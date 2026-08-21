@@ -58,6 +58,8 @@
 19. OpenClaw
 20. Hermes Agent
 
+同一平台品牌下的客户端形态不额外增加候选平台数量，但会在 profile 层拆分。例如 OpenAI 需要区分 ChatGPT desktop app、Codex CLI 和 Codex IDE extension；Anthropic 需要区分 Claude Code 与 Claude / Claude Desktop 聊天 Skills。
+
 ---
 
 ## 2. 证据与结论规则
@@ -77,7 +79,7 @@
 |---|---|
 | 完整文件管理接入候选（下文简称“完整适配候选”） | 本地目录、Skill 格式和主要层级规则已有较充分依据，可以实现完整 profile |
 | 部分文件管理接入候选（下文简称“部分适配候选”） | 存在本地 Skill，但关键目录、优先级、刷新或客户端差异仍不完整 |
-| 有限文件接入候选（下文简称“有限接入候选”） | 官方只确认上传包、市场安装或界面管理，未公开稳定本地目录；只能先提供包生成、手动导入和状态记录 |
+| 有限文件接入候选（下文简称“有限接入候选”） | 官方只确认上传包、市场安装或界面管理，未公开稳定本地目录；只展示能力边界、官方帮助链接和通用标准导出，不建立部署或人工安装状态 |
 | 暂不支持 | 没有可被本项目安全管理的本地 Skill 机制 |
 
 分类仅代表当前调研成熟度，不代表开发版本划分，也不代表最终支持优先级。
@@ -90,9 +92,9 @@
 
 | 分类 | 平台 |
 |---|---|
-| 完整文件管理接入候选 | Codex、Claude Code、Gemini CLI、Cursor、Windsurf、OpenCode、TraeCode、通义灵码（Qoder CN）、CodeBuddy Code、文心快码 Comate、Kimi Code、OpenClaw、Hermes Agent |
-| 部分文件管理接入候选 | GitHub Copilot、Cline、Google Antigravity、ZCode |
-| 有限文件接入候选 | TraeWork、WorkBuddy、Kimi Work |
+| 完整文件管理接入候选 | OpenAI Codex CLI / Codex IDE extension、Claude Code、Gemini CLI、Cursor、Windsurf、OpenCode、TraeCode、通义灵码（Qoder CN）、CodeBuddy Code、文心快码 Comate、Kimi Code、OpenClaw、Hermes Agent |
+| 部分文件管理接入候选 | ChatGPT desktop app 中的 standalone skills、GitHub Copilot、Cline、Google Antigravity、ZCode |
+| 有限文件接入候选 | Claude / Claude Desktop 聊天 Skills、TraeWork、WorkBuddy、Kimi Work |
 | 暂不支持 | 当前无；Roo Code 已按产品范围决定移出候选池 |
 
 以上分类允许按官方资料进入开发；未经测试时必须明确标记“基于官方资料”，不能宣传为运行时兼容或已验证可用。
@@ -106,9 +108,9 @@
 5. 内置 Skill、插件 Skill 和用户 Skill 必须区分所有权。SkillHub 不能覆盖或删除平台内置、插件管理的内容。
 6. 软链接能力不能统一假设。Windows 的符号链接、目录联接与普通复制必须逐平台验证。
 7. 本次没有发现任何平台公开稳定的“每个 Skill 调用次数”接口。平台日志或会话事件只能作为后续 hook 关联项目的候选证据。
-8. TraeWork、WorkBuddy、Kimi Work 虽然支持本地 Skill 上传或安装，但尚不能证明存在稳定、公开、可由外部工具直接管理的目录。
+8. Claude / Claude Desktop 聊天 Skills、TraeWork、WorkBuddy、Kimi Work 虽然支持 Skill 上传、安装或账号管理，但尚不能证明存在稳定、公开、可由外部工具直接管理的目录。
 9. 项目级目录并不统一：目录名称、项目根识别、父级或嵌套扫描、同名优先级和可信要求均可能不同。
-10. 同一品牌的 CLI、桌面端和 IDE 插件需要分别保存客户端 profile；共享目录和规则相同时才合并为一个实际目标。
+10. 同一品牌的 CLI、桌面端、IDE 插件、云端 Agent 和聊天/办公客户端需要分别保存客户端 profile；只有官方资料或真机结果确认共享目录和规则时，才合并为一个实际目标。聊天桌面应用不能仅因品牌相同就套用同品牌 CLI 的本地 Skill 目录。
 
 ---
 
@@ -116,8 +118,10 @@
 
 | 平台 | 本地 Skill | 全局/用户级 | 项目级 | 共享或兼容目录 | 同名规则 | 刷新方式 | 链接支持证据 | 调研分类 |
 |---|---|---|---|---|---|---|---|---|
-| Codex | `SKILL.md` 目录 | `$HOME/.agents/skills`；`~/.codex/skills` 需结合客户端验证 | 从当前目录到仓库根的 `.agents/skills` | 插件携带 Skill | 官方资料显示同名可同时出现，需按客户端复核 | 自动检测；App Server 可强制刷新 | 官方明确支持符号链接目录 | 完整适配候选 |
+| OpenAI Codex CLI / IDE extension | `SKILL.md` 目录 | `$HOME/.agents/skills`；`/etc/codex/skills` 为机器/容器级；`~/.codex/skills` 不是 OpenAI 官方文档列出的 Codex 本地 Skill 加载目录 | 从当前目录到仓库根的 `.agents/skills` | ChatGPT/Codex 插件可携带 Skill | 官方资料显示同名可同时出现，需按客户端复核 | 自动检测；不出现时重启；App Server 可强制刷新 | 官方明确支持符号链接目录 | 完整适配候选 |
+| ChatGPT desktop app（含 Codex in ChatGPT） | standalone skills 与插件 Skill | 官方确认可在桌面端使用 standalone skills，但未公开独立稳定本地扫描目录 | 与项目 Skills 关系待真机验证 | 插件 Skill 在 Chat/Work 中跨 Web、桌面、移动可用 | 未公开 | Skills 侧边栏/UI；本地刷新规则待验证 | 未确认 | 部分适配候选 |
 | Claude Code | `SKILL.md` 目录 | `~/.claude/skills` | `.claude/skills`，支持父级与嵌套发现 | `.claude/commands`、插件 `skills/` | Enterprise > Personal > Project；插件有命名空间 | Skill 文件监听；部分插件变化需 reload | 官方明确支持，Windows 有额外权限条件 | 完整适配候选 |
+| Claude / Claude Desktop 聊天 Skills | `skill.md`/Skill 包 ZIP 上传、账号/组织管理 | 没有公开稳定本地扫描目录；自定义 Skill 通过 Customize > Skills 上传 | 项目级文件目录未公开 | Claude Desktop/Cowork 插件可本地保存但路径未公开；Microsoft 365 add-ins 使用已启用 Skills | 云端/账号规则 | UI 启停、删除、重新上传 | 未确认 | 有限接入候选 |
 | Gemini CLI | `SKILL.md` 目录 | `~/.gemini/skills`、`~/.agents/skills` | `.gemini/skills`、`.agents/skills` | Extension `skills/` | Built-in < Extension < User < Workspace | `/skills reload` 或 `/skills refresh` | Extension link 明确；Skill link 实现待验证 | 完整适配候选 |
 | Cursor | `SKILL.md` 目录 | `~/.cursor/skills`、`~/.agents/skills` | `.cursor/skills`、`.agents/skills` | 兼容 Claude、Codex 目录 | 未完整公开 | 启动时发现；热刷新待验证 | 未确认 | 完整适配候选 |
 | GitHub Copilot | `SKILL.md` 目录 | `~/.copilot/skills`、`~/.agents/skills` 等 | `.github/skills`、`.agents/skills` 等 | Claude 兼容目录、插件 Skill | 未完整公开 | CLI/IDE/云端行为不同 | 未确认 | 部分适配候选 |
@@ -143,26 +147,28 @@
 
 ### 5.1 OpenAI Codex
 
-官方资料确认 Codex 使用目录型 `SKILL.md`，可以携带脚本、参考资料、资源和 `agents/openai.yaml`。当前官方体系同时出现跨 Agent 的 `.agents/skills` 与 Codex 自身的 Skill 安装位置，因此 SkillHub 不能只扫描一个固定目录，应同时维护官方已知候选目录并以本机实际存在位置和用户确认结果为准。
+官方资料确认 OpenAI 使用的准确客户端形态包括 ChatGPT desktop app、Codex CLI 和 Codex IDE extension；没有名为“Codex Desktop”的独立官方产品名。Codex 的本地 Skill 使用目录型 `SKILL.md`，可以携带脚本、参考资料、资源和 `agents/openai.yaml`。OpenAI 官方文档列出的 Codex 本地加载位置是仓库/当前目录链路中的 `.agents/skills`、`$HOME/.agents/skills`、`/etc/codex/skills` 和系统内置 Skill；`~/.codex/config.toml` 用于禁用配置，但 `~/.codex/skills` 不是官方文档列出的 Codex 本地 Skill 加载目录。
 
-- 已确认：项目级 `.agents/skills`；用户级 `.agents/skills`；系统/插件 Skill；禁用配置；文件变化通知；符号链接目录。
+- 已确认：Codex CLI / IDE extension 的项目级 `.agents/skills`；用户级 `$HOME/.agents/skills`；机器/容器级 `/etc/codex/skills`；系统/插件 Skill；禁用配置；文件变化通知；符号链接目录。
+- 已确认但需独立建模：standalone skills 可在 ChatGPT desktop app、Codex CLI 和 Codex IDE extension 使用；插件 Skill 可在 ChatGPT 的 Chat/Work 以及 Codex 中分发使用。
 - 源码线索：扫描深度和 App Server 的 `skills/list`、强制刷新能力。
-- 必须验证：Windows 下 `.agents` 与 `.codex` 的实际发现关系、同名展示、目录联接、桌面端/CLI/IDE 的一致性。
+- 必须验证：ChatGPT desktop app 是否直接复用 Codex 的 `.agents/skills` 发现链路，是否存在独立本地 Skills 存储目录，Windows 下目录联接、同名展示、Codex CLI 与 IDE extension 的一致性。
 - 调用证据：没有公开稳定的按 Skill 调用次数接口。
-- 结论：完整适配候选。
+- 结论：Codex CLI / IDE extension 是完整适配候选；ChatGPT desktop app 只能先作为部分适配候选，不能在未验证前把聊天桌面应用当作独立本地文件部署目标。
 
 主要来源：[Codex Build skills](https://learn.chatgpt.com/docs/build-skills)、[OpenAI Codex 官方仓库](https://github.com/openai/codex)、[Codex App Server](https://github.com/openai/codex/blob/main/codex-rs/app-server/README.md)。
 
-### 5.2 Claude Code
+### 5.2 Claude Code 与 Claude Desktop
 
-Claude Code 的 Skill 体系最完整之一，支持个人、项目、企业和插件层级，并明确说明父级、嵌套目录、热变化和符号链接行为。
+Claude Code 的 Skill 体系最完整之一，支持个人、项目、企业、同步和插件层级，并明确说明父级、嵌套目录、热变化和符号链接行为。Claude Desktop / Claude Web 的聊天 Skills 是另一套账号与 UI 管理能力：官方说明通过 Customize > Skills 上传 ZIP、启停、删除和分享，没有公开稳定的本地扫描目录。Claude Desktop 的插件和本地 MCP/desktop extensions 可能保存到本机，但官方帮助文档没有给出可由外部文件管理器稳定写入的 Skill 目录。
 
-- 已确认：`~/.claude/skills`、`.claude/skills`、插件 `skills/`、旧 `.claude/commands` 兼容、层级优先级、启停和插件生命周期。
-- 必须验证：Windows 符号链接权限、企业托管目录、同步到 Claude 账号的 Skill 与本地 Skill 冲突。
+- 已确认：Claude Code 的 `~/.claude/skills`、`.claude/skills`、`~/.claude/skills/synced/`、插件 `skills/`、旧 `.claude/commands` 兼容、层级优先级、启停、热变化和插件生命周期。
+- 已确认但不作为直接文件部署目标：Claude / Claude Desktop 聊天 Skills 通过 Customize > Skills 上传 ZIP 并由账号/组织管理；Microsoft 365 add-ins 使用已启用的 Claude Skills；Claude Desktop 插件自定义包可本地保存但路径未公开。
+- 必须验证：Windows 符号链接权限、企业托管目录、`CLAUDE_CODE_SYNC_SKILLS` 下载行为、Claude Desktop/Cowork 与 Claude Code 本地目录的关系、桌面插件本地存储位置是否可安全观察。
 - 调用证据：没有官方按 Skill 调用次数 API。
-- 结论：完整适配候选。
+- 结论：Claude Code 是完整适配候选；Claude / Claude Desktop 聊天 Skills 是有限接入候选，只展示能力边界、官方帮助链接和通用标准导出，不生成平台专用包，也不记录人工安装状态。
 
-主要来源：[Claude Code Skills](https://code.claude.com/docs/en/slash-commands)、[Claude Code Plugins](https://code.claude.com/docs/en/plugins)。
+主要来源：[Claude Code Skills](https://code.claude.com/docs/en/skills)、[Claude Code Plugins](https://code.claude.com/docs/en/plugins)、[Claude Use skills](https://support.claude.com/en/articles/12512180-use-skills-in-claude)、[Claude Create custom skills](https://support.claude.com/en/articles/12512198-how-to-create-custom-skills)、[Claude Desktop](https://support.claude.com/en/articles/10065433-install-claude-desktop)。
 
 ### 5.3 Gemini CLI
 
@@ -173,17 +179,17 @@ Gemini CLI 明确区分 Built-in、Extension、User、Workspace 四层，并提�
 - 调用证据：会话内可以观察 `activate_skill`，但没有公开持久调用统计。
 - 结论：完整适配候选。
 
-主要来源：[Gemini CLI 管理 Agent Skills](https://geminicli.com/docs/cli/using-agent-skills/)、[Gemini CLI Skills 入门](https://geminicli.com/docs/cli/tutorials/skills-getting-started/)。
+主要来源：[Gemini CLI 管理 Agent Skills](https://github.com/google-gemini/gemini-cli/blob/main/docs/cli/using-agent-skills.md)、[Gemini CLI Skills 入门](https://github.com/google-gemini/gemini-cli/blob/main/docs/cli/tutorials/skills-getting-started.md)、[Gemini CLI Extensions](https://github.com/google-gemini/gemini-cli/blob/main/docs/extensions/reference.md)。
 
 ### 5.4 Cursor
 
-Cursor 已采用 Agent Skills，并兼容 `.agents`、Cursor、Claude 和 Codex 多套目录。内置 Skill 和插件体系较丰富，但同名优先级、启用状态落盘位置和热刷新规则仍需实测。
+Cursor 已采用 Agent Skills，并兼容 `.agents`、Cursor、Claude 和 Codex 多套目录。官方更新日志说明 Skills 支持 editor 和 CLI；当前公开的 Skills 文档给出统一目录，尚未给出 IDE 与 CLI 的差异化目录规则。内置 Skill 和插件体系较丰富，但同名优先级、启用状态落盘位置和热刷新规则仍需实测。
 
-- 已确认：用户级和项目级 `.cursor/skills`、`.agents/skills`，以及 Claude/Codex 兼容目录；内置 Skill；插件可携带 Skill。
-- 必须验证：多目录同时存在时的遮蔽顺序、Customize 中禁用状态、Marketplace 安装位置、Windows 目录联接和当前会话刷新。
+- 已确认：用户级和项目级 `.cursor/skills`、`.agents/skills`，以及 Claude/Codex 兼容目录；Cursor editor 和 Cursor CLI 均支持 Agent Skills；内置 Skill；插件可携带 Skill。
+- 必须验证：Cursor editor 与 Cursor CLI 是否完全共享发现链路，多目录同时存在时的遮蔽顺序、Customize 中禁用状态、Marketplace 安装位置、Windows 目录联接和当前会话刷新。
 - 结论：完整适配候选，标记“已测试文件管理接入”前验证项较多。
 
-主要来源：[Cursor Agent Skills](https://prod.cursor.com/docs/skills)、[Cursor Customize](https://prod.cursor.com/docs/customize-cursor)。
+主要来源：[Cursor Agent Skills](https://prod.cursor.com/docs/skills)、[Cursor CLI](https://docs.cursor.com/en/cli/overview)、[Cursor 2.4 Changelog](https://cursor.com/changelog/2-4)、[Cursor Customize](https://prod.cursor.com/docs/customize-cursor)。
 
 ### 5.5 GitHub Copilot
 
@@ -207,13 +213,13 @@ Windsurf 官方已提供 Cascade Skills，而不只是 Rules。Workspace Skill �
 
 ### 5.7 Cline
 
-Cline 已支持目录型 `SKILL.md`，但当前官方文档仍将 Skills 标记为实验性能力。它同时存在 VS Code 扩展和 CLI，用户目录在不同文档中可能出现差异。
+Cline 已支持目录型 `SKILL.md`，但当前官方文档仍将 Skills 标记为实验性能力。它同时存在 VS Code/JetBrains 扩展、CLI、SDK 和 ACP 形态；官方配置文档说明全局 `~/.cline/` 适用于 IDE、CLI 和 SDK，但插件文档又说明插件当前只适用于 SDK、CLI 和 Kanban，不适用于 VS Code/JetBrains 扩展，因此必须拆分客户端能力。
 
-- 已确认：`~/.cline/skills`、`.cline/skills`、部分 Claude 兼容目录、全局覆盖项目、单 Skill 开关。
-- 必须验证：实验性开关、CLI 与扩展目录关系、状态落盘、热刷新、插件 Skill、符号链接和会话日志。
+- 已确认：`~/.cline/skills`、`.cline/skills`、部分 Claude 兼容目录、全局覆盖项目、单 Skill 开关；全局配置跨 IDE、CLI 和 SDK。
+- 必须验证：实验性开关、CLI 与扩展实际发现关系、插件 Skill 在 CLI/SDK 与 IDE 扩展中的差异、状态落盘、热刷新、符号链接和会话日志。
 - 结论：部分适配候选。
 
-主要来源：[Cline Skills](https://docs.cline.bot/customization/skills)、[Cline CLI Reference](https://docs.cline.bot/cli/cli-reference)。
+主要来源：[Cline Skills](https://docs.cline.bot/customization/skills)、[Cline Config](https://docs.cline.bot/getting-started/config)、[Cline CLI Reference](https://docs.cline.bot/cli/cli-reference)、[Cline Plugins](https://docs.cline.bot/customization/plugins)。
 
 ### 5.8 OpenCode
 
@@ -227,10 +233,10 @@ OpenCode V2 同时支持目录型 `SKILL.md`、扁平 Markdown、本地额外目
 
 ### 5.9 Google Antigravity
 
-Google Antigravity 使用 Agent Skills 开放标准。项目默认目录已从早期 `.agent/skills` 转向 `.agents/skills`，全局目录为 `~/.gemini/config/skills`，但 IDE、CLI 和不同版本的全局路径仍存在历史差异。
+Google Antigravity 使用 Agent Skills 开放标准。官方文档同时列出 Antigravity 主应用、Antigravity CLI、Antigravity for IDEs 和 SDK；Skills 文档给出项目默认目录 `.agents/skills` 与全局目录 `~/.gemini/config/skills`，codelab 进一步说明全局目录适用于 Antigravity、Antigravity IDE 和 Antigravity CLI。由于客户端形态较多，仍需按 profile 保存并实测。
 
-- 已确认：项目 `.agents/skills`、全局目录、`.agent/skills` 向后兼容、`SKILL.md` 和渐进式加载。
-- 必须验证：IDE 与 CLI 是否共享目录、同名优先级、插件 Skill、启停、热刷新、符号链接。
+- 已确认：项目 `.agents/skills`、全局目录、`.agent/skills` 向后兼容、`SKILL.md` 和渐进式加载；官方资料称全局目录跨主应用、IDE 和 CLI。
+- 必须验证：主应用、CLI、IDE 扩展与 SDK 是否完全共享目录和刷新规则、同名优先级、插件 Skill、启停、热刷新、符号链接。
 - 结论：部分适配候选。
 
 主要来源：[Google Antigravity Skills](https://antigravity.google/docs/skills)、[Antigravity Skills Codelab](https://codelabs.developers.google.com/getting-started-with-antigravity-skills)。
@@ -301,7 +307,7 @@ TraeWork 是独立的办公 Agent 产品，不能直接套用 TraeCode 的 `.tra
 
 - 已确认：桌面、Web、移动形态；Work/Code 模式；界面中可使用和上传 Skill 的产品能力。
 - 未确认：全局目录、项目目录、优先级、热刷新、链接、卸载落盘和调用记录。
-- 结论：有限接入候选。实机确认目录前，只提供 Skill 包生成、上传指引和人工安装记录。
+- 结论：有限接入候选。实机确认目录前，只展示能力边界、官方帮助链接和通用标准导出，不生成平台专用包，也不记录人工安装状态。
 
 主要来源：[TraeWork 官方产品页](https://www.trae.ai/work)、[TRAE 官方社区 TraeWork Skill 指南](https://forum.trae.cn/t/topic/32832)。后者只作为操作线索，不作为稳定目录承诺。
 
@@ -371,8 +377,9 @@ SkillHub 应以真实路径、规范化路径、文件身份和内容哈希联�
 
 `.agents/skills` 的部署语义必须区分：
 
-- “仅添加到选定 Agent”优先使用 Agent 专属目录。
-- “共享给所有兼容 Agent”才优先使用 `.agents/skills`。
+- 添加到单个或多个 Agent 时分别使用各客户端自己的已知 Skill 目录，不把 `.agents/skills` 当作所有平台的通用共享目标。
+- 只有对应 Agent 官方支持、用户明确选择或登记为自定义目录时，`.agents/skills` 才能作为具体部署目标。
+- 多个逻辑 Agent 实际指向同一 `.agents/skills` 物理目录时只部署一次，但分别记录逻辑关系。
 - 共享实体仍被其他 Agent 引用时，解除单个 Agent 关系不得直接删除文件。
 - Agent 专用变体内容不一致时不能共用同一份共享部署。
 
@@ -434,6 +441,8 @@ Windows 必须分别验证：
 ### 6.8 客户端存在与文件可用性边界
 
 - 发现应用程序、CLI 或官方安装记录时只表示客户端存在；只发现目录时显示“发现相关目录”。
+- 客户端官方只提供上传、账号同步、云端管理、插件市场或连接器能力时，不作为可直接写入的本地文件部署目标。
+- 同品牌 CLI 的本地目录不能自动继承给聊天桌面端、Web、移动端、Office/办公插件或云端 Agent；只有官方资料或真机验证确认共享目录时才建立同一实际目标。
 - 不读取 Agent 版本，不判断登录、项目可信、模型能力和运行时兼容性。
 - 部署成功只表示文件已放入目标目录并建立管理关系，不表示 Agent 已加载或能够调用。
 - 平台自身的项目信任无法可靠持续观察，不建立“未授权”状态；只在故障排查中提供可能原因。
@@ -448,7 +457,7 @@ Windows 必须分别验证：
 
 | 顺序 | 平台 | 原因 |
 |---|---|---|
-| 第一批 | Codex、Claude Code、Gemini CLI、Cursor、TraeCode、通义灵码、CodeBuddy Code、文心快码 Comate、Kimi Code | 用户覆盖面高，目录较明确，能够尽早验证通用适配框架 |
+| 第一批 | OpenAI Codex CLI、Codex IDE extension、ChatGPT desktop app、Claude Code、Claude Desktop、Gemini CLI、Cursor、TraeCode、通义灵码、CodeBuddy Code、文心快码 Comate、Kimi Code | 用户覆盖面高，且 OpenAI/Anthropic 多客户端拆分会直接影响 profile 模型和部署目标 |
 | 第二批 | Windsurf、OpenCode、OpenClaw、Hermes Agent | 本地能力完整，但层级、额外目录或链接安全更复杂 |
 | 第三批 | GitHub Copilot、Cline、Google Antigravity、ZCode | 关键规则或客户端差异尚未完全公开 |
 | 第四批 | TraeWork、WorkBuddy、Kimi Work | 需要先确认是否存在稳定、公开、可由外部管理的目录 |
@@ -490,14 +499,18 @@ Windows 必须分别验证：
 
 同一品牌可能存在多个客户端和目录，例如：
 
-- Codex Desktop、CLI、IDE。
+- OpenAI：ChatGPT desktop app（含 Codex in ChatGPT）、Codex CLI、Codex IDE extension、Codex cloud；其中 Codex cloud 和 ChatGPT Web/Mobile 不因支持插件 Skill 就成为本地文件部署目标。
+- Anthropic：Claude Code CLI/本地会话、Claude Desktop/Cowork/Chat、Claude Web、Microsoft 365 add-ins；Claude Code 有公开本地目录，Claude 聊天 Skills 主要通过上传和账号/组织管理。
 - GitHub Copilot CLI、VS Code/JetBrains、本地与云端 Agent。
+- Cursor editor 与 Cursor CLI。
+- Cline VS Code/JetBrains 扩展、Cline CLI、SDK/ACP。
+- Google Antigravity 主应用、Antigravity CLI、Antigravity for IDEs、SDK。
 - 通义灵码/Qoder CN IDE 与 CLI。
 - CodeBuddy Code 与 WorkBuddy。
 - TraeCode 与 TraeWork。
 - Kimi Code 与 Kimi Work。
 
-产品层可以统一展示品牌，底层必须按客户端 profile 保存能力和规则。
+产品层可以统一展示品牌，底层必须按客户端 profile 保存能力和规则。共享目录和规则相同的客户端可以合并成一个实际目标；只支持上传、云端或账号管理的客户端只展示能力边界、官方帮助链接和通用标准导出，不能生成平台专用包或建立部署、人工安装状态。
 
 ### 8.2 开发优先级应由依赖关系决定
 
@@ -524,11 +537,11 @@ Windows 必须分别验证：
 
 ## 9. 当前结论
 
-20 个候选平台均存在继续调研或文件管理接入价值，但接入深度不同：
+20 个候选平台均存在继续调研或文件管理接入价值，但接入深度不同；同品牌多客户端需要在 profile 层继续拆分：
 
-- 13 个平台可以按官方资料实现完整文件管理 profile。
-- 4 个平台可以先实现部分文件管理 profile，未知规则显示“无法判断”并保留自定义目录兜底。
-- 3 个办公型 Agent 暂时只做包生成和手动安装辅助，确认稳定本地目录前不直接写入其内部数据。
+- 13 个本地文件管理 profile 可以按官方资料实现完整接入，其中 OpenAI 侧仅指 Codex CLI / Codex IDE extension。
+- 5 个部分文件管理 profile 可以先实现，未知规则显示“无法判断”并保留自定义目录兜底；新增关注点是 ChatGPT desktop app 的 standalone skills 是否可作为独立文件目标。
+- 4 个上传、云端或办公型 profile 暂时只展示能力边界、官方帮助链接和通用标准导出；新增关注点是 Claude / Claude Desktop 聊天 Skills 不能套用 Claude Code 的 `.claude/skills` 目录。
 - 没有平台能够仅凭官方资料提供可靠的按 Skill 调用次数统计。
 - Roo Code 已移出候选范围，不再占用后续调研和开发资源。
 
