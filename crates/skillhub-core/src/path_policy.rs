@@ -84,9 +84,10 @@ impl PathPolicy {
     }
 
     pub fn register_root(&mut self, root: AllowedRoot) -> AppResult<()> {
-        if self.roots.insert(root.id, root).is_some() {
+        if self.roots.contains_key(&root.id) {
             return Err(path_error());
         }
+        self.roots.insert(root.id, root);
         Ok(())
     }
 
@@ -158,13 +159,28 @@ fn validate_child(path: &Path) -> AppResult<()> {
             Component::Normal(name) => {
                 let text = name.to_string_lossy();
                 #[cfg(windows)]
-                if text.contains(':') || text.bytes().any(|b| b < 32 || b"<>\"|?*".contains(&b)) {
+                if text.ends_with('.')
+                    || text.ends_with(' ')
+                    || text.contains(':')
+                    || text.bytes().any(|b| b < 32 || b"<>\"|?*".contains(&b))
+                    || is_reserved_windows_name(&text)
+                {
                     return Err(path_error());
                 }
             }
         }
     }
     Ok(())
+}
+
+#[cfg(windows)]
+fn is_reserved_windows_name(name: &str) -> bool {
+    let stem = name.split('.').next().unwrap_or(name).to_ascii_uppercase();
+    matches!(stem.as_str(), "CON" | "PRN" | "AUX" | "NUL")
+        || (stem.len() == 4
+            && (stem.starts_with("COM") || stem.starts_with("LPT"))
+            && stem.as_bytes()[3].is_ascii_digit()
+            && stem.as_bytes()[3] != b'0')
 }
 
 fn path_error() -> AppError {

@@ -50,3 +50,49 @@ fn existing_symlink_cannot_escape_registered_root() {
     let error = policy.resolve_existing(root_id, "link/escape").unwrap_err();
     assert_eq!(error.code.as_str(), "path.outside_allowed_root");
 }
+
+#[test]
+fn create_rejects_existing_symlink_ancestor_that_escapes_root() {
+    let root = tempfile::tempdir().unwrap();
+    let outside = tempfile::tempdir().unwrap();
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(outside.path(), root.path().join("link")).unwrap();
+    #[cfg(windows)]
+    if std::os::windows::fs::symlink_dir(outside.path(), root.path().join("link")).is_err() {
+        return;
+    }
+    let (root_id, policy) = policy_for(root.path());
+    let error = policy
+        .resolve_for_create(root_id, "link/new-skill")
+        .unwrap_err();
+    assert_eq!(error.code.as_str(), "path.outside_allowed_root");
+}
+
+#[test]
+fn duplicate_root_registration_keeps_original_root() {
+    let first = tempfile::tempdir().unwrap();
+    let second = tempfile::tempdir().unwrap();
+    let root_id = AllowedRootId::new();
+    let mut policy = PathPolicy::new();
+    policy
+        .register_root(AllowedRoot::with_id(root_id, first.path()).unwrap())
+        .unwrap();
+    assert!(policy
+        .register_root(AllowedRoot::with_id(root_id, second.path()).unwrap())
+        .is_err());
+    let safe = policy.resolve_for_create(root_id, "original").unwrap();
+    let first_path = std::fs::canonicalize(first.path()).unwrap();
+    let second_path = std::fs::canonicalize(second.path()).unwrap();
+    assert!(safe.as_path().starts_with(first_path));
+    assert!(!safe.as_path().starts_with(second_path));
+}
+
+#[cfg(windows)]
+#[test]
+fn rejects_windows_reserved_names_and_trailing_spaces_or_dots() {
+    let root = tempfile::tempdir().unwrap();
+    let (root_id, policy) = policy_for(root.path());
+    for name in ["CON", "PRN", "AUX", "NUL", "COM1", "LPT9", "name.", "name "] {
+        assert!(policy.resolve_for_create(root_id, name).is_err(), "{name}");
+    }
+}
