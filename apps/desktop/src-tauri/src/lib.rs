@@ -122,13 +122,12 @@ export function onAppEvent(handler: (event: AppEvent) => void): Promise<Unlisten
 fn generate_bindings() {
     let generated = generated_bindings_source().expect("generate TypeScript from Rust contracts");
     let destination = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../src/api/bindings.ts");
-    std::fs::write(&destination, generated).expect("generated bindings destination");
-    let generated = std::fs::read_to_string(destination).expect("generated bindings output");
-    assert!(generated.contains("export type AppCommand"));
-    assert!(generated.contains("export type AppQuery"));
-    assert!(generated.contains("export type AppEvent"));
-    assert!(generated.contains("export function executeCommand"));
-    assert!(generated.contains("export function queryApplication"));
+    let committed = std::fs::read_to_string(destination).expect("committed bindings output");
+    assert_eq!(
+        committed.replace("\r\n", "\n"),
+        generated,
+        "bindings.ts drifted from the Rust/Specta contracts; regenerate it before committing"
+    );
 }
 
 #[test]
@@ -190,4 +189,15 @@ fn command_bridge_forwards_typed_envelopes_to_injected_facade() {
         facade.queries.lock().expect("queries mutex").as_slice(),
         &[AppQuery::GetBootstrapSnapshot]
     );
+}
+
+#[test]
+fn capabilities_allow_only_typed_ipc_and_event_subscription() {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("capabilities/default.json");
+    let capabilities = std::fs::read_to_string(path).expect("desktop capability manifest");
+    assert!(!capabilities.contains("core:default"));
+    assert!(capabilities.contains("core:event:allow-listen"));
+    assert!(capabilities.contains("core:event:allow-unlisten"));
+    assert!(capabilities.contains("allow-execute-command"));
+    assert!(capabilities.contains("allow-query-application"));
 }

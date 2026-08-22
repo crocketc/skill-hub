@@ -4,7 +4,8 @@
   "description": "Minimal local desktop capability for the typed SkillHub IPC bridge.",
   "windows": ["main"],
   "permissions": [
-    "core:default",
+    "core:event:allow-listen",
+    "core:event:allow-unlisten",
     "allow-execute-command",
     "allow-query-application"
   ]
