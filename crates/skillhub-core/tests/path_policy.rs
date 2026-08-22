@@ -87,6 +87,37 @@ fn duplicate_root_registration_keeps_original_root() {
     assert!(!safe.as_path().starts_with(second_path));
 }
 
+#[test]
+fn unknown_root_id_is_rejected_without_touching_the_filesystem() {
+    let root = tempfile::tempdir().unwrap();
+    let policy = PathPolicy::new();
+    let error = policy
+        .resolve_for_create(AllowedRootId::new(), root.path().join("new"))
+        .unwrap_err();
+    assert_eq!(error.code.as_str(), "path.outside_allowed_root");
+    assert!(!root.path().join("new").exists());
+}
+
+#[test]
+fn existing_nested_path_is_canonicalized_inside_its_registered_root() {
+    let root = tempfile::tempdir().unwrap();
+    let nested = root.path().join("skills").join("pdf");
+    std::fs::create_dir_all(&nested).unwrap();
+    let (root_id, policy) = policy_for(root.path());
+
+    let safe = policy.resolve_existing(root_id, "skills/pdf").unwrap();
+    assert_eq!(safe.root_id(), root_id);
+    assert_eq!(safe.as_path(), std::fs::canonicalize(nested).unwrap());
+}
+
+#[test]
+fn registering_a_file_as_a_root_is_rejected() {
+    let root = tempfile::tempdir().unwrap();
+    let file = root.path().join("not-a-directory");
+    std::fs::write(&file, b"fixture").unwrap();
+    assert!(AllowedRoot::new(file).is_err());
+}
+
 #[cfg(windows)]
 #[test]
 fn rejects_windows_reserved_names_and_trailing_spaces_or_dots() {
