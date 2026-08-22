@@ -1,0 +1,11 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Minimal local desktop capability for the typed SkillHub IPC bridge.",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "allow-execute-command",
+    "allow-query-application"
+  ]
+}

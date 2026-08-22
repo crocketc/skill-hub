@@ -18,4 +18,7 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 async-trait = "0.1"
 skillhub-core = { path = "../../../crates/skillhub-core" }
+specta = { version = "2.0.0-rc.25", features = ["derive"] }
 tauri = { version = "2" }
+specta-serde = "0.0.12"
+specta-typescript = "0.0.12"

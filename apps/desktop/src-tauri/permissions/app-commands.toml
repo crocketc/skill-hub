@@ -1,0 +1,21 @@
+## Permission Table
+
+[[permission]]
+identifier = "allow-execute-command"
+description = "Allows the typed AppCommand envelope to reach the injected application facade."
+commands.allow = ["execute_command"]
+
+[[permission]]
+identifier = "deny-execute-command"
+description = "Denies the typed AppCommand envelope."
+commands.deny = ["execute_command"]
+
+[[permission]]
+identifier = "allow-query-application"
+description = "Allows the typed AppQuery envelope to reach the injected application facade."
+commands.allow = ["query_application"]
+
+[[permission]]
+identifier = "deny-query-application"
+description = "Denies the typed AppQuery envelope."
+commands.deny = ["query_application"]
