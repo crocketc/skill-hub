@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 /// Stable machine-readable failures returned by the application boundary.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 pub enum ErrorCode {
     #[serde(rename = "input.invalid")]
     InvalidInput,
