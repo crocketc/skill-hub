@@ -122,25 +122,33 @@ impl TempWorkspace {
 
 fn validate_destination(destination: &Path, canonical_root: &Path) -> io::Result<()> {
     let mut ancestor = destination;
-    while !ancestor.exists() {
-        ancestor = ancestor.parent().ok_or_else(|| {
-            io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "destination has no workspace root",
-            )
-        })?;
+    loop {
+        match fs::symlink_metadata(ancestor) {
+            Ok(metadata) => {
+                if metadata.file_type().is_symlink() {
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidInput,
+                        "destination cannot contain a symlink",
+                    ));
+                }
+                break;
+            }
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                ancestor = ancestor.parent().ok_or_else(|| {
+                    io::Error::new(
+                        io::ErrorKind::InvalidInput,
+                        "destination has no workspace root",
+                    )
+                })?;
+            }
+            Err(error) => return Err(error),
+        }
     }
     let canonical = fs::canonicalize(ancestor)?;
     if !canonical.starts_with(canonical_root) {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
             "destination must remain inside the temporary workspace",
-        ));
-    }
-    if destination.exists() && fs::symlink_metadata(destination)?.file_type().is_symlink() {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            "destination cannot be a symlink",
         ));
     }
     Ok(())

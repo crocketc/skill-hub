@@ -69,3 +69,25 @@ fn fixture_copy_rejects_nested_destination_symlink_escape() {
     assert!(workspace.copy_fixture(source.path(), &destination).is_err());
     assert!(!external.path().join("nested/fixture.txt").exists());
 }
+
+#[test]
+fn fixture_copy_rejects_dangling_nested_destination_symlink_escape() {
+    let source = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(source.path().join("nested")).unwrap();
+    std::fs::write(source.path().join("nested/fixture.txt"), "fixture").unwrap();
+    let external = tempfile::tempdir().unwrap();
+    let external_target = external.path().join("created-by-copy");
+    let workspace = skillhub_testkit::TempWorkspace::new().unwrap();
+    let destination = workspace.central_root().join("dangling-copy");
+    std::fs::create_dir_all(&destination).unwrap();
+
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(&external_target, destination.join("nested")).unwrap();
+    #[cfg(windows)]
+    if std::os::windows::fs::symlink_dir(&external_target, destination.join("nested")).is_err() {
+        return;
+    }
+
+    assert!(workspace.copy_fixture(source.path(), &destination).is_err());
+    assert!(!external_target.join("fixture.txt").exists());
+}
