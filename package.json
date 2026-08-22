@@ -3,7 +3,9 @@
   "private": true,
   "packageManager": "pnpm@11.21.0",
   "scripts": {
+    "check:frontend": "pnpm --dir apps/desktop check",
     "test:frontend": "pnpm --dir apps/desktop test --run",
-    "build:frontend": "pnpm --dir apps/desktop build"
+    "build:frontend": "pnpm --dir apps/desktop build",
+    "audit:frontend": "pnpm audit --json"
   }
 }
