@@ -4,9 +4,7 @@ use serde::{de::Error as _, Deserialize, Deserializer, Serialize, Serializer};
 
 macro_rules! uuid_id {
     ($name:ident) => {
-        #[derive(
-            Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, specta::Type,
-        )]
+        #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, specta::Type)]
         #[serde(transparent)]
         pub struct $name(uuid::Uuid);
 
