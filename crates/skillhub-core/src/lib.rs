@@ -2,6 +2,7 @@ pub mod api;
 mod error;
 mod ids;
 mod operation;
+mod path_policy;
 
 pub use api::{
     AppCommand, AppCommandResult, AppEvent, AppQuery, AppQueryResult, ApplicationFacade,
@@ -9,6 +10,7 @@ pub use api::{
 };
 pub use error::{AppError, AppResult, ErrorCode, RecoveryAction, Severity};
 pub use operation::{OperationPhase, OperationProgress, OperationSummary};
+pub use path_policy::{AllowedRoot, AllowedRootId, PathPolicy, SafePath};
 
 pub use ids::{
     AgentProfileId, ClientInstanceId, DeploymentId, LogicalTargetId, OperationId, PhysicalTargetId,
