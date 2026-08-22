@@ -35,7 +35,7 @@
 
 ### 1.2 候选平台
 
-本次共调研 20 个平台：
+本次共调研 21 个平台品牌：
 
 1. OpenAI Codex
 2. Claude Code
@@ -57,8 +57,9 @@
 18. Kimi Work
 19. OpenClaw
 20. Hermes Agent
+21. Grok（Grok Build、Grok consumer、Grok Bot）
 
-同一平台品牌下的客户端形态不额外增加候选平台数量，但会在 profile 层拆分。例如 OpenAI 需要区分 ChatGPT desktop app、Codex CLI 和 Codex IDE extension；Anthropic 需要区分 Claude Code 与 Claude / Claude Desktop 聊天 Skills。
+同一平台品牌下的客户端形态不额外增加候选平台数量，但会在 profile 层拆分。例如 OpenAI 需要区分 ChatGPT desktop app、Codex CLI 和 Codex IDE extension；Anthropic 需要区分 Claude Code 与 Claude / Claude Desktop 聊天 Skills；Grok 需要区分 Grok Build、Grok Web/iOS/Android 与 Grok Bot。
 
 ---
 
@@ -92,9 +93,9 @@
 
 | 分类 | 平台 |
 |---|---|
-| 完整文件管理接入候选 | OpenAI Codex CLI / Codex IDE extension、Claude Code、Gemini CLI、Cursor、Windsurf、OpenCode、TraeCode、通义灵码（Qoder CN）、CodeBuddy Code、文心快码 Comate、Kimi Code、OpenClaw、Hermes Agent |
+| 完整文件管理接入候选 | OpenAI Codex CLI / Codex IDE extension、Claude Code、Gemini CLI、Cursor、Windsurf、OpenCode、TraeCode、通义灵码（Qoder CN）、CodeBuddy Code、文心快码 Comate、Kimi Code、OpenClaw、Hermes Agent、Grok Build CLI / TUI / ACP |
 | 部分文件管理接入候选 | ChatGPT desktop app 中的 standalone skills、GitHub Copilot、Cline、Google Antigravity、ZCode |
-| 有限文件接入候选 | Claude / Claude Desktop 聊天 Skills、TraeWork、WorkBuddy、Kimi Work |
+| 有限文件接入候选 | Claude / Claude Desktop 聊天 Skills、TraeWork、WorkBuddy、Kimi Work、Grok Web/iOS/Android Skills、Grok Bot desktop/iOS Skills |
 | 暂不支持 | 当前无；Roo Code 已按产品范围决定移出候选池 |
 
 以上分类允许按官方资料进入开发；未经测试时必须明确标记“基于官方资料”，不能宣传为运行时兼容或已验证可用。
@@ -108,7 +109,7 @@
 5. 内置 Skill、插件 Skill 和用户 Skill 必须区分所有权。SkillHub 不能覆盖或删除平台内置、插件管理的内容。
 6. 软链接能力不能统一假设。Windows 的符号链接、目录联接与普通复制必须逐平台验证。
 7. 本次没有发现任何平台公开稳定的“每个 Skill 调用次数”接口。平台日志或会话事件只能作为后续 hook 关联项目的候选证据。
-8. Claude / Claude Desktop 聊天 Skills、TraeWork、WorkBuddy、Kimi Work 虽然支持 Skill 上传、安装或账号管理，但尚不能证明存在稳定、公开、可由外部工具直接管理的目录。
+8. Claude / Claude Desktop 聊天 Skills、TraeWork、WorkBuddy、Kimi Work、Grok Web/iOS/Android 和 Grok Bot 虽然支持 Skill 创建、上传、安装或账号管理，但尚不能证明存在稳定、公开、可由外部工具直接管理的目录。
 9. 项目级目录并不统一：目录名称、项目根识别、父级或嵌套扫描、同名优先级和可信要求均可能不同。
 10. 同一品牌的 CLI、桌面端、IDE 插件、云端 Agent 和聊天/办公客户端需要分别保存客户端 profile；只有官方资料或真机结果确认共享目录和规则时，才合并为一个实际目标。聊天桌面应用不能仅因品牌相同就套用同品牌 CLI 的本地 Skill 目录。
 
@@ -140,6 +141,9 @@
 | Kimi Work | 支持上传本地 Skill，稳定目录未确认 | 未确认 | 未确认 | 可能复用 Kimi Code 内核，但不能据此写目录 | 未确认 | UI/新会话行为待验证 | 未确认 | 有限接入候选 |
 | OpenClaw | `SKILL.md` 目录 | `~/.agents/skills`、`~/.openclaw/skills` | `<workspace>/skills`、`<workspace>/.agents/skills` | Extra dirs、插件 Skill | Workspace > Project Agent > Personal > Managed > Bundled/Extra | 默认 watcher，下一次 Agent turn 生效 | 官方有显式信任与目标约束 | 完整适配候选 |
 | Hermes Agent | `SKILL.md` 目录 | `~/.hermes/skills` | `.hermes/skills`、`.agents/skills`，需要项目信任 | `skills.external_dirs`、插件 Skill | Project > Local > External | 新会话、`--now` 或 reset；完整 watcher 待验证 | 推荐 external dirs；Skill 目录链接待验证 | 完整适配候选 |
+| Grok Build CLI / TUI / ACP | `SKILL.md` 目录 | `$GROK_HOME/skills`，默认 `~/.grok/skills`；`~/.agents/skills`；兼容 Claude/Cursor 用户目录 | 从当前目录到仓库根扫描 `.grok/skills`、`.agents/skills` 及已启用兼容目录 | `[skills].paths`、Bundled Skill、插件 `skills/`、Marketplace 插件 | 当前目录 > 较上层项目目录 > 用户；原生同名按高层级覆盖；Bundled 可被原生覆盖；插件冲突保留限定名 | 文件变化后数秒内自动重载；`grok inspect [--json]` 可查看发现结果 | 未确认 | 完整适配候选 |
+| Grok Web / iOS / Android Skills | 官方确认内置和自定义 Skills，但属于账号同步能力 | 未公开稳定本地扫描目录 | 未公开 | 可通过对话、上传文件或从头创建；内置 Skill 随账号提供 | 官方说明用户自定义版本优先于同名内置版本 | 云端/UI 管理；客户端间账号同步 | 不适用 | 有限接入候选 |
+| Grok Bot desktop / iOS Skills | 官方确认保存 Skill、私有 Skill 和插件所带 Skill，但工作在共享云端计算机 | 未公开稳定本地扫描目录 | 未公开 | Settings > Plugins 安装与启用；Skill 可跨 Bot 使用并按 Bot 启用 | 未公开 | 桌面端/UI 管理；iOS 与桌面连接同一账号和云端计算机 | 不适用 | 有限接入候选 |
 
 ---
 
@@ -351,6 +355,34 @@ OpenClaw 的本地 Skill 层级、扫描深度、安装更新、启停、链接�
 
 主要来源：[Hermes Skills System](https://hermes-agent.nousresearch.com/docs/user-guide/features/skills)、[Hermes Working with Skills](https://hermes-agent.nousresearch.com/docs/guides/work-with-skills)、[Nous Research Hermes Agent](https://github.com/NousResearch/hermes-agent)。
 
+### 5.21 Grok
+
+Grok 品牌下至少需要拆分三个客户端 profile。Grok Build 是 xAI 官方的本地终端编码代理，交互式 TUI、无界面 headless 模式和供第三方应用接入的 ACP 都复用 Grok Build 运行时，不应再虚构一个独立的 xAI IDE Skill 目录。Grok Web/iOS/Android 的消费端 Skills 与 Grok Bot desktop/iOS 的 Skills 则属于账号或云端管理能力，不能套用 Grok Build 的 `.grok/skills`。
+
+#### Grok Build CLI / TUI / ACP
+
+- 已确认：目录型 `SKILL.md`；用户级 `$GROK_HOME/skills`（默认 `~/.grok/skills`）；从当前目录到仓库根发现 `.grok/skills`；同层扫描 `.agents/skills`；默认兼容 Claude Code，并可兼容 Cursor Skill 目录；`[skills].paths` 额外目录、`ignore` 和 `disabled`；Bundled Skill、插件 Skill 与 Marketplace 插件；Windows、macOS 发布版；`grok inspect [--json]` 可显示 Skill 来源路径。
+- 已确认的项目层级：当前工作目录优先于较上层项目目录，项目优先于用户；同名原生 Skill 由更高层级覆盖；同名 Bundled Skill 可被本地、项目或用户 Skill 覆盖；插件 Skill 与原生或内置命令冲突时保留限定名称，不应按普通覆盖关系删除。
+- 已确认的刷新方式：官方指南说明文件变化后数秒内自动重载并出现在斜杠菜单中，不要求重启会话。
+- 所有权边界：`~/.grok/bundled/skills` 和插件/Marketplace 管理目录只能观察、参与重复检测和展示来源，SkillHub 不覆盖、升级或删除其内容。
+- 必须验证：Windows/macOS 的符号链接与目录联接发现行为；多个兼容目录处于同一层级时的精确先后顺序；`GROK_HOME` 改写后的发现；从非 Git 目录启动时的项目边界；官方精简产品文档与官方仓库详细指南之间少量扫描描述差异。
+- 结论：完整适配候选。预置 profile 可按官方资料实现 `.grok/skills` 和 `.agents/skills` 的用户/项目目标；链接部署先标记“待测试”，失败时使用受管复制。
+
+#### Grok Web / iOS / Android
+
+- 已确认：官方消费端在 grok.com、iOS 和 Android 提供内置及自定义 Skills；用户可以通过对话、上传文件或从头编写创建 Skill；账号设置和会话在客户端间同步；用户自定义 Skill 优先于同名内置 Skill。当前官方消费端概览没有列出独立的 Grok 桌面应用，不能把另行发布的 Grok Bot desktop 当作同一客户端。
+- 未确认：官方没有公开可由 SkillHub 扫描或写入的本地 Skill 目录、`SKILL.md` 落盘位置、项目级目录、链接行为或文件刷新机制。官方所称上传文件也不能推导为可安装的本地 Skill 包。
+- 边界：X 内 Grok、Connectors、Automations、Build Mode 和 xAI API 不因使用 Grok 模型或 Skills 能力而成为本地 Skill 文件部署目标。
+- 结论：有限接入候选，只展示客户端能力边界、官方帮助链接和通用标准导出；不建立部署、解除部署或人工安装状态。
+
+#### Grok Bot desktop / iOS
+
+- 已确认：Grok Bot 提供 Windows/macOS 桌面应用和 iOS 应用；Skill 可从成功任务保存、跨 Bot 使用，也可通过 Settings > Plugins 发现和启用私有或打包 Skill；Bot 在共享云端计算机持续工作。
+- 未确认：官方没有公开桌面应用可由外部工具稳定管理的本地 Skill 目录、`SKILL.md` 文件机制、项目级目录、同名优先级或链接支持。桌面应用的存在不等于 Skill 存储在本地。
+- 结论：有限接入候选，只展示能力边界和官方帮助链接，不套用 Grok Build 目录。
+
+主要来源：[Grok Build 概览](https://docs.x.ai/build/overview)、[Grok Build Skills、Plugins 与 Marketplaces](https://docs.x.ai/build/features/skills-plugins-marketplaces)、[Grok Build CLI Reference](https://docs.x.ai/build/cli/reference)、[xAI Grok Build 官方仓库 Skills 指南](https://github.com/xai-org/grok-build/blob/main/crates/codegen/xai-grok-pager/docs/user-guide/08-skills.md)、[Grok consumer Skills 发布说明](https://x.ai/news/grok-skills)、[Grok consumer 概览](https://docs.x.ai/grok/overview)、[Grok Bot Skills 与 Routines](https://docs.x.ai/grok-bot/skills-routines-and-automations)、[Grok Bot 入门](https://docs.x.ai/grok-bot/get-started)。资料复核日期：2026-08-21。
+
 ---
 
 ## 6. 跨平台适配约束
@@ -537,11 +569,11 @@ Windows 必须分别验证：
 
 ## 9. 当前结论
 
-20 个候选平台均存在继续调研或文件管理接入价值，但接入深度不同；同品牌多客户端需要在 profile 层继续拆分：
+21 个候选平台品牌均存在继续调研或文件管理接入价值，但接入深度不同；同品牌多客户端需要在 profile 层继续拆分：
 
-- 13 个本地文件管理 profile 可以按官方资料实现完整接入，其中 OpenAI 侧仅指 Codex CLI / Codex IDE extension。
+- 14 个本地文件管理 profile 可以按官方资料实现完整接入，其中 OpenAI 侧仅指 Codex CLI / Codex IDE extension，Grok 侧仅指 Grok Build CLI / TUI / ACP。
 - 5 个部分文件管理 profile 可以先实现，未知规则显示“无法判断”并保留自定义目录兜底；新增关注点是 ChatGPT desktop app 的 standalone skills 是否可作为独立文件目标。
-- 4 个上传、云端或办公型 profile 暂时只展示能力边界、官方帮助链接和通用标准导出；新增关注点是 Claude / Claude Desktop 聊天 Skills 不能套用 Claude Code 的 `.claude/skills` 目录。
+- 6 个上传、云端或办公型 profile 暂时只展示能力边界、官方帮助链接和通用标准导出；Claude / Claude Desktop 聊天 Skills 不能套用 Claude Code 的 `.claude/skills`，Grok consumer 与 Grok Bot 也不能套用 Grok Build 的 `.grok/skills`。
 - 没有平台能够仅凭官方资料提供可靠的按 Skill 调用次数统计。
 - Roo Code 已移出候选范围，不再占用后续调研和开发资源。
 
