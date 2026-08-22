@@ -1,3 +1,7 @@
 [workspace]
 resolver = "2"
-members = ["crates/skillhub-core", "crates/skillhub-testkit"]
+members = [
+    "crates/skillhub-core",
+    "crates/skillhub-testkit",
+    "apps/desktop/src-tauri",
+]

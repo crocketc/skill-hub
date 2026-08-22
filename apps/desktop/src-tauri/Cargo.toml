@@ -1,0 +1,21 @@
+[package]
+name = "skillhub-desktop"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[lib]
+name = "skillhub_desktop"
+path = "src/lib.rs"
+
+[[bin]]
+name = "skillhub-desktop"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+async-trait = "0.1"
+skillhub-core = { path = "../../../crates/skillhub-core" }
+tauri = { version = "2" }

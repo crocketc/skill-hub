@@ -1,0 +1,9 @@
+{
+  "name": "skillhub",
+  "private": true,
+  "packageManager": "pnpm@11.21.0",
+  "scripts": {
+    "test:frontend": "pnpm --dir apps/desktop test --run",
+    "build:frontend": "pnpm --dir apps/desktop build"
+  }
+}

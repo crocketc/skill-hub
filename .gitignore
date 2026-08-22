@@ -1,3 +1,9 @@
 .superpowers/
 .worktrees/
 /target/
+/node_modules/
+/apps/desktop/node_modules/
+/apps/desktop/dist/*
+!/apps/desktop/dist/.gitkeep
+/apps/desktop/src-tauri/icons/
+/apps/desktop/src-tauri/gen/
