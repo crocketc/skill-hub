@@ -15,4 +15,3 @@ pub enum AppEvent {
     #[serde(rename = "facts_changed")]
     FactsChanged(FactsChanged),
 }
-

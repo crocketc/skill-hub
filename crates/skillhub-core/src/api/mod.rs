@@ -22,4 +22,3 @@ pub struct Page<T> {
 }
 
 use serde::{Deserialize, Serialize};
-

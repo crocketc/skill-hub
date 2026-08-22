@@ -17,4 +17,3 @@ pub enum AppCommandResult {
     #[serde(rename = "operation_summary")]
     OperationSummary(OperationSummary),
 }
-

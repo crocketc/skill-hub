@@ -16,4 +16,3 @@ pub enum AppQueryResult {
     #[serde(rename = "bootstrap_snapshot")]
     BootstrapSnapshot(BootstrapSnapshot),
 }
-

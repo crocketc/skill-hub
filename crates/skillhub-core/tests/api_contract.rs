@@ -19,8 +19,12 @@ fn progress_event_has_stable_wire_shape() {
 #[test]
 fn application_envelopes_include_foundation_operations() {
     let commands = [
-        AppCommand::CancelOperation { operation_id: OperationId::new() },
-        AppCommand::AcknowledgeRecovery { operation_id: OperationId::new() },
+        AppCommand::CancelOperation {
+            operation_id: OperationId::new(),
+        },
+        AppCommand::AcknowledgeRecovery {
+            operation_id: OperationId::new(),
+        },
     ];
     for command in commands {
         fn assert_send<T: Send>(_: T) {}
