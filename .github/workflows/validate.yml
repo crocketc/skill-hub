@@ -51,13 +51,16 @@ jobs:
         run: cargo deny check advisories bans licenses sources
 
       - name: Run Rust lints
-        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+        run: cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
 
       - name: Run Rust tests
-        run: cargo test --workspace
+        run: cargo test --locked --workspace
 
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Audit frontend dependencies
+        run: pnpm audit:frontend
 
       - name: Check frontend
         run: pnpm check:frontend
