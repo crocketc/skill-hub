@@ -241,12 +241,7 @@ impl VersionStore {
         let tmp = object_store::unique_temp(&dir, ".current")?;
         fs::write(&tmp, id.as_str()).map_err(io_error)?;
         let target = dir.join("current");
-        if let Err(error) = fs::rename(&tmp, &target) {
-            let _ = fs::remove_file(&tmp);
-            if !target.exists() {
-                return Err(io_error(error));
-            }
-        }
+        replace_current_file(&tmp, &target)?;
         Ok(())
     }
 
@@ -408,6 +403,41 @@ impl VersionStore {
         }
         Ok(())
     }
+}
+
+#[cfg(not(windows))]
+fn replace_current_file(source: &Path, target: &Path) -> AppResult<()> {
+    fs::rename(source, target).map_err(io_error)
+}
+
+#[cfg(windows)]
+fn replace_current_file(source: &Path, target: &Path) -> AppResult<()> {
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::Storage::FileSystem::{
+        MoveFileExW, MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH,
+    };
+    let source: Vec<u16> = source
+        .as_os_str()
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect();
+    let target: Vec<u16> = target
+        .as_os_str()
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect();
+    if unsafe {
+        MoveFileExW(
+            source.as_ptr(),
+            target.as_ptr(),
+            MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH,
+        )
+    } == 0
+    {
+        return Err(AppError::new(ErrorCode::InternalError, Severity::Error)
+            .with_action(RecoveryAction::Retry));
+    }
+    Ok(())
 }
 
 fn normalize_relative(path: &Path) -> AppResult<String> {
