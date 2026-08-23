@@ -15,9 +15,9 @@ export type AppCommandResult = { type: "operation_summary"; payload: OperationSu
 
 export type AppEvent = { type: "operation_progress"; payload: OperationProgress } | { type: "operation_finished"; payload: OperationSummary } | { type: "facts_changed"; payload: FactsChanged };
 
-export type AppQuery = { type: "get_skill"; payload: GetSkill } | { type: "list_versions"; payload: ListVersions } | { type: "diff_versions"; payload: DiffVersions } | { type: "list_combinations"; payload: ListCombinations } | { type: "search"; payload: SearchQuery } | { type: "get_bootstrap_snapshot" } | { type: "list_pending_items"; payload: ListPendingItems };
+export type AppQuery = { type: "get_skill"; payload: GetSkill } | { type: "list_versions"; payload: ListVersions } | { type: "diff_versions"; payload: DiffVersions } | { type: "list_combinations"; payload: ListCombinations } | { type: "search"; payload: SearchQuery } | { type: "get_bootstrap_snapshot" } | { type: "list_pending_items"; payload: ListPendingItems } | { type: "get_discovery_snapshot"; payload: GetDiscoverySnapshot };
 
-export type AppQueryResult = { type: "skill"; payload: SkillResult } | { type: "versions"; payload: VersionResult[] } | { type: "version_diff"; payload: VersionDiffResult } | { type: "combinations"; payload: CombinationResult[] } | { type: "search_results"; payload: SearchHit[] } | { type: "bootstrap_snapshot"; payload: BootstrapSnapshot } | { type: "pending_items"; payload: PendingItem[] };
+export type AppQueryResult = { type: "skill"; payload: SkillResult } | { type: "versions"; payload: VersionResult[] } | { type: "version_diff"; payload: VersionDiffResult } | { type: "combinations"; payload: CombinationResult[] } | { type: "search_results"; payload: SearchHit[] } | { type: "bootstrap_snapshot"; payload: BootstrapSnapshot } | { type: "pending_items"; payload: PendingItem[] } | { type: "discovery_snapshot"; payload: DiscoverySnapshot };
 
 export type BootstrapSnapshot = {
 	skill_count: number,
@@ -30,6 +30,18 @@ export type BootstrapSnapshot = {
 	last_scan_at: string | null,
 	recovery_state: StartupRecoveryState,
 };
+
+export type ClientInstance = {
+	profile_id: string,
+	client_id: string,
+	kind: ClientKind,
+	supported_os: OperatingSystem[],
+	client_presence: ClientPresence,
+};
+
+export type ClientKind = "cli" | "desktop" | "ide_extension" | "tui" | "headless" | "acp" | "web" | "mobile" | "bot";
+
+export type ClientPresence = "Unknown";
 
 export type CombinationResult = {
 	name: string,
@@ -60,10 +72,22 @@ export type DiffVersions = {
 	right: VersionId,
 };
 
+export type DirectoryPrecedence = "preferred" | "lower_priority_copy" | "may_coexist" | "unknown";
+
+export type DiscoverySnapshot = {
+	generation: string,
+	observed_at: string,
+	instances: ClientInstance[],
+	logical_targets: LogicalTarget[],
+	physical_targets: PhysicalTarget[],
+};
+
 /**  Stable machine-readable failures returned by the application boundary. */
 export type ErrorCode = "input.invalid" | "path.outside_allowed_root" | "object.not_found" | "deployment.target_exists" | "target.ownership_unknown" | "deployment.security_check_blocked" | "operation.conflict" | "credential.unavailable" | "migration.required" | "database.newer_schema" | "internal.error" | "combination.nesting_not_allowed" | "catalog.invalid_metadata" | "requirements.invalid_declaration" | "agent_profile.invalid_capability";
 
 export type FactsChanged = Record<string, never>;
+
+export type GetDiscoverySnapshot = null;
 
 export type GetSkill = {
 	skill_id: SkillId,
@@ -76,6 +100,23 @@ export type ListPendingItems = null;
 export type ListVersions = {
 	skill_id: SkillId,
 };
+
+export type LogicalTarget = {
+	id: string,
+	profile_id: string,
+	client_id: string,
+	scope: TargetScope,
+	path: string,
+	marker: string,
+	precedence: DirectoryPrecedence,
+	exists: boolean,
+	readable: boolean,
+	writable: boolean,
+	available: boolean,
+	physical_id: string,
+};
+
+export type OperatingSystem = "windows" | "macos";
 
 export type OperationId = string;
 
@@ -113,6 +154,15 @@ export type PendingKind = "trial_due" | "security_finding" | "recovery";
 export type PendingSummary = {
 	total: number,
 	by_kind: Partial<{ [key in PendingKind]: number }>,
+};
+
+export type PhysicalTarget = {
+	id: string,
+	path: string,
+	exists: boolean,
+	readable: boolean,
+	writable: boolean,
+	logical_target_ids: string[],
 };
 
 export type PinProjectSkillVersion = {
@@ -191,6 +241,8 @@ export type SkillResult = {
 };
 
 export type StartupRecoveryState = "clean" | "in_progress" | "needs_recovery";
+
+export type TargetScope = "global" | "project" | "extra";
 
 export type VersionDiffResult = {
 	added: string[],

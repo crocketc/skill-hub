@@ -22,6 +22,8 @@ fn physical_target_merge_keeps_logical_client_relationships() {
     assert!(snapshot
         .instances
         .iter()
-        .filter(|instance| instance.available)
+        .filter(|instance| {
+            instance.client_presence == skillhub_core::agent::ClientPresence::Unknown
+        })
         .any(|instance| instance.client_id == "openai.codex-cli"));
 }

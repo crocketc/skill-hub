@@ -9,7 +9,12 @@ pub struct ClientInstance {
     pub client_id: String,
     pub kind: ClientKind,
     pub supported_os: Vec<OperatingSystem>,
-    pub available: bool,
+    pub client_presence: ClientPresence,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+pub enum ClientPresence {
+    Unknown,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
@@ -40,8 +45,8 @@ pub struct PhysicalTarget {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 pub struct DiscoverySnapshot {
-    pub generation: u64,
-    pub observed_at: u64,
+    pub generation: String,
+    pub observed_at: String,
     pub instances: Vec<ClientInstance>,
     pub logical_targets: Vec<LogicalTarget>,
     pub physical_targets: Vec<PhysicalTarget>,

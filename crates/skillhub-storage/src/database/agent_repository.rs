@@ -79,16 +79,16 @@ fn merge_history(
         return current.clone();
     };
     let mut merged = current.clone();
-    merged.generation = current
-        .generation
-        .max(previous.generation.saturating_add(1));
+    let previous_generation = previous.generation.parse::<u64>().unwrap_or_default();
+    let current_generation = current.generation.parse::<u64>().unwrap_or_default();
+    merged.generation = current_generation
+        .max(previous_generation.saturating_add(1))
+        .to_string();
     for instance in &previous.instances {
         if !merged.instances.iter().any(|candidate| {
             candidate.profile_id == instance.profile_id && candidate.client_id == instance.client_id
         }) {
-            let mut unavailable = instance.clone();
-            unavailable.available = false;
-            merged.instances.push(unavailable);
+            merged.instances.push(instance.clone());
         }
     }
     for target in &previous.logical_targets {

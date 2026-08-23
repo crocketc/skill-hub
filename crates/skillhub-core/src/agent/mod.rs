@@ -3,7 +3,8 @@ pub mod profile;
 pub mod target;
 
 pub use discovery::{
-    AgentRepository, ClientInstance, DiscoverySnapshot, LogicalTarget, PhysicalTarget,
+    AgentRepository, ClientInstance, ClientPresence, DiscoverySnapshot, LogicalTarget,
+    PhysicalTarget,
 };
 pub use profile::{
     AgentClient, AgentProfile, CallPolicy, ClientKind, DeploymentCapability, DirectoryPrecedence,

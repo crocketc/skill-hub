@@ -3,8 +3,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use skillhub_core::agent::{
-    ClientInstance, DiscoverySnapshot, LogicalTarget, OperatingSystem, PhysicalTarget,
-    ProfileCatalog, TargetScope,
+    ClientInstance, ClientPresence, DiscoverySnapshot, LogicalTarget, OperatingSystem,
+    PhysicalTarget, ProfileCatalog, TargetScope,
 };
 use skillhub_core::AppResult;
 
@@ -58,7 +58,6 @@ impl DiscoverAgents {
                 if !client.supported_os.contains(&roots.operating_system) {
                     continue;
                 }
-                let start = logical_targets.len();
                 for candidate in &client.path_candidates {
                     for path in expand_candidate(candidate, roots) {
                         let path_string = path.to_string_lossy().into_owned();
@@ -85,15 +84,12 @@ impl DiscoverAgents {
                         });
                     }
                 }
-                let available = logical_targets[start..]
-                    .iter()
-                    .any(|target| target.available);
                 instances.push(ClientInstance {
                     profile_id: profile_id.clone(),
                     client_id: client.id.clone(),
                     kind: client.kind.clone(),
                     supported_os: client.supported_os.clone(),
-                    available,
+                    client_presence: ClientPresence::Unknown,
                 });
             }
         }
@@ -119,7 +115,7 @@ impl DiscoverAgents {
             entry.logical_target_ids.push(target.id.clone());
         }
         Ok(DiscoverySnapshot {
-            generation: 1,
+            generation: "1".into(),
             observed_at: now(),
             instances,
             logical_targets,
@@ -164,17 +160,98 @@ fn directory_access(path: &Path, exists: bool) -> (bool, bool) {
     let Ok(metadata) = fs::metadata(path) else {
         return (false, false);
     };
-    let writable = !metadata.permissions().readonly();
-    (true, writable)
+    let readable = fs::read_dir(path).is_ok();
+    let writable = readable && !metadata.permissions().readonly();
+    (readable, writable)
 }
 
 fn physical_identity(path: &Path, operating_system: OperatingSystem) -> String {
-    let observed = fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+    if let Ok(metadata) = fs::metadata(path) {
+        if let Some(identity) = metadata_identity(path, &metadata) {
+            return format!("fs:{identity}");
+        }
+    }
+    let mut ancestor = path.to_path_buf();
+    let mut suffix = Vec::new();
+    while !ancestor.exists() {
+        if let Some(name) = ancestor.file_name() {
+            suffix.push(name.to_string_lossy().into_owned());
+        }
+        if !ancestor.pop() {
+            break;
+        }
+    }
+    if ancestor.exists() {
+        if let Ok(metadata) = fs::metadata(&ancestor) {
+            if let Some(identity) = metadata_identity(&ancestor, &metadata) {
+                suffix.reverse();
+                return format!("fs:{identity}:{}", suffix.join("/"));
+            }
+        }
+    }
+    let observed = fs::canonicalize(&ancestor).unwrap_or(ancestor);
     let mut value = observed.to_string_lossy().replace('\\', "/");
+    if !suffix.is_empty() {
+        value.push('/');
+        value.push_str(&suffix.join("/"));
+    }
     if matches!(operating_system, OperatingSystem::Windows) {
         value = value.to_ascii_lowercase();
     }
     format!("path:{value}")
+}
+
+#[cfg(unix)]
+fn metadata_identity(_: &Path, metadata: &fs::Metadata) -> Option<String> {
+    use std::os::unix::fs::MetadataExt;
+    Some(format!("dev-{}-ino-{}", metadata.dev(), metadata.ino()))
+}
+
+#[cfg(windows)]
+fn metadata_identity(path: &Path, _: &fs::Metadata) -> Option<String> {
+    use std::iter::once;
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::Foundation::{CloseHandle, INVALID_HANDLE_VALUE};
+    use windows_sys::Win32::Storage::FileSystem::{
+        CreateFileW, GetFileInformationByHandle, BY_HANDLE_FILE_INFORMATION,
+        FILE_FLAG_BACKUP_SEMANTICS, FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE,
+        OPEN_EXISTING,
+    };
+    let wide = path
+        .as_os_str()
+        .encode_wide()
+        .chain(once(0))
+        .collect::<Vec<_>>();
+    let handle = unsafe {
+        CreateFileW(
+            wide.as_ptr(),
+            0,
+            FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+            std::ptr::null(),
+            OPEN_EXISTING,
+            FILE_FLAG_BACKUP_SEMANTICS,
+            std::ptr::null_mut(),
+        )
+    };
+    if handle == INVALID_HANDLE_VALUE {
+        return None;
+    }
+    let mut info = unsafe { std::mem::zeroed::<BY_HANDLE_FILE_INFORMATION>() };
+    let result = unsafe { GetFileInformationByHandle(handle, &mut info) };
+    unsafe { CloseHandle(handle) };
+    if result == 0 {
+        None
+    } else {
+        Some(format!(
+            "volume-{}-file-{}-{}",
+            info.dwVolumeSerialNumber, info.nFileIndexHigh, info.nFileIndexLow
+        ))
+    }
+}
+
+#[cfg(not(any(unix, windows)))]
+fn metadata_identity(_: &Path, _: &fs::Metadata) -> Option<String> {
+    None
 }
 
 fn profile_id(brand: &str) -> String {
@@ -202,9 +279,10 @@ fn scope_code(scope: &TargetScope) -> &'static str {
     }
 }
 
-fn now() -> u64 {
+fn now() -> String {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs()
+        .to_string()
 }
