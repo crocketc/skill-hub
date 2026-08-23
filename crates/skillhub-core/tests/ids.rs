@@ -4,7 +4,7 @@ use skillhub_core::{OperationId, SkillId, VersionId};
 fn identifiers_round_trip_through_json_without_losing_type() {
     let skill = SkillId::new();
     let operation = OperationId::new();
-    let version = VersionId::parse("sha256:abc123").unwrap();
+    let version = VersionId::parse(&format!("sha256:{}", "a".repeat(64))).unwrap();
 
     assert_eq!(
         serde_json::from_str::<SkillId>(&serde_json::to_string(&skill).unwrap()).unwrap(),
@@ -14,6 +14,8 @@ fn identifiers_round_trip_through_json_without_losing_type() {
         serde_json::from_str::<OperationId>(&serde_json::to_string(&operation).unwrap()).unwrap(),
         operation
     );
-    assert_eq!(version.as_str(), "sha256:abc123");
+    assert_eq!(version.as_str(), format!("sha256:{}", "a".repeat(64)));
     assert!(VersionId::parse("abc123").is_err());
+    assert!(VersionId::parse("sha256:abc123").is_err());
+    assert!(VersionId::parse(&format!("sha256:{}", "A".repeat(64))).is_err());
 }

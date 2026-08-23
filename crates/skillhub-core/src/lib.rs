@@ -4,6 +4,7 @@ mod error;
 mod ids;
 mod operation;
 mod path_policy;
+pub mod versioning;
 
 pub use api::{
     AppCommand, AppCommandResult, AppEvent, AppQuery, AppQueryResult, ApplicationFacade,
@@ -18,3 +19,4 @@ pub use ids::{
     AgentProfileId, ClientInstanceId, CombinationId, DeploymentId, LogicalTargetId, OperationId,
     PhysicalTargetId, ProjectId, SkillId, VersionId,
 };
+pub use versioning::{FileEntry, VersionDiff, VersionManifest, VersionRecord, VersionRepository};
