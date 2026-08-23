@@ -13,7 +13,7 @@
         {"path": "{user_home}/.agents/skills", "scope": "global", "precedence": "preferred", "marker": "SKILL.md"}
       ],
       "skill_marker": "SKILL.md",
-      "deployment": {"copy": true, "symlink": true, "junction": true, "limitations": ["runtime loading is not inferred"]},
+      "deployment": {"copy": true, "symlink": true, "junction": false, "limitations": ["runtime_loading_unknown", "junction_support_unconfirmed"]},
       "call_policy": "unknown"
     }
   ]

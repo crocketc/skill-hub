@@ -32,9 +32,10 @@
       "deployment": {
         "copy": true,
         "symlink": true,
-        "junction": true,
+        "junction": false,
         "limitations": [
-          "runtime loading is not inferred"
+          "runtime_loading_unknown",
+          "junction_support_unconfirmed"
         ]
       },
       "call_policy": "unknown"
@@ -53,7 +54,7 @@
         "symlink": false,
         "junction": false,
         "limitations": [
-          "no stable public local Skill directory"
+          "no_stable_public_local_skill_directory"
         ]
       },
       "call_policy": "unknown"

@@ -80,13 +80,27 @@ fn every_builtin_profile_passes_strict_loader_and_matches_expectations() {
                     .map(|candidate| candidate.path.as_str())
             })
             .collect::<std::collections::BTreeSet<_>>();
-        for expected in expected_paths.iter().filter_map(serde_json::Value::as_str) {
-            assert!(
-                actual_paths.contains(expected),
-                "{id} missing expected path {expected}"
-            );
-        }
+        let expected_paths = expected_paths
+            .iter()
+            .filter_map(serde_json::Value::as_str)
+            .collect::<std::collections::BTreeSet<_>>();
+        assert_eq!(
+            actual_paths, expected_paths,
+            "path expectations differ for {id}"
+        );
     }
+}
+
+#[test]
+fn embedded_builtin_catalog_matches_profiles_after_strict_validation() {
+    let profile_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("profiles");
+    let validated = PROFILE_FILES
+        .iter()
+        .map(|id| {
+            skillhub_adapters::agent::load_profile(profile_dir.join(format!("{id}.json"))).unwrap()
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(ProfileCatalog::builtin().profiles, validated);
 }
 
 #[test]
@@ -105,5 +119,97 @@ fn upload_only_clients_have_no_local_target_and_no_roo_code_file() {
             .clients
             .iter()
             .any(|client| client.path_candidates.is_empty()));
+    }
+}
+
+#[test]
+fn link_capabilities_are_true_only_when_officially_documented() {
+    let catalog = ProfileCatalog::builtin();
+    let documented = [
+        "openai.codex-cli",
+        "openai.codex-ide",
+        "anthropic.claude-code",
+        "zcode.desktop",
+        "openclaw.agent",
+    ];
+    for profile in catalog.profiles {
+        for client in profile.clients {
+            assert!(
+                !client.deployment.junction,
+                "unconfirmed junction: {}",
+                client.id
+            );
+            if documented.contains(&client.id.as_str()) {
+                assert!(
+                    client.deployment.symlink,
+                    "documented symlink missing: {}",
+                    client.id
+                );
+                continue;
+            }
+            assert!(
+                !client.deployment.symlink,
+                "unconfirmed symlink: {}",
+                client.id
+            );
+            if !client.path_candidates.is_empty() {
+                assert!(client
+                    .deployment
+                    .limitations
+                    .iter()
+                    .any(|limitation| limitation == "symlink_support_unconfirmed"));
+            }
+        }
+    }
+}
+
+#[test]
+fn researched_client_boundaries_are_kept_as_separate_profiles() {
+    let catalog = ProfileCatalog::builtin();
+    let ids = catalog
+        .profiles
+        .iter()
+        .flat_map(|profile| profile.clients.iter().map(|client| client.id.as_str()))
+        .collect::<std::collections::BTreeSet<_>>();
+    for expected in [
+        "google.gemini-cli",
+        "google.antigravity.app",
+        "google.antigravity.cli",
+        "google.antigravity.ide",
+        "google.antigravity.sdk",
+        "cline.extension",
+        "cline.cli",
+        "cline.sdk",
+        "cline.acp",
+        "github-copilot.cloud",
+        "trae.work",
+        "codebuddy.workbuddy",
+        "kimi.work",
+        "grok.build-cli",
+        "grok.build-tui",
+        "grok.build-acp",
+    ] {
+        assert!(ids.contains(expected), "missing client {expected}");
+    }
+    for expected in [
+        "openai.chatgpt-desktop",
+        "anthropic.claude-desktop",
+        "github-copilot.cloud",
+        "trae.work",
+        "codebuddy.workbuddy",
+        "kimi.work",
+        "grok.consumer",
+        "grok.bot",
+    ] {
+        let client = catalog
+            .profiles
+            .iter()
+            .flat_map(|profile| profile.clients.iter())
+            .find(|client| client.id == expected)
+            .unwrap();
+        assert!(
+            client.path_candidates.is_empty(),
+            "{expected} must not claim a local target"
+        );
     }
 }

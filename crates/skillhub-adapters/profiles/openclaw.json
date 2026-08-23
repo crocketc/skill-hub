@@ -44,9 +44,10 @@
       "deployment": {
         "copy": true,
         "symlink": true,
-        "junction": true,
+        "junction": false,
         "limitations": [
-          "runtime loading is not inferred"
+          "runtime_loading_unknown",
+          "junction_support_unconfirmed"
         ]
       },
       "call_policy": "unknown"

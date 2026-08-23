@@ -1,21 +1,95 @@
 {
   "profiles": {
-    "openai": ["{user_home}/.agents/skills", "{project_root}/.agents/skills"],
-    "anthropic": ["{user_home}/.claude/skills", "{project_root}/.claude/skills"],
-    "google": ["{user_home}/.gemini/skills", "{user_home}/.gemini/config/skills", "{project_root}/.gemini/skills", "{project_root}/.agents/skills"],
-    "cursor": ["{user_home}/.cursor/skills", "{project_root}/.cursor/skills"],
-    "github-copilot": ["{user_home}/.copilot/skills", "{project_root}/.github/skills"],
-    "windsurf": ["{user_home}/.codeium/windsurf/skills", "{project_root}/.windsurf/skills"],
-    "cline": ["{user_home}/.cline/skills", "{project_root}/.cline/skills"],
-    "opencode": ["{user_home}/.config/opencode/skills", "{project_root}/.opencode/skills"],
-    "trae": ["{user_home}/.trae-cn/skills", "{project_root}/.trae/skills"],
-    "qoder": ["{user_home}/.lingma/skills", "{project_root}/.lingma/skills", "{project_root}/.qoder/skills"],
-    "codebuddy": ["{user_home}/.codebuddy/skills", "{project_root}/.codebuddy/skills"],
-    "comate": ["{user_home}/.comate/skills", "{project_root}/.comate/skills"],
-    "kimi": ["{user_home}/.kimi-code/skills", "{project_root}/.kimi-code/skills"],
-    "zcode": ["{user_home}/.zcode/skills"],
-    "openclaw": ["{user_home}/.agents/skills", "{user_home}/.openclaw/skills", "{project_root}/skills", "{project_root}/.agents/skills"],
-    "hermes": ["{user_home}/.hermes/skills", "{project_root}/.hermes/skills"],
-    "grok": ["{user_home}/.grok/skills", "{project_root}/.grok/skills"]
+    "openai": [
+      "{project_root}/.agents/skills",
+      "{user_home}/.agents/skills"
+    ],
+    "anthropic": [
+      "{project_root}/.claude/skills",
+      "{user_home}/.claude/skills"
+    ],
+    "google": [
+      "{project_root}/.agent/skills",
+      "{project_root}/.agents/skills",
+      "{project_root}/.gemini/skills",
+      "{user_home}/.agents/skills",
+      "{user_home}/.gemini/config/skills",
+      "{user_home}/.gemini/skills"
+    ],
+    "cursor": [
+      "{project_root}/.agents/skills",
+      "{project_root}/.claude/skills",
+      "{project_root}/.cursor/skills",
+      "{user_home}/.agents/skills",
+      "{user_home}/.cursor/skills"
+    ],
+    "github-copilot": [
+      "{project_root}/.agents/skills",
+      "{project_root}/.claude/skills",
+      "{project_root}/.github/skills",
+      "{user_home}/.agents/skills",
+      "{user_home}/.copilot/skills"
+    ],
+    "windsurf": [
+      "{project_root}/.windsurf/skills",
+      "{user_home}/.codeium/windsurf/skills"
+    ],
+    "cline": [
+      "{project_root}/.claude/skills",
+      "{project_root}/.cline/skills",
+      "{project_root}/.clinerules/skills",
+      "{user_home}/.cline/skills"
+    ],
+    "opencode": [
+      "{project_root}/.agents/skills",
+      "{project_root}/.claude/skills",
+      "{project_root}/.opencode/skills",
+      "{user_home}/.config/opencode/skills"
+    ],
+    "trae": [
+      "{project_root}/.agents/skills",
+      "{project_root}/.trae/skills",
+      "{user_home}/.trae-cn/skills"
+    ],
+    "qoder": [
+      "{project_root}/.lingma/skills",
+      "{project_root}/.qoder/skills",
+      "{user_home}/.lingma/skills"
+    ],
+    "codebuddy": [
+      "{project_root}/.codebuddy/skills",
+      "{user_home}/.codebuddy/skills"
+    ],
+    "comate": [
+      "{project_root}/.agents/skills",
+      "{project_root}/.comate/skills",
+      "{user_home}/.comate/skills"
+    ],
+    "kimi": [
+      "{project_root}/.agents/skills",
+      "{project_root}/.kimi-code/skills",
+      "{user_home}/.agents/skills",
+      "{user_home}/.kimi-code/skills"
+    ],
+    "zcode": [
+      "{user_home}/.zcode/skills"
+    ],
+    "openclaw": [
+      "{project_root}/.agents/skills",
+      "{project_root}/skills",
+      "{user_home}/.agents/skills",
+      "{user_home}/.openclaw/skills"
+    ],
+    "hermes": [
+      "{project_root}/.agents/skills",
+      "{project_root}/.hermes/skills",
+      "{user_home}/.hermes/skills"
+    ],
+    "grok": [
+      "{project_root}/.agents/skills",
+      "{project_root}/.grok/skills",
+      "{user_home}/.agents/skills",
+      "{user_home}/.grok/skills"
+    ]
   }
 }

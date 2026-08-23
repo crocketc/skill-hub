@@ -37,10 +37,31 @@
       "skill_marker": "SKILL.md",
       "deployment": {
         "copy": true,
-        "symlink": true,
-        "junction": true,
+        "symlink": false,
+        "junction": false,
         "limitations": [
-          "runtime loading is not inferred"
+          "runtime_loading_unknown",
+          "symlink_support_unconfirmed",
+          "junction_support_unconfirmed"
+        ]
+      },
+      "call_policy": "unknown"
+    },
+    {
+      "id": "trae.work",
+      "kind": "desktop",
+      "supported_os": [
+        "windows",
+        "macos"
+      ],
+      "path_candidates": [],
+      "skill_marker": "SKILL.md",
+      "deployment": {
+        "copy": false,
+        "symlink": false,
+        "junction": false,
+        "limitations": [
+          "no_stable_public_local_skill_directory"
         ]
       },
       "call_policy": "unknown"
