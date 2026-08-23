@@ -1,0 +1,139 @@
+use std::fs;
+
+use skillhub_core::{LibraryPaths, SkillId};
+use skillhub_storage::VersionStore;
+use tempfile::TempDir;
+
+struct Fixture {
+    _root: TempDir,
+    source: TempDir,
+    store: VersionStore,
+    skill: SkillId,
+}
+
+impl Fixture {
+    fn new() -> Self {
+        let root = tempfile::tempdir().unwrap();
+        let source = tempfile::tempdir().unwrap();
+        let paths = LibraryPaths::from_root(root.path());
+        for path in [&paths.versions_dir, &paths.objects_dir, &paths.metadata_dir] {
+            fs::create_dir_all(path).unwrap();
+        }
+        Self {
+            _root: root,
+            source,
+            store: VersionStore::new(paths),
+            skill: SkillId::new(),
+        }
+    }
+
+    fn write(&self, name: &str, content: &[u8]) {
+        let path = self.source.path().join(name);
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).unwrap();
+        }
+        fs::write(path, content).unwrap();
+    }
+}
+
+#[test]
+fn equal_file_content_is_stored_once_across_versions() {
+    let fixture = Fixture::new();
+    fixture.write("SKILL.md", b"same");
+    let first = fixture
+        .store
+        .capture(fixture.skill, fixture.source.path())
+        .unwrap();
+    fixture.write("note.md", b"new");
+    let second = fixture
+        .store
+        .capture(fixture.skill, fixture.source.path())
+        .unwrap();
+    assert_ne!(first.id, second.id);
+    assert_eq!(fixture.store.object_count_for_bytes(b"same").unwrap(), 1);
+}
+
+#[test]
+fn materialized_version_matches_manifest_hashes() {
+    let fixture = Fixture::new();
+    fixture.write("SKILL.md", b"content");
+    let version = fixture
+        .store
+        .capture(fixture.skill, fixture.source.path())
+        .unwrap();
+    let output = tempfile::tempdir().unwrap();
+    fixture
+        .store
+        .materialize(&version.id, output.path())
+        .unwrap();
+    assert_eq!(
+        fs::read(output.path().join("SKILL.md")).unwrap(),
+        b"content"
+    );
+    assert_eq!(
+        fixture.store.hash_tree(output.path()).unwrap(),
+        version.manifest.tree_hash
+    );
+}
+
+#[test]
+fn traversal_and_symlink_escape_are_rejected() {
+    let fixture = Fixture::new();
+    #[cfg(unix)]
+    std::os::unix::fs::symlink("/tmp", fixture.source.path().join("link")).unwrap();
+    #[cfg(windows)]
+    if std::os::windows::fs::symlink_dir("C:\\Windows", fixture.source.path().join("link")).is_err()
+    {
+        return;
+    }
+    assert!(fixture
+        .store
+        .capture(fixture.skill, fixture.source.path())
+        .is_err());
+}
+
+#[test]
+fn version_manifests_are_immutable_and_canonically_sorted() {
+    let fixture = Fixture::new();
+    fixture.write("z.txt", b"z");
+    fixture.write("a.txt", b"a");
+    let version = fixture
+        .store
+        .capture(fixture.skill, fixture.source.path())
+        .unwrap();
+    assert_eq!(version.manifest.entries[0].path, "a.txt");
+    assert_eq!(version.manifest.entries[1].path, "z.txt");
+    let before = fixture.store.load_manifest(&version.id).unwrap();
+    assert!(fixture.store.save_manifest(&version.id, &before).is_err());
+    assert_eq!(fixture.store.load_manifest(&version.id).unwrap(), before);
+}
+
+#[test]
+fn set_current_rejects_other_skill_and_rollback_keeps_newer_history() {
+    let fixture = Fixture::new();
+    fixture.write("SKILL.md", b"one");
+    let first = fixture
+        .store
+        .capture(fixture.skill, fixture.source.path())
+        .unwrap();
+    fixture.write("SKILL.md", b"two");
+    let second = fixture
+        .store
+        .capture(fixture.skill, fixture.source.path())
+        .unwrap();
+    let other = fixture
+        .store
+        .capture(SkillId::new(), fixture.source.path())
+        .unwrap();
+    assert!(fixture.store.set_current(fixture.skill, &other.id).is_err());
+    fixture
+        .store
+        .set_current(fixture.skill, &second.id)
+        .unwrap();
+    fixture.store.set_current(fixture.skill, &first.id).unwrap();
+    assert_eq!(
+        fixture.store.current(fixture.skill).unwrap(),
+        Some(first.id)
+    );
+    assert!(fixture.store.load_manifest(&second.id).is_ok());
+}
