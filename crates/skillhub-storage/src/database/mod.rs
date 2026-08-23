@@ -1,3 +1,4 @@
+mod agent_repository;
 mod bootstrap_repository;
 mod catalog_repository;
 mod migrations;
@@ -9,6 +10,7 @@ use std::path::Path;
 use rusqlite::Connection;
 use skillhub_core::{AppError, AppResult, ErrorCode, RecoveryAction, Severity};
 
+pub use agent_repository::AgentRepository;
 pub use bootstrap_repository::BootstrapRepository;
 pub use catalog_repository::CatalogRepositorySqlite;
 pub use migrations::MigrationReport;
@@ -40,6 +42,10 @@ impl Database {
 
     pub fn bootstrap_repository(&self) -> BootstrapRepository<'_> {
         BootstrapRepository::new(self)
+    }
+
+    pub fn agent_repository(&self) -> AgentRepository<'_> {
+        AgentRepository::new(self)
     }
 
     #[doc(hidden)]
