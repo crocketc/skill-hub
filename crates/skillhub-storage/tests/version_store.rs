@@ -3,7 +3,9 @@ use std::sync::Arc;
 use std::thread;
 
 use serde_json::Value;
+use sha2::{Digest, Sha256};
 use skillhub_core::{LibraryPaths, SkillId};
+use skillhub_core::{VersionId, VersionManifest};
 use skillhub_storage::VersionStore;
 use tempfile::TempDir;
 
@@ -254,14 +256,26 @@ fn manifest_rejects_noncanonical_duplicate_and_invalid_object_entries() {
         .store
         .manifest_path_for_test(fixture.skill, &version.id);
     let original: Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+    let mut previous_path = path;
     for mutation in [
         ("path", Value::String("nested\\file.txt".into())),
         ("object_id", Value::String("sha256:ABC".into())),
     ] {
         let mut value = original.clone();
         value["entries"][0][mutation.0] = mutation.1;
-        fs::write(&path, serde_json::to_vec_pretty(&value).unwrap()).unwrap();
-        assert!(fixture.store.load_manifest(&version.id).is_err());
+        let tree_hash = digest(&serde_json::to_vec(&value["entries"]).unwrap());
+        value["tree_hash"] = Value::String(format!("sha256:{tree_hash}"));
+        let manifest: VersionManifest = serde_json::from_value(value).unwrap();
+        let id = VersionId::parse(&format!(
+            "sha256:{}",
+            digest(&serde_json::to_vec(&manifest).unwrap())
+        ))
+        .unwrap();
+        let mutated_path = fixture.store.manifest_path_for_test(fixture.skill, &id);
+        fs::write(&mutated_path, serde_json::to_vec_pretty(&manifest).unwrap()).unwrap();
+        fs::remove_file(&previous_path).unwrap();
+        assert!(fixture.store.load_manifest(&id).is_err());
+        previous_path = mutated_path;
     }
     let mut duplicate = original;
     let first_entry = duplicate["entries"][0].clone();
@@ -269,6 +283,30 @@ fn manifest_rejects_noncanonical_duplicate_and_invalid_object_entries() {
         .as_array_mut()
         .unwrap()
         .push(first_entry);
-    fs::write(&path, serde_json::to_vec_pretty(&duplicate).unwrap()).unwrap();
-    assert!(fixture.store.load_manifest(&version.id).is_err());
+    duplicate["tree_hash"] = Value::String(format!(
+        "sha256:{}",
+        digest(&serde_json::to_vec(&duplicate["entries"]).unwrap())
+    ));
+    let duplicate_manifest: VersionManifest = serde_json::from_value(duplicate).unwrap();
+    let duplicate_id = VersionId::parse(&format!(
+        "sha256:{}",
+        digest(&serde_json::to_vec(&duplicate_manifest).unwrap())
+    ))
+    .unwrap();
+    let duplicate_path = fixture
+        .store
+        .manifest_path_for_test(fixture.skill, &duplicate_id);
+    fs::write(
+        &duplicate_path,
+        serde_json::to_vec_pretty(&duplicate_manifest).unwrap(),
+    )
+    .unwrap();
+    fs::remove_file(previous_path).unwrap();
+    assert!(fixture.store.load_manifest(&duplicate_id).is_err());
+}
+
+fn digest(bytes: &[u8]) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(bytes);
+    format!("{:x}", hasher.finalize())
 }
