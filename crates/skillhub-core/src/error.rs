@@ -29,6 +29,8 @@ pub enum ErrorCode {
     DatabaseNewerSchema,
     #[serde(rename = "internal.error")]
     InternalError,
+    #[serde(rename = "combination.nesting_not_allowed")]
+    CombinationNestingNotAllowed,
 }
 
 #[allow(non_upper_case_globals)]
@@ -49,6 +51,7 @@ impl ErrorCode {
             Self::MigrationRequired => "migration.required",
             Self::DatabaseNewerSchema => "database.newer_schema",
             Self::InternalError => "internal.error",
+            Self::CombinationNestingNotAllowed => "combination.nesting_not_allowed",
         }
     }
 }

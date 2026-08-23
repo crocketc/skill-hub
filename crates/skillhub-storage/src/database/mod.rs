@@ -1,3 +1,4 @@
+mod catalog_repository;
 mod migrations;
 
 use std::fmt;
@@ -6,6 +7,7 @@ use std::path::Path;
 use rusqlite::Connection;
 use skillhub_core::{AppError, AppResult, ErrorCode, RecoveryAction, Severity};
 
+pub use catalog_repository::CatalogRepositorySqlite;
 pub use migrations::MigrationReport;
 
 /// An application database backed by SQLite.
@@ -24,6 +26,9 @@ impl fmt::Debug for Database {
 }
 
 impl Database {
+    pub fn catalog_repository(&self) -> CatalogRepositorySqlite<'_> {
+        CatalogRepositorySqlite::new(self)
+    }
     /// Opens a database file and applies all migrations required by this build.
     pub fn open(path: impl AsRef<Path>) -> AppResult<Self> {
         let mut connection = Connection::open(path).map_err(database_error)?;

@@ -44,6 +44,7 @@ uuid_id!(LogicalTargetId);
 uuid_id!(PhysicalTargetId);
 uuid_id!(DeploymentId);
 uuid_id!(OperationId);
+uuid_id!(CombinationId);
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, specta::Type)]
 pub struct VersionId(String);
