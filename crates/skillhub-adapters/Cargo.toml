@@ -1,0 +1,10 @@
+[package]
+name = "skillhub-adapters"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+skillhub-core = { path = "../skillhub-core" }
+
+[dev-dependencies]
+tempfile = "3"
