@@ -193,8 +193,19 @@ impl VersionStore {
         let text = fs::read_to_string(self.find_manifest(id)?).map_err(io_error)?;
         let manifest: VersionManifest = serde_json::from_str(&text).map_err(json_error)?;
         let mut sorted = manifest.entries.clone();
+        for entry in &manifest.entries {
+            if entry.path.contains('\\')
+                || normalize_relative(Path::new(&entry.path))? != entry.path
+            {
+                return Err(invalid("manifest path canonicality"));
+            }
+            if skillhub_core::VersionId::parse(&entry.object_id).is_err() {
+                return Err(invalid("manifest object id"));
+            }
+        }
         sorted.sort_by(|a, b| a.path.as_bytes().cmp(b.path.as_bytes()));
         if sorted != manifest.entries
+            || sorted.windows(2).any(|pair| pair[0].path == pair[1].path)
             || manifest::tree_hash(&manifest.entries) != manifest.tree_hash
             || manifest::version_id(&manifest) != *id
         {
@@ -223,6 +234,14 @@ impl VersionStore {
     #[doc(hidden)]
     pub fn objects_path_for_test(&self) -> &Path {
         &self.paths.objects_dir
+    }
+
+    #[doc(hidden)]
+    pub fn manifest_path_for_test(&self, skill_id: SkillId, id: &VersionId) -> PathBuf {
+        self.paths
+            .versions_dir
+            .join(skill_id.to_string())
+            .join(format!("{}.json", digest_name(id)))
     }
 
     pub fn hash_tree(&self, root: impl AsRef<Path>) -> AppResult<String> {

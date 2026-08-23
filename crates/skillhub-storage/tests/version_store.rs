@@ -2,6 +2,7 @@ use std::fs;
 use std::sync::Arc;
 use std::thread;
 
+use serde_json::Value;
 use skillhub_core::{LibraryPaths, SkillId};
 use skillhub_storage::VersionStore;
 use tempfile::TempDir;
@@ -239,4 +240,35 @@ fn existing_output_symlink_is_rejected() {
             .materialize(&version.id, output.path())
             .is_err());
     }
+}
+
+#[test]
+fn manifest_rejects_noncanonical_duplicate_and_invalid_object_entries() {
+    let fixture = Fixture::new();
+    fixture.write("nested/file.txt", b"safe");
+    let version = fixture
+        .store
+        .capture(fixture.skill, fixture.source.path())
+        .unwrap();
+    let path = fixture
+        .store
+        .manifest_path_for_test(fixture.skill, &version.id);
+    let original: Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+    for mutation in [
+        ("path", Value::String("nested\\file.txt".into())),
+        ("object_id", Value::String("sha256:ABC".into())),
+    ] {
+        let mut value = original.clone();
+        value["entries"][0][mutation.0] = mutation.1;
+        fs::write(&path, serde_json::to_vec_pretty(&value).unwrap()).unwrap();
+        assert!(fixture.store.load_manifest(&version.id).is_err());
+    }
+    let mut duplicate = original;
+    let first_entry = duplicate["entries"][0].clone();
+    duplicate["entries"]
+        .as_array_mut()
+        .unwrap()
+        .push(first_entry);
+    fs::write(&path, serde_json::to_vec_pretty(&duplicate).unwrap()).unwrap();
+    assert!(fixture.store.load_manifest(&version.id).is_err());
 }
