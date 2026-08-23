@@ -15,7 +15,7 @@ fn document(
         display_name: name.to_owned(),
         runtime_name: name.to_owned(),
         original_description: description.to_owned(),
-        translated_description: None,
+        translated_description: Some("PDF table extraction 中文说明".to_owned()),
         user_note: Some(note.to_owned()),
         tags: tags.iter().map(|value| (*value).to_owned()).collect(),
         author: Some("SkillHub".to_owned()),
@@ -55,6 +55,10 @@ fn indexed_catalog_fixture() -> SearchRepository<'static> {
 fn bm25_searches_name_note_translation_tags_and_markdown() {
     let repo = indexed_catalog_fixture();
     assert_eq!(
+        repo.search(SearchQuery::new("pdf")).unwrap()[0].skill_name,
+        "pdf-extractor"
+    );
+    assert_eq!(
         repo.search(SearchQuery::new("PDF 表格")).unwrap()[0].skill_name,
         "pdf-extractor"
     );
@@ -62,6 +66,41 @@ fn bm25_searches_name_note_translation_tags_and_markdown() {
         repo.search(SearchQuery::new("meeting transcript")).unwrap()[0].skill_name,
         "audio-notes"
     );
+}
+
+#[test]
+fn bm25_rank_is_populated_and_orders_more_relevant_hits_first() {
+    let repo = indexed_catalog_fixture();
+    repo.reindex_skill(&document(
+        "00000000-0000-0000-0000-000000000005",
+        "generic-tool",
+        "A generic utility",
+        "PDF",
+        &["misc"],
+        "# Utility\nA generic utility.",
+    ))
+    .unwrap();
+    let hits = repo.search("PDF").unwrap();
+    assert!(hits[0].rank <= hits[1].rank);
+    assert_ne!(hits[0].rank, 0.0);
+}
+
+#[test]
+fn search_preserves_original_display_name_and_indexes_translation_and_tags() {
+    let database = Box::leak(Box::new(Database::open_in_memory().unwrap()));
+    let repo = SearchRepository::new(database);
+    repo.reindex_skill(&document(
+        "00000000-0000-0000-0000-000000000004",
+        "PDF Extractor",
+        "Extract documents",
+        "用户备注",
+        &["文档处理"],
+        "# Extract\ncontent",
+    ))
+    .unwrap();
+    assert_eq!(repo.search("pdf").unwrap()[0].skill_name, "PDF Extractor");
+    assert!(!repo.search("中文说明").unwrap().is_empty());
+    assert!(!repo.search("文档处理").unwrap().is_empty());
 }
 
 #[test]
@@ -94,6 +133,17 @@ fn search_returns_field_codes_for_highlights() {
 }
 
 #[test]
+fn highlight_fields_are_calculated_per_query_term() {
+    let repo = indexed_catalog_fixture();
+    let hit = &repo.search("PDF").unwrap()[0];
+    assert!(hit
+        .highlighted_fields
+        .contains(&SearchField::OriginalDescription));
+    assert!(hit.highlighted_fields.contains(&SearchField::UserNote));
+    assert!(hit.highlighted_fields.contains(&SearchField::Tags));
+}
+
+#[test]
 fn duplicate_candidates_are_deterministic_and_metadata_based() {
     let repo = indexed_catalog_fixture();
     repo.reindex_skill(&document(
@@ -120,4 +170,26 @@ fn duplicate_candidates_are_deterministic_and_metadata_based() {
             .parse::<SkillId>()
             .unwrap()
     );
+}
+
+#[test]
+fn duplicate_candidates_survive_small_markdown_changes() {
+    let repo = indexed_catalog_fixture();
+    repo.reindex_skill(&document(
+        "00000000-0000-0000-0000-000000000003",
+        "pdf-extractor-copy",
+        "Extract PDF tables",
+        "PDF 表格提取",
+        &["pdf", "table"],
+        "# PDF\nExtract PDF tables into CSV with a note.",
+    ))
+    .unwrap();
+    assert!(repo
+        .duplicate_candidates()
+        .unwrap()
+        .iter()
+        .any(|candidate| candidate.right_skill_id
+            == "00000000-0000-0000-0000-000000000003"
+                .parse::<SkillId>()
+                .unwrap()));
 }

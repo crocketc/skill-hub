@@ -1,9 +1,10 @@
 use super::Database;
-use rusqlite::{params, OptionalExtension};
+use rusqlite::{params, params_from_iter, OptionalExtension};
 use skillhub_core::search::{
     DuplicateCandidate, SearchDocument, SearchField, SearchHit, SearchQuery,
 };
 use skillhub_core::{AppError, AppResult, ErrorCode, Severity, SkillId};
+use std::collections::BTreeSet;
 
 const FIELD_NAMES: [&str; 10] = [
     "display_name",
@@ -33,6 +34,11 @@ impl<'a> SearchRepository<'a> {
         tx.execute(
             "DELETE FROM skills_fts WHERE skill_id = ?1",
             [document.skill_id.to_string()],
+        )
+        .map_err(error)?;
+        tx.execute(
+            "INSERT INTO search_display_names (skill_id, display_name) VALUES (?1, ?2) ON CONFLICT(skill_id) DO UPDATE SET display_name=excluded.display_name",
+            params![document.skill_id.to_string(), document.display_name],
         )
         .map_err(error)?;
         tx.execute(
@@ -75,7 +81,7 @@ impl<'a> SearchRepository<'a> {
         }
         let match_query = fts_query(&text);
         let mut statement = self.database.connection.prepare(
-            "SELECT skill_id, display_name, bm25(skills_fts, 10.0, 8.0, 3.0, 3.0, 4.0, 2.0, 2.0, 1.0, 2.0, 1.0) AS rank FROM skills_fts WHERE skills_fts MATCH ?1 ORDER BY rank ASC, skill_id ASC LIMIT ?2"
+            "SELECT f.skill_id, COALESCE(n.display_name, f.display_name), bm25(skills_fts, 10.0, 8.0, 3.0, 3.0, 4.0, 2.0, 2.0, 1.0, 2.0, 1.0) AS rank FROM skills_fts f LEFT JOIN search_display_names n ON n.skill_id=f.skill_id WHERE skills_fts MATCH ?1 ORDER BY rank ASC, f.skill_id ASC LIMIT ?2"
         ).map_err(error)?;
         let rows = statement
             .query_map(params![match_query, query.limit as i64], |row| {
@@ -99,23 +105,45 @@ impl<'a> SearchRepository<'a> {
             });
         }
         if hits.is_empty() {
-            let pattern = format!("%{}%", text);
-            let mut fallback = self.database.connection.prepare("SELECT skill_id, display_name FROM skills_fts WHERE display_name LIKE ?1 OR runtime_name LIKE ?1 OR original_description LIKE ?1 OR translated_description LIKE ?1 OR user_note LIKE ?1 OR tags LIKE ?1 OR author LIKE ?1 OR license LIKE ?1 OR requirements LIKE ?1 OR markdown LIKE ?1 ORDER BY skill_id ASC LIMIT ?2").map_err(error)?;
+            let fields = FIELD_NAMES
+                .iter()
+                .map(|field| format!("f.{field} LIKE ?"))
+                .collect::<Vec<_>>();
+            let clauses = text
+                .split_whitespace()
+                .map(|_| format!("({})", fields.join(" OR ")))
+                .collect::<Vec<_>>();
+            let sql = format!("SELECT f.skill_id, COALESCE(n.display_name, f.display_name) FROM skills_fts f LEFT JOIN search_display_names n ON n.skill_id=f.skill_id WHERE {} ORDER BY f.skill_id ASC LIMIT ?", clauses.join(" OR "));
+            let mut fallback = self.database.connection.prepare(&sql).map_err(error)?;
+            let mut fallback_params = Vec::new();
+            for term in text.split_whitespace() {
+                for _ in FIELD_NAMES {
+                    fallback_params.push(format!("%{term}%"));
+                }
+            }
+            fallback_params.push(query.limit.to_string());
             let rows = fallback
-                .query_map(params![pattern, query.limit as i64], |row| {
+                .query_map(params_from_iter(fallback_params.iter()), |row| {
                     Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
                 })
                 .map_err(error)?;
             for row in rows {
                 let (id, skill_name) = row.map_err(error)?;
                 let skill_id = id.parse().map_err(|_| bad_id())?;
+                let highlighted_fields = self.matching_fields(&id, &text)?;
                 hits.push(SearchHit {
                     skill_id,
                     skill_name,
-                    rank: 0.0,
-                    highlighted_fields: self.matching_fields(&id, &text)?,
+                    rank: -(highlighted_fields.len() as f64),
+                    highlighted_fields,
                 });
             }
+            hits.sort_by(|left, right| {
+                left.rank
+                    .partial_cmp(&right.rank)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+                    .then_with(|| left.skill_id.to_string().cmp(&right.skill_id.to_string()))
+            });
         }
         Ok(hits)
     }
@@ -142,7 +170,11 @@ impl<'a> SearchRepository<'a> {
         let docs: Vec<_> = rows.map(|r| r.map_err(error)).collect::<AppResult<_>>()?;
         let mut result = Vec::new();
         for left in 0..docs.len() {
+            let bm25_candidates = self.bm25_prefilter(&docs[left])?;
             for right in left + 1..docs.len() {
+                if !bm25_candidates.contains(&docs[right].0) {
+                    continue;
+                }
                 let matched = matching_doc_fields(&docs[left], &docs[right]);
                 if matched.is_empty() {
                     continue;
@@ -182,19 +214,68 @@ impl<'a> SearchRepository<'a> {
         Ok(result)
     }
 
+    fn bm25_prefilter(
+        &self,
+        document: &(
+            String,
+            String,
+            String,
+            String,
+            String,
+            String,
+            String,
+            String,
+            String,
+            String,
+            String,
+        ),
+    ) -> AppResult<BTreeSet<String>> {
+        let terms = [
+            &document.1,
+            &document.2,
+            &document.3,
+            &document.4,
+            &document.5,
+            &document.6,
+            &document.10,
+        ]
+        .iter()
+        .flat_map(|value| value.split_whitespace())
+        .filter(|term| term.len() >= 2)
+        .take(24)
+        .map(|term| format!("\"{}\"", term.replace('"', "")))
+        .collect::<Vec<_>>();
+        if terms.is_empty() {
+            return Ok(BTreeSet::new());
+        }
+        let query = terms.join(" OR ");
+        let mut statement = self
+            .database
+            .connection
+            .prepare("SELECT skill_id FROM skills_fts WHERE skills_fts MATCH ?1 ORDER BY bm25(skills_fts) ASC, skill_id ASC LIMIT 100")
+            .map_err(error)?;
+        let rows = statement
+            .query_map([query], |row| row.get::<_, String>(0))
+            .map_err(error)?;
+        rows.map(|row| row.map_err(error)).collect()
+    }
+
     fn matching_fields(&self, skill_id: &str, query: &str) -> AppResult<Vec<SearchField>> {
         let mut result = Vec::new();
         for (index, field) in FIELD_NAMES.iter().enumerate() {
-            let sql = format!(
-                "SELECT EXISTS(SELECT 1 FROM skills_fts WHERE skill_id=?1 AND {field} LIKE ?2)"
-            );
-            let matched: bool = self
-                .database
-                .connection
-                .query_row(&sql, params![skill_id, format!("%{}%", query)], |row| {
-                    row.get(0)
-                })
-                .map_err(error)?;
+            let mut matched = false;
+            for term in query.split_whitespace() {
+                let sql = format!(
+                    "SELECT EXISTS(SELECT 1 FROM skills_fts WHERE skill_id=?1 AND {field} LIKE ?2)"
+                );
+                matched |= self
+                    .database
+                    .connection
+                    .query_row(&sql, params![skill_id, format!("%{term}%")], |row| {
+                        row.get::<_, bool>(0)
+                    })
+                    .map_err(error)?;
+            }
             if matched {
                 result.push(field_code(index));
             }
@@ -274,15 +355,14 @@ fn normalize(value: &str) -> String {
         .chars()
         .flat_map(|character| {
             let code = character as u32;
-            if (0xFF01..=0xFF5E).contains(&code) {
-                char::from_u32(code - 0xFEE0)
-                    .into_iter()
-                    .collect::<Vec<_>>()
+            let mapped = if (0xFF01..=0xFF5E).contains(&code) {
+                char::from_u32(code - 0xFEE0).unwrap_or(character)
             } else if code == 0x3000 {
-                vec![' ']
+                ' '
             } else {
-                character.to_lowercase().collect()
-            }
+                character
+            };
+            mapped.to_lowercase()
         })
         .collect()
 }
