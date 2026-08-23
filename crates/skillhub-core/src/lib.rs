@@ -15,6 +15,6 @@ pub use path_policy::{AllowedRoot, AllowedRootId, PathPolicy, SafePath};
 
 pub use catalog::{LibraryManifest, LibraryPaths, PortableSkillRecord};
 pub use ids::{
-    AgentProfileId, ClientInstanceId, DeploymentId, LogicalTargetId, OperationId, PhysicalTargetId,
-    ProjectId, SkillId, VersionId,
+    AgentProfileId, ClientInstanceId, CombinationId, DeploymentId, LogicalTargetId, OperationId,
+    PhysicalTargetId, ProjectId, SkillId, VersionId,
 };
