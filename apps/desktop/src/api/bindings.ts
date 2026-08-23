@@ -15,11 +15,21 @@ export type AppCommandResult = { type: "operation_summary"; payload: OperationSu
 
 export type AppEvent = { type: "operation_progress"; payload: OperationProgress } | { type: "operation_finished"; payload: OperationSummary } | { type: "facts_changed"; payload: FactsChanged };
 
-export type AppQuery = { type: "get_skill"; payload: GetSkill } | { type: "list_versions"; payload: ListVersions } | { type: "diff_versions"; payload: DiffVersions } | { type: "list_combinations"; payload: ListCombinations } | { type: "search"; payload: SearchQuery } | { type: "get_bootstrap_snapshot" };
+export type AppQuery = { type: "get_skill"; payload: GetSkill } | { type: "list_versions"; payload: ListVersions } | { type: "diff_versions"; payload: DiffVersions } | { type: "list_combinations"; payload: ListCombinations } | { type: "search"; payload: SearchQuery } | { type: "get_bootstrap_snapshot" } | { type: "list_pending_items"; payload: ListPendingItems };
 
-export type AppQueryResult = { type: "skill"; payload: SkillResult } | { type: "versions"; payload: VersionResult[] } | { type: "version_diff"; payload: VersionDiffResult } | { type: "combinations"; payload: CombinationResult[] } | { type: "search_results"; payload: SearchHit[] } | { type: "bootstrap_snapshot"; payload: BootstrapSnapshot };
+export type AppQueryResult = { type: "skill"; payload: SkillResult } | { type: "versions"; payload: VersionResult[] } | { type: "version_diff"; payload: VersionDiffResult } | { type: "combinations"; payload: CombinationResult[] } | { type: "search_results"; payload: SearchHit[] } | { type: "bootstrap_snapshot"; payload: BootstrapSnapshot } | { type: "pending_items"; payload: PendingItem[] };
 
-export type BootstrapSnapshot = Record<string, never>;
+export type BootstrapSnapshot = {
+	skill_count: number,
+	project_count: number,
+	agent_count: number,
+	deployed_count: number,
+	deployment_categories: DeploymentChartCategory[],
+	recent_operations: RecentOperationSummary[],
+	pending: PendingSummary,
+	last_scan_at: string | null,
+	recovery_state: StartupRecoveryState,
+};
 
 export type CombinationResult = {
 	name: string,
@@ -36,6 +46,15 @@ export type CreateSkill = {
 	source_path: string,
 };
 
+export type DeploymentChartCategory = {
+	dimension: DeploymentDimension,
+	key: string,
+	label_code: string,
+	count: number,
+};
+
+export type DeploymentDimension = "agent" | "project";
+
 export type DiffVersions = {
 	left: VersionId,
 	right: VersionId,
@@ -51,6 +70,8 @@ export type GetSkill = {
 };
 
 export type ListCombinations = null;
+
+export type ListPendingItems = null;
 
 export type ListVersions = {
 	skill_id: SkillId,
@@ -75,6 +96,25 @@ export type OperationSummary = {
 	error_code: ErrorCode | null,
 };
 
+/**
+ *  Derived pending work. `message_code` is an i18n key, never a localized
+ *  sentence persisted in the database or cache.
+ */
+export type PendingItem = {
+	subject: SkillId,
+	kind: PendingKind,
+	code: string,
+	message_code: string | null,
+};
+
+/**  A stable category for work the user may need to handle. */
+export type PendingKind = "trial_due" | "security_finding" | "recovery";
+
+export type PendingSummary = {
+	total: number,
+	by_kind: Partial<{ [key in PendingKind]: number }>,
+};
+
 export type PinProjectSkillVersion = {
 	project_id: ProjectId,
 	skill_id: SkillId,
@@ -82,6 +122,15 @@ export type PinProjectSkillVersion = {
 };
 
 export type ProjectId = string;
+
+export type RecentOperationSummary = {
+	operation_id: OperationId,
+	kind: string,
+	state: string,
+	phase: OperationPhase,
+	error_code: string | null,
+	created_at: string,
+};
 
 export type RenameSkill = {
 	skill_id: SkillId,
@@ -140,6 +189,8 @@ export type SkillResult = {
 	display_name: string,
 	runtime_name: string,
 };
+
+export type StartupRecoveryState = "clean" | "in_progress" | "needs_recovery";
 
 export type VersionDiffResult = {
 	added: string[],

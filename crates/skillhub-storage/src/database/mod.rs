@@ -1,3 +1,4 @@
+mod bootstrap_repository;
 mod catalog_repository;
 mod migrations;
 mod search_repository;
@@ -8,6 +9,7 @@ use std::path::Path;
 use rusqlite::Connection;
 use skillhub_core::{AppError, AppResult, ErrorCode, RecoveryAction, Severity};
 
+pub use bootstrap_repository::BootstrapRepository;
 pub use catalog_repository::CatalogRepositorySqlite;
 pub use migrations::MigrationReport;
 pub use search_repository::SearchRepository;
@@ -34,6 +36,10 @@ impl Database {
 
     pub fn search_repository(&self) -> SearchRepository<'_> {
         SearchRepository::new(self)
+    }
+
+    pub fn bootstrap_repository(&self) -> BootstrapRepository<'_> {
+        BootstrapRepository::new(self)
     }
 
     #[doc(hidden)]

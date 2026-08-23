@@ -1,16 +1,22 @@
 pub mod api;
 pub mod application;
+pub mod bootstrap;
 pub mod catalog;
 mod error;
 mod ids;
 mod operation;
 mod path_policy;
+pub mod pending;
 pub mod search;
 pub mod versioning;
 
 pub use api::{
     AppCommand, AppCommandResult, AppEvent, AppQuery, AppQueryResult, ApplicationFacade,
-    BootstrapSnapshot, FactsChanged, Page,
+    FactsChanged, Page,
+};
+pub use bootstrap::{
+    BootstrapSnapshot, DeploymentChartCategory, DeploymentDimension, PendingSummary,
+    RecentOperationSummary, StartupRecoveryState,
 };
 pub use error::{AppError, AppResult, ErrorCode, RecoveryAction, Severity};
 pub use operation::{OperationPhase, OperationProgress, OperationSummary};
