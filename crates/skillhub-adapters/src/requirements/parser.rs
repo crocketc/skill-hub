@@ -290,23 +290,58 @@ fn deduplicate(values: &mut Vec<RequirementEvidence>) {
 }
 
 fn sanitize_source(line: &str) -> String {
-    line.split_whitespace()
-        .map(|token| {
-            let Some(index) = token.find('=') else {
-                return token.to_owned();
-            };
-            let left = &token[..index];
-            if left.len() > 2
-                && left.contains('_')
-                && left
-                    .chars()
-                    .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_')
-            {
-                format!("{left}=<redacted>")
-            } else {
-                token.to_owned()
+    let bytes = line.as_bytes();
+    let mut output = String::with_capacity(line.len());
+    let mut cursor = 0;
+    let mut index = 0;
+    while index < bytes.len() {
+        if is_name_start(bytes, index) {
+            let name_start = index;
+            index += 1;
+            while index < bytes.len() && is_name_char(bytes[index]) {
+                index += 1;
             }
-        })
-        .collect::<Vec<_>>()
-        .join(" ")
+            let name = &line[name_start..index];
+            let mut separator = index;
+            while separator < bytes.len() && bytes[separator].is_ascii_whitespace() {
+                separator += 1;
+            }
+            if is_env_name(name)
+                && separator < bytes.len()
+                && (bytes[separator] == b'=' || bytes[separator] == b':')
+            {
+                let mut value_start = separator + 1;
+                while value_start < bytes.len() && bytes[value_start].is_ascii_whitespace() {
+                    value_start += 1;
+                }
+                let mut value_end = value_start;
+                while value_end < bytes.len() && !bytes[value_end].is_ascii_whitespace() {
+                    value_end += 1;
+                }
+                output.push_str(&line[cursor..name_start]);
+                output.push_str(name);
+                output.push_str("=<redacted>");
+                cursor = value_end;
+                index = value_end;
+                continue;
+            }
+            index = name_start + name.len();
+        } else {
+            index += 1;
+        }
+    }
+    output.push_str(&line[cursor..]);
+    output
+}
+
+fn is_name_start(bytes: &[u8], index: usize) -> bool {
+    bytes[index].is_ascii_uppercase() || bytes[index] == b'_'
+}
+
+fn is_name_char(byte: u8) -> bool {
+    byte.is_ascii_uppercase() || byte.is_ascii_digit() || byte == b'_'
+}
+
+fn is_env_name(name: &str) -> bool {
+    name.len() > 2 && name.contains('_') && name.bytes().all(is_name_char)
 }

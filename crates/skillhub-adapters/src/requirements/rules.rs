@@ -6,13 +6,13 @@ pub(crate) fn classify(text: &str) -> Option<(RequirementKind, String, Option<St
         .split(|c: char| !c.is_ascii_alphanumeric())
         .filter(|token| !token.is_empty())
         .collect();
-    let kind = if lower.contains("ffmpeg") {
+    let kind = if tokens.contains(&"ffmpeg") {
         RequirementKind::Ffmpeg
-    } else if lower.contains("python") {
+    } else if tokens.contains(&"python") {
         RequirementKind::Python
-    } else if lower.contains("mcp") {
+    } else if tokens.contains(&"mcp") {
         RequirementKind::Mcp
-    } else if lower.contains("plugin") {
+    } else if tokens.contains(&"plugin") {
         RequirementKind::Plugin
     } else if ["node", "docker", "pandoc", "imagemagick", "git"]
         .iter()

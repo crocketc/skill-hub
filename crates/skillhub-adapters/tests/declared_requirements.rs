@@ -105,3 +105,54 @@ fn user_notes_do_not_become_compatibility_statements_and_tool_names_use_boundari
         .iter()
         .any(|requirement| requirement.kind == RequirementKind::OtherTool));
 }
+
+#[test]
+fn redacts_spaced_and_colon_environment_assignments_on_requirement_lines() {
+    let root = tempfile::tempdir().unwrap();
+    std::fs::write(
+        root.path().join("SKILL.md"),
+        "OPENAI_API_KEY = first-secret # ffmpeg\nANTHROPIC_API_KEY: second-secret Python\n",
+    )
+    .unwrap();
+    let parsed = DeclaredRequirementParser::parse(root.path()).unwrap();
+    assert!(parsed
+        .environment_variables
+        .iter()
+        .any(|variable| { variable.name == "OPENAI_API_KEY" && variable.value.is_none() }));
+    assert!(parsed
+        .environment_variables
+        .iter()
+        .any(|variable| { variable.name == "ANTHROPIC_API_KEY" && variable.value.is_none() }));
+    assert!(parsed
+        .explicit
+        .iter()
+        .chain(parsed.clues.iter())
+        .all(|requirement| {
+            !requirement.source_code.contains("first-secret")
+                && !requirement.source_code.contains("second-secret")
+        }));
+}
+
+#[test]
+fn tool_names_require_word_boundaries() {
+    let root = tempfile::tempdir().unwrap();
+    std::fs::write(
+        root.path().join("SKILL.md"),
+        "pythonista ffmpegish mcpserver pluginization\n",
+    )
+    .unwrap();
+    let parsed = DeclaredRequirementParser::parse(root.path()).unwrap();
+    assert!(!parsed
+        .explicit
+        .iter()
+        .chain(parsed.clues.iter())
+        .any(|requirement| {
+            matches!(
+                requirement.kind,
+                RequirementKind::Python
+                    | RequirementKind::Ffmpeg
+                    | RequirementKind::Mcp
+                    | RequirementKind::Plugin
+            )
+        }));
+}
