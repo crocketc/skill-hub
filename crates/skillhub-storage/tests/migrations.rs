@@ -31,3 +31,13 @@ fn database_newer_than_application_is_rejected_with_read_only_recovery() {
         .iter()
         .any(|action| action.as_str() == "open_read_only"));
 }
+
+#[test]
+fn open_exposes_the_migration_report() {
+    let db = Database::open_in_memory().unwrap();
+    let report = db.migration_report();
+
+    assert_eq!(report.from_version, 0);
+    assert_eq!(report.to_version, 2);
+    assert_eq!(report.applied_versions, vec![1, 2]);
+}

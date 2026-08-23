@@ -1,5 +1,3 @@
-PRAGMA foreign_keys = ON;
-
 CREATE TABLE skills (
     id TEXT PRIMARY KEY NOT NULL,
     display_name TEXT NOT NULL,

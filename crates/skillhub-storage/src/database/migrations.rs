@@ -5,9 +5,10 @@ use skillhub_core::{AppError, AppResult, ErrorCode, RecoveryAction, Severity};
 
 pub const CURRENT_SCHEMA_VERSION: u32 = 2;
 
-struct Migration {
+#[derive(Clone, Copy)]
+struct Migration<'a> {
     version: u32,
-    sql: &'static str,
+    sql: &'a str,
 }
 
 const MIGRATIONS: &[Migration] = &[
@@ -30,6 +31,13 @@ pub struct MigrationReport {
 }
 
 pub fn run(connection: &mut Connection) -> AppResult<MigrationReport> {
+    run_with_migrations(connection, MIGRATIONS)
+}
+
+fn run_with_migrations(
+    connection: &mut Connection,
+    migrations: &[Migration<'_>],
+) -> AppResult<MigrationReport> {
     let from_version = read_schema_version(connection)?;
     if from_version > CURRENT_SCHEMA_VERSION {
         return Err(
@@ -41,7 +49,7 @@ pub fn run(connection: &mut Connection) -> AppResult<MigrationReport> {
     }
 
     let mut applied_versions = Vec::new();
-    for migration in MIGRATIONS
+    for migration in migrations
         .iter()
         .filter(|migration| migration.version > from_version)
     {
@@ -81,5 +89,35 @@ fn database_error(error: rusqlite::Error) -> AppError {
         severity: Severity::Error,
         params,
         actions: vec![RecoveryAction::Retry],
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{run_with_migrations, Migration};
+    use rusqlite::Connection;
+
+    #[test]
+    fn failed_migration_rolls_back_its_schema_and_user_version() {
+        let mut connection = Connection::open_in_memory().unwrap();
+        let migrations = [Migration {
+            version: 1,
+            sql: "CREATE TABLE should_rollback (id INTEGER); THIS IS NOT SQL;",
+        }];
+
+        assert!(run_with_migrations(&mut connection, &migrations).is_err());
+
+        let table_count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'should_rollback'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let user_version: u32 = connection
+            .pragma_query_value(None, "user_version", |row| row.get(0))
+            .unwrap();
+        assert_eq!(table_count, 0);
+        assert_eq!(user_version, 0);
     }
 }
