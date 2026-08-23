@@ -44,6 +44,7 @@ fn agent_at(id: &str, path: &str) -> CustomAgent {
         directory: ResolvedPathGrant {
             grant_id: "grant-1".into(),
             path: path.into(),
+            operating_system: OperatingSystem::Windows,
         },
         profile: profile(path),
     }
@@ -64,6 +65,7 @@ fn custom_agent_crud_and_override_reset_preserve_directory() {
             directory: ResolvedPathGrant {
                 grant_id: "grant-1".into(),
                 path: "C:/Users/me/.my-agent/alternate-skills".into(),
+                operating_system: OperatingSystem::Windows,
             },
             profile: profile("C:/Users/me/.my-agent/alternate-skills"),
         })
@@ -131,6 +133,7 @@ fn unknown_profile_override_is_rejected() {
             directory: ResolvedPathGrant {
                 grant_id: "grant-1".into(),
                 path: "C:/Users/me/.my-agent/skills".into(),
+                operating_system: OperatingSystem::Windows,
             },
             profile: profile("C:/Users/me/.my-agent/skills"),
         })
@@ -175,6 +178,7 @@ fn profile_override_can_target_builtin_metadata_without_mutating_builtin_files()
             directory: ResolvedPathGrant {
                 grant_id: "grant-2".into(),
                 path: "C:/Users/me/.custom-codex/skills".into(),
+                operating_system: OperatingSystem::Windows,
             },
             profile: profile("C:/Users/me/.custom-codex/skills"),
         })
@@ -208,6 +212,7 @@ fn second_settings_write_failure_rolls_back_agents_and_overrides_together() {
             directory: ResolvedPathGrant {
                 grant_id: "grant-1".into(),
                 path: "C:/Users/me/.my-agent/skills".into(),
+                operating_system: OperatingSystem::Windows,
             },
             profile: profile("C:/Users/me/.my-agent/skills"),
         })

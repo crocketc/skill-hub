@@ -264,6 +264,7 @@ export type ResetProfileOverride = {
 export type ResolvedPathGrant = {
 	grant_id: string,
 	path: string,
+	operating_system: OperatingSystem,
 };
 
 export type SaveSkillContent = {

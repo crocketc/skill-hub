@@ -1,7 +1,7 @@
 use skillhub_core::agent::{
     AgentClient, AgentProfile, CallPolicy, ClientKind, CustomAgent, CustomAgentDraft,
     CustomAgentValidationError, DeploymentCapability, DirectoryPrecedence, OperatingSystem,
-    PathCandidate, PathGrant, PathGrantResolver, TargetScope,
+    PathCandidate, PathGrant, PathGrantResolver, ResolvedPathGrant, TargetScope,
 };
 
 fn profile(path: &str) -> AgentProfile {
@@ -34,12 +34,36 @@ fn profile(path: &str) -> AgentProfile {
 
 struct FakeRegistry;
 impl PathGrantResolver for FakeRegistry {
-    fn resolve(&self, grant: &PathGrant) -> Result<String, CustomAgentValidationError> {
+    fn resolve(&self, grant: &PathGrant) -> Result<ResolvedPathGrant, CustomAgentValidationError> {
         match grant.grant_id.as_str() {
-            "grant-1" => Ok("C:/Users/me/.my-agent/skills".into()),
+            "grant-1" => Ok(ResolvedPathGrant {
+                grant_id: grant.grant_id.clone(),
+                path: "C:/Users/me/.my-agent/skills".into(),
+                operating_system: OperatingSystem::Windows,
+            }),
+            "grant-mac" => Ok(ResolvedPathGrant {
+                grant_id: grant.grant_id.clone(),
+                path: "/Users/me/Skills".into(),
+                operating_system: OperatingSystem::Macos,
+            }),
             _ => Err(CustomAgentValidationError::GrantNotAuthorized),
         }
     }
+}
+
+#[test]
+fn macos_case_sensitive_grants_do_not_match_different_candidate_case() {
+    let error = CustomAgent::from_draft(
+        CustomAgentDraft {
+            id: "custom.mac".into(),
+            display_name: "Mac Agent".into(),
+            directory: PathGrant::from_file_picker("grant-mac"),
+            profile: profile("/Users/me/skills"),
+        },
+        &FakeRegistry,
+    )
+    .unwrap_err();
+    assert_eq!(error, CustomAgentValidationError::GrantPathMismatch);
 }
 
 #[test]

@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use super::{AgentProfile, TargetScope};
+use super::{AgentProfile, OperatingSystem, TargetScope};
 
 /// Opaque identifier issued by the native file picker.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
@@ -27,7 +27,7 @@ impl PathGrant {
 /// Native file-picker authority boundary. It resolves an opaque ID only after
 /// checking the OS grant registry.
 pub trait PathGrantResolver {
-    fn resolve(&self, grant: &PathGrant) -> Result<String, CustomAgentValidationError>;
+    fn resolve(&self, grant: &PathGrant) -> Result<ResolvedPathGrant, CustomAgentValidationError>;
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
@@ -35,6 +35,7 @@ pub trait PathGrantResolver {
 pub struct ResolvedPathGrant {
     pub grant_id: String,
     pub path: String,
+    pub operating_system: OperatingSystem,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
@@ -74,14 +75,11 @@ impl CustomAgent {
         resolver: &impl PathGrantResolver,
     ) -> Result<Self, CustomAgentValidationError> {
         draft.directory.validate()?;
-        let path = resolver.resolve(&draft.directory)?;
+        let resolved = resolver.resolve(&draft.directory)?;
         let agent = Self {
             id: draft.id,
             display_name: draft.display_name,
-            directory: ResolvedPathGrant {
-                grant_id: draft.directory.grant_id,
-                path,
-            },
+            directory: resolved,
             profile: draft.profile,
         };
         agent.validate()?;
@@ -100,7 +98,7 @@ impl CustomAgent {
         if super::validate_profile_strict(&self.profile).is_err() {
             return Err(CustomAgentValidationError::InvalidProfile);
         }
-        if !global_path_matches(&self.profile, &self.directory.path) {
+        if !global_path_matches(&self.profile, &self.directory) {
             return Err(CustomAgentValidationError::GrantPathMismatch);
         }
         Ok(())
@@ -123,27 +121,35 @@ impl CustomAgentOverride {
         if super::validate_profile_strict(&self.profile).is_err() {
             return Err(CustomAgentValidationError::InvalidProfile);
         }
-        if !global_path_matches(&self.profile, &self.directory.path) {
+        if !global_path_matches(&self.profile, &self.directory) {
             return Err(CustomAgentValidationError::GrantPathMismatch);
         }
         Ok(())
     }
 }
 
-fn global_path_matches(profile: &AgentProfile, path: &str) -> bool {
-    let expected = normalize_path(path);
-    profile
+fn global_path_matches(profile: &AgentProfile, grant: &ResolvedPathGrant) -> bool {
+    let expected = normalize_path(&grant.path, &grant.operating_system);
+    let globals = profile
         .clients
         .iter()
         .flat_map(|client| client.path_candidates.iter())
         .filter(|candidate| matches!(candidate.scope, TargetScope::Global))
-        .any(|candidate| normalize_path(&candidate.path) == expected)
+        .collect::<Vec<_>>();
+    !globals.is_empty()
+        && globals
+            .iter()
+            .all(|candidate| normalize_path(&candidate.path, &grant.operating_system) == expected)
 }
 
-fn normalize_path(path: &str) -> String {
+fn normalize_path(path: &str, operating_system: &OperatingSystem) -> String {
     let mut normalized = path.replace('\\', "/");
     while normalized.ends_with('/') {
         normalized.pop();
     }
-    normalized.to_ascii_lowercase()
+    if matches!(operating_system, OperatingSystem::Windows) {
+        normalized.to_ascii_lowercase()
+    } else {
+        normalized
+    }
 }
