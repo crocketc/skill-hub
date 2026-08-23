@@ -4,7 +4,16 @@
 
 SkillHub 是一个面向 Windows 和 macOS 的本地 Skill 全生命周期管理工具，负责 Skill 的发现、导入、集中存储、版本管理、安全检查、搜索、部署、解除部署、备份和迁移。
 
-当前仓库处于开发准备阶段，功能范围已经确认，正式代码实现尚未开始。
+功能范围已经确认，基础技术底座已经完成，当前进入业务功能开发阶段。基础底座包括 Rust 核心库、文件系统测试夹具、Tauri/React 桌面壳、前后端接口绑定、前端质量检查、CI 和依赖安全检查。Skill 导入、集中库、Agent 适配、部署、项目管理等核心业务功能仍待开发。
+
+当前技术栈和代码边界：
+
+- `crates/skillhub-core`：跨平台领域基础类型、结构化错误、API 契约和路径安全策略，不直接依赖桌面 UI。
+- `crates/skillhub-testkit`：隔离临时工作区、fixture 复制和故障注入，仅供测试使用，不依赖核心业务 crate。
+- `apps/desktop/src-tauri`：Tauri 2 桌面端本地后端，负责命令、查询、事件和 ApplicationFacade 桥接。
+- `apps/desktop/src`：React/Vite 前端页面和交互，通过生成的 TypeScript bindings 调用桌面端能力。
+- Rust 合约到 TypeScript 的 bindings 必须由 Specta 生成并进行完整漂移校验，不能手工维护接口副本。
+- 前后端可以并行开发；前端允许使用 Mock Facade，但真实联调必须遵守已冻结的命令、查询、事件和错误契约。
 
 ## 2. 权威文档
 
@@ -26,6 +35,8 @@ SkillHub 是一个面向 Windows 和 macOS 的本地 Skill 全生命周期管理
 - 不要通过降低断言强度、删除测试或增加任意延时来掩盖问题。
 - 每个 Task 完成后运行该 Task 的测试；每个阶段完成后运行对应集成测试。
 - 代码、测试和文档中的用户可见文本应支持既定的 i18n 方向。
+- Rust 依赖验证使用锁定文件；CI 中会使用 `--locked`、冻结的 pnpm lockfile 和前端安全审计，不自动升级依赖。
+- 前端业务功能应同时通过 ESLint、TypeScript 检查、Vitest 和生产构建。
 
 ## 4. 并行 Agent 协作
 
