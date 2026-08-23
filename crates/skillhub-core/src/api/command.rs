@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 
+use crate::agent::{CustomAgent, CustomAgentDraft, CustomAgentOverride, PathGrant};
 use crate::catalog::SkillLifecycle;
 use crate::{OperationId, OperationSummary, ProjectId, SkillId, VersionId};
 
@@ -55,6 +56,33 @@ pub struct PinProjectSkillVersion {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+pub struct CreateCustomAgent {
+    pub agent: CustomAgentDraft,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+pub struct UpdateCustomAgent {
+    pub agent: CustomAgentDraft,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+pub struct RemoveCustomAgent {
+    pub id: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+pub struct ResetProfileOverride {
+    pub profile_id: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+pub struct SetProfileOverride {
+    pub profile_id: String,
+    pub directory: PathGrant,
+    pub profile: crate::agent::AgentProfile,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 #[serde(tag = "type", content = "payload")]
 pub enum AppCommand {
     #[serde(rename = "create_skill")]
@@ -75,6 +103,16 @@ pub enum AppCommand {
     SetCurrentVersion(SetCurrentVersion),
     #[serde(rename = "pin_project_skill_version")]
     PinProjectSkillVersion(PinProjectSkillVersion),
+    #[serde(rename = "create_custom_agent")]
+    CreateCustomAgent(CreateCustomAgent),
+    #[serde(rename = "update_custom_agent")]
+    UpdateCustomAgent(UpdateCustomAgent),
+    #[serde(rename = "remove_custom_agent")]
+    RemoveCustomAgent(RemoveCustomAgent),
+    #[serde(rename = "reset_profile_override")]
+    ResetProfileOverride(ResetProfileOverride),
+    #[serde(rename = "set_profile_override")]
+    SetProfileOverride(SetProfileOverride),
     #[serde(rename = "cancel_operation")]
     CancelOperation { operation_id: OperationId },
     #[serde(rename = "acknowledge_recovery")]
@@ -86,4 +124,8 @@ pub enum AppCommand {
 pub enum AppCommandResult {
     #[serde(rename = "operation_summary")]
     OperationSummary(OperationSummary),
+    #[serde(rename = "custom_agent")]
+    CustomAgent(CustomAgent),
+    #[serde(rename = "custom_agent_override")]
+    CustomAgentOverride(CustomAgentOverride),
 }

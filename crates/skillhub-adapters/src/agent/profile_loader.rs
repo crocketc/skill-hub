@@ -1,5 +1,5 @@
 use serde_json::Value;
-use skillhub_core::agent::{AgentProfile, ProfileCatalog};
+use skillhub_core::agent::{validate_profile_strict, AgentProfile, ProfileCatalog};
 use skillhub_core::{AppError, ErrorCode, Severity};
 use std::fs;
 use std::path::Path;
@@ -213,68 +213,7 @@ fn reject_unsafe_keys(value: &Value) -> Result<(), ProfileLoadError> {
 }
 
 fn validate_profile(profile: &AgentProfile) -> Result<(), ProfileLoadError> {
-    if profile.profile_version == 0
-        || profile.brand.trim().is_empty()
-        || profile.clients.is_empty()
-        || profile.official_references.is_empty()
-        || !valid_date(&profile.research_date)
-        || profile
-            .official_references
-            .iter()
-            .any(|url| !valid_url(url))
-    {
-        return Err(ProfileLoadError::invalid("incomplete profile"));
-    }
-    for client in &profile.clients {
-        if client.id.trim().is_empty()
-            || client.skill_marker.trim().is_empty()
-            || client.supported_os.is_empty()
-        {
-            return Err(ProfileLoadError::invalid("incomplete client profile"));
-        }
-        for candidate in &client.path_candidates {
-            let path = candidate.path.trim();
-            if path.is_empty() || is_unbounded_root(path) || path.contains("**") {
-                return Err(ProfileLoadError::invalid("unbounded scan root"));
-            }
-            if candidate.marker.trim().is_empty() {
-                return Err(ProfileLoadError::invalid("empty skill marker"));
-            }
-        }
-    }
-    Ok(())
-}
-
-fn is_unbounded_root(path: &str) -> bool {
-    let normalized = path.replace('\\', "/");
-    let trimmed = normalized.trim_end_matches('/');
-    let components = trimmed
-        .split('/')
-        .filter(|component| !component.is_empty())
-        .collect::<Vec<_>>();
-    let has_traversal = components
-        .iter()
-        .any(|component| *component == "." || *component == "..");
-    let home_root = components.len() == 2
-        && (components[0].eq_ignore_ascii_case("users")
-            || components[0].eq_ignore_ascii_case("home"));
-    let windows_home_root = components.len() == 3
-        && components[0].len() == 2
-        && components[0].as_bytes()[1] == b':'
-        && components[1].eq_ignore_ascii_case("Users");
-    let unc_root = normalized.starts_with("//") && components.len() <= 2;
-    trimmed.is_empty()
-        || has_traversal
-        || trimmed == "~"
-        || trimmed == "."
-        || trimmed.eq_ignore_ascii_case("%USERPROFILE%")
-        || trimmed.eq_ignore_ascii_case("$HOME")
-        || trimmed.eq_ignore_ascii_case("{user_home}")
-        || trimmed.ends_with(':')
-        || (trimmed.len() == 2 && trimmed.as_bytes()[1] == b':')
-        || home_root
-        || windows_home_root
-        || unc_root
+    validate_profile_strict(profile).map_err(ProfileLoadError::invalid)
 }
 
 fn valid_date(value: &str) -> bool {

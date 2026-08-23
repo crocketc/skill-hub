@@ -1,6 +1,7 @@
 mod agent_repository;
 mod bootstrap_repository;
 mod catalog_repository;
+mod custom_agent_repository;
 mod migrations;
 mod search_repository;
 
@@ -13,6 +14,7 @@ use skillhub_core::{AppError, AppResult, ErrorCode, RecoveryAction, Severity};
 pub use agent_repository::AgentRepository;
 pub use bootstrap_repository::BootstrapRepository;
 pub use catalog_repository::CatalogRepositorySqlite;
+pub use custom_agent_repository::CustomAgentRepository;
 pub use migrations::MigrationReport;
 pub use search_repository::SearchRepository;
 
@@ -46,6 +48,10 @@ impl Database {
 
     pub fn agent_repository(&self) -> AgentRepository<'_> {
         AgentRepository::new(self)
+    }
+
+    pub fn custom_agent_repository(&self) -> CustomAgentRepository<'_> {
+        CustomAgentRepository::new(self)
     }
 
     #[doc(hidden)]
