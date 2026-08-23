@@ -29,3 +29,6 @@ CREATE TABLE search_display_names (
     skill_id TEXT PRIMARY KEY NOT NULL,
     display_name TEXT NOT NULL
 );
+
+INSERT INTO search_display_names (skill_id, display_name)
+SELECT id, display_name FROM skills;

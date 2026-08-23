@@ -51,6 +51,20 @@ fn indexed_catalog_fixture() -> SearchRepository<'static> {
     repository
 }
 
+fn indexed_catalog_fixture_with_pdf_only() -> SearchRepository<'static> {
+    let repo = indexed_catalog_fixture();
+    repo.reindex_skill(&document(
+        "00000000-0000-0000-0000-000000000006",
+        "pdf-only",
+        "PDF utility",
+        "unrelated note",
+        &["pdf"],
+        "# Utility",
+    ))
+    .unwrap();
+    repo
+}
+
 #[test]
 fn bm25_searches_name_note_translation_tags_and_markdown() {
     let repo = indexed_catalog_fixture();
@@ -83,6 +97,34 @@ fn bm25_rank_is_populated_and_orders_more_relevant_hits_first() {
     let hits = repo.search("PDF").unwrap();
     assert!(hits[0].rank <= hits[1].rank);
     assert_ne!(hits[0].rank, 0.0);
+}
+
+#[test]
+fn fallback_keeps_multi_word_queries_as_and() {
+    let repo = indexed_catalog_fixture_with_pdf_only();
+    let hits = repo.search("pdf 表格").unwrap();
+    assert_eq!(hits.len(), 1);
+    assert_eq!(hits[0].skill_name, "pdf-extractor");
+}
+
+#[test]
+fn fallback_like_escapes_percent_and_underscore_literals() {
+    let repo = indexed_catalog_fixture();
+    repo.reindex_skill(&document(
+        "00000000-0000-0000-0000-000000000007",
+        "literal-markers",
+        "Literal marker search",
+        "100% complete _draft",
+        &["literal"],
+        "# Markers",
+    ))
+    .unwrap();
+    let percent_hits = repo.search("%").unwrap();
+    assert_eq!(percent_hits.len(), 1);
+    assert_eq!(percent_hits[0].skill_name, "literal-markers");
+    let underscore_hits = repo.search("_").unwrap();
+    assert_eq!(underscore_hits.len(), 1);
+    assert_eq!(underscore_hits[0].skill_name, "literal-markers");
 }
 
 #[test]

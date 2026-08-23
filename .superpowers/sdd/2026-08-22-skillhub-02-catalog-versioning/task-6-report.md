@@ -16,6 +16,21 @@
 - `cargo clippy --locked -p skillhub-core -p skillhub-storage --all-targets --all-features -- -D warnings` — passed.
 - `cargo fmt --all` and `git diff --check` — passed.
 
+## Fix round 2
+
+- Updated migration 0004 to backfill `search_display_names` from the authoritative `skills` table, preserving mixed-case names for existing v3 databases.
+- Made fallback search use the same multi-term AND semantics as the FTS query while OR-ing fields within each term.
+- Added SQL LIKE escaping with an explicit ESCAPE clause for `%`, `_`, and the escape character in fallback matching and highlight detection.
+- Added migration upgrade, multi-word AND, wildcard-literal, and legacy display-name regression tests.
+
+Fix round 2 verification:
+
+- `cargo test --locked -p skillhub-storage --test search` — passed (10 tests).
+- `cargo test --locked -p skillhub-storage --test migrations` — passed (5 tests).
+- `cargo test --locked --workspace` — pending final post-commit run.
+- `cargo clippy --locked --workspace --all-targets --all-features -- -D warnings` — pending final post-commit run.
+- `cargo fmt --all` and `git diff --check` — pending final post-commit run.
+
 ## Unresolved issues
 
 The search repository currently accepts indexed documents explicitly; wiring catalog/version updates to automatic reindex events is outside this task and belongs to the application integration layer.

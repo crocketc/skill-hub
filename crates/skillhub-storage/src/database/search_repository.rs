@@ -107,18 +107,18 @@ impl<'a> SearchRepository<'a> {
         if hits.is_empty() {
             let fields = FIELD_NAMES
                 .iter()
-                .map(|field| format!("f.{field} LIKE ?"))
+                .map(|field| format!("f.{field} LIKE ? ESCAPE '\\'"))
                 .collect::<Vec<_>>();
             let clauses = text
                 .split_whitespace()
                 .map(|_| format!("({})", fields.join(" OR ")))
                 .collect::<Vec<_>>();
-            let sql = format!("SELECT f.skill_id, COALESCE(n.display_name, f.display_name) FROM skills_fts f LEFT JOIN search_display_names n ON n.skill_id=f.skill_id WHERE {} ORDER BY f.skill_id ASC LIMIT ?", clauses.join(" OR "));
+            let sql = format!("SELECT f.skill_id, COALESCE(n.display_name, f.display_name) FROM skills_fts f LEFT JOIN search_display_names n ON n.skill_id=f.skill_id WHERE {} ORDER BY f.skill_id ASC LIMIT ?", clauses.join(" AND "));
             let mut fallback = self.database.connection.prepare(&sql).map_err(error)?;
             let mut fallback_params = Vec::new();
             for term in text.split_whitespace() {
                 for _ in FIELD_NAMES {
-                    fallback_params.push(format!("%{term}%"));
+                    fallback_params.push(format!("%{}%", escape_like_term(term)));
                 }
             }
             fallback_params.push(query.limit.to_string());
@@ -266,14 +266,16 @@ impl<'a> SearchRepository<'a> {
             let mut matched = false;
             for term in query.split_whitespace() {
                 let sql = format!(
-                    "SELECT EXISTS(SELECT 1 FROM skills_fts WHERE skill_id=?1 AND {field} LIKE ?2)"
+                    "SELECT EXISTS(SELECT 1 FROM skills_fts WHERE skill_id=?1 AND {field} LIKE ?2 ESCAPE '\\')"
                 );
                 matched |= self
                     .database
                     .connection
-                    .query_row(&sql, params![skill_id, format!("%{term}%")], |row| {
-                        row.get::<_, bool>(0)
-                    })
+                    .query_row(
+                        &sql,
+                        params![skill_id, format!("%{}%", escape_like_term(term))],
+                        |row| row.get::<_, bool>(0),
+                    )
                     .map_err(error)?;
             }
             if matched {
@@ -373,6 +375,13 @@ fn fts_query(value: &str) -> String {
         .map(|token| format!("\"{}\"", token.replace('"', "")))
         .collect::<Vec<_>>()
         .join(" AND ")
+}
+
+fn escape_like_term(value: &str) -> String {
+    value
+        .replace('\\', "\\\\")
+        .replace('%', "\\%")
+        .replace('_', "\\_")
 }
 
 fn bad_id() -> AppError {

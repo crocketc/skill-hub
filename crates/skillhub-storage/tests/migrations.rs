@@ -68,3 +68,34 @@ fn v2_database_upgrades_catalog_metadata_table() {
         "Legacy"
     );
 }
+
+#[test]
+fn v3_database_upgrade_backfills_original_search_display_names() {
+    let file = NamedTempFile::new().unwrap();
+    let connection = Connection::open(file.path()).unwrap();
+    connection
+        .execute_batch(include_str!("../migrations/0001_initial.sql"))
+        .unwrap();
+    connection
+        .execute_batch(include_str!("../migrations/0002_fts.sql"))
+        .unwrap();
+    connection
+        .execute_batch(include_str!("../migrations/0003_catalog_metadata.sql"))
+        .unwrap();
+    connection
+        .execute("INSERT INTO skills(id,display_name,runtime_name,created_at,updated_at) VALUES ('00000000-0000-0000-0000-000000000008','PDF Extractor','pdf-extractor',1,1)", [])
+        .unwrap();
+    connection
+        .execute("INSERT INTO skills_fts(skill_id,display_name,runtime_name) VALUES ('00000000-0000-0000-0000-000000000008','pdf extractor','pdf-extractor')", [])
+        .unwrap();
+    connection.pragma_update(None, "user_version", 3).unwrap();
+    drop(connection);
+    let db = Database::open(file.path()).unwrap();
+    let repo = db.search_repository();
+    let hit = repo
+        .search("pdf")
+        .unwrap()
+        .into_iter()
+        .find(|hit| hit.skill_name == "PDF Extractor");
+    assert!(hit.is_some());
+}
