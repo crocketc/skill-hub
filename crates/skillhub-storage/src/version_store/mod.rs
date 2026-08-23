@@ -47,6 +47,13 @@ impl VersionStore {
 
     pub fn capture(&self, skill_id: SkillId, source: impl AsRef<Path>) -> AppResult<VersionRecord> {
         let source = source.as_ref();
+        if fs::symlink_metadata(source)
+            .map_err(io_error)?
+            .file_type()
+            .is_symlink()
+        {
+            return Err(invalid("source symlink"));
+        }
         let mut entries = Vec::new();
         self.collect(source, source, &mut entries)?;
         entries.sort_by(|a, b| a.path.as_bytes().cmp(b.path.as_bytes()));
@@ -67,31 +74,61 @@ impl VersionStore {
                 manifest: existing,
             });
         }
-        let tmp = self
-            .paths
-            .tmp_dir
-            .join(format!("manifest-{}.tmp", std::process::id()));
-        fs::create_dir_all(&self.paths.tmp_dir).map_err(io_error)?;
+        let tmp = object_store::unique_temp(&dir, ".manifest")?;
         fs::write(&tmp, to_vec_pretty(&manifest).map_err(json_error)?).map_err(io_error)?;
-        fs::rename(tmp, path).map_err(io_error)?;
+        if let Err(error) = fs::rename(&tmp, &path) {
+            let _ = fs::remove_file(&tmp);
+            if !path.exists() {
+                return Err(io_error(error));
+            }
+        }
         Ok(VersionRecord { id, manifest })
     }
 
     pub fn materialize(&self, id: &VersionId, output: impl AsRef<Path>) -> AppResult<()> {
         let manifest = self.load_manifest(id)?;
         let output = output.as_ref();
+        if output.exists()
+            && fs::symlink_metadata(output)
+                .map_err(io_error)?
+                .file_type()
+                .is_symlink()
+        {
+            return Err(invalid("output symlink"));
+        }
         fs::create_dir_all(output).map_err(io_error)?;
         for entry in &manifest.entries {
             let relative = safe_relative(&entry.path)?;
             let target = output.join(relative);
-            if let Some(parent) = target.parent() {
-                fs::create_dir_all(parent).map_err(io_error)?;
+            let mut parent = output.to_path_buf();
+            let component_count = Path::new(&entry.path).components().count();
+            for (index, component) in Path::new(&entry.path).components().enumerate() {
+                if index + 1 == component_count {
+                    break;
+                }
+                if let Component::Normal(name) = component {
+                    parent.push(name);
+                    if parent.exists() {
+                        let metadata = fs::symlink_metadata(&parent).map_err(io_error)?;
+                        if metadata.file_type().is_symlink() || !metadata.is_dir() {
+                            return Err(invalid("output path escape"));
+                        }
+                    } else {
+                        fs::create_dir(&parent).map_err(io_error)?;
+                    }
+                }
             }
-            fs::write(
-                target,
-                object_store::get(&self.paths.objects_dir, &entry.object_id)?,
-            )
-            .map_err(io_error)?;
+            if target.exists() {
+                return Err(invalid("output file exists"));
+            }
+            let bytes = object_store::get(&self.paths.objects_dir, &entry.object_id, entry.size)?;
+            use std::io::Write;
+            let mut file = fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&target)
+                .map_err(io_error)?;
+            file.write_all(&bytes).map_err(io_error)?;
         }
         Ok(())
     }
@@ -122,13 +159,16 @@ impl VersionStore {
         }
         let dir = self.paths.metadata_dir.join(skill_id.to_string());
         fs::create_dir_all(&dir).map_err(io_error)?;
-        let tmp = self
-            .paths
-            .tmp_dir
-            .join(format!("current-{}.tmp", std::process::id()));
-        fs::create_dir_all(&self.paths.tmp_dir).map_err(io_error)?;
+        let tmp = object_store::unique_temp(&dir, ".current")?;
         fs::write(&tmp, id.as_str()).map_err(io_error)?;
-        fs::rename(tmp, dir.join("current")).map_err(io_error)
+        let target = dir.join("current");
+        if let Err(error) = fs::rename(&tmp, &target) {
+            let _ = fs::remove_file(&tmp);
+            if !target.exists() {
+                return Err(io_error(error));
+            }
+        }
+        Ok(())
     }
 
     pub fn current(&self, skill_id: SkillId) -> AppResult<Option<VersionId>> {
@@ -141,9 +181,12 @@ impl VersionStore {
             return Ok(None);
         }
         let text = fs::read_to_string(path).map_err(io_error)?;
-        VersionId::parse(text.trim())
-            .map(Some)
-            .map_err(|_| invalid("current version"))
+        let id = VersionId::parse(text.trim()).map_err(|_| invalid("current version"))?;
+        let manifest = self.load_manifest(&id)?;
+        if manifest.skill_id != skill_id {
+            return Err(invalid("current version skill"));
+        }
+        Ok(Some(id))
     }
 
     pub fn load_manifest(&self, id: &VersionId) -> AppResult<VersionManifest> {
@@ -175,6 +218,11 @@ impl VersionStore {
                 .join(id.strip_prefix("sha256:").unwrap())
                 .exists(),
         ))
+    }
+
+    #[doc(hidden)]
+    pub fn objects_path_for_test(&self) -> &Path {
+        &self.paths.objects_dir
     }
 
     pub fn hash_tree(&self, root: impl AsRef<Path>) -> AppResult<String> {

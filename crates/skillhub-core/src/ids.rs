@@ -54,7 +54,7 @@ impl VersionId {
         let Some(digest) = value.strip_prefix("sha256:") else {
             return Err("version must use the sha256: prefix");
         };
-        if digest.is_empty()
+        if digest.len() != 64
             || !digest
                 .bytes()
                 .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))

@@ -1,4 +1,6 @@
 use std::fs;
+use std::sync::Arc;
+use std::thread;
 
 use skillhub_core::{LibraryPaths, SkillId};
 use skillhub_storage::VersionStore;
@@ -136,4 +138,105 @@ fn set_current_rejects_other_skill_and_rollback_keeps_newer_history() {
         Some(first.id)
     );
     assert!(fixture.store.load_manifest(&second.id).is_ok());
+}
+
+#[test]
+fn diff_reports_added_removed_and_changed_files() {
+    let fixture = Fixture::new();
+    fixture.write("same.txt", b"one");
+    fixture.write("removed.txt", b"gone");
+    let first = fixture
+        .store
+        .capture(fixture.skill, fixture.source.path())
+        .unwrap();
+    fs::remove_file(fixture.source.path().join("removed.txt")).unwrap();
+    fixture.write("same.txt", b"two");
+    fixture.write("added.txt", b"new");
+    let second = fixture
+        .store
+        .capture(fixture.skill, fixture.source.path())
+        .unwrap();
+    let diff = fixture.store.diff(&first.id, &second.id).unwrap();
+    assert_eq!(diff.added, vec!["added.txt"]);
+    assert_eq!(diff.removed, vec!["removed.txt"]);
+    assert_eq!(diff.changed, vec!["same.txt"]);
+}
+
+#[test]
+fn concurrent_captures_and_current_updates_do_not_share_temporary_files() {
+    let fixture = Fixture::new();
+    fixture.write("SKILL.md", b"concurrent");
+    let store = Arc::new(fixture.store);
+    let source = fixture.source.path().to_path_buf();
+    let skill = fixture.skill;
+    let workers: Vec<_> = (0..8)
+        .map(|_| {
+            let store = Arc::clone(&store);
+            let source = source.clone();
+            thread::spawn(move || store.capture(skill, source).unwrap().id)
+        })
+        .collect();
+    let ids: Vec<_> = workers
+        .into_iter()
+        .map(|worker| worker.join().unwrap())
+        .collect();
+    assert!(ids.iter().all(|id| id == &ids[0]));
+    for id in ids {
+        store.set_current(skill, &id).unwrap();
+    }
+}
+
+#[test]
+fn tampered_object_is_rejected_before_materialization() {
+    let fixture = Fixture::new();
+    fixture.write("SKILL.md", b"original");
+    let version = fixture
+        .store
+        .capture(fixture.skill, fixture.source.path())
+        .unwrap();
+    let object = version.manifest.entries[0]
+        .object_id
+        .strip_prefix("sha256:")
+        .unwrap();
+    fs::write(
+        fixture.store.objects_path_for_test().join(object),
+        b"tampered",
+    )
+    .unwrap();
+    assert!(fixture
+        .store
+        .materialize(&version.id, tempfile::tempdir().unwrap().path())
+        .is_err());
+}
+
+#[test]
+fn existing_output_symlink_is_rejected() {
+    let fixture = Fixture::new();
+    fixture.write("nested/file.txt", b"safe");
+    let version = fixture
+        .store
+        .capture(fixture.skill, fixture.source.path())
+        .unwrap();
+    let output = tempfile::tempdir().unwrap();
+    #[cfg(unix)]
+    {
+        std::os::unix::fs::symlink(
+            tempfile::tempdir().unwrap().path(),
+            output.path().join("nested"),
+        )
+        .unwrap();
+        assert!(fixture
+            .store
+            .materialize(&version.id, output.path())
+            .is_err());
+    }
+    #[cfg(windows)]
+    {
+        fs::create_dir(output.path().join("nested")).unwrap();
+        fs::write(output.path().join("nested/file.txt"), b"existing").unwrap();
+        assert!(fixture
+            .store
+            .materialize(&version.id, output.path())
+            .is_err());
+    }
 }
