@@ -49,7 +49,13 @@ pub fn load_catalog(dir: impl AsRef<Path>) -> Result<ProfileCatalog, ProfileLoad
     let mut paths = entries
         .filter_map(Result::ok)
         .map(|entry| entry.path())
-        .filter(|path| path.extension().and_then(|e| e.to_str()) == Some("json"))
+        .filter(|path| {
+            path.extension().and_then(|e| e.to_str()) == Some("json")
+                && !path
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .is_some_and(|name| name.eq_ignore_ascii_case("schema.json"))
+        })
         .collect::<Vec<_>>();
     paths.sort();
     for path in paths {
@@ -85,7 +91,15 @@ fn reject_unsafe_keys(value: &Value) -> Result<(), ProfileLoadError> {
 }
 
 fn validate_profile(profile: &AgentProfile) -> Result<(), ProfileLoadError> {
-    if profile.profile_version == 0 || profile.brand.trim().is_empty() || profile.clients.is_empty()
+    if profile.profile_version == 0
+        || profile.brand.trim().is_empty()
+        || profile.clients.is_empty()
+        || profile.official_references.is_empty()
+        || !valid_date(&profile.research_date)
+        || profile
+            .official_references
+            .iter()
+            .any(|url| !valid_url(url))
     {
         return Err(ProfileLoadError::invalid("incomplete profile"));
     }
@@ -93,6 +107,7 @@ fn validate_profile(profile: &AgentProfile) -> Result<(), ProfileLoadError> {
         if client.id.trim().is_empty()
             || client.path_candidates.is_empty()
             || client.skill_marker.trim().is_empty()
+            || client.supported_os.is_empty()
         {
             return Err(ProfileLoadError::invalid("incomplete client profile"));
         }
@@ -112,11 +127,64 @@ fn validate_profile(profile: &AgentProfile) -> Result<(), ProfileLoadError> {
 fn is_unbounded_root(path: &str) -> bool {
     let normalized = path.replace('\\', "/");
     let trimmed = normalized.trim_end_matches('/');
+    let components = trimmed
+        .split('/')
+        .filter(|component| !component.is_empty())
+        .collect::<Vec<_>>();
+    let home_root = matches!(components.as_slice(), ["Users", _] | ["home", _]);
+    let windows_home_root = components.len() == 3
+        && components[0].len() == 2
+        && components[0].as_bytes()[1] == b':'
+        && components[1].eq_ignore_ascii_case("Users");
+    let unc_root = normalized.starts_with("//") && components.len() <= 2;
     trimmed.is_empty()
         || trimmed == "~"
         || trimmed == "."
+        || trimmed.eq_ignore_ascii_case("%USERPROFILE%")
+        || trimmed.eq_ignore_ascii_case("$HOME")
+        || trimmed.eq_ignore_ascii_case("{user_home}")
         || trimmed.ends_with(':')
         || (trimmed.len() == 2 && trimmed.as_bytes()[1] == b':')
+        || home_root
+        || windows_home_root
+        || unc_root
+}
+
+fn valid_date(value: &str) -> bool {
+    let mut parts = value.split('-');
+    let (Some(year), Some(month), Some(day), None) =
+        (parts.next(), parts.next(), parts.next(), parts.next())
+    else {
+        return false;
+    };
+    if year.len() != 4 || month.len() != 2 || day.len() != 2 {
+        return false;
+    }
+    let (Ok(year), Ok(month), Ok(day)) = (
+        year.parse::<u32>(),
+        month.parse::<u32>(),
+        day.parse::<u32>(),
+    ) else {
+        return false;
+    };
+    if !(1..=12).contains(&month) || day == 0 {
+        return false;
+    }
+    let days = match month {
+        2 if year % 4 == 0 && (year % 100 != 0 || year % 400 == 0) => 29,
+        2 => 28,
+        4 | 6 | 9 | 11 => 30,
+        _ => 31,
+    };
+    day <= days
+}
+
+fn valid_url(value: &str) -> bool {
+    let lower = value.to_ascii_lowercase();
+    (lower.starts_with("https://") || lower.starts_with("http://"))
+        && value
+            .split_once("://")
+            .is_some_and(|(_, host)| !host.trim_matches('/').is_empty() && !host.starts_with('/'))
 }
 
 impl From<ProfileLoadError> for AppError {
