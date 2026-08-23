@@ -107,6 +107,7 @@ impl DiscoverAgents {
                     exists: target.exists,
                     readable: target.readable,
                     writable: target.writable,
+                    case_behavior: case_behavior(&roots.operating_system),
                     logical_target_ids: Vec::new(),
                 });
             entry.exists |= target.exists;
@@ -277,6 +278,17 @@ fn scope_code(scope: &TargetScope) -> &'static str {
         TargetScope::Project => "project",
         TargetScope::Extra => "extra",
     }
+}
+
+fn case_behavior(operating_system: &OperatingSystem) -> String {
+    match operating_system {
+        OperatingSystem::Windows => "case_insensitive_normalization",
+        // macOS volumes may be case-sensitive or case-insensitive. We do not
+        // probe or mutate the volume during discovery; the path fallback keeps
+        // the observed spelling and records that the volume behavior is unknown.
+        OperatingSystem::Macos => "volume_case_behavior_unknown_preserved_case_fallback",
+    }
+    .into()
 }
 
 fn now() -> String {

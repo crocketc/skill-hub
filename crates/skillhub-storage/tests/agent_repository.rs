@@ -35,6 +35,7 @@ fn snapshot(generation: u64, available: bool) -> DiscoverySnapshot {
             exists: available,
             readable: available,
             writable: available,
+            case_behavior: "case_insensitive_normalization".into(),
             logical_target_ids: vec!["target-1".into()],
         }],
     }

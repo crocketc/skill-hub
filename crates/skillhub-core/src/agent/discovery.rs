@@ -40,6 +40,7 @@ pub struct PhysicalTarget {
     pub exists: bool,
     pub readable: bool,
     pub writable: bool,
+    pub case_behavior: String,
     pub logical_target_ids: Vec<String>,
 }
 

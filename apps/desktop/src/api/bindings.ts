@@ -162,6 +162,7 @@ export type PhysicalTarget = {
 	exists: boolean,
 	readable: boolean,
 	writable: boolean,
+	case_behavior: string,
 	logical_target_ids: string[],
 };
 

@@ -106,19 +106,127 @@ fn absent_registered_directories_are_unavailable_without_being_created() {
 #[cfg(unix)]
 #[test]
 fn symlinked_directory_is_merged_by_filesystem_identity() {
+    use skillhub_core::agent::{
+        AgentClient, AgentProfile, CallPolicy, ClientKind, DeploymentCapability,
+        DirectoryPrecedence, PathCandidate, ProfileCatalog, TargetScope,
+    };
     use std::os::unix::fs::symlink;
     let workspace = tempdir().unwrap();
     let home = workspace.path().join("home");
     let real = workspace.path().join("real-skills");
-    std::fs::create_dir_all(&real).unwrap();
+    std::fs::create_dir_all(real.join("skills")).unwrap();
     std::fs::create_dir_all(&home).unwrap();
-    symlink(&real, home.join(".agents")).unwrap();
+    symlink(&real, home.join("linked")).unwrap();
 
-    let snapshot = DiscoverAgents::builtin()
-        .discover(&DiscoveryRoots::new(OperatingSystem::Macos, &home))
+    let candidate = |path: &str, scope: TargetScope| PathCandidate {
+        path: path.into(),
+        scope,
+        precedence: DirectoryPrecedence::Preferred,
+        marker: "SKILL.md".into(),
+    };
+    let client = |id: &str, path: PathCandidate| AgentClient {
+        id: id.into(),
+        kind: ClientKind::Cli,
+        supported_os: vec![OperatingSystem::Macos],
+        path_candidates: vec![path],
+        skill_marker: "SKILL.md".into(),
+        deployment: DeploymentCapability {
+            copy: true,
+            symlink: false,
+            junction: false,
+            limitations: vec![],
+        },
+        call_policy: CallPolicy::Unknown,
+    };
+    let catalog = ProfileCatalog {
+        profiles: vec![AgentProfile {
+            profile_version: 1,
+            research_date: "2026-08-21".into(),
+            official_references: vec!["https://example.com".into()],
+            brand: "Fixture".into(),
+            clients: vec![
+                client(
+                    "fixture.link",
+                    candidate("{user_home}/linked/skills", TargetScope::Global),
+                ),
+                client(
+                    "fixture.real",
+                    candidate("{project_root}/skills", TargetScope::Project),
+                ),
+            ],
+        }],
+    };
+
+    let snapshot = DiscoverAgents::new(catalog)
+        .discover(&DiscoveryRoots::new(OperatingSystem::Macos, &home).with_project_root(&real))
         .unwrap();
     assert_eq!(snapshot.physical_targets.len(), 1);
-    assert!(snapshot.physical_targets[0].logical_target_ids.len() >= 2);
+    assert_eq!(snapshot.physical_targets[0].logical_target_ids.len(), 2);
+    assert_eq!(
+        snapshot.physical_targets[0].case_behavior,
+        "volume_case_behavior_unknown_preserved_case_fallback"
+    );
+}
+
+#[cfg(windows)]
+#[test]
+fn windows_alias_paths_are_merged_by_filesystem_identity() {
+    let workspace = tempdir().unwrap();
+    let home = workspace.path().join("home");
+    let alias = home.join("..").join("home");
+    std::fs::create_dir_all(home.join("skills")).unwrap();
+    let snapshot = DiscoverAgents::new(alias_catalog())
+        .discover(&DiscoveryRoots::new(OperatingSystem::Windows, &home).with_project_root(alias))
+        .unwrap();
+    assert_eq!(snapshot.physical_targets.len(), 1);
+    assert_eq!(snapshot.physical_targets[0].logical_target_ids.len(), 2);
+    assert_eq!(
+        snapshot.physical_targets[0].case_behavior,
+        "case_insensitive_normalization"
+    );
+}
+
+#[cfg(windows)]
+fn alias_catalog() -> skillhub_core::agent::ProfileCatalog {
+    use skillhub_core::agent::{
+        AgentClient, AgentProfile, CallPolicy, ClientKind, DeploymentCapability,
+        DirectoryPrecedence, PathCandidate, TargetScope,
+    };
+    let client = |id: &str, path: &str, scope| AgentClient {
+        id: id.into(),
+        kind: ClientKind::Cli,
+        supported_os: vec![OperatingSystem::Windows],
+        path_candidates: vec![PathCandidate {
+            path: path.into(),
+            scope,
+            precedence: DirectoryPrecedence::Preferred,
+            marker: "SKILL.md".into(),
+        }],
+        skill_marker: "SKILL.md".into(),
+        deployment: DeploymentCapability {
+            copy: true,
+            symlink: false,
+            junction: false,
+            limitations: vec![],
+        },
+        call_policy: CallPolicy::Unknown,
+    };
+    skillhub_core::agent::ProfileCatalog {
+        profiles: vec![AgentProfile {
+            profile_version: 1,
+            research_date: "2026-08-21".into(),
+            official_references: vec!["https://example.com".into()],
+            brand: "Fixture".into(),
+            clients: vec![
+                client("fixture.user", "{user_home}/skills", TargetScope::Global),
+                client(
+                    "fixture.project",
+                    "{project_root}/skills",
+                    TargetScope::Project,
+                ),
+            ],
+        }],
+    }
 }
 
 #[test]
