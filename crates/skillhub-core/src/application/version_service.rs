@@ -8,9 +8,24 @@ use crate::{AppResult, ProjectId, SkillId, VersionId};
 #[async_trait]
 pub trait VersionCapture: VersionRepository {
     async fn capture(&self, skill_id: SkillId, source: &Path) -> AppResult<VersionRecord>;
+    async fn capture_with_status(
+        &self,
+        skill_id: SkillId,
+        source: &Path,
+    ) -> AppResult<CapturedVersion> {
+        Ok(CapturedVersion {
+            record: self.capture(skill_id, source).await?,
+            created: true,
+        })
+    }
     async fn discard(&self, _record: &VersionRecord) -> AppResult<()> {
         Ok(())
     }
+}
+
+pub struct CapturedVersion {
+    pub record: VersionRecord,
+    pub created: bool,
 }
 
 #[async_trait]
@@ -81,6 +96,16 @@ where
         V: VersionCapture,
     {
         self.repository.capture(skill_id, source).await
+    }
+    pub async fn capture_with_status(
+        &self,
+        skill_id: SkillId,
+        source: &Path,
+    ) -> AppResult<CapturedVersion>
+    where
+        V: VersionCapture,
+    {
+        self.repository.capture_with_status(skill_id, source).await
     }
     pub async fn discard(&self, record: &VersionRecord) -> AppResult<()>
     where

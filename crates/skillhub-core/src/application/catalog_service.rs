@@ -7,9 +7,15 @@ use crate::{AppError, AppResult, ErrorCode, RecoveryAction, Severity, SkillId, V
 
 use super::VersionService;
 
+#[async_trait::async_trait]
+pub trait PortableMetadataRepository: Send + Sync {
+    async fn save_skill(&self, skill: &Skill, current: Option<&VersionId>) -> AppResult<()>;
+}
+
 pub struct CatalogService<C, V> {
     catalog: Arc<C>,
     versions: VersionService<V>,
+    portable: Option<Arc<dyn PortableMetadataRepository>>,
 }
 
 impl<C, V> CatalogService<C, V>
@@ -18,7 +24,43 @@ where
     V: crate::versioning::VersionRepository + Send + Sync + 'static,
 {
     pub fn new(catalog: Arc<C>, versions: VersionService<V>) -> Self {
-        Self { catalog, versions }
+        Self {
+            catalog,
+            versions,
+            portable: None,
+        }
+    }
+
+    pub fn with_portable_repository(
+        mut self,
+        portable: Arc<dyn PortableMetadataRepository>,
+    ) -> Self {
+        self.portable = Some(portable);
+        self
+    }
+
+    pub async fn create_skill_operation(
+        &self,
+        name: impl Into<String>,
+        source: &Path,
+    ) -> AppResult<(crate::OperationSummary, Skill)>
+    where
+        V: super::VersionCapture,
+    {
+        let result = self.create_skill(name, source).await?;
+        Ok((committed_summary("catalog.skill_created"), result))
+    }
+
+    pub async fn save_skill_operation(
+        &self,
+        id: SkillId,
+        source: &Path,
+    ) -> AppResult<(crate::OperationSummary, VersionId)>
+    where
+        V: super::VersionCapture,
+    {
+        let result = self.save_skill(id, source).await?;
+        Ok((committed_summary("catalog.version_saved"), result))
     }
 
     pub async fn get_skill(&self, id: SkillId) -> AppResult<Option<Skill>> {
@@ -37,6 +79,8 @@ where
         let mut skill = self.require(id).await?;
         skill.rename(name)?;
         self.catalog.insert(&skill).await?;
+        self.persist_portable(&skill, self.versions.current(id).await?.as_ref())
+            .await?;
         Ok(skill)
     }
 
@@ -44,6 +88,8 @@ where
         let mut skill = self.require(id).await?;
         skill.set_lifecycle(lifecycle);
         self.catalog.insert(&skill).await?;
+        self.persist_portable(&skill, self.versions.current(id).await?.as_ref())
+            .await?;
         Ok(skill)
     }
 
@@ -51,6 +97,8 @@ where
         let mut skill = self.require(id).await?;
         skill.set_trial_due(due);
         self.catalog.insert(&skill).await?;
+        self.persist_portable(&skill, self.versions.current(id).await?.as_ref())
+            .await?;
         Ok(skill)
     }
 
@@ -72,6 +120,8 @@ where
             license,
         )?;
         self.catalog.insert(&skill).await?;
+        self.persist_portable(&skill, self.versions.current(id).await?.as_ref())
+            .await?;
         Ok(skill)
     }
 
@@ -82,16 +132,28 @@ where
         validate_skill_directory(source)?;
         let skill = Skill::new(SkillId::new(), name);
         skill.validate()?;
-        let version = self.versions.capture(skill.id(), source).await?;
+        let captured = self
+            .versions
+            .capture_with_status(skill.id(), source)
+            .await?;
+        let version = &captured.record;
         if let Err(error) = self.catalog.insert(&skill).await {
-            return match self.versions.discard(&version).await {
+            return match if captured.created {
+                self.versions.discard(version).await
+            } else {
+                Ok(())
+            } {
                 Ok(()) => Err(error),
                 Err(cleanup) => Err(recovery_error(error, cleanup)),
             };
         }
         if let Err(error) = self.versions.set_current(skill.id(), &version.id).await {
             let remove = self.catalog.remove(skill.id()).await;
-            let discard = self.versions.discard(&version).await;
+            let discard = if captured.created {
+                self.versions.discard(version).await
+            } else {
+                Ok(())
+            };
             if let Err(cleanup) = remove {
                 return Err(recovery_error(error, cleanup));
             }
@@ -100,6 +162,7 @@ where
             }
             return Err(error);
         }
+        self.persist_portable(&skill, Some(&version.id)).await?;
         Ok(skill)
     }
 
@@ -109,14 +172,21 @@ where
     {
         validate_skill_directory(source)?;
         self.require(id).await?;
-        let version = self.versions.capture(id, source).await?;
+        let captured = self.versions.capture_with_status(id, source).await?;
+        let version = &captured.record;
         if let Err(error) = self.versions.set_current(id, &version.id).await {
-            return match self.versions.discard(&version).await {
+            return match if captured.created {
+                self.versions.discard(version).await
+            } else {
+                Ok(())
+            } {
                 Ok(()) => Err(error),
                 Err(cleanup) => Err(recovery_error(error, cleanup)),
             };
         }
-        Ok(version.id)
+        let skill = self.require(id).await?;
+        self.persist_portable(&skill, Some(&version.id)).await?;
+        Ok(version.id.clone())
     }
 
     async fn require(&self, id: SkillId) -> AppResult<Skill> {
@@ -125,6 +195,13 @@ where
                 .with_param("skill_id", id.to_string())
                 .with_action(RecoveryAction::ChooseAnotherName)
         })
+    }
+
+    async fn persist_portable(&self, skill: &Skill, current: Option<&VersionId>) -> AppResult<()> {
+        if let Some(portable) = &self.portable {
+            portable.save_skill(skill, current).await?;
+        }
+        Ok(())
     }
 }
 
@@ -154,4 +231,13 @@ fn recovery_error(original: AppError, cleanup: AppError) -> AppError {
         .with_param("cleanup_error", cleanup.code.as_str())
         .with_action(RecoveryAction::RollbackOperation)
         .with_action(RecoveryAction::CompleteOperation)
+}
+
+fn committed_summary(message_code: &str) -> crate::OperationSummary {
+    crate::OperationSummary {
+        operation_id: crate::OperationId::new(),
+        phase: crate::OperationPhase::Committed,
+        message_code: message_code.to_owned(),
+        error_code: None,
+    }
 }

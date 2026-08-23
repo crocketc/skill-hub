@@ -6,7 +6,7 @@ use std::fs;
 use std::path::{Component, Path, PathBuf};
 
 use serde_json::to_vec_pretty;
-use skillhub_core::application::VersionCapture;
+use skillhub_core::application::{CapturedVersion, VersionCapture};
 use skillhub_core::{
     AppError, AppResult, ErrorCode, FileEntry, LibraryPaths, RecoveryAction, Severity, SkillId,
     VersionDiff, VersionId, VersionManifest, VersionRecord,
@@ -37,6 +37,23 @@ impl skillhub_core::VersionRepository for VersionStore {
 impl VersionCapture for VersionStore {
     async fn capture(&self, skill_id: SkillId, source: &Path) -> AppResult<VersionRecord> {
         VersionStore::capture(self, skill_id, source)
+    }
+
+    async fn capture_with_status(
+        &self,
+        skill_id: SkillId,
+        source: &Path,
+    ) -> AppResult<CapturedVersion> {
+        let before = self
+            .list(skill_id)?
+            .into_iter()
+            .map(|v| v.id.as_str().to_owned())
+            .collect::<BTreeSet<_>>();
+        let record = VersionStore::capture(self, skill_id, source)?;
+        Ok(CapturedVersion {
+            created: !before.contains(record.id.as_str()),
+            record,
+        })
     }
 
     async fn discard(&self, record: &VersionRecord) -> AppResult<()> {
