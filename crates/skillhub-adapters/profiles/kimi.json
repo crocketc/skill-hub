@@ -1,0 +1,76 @@
+{
+  "profile_version": 1,
+  "research_date": "2026-08-21",
+  "official_references": [
+    "https://www.kimi.com/code/docs/kimi-code-cli/customization/skills.html",
+    "https://www.kimi.com/en/help/features/use-skills-in-code"
+  ],
+  "brand": "Kimi",
+  "clients": [
+    {
+      "id": "kimi.code",
+      "kind": "cli",
+      "supported_os": [
+        "windows",
+        "macos"
+      ],
+      "path_candidates": [
+        {
+          "path": "{user_home}/.kimi-code/skills",
+          "scope": "global",
+          "precedence": "preferred",
+          "marker": "SKILL.md"
+        },
+        {
+          "path": "{user_home}/.agents/skills",
+          "scope": "global",
+          "precedence": "lower_priority_copy",
+          "marker": "SKILL.md"
+        },
+        {
+          "path": "{project_root}/.kimi-code/skills",
+          "scope": "project",
+          "precedence": "preferred",
+          "marker": "SKILL.md"
+        },
+        {
+          "path": "{project_root}/.agents/skills",
+          "scope": "project",
+          "precedence": "lower_priority_copy",
+          "marker": "SKILL.md"
+        }
+      ],
+      "skill_marker": "SKILL.md",
+      "deployment": {
+        "copy": true,
+        "symlink": false,
+        "junction": false,
+        "limitations": [
+          "runtime_loading_unknown",
+          "symlink_support_unconfirmed",
+          "junction_support_unconfirmed"
+        ]
+      },
+      "call_policy": "unknown"
+    },
+    {
+      "id": "kimi.work",
+      "kind": "desktop",
+      "supported_os": [
+        "windows",
+        "macos"
+      ],
+      "path_candidates": [],
+      "skill_marker": "SKILL.md",
+      "deployment": {
+        "copy": false,
+        "symlink": false,
+        "junction": false,
+        "limitations": [
+          "no_stable_public_local_skill_directory"
+        ]
+      },
+      "call_policy": "unknown"
+    }
+  ]
+}

@@ -1,0 +1,38 @@
+{
+  "profile_version": 1,
+  "research_date": "2026-08-21",
+  "official_references": [
+    "https://zcode.z.ai/en/docs/skill",
+    "https://zcode.z.ai/cn/docs/plugin"
+  ],
+  "brand": "ZCode",
+  "clients": [
+    {
+      "id": "zcode.desktop",
+      "kind": "desktop",
+      "supported_os": [
+        "windows",
+        "macos"
+      ],
+      "path_candidates": [
+        {
+          "path": "{user_home}/.zcode/skills",
+          "scope": "global",
+          "precedence": "preferred",
+          "marker": "SKILL.md"
+        }
+      ],
+      "skill_marker": "SKILL.md",
+      "deployment": {
+        "copy": true,
+        "symlink": true,
+        "junction": false,
+        "limitations": [
+          "runtime_loading_unknown",
+          "junction_support_unconfirmed"
+        ]
+      },
+      "call_policy": "unknown"
+    }
+  ]
+}
