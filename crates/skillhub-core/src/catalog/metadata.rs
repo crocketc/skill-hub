@@ -28,32 +28,51 @@ pub struct DeclaredRequirement {
     pub name: String,
     pub version: Option<String>,
     pub explicit: bool,
+    pub source: String,
 }
 
 pub fn parse_declared_requirements(text: &str) -> Vec<DeclaredRequirement> {
     let mut result = Vec::new();
     for line in text.lines() {
         let lower = line.to_ascii_lowercase();
-        let kind = if lower.contains("python") {
-            Some(RequirementKind::Python)
-        } else if lower.contains("ffmpeg") {
-            Some(RequirementKind::Ffmpeg)
-        } else if lower.contains("mcp") {
-            Some(RequirementKind::Mcp)
-        } else if lower.contains("plugin") {
-            Some(RequirementKind::Plugin)
-        } else {
-            None
-        };
-        if let Some(kind) = kind {
-            result.push(DeclaredRequirement::new(kind, line.trim()));
+        let explicit_line = lower.contains("requires")
+            || lower.contains("requirement")
+            || lower.starts_with("python=")
+            || lower.starts_with("ffmpeg=");
+        let kinds = [
+            ("python", RequirementKind::Python),
+            ("ffmpeg", RequirementKind::Ffmpeg),
+            ("mcp", RequirementKind::Mcp),
+            ("plugin", RequirementKind::Plugin),
+        ];
+        for (needle, kind) in kinds {
+            if lower.contains(needle) {
+                let mut req = DeclaredRequirement::new(kind, line.trim());
+                req.explicit = explicit_line;
+                req.source = line.trim().to_owned();
+                req.version = version_from(line);
+                result.push(req);
+            }
         }
         for token in line.split(|c: char| !c.is_ascii_alphanumeric() && c != '_') {
-            if token.ends_with("_API_KEY") || token.starts_with("OPENAI_") {
-                result.push(DeclaredRequirement::new(
-                    RequirementKind::EnvironmentVariable,
-                    token,
-                ));
+            if token.len() > 2
+                && token
+                    .chars()
+                    .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_')
+                && token.contains('_')
+            {
+                let mut req = DeclaredRequirement::new(RequirementKind::EnvironmentVariable, token);
+                req.explicit = explicit_line;
+                req.source = line.trim().to_owned();
+                result.push(req);
+            }
+        }
+        for tool in ["node", "docker", "pandoc", "imagemagick", "git"] {
+            if lower.contains(tool) {
+                let mut req = DeclaredRequirement::new(RequirementKind::OtherTool, tool);
+                req.explicit = explicit_line;
+                req.source = line.trim().to_owned();
+                result.push(req);
             }
         }
     }
@@ -67,6 +86,25 @@ impl DeclaredRequirement {
             name: name.into(),
             version: None,
             explicit: true,
+            source: String::new(),
         }
     }
+}
+
+fn version_from(line: &str) -> Option<String> {
+    let bytes = line.as_bytes();
+    for (i, b) in bytes.iter().enumerate() {
+        if *b == b'>' || *b == b'=' || *b == b'<' {
+            let tail = &line[i..];
+            let value: String = tail
+                .chars()
+                .skip_while(|c| !c.is_ascii_digit())
+                .take_while(|c| c.is_ascii_digit() || *c == '.')
+                .collect();
+            if !value.is_empty() {
+                return Some(value);
+            }
+        }
+    }
+    None
 }

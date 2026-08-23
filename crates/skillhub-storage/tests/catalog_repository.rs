@@ -15,6 +15,15 @@ fn catalog_round_trip_preserves_original_and_user_metadata() {
         .with_author("Ada")
         .with_license("MIT");
     block_on(repo.insert(&skill)).unwrap();
+    let before: (i64, i64) = db
+        .connection_for_test()
+        .query_row(
+            "SELECT created_at,updated_at FROM skills WHERE id=?1",
+            [skill.id().to_string()],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .unwrap();
+    assert!(before.0 > 0 && before.1 > 0);
     assert_eq!(block_on(repo.get(skill.id())).unwrap().unwrap(), skill);
 }
 
@@ -24,8 +33,27 @@ fn repeated_insert_preserves_existing_version_relationships_and_timestamps() {
     let repo = CatalogRepositorySqlite::new(&db).unwrap();
     let skill = Skill::new(SkillId::new(), "pdf");
     block_on(repo.insert(&skill)).unwrap();
+    let before: (i64, i64) = db
+        .connection_for_test()
+        .query_row(
+            "SELECT created_at,updated_at FROM skills WHERE id=?1",
+            [skill.id().to_string()],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .unwrap();
+    assert!(before.0 > 0 && before.1 > 0);
     db.connection_for_test().execute("INSERT INTO versions(id,skill_id,content_hash,manifest_json,created_at) VALUES ('v',?1,'h','{}',1)", [skill.id().to_string()]).unwrap();
     block_on(repo.insert(&skill.clone().with_note("updated"))).unwrap();
+    let after: (i64, i64) = db
+        .connection_for_test()
+        .query_row(
+            "SELECT created_at,updated_at FROM skills WHERE id=?1",
+            [skill.id().to_string()],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(after.0, before.0);
+    assert!(after.1 >= before.1);
     let count: i64 = db
         .connection_for_test()
         .query_row(
