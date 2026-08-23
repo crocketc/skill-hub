@@ -6,6 +6,7 @@ use std::fs;
 use std::path::{Component, Path, PathBuf};
 
 use serde_json::to_vec_pretty;
+use skillhub_core::application::VersionCapture;
 use skillhub_core::{
     AppError, AppResult, ErrorCode, FileEntry, LibraryPaths, RecoveryAction, Severity, SkillId,
     VersionDiff, VersionId, VersionManifest, VersionRecord,
@@ -29,6 +30,13 @@ impl skillhub_core::VersionRepository for VersionStore {
 
     async fn list(&self, skill_id: SkillId) -> AppResult<Vec<VersionRecord>> {
         VersionStore::list(self, skill_id)
+    }
+}
+
+#[async_trait::async_trait]
+impl VersionCapture for VersionStore {
+    async fn capture(&self, skill_id: SkillId, source: &Path) -> AppResult<VersionRecord> {
+        VersionStore::capture(self, skill_id, source)
     }
 }
 

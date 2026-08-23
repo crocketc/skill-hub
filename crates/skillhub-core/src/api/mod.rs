@@ -2,9 +2,14 @@ mod command;
 mod event;
 mod query;
 
-pub use command::{AppCommand, AppCommandResult};
+pub use command::{
+    AppCommand, AppCommandResult, CreateSkill, PinProjectSkillVersion, RenameSkill,
+    SaveSkillContent, SetCurrentVersion, SetLifecycle,
+};
 pub use event::{AppEvent, FactsChanged};
-pub use query::{AppQuery, AppQueryResult, BootstrapSnapshot};
+pub use query::{
+    AppQuery, AppQueryResult, BootstrapSnapshot, DiffVersions, GetSkill, ListVersions,
+};
 
 use crate::AppResult;
 

@@ -3,7 +3,7 @@ use crate::{AppError, ErrorCode, Severity, SkillId};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, specta::Type)]
 pub enum SkillLifecycle {
     Normal,
     Deprecated,
@@ -168,6 +168,29 @@ impl Skill {
             ))
         } else {
             Ok(())
+        }
+    }
+
+    pub fn rename(&mut self, name: impl Into<String>) -> Result<(), AppError> {
+        let name = name.into();
+        if name.trim().is_empty() {
+            return Err(AppError::new(ErrorCode::InvalidInput, Severity::Error));
+        }
+        self.display_name = name.clone();
+        self.runtime_name = name;
+        Ok(())
+    }
+
+    pub fn set_lifecycle(&mut self, lifecycle: SkillLifecycle) {
+        self.lifecycle = lifecycle;
+    }
+
+    pub fn set_trial_due(&mut self, due: Option<(i32, u8, u8)>) {
+        self.trial_due = due;
+        if due.is_some() {
+            self.tags.insert("temporary_trial".to_owned());
+        } else {
+            self.tags.remove("temporary_trial");
         }
     }
     #[allow(clippy::too_many_arguments)]
