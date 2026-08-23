@@ -2,7 +2,7 @@ mod database;
 mod library;
 mod version_store;
 
-pub use database::{CatalogRepositorySqlite, Database, MigrationReport};
+pub use database::{CatalogRepositorySqlite, Database, MigrationReport, SearchRepository};
 pub use library::{CentralLibrary, ManifestFaultHandler, PortableManifestStore};
 pub use skillhub_core::{LibraryManifest, LibraryPaths, PortableSkillRecord};
 pub use version_store::VersionStore;
