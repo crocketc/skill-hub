@@ -171,7 +171,29 @@ where
             }
             return Err(error);
         }
-        self.persist_portable(&skill, Some(&version.id)).await?;
+        if let Err(error) = self.persist_portable(&skill, Some(&version.id)).await {
+            let remove = self.catalog.remove(skill.id()).await;
+            let portable_remove = if let Some(portable) = &self.portable {
+                portable.remove_skill(skill.id()).await
+            } else {
+                Ok(())
+            };
+            let discard = if captured.created {
+                self.versions.discard(version).await
+            } else {
+                Ok(())
+            };
+            if let Err(cleanup) = remove {
+                return Err(recovery_error(error, cleanup));
+            }
+            if let Err(cleanup) = portable_remove {
+                return Err(recovery_error(error, cleanup));
+            }
+            if let Err(cleanup) = discard {
+                return Err(recovery_error(error, cleanup));
+            }
+            return Err(error);
+        }
         Ok(skill)
     }
 
@@ -180,7 +202,13 @@ where
         V: super::VersionCapture,
     {
         validate_skill_directory(source)?;
-        self.require(id).await?;
+        let old_skill = self.require(id).await?;
+        let old_current = self.versions.current(id).await?;
+        let old_portable = if let Some(portable) = &self.portable {
+            portable.load_skill(id).await?
+        } else {
+            None
+        };
         let captured = self.versions.capture_with_status(id, source).await?;
         let version = &captured.record;
         if let Err(error) = self.versions.set_current(id, &version.id).await {
@@ -194,7 +222,41 @@ where
             };
         }
         let skill = self.require(id).await?;
-        self.persist_portable(&skill, Some(&version.id)).await?;
+        if let Err(error) = self.persist_portable(&skill, Some(&version.id)).await {
+            let restore_catalog = self.catalog.insert(&old_skill).await;
+            let restore_current = match old_current.as_ref() {
+                Some(previous) => self.versions.set_current(id, previous).await,
+                None => Ok(()),
+            };
+            let restore_portable = if let Some(portable) = &self.portable {
+                match old_portable.as_ref() {
+                    Some((previous, current)) => {
+                        portable.restore_skill(previous, current.as_ref()).await
+                    }
+                    None => portable.remove_skill(id).await,
+                }
+            } else {
+                Ok(())
+            };
+            let discard = if captured.created {
+                self.versions.discard(version).await
+            } else {
+                Ok(())
+            };
+            if let Err(cleanup) = restore_catalog {
+                return Err(recovery_error(error, cleanup));
+            }
+            if let Err(cleanup) = restore_current {
+                return Err(recovery_error(error, cleanup));
+            }
+            if let Err(cleanup) = restore_portable {
+                return Err(recovery_error(error, cleanup));
+            }
+            if let Err(cleanup) = discard {
+                return Err(recovery_error(error, cleanup));
+            }
+            return Err(error);
+        }
         Ok(version.id.clone())
     }
 
