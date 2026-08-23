@@ -1,0 +1,157 @@
+{
+  "profile_version": 1,
+  "research_date": "2026-08-21",
+  "official_references": [
+    "https://docs.x.ai/build/features/skills-plugins-marketplaces",
+    "https://docs.x.ai/build/cli/reference"
+  ],
+  "brand": "Grok",
+  "clients": [
+    {
+      "id": "grok.build-cli",
+      "kind": "cli",
+      "supported_os": [
+        "windows",
+        "macos"
+      ],
+      "path_candidates": [
+        {
+          "path": "{user_home}/.grok/skills",
+          "scope": "global",
+          "precedence": "preferred",
+          "marker": "SKILL.md"
+        },
+        {
+          "path": "{user_home}/.agents/skills",
+          "scope": "global",
+          "precedence": "lower_priority_copy",
+          "marker": "SKILL.md"
+        },
+        {
+          "path": "{project_root}/.grok/skills",
+          "scope": "project",
+          "precedence": "preferred",
+          "marker": "SKILL.md"
+        },
+        {
+          "path": "{project_root}/.agents/skills",
+          "scope": "project",
+          "precedence": "lower_priority_copy",
+          "marker": "SKILL.md"
+        }
+      ],
+      "skill_marker": "SKILL.md",
+      "deployment": {
+        "copy": true,
+        "symlink": true,
+        "junction": true,
+        "limitations": [
+          "runtime loading is not inferred"
+        ]
+      },
+      "call_policy": "unknown"
+    },
+    {
+      "id": "grok.build-tui",
+      "kind": "tui",
+      "supported_os": [
+        "windows",
+        "macos"
+      ],
+      "path_candidates": [
+        {
+          "path": "{user_home}/.grok/skills",
+          "scope": "global",
+          "precedence": "preferred",
+          "marker": "SKILL.md"
+        },
+        {
+          "path": "{project_root}/.grok/skills",
+          "scope": "project",
+          "precedence": "preferred",
+          "marker": "SKILL.md"
+        }
+      ],
+      "skill_marker": "SKILL.md",
+      "deployment": {
+        "copy": true,
+        "symlink": true,
+        "junction": true,
+        "limitations": [
+          "runtime loading is not inferred"
+        ]
+      },
+      "call_policy": "unknown"
+    },
+    {
+      "id": "grok.build-acp",
+      "kind": "acp",
+      "supported_os": [
+        "windows",
+        "macos"
+      ],
+      "path_candidates": [
+        {
+          "path": "{user_home}/.grok/skills",
+          "scope": "global",
+          "precedence": "preferred",
+          "marker": "SKILL.md"
+        },
+        {
+          "path": "{project_root}/.grok/skills",
+          "scope": "project",
+          "precedence": "preferred",
+          "marker": "SKILL.md"
+        }
+      ],
+      "skill_marker": "SKILL.md",
+      "deployment": {
+        "copy": true,
+        "symlink": true,
+        "junction": true,
+        "limitations": [
+          "runtime loading is not inferred"
+        ]
+      },
+      "call_policy": "unknown"
+    },
+    {
+      "id": "grok.consumer",
+      "kind": "web",
+      "supported_os": [
+        "windows",
+        "macos"
+      ],
+      "path_candidates": [],
+      "skill_marker": "SKILL.md",
+      "deployment": {
+        "copy": false,
+        "symlink": false,
+        "junction": false,
+        "limitations": [
+          "no stable public local Skill directory"
+        ]
+      },
+      "call_policy": "unknown"
+    },
+    {
+      "id": "grok.bot",
+      "kind": "bot",
+      "supported_os": [
+        "windows",
+        "macos"
+      ],
+      "path_candidates": [],
+      "skill_marker": "SKILL.md",
+      "deployment": {
+        "copy": false,
+        "symlink": false,
+        "junction": false,
+        "limitations": [
+          "no stable public local Skill directory"
+        ]
+      },
+      "call_policy": "unknown"
+    }
+  ]
+}

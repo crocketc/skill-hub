@@ -1,0 +1,62 @@
+{
+  "profile_version": 1,
+  "research_date": "2026-08-21",
+  "official_references": [
+    "https://code.claude.com/docs/en/skills",
+    "https://support.claude.com/en/articles/12512198-how-to-create-custom-skills"
+  ],
+  "brand": "Anthropic",
+  "clients": [
+    {
+      "id": "anthropic.claude-code",
+      "kind": "cli",
+      "supported_os": [
+        "windows",
+        "macos"
+      ],
+      "path_candidates": [
+        {
+          "path": "{user_home}/.claude/skills",
+          "scope": "global",
+          "precedence": "preferred",
+          "marker": "SKILL.md"
+        },
+        {
+          "path": "{project_root}/.claude/skills",
+          "scope": "project",
+          "precedence": "preferred",
+          "marker": "SKILL.md"
+        }
+      ],
+      "skill_marker": "SKILL.md",
+      "deployment": {
+        "copy": true,
+        "symlink": true,
+        "junction": true,
+        "limitations": [
+          "runtime loading is not inferred"
+        ]
+      },
+      "call_policy": "unknown"
+    },
+    {
+      "id": "anthropic.claude-desktop",
+      "kind": "desktop",
+      "supported_os": [
+        "windows",
+        "macos"
+      ],
+      "path_candidates": [],
+      "skill_marker": "SKILL.md",
+      "deployment": {
+        "copy": false,
+        "symlink": false,
+        "junction": false,
+        "limitations": [
+          "no stable public local Skill directory"
+        ]
+      },
+      "call_policy": "unknown"
+    }
+  ]
+}

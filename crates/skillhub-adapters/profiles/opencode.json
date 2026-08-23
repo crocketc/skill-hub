@@ -1,0 +1,55 @@
+{
+  "profile_version": 1,
+  "research_date": "2026-08-21",
+  "official_references": [
+    "https://opencode.ai/v2/docs/skills",
+    "https://opencode.ai/v2/docs/api/skill/v2-skill-list"
+  ],
+  "brand": "OpenCode",
+  "clients": [
+    {
+      "id": "opencode.cli",
+      "kind": "cli",
+      "supported_os": [
+        "windows",
+        "macos"
+      ],
+      "path_candidates": [
+        {
+          "path": "{user_home}/.config/opencode/skills",
+          "scope": "global",
+          "precedence": "preferred",
+          "marker": "SKILL.md"
+        },
+        {
+          "path": "{project_root}/.opencode/skills",
+          "scope": "project",
+          "precedence": "preferred",
+          "marker": "SKILL.md"
+        },
+        {
+          "path": "{project_root}/.claude/skills",
+          "scope": "project",
+          "precedence": "may_coexist",
+          "marker": "SKILL.md"
+        },
+        {
+          "path": "{project_root}/.agents/skills",
+          "scope": "project",
+          "precedence": "may_coexist",
+          "marker": "SKILL.md"
+        }
+      ],
+      "skill_marker": "SKILL.md",
+      "deployment": {
+        "copy": true,
+        "symlink": true,
+        "junction": true,
+        "limitations": [
+          "runtime loading is not inferred"
+        ]
+      },
+      "call_policy": "unknown"
+    }
+  ]
+}

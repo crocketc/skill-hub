@@ -1,0 +1,21 @@
+{
+  "profiles": {
+    "openai": ["{user_home}/.agents/skills", "{project_root}/.agents/skills"],
+    "anthropic": ["{user_home}/.claude/skills", "{project_root}/.claude/skills"],
+    "google": ["{user_home}/.gemini/skills", "{user_home}/.gemini/config/skills", "{project_root}/.gemini/skills", "{project_root}/.agents/skills"],
+    "cursor": ["{user_home}/.cursor/skills", "{project_root}/.cursor/skills"],
+    "github-copilot": ["{user_home}/.copilot/skills", "{project_root}/.github/skills"],
+    "windsurf": ["{user_home}/.codeium/windsurf/skills", "{project_root}/.windsurf/skills"],
+    "cline": ["{user_home}/.cline/skills", "{project_root}/.cline/skills"],
+    "opencode": ["{user_home}/.config/opencode/skills", "{project_root}/.opencode/skills"],
+    "trae": ["{user_home}/.trae-cn/skills", "{project_root}/.trae/skills"],
+    "qoder": ["{user_home}/.lingma/skills", "{project_root}/.lingma/skills", "{project_root}/.qoder/skills"],
+    "codebuddy": ["{user_home}/.codebuddy/skills", "{project_root}/.codebuddy/skills"],
+    "comate": ["{user_home}/.comate/skills", "{project_root}/.comate/skills"],
+    "kimi": ["{user_home}/.kimi-code/skills", "{project_root}/.kimi-code/skills"],
+    "zcode": ["{user_home}/.zcode/skills"],
+    "openclaw": ["{user_home}/.agents/skills", "{user_home}/.openclaw/skills", "{project_root}/skills", "{project_root}/.agents/skills"],
+    "hermes": ["{user_home}/.hermes/skills", "{project_root}/.hermes/skills"],
+    "grok": ["{user_home}/.grok/skills", "{project_root}/.grok/skills"]
+  }
+}

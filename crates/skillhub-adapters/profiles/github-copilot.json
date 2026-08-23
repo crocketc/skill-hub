@@ -1,0 +1,87 @@
+{
+  "profile_version": 1,
+  "research_date": "2026-08-21",
+  "official_references": [
+    "https://docs.github.com/en/copilot/concepts/agents/about-agent-skills",
+    "https://docs.github.com/en/copilot/how-tos/copilot-cli/customize-copilot/add-skills"
+  ],
+  "brand": "GitHub Copilot",
+  "clients": [
+    {
+      "id": "github-copilot.cli",
+      "kind": "cli",
+      "supported_os": [
+        "windows",
+        "macos"
+      ],
+      "path_candidates": [
+        {
+          "path": "{user_home}/.copilot/skills",
+          "scope": "global",
+          "precedence": "preferred",
+          "marker": "SKILL.md"
+        },
+        {
+          "path": "{user_home}/.agents/skills",
+          "scope": "global",
+          "precedence": "lower_priority_copy",
+          "marker": "SKILL.md"
+        },
+        {
+          "path": "{project_root}/.github/skills",
+          "scope": "project",
+          "precedence": "preferred",
+          "marker": "SKILL.md"
+        },
+        {
+          "path": "{project_root}/.agents/skills",
+          "scope": "project",
+          "precedence": "lower_priority_copy",
+          "marker": "SKILL.md"
+        }
+      ],
+      "skill_marker": "SKILL.md",
+      "deployment": {
+        "copy": true,
+        "symlink": true,
+        "junction": true,
+        "limitations": [
+          "runtime loading is not inferred"
+        ]
+      },
+      "call_policy": "unknown"
+    },
+    {
+      "id": "github-copilot.ide",
+      "kind": "ide_extension",
+      "supported_os": [
+        "windows",
+        "macos"
+      ],
+      "path_candidates": [
+        {
+          "path": "{user_home}/.copilot/skills",
+          "scope": "global",
+          "precedence": "preferred",
+          "marker": "SKILL.md"
+        },
+        {
+          "path": "{project_root}/.github/skills",
+          "scope": "project",
+          "precedence": "preferred",
+          "marker": "SKILL.md"
+        }
+      ],
+      "skill_marker": "SKILL.md",
+      "deployment": {
+        "copy": true,
+        "symlink": true,
+        "junction": true,
+        "limitations": [
+          "runtime loading is not inferred"
+        ]
+      },
+      "call_policy": "unknown"
+    }
+  ]
+}

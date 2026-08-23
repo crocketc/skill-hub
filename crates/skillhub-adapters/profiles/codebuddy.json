@@ -1,0 +1,62 @@
+{
+  "profile_version": 1,
+  "research_date": "2026-08-21",
+  "official_references": [
+    "https://www.codebuddy.ai/docs/cli/skills",
+    "https://www.codebuddy.cn/docs/cli/plugins-reference"
+  ],
+  "brand": "CodeBuddy",
+  "clients": [
+    {
+      "id": "codebuddy.code",
+      "kind": "cli",
+      "supported_os": [
+        "windows",
+        "macos"
+      ],
+      "path_candidates": [
+        {
+          "path": "{user_home}/.codebuddy/skills",
+          "scope": "global",
+          "precedence": "preferred",
+          "marker": "SKILL.md"
+        },
+        {
+          "path": "{project_root}/.codebuddy/skills",
+          "scope": "project",
+          "precedence": "preferred",
+          "marker": "SKILL.md"
+        }
+      ],
+      "skill_marker": "SKILL.md",
+      "deployment": {
+        "copy": true,
+        "symlink": true,
+        "junction": true,
+        "limitations": [
+          "runtime loading is not inferred"
+        ]
+      },
+      "call_policy": "unknown"
+    },
+    {
+      "id": "codebuddy.workbuddy",
+      "kind": "desktop",
+      "supported_os": [
+        "windows",
+        "macos"
+      ],
+      "path_candidates": [],
+      "skill_marker": "SKILL.md",
+      "deployment": {
+        "copy": false,
+        "symlink": false,
+        "junction": false,
+        "limitations": [
+          "no stable public local Skill directory"
+        ]
+      },
+      "call_policy": "unknown"
+    }
+  ]
+}

@@ -227,7 +227,6 @@ fn validate_profile(profile: &AgentProfile) -> Result<(), ProfileLoadError> {
     }
     for client in &profile.clients {
         if client.id.trim().is_empty()
-            || client.path_candidates.is_empty()
             || client.skill_marker.trim().is_empty()
             || client.supported_os.is_empty()
         {
