@@ -1,4 +1,5 @@
 pub mod api;
+pub mod catalog;
 mod error;
 mod ids;
 mod operation;
@@ -12,6 +13,7 @@ pub use error::{AppError, AppResult, ErrorCode, RecoveryAction, Severity};
 pub use operation::{OperationPhase, OperationProgress, OperationSummary};
 pub use path_policy::{AllowedRoot, AllowedRootId, PathPolicy, SafePath};
 
+pub use catalog::{LibraryManifest, LibraryPaths, PortableSkillRecord};
 pub use ids::{
     AgentProfileId, ClientInstanceId, DeploymentId, LogicalTargetId, OperationId, PhysicalTargetId,
     ProjectId, SkillId, VersionId,

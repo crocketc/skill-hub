@@ -2946,7 +2946,9 @@ dependencies = [
  "serde",
  "serde_json",
  "skillhub-core",
+ "skillhub-testkit",
  "tempfile",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
