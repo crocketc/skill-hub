@@ -12,8 +12,9 @@ pub mod search;
 pub mod versioning;
 
 pub use agent::{
-    AgentClient, AgentProfile, CallPolicy, ClientKind, DeploymentCapability, DirectoryPrecedence,
-    OperatingSystem, PathCandidate, ProfileCatalog, TargetScope,
+    AgentClient, AgentProfile, AgentRepository, CallPolicy, ClientInstance, ClientKind,
+    DeploymentCapability, DirectoryPrecedence, DiscoverySnapshot, LogicalTarget, OperatingSystem,
+    PathCandidate, PhysicalTarget, ProfileCatalog, TargetScope,
 };
 pub use api::{
     AppCommand, AppCommandResult, AppEvent, AppQuery, AppQueryResult, ApplicationFacade,
