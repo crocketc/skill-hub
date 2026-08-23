@@ -256,7 +256,9 @@ fn is_unbounded_root(path: &str) -> bool {
     let has_traversal = components
         .iter()
         .any(|component| *component == "." || *component == "..");
-    let home_root = matches!(components.as_slice(), ["Users", _] | ["home", _]);
+    let home_root = components.len() == 2
+        && (components[0].eq_ignore_ascii_case("users")
+            || components[0].eq_ignore_ascii_case("home"));
     let windows_home_root = components.len() == 3
         && components[0].len() == 2
         && components[0].as_bytes()[1] == b':'
@@ -306,18 +308,27 @@ fn valid_date(value: &str) -> bool {
 }
 
 fn valid_url(value: &str) -> bool {
-    let lower = value.to_ascii_lowercase();
-    (lower.starts_with("https://") || lower.starts_with("http://"))
-        && value.split_once("://").is_some_and(|(_, host)| {
-            if host.starts_with('/') {
-                return false;
-            }
-            let host = host.trim_matches('/');
-            let authority = host.split('/').next().unwrap_or_default();
-            !authority.is_empty()
-                && !authority.chars().any(char::is_whitespace)
-                && !authority.contains('\\')
-        })
+    let Some((_, authority_and_path)) = value.split_once("://") else {
+        return false;
+    };
+    if authority_and_path.starts_with('/') {
+        return false;
+    }
+    let bytes = value.as_bytes();
+    for (index, byte) in bytes.iter().enumerate() {
+        if *byte == b'%'
+            && (index + 2 >= bytes.len()
+                || !bytes[index + 1].is_ascii_hexdigit()
+                || !bytes[index + 2].is_ascii_hexdigit())
+        {
+            return false;
+        }
+    }
+    let Ok(parsed) = url::Url::parse(value) else {
+        return false;
+    };
+    matches!(parsed.scheme(), "http" | "https")
+        && parsed.host_str().is_some_and(|host| !host.is_empty())
 }
 
 impl From<ProfileLoadError> for AppError {

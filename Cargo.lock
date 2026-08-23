@@ -2920,6 +2920,7 @@ dependencies = [
  "serde_json",
  "skillhub-core",
  "tempfile",
+ "url",
 ]
 
 [[package]]

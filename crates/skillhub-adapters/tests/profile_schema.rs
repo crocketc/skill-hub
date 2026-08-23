@@ -81,6 +81,10 @@ fn rejects_unbounded_home_and_network_roots_but_accepts_bounded_candidates() {
         "//server/share/..",
         "%USERPROFILE%/.codex/../..",
         "{user_home}\\.agents\\..\\..",
+        "/USERS/alice",
+        "/users/alice",
+        "/HOME/alice",
+        "C:/USERS/alice",
     ] {
         let json = profile_with_path(path);
         assert!(
@@ -125,6 +129,8 @@ fn validates_date_references_and_non_empty_arrays() {
         "https:// /",
         "https://example.com bad",
         "https:///missing-host",
+        "https://example.com/%",
+        "https://[not-an-ipv6]",
     ] {
         let json = format!(
             r#"{{"profile_version":1,"research_date":"2026-01-01","official_references":["{reference}"],"brand":"Example","clients":[{{"id":"example.cli","kind":"cli","supported_os":["windows"],"path_candidates":[{{"path":"%USERPROFILE%/.example/skills","scope":"global","precedence":"preferred","marker":"SKILL.md"}}],"skill_marker":"SKILL.md","deployment":{{"copy":true,"symlink":false,"junction":false}},"call_policy":"unknown"}}]}}"#
