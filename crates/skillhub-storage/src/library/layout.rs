@@ -2,8 +2,10 @@ use std::fs;
 use std::path::Path;
 use std::sync::Arc;
 
+use skillhub_core::catalog::Skill;
 use skillhub_core::{
-    AppError, AppResult, ErrorCode, LibraryManifest, LibraryPaths, RecoveryAction, Severity,
+    AppError, AppResult, ErrorCode, LibraryManifest, LibraryPaths, PortableSkillRecord,
+    RecoveryAction, Severity, SkillId, VersionId,
 };
 
 use super::portable::{ManifestFaultHandler, PortableManifestStore};
@@ -64,6 +66,44 @@ impl CentralLibrary {
 
     pub fn write_manifest_atomic(&self, manifest: &LibraryManifest) -> AppResult<()> {
         self.store.write_atomic(manifest)
+    }
+
+    pub fn load_portable_skill(
+        &self,
+        id: SkillId,
+    ) -> AppResult<Option<(PortableSkillRecord, Option<VersionId>)>> {
+        Ok(self
+            .load_manifest()?
+            .skills
+            .into_iter()
+            .find(|record| record.id == id)
+            .map(|record| (record.clone(), record.current_version.clone())))
+    }
+
+    pub fn save_portable_skill(&self, skill: &Skill, current: Option<&VersionId>) -> AppResult<()> {
+        let mut manifest = self.load_manifest()?;
+        let mut record = manifest
+            .skills
+            .iter()
+            .find(|record| record.id == skill.id())
+            .cloned()
+            .unwrap_or_else(|| PortableSkillRecord::new(skill.id(), skill.display_name()));
+        record.runtime_name = skill.runtime_name().to_owned();
+        record.description = skill.original_description().to_owned();
+        record.note = skill.note().map(str::to_owned);
+        record.tags = skill.tags().iter().cloned().collect();
+        record.author = skill.author().map(str::to_owned);
+        record.license = skill.license().map(str::to_owned);
+        record.current_version = current.cloned();
+        manifest.skills.retain(|existing| existing.id != skill.id());
+        manifest.skills.push(record);
+        self.write_manifest_atomic(&manifest)
+    }
+
+    pub fn remove_portable_skill(&self, id: SkillId) -> AppResult<()> {
+        let mut manifest = self.load_manifest()?;
+        manifest.skills.retain(|record| record.id != id);
+        self.write_manifest_atomic(&manifest)
     }
 }
 

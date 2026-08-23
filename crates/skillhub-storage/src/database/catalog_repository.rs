@@ -114,6 +114,14 @@ impl CatalogRepository for CatalogRepositorySqlite<'_> {
             due.and_then(parse_date),
         )?))
     }
+
+    async fn remove(&self, id: SkillId) -> AppResult<()> {
+        self.database
+            .connection
+            .execute("DELETE FROM skills WHERE id=?1", [id.to_string()])
+            .map_err(error)?;
+        Ok(())
+    }
 }
 
 fn now() -> i64 {

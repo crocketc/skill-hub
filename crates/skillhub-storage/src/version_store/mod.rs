@@ -6,6 +6,7 @@ use std::fs;
 use std::path::{Component, Path, PathBuf};
 
 use serde_json::to_vec_pretty;
+use skillhub_core::application::{CapturedVersion, VersionCapture};
 use skillhub_core::{
     AppError, AppResult, ErrorCode, FileEntry, LibraryPaths, RecoveryAction, Severity, SkillId,
     VersionDiff, VersionId, VersionManifest, VersionRecord,
@@ -22,6 +23,9 @@ impl skillhub_core::VersionRepository for VersionStore {
     async fn set_current(&self, skill_id: SkillId, version_id: &VersionId) -> AppResult<()> {
         VersionStore::set_current(self, skill_id, version_id)
     }
+    async fn clear_current(&self, skill_id: SkillId) -> AppResult<()> {
+        VersionStore::clear_current(self, skill_id)
+    }
 
     async fn diff(&self, left: &VersionId, right: &VersionId) -> AppResult<VersionDiff> {
         VersionStore::diff(self, left, right)
@@ -32,11 +36,68 @@ impl skillhub_core::VersionRepository for VersionStore {
     }
 }
 
+#[async_trait::async_trait]
+impl VersionCapture for VersionStore {
+    async fn capture(&self, skill_id: SkillId, source: &Path) -> AppResult<VersionRecord> {
+        VersionStore::capture(self, skill_id, source)
+    }
+
+    async fn capture_with_status(
+        &self,
+        skill_id: SkillId,
+        source: &Path,
+    ) -> AppResult<CapturedVersion> {
+        VersionStore::capture_with_status(self, skill_id, source)
+    }
+
+    async fn discard(&self, record: &VersionRecord) -> AppResult<()> {
+        let manifest_path = self.find_manifest(&record.id)?;
+        if manifest_path.exists() {
+            fs::remove_file(&manifest_path).map_err(io_error)?;
+        }
+        for entry in &record.manifest.entries {
+            let object = self.paths.objects_dir.join(
+                entry
+                    .object_id
+                    .strip_prefix("sha256:")
+                    .unwrap_or(&entry.object_id),
+            );
+            if !object.exists() {
+                continue;
+            }
+            let still_referenced = self.any_manifest_references(&entry.object_id, &record.id)?;
+            if !still_referenced {
+                let _ = fs::remove_file(object);
+            }
+        }
+        Ok(())
+    }
+}
+
 pub struct VersionStore {
     paths: LibraryPaths,
 }
 
 impl VersionStore {
+    fn any_manifest_references(&self, object_id: &str, ignored: &VersionId) -> AppResult<bool> {
+        for skill in fs::read_dir(&self.paths.versions_dir).map_err(io_error)? {
+            let dir = skill.map_err(io_error)?.path();
+            for item in fs::read_dir(dir).map_err(io_error)? {
+                let path = item.map_err(io_error)?.path();
+                if path.extension().and_then(|x| x.to_str()) != Some("json") {
+                    continue;
+                }
+                let text = fs::read_to_string(&path).map_err(io_error)?;
+                if text.contains(&format!("\"{}\"", ignored.as_str())) {
+                    continue;
+                }
+                if text.contains(object_id) {
+                    return Ok(true);
+                }
+            }
+        }
+        Ok(false)
+    }
     pub fn new(paths: LibraryPaths) -> Self {
         Self { paths }
     }
@@ -46,6 +107,14 @@ impl VersionStore {
     }
 
     pub fn capture(&self, skill_id: SkillId, source: impl AsRef<Path>) -> AppResult<VersionRecord> {
+        Ok(self.capture_with_status(skill_id, source)?.record)
+    }
+
+    pub fn capture_with_status(
+        &self,
+        skill_id: SkillId,
+        source: impl AsRef<Path>,
+    ) -> AppResult<CapturedVersion> {
         let source = source.as_ref();
         if fs::symlink_metadata(source)
             .map_err(io_error)?
@@ -69,20 +138,30 @@ impl VersionStore {
         let path = dir.join(format!("{}.json", digest_name(&id)));
         if path.exists() {
             let existing = self.load_manifest(&id)?;
-            return Ok(VersionRecord {
-                id,
-                manifest: existing,
+            return Ok(CapturedVersion {
+                created: false,
+                record: VersionRecord {
+                    id,
+                    manifest: existing,
+                },
             });
         }
         let tmp = object_store::unique_temp(&dir, ".manifest")?;
         fs::write(&tmp, to_vec_pretty(&manifest).map_err(json_error)?).map_err(io_error)?;
-        if let Err(error) = fs::rename(&tmp, &path) {
+        let created = if let Err(error) = fs::hard_link(&tmp, &path) {
             let _ = fs::remove_file(&tmp);
             if !path.exists() {
                 return Err(io_error(error));
             }
-        }
-        Ok(VersionRecord { id, manifest })
+            false
+        } else {
+            true
+        };
+        let _ = fs::remove_file(&tmp);
+        Ok(CapturedVersion {
+            created,
+            record: VersionRecord { id, manifest },
+        })
     }
 
     pub fn materialize(&self, id: &VersionId, output: impl AsRef<Path>) -> AppResult<()> {
@@ -162,11 +241,18 @@ impl VersionStore {
         let tmp = object_store::unique_temp(&dir, ".current")?;
         fs::write(&tmp, id.as_str()).map_err(io_error)?;
         let target = dir.join("current");
-        if let Err(error) = fs::rename(&tmp, &target) {
-            let _ = fs::remove_file(&tmp);
-            if !target.exists() {
-                return Err(io_error(error));
-            }
+        replace_current_file(&tmp, &target)?;
+        Ok(())
+    }
+
+    pub fn clear_current(&self, skill_id: SkillId) -> AppResult<()> {
+        let path = self
+            .paths
+            .metadata_dir
+            .join(skill_id.to_string())
+            .join("current");
+        if path.exists() {
+            fs::remove_file(path).map_err(io_error)?;
         }
         Ok(())
     }
@@ -317,6 +403,41 @@ impl VersionStore {
         }
         Ok(())
     }
+}
+
+#[cfg(not(windows))]
+fn replace_current_file(source: &Path, target: &Path) -> AppResult<()> {
+    fs::rename(source, target).map_err(io_error)
+}
+
+#[cfg(windows)]
+fn replace_current_file(source: &Path, target: &Path) -> AppResult<()> {
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::Storage::FileSystem::{
+        MoveFileExW, MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH,
+    };
+    let source: Vec<u16> = source
+        .as_os_str()
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect();
+    let target: Vec<u16> = target
+        .as_os_str()
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect();
+    if unsafe {
+        MoveFileExW(
+            source.as_ptr(),
+            target.as_ptr(),
+            MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH,
+        )
+    } == 0
+    {
+        return Err(AppError::new(ErrorCode::InternalError, Severity::Error)
+            .with_action(RecoveryAction::Retry));
+    }
+    Ok(())
 }
 
 fn normalize_relative(path: &Path) -> AppResult<String> {
