@@ -65,8 +65,17 @@ impl<'a> CustomAgentRepository<'a> {
         if override_profile.profile_id.trim().is_empty() {
             return Err(invalid_agent("missing profile id"));
         }
-        skillhub_core::agent::validate_profile_strict(&override_profile.profile)
-            .map_err(invalid_agent)?;
+        override_profile
+            .validate()
+            .map_err(|error| invalid_agent(format!("{error:?}")))?;
+        if !self
+            .load_agents()?
+            .iter()
+            .any(|agent| agent.id == override_profile.profile_id)
+            && !builtin_profile_id(&override_profile.profile_id)
+        {
+            return Err(not_found("profile"));
+        }
         let mut overrides = self.load_overrides()?;
         if let Some(existing) = overrides
             .iter_mut()
@@ -140,6 +149,29 @@ impl<'a> CustomAgentRepository<'a> {
             .map_err(database_error)?;
         transaction.commit().map_err(database_error)
     }
+}
+
+fn builtin_profile_id(id: &str) -> bool {
+    matches!(
+        id,
+        "openai"
+            | "anthropic"
+            | "google"
+            | "cursor"
+            | "github-copilot"
+            | "windsurf"
+            | "cline"
+            | "opencode"
+            | "trae"
+            | "qoder"
+            | "codebuddy"
+            | "comate"
+            | "kimi"
+            | "zcode"
+            | "openclaw"
+            | "hermes"
+            | "grok"
+    )
 }
 
 fn load_value<T: serde::de::DeserializeOwned>(

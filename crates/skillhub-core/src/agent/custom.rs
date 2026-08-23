@@ -1,62 +1,40 @@
 use serde::{Deserialize, Serialize};
 
-use super::AgentProfile;
+use super::{AgentProfile, TargetScope};
 
-/// An opaque capability issued by the native file picker for one directory.
-/// The path is never accepted as a raw, un-granted custom-Agent input.
+/// Opaque identifier issued by the native file picker.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 #[serde(deny_unknown_fields)]
 pub struct PathGrant {
     pub grant_id: String,
-    pub path: String,
 }
 
 impl PathGrant {
-    pub fn from_file_picker(grant_id: impl Into<String>, path: impl Into<String>) -> Self {
+    pub fn from_file_picker(grant_id: impl Into<String>) -> Self {
         Self {
             grant_id: grant_id.into(),
-            path: path.into(),
         }
     }
-
     pub fn validate(&self) -> Result<(), CustomAgentValidationError> {
-        if self.grant_id.trim().is_empty() || self.path.trim().is_empty() {
-            return Err(CustomAgentValidationError::MissingPathGrant);
+        if self.grant_id.trim().is_empty() {
+            Err(CustomAgentValidationError::MissingPathGrant)
+        } else {
+            Ok(())
         }
-        if self.path.contains('\0') || is_unbounded_root(&self.path) {
-            return Err(CustomAgentValidationError::InvalidPathGrant);
-        }
-        Ok(())
     }
 }
 
-fn is_unbounded_root(path: &str) -> bool {
-    let normalized = path.replace('\\', "/");
-    let trimmed = normalized.trim_end_matches('/');
-    let components = trimmed
-        .split('/')
-        .filter(|component| !component.is_empty())
-        .collect::<Vec<_>>();
-    let has_traversal = components
-        .iter()
-        .any(|component| *component == "." || *component == "..");
-    let home_root = components.len() == 2
-        && (components[0].eq_ignore_ascii_case("users")
-            || components[0].eq_ignore_ascii_case("home"));
-    let windows_home_root = components.len() == 3
-        && components[0].len() == 2
-        && components[0].as_bytes().get(1) == Some(&b':')
-        && components[1].eq_ignore_ascii_case("Users");
-    let unc_root = normalized.starts_with("//") && components.len() <= 2;
-    trimmed.is_empty()
-        || has_traversal
-        || trimmed == "~"
-        || trimmed == "."
-        || trimmed.eq_ignore_ascii_case("%USERPROFILE%")
-        || trimmed.eq_ignore_ascii_case("$HOME")
-        || home_root
-        || windows_home_root
-        || unc_root
+/// Native file-picker authority boundary. It resolves an opaque ID only after
+/// checking the OS grant registry.
+pub trait PathGrantResolver {
+    fn resolve(&self, grant: &PathGrant) -> Result<String, CustomAgentValidationError>;
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct ResolvedPathGrant {
+    pub grant_id: String,
+    pub path: String,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
@@ -68,35 +46,47 @@ pub enum CustomAgentValidationError {
     InvalidPathGrant,
     InvalidProfile,
     UnboundedPath,
+    GrantNotAuthorized,
+    GrantPathMismatch,
 }
 
-/// User-owned Agent metadata and its strict, command-free profile override.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 #[serde(deny_unknown_fields)]
-pub struct CustomAgent {
+pub struct CustomAgentDraft {
     pub id: String,
     pub display_name: String,
     pub directory: PathGrant,
     pub profile: AgentProfile,
 }
 
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct CustomAgent {
+    pub id: String,
+    pub display_name: String,
+    pub directory: ResolvedPathGrant,
+    pub profile: AgentProfile,
+}
+
 impl CustomAgent {
-    pub fn new(
-        id: impl Into<String>,
-        display_name: impl Into<String>,
-        directory: PathGrant,
-        profile: AgentProfile,
+    pub fn from_draft(
+        draft: CustomAgentDraft,
+        resolver: &impl PathGrantResolver,
     ) -> Result<Self, CustomAgentValidationError> {
+        draft.directory.validate()?;
+        let path = resolver.resolve(&draft.directory)?;
         let agent = Self {
-            id: id.into(),
-            display_name: display_name.into(),
-            directory,
-            profile,
+            id: draft.id,
+            display_name: draft.display_name,
+            directory: ResolvedPathGrant {
+                grant_id: draft.directory.grant_id,
+                path,
+            },
+            profile: draft.profile,
         };
         agent.validate()?;
         Ok(agent)
     }
-
     pub fn validate(&self) -> Result<(), CustomAgentValidationError> {
         if self.id.trim().is_empty() {
             return Err(CustomAgentValidationError::MissingId);
@@ -104,9 +94,14 @@ impl CustomAgent {
         if self.display_name.trim().is_empty() {
             return Err(CustomAgentValidationError::MissingName);
         }
-        self.directory.validate()?;
+        if self.directory.grant_id.trim().is_empty() || self.directory.path.trim().is_empty() {
+            return Err(CustomAgentValidationError::InvalidPathGrant);
+        }
         if super::validate_profile_strict(&self.profile).is_err() {
             return Err(CustomAgentValidationError::InvalidProfile);
+        }
+        if !global_path_matches(&self.profile, &self.directory.path) {
+            return Err(CustomAgentValidationError::GrantPathMismatch);
         }
         Ok(())
     }
@@ -116,5 +111,39 @@ impl CustomAgent {
 #[serde(deny_unknown_fields)]
 pub struct CustomAgentOverride {
     pub profile_id: String,
+    pub directory: ResolvedPathGrant,
     pub profile: AgentProfile,
+}
+
+impl CustomAgentOverride {
+    pub fn validate(&self) -> Result<(), CustomAgentValidationError> {
+        if self.profile_id.trim().is_empty() || self.directory.grant_id.trim().is_empty() {
+            return Err(CustomAgentValidationError::MissingPathGrant);
+        }
+        if super::validate_profile_strict(&self.profile).is_err() {
+            return Err(CustomAgentValidationError::InvalidProfile);
+        }
+        if !global_path_matches(&self.profile, &self.directory.path) {
+            return Err(CustomAgentValidationError::GrantPathMismatch);
+        }
+        Ok(())
+    }
+}
+
+fn global_path_matches(profile: &AgentProfile, path: &str) -> bool {
+    let expected = normalize_path(path);
+    profile
+        .clients
+        .iter()
+        .flat_map(|client| client.path_candidates.iter())
+        .filter(|candidate| matches!(candidate.scope, TargetScope::Global))
+        .any(|candidate| normalize_path(&candidate.path) == expected)
+}
+
+fn normalize_path(path: &str) -> String {
+    let mut normalized = path.replace('\\', "/");
+    while normalized.ends_with('/') {
+        normalized.pop();
+    }
+    normalized.to_ascii_lowercase()
 }

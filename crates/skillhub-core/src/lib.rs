@@ -13,9 +13,10 @@ pub mod versioning;
 
 pub use agent::{
     AgentClient, AgentProfile, AgentRepository, CallPolicy, ClientInstance, ClientKind,
-    ClientPresence, CustomAgent, CustomAgentOverride, CustomAgentValidationError,
+    ClientPresence, CustomAgent, CustomAgentDraft, CustomAgentOverride, CustomAgentValidationError,
     DeploymentCapability, DirectoryPrecedence, DiscoverySnapshot, LogicalTarget, OperatingSystem,
-    PathCandidate, PathGrant, PhysicalTarget, ProfileCatalog, TargetScope,
+    PathCandidate, PathGrant, PathGrantResolver, PhysicalTarget, ProfileCatalog, ResolvedPathGrant,
+    TargetScope,
 };
 pub use api::{
     AppCommand, AppCommandResult, AppEvent, AppQuery, AppQueryResult, ApplicationFacade,

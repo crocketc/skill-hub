@@ -1,6 +1,7 @@
 use skillhub_core::agent::{
-    AgentClient, AgentProfile, CallPolicy, ClientKind, CustomAgent, DeploymentCapability,
-    DirectoryPrecedence, OperatingSystem, PathCandidate, PathGrant, TargetScope,
+    AgentClient, AgentProfile, CallPolicy, ClientKind, CustomAgent, CustomAgentDraft,
+    CustomAgentValidationError, DeploymentCapability, DirectoryPrecedence, OperatingSystem,
+    PathCandidate, PathGrant, PathGrantResolver, TargetScope,
 };
 
 fn profile(path: &str) -> AgentProfile {
@@ -31,45 +32,55 @@ fn profile(path: &str) -> AgentProfile {
     }
 }
 
+struct FakeRegistry;
+impl PathGrantResolver for FakeRegistry {
+    fn resolve(&self, grant: &PathGrant) -> Result<String, CustomAgentValidationError> {
+        match grant.grant_id.as_str() {
+            "grant-1" => Ok("C:/Users/me/.my-agent/skills".into()),
+            _ => Err(CustomAgentValidationError::GrantNotAuthorized),
+        }
+    }
+}
+
 #[test]
-fn custom_agent_accepts_explicit_file_picker_grant() {
-    let agent = CustomAgent::new(
-        "custom.my-agent",
-        "My Agent",
-        PathGrant::from_file_picker("grant-1", "C:/Users/me/.my-agent/skills"),
-        profile("C:/Users/me/.my-agent/skills"),
+fn custom_agent_accepts_only_a_resolver_issued_grant_and_matching_profile_path() {
+    let agent = CustomAgent::from_draft(
+        CustomAgentDraft {
+            id: "custom.my-agent".into(),
+            display_name: "My Agent".into(),
+            directory: PathGrant::from_file_picker("grant-1"),
+            profile: profile("C:/Users/me/.my-agent/skills"),
+        },
+        &FakeRegistry,
     )
     .unwrap();
     assert_eq!(agent.directory.path, "C:/Users/me/.my-agent/skills");
+    let mismatch = CustomAgent::from_draft(
+        CustomAgentDraft {
+            id: "custom.my-agent".into(),
+            display_name: "My Agent".into(),
+            directory: PathGrant::from_file_picker("grant-1"),
+            profile: profile("C:/other/skills"),
+        },
+        &FakeRegistry,
+    )
+    .unwrap_err();
+    assert_eq!(mismatch, CustomAgentValidationError::GrantPathMismatch);
+    assert!(CustomAgent::from_draft(
+        CustomAgentDraft {
+            id: "x".into(),
+            display_name: "x".into(),
+            directory: PathGrant::from_file_picker("forged"),
+            profile: profile("C:/Users/me/.my-agent/skills")
+        },
+        &FakeRegistry
+    )
+    .is_err());
 }
 
 #[test]
-fn custom_agent_rejects_missing_or_unbounded_grants_and_paths() {
-    assert!(PathGrant::from_file_picker("", "C:/skills")
-        .validate()
-        .is_err());
-    assert!(PathGrant::from_file_picker("grant", "").validate().is_err());
-    assert!(CustomAgent::new(
-        "custom.my-agent",
-        "My Agent",
-        PathGrant::from_file_picker("grant-1", "C:/Users/me"),
-        profile("C:/Users/me"),
-    )
-    .is_err());
-    assert!(CustomAgent::new(
-        "custom.my-agent",
-        "My Agent",
-        PathGrant::from_file_picker("grant-1", "C:/Users/me/.agent/skills"),
-        profile("C:/Users/me/.agent/skills/**"),
-    )
-    .is_err());
-}
-
-#[test]
-fn custom_agent_has_no_command_or_runtime_fields() {
-    let serialized = serde_json::to_value(profile("C:/skills")).unwrap();
-    let text = serialized.to_string();
-    assert!(!text.contains("command"));
-    assert!(!text.contains("script"));
-    assert!(!text.contains("shell"));
+fn custom_agent_rejects_malformed_grants_and_malicious_json() {
+    assert!(PathGrant::from_file_picker("").validate().is_err());
+    let malicious = r#"{"id":"x","display_name":"x","directory":{"grant_id":"grant-1"},"profile":{"command":"curl bad"}}"#;
+    assert!(serde_json::from_str::<CustomAgentDraft>(malicious).is_err());
 }

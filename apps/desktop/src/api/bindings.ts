@@ -23,7 +23,7 @@ export type AgentProfile = {
 	clients: AgentClient[],
 };
 
-export type AppCommand = { type: "create_skill"; payload: CreateSkill } | { type: "save_skill_content"; payload: SaveSkillContent } | { type: "rename_skill"; payload: RenameSkill } | { type: "set_lifecycle"; payload: SetLifecycle } | { type: "set_metadata"; payload: SetMetadata } | { type: "set_trial"; payload: SetTrial } | { type: "create_combination"; payload: CreateCombination } | { type: "set_current_version"; payload: SetCurrentVersion } | { type: "pin_project_skill_version"; payload: PinProjectSkillVersion } | { type: "create_custom_agent"; payload: CreateCustomAgent } | { type: "update_custom_agent"; payload: UpdateCustomAgent } | { type: "remove_custom_agent"; payload: RemoveCustomAgent } | { type: "reset_profile_override"; payload: ResetProfileOverride } | { type: "cancel_operation"; payload: {
+export type AppCommand = { type: "create_skill"; payload: CreateSkill } | { type: "save_skill_content"; payload: SaveSkillContent } | { type: "rename_skill"; payload: RenameSkill } | { type: "set_lifecycle"; payload: SetLifecycle } | { type: "set_metadata"; payload: SetMetadata } | { type: "set_trial"; payload: SetTrial } | { type: "create_combination"; payload: CreateCombination } | { type: "set_current_version"; payload: SetCurrentVersion } | { type: "pin_project_skill_version"; payload: PinProjectSkillVersion } | { type: "create_custom_agent"; payload: CreateCustomAgent } | { type: "update_custom_agent"; payload: UpdateCustomAgent } | { type: "remove_custom_agent"; payload: RemoveCustomAgent } | { type: "reset_profile_override"; payload: ResetProfileOverride } | { type: "set_profile_override"; payload: SetProfileOverride } | { type: "cancel_operation"; payload: {
 	operation_id: OperationId,
 } } | { type: "acknowledge_recovery"; payload: {
 	operation_id: OperationId,
@@ -74,7 +74,7 @@ export type CreateCombination = {
 };
 
 export type CreateCustomAgent = {
-	agent: CustomAgent,
+	agent: CustomAgentDraft,
 };
 
 export type CreateSkill = {
@@ -82,8 +82,14 @@ export type CreateSkill = {
 	source_path: string,
 };
 
-/**  User-owned Agent metadata and its strict, command-free profile override. */
 export type CustomAgent = {
+	id: string,
+	display_name: string,
+	directory: ResolvedPathGrant,
+	profile: AgentProfile,
+};
+
+export type CustomAgentDraft = {
 	id: string,
 	display_name: string,
 	directory: PathGrant,
@@ -92,6 +98,7 @@ export type CustomAgent = {
 
 export type CustomAgentOverride = {
 	profile_id: string,
+	directory: ResolvedPathGrant,
 	profile: AgentProfile,
 };
 
@@ -190,13 +197,9 @@ export type PathCandidate = {
 	marker: string,
 };
 
-/**
- *  An opaque capability issued by the native file picker for one directory.
- *  The path is never accepted as a raw, un-granted custom-Agent input.
- */
+/**  Opaque identifier issued by the native file picker. */
 export type PathGrant = {
 	grant_id: string,
-	path: string,
 };
 
 /**
@@ -258,6 +261,11 @@ export type ResetProfileOverride = {
 	profile_id: string,
 };
 
+export type ResolvedPathGrant = {
+	grant_id: string,
+	path: string,
+};
+
 export type SaveSkillContent = {
 	skill_id: SkillId,
 	source_path: string,
@@ -296,6 +304,12 @@ export type SetMetadata = {
 	license: string | null,
 };
 
+export type SetProfileOverride = {
+	profile_id: string,
+	directory: PathGrant,
+	profile: AgentProfile,
+};
+
 export type SetTrial = {
 	skill_id: SkillId,
 	due: [number, number, number] | null,
@@ -316,7 +330,7 @@ export type StartupRecoveryState = "clean" | "in_progress" | "needs_recovery";
 export type TargetScope = "global" | "project" | "extra";
 
 export type UpdateCustomAgent = {
-	agent: CustomAgent,
+	agent: CustomAgentDraft,
 };
 
 export type VersionDiffResult = {

@@ -5,7 +5,7 @@ mod query;
 pub use command::{
     AppCommand, AppCommandResult, CreateCombination, CreateCustomAgent, CreateSkill,
     PinProjectSkillVersion, RemoveCustomAgent, RenameSkill, ResetProfileOverride, SaveSkillContent,
-    SetCurrentVersion, SetLifecycle, SetMetadata, SetTrial, UpdateCustomAgent,
+    SetCurrentVersion, SetLifecycle, SetMetadata, SetProfileOverride, SetTrial, UpdateCustomAgent,
 };
 pub use event::{AppEvent, FactsChanged};
 pub use query::{

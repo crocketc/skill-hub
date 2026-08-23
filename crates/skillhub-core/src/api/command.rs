@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::agent::{CustomAgent, CustomAgentOverride};
+use crate::agent::{CustomAgent, CustomAgentDraft, CustomAgentOverride, PathGrant};
 use crate::catalog::SkillLifecycle;
 use crate::{OperationId, OperationSummary, ProjectId, SkillId, VersionId};
 
@@ -57,12 +57,12 @@ pub struct PinProjectSkillVersion {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 pub struct CreateCustomAgent {
-    pub agent: CustomAgent,
+    pub agent: CustomAgentDraft,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 pub struct UpdateCustomAgent {
-    pub agent: CustomAgent,
+    pub agent: CustomAgentDraft,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
@@ -73,6 +73,13 @@ pub struct RemoveCustomAgent {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 pub struct ResetProfileOverride {
     pub profile_id: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+pub struct SetProfileOverride {
+    pub profile_id: String,
+    pub directory: PathGrant,
+    pub profile: crate::agent::AgentProfile,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
@@ -104,6 +111,8 @@ pub enum AppCommand {
     RemoveCustomAgent(RemoveCustomAgent),
     #[serde(rename = "reset_profile_override")]
     ResetProfileOverride(ResetProfileOverride),
+    #[serde(rename = "set_profile_override")]
+    SetProfileOverride(SetProfileOverride),
     #[serde(rename = "cancel_operation")]
     CancelOperation { operation_id: OperationId },
     #[serde(rename = "acknowledge_recovery")]
