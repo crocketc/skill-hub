@@ -25,6 +25,8 @@ pub enum ErrorCode {
     CredentialUnavailable,
     #[serde(rename = "migration.required")]
     MigrationRequired,
+    #[serde(rename = "database.newer_schema")]
+    DatabaseNewerSchema,
     #[serde(rename = "internal.error")]
     InternalError,
 }
@@ -45,6 +47,7 @@ impl ErrorCode {
             Self::OperationConflict => "operation.conflict",
             Self::CredentialUnavailable => "credential.unavailable",
             Self::MigrationRequired => "migration.required",
+            Self::DatabaseNewerSchema => "database.newer_schema",
             Self::InternalError => "internal.error",
         }
     }

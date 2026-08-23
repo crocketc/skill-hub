@@ -3,5 +3,6 @@ resolver = "2"
 members = [
     "crates/skillhub-core",
     "crates/skillhub-testkit",
+    "crates/skillhub-storage",
     "apps/desktop/src-tauri",
 ]
