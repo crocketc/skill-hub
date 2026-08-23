@@ -85,30 +85,25 @@ where
     }
 
     pub async fn rename_skill(&self, id: SkillId, name: impl Into<String>) -> AppResult<Skill> {
-        let mut skill = self.require(id).await?;
-        skill.rename(name)?;
-        self.catalog.insert(&skill).await?;
-        self.persist_portable(&skill, self.versions.current(id).await?.as_ref())
-            .await?;
-        Ok(skill)
+        let name = name.into();
+        self.update_skill_and_portable(id, move |skill| skill.rename(name))
+            .await
     }
 
     pub async fn set_lifecycle(&self, id: SkillId, lifecycle: SkillLifecycle) -> AppResult<Skill> {
-        let mut skill = self.require(id).await?;
-        skill.set_lifecycle(lifecycle);
-        self.catalog.insert(&skill).await?;
-        self.persist_portable(&skill, self.versions.current(id).await?.as_ref())
-            .await?;
-        Ok(skill)
+        self.update_skill_and_portable(id, move |skill| {
+            skill.set_lifecycle(lifecycle);
+            Ok(())
+        })
+        .await
     }
 
     pub async fn set_trial(&self, id: SkillId, due: Option<(i32, u8, u8)>) -> AppResult<Skill> {
-        let mut skill = self.require(id).await?;
-        skill.set_trial_due(due);
-        self.catalog.insert(&skill).await?;
-        self.persist_portable(&skill, self.versions.current(id).await?.as_ref())
-            .await?;
-        Ok(skill)
+        self.update_skill_and_portable(id, move |skill| {
+            skill.set_trial_due(due);
+            Ok(())
+        })
+        .await
     }
 
     pub async fn set_metadata(
@@ -120,18 +115,16 @@ where
         author: Option<String>,
         license: Option<String>,
     ) -> AppResult<Skill> {
-        let mut skill = self.require(id).await?;
-        skill.set_metadata(
-            display_name,
-            note,
-            tags.into_iter().collect::<BTreeSet<_>>(),
-            author,
-            license,
-        )?;
-        self.catalog.insert(&skill).await?;
-        self.persist_portable(&skill, self.versions.current(id).await?.as_ref())
-            .await?;
-        Ok(skill)
+        self.update_skill_and_portable(id, move |skill| {
+            skill.set_metadata(
+                display_name,
+                note,
+                tags.into_iter().collect::<BTreeSet<_>>(),
+                author,
+                license,
+            )
+        })
+        .await
     }
 
     pub async fn create_skill(&self, name: impl Into<String>, source: &Path) -> AppResult<Skill>
@@ -270,6 +263,41 @@ where
                 .with_param("skill_id", id.to_string())
                 .with_action(RecoveryAction::ChooseAnotherName)
         })
+    }
+
+    async fn update_skill_and_portable<F>(&self, id: SkillId, update: F) -> AppResult<Skill>
+    where
+        F: FnOnce(&mut Skill) -> AppResult<()>,
+    {
+        let old_skill = self.require(id).await?;
+        let old_current = self.versions.current(id).await?;
+        let old_portable = if let Some(portable) = &self.portable {
+            portable.load_skill(id).await?
+        } else {
+            None
+        };
+        let mut updated = old_skill.clone();
+        update(&mut updated)?;
+        self.catalog.insert(&updated).await?;
+        if let Err(error) = self.persist_portable(&updated, old_current.as_ref()).await {
+            let restore_catalog = self.catalog.insert(&old_skill).await;
+            let restore_portable = if let Some(portable) = &self.portable {
+                match old_portable.as_ref() {
+                    Some((skill, current)) => portable.restore_skill(skill, current.as_ref()).await,
+                    None => portable.remove_skill(id).await,
+                }
+            } else {
+                Ok(())
+            };
+            if let Err(cleanup) = restore_catalog {
+                return Err(recovery_error(error, cleanup));
+            }
+            if let Err(cleanup) = restore_portable {
+                return Err(recovery_error(error, cleanup));
+            }
+            return Err(error);
+        }
+        Ok(updated)
     }
 
     async fn persist_portable(&self, skill: &Skill, current: Option<&VersionId>) -> AppResult<()> {
