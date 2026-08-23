@@ -10,6 +10,15 @@ use super::VersionService;
 #[async_trait::async_trait]
 pub trait PortableMetadataRepository: Send + Sync {
     async fn save_skill(&self, skill: &Skill, current: Option<&VersionId>) -> AppResult<()>;
+    async fn load_skill(&self, _id: SkillId) -> AppResult<Option<(Skill, Option<VersionId>)>> {
+        Ok(None)
+    }
+    async fn restore_skill(&self, skill: &Skill, current: Option<&VersionId>) -> AppResult<()> {
+        self.save_skill(skill, current).await
+    }
+    async fn remove_skill(&self, _id: SkillId) -> AppResult<()> {
+        Ok(())
+    }
 }
 
 pub struct CatalogService<C, V> {

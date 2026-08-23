@@ -44,16 +44,7 @@ impl VersionCapture for VersionStore {
         skill_id: SkillId,
         source: &Path,
     ) -> AppResult<CapturedVersion> {
-        let before = self
-            .list(skill_id)?
-            .into_iter()
-            .map(|v| v.id.as_str().to_owned())
-            .collect::<BTreeSet<_>>();
-        let record = VersionStore::capture(self, skill_id, source)?;
-        Ok(CapturedVersion {
-            created: !before.contains(record.id.as_str()),
-            record,
-        })
+        VersionStore::capture_with_status(self, skill_id, source)
     }
 
     async fn discard(&self, record: &VersionRecord) -> AppResult<()> {
@@ -113,6 +104,14 @@ impl VersionStore {
     }
 
     pub fn capture(&self, skill_id: SkillId, source: impl AsRef<Path>) -> AppResult<VersionRecord> {
+        Ok(self.capture_with_status(skill_id, source)?.record)
+    }
+
+    pub fn capture_with_status(
+        &self,
+        skill_id: SkillId,
+        source: impl AsRef<Path>,
+    ) -> AppResult<CapturedVersion> {
         let source = source.as_ref();
         if fs::symlink_metadata(source)
             .map_err(io_error)?
@@ -136,20 +135,29 @@ impl VersionStore {
         let path = dir.join(format!("{}.json", digest_name(&id)));
         if path.exists() {
             let existing = self.load_manifest(&id)?;
-            return Ok(VersionRecord {
-                id,
-                manifest: existing,
+            return Ok(CapturedVersion {
+                created: false,
+                record: VersionRecord {
+                    id,
+                    manifest: existing,
+                },
             });
         }
         let tmp = object_store::unique_temp(&dir, ".manifest")?;
         fs::write(&tmp, to_vec_pretty(&manifest).map_err(json_error)?).map_err(io_error)?;
-        if let Err(error) = fs::rename(&tmp, &path) {
+        let created = if let Err(error) = fs::rename(&tmp, &path) {
             let _ = fs::remove_file(&tmp);
             if !path.exists() {
                 return Err(io_error(error));
             }
-        }
-        Ok(VersionRecord { id, manifest })
+            false
+        } else {
+            true
+        };
+        Ok(CapturedVersion {
+            created,
+            record: VersionRecord { id, manifest },
+        })
     }
 
     pub fn materialize(&self, id: &VersionId, output: impl AsRef<Path>) -> AppResult<()> {
