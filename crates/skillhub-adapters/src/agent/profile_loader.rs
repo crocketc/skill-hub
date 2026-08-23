@@ -36,10 +36,132 @@ pub fn parse_custom_profile(content: &str) -> Result<AgentProfile, ProfileLoadEr
     let value: Value = serde_json::from_str(content)
         .map_err(|error| ProfileLoadError::invalid(error.to_string()))?;
     reject_unsafe_keys(&value)?;
+    validate_json_schema(&value)?;
     let profile: AgentProfile = serde_json::from_value(value)
         .map_err(|error| ProfileLoadError::invalid(error.to_string()))?;
     validate_profile(&profile)?;
     Ok(profile)
+}
+
+fn validate_json_schema(value: &Value) -> Result<(), ProfileLoadError> {
+    let schema: Value =
+        serde_json::from_str(include_str!("../../profiles/schema.json")).map_err(|error| {
+            ProfileLoadError::invalid(format!("invalid bundled profile schema: {error}"))
+        })?;
+    validate_schema_node(value, &schema, &schema, "$")
+}
+
+fn validate_schema_node(
+    value: &Value,
+    schema: &Value,
+    root: &Value,
+    location: &str,
+) -> Result<(), ProfileLoadError> {
+    if let Some(reference) = schema.get("$ref").and_then(Value::as_str) {
+        let definition = reference
+            .strip_prefix("#/$defs/")
+            .and_then(|name| root.get("$defs").and_then(|defs| defs.get(name)))
+            .ok_or_else(|| {
+                ProfileLoadError::invalid(format!("unknown schema reference: {reference}"))
+            })?;
+        return validate_schema_node(value, definition, root, location);
+    }
+    if let Some(kind) = schema.get("type").and_then(Value::as_str) {
+        let matches = match kind {
+            "object" => value.is_object(),
+            "array" => value.is_array(),
+            "string" => value.is_string(),
+            "integer" => value.as_i64().is_some(),
+            _ => true,
+        };
+        if !matches {
+            return Err(ProfileLoadError::invalid(format!(
+                "{location} has invalid type"
+            )));
+        }
+    }
+    if let Some(values) = schema.get("enum").and_then(Value::as_array) {
+        if !values.iter().any(|candidate| candidate == value) {
+            return Err(ProfileLoadError::invalid(format!(
+                "{location} is not an allowed value"
+            )));
+        }
+    }
+    if let Some(minimum) = schema.get("minimum").and_then(Value::as_i64) {
+        if value.as_i64().is_none_or(|number| number < minimum) {
+            return Err(ProfileLoadError::invalid(format!(
+                "{location} is below minimum"
+            )));
+        }
+    }
+    if let Some(min_items) = schema.get("minItems").and_then(Value::as_u64) {
+        if value
+            .as_array()
+            .is_none_or(|items| items.len() < min_items as usize)
+        {
+            return Err(ProfileLoadError::invalid(format!(
+                "{location} has too few items"
+            )));
+        }
+    }
+    if let Some(min_length) = schema.get("minLength").and_then(Value::as_u64) {
+        if value
+            .as_str()
+            .is_none_or(|text| text.chars().count() < min_length as usize)
+        {
+            return Err(ProfileLoadError::invalid(format!(
+                "{location} is too short"
+            )));
+        }
+    }
+    if let Some(format) = schema.get("format").and_then(Value::as_str) {
+        let valid = match format {
+            "date" => value.as_str().is_some_and(valid_date),
+            "uri" => value.as_str().is_some_and(valid_url),
+            _ => true,
+        };
+        if !valid {
+            return Err(ProfileLoadError::invalid(format!(
+                "{location} has invalid format"
+            )));
+        }
+    }
+    if let Some(object) = value.as_object() {
+        if let Some(required) = schema.get("required").and_then(Value::as_array) {
+            for field in required.iter().filter_map(Value::as_str) {
+                if !object.contains_key(field) {
+                    return Err(ProfileLoadError::invalid(format!(
+                        "{location} missing {field}"
+                    )));
+                }
+            }
+        }
+        let properties = schema.get("properties").and_then(Value::as_object);
+        if schema.get("additionalProperties") == Some(&Value::Bool(false)) {
+            if let Some(properties) = properties {
+                if object.keys().any(|key| !properties.contains_key(key)) {
+                    return Err(ProfileLoadError::invalid(format!(
+                        "{location} has unknown field"
+                    )));
+                }
+            }
+        }
+        if let Some(properties) = properties {
+            for (key, child) in object {
+                if let Some(child_schema) = properties.get(key) {
+                    validate_schema_node(child, child_schema, root, &format!("{location}.{key}"))?;
+                }
+            }
+        }
+    }
+    if let Some(items_schema) = schema.get("items") {
+        if let Some(items) = value.as_array() {
+            for (index, item) in items.iter().enumerate() {
+                validate_schema_node(item, items_schema, root, &format!("{location}[{index}]"))?;
+            }
+        }
+    }
+    Ok(())
 }
 
 pub fn load_catalog(dir: impl AsRef<Path>) -> Result<ProfileCatalog, ProfileLoadError> {
@@ -131,6 +253,9 @@ fn is_unbounded_root(path: &str) -> bool {
         .split('/')
         .filter(|component| !component.is_empty())
         .collect::<Vec<_>>();
+    let has_traversal = components
+        .iter()
+        .any(|component| *component == "." || *component == "..");
     let home_root = matches!(components.as_slice(), ["Users", _] | ["home", _]);
     let windows_home_root = components.len() == 3
         && components[0].len() == 2
@@ -138,6 +263,7 @@ fn is_unbounded_root(path: &str) -> bool {
         && components[1].eq_ignore_ascii_case("Users");
     let unc_root = normalized.starts_with("//") && components.len() <= 2;
     trimmed.is_empty()
+        || has_traversal
         || trimmed == "~"
         || trimmed == "."
         || trimmed.eq_ignore_ascii_case("%USERPROFILE%")
@@ -182,9 +308,16 @@ fn valid_date(value: &str) -> bool {
 fn valid_url(value: &str) -> bool {
     let lower = value.to_ascii_lowercase();
     (lower.starts_with("https://") || lower.starts_with("http://"))
-        && value
-            .split_once("://")
-            .is_some_and(|(_, host)| !host.trim_matches('/').is_empty() && !host.starts_with('/'))
+        && value.split_once("://").is_some_and(|(_, host)| {
+            if host.starts_with('/') {
+                return false;
+            }
+            let host = host.trim_matches('/');
+            let authority = host.split('/').next().unwrap_or_default();
+            !authority.is_empty()
+                && !authority.chars().any(char::is_whitespace)
+                && !authority.contains('\\')
+        })
 }
 
 impl From<ProfileLoadError> for AppError {

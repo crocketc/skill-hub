@@ -75,6 +75,12 @@ fn rejects_unbounded_home_and_network_roots_but_accepts_bounded_candidates() {
         "C:/Users/alice",
         "\\\\server\\share",
         "//server/share",
+        "C:/Users/alice/../..",
+        "{user_home}/..",
+        "%USERPROFILE%/..",
+        "//server/share/..",
+        "%USERPROFILE%/.codex/../..",
+        "{user_home}\\.agents\\..\\..",
     ] {
         let json = profile_with_path(path);
         assert!(
@@ -114,6 +120,19 @@ fn validates_date_references_and_non_empty_arrays() {
         );
         let _ = reference;
         assert!(parse_custom_profile(&json).is_err());
+    }
+    for reference in [
+        "https:// /",
+        "https://example.com bad",
+        "https:///missing-host",
+    ] {
+        let json = format!(
+            r#"{{"profile_version":1,"research_date":"2026-01-01","official_references":["{reference}"],"brand":"Example","clients":[{{"id":"example.cli","kind":"cli","supported_os":["windows"],"path_candidates":[{{"path":"%USERPROFILE%/.example/skills","scope":"global","precedence":"preferred","marker":"SKILL.md"}}],"skill_marker":"SKILL.md","deployment":{{"copy":true,"symlink":false,"junction":false}},"call_policy":"unknown"}}]}}"#
+        );
+        assert!(
+            parse_custom_profile(&json).is_err(),
+            "accepted invalid URI: {reference}"
+        );
     }
 }
 
