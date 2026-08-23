@@ -44,7 +44,9 @@ fn deployment_chart_can_aggregate_by_agent_and_project() {
              INSERT INTO targets (id,agent_id,project_id,scope,path,created_at) VALUES ('target-a','codex','{project}','project','C:/target-a',0);
              INSERT INTO targets (id,agent_id,project_id,scope,path,created_at) VALUES ('target-b','claude','{project}','project','C:/target-b',0);
              INSERT INTO deployments (id,skill_id,version_id,target_id,state,method,runtime_name,expected_hash,created_at,updated_at) VALUES ('deployment-a','{skill}','{version}','target-a','deployed','symlink','chart','hash',0,0);
-             INSERT INTO deployments (id,skill_id,version_id,target_id,state,method,runtime_name,expected_hash,created_at,updated_at) VALUES ('deployment-b','{skill}','{version}','target-b','deployed','symlink','chart','hash',0,0);"
+             INSERT INTO deployments (id,skill_id,version_id,target_id,state,method,runtime_name,expected_hash,created_at,updated_at) VALUES ('deployment-b','{skill}','{version}','target-b','deployed','symlink','chart','hash',0,0);
+             INSERT INTO deployments (id,skill_id,version_id,target_id,state,method,runtime_name,expected_hash,created_at,updated_at) VALUES ('deployment-failed','{skill}','{version}','target-a','failed','symlink','chart-failed','hash',0,0);
+             INSERT INTO deployments (id,skill_id,version_id,target_id,state,method,runtime_name,expected_hash,created_at,updated_at) VALUES ('deployment-removed','{skill}','{version}','target-b','removed','symlink','chart-removed','hash',0,0);"
         ))
         .unwrap();
 
@@ -69,6 +71,20 @@ fn deployment_chart_can_aggregate_by_agent_and_project() {
     assert!(by_agent
         .iter()
         .all(|item| item.label_code == "deployment.dimension.agent"));
+    assert_eq!(by_agent.iter().map(|item| item.count).sum::<u32>(), 2);
+    let snapshot = db
+        .bootstrap_repository()
+        .build_snapshot((2026, 8, 23))
+        .unwrap();
+    assert_eq!(snapshot.deployed_count, 2);
+    assert_eq!(
+        snapshot
+            .deployment_categories
+            .iter()
+            .map(|item| item.count)
+            .sum::<u32>(),
+        4
+    );
 }
 
 #[test]

@@ -97,7 +97,7 @@ impl<'a> BootstrapRepository<'a> {
             ),
         };
         let sql = format!(
-            "SELECT {column}, COUNT(*) FROM deployments d JOIN targets t ON t.id=d.target_id GROUP BY {column} ORDER BY {column}"
+            "SELECT {column}, COUNT(*) FROM deployments d JOIN targets t ON t.id=d.target_id WHERE d.state IN ('deployed','active') AND d.managed=1 GROUP BY {column} ORDER BY {column}"
         );
         let mut statement = self.database.connection.prepare(&sql).map_err(error)?;
         let mut result = Vec::new();
