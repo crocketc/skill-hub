@@ -35,6 +35,8 @@ pub enum ErrorCode {
     CatalogInvalidMetadata,
     #[serde(rename = "requirements.invalid_declaration")]
     RequirementsInvalidDeclaration,
+    #[serde(rename = "agent_profile.invalid_capability")]
+    AgentProfileInvalidCapability,
 }
 
 #[allow(non_upper_case_globals)]
@@ -58,6 +60,7 @@ impl ErrorCode {
             Self::CombinationNestingNotAllowed => "combination.nesting_not_allowed",
             Self::CatalogInvalidMetadata => "catalog.invalid_metadata",
             Self::RequirementsInvalidDeclaration => "requirements.invalid_declaration",
+            Self::AgentProfileInvalidCapability => "agent_profile.invalid_capability",
         }
     }
 }

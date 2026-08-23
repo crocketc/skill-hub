@@ -5,6 +5,8 @@ edition = "2021"
 
 [dependencies]
 skillhub-core = { path = "../skillhub-core" }
+serde_json = "1"
+url = "2"
 
 [dev-dependencies]
 tempfile = "3"

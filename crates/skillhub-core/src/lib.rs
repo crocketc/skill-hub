@@ -1,3 +1,4 @@
+pub mod agent;
 pub mod api;
 pub mod application;
 pub mod bootstrap;
@@ -10,6 +11,10 @@ pub mod pending;
 pub mod search;
 pub mod versioning;
 
+pub use agent::{
+    AgentClient, AgentProfile, CallPolicy, ClientKind, DeploymentCapability, DirectoryPrecedence,
+    OperatingSystem, PathCandidate, ProfileCatalog, TargetScope,
+};
 pub use api::{
     AppCommand, AppCommandResult, AppEvent, AppQuery, AppQueryResult, ApplicationFacade,
     FactsChanged, Page,

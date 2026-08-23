@@ -1,0 +1,20 @@
+{
+  "profile_version": 1,
+  "research_date": "2026-08-21",
+  "official_references": ["https://learn.chatgpt.com/docs/build-skills"],
+  "brand": "OpenAI Codex",
+  "clients": [
+    {
+      "id": "codex.cli",
+      "kind": "cli",
+      "supported_os": ["windows", "macos"],
+      "path_candidates": [
+        {"path": "{project_root}/.agents/skills", "scope": "project", "precedence": "preferred", "marker": "SKILL.md"},
+        {"path": "{user_home}/.agents/skills", "scope": "global", "precedence": "preferred", "marker": "SKILL.md"}
+      ],
+      "skill_marker": "SKILL.md",
+      "deployment": {"copy": true, "symlink": true, "junction": true, "limitations": ["runtime loading is not inferred"]},
+      "call_policy": "unknown"
+    }
+  ]
+}

@@ -28,6 +28,10 @@ fn all_foundation_error_codes_have_stable_wire_names() {
         (ErrorCode::CredentialUnavailable, "credential.unavailable"),
         (ErrorCode::MigrationRequired, "migration.required"),
         (ErrorCode::InternalError, "internal.error"),
+        (
+            ErrorCode::AgentProfileInvalidCapability,
+            "agent_profile.invalid_capability",
+        ),
     ];
 
     for (code, expected) in cases {
