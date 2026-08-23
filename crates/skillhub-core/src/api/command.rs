@@ -5,7 +5,6 @@ use crate::{OperationId, OperationSummary, ProjectId, SkillId, VersionId};
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 pub struct CreateSkill {
-    pub skill_id: SkillId,
     pub name: String,
     pub source_path: String,
 }
@@ -23,6 +22,25 @@ pub struct RenameSkill {
 pub struct SetLifecycle {
     pub skill_id: SkillId,
     pub lifecycle: SkillLifecycle,
+}
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+pub struct SetMetadata {
+    pub skill_id: SkillId,
+    pub display_name: Option<String>,
+    pub note: Option<String>,
+    pub tags: Vec<String>,
+    pub author: Option<String>,
+    pub license: Option<String>,
+}
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+pub struct SetTrial {
+    pub skill_id: SkillId,
+    pub due: Option<(i32, u8, u8)>,
+}
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+pub struct CreateCombination {
+    pub name: String,
+    pub members: Vec<SkillId>,
 }
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 pub struct SetCurrentVersion {
@@ -47,6 +65,12 @@ pub enum AppCommand {
     RenameSkill(RenameSkill),
     #[serde(rename = "set_lifecycle")]
     SetLifecycle(SetLifecycle),
+    #[serde(rename = "set_metadata")]
+    SetMetadata(SetMetadata),
+    #[serde(rename = "set_trial")]
+    SetTrial(SetTrial),
+    #[serde(rename = "create_combination")]
+    CreateCombination(CreateCombination),
     #[serde(rename = "set_current_version")]
     SetCurrentVersion(SetCurrentVersion),
     #[serde(rename = "pin_project_skill_version")]

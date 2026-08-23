@@ -38,6 +38,29 @@ impl VersionCapture for VersionStore {
     async fn capture(&self, skill_id: SkillId, source: &Path) -> AppResult<VersionRecord> {
         VersionStore::capture(self, skill_id, source)
     }
+
+    async fn discard(&self, record: &VersionRecord) -> AppResult<()> {
+        let manifest_path = self.find_manifest(&record.id)?;
+        if manifest_path.exists() {
+            fs::remove_file(&manifest_path).map_err(io_error)?;
+        }
+        for entry in &record.manifest.entries {
+            let object = self.paths.objects_dir.join(
+                entry
+                    .object_id
+                    .strip_prefix("sha256:")
+                    .unwrap_or(&entry.object_id),
+            );
+            if !object.exists() {
+                continue;
+            }
+            let still_referenced = self.any_manifest_references(&entry.object_id, &record.id)?;
+            if !still_referenced {
+                let _ = fs::remove_file(object);
+            }
+        }
+        Ok(())
+    }
 }
 
 pub struct VersionStore {
@@ -45,6 +68,25 @@ pub struct VersionStore {
 }
 
 impl VersionStore {
+    fn any_manifest_references(&self, object_id: &str, ignored: &VersionId) -> AppResult<bool> {
+        for skill in fs::read_dir(&self.paths.versions_dir).map_err(io_error)? {
+            let dir = skill.map_err(io_error)?.path();
+            for item in fs::read_dir(dir).map_err(io_error)? {
+                let path = item.map_err(io_error)?.path();
+                if path.extension().and_then(|x| x.to_str()) != Some("json") {
+                    continue;
+                }
+                let text = fs::read_to_string(&path).map_err(io_error)?;
+                if text.contains(&format!("\"{}\"", ignored.as_str())) {
+                    continue;
+                }
+                if text.contains(object_id) {
+                    return Ok(true);
+                }
+            }
+        }
+        Ok(false)
+    }
     pub fn new(paths: LibraryPaths) -> Self {
         Self { paths }
     }

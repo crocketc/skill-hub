@@ -8,6 +8,9 @@ use crate::{AppResult, ProjectId, SkillId, VersionId};
 #[async_trait]
 pub trait VersionCapture: VersionRepository {
     async fn capture(&self, skill_id: SkillId, source: &Path) -> AppResult<VersionRecord>;
+    async fn discard(&self, _record: &VersionRecord) -> AppResult<()> {
+        Ok(())
+    }
 }
 
 #[async_trait]
@@ -78,6 +81,12 @@ where
         V: VersionCapture,
     {
         self.repository.capture(skill_id, source).await
+    }
+    pub async fn discard(&self, record: &VersionRecord) -> AppResult<()>
+    where
+        V: VersionCapture,
+    {
+        self.repository.discard(record).await
     }
 }
 

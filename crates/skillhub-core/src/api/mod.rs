@@ -3,12 +3,13 @@ mod event;
 mod query;
 
 pub use command::{
-    AppCommand, AppCommandResult, CreateSkill, PinProjectSkillVersion, RenameSkill,
-    SaveSkillContent, SetCurrentVersion, SetLifecycle,
+    AppCommand, AppCommandResult, CreateCombination, CreateSkill, PinProjectSkillVersion,
+    RenameSkill, SaveSkillContent, SetCurrentVersion, SetLifecycle, SetMetadata, SetTrial,
 };
 pub use event::{AppEvent, FactsChanged};
 pub use query::{
-    AppQuery, AppQueryResult, BootstrapSnapshot, DiffVersions, GetSkill, ListVersions,
+    AppQuery, AppQueryResult, BootstrapSnapshot, CombinationResult, DiffVersions, GetSkill,
+    ListCombinations, ListVersions, SkillResult, VersionDiffResult, VersionResult,
 };
 
 use crate::AppResult;

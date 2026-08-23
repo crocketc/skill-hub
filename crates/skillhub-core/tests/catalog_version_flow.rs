@@ -22,30 +22,50 @@ impl CatalogRepository for FakeCatalog {
             .filter(|s| s.id() == id)
             .cloned())
     }
+    async fn remove(&self, _id: SkillId) -> AppResult<()> {
+        *self.0.lock().unwrap() = None;
+        Ok(())
+    }
 }
 
-struct FakeVersions(std::sync::Mutex<Vec<VersionRecord>>);
+struct FakeVersions {
+    records: std::sync::Mutex<Vec<VersionRecord>>,
+    fail_current: std::sync::atomic::AtomicBool,
+    discarded: std::sync::Mutex<Vec<VersionId>>,
+}
 #[async_trait]
 impl VersionRepository for FakeVersions {
     async fn current(&self, _: SkillId) -> AppResult<Option<VersionId>> {
-        Ok(self.0.lock().unwrap().last().map(|v| v.id.clone()))
+        Ok(self.records.lock().unwrap().last().map(|v| v.id.clone()))
     }
     async fn set_current(&self, _: SkillId, _: &VersionId) -> AppResult<()> {
+        if self
+            .fail_current
+            .swap(false, std::sync::atomic::Ordering::SeqCst)
+        {
+            return Err(skillhub_core::AppError::new(
+                skillhub_core::ErrorCode::InternalError,
+                skillhub_core::Severity::Error,
+            ));
+        }
         Ok(())
     }
     async fn diff(&self, _: &VersionId, _: &VersionId) -> AppResult<VersionDiff> {
         Ok(Default::default())
     }
     async fn list(&self, _: SkillId) -> AppResult<Vec<VersionRecord>> {
-        Ok(self.0.lock().unwrap().clone())
+        Ok(self.records.lock().unwrap().clone())
     }
 }
 #[async_trait]
 impl VersionCapture for FakeVersions {
     async fn capture(&self, skill_id: SkillId, source: &Path) -> AppResult<VersionRecord> {
         assert!(source.join("SKILL.md").exists());
-        let id =
-            VersionId::parse(&format!("sha256:{:064x}", self.0.lock().unwrap().len() + 1)).unwrap();
+        let id = VersionId::parse(&format!(
+            "sha256:{:064x}",
+            self.records.lock().unwrap().len() + 1
+        ))
+        .unwrap();
         let record = VersionRecord {
             id,
             manifest: skillhub_core::VersionManifest {
@@ -55,8 +75,16 @@ impl VersionCapture for FakeVersions {
                 entries: vec![],
             },
         };
-        self.0.lock().unwrap().push(record.clone());
+        self.records.lock().unwrap().push(record.clone());
         Ok(record)
+    }
+    async fn discard(&self, record: &VersionRecord) -> AppResult<()> {
+        self.records
+            .lock()
+            .unwrap()
+            .retain(|item| item.id != record.id);
+        self.discarded.lock().unwrap().push(record.id.clone());
+        Ok(())
     }
 }
 
@@ -82,7 +110,11 @@ fn create_save_and_rename_preserve_identity() {
     let source = tempdir().unwrap();
     std::fs::write(source.path().join("SKILL.md"), "# PDF").unwrap();
     let catalog = std::sync::Arc::new(FakeCatalog(std::sync::Mutex::new(None)));
-    let versions = std::sync::Arc::new(FakeVersions(std::sync::Mutex::new(vec![])));
+    let versions = std::sync::Arc::new(FakeVersions {
+        records: std::sync::Mutex::new(vec![]),
+        fail_current: std::sync::atomic::AtomicBool::new(false),
+        discarded: std::sync::Mutex::new(vec![]),
+    });
     let app = CatalogService::new(catalog.clone(), VersionService::new(versions.clone()));
     let skill = block_on(app.create_skill("pdf", source.path())).unwrap();
     assert!(block_on(app.current_version(skill.id())).unwrap().is_some());
@@ -100,8 +132,29 @@ fn create_save_and_rename_preserve_identity() {
 fn invalid_skill_file_is_rejected_without_catalog_write() {
     let source = tempdir().unwrap();
     let catalog = std::sync::Arc::new(FakeCatalog(std::sync::Mutex::new(None)));
-    let versions = std::sync::Arc::new(FakeVersions(std::sync::Mutex::new(vec![])));
+    let versions = std::sync::Arc::new(FakeVersions {
+        records: std::sync::Mutex::new(vec![]),
+        fail_current: std::sync::atomic::AtomicBool::new(false),
+        discarded: std::sync::Mutex::new(vec![]),
+    });
     let app = CatalogService::new(catalog.clone(), VersionService::new(versions));
     assert!(block_on(app.create_skill("pdf", source.path())).is_err());
     assert!(catalog.0.lock().unwrap().is_none());
+}
+
+#[test]
+fn current_failure_discards_captured_version_and_removes_new_skill() {
+    let source = tempdir().unwrap();
+    std::fs::write(source.path().join("SKILL.md"), "# PDF").unwrap();
+    let catalog = std::sync::Arc::new(FakeCatalog(std::sync::Mutex::new(None)));
+    let versions = std::sync::Arc::new(FakeVersions {
+        records: std::sync::Mutex::new(vec![]),
+        fail_current: std::sync::atomic::AtomicBool::new(true),
+        discarded: std::sync::Mutex::new(vec![]),
+    });
+    let app = CatalogService::new(catalog.clone(), VersionService::new(versions.clone()));
+    assert!(block_on(app.create_skill("pdf", source.path())).is_err());
+    assert!(catalog.0.lock().unwrap().is_none());
+    assert!(versions.records.lock().unwrap().is_empty());
+    assert_eq!(versions.discarded.lock().unwrap().len(), 1);
 }

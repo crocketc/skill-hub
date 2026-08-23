@@ -193,6 +193,24 @@ impl Skill {
             self.tags.remove("temporary_trial");
         }
     }
+
+    pub fn set_metadata(
+        &mut self,
+        display_name: Option<String>,
+        note: Option<String>,
+        tags: BTreeSet<String>,
+        author: Option<String>,
+        license: Option<String>,
+    ) -> Result<(), AppError> {
+        if let Some(name) = display_name {
+            self.rename(name)?;
+        }
+        self.user_note = note;
+        self.tags = tags;
+        self.author = author;
+        self.license = license;
+        self.validate()
+    }
     #[allow(clippy::too_many_arguments)]
     pub fn from_parts(
         id: SkillId,

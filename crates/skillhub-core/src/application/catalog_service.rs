@@ -1,3 +1,4 @@
+use std::collections::BTreeSet;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -53,6 +54,27 @@ where
         Ok(skill)
     }
 
+    pub async fn set_metadata(
+        &self,
+        id: SkillId,
+        display_name: Option<String>,
+        note: Option<String>,
+        tags: Vec<String>,
+        author: Option<String>,
+        license: Option<String>,
+    ) -> AppResult<Skill> {
+        let mut skill = self.require(id).await?;
+        skill.set_metadata(
+            display_name,
+            note,
+            tags.into_iter().collect::<BTreeSet<_>>(),
+            author,
+            license,
+        )?;
+        self.catalog.insert(&skill).await?;
+        Ok(skill)
+    }
+
     pub async fn create_skill(&self, name: impl Into<String>, source: &Path) -> AppResult<Skill>
     where
         V: super::VersionCapture,
@@ -61,8 +83,23 @@ where
         let skill = Skill::new(SkillId::new(), name);
         skill.validate()?;
         let version = self.versions.capture(skill.id(), source).await?;
-        self.catalog.insert(&skill).await?;
-        self.versions.set_current(skill.id(), &version.id).await?;
+        if let Err(error) = self.catalog.insert(&skill).await {
+            return match self.versions.discard(&version).await {
+                Ok(()) => Err(error),
+                Err(cleanup) => Err(recovery_error(error, cleanup)),
+            };
+        }
+        if let Err(error) = self.versions.set_current(skill.id(), &version.id).await {
+            let remove = self.catalog.remove(skill.id()).await;
+            let discard = self.versions.discard(&version).await;
+            if let Err(cleanup) = remove {
+                return Err(recovery_error(error, cleanup));
+            }
+            if let Err(cleanup) = discard {
+                return Err(recovery_error(error, cleanup));
+            }
+            return Err(error);
+        }
         Ok(skill)
     }
 
@@ -73,7 +110,12 @@ where
         validate_skill_directory(source)?;
         self.require(id).await?;
         let version = self.versions.capture(id, source).await?;
-        self.versions.set_current(id, &version.id).await?;
+        if let Err(error) = self.versions.set_current(id, &version.id).await {
+            return match self.versions.discard(&version).await {
+                Ok(()) => Err(error),
+                Err(cleanup) => Err(recovery_error(error, cleanup)),
+            };
+        }
         Ok(version.id)
     }
 
@@ -104,4 +146,12 @@ fn invalid_skill(field: &str) -> AppError {
     AppError::new(ErrorCode::InvalidInput, Severity::Error)
         .with_param("field", field)
         .with_action(RecoveryAction::ChooseAnotherName)
+}
+
+fn recovery_error(original: AppError, cleanup: AppError) -> AppError {
+    AppError::new(ErrorCode::OperationConflict, Severity::Critical)
+        .with_param("original_error", original.code.as_str())
+        .with_param("cleanup_error", cleanup.code.as_str())
+        .with_action(RecoveryAction::RollbackOperation)
+        .with_action(RecoveryAction::CompleteOperation)
 }
