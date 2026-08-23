@@ -3,14 +3,15 @@ mod event;
 mod query;
 
 pub use command::{
-    AppCommand, AppCommandResult, CreateCombination, CreateSkill, PinProjectSkillVersion,
-    RenameSkill, SaveSkillContent, SetCurrentVersion, SetLifecycle, SetMetadata, SetTrial,
+    AppCommand, AppCommandResult, CreateCombination, CreateCustomAgent, CreateSkill,
+    PinProjectSkillVersion, RemoveCustomAgent, RenameSkill, ResetProfileOverride, SaveSkillContent,
+    SetCurrentVersion, SetLifecycle, SetMetadata, SetTrial, UpdateCustomAgent,
 };
 pub use event::{AppEvent, FactsChanged};
 pub use query::{
     AppQuery, AppQueryResult, CombinationResult, DiffVersions, GetBootstrapSnapshot,
-    GetDiscoverySnapshot, GetSkill, ListCombinations, ListPendingItems, ListVersions, SkillResult,
-    VersionDiffResult, VersionResult,
+    GetDiscoverySnapshot, GetSkill, ListCombinations, ListCustomAgents, ListPendingItems,
+    ListVersions, SkillResult, VersionDiffResult, VersionResult,
 };
 
 use crate::AppResult;
