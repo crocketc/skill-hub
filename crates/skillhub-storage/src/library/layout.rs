@@ -82,8 +82,12 @@ impl CentralLibrary {
 
     pub fn save_portable_skill(&self, skill: &Skill, current: Option<&VersionId>) -> AppResult<()> {
         let mut manifest = self.load_manifest()?;
-        manifest.skills.retain(|record| record.id != skill.id());
-        let mut record = PortableSkillRecord::new(skill.id(), skill.display_name());
+        let mut record = manifest
+            .skills
+            .iter()
+            .find(|record| record.id == skill.id())
+            .cloned()
+            .unwrap_or_else(|| PortableSkillRecord::new(skill.id(), skill.display_name()));
         record.runtime_name = skill.runtime_name().to_owned();
         record.description = skill.original_description().to_owned();
         record.note = skill.note().map(str::to_owned);
@@ -91,6 +95,7 @@ impl CentralLibrary {
         record.author = skill.author().map(str::to_owned);
         record.license = skill.license().map(str::to_owned);
         record.current_version = current.cloned();
+        manifest.skills.retain(|existing| existing.id != skill.id());
         manifest.skills.push(record);
         self.write_manifest_atomic(&manifest)
     }

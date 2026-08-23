@@ -23,6 +23,9 @@ impl skillhub_core::VersionRepository for VersionStore {
     async fn set_current(&self, skill_id: SkillId, version_id: &VersionId) -> AppResult<()> {
         VersionStore::set_current(self, skill_id, version_id)
     }
+    async fn clear_current(&self, skill_id: SkillId) -> AppResult<()> {
+        VersionStore::clear_current(self, skill_id)
+    }
 
     async fn diff(&self, left: &VersionId, right: &VersionId) -> AppResult<VersionDiff> {
         VersionStore::diff(self, left, right)
@@ -145,7 +148,7 @@ impl VersionStore {
         }
         let tmp = object_store::unique_temp(&dir, ".manifest")?;
         fs::write(&tmp, to_vec_pretty(&manifest).map_err(json_error)?).map_err(io_error)?;
-        let created = if let Err(error) = fs::rename(&tmp, &path) {
+        let created = if let Err(error) = fs::hard_link(&tmp, &path) {
             let _ = fs::remove_file(&tmp);
             if !path.exists() {
                 return Err(io_error(error));
@@ -154,6 +157,7 @@ impl VersionStore {
         } else {
             true
         };
+        let _ = fs::remove_file(&tmp);
         Ok(CapturedVersion {
             created,
             record: VersionRecord { id, manifest },
@@ -242,6 +246,18 @@ impl VersionStore {
             if !target.exists() {
                 return Err(io_error(error));
             }
+        }
+        Ok(())
+    }
+
+    pub fn clear_current(&self, skill_id: SkillId) -> AppResult<()> {
+        let path = self
+            .paths
+            .metadata_dir
+            .join(skill_id.to_string())
+            .join("current");
+        if path.exists() {
+            fs::remove_file(path).map_err(io_error)?;
         }
         Ok(())
     }

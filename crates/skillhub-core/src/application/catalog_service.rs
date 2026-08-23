@@ -173,6 +173,7 @@ where
         }
         if let Err(error) = self.persist_portable(&skill, Some(&version.id)).await {
             let remove = self.catalog.remove(skill.id()).await;
+            let clear_current = self.versions.clear_current(skill.id()).await;
             let portable_remove = if let Some(portable) = &self.portable {
                 portable.remove_skill(skill.id()).await
             } else {
@@ -184,6 +185,9 @@ where
                 Ok(())
             };
             if let Err(cleanup) = remove {
+                return Err(recovery_error(error, cleanup));
+            }
+            if let Err(cleanup) = clear_current {
                 return Err(recovery_error(error, cleanup));
             }
             if let Err(cleanup) = portable_remove {
@@ -226,7 +230,7 @@ where
             let restore_catalog = self.catalog.insert(&old_skill).await;
             let restore_current = match old_current.as_ref() {
                 Some(previous) => self.versions.set_current(id, previous).await,
-                None => Ok(()),
+                None => self.versions.clear_current(id).await,
             };
             let restore_portable = if let Some(portable) = &self.portable {
                 match old_portable.as_ref() {

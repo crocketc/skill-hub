@@ -69,6 +69,9 @@ where
     pub async fn set_current(&self, skill_id: SkillId, version: &VersionId) -> AppResult<()> {
         self.repository.set_current(skill_id, version).await
     }
+    pub async fn clear_current(&self, skill_id: SkillId) -> AppResult<()> {
+        self.repository.clear_current(skill_id).await
+    }
     pub async fn pin_project<P: ProjectVersionPinRepository>(
         &self,
         pins: &P,
