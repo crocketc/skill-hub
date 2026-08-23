@@ -1,7 +1,8 @@
 use super::Database;
 use rusqlite::{params, OptionalExtension};
 use skillhub_core::bootstrap::{
-    BootstrapSnapshot, PendingSummary, RecentOperationSummary, StartupRecoveryState,
+    BootstrapSnapshot, DeploymentChartCategory, DeploymentDimension, PendingSummary,
+    RecentOperationSummary, StartupRecoveryState,
 };
 use skillhub_core::pending::{PendingItem, PendingKind};
 use skillhub_core::OperationPhase;
@@ -82,6 +83,41 @@ impl<'a> BootstrapRepository<'a> {
         Ok(result)
     }
 
+    /// Returns deployment counts for one chart dimension. The key is a stable
+    /// Agent id or Project id and the label is an i18n code, never a sentence.
+    pub fn deployment_chart(
+        &self,
+        dimension: DeploymentDimension,
+    ) -> AppResult<Vec<DeploymentChartCategory>> {
+        let (column, label_code) = match dimension {
+            DeploymentDimension::Agent => ("t.agent_id", "deployment.dimension.agent"),
+            DeploymentDimension::Project => (
+                "COALESCE(t.project_id, 'project:none')",
+                "deployment.dimension.project",
+            ),
+        };
+        let sql = format!(
+            "SELECT {column}, COUNT(*) FROM deployments d JOIN targets t ON t.id=d.target_id GROUP BY {column} ORDER BY {column}"
+        );
+        let mut statement = self.database.connection.prepare(&sql).map_err(error)?;
+        let mut result = Vec::new();
+        for row in statement
+            .query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+            })
+            .map_err(error)?
+        {
+            let (key, count) = row.map_err(error)?;
+            result.push(DeploymentChartCategory {
+                dimension,
+                key,
+                label_code: label_code.to_owned(),
+                count: count as u32,
+            });
+        }
+        Ok(result)
+    }
+
     pub fn build_snapshot(&self, today: (i32, u8, u8)) -> AppResult<BootstrapSnapshot> {
         let pending = self.list_pending(today)?;
         let skill_count = self.count("SELECT COUNT(*) FROM skills")?;
@@ -95,21 +131,8 @@ impl<'a> BootstrapRepository<'a> {
             .map_err(error)? as u32;
         let deployed_count =
             self.count("SELECT COUNT(*) FROM deployments WHERE state IN ('deployed','active')")?;
-        let mut deployment_categories = std::collections::BTreeMap::new();
-        let mut deployment_rows = self
-            .database
-            .connection
-            .prepare("SELECT state, COUNT(*) FROM deployments GROUP BY state ORDER BY state")
-            .map_err(error)?;
-        for row in deployment_rows
-            .query_map([], |row| {
-                Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
-            })
-            .map_err(error)?
-        {
-            let (category, count) = row.map_err(error)?;
-            deployment_categories.insert(category, count as u32);
-        }
+        let mut deployment_categories = self.deployment_chart(DeploymentDimension::Agent)?;
+        deployment_categories.extend(self.deployment_chart(DeploymentDimension::Project)?);
         let mut recent_operations = Vec::new();
         let mut ops = self.database.connection.prepare("SELECT operation_id,kind,state,phase,error_code,created_at FROM operations ORDER BY created_at DESC,operation_id DESC LIMIT 10").map_err(error)?;
         for row in ops
@@ -145,7 +168,13 @@ impl<'a> BootstrapRepository<'a> {
             )
             .map_err(error)?
             .map(|value| value.to_string());
-        let recovery_state = if self.database.connection.query_row::<i64, _, _>("SELECT EXISTS(SELECT 1 FROM operations WHERE state='needs_recovery' OR phase='needs_recovery')", [], |row| row.get(0)).map_err(error)? != 0 { StartupRecoveryState::NeedsRecovery } else { StartupRecoveryState::Clean };
+        let recovery_state = if self.database.connection.query_row::<i64, _, _>("SELECT EXISTS(SELECT 1 FROM operations WHERE state='needs_recovery' OR phase='needs_recovery')", [], |row| row.get(0)).map_err(error)? != 0 {
+            StartupRecoveryState::NeedsRecovery
+        } else if self.database.connection.query_row::<i64, _, _>("SELECT EXISTS(SELECT 1 FROM operations WHERE state NOT IN ('completed','failed','rolled_back') AND phase NOT IN ('committed','rolled_back','needs_recovery'))", [], |row| row.get(0)).map_err(error)? != 0 {
+            StartupRecoveryState::InProgress
+        } else {
+            StartupRecoveryState::Clean
+        };
         Ok(BootstrapSnapshot {
             skill_count,
             project_count,

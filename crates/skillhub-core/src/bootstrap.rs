@@ -5,6 +5,23 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 #[derive(
+    Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, specta::Type,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum DeploymentDimension {
+    Agent,
+    Project,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+pub struct DeploymentChartCategory {
+    pub dimension: DeploymentDimension,
+    pub key: String,
+    pub label_code: String,
+    pub count: u32,
+}
+
+#[derive(
     Clone,
     Copy,
     Debug,
@@ -60,7 +77,7 @@ pub struct BootstrapSnapshot {
     pub project_count: u32,
     pub agent_count: u32,
     pub deployed_count: u32,
-    pub deployment_categories: BTreeMap<String, u32>,
+    pub deployment_categories: Vec<DeploymentChartCategory>,
     pub recent_operations: Vec<RecentOperationSummary>,
     pub pending: PendingSummary,
     pub last_scan_at: Option<String>,

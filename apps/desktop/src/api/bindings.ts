@@ -24,7 +24,7 @@ export type BootstrapSnapshot = {
 	project_count: number,
 	agent_count: number,
 	deployed_count: number,
-	deployment_categories: { [key in string]: number },
+	deployment_categories: DeploymentChartCategory[],
 	recent_operations: RecentOperationSummary[],
 	pending: PendingSummary,
 	last_scan_at: string | null,
@@ -45,6 +45,15 @@ export type CreateSkill = {
 	name: string,
 	source_path: string,
 };
+
+export type DeploymentChartCategory = {
+	dimension: DeploymentDimension,
+	key: string,
+	label_code: string,
+	count: number,
+};
+
+export type DeploymentDimension = "agent" | "project";
 
 export type DiffVersions = {
 	left: VersionId,

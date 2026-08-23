@@ -15,7 +15,8 @@ pub use api::{
     FactsChanged, Page,
 };
 pub use bootstrap::{
-    BootstrapSnapshot, PendingSummary, RecentOperationSummary, StartupRecoveryState,
+    BootstrapSnapshot, DeploymentChartCategory, DeploymentDimension, PendingSummary,
+    RecentOperationSummary, StartupRecoveryState,
 };
 pub use error::{AppError, AppResult, ErrorCode, RecoveryAction, Severity};
 pub use operation::{OperationPhase, OperationProgress, OperationSummary};
