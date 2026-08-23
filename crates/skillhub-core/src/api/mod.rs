@@ -8,8 +8,9 @@ pub use command::{
 };
 pub use event::{AppEvent, FactsChanged};
 pub use query::{
-    AppQuery, AppQueryResult, BootstrapSnapshot, CombinationResult, DiffVersions, GetSkill,
-    ListCombinations, ListVersions, SkillResult, VersionDiffResult, VersionResult,
+    AppQuery, AppQueryResult, CombinationResult, DiffVersions, GetBootstrapSnapshot, GetSkill,
+    ListCombinations, ListPendingItems, ListVersions, SkillResult, VersionDiffResult,
+    VersionResult,
 };
 
 use crate::AppResult;

@@ -157,7 +157,7 @@ fn command_bridge_forwards_typed_envelopes_to_injected_facade() {
 
         async fn query(&self, query: AppQuery) -> AppResult<AppQueryResult> {
             self.queries.lock().expect("queries mutex").push(query);
-            Ok(AppQueryResult::BootstrapSnapshot(BootstrapSnapshot {}))
+            Ok(AppQueryResult::BootstrapSnapshot(BootstrapSnapshot::empty()))
         }
     }
 

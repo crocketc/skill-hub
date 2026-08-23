@@ -1,5 +1,5 @@
 use crate::search::{SearchHit, SearchQuery};
-use crate::{SkillId, VersionId};
+use crate::{BootstrapSnapshot, SkillId, VersionId};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
@@ -40,8 +40,11 @@ pub struct CombinationResult {
     pub members: Vec<SkillId>,
 }
 
-#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
-pub struct BootstrapSnapshot {}
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+pub struct GetBootstrapSnapshot;
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+pub struct ListPendingItems;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 #[serde(tag = "type", content = "payload")]
@@ -58,6 +61,8 @@ pub enum AppQuery {
     Search(SearchQuery),
     #[serde(rename = "get_bootstrap_snapshot")]
     GetBootstrapSnapshot,
+    #[serde(rename = "list_pending_items")]
+    ListPendingItems(ListPendingItems),
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
@@ -75,4 +80,6 @@ pub enum AppQueryResult {
     SearchResults(Vec<SearchHit>),
     #[serde(rename = "bootstrap_snapshot")]
     BootstrapSnapshot(BootstrapSnapshot),
+    #[serde(rename = "pending_items")]
+    PendingItems(Vec<crate::pending::PendingItem>),
 }
