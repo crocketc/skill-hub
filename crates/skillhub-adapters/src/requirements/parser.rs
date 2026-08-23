@@ -1,5 +1,4 @@
 use super::rules;
-use super::rules::EnvironmentVariableEvidence;
 use skillhub_core::catalog::{DeclaredRequirement, RequirementKind};
 use std::collections::BTreeSet;
 use std::fs;
@@ -10,6 +9,13 @@ use std::path::{Path, PathBuf};
 pub struct SourceLocation {
     pub file: String,
     pub line: usize,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EnvironmentVariableEvidence {
+    pub name: String,
+    pub value: Option<String>,
+    pub location: SourceLocation,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -75,38 +81,51 @@ impl DeclaredRequirementParser {
                 .to_string_lossy()
                 .replace('\\', "/");
             let frontmatter = frontmatter_lines(&content);
+            let known_file = !relative.eq_ignore_ascii_case("SKILL.md");
             for (line_no, line) in content.lines().enumerate() {
                 let line_number = line_no + 1;
                 let trimmed = line.trim();
-                if trimmed.contains("用户备注") {
+                let user_note = trimmed.contains("用户备注");
+                if user_note {
                     parsed.user_notes.push(trimmed.to_owned());
                 }
-                parse_compatibility(trimmed, line_number, &relative, &mut parsed.compatibility);
+                if !user_note {
+                    parse_compatibility(trimmed, line_number, &relative, &mut parsed.compatibility);
+                }
                 let explicit = frontmatter.contains(&line_number) && is_explicit_line(trimmed)
                     || is_markdown_explicit(trimmed);
-                if let Some((kind, name, version)) = rules::classify(trimmed) {
-                    let evidence = RequirementEvidence {
-                        kind,
-                        name,
-                        version,
-                        explicit,
-                        source_code: sanitize_source(trimmed),
-                        location: SourceLocation {
-                            file: relative.clone(),
-                            line: line_number,
-                        },
-                    };
-                    if explicit {
-                        parsed.explicit.push(evidence);
-                    } else {
-                        parsed.clues.push(evidence);
+                if !known_file {
+                    if let Some((kind, name, version)) = rules::classify(trimmed) {
+                        let evidence = RequirementEvidence {
+                            kind,
+                            name,
+                            version,
+                            explicit,
+                            source_code: sanitize_source(trimmed),
+                            location: SourceLocation {
+                                file: relative.clone(),
+                                line: line_number,
+                            },
+                        };
+                        if explicit {
+                            parsed.explicit.push(evidence);
+                        } else {
+                            parsed.clues.push(evidence);
+                        }
                     }
                 }
                 for name in rules::environment_variables(trimmed) {
                     if seen_env.insert(name.clone()) {
                         parsed
                             .environment_variables
-                            .push(EnvironmentVariableEvidence { name, value: None });
+                            .push(EnvironmentVariableEvidence {
+                                name,
+                                value: None,
+                                location: SourceLocation {
+                                    file: relative.clone(),
+                                    line: line_number,
+                                },
+                            });
                     }
                 }
             }
@@ -244,7 +263,7 @@ fn parse_known_file(
                 name,
                 version,
                 explicit: true,
-                source_code: line.trim().to_owned(),
+                source_code: sanitize_source(line.trim()),
                 location: SourceLocation {
                     file: relative.to_owned(),
                     line: index + 1,
@@ -271,16 +290,23 @@ fn deduplicate(values: &mut Vec<RequirementEvidence>) {
 }
 
 fn sanitize_source(line: &str) -> String {
-    if let Some(index) = line.find('=') {
-        let left = line[..index].trim();
-        if left.len() > 2
-            && left.contains('_')
-            && left
-                .chars()
-                .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_')
-        {
-            return format!("{left}=<redacted>");
-        }
-    }
-    line.to_owned()
+    line.split_whitespace()
+        .map(|token| {
+            let Some(index) = token.find('=') else {
+                return token.to_owned();
+            };
+            let left = &token[..index];
+            if left.len() > 2
+                && left.contains('_')
+                && left
+                    .chars()
+                    .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_')
+            {
+                format!("{left}=<redacted>")
+            } else {
+                token.to_owned()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
 }

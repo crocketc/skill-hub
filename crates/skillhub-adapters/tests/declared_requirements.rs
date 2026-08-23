@@ -23,7 +23,12 @@ fn separates_explicit_requirements_from_reference_clues() {
     assert!(parsed
         .environment_variables
         .iter()
-        .any(|v: &EnvironmentVariableEvidence| v.name == "OPENAI_API_KEY" && v.value.is_none()));
+        .any(|v: &EnvironmentVariableEvidence| {
+            v.name == "OPENAI_API_KEY"
+                && v.value.is_none()
+                && v.location.file == "SKILL.md"
+                && v.location.line == 5
+        }));
 }
 
 #[test]
@@ -63,11 +68,15 @@ fn known_dependency_files_are_explicit_but_credentials_are_never_read() {
     .unwrap();
     std::fs::write(
         root.path().join("requirements.txt"),
-        "ffmpeg-python==0.2.0\nOPENAI_API_KEY=do-not-read\n",
+        "ffmpeg-python==0.2.0\nprefix OPENAI_API_KEY=do-not-read # ffmpeg\n",
     )
     .unwrap();
     let parsed = DeclaredRequirementParser::parse(root.path()).unwrap();
     assert!(parsed.explicit.iter().any(|requirement| {
+        requirement.kind == RequirementKind::Ffmpeg
+            && requirement.location.file == "requirements.txt"
+    }));
+    assert!(!parsed.clues.iter().any(|requirement| {
         requirement.kind == RequirementKind::Ffmpeg
             && requirement.location.file == "requirements.txt"
     }));
@@ -79,4 +88,20 @@ fn known_dependency_files_are_explicit_but_credentials_are_never_read() {
         .explicit
         .iter()
         .all(|requirement| !requirement.source_code.contains("do-not-read")));
+}
+
+#[test]
+fn user_notes_do_not_become_compatibility_statements_and_tool_names_use_boundaries() {
+    let root = tempfile::tempdir().unwrap();
+    std::fs::write(
+        root.path().join("SKILL.md"),
+        "用户备注：agent: Codex\nThis is a digital workflow.\n",
+    )
+    .unwrap();
+    let parsed = DeclaredRequirementParser::parse(root.path()).unwrap();
+    assert!(parsed.compatibility.is_empty());
+    assert!(!parsed
+        .clues
+        .iter()
+        .any(|requirement| requirement.kind == RequirementKind::OtherTool));
 }

@@ -1,13 +1,11 @@
 use skillhub_core::catalog::RequirementKind;
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct EnvironmentVariableEvidence {
-    pub name: String,
-    pub value: Option<String>,
-}
-
 pub(crate) fn classify(text: &str) -> Option<(RequirementKind, String, Option<String>)> {
     let lower = text.to_ascii_lowercase();
+    let tokens: Vec<_> = lower
+        .split(|c: char| !c.is_ascii_alphanumeric())
+        .filter(|token| !token.is_empty())
+        .collect();
     let kind = if lower.contains("ffmpeg") {
         RequirementKind::Ffmpeg
     } else if lower.contains("python") {
@@ -18,7 +16,7 @@ pub(crate) fn classify(text: &str) -> Option<(RequirementKind, String, Option<St
         RequirementKind::Plugin
     } else if ["node", "docker", "pandoc", "imagemagick", "git"]
         .iter()
-        .any(|tool| lower.contains(tool))
+        .any(|tool| tokens.contains(tool))
     {
         RequirementKind::OtherTool
     } else {
