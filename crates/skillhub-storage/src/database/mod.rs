@@ -1,5 +1,6 @@
 mod catalog_repository;
 mod migrations;
+mod search_repository;
 
 use std::fmt;
 use std::path::Path;
@@ -9,6 +10,7 @@ use skillhub_core::{AppError, AppResult, ErrorCode, RecoveryAction, Severity};
 
 pub use catalog_repository::CatalogRepositorySqlite;
 pub use migrations::MigrationReport;
+pub use search_repository::SearchRepository;
 
 /// An application database backed by SQLite.
 pub struct Database {
@@ -28,6 +30,10 @@ impl fmt::Debug for Database {
 impl Database {
     pub fn catalog_repository(&self) -> AppResult<CatalogRepositorySqlite<'_>> {
         CatalogRepositorySqlite::new(self)
+    }
+
+    pub fn search_repository(&self) -> SearchRepository<'_> {
+        SearchRepository::new(self)
     }
 
     #[doc(hidden)]

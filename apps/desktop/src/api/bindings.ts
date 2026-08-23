@@ -15,9 +15,9 @@ export type AppCommandResult = { type: "operation_summary"; payload: OperationSu
 
 export type AppEvent = { type: "operation_progress"; payload: OperationProgress } | { type: "operation_finished"; payload: OperationSummary } | { type: "facts_changed"; payload: FactsChanged };
 
-export type AppQuery = { type: "get_skill"; payload: GetSkill } | { type: "list_versions"; payload: ListVersions } | { type: "diff_versions"; payload: DiffVersions } | { type: "list_combinations"; payload: ListCombinations } | { type: "get_bootstrap_snapshot" };
+export type AppQuery = { type: "get_skill"; payload: GetSkill } | { type: "list_versions"; payload: ListVersions } | { type: "diff_versions"; payload: DiffVersions } | { type: "list_combinations"; payload: ListCombinations } | { type: "search"; payload: SearchQuery } | { type: "get_bootstrap_snapshot" };
 
-export type AppQueryResult = { type: "skill"; payload: SkillResult } | { type: "versions"; payload: VersionResult[] } | { type: "version_diff"; payload: VersionDiffResult } | { type: "combinations"; payload: CombinationResult[] } | { type: "bootstrap_snapshot"; payload: BootstrapSnapshot };
+export type AppQueryResult = { type: "skill"; payload: SkillResult } | { type: "versions"; payload: VersionResult[] } | { type: "version_diff"; payload: VersionDiffResult } | { type: "combinations"; payload: CombinationResult[] } | { type: "search_results"; payload: SearchHit[] } | { type: "bootstrap_snapshot"; payload: BootstrapSnapshot };
 
 export type BootstrapSnapshot = Record<string, never>;
 
@@ -91,6 +91,20 @@ export type RenameSkill = {
 export type SaveSkillContent = {
 	skill_id: SkillId,
 	source_path: string,
+};
+
+export type SearchField = "DisplayName" | "RuntimeName" | "OriginalDescription" | "TranslatedDescription" | "UserNote" | "Tags" | "Author" | "License" | "Requirements" | "Markdown";
+
+export type SearchHit = {
+	skill_id: SkillId,
+	skill_name: string,
+	rank: number | null,
+	highlighted_fields: SearchField[],
+};
+
+export type SearchQuery = {
+	text: string,
+	limit: number,
 };
 
 export type SetCurrentVersion = {

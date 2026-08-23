@@ -1,3 +1,4 @@
+use crate::search::{SearchHit, SearchQuery};
 use crate::{SkillId, VersionId};
 use serde::{Deserialize, Serialize};
 
@@ -53,6 +54,8 @@ pub enum AppQuery {
     DiffVersions(DiffVersions),
     #[serde(rename = "list_combinations")]
     ListCombinations(ListCombinations),
+    #[serde(rename = "search")]
+    Search(SearchQuery),
     #[serde(rename = "get_bootstrap_snapshot")]
     GetBootstrapSnapshot,
 }
@@ -68,6 +71,8 @@ pub enum AppQueryResult {
     VersionDiff(VersionDiffResult),
     #[serde(rename = "combinations")]
     Combinations(Vec<CombinationResult>),
+    #[serde(rename = "search_results")]
+    SearchResults(Vec<SearchHit>),
     #[serde(rename = "bootstrap_snapshot")]
     BootstrapSnapshot(BootstrapSnapshot),
 }

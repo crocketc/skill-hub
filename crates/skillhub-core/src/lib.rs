@@ -5,6 +5,7 @@ mod error;
 mod ids;
 mod operation;
 mod path_policy;
+pub mod search;
 pub mod versioning;
 
 pub use api::{
