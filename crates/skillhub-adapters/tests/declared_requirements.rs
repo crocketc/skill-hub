@@ -156,3 +156,25 @@ fn tool_names_require_word_boundaries() {
             )
         }));
 }
+
+#[test]
+fn redacts_quoted_and_yaml_values_without_preserving_suffixes() {
+    let root = tempfile::tempdir().unwrap();
+    std::fs::write(
+        root.path().join("SKILL.md"),
+        "OPENAI_API_KEY=\"first secret\" ffmpeg\nOPENAI_API_KEY: second secret Python\n",
+    )
+    .unwrap();
+    let parsed = DeclaredRequirementParser::parse(root.path()).unwrap();
+    assert!(parsed
+        .explicit
+        .iter()
+        .chain(parsed.clues.iter())
+        .all(|requirement| {
+            !requirement.source_code.contains("first")
+                && !requirement.source_code.contains("secret")
+                && !requirement.source_code.contains("second")
+                && !requirement.source_code.contains("ffmpeg")
+                && !requirement.source_code.contains("Python")
+        }));
+}

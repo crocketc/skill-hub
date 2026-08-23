@@ -291,8 +291,6 @@ fn deduplicate(values: &mut Vec<RequirementEvidence>) {
 
 fn sanitize_source(line: &str) -> String {
     let bytes = line.as_bytes();
-    let mut output = String::with_capacity(line.len());
-    let mut cursor = 0;
     let mut index = 0;
     while index < bytes.len() {
         if is_name_start(bytes, index) {
@@ -310,28 +308,18 @@ fn sanitize_source(line: &str) -> String {
                 && separator < bytes.len()
                 && (bytes[separator] == b'=' || bytes[separator] == b':')
             {
-                let mut value_start = separator + 1;
-                while value_start < bytes.len() && bytes[value_start].is_ascii_whitespace() {
-                    value_start += 1;
-                }
-                let mut value_end = value_start;
-                while value_end < bytes.len() && !bytes[value_end].is_ascii_whitespace() {
-                    value_end += 1;
-                }
-                output.push_str(&line[cursor..name_start]);
+                let mut output = String::with_capacity(name_start + name.len() + 12);
+                output.push_str(&line[..name_start]);
                 output.push_str(name);
                 output.push_str("=<redacted>");
-                cursor = value_end;
-                index = value_end;
-                continue;
+                return output;
             }
             index = name_start + name.len();
         } else {
             index += 1;
         }
     }
-    output.push_str(&line[cursor..]);
-    output
+    line.to_owned()
 }
 
 fn is_name_start(bytes: &[u8], index: usize) -> bool {
