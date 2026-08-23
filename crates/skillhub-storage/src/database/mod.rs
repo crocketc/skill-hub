@@ -26,8 +26,13 @@ impl fmt::Debug for Database {
 }
 
 impl Database {
-    pub fn catalog_repository(&self) -> CatalogRepositorySqlite<'_> {
+    pub fn catalog_repository(&self) -> AppResult<CatalogRepositorySqlite<'_>> {
         CatalogRepositorySqlite::new(self)
+    }
+
+    #[doc(hidden)]
+    pub fn connection_for_test(&self) -> &Connection {
+        &self.connection
     }
     /// Opens a database file and applies all migrations required by this build.
     pub fn open(path: impl AsRef<Path>) -> AppResult<Self> {

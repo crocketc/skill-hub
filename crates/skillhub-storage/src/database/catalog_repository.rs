@@ -1,9 +1,7 @@
 use super::Database;
 use async_trait::async_trait;
 use rusqlite::params;
-use skillhub_core::catalog::{
-    CallPolicy, CatalogRepository, DeclaredRequirement, Skill, SkillLifecycle,
-};
+use skillhub_core::catalog::{CallPolicy, CatalogRepository, Skill, SkillLifecycle};
 use skillhub_core::{AppError, AppResult, ErrorCode, RecoveryAction, Severity, SkillId};
 use std::collections::BTreeSet;
 
@@ -11,9 +9,11 @@ pub struct CatalogRepositorySqlite<'a> {
     database: &'a Database,
 }
 impl<'a> CatalogRepositorySqlite<'a> {
-    pub fn new(database: &'a Database) -> Self {
-        let _ = database.connection.execute_batch("CREATE TABLE IF NOT EXISTS catalog_skill_metadata (skill_id TEXT PRIMARY KEY REFERENCES skills(id) ON DELETE CASCADE, requirements_json TEXT NOT NULL DEFAULT '[]', trial_due TEXT)");
-        Self { database }
+    pub fn new(database: &'a Database) -> AppResult<Self> {
+        if !database.has_table("catalog_skill_metadata")? {
+            return Err(AppError::new(ErrorCode::MigrationRequired, Severity::Error));
+        }
+        Ok(Self { database })
     }
 }
 
@@ -23,7 +23,8 @@ impl CatalogRepository for CatalogRepositorySqlite<'_> {
         skill.validate()?;
         let conn = &self.database.connection;
         let tx = conn.unchecked_transaction().map_err(error)?;
-        tx.execute("INSERT OR REPLACE INTO skills (id,display_name,runtime_name,original_description,translated_description,user_note,author,license,call_policy,lifecycle,created_at,updated_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,COALESCE((SELECT created_at FROM skills WHERE id=?1),?11),?11)", params![skill.id().to_string(), skill.display_name(), skill.runtime_name(), skill.original_description(), skill.translated_description(), skill.note().unwrap_or_default(), skill.author(), skill.license(), policy_code(skill.call_policy()), lifecycle_code(skill.lifecycle()), now()]).map_err(error)?;
+        let timestamp = now();
+        tx.execute("INSERT INTO skills (id,display_name,runtime_name,original_description,translated_description,user_note,author,license,call_policy,lifecycle,created_at,updated_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?11) ON CONFLICT(id) DO UPDATE SET display_name=excluded.display_name,runtime_name=excluded.runtime_name,original_description=excluded.original_description,translated_description=excluded.translated_description,user_note=excluded.user_note,author=excluded.author,license=excluded.license,call_policy=excluded.call_policy,lifecycle=excluded.lifecycle,updated_at=excluded.updated_at", params![skill.id().to_string(), skill.display_name(), skill.runtime_name(), skill.original_description(), skill.translated_description(), skill.note().unwrap_or_default(), skill.author(), skill.license(), policy_code(skill.call_policy()), lifecycle_code(skill.lifecycle()), timestamp]).map_err(error)?;
         tx.execute(
             "DELETE FROM skill_tags WHERE skill_id=?1",
             [skill.id().to_string()],
@@ -79,16 +80,24 @@ impl CatalogRepository for CatalogRepositorySqlite<'_> {
         {
             tags.insert(tag.map_err(error)?);
         }
-        let (requirements, due): (Vec<DeclaredRequirement>, Option<String>) = conn
+        let metadata: Option<(String, Option<String>)> = conn
             .query_row(
                 "SELECT requirements_json,trial_due FROM catalog_skill_metadata WHERE skill_id=?1",
                 [id.to_string()],
                 |r| Ok((r.get::<_, String>(0)?, r.get(1)?)),
             )
             .optional()
-            .map_err(error)?
-            .map(|(j, d)| (serde_json::from_str(&j).unwrap_or_default(), d))
-            .unwrap_or_default();
+            .map_err(error)?;
+        let (requirements, due) = if let Some((json, due)) = metadata {
+            (
+                serde_json::from_str(&json).map_err(|_| {
+                    AppError::new(ErrorCode::RequirementsInvalidDeclaration, Severity::Error)
+                })?,
+                due,
+            )
+        } else {
+            (Vec::new(), None)
+        };
         Ok(Some(Skill::from_parts(
             id,
             display,
@@ -99,16 +108,19 @@ impl CatalogRepository for CatalogRepositorySqlite<'_> {
             tags,
             author,
             license,
-            parse_policy(&policy),
-            parse_lifecycle(&lifecycle),
+            parse_policy(&policy)?,
+            parse_lifecycle(&lifecycle)?,
             requirements,
             due.and_then(parse_date),
-        )))
+        )?))
     }
 }
 
 fn now() -> i64 {
-    0
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64
 }
 fn policy_code(v: CallPolicy) -> &'static str {
     match v {
@@ -123,18 +135,25 @@ fn lifecycle_code(v: SkillLifecycle) -> &'static str {
         SkillLifecycle::Archived => "archived",
     }
 }
-fn parse_policy(v: &str) -> CallPolicy {
-    if v == "manual_only" {
-        CallPolicy::ManualOnly
-    } else {
-        CallPolicy::AutomaticAndManual
+fn parse_policy(v: &str) -> AppResult<CallPolicy> {
+    match v {
+        "manual_only" => Ok(CallPolicy::ManualOnly),
+        "automatic_and_manual" => Ok(CallPolicy::AutomaticAndManual),
+        _ => Err(AppError::new(
+            ErrorCode::CatalogInvalidMetadata,
+            Severity::Error,
+        )),
     }
 }
-fn parse_lifecycle(v: &str) -> SkillLifecycle {
+fn parse_lifecycle(v: &str) -> AppResult<SkillLifecycle> {
     match v {
-        "deprecated" => SkillLifecycle::Deprecated,
-        "archived" => SkillLifecycle::Archived,
-        _ => SkillLifecycle::Normal,
+        "normal" => Ok(SkillLifecycle::Normal),
+        "deprecated" => Ok(SkillLifecycle::Deprecated),
+        "archived" => Ok(SkillLifecycle::Archived),
+        _ => Err(AppError::new(
+            ErrorCode::CatalogInvalidMetadata,
+            Severity::Error,
+        )),
     }
 }
 fn parse_date(v: String) -> Option<(i32, u8, u8)> {

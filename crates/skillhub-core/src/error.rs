@@ -31,6 +31,10 @@ pub enum ErrorCode {
     InternalError,
     #[serde(rename = "combination.nesting_not_allowed")]
     CombinationNestingNotAllowed,
+    #[serde(rename = "catalog.invalid_metadata")]
+    CatalogInvalidMetadata,
+    #[serde(rename = "requirements.invalid_declaration")]
+    RequirementsInvalidDeclaration,
 }
 
 #[allow(non_upper_case_globals)]
@@ -52,6 +56,8 @@ impl ErrorCode {
             Self::DatabaseNewerSchema => "database.newer_schema",
             Self::InternalError => "internal.error",
             Self::CombinationNestingNotAllowed => "combination.nesting_not_allowed",
+            Self::CatalogInvalidMetadata => "catalog.invalid_metadata",
+            Self::RequirementsInvalidDeclaration => "requirements.invalid_declaration",
         }
     }
 }

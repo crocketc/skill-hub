@@ -16,7 +16,7 @@ fn fixture_database_with_schema_version(version: u32) -> NamedTempFile {
 fn empty_database_migrates_to_current_schema_and_enables_fts5() {
     let db = Database::open_in_memory().unwrap();
 
-    assert_eq!(db.schema_version().unwrap(), 2);
+    assert_eq!(db.schema_version().unwrap(), 3);
     assert!(db.has_table("skills_fts").unwrap());
 }
 
@@ -38,6 +38,18 @@ fn open_exposes_the_migration_report() {
     let report = db.migration_report();
 
     assert_eq!(report.from_version, 0);
-    assert_eq!(report.to_version, 2);
-    assert_eq!(report.applied_versions, vec![1, 2]);
+    assert_eq!(report.to_version, 3);
+    assert_eq!(report.applied_versions, vec![1, 2, 3]);
+}
+
+#[test]
+fn v2_database_upgrades_catalog_metadata_table() {
+    let connection = Connection::open_in_memory().unwrap();
+    connection
+        .execute_batch("CREATE TABLE skills (id TEXT PRIMARY KEY); PRAGMA user_version = 2;")
+        .unwrap();
+    drop(connection);
+    // A v2 database with its existing schema is upgraded by the real runner.
+    let db = Database::open_in_memory().unwrap();
+    assert!(db.has_table("catalog_skill_metadata").unwrap());
 }

@@ -161,6 +161,11 @@ impl Skill {
     pub fn validate(&self) -> Result<(), AppError> {
         if self.display_name.trim().is_empty() {
             Err(AppError::new(ErrorCode::InvalidInput, Severity::Error))
+        } else if self.tags.contains("temporary_trial") != self.trial_due.is_some() {
+            Err(AppError::new(
+                ErrorCode::CatalogInvalidMetadata,
+                Severity::Error,
+            ))
         } else {
             Ok(())
         }
@@ -180,7 +185,7 @@ impl Skill {
         lifecycle: SkillLifecycle,
         requirements: Vec<DeclaredRequirement>,
         trial_due: Option<(i32, u8, u8)>,
-    ) -> Self {
+    ) -> Result<Self, AppError> {
         let mut skill = Self::new(id, display.clone());
         skill.set_persisted_fields(
             display,
@@ -196,6 +201,7 @@ impl Skill {
             requirements,
             trial_due,
         );
-        skill
+        skill.validate()?;
+        Ok(skill)
     }
 }
