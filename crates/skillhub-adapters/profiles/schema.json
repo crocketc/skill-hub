@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SkillHub Agent Profile",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["profile_version", "research_date", "official_references", "brand", "clients"],
+  "properties": {
+    "profile_version": {"type": "integer", "minimum": 1},
+    "research_date": {"type": "string", "format": "date"},
+    "official_references": {"type": "array", "items": {"type": "string", "format": "uri"}},
+    "brand": {"type": "string", "minLength": 1},
+    "clients": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/client"}}
+  },
+  "$defs": {
+    "client": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "kind", "supported_os", "path_candidates", "skill_marker", "deployment", "call_policy"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "kind": {"enum": ["cli", "desktop", "ide_extension", "tui", "headless", "acp", "web", "mobile", "bot"]},
+        "supported_os": {"type": "array", "items": {"enum": ["windows", "macos"]}},
+        "path_candidates": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/path"}},
+        "skill_marker": {"type": "string", "minLength": 1},
+        "deployment": {"$ref": "#/$defs/deployment"},
+        "call_policy": {"enum": ["automatic", "user_selected", "unknown"]}
+      }
+    },
+    "path": {
+      "type": "object", "additionalProperties": false,
+      "required": ["path", "scope", "precedence", "marker"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "scope": {"enum": ["global", "project", "extra"]},
+        "precedence": {"enum": ["preferred", "lower_priority_copy", "may_coexist", "unknown"]},
+        "marker": {"type": "string", "minLength": 1}
+      }
+    },
+    "deployment": {
+      "type": "object", "additionalProperties": false,
+      "required": ["copy", "symlink", "junction"],
+      "properties": {
+        "copy": {"type": "boolean"}, "symlink": {"type": "boolean"}, "junction": {"type": "boolean"},
+        "limitations": {"type": "array", "items": {"type": "string"}}
+      }
+    }
+  }
+}
