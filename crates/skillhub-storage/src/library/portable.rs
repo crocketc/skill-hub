@@ -23,14 +23,18 @@ impl PortableManifestStore {
 
     pub fn load(&self) -> AppResult<LibraryManifest> {
         let bytes = fs::read(&self.path).map_err(io_error)?;
-        serde_json::from_slice(&bytes).map_err(json_error)
+        let manifest: LibraryManifest = serde_json::from_slice(&bytes).map_err(json_error)?;
+        validate_manifest_version(&manifest)?;
+        Ok(manifest)
     }
 
     pub fn write_atomic(&self, manifest: &LibraryManifest) -> AppResult<()> {
+        validate_manifest_version(manifest)?;
         // Serialize and parse before touching the filesystem. This prevents a
         // malformed in-memory value from ever replacing a valid manifest.
         let bytes = serde_json::to_vec_pretty(manifest).map_err(json_error)?;
-        let _: LibraryManifest = serde_json::from_slice(&bytes).map_err(json_error)?;
+        let parsed: LibraryManifest = serde_json::from_slice(&bytes).map_err(json_error)?;
+        validate_manifest_version(&parsed)?;
         let parent = self.path.parent().ok_or_else(|| {
             AppError::new(ErrorCode::InternalError, Severity::Error)
                 .with_action(RecoveryAction::Retry)
@@ -58,6 +62,16 @@ impl PortableManifestStore {
         }
         result
     }
+}
+
+fn validate_manifest_version(manifest: &LibraryManifest) -> AppResult<()> {
+    if manifest.format_version == 1 {
+        return Ok(());
+    }
+    Err(AppError::new(ErrorCode::InvalidInput, Severity::Error)
+        .with_param("format_version", manifest.format_version)
+        .with_param("supported_format_version", 1_u32)
+        .with_action(RecoveryAction::Retry))
 }
 
 fn temporary_path(parent: &Path, destination: &Path) -> PathBuf {

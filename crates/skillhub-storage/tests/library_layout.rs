@@ -47,3 +47,53 @@ fn interrupted_manifest_write_keeps_previous_valid_manifest() {
     assert!(library.write_manifest_atomic(&changed).is_err());
     assert_eq!(library.load_manifest().unwrap(), original);
 }
+
+#[test]
+fn successful_manifest_write_replaces_previous_manifest() {
+    let ws = TempWorkspace::new().unwrap();
+    let library = CentralLibrary::initialize(ws.central_root()).unwrap();
+    let changed = LibraryManifest {
+        format_version: 1,
+        skills: vec![PortableSkillRecord::new(SkillId::new(), "pdf")],
+    };
+
+    library.write_manifest_atomic(&changed).unwrap();
+    assert_eq!(library.load_manifest().unwrap(), changed);
+}
+
+#[test]
+fn unknown_manifest_version_is_rejected_without_overwriting_existing_data() {
+    let ws = TempWorkspace::new().unwrap();
+    let library = CentralLibrary::initialize(ws.central_root()).unwrap();
+    let original = library.load_manifest().unwrap();
+    let future = LibraryManifest {
+        format_version: 99,
+        skills: Vec::new(),
+    };
+
+    assert!(library.write_manifest_atomic(&future).is_err());
+    assert_eq!(library.load_manifest().unwrap(), original);
+
+    std::fs::write(
+        library.paths().manifest_path.clone(),
+        serde_json::to_vec(&future).unwrap(),
+    )
+    .unwrap();
+    let error = library.load_manifest().unwrap_err();
+    assert_eq!(error.code.as_str(), "input.invalid");
+}
+
+#[test]
+fn initialization_rejects_an_existing_unknown_manifest_version() {
+    let ws = TempWorkspace::new().unwrap();
+    let management = ws.central_root().join(".skillhub");
+    std::fs::create_dir_all(&management).unwrap();
+    std::fs::write(
+        management.join("library.json"),
+        br#"{"format_version":99,"skills":[]}"#,
+    )
+    .unwrap();
+
+    let error = CentralLibrary::initialize(ws.central_root()).unwrap_err();
+    assert_eq!(error.code.as_str(), "input.invalid");
+}
