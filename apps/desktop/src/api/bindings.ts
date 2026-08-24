@@ -37,15 +37,6 @@ export type AppQuery = { type: "get_skill"; payload: GetSkill } | { type: "list_
 
 export type AppQueryResult = { type: "skill"; payload: SkillResult } | { type: "versions"; payload: VersionResult[] } | { type: "version_diff"; payload: VersionDiffResult } | { type: "combinations"; payload: CombinationResult[] } | { type: "search_results"; payload: SearchHit[] } | { type: "bootstrap_snapshot"; payload: BootstrapSnapshot } | { type: "pending_items"; payload: PendingItem[] } | { type: "discovery_snapshot"; payload: DiscoverySnapshot } | { type: "custom_agents"; payload: CustomAgent[] } | { type: "projects"; payload: Project[] } | { type: "saved_project_views"; payload: SavedProjectView[] } | { type: "deployment_plan"; payload: DeploymentPlan } | { type: "basic_check_result"; payload: BasicCheckResult } | { type: "findings"; payload: FindingResult[] } | { type: "assembly_plan"; payload: AssemblyPlan };
 
-export type BasicCheckResult = {
-	skill_id: SkillId,
-	version_id: VersionId,
-	state: CheckState,
-	run_id: string | null,
-	ruleset_id: string | null,
-	checked_at: string | null,
-	finding_count: number,
-	actionable_count: number,
 export type AssemblyChoice = "acquire" | "skip" | "use_existing";
 
 export type AssemblyConflictKind = "source_ambiguity" | "same_name_conflict" | "high_risk_finding" | "deployment_target_conflict";
@@ -68,6 +59,17 @@ export type AssemblyPlan = {
 	project_id: ProjectId,
 	items: AssemblyItemPlan[],
 	committed: boolean,
+};
+
+export type BasicCheckResult = {
+	skill_id: SkillId,
+	version_id: VersionId,
+	state: CheckState,
+	run_id: string | null,
+	ruleset_id: string | null,
+	checked_at: string | null,
+	finding_count: number,
+	actionable_count: number,
 };
 
 export type BootstrapSnapshot = {
