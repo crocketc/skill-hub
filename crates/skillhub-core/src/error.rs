@@ -21,6 +21,8 @@ pub enum ErrorCode {
     CheckBlocked,
     #[serde(rename = "operation.conflict")]
     OperationConflict,
+    #[serde(rename = "operation.id_reused_with_different_request")]
+    OperationIdReusedWithDifferentRequest,
     #[serde(rename = "credential.unavailable")]
     CredentialUnavailable,
     #[serde(rename = "migration.required")]
@@ -53,6 +55,9 @@ impl ErrorCode {
             Self::OwnershipUnknown => "target.ownership_unknown",
             Self::CheckBlocked => "deployment.security_check_blocked",
             Self::OperationConflict => "operation.conflict",
+            Self::OperationIdReusedWithDifferentRequest => {
+                "operation.id_reused_with_different_request"
+            }
             Self::CredentialUnavailable => "credential.unavailable",
             Self::MigrationRequired => "migration.required",
             Self::DatabaseNewerSchema => "database.newer_schema",

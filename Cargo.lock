@@ -2933,6 +2933,7 @@ dependencies = [
  "serde_json",
  "specta",
  "tempfile",
+ "tokio",
  "url",
  "uuid",
 ]
@@ -2962,6 +2963,7 @@ dependencies = [
  "skillhub-core",
  "skillhub-testkit",
  "tempfile",
+ "tokio",
  "windows-sys 0.61.2",
 ]
 

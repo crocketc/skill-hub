@@ -4,13 +4,16 @@ mod catalog_repository;
 mod custom_agent_repository;
 mod migrations;
 mod project_repository;
+mod operation_repository;
 mod search_repository;
 
 use std::fmt;
 use std::path::Path;
+use std::sync::Arc;
 
 use rusqlite::Connection;
 use skillhub_core::{AppError, AppResult, ErrorCode, RecoveryAction, Severity};
+use tokio::sync::Mutex;
 
 pub use agent_repository::AgentRepository;
 pub use bootstrap_repository::BootstrapRepository;
@@ -18,12 +21,14 @@ pub use catalog_repository::CatalogRepositorySqlite;
 pub use custom_agent_repository::CustomAgentRepository;
 pub use migrations::MigrationReport;
 pub use project_repository::ProjectRepository;
+pub use operation_repository::OperationRepositorySqlite;
 pub use search_repository::SearchRepository;
 
 /// An application database backed by SQLite.
 pub struct Database {
     connection: Connection,
     migration_report: MigrationReport,
+    operation_writer: Arc<Mutex<()>>,
 }
 
 impl fmt::Debug for Database {
@@ -60,6 +65,14 @@ impl Database {
         ProjectRepository::new(self)
     }
 
+    pub fn operation_repository(&self) -> OperationRepositorySqlite<'_> {
+        OperationRepositorySqlite::new(self)
+    }
+
+    pub(crate) fn operation_writer(&self) -> Arc<Mutex<()>> {
+        self.operation_writer.clone()
+    }
+
     #[doc(hidden)]
     pub fn connection_for_test(&self) -> &Connection {
         &self.connection
@@ -72,6 +85,7 @@ impl Database {
         Ok(Self {
             connection,
             migration_report,
+            operation_writer: Arc::new(Mutex::new(())),
         })
     }
 
@@ -83,6 +97,7 @@ impl Database {
         Ok(Self {
             connection,
             migration_report,
+            operation_writer: Arc::new(Mutex::new(())),
         })
     }
 
