@@ -1,4 +1,4 @@
-use crate::ProjectId;
+use crate::{AppResult, ProjectId};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 use std::path::Path;
@@ -56,6 +56,12 @@ impl Project {
         self.tags.sort_by(|left, right| left.name.cmp(&right.name));
         self.updated_at = now();
     }
+}
+
+/// Resolves a persisted project record by identity. Adapters must use this
+/// boundary instead of accepting caller-supplied project paths.
+pub trait ProjectRepository {
+    fn get(&self, id: ProjectId) -> AppResult<Project>;
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize, specta::Type)]

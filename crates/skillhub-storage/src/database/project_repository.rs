@@ -1,6 +1,9 @@
 use super::Database;
 use rusqlite::{params, OptionalExtension};
-use skillhub_core::project::{Project, ProjectTag, SavedProjectView, SharedProjectConfig};
+use skillhub_core::project::{
+    Project, ProjectRepository as ProjectRepositoryPort, ProjectTag, SavedProjectView,
+    SharedProjectConfig,
+};
 use skillhub_core::{AppError, AppResult, ErrorCode, ProjectId, RecoveryAction, Severity};
 use std::path::Path;
 
@@ -190,6 +193,12 @@ impl<'a> ProjectRepository<'a> {
             )
             .map(|_| ())
             .map_err(database_error)
+    }
+}
+
+impl<'a> ProjectRepositoryPort for ProjectRepository<'a> {
+    fn get(&self, id: ProjectId) -> AppResult<Project> {
+        self.get(id)
     }
 }
 

@@ -10,6 +10,7 @@ mod operation;
 mod path_policy;
 pub mod pending;
 pub mod project;
+pub mod scan;
 pub mod search;
 pub mod source;
 pub mod versioning;
@@ -36,7 +37,7 @@ pub use operation::{
     OperationProgress, OperationRecord, OperationRepository, OperationStatus, OperationSummary,
     UndoPlan,
 };
-pub use path_policy::{AllowedRoot, AllowedRootId, PathPolicy, SafePath};
+pub use path_policy::{physical_id_for_path, AllowedRoot, AllowedRootId, PathPolicy, SafePath};
 
 pub use catalog::{LibraryManifest, LibraryPaths, PortableSkillRecord};
 pub use ids::{
@@ -44,7 +45,8 @@ pub use ids::{
     PhysicalTargetId, ProjectId, SkillId, VersionId,
 };
 pub use project::{
-    PortableSource, Project, ProjectMetadata, ProjectTag, SavedProjectView, SharedProjectConfig,
-    SharedSkillRequirement,
+    PortableSource, Project, ProjectMetadata, ProjectRepository, ProjectTag, SavedProjectView,
+    SharedProjectConfig, SharedSkillRequirement,
 };
+pub use scan::{DiscoveredSkill, ScanGeneration, ScanIssue, ScanRepository, ScanResult, ScanScope};
 pub use versioning::{FileEntry, VersionDiff, VersionManifest, VersionRecord, VersionRepository};
