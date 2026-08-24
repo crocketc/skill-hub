@@ -15,8 +15,16 @@ pub enum ErrorCode {
     ObjectNotFound,
     #[serde(rename = "deployment.target_exists")]
     TargetExists,
+    #[serde(rename = "deployment.target_changed")]
+    TargetChanged,
+    #[serde(rename = "deployment.symlink_not_supported")]
+    SymlinkNotSupported,
+    #[serde(rename = "deployment.junction_not_supported")]
+    JunctionNotSupported,
     #[serde(rename = "target.ownership_unknown")]
     OwnershipUnknown,
+    #[serde(rename = "deployment.ownership_mismatch")]
+    OwnershipMismatch,
     #[serde(rename = "deployment.security_check_blocked")]
     CheckBlocked,
     #[serde(rename = "operation.conflict")]
@@ -52,7 +60,11 @@ impl ErrorCode {
             Self::PathOutsideAllowedRoots => "path.outside_allowed_root",
             Self::ObjectNotFound => "object.not_found",
             Self::TargetExists => "deployment.target_exists",
+            Self::TargetChanged => "deployment.target_changed",
+            Self::SymlinkNotSupported => "deployment.symlink_not_supported",
+            Self::JunctionNotSupported => "deployment.junction_not_supported",
             Self::OwnershipUnknown => "target.ownership_unknown",
+            Self::OwnershipMismatch => "deployment.ownership_mismatch",
             Self::CheckBlocked => "deployment.security_check_blocked",
             Self::OperationConflict => "operation.conflict",
             Self::OperationIdReusedWithDifferentRequest => {
