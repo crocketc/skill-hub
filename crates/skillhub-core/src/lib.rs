@@ -7,6 +7,7 @@ pub mod check;
 pub mod deployment;
 mod error;
 mod ids;
+pub mod import;
 mod operation;
 mod path_policy;
 pub mod pending;
@@ -53,6 +54,7 @@ pub use ids::{
     AgentProfileId, ClientInstanceId, CombinationId, DeploymentId, LogicalTargetId, OperationId,
     PhysicalTargetId, ProjectId, SkillId, VersionId,
 };
+pub use import::{CandidateOwnership, ImportAction, ImportCandidate};
 pub use project::{
     PortableSource, Project, ProjectMetadata, ProjectRepository, ProjectTag, SavedProjectView,
     SharedProjectConfig, SharedSkillRequirement,
