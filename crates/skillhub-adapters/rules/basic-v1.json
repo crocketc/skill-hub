@@ -1,0 +1,17 @@
+{
+  "id": "basic-v1",
+  "rules": [
+    { "code": "security.destructive_command", "severity": "critical", "category": "destructive" },
+    { "code": "security.elevation", "severity": "error", "category": "privilege" },
+    { "code": "security.permission_change", "severity": "error", "category": "privilege" },
+    { "code": "security.persistence", "severity": "error", "category": "persistence" },
+    { "code": "security.download_and_execute", "severity": "critical", "category": "execution" },
+    { "code": "security.data_upload", "severity": "error", "category": "exfiltration" },
+    { "code": "security.command_interpolation", "severity": "warning", "category": "execution" },
+    { "code": "security.obfuscation", "severity": "warning", "category": "obfuscation" },
+    { "code": "security.path_traversal", "severity": "error", "category": "filesystem" },
+    { "code": "security.possible_plaintext_credential", "severity": "warning", "category": "credential" },
+    { "code": "security.prompt_injection", "severity": "warning", "category": "prompt_injection" },
+    { "code": "security.suspicious_external_resource", "severity": "warning", "category": "external_resource" }
+  ]
+}
