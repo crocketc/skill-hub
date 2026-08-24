@@ -1,0 +1,31 @@
+{
+  "actions": {
+    "cancel": "Cancel",
+    "close": "Close",
+    "confirm": "Confirm",
+    "retry": "Retry"
+  },
+  "dataState": {
+    "empty": "No data",
+    "error": "Unable to read data",
+    "loading": "Reading local data"
+  },
+  "navigation": {
+    "agents": "Agents",
+    "discovery": "Discover",
+    "library": "Skill library",
+    "operations": "Operations and recovery",
+    "overview": "Overview",
+    "pending": "Pending",
+    "projects": "Projects",
+    "settings": "Settings"
+  },
+  "status": {
+    "failed": "Failed",
+    "noData": "No data",
+    "notChecked": "Not checked",
+    "success": "Success",
+    "unknown": "Unknown",
+    "warning": "Needs attention"
+  }
+}

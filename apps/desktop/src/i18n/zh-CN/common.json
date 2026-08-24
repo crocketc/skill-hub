@@ -1,0 +1,31 @@
+{
+  "actions": {
+    "cancel": "取消",
+    "close": "关闭",
+    "confirm": "确认",
+    "retry": "重试"
+  },
+  "dataState": {
+    "empty": "暂无数据",
+    "error": "无法读取数据",
+    "loading": "正在读取本地数据"
+  },
+  "navigation": {
+    "agents": "Agent",
+    "discovery": "发现",
+    "library": "技能库",
+    "operations": "操作记录与恢复",
+    "overview": "概览",
+    "pending": "待处理",
+    "projects": "项目",
+    "settings": "设置"
+  },
+  "status": {
+    "failed": "失败",
+    "noData": "无数据",
+    "notChecked": "未检查",
+    "success": "成功",
+    "unknown": "未知",
+    "warning": "需要注意"
+  }
+}
