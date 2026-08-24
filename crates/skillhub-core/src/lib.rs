@@ -4,6 +4,7 @@ pub mod application;
 pub mod bootstrap;
 pub mod catalog;
 pub mod check;
+pub mod deployment;
 mod error;
 mod ids;
 mod operation;
@@ -24,7 +25,7 @@ pub use agent::{
 };
 pub use api::{
     AppCommand, AppCommandResult, AppEvent, AppQuery, AppQueryResult, ApplicationFacade,
-    FactsChanged, Page,
+    FactsChanged, GetDeploymentPlan, Page,
 };
 pub use application::OperationService;
 pub use bootstrap::{
@@ -40,6 +41,13 @@ pub use operation::{
 pub use path_policy::{physical_id_for_path, AllowedRoot, AllowedRootId, PathPolicy, SafePath};
 
 pub use catalog::{LibraryManifest, LibraryPaths, PortableSkillRecord};
+pub use deployment::{
+    DeploymentCapabilities, DeploymentMode, DeploymentPlan, DeploymentPlanInput,
+    DeploymentPlanRequest, DeploymentPlanner, DeploymentRecord, DeploymentRepository,
+    DeploymentRequest, DeploymentState, ExistingDeployment, ExistingOwnership,
+    RegisteredTargetIndex, RegisteredTargetResolver, TargetCapabilities, TargetChange,
+    TargetConflict, TargetConflictReason, TargetFact, TargetFactSource, TargetPlan, VerifiedTarget,
+};
 pub use ids::{
     AgentProfileId, ClientInstanceId, CombinationId, DeploymentId, LogicalTargetId, OperationId,
     PhysicalTargetId, ProjectId, SkillId, VersionId,

@@ -1,7 +1,7 @@
 use crate::agent::{CustomAgent, DiscoverySnapshot};
 use crate::project::{Project, SavedProjectView};
 use crate::search::{SearchHit, SearchQuery};
-use crate::{BootstrapSnapshot, SkillId, VersionId};
+use crate::{BootstrapSnapshot, DeploymentPlan, DeploymentPlanRequest, SkillId, VersionId};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
@@ -60,6 +60,12 @@ pub struct ListProjects;
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 pub struct ListSavedProjectViews;
 
+/// Registered logical target IDs for a side-effect-free deployment preview.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+pub struct GetDeploymentPlan {
+    pub request: DeploymentPlanRequest,
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 #[serde(tag = "type", content = "payload")]
 pub enum AppQuery {
@@ -85,6 +91,8 @@ pub enum AppQuery {
     ListProjects(ListProjects),
     #[serde(rename = "list_saved_project_views")]
     ListSavedProjectViews(ListSavedProjectViews),
+    #[serde(rename = "get_deployment_plan")]
+    GetDeploymentPlan(GetDeploymentPlan),
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
@@ -112,4 +120,6 @@ pub enum AppQueryResult {
     Projects(Vec<Project>),
     #[serde(rename = "saved_project_views")]
     SavedProjectViews(Vec<SavedProjectView>),
+    #[serde(rename = "deployment_plan")]
+    DeploymentPlan(DeploymentPlan),
 }

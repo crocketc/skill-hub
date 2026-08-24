@@ -2,6 +2,7 @@ mod command;
 mod event;
 mod query;
 
+pub use crate::deployment::DeploymentPlanRequest;
 pub use command::{
     AppCommand, AppCommandResult, CreateCombination, CreateCustomAgent, CreateSkill,
     PinProjectSkillVersion, ReadSharedProjectConfig, RegisterProject, RemoveCustomAgent,
@@ -13,9 +14,9 @@ pub use command::{
 pub use event::{AppEvent, FactsChanged};
 pub use query::{
     AppQuery, AppQueryResult, CombinationResult, DiffVersions, GetBootstrapSnapshot,
-    GetDiscoverySnapshot, GetSkill, ListCombinations, ListCustomAgents, ListPendingItems,
-    ListProjects, ListSavedProjectViews, ListVersions, SkillResult, VersionDiffResult,
-    VersionResult,
+    GetDeploymentPlan, GetDiscoverySnapshot, GetSkill, ListCombinations, ListCustomAgents,
+    ListPendingItems, ListProjects, ListSavedProjectViews, ListVersions, SkillResult,
+    VersionDiffResult, VersionResult,
 };
 
 use crate::AppResult;
