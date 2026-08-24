@@ -58,6 +58,13 @@ impl AcquisitionErrorCode {
 pub struct AcquisitionError {
     pub code: AcquisitionErrorCode,
     pub message: String,
+    pub cleanup_failure: Option<CleanupFailure>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct CleanupFailure {
+    pub code: AcquisitionErrorCode,
+    pub message: String,
 }
 
 impl AcquisitionError {
@@ -65,13 +72,31 @@ impl AcquisitionError {
         Self {
             code,
             message: message.into(),
+            cleanup_failure: None,
         }
+    }
+
+    pub fn with_cleanup_failure(mut self, cleanup: &Self) -> Self {
+        self.cleanup_failure = Some(CleanupFailure {
+            code: cleanup.code,
+            message: cleanup.message.clone(),
+        });
+        self
     }
 }
 
 impl fmt::Display for AcquisitionError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}: {}", self.code.as_str(), self.message)
+        write!(f, "{}: {}", self.code.as_str(), self.message)?;
+        if let Some(cleanup) = &self.cleanup_failure {
+            write!(
+                f,
+                " (cleanup {}: {})",
+                cleanup.code.as_str(),
+                cleanup.message
+            )?;
+        }
+        Ok(())
     }
 }
 
@@ -127,6 +152,12 @@ impl AcquisitionWorkspace {
         };
         self.used.set(true);
         tempdir.close().map_err(|error| {
+            AcquisitionError::new(AcquisitionErrorCode::AcquisitionIo, error.to_string())
+        })
+    }
+
+    pub fn cleanup_root(&self) -> AcquisitionResult<()> {
+        std::fs::remove_dir_all(&self.root).map_err(|error| {
             AcquisitionError::new(AcquisitionErrorCode::AcquisitionIo, error.to_string())
         })
     }

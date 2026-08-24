@@ -4,7 +4,7 @@ mod parser;
 
 pub use acquisition::{
     AcquiredSource, AcquisitionError, AcquisitionErrorCode, AcquisitionLimits, AcquisitionResult,
-    AcquisitionWorkspace,
+    AcquisitionWorkspace, CleanupFailure,
 };
 pub use archive::ArchiveExtractor;
 pub use parser::SourceInputParser;

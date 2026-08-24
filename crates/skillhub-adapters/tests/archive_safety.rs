@@ -1,7 +1,12 @@
 use std::path::PathBuf;
 
-use skillhub_adapters::source::{AcquisitionLimits, AcquisitionWorkspace, ArchiveExtractor};
-use skillhub_core::source::AcquisitionErrorCode;
+use skillhub_adapters::source::{
+    AcquisitionError, AcquisitionLimits, AcquisitionWorkspace, ArchiveExtractor,
+};
+use skillhub_core::source::AcquisitionErrorCode as CoreAcquisitionErrorCode;
+use tempfile::tempdir;
+use zip::write::SimpleFileOptions;
+use zip::ZipWriter;
 
 fn fixture(name: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -18,13 +23,80 @@ fn test_limits() -> AcquisitionLimits {
 }
 
 #[test]
-fn rejects_parent_absolute_and_link_escape_entries() {
-    for name in ["path-traversal.zip", "link-escape.tar"] {
+fn rejects_each_unsafe_zip_path_independently() {
+    for (name, expected) in [
+        ("../escape.txt", "parent"),
+        ("/absolute.txt", "absolute"),
+        ("C:/drive.txt", "drive"),
+        ("//server/share.txt", "unc"),
+        ("NUL ", "device"),
+        ("COM1 ", "device_alias"),
+    ] {
+        let (_directory, archive) = one_file_zip(name);
         let error = ArchiveExtractor::new(test_limits())
-            .extract(fixture(name))
+            .extract(archive)
             .unwrap_err();
-        assert_eq!(error.code.as_str(), "source.archive_path_escape", "{name}");
+        assert_eq!(
+            error.code.as_str(),
+            "source.archive_path_escape",
+            "{expected}"
+        );
     }
+}
+
+#[test]
+fn rejects_parent_traversal_fixture() {
+    let error = ArchiveExtractor::new(test_limits())
+        .extract(fixture("path-traversal.zip"))
+        .unwrap_err();
+    assert_eq!(error.code, CoreAcquisitionErrorCode::ArchivePathEscape);
+}
+
+#[test]
+fn rejects_zip_symbolic_link_without_materializing_it() {
+    let error = ArchiveExtractor::new(test_limits())
+        .extract(fixture("zip-symlink.zip"))
+        .unwrap_err();
+    assert_eq!(error.code, CoreAcquisitionErrorCode::ArchivePathEscape);
+}
+
+#[test]
+fn rejects_tar_symbolic_link_and_hard_link_independently() {
+    for link_type in [tar::EntryType::symlink(), tar::EntryType::hard_link()] {
+        let directory = tempdir().unwrap();
+        let archive = directory.path().join("links.tar");
+        let file = std::fs::File::create(&archive).unwrap();
+        let mut builder = tar::Builder::new(file);
+        let mut header = tar::Header::new_gnu();
+        header.set_entry_type(link_type);
+        header.set_size(0);
+        header.set_cksum();
+        builder
+            .append_link(&mut header, "escape.txt", "../../outside.txt")
+            .unwrap();
+        builder.finish().unwrap();
+
+        let error = ArchiveExtractor::new(test_limits())
+            .extract(archive)
+            .unwrap_err();
+        assert_eq!(error.code, CoreAcquisitionErrorCode::ArchivePathEscape);
+    }
+}
+
+#[test]
+fn rejects_tar_link_escape_fixture() {
+    let error = ArchiveExtractor::new(test_limits())
+        .extract(fixture("link-escape.tar"))
+        .unwrap_err();
+    assert_eq!(error.code, CoreAcquisitionErrorCode::ArchivePathEscape);
+}
+
+#[test]
+fn rejects_entry_count_before_zip_archive_is_constructed() {
+    let error = ArchiveExtractor::new(test_limits())
+        .extract(fixture("entry-count-limit.zip"))
+        .unwrap_err();
+    assert_eq!(error.code, CoreAcquisitionErrorCode::ArchiveEntryLimit);
 }
 
 #[test]
@@ -35,8 +107,19 @@ fn expanded_size_limit_is_enforced_before_disk_exhaustion() {
     })
     .extract(fixture("valid-skill.zip"))
     .unwrap_err();
-    assert_eq!(error.code, AcquisitionErrorCode::ExpandedSizeLimit);
+    assert_eq!(error.code, CoreAcquisitionErrorCode::ExpandedSizeLimit);
     assert_eq!(error.code.as_str(), "source.expanded_size_limit");
+}
+
+#[test]
+fn per_file_limit_is_checked_from_archive_metadata() {
+    let error = ArchiveExtractor::new(AcquisitionLimits {
+        max_file_bytes: 8,
+        ..test_limits()
+    })
+    .extract(fixture("valid-skill.zip"))
+    .unwrap_err();
+    assert_eq!(error.code, CoreAcquisitionErrorCode::ArchiveFileSizeLimit);
 }
 
 #[test]
@@ -64,9 +147,38 @@ fn failed_extraction_removes_the_workspace_and_it_cannot_be_reused() {
     .extract_into(fixture("valid-skill.zip"), &workspace)
     .unwrap_err();
 
-    assert_eq!(error.code, AcquisitionErrorCode::ExpandedSizeLimit);
+    assert_eq!(error.code, CoreAcquisitionErrorCode::ExpandedSizeLimit);
     assert!(!root.exists());
     assert!(ArchiveExtractor::new(test_limits())
         .extract_into(fixture("valid-skill.zip"), &workspace)
         .is_err());
+}
+
+#[test]
+fn cleanup_failure_is_structured_instead_of_discarded() {
+    let mut workspace = AcquisitionWorkspace::new().unwrap();
+    workspace.cleanup().unwrap();
+    let cleanup = workspace.cleanup().unwrap_err();
+    let error = AcquisitionError::new(
+        CoreAcquisitionErrorCode::ExpandedSizeLimit,
+        "archive exceeded the expanded-size limit",
+    )
+    .with_cleanup_failure(&cleanup);
+
+    let failure = error.cleanup_failure.as_ref().unwrap();
+    assert_eq!(failure.code, CoreAcquisitionErrorCode::WorkspaceUnavailable);
+    assert!(failure.message.contains("already been consumed"));
+}
+
+fn one_file_zip(name: &str) -> (tempfile::TempDir, PathBuf) {
+    let directory = tempdir().unwrap();
+    let path = directory.path().join("boundary.zip");
+    let file = std::fs::File::create(&path).unwrap();
+    let mut writer = ZipWriter::new(file);
+    writer
+        .start_file(name, SimpleFileOptions::default())
+        .unwrap();
+    std::io::Write::write_all(&mut writer, b"x").unwrap();
+    writer.finish().unwrap();
+    (directory, path)
 }

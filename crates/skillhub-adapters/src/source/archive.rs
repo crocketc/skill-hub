@@ -1,5 +1,5 @@
 use std::fs::{self, File, OpenOptions};
-use std::io::Read;
+use std::io::{Read, Seek, SeekFrom};
 use std::path::{Component, Path, PathBuf};
 
 use skillhub_core::source::{
@@ -27,10 +27,7 @@ impl ArchiveExtractor {
         workspace.begin()?;
         match self.extract_into_workspace(archive.as_ref(), &mut workspace) {
             Ok((entries, bytes)) => Ok(AcquiredSource::new(workspace, entries, bytes)),
-            Err(error) => {
-                let _ = workspace.cleanup();
-                Err(error)
-            }
+            Err(error) => Err(cleanup_error(&mut workspace, error)),
         }
     }
 
@@ -51,10 +48,10 @@ impl ArchiveExtractor {
         let mut workspace = WorkspaceRef::new(workspace);
         match self.extract_into_workspace(archive.as_ref(), &mut workspace) {
             Ok(_) => Ok(()),
-            Err(error) => {
-                let _ = fs::remove_dir_all(workspace.root());
-                Err(error)
-            }
+            Err(error) => match workspace.cleanup_root() {
+                Ok(()) => Err(error),
+                Err(cleanup) => Err(error.with_cleanup_failure(&cleanup)),
+            },
         }
     }
 
@@ -80,6 +77,7 @@ impl ArchiveExtractor {
         file: File,
         workspace: &mut impl ExtractionRoot,
     ) -> AcquisitionResult<(u64, u64)> {
+        validate_zip_entry_count(&file, self.limits.max_entries)?;
         let mut archive = ZipArchive::new(file).map_err(|error| {
             AcquisitionError::new(
                 AcquisitionErrorCode::ArchiveFormatInvalid,
@@ -231,6 +229,10 @@ impl<'a> WorkspaceRef<'a> {
     fn new(workspace: &'a AcquisitionWorkspace) -> Self {
         Self { workspace }
     }
+
+    fn cleanup_root(&self) -> AcquisitionResult<()> {
+        self.workspace.cleanup_root()
+    }
 }
 
 trait ExtractionRoot {
@@ -285,6 +287,11 @@ fn safe_archive_path(raw: &str) -> AcquisitionResult<PathBuf> {
         match component {
             "" | "." => {}
             ".." => return Err(path_escape("archive entry escapes extraction root")),
+            value if value.ends_with([' ', '.']) => {
+                return Err(path_escape(
+                    "archive entry contains a trailing Windows space or dot",
+                ))
+            }
             value if value.contains(':') || is_windows_device_component(value) => {
                 return Err(path_escape(
                     "archive entry contains a drive or device prefix",
@@ -312,6 +319,7 @@ fn has_windows_drive_prefix(path: &str) -> bool {
 }
 
 fn is_windows_device_component(value: &str) -> bool {
+    let value = value.trim_end_matches([' ', '.']);
     let stem = value
         .split_once('.')
         .map_or(value, |(stem, _)| stem)
@@ -341,4 +349,92 @@ fn path_escape(message: impl Into<String>) -> AcquisitionError {
 
 fn io_error(error: impl std::fmt::Display) -> AcquisitionError {
     AcquisitionError::new(AcquisitionErrorCode::AcquisitionIo, error.to_string())
+}
+
+fn cleanup_error(
+    workspace: &mut AcquisitionWorkspace,
+    error: AcquisitionError,
+) -> AcquisitionError {
+    match workspace.cleanup() {
+        Ok(()) => error,
+        Err(cleanup) => error.with_cleanup_failure(&cleanup),
+    }
+}
+
+fn validate_zip_entry_count(file: &File, max_entries: u64) -> AcquisitionResult<()> {
+    const EOCD_SIGNATURE: [u8; 4] = *b"PK\x05\x06";
+    const ZIP64_LOCATOR_SIGNATURE: [u8; 4] = *b"PK\x06\x07";
+    const ZIP64_EOCD_SIGNATURE: [u8; 4] = *b"PK\x06\x06";
+    const EOCD_LEN: usize = 22;
+    const MAX_COMMENT: usize = u16::MAX as usize;
+
+    let length = file.metadata().map_err(io_error)?.len();
+    let tail_len = usize::try_from(length.min((EOCD_LEN + MAX_COMMENT) as u64))
+        .map_err(|_| format_error("ZIP tail length overflowed"))?;
+    let start = length.saturating_sub(tail_len as u64);
+    let mut tail = vec![0_u8; tail_len];
+    let mut reader = file.try_clone().map_err(io_error)?;
+    reader.seek(SeekFrom::Start(start)).map_err(io_error)?;
+    reader.read_exact(&mut tail).map_err(io_error)?;
+    let eocd = tail
+        .windows(EOCD_SIGNATURE.len())
+        .rposition(|window| window == EOCD_SIGNATURE)
+        .ok_or_else(|| format_error("ZIP end-of-central-directory record is missing"))?;
+    if tail.len().saturating_sub(eocd) < EOCD_LEN {
+        return Err(format_error(
+            "ZIP end-of-central-directory record is truncated",
+        ));
+    }
+    let count = u16::from_le_bytes([tail[eocd + 10], tail[eocd + 11]]);
+    if count != u16::MAX {
+        return check_zip_entry_count(count as u64, max_entries);
+    }
+    if max_entries < u16::MAX as u64 {
+        return Err(AcquisitionError::new(
+            AcquisitionErrorCode::ArchiveEntryLimit,
+            "archive contains too many entries",
+        ));
+    }
+
+    let locator_start = start + eocd as u64;
+    if locator_start < 20 {
+        return Err(format_error("ZIP64 locator is missing"));
+    }
+    let mut locator = [0_u8; 20];
+    let mut reader = file.try_clone().map_err(io_error)?;
+    reader
+        .seek(SeekFrom::Start(locator_start - 20))
+        .map_err(io_error)?;
+    reader.read_exact(&mut locator).map_err(io_error)?;
+    if locator[..4] != ZIP64_LOCATOR_SIGNATURE {
+        return Err(format_error("ZIP64 locator is missing"));
+    }
+    let zip64_offset = u64::from_le_bytes(locator[8..16].try_into().unwrap());
+    let mut zip64 = [0_u8; 56];
+    let mut reader = file.try_clone().map_err(io_error)?;
+    reader
+        .seek(SeekFrom::Start(zip64_offset))
+        .map_err(io_error)?;
+    reader.read_exact(&mut zip64).map_err(io_error)?;
+    if zip64[..4] != ZIP64_EOCD_SIGNATURE {
+        return Err(format_error(
+            "ZIP64 end-of-central-directory record is missing",
+        ));
+    }
+    let count = u64::from_le_bytes(zip64[32..40].try_into().unwrap());
+    check_zip_entry_count(count, max_entries)
+}
+
+fn check_zip_entry_count(count: u64, max_entries: u64) -> AcquisitionResult<()> {
+    if count > max_entries {
+        return Err(AcquisitionError::new(
+            AcquisitionErrorCode::ArchiveEntryLimit,
+            "archive contains too many entries",
+        ));
+    }
+    Ok(())
+}
+
+fn format_error(message: impl Into<String>) -> AcquisitionError {
+    AcquisitionError::new(AcquisitionErrorCode::ArchiveFormatInvalid, message)
 }
