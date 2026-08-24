@@ -3,7 +3,8 @@ mod library;
 mod version_store;
 
 pub use database::{
-    CatalogRepositorySqlite, CustomAgentRepository, Database, MigrationReport, SearchRepository,
+    CatalogRepositorySqlite, CustomAgentRepository, Database, MigrationReport, ProjectRepository,
+    SearchRepository,
 };
 pub use library::{CentralLibrary, ManifestFaultHandler, PortableManifestStore};
 pub use skillhub_core::{LibraryManifest, LibraryPaths, PortableSkillRecord};

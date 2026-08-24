@@ -23,19 +23,19 @@ export type AgentProfile = {
 	clients: AgentClient[],
 };
 
-export type AppCommand = { type: "create_skill"; payload: CreateSkill } | { type: "save_skill_content"; payload: SaveSkillContent } | { type: "rename_skill"; payload: RenameSkill } | { type: "set_lifecycle"; payload: SetLifecycle } | { type: "set_metadata"; payload: SetMetadata } | { type: "set_trial"; payload: SetTrial } | { type: "create_combination"; payload: CreateCombination } | { type: "set_current_version"; payload: SetCurrentVersion } | { type: "pin_project_skill_version"; payload: PinProjectSkillVersion } | { type: "create_custom_agent"; payload: CreateCustomAgent } | { type: "update_custom_agent"; payload: UpdateCustomAgent } | { type: "remove_custom_agent"; payload: RemoveCustomAgent } | { type: "reset_profile_override"; payload: ResetProfileOverride } | { type: "set_profile_override"; payload: SetProfileOverride } | { type: "cancel_operation"; payload: {
+export type AppCommand = { type: "create_skill"; payload: CreateSkill } | { type: "save_skill_content"; payload: SaveSkillContent } | { type: "rename_skill"; payload: RenameSkill } | { type: "set_lifecycle"; payload: SetLifecycle } | { type: "set_metadata"; payload: SetMetadata } | { type: "set_trial"; payload: SetTrial } | { type: "create_combination"; payload: CreateCombination } | { type: "set_current_version"; payload: SetCurrentVersion } | { type: "pin_project_skill_version"; payload: PinProjectSkillVersion } | { type: "create_custom_agent"; payload: CreateCustomAgent } | { type: "update_custom_agent"; payload: UpdateCustomAgent } | { type: "remove_custom_agent"; payload: RemoveCustomAgent } | { type: "reset_profile_override"; payload: ResetProfileOverride } | { type: "set_profile_override"; payload: SetProfileOverride } | { type: "register_project"; payload: RegisterProject } | { type: "update_project"; payload: UpdateProject } | { type: "set_project_tags"; payload: SetProjectTags } | { type: "save_project_view"; payload: SaveProjectView } | { type: "write_shared_project_config"; payload: WriteSharedProjectConfig } | { type: "read_shared_project_config"; payload: ReadSharedProjectConfig } | { type: "cancel_operation"; payload: {
 	operation_id: OperationId,
 } } | { type: "acknowledge_recovery"; payload: {
 	operation_id: OperationId,
 } };
 
-export type AppCommandResult = { type: "operation_summary"; payload: OperationSummary } | { type: "custom_agent"; payload: CustomAgent } | { type: "custom_agent_override"; payload: CustomAgentOverride };
+export type AppCommandResult = { type: "operation_summary"; payload: OperationSummary } | { type: "custom_agent"; payload: CustomAgent } | { type: "custom_agent_override"; payload: CustomAgentOverride } | { type: "project"; payload: Project } | { type: "saved_project_view"; payload: SavedProjectView } | { type: "shared_project_config"; payload: SharedProjectConfig };
 
 export type AppEvent = { type: "operation_progress"; payload: OperationProgress } | { type: "operation_finished"; payload: OperationSummary } | { type: "facts_changed"; payload: FactsChanged };
 
-export type AppQuery = { type: "get_skill"; payload: GetSkill } | { type: "list_versions"; payload: ListVersions } | { type: "diff_versions"; payload: DiffVersions } | { type: "list_combinations"; payload: ListCombinations } | { type: "search"; payload: SearchQuery } | { type: "get_bootstrap_snapshot" } | { type: "list_pending_items"; payload: ListPendingItems } | { type: "get_discovery_snapshot"; payload: GetDiscoverySnapshot } | { type: "list_custom_agents"; payload: ListCustomAgents };
+export type AppQuery = { type: "get_skill"; payload: GetSkill } | { type: "list_versions"; payload: ListVersions } | { type: "diff_versions"; payload: DiffVersions } | { type: "list_combinations"; payload: ListCombinations } | { type: "search"; payload: SearchQuery } | { type: "get_bootstrap_snapshot" } | { type: "list_pending_items"; payload: ListPendingItems } | { type: "get_discovery_snapshot"; payload: GetDiscoverySnapshot } | { type: "list_custom_agents"; payload: ListCustomAgents } | { type: "list_projects"; payload: ListProjects } | { type: "list_saved_project_views"; payload: ListSavedProjectViews };
 
-export type AppQueryResult = { type: "skill"; payload: SkillResult } | { type: "versions"; payload: VersionResult[] } | { type: "version_diff"; payload: VersionDiffResult } | { type: "combinations"; payload: CombinationResult[] } | { type: "search_results"; payload: SearchHit[] } | { type: "bootstrap_snapshot"; payload: BootstrapSnapshot } | { type: "pending_items"; payload: PendingItem[] } | { type: "discovery_snapshot"; payload: DiscoverySnapshot } | { type: "custom_agents"; payload: CustomAgent[] };
+export type AppQueryResult = { type: "skill"; payload: SkillResult } | { type: "versions"; payload: VersionResult[] } | { type: "version_diff"; payload: VersionDiffResult } | { type: "combinations"; payload: CombinationResult[] } | { type: "search_results"; payload: SearchHit[] } | { type: "bootstrap_snapshot"; payload: BootstrapSnapshot } | { type: "pending_items"; payload: PendingItem[] } | { type: "discovery_snapshot"; payload: DiscoverySnapshot } | { type: "custom_agents"; payload: CustomAgent[] } | { type: "projects"; payload: Project[] } | { type: "saved_project_views"; payload: SavedProjectView[] };
 
 export type BootstrapSnapshot = {
 	skill_count: number,
@@ -150,6 +150,10 @@ export type ListCustomAgents = null;
 
 export type ListPendingItems = null;
 
+export type ListProjects = null;
+
+export type ListSavedProjectViews = null;
+
 export type ListVersions = {
 	skill_id: SkillId,
 };
@@ -237,7 +241,34 @@ export type PinProjectSkillVersion = {
 	version_id: VersionId,
 };
 
+/**
+ *  A registered project. `device_path` is deliberately device-local and is
+ *  never part of the portable `.skillhub/project.json` representation.
+ */
+export type Project = {
+	id: ProjectId,
+	name: string,
+	device_path: string,
+	logical: ProjectMetadata,
+	tags: ProjectTag[],
+	created_at: string,
+	updated_at: string,
+};
+
 export type ProjectId = string;
+
+export type ProjectMetadata = {
+	identity_hint: string | null,
+	note: string | null,
+};
+
+export type ProjectTag = {
+	name: string,
+};
+
+export type ReadSharedProjectConfig = {
+	project_id: ProjectId,
+};
 
 export type RecentOperationSummary = {
 	operation_id: OperationId,
@@ -246,6 +277,10 @@ export type RecentOperationSummary = {
 	phase: OperationPhase,
 	error_code: string | null,
 	created_at: string,
+};
+
+export type RegisterProject = {
+	project: Project,
 };
 
 export type RemoveCustomAgent = {
@@ -267,9 +302,20 @@ export type ResolvedPathGrant = {
 	operating_system: OperatingSystem,
 };
 
+export type SaveProjectView = {
+	view: SavedProjectView,
+};
+
 export type SaveSkillContent = {
 	skill_id: SkillId,
 	source_path: string,
+};
+
+export type SavedProjectView = {
+	id: string,
+	name: string,
+	all_tags: string[],
+	any_tags: string[],
 };
 
 export type SearchField = "DisplayName" | "RuntimeName" | "OriginalDescription" | "TranslatedDescription" | "UserNote" | "Tags" | "Author" | "License" | "Requirements" | "Markdown";
@@ -311,9 +357,32 @@ export type SetProfileOverride = {
 	profile: AgentProfile,
 };
 
+export type SetProjectTags = {
+	project_id: ProjectId,
+	tags: string[],
+};
+
 export type SetTrial = {
 	skill_id: SkillId,
 	due: [number, number, number] | null,
+};
+
+/**
+ *  Portable project metadata. It intentionally has no path, content,
+ *  deployment, credential, or device-specific fields.
+ */
+export type SharedProjectConfig = {
+	schema_version: number,
+	project_identity_hint: string,
+	required_skills: SharedSkillRequirement[],
+};
+
+export type SharedSkillRequirement = {
+	skill_id: SkillId,
+	source: string,
+	name: string,
+	version_constraint: string | null,
+	note: string | null,
 };
 
 export type SkillId = string;
@@ -334,6 +403,10 @@ export type UpdateCustomAgent = {
 	agent: CustomAgentDraft,
 };
 
+export type UpdateProject = {
+	project: Project,
+};
+
 export type VersionDiffResult = {
 	added: string[],
 	removed: string[],
@@ -345,6 +418,11 @@ export type VersionId = string;
 export type VersionResult = {
 	version_id: VersionId,
 	skill_id: SkillId,
+};
+
+export type WriteSharedProjectConfig = {
+	project_id: ProjectId,
+	config: SharedProjectConfig,
 };
 
 export const appEventName = "app_event" as const;

@@ -1,4 +1,5 @@
 use crate::agent::{CustomAgent, DiscoverySnapshot};
+use crate::project::{Project, SavedProjectView};
 use crate::search::{SearchHit, SearchQuery};
 use crate::{BootstrapSnapshot, SkillId, VersionId};
 use serde::{Deserialize, Serialize};
@@ -54,6 +55,12 @@ pub struct GetDiscoverySnapshot;
 pub struct ListCustomAgents;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+pub struct ListProjects;
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+pub struct ListSavedProjectViews;
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 #[serde(tag = "type", content = "payload")]
 pub enum AppQuery {
     #[serde(rename = "get_skill")]
@@ -74,6 +81,10 @@ pub enum AppQuery {
     GetDiscoverySnapshot(GetDiscoverySnapshot),
     #[serde(rename = "list_custom_agents")]
     ListCustomAgents(ListCustomAgents),
+    #[serde(rename = "list_projects")]
+    ListProjects(ListProjects),
+    #[serde(rename = "list_saved_project_views")]
+    ListSavedProjectViews(ListSavedProjectViews),
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
@@ -97,4 +108,8 @@ pub enum AppQueryResult {
     DiscoverySnapshot(DiscoverySnapshot),
     #[serde(rename = "custom_agents")]
     CustomAgents(Vec<CustomAgent>),
+    #[serde(rename = "projects")]
+    Projects(Vec<Project>),
+    #[serde(rename = "saved_project_views")]
+    SavedProjectViews(Vec<SavedProjectView>),
 }

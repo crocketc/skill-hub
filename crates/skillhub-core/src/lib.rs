@@ -8,6 +8,7 @@ mod ids;
 mod operation;
 mod path_policy;
 pub mod pending;
+pub mod project;
 pub mod search;
 pub mod versioning;
 
@@ -34,5 +35,9 @@ pub use catalog::{LibraryManifest, LibraryPaths, PortableSkillRecord};
 pub use ids::{
     AgentProfileId, ClientInstanceId, CombinationId, DeploymentId, LogicalTargetId, OperationId,
     PhysicalTargetId, ProjectId, SkillId, VersionId,
+};
+pub use project::{
+    Project, ProjectMetadata, ProjectTag, SavedProjectView, SharedProjectConfig,
+    SharedSkillRequirement,
 };
 pub use versioning::{FileEntry, VersionDiff, VersionManifest, VersionRecord, VersionRepository};
