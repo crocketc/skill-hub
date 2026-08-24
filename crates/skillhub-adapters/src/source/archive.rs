@@ -372,6 +372,11 @@ fn validate_zip_entry_count(file: &File, max_entries: u64) -> AcquisitionResult<
     const MAX_COMMENT: usize = u16::MAX as usize;
 
     let length = file.metadata().map_err(io_error)?.len();
+    if length < EOCD_LEN as u64 {
+        return Err(format_error(
+            "ZIP end-of-central-directory record is truncated",
+        ));
+    }
     let tail_len = usize::try_from(length.min((EOCD_LEN + MAX_COMMENT) as u64))
         .map_err(|_| format_error("ZIP tail length overflowed"))?;
     let start = length.saturating_sub(tail_len as u64);
@@ -379,7 +384,7 @@ fn validate_zip_entry_count(file: &File, max_entries: u64) -> AcquisitionResult<
     let mut reader = file.try_clone().map_err(io_error)?;
     reader.seek(SeekFrom::Start(start)).map_err(io_error)?;
     reader.read_exact(&mut tail).map_err(io_error)?;
-    let mut selected_count = None;
+    let mut selected_layout = None;
     for offset in (0..=tail.len().saturating_sub(EOCD_LEN)).rev() {
         if !tail[offset..].starts_with(&EOCD_SIGNATURE)
             || offset
@@ -395,45 +400,86 @@ fn validate_zip_entry_count(file: &File, max_entries: u64) -> AcquisitionResult<
             let size = u32::from_le_bytes(tail[offset + 12..offset + 16].try_into().unwrap());
             let directory_offset =
                 u32::from_le_bytes(tail[offset + 16..offset + 20].try_into().unwrap());
-            if zip32_layout_is_valid(file, absolute, count, size, directory_offset)? {
-                selected_count = Some(count as u64);
+            check_zip_entry_count(count as u64, max_entries)?;
+            if central_directory_is_valid(
+                file,
+                absolute,
+                count as u64,
+                u64::from(size),
+                u64::from(directory_offset),
+            )? {
+                selected_layout =
+                    Some((count as u64, u64::from(size), u64::from(directory_offset)));
                 break;
             }
-        } else if let Some(count) = read_zip64_entry_count(file, absolute, length)? {
-            selected_count = Some(count);
-            break;
+        } else if let Some(layout) = read_zip64_layout(file, absolute, length)? {
+            check_zip_entry_count(layout.0, max_entries)?;
+            if central_directory_is_valid(file, absolute, layout.0, layout.1, layout.2)? {
+                selected_layout = Some(layout);
+                break;
+            }
         }
     }
-    let count = selected_count.ok_or_else(|| {
+    let (count, _, _) = selected_layout.ok_or_else(|| {
         format_error("ZIP end-of-central-directory record is missing or truncated")
     })?;
-    check_zip_entry_count(count, max_entries).map(|()| count)
+    Ok(count)
 }
 
-fn zip32_layout_is_valid(
+fn central_directory_is_valid(
     file: &File,
     eocd_offset: u64,
-    count: u16,
-    directory_size: u32,
-    directory_offset: u32,
+    count: u64,
+    directory_size: u64,
+    directory_offset: u64,
 ) -> AcquisitionResult<bool> {
     if count == 0 {
         return Ok(directory_size == 0 && directory_offset == 0);
     }
-    let directory_end = u64::from(directory_offset).saturating_add(u64::from(directory_size));
-    if directory_size == 0 || directory_end != eocd_offset {
+    let directory_end = directory_offset.saturating_add(directory_size);
+    if directory_size < 46 || directory_end != eocd_offset {
         return Ok(false);
     }
-    let mut signature = [0_u8; 4];
-    read_at(file, u64::from(directory_offset), &mut signature)?;
-    Ok(signature == *b"PK\x01\x02")
+    let mut reader = file.try_clone().map_err(io_error)?;
+    reader
+        .seek(SeekFrom::Start(directory_offset))
+        .map_err(io_error)?;
+    let mut consumed = 0_u64;
+    for _ in 0..count {
+        let mut header = [0_u8; 46];
+        reader.read_exact(&mut header).map_err(|error| {
+            format_error(format!(
+                "ZIP central directory header is truncated: {error}"
+            ))
+        })?;
+        if header[..4] != *b"PK\x01\x02" {
+            return Ok(false);
+        }
+        let name_len = u16::from_le_bytes(header[28..30].try_into().unwrap()) as u64;
+        let extra_len = u16::from_le_bytes(header[30..32].try_into().unwrap()) as u64;
+        let comment_len = u16::from_le_bytes(header[32..34].try_into().unwrap()) as u64;
+        let record_len = 46_u64
+            .saturating_add(name_len)
+            .saturating_add(extra_len)
+            .saturating_add(comment_len);
+        consumed = consumed.saturating_add(record_len);
+        if consumed > directory_size {
+            return Ok(false);
+        }
+        reader
+            .seek(SeekFrom::Current(
+                (name_len + extra_len + comment_len) as i64,
+            ))
+            .map_err(io_error)?;
+    }
+    Ok(consumed == directory_size)
 }
 
-fn read_zip64_entry_count(
+fn read_zip64_layout(
     file: &File,
     eocd_offset: u64,
     archive_length: u64,
-) -> AcquisitionResult<Option<u64>> {
+) -> AcquisitionResult<Option<(u64, u64, u64)>> {
     const ZIP64_LOCATOR_SIGNATURE: [u8; 4] = *b"PK\x06\x07";
     const ZIP64_EOCD_SIGNATURE: [u8; 4] = *b"PK\x06\x06";
     if eocd_offset < 20 {
@@ -460,7 +506,11 @@ fn read_zip64_entry_count(
     {
         return Ok(None);
     }
-    Ok(Some(u64::from_le_bytes(zip64[32..40].try_into().unwrap())))
+    Ok(Some((
+        u64::from_le_bytes(zip64[32..40].try_into().unwrap()),
+        u64::from_le_bytes(zip64[40..48].try_into().unwrap()),
+        u64::from_le_bytes(zip64[48..56].try_into().unwrap()),
+    )))
 }
 
 fn read_at(file: &File, offset: u64, buffer: &mut [u8]) -> AcquisitionResult<()> {
