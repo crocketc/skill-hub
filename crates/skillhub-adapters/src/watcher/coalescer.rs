@@ -32,14 +32,14 @@ impl WatchCoalescer {
     {
         self.recognized_skill_roots = roots
             .into_iter()
-            .map(|root| root.into().to_string_lossy().replace('\\', "/"))
+            .map(|root| normalize_path(&root.into()))
             .collect();
     }
 
     pub fn push(&mut self, hint: WatchHint) {
         if let Some(skill_root) = hint.skill_root() {
             self.recognized_skill_roots
-                .insert(skill_root.to_string_lossy().replace('\\', "/"));
+                .insert(normalize_path(&skill_root));
         }
         let key = hint.coalescing_key_with_skill_roots(&self.recognized_skill_roots);
         self.pending.insert(key, (Instant::now(), hint));
@@ -82,5 +82,17 @@ impl WatchCoalescer {
             .into_values()
             .map(|(_, hint)| hint)
             .collect()
+    }
+}
+
+fn normalize_path(path: &std::path::Path) -> String {
+    let value = path.to_string_lossy().replace('\\', "/");
+    #[cfg(windows)]
+    {
+        value.to_ascii_lowercase()
+    }
+    #[cfg(not(windows))]
+    {
+        value
     }
 }

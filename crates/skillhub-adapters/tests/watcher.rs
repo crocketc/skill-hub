@@ -101,6 +101,17 @@ fn injected_scan_roots_merge_child_events_without_a_marker_hint() {
     assert_eq!(coalescer.flush_after_stable().len(), 1);
 }
 
+#[cfg(windows)]
+#[test]
+fn windows_path_spelling_variants_share_one_injected_skill_key() {
+    let mut coalescer = WatchCoalescer::new(Duration::ZERO);
+    coalescer.set_recognized_skill_roots([PathBuf::from(r"C:\Users\X\skills\pdf")]);
+    coalescer.push(event(r"c:/users/x/skills/pdf/references/example.md"));
+    coalescer.push(event(r"C:\USERS\X\SKILLS\PDF\scripts\build.rs"));
+
+    assert_eq!(coalescer.flush_after_stable().len(), 1);
+}
+
 #[test]
 fn compensation_hint_is_distinct_from_confirmed_file_hint() {
     let overflow = WatchHint::overflow("/workspace/skills");

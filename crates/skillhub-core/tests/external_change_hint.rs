@@ -92,6 +92,26 @@ fn injected_scan_root_merges_child_hints_without_a_marker_event() {
     assert_eq!(service.pending_hints().len(), 1);
 }
 
+#[cfg(windows)]
+#[test]
+fn windows_path_spelling_variants_share_one_watch_service_key() {
+    let service = WatchService::new();
+    service.set_active_roots([r"C:\Users\X\skills"]);
+    service.set_recognized_skill_roots([r"C:\Users\X\skills\pdf"]);
+    service.start().unwrap();
+
+    service
+        .emit_watch_hint(WatchHint::new(
+            r"c:/users/x/skills/pdf/references/example.md",
+        ))
+        .unwrap();
+    service
+        .emit_watch_hint(WatchHint::new(r"C:\USERS\X\SKILLS\PDF\scripts\build.rs"))
+        .unwrap();
+
+    assert_eq!(service.pending_hints().len(), 1);
+}
+
 #[test]
 fn failed_confirmation_requeues_hints_for_retry() {
     run(async {

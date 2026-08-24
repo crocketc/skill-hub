@@ -161,16 +161,16 @@ impl WatchHint {
         }
         let path = Path::new(&self.path);
         if let Some(skill_root) = self.skill_root() {
-            return format!("skill:{}", skill_root.display());
+            return format!("skill:{}", normalize_path(&skill_root));
         }
         if let Some(skill_root) = skill_roots
             .iter()
             .filter(|root| path_starts_with(path, Path::new(root)))
             .max_by_key(|root| root.len())
         {
-            return format!("skill:{skill_root}");
+            return format!("skill:{}", normalize_path(Path::new(skill_root)));
         }
-        format!("path:{}", path.display())
+        format!("path:{}", normalize_path(path))
     }
 }
 
