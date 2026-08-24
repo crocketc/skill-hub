@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use skillhub_core::{AppError, AppResult, ErrorCode, Severity};
+use std::collections::BTreeSet;
 use std::fs;
 use std::path::Path;
 
@@ -22,55 +23,7 @@ impl BasicRuleset {
     pub const ID: &'static str = "basic-v1";
 
     pub fn v1() -> Self {
-        let rules = [
-            (
-                "security.destructive_command",
-                Severity::Critical,
-                "destructive",
-            ),
-            ("security.elevation", Severity::Error, "privilege"),
-            ("security.permission_change", Severity::Error, "privilege"),
-            ("security.persistence", Severity::Error, "persistence"),
-            (
-                "security.download_and_execute",
-                Severity::Critical,
-                "execution",
-            ),
-            ("security.data_upload", Severity::Error, "exfiltration"),
-            (
-                "security.command_interpolation",
-                Severity::Warning,
-                "execution",
-            ),
-            ("security.obfuscation", Severity::Warning, "obfuscation"),
-            ("security.path_traversal", Severity::Error, "filesystem"),
-            (
-                "security.possible_plaintext_credential",
-                Severity::Warning,
-                "credential",
-            ),
-            (
-                "security.prompt_injection",
-                Severity::Warning,
-                "prompt_injection",
-            ),
-            (
-                "security.suspicious_external_resource",
-                Severity::Warning,
-                "external_resource",
-            ),
-        ]
-        .into_iter()
-        .map(|(code, severity, category)| BasicRule {
-            code: code.to_owned(),
-            severity,
-            category: category.to_owned(),
-        })
-        .collect();
-        Self {
-            id: Self::ID.to_owned(),
-            rules,
-        }
+        Self::from_str(BUILTIN_RULES_JSON).expect("embedded basic-v1 rules must be valid")
     }
 
     pub fn from_json(path: impl AsRef<Path>) -> AppResult<Self> {
@@ -78,10 +31,42 @@ impl BasicRuleset {
             AppError::new(ErrorCode::InternalError, Severity::Error)
                 .with_param("reason", error.to_string())
         })?;
-        serde_json::from_slice(&bytes).map_err(|error| {
+        let ruleset: Self = serde_json::from_slice(&bytes).map_err(|error| {
             AppError::new(ErrorCode::InvalidInput, Severity::Error)
                 .with_param("reason", error.to_string())
-        })
+        })?;
+        ruleset.validate()?;
+        Ok(ruleset)
+    }
+
+    fn from_str(source: &str) -> AppResult<Self> {
+        let ruleset: Self = serde_json::from_str(source).map_err(|error| {
+            AppError::new(ErrorCode::InvalidInput, Severity::Error)
+                .with_param("reason", error.to_string())
+        })?;
+        ruleset.validate()?;
+        Ok(ruleset)
+    }
+
+    fn validate(&self) -> AppResult<()> {
+        let mut codes = BTreeSet::new();
+        if self.id != Self::ID || self.rules.is_empty() {
+            return Err(AppError::new(ErrorCode::InvalidInput, Severity::Error)
+                .with_param("reason", "basic-v1 ruleset identity or rules are invalid"));
+        }
+        if self
+            .rules
+            .iter()
+            .any(|rule| rule.code.trim().is_empty() || !codes.insert(&rule.code))
+        {
+            return Err(
+                AppError::new(ErrorCode::InvalidInput, Severity::Error).with_param(
+                    "reason",
+                    "basic-v1 contains an empty or duplicate rule code",
+                ),
+            );
+        }
+        Ok(())
     }
 
     pub fn rule(&self, code: &str) -> Option<&BasicRule> {
@@ -94,3 +79,5 @@ impl Default for BasicRuleset {
         Self::v1()
     }
 }
+
+const BUILTIN_RULES_JSON: &str = include_str!("../../rules/basic-v1.json");

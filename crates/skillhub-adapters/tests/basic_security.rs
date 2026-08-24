@@ -1,7 +1,9 @@
 use skillhub_adapters::security::BasicScanner;
 use skillhub_core::check::FindingDisposition;
 use skillhub_core::Severity;
+use std::fs;
 use std::path::PathBuf;
+use tempfile::tempdir;
 
 fn fixture_path(name: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -73,6 +75,92 @@ fn reports_obfuscation_exfiltration_and_prompt_injection_as_stable_findings() {
     assert!(injection
         .iter()
         .any(|finding| finding.code == "security.prompt_injection"));
+}
+
+#[test]
+fn reports_downloaded_file_execution_patterns() {
+    let findings = scan_fixture("download-execution");
+    assert!(findings
+        .iter()
+        .any(|finding| finding.code == "security.download_and_execute"));
+    assert!(findings.len() >= 4, "findings: {findings:#?}");
+}
+
+#[test]
+fn reports_common_upload_forms_and_tools() {
+    let findings = scan_fixture("upload-patterns");
+    assert_eq!(
+        findings
+            .iter()
+            .filter(|finding| finding.code == "security.data_upload")
+            .count(),
+        5,
+        "findings: {findings:#?}"
+    );
+    assert!(scan_fixture("benign-commands")
+        .iter()
+        .all(|finding| { finding.code != "security.data_upload" }));
+}
+
+#[test]
+fn reports_all_deterministic_rule_categories() {
+    let findings = scan_fixture("all-rule-categories");
+    for code in [
+        "security.elevation",
+        "security.permission_change",
+        "security.persistence",
+        "security.command_interpolation",
+        "security.path_traversal",
+    ] {
+        assert!(
+            findings.iter().any(|finding| finding.code == code),
+            "missing {code}: {findings:#?}"
+        );
+    }
+}
+
+#[test]
+fn reports_credentials_but_ignores_example_values() {
+    let findings = scan_fixture("credential-patterns");
+    assert!(
+        findings
+            .iter()
+            .filter(|finding| finding.code == "security.possible_plaintext_credential")
+            .count()
+            >= 5,
+        "findings: {findings:#?}"
+    );
+    assert!(findings.iter().any(|finding| {
+        finding.code == "security.possible_plaintext_credential" && finding.line_start == Some(8)
+    }));
+    let benign = scan_fixture("benign-commands");
+    assert!(benign
+        .iter()
+        .all(|finding| finding.code != "security.possible_plaintext_credential"));
+}
+
+#[test]
+fn default_ruleset_is_loaded_from_the_versioned_json_source() {
+    let rules_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("rules/basic-v1.json");
+    let from_json = skillhub_adapters::security::BasicRuleset::from_json(rules_path)
+        .expect("checked-in rules should parse");
+    assert_eq!(
+        skillhub_adapters::security::BasicRuleset::default(),
+        from_json
+    );
+}
+
+#[test]
+fn binary_files_are_reported_as_metadata_without_content_findings() {
+    let root = tempdir().expect("temporary root");
+    let bytes = [0_u8, b'r', b'm', b' ', b'-', b'r', b'f'];
+    fs::write(root.path().join("payload.bin"), bytes).expect("binary fixture");
+    let report = BasicScanner::default()
+        .scan_version_report(root.path())
+        .expect("binary scan should succeed");
+    assert!(report.findings.is_empty());
+    assert_eq!(report.binary_files[0].file, "payload.bin");
+    assert_eq!(report.binary_files[0].size, bytes.len() as u64);
 }
 
 #[test]

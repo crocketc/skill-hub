@@ -108,6 +108,7 @@ fn scan_text(ruleset: &BasicRuleset, file: &str, text: &str, findings: &mut Vec<
         let line_number = index as u32 + 1;
         let lower = line.to_ascii_lowercase();
         let mut codes = Vec::new();
+        let example_line = is_example_line(&lower);
         if lower.contains("rm -rf")
             || lower.contains("rm -fr")
             || lower.contains("del /f")
@@ -148,7 +149,14 @@ fn scan_text(ruleset: &BasicRuleset, file: &str, text: &str, findings: &mut Vec<
                 || lower.contains("| zsh")
                 || lower.contains("invoke-expression")
                 || lower.contains("iex ")
-                || lower.contains("chmod +x"))
+                || lower.contains("chmod +x")
+                || lower.contains("&& bash ")
+                || lower.contains("&& sh ")
+                || lower.contains("; bash ")
+                || lower.contains("; sh ")
+                || lower.contains("; pwsh ")
+                || lower.contains("; powershell ")
+                || lower.contains("&& ./"))
         {
             codes.push("security.download_and_execute");
         }
@@ -160,6 +168,15 @@ fn scan_text(ruleset: &BasicRuleset, file: &str, text: &str, findings: &mut Vec<
                 || lower.contains(" -d ")
                 || lower.contains("-method post")
                 || lower.contains("upload"))
+            && !example_line
+        {
+            codes.push("security.data_upload");
+        }
+        if (lower.contains("curl ") && (lower.contains("--form") || lower.contains(" -f "))
+            || lower.contains("invoke-webrequest") && lower.contains("-infile")
+            || lower.starts_with("scp ")
+            || lower.starts_with("rsync "))
+            && !example_line
         {
             codes.push("security.data_upload");
         }
@@ -186,7 +203,7 @@ fn scan_text(ruleset: &BasicRuleset, file: &str, text: &str, findings: &mut Vec<
         {
             codes.push("security.path_traversal");
         }
-        if has_plaintext_credential(line) {
+        if !example_line && has_plaintext_credential(line) {
             codes.push("security.possible_plaintext_credential");
         }
         if lower.contains("ignore previous instructions")
@@ -214,6 +231,12 @@ fn scan_text(ruleset: &BasicRuleset, file: &str, text: &str, findings: &mut Vec<
             findings.push(make_finding(code, severity, file, line_number, line));
         }
     }
+}
+
+fn is_example_line(lower: &str) -> bool {
+    lower.contains("documentation only")
+        || lower.contains("syntax example")
+        || lower.contains("examples use")
 }
 
 fn make_finding(code: &str, severity: Severity, file: &str, line: u32, evidence: &str) -> Finding {

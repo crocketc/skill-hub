@@ -6,6 +6,10 @@ pub fn has_plaintext_credential(line: &str) -> bool {
         return true;
     }
 
+    if has_connection_string(&lower) {
+        return true;
+    }
+
     let prefixes = ["sk-", "ghp_", "github_pat_", "xoxb-", "xoxp-"];
     if prefixes
         .iter()
@@ -15,10 +19,23 @@ pub fn has_plaintext_credential(line: &str) -> bool {
     }
 
     for marker in ["api_key", "api-key", "token", "password", "secret"] {
-        let Some(position) = lower.find(marker) else {
+        let Some(position) = lower.match_indices(marker).find_map(|(position, _)| {
+            let before_is_word = position > 0
+                && lower[..position]
+                    .chars()
+                    .next_back()
+                    .is_some_and(|character| character.is_ascii_alphanumeric() || character == '_');
+            let after_marker = position + marker.len();
+            let after_is_word = lower[after_marker..]
+                .chars()
+                .next()
+                .is_some_and(|character| character.is_ascii_alphanumeric() || character == '_');
+            (!before_is_word && !after_is_word).then_some(position)
+        }) else {
             continue;
         };
-        let after = line[position + marker.len()..].trim_start();
+        let after_marker = position + marker.len();
+        let after = line[after_marker..].trim_start();
         let after = after
             .strip_prefix('=')
             .or_else(|| after.strip_prefix(':'))
@@ -29,9 +46,7 @@ pub fn has_plaintext_credential(line: &str) -> bool {
             || value.starts_with('$')
             || value.starts_with('<')
             || value.starts_with('{')
-            || value.eq_ignore_ascii_case("changeme")
-            || value.eq_ignore_ascii_case("your-key")
-            || value.eq_ignore_ascii_case("your_token")
+            || is_placeholder(value)
         {
             continue;
         }
@@ -46,6 +61,36 @@ pub fn has_plaintext_credential(line: &str) -> bool {
         }
     }
     false
+}
+
+fn has_connection_string(lower: &str) -> bool {
+    let uri_with_userinfo = lower.contains("://")
+        && lower.split("://").skip(1).any(|rest| {
+            rest.split('/')
+                .next()
+                .is_some_and(|authority| authority.contains('@'))
+        });
+    let key_value_dsn = (lower.contains("server=") || lower.contains("host="))
+        && (lower.contains("password=") || lower.contains("user id=") || lower.contains("uid="));
+    uri_with_userinfo || key_value_dsn
+}
+
+fn is_placeholder(value: &str) -> bool {
+    let normalized = value
+        .trim_matches(['"', '\'', '`', ' ', '\t', ';', ','])
+        .to_ascii_lowercase();
+    normalized == "changeme"
+        || normalized == "password"
+        || normalized == "secret"
+        || normalized == "token"
+        || normalized.starts_with("your-")
+        || normalized.starts_with("your_")
+        || normalized.starts_with("dummy")
+        || normalized.starts_with("sample")
+        || normalized.starts_with("placeholder")
+        || normalized == "example"
+        || normalized.starts_with("example-")
+        || normalized.starts_with("example_")
 }
 
 fn has_literal_after(line: &str, prefix: &str) -> bool {
