@@ -1,8 +1,10 @@
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::collections::HashSet;
+use std::sync::{Arc, Mutex as StdMutex};
 
 use async_trait::async_trait;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::Value;
+use tokio::sync::Mutex;
 
 use crate::{
     AppError, AppResult, ErrorCode, OperationId, OperationPhase, OperationProgress, Severity,
@@ -113,10 +115,12 @@ impl OperationRecord {
 }
 
 /// Storage boundary for the operation journal. Implementations must update a
-/// single record atomically; the in-process writer lock is supplied by
-/// `OperationJournal` and this trait is also suitable for a durable backend.
+/// single record atomically; the writer lock is supplied by the library
+/// composition root through the repository and shared by all services.
 #[async_trait(?Send)]
 pub trait OperationRepository {
+    fn writer(&self) -> Arc<Mutex<()>>;
+    fn checkpoint(&self, record: &OperationRecord) -> AppResult<()>;
     async fn get(&self, operation_id: OperationId) -> AppResult<Option<OperationRecord>>;
     async fn insert(&self, record: &OperationRecord) -> AppResult<()>;
     async fn update(&self, record: &OperationRecord) -> AppResult<()>;
@@ -129,6 +133,7 @@ pub trait OperationRepository {
 pub struct OperationJournal<R> {
     repository: Arc<R>,
     writer: Arc<Mutex<()>>,
+    cancellations: Arc<StdMutex<HashSet<OperationId>>>,
 }
 
 impl<R> Clone for OperationJournal<R> {
@@ -136,15 +141,21 @@ impl<R> Clone for OperationJournal<R> {
         Self {
             repository: self.repository.clone(),
             writer: self.writer.clone(),
+            cancellations: self.cancellations.clone(),
         }
     }
 }
 
-impl<R> OperationJournal<R> {
+impl<R> OperationJournal<R>
+where
+    R: OperationRepository,
+{
     pub fn new(repository: Arc<R>) -> Self {
+        let writer = repository.writer();
         Self {
             repository,
-            writer: Arc::new(Mutex::new(())),
+            writer,
+            cancellations: Arc::new(StdMutex::new(HashSet::new())),
         }
     }
 
@@ -152,11 +163,26 @@ impl<R> OperationJournal<R> {
         &self.repository
     }
 
-    pub(crate) fn acquire_writer(&self) -> AppResult<MutexGuard<'_, ()>> {
-        self.writer.lock().map_err(|_| {
-            AppError::new(ErrorCode::InternalError, Severity::Critical)
-                .with_param("reason", "operation_writer_poisoned")
-        })
+    pub(crate) async fn acquire_writer(&self) -> tokio::sync::OwnedMutexGuard<()> {
+        self.writer.clone().lock_owned().await
+    }
+
+    pub(crate) fn request_cancel(&self, operation_id: OperationId) {
+        self.cancellations
+            .lock()
+            .expect("operation cancellation lock")
+            .insert(operation_id);
+    }
+
+    pub(crate) fn clear_cancel(&self, operation_id: OperationId) {
+        self.cancellations
+            .lock()
+            .expect("operation cancellation lock")
+            .remove(&operation_id);
+    }
+
+    pub(crate) fn cancellation_state(&self) -> Arc<StdMutex<HashSet<OperationId>>> {
+        self.cancellations.clone()
     }
 }
 
@@ -174,15 +200,38 @@ where
 }
 
 /// Mutable operation state passed to a mutation closure.
-#[derive(Clone)]
-pub struct OperationContext {
-    record: Arc<Mutex<OperationRecord>>,
+pub struct OperationContext<R> {
+    record: Arc<StdMutex<OperationRecord>>,
+    repository: Arc<R>,
+    checkpoint_error: Arc<StdMutex<Option<AppError>>>,
+    cancellations: Arc<StdMutex<HashSet<OperationId>>>,
 }
 
-impl OperationContext {
-    pub(crate) fn new(record: OperationRecord) -> Self {
+impl<R> Clone for OperationContext<R> {
+    fn clone(&self) -> Self {
         Self {
-            record: Arc::new(Mutex::new(record)),
+            record: self.record.clone(),
+            repository: self.repository.clone(),
+            checkpoint_error: self.checkpoint_error.clone(),
+            cancellations: self.cancellations.clone(),
+        }
+    }
+}
+
+impl<R> OperationContext<R>
+where
+    R: OperationRepository,
+{
+    pub(crate) fn new(
+        record: OperationRecord,
+        repository: Arc<R>,
+        cancellations: Arc<StdMutex<HashSet<OperationId>>>,
+    ) -> Self {
+        Self {
+            record: Arc::new(StdMutex::new(record)),
+            repository,
+            checkpoint_error: Arc::new(StdMutex::new(None)),
+            cancellations,
         }
     }
 
@@ -201,6 +250,13 @@ impl OperationContext {
             .clone()
     }
 
+    pub fn is_cancelled(&self) -> bool {
+        self.cancellations
+            .lock()
+            .expect("operation cancellation lock")
+            .contains(&self.operation_id())
+    }
+
     pub fn set_progress(&self, completed: u32, total: u32, message_code: impl Into<String>) {
         let mut record = self.record.lock().expect("operation context lock");
         record.progress = OperationProgress {
@@ -210,6 +266,8 @@ impl OperationContext {
             total,
             message_code: message_code.into(),
         };
+        drop(record);
+        self.checkpoint_snapshot();
     }
 
     pub fn record_object_result(&self, result: OperationObjectResult) {
@@ -218,6 +276,7 @@ impl OperationContext {
             .expect("operation context lock")
             .object_results
             .push(result);
+        self.checkpoint_snapshot();
     }
 
     pub fn set_inverse(&self, kind: impl Into<String>, preconditions: Value, facts: Value) {
@@ -226,6 +285,7 @@ impl OperationContext {
             preconditions,
             facts,
         });
+        self.checkpoint_snapshot();
     }
 
     pub fn set_recovery_data(&self, data: Value) {
@@ -233,6 +293,24 @@ impl OperationContext {
             .lock()
             .expect("operation context lock")
             .recovery_data = data;
+        self.checkpoint_snapshot();
+    }
+
+    fn checkpoint_snapshot(&self) {
+        let snapshot = self.record();
+        if let Err(error) = self.repository.checkpoint(&snapshot) {
+            *self
+                .checkpoint_error
+                .lock()
+                .expect("operation checkpoint lock") = Some(error);
+        }
+    }
+
+    pub(crate) fn checkpoint_error(&self) -> Option<AppError> {
+        self.checkpoint_error
+            .lock()
+            .expect("operation checkpoint lock")
+            .clone()
     }
 
     pub fn record(&self) -> OperationRecord {

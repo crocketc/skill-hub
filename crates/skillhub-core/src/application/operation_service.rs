@@ -45,7 +45,6 @@ where
 
     /// Run an idempotent mutation. A completed operation with the same id and
     /// fingerprint is decoded and returned without invoking `operation`.
-    #[allow(clippy::await_holding_lock)]
     pub async fn run<T, F, Fut>(
         &self,
         operation_id: OperationId,
@@ -55,12 +54,12 @@ where
     ) -> AppResult<T>
     where
         T: Serialize + DeserializeOwned + Clone,
-        F: FnOnce(OperationContext) -> Fut,
+        F: FnOnce(OperationContext<R>) -> Fut,
         Fut: Future<Output = AppResult<T>>,
     {
         let kind = kind.into();
         let request_fingerprint = request_fingerprint.into();
-        let _writer = self.journal.acquire_writer()?;
+        let _writer = self.journal.acquire_writer().await;
 
         if let Some(existing) = self.journal.repository().get(operation_id).await? {
             if existing.request_fingerprint != request_fingerprint {
@@ -79,20 +78,85 @@ where
                         .with_action(RecoveryAction::RollbackOperation),
                 );
             }
+            let mut existing = existing;
+            for _ in 0..64 {
+                if existing.phase == OperationPhase::Committed {
+                    return decode_result(&existing);
+                }
+                if existing.is_terminal() {
+                    return Err(conflict("operation_in_progress"));
+                }
+                tokio::task::yield_now().await;
+                existing = self
+                    .journal
+                    .repository()
+                    .get(operation_id)
+                    .await?
+                    .ok_or_else(|| conflict("operation_disappeared"))?;
+            }
             return Err(conflict("operation_in_progress"));
         }
 
         let mut record = OperationRecord::planned(operation_id, kind, request_fingerprint);
-        self.journal.repository().insert(&record).await?;
+        if let Err(insert_error) = self.journal.repository().insert(&record).await {
+            // A second service instance may use a separate process-local
+            // writer while pointing at the same SQLite file. The primary key
+            // insert is the atomic claim; resolve its loser path by reading
+            // the row that won the claim.
+            if let Some(existing) = self.journal.repository().get(operation_id).await? {
+                if existing.request_fingerprint != record.request_fingerprint {
+                    return Err(mismatch_error());
+                }
+                let mut existing = existing;
+                for _ in 0..64 {
+                    if existing.phase == OperationPhase::Committed {
+                        return decode_result(&existing);
+                    }
+                    if existing.is_terminal() {
+                        return Err(conflict("operation_claimed_by_another_writer"));
+                    }
+                    tokio::task::yield_now().await;
+                    existing = self
+                        .journal
+                        .repository()
+                        .get(operation_id)
+                        .await?
+                        .ok_or_else(|| conflict("operation_claim_lost"))?;
+                }
+                return Err(conflict("operation_claimed_by_another_writer"));
+            }
+            return Err(insert_error);
+        }
 
         record.phase = OperationPhase::Applying;
         record.progress.phase = OperationPhase::Applying;
         record.progress.message_code = "operation.applying".to_owned();
         self.journal.repository().update(&record).await?;
 
-        let context = OperationContext::new(record.clone());
+        let context = OperationContext::new(
+            record.clone(),
+            self.journal.repository().clone(),
+            self.journal.cancellation_state(),
+        );
         let outcome = operation(context.clone()).await;
+        let checkpoint_error = context.checkpoint_error();
+        let cancelled = context.is_cancelled();
         let mut context_record = context.into_record();
+        if let Some(error) = checkpoint_error {
+            context_record.phase = OperationPhase::NeedsRecovery;
+            context_record.progress.phase = OperationPhase::NeedsRecovery;
+            context_record.progress.message_code = "operation.needs_recovery".to_owned();
+            context_record.error_code = Some(error.code);
+            self.journal.repository().update(&context_record).await?;
+            return Err(error);
+        }
+        if cancelled {
+            context_record.phase = OperationPhase::RolledBack;
+            context_record.progress.phase = OperationPhase::RolledBack;
+            context_record.progress.message_code = "operation.cancelled".to_owned();
+            self.journal.repository().update(&context_record).await?;
+            return Err(conflict("operation_cancelled"));
+        }
         match outcome {
             Ok(result) => {
                 context_record.phase = OperationPhase::Verifying;
@@ -123,9 +187,9 @@ where
         }
     }
 
-    #[allow(clippy::await_holding_lock)]
     pub async fn cancel(&self, operation_id: OperationId) -> AppResult<OperationSummary> {
-        let _writer = self.journal.acquire_writer()?;
+        self.journal.request_cancel(operation_id);
+        let _writer = self.journal.acquire_writer().await;
         let mut record = self
             .journal
             .repository()
@@ -138,6 +202,7 @@ where
             record.progress.message_code = "operation.rolled_back".to_owned();
             self.journal.repository().update(&record).await?;
         }
+        self.journal.clear_cancel(operation_id);
         Ok(summary(&record))
     }
 
@@ -145,9 +210,27 @@ where
     /// history rewind; only facts recorded by the selected operation are put in
     /// the plan. The caller must re-check the returned preconditions before
     /// applying the inverse to domain state.
-    #[allow(clippy::await_holding_lock)]
     pub async fn prepare_undo(&self, operation_id: OperationId) -> AppResult<UndoPlan> {
-        let _writer = self.journal.acquire_writer()?;
+        self.prepare_undo_internal(operation_id, None).await
+    }
+
+    /// Prepare an inverse only when freshly observed facts match the
+    /// preconditions recorded by the original operation.
+    pub async fn prepare_undo_checked(
+        &self,
+        operation_id: OperationId,
+        current_facts: Value,
+    ) -> AppResult<UndoPlan> {
+        self.prepare_undo_internal(operation_id, Some(current_facts))
+            .await
+    }
+
+    async fn prepare_undo_internal(
+        &self,
+        operation_id: OperationId,
+        current_facts: Option<Value>,
+    ) -> AppResult<UndoPlan> {
+        let _writer = self.journal.acquire_writer().await;
         let source = self
             .journal
             .repository()
@@ -161,6 +244,11 @@ where
             .inverse
             .clone()
             .ok_or_else(|| conflict("operation_has_no_inverse"))?;
+        if let Some(current_facts) = current_facts {
+            if current_facts != inverse.preconditions {
+                return Err(conflict("undo_precondition_mismatch"));
+            }
+        }
         let plan_id = OperationId::new();
         let mut plan_record = OperationRecord::planned(
             plan_id,
@@ -184,9 +272,8 @@ where
 
     /// Commit the prepared inverse marker after the caller has applied and
     /// verified the inverse against `UndoPlan::preconditions`.
-    #[allow(clippy::await_holding_lock)]
     pub async fn commit_undo(&self, plan_id: OperationId) -> AppResult<OperationSummary> {
-        let _writer = self.journal.acquire_writer()?;
+        let _writer = self.journal.acquire_writer().await;
         let mut plan = self
             .journal
             .repository()
@@ -208,6 +295,69 @@ where
         plan.progress.message_code = "operation.undo_committed".to_owned();
         self.journal.repository().update(&plan).await?;
         Ok(summary(&plan))
+    }
+
+    /// Apply and verify an inverse while holding the same writer permit. The
+    /// callback is the domain-specific inverse (for example, restoring a
+    /// previous name); the journal supplies recorded facts and refuses stale
+    /// observations before any inverse write begins.
+    pub async fn commit_undo_checked<T, F, Fut>(
+        &self,
+        plan_id: OperationId,
+        current_facts: Value,
+        apply_inverse: F,
+    ) -> AppResult<T>
+    where
+        T: Serialize,
+        F: FnOnce(Value) -> Fut,
+        Fut: Future<Output = AppResult<T>>,
+    {
+        let _writer = self.journal.acquire_writer().await;
+        let mut plan = self
+            .journal
+            .repository()
+            .get(plan_id)
+            .await?
+            .ok_or_else(|| object_not_found(plan_id))?;
+        let inverse = plan
+            .inverse
+            .clone()
+            .ok_or_else(|| conflict("undo_plan_has_no_inverse"))?;
+        if plan.phase != OperationPhase::Prepared {
+            return Err(conflict("undo_plan_is_not_prepared"));
+        }
+        if current_facts != inverse.preconditions {
+            return Err(conflict("undo_precondition_mismatch"));
+        }
+        plan.phase = OperationPhase::Applying;
+        plan.progress.phase = OperationPhase::Applying;
+        plan.progress.message_code = "operation.undo_applying".to_owned();
+        self.journal.repository().update(&plan).await?;
+
+        match apply_inverse(inverse.facts).await {
+            Ok(result) => {
+                plan.result = Some(serde_json::to_value(&result).map_err(|_| {
+                    AppError::new(ErrorCode::InternalError, Severity::Error)
+                        .with_param("reason", "undo_result_not_serializable")
+                })?);
+                plan.phase = OperationPhase::Verifying;
+                plan.progress.phase = OperationPhase::Verifying;
+                self.journal.repository().update(&plan).await?;
+                plan.phase = OperationPhase::Committed;
+                plan.progress.phase = OperationPhase::Committed;
+                plan.progress.message_code = "operation.undo_committed".to_owned();
+                self.journal.repository().update(&plan).await?;
+                Ok(result)
+            }
+            Err(error) => {
+                plan.phase = OperationPhase::NeedsRecovery;
+                plan.progress.phase = OperationPhase::NeedsRecovery;
+                plan.error_code = Some(error.code);
+                plan.progress.message_code = "operation.undo_needs_recovery".to_owned();
+                self.journal.repository().update(&plan).await?;
+                Err(error)
+            }
+        }
     }
 
     pub async fn list_operations(&self) -> AppResult<Vec<OperationRecord>> {
@@ -239,13 +389,34 @@ mod tests {
     use std::collections::BTreeMap;
     use std::sync::{Arc, Mutex};
 
-    #[derive(Default)]
     struct MemoryRepository {
         records: Mutex<BTreeMap<String, OperationRecord>>,
+        writer: Arc<tokio::sync::Mutex<()>>,
+    }
+
+    impl Default for MemoryRepository {
+        fn default() -> Self {
+            Self {
+                records: Mutex::new(BTreeMap::new()),
+                writer: Arc::new(tokio::sync::Mutex::new(())),
+            }
+        }
     }
 
     #[async_trait(?Send)]
     impl OperationRepository for MemoryRepository {
+        fn writer(&self) -> Arc<tokio::sync::Mutex<()>> {
+            self.writer.clone()
+        }
+
+        fn checkpoint(&self, record: &OperationRecord) -> AppResult<()> {
+            self.records
+                .lock()
+                .unwrap()
+                .insert(record.operation_id.to_string(), record.clone());
+            Ok(())
+        }
+
         async fn get(&self, id: OperationId) -> AppResult<Option<OperationRecord>> {
             Ok(self.records.lock().unwrap().get(&id.to_string()).cloned())
         }
@@ -340,26 +511,139 @@ mod tests {
         assert_eq!(summary.phase, OperationPhase::Committed);
     }
 
-    fn block_on<F: Future>(future: F) -> F::Output {
-        use std::task::{Context, Poll, RawWaker, RawWakerVTable, Waker};
-        fn clone(_: *const ()) -> RawWaker {
-            raw_waker()
-        }
-        fn wake(_: *const ()) {}
-        fn raw_waker() -> RawWaker {
-            RawWaker::new(
-                std::ptr::null(),
-                &RawWakerVTable::new(clone, wake, wake, wake),
+    #[test]
+    fn shared_repository_writer_never_allows_two_applying_mutations() {
+        let repository = Arc::new(MemoryRepository::default());
+        let service = OperationService::new(repository);
+        let active = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let maximum = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let first_active = active.clone();
+        let first_maximum = maximum.clone();
+        let second_active = active.clone();
+        let second_maximum = maximum.clone();
+        let result = block_on(async move {
+            join2(
+                service.run(OperationId::new(), "first", "a", move |_context| {
+                    applying_window(first_active, first_maximum)
+                }),
+                service.run(OperationId::new(), "second", "b", move |_context| {
+                    applying_window(second_active, second_maximum)
+                }),
             )
-        }
-        let waker = unsafe { Waker::from_raw(raw_waker()) };
-        let mut context = Context::from_waker(&waker);
-        let mut future = std::pin::pin!(future);
-        loop {
-            match future.as_mut().poll(&mut context) {
-                Poll::Ready(value) => return value,
-                Poll::Pending => std::thread::yield_now(),
+            .await
+        });
+        assert!(result.0.is_ok() && result.1.is_ok());
+        assert_eq!(maximum.load(std::sync::atomic::Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn cancellation_is_observable_and_persisted_as_rolled_back() {
+        let repository = Arc::new(MemoryRepository::default());
+        let service = OperationService::new(repository.clone());
+        let operation_id = OperationId::new();
+        let result = block_on(async {
+            join2(
+                service.run(operation_id, "cancel-me", "cancel", |context| async move {
+                    while !context.is_cancelled() {
+                        tokio::task::yield_now().await;
+                    }
+                    Err::<(), _>(conflict("cooperative_cancel"))
+                }),
+                async {
+                    tokio::task::yield_now().await;
+                    service.cancel(operation_id).await
+                },
+            )
+            .await
+        });
+        assert!(result.0.is_err());
+        assert_eq!(result.1.unwrap().phase, OperationPhase::RolledBack);
+        let stored = block_on(repository.get(operation_id)).unwrap().unwrap();
+        assert_eq!(stored.phase, OperationPhase::RolledBack);
+    }
+
+    #[test]
+    fn checked_undo_rejects_external_change_and_applies_matching_inverse() {
+        let repository = Arc::new(MemoryRepository::default());
+        let service = OperationService::new(repository);
+        let id = OperationId::new();
+        block_on(
+            service.run(id, "rename_skill", "rename-checked", |context| async move {
+                context.set_inverse(
+                    "rename_skill",
+                    serde_json::json!({"name":"after"}),
+                    serde_json::json!({"name":"before"}),
+                );
+                Ok::<_, AppError>(())
+            }),
+        )
+        .unwrap();
+        let plan = block_on(service.prepare_undo(id)).unwrap();
+        let stale = block_on(service.commit_undo_checked(
+            plan.id,
+            serde_json::json!({"name":"changed-externally"}),
+            |_facts| async { Ok::<_, AppError>(()) },
+        ));
+        assert_eq!(
+            stale.unwrap_err().params["reason"],
+            "undo_precondition_mismatch"
+        );
+        let plan = block_on(service.prepare_undo(id)).unwrap();
+        let applied = block_on(service.commit_undo_checked(
+            plan.id,
+            serde_json::json!({"name":"after"}),
+            |facts| async move { Ok::<_, AppError>(facts["name"].clone()) },
+        ))
+        .unwrap();
+        assert_eq!(applied, "before");
+    }
+
+    async fn applying_window(
+        active: Arc<std::sync::atomic::AtomicUsize>,
+        maximum: Arc<std::sync::atomic::AtomicUsize>,
+    ) -> AppResult<u32> {
+        let current = active.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
+        maximum.fetch_max(current, std::sync::atomic::Ordering::SeqCst);
+        tokio::task::yield_now().await;
+        active.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+        Ok(1)
+    }
+
+    async fn join2<A, B>(first: A, second: B) -> (A::Output, B::Output)
+    where
+        A: Future,
+        B: Future,
+    {
+        use std::task::Poll;
+        let mut first = std::pin::pin!(first);
+        let mut second = std::pin::pin!(second);
+        let mut first_result = None;
+        let mut second_result = None;
+        std::future::poll_fn(|cx| {
+            if first_result.is_none() {
+                if let Poll::Ready(value) = first.as_mut().poll(cx) {
+                    first_result = Some(value);
+                }
             }
-        }
+            if second_result.is_none() {
+                if let Poll::Ready(value) = second.as_mut().poll(cx) {
+                    second_result = Some(value);
+                }
+            }
+            if first_result.is_some() && second_result.is_some() {
+                Poll::Ready((first_result.take().unwrap(), second_result.take().unwrap()))
+            } else {
+                Poll::Pending
+            }
+        })
+        .await
+    }
+
+    fn block_on<F: Future>(future: F) -> F::Output {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_time()
+            .build()
+            .unwrap()
+            .block_on(future)
     }
 }

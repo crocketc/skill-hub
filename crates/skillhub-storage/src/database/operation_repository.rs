@@ -8,6 +8,7 @@ use skillhub_core::{
     OperationPhase, OperationProgress, OperationRecord, OperationRepository, RecoveryAction,
     Severity,
 };
+use std::sync::Arc;
 
 /// SQLite implementation of the operation journal repository.
 pub struct OperationRepositorySqlite<'a> {
@@ -40,6 +41,35 @@ struct StoredProgress {
 
 #[async_trait(?Send)]
 impl OperationRepository for OperationRepositorySqlite<'_> {
+    fn writer(&self) -> Arc<tokio::sync::Mutex<()>> {
+        self.database.operation_writer()
+    }
+
+    fn checkpoint(&self, record: &OperationRecord) -> AppResult<()> {
+        let (progress, inverse) = encode_record(record)?;
+        let changed = self
+            .database
+            .connection
+            .execute(
+                "UPDATE operations SET phase=?2,state=?3,progress_json=?4,inverse_json=?5,error_code=?6,updated_at=?7 WHERE operation_id=?1",
+                params![
+                    record.operation_id.to_string(),
+                    phase_code(record.phase),
+                    state_code(record.phase),
+                    progress,
+                    inverse,
+                    record.error_code.map(|value| value.as_str()),
+                    now(),
+                ],
+            )
+            .map_err(error)?;
+        if changed == 0 {
+            return Err(AppError::new(ErrorCode::ObjectNotFound, Severity::Error)
+                .with_param("operation_id", record.operation_id.to_string()));
+        }
+        Ok(())
+    }
+
     async fn get(&self, operation_id: OperationId) -> AppResult<Option<OperationRecord>> {
         let row = self
             .database

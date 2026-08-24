@@ -22,7 +22,6 @@ pub enum ErrorCode {
     #[serde(rename = "operation.conflict")]
     OperationConflict,
     #[serde(rename = "operation.id_reused_with_different_request")]
-    #[specta(skip)]
     OperationIdReusedWithDifferentRequest,
     #[serde(rename = "credential.unavailable")]
     CredentialUnavailable,
