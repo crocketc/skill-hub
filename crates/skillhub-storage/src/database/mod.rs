@@ -3,8 +3,8 @@ mod bootstrap_repository;
 mod catalog_repository;
 mod custom_agent_repository;
 mod migrations;
-mod project_repository;
 mod operation_repository;
+mod project_repository;
 mod search_repository;
 
 use std::fmt;
@@ -20,8 +20,8 @@ pub use bootstrap_repository::BootstrapRepository;
 pub use catalog_repository::CatalogRepositorySqlite;
 pub use custom_agent_repository::CustomAgentRepository;
 pub use migrations::MigrationReport;
-pub use project_repository::ProjectRepository;
 pub use operation_repository::OperationRepositorySqlite;
+pub use project_repository::ProjectRepository;
 pub use search_repository::SearchRepository;
 
 /// An application database backed by SQLite.
