@@ -2,7 +2,7 @@ use skillhub_core::source::{
     ParsedSourceInput, SourceDescriptor, SourceErrorCode, SourceInputError, SourceKind,
     SourceLocator,
 };
-use std::path::PathBuf;
+use std::path::{Component, Path, PathBuf};
 use url::Url;
 
 pub struct SourceInputParser;
@@ -27,7 +27,6 @@ impl SourceInputParser {
             descriptor,
             skill_selector: None,
             target_hint: None,
-            executable: None,
         })
     }
 
@@ -67,7 +66,6 @@ impl SourceInputParser {
             descriptor,
             skill_selector,
             target_hint,
-            executable: None,
         })
     }
 }
@@ -76,6 +74,9 @@ fn parse_source(
     value: &str,
     allow_repository_shorthand: bool,
 ) -> Result<SourceDescriptor, SourceInputError> {
+    if value.chars().any(char::is_control) {
+        return Err(error(SourceErrorCode::InvalidInput));
+    }
     if value.starts_with("github:") || value.starts_with("gitlab:") {
         let (host, path) = value.split_once(':').expect("prefix contains a colon");
         let normalized = repository_url(host, path)?;
@@ -88,7 +89,7 @@ fn parse_source(
     if is_windows_path(value) {
         return Ok(SourceDescriptor::new(
             SourceKind::Local,
-            SourceLocator::local_path(PathBuf::from(value)),
+            SourceLocator::local_path(normalize_local_path(value)),
         ));
     }
 
@@ -99,39 +100,34 @@ fn parse_source(
         if url.host_str().is_none() || !url.username().is_empty() || url.password().is_some() {
             return Err(error(SourceErrorCode::InvalidInput));
         }
-        let normalized = url.to_string();
-        let kind = if is_repository_url(&url) {
-            SourceKind::Git
-        } else {
-            SourceKind::Https
-        };
-        let locator = if kind == SourceKind::Git {
-            SourceLocator::git_url(normalized)
-        } else {
-            SourceLocator::https_url(normalized)
-        };
-        return Ok(SourceDescriptor::new(kind, locator));
+        if let Some(normalized) = canonical_repository_url(&url) {
+            return Ok(SourceDescriptor::new(
+                SourceKind::Git,
+                SourceLocator::git_url(normalized),
+            ));
+        }
+        return Ok(SourceDescriptor::new(
+            SourceKind::Https,
+            SourceLocator::https_url(url.to_string()),
+        ));
     }
 
     if value.contains("://") {
         return Err(error(SourceErrorCode::Unsupported));
     }
-    if allow_repository_shorthand && is_repository_path(value) {
+    if allow_repository_shorthand && is_repository_path(value, "github") {
         let normalized = repository_url("github", value)?;
         return Ok(SourceDescriptor::new(
             SourceKind::Git,
             SourceLocator::git_url(normalized),
         ));
     }
-    if value.chars().any(char::is_control) {
-        return Err(error(SourceErrorCode::InvalidInput));
-    }
     if value.contains(char::is_whitespace) && !looks_like_path_with_spaces(value) {
         return Err(error(SourceErrorCode::CommandNotParseable));
     }
     Ok(SourceDescriptor::new(
         SourceKind::Local,
-        SourceLocator::local_path(PathBuf::from(value)),
+        SourceLocator::local_path(normalize_local_path(value)),
     ))
 }
 
@@ -148,7 +144,7 @@ fn is_windows_path(value: &str) -> bool {
 }
 
 fn repository_url(prefix: &str, path: &str) -> Result<String, SourceInputError> {
-    if !is_repository_path(path) {
+    if !is_repository_path(path, prefix) {
         return Err(error(SourceErrorCode::InvalidInput));
     }
     let path = path.trim_end_matches('/').trim_end_matches(".git");
@@ -160,24 +156,39 @@ fn repository_url(prefix: &str, path: &str) -> Result<String, SourceInputError> 
     Ok(format!("https://{host}/{path}"))
 }
 
-fn is_repository_url(url: &Url) -> bool {
-    let Some(host) = url.host_str() else {
-        return false;
+fn canonical_repository_url(url: &Url) -> Option<String> {
+    let host = url.host_str()?;
+    let prefix = if host.eq_ignore_ascii_case("github.com") {
+        "github"
+    } else if host.eq_ignore_ascii_case("gitlab.com") {
+        "gitlab"
+    } else {
+        return None;
     };
-    if !host.eq_ignore_ascii_case("github.com") && !host.eq_ignore_ascii_case("gitlab.com") {
-        return false;
-    }
     if url.query().is_some() || url.fragment().is_some() {
-        return false;
+        return None;
     }
-    let parts = url.path().trim_matches('/').split('/').collect::<Vec<_>>();
-    parts.len() == 2 && parts.last().is_some_and(|part| !part.is_empty())
+    let path = url.path().trim_matches('/').trim_end_matches(".git");
+    if !is_repository_path(path, prefix) {
+        return None;
+    }
+    let host = if prefix == "github" {
+        "github.com"
+    } else {
+        "gitlab.com"
+    };
+    Some(format!("https://{host}/{path}"))
 }
 
-fn is_repository_path(value: &str) -> bool {
+fn is_repository_path(value: &str, prefix: &str) -> bool {
     let path = value.trim_start_matches('/').trim_end_matches('/');
     let parts = path.trim_end_matches(".git").split('/').collect::<Vec<_>>();
-    parts.len() >= 2
+    let valid_segment_count = match prefix {
+        "github" => parts.len() == 2,
+        "gitlab" => parts.len() >= 2,
+        _ => false,
+    };
+    valid_segment_count
         && parts.iter().all(|part| {
             !part.is_empty()
                 && *part != "."
@@ -186,6 +197,23 @@ fn is_repository_path(value: &str) -> bool {
                     character.is_ascii_alphanumeric() || matches!(character, '-' | '_' | '.' | '@')
                 })
         })
+}
+
+fn normalize_local_path(value: &str) -> PathBuf {
+    // Normalize only lexical current-directory components. Do not canonicalize,
+    // resolve symlinks, or collapse parent components; filesystem-sensitive
+    // checks belong to acquisition and path policy.
+    let mut normalized = PathBuf::new();
+    for component in Path::new(value).components() {
+        if !matches!(component, Component::CurDir) {
+            normalized.push(component.as_os_str());
+        }
+    }
+    if normalized.as_os_str().is_empty() {
+        PathBuf::from(".")
+    } else {
+        normalized
+    }
 }
 
 fn tokenize(value: &str) -> Result<Vec<String>, SourceInputError> {
@@ -245,12 +273,14 @@ fn is_command_name(value: &str) -> bool {
 
 fn is_shell_metacharacter(value: &str) -> bool {
     value.contains('|')
+        || value.contains('&')
         || value.contains('>')
         || value.contains('<')
         || value.contains(';')
         || value.contains(char::from(96))
-        || value.contains("$({")
-        || value.contains("&&")
+        || value.contains('$')
+        || value.contains('(')
+        || value.contains(')')
 }
 
 fn looks_like_path_with_spaces(value: &str) -> bool {

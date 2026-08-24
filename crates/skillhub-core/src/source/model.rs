@@ -56,12 +56,12 @@ impl SourceDescriptor {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct ParsedSourceInput {
     pub original_input: String,
     pub descriptor: SourceDescriptor,
     pub skill_selector: Option<String>,
     pub target_hint: Option<String>,
-    pub executable: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
