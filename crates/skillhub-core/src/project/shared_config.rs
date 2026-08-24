@@ -54,6 +54,7 @@ impl PortableSource {
         {
             return Err("source URL must not contain credentials");
         }
+        reject_sensitive_url_parameters(&parsed)?;
         validate_portable_text(&value)?;
         Ok(Self(value))
     }
@@ -226,6 +227,45 @@ fn validate_portable_text(value: &str) -> Result<(), &'static str> {
         }
     }
     Ok(())
+}
+
+fn reject_sensitive_url_parameters(url: &Url) -> Result<(), &'static str> {
+    for (name, value) in url.query_pairs() {
+        if sensitive_parameter(name.as_ref()) || sensitive_parameter(value.as_ref()) {
+            return Err("source URL contains a credential-like query parameter");
+        }
+    }
+    if let Some(fragment) = url.fragment() {
+        for part in fragment.split('&') {
+            let (name, value) = part.split_once('=').unwrap_or((part, ""));
+            if sensitive_parameter(name) || sensitive_parameter(value) {
+                return Err("source URL contains a credential-like fragment parameter");
+            }
+        }
+    }
+    Ok(())
+}
+
+fn sensitive_parameter(value: &str) -> bool {
+    let normalized = value
+        .chars()
+        .filter(|character| character.is_ascii_alphanumeric())
+        .collect::<String>()
+        .to_ascii_lowercase();
+    [
+        "key",
+        "token",
+        "secret",
+        "password",
+        "credential",
+        "authorization",
+        "bearer",
+        "apikey",
+        "accesstoken",
+        "xamzcredential",
+    ]
+    .iter()
+    .any(|needle| normalized.contains(needle))
 }
 
 fn is_safe_relative_path(value: &str) -> bool {

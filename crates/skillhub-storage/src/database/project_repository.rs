@@ -232,15 +232,66 @@ fn normalize_project_path(path: &str) -> AppResult<(String, String)> {
         }
     })?;
     let normalized = canonical.to_string_lossy().into_owned();
-    let identity = if cfg!(windows) {
-        format!(
-            "path:{}",
+    let identity = metadata_identity(&canonical, &metadata).unwrap_or_else(|| {
+        let fallback = if cfg!(windows) {
             normalized.replace('\\', "/").to_ascii_lowercase()
-        )
-    } else {
-        format!("path:{}", normalized)
-    };
+        } else {
+            normalized.clone()
+        };
+        format!("fallback-path:{fallback}")
+    });
     Ok((normalized, identity))
+}
+
+#[cfg(unix)]
+fn metadata_identity(_: &Path, metadata: &std::fs::Metadata) -> Option<String> {
+    use std::os::unix::fs::MetadataExt;
+    Some(format!("fs:dev-{}-ino-{}", metadata.dev(), metadata.ino()))
+}
+
+#[cfg(windows)]
+fn metadata_identity(path: &Path, _: &std::fs::Metadata) -> Option<String> {
+    use std::iter::once;
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::Foundation::{CloseHandle, INVALID_HANDLE_VALUE};
+    use windows_sys::Win32::Storage::FileSystem::{
+        CreateFileW, GetFileInformationByHandle, BY_HANDLE_FILE_INFORMATION,
+        FILE_FLAG_BACKUP_SEMANTICS, FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE,
+        OPEN_EXISTING,
+    };
+    let wide = path
+        .as_os_str()
+        .encode_wide()
+        .chain(once(0))
+        .collect::<Vec<_>>();
+    let handle = unsafe {
+        CreateFileW(
+            wide.as_ptr(),
+            0,
+            FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+            std::ptr::null(),
+            OPEN_EXISTING,
+            FILE_FLAG_BACKUP_SEMANTICS,
+            std::ptr::null_mut(),
+        )
+    };
+    if handle == INVALID_HANDLE_VALUE {
+        return None;
+    }
+    let mut info = unsafe { std::mem::zeroed::<BY_HANDLE_FILE_INFORMATION>() };
+    let result = unsafe { GetFileInformationByHandle(handle, &mut info) };
+    unsafe { CloseHandle(handle) };
+    (result != 0).then(|| {
+        format!(
+            "fs:volume-{}-file-{}-{}",
+            info.dwVolumeSerialNumber, info.nFileIndexHigh, info.nFileIndexLow
+        )
+    })
+}
+
+#[cfg(not(any(unix, windows)))]
+fn metadata_identity(_: &Path, _: &std::fs::Metadata) -> Option<String> {
+    None
 }
 
 fn reject_symlink_components(path: &Path) -> AppResult<()> {

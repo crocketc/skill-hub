@@ -149,6 +149,12 @@ fn project_registration_requires_real_directory_and_persists_canonical_physical_
         directory.path().canonicalize().unwrap().to_string_lossy()
     );
     assert!(!project.physical_id.is_empty());
+    assert!(project.physical_id.starts_with("fs:"));
+    let alias_duplicate = database
+        .project_repository()
+        .register(Project::new(ProjectId::new(), "alias", directory.path()))
+        .unwrap_err();
+    assert_eq!(alias_duplicate.code, skillhub_core::ErrorCode::InvalidInput);
 
     let relative = database
         .project_repository()
@@ -172,9 +178,17 @@ fn shared_config_rejects_paths_urls_with_userinfo_and_secret_like_values() {
         PortableSource::try_from("https://user:password@example.test/skill"),
         PortableSource::try_from("C:\\Users\\alice\\skill"),
         PortableSource::try_from("token=secret-value"),
+        PortableSource::try_from("https://example.test/skill?token=secret-value"),
+        PortableSource::try_from("https://example.test/skill?ref=ok#credential=bad"),
     ] {
         assert!(source.is_err());
     }
+
+    let ordinary = PortableSource::url("https://example.test/skill?ref=docs#readme").unwrap();
+    assert_eq!(
+        ordinary.as_str(),
+        "https://example.test/skill?ref=docs#readme"
+    );
 
     let config = SharedProjectConfig::new(
         "/Users/alice/project",
