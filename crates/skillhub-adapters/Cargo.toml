@@ -7,6 +7,8 @@ edition = "2021"
 skillhub-core = { path = "../skillhub-core" }
 serde_json = "1"
 url = "2"
+tar = "0.4"
+zip = { version = "2", default-features = false, features = ["deflate"] }
 
 [dev-dependencies]
 tempfile = "3"
