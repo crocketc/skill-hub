@@ -1,6 +1,7 @@
 mod agent_repository;
 mod bootstrap_repository;
 mod catalog_repository;
+mod check_repository;
 mod custom_agent_repository;
 mod migrations;
 mod operation_repository;
@@ -18,6 +19,7 @@ use tokio::sync::Mutex;
 pub use agent_repository::AgentRepository;
 pub use bootstrap_repository::BootstrapRepository;
 pub use catalog_repository::CatalogRepositorySqlite;
+pub use check_repository::CheckRepositorySqlite;
 pub use custom_agent_repository::CustomAgentRepository;
 pub use migrations::MigrationReport;
 pub use operation_repository::OperationRepositorySqlite;
@@ -41,6 +43,9 @@ impl fmt::Debug for Database {
 }
 
 impl Database {
+    pub fn check_repository(&self) -> CheckRepositorySqlite<'_> {
+        CheckRepositorySqlite::new(self)
+    }
     pub fn catalog_repository(&self) -> AppResult<CatalogRepositorySqlite<'_>> {
         CatalogRepositorySqlite::new(self)
     }
