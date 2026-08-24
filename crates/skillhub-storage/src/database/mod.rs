@@ -5,6 +5,7 @@ mod custom_agent_repository;
 mod migrations;
 mod operation_repository;
 mod project_repository;
+mod scan_repository;
 mod search_repository;
 
 use std::fmt;
@@ -22,6 +23,7 @@ pub use custom_agent_repository::CustomAgentRepository;
 pub use migrations::MigrationReport;
 pub use operation_repository::OperationRepositorySqlite;
 pub use project_repository::ProjectRepository;
+pub use scan_repository::ScanRepository;
 pub use search_repository::SearchRepository;
 
 /// An application database backed by SQLite.
@@ -63,6 +65,10 @@ impl Database {
 
     pub fn project_repository(&self) -> ProjectRepository<'_> {
         ProjectRepository::new(self)
+    }
+
+    pub fn scan_repository(&self) -> ScanRepository<'_> {
+        ScanRepository::new(self)
     }
 
     pub fn operation_repository(&self) -> OperationRepositorySqlite<'_> {

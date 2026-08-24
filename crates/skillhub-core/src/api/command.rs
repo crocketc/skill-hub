@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use crate::agent::{CustomAgent, CustomAgentDraft, CustomAgentOverride, PathGrant};
 use crate::catalog::SkillLifecycle;
 use crate::project::{Project, SavedProjectView, SharedProjectConfig};
+use crate::scan::{ScanResult, ScanScope};
 use crate::{OperationId, OperationSummary, ProjectId, SkillId, VersionId};
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
@@ -116,6 +117,22 @@ pub struct ReadSharedProjectConfig {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+pub struct RunInitializationScan {
+    pub scopes: Vec<ScanScope>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+pub struct ScanTargets {
+    pub scopes: Vec<ScanScope>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+pub struct RescanSkill {
+    pub scope: ScanScope,
+    pub path: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 #[serde(tag = "type", content = "payload")]
 pub enum AppCommand {
     #[serde(rename = "create_skill")]
@@ -158,6 +175,12 @@ pub enum AppCommand {
     WriteSharedProjectConfig(WriteSharedProjectConfig),
     #[serde(rename = "read_shared_project_config")]
     ReadSharedProjectConfig(ReadSharedProjectConfig),
+    #[serde(rename = "run_initialization_scan")]
+    RunInitializationScan(RunInitializationScan),
+    #[serde(rename = "scan_targets")]
+    ScanTargets(ScanTargets),
+    #[serde(rename = "rescan_skill")]
+    RescanSkill(RescanSkill),
     #[serde(rename = "cancel_operation")]
     CancelOperation { operation_id: OperationId },
     #[serde(rename = "acknowledge_recovery")]
@@ -179,4 +202,6 @@ pub enum AppCommandResult {
     SavedProjectView(SavedProjectView),
     #[serde(rename = "shared_project_config")]
     SharedProjectConfig(SharedProjectConfig),
+    #[serde(rename = "scan_result")]
+    ScanResult(ScanResult),
 }

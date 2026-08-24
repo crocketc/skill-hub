@@ -5,9 +5,10 @@ mod query;
 pub use command::{
     AppCommand, AppCommandResult, CreateCombination, CreateCustomAgent, CreateSkill,
     PinProjectSkillVersion, ReadSharedProjectConfig, RegisterProject, RemoveCustomAgent,
-    RenameSkill, ResetProfileOverride, SaveProjectView, SaveSkillContent, SetCurrentVersion,
-    SetLifecycle, SetMetadata, SetProfileOverride, SetProjectTags, SetTrial, UpdateCustomAgent,
-    UpdateProject, WriteSharedProjectConfig,
+    RenameSkill, RescanSkill, ResetProfileOverride, RunInitializationScan, SaveProjectView,
+    SaveSkillContent, ScanTargets, SetCurrentVersion, SetLifecycle, SetMetadata,
+    SetProfileOverride, SetProjectTags, SetTrial, UpdateCustomAgent, UpdateProject,
+    WriteSharedProjectConfig,
 };
 pub use event::{AppEvent, FactsChanged};
 pub use query::{
