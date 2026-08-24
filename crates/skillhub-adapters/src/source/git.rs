@@ -91,9 +91,11 @@ impl GixSourceFetcher {
         std::fs::rename(downloaded.root().join("source"), &archive_path).map_err(|error| {
             SourceFetchError::new(SourceFetchErrorCode::AcquisitionFailed, error.to_string())
         })?;
-        ArchiveExtractor::new(self.limits.clone())
+        let extracted = ArchiveExtractor::new(self.limits.clone())
             .extract(archive_path)
-            .map_err(SourceFetchError::from)
+            .map_err(SourceFetchError::from)?;
+        flatten_archive_root(extracted.root())?;
+        Ok(extracted)
     }
 
     fn fetch_sync(
@@ -410,6 +412,42 @@ fn repository_archive_url(url: &Url) -> Option<Url> {
     Some(archive_url)
 }
 
+fn flatten_archive_root(root: &Path) -> SourceFetchResult<()> {
+    let entries = std::fs::read_dir(root)
+        .map_err(|error| {
+            SourceFetchError::new(SourceFetchErrorCode::AcquisitionFailed, error.to_string())
+        })?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| {
+            SourceFetchError::new(SourceFetchErrorCode::AcquisitionFailed, error.to_string())
+        })?;
+    if entries.len() != 1 {
+        return Ok(());
+    }
+    let wrapper = entries[0].path();
+    if !std::fs::symlink_metadata(&wrapper)
+        .map_err(|error| {
+            SourceFetchError::new(SourceFetchErrorCode::AcquisitionFailed, error.to_string())
+        })?
+        .is_dir()
+    {
+        return Ok(());
+    }
+    for child in std::fs::read_dir(&wrapper).map_err(|error| {
+        SourceFetchError::new(SourceFetchErrorCode::AcquisitionFailed, error.to_string())
+    })? {
+        let child = child.map_err(|error| {
+            SourceFetchError::new(SourceFetchErrorCode::AcquisitionFailed, error.to_string())
+        })?;
+        std::fs::rename(child.path(), root.join(child.file_name())).map_err(|error| {
+            SourceFetchError::new(SourceFetchErrorCode::AcquisitionFailed, error.to_string())
+        })?;
+    }
+    std::fs::remove_dir(&wrapper).map_err(|error| {
+        SourceFetchError::new(SourceFetchErrorCode::AcquisitionFailed, error.to_string())
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::{is_windows_device_name, repository_archive_url};
@@ -456,5 +494,16 @@ mod tests {
             repository_archive_url(&Url::parse("https://example.com/owner/repo").unwrap())
                 .is_none()
         );
+    }
+
+    #[test]
+    fn archive_wrapper_is_flattened_to_match_a_git_tree_root() {
+        let workspace = tempfile::tempdir().unwrap();
+        let wrapper = workspace.path().join("repo-HEAD");
+        std::fs::create_dir(&wrapper).unwrap();
+        std::fs::write(wrapper.join("SKILL.md"), b"skill").unwrap();
+        super::flatten_archive_root(workspace.path()).unwrap();
+        assert!(workspace.path().join("SKILL.md").is_file());
+        assert!(!workspace.path().join("repo-HEAD").exists());
     }
 }
