@@ -1,14 +1,15 @@
 mod skill_detector;
+use skill_detector::SkillDetector;
 
 use std::collections::BTreeMap;
 use std::path::Path;
 
+use skillhub_core::agent::LogicalTarget;
+use skillhub_core::project::Project;
 use skillhub_core::scan::{ScanRepository, ScanResult, ScanScope};
-use skillhub_core::{
-    AppError, AppResult, ErrorCode, RecoveryAction, ScanService as ScanServicePort, Severity,
-};
+use skillhub_core::{AppError, AppResult, ErrorCode, RecoveryAction, Severity};
 
-pub use skill_detector::{SkillDetector, SkillDetectorConfig};
+pub use skill_detector::SkillDetectorConfig;
 
 /// Incremental, bounded scanner for directory-shaped Skills.
 pub struct ScanService {
@@ -37,20 +38,40 @@ impl ScanService {
         }
     }
 
-    pub fn scan<I>(&mut self, scopes: I) -> AppResult<ScanResult>
+    #[allow(dead_code)]
+    pub(crate) fn scan<I>(&mut self, scopes: I) -> AppResult<ScanResult>
     where
         I: Into<ScanScopes>,
     {
         self.detector.scan(&scopes.into().0)
     }
 
-    pub fn scan_scope(&mut self, scope: &ScanScope) -> AppResult<ScanResult> {
+    #[allow(dead_code)]
+    pub(crate) fn scan_scope(&mut self, scope: &ScanScope) -> AppResult<ScanResult> {
         self.detector.scan(std::slice::from_ref(scope))
     }
 
     /// Register a scope obtained from discovery, a custom Agent or the
     /// path-policy service. Callers cannot scan command-supplied roots.
-    pub fn register_scope(&mut self, scope: ScanScope) -> AppResult<()> {
+    pub fn register_discovery_target(&mut self, target: &LogicalTarget) -> AppResult<()> {
+        if target.id.trim().is_empty() || !target.available || !target.exists || !target.readable {
+            return Err(invalid_scope(
+                "discovery target is not available for scanning",
+            ));
+        }
+        self.register_scope(
+            ScanScope::registered(&target.id, &target.path).with_marker(&target.marker),
+        )
+    }
+
+    pub fn register_project_scope(&mut self, project: &Project) -> AppResult<()> {
+        self.register_scope(ScanScope::registered(
+            project.id.to_string(),
+            &project.device_path,
+        ))
+    }
+
+    pub(crate) fn register_scope(&mut self, scope: ScanScope) -> AppResult<()> {
         self.detector.validate_registered_scope(&scope)?;
         if scope.id.trim().is_empty() {
             return Err(invalid_scope("scope id is required"));
@@ -72,6 +93,43 @@ impl ScanService {
         self.detector.scan(&scopes)
     }
 
+    pub fn scan_registered_with_previous(
+        &mut self,
+        scope_ids: &[String],
+        previous: &ScanResult,
+    ) -> AppResult<ScanResult> {
+        let scopes = self.registered_scopes_for(scope_ids)?;
+        self.detector.scan_with_previous(&scopes, previous)
+    }
+
+    pub fn scan_registered_with_repository<R>(
+        &mut self,
+        scope_ids: &[String],
+        repository: &R,
+    ) -> AppResult<ScanResult>
+    where
+        R: ScanRepository,
+    {
+        let scopes = self.registered_scopes_for(scope_ids)?;
+        let result = match repository.load()? {
+            Some(previous) => self.detector.scan_with_previous(&scopes, &previous)?,
+            None => self.detector.scan(&scopes)?,
+        };
+        repository.replace(&result)
+    }
+
+    fn registered_scopes_for(&self, scope_ids: &[String]) -> AppResult<Vec<ScanScope>> {
+        scope_ids
+            .iter()
+            .map(|id| {
+                self.registered_scopes
+                    .get(id)
+                    .cloned()
+                    .ok_or_else(|| invalid_scope(format!("unknown scan scope: {id}")))
+            })
+            .collect()
+    }
+
     pub fn rescan_registered_skill(
         &mut self,
         scope_id: &str,
@@ -87,7 +145,8 @@ impl ScanService {
 
     /// Continue from a persisted confirmed snapshot, checking metadata before
     /// reusing its fingerprints.
-    pub fn scan_with_previous<I>(
+    #[allow(dead_code)]
+    pub(crate) fn scan_with_previous<I>(
         &mut self,
         scopes: I,
         previous: &ScanResult,
@@ -98,7 +157,12 @@ impl ScanService {
         self.detector.scan_with_previous(&scopes.into().0, previous)
     }
 
-    pub fn scan_with_repository<I, R>(&mut self, scopes: I, repository: &R) -> AppResult<ScanResult>
+    #[allow(dead_code)]
+    pub(crate) fn scan_with_repository<I, R>(
+        &mut self,
+        scopes: I,
+        repository: &R,
+    ) -> AppResult<ScanResult>
     where
         I: Into<ScanScopes>,
         R: ScanRepository,
@@ -111,7 +175,8 @@ impl ScanService {
         repository.replace(&result)
     }
 
-    pub fn rescan_skill(
+    #[allow(dead_code)]
+    pub(crate) fn rescan_skill(
         &mut self,
         scope: &ScanScope,
         path: impl AsRef<Path>,
@@ -120,12 +185,7 @@ impl ScanService {
     }
 }
 
-impl ScanServicePort for ScanService {
-    fn scan(&mut self, scopes: &[ScanScope]) -> AppResult<ScanResult> {
-        self.detector.scan(scopes)
-    }
-}
-
+#[allow(dead_code)]
 #[derive(Clone, Debug)]
 pub struct ScanScopes(Vec<ScanScope>);
 

@@ -85,10 +85,6 @@ impl ScanResult {
     }
 }
 
-pub trait ScanService: Send + Sync {
-    fn scan(&mut self, scopes: &[ScanScope]) -> crate::AppResult<ScanResult>;
-}
-
 pub trait ScanRepository {
     fn load(&self) -> crate::AppResult<Option<ScanResult>>;
     fn replace(&self, snapshot: &ScanResult) -> crate::AppResult<ScanResult>;

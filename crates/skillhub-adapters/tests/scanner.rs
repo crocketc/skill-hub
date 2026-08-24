@@ -1,7 +1,37 @@
 use skillhub_adapters::scanner::ScanService;
+use skillhub_core::agent::{DirectoryPrecedence, LogicalTarget, TargetScope};
 use skillhub_core::api::{RescanSkill, RunInitializationScan, ScanTargets};
 use skillhub_core::scan::ScanScope;
 use tempfile::tempdir;
+
+fn discovery_target(scope: &ScanScope) -> LogicalTarget {
+    let id = scope.id.clone();
+    LogicalTarget {
+        id: id.clone(),
+        profile_id: "test".into(),
+        client_id: "test".into(),
+        scope: TargetScope::Global,
+        path: scope.root.clone(),
+        marker: scope.marker.clone(),
+        precedence: DirectoryPrecedence::Preferred,
+        exists: true,
+        readable: true,
+        writable: true,
+        available: true,
+        physical_id: id.clone(),
+    }
+}
+
+fn register_scope(service: &mut ScanService, scope: ScanScope) {
+    let target = discovery_target(&scope);
+    service.register_discovery_target(&target).unwrap();
+}
+
+fn scan_scope(service: &mut ScanService, scope: ScanScope) -> skillhub_core::ScanResult {
+    let id = scope.id.clone();
+    register_scope(service, scope);
+    service.scan_registered(&[id]).unwrap()
+}
 
 #[test]
 fn scanner_recognizes_only_the_profile_marker_inside_registered_roots() {
@@ -17,7 +47,7 @@ fn scanner_recognizes_only_the_profile_marker_inside_registered_roots() {
     std::fs::write(unrelated.join("SKILL.md"), "must not be visited\n").unwrap();
 
     let mut service = ScanService::new();
-    let result = service.scan([ScanScope::new(registered.clone())]).unwrap();
+    let result = scan_scope(&mut service, ScanScope::new(registered.clone()));
 
     assert_eq!(result.discovered.len(), 1);
     let discovered = &result.discovered[0];
@@ -44,10 +74,10 @@ fn second_scan_reuses_unchanged_skill_fingerprint() {
     std::fs::create_dir_all(root.join("one")).unwrap();
     std::fs::write(root.join("one/SKILL.md"), "name: one\n").unwrap();
 
-    let scope = ScanScope::new(&root);
     let mut service = ScanService::new();
-    let first = service.scan([scope.clone()]).unwrap();
-    let second = service.scan([scope]).unwrap();
+    let scope = ScanScope::new(&root);
+    let first = scan_scope(&mut service, scope.clone());
+    let second = scan_scope(&mut service, scope);
 
     assert_eq!(first.discovered.len(), 1);
     assert_eq!(first.reparsed_count, 1);
@@ -70,11 +100,11 @@ fn changed_skill_is_rehashed_without_scanning_a_sibling_root() {
     std::fs::write(root.join("one/SKILL.md"), "name: one\n").unwrap();
     std::fs::write(sibling.join("outside/SKILL.md"), "outside\n").unwrap();
 
-    let scope = ScanScope::new(&root);
     let mut service = ScanService::new();
-    let first = service.scan([scope.clone()]).unwrap();
+    let scope = ScanScope::new(&root);
+    let first = scan_scope(&mut service, scope.clone());
     std::fs::write(root.join("one/SKILL.md"), "name: changed\n").unwrap();
-    let second = service.scan([scope]).unwrap();
+    let second = scan_scope(&mut service, scope);
 
     assert_eq!(second.discovered.len(), 1);
     assert_eq!(second.reparsed_count, 1);
@@ -95,11 +125,11 @@ fn same_length_rewrite_gets_a_new_metadata_fingerprint() {
     let root = workspace.path().join("skills");
     std::fs::create_dir_all(root.join("one")).unwrap();
     std::fs::write(root.join("one/SKILL.md"), "name: one\n").unwrap();
-    let scope = ScanScope::new(&root);
     let mut service = ScanService::new();
-    let first = service.scan([scope.clone()]).unwrap();
+    let scope = ScanScope::new(&root);
+    let first = scan_scope(&mut service, scope.clone());
     std::fs::write(root.join("one/SKILL.md"), "name: two\n").unwrap();
-    let second = service.scan([scope]).unwrap();
+    let second = scan_scope(&mut service, scope);
 
     assert_eq!(first.discovered[0].size, second.discovered[0].size);
     assert_ne!(
@@ -121,9 +151,13 @@ fn persisted_snapshot_can_seed_incremental_scan_in_a_new_service() {
     let scope = ScanScope::new(&root);
 
     let mut first_service = ScanService::new();
-    let first = first_service.scan([scope.clone()]).unwrap();
+    let first = scan_scope(&mut first_service, scope.clone());
     let mut resumed_service = ScanService::new();
-    let resumed = resumed_service.scan_with_previous([scope], &first).unwrap();
+    let id = scope.id.clone();
+    register_scope(&mut resumed_service, scope);
+    let resumed = resumed_service
+        .scan_registered_with_previous(&[id], &first)
+        .unwrap();
 
     assert_eq!(resumed.reparsed_count, 0);
     assert_eq!(resumed.unchanged_count, 1);
@@ -139,18 +173,15 @@ fn invalid_scope_is_reported_and_other_registered_scope_still_scans() {
     let valid = workspace.path().join("valid");
     std::fs::create_dir_all(valid.join("one")).unwrap();
     std::fs::write(valid.join("one/SKILL.md"), "name: one\n").unwrap();
-    let invalid = ScanScope::registered("missing", workspace.path().join("missing"));
     let mut service = ScanService::new();
-
-    let result = service
-        .scan([invalid, ScanScope::registered("valid", &valid)])
-        .unwrap();
+    let missing = ScanScope::registered("missing", workspace.path().join("missing"));
+    assert!(service
+        .register_discovery_target(&discovery_target(&missing))
+        .is_err());
+    let result = scan_scope(&mut service, ScanScope::registered("valid", &valid));
 
     assert_eq!(result.discovered.len(), 1);
-    assert!(result
-        .errors
-        .iter()
-        .any(|issue| issue.path.ends_with("missing")));
+    assert!(result.errors.is_empty());
 }
 
 #[test]
@@ -165,7 +196,10 @@ fn rescan_skill_only_visits_the_requested_directory() {
     let scope = ScanScope::registered("skills", &root);
     let mut service = ScanService::new();
 
-    let result = service.rescan_skill(&scope, root.join("one")).unwrap();
+    register_scope(&mut service, scope);
+    let result = service
+        .rescan_registered_skill("skills", root.join("one"))
+        .unwrap();
 
     assert_eq!(result.discovered.len(), 1);
     assert!(result.discovered[0].path.ends_with("one"));
@@ -203,9 +237,7 @@ fn scanner_requires_a_registered_scope_id_before_scanning() {
     let mut service = ScanService::new();
 
     assert!(service.scan_registered(&["missing".into()]).is_err());
-    service
-        .register_scope(ScanScope::registered("known", &root))
-        .unwrap();
+    register_scope(&mut service, ScanScope::registered("known", &root));
     let result = service.scan_registered(&["known".into()]).unwrap();
     assert_eq!(result.discovered.len(), 1);
 }
@@ -218,15 +250,21 @@ fn profile_marker_is_case_aware_and_not_user_selectable() {
     std::fs::write(root.join("wrong/skill.md"), "wrong\n").unwrap();
     let mut service = ScanService::new();
 
-    let result = service
-        .scan([ScanScope::new(&root).with_marker("skill.md")])
-        .unwrap();
+    let target = discovery_target(&ScanScope::new(&root).with_marker("skill.md"));
+    assert!(service.register_discovery_target(&target).is_err());
+}
 
-    assert!(result.discovered.is_empty());
-    assert!(result
-        .errors
-        .iter()
-        .any(|issue| issue.code == "input.invalid"));
+#[test]
+fn unavailable_discovery_target_cannot_authorize_a_scan_root() {
+    let workspace = tempdir().unwrap();
+    let root = workspace.path().join("outside");
+    std::fs::create_dir_all(&root).unwrap();
+    let mut target = discovery_target(&ScanScope::new(&root));
+    target.available = false;
+    let mut service = ScanService::new();
+
+    assert!(service.register_discovery_target(&target).is_err());
+    assert!(service.scan_registered(&[target.id]).is_err());
 }
 
 #[test]
@@ -244,8 +282,8 @@ fn three_hundred_skill_fixture_scans_and_reuses_all_unchanged_entries() {
     }
     let scope = ScanScope::new(&root);
     let mut service = ScanService::new();
-    let first = service.scan([scope.clone()]).unwrap();
-    let second = service.scan([scope]).unwrap();
+    let first = scan_scope(&mut service, scope.clone());
+    let second = scan_scope(&mut service, scope);
 
     assert_eq!(first.discovered.len(), 300);
     assert_eq!(second.discovered.len(), 300);
@@ -265,7 +303,7 @@ fn symlink_loop_is_not_followed() {
     symlink(&root, root.join("one/loop")).unwrap();
     let mut service = ScanService::new();
 
-    let result = service.scan([ScanScope::new(&root)]).unwrap();
+    let result = scan_scope(&mut service, ScanScope::new(&root));
 
     assert_eq!(result.discovered.len(), 1);
     assert!(result
