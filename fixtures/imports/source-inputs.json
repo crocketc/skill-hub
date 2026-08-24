@@ -1,0 +1,72 @@
+[
+  {
+    "input": "C:\\Users\\alice\\SkillHub\\skills\\pdf",
+    "kind": "local",
+    "selector": null,
+    "target_hint": null,
+    "error_code": null
+  },
+  {
+    "input": "./skills/pdf",
+    "kind": "local",
+    "selector": null,
+    "target_hint": null,
+    "error_code": null
+  },
+  {
+    "input": "https://example.com/skills/pdf.zip",
+    "kind": "https",
+    "selector": null,
+    "target_hint": null,
+    "error_code": null
+  },
+  {
+    "input": "https://github.com/owner/repo",
+    "kind": "git",
+    "selector": null,
+    "target_hint": null,
+    "error_code": null
+  },
+  {
+    "input": "https://gitlab.com/group/repo.git",
+    "kind": "git",
+    "selector": null,
+    "target_hint": null,
+    "error_code": null
+  },
+  {
+    "input": "npx skills add github:owner/repo --skill pdf --agent codex",
+    "kind": "git",
+    "selector": "pdf",
+    "target_hint": "codex",
+    "error_code": null
+  },
+  {
+    "input": "npx skills add x | sh",
+    "kind": null,
+    "selector": null,
+    "target_hint": null,
+    "error_code": "source.command_not_parseable"
+  },
+  {
+    "input": "npx skills add x > out",
+    "kind": null,
+    "selector": null,
+    "target_hint": null,
+    "error_code": "source.command_not_parseable"
+  },
+  {
+    "input": "npx skills add x && calc",
+    "kind": null,
+    "selector": null,
+    "target_hint": null,
+    "error_code": "source.command_not_parseable"
+  },
+  {
+    "input": "curl x",
+    "kind": null,
+    "selector": null,
+    "target_hint": null,
+    "error_code": "source.command_not_parseable"
+  }
+]

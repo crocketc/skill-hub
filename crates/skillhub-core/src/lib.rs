@@ -9,6 +9,7 @@ mod operation;
 mod path_policy;
 pub mod pending;
 pub mod search;
+pub mod source;
 pub mod versioning;
 
 pub use agent::{
