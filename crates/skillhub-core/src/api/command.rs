@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::agent::{CustomAgent, CustomAgentDraft, CustomAgentOverride, PathGrant};
 use crate::catalog::SkillLifecycle;
+use crate::project::{Project, SavedProjectView, SharedProjectConfig};
 use crate::{OperationId, OperationSummary, ProjectId, SkillId, VersionId};
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
@@ -83,6 +84,38 @@ pub struct SetProfileOverride {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+pub struct RegisterProject {
+    pub project: Project,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+pub struct UpdateProject {
+    pub project: Project,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+pub struct SetProjectTags {
+    pub project_id: ProjectId,
+    pub tags: Vec<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+pub struct SaveProjectView {
+    pub view: SavedProjectView,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+pub struct WriteSharedProjectConfig {
+    pub project_id: ProjectId,
+    pub config: SharedProjectConfig,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+pub struct ReadSharedProjectConfig {
+    pub project_id: ProjectId,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 #[serde(tag = "type", content = "payload")]
 pub enum AppCommand {
     #[serde(rename = "create_skill")]
@@ -113,6 +146,18 @@ pub enum AppCommand {
     ResetProfileOverride(ResetProfileOverride),
     #[serde(rename = "set_profile_override")]
     SetProfileOverride(SetProfileOverride),
+    #[serde(rename = "register_project")]
+    RegisterProject(RegisterProject),
+    #[serde(rename = "update_project")]
+    UpdateProject(UpdateProject),
+    #[serde(rename = "set_project_tags")]
+    SetProjectTags(SetProjectTags),
+    #[serde(rename = "save_project_view")]
+    SaveProjectView(SaveProjectView),
+    #[serde(rename = "write_shared_project_config")]
+    WriteSharedProjectConfig(WriteSharedProjectConfig),
+    #[serde(rename = "read_shared_project_config")]
+    ReadSharedProjectConfig(ReadSharedProjectConfig),
     #[serde(rename = "cancel_operation")]
     CancelOperation { operation_id: OperationId },
     #[serde(rename = "acknowledge_recovery")]
@@ -128,4 +173,10 @@ pub enum AppCommandResult {
     CustomAgent(CustomAgent),
     #[serde(rename = "custom_agent_override")]
     CustomAgentOverride(CustomAgentOverride),
+    #[serde(rename = "project")]
+    Project(Project),
+    #[serde(rename = "saved_project_view")]
+    SavedProjectView(SavedProjectView),
+    #[serde(rename = "shared_project_config")]
+    SharedProjectConfig(SharedProjectConfig),
 }

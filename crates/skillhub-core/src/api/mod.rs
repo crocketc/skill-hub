@@ -4,14 +4,17 @@ mod query;
 
 pub use command::{
     AppCommand, AppCommandResult, CreateCombination, CreateCustomAgent, CreateSkill,
-    PinProjectSkillVersion, RemoveCustomAgent, RenameSkill, ResetProfileOverride, SaveSkillContent,
-    SetCurrentVersion, SetLifecycle, SetMetadata, SetProfileOverride, SetTrial, UpdateCustomAgent,
+    PinProjectSkillVersion, ReadSharedProjectConfig, RegisterProject, RemoveCustomAgent,
+    RenameSkill, ResetProfileOverride, SaveProjectView, SaveSkillContent, SetCurrentVersion,
+    SetLifecycle, SetMetadata, SetProfileOverride, SetProjectTags, SetTrial, UpdateCustomAgent,
+    UpdateProject, WriteSharedProjectConfig,
 };
 pub use event::{AppEvent, FactsChanged};
 pub use query::{
     AppQuery, AppQueryResult, CombinationResult, DiffVersions, GetBootstrapSnapshot,
     GetDiscoverySnapshot, GetSkill, ListCombinations, ListCustomAgents, ListPendingItems,
-    ListVersions, SkillResult, VersionDiffResult, VersionResult,
+    ListProjects, ListSavedProjectViews, ListVersions, SkillResult, VersionDiffResult,
+    VersionResult,
 };
 
 use crate::AppResult;
