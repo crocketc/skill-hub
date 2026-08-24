@@ -11,6 +11,7 @@ pub struct Project {
     pub id: ProjectId,
     pub name: String,
     pub device_path: String,
+    pub physical_id: String,
     pub logical: ProjectMetadata,
     pub tags: Vec<ProjectTag>,
     pub created_at: String,
@@ -24,6 +25,7 @@ impl Project {
             id,
             name: name.into(),
             device_path: path.as_ref().to_string_lossy().into_owned(),
+            physical_id: String::new(),
             logical: ProjectMetadata::default(),
             tags: Vec::new(),
             created_at: now.clone(),
@@ -129,6 +131,21 @@ impl SavedProjectView {
                     .any_tags
                     .iter()
                     .any(|tag| project_tags.contains(tag.as_str())))
+    }
+
+    pub fn normalize(&mut self) {
+        self.name = self.name.trim().to_owned();
+        self.all_tags = normalize_tags(std::mem::take(&mut self.all_tags));
+        self.any_tags = normalize_tags(std::mem::take(&mut self.any_tags));
+    }
+
+    pub fn with_any_tags<I, S>(mut self, tags: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        self.any_tags = normalize_tags(tags);
+        self
     }
 }
 

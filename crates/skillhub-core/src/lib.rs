@@ -37,7 +37,7 @@ pub use ids::{
     PhysicalTargetId, ProjectId, SkillId, VersionId,
 };
 pub use project::{
-    Project, ProjectMetadata, ProjectTag, SavedProjectView, SharedProjectConfig,
+    PortableSource, Project, ProjectMetadata, ProjectTag, SavedProjectView, SharedProjectConfig,
     SharedSkillRequirement,
 };
 pub use versioning::{FileEntry, VersionDiff, VersionManifest, VersionRecord, VersionRepository};

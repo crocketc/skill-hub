@@ -241,6 +241,8 @@ export type PinProjectSkillVersion = {
 	version_id: VersionId,
 };
 
+export type PortableSource = string;
+
 /**
  *  A registered project. `device_path` is deliberately device-local and is
  *  never part of the portable `.skillhub/project.json` representation.
@@ -249,6 +251,7 @@ export type Project = {
 	id: ProjectId,
 	name: string,
 	device_path: string,
+	physical_id: string,
 	logical: ProjectMetadata,
 	tags: ProjectTag[],
 	created_at: string,
@@ -379,9 +382,13 @@ export type SharedProjectConfig = {
 
 export type SharedSkillRequirement = {
 	skill_id: SkillId,
-	source: string,
+	source: PortableSource,
 	name: string,
 	version_constraint: string | null,
+	version_id: VersionId | null,
+	content_identity: string | null,
+	logical_agent_id: string | null,
+	project_subdirectory: string | null,
 	note: string | null,
 };
 

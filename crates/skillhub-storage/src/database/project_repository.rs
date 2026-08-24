@@ -28,14 +28,17 @@ impl<'a> ProjectRepository<'a> {
     }
 
     pub fn register(&self, mut project: Project) -> AppResult<Project> {
-        validate_project(&project)?;
         let mut projects = self.list()?;
         if projects.iter().any(|candidate| candidate.id == project.id) {
             return Err(invalid_input("duplicate project id"));
         }
+        let (device_path, physical_id) = normalize_project_path(&project.device_path)?;
+        project.device_path = device_path;
+        project.physical_id = physical_id;
+        validate_project(&project)?;
         if projects
             .iter()
-            .any(|candidate| candidate.device_path == project.device_path)
+            .any(|candidate| candidate.physical_id == project.physical_id)
         {
             return Err(invalid_input("project path is already registered"));
         }
@@ -46,10 +49,14 @@ impl<'a> ProjectRepository<'a> {
     }
 
     pub fn update(&self, project: Project) -> AppResult<Project> {
+        let mut project = project;
+        let (device_path, physical_id) = normalize_project_path(&project.device_path)?;
+        project.device_path = device_path;
+        project.physical_id = physical_id;
         validate_project(&project)?;
         let mut projects = self.list()?;
         if projects.iter().any(|candidate| {
-            candidate.id != project.id && candidate.device_path == project.device_path
+            candidate.id != project.id && candidate.physical_id == project.physical_id
         }) {
             return Err(invalid_input("project path is already registered"));
         }
@@ -75,10 +82,20 @@ impl<'a> ProjectRepository<'a> {
     }
 
     pub fn save_view(&self, view: SavedProjectView) -> AppResult<SavedProjectView> {
+        let mut view = view;
+        view.normalize();
         if view.id.trim().is_empty() || view.name.trim().is_empty() {
             return Err(invalid_input("saved project view needs an id and name"));
         }
         let mut views: Vec<SavedProjectView> = load_value(&self.database.connection, VIEWS_KEY)?;
+        if views
+            .iter()
+            .any(|candidate| candidate.id != view.id && candidate.name == view.name)
+        {
+            return Err(invalid_input(
+                "saved project view name is already registered",
+            ));
+        }
         if let Some(existing) = views.iter_mut().find(|candidate| candidate.id == view.id) {
             *existing = view.clone();
         } else {
@@ -127,6 +144,12 @@ impl<'a> ProjectRepository<'a> {
     ) -> AppResult<()> {
         config.validate().map_err(invalid_input)?;
         let project = self.get(id)?;
+        let (canonical_path, physical_id) = normalize_project_path(&project.device_path)?;
+        if canonical_path != project.device_path || physical_id != project.physical_id {
+            return Err(invalid_input(
+                "registered project path changed or is not canonical",
+            ));
+        }
         let directory = Path::new(&project.device_path).join(".skillhub");
         std::fs::create_dir_all(&directory).map_err(io_error)?;
         let path = directory.join("project.json");
@@ -177,7 +200,70 @@ fn validate_project(project: &Project) -> AppResult<()> {
     if project.device_path.trim().is_empty() {
         return Err(invalid_input("project device path is required"));
     }
+    if project.physical_id.trim().is_empty() {
+        return Err(invalid_input("project physical identity is required"));
+    }
     Ok(())
+}
+
+fn normalize_project_path(path: &str) -> AppResult<(String, String)> {
+    let input = Path::new(path);
+    if !input.is_absolute() || foreign_drive_prefix(path) {
+        return Err(invalid_input("project path must be an absolute local path"));
+    }
+    reject_symlink_components(input)?;
+    let metadata = std::fs::symlink_metadata(input).map_err(|error| {
+        if error.kind() == std::io::ErrorKind::NotFound {
+            invalid_input("project path must be an existing real directory")
+        } else {
+            io_error(error)
+        }
+    })?;
+    if !metadata.is_dir() || metadata.file_type().is_symlink() {
+        return Err(invalid_input(
+            "project path must be an existing real directory",
+        ));
+    }
+    let canonical = input.canonicalize().map_err(|error| {
+        if error.kind() == std::io::ErrorKind::NotFound {
+            invalid_input("project path must be an existing real directory")
+        } else {
+            io_error(error)
+        }
+    })?;
+    let normalized = canonical.to_string_lossy().into_owned();
+    let identity = if cfg!(windows) {
+        format!(
+            "path:{}",
+            normalized.replace('\\', "/").to_ascii_lowercase()
+        )
+    } else {
+        format!("path:{}", normalized)
+    };
+    Ok((normalized, identity))
+}
+
+fn reject_symlink_components(path: &Path) -> AppResult<()> {
+    let mut current = if let Some(prefix) = path.components().next() {
+        Path::new(prefix.as_os_str()).to_path_buf()
+    } else {
+        return Err(invalid_input("project path is invalid"));
+    };
+    for component in path.components().skip(1) {
+        current.push(component.as_os_str());
+        if let Ok(metadata) = std::fs::symlink_metadata(&current) {
+            if metadata.file_type().is_symlink() {
+                return Err(invalid_input(
+                    "project path cannot traverse a symbolic link",
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn foreign_drive_prefix(path: &str) -> bool {
+    !cfg!(windows) && path.as_bytes().get(1) == Some(&b':')
 }
 
 fn load_value<T: serde::de::DeserializeOwned>(

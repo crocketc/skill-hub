@@ -1,5 +1,6 @@
 use skillhub_core::project::{
-    Project, ProjectTag, SavedProjectView, SharedProjectConfig, SharedSkillRequirement,
+    PortableSource, Project, ProjectTag, SavedProjectView, SharedProjectConfig,
+    SharedSkillRequirement,
 };
 use skillhub_core::{ProjectId, SkillId};
 use skillhub_storage::Database;
@@ -7,7 +8,8 @@ use skillhub_storage::Database;
 #[test]
 fn project_can_belong_to_multiple_saved_filter_categories() {
     let database = Database::open_in_memory().unwrap();
-    let project = Project::new(ProjectId::new(), "demo", "C:/work/demo");
+    let directory = tempfile::tempdir().unwrap();
+    let project = Project::new(ProjectId::new(), "demo", directory.path());
     let project = database.project_repository().register(project).unwrap();
     database
         .project_repository()
@@ -31,9 +33,13 @@ fn shared_config_contains_requirements_not_absolute_paths_or_skill_content() {
         "demo",
         vec![SharedSkillRequirement {
             skill_id: SkillId::new(),
-            source: "https://example.test/skill".into(),
+            source: PortableSource::url("https://example.test/skill").unwrap(),
             name: "pdf-tools".into(),
             version_constraint: Some(">=1.0".into()),
+            version_id: None,
+            content_identity: None,
+            logical_agent_id: None,
+            project_subdirectory: None,
             note: Some("required for documents".into()),
         }],
     );
@@ -56,9 +62,13 @@ fn shared_config_round_trips_through_project_directory() {
         "demo",
         vec![SharedSkillRequirement {
             skill_id: SkillId::new(),
-            source: "local".into(),
+            source: PortableSource::catalog("local").unwrap(),
             name: "example".into(),
             version_constraint: None,
+            version_id: None,
+            content_identity: None,
+            logical_agent_id: None,
+            project_subdirectory: None,
             note: None,
         }],
     );
@@ -80,18 +90,19 @@ fn shared_config_round_trips_through_project_directory() {
 fn duplicate_project_identity_or_path_is_rejected_without_replacing_registry() {
     let database = Database::open_in_memory().unwrap();
     let id = ProjectId::new();
+    let directory = tempfile::tempdir().unwrap();
     database
         .project_repository()
-        .register(Project::new(id, "demo", "C:/work/demo"))
+        .register(Project::new(id, "demo", directory.path()))
         .unwrap();
     let duplicate_id = database
         .project_repository()
-        .register(Project::new(id, "other", "C:/work/other"))
+        .register(Project::new(id, "other", directory.path().join("other")))
         .unwrap_err();
     assert_eq!(duplicate_id.code, skillhub_core::ErrorCode::InvalidInput);
     let duplicate_path = database
         .project_repository()
-        .register(Project::new(ProjectId::new(), "other", "C:/work/demo"))
+        .register(Project::new(ProjectId::new(), "other", directory.path()))
         .unwrap_err();
     assert_eq!(duplicate_path.code, skillhub_core::ErrorCode::InvalidInput);
     assert_eq!(database.project_repository().list().unwrap().len(), 1);
@@ -100,9 +111,10 @@ fn duplicate_project_identity_or_path_is_rejected_without_replacing_registry() {
 #[test]
 fn tags_are_normalized_and_duplicate_tags_do_not_duplicate_membership() {
     let database = Database::open_in_memory().unwrap();
+    let directory = tempfile::tempdir().unwrap();
     let project = database
         .project_repository()
-        .register(Project::new(ProjectId::new(), "demo", "C:/work/demo"))
+        .register(Project::new(ProjectId::new(), "demo", directory.path()))
         .unwrap();
     database
         .project_repository()
@@ -116,5 +128,102 @@ fn tags_are_normalized_and_duplicate_tags_do_not_duplicate_membership() {
             .map(|tag| tag.name)
             .collect::<Vec<_>>(),
         ["client", "rust"]
+    );
+}
+
+#[test]
+fn project_registration_requires_real_directory_and_persists_canonical_physical_identity() {
+    let database = Database::open_in_memory().unwrap();
+    let directory = tempfile::tempdir().unwrap();
+    let alias = format!(
+        "{}{}",
+        directory.path().display(),
+        std::path::MAIN_SEPARATOR
+    );
+    let project = database
+        .project_repository()
+        .register(Project::new(ProjectId::new(), "demo", alias))
+        .unwrap();
+    assert_eq!(
+        project.device_path,
+        directory.path().canonicalize().unwrap().to_string_lossy()
+    );
+    assert!(!project.physical_id.is_empty());
+
+    let relative = database
+        .project_repository()
+        .register(Project::new(ProjectId::new(), "relative", "relative/path"))
+        .unwrap_err();
+    assert_eq!(relative.code, skillhub_core::ErrorCode::InvalidInput);
+    let missing = database
+        .project_repository()
+        .register(Project::new(
+            ProjectId::new(),
+            "missing",
+            directory.path().join("missing"),
+        ))
+        .unwrap_err();
+    assert_eq!(missing.code, skillhub_core::ErrorCode::InvalidInput);
+}
+
+#[test]
+fn shared_config_rejects_paths_urls_with_userinfo_and_secret_like_values() {
+    for source in [
+        PortableSource::try_from("https://user:password@example.test/skill"),
+        PortableSource::try_from("C:\\Users\\alice\\skill"),
+        PortableSource::try_from("token=secret-value"),
+    ] {
+        assert!(source.is_err());
+    }
+
+    let config = SharedProjectConfig::new(
+        "/Users/alice/project",
+        vec![SharedSkillRequirement {
+            skill_id: SkillId::new(),
+            source: PortableSource::catalog("catalog").unwrap(),
+            name: "example".into(),
+            version_constraint: Some("=1.2.3".into()),
+            version_id: Some(
+                "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+                    .parse()
+                    .unwrap(),
+            ),
+            content_identity: Some("sha256:abc".into()),
+            logical_agent_id: Some("openai.codex-cli".into()),
+            project_subdirectory: Some("packages/demo".into()),
+            note: Some("Authorization: Bearer secret".into()),
+        }],
+    );
+    assert!(config.validate().is_err());
+    assert!(serde_json::to_string(&config).is_err());
+}
+
+#[test]
+fn saved_view_normalizes_direct_all_and_any_tag_input_and_matches_combined_filter() {
+    let database = Database::open_in_memory().unwrap();
+    let directory = tempfile::tempdir().unwrap();
+    let project = database
+        .project_repository()
+        .register(Project::new(ProjectId::new(), "demo", directory.path()))
+        .unwrap();
+    database
+        .project_repository()
+        .set_tags(project.id, ["client", "rust"])
+        .unwrap();
+    let view = SavedProjectView {
+        id: "combined".into(),
+        name: "Combined".into(),
+        all_tags: vec![" Client ".into()],
+        any_tags: vec![" PYTHON ".into(), "rust".into(), "rust".into()],
+    };
+    let saved = database.project_repository().save_view(view).unwrap();
+    assert_eq!(saved.all_tags, vec!["client"]);
+    assert_eq!(saved.any_tags, vec!["python", "rust"]);
+    assert_eq!(
+        database
+            .project_repository()
+            .matching_view("combined")
+            .unwrap(),
+        vec![project.id]
     );
 }
