@@ -22,12 +22,17 @@ pub use api::{
     AppCommand, AppCommandResult, AppEvent, AppQuery, AppQueryResult, ApplicationFacade,
     FactsChanged, Page,
 };
+pub use application::OperationService;
 pub use bootstrap::{
     BootstrapSnapshot, DeploymentChartCategory, DeploymentDimension, PendingSummary,
     RecentOperationSummary, StartupRecoveryState,
 };
 pub use error::{AppError, AppResult, ErrorCode, RecoveryAction, Severity};
-pub use operation::{OperationPhase, OperationProgress, OperationSummary};
+pub use operation::{
+    InverseOperation, OperationContext, OperationJournal, OperationObjectResult, OperationPhase,
+    OperationProgress, OperationRecord, OperationRepository, OperationStatus, OperationSummary,
+    UndoPlan,
+};
 pub use path_policy::{AllowedRoot, AllowedRootId, PathPolicy, SafePath};
 
 pub use catalog::{LibraryManifest, LibraryPaths, PortableSkillRecord};

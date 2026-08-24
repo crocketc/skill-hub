@@ -3,6 +3,7 @@ mod bootstrap_repository;
 mod catalog_repository;
 mod custom_agent_repository;
 mod migrations;
+mod operation_repository;
 mod search_repository;
 
 use std::fmt;
@@ -16,6 +17,7 @@ pub use bootstrap_repository::BootstrapRepository;
 pub use catalog_repository::CatalogRepositorySqlite;
 pub use custom_agent_repository::CustomAgentRepository;
 pub use migrations::MigrationReport;
+pub use operation_repository::OperationRepositorySqlite;
 pub use search_repository::SearchRepository;
 
 /// An application database backed by SQLite.
@@ -52,6 +54,10 @@ impl Database {
 
     pub fn custom_agent_repository(&self) -> CustomAgentRepository<'_> {
         CustomAgentRepository::new(self)
+    }
+
+    pub fn operation_repository(&self) -> OperationRepositorySqlite<'_> {
+        OperationRepositorySqlite::new(self)
     }
 
     #[doc(hidden)]

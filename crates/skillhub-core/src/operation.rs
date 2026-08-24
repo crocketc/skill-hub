@@ -2,6 +2,13 @@ use serde::{Deserialize, Serialize};
 
 use crate::{ErrorCode, OperationId};
 
+pub mod journal;
+
+pub use journal::{
+    InverseOperation, OperationContext, OperationJournal, OperationObjectResult, OperationRecord,
+    OperationRepository, OperationStatus, UndoPlan,
+};
+
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 #[serde(rename_all = "snake_case")]
 pub enum OperationPhase {
