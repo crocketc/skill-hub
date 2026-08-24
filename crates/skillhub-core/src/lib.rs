@@ -3,6 +3,7 @@ pub mod api;
 pub mod application;
 pub mod bootstrap;
 pub mod catalog;
+pub mod check;
 mod error;
 mod ids;
 mod operation;
