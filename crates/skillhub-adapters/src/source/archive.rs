@@ -396,10 +396,11 @@ fn validate_zip_entry_count(file: &File, max_entries: u64) -> AcquisitionResult<
         }
         let absolute = start + offset as u64;
         let count = u16::from_le_bytes([tail[offset + 10], tail[offset + 11]]);
-        if count != u16::MAX {
-            let size = u32::from_le_bytes(tail[offset + 12..offset + 16].try_into().unwrap());
-            let directory_offset =
-                u32::from_le_bytes(tail[offset + 16..offset + 20].try_into().unwrap());
+        let size = u32::from_le_bytes(tail[offset + 12..offset + 16].try_into().unwrap());
+        let directory_offset =
+            u32::from_le_bytes(tail[offset + 16..offset + 20].try_into().unwrap());
+        let zip64_sentinel = count == u16::MAX || size == u32::MAX || directory_offset == u32::MAX;
+        if !zip64_sentinel {
             check_zip_entry_count(count as u64, max_entries)?;
             if central_directory_is_valid(
                 file,
@@ -408,19 +409,23 @@ fn validate_zip_entry_count(file: &File, max_entries: u64) -> AcquisitionResult<
                 u64::from(size),
                 u64::from(directory_offset),
             )? {
-                selected_layout =
-                    Some((count as u64, u64::from(size), u64::from(directory_offset)));
+                selected_layout = Some((
+                    count as u64,
+                    u64::from(size),
+                    u64::from(directory_offset),
+                    absolute,
+                ));
                 break;
             }
         } else if let Some(layout) = read_zip64_layout(file, absolute, length)? {
             check_zip_entry_count(layout.0, max_entries)?;
-            if central_directory_is_valid(file, absolute, layout.0, layout.1, layout.2)? {
+            if central_directory_is_valid(file, layout.3, layout.0, layout.1, layout.2)? {
                 selected_layout = Some(layout);
                 break;
             }
         }
     }
-    let (count, _, _) = selected_layout.ok_or_else(|| {
+    let (count, _, _, _) = selected_layout.ok_or_else(|| {
         format_error("ZIP end-of-central-directory record is missing or truncated")
     })?;
     Ok(count)
@@ -479,7 +484,7 @@ fn read_zip64_layout(
     file: &File,
     eocd_offset: u64,
     archive_length: u64,
-) -> AcquisitionResult<Option<(u64, u64, u64)>> {
+) -> AcquisitionResult<Option<(u64, u64, u64, u64)>> {
     const ZIP64_LOCATOR_SIGNATURE: [u8; 4] = *b"PK\x06\x07";
     const ZIP64_EOCD_SIGNATURE: [u8; 4] = *b"PK\x06\x06";
     if eocd_offset < 20 {
@@ -502,7 +507,7 @@ fn read_zip64_layout(
     }
     let zip64_size = u64::from_le_bytes(zip64[4..12].try_into().unwrap());
     if zip64_size < 44
-        || zip64_offset.saturating_add(12).saturating_add(zip64_size) > locator_offset
+        || zip64_offset.saturating_add(12).saturating_add(zip64_size) != locator_offset
     {
         return Ok(None);
     }
@@ -510,6 +515,7 @@ fn read_zip64_layout(
         u64::from_le_bytes(zip64[32..40].try_into().unwrap()),
         u64::from_le_bytes(zip64[40..48].try_into().unwrap()),
         u64::from_le_bytes(zip64[48..56].try_into().unwrap()),
+        zip64_offset,
     )))
 }
 

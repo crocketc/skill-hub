@@ -157,6 +157,62 @@ fn rejects_truncated_central_directory_file_header() {
 }
 
 #[test]
+fn extracts_a_valid_zip64_archive() {
+    let directory = tempdir().unwrap();
+    let archive = zip64_archive(&directory);
+    let acquired = ArchiveExtractor::new(test_limits())
+        .extract(archive)
+        .unwrap();
+    assert!(acquired.root.join("file-0.txt").is_file());
+    assert_eq!(acquired.entry_count(), 1);
+}
+
+#[test]
+fn accepts_zip64_when_size_or_offset_sentinel_triggers_zip64_parsing() {
+    for field in ["size", "offset"] {
+        let directory = tempdir().unwrap();
+        let archive = zip64_archive_with_sentinel(&directory, field);
+        let acquired = ArchiveExtractor::new(test_limits())
+            .extract(archive)
+            .unwrap();
+        assert!(acquired.root.join("file-0.txt").is_file(), "{field}");
+    }
+}
+
+#[test]
+fn rejects_zip64_count_size_offset_and_locator_mismatches() {
+    for field in ["count", "size", "offset", "locator"] {
+        let directory = tempdir().unwrap();
+        let archive = zip64_archive(&directory);
+        let mut bytes = std::fs::read(&archive).unwrap();
+        let eocd = bytes
+            .windows(4)
+            .rposition(|window| window == b"PK\x05\x06")
+            .unwrap();
+        let locator = eocd - 20;
+        let zip64 =
+            u64::from_le_bytes(bytes[locator + 8..locator + 16].try_into().unwrap()) as usize;
+        match field {
+            "count" => bytes[zip64 + 32..zip64 + 40].copy_from_slice(&2_u64.to_le_bytes()),
+            "size" => bytes[zip64 + 40..zip64 + 48].copy_from_slice(&1_u64.to_le_bytes()),
+            "offset" => bytes[zip64 + 48..zip64 + 56].copy_from_slice(&1_u64.to_le_bytes()),
+            "locator" => bytes[locator + 8..locator + 16].copy_from_slice(&0_u64.to_le_bytes()),
+            _ => unreachable!(),
+        }
+        std::fs::write(&archive, bytes).unwrap();
+
+        let error = ArchiveExtractor::new(test_limits())
+            .extract(archive)
+            .unwrap_err();
+        assert_eq!(
+            error.code,
+            CoreAcquisitionErrorCode::ArchiveFormatInvalid,
+            "{field}"
+        );
+    }
+}
+
+#[test]
 fn rejects_forged_eocd_signatures_inside_a_valid_comment() {
     let directory = tempdir().unwrap();
     let archive = directory.path().join("comment-signature.zip");
@@ -302,4 +358,57 @@ fn zip_with_files(directory: &tempfile::TempDir, count: usize) -> PathBuf {
     }
     writer.finish().unwrap();
     path
+}
+
+fn zip64_archive(directory: &tempfile::TempDir) -> PathBuf {
+    let zip32 = zip_with_files(directory, 1);
+    let bytes = std::fs::read(&zip32).unwrap();
+    let eocd = bytes
+        .windows(4)
+        .rposition(|window| window == b"PK\x05\x06")
+        .unwrap();
+    let central_size = u32::from_le_bytes(bytes[eocd + 12..eocd + 16].try_into().unwrap()) as u64;
+    let central_offset = u32::from_le_bytes(bytes[eocd + 16..eocd + 20].try_into().unwrap()) as u64;
+    let mut output = bytes[..eocd].to_vec();
+    let zip64_offset = output.len() as u64;
+    output.extend_from_slice(b"PK\x06\x06");
+    output.extend_from_slice(&44_u64.to_le_bytes());
+    output.extend_from_slice(&45_u16.to_le_bytes());
+    output.extend_from_slice(&45_u16.to_le_bytes());
+    output.extend_from_slice(&0_u32.to_le_bytes());
+    output.extend_from_slice(&0_u32.to_le_bytes());
+    output.extend_from_slice(&1_u64.to_le_bytes());
+    output.extend_from_slice(&1_u64.to_le_bytes());
+    output.extend_from_slice(&central_size.to_le_bytes());
+    output.extend_from_slice(&central_offset.to_le_bytes());
+    output.extend_from_slice(b"PK\x06\x07");
+    output.extend_from_slice(&0_u32.to_le_bytes());
+    output.extend_from_slice(&zip64_offset.to_le_bytes());
+    output.extend_from_slice(&1_u32.to_le_bytes());
+    output.extend_from_slice(b"PK\x05\x06");
+    output.extend_from_slice(&0_u16.to_le_bytes());
+    output.extend_from_slice(&0_u16.to_le_bytes());
+    output.extend_from_slice(&u16::MAX.to_le_bytes());
+    output.extend_from_slice(&u16::MAX.to_le_bytes());
+    output.extend_from_slice(&u32::MAX.to_le_bytes());
+    output.extend_from_slice(&u32::MAX.to_le_bytes());
+    output.extend_from_slice(&0_u16.to_le_bytes());
+    std::fs::write(&zip32, output).unwrap();
+    zip32
+}
+
+fn zip64_archive_with_sentinel(directory: &tempfile::TempDir, field: &str) -> PathBuf {
+    let archive = zip64_archive(directory);
+    let mut bytes = std::fs::read(&archive).unwrap();
+    let eocd = bytes
+        .windows(4)
+        .rposition(|window| window == b"PK\x05\x06")
+        .unwrap();
+    match field {
+        "size" => bytes[eocd + 12..eocd + 16].copy_from_slice(&u32::MAX.to_le_bytes()),
+        "offset" => bytes[eocd + 16..eocd + 20].copy_from_slice(&u32::MAX.to_le_bytes()),
+        _ => unreachable!(),
+    }
+    std::fs::write(&archive, bytes).unwrap();
+    archive
 }
