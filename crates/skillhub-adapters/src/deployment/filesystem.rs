@@ -208,7 +208,13 @@ fn collect_entries(
             "deployment trees must not contain nested symlinks",
         ));
     }
+    let relative = current
+        .strip_prefix(root)
+        .map_err(|_| operation_conflict("deployment path escaped its root"))?
+        .to_string_lossy()
+        .replace('\\', "/");
     if metadata.is_dir() || (metadata.file_type().is_symlink() && current == root) {
+        entries.push((format!("dir:{relative}"), String::new()));
         for entry in fs::read_dir(current).map_err(io_error)? {
             let entry = entry.map_err(io_error)?;
             collect_entries(root, &entry.path(), entries)?;
@@ -217,12 +223,7 @@ fn collect_entries(
     }
     let bytes = fs::read(current).map_err(io_error)?;
     let digest = Sha256::digest(bytes);
-    let relative = current
-        .strip_prefix(root)
-        .map_err(|_| operation_conflict("deployment path escaped its root"))?
-        .to_string_lossy()
-        .replace('\\', "/");
-    entries.push((relative, format!("{digest:x}")));
+    entries.push((format!("file:{relative}"), format!("{digest:x}")));
     Ok(())
 }
 

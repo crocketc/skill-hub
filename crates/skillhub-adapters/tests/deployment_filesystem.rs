@@ -55,6 +55,21 @@ fn remove_owned_refuses_modified_managed_copy() {
 }
 
 #[test]
+fn remove_owned_refuses_added_empty_directory() {
+    let fixture = DeploymentFixture::new();
+    let applied = fixture.deploy(DeploymentMode::ManagedCopy).unwrap();
+    fs::create_dir(applied.destination_path.join("user-data")).unwrap();
+
+    let error = DeploymentFilesystem::new()
+        .remove_owned(&applied.ownership)
+        .unwrap_err();
+
+    assert_eq!(error.code.as_str(), "deployment.ownership_mismatch");
+    assert!(applied.destination_path.exists());
+    assert!(applied.destination_path.join("user-data").is_dir());
+}
+
+#[test]
 fn symbolic_link_round_trip_is_verified_or_reports_capability() {
     let fixture = DeploymentFixture::new();
     let outcome = fixture.deploy(DeploymentMode::SymbolicLink);
