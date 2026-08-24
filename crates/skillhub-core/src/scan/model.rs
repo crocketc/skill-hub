@@ -1,7 +1,6 @@
 use serde::{Deserialize, Serialize};
 
 /// A filesystem root explicitly registered for scanning.
-///
 /// The marker is intentionally part of the scope: different Agent profiles
 /// may use different marker spelling, and matching is case-aware.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]

@@ -23,13 +23,13 @@ export type AgentProfile = {
 	clients: AgentClient[],
 };
 
-export type AppCommand = { type: "create_skill"; payload: CreateSkill } | { type: "save_skill_content"; payload: SaveSkillContent } | { type: "rename_skill"; payload: RenameSkill } | { type: "set_lifecycle"; payload: SetLifecycle } | { type: "set_metadata"; payload: SetMetadata } | { type: "set_trial"; payload: SetTrial } | { type: "create_combination"; payload: CreateCombination } | { type: "set_current_version"; payload: SetCurrentVersion } | { type: "pin_project_skill_version"; payload: PinProjectSkillVersion } | { type: "create_custom_agent"; payload: CreateCustomAgent } | { type: "update_custom_agent"; payload: UpdateCustomAgent } | { type: "remove_custom_agent"; payload: RemoveCustomAgent } | { type: "reset_profile_override"; payload: ResetProfileOverride } | { type: "set_profile_override"; payload: SetProfileOverride } | { type: "register_project"; payload: RegisterProject } | { type: "update_project"; payload: UpdateProject } | { type: "set_project_tags"; payload: SetProjectTags } | { type: "save_project_view"; payload: SaveProjectView } | { type: "write_shared_project_config"; payload: WriteSharedProjectConfig } | { type: "read_shared_project_config"; payload: ReadSharedProjectConfig } | { type: "cancel_operation"; payload: {
+export type AppCommand = { type: "create_skill"; payload: CreateSkill } | { type: "save_skill_content"; payload: SaveSkillContent } | { type: "rename_skill"; payload: RenameSkill } | { type: "set_lifecycle"; payload: SetLifecycle } | { type: "set_metadata"; payload: SetMetadata } | { type: "set_trial"; payload: SetTrial } | { type: "create_combination"; payload: CreateCombination } | { type: "set_current_version"; payload: SetCurrentVersion } | { type: "pin_project_skill_version"; payload: PinProjectSkillVersion } | { type: "create_custom_agent"; payload: CreateCustomAgent } | { type: "update_custom_agent"; payload: UpdateCustomAgent } | { type: "remove_custom_agent"; payload: RemoveCustomAgent } | { type: "reset_profile_override"; payload: ResetProfileOverride } | { type: "set_profile_override"; payload: SetProfileOverride } | { type: "register_project"; payload: RegisterProject } | { type: "update_project"; payload: UpdateProject } | { type: "set_project_tags"; payload: SetProjectTags } | { type: "save_project_view"; payload: SaveProjectView } | { type: "write_shared_project_config"; payload: WriteSharedProjectConfig } | { type: "read_shared_project_config"; payload: ReadSharedProjectConfig } | { type: "run_initialization_scan"; payload: RunInitializationScan } | { type: "scan_targets"; payload: ScanTargets } | { type: "rescan_skill"; payload: RescanSkill } | { type: "cancel_operation"; payload: {
 	operation_id: OperationId,
 } } | { type: "acknowledge_recovery"; payload: {
 	operation_id: OperationId,
 } };
 
-export type AppCommandResult = { type: "operation_summary"; payload: OperationSummary } | { type: "custom_agent"; payload: CustomAgent } | { type: "custom_agent_override"; payload: CustomAgentOverride } | { type: "project"; payload: Project } | { type: "saved_project_view"; payload: SavedProjectView } | { type: "shared_project_config"; payload: SharedProjectConfig };
+export type AppCommandResult = { type: "operation_summary"; payload: OperationSummary } | { type: "custom_agent"; payload: CustomAgent } | { type: "custom_agent_override"; payload: CustomAgentOverride } | { type: "project"; payload: Project } | { type: "saved_project_view"; payload: SavedProjectView } | { type: "shared_project_config"; payload: SharedProjectConfig } | { type: "scan_result"; payload: ScanResult };
 
 export type AppEvent = { type: "operation_progress"; payload: OperationProgress } | { type: "operation_finished"; payload: OperationSummary } | { type: "facts_changed"; payload: FactsChanged };
 
@@ -124,6 +124,18 @@ export type DiffVersions = {
 };
 
 export type DirectoryPrecedence = "preferred" | "lower_priority_copy" | "may_coexist" | "unknown";
+
+export type DiscoveredSkill = {
+	root: string,
+	relative_path: string,
+	path: string,
+	marker: string,
+	marker_size: number,
+	marker_modified_at: number,
+	size: number,
+	latest_modified_at: number,
+	fingerprint: string,
+};
 
 export type DiscoverySnapshot = {
 	generation: string,
@@ -295,6 +307,11 @@ export type RenameSkill = {
 	name: string,
 };
 
+export type RescanSkill = {
+	scope: ScanScope,
+	path: string,
+};
+
 export type ResetProfileOverride = {
 	profile_id: string,
 };
@@ -303,6 +320,10 @@ export type ResolvedPathGrant = {
 	grant_id: string,
 	path: string,
 	operating_system: OperatingSystem,
+};
+
+export type RunInitializationScan = {
+	scopes: ScanScope[],
 };
 
 export type SaveProjectView = {
@@ -319,6 +340,40 @@ export type SavedProjectView = {
 	name: string,
 	all_tags: string[],
 	any_tags: string[],
+};
+
+export type ScanGeneration = {
+	generation: number,
+	observed_at: number,
+};
+
+export type ScanIssue = {
+	path: string,
+	code: string,
+};
+
+export type ScanResult = {
+	generation: ScanGeneration,
+	roots: string[],
+	discovered: DiscoveredSkill[],
+	visited_paths: string[],
+	reparsed_count: number,
+	unchanged_count: number,
+	errors: ScanIssue[],
+};
+
+/**
+ *  A filesystem root explicitly registered for scanning.
+ *  The marker is intentionally part of the scope: different Agent profiles
+ *  may use different marker spelling, and matching is case-aware.
+ */
+export type ScanScope = {
+	root: string,
+	marker: string,
+};
+
+export type ScanTargets = {
+	scopes: ScanScope[],
 };
 
 export type SearchField = "DisplayName" | "RuntimeName" | "OriginalDescription" | "TranslatedDescription" | "UserNote" | "Tags" | "Author" | "License" | "Requirements" | "Markdown";
