@@ -1,4 +1,5 @@
 use crate::agent::LogicalTarget;
+use crate::check::CheckRun;
 use crate::path_policy::{physical_id_for_path, PathPolicy};
 use crate::project::Project;
 use crate::{
@@ -263,6 +264,7 @@ pub struct DeploymentPlanInput {
     pub source_path: String,
     pub targets: Vec<VerifiedTarget>,
     pub mode_override: Option<DeploymentMode>,
+    pub security_gate: DeploymentSecurityGate,
 }
 
 impl DeploymentPlanInput {
@@ -280,6 +282,7 @@ impl DeploymentPlanInput {
             source_path: source_path.into(),
             targets,
             mode_override: None,
+            security_gate: DeploymentSecurityGate::default(),
         }
     }
 
@@ -292,6 +295,16 @@ impl DeploymentPlanInput {
         self.mode_override = Some(mode);
         self
     }
+
+    pub fn with_basic_check_run(mut self, run: CheckRun) -> Self {
+        self.security_gate.basic_check_run = Some(run);
+        self
+    }
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct DeploymentSecurityGate {
+    pub basic_check_run: Option<CheckRun>,
 }
 
 /// API-facing deployment preview request.  The caller selects registered
@@ -320,6 +333,7 @@ impl DeploymentPlanRequest {
             source_path: source_path.into(),
             targets: resolver.resolve(&self.logical_target_ids)?,
             mode_override: self.mode_override,
+            security_gate: DeploymentSecurityGate::default(),
         })
     }
 }

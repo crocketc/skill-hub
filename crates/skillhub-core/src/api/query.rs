@@ -1,7 +1,12 @@
 use crate::agent::{CustomAgent, DiscoverySnapshot};
+use crate::check::{
+    CheckKind, CheckResult as DomainCheckResult, CheckState, Finding, FindingDisposition,
+};
 use crate::project::{Project, SavedProjectView};
 use crate::search::{SearchHit, SearchQuery};
-use crate::{BootstrapSnapshot, DeploymentPlan, DeploymentPlanRequest, SkillId, VersionId};
+use crate::{
+    BootstrapSnapshot, DeploymentPlan, DeploymentPlanRequest, Severity, SkillId, VersionId,
+};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
@@ -67,6 +72,92 @@ pub struct GetDeploymentPlan {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+pub struct GetBasicCheckResult {
+    pub skill_id: SkillId,
+    pub version_id: VersionId,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+pub struct ListFindings {
+    pub skill_id: SkillId,
+    pub version_id: VersionId,
+    pub kind: CheckKind,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+pub struct BasicCheckResult {
+    pub skill_id: SkillId,
+    pub version_id: VersionId,
+    pub state: CheckState,
+    pub run_id: Option<String>,
+    pub ruleset_id: Option<String>,
+    pub checked_at: Option<String>,
+    pub finding_count: u32,
+    pub actionable_count: u32,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+pub struct FindingResult {
+    pub id: String,
+    pub code: String,
+    pub severity: Severity,
+    pub file: Option<String>,
+    pub line_start: Option<u32>,
+    pub line_end: Option<u32>,
+    pub disposition: FindingDisposition,
+    pub high_risk: bool,
+}
+
+impl BasicCheckResult {
+    pub fn from_check_result(
+        skill_id: SkillId,
+        version_id: VersionId,
+        result: &DomainCheckResult,
+    ) -> Self {
+        let run = result.run.as_ref();
+        let finding_count = run
+            .map(|run| u32::try_from(run.findings.len()).unwrap_or(u32::MAX))
+            .unwrap_or_default();
+        let actionable_count = run
+            .map(|run| {
+                u32::try_from(
+                    run.findings
+                        .iter()
+                        .filter(|finding| finding.is_actionable())
+                        .count(),
+                )
+                .unwrap_or(u32::MAX)
+            })
+            .unwrap_or_default();
+        Self {
+            skill_id,
+            version_id,
+            state: result.state,
+            run_id: run.map(|run| run.id.clone()),
+            ruleset_id: run.and_then(|run| run.ruleset_id.clone()),
+            checked_at: run.and_then(|run| run.ended_at.map(|value| value.to_string())),
+            finding_count,
+            actionable_count,
+        }
+    }
+}
+
+impl From<&Finding> for FindingResult {
+    fn from(finding: &Finding) -> Self {
+        Self {
+            id: finding.id.clone(),
+            code: finding.code.clone(),
+            severity: finding.severity,
+            file: finding.file.clone(),
+            line_start: finding.line_start,
+            line_end: finding.line_end,
+            disposition: finding.disposition,
+            high_risk: finding.is_high_risk(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 #[serde(tag = "type", content = "payload")]
 pub enum AppQuery {
     #[serde(rename = "get_skill")]
@@ -93,6 +184,10 @@ pub enum AppQuery {
     ListSavedProjectViews(ListSavedProjectViews),
     #[serde(rename = "get_deployment_plan")]
     GetDeploymentPlan(GetDeploymentPlan),
+    #[serde(rename = "get_basic_check_result")]
+    GetBasicCheckResult(GetBasicCheckResult),
+    #[serde(rename = "list_findings")]
+    ListFindings(ListFindings),
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
@@ -122,4 +217,8 @@ pub enum AppQueryResult {
     SavedProjectViews(Vec<SavedProjectView>),
     #[serde(rename = "deployment_plan")]
     DeploymentPlan(DeploymentPlan),
+    #[serde(rename = "basic_check_result")]
+    BasicCheckResult(BasicCheckResult),
+    #[serde(rename = "findings")]
+    Findings(Vec<FindingResult>),
 }

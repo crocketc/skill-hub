@@ -27,7 +27,9 @@ pub use api::{
     AppCommand, AppCommandResult, AppEvent, AppQuery, AppQueryResult, ApplicationFacade,
     FactsChanged, GetDeploymentPlan, Page,
 };
-pub use application::OperationService;
+pub use application::{
+    BasicCheckOutput, BasicCheckScanner, CheckService, OperationService, VersionMaterializer,
+};
 pub use application::{WatchConfirmation, WatchHint, WatchHintKind, WatchService};
 pub use bootstrap::{
     BootstrapSnapshot, DeploymentChartCategory, DeploymentDimension, PendingSummary,
