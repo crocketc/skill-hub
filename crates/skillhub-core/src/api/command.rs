@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use crate::agent::{CustomAgent, CustomAgentDraft, CustomAgentOverride, PathGrant};
 use crate::catalog::SkillLifecycle;
 use crate::check::{CheckKind, FindingDisposition};
-use crate::project::{Project, SavedProjectView, SharedProjectConfig};
+use crate::project::{AssemblyPlan, Project, SavedProjectView, SharedProjectConfig};
 use crate::scan::ScanResult;
 use crate::{OperationId, OperationSummary, ProjectId, SkillId, VersionId};
 
@@ -120,6 +120,16 @@ pub struct ReadSharedProjectConfig {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+pub struct PrepareProjectAssembly {
+    pub project_id: ProjectId,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+pub struct CommitProjectAssembly {
+    pub plan: AssemblyPlan,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 #[serde(deny_unknown_fields)]
 pub struct RunInitializationScan {
     pub scope_ids: Vec<String>,
@@ -206,6 +216,10 @@ pub enum AppCommand {
     WriteSharedProjectConfig(WriteSharedProjectConfig),
     #[serde(rename = "read_shared_project_config")]
     ReadSharedProjectConfig(ReadSharedProjectConfig),
+    #[serde(rename = "prepare_project_assembly")]
+    PrepareProjectAssembly(PrepareProjectAssembly),
+    #[serde(rename = "commit_project_assembly")]
+    CommitProjectAssembly(CommitProjectAssembly),
     #[serde(rename = "run_initialization_scan")]
     RunInitializationScan(RunInitializationScan),
     #[serde(rename = "scan_targets")]
@@ -239,6 +253,8 @@ pub enum AppCommandResult {
     SavedProjectView(SavedProjectView),
     #[serde(rename = "shared_project_config")]
     SharedProjectConfig(SharedProjectConfig),
+    #[serde(rename = "assembly_plan")]
+    AssemblyPlan(AssemblyPlan),
     #[serde(rename = "scan_result")]
     ScanResult(ScanResult),
     #[serde(rename = "basic_check_result")]

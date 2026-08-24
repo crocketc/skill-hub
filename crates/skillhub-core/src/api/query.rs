@@ -2,7 +2,7 @@ use crate::agent::{CustomAgent, DiscoverySnapshot};
 use crate::check::{
     CheckKind, CheckResult as DomainCheckResult, CheckState, Finding, FindingDisposition,
 };
-use crate::project::{Project, SavedProjectView};
+use crate::project::{AssemblyPlan, Project, SavedProjectView};
 use crate::search::{SearchHit, SearchQuery};
 use crate::{
     BootstrapSnapshot, DeploymentPlan, DeploymentPlanRequest, Severity, SkillId, VersionId,
@@ -158,6 +158,11 @@ impl From<&Finding> for FindingResult {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+pub struct GetProjectAssemblyPlan {
+    pub project_id: crate::ProjectId,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 #[serde(tag = "type", content = "payload")]
 pub enum AppQuery {
     #[serde(rename = "get_skill")]
@@ -188,6 +193,8 @@ pub enum AppQuery {
     GetBasicCheckResult(GetBasicCheckResult),
     #[serde(rename = "list_findings")]
     ListFindings(ListFindings),
+    #[serde(rename = "get_project_assembly_plan")]
+    GetProjectAssemblyPlan(GetProjectAssemblyPlan),
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
@@ -221,4 +228,6 @@ pub enum AppQueryResult {
     BasicCheckResult(BasicCheckResult),
     #[serde(rename = "findings")]
     Findings(Vec<FindingResult>),
+    #[serde(rename = "assembly_plan")]
+    AssemblyPlan(AssemblyPlan),
 }

@@ -26,10 +26,11 @@ pub use agent::{
 };
 pub use api::{
     AppCommand, AppCommandResult, AppEvent, AppQuery, AppQueryResult, ApplicationFacade,
-    FactsChanged, GetDeploymentPlan, Page,
+    FactsChanged, GetDeploymentPlan, GetProjectAssemblyPlan, Page,
 };
 pub use application::{
-    BasicCheckOutput, BasicCheckScanner, CheckService, OperationService, VersionMaterializer,
+    BasicCheckOutput, BasicCheckScanner, CheckService, OperationService, ProjectAssemblyService,
+    VersionMaterializer,
 };
 pub use application::{WatchConfirmation, WatchHint, WatchHintKind, WatchService};
 pub use bootstrap::{
@@ -58,8 +59,11 @@ pub use ids::{
 };
 pub use import::{CandidateOwnership, ImportAction, ImportCandidate};
 pub use project::{
+    AssemblyChoice, AssemblyConflictKind, AssemblyItemPlan, AssemblyItemStatus, AssemblyPlan,
+    CheckPreparation, CheckPreparationPort, DeploymentPreparation, DeploymentPreparationPort,
     PortableSource, Project, ProjectMetadata, ProjectRepository, ProjectTag, SavedProjectView,
-    SharedProjectConfig, SharedSkillRequirement,
+    SharedProjectConfig, SharedSkillRequirement, SkillResolution, SkillResolutionPort,
+    SourcePreparation, SourcePreparationPort,
 };
 pub use scan::{DiscoveredSkill, ScanGeneration, ScanIssue, ScanRepository, ScanResult, ScanScope};
 pub use versioning::{FileEntry, VersionDiff, VersionManifest, VersionRecord, VersionRepository};
