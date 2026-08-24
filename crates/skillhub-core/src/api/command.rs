@@ -2,9 +2,12 @@ use serde::{Deserialize, Serialize};
 
 use crate::agent::{CustomAgent, CustomAgentDraft, CustomAgentOverride, PathGrant};
 use crate::catalog::SkillLifecycle;
+use crate::check::{CheckKind, FindingDisposition};
 use crate::project::{Project, SavedProjectView, SharedProjectConfig};
 use crate::scan::ScanResult;
 use crate::{OperationId, OperationSummary, ProjectId, SkillId, VersionId};
+
+use super::query::BasicCheckResult;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 pub struct CreateSkill {
@@ -136,6 +139,31 @@ pub struct RescanSkill {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct RunBasicCheck {
+    pub skill_id: SkillId,
+    pub version_id: VersionId,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct RecheckBasic {
+    pub skill_id: SkillId,
+    pub version_id: VersionId,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct SetFindingDisposition {
+    pub skill_id: SkillId,
+    pub version_id: VersionId,
+    pub kind: CheckKind,
+    pub finding_id: String,
+    pub disposition: FindingDisposition,
+    pub high_risk_confirmed: bool,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 #[serde(tag = "type", content = "payload")]
 pub enum AppCommand {
     #[serde(rename = "create_skill")]
@@ -184,6 +212,12 @@ pub enum AppCommand {
     ScanTargets(ScanTargets),
     #[serde(rename = "rescan_skill")]
     RescanSkill(RescanSkill),
+    #[serde(rename = "run_basic_check")]
+    RunBasicCheck(RunBasicCheck),
+    #[serde(rename = "recheck_basic")]
+    RecheckBasic(RecheckBasic),
+    #[serde(rename = "set_finding_disposition")]
+    SetFindingDisposition(SetFindingDisposition),
     #[serde(rename = "cancel_operation")]
     CancelOperation { operation_id: OperationId },
     #[serde(rename = "acknowledge_recovery")]
@@ -207,4 +241,6 @@ pub enum AppCommandResult {
     SharedProjectConfig(SharedProjectConfig),
     #[serde(rename = "scan_result")]
     ScanResult(ScanResult),
+    #[serde(rename = "basic_check_result")]
+    BasicCheckResult(BasicCheckResult),
 }

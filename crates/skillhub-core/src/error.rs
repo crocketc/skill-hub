@@ -83,7 +83,7 @@ impl ErrorCode {
 }
 
 /// How prominently an error should be presented to the user.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 #[serde(rename_all = "snake_case")]
 pub enum Severity {
     Info,

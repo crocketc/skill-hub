@@ -23,19 +23,30 @@ export type AgentProfile = {
 	clients: AgentClient[],
 };
 
-export type AppCommand = { type: "create_skill"; payload: CreateSkill } | { type: "save_skill_content"; payload: SaveSkillContent } | { type: "rename_skill"; payload: RenameSkill } | { type: "set_lifecycle"; payload: SetLifecycle } | { type: "set_metadata"; payload: SetMetadata } | { type: "set_trial"; payload: SetTrial } | { type: "create_combination"; payload: CreateCombination } | { type: "set_current_version"; payload: SetCurrentVersion } | { type: "pin_project_skill_version"; payload: PinProjectSkillVersion } | { type: "create_custom_agent"; payload: CreateCustomAgent } | { type: "update_custom_agent"; payload: UpdateCustomAgent } | { type: "remove_custom_agent"; payload: RemoveCustomAgent } | { type: "reset_profile_override"; payload: ResetProfileOverride } | { type: "set_profile_override"; payload: SetProfileOverride } | { type: "register_project"; payload: RegisterProject } | { type: "update_project"; payload: UpdateProject } | { type: "set_project_tags"; payload: SetProjectTags } | { type: "save_project_view"; payload: SaveProjectView } | { type: "write_shared_project_config"; payload: WriteSharedProjectConfig } | { type: "read_shared_project_config"; payload: ReadSharedProjectConfig } | { type: "run_initialization_scan"; payload: RunInitializationScan } | { type: "scan_targets"; payload: ScanTargets } | { type: "rescan_skill"; payload: RescanSkill } | { type: "cancel_operation"; payload: {
+export type AppCommand = { type: "create_skill"; payload: CreateSkill } | { type: "save_skill_content"; payload: SaveSkillContent } | { type: "rename_skill"; payload: RenameSkill } | { type: "set_lifecycle"; payload: SetLifecycle } | { type: "set_metadata"; payload: SetMetadata } | { type: "set_trial"; payload: SetTrial } | { type: "create_combination"; payload: CreateCombination } | { type: "set_current_version"; payload: SetCurrentVersion } | { type: "pin_project_skill_version"; payload: PinProjectSkillVersion } | { type: "create_custom_agent"; payload: CreateCustomAgent } | { type: "update_custom_agent"; payload: UpdateCustomAgent } | { type: "remove_custom_agent"; payload: RemoveCustomAgent } | { type: "reset_profile_override"; payload: ResetProfileOverride } | { type: "set_profile_override"; payload: SetProfileOverride } | { type: "register_project"; payload: RegisterProject } | { type: "update_project"; payload: UpdateProject } | { type: "set_project_tags"; payload: SetProjectTags } | { type: "save_project_view"; payload: SaveProjectView } | { type: "write_shared_project_config"; payload: WriteSharedProjectConfig } | { type: "read_shared_project_config"; payload: ReadSharedProjectConfig } | { type: "run_initialization_scan"; payload: RunInitializationScan } | { type: "scan_targets"; payload: ScanTargets } | { type: "rescan_skill"; payload: RescanSkill } | { type: "run_basic_check"; payload: RunBasicCheck } | { type: "recheck_basic"; payload: RecheckBasic } | { type: "set_finding_disposition"; payload: SetFindingDisposition } | { type: "cancel_operation"; payload: {
 	operation_id: OperationId,
 } } | { type: "acknowledge_recovery"; payload: {
 	operation_id: OperationId,
 } };
 
-export type AppCommandResult = { type: "operation_summary"; payload: OperationSummary } | { type: "custom_agent"; payload: CustomAgent } | { type: "custom_agent_override"; payload: CustomAgentOverride } | { type: "project"; payload: Project } | { type: "saved_project_view"; payload: SavedProjectView } | { type: "shared_project_config"; payload: SharedProjectConfig } | { type: "scan_result"; payload: ScanResult };
+export type AppCommandResult = { type: "operation_summary"; payload: OperationSummary } | { type: "custom_agent"; payload: CustomAgent } | { type: "custom_agent_override"; payload: CustomAgentOverride } | { type: "project"; payload: Project } | { type: "saved_project_view"; payload: SavedProjectView } | { type: "shared_project_config"; payload: SharedProjectConfig } | { type: "scan_result"; payload: ScanResult } | { type: "basic_check_result"; payload: BasicCheckResult };
 
 export type AppEvent = { type: "operation_progress"; payload: OperationProgress } | { type: "operation_finished"; payload: OperationSummary } | { type: "facts_changed"; payload: FactsChanged };
 
-export type AppQuery = { type: "get_skill"; payload: GetSkill } | { type: "list_versions"; payload: ListVersions } | { type: "diff_versions"; payload: DiffVersions } | { type: "list_combinations"; payload: ListCombinations } | { type: "search"; payload: SearchQuery } | { type: "get_bootstrap_snapshot" } | { type: "list_pending_items"; payload: ListPendingItems } | { type: "get_discovery_snapshot"; payload: GetDiscoverySnapshot } | { type: "list_custom_agents"; payload: ListCustomAgents } | { type: "list_projects"; payload: ListProjects } | { type: "list_saved_project_views"; payload: ListSavedProjectViews } | { type: "get_deployment_plan"; payload: GetDeploymentPlan };
+export type AppQuery = { type: "get_skill"; payload: GetSkill } | { type: "list_versions"; payload: ListVersions } | { type: "diff_versions"; payload: DiffVersions } | { type: "list_combinations"; payload: ListCombinations } | { type: "search"; payload: SearchQuery } | { type: "get_bootstrap_snapshot" } | { type: "list_pending_items"; payload: ListPendingItems } | { type: "get_discovery_snapshot"; payload: GetDiscoverySnapshot } | { type: "list_custom_agents"; payload: ListCustomAgents } | { type: "list_projects"; payload: ListProjects } | { type: "list_saved_project_views"; payload: ListSavedProjectViews } | { type: "get_deployment_plan"; payload: GetDeploymentPlan } | { type: "get_basic_check_result"; payload: GetBasicCheckResult } | { type: "list_findings"; payload: ListFindings };
 
-export type AppQueryResult = { type: "skill"; payload: SkillResult } | { type: "versions"; payload: VersionResult[] } | { type: "version_diff"; payload: VersionDiffResult } | { type: "combinations"; payload: CombinationResult[] } | { type: "search_results"; payload: SearchHit[] } | { type: "bootstrap_snapshot"; payload: BootstrapSnapshot } | { type: "pending_items"; payload: PendingItem[] } | { type: "discovery_snapshot"; payload: DiscoverySnapshot } | { type: "custom_agents"; payload: CustomAgent[] } | { type: "projects"; payload: Project[] } | { type: "saved_project_views"; payload: SavedProjectView[] } | { type: "deployment_plan"; payload: DeploymentPlan };
+export type AppQueryResult = { type: "skill"; payload: SkillResult } | { type: "versions"; payload: VersionResult[] } | { type: "version_diff"; payload: VersionDiffResult } | { type: "combinations"; payload: CombinationResult[] } | { type: "search_results"; payload: SearchHit[] } | { type: "bootstrap_snapshot"; payload: BootstrapSnapshot } | { type: "pending_items"; payload: PendingItem[] } | { type: "discovery_snapshot"; payload: DiscoverySnapshot } | { type: "custom_agents"; payload: CustomAgent[] } | { type: "projects"; payload: Project[] } | { type: "saved_project_views"; payload: SavedProjectView[] } | { type: "deployment_plan"; payload: DeploymentPlan } | { type: "basic_check_result"; payload: BasicCheckResult } | { type: "findings"; payload: FindingResult[] };
+
+export type BasicCheckResult = {
+	skill_id: SkillId,
+	version_id: VersionId,
+	state: CheckState,
+	run_id: string | null,
+	ruleset_id: string | null,
+	checked_at: string | null,
+	finding_count: number,
+	actionable_count: number,
+};
 
 export type BootstrapSnapshot = {
 	skill_count: number,
@@ -50,6 +61,12 @@ export type BootstrapSnapshot = {
 };
 
 export type CallPolicy = "automatic" | "user_selected" | "unknown";
+
+/**  The two security checks are intentionally independent facts. */
+export type CheckKind = "basic" | "llm";
+
+/**  User-visible result states. Availability of an optional LLM is not a state. */
+export type CheckState = "not_checked" | "running" | "passed" | "failed";
 
 export type ClientInstance = {
 	profile_id: string,
@@ -190,6 +207,24 @@ export type ExistingOwnership = "managed" | "unknown" | "agent_builtin" | "plugi
 
 export type FactsChanged = Record<string, never>;
 
+export type FindingDisposition = "actionable" | "acknowledged" | "dismissed";
+
+export type FindingResult = {
+	id: string,
+	code: string,
+	severity: Severity,
+	file: string | null,
+	line_start: number | null,
+	line_end: number | null,
+	disposition: FindingDisposition,
+	high_risk: boolean,
+};
+
+export type GetBasicCheckResult = {
+	skill_id: SkillId,
+	version_id: VersionId,
+};
+
 /**  Registered logical target IDs for a side-effect-free deployment preview. */
 export type GetDeploymentPlan = {
 	request: DeploymentPlanRequest,
@@ -204,6 +239,12 @@ export type GetSkill = {
 export type ListCombinations = null;
 
 export type ListCustomAgents = null;
+
+export type ListFindings = {
+	skill_id: SkillId,
+	version_id: VersionId,
+	kind: CheckKind,
+};
 
 export type ListPendingItems = null;
 
@@ -339,6 +380,11 @@ export type RecentOperationSummary = {
 	created_at: string,
 };
 
+export type RecheckBasic = {
+	skill_id: SkillId,
+	version_id: VersionId,
+};
+
 export type RegisterProject = {
 	project: Project,
 };
@@ -365,6 +411,11 @@ export type ResolvedPathGrant = {
 	grant_id: string,
 	path: string,
 	operating_system: OperatingSystem,
+};
+
+export type RunBasicCheck = {
+	skill_id: SkillId,
+	version_id: VersionId,
 };
 
 export type RunInitializationScan = {
@@ -430,6 +481,15 @@ export type SetCurrentVersion = {
 	version_id: VersionId,
 };
 
+export type SetFindingDisposition = {
+	skill_id: SkillId,
+	version_id: VersionId,
+	kind: CheckKind,
+	finding_id: string,
+	disposition: FindingDisposition,
+	high_risk_confirmed: boolean,
+};
+
 export type SetLifecycle = {
 	skill_id: SkillId,
 	lifecycle: SkillLifecycle,
@@ -459,6 +519,9 @@ export type SetTrial = {
 	skill_id: SkillId,
 	due: [number, number, number] | null,
 };
+
+/**  How prominently an error should be presented to the user. */
+export type Severity = "info" | "warning" | "error" | "critical";
 
 /**
  *  Portable project metadata. It intentionally has no path, content,

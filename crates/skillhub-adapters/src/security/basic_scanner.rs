@@ -1,6 +1,7 @@
 use super::rules::BasicRuleset;
 use super::secrets::has_plaintext_credential;
 use sha2::{Digest, Sha256};
+use skillhub_core::application::{BasicCheckOutput, BasicCheckScanner as BasicCheckScannerPort};
 use skillhub_core::check::Finding;
 use skillhub_core::{AppError, AppResult, ErrorCode, Severity};
 use std::collections::BTreeSet;
@@ -81,6 +82,16 @@ impl BasicScanner {
             ))
         });
         Ok(report)
+    }
+}
+
+impl BasicCheckScannerPort for BasicScanner {
+    fn scan_version(&self, root: &Path) -> AppResult<BasicCheckOutput> {
+        Ok(BasicCheckOutput {
+            ruleset_id: self.ruleset.id.clone(),
+            findings: self.scan_version(root)?,
+            coverage_inputs: serde_json::json!({ "root": "materialized_version" }),
+        })
     }
 }
 

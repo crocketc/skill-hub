@@ -6,7 +6,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::{AppError, AppResult, ErrorCode, RecoveryAction, Severity, SkillId, VersionId};
 
 /// The two security checks are intentionally independent facts.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize, specta::Type)]
 #[serde(rename_all = "snake_case")]
 pub enum CheckKind {
     Basic,
@@ -15,7 +15,18 @@ pub enum CheckKind {
 
 /// User-visible result states. Availability of an optional LLM is not a state.
 #[derive(
-    Clone, Copy, Debug, Default, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize,
+    Clone,
+    Copy,
+    Debug,
+    Default,
+    Deserialize,
+    Eq,
+    Hash,
+    Ord,
+    PartialEq,
+    PartialOrd,
+    Serialize,
+    specta::Type,
 )]
 #[serde(rename_all = "snake_case")]
 pub enum CheckState {
@@ -27,7 +38,9 @@ pub enum CheckState {
 }
 
 /// Internal execution phase used to derive the four result states.
-#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, Hash, PartialEq, Serialize)]
+#[derive(
+    Clone, Copy, Debug, Default, Deserialize, Eq, Hash, PartialEq, Serialize, specta::Type,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum CheckRunPhase {
     #[default]
@@ -41,7 +54,18 @@ pub enum CheckRunPhase {
 pub type FindingCode = String;
 
 #[derive(
-    Clone, Copy, Debug, Default, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize,
+    Clone,
+    Copy,
+    Debug,
+    Default,
+    Deserialize,
+    Eq,
+    Hash,
+    Ord,
+    PartialEq,
+    PartialOrd,
+    Serialize,
+    specta::Type,
 )]
 #[serde(rename_all = "snake_case")]
 pub enum FindingDisposition {
@@ -106,6 +130,10 @@ impl Finding {
 
     pub fn is_actionable(&self) -> bool {
         self.disposition.is_actionable()
+    }
+
+    pub fn is_high_risk(&self) -> bool {
+        matches!(self.severity, Severity::Error | Severity::Critical)
     }
 }
 

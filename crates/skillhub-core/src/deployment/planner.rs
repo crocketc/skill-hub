@@ -28,6 +28,7 @@ impl DeploymentPlanner {
     {
         let input = input.borrow();
         validate_runtime_name(&input.runtime_name)?;
+        enforce_security_gate(input)?;
         if input.targets.is_empty() {
             return Err(invalid_input("at least one verified target is required"));
         }
@@ -121,6 +122,33 @@ impl DeploymentPlanner {
     pub fn plan_request(&self, input: &DeploymentPlanInput) -> AppResult<DeploymentPlan> {
         self.plan(input)
     }
+}
+
+fn enforce_security_gate(input: &DeploymentPlanInput) -> AppResult<()> {
+    let Some(run) = &input.security_gate.basic_check_run else {
+        return Ok(());
+    };
+    if run.skill_id != input.skill_id
+        || run.version_id != input.version_id
+        || run.kind != crate::check::CheckKind::Basic
+    {
+        return Ok(());
+    }
+    if let Some(finding) = run
+        .findings
+        .iter()
+        .find(|finding| finding.is_actionable() && finding.is_high_risk())
+    {
+        return Err(
+            AppError::new(ErrorCode::SecurityCheckBlocked, Severity::Error)
+                .with_param("skill_id", input.skill_id.to_string())
+                .with_param("version_id", input.version_id.as_str().to_owned())
+                .with_param("finding_id", finding.id.clone())
+                .with_param("finding_code", finding.code.clone())
+                .with_action(RecoveryAction::ReviewSecurityFindings),
+        );
+    }
+    Ok(())
 }
 
 fn merged_logical_ids(targets: &[&VerifiedTarget]) -> Vec<String> {

@@ -74,6 +74,12 @@ impl VersionCapture for VersionStore {
     }
 }
 
+impl skillhub_core::application::VersionMaterializer for VersionStore {
+    fn materialize_version(&self, version_id: &VersionId, output: &Path) -> AppResult<()> {
+        self.materialize(version_id, output)
+    }
+}
+
 pub struct VersionStore {
     paths: LibraryPaths,
 }
