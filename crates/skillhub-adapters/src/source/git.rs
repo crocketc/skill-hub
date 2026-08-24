@@ -37,6 +37,10 @@ impl GixSourceFetcher {
                 policy.validate_resolved(&url).await.map_err(|code| {
                     SourceFetchError::new(code, "Git source destination is not allowed")
                 })?;
+                return Err(SourceFetchError::new(
+                    SourceFetchErrorCode::GitFetchFailed,
+                    "HTTPS Git remotes are disabled because gix cannot pin the validated DNS address; use a local path or file:// URL",
+                ));
             }
         }
         let clone_workspace = if Path::new(&value).is_dir() {
@@ -107,7 +111,7 @@ impl GixSourceFetcher {
         stop: &AtomicBool,
         clone_path: &Path,
     ) -> SourceFetchResult<AcquiredSource> {
-        if !matches!(url.scheme(), "file" | "https" | "ssh" | "git") {
+        if !matches!(url.scheme(), "file" | "ssh" | "git") {
             return Err(SourceFetchError::new(
                 SourceFetchErrorCode::GitFetchFailed,
                 "Git source URL uses an unsupported scheme",
@@ -125,16 +129,15 @@ impl GixSourceFetcher {
             std::num::NonZeroU32::new(1).expect("one is non-zero"),
         ));
         // Git's normal global configuration is untrusted input here.  Do not allow it to
-        // route the clone through a user-controlled proxy, and do not follow redirects in
-        // gix's transport: a redirect would otherwise create a second DNS/connection
-        // decision outside RedirectPolicy.  HTTPS endpoints are resolved and checked above;
-        // rejecting a redirect is the safe boundary for the blocking gix transport.
+        // route the clone through a user-controlled proxy. HTTPS Git is rejected above because
+        // gix cannot pin the address checked by RedirectPolicy; file/SSH/git transports do not
+        // use the HTTP redirect setting.
         prepare = prepare.with_in_memory_config_overrides([
             "http.proxy=",
             "gitoxide.http.proxy=",
             "gitoxide.http.allProxy=",
             "gitoxide.http.noProxy=*",
-            "http.followRedirects=none",
+            "http.followRedirects=false",
         ]);
         let (repo, _) = prepare
             .fetch_only(gix::progress::Discard, stop)
@@ -364,5 +367,12 @@ mod tests {
         for name in ["COM0", "LPT0", "COM10", "LPT10", "content.txt"] {
             assert!(!is_windows_device_name(name), "{name} is not reserved");
         }
+    }
+
+    #[test]
+    fn gix_http_redirect_override_uses_a_valid_boolean_value() {
+        let parsed = gix::config::tree::Http::FOLLOW_REDIRECTS
+            .try_into_follow_redirects(b"false", || Ok(Some(false)));
+        assert!(parsed.is_ok());
     }
 }

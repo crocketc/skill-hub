@@ -66,6 +66,7 @@ async fn git_clone_download_is_bounded_before_tree_materialization() {
     .unwrap_err();
 
     assert_eq!(error.code, SourceFetchErrorCode::DownloadSizeLimit);
+    assert!(error.message.contains("Git download"));
 }
 
 #[tokio::test]
@@ -86,4 +87,15 @@ async fn git_https_fetch_rejects_private_dns_names() {
         .unwrap_err();
 
     assert_eq!(error.code, SourceFetchErrorCode::RedirectBlocked);
+}
+
+#[tokio::test]
+async fn git_https_remote_has_an_explicit_safe_protocol_boundary() {
+    let error = GixSourceFetcher::default()
+        .fetch("https://example.com/owner/repository")
+        .await
+        .unwrap_err();
+
+    assert_eq!(error.code, SourceFetchErrorCode::GitFetchFailed);
+    assert!(error.message.contains("local path or file://"));
 }
