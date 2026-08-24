@@ -47,5 +47,7 @@ pub use project::{
     PortableSource, Project, ProjectMetadata, ProjectTag, SavedProjectView, SharedProjectConfig,
     SharedSkillRequirement,
 };
-pub use scan::{DiscoveredSkill, ScanGeneration, ScanIssue, ScanResult, ScanScope, ScanService};
+pub use scan::{
+    DiscoveredSkill, ScanGeneration, ScanIssue, ScanRepository, ScanResult, ScanScope, ScanService,
+};
 pub use versioning::{FileEntry, VersionDiff, VersionManifest, VersionRecord, VersionRepository};

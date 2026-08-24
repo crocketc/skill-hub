@@ -37,6 +37,10 @@ impl SkillDetector {
         }
     }
 
+    pub fn validate_registered_scope(&self, scope: &ScanScope) -> AppResult<()> {
+        validate_scope(scope).map(|_| ())
+    }
+
     pub fn scan(&mut self, scopes: &[ScanScope]) -> AppResult<ScanResult> {
         let mut discovered = Vec::new();
         let mut roots = Vec::new();
@@ -47,7 +51,16 @@ impl SkillDetector {
         let mut unchanged = 0u32;
 
         for scope in scopes {
-            let root = validate_scope(scope)?;
+            let root = match validate_scope(scope) {
+                Ok(root) => root,
+                Err(error) => {
+                    errors.push(ScanIssue {
+                        path: scope.root.clone(),
+                        code: error.code.as_str().to_owned(),
+                    });
+                    continue;
+                }
+            };
             let root_string = root.to_string_lossy().into_owned();
             roots.push(root_string.clone());
             let mut state = WalkState {
@@ -104,16 +117,48 @@ impl SkillDetector {
                     .with_action(RecoveryAction::Acknowledge),
             );
         }
-        let relative = candidate
-            .strip_prefix(&root)
-            .ok()
-            .map(|path| path.to_string_lossy().into_owned())
-            .unwrap_or_default();
-        let mut result = self.scan(std::slice::from_ref(scope))?;
-        result
-            .discovered
-            .retain(|skill| skill.relative_path == relative);
-        Ok(result)
+        let mut discovered = Vec::new();
+        let mut visited_paths = vec![candidate.to_string_lossy().into_owned()];
+        let mut errors = Vec::new();
+        let mut active = BTreeSet::new();
+        let mut reparsed = 0u32;
+        let mut unchanged = 0u32;
+        let mut state = WalkState {
+            root: root.clone(),
+            scope,
+            discovered: &mut discovered,
+            visited_paths: &mut visited_paths,
+            errors: &mut errors,
+            active: &mut active,
+            reparsed: &mut reparsed,
+            unchanged: &mut unchanged,
+            entries: 0,
+        };
+        if let Some(marker_path) = find_marker(&candidate, &scope.marker) {
+            match self.inspect_candidate(&mut state, &candidate, &marker_path) {
+                Ok(Some(skill)) => discovered.push(skill),
+                Ok(None) => {}
+                Err(error) => errors.push(ScanIssue {
+                    path: candidate.to_string_lossy().into_owned(),
+                    code: error.code.as_str().to_owned(),
+                }),
+            }
+        }
+        self.cache.retain(|path, _| active.contains(path));
+        self.baseline.clear();
+        self.next_generation = self.next_generation.saturating_add(1);
+        Ok(ScanResult {
+            generation: ScanGeneration {
+                generation: self.next_generation,
+                observed_at: now_secs(),
+            },
+            roots: vec![root.to_string_lossy().into_owned()],
+            discovered,
+            visited_paths,
+            reparsed_count: reparsed,
+            unchanged_count: unchanged,
+            errors,
+        })
     }
 
     fn walk_directory(
@@ -133,8 +178,13 @@ impl SkillDetector {
         state.visited_paths.push(directory_key);
         let marker_path = find_marker(directory, &state.scope.marker);
         if let Some(marker_path) = marker_path.as_deref() {
-            if let Some(skill) = self.inspect_candidate(state, directory, marker_path)? {
-                state.discovered.push(skill);
+            match self.inspect_candidate(state, directory, marker_path) {
+                Ok(Some(skill)) => state.discovered.push(skill),
+                Ok(None) => {}
+                Err(error) => state.errors.push(ScanIssue {
+                    path: directory.to_string_lossy().into_owned(),
+                    code: error.code.as_str().to_owned(),
+                }),
             }
         }
         let entries = match fs::read_dir(directory) {
@@ -199,19 +249,17 @@ impl SkillDetector {
         let marker_metadata =
             fs::metadata(marker_path).map_err(|error| io_error(marker_path, error))?;
         let marker_size = marker_metadata.len().min(u32::MAX as u64) as u32;
-        let marker_modified_at = modified_at(&marker_metadata);
+        let marker_modified_at =
+            (modified_at(&marker_metadata) / 1_000_000_000).min(u32::MAX as u64) as u32;
         let relative_path = path
             .strip_prefix(&state.root)
             .map(|path| path.to_string_lossy().into_owned())
             .unwrap_or_default();
         let cached = self.cache.get(&key);
         let unchanged = cached.is_some_and(|cached| cached.signature == signature);
+        let metadata_fingerprint = metadata_fingerprint(&signature);
         let baseline = self.baseline.get(&key).filter(|skill| {
-            skill.size == size.min(u32::MAX as u64) as u32
-                && skill.latest_modified_at == latest_modified_at.min(u32::MAX as u64) as u32
-                && skill.marker_size == marker_size
-                && skill.marker_modified_at == marker_modified_at
-                && skill.marker == state.scope.marker
+            skill.metadata_fingerprint == metadata_fingerprint && skill.marker == state.scope.marker
         });
         let fingerprint = if let Some(cached) = cached.filter(|_| unchanged) {
             *state.unchanged += 1;
@@ -233,6 +281,7 @@ impl SkillDetector {
             size: size.min(u32::MAX as u64) as u32,
             latest_modified_at: latest_modified_at.min(u32::MAX as u64) as u32,
             fingerprint,
+            metadata_fingerprint,
         };
         self.cache.insert(
             key,
@@ -298,6 +347,14 @@ fn collect_tree(
             }
         };
         for entry in entries {
+            state.entries += 1;
+            if state.entries > config.max_entries {
+                state.errors.push(ScanIssue {
+                    path: current.to_string_lossy().into_owned(),
+                    code: "scan.entry_limit".into(),
+                });
+                break;
+            }
             let Ok(entry) = entry else { continue };
             let path = entry.path();
             let Ok(metadata) = fs::symlink_metadata(&path) else {
@@ -321,7 +378,7 @@ fn collect_tree(
             let stamp = FileStamp {
                 relative_path: relative.clone(),
                 size: metadata.len(),
-                modified_at: modified_at(&metadata) as u64,
+                modified_at: modified_at(&metadata),
             };
             latest = latest.max(stamp.modified_at);
             size = size.saturating_add(stamp.size);
@@ -346,9 +403,20 @@ fn fingerprint(files: &[(String, PathBuf)]) -> AppResult<String> {
     Ok(format!("sha256:{:x}", digest.finalize()))
 }
 
+fn metadata_fingerprint(stamps: &[FileStamp]) -> String {
+    let mut digest = Sha256::new();
+    for stamp in stamps {
+        digest.update((stamp.relative_path.len() as u64).to_le_bytes());
+        digest.update(stamp.relative_path.as_bytes());
+        digest.update(stamp.size.to_le_bytes());
+        digest.update(stamp.modified_at.to_le_bytes());
+    }
+    format!("sha256:{:x}", digest.finalize())
+}
+
 fn validate_scope(scope: &ScanScope) -> AppResult<PathBuf> {
-    if scope.marker.is_empty() || scope.marker.contains('/') || scope.marker.contains('\\') {
-        return Err(invalid_input("scan marker must be a file name"));
+    if scope.marker != "SKILL.md" {
+        return Err(invalid_input("scan marker is not declared by the profile"));
     }
     let path = Path::new(&scope.root);
     if !path.is_absolute() {
@@ -389,12 +457,12 @@ fn find_marker(directory: &Path, marker: &str) -> Option<PathBuf> {
     })
 }
 
-fn modified_at(metadata: &Metadata) -> u32 {
+fn modified_at(metadata: &Metadata) -> u64 {
     metadata
         .modified()
         .ok()
         .and_then(|value| value.duration_since(UNIX_EPOCH).ok())
-        .map(|value| value.as_secs().min(u32::MAX as u64) as u32)
+        .map(|value| value.as_nanos().min(u64::MAX as u128) as u64)
         .unwrap_or_default()
 }
 

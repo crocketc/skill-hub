@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use crate::agent::{CustomAgent, CustomAgentDraft, CustomAgentOverride, PathGrant};
 use crate::catalog::SkillLifecycle;
 use crate::project::{Project, SavedProjectView, SharedProjectConfig};
-use crate::scan::{ScanResult, ScanScope};
+use crate::scan::ScanResult;
 use crate::{OperationId, OperationSummary, ProjectId, SkillId, VersionId};
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
@@ -117,18 +117,21 @@ pub struct ReadSharedProjectConfig {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
 pub struct RunInitializationScan {
-    pub scopes: Vec<ScanScope>,
+    pub scope_ids: Vec<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
 pub struct ScanTargets {
-    pub scopes: Vec<ScanScope>,
+    pub scope_ids: Vec<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
 pub struct RescanSkill {
-    pub scope: ScanScope,
+    pub scope_id: String,
     pub path: String,
 }
 

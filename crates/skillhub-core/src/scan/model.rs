@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 #[serde(deny_unknown_fields)]
 pub struct ScanScope {
+    pub id: String,
     pub root: String,
     pub marker: String,
 }
@@ -13,6 +14,15 @@ pub struct ScanScope {
 impl ScanScope {
     pub fn new(root: impl AsRef<std::path::Path>) -> Self {
         Self {
+            id: root.as_ref().to_string_lossy().into_owned(),
+            root: root.as_ref().to_string_lossy().into_owned(),
+            marker: "SKILL.md".into(),
+        }
+    }
+
+    pub fn registered(id: impl Into<String>, root: impl AsRef<std::path::Path>) -> Self {
+        Self {
+            id: id.into(),
             root: root.as_ref().to_string_lossy().into_owned(),
             marker: "SKILL.md".into(),
         }
@@ -43,6 +53,7 @@ pub struct DiscoveredSkill {
     pub size: u32,
     pub latest_modified_at: u32,
     pub fingerprint: String,
+    pub metadata_fingerprint: String,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
@@ -76,4 +87,9 @@ impl ScanResult {
 
 pub trait ScanService: Send + Sync {
     fn scan(&mut self, scopes: &[ScanScope]) -> crate::AppResult<ScanResult>;
+}
+
+pub trait ScanRepository {
+    fn load(&self) -> crate::AppResult<Option<ScanResult>>;
+    fn replace(&self, snapshot: &ScanResult) -> crate::AppResult<ScanResult>;
 }

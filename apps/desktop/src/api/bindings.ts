@@ -135,6 +135,7 @@ export type DiscoveredSkill = {
 	size: number,
 	latest_modified_at: number,
 	fingerprint: string,
+	metadata_fingerprint: string,
 };
 
 export type DiscoverySnapshot = {
@@ -308,7 +309,7 @@ export type RenameSkill = {
 };
 
 export type RescanSkill = {
-	scope: ScanScope,
+	scope_id: string,
 	path: string,
 };
 
@@ -323,7 +324,7 @@ export type ResolvedPathGrant = {
 };
 
 export type RunInitializationScan = {
-	scopes: ScanScope[],
+	scope_ids: string[],
 };
 
 export type SaveProjectView = {
@@ -362,18 +363,8 @@ export type ScanResult = {
 	errors: ScanIssue[],
 };
 
-/**
- *  A filesystem root explicitly registered for scanning.
- *  The marker is intentionally part of the scope: different Agent profiles
- *  may use different marker spelling, and matching is case-aware.
- */
-export type ScanScope = {
-	root: string,
-	marker: string,
-};
-
 export type ScanTargets = {
-	scopes: ScanScope[],
+	scope_ids: string[],
 };
 
 export type SearchField = "DisplayName" | "RuntimeName" | "OriginalDescription" | "TranslatedDescription" | "UserNote" | "Tags" | "Author" | "License" | "Requirements" | "Markdown";

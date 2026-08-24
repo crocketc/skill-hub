@@ -45,6 +45,16 @@ impl<'a> ScanRepository<'a> {
     }
 }
 
+impl skillhub_core::scan::ScanRepository for ScanRepository<'_> {
+    fn load(&self) -> AppResult<Option<ScanResult>> {
+        self.load()
+    }
+
+    fn replace(&self, snapshot: &ScanResult) -> AppResult<ScanResult> {
+        self.replace(snapshot)
+    }
+}
+
 fn now() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
