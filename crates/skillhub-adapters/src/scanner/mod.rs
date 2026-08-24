@@ -1,14 +1,15 @@
 mod skill_detector;
 use skill_detector::SkillDetector;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
 use skillhub_core::agent::{AgentRepository as DiscoveryRepository, LogicalTarget};
 use skillhub_core::project::{Project, ProjectRepository};
 use skillhub_core::scan::{ScanRepository, ScanResult, ScanScope};
 use skillhub_core::{
-    AppError, AppResult, ErrorCode, PathPolicy, ProjectId, RecoveryAction, Severity,
+    physical_id_for_path, AppError, AppResult, ErrorCode, PathPolicy, ProjectId, RecoveryAction,
+    Severity,
 };
 
 pub use skill_detector::SkillDetectorConfig;
@@ -17,6 +18,7 @@ pub use skill_detector::SkillDetectorConfig;
 pub struct ScanService {
     detector: SkillDetector,
     registered_scopes: BTreeMap<String, ScanScope>,
+    scope_physical_ids: BTreeMap<String, String>,
 }
 
 impl Default for ScanService {
@@ -30,6 +32,7 @@ impl ScanService {
         Self {
             detector: SkillDetector::default(),
             registered_scopes: BTreeMap::new(),
+            scope_physical_ids: BTreeMap::new(),
         }
     }
 
@@ -37,6 +40,7 @@ impl ScanService {
         Self {
             detector: SkillDetector::with_config(config),
             registered_scopes: BTreeMap::new(),
+            scope_physical_ids: BTreeMap::new(),
         }
     }
 
@@ -72,15 +76,30 @@ impl ScanService {
             .iter()
             .find(|target| target.id == target_id)
             .ok_or_else(|| invalid_scope(format!("unknown discovery target: {target_id}")))?;
-        if !target.available || !target.exists || !target.readable {
+        let physical = snapshot
+            .physical_targets
+            .iter()
+            .find(|physical| physical.id == target.physical_id)
+            .ok_or_else(|| invalid_scope("discovery physical target is unavailable"))?;
+        if !target.available
+            || !target.exists
+            || !target.readable
+            || target.physical_id.trim().is_empty()
+            || !physical.logical_target_ids.iter().any(|id| id == target_id)
+        {
             return Err(invalid_scope(
                 "discovery target is not available for scanning",
             ));
         }
         let authorized_path = path_policy.authorize_existing(&target.path)?;
+        let current_physical_id = physical_id_for_path(authorized_path.as_path())
+            .ok_or_else(|| invalid_scope("discovery physical identity is unavailable"))?;
+        if current_physical_id != target.physical_id {
+            return Err(invalid_scope("discovery physical identity changed"));
+        }
         let scope = ScanScope::registered(target.id.clone(), authorized_path.into_path())
             .with_marker(&target.marker);
-        self.register_scope(scope)
+        self.register_scope_with_physical_id(scope, target.physical_id.clone())
     }
 
     /// Internal fixture/adapter boundary for an already resolved target.
@@ -94,8 +113,9 @@ impl ScanService {
                 "discovery target is not available for scanning",
             ));
         }
-        self.register_scope(
+        self.register_scope_with_physical_id(
             ScanScope::registered(&target.id, &target.path).with_marker(&target.marker),
+            target.physical_id.clone(),
         )
     }
 
@@ -112,40 +132,56 @@ impl ScanService {
     {
         let project = repository.get(project_id)?;
         let authorized_path = path_policy.authorize_existing(project.path())?;
-        self.register_scope(ScanScope::registered(
-            project_id.to_string(),
-            authorized_path.into_path(),
-        ))
+        let current_physical_id = physical_id_for_path(authorized_path.as_path())
+            .ok_or_else(|| invalid_scope("project physical identity is unavailable"))?;
+        if project.physical_id.trim().is_empty() || current_physical_id != project.physical_id {
+            return Err(invalid_scope("project physical identity changed"));
+        }
+        self.register_scope_with_physical_id(
+            ScanScope::registered(project_id.to_string(), authorized_path.into_path()),
+            project.physical_id,
+        )
     }
 
     /// Internal fixture/adapter boundary for an already resolved project.
     #[allow(dead_code)]
     pub(crate) fn register_project_scope_raw(&mut self, project: &Project) -> AppResult<()> {
-        self.register_scope(ScanScope::registered(
-            project.id.to_string(),
-            &project.device_path,
-        ))
+        self.register_scope_with_physical_id(
+            ScanScope::registered(project.id.to_string(), &project.device_path),
+            project.physical_id.clone(),
+        )
     }
 
+    #[allow(dead_code)]
     pub(crate) fn register_scope(&mut self, scope: ScanScope) -> AppResult<()> {
+        let physical_id = physical_id_for_path(&scope.root)
+            .ok_or_else(|| invalid_scope("scope physical identity is unavailable"))?;
+        self.register_scope_with_physical_id(scope, physical_id)
+    }
+
+    fn register_scope_with_physical_id(
+        &mut self,
+        scope: ScanScope,
+        physical_id: String,
+    ) -> AppResult<()> {
         self.detector.validate_registered_scope(&scope)?;
-        if scope.id.trim().is_empty() {
+        if scope.id.trim().is_empty() || physical_id.trim().is_empty() {
             return Err(invalid_scope("scope id is required"));
         }
+        self.scope_physical_ids
+            .insert(scope.id.clone(), physical_id);
         self.registered_scopes.insert(scope.id.clone(), scope);
         Ok(())
     }
 
     pub fn scan_registered(&mut self, scope_ids: &[String]) -> AppResult<ScanResult> {
-        let scopes = scope_ids
-            .iter()
-            .map(|id| {
-                self.registered_scopes
-                    .get(id)
-                    .cloned()
-                    .ok_or_else(|| invalid_scope(format!("unknown scan scope: {id}")))
-            })
-            .collect::<AppResult<Vec<_>>>()?;
+        let mut seen_physical_ids = BTreeSet::new();
+        let scopes = self
+            .registered_scopes_for(scope_ids)?
+            .into_iter()
+            .filter(|(_, physical_id)| seen_physical_ids.insert(physical_id.clone()))
+            .map(|(scope, _)| scope)
+            .collect::<Vec<_>>();
         self.detector.scan(&scopes)
     }
 
@@ -154,7 +190,13 @@ impl ScanService {
         scope_ids: &[String],
         previous: &ScanResult,
     ) -> AppResult<ScanResult> {
-        let scopes = self.registered_scopes_for(scope_ids)?;
+        let mut seen_physical_ids = BTreeSet::new();
+        let scopes = self
+            .registered_scopes_for(scope_ids)?
+            .into_iter()
+            .filter(|(_, physical_id)| seen_physical_ids.insert(physical_id.clone()))
+            .map(|(scope, _)| scope)
+            .collect::<Vec<_>>();
         self.detector.scan_with_previous(&scopes, previous)
     }
 
@@ -166,7 +208,13 @@ impl ScanService {
     where
         R: ScanRepository,
     {
-        let scopes = self.registered_scopes_for(scope_ids)?;
+        let mut seen_physical_ids = BTreeSet::new();
+        let scopes = self
+            .registered_scopes_for(scope_ids)?
+            .into_iter()
+            .filter(|(_, physical_id)| seen_physical_ids.insert(physical_id.clone()))
+            .map(|(scope, _)| scope)
+            .collect::<Vec<_>>();
         let result = match repository.load()? {
             Some(previous) => self.detector.scan_with_previous(&scopes, &previous)?,
             None => self.detector.scan(&scopes)?,
@@ -174,14 +222,26 @@ impl ScanService {
         repository.replace(&result)
     }
 
-    fn registered_scopes_for(&self, scope_ids: &[String]) -> AppResult<Vec<ScanScope>> {
+    fn registered_scopes_for(&self, scope_ids: &[String]) -> AppResult<Vec<(ScanScope, String)>> {
         scope_ids
             .iter()
             .map(|id| {
-                self.registered_scopes
+                let scope = self
+                    .registered_scopes
                     .get(id)
                     .cloned()
-                    .ok_or_else(|| invalid_scope(format!("unknown scan scope: {id}")))
+                    .ok_or_else(|| invalid_scope(format!("unknown scan scope: {id}")))?;
+                let physical_id = self
+                    .scope_physical_ids
+                    .get(id)
+                    .cloned()
+                    .ok_or_else(|| invalid_scope(format!("unknown scan scope: {id}")))?;
+                let current_physical_id = physical_id_for_path(&scope.root)
+                    .ok_or_else(|| invalid_scope("scope physical identity is unavailable"))?;
+                if current_physical_id != physical_id {
+                    return Err(invalid_scope("scope physical identity changed"));
+                }
+                Ok((scope, physical_id))
             })
             .collect()
     }
@@ -192,10 +252,9 @@ impl ScanService {
         path: impl AsRef<Path>,
     ) -> AppResult<ScanResult> {
         let scope = self
-            .registered_scopes
-            .get(scope_id)
-            .ok_or_else(|| invalid_scope(format!("unknown scan scope: {scope_id}")))?
-            .clone();
+            .registered_scopes_for(&[scope_id.to_owned()])?
+            .remove(0)
+            .0;
         self.detector.rescan_skill(&scope, path.as_ref())
     }
 

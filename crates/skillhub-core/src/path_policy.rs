@@ -3,6 +3,14 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Component, Path, PathBuf};
 
+/// Returns the stable filesystem identity used by persisted discovery and
+/// project records for an existing directory.
+pub fn physical_id_for_path(path: impl AsRef<Path>) -> Option<String> {
+    let path = path.as_ref();
+    let metadata = std::fs::metadata(path).ok()?;
+    metadata_identity(path, &metadata).map(|identity| format!("fs:{identity}"))
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, specta::Type)]
 #[serde(transparent)]
 pub struct AllowedRootId(uuid::Uuid);
@@ -202,4 +210,55 @@ fn is_reserved_windows_name(name: &str) -> bool {
 fn path_error() -> AppError {
     AppError::new(ErrorCode::PathOutsideAllowedRoots, Severity::Error)
         .with_action(RecoveryAction::ChooseAnotherName)
+}
+
+#[cfg(unix)]
+fn metadata_identity(_: &Path, metadata: &std::fs::Metadata) -> Option<String> {
+    use std::os::unix::fs::MetadataExt;
+    Some(format!("dev-{}-ino-{}", metadata.dev(), metadata.ino()))
+}
+
+#[cfg(windows)]
+fn metadata_identity(path: &Path, _: &std::fs::Metadata) -> Option<String> {
+    use std::iter::once;
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::Foundation::{CloseHandle, INVALID_HANDLE_VALUE};
+    use windows_sys::Win32::Storage::FileSystem::{
+        CreateFileW, GetFileInformationByHandle, BY_HANDLE_FILE_INFORMATION,
+        FILE_FLAG_BACKUP_SEMANTICS, FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE,
+        OPEN_EXISTING,
+    };
+    let wide = path
+        .as_os_str()
+        .encode_wide()
+        .chain(once(0))
+        .collect::<Vec<_>>();
+    let handle = unsafe {
+        CreateFileW(
+            wide.as_ptr(),
+            0,
+            FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+            std::ptr::null(),
+            OPEN_EXISTING,
+            FILE_FLAG_BACKUP_SEMANTICS,
+            std::ptr::null_mut(),
+        )
+    };
+    if handle == INVALID_HANDLE_VALUE {
+        return None;
+    }
+    let mut info = unsafe { std::mem::zeroed::<BY_HANDLE_FILE_INFORMATION>() };
+    let result = unsafe { GetFileInformationByHandle(handle, &mut info) };
+    unsafe { CloseHandle(handle) };
+    (result != 0).then(|| {
+        format!(
+            "volume-{}-file-{}-{}",
+            info.dwVolumeSerialNumber, info.nFileIndexHigh, info.nFileIndexLow
+        )
+    })
+}
+
+#[cfg(not(any(unix, windows)))]
+fn metadata_identity(_: &Path, _: &std::fs::Metadata) -> Option<String> {
+    None
 }

@@ -36,7 +36,7 @@ pub use operation::{
     OperationProgress, OperationRecord, OperationRepository, OperationStatus, OperationSummary,
     UndoPlan,
 };
-pub use path_policy::{AllowedRoot, AllowedRootId, PathPolicy, SafePath};
+pub use path_policy::{physical_id_for_path, AllowedRoot, AllowedRootId, PathPolicy, SafePath};
 
 pub use catalog::{LibraryManifest, LibraryPaths, PortableSkillRecord};
 pub use ids::{
