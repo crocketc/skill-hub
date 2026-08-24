@@ -1,8 +1,44 @@
 use skillhub_adapters::scanner::ScanService;
-use skillhub_core::agent::{DirectoryPrecedence, LogicalTarget, TargetScope};
+use skillhub_core::agent::{
+    AgentRepository, DirectoryPrecedence, DiscoverySnapshot, LogicalTarget, TargetScope,
+};
 use skillhub_core::api::{RescanSkill, RunInitializationScan, ScanTargets};
+use skillhub_core::project::{Project, ProjectRepository as ProjectRepositoryPort};
 use skillhub_core::scan::ScanScope;
+use skillhub_core::{AllowedRoot, AppResult, PathPolicy, ProjectId};
 use tempfile::tempdir;
+
+#[derive(Clone)]
+struct FixtureDiscoveryRepository {
+    snapshot: DiscoverySnapshot,
+}
+
+impl AgentRepository for FixtureDiscoveryRepository {
+    fn load_discovery(&self) -> AppResult<Option<DiscoverySnapshot>> {
+        Ok(Some(self.snapshot.clone()))
+    }
+
+    fn replace_discovery(&self, snapshot: &DiscoverySnapshot) -> AppResult<DiscoverySnapshot> {
+        Ok(snapshot.clone())
+    }
+}
+
+struct FixtureProjectRepository {
+    project: Project,
+}
+
+impl ProjectRepositoryPort for FixtureProjectRepository {
+    fn get(&self, id: ProjectId) -> AppResult<Project> {
+        (self.project.id == id)
+            .then(|| self.project.clone())
+            .ok_or_else(|| {
+                skillhub_core::AppError::new(
+                    skillhub_core::ErrorCode::ObjectNotFound,
+                    skillhub_core::Severity::Error,
+                )
+            })
+    }
+}
 
 fn discovery_target(scope: &ScanScope) -> LogicalTarget {
     let id = scope.id.clone();
@@ -23,8 +59,21 @@ fn discovery_target(scope: &ScanScope) -> LogicalTarget {
 }
 
 fn register_scope(service: &mut ScanService, scope: ScanScope) {
+    let id = scope.id.clone();
     let target = discovery_target(&scope);
-    service.register_discovery_target(&target).unwrap();
+    let repository = FixtureDiscoveryRepository {
+        snapshot: DiscoverySnapshot {
+            generation: "1".into(),
+            observed_at: "now".into(),
+            instances: Vec::new(),
+            logical_targets: vec![target],
+            physical_targets: Vec::new(),
+        },
+    };
+    let policy = PathPolicy::from_roots([AllowedRoot::new(&scope.root).unwrap()]).unwrap();
+    service
+        .register_discovery_target(&id, &repository, &policy)
+        .unwrap();
 }
 
 fn scan_scope(service: &mut ScanService, scope: ScanScope) -> skillhub_core::ScanResult {
@@ -175,8 +224,17 @@ fn invalid_scope_is_reported_and_other_registered_scope_still_scans() {
     std::fs::write(valid.join("one/SKILL.md"), "name: one\n").unwrap();
     let mut service = ScanService::new();
     let missing = ScanScope::registered("missing", workspace.path().join("missing"));
+    let missing_repository = FixtureDiscoveryRepository {
+        snapshot: DiscoverySnapshot {
+            generation: "1".into(),
+            observed_at: "now".into(),
+            instances: Vec::new(),
+            logical_targets: vec![discovery_target(&missing)],
+            physical_targets: Vec::new(),
+        },
+    };
     assert!(service
-        .register_discovery_target(&discovery_target(&missing))
+        .register_discovery_target("missing", &missing_repository, &PathPolicy::new())
         .is_err());
     let result = scan_scope(&mut service, ScanScope::registered("valid", &valid));
 
@@ -251,7 +309,19 @@ fn profile_marker_is_case_aware_and_not_user_selectable() {
     let mut service = ScanService::new();
 
     let target = discovery_target(&ScanScope::new(&root).with_marker("skill.md"));
-    assert!(service.register_discovery_target(&target).is_err());
+    let repository = FixtureDiscoveryRepository {
+        snapshot: DiscoverySnapshot {
+            generation: "1".into(),
+            observed_at: "now".into(),
+            instances: Vec::new(),
+            logical_targets: vec![target],
+            physical_targets: Vec::new(),
+        },
+    };
+    let policy = PathPolicy::from_roots([AllowedRoot::new(&root).unwrap()]).unwrap();
+    assert!(service
+        .register_discovery_target("skills", &repository, &policy)
+        .is_err());
 }
 
 #[test]
@@ -261,10 +331,86 @@ fn unavailable_discovery_target_cannot_authorize_a_scan_root() {
     std::fs::create_dir_all(&root).unwrap();
     let mut target = discovery_target(&ScanScope::new(&root));
     target.available = false;
+    let repository = FixtureDiscoveryRepository {
+        snapshot: DiscoverySnapshot {
+            generation: "1".into(),
+            observed_at: "now".into(),
+            instances: Vec::new(),
+            logical_targets: vec![target.clone()],
+            physical_targets: Vec::new(),
+        },
+    };
+    let policy = PathPolicy::from_roots([AllowedRoot::new(&root).unwrap()]).unwrap();
     let mut service = ScanService::new();
 
-    assert!(service.register_discovery_target(&target).is_err());
+    assert!(service
+        .register_discovery_target(&target.id, &repository, &policy)
+        .is_err());
     assert!(service.scan_registered(&[target.id]).is_err());
+}
+
+#[test]
+fn forged_discovery_record_cannot_authorize_an_unregistered_path() {
+    let workspace = tempdir().unwrap();
+    let allowed = workspace.path().join("allowed");
+    let forged = workspace.path().join("forged");
+    std::fs::create_dir_all(&allowed).unwrap();
+    std::fs::create_dir_all(&forged).unwrap();
+    let target = discovery_target(&ScanScope::registered("forged", &forged));
+    let repository = FixtureDiscoveryRepository {
+        snapshot: DiscoverySnapshot {
+            generation: "1".into(),
+            observed_at: "now".into(),
+            instances: Vec::new(),
+            logical_targets: vec![target],
+            physical_targets: Vec::new(),
+        },
+    };
+    let policy = PathPolicy::from_roots([AllowedRoot::new(&allowed).unwrap()]).unwrap();
+    let mut service = ScanService::new();
+
+    assert!(service
+        .register_discovery_target("forged", &repository, &policy)
+        .is_err());
+    assert!(service.scan_registered(&["forged".into()]).is_err());
+}
+
+#[test]
+fn project_scope_resolves_persisted_id_and_path_policy() {
+    let workspace = tempdir().unwrap();
+    let root = workspace.path().join("project");
+    std::fs::create_dir_all(root.join("one")).unwrap();
+    std::fs::write(root.join("one/SKILL.md"), "name: one\n").unwrap();
+    let project = Project::new(ProjectId::new(), "fixture", &root);
+    let project_id = project.id;
+    let repository = FixtureProjectRepository { project };
+    let policy = PathPolicy::from_roots([AllowedRoot::new(&root).unwrap()]).unwrap();
+    let mut service = ScanService::new();
+
+    service
+        .register_project_scope(project_id, &repository, &policy)
+        .unwrap();
+    let result = service.scan_registered(&[project_id.to_string()]).unwrap();
+    assert_eq!(result.discovered.len(), 1);
+}
+
+#[test]
+fn forged_project_record_cannot_authorize_an_unregistered_path() {
+    let workspace = tempdir().unwrap();
+    let allowed = workspace.path().join("allowed");
+    let forged = workspace.path().join("forged");
+    std::fs::create_dir_all(&allowed).unwrap();
+    std::fs::create_dir_all(&forged).unwrap();
+    let project = Project::new(ProjectId::new(), "forged", &forged);
+    let project_id = project.id;
+    let repository = FixtureProjectRepository { project };
+    let policy = PathPolicy::from_roots([AllowedRoot::new(&allowed).unwrap()]).unwrap();
+    let mut service = ScanService::new();
+
+    assert!(service
+        .register_project_scope(project_id, &repository, &policy)
+        .is_err());
+    assert!(service.scan_registered(&[project_id.to_string()]).is_err());
 }
 
 #[test]

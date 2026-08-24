@@ -44,8 +44,8 @@ pub use ids::{
     PhysicalTargetId, ProjectId, SkillId, VersionId,
 };
 pub use project::{
-    PortableSource, Project, ProjectMetadata, ProjectTag, SavedProjectView, SharedProjectConfig,
-    SharedSkillRequirement,
+    PortableSource, Project, ProjectMetadata, ProjectRepository, ProjectTag, SavedProjectView,
+    SharedProjectConfig, SharedSkillRequirement,
 };
 pub use scan::{DiscoveredSkill, ScanGeneration, ScanIssue, ScanRepository, ScanResult, ScanScope};
 pub use versioning::{FileEntry, VersionDiff, VersionManifest, VersionRecord, VersionRepository};

@@ -109,6 +109,22 @@ impl PathPolicy {
         })
     }
 
+    /// Authorizes an existing absolute path against a previously registered
+    /// root. The caller cannot introduce a new root through this lookup.
+    pub fn authorize_existing(&self, path: impl AsRef<Path>) -> AppResult<SafePath> {
+        let canonical = std::fs::canonicalize(path.as_ref()).map_err(|_| path_error())?;
+        let root_id = self
+            .roots
+            .iter()
+            .find(|(_, root)| canonical.starts_with(&root.path))
+            .map(|(root_id, _)| *root_id)
+            .ok_or_else(path_error)?;
+        Ok(SafePath {
+            root_id,
+            path: canonical,
+        })
+    }
+
     pub fn resolve_for_create(
         &self,
         root_id: AllowedRootId,

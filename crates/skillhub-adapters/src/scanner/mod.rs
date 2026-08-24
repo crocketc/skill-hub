@@ -4,10 +4,12 @@ use skill_detector::SkillDetector;
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use skillhub_core::agent::LogicalTarget;
-use skillhub_core::project::Project;
+use skillhub_core::agent::{AgentRepository as DiscoveryRepository, LogicalTarget};
+use skillhub_core::project::{Project, ProjectRepository};
 use skillhub_core::scan::{ScanRepository, ScanResult, ScanScope};
-use skillhub_core::{AppError, AppResult, ErrorCode, RecoveryAction, Severity};
+use skillhub_core::{
+    AppError, AppResult, ErrorCode, PathPolicy, ProjectId, RecoveryAction, Severity,
+};
 
 pub use skill_detector::SkillDetectorConfig;
 
@@ -51,9 +53,42 @@ impl ScanService {
         self.detector.scan(std::slice::from_ref(scope))
     }
 
-    /// Register a scope obtained from discovery, a custom Agent or the
-    /// path-policy service. Callers cannot scan command-supplied roots.
-    pub fn register_discovery_target(&mut self, target: &LogicalTarget) -> AppResult<()> {
+    /// Resolve a persisted discovery target ID and authorize its path against
+    /// the application's already-registered path policy.
+    pub fn register_discovery_target<R>(
+        &mut self,
+        target_id: &str,
+        repository: &R,
+        path_policy: &PathPolicy,
+    ) -> AppResult<()>
+    where
+        R: DiscoveryRepository,
+    {
+        let snapshot = repository
+            .load_discovery()?
+            .ok_or_else(|| invalid_scope("discovery snapshot is unavailable"))?;
+        let target = snapshot
+            .logical_targets
+            .iter()
+            .find(|target| target.id == target_id)
+            .ok_or_else(|| invalid_scope(format!("unknown discovery target: {target_id}")))?;
+        if !target.available || !target.exists || !target.readable {
+            return Err(invalid_scope(
+                "discovery target is not available for scanning",
+            ));
+        }
+        let authorized_path = path_policy.authorize_existing(&target.path)?;
+        let scope = ScanScope::registered(target.id.clone(), authorized_path.into_path())
+            .with_marker(&target.marker);
+        self.register_scope(scope)
+    }
+
+    /// Internal fixture/adapter boundary for an already resolved target.
+    #[allow(dead_code)]
+    pub(crate) fn register_discovery_target_raw(
+        &mut self,
+        target: &LogicalTarget,
+    ) -> AppResult<()> {
         if target.id.trim().is_empty() || !target.available || !target.exists || !target.readable {
             return Err(invalid_scope(
                 "discovery target is not available for scanning",
@@ -64,7 +99,28 @@ impl ScanService {
         )
     }
 
-    pub fn register_project_scope(&mut self, project: &Project) -> AppResult<()> {
+    /// Resolve a persisted project ID and authorize its device path against
+    /// the application's already-registered path policy.
+    pub fn register_project_scope<R>(
+        &mut self,
+        project_id: ProjectId,
+        repository: &R,
+        path_policy: &PathPolicy,
+    ) -> AppResult<()>
+    where
+        R: ProjectRepository,
+    {
+        let project = repository.get(project_id)?;
+        let authorized_path = path_policy.authorize_existing(project.path())?;
+        self.register_scope(ScanScope::registered(
+            project_id.to_string(),
+            authorized_path.into_path(),
+        ))
+    }
+
+    /// Internal fixture/adapter boundary for an already resolved project.
+    #[allow(dead_code)]
+    pub(crate) fn register_project_scope_raw(&mut self, project: &Project) -> AppResult<()> {
         self.register_scope(ScanScope::registered(
             project.id.to_string(),
             &project.device_path,
