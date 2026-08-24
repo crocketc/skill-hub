@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::{AppResult, Severity, SkillId, VersionId};
+use crate::{AppError, AppResult, ErrorCode, RecoveryAction, Severity, SkillId, VersionId};
 
 /// The two security checks are intentionally independent facts.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
@@ -31,6 +31,7 @@ pub enum CheckState {
 #[serde(rename_all = "snake_case")]
 pub enum CheckRunPhase {
     #[default]
+    NotChecked,
     Running,
     Completed,
     Failed,
@@ -123,17 +124,31 @@ pub struct CheckRun {
     pub skill_id: SkillId,
     pub version_id: VersionId,
     pub kind: CheckKind,
+    #[serde(default)]
+    pub generation: u64,
     pub phase: CheckRunPhase,
     pub ruleset_id: Option<String>,
     pub model_id: Option<String>,
     pub started_at: i64,
     pub ended_at: Option<i64>,
     pub coverage_inputs: Value,
-    pub failure_reason: Option<String>,
+    pub failure_code: Option<String>,
     pub findings: Vec<Finding>,
 }
 
 impl CheckRun {
+    pub fn not_checked(
+        id: impl Into<String>,
+        skill_id: SkillId,
+        version_id: VersionId,
+        kind: CheckKind,
+    ) -> Self {
+        Self {
+            phase: CheckRunPhase::NotChecked,
+            ..Self::running(id, skill_id, version_id, kind)
+        }
+    }
+
     pub fn running(
         id: impl Into<String>,
         skill_id: SkillId,
@@ -145,13 +160,14 @@ impl CheckRun {
             skill_id,
             version_id,
             kind,
+            generation: 0,
             phase: CheckRunPhase::Running,
             ruleset_id: None,
             model_id: None,
             started_at: 0,
             ended_at: None,
             coverage_inputs: Value::Object(Default::default()),
-            failure_reason: None,
+            failure_code: None,
             findings: Vec::new(),
         }
     }
@@ -175,16 +191,28 @@ impl CheckRun {
         &self,
         finding_id: impl AsRef<str>,
         disposition: FindingDisposition,
-    ) -> Self {
+    ) -> AppResult<Self> {
         let mut updated = self.clone();
-        if let Some(finding) = updated
+        let Some(finding) = updated
             .findings
             .iter_mut()
             .find(|finding| finding.id == finding_id.as_ref())
-        {
-            finding.disposition = disposition;
+        else {
+            return Err(AppError::new(ErrorCode::ObjectNotFound, Severity::Error)
+                .with_param("finding_id", finding_id.as_ref().to_owned())
+                .with_action(RecoveryAction::ReviewSecurityFindings));
+        };
+        if !finding.allowed_dispositions.contains(&disposition) {
+            return Err(AppError::new(ErrorCode::InvalidInput, Severity::Error)
+                .with_param("finding_id", finding_id.as_ref().to_owned())
+                .with_param(
+                    "disposition",
+                    serde_json::to_value(disposition).unwrap_or_default(),
+                )
+                .with_action(RecoveryAction::ReviewSecurityFindings));
         }
-        updated
+        finding.disposition = disposition;
+        Ok(updated)
     }
 
     pub fn state(&self) -> crate::check::CheckState {
@@ -204,4 +232,10 @@ pub trait CheckRepository {
         version_id: &VersionId,
         kind: CheckKind,
     ) -> AppResult<Vec<CheckRun>>;
+    async fn current_for_version(
+        &self,
+        skill_id: SkillId,
+        version_id: &VersionId,
+        kind: CheckKind,
+    ) -> AppResult<Option<CheckRun>>;
 }

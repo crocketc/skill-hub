@@ -23,25 +23,27 @@ impl<'a> CheckRepositorySqlite<'a> {
 #[async_trait(?Send)]
 impl CheckRepositoryPort for CheckRepositorySqlite<'_> {
     async fn insert(&self, run: &CheckRun) -> AppResult<()> {
+        ensure_check_columns(&self.database.connection)?;
         let tx = self
             .database
             .connection
             .unchecked_transaction()
             .map_err(error)?;
         tx.execute(
-            "INSERT INTO check_runs(id,skill_id,version_id,kind,state,ruleset_id,model_id,started_at,ended_at,coverage_json,failure_code) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)",
+            "INSERT INTO check_runs(id,skill_id,version_id,kind,generation,state,ruleset_id,model_id,started_at,ended_at,coverage_json,failure_code) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12)",
             params![
                 run.id,
                 run.skill_id.to_string(),
                 run.version_id.to_string(),
                 kind_code(run.kind),
+                i64::try_from(run.generation).map_err(|_| invalid_record())?,
                 state_code(run),
                 run.ruleset_id,
                 run.model_id,
                 run.started_at,
                 run.ended_at,
                 serde_json::to_string(&run.coverage_inputs).map_err(|_| invalid_record())?,
-                run.failure_reason,
+                run.failure_code,
             ],
         )
         .map_err(error)?;
@@ -50,31 +52,45 @@ impl CheckRepositoryPort for CheckRepositorySqlite<'_> {
     }
 
     async fn get(&self, id: &str) -> AppResult<Option<CheckRun>> {
+        ensure_check_columns(&self.database.connection)?;
         let row = self
             .database
             .connection
             .query_row(
-                "SELECT skill_id,version_id,kind,state,ruleset_id,model_id,started_at,ended_at,coverage_json,failure_code FROM check_runs WHERE id=?1",
+                "SELECT skill_id,version_id,kind,generation,state,ruleset_id,model_id,started_at,ended_at,coverage_json,failure_code FROM check_runs WHERE id=?1",
                 [id],
                 |row| {
                     Ok((
                         row.get::<_, String>(0)?,
                         row.get::<_, String>(1)?,
                         row.get::<_, String>(2)?,
-                        row.get::<_, String>(3)?,
-                        row.get::<_, Option<String>>(4)?,
+                        row.get::<_, i64>(3)?,
+                        row.get::<_, String>(4)?,
                         row.get::<_, Option<String>>(5)?,
-                        row.get::<_, i64>(6)?,
-                        row.get::<_, Option<i64>>(7)?,
-                        row.get::<_, String>(8)?,
-                        row.get::<_, Option<String>>(9)?,
+                        row.get::<_, Option<String>>(6)?,
+                        row.get::<_, i64>(7)?,
+                        row.get::<_, Option<i64>>(8)?,
+                        row.get::<_, String>(9)?,
+                        row.get::<_, Option<String>>(10)?,
                     ))
                 },
             )
             .optional()
             .map_err(error)?;
         row.map(
-            |(skill, version, kind, state, ruleset, model, started, ended, coverage, failure)| {
+            |(
+                skill,
+                version,
+                kind,
+                generation,
+                state,
+                ruleset,
+                model,
+                started,
+                ended,
+                coverage,
+                failure,
+            )| {
                 let skill_id = skill.parse().map_err(|_| invalid_record())?;
                 let version_id = version.parse().map_err(|_| invalid_record())?;
                 let kind = parse_kind(&kind)?;
@@ -86,13 +102,14 @@ impl CheckRepositoryPort for CheckRepositorySqlite<'_> {
                     skill_id,
                     version_id,
                     kind,
+                    generation: u64::try_from(generation).map_err(|_| invalid_record())?,
                     phase,
                     ruleset_id: ruleset,
                     model_id: model,
                     started_at: started,
                     ended_at: ended,
                     coverage_inputs,
-                    failure_reason: failure,
+                    failure_code: failure,
                     findings: Vec::new(),
                 };
                 run.findings = load_findings(&self.database.connection, id)?;
@@ -103,6 +120,7 @@ impl CheckRepositoryPort for CheckRepositorySqlite<'_> {
     }
 
     async fn update(&self, run: &CheckRun) -> AppResult<()> {
+        ensure_check_columns(&self.database.connection)?;
         let tx = self
             .database
             .connection
@@ -110,19 +128,20 @@ impl CheckRepositoryPort for CheckRepositorySqlite<'_> {
             .map_err(error)?;
         let changed = tx
             .execute(
-                "UPDATE check_runs SET skill_id=?2,version_id=?3,kind=?4,state=?5,ruleset_id=?6,model_id=?7,started_at=?8,ended_at=?9,coverage_json=?10,failure_code=?11 WHERE id=?1",
+                "UPDATE check_runs SET skill_id=?2,version_id=?3,kind=?4,generation=?5,state=?6,ruleset_id=?7,model_id=?8,started_at=?9,ended_at=?10,coverage_json=?11,failure_code=?12 WHERE id=?1",
                 params![
                     run.id,
                     run.skill_id.to_string(),
                     run.version_id.to_string(),
                     kind_code(run.kind),
+                    i64::try_from(run.generation).map_err(|_| invalid_record())?,
                     state_code(run),
                     run.ruleset_id,
                     run.model_id,
                     run.started_at,
                     run.ended_at,
                     serde_json::to_string(&run.coverage_inputs).map_err(|_| invalid_record())?,
-                    run.failure_reason,
+                    run.failure_code,
                 ],
             )
             .map_err(error)?;
@@ -146,6 +165,7 @@ impl CheckRepositoryPort for CheckRepositorySqlite<'_> {
         version_id: &VersionId,
         kind: CheckKind,
     ) -> AppResult<Vec<CheckRun>> {
+        ensure_check_columns(&self.database.connection)?;
         let mut statement = self.database.connection.prepare(
             "SELECT id FROM check_runs WHERE skill_id=?1 AND version_id=?2 AND kind=?3 ORDER BY started_at,id",
         ).map_err(error)?;
@@ -168,12 +188,35 @@ impl CheckRepositoryPort for CheckRepositorySqlite<'_> {
         }
         Ok(runs)
     }
+
+    async fn current_for_version(
+        &self,
+        skill_id: SkillId,
+        version_id: &VersionId,
+        kind: CheckKind,
+    ) -> AppResult<Option<CheckRun>> {
+        ensure_check_columns(&self.database.connection)?;
+        let id = self
+            .database
+            .connection
+            .query_row(
+                "SELECT id FROM check_runs WHERE skill_id=?1 AND version_id=?2 AND kind=?3 ORDER BY generation DESC,started_at DESC,COALESCE(ended_at,-1) DESC,id DESC LIMIT 1",
+                params![skill_id.to_string(), version_id.to_string(), kind_code(kind)],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()
+            .map_err(error)?;
+        match id {
+            Some(id) => self.get(&id).await,
+            None => Ok(None),
+        }
+    }
 }
 
 fn insert_findings(tx: &rusqlite::Transaction<'_>, run: &CheckRun) -> AppResult<()> {
     for finding in &run.findings {
         tx.execute(
-            "INSERT INTO check_findings(id,run_id,code,severity,file_path,line_start,line_end,evidence_hash,message_params_json,disposition) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10)",
+            "INSERT INTO check_findings(id,run_id,code,severity,file_path,line_start,line_end,evidence_hash,message_params_json,disposition,allowed_dispositions_json) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)",
             params![
                 finding.id,
                 run.id,
@@ -185,6 +228,7 @@ fn insert_findings(tx: &rusqlite::Transaction<'_>, run: &CheckRun) -> AppResult<
                 finding.evidence_hash,
                 serde_json::to_string(&finding.message_params).map_err(|_| invalid_record())?,
                 disposition_code(finding.disposition),
+                serde_json::to_string(&finding.allowed_dispositions).map_err(|_| invalid_record())?,
             ],
         )
         .map_err(error)?;
@@ -194,7 +238,7 @@ fn insert_findings(tx: &rusqlite::Transaction<'_>, run: &CheckRun) -> AppResult<
 
 fn load_findings(connection: &rusqlite::Connection, run_id: &str) -> AppResult<Vec<Finding>> {
     let mut statement = connection
-        .prepare("SELECT id,code,severity,file_path,line_start,line_end,evidence_hash,message_params_json,disposition FROM check_findings WHERE run_id=?1 ORDER BY id")
+        .prepare("SELECT id,code,severity,file_path,line_start,line_end,evidence_hash,message_params_json,disposition,allowed_dispositions_json FROM check_findings WHERE run_id=?1 ORDER BY id")
         .map_err(error)?;
     let rows = statement
         .query_map([run_id], |row| {
@@ -208,11 +252,12 @@ fn load_findings(connection: &rusqlite::Connection, run_id: &str) -> AppResult<V
                 row.get::<_, Option<String>>(6)?,
                 row.get::<_, String>(7)?,
                 row.get::<_, String>(8)?,
+                row.get::<_, Option<String>>(9)?,
             ))
         })
         .map_err(error)?;
     rows.map(|row| {
-        let (id, code, severity, file, start, end, evidence, params, disposition) =
+        let (id, code, severity, file, start, end, evidence, params, disposition, allowed) =
             row.map_err(error)?;
         let message_params = serde_json::from_str::<BTreeMap<String, Value>>(&params)
             .map_err(|_| invalid_record())?;
@@ -226,12 +271,10 @@ fn load_findings(connection: &rusqlite::Connection, run_id: &str) -> AppResult<V
             evidence_hash: evidence,
             message_params,
             disposition: parse_disposition(&disposition)?,
-            allowed_dispositions: [
-                FindingDisposition::Acknowledged,
-                FindingDisposition::Dismissed,
-            ]
-            .into_iter()
-            .collect(),
+            allowed_dispositions: allowed
+                .map(|value| serde_json::from_str(&value).map_err(|_| invalid_record()))
+                .transpose()?
+                .unwrap_or_else(default_allowed_dispositions),
         })
     })
     .collect()
@@ -261,14 +304,64 @@ fn state_code(run: &CheckRun) -> &'static str {
     }
 }
 
-fn parse_phase(value: &str, has_failure_reason: bool) -> AppResult<CheckRunPhase> {
+fn parse_phase(value: &str, has_failure_code: bool) -> AppResult<CheckRunPhase> {
     match value {
+        "not_checked" => Ok(CheckRunPhase::NotChecked),
         "running" => Ok(CheckRunPhase::Running),
-        "completed" | "passed" | "not_checked" => Ok(CheckRunPhase::Completed),
-        "failed" if has_failure_reason => Ok(CheckRunPhase::Failed),
+        "completed" | "passed" => Ok(CheckRunPhase::Completed),
+        "failed" if has_failure_code => Ok(CheckRunPhase::Failed),
         "failed" => Ok(CheckRunPhase::Completed),
         _ => Err(invalid_record()),
     }
+}
+
+fn default_allowed_dispositions() -> std::collections::BTreeSet<FindingDisposition> {
+    [
+        FindingDisposition::Acknowledged,
+        FindingDisposition::Dismissed,
+    ]
+    .into_iter()
+    .collect()
+}
+
+fn ensure_check_columns(connection: &rusqlite::Connection) -> AppResult<()> {
+    let mut columns = BTreeMap::new();
+    let mut statement = connection
+        .prepare("PRAGMA table_info(check_runs)")
+        .map_err(error)?;
+    for row in statement
+        .query_map([], |row| row.get::<_, String>(1))
+        .map_err(error)?
+    {
+        columns.insert(row.map_err(error)?, ());
+    }
+    if !columns.contains_key("generation") {
+        connection
+            .execute(
+                "ALTER TABLE check_runs ADD COLUMN generation INTEGER NOT NULL DEFAULT 0",
+                [],
+            )
+            .map_err(error)?;
+    }
+    let mut finding_columns = BTreeMap::new();
+    let mut statement = connection
+        .prepare("PRAGMA table_info(check_findings)")
+        .map_err(error)?;
+    for row in statement
+        .query_map([], |row| row.get::<_, String>(1))
+        .map_err(error)?
+    {
+        finding_columns.insert(row.map_err(error)?, ());
+    }
+    if !finding_columns.contains_key("allowed_dispositions_json") {
+        connection
+            .execute(
+                "ALTER TABLE check_findings ADD COLUMN allowed_dispositions_json TEXT",
+                [],
+            )
+            .map_err(error)?;
+    }
+    Ok(())
 }
 
 fn severity_code(value: Severity) -> &'static str {

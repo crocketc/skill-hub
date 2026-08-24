@@ -61,9 +61,19 @@ impl<'a> BootstrapRepository<'a> {
                 message_code: Some("pending.trial_due".into()),
             });
         }
-        let mut findings = self.database.connection.prepare(
-            "SELECT r.skill_id, f.code FROM check_findings f JOIN check_runs r ON r.id=f.run_id WHERE f.disposition NOT IN ('resolved','dismissed') ORDER BY r.skill_id, f.code, f.id",
-        ).map_err(error)?;
+        let ordering = if has_column(&self.database.connection, "check_runs", "generation")? {
+            "current.generation DESC,current.started_at DESC,COALESCE(current.ended_at,-1) DESC,current.id DESC"
+        } else {
+            "current.started_at DESC,COALESCE(current.ended_at,-1) DESC,current.id DESC"
+        };
+        let findings_sql = format!(
+            "SELECT r.skill_id, f.code FROM check_findings f JOIN check_runs r ON r.id=f.run_id WHERE f.disposition NOT IN ('resolved','dismissed') AND r.id = (SELECT current.id FROM check_runs current WHERE current.skill_id=r.skill_id AND current.kind=r.kind ORDER BY {ordering} LIMIT 1) ORDER BY r.skill_id, f.code, f.id"
+        );
+        let mut findings = self
+            .database
+            .connection
+            .prepare(&findings_sql)
+            .map_err(error)?;
         for row in findings
             .query_map([], |row| {
                 Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
@@ -220,6 +230,21 @@ fn now() -> i64 {
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs() as i64
+}
+
+fn has_column(connection: &rusqlite::Connection, table: &str, column: &str) -> AppResult<bool> {
+    let mut statement = connection
+        .prepare(&format!("PRAGMA table_info({table})"))
+        .map_err(error)?;
+    for row in statement
+        .query_map([], |row| row.get::<_, String>(1))
+        .map_err(error)?
+    {
+        if row.map_err(error)? == column {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 fn invalid_snapshot() -> AppError {
     AppError::new(ErrorCode::InternalError, Severity::Error).with_action(RecoveryAction::Retry)

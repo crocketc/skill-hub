@@ -1,6 +1,7 @@
 use skillhub_core::check::{CheckKind, CheckRepository, CheckRun, Finding, FindingDisposition};
-use skillhub_core::{Severity, SkillId, VersionId};
+use skillhub_core::{ErrorCode, Severity, SkillId, VersionId};
 use skillhub_storage::Database;
+use std::collections::BTreeSet;
 
 fn version_id() -> VersionId {
     "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
@@ -116,6 +117,7 @@ fn updating_a_finding_disposition_rederives_a_passed_result() {
     let repository = db.check_repository();
     block_on(repository.insert(&run)).unwrap();
     let resolved = run.set_disposition("finding-1", FindingDisposition::Acknowledged);
+    let resolved = resolved.unwrap();
     block_on(repository.update(&resolved)).unwrap();
 
     let loaded = block_on(repository.get("basic-run")).unwrap().unwrap();
@@ -124,4 +126,100 @@ fn updating_a_finding_disposition_rederives_a_passed_result() {
         FindingDisposition::Acknowledged
     );
     assert_eq!(loaded.state(), skillhub_core::check::CheckState::Passed);
+}
+
+#[test]
+fn current_run_uses_newest_generation_and_not_checked_round_trips() {
+    let db = Database::open_in_memory().unwrap();
+    let skill = SkillId::new();
+    let version = version_id();
+    seed_skill_and_version(&db, skill, &version);
+    let mut stale = CheckRun::completed(
+        "stale",
+        skill,
+        version.clone(),
+        CheckKind::Basic,
+        vec![Finding::new(
+            "old-finding",
+            "security.secret",
+            Severity::Error,
+        )],
+    );
+    stale.generation = 1;
+    stale.started_at = 10;
+    let mut current = CheckRun::not_checked("current", skill, version.clone(), CheckKind::Basic);
+    current.generation = 2;
+    current.started_at = 20;
+    let repository = db.check_repository();
+    block_on(repository.insert(&stale)).unwrap();
+    block_on(repository.insert(&current)).unwrap();
+
+    assert_eq!(
+        block_on(repository.current_for_version(skill, &version, CheckKind::Basic))
+            .unwrap()
+            .unwrap()
+            .id,
+        "current"
+    );
+    assert_eq!(
+        block_on(repository.get("current"))
+            .unwrap()
+            .unwrap()
+            .state(),
+        skillhub_core::check::CheckState::NotChecked
+    );
+}
+
+#[test]
+fn custom_allowed_dispositions_and_failure_code_round_trip() {
+    let db = Database::open_in_memory().unwrap();
+    let skill = SkillId::new();
+    let version = version_id();
+    seed_skill_and_version(&db, skill, &version);
+    let mut finding = Finding::new("finding", "security.secret", Severity::Error);
+    finding.allowed_dispositions = [FindingDisposition::Dismissed].into_iter().collect();
+    let mut run = CheckRun::completed("failed", skill, version, CheckKind::Basic, vec![finding]);
+    run.failure_code = Some("scanner.io_error".to_owned());
+    let repository = db.check_repository();
+    block_on(repository.insert(&run)).unwrap();
+    let loaded = block_on(repository.get("failed")).unwrap().unwrap();
+    assert_eq!(loaded.failure_code.as_deref(), Some("scanner.io_error"));
+    assert_eq!(
+        loaded.findings[0].allowed_dispositions,
+        [FindingDisposition::Dismissed]
+            .into_iter()
+            .collect::<BTreeSet<_>>()
+    );
+    let error = run
+        .set_disposition("missing", FindingDisposition::Dismissed)
+        .unwrap_err();
+    assert_eq!(error.code, ErrorCode::ObjectNotFound);
+}
+
+#[test]
+fn pending_findings_only_come_from_the_current_run() {
+    let db = Database::open_in_memory().unwrap();
+    let skill = SkillId::new();
+    let version = version_id();
+    seed_skill_and_version(&db, skill, &version);
+    let mut stale = CheckRun::completed(
+        "stale-pending",
+        skill,
+        version.clone(),
+        CheckKind::Basic,
+        vec![Finding::new("old", "security.secret", Severity::Error)],
+    );
+    stale.started_at = 10;
+    let mut current =
+        CheckRun::completed("clean-current", skill, version, CheckKind::Basic, vec![]);
+    current.started_at = 20;
+    let repository = db.check_repository();
+    block_on(repository.insert(&stale)).unwrap();
+    block_on(repository.insert(&current)).unwrap();
+
+    assert!(db
+        .bootstrap_repository()
+        .list_pending((2026, 8, 24))
+        .unwrap()
+        .is_empty());
 }
