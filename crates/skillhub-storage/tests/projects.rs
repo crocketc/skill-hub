@@ -180,6 +180,7 @@ fn shared_config_rejects_paths_urls_with_userinfo_and_secret_like_values() {
         PortableSource::try_from("token=secret-value"),
         PortableSource::try_from("https://example.test/skill?token=secret-value"),
         PortableSource::try_from("https://example.test/skill?ref=ok#credential=bad"),
+        PortableSource::try_from("https://example.test/skill#t%6fken=abc123"),
     ] {
         assert!(source.is_err());
     }

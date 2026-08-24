@@ -1,7 +1,7 @@
 use crate::{SkillId, VersionId};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
-use url::Url;
+use url::{form_urlencoded, Url};
 
 pub const SHARED_CONFIG_SCHEMA_VERSION: u32 = 1;
 
@@ -236,9 +236,8 @@ fn reject_sensitive_url_parameters(url: &Url) -> Result<(), &'static str> {
         }
     }
     if let Some(fragment) = url.fragment() {
-        for part in fragment.split('&') {
-            let (name, value) = part.split_once('=').unwrap_or((part, ""));
-            if sensitive_parameter(name) || sensitive_parameter(value) {
+        for (name, value) in form_urlencoded::parse(fragment.as_bytes()) {
+            if sensitive_parameter(&name) || sensitive_parameter(&value) {
                 return Err("source URL contains a credential-like fragment parameter");
             }
         }
