@@ -206,14 +206,6 @@ where
         Ok(summary(&record))
     }
 
-    /// Prepare a whole-operation inverse. This method never exposes a global
-    /// history rewind; only facts recorded by the selected operation are put in
-    /// the plan. The caller must re-check the returned preconditions before
-    /// applying the inverse to domain state.
-    pub async fn prepare_undo(&self, operation_id: OperationId) -> AppResult<UndoPlan> {
-        self.prepare_undo_internal(operation_id, None).await
-    }
-
     /// Prepare an inverse only when freshly observed facts match the
     /// preconditions recorded by the original operation.
     pub async fn prepare_undo_checked(
@@ -221,14 +213,14 @@ where
         operation_id: OperationId,
         current_facts: Value,
     ) -> AppResult<UndoPlan> {
-        self.prepare_undo_internal(operation_id, Some(current_facts))
+        self.prepare_undo_internal(operation_id, current_facts)
             .await
     }
 
     async fn prepare_undo_internal(
         &self,
         operation_id: OperationId,
-        current_facts: Option<Value>,
+        current_facts: Value,
     ) -> AppResult<UndoPlan> {
         let _writer = self.journal.acquire_writer().await;
         let source = self
@@ -244,10 +236,8 @@ where
             .inverse
             .clone()
             .ok_or_else(|| conflict("operation_has_no_inverse"))?;
-        if let Some(current_facts) = current_facts {
-            if current_facts != inverse.preconditions {
-                return Err(conflict("undo_precondition_mismatch"));
-            }
+        if current_facts != inverse.preconditions {
+            return Err(conflict("undo_precondition_mismatch"));
         }
         let plan_id = OperationId::new();
         let mut plan_record = OperationRecord::planned(
@@ -270,47 +260,24 @@ where
         })
     }
 
-    /// Commit the prepared inverse marker after the caller has applied and
-    /// verified the inverse against `UndoPlan::preconditions`.
-    pub async fn commit_undo(&self, plan_id: OperationId) -> AppResult<OperationSummary> {
-        let _writer = self.journal.acquire_writer().await;
-        let mut plan = self
-            .journal
-            .repository()
-            .get(plan_id)
-            .await?
-            .ok_or_else(|| object_not_found(plan_id))?;
-        if plan.phase != OperationPhase::Prepared {
-            return Err(conflict("undo_plan_is_not_prepared"));
-        }
-        if plan.inverse.is_none() {
-            return Err(conflict("undo_plan_has_no_inverse"));
-        }
-        plan.phase = OperationPhase::Applying;
-        plan.progress.phase = OperationPhase::Applying;
-        plan.progress.message_code = "operation.undo_applying".to_owned();
-        self.journal.repository().update(&plan).await?;
-        plan.phase = OperationPhase::Committed;
-        plan.progress.phase = OperationPhase::Committed;
-        plan.progress.message_code = "operation.undo_committed".to_owned();
-        self.journal.repository().update(&plan).await?;
-        Ok(summary(&plan))
-    }
-
     /// Apply and verify an inverse while holding the same writer permit. The
     /// callback is the domain-specific inverse (for example, restoring a
-    /// previous name); the journal supplies recorded facts and refuses stale
-    /// observations before any inverse write begins.
-    pub async fn commit_undo_checked<T, F, Fut>(
+    /// previous name); the journal supplies recorded facts, refuses stale
+    /// observations before any inverse write begins, and verifies the facts
+    /// observed after applying the inverse before committing.
+    pub async fn commit_undo_checked<T, F, Fut, RF, RFut>(
         &self,
         plan_id: OperationId,
         current_facts: Value,
         apply_inverse: F,
+        read_facts_after_apply: RF,
     ) -> AppResult<T>
     where
         T: Serialize,
         F: FnOnce(Value) -> Fut,
         Fut: Future<Output = AppResult<T>>,
+        RF: FnOnce() -> RFut,
+        RFut: Future<Output = AppResult<Value>>,
     {
         let _writer = self.journal.acquire_writer().await;
         let mut plan = self
@@ -334,8 +301,29 @@ where
         plan.progress.message_code = "operation.undo_applying".to_owned();
         self.journal.repository().update(&plan).await?;
 
+        let expected_post_apply_facts = inverse.facts.clone();
         match apply_inverse(inverse.facts).await {
             Ok(result) => {
+                let post_apply_facts = match read_facts_after_apply().await {
+                    Ok(facts) => facts,
+                    Err(error) => {
+                        plan.phase = OperationPhase::NeedsRecovery;
+                        plan.progress.phase = OperationPhase::NeedsRecovery;
+                        plan.error_code = Some(error.code);
+                        plan.progress.message_code = "operation.undo_needs_recovery".to_owned();
+                        self.journal.repository().update(&plan).await?;
+                        return Err(error);
+                    }
+                };
+                if post_apply_facts != expected_post_apply_facts {
+                    let error = conflict("undo_postcondition_mismatch");
+                    plan.phase = OperationPhase::NeedsRecovery;
+                    plan.progress.phase = OperationPhase::NeedsRecovery;
+                    plan.error_code = Some(error.code);
+                    plan.progress.message_code = "operation.undo_needs_recovery".to_owned();
+                    self.journal.repository().update(&plan).await?;
+                    return Err(error);
+                }
                 plan.result = Some(serde_json::to_value(&result).map_err(|_| {
                     AppError::new(ErrorCode::InternalError, Severity::Error)
                         .with_param("reason", "undo_result_not_serializable")
@@ -504,11 +492,18 @@ mod tests {
         )
         .unwrap();
 
-        let plan = block_on(service.prepare_undo(id)).unwrap();
+        let plan =
+            block_on(service.prepare_undo_checked(id, serde_json::json!({"current_name":"after"})))
+                .unwrap();
         assert_eq!(plan.inverse_kind, "rename_skill");
         assert_eq!(plan.facts["previous_name"], "before");
-        let summary = block_on(service.commit_undo(plan.id)).unwrap();
-        assert_eq!(summary.phase, OperationPhase::Committed);
+        block_on(service.commit_undo_checked(
+            plan.id,
+            serde_json::json!({"current_name":"after"}),
+            |_facts| async { Ok::<_, AppError>(()) },
+            || async { Ok::<_, AppError>(serde_json::json!({"previous_name":"before"})) },
+        ))
+        .unwrap();
     }
 
     #[test]
@@ -578,24 +573,57 @@ mod tests {
             }),
         )
         .unwrap();
-        let plan = block_on(service.prepare_undo(id)).unwrap();
+        let plan = block_on(service.prepare_undo_checked(id, serde_json::json!({"name":"after"})))
+            .unwrap();
         let stale = block_on(service.commit_undo_checked(
             plan.id,
             serde_json::json!({"name":"changed-externally"}),
             |_facts| async { Ok::<_, AppError>(()) },
+            || async { Ok::<_, AppError>(serde_json::json!({"name":"before"})) },
         ));
         assert_eq!(
             stale.unwrap_err().params["reason"],
             "undo_precondition_mismatch"
         );
-        let plan = block_on(service.prepare_undo(id)).unwrap();
+        let plan = block_on(service.prepare_undo_checked(id, serde_json::json!({"name":"after"})))
+            .unwrap();
         let applied = block_on(service.commit_undo_checked(
             plan.id,
             serde_json::json!({"name":"after"}),
             |facts| async move { Ok::<_, AppError>(facts["name"].clone()) },
+            || async { Ok::<_, AppError>(serde_json::json!({"name":"before"})) },
         ))
         .unwrap();
         assert_eq!(applied, "before");
+
+        let id_again = OperationId::new();
+        block_on(service.run(
+            id_again,
+            "rename_skill_again",
+            "rename-again",
+            |context| async move {
+                context.set_inverse(
+                    "rename_skill",
+                    serde_json::json!({"name":"after"}),
+                    serde_json::json!({"name":"before"}),
+                );
+                Ok::<_, AppError>(())
+            },
+        ))
+        .unwrap();
+        let plan =
+            block_on(service.prepare_undo_checked(id_again, serde_json::json!({"name":"after"})))
+                .unwrap();
+        let post_mismatch = block_on(service.commit_undo_checked(
+            plan.id,
+            serde_json::json!({"name":"after"}),
+            |_facts| async { Ok::<_, AppError>(()) },
+            || async { Ok::<_, AppError>(serde_json::json!({"name":"wrong"})) },
+        ));
+        assert_eq!(
+            post_mismatch.unwrap_err().params["reason"],
+            "undo_postcondition_mismatch"
+        );
     }
 
     async fn applying_window(
