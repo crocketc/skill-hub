@@ -6,7 +6,7 @@ use crate::{AppError, AppResult, DeploymentCapability, ErrorCode, RecoveryAction
 
 use super::model::{
     DeploymentMode, DeploymentPlan, DeploymentPlanInput, ExistingDeployment, ExistingOwnership,
-    PhysicalTargetInput, TargetChange, TargetConflict, TargetConflictReason, TargetPlan,
+    TargetChange, TargetConflict, TargetConflictReason, TargetPlan, VerifiedTarget,
 };
 
 /// Pure deployment planner.  It consumes caller-provided discovery and
@@ -28,67 +28,65 @@ impl DeploymentPlanner {
     {
         let input = input.borrow();
         validate_runtime_name(&input.runtime_name)?;
-        if input.logical_targets.is_empty() {
-            return Err(invalid_input("at least one logical target is required"));
+        if input.targets.is_empty() {
+            return Err(invalid_input("at least one verified target is required"));
         }
 
-        let physical = index_physical_targets(&input.physical_targets)?;
-        let mut selected: BTreeMap<String, Vec<String>> = BTreeMap::new();
-        for logical in &input.logical_targets {
-            if logical.id.trim().is_empty() {
-                return Err(invalid_input("logical target id is required"));
-            }
-            if !physical.contains_key(&logical.physical_target_id) {
-                return Err(AppError::new(ErrorCode::ObjectNotFound, Severity::Error)
-                    .with_param("physical_target_id", logical.physical_target_id.clone())
-                    .with_action(RecoveryAction::InspectTarget));
-            }
+        let mut selected: BTreeMap<String, Vec<&VerifiedTarget>> = BTreeMap::new();
+        for target in &input.targets {
             selected
-                .entry(logical.physical_target_id.clone())
+                .entry(target.physical_target_id().to_owned())
                 .or_default()
-                .push(logical.id.clone());
+                .push(target);
         }
 
         let mut targets = Vec::with_capacity(selected.len());
         let mut warnings = Vec::new();
         let mut conflicts = Vec::new();
-        for (physical_id, logical_ids) in selected {
-            let target = physical
-                .get(&physical_id)
-                .expect("selected physical target was indexed above");
-            let mode = select_mode(input.mode_override, &target.capabilities, &physical_id)?;
-            let target_warnings = mode_warnings(mode, &target.capabilities);
+        for (physical_id, target_group) in selected {
+            let target = target_group
+                .first()
+                .expect("selected physical target group is not empty");
+            let logical_ids = merged_logical_ids(&target_group);
+            let existing = merged_existing(&target_group);
+            let capabilities = merged_capabilities(&target_group);
+            let case_sensitive = target_group.iter().all(|target| target.case_sensitive());
+            let mode = select_mode(input.mode_override, &capabilities, &physical_id)?;
+            let target_warnings = mode_warnings(mode, &capabilities);
             let target_conflicts = conflicts_for(
-                target,
+                &physical_id,
+                target.path(),
+                &existing,
                 &input.runtime_name,
                 input.skill_id,
                 &input.version_id,
+                case_sensitive,
             );
             conflicts.extend(target_conflicts.iter().cloned());
             warnings.extend(target_warnings.iter().cloned());
 
             let change = if target_conflicts.is_empty()
-                && target.existing.iter().any(|existing| {
+                && existing.iter().any(|existing| {
                     is_same_managed_deployment(
                         existing,
                         &input.runtime_name,
                         input.skill_id,
                         &input.version_id,
-                        target.case_sensitive,
+                        case_sensitive,
                     )
                 }) {
                 TargetChange::NoOp
             } else {
                 TargetChange::Create
             };
-            let destination_path = Path::new(&target.path)
+            let destination_path = Path::new(target.path())
                 .join(&input.runtime_name)
                 .to_string_lossy()
                 .into_owned();
             targets.push(TargetPlan {
                 physical_target_id: physical_id,
                 logical_target_ids: logical_ids,
-                target_path: target.path.clone(),
+                target_path: target.path().to_owned(),
                 destination_path,
                 source_path: input.source_path.clone(),
                 runtime_name: input.runtime_name.clone(),
@@ -125,19 +123,29 @@ impl DeploymentPlanner {
     }
 }
 
-fn index_physical_targets(
-    targets: &[PhysicalTargetInput],
-) -> AppResult<BTreeMap<String, &PhysicalTargetInput>> {
-    let mut indexed = BTreeMap::new();
-    for target in targets {
-        if target.id.trim().is_empty() || target.path.trim().is_empty() {
-            return Err(invalid_input("physical target id and path are required"));
-        }
-        if indexed.insert(target.id.clone(), target).is_some() {
-            return Err(invalid_input("physical target ids must be unique"));
-        }
-    }
-    Ok(indexed)
+fn merged_logical_ids(targets: &[&VerifiedTarget]) -> Vec<String> {
+    let mut ids = targets
+        .iter()
+        .flat_map(|target| target.logical_target_ids().iter().cloned())
+        .collect::<Vec<_>>();
+    ids.sort();
+    ids.dedup();
+    ids
+}
+
+fn merged_existing(targets: &[&VerifiedTarget]) -> Vec<ExistingDeployment> {
+    targets
+        .iter()
+        .flat_map(|target| target.existing().iter().cloned())
+        .collect()
+}
+
+fn merged_capabilities(targets: &[&VerifiedTarget]) -> DeploymentCapability {
+    DeploymentCapability::new(
+        targets.iter().all(|target| target.capabilities().symlink),
+        targets.iter().all(|target| target.capabilities().junction),
+        targets.iter().all(|target| target.capabilities().copy),
+    )
 }
 
 fn select_mode(
@@ -188,22 +196,24 @@ fn mode_warnings(mode: DeploymentMode, capabilities: &DeploymentCapability) -> V
 }
 
 fn conflicts_for(
-    target: &PhysicalTargetInput,
+    physical_target_id: &str,
+    target_path: &str,
+    existing_deployments: &[ExistingDeployment],
     runtime_name: &str,
     skill_id: crate::SkillId,
     version_id: &crate::VersionId,
+    case_sensitive: bool,
 ) -> Vec<TargetConflict> {
-    target
-        .existing
+    existing_deployments
         .iter()
-        .filter(|existing| names_equal(&existing.runtime_name, runtime_name, target.case_sensitive))
+        .filter(|existing| names_equal(&existing.runtime_name, runtime_name, case_sensitive))
         .filter(|existing| {
             !is_same_managed_deployment(
                 existing,
                 runtime_name,
                 skill_id,
                 version_id,
-                target.case_sensitive,
+                case_sensitive,
             )
         })
         .filter(|existing| {
@@ -211,8 +221,8 @@ fn conflicts_for(
                 && existing.skill_id == Some(skill_id))
         })
         .map(|existing| TargetConflict {
-            physical_target_id: target.id.clone(),
-            target_path: target.path.clone(),
+            physical_target_id: physical_target_id.to_owned(),
+            target_path: target_path.to_owned(),
             runtime_name: runtime_name.to_owned(),
             reason: match existing.ownership {
                 ExistingOwnership::Unknown => TargetConflictReason::OwnershipUnknown,

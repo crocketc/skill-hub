@@ -42,10 +42,11 @@ pub use path_policy::{physical_id_for_path, AllowedRoot, AllowedRootId, PathPoli
 
 pub use catalog::{LibraryManifest, LibraryPaths, PortableSkillRecord};
 pub use deployment::{
-    DeploymentCapabilities, DeploymentMode, DeploymentPlan, DeploymentPlanInput, DeploymentPlanner,
-    DeploymentRecord, DeploymentRepository, DeploymentRequest, DeploymentState, ExistingDeployment,
-    ExistingOwnership, LogicalTargetSelection, PhysicalTargetInput, TargetCapabilities,
-    TargetChange, TargetConflict, TargetConflictReason, TargetPlan,
+    DeploymentCapabilities, DeploymentMode, DeploymentPlan, DeploymentPlanInput,
+    DeploymentPlanRequest, DeploymentPlanner, DeploymentRecord, DeploymentRepository,
+    DeploymentRequest, DeploymentState, ExistingDeployment, ExistingOwnership,
+    RegisteredTargetIndex, RegisteredTargetResolver, TargetCapabilities, TargetChange,
+    TargetConflict, TargetConflictReason, TargetFact, TargetFactSource, TargetPlan, VerifiedTarget,
 };
 pub use ids::{
     AgentProfileId, ClientInstanceId, CombinationId, DeploymentId, LogicalTargetId, OperationId,

@@ -2,6 +2,7 @@ mod command;
 mod event;
 mod query;
 
+pub use crate::deployment::DeploymentPlanRequest;
 pub use command::{
     AppCommand, AppCommandResult, CreateCombination, CreateCustomAgent, CreateSkill,
     PinProjectSkillVersion, ReadSharedProjectConfig, RegisterProject, RemoveCustomAgent,

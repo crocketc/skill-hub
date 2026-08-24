@@ -118,8 +118,6 @@ export type DeploymentChartCategory = {
 
 export type DeploymentDimension = "agent" | "project";
 
-export type DeploymentId = string;
-
 /**
  *  The filesystem representation selected for one physical deployment target.
  *  It is selected from the target's declared capabilities.
@@ -143,17 +141,16 @@ export type DeploymentPlan = {
 	conflicts: TargetConflict[],
 };
 
-export type DeploymentPlanInput = {
+/**
+ *  API-facing deployment preview request.  The caller selects registered
+ *  logical target IDs; filesystem paths and physical identities are resolved
+ *  by the application boundary before constructing planner input.
+ */
+export type DeploymentPlanRequest = {
 	skill_id: SkillId,
 	version_id: VersionId,
 	runtime_name: string,
-	/**
-	 *  Path to the immutable central-library version tree.  The planner only
-	 *  copies this value into its output and never reads it.
-	 */
-	source_path: string,
-	logical_targets: LogicalTargetSelection[],
-	physical_targets: PhysicalTargetInput[],
+	logical_target_ids: string[],
 	mode_override: DeploymentMode | null,
 };
 
@@ -188,22 +185,14 @@ export type DiscoverySnapshot = {
 /**  Stable machine-readable failures returned by the application boundary. */
 export type ErrorCode = "input.invalid" | "path.outside_allowed_root" | "object.not_found" | "deployment.target_exists" | "target.ownership_unknown" | "deployment.security_check_blocked" | "operation.conflict" | "operation.id_reused_with_different_request" | "credential.unavailable" | "migration.required" | "database.newer_schema" | "internal.error" | "combination.nesting_not_allowed" | "catalog.invalid_metadata" | "requirements.invalid_declaration" | "agent_profile.invalid_capability";
 
-export type ExistingDeployment = {
-	runtime_name: string,
-	ownership: ExistingOwnership,
-	deployment_id: DeploymentId | null,
-	skill_id: SkillId | null,
-	version_id: VersionId | null,
-};
-
 /**  Facts observed for a runtime name already present in a physical target. */
 export type ExistingOwnership = "managed" | "unknown" | "agent_builtin" | "plugin" | "other_tool";
 
 export type FactsChanged = Record<string, never>;
 
-/**  Input facts for a side-effect-free deployment preview. */
+/**  Registered logical target IDs for a side-effect-free deployment preview. */
 export type GetDeploymentPlan = {
-	input: DeploymentPlanInput,
+	request: DeploymentPlanRequest,
 };
 
 export type GetDiscoverySnapshot = null;
@@ -239,12 +228,6 @@ export type LogicalTarget = {
 	writable: boolean,
 	available: boolean,
 	physical_id: string,
-};
-
-/**  A logical Agent/client relationship selected by the user. */
-export type LogicalTargetSelection = {
-	id: string,
-	physical_target_id: string,
 };
 
 export type OperatingSystem = "windows" | "macos";
@@ -307,19 +290,6 @@ export type PhysicalTarget = {
 	writable: boolean,
 	case_behavior: string,
 	logical_target_ids: string[],
-};
-
-/**
- *  A merged physical target.  Several logical targets may refer to one of
- *  these and must consequently be written only once by the executor.
- */
-export type PhysicalTargetInput = {
-	id: string,
-	path: string,
-	capabilities: DeploymentCapability,
-	existing: ExistingDeployment[],
-	/**  Whether runtime names are compared case-sensitively for this target. */
-	case_sensitive: boolean,
 };
 
 export type PinProjectSkillVersion = {

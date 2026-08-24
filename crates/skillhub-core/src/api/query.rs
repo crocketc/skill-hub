@@ -1,7 +1,7 @@
 use crate::agent::{CustomAgent, DiscoverySnapshot};
 use crate::project::{Project, SavedProjectView};
 use crate::search::{SearchHit, SearchQuery};
-use crate::{BootstrapSnapshot, DeploymentPlan, DeploymentPlanInput, SkillId, VersionId};
+use crate::{BootstrapSnapshot, DeploymentPlan, DeploymentPlanRequest, SkillId, VersionId};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
@@ -60,10 +60,10 @@ pub struct ListProjects;
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 pub struct ListSavedProjectViews;
 
-/// Input facts for a side-effect-free deployment preview.
+/// Registered logical target IDs for a side-effect-free deployment preview.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 pub struct GetDeploymentPlan {
-    pub input: DeploymentPlanInput,
+    pub request: DeploymentPlanRequest,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]

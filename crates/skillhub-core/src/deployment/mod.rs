@@ -2,12 +2,20 @@ mod model;
 mod planner;
 
 pub use model::{
-    DeploymentCapabilities, DeploymentMode, DeploymentPlan, DeploymentPlanInput, DeploymentRecord,
-    DeploymentRequest, DeploymentState, ExistingDeployment, ExistingOwnership,
-    LogicalTargetSelection, PhysicalTargetInput, PlannerInput, TargetCapabilities, TargetChange,
-    TargetConflict, TargetConflictReason, TargetPlan,
+    DeploymentCapabilities, DeploymentMode, DeploymentPlan, DeploymentPlanInput,
+    DeploymentPlanRequest, DeploymentRecord, DeploymentRequest, DeploymentState,
+    ExistingDeployment, ExistingOwnership, PlannerInput, RegisteredTargetIndex, TargetCapabilities,
+    TargetChange, TargetConflict, TargetConflictReason, TargetFact, TargetFactSource, TargetPlan,
+    VerifiedTarget,
 };
 pub use planner::DeploymentPlanner;
+
+/// Resolves logical IDs selected by an API caller to currently verified target
+/// facts.  The application implementation is responsible for loading only
+/// registered discovery/custom/project records and using PathPolicy.
+pub trait RegisteredTargetResolver {
+    fn resolve(&self, logical_target_ids: &[String]) -> crate::AppResult<Vec<VerifiedTarget>>;
+}
 
 use async_trait::async_trait;
 
