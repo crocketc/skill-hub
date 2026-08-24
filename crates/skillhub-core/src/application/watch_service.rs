@@ -273,6 +273,18 @@ impl WatchService {
             .collect();
     }
 
+    pub fn set_recognized_skill_roots<I, P>(&self, roots: I)
+    where
+        I: IntoIterator<Item = P>,
+        P: AsRef<Path>,
+    {
+        let mut state = self.state.lock().expect("watch state mutex poisoned");
+        state.recognized_skill_roots = roots
+            .into_iter()
+            .map(|root| normalize_path(root.as_ref()))
+            .collect();
+    }
+
     pub fn start(&self) -> AppResult<()> {
         self.state
             .lock()

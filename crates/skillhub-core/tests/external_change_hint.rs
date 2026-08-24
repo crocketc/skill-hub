@@ -74,6 +74,25 @@ fn watcher_hint_does_not_change_facts_until_rescan_confirms_it() {
 }
 
 #[test]
+fn injected_scan_root_merges_child_hints_without_a_marker_event() {
+    let service = WatchService::new();
+    service.set_active_roots(["/workspace/skills"]);
+    service.set_recognized_skill_roots(["/workspace/skills/pdf"]);
+    service.start().unwrap();
+
+    service
+        .emit_watch_hint(WatchHint::new(
+            "/workspace/skills/pdf/references/example.md",
+        ))
+        .unwrap();
+    service
+        .emit_watch_hint(WatchHint::new("/workspace/skills/pdf/scripts/build.rs"))
+        .unwrap();
+
+    assert_eq!(service.pending_hints().len(), 1);
+}
+
+#[test]
 fn failed_confirmation_requeues_hints_for_retry() {
     run(async {
         let scanner = Arc::new(FixtureScanner {

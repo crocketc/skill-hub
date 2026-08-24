@@ -25,6 +25,17 @@ impl WatchCoalescer {
         self.stable_window
     }
 
+    pub fn set_recognized_skill_roots<I, P>(&mut self, roots: I)
+    where
+        I: IntoIterator<Item = P>,
+        P: Into<std::path::PathBuf>,
+    {
+        self.recognized_skill_roots = roots
+            .into_iter()
+            .map(|root| root.into().to_string_lossy().replace('\\', "/"))
+            .collect();
+    }
+
     pub fn push(&mut self, hint: WatchHint) {
         if let Some(skill_root) = hint.skill_root() {
             self.recognized_skill_roots

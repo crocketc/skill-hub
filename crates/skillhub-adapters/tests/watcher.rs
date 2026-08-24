@@ -92,6 +92,16 @@ fn ordinary_child_events_collapse_after_skill_marker_is_seen() {
 }
 
 #[test]
+fn injected_scan_roots_merge_child_events_without_a_marker_hint() {
+    let mut coalescer = WatchCoalescer::new(Duration::ZERO);
+    coalescer.set_recognized_skill_roots([PathBuf::from("skills/pdf")]);
+    coalescer.push(event("skills/pdf/references/example.md"));
+    coalescer.push(event("skills/pdf/scripts/build.rs"));
+
+    assert_eq!(coalescer.flush_after_stable().len(), 1);
+}
+
+#[test]
 fn compensation_hint_is_distinct_from_confirmed_file_hint() {
     let overflow = WatchHint::overflow("/workspace/skills");
     let file = event("/workspace/skills/pdf/SKILL.md");
