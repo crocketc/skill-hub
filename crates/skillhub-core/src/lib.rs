@@ -27,6 +27,7 @@ pub use api::{
     FactsChanged, Page,
 };
 pub use application::OperationService;
+pub use application::{WatchConfirmation, WatchHint, WatchHintKind, WatchService};
 pub use bootstrap::{
     BootstrapSnapshot, DeploymentChartCategory, DeploymentDimension, PendingSummary,
     RecentOperationSummary, StartupRecoveryState,
