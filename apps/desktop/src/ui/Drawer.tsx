@@ -1,10 +1,12 @@
 import * as Dialog from "@radix-ui/react-dialog";
 import {
+  type RefObject,
   type ReactElement,
   type ReactNode,
   useEffect,
   useState,
 } from "react";
+import { useTranslation } from "react-i18next";
 import { Button } from "./Button";
 
 export interface DrawerProps {
@@ -13,6 +15,7 @@ export interface DrawerProps {
   description?: string;
   onOpenChange: (open: boolean) => void;
   open: boolean;
+  returnFocusRef?: RefObject<HTMLElement | null>;
   title: string;
   trigger?: ReactElement;
 }
@@ -42,14 +45,17 @@ function usePrefersReducedMotion() {
 
 export function Drawer({
   children,
-  closeLabel = "Close",
+  closeLabel,
   description,
   onOpenChange,
   open,
+  returnFocusRef,
   title,
   trigger,
 }: DrawerProps) {
+  const { t } = useTranslation();
   const reducedMotion = usePrefersReducedMotion();
+  const resolvedCloseLabel = closeLabel ?? t("actions.close");
 
   return (
     <Dialog.Root onOpenChange={onOpenChange} open={open}>
@@ -60,6 +66,12 @@ export function Drawer({
           className="sh-drawer"
           data-reduced-motion={String(reducedMotion)}
           data-testid="drawer-panel"
+          onCloseAutoFocus={(event) => {
+            if (returnFocusRef?.current) {
+              event.preventDefault();
+              returnFocusRef.current.focus();
+            }
+          }}
         >
           <header className="sh-drawer__header">
             <div>
@@ -73,7 +85,7 @@ export function Drawer({
               </Dialog.Description>
             </div>
             <Dialog.Close asChild>
-              <Button aria-label={closeLabel} size="sm" variant="ghost">
+              <Button aria-label={resolvedCloseLabel} size="sm" variant="ghost">
                 <span aria-hidden="true">×</span>
               </Button>
             </Dialog.Close>

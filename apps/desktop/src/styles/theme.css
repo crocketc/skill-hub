@@ -7,7 +7,7 @@
   --color-surface-raised: #f7f9f5;
   --color-text: #1c251f;
   --color-text-secondary: #465249;
-  --color-text-muted: #68766c;
+  --color-text-muted: #5f6d63;
   --color-border: rgb(24 43 29 / 10%);
   --color-accent: #3f7259;
   --color-accent-strong: #315b46;
@@ -15,6 +15,7 @@
   --color-accent-fill: var(--color-accent);
   --color-on-accent: #f7fbf8;
   --color-focus: #2f6b4f;
+  --color-overlay: rgb(10 14 11 / 34%);
   --shadow-tint: 30 55 38;
 }
 
@@ -26,7 +27,7 @@
   --color-surface-raised: #f5fcf7;
   --color-text: #15251b;
   --color-text-secondary: #365342;
-  --color-text-muted: #5f7767;
+  --color-text-muted: #5d7464;
   --color-border: rgb(15 64 34 / 10%);
   --color-accent: #19a95b;
   --color-accent-strong: #118449;
@@ -45,7 +46,7 @@
   --color-surface-raised: #fbf5ef;
   --color-text: #2b1d16;
   --color-text-secondary: #62483b;
-  --color-text-muted: #80695c;
+  --color-text-muted: #7e675a;
   --color-border: rgb(66 38 24 / 10%);
   --color-accent: #d7653b;
   --color-accent-strong: #ad4e2b;
@@ -83,7 +84,7 @@
   --color-surface-raised: #f5f8fd;
   --color-text: #17243a;
   --color-text-secondary: #40516d;
-  --color-text-muted: #647590;
+  --color-text-muted: #5b6d88;
   --color-border: rgb(24 53 105 / 10%);
   --color-accent: #3d63d8;
   --color-accent-strong: #2d50b8;
@@ -140,7 +141,7 @@
   --color-surface-raised: #f7f1ea;
   --color-text: #2d231c;
   --color-text-secondary: #5d4b3f;
-  --color-text-muted: #79695d;
+  --color-text-muted: #77675b;
   --color-border: rgb(61 42 30 / 11%);
   --color-accent: #76513b;
   --color-accent-strong: #5c3d2c;
@@ -167,18 +168,19 @@
   --color-accent-fill: var(--color-accent);
   --color-on-accent: #101111;
   --color-focus: #f2f3ef;
+  --color-overlay: rgb(0 0 0 / 64%);
   --shadow-tint: 0 0 0;
 }
 
 :root {
-  --color-success: #287a53;
+  --color-success: #26724e;
   --color-success-soft: #dcefe5;
-  --color-warning: #a86816;
+  --color-warning: #83500e;
   --color-warning-soft: #f6ead4;
-  --color-danger: #b63f3b;
+  --color-danger: #a83633;
   --color-danger-soft: #f7e1df;
   --color-on-danger: #fff9f8;
-  --color-info: #3568bd;
+  --color-info: #2d5ca8;
   --color-info-soft: #e0e8f7;
 
   --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;

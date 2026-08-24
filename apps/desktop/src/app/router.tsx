@@ -4,6 +4,7 @@ import { I18nextProvider } from "react-i18next";
 import { createBrowserRouter, RouterProvider } from "react-router-dom";
 import { resolveLocale, skillHubI18n } from "../i18n";
 import "../styles/base.css";
+import { ThemeProvider } from "../styles/ThemeProvider";
 import { App } from "./App";
 import { queryClient } from "./queryClient";
 
@@ -26,12 +27,14 @@ export const appRouter = createBrowserRouter([
 
 export function AppRouter() {
   return (
-    <MotionConfig reducedMotion="user">
-      <I18nextProvider i18n={skillHubI18n}>
-        <QueryClientProvider client={queryClient}>
-          <RouterProvider router={appRouter} />
-        </QueryClientProvider>
-      </I18nextProvider>
-    </MotionConfig>
+    <ThemeProvider>
+      <MotionConfig reducedMotion="user">
+        <I18nextProvider i18n={skillHubI18n}>
+          <QueryClientProvider client={queryClient}>
+            <RouterProvider router={appRouter} />
+          </QueryClientProvider>
+        </I18nextProvider>
+      </MotionConfig>
+    </ThemeProvider>
   );
 }

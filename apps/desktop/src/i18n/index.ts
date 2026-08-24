@@ -20,11 +20,17 @@ declare module "i18next" {
 export function resolveLocale(
   preferredLanguages: readonly string[],
 ): SupportedLocale {
-  return preferredLanguages.some((language) =>
-    language.toLowerCase().startsWith("zh"),
-  )
-    ? "zh-CN"
-    : "en-US";
+  for (const language of preferredLanguages) {
+    const normalized = language.toLowerCase();
+    if (normalized.startsWith("zh")) {
+      return "zh-CN";
+    }
+    if (normalized.startsWith("en")) {
+      return "en-US";
+    }
+  }
+
+  return "en-US";
 }
 
 export function flattenTranslationKeys(tree: TranslationTree): string[] {

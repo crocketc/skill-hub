@@ -16,6 +16,11 @@ it("uses Simplified Chinese only when the system preference requests Chinese", (
   expect(resolveLocale(["fr-FR", "en-GB"])).toBe("en-US");
 });
 
+it("uses the first supported language in system preference order", () => {
+  expect(resolveLocale(["en-US", "zh-CN"])).toBe("en-US");
+  expect(resolveLocale(["fr-FR", "zh-CN", "en-US"])).toBe("zh-CN");
+});
+
 it("switches language immediately without mutating the shared resources", async () => {
   const i18n = await createSkillHubI18n(["en-US"]);
   expect(i18n.t("actions.close")).toBe("Close");

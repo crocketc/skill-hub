@@ -105,7 +105,7 @@ a {
   position: fixed;
   z-index: 40;
   inset: 0;
-  background: rgb(10 14 11 / 34%);
+  background: var(--color-overlay);
   backdrop-filter: blur(2px);
   animation: sh-fade-in var(--motion-normal) var(--ease-standard);
 }

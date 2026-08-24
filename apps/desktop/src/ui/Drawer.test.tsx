@@ -1,6 +1,8 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { useState } from "react";
+import { useRef, useState } from "react";
+import { I18nextProvider } from "react-i18next";
 import { afterEach, vi } from "vitest";
+import { createSkillHubI18n, skillHubI18n } from "../i18n";
 import { Drawer } from "./Drawer";
 
 function DrawerHarness() {
@@ -16,6 +18,31 @@ function DrawerHarness() {
     >
       内容
     </Drawer>
+  );
+}
+
+function ExternallyControlledDrawerHarness() {
+  const [open, setOpen] = useState(false);
+  const returnFocusRef = useRef<HTMLButtonElement>(null);
+
+  return (
+    <>
+      <button
+        onClick={() => setOpen(true)}
+        ref={returnFocusRef}
+        type="button"
+      >
+        Open details
+      </button>
+      <Drawer
+        onOpenChange={setOpen}
+        open={open}
+        returnFocusRef={returnFocusRef}
+        title="Details"
+      >
+        Content
+      </Drawer>
+    </>
   );
 }
 
@@ -38,7 +65,11 @@ afterEach(() => {
 
 it("returns focus to the invoking row when the drawer closes", async () => {
   mockReducedMotion(false);
-  render(<DrawerHarness />);
+  render(
+    <I18nextProvider i18n={skillHubI18n}>
+      <DrawerHarness />
+    </I18nextProvider>,
+  );
 
   fireEvent.click(screen.getByRole("button", { name: "PDF Skill" }));
   fireEvent.click(screen.getByRole("button", { name: "关闭" }));
@@ -51,13 +82,46 @@ it("returns focus to the invoking row when the drawer closes", async () => {
 it("uses the no-transform terminal state when reduced motion is requested", () => {
   mockReducedMotion(true);
   render(
-    <Drawer onOpenChange={() => undefined} open title="详情">
-      内容
-    </Drawer>,
+    <I18nextProvider i18n={skillHubI18n}>
+      <Drawer onOpenChange={() => undefined} open title="详情">
+        内容
+      </Drawer>
+    </I18nextProvider>,
   );
 
   expect(screen.getByTestId("drawer-panel")).toHaveAttribute(
     "data-reduced-motion",
     "true",
   );
+});
+
+it("localizes the default close action", async () => {
+  mockReducedMotion(false);
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  render(
+    <I18nextProvider i18n={i18n}>
+      <Drawer onOpenChange={() => undefined} open title="详情">
+        内容
+      </Drawer>
+    </I18nextProvider>,
+  );
+
+  expect(screen.getByRole("button", { name: "关闭" })).toBeInTheDocument();
+});
+
+it("restores focus for an externally controlled drawer without a trigger", async () => {
+  mockReducedMotion(false);
+  const i18n = await createSkillHubI18n(["en-US"]);
+  render(
+    <I18nextProvider i18n={i18n}>
+      <ExternallyControlledDrawerHarness />
+    </I18nextProvider>,
+  );
+
+  fireEvent.click(screen.getByRole("button", { name: "Open details" }));
+  fireEvent.click(screen.getByRole("button", { name: "Close" }));
+
+  await waitFor(() => {
+    expect(screen.getByRole("button", { name: "Open details" })).toHaveFocus();
+  });
 });
