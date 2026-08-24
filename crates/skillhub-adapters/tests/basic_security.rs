@@ -56,6 +56,22 @@ fn user_api_key_is_warnable_and_acknowledgeable_not_a_hard_block() {
 }
 
 #[test]
+fn credential_evidence_is_redacted_before_persistence() {
+    let findings = scan_fixture("user-api-key");
+    let finding = findings.single();
+    let params = serde_json::to_string(&finding.message_params).expect("finding params serialize");
+    assert!(!params.contains("sk-test-user-key-1234567890"));
+    assert!(!finding.message_params.contains_key("evidence"));
+    assert_eq!(
+        finding.message_params.get("evidence_summary"),
+        Some(&serde_json::json!("credential value redacted"))
+    );
+    assert!(finding.evidence_hash.is_some());
+    assert_eq!(finding.file.as_deref(), Some("SKILL.md"));
+    assert_eq!(finding.line_start, Some(6));
+}
+
+#[test]
 fn benign_commands_and_placeholders_are_not_reported() {
     let findings = scan_fixture("benign-commands");
     assert!(findings.is_empty(), "unexpected findings: {findings:#?}");
@@ -84,6 +100,14 @@ fn reports_downloaded_file_execution_patterns() {
         .iter()
         .any(|finding| finding.code == "security.download_and_execute"));
     assert!(findings.len() >= 4, "findings: {findings:#?}");
+    assert!(
+        findings.has_code_at("security.download_and_execute", "SKILL.md", 11),
+        "findings: {findings:#?}"
+    );
+    assert!(
+        findings.has_code_at("security.download_and_execute", "SKILL.md", 12),
+        "findings: {findings:#?}"
+    );
 }
 
 #[test]

