@@ -29,8 +29,12 @@ fn rejects_each_unsafe_zip_path_independently() {
         ("/absolute.txt", "absolute"),
         ("C:/drive.txt", "drive"),
         ("//server/share.txt", "unc"),
-        ("NUL ", "device"),
-        ("COM1 ", "device_alias"),
+        ("NUL", "device_nul"),
+        ("CON", "device_con"),
+        ("COM1", "device_com1"),
+        ("LPT1", "device_lpt1"),
+        ("NUL ", "device_trailing_space"),
+        ("COM1 ", "device_alias_trailing_space"),
     ] {
         let (_directory, archive) = one_file_zip(name);
         let error = ArchiveExtractor::new(test_limits())
@@ -97,6 +101,56 @@ fn rejects_entry_count_before_zip_archive_is_constructed() {
         .extract(fixture("entry-count-limit.zip"))
         .unwrap_err();
     assert_eq!(error.code, CoreAcquisitionErrorCode::ArchiveEntryLimit);
+}
+
+#[test]
+fn rejects_forged_eocd_signatures_inside_a_valid_comment() {
+    let directory = tempdir().unwrap();
+    let archive = directory.path().join("comment-signature.zip");
+    let file = std::fs::File::create(&archive).unwrap();
+    let mut writer = ZipWriter::new(file);
+    writer
+        .start_file("SKILL.md", SimpleFileOptions::default())
+        .unwrap();
+    std::io::Write::write_all(&mut writer, b"valid").unwrap();
+    let mut comment = vec![0_u8; 22];
+    comment[..4].copy_from_slice(b"PK\x05\x06");
+    comment[10] = 0xff;
+    comment[11] = 0xff;
+    writer.set_raw_comment(comment.into_boxed_slice());
+    writer.finish().unwrap();
+
+    let error = ArchiveExtractor::new(test_limits())
+        .extract(archive)
+        .unwrap_err();
+    assert_eq!(error.code, CoreAcquisitionErrorCode::ArchiveFormatInvalid);
+}
+
+#[test]
+fn rejects_eocd_with_comment_length_that_does_not_reach_eof() {
+    let directory = tempdir().unwrap();
+    let archive = directory.path().join("truncated-comment.zip");
+    let file = std::fs::File::create(&archive).unwrap();
+    let mut writer = ZipWriter::new(file);
+    writer
+        .start_file("SKILL.md", SimpleFileOptions::default())
+        .unwrap();
+    std::io::Write::write_all(&mut writer, b"valid").unwrap();
+    writer.set_comment("comment");
+    writer.finish().unwrap();
+    let mut bytes = std::fs::read(&archive).unwrap();
+    let eocd = bytes
+        .windows(4)
+        .rposition(|window| window == b"PK\x05\x06")
+        .unwrap();
+    bytes[eocd + 20] = 0xff;
+    bytes[eocd + 21] = 0xff;
+    std::fs::write(&archive, bytes).unwrap();
+
+    let error = ArchiveExtractor::new(test_limits())
+        .extract(archive)
+        .unwrap_err();
+    assert_eq!(error.code, CoreAcquisitionErrorCode::ArchiveFormatInvalid);
 }
 
 #[test]
