@@ -88,14 +88,14 @@ fn bare_npx_repository_reference_is_parsed_as_github_git_source() {
 #[test]
 fn canonicalizes_equivalent_github_and_nested_gitlab_references() {
     let github = SourceInputParser::parse("https://github.com/owner/repo.git/").unwrap();
-    let github_shorthand = SourceInputParser::parse("github:owner/repo").unwrap();
+    let github_shorthand = SourceInputParser::parse("github:owner/repo.git/").unwrap();
     assert_eq!(
         github.descriptor.locator,
         github_shorthand.descriptor.locator
     );
 
     let gitlab = SourceInputParser::parse("https://gitlab.com/group/subgroup/repo.git/").unwrap();
-    let gitlab_shorthand = SourceInputParser::parse("gitlab:group/subgroup/repo").unwrap();
+    let gitlab_shorthand = SourceInputParser::parse("gitlab:group/subgroup/repo.git/").unwrap();
     assert_eq!(gitlab.descriptor.kind, SourceKind::Git);
     assert_eq!(
         gitlab.descriptor.locator,
@@ -106,6 +106,12 @@ fn canonicalizes_equivalent_github_and_nested_gitlab_references() {
 #[test]
 fn github_subdirectories_are_https_pages_not_repository_roots() {
     let parsed = SourceInputParser::parse("https://github.com/owner/repo/tree/main").unwrap();
+    assert_eq!(parsed.descriptor.kind, SourceKind::Https);
+}
+
+#[test]
+fn gitlab_page_paths_are_https_pages_not_repository_roots() {
+    let parsed = SourceInputParser::parse("https://gitlab.com/group/repo/-/tree/main").unwrap();
     assert_eq!(parsed.descriptor.kind, SourceKind::Https);
 }
 

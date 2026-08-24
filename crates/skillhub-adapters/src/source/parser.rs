@@ -189,6 +189,7 @@ fn is_repository_path(value: &str, prefix: &str) -> bool {
         _ => false,
     };
     valid_segment_count
+        && !parts.contains(&"-")
         && parts.iter().all(|part| {
             !part.is_empty()
                 && *part != "."
