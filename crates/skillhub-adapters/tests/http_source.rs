@@ -25,6 +25,10 @@ fn redirect_policy_rejects_private_and_non_https_destinations() {
         Err(SourceFetchErrorCode::RedirectBlocked)
     );
     assert_eq!(
+        policy.validate(&Url::parse("https://[::ffff:127.0.0.1]/private").unwrap()),
+        Err(SourceFetchErrorCode::RedirectBlocked)
+    );
+    assert_eq!(
         policy.resolve(
             &Url::parse("https://public.example/source").unwrap(),
             "http://127.0.0.1/private"

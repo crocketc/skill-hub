@@ -49,6 +49,7 @@ impl RedirectPolicy {
         let Some(host) = url.host_str() else {
             return Err(SourceFetchErrorCode::RedirectBlocked);
         };
+        let host = normalize_host(host);
         if let Ok(address) = host.parse::<IpAddr>() {
             if is_blocked_ip(address) {
                 return Err(SourceFetchErrorCode::RedirectBlocked);
@@ -79,6 +80,7 @@ fn is_private_destination(url: &Url) -> bool {
     let Some(host) = url.host_str() else {
         return true;
     };
+    let host = normalize_host(host);
     if host.eq_ignore_ascii_case("localhost") || host.ends_with(".localhost") {
         return true;
     }
@@ -88,7 +90,18 @@ fn is_private_destination(url: &Url) -> bool {
     is_blocked_ip(address)
 }
 
+fn normalize_host(host: &str) -> &str {
+    host.strip_prefix('[')
+        .and_then(|host| host.strip_suffix(']'))
+        .unwrap_or(host)
+}
+
 fn is_blocked_ip(address: IpAddr) -> bool {
+    if let IpAddr::V6(address) = address {
+        if let Some(mapped) = address.to_ipv4_mapped() {
+            return is_blocked_ip(IpAddr::V4(mapped));
+        }
+    }
     match address {
         IpAddr::V4(address) => {
             address.is_private()
