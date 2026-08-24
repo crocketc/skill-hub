@@ -4,19 +4,19 @@ mod query;
 
 pub use crate::deployment::DeploymentPlanRequest;
 pub use command::{
-    AppCommand, AppCommandResult, CreateCombination, CreateCustomAgent, CreateSkill,
-    PinProjectSkillVersion, ReadSharedProjectConfig, RegisterProject, RemoveCustomAgent,
-    RenameSkill, RescanSkill, ResetProfileOverride, RunInitializationScan, SaveProjectView,
-    SaveSkillContent, ScanTargets, SetCurrentVersion, SetLifecycle, SetMetadata,
-    SetProfileOverride, SetProjectTags, SetTrial, UpdateCustomAgent, UpdateProject,
-    WriteSharedProjectConfig,
+    AppCommand, AppCommandResult, CommitProjectAssembly, CreateCombination, CreateCustomAgent,
+    CreateSkill, PinProjectSkillVersion, PrepareProjectAssembly, ReadSharedProjectConfig,
+    RegisterProject, RemoveCustomAgent, RenameSkill, RescanSkill, ResetProfileOverride,
+    RunInitializationScan, SaveProjectView, SaveSkillContent, ScanTargets, SetCurrentVersion,
+    SetLifecycle, SetMetadata, SetProfileOverride, SetProjectTags, SetTrial, UpdateCustomAgent,
+    UpdateProject, WriteSharedProjectConfig,
 };
 pub use event::{AppEvent, FactsChanged};
 pub use query::{
     AppQuery, AppQueryResult, CombinationResult, DiffVersions, GetBootstrapSnapshot,
-    GetDeploymentPlan, GetDiscoverySnapshot, GetSkill, ListCombinations, ListCustomAgents,
-    ListPendingItems, ListProjects, ListSavedProjectViews, ListVersions, SkillResult,
-    VersionDiffResult, VersionResult,
+    GetDeploymentPlan, GetDiscoverySnapshot, GetProjectAssemblyPlan, GetSkill, ListCombinations,
+    ListCustomAgents, ListPendingItems, ListProjects, ListSavedProjectViews, ListVersions,
+    SkillResult, VersionDiffResult, VersionResult,
 };
 
 use crate::AppResult;

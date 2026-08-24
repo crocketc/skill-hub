@@ -1,10 +1,12 @@
 mod catalog_service;
 mod operation_service;
+mod project_assembly_service;
 mod version_service;
 mod watch_service;
 
 pub use catalog_service::{CatalogService, PortableMetadataRepository};
 pub use operation_service::OperationService;
+pub use project_assembly_service::ProjectAssemblyService;
 pub use version_service::{
     CapturedVersion, ProjectVersionPinRepository, VersionCapture, VersionService,
 };

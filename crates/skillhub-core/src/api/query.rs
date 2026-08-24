@@ -1,5 +1,5 @@
 use crate::agent::{CustomAgent, DiscoverySnapshot};
-use crate::project::{Project, SavedProjectView};
+use crate::project::{AssemblyPlan, Project, SavedProjectView};
 use crate::search::{SearchHit, SearchQuery};
 use crate::{BootstrapSnapshot, DeploymentPlan, DeploymentPlanRequest, SkillId, VersionId};
 use serde::{Deserialize, Serialize};
@@ -67,6 +67,11 @@ pub struct GetDeploymentPlan {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+pub struct GetProjectAssemblyPlan {
+    pub project_id: crate::ProjectId,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 #[serde(tag = "type", content = "payload")]
 pub enum AppQuery {
     #[serde(rename = "get_skill")]
@@ -93,6 +98,8 @@ pub enum AppQuery {
     ListSavedProjectViews(ListSavedProjectViews),
     #[serde(rename = "get_deployment_plan")]
     GetDeploymentPlan(GetDeploymentPlan),
+    #[serde(rename = "get_project_assembly_plan")]
+    GetProjectAssemblyPlan(GetProjectAssemblyPlan),
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
@@ -122,4 +129,6 @@ pub enum AppQueryResult {
     SavedProjectViews(Vec<SavedProjectView>),
     #[serde(rename = "deployment_plan")]
     DeploymentPlan(DeploymentPlan),
+    #[serde(rename = "assembly_plan")]
+    AssemblyPlan(AssemblyPlan),
 }

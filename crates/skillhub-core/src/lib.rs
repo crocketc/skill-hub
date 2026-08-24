@@ -25,9 +25,9 @@ pub use agent::{
 };
 pub use api::{
     AppCommand, AppCommandResult, AppEvent, AppQuery, AppQueryResult, ApplicationFacade,
-    FactsChanged, GetDeploymentPlan, Page,
+    FactsChanged, GetDeploymentPlan, GetProjectAssemblyPlan, Page,
 };
-pub use application::OperationService;
+pub use application::{OperationService, ProjectAssemblyService};
 pub use application::{WatchConfirmation, WatchHint, WatchHintKind, WatchService};
 pub use bootstrap::{
     BootstrapSnapshot, DeploymentChartCategory, DeploymentDimension, PendingSummary,
@@ -54,8 +54,11 @@ pub use ids::{
     PhysicalTargetId, ProjectId, SkillId, VersionId,
 };
 pub use project::{
-    PortableSource, Project, ProjectMetadata, ProjectRepository, ProjectTag, SavedProjectView,
-    SharedProjectConfig, SharedSkillRequirement,
+    AssemblyChoice, AssemblyItemPlan, AssemblyItemStatus, AssemblyPlan, CheckPreparation,
+    CheckPreparationPort, DeploymentPreparation, DeploymentPreparationPort, PortableSource,
+    Project, ProjectMetadata, ProjectRepository, ProjectTag, SavedProjectView, SharedProjectConfig,
+    SharedSkillRequirement, SkillResolution, SkillResolutionPort, SourcePreparation,
+    SourcePreparationPort,
 };
 pub use scan::{DiscoveredSkill, ScanGeneration, ScanIssue, ScanRepository, ScanResult, ScanScope};
 pub use versioning::{FileEntry, VersionDiff, VersionManifest, VersionRecord, VersionRepository};
