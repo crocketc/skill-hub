@@ -75,7 +75,18 @@ impl std::error::Error for SourceFetchError {}
 
 impl From<AcquisitionError> for SourceFetchError {
     fn from(error: AcquisitionError) -> Self {
-        Self::new(SourceFetchErrorCode::AcquisitionFailed, error.to_string())
+        let cleanup_failure = error
+            .cleanup_failure
+            .as_ref()
+            .map(|cleanup| SourceCleanupFailure {
+                code: SourceFetchErrorCode::AcquisitionFailed,
+                message: format!("{}: {}", cleanup.code.as_str(), cleanup.message),
+            });
+        Self {
+            code: SourceFetchErrorCode::AcquisitionFailed,
+            message: error.to_string(),
+            cleanup_failure,
+        }
     }
 }
 

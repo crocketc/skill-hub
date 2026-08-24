@@ -38,6 +38,18 @@ async fn git_fetch_rejects_unsupported_remote_schemes() {
 }
 
 #[tokio::test]
+async fn git_fetch_rejects_unpinned_ssh_and_git_transports() {
+    for source in [
+        "ssh://example.com/owner/repository",
+        "git://example.com/owner/repository",
+    ] {
+        let error = GixSourceFetcher::default().fetch(source).await.unwrap_err();
+        assert_eq!(error.code, SourceFetchErrorCode::GitFetchFailed);
+        assert!(error.message.contains("disabled"));
+    }
+}
+
+#[tokio::test]
 async fn git_tree_limits_apply_across_nested_directories() {
     let repository = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let error = GixSourceFetcher::new(AcquisitionLimits {
@@ -97,5 +109,5 @@ async fn git_https_remote_has_an_explicit_safe_protocol_boundary() {
         .unwrap_err();
 
     assert_eq!(error.code, SourceFetchErrorCode::GitFetchFailed);
-    assert!(error.message.contains("local path or file://"));
+    assert!(error.message.contains("canonical GitHub/GitLab"));
 }

@@ -10,8 +10,10 @@ use tokio::task::spawn_blocking;
 use tokio::time::{sleep, timeout, Duration, Instant};
 use url::Url;
 
+use super::archive::ArchiveExtractor;
 use super::http::{
-    cleanup_fetch_error, SourceFetchError, SourceFetchErrorCode, SourceFetchResult, SourceFetcher,
+    cleanup_fetch_error, HttpsSourceFetcher, SourceFetchError, SourceFetchErrorCode,
+    SourceFetchResult, SourceFetcher,
 };
 use super::redirect_policy::RedirectPolicy;
 
@@ -37,10 +39,13 @@ impl GixSourceFetcher {
                 policy.validate_resolved(&url).await.map_err(|code| {
                     SourceFetchError::new(code, "Git source destination is not allowed")
                 })?;
-                return Err(SourceFetchError::new(
-                    SourceFetchErrorCode::GitFetchFailed,
-                    "HTTPS Git remotes are disabled because gix cannot pin the validated DNS address; use a local path or file:// URL",
-                ));
+                let archive_url = repository_archive_url(&url).ok_or_else(|| {
+                    SourceFetchError::new(
+                        SourceFetchErrorCode::GitFetchFailed,
+                        "HTTPS Git is supported only for canonical GitHub/GitLab repositories",
+                    )
+                })?;
+                return self.fetch_https_archive(archive_url).await;
             }
         }
         let clone_workspace = if Path::new(&value).is_dir() {
@@ -78,6 +83,19 @@ impl GixSourceFetcher {
         }
     }
 
+    async fn fetch_https_archive(&self, archive_url: Url) -> SourceFetchResult<AcquiredSource> {
+        let downloaded = HttpsSourceFetcher::new(self.limits.clone())
+            .fetch(archive_url)
+            .await?;
+        let archive_path = downloaded.root().join("source.zip");
+        std::fs::rename(downloaded.root().join("source"), &archive_path).map_err(|error| {
+            SourceFetchError::new(SourceFetchErrorCode::AcquisitionFailed, error.to_string())
+        })?;
+        ArchiveExtractor::new(self.limits.clone())
+            .extract(archive_path)
+            .map_err(SourceFetchError::from)
+    }
+
     fn fetch_sync(
         &self,
         value: &str,
@@ -111,10 +129,10 @@ impl GixSourceFetcher {
         stop: &AtomicBool,
         clone_path: &Path,
     ) -> SourceFetchResult<AcquiredSource> {
-        if !matches!(url.scheme(), "file" | "ssh" | "git") {
+        if url.scheme() != "file" {
             return Err(SourceFetchError::new(
                 SourceFetchErrorCode::GitFetchFailed,
-                "Git source URL uses an unsupported scheme",
+                "SSH and git:// remotes are disabled; use a local path, file:// URL, or GitHub/GitLab HTTPS repository",
             ));
         }
         let mut prepare = gix::clone::PrepareFetch::new(
@@ -353,9 +371,49 @@ fn directory_size(root: &Path) -> u64 {
         .fold(0_u64, u64::saturating_add)
 }
 
+fn repository_archive_url(url: &Url) -> Option<Url> {
+    if url.query().is_some() || url.fragment().is_some() {
+        return None;
+    }
+    let host = url.host_str()?;
+    let is_github = host.eq_ignore_ascii_case("github.com");
+    let is_gitlab = host.eq_ignore_ascii_case("gitlab.com");
+    if !is_github && !is_gitlab {
+        return None;
+    }
+    let mut segments = url.path_segments()?.filter(|segment| !segment.is_empty());
+    let mut path = Vec::new();
+    for segment in segments.by_ref() {
+        path.push(segment.trim_end_matches(".git"));
+    }
+    if (is_github && path.len() != 2) || (is_gitlab && path.len() < 2) {
+        return None;
+    }
+    if path.iter().any(|segment| {
+        segment.is_empty()
+            || matches!(*segment, "." | "..")
+            || !segment.bytes().all(|byte| {
+                byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'@' | b'.')
+            })
+    }) {
+        return None;
+    }
+    let repository = path.last()?;
+    let archive_path = if is_github {
+        format!("/{}/archive/HEAD.zip", path.join("/"))
+    } else {
+        format!("/{}/-/archive/HEAD/{}-HEAD.zip", path.join("/"), repository)
+    };
+    let mut archive_url = Url::parse(&format!("https://{host}{archive_path}")).ok()?;
+    archive_url.set_query(None);
+    archive_url.set_fragment(None);
+    Some(archive_url)
+}
+
 #[cfg(test)]
 mod tests {
-    use super::is_windows_device_name;
+    use super::{is_windows_device_name, repository_archive_url};
+    use url::Url;
 
     #[test]
     fn rejects_windows_reserved_device_names_with_extensions() {
@@ -374,5 +432,29 @@ mod tests {
         let parsed = gix::config::tree::Http::FOLLOW_REDIRECTS
             .try_into_follow_redirects(b"false", || Ok(Some(false)));
         assert!(parsed.is_ok());
+    }
+
+    #[test]
+    fn canonical_repositories_use_controlled_archive_urls() {
+        let github =
+            repository_archive_url(&Url::parse("https://github.com/owner/repo.git").unwrap());
+        assert_eq!(
+            github.unwrap().as_str(),
+            "https://github.com/owner/repo/archive/HEAD.zip"
+        );
+        let gitlab =
+            repository_archive_url(&Url::parse("https://gitlab.com/group/sub/repo").unwrap());
+        assert_eq!(
+            gitlab.unwrap().as_str(),
+            "https://gitlab.com/group/sub/repo/-/archive/HEAD/repo-HEAD.zip"
+        );
+        assert!(repository_archive_url(
+            &Url::parse("https://github.com/owner.name/repo.name").unwrap()
+        )
+        .is_some());
+        assert!(
+            repository_archive_url(&Url::parse("https://example.com/owner/repo").unwrap())
+                .is_none()
+        );
     }
 }
