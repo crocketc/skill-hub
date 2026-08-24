@@ -13,9 +13,9 @@ pub use command::{
 pub use event::{AppEvent, FactsChanged};
 pub use query::{
     AppQuery, AppQueryResult, CombinationResult, DiffVersions, GetBootstrapSnapshot,
-    GetDiscoverySnapshot, GetSkill, ListCombinations, ListCustomAgents, ListPendingItems,
-    ListProjects, ListSavedProjectViews, ListVersions, SkillResult, VersionDiffResult,
-    VersionResult,
+    GetDeploymentPlan, GetDiscoverySnapshot, GetSkill, ListCombinations, ListCustomAgents,
+    ListPendingItems, ListProjects, ListSavedProjectViews, ListVersions, SkillResult,
+    VersionDiffResult, VersionResult,
 };
 
 use crate::AppResult;

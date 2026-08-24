@@ -33,9 +33,9 @@ export type AppCommandResult = { type: "operation_summary"; payload: OperationSu
 
 export type AppEvent = { type: "operation_progress"; payload: OperationProgress } | { type: "operation_finished"; payload: OperationSummary } | { type: "facts_changed"; payload: FactsChanged };
 
-export type AppQuery = { type: "get_skill"; payload: GetSkill } | { type: "list_versions"; payload: ListVersions } | { type: "diff_versions"; payload: DiffVersions } | { type: "list_combinations"; payload: ListCombinations } | { type: "search"; payload: SearchQuery } | { type: "get_bootstrap_snapshot" } | { type: "list_pending_items"; payload: ListPendingItems } | { type: "get_discovery_snapshot"; payload: GetDiscoverySnapshot } | { type: "list_custom_agents"; payload: ListCustomAgents } | { type: "list_projects"; payload: ListProjects } | { type: "list_saved_project_views"; payload: ListSavedProjectViews };
+export type AppQuery = { type: "get_skill"; payload: GetSkill } | { type: "list_versions"; payload: ListVersions } | { type: "diff_versions"; payload: DiffVersions } | { type: "list_combinations"; payload: ListCombinations } | { type: "search"; payload: SearchQuery } | { type: "get_bootstrap_snapshot" } | { type: "list_pending_items"; payload: ListPendingItems } | { type: "get_discovery_snapshot"; payload: GetDiscoverySnapshot } | { type: "list_custom_agents"; payload: ListCustomAgents } | { type: "list_projects"; payload: ListProjects } | { type: "list_saved_project_views"; payload: ListSavedProjectViews } | { type: "get_deployment_plan"; payload: GetDeploymentPlan };
 
-export type AppQueryResult = { type: "skill"; payload: SkillResult } | { type: "versions"; payload: VersionResult[] } | { type: "version_diff"; payload: VersionDiffResult } | { type: "combinations"; payload: CombinationResult[] } | { type: "search_results"; payload: SearchHit[] } | { type: "bootstrap_snapshot"; payload: BootstrapSnapshot } | { type: "pending_items"; payload: PendingItem[] } | { type: "discovery_snapshot"; payload: DiscoverySnapshot } | { type: "custom_agents"; payload: CustomAgent[] } | { type: "projects"; payload: Project[] } | { type: "saved_project_views"; payload: SavedProjectView[] };
+export type AppQueryResult = { type: "skill"; payload: SkillResult } | { type: "versions"; payload: VersionResult[] } | { type: "version_diff"; payload: VersionDiffResult } | { type: "combinations"; payload: CombinationResult[] } | { type: "search_results"; payload: SearchHit[] } | { type: "bootstrap_snapshot"; payload: BootstrapSnapshot } | { type: "pending_items"; payload: PendingItem[] } | { type: "discovery_snapshot"; payload: DiscoverySnapshot } | { type: "custom_agents"; payload: CustomAgent[] } | { type: "projects"; payload: Project[] } | { type: "saved_project_views"; payload: SavedProjectView[] } | { type: "deployment_plan"; payload: DeploymentPlan };
 
 export type BootstrapSnapshot = {
 	skill_count: number,
@@ -118,6 +118,45 @@ export type DeploymentChartCategory = {
 
 export type DeploymentDimension = "agent" | "project";
 
+export type DeploymentId = string;
+
+/**
+ *  The filesystem representation selected for one physical deployment target.
+ *  It is selected from the target's declared capabilities.
+ *  A symbolic link is preferred because it keeps a deployment connected to the
+ *  selected library version.  Junctions are a Windows directory fallback and
+ *  managed copies are the portable last resort.
+ */
+export type DeploymentMode = "symbolic_link" | "directory_junction" | "managed_copy";
+
+export type DeploymentPlan = {
+	skill_id: SkillId,
+	version_id: VersionId,
+	runtime_name: string,
+	/**
+	 *  For a single physical target this is its selected mode.  For a batch
+	 *  with different capabilities, inspect each `TargetPlan::mode`.
+	 */
+	mode: DeploymentMode,
+	targets: TargetPlan[],
+	warnings: string[],
+	conflicts: TargetConflict[],
+};
+
+export type DeploymentPlanInput = {
+	skill_id: SkillId,
+	version_id: VersionId,
+	runtime_name: string,
+	/**
+	 *  Path to the immutable central-library version tree.  The planner only
+	 *  copies this value into its output and never reads it.
+	 */
+	source_path: string,
+	logical_targets: LogicalTargetSelection[],
+	physical_targets: PhysicalTargetInput[],
+	mode_override: DeploymentMode | null,
+};
+
 export type DiffVersions = {
 	left: VersionId,
 	right: VersionId,
@@ -149,7 +188,23 @@ export type DiscoverySnapshot = {
 /**  Stable machine-readable failures returned by the application boundary. */
 export type ErrorCode = "input.invalid" | "path.outside_allowed_root" | "object.not_found" | "deployment.target_exists" | "target.ownership_unknown" | "deployment.security_check_blocked" | "operation.conflict" | "operation.id_reused_with_different_request" | "credential.unavailable" | "migration.required" | "database.newer_schema" | "internal.error" | "combination.nesting_not_allowed" | "catalog.invalid_metadata" | "requirements.invalid_declaration" | "agent_profile.invalid_capability";
 
+export type ExistingDeployment = {
+	runtime_name: string,
+	ownership: ExistingOwnership,
+	deployment_id: DeploymentId | null,
+	skill_id: SkillId | null,
+	version_id: VersionId | null,
+};
+
+/**  Facts observed for a runtime name already present in a physical target. */
+export type ExistingOwnership = "managed" | "unknown" | "agent_builtin" | "plugin" | "other_tool";
+
 export type FactsChanged = Record<string, never>;
+
+/**  Input facts for a side-effect-free deployment preview. */
+export type GetDeploymentPlan = {
+	input: DeploymentPlanInput,
+};
 
 export type GetDiscoverySnapshot = null;
 
@@ -184,6 +239,12 @@ export type LogicalTarget = {
 	writable: boolean,
 	available: boolean,
 	physical_id: string,
+};
+
+/**  A logical Agent/client relationship selected by the user. */
+export type LogicalTargetSelection = {
+	id: string,
+	physical_target_id: string,
 };
 
 export type OperatingSystem = "windows" | "macos";
@@ -246,6 +307,19 @@ export type PhysicalTarget = {
 	writable: boolean,
 	case_behavior: string,
 	logical_target_ids: string[],
+};
+
+/**
+ *  A merged physical target.  Several logical targets may refer to one of
+ *  these and must consequently be written only once by the executor.
+ */
+export type PhysicalTargetInput = {
+	id: string,
+	path: string,
+	capabilities: DeploymentCapability,
+	existing: ExistingDeployment[],
+	/**  Whether runtime names are compared case-sensitively for this target. */
+	case_sensitive: boolean,
 };
 
 export type PinProjectSkillVersion = {
@@ -449,6 +523,34 @@ export type SkillResult = {
 };
 
 export type StartupRecoveryState = "clean" | "in_progress" | "needs_recovery";
+
+/**  Names used by the operation executor to summarize the filesystem change. */
+export type TargetChange = "create" | "no_op";
+
+export type TargetConflict = {
+	physical_target_id: string,
+	target_path: string,
+	runtime_name: string,
+	reason: TargetConflictReason,
+	existing_ownership: ExistingOwnership,
+};
+
+export type TargetConflictReason = "runtime_name_already_exists" | "ownership_unknown" | "managed_by_another_skill";
+
+export type TargetPlan = {
+	physical_target_id: string,
+	logical_target_ids: string[],
+	target_path: string,
+	destination_path: string,
+	source_path: string,
+	runtime_name: string,
+	skill_id: SkillId,
+	version_id: VersionId,
+	mode: DeploymentMode,
+	change: TargetChange,
+	warnings: string[],
+	conflicts: TargetConflict[],
+};
 
 export type TargetScope = "global" | "project" | "extra";
 

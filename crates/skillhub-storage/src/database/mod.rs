@@ -3,6 +3,7 @@ mod bootstrap_repository;
 mod catalog_repository;
 mod check_repository;
 mod custom_agent_repository;
+mod deployment_repository;
 mod migrations;
 mod operation_repository;
 mod project_repository;
@@ -22,6 +23,7 @@ pub use bootstrap_repository::BootstrapRepository;
 pub use catalog_repository::CatalogRepositorySqlite;
 pub use check_repository::CheckRepositorySqlite;
 pub use custom_agent_repository::CustomAgentRepository;
+pub use deployment_repository::{DeploymentRepository, DeploymentRepositorySqlite};
 pub use migrations::MigrationReport;
 pub use operation_repository::OperationRepositorySqlite;
 pub use project_repository::ProjectRepository;
@@ -78,6 +80,10 @@ impl Database {
 
     pub fn operation_repository(&self) -> OperationRepositorySqlite<'_> {
         OperationRepositorySqlite::new(self)
+    }
+
+    pub fn deployment_repository(&self) -> DeploymentRepositorySqlite<'_> {
+        DeploymentRepositorySqlite::new(self)
     }
 
     pub(crate) fn operation_writer(&self) -> Arc<Mutex<()>> {
