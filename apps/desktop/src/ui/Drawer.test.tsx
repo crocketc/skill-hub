@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { useRef, useState } from "react";
+import { type ReactNode, useRef, useState } from "react";
 import { I18nextProvider } from "react-i18next";
 import { afterEach, vi } from "vitest";
 import { createSkillHubI18n, skillHubI18n } from "../i18n";
@@ -46,6 +46,31 @@ function ExternallyControlledDrawerHarness() {
   );
 }
 
+interface OpenDrawerHarnessProps {
+  children: ReactNode;
+  title: string;
+}
+
+function OpenDrawerHarness({ children, title }: OpenDrawerHarnessProps) {
+  const returnFocusRef = useRef<HTMLButtonElement>(null);
+
+  return (
+    <>
+      <button ref={returnFocusRef} type="button">
+        Return target
+      </button>
+      <Drawer
+        onOpenChange={() => undefined}
+        open
+        returnFocusRef={returnFocusRef}
+        title={title}
+      >
+        {children}
+      </Drawer>
+    </>
+  );
+}
+
 function mockReducedMotion(reduced: boolean) {
   vi.stubGlobal("matchMedia", vi.fn((query: string) => ({
     matches: query === "(prefers-reduced-motion: reduce)" ? reduced : false,
@@ -83,9 +108,7 @@ it("uses the no-transform terminal state when reduced motion is requested", () =
   mockReducedMotion(true);
   render(
     <I18nextProvider i18n={skillHubI18n}>
-      <Drawer onOpenChange={() => undefined} open title="详情">
-        内容
-      </Drawer>
+      <OpenDrawerHarness title="详情">内容</OpenDrawerHarness>
     </I18nextProvider>,
   );
 
@@ -100,9 +123,7 @@ it("localizes the default close action", async () => {
   const i18n = await createSkillHubI18n(["zh-CN"]);
   render(
     <I18nextProvider i18n={i18n}>
-      <Drawer onOpenChange={() => undefined} open title="详情">
-        内容
-      </Drawer>
+      <OpenDrawerHarness title="详情">内容</OpenDrawerHarness>
     </I18nextProvider>,
   );
 

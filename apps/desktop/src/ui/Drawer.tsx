@@ -9,16 +9,26 @@ import {
 import { useTranslation } from "react-i18next";
 import { Button } from "./Button";
 
-export interface DrawerProps {
+interface DrawerBaseProps {
   children: ReactNode;
   closeLabel?: string;
   description?: string;
   onOpenChange: (open: boolean) => void;
   open: boolean;
-  returnFocusRef?: RefObject<HTMLElement | null>;
   title: string;
-  trigger?: ReactElement;
 }
+
+type DrawerFocusTarget =
+  | {
+      returnFocusRef?: RefObject<HTMLElement | null>;
+      trigger: ReactElement;
+    }
+  | {
+      returnFocusRef: RefObject<HTMLElement | null>;
+      trigger?: never;
+    };
+
+export type DrawerProps = DrawerBaseProps & DrawerFocusTarget;
 
 function getReducedMotionPreference() {
   return typeof window !== "undefined" &&

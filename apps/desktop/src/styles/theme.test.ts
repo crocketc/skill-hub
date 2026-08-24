@@ -84,10 +84,21 @@ it.each(themeNames)("keeps %s text and semantic states at AA contrast", (theme) 
     }
   }
 
-  expect(
-    contrast(tokens["color-on-accent"], tokens["color-accent"]),
-    `${theme} accent button`,
-  ).toBeGreaterThanOrEqual(4.5);
+  for (const background of ["color-page", "color-surface"]) {
+    expect(
+      contrast(tokens["color-focus"], tokens[background]),
+      `${theme} focus ring on ${background}`,
+    ).toBeGreaterThanOrEqual(3);
+  }
+
+  const accentFillColors =
+    tokens["color-accent-fill"].match(/#[\da-f]{6}/gi) ?? [tokens["color-accent"]];
+  for (const accentFill of accentFillColors) {
+    expect(
+      contrast(tokens["color-on-accent"], accentFill),
+      `${theme} accent button on ${accentFill}`,
+    ).toBeGreaterThanOrEqual(4.5);
+  }
 
   const semanticTokens =
     theme === "grok-night"
