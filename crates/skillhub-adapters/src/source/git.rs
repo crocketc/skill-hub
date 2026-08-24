@@ -87,17 +87,26 @@ impl GixSourceFetcher {
         let downloaded = HttpsSourceFetcher::new(self.limits.clone())
             .fetch(archive_url)
             .await?;
-        let archive_path = downloaded.root().join("source.zip");
-        std::fs::rename(downloaded.root().join("source"), &archive_path).map_err(|error| {
-            SourceFetchError::new(SourceFetchErrorCode::AcquisitionFailed, error.to_string())
-        })?;
-        let extracted = ArchiveExtractor::new(self.limits.clone())
-            .extract(archive_path)
-            .map_err(SourceFetchError::from)?;
-        flatten_archive_root(extracted.root())?;
-        Ok(extracted)
+        extract_downloaded_archive(downloaded, &self.limits)
     }
+}
 
+fn extract_downloaded_archive(
+    downloaded: AcquiredSource,
+    limits: &AcquisitionLimits,
+) -> SourceFetchResult<AcquiredSource> {
+    let archive_path = downloaded.root().join("source.zip");
+    std::fs::rename(downloaded.root().join("source"), &archive_path).map_err(|error| {
+        SourceFetchError::new(SourceFetchErrorCode::AcquisitionFailed, error.to_string())
+    })?;
+    let extracted = ArchiveExtractor::new(limits.clone())
+        .extract(archive_path)
+        .map_err(SourceFetchError::from)?;
+    flatten_archive_root(extracted.root())?;
+    Ok(extracted)
+}
+
+impl GixSourceFetcher {
     fn fetch_sync(
         &self,
         value: &str,
@@ -148,10 +157,9 @@ impl GixSourceFetcher {
         prepare = prepare.with_shallow(gix::remote::fetch::Shallow::DepthAtRemote(
             std::num::NonZeroU32::new(1).expect("one is non-zero"),
         ));
-        // Git's normal global configuration is untrusted input here.  Do not allow it to
-        // route the clone through a user-controlled proxy. HTTPS Git is rejected above because
-        // gix cannot pin the address checked by RedirectPolicy; file/SSH/git transports do not
-        // use the HTTP redirect setting.
+        // Git's normal global configuration is untrusted input here. The file transport does
+        // not use HTTP, but keep proxy and redirect settings explicit in case gix changes its
+        // transport selection in a future release.
         prepare = prepare.with_in_memory_config_overrides([
             "http.proxy=",
             "gitoxide.http.proxy=",
@@ -450,7 +458,8 @@ fn flatten_archive_root(root: &Path) -> SourceFetchResult<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::{is_windows_device_name, repository_archive_url};
+    use super::{extract_downloaded_archive, is_windows_device_name, repository_archive_url};
+    use skillhub_core::source::{AcquiredSource, AcquisitionLimits, AcquisitionWorkspace};
     use url::Url;
 
     #[test]
@@ -505,5 +514,28 @@ mod tests {
         super::flatten_archive_root(workspace.path()).unwrap();
         assert!(workspace.path().join("SKILL.md").is_file());
         assert!(!workspace.path().join("repo-HEAD").exists());
+    }
+
+    #[test]
+    fn downloaded_host_archive_is_extracted_and_flattened_without_network() {
+        let workspace = AcquisitionWorkspace::new().unwrap();
+        workspace.begin().unwrap();
+        let archive = workspace.root().join("source");
+        let file = std::fs::File::create(&archive).unwrap();
+        let mut zip = zip::ZipWriter::new(file);
+        zip.add_directory("owner-repo-HEAD/", zip::write::FileOptions::<()>::default())
+            .unwrap();
+        zip.start_file(
+            "owner-repo-HEAD/SKILL.md",
+            zip::write::FileOptions::<()>::default(),
+        )
+        .unwrap();
+        std::io::Write::write_all(&mut zip, b"# Skill\n").unwrap();
+        zip.finish().unwrap();
+        let downloaded = AcquiredSource::new(workspace, 1, 8);
+        let extracted =
+            extract_downloaded_archive(downloaded, &AcquisitionLimits::default()).unwrap();
+        assert!(extracted.root().join("SKILL.md").is_file());
+        assert!(!extracted.root().join("owner-repo-HEAD").exists());
     }
 }
