@@ -1075,6 +1075,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b1f9e3d69d39e4862ffed03ed071a76f9a13ba1d9109d355b0f0aa6b15e393c4"
 dependencies = [
  "futures-core",
+ "futures-sink",
 ]
 
 [[package]]
@@ -1330,6 +1331,7 @@ dependencies = [
  "gix-command",
  "gix-commitgraph",
  "gix-config",
+ "gix-credentials",
  "gix-date",
  "gix-diff",
  "gix-discover",
@@ -1343,12 +1345,14 @@ dependencies = [
  "gix-ignore",
  "gix-index",
  "gix-lock",
+ "gix-negotiate",
  "gix-note",
  "gix-object",
  "gix-odb",
  "gix-pack",
  "gix-path",
  "gix-pathspec",
+ "gix-prompt",
  "gix-protocol",
  "gix-quote",
  "gix-ref",
@@ -1360,6 +1364,7 @@ dependencies = [
  "gix-submodule",
  "gix-tempfile",
  "gix-trace",
+ "gix-transport",
  "gix-traverse",
  "gix-url",
  "gix-utils",
@@ -1474,6 +1479,25 @@ dependencies = [
  "bstr",
  "gix-path",
  "libc",
+ "thiserror 2.0.20",
+]
+
+[[package]]
+name = "gix-credentials"
+version = "0.40.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "16c11822054fd4b80a1ab722b703f2e7c691b20484d898374289b742c1f49e50"
+dependencies = [
+ "bstr",
+ "gix-command",
+ "gix-config-value",
+ "gix-date",
+ "gix-path",
+ "gix-prompt",
+ "gix-quote",
+ "gix-sec",
+ "gix-trace",
+ "gix-url",
  "thiserror 2.0.20",
 ]
 
@@ -1685,6 +1709,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "gix-negotiate"
+version = "0.35.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "603d0249455908b6e5bb25a4e7f1abd2fcd312ac20546944423038cdd19b8ee5"
+dependencies = [
+ "bitflags 2.13.1",
+ "gix-commitgraph",
+ "gix-date",
+ "gix-hash",
+ "gix-object",
+ "gix-revwalk",
+]
+
+[[package]]
 name = "gix-note"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1753,8 +1791,10 @@ dependencies = [
  "gix-hashtable",
  "gix-object",
  "gix-path",
+ "gix-tempfile",
  "gix-zlib",
  "memmap2",
+ "parking_lot",
  "smallvec",
  "thiserror 2.0.20",
 ]
@@ -1799,6 +1839,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "gix-prompt"
+version = "0.17.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "802256e13ecb2133ba5f9e6acbaa6b08bac027b1c5929f85f6adbb56ba3a4f28"
+dependencies = [
+ "gix-command",
+ "gix-config-value",
+ "parking_lot",
+ "rustix",
+ "thiserror 2.0.20",
+]
+
+[[package]]
 name = "gix-protocol"
 version = "0.65.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1806,11 +1859,18 @@ checksum = "2078e698dc6ca36242f104652c3e0e7ec39ba08986e145ee3f049ad9a10bc07a"
 dependencies = [
  "bisync",
  "bstr",
+ "gix-credentials",
  "gix-date",
  "gix-features",
  "gix-hash",
+ "gix-lock",
+ "gix-negotiate",
+ "gix-object",
  "gix-ref",
+ "gix-refspec",
+ "gix-revwalk",
  "gix-shallow",
+ "gix-trace",
  "gix-transport",
  "gix-utils",
  "nonempty",
@@ -1961,14 +2021,18 @@ version = "0.59.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c132cc0d212c5b22e8eb8b8b9a90fd6cf6803bc922a7ea7ab92c53b2c56dfb41"
 dependencies = [
+ "base64 0.22.1",
  "bstr",
  "gix-command",
+ "gix-credentials",
  "gix-features",
  "gix-packetline",
  "gix-path",
  "gix-quote",
  "gix-sec",
  "gix-url",
+ "parking_lot",
+ "reqwest",
  "thiserror 2.0.20",
 ]
 
@@ -2186,6 +2250,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "h2"
+version = "0.4.18"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "839c0e8a181239723652be9062bb56ca5bf5f64011f73b623f6f4fc59086a228"
+dependencies = [
+ "atomic-waker",
+ "bytes",
+ "fnv",
+ "futures-core",
+ "futures-sink",
+ "http",
+ "indexmap 2.14.0",
+ "slab",
+ "tokio",
+ "tokio-util",
+ "tracing",
+]
+
+[[package]]
 name = "hash32"
 version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2327,6 +2410,7 @@ dependencies = [
  "bytes",
  "futures-channel",
  "futures-core",
+ "h2",
  "http",
  "http-body",
  "httparse",
@@ -3699,8 +3783,11 @@ checksum = "219c5811de6525e5416c7d5d53bb656d3afdbc6c5af816e0802bcfa42dbdc1c3"
 dependencies = [
  "base64 0.22.1",
  "bytes",
+ "encoding_rs",
+ "futures-channel",
  "futures-core",
  "futures-util",
+ "h2",
  "http",
  "http-body",
  "http-body-util",
@@ -3709,6 +3796,7 @@ dependencies = [
  "hyper-util",
  "js-sys",
  "log",
+ "mime",
  "percent-encoding",
  "pin-project-lite",
  "quinn",
@@ -4968,6 +5056,7 @@ dependencies = [
  "bytes",
  "futures-core",
  "futures-sink",
+ "libc",
  "pin-project-lite",
  "tokio",
 ]

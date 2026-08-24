@@ -1,12 +1,13 @@
 use std::fmt;
 use std::fs::File;
 use std::io::Write;
+use std::net::SocketAddr;
 use std::time::Duration;
 
 use async_trait::async_trait;
 use reqwest::Client;
 use skillhub_core::source::{
-    AcquiredSource, AcquisitionError, AcquisitionErrorCode, AcquisitionLimits, AcquisitionWorkspace,
+    AcquiredSource, AcquisitionError, AcquisitionLimits, AcquisitionWorkspace,
 };
 use url::Url;
 
@@ -45,6 +46,13 @@ impl SourceFetchErrorCode {
 pub struct SourceFetchError {
     pub code: SourceFetchErrorCode,
     pub message: String,
+    pub cleanup_failure: Option<SourceCleanupFailure>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SourceCleanupFailure {
+    pub code: SourceFetchErrorCode,
+    pub message: String,
 }
 
 impl SourceFetchError {
@@ -52,6 +60,7 @@ impl SourceFetchError {
         Self {
             code,
             message: message.into(),
+            cleanup_failure: None,
         }
     }
 }
@@ -64,6 +73,25 @@ impl fmt::Display for SourceFetchError {
 
 impl std::error::Error for SourceFetchError {}
 
+impl From<AcquisitionError> for SourceFetchError {
+    fn from(error: AcquisitionError) -> Self {
+        Self::new(SourceFetchErrorCode::AcquisitionFailed, error.to_string())
+    }
+}
+
+pub(crate) fn cleanup_fetch_error(
+    mut workspace: AcquisitionWorkspace,
+    mut error: SourceFetchError,
+) -> SourceFetchError {
+    if let Err(cleanup) = workspace.cleanup() {
+        error.cleanup_failure = Some(SourceCleanupFailure {
+            code: SourceFetchErrorCode::AcquisitionFailed,
+            message: cleanup.to_string(),
+        });
+    }
+    error
+}
+
 pub type SourceFetchResult<T> = Result<T, SourceFetchError>;
 
 #[async_trait]
@@ -73,8 +101,8 @@ pub trait SourceFetcher {
 
 #[derive(Clone, Debug)]
 pub struct HttpsSourceFetcher {
-    client: Client,
     limits: AcquisitionLimits,
+    timeout: Duration,
     max_redirects: usize,
     redirect_policy: RedirectPolicy,
 }
@@ -101,14 +129,9 @@ impl HttpsSourceFetcher {
         max_redirects: usize,
         redirect_policy: RedirectPolicy,
     ) -> Self {
-        let client = Client::builder()
-            .redirect(reqwest::redirect::Policy::none())
-            .timeout(timeout)
-            .build()
-            .expect("static reqwest client options are valid");
         Self {
-            client,
             limits,
+            timeout,
             max_redirects,
             redirect_policy,
         }
@@ -125,16 +148,19 @@ impl HttpsSourceFetcher {
         self.redirect_policy
             .validate(&current)
             .map_err(|code| SourceFetchError::new(code, "HTTPS source URL is not allowed"))?;
+        self.redirect_policy
+            .validate_resolved(&current)
+            .await
+            .map_err(|code| {
+                SourceFetchError::new(code, "HTTPS source destination is not allowed")
+            })?;
 
-        let mut workspace = AcquisitionWorkspace::new().map_err(from_acquisition_error)?;
-        workspace.begin().map_err(from_acquisition_error)?;
+        let mut workspace = AcquisitionWorkspace::new().map_err(SourceFetchError::from)?;
+        workspace.begin().map_err(SourceFetchError::from)?;
         let result = self.fetch_into(&mut current, &mut workspace).await;
         match result {
             Ok((bytes, entries)) => Ok(AcquiredSource::new(workspace, entries, bytes)),
-            Err(error) => {
-                let _ = workspace.cleanup();
-                Err(error)
-            }
+            Err(error) => Err(cleanup_fetch_error(workspace, error)),
         }
     }
 
@@ -144,8 +170,15 @@ impl HttpsSourceFetcher {
         workspace: &mut AcquisitionWorkspace,
     ) -> SourceFetchResult<(u64, u64)> {
         for redirects in 0..=self.max_redirects {
-            let response = self
-                .client
+            let destination = self
+                .redirect_policy
+                .resolve_destination(current)
+                .await
+                .map_err(|code| {
+                    SourceFetchError::new(code, "HTTPS source destination is not allowed")
+                })?;
+            let client = self.client_for(current, destination)?;
+            let response = client
                 .get(current.clone())
                 .send()
                 .await
@@ -170,6 +203,12 @@ impl HttpsSourceFetcher {
                 *current = self
                     .redirect_policy
                     .resolve(current, location)
+                    .map_err(|code| {
+                        SourceFetchError::new(code, "redirect destination is not allowed")
+                    })?;
+                self.redirect_policy
+                    .validate_resolved(current)
+                    .await
                     .map_err(|code| {
                         SourceFetchError::new(code, "redirect destination is not allowed")
                     })?;
@@ -226,6 +265,19 @@ impl HttpsSourceFetcher {
             "too many HTTP redirects",
         ))
     }
+
+    fn client_for(&self, url: &Url, destination: Option<SocketAddr>) -> SourceFetchResult<Client> {
+        let mut builder = Client::builder()
+            .redirect(reqwest::redirect::Policy::none())
+            .timeout(self.timeout)
+            .no_proxy();
+        if let (Some(host), Some(destination)) = (url.host_str(), destination) {
+            builder = builder.resolve(host, destination);
+        }
+        builder.build().map_err(|error| {
+            SourceFetchError::new(SourceFetchErrorCode::HttpTransport, error.to_string())
+        })
+    }
 }
 
 #[async_trait]
@@ -240,14 +292,6 @@ fn map_reqwest_error(error: reqwest::Error) -> SourceFetchError {
         SourceFetchErrorCode::Timeout
     } else {
         SourceFetchErrorCode::HttpTransport
-    };
-    SourceFetchError::new(code, error.to_string())
-}
-
-fn from_acquisition_error(error: AcquisitionError) -> SourceFetchError {
-    let code = match error.code {
-        AcquisitionErrorCode::WorkspaceUnavailable => SourceFetchErrorCode::AcquisitionFailed,
-        _ => SourceFetchErrorCode::AcquisitionFailed,
     };
     SourceFetchError::new(code, error.to_string())
 }
