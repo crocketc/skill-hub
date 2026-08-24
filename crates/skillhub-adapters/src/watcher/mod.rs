@@ -125,6 +125,9 @@ impl Watcher {
     }
 
     fn is_allowed(&self, hint: &WatchHint) -> bool {
+        if !hint.root_matches_path() {
+            return false;
+        }
         if hint.kind() == WatchHintKind::AppResumed {
             return !self.active_roots.is_empty();
         }

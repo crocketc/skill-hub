@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
@@ -113,6 +113,9 @@ impl WatchHint {
     }
 
     pub fn belongs_to(&self, root: &Path) -> bool {
+        if !self.root_matches_path() {
+            return false;
+        }
         if self.kind == WatchHintKind::AppResumed {
             return true;
         }
@@ -126,13 +129,46 @@ impl WatchHint {
         path_starts_with(candidate, root)
     }
 
+    pub fn root_matches_path(&self) -> bool {
+        if self.root.is_empty() || self.kind == WatchHintKind::AppResumed {
+            return true;
+        }
+        if self.path.is_empty() {
+            return path_starts_with(Path::new(&self.root), Path::new(&self.root));
+        }
+        path_starts_with(Path::new(&self.path), Path::new(&self.root))
+    }
+
+    pub fn skill_root(&self) -> Option<PathBuf> {
+        Path::new(&self.path)
+            .file_name()
+            .is_some_and(|name| name == "SKILL.md")
+            .then(|| {
+                Path::new(&self.path)
+                    .parent()
+                    .unwrap_or(Path::new(&self.path))
+                    .to_path_buf()
+            })
+    }
+
     pub fn coalescing_key(&self) -> String {
+        self.coalescing_key_with_skill_roots(&BTreeSet::new())
+    }
+
+    pub fn coalescing_key_with_skill_roots(&self, skill_roots: &BTreeSet<String>) -> String {
         if let Some(target_id) = &self.target_id {
             return format!("target:{target_id}");
         }
         let path = Path::new(&self.path);
-        if path.file_name().is_some_and(|name| name == "SKILL.md") {
-            return format!("skill:{}", path.parent().unwrap_or(path).display());
+        if let Some(skill_root) = self.skill_root() {
+            return format!("skill:{}", skill_root.display());
+        }
+        if let Some(skill_root) = skill_roots
+            .iter()
+            .filter(|root| path_starts_with(path, Path::new(root)))
+            .max_by_key(|root| root.len())
+        {
+            return format!("skill:{skill_root}");
         }
         format!("path:{}", path.display())
     }
@@ -173,9 +209,10 @@ pub trait WatchConfirmation: Send + Sync {
 #[derive(Default)]
 struct WatchState {
     running: bool,
-    pending: Vec<WatchHint>,
+    pending: BTreeMap<String, WatchHint>,
     compensation_pending: bool,
     active_roots: BTreeSet<String>,
+    recognized_skill_roots: BTreeSet<String>,
     confirmed_batches: u64,
 }
 
@@ -263,13 +300,22 @@ impl WatchService {
     /// event, so callers can safely accept noisy editor notifications.
     pub fn submit_hint(&self, hint: WatchHint) -> AppResult<bool> {
         let mut state = self.state.lock().expect("watch state mutex poisoned");
+        if !hint.root_matches_path() {
+            return Err(invalid_watch("watch hint root does not contain its path"));
+        }
         if !state.running || !is_allowed(&state.active_roots, &hint) {
             return Ok(false);
         }
         if hint.is_compensation() {
             state.compensation_pending = true;
         } else {
-            state.pending.push(hint);
+            if let Some(skill_root) = hint.skill_root() {
+                state
+                    .recognized_skill_roots
+                    .insert(normalize_path(&skill_root));
+            }
+            let key = hint.coalescing_key_with_skill_roots(&state.recognized_skill_roots);
+            state.pending.insert(key, hint);
         }
         Ok(true)
     }
@@ -287,7 +333,9 @@ impl WatchService {
             .lock()
             .expect("watch state mutex poisoned")
             .pending
-            .clone()
+            .values()
+            .cloned()
+            .collect()
     }
 
     pub fn take_compensation_scan(&self) -> bool {
@@ -305,34 +353,48 @@ impl WatchService {
     /// Confirm queued hints. The event is published only after the scan port
     /// succeeds; this is the boundary between hints and facts.
     pub async fn confirm_pending(&self) -> AppResult<Option<FactsChanged>> {
+        if self.confirmation.is_none() {
+            let state = self.state.lock().expect("watch state mutex poisoned");
+            if state.pending.is_empty() && !state.compensation_pending {
+                return Ok(None);
+            }
+            return Err(invalid_watch("watch confirmation scanner is unavailable"));
+        }
         let (hints, compensation) = {
             let mut state = self.state.lock().expect("watch state mutex poisoned");
             if !state.running {
                 return Ok(None);
             }
             (
-                std::mem::take(&mut state.pending),
+                std::mem::take(&mut state.pending)
+                    .into_values()
+                    .collect::<Vec<_>>(),
                 std::mem::take(&mut state.compensation_pending),
             )
         };
         if hints.is_empty() && !compensation {
             return Ok(None);
         }
+        let confirmation = self
+            .confirmation
+            .as_ref()
+            .expect("confirmation checked before taking pending hints");
         let result = async {
-            if let Some(confirmation) = &self.confirmation {
-                if compensation {
-                    confirmation.compensation_scan().await?;
-                }
-                if !hints.is_empty() {
-                    confirmation.confirm(hints.clone()).await?;
-                }
+            if compensation {
+                confirmation.compensation_scan().await?;
+            }
+            if !hints.is_empty() {
+                confirmation.confirm(hints.clone()).await?;
             }
             Ok::<_, crate::AppError>(())
         }
         .await;
         if let Err(error) = result {
             let mut state = self.state.lock().expect("watch state mutex poisoned");
-            state.pending.extend(hints);
+            for hint in hints {
+                let key = hint.coalescing_key_with_skill_roots(&state.recognized_skill_roots);
+                state.pending.insert(key, hint);
+            }
             state.compensation_pending |= compensation;
             return Err(error);
         }
@@ -366,7 +428,7 @@ fn normalize_path(path: &Path) -> String {
 
 fn is_allowed(roots: &BTreeSet<String>, hint: &WatchHint) -> bool {
     if roots.is_empty() {
-        return true;
+        return false;
     }
     if hint.kind() == WatchHintKind::AppResumed {
         return true;
@@ -379,4 +441,10 @@ fn is_allowed(roots: &BTreeSet<String>, hint: &WatchHint) -> bool {
                 .root()
                 .is_some_and(|hint_root| path_starts_with(hint_root, root))
     })
+}
+
+fn invalid_watch(detail: impl Into<String>) -> crate::AppError {
+    crate::AppError::new(crate::ErrorCode::InvalidInput, crate::Severity::Error)
+        .with_param("detail", detail.into())
+        .with_action(crate::RecoveryAction::Acknowledge)
 }

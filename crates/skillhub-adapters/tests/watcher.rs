@@ -82,6 +82,16 @@ fn hints_collapse_by_nearest_declared_skill_target() {
 }
 
 #[test]
+fn ordinary_child_events_collapse_after_skill_marker_is_seen() {
+    let mut coalescer = WatchCoalescer::new(Duration::ZERO);
+    coalescer.push(event("skills/pdf/SKILL.md"));
+    coalescer.push(event("skills/pdf/references/example.md"));
+    coalescer.push(event("skills/pdf/references/other.md"));
+
+    assert_eq!(coalescer.flush_after_stable().len(), 1);
+}
+
+#[test]
 fn compensation_hint_is_distinct_from_confirmed_file_hint() {
     let overflow = WatchHint::overflow("/workspace/skills");
     let file = event("/workspace/skills/pdf/SKILL.md");
@@ -100,4 +110,22 @@ fn queued_hint_does_not_count_as_a_confirmed_fact_change() {
 
     assert_eq!(service.confirmed_batches(), 0);
     assert_eq!(service.pending_hints().len(), 1);
+}
+
+#[test]
+fn root_and_path_mismatch_is_rejected() {
+    let mut watcher = Watcher::new([PathBuf::from("/workspace/skills")]);
+    watcher.start().unwrap();
+    assert!(!watcher.push(WatchHint::for_root(
+        "/workspace/skills",
+        "/workspace/other/SKILL.md",
+    )));
+}
+
+#[test]
+fn watcher_without_active_roots_does_not_accept_hints() {
+    let mut watcher = Watcher::new(std::iter::empty::<PathBuf>());
+    watcher.start().unwrap();
+    assert!(!watcher.push(event("/workspace/skills/pdf/SKILL.md")));
+    assert!(!watcher.on_app_resumed());
 }

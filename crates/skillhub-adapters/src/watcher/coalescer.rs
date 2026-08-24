@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::time::{Duration, Instant};
 
 use skillhub_core::WatchHint;
@@ -9,6 +9,7 @@ use skillhub_core::WatchHint;
 pub struct WatchCoalescer {
     stable_window: Duration,
     pending: BTreeMap<String, (Instant, WatchHint)>,
+    recognized_skill_roots: BTreeSet<String>,
 }
 
 impl WatchCoalescer {
@@ -16,6 +17,7 @@ impl WatchCoalescer {
         Self {
             stable_window,
             pending: BTreeMap::new(),
+            recognized_skill_roots: BTreeSet::new(),
         }
     }
 
@@ -24,7 +26,11 @@ impl WatchCoalescer {
     }
 
     pub fn push(&mut self, hint: WatchHint) {
-        let key = hint.coalescing_key();
+        if let Some(skill_root) = hint.skill_root() {
+            self.recognized_skill_roots
+                .insert(skill_root.to_string_lossy().replace('\\', "/"));
+        }
+        let key = hint.coalescing_key_with_skill_roots(&self.recognized_skill_roots);
         self.pending.insert(key, (Instant::now(), hint));
     }
 
