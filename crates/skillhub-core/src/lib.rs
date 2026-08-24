@@ -54,11 +54,11 @@ pub use ids::{
     PhysicalTargetId, ProjectId, SkillId, VersionId,
 };
 pub use project::{
-    AssemblyChoice, AssemblyItemPlan, AssemblyItemStatus, AssemblyPlan, CheckPreparation,
-    CheckPreparationPort, DeploymentPreparation, DeploymentPreparationPort, PortableSource,
-    Project, ProjectMetadata, ProjectRepository, ProjectTag, SavedProjectView, SharedProjectConfig,
-    SharedSkillRequirement, SkillResolution, SkillResolutionPort, SourcePreparation,
-    SourcePreparationPort,
+    AssemblyChoice, AssemblyConflictKind, AssemblyItemPlan, AssemblyItemStatus, AssemblyPlan,
+    CheckPreparation, CheckPreparationPort, DeploymentPreparation, DeploymentPreparationPort,
+    PortableSource, Project, ProjectMetadata, ProjectRepository, ProjectTag, SavedProjectView,
+    SharedProjectConfig, SharedSkillRequirement, SkillResolution, SkillResolutionPort,
+    SourcePreparation, SourcePreparationPort,
 };
 pub use scan::{DiscoveredSkill, ScanGeneration, ScanIssue, ScanRepository, ScanResult, ScanScope};
 pub use versioning::{FileEntry, VersionDiff, VersionManifest, VersionRecord, VersionRepository};

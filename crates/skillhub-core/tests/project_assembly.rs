@@ -2,10 +2,11 @@ use std::cell::RefCell;
 use std::collections::{BTreeSet, HashMap};
 
 use skillhub_core::{
-    AppResult, AssemblyChoice, AssemblyItemStatus, CheckPreparation, CheckPreparationPort,
-    DeploymentPreparation, DeploymentPreparationPort, ProjectAssemblyService, ProjectId,
-    SharedProjectConfig, SharedSkillRequirement, SkillId, SkillResolution, SkillResolutionPort,
-    SourcePreparation, SourcePreparationPort, VersionId,
+    AppError, AppResult, AssemblyChoice, AssemblyConflictKind, AssemblyItemStatus,
+    CheckPreparation, CheckPreparationPort, DeploymentPreparation, DeploymentPreparationPort,
+    ErrorCode, ProjectAssemblyService, ProjectId, Severity, SharedProjectConfig,
+    SharedSkillRequirement, SkillId, SkillResolution, SkillResolutionPort, SourcePreparation,
+    SourcePreparationPort, VersionId,
 };
 
 #[test]
@@ -23,9 +24,10 @@ fn best_effort_assembly_keeps_each_requirement_result() {
         AssemblyItemStatus::ConflictNeedsChoice
     );
 
+    let selected_plan = plan.with_choice_for_item(2, AssemblyChoice::Skip);
     let result = fixture
         .service
-        .commit_assembly(plan.with_choice_for_item(2, AssemblyChoice::Skip))
+        .commit_assembly(selected_plan.clone())
         .unwrap();
 
     assert_eq!(result.items.len(), 3);
@@ -49,6 +51,10 @@ fn best_effort_assembly_keeps_each_requirement_result() {
         .deployed
         .borrow()
         .contains("conflict"));
+
+    let repeated = fixture.service.commit_assembly(selected_plan).unwrap();
+    assert_eq!(repeated, result);
+    assert_eq!(fixture.service.deployment.deployed.borrow().len(), 1);
 }
 
 #[test]
@@ -62,6 +68,69 @@ fn commit_requires_explicit_choice_for_conflict_items() {
     let error = fixture.service.commit_assembly(plan).unwrap_err();
 
     assert_eq!(error.code.as_str(), "operation.conflict");
+    assert!(fixture.service.deployment.deployed.borrow().is_empty());
+}
+
+#[test]
+fn each_port_error_only_fails_its_requirement_and_keeps_scanning() {
+    let project_id = ProjectId::new();
+    let names = [
+        "resolution_error",
+        "source_error",
+        "check_error",
+        "deployment_error",
+        "healthy",
+    ];
+    let requirements = names.iter().map(|name| requirement(name)).collect();
+    let config = SharedProjectConfig::new("errors", requirements);
+    let resolution = RecordingResolution::new([]).with_config(project_id, config);
+    let service = ProjectAssemblyService::new(
+        resolution,
+        RecordingSource,
+        RecordingCheck,
+        RecordingDeployment::default(),
+    );
+
+    let plan = service.prepare_assembly(project_id).unwrap();
+
+    assert_eq!(
+        plan.items
+            .iter()
+            .map(|item| item.status)
+            .collect::<Vec<_>>(),
+        vec![
+            AssemblyItemStatus::Failed,
+            AssemblyItemStatus::Failed,
+            AssemblyItemStatus::Failed,
+            AssemblyItemStatus::Failed,
+            AssemblyItemStatus::ReadyToAcquire,
+        ]
+    );
+}
+
+#[test]
+fn conflict_metadata_rejects_choices_that_cannot_resolve_it() {
+    let fixture = AssemblyFixture::new();
+    let plan = fixture
+        .service
+        .prepare_assembly(fixture.project_id)
+        .unwrap();
+    let conflict_item = &plan.items[2];
+
+    assert_eq!(
+        conflict_item.conflict_kind,
+        Some(AssemblyConflictKind::SameNameConflict)
+    );
+    assert_eq!(
+        conflict_item.allowed_choices,
+        vec![AssemblyChoice::UseExisting, AssemblyChoice::Skip]
+    );
+    let error = fixture
+        .service
+        .commit_assembly(plan.with_choice_for_item(2, AssemblyChoice::Acquire))
+        .unwrap_err();
+    assert_eq!(error.code, ErrorCode::OperationConflict);
+    assert!(fixture.service.deployment.deployed.borrow().is_empty());
 }
 
 struct AssemblyFixture {
@@ -152,6 +221,9 @@ impl SkillResolutionPort for RecordingResolution {
         &self,
         requirement: &SharedSkillRequirement,
     ) -> AppResult<SkillResolution> {
+        if requirement.name == "resolution_error" {
+            return Err(port_error());
+        }
         Ok(self
             .resolutions
             .get(&requirement.skill_id)
@@ -167,7 +239,11 @@ struct RecordingSource;
 
 impl SourcePreparationPort for RecordingSource {
     fn prepare_source(&self, requirement: &SharedSkillRequirement) -> AppResult<SourcePreparation> {
-        if requirement.name == "missing" {
+        if requirement.name == "source_error" {
+            Err(port_error())
+        } else if ["missing", "check_error", "deployment_error", "healthy"]
+            .contains(&requirement.name.as_str())
+        {
             Ok(SourcePreparation::Ready {
                 version_id: version(2),
             })
@@ -187,7 +263,12 @@ impl CheckPreparationPort for RecordingCheck {
         version_id: &VersionId,
     ) -> AppResult<CheckPreparation> {
         let _ = version_id;
-        if requirement.name == "missing" {
+        if requirement.name == "check_error" {
+            Err(port_error())
+        } else if requirement.name == "missing"
+            || requirement.name == "deployment_error"
+            || requirement.name == "healthy"
+        {
             Ok(CheckPreparation::Passed)
         } else {
             Ok(CheckPreparation::NotNeeded)
@@ -207,7 +288,9 @@ impl DeploymentPreparationPort for RecordingDeployment {
         version_id: &VersionId,
     ) -> AppResult<DeploymentPreparation> {
         let _ = version_id;
-        if requirement.name == "missing" {
+        if requirement.name == "deployment_error" {
+            Err(port_error())
+        } else if requirement.name == "missing" || requirement.name == "healthy" {
             Ok(DeploymentPreparation::Ready)
         } else {
             Ok(DeploymentPreparation::NotNeeded)
@@ -245,4 +328,8 @@ fn version(byte: u8) -> VersionId {
         char::from(b'0' + byte).to_string().repeat(64)
     ))
     .unwrap()
+}
+
+fn port_error() -> AppError {
+    AppError::new(ErrorCode::InternalError, Severity::Error)
 }

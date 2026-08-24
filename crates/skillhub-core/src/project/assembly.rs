@@ -1,20 +1,26 @@
-use crate::{AppResult, ProjectId, SharedProjectConfig, SharedSkillRequirement, VersionId};
+use crate::{
+    AppResult, OperationId, ProjectId, SharedProjectConfig, SharedSkillRequirement, VersionId,
+};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 #[serde(deny_unknown_fields)]
 pub struct AssemblyPlan {
     pub id: String,
+    pub operation_id: OperationId,
     pub project_id: ProjectId,
     pub items: Vec<AssemblyItemPlan>,
+    pub committed: bool,
 }
 
 impl AssemblyPlan {
     pub fn new(project_id: ProjectId, items: Vec<AssemblyItemPlan>) -> Self {
         Self {
             id: project_id.to_string(),
+            operation_id: OperationId::new(),
             project_id,
             items,
+            committed: false,
         }
     }
 
@@ -34,6 +40,8 @@ pub struct AssemblyItemPlan {
     pub version_id: Option<VersionId>,
     pub reasons: Vec<String>,
     pub choice: Option<AssemblyChoice>,
+    pub conflict_kind: Option<AssemblyConflictKind>,
+    pub allowed_choices: Vec<AssemblyChoice>,
 }
 
 impl AssemblyItemPlan {
@@ -44,6 +52,8 @@ impl AssemblyItemPlan {
             version_id: None,
             reasons: Vec::new(),
             choice: None,
+            conflict_kind: None,
+            allowed_choices: Vec::new(),
         }
     }
 
@@ -55,6 +65,52 @@ impl AssemblyItemPlan {
     pub fn with_reasons(mut self, reasons: Vec<String>) -> Self {
         self.reasons = reasons;
         self
+    }
+
+    pub fn with_conflict(
+        mut self,
+        kind: AssemblyConflictKind,
+        allowed_choices: Vec<AssemblyChoice>,
+    ) -> Self {
+        self.conflict_kind = Some(kind);
+        self.allowed_choices = allowed_choices;
+        self
+    }
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize, specta::Type)]
+#[serde(rename_all = "snake_case")]
+pub enum AssemblyConflictKind {
+    SourceAmbiguity,
+    SameNameConflict,
+    HighRiskFinding,
+    DeploymentTargetConflict,
+}
+
+impl AssemblyConflictKind {
+    pub fn from_reasons(reasons: &[String]) -> Self {
+        if reasons.iter().any(|reason| {
+            let reason = reason.to_ascii_lowercase();
+            reason.contains("source") || reason.contains("ambig")
+        }) {
+            return Self::SourceAmbiguity;
+        }
+        if reasons.iter().any(|reason| {
+            let reason = reason.to_ascii_lowercase();
+            reason.contains("same_name") || reason.contains("name_conflict")
+        }) {
+            return Self::SameNameConflict;
+        }
+        Self::DeploymentTargetConflict
+    }
+
+    pub const fn allowed_choices(self) -> &'static [AssemblyChoice] {
+        match self {
+            Self::SourceAmbiguity => &[AssemblyChoice::Skip],
+            Self::SameNameConflict => &[AssemblyChoice::UseExisting, AssemblyChoice::Skip],
+            Self::HighRiskFinding => &[AssemblyChoice::Acquire, AssemblyChoice::Skip],
+            Self::DeploymentTargetConflict => &[AssemblyChoice::UseExisting, AssemblyChoice::Skip],
+        }
     }
 }
 
