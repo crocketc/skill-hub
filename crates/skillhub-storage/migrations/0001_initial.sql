@@ -114,7 +114,6 @@ CREATE TABLE check_runs (
     skill_id TEXT NOT NULL REFERENCES skills(id) ON DELETE CASCADE,
     version_id TEXT NOT NULL REFERENCES versions(id) ON DELETE CASCADE,
     kind TEXT NOT NULL,
-    generation INTEGER NOT NULL DEFAULT 0,
     state TEXT NOT NULL,
     ruleset_id TEXT,
     model_id TEXT,
@@ -134,8 +133,7 @@ CREATE TABLE check_findings (
     line_end INTEGER,
     evidence_hash TEXT,
     message_params_json TEXT NOT NULL DEFAULT '{}',
-    disposition TEXT NOT NULL DEFAULT 'actionable',
-    allowed_dispositions_json TEXT
+    disposition TEXT NOT NULL DEFAULT 'actionable'
 );
 
 CREATE TABLE operations (

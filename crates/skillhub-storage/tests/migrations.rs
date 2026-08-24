@@ -16,7 +16,7 @@ fn fixture_database_with_schema_version(version: u32) -> NamedTempFile {
 fn empty_database_migrates_to_current_schema_and_enables_fts5() {
     let db = Database::open_in_memory().unwrap();
 
-    assert_eq!(db.schema_version().unwrap(), 4);
+    assert_eq!(db.schema_version().unwrap(), 5);
     assert!(db.has_table("skills_fts").unwrap());
 }
 
@@ -38,8 +38,50 @@ fn open_exposes_the_migration_report() {
     let report = db.migration_report();
 
     assert_eq!(report.from_version, 0);
-    assert_eq!(report.to_version, 4);
-    assert_eq!(report.applied_versions, vec![1, 2, 3, 4]);
+    assert_eq!(report.to_version, 5);
+    assert_eq!(report.applied_versions, vec![1, 2, 3, 4, 5]);
+}
+
+#[test]
+fn v4_database_upgrades_check_run_metadata_in_v5() {
+    let file = NamedTempFile::new().unwrap();
+    let connection = Connection::open(file.path()).unwrap();
+    connection
+        .execute_batch(include_str!("../migrations/0001_initial.sql"))
+        .unwrap();
+    connection
+        .execute_batch(include_str!("../migrations/0002_fts.sql"))
+        .unwrap();
+    connection
+        .execute_batch(include_str!("../migrations/0003_catalog_metadata.sql"))
+        .unwrap();
+    connection
+        .execute_batch(include_str!("../migrations/0004_search_tokenizer.sql"))
+        .unwrap();
+    connection.pragma_update(None, "user_version", 4).unwrap();
+    drop(connection);
+
+    let db = Database::open(file.path()).unwrap();
+    assert_eq!(db.schema_version().unwrap(), 5);
+    assert_eq!(db.migration_report().applied_versions, vec![5]);
+    let generation: String = db
+        .connection_for_test()
+        .query_row(
+            "SELECT name FROM pragma_table_info('check_runs') WHERE name='generation'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    let allowed: String = db
+        .connection_for_test()
+        .query_row(
+            "SELECT name FROM pragma_table_info('check_findings') WHERE name='allowed_dispositions_json'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(generation, "generation");
+    assert_eq!(allowed, "allowed_dispositions_json");
 }
 
 #[test]

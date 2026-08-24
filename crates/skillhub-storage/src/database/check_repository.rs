@@ -23,7 +23,6 @@ impl<'a> CheckRepositorySqlite<'a> {
 #[async_trait(?Send)]
 impl CheckRepositoryPort for CheckRepositorySqlite<'_> {
     async fn insert(&self, run: &CheckRun) -> AppResult<()> {
-        ensure_check_columns(&self.database.connection)?;
         let tx = self
             .database
             .connection
@@ -52,7 +51,6 @@ impl CheckRepositoryPort for CheckRepositorySqlite<'_> {
     }
 
     async fn get(&self, id: &str) -> AppResult<Option<CheckRun>> {
-        ensure_check_columns(&self.database.connection)?;
         let row = self
             .database
             .connection
@@ -120,7 +118,6 @@ impl CheckRepositoryPort for CheckRepositorySqlite<'_> {
     }
 
     async fn update(&self, run: &CheckRun) -> AppResult<()> {
-        ensure_check_columns(&self.database.connection)?;
         let tx = self
             .database
             .connection
@@ -165,7 +162,6 @@ impl CheckRepositoryPort for CheckRepositorySqlite<'_> {
         version_id: &VersionId,
         kind: CheckKind,
     ) -> AppResult<Vec<CheckRun>> {
-        ensure_check_columns(&self.database.connection)?;
         let mut statement = self.database.connection.prepare(
             "SELECT id FROM check_runs WHERE skill_id=?1 AND version_id=?2 AND kind=?3 ORDER BY started_at,id",
         ).map_err(error)?;
@@ -195,7 +191,6 @@ impl CheckRepositoryPort for CheckRepositorySqlite<'_> {
         version_id: &VersionId,
         kind: CheckKind,
     ) -> AppResult<Option<CheckRun>> {
-        ensure_check_columns(&self.database.connection)?;
         let id = self
             .database
             .connection
@@ -322,46 +317,6 @@ fn default_allowed_dispositions() -> std::collections::BTreeSet<FindingDispositi
     ]
     .into_iter()
     .collect()
-}
-
-fn ensure_check_columns(connection: &rusqlite::Connection) -> AppResult<()> {
-    let mut columns = BTreeMap::new();
-    let mut statement = connection
-        .prepare("PRAGMA table_info(check_runs)")
-        .map_err(error)?;
-    for row in statement
-        .query_map([], |row| row.get::<_, String>(1))
-        .map_err(error)?
-    {
-        columns.insert(row.map_err(error)?, ());
-    }
-    if !columns.contains_key("generation") {
-        connection
-            .execute(
-                "ALTER TABLE check_runs ADD COLUMN generation INTEGER NOT NULL DEFAULT 0",
-                [],
-            )
-            .map_err(error)?;
-    }
-    let mut finding_columns = BTreeMap::new();
-    let mut statement = connection
-        .prepare("PRAGMA table_info(check_findings)")
-        .map_err(error)?;
-    for row in statement
-        .query_map([], |row| row.get::<_, String>(1))
-        .map_err(error)?
-    {
-        finding_columns.insert(row.map_err(error)?, ());
-    }
-    if !finding_columns.contains_key("allowed_dispositions_json") {
-        connection
-            .execute(
-                "ALTER TABLE check_findings ADD COLUMN allowed_dispositions_json TEXT",
-                [],
-            )
-            .map_err(error)?;
-    }
-    Ok(())
 }
 
 fn severity_code(value: Severity) -> &'static str {

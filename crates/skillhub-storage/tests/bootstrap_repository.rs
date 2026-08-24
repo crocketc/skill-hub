@@ -111,6 +111,28 @@ fn pending_query_derives_due_trial_and_unresolved_finding_from_facts() {
 }
 
 #[test]
+fn pending_query_ignores_findings_from_superseded_check_runs() {
+    let db = Database::open_in_memory().unwrap();
+    let skill = SkillId::new();
+    let version = "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc";
+    db.connection_for_test()
+        .execute_batch(&format!(
+            "INSERT INTO skills (id,display_name,runtime_name,created_at,updated_at) VALUES ('{skill}','current','current',0,0);
+             INSERT INTO versions (id,skill_id,content_hash,manifest_json,created_at) VALUES ('{version}','{skill}','hash','{{}}',0);
+             INSERT INTO check_runs (id,skill_id,version_id,kind,generation,state,started_at,ended_at) VALUES ('old-run','{skill}','{version}','basic',1,'failed',10,10);
+             INSERT INTO check_findings (id,run_id,code,severity,disposition) VALUES ('old-finding','old-run','security.secret','error','actionable');
+             INSERT INTO check_runs (id,skill_id,version_id,kind,generation,state,started_at,ended_at) VALUES ('current-run','{skill}','{version}','basic',2,'passed',20,20);"
+        ))
+        .unwrap();
+
+    let pending = db
+        .bootstrap_repository()
+        .list_pending((2026, 8, 24))
+        .unwrap();
+    assert!(pending.is_empty());
+}
+
+#[test]
 fn sqlite_pending_query_handles_three_hundred_skills_under_threshold() {
     let db = Database::open_in_memory().unwrap();
     for index in 0..300 {
