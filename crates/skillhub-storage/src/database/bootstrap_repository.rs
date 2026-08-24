@@ -67,7 +67,7 @@ impl<'a> BootstrapRepository<'a> {
             "current.started_at DESC,COALESCE(current.ended_at,-1) DESC,current.id DESC"
         };
         let findings_sql = format!(
-            "SELECT r.skill_id, f.code FROM check_findings f JOIN check_runs r ON r.id=f.run_id WHERE f.disposition NOT IN ('resolved','dismissed') AND r.id = (SELECT current.id FROM check_runs current WHERE current.skill_id=r.skill_id AND current.kind=r.kind ORDER BY {ordering} LIMIT 1) ORDER BY r.skill_id, f.code, f.id"
+            "SELECT r.skill_id, f.code FROM check_findings f JOIN check_runs r ON r.id=f.run_id WHERE f.disposition NOT IN ('resolved','dismissed') AND r.version_id = (SELECT pointer.version_id FROM current_pointers pointer WHERE pointer.skill_id=r.skill_id) AND r.id = (SELECT current.id FROM check_runs current WHERE current.skill_id=r.skill_id AND current.version_id=r.version_id AND current.kind=r.kind ORDER BY {ordering} LIMIT 1) ORDER BY r.skill_id, f.code, f.id"
         );
         let mut findings = self
             .database

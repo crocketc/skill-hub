@@ -98,6 +98,7 @@ fn pending_query_derives_due_trial_and_unresolved_finding_from_facts() {
             "INSERT INTO skills (id,display_name,runtime_name,created_at,updated_at) VALUES ('{skill}','trial','trial',0,0);
              INSERT INTO catalog_skill_metadata (skill_id,requirements_json,trial_due) VALUES ('{skill}','[]','2026-08-01');
              INSERT INTO versions (id,skill_id,content_hash,manifest_json,created_at) VALUES ('{version}','{skill}','hash','{{}}',0);
+             INSERT INTO current_pointers (skill_id,version_id,updated_at) VALUES ('{skill}','{version}',0);
              INSERT INTO check_runs (id,skill_id,version_id,kind,state,started_at) VALUES ('{run}','{skill}','{version}','basic','completed',0);
              INSERT INTO check_findings (id,run_id,code,severity,disposition) VALUES ('finding-1','{run}','basic.secret','high','actionable');"
         ))
@@ -130,6 +131,31 @@ fn pending_query_ignores_findings_from_superseded_check_runs() {
         .list_pending((2026, 8, 24))
         .unwrap();
     assert!(pending.is_empty());
+}
+
+#[test]
+fn pending_query_ignores_findings_from_non_current_versions() {
+    let db = Database::open_in_memory().unwrap();
+    let skill = SkillId::new();
+    let old_version = "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd";
+    let current_version = "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
+    db.connection_for_test()
+        .execute_batch(&format!(
+            "INSERT INTO skills (id,display_name,runtime_name,created_at,updated_at) VALUES ('{skill}','versions','versions',0,0);
+             INSERT INTO versions (id,skill_id,content_hash,manifest_json,created_at) VALUES ('{old_version}','{skill}','old','{{}}',0);
+             INSERT INTO versions (id,skill_id,content_hash,manifest_json,created_at) VALUES ('{current_version}','{skill}','current','{{}}',1);
+             INSERT INTO current_pointers (skill_id,version_id,updated_at) VALUES ('{skill}','{current_version}',1);
+             INSERT INTO check_runs (id,skill_id,version_id,kind,generation,state,started_at,ended_at) VALUES ('old-version-run','{skill}','{old_version}','basic',99,'failed',99,99);
+             INSERT INTO check_findings (id,run_id,code,severity,disposition) VALUES ('old-version-finding','old-version-run','security.secret','error','actionable');
+             INSERT INTO check_runs (id,skill_id,version_id,kind,generation,state,started_at,ended_at) VALUES ('current-version-run','{skill}','{current_version}','basic',1,'passed',1,1);"
+        ))
+        .unwrap();
+
+    assert!(db
+        .bootstrap_repository()
+        .list_pending((2026, 8, 24))
+        .unwrap()
+        .is_empty());
 }
 
 #[test]
