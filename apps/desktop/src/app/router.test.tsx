@@ -1,6 +1,7 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import { afterEach, vi } from "vitest";
 import { skillHubI18n } from "../i18n";
+import { sidebarNavigationEnd } from "./Sidebar";
 import { appRouter, AppRouter } from "./router";
 
 vi.mock("../api/bindings", async (importOriginal) => {
@@ -59,8 +60,21 @@ it("wires theme, language, data and motion providers at the production entry", a
   expect(screen.getByRole("link", { name: "Skill library" })).toHaveClass(
     "sh-sidebar__link--active",
   );
+  expect(screen.getByRole("link", { name: "Skill library" })).toHaveAttribute(
+    "aria-current",
+    "page",
+  );
+  expect(screen.getByRole("link", { name: "Overview" })).not.toHaveAttribute(
+    "aria-current",
+    "page",
+  );
   expect(document.documentElement).toHaveAttribute("data-theme", "moss-neutral");
   await waitFor(() => {
     expect(document.documentElement).toHaveAttribute("lang", "en-US");
   });
+});
+
+it("uses exact matching for the overview link while nested routes own current-page semantics", () => {
+  expect(sidebarNavigationEnd("/")).toBe(true);
+  expect(sidebarNavigationEnd("/library")).toBe(false);
 });

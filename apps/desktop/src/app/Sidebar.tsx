@@ -29,6 +29,10 @@ const pinnedNavigation: NavigationItem[] = [
   { href: "/settings", translationKey: "settings" },
 ];
 
+export function sidebarNavigationEnd(href: string) {
+  return href === "/";
+}
+
 function NavigationLinks({ items }: { items: NavigationItem[] }) {
   const { t } = useTranslation();
 
@@ -40,6 +44,7 @@ function NavigationLinks({ items }: { items: NavigationItem[] }) {
             className={({ isActive }) =>
               isActive ? "sh-sidebar__link sh-sidebar__link--active" : "sh-sidebar__link"
             }
+            end={sidebarNavigationEnd(item.href)}
             to={item.href}
           >
             {t(`navigation.${item.translationKey}`)}
