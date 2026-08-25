@@ -49,30 +49,32 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-it("wires theme, language, data and motion providers at the production entry", async () => {
+it("wires theme, language, data and motion providers at the production entry without duplicating the overview summary", async () => {
   mockBrowserPreferences();
   await skillHubI18n.changeLanguage("en-US");
-  await appRouter.navigate("/library");
+  await appRouter.navigate("/");
 
   render(<AppRouter />);
 
-  expect(await screen.findByText("Cached skill library")).toBeInTheDocument();
-  expect(screen.getAllByRole("heading", { name: "Skill library" })).toHaveLength(2);
-  expect(screen.getByRole("link", { name: "Skill library" })).toHaveClass(
-    "sh-sidebar__link--active",
-  );
-  expect(screen.getByRole("link", { name: "Skill library" })).toHaveAttribute(
-    "aria-current",
-    "page",
-  );
-  expect(screen.getByRole("link", { name: "Overview" })).not.toHaveAttribute(
-    "aria-current",
-    "page",
-  );
+  expect(await screen.findAllByText("0 skills")).toHaveLength(1);
+  expect(screen.queryByText("Cached skill library")).not.toBeInTheDocument();
+  expect(screen.getByRole("link", { name: "Overview" })).toHaveAttribute("aria-current", "page");
   expect(document.documentElement).toHaveAttribute("data-theme", "moss-neutral");
   await waitFor(() => {
     expect(document.documentElement).toHaveAttribute("lang", "en-US");
   });
+
+  await act(async () => {
+    await appRouter.navigate("/library");
+  });
+
+  expect(await screen.findAllByRole("heading", { name: "Skill library" })).toHaveLength(2);
+  expect(screen.getByRole("link", { name: "Skill library" })).toHaveAttribute(
+    "aria-current",
+    "page",
+  );
+  expect(screen.queryByText("0 skills")).not.toBeInTheDocument();
+  expect(screen.queryByText("Cached skill library")).not.toBeInTheDocument();
 });
 
 it("uses exact matching for the overview link while nested routes own current-page semantics", () => {

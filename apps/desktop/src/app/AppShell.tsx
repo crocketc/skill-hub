@@ -66,11 +66,6 @@ export function AppShell({ snapshot, verification }: AppShellProps) {
           ) : null}
         </header>
         <main className="sh-app-shell__content">
-          <section aria-label={t("appShell.cachedData")} className="sh-app-shell__summary">
-            <p>{t("appShell.cachedData")}</p>
-            <strong>{snapshot.skill_count}</strong>
-            <span>{t("appShell.skillCount")}</span>
-          </section>
           <Outlet context={snapshot} />
         </main>
       </section>

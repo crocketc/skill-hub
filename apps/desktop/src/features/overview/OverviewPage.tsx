@@ -1,19 +1,15 @@
-import { Suspense, lazy, useState } from "react";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useOutletContext } from "react-router-dom";
 import type { BootstrapSnapshot } from "../../api/bindings";
 import { DataState } from "../../ui/DataState";
+import { DeploymentBarChart } from "./DeploymentBarChart";
 import { PendingSummary } from "./PendingSummary";
 import {
   getDeploymentItems,
   getOverviewMetrics,
   type OverviewDimension,
 } from "./api";
-
-const LazyDeploymentBarChart = lazy(async () => {
-  const module = await import("./DeploymentBarChart");
-  return { default: module.DeploymentBarChart };
-});
 
 function OverviewMetricCard({
   count,
@@ -102,14 +98,12 @@ export function OverviewPage() {
             <DeploymentDimensionToggle onChange={setDimension} value={dimension} />
           </div>
           {deploymentItems.length > 0 ? (
-            <Suspense fallback={<p className="sh-overview__chart-loading">{t("overview.chart.loading")}</p>}>
-              <LazyDeploymentBarChart
-                ariaLabel={t(`overview.chart.aria.${dimension}`)}
-                detailsLabel={t("overview.chart.detailsLabel")}
-                dimension={dimension}
-                items={deploymentItems}
-              />
-            </Suspense>
+            <DeploymentBarChart
+              ariaLabel={t(`overview.chart.aria.${dimension}`)}
+              detailsLabel={t("overview.chart.detailsLabel")}
+              dimension={dimension}
+              items={deploymentItems}
+            />
           ) : (
             <DataState
               message={t(`overview.chart.empty.${dimension}`)}

@@ -1,8 +1,10 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { I18nextProvider } from "react-i18next";
 import { MemoryRouter, Outlet, Route, Routes, useLocation } from "react-router-dom";
+import { afterEach, vi } from "vitest";
 import type { BootstrapSnapshot } from "../../api/bindings";
 import { createSkillHubI18n } from "../../i18n";
+import { ThemeProvider } from "../../styles/ThemeProvider";
 import { OverviewPage } from "./OverviewPage";
 
 const overviewSnapshot: BootstrapSnapshot = {
@@ -39,20 +41,45 @@ function OverviewRoute({ snapshot }: { snapshot: BootstrapSnapshot }) {
   return <Outlet context={snapshot} />;
 }
 
+function mockBrowserPreferences() {
+  vi.stubGlobal(
+    "matchMedia",
+    vi.fn((query: string) => ({
+      matches: query === "(prefers-color-scheme: dark)" ? false : false,
+      media: query,
+      onchange: null,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    })),
+  );
+}
+
+afterEach(() => {
+  localStorage.clear();
+  document.documentElement.removeAttribute("data-theme");
+  vi.unstubAllGlobals();
+});
+
 async function renderOverview(snapshot = overviewSnapshot) {
   const i18n = await createSkillHubI18n(["en-US"]);
+  mockBrowserPreferences();
 
   render(
     <I18nextProvider i18n={i18n}>
-      <MemoryRouter initialEntries={["/"]}>
-        <Routes>
-          <Route element={<OverviewRoute snapshot={snapshot} />}>
-            <Route index element={<OverviewPage />} />
-            <Route path="agents/:agentKey" element={<LocationDisplay />} />
-            <Route path="projects/:projectKey" element={<LocationDisplay />} />
-          </Route>
-        </Routes>
-      </MemoryRouter>
+      <ThemeProvider>
+        <MemoryRouter initialEntries={["/"]}>
+          <Routes>
+            <Route element={<OverviewRoute snapshot={snapshot} />}>
+              <Route index element={<OverviewPage />} />
+              <Route path="agents/:agentKey" element={<LocationDisplay />} />
+              <Route path="projects/:projectKey" element={<LocationDisplay />} />
+            </Route>
+          </Routes>
+        </MemoryRouter>
+      </ThemeProvider>
     </I18nextProvider>,
   );
 }

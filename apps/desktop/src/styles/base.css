@@ -445,9 +445,7 @@ a {
 }
 
 .sh-overview__metric--hero {
-  background:
-    radial-gradient(circle at top right, color-mix(in srgb, var(--color-accent-soft) 75%, transparent), transparent 58%),
-    var(--color-surface);
+  background: var(--color-surface-raised);
 }
 
 .sh-overview__content-grid {

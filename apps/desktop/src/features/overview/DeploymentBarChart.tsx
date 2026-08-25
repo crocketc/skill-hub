@@ -1,107 +1,105 @@
-import { useEffect, useRef } from "react";
+import {
+  Suspense,
+  lazy,
+  useEffect,
+  useMemo,
+  useState,
+  type ComponentType,
+} from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
+import { useTheme } from "../../styles/ThemeProvider";
 import type { OverviewDeploymentItem, OverviewDimension } from "./api";
-import {
-  type ECElementEvent,
-  init,
-  type ComposeOption,
-  type EChartsType,
-  use,
-} from "echarts/core";
-import { BarChart, type BarSeriesOption } from "echarts/charts";
-import {
-  AriaComponent,
-  GridComponent,
-  TooltipComponent,
-  type GridComponentOption,
-  type TooltipComponentOption,
-} from "echarts/components";
-import { SVGRenderer } from "echarts/renderers";
 
-use([AriaComponent, BarChart, GridComponent, SVGRenderer, TooltipComponent]);
-
-type DeploymentChartOption = ComposeOption<
-  BarSeriesOption | GridComponentOption | TooltipComponentOption
->;
+export interface DeploymentBarChartPalette {
+  axisLabelColor: string;
+  axisLineColor: string;
+  barColor: string;
+  splitLineColor: string;
+  surfaceColor: string;
+  textColor: string;
+  tooltipBorderColor: string;
+}
 
 interface DeploymentBarChartProps {
   ariaLabel: string;
   detailsLabel: string;
   dimension: OverviewDimension;
   items: OverviewDeploymentItem[];
+  palette?: DeploymentBarChartPalette;
+  runtimeLoader?: DeploymentBarChartRuntimeLoader;
 }
 
-function buildChartOption(
-  ariaLabel: string,
-  dimensionLabel: string,
-  items: OverviewDeploymentItem[],
-): DeploymentChartOption {
+export interface DeploymentBarChartRuntimeProps {
+  animation: boolean;
+  ariaLabel: string;
+  dimensionLabel: string;
+  items: OverviewDeploymentItem[];
+  onSelect: (target: string) => void;
+  palette: DeploymentBarChartPalette;
+}
+
+type DeploymentBarChartRuntimeLoader = () => Promise<{
+  default: ComponentType<DeploymentBarChartRuntimeProps>;
+}>;
+
+const defaultPalette: DeploymentBarChartPalette = {
+  axisLabelColor: "#5f6d63",
+  axisLineColor: "rgb(24 43 29 / 10%)",
+  barColor: "#3f7259",
+  splitLineColor: "rgb(24 43 29 / 10%)",
+  surfaceColor: "#f7f9f5",
+  textColor: "#1c251f",
+  tooltipBorderColor: "rgb(24 43 29 / 10%)",
+};
+
+const defaultRuntimeLoader: DeploymentBarChartRuntimeLoader = async () =>
+  import("./DeploymentBarChartRuntime");
+
+function resolvePaletteValue(
+  styles: CSSStyleDeclaration,
+  token: string,
+  fallback: string,
+) {
+  return styles.getPropertyValue(token).trim() || fallback;
+}
+
+function readDeploymentBarChartPalette(): DeploymentBarChartPalette {
+  if (typeof document === "undefined") {
+    return defaultPalette;
+  }
+
+  const styles = getComputedStyle(document.documentElement);
+
   return {
-    animationDuration: 220,
-    aria: {
-      enabled: true,
-      description: ariaLabel,
-    },
-    grid: {
-      bottom: 12,
-      containLabel: true,
-      left: 12,
-      right: 12,
-      top: 12,
-    },
-    series: [
-      {
-        barMaxWidth: 48,
-        data: items.map((item) => ({
-          itemStyle: {
-            borderRadius: [10, 10, 0, 0],
-          },
-          name: item.label,
-          target: item.target,
-          value: item.count,
-        })),
-        emphasis: {
-          focus: "series",
-          itemStyle: {
-            opacity: 0.92,
-          },
-        },
-        type: "bar",
-      },
-    ],
-    tooltip: {
-      formatter: (params) => {
-        const item = Array.isArray(params) ? params[0] : params;
-        return `${item.name}: ${item.value}`;
-      },
-      trigger: "item",
-    },
-    xAxis: {
-      axisLabel: {
-        interval: 0,
-      },
-      axisTick: {
-        show: false,
-      },
-      data: items.map((item) => item.label),
-      type: "category",
-    },
-    yAxis: {
-      min: 0,
-      name: dimensionLabel,
-      splitLine: {
-        lineStyle: {
-          opacity: 0.28,
-        },
-      },
-      type: "value",
-    },
+    axisLabelColor: resolvePaletteValue(
+      styles,
+      "--color-text-muted",
+      defaultPalette.axisLabelColor,
+    ),
+    axisLineColor: resolvePaletteValue(
+      styles,
+      "--color-border",
+      defaultPalette.axisLineColor,
+    ),
+    barColor: resolvePaletteValue(styles, "--color-accent", defaultPalette.barColor),
+    splitLineColor: resolvePaletteValue(
+      styles,
+      "--color-border",
+      defaultPalette.splitLineColor,
+    ),
+    surfaceColor: resolvePaletteValue(
+      styles,
+      "--color-surface-raised",
+      defaultPalette.surfaceColor,
+    ),
+    textColor: resolvePaletteValue(styles, "--color-text", defaultPalette.textColor),
+    tooltipBorderColor: resolvePaletteValue(
+      styles,
+      "--color-border",
+      defaultPalette.tooltipBorderColor,
+    ),
   };
-}
-
-function canMountRuntimeChart() {
-  return typeof navigator === "undefined" || !/jsdom/i.test(navigator.userAgent);
 }
 
 export function DeploymentBarChart({
@@ -109,53 +107,42 @@ export function DeploymentBarChart({
   detailsLabel,
   dimension,
   items,
+  palette,
+  runtimeLoader = defaultRuntimeLoader,
 }: DeploymentBarChartProps) {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const chartRef = useRef<HTMLDivElement | null>(null);
-  const instanceRef = useRef<EChartsType | null>(null);
+  const { resolvedTheme } = useTheme();
+  const [resolvedPalette, setResolvedPalette] = useState<DeploymentBarChartPalette>(
+    () => palette ?? readDeploymentBarChartPalette(),
+  );
+  const RuntimeChart = useMemo(() => lazy(runtimeLoader), [runtimeLoader]);
 
   useEffect(() => {
-    if (!chartRef.current || !canMountRuntimeChart()) {
-      return undefined;
+    if (!palette) {
+      setResolvedPalette(readDeploymentBarChartPalette());
     }
-
-    const chart = init(chartRef.current, undefined, { renderer: "svg" });
-    instanceRef.current = chart;
-    chart.setOption(
-      buildChartOption(
-        ariaLabel,
-        t(`overview.chart.axis.${dimension}`),
-        items,
-      ),
-    );
-    chart.on("click", (params: ECElementEvent) => {
-      const { data } = params;
-      if (typeof data === "object" && data !== null && "target" in data) {
-        const target = data.target;
-        if (typeof target === "string") {
-          navigate(target);
-        }
-      }
-    });
-
-    const resize = () => {
-      chart.resize();
-    };
-
-    window.addEventListener("resize", resize);
-
-    return () => {
-      window.removeEventListener("resize", resize);
-      chart.dispose();
-      instanceRef.current = null;
-    };
-  }, [ariaLabel, dimension, items, navigate, t]);
+  }, [palette, resolvedTheme]);
 
   return (
     <section className="sh-overview__chart-block">
       <div aria-label={ariaLabel} className="sh-overview__chart-figure" role="img">
-        <div aria-hidden="true" className="sh-overview__chart-canvas" ref={chartRef} />
+        <Suspense
+          fallback={
+            <p className="sh-overview__chart-loading">
+              {t("overview.chart.loading")}
+            </p>
+          }
+        >
+          <RuntimeChart
+            animation={false}
+            ariaLabel={ariaLabel}
+            dimensionLabel={t(`overview.chart.axis.${dimension}`)}
+            items={items}
+            onSelect={(target) => navigate(target)}
+            palette={palette ?? resolvedPalette}
+          />
+        </Suspense>
       </div>
       <ol aria-label={detailsLabel} className="sh-overview__chart-list">
         {items.map((item) => (
