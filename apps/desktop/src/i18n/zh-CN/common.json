@@ -82,6 +82,12 @@
         "project": "项目部署"
       },
       "detailsLabel": "部署数量明细",
+      "detailCount": {
+        "agent_one": "{{count}} 个 Agent",
+        "agent_other": "{{count}} 个 Agent",
+        "project_one": "{{count}} 个项目",
+        "project_other": "{{count}} 个项目"
+      },
       "dimensionLabel": "部署关系维度",
       "dimensions": {
         "agent": "Agent",
@@ -97,7 +103,9 @@
       },
       "eyebrow": "部署分布",
       "heading": "受管理技能的部署去向",
-      "loading": "正在加载部署图表"
+      "loading": "正在加载部署图表",
+      "projectLimit": "显示部署最多的 {{shown}} / 共 {{total}} 个项目",
+      "scrollableDetails": "可滚动的部署数量明细"
     },
     "metrics": {
       "agents": "{{count}} 个 Agent",

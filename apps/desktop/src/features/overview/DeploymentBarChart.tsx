@@ -23,7 +23,6 @@ export interface DeploymentBarChartPalette {
 
 interface DeploymentBarChartProps {
   ariaLabel: string;
-  detailsLabel: string;
   dimension: OverviewDimension;
   items: OverviewDeploymentItem[];
   palette?: DeploymentBarChartPalette;
@@ -36,6 +35,7 @@ export interface DeploymentBarChartRuntimeProps {
   dimensionLabel: string;
   items: OverviewDeploymentItem[];
   onSelect: (target: string) => void;
+  orientation: "horizontal" | "vertical";
   palette: DeploymentBarChartPalette;
 }
 
@@ -55,6 +55,9 @@ const defaultPalette: DeploymentBarChartPalette = {
 
 const defaultRuntimeLoader: DeploymentBarChartRuntimeLoader = async () =>
   import("./DeploymentBarChartRuntime");
+
+const projectChartLimit = 10;
+const scrollableDetailThreshold = 6;
 
 function resolvePaletteValue(
   styles: CSSStyleDeclaration,
@@ -104,7 +107,6 @@ function readDeploymentBarChartPalette(): DeploymentBarChartPalette {
 
 export function DeploymentBarChart({
   ariaLabel,
-  detailsLabel,
   dimension,
   items,
   palette,
@@ -117,6 +119,10 @@ export function DeploymentBarChart({
     () => palette ?? readDeploymentBarChartPalette(),
   );
   const RuntimeChart = useMemo(() => lazy(runtimeLoader), [runtimeLoader]);
+  const chartItems =
+    dimension === "project" ? items.slice(0, projectChartLimit) : items;
+  const orientation = dimension === "project" ? "horizontal" : "vertical";
+  const isRankedProject = dimension === "project" && items.length > projectChartLimit;
 
   useEffect(() => {
     if (!palette) {
@@ -125,7 +131,17 @@ export function DeploymentBarChart({
   }, [palette, resolvedTheme]);
 
   return (
-    <section className="sh-overview__chart-block">
+    <section
+      className={`sh-overview__chart-block${isRankedProject ? " sh-overview__chart-block--ranked" : ""}`}
+    >
+      {isRankedProject ? (
+        <p className="sh-overview__chart-summary">
+          {t("overview.chart.projectLimit", {
+            shown: projectChartLimit,
+            total: items.length,
+          })}
+        </p>
+      ) : null}
       <div aria-label={ariaLabel} className="sh-overview__chart-figure" role="img">
         <Suspense
           fallback={
@@ -138,26 +154,62 @@ export function DeploymentBarChart({
             animation={false}
             ariaLabel={ariaLabel}
             dimensionLabel={t(`overview.chart.axis.${dimension}`)}
-            items={items}
+            items={chartItems}
             onSelect={(target) => navigate(target)}
+            orientation={orientation}
             palette={palette ?? resolvedPalette}
           />
         </Suspense>
       </div>
-      <ol aria-label={detailsLabel} className="sh-overview__chart-list">
-        {items.map((item) => (
-          <li key={item.key}>
-            <button
-              aria-label={item.buttonLabel}
-              className="sh-overview__chart-link"
-              onClick={() => navigate(item.target)}
-              type="button"
-            >
-              <span>{`${item.label} ${item.count}`}</span>
-            </button>
-          </li>
-        ))}
-      </ol>
+    </section>
+  );
+}
+
+interface DeploymentDetailListProps {
+  detailsLabel: string;
+  dimension: OverviewDimension;
+  items: OverviewDeploymentItem[];
+}
+
+export function DeploymentDetailList({
+  detailsLabel,
+  dimension,
+  items,
+}: DeploymentDetailListProps) {
+  const { t } = useTranslation();
+  const navigate = useNavigate();
+  const isScrollable = items.length > scrollableDetailThreshold;
+
+  return (
+    <section aria-label={detailsLabel} className="sh-overview__details">
+      <div className="sh-overview__details-head">
+        <h2>{detailsLabel}</h2>
+        <span>
+          {t(`overview.chart.detailCount.${dimension}`, { count: items.length })}
+        </span>
+      </div>
+      <div
+        aria-label={isScrollable ? t("overview.chart.scrollableDetails") : undefined}
+        className="sh-overview__details-scroll"
+        role={isScrollable ? "region" : undefined}
+        tabIndex={isScrollable ? 0 : undefined}
+      >
+        <ol aria-label={detailsLabel} className="sh-overview__chart-list">
+          {items.map((item) => (
+            <li key={item.key}>
+              <button
+                aria-label={item.buttonLabel}
+                className="sh-overview__chart-link"
+                onClick={() => navigate(item.target)}
+                type="button"
+              >
+                <span>{item.label}</span>
+                <strong>{` ${item.count}`}</strong>
+              </button>
+            </li>
+          ))}
+        </ol>
+      </div>
     </section>
   );
 }

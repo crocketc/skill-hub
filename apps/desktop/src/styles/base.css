@@ -284,8 +284,13 @@ a {
 
 .sh-sidebar__brand {
   display: inline-flex;
-  width: fit-content;
-  margin: var(--space-2);
+  width: 100%;
+  min-height: 3.75rem;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  color: var(--color-accent-strong);
+  text-decoration: none;
 }
 
 .sh-sidebar__list {
@@ -418,7 +423,8 @@ a {
 
 .sh-overview__metric,
 .sh-overview__panel,
-.sh-overview__pending {
+.sh-overview__pending,
+.sh-overview__details {
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
   background: var(--color-surface);
@@ -452,14 +458,25 @@ a {
   display: grid;
   gap: var(--space-4);
   grid-template-columns: minmax(0, 1fr) minmax(17rem, 22rem);
-  align-items: start;
+  align-items: stretch;
 }
 
 .sh-overview__panel,
-.sh-overview__pending {
+.sh-overview__pending,
+.sh-overview__details {
   display: grid;
   gap: var(--space-4);
   padding: var(--space-5);
+}
+
+.sh-overview__panel {
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.sh-overview__rail {
+  display: grid;
+  align-content: start;
+  gap: var(--space-4);
 }
 
 .sh-overview__section-head {
@@ -470,7 +487,8 @@ a {
 }
 
 .sh-overview__section-head h2,
-.sh-overview__pending h2 {
+.sh-overview__pending h2,
+.sh-overview__details h2 {
   margin: 0;
   font-size: var(--font-size-xl);
   text-wrap: balance;
@@ -524,7 +542,18 @@ a {
 
 .sh-overview__chart-block {
   display: grid;
-  gap: var(--space-4);
+  min-height: 0;
+  gap: var(--space-2);
+}
+
+.sh-overview__chart-block--ranked {
+  grid-template-rows: max-content minmax(0, 1fr);
+}
+
+.sh-overview__chart-summary {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
 }
 
 .sh-overview__chart-figure {
@@ -537,6 +566,29 @@ a {
 .sh-overview__chart-canvas {
   width: 100%;
   min-height: 16rem;
+}
+
+.sh-overview__chart-canvas--horizontal {
+  min-height: 20rem;
+}
+
+.sh-overview__details-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.sh-overview__details-head span {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+  white-space: nowrap;
+}
+
+.sh-overview__details-scroll {
+  max-height: 17.5rem;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
 }
 
 .sh-overview__chart-list,
@@ -562,8 +614,15 @@ a {
 
 .sh-overview__chart-link {
   width: 100%;
+  min-height: var(--table-row-height);
+  padding-block: var(--space-2);
   color: var(--color-text);
   cursor: pointer;
+}
+
+.sh-overview__chart-link strong {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
 }
 
 .sh-overview__chart-link:hover,
@@ -581,6 +640,10 @@ a {
   .sh-overview__metrics,
   .sh-overview__content-grid {
     grid-template-columns: 1fr;
+  }
+
+  .sh-overview__panel {
+    grid-template-rows: auto auto;
   }
 }
 

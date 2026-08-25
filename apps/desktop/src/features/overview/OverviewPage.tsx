@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import { useOutletContext } from "react-router-dom";
 import type { BootstrapSnapshot } from "../../api/bindings";
 import { DataState } from "../../ui/DataState";
-import { DeploymentBarChart } from "./DeploymentBarChart";
+import { DeploymentBarChart, DeploymentDetailList } from "./DeploymentBarChart";
 import { PendingSummary } from "./PendingSummary";
 import {
   getDeploymentItems,
@@ -100,7 +100,6 @@ export function OverviewPage() {
           {deploymentItems.length > 0 ? (
             <DeploymentBarChart
               ariaLabel={t(`overview.chart.aria.${dimension}`)}
-              detailsLabel={t("overview.chart.detailsLabel")}
               dimension={dimension}
               items={deploymentItems}
             />
@@ -112,7 +111,16 @@ export function OverviewPage() {
           )}
         </section>
 
-        <PendingSummary snapshot={snapshot} />
+        <div className="sh-overview__rail">
+          <PendingSummary snapshot={snapshot} />
+          {deploymentItems.length > 0 ? (
+            <DeploymentDetailList
+              detailsLabel={t("overview.chart.detailsLabel")}
+              dimension={dimension}
+              items={deploymentItems}
+            />
+          ) : null}
+        </div>
       </section>
     </section>
   );

@@ -82,6 +82,12 @@
         "project": "Project deployments"
       },
       "detailsLabel": "Deployment count details",
+      "detailCount": {
+        "agent_one": "{{count}} agent",
+        "agent_other": "{{count}} agents",
+        "project_one": "{{count}} project",
+        "project_other": "{{count}} projects"
+      },
       "dimensionLabel": "Deployment relationship dimension",
       "dimensions": {
         "agent": "Agents",
@@ -97,7 +103,9 @@
       },
       "eyebrow": "Deployment distribution",
       "heading": "Where managed skills are deployed",
-      "loading": "Loading deployment chart"
+      "loading": "Loading deployment chart",
+      "projectLimit": "Showing the top {{shown}} of {{total}} projects",
+      "scrollableDetails": "Scrollable deployment details"
     },
     "metrics": {
       "agents": "{{count}} agents",

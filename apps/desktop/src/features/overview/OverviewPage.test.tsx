@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { I18nextProvider } from "react-i18next";
 import { MemoryRouter, Outlet, Route, Routes, useLocation } from "react-router-dom";
 import { afterEach, vi } from "vitest";
@@ -31,6 +31,13 @@ const overviewSnapshot: BootstrapSnapshot = {
   recovery_state: "clean",
   skill_count: 12,
 };
+
+const manyProjectCategories = Array.from({ length: 12 }, (_, index) => ({
+  count: 12 - index,
+  dimension: "project" as const,
+  key: `project-${index + 1}`,
+  label_code: `Project ${index + 1}`,
+}));
 
 function LocationDisplay() {
   const location = useLocation();
@@ -88,8 +95,12 @@ it("renders proportional agent deployments with a visible text equivalent and dr
   await renderOverview();
 
   expect(await screen.findByRole("img", { name: "Deployment count by agent" })).toBeVisible();
-  expect(screen.getByText("Codex 12")).toBeVisible();
-  expect(screen.getByText("Claude Code 3")).toBeVisible();
+  expect(
+    screen.getByRole("button", { name: "View Codex's 12 deployments" }),
+  ).toHaveTextContent("Codex 12");
+  expect(
+    screen.getByRole("button", { name: "View Claude Code's 3 deployments" }),
+  ).toHaveTextContent("Claude Code 3");
   expect(screen.getByRole("list", { name: "Deployment count details" })).toHaveTextContent(
     "Codex 12Claude Code 3",
   );
@@ -107,12 +118,36 @@ it("switches to project relationships and drills into the truthful project desti
   fireEvent.click(screen.getByRole("radio", { name: "Projects" }));
 
   expect(await screen.findByRole("img", { name: "Deployment count by project" })).toBeVisible();
-  expect(screen.getByText("Aurora 3")).toBeVisible();
+  expect(
+    screen.getByRole("button", { name: "View Aurora's 3 deployments" }),
+  ).toHaveTextContent("Aurora 3");
   fireEvent.click(screen.getByRole("button", { name: "View Aurora's 3 deployments" }));
 
   expect(screen.getByTestId("location")).toHaveTextContent(
     "/projects/project-aurora?view=deployments",
   );
+});
+
+it("moves every deployment detail into the right rail while the project chart reports its top ten", async () => {
+  await renderOverview({
+    ...overviewSnapshot,
+    deployment_categories: [
+      ...overviewSnapshot.deployment_categories.filter(({ dimension }) => dimension === "agent"),
+      ...manyProjectCategories,
+    ],
+    project_count: 12,
+  });
+
+  fireEvent.click(screen.getByRole("radio", { name: "Projects" }));
+
+  const detailRegion = screen.getByRole("region", { name: "Deployment count details" });
+  expect(detailRegion.parentElement).toHaveClass("sh-overview__rail");
+  expect(within(detailRegion).getAllByRole("button", { name: /View Project/ })).toHaveLength(12);
+  expect(
+    within(detailRegion).getByRole("region", { name: "Scrollable deployment details" }),
+  ).toHaveAttribute("tabindex", "0");
+  expect(screen.getByText("Showing the top 10 of 12 projects")).toBeVisible();
+  expect(document.querySelector(".sh-overview__panel .sh-overview__chart-list")).toBeNull();
 });
 
 it("shows the pending summary without exposing the recent-operation log", async () => {

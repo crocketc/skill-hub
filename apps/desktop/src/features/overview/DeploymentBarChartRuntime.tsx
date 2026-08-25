@@ -28,8 +28,49 @@ function buildChartOption({
   ariaLabel,
   dimensionLabel,
   items,
+  orientation,
   palette,
 }: DeploymentBarChartRuntimeProps): DeploymentChartOption {
+  const isHorizontal = orientation === "horizontal";
+  const categoryAxis = {
+    axisLabel: {
+      color: palette.axisLabelColor,
+      interval: 0,
+    },
+    axisLine: {
+      lineStyle: {
+        color: palette.axisLineColor,
+      },
+    },
+    axisTick: {
+      show: false,
+    },
+    data: items.map((item) => item.label),
+    inverse: isHorizontal,
+    type: "category" as const,
+  };
+  const valueAxis = {
+    axisLabel: {
+      color: palette.axisLabelColor,
+    },
+    axisLine: {
+      lineStyle: {
+        color: palette.axisLineColor,
+      },
+    },
+    min: 0,
+    name: dimensionLabel,
+    nameTextStyle: {
+      color: palette.axisLabelColor,
+    },
+    splitLine: {
+      lineStyle: {
+        color: palette.splitLineColor,
+      },
+    },
+    type: "value" as const,
+  };
+
   return {
     animation,
     aria: {
@@ -45,10 +86,10 @@ function buildChartOption({
     },
     series: [
       {
-        barMaxWidth: 48,
+        barMaxWidth: isHorizontal ? 28 : 48,
         data: items.map((item) => ({
           itemStyle: {
-            borderRadius: [10, 10, 0, 0],
+            borderRadius: isHorizontal ? [0, 8, 8, 0] : [10, 10, 0, 0],
             color: palette.barColor,
           },
           name: item.label,
@@ -71,38 +112,8 @@ function buildChartOption({
       },
       trigger: "item",
     },
-    xAxis: {
-      axisLabel: {
-        color: palette.axisLabelColor,
-        interval: 0,
-      },
-      axisLine: {
-        lineStyle: {
-          color: palette.axisLineColor,
-        },
-      },
-      axisTick: {
-        show: false,
-      },
-      data: items.map((item) => item.label),
-      type: "category",
-    },
-    yAxis: {
-      axisLabel: {
-        color: palette.axisLabelColor,
-      },
-      min: 0,
-      name: dimensionLabel,
-      nameTextStyle: {
-        color: palette.axisLabelColor,
-      },
-      splitLine: {
-        lineStyle: {
-          color: palette.splitLineColor,
-        },
-      },
-      type: "value",
-    },
+    xAxis: isHorizontal ? valueAxis : categoryAxis,
+    yAxis: isHorizontal ? categoryAxis : valueAxis,
   };
 }
 
@@ -147,5 +158,11 @@ export default function DeploymentBarChartRuntime(
     };
   }, [props]);
 
-  return <div aria-hidden="true" className="sh-overview__chart-canvas" ref={chartRef} />;
+  return (
+    <div
+      aria-hidden="true"
+      className={`sh-overview__chart-canvas sh-overview__chart-canvas--${props.orientation}`}
+      ref={chartRef}
+    />
+  );
 }

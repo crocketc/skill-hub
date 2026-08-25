@@ -25,6 +25,14 @@ const items = [
   },
 ] as const;
 
+const projectItems = Array.from({ length: 12 }, (_, index) => ({
+  buttonLabel: `View Project ${index + 1}'s ${12 - index} deployments`,
+  count: 12 - index,
+  key: `project-${index + 1}`,
+  label: `Project ${index + 1}`,
+  target: `/projects/project-${index + 1}?view=deployments`,
+}));
+
 function mockThemeBrowserEnvironment() {
   vi.stubGlobal(
     "matchMedia",
@@ -85,7 +93,6 @@ function ThemeSwitchHarness({
       </button>
       <DeploymentBarChart
         ariaLabel="Deployment count by agent"
-        detailsLabel="Deployment count details"
         dimension="agent"
         items={[...items]}
         runtimeLoader={runtimeLoader}
@@ -99,13 +106,12 @@ async function renderWithEnglishLocale(node: JSX.Element) {
   render(<I18nextProvider i18n={i18n}>{node}</I18nextProvider>);
 }
 
-it("keeps the numeric deployment list visible while the lazy chart runtime is still unresolved", async () => {
+it("keeps the chart landmark visible while the lazy runtime is unresolved", async () => {
   await renderWithEnglishLocale(
     <ThemeProvider>
       <MemoryRouter>
         <DeploymentBarChart
           ariaLabel="Deployment count by agent"
-          detailsLabel="Deployment count details"
           dimension="agent"
           items={[...items]}
           runtimeLoader={() => new Promise(() => undefined)}
@@ -116,9 +122,45 @@ it("keeps the numeric deployment list visible while the lazy chart runtime is st
 
   expect(screen.getByRole("img", { name: "Deployment count by agent" })).toBeVisible();
   expect(screen.getByText("Loading deployment chart")).toBeVisible();
-  expect(screen.getByRole("list", { name: "Deployment count details" })).toHaveTextContent(
-    "Codex 12Claude Code 3",
+});
+
+it("shows every agent vertically but limits a large project ranking to ten horizontal bars", async () => {
+  mockThemeBrowserEnvironment();
+
+  const runtime = ({ ariaLabel, items: runtimeItems, orientation }: DeploymentBarChartRuntimeProps) => (
+    <output data-testid={ariaLabel}>
+      {`${orientation}|${runtimeItems.length}|${runtimeItems.at(0)?.label}|${runtimeItems.at(-1)?.label}`}
+    </output>
   );
+
+  await act(async () => {
+    await renderWithEnglishLocale(
+      <ThemeProvider>
+        <MemoryRouter>
+          <DeploymentBarChart
+            ariaLabel="Agent chart"
+            dimension="agent"
+            items={[...items]}
+            runtimeLoader={async () => ({ default: runtime })}
+          />
+          <DeploymentBarChart
+            ariaLabel="Project chart"
+            dimension="project"
+            items={projectItems}
+            runtimeLoader={async () => ({ default: runtime })}
+          />
+        </MemoryRouter>
+      </ThemeProvider>,
+    );
+  });
+
+  expect(await screen.findByTestId("Agent chart")).toHaveTextContent(
+    "vertical|2|Codex|Claude Code",
+  );
+  expect(await screen.findByTestId("Project chart")).toHaveTextContent(
+    "horizontal|10|Project 1|Project 10",
+  );
+  expect(screen.getByText("Showing the top 10 of 12 projects")).toBeVisible();
 });
 
 it("resolves palette values from theme tokens and keeps chart animation disabled", async () => {
