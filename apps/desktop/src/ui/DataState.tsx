@@ -4,7 +4,7 @@ export interface DataStateProps {
   actionLabel?: string;
   message: string;
   onAction?: () => void;
-  state: "loading" | "empty" | "error";
+  state: "loading" | "empty" | "error" | "unavailable";
 }
 
 export function DataState({

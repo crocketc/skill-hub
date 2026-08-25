@@ -1,0 +1,674 @@
+import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type FormEvent,
+  type JSX,
+} from "react";
+import { useTranslation } from "react-i18next";
+import { useSearchParams } from "react-router-dom";
+import { Button } from "../../ui/Button";
+import { DataState } from "../../ui/DataState";
+import {
+  BUILT_IN_SAVED_VIEWS,
+  DEFAULT_DRAWER_PREFERENCES,
+  DEFAULT_SKILL_QUERY,
+  DEFAULT_TABLE_PREFERENCES,
+  isSkillLibraryUnavailable,
+  skillLibraryKeys,
+  type BatchAction,
+  type SavedSkillView,
+  type SkillDrawerPreferences,
+  type SkillLibraryFacade,
+  type SkillLibraryQuery,
+  type SkillPage,
+  type SkillTablePreferences,
+} from "./api";
+import {
+  applySavedView,
+  parseSkillLibrarySearchParams,
+  serializeSkillLibrarySearchParams,
+  skillFilterKey,
+} from "./queryState";
+import { SavedViews } from "./SavedViews";
+import {
+  retainExplicitSelection,
+  selectAllFiltered,
+  selectionCount,
+  selectionToBatchTarget,
+  type SkillSelection,
+} from "./selection";
+import { SkillFilters } from "./SkillFilters";
+import { SkillQuickDrawer } from "./SkillQuickDrawer";
+import { SkillTable } from "./SkillTable";
+
+export interface SkillLibraryPageProps {
+  facade: SkillLibraryFacade;
+}
+
+interface SaveViewFormProps {
+  error?: string;
+  name: string;
+  onCancel: () => void;
+  onNameChange: (name: string) => void;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  pending: boolean;
+}
+
+interface PreferenceStatusProps {
+  message: string;
+  onRestore?: () => void;
+  onRetry: () => void;
+}
+
+interface BatchBarProps {
+  announcement?: string;
+  onAction: (action: BatchAction) => void;
+  onClear: () => void;
+  onSelectAll: () => void;
+  page: SkillPage;
+  selection: Exclude<SkillSelection, { kind: "none" }>;
+}
+
+const BATCH_ACTIONS: readonly BatchAction[] = [
+  "add_to",
+  "security_check",
+  "export",
+  "archive",
+];
+
+const BATCH_ACTION_KEYS = {
+  add_to: "skillLibrary.page.batch.addTo",
+  archive: "skillLibrary.page.batch.archive",
+  export: "skillLibrary.page.batch.export",
+  security_check: "skillLibrary.page.batch.securityCheck",
+} as const satisfies Record<BatchAction, string>;
+
+function hasActiveFilter(query: SkillLibraryQuery): boolean {
+  return skillFilterKey(query) !== skillFilterKey(DEFAULT_SKILL_QUERY);
+}
+
+function savedViewScope(query: SkillLibraryQuery): SavedSkillView["query"] {
+  return {
+    filters: {
+      ...query.filters,
+      aiCheck: [...query.filters.aiCheck],
+      basicCheck: [...query.filters.basicCheck],
+      lifecycle: [...query.filters.lifecycle],
+      tags: [...query.filters.tags],
+    },
+    sort: { ...query.sort },
+    text: query.text,
+  };
+}
+
+function savedViewIsDirty(
+  view: SavedSkillView | undefined,
+  query: SkillLibraryQuery,
+  table: SkillTablePreferences,
+): boolean {
+  if (!view) return false;
+  return JSON.stringify({ query: savedViewScope(query), table }) !==
+    JSON.stringify({ query: view.query, table: view.table });
+}
+
+function mergeSavedViews(userViews: SavedSkillView[] | undefined): SavedSkillView[] {
+  const views = new Map<string, SavedSkillView>();
+  for (const view of BUILT_IN_SAVED_VIEWS) views.set(view.id, view);
+  for (const view of userViews ?? []) {
+    if (!views.has(view.id)) views.set(view.id, view);
+  }
+  return [...views.values()];
+}
+
+function SkillLibrarySkeleton(): JSX.Element {
+  const { t } = useTranslation();
+  return (
+    <div className="sh-skill-library__loading">
+      <p aria-live="polite" role="status">
+        {t("skillLibrary.page.states.loading")}
+      </p>
+      <div
+        aria-label={t("skillLibrary.table.resultsRegion")}
+        className="sh-skill-library__loading-table"
+        role="region"
+      >
+        {Array.from({ length: 6 }, (_, index) => (
+          <div
+            className="sh-skill-library__loading-row"
+            data-testid="skill-loading-row"
+            key={index}
+          >
+            <span />
+            <span />
+            <span />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function SaveViewForm({
+  error,
+  name,
+  onCancel,
+  onNameChange,
+  onSubmit,
+  pending,
+}: SaveViewFormProps): JSX.Element {
+  const { t } = useTranslation();
+  return (
+    <form
+      aria-label={t("skillLibrary.page.saveView.formLabel")}
+      className="sh-skill-library__save-view"
+      onSubmit={onSubmit}
+    >
+      <label>
+        {t("skillLibrary.page.saveView.name")}
+        <input
+          onChange={(event) => onNameChange(event.currentTarget.value)}
+          required
+          type="text"
+          value={name}
+        />
+      </label>
+      <Button disabled={pending || name.trim().length === 0} size="sm" type="submit">
+        {t("skillLibrary.page.saveView.submit")}
+      </Button>
+      <Button onClick={onCancel} size="sm" type="button" variant="ghost">
+        {t("actions.cancel")}
+      </Button>
+      {error ? <p role="alert">{error}</p> : null}
+    </form>
+  );
+}
+
+function PreferenceStatus({
+  message,
+  onRestore,
+  onRetry,
+}: PreferenceStatusProps): JSX.Element {
+  const { t } = useTranslation();
+  return (
+    <div
+      aria-label={t("skillLibrary.page.preferences.statusLabel")}
+      className="sh-skill-library__preference-status"
+      role="status"
+    >
+      <span>{message}</span>
+      <Button onClick={onRetry} size="sm" variant="ghost">
+        {t("actions.retry")}
+      </Button>
+      {onRestore ? (
+        <Button onClick={onRestore} size="sm" variant="ghost">
+          {t("skillLibrary.page.preferences.restoreDefault")}
+        </Button>
+      ) : null}
+    </div>
+  );
+}
+
+function BatchBar({
+  announcement,
+  onAction,
+  onClear,
+  onSelectAll,
+  page,
+  selection,
+}: BatchBarProps): JSX.Element {
+  const { t } = useTranslation();
+  const count = selectionCount(selection);
+  const pageIds = new Set(page.items.map((row) => row.id));
+  const selectedCurrentPage =
+    selection.kind === "explicit" &&
+    selection.skillIds.length === page.items.length &&
+    page.items.length > 1 &&
+    selection.skillIds.every((skillId) => pageIds.has(skillId));
+  const scope =
+    selection.kind === "all_filtered"
+      ? t("skillLibrary.page.selection.allFiltered", { count })
+      : selectedCurrentPage
+        ? t("skillLibrary.page.selection.currentPage", { count })
+        : t("skillLibrary.page.selection.explicit", { count });
+
+  return (
+    <aside aria-label={t("skillLibrary.page.batch.label")} className="sh-skill-library__batch-bar">
+      <strong>{scope}</strong>
+      {selection.kind === "explicit" && count < page.total ? (
+        <Button onClick={onSelectAll} size="sm" variant="secondary">
+          {t("skillLibrary.page.selection.selectAll", { count: page.total })}
+        </Button>
+      ) : null}
+      <div className="sh-skill-library__batch-actions">
+        {BATCH_ACTIONS.map((action) => (
+          <Button key={action} onClick={() => onAction(action)} size="sm" variant="ghost">
+            {t(BATCH_ACTION_KEYS[action])}
+          </Button>
+        ))}
+        <Button onClick={onClear} size="sm" variant="ghost">
+          {t("skillLibrary.page.selection.clear")}
+        </Button>
+      </div>
+      {announcement ? <p aria-live="polite" role="status">{announcement}</p> : null}
+    </aside>
+  );
+}
+
+export function SkillLibraryPage({ facade }: SkillLibraryPageProps): JSX.Element {
+  const { t } = useTranslation();
+  const queryClient = useQueryClient();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const search = searchParams.toString();
+  const parsed = useMemo(() => parseSkillLibrarySearchParams(search), [search]);
+  const { query, skillId } = parsed;
+  const rootRef = useRef<HTMLElement | null>(null);
+  const returnFocusRef = useRef<HTMLElement | null>(null);
+  const scrollPositionRef = useRef<{ left: number; top: number }>();
+  const currentFilterKeyRef = useRef(skillFilterKey(query));
+  currentFilterKeyRef.current = skillFilterKey(query);
+
+  const [selection, setSelection] = useState<SkillSelection>({ kind: "none" });
+  const [tablePreferences, setTablePreferences] = useState<SkillTablePreferences>();
+  const [drawerPreferences, setDrawerPreferences] = useState<SkillDrawerPreferences>();
+  const [tableSaveFailure, setTableSaveFailure] = useState<SkillTablePreferences>();
+  const [drawerSaveFailure, setDrawerSaveFailure] = useState<SkillDrawerPreferences>();
+  const [selectionAnnouncement, setSelectionAnnouncement] = useState<string>();
+  const [batchAnnouncement, setBatchAnnouncement] = useState<string>();
+  const [saveViewOpen, setSaveViewOpen] = useState(false);
+  const [saveViewName, setSaveViewName] = useState("");
+  const [saveViewError, setSaveViewError] = useState<string>();
+  const [saveViewPending, setSaveViewPending] = useState(false);
+
+  const pageQuery = useQuery({
+    placeholderData: keepPreviousData,
+    queryFn: () => facade.listSkills(query),
+    queryKey: skillLibraryKeys.page(query),
+  });
+  const savedViewsQuery = useQuery({
+    queryFn: () => facade.listSavedViews(),
+    queryKey: skillLibraryKeys.savedViews(),
+  });
+  const tablePreferencesQuery = useQuery({
+    queryFn: () => facade.loadTablePreferences(),
+    queryKey: skillLibraryKeys.tablePreferences(),
+  });
+  const drawerPreferencesQuery = useQuery({
+    queryFn: () => facade.loadDrawerPreferences(),
+    queryKey: skillLibraryKeys.drawerPreferences(),
+  });
+
+  const effectiveTablePreferences =
+    tablePreferences ?? tablePreferencesQuery.data ?? DEFAULT_TABLE_PREFERENCES;
+  const effectiveDrawerPreferences =
+    drawerPreferences ?? drawerPreferencesQuery.data ?? DEFAULT_DRAWER_PREFERENCES;
+  const savedViews = useMemo(
+    () => mergeSavedViews(savedViewsQuery.data),
+    [savedViewsQuery.data],
+  );
+  const activeSavedView = savedViews.find((view) => view.id === query.savedViewId);
+
+  const persistDrawerPreferences = useCallback(
+    async (next: SkillDrawerPreferences) => {
+      setDrawerSaveFailure(undefined);
+      try {
+        await facade.saveDrawerPreferences(next);
+        await queryClient.invalidateQueries({
+          queryKey: skillLibraryKeys.drawerPreferences(),
+        });
+      } catch (error) {
+        setDrawerSaveFailure(next);
+        throw error;
+      }
+    },
+    [facade, queryClient],
+  );
+  const drawerFacade = useMemo<SkillLibraryFacade>(
+    () => ({
+      ...facade,
+      saveDrawerPreferences: persistDrawerPreferences,
+    }),
+    [facade, persistDrawerPreferences],
+  );
+
+  useEffect(() => {
+    const region = rootRef.current?.querySelector<HTMLElement>(
+      ".sh-skill-table__region",
+    );
+    if (region && (!returnFocusRef.current || !returnFocusRef.current.isConnected)) {
+      returnFocusRef.current = region;
+    }
+  }, [pageQuery.data]);
+
+  const writeQuery = (nextQuery: SkillLibraryQuery, nextSkillId?: string) => {
+    setSearchParams(serializeSkillLibrarySearchParams(nextQuery, nextSkillId));
+  };
+
+  const updateQuery = (nextQuery: SkillLibraryQuery) => {
+    const previousKey = skillFilterKey(query);
+    const nextKey = skillFilterKey(nextQuery);
+    if (previousKey !== nextKey) {
+      currentFilterKeyRef.current = nextKey;
+      if (selection.kind === "all_filtered") {
+        setSelection({ kind: "none" });
+        setSelectionAnnouncement(
+          t("skillLibrary.page.selection.clearedForFilters"),
+        );
+      } else if (selection.kind === "explicit") {
+        const selectedIds = [...selection.skillIds];
+        void facade.retainMatchingSkillIds(selectedIds, nextQuery).then((matchingIds) => {
+          if (currentFilterKeyRef.current !== nextKey) return;
+          setSelection((current) => retainExplicitSelection(current, matchingIds));
+        });
+      }
+    }
+    writeQuery(nextQuery, skillId);
+  };
+
+  const clearFilters = () => {
+    updateQuery({
+      ...query,
+      filters: DEFAULT_SKILL_QUERY.filters,
+      page: 1,
+      savedViewId: undefined,
+      text: "",
+    });
+  };
+
+  const applyView = (view: SavedSkillView) => {
+    const applied = applySavedView(query, view);
+    setTablePreferences(applied.table);
+    updateQuery(applied.query);
+  };
+
+  const persistTablePreferences = (next: SkillTablePreferences) => {
+    setTablePreferences(next);
+    setTableSaveFailure(undefined);
+    void facade.saveTablePreferences(next).then(
+      () =>
+        queryClient.invalidateQueries({
+          queryKey: skillLibraryKeys.tablePreferences(),
+        }),
+      () => setTableSaveFailure(next),
+    );
+  };
+
+  const openSkill = (nextSkillId: string, rowElement: HTMLElement) => {
+    const region = rootRef.current?.querySelector<HTMLElement>(
+      ".sh-skill-table__region",
+    );
+    scrollPositionRef.current = region
+      ? { left: region.scrollLeft, top: region.scrollTop }
+      : undefined;
+    returnFocusRef.current = rowElement;
+    writeQuery(query, nextSkillId);
+  };
+
+  const closeDrawer = () => {
+    const region = rootRef.current?.querySelector<HTMLElement>(
+      ".sh-skill-table__region",
+    );
+    if (region && scrollPositionRef.current) {
+      region.scrollLeft = scrollPositionRef.current.left;
+      region.scrollTop = scrollPositionRef.current.top;
+    }
+    if (!returnFocusRef.current?.isConnected && region) {
+      returnFocusRef.current = region;
+    }
+    writeQuery(query, undefined);
+  };
+
+  const emitBatchAction = (action: BatchAction) => {
+    if (selection.kind === "none") return;
+    setBatchAnnouncement(undefined);
+    const intent = { action, target: selectionToBatchTarget(selection) };
+    void facade.emitBatchIntent(intent).catch((error: unknown) => {
+      setBatchAnnouncement(
+        isSkillLibraryUnavailable(error)
+          ? t("skillLibrary.page.batch.unconnected")
+          : t("skillLibrary.page.batch.error"),
+      );
+    });
+  };
+
+  const submitSavedView = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const name = saveViewName.trim();
+    if (!name) return;
+    setSaveViewPending(true);
+    setSaveViewError(undefined);
+    void facade
+      .saveView({
+        name,
+        query: savedViewScope(query),
+        table: effectiveTablePreferences,
+      })
+      .then(
+        () => {
+          setSaveViewOpen(false);
+          setSaveViewName("");
+          return queryClient.invalidateQueries({
+            queryKey: skillLibraryKeys.savedViews(),
+          });
+        },
+        () => setSaveViewError(t("skillLibrary.page.saveView.error")),
+      )
+      .finally(() => setSaveViewPending(false));
+  };
+
+  let preferenceStatus: JSX.Element | null = null;
+  if (tableSaveFailure) {
+    preferenceStatus = (
+      <PreferenceStatus
+        message={t("skillLibrary.page.preferences.notSaved")}
+        onRestore={() => persistTablePreferences(DEFAULT_TABLE_PREFERENCES)}
+        onRetry={() => persistTablePreferences(tableSaveFailure)}
+      />
+    );
+  } else if (drawerSaveFailure) {
+    preferenceStatus = (
+      <PreferenceStatus
+        message={t("skillLibrary.page.preferences.notSaved")}
+        onRestore={() => {
+          setDrawerPreferences(DEFAULT_DRAWER_PREFERENCES);
+          void persistDrawerPreferences(DEFAULT_DRAWER_PREFERENCES).catch(
+            () => undefined,
+          );
+        }}
+        onRetry={() => {
+          void persistDrawerPreferences(drawerSaveFailure).catch(
+            () => undefined,
+          );
+        }}
+      />
+    );
+  } else if (tablePreferencesQuery.isError) {
+    preferenceStatus = (
+      <PreferenceStatus
+        message={t("skillLibrary.page.preferences.tableLoadError")}
+        onRetry={() => void tablePreferencesQuery.refetch()}
+      />
+    );
+  } else if (drawerPreferencesQuery.isError) {
+    preferenceStatus = (
+      <PreferenceStatus
+        message={t("skillLibrary.page.preferences.drawerLoadError")}
+        onRetry={() => void drawerPreferencesQuery.refetch()}
+      />
+    );
+  } else if (savedViewsQuery.isError) {
+    preferenceStatus = (
+      <PreferenceStatus
+        message={t("skillLibrary.page.preferences.viewsLoadError")}
+        onRetry={() => void savedViewsQuery.refetch()}
+      />
+    );
+  }
+
+  if (pageQuery.isPending) {
+    return (
+      <section className="sh-skill-library" ref={rootRef}>
+        <SkillLibrarySkeleton />
+      </section>
+    );
+  }
+
+  if (pageQuery.isError && isSkillLibraryUnavailable(pageQuery.error)) {
+    return (
+      <section className="sh-skill-library" ref={rootRef}>
+        <DataState
+          message={t("skillLibrary.page.states.unavailable")}
+          state="unavailable"
+        />
+      </section>
+    );
+  }
+
+  if (pageQuery.isError) {
+    return (
+      <section className="sh-skill-library" ref={rootRef}>
+        <DataState
+          actionLabel={t("actions.retry")}
+          message={t("skillLibrary.page.states.error")}
+          onAction={() => void pageQuery.refetch()}
+          state="error"
+        />
+      </section>
+    );
+  }
+
+  const page = pageQuery.data;
+  if (page.total === 0 && !hasActiveFilter(query)) {
+    return (
+      <section className="sh-skill-library" ref={rootRef}>
+        <DataState
+          message={t("skillLibrary.page.states.empty")}
+          state="empty"
+        />
+        <p className="sh-skill-library__boundary">
+          {t("skillLibrary.page.states.importBoundary")}
+        </p>
+      </section>
+    );
+  }
+
+  if (page.items.length === 0 && hasActiveFilter(query)) {
+    return (
+      <section className="sh-skill-library" ref={rootRef}>
+        <DataState
+          actionLabel={t("skillLibrary.filters.clear")}
+          message={t("skillLibrary.page.states.noResults")}
+          onAction={clearFilters}
+          state="empty"
+        />
+      </section>
+    );
+  }
+
+  const nonEmptySelection = selection.kind === "none" ? undefined : selection;
+
+  return (
+    <section
+      className={`sh-skill-library${nonEmptySelection ? " sh-skill-library--batch-active" : ""}`}
+      ref={rootRef}
+    >
+      <div className="sh-skill-library__saved-views">
+        <SavedViews
+          activeViewId={query.savedViewId}
+          dirty={savedViewIsDirty(activeSavedView, query, effectiveTablePreferences)}
+          onApply={applyView}
+          onSave={() => {
+            setSaveViewError(undefined);
+            setSaveViewOpen(true);
+          }}
+          views={savedViews}
+        />
+      </div>
+
+      {saveViewOpen ? (
+        <SaveViewForm
+          error={saveViewError}
+          name={saveViewName}
+          onCancel={() => setSaveViewOpen(false)}
+          onNameChange={setSaveViewName}
+          onSubmit={submitSavedView}
+          pending={saveViewPending}
+        />
+      ) : null}
+
+      {preferenceStatus}
+      {selectionAnnouncement ? (
+        <p className="sh-skill-library__announcement" role="status">
+          {selectionAnnouncement}
+        </p>
+      ) : null}
+
+      <div className="sh-skill-library__query-tools">
+        <SkillFilters
+          availableTags={page.facets.tags}
+          onChange={updateQuery}
+          onClear={clearFilters}
+          query={query}
+          resultCount={page.total}
+        />
+      </div>
+
+      <p className="sh-skill-library__page-status">
+        {t("skillLibrary.page.pageStatus", {
+          count: page.total,
+          page: page.page,
+        })}
+      </p>
+
+      <SkillTable
+        onOpenSkill={openSkill}
+        onPreferencesChange={persistTablePreferences}
+        onQueryChange={updateQuery}
+        onSelectionChange={(next) => {
+          setSelectionAnnouncement(undefined);
+          setSelection(next);
+        }}
+        page={page}
+        preferences={effectiveTablePreferences}
+        query={query}
+        selection={selection}
+      />
+
+      {nonEmptySelection ? (
+        <BatchBar
+          announcement={batchAnnouncement}
+          onAction={emitBatchAction}
+          onClear={() => {
+            setBatchAnnouncement(undefined);
+            setSelection({ kind: "none" });
+          }}
+          onSelectAll={() =>
+            setSelection(
+              selectAllFiltered(
+                { filters: query.filters, text: query.text },
+                skillFilterKey(query),
+                page.total,
+              ),
+            )}
+          page={page}
+          selection={nonEmptySelection}
+        />
+      ) : null}
+
+      <SkillQuickDrawer
+        facade={drawerFacade}
+        onOpenChange={(open) => {
+          if (!open) closeDrawer();
+        }}
+        onPreferencesChange={setDrawerPreferences}
+        open={Boolean(skillId)}
+        preferences={effectiveDrawerPreferences}
+        returnFocusRef={returnFocusRef}
+        skillId={skillId}
+      />
+    </section>
+  );
+}

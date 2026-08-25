@@ -62,6 +62,51 @@
     "unavailable": "Unavailable"
   },
   "skillLibrary": {
+    "page": {
+      "batch": {
+        "addTo": "Add to",
+        "archive": "Archive",
+        "error": "The batch workflow could not be started",
+        "export": "Export",
+        "label": "Batch actions",
+        "securityCheck": "Run security check",
+        "unconnected": "This batch workflow is not connected"
+      },
+      "pageStatus": "Page {{page}} · {{count}} results",
+      "preferences": {
+        "drawerLoadError": "Drawer preferences could not be loaded. Defaults are in use.",
+        "notSaved": "Preference was not saved. The temporary layout is still active.",
+        "restoreDefault": "Restore default",
+        "statusLabel": "Preference status",
+        "tableLoadError": "Table preferences could not be loaded. Defaults are in use.",
+        "viewsLoadError": "Saved views could not be loaded. Built-in views are still available."
+      },
+      "saveView": {
+        "error": "The view could not be saved",
+        "formLabel": "Save current view",
+        "name": "View name",
+        "submit": "Save view"
+      },
+      "selection": {
+        "allFiltered_one": "All {{count}} filtered result selected",
+        "allFiltered_other": "All {{count}} filtered results selected",
+        "clear": "Clear selection",
+        "clearedForFilters": "Selection cleared because filters changed",
+        "currentPage_one": "{{count}} item selected on this page",
+        "currentPage_other": "{{count}} items selected on this page",
+        "explicit_one": "{{count}} item selected",
+        "explicit_other": "{{count}} items selected",
+        "selectAll": "Select all {{count}} filtered results"
+      },
+      "states": {
+        "empty": "No skills are in the library yet",
+        "error": "Could not load the skill library",
+        "importBoundary": "Import is not connected yet",
+        "loading": "Loading skill library",
+        "noResults": "No skills match the current filters",
+        "unavailable": "The local catalog contract is not connected"
+      }
+    },
     "drawer": {
       "actions": {
         "addTo": "Add to",

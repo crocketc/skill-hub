@@ -24,3 +24,12 @@ it("announces loading without presenting it as an error", () => {
   expect(screen.getByRole("status")).toHaveTextContent("正在读取本地数据");
   expect(screen.queryByRole("alert")).not.toBeInTheDocument();
 });
+
+it("announces unavailable data without treating it as an application error", () => {
+  render(<DataState message="Catalog contract is unavailable" state="unavailable" />);
+
+  expect(screen.getByRole("status")).toHaveTextContent(
+    "Catalog contract is unavailable",
+  );
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+});
