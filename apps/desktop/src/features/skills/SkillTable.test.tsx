@@ -2,6 +2,7 @@ import { fireEvent, render, screen, within } from "@testing-library/react";
 import { I18nextProvider } from "react-i18next";
 import { expect, it, vi } from "vitest";
 import { createSkillHubI18n } from "../../i18n";
+import "../../styles/base.css";
 import {
   DEFAULT_SKILL_QUERY,
   DEFAULT_TABLE_PREFERENCES,
@@ -82,7 +83,9 @@ it("uses compact density and keeps checkbox clicks separate from row opening", a
   fireEvent.click(screen.getByRole("checkbox", { name: "Select PDF Reader" }));
   expect(onSelectionChange).toHaveBeenCalled();
   expect(onOpenSkill).not.toHaveBeenCalled();
-  fireEvent.click(screen.getByRole("cell", { name: /PDF Reader/ }));
+  const nameCell = screen.getByText("PDF Reader").closest("td");
+  if (!nameCell) throw new Error("Expected the PDF Reader name cell");
+  fireEvent.click(nameCell);
   expect(onOpenSkill).toHaveBeenCalledWith("skill-pdf", expect.any(HTMLElement));
 });
 
@@ -95,7 +98,7 @@ it("opens a focused row with Enter and emits manual sort and pagination", async 
   expect(onOpenSkill).toHaveBeenCalledWith("skill-pdf", expect.any(HTMLElement));
   fireEvent.click(screen.getByRole("button", { name: "Sort by name" }));
   expect(onQueryChange).toHaveBeenCalledWith(
-    expect.objectContaining({ page: 1, sort: { column: "name", direction: "asc" } }),
+    expect.objectContaining({ page: 1, sort: { column: "name", direction: "desc" } }),
   );
   fireEvent.click(screen.getByRole("button", { name: "Previous page" }));
   expect(onQueryChange).toHaveBeenLastCalledWith(expect.objectContaining({ page: 1 }));
@@ -142,4 +145,88 @@ it("sets aria-sort on the actively sorted name header and resets pages when page
   expect(screen.getByRole("columnheader", { name: /Name/ })).toHaveAttribute("aria-sort", "ascending");
   fireEvent.change(screen.getByRole("combobox", { name: "Page size" }), { target: { value: "50" } });
   expect(onQueryChange).toHaveBeenCalledWith(expect.objectContaining({ page: 1, pageSize: 50 }));
+});
+
+it("selects only the current page from the header checkbox", async () => {
+  const onSelectionChange = vi.fn();
+  await renderTable({ onSelectionChange });
+
+  fireEvent.click(screen.getByRole("checkbox", { name: "Select current page" }));
+
+  expect(onSelectionChange).toHaveBeenCalledWith({
+    kind: "explicit",
+    skillIds: ["skill-notes", "skill-pdf"],
+  });
+});
+
+it("excludes an all-filtered selection without opening the row", async () => {
+  const onOpenSkill = vi.fn();
+  const onSelectionChange = vi.fn();
+  const selection = {
+    excludedSkillIds: [],
+    filter: { filters: DEFAULT_SKILL_QUERY.filters, text: "" },
+    filterKey: "",
+    kind: "all_filtered" as const,
+    total: 23,
+  };
+  await renderTable({ onOpenSkill, onSelectionChange, selection });
+
+  fireEvent.click(screen.getByRole("checkbox", { name: "Select PDF Reader" }));
+
+  expect(onSelectionChange).toHaveBeenCalledWith(expect.objectContaining({
+    excludedSkillIds: ["skill-pdf"],
+    kind: "all_filtered",
+  }));
+  expect(onOpenSkill).not.toHaveBeenCalled();
+});
+
+it("emits controlled visibility and density preference updates", async () => {
+  const onPreferencesChange = vi.fn();
+  await renderTable({ onPreferencesChange });
+
+  fireEvent.click(screen.getByRole("button", { name: "Columns and density" }));
+  fireEvent.click(screen.getByRole("checkbox", { name: "Purpose" }));
+  expect(onPreferencesChange).toHaveBeenLastCalledWith(expect.objectContaining({
+    visibleColumns: expect.not.arrayContaining(["purpose"]),
+  }));
+  fireEvent.click(screen.getByRole("radio", { name: "Standard" }));
+  expect(onPreferencesChange).toHaveBeenLastCalledWith(expect.objectContaining({ density: "standard" }));
+});
+
+it("keeps row checkbox keyboard activation isolated from row opening", async () => {
+  const onOpenSkill = vi.fn();
+  await renderTable({ onOpenSkill });
+
+  fireEvent.keyDown(screen.getByRole("checkbox", { name: "Select PDF Reader" }), { key: "Enter" });
+
+  expect(onOpenSkill).not.toHaveBeenCalled();
+});
+
+it("keeps the selection cell semantic while using compact inline cell content", async () => {
+  await renderTable();
+
+  const pdfRow = screen.getByRole("row", { name: /PDF Reader/ });
+  const selectionCell = pdfRow.querySelector("td");
+  const name = within(pdfRow).getByText("PDF Reader").closest(".sh-skill-table__name");
+  const security = within(pdfRow).getByText("Basic: Passed").closest(".sh-skill-table__security");
+  expect(selectionCell).toHaveRole("cell");
+  expect(selectionCell).not.toHaveAttribute("role", "presentation");
+  expect(name).toHaveClass("sh-skill-table__inline");
+  expect(security).toHaveClass("sh-skill-table__inline");
+  expect(getComputedStyle(name as HTMLElement).display).toBe("flex");
+  expect(getComputedStyle(name as HTMLElement).whiteSpace).toBe("nowrap");
+  expect(getComputedStyle(security as HTMLElement).display).toBe("flex");
+  expect(getComputedStyle(screen.getByRole("table")).getPropertyValue("--skill-row-height")).toBe("2.375rem");
+});
+
+it("disables pagination controls at the first and last pages", async () => {
+  await renderTable({ page: { ...page, page: 1 }, query: { ...DEFAULT_SKILL_QUERY, page: 1, pageSize: 10 } });
+  expect(screen.getByRole("button", { name: "Previous page" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "Next page" })).not.toBeDisabled();
+});
+
+it("disables the next page control at the final page", async () => {
+  await renderTable({ page: { ...page, page: 3 }, query: { ...DEFAULT_SKILL_QUERY, page: 3, pageSize: 10 } });
+  expect(screen.getByRole("button", { name: "Previous page" })).not.toBeDisabled();
+  expect(screen.getByRole("button", { name: "Next page" })).toBeDisabled();
 });

@@ -864,7 +864,9 @@ a {
 }
 
 .sh-skill-table tbody tr {
+  height: var(--skill-row-height);
   min-height: var(--skill-row-height);
+  max-height: var(--skill-row-height);
   cursor: pointer;
 }
 
@@ -880,7 +882,8 @@ a {
 .sh-skill-table th,
 .sh-skill-table td {
   height: var(--skill-row-height);
-  padding: var(--space-2) var(--space-3);
+  max-height: var(--skill-row-height);
+  padding: var(--space-1) var(--space-3);
   border-bottom: 1px solid var(--color-border);
   text-align: left;
   vertical-align: middle;
@@ -903,8 +906,6 @@ a {
   cursor: pointer;
 }
 
-.sh-skill-table__name,
-.sh-skill-table__security,
 .sh-skill-table__counts,
 .sh-skill-table__version {
   display: grid;
@@ -912,7 +913,18 @@ a {
   min-width: 0;
 }
 
+.sh-skill-table__inline {
+  display: flex;
+  min-width: 0;
+  max-width: 100%;
+  align-items: center;
+  gap: var(--space-2);
+  overflow: hidden;
+  white-space: nowrap;
+}
+
 .sh-skill-table__name strong {
+  flex: 0 0 auto;
   font-weight: 700;
 }
 
@@ -926,8 +938,13 @@ a {
   white-space: nowrap;
 }
 
+.sh-skill-table__name .sh-skill-table__secondary {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
 .sh-skill-table__security {
-  min-width: 11rem;
+  min-width: max-content;
 }
 
 .sh-skill-table__security > span:not(.sh-status-badge),

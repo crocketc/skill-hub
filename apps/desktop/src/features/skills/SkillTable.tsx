@@ -96,7 +96,7 @@ function checkTone(state: CheckState) {
 function SecurityCell({ row }: { row: SkillTableRow }) {
   const { t } = useTranslation();
   return (
-    <div className="sh-skill-table__security">
+    <div className="sh-skill-table__inline sh-skill-table__security">
       <span className={`sh-status-badge sh-status-badge--${checkTone(row.basicCheck)}`}>
         {t("skillLibrary.table.basicStatus", { state: t(CHECK_LABELS[row.basicCheck]) })}
       </span>
@@ -124,6 +124,7 @@ export function createSkillColumns(t: TFunction): ColumnDef<SkillTableRow>[] {
             checked={selected}
             onChange={(event) => meta.onRowCheck(row.original.id, event.currentTarget.checked)}
             onClick={stopRowOpen}
+            onKeyDown={stopRowOpen}
             type="checkbox"
           />
         );
@@ -134,7 +135,7 @@ export function createSkillColumns(t: TFunction): ColumnDef<SkillTableRow>[] {
       accessorKey: "name",
       id: "name",
       cell: ({ row }) => (
-        <div className="sh-skill-table__name">
+        <div className="sh-skill-table__inline sh-skill-table__name">
           <strong>{row.original.name}</strong>
           {row.original.alias ? <span className="sh-skill-table__alias">{row.original.alias}</span> : null}
           <span className="sh-skill-table__secondary" title={row.original.purpose}>{row.original.purpose}</span>
@@ -220,6 +221,13 @@ export function SkillTable(props: SkillTableProps) {
   });
 
   const updateQuery = (change: Partial<SkillLibraryQuery>) => props.onQueryChange({ ...props.query, ...change });
+  const sortColumn = (column: SkillColumnId) => updateQuery({
+    page: 1,
+    sort: {
+      column,
+      direction: props.query.sort.column === column && props.query.sort.direction === "asc" ? "desc" : "asc",
+    },
+  });
   const togglePage = (event: ChangeEvent<HTMLInputElement>) => props.onSelectionChange(selectExplicit(props.selection, pageIds, event.currentTarget.checked));
   const toggleColumn = (column: SkillColumnId, visible: boolean) => props.onPreferencesChange({
     ...props.preferences,
@@ -269,13 +277,13 @@ export function SkillTable(props: SkillTableProps) {
               const sortable = column !== "select";
               const sort = props.query.sort.column === column ? props.query.sort.direction : undefined;
               return <th aria-sort={sortable ? (sort === "asc" ? "ascending" : sort === "desc" ? "descending" : "none") : undefined} key={header.id} scope="col">
-                {column === "select" ? <input aria-label={t("skillLibrary.table.selectCurrentPage")} checked={allPageSelected} onChange={togglePage} onClick={stopRowOpen} type="checkbox" /> : sortable ? <button aria-label={t("skillLibrary.table.sortBy", { column: t(COLUMN_LABELS[column]).toLocaleLowerCase() })} className="sh-skill-table__sort" onClick={() => updateQuery({ page: 1, sort: { column, direction: "asc" } })} type="button">{flexRender(header.column.columnDef.header, header.getContext())}</button> : flexRender(header.column.columnDef.header, header.getContext())}
+                {column === "select" ? <input aria-label={t("skillLibrary.table.selectCurrentPage")} checked={allPageSelected} onChange={togglePage} onClick={stopRowOpen} onKeyDown={stopRowOpen} type="checkbox" /> : sortable ? <button aria-label={t("skillLibrary.table.sortBy", { column: t(COLUMN_LABELS[column]).toLocaleLowerCase() })} className="sh-skill-table__sort" onClick={() => sortColumn(column)} type="button">{flexRender(header.column.columnDef.header, header.getContext())}</button> : flexRender(header.column.columnDef.header, header.getContext())}
               </th>;
             })}</tr>)}
           </thead>
           <tbody>
-            {table.getRowModel().rows.map((row) => <tr key={row.id} onClick={(event) => props.onOpenSkill(row.original.id, event.currentTarget)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); props.onOpenSkill(row.original.id, event.currentTarget); } }} tabIndex={0}>
-              {row.getVisibleCells().map((cell) => <td key={cell.id} role={cell.column.id === "select" ? "presentation" : undefined}>{flexRender(cell.column.columnDef.cell, cell.getContext())}</td>)}
+            {table.getRowModel().rows.map((row) => <tr key={row.id} onClick={(event) => props.onOpenSkill(row.original.id, event.currentTarget)} onKeyDown={(event) => { if (event.target === event.currentTarget && event.key === "Enter") { event.preventDefault(); props.onOpenSkill(row.original.id, event.currentTarget); } }} tabIndex={0}>
+              {row.getVisibleCells().map((cell) => <td key={cell.id}>{flexRender(cell.column.columnDef.cell, cell.getContext())}</td>)}
             </tr>)}
           </tbody>
         </table>
