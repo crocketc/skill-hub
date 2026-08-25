@@ -104,6 +104,61 @@
       "more": "More views",
       "save": "Save current view",
       "unsaved": "Unsaved changes"
+    },
+    "table": {
+      "agentDeployments": "{{count}} agents",
+      "aiStatus": "AI: {{state}}",
+      "basicStatus": "Basic: {{state}}",
+      "checkStates": {
+        "failed": "Failed",
+        "notRun": "Not run",
+        "passed": "Passed",
+        "unavailable": "Unavailable",
+        "warning": "Warning"
+      },
+      "columns": {
+        "deployments": "Deployments",
+        "invocation": "Invocation",
+        "license": "License",
+        "lifecycle": "Lifecycle",
+        "name": "Name",
+        "originalDescription": "Original description",
+        "ownership": "Ownership",
+        "purpose": "Purpose",
+        "requirements": "Requirements",
+        "security": "Security",
+        "selection": "Selection",
+        "source": "Source",
+        "tags": "Tags",
+        "translatedDescription": "Translated description",
+        "version": "Version"
+      },
+      "columnsAndDensity": "Columns and density",
+      "columnsLabel": "Columns",
+      "density": {
+        "comfortable": "Comfortable",
+        "compact": "Compact",
+        "standard": "Standard"
+      },
+      "densityLabel": "Density",
+      "highRiskCount": "{{count}} high risk",
+      "lifecycle": {
+        "active": "Active",
+        "archived": "Archived",
+        "trial": "Trial"
+      },
+      "moveBefore": "Move {{column}} before {{before}}",
+      "nextPage": "Next page",
+      "pageRange": "{{start}}–{{end}} of {{total}}",
+      "pageSize": "Page size",
+      "pendingCount": "{{count}} pending",
+      "previousPage": "Previous page",
+      "projectDeployments": "{{count}} projects",
+      "resultsRegion": "Skill results",
+      "selectCurrentPage": "Select current page",
+      "selectSkill": "Select {{name}}",
+      "sortBy": "Sort by {{column}}",
+      "updateAvailable": "Update available"
     }
   },
   "navigation": {

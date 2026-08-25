@@ -104,6 +104,61 @@
       "more": "更多视图",
       "save": "保存当前视图",
       "unsaved": "未保存更改"
+    },
+    "table": {
+      "agentDeployments": "{{count}} 个 Agent",
+      "aiStatus": "AI：{{state}}",
+      "basicStatus": "基础：{{state}}",
+      "checkStates": {
+        "failed": "失败",
+        "notRun": "未运行",
+        "passed": "通过",
+        "unavailable": "不可用",
+        "warning": "警告"
+      },
+      "columns": {
+        "deployments": "部署",
+        "invocation": "调用方式",
+        "license": "许可证",
+        "lifecycle": "生命周期",
+        "name": "名称",
+        "originalDescription": "原始描述",
+        "ownership": "归属",
+        "purpose": "用途",
+        "requirements": "要求",
+        "security": "安全检查",
+        "selection": "选择",
+        "source": "来源",
+        "tags": "标签",
+        "translatedDescription": "译文描述",
+        "version": "版本"
+      },
+      "columnsAndDensity": "列与密度",
+      "columnsLabel": "列",
+      "density": {
+        "comfortable": "舒适",
+        "compact": "紧凑",
+        "standard": "标准"
+      },
+      "densityLabel": "密度",
+      "highRiskCount": "{{count}} 个高风险项",
+      "lifecycle": {
+        "active": "活跃",
+        "archived": "已归档",
+        "trial": "试用"
+      },
+      "moveBefore": "将{{column}}移到{{before}}之前",
+      "nextPage": "下一页",
+      "pageRange": "第 {{start}}–{{end}} 项，共 {{total}} 项",
+      "pageSize": "每页数量",
+      "pendingCount": "{{count}} 项待处理",
+      "previousPage": "上一页",
+      "projectDeployments": "{{count}} 个项目",
+      "resultsRegion": "Skill 结果",
+      "selectCurrentPage": "选择当前页面",
+      "selectSkill": "选择 {{name}}",
+      "sortBy": "按{{column}}排序",
+      "updateAvailable": "有可用更新"
     }
   },
   "navigation": {

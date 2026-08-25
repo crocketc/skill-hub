@@ -782,3 +782,167 @@ a {
     min-height: 2.75rem;
   }
 }
+
+.sh-skill-table-workspace {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.sh-skill-table__toolbar,
+.sh-skill-table__pagination {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.sh-skill-table__controls {
+  display: grid;
+  width: min(40rem, 100%);
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-raised);
+  box-shadow: var(--shadow-sm);
+}
+
+.sh-skill-table__controls fieldset {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  padding: 0;
+  margin: 0;
+  border: 0;
+}
+
+.sh-skill-table__controls label,
+.sh-skill-table__reorder {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.sh-skill-table__reorder {
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.sh-skill-table__reorder button {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--color-accent-strong);
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.sh-skill-table__region {
+  overflow-x: auto;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-sm);
+}
+
+.sh-skill-table {
+  width: 100%;
+  min-width: 64rem;
+  border-collapse: collapse;
+  color: var(--color-text);
+}
+
+.sh-skill-table[data-density="compact"] { --skill-row-height: 2.375rem; }
+.sh-skill-table[data-density="standard"] { --skill-row-height: 2.75rem; }
+.sh-skill-table[data-density="comfortable"] { --skill-row-height: 3.25rem; }
+
+.sh-skill-table thead {
+  position: sticky;
+  z-index: 1;
+  top: 0;
+  background: var(--color-surface-raised);
+}
+
+.sh-skill-table tbody tr {
+  min-height: var(--skill-row-height);
+  cursor: pointer;
+}
+
+.sh-skill-table tbody tr:hover {
+  background: var(--color-surface-muted);
+}
+
+.sh-skill-table tbody tr:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: -2px;
+}
+
+.sh-skill-table th,
+.sh-skill-table td {
+  height: var(--skill-row-height);
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--color-border);
+  text-align: left;
+  vertical-align: middle;
+}
+
+.sh-skill-table th {
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-xs);
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.sh-skill-table__sort {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: inherit;
+  cursor: pointer;
+}
+
+.sh-skill-table__name,
+.sh-skill-table__security,
+.sh-skill-table__counts,
+.sh-skill-table__version {
+  display: grid;
+  gap: 0.1rem;
+  min-width: 0;
+}
+
+.sh-skill-table__name strong {
+  font-weight: 700;
+}
+
+.sh-skill-table__alias,
+.sh-skill-table__secondary,
+.sh-skill-table__version span + span {
+  overflow: hidden;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sh-skill-table__security {
+  min-width: 11rem;
+}
+
+.sh-skill-table__security > span:not(.sh-status-badge),
+.sh-skill-table__counts,
+.sh-skill-table__pagination span {
+  font-variant-numeric: tabular-nums;
+}
+
+.sh-skill-table__pagination {
+  justify-content: flex-end;
+  color: var(--color-text-secondary);
+}
+
+.sh-skill-table__pagination label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
