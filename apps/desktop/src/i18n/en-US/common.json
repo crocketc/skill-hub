@@ -10,6 +10,48 @@
     "error": "Unable to read data",
     "loading": "Reading local data"
   },
+  "appShell": {
+    "cachedData": "Cached skill library",
+    "navigation": "Main navigation",
+    "placeholder": "The last known local data is shown. Detailed workspaces will be available in later features.",
+    "skillCount": "skills",
+    "verification": "Checking local changes"
+  },
+  "bootstrap": {
+    "blockingStartup": "Blocking startup",
+    "openRecovery": "Open operations and recovery",
+    "recoveryDescription": "An unfinished recovery operation needs attention. SkillHub will not show potentially stale local data until recovery is complete.",
+    "recoveryInProgressDescription": "SkillHub is restoring local data. Potentially stale local data will remain hidden until restoration is complete.",
+    "recoveryInProgressTitle": "Restoring local data",
+    "recoveryTitle": "Recovery is required before continuing"
+  },
+  "onboarding": {
+    "back": "Back",
+    "compatibilityConfirmation": "I understand this only discovers agents and will not deploy skills",
+    "compatibilityDescription": "Discovery only creates compatibility information. Deployment requires a separate preview and confirmation later.",
+    "compatibilityTitle": "Discover compatible agents",
+    "complete": "Initialization settings were submitted.",
+    "confirmSkip": "Confirm and skip",
+    "continue": "Continue",
+    "contractUnavailable": "This action is not yet connected to the native service. No directory, deployment, or import was made.",
+    "defaultLocation": "Default library location",
+    "discoverAgents": "Discover agents",
+    "eyebrow": "Initialization",
+    "finish": "Finish initialization",
+    "libraryDescription": "The library keeps managed skill content in one place. An empty directory is created only after confirmation.",
+    "libraryHelper": "To use another location, change it through a path picker once the native service is connected.",
+    "libraryTitle": "Confirm library location",
+    "scanComplete": "Read-only scan preview completed.",
+    "scanDescription": "The scan only creates a preview. It will not move, import, or deploy skills.",
+    "scanFailed": "The scan could not be completed. Existing skills and directories were not changed.",
+    "scanTitle": "Scan existing skills",
+    "skip": "Skip initialization",
+    "skipScan": "Skip scan",
+    "skipDescription": "An empty library will be created at {{path}}. No agents will be discovered and no skills will be scanned, imported, or deployed.",
+    "skipTitle": "Create an empty library",
+    "startReadOnlyScan": "Start read-only scan",
+    "step": "Step {{current}} of 3"
+  },
   "navigation": {
     "agents": "Agents",
     "discovery": "Discover",

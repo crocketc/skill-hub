@@ -10,6 +10,48 @@
     "error": "无法读取数据",
     "loading": "正在读取本地数据"
   },
+  "appShell": {
+    "cachedData": "技能库缓存",
+    "navigation": "主导航",
+    "placeholder": "已显示上次已知的本地数据。详细工作台将在后续功能中提供。",
+    "skillCount": "项技能",
+    "verification": "正在核对本地变化"
+  },
+  "bootstrap": {
+    "blockingStartup": "阻塞启动",
+    "openRecovery": "打开操作记录与恢复",
+    "recoveryDescription": "检测到尚未完成的恢复操作。完成恢复前，SkillHub 不会继续显示可能过期的本地数据。",
+    "recoveryInProgressDescription": "SkillHub 正在恢复本地数据。恢复完成前不会显示可能过期的本地数据。",
+    "recoveryInProgressTitle": "正在恢复本地数据",
+    "recoveryTitle": "需要恢复后才能继续"
+  },
+  "onboarding": {
+    "back": "上一步",
+    "compatibilityConfirmation": "我确认此步骤只识别，不会部署技能",
+    "compatibilityDescription": "识别只会生成兼容性信息。部署需要在后续单独预览和确认。",
+    "compatibilityTitle": "识别兼容的 Agent",
+    "complete": "初始化设置已提交。",
+    "confirmSkip": "确认并跳过",
+    "continue": "继续",
+    "contractUnavailable": "此操作尚未连接到本机服务。不会创建目录、部署或导入任何技能。",
+    "defaultLocation": "默认集中库位置",
+    "discoverAgents": "识别 Agent",
+    "eyebrow": "初始化",
+    "finish": "完成初始化",
+    "libraryDescription": "集中库会统一保存受管理的技能内容。选择后才会创建空目录。",
+    "libraryHelper": "需要其他位置时，请在本机服务连接后通过路径选择器更改。",
+    "libraryTitle": "确认集中库位置",
+    "scanComplete": "已完成只读扫描预览。",
+    "scanDescription": "扫描只生成预览，不会移动、导入或部署技能。",
+    "scanFailed": "无法完成扫描。现有技能和目录没有被修改。",
+    "scanTitle": "扫描已有技能",
+    "skip": "跳过初始化",
+    "skipScan": "跳过扫描",
+    "skipDescription": "将创建空集中库：{{path}}。不会识别 Agent、扫描、导入或部署技能。",
+    "skipTitle": "将创建空集中库",
+    "startReadOnlyScan": "开始只读扫描",
+    "step": "第 {{current}} 步，共 3 步"
+  },
   "navigation": {
     "agents": "Agent",
     "discovery": "发现",
