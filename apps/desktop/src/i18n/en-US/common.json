@@ -61,6 +61,30 @@
     "step": "Step {{current}} of 3",
     "unavailable": "Unavailable"
   },
+  "skillLibrary": {
+    "filters": {
+      "aiCheck": "AI check",
+      "basicCheck": "Basic check",
+      "clear": "Clear filters",
+      "deployment": "Deployment",
+      "lifecycle": "Lifecycle",
+      "resultCount": "{{count}} results",
+      "search": "Search skills",
+      "tags": "Tags",
+      "version": "Version"
+    },
+    "savedViews": {
+      "builtIn": {
+        "active": "Active",
+        "all": "All skills",
+        "attention": "Needs attention",
+        "updates": "Updates"
+      },
+      "more": "More views",
+      "save": "Save current view",
+      "unsaved": "Unsaved changes"
+    }
+  },
   "navigation": {
     "agents": "Agents",
     "discovery": "Discover",

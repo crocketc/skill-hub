@@ -61,6 +61,30 @@
     "step": "第 {{current}} 步，共 3 步",
     "unavailable": "不可用"
   },
+  "skillLibrary": {
+    "filters": {
+      "aiCheck": "AI 检查",
+      "basicCheck": "基础检查",
+      "clear": "清除筛选",
+      "deployment": "部署状态",
+      "lifecycle": "生命周期",
+      "resultCount": "{{count}} 个结果",
+      "search": "搜索 Skill",
+      "tags": "标签",
+      "version": "版本"
+    },
+    "savedViews": {
+      "builtIn": {
+        "active": "活跃",
+        "all": "全部 Skill",
+        "attention": "需要处理",
+        "updates": "可更新"
+      },
+      "more": "更多视图",
+      "save": "保存当前视图",
+      "unsaved": "未保存更改"
+    }
+  },
   "navigation": {
     "agents": "Agent",
     "discovery": "发现",
