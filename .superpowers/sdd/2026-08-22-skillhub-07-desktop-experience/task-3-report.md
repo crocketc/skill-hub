@@ -158,7 +158,7 @@ Result: PASS (no diff-check findings)
 
 ### Status
 
-Completed in follow-up commit `<pending-sha>` (`fix: harden overview deployment chart delivery`).
+Completed in follow-up commit `484fef1` (`fix: harden overview deployment chart delivery`).
 
 ### Changes Applied
 
