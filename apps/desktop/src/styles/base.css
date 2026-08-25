@@ -777,12 +777,6 @@ a {
   }
 }
 
-@media (pointer: coarse) {
-  .sh-button {
-    min-height: 2.75rem;
-  }
-}
-
 .sh-skill-library {
   position: relative;
   display: grid;
@@ -1081,6 +1075,18 @@ a {
   }
 }
 
+@media (max-width: 56rem) {
+  .sh-skill-table__region {
+    overscroll-behavior-inline: contain;
+    scrollbar-gutter: stable;
+  }
+
+  .sh-skill-table {
+    width: max-content;
+    min-width: 84rem;
+  }
+}
+
 @media (max-width: 48rem) {
   .sh-skill-library__query-tools > section {
     grid-template-columns: 1fr;
@@ -1161,7 +1167,8 @@ a {
 
 .sh-skill-table {
   width: 100%;
-  min-width: 64rem;
+  min-width: 84rem;
+  table-layout: fixed;
   border-collapse: collapse;
   color: var(--color-text);
 }
@@ -1197,11 +1204,31 @@ a {
 .sh-skill-table td {
   height: var(--skill-row-height);
   max-height: var(--skill-row-height);
+  overflow: hidden;
   padding: var(--space-1) var(--space-3);
   border-bottom: 1px solid var(--color-border);
   text-align: left;
+  text-overflow: ellipsis;
   vertical-align: middle;
+  white-space: nowrap;
 }
+
+.sh-skill-table th:nth-child(1),
+.sh-skill-table td:nth-child(1) { width: 2.75rem; }
+.sh-skill-table th:nth-child(2),
+.sh-skill-table td:nth-child(2) { width: 18rem; }
+.sh-skill-table th:nth-child(3),
+.sh-skill-table td:nth-child(3) { width: 12rem; }
+.sh-skill-table th:nth-child(4),
+.sh-skill-table td:nth-child(4) { width: 8rem; }
+.sh-skill-table th:nth-child(5),
+.sh-skill-table td:nth-child(5) { width: 7rem; }
+.sh-skill-table th:nth-child(6),
+.sh-skill-table td:nth-child(6) { width: 8rem; }
+.sh-skill-table th:nth-child(7),
+.sh-skill-table td:nth-child(7) { width: 7rem; }
+.sh-skill-table th:nth-child(8),
+.sh-skill-table td:nth-child(8) { width: 21.25rem; }
 
 .sh-skill-table th {
   color: var(--color-text-secondary);
@@ -1222,9 +1249,12 @@ a {
 
 .sh-skill-table__counts,
 .sh-skill-table__version {
-  display: grid;
-  gap: 0.1rem;
+  display: flex;
   min-width: 0;
+  align-items: center;
+  gap: var(--space-2);
+  overflow: hidden;
+  white-space: nowrap;
 }
 
 .sh-skill-table__inline {
@@ -1536,6 +1566,10 @@ a {
 }
 
 @media (max-width: 48rem) {
+  .sh-skill-drawer {
+    width: min(var(--skill-drawer-width, 42.5rem), calc(100vw - var(--space-2)));
+  }
+
   .sh-skill-drawer__modules,
   .sh-skill-drawer__configuration fieldset,
   .sh-skill-drawer__fixed {
@@ -1544,5 +1578,23 @@ a {
 
   .sh-skill-drawer__risk {
     justify-content: flex-start;
+  }
+}
+
+@media (pointer: coarse) {
+  .sh-button,
+  .sh-skill-library__saved-views button,
+  .sh-skill-library__saved-views summary,
+  .sh-skill-library__query-tools input,
+  .sh-skill-library__query-tools select,
+  .sh-skill-library__query-tools button,
+  .sh-skill-library__save-view input,
+  .sh-skill-table__toolbar button,
+  .sh-skill-table__toolbar select,
+  .sh-skill-table__pagination button,
+  .sh-skill-table__pagination select,
+  .sh-skill-table__controls label,
+  .sh-skill-drawer__configuration label {
+    min-height: 2.75rem;
   }
 }

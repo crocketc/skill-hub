@@ -29,7 +29,10 @@ export function resolveRouteTitleKey(pathname: string): RouteTitleKey {
   if (pathname.startsWith("/discovery")) {
     return "navigation.discovery";
   }
-  if (pathname.startsWith("/library")) {
+  if (
+    pathname.startsWith("/library") ||
+    pathname === "/__preview/skill-library"
+  ) {
     return "navigation.library";
   }
   if (pathname.startsWith("/operations")) {

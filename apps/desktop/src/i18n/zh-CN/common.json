@@ -62,6 +62,7 @@
     "unavailable": "不可用"
   },
   "skillLibrary": {
+    "fullDetailsBoundary": "完整 Skill 详情将在下一任务中提供",
     "page": {
       "batch": {
         "addTo": "添加到",
@@ -104,7 +105,7 @@
         "importBoundary": "导入流程尚未连接",
         "loading": "正在加载技能库",
         "noResults": "没有符合当前筛选条件的技能",
-        "unavailable": "本地技能库契约尚未连接"
+        "unavailable": "技能目录数据尚未连接"
       }
     },
     "drawer": {

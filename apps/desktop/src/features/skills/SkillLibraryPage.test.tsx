@@ -242,7 +242,7 @@ describe("SkillLibraryPage", () => {
     renderLibrary({ facade });
 
     expect(
-      await screen.findByText("The local catalog contract is not connected"),
+      await screen.findByText("Skill catalog data is not connected yet"),
     ).toBeVisible();
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });

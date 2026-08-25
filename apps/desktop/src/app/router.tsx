@@ -4,6 +4,12 @@ import { I18nextProvider } from "react-i18next";
 import { createBrowserRouter, RouterProvider, useNavigate } from "react-router-dom";
 import { OnboardingWizard } from "../features/onboarding/OnboardingWizard";
 import { OverviewPage } from "../features/overview/OverviewPage";
+import { SkillLibraryPage } from "../features/skills/SkillLibraryPage";
+import {
+  SkillLibraryPreview,
+  SkillLibraryPreviewShell,
+} from "../features/skills/SkillLibraryPreview";
+import { unavailableSkillLibraryFacade } from "../features/skills/api";
 import { skillHubI18n } from "../i18n";
 import "../styles/base.css";
 import { ThemeProvider } from "../styles/ThemeProvider";
@@ -22,7 +28,19 @@ export const appRouter = createBrowserRouter([
     path: "/",
     children: [
       { index: true, element: <OverviewPage /> },
-      { path: "library", element: <RoutePlaceholder titleKey="navigation.library" /> },
+      {
+        path: "library",
+        element: <SkillLibraryPage facade={unavailableSkillLibraryFacade} />,
+      },
+      {
+        path: "library/:skillId",
+        element: (
+          <RoutePlaceholder
+            descriptionKey="skillLibrary.fullDetailsBoundary"
+            titleKey="navigation.library"
+          />
+        ),
+      },
       { path: "discovery", element: <RoutePlaceholder titleKey="navigation.discovery" /> },
       { path: "agents", element: <RoutePlaceholder titleKey="navigation.agents" /> },
       { path: "agents/:agentKey", element: <RoutePlaceholder titleKey="navigation.agents" /> },
@@ -34,6 +52,17 @@ export const appRouter = createBrowserRouter([
     ],
   },
   { element: <OnboardingRoute />, path: "/initialize" },
+  ...(import.meta.env.DEV
+    ? [
+        {
+          path: "__preview",
+          element: <SkillLibraryPreviewShell />,
+          children: [
+            { path: "skill-library", element: <SkillLibraryPreview /> },
+          ],
+        },
+      ]
+    : []),
 ]);
 
 export function AppRouter() {

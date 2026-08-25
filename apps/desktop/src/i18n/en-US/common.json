@@ -62,6 +62,7 @@
     "unavailable": "Unavailable"
   },
   "skillLibrary": {
+    "fullDetailsBoundary": "Full Skill details are delivered in the next task",
     "page": {
       "batch": {
         "addTo": "Add to",
@@ -104,7 +105,7 @@
         "importBoundary": "Import is not connected yet",
         "loading": "Loading skill library",
         "noResults": "No skills match the current filters",
-        "unavailable": "The local catalog contract is not connected"
+        "unavailable": "Skill catalog data is not connected yet"
       }
     },
     "drawer": {

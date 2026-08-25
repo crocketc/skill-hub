@@ -1,5 +1,9 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, render, screen, waitFor } from "@testing-library/react";
+import { I18nextProvider } from "react-i18next";
+import { MemoryRouter } from "react-router-dom";
 import { afterEach, vi } from "vitest";
+import { SkillLibraryPreview } from "../features/skills/SkillLibraryPreview";
 import { skillHubI18n } from "../i18n";
 import { sidebarNavigationEnd } from "./Sidebar";
 import { resolveRouteTitleKey } from "./AppShell";
@@ -63,24 +67,61 @@ it("wires theme, language, data and motion providers at the production entry wit
   await waitFor(() => {
     expect(document.documentElement).toHaveAttribute("lang", "en-US");
   });
+});
 
-  await act(async () => {
-    await appRouter.navigate("/library");
-  });
+it("uses the unavailable facade on the production Skill library route", async () => {
+  mockBrowserPreferences();
+  await skillHubI18n.changeLanguage("en-US");
+  await appRouter.navigate("/library");
+
+  render(<AppRouter />);
+
+  expect(
+    await screen.findByText(
+      "Skill catalog data is not connected yet",
+      undefined,
+      { timeout: 3_000 },
+    ),
+  ).toBeVisible();
+  expect(screen.queryByText("PDF Reader")).not.toBeInTheDocument();
+});
+
+it("reserves the full-detail URL without changing the shell section", async () => {
+  mockBrowserPreferences();
+  await skillHubI18n.changeLanguage("en-US");
+  await appRouter.navigate("/library/skill-pdf");
+
+  render(<AppRouter />);
 
   expect(await screen.findAllByRole("heading", { name: "Skill library" })).toHaveLength(2);
-  expect(screen.getByRole("link", { name: "Skill library" })).toHaveAttribute(
-    "aria-current",
-    "page",
+  expect(screen.getByText("Full Skill details are delivered in the next task")).toBeVisible();
+});
+
+it("renders deterministic Skill rows when the preview component is mounted directly", async () => {
+  mockBrowserPreferences();
+  await skillHubI18n.changeLanguage("en-US");
+  const previewQueryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+
+  render(
+    <I18nextProvider i18n={skillHubI18n}>
+      <QueryClientProvider client={previewQueryClient}>
+        <MemoryRouter initialEntries={["/__preview/skill-library"]}>
+          <SkillLibraryPreview />
+        </MemoryRouter>
+      </QueryClientProvider>
+    </I18nextProvider>,
   );
-  expect(screen.queryByText("0 skills")).not.toBeInTheDocument();
-  expect(screen.queryByText("Cached skill library")).not.toBeInTheDocument();
+
+  expect(await screen.findByText("PDF Reader")).toBeVisible();
 });
 
 it("uses exact matching for the overview link while nested routes own current-page semantics", () => {
   expect(sidebarNavigationEnd("/")).toBe(true);
   expect(sidebarNavigationEnd("/library")).toBe(false);
   expect(resolveRouteTitleKey("/agents/openai.codex-cli")).toBe("navigation.agents");
+  expect(resolveRouteTitleKey("/__preview/skill-library")).toBe("navigation.library");
   expect(resolveRouteTitleKey("/projects/project-aurora")).toBe("navigation.projects");
 });
 
