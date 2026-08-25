@@ -36,6 +36,11 @@ describe("Skill selection", () => {
     expect(selectExplicit(selected, ["a", "b", "b"], false)).toEqual({ kind: "none" });
   });
 
+  it("orders persisted selection IDs by code unit instead of locale", () => {
+    const selected = selectExplicit({ kind: "none" }, ["z", "ä", "A", "a"], true);
+    expect(selected).toEqual({ kind: "explicit", skillIds: ["A", "a", "z", "ä"] });
+  });
+
   it("clones filter snapshots and retains only matching explicit IDs", () => {
     const filter = {
       filters: { ...DEFAULT_SKILL_QUERY.filters, tags: ["docs"] },

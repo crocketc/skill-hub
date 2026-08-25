@@ -12,7 +12,7 @@ export type SkillSelection =
     };
 
 function normalizeIds(skillIds: string[]): string[] {
-  return [...new Set(skillIds)].sort((left, right) => left.localeCompare(right));
+  return [...new Set(skillIds)].sort();
 }
 
 function cloneFilterSnapshot(filter: SkillFilterSnapshot): SkillFilterSnapshot {
