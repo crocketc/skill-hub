@@ -62,6 +62,68 @@
     "unavailable": "Unavailable"
   },
   "skillLibrary": {
+    "drawer": {
+      "actions": {
+        "addTo": "Add to",
+        "archive": "Archive",
+        "export": "Export",
+        "securityCheck": "Run security check"
+      },
+      "configure": "Configure quick drawer",
+      "description": "Skill summary, common actions, and configurable detail modules.",
+      "detail": {
+        "empty": "Select a skill to view details",
+        "error": "Could not load skill details",
+        "loading": "Loading skill details"
+      },
+      "emptyValue": "Not available",
+      "fullDetails": "View full details",
+      "modules": {
+        "dependenciesDuplicates": "Dependencies and duplicates",
+        "externalChanges": "External changes",
+        "fullDetails": "Full details",
+        "identity": "Identity",
+        "invocationRequirements": "Invocation and requirements",
+        "primaryActions": "Primary actions",
+        "relations": "Relations",
+        "riskSummary": "Risk summary",
+        "securityChecks": "Security checks",
+        "sourceLicense": "Source and license",
+        "usageEvidence": "Usage evidence",
+        "versions": "Versions"
+      },
+      "moduleVisibility": "Drawer modules",
+      "moveBefore": "Move {{module}} before {{before}}",
+      "preferenceFailure": "Preference was not saved. The temporary layout is still active.",
+      "presets": {
+        "label": "Quick drawer width",
+        "nearFull": "Near full screen",
+        "standard": "Standard width",
+        "wide": "Wide"
+      },
+      "reset": "Reset to default",
+      "resize": "Resize quick drawer",
+      "risk": {
+        "high": "{{count}} high risk",
+        "pending": "{{count}} pending"
+      },
+      "title": "Skill details",
+      "values": {
+        "agents": "Agents",
+        "currentVersion": "Current version: {{version}}",
+        "dependencies": "Dependencies",
+        "duplicates": "Possible duplicates",
+        "invocation": "Invocation:",
+        "invocationCount": "{{count}} invocations",
+        "lastUsed": "Last used: {{value}}",
+        "license": "License",
+        "ownership": "Ownership",
+        "projects": "Projects",
+        "source": "Source",
+        "upToDate": "Up to date",
+        "updateAvailable": "Update available"
+      }
+    },
     "filters": {
       "aiCheck": "AI check",
       "basicCheck": "Basic check",

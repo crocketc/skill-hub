@@ -146,3 +146,25 @@ it("restores focus for an externally controlled drawer without a trigger", async
     expect(screen.getByRole("button", { name: "Open details" })).toHaveFocus();
   });
 });
+
+it("applies a caller-owned panel class, style, and leading accessory", () => {
+  mockReducedMotion(false);
+  render(
+    <I18nextProvider i18n={skillHubI18n}>
+      <Drawer
+        leadingAccessory={<span data-testid="resize-handle" />}
+        onOpenChange={() => undefined}
+        open
+        panelClassName="custom-drawer"
+        panelStyle={{ width: "42rem" }}
+        returnFocusRef={{ current: null }}
+        title="Details"
+      >
+        Content
+      </Drawer>
+    </I18nextProvider>,
+  );
+  expect(screen.getByTestId("drawer-panel")).toHaveClass("custom-drawer");
+  expect(screen.getByTestId("drawer-panel")).toHaveStyle({ width: "42rem" });
+  expect(screen.getByTestId("resize-handle")).toBeVisible();
+});

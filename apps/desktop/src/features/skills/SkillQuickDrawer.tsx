@@ -1,0 +1,658 @@
+import { useQuery } from "@tanstack/react-query";
+import {
+  type ComponentType,
+  type CSSProperties,
+  type PointerEvent as ReactPointerEvent,
+  type ReactNode,
+  type RefObject,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
+import { useTranslation } from "react-i18next";
+import { Link } from "react-router-dom";
+import { Button } from "../../ui/Button";
+import { Drawer } from "../../ui/Drawer";
+import {
+  DEFAULT_DRAWER_PREFERENCES,
+  type BatchAction,
+  type CheckState,
+  type DrawerModuleId,
+  type DrawerPreset,
+  type SkillDrawerPreferences,
+  type SkillLibraryFacade,
+  type SkillQuickView,
+  skillLibraryKeys,
+} from "./api";
+import {
+  OPTIONAL_DRAWER_MODULES,
+  clampDrawerWidth,
+  drawerWidthForPreset,
+  isRequiredDrawerModule,
+  normalizeDrawerPreferences,
+  reorderDrawerModule,
+} from "./drawerModules";
+
+export interface SkillQuickDrawerProps {
+  facade: SkillLibraryFacade;
+  onOpenChange: (open: boolean) => void;
+  onPreferencesChange: (preferences: SkillDrawerPreferences) => void;
+  open: boolean;
+  preferences: SkillDrawerPreferences;
+  returnFocusRef: RefObject<HTMLElement | null>;
+  skillId?: string;
+}
+
+type OptionalDrawerModule = (typeof OPTIONAL_DRAWER_MODULES)[number];
+
+interface ModuleProps {
+  view: SkillQuickView;
+}
+
+interface ModuleCardProps {
+  children: ReactNode;
+  title: string;
+}
+
+const MODULE_LABEL_KEYS = {
+  identity: "skillLibrary.drawer.modules.identity",
+  primary_actions: "skillLibrary.drawer.modules.primaryActions",
+  risk_summary: "skillLibrary.drawer.modules.riskSummary",
+  full_details: "skillLibrary.drawer.modules.fullDetails",
+  relations: "skillLibrary.drawer.modules.relations",
+  versions: "skillLibrary.drawer.modules.versions",
+  source_license: "skillLibrary.drawer.modules.sourceLicense",
+  security_checks: "skillLibrary.drawer.modules.securityChecks",
+  invocation_requirements: "skillLibrary.drawer.modules.invocationRequirements",
+  dependencies_duplicates: "skillLibrary.drawer.modules.dependenciesDuplicates",
+  external_changes: "skillLibrary.drawer.modules.externalChanges",
+  usage_evidence: "skillLibrary.drawer.modules.usageEvidence",
+} as const;
+
+const CHECK_STATE_KEYS = {
+  failed: "skillLibrary.table.checkStates.failed",
+  not_run: "skillLibrary.table.checkStates.notRun",
+  passed: "skillLibrary.table.checkStates.passed",
+  unavailable: "skillLibrary.table.checkStates.unavailable",
+  warning: "skillLibrary.table.checkStates.warning",
+} as const satisfies Record<CheckState, string>;
+
+const PRESET_LABEL_KEYS = {
+  near_full: "skillLibrary.drawer.presets.nearFull",
+  standard: "skillLibrary.drawer.presets.standard",
+  wide: "skillLibrary.drawer.presets.wide",
+} as const satisfies Record<DrawerPreset, string>;
+
+function ModuleCard({ children, title }: ModuleCardProps) {
+  return (
+    <section className="sh-skill-drawer__module">
+      <h3>{title}</h3>
+      {children}
+    </section>
+  );
+}
+
+function EmptyValue() {
+  const { t } = useTranslation();
+  return <span className="sh-skill-drawer__empty">{t("skillLibrary.drawer.emptyValue")}</span>;
+}
+
+function ValueList({ values }: { values: string[] }) {
+  return values.length > 0 ? (
+    <ul className="sh-skill-drawer__value-list">
+      {values.map((value) => (
+        <li key={value}>{value}</li>
+      ))}
+    </ul>
+  ) : (
+    <EmptyValue />
+  );
+}
+
+function RelationsModule({ view }: ModuleProps) {
+  const { t } = useTranslation();
+  return (
+    <ModuleCard title={t(MODULE_LABEL_KEYS.relations)}>
+      <dl className="sh-skill-drawer__facts">
+        <div>
+          <dt>{t("skillLibrary.drawer.values.agents")}</dt>
+          <dd>{view.agentDeploymentCount}</dd>
+        </div>
+        <div>
+          <dt>{t("skillLibrary.drawer.values.projects")}</dt>
+          <dd>{view.projectDeploymentCount}</dd>
+        </div>
+      </dl>
+    </ModuleCard>
+  );
+}
+
+function VersionsModule({ view }: ModuleProps) {
+  const { t } = useTranslation();
+  return (
+    <ModuleCard title={t(MODULE_LABEL_KEYS.versions)}>
+      <p>{t("skillLibrary.drawer.values.currentVersion", { version: view.currentVersion })}</p>
+      <p className="sh-skill-drawer__secondary">
+        {view.upgradeAvailable
+          ? t("skillLibrary.drawer.values.updateAvailable")
+          : t("skillLibrary.drawer.values.upToDate")}
+      </p>
+    </ModuleCard>
+  );
+}
+
+function SourceLicenseModule({ view }: ModuleProps) {
+  const { t } = useTranslation();
+  return (
+    <ModuleCard title={t(MODULE_LABEL_KEYS.source_license)}>
+      <dl className="sh-skill-drawer__facts sh-skill-drawer__facts--stacked">
+        <div>
+          <dt>{t("skillLibrary.drawer.values.source")}</dt>
+          <dd>{view.source ?? <EmptyValue />}</dd>
+        </div>
+        <div>
+          <dt>{t("skillLibrary.drawer.values.ownership")}</dt>
+          <dd>{view.ownership ?? <EmptyValue />}</dd>
+        </div>
+        <div>
+          <dt>{t("skillLibrary.drawer.values.license")}</dt>
+          <dd>{view.license ?? <EmptyValue />}</dd>
+        </div>
+      </dl>
+    </ModuleCard>
+  );
+}
+
+function SecurityChecksModule({ view }: ModuleProps) {
+  const { t } = useTranslation();
+  return (
+    <ModuleCard title={t(MODULE_LABEL_KEYS.security_checks)}>
+      <dl className="sh-skill-drawer__facts">
+        <div>
+          <dt>{t("skillLibrary.filters.basicCheck")}</dt>
+          <dd>{t(CHECK_STATE_KEYS[view.basicCheck])}</dd>
+        </div>
+        <div>
+          <dt>{t("skillLibrary.filters.aiCheck")}</dt>
+          <dd>{t(CHECK_STATE_KEYS[view.aiCheck])}</dd>
+        </div>
+      </dl>
+    </ModuleCard>
+  );
+}
+
+function InvocationRequirementsModule({ view }: ModuleProps) {
+  const { t } = useTranslation();
+  return (
+    <ModuleCard title={t(MODULE_LABEL_KEYS.invocation_requirements)}>
+      <p>
+        <strong>{t("skillLibrary.drawer.values.invocation")}</strong>{" "}
+        {view.invocation ?? <EmptyValue />}
+      </p>
+      <ValueList values={view.requirements} />
+    </ModuleCard>
+  );
+}
+
+function DependenciesDuplicatesModule({ view }: ModuleProps) {
+  const { t } = useTranslation();
+  return (
+    <ModuleCard title={t(MODULE_LABEL_KEYS.dependencies_duplicates)}>
+      <strong>{t("skillLibrary.drawer.values.dependencies")}</strong>
+      <ValueList values={view.dependencies} />
+      <strong>{t("skillLibrary.drawer.values.duplicates")}</strong>
+      <ValueList values={view.duplicateCandidates} />
+    </ModuleCard>
+  );
+}
+
+function ExternalChangesModule({ view }: ModuleProps) {
+  const { t } = useTranslation();
+  return (
+    <ModuleCard title={t(MODULE_LABEL_KEYS.external_changes)}>
+      <ValueList values={view.externalChanges} />
+    </ModuleCard>
+  );
+}
+
+function UsageEvidenceModule({ view }: ModuleProps) {
+  const { t } = useTranslation();
+  if (!view.usageEvidence) {
+    return null;
+  }
+  return (
+    <ModuleCard title={t(MODULE_LABEL_KEYS.usage_evidence)}>
+      <p>
+        {t("skillLibrary.drawer.values.invocationCount", {
+          count: view.usageEvidence.invocationCount,
+        })}
+      </p>
+      {view.usageEvidence.lastUsedAt ? (
+        <p className="sh-skill-drawer__secondary">
+          {t("skillLibrary.drawer.values.lastUsed", {
+            value: view.usageEvidence.lastUsedAt,
+          })}
+        </p>
+      ) : null}
+    </ModuleCard>
+  );
+}
+
+const OPTIONAL_MODULE_RENDERERS: Record<
+  OptionalDrawerModule,
+  ComponentType<ModuleProps>
+> = {
+  dependencies_duplicates: DependenciesDuplicatesModule,
+  external_changes: ExternalChangesModule,
+  invocation_requirements: InvocationRequirementsModule,
+  relations: RelationsModule,
+  security_checks: SecurityChecksModule,
+  source_license: SourceLicenseModule,
+  usage_evidence: UsageEvidenceModule,
+  versions: VersionsModule,
+};
+
+function IdentityRegion({ view }: ModuleProps) {
+  const { t } = useTranslation();
+  return (
+    <section className="sh-skill-drawer__identity">
+      <div>
+        <h2>{view.name}</h2>
+        {view.alias ? <span>{view.alias}</span> : null}
+      </div>
+      <p>{view.purpose}</p>
+      <p className="sh-skill-drawer__secondary">
+        {view.translatedDescription ?? view.originalDescription ?? t("skillLibrary.drawer.emptyValue")}
+      </p>
+    </section>
+  );
+}
+
+interface PrimaryActionsProps extends ModuleProps {
+  facade: SkillLibraryFacade;
+}
+
+function PrimaryActions({ facade, view }: PrimaryActionsProps) {
+  const { t } = useTranslation();
+  const emitIntent = (action: BatchAction) => {
+    void facade
+      .emitBatchIntent({
+        action,
+        target: { kind: "skill_ids", skillIds: [view.id] },
+      })
+      .catch(() => undefined);
+  };
+  return (
+    <section aria-label={t(MODULE_LABEL_KEYS.primary_actions)} className="sh-skill-drawer__actions">
+      <Button onClick={() => emitIntent("add_to")} size="sm">
+        {t("skillLibrary.drawer.actions.addTo")}
+      </Button>
+      <Button onClick={() => emitIntent("security_check")} size="sm" variant="secondary">
+        {t("skillLibrary.drawer.actions.securityCheck")}
+      </Button>
+      <Button onClick={() => emitIntent("export")} size="sm" variant="ghost">
+        {t("skillLibrary.drawer.actions.export")}
+      </Button>
+      <Button onClick={() => emitIntent("archive")} size="sm" variant="ghost">
+        {t("skillLibrary.drawer.actions.archive")}
+      </Button>
+    </section>
+  );
+}
+
+function RiskSummary({ view }: ModuleProps) {
+  const { t } = useTranslation();
+  return (
+    <section aria-label={t(MODULE_LABEL_KEYS.risk_summary)} className="sh-skill-drawer__risk">
+      <strong>{t(MODULE_LABEL_KEYS.risk_summary)}</strong>
+      <span>{t("skillLibrary.drawer.risk.high", { count: view.highRiskCount })}</span>
+      <span>{t("skillLibrary.drawer.risk.pending", { count: view.pendingCount })}</span>
+    </section>
+  );
+}
+
+interface DrawerConfigurationProps {
+  onMoveBefore: (moved: DrawerModuleId, before: DrawerModuleId) => void;
+  onReset: () => void;
+  onToggle: (moduleId: DrawerModuleId, visible: boolean) => void;
+  preferences: SkillDrawerPreferences;
+}
+
+function DrawerConfiguration({
+  onMoveBefore,
+  onReset,
+  onToggle,
+  preferences,
+}: DrawerConfigurationProps) {
+  const { t } = useTranslation();
+  const visible = new Set(preferences.visibleModules);
+  const optionalOrder = preferences.moduleOrder.filter((moduleId) =>
+    OPTIONAL_DRAWER_MODULES.includes(moduleId as OptionalDrawerModule),
+  );
+  return (
+    <section
+      aria-label={t("skillLibrary.drawer.configure")}
+      className="sh-skill-drawer__configuration"
+    >
+      <fieldset>
+        <legend>{t("skillLibrary.drawer.moduleVisibility")}</legend>
+        {preferences.moduleOrder.map((moduleId) => (
+          <label key={moduleId}>
+            <input
+              aria-label={t(MODULE_LABEL_KEYS[moduleId])}
+              checked={visible.has(moduleId)}
+              disabled={isRequiredDrawerModule(moduleId)}
+              onChange={(event) => onToggle(moduleId, event.currentTarget.checked)}
+              type="checkbox"
+            />
+            {t(MODULE_LABEL_KEYS[moduleId])}
+          </label>
+        ))}
+      </fieldset>
+      <div className="sh-skill-drawer__reorder">
+        {optionalOrder.map((moduleId, index) => {
+          const before = optionalOrder[index - 1];
+          return before ? (
+            <button
+              key={moduleId}
+              onClick={() => onMoveBefore(moduleId, before)}
+              type="button"
+            >
+              {t("skillLibrary.drawer.moveBefore", {
+                before: t(MODULE_LABEL_KEYS[before]).toLocaleLowerCase(),
+                module: t(MODULE_LABEL_KEYS[moduleId]).toLocaleLowerCase(),
+              })}
+            </button>
+          ) : null;
+        })}
+      </div>
+      <Button onClick={onReset} size="sm" variant="secondary">
+        {t("skillLibrary.drawer.reset")}
+      </Button>
+    </section>
+  );
+}
+
+interface DragSession {
+  handle: HTMLDivElement;
+  lastWidth: number;
+  pointerId: number;
+  startWidth: number;
+  startX: number;
+}
+
+type DrawerPanelStyle = CSSProperties & {
+  "--skill-drawer-width": string;
+};
+
+function viewportWidth() {
+  return typeof window === "undefined" ? 1024 : window.innerWidth;
+}
+
+export function SkillQuickDrawer({
+  facade,
+  onOpenChange,
+  onPreferencesChange,
+  open,
+  preferences,
+  returnFocusRef,
+  skillId,
+}: SkillQuickDrawerProps) {
+  const { t } = useTranslation();
+  const [configurationOpen, setConfigurationOpen] = useState(false);
+  const [dragWidthPx, setDragWidthPx] = useState<number>();
+  const [preferenceSaveFailed, setPreferenceSaveFailed] = useState(false);
+  const dragSessionRef = useRef<DragSession>();
+  const removePointerListenersRef = useRef<() => void>(() => undefined);
+  const normalizedPreferences = normalizeDrawerPreferences(preferences);
+  const visibleModules = new Set(normalizedPreferences.visibleModules);
+  const optionalOrder = normalizedPreferences.moduleOrder.filter((moduleId) =>
+    OPTIONAL_DRAWER_MODULES.includes(moduleId as OptionalDrawerModule),
+  ) as OptionalDrawerModule[];
+  const displayedWidth = dragWidthPx ?? normalizedPreferences.widthPx;
+  const panelStyle: DrawerPanelStyle = {
+    "--skill-drawer-width": `${displayedWidth}px`,
+  };
+  const detailQuery = useQuery({
+    enabled: open && Boolean(skillId),
+    queryFn: () => {
+      if (!skillId) {
+        throw new Error("A Skill ID is required for the quick view query.");
+      }
+      return facade.getSkillQuickView(skillId);
+    },
+    queryKey: skillLibraryKeys.quickView(skillId ?? ""),
+  });
+
+  const persistPreferences = (next: SkillDrawerPreferences) => {
+    const normalized = normalizeDrawerPreferences(next);
+    setPreferenceSaveFailed(false);
+    onPreferencesChange(normalized);
+    void facade.saveDrawerPreferences(normalized).catch(() => {
+      setPreferenceSaveFailed(true);
+    });
+  };
+
+  const choosePreset = (preset: DrawerPreset) => {
+    persistPreferences({
+      ...normalizedPreferences,
+      preset,
+      widthPx: drawerWidthForPreset(preset, viewportWidth()),
+    });
+  };
+
+  const toggleModule = (moduleId: DrawerModuleId, visible: boolean) => {
+    if (isRequiredDrawerModule(moduleId)) {
+      return;
+    }
+    const nextVisible = visible
+      ? [...normalizedPreferences.visibleModules, moduleId]
+      : normalizedPreferences.visibleModules.filter((candidate) => candidate !== moduleId);
+    persistPreferences({ ...normalizedPreferences, visibleModules: nextVisible });
+  };
+
+  const moveModuleBefore = (moved: DrawerModuleId, before: DrawerModuleId) => {
+    persistPreferences({
+      ...normalizedPreferences,
+      moduleOrder: reorderDrawerModule(
+        normalizedPreferences.moduleOrder,
+        moved,
+        before,
+      ),
+    });
+  };
+
+  const beginResize = (event: ReactPointerEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    const handle = event.currentTarget;
+    if (typeof handle.setPointerCapture === "function") {
+      handle.setPointerCapture(event.pointerId);
+    }
+    dragSessionRef.current = {
+      handle,
+      lastWidth: displayedWidth,
+      pointerId: event.pointerId,
+      startWidth: displayedWidth,
+      startX: event.clientX,
+    };
+
+    const handlePointerMove = (pointerEvent: PointerEvent) => {
+      const session = dragSessionRef.current;
+      if (!session || pointerEvent.pointerId !== session.pointerId) {
+        return;
+      }
+      const nextWidth = clampDrawerWidth(
+        session.startWidth + session.startX - pointerEvent.clientX,
+        viewportWidth(),
+      );
+      session.lastWidth = nextWidth;
+      setDragWidthPx(nextWidth);
+    };
+
+    const handlePointerUp = (pointerEvent: PointerEvent) => {
+      const session = dragSessionRef.current;
+      if (!session || pointerEvent.pointerId !== session.pointerId) {
+        return;
+      }
+      removePointerListenersRef.current();
+      if (
+        typeof session.handle.hasPointerCapture === "function" &&
+        session.handle.hasPointerCapture(session.pointerId)
+      ) {
+        session.handle.releasePointerCapture(session.pointerId);
+      }
+      dragSessionRef.current = undefined;
+      setDragWidthPx(undefined);
+      persistPreferences({
+        ...normalizedPreferences,
+        widthPx: session.lastWidth,
+      });
+    };
+
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp);
+    removePointerListenersRef.current = () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+      removePointerListenersRef.current = () => undefined;
+    };
+  };
+
+  useEffect(
+    () => () => {
+      removePointerListenersRef.current();
+    },
+    [],
+  );
+
+  const resizeHandle = (
+    <div
+      aria-label={t("skillLibrary.drawer.resize")}
+      aria-orientation="vertical"
+      aria-valuemax={Math.max(420, viewportWidth() - 32)}
+      aria-valuemin={420}
+      aria-valuenow={displayedWidth}
+      className="sh-skill-drawer__resize"
+      onPointerDown={beginResize}
+      role="separator"
+    />
+  );
+  const view = detailQuery.data;
+
+  return (
+    <Drawer
+      description={t("skillLibrary.drawer.description")}
+      leadingAccessory={resizeHandle}
+      onOpenChange={onOpenChange}
+      open={open}
+      panelClassName="sh-skill-drawer"
+      panelStyle={panelStyle}
+      returnFocusRef={returnFocusRef}
+      title={view?.name ?? t("skillLibrary.drawer.title")}
+    >
+      <div
+        className="sh-skill-drawer__layout"
+        data-preset={normalizedPreferences.preset}
+        data-testid="skill-quick-drawer"
+        style={panelStyle}
+      >
+        <div className="sh-skill-drawer__chrome">
+          <div className="sh-skill-drawer__toolbar">
+            <Button
+              aria-expanded={configurationOpen}
+              onClick={() => setConfigurationOpen((current) => !current)}
+              size="sm"
+              variant="ghost"
+            >
+              {t("skillLibrary.drawer.configure")}
+            </Button>
+            <div aria-label={t("skillLibrary.drawer.presets.label")} className="sh-skill-drawer__presets" role="group">
+              {(["standard", "wide", "near_full"] as const).map((preset) => (
+                <Button
+                  aria-pressed={normalizedPreferences.preset === preset}
+                  key={preset}
+                  onClick={() => choosePreset(preset)}
+                  size="sm"
+                  variant={normalizedPreferences.preset === preset ? "secondary" : "ghost"}
+                >
+                  {t(PRESET_LABEL_KEYS[preset])}
+                </Button>
+              ))}
+            </div>
+          </div>
+
+          {preferenceSaveFailed ? (
+            <p className="sh-skill-drawer__alert" role="alert">
+              {t("skillLibrary.drawer.preferenceFailure")}
+            </p>
+          ) : null}
+
+          {!skillId ? (
+            <p className="sh-skill-drawer__state" role="status">
+              {t("skillLibrary.drawer.detail.empty")}
+            </p>
+          ) : detailQuery.isPending ? (
+            <p className="sh-skill-drawer__state" role="status">
+              {t("skillLibrary.drawer.detail.loading")}
+            </p>
+          ) : detailQuery.isError ? (
+            <div className="sh-skill-drawer__state" role="alert">
+              <p>{t("skillLibrary.drawer.detail.error")}</p>
+              <Button onClick={() => void detailQuery.refetch()} size="sm" variant="secondary">
+                {t("actions.retry")}
+              </Button>
+            </div>
+          ) : view ? (
+            <div className="sh-skill-drawer__fixed">
+              <IdentityRegion view={view} />
+              <PrimaryActions facade={facade} view={view} />
+              <RiskSummary view={view} />
+            </div>
+          ) : null}
+        </div>
+
+        <div
+          className="sh-skill-drawer__scroll"
+          data-testid="drawer-modules-scroll"
+        >
+          {configurationOpen ? (
+            <DrawerConfiguration
+              onMoveBefore={moveModuleBefore}
+              onReset={() =>
+                persistPreferences({
+                  ...DEFAULT_DRAWER_PREFERENCES,
+                  moduleOrder: [...DEFAULT_DRAWER_PREFERENCES.moduleOrder],
+                  visibleModules: [...DEFAULT_DRAWER_PREFERENCES.visibleModules],
+                })
+              }
+              onToggle={toggleModule}
+              preferences={normalizedPreferences}
+            />
+          ) : null}
+          {view ? (
+            <div className="sh-skill-drawer__modules">
+              {optionalOrder.map((moduleId) => {
+                if (!visibleModules.has(moduleId)) {
+                  return null;
+                }
+                if (moduleId === "usage_evidence" && !view.usageEvidence) {
+                  return null;
+                }
+                const ModuleRenderer = OPTIONAL_MODULE_RENDERERS[moduleId];
+                return <ModuleRenderer key={moduleId} view={view} />;
+              })}
+            </div>
+          ) : null}
+        </div>
+
+        {view && skillId ? (
+          <footer className="sh-skill-drawer__footer">
+            <Link className="sh-button sh-button--secondary sh-button--sm" to={`/library/${skillId}`}>
+              {t("skillLibrary.drawer.fullDetails")}
+            </Link>
+          </footer>
+        ) : null}
+      </div>
+    </Drawer>
+  );
+}

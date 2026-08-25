@@ -1,5 +1,6 @@
 import * as Dialog from "@radix-ui/react-dialog";
 import {
+  type CSSProperties,
   type RefObject,
   type ReactElement,
   type ReactNode,
@@ -13,8 +14,11 @@ interface DrawerBaseProps {
   children: ReactNode;
   closeLabel?: string;
   description?: string;
+  leadingAccessory?: ReactNode;
   onOpenChange: (open: boolean) => void;
   open: boolean;
+  panelClassName?: string;
+  panelStyle?: CSSProperties;
   title: string;
 }
 
@@ -57,8 +61,11 @@ export function Drawer({
   children,
   closeLabel,
   description,
+  leadingAccessory,
   onOpenChange,
   open,
+  panelClassName,
+  panelStyle,
   returnFocusRef,
   title,
   trigger,
@@ -73,7 +80,7 @@ export function Drawer({
       <Dialog.Portal>
         <Dialog.Overlay className="sh-overlay" />
         <Dialog.Content
-          className="sh-drawer"
+          className={["sh-drawer", panelClassName].filter(Boolean).join(" ")}
           data-reduced-motion={String(reducedMotion)}
           data-testid="drawer-panel"
           onCloseAutoFocus={(event) => {
@@ -82,7 +89,9 @@ export function Drawer({
               returnFocusRef.current.focus();
             }
           }}
+          style={panelStyle}
         >
+          {leadingAccessory}
           <header className="sh-drawer__header">
             <div>
               <Dialog.Title className="sh-drawer__title">{title}</Dialog.Title>
