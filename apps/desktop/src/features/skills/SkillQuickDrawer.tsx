@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import {
   type ComponentType,
   type CSSProperties,
+  type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
   type RefObject,
@@ -403,13 +404,21 @@ export function SkillQuickDrawer({
   const [dragWidthPx, setDragWidthPx] = useState<number>();
   const [preferenceSaveFailed, setPreferenceSaveFailed] = useState(false);
   const dragSessionRef = useRef<DragSession>();
+  const preferenceSaveQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const preferenceSaveRequestRef = useRef(0);
   const removePointerListenersRef = useRef<() => void>(() => undefined);
   const normalizedPreferences = normalizeDrawerPreferences(preferences);
   const visibleModules = new Set(normalizedPreferences.visibleModules);
   const optionalOrder = normalizedPreferences.moduleOrder.filter((moduleId) =>
     OPTIONAL_DRAWER_MODULES.includes(moduleId as OptionalDrawerModule),
   ) as OptionalDrawerModule[];
-  const displayedWidth = dragWidthPx ?? normalizedPreferences.widthPx;
+  const drawerViewportWidth = viewportWidth();
+  const drawerMaximumWidth = Math.max(420, drawerViewportWidth - 32);
+  const effectiveWidth = clampDrawerWidth(
+    normalizedPreferences.widthPx,
+    drawerViewportWidth,
+  );
+  const displayedWidth = dragWidthPx ?? effectiveWidth;
   const panelStyle: DrawerPanelStyle = {
     "--skill-drawer-width": `${displayedWidth}px`,
   };
@@ -426,18 +435,36 @@ export function SkillQuickDrawer({
 
   const persistPreferences = (next: SkillDrawerPreferences) => {
     const normalized = normalizeDrawerPreferences(next);
+    const request = preferenceSaveRequestRef.current + 1;
+    preferenceSaveRequestRef.current = request;
     setPreferenceSaveFailed(false);
     onPreferencesChange(normalized);
-    void facade.saveDrawerPreferences(normalized).catch(() => {
-      setPreferenceSaveFailed(true);
-    });
+    const save = preferenceSaveQueueRef.current.then(() =>
+      facade.saveDrawerPreferences(normalized),
+    );
+    preferenceSaveQueueRef.current = save.then(
+      () => undefined,
+      () => undefined,
+    );
+    void save.then(
+      () => {
+        if (request === preferenceSaveRequestRef.current) {
+          setPreferenceSaveFailed(false);
+        }
+      },
+      () => {
+        if (request === preferenceSaveRequestRef.current) {
+          setPreferenceSaveFailed(true);
+        }
+      },
+    );
   };
 
   const choosePreset = (preset: DrawerPreset) => {
     persistPreferences({
       ...normalizedPreferences,
       preset,
-      widthPx: drawerWidthForPreset(preset, viewportWidth()),
+      widthPx: drawerWidthForPreset(preset, drawerViewportWidth),
     });
   };
 
@@ -462,8 +489,34 @@ export function SkillQuickDrawer({
     });
   };
 
+  const completeResize = (pointerId: number, persistWidth: boolean) => {
+    const session = dragSessionRef.current;
+    if (!session || pointerId !== session.pointerId) {
+      return;
+    }
+    removePointerListenersRef.current();
+    dragSessionRef.current = undefined;
+    setDragWidthPx(undefined);
+    if (
+      typeof session.handle.hasPointerCapture === "function" &&
+      session.handle.hasPointerCapture(session.pointerId)
+    ) {
+      session.handle.releasePointerCapture(session.pointerId);
+    }
+    if (persistWidth) {
+      persistPreferences({
+        ...normalizedPreferences,
+        widthPx: session.lastWidth,
+      });
+    }
+  };
+
   const beginResize = (event: ReactPointerEvent<HTMLDivElement>) => {
     event.preventDefault();
+    const activeSession = dragSessionRef.current;
+    if (activeSession) {
+      completeResize(activeSession.pointerId, false);
+    }
     const handle = event.currentTarget;
     if (typeof handle.setPointerCapture === "function") {
       handle.setPointerCapture(event.pointerId);
@@ -483,44 +536,59 @@ export function SkillQuickDrawer({
       }
       const nextWidth = clampDrawerWidth(
         session.startWidth + session.startX - pointerEvent.clientX,
-        viewportWidth(),
+        drawerViewportWidth,
       );
       session.lastWidth = nextWidth;
       setDragWidthPx(nextWidth);
     };
 
     const handlePointerUp = (pointerEvent: PointerEvent) => {
-      const session = dragSessionRef.current;
-      if (!session || pointerEvent.pointerId !== session.pointerId) {
-        return;
-      }
-      removePointerListenersRef.current();
-      if (
-        typeof session.handle.hasPointerCapture === "function" &&
-        session.handle.hasPointerCapture(session.pointerId)
-      ) {
-        session.handle.releasePointerCapture(session.pointerId);
-      }
-      dragSessionRef.current = undefined;
-      setDragWidthPx(undefined);
-      persistPreferences({
-        ...normalizedPreferences,
-        widthPx: session.lastWidth,
-      });
+      completeResize(pointerEvent.pointerId, true);
+    };
+
+    const handlePointerCancel = (pointerEvent: PointerEvent) => {
+      completeResize(pointerEvent.pointerId, false);
     };
 
     window.addEventListener("pointermove", handlePointerMove);
     window.addEventListener("pointerup", handlePointerUp);
+    window.addEventListener("pointercancel", handlePointerCancel);
     removePointerListenersRef.current = () => {
       window.removeEventListener("pointermove", handlePointerMove);
       window.removeEventListener("pointerup", handlePointerUp);
+      window.removeEventListener("pointercancel", handlePointerCancel);
       removePointerListenersRef.current = () => undefined;
     };
+  };
+
+  const resizeWithKeyboard = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    const nextWidth =
+      event.key === "ArrowLeft"
+        ? displayedWidth + 16
+        : event.key === "ArrowRight"
+          ? displayedWidth - 16
+          : event.key === "Home"
+            ? 420
+            : event.key === "End"
+              ? drawerMaximumWidth
+              : undefined;
+    if (nextWidth === undefined) {
+      return;
+    }
+    event.preventDefault();
+    const clampedWidth = clampDrawerWidth(nextWidth, drawerViewportWidth);
+    if (clampedWidth !== displayedWidth) {
+      persistPreferences({
+        ...normalizedPreferences,
+        widthPx: clampedWidth,
+      });
+    }
   };
 
   useEffect(
     () => () => {
       removePointerListenersRef.current();
+      dragSessionRef.current = undefined;
     },
     [],
   );
@@ -529,12 +597,15 @@ export function SkillQuickDrawer({
     <div
       aria-label={t("skillLibrary.drawer.resize")}
       aria-orientation="vertical"
-      aria-valuemax={Math.max(420, viewportWidth() - 32)}
+      aria-valuemax={drawerMaximumWidth}
       aria-valuemin={420}
       aria-valuenow={displayedWidth}
       className="sh-skill-drawer__resize"
+      onKeyDown={resizeWithKeyboard}
+      onLostPointerCapture={(event) => completeResize(event.pointerId, false)}
       onPointerDown={beginResize}
       role="separator"
+      tabIndex={0}
     />
   );
   const view = detailQuery.data;

@@ -54,6 +54,10 @@ interface MockOptions {
   failDrawerSave?: boolean;
   failQuickView?: boolean;
   quickViewPromise?: Promise<SkillQuickView>;
+  saveDrawerPreference?: (
+    preferences: SkillDrawerPreferences,
+    index: number,
+  ) => Promise<void>;
   usageEvidence?: SkillQuickView["usageEvidence"];
 }
 
@@ -118,7 +122,14 @@ function createMockSkillLibraryFacade(options: MockOptions = {}): MockFacade {
       return [];
     },
     async saveDrawerPreferences(preferences) {
-      calls.saveDrawerPreferences.push(clonePreferences(preferences));
+      const savedPreferences = clonePreferences(preferences);
+      calls.saveDrawerPreferences.push(savedPreferences);
+      if (options.saveDrawerPreference) {
+        await options.saveDrawerPreference(
+          savedPreferences,
+          calls.saveDrawerPreferences.length - 1,
+        );
+      }
       if (options.failDrawerSave) {
         throw new Error("preference write failed");
       }
@@ -197,6 +208,16 @@ async function renderDrawer({
 
 function pendingQuickView() {
   return new Promise<SkillQuickView>(() => undefined);
+}
+
+function deferred<T = void>() {
+  let reject!: (reason?: unknown) => void;
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  const promise = new Promise<T>((promiseResolve, promiseReject) => {
+    resolve = promiseResolve;
+    reject = promiseReject;
+  });
+  return { promise, reject, resolve };
 }
 
 function mockReducedMotion(reduced: boolean) {
@@ -289,6 +310,9 @@ it("starts wide, changes presets, and persists a clamped drag width", async () =
     "--skill-drawer-width: 680px",
   );
   fireEvent.click(screen.getByRole("button", { name: "Near full screen" }));
+  await waitFor(() => {
+    expect(facade.calls.saveDrawerPreferences).toHaveLength(1);
+  });
   const separator = screen.getByRole("separator", { name: "Resize quick drawer" });
   fireEvent.pointerDown(separator, { clientX: 500, pointerId: 1 });
   fireEvent.pointerMove(window, { clientX: 420, pointerId: 1 });
@@ -297,6 +321,120 @@ it("starts wide, changes presets, and persists a clamped drag width", async () =
   await waitFor(() => {
     expect(facade.calls.saveDrawerPreferences.at(-1)?.widthPx).toBeGreaterThanOrEqual(420);
     expect(facade.calls.saveDrawerPreferences).toHaveLength(2);
+  });
+});
+
+it("resizes the focused separator with Arrow, Home, and End keys", async () => {
+  const facade = createMockSkillLibraryFacade();
+  await renderDrawer({ facade, viewportWidth: 1200 });
+  const separator = screen.getByRole("separator", { name: "Resize quick drawer" });
+
+  separator.focus();
+  expect(separator).toHaveFocus();
+  expect(separator).toHaveAttribute("tabindex", "0");
+  expect(separator).toHaveAttribute("aria-valuemin", "420");
+  expect(separator).toHaveAttribute("aria-valuemax", "1168");
+  expect(separator).toHaveAttribute("aria-valuenow", "680");
+
+  fireEvent.keyDown(separator, { key: "ArrowLeft" });
+  expect(separator).toHaveAttribute("aria-valuenow", "696");
+  fireEvent.keyDown(separator, { key: "ArrowRight" });
+  expect(separator).toHaveAttribute("aria-valuenow", "680");
+  fireEvent.keyDown(separator, { key: "Home" });
+  expect(separator).toHaveAttribute("aria-valuenow", "420");
+  fireEvent.keyDown(separator, { key: "End" });
+  expect(separator).toHaveAttribute("aria-valuenow", "1168");
+
+  await waitFor(() => {
+    expect(facade.calls.saveDrawerPreferences.map(({ widthPx }) => widthPx)).toEqual([
+      696,
+      680,
+      420,
+      1168,
+    ]);
+  });
+});
+
+it("clamps a persisted width before rendering in a narrower viewport", async () => {
+  mockPointerEvents();
+  const facade = createMockSkillLibraryFacade();
+  await renderDrawer({
+    facade,
+    preferences: { ...DEFAULT_DRAWER_PREFERENCES, widthPx: 1100 },
+    viewportWidth: 600,
+  });
+
+  const separator = screen.getByRole("separator", { name: "Resize quick drawer" });
+  expect(await screen.findByTestId("skill-quick-drawer")).toHaveStyle(
+    "--skill-drawer-width: 568px",
+  );
+  expect(separator).toHaveAttribute("aria-valuemax", "568");
+  expect(separator).toHaveAttribute("aria-valuenow", "568");
+
+  fireEvent.pointerDown(separator, { clientX: 500, pointerId: 1 });
+  fireEvent.pointerMove(window, { clientX: 520, pointerId: 1 });
+  expect(screen.getByTestId("skill-quick-drawer")).toHaveStyle(
+    "--skill-drawer-width: 548px",
+  );
+  fireEvent.pointerCancel(window, { pointerId: 1 });
+});
+
+it.each(["pointercancel", "lostpointercapture"] as const)(
+  "cleans up %s without persisting the cancelled drag",
+  async (eventType) => {
+    mockPointerEvents();
+    const facade = createMockSkillLibraryFacade();
+    await renderDrawer({ facade, viewportWidth: 1200 });
+    const drawer = await screen.findByTestId("skill-quick-drawer");
+    const separator = screen.getByRole("separator", { name: "Resize quick drawer" });
+
+    fireEvent.pointerDown(separator, { clientX: 500, pointerId: 1 });
+    fireEvent.pointerMove(window, { clientX: 400, pointerId: 1 });
+    expect(drawer).toHaveStyle("--skill-drawer-width: 780px");
+
+    const cancelTarget = eventType === "pointercancel" ? window : separator;
+    fireEvent(
+      cancelTarget,
+      new PointerEvent(eventType, { bubbles: true, pointerId: 1 }),
+    );
+    expect(drawer).toHaveStyle("--skill-drawer-width: 680px");
+
+    fireEvent.pointerMove(window, { clientX: 300, pointerId: 1 });
+    fireEvent.pointerUp(window, { pointerId: 1 });
+    await waitFor(() => {
+      expect(facade.calls.saveDrawerPreferences).toEqual([]);
+      expect(drawer).toHaveStyle("--skill-drawer-width: 680px");
+    });
+  },
+);
+
+it("serializes overlapping saves and ignores an older rejected result", async () => {
+  const firstSave = deferred();
+  const secondSave = deferred();
+  const facade = createMockSkillLibraryFacade({
+    saveDrawerPreference: async (_preferences, index) =>
+      index === 0 ? firstSave.promise : secondSave.promise,
+  });
+  await renderDrawer({ facade });
+
+  fireEvent.click(screen.getByRole("button", { name: "Standard width" }));
+  fireEvent.click(screen.getByRole("button", { name: "Near full screen" }));
+  await waitFor(() => {
+    expect(facade.calls.saveDrawerPreferences).toHaveLength(1);
+  });
+
+  firstSave.reject(new Error("older save failed"));
+  await waitFor(() => {
+    expect(facade.calls.saveDrawerPreferences).toHaveLength(2);
+  });
+  expect(screen.queryByText(/Preference was not saved/)).not.toBeInTheDocument();
+  secondSave.resolve();
+  await waitFor(() => {
+    expect(screen.queryByText(/Preference was not saved/)).not.toBeInTheDocument();
+    expect(screen.getByTestId("skill-quick-drawer")).toHaveAttribute(
+      "data-preset",
+      "near_full",
+    );
   });
 });
 

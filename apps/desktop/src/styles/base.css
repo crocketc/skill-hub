@@ -985,8 +985,14 @@ a {
   touch-action: none;
 }
 
-.sh-skill-drawer__resize:hover {
+.sh-skill-drawer__resize:hover,
+.sh-skill-drawer__resize:focus-visible {
   background: var(--color-accent-soft);
+}
+
+.sh-skill-drawer__resize:focus-visible {
+  outline-offset: 0;
+  box-shadow: inset 0 0 0 2px var(--color-focus);
 }
 
 .sh-skill-drawer__layout {
