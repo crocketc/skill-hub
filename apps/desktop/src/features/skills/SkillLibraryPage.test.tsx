@@ -467,6 +467,98 @@ describe("SkillLibraryPage", () => {
     expect(getComputedStyle(batchBar).flexWrap).toBe("wrap");
   });
 
+  it("reconnects batch clearance after a page error is retried", async () => {
+    let batchHeight = 72;
+    const activeObservers = new Set<MockResizeObserver>();
+    class MockResizeObserver implements ResizeObserver {
+      constructor(readonly callback: ResizeObserverCallback) {}
+
+      disconnect() {
+        activeObservers.delete(this);
+      }
+
+      observe() {
+        activeObservers.add(this);
+      }
+
+      unobserve() {}
+    }
+    vi.stubGlobal("ResizeObserver", MockResizeObserver);
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(
+      function getBoundingClientRect(this: HTMLElement) {
+        return DOMRect.fromRect({
+          height: this.classList.contains("sh-skill-library__batch-bar")
+            ? batchHeight
+            : 0,
+        });
+      },
+    );
+    const facade = createMockSkillLibraryFacade();
+    const successfulList = facade.listSkills.bind(facade);
+    let pageAttempt = 0;
+    vi.spyOn(facade, "listSkills").mockImplementation((query) => {
+      pageAttempt += 1;
+      return pageAttempt === 2
+        ? Promise.reject(new Error("transient catalog read failure"))
+        : successfulList(query);
+    });
+    const view = renderLibrary({ facade });
+
+    fireEvent.click(
+      await screen.findByRole("checkbox", { name: "Select PDF Reader" }),
+    );
+    const firstBatchBar = screen.getByRole("complementary", {
+      name: "Batch actions",
+    });
+    const firstWorkspace = firstBatchBar.closest(".sh-skill-library");
+    if (!(firstWorkspace instanceof HTMLElement)) {
+      throw new Error("Expected the batch bar to be inside the Skill library workspace");
+    }
+    await waitFor(() => {
+      expect(firstWorkspace).toHaveStyle("--skill-batch-bar-height: 72px");
+    });
+
+    await act(async () => {
+      await view.queryClient.invalidateQueries({
+        queryKey: ["skill-library", "page"],
+      });
+    });
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Could not load the skill library",
+    );
+    expect(firstBatchBar.isConnected).toBe(false);
+    batchHeight = 96;
+    act(() => {
+      for (const observer of activeObservers) {
+        observer.callback([], observer);
+      }
+    });
+    expect(
+      firstWorkspace.style.getPropertyValue("--skill-batch-bar-height"),
+    ).toBe("");
+
+    batchHeight = 124;
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    const nextBatchBar = await screen.findByRole("complementary", {
+      name: "Batch actions",
+    });
+    const nextWorkspace = nextBatchBar.closest(".sh-skill-library");
+    if (!(nextWorkspace instanceof HTMLElement)) {
+      throw new Error("Expected the retried batch bar to be inside the workspace");
+    }
+    await waitFor(() => {
+      expect(nextWorkspace).toHaveStyle("--skill-batch-bar-height: 124px");
+    });
+
+    batchHeight = 168;
+    act(() => {
+      for (const observer of activeObservers) {
+        observer.callback([], observer);
+      }
+    });
+    expect(nextWorkspace).toHaveStyle("--skill-batch-bar-height: 168px");
+  });
+
   it("saves only the view scope and current table preferences", async () => {
     const facade = createMockSkillLibraryFacade();
     renderLibrary({ facade, initialEntry: "/library?q=pdf&page=2" });

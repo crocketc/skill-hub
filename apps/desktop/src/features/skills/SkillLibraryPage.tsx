@@ -288,7 +288,7 @@ export function SkillLibraryPage({ facade }: SkillLibraryPageProps): JSX.Element
   const parsed = useMemo(() => parseSkillLibrarySearchParams(search), [search]);
   const { query, skillId } = parsed;
   const rootRef = useRef<HTMLElement | null>(null);
-  const batchBarRef = useRef<HTMLElement | null>(null);
+  const [batchBarElement, setBatchBarElement] = useState<HTMLElement | null>(null);
   const returnFocusRef = useRef<HTMLElement | null>(null);
   const scrollPositionRef = useRef<{ left: number; top: number }>();
   const currentFilterKeyRef = useRef(skillFilterKey(query));
@@ -364,7 +364,7 @@ export function SkillLibraryPage({ facade }: SkillLibraryPageProps): JSX.Element
 
   useLayoutEffect(() => {
     const workspace = rootRef.current;
-    const batchBar = batchBarRef.current;
+    const batchBar = batchBarElement;
     if (!workspace || !hasActionableSelection || !batchBar) {
       workspace?.style.removeProperty("--skill-batch-bar-height");
       return;
@@ -380,13 +380,17 @@ export function SkillLibraryPage({ facade }: SkillLibraryPageProps): JSX.Element
       window.addEventListener("resize", reserveBatchBarHeight);
       return () => {
         window.removeEventListener("resize", reserveBatchBarHeight);
+        workspace.style.removeProperty("--skill-batch-bar-height");
       };
     }
 
     const observer = new ResizeObserver(reserveBatchBarHeight);
     observer.observe(batchBar);
-    return () => observer.disconnect();
-  }, [hasActionableSelection]);
+    return () => {
+      observer.disconnect();
+      workspace.style.removeProperty("--skill-batch-bar-height");
+    };
+  }, [batchBarElement, hasActionableSelection]);
 
   useEffect(() => {
     const region = rootRef.current?.querySelector<HTMLElement>(
@@ -708,7 +712,7 @@ export function SkillLibraryPage({ facade }: SkillLibraryPageProps): JSX.Element
       {selectedBatchTarget ? (
         <BatchBar
           announcement={batchAnnouncement}
-          barRef={batchBarRef}
+          barRef={setBatchBarElement}
           onAction={emitBatchAction}
           onClear={() => {
             setBatchAnnouncement(undefined);
