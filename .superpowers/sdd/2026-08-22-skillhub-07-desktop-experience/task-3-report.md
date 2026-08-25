@@ -298,3 +298,138 @@ Repository hygiene:
 - The numeric list now renders outside Suspense, so the accessible text equivalent survives runtime delay and lazy loading.
 - Theme styling is derived from the existing CSS token system rather than a duplicated theme map, and the runtime chunk still lazy-loads separately from the overview page shell.
 - The review fixes stayed inside Task 3 scope and did not extend the placeholder agent/project workspaces beyond the already-approved drill-down routes.
+
+## Fix Round 2
+
+### Status
+
+Completed in follow-up commit `f8e1ca7` (`test: align bootstrap gate with overview route`).
+
+### Root Cause
+
+- `BootstrapGate` returns `AppShell`, and `AppShell` now correctly relies on its routed `Outlet` for overview content.
+- The unit test had been rendering `BootstrapGate` directly inside `MemoryRouter` without a child route, so the shell rendered with an empty `<main>` and the truthful overview metric `42` was no longer visible.
+- Production behavior stayed correct because the real app mounts `BootstrapGate` as a route element with `OverviewPage` as the index child.
+
+### Changes Applied
+
+- Reworked the BootstrapGate harness to mirror the real route relationship:
+  - `MemoryRouter`
+  - `Routes`
+  - parent `Route` with `BootstrapGate` as the route element
+  - index child `Route` with the real `OverviewPage`
+- Added `ThemeProvider` and browser-preference stubs so the harness matches the production provider tree cleanly.
+- Tightened the cached-home assertion to prove the cached `42` metric appears exactly once, which preserves the “no duplicate shell summary” requirement.
+- Kept the recovery-path assertions intact; the shared helper still exercises those branches truthfully.
+
+### RED
+
+Controller reproduction (reported independently and then reproduced locally):
+
+```powershell
+$env:CI='true'
+pnpm --dir apps/desktop test --run src/features/bootstrap/BootstrapGate.test.tsx
+```
+
+Failing output:
+
+```text
+FAIL  src/features/bootstrap/BootstrapGate.test.tsx > shows cached home data while filesystem verification continues
+Unable to find an element with the text: 42.
+```
+
+This was the expected RED because the test harness no longer mounted any routed outlet child after the shell-summary removal.
+
+### GREEN
+
+Focused verification:
+
+```powershell
+$env:CI='true'
+pnpm --dir apps/desktop test --run src/features/bootstrap/BootstrapGate.test.tsx src/features/overview/OverviewPage.test.tsx
+```
+
+Passing output:
+
+```text
+✓ src/features/bootstrap/BootstrapGate.test.tsx (4 tests)
+✓ src/features/overview/OverviewPage.test.tsx (4 tests)
+Tests 8 passed (8)
+```
+
+### Verification Commands and Results
+
+Full desktop suite:
+
+```powershell
+$env:CI='true'
+pnpm --dir apps/desktop test --run
+```
+
+Result:
+
+```text
+✓ src/features/bootstrap/BootstrapGate.test.tsx (4 tests)
+✓ src/features/overview/OverviewPage.test.tsx (4 tests)
+✓ 13 test files passed
+✓ 53 tests passed
+```
+
+Lint:
+
+```powershell
+$env:CI='true'
+pnpm --dir apps/desktop lint
+```
+
+Result:
+
+```text
+$ eslint . --max-warnings 0
+```
+
+Typecheck:
+
+```powershell
+$env:CI='true'
+pnpm --dir apps/desktop typecheck
+```
+
+Result:
+
+```text
+$ tsc --noEmit
+```
+
+Build:
+
+```powershell
+$env:CI='true'
+pnpm --dir apps/desktop build
+```
+
+Result:
+
+```text
+dist/assets/index-CTK_Vg7B.js                      389.53 kB
+dist/assets/DeploymentBarChartRuntime-DiabR7sk.js 469.36 kB
+✓ built in 2.98s
+```
+
+Whitespace / diff check:
+
+```powershell
+git diff --check
+```
+
+Result: PASS (Git emitted an LF→CRLF checkout warning for the Windows worktree, but no diff-check errors)
+
+### Files Changed in Fix Round 2
+
+- `apps/desktop/src/features/bootstrap/BootstrapGate.test.tsx`
+
+### Self-Review
+
+- The fix stays entirely at the harness boundary and does not change production behavior.
+- The cached overview metric remains sourced from `BootstrapSnapshot` through the real routed overview flow, which is the integration behavior we actually care about.
+- The duplicate-shell-summary regression guard is stronger now because the test asserts the cached metric appears once, not merely that it appears somewhere.
