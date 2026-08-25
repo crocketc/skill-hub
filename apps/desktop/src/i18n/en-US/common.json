@@ -65,13 +65,34 @@
     "filters": {
       "aiCheck": "AI check",
       "basicCheck": "Basic check",
+      "checkStates": {
+        "failed": "Failed",
+        "notRun": "Not run",
+        "passed": "Passed",
+        "unavailable": "Unavailable",
+        "warning": "Warning"
+      },
       "clear": "Clear filters",
       "deployment": "Deployment",
+      "deploymentOptions": {
+        "any": "Any deployment",
+        "deployed": "Deployed",
+        "notDeployed": "Not deployed"
+      },
       "lifecycle": "Lifecycle",
+      "lifecycleOptions": {
+        "active": "Active",
+        "archived": "Archived",
+        "trial": "Trial"
+      },
       "resultCount": "{{count}} results",
       "search": "Search skills",
       "tags": "Tags",
-      "version": "Version"
+      "version": "Version",
+      "versionOptions": {
+        "any": "Any version",
+        "upgradeAvailable": "Upgrade available"
+      }
     },
     "savedViews": {
       "builtIn": {

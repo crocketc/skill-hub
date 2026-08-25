@@ -52,3 +52,38 @@ it("applies a saved view without copying page or selection", () => {
   expect(result.query.savedViewId).toBe("view-risk");
   expect(result.table.density).toBe("compact");
 });
+
+it("rejects malformed URL enum, page, page-size, and sort values", () => {
+  const result = parseSkillLibrarySearchParams(
+    "ai=failed&ai=unknown&basic=invalid&lifecycle=trial&lifecycle=trial&lifecycle=unknown&deployment=everywhere&version=old&page=0&size=20&sort=security:sideways",
+  );
+
+  expect(result.query).toEqual({
+    ...DEFAULT_SKILL_QUERY,
+    filters: {
+      ...DEFAULT_SKILL_QUERY.filters,
+      aiCheck: ["failed"],
+      lifecycle: ["trial"],
+    },
+  });
+});
+
+it("clamps non-integer pages and rejects unsupported page sizes", () => {
+  const result = parseSkillLibrarySearchParams("page=1.5&size=500");
+
+  expect(result.query.page).toBe(1);
+  expect(result.query.pageSize).toBe(25);
+});
+
+it("uses repeated normalized filter parameters and omits defaults", () => {
+  const params = serializeSkillLibrarySearchParams({
+    ...DEFAULT_SKILL_QUERY,
+    filters: {
+      ...DEFAULT_SKILL_QUERY.filters,
+      basicCheck: ["passed", "failed", "passed"],
+      tags: ["pdf", "docs", "pdf"],
+    },
+  });
+
+  expect(params.toString()).toBe("basic=failed&basic=passed&tag=docs&tag=pdf");
+});

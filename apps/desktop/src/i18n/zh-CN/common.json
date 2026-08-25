@@ -65,13 +65,34 @@
     "filters": {
       "aiCheck": "AI 检查",
       "basicCheck": "基础检查",
+      "checkStates": {
+        "failed": "失败",
+        "notRun": "未运行",
+        "passed": "通过",
+        "unavailable": "不可用",
+        "warning": "警告"
+      },
       "clear": "清除筛选",
       "deployment": "部署状态",
+      "deploymentOptions": {
+        "any": "任意部署状态",
+        "deployed": "已部署",
+        "notDeployed": "未部署"
+      },
       "lifecycle": "生命周期",
+      "lifecycleOptions": {
+        "active": "活跃",
+        "archived": "已归档",
+        "trial": "试用"
+      },
       "resultCount": "{{count}} 个结果",
       "search": "搜索 Skill",
       "tags": "标签",
-      "version": "版本"
+      "version": "版本",
+      "versionOptions": {
+        "any": "任意版本",
+        "upgradeAvailable": "有可用更新"
+      }
     },
     "savedViews": {
       "builtIn": {
