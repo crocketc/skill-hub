@@ -1,4 +1,5 @@
 import { useTranslation } from "react-i18next";
+import { NavLink } from "react-router-dom";
 import { BrandLogo } from "../ui/BrandLogo";
 
 interface NavigationItem {
@@ -35,9 +36,14 @@ function NavigationLinks({ items }: { items: NavigationItem[] }) {
     <ul className="sh-sidebar__list">
       {items.map((item) => (
         <li key={item.href}>
-          <a className="sh-sidebar__link" href={item.href}>
+          <NavLink
+            className={({ isActive }) =>
+              isActive ? "sh-sidebar__link sh-sidebar__link--active" : "sh-sidebar__link"
+            }
+            to={item.href}
+          >
             {t(`navigation.${item.translationKey}`)}
-          </a>
+          </NavLink>
         </li>
       ))}
     </ul>
@@ -49,9 +55,9 @@ export function Sidebar() {
 
   return (
     <aside aria-label={t("appShell.navigation")} className="sh-sidebar">
-      <a aria-label="SkillHub" className="sh-sidebar__brand" href="/">
+      <NavLink aria-label="SkillHub" className="sh-sidebar__brand" to="/">
         <BrandLogo />
-      </a>
+      </NavLink>
       <nav>
         <NavigationLinks items={primaryNavigation} />
       </nav>

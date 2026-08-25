@@ -1,5 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import { I18nextProvider } from "react-i18next";
+import { MemoryRouter } from "react-router-dom";
 import { createSkillHubI18n } from "../../i18n";
 import { BootstrapGate } from "./BootstrapGate";
 
@@ -19,17 +20,22 @@ it("shows cached home data while filesystem verification continues", async () =>
   const i18n = await createSkillHubI18n(["zh-CN"]);
   render(
     <I18nextProvider i18n={i18n}>
-      <BootstrapGate
-        runtime={{
-          getBootstrapSnapshot: async () => cachedSnapshot,
-          runInitializationScan: async () => undefined,
-        }}
-      />
+      <MemoryRouter>
+        <BootstrapGate
+          runtime={{
+            getBootstrapView: async () => ({
+              snapshot: cachedSnapshot,
+              verification: { kind: "unavailable" },
+            }),
+            runInitializationScan: async () => ({ kind: "completed" }),
+          }}
+        />
+      </MemoryRouter>
     </I18nextProvider>,
   );
 
   expect(await screen.findByText("42")).toBeVisible();
-  expect(screen.getByText("正在核对本地变化")).toBeVisible();
+  expect(screen.queryByText("正在核对本地变化")).not.toBeInTheDocument();
   expect(
     screen.queryByRole("progressbar", { name: "阻塞启动" }),
   ).not.toBeInTheDocument();
@@ -37,26 +43,48 @@ it("shows cached home data while filesystem verification continues", async () =>
   expect(screen.getByRole("link", { name: "设置" })).toBeVisible();
 });
 
+it("shows background verification only when the injected view says it is active", async () => {
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  render(
+    <I18nextProvider i18n={i18n}>
+      <MemoryRouter>
+        <BootstrapGate
+          runtime={{
+            getBootstrapView: async () => ({
+              snapshot: cachedSnapshot,
+              verification: { kind: "verifying" },
+            }),
+            runInitializationScan: async () => ({ kind: "completed" }),
+          }}
+        />
+      </MemoryRouter>
+    </I18nextProvider>,
+  );
+
+  expect(await screen.findByText("正在核对本地变化")).toBeVisible();
+});
+
 it("blocks only for a truthful recovery state", async () => {
   const i18n = await createSkillHubI18n(["zh-CN"]);
   render(
     <I18nextProvider i18n={i18n}>
-      <BootstrapGate
-        runtime={{
-          getBootstrapSnapshot: async () => ({
-            ...cachedSnapshot,
-            recovery_state: "needs_recovery" as const,
-          }),
-          runInitializationScan: async () => undefined,
-        }}
-      />
+      <MemoryRouter>
+        <BootstrapGate
+          runtime={{
+            getBootstrapView: async () => ({
+              snapshot: { ...cachedSnapshot, recovery_state: "needs_recovery" as const },
+              verification: { kind: "unavailable" },
+            }),
+            runInitializationScan: async () => ({ kind: "completed" }),
+          }}
+        />
+      </MemoryRouter>
     </I18nextProvider>,
   );
 
   expect(await screen.findByText("需要恢复后才能继续")).toBeVisible();
-  expect(
-    screen.getByRole("progressbar", { name: "阻塞启动" }),
-  ).toBeVisible();
+  expect(screen.getByRole("alert")).toBeVisible();
+  expect(screen.queryByRole("progressbar", { name: "阻塞启动" })).not.toBeInTheDocument();
   expect(screen.queryByRole("link", { name: "概览" })).not.toBeInTheDocument();
 });
 
@@ -64,17 +92,20 @@ it("names an in-progress recovery without pretending it is complete", async () =
   const i18n = await createSkillHubI18n(["zh-CN"]);
   render(
     <I18nextProvider i18n={i18n}>
-      <BootstrapGate
-        runtime={{
-          getBootstrapSnapshot: async () => ({
-            ...cachedSnapshot,
-            recovery_state: "in_progress" as const,
-          }),
-          runInitializationScan: async () => undefined,
-        }}
-      />
+      <MemoryRouter>
+        <BootstrapGate
+          runtime={{
+            getBootstrapView: async () => ({
+              snapshot: { ...cachedSnapshot, recovery_state: "in_progress" as const },
+              verification: { kind: "unavailable" },
+            }),
+            runInitializationScan: async () => ({ kind: "completed" }),
+          }}
+        />
+      </MemoryRouter>
     </I18nextProvider>,
   );
 
   expect(await screen.findByText("正在恢复本地数据")).toBeVisible();
+  expect(screen.getByRole("progressbar", { name: "阻塞启动" })).toBeVisible();
 });

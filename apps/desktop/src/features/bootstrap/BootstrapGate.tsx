@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import type { BootstrapSnapshot, StartupRecoveryState } from "../../api/bindings";
 import { AppShell } from "../../app/AppShell";
 import {
+  type BootstrapVerificationState,
   desktopBootstrapRuntime,
   type BootstrapRuntime,
 } from "./api";
@@ -13,7 +14,11 @@ interface BootstrapGateProps {
 
 type BootstrapLoadState =
   | { kind: "loading" }
-  | { kind: "ready"; snapshot: BootstrapSnapshot }
+  | {
+      kind: "ready";
+      snapshot: BootstrapSnapshot;
+      verification: BootstrapVerificationState;
+    }
   | { kind: "error" };
 
 function RecoveryBlocker({ recoveryState }: { recoveryState: StartupRecoveryState }) {
@@ -22,10 +27,16 @@ function RecoveryBlocker({ recoveryState }: { recoveryState: StartupRecoveryStat
 
   return (
     <main className="sh-startup-blocker">
-      <section aria-live="assertive" className="sh-startup-blocker__card">
+      <section
+        aria-live="assertive"
+        className="sh-startup-blocker__card"
+        role={isRecovering ? undefined : "alert"}
+      >
         <h1>{t(isRecovering ? "bootstrap.recoveryInProgressTitle" : "bootstrap.recoveryTitle")}</h1>
         <p>{t(isRecovering ? "bootstrap.recoveryInProgressDescription" : "bootstrap.recoveryDescription")}</p>
-        <div aria-label={t("bootstrap.blockingStartup")} role="progressbar" />
+        {isRecovering ? (
+          <div aria-label={t("bootstrap.blockingStartup")} role="progressbar" />
+        ) : null}
         <a href="/operations">{t("bootstrap.openRecovery")}</a>
       </section>
     </main>
@@ -55,8 +66,12 @@ export function BootstrapGate({ runtime = desktopBootstrapRuntime }: BootstrapGa
   const load = useCallback(async () => {
     setState({ kind: "loading" });
     try {
-      const snapshot = await runtime.getBootstrapSnapshot();
-      setState({ kind: "ready", snapshot });
+      const view = await runtime.getBootstrapView();
+      setState({
+        kind: "ready",
+        snapshot: view.snapshot,
+        verification: view.verification,
+      });
     } catch {
       setState({ kind: "error" });
     }
@@ -76,5 +91,5 @@ export function BootstrapGate({ runtime = desktopBootstrapRuntime }: BootstrapGa
     return <RecoveryBlocker recoveryState={state.snapshot.recovery_state} />;
   }
 
-  return <AppShell snapshot={state.snapshot} />;
+  return <AppShell snapshot={state.snapshot} verification={state.verification} />;
 }

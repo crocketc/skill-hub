@@ -1,7 +1,7 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import { afterEach, vi } from "vitest";
 import { skillHubI18n } from "../i18n";
-import { AppRouter } from "./router";
+import { appRouter, AppRouter } from "./router";
 
 vi.mock("../api/bindings", async (importOriginal) => {
   const original = await importOriginal<typeof import("../api/bindings")>();
@@ -50,10 +50,15 @@ afterEach(() => {
 it("wires theme, language, data and motion providers at the production entry", async () => {
   mockBrowserPreferences();
   await skillHubI18n.changeLanguage("en-US");
+  await appRouter.navigate("/library");
 
   render(<AppRouter />);
 
-  expect(await screen.findByText("Checking local changes")).toBeInTheDocument();
+  expect(await screen.findByText("Cached skill library")).toBeInTheDocument();
+  expect(screen.getAllByRole("heading", { name: "Skill library" })).toHaveLength(2);
+  expect(screen.getByRole("link", { name: "Skill library" })).toHaveClass(
+    "sh-sidebar__link--active",
+  );
   expect(document.documentElement).toHaveAttribute("data-theme", "moss-neutral");
   await waitFor(() => {
     expect(document.documentElement).toHaveAttribute("lang", "en-US");
