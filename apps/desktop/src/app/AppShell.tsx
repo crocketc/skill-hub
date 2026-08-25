@@ -19,21 +19,39 @@ export type RouteTitleKey =
   | "navigation.projects"
   | "navigation.settings";
 
-const routeTitleKeys: Record<string, RouteTitleKey> = {
-  "/": "navigation.overview",
-  "/agents": "navigation.agents",
-  "/discovery": "navigation.discovery",
-  "/library": "navigation.library",
-  "/operations": "navigation.operations",
-  "/pending": "navigation.pending",
-  "/projects": "navigation.projects",
-  "/settings": "navigation.settings",
-};
+export function resolveRouteTitleKey(pathname: string): RouteTitleKey {
+  if (pathname === "/") {
+    return "navigation.overview";
+  }
+  if (pathname.startsWith("/agents")) {
+    return "navigation.agents";
+  }
+  if (pathname.startsWith("/discovery")) {
+    return "navigation.discovery";
+  }
+  if (pathname.startsWith("/library")) {
+    return "navigation.library";
+  }
+  if (pathname.startsWith("/operations")) {
+    return "navigation.operations";
+  }
+  if (pathname.startsWith("/pending")) {
+    return "navigation.pending";
+  }
+  if (pathname.startsWith("/projects")) {
+    return "navigation.projects";
+  }
+  if (pathname.startsWith("/settings")) {
+    return "navigation.settings";
+  }
+
+  return "navigation.overview";
+}
 
 export function AppShell({ snapshot, verification }: AppShellProps) {
   const { t } = useTranslation();
   const { pathname } = useLocation();
-  const title = t(routeTitleKeys[pathname] ?? "navigation.overview");
+  const title = t(resolveRouteTitleKey(pathname));
 
   return (
     <div className="sh-app-shell">
@@ -53,7 +71,7 @@ export function AppShell({ snapshot, verification }: AppShellProps) {
             <strong>{snapshot.skill_count}</strong>
             <span>{t("appShell.skillCount")}</span>
           </section>
-          <Outlet />
+          <Outlet context={snapshot} />
         </main>
       </section>
     </div>

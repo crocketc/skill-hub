@@ -71,6 +71,57 @@
     "projects": "项目",
     "settings": "设置"
   },
+  "overview": {
+    "chart": {
+      "aria": {
+        "agent": "各 Agent 部署数量",
+        "project": "各项目部署数量"
+      },
+      "axis": {
+        "agent": "Agent 部署",
+        "project": "项目部署"
+      },
+      "detailsLabel": "部署数量明细",
+      "dimensionLabel": "部署关系维度",
+      "dimensions": {
+        "agent": "Agent",
+        "project": "项目"
+      },
+      "drilldown": {
+        "agent": "查看 {{label}} 的 {{count}} 个部署",
+        "project": "查看 {{label}} 的 {{count}} 个部署"
+      },
+      "empty": {
+        "agent": "暂时没有按 Agent 统计的部署关系",
+        "project": "暂时没有按项目统计的部署关系"
+      },
+      "eyebrow": "部署分布",
+      "heading": "受管理技能的部署去向",
+      "loading": "正在加载部署图表"
+    },
+    "metrics": {
+      "agents": "{{count}} 个 Agent",
+      "deployments": "{{count}} 个部署",
+      "projects": "{{count}} 个项目",
+      "skills": "{{count}} 项技能"
+    },
+    "pending": {
+      "badge": "{{count}} 项待处理",
+      "clear": "已清空",
+      "emptyDescription": "当前没有需要确认、恢复或跟进的事项。",
+      "eyebrow": "待处理摘要",
+      "kinds": {
+        "recovery_one": "{{count}} 项恢复处理",
+        "recovery_other": "{{count}} 项恢复处理",
+        "security_finding_one": "{{count}} 个安全问题",
+        "security_finding_other": "{{count}} 个安全问题",
+        "trial_due_one": "{{count}} 个试用待确认",
+        "trial_due_other": "{{count}} 个试用待确认"
+      },
+      "none": "没有待处理事项",
+      "title": "{{count}} 项待处理"
+    }
+  },
   "status": {
     "failed": "失败",
     "noData": "无数据",

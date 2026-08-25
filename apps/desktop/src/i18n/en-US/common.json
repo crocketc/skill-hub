@@ -71,6 +71,57 @@
     "projects": "Projects",
     "settings": "Settings"
   },
+  "overview": {
+    "chart": {
+      "aria": {
+        "agent": "Deployment count by agent",
+        "project": "Deployment count by project"
+      },
+      "axis": {
+        "agent": "Agent deployments",
+        "project": "Project deployments"
+      },
+      "detailsLabel": "Deployment count details",
+      "dimensionLabel": "Deployment relationship dimension",
+      "dimensions": {
+        "agent": "Agents",
+        "project": "Projects"
+      },
+      "drilldown": {
+        "agent": "View {{label}}'s {{count}} deployments",
+        "project": "View {{label}}'s {{count}} deployments"
+      },
+      "empty": {
+        "agent": "No deployment relationships by agent yet",
+        "project": "No deployment relationships by project yet"
+      },
+      "eyebrow": "Deployment distribution",
+      "heading": "Where managed skills are deployed",
+      "loading": "Loading deployment chart"
+    },
+    "metrics": {
+      "agents": "{{count}} agents",
+      "deployments": "{{count}} deployments",
+      "projects": "{{count}} projects",
+      "skills": "{{count}} skills"
+    },
+    "pending": {
+      "badge": "{{count}} open",
+      "clear": "All clear",
+      "emptyDescription": "Nothing is waiting for confirmation, recovery, or follow-up.",
+      "eyebrow": "Pending summary",
+      "kinds": {
+        "recovery_one": "{{count}} recovery action",
+        "recovery_other": "{{count}} recovery actions",
+        "security_finding_one": "{{count}} security finding",
+        "security_finding_other": "{{count}} security findings",
+        "trial_due_one": "{{count}} trial due",
+        "trial_due_other": "{{count}} trials due"
+      },
+      "none": "No pending items",
+      "title": "{{count}} pending items"
+    }
+  },
   "status": {
     "failed": "Failed",
     "noData": "No data",

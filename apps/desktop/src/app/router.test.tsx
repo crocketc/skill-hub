@@ -1,7 +1,8 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, vi } from "vitest";
 import { skillHubI18n } from "../i18n";
 import { sidebarNavigationEnd } from "./Sidebar";
+import { resolveRouteTitleKey } from "./AppShell";
 import { appRouter, AppRouter } from "./router";
 
 vi.mock("../api/bindings", async (importOriginal) => {
@@ -77,4 +78,24 @@ it("wires theme, language, data and motion providers at the production entry", a
 it("uses exact matching for the overview link while nested routes own current-page semantics", () => {
   expect(sidebarNavigationEnd("/")).toBe(true);
   expect(sidebarNavigationEnd("/library")).toBe(false);
+  expect(resolveRouteTitleKey("/agents/openai.codex-cli")).toBe("navigation.agents");
+  expect(resolveRouteTitleKey("/projects/project-aurora")).toBe("navigation.projects");
+});
+
+it("keeps shell titles for filtered agent and project deployment destinations", async () => {
+  mockBrowserPreferences();
+  await skillHubI18n.changeLanguage("en-US");
+
+  await appRouter.navigate("/agents/openai.codex-cli?view=deployments");
+  render(<AppRouter />);
+
+  expect(await screen.findAllByRole("heading", { name: "Agents" })).toHaveLength(2);
+  expect(screen.getByRole("link", { name: "Agents" })).toHaveAttribute("aria-current", "page");
+
+  await act(async () => {
+    await appRouter.navigate("/projects/project-aurora?view=deployments");
+  });
+
+  expect(await screen.findAllByRole("heading", { name: "Projects" })).toHaveLength(2);
+  expect(screen.getByRole("link", { name: "Projects" })).toHaveAttribute("aria-current", "page");
 });
