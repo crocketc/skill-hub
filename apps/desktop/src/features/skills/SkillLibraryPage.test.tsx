@@ -16,6 +16,7 @@ import {
 import { SkillLibraryPage } from "./SkillLibraryPage";
 import {
   createMockSkillLibraryFacade,
+  MOCK_SKILL_PDF,
   type MockSkillLibraryFacade,
 } from "./testFixtures";
 
@@ -64,8 +65,17 @@ function skillNameCell(name: string): HTMLTableCellElement {
   return cell;
 }
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((next) => {
+    resolve = next;
+  });
+  return { promise, resolve };
+}
+
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 
 describe("SkillLibraryPage", () => {
@@ -99,7 +109,8 @@ describe("SkillLibraryPage", () => {
     const facade = createMockSkillLibraryFacade();
     const view = renderLibrary({
       facade,
-      initialEntry: "/library?q=pdf&page=2&size=25&skill=skill-pdf",
+      initialEntry:
+        "/library?q=pdf&page=2&size=25&future=preserve&skill=skill-pdf",
     });
 
     expect(await screen.findByDisplayValue("pdf")).toHaveAttribute(
@@ -110,7 +121,9 @@ describe("SkillLibraryPage", () => {
       await screen.findByRole("dialog", { name: "PDF Reader" }),
     ).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "Close" }));
-    expect(view.router.state.location.search).not.toContain("skill=");
+    expect(view.router.state.location.search).toBe(
+      "?q=pdf&page=2&size=25&future=preserve",
+    );
     const region = screen.getByRole("region", { name: "Skill results" });
     await waitFor(() => expect(region).toHaveFocus());
 
@@ -159,6 +172,39 @@ describe("SkillLibraryPage", () => {
       "Loading skill library",
     );
     expect(screen.getAllByTestId("skill-loading-row")).toHaveLength(6);
+  });
+
+  it("replaces stale rows with a non-interactive skeleton during filter reads", async () => {
+    const facade = createMockSkillLibraryFacade();
+    const initialList = facade.listSkills.bind(facade);
+    const filteredPage = deferred<SkillPage>();
+    vi.spyOn(facade, "listSkills").mockImplementation((query) =>
+      query.text === "reader" ? filteredPage.promise : initialList(query),
+    );
+    renderLibrary({ facade });
+
+    expect(await screen.findByRole("table")).toBeVisible();
+    fireEvent.change(screen.getByRole("searchbox", { name: "Search skills" }), {
+      target: { value: "reader" },
+    });
+
+    expect(await screen.findByRole("status")).toHaveTextContent(
+      "Loading skill library",
+    );
+    expect(screen.getByRole("searchbox", { name: "Search skills" })).toHaveValue(
+      "reader",
+    );
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
+    expect(screen.queryByRole("row", { name: /PDF Reader/ })).not.toBeInTheDocument();
+
+    filteredPage.resolve({
+      facets: { tags: ["documents", "pdf"] },
+      items: [MOCK_SKILL_PDF],
+      page: 1,
+      pageSize: 25,
+      total: 1,
+    });
+    expect(await screen.findByRole("row", { name: /PDF Reader/ })).toBeVisible();
   });
 
   it("distinguishes an empty library from an empty filtered result", async () => {
@@ -314,28 +360,111 @@ describe("SkillLibraryPage", () => {
     });
   });
 
-  it("switches drawer rows without resetting query, page, or selection", async () => {
+  it("switches drawer rows through reachable controls without rewriting URL context", async () => {
     const facade = createMockSkillLibraryFacade();
     const view = renderLibrary({
       facade,
-      initialEntry: "/library?q=reader&page=2&size=25",
+      initialEntry: "/library?q=reader&page=2&size=25&future=preserve",
     });
 
     await screen.findByRole("table");
-    const pdfCell = skillNameCell("PDF Reader");
-    const browserCell = skillNameCell("Browser Automation");
     fireEvent.click(screen.getByRole("checkbox", { name: "Select DOCX Writer" }));
-    fireEvent.click(pdfCell);
+    fireEvent.click(skillNameCell("PDF Reader"));
     expect(await screen.findByRole("dialog", { name: "PDF Reader" })).toBeVisible();
-    fireEvent.click(browserCell);
+    expect(view.router.state.location.search).toBe(
+      "?q=reader&page=2&size=25&future=preserve&skill=skill-pdf",
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    await waitFor(() => {
+      expect(screen.getByRole("row", { name: /PDF Reader/ })).toHaveFocus();
+    });
+    expect(view.router.state.location.search).toBe(
+      "?q=reader&page=2&size=25&future=preserve",
+    );
+    fireEvent.click(skillNameCell("Browser Automation"));
 
     expect(
       await screen.findByRole("dialog", { name: "Browser Automation" }),
     ).toBeVisible();
-    expect(view.router.state.location.search).toContain("q=reader");
-    expect(view.router.state.location.search).toContain("page=2");
-    expect(view.router.state.location.search).toContain("skill=skill-browser");
+    expect(view.router.state.location.search).toBe(
+      "?q=reader&page=2&size=25&future=preserve&skill=skill-browser",
+    );
     expect(screen.getByText("1 item selected")).toBeVisible();
+  });
+
+  it("removes the batch bar when an all-filtered selection reaches zero", async () => {
+    const facade = createMockSkillLibraryFacade();
+    renderLibrary({ facade });
+
+    fireEvent.click(
+      await screen.findByRole("checkbox", { name: "Select PDF Reader" }),
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Select all 3 filtered results" }),
+    );
+    for (const name of ["PDF Reader", "DOCX Writer", "Browser Automation"]) {
+      fireEvent.click(screen.getByRole("checkbox", { name: `Select ${name}` }));
+    }
+
+    expect(
+      screen.queryByRole("complementary", { name: "Batch actions" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Run security check" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("reserves the measured batch-bar height as actions wrap", async () => {
+    let batchHeight = 72;
+    let resizeCallback: ResizeObserverCallback | undefined;
+    vi.stubGlobal(
+      "ResizeObserver",
+      class MockResizeObserver implements ResizeObserver {
+        constructor(callback: ResizeObserverCallback) {
+          resizeCallback = callback;
+        }
+
+        disconnect() {}
+        observe() {}
+        unobserve() {}
+      },
+    );
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(
+      function getBoundingClientRect(this: HTMLElement) {
+        return DOMRect.fromRect({
+          height: this.classList.contains("sh-skill-library__batch-bar")
+            ? batchHeight
+            : 0,
+        });
+      },
+    );
+    const facade = createMockSkillLibraryFacade();
+    renderLibrary({ facade });
+
+    fireEvent.click(
+      await screen.findByRole("checkbox", { name: "Select PDF Reader" }),
+    );
+    const batchBar = screen.getByRole("complementary", {
+      name: "Batch actions",
+    });
+    const workspace = batchBar.closest(".sh-skill-library");
+    if (!(workspace instanceof HTMLElement)) {
+      throw new Error("Expected the batch bar to be inside the Skill library workspace");
+    }
+    await waitFor(() => {
+      expect(workspace).toHaveStyle("--skill-batch-bar-height: 72px");
+    });
+    expect(getComputedStyle(workspace).paddingBottom).toContain(
+      "--skill-batch-bar-height",
+    );
+
+    batchHeight = 148;
+    act(() => {
+      resizeCallback?.([], {} as ResizeObserver);
+    });
+    expect(workspace).toHaveStyle("--skill-batch-bar-height: 148px");
+    expect(getComputedStyle(batchBar).flexWrap).toBe("wrap");
   });
 
   it("saves only the view scope and current table preferences", async () => {

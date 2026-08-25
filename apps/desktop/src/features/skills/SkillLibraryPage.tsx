@@ -2,11 +2,13 @@ import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-quer
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
   type FormEvent,
   type JSX,
+  type Ref,
 } from "react";
 import { useTranslation } from "react-i18next";
 import { useSearchParams } from "react-router-dom";
@@ -66,6 +68,7 @@ interface PreferenceStatusProps {
 
 interface BatchBarProps {
   announcement?: string;
+  barRef: Ref<HTMLElement>;
   onAction: (action: BatchAction) => void;
   onClear: () => void;
   onSelectAll: () => void;
@@ -89,6 +92,20 @@ const BATCH_ACTION_KEYS = {
 
 function hasActiveFilter(query: SkillLibraryQuery): boolean {
   return skillFilterKey(query) !== skillFilterKey(DEFAULT_SKILL_QUERY);
+}
+
+function actionableSelection(
+  selection: SkillSelection,
+  pageRefreshing: boolean,
+): Exclude<SkillSelection, { kind: "none" }> | undefined {
+  if (
+    pageRefreshing ||
+    selection.kind === "none" ||
+    selectionCount(selection) <= 0
+  ) {
+    return undefined;
+  }
+  return selection;
 }
 
 function savedViewScope(query: SkillLibraryQuery): SavedSkillView["query"] {
@@ -214,6 +231,7 @@ function PreferenceStatus({
 
 function BatchBar({
   announcement,
+  barRef,
   onAction,
   onClear,
   onSelectAll,
@@ -236,7 +254,11 @@ function BatchBar({
         : t("skillLibrary.page.selection.explicit", { count });
 
   return (
-    <aside aria-label={t("skillLibrary.page.batch.label")} className="sh-skill-library__batch-bar">
+    <aside
+      aria-label={t("skillLibrary.page.batch.label")}
+      className="sh-skill-library__batch-bar"
+      ref={barRef}
+    >
       <strong>{scope}</strong>
       {selection.kind === "explicit" && count < page.total ? (
         <Button onClick={onSelectAll} size="sm" variant="secondary">
@@ -266,6 +288,7 @@ export function SkillLibraryPage({ facade }: SkillLibraryPageProps): JSX.Element
   const parsed = useMemo(() => parseSkillLibrarySearchParams(search), [search]);
   const { query, skillId } = parsed;
   const rootRef = useRef<HTMLElement | null>(null);
+  const batchBarRef = useRef<HTMLElement | null>(null);
   const returnFocusRef = useRef<HTMLElement | null>(null);
   const scrollPositionRef = useRef<{ left: number; top: number }>();
   const currentFilterKeyRef = useRef(skillFilterKey(query));
@@ -333,6 +356,37 @@ export function SkillLibraryPage({ facade }: SkillLibraryPageProps): JSX.Element
     }),
     [facade, persistDrawerPreferences],
   );
+  const selectedBatchTarget = actionableSelection(
+    selection,
+    pageQuery.isPlaceholderData,
+  );
+  const hasActionableSelection = Boolean(selectedBatchTarget);
+
+  useLayoutEffect(() => {
+    const workspace = rootRef.current;
+    const batchBar = batchBarRef.current;
+    if (!workspace || !hasActionableSelection || !batchBar) {
+      workspace?.style.removeProperty("--skill-batch-bar-height");
+      return;
+    }
+
+    const reserveBatchBarHeight = () => {
+      const height = Math.ceil(batchBar.getBoundingClientRect().height);
+      workspace.style.setProperty("--skill-batch-bar-height", `${height}px`);
+    };
+    reserveBatchBarHeight();
+
+    if (typeof ResizeObserver === "undefined") {
+      window.addEventListener("resize", reserveBatchBarHeight);
+      return () => {
+        window.removeEventListener("resize", reserveBatchBarHeight);
+      };
+    }
+
+    const observer = new ResizeObserver(reserveBatchBarHeight);
+    observer.observe(batchBar);
+    return () => observer.disconnect();
+  }, [hasActionableSelection]);
 
   useEffect(() => {
     const region = rootRef.current?.querySelector<HTMLElement>(
@@ -345,6 +399,16 @@ export function SkillLibraryPage({ facade }: SkillLibraryPageProps): JSX.Element
 
   const writeQuery = (nextQuery: SkillLibraryQuery, nextSkillId?: string) => {
     setSearchParams(serializeSkillLibrarySearchParams(nextQuery, nextSkillId));
+  };
+
+  const writeDrawerSkill = (nextSkillId?: string) => {
+    const nextSearchParams = new URLSearchParams(searchParams);
+    if (nextSkillId) {
+      nextSearchParams.set("skill", nextSkillId);
+    } else {
+      nextSearchParams.delete("skill");
+    }
+    setSearchParams(nextSearchParams);
   };
 
   const updateQuery = (nextQuery: SkillLibraryQuery) => {
@@ -404,7 +468,7 @@ export function SkillLibraryPage({ facade }: SkillLibraryPageProps): JSX.Element
       ? { left: region.scrollLeft, top: region.scrollTop }
       : undefined;
     returnFocusRef.current = rowElement;
-    writeQuery(query, nextSkillId);
+    writeDrawerSkill(nextSkillId);
   };
 
   const closeDrawer = () => {
@@ -418,11 +482,11 @@ export function SkillLibraryPage({ facade }: SkillLibraryPageProps): JSX.Element
     if (!returnFocusRef.current?.isConnected && region) {
       returnFocusRef.current = region;
     }
-    writeQuery(query, undefined);
+    writeDrawerSkill(undefined);
   };
 
   const emitBatchAction = (action: BatchAction) => {
-    if (selection.kind === "none") return;
+    if (selection.kind === "none" || selectionCount(selection) <= 0) return;
     setBatchAnnouncement(undefined);
     const intent = { action, target: selectionToBatchTarget(selection) };
     void facade.emitBatchIntent(intent).catch((error: unknown) => {
@@ -541,7 +605,8 @@ export function SkillLibraryPage({ facade }: SkillLibraryPageProps): JSX.Element
   }
 
   const page = pageQuery.data;
-  if (page.total === 0 && !hasActiveFilter(query)) {
+  const pageRefreshing = pageQuery.isPlaceholderData;
+  if (!pageRefreshing && page.total === 0 && !hasActiveFilter(query)) {
     return (
       <section className="sh-skill-library" ref={rootRef}>
         <DataState
@@ -555,7 +620,7 @@ export function SkillLibraryPage({ facade }: SkillLibraryPageProps): JSX.Element
     );
   }
 
-  if (page.items.length === 0 && hasActiveFilter(query)) {
+  if (!pageRefreshing && page.items.length === 0 && hasActiveFilter(query)) {
     return (
       <section className="sh-skill-library" ref={rootRef}>
         <DataState
@@ -568,11 +633,9 @@ export function SkillLibraryPage({ facade }: SkillLibraryPageProps): JSX.Element
     );
   }
 
-  const nonEmptySelection = selection.kind === "none" ? undefined : selection;
-
   return (
     <section
-      className={`sh-skill-library${nonEmptySelection ? " sh-skill-library--batch-active" : ""}`}
+      className={`sh-skill-library${selectedBatchTarget ? " sh-skill-library--batch-active" : ""}`}
       ref={rootRef}
     >
       <div className="sh-skill-library__saved-views">
@@ -616,30 +679,36 @@ export function SkillLibraryPage({ facade }: SkillLibraryPageProps): JSX.Element
         />
       </div>
 
-      <p className="sh-skill-library__page-status">
-        {t("skillLibrary.page.pageStatus", {
-          count: page.total,
-          page: page.page,
-        })}
-      </p>
+      {pageRefreshing ? (
+        <SkillLibrarySkeleton />
+      ) : (
+        <>
+          <p className="sh-skill-library__page-status">
+            {t("skillLibrary.page.pageStatus", {
+              count: page.total,
+              page: page.page,
+            })}
+          </p>
+          <SkillTable
+            onOpenSkill={openSkill}
+            onPreferencesChange={persistTablePreferences}
+            onQueryChange={updateQuery}
+            onSelectionChange={(next) => {
+              setSelectionAnnouncement(undefined);
+              setSelection(next);
+            }}
+            page={page}
+            preferences={effectiveTablePreferences}
+            query={query}
+            selection={selection}
+          />
+        </>
+      )}
 
-      <SkillTable
-        onOpenSkill={openSkill}
-        onPreferencesChange={persistTablePreferences}
-        onQueryChange={updateQuery}
-        onSelectionChange={(next) => {
-          setSelectionAnnouncement(undefined);
-          setSelection(next);
-        }}
-        page={page}
-        preferences={effectiveTablePreferences}
-        query={query}
-        selection={selection}
-      />
-
-      {nonEmptySelection ? (
+      {selectedBatchTarget ? (
         <BatchBar
           announcement={batchAnnouncement}
+          barRef={batchBarRef}
           onAction={emitBatchAction}
           onClear={() => {
             setBatchAnnouncement(undefined);
@@ -654,7 +723,7 @@ export function SkillLibraryPage({ facade }: SkillLibraryPageProps): JSX.Element
               ),
             )}
           page={page}
-          selection={nonEmptySelection}
+          selection={selectedBatchTarget}
         />
       ) : null}
 

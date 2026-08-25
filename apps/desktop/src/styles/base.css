@@ -791,7 +791,8 @@ a {
 }
 
 .sh-skill-library--batch-active {
-  padding-bottom: 5.5rem;
+  padding-bottom: calc(var(--skill-batch-bar-height, 0px) + var(--space-4));
+  scroll-padding-bottom: calc(var(--skill-batch-bar-height, 0px) + var(--space-4));
 }
 
 .sh-skill-library__saved-views {
