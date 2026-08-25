@@ -1,12 +1,9 @@
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, render, screen, waitFor } from "@testing-library/react";
-import { I18nextProvider } from "react-i18next";
-import { MemoryRouter } from "react-router-dom";
 import { afterEach, vi } from "vitest";
-import { SkillLibraryPreview } from "../features/skills/SkillLibraryPreview";
 import { skillHubI18n } from "../i18n";
 import { sidebarNavigationEnd } from "./Sidebar";
 import { resolveRouteTitleKey } from "./AppShell";
+import { queryClient } from "./queryClient";
 import { appRouter, AppRouter } from "./router";
 
 vi.mock("../api/bindings", async (importOriginal) => {
@@ -47,6 +44,7 @@ function mockBrowserPreferences() {
 }
 
 afterEach(() => {
+  queryClient.clear();
   localStorage.clear();
   document.documentElement.removeAttribute("data-theme");
   document.documentElement.removeAttribute("lang");
@@ -97,24 +95,27 @@ it("reserves the full-detail URL without changing the shell section", async () =
   expect(screen.getByText("Full Skill details are delivered in the next task")).toBeVisible();
 });
 
-it("renders deterministic Skill rows when the preview component is mounted directly", async () => {
+it("isolates development preview data from the production Skill library route", async () => {
   mockBrowserPreferences();
   await skillHubI18n.changeLanguage("en-US");
-  const previewQueryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
-  });
+  await appRouter.navigate("/__preview/skill-library");
 
-  render(
-    <I18nextProvider i18n={skillHubI18n}>
-      <QueryClientProvider client={previewQueryClient}>
-        <MemoryRouter initialEntries={["/__preview/skill-library"]}>
-          <SkillLibraryPreview />
-        </MemoryRouter>
-      </QueryClientProvider>
-    </I18nextProvider>,
-  );
+  render(<AppRouter />);
 
   expect(await screen.findByText("PDF Reader")).toBeVisible();
+
+  await act(async () => {
+    await appRouter.navigate("/library");
+  });
+
+  expect(
+    await screen.findByText(
+      "Skill catalog data is not connected yet",
+      undefined,
+      { timeout: 3_000 },
+    ),
+  ).toBeVisible();
+  expect(screen.queryByText("PDF Reader")).not.toBeInTheDocument();
 });
 
 it("uses exact matching for the overview link while nested routes own current-page semantics", () => {

@@ -3,6 +3,7 @@ import { I18nextProvider } from "react-i18next";
 import { expect, it, vi } from "vitest";
 import { createSkillHubI18n } from "../../i18n";
 import "../../styles/base.css";
+import baseCss from "../../styles/base.css?raw";
 import {
   DEFAULT_SKILL_QUERY,
   DEFAULT_TABLE_PREFERENCES,
@@ -54,6 +55,23 @@ const rows: SkillTableRow[] = [
 ];
 
 const page: SkillPage = { facets: { tags: ["documents", "notes", "pdf"] }, items: rows, page: 2, pageSize: 10, total: 23 };
+const allColumnIds = [
+  "select",
+  "name",
+  "purpose",
+  "tags",
+  "lifecycle",
+  "deployments",
+  "version",
+  "security",
+  "original_description",
+  "translated_description",
+  "source",
+  "ownership",
+  "license",
+  "invocation",
+  "requirements",
+] as const;
 
 async function renderTable(props: Partial<SkillTableProps> = {}) {
   const i18n = await createSkillHubI18n(["en-US"]);
@@ -217,6 +235,50 @@ it("keeps the selection cell semantic while using compact inline cell content", 
   expect(getComputedStyle(name as HTMLElement).whiteSpace).toBe("nowrap");
   expect(getComputedStyle(security as HTMLElement).display).toBe("flex");
   expect(getComputedStyle(screen.getByRole("table")).getPropertyValue("--skill-row-height")).toBe("2.375rem");
+});
+
+it("defines coarse-pointer targets for every compact table interaction", async () => {
+  await renderTable();
+
+  const headerCheckbox = screen.getByRole("checkbox", { name: "Select current page" });
+  const rowCheckbox = screen.getByRole("checkbox", { name: "Select PDF Reader" });
+  expect(headerCheckbox.closest("label")).toHaveClass("sh-skill-table__checkbox-target");
+  expect(rowCheckbox.closest("label")).toHaveClass("sh-skill-table__checkbox-target");
+
+  const coarsePointerCss = baseCss.slice(baseCss.lastIndexOf("@media (pointer: coarse)"));
+  expect(coarsePointerCss).toMatch(
+    /\.sh-skill-table\[data-density="compact"\][^{]*\{[^}]*--skill-row-height:\s*2\.75rem/,
+  );
+  expect(coarsePointerCss).toMatch(
+    /\.sh-skill-table__checkbox-target[\s\S]*\.sh-skill-table__sort[\s\S]*min-height:\s*2\.75rem/,
+  );
+});
+
+it("gives every visible column a semantic width contract for narrow overflow", async () => {
+  await renderTable({
+    preferences: {
+      ...DEFAULT_TABLE_PREFERENCES,
+      visibleColumns: [...allColumnIds],
+    },
+  });
+
+  const headers = screen.getAllByRole("columnheader");
+  expect(headers).toHaveLength(allColumnIds.length);
+  expect(headers.map((header) => header.getAttribute("data-column"))).toEqual(allColumnIds);
+
+  const pdfCells = within(screen.getByRole("row", { name: /PDF Reader/ })).getAllByRole("cell");
+  expect(pdfCells.map((cell) => cell.getAttribute("data-column"))).toEqual(allColumnIds);
+  for (const column of allColumnIds) {
+    expect(baseCss).toContain(`[data-column="${column}"]`);
+  }
+  expect(baseCss).not.toMatch(/\.sh-skill-table (?:th|td):nth-child/);
+
+  const tableBaseIndex = baseCss.indexOf(".sh-skill-table {");
+  const narrowIndex = baseCss.lastIndexOf("@media (max-width: 56rem)");
+  expect(narrowIndex).toBeGreaterThan(tableBaseIndex);
+  expect(baseCss.slice(narrowIndex)).toMatch(
+    /\.sh-skill-table\s*\{[^}]*width:\s*max-content[^}]*min-width:\s*max-content/,
+  );
 });
 
 it("disables pagination controls at the first and last pages", async () => {

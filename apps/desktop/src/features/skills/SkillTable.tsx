@@ -1,4 +1,4 @@
-import { useMemo, useState, type ChangeEvent, type KeyboardEvent, type MouseEvent } from "react";
+import { useMemo, useState, type ChangeEvent, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
 import { flexRender, getCoreRowModel, useReactTable, type ColumnDef } from "@tanstack/react-table";
 import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
@@ -78,6 +78,18 @@ function stopRowOpen(event: MouseEvent | KeyboardEvent) {
   event.stopPropagation();
 }
 
+function CheckboxTarget({ children }: { children: ReactNode }) {
+  return (
+    <label
+      className="sh-skill-table__checkbox-target"
+      onClick={stopRowOpen}
+      onKeyDown={stopRowOpen}
+    >
+      {children}
+    </label>
+  );
+}
+
 function tableMeta(table: { options: { meta?: unknown } }): SkillTableMeta {
   return table.options.meta as SkillTableMeta;
 }
@@ -119,14 +131,16 @@ export function createSkillColumns(t: TFunction): ColumnDef<SkillTableRow>[] {
           ? !meta.selection.excludedSkillIds.includes(row.original.id)
           : meta.selection.kind === "explicit" && meta.selection.skillIds.includes(row.original.id);
         return (
-          <input
-            aria-label={meta.t("skillLibrary.table.selectSkill", { name: row.original.name })}
-            checked={selected}
-            onChange={(event) => meta.onRowCheck(row.original.id, event.currentTarget.checked)}
-            onClick={stopRowOpen}
-            onKeyDown={stopRowOpen}
-            type="checkbox"
-          />
+          <CheckboxTarget>
+            <input
+              aria-label={meta.t("skillLibrary.table.selectSkill", { name: row.original.name })}
+              checked={selected}
+              onChange={(event) => meta.onRowCheck(row.original.id, event.currentTarget.checked)}
+              onClick={stopRowOpen}
+              onKeyDown={stopRowOpen}
+              type="checkbox"
+            />
+          </CheckboxTarget>
         );
       },
       header: t(COLUMN_LABELS.select),
@@ -276,14 +290,14 @@ export function SkillTable(props: SkillTableProps) {
               const column = header.column.id as SkillColumnId;
               const sortable = column !== "select";
               const sort = props.query.sort.column === column ? props.query.sort.direction : undefined;
-              return <th aria-sort={sortable ? (sort === "asc" ? "ascending" : sort === "desc" ? "descending" : "none") : undefined} key={header.id} scope="col">
-                {column === "select" ? <input aria-label={t("skillLibrary.table.selectCurrentPage")} checked={allPageSelected} onChange={togglePage} onClick={stopRowOpen} onKeyDown={stopRowOpen} type="checkbox" /> : sortable ? <button aria-label={t("skillLibrary.table.sortBy", { column: t(COLUMN_LABELS[column]).toLocaleLowerCase() })} className="sh-skill-table__sort" onClick={() => sortColumn(column)} type="button">{flexRender(header.column.columnDef.header, header.getContext())}</button> : flexRender(header.column.columnDef.header, header.getContext())}
+              return <th aria-sort={sortable ? (sort === "asc" ? "ascending" : sort === "desc" ? "descending" : "none") : undefined} data-column={column} key={header.id} scope="col">
+                {column === "select" ? <CheckboxTarget><input aria-label={t("skillLibrary.table.selectCurrentPage")} checked={allPageSelected} onChange={togglePage} onClick={stopRowOpen} onKeyDown={stopRowOpen} type="checkbox" /></CheckboxTarget> : sortable ? <button aria-label={t("skillLibrary.table.sortBy", { column: t(COLUMN_LABELS[column]).toLocaleLowerCase() })} className="sh-skill-table__sort" onClick={() => sortColumn(column)} type="button">{flexRender(header.column.columnDef.header, header.getContext())}</button> : flexRender(header.column.columnDef.header, header.getContext())}
               </th>;
             })}</tr>)}
           </thead>
           <tbody>
             {table.getRowModel().rows.map((row) => <tr key={row.id} onClick={(event) => props.onOpenSkill(row.original.id, event.currentTarget)} onKeyDown={(event) => { if (event.target === event.currentTarget && event.key === "Enter") { event.preventDefault(); props.onOpenSkill(row.original.id, event.currentTarget); } }} tabIndex={0}>
-              {row.getVisibleCells().map((cell) => <td key={cell.id}>{flexRender(cell.column.columnDef.cell, cell.getContext())}</td>)}
+              {row.getVisibleCells().map((cell) => <td data-column={cell.column.id} key={cell.id}>{flexRender(cell.column.columnDef.cell, cell.getContext())}</td>)}
             </tr>)}
           </tbody>
         </table>

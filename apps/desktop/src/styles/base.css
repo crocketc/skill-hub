@@ -1075,18 +1075,6 @@ a {
   }
 }
 
-@media (max-width: 56rem) {
-  .sh-skill-table__region {
-    overscroll-behavior-inline: contain;
-    scrollbar-gutter: stable;
-  }
-
-  .sh-skill-table {
-    width: max-content;
-    min-width: 84rem;
-  }
-}
-
 @media (max-width: 48rem) {
   .sh-skill-library__query-tools > section {
     grid-template-columns: 1fr;
@@ -1166,8 +1154,8 @@ a {
 }
 
 .sh-skill-table {
-  width: 100%;
-  min-width: 84rem;
+  width: max-content;
+  min-width: max(84rem, 100%);
   table-layout: fixed;
   border-collapse: collapse;
   color: var(--color-text);
@@ -1213,22 +1201,38 @@ a {
   white-space: nowrap;
 }
 
-.sh-skill-table th:nth-child(1),
-.sh-skill-table td:nth-child(1) { width: 2.75rem; }
-.sh-skill-table th:nth-child(2),
-.sh-skill-table td:nth-child(2) { width: 18rem; }
-.sh-skill-table th:nth-child(3),
-.sh-skill-table td:nth-child(3) { width: 12rem; }
-.sh-skill-table th:nth-child(4),
-.sh-skill-table td:nth-child(4) { width: 8rem; }
-.sh-skill-table th:nth-child(5),
-.sh-skill-table td:nth-child(5) { width: 7rem; }
-.sh-skill-table th:nth-child(6),
-.sh-skill-table td:nth-child(6) { width: 8rem; }
-.sh-skill-table th:nth-child(7),
-.sh-skill-table td:nth-child(7) { width: 7rem; }
-.sh-skill-table th:nth-child(8),
-.sh-skill-table td:nth-child(8) { width: 21.25rem; }
+.sh-skill-table [data-column="select"] { width: 2.75rem; min-width: 2.75rem; }
+.sh-skill-table [data-column="name"] { width: 18rem; min-width: 18rem; }
+.sh-skill-table [data-column="purpose"] { width: 12rem; min-width: 12rem; }
+.sh-skill-table [data-column="tags"] { width: 10rem; min-width: 10rem; }
+.sh-skill-table [data-column="lifecycle"] { width: 7rem; min-width: 7rem; }
+.sh-skill-table [data-column="deployments"] { width: 9rem; min-width: 9rem; }
+.sh-skill-table [data-column="version"] { width: 9rem; min-width: 9rem; }
+.sh-skill-table [data-column="security"] { width: 22rem; min-width: 22rem; }
+.sh-skill-table [data-column="original_description"] { width: 16rem; min-width: 16rem; }
+.sh-skill-table [data-column="translated_description"] { width: 16rem; min-width: 16rem; }
+.sh-skill-table [data-column="source"] { width: 12rem; min-width: 12rem; }
+.sh-skill-table [data-column="ownership"] { width: 12rem; min-width: 12rem; }
+.sh-skill-table [data-column="license"] { width: 8rem; min-width: 8rem; }
+.sh-skill-table [data-column="invocation"] { width: 12rem; min-width: 12rem; }
+.sh-skill-table [data-column="requirements"] { width: 16rem; min-width: 16rem; }
+
+.sh-skill-table__checkbox-target {
+  display: inline-grid;
+  place-items: center;
+}
+
+@media (max-width: 56rem) {
+  .sh-skill-table__region {
+    overscroll-behavior-inline: contain;
+    scrollbar-gutter: stable;
+  }
+
+  .sh-skill-table {
+    width: max-content;
+    min-width: max-content;
+  }
+}
 
 .sh-skill-table th {
   color: var(--color-text-secondary);
@@ -1596,5 +1600,19 @@ a {
   .sh-skill-table__controls label,
   .sh-skill-drawer__configuration label {
     min-height: 2.75rem;
+  }
+
+  .sh-skill-table[data-density="compact"] {
+    --skill-row-height: 2.75rem;
+  }
+
+  .sh-skill-table__checkbox-target,
+  .sh-skill-table__sort {
+    min-width: 2.75rem;
+    min-height: 2.75rem;
+  }
+
+  .sh-skill-table [data-column="select"] {
+    padding-block: 0;
   }
 }

@@ -1,3 +1,4 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useState } from "react";
 import type { BootstrapSnapshot } from "../../api/bindings";
 import { AppShell } from "../../app/AppShell";
@@ -22,10 +23,22 @@ export function SkillLibraryPreview() {
 }
 
 export function SkillLibraryPreviewShell() {
+  const [previewQueryClient] = useState(
+    () =>
+      new QueryClient({
+        defaultOptions: {
+          mutations: { retry: false },
+          queries: { refetchOnWindowFocus: false, retry: false },
+        },
+      }),
+  );
+
   return (
-    <AppShell
-      snapshot={PREVIEW_BOOTSTRAP_SNAPSHOT}
-      verification={{ kind: "unavailable" }}
-    />
+    <QueryClientProvider client={previewQueryClient}>
+      <AppShell
+        snapshot={PREVIEW_BOOTSTRAP_SNAPSHOT}
+        verification={{ kind: "unavailable" }}
+      />
+    </QueryClientProvider>
   );
 }
