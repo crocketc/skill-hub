@@ -1,6 +1,5 @@
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
-import { Button } from "../../ui/Button";
 import type { AdjacentSkillContext, SkillDetailSummary } from "./api";
 
 interface DetailHeaderProps {
@@ -26,14 +25,20 @@ export function DetailHeader({ adjacent, backSearch, summary }: DetailHeaderProp
           <div className="sh-skill-detail__adjacent">
             <span>{t("skillDetail.navigation.position", { position: adjacent.position, total: adjacent.total })}</span>
             {adjacent.previous ? (
-              <Button size="sm" variant="ghost">
+              <Link
+                className="sh-button sh-button--ghost sh-button--sm"
+                to={{ pathname: `/library/${adjacent.previous.id}`, search: backSearch }}
+              >
                 {t("skillDetail.navigation.previous")}
-              </Button>
+              </Link>
             ) : null}
             {adjacent.next ? (
-              <Button size="sm" variant="ghost">
+              <Link
+                className="sh-button sh-button--ghost sh-button--sm"
+                to={{ pathname: `/library/${adjacent.next.id}`, search: backSearch }}
+              >
                 {t("skillDetail.navigation.next")}
-              </Button>
+              </Link>
             ) : null}
           </div>
         ) : null}

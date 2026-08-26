@@ -31,7 +31,8 @@ export function resolveRouteTitleKey(pathname: string): RouteTitleKey {
   }
   if (
     pathname.startsWith("/library") ||
-    pathname === "/__preview/skill-library"
+    pathname === "/__preview/skill-library" ||
+    pathname.startsWith("/__preview/skill-detail/")
   ) {
     return "navigation.library";
   }

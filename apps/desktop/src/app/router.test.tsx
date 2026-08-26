@@ -83,15 +83,30 @@ it("uses the unavailable facade on the production Skill library route", async ()
   expect(screen.queryByText("PDF Reader")).not.toBeInTheDocument();
 });
 
-it("reserves the full-detail URL without changing the shell section", async () => {
+it("uses the unavailable facade on the production Skill detail route", async () => {
   mockBrowserPreferences();
   await skillHubI18n.changeLanguage("en-US");
   await appRouter.navigate("/library/skill-pdf");
 
   render(<AppRouter />);
 
-  expect(await screen.findAllByRole("heading", { name: "Skill library" })).toHaveLength(2);
-  expect(screen.getByText("Full Skill details are delivered in the next task")).toBeVisible();
+  expect(await screen.findByText("Skill detail data is not connected yet")).toBeVisible();
+  expect(screen.queryByText("PDF Reader")).not.toBeInTheDocument();
+});
+
+it("isolates deterministic Skill detail preview data from production", async () => {
+  mockBrowserPreferences();
+  await skillHubI18n.changeLanguage("en-US");
+  await appRouter.navigate("/__preview/skill-detail/skill-pdf");
+
+  render(<AppRouter />);
+  expect(await screen.findByRole("heading", { name: "PDF Reader" })).toBeVisible();
+
+  await act(async () => {
+    await appRouter.navigate("/library/skill-pdf");
+  });
+  expect(await screen.findByText("Skill detail data is not connected yet")).toBeVisible();
+  expect(screen.queryByRole("heading", { name: "PDF Reader" })).not.toBeInTheDocument();
 });
 
 it("isolates development preview data from the production Skill library route", async () => {
@@ -118,6 +133,7 @@ it("uses exact matching for the overview link while nested routes own current-pa
   expect(sidebarNavigationEnd("/library")).toBe(false);
   expect(resolveRouteTitleKey("/agents/openai.codex-cli")).toBe("navigation.agents");
   expect(resolveRouteTitleKey("/__preview/skill-library")).toBe("navigation.library");
+  expect(resolveRouteTitleKey("/__preview/skill-detail/skill-pdf")).toBe("navigation.library");
   expect(resolveRouteTitleKey("/projects/project-aurora")).toBe("navigation.projects");
 });
 

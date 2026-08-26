@@ -370,7 +370,9 @@
       "error": "Unable to load Skill details",
       "loading": "Loading Skill details",
       "loadingMetadata": "Loading description and metadata",
-      "metadataError": "Description and metadata could not be loaded"
+      "metadataError": "Description and metadata could not be loaded",
+      "notFound": "This Skill is not in the local library",
+      "unavailable": "Skill detail data is not connected yet"
     },
     "statusRail": {
       "basicOther": "Basic check: {{state}}",

@@ -5,6 +5,9 @@ import { createBrowserRouter, RouterProvider, useNavigate } from "react-router-d
 import { OnboardingWizard } from "../features/onboarding/OnboardingWizard";
 import { OverviewPage } from "../features/overview/OverviewPage";
 import { SkillLibraryPage } from "../features/skills/SkillLibraryPage";
+import { SkillDetailPage } from "../features/skill-detail/SkillDetailPage";
+import { SkillDetailPreview } from "../features/skill-detail/SkillDetailPreview";
+import { unavailableSkillDetailFacade } from "../features/skill-detail/api";
 import {
   SkillLibraryPreview,
   SkillLibraryPreviewShell,
@@ -34,12 +37,7 @@ export const appRouter = createBrowserRouter([
       },
       {
         path: "library/:skillId",
-        element: (
-          <RoutePlaceholder
-            descriptionKey="skillLibrary.fullDetailsBoundary"
-            titleKey="navigation.library"
-          />
-        ),
+        element: <SkillDetailPage facade={unavailableSkillDetailFacade} />,
       },
       { path: "discovery", element: <RoutePlaceholder titleKey="navigation.discovery" /> },
       { path: "agents", element: <RoutePlaceholder titleKey="navigation.agents" /> },
@@ -59,6 +57,7 @@ export const appRouter = createBrowserRouter([
           element: <SkillLibraryPreviewShell />,
           children: [
             { path: "skill-library", element: <SkillLibraryPreview /> },
+            { path: "skill-detail/:skillId", element: <SkillDetailPreview /> },
           ],
         },
       ]

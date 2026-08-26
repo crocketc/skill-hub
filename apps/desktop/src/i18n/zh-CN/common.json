@@ -301,7 +301,8 @@
       "basicSecurity": "基础安全检查",
       "connections": "依赖、重复项与组合",
       "externalHistory": "外部变化与操作历史",
-      "invocations": "记录到 {{count}} 次调用",
+      "invocations_one": "记录到 {{count}} 次调用",
+      "invocations_other": "记录到 {{count}} 次调用",
       "none": "暂无已确认的关联",
       "riskSummary": "{{high}} 个高风险，{{pending}} 个待处理项",
       "usageEvidence": "使用证据"
@@ -369,13 +370,16 @@
       "error": "无法加载 Skill 详情",
       "loading": "正在加载 Skill 详情",
       "loadingMetadata": "正在加载描述与元数据",
-      "metadataError": "无法加载描述与元数据"
+      "metadataError": "无法加载描述与元数据",
+      "notFound": "本地 Skill 库中不存在此 Skill",
+      "unavailable": "Skill 详情数据尚未接入"
     },
     "statusRail": {
       "basicOther": "基础检查：{{state}}",
       "basicPassed": "基础检查已通过",
       "deploymentLabel": "部署",
-      "deployments": "{{count}} 个部署",
+      "deployments_one": "{{count}} 个部署",
+      "deployments_other": "{{count}} 个部署",
       "label": "Skill 状态",
       "versionLabel": "当前版本"
     },

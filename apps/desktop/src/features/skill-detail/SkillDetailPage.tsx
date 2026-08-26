@@ -4,7 +4,11 @@ import { useLocation, useParams } from "react-router-dom";
 import { DataState } from "../../ui/DataState";
 import { parseSkillLibrarySearchParams } from "../skills/queryState";
 import type { SkillDetailFacade } from "./api";
-import { skillDetailKeys } from "./api";
+import {
+  SkillDetailNotFoundError,
+  SkillDetailUnavailableError,
+  skillDetailKeys,
+} from "./api";
 import { DetailHeader } from "./DetailHeader";
 import { DETAIL_SECTIONS, DetailSectionNav } from "./DetailSectionNav";
 import { DetailStatusRail } from "./DetailStatusRail";
@@ -36,6 +40,7 @@ export function SkillDetailPage({ facade }: SkillDetailPageProps) {
   const summaryQuery = useQuery({
     queryFn: () => facade.getSummary(skillId),
     queryKey: skillDetailKeys.summary(skillId),
+    retry: false,
   });
   const adjacentQuery = useQuery({
     enabled: hasLibraryContext,
@@ -63,7 +68,20 @@ export function SkillDetailPage({ facade }: SkillDetailPageProps) {
     return <DataState state="loading" message={t("skillDetail.states.loading")} />;
   }
   if (summaryQuery.isError || !summaryQuery.data) {
-    return <DataState state="error" message={t("skillDetail.states.error")} />;
+    if (summaryQuery.error instanceof SkillDetailUnavailableError) {
+      return <DataState state="unavailable" message={t("skillDetail.states.unavailable")} />;
+    }
+    if (summaryQuery.error instanceof SkillDetailNotFoundError) {
+      return <DataState state="empty" message={t("skillDetail.states.notFound")} />;
+    }
+    return (
+      <DataState
+        actionLabel={t("actions.retry")}
+        message={t("skillDetail.states.error")}
+        onAction={() => void summaryQuery.refetch()}
+        state="error"
+      />
+    );
   }
 
   return (
