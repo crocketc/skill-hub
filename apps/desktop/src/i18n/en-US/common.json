@@ -5,6 +5,25 @@
     "confirm": "Confirm",
     "retry": "Retry"
   },
+  "markdown": {
+    "code": {
+      "copied": "Copied",
+      "copy": "Copy code",
+      "plainText": "plain text"
+    },
+    "external": {
+      "open": "Open link",
+      "title": "Open external link?"
+    },
+    "frontmatter": "YAML Frontmatter",
+    "remoteImage": {
+      "blocked": "Remote image blocked: {{host}}",
+      "load": "Load this image"
+    },
+    "resource": {
+      "blocked": "Blocked resource: {{target}}"
+    }
+  },
   "dataState": {
     "empty": "No data",
     "error": "Unable to read data",

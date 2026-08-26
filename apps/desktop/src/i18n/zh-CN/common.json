@@ -5,6 +5,25 @@
     "confirm": "确认",
     "retry": "重试"
   },
+  "markdown": {
+    "code": {
+      "copied": "已复制",
+      "copy": "复制代码",
+      "plainText": "纯文本"
+    },
+    "external": {
+      "open": "打开链接",
+      "title": "打开外部链接？"
+    },
+    "frontmatter": "YAML Frontmatter",
+    "remoteImage": {
+      "blocked": "已阻止远程图片：{{host}}",
+      "load": "加载此图片"
+    },
+    "resource": {
+      "blocked": "已阻止资源：{{target}}"
+    }
+  },
   "dataState": {
     "empty": "暂无数据",
     "error": "无法读取数据",
