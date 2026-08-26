@@ -107,4 +107,12 @@ describe("MarkdownRenderer", () => {
     expect(screen.getByText("unsafe")).not.toHaveAttribute("href");
     expect(screen.getByText("Blocked resource: ../outside.png")).toBeVisible();
   });
+
+  it("offers diagram and source views only for Mermaid code fences", async () => {
+    await renderMarkdown("```mermaid\ngraph TD; A-->B\n```");
+
+    expect(screen.getByRole("tab", { name: "Diagram" })).toBeVisible();
+    fireEvent.click(screen.getByRole("tab", { name: "Source" }));
+    expect(screen.getByText("graph TD; A-->B", { exact: false })).toBeVisible();
+  });
 });

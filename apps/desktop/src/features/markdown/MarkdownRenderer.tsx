@@ -6,6 +6,7 @@ import remarkGfm from "remark-gfm";
 import type { MarkdownFacade } from "./api";
 import { CodeBlock } from "./CodeBlock";
 import { ExternalLink } from "./ExternalLink";
+import { MermaidBlock } from "./MermaidBlock";
 import { RemoteImage } from "./RemoteImage";
 import { classifyMarkdownUrl } from "./sanitize";
 
@@ -74,9 +75,18 @@ export function MarkdownRenderer({ facade, filePath, markdown, skillId }: Markdo
       if (!language) {
         return <code>{children}</code>;
       }
+      const code = String(children).replace(/\n$/, "");
+      if (language === "mermaid") {
+        return (
+          <MermaidBlock
+            code={code}
+            onExternalTarget={(target) => void facade.openExternalUrl(target)}
+          />
+        );
+      }
       return (
         <CodeBlock
-          code={String(children).replace(/\n$/, "")}
+          code={code}
           language={language}
         />
       );

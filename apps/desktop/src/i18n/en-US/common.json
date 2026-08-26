@@ -16,6 +16,13 @@
       "title": "Open external link?"
     },
     "frontmatter": "YAML Frontmatter",
+    "mermaid": {
+      "diagram": "Diagram",
+      "loading": "Rendering diagram",
+      "source": "Source",
+      "unavailable": "Diagram unavailable; showing Mermaid source.",
+      "views": "Mermaid preview"
+    },
     "remoteImage": {
       "blocked": "Remote image blocked: {{host}}",
       "load": "Load this image"

@@ -16,6 +16,13 @@
       "title": "打开外部链接？"
     },
     "frontmatter": "YAML Frontmatter",
+    "mermaid": {
+      "diagram": "图表",
+      "loading": "正在渲染图表",
+      "source": "源码",
+      "unavailable": "图表不可用，已显示 Mermaid 源码。",
+      "views": "Mermaid 预览"
+    },
     "remoteImage": {
       "blocked": "已阻止远程图片：{{host}}",
       "load": "加载此图片"
