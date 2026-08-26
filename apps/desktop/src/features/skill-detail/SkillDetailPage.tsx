@@ -11,6 +11,14 @@ import { DetailStatusRail } from "./DetailStatusRail";
 import { detailSearchFromLibrary, readLibraryReturnState } from "./detailContext";
 import { MetadataPanel } from "./MetadataPanel";
 import { LifecyclePanel } from "./LifecyclePanel";
+import { RelationsPanel } from "./RelationsPanel";
+import { RequirementsPanel } from "./RequirementsPanel";
+import {
+  ConnectionEvidence,
+  ExternalHistoryEvidence,
+  SecurityEvidence,
+} from "./InsightPanels";
+import { Button } from "../../ui/Button";
 
 interface SkillDetailPageProps {
   facade: SkillDetailFacade;
@@ -36,6 +44,18 @@ export function SkillDetailPage({ facade }: SkillDetailPageProps) {
   const metadataQuery = useQuery({
     queryFn: () => facade.getMetadata(skillId),
     queryKey: skillDetailKeys.metadata(skillId),
+  });
+  const relationsQuery = useQuery({
+    queryFn: () => facade.getRelations(skillId),
+    queryKey: skillDetailKeys.relations(skillId),
+  });
+  const requirementsQuery = useQuery({
+    queryFn: () => facade.getRequirements(skillId),
+    queryKey: skillDetailKeys.requirements(skillId),
+  });
+  const insightsQuery = useQuery({
+    queryFn: () => facade.getInsights(skillId),
+    queryKey: skillDetailKeys.insights(skillId),
   });
 
   if (summaryQuery.isPending) {
@@ -68,6 +88,26 @@ export function SkillDetailPage({ facade }: SkillDetailPageProps) {
                 ) : (
                   <MetadataPanel facade={facade} metadata={metadataQuery.data} skillId={skillId} />
                 )
+              ) : null}
+              {section === "relations" ? (
+                relationsQuery.isError ? (
+                  <div aria-label={t("skillDetail.relations.loadErrorLabel")} role="alert">
+                    <p>{t("skillDetail.relations.loadError")}</p>
+                    <Button onClick={() => void relationsQuery.refetch()} size="sm" variant="secondary">
+                      {t("skillDetail.relations.retry")}
+                    </Button>
+                  </div>
+                ) : relationsQuery.data ? <RelationsPanel relations={relationsQuery.data} /> : null
+              ) : null}
+              {section === "requirements" && requirementsQuery.data ? (
+                <RequirementsPanel requirements={requirementsQuery.data} />
+              ) : null}
+              {section === "security" ? <SecurityEvidence summary={summaryQuery.data} /> : null}
+              {section === "connections" && insightsQuery.data ? (
+                <ConnectionEvidence insights={insightsQuery.data} />
+              ) : null}
+              {section === "external" && insightsQuery.data ? (
+                <ExternalHistoryEvidence insights={insightsQuery.data} />
               ) : null}
             </section>
           ))}

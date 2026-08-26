@@ -270,6 +270,25 @@
     }
   },
   "skillDetail": {
+    "insights": {
+      "basicSecurity": "基础安全检查",
+      "connections": "依赖、重复项与组合",
+      "externalHistory": "外部变化与操作历史",
+      "invocations": "记录到 {{count}} 次调用",
+      "none": "暂无已确认的关联",
+      "riskSummary": "{{high}} 个高风险，{{pending}} 个待处理项",
+      "usageEvidence": "使用证据"
+    },
+    "relations": {
+      "loadError": "无法加载部署关系，其他详情仍可使用。",
+      "loadErrorLabel": "关系加载失败",
+      "physicalTarget": "物理目标：",
+      "pinned": "已固定版本",
+      "retry": "重试关系"
+    },
+    "requirements": {
+      "declaredOnly": "仅来自 Skill 声明，SkillHub 未安装或验证"
+    },
     "lifecycle": {
       "active": "正式管理",
       "archived": "已归档",

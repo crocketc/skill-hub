@@ -270,6 +270,26 @@
     }
   },
   "skillDetail": {
+    "insights": {
+      "basicSecurity": "Basic security check",
+      "connections": "Dependencies, duplicates, and combinations",
+      "externalHistory": "External changes and operation history",
+      "invocations_one": "{{count}} recorded invocation",
+      "invocations_other": "{{count}} recorded invocations",
+      "none": "No established relationships",
+      "riskSummary": "{{high}} high-risk and {{pending}} pending findings",
+      "usageEvidence": "Usage evidence"
+    },
+    "relations": {
+      "loadError": "Relations could not be loaded. Other detail sections remain available.",
+      "loadErrorLabel": "Relations failed to load",
+      "physicalTarget": "Physical target:",
+      "pinned": "Pinned",
+      "retry": "Retry relations"
+    },
+    "requirements": {
+      "declaredOnly": "Declared by the Skill only; SkillHub has not installed or verified it."
+    },
     "lifecycle": {
       "active": "Managed",
       "archived": "Archived",

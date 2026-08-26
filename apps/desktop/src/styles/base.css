@@ -1042,6 +1042,51 @@ a {
   color: var(--color-danger);
 }
 
+.sh-detail-relations,
+.sh-detail-requirements,
+.sh-detail-insights {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.sh-detail-relations > section,
+.sh-detail-requirements article {
+  background: var(--color-surface-muted);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-4);
+}
+
+.sh-detail-relations p,
+.sh-detail-relations ul,
+.sh-detail-requirements h3,
+.sh-detail-requirements p,
+.sh-detail-insights h3,
+.sh-detail-insights p,
+.sh-detail-insights ul {
+  margin: 0;
+}
+
+.sh-detail-relations ul,
+.sh-detail-insights ul {
+  display: grid;
+  gap: var(--space-2);
+  padding-left: var(--space-5);
+}
+
+.sh-detail-relations li {
+  align-items: baseline;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.sh-detail-relations li span,
+.sh-detail-requirements p:last-child {
+  color: var(--color-text-secondary);
+  font-size: 0.8125rem;
+}
+
 @media (max-width: 64rem) {
   .sh-skill-detail__layout {
     grid-template-columns: minmax(8rem, 0.6fr) minmax(20rem, 2fr);
