@@ -270,6 +270,26 @@
     }
   },
   "skillDetail": {
+    "metadata": {
+      "alias": "Alias",
+      "confirmRetranslate": "Replace translation",
+      "edit": "Edit {{label}}",
+      "editAction": "Edit",
+      "empty": "Not provided",
+      "note": "My note",
+      "originalDescription": "Original source text",
+      "purpose": "My purpose",
+      "retranslate": "Translate description again",
+      "save": "Save {{label}}",
+      "saveAction": "Save",
+      "saveError": "Could not save. Your draft is still here.",
+      "stale": "Translation may be outdated",
+      "tags": "Tags",
+      "translation": "Saved translation",
+      "translationText": "Translation text",
+      "translationOverwrite": "The existing user-revised {{locale}} translation will be replaced.",
+      "userRevised": "User revised"
+    },
     "navigation": {
       "back": "Back to Skill library",
       "next": "Next Skill",
@@ -290,7 +310,9 @@
     },
     "states": {
       "error": "Unable to load Skill details",
-      "loading": "Loading Skill details"
+      "loading": "Loading Skill details",
+      "loadingMetadata": "Loading description and metadata",
+      "metadataError": "Description and metadata could not be loaded"
     },
     "statusRail": {
       "basicOther": "Basic check: {{state}}",

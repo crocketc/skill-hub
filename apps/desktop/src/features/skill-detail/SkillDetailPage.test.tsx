@@ -109,4 +109,11 @@ describe("SkillDetailPage shell", () => {
     expect(screen.getByText("Basic check passed")).toBeVisible();
     expect(screen.getByText("2 deployments")).toBeVisible();
   });
+
+  it("loads the description and editable metadata panel independently", async () => {
+    await renderDetail();
+    expect(await screen.findByText("Original description")).toBeVisible();
+    expect(screen.getByText("模型译文")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Edit My purpose" })).toBeVisible();
+  });
 });

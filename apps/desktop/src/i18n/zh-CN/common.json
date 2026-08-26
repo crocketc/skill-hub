@@ -270,6 +270,26 @@
     }
   },
   "skillDetail": {
+    "metadata": {
+      "alias": "别名",
+      "confirmRetranslate": "替换译文",
+      "edit": "编辑{{label}}",
+      "editAction": "编辑",
+      "empty": "未填写",
+      "note": "我的备注",
+      "originalDescription": "原始描述",
+      "purpose": "我的用途说明",
+      "retranslate": "重新翻译描述",
+      "save": "保存{{label}}",
+      "saveAction": "保存",
+      "saveError": "未能保存，草稿已保留。",
+      "stale": "译文可能已过期",
+      "tags": "标签",
+      "translation": "已保存译文",
+      "translationText": "译文内容",
+      "translationOverwrite": "现有用户修订译文将被替换（{{locale}}）。",
+      "userRevised": "用户已修订"
+    },
     "navigation": {
       "back": "返回 Skill 库",
       "next": "下一个 Skill",
@@ -290,7 +310,9 @@
     },
     "states": {
       "error": "无法加载 Skill 详情",
-      "loading": "正在加载 Skill 详情"
+      "loading": "正在加载 Skill 详情",
+      "loadingMetadata": "正在加载描述与元数据",
+      "metadataError": "无法加载描述与元数据"
     },
     "statusRail": {
       "basicOther": "基础检查：{{state}}",

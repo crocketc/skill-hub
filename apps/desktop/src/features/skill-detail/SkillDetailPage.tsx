@@ -9,6 +9,7 @@ import { DetailHeader } from "./DetailHeader";
 import { DETAIL_SECTIONS, DetailSectionNav } from "./DetailSectionNav";
 import { DetailStatusRail } from "./DetailStatusRail";
 import { detailSearchFromLibrary, readLibraryReturnState } from "./detailContext";
+import { MetadataPanel } from "./MetadataPanel";
 
 interface SkillDetailPageProps {
   facade: SkillDetailFacade;
@@ -31,6 +32,10 @@ export function SkillDetailPage({ facade }: SkillDetailPageProps) {
     queryFn: () => facade.getAdjacentContext(skillId, libraryQuery),
     queryKey: skillDetailKeys.adjacent(skillId, libraryQuery),
   });
+  const metadataQuery = useQuery({
+    queryFn: () => facade.getMetadata(skillId),
+    queryKey: skillDetailKeys.metadata(skillId),
+  });
 
   if (summaryQuery.isPending) {
     return <DataState state="loading" message={t("skillDetail.states.loading")} />;
@@ -49,6 +54,15 @@ export function SkillDetailPage({ facade }: SkillDetailPageProps) {
             <section className="sh-skill-detail__section" id={section} key={section}>
               <h2>{t(`skillDetail.navigation.sections.${section}`)}</h2>
               {section === "overview" ? <p>{summaryQuery.data.purpose}</p> : null}
+              {section === "description" ? (
+                metadataQuery.isPending ? (
+                  <p role="status">{t("skillDetail.states.loadingMetadata")}</p>
+                ) : metadataQuery.isError || !metadataQuery.data ? (
+                  <p role="alert">{t("skillDetail.states.metadataError")}</p>
+                ) : (
+                  <MetadataPanel facade={facade} metadata={metadataQuery.data} skillId={skillId} />
+                )
+              ) : null}
             </section>
           ))}
         </main>
