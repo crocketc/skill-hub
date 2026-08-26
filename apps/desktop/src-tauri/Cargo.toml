@@ -3,6 +3,7 @@ name = "skillhub-desktop"
 version = "0.1.0"
 edition = "2021"
 publish = false
+license = "MIT"
 
 [lib]
 name = "skillhub_desktop"
@@ -17,7 +18,7 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 async-trait = "0.1"
-skillhub-core = { path = "../../../crates/skillhub-core" }
+skillhub-core = { path = "../../../crates/skillhub-core", version = "0.1.0" }
 specta = { version = "2.0.0-rc.25", features = ["derive"] }
 tauri = { version = "2" }
 specta-serde = "0.0.12"
