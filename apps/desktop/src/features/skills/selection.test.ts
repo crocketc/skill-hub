@@ -5,6 +5,7 @@ import {
   retainExplicitSelection,
   selectAllFiltered,
   selectExplicit,
+  setPageSelection,
   selectionCount,
   selectionToBatchTarget,
 } from "./selection";
@@ -70,5 +71,48 @@ describe("Skill selection", () => {
       throw new Error("expected an explicit selection");
     }
     expect(selectionToBatchTarget(selected)).toEqual({ kind: "skill_ids", skillIds: ["a", "b"] });
+  });
+
+  it("adds only the current page to all-filtered exclusions without losing its snapshot", () => {
+    const filter = {
+      filters: { ...DEFAULT_SKILL_QUERY.filters, tags: ["docs"] },
+      text: "reader",
+    };
+    const selected = {
+      ...selectAllFiltered(filter, "filter:reader", 80),
+      excludedSkillIds: ["skill-other-page"],
+    };
+
+    const next = setPageSelection(selected, ["skill-z", "skill-a"], false);
+
+    expect(next).toEqual({
+      excludedSkillIds: ["skill-a", "skill-other-page", "skill-z"],
+      filter,
+      filterKey: "filter:reader",
+      kind: "all_filtered",
+      total: 80,
+    });
+    if (next.kind !== "all_filtered") throw new Error("expected all-filtered selection");
+    expect(next.filter).not.toBe(selected.filter);
+    expect(next.filter.filters.tags).not.toBe(selected.filter.filters.tags);
+  });
+
+  it("removes only the current page from all-filtered exclusions", () => {
+    const selected = {
+      ...selectAllFiltered(
+        { filters: DEFAULT_SKILL_QUERY.filters, text: "" },
+        "filter:all",
+        80,
+      ),
+      excludedSkillIds: ["skill-a", "skill-other-page", "skill-z"],
+    };
+
+    expect(setPageSelection(selected, ["skill-z", "skill-a"], true)).toEqual({
+      excludedSkillIds: ["skill-other-page"],
+      filter: { filters: DEFAULT_SKILL_QUERY.filters, text: "" },
+      filterKey: "filter:all",
+      kind: "all_filtered",
+      total: 80,
+    });
   });
 });

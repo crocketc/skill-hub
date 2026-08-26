@@ -291,6 +291,7 @@ export function SkillLibraryPage({ facade }: SkillLibraryPageProps): JSX.Element
   const [batchBarElement, setBatchBarElement] = useState<HTMLElement | null>(null);
   const returnFocusRef = useRef<HTMLElement | null>(null);
   const scrollPositionRef = useRef<{ left: number; top: number }>();
+  const batchRequestRef = useRef(0);
   const currentFilterKeyRef = useRef(skillFilterKey(query));
   currentFilterKeyRef.current = skillFilterKey(query);
 
@@ -305,11 +306,31 @@ export function SkillLibraryPage({ facade }: SkillLibraryPageProps): JSX.Element
   const [saveViewName, setSaveViewName] = useState("");
   const [saveViewError, setSaveViewError] = useState<string>();
   const [saveViewPending, setSaveViewPending] = useState(false);
+  const defaultPageRetry = queryClient.getDefaultOptions().queries?.retry;
+
+  const clearBatchAnnouncement = () => {
+    batchRequestRef.current += 1;
+    setBatchAnnouncement(undefined);
+  };
+
+  const changeSelection = (next: SkillSelection) => {
+    clearBatchAnnouncement();
+    setSelection(next);
+  };
 
   const pageQuery = useQuery({
     placeholderData: keepPreviousData,
     queryFn: () => facade.listSkills(query),
     queryKey: skillLibraryKeys.page(query),
+    retry: (failureCount, error) => {
+      if (isSkillLibraryUnavailable(error)) return false;
+      if (typeof defaultPageRetry === "function") {
+        return defaultPageRetry(failureCount, error);
+      }
+      if (defaultPageRetry === true) return true;
+      if (defaultPageRetry === false) return false;
+      return failureCount < (defaultPageRetry ?? 3);
+    },
   });
   const savedViewsQuery = useQuery({
     queryFn: () => facade.listSavedViews(),
@@ -421,14 +442,16 @@ export function SkillLibraryPage({ facade }: SkillLibraryPageProps): JSX.Element
     if (previousKey !== nextKey) {
       currentFilterKeyRef.current = nextKey;
       if (selection.kind === "all_filtered") {
-        setSelection({ kind: "none" });
+        changeSelection({ kind: "none" });
         setSelectionAnnouncement(
           t("skillLibrary.page.selection.clearedForFilters"),
         );
       } else if (selection.kind === "explicit") {
+        clearBatchAnnouncement();
         const selectedIds = [...selection.skillIds];
         void facade.retainMatchingSkillIds(selectedIds, nextQuery).then((matchingIds) => {
           if (currentFilterKeyRef.current !== nextKey) return;
+          clearBatchAnnouncement();
           setSelection((current) => retainExplicitSelection(current, matchingIds));
         });
       }
@@ -491,9 +514,12 @@ export function SkillLibraryPage({ facade }: SkillLibraryPageProps): JSX.Element
 
   const emitBatchAction = (action: BatchAction) => {
     if (selection.kind === "none" || selectionCount(selection) <= 0) return;
+    const request = batchRequestRef.current + 1;
+    batchRequestRef.current = request;
     setBatchAnnouncement(undefined);
     const intent = { action, target: selectionToBatchTarget(selection) };
     void facade.emitBatchIntent(intent).catch((error: unknown) => {
+      if (request !== batchRequestRef.current) return;
       setBatchAnnouncement(
         isSkillLibraryUnavailable(error)
           ? t("skillLibrary.page.batch.unconnected")
@@ -699,7 +725,7 @@ export function SkillLibraryPage({ facade }: SkillLibraryPageProps): JSX.Element
             onQueryChange={updateQuery}
             onSelectionChange={(next) => {
               setSelectionAnnouncement(undefined);
-              setSelection(next);
+              changeSelection(next);
             }}
             page={page}
             preferences={effectiveTablePreferences}
@@ -715,11 +741,10 @@ export function SkillLibraryPage({ facade }: SkillLibraryPageProps): JSX.Element
           barRef={setBatchBarElement}
           onAction={emitBatchAction}
           onClear={() => {
-            setBatchAnnouncement(undefined);
-            setSelection({ kind: "none" });
+            changeSelection({ kind: "none" });
           }}
           onSelectAll={() =>
-            setSelection(
+            changeSelection(
               selectAllFiltered(
                 { filters: query.filters, text: query.text },
                 skillFilterKey(query),
@@ -738,6 +763,7 @@ export function SkillLibraryPage({ facade }: SkillLibraryPageProps): JSX.Element
         }}
         onPreferencesChange={setDrawerPreferences}
         open={Boolean(skillId)}
+        preferenceSaveFailed={Boolean(drawerSaveFailure)}
         preferences={effectiveDrawerPreferences}
         returnFocusRef={returnFocusRef}
         skillId={skillId}

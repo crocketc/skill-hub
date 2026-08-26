@@ -10,7 +10,12 @@ import {
   type SkillTablePreferences,
   type SkillTableRow,
 } from "./api";
-import { excludeFromAllFiltered, selectExplicit, type SkillSelection } from "./selection";
+import {
+  excludeFromAllFiltered,
+  selectExplicit,
+  setPageSelection,
+  type SkillSelection,
+} from "./selection";
 
 export interface SkillTableProps {
   onOpenSkill: (skillId: string, rowElement: HTMLElement) => void;
@@ -199,11 +204,8 @@ function isSelected(selection: SkillSelection, skillId: string) {
 export function SkillTable(props: SkillTableProps) {
   const { t } = useTranslation();
   const [controlsOpen, setControlsOpen] = useState(false);
-  const columnOrder = useMemo(() => orderedColumnIds(props.preferences), [props.preferences]);
-  const visibleColumns = useMemo(
-    () => new Set([...LOCKED_COLUMNS, ...props.preferences.visibleColumns]),
-    [props.preferences.visibleColumns],
-  );
+  const columnOrder = orderedColumnIds(props.preferences);
+  const visibleColumns = new Set([...LOCKED_COLUMNS, ...props.preferences.visibleColumns]);
   const columns = useMemo(() => createSkillColumns(t), [t]);
   const pageCount = Math.ceil(props.page.total / props.query.pageSize);
   const pageIds = props.page.items.map((row) => row.id);
@@ -242,7 +244,10 @@ export function SkillTable(props: SkillTableProps) {
       direction: props.query.sort.column === column && props.query.sort.direction === "asc" ? "desc" : "asc",
     },
   });
-  const togglePage = (event: ChangeEvent<HTMLInputElement>) => props.onSelectionChange(selectExplicit(props.selection, pageIds, event.currentTarget.checked));
+  const togglePage = (event: ChangeEvent<HTMLInputElement>) =>
+    props.onSelectionChange(
+      setPageSelection(props.selection, pageIds, event.currentTarget.checked),
+    );
   const toggleColumn = (column: SkillColumnId, visible: boolean) => props.onPreferencesChange({
     ...props.preferences,
     visibleColumns: visible

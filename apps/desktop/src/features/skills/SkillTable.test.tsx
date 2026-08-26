@@ -177,6 +177,47 @@ it("selects only the current page from the header checkbox", async () => {
   });
 });
 
+it("keeps all-filtered scope when the header excludes the current page", async () => {
+  const onSelectionChange = vi.fn();
+  const selection = {
+    excludedSkillIds: ["skill-other-page"],
+    filter: {
+      filters: { ...DEFAULT_SKILL_QUERY.filters, tags: ["documents"] },
+      text: "reader",
+    },
+    filterKey: "filter:reader",
+    kind: "all_filtered" as const,
+    total: 80,
+  };
+  await renderTable({ onSelectionChange, selection });
+
+  fireEvent.click(screen.getByRole("checkbox", { name: "Select current page" }));
+
+  expect(onSelectionChange).toHaveBeenCalledWith({
+    ...selection,
+    excludedSkillIds: ["skill-notes", "skill-other-page", "skill-pdf"],
+  });
+});
+
+it("keeps other-page exclusions when the header reselects the current page", async () => {
+  const onSelectionChange = vi.fn();
+  const selection = {
+    excludedSkillIds: ["skill-notes", "skill-other-page", "skill-pdf"],
+    filter: { filters: DEFAULT_SKILL_QUERY.filters, text: "" },
+    filterKey: "filter:all",
+    kind: "all_filtered" as const,
+    total: 23,
+  };
+  await renderTable({ onSelectionChange, selection });
+
+  fireEvent.click(screen.getByRole("checkbox", { name: "Select current page" }));
+
+  expect(onSelectionChange).toHaveBeenCalledWith({
+    ...selection,
+    excludedSkillIds: ["skill-other-page"],
+  });
+});
+
 it("excludes an all-filtered selection without opening the row", async () => {
   const onOpenSkill = vi.fn();
   const onSelectionChange = vi.fn();

@@ -1,6 +1,7 @@
 import { act, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, vi } from "vitest";
 import { skillHubI18n } from "../i18n";
+import { unavailableSkillLibraryFacade } from "../features/skills/api";
 import { sidebarNavigationEnd } from "./Sidebar";
 import { resolveRouteTitleKey } from "./AppShell";
 import { queryClient } from "./queryClient";
@@ -71,16 +72,14 @@ it("uses the unavailable facade on the production Skill library route", async ()
   mockBrowserPreferences();
   await skillHubI18n.changeLanguage("en-US");
   await appRouter.navigate("/library");
+  const listSkills = vi.spyOn(unavailableSkillLibraryFacade, "listSkills");
 
   render(<AppRouter />);
 
   expect(
-    await screen.findByText(
-      "Skill catalog data is not connected yet",
-      undefined,
-      { timeout: 3_000 },
-    ),
+    await screen.findByText("Skill catalog data is not connected yet"),
   ).toBeVisible();
+  expect(listSkills).toHaveBeenCalledTimes(1);
   expect(screen.queryByText("PDF Reader")).not.toBeInTheDocument();
 });
 
@@ -109,11 +108,7 @@ it("isolates development preview data from the production Skill library route", 
   });
 
   expect(
-    await screen.findByText(
-      "Skill catalog data is not connected yet",
-      undefined,
-      { timeout: 3_000 },
-    ),
+    await screen.findByText("Skill catalog data is not connected yet"),
   ).toBeVisible();
   expect(screen.queryByText("PDF Reader")).not.toBeInTheDocument();
 });

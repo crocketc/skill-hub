@@ -62,6 +62,27 @@ export function excludeFromAllFiltered(
   return { ...state, excludedSkillIds, filter: cloneFilterSnapshot(state.filter) };
 }
 
+export function setPageSelection(
+  state: SkillSelection,
+  skillIds: string[],
+  selected: boolean,
+): SkillSelection {
+  if (state.kind !== "all_filtered") {
+    return selectExplicit(state, skillIds, selected);
+  }
+
+  const pageIds = new Set(skillIds);
+  const excludedSkillIds = selected
+    ? state.excludedSkillIds.filter((skillId) => !pageIds.has(skillId))
+    : [...state.excludedSkillIds, ...skillIds];
+
+  return {
+    ...state,
+    excludedSkillIds: normalizeIds(excludedSkillIds),
+    filter: cloneFilterSnapshot(state.filter),
+  };
+}
+
 export function retainExplicitSelection(state: SkillSelection, matchingIds: string[]): SkillSelection {
   if (state.kind !== "explicit") {
     return state;

@@ -10,6 +10,8 @@ import { skillHubI18n } from "../../i18n";
 import "../../styles/base.css";
 import {
   SkillLibraryUnavailableError,
+  type SavedSkillView,
+  type SkillDrawerPreferences,
   type SkillLibraryFacade,
   type SkillPage,
 } from "./api";
@@ -23,6 +25,7 @@ import {
 interface RenderLibraryOptions {
   facade: SkillLibraryFacade;
   initialEntry?: string;
+  queryRetry?: boolean | number;
 }
 
 interface RenderedLibrary {
@@ -33,9 +36,10 @@ interface RenderedLibrary {
 function renderLibrary({
   facade,
   initialEntry = "/library",
+  queryRetry = false,
 }: RenderLibraryOptions): RenderedLibrary {
   const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
+    defaultOptions: { queries: { retry: queryRetry, retryDelay: 0 } },
   });
   const router = createMemoryRouter(
     [{ path: "/library", element: <SkillLibraryPage facade={facade} /> }],
@@ -67,10 +71,12 @@ function skillNameCell(name: string): HTMLTableCellElement {
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
-  const promise = new Promise<T>((next) => {
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((next, fail) => {
     resolve = next;
+    reject = fail;
   });
-  return { promise, resolve };
+  return { promise, reject, resolve };
 }
 
 afterEach(() => {
@@ -245,6 +251,20 @@ describe("SkillLibraryPage", () => {
       await screen.findByText("Skill catalog data is not connected yet"),
     ).toBeVisible();
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("preserves the QueryClient retry policy for ordinary page failures", async () => {
+    const facade = createMockSkillLibraryFacade();
+    const successfulList = facade.listSkills.bind(facade);
+    const listSkills = vi
+      .spyOn(facade, "listSkills")
+      .mockRejectedValueOnce(new Error("transient page read failure"))
+      .mockImplementation((query) => successfulList(query));
+
+    renderLibrary({ facade, queryRetry: 1 });
+
+    expect(await screen.findByRole("table")).toBeVisible();
+    expect(listSkills).toHaveBeenCalledTimes(2);
   });
 
   it("keeps temporary drawer preferences when persistence fails", async () => {
@@ -585,6 +605,168 @@ describe("SkillLibraryPage", () => {
     expect(screen.queryByText("View saved")).not.toBeInTheDocument();
   });
 
+  it("keeps a rejected saved-view form recoverable until a later save succeeds", async () => {
+    const facade = createMockSkillLibraryFacade();
+    const savedViewsRead = vi.spyOn(facade, "listSavedViews");
+    const firstSave = deferred<SavedSkillView>();
+    const successfulSave = facade.saveView.bind(facade);
+    const saveView = vi
+      .spyOn(facade, "saveView")
+      .mockImplementationOnce(() => firstSave.promise)
+      .mockImplementation((view) => successfulSave(view));
+    renderLibrary({ facade });
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Save current view" }),
+    );
+    fireEvent.change(screen.getByRole("textbox", { name: "View name" }), {
+      target: { value: "Recovery view" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save view" }));
+
+    expect(screen.getByRole("button", { name: "Save view" })).toBeDisabled();
+    expect(saveView).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      firstSave.reject(new Error("saved view write failed"));
+    });
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "The view could not be saved",
+    );
+    expect(screen.getByRole("textbox", { name: "View name" })).toHaveValue(
+      "Recovery view",
+    );
+    expect(screen.getByRole("button", { name: "Save view" })).toBeEnabled();
+    expect(screen.queryByRole("button", { name: "Recovery view" })).not.toBeInTheDocument();
+    expect(screen.queryByText("View saved")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Save view" }));
+
+    await waitFor(() => {
+      expect(saveView).toHaveBeenCalledTimes(2);
+      expect(savedViewsRead).toHaveBeenCalledTimes(2);
+      expect(
+        screen.queryByRole("form", { name: "Save current view" }),
+      ).not.toBeInTheDocument();
+    });
+  });
+
+  it("keeps built-in views usable while a saved-view read recovers", async () => {
+    const facade = createMockSkillLibraryFacade();
+    const listSavedViews = facade.listSavedViews.bind(facade);
+    const savedViewsRead = vi
+      .spyOn(facade, "listSavedViews")
+      .mockRejectedValueOnce(new Error("saved views unavailable"))
+      .mockImplementation(() => listSavedViews());
+    renderLibrary({ facade });
+
+    expect(await screen.findByRole("table")).toBeVisible();
+    const status = screen.getByRole("status", { name: "Preference status" });
+    expect(status).toHaveTextContent("Saved views could not be loaded");
+    fireEvent.click(screen.getByRole("button", { name: "Active" }));
+    await waitFor(() => {
+      expect(lastPageCall(facade)).toEqual(
+        expect.objectContaining({
+          filters: expect.objectContaining({ lifecycle: ["active"] }),
+        }),
+      );
+    });
+
+    fireEvent.click(within(status).getByRole("button", { name: "Retry" }));
+
+    expect(await screen.findByRole("button", { name: "Document tools" })).toBeVisible();
+    expect(savedViewsRead).toHaveBeenCalledTimes(2);
+    expect(
+      screen.queryByRole("status", { name: "Preference status" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("uses default drawer preferences while a failed read retries server preferences", async () => {
+    const facade = createMockSkillLibraryFacade();
+    const serverPreferences: SkillDrawerPreferences = {
+      moduleOrder: [
+        "identity",
+        "primary_actions",
+        "risk_summary",
+        "full_details",
+        "versions",
+      ],
+      preset: "standard",
+      visibleModules: [
+        "identity",
+        "primary_actions",
+        "risk_summary",
+        "full_details",
+        "versions",
+      ],
+      widthPx: 480,
+    };
+    const drawerPreferencesRead = vi
+      .spyOn(facade, "loadDrawerPreferences")
+      .mockRejectedValueOnce(new Error("drawer preferences unavailable"))
+      .mockResolvedValue(serverPreferences);
+    renderLibrary({ facade });
+
+    expect(await screen.findByRole("table")).toBeVisible();
+    const status = screen.getByRole("status", { name: "Preference status" });
+    expect(status).toHaveTextContent("Drawer preferences could not be loaded");
+    fireEvent.click(skillNameCell("PDF Reader"));
+    expect(await screen.findByTestId("skill-quick-drawer")).toHaveAttribute(
+      "data-preset",
+      "wide",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+
+    fireEvent.click(within(status).getByRole("button", { name: "Retry" }));
+    await waitFor(() => expect(drawerPreferencesRead).toHaveBeenCalledTimes(2));
+    fireEvent.click(skillNameCell("PDF Reader"));
+
+    expect(await screen.findByTestId("skill-quick-drawer")).toHaveAttribute(
+      "data-preset",
+      "standard",
+    );
+    expect(screen.getByTestId("skill-quick-drawer")).toHaveStyle(
+      "--skill-drawer-width: 480px",
+    );
+    expect(
+      screen.queryByRole("status", { name: "Preference status" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("invalidates and refetches drawer preferences after a failed save retry succeeds", async () => {
+    const facade = createMockSkillLibraryFacade();
+    const drawerPreferencesRead = vi.spyOn(facade, "loadDrawerPreferences");
+    const saveDrawerPreferences = vi
+      .spyOn(facade, "saveDrawerPreferences")
+      .mockRejectedValueOnce(new Error("drawer preference save failed"))
+      .mockResolvedValue(undefined);
+    renderLibrary({ facade });
+
+    await screen.findByRole("table");
+    fireEvent.click(skillNameCell("PDF Reader"));
+    fireEvent.click(await screen.findByRole("button", { name: "Standard width" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Preference was not saved",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    const status = await screen.findByRole("status", {
+      name: "Preference status",
+    });
+
+    fireEvent.click(within(status).getByRole("button", { name: "Retry" }));
+
+    await waitFor(() => {
+      expect(saveDrawerPreferences).toHaveBeenCalledTimes(2);
+      expect(drawerPreferencesRead).toHaveBeenCalledTimes(2);
+      expect(
+        screen.queryByRole("status", { name: "Preference status" }),
+      ).not.toBeInTheDocument();
+    });
+    fireEvent.click(skillNameCell("PDF Reader"));
+    expect(await screen.findByTestId("skill-quick-drawer")).toBeVisible();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
   it("explains unavailable batch workflows without inventing completion", async () => {
     const facade = createMockSkillLibraryFacade();
     vi.spyOn(facade, "emitBatchIntent").mockRejectedValue(
@@ -601,6 +783,31 @@ describe("SkillLibraryPage", () => {
       "This batch workflow is not connected",
     );
     expect(screen.queryByText("Export completed")).not.toBeInTheDocument();
+  });
+
+  it("clears a failed batch announcement when the selected scope changes", async () => {
+    const facade = createMockSkillLibraryFacade();
+    vi.spyOn(facade, "emitBatchIntent").mockRejectedValue(
+      new Error("batch preparation failed"),
+    );
+    renderLibrary({ facade });
+
+    fireEvent.click(
+      await screen.findByRole("checkbox", { name: "Select PDF Reader" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Export" }));
+    const batchBar = screen.getByRole("complementary", { name: "Batch actions" });
+    expect(await within(batchBar).findByRole("status")).toHaveTextContent(
+      "The batch workflow could not be started",
+    );
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select DOCX Writer" }));
+
+    expect(within(batchBar).getByText("2 items selected")).toBeVisible();
+    expect(within(batchBar).queryByRole("status")).not.toBeInTheDocument();
+    expect(
+      within(batchBar).queryByText("The batch workflow could not be started"),
+    ).not.toBeInTheDocument();
   });
 
   it("keeps valid table data when preference reads fail and lets the user retry", async () => {

@@ -39,6 +39,7 @@ export interface SkillQuickDrawerProps {
   onOpenChange: (open: boolean) => void;
   onPreferencesChange: (preferences: SkillDrawerPreferences) => void;
   open: boolean;
+  preferenceSaveFailed?: boolean;
   preferences: SkillDrawerPreferences;
   returnFocusRef: RefObject<HTMLElement | null>;
   skillId?: string;
@@ -395,6 +396,7 @@ export function SkillQuickDrawer({
   onOpenChange,
   onPreferencesChange,
   open,
+  preferenceSaveFailed,
   preferences,
   returnFocusRef,
   skillId,
@@ -402,7 +404,7 @@ export function SkillQuickDrawer({
   const { t } = useTranslation();
   const [configurationOpen, setConfigurationOpen] = useState(false);
   const [dragWidthPx, setDragWidthPx] = useState<number>();
-  const [preferenceSaveFailed, setPreferenceSaveFailed] = useState(false);
+  const [localPreferenceSaveFailed, setLocalPreferenceSaveFailed] = useState(false);
   const dragSessionRef = useRef<DragSession>();
   const preferenceSaveQueueRef = useRef<Promise<void>>(Promise.resolve());
   const preferenceSaveRequestRef = useRef(0);
@@ -437,7 +439,7 @@ export function SkillQuickDrawer({
     const normalized = normalizeDrawerPreferences(next);
     const request = preferenceSaveRequestRef.current + 1;
     preferenceSaveRequestRef.current = request;
-    setPreferenceSaveFailed(false);
+    setLocalPreferenceSaveFailed(false);
     onPreferencesChange(normalized);
     const save = preferenceSaveQueueRef.current.then(() =>
       facade.saveDrawerPreferences(normalized),
@@ -449,12 +451,12 @@ export function SkillQuickDrawer({
     void save.then(
       () => {
         if (request === preferenceSaveRequestRef.current) {
-          setPreferenceSaveFailed(false);
+          setLocalPreferenceSaveFailed(false);
         }
       },
       () => {
         if (request === preferenceSaveRequestRef.current) {
-          setPreferenceSaveFailed(true);
+          setLocalPreferenceSaveFailed(true);
         }
       },
     );
@@ -652,7 +654,7 @@ export function SkillQuickDrawer({
             </div>
           </div>
 
-          {preferenceSaveFailed ? (
+          {(preferenceSaveFailed ?? localPreferenceSaveFailed) ? (
             <p className="sh-skill-drawer__alert" role="alert">
               {t("skillLibrary.drawer.preferenceFailure")}
             </p>
