@@ -270,6 +270,33 @@
     }
   },
   "skillDetail": {
+    "versions": {
+      "added": "新增文件：{{count}}",
+      "changed": "修改文件：{{count}}",
+      "changes": "新增 {{added}} · 修改 {{changed}} · 删除 {{removed}}",
+      "compare": "选择比较",
+      "compareSelected": "比较所选版本",
+      "confirmRollback": "确认创建回滚版本",
+      "createsVersion": "回滚会创建新的当前版本，不会删除历史记录。",
+      "current": "当前版本",
+      "deploymentUpdates": "{{label}} 将更新",
+      "impactLoading": "正在加载回滚影响",
+      "loadError": "无法加载版本历史",
+      "loading": "正在加载版本历史",
+      "origin": {
+        "edit": "编辑",
+        "import": "导入",
+        "rollback": "回滚",
+        "upstream": "上游更新"
+      },
+      "pinnedUnaffected": "{{label}} 固定版本不受影响",
+      "removed": "删除文件：{{count}}",
+      "rerunBasic": "回滚后重新执行基础安全检查",
+      "rollbackError": "回滚未完成，请保留当前影响预览后重试。",
+      "rollbackPreview": "回滚影响预览",
+      "rollbackTo": "回滚到 {{version}}",
+      "selectCompare": "选择 {{version}} 进行比较"
+    },
     "insights": {
       "basicSecurity": "基础安全检查",
       "connections": "依赖、重复项与组合",

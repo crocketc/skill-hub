@@ -270,6 +270,33 @@
     }
   },
   "skillDetail": {
+    "versions": {
+      "added": "Added files: {{count}}",
+      "changed": "Changed files: {{count}}",
+      "changes": "+{{added}} added · {{changed}} changed · −{{removed}} removed",
+      "compare": "Select for comparison",
+      "compareSelected": "Compare selected versions",
+      "confirmRollback": "Confirm and create rollback version",
+      "createsVersion": "Rollback creates a new current version; it does not erase history.",
+      "current": "Current",
+      "deploymentUpdates": "{{label}} will update",
+      "impactLoading": "Loading rollback impact",
+      "loadError": "Version history could not be loaded",
+      "loading": "Loading version history",
+      "origin": {
+        "edit": "Edited",
+        "import": "Imported",
+        "rollback": "Rollback",
+        "upstream": "Upstream"
+      },
+      "pinnedUnaffected": "{{label}} is pinned and will not be affected",
+      "removed": "Removed files: {{count}}",
+      "rerunBasic": "The basic security check runs again after rollback",
+      "rollbackError": "Rollback did not complete. Review the impact and try again.",
+      "rollbackPreview": "Rollback impact preview",
+      "rollbackTo": "Rollback to {{version}}",
+      "selectCompare": "Select {{version}} for comparison"
+    },
     "insights": {
       "basicSecurity": "Basic security check",
       "connections": "Dependencies, duplicates, and combinations",

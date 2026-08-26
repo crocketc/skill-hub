@@ -1087,6 +1087,82 @@ a {
   font-size: 0.8125rem;
 }
 
+.sh-version-timeline,
+.sh-version-timeline ol,
+.sh-version-timeline article,
+.sh-version-timeline__rollback {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.sh-version-timeline ol {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.sh-version-timeline ol > li {
+  display: grid;
+  gap: var(--space-3);
+  grid-template-columns: 1rem 1fr;
+  position: relative;
+}
+
+.sh-version-timeline ol > li:not(:last-child)::before {
+  background: var(--color-border);
+  content: "";
+  left: 0.4375rem;
+  position: absolute;
+  top: 1rem;
+  bottom: calc(-1 * var(--space-3));
+  width: 2px;
+}
+
+.sh-version-timeline__node {
+  background: var(--color-accent);
+  border: 3px solid var(--color-surface);
+  border-radius: 999px;
+  height: 1rem;
+  position: relative;
+  width: 1rem;
+  z-index: 1;
+}
+
+.sh-version-timeline article,
+.sh-version-timeline__diff,
+.sh-version-timeline__rollback {
+  background: var(--color-surface-muted);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-4);
+}
+
+.sh-version-timeline__heading {
+  align-items: center;
+  display: flex;
+  gap: var(--space-2);
+}
+
+.sh-version-timeline h3,
+.sh-version-timeline p,
+.sh-version-timeline__diff p {
+  margin: 0;
+}
+
+.sh-version-timeline__diff {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+}
+
+.sh-version-timeline__rollback {
+  border-color: var(--color-warning);
+}
+
+.sh-version-timeline__rollback [role="alert"] {
+  color: var(--color-danger);
+}
+
 @media (max-width: 64rem) {
   .sh-skill-detail__layout {
     grid-template-columns: minmax(8rem, 0.6fr) minmax(20rem, 2fr);

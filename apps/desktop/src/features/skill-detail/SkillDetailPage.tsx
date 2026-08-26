@@ -19,6 +19,7 @@ import {
   SecurityEvidence,
 } from "./InsightPanels";
 import { Button } from "../../ui/Button";
+import { VersionTimeline } from "./VersionTimeline";
 
 interface SkillDetailPageProps {
   facade: SkillDetailFacade;
@@ -109,6 +110,7 @@ export function SkillDetailPage({ facade }: SkillDetailPageProps) {
               {section === "external" && insightsQuery.data ? (
                 <ExternalHistoryEvidence insights={insightsQuery.data} />
               ) : null}
+              {section === "versions" ? <VersionTimeline facade={facade} skillId={skillId} /> : null}
             </section>
           ))}
         </main>
