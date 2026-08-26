@@ -10,6 +10,7 @@ import { DETAIL_SECTIONS, DetailSectionNav } from "./DetailSectionNav";
 import { DetailStatusRail } from "./DetailStatusRail";
 import { detailSearchFromLibrary, readLibraryReturnState } from "./detailContext";
 import { MetadataPanel } from "./MetadataPanel";
+import { LifecyclePanel } from "./LifecyclePanel";
 
 interface SkillDetailPageProps {
   facade: SkillDetailFacade;
@@ -53,7 +54,12 @@ export function SkillDetailPage({ facade }: SkillDetailPageProps) {
           {DETAIL_SECTIONS.map((section) => (
             <section className="sh-skill-detail__section" id={section} key={section}>
               <h2>{t(`skillDetail.navigation.sections.${section}`)}</h2>
-              {section === "overview" ? <p>{summaryQuery.data.purpose}</p> : null}
+              {section === "overview" ? (
+                <>
+                  <p>{summaryQuery.data.purpose}</p>
+                  <LifecyclePanel summary={summaryQuery.data} />
+                </>
+              ) : null}
               {section === "description" ? (
                 metadataQuery.isPending ? (
                   <p role="status">{t("skillDetail.states.loadingMetadata")}</p>
@@ -66,7 +72,7 @@ export function SkillDetailPage({ facade }: SkillDetailPageProps) {
             </section>
           ))}
         </main>
-        <DetailStatusRail summary={summaryQuery.data} />
+        <DetailStatusRail facade={facade} skillId={skillId} summary={summaryQuery.data} />
       </div>
     </section>
   );

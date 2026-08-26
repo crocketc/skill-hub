@@ -270,6 +270,17 @@
     }
   },
   "skillDetail": {
+    "lifecycle": {
+      "active": "正式管理",
+      "archived": "已归档",
+      "description": {
+        "active": "此 Skill 已纳入集中库管理。",
+        "archived": "此 Skill 仍被保留，但当前不再启用。",
+        "trial": "此 Skill 设有复核日期，届时再决定保留或移除。"
+      },
+      "reviewDue": "复核日期：{{date}}",
+      "trial": "试用中"
+    },
     "metadata": {
       "alias": "别名",
       "confirmRetranslate": "替换译文",
@@ -321,6 +332,18 @@
       "deployments": "{{count}} 个部署",
       "label": "Skill 状态",
       "versionLabel": "当前版本"
+    },
+    "trial": {
+      "abandon": "放弃试用",
+      "abandonError": "未能进入后续移除流程。",
+      "convert": "正式纳入管理",
+      "converted": "已移除试用日期，此 Skill 仍由 SkillHub 管理。",
+      "extend": "延长试用",
+      "reviewDate": "复核日期",
+      "saveDate": "保存复核日期",
+      "saveError": "未能保存试用日期。",
+      "saved": "复核日期已保存为 {{date}}。",
+      "set": "设置试用复核"
     }
   },
   "navigation": {

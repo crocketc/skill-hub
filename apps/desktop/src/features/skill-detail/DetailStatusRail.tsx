@@ -1,12 +1,16 @@
 import { useTranslation } from "react-i18next";
 import { StatusBadge } from "../../ui/StatusBadge";
 import type { SkillDetailSummary } from "./api";
+import type { SkillDetailFacade } from "./api";
+import { TrialActions } from "./TrialActions";
 
 interface DetailStatusRailProps {
+  facade: SkillDetailFacade;
+  skillId: string;
   summary: SkillDetailSummary;
 }
 
-export function DetailStatusRail({ summary }: DetailStatusRailProps) {
+export function DetailStatusRail({ facade, skillId, summary }: DetailStatusRailProps) {
   const { t } = useTranslation();
   const deployments = summary.agentDeploymentCount + summary.projectDeploymentCount;
   return (
@@ -20,6 +24,7 @@ export function DetailStatusRail({ summary }: DetailStatusRailProps) {
         <div><dt>{t("skillDetail.statusRail.versionLabel")}</dt><dd>{summary.currentVersion}</dd></div>
         <div><dt>{t("skillDetail.statusRail.deploymentLabel")}</dt><dd>{t("skillDetail.statusRail.deployments", { count: deployments })}</dd></div>
       </dl>
+      <TrialActions facade={facade} skillId={skillId} summary={summary} />
     </aside>
   );
 }

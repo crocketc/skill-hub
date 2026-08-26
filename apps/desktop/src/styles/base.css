@@ -998,6 +998,50 @@ a {
   flex-basis: 100%;
 }
 
+.sh-lifecycle-panel,
+.sh-trial-actions,
+.sh-trial-actions__date,
+.sh-trial-actions__buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.sh-lifecycle-panel {
+  align-items: center;
+}
+
+.sh-lifecycle-panel p,
+.sh-trial-actions p {
+  color: var(--color-text-secondary);
+  margin: 0;
+}
+
+.sh-trial-actions,
+.sh-trial-actions__date {
+  display: grid;
+}
+
+.sh-trial-actions__date label {
+  color: var(--color-text-secondary);
+  display: grid;
+  font-size: 0.8125rem;
+  gap: var(--space-1);
+}
+
+.sh-trial-actions__date input {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  color: var(--color-text);
+  font: inherit;
+  padding: var(--space-2);
+}
+
+.sh-trial-actions [role="alert"] {
+  color: var(--color-danger);
+}
+
 @media (max-width: 64rem) {
   .sh-skill-detail__layout {
     grid-template-columns: minmax(8rem, 0.6fr) minmax(20rem, 2fr);

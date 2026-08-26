@@ -270,6 +270,17 @@
     }
   },
   "skillDetail": {
+    "lifecycle": {
+      "active": "Managed",
+      "archived": "Archived",
+      "description": {
+        "active": "This Skill is part of the managed library.",
+        "archived": "This Skill is retained but no longer active.",
+        "trial": "This Skill has a review date for a later keep-or-remove decision."
+      },
+      "reviewDue": "Review on {{date}}",
+      "trial": "Trial"
+    },
     "metadata": {
       "alias": "Alias",
       "confirmRetranslate": "Replace translation",
@@ -322,6 +333,18 @@
       "deployments_other": "{{count}} deployments",
       "label": "Skill status",
       "versionLabel": "Current version"
+    },
+    "trial": {
+      "abandon": "Abandon trial",
+      "abandonError": "The removal workflow could not be opened.",
+      "convert": "Add to managed library",
+      "converted": "Trial date removed; this Skill remains managed.",
+      "extend": "Extend trial",
+      "reviewDate": "Review date",
+      "saveDate": "Save review date",
+      "saveError": "Could not save the trial date.",
+      "saved": "Review date saved as {{date}}.",
+      "set": "Set trial review"
     }
   },
   "navigation": {
