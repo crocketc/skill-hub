@@ -53,6 +53,7 @@ Markdown 工作区嵌入 Skill 详情的“说明”章节，位于描述和译�
 
 - `listMarkdownFiles(skillId)`：列出 Skill 内可查看的 Markdown 文件。
 - `readMarkdownFile(skillId, path)`：读取内容、可编辑性、只读原因和内容身份。
+- `resolveLocalAsset(skillId, markdownPath, assetPath)`：在 Skill 根目录约束内解析本地图片，返回受控资源地址。
 - `saveDraft(skillId, path, markdown)`：保存本机草稿，不建立版本。
 - `discardDraft(skillId, path)`：丢弃本机草稿。
 - `validateMarkdown(skillId, path, markdown)`：返回 Frontmatter、格式和引用问题。
