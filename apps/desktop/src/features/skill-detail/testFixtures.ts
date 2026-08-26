@@ -257,7 +257,9 @@ export function createMockSkillDetailFacade(
       calls.intents.push(intent);
     },
     async getAdjacentContext() {
-      return options.adjacent ?? fixture.adjacent;
+      return "adjacent" in options
+        ? options.adjacent ?? { position: 1, total: 1 }
+        : fixture.adjacent;
     },
     async getInsights() {
       return insights;

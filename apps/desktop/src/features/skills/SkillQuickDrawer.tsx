@@ -14,6 +14,7 @@ import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
 import { Button } from "../../ui/Button";
 import { Drawer } from "../../ui/Drawer";
+import type { SkillLibraryReturnState } from "../skill-detail/detailContext";
 import {
   DEFAULT_DRAWER_PREFERENCES,
   type BatchAction,
@@ -35,7 +36,9 @@ import {
 } from "./drawerModules";
 
 export interface SkillQuickDrawerProps {
+  detailSearch?: string;
   facade: SkillLibraryFacade;
+  libraryReturn?: SkillLibraryReturnState;
   onOpenChange: (open: boolean) => void;
   onPreferencesChange: (preferences: SkillDrawerPreferences) => void;
   open: boolean;
@@ -392,7 +395,9 @@ function viewportWidth() {
 }
 
 export function SkillQuickDrawer({
+  detailSearch = "",
   facade,
+  libraryReturn,
   onOpenChange,
   onPreferencesChange,
   open,
@@ -720,7 +725,11 @@ export function SkillQuickDrawer({
 
         {view && skillId ? (
           <footer className="sh-skill-drawer__footer">
-            <Link className="sh-button sh-button--secondary sh-button--sm" to={`/library/${skillId}`}>
+            <Link
+              className="sh-button sh-button--secondary sh-button--sm"
+              state={libraryReturn ? { libraryReturn } : undefined}
+              to={{ pathname: `/library/${skillId}`, search: detailSearch }}
+            >
               {t("skillLibrary.drawer.fullDetails")}
             </Link>
           </footer>

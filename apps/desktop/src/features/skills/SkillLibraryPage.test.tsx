@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   createMemoryRouter,
   RouterProvider,
+  type InitialEntry,
 } from "react-router-dom";
 import { I18nextProvider } from "react-i18next";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -24,7 +25,7 @@ import {
 
 interface RenderLibraryOptions {
   facade: SkillLibraryFacade;
-  initialEntry?: string;
+  initialEntry?: InitialEntry;
   queryRetry?: boolean | number;
 }
 
@@ -145,6 +146,40 @@ describe("SkillLibraryPage", () => {
     });
     expect(region.scrollTop).toBe(128);
     expect(region.scrollLeft).toBe(96);
+  });
+
+  it("restores the table position supplied by a returning detail page", async () => {
+    const facade = createMockSkillLibraryFacade();
+    const view = renderLibrary({
+      facade,
+      initialEntry: {
+        pathname: "/library",
+        search: "?q=pdf",
+        state: {
+          libraryReturn: {
+            focusSkillId: "skill-pdf",
+            scrollLeft: 32,
+            scrollTop: 320,
+          },
+        },
+      },
+    });
+
+    expect(view.router.state.location.state).toEqual({
+      libraryReturn: {
+        focusSkillId: "skill-pdf",
+        scrollLeft: 32,
+        scrollTop: 320,
+      },
+    });
+
+    await screen.findByRole("row", { name: /PDF Reader/ });
+    const region = screen.getByRole("region", { name: "Skill results" });
+    await waitFor(() => {
+      expect(region.scrollLeft).toBe(32);
+      expect(region.scrollTop).toBe(320);
+      expect(screen.getByRole("row", { name: /PDF Reader/ })).toHaveFocus();
+    });
   });
 
   it("clears all-filtered selection when filters change", async () => {

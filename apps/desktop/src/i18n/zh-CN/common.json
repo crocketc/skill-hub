@@ -269,6 +269,38 @@
       "updateAvailable": "有可用更新"
     }
   },
+  "skillDetail": {
+    "navigation": {
+      "back": "返回 Skill 库",
+      "next": "下一个 Skill",
+      "position": "第 {{position}} 个，共 {{total}} 个",
+      "previous": "上一个 Skill",
+      "sectionsLabel": "详情章节",
+      "sections": {
+        "connections": "相关 Skill",
+        "description": "说明",
+        "external": "外部变更",
+        "metadata": "身份与来源",
+        "overview": "概览",
+        "relations": "部署关系",
+        "requirements": "运行要求",
+        "security": "安全检查",
+        "versions": "版本历史"
+      }
+    },
+    "states": {
+      "error": "无法加载 Skill 详情",
+      "loading": "正在加载 Skill 详情"
+    },
+    "statusRail": {
+      "basicOther": "基础检查：{{state}}",
+      "basicPassed": "基础检查已通过",
+      "deploymentLabel": "部署",
+      "deployments": "{{count}} 个部署",
+      "label": "Skill 状态",
+      "versionLabel": "当前版本"
+    }
+  },
   "navigation": {
     "agents": "Agent",
     "discovery": "发现",

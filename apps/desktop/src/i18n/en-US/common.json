@@ -269,6 +269,39 @@
       "updateAvailable": "Update available"
     }
   },
+  "skillDetail": {
+    "navigation": {
+      "back": "Back to Skill library",
+      "next": "Next Skill",
+      "position": "{{position}} of {{total}}",
+      "previous": "Previous Skill",
+      "sectionsLabel": "Detail sections",
+      "sections": {
+        "connections": "Related Skills",
+        "description": "Description",
+        "external": "External changes",
+        "metadata": "Identity and source",
+        "overview": "Overview",
+        "relations": "Relations",
+        "requirements": "Requirements",
+        "security": "Security checks",
+        "versions": "Version history"
+      }
+    },
+    "states": {
+      "error": "Unable to load Skill details",
+      "loading": "Loading Skill details"
+    },
+    "statusRail": {
+      "basicOther": "Basic check: {{state}}",
+      "basicPassed": "Basic check passed",
+      "deploymentLabel": "Deployment",
+      "deployments_one": "{{count}} deployment",
+      "deployments_other": "{{count}} deployments",
+      "label": "Skill status",
+      "versionLabel": "Current version"
+    }
+  },
   "navigation": {
     "agents": "Agents",
     "discovery": "Discover",

@@ -1,4 +1,4 @@
-import { useMemo, useState, type ChangeEvent, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
+import { useLayoutEffect, useMemo, useRef, useState, type ChangeEvent, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
 import { flexRender, getCoreRowModel, useReactTable, type ColumnDef } from "@tanstack/react-table";
 import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
@@ -25,6 +25,7 @@ export interface SkillTableProps {
   page: SkillPage;
   preferences: SkillTablePreferences;
   query: SkillLibraryQuery;
+  returnPosition?: { focusSkillId: string; left: number; top: number };
   selection: SkillSelection;
 }
 
@@ -203,6 +204,8 @@ function isSelected(selection: SkillSelection, skillId: string) {
 
 export function SkillTable(props: SkillTableProps) {
   const { t } = useTranslation();
+  const regionRef = useRef<HTMLDivElement>(null);
+  const restoredKeyRef = useRef<string>();
   const [controlsOpen, setControlsOpen] = useState(false);
   const columnOrder = orderedColumnIds(props.preferences);
   const visibleColumns = new Set([...LOCKED_COLUMNS, ...props.preferences.visibleColumns]);
@@ -235,6 +238,20 @@ export function SkillTable(props: SkillTableProps) {
       sorting: [{ desc: props.query.sort.direction === "desc", id: props.query.sort.column }],
     },
   });
+
+  useLayoutEffect(() => {
+    const position = props.returnPosition;
+    const region = regionRef.current;
+    if (!position || !region) return;
+    const key = `${position.focusSkillId}:${position.left}:${position.top}`;
+    if (restoredKeyRef.current === key) return;
+    restoredKeyRef.current = key;
+    const row = [...region.querySelectorAll<HTMLElement>("[data-skill-id]")]
+      .find((element) => element.dataset.skillId === position.focusSkillId);
+    (row ?? region).focus({ preventScroll: true });
+    region.scrollLeft = position.left;
+    region.scrollTop = position.top;
+  }, [props.page.items, props.returnPosition]);
 
   const updateQuery = (change: Partial<SkillLibraryQuery>) => props.onQueryChange({ ...props.query, ...change });
   const sortColumn = (column: SkillColumnId) => updateQuery({
@@ -288,7 +305,7 @@ export function SkillTable(props: SkillTableProps) {
           </div>
         ) : null}
       </div>
-      <div aria-label={t("skillLibrary.table.resultsRegion")} className="sh-skill-table__region" role="region" tabIndex={-1}>
+      <div aria-label={t("skillLibrary.table.resultsRegion")} className="sh-skill-table__region" ref={regionRef} role="region" tabIndex={-1}>
         <table className="sh-skill-table" data-density={props.preferences.density}>
           <thead>
             {table.getHeaderGroups().map((headerGroup) => <tr key={headerGroup.id}>{headerGroup.headers.map((header) => {
@@ -301,7 +318,7 @@ export function SkillTable(props: SkillTableProps) {
             })}</tr>)}
           </thead>
           <tbody>
-            {table.getRowModel().rows.map((row) => <tr key={row.id} onClick={(event) => props.onOpenSkill(row.original.id, event.currentTarget)} onKeyDown={(event) => { if (event.target === event.currentTarget && event.key === "Enter") { event.preventDefault(); props.onOpenSkill(row.original.id, event.currentTarget); } }} tabIndex={0}>
+            {table.getRowModel().rows.map((row) => <tr data-skill-id={row.original.id} key={row.id} onClick={(event) => props.onOpenSkill(row.original.id, event.currentTarget)} onKeyDown={(event) => { if (event.target === event.currentTarget && event.key === "Enter") { event.preventDefault(); props.onOpenSkill(row.original.id, event.currentTarget); } }} tabIndex={0}>
               {row.getVisibleCells().map((cell) => <td data-column={cell.column.id} key={cell.id}>{flexRender(cell.column.columnDef.cell, cell.getContext())}</td>)}
             </tr>)}
           </tbody>

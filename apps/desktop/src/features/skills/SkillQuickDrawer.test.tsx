@@ -21,6 +21,7 @@ import {
   reorderDrawerModule,
 } from "./drawerModules";
 import { SkillQuickDrawer } from "./SkillQuickDrawer";
+import type { SkillLibraryReturnState } from "../skill-detail/detailContext";
 
 const QUICK_VIEW: SkillQuickView = {
   aiCheck: "unavailable",
@@ -144,14 +145,18 @@ function createMockSkillLibraryFacade(options: MockOptions = {}): MockFacade {
 }
 
 interface DrawerHarnessProps {
+  detailSearch?: string;
   facade: SkillLibraryFacade;
+  libraryReturn?: SkillLibraryReturnState;
   open?: boolean;
   preferences?: SkillDrawerPreferences;
   skillId?: string;
 }
 
 function DrawerHarness({
+  detailSearch,
   facade,
+  libraryReturn,
   open = true,
   preferences = DEFAULT_DRAWER_PREFERENCES,
   skillId = "skill-pdf",
@@ -166,7 +171,9 @@ function DrawerHarness({
         PDF Reader row
       </button>
       <SkillQuickDrawer
+        detailSearch={detailSearch}
         facade={facade}
+        libraryReturn={libraryReturn}
         onOpenChange={() => undefined}
         onPreferencesChange={setControlledPreferences}
         open={open}
@@ -179,10 +186,12 @@ function DrawerHarness({
 }
 
 interface RenderDrawerOptions extends DrawerHarnessProps {
+  initialEntry?: string;
   viewportWidth?: number;
 }
 
 async function renderDrawer({
+  initialEntry = "/library",
   viewportWidth = 1200,
   ...props
 }: RenderDrawerOptions) {
@@ -197,7 +206,7 @@ async function renderDrawer({
   render(
     <QueryClientProvider client={client}>
       <I18nextProvider i18n={i18n}>
-        <MemoryRouter>
+        <MemoryRouter initialEntries={[initialEntry]}>
           <DrawerHarness {...props} />
         </MemoryRouter>
       </I18nextProvider>
@@ -488,6 +497,19 @@ it("resets defaults, keeps modules independently scrollable, and links to full d
   expect(screen.getByRole("link", { name: "View full details" })).toHaveAttribute(
     "href",
     "/library/skill-pdf",
+  );
+});
+
+it("carries the library query and return position into full details", async () => {
+  const facade = createMockSkillLibraryFacade();
+  await renderDrawer({
+    detailSearch: "?q=pdf&sort=version%3Adesc",
+    facade,
+    libraryReturn: { focusSkillId: "skill-pdf", scrollLeft: 24, scrollTop: 416 },
+  });
+  expect(await screen.findByRole("link", { name: "View full details" })).toHaveAttribute(
+    "href",
+    "/library/skill-pdf?q=pdf&sort=version%3Adesc",
   );
 });
 

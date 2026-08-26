@@ -11,9 +11,13 @@ import {
   type Ref,
 } from "react";
 import { useTranslation } from "react-i18next";
-import { useSearchParams } from "react-router-dom";
+import { useLocation, useSearchParams } from "react-router-dom";
 import { Button } from "../../ui/Button";
 import { DataState } from "../../ui/DataState";
+import {
+  detailSearchFromLibrary,
+  readLibraryReturnState,
+} from "../skill-detail/detailContext";
 import {
   BUILT_IN_SAVED_VIEWS,
   DEFAULT_DRAWER_PREFERENCES,
@@ -283,7 +287,9 @@ function BatchBar({
 export function SkillLibraryPage({ facade }: SkillLibraryPageProps): JSX.Element {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
+  const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
+  const libraryReturnState = readLibraryReturnState(location.state);
   const search = searchParams.toString();
   const parsed = useMemo(() => parseSkillLibrarySearchParams(search), [search]);
   const { query, skillId } = parsed;
@@ -730,6 +736,15 @@ export function SkillLibraryPage({ facade }: SkillLibraryPageProps): JSX.Element
             page={page}
             preferences={effectiveTablePreferences}
             query={query}
+            returnPosition={
+              libraryReturnState
+                ? {
+                    focusSkillId: libraryReturnState.focusSkillId,
+                    left: libraryReturnState.scrollLeft,
+                    top: libraryReturnState.scrollTop,
+                  }
+                : undefined
+            }
             selection={selection}
           />
         </>
@@ -757,7 +772,17 @@ export function SkillLibraryPage({ facade }: SkillLibraryPageProps): JSX.Element
       ) : null}
 
       <SkillQuickDrawer
+        detailSearch={detailSearchFromLibrary(location.search)}
         facade={drawerFacade}
+        libraryReturn={
+          skillId
+            ? {
+                focusSkillId: skillId,
+                scrollLeft: scrollPositionRef.current?.left ?? 0,
+                scrollTop: scrollPositionRef.current?.top ?? 0,
+              }
+            : undefined
+        }
         onOpenChange={(open) => {
           if (!open) closeDrawer();
         }}
