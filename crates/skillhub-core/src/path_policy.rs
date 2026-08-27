@@ -180,10 +180,10 @@ fn validate_child(path: &Path) -> AppResult<()> {
                 return Err(path_error())
             }
             Component::CurDir => return Err(path_error()),
-            Component::Normal(name) => {
+            Component::Normal(_name) => {
                 #[cfg(windows)]
                 {
-                    let text = name.to_string_lossy();
+                    let text = _name.to_string_lossy();
                     if text.ends_with('.')
                         || text.ends_with(' ')
                         || text.contains(':')
