@@ -657,6 +657,20 @@ describe("SkillLibraryPage", () => {
     expect(screen.queryByText("Unsaved changes")).not.toBeInTheDocument();
   });
 
+  it("deletes custom saved views while keeping built-in views available", async () => {
+    const facade = createMockSkillLibraryFacade();
+    renderLibrary({ facade });
+
+    await screen.findByRole("button", { name: "Document tools" });
+    expect(screen.queryByRole("button", { name: "Delete Active" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Delete Document tools" }));
+
+    await waitFor(() => {
+      expect(screen.queryByRole("button", { name: "Document tools" })).not.toBeInTheDocument();
+      expect(facade.calls.deleteView).toEqual(["documents"]);
+    });
+  });
+
   it("keeps the built-in attention view clean immediately after applying it", async () => {
     const facade = createMockSkillLibraryFacade();
     renderLibrary({ facade });

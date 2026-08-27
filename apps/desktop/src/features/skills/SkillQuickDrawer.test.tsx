@@ -64,6 +64,7 @@ interface MockOptions {
 
 interface MockFacade extends SkillLibraryFacade {
   calls: {
+    deleteView: string[];
     emitBatchIntent: SkillBatchIntent[];
     getSkillQuickView: string[];
     saveDrawerPreferences: SkillDrawerPreferences[];
@@ -82,6 +83,7 @@ function clonePreferences(
 
 function createMockSkillLibraryFacade(options: MockOptions = {}): MockFacade {
   const calls: MockFacade["calls"] = {
+    deleteView: [],
     emitBatchIntent: [],
     getSkillQuickView: [],
     saveDrawerPreferences: [],
@@ -109,6 +111,9 @@ function createMockSkillLibraryFacade(options: MockOptions = {}): MockFacade {
     },
     async listSavedViews() {
       return [];
+    },
+    async deleteView() {
+      return undefined;
     },
     async listSkills() {
       return { facets: { tags: [] }, items: [], page: 1, pageSize: 25, total: 0 };

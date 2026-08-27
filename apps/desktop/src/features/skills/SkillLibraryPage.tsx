@@ -321,6 +321,7 @@ export function SkillLibraryPage({ facade }: SkillLibraryPageProps): JSX.Element
   const [saveViewName, setSaveViewName] = useState("");
   const [saveViewError, setSaveViewError] = useState<string>();
   const [saveViewPending, setSaveViewPending] = useState(false);
+  const [savedViewDeleteError, setSavedViewDeleteError] = useState<string>();
   const defaultPageRetry = queryClient.getDefaultOptions().queries?.retry;
 
   const clearBatchAnnouncement = () => {
@@ -488,6 +489,25 @@ export function SkillLibraryPage({ facade }: SkillLibraryPageProps): JSX.Element
     const applied = applySavedView(query, view);
     setTablePreferences(applied.table);
     updateQuery(applied.query);
+  };
+
+  const deleteSavedView = (view: SavedSkillView) => {
+    setSavedViewDeleteError(undefined);
+    void facade.deleteView(view.id).then(
+      () => {
+        queryClient.setQueryData<SavedSkillView[]>(
+          skillLibraryKeys.savedViews(),
+          (currentViews) => currentViews?.filter((current) => current.id !== view.id),
+        );
+        if (query.savedViewId === view.id) {
+          writeQuery({ ...query, savedViewId: undefined }, skillId);
+        }
+        return queryClient.invalidateQueries({
+          queryKey: skillLibraryKeys.savedViews(),
+        });
+      },
+      () => setSavedViewDeleteError(t("skillLibrary.savedViews.deleteError")),
+    );
   };
 
   const persistTablePreferences = (next: SkillTablePreferences) => {
@@ -695,10 +715,12 @@ export function SkillLibraryPage({ facade }: SkillLibraryPageProps): JSX.Element
       ref={rootRef}
     >
       <div className="sh-skill-library__saved-views">
+        {savedViewDeleteError ? <p role="alert">{savedViewDeleteError}</p> : null}
         <SavedViews
           activeViewId={query.savedViewId}
           dirty={savedViewIsDirty(activeSavedView, query, effectiveTablePreferences)}
           onApply={applyView}
+          onDelete={deleteSavedView}
           onSave={() => {
             setSaveViewError(undefined);
             setSaveViewOpen(true);

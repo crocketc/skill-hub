@@ -468,6 +468,8 @@
         "attention": "Needs attention",
         "updates": "Updates"
       },
+      "delete": "Delete {{name}}",
+      "deleteError": "The view could not be deleted.",
       "more": "More views",
       "save": "Save current view",
       "unsaved": "Unsaved changes"

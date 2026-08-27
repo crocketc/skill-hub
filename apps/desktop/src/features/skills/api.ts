@@ -132,6 +132,7 @@ export interface SkillLibraryFacade {
   retainMatchingSkillIds(skillIds: string[], query: SkillLibraryQuery): Promise<string[]>;
   saveDrawerPreferences(preferences: SkillDrawerPreferences): Promise<void>;
   saveTablePreferences(preferences: SkillTablePreferences): Promise<void>;
+  deleteView(viewId: string): Promise<void>;
   saveView(view: Omit<SavedSkillView, "builtIn" | "id">): Promise<SavedSkillView>;
 }
 
@@ -295,5 +296,6 @@ export const unavailableSkillLibraryFacade: SkillLibraryFacade = {
   retainMatchingSkillIds: async () => EMPTY_SKILL_IDS,
   saveDrawerPreferences: unavailable,
   saveTablePreferences: unavailable,
+  deleteView: unavailable,
   saveView: unavailable,
 };

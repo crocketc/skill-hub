@@ -468,6 +468,8 @@
         "attention": "需要处理",
         "updates": "可更新"
       },
+      "delete": "删除{{name}}",
+      "deleteError": "视图删除失败。",
       "more": "更多视图",
       "save": "保存当前视图",
       "unsaved": "未保存更改"

@@ -23,6 +23,7 @@ export interface MockSkillLibraryOptions {
 export interface MockSkillLibraryFacade extends SkillLibraryFacade {
   calls: {
     emitBatchIntent: SkillBatchIntent[];
+    deleteView: string[];
     listSkills: SkillLibraryQuery[];
     saveDrawerPreferences: SkillDrawerPreferences[];
     saveTablePreferences: SkillTablePreferences[];
@@ -153,6 +154,7 @@ export function createMockSkillLibraryFacade(
   options: MockSkillLibraryOptions = {},
 ): MockSkillLibraryFacade {
   const calls: MockSkillLibraryFacade["calls"] = {
+    deleteView: [],
     emitBatchIntent: [],
     listSkills: [],
     saveDrawerPreferences: [],
@@ -176,6 +178,10 @@ export function createMockSkillLibraryFacade(
     },
     async listSavedViews() {
       return clone(savedViews);
+    },
+    async deleteView(viewId) {
+      calls.deleteView.push(viewId);
+      savedViews = savedViews.filter((view) => view.id !== viewId);
     },
     async listSkills(query) {
       calls.listSkills.push(clone(query));
