@@ -20,7 +20,7 @@
     "@tauri-apps/api": "^2.8.0",
     "@uiw/react-codemirror": "^4.25.11",
     "dompurify": "^3.4.14",
-    "echarts": "5.6.0",
+    "echarts": "6.1.0",
     "i18next": "^26.4.0",
     "mermaid": "^11.17.2",
     "motion": "^13.1.1",
