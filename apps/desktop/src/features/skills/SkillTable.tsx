@@ -280,7 +280,7 @@ export function SkillTable(props: SkillTableProps) {
   const moveColumnToIndex = (column: SkillColumnId, targetIndex: number) => {
     const next = [...columnOrder];
     const index = next.indexOf(column);
-    if (index < LOCKED_COLUMNS.length || targetIndex < LOCKED_COLUMNS.length || targetIndex >= next.length) return;
+    if (index < LOCKED_COLUMNS.length || targetIndex < LOCKED_COLUMNS.length || targetIndex > next.length) return;
     next.splice(index, 1);
     next.splice(targetIndex, 0, column);
     props.onPreferencesChange({ ...props.preferences, columnOrder: next });
@@ -289,8 +289,7 @@ export function SkillTable(props: SkillTableProps) {
     if (column === before || LOCKED_COLUMNS.includes(column) || LOCKED_COLUMNS.includes(before)) return;
     const target = columnOrder.indexOf(before);
     if (target < LOCKED_COLUMNS.length) return;
-    const nextTarget = columnOrder.indexOf(column) < target ? target - 1 : target;
-    moveColumnToIndex(column, nextTarget);
+    moveColumnToIndex(column, target);
   };
   const moveColumnByOffset = (column: SkillColumnId, offset: -1 | 1) => {
     const index = columnOrder.indexOf(column);

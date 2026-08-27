@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { type CheckState, type SkillLibraryQuery, type SkillLifecycle } from "./api";
 
@@ -44,12 +44,23 @@ interface MultiSelectMenuProps {
 
 function MultiSelectMenu({ label, onChange, options, selected, summary }: MultiSelectMenuProps) {
   const [open, setOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const closeOnOutsidePointer = (event: PointerEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener("pointerdown", closeOnOutsidePointer);
+    return () => document.removeEventListener("pointerdown", closeOnOutsidePointer);
+  }, [open]);
   const toggle = (value: string, checked: boolean) => {
     onChange(checked ? [...selected, value] : selected.filter((item) => item !== value));
   };
 
   return (
-    <div className="sh-filter-dropdown">
+    <div className="sh-filter-dropdown" ref={dropdownRef}>
       <span className="sh-filter-dropdown__label">{label}</span>
       <button
         aria-label={label}

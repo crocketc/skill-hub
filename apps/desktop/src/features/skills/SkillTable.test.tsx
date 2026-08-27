@@ -140,6 +140,21 @@ it("does not allow the select or name columns to be hidden", async () => {
   expect(next.columnOrder.indexOf("version")).toBeLessThan(next.columnOrder.indexOf("deployments"));
 });
 
+it("moves an adjacent column when dragging from left to right", async () => {
+  const onPreferencesChange = vi.fn();
+  await renderTable({ onPreferencesChange });
+
+  fireEvent.click(screen.getByRole("button", { name: "Columns and density" }));
+  const deploymentsColumn = screen.getByRole("listitem", { name: "Deployments" });
+  const versionColumn = screen.getByRole("listitem", { name: "Version" });
+  fireEvent.dragStart(deploymentsColumn);
+  fireEvent.dragOver(versionColumn);
+  fireEvent.drop(versionColumn);
+
+  const next = onPreferencesChange.mock.calls.at(-1)?.[0];
+  expect(next.columnOrder.indexOf("deployments")).toBeGreaterThan(next.columnOrder.indexOf("version"));
+});
+
 it("offers all supported page sizes and reports the current page range", async () => {
   await renderTable();
 

@@ -1590,7 +1590,9 @@ a {
 
 .sh-skill-table__controls {
   display: grid;
-  width: min(40rem, 100%);
+  flex: 1 0 100%;
+  width: 100%;
+  max-width: none;
   gap: var(--space-3);
   padding: var(--space-3);
   border: 1px solid var(--color-border);
@@ -1606,6 +1608,13 @@ a {
   padding: 0;
   margin: 0;
   border: 0;
+  font-size: var(--font-size-md);
+}
+
+.sh-skill-table__controls legend {
+  margin-bottom: var(--space-1);
+  font-size: var(--font-size-md);
+  font-weight: 700;
 }
 
 .sh-skill-table__controls label,
@@ -1626,12 +1635,12 @@ a {
 
 .sh-skill-table__reorder-item {
   display: flex;
-  min-width: 7rem;
-  min-height: 2.5rem;
+  min-width: 5.5rem;
+  min-height: 2rem;
   align-items: center;
   justify-content: center;
   gap: var(--space-1);
-  padding: var(--space-2) var(--space-3);
+  padding: var(--space-1) var(--space-2);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
   background: var(--color-surface-raised);
@@ -1639,6 +1648,7 @@ a {
   cursor: grab;
   user-select: none;
   white-space: nowrap;
+  font-size: var(--font-size-xs);
 }
 
 .sh-skill-table__reorder-item:active {

@@ -108,6 +108,16 @@ it("keeps multi-value filters inside a compact dropdown menu", async () => {
   expect(screen.queryByRole("listbox", { name: "Tags" })).not.toBeInTheDocument();
 });
 
+it("closes an open multi-value filter when focus moves outside the menu", async () => {
+  await renderSkillFilters();
+  fireEvent.click(screen.getByRole("button", { name: "Tags" }));
+  expect(screen.getByRole("menu", { name: "Tags" })).toBeVisible();
+
+  fireEvent.pointerDown(document.body);
+
+  expect(screen.queryByRole("menu", { name: "Tags" })).not.toBeInTheDocument();
+});
+
 it("delegates clearing to controlled state while preserving page size", async () => {
   const i18n = await createSkillHubI18n(["en-US"]);
   render(
