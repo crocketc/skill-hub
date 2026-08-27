@@ -965,7 +965,9 @@ a {
 
 .sh-skill-detail {
   display: grid;
+  height: 100%;
   gap: var(--space-6);
+  min-height: 0;
   min-width: 0;
 }
 
@@ -1023,8 +1025,22 @@ a {
 .sh-skill-detail__layout {
   align-items: start;
   display: grid;
+  height: 100%;
   gap: var(--space-5);
   grid-template-columns: minmax(11rem, 13rem) minmax(0, 1fr);
+  min-height: 0;
+}
+
+.sh-skill-detail__rail {
+  position: sticky;
+  top: 0;
+  display: grid;
+  max-height: 100%;
+  min-height: 0;
+  align-content: start;
+  gap: var(--space-5);
+  overflow-y: auto;
+  scrollbar-gutter: stable;
 }
 
 .sh-skill-detail__section-nav {
@@ -1054,8 +1070,14 @@ a {
 
 .sh-skill-detail__content {
   display: grid;
+  height: 100%;
   gap: var(--space-4);
   min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: var(--space-1);
+  scrollbar-gutter: stable;
 }
 
 .sh-skill-detail__section {
@@ -1352,8 +1374,25 @@ a {
 }
 
 @media (max-width: 44rem) {
+  .sh-skill-detail {
+    height: auto;
+  }
+
   .sh-skill-detail__layout {
+    height: auto;
     grid-template-columns: 1fr;
+  }
+
+  .sh-skill-detail__rail {
+    position: static;
+    max-height: none;
+    overflow: visible;
+  }
+
+  .sh-skill-detail__content {
+    height: auto;
+    overflow: visible;
+    padding-right: 0;
   }
 
   .sh-skill-detail__status-summary {

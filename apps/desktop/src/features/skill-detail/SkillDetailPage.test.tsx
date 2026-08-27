@@ -9,6 +9,8 @@ import {
 } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createSkillHubI18n } from "../../i18n";
+import "../../styles/base.css";
+import baseCss from "../../styles/base.css?raw";
 import type { SkillDetailFacade } from "./api";
 import type { MarkdownFacade } from "../markdown/api";
 import { createMockMarkdownFacade } from "../markdown/testFixtures";
@@ -147,6 +149,21 @@ describe("SkillDetailPage shell", () => {
     expect(screen.getByText("2 deployments")).toBeVisible();
     expect(screen.getByRole("group", { name: "Skill status" })).toBeVisible();
     expect(screen.queryByRole("complementary", { name: "Skill status" })).not.toBeInTheDocument();
+  });
+
+  it("keeps the detail rail fixed while the content column scrolls", async () => {
+    await renderDetail();
+    await screen.findByRole("navigation", { name: "Detail sections" });
+
+    const rail = document.querySelector(".sh-skill-detail__rail");
+    const content = document.querySelector(".sh-skill-detail__content");
+    expect(rail).toBeInTheDocument();
+    expect(rail).toContainElement(screen.getByRole("navigation", { name: "Detail sections" }));
+    expect(rail?.querySelector(".sh-skill-detail__header")).toBeInTheDocument();
+    expect(content).toBeInTheDocument();
+
+    expect(baseCss).toMatch(/\.sh-skill-detail\s*\{[\s\S]*height:\s*100%/);
+    expect(baseCss).toMatch(/\.sh-skill-detail__content\s*\{[\s\S]*overflow-y:\s*auto/);
   });
 
   it("highlights the section selected from the detail navigation", async () => {

@@ -95,9 +95,11 @@ export function SkillDetailPage({
 
   return (
     <section className="sh-skill-detail">
-      <DetailHeader adjacent={adjacentQuery.data} backSearch={backSearch} summary={summaryQuery.data} />
       <div className="sh-skill-detail__layout">
-        <DetailSectionNav />
+        <aside className="sh-skill-detail__rail">
+          <DetailHeader adjacent={adjacentQuery.data} backSearch={backSearch} summary={summaryQuery.data} />
+          <DetailSectionNav />
+        </aside>
         <main className="sh-skill-detail__content">
           {DETAIL_SECTIONS.map((section) => (
             <section className="sh-skill-detail__section" id={section} key={section}>
