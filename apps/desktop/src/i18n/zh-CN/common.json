@@ -15,6 +15,20 @@
       "open": "打开链接",
       "title": "打开外部链接？"
     },
+    "editor": {
+      "conflict": "文件已在 SkillHub 外发生变化，本机草稿已保留。",
+      "draftError": "无法保存本机草稿。",
+      "draftSaved": "草稿已保存到本机",
+      "draftSaving": "正在保存本机草稿",
+      "issues": "保存问题",
+      "preview": "实时预览",
+      "save": "保存并创建版本",
+      "saveError": "无法保存，本机草稿仍然保留。",
+      "saveWarnings": "忽略警告并保存",
+      "source": "源码编辑器",
+      "sourceLabel": "Markdown 源码",
+      "versionCreated": "已创建版本 {{version}}"
+    },
     "frontmatter": "YAML Frontmatter",
     "mermaid": {
       "diagram": "图表",

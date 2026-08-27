@@ -15,6 +15,20 @@
       "open": "Open link",
       "title": "Open external link?"
     },
+    "editor": {
+      "conflict": "The file changed outside SkillHub. Your local draft was preserved.",
+      "draftError": "Could not save the local draft.",
+      "draftSaved": "Draft saved locally",
+      "draftSaving": "Saving local draft",
+      "issues": "Save issues",
+      "preview": "Live preview",
+      "save": "Save and create version",
+      "saveError": "Could not save; your local draft is still available.",
+      "saveWarnings": "Save despite warnings",
+      "source": "Source editor",
+      "sourceLabel": "Markdown source",
+      "versionCreated": "Version {{version}} created"
+    },
     "frontmatter": "YAML Frontmatter",
     "mermaid": {
       "diagram": "Diagram",
