@@ -742,10 +742,13 @@
     "agents": "Agents",
     "discovery": "Discover",
     "library": "Skill library",
-    "operations": "Operations and recovery",
+    "collapse": "Collapse navigation",
+    "expand": "Expand navigation",
+    "operations": "Operations",
     "overview": "Overview",
     "pending": "Pending",
     "projects": "Projects",
+    "recovery": "Recovery",
     "settings": "Settings"
   },
   "overview": {

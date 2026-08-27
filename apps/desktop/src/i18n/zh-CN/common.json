@@ -742,10 +742,13 @@
     "agents": "Agent",
     "discovery": "发现",
     "library": "技能库",
-    "operations": "操作记录与恢复",
+    "collapse": "收起导航",
+    "expand": "展开导航",
+    "operations": "操作记录",
     "overview": "概览",
     "pending": "待处理",
     "projects": "项目",
+    "recovery": "恢复",
     "settings": "设置"
   },
   "overview": {
