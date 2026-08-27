@@ -1564,14 +1564,17 @@ a {
 }
 
 .sh-skill-library__query-tools.is-collapsed {
-  min-height: 1.5rem;
+  min-height: 1.25rem;
+  padding-block: 0;
+  margin-top: calc(-1 * var(--space-2));
 }
 
 .sh-skill-library__query-tools.is-collapsed .sh-skill-library__query-toggle {
   right: auto;
-  bottom: 0;
+  top: 0;
+  bottom: auto;
   left: 50%;
-  transform: translate(-50%, 50%);
+  transform: translate(-50%, 0);
 }
 
 .sh-skill-library__query-tools label,

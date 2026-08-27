@@ -260,3 +260,20 @@ it("overrides the generic filter button minimum height for the toggle rail", () 
   const overrideBlock = baseCss.slice(overrideStart, overrideEnd);
   expect(overrideBlock).toMatch(/min-height:\s*0/);
 });
+
+it("anchors the collapsed filter toggle directly below the preset views", () => {
+  const collapsedStart = baseCss.indexOf(".sh-skill-library__query-tools.is-collapsed {");
+  const collapsedEnd = baseCss.indexOf("}", collapsedStart);
+  const collapsedBlock = baseCss.slice(collapsedStart, collapsedEnd);
+  expect(collapsedBlock).toMatch(/min-height:\s*1\.25rem/);
+  expect(collapsedBlock).toMatch(/margin-top:\s*calc\(-1 \* var\(--space-2\)\)/);
+
+  const toggleStart = baseCss.indexOf(
+    ".sh-skill-library__query-tools.is-collapsed .sh-skill-library__query-toggle",
+  );
+  const toggleEnd = baseCss.indexOf("}", toggleStart);
+  const toggleBlock = baseCss.slice(toggleStart, toggleEnd);
+  expect(toggleBlock).toMatch(/top:\s*0/);
+  expect(toggleBlock).toMatch(/bottom:\s*auto/);
+  expect(toggleBlock).toMatch(/transform:\s*translate\(-50%,\s*0\)/);
+});
