@@ -1,8 +1,14 @@
 import { QueryClientProvider } from "@tanstack/react-query";
 import { MotionConfig } from "motion/react";
 import { I18nextProvider } from "react-i18next";
-import { createBrowserRouter, RouterProvider, useNavigate } from "react-router-dom";
+import { createBrowserRouter, RouterProvider, useNavigate, useParams } from "react-router-dom";
 import { OnboardingWizard } from "../features/onboarding/OnboardingWizard";
+import { AgentDetailPage } from "../features/agents/AgentDetailPage";
+import { AgentListPage } from "../features/agents/AgentListPage";
+import { ProjectDetailPage } from "../features/projects/ProjectDetailPage";
+import { ProjectListPage } from "../features/projects/ProjectListPage";
+import { unavailableAgentFacade } from "../features/agents/api";
+import { unavailableProjectFacade } from "../features/projects/api";
 import { DiscoveryPage } from "../features/discovery/DiscoveryPage";
 import { OverviewPage } from "../features/overview/OverviewPage";
 import { SkillLibraryPage } from "../features/skills/SkillLibraryPage";
@@ -27,6 +33,16 @@ function OnboardingRoute() {
   return <OnboardingWizard onComplete={() => navigate("/", { replace: true })} />;
 }
 
+function AgentDetailRoute() {
+  const { agentKey } = useParams();
+  return <AgentDetailPage agentId={agentKey} facade={unavailableAgentFacade} />;
+}
+
+function ProjectDetailRoute() {
+  const { projectKey } = useParams();
+  return <ProjectDetailPage facade={unavailableProjectFacade} projectId={projectKey} />;
+}
+
 export const appRouter = createBrowserRouter([
   {
     element: <DesktopApp />,
@@ -42,10 +58,10 @@ export const appRouter = createBrowserRouter([
         element: <SkillDetailPage facade={unavailableSkillDetailFacade} />,
       },
       { path: "discovery", element: <DiscoveryPage /> },
-      { path: "agents", element: <RoutePlaceholder titleKey="navigation.agents" /> },
-      { path: "agents/:agentKey", element: <RoutePlaceholder titleKey="navigation.agents" /> },
-      { path: "projects", element: <RoutePlaceholder titleKey="navigation.projects" /> },
-      { path: "projects/:projectKey", element: <RoutePlaceholder titleKey="navigation.projects" /> },
+      { path: "agents", element: <AgentListPage facade={unavailableAgentFacade} /> },
+      { path: "agents/:agentKey", element: <AgentDetailRoute /> },
+      { path: "projects", element: <ProjectListPage facade={unavailableProjectFacade} /> },
+      { path: "projects/:projectKey", element: <ProjectDetailRoute /> },
       { path: "pending", element: <RoutePlaceholder titleKey="navigation.pending" /> },
       { path: "operations", element: <RoutePlaceholder titleKey="navigation.operations" /> },
       { path: "settings", element: <RoutePlaceholder titleKey="navigation.settings" /> },
