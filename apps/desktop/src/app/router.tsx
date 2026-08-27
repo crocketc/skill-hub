@@ -3,6 +3,7 @@ import { MotionConfig } from "motion/react";
 import { I18nextProvider } from "react-i18next";
 import { createBrowserRouter, RouterProvider, useNavigate } from "react-router-dom";
 import { OnboardingWizard } from "../features/onboarding/OnboardingWizard";
+import { DiscoveryPage } from "../features/discovery/DiscoveryPage";
 import { OverviewPage } from "../features/overview/OverviewPage";
 import { SkillLibraryPage } from "../features/skills/SkillLibraryPage";
 import { SkillDetailPage } from "../features/skill-detail/SkillDetailPage";
@@ -40,7 +41,7 @@ export const appRouter = createBrowserRouter([
         path: "library/:skillId",
         element: <SkillDetailPage facade={unavailableSkillDetailFacade} />,
       },
-      { path: "discovery", element: <RoutePlaceholder titleKey="navigation.discovery" /> },
+      { path: "discovery", element: <DiscoveryPage /> },
       { path: "agents", element: <RoutePlaceholder titleKey="navigation.agents" /> },
       { path: "agents/:agentKey", element: <RoutePlaceholder titleKey="navigation.agents" /> },
       { path: "projects", element: <RoutePlaceholder titleKey="navigation.projects" /> },

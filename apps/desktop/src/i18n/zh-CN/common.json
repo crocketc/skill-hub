@@ -187,6 +187,28 @@
       }
     }
   },
+  "discovery": {
+    "eyebrow": "来源发现",
+    "title": "从可信来源查找 Skill",
+    "description": "先查看本地和在线来源事实，再进入安全导入流程。",
+    "scope": "只读发现",
+    "importSkill": "导入 Skill",
+    "importUnavailable": "导入能力尚未连接到本机服务，未修改任何文件，也未执行命令。",
+    "local": {
+      "eyebrow": "本机来源",
+      "title": "本地发现",
+      "description": "检查你选择的路径，在导入前先审阅候选项。",
+      "factPath": "只读取选定路径",
+      "factReadOnly": "发现不会移动或部署文件"
+    },
+    "online": {
+      "eyebrow": "远程来源",
+      "title": "在线发现",
+      "description": "未来将使用相同安全流程审阅远程仓库来源。",
+      "factNoNetwork": "此预览未启用网络访问",
+      "factPreview": "不会宣称或执行任何远程仓库"
+    }
+  },
   "appShell": {
     "cachedData": "技能库缓存",
     "navigation": "主导航",

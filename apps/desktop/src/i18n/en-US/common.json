@@ -187,6 +187,28 @@
       }
     }
   },
+  "discovery": {
+    "eyebrow": "Source discovery",
+    "title": "Find Skills from trusted sources",
+    "description": "Review local and online source facts before starting the safe import workflow.",
+    "scope": "Read-only discovery",
+    "importSkill": "Import Skill",
+    "importUnavailable": "Import capability is not connected to the native service yet. No files or commands were changed.",
+    "local": {
+      "eyebrow": "On this device",
+      "title": "Local discovery",
+      "description": "Inspect a path you choose and review its candidates before import.",
+      "factPath": "Reads only the selected path",
+      "factReadOnly": "Discovery does not move or deploy files"
+    },
+    "online": {
+      "eyebrow": "Remote sources",
+      "title": "Online discovery",
+      "description": "A future source boundary for reviewing remote repositories with the same safe flow.",
+      "factNoNetwork": "Network access is not enabled in this preview",
+      "factPreview": "No remote repository is claimed or executed"
+    }
+  },
   "appShell": {
     "cachedData": "Cached skill library",
     "navigation": "Main navigation",
