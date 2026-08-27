@@ -125,7 +125,15 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
           onClick={toggle}
           type="button"
         >
-          <span aria-hidden="true">{isCollapsed ? "→" : "←"}</span>
+          <svg aria-hidden="true" className="sh-sidebar__toggle-icon" fill="none" viewBox="0 0 24 24">
+            <path
+              d={isCollapsed ? "m9 6 6 6-6 6" : "m15 6-6 6 6 6"}
+              stroke="currentColor"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth="2.25"
+            />
+          </svg>
         </button>
       </div>
       <nav>

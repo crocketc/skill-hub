@@ -279,6 +279,7 @@ a {
 
 .sh-sidebar {
   position: sticky;
+  z-index: 3;
   top: 0;
   display: flex;
   height: 100dvh;
@@ -292,6 +293,7 @@ a {
 }
 
 .sh-sidebar__header {
+  position: relative;
   display: flex;
   align-items: center;
   gap: var(--space-2);
@@ -310,24 +312,41 @@ a {
 }
 
 .sh-sidebar__toggle {
-  display: inline-grid;
-  width: 2rem;
-  height: 2rem;
+  position: absolute;
+  z-index: 2;
+  top: 4.25rem;
+  right: -1rem;
+  display: grid;
+  width: 2.15rem;
+  height: 3.5rem;
   flex: 0 0 auto;
   place-items: center;
-  border: 1px solid var(--color-border);
-  border-radius: 999px;
-  background: var(--color-surface);
+  border: 1px solid color-mix(in srgb, var(--color-border) 90%, var(--color-text));
+  border-radius: 0 var(--radius-md) var(--radius-md) 0;
+  background: linear-gradient(145deg, var(--color-surface) 10%, var(--color-surface-raised) 88%);
   color: var(--color-text-secondary);
   cursor: pointer;
-  font-size: var(--font-size-md);
-  line-height: 1;
+  box-shadow: 0.2rem 0.25rem 0 color-mix(in srgb, var(--color-border) 75%, transparent), 0 0.35rem 0.7rem color-mix(in srgb, var(--color-text) 14%, transparent);
+  transform: translateY(-50%);
+  transition: color var(--motion-fast), box-shadow var(--motion-fast), transform var(--motion-fast);
 }
 
 .sh-sidebar__toggle:hover,
 .sh-sidebar__toggle:focus-visible {
   border-color: var(--color-accent-strong);
   color: var(--color-accent-strong);
+  box-shadow: 0.15rem 0.2rem 0 color-mix(in srgb, var(--color-accent) 45%, var(--color-border)), 0 0.45rem 0.85rem color-mix(in srgb, var(--color-accent-strong) 20%, transparent);
+  transform: translateY(-50%) translateX(0.1rem);
+}
+
+.sh-sidebar__toggle:active {
+  box-shadow: 0.08rem 0.1rem 0 color-mix(in srgb, var(--color-border) 75%, transparent), 0 0.2rem 0.45rem color-mix(in srgb, var(--color-text) 14%, transparent);
+  transform: translateY(calc(-50% + 0.15rem));
+}
+
+.sh-sidebar__toggle-icon {
+  width: 1.15rem;
+  height: 1.15rem;
 }
 
 .sh-sidebar__list {
@@ -851,6 +870,21 @@ a {
     flex: 0 0 auto;
     width: auto;
     min-height: 2.5rem;
+  }
+
+  .sh-sidebar__toggle {
+    position: static;
+    width: 2rem;
+    height: 2rem;
+    border-radius: 999px;
+    box-shadow: var(--shadow-sm);
+    transform: none;
+  }
+
+  .sh-sidebar__toggle:hover,
+  .sh-sidebar__toggle:focus-visible,
+  .sh-sidebar__toggle:active {
+    transform: none;
   }
 
   .sh-sidebar nav {
