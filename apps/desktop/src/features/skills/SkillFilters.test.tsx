@@ -28,7 +28,6 @@ function ClearHarness() {
         onChange={setQuery}
         onClear={() => setQuery({ ...DEFAULT_SKILL_QUERY, pageSize: query.pageSize })}
         query={query}
-        resultCount={0}
       />
       <output>{query.pageSize}</output>
     </>
@@ -44,7 +43,6 @@ async function renderSkillFilters(props: Partial<SkillFiltersProps> = {}) {
         onChange={vi.fn()}
         onClear={vi.fn()}
         query={DEFAULT_SKILL_QUERY}
-        resultCount={0}
         {...props}
       />
     </I18nextProvider>,
@@ -133,6 +131,12 @@ it("delegates clearing to controlled state while preserving page size", async ()
   expect(screen.getByRole("status")).toHaveTextContent("50");
 });
 
+it("does not repeat the result total inside the filter controls", async () => {
+  await renderSkillFilters();
+
+  expect(screen.queryByText(/results/i)).not.toBeInTheDocument();
+});
+
 it("applies a saved view and exposes dirty state without saving page or selection", async () => {
   const onApply = vi.fn();
   await renderSavedViews({ activeViewId: "view-risk", dirty: true, onApply });
@@ -196,4 +200,8 @@ it("wraps the filter grid before zoomed desktop widths can overflow", () => {
   expect(baseCss).toMatch(
     /@media \(max-width: 120rem\)[\s\S]*\.sh-skill-library__query-tools > section\s*\{[\s\S]*grid-template-columns:\s*repeat\(4, minmax\(0, 1fr\)/,
   );
+});
+
+it("uses compact spacing between the library controls and results", () => {
+  expect(baseCss).toMatch(/\.sh-skill-library\s*\{[\s\S]*gap:\s*var\(--space-2\)/);
 });

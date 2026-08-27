@@ -753,43 +753,38 @@ export function SkillLibraryPage({ facade }: SkillLibraryPageProps): JSX.Element
           onChange={updateQuery}
           onClear={clearFilters}
           query={query}
-          resultCount={page.total}
         />
       </div>
 
       {pageRefreshing ? (
         <SkillLibrarySkeleton />
       ) : (
-        <>
-          <p className="sh-skill-library__page-status">
-            {t("skillLibrary.page.pageStatus", {
-              count: page.total,
-              page: page.page,
-            })}
-          </p>
-          <SkillTable
-            onOpenSkill={openSkill}
-            onPreferencesChange={persistTablePreferences}
-            onQueryChange={updateQuery}
-            onSelectionChange={(next) => {
-              setSelectionAnnouncement(undefined);
-              changeSelection(next);
-            }}
-            page={page}
-            preferences={effectiveTablePreferences}
-            query={query}
-            returnPosition={
-              libraryReturnState
-                ? {
-                    focusSkillId: libraryReturnState.focusSkillId,
-                    left: libraryReturnState.scrollLeft,
-                    top: libraryReturnState.scrollTop,
-                  }
-                : undefined
-            }
-            selection={selection}
-          />
-        </>
+        <SkillTable
+          pageStatus={t("skillLibrary.page.pageStatus", {
+            count: page.total,
+            page: page.page,
+          })}
+          onOpenSkill={openSkill}
+          onPreferencesChange={persistTablePreferences}
+          onQueryChange={updateQuery}
+          onSelectionChange={(next) => {
+            setSelectionAnnouncement(undefined);
+            changeSelection(next);
+          }}
+          page={page}
+          preferences={effectiveTablePreferences}
+          query={query}
+          returnPosition={
+            libraryReturnState
+              ? {
+                  focusSkillId: libraryReturnState.focusSkillId,
+                  left: libraryReturnState.scrollLeft,
+                  top: libraryReturnState.scrollTop,
+                }
+              : undefined
+          }
+          selection={selection}
+        />
       )}
 
       {selectedBatchTarget ? (

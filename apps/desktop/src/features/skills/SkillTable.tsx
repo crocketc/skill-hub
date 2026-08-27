@@ -23,6 +23,7 @@ export interface SkillTableProps {
   onQueryChange: (query: SkillLibraryQuery) => void;
   onSelectionChange: (selection: SkillSelection) => void;
   page: SkillPage;
+  pageStatus?: ReactNode;
   preferences: SkillTablePreferences;
   query: SkillLibraryQuery;
   returnPosition?: { focusSkillId: string; left: number; top: number };
@@ -359,6 +360,7 @@ export function SkillTable(props: SkillTableProps) {
         <button aria-expanded={controlsOpen} aria-haspopup="dialog" className="sh-button sh-button--ghost sh-button--sm" onClick={() => setControlsOpen((open) => !open)} type="button">
           {t("skillLibrary.table.columnsAndDensity")}
         </button>
+        {props.pageStatus ? <p className="sh-skill-table__page-status">{props.pageStatus}</p> : null}
         {controlsOpen ? (
           <div aria-label={t("skillLibrary.table.columnsAndDensity")} className="sh-skill-table__controls" role="dialog">
             <fieldset>

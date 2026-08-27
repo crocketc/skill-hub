@@ -7,7 +7,6 @@ export interface SkillFiltersProps {
   onChange: (query: SkillLibraryQuery) => void;
   onClear: () => void;
   query: SkillLibraryQuery;
-  resultCount: number;
 }
 
 const CHECK_STATES: readonly CheckState[] = ["passed", "warning", "failed", "not_run", "unavailable"];
@@ -94,7 +93,7 @@ function MultiSelectMenu({ label, onChange, options, selected, summary }: MultiS
   );
 }
 
-export function SkillFilters({ availableTags, onChange, onClear, query, resultCount }: SkillFiltersProps) {
+export function SkillFilters({ availableTags, onChange, onClear, query }: SkillFiltersProps) {
   const { t } = useTranslation();
 
   const update = (change: Partial<SkillLibraryQuery>) => {
@@ -169,7 +168,6 @@ export function SkillFilters({ availableTags, onChange, onClear, query, resultCo
         summary={query.filters.tags.length > 0 ? t("skillLibrary.filters.selectedCount", { count: query.filters.tags.length }) : t("skillLibrary.filters.any")}
       />
 
-      <p>{t("skillLibrary.filters.resultCount", { count: resultCount })}</p>
       <button onClick={onClear} type="button">{t("skillLibrary.filters.clear")}</button>
     </section>
   );

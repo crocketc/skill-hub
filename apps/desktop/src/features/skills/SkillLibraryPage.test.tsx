@@ -86,6 +86,14 @@ afterEach(() => {
 });
 
 describe("SkillLibraryPage", () => {
+  it("places the page result status in the results toolbar", async () => {
+    const facade = createMockSkillLibraryFacade({ total: 80 });
+    renderLibrary({ facade });
+
+    const status = await screen.findByText("Page 1 · 80 results");
+    expect(status.closest(".sh-skill-table__toolbar")).toBeInTheDocument();
+  });
+
   it("distinguishes current-page selection from all filtered results", async () => {
     const facade = createMockSkillLibraryFacade({ total: 80 });
     renderLibrary({ facade });

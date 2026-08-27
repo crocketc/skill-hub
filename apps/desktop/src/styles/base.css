@@ -957,7 +957,7 @@ a {
   position: relative;
   display: grid;
   min-width: 0;
-  gap: var(--space-3);
+  gap: var(--space-2);
 }
 
 .sh-skill-detail {
@@ -1637,7 +1637,6 @@ a {
 }
 
 .sh-skill-library__query-tools p,
-.sh-skill-library__page-status,
 .sh-skill-library__announcement,
 .sh-skill-library__boundary,
 .sh-skill-library__save-view p {
@@ -1658,11 +1657,6 @@ a {
   font-weight: 650;
   cursor: pointer;
   white-space: nowrap;
-}
-
-.sh-skill-library__page-status {
-  justify-self: end;
-  font-variant-numeric: tabular-nums;
 }
 
 .sh-skill-library__save-view,
@@ -1810,6 +1804,14 @@ a {
   align-items: center;
   gap: var(--space-3);
   flex-wrap: wrap;
+}
+
+.sh-skill-table__page-status {
+  margin: 0;
+  margin-inline-start: auto;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+  font-variant-numeric: tabular-nums;
 }
 
 .sh-skill-table__controls {
