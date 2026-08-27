@@ -330,6 +330,8 @@ a {
 .sh-sidebar__link--active {
   background: var(--color-accent-soft);
   color: var(--color-accent-strong);
+  box-shadow: inset 3px 0 0 var(--color-accent-strong);
+  font-weight: 750;
 }
 
 .sh-app-shell__workspace {
@@ -754,13 +756,33 @@ a {
   }
 
   .sh-sidebar {
+    align-items: center;
+    flex-direction: row;
+    gap: var(--space-2);
     min-height: auto;
     padding: var(--space-2) var(--space-3);
     border-right: 0;
     border-bottom: 1px solid var(--color-border);
   }
 
-  .sh-sidebar nav,
+  .sh-sidebar__brand {
+    flex: 0 0 auto;
+    width: auto;
+    min-height: 2.5rem;
+  }
+
+  .sh-sidebar nav {
+    min-width: 0;
+    overflow-x: auto;
+  }
+
+  .sh-sidebar__list {
+    display: flex;
+    gap: var(--space-1);
+    margin: 0;
+    white-space: nowrap;
+  }
+
   .sh-sidebar__pinned {
     display: none;
   }
@@ -845,7 +867,7 @@ a {
   align-items: start;
   display: grid;
   gap: var(--space-5);
-  grid-template-columns: minmax(9rem, 0.65fr) minmax(0, 1fr);
+  grid-template-columns: minmax(11rem, 13rem) minmax(0, 1fr);
 }
 
 .sh-skill-detail__section-nav {
@@ -1168,7 +1190,7 @@ a {
 
 @media (max-width: 64rem) {
   .sh-skill-detail__layout {
-    grid-template-columns: minmax(8rem, 0.6fr) minmax(20rem, 2fr);
+    grid-template-columns: minmax(9rem, 11rem) minmax(0, 1fr);
   }
 }
 

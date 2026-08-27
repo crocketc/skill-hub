@@ -1,5 +1,5 @@
 import { useTranslation } from "react-i18next";
-import { NavLink } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { BrandLogo } from "../ui/BrandLogo";
 
 interface NavigationItem {
@@ -35,22 +35,30 @@ export function sidebarNavigationEnd(href: string) {
 
 function NavigationLinks({ items }: { items: NavigationItem[] }) {
   const { t } = useTranslation();
+  const { pathname } = useLocation();
 
   return (
     <ul className="sh-sidebar__list">
-      {items.map((item) => (
-        <li key={item.href}>
-          <NavLink
-            className={({ isActive }) =>
-              isActive ? "sh-sidebar__link sh-sidebar__link--active" : "sh-sidebar__link"
-            }
-            end={sidebarNavigationEnd(item.href)}
-            to={item.href}
-          >
-            {t(`navigation.${item.translationKey}`)}
-          </NavLink>
-        </li>
-      ))}
+      {items.map((item) => {
+        const isPreviewLibrary =
+          item.href === "/library" && pathname.startsWith("/__preview/skill-");
+        const isCurrent =
+          isPreviewLibrary ||
+          (item.href === "/"
+            ? pathname === "/"
+            : pathname === item.href || pathname.startsWith(`${item.href}/`));
+        return (
+          <li key={item.href}>
+            <Link
+              aria-current={isCurrent ? "page" : undefined}
+              className={isCurrent ? "sh-sidebar__link sh-sidebar__link--active" : "sh-sidebar__link"}
+              to={item.href}
+            >
+              {t(`navigation.${item.translationKey}`)}
+            </Link>
+          </li>
+        );
+      })}
     </ul>
   );
 }
@@ -60,9 +68,9 @@ export function Sidebar() {
 
   return (
     <aside aria-label={t("appShell.navigation")} className="sh-sidebar">
-      <NavLink aria-label="SkillHub" className="sh-sidebar__brand" to="/">
+      <Link aria-label="SkillHub" className="sh-sidebar__brand" to="/">
         <BrandLogo />
-      </NavLink>
+      </Link>
       <nav>
         <NavigationLinks items={primaryNavigation} />
       </nav>

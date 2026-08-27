@@ -126,6 +126,10 @@ it("isolates development preview data from the production Skill library route", 
   render(<AppRouter />);
 
   expect(await screen.findByText("PDF Reader")).toBeVisible();
+  expect(screen.getByRole("link", { name: "Skill library" })).toHaveAttribute(
+    "aria-current",
+    "page",
+  );
 
   await act(async () => {
     await appRouter.navigate("/library");
