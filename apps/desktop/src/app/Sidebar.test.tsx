@@ -62,4 +62,9 @@ describe("Sidebar", () => {
       /\.sh-sidebar__scroll\s*\{[\s\S]*overflow-y:\s*auto[\s\S]*overflow-x:\s*hidden/,
     );
   });
+
+  it("places the compact toggle between the brand row and the first nav item", () => {
+    expect(baseCss).toMatch(/\.sh-sidebar__toggle\s*\{[\s\S]*top:\s*calc\(100% \+ var\(--space-2\)\)/);
+    expect(baseCss).toMatch(/\.sh-sidebar__toggle\s*\{[\s\S]*width:\s*1\.55rem[\s\S]*height:\s*2rem/);
+  });
 });

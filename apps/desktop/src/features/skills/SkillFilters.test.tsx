@@ -3,6 +3,7 @@ import { useState } from "react";
 import { I18nextProvider } from "react-i18next";
 import { vi, expect, it } from "vitest";
 import { createSkillHubI18n } from "../../i18n";
+import baseCss from "../../styles/base.css?raw";
 import {
   DEFAULT_SKILL_QUERY,
   DEFAULT_TABLE_PREFERENCES,
@@ -189,4 +190,10 @@ it("places user views after the first four in a labelled details menu", async ()
   fireEvent.click(screen.getByText("More views"));
 
   expect(moreViews).toHaveAttribute("open");
+});
+
+it("wraps the filter grid before zoomed desktop widths can overflow", () => {
+  expect(baseCss).toMatch(
+    /@media \(max-width: 120rem\)[\s\S]*\.sh-skill-library__query-tools > section\s*\{[\s\S]*grid-template-columns:\s*repeat\(4, minmax\(0, 1fr\)/,
+  );
 });

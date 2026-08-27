@@ -407,17 +407,6 @@ export function SkillTable(props: SkillTableProps) {
         ) : null}
       </div>
       <div className="sh-skill-table__region-shell">
-        <div
-          aria-label={t("skillLibrary.table.horizontalScroll")}
-          className="sh-skill-table__horizontal-scroll"
-          data-overflowing={horizontalOverflow ? "true" : "false"}
-          onScroll={syncHorizontalScroll}
-          ref={horizontalScrollRef}
-          role="region"
-          tabIndex={0}
-        >
-          <div aria-hidden="true" style={{ width: `${tableScrollWidth}px` }} />
-        </div>
         <div aria-label={t("skillLibrary.table.resultsRegion")} className="sh-skill-table__region" onScroll={syncRegionScroll} ref={regionRef} role="region" tabIndex={-1}>
           <table className="sh-skill-table" data-density={props.preferences.density}>
           <thead>
@@ -436,6 +425,17 @@ export function SkillTable(props: SkillTableProps) {
             </tr>)}
           </tbody>
           </table>
+        </div>
+        <div
+          aria-label={t("skillLibrary.table.horizontalScroll")}
+          className="sh-skill-table__horizontal-scroll"
+          data-overflowing={horizontalOverflow ? "true" : "false"}
+          onScroll={syncHorizontalScroll}
+          ref={horizontalScrollRef}
+          role="region"
+          tabIndex={0}
+        >
+          <div aria-hidden="true" style={{ width: `${tableScrollWidth}px` }} />
         </div>
       </div>
       <footer className="sh-skill-table__pagination">

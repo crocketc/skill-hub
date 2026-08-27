@@ -355,7 +355,7 @@ it("keeps horizontal table scrolling visible above the vertically scrolling resu
   expect(horizontalScroll).toBeInTheDocument();
   if (!horizontalScroll) throw new Error("Expected the horizontal table scroll rail");
   expect(horizontalScroll).toHaveClass("sh-skill-table__horizontal-scroll");
-  expect(horizontalScroll.nextElementSibling).toHaveClass("sh-skill-table__region");
+  expect(horizontalScroll.previousElementSibling).toHaveClass("sh-skill-table__region");
   expect(baseCss).toMatch(/\.sh-skill-table__horizontal-scroll\s*\{[\s\S]*overflow-x:\s*auto/);
   expect(baseCss).toMatch(
     /\.sh-skill-table__region\s*\{[\s\S]*overflow-x:\s*hidden[\s\S]*overflow-y:\s*auto/,

@@ -268,9 +268,11 @@ a {
 
 .sh-app-shell {
   display: grid;
-  min-height: 100dvh;
+  height: 100dvh;
+  min-height: 0;
   grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
   background: var(--color-page);
+  overflow: hidden;
 }
 
 .sh-app-shell.is-sidebar-collapsed {
@@ -314,11 +316,11 @@ a {
 .sh-sidebar__toggle {
   position: absolute;
   z-index: 2;
-  top: 50%;
-  right: -0.9rem;
+  top: calc(100% + var(--space-2));
+  right: -0.78rem;
   display: grid;
-  width: 1.8rem;
-  height: 2.4rem;
+  width: 1.55rem;
+  height: 2rem;
   flex: 0 0 auto;
   place-items: center;
   border: 1px solid color-mix(in srgb, var(--color-border) 90%, var(--color-text));
@@ -447,7 +449,11 @@ a {
 }
 
 .sh-app-shell__workspace {
+  display: grid;
+  min-height: 0;
   min-width: 0;
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
 }
 
 .sh-app-shell__topbar {
@@ -473,8 +479,11 @@ a {
 
 .sh-app-shell__content {
   display: grid;
+  min-height: 0;
   gap: var(--space-4);
+  overflow-y: auto;
   padding: var(--space-5);
+  scrollbar-gutter: stable;
 }
 
 .sh-app-shell__summary,
@@ -1764,7 +1773,7 @@ a {
   font-size: var(--font-size-xs);
 }
 
-@media (max-width: 72rem) {
+@media (max-width: 120rem) {
   .sh-skill-library__query-tools > section {
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }
@@ -1901,7 +1910,7 @@ a {
   overflow-x: auto;
   overflow-y: hidden;
   padding-inline: var(--space-2);
-  border-bottom: 1px solid var(--color-border);
+  border-top: 1px solid var(--color-border);
   background: var(--color-surface-muted);
   scrollbar-color: var(--color-accent) var(--color-surface-muted);
   scrollbar-gutter: stable;
