@@ -209,6 +209,38 @@
       "factPreview": "No remote repository is claimed or executed"
     }
   },
+  "agents": {
+    "eyebrow": "Agent workspace",
+    "title": "Agents",
+    "description": "Review discovered client and Skill directory facts.",
+    "loading": "Loading Agent facts",
+    "unavailable": "Agent data is not connected to the native service yet.",
+    "errors": { "unknown": "Agent data could not be read." },
+    "experimental": "Experimental, for reference only",
+    "runtimeHook": "Runtime Hook",
+    "runtimeHookStatus": "In development",
+    "detail": {
+      "eyebrow": "Observed Agent",
+      "discoveredFact": "Discovered client and Skill directory facts",
+      "observed": "Observed",
+      "identity": "Agent identity",
+      "brand": "Brand",
+      "client": "Client",
+      "instance": "Instance",
+      "paths": "Discovered paths"
+    },
+    "relations": {
+      "eyebrow": "Target relations",
+      "title": "Logical clients and physical directories",
+      "count": "{{logical}} logical clients · {{physical}} physical directories",
+      "physicalTarget": "Physical directory"
+    },
+    "evidence": {
+      "eyebrow": "Usage evidence",
+      "title": "Observed usage signals",
+      "empty": "No usage evidence has been collected."
+    }
+  },
   "appShell": {
     "cachedData": "Cached skill library",
     "navigation": "Main navigation",

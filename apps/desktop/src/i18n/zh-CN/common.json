@@ -209,6 +209,38 @@
       "factPreview": "不会宣称或执行任何远程仓库"
     }
   },
+  "agents": {
+    "eyebrow": "Agent 工作区",
+    "title": "Agent",
+    "description": "查看已发现的客户端和 Skill 目录事实。",
+    "loading": "正在加载 Agent 事实",
+    "unavailable": "Agent 数据尚未连接到本机服务。",
+    "errors": { "unknown": "无法读取 Agent 数据。" },
+    "experimental": "实验功能，仅供参考",
+    "runtimeHook": "Runtime Hook",
+    "runtimeHookStatus": "研发中",
+    "detail": {
+      "eyebrow": "已观测 Agent",
+      "discoveredFact": "已发现客户端和 Skill 目录",
+      "observed": "已观测",
+      "identity": "Agent 身份",
+      "brand": "品牌",
+      "client": "客户端",
+      "instance": "实例",
+      "paths": "已发现路径"
+    },
+    "relations": {
+      "eyebrow": "目标关系",
+      "title": "逻辑客户端与物理目录",
+      "count": "{{logical}} 个逻辑客户端 · {{physical}} 个物理目录",
+      "physicalTarget": "物理目录"
+    },
+    "evidence": {
+      "eyebrow": "使用证据",
+      "title": "已观测使用信号",
+      "empty": "尚未收集使用证据。"
+    }
+  },
   "appShell": {
     "cachedData": "技能库缓存",
     "navigation": "主导航",
