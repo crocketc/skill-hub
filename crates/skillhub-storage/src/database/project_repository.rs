@@ -220,7 +220,6 @@ fn normalize_project_path(path: &str) -> AppResult<(String, String)> {
     if !input.is_absolute() || foreign_drive_prefix(path) {
         return Err(invalid_input("project path must be an absolute local path"));
     }
-    reject_symlink_components(input)?;
     let metadata = std::fs::symlink_metadata(input).map_err(|error| {
         if error.kind() == std::io::ErrorKind::NotFound {
             invalid_input("project path must be an existing real directory")
@@ -301,25 +300,6 @@ fn metadata_identity(path: &Path, _: &std::fs::Metadata) -> Option<String> {
 #[cfg(not(any(unix, windows)))]
 fn metadata_identity(_: &Path, _: &std::fs::Metadata) -> Option<String> {
     None
-}
-
-fn reject_symlink_components(path: &Path) -> AppResult<()> {
-    let mut current = if let Some(prefix) = path.components().next() {
-        Path::new(prefix.as_os_str()).to_path_buf()
-    } else {
-        return Err(invalid_input("project path is invalid"));
-    };
-    for component in path.components().skip(1) {
-        current.push(component.as_os_str());
-        if let Ok(metadata) = std::fs::symlink_metadata(&current) {
-            if metadata.file_type().is_symlink() {
-                return Err(invalid_input(
-                    "project path cannot traverse a symbolic link",
-                ));
-            }
-        }
-    }
-    Ok(())
 }
 
 fn foreign_drive_prefix(path: &str) -> bool {

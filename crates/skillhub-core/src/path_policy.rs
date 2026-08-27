@@ -180,16 +180,18 @@ fn validate_child(path: &Path) -> AppResult<()> {
                 return Err(path_error())
             }
             Component::CurDir => return Err(path_error()),
-            Component::Normal(name) => {
-                let text = name.to_string_lossy();
+            Component::Normal(_name) => {
                 #[cfg(windows)]
-                if text.ends_with('.')
-                    || text.ends_with(' ')
-                    || text.contains(':')
-                    || text.bytes().any(|b| b < 32 || b"<>\"|?*".contains(&b))
-                    || is_reserved_windows_name(&text)
                 {
-                    return Err(path_error());
+                    let text = _name.to_string_lossy();
+                    if text.ends_with('.')
+                        || text.ends_with(' ')
+                        || text.contains(':')
+                        || text.bytes().any(|b| b < 32 || b"<>\"|?*".contains(&b))
+                        || is_reserved_windows_name(&text)
+                    {
+                        return Err(path_error());
+                    }
                 }
             }
         }

@@ -172,6 +172,35 @@ fn project_registration_requires_real_directory_and_persists_canonical_physical_
     assert_eq!(missing.code, skillhub_core::ErrorCode::InvalidInput);
 }
 
+#[cfg(unix)]
+#[test]
+fn project_registration_allows_platform_symlink_ancestors_but_not_a_symlink_directory() {
+    let database = Database::open_in_memory().unwrap();
+    let real_parent = tempfile::tempdir().unwrap();
+    let alias_parent = tempfile::tempdir().unwrap();
+    let alias = alias_parent.path().join("alias");
+    std::os::unix::fs::symlink(real_parent.path(), &alias).unwrap();
+    let project_path = alias.join("project");
+    std::fs::create_dir(&project_path).unwrap();
+
+    let project = database
+        .project_repository()
+        .register(Project::new(ProjectId::new(), "via-alias", &project_path))
+        .unwrap();
+    assert_eq!(
+        project.device_path,
+        project_path.canonicalize().unwrap().to_string_lossy()
+    );
+
+    let symlink_project = alias_parent.path().join("project-link");
+    std::os::unix::fs::symlink(&project_path, &symlink_project).unwrap();
+    let error = database
+        .project_repository()
+        .register(Project::new(ProjectId::new(), "symlink", &symlink_project))
+        .unwrap_err();
+    assert_eq!(error.code, skillhub_core::ErrorCode::InvalidInput);
+}
+
 #[test]
 fn shared_config_rejects_paths_urls_with_userinfo_and_secret_like_values() {
     for source in [
