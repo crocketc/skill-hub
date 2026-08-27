@@ -29,8 +29,8 @@ describe("Sidebar", () => {
     expect(screen.getByRole("link", { name: "Agents" })).toBeVisible();
     expect(screen.getByRole("link", { name: "Projects" })).toBeVisible();
     expect(screen.getByRole("link", { name: "Pending" })).toBeVisible();
-    expect(screen.getByRole("link", { name: "Operations" })).toBeVisible();
-    expect(screen.getByRole("link", { name: "Recovery" })).toBeVisible();
+    expect(screen.getByRole("link", { name: "Operations and recovery" })).toBeVisible();
+    expect(screen.queryByRole("link", { name: "Recovery" })).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Settings" })).toBeVisible();
   });
 

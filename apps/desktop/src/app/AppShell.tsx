@@ -16,7 +16,6 @@ export type RouteTitleKey =
   | "navigation.discovery"
   | "navigation.library"
   | "navigation.operations"
-  | "navigation.recovery"
   | "navigation.pending"
   | "navigation.projects"
   | "navigation.settings";
@@ -42,7 +41,7 @@ export function resolveRouteTitleKey(pathname: string): RouteTitleKey {
     return "navigation.operations";
   }
   if (pathname.startsWith("/recovery")) {
-    return "navigation.recovery";
+    return "navigation.operations";
   }
   if (pathname.startsWith("/pending")) {
     return "navigation.pending";

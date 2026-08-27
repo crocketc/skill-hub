@@ -148,6 +148,7 @@ it("uses exact matching for the overview link while nested routes own current-pa
   expect(resolveRouteTitleKey("/__preview/skill-library")).toBe("navigation.library");
   expect(resolveRouteTitleKey("/__preview/skill-detail/skill-pdf")).toBe("navigation.library");
   expect(resolveRouteTitleKey("/projects/project-aurora")).toBe("navigation.projects");
+  expect(resolveRouteTitleKey("/recovery")).toBe("navigation.operations");
 });
 
 it("keeps shell titles for filtered agent and project deployment destinations", async () => {

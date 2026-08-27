@@ -13,7 +13,6 @@ interface NavigationItem {
     | "projects"
     | "pending"
     | "operations"
-    | "recovery"
     | "settings";
   icon: NavigationIconName;
 }
@@ -26,7 +25,6 @@ type NavigationIconName =
   | "projects"
   | "pending"
   | "operations"
-  | "recovery"
   | "settings";
 
 const primaryNavigation: NavigationItem[] = [
@@ -40,7 +38,6 @@ const primaryNavigation: NavigationItem[] = [
 
 const pinnedNavigation: NavigationItem[] = [
   { href: "/operations", translationKey: "operations", icon: "operations" },
-  { href: "/recovery", translationKey: "recovery", icon: "recovery" },
   { href: "/settings", translationKey: "settings", icon: "settings" },
 ];
 
@@ -57,7 +54,6 @@ function NavigationIcon({ name, label }: { name: NavigationIconName; label: stri
     projects: "M4 7.5h6l1.5 2H20v9H4zM4 7.5V5h6l1.5 2.5",
     pending: "M12 7v5l3 2M20 12a8 8 0 1 1-16 0 8 8 0 0 1 16 0Z",
     operations: "M6 4h12v16H6zM9 8h6M9 12h6M9 16h4",
-    recovery: "M4 12a8 8 0 1 0 2.3-5.7M4 5v5h5",
     settings: "M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7Zm0-5v2M12 18.5v2M3.5 12h2M18.5 12h2M5.9 5.9l1.4 1.4M16.7 16.7l1.4 1.4M18.1 5.9l-1.4 1.4M7.3 16.7l-1.4 1.4",
   };
 

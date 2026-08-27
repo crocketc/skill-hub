@@ -744,11 +744,10 @@
     "library": "Skill library",
     "collapse": "Collapse navigation",
     "expand": "Expand navigation",
-    "operations": "Operations",
+    "operations": "Operations and recovery",
     "overview": "Overview",
     "pending": "Pending",
     "projects": "Projects",
-    "recovery": "Recovery",
     "settings": "Settings"
   },
   "overview": {
