@@ -1,4 +1,6 @@
-use std::path::PathBuf;
+use std::fs;
+use std::path::{Path, PathBuf};
+use std::process::Command;
 
 use skillhub_adapters::source::{AcquisitionLimits, GixSourceFetcher, SourceFetchErrorCode};
 
@@ -18,13 +20,44 @@ async fn git_fetch_materializes_selected_head_tree_not_worktree_files() {
 
 #[tokio::test]
 async fn git_fetch_accepts_a_file_url_and_reads_the_remote_tree_without_hooks() {
-    let repository = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let url = url::Url::from_directory_path(&repository)
+    let fixture = temporary_git_repository();
+    let url = url::Url::from_directory_path(fixture.path())
         .unwrap()
         .to_string();
 
     let acquired = GixSourceFetcher::default().fetch(url).await.unwrap();
-    assert!(acquired.root().join("Cargo.toml").is_file());
+    assert!(acquired.root().join("SKILL.md").is_file());
+}
+
+fn temporary_git_repository() -> tempfile::TempDir {
+    let fixture = tempfile::tempdir().unwrap();
+    run_git(fixture.path(), &["init"]);
+    run_git(
+        fixture.path(),
+        &["config", "user.email", "skillhub-tests@example.com"],
+    );
+    run_git(fixture.path(), &["config", "user.name", "SkillHub Tests"]);
+    fs::write(fixture.path().join("SKILL.md"), "# fixture\n").unwrap();
+    run_git(fixture.path(), &["add", "SKILL.md"]);
+    run_git(
+        fixture.path(),
+        &["commit", "--no-gpg-sign", "--no-verify", "-m", "fixture"],
+    );
+    fixture
+}
+
+fn run_git(repository: &Path, args: &[&str]) {
+    let output = Command::new("git")
+        .current_dir(repository)
+        .args(args)
+        .output()
+        .unwrap_or_else(|error| panic!("failed to invoke git for fixture: {error}"));
+    assert!(
+        output.status.success(),
+        "git fixture command {:?} failed: {}",
+        args,
+        String::from_utf8_lossy(&output.stderr)
+    );
 }
 
 #[tokio::test]
