@@ -472,6 +472,7 @@
     },
     "table": {
       "agentDeployments": "{{count}} 个 Agent",
+      "aliasLabel": "别名",
       "aiStatus": "AI：{{state}}",
       "basicStatus": "基础：{{state}}",
       "checkStates": {
@@ -515,6 +516,8 @@
       "moveBefore": "将{{column}}移到{{before}}之前",
       "moveUp": "上移{{column}}",
       "moveDown": "下移{{column}}",
+      "dragColumn": "可拖动列",
+      "lockedColumn": "固定",
       "reorderLabel": "调整列顺序",
       "nextPage": "下一页",
       "pageRange": "第 {{start}}–{{end}} 项，共 {{total}} 项",

@@ -472,6 +472,7 @@
     },
     "table": {
       "agentDeployments": "{{count}} agents",
+      "aliasLabel": "Alias",
       "aiStatus": "AI: {{state}}",
       "basicStatus": "Basic: {{state}}",
       "checkStates": {
@@ -515,6 +516,8 @@
       "moveBefore": "Move {{column}} before {{before}}",
       "moveUp": "Move {{column}} up",
       "moveDown": "Move {{column}} down",
+      "dragColumn": "draggable column",
+      "lockedColumn": "Locked",
       "reorderLabel": "Reorder columns",
       "nextPage": "Next page",
       "pageRange": "{{start}}–{{end}} of {{total}}",

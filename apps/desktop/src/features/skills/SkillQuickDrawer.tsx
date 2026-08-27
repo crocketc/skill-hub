@@ -11,7 +11,7 @@ import {
   useState,
 } from "react";
 import { useTranslation } from "react-i18next";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { Button } from "../../ui/Button";
 import { Drawer } from "../../ui/Drawer";
 import type { SkillLibraryReturnState } from "../skill-detail/detailContext";
@@ -407,6 +407,7 @@ export function SkillQuickDrawer({
   skillId,
 }: SkillQuickDrawerProps) {
   const { t } = useTranslation();
+  const location = useLocation();
   const [configurationOpen, setConfigurationOpen] = useState(false);
   const [dragWidthPx, setDragWidthPx] = useState<number>();
   const [localPreferenceSaveFailed, setLocalPreferenceSaveFailed] = useState(false);
@@ -728,7 +729,7 @@ export function SkillQuickDrawer({
             <Link
               className="sh-button sh-button--secondary sh-button--sm"
               state={libraryReturn ? { libraryReturn } : undefined}
-              to={{ pathname: `/library/${skillId}`, search: detailSearch }}
+              to={{ pathname: `${location.pathname.startsWith("/__preview") ? "/__preview/skill-detail" : "/library"}/${skillId}`, search: detailSearch }}
             >
               {t("skillLibrary.drawer.fullDetails")}
             </Link>

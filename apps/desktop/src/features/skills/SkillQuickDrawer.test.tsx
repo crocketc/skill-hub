@@ -513,6 +513,16 @@ it("carries the library query and return position into full details", async () =
   );
 });
 
+it("keeps preview full-detail links inside the development preview routes", async () => {
+  const facade = createMockSkillLibraryFacade();
+  await renderDrawer({ facade, initialEntry: "/__preview/skill-library" });
+
+  expect(await screen.findByRole("link", { name: "View full details" })).toHaveAttribute(
+    "href",
+    "/__preview/skill-detail/skill-pdf",
+  );
+});
+
 it("inherits reduced motion and emits only a single-skill action intent", async () => {
   mockReducedMotion(true);
   const facade = createMockSkillLibraryFacade({ usageEvidence: undefined });

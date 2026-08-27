@@ -103,6 +103,8 @@ it("uses compact density and keeps checkbox clicks separate from row opening", a
   expect(onOpenSkill).not.toHaveBeenCalled();
   const nameCell = screen.getByText("PDF Reader").closest("td");
   if (!nameCell) throw new Error("Expected the PDF Reader name cell");
+  expect(within(nameCell).getByText("Alias:")).toBeVisible();
+  expect(within(nameCell).getByText("reader")).toBeVisible();
   fireEvent.click(nameCell);
   expect(onOpenSkill).toHaveBeenCalledWith("skill-pdf", expect.any(HTMLElement));
 });
@@ -129,7 +131,11 @@ it("does not allow the select or name columns to be hidden", async () => {
   fireEvent.click(screen.getByRole("button", { name: "Columns and density" }));
   expect(screen.getByRole("checkbox", { name: "Selection" })).toBeDisabled();
   expect(screen.getByRole("checkbox", { name: "Name" })).toBeDisabled();
-  fireEvent.click(screen.getByRole("button", { name: "Move Version up" }));
+  const versionColumn = screen.getByRole("listitem", { name: "Version" });
+  const deploymentsColumn = screen.getByRole("listitem", { name: "Deployments" });
+  fireEvent.dragStart(versionColumn);
+  fireEvent.dragOver(deploymentsColumn);
+  fireEvent.drop(deploymentsColumn);
   const next = onPreferencesChange.mock.calls.at(-1)?.[0];
   expect(next.columnOrder.indexOf("version")).toBeLessThan(next.columnOrder.indexOf("deployments"));
 });

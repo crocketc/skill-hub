@@ -1,4 +1,4 @@
-import { useLayoutEffect, useMemo, useRef, useState, type ChangeEvent, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
+import { useLayoutEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
 import { flexRender, getCoreRowModel, useReactTable, type ColumnDef } from "@tanstack/react-table";
 import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
@@ -157,7 +157,11 @@ export function createSkillColumns(t: TFunction): ColumnDef<SkillTableRow>[] {
       cell: ({ row }) => (
         <div className="sh-skill-table__inline sh-skill-table__name">
           <strong>{row.original.name}</strong>
-          {row.original.alias ? <span className="sh-skill-table__alias">{row.original.alias}</span> : null}
+          {row.original.alias ? (
+            <span className="sh-skill-table__alias">
+              <span className="sh-skill-table__alias-label">{t("skillLibrary.table.aliasLabel")}:</span> {row.original.alias}
+            </span>
+          ) : null}
           <span className="sh-skill-table__secondary" title={row.original.purpose}>{row.original.purpose}</span>
         </div>
       ),
@@ -207,6 +211,8 @@ export function SkillTable(props: SkillTableProps) {
   const regionRef = useRef<HTMLDivElement>(null);
   const restoredKeyRef = useRef<string>();
   const [controlsOpen, setControlsOpen] = useState(false);
+  const [draggedColumn, setDraggedColumn] = useState<SkillColumnId>();
+  const [dragOverColumn, setDragOverColumn] = useState<SkillColumnId>();
   const columnOrder = orderedColumnIds(props.preferences);
   const visibleColumns = new Set([...LOCKED_COLUMNS, ...props.preferences.visibleColumns]);
   const columns = useMemo(() => createSkillColumns(t), [t]);
@@ -271,13 +277,35 @@ export function SkillTable(props: SkillTableProps) {
       ? [...new Set([...props.preferences.visibleColumns, column])]
       : props.preferences.visibleColumns.filter((id) => id !== column),
   });
-  const moveColumn = (column: SkillColumnId, direction: "up" | "down") => {
+  const moveColumnToIndex = (column: SkillColumnId, targetIndex: number) => {
     const next = [...columnOrder];
     const index = next.indexOf(column);
-    const target = direction === "up" ? index - 1 : index + 1;
-    if (index <= LOCKED_COLUMNS.length - 1 || target < LOCKED_COLUMNS.length || target >= next.length) return;
-    [next[index], next[target]] = [next[target], next[index]];
+    if (index < LOCKED_COLUMNS.length || targetIndex < LOCKED_COLUMNS.length || targetIndex >= next.length) return;
+    next.splice(index, 1);
+    next.splice(targetIndex, 0, column);
     props.onPreferencesChange({ ...props.preferences, columnOrder: next });
+  };
+  const moveColumnBefore = (column: SkillColumnId, before: SkillColumnId) => {
+    if (column === before || LOCKED_COLUMNS.includes(column) || LOCKED_COLUMNS.includes(before)) return;
+    const target = columnOrder.indexOf(before);
+    if (target < LOCKED_COLUMNS.length) return;
+    const nextTarget = columnOrder.indexOf(column) < target ? target - 1 : target;
+    moveColumnToIndex(column, nextTarget);
+  };
+  const moveColumnByOffset = (column: SkillColumnId, offset: -1 | 1) => {
+    const index = columnOrder.indexOf(column);
+    moveColumnToIndex(column, index + offset);
+  };
+  const handleColumnDragOver = (event: DragEvent<HTMLDivElement>, column: SkillColumnId) => {
+    if (!draggedColumn || draggedColumn === column || LOCKED_COLUMNS.includes(column)) return;
+    event.preventDefault();
+    setDragOverColumn(column);
+  };
+  const handleColumnDrop = (event: DragEvent<HTMLDivElement>, column: SkillColumnId) => {
+    event.preventDefault();
+    if (draggedColumn && draggedColumn !== column) moveColumnBefore(draggedColumn, column);
+    setDraggedColumn(undefined);
+    setDragOverColumn(undefined);
   };
   const start = props.page.total === 0 ? 0 : (props.page.page - 1) * props.page.pageSize + 1;
   const end = Math.min(props.page.page * props.page.pageSize, props.page.total);
@@ -298,16 +326,39 @@ export function SkillTable(props: SkillTableProps) {
               <legend>{t("skillLibrary.table.densityLabel")}</legend>
                {(["compact", "standard", "comfortable"] as const).map((density) => <label key={density}><input checked={props.preferences.density === density} name="skill-density" onChange={() => props.onPreferencesChange({ ...props.preferences, density })} type="radio" />{t(DENSITY_LABELS[density])}</label>)}
             </fieldset>
-            <div aria-label={t("skillLibrary.table.reorderLabel")} className="sh-skill-table__reorder">
-              {columnOrder.map((column, index) => !LOCKED_COLUMNS.includes(column) ? (
-                <div className="sh-skill-table__reorder-row" key={column}>
-                  <span>{t(COLUMN_LABELS[column])}</span>
-                  <span className="sh-skill-table__reorder-actions">
-                    <button aria-label={t("skillLibrary.table.moveUp", { column: t(COLUMN_LABELS[column]) })} disabled={index <= LOCKED_COLUMNS.length} onClick={() => moveColumn(column, "up")} type="button">↑</button>
-                    <button aria-label={t("skillLibrary.table.moveDown", { column: t(COLUMN_LABELS[column]) })} disabled={index >= columnOrder.length - 1} onClick={() => moveColumn(column, "down")} type="button">↓</button>
-                  </span>
-                </div>
-              ) : null)}
+            <div aria-label={t("skillLibrary.table.reorderLabel")} className="sh-skill-table__reorder" role="list">
+              {columnOrder.map((column) => {
+                const locked = LOCKED_COLUMNS.includes(column);
+                return (
+                  <div
+                    aria-label={t(COLUMN_LABELS[column])}
+                    aria-roledescription={locked ? undefined : t("skillLibrary.table.dragColumn")}
+                    className={`sh-skill-table__reorder-item${dragOverColumn === column ? " sh-skill-table__reorder-item--target" : ""}${locked ? " sh-skill-table__reorder-item--locked" : ""}`}
+                    draggable={!locked}
+                    key={column}
+                    onDragEnd={() => {
+                      setDraggedColumn(undefined);
+                      setDragOverColumn(undefined);
+                    }}
+                    onDragOver={(event) => handleColumnDragOver(event, column)}
+                    onDragStart={(event) => {
+                      setDraggedColumn(column);
+                      if (event.dataTransfer) event.dataTransfer.effectAllowed = "move";
+                    }}
+                    onDrop={(event) => handleColumnDrop(event, column)}
+                    onKeyDown={(event) => {
+                      if (locked || (event.key !== "ArrowLeft" && event.key !== "ArrowRight")) return;
+                      event.preventDefault();
+                      moveColumnByOffset(column, event.key === "ArrowLeft" ? -1 : 1);
+                    }}
+                    role="listitem"
+                    tabIndex={locked ? -1 : 0}
+                  >
+                    <span>{t(COLUMN_LABELS[column])}</span>
+                    {locked ? <span className="sh-skill-table__reorder-lock">{t("skillLibrary.table.lockedColumn")}</span> : null}
+                  </div>
+                );
+              })}
             </div>
           </div>
         ) : null}
