@@ -244,5 +244,12 @@ it("places the filter toggle as a short centered rail below the filter card", ()
   expect(toggleBlock).toMatch(/bottom:\s*0/);
   expect(toggleBlock).toMatch(/left:\s*50%/);
   expect(toggleBlock).toMatch(/width:\s*4rem/);
-  expect(toggleBlock).toMatch(/height:\s*1rem/);
+  expect(toggleBlock).toMatch(/height:\s*0\.75rem/);
+});
+
+it("keeps the filter toggle rail as short as the scrollbar", () => {
+  const toggleStart = baseCss.indexOf(".sh-skill-library__query-toggle {");
+  const toggleEnd = baseCss.indexOf("}", toggleStart);
+  const toggleBlock = baseCss.slice(toggleStart, toggleEnd);
+  expect(toggleBlock).toMatch(/height:\s*0\.75rem/);
 });

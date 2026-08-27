@@ -493,7 +493,7 @@
         "invocation": "Invocation",
         "license": "License",
         "lifecycle": "Lifecycle",
-        "name": "Name",
+        "name": "Name / Alias",
         "originalDescription": "Original description",
         "ownership": "Ownership",
         "purpose": "Purpose",

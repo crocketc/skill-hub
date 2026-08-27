@@ -66,5 +66,6 @@ describe("Sidebar", () => {
   it("places the compact toggle between the brand row and the first nav item", () => {
     expect(baseCss).toMatch(/\.sh-sidebar__toggle\s*\{[\s\S]*top:\s*calc\(100% \+ var\(--space-2\)\)/);
     expect(baseCss).toMatch(/\.sh-sidebar__toggle\s*\{[\s\S]*width:\s*1\.55rem[\s\S]*height:\s*2rem/);
+    expect(baseCss).toMatch(/\.sh-sidebar__toggle\s*\{[\s\S]*right:\s*-1\.5rem/);
   });
 });

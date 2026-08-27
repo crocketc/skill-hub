@@ -109,6 +109,12 @@ it("uses compact density and keeps checkbox clicks separate from row opening", a
   expect(onOpenSkill).toHaveBeenCalledWith("skill-pdf", expect.any(HTMLElement));
 });
 
+it("labels the name column as name and alias", async () => {
+  await renderTable();
+
+  expect(screen.getByRole("columnheader", { name: "Name / Alias" })).toBeVisible();
+});
+
 it("opens a focused row with Enter and emits manual sort and pagination", async () => {
   const onOpenSkill = vi.fn();
   const onQueryChange = vi.fn();
@@ -116,7 +122,7 @@ it("opens a focused row with Enter and emits manual sort and pagination", async 
 
   fireEvent.keyDown(screen.getByRole("row", { name: /PDF Reader/ }), { key: "Enter" });
   expect(onOpenSkill).toHaveBeenCalledWith("skill-pdf", expect.any(HTMLElement));
-  fireEvent.click(screen.getByRole("button", { name: "Sort by name" }));
+  fireEvent.click(screen.getByRole("button", { name: "Sort by name / alias" }));
   expect(onQueryChange).toHaveBeenCalledWith(
     expect.objectContaining({ page: 1, sort: { column: "name", direction: "desc" } }),
   );
@@ -130,7 +136,7 @@ it("does not allow the select or name columns to be hidden", async () => {
 
   fireEvent.click(screen.getByRole("button", { name: "Columns and density" }));
   expect(screen.getByRole("checkbox", { name: "Selection" })).toBeDisabled();
-  expect(screen.getByRole("checkbox", { name: "Name" })).toBeDisabled();
+  expect(screen.getByRole("checkbox", { name: "Name / Alias" })).toBeDisabled();
   const versionColumn = screen.getByRole("listitem", { name: "Version" });
   const deploymentsColumn = screen.getByRole("listitem", { name: "Deployments" });
   fireEvent.dragStart(versionColumn);

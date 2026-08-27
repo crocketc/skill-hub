@@ -317,7 +317,7 @@ a {
   position: absolute;
   z-index: 2;
   top: calc(100% + var(--space-2));
-  right: -0.78rem;
+  right: -1.5rem;
   display: grid;
   width: 1.55rem;
   height: 2rem;
@@ -1543,7 +1543,7 @@ a {
   left: 50%;
   display: grid;
   width: 4rem;
-  height: 1rem;
+  height: 0.75rem;
   min-height: 0;
   place-items: center;
   padding: 0;

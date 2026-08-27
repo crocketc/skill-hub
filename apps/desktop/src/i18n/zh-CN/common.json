@@ -493,7 +493,7 @@
         "invocation": "调用方式",
         "license": "许可证",
         "lifecycle": "生命周期",
-        "name": "名称",
+        "name": "名称/别名",
         "originalDescription": "原始描述",
         "ownership": "归属",
         "purpose": "用途",
