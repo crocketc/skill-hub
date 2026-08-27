@@ -166,8 +166,19 @@ describe("SkillDetailPage shell", () => {
     expect(baseCss).toMatch(/\.sh-skill-detail__content\s*\{[\s\S]*overflow-y:\s*auto/);
     expect(baseCss).toMatch(/\.sh-skill-detail__content\s*\{[\s\S]*display:\s*flex/);
     expect(baseCss).toMatch(/\.sh-skill-detail__section\s*\{[\s\S]*flex:\s*0\s+0\s+auto/);
-    expect(baseCss).toMatch(/grid-template-columns:\s*minmax\(15rem,\s*18rem\)\s+minmax\(0,\s*1fr\)/);
+    expect(baseCss).toMatch(/grid-template-columns:\s*minmax\(12rem,\s*14rem\)\s+minmax\(0,\s*1fr\)/);
     expect(baseCss).toMatch(/\.sh-skill-detail__layout\s*\{[\s\S]*gap:\s*var\(--space-4\)/);
+  });
+
+  it("keeps the overview compact and gives the content column the remaining width", async () => {
+    await renderDetail();
+    await screen.findByRole("navigation", { name: "Detail sections" });
+
+    expect(document.getElementById("overview")).toHaveClass("sh-skill-detail__section--overview");
+    expect(baseCss).toMatch(/\.sh-skill-detail__section--overview\s*\{[\s\S]*gap:\s*var\(--space-2\)/);
+    expect(baseCss).toMatch(/\.sh-skill-detail__section--overview\s*\{[\s\S]*padding:\s*var\(--space-4\)/);
+    expect(baseCss).toMatch(/\.sh-skill-detail__rail \.sh-skill-detail__title-row h1\s*\{[\s\S]*font-size:/);
+    expect(baseCss).toMatch(/grid-template-columns:\s*minmax\(12rem,\s*14rem\)\s+minmax\(0,\s*1fr\)/);
   });
 
   it("highlights the section selected from the detail navigation", async () => {

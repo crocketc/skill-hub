@@ -102,7 +102,7 @@ export function SkillDetailPage({
         </aside>
         <main className="sh-skill-detail__content">
           {DETAIL_SECTIONS.map((section) => (
-            <section className="sh-skill-detail__section" id={section} key={section}>
+            <section className={`sh-skill-detail__section sh-skill-detail__section--${section}`} id={section} key={section}>
               <h2>{t(`skillDetail.navigation.sections.${section}`)}</h2>
               {section === "overview" ? (
                 <>
