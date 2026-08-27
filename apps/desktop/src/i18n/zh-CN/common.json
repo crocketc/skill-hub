@@ -43,6 +43,34 @@
     },
     "resource": {
       "blocked": "已阻止资源：{{target}}"
+    },
+    "workspace": {
+      "chooseApp": "选择其他应用",
+      "discardDraft": "丢弃本机草稿",
+      "draftRestored": "已恢复本机草稿。",
+      "empty": "此 Skill 中没有 Markdown 文件。",
+      "file": "Markdown 文件",
+      "fileError": "无法读取此 Markdown 文件。",
+      "filesError": "无法列出 Markdown 文件。",
+      "loadingFile": "正在加载 Markdown 文件",
+      "loadingFiles": "正在加载 Markdown 文件列表",
+      "mode": {
+        "edit": "编辑",
+        "read": "阅读",
+        "source": "源码"
+      },
+      "modes": "Markdown 视图",
+      "openDefault": "使用默认应用打开",
+      "openFolder": "打开 Skill 文件夹",
+      "readOnly": {
+        "builtin": "此文件内置于 Agent，因此为只读。",
+        "external": "此文件由外部来源管理，因此为只读。",
+        "permission": "当前用户没有写入权限，因此此文件为只读。",
+        "plugin": "此文件属于插件，因此为只读。"
+      },
+      "takeover": "复制到 SkillHub",
+      "title": "Markdown 工作区",
+      "unavailable": "Markdown 内容尚未接入。"
     }
   },
   "dataState": {

@@ -43,6 +43,34 @@
     },
     "resource": {
       "blocked": "Blocked resource: {{target}}"
+    },
+    "workspace": {
+      "chooseApp": "Choose another app",
+      "discardDraft": "Discard local draft",
+      "draftRestored": "A local draft was restored.",
+      "empty": "This Skill has no Markdown files.",
+      "file": "Markdown file",
+      "fileError": "Unable to read this Markdown file.",
+      "filesError": "Unable to list Markdown files.",
+      "loadingFile": "Loading Markdown file",
+      "loadingFiles": "Loading Markdown files",
+      "mode": {
+        "edit": "Edit",
+        "read": "Read",
+        "source": "Source"
+      },
+      "modes": "Markdown view",
+      "openDefault": "Open in default app",
+      "openFolder": "Open Skill folder",
+      "readOnly": {
+        "builtin": "This file is read-only because it is built into an Agent.",
+        "external": "This file is read-only because it is managed externally.",
+        "permission": "This file is read-only because the current user cannot write it.",
+        "plugin": "This file is read-only because it belongs to a plugin."
+      },
+      "takeover": "Copy into SkillHub",
+      "title": "Markdown workspace",
+      "unavailable": "Markdown content is not connected yet."
     }
   },
   "dataState": {
