@@ -39,8 +39,8 @@ interface SkillTableMeta {
 const LOCKED_COLUMNS: SkillColumnId[] = ["select", "name"];
 const PAGE_SIZES = [10, 25, 50, 100] as const;
 const COLUMN_IDS: SkillColumnId[] = [
-  "select", "name", "purpose", "tags", "lifecycle", "deployments", "version", "security",
-  "original_description", "translated_description", "source", "ownership", "license", "invocation", "requirements",
+  "select", "name", "purpose", "tags", "invocation", "deployments", "version", "security",
+  "original_description", "translated_description", "source", "ownership", "license", "requirements", "lifecycle",
 ];
 
 const COLUMN_LABELS = {

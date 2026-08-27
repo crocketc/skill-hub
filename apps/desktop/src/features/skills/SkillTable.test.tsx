@@ -60,7 +60,7 @@ const allColumnIds = [
   "name",
   "purpose",
   "tags",
-  "lifecycle",
+  "invocation",
   "deployments",
   "version",
   "security",
@@ -69,8 +69,8 @@ const allColumnIds = [
   "source",
   "ownership",
   "license",
-  "invocation",
   "requirements",
+  "lifecycle",
 ] as const;
 
 async function renderTable(props: Partial<SkillTableProps> = {}) {
