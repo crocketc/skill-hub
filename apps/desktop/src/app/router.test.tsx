@@ -101,12 +101,21 @@ it("isolates deterministic Skill detail preview data from production", async () 
 
   render(<AppRouter />);
   expect(await screen.findByRole("heading", { name: "PDF Reader" })).toBeVisible();
+  expect(
+    await screen.findByRole("heading", { name: "Markdown workspace" }),
+  ).toBeVisible();
+  expect(
+    await screen.findByRole("heading", { name: "Extract PDF tables safely" }),
+  ).toBeVisible();
 
   await act(async () => {
     await appRouter.navigate("/library/skill-pdf");
   });
   expect(await screen.findByText("Skill detail data is not connected yet")).toBeVisible();
   expect(screen.queryByRole("heading", { name: "PDF Reader" })).not.toBeInTheDocument();
+  expect(
+    screen.queryByRole("heading", { name: "Markdown workspace" }),
+  ).not.toBeInTheDocument();
 });
 
 it("isolates development preview data from the production Skill library route", async () => {

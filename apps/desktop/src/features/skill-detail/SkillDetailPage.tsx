@@ -2,6 +2,11 @@ import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { useLocation, useParams } from "react-router-dom";
 import { DataState } from "../../ui/DataState";
+import { MarkdownWorkspace } from "../markdown/MarkdownWorkspace";
+import {
+  type MarkdownFacade,
+  unavailableMarkdownFacade,
+} from "../markdown/api";
 import { parseSkillLibrarySearchParams } from "../skills/queryState";
 import type { SkillDetailFacade } from "./api";
 import {
@@ -27,9 +32,13 @@ import { VersionTimeline } from "./VersionTimeline";
 
 interface SkillDetailPageProps {
   facade: SkillDetailFacade;
+  markdownFacade?: MarkdownFacade;
 }
 
-export function SkillDetailPage({ facade }: SkillDetailPageProps) {
+export function SkillDetailPage({
+  facade,
+  markdownFacade = unavailableMarkdownFacade,
+}: SkillDetailPageProps) {
   const { t } = useTranslation();
   const location = useLocation();
   const { skillId = "" } = useParams();
@@ -100,13 +109,16 @@ export function SkillDetailPage({ facade }: SkillDetailPageProps) {
                 </>
               ) : null}
               {section === "description" ? (
-                metadataQuery.isPending ? (
-                  <p role="status">{t("skillDetail.states.loadingMetadata")}</p>
-                ) : metadataQuery.isError || !metadataQuery.data ? (
-                  <p role="alert">{t("skillDetail.states.metadataError")}</p>
-                ) : (
-                  <MetadataPanel facade={facade} metadata={metadataQuery.data} skillId={skillId} />
-                )
+                <>
+                  {metadataQuery.isPending ? (
+                    <p role="status">{t("skillDetail.states.loadingMetadata")}</p>
+                  ) : metadataQuery.isError || !metadataQuery.data ? (
+                    <p role="alert">{t("skillDetail.states.metadataError")}</p>
+                  ) : (
+                    <MetadataPanel facade={facade} metadata={metadataQuery.data} skillId={skillId} />
+                  )}
+                  <MarkdownWorkspace facade={markdownFacade} skillId={skillId} />
+                </>
               ) : null}
               {section === "relations" ? (
                 relationsQuery.isError ? (

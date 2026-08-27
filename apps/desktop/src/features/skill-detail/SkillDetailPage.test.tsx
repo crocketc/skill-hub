@@ -10,17 +10,21 @@ import {
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createSkillHubI18n } from "../../i18n";
 import type { SkillDetailFacade } from "./api";
+import type { MarkdownFacade } from "../markdown/api";
+import { createMockMarkdownFacade } from "../markdown/testFixtures";
 import { SkillDetailPage } from "./SkillDetailPage";
 import { createMockSkillDetailFacade } from "./testFixtures";
 
 interface RenderDetailOptions {
   entry?: InitialEntry;
   facade?: SkillDetailFacade;
+  markdownFacade?: MarkdownFacade;
 }
 
 async function renderDetail({
   entry = "/library/skill-pdf",
   facade = createMockSkillDetailFacade(),
+  markdownFacade = createMockMarkdownFacade(),
 }: RenderDetailOptions = {}) {
   const i18n = await createSkillHubI18n(["en-US"]);
   const client = new QueryClient({
@@ -32,7 +36,7 @@ async function renderDetail({
         <MemoryRouter initialEntries={[entry]}>
           <Routes>
             <Route
-              element={<SkillDetailPage facade={facade} />}
+              element={<SkillDetailPage facade={facade} markdownFacade={markdownFacade} />}
               path="/library/:skillId"
             />
           </Routes>
@@ -148,5 +152,24 @@ describe("SkillDetailPage shell", () => {
     expect(await screen.findByText("Original description")).toBeVisible();
     expect(screen.getByText("模型译文")).toBeVisible();
     expect(screen.getByRole("button", { name: "Edit My purpose" })).toBeVisible();
+  });
+
+  it("places the Markdown workspace after the description metadata", async () => {
+    await renderDetail();
+
+    const metadataHeading = await screen.findByRole("heading", {
+      name: "Original source text",
+    });
+    const workspaceHeading = await screen.findByRole("heading", {
+      name: "Markdown workspace",
+    });
+
+    expect(
+      metadataHeading.compareDocumentPosition(workspaceHeading) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      await screen.findByRole("heading", { name: "Extract PDF tables safely" }),
+    ).toBeVisible();
   });
 });

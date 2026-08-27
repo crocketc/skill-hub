@@ -188,7 +188,14 @@ export function MarkdownWorkspace({ facade, skillId }: MarkdownWorkspaceProps) {
               facade={facade}
               file={file}
               key={`${file.path}-${file.contentIdentity}-${file.draft?.savedAt ?? "formal"}`}
-              onSaved={() => undefined}
+              onSaved={() => {
+                void queryClient.invalidateQueries({
+                  queryKey: ["skill-detail", skillId, "summary"],
+                });
+                void queryClient.invalidateQueries({
+                  queryKey: ["skill-detail", skillId, "versions"],
+                });
+              }}
               skillId={skillId}
             />
           ) : null}

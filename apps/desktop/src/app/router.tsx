@@ -14,6 +14,7 @@ import {
 } from "../features/skills/SkillLibraryPreview";
 import { unavailableSkillLibraryFacade } from "../features/skills/api";
 import { skillHubI18n } from "../i18n";
+import "../features/markdown/markdown.css";
 import "../styles/base.css";
 import { ThemeProvider } from "../styles/ThemeProvider";
 import { DesktopApp } from "./App";
