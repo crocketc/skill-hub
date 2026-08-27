@@ -481,7 +481,7 @@ a {
   display: grid;
   min-height: 0;
   gap: var(--space-4);
-  overflow-y: auto;
+  overflow-y: hidden;
   padding: var(--space-5);
   scrollbar-gutter: stable;
 }
@@ -955,8 +955,11 @@ a {
 
 .sh-skill-library {
   position: relative;
-  display: grid;
+  display: flex;
+  height: 100%;
+  flex-direction: column;
   min-width: 0;
+  min-height: 0;
   gap: var(--space-2);
 }
 
@@ -1514,6 +1517,7 @@ a {
   z-index: 4;
   top: 0;
   min-width: 0;
+  flex: 0 0 auto;
   padding-block: var(--space-1);
   background: var(--color-page);
 }
@@ -1805,6 +1809,27 @@ a {
 
 @media (max-width: 112rem) {
   .sh-skill-library__query-tools > section {
+    grid-template-columns: minmax(12rem, 2fr) repeat(6, minmax(5.5rem, 1fr)) max-content max-content;
+    gap: var(--space-2);
+    padding: var(--space-2);
+  }
+
+  .sh-skill-library__query-tools > section > .sh-filter-search {
+    grid-column: auto;
+  }
+}
+
+@media (max-width: 90rem) {
+  .sh-app-shell__content {
+    overflow-y: auto;
+  }
+
+  .sh-skill-library {
+    height: auto;
+    min-height: 100%;
+  }
+
+  .sh-skill-library__query-tools > section {
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 
@@ -1831,6 +1856,9 @@ a {
 
 .sh-skill-table-workspace {
   display: grid;
+  min-height: 0;
+  flex: 1 1 auto;
+  grid-template-rows: auto minmax(0, 1fr) auto;
   gap: var(--space-3);
 }
 
@@ -1935,6 +1963,9 @@ a {
 }
 
 .sh-skill-table__region-shell {
+  display: grid;
+  min-height: 0;
+  grid-template-rows: minmax(0, 1fr) auto;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
   background: var(--color-surface);
@@ -1963,6 +1994,7 @@ a {
 }
 
 .sh-skill-table__region {
+  min-height: 0;
   overflow-x: hidden;
   overflow-y: auto;
   border: 0;
@@ -2052,8 +2084,18 @@ a {
 
 @media (min-width: 49rem) {
   .sh-skill-table__region {
-    max-height: calc(100dvh - 22rem);
     overflow-y: auto;
+  }
+}
+
+@media (max-width: 90rem) {
+  .sh-skill-table-workspace {
+    flex: 0 0 auto;
+    grid-template-rows: auto auto auto;
+  }
+
+  .sh-skill-table__region {
+    max-height: calc(100dvh - 22rem);
   }
 }
 

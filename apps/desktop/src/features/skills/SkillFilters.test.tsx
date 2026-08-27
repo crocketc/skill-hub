@@ -198,17 +198,39 @@ it("places user views after the first four in a labelled details menu", async ()
 
 it("wraps the filter grid before zoomed desktop widths can overflow", () => {
   expect(baseCss).toMatch(
-    /@media \(max-width: 112rem\)[\s\S]*\.sh-skill-library__query-tools > section\s*\{[\s\S]*grid-template-columns:\s*repeat\(4, minmax\(0, 1fr\)/,
+    /@media \(max-width: 90rem\)[\s\S]*\.sh-skill-library__query-tools > section\s*\{[\s\S]*grid-template-columns:\s*repeat\(4, minmax\(0, 1fr\)/,
   );
 });
 
 it("keeps the search field bounded inside the zoomed filter grid", () => {
-  const zoomedStart = baseCss.indexOf("@media (max-width: 112rem)");
+  const zoomedStart = baseCss.indexOf("@media (max-width: 90rem)");
   const zoomedEnd = baseCss.indexOf("@media (max-width: 48rem)", zoomedStart);
   const zoomedLayout = baseCss.slice(zoomedStart, zoomedEnd);
   expect(zoomedLayout).toMatch(
     /\.sh-skill-library__query-tools > section > \.sh-filter-search\s*\{[\s\S]*grid-column:\s*auto/,
   );
+});
+
+it("keeps 100% and 110% filters on one compact row", () => {
+  const compactStart = baseCss.indexOf("@media (max-width: 112rem)");
+  const compactEnd = baseCss.indexOf("@media (max-width: 90rem)", compactStart);
+  const compactLayout = baseCss.slice(compactStart, compactEnd);
+  expect(compactLayout).toMatch(
+    /grid-template-columns:\s*minmax\(12rem, 2fr\) repeat\(6, minmax\(5\.5rem, 1fr\)\)/,
+  );
+  expect(compactLayout).not.toMatch(/grid-template-columns:\s*repeat\(4,/);
+});
+
+it("keeps the desktop shell fixed while enabling outer scroll only for wrapped zoom", () => {
+  expect(baseCss).toMatch(/\.sh-app-shell__content\s*\{[\s\S]*overflow-y:\s*hidden/);
+  const wrappedStart = baseCss.indexOf("@media (max-width: 90rem)");
+  const wrappedEnd = baseCss.indexOf("@media (max-width: 48rem)", wrappedStart);
+  expect(baseCss.slice(wrappedStart, wrappedEnd)).toMatch(/\.sh-app-shell__content\s*\{[\s\S]*overflow-y:\s*auto/);
+});
+
+it("lets the table workspace fill the remaining library height", () => {
+  expect(baseCss).toMatch(/\.sh-skill-library\s*\{[\s\S]*display:\s*flex[\s\S]*height:\s*100%/);
+  expect(baseCss).toMatch(/\.sh-skill-table-workspace\s*\{[\s\S]*min-height:\s*0[\s\S]*flex:\s*1 1 auto/);
 });
 
 it("uses compact spacing between the library controls and results", () => {
