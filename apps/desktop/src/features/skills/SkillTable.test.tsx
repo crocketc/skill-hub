@@ -62,8 +62,8 @@ const allColumnIds = [
   "tags",
   "invocation",
   "deployments",
-  "version",
   "security",
+  "version",
   "original_description",
   "translated_description",
   "source",
@@ -280,7 +280,7 @@ it("emits controlled visibility and density preference updates", async () => {
   expect(onPreferencesChange).toHaveBeenLastCalledWith(expect.objectContaining({
     visibleColumns: expect.not.arrayContaining(["purpose"]),
   }));
-  expect(screen.getByRole("button", { name: "Invocation" })).not.toHaveClass("sh-skill-table__reorder-item--visible");
+  expect(screen.getByRole("button", { name: "Version" })).not.toHaveClass("sh-skill-table__reorder-item--visible");
   fireEvent.click(screen.getByRole("radio", { name: "Standard" }));
   expect(onPreferencesChange).toHaveBeenLastCalledWith(expect.objectContaining({ density: "standard" }));
 });

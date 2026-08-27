@@ -156,8 +156,8 @@ const SKILL_COLUMN_ORDER = freeze<SkillColumnId[]>([
   "tags",
   "invocation",
   "deployments",
-  "version",
   "security",
+  "version",
   "original_description",
   "translated_description",
   "source",
@@ -172,10 +172,9 @@ const DEFAULT_VISIBLE_COLUMNS = freeze<SkillColumnId[]>([
   "name",
   "purpose",
   "tags",
+  "invocation",
   "deployments",
-  "version",
   "security",
-  "lifecycle",
 ]);
 
 const DRAWER_MODULE_ORDER = freeze<DrawerModuleId[]>([
