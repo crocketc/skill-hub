@@ -1,0 +1,298 @@
+.sh-markdown-workspace {
+  display: grid;
+  min-width: 0;
+  gap: var(--space-3);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--color-border);
+  content-visibility: auto;
+  contain-intrinsic-size: auto 36rem;
+}
+
+.sh-markdown-workspace__header,
+.sh-markdown-workspace__external-actions,
+.sh-markdown-workspace [role="tablist"],
+.sh-markdown-workspace__draft,
+.sh-markdown-editor__toolbar,
+.sh-mermaid-block > [role="tablist"] {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.sh-markdown-workspace__header {
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.sh-markdown-workspace__header > div:first-child {
+  display: grid;
+  min-width: min(20rem, 100%);
+  grid-template-columns: auto minmax(8rem, 1fr);
+  align-items: center;
+  gap: var(--space-1) var(--space-3);
+}
+
+.sh-markdown-workspace__header h3 {
+  grid-column: 1 / -1;
+  margin: 0;
+  font-size: var(--font-size-lg);
+}
+
+.sh-markdown-workspace__header label {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+  font-weight: 650;
+}
+
+.sh-markdown-workspace select {
+  min-width: 0;
+  min-height: 2.25rem;
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-raised);
+  color: var(--color-text);
+  font: inherit;
+  font-size: var(--font-size-sm);
+}
+
+.sh-markdown-workspace__external-actions,
+.sh-markdown-workspace [role="tablist"] {
+  flex-wrap: wrap;
+}
+
+.sh-markdown-workspace__draft,
+.sh-markdown-workspace__read-only,
+.sh-markdown-frontmatter,
+.sh-markdown-remote-image,
+.sh-markdown-blocked-resource,
+.sh-markdown-editor > [role="alert"] {
+  padding: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-muted);
+}
+
+.sh-markdown-workspace__draft {
+  justify-content: space-between;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.sh-markdown-workspace__read-only {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  background: var(--color-warning-soft);
+}
+
+.sh-markdown-workspace__read-only p,
+.sh-markdown-frontmatter h3,
+.sh-markdown-frontmatter pre,
+.sh-markdown-editor h3,
+.sh-markdown-code,
+.sh-mermaid-block {
+  margin: 0;
+}
+
+.sh-markdown-workspace__source,
+.sh-markdown-frontmatter pre {
+  max-width: 100%;
+  overflow: auto;
+  padding: var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-muted);
+  color: var(--color-text);
+  font-size: var(--font-size-sm);
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.sh-markdown-renderer {
+  min-width: 0;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+}
+
+.sh-markdown-renderer > :first-child,
+.sh-markdown-renderer > .sh-markdown-frontmatter + * {
+  margin-top: 0;
+}
+
+.sh-markdown-renderer > :last-child {
+  margin-bottom: 0;
+}
+
+.sh-markdown-renderer h1,
+.sh-markdown-renderer h2,
+.sh-markdown-renderer h3,
+.sh-markdown-renderer h4 {
+  margin-block: var(--space-5) var(--space-2);
+  color: var(--color-text);
+  line-height: 1.3;
+  letter-spacing: -0.015em;
+}
+
+.sh-markdown-renderer h1 { font-size: var(--font-size-xl); }
+.sh-markdown-renderer h2 { font-size: var(--font-size-lg); }
+.sh-markdown-renderer h3,
+.sh-markdown-renderer h4 { font-size: var(--font-size-md); }
+
+.sh-markdown-renderer a {
+  color: var(--color-accent-strong);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.18em;
+}
+
+.sh-markdown-renderer blockquote {
+  margin-inline: 0;
+  padding: var(--space-2) var(--space-4);
+  border-left: 3px solid var(--color-accent);
+  background: var(--color-accent-soft);
+}
+
+.sh-markdown-renderer table {
+  display: block;
+  width: 100%;
+  overflow-x: auto;
+  border-collapse: collapse;
+}
+
+.sh-markdown-renderer th,
+.sh-markdown-renderer td {
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border);
+  text-align: left;
+}
+
+.sh-markdown-renderer th {
+  background: var(--color-surface-muted);
+  color: var(--color-text);
+}
+
+.sh-markdown-renderer img,
+.sh-mermaid-block__diagram svg {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+
+.sh-markdown-remote-image {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--color-text-muted);
+}
+
+.sh-markdown-code {
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-muted);
+}
+
+.sh-markdown-code figcaption {
+  display: flex;
+  min-height: 2.25rem;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding-inline: var(--space-3);
+  border-bottom: 1px solid var(--color-border);
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+  font-weight: 650;
+}
+
+.sh-markdown-code pre {
+  max-width: 100%;
+  margin: 0;
+  overflow: auto;
+  padding: var(--space-4) !important;
+  font-size: var(--font-size-xs);
+  line-height: 1.6;
+}
+
+.sh-mermaid-block {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.sh-mermaid-block__diagram {
+  overflow: auto;
+  padding: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-raised);
+}
+
+.sh-markdown-editor,
+.sh-markdown-editor__split,
+.sh-markdown-editor__split > div {
+  display: grid;
+  min-width: 0;
+  gap: var(--space-3);
+}
+
+.sh-markdown-editor__toolbar {
+  min-height: 2.25rem;
+  justify-content: space-between;
+}
+
+.sh-markdown-editor__toolbar > div {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+}
+
+.sh-markdown-editor__split {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.sh-markdown-editor__split > div {
+  align-content: start;
+}
+
+.sh-markdown-editor .cm-editor {
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-raised);
+  color: var(--color-text);
+  font-size: var(--font-size-sm);
+}
+
+.sh-markdown-editor .cm-editor.cm-focused {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 1px;
+}
+
+.sh-markdown-editor .cm-gutters,
+.sh-markdown-editor .cm-activeLine,
+.sh-markdown-editor .cm-activeLineGutter {
+  border-color: var(--color-border);
+  background: var(--color-surface-muted);
+  color: var(--color-text-muted);
+}
+
+@media (max-width: 56rem) {
+  .sh-markdown-workspace__header,
+  .sh-markdown-workspace__read-only {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .sh-markdown-editor__split {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (pointer: coarse) {
+  .sh-markdown-workspace select {
+    min-height: 2.75rem;
+  }
+}

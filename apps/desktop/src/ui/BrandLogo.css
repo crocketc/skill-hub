@@ -1,0 +1,16 @@
+.sh-brand-logo {
+  display: inline-block;
+  width: auto;
+  height: 3.25rem;
+  aspect-ratio: 1024 / 477;
+  flex: none;
+  background-color: currentcolor;
+  mask-image: url("/brand/skillhub-logo-mask.png");
+  mask-position: center;
+  mask-repeat: no-repeat;
+  mask-size: contain;
+  -webkit-mask-image: url("/brand/skillhub-logo-mask.png");
+  -webkit-mask-position: center;
+  -webkit-mask-repeat: no-repeat;
+  -webkit-mask-size: contain;
+}
