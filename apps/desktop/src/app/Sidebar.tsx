@@ -136,12 +136,14 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
           </svg>
         </button>
       </div>
-      <nav>
-        <NavigationLinks collapsed={isCollapsed} items={primaryNavigation} />
-      </nav>
-      <nav className="sh-sidebar__pinned">
-        <NavigationLinks collapsed={isCollapsed} items={pinnedNavigation} />
-      </nav>
+      <div className="sh-sidebar__scroll">
+        <nav>
+          <NavigationLinks collapsed={isCollapsed} items={primaryNavigation} />
+        </nav>
+        <nav className="sh-sidebar__pinned">
+          <NavigationLinks collapsed={isCollapsed} items={pinnedNavigation} />
+        </nav>
+      </div>
     </aside>
   );
 }

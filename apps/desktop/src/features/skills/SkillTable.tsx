@@ -209,10 +209,13 @@ function isSelected(selection: SkillSelection, skillId: string) {
 export function SkillTable(props: SkillTableProps) {
   const { t } = useTranslation();
   const regionRef = useRef<HTMLDivElement>(null);
+  const horizontalScrollRef = useRef<HTMLDivElement>(null);
   const restoredKeyRef = useRef<string>();
   const [controlsOpen, setControlsOpen] = useState(false);
   const [draggedColumn, setDraggedColumn] = useState<SkillColumnId>();
   const [dragOverColumn, setDragOverColumn] = useState<SkillColumnId>();
+  const [horizontalOverflow, setHorizontalOverflow] = useState(false);
+  const [tableScrollWidth, setTableScrollWidth] = useState(0);
   const columnOrder = orderedColumnIds(props.preferences);
   const visibleColumns = new Set([...LOCKED_COLUMNS, ...props.preferences.visibleColumns]);
   const columns = useMemo(() => createSkillColumns(t), [t]);
@@ -258,6 +261,47 @@ export function SkillTable(props: SkillTableProps) {
     region.scrollLeft = position.left;
     region.scrollTop = position.top;
   }, [props.page.items, props.returnPosition]);
+
+  useLayoutEffect(() => {
+    const region = regionRef.current;
+    const horizontalScroll = horizontalScrollRef.current;
+    if (!region || !horizontalScroll) return;
+
+    const measure = () => {
+      const scrollWidth = region.scrollWidth;
+      setTableScrollWidth(scrollWidth);
+      setHorizontalOverflow(scrollWidth > region.clientWidth + 1);
+      if (horizontalScroll.scrollLeft !== region.scrollLeft) {
+        horizontalScroll.scrollLeft = region.scrollLeft;
+      }
+    };
+    measure();
+    const table = region.querySelector("table");
+    const observer = typeof ResizeObserver !== "undefined" ? new ResizeObserver(measure) : undefined;
+    observer?.observe(region);
+    if (table) observer?.observe(table);
+    window.addEventListener("resize", measure);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener("resize", measure);
+    };
+  }, [props.page.items, props.preferences.columnOrder, props.preferences.visibleColumns]);
+
+  const syncHorizontalScroll = () => {
+    const region = regionRef.current;
+    const horizontalScroll = horizontalScrollRef.current;
+    if (region && horizontalScroll && region.scrollLeft !== horizontalScroll.scrollLeft) {
+      region.scrollLeft = horizontalScroll.scrollLeft;
+    }
+  };
+
+  const syncRegionScroll = () => {
+    const region = regionRef.current;
+    const horizontalScroll = horizontalScrollRef.current;
+    if (region && horizontalScroll && horizontalScroll.scrollLeft !== region.scrollLeft) {
+      horizontalScroll.scrollLeft = region.scrollLeft;
+    }
+  };
 
   const updateQuery = (change: Partial<SkillLibraryQuery>) => props.onQueryChange({ ...props.query, ...change });
   const sortColumn = (column: SkillColumnId) => updateQuery({
@@ -362,8 +406,20 @@ export function SkillTable(props: SkillTableProps) {
           </div>
         ) : null}
       </div>
-      <div aria-label={t("skillLibrary.table.resultsRegion")} className="sh-skill-table__region" ref={regionRef} role="region" tabIndex={-1}>
-        <table className="sh-skill-table" data-density={props.preferences.density}>
+      <div className="sh-skill-table__region-shell">
+        <div
+          aria-label={t("skillLibrary.table.horizontalScroll")}
+          className="sh-skill-table__horizontal-scroll"
+          data-overflowing={horizontalOverflow ? "true" : "false"}
+          onScroll={syncHorizontalScroll}
+          ref={horizontalScrollRef}
+          role="region"
+          tabIndex={0}
+        >
+          <div aria-hidden="true" style={{ width: `${tableScrollWidth}px` }} />
+        </div>
+        <div aria-label={t("skillLibrary.table.resultsRegion")} className="sh-skill-table__region" onScroll={syncRegionScroll} ref={regionRef} role="region" tabIndex={-1}>
+          <table className="sh-skill-table" data-density={props.preferences.density}>
           <thead>
             {table.getHeaderGroups().map((headerGroup) => <tr key={headerGroup.id}>{headerGroup.headers.map((header) => {
               const column = header.column.id as SkillColumnId;
@@ -379,7 +435,8 @@ export function SkillTable(props: SkillTableProps) {
               {row.getVisibleCells().map((cell) => <td data-column={cell.column.id} key={cell.id}>{flexRender(cell.column.columnDef.cell, cell.getContext())}</td>)}
             </tr>)}
           </tbody>
-        </table>
+          </table>
+        </div>
       </div>
       <footer className="sh-skill-table__pagination">
         <label>{t("skillLibrary.table.pageSize")}<select aria-label={t("skillLibrary.table.pageSize")} onChange={(event) => updateQuery({ page: 1, pageSize: Number(event.currentTarget.value) as SkillLibraryQuery["pageSize"] })} value={props.query.pageSize}>{PAGE_SIZES.map((size) => <option key={size} value={size}>{size}</option>)}</select></label>

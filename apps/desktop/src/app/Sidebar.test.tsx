@@ -3,6 +3,7 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it } from "vitest";
 import { createSkillHubI18n } from "../i18n";
+import baseCss from "../styles/base.css?raw";
 import { Sidebar } from "./Sidebar";
 
 async function renderSidebar(entry = "/library/skill-pdf") {
@@ -49,5 +50,16 @@ describe("Sidebar", () => {
       "page",
     );
     expect(screen.getByRole("img", { name: "Skill library icon" })).toBeInTheDocument();
+  });
+
+  it("keeps the floating toggle outside the sidebar scroll container", async () => {
+    await renderSidebar();
+
+    const navigation = screen.getByRole("complementary", { name: "Main navigation" });
+    expect(navigation.querySelector(".sh-sidebar__scroll")).toBeInTheDocument();
+    expect(baseCss).toMatch(/\.sh-sidebar\s*\{[^}]*overflow:\s*visible/);
+    expect(baseCss).toMatch(
+      /\.sh-sidebar__scroll\s*\{[\s\S]*overflow-y:\s*auto[\s\S]*overflow-x:\s*hidden/,
+    );
   });
 });

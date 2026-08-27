@@ -512,6 +512,7 @@
       },
       "densityLabel": "密度",
       "highRiskCount": "{{count}} 个高风险项",
+      "horizontalScroll": "横向滚动技能列表",
       "lifecycle": {
         "active": "活跃",
         "archived": "已归档",

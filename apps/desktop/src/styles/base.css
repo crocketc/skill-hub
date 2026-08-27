@@ -286,7 +286,7 @@ a {
   min-height: 0;
   flex-direction: column;
   align-self: start;
-  overflow-y: auto;
+  overflow: visible;
   padding: var(--space-4);
   border-right: 1px solid var(--color-border);
   background: var(--color-surface-raised);
@@ -314,15 +314,15 @@ a {
 .sh-sidebar__toggle {
   position: absolute;
   z-index: 2;
-  top: 4.25rem;
-  right: -1rem;
+  top: 50%;
+  right: -0.9rem;
   display: grid;
-  width: 2.15rem;
-  height: 3.5rem;
+  width: 1.8rem;
+  height: 2.4rem;
   flex: 0 0 auto;
   place-items: center;
   border: 1px solid color-mix(in srgb, var(--color-border) 90%, var(--color-text));
-  border-radius: 0 var(--radius-md) var(--radius-md) 0;
+  border-radius: 999px;
   background: linear-gradient(145deg, var(--color-surface) 10%, var(--color-surface-raised) 88%);
   color: var(--color-text-secondary);
   cursor: pointer;
@@ -345,8 +345,18 @@ a {
 }
 
 .sh-sidebar__toggle-icon {
-  width: 1.15rem;
-  height: 1.15rem;
+  width: 1rem;
+  height: 1rem;
+}
+
+.sh-sidebar__scroll {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
 }
 
 .sh-sidebar__list {
@@ -890,6 +900,20 @@ a {
   .sh-sidebar nav {
     min-width: 0;
     overflow-x: auto;
+  }
+
+  .sh-sidebar__scroll {
+    min-width: 0;
+    flex-direction: row;
+    gap: var(--space-2);
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+
+  .sh-sidebar__scroll nav {
+    flex: 0 0 auto;
+    min-width: max-content;
+    overflow-x: visible;
   }
 
   .sh-sidebar__list {
@@ -1863,12 +1887,39 @@ a {
   font-size: var(--font-size-xs);
 }
 
-.sh-skill-table__region {
-  overflow-x: auto;
+.sh-skill-table__region-shell {
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
   background: var(--color-surface);
   box-shadow: var(--shadow-sm);
+  overflow: hidden;
+}
+
+.sh-skill-table__horizontal-scroll {
+  display: none;
+  height: 0.9rem;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-inline: var(--space-2);
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface-muted);
+  scrollbar-color: var(--color-accent) var(--color-surface-muted);
+  scrollbar-gutter: stable;
+}
+
+.sh-skill-table__horizontal-scroll[data-overflowing="true"] {
+  display: block;
+}
+
+.sh-skill-table__horizontal-scroll > div {
+  height: 1px;
+}
+
+.sh-skill-table__region {
+  overflow-x: hidden;
+  overflow-y: auto;
+  border: 0;
+  border-radius: 0;
 }
 
 .sh-skill-table {

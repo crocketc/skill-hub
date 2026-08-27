@@ -343,6 +343,25 @@ it("gives every visible column a semantic width contract for narrow overflow", a
   );
 });
 
+it("keeps horizontal table scrolling visible above the vertically scrolling results", async () => {
+  await renderTable({
+    preferences: {
+      ...DEFAULT_TABLE_PREFERENCES,
+      visibleColumns: [...allColumnIds],
+    },
+  });
+
+  const horizontalScroll = document.querySelector<HTMLElement>(".sh-skill-table__horizontal-scroll");
+  expect(horizontalScroll).toBeInTheDocument();
+  if (!horizontalScroll) throw new Error("Expected the horizontal table scroll rail");
+  expect(horizontalScroll).toHaveClass("sh-skill-table__horizontal-scroll");
+  expect(horizontalScroll.nextElementSibling).toHaveClass("sh-skill-table__region");
+  expect(baseCss).toMatch(/\.sh-skill-table__horizontal-scroll\s*\{[\s\S]*overflow-x:\s*auto/);
+  expect(baseCss).toMatch(
+    /\.sh-skill-table__region\s*\{[\s\S]*overflow-x:\s*hidden[\s\S]*overflow-y:\s*auto/,
+  );
+});
+
 it("disables pagination controls at the first and last pages", async () => {
   await renderTable({ page: { ...page, page: 1 }, query: { ...DEFAULT_SKILL_QUERY, page: 1, pageSize: 10 } });
   expect(screen.getByRole("button", { name: "Previous page" })).toBeDisabled();

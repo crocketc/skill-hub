@@ -512,6 +512,7 @@
       },
       "densityLabel": "Density",
       "highRiskCount": "{{count}} high risk",
+      "horizontalScroll": "Horizontal table scroll",
       "lifecycle": {
         "active": "Active",
         "archived": "Archived",
