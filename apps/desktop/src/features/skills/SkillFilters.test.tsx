@@ -253,3 +253,10 @@ it("keeps the filter toggle rail as short as the scrollbar", () => {
   const toggleBlock = baseCss.slice(toggleStart, toggleEnd);
   expect(toggleBlock).toMatch(/height:\s*0\.75rem/);
 });
+
+it("overrides the generic filter button minimum height for the toggle rail", () => {
+  const overrideStart = baseCss.indexOf(".sh-skill-library__query-tools button.sh-skill-library__query-toggle");
+  const overrideEnd = baseCss.indexOf("}", overrideStart);
+  const overrideBlock = baseCss.slice(overrideStart, overrideEnd);
+  expect(overrideBlock).toMatch(/min-height:\s*0/);
+});

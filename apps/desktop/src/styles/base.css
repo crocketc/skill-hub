@@ -1702,6 +1702,10 @@ a {
   white-space: nowrap;
 }
 
+.sh-skill-library__query-tools button.sh-skill-library__query-toggle {
+  min-height: 0;
+}
+
 .sh-skill-library__save-view,
 .sh-skill-library__preference-status,
 .sh-skill-library__announcement,
