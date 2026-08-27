@@ -215,6 +215,7 @@ export function SkillTable(props: SkillTableProps) {
   const [controlsOpen, setControlsOpen] = useState(false);
   const [draggedColumn, setDraggedColumn] = useState<SkillColumnId>();
   const [dragOverColumn, setDragOverColumn] = useState<SkillColumnId>();
+  const suppressToggleClickRef = useRef(false);
   const [horizontalOverflow, setHorizontalOverflow] = useState(false);
   const [tableScrollWidth, setTableScrollWidth] = useState(0);
   const columnOrder = orderedColumnIds(props.preferences);
@@ -340,12 +341,12 @@ export function SkillTable(props: SkillTableProps) {
     const index = columnOrder.indexOf(column);
     moveColumnToIndex(column, index + offset);
   };
-  const handleColumnDragOver = (event: DragEvent<HTMLDivElement>, column: SkillColumnId) => {
+  const handleColumnDragOver = (event: DragEvent<HTMLElement>, column: SkillColumnId) => {
     if (!draggedColumn || draggedColumn === column || LOCKED_COLUMNS.includes(column)) return;
     event.preventDefault();
     setDragOverColumn(column);
   };
-  const handleColumnDrop = (event: DragEvent<HTMLDivElement>, column: SkillColumnId) => {
+  const handleColumnDrop = (event: DragEvent<HTMLElement>, column: SkillColumnId) => {
     event.preventDefault();
     if (draggedColumn && draggedColumn !== column) moveColumnBefore(draggedColumn, column);
     setDraggedColumn(undefined);
@@ -365,46 +366,59 @@ export function SkillTable(props: SkillTableProps) {
           <div aria-label={t("skillLibrary.table.columnsAndDensity")} className="sh-skill-table__controls" role="dialog">
             <fieldset>
               <legend>{t("skillLibrary.table.columnsLabel")}</legend>
-              {columnOrder.map((column) => <label key={column}><input aria-label={t(COLUMN_LABELS[column])} checked={visibleColumns.has(column)} disabled={LOCKED_COLUMNS.includes(column)} onChange={(event) => toggleColumn(column, event.currentTarget.checked)} type="checkbox" />{t(COLUMN_LABELS[column])}</label>)}
+              <div aria-label={t("skillLibrary.table.reorderLabel")} className="sh-skill-table__reorder" role="list">
+                {columnOrder.map((column) => {
+                  const locked = LOCKED_COLUMNS.includes(column);
+                  const visible = visibleColumns.has(column);
+                  return (
+                    <div key={column} role="listitem">
+                      <button
+                        aria-label={t(COLUMN_LABELS[column])}
+                        aria-pressed={visible}
+                        aria-roledescription={locked ? undefined : t("skillLibrary.table.dragColumn")}
+                        className={`sh-skill-table__reorder-item${visible ? " sh-skill-table__reorder-item--visible" : ""}${dragOverColumn === column ? " sh-skill-table__reorder-item--target" : ""}${locked ? " sh-skill-table__reorder-item--locked" : ""}`}
+                        disabled={locked}
+                        draggable={!locked}
+                        onClick={() => {
+                          if (suppressToggleClickRef.current) {
+                            suppressToggleClickRef.current = false;
+                            return;
+                          }
+                          toggleColumn(column, !visible);
+                        }}
+                        onDragEnd={() => {
+                          setDraggedColumn(undefined);
+                          setDragOverColumn(undefined);
+                          window.setTimeout(() => {
+                            suppressToggleClickRef.current = false;
+                          }, 0);
+                        }}
+                        onDragOver={(event) => handleColumnDragOver(event, column)}
+                        onDragStart={(event) => {
+                          suppressToggleClickRef.current = true;
+                          setDraggedColumn(column);
+                          if (event.dataTransfer) event.dataTransfer.effectAllowed = "move";
+                        }}
+                        onDrop={(event) => handleColumnDrop(event, column)}
+                        onKeyDown={(event) => {
+                          if (locked || (event.key !== "ArrowLeft" && event.key !== "ArrowRight")) return;
+                          event.preventDefault();
+                          moveColumnByOffset(column, event.key === "ArrowLeft" ? -1 : 1);
+                        }}
+                        type="button"
+                      >
+                        <span>{t(COLUMN_LABELS[column])}</span>
+                        {locked ? <span className="sh-skill-table__reorder-lock">{t("skillLibrary.table.lockedColumn")}</span> : null}
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
             </fieldset>
             <fieldset>
               <legend>{t("skillLibrary.table.densityLabel")}</legend>
                {(["compact", "standard", "comfortable"] as const).map((density) => <label key={density}><input checked={props.preferences.density === density} name="skill-density" onChange={() => props.onPreferencesChange({ ...props.preferences, density })} type="radio" />{t(DENSITY_LABELS[density])}</label>)}
             </fieldset>
-            <div aria-label={t("skillLibrary.table.reorderLabel")} className="sh-skill-table__reorder" role="list">
-              {columnOrder.map((column) => {
-                const locked = LOCKED_COLUMNS.includes(column);
-                return (
-                  <div
-                    aria-label={t(COLUMN_LABELS[column])}
-                    aria-roledescription={locked ? undefined : t("skillLibrary.table.dragColumn")}
-                    className={`sh-skill-table__reorder-item${dragOverColumn === column ? " sh-skill-table__reorder-item--target" : ""}${locked ? " sh-skill-table__reorder-item--locked" : ""}`}
-                    draggable={!locked}
-                    key={column}
-                    onDragEnd={() => {
-                      setDraggedColumn(undefined);
-                      setDragOverColumn(undefined);
-                    }}
-                    onDragOver={(event) => handleColumnDragOver(event, column)}
-                    onDragStart={(event) => {
-                      setDraggedColumn(column);
-                      if (event.dataTransfer) event.dataTransfer.effectAllowed = "move";
-                    }}
-                    onDrop={(event) => handleColumnDrop(event, column)}
-                    onKeyDown={(event) => {
-                      if (locked || (event.key !== "ArrowLeft" && event.key !== "ArrowRight")) return;
-                      event.preventDefault();
-                      moveColumnByOffset(column, event.key === "ArrowLeft" ? -1 : 1);
-                    }}
-                    role="listitem"
-                    tabIndex={locked ? -1 : 0}
-                  >
-                    <span>{t(COLUMN_LABELS[column])}</span>
-                    {locked ? <span className="sh-skill-table__reorder-lock">{t("skillLibrary.table.lockedColumn")}</span> : null}
-                  </div>
-                );
-              })}
-            </div>
           </div>
         ) : null}
       </div>

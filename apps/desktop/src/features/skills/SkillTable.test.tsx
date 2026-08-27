@@ -135,10 +135,12 @@ it("does not allow the select or name columns to be hidden", async () => {
   await renderTable({ onPreferencesChange });
 
   fireEvent.click(screen.getByRole("button", { name: "Columns and density" }));
-  expect(screen.getByRole("checkbox", { name: "Selection" })).toBeDisabled();
-  expect(screen.getByRole("checkbox", { name: "Name / Alias" })).toBeDisabled();
-  const versionColumn = screen.getByRole("listitem", { name: "Version" });
-  const deploymentsColumn = screen.getByRole("listitem", { name: "Deployments" });
+  expect(screen.getByRole("button", { name: "Selection" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "Name / Alias" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "Selection" })).toHaveAttribute("aria-pressed", "true");
+  expect(screen.getByRole("button", { name: "Name / Alias" })).toHaveAttribute("aria-pressed", "true");
+  const versionColumn = screen.getByRole("button", { name: "Version" });
+  const deploymentsColumn = screen.getByRole("button", { name: "Deployments" });
   fireEvent.dragStart(versionColumn);
   fireEvent.dragOver(deploymentsColumn);
   fireEvent.drop(deploymentsColumn);
@@ -151,8 +153,8 @@ it("moves an adjacent column when dragging from left to right", async () => {
   await renderTable({ onPreferencesChange });
 
   fireEvent.click(screen.getByRole("button", { name: "Columns and density" }));
-  const deploymentsColumn = screen.getByRole("listitem", { name: "Deployments" });
-  const versionColumn = screen.getByRole("listitem", { name: "Version" });
+  const deploymentsColumn = screen.getByRole("button", { name: "Deployments" });
+  const versionColumn = screen.getByRole("button", { name: "Version" });
   fireEvent.dragStart(deploymentsColumn);
   fireEvent.dragOver(versionColumn);
   fireEvent.drop(versionColumn);
@@ -271,12 +273,33 @@ it("emits controlled visibility and density preference updates", async () => {
   await renderTable({ onPreferencesChange });
 
   fireEvent.click(screen.getByRole("button", { name: "Columns and density" }));
-  fireEvent.click(screen.getByRole("checkbox", { name: "Purpose" }));
+  const purpose = screen.getByRole("button", { name: "Purpose" });
+  expect(purpose).toHaveAttribute("aria-pressed", "true");
+  expect(purpose).toHaveClass("sh-skill-table__reorder-item--visible");
+  fireEvent.click(purpose);
   expect(onPreferencesChange).toHaveBeenLastCalledWith(expect.objectContaining({
     visibleColumns: expect.not.arrayContaining(["purpose"]),
   }));
+  expect(screen.getByRole("button", { name: "Invocation" })).not.toHaveClass("sh-skill-table__reorder-item--visible");
   fireEvent.click(screen.getByRole("radio", { name: "Standard" }));
   expect(onPreferencesChange).toHaveBeenLastCalledWith(expect.objectContaining({ density: "standard" }));
+});
+
+it("uses the visibility buttons as draggable order controls", async () => {
+  const onPreferencesChange = vi.fn();
+  await renderTable({ onPreferencesChange });
+
+  fireEvent.click(screen.getByRole("button", { name: "Columns and density" }));
+  const version = screen.getByRole("button", { name: "Version" });
+  const deployments = screen.getByRole("button", { name: "Deployments" });
+  expect(version).toHaveAttribute("draggable", "true");
+  expect(deployments).toHaveAttribute("draggable", "true");
+  fireEvent.dragStart(version);
+  fireEvent.dragOver(deployments);
+  fireEvent.drop(deployments);
+
+  const next = onPreferencesChange.mock.calls.at(-1)?.[0];
+  expect(next.columnOrder.indexOf("version")).toBeLessThan(next.columnOrder.indexOf("deployments"));
 });
 
 it("keeps row checkbox keyboard activation isolated from row opening", async () => {

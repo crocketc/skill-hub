@@ -1927,6 +1927,7 @@ a {
 .sh-skill-table__reorder {
   display: flex;
   align-items: stretch;
+  flex: 1 1 100%;
   gap: var(--space-2);
   max-width: 100%;
   overflow-x: auto;
@@ -1935,6 +1936,7 @@ a {
 
 .sh-skill-table__reorder-item {
   display: flex;
+  appearance: none;
   min-width: 5.5rem;
   min-height: 2rem;
   align-items: center;
@@ -1946,6 +1948,7 @@ a {
   background: var(--color-surface-raised);
   color: var(--color-text-secondary);
   cursor: grab;
+  font: inherit;
   user-select: none;
   white-space: nowrap;
   font-size: var(--font-size-xs);
@@ -1962,8 +1965,13 @@ a {
   outline-offset: 1px;
 }
 
+.sh-skill-table__reorder-item--visible {
+  border-color: var(--color-accent);
+  background: var(--color-accent-soft);
+  color: var(--color-accent-strong);
+}
+
 .sh-skill-table__reorder-item--locked {
-  background: var(--color-surface-muted);
   cursor: not-allowed;
 }
 
