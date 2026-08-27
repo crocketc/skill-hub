@@ -653,6 +653,69 @@
       "set": "Set trial review"
     }
   },
+  "deployment": {
+    "eyebrow": "Safe deployment",
+    "heading": "Preview before changing Agent targets",
+    "description": "Select one or more targets, inspect the physical plan, then commit explicitly.",
+    "states": { "loading": "Loading deployment targets" },
+    "targets": { "heading": "Agent targets", "description": "Only discovered writable targets can be selected.", "unavailable": "Unavailable" },
+    "preview": "Preview deployment",
+    "commit": "Commit deployment",
+    "plan": { "heading": "Deployment plan", "description": "The plan is grouped by physical target; warnings stay visible before commit." },
+    "mode": { "symbolic_link": "Symbolic link", "directory_junction": "Directory junction", "managed_copy": "Managed copy" },
+    "results": { "heading": "Deployment results", "status": { "succeeded": "Succeeded", "failed": "Failed", "skipped": "Skipped" } }
+  },
+  "security": {
+    "eyebrow": "Security checks",
+    "heading": "Review findings before deployment",
+    "description": "Basic checks and optional LLM checks are separate facts and can be handled independently.",
+    "states": { "loading": "Loading security checks", "not_checked": "Not checked", "running": "Running", "passed": "Passed", "failed": "Failed" },
+    "basicHeading": "Basic security check",
+    "llmHeading": "LLM security check",
+    "experimental": "Experimental; informational only",
+    "findingsHeading": "Findings",
+    "findingCount": "{{count}} findings",
+    "noFindings": "No findings recorded.",
+    "notChecked": "This check has not run yet.",
+    "locationUnknown": "Location unavailable",
+    "actions": { "acknowledge": "Acknowledge", "confirmDismiss": "Confirm and dismiss" },
+    "disposition": { "actionable": "Actionable", "acknowledged": "Acknowledged", "dismissed": "Dismissed" }
+  },
+  "removal": {
+    "eyebrow": "Removal impact",
+    "heading": "Remove {{name}} from the managed library?",
+    "description": "Choose what should happen at every deployment target before deleting the central Skill.",
+    "dependents": "Dependent projects: {{projects}}",
+    "choiceLabel": "Deployment handling",
+    "choose": "Choose an action",
+    "choices": { "keep": "Keep deployed", "remove": "Remove deployment", "convert": "Convert to managed copy" },
+    "confirm": "Confirm deletion"
+  },
+  "pending": {
+    "eyebrow": "Pending work",
+    "heading": "Close the loop on pending items",
+    "description": "Each item exposes a direct follow-up action; unresolved work stays visible.",
+    "empty": "No pending items",
+    "listHeading": "Items needing attention",
+    "actions": { "resolve": "Resolve", "recheck": "Recheck", "convert": "Convert", "recover": "Recover", "remove": "Remove" }
+  },
+  "recovery": {
+    "eyebrow": "Recovery",
+    "heading": "Finish the interrupted operation",
+    "description": "Review the operation state before acknowledging recovery and continuing.",
+    "loading": "Loading recovery state",
+    "acknowledge": "Acknowledge recovery"
+  },
+  "operations": {
+    "eyebrow": "Operation progress",
+    "progressHeading": "Operation status",
+    "loading": "Loading operation",
+    "progressLabel": "Operation progress",
+    "technicalDetails": "Technical details",
+    "operationId": "Operation ID",
+    "completed": "Completed",
+    "phases": { "planned": "Planned", "prepared": "Prepared", "applying": "Applying", "verifying": "Verifying", "committed": "Committed", "needs_recovery": "Needs recovery", "rolled_back": "Rolled back" }
+  },
   "navigation": {
     "agents": "Agents",
     "discovery": "Discover",

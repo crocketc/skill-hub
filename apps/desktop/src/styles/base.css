@@ -2696,6 +2696,181 @@ a {
   font-size: var(--font-size-xs);
 }
 
+.sh-workflow-page {
+  display: grid;
+  gap: var(--space-5);
+}
+
+.sh-workflow-card {
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  padding: var(--space-5);
+}
+
+.sh-workflow-grid {
+  display: grid;
+  gap: var(--space-4);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.sh-workflow-targets,
+.sh-workflow-list {
+  display: grid;
+  gap: var(--space-2);
+  list-style: none;
+  margin: var(--space-4) 0 0;
+  padding: 0;
+}
+
+.sh-workflow-target,
+.sh-workflow-list__item {
+  align-items: center;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
+  display: flex;
+  gap: var(--space-3);
+  justify-content: space-between;
+  padding: var(--space-3);
+}
+
+.sh-workflow-target span,
+.sh-workflow-list__item > div:first-child,
+.sh-workflow-list__item > span:first-child {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.sh-workflow-target small,
+.sh-workflow-list__item small {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+}
+
+.sh-workflow-actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  justify-content: flex-end;
+}
+
+.sh-workflow-card select {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  color: var(--color-text);
+  min-height: 2.25rem;
+  padding: 0 var(--space-2);
+}
+
+.sh-count-badge {
+  align-items: center;
+  background: var(--color-accent-soft);
+  border-radius: 999px;
+  color: var(--color-accent-strong);
+  display: inline-flex;
+  font-size: var(--font-size-xs);
+  min-height: 1.75rem;
+  padding: 0 var(--space-2);
+}
+
+.sh-section-heading {
+  align-items: flex-start;
+  display: flex;
+  gap: var(--space-3);
+  justify-content: space-between;
+}
+
+.sh-section-heading h2 {
+  margin: 0;
+}
+
+.sh-section-heading p {
+  color: var(--color-text-muted);
+  margin: var(--space-1) 0 0;
+}
+
+.sh-notice,
+.sh-notice-list {
+  background: var(--color-warning-soft);
+  border: 1px solid color-mix(in srgb, var(--color-warning) 32%, transparent);
+  border-radius: var(--radius-md);
+  color: var(--color-warning);
+  padding: var(--space-3);
+}
+
+.sh-notice-list {
+  list-style: none;
+  margin: var(--space-4) 0 0;
+}
+
+.sh-status {
+  border-radius: 999px;
+  font-size: var(--font-size-xs);
+  padding: var(--space-1) var(--space-2);
+  white-space: nowrap;
+}
+
+.sh-status--succeeded,
+.sh-status--passed,
+.sh-status--committed {
+  background: var(--color-success-soft);
+  color: var(--color-success);
+}
+
+.sh-status--failed,
+.sh-status--needs_recovery {
+  background: var(--color-danger-soft);
+  color: var(--color-danger);
+}
+
+.sh-status--warning,
+.sh-status--actionable,
+.sh-status--applying,
+.sh-status--verifying {
+  background: var(--color-warning-soft);
+  color: var(--color-warning);
+}
+
+.sh-status--muted,
+.sh-status--skipped,
+.sh-status--not_checked,
+.sh-status--prepared,
+.sh-status--planned,
+.sh-status--rolled_back {
+  background: var(--color-surface-muted);
+  color: var(--color-text-muted);
+}
+
+.sh-check-summary,
+.sh-operation-summary {
+  display: grid;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+
+.sh-check-summary small {
+  color: var(--color-text-muted);
+}
+
+.sh-workflow-card progress {
+  accent-color: var(--color-accent);
+  height: 0.75rem;
+  width: 100%;
+}
+
+.sh-workflow-card details {
+  margin-top: var(--space-4);
+}
+
+@media (max-width: 48rem) {
+  .sh-workflow-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 @media (max-width: 48rem) {
   .sh-discovery-page__grid,
   .sh-import-source__descriptor {

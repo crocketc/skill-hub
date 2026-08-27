@@ -653,6 +653,69 @@
       "set": "设置试用复核"
     }
   },
+  "deployment": {
+    "eyebrow": "安全部署",
+    "heading": "先预览，再修改 Agent 目标",
+    "description": "选择一个或多个目标，检查物理计划后再显式提交。",
+    "states": { "loading": "正在加载部署目标" },
+    "targets": { "heading": "Agent 目标", "description": "只有已发现且可写的目标可以选择。", "unavailable": "不可用" },
+    "preview": "预览部署",
+    "commit": "提交部署",
+    "plan": { "heading": "部署计划", "description": "计划按物理目标归组；提交前始终保留警告。" },
+    "mode": { "symbolic_link": "符号链接", "directory_junction": "目录联接", "managed_copy": "托管复制" },
+    "results": { "heading": "部署结果", "status": { "succeeded": "已成功", "failed": "失败", "skipped": "已跳过" } }
+  },
+  "security": {
+    "eyebrow": "安全检查",
+    "heading": "部署前处理安全问题",
+    "description": "基础检查与可选的 LLM 检查是彼此独立的事实，可以分别处理。",
+    "states": { "loading": "正在加载安全检查", "not_checked": "未检查", "running": "检查中", "passed": "通过", "failed": "失败" },
+    "basicHeading": "基础安全检查",
+    "llmHeading": "LLM 安全检查",
+    "experimental": "实验功能，仅供参考",
+    "findingsHeading": "发现的问题",
+    "findingCount": "{{count}} 个问题",
+    "noFindings": "暂无安全问题记录。",
+    "notChecked": "此检查尚未运行。",
+    "locationUnknown": "位置不可用",
+    "actions": { "acknowledge": "确认已知晓", "confirmDismiss": "确认并忽略此项" },
+    "disposition": { "actionable": "待处理", "acknowledged": "已知晓", "dismissed": "已忽略" }
+  },
+  "removal": {
+    "eyebrow": "移除影响",
+    "heading": "要从托管库移除 {{name}} 吗？",
+    "description": "删除中心 Skill 前，请先为每个部署目标选择处理方式。",
+    "dependents": "依赖项目：{{projects}}",
+    "choiceLabel": "部署处理方式",
+    "choose": "选择处理方式",
+    "choices": { "keep": "保留部署", "remove": "移除部署", "convert": "转换为托管复制" },
+    "confirm": "确认删除"
+  },
+  "pending": {
+    "eyebrow": "待处理事项",
+    "heading": "完成待处理事项",
+    "description": "每个事项都提供直接的后续操作；未完成的工作会持续显示。",
+    "empty": "没有待处理事项",
+    "listHeading": "需要关注的事项",
+    "actions": { "resolve": "处理", "recheck": "重新检查", "convert": "转换", "recover": "恢复", "remove": "移除" }
+  },
+  "recovery": {
+    "eyebrow": "恢复",
+    "heading": "完成中断的操作",
+    "description": "确认操作状态后，再确认恢复并继续。",
+    "loading": "正在加载恢复状态",
+    "acknowledge": "确认恢复"
+  },
+  "operations": {
+    "eyebrow": "操作进度",
+    "progressHeading": "操作状态",
+    "loading": "正在加载操作",
+    "progressLabel": "操作进度",
+    "technicalDetails": "技术细节",
+    "operationId": "操作 ID",
+    "completed": "已完成",
+    "phases": { "planned": "已计划", "prepared": "已准备", "applying": "执行中", "verifying": "验证中", "committed": "已提交", "needs_recovery": "需要恢复", "rolled_back": "已回滚" }
+  },
   "navigation": {
     "agents": "Agent",
     "discovery": "发现",

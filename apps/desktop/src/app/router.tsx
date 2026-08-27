@@ -9,6 +9,15 @@ import { ProjectDetailPage } from "../features/projects/ProjectDetailPage";
 import { ProjectListPage } from "../features/projects/ProjectListPage";
 import { unavailableAgentFacade } from "../features/agents/api";
 import { unavailableProjectFacade } from "../features/projects/api";
+import { DeploymentDialog } from "../features/deployment/DeploymentDialog";
+import { unavailableDeploymentFacade } from "../features/deployment/api";
+import { SecurityResults } from "../features/security/SecurityResults";
+import { unavailableSecurityFacade } from "../features/security/api";
+import { PendingPage } from "../features/pending/PendingPage";
+import { unavailablePendingFacade } from "../features/pending/api";
+import { OperationProgress } from "../features/operations/OperationProgress";
+import { unavailableOperationFacade } from "../features/operations/api";
+import { RecoveryPage } from "../features/recovery/RecoveryPage";
 import { DiscoveryPage } from "../features/discovery/DiscoveryPage";
 import { OverviewPage } from "../features/overview/OverviewPage";
 import { SkillLibraryPage } from "../features/skills/SkillLibraryPage";
@@ -43,6 +52,21 @@ function ProjectDetailRoute() {
   return <ProjectDetailPage facade={unavailableProjectFacade} projectId={projectKey} />;
 }
 
+function DeploymentRoute() {
+  const { skillId } = useParams();
+  return <DeploymentDialog facade={unavailableDeploymentFacade} skillId={skillId ?? "unknown"} versionId="current" />;
+}
+
+function SecurityRoute() {
+  const { skillId } = useParams();
+  return <SecurityResults facade={unavailableSecurityFacade} skillId={skillId ?? "unknown"} versionId="current" />;
+}
+
+function OperationRoute() {
+  const { operationId } = useParams();
+  return <OperationProgress facade={unavailableOperationFacade} operationId={operationId ?? "latest"} />;
+}
+
 export const appRouter = createBrowserRouter([
   {
     element: <DesktopApp />,
@@ -57,13 +81,17 @@ export const appRouter = createBrowserRouter([
         path: "library/:skillId",
         element: <SkillDetailPage facade={unavailableSkillDetailFacade} />,
       },
+      { path: "library/:skillId/deploy", element: <DeploymentRoute /> },
+      { path: "library/:skillId/security", element: <SecurityRoute /> },
       { path: "discovery", element: <DiscoveryPage /> },
       { path: "agents", element: <AgentListPage facade={unavailableAgentFacade} /> },
       { path: "agents/:agentKey", element: <AgentDetailRoute /> },
       { path: "projects", element: <ProjectListPage facade={unavailableProjectFacade} /> },
       { path: "projects/:projectKey", element: <ProjectDetailRoute /> },
-      { path: "pending", element: <RoutePlaceholder titleKey="navigation.pending" /> },
-      { path: "operations", element: <RoutePlaceholder titleKey="navigation.operations" /> },
+      { path: "pending", element: <PendingPage facade={unavailablePendingFacade} /> },
+      { path: "operations/:operationId", element: <OperationRoute /> },
+      { path: "operations", element: <OperationRoute /> },
+      { path: "recovery", element: <RecoveryPage facade={unavailableOperationFacade} /> },
       { path: "settings", element: <RoutePlaceholder titleKey="navigation.settings" /> },
     ],
   },
