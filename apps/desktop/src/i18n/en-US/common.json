@@ -118,6 +118,46 @@
         "other_tool": "Managed by another tool",
         "unknown": "Ownership unknown"
       }
+    },
+    "conflicts": {
+      "eyebrow": "Conflict decisions",
+      "title": "Review required decisions",
+      "description": "Choose an explicit action for every required conflict. No choice overwrites existing files.",
+      "chooseAction": "Choose an action",
+      "none": "No conflicts require a decision.",
+      "kinds": {
+        "exact_duplicate": "Exact duplicate",
+        "same_name": "Same name",
+        "semantic_match": "Possible match",
+        "agent_owned": "Agent-owned directory"
+      },
+      "actions": {
+        "reuse": "Reuse the managed Skill",
+        "copy": "Copy into SkillHub",
+        "takeover": "Keep location and bring under management",
+        "independent": "Import independently",
+        "skip": "Skip this candidate"
+      }
+    },
+    "summary": {
+      "eyebrow": "Import summary",
+      "title": "Import results",
+      "complete": "Every selected candidate finished.",
+      "partial": "Some candidates need attention; each outcome is listed below.",
+      "unavailable": "Import is not connected to the native service yet. No files or commands were changed.",
+      "openLibrary": "Open Skill library",
+      "actions": {
+        "reuse": "Reuse",
+        "copy": "Copy",
+        "takeover": "Take over",
+        "independent": "Import independently",
+        "skip": "Skip"
+      },
+      "status": {
+        "succeeded": "Succeeded",
+        "skipped": "Skipped",
+        "failed": "Failed"
+      }
     }
   },
   "appShell": {
