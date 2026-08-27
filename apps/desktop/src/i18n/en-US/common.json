@@ -241,6 +241,16 @@
       "empty": "No usage evidence has been collected."
     }
   },
+  "projects": {
+    "eyebrow": "Project workspace",
+    "title": "Projects",
+    "description": "Organize shared Skill requirements with flat, tag-based views.",
+    "loading": "Loading project facts",
+    "unavailable": "Project data is not connected to the native service yet.",
+    "empty": "No projects match the current filters.",
+    "filters": { "label": "Project filters", "search": "Search projects", "tags": "Tags" },
+    "drawer": { "identity": "Project location", "tags": "Tags", "targets": "Shared targets" }
+  },
   "appShell": {
     "cachedData": "Cached skill library",
     "navigation": "Main navigation",

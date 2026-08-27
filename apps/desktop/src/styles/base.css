@@ -2491,6 +2491,141 @@ a {
   justify-content: flex-end;
 }
 
+.sh-project-list,
+.sh-project-detail {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.sh-project-list__header,
+.sh-project-list__filters,
+.sh-project-list__items,
+.sh-project-detail__header,
+.sh-project-detail__panel {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-5);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-sm);
+}
+
+.sh-project-list__header h1,
+.sh-project-detail__header h1 {
+  margin: 0;
+  font-size: var(--font-size-xl);
+}
+
+.sh-project-list__header p,
+.sh-project-detail__header p {
+  margin: var(--space-1) 0 0;
+  color: var(--color-text-muted);
+}
+
+.sh-project-eyebrow {
+  margin: 0 0 var(--space-1) !important;
+  color: var(--color-accent-strong) !important;
+  font-size: var(--font-size-xs);
+  font-weight: 750;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.sh-project-list__filters {
+  grid-template-columns: minmax(12rem, 20rem) minmax(0, 1fr);
+  align-items: end;
+}
+
+.sh-project-list__filters > label,
+.sh-project-list__filters fieldset {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.sh-project-list__filters input[type="text"],
+.sh-project-list__filters input:not([type]) {
+  width: 100%;
+  min-height: 2.25rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding-inline: var(--space-3);
+  background: var(--color-surface-raised);
+  color: var(--color-text);
+}
+
+.sh-project-list__filters fieldset {
+  min-width: 0;
+  padding: 0;
+  margin: 0;
+  border: 0;
+}
+
+.sh-project-list__filters legend,
+.sh-project-list__filters > label > span {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+  font-weight: 650;
+}
+
+.sh-project-list__filters fieldset > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
+}
+
+.sh-project-list__filters fieldset label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  cursor: pointer;
+}
+
+.sh-project-list__items {
+  padding: var(--space-2);
+  margin: 0;
+  list-style: none;
+}
+
+.sh-project-list__items li {
+  min-width: 0;
+}
+
+.sh-project-list__items .sh-button {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  text-align: left;
+}
+
+.sh-project-list__items .sh-button span {
+  font-weight: 700;
+}
+
+.sh-project-list__items small {
+  overflow-wrap: anywhere;
+  color: var(--color-text-muted);
+  font-weight: 400;
+}
+
+.sh-project-drawer__facts {
+  display: grid;
+  gap: var(--space-3);
+  margin: 0;
+}
+
+.sh-project-drawer__facts dt {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+}
+
+.sh-project-drawer__facts dd {
+  overflow-wrap: anywhere;
+  margin: var(--space-1) 0 0;
+}
+
 @media (max-width: 48rem) {
   .sh-discovery-page__grid,
   .sh-import-source__descriptor {
@@ -2503,6 +2638,10 @@ a {
   }
 
   .sh-agent-facts {
+    grid-template-columns: 1fr;
+  }
+
+  .sh-project-list__filters {
     grid-template-columns: 1fr;
   }
 

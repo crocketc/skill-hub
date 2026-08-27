@@ -241,6 +241,16 @@
       "empty": "尚未收集使用证据。"
     }
   },
+  "projects": {
+    "eyebrow": "项目工作区",
+    "title": "项目",
+    "description": "用扁平的标签视图组织项目共享的 Skill 要求。",
+    "loading": "正在加载项目事实",
+    "unavailable": "项目数据尚未连接到本机服务。",
+    "empty": "没有项目符合当前筛选条件。",
+    "filters": { "label": "项目筛选", "search": "搜索项目", "tags": "标签" },
+    "drawer": { "identity": "项目位置", "tags": "标签", "targets": "共享目标" }
+  },
   "appShell": {
     "cachedData": "技能库缓存",
     "navigation": "主导航",
