@@ -179,3 +179,12 @@ it("does not show fixture Agents or projects through production routes", async (
   expect(await screen.findByText("Project data is not connected to the native service yet.")).toBeVisible();
   expect(screen.queryByText("Demo Project")).not.toBeInTheDocument();
 });
+
+it("keeps the production settings route behind the native settings contract", async () => {
+  mockBrowserPreferences();
+  await skillHubI18n.changeLanguage("en-US");
+  await appRouter.navigate("/settings");
+  render(<AppRouter />);
+
+  expect(await screen.findByText("settings_query is unavailable until the native contract is generated.")).toBeVisible();
+});

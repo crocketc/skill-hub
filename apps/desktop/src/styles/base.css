@@ -2865,6 +2865,63 @@ a {
   margin-top: var(--space-4);
 }
 
+.sh-settings-page {
+  display: grid;
+  gap: var(--space-5);
+}
+
+.sh-settings-grid {
+  display: grid;
+  gap: var(--space-4);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.sh-settings-card {
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  padding: var(--space-5);
+}
+
+.sh-settings-card h2 {
+  margin-top: 0;
+}
+
+.sh-settings-toggle {
+  align-items: center;
+  display: flex;
+  gap: var(--space-2);
+  margin-top: var(--space-4);
+}
+
+.sh-settings-local-note,
+.sh-settings-note {
+  background: var(--color-accent-soft);
+  border-radius: var(--radius-md);
+  color: var(--color-accent-strong);
+  margin: var(--space-4) 0;
+  padding: var(--space-3);
+}
+
+.sh-settings-list {
+  color: var(--color-text-secondary);
+  display: grid;
+  gap: var(--space-2);
+  list-style: none;
+  padding: 0;
+}
+
+.sh-settings-placeholder {
+  border-style: dashed;
+}
+
+@media (max-width: 48rem) {
+  .sh-settings-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 @media (max-width: 48rem) {
   .sh-workflow-grid {
     grid-template-columns: 1fr;

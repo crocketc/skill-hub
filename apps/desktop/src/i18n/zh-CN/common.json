@@ -716,6 +716,20 @@
     "completed": "已完成",
     "phases": { "planned": "已计划", "prepared": "已准备", "applying": "执行中", "verifying": "验证中", "committed": "已提交", "needs_recovery": "需要恢复", "rolled_back": "已回滚" }
   },
+  "settings": {
+    "eyebrow": "设置",
+    "heading": "让 SkillHub 适应你的工作方式",
+    "description": "本地管理保持明确可控，网络与未来存储能力保持边界清晰。",
+    "loading": "正在加载设置",
+    "general": { "heading": "通用", "language": "语言", "theme": "主题" },
+    "library": { "heading": "技能库", "path": "技能库路径", "migrationAvailable": "连接本机服务后可使用技能库迁移入口。" },
+    "view": { "heading": "视图", "density": "信息密度：{{density}}" },
+    "automation": { "heading": "自动化", "perSkill": "单个 Skill 检查", "batch": "批量检查", "global": "全局自动检查" },
+    "network": { "heading": "AI 与网络", "description": "网络辅助功能默认需要明确开启，不会自行改变本地管理行为。", "disableAll": "关闭所有网络功能", "localStillWorks": "本地扫描、搜索、部署和备份仍可使用", "dataScope": "数据范围", "testProvider": "测试提供商" },
+    "backup": { "heading": "备份", "location": "备份位置", "retention": "保留时间", "days": "天" },
+    "networkStorage": { "eyebrow": "网络存储", "heading": "网络存储尚未接入", "description": "该能力规划在下一大版本实现；当前不会在这里请求凭据或执行远程操作。", "planned": "下一大版本规划" },
+    "update": { "heading": "应用更新", "current": "当前已是最新版本。", "available": "发现可用版本 {{version}}。", "unsigned": "当前为未签名构建，将打开官方 Release 页面供手动下载，不会自动安装。", "signed": "即使是签名构建，应用更新前仍会要求显式确认。", "openRelease": "打开 GitHub Release" }
+  },
   "navigation": {
     "agents": "Agent",
     "discovery": "发现",

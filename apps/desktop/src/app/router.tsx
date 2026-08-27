@@ -18,6 +18,8 @@ import { unavailablePendingFacade } from "../features/pending/api";
 import { OperationProgress } from "../features/operations/OperationProgress";
 import { unavailableOperationFacade } from "../features/operations/api";
 import { RecoveryPage } from "../features/recovery/RecoveryPage";
+import { SettingsPage } from "../features/settings/SettingsPage";
+import { unavailableSettingsFacade } from "../features/settings/api";
 import { DiscoveryPage } from "../features/discovery/DiscoveryPage";
 import { OverviewPage } from "../features/overview/OverviewPage";
 import { SkillLibraryPage } from "../features/skills/SkillLibraryPage";
@@ -35,7 +37,6 @@ import "../styles/base.css";
 import { ThemeProvider } from "../styles/ThemeProvider";
 import { DesktopApp } from "./App";
 import { queryClient } from "./queryClient";
-import { RoutePlaceholder } from "./RoutePlaceholder";
 
 function OnboardingRoute() {
   const navigate = useNavigate();
@@ -92,7 +93,7 @@ export const appRouter = createBrowserRouter([
       { path: "operations/:operationId", element: <OperationRoute /> },
       { path: "operations", element: <OperationRoute /> },
       { path: "recovery", element: <RecoveryPage facade={unavailableOperationFacade} /> },
-      { path: "settings", element: <RoutePlaceholder titleKey="navigation.settings" /> },
+      { path: "settings", element: <SettingsPage facade={unavailableSettingsFacade} /> },
     ],
   },
   { element: <OnboardingRoute />, path: "/initialize" },

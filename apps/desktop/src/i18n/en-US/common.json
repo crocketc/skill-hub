@@ -716,6 +716,20 @@
     "completed": "Completed",
     "phases": { "planned": "Planned", "prepared": "Prepared", "applying": "Applying", "verifying": "Verifying", "committed": "Committed", "needs_recovery": "Needs recovery", "rolled_back": "Rolled back" }
   },
+  "settings": {
+    "eyebrow": "Settings",
+    "heading": "Shape SkillHub around your workflow",
+    "description": "Local management stays explicit, while network and future storage features remain bounded.",
+    "loading": "Loading settings",
+    "general": { "heading": "General", "language": "Language", "theme": "Theme" },
+    "library": { "heading": "Library", "path": "Library path", "migrationAvailable": "A library migration entry is available when the native service is connected." },
+    "view": { "heading": "View", "density": "Information density: {{density}}" },
+    "automation": { "heading": "Automation", "perSkill": "Per-Skill checks", "batch": "Batch checks", "global": "Global auto-checks" },
+    "network": { "heading": "AI and network", "description": "Network helpers are opt-in and never change local management by themselves.", "disableAll": "Turn off all network features", "localStillWorks": "Local scan, search, deployment, and backup remain available", "dataScope": "Data scope", "testProvider": "Test provider" },
+    "backup": { "heading": "Backup", "location": "Location", "retention": "Retention", "days": "days" },
+    "networkStorage": { "eyebrow": "Network storage", "heading": "Shared storage is not connected yet", "description": "This capability is intentionally reserved for the next major version. No credentials or remote actions are requested here.", "planned": "下一大版本规划" },
+    "update": { "heading": "Application update", "current": "You are on the current version.", "available": "Version {{version}} is available.", "unsigned": "This unsigned build opens the official release page for a manual download; it will not auto-install.", "signed": "The signed build still asks for explicit confirmation before applying an update.", "openRelease": "Open GitHub Release" }
+  },
   "navigation": {
     "agents": "Agents",
     "discovery": "Discover",
