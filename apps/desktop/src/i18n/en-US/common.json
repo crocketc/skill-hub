@@ -1,8 +1,10 @@
 {
   "actions": {
+    "back": "Back",
     "cancel": "Cancel",
     "close": "Close",
     "confirm": "Confirm",
+    "continue": "Continue",
     "retry": "Retry"
   },
   "markdown": {
@@ -77,6 +79,46 @@
     "empty": "No data",
     "error": "Unable to read data",
     "loading": "Reading local data"
+  },
+  "importWorkflow": {
+    "step": "Step {{current}} of {{total}}",
+    "source": {
+      "eyebrow": "Import source",
+      "title": "Where should SkillHub look?",
+      "description": "Paste a local path, URL, Git reference, or an npx skills add reference.",
+      "label": "Source",
+      "placeholder": "C:/skills or https://github.com/owner/repository",
+      "parse": "Parse source",
+      "npxParseOnly": "This reference is parsed only; no npx command will be executed.",
+      "detectedSource": "Detected source",
+      "type": "Type",
+      "target": "Target",
+      "kinds": {
+        "local_path": "Local path",
+        "url": "Web URL",
+        "git": "Git repository",
+        "npx_reference": "npx reference",
+        "unknown": "Unknown"
+      }
+    },
+    "candidates": {
+      "eyebrow": "Candidate review",
+      "title": "Choose Skills to import",
+      "description": "Only selected candidates continue to conflict analysis and import.",
+      "empty": "No candidates were found for this source.",
+      "basicCheck": {
+        "not_checked": "Not checked",
+        "passed": "Basic check passed",
+        "failed": "Basic check failed"
+      },
+      "ownership": {
+        "managed": "Managed by SkillHub",
+        "agent_builtin": "Built into an Agent",
+        "plugin": "Managed by a plugin",
+        "other_tool": "Managed by another tool",
+        "unknown": "Ownership unknown"
+      }
+    }
   },
   "appShell": {
     "cachedData": "Cached skill library",

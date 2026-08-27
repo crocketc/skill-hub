@@ -1,8 +1,10 @@
 {
   "actions": {
+    "back": "上一步",
     "cancel": "取消",
     "close": "关闭",
     "confirm": "确认",
+    "continue": "继续",
     "retry": "重试"
   },
   "markdown": {
@@ -77,6 +79,46 @@
     "empty": "暂无数据",
     "error": "无法读取数据",
     "loading": "正在读取本地数据"
+  },
+  "importWorkflow": {
+    "step": "第 {{current}} 步，共 {{total}} 步",
+    "source": {
+      "eyebrow": "导入来源",
+      "title": "从哪里查找 Skill？",
+      "description": "可粘贴本地路径、URL、Git 地址，或 npx skills add 来源引用。",
+      "label": "来源",
+      "placeholder": "C:/skills 或 https://github.com/owner/repository",
+      "parse": "解析来源",
+      "npxParseOnly": "仅解析来源，不会执行 npx 命令",
+      "detectedSource": "已识别来源",
+      "type": "类型",
+      "target": "目标",
+      "kinds": {
+        "local_path": "本地路径",
+        "url": "网页 URL",
+        "git": "Git 仓库",
+        "npx_reference": "npx 来源引用",
+        "unknown": "未知"
+      }
+    },
+    "candidates": {
+      "eyebrow": "候选审阅",
+      "title": "选择要导入的 Skill",
+      "description": "只有选中的候选项会继续进入冲突分析和导入流程。",
+      "empty": "此来源没有找到候选 Skill。",
+      "basicCheck": {
+        "not_checked": "尚未检查",
+        "passed": "基础检查通过",
+        "failed": "基础检查失败"
+      },
+      "ownership": {
+        "managed": "由 SkillHub 管理",
+        "agent_builtin": "内置于 Agent",
+        "plugin": "由插件管理",
+        "other_tool": "由其他工具管理",
+        "unknown": "所有权未知"
+      }
+    }
   },
   "appShell": {
     "cachedData": "技能库缓存",
