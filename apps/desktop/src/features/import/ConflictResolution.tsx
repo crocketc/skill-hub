@@ -9,6 +9,7 @@ export interface ConflictResolutionProps {
   onAction: (candidateId: string, action: ImportAction) => void;
   onContinue: () => void;
   onBack: () => void;
+  continueLabel?: string;
 }
 
 const actionOrder: ImportAction[] = ["reuse", "copy", "takeover", "independent", "skip"];
@@ -19,6 +20,7 @@ export function ConflictResolution({
   onAction,
   onContinue,
   onBack,
+  continueLabel,
 }: ConflictResolutionProps) {
   const { t } = useTranslation();
   const hasMissingRequiredAction = conflicts.some(
@@ -74,7 +76,7 @@ export function ConflictResolution({
 
       <div className="sh-import-conflicts__actions">
         <Button onClick={onBack} variant="ghost">{t("actions.back")}</Button>
-        <Button disabled={hasMissingRequiredAction} onClick={onContinue}>{t("actions.continue")}</Button>
+        <Button disabled={hasMissingRequiredAction} onClick={onContinue}>{continueLabel ?? t("actions.continue")}</Button>
       </div>
     </section>
   );

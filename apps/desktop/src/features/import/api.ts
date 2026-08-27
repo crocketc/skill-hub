@@ -257,6 +257,7 @@ export function createMockImportFacade(
   };
   let lastCandidates: ImportCandidate[] = [];
   let cancelled = false;
+  let cancelReject: (() => void) | undefined;
 
   const facade: MockImportFacade = {
     calls,
@@ -267,7 +268,13 @@ export function createMockImportFacade(
     },
     async acquireCandidates(source, signal) {
       calls.acquiredSources.push(source.displayTarget);
-      if (options.scenario === "cancelled" || cancelled || signal?.aborted) {
+      if (options.scenario === "cancelled") {
+        return new Promise<ImportCandidate[]>((_, reject) => {
+          cancelReject = () => reject(new ImportCancelledError());
+          signal?.addEventListener("abort", () => cancelReject?.(), { once: true });
+        });
+      }
+      if (cancelled || signal?.aborted) {
         throw new ImportCancelledError();
       }
       lastCandidates = fixtureCandidates(options.scenario, source);
@@ -308,6 +315,8 @@ export function createMockImportFacade(
     },
     cancel() {
       cancelled = true;
+      cancelReject?.();
+      cancelReject = undefined;
       calls.cancelled += 1;
       return Promise.resolve();
     },

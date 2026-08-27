@@ -81,7 +81,28 @@
     "loading": "正在读取本地数据"
   },
   "importWorkflow": {
+    "eyebrow": "安全导入流程",
+    "title": "导入 Skill",
     "step": "第 {{current}} 步，共 {{total}} 步",
+    "phases": {
+      "source": "选择来源",
+      "acquiring": "正在读取候选项",
+      "candidate_gate": "候选项已准备好",
+      "candidates": "选择候选项",
+      "analyzing": "正在分析冲突",
+      "conflicts": "处理冲突",
+      "committing": "正在提交导入",
+      "summary": "导入完成",
+      "failed": "导入需要处理",
+      "cancelled": "导入已取消"
+    },
+    "acquisition": {
+      "complete": "找到 {{count}} 个候选项，请先审阅列表。"
+    },
+    "cancelled": "获取已取消，来源内容仍然保留。",
+    "errors": {
+      "unknown": "导入步骤未能完成。"
+    },
     "source": {
       "eyebrow": "导入来源",
       "title": "从哪里查找 Skill？",
@@ -89,6 +110,10 @@
       "label": "来源",
       "placeholder": "C:/skills 或 https://github.com/owner/repository",
       "parse": "解析来源",
+      "continueCandidates": "继续选择候选",
+      "acquiring": "正在读取来源中的候选 Skill",
+      "cancelAcquiring": "取消获取",
+      "retry": "重试获取",
       "npxParseOnly": "仅解析来源，不会执行 npx 命令",
       "detectedSource": "已识别来源",
       "type": "类型",
@@ -105,6 +130,7 @@
       "eyebrow": "候选审阅",
       "title": "选择要导入的 Skill",
       "description": "只有选中的候选项会继续进入冲突分析和导入流程。",
+      "analyze": "分析冲突",
       "empty": "此来源没有找到候选 Skill。",
       "basicCheck": {
         "not_checked": "尚未检查",
@@ -124,6 +150,7 @@
       "title": "处理需要确认的冲突",
       "description": "请为每个必选冲突明确选择处理方式，不会覆盖已有文件。",
       "chooseAction": "选择处理方式",
+      "commit": "提交导入",
       "none": "没有需要处理的冲突。",
       "kinds": {
         "exact_duplicate": "完全重复",

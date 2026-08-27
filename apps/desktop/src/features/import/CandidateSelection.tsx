@@ -9,6 +9,7 @@ export interface CandidateSelectionProps {
   onToggle: (id: string) => void;
   onContinue: () => void;
   onBack: () => void;
+  continueLabel?: string;
 }
 
 const ownershipTone: Record<CandidateOwnership, "neutral" | "warning" | "info"> = {
@@ -25,6 +26,7 @@ export function CandidateSelection({
   onToggle,
   onContinue,
   onBack,
+  continueLabel,
 }: CandidateSelectionProps) {
   const { t } = useTranslation();
 
@@ -78,7 +80,7 @@ export function CandidateSelection({
           {t("actions.back")}
         </Button>
         <Button disabled={!selectedIds.length} onClick={onContinue}>
-          {t("actions.continue")}
+          {continueLabel ?? t("actions.continue")}
         </Button>
       </div>
     </section>

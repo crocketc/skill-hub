@@ -81,7 +81,28 @@
     "loading": "Reading local data"
   },
   "importWorkflow": {
+    "eyebrow": "Safe import workflow",
+    "title": "Import Skills",
     "step": "Step {{current}} of {{total}}",
+    "phases": {
+      "source": "Choose a source",
+      "acquiring": "Reading candidates",
+      "candidate_gate": "Candidates ready",
+      "candidates": "Choose candidates",
+      "analyzing": "Analyzing conflicts",
+      "conflicts": "Resolve conflicts",
+      "committing": "Committing import",
+      "summary": "Import complete",
+      "failed": "Import needs attention",
+      "cancelled": "Import cancelled"
+    },
+    "acquisition": {
+      "complete": "Found {{count}} candidate(s). Review the list before continuing."
+    },
+    "cancelled": "Acquisition was cancelled. Your source is still here.",
+    "errors": {
+      "unknown": "The import step could not be completed."
+    },
     "source": {
       "eyebrow": "Import source",
       "title": "Where should SkillHub look?",
@@ -89,6 +110,10 @@
       "label": "Source",
       "placeholder": "C:/skills or https://github.com/owner/repository",
       "parse": "Parse source",
+      "continueCandidates": "Continue to candidate selection",
+      "acquiring": "Reading candidates from the source",
+      "cancelAcquiring": "Cancel acquisition",
+      "retry": "Retry acquisition",
       "npxParseOnly": "This reference is parsed only; no npx command will be executed.",
       "detectedSource": "Detected source",
       "type": "Type",
@@ -105,6 +130,7 @@
       "eyebrow": "Candidate review",
       "title": "Choose Skills to import",
       "description": "Only selected candidates continue to conflict analysis and import.",
+      "analyze": "Analyze conflicts",
       "empty": "No candidates were found for this source.",
       "basicCheck": {
         "not_checked": "Not checked",
@@ -124,6 +150,7 @@
       "title": "Review required decisions",
       "description": "Choose an explicit action for every required conflict. No choice overwrites existing files.",
       "chooseAction": "Choose an action",
+      "commit": "Commit import",
       "none": "No conflicts require a decision.",
       "kinds": {
         "exact_duplicate": "Exact duplicate",
