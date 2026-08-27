@@ -967,8 +967,10 @@ a {
   display: grid;
   height: 100%;
   gap: var(--space-6);
+  grid-template-rows: minmax(0, 1fr);
   min-height: 0;
   min-width: 0;
+  overflow: hidden;
 }
 
 .sh-skill-detail__header {
@@ -988,6 +990,16 @@ a {
   display: flex;
   justify-content: space-between;
   gap: var(--space-4);
+}
+
+.sh-skill-detail__rail .sh-skill-detail__title-row {
+  align-items: start;
+  display: grid;
+  justify-content: stretch;
+}
+
+.sh-skill-detail__rail .sh-skill-detail__adjacent {
+  justify-content: flex-start;
 }
 
 .sh-skill-detail__title-row h1,
@@ -1026,8 +1038,8 @@ a {
   align-items: start;
   display: grid;
   height: 100%;
-  gap: var(--space-5);
-  grid-template-columns: minmax(11rem, 13rem) minmax(0, 1fr);
+  gap: var(--space-4);
+  grid-template-columns: minmax(15rem, 18rem) minmax(0, 1fr);
   min-height: 0;
 }
 
@@ -1044,8 +1056,7 @@ a {
 }
 
 .sh-skill-detail__section-nav {
-  position: sticky;
-  top: var(--space-5);
+  position: static;
 }
 
 .sh-skill-detail__section-nav {
@@ -1069,7 +1080,8 @@ a {
 }
 
 .sh-skill-detail__content {
-  display: grid;
+  display: flex;
+  flex-direction: column;
   height: 100%;
   gap: var(--space-4);
   min-width: 0;
@@ -1088,6 +1100,7 @@ a {
 
 .sh-skill-detail__section {
   display: grid;
+  flex: 0 0 auto;
   gap: var(--space-3);
   min-height: 8rem;
   padding: var(--space-5);
@@ -1369,13 +1382,14 @@ a {
 
 @media (max-width: 64rem) {
   .sh-skill-detail__layout {
-    grid-template-columns: minmax(9rem, 11rem) minmax(0, 1fr);
+    grid-template-columns: minmax(12rem, 15rem) minmax(0, 1fr);
   }
 }
 
 @media (max-width: 44rem) {
   .sh-skill-detail {
     height: auto;
+    overflow: visible;
   }
 
   .sh-skill-detail__layout {

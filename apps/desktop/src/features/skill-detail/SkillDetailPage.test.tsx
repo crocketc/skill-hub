@@ -164,6 +164,10 @@ describe("SkillDetailPage shell", () => {
 
     expect(baseCss).toMatch(/\.sh-skill-detail\s*\{[\s\S]*height:\s*100%/);
     expect(baseCss).toMatch(/\.sh-skill-detail__content\s*\{[\s\S]*overflow-y:\s*auto/);
+    expect(baseCss).toMatch(/\.sh-skill-detail__content\s*\{[\s\S]*display:\s*flex/);
+    expect(baseCss).toMatch(/\.sh-skill-detail__section\s*\{[\s\S]*flex:\s*0\s+0\s+auto/);
+    expect(baseCss).toMatch(/grid-template-columns:\s*minmax\(15rem,\s*18rem\)\s+minmax\(0,\s*1fr\)/);
+    expect(baseCss).toMatch(/\.sh-skill-detail__layout\s*\{[\s\S]*gap:\s*var\(--space-4\)/);
   });
 
   it("highlights the section selected from the detail navigation", async () => {
