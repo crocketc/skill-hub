@@ -135,7 +135,7 @@ describe("SkillDetailPage shell", () => {
     expect(screen.queryByRole("button", { name: "Retry" })).not.toBeInTheDocument();
   });
 
-  it("renders the approved section navigation and status rail from summary facts", async () => {
+  it("merges the status summary into the Overview section", async () => {
     await renderDetail();
 
     expect(await screen.findByRole("navigation", { name: "Detail sections" })).toBeVisible();
@@ -145,6 +145,28 @@ describe("SkillDetailPage shell", () => {
     );
     expect(screen.getByText("Basic check passed")).toBeVisible();
     expect(screen.getByText("2 deployments")).toBeVisible();
+    expect(screen.getByRole("group", { name: "Skill status" })).toBeVisible();
+    expect(screen.queryByRole("complementary", { name: "Skill status" })).not.toBeInTheDocument();
+  });
+
+  it("highlights the section selected from the detail navigation", async () => {
+    await renderDetail();
+
+    await screen.findByRole("navigation", { name: "Detail sections" });
+    const metadataLink = screen.getByRole("link", { name: "Identity and source" });
+    fireEvent.click(metadataLink);
+
+    expect(metadataLink).toHaveAttribute("aria-current", "location");
+  });
+
+  it("restores the active section from a detail hash", async () => {
+    await renderDetail({ entry: "/library/skill-pdf#versions" });
+
+    await screen.findByRole("navigation", { name: "Detail sections" });
+    expect(screen.getByRole("link", { name: "Version history" })).toHaveAttribute(
+      "aria-current",
+      "location",
+    );
   });
 
   it("loads the description and editable metadata panel independently", async () => {

@@ -14,7 +14,11 @@ export function DetailStatusRail({ facade, skillId, summary }: DetailStatusRailP
   const { t } = useTranslation();
   const deployments = summary.agentDeploymentCount + summary.projectDeploymentCount;
   return (
-    <aside aria-label={t("skillDetail.statusRail.label")} className="sh-skill-detail__status-rail">
+    <div
+      aria-label={t("skillDetail.statusRail.label")}
+      className="sh-skill-detail__status-summary"
+      role="group"
+    >
       <StatusBadge tone={summary.basicCheck === "passed" ? "success" : "warning"}>
         {summary.basicCheck === "passed"
           ? t("skillDetail.statusRail.basicPassed")
@@ -25,6 +29,6 @@ export function DetailStatusRail({ facade, skillId, summary }: DetailStatusRailP
         <div><dt>{t("skillDetail.statusRail.deploymentLabel")}</dt><dd>{t("skillDetail.statusRail.deployments", { count: deployments })}</dd></div>
       </dl>
       <TrialActions facade={facade} skillId={skillId} summary={summary} />
-    </aside>
+    </div>
   );
 }

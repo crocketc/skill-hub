@@ -845,11 +845,10 @@ a {
   align-items: start;
   display: grid;
   gap: var(--space-5);
-  grid-template-columns: minmax(9rem, 0.65fr) minmax(24rem, 3fr) minmax(13rem, 0.9fr);
+  grid-template-columns: minmax(9rem, 0.65fr) minmax(0, 1fr);
 }
 
-.sh-skill-detail__section-nav,
-.sh-skill-detail__status-rail {
+.sh-skill-detail__section-nav {
   position: sticky;
   top: var(--space-5);
 }
@@ -868,7 +867,8 @@ a {
 }
 
 .sh-skill-detail__section-nav a:hover,
-.sh-skill-detail__section-nav a:focus-visible {
+.sh-skill-detail__section-nav a:focus-visible,
+.sh-skill-detail__section-nav a.is-active {
   border-color: var(--color-accent);
   color: var(--color-text);
 }
@@ -879,8 +879,7 @@ a {
   min-width: 0;
 }
 
-.sh-skill-detail__section,
-.sh-skill-detail__status-rail {
+.sh-skill-detail__section {
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
@@ -894,29 +893,33 @@ a {
   scroll-margin-top: var(--space-5);
 }
 
-.sh-skill-detail__status-rail {
+.sh-skill-detail__status-summary {
+  align-items: center;
+  border-top: 1px solid var(--color-border);
   display: grid;
   gap: var(--space-4);
-  padding: var(--space-4);
+  grid-template-columns: max-content minmax(0, 1fr) max-content;
+  padding-top: var(--space-4);
 }
 
-.sh-skill-detail__status-rail dl,
-.sh-skill-detail__status-rail dl div {
+.sh-skill-detail__status-summary dl,
+.sh-skill-detail__status-summary dl div {
   display: grid;
   gap: var(--space-1);
   margin: 0;
 }
 
-.sh-skill-detail__status-rail dl {
-  gap: var(--space-3);
+.sh-skill-detail__status-summary dl {
+  gap: var(--space-4);
+  grid-template-columns: repeat(2, minmax(8rem, 1fr));
 }
 
-.sh-skill-detail__status-rail dt {
+.sh-skill-detail__status-summary dt {
   color: var(--color-text-muted);
   font-size: 0.75rem;
 }
 
-.sh-skill-detail__status-rail dd {
+.sh-skill-detail__status-summary dd {
   margin: 0;
 }
 
@@ -1167,17 +1170,19 @@ a {
   .sh-skill-detail__layout {
     grid-template-columns: minmax(8rem, 0.6fr) minmax(20rem, 2fr);
   }
-
-  .sh-skill-detail__status-rail {
-    grid-column: 1 / -1;
-    grid-row: 1;
-    position: static;
-  }
 }
 
 @media (max-width: 44rem) {
   .sh-skill-detail__layout {
     grid-template-columns: 1fr;
+  }
+
+  .sh-skill-detail__status-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .sh-skill-detail__status-summary dl {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .sh-skill-detail__section-nav {

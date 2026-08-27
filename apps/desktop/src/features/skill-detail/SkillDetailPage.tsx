@@ -106,6 +106,7 @@ export function SkillDetailPage({
                 <>
                   <p>{summaryQuery.data.purpose}</p>
                   <LifecyclePanel summary={summaryQuery.data} />
+                  <DetailStatusRail facade={facade} skillId={skillId} summary={summaryQuery.data} />
                 </>
               ) : null}
               {section === "description" ? (
@@ -144,7 +145,6 @@ export function SkillDetailPage({
             </section>
           ))}
         </main>
-        <DetailStatusRail facade={facade} skillId={skillId} summary={summaryQuery.data} />
       </div>
     </section>
   );
