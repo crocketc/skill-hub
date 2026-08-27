@@ -513,6 +513,9 @@
         "trial": "试用"
       },
       "moveBefore": "将{{column}}移到{{before}}之前",
+      "moveUp": "上移{{column}}",
+      "moveDown": "下移{{column}}",
+      "reorderLabel": "调整列顺序",
       "nextPage": "下一页",
       "pageRange": "第 {{start}}–{{end}} 项，共 {{total}} 项",
       "pageSize": "每页数量",

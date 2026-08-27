@@ -154,18 +154,28 @@ describe("SkillDetailPage shell", () => {
     expect(screen.getByRole("button", { name: "Edit My purpose" })).toBeVisible();
   });
 
-  it("places the Markdown workspace after the description metadata", async () => {
+  it("keeps Markdown in Description and editable fields in Metadata", async () => {
     await renderDetail();
 
-    const metadataHeading = await screen.findByRole("heading", {
-      name: "Original source text",
+    const descriptionHeading = await screen.findByRole("heading", {
+      name: "Description",
     });
     const workspaceHeading = await screen.findByRole("heading", {
       name: "Markdown workspace",
     });
+    const metadataSectionHeading = await screen.findByRole("heading", { name: "Identity and source" });
+    const metadataHeading = await screen.findByRole("heading", { name: "Original source text" });
 
     expect(
-      metadataHeading.compareDocumentPosition(workspaceHeading) &
+      descriptionHeading.compareDocumentPosition(workspaceHeading) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      workspaceHeading.compareDocumentPosition(metadataSectionHeading) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      metadataSectionHeading.compareDocumentPosition(metadataHeading) &
         Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
     expect(

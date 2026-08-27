@@ -271,10 +271,12 @@ export function SkillTable(props: SkillTableProps) {
       ? [...new Set([...props.preferences.visibleColumns, column])]
       : props.preferences.visibleColumns.filter((id) => id !== column),
   });
-  const moveBefore = (column: SkillColumnId, before: SkillColumnId) => {
+  const moveColumn = (column: SkillColumnId, direction: "up" | "down") => {
     const next = [...columnOrder];
-    next.splice(next.indexOf(column), 1);
-    next.splice(next.indexOf(before), 0, column);
+    const index = next.indexOf(column);
+    const target = direction === "up" ? index - 1 : index + 1;
+    if (index <= LOCKED_COLUMNS.length - 1 || target < LOCKED_COLUMNS.length || target >= next.length) return;
+    [next[index], next[target]] = [next[target], next[index]];
     props.onPreferencesChange({ ...props.preferences, columnOrder: next });
   };
   const start = props.page.total === 0 ? 0 : (props.page.page - 1) * props.page.pageSize + 1;
@@ -296,11 +298,16 @@ export function SkillTable(props: SkillTableProps) {
               <legend>{t("skillLibrary.table.densityLabel")}</legend>
                {(["compact", "standard", "comfortable"] as const).map((density) => <label key={density}><input checked={props.preferences.density === density} name="skill-density" onChange={() => props.onPreferencesChange({ ...props.preferences, density })} type="radio" />{t(DENSITY_LABELS[density])}</label>)}
             </fieldset>
-            <div className="sh-skill-table__reorder">
-              {columnOrder.map((column, index) => {
-                const before = columnOrder[index - 1];
-                return !LOCKED_COLUMNS.includes(column) && before ? <button key={column} onClick={() => moveBefore(column, before)} type="button">{t("skillLibrary.table.moveBefore", { column: t(COLUMN_LABELS[column]).toLocaleLowerCase(), before: t(COLUMN_LABELS[before]).toLocaleLowerCase() })}</button> : null;
-              })}
+            <div aria-label={t("skillLibrary.table.reorderLabel")} className="sh-skill-table__reorder">
+              {columnOrder.map((column, index) => !LOCKED_COLUMNS.includes(column) ? (
+                <div className="sh-skill-table__reorder-row" key={column}>
+                  <span>{t(COLUMN_LABELS[column])}</span>
+                  <span className="sh-skill-table__reorder-actions">
+                    <button aria-label={t("skillLibrary.table.moveUp", { column: t(COLUMN_LABELS[column]) })} disabled={index <= LOCKED_COLUMNS.length} onClick={() => moveColumn(column, "up")} type="button">↑</button>
+                    <button aria-label={t("skillLibrary.table.moveDown", { column: t(COLUMN_LABELS[column]) })} disabled={index >= columnOrder.length - 1} onClick={() => moveColumn(column, "down")} type="button">↓</button>
+                  </span>
+                </div>
+              ) : null)}
             </div>
           </div>
         ) : null}

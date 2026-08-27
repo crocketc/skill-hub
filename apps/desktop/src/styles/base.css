@@ -748,7 +748,7 @@ a {
   flex-wrap: wrap;
 }
 
-@media (max-width: 48rem) {
+@media (max-width: 24rem) {
   .sh-app-shell {
     grid-template-columns: 1fr;
   }
@@ -1319,6 +1319,67 @@ a {
   font-size: var(--font-size-xs);
 }
 
+.sh-filter-dropdown {
+  position: relative;
+  min-width: 0;
+}
+
+.sh-filter-dropdown__trigger {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  overflow: hidden;
+  text-align: left;
+  text-overflow: ellipsis;
+}
+
+.sh-filter-dropdown__trigger span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sh-filter-dropdown__menu {
+  position: absolute;
+  z-index: 10;
+  top: calc(100% + var(--space-1));
+  right: 0;
+  left: 0;
+  display: grid;
+  max-height: 16rem;
+  gap: var(--space-1);
+  overflow-y: auto;
+  padding: var(--space-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-md);
+}
+
+.sh-filter-dropdown__menu label {
+  display: flex;
+  min-height: 2rem;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+}
+
+.sh-filter-dropdown__menu label:hover,
+.sh-filter-dropdown__menu label:focus-within {
+  background: var(--color-accent-soft);
+  color: var(--color-text);
+}
+
+.sh-filter-dropdown__menu input {
+  width: auto;
+  min-height: auto;
+}
+
 .sh-skill-library__query-tools input,
 .sh-skill-library__query-tools select,
 .sh-skill-library__save-view input {
@@ -1476,11 +1537,11 @@ a {
 
 @media (max-width: 72rem) {
   .sh-skill-library__query-tools > section {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 
-  .sh-skill-library__query-tools > section > label:first-child {
-    grid-column: span 2;
+  .sh-skill-library__query-tools > section > .sh-filter-search {
+    grid-column: 1 / -1;
   }
 }
 
@@ -1489,7 +1550,7 @@ a {
     grid-template-columns: 1fr;
   }
 
-  .sh-skill-library__query-tools > section > label:first-child {
+  .sh-skill-library__query-tools > section > .sh-filter-search {
     grid-column: auto;
   }
 
@@ -1541,17 +1602,49 @@ a {
 }
 
 .sh-skill-table__reorder {
-  gap: var(--space-2);
-  flex-wrap: wrap;
+  display: grid;
+  gap: var(--space-1);
+  min-width: min(18rem, 100%);
+  padding-top: var(--space-2);
+}
+
+.sh-skill-table__reorder-row {
+  display: flex;
+  min-height: 2.25rem;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-raised);
+}
+
+.sh-skill-table__reorder-actions {
+  display: inline-flex;
+  flex: 0 0 auto;
+  gap: var(--space-1);
 }
 
 .sh-skill-table__reorder button {
-  border: 0;
+  display: inline-grid;
+  width: 2rem;
+  height: 2rem;
+  place-items: center;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
   padding: 0;
-  background: transparent;
+  background: var(--color-surface);
   color: var(--color-accent-strong);
   cursor: pointer;
-  text-decoration: underline;
+  font-size: var(--font-size-md);
+  line-height: 1;
+}
+
+.sh-skill-table__reorder button:disabled {
+  color: var(--color-text-muted);
+  cursor: not-allowed;
+  opacity: 0.55;
 }
 
 .sh-skill-table__region {

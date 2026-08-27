@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { type CheckState, type SkillLibraryQuery, type SkillLifecycle } from "./api";
 
@@ -33,8 +34,51 @@ const VERSION_OPTIONS = [
   ["upgrade_available", "skillLibrary.filters.versionOptions.upgradeAvailable"],
 ] as const;
 
-function selectedValues(event: React.ChangeEvent<HTMLSelectElement>): string[] {
-  return Array.from(event.currentTarget.selectedOptions, (option) => option.value);
+interface MultiSelectMenuProps {
+  label: string;
+  onChange: (values: string[]) => void;
+  options: Array<{ label: string; value: string }>;
+  selected: string[];
+}
+
+function MultiSelectMenu({ label, onChange, options, selected }: MultiSelectMenuProps) {
+  const [open, setOpen] = useState(false);
+  const summary = selected.length > 0 ? `${label} (${selected.length})` : label;
+  const toggle = (value: string, checked: boolean) => {
+    onChange(checked ? [...selected, value] : selected.filter((item) => item !== value));
+  };
+
+  return (
+    <div className="sh-filter-dropdown">
+      <button
+        aria-expanded={open}
+        aria-haspopup="menu"
+        className="sh-filter-dropdown__trigger"
+        onClick={() => setOpen((current) => !current)}
+        type="button"
+      >
+        <span>{summary}</span>
+        <span aria-hidden="true">⌄</span>
+      </button>
+      {open ? (
+        <div aria-label={label} className="sh-filter-dropdown__menu" role="menu">
+          {options.map((option) => (
+            <label key={option.value}>
+              <input
+                aria-checked={selected.includes(option.value)}
+                aria-label={option.label}
+                checked={selected.includes(option.value)}
+                onChange={(event) => toggle(option.value, event.currentTarget.checked)}
+                role="menuitemcheckbox"
+                type="checkbox"
+              />
+              {option.label}
+            </label>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
 }
 
 export function SkillFilters({ availableTags, onChange, onClear, query, resultCount }: SkillFiltersProps) {
@@ -50,7 +94,7 @@ export function SkillFilters({ availableTags, onChange, onClear, query, resultCo
 
   return (
     <section aria-label={t("skillLibrary.filters.search")}>
-      <label>
+      <label className="sh-filter-search">
         {t("skillLibrary.filters.search")}
         <input
           name="skill-search"
@@ -60,41 +104,26 @@ export function SkillFilters({ availableTags, onChange, onClear, query, resultCo
         />
       </label>
 
-      <fieldset>
-        <legend>{t("skillLibrary.filters.basicCheck")}</legend>
-        <select
-          aria-label={t("skillLibrary.filters.basicCheck")}
-          multiple
-          onChange={(event) => updateFilters({ basicCheck: selectedValues(event) as CheckState[] })}
-          value={query.filters.basicCheck}
-        >
-          {CHECK_STATES.map((state) => <option key={state} value={state}>{t(CHECK_STATE_LABELS[state])}</option>)}
-        </select>
-      </fieldset>
+      <MultiSelectMenu
+        label={t("skillLibrary.filters.basicCheck")}
+        onChange={(values) => updateFilters({ basicCheck: values as CheckState[] })}
+        options={CHECK_STATES.map((state) => ({ label: t(CHECK_STATE_LABELS[state]), value: state }))}
+        selected={query.filters.basicCheck}
+      />
 
-      <fieldset>
-        <legend>{t("skillLibrary.filters.aiCheck")}</legend>
-        <select
-          aria-label={t("skillLibrary.filters.aiCheck")}
-          multiple
-          onChange={(event) => updateFilters({ aiCheck: selectedValues(event) as CheckState[] })}
-          value={query.filters.aiCheck}
-        >
-          {CHECK_STATES.map((state) => <option key={state} value={state}>{t(CHECK_STATE_LABELS[state])}</option>)}
-        </select>
-      </fieldset>
+      <MultiSelectMenu
+        label={t("skillLibrary.filters.aiCheck")}
+        onChange={(values) => updateFilters({ aiCheck: values as CheckState[] })}
+        options={CHECK_STATES.map((state) => ({ label: t(CHECK_STATE_LABELS[state]), value: state }))}
+        selected={query.filters.aiCheck}
+      />
 
-      <fieldset>
-        <legend>{t("skillLibrary.filters.lifecycle")}</legend>
-        <select
-          aria-label={t("skillLibrary.filters.lifecycle")}
-          multiple
-          onChange={(event) => updateFilters({ lifecycle: selectedValues(event) as SkillLifecycle[] })}
-          value={query.filters.lifecycle}
-        >
-          {LIFECYCLES.map((state) => <option key={state} value={state}>{t(LIFECYCLE_LABELS[state])}</option>)}
-        </select>
-      </fieldset>
+      <MultiSelectMenu
+        label={t("skillLibrary.filters.lifecycle")}
+        onChange={(values) => updateFilters({ lifecycle: values as SkillLifecycle[] })}
+        options={LIFECYCLES.map((state) => ({ label: t(LIFECYCLE_LABELS[state]), value: state }))}
+        selected={query.filters.lifecycle}
+      />
 
       <label>
         {t("skillLibrary.filters.deployment")}
@@ -116,17 +145,12 @@ export function SkillFilters({ availableTags, onChange, onClear, query, resultCo
         </select>
       </label>
 
-      <fieldset>
-        <legend>{t("skillLibrary.filters.tags")}</legend>
-        <select
-          aria-label={t("skillLibrary.filters.tags")}
-          multiple
-          onChange={(event) => updateFilters({ tags: selectedValues(event) })}
-          value={query.filters.tags}
-        >
-          {availableTags.map((tag) => <option key={tag} value={tag}>{tag}</option>)}
-        </select>
-      </fieldset>
+      <MultiSelectMenu
+        label={t("skillLibrary.filters.tags")}
+        onChange={(values) => updateFilters({ tags: values })}
+        options={availableTags.map((tag) => ({ label: tag, value: tag }))}
+        selected={query.filters.tags}
+      />
 
       <p>{t("skillLibrary.filters.resultCount", { count: resultCount })}</p>
       <button onClick={onClear} type="button">{t("skillLibrary.filters.clear")}</button>

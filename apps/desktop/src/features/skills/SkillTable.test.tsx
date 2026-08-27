@@ -129,7 +129,7 @@ it("does not allow the select or name columns to be hidden", async () => {
   fireEvent.click(screen.getByRole("button", { name: "Columns and density" }));
   expect(screen.getByRole("checkbox", { name: "Selection" })).toBeDisabled();
   expect(screen.getByRole("checkbox", { name: "Name" })).toBeDisabled();
-  fireEvent.click(screen.getByRole("button", { name: "Move version before deployments" }));
+  fireEvent.click(screen.getByRole("button", { name: "Move Version up" }));
   const next = onPreferencesChange.mock.calls.at(-1)?.[0];
   expect(next.columnOrder.indexOf("version")).toBeLessThan(next.columnOrder.indexOf("deployments"));
 });

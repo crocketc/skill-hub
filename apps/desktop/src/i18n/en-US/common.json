@@ -513,6 +513,9 @@
         "trial": "Trial"
       },
       "moveBefore": "Move {{column}} before {{before}}",
+      "moveUp": "Move {{column}} up",
+      "moveDown": "Move {{column}} down",
+      "reorderLabel": "Reorder columns",
       "nextPage": "Next page",
       "pageRange": "{{start}}–{{end}} of {{total}}",
       "pageSize": "Page size",

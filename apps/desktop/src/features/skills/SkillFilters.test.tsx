@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { useState } from "react";
 import { I18nextProvider } from "react-i18next";
 import { vi, expect, it } from "vitest";
@@ -87,11 +87,8 @@ it("emits a page-reset query when search or filters change", async () => {
 it("emits a page-reset query when a filter changes", async () => {
   const onChange = vi.fn();
   await renderSkillFilters({ onChange, query: { ...DEFAULT_SKILL_QUERY, page: 4 } });
-  const basicCheck = screen.getByRole("listbox", { name: "Basic check" });
-  const failed = within(basicCheck).getByRole("option", { name: "Failed" }) as HTMLOptionElement;
-  failed.selected = true;
-
-  fireEvent.change(basicCheck);
+  fireEvent.click(screen.getByRole("button", { name: "Basic check" }));
+  fireEvent.click(screen.getByRole("menuitemcheckbox", { name: "Failed" }));
 
   expect(onChange).toHaveBeenLastCalledWith(
     expect.objectContaining({
@@ -100,6 +97,14 @@ it("emits a page-reset query when a filter changes", async () => {
       savedViewId: undefined,
     }),
   );
+});
+
+it("keeps multi-value filters inside a compact dropdown menu", async () => {
+  await renderSkillFilters();
+  fireEvent.click(screen.getByRole("button", { name: "Tags" }));
+  expect(screen.getByRole("menu", { name: "Tags" })).toBeVisible();
+  expect(screen.getByRole("menuitemcheckbox", { name: "docs" })).toBeVisible();
+  expect(screen.queryByRole("listbox", { name: "Tags" })).not.toBeInTheDocument();
 });
 
 it("delegates clearing to controlled state while preserving page size", async () => {

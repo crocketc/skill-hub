@@ -109,16 +109,16 @@ export function SkillDetailPage({
                 </>
               ) : null}
               {section === "description" ? (
-                <>
-                  {metadataQuery.isPending ? (
-                    <p role="status">{t("skillDetail.states.loadingMetadata")}</p>
-                  ) : metadataQuery.isError || !metadataQuery.data ? (
-                    <p role="alert">{t("skillDetail.states.metadataError")}</p>
-                  ) : (
-                    <MetadataPanel facade={facade} metadata={metadataQuery.data} skillId={skillId} />
-                  )}
-                  <MarkdownWorkspace facade={markdownFacade} skillId={skillId} />
-                </>
+                <MarkdownWorkspace facade={markdownFacade} skillId={skillId} />
+              ) : null}
+              {section === "metadata" ? (
+                metadataQuery.isPending ? (
+                  <p role="status">{t("skillDetail.states.loadingMetadata")}</p>
+                ) : metadataQuery.isError || !metadataQuery.data ? (
+                  <p role="alert">{t("skillDetail.states.metadataError")}</p>
+                ) : (
+                  <MetadataPanel facade={facade} metadata={metadataQuery.data} skillId={skillId} />
+                )
               ) : null}
               {section === "relations" ? (
                 relationsQuery.isError ? (
