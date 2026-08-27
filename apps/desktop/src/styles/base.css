@@ -1531,6 +1531,42 @@ a {
   box-shadow: var(--shadow-sm);
 }
 
+.sh-skill-library__query-toggle {
+  position: absolute;
+  z-index: 1;
+  top: 50%;
+  right: calc(-1 * var(--space-2));
+  display: grid;
+  width: 1.5rem;
+  height: 1.5rem;
+  place-items: center;
+  padding: 0;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: var(--color-surface);
+  color: var(--color-text-secondary);
+  box-shadow: var(--shadow-sm);
+  font-size: var(--font-size-xs);
+  line-height: 1;
+  transform: translateY(-50%);
+  cursor: pointer;
+}
+
+.sh-skill-library__query-toggle:hover {
+  color: var(--color-text);
+  box-shadow: var(--shadow-md);
+}
+
+.sh-skill-library__query-tools.is-collapsed {
+  min-height: 1.5rem;
+}
+
+.sh-skill-library__query-tools.is-collapsed .sh-skill-library__query-toggle {
+  top: 0;
+  right: 0;
+  transform: none;
+}
+
 .sh-skill-library__query-tools label,
 .sh-skill-library__query-tools fieldset {
   display: grid;
@@ -1767,13 +1803,13 @@ a {
   font-size: var(--font-size-xs);
 }
 
-@media (max-width: 120rem) {
+@media (max-width: 112rem) {
   .sh-skill-library__query-tools > section {
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 
   .sh-skill-library__query-tools > section > .sh-filter-search {
-    grid-column: 1 / -1;
+    grid-column: auto;
   }
 }
 

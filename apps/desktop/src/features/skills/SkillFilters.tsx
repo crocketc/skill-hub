@@ -4,6 +4,7 @@ import { type CheckState, type SkillLibraryQuery, type SkillLifecycle } from "./
 
 export interface SkillFiltersProps {
   availableTags: string[];
+  id?: string;
   onChange: (query: SkillLibraryQuery) => void;
   onClear: () => void;
   query: SkillLibraryQuery;
@@ -93,7 +94,7 @@ function MultiSelectMenu({ label, onChange, options, selected, summary }: MultiS
   );
 }
 
-export function SkillFilters({ availableTags, onChange, onClear, query }: SkillFiltersProps) {
+export function SkillFilters({ availableTags, id, onChange, onClear, query }: SkillFiltersProps) {
   const { t } = useTranslation();
 
   const update = (change: Partial<SkillLibraryQuery>) => {
@@ -105,7 +106,7 @@ export function SkillFilters({ availableTags, onChange, onClear, query }: SkillF
   };
 
   return (
-    <section aria-label={t("skillLibrary.filters.search")}>
+    <section aria-label={t("skillLibrary.filters.search")} id={id}>
       <label className="sh-filter-search">
         {t("skillLibrary.filters.search")}
         <input

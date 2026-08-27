@@ -198,7 +198,16 @@ it("places user views after the first four in a labelled details menu", async ()
 
 it("wraps the filter grid before zoomed desktop widths can overflow", () => {
   expect(baseCss).toMatch(
-    /@media \(max-width: 120rem\)[\s\S]*\.sh-skill-library__query-tools > section\s*\{[\s\S]*grid-template-columns:\s*repeat\(4, minmax\(0, 1fr\)/,
+    /@media \(max-width: 112rem\)[\s\S]*\.sh-skill-library__query-tools > section\s*\{[\s\S]*grid-template-columns:\s*repeat\(4, minmax\(0, 1fr\)/,
+  );
+});
+
+it("keeps the search field bounded inside the zoomed filter grid", () => {
+  const zoomedStart = baseCss.indexOf("@media (max-width: 112rem)");
+  const zoomedEnd = baseCss.indexOf("@media (max-width: 48rem)", zoomedStart);
+  const zoomedLayout = baseCss.slice(zoomedStart, zoomedEnd);
+  expect(zoomedLayout).toMatch(
+    /\.sh-skill-library__query-tools > section > \.sh-filter-search\s*\{[\s\S]*grid-column:\s*auto/,
   );
 });
 

@@ -86,6 +86,22 @@ afterEach(() => {
 });
 
 describe("SkillLibraryPage", () => {
+  it("collapses and expands the filters with a compact toggle", async () => {
+    const facade = createMockSkillLibraryFacade();
+    renderLibrary({ facade });
+
+    const collapse = await screen.findByRole("button", { name: "Collapse filters" });
+    expect(collapse).toHaveAttribute("aria-expanded", "true");
+    fireEvent.click(collapse);
+
+    expect(screen.queryByRole("searchbox", { name: "Search skills" })).not.toBeInTheDocument();
+    const expand = screen.getByRole("button", { name: "Expand filters" });
+    expect(expand).toHaveAttribute("aria-expanded", "false");
+    fireEvent.click(expand);
+
+    expect(await screen.findByRole("searchbox", { name: "Search skills" })).toBeVisible();
+  });
+
   it("places the page result status in the results toolbar", async () => {
     const facade = createMockSkillLibraryFacade({ total: 80 });
     renderLibrary({ facade });

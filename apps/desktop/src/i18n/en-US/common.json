@@ -438,6 +438,7 @@
         "warning": "Warning"
       },
       "clear": "Clear filters",
+      "collapse": "Collapse filters",
       "any": "Any",
       "deployment": "Deployment",
       "deploymentOptions": {
@@ -453,6 +454,7 @@
       },
       "resultCount": "{{count}} results",
       "search": "Search skills",
+      "expand": "Expand filters",
       "selectedCount": "{{count}} selected",
       "tags": "Tags",
       "version": "Version",

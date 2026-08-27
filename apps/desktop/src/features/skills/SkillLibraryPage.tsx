@@ -322,6 +322,7 @@ export function SkillLibraryPage({ facade }: SkillLibraryPageProps): JSX.Element
   const [saveViewError, setSaveViewError] = useState<string>();
   const [saveViewPending, setSaveViewPending] = useState(false);
   const [savedViewDeleteError, setSavedViewDeleteError] = useState<string>();
+  const [filtersCollapsed, setFiltersCollapsed] = useState(false);
   const defaultPageRetry = queryClient.getDefaultOptions().queries?.retry;
 
   const clearBatchAnnouncement = () => {
@@ -747,13 +748,26 @@ export function SkillLibraryPage({ facade }: SkillLibraryPageProps): JSX.Element
         </p>
       ) : null}
 
-      <div className="sh-skill-library__query-tools">
-        <SkillFilters
-          availableTags={page.facets.tags}
-          onChange={updateQuery}
-          onClear={clearFilters}
-          query={query}
-        />
+      <div className={`sh-skill-library__query-tools${filtersCollapsed ? " is-collapsed" : ""}`}>
+        <button
+          aria-controls="skill-library-filters"
+          aria-expanded={!filtersCollapsed}
+          aria-label={t(filtersCollapsed ? "skillLibrary.filters.expand" : "skillLibrary.filters.collapse")}
+          className="sh-skill-library__query-toggle"
+          onClick={() => setFiltersCollapsed((collapsed) => !collapsed)}
+          type="button"
+        >
+          <span aria-hidden="true">{filtersCollapsed ? "⌄" : "⌃"}</span>
+        </button>
+        {!filtersCollapsed ? (
+          <SkillFilters
+            availableTags={page.facets.tags}
+            id="skill-library-filters"
+            onChange={updateQuery}
+            onClear={clearFilters}
+            query={query}
+          />
+        ) : null}
       </div>
 
       {pageRefreshing ? (
