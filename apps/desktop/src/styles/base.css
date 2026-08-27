@@ -1320,8 +1320,15 @@ a {
 }
 
 .sh-filter-dropdown {
+  display: grid;
+  gap: var(--space-1);
   position: relative;
   min-width: 0;
+}
+
+.sh-filter-dropdown__label {
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-xs);
 }
 
 .sh-filter-dropdown__trigger {
@@ -1376,8 +1383,15 @@ a {
 }
 
 .sh-filter-dropdown__menu input {
+  appearance: auto;
+  flex: 0 0 1rem;
+  block-size: 1rem;
+  inline-size: 1rem;
+  margin: 0;
   width: auto;
   min-height: auto;
+  padding: 0;
+  accent-color: var(--color-accent-strong);
 }
 
 .sh-skill-library__query-tools input,

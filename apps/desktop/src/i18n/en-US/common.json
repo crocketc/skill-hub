@@ -438,6 +438,7 @@
         "warning": "Warning"
       },
       "clear": "Clear filters",
+      "any": "Any",
       "deployment": "Deployment",
       "deploymentOptions": {
         "any": "Any deployment",
@@ -452,6 +453,7 @@
       },
       "resultCount": "{{count}} results",
       "search": "Search skills",
+      "selectedCount": "{{count}} selected",
       "tags": "Tags",
       "version": "Version",
       "versionOptions": {

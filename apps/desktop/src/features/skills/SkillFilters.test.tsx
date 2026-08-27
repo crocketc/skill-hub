@@ -101,6 +101,7 @@ it("emits a page-reset query when a filter changes", async () => {
 
 it("keeps multi-value filters inside a compact dropdown menu", async () => {
   await renderSkillFilters();
+  expect(screen.getByText("Basic check", { selector: ".sh-filter-dropdown__label" })).toBeVisible();
   fireEvent.click(screen.getByRole("button", { name: "Tags" }));
   expect(screen.getByRole("menu", { name: "Tags" })).toBeVisible();
   expect(screen.getByRole("menuitemcheckbox", { name: "docs" })).toBeVisible();

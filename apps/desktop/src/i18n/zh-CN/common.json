@@ -438,6 +438,7 @@
         "warning": "警告"
       },
       "clear": "清除筛选",
+      "any": "不限",
       "deployment": "部署状态",
       "deploymentOptions": {
         "any": "任意部署状态",
@@ -452,6 +453,7 @@
       },
       "resultCount": "{{count}} 个结果",
       "search": "搜索 Skill",
+      "selectedCount": "已选 {{count}} 项",
       "tags": "标签",
       "version": "版本",
       "versionOptions": {

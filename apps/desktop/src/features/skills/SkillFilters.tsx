@@ -39,18 +39,20 @@ interface MultiSelectMenuProps {
   onChange: (values: string[]) => void;
   options: Array<{ label: string; value: string }>;
   selected: string[];
+  summary: string;
 }
 
-function MultiSelectMenu({ label, onChange, options, selected }: MultiSelectMenuProps) {
+function MultiSelectMenu({ label, onChange, options, selected, summary }: MultiSelectMenuProps) {
   const [open, setOpen] = useState(false);
-  const summary = selected.length > 0 ? `${label} (${selected.length})` : label;
   const toggle = (value: string, checked: boolean) => {
     onChange(checked ? [...selected, value] : selected.filter((item) => item !== value));
   };
 
   return (
     <div className="sh-filter-dropdown">
+      <span className="sh-filter-dropdown__label">{label}</span>
       <button
+        aria-label={label}
         aria-expanded={open}
         aria-haspopup="menu"
         className="sh-filter-dropdown__trigger"
@@ -109,6 +111,7 @@ export function SkillFilters({ availableTags, onChange, onClear, query, resultCo
         onChange={(values) => updateFilters({ basicCheck: values as CheckState[] })}
         options={CHECK_STATES.map((state) => ({ label: t(CHECK_STATE_LABELS[state]), value: state }))}
         selected={query.filters.basicCheck}
+        summary={query.filters.basicCheck.length > 0 ? t("skillLibrary.filters.selectedCount", { count: query.filters.basicCheck.length }) : t("skillLibrary.filters.any")}
       />
 
       <MultiSelectMenu
@@ -116,6 +119,7 @@ export function SkillFilters({ availableTags, onChange, onClear, query, resultCo
         onChange={(values) => updateFilters({ aiCheck: values as CheckState[] })}
         options={CHECK_STATES.map((state) => ({ label: t(CHECK_STATE_LABELS[state]), value: state }))}
         selected={query.filters.aiCheck}
+        summary={query.filters.aiCheck.length > 0 ? t("skillLibrary.filters.selectedCount", { count: query.filters.aiCheck.length }) : t("skillLibrary.filters.any")}
       />
 
       <MultiSelectMenu
@@ -123,6 +127,7 @@ export function SkillFilters({ availableTags, onChange, onClear, query, resultCo
         onChange={(values) => updateFilters({ lifecycle: values as SkillLifecycle[] })}
         options={LIFECYCLES.map((state) => ({ label: t(LIFECYCLE_LABELS[state]), value: state }))}
         selected={query.filters.lifecycle}
+        summary={query.filters.lifecycle.length > 0 ? t("skillLibrary.filters.selectedCount", { count: query.filters.lifecycle.length }) : t("skillLibrary.filters.any")}
       />
 
       <label>
@@ -150,6 +155,7 @@ export function SkillFilters({ availableTags, onChange, onClear, query, resultCo
         onChange={(values) => updateFilters({ tags: values })}
         options={availableTags.map((tag) => ({ label: tag, value: tag }))}
         selected={query.filters.tags}
+        summary={query.filters.tags.length > 0 ? t("skillLibrary.filters.selectedCount", { count: query.filters.tags.length }) : t("skillLibrary.filters.any")}
       />
 
       <p>{t("skillLibrary.filters.resultCount", { count: resultCount })}</p>
