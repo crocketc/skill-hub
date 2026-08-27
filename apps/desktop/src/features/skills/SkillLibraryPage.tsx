@@ -132,8 +132,17 @@ function savedViewIsDirty(
   table: SkillTablePreferences,
 ): boolean {
   if (!view) return false;
-  return JSON.stringify({ query: savedViewScope(query), table }) !==
-    JSON.stringify({ query: view.query, table: view.table });
+  const current = {
+    filterKey: skillFilterKey(query),
+    sort: query.sort,
+    table,
+  };
+  const saved = {
+    filterKey: skillFilterKey({ ...query, ...view.query }),
+    sort: view.query.sort,
+    table: view.table,
+  };
+  return JSON.stringify(current) !== JSON.stringify(saved);
 }
 
 function mergeSavedViews(userViews: SavedSkillView[] | undefined): SavedSkillView[] {
@@ -547,7 +556,18 @@ export function SkillLibraryPage({ facade }: SkillLibraryPageProps): JSX.Element
         table: effectiveTablePreferences,
       })
       .then(
-        () => {
+        (savedView) => {
+          queryClient.setQueryData<SavedSkillView[]>(
+            skillLibraryKeys.savedViews(),
+            (currentViews) => {
+              const views = currentViews ?? [];
+              return [
+                ...views.filter((view) => view.id !== savedView.id),
+                savedView,
+              ];
+            },
+          );
+          writeQuery({ ...query, savedViewId: savedView.id }, skillId);
           setSaveViewOpen(false);
           setSaveViewName("");
           return queryClient.invalidateQueries({

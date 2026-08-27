@@ -640,6 +640,34 @@ describe("SkillLibraryPage", () => {
     expect(screen.queryByText("View saved")).not.toBeInTheDocument();
   });
 
+  it("shows and activates a saved shortcut after saving the current filters", async () => {
+    const facade = createMockSkillLibraryFacade();
+    renderLibrary({ facade, initialEntry: "/library?deployment=deployed" });
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Save current view" }),
+    );
+    fireEvent.change(screen.getByRole("textbox", { name: "View name" }), {
+      target: { value: "Deployed skills" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save view" }));
+
+    const savedView = await screen.findByRole("button", { name: "Deployed skills" });
+    expect(savedView).toHaveAttribute("aria-pressed", "true");
+    expect(screen.queryByText("Unsaved changes")).not.toBeInTheDocument();
+  });
+
+  it("keeps the built-in attention view clean immediately after applying it", async () => {
+    const facade = createMockSkillLibraryFacade();
+    renderLibrary({ facade });
+
+    fireEvent.click(await screen.findByRole("button", { name: "Needs attention" }));
+
+    await waitFor(() => {
+      expect(screen.queryByText("Unsaved changes")).not.toBeInTheDocument();
+    });
+  });
+
   it("keeps a rejected saved-view form recoverable until a later save succeeds", async () => {
     const facade = createMockSkillLibraryFacade();
     const savedViewsRead = vi.spyOn(facade, "listSavedViews");

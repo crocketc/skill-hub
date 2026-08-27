@@ -160,6 +160,7 @@ export function createMockSkillLibraryFacade(
     saveView: [],
   };
   const total = options.total ?? options.pageItems?.length ?? NAMED_ROWS.length;
+  let savedViews = [USER_SAVED_VIEW];
 
   return {
     calls,
@@ -174,7 +175,7 @@ export function createMockSkillLibraryFacade(
       return clone(quickView(row));
     },
     async listSavedViews() {
-      return clone([USER_SAVED_VIEW]);
+      return clone(savedViews);
     },
     async listSkills(query) {
       calls.listSkills.push(clone(query));
@@ -216,11 +217,13 @@ export function createMockSkillLibraryFacade(
     async saveView(view) {
       const saved = clone(view);
       calls.saveView.push(saved);
-      return {
+      const result = {
         ...clone(saved),
         builtIn: false,
         id: `saved-${calls.saveView.length}`,
       };
+      savedViews = [...savedViews, result];
+      return clone(result);
     },
   };
 }
