@@ -249,7 +249,23 @@
     "unavailable": "项目数据尚未连接到本机服务。",
     "empty": "没有项目符合当前筛选条件。",
     "filters": { "label": "项目筛选", "search": "搜索项目", "tags": "标签" },
-    "drawer": { "identity": "项目位置", "tags": "标签", "targets": "共享目标" }
+    "drawer": { "identity": "项目位置", "tags": "标签", "targets": "共享目标" },
+    "readOnly": "只读事实",
+    "detail": { "eyebrow": "项目详情" },
+    "sharedConfig": {
+      "eyebrow": "共享配置",
+      "title": "项目要求",
+      "identity": "身份提示",
+      "targets": "共享目标",
+      "requirements": "所需 Skill"
+    },
+    "assembly": {
+      "eyebrow": "Best-effort 组装",
+      "title": "组装预览",
+      "bestEffort": "每个条目独立展示结果",
+      "singleState": "逐项结果",
+      "status": { "satisfied": "满足", "skipped": "已跳过", "conflict": "冲突", "failed": "失败" }
+    }
   },
   "appShell": {
     "cachedData": "技能库缓存",

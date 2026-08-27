@@ -249,7 +249,23 @@
     "unavailable": "Project data is not connected to the native service yet.",
     "empty": "No projects match the current filters.",
     "filters": { "label": "Project filters", "search": "Search projects", "tags": "Tags" },
-    "drawer": { "identity": "Project location", "tags": "Tags", "targets": "Shared targets" }
+    "drawer": { "identity": "Project location", "tags": "Tags", "targets": "Shared targets" },
+    "readOnly": "Read-only facts",
+    "detail": { "eyebrow": "Project detail" },
+    "sharedConfig": {
+      "eyebrow": "Shared configuration",
+      "title": "Project requirements",
+      "identity": "Identity hint",
+      "targets": "Shared targets",
+      "requirements": "Required Skills"
+    },
+    "assembly": {
+      "eyebrow": "Best-effort assembly",
+      "title": "Assembly preview",
+      "bestEffort": "Each item is reported independently",
+      "singleState": "Itemized result",
+      "status": { "satisfied": "Satisfied", "skipped": "Skipped", "conflict": "Conflict", "failed": "Failed" }
+    }
   },
   "appShell": {
     "cachedData": "Cached skill library",

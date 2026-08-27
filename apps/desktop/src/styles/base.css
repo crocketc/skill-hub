@@ -2626,6 +2626,76 @@ a {
   margin: var(--space-1) 0 0;
 }
 
+.sh-project-section-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.sh-project-section-heading h2 {
+  margin: 0;
+  font-size: var(--font-size-lg);
+}
+
+.sh-project-section-heading > span {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+}
+
+.sh-project-detail__facts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+  margin: 0;
+}
+
+.sh-project-detail__facts dt {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+}
+
+.sh-project-detail__facts dd {
+  overflow-wrap: anywhere;
+  margin: var(--space-1) 0 0;
+}
+
+.sh-project-detail__panel ul {
+  display: grid;
+  gap: var(--space-2);
+  padding-left: var(--space-5);
+  margin: var(--space-2) 0 0;
+}
+
+.sh-project-assembly__list {
+  padding: 0 !important;
+  margin: 0 !important;
+  list-style: none;
+}
+
+.sh-project-assembly__item {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.sh-project-assembly__item:last-child {
+  border-bottom: 0;
+}
+
+.sh-project-assembly__item strong {
+  display: block;
+}
+
+.sh-project-assembly__item p {
+  margin: var(--space-1) 0 0;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+}
+
 @media (max-width: 48rem) {
   .sh-discovery-page__grid,
   .sh-import-source__descriptor {
@@ -2642,6 +2712,10 @@ a {
   }
 
   .sh-project-list__filters {
+    grid-template-columns: 1fr;
+  }
+
+  .sh-project-detail__facts {
     grid-template-columns: 1fr;
   }
 
