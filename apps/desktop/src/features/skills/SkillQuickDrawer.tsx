@@ -56,6 +56,8 @@ type OptionalDrawerModule = (typeof OPTIONAL_DRAWER_MODULES)[number];
 
 interface ModuleProps {
   view: SkillQuickView;
+  versionsHref?: string;
+  versionsState?: { libraryReturn: SkillLibraryReturnState };
 }
 
 interface ModuleCardProps {
@@ -186,16 +188,31 @@ function RelationsModule({ view }: ModuleProps) {
   );
 }
 
-function VersionsModule({ view }: ModuleProps) {
+function VersionsModule({ versionsHref, versionsState, view }: ModuleProps) {
   const { t } = useTranslation();
   return (
     <ModuleCard title={t(MODULE_LABEL_KEYS.versions)}>
       <p>{t("skillLibrary.drawer.values.currentVersion", { version: view.currentVersion })}</p>
-      <p className="sh-skill-drawer__secondary">
-        {view.upgradeAvailable
-          ? t("skillLibrary.drawer.values.updateAvailable")
-          : t("skillLibrary.drawer.values.upToDate")}
-      </p>
+      {view.upgradeAvailable ? (
+        <div className="sh-skill-drawer__version-update">
+          <p className="sh-skill-drawer__secondary">
+            {t("skillLibrary.drawer.values.updateAvailable")}
+          </p>
+          {versionsHref ? (
+            <Link
+              className="sh-button sh-button--secondary sh-button--sm"
+              state={versionsState}
+              to={versionsHref}
+            >
+              {t("skillLibrary.drawer.viewUpdate")}
+            </Link>
+          ) : null}
+        </div>
+      ) : (
+        <p className="sh-skill-drawer__secondary">
+          {t("skillLibrary.drawer.values.upToDate")}
+        </p>
+      )}
     </ModuleCard>
   );
 }
@@ -841,6 +858,10 @@ export function SkillQuickDrawer({
   }, [detailQuery.data]);
 
   const view = localView ?? detailQuery.data;
+  const versionsHref = skillId
+    ? `${location.pathname.startsWith("/__preview") ? "/__preview/skill-detail" : "/library"}/${skillId}${detailSearch}#versions`
+    : undefined;
+  const versionsState = libraryReturn ? { libraryReturn } : undefined;
 
   const beginEdit = (field: "alias" | "note") => {
     if (!view) return;
@@ -1010,7 +1031,14 @@ export function SkillQuickDrawer({
                   return null;
                 }
                 const ModuleRenderer = OPTIONAL_MODULE_RENDERERS[moduleId];
-                return <ModuleRenderer key={moduleId} view={view} />;
+                return (
+                  <ModuleRenderer
+                    key={moduleId}
+                    versionsHref={versionsHref}
+                    versionsState={versionsState}
+                    view={view}
+                  />
+                );
               })}
             </div>
           ) : null}

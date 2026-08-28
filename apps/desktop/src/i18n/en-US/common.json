@@ -437,6 +437,7 @@
         "showMoreProjects": "Show {{count}} more projects"
       },
       "title": "Skill details",
+      "viewUpdate": "View update",
       "values": {
         "agents": "Agents",
         "alias": "Alias",

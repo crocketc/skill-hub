@@ -437,6 +437,7 @@
         "showMoreProjects": "展开另外 {{count}} 个项目"
       },
       "title": "Skill 详情",
+      "viewUpdate": "查看更新",
       "values": {
         "agents": "Agent",
         "alias": "别名",

@@ -509,6 +509,13 @@ it("shows the detail error state", async () => {
   );
 });
 
+it("links available updates to the version review in full details", async () => {
+  await renderDrawer({ detailSearch: "?text=pdf", facade: createMockSkillLibraryFacade() });
+
+  const updateLink = await screen.findByRole("link", { name: "View update" });
+  expect(updateLink).toHaveAttribute("href", "/library/skill-pdf?text=pdf#versions");
+});
+
 it("shows agent tags and project names with paths in the relations module", async () => {
   const facade = createMockSkillLibraryFacade({
     quickView: {
