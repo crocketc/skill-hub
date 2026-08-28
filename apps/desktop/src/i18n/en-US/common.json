@@ -378,8 +378,10 @@
     "drawer": {
       "actions": {
         "addTo": "Add to",
+        "addTags": "Add tags",
         "archive": "Archive",
         "export": "Export",
+        "removeTags": "Remove tags",
         "securityCheck": "Run security check"
       },
       "configure": "Configure quick drawer",
@@ -390,6 +392,8 @@
         "loading": "Loading skill details"
       },
       "emptyValue": "Not available",
+      "editAlias": "Edit alias",
+      "editNote": "Edit note",
       "fullDetails": "View and edit full details",
       "modules": {
         "dependenciesDuplicates": "Dependencies and duplicates",
@@ -423,6 +427,7 @@
       "title": "Skill details",
       "values": {
         "agents": "Agents",
+        "alias": "Alias",
         "currentVersion": "Current version: {{version}}",
         "dependencies": "Dependencies",
         "duplicates": "Possible duplicates",
@@ -430,6 +435,7 @@
         "invocationCount": "{{count}} invocations",
         "lastUsed": "Last used: {{value}}",
         "license": "License",
+        "note": "My note",
         "ownership": "Ownership",
         "projects": "Projects",
         "source": "Source",

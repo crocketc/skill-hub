@@ -101,14 +101,16 @@ export function SkillDetailPage({
       <div className="sh-skill-detail__layout">
         <aside className="sh-skill-detail__rail">
           <DetailHeader
-            adjacent={adjacentQuery.data}
             backPathname={backPathname}
             backSearch={backSearch}
-            detailPathname={detailPathname}
             libraryReturn={libraryReturn}
             summary={summaryQuery.data}
           />
-          <DetailSectionNav />
+          <DetailSectionNav
+            adjacent={adjacentQuery.data}
+            backSearch={backSearch}
+            detailPathname={detailPathname}
+          />
         </aside>
         <main className="sh-skill-detail__content">
           {DETAIL_SECTIONS.map((section) => (

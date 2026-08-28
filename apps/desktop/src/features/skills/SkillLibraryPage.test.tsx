@@ -161,6 +161,32 @@ describe("SkillLibraryPage", () => {
     });
   });
 
+  it("places tag actions directly after add-to in the batch action bar", async () => {
+    const facade = createMockSkillLibraryFacade();
+    renderLibrary({ facade });
+
+    fireEvent.click(
+      await screen.findByRole("checkbox", { name: "Select PDF Reader" }),
+    );
+
+    const batchBar = screen.getByRole("complementary", { name: "Batch actions" });
+    const actions = batchBar.querySelector(".sh-skill-library__batch-actions");
+    expect(actions).toBeInTheDocument();
+    expect(
+      within(actions as HTMLElement)
+        .getAllByRole("button")
+        .map((button) => button.textContent?.trim()),
+    ).toEqual([
+      "Add to",
+      "Add tags",
+      "Remove tags",
+      "Run security check",
+      "Export",
+      "Archive",
+      "Clear selection",
+    ]);
+  });
+
   it("restores query and drawer state from the URL and preserves scroll and focus", async () => {
     const facade = createMockSkillLibraryFacade();
     const view = renderLibrary({

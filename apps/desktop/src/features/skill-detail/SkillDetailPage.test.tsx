@@ -168,6 +168,15 @@ describe("SkillDetailPage shell", () => {
     expect(baseCss).toMatch(/\.sh-skill-detail__adjacent\s*\{[\s\S]*flex-direction:\s*row/);
   });
 
+  it("places adjacent Skill controls at the bottom of the detail section rail", async () => {
+    await renderDetail({ entry: "/__preview/skill-detail/skill-pdf" });
+
+    const sections = await screen.findByRole("navigation", { name: "Detail sections" });
+    const adjacent = await screen.findByRole("navigation", { name: "Skill navigation" });
+    expect(sections.compareDocumentPosition(adjacent) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(adjacent.parentElement).toBe(sections.parentElement);
+  });
+
   it("recovers from a summary failure without leaving the detail route", async () => {
     await renderDetail({
       facade: createMockSkillDetailFacade({ failSummaryOnce: true }),
@@ -236,6 +245,8 @@ describe("SkillDetailPage shell", () => {
     expect(baseCss).toMatch(/\.sh-skill-detail__section\s*\{[\s\S]*flex:\s*0\s+0\s+auto/);
     expect(baseCss).toMatch(/grid-template-columns:\s*minmax\(10rem,\s*12rem\)\s+minmax\(0,\s*1fr\)/);
     expect(baseCss).toMatch(/\.sh-skill-detail__layout\s*\{[\s\S]*gap:\s*var\(--space-4\)/);
+    expect(baseCss).toMatch(/\.sh-skill-detail__rail\s*\{[\s\S]*overflow-y:\s*hidden/);
+    expect(baseCss).toMatch(/@media\s*\(max-width:\s*110rem\)[\s\S]*\.sh-skill-detail__rail\s*\{[\s\S]*overflow-y:\s*auto/);
   });
 
   it("keeps the overview compact and gives the content column the remaining width", async () => {

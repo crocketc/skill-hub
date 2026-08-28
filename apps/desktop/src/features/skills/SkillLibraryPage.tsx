@@ -284,17 +284,20 @@ function BatchBar({
         </Button>
       ) : null}
       <div className="sh-skill-library__batch-actions">
-        {BATCH_ACTIONS.map((action) => (
-          <Button key={action} onClick={() => onAction(action)} size="sm" variant="ghost">
-            {t(BATCH_ACTION_KEYS[action])}
-          </Button>
-        ))}
+        <Button onClick={() => onAction("add_to")} size="sm" variant="ghost">
+          {t(BATCH_ACTION_KEYS.add_to)}
+        </Button>
         <Button onClick={() => onTagAction("add_tag")} size="sm" variant="ghost">
           {t("skillLibrary.page.batch.addTags")}
         </Button>
         <Button onClick={() => onTagAction("remove_tag")} size="sm" variant="ghost">
           {t("skillLibrary.page.batch.removeTags")}
         </Button>
+        {BATCH_ACTIONS.slice(1).map((action) => (
+          <Button key={action} onClick={() => onAction(action)} size="sm" variant="ghost">
+            {t(BATCH_ACTION_KEYS[action])}
+          </Button>
+        ))}
         <Button onClick={onClear} size="sm" variant="ghost">
           {t("skillLibrary.page.selection.clear")}
         </Button>

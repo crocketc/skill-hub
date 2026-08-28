@@ -73,7 +73,13 @@ export interface SkillQuickView extends SkillTableRow {
   dependencies: string[];
   duplicateCandidates: string[];
   externalChanges: string[];
+  note?: string;
   usageEvidence?: { invocationCount: number; lastUsedAt?: string };
+}
+
+export interface SkillMetadataPatch {
+  alias?: string | null;
+  note?: string | null;
 }
 
 export interface SkillTablePreferences {
@@ -139,6 +145,7 @@ export interface SkillLibraryFacade {
   loadTablePreferences(): Promise<SkillTablePreferences>;
   retainMatchingSkillIds(skillIds: string[], query: SkillLibraryQuery): Promise<string[]>;
   saveDrawerPreferences(preferences: SkillDrawerPreferences): Promise<void>;
+  saveSkillMetadata?: (skillId: string, patch: SkillMetadataPatch) => Promise<void>;
   saveTablePreferences(preferences: SkillTablePreferences): Promise<void>;
   deleteView(viewId: string): Promise<void>;
   saveView(view: Omit<SavedSkillView, "builtIn" | "id">): Promise<SavedSkillView>;

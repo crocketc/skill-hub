@@ -7,6 +7,7 @@ import {
   type SkillDrawerPreferences,
   type SkillLibraryFacade,
   type SkillLibraryQuery,
+  type SkillMetadataPatch,
   type SkillQuickView,
   type SkillTablePreferences,
   type SkillTableRow,
@@ -26,6 +27,7 @@ export interface MockSkillLibraryFacade extends SkillLibraryFacade {
     deleteView: string[];
     listSkills: SkillLibraryQuery[];
     saveDrawerPreferences: SkillDrawerPreferences[];
+    saveSkillMetadata: Array<{ skillId: string; patch: SkillMetadataPatch }>;
     saveTablePreferences: SkillTablePreferences[];
     saveView: Array<Omit<SavedSkillView, "builtIn" | "id">>;
   };
@@ -158,11 +160,15 @@ export function createMockSkillLibraryFacade(
     emitBatchIntent: [],
     listSkills: [],
     saveDrawerPreferences: [],
+    saveSkillMetadata: [],
     saveTablePreferences: [],
     saveView: [],
   };
   const total = options.total ?? options.pageItems?.length ?? NAMED_ROWS.length;
   let savedViews = [USER_SAVED_VIEW];
+  const metadata = new Map<string, SkillMetadataPatch>([
+    ["skill-pdf", { note: "Keep this reader near document workflows." }],
+  ]);
 
   return {
     calls,
@@ -174,7 +180,13 @@ export function createMockSkillLibraryFacade(
       const row = available.find((item) => item.id === skillId) ??
         NAMED_ROWS.find((item) => item.id === skillId) ??
         generatedRow(Number(skillId.replace("skill-", "")) - 1);
-      return clone(quickView(row));
+      const result = quickView(row);
+      const patch = metadata.get(skillId);
+      return clone({
+        ...result,
+        ...(patch?.alias === null ? { alias: undefined } : patch?.alias ? { alias: patch.alias } : {}),
+        ...(patch?.note === null ? { note: undefined } : patch?.note ? { note: patch.note } : {}),
+      });
     },
     async listSavedViews() {
       return clone(savedViews);
@@ -225,6 +237,20 @@ export function createMockSkillLibraryFacade(
       if (options.failDrawerSave) {
         throw new Error("drawer preference save failed");
       }
+    },
+    async saveSkillMetadata(skillId, patch) {
+      calls.saveSkillMetadata.push(clone({ skillId, patch }));
+      const current = metadata.get(skillId) ?? {};
+      const next = { ...current };
+      if ("alias" in patch) {
+        if (patch.alias === null) delete next.alias;
+        else next.alias = patch.alias;
+      }
+      if ("note" in patch) {
+        if (patch.note === null) delete next.note;
+        else next.note = patch.note;
+      }
+      metadata.set(skillId, next);
     },
     async saveTablePreferences(preferences) {
       calls.saveTablePreferences.push(clone(preferences));

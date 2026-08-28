@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useRef, useState } from "react";
 import { I18nextProvider } from "react-i18next";
@@ -49,6 +49,7 @@ const QUICK_VIEW: SkillQuickView = {
   translatedDescription: "Reads PDF files.",
   upgradeAvailable: true,
   usageEvidence: { invocationCount: 12, lastUsedAt: "2026-08-24T10:00:00Z" },
+  note: "Keep this reader near document workflows.",
 };
 
 interface MockOptions {
@@ -59,6 +60,7 @@ interface MockOptions {
     preferences: SkillDrawerPreferences,
     index: number,
   ) => Promise<void>;
+  saveSkillMetadata?: (patch: { alias?: string | null; note?: string | null }) => Promise<void>;
   usageEvidence?: SkillQuickView["usageEvidence"];
 }
 
@@ -68,6 +70,7 @@ interface MockFacade extends SkillLibraryFacade {
     emitBatchIntent: SkillBatchIntent[];
     getSkillQuickView: string[];
     saveDrawerPreferences: SkillDrawerPreferences[];
+    saveSkillMetadata: Array<{ skillId: string; patch: { alias?: string | null; note?: string | null } }>;
   };
 }
 
@@ -87,6 +90,7 @@ function createMockSkillLibraryFacade(options: MockOptions = {}): MockFacade {
     emitBatchIntent: [],
     getSkillQuickView: [],
     saveDrawerPreferences: [],
+    saveSkillMetadata: [],
   };
   return {
     calls,
@@ -139,6 +143,10 @@ function createMockSkillLibraryFacade(options: MockOptions = {}): MockFacade {
       if (options.failDrawerSave) {
         throw new Error("preference write failed");
       }
+    },
+    async saveSkillMetadata(skillId, patch) {
+      calls.saveSkillMetadata.push({ skillId, patch });
+      await options.saveSkillMetadata?.(patch);
     },
     async saveTablePreferences() {
       return undefined;
@@ -591,6 +599,52 @@ it("inherits reduced motion and emits only a single-skill action intent", async 
   expect(screen.queryByText(/completed/i)).not.toBeInTheDocument();
   expect(screen.getByRole("heading", { name: "Usage evidence" })).toBeVisible();
   expect(screen.queryByText(/0 invocations/i)).not.toBeInTheDocument();
+});
+
+it("offers single-skill tag actions and saves alias and note edits on blur", async () => {
+  const facade = createMockSkillLibraryFacade();
+  await renderDrawer({ facade });
+
+  expect(await screen.findByRole("button", { name: "Add tags" })).toBeVisible();
+  expect(screen.getByRole("button", { name: "Remove tags" })).toBeVisible();
+
+  fireEvent.click(screen.getByRole("button", { name: "Add tags" }));
+  const dialog = await screen.findByRole("dialog", { name: "Add tags" });
+  fireEvent.change(within(dialog).getByRole("textbox", { name: "Tags" }), {
+    target: { value: "review, urgent" },
+  });
+  fireEvent.click(within(dialog).getByRole("button", { name: "Add tags" }));
+  await waitFor(() => {
+    expect(facade.calls.emitBatchIntent).toContainEqual({
+      action: "add_tag",
+      tags: ["review", "urgent"],
+      target: { kind: "skill_ids", skillIds: ["skill-pdf"] },
+    });
+  });
+
+  fireEvent.click(screen.getByRole("button", { name: "Edit alias" }));
+  const aliasInput = screen.getByRole("textbox", { name: "Alias" });
+  fireEvent.change(aliasInput, { target: { value: "PDF helper" } });
+  fireEvent.blur(aliasInput);
+  await waitFor(() => {
+    expect(facade.calls.saveSkillMetadata).toContainEqual({
+      skillId: "skill-pdf",
+      patch: { alias: "PDF helper" },
+    });
+  });
+  expect(screen.getByText("PDF helper")).toBeVisible();
+
+  fireEvent.click(screen.getByRole("button", { name: "Edit note" }));
+  const noteInput = screen.getByRole("textbox", { name: "My note" });
+  fireEvent.change(noteInput, { target: { value: "Use for invoices" } });
+  fireEvent.blur(noteInput);
+  await waitFor(() => {
+    expect(facade.calls.saveSkillMetadata).toContainEqual({
+      skillId: "skill-pdf",
+      patch: { note: "Use for invoices" },
+    });
+  });
+  expect(screen.getByText("Use for invoices")).toBeVisible();
 });
 
 it("does not fetch details while the drawer is disabled", async () => {

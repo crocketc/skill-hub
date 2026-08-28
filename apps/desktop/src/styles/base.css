@@ -1117,9 +1117,8 @@ a {
   max-height: 100%;
   min-height: 0;
   align-content: start;
-  gap: var(--space-5);
-  overflow-y: auto;
-  scrollbar-gutter: stable;
+  gap: var(--space-4);
+  overflow-y: hidden;
 }
 
 .sh-skill-detail__section-nav {
@@ -1128,15 +1127,26 @@ a {
 
 .sh-skill-detail__section-nav {
   display: grid;
-  gap: var(--space-1);
+  gap: 0.25rem;
 }
 
 .sh-skill-detail__section-nav a {
   border-left: 2px solid var(--color-border);
   color: var(--color-text-secondary);
-  font-size: 0.875rem;
-  padding: var(--space-2) var(--space-3);
+  font-size: 0.8125rem;
+  padding: 0.375rem var(--space-2);
   text-decoration: none;
+}
+
+.sh-skill-detail__adjacent {
+  margin-top: var(--space-2);
+}
+
+@media (max-width: 110rem) and (min-width: 44.01rem) {
+  .sh-skill-detail__rail {
+    overflow-y: auto;
+    scrollbar-gutter: stable;
+  }
 }
 
 .sh-skill-detail__section-nav a:hover,
@@ -2547,6 +2557,44 @@ a {
   gap: var(--space-2);
 }
 
+.sh-skill-drawer__identity-heading {
+  min-width: 0;
+}
+
+.sh-skill-drawer__identity-heading input,
+.sh-skill-drawer__note input {
+  min-width: 8rem;
+  max-width: 100%;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+  padding: 0.125rem var(--space-1);
+}
+
+.sh-skill-drawer__edit-icon {
+  display: inline-grid;
+  flex: 0 0 auto;
+  place-items: center;
+  width: 1.25rem;
+  height: 1.25rem;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  font-size: 0.8rem;
+  line-height: 1;
+}
+
+.sh-skill-drawer__edit-icon:hover,
+.sh-skill-drawer__edit-icon:focus-visible {
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+}
+
 .sh-skill-drawer__identity h2,
 .sh-skill-drawer__module h3,
 .sh-skill-drawer__identity p,
@@ -2569,6 +2617,19 @@ a {
 .sh-skill-drawer__identity > p {
   margin-top: var(--space-1);
   text-wrap: pretty;
+}
+
+.sh-skill-drawer__note {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  margin-top: var(--space-2);
+}
+
+.sh-skill-drawer__note-label {
+  color: var(--color-text-muted);
+  font-size: 0.8125rem;
 }
 
 .sh-skill-drawer__actions {

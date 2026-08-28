@@ -23,9 +23,11 @@ import {
   type DrawerPreset,
   type SkillDrawerPreferences,
   type SkillLibraryFacade,
+  type SkillMetadataPatch,
   type SkillQuickView,
   skillLibraryKeys,
 } from "./api";
+import { BatchTagDialog, type BatchTagAction } from "./BatchTagDialog";
 import {
   OPTIONAL_DRAWER_MODULES,
   clampDrawerWidth,
@@ -260,27 +262,99 @@ const OPTIONAL_MODULE_RENDERERS: Record<
   versions: VersionsModule,
 };
 
-function IdentityRegion({ view }: ModuleProps) {
+interface IdentityRegionProps extends ModuleProps {
+  editingField?: "alias" | "note";
+  editingValue: string;
+  onBeginEdit: (field: "alias" | "note") => void;
+  onChange: (value: string) => void;
+  onCommit: () => void;
+}
+
+function IdentityRegion({
+  editingField,
+  editingValue,
+  onBeginEdit,
+  onChange,
+  onCommit,
+  view,
+}: IdentityRegionProps) {
   const { t } = useTranslation();
   return (
     <section className="sh-skill-drawer__identity">
-      <div>
+      <div className="sh-skill-drawer__identity-heading">
         <h2>{view.name}</h2>
-        {view.alias ? <span>{view.alias}</span> : null}
+        {editingField === "alias" ? (
+          <input
+            aria-label={t("skillLibrary.drawer.values.alias")}
+            autoFocus
+            onBlur={onCommit}
+            onChange={(event) => onChange(event.currentTarget.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") onCommit();
+              if (event.key === "Escape") onCommit();
+            }}
+            type="text"
+            value={editingValue}
+          />
+        ) : (
+          <span>{view.alias ?? <EmptyValue />}</span>
+        )}
+        <button
+          aria-label={t("skillLibrary.drawer.editAlias")}
+          className="sh-skill-drawer__edit-icon"
+          onClick={() => onBeginEdit("alias")}
+          title={t("skillLibrary.drawer.editAlias")}
+          type="button"
+        >
+          <span aria-hidden="true">✎</span>
+        </button>
       </div>
       <p>{view.purpose}</p>
       <p className="sh-skill-drawer__secondary">
         {view.translatedDescription ?? view.originalDescription ?? t("skillLibrary.drawer.emptyValue")}
       </p>
+      <div className="sh-skill-drawer__note">
+        <span className="sh-skill-drawer__note-label">
+          {t("skillLibrary.drawer.values.note")}:
+        </span>
+        {editingField === "note" ? (
+          <input
+            aria-label={t("skillLibrary.drawer.values.note")}
+            autoFocus
+            onBlur={onCommit}
+            onChange={(event) => onChange(event.currentTarget.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") onCommit();
+              if (event.key === "Escape") onCommit();
+            }}
+            type="text"
+            value={editingValue}
+          />
+        ) : (
+          <span className="sh-skill-drawer__secondary">
+            {view.note ?? <EmptyValue />}
+          </span>
+        )}
+        <button
+          aria-label={t("skillLibrary.drawer.editNote")}
+          className="sh-skill-drawer__edit-icon"
+          onClick={() => onBeginEdit("note")}
+          title={t("skillLibrary.drawer.editNote")}
+          type="button"
+        >
+          <span aria-hidden="true">✎</span>
+        </button>
+      </div>
     </section>
   );
 }
 
 interface PrimaryActionsProps extends ModuleProps {
   facade: SkillLibraryFacade;
+  onTagAction: (action: BatchTagAction) => void;
 }
 
-function PrimaryActions({ facade, view }: PrimaryActionsProps) {
+function PrimaryActions({ facade, onTagAction, view }: PrimaryActionsProps) {
   const { t } = useTranslation();
   const emitIntent = (action: BatchAction) => {
     void facade
@@ -294,6 +368,12 @@ function PrimaryActions({ facade, view }: PrimaryActionsProps) {
     <section aria-label={t(MODULE_LABEL_KEYS.primary_actions)} className="sh-skill-drawer__actions">
       <Button onClick={() => emitIntent("add_to")} size="sm">
         {t("skillLibrary.drawer.actions.addTo")}
+      </Button>
+      <Button onClick={() => onTagAction("add_tag")} size="sm" variant="secondary">
+        {t("skillLibrary.drawer.actions.addTags")}
+      </Button>
+      <Button onClick={() => onTagAction("remove_tag")} size="sm" variant="secondary">
+        {t("skillLibrary.drawer.actions.removeTags")}
       </Button>
       <Button onClick={() => emitIntent("security_check")} size="sm" variant="secondary">
         {t("skillLibrary.drawer.actions.securityCheck")}
@@ -451,7 +531,11 @@ export function SkillQuickDrawer({
   const location = useLocation();
   const [configurationOpen, setConfigurationOpen] = useState(false);
   const [dragWidthPx, setDragWidthPx] = useState<number>();
+  const [editingField, setEditingField] = useState<"alias" | "note">();
+  const [editingValue, setEditingValue] = useState("");
   const [localPreferenceSaveFailed, setLocalPreferenceSaveFailed] = useState(false);
+  const [localView, setLocalView] = useState<SkillQuickView>();
+  const [tagAction, setTagAction] = useState<BatchTagAction>();
   const dragSessionRef = useRef<DragSession>();
   const preferenceSaveQueueRef = useRef<Promise<void>>(Promise.resolve());
   const preferenceSaveRequestRef = useRef(0);
@@ -670,7 +754,53 @@ export function SkillQuickDrawer({
       tabIndex={0}
     />
   );
-  const view = detailQuery.data;
+  useEffect(() => {
+    if (detailQuery.data) {
+      setLocalView(detailQuery.data);
+      setEditingField(undefined);
+      setEditingValue("");
+    } else {
+      setLocalView(undefined);
+    }
+  }, [detailQuery.data]);
+
+  const view = localView ?? detailQuery.data;
+
+  const beginEdit = (field: "alias" | "note") => {
+    if (!view) return;
+    setEditingField(field);
+    setEditingValue(field === "alias" ? view.alias ?? "" : view.note ?? "");
+  };
+
+  const commitEdit = () => {
+    if (!editingField || !view) return;
+    const value = editingValue.trim();
+    const patch: SkillMetadataPatch =
+      editingField === "alias" ? { alias: value || null } : { note: value || null };
+    setLocalView({
+      ...view,
+      ...(editingField === "alias"
+        ? { alias: value || undefined }
+        : { note: value || undefined }),
+    });
+    setEditingField(undefined);
+    setEditingValue("");
+    const save = facade.saveSkillMetadata?.(view.id, patch);
+    void save?.catch(() => undefined);
+  };
+
+  const confirmTagAction = (tags: string[]) => {
+    if (!tagAction || !view) return;
+    const action = tagAction;
+    setTagAction(undefined);
+    void facade
+      .emitBatchIntent({
+        action,
+        tags,
+        target: { kind: "skill_ids", skillIds: [view.id] },
+      })
+      .catch(() => undefined);
+  };
 
   return (
     <Drawer
@@ -764,8 +894,15 @@ export function SkillQuickDrawer({
             </div>
           ) : view ? (
             <div className="sh-skill-drawer__fixed">
-              <IdentityRegion view={view} />
-              <PrimaryActions facade={facade} view={view} />
+              <IdentityRegion
+                editingField={editingField}
+                editingValue={editingValue}
+                onBeginEdit={beginEdit}
+                onChange={setEditingValue}
+                onCommit={commitEdit}
+                view={view}
+              />
+              <PrimaryActions facade={facade} onTagAction={setTagAction} view={view} />
               <RiskSummary view={view} />
             </div>
           ) : null}
@@ -804,6 +941,14 @@ export function SkillQuickDrawer({
         </div>
 
       </div>
+      {tagAction ? (
+        <BatchTagDialog
+          action={tagAction}
+          count={1}
+          onCancel={() => setTagAction(undefined)}
+          onConfirm={confirmTagAction}
+        />
+      ) : null}
     </Drawer>
   );
 }
