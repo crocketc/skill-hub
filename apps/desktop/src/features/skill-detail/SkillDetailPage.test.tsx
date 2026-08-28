@@ -246,6 +246,7 @@ describe("SkillDetailPage shell", () => {
     expect(baseCss).toMatch(/grid-template-columns:\s*minmax\(10rem,\s*12rem\)\s+minmax\(0,\s*1fr\)/);
     expect(baseCss).toMatch(/\.sh-skill-detail__layout\s*\{[\s\S]*gap:\s*var\(--space-4\)/);
     expect(baseCss).toMatch(/\.sh-skill-detail__rail\s*\{[\s\S]*overflow-y:\s*hidden/);
+    expect(baseCss).toMatch(/\.sh-skill-detail__rail\s*\{[\s\S]*height:\s*100%/);
     expect(baseCss).toMatch(/@media\s*\(max-width:\s*110rem\)[\s\S]*\.sh-skill-detail__rail\s*\{[\s\S]*overflow-y:\s*auto/);
     expect(baseCss).toMatch(/\.sh-skill-detail__rail\s*\{[\s\S]*display:\s*flex/);
     expect(baseCss).toMatch(/\.sh-skill-detail__adjacent\s*\{[\s\S]*margin-top:\s*auto/);
