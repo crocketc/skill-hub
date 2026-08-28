@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { I18nextProvider } from "react-i18next";
 import {
   MemoryRouter,
@@ -151,6 +151,23 @@ describe("SkillDetailPage shell", () => {
     expect(screen.queryByRole("complementary", { name: "Skill status" })).not.toBeInTheDocument();
   });
 
+  it("places identity before the content description in the detail navigation", async () => {
+    await renderDetail();
+
+    const navigation = await screen.findByRole("navigation", { name: "Detail sections" });
+    expect(await within(navigation).getAllByRole("link").map((link) => link.textContent)).toEqual([
+      "Overview",
+      "Identity and source",
+      "Content description",
+      "Relations",
+      "Requirements",
+      "Security checks",
+      "Related Skills",
+      "External changes",
+      "Version history",
+    ]);
+  });
+
   it("keeps the detail rail fixed while the content column scrolls", async () => {
     await renderDetail();
     await screen.findByRole("navigation", { name: "Detail sections" });
@@ -166,7 +183,7 @@ describe("SkillDetailPage shell", () => {
     expect(baseCss).toMatch(/\.sh-skill-detail__content\s*\{[\s\S]*overflow-y:\s*auto/);
     expect(baseCss).toMatch(/\.sh-skill-detail__content\s*\{[\s\S]*display:\s*flex/);
     expect(baseCss).toMatch(/\.sh-skill-detail__section\s*\{[\s\S]*flex:\s*0\s+0\s+auto/);
-    expect(baseCss).toMatch(/grid-template-columns:\s*minmax\(12rem,\s*14rem\)\s+minmax\(0,\s*1fr\)/);
+    expect(baseCss).toMatch(/grid-template-columns:\s*minmax\(10rem,\s*12rem\)\s+minmax\(0,\s*1fr\)/);
     expect(baseCss).toMatch(/\.sh-skill-detail__layout\s*\{[\s\S]*gap:\s*var\(--space-4\)/);
   });
 
@@ -178,7 +195,7 @@ describe("SkillDetailPage shell", () => {
     expect(baseCss).toMatch(/\.sh-skill-detail__section--overview\s*\{[\s\S]*gap:\s*var\(--space-2\)/);
     expect(baseCss).toMatch(/\.sh-skill-detail__section--overview\s*\{[\s\S]*padding:\s*var\(--space-4\)/);
     expect(baseCss).toMatch(/\.sh-skill-detail__rail \.sh-skill-detail__title-row h1\s*\{[\s\S]*font-size:/);
-    expect(baseCss).toMatch(/grid-template-columns:\s*minmax\(12rem,\s*14rem\)\s+minmax\(0,\s*1fr\)/);
+    expect(baseCss).toMatch(/grid-template-columns:\s*minmax\(10rem,\s*12rem\)\s+minmax\(0,\s*1fr\)/);
   });
 
   it("highlights the section selected from the detail navigation", async () => {
@@ -212,7 +229,7 @@ describe("SkillDetailPage shell", () => {
     await renderDetail();
 
     const descriptionHeading = await screen.findByRole("heading", {
-      name: "Description",
+      name: "Content description",
     });
     const workspaceHeading = await screen.findByRole("heading", {
       name: "Markdown workspace",
@@ -225,7 +242,7 @@ describe("SkillDetailPage shell", () => {
         Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
     expect(
-      workspaceHeading.compareDocumentPosition(metadataSectionHeading) &
+      metadataSectionHeading.compareDocumentPosition(workspaceHeading) &
         Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
     expect(

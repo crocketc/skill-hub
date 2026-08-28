@@ -550,6 +550,13 @@
       "createsVersion": "回滚会创建新的当前版本，不会删除历史记录。",
       "current": "当前版本",
       "deploymentUpdates": "{{label}} 将更新",
+      "fileDetails": {
+        "added": "新增文件",
+        "changed": "修改文件",
+        "empty": "无文件",
+        "label": "变更文件明细",
+        "removed": "删除文件"
+      },
       "impactLoading": "正在加载回滚影响",
       "loadError": "无法加载版本历史",
       "loading": "正在加载版本历史",
@@ -613,6 +620,7 @@
       "saveError": "未能保存，草稿已保留。",
       "stale": "译文可能已过期",
       "tags": "标签",
+      "tagsHint": "多个标签请用逗号分隔",
       "translation": "已保存译文",
       "translationText": "译文内容",
       "translationOverwrite": "现有用户修订译文将被替换（{{locale}}）。",
@@ -626,7 +634,7 @@
       "sectionsLabel": "详情章节",
       "sections": {
         "connections": "相关 Skill",
-        "description": "说明",
+        "description": "内容说明",
         "external": "外部变更",
         "metadata": "身份与来源",
         "overview": "概览",

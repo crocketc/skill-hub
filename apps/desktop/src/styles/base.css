@@ -1044,7 +1044,7 @@ a {
   display: grid;
   height: 100%;
   gap: var(--space-4);
-  grid-template-columns: minmax(12rem, 14rem) minmax(0, 1fr);
+  grid-template-columns: minmax(10rem, 12rem) minmax(0, 1fr);
   min-height: 0;
 }
 
@@ -1171,6 +1171,11 @@ a {
 .sh-metadata-panel h3,
 .sh-metadata-panel p {
   margin: 0;
+}
+
+.sh-metadata-panel__hint {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
 }
 
 .sh-metadata-panel__section-heading,
@@ -1383,6 +1388,27 @@ a {
   gap: var(--space-4);
 }
 
+.sh-version-timeline__file-group {
+  min-width: min(14rem, 100%);
+  flex: 1 1 14rem;
+}
+
+.sh-version-timeline__file-group h4,
+.sh-version-timeline__file-group p {
+  margin: 0;
+}
+
+.sh-version-timeline__file-group ul {
+  display: grid;
+  gap: var(--space-1);
+  padding-left: var(--space-4);
+  margin: var(--space-2) 0 0;
+}
+
+.sh-version-timeline__file-group code {
+  overflow-wrap: anywhere;
+}
+
 .sh-version-timeline__rollback {
   border-color: var(--color-warning);
 }
@@ -1393,7 +1419,7 @@ a {
 
 @media (max-width: 64rem) {
   .sh-skill-detail__layout {
-    grid-template-columns: minmax(10rem, 12rem) minmax(0, 1fr);
+    grid-template-columns: minmax(9rem, 10.5rem) minmax(0, 1fr);
   }
 }
 

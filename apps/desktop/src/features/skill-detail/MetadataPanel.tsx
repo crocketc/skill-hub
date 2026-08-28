@@ -18,6 +18,7 @@ interface MetadataPanelProps {
 }
 
 interface EditableTextSectionProps {
+  hint?: string;
   label: string;
   multiline?: boolean;
   onSave: (value: string) => Promise<void>;
@@ -25,6 +26,7 @@ interface EditableTextSectionProps {
 }
 
 function EditableTextSection({
+  hint,
   label,
   multiline = false,
   onSave,
@@ -98,6 +100,7 @@ function EditableTextSection({
               value={draft}
             />
           )}
+          {hint ? <p className="sh-metadata-panel__hint">{hint}</p> : null}
           <div>
             <Button
               aria-label={t("skillDetail.metadata.save", { label })}
@@ -223,6 +226,7 @@ export function MetadataPanel({ facade, metadata, skillId }: MetadataPanelProps)
       <EditableTextSection
         key={`tags-${metadata.tags.join(",")}`}
         label={t("skillDetail.metadata.tags")}
+        hint={t("skillDetail.metadata.tagsHint")}
         onSave={(tags) =>
           savePatch({ tags: tags.split(",").map((tag) => tag.trim()).filter(Boolean) })
         }

@@ -550,6 +550,13 @@
       "createsVersion": "Rollback creates a new current version; it does not erase history.",
       "current": "Current",
       "deploymentUpdates": "{{label}} will update",
+      "fileDetails": {
+        "added": "Added files",
+        "changed": "Changed files",
+        "empty": "No files",
+        "label": "Changed file details",
+        "removed": "Removed files"
+      },
       "impactLoading": "Loading rollback impact",
       "loadError": "Version history could not be loaded",
       "loading": "Loading version history",
@@ -613,6 +620,7 @@
       "saveError": "Could not save. Your draft is still here.",
       "stale": "Translation may be outdated",
       "tags": "Tags",
+      "tagsHint": "Separate multiple tags with commas",
       "translation": "Saved translation",
       "translationText": "Translation text",
       "translationOverwrite": "The existing user-revised {{locale}} translation will be replaced.",
@@ -626,7 +634,7 @@
       "sectionsLabel": "Detail sections",
       "sections": {
         "connections": "Related Skills",
-        "description": "Description",
+        "description": "Content description",
         "external": "External changes",
         "metadata": "Identity and source",
         "overview": "Overview",

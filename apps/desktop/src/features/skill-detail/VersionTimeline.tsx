@@ -115,10 +115,20 @@ export function VersionTimeline({ facade, skillId }: VersionTimelineProps) {
         {t("skillDetail.versions.compareSelected")}
       </Button>
       {diffQuery.data ? (
-        <div className="sh-version-timeline__diff">
+        <div className="sh-version-timeline__diff" role="region" aria-label={t("skillDetail.versions.fileDetails.label")}>
           <p>{t("skillDetail.versions.added", { count: diffQuery.data.added.length })}</p>
           <p>{t("skillDetail.versions.changed", { count: diffQuery.data.changed.length })}</p>
           <p>{t("skillDetail.versions.removed", { count: diffQuery.data.removed.length })}</p>
+          {(["added", "changed", "removed"] as const).map((kind) => (
+            <section className="sh-version-timeline__file-group" key={kind}>
+              <h4>{t(`skillDetail.versions.fileDetails.${kind}`)}</h4>
+              {diffQuery.data[kind].length > 0 ? (
+                <ul>
+                  {diffQuery.data[kind].map((path) => <li key={path}><code>{path}</code></li>)}
+                </ul>
+              ) : <p>{t("skillDetail.versions.fileDetails.empty")}</p>}
+            </section>
+          ))}
         </div>
       ) : null}
       {rollbackTarget ? (

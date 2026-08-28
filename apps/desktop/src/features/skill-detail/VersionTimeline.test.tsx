@@ -27,6 +27,9 @@ describe("VersionTimeline", () => {
     fireEvent.click(screen.getByRole("button", { name: "比较所选版本" }));
     expect(await screen.findByText("新增文件：1")).toBeVisible();
     expect(screen.getByText("修改文件：2")).toBeVisible();
+    expect(screen.getByText("references/new-format.md")).toBeVisible();
+    expect(screen.getByText("SKILL.md")).toBeVisible();
+    expect(screen.getByText("references/tables.md")).toBeVisible();
   });
 
   it("previews affected and pinned deployments before rollback", async () => {

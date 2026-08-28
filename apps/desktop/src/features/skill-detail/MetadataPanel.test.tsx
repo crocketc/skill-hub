@@ -58,6 +58,13 @@ describe("MetadataPanel", () => {
     });
   });
 
+  it("explains comma-separated tags while editing", async () => {
+    await renderMetadata();
+    fireEvent.click(screen.getByRole("button", { name: "编辑标签" }));
+
+    expect(screen.getByText("多个标签请用逗号分隔")).toBeVisible();
+  });
+
   it("requires confirmation before replacing a user-revised translation", async () => {
     const facade = createMockSkillDetailFacade();
     await renderMetadata({

@@ -4,8 +4,8 @@ import { useLocation } from "react-router-dom";
 
 export const DETAIL_SECTIONS = [
   "overview",
-  "description",
   "metadata",
+  "description",
   "relations",
   "requirements",
   "security",
