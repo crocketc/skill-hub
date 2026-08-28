@@ -63,10 +63,8 @@ function AgentMark({ agent }: { agent: AgentDeployment }) {
   const style = { "--agent-accent": visual.color } as CSSProperties;
   return (
     <span
-      aria-label={agent.name}
       className="sh-skill-table__agent-deployment"
       data-agent-id={agent.id}
-      role="img"
       style={style}
       title={agent.name}
     >
