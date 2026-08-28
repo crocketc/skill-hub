@@ -523,6 +523,16 @@ it("resets defaults, keeps modules independently scrollable, and links to full d
   expect(screen.getByRole("link", { name: "View full details" })).toHaveClass(
     "sh-button--primary",
   );
+  const toolbar = document.querySelector(".sh-skill-drawer__toolbar");
+  expect(toolbar?.firstElementChild).toContainElement(
+    screen.getByRole("link", { name: "View full details" }),
+  );
+  expect(toolbar?.lastElementChild).toContainElement(
+    screen.getByRole("button", { name: "Configure quick drawer" }),
+  );
+  expect(screen.getByRole("button", { name: "Standard width" })).toHaveClass(
+    "sh-skill-drawer__preset-icon-button",
+  );
 });
 
 it("carries the library query and return position into full details", async () => {

@@ -2364,7 +2364,7 @@ a {
 }
 
 .sh-skill-drawer__toolbar,
-.sh-skill-drawer__toolbar-start,
+.sh-skill-drawer__toolbar-end,
 .sh-skill-drawer__presets,
 .sh-skill-drawer__actions,
 .sh-skill-drawer__risk,
@@ -2382,13 +2382,56 @@ a {
   background: var(--color-surface-raised);
 }
 
-.sh-skill-drawer__toolbar-start {
+.sh-skill-drawer__toolbar-end {
   flex-wrap: wrap;
 }
 
 .sh-skill-drawer__presets,
 .sh-skill-drawer__actions {
   flex-wrap: wrap;
+}
+
+.sh-skill-drawer__preset-icon-button {
+  width: 2.25rem;
+  min-width: 2.25rem;
+  height: 2.25rem;
+  padding: 0;
+}
+
+.sh-skill-drawer__preset-icon {
+  --preset-line-position: 25%;
+  position: relative;
+  display: block;
+  width: 1rem;
+  height: 1rem;
+  border: 1.5px solid currentColor;
+  border-radius: 2px;
+  background:
+    linear-gradient(
+      90deg,
+      transparent calc(var(--preset-line-position) - 0.75px),
+      currentColor calc(var(--preset-line-position) - 0.75px),
+      currentColor calc(var(--preset-line-position) + 0.75px),
+      transparent calc(var(--preset-line-position) + 0.75px)
+    );
+  box-shadow: 2px 2px 0 -1px var(--color-surface), 2px 2px 0 0 currentColor;
+}
+
+.sh-skill-drawer__preset-icon::after {
+  position: absolute;
+  inset: 2px -3px -3px 2px;
+  border-right: 1px solid currentColor;
+  border-bottom: 1px solid currentColor;
+  content: "";
+  opacity: 0.55;
+}
+
+.sh-skill-drawer__preset-icon--wide {
+  --preset-line-position: 50%;
+}
+
+.sh-skill-drawer__preset-icon--near_full {
+  --preset-line-position: 75%;
 }
 
 .sh-skill-drawer__alert,

@@ -691,7 +691,35 @@ export function SkillQuickDrawer({
       >
         <div className="sh-skill-drawer__chrome">
           <div className="sh-skill-drawer__toolbar">
-            <div className="sh-skill-drawer__toolbar-start">
+            {view && skillId ? (
+              <Link
+                className="sh-button sh-button--primary sh-button--sm"
+                state={libraryReturn ? { libraryReturn } : undefined}
+                to={{ pathname: `${location.pathname.startsWith("/__preview") ? "/__preview/skill-detail" : "/library"}/${skillId}`, search: detailSearch }}
+              >
+                {t("skillLibrary.drawer.fullDetails")}
+              </Link>
+            ) : <span />}
+            <div className="sh-skill-drawer__toolbar-end">
+              <div aria-label={t("skillLibrary.drawer.presets.label")} className="sh-skill-drawer__presets" role="group">
+                {(["standard", "wide", "near_full"] as const).map((preset) => (
+                  <Button
+                    aria-label={t(PRESET_LABEL_KEYS[preset])}
+                    aria-pressed={normalizedPreferences.preset === preset}
+                    className="sh-skill-drawer__preset-icon-button"
+                    key={preset}
+                    onClick={() => choosePreset(preset)}
+                    size="sm"
+                    title={t(PRESET_LABEL_KEYS[preset])}
+                    variant={normalizedPreferences.preset === preset ? "secondary" : "ghost"}
+                  >
+                    <span
+                      aria-hidden="true"
+                      className={`sh-skill-drawer__preset-icon sh-skill-drawer__preset-icon--${preset}`}
+                    />
+                  </Button>
+                ))}
+              </div>
               <Button
                 aria-expanded={configurationOpen}
                 onClick={() => setConfigurationOpen((current) => !current)}
@@ -700,28 +728,6 @@ export function SkillQuickDrawer({
               >
                 {t("skillLibrary.drawer.configure")}
               </Button>
-              {view && skillId ? (
-                <Link
-                  className="sh-button sh-button--primary sh-button--sm"
-                  state={libraryReturn ? { libraryReturn } : undefined}
-                  to={{ pathname: `${location.pathname.startsWith("/__preview") ? "/__preview/skill-detail" : "/library"}/${skillId}`, search: detailSearch }}
-                >
-                  {t("skillLibrary.drawer.fullDetails")}
-                </Link>
-              ) : null}
-            </div>
-            <div aria-label={t("skillLibrary.drawer.presets.label")} className="sh-skill-drawer__presets" role="group">
-              {(["standard", "wide", "near_full"] as const).map((preset) => (
-                <Button
-                  aria-pressed={normalizedPreferences.preset === preset}
-                  key={preset}
-                  onClick={() => choosePreset(preset)}
-                  size="sm"
-                  variant={normalizedPreferences.preset === preset ? "secondary" : "ghost"}
-                >
-                  {t(PRESET_LABEL_KEYS[preset])}
-                </Button>
-              ))}
             </div>
           </div>
 
