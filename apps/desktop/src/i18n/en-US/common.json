@@ -319,6 +319,14 @@
     "unavailable": "Unavailable"
   },
   "skillLibrary": {
+    "invocation": {
+      "modes": {
+        "modelAndUser": "Model and user",
+        "modelOnly": "Model only",
+        "userOnly": "User only",
+        "disabled": "Disabled"
+      }
+    },
     "fullDetailsBoundary": "Full Skill details are delivered in the next task",
     "page": {
       "batch": {

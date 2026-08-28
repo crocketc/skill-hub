@@ -1,4 +1,4 @@
-use skillhub_core::catalog::{parse_declared_requirements, RequirementKind};
+use skillhub_core::catalog::{parse_declared_requirements, CallPolicy, RequirementKind};
 use skillhub_core::catalog::{
     CombinationMember, Skill, SkillCombination, SkillLifecycle, TrialState,
 };
@@ -42,4 +42,18 @@ fn declared_requirements_cover_runtime_types_and_explicitness() {
     assert!(parsed
         .iter()
         .any(|r| r.kind == RequirementKind::OtherTool && !r.explicit));
+}
+
+#[test]
+fn call_policy_supports_all_invocation_actor_combinations() {
+    let policies = [
+        CallPolicy::AutomaticAndManual,
+        CallPolicy::ManualOnly,
+        CallPolicy::ModelOnly,
+        CallPolicy::Disabled,
+    ];
+
+    assert_eq!(policies.len(), 4);
+    assert_ne!(CallPolicy::ModelOnly, CallPolicy::ManualOnly);
+    assert_ne!(CallPolicy::Disabled, CallPolicy::AutomaticAndManual);
 }

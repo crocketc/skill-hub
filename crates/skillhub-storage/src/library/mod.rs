@@ -6,7 +6,7 @@ pub use portable::{ManifestFaultHandler, PortableManifestStore};
 
 use async_trait::async_trait;
 use skillhub_core::application::PortableMetadataRepository;
-use skillhub_core::catalog::{CallPolicy, Skill, SkillLifecycle};
+use skillhub_core::catalog::{Skill, SkillLifecycle};
 use skillhub_core::{AppResult, SkillId, VersionId};
 use std::collections::BTreeSet;
 
@@ -29,7 +29,7 @@ impl PortableMetadataRepository for CentralLibrary {
             record.tags.into_iter().collect::<BTreeSet<_>>(),
             record.author,
             record.license,
-            CallPolicy::AutomaticAndManual,
+            record.call_policy,
             SkillLifecycle::Normal,
             Vec::new(),
             None,

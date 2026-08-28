@@ -319,6 +319,14 @@
     "unavailable": "不可用"
   },
   "skillLibrary": {
+    "invocation": {
+      "modes": {
+        "modelAndUser": "模型与用户",
+        "modelOnly": "仅模型",
+        "userOnly": "仅用户",
+        "disabled": "已禁用"
+      }
+    },
     "fullDetailsBoundary": "完整 Skill 详情将在下一任务中提供",
     "page": {
       "batch": {

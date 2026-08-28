@@ -16,6 +16,7 @@ import {
   setPageSelection,
   type SkillSelection,
 } from "./selection";
+import { InvocationBadge } from "./InvocationBadge";
 
 export interface SkillTableProps {
   onOpenSkill: (skillId: string, rowElement: HTMLElement) => void;
@@ -186,7 +187,16 @@ export function createSkillColumns(t: TFunction): ColumnDef<SkillTableRow>[] {
     { accessorKey: "source", id: "source", cell: ({ row }) => secondary(row.original.source), header: t(COLUMN_LABELS.source) },
     { accessorKey: "ownership", id: "ownership", cell: ({ row }) => secondary(row.original.ownership), header: t(COLUMN_LABELS.ownership) },
     { accessorKey: "license", id: "license", cell: ({ row }) => secondary(row.original.license), header: t(COLUMN_LABELS.license) },
-    { accessorKey: "invocation", id: "invocation", cell: ({ row }) => secondary(row.original.invocation), header: t(COLUMN_LABELS.invocation) },
+    {
+      id: "invocation",
+      cell: ({ row }) => (
+        <div className="sh-skill-table__invocation-cell">
+          <InvocationBadge policy={row.original.invocationPolicy} />
+          {row.original.invocation ? <span className="sh-skill-table__invocation-command" title={row.original.invocation}>{row.original.invocation}</span> : null}
+        </div>
+      ),
+      header: t(COLUMN_LABELS.invocation),
+    },
     { id: "requirements", cell: ({ row }) => secondary(row.original.requirements.join(", ")), header: t(COLUMN_LABELS.requirements) },
   ];
 }

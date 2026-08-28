@@ -27,6 +27,7 @@ import {
   type SkillQuickView,
   skillLibraryKeys,
 } from "./api";
+import { InvocationBadge } from "./InvocationBadge";
 import { BatchTagDialog, type BatchTagAction } from "./BatchTagDialog";
 import {
   OPTIONAL_DRAWER_MODULES,
@@ -194,6 +195,7 @@ function InvocationRequirementsModule({ view }: ModuleProps) {
     <ModuleCard title={t(MODULE_LABEL_KEYS.invocation_requirements)}>
       <p>
         <strong>{t("skillLibrary.drawer.values.invocation")}</strong>{" "}
+        <InvocationBadge policy={view.invocationPolicy} />{" "}
         {view.invocation ?? <EmptyValue />}
       </p>
       <ValueList values={view.requirements} />

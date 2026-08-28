@@ -2,6 +2,13 @@ export type SkillLifecycle = "active" | "trial" | "archived";
 export type CheckState = "passed" | "warning" | "failed" | "not_run" | "unavailable";
 export type SkillDensity = "compact" | "standard" | "comfortable";
 export type DrawerPreset = "standard" | "wide" | "near_full";
+export type InvocationMode = "model_and_user" | "model_only" | "user_only" | "disabled";
+export type InvocationSource = "explicit" | "default" | "unknown";
+export interface InvocationPolicy {
+  mode: InvocationMode;
+  source: InvocationSource;
+  field?: string;
+}
 export type SkillColumnId =
   | "select"
   | "name"
@@ -46,6 +53,7 @@ export interface SkillTableRow {
   highRiskCount: number;
   id: string;
   invocation?: string;
+  invocationPolicy?: InvocationPolicy;
   license?: string;
   lifecycle: SkillLifecycle;
   name: string;

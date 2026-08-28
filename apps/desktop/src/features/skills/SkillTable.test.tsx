@@ -116,6 +116,19 @@ it("labels the name column as name and alias", async () => {
   expect(screen.getByRole("columnheader", { name: "Name / Alias" })).toBeVisible();
 });
 
+it("renders invocation actor badges instead of a raw invocation command", async () => {
+  await renderTable({
+    page: {
+      ...page,
+      items: [{ ...rows[0], invocationPolicy: { mode: "model_only", source: "explicit" } }],
+    },
+  });
+
+  const invocationCell = screen.getByText("Model only").closest("[data-invocation-mode]");
+  expect(invocationCell).toBeVisible();
+  expect(invocationCell).toHaveAttribute("data-invocation-mode", "model_only");
+});
+
 it("opens a focused row with Enter and emits manual sort and pagination", async () => {
   const onOpenSkill = vi.fn();
   const onQueryChange = vi.fn();

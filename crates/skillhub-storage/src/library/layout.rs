@@ -94,6 +94,7 @@ impl CentralLibrary {
         record.tags = skill.tags().iter().cloned().collect();
         record.author = skill.author().map(str::to_owned);
         record.license = skill.license().map(str::to_owned);
+        record.call_policy = skill.call_policy();
         record.current_version = current.cloned();
         manifest.skills.retain(|existing| existing.id != skill.id());
         manifest.skills.push(record);

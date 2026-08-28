@@ -2351,6 +2351,45 @@ a {
   white-space: nowrap;
 }
 
+.sh-skill-table__invocation-cell {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.sh-skill-table__invocation-command {
+  color: var(--color-text-muted);
+  font-size: 0.82em;
+  max-width: 12rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sh-invocation-badge {
+  align-items: center;
+  border: 1px solid var(--color-accent-soft);
+  border-radius: 999px;
+  color: var(--color-accent);
+  display: inline-flex;
+  font-size: 0.82em;
+  font-weight: 650;
+  gap: 0.28rem;
+  line-height: 1.2;
+  padding: 0.2rem 0.45rem;
+  white-space: nowrap;
+}
+
+.sh-invocation-badge--model_only { color: var(--color-accent); }
+.sh-invocation-badge--user_only { color: var(--color-focus); }
+.sh-invocation-badge--disabled { color: var(--color-text-muted); }
+.sh-invocation-badge__actors { align-items: center; display: inline-flex; gap: 0.05rem; }
+.sh-invocation-badge__icon { fill: none; height: 1rem; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.5; width: 1rem; }
+.sh-invocation-badge__icon--model { color: var(--color-accent); }
+.sh-invocation-badge__icon--user { color: var(--color-focus); }
+.sh-invocation-badge__disabled { font-size: 1.15rem; line-height: 0.8; }
+
 .sh-skill-table__name strong {
   flex: 0 0 auto;
   font-weight: 700;
