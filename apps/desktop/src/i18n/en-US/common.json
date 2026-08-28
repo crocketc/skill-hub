@@ -380,7 +380,7 @@
         "loading": "Loading skill details"
       },
       "emptyValue": "Not available",
-      "fullDetails": "View full details",
+      "fullDetails": "View and edit full details",
       "modules": {
         "dependenciesDuplicates": "Dependencies and duplicates",
         "externalChanges": "External changes",

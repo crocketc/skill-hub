@@ -515,19 +515,19 @@ it("resets defaults, keeps modules independently scrollable, and links to full d
   expect(getComputedStyle(screen.getByTestId("drawer-modules-scroll")).overflowY).toBe(
     "auto",
   );
-  expect(screen.getByRole("link", { name: "View full details" })).toHaveAttribute(
+  expect(screen.getByRole("link", { name: "View and edit full details" })).toHaveAttribute(
     "href",
     "/library/skill-pdf",
   );
   expect(document.querySelector(".sh-skill-drawer__toolbar a")).toBe(
-    screen.getByRole("link", { name: "View full details" }),
+    screen.getByRole("link", { name: "View and edit full details" }),
   );
-  expect(screen.getByRole("link", { name: "View full details" })).toHaveClass(
+  expect(screen.getByRole("link", { name: "View and edit full details" })).toHaveClass(
     "sh-button--primary",
   );
   const toolbar = document.querySelector(".sh-skill-drawer__toolbar");
   expect(toolbar?.firstElementChild).toContainElement(
-    screen.getByRole("link", { name: "View full details" }),
+    screen.getByRole("link", { name: "View and edit full details" }),
   );
   expect(toolbar?.lastElementChild).toContainElement(
     screen.getByRole("button", { name: "Configure quick drawer" }),
@@ -557,7 +557,7 @@ it("carries the library query and return position into full details", async () =
     facade,
     libraryReturn: { focusSkillId: "skill-pdf", scrollLeft: 24, scrollTop: 416 },
   });
-  expect(await screen.findByRole("link", { name: "View full details" })).toHaveAttribute(
+  expect(await screen.findByRole("link", { name: "View and edit full details" })).toHaveAttribute(
     "href",
     "/library/skill-pdf?q=pdf&sort=version%3Adesc",
   );
@@ -567,7 +567,7 @@ it("keeps preview full-detail links inside the development preview routes", asyn
   const facade = createMockSkillLibraryFacade();
   await renderDrawer({ facade, initialEntry: "/__preview/skill-library" });
 
-  expect(await screen.findByRole("link", { name: "View full details" })).toHaveAttribute(
+  expect(await screen.findByRole("link", { name: "View and edit full details" })).toHaveAttribute(
     "href",
     "/__preview/skill-detail/skill-pdf",
   );

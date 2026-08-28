@@ -380,7 +380,7 @@
         "loading": "正在加载 Skill 详情"
       },
       "emptyValue": "暂无可靠数据",
-      "fullDetails": "查看完整详情",
+      "fullDetails": "查看编辑完整详情",
       "modules": {
         "dependenciesDuplicates": "依赖与重复项",
         "externalChanges": "外部变更",
