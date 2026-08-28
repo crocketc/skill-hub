@@ -533,6 +533,16 @@ it("resets defaults, keeps modules independently scrollable, and links to full d
   expect(screen.getByRole("button", { name: "Standard width" })).toHaveClass(
     "sh-skill-drawer__preset-icon-button",
   );
+  expect(
+    getComputedStyle(
+      screen.getByRole("button", { name: "Standard width" }).querySelector("span")!,
+    ).getPropertyValue("--preset-line-position"),
+  ).toBe("75%");
+  expect(
+    getComputedStyle(
+      screen.getByRole("button", { name: "Near full screen" }).querySelector("span")!,
+    ).getPropertyValue("--preset-line-position"),
+  ).toBe("25%");
 });
 
 it("carries the library query and return position into full details", async () => {

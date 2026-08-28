@@ -2399,13 +2399,14 @@ a {
 }
 
 .sh-skill-drawer__preset-icon {
-  --preset-line-position: 25%;
+  --preset-line-position: 75%;
   position: relative;
   display: block;
   width: 1rem;
   height: 1rem;
   border: 1.5px solid currentColor;
   border-radius: 2px;
+  color: var(--color-accent);
   background:
     linear-gradient(
       90deg,
@@ -2431,7 +2432,7 @@ a {
 }
 
 .sh-skill-drawer__preset-icon--near_full {
-  --preset-line-position: 75%;
+  --preset-line-position: 25%;
 }
 
 .sh-skill-drawer__alert,
