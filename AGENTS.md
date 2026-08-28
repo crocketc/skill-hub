@@ -57,6 +57,15 @@ SkillHub 是一个面向 Windows 和 macOS 的本地 Skill 全生命周期管理
 - 个人项目不强制每个 Task 创建 GitHub PR，但不得绕过审查直接把未验证代码推到 `main`。
 - 不得使用 `git reset --hard`、`git checkout --` 或其他破坏性命令覆盖用户工作，除非得到明确授权。
 
+### 本地 CI 与双设备协作
+
+- GitHub Actions 不是本项目唯一的质量门禁；在 Windows 11 和 macOS 上均可运行同一套本地 CI。
+- 完整检查入口：Windows 使用 `./scripts/ci-local.ps1`，macOS 使用 `./scripts/ci-local.sh`，也可使用跨平台入口 `node ./scripts/ci-local.mjs`。
+- 本地 CI 必须使用锁定依赖并执行 Rust 格式、cargo-deny、Clippy、Rust 测试、前端依赖审计、Lint、TypeScript、Vitest 和生产构建。
+- 两台设备通过 Git 分支同步代码：先 `git fetch`/`git pull --ff-only`，再运行本机入口；不要同步 `.git`、worktree、`node_modules` 或 `target` 目录。
+- Mac 上新建开发会话时，先阅读本文件和 `docs/本地CI使用.md`，默认只做验证，不修改代码、不提交，除非任务明确要求。
+- 本地 Skill 集中库、API Key、用户配置和个人 Skill 内容不属于代码仓库，不得提交或通过 Git 同步。
+
 ## 6. 文件和数据安全
 
 - 不提交 API Key、密码、令牌、个人路径、用户 Skill 内容或其他敏感数据。
