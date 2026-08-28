@@ -2358,15 +2358,17 @@ a {
   align-items: center;
   background: color-mix(in srgb, var(--agent-accent) 12%, var(--color-surface));
   border: 1px solid color-mix(in srgb, var(--agent-accent) 28%, var(--color-border));
-  border-radius: 50%;
+  border-radius: 999px;
   color: var(--agent-accent);
   display: inline-flex;
-  flex: 0 0 1.45rem;
+  flex: 0 0 auto;
   height: 1.45rem;
-  justify-content: center;
+  justify-content: flex-start;
   overflow: hidden;
+  padding: 0 0.45rem;
   transition: transform 140ms ease, box-shadow 140ms ease;
-  width: 1.45rem;
+  max-width: 9rem;
+  min-width: 0;
 }
 
 .sh-skill-table__agent-deployment:hover,
@@ -2375,10 +2377,13 @@ a {
   transform: translateY(-1px);
 }
 
-.sh-skill-table__agent-deployment-mark {
-  font-size: 0.58rem;
+.sh-skill-table__agent-deployment-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.68rem;
   font-weight: 750;
-  letter-spacing: -0.04em;
+  letter-spacing: 0.01em;
   line-height: 1;
 }
 
