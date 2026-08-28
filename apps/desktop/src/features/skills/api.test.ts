@@ -16,13 +16,14 @@ describe("Skill library facade defaults", () => {
   });
 
   it("starts with the screenshot column order and visible set", () => {
-    expect(DEFAULT_TABLE_PREFERENCES.columnOrder.slice(0, 7)).toEqual([
+    expect(DEFAULT_TABLE_PREFERENCES.columnOrder.slice(0, 8)).toEqual([
       "select",
       "name",
       "purpose",
       "tags",
       "invocation",
-      "deployments",
+      "agent_deployments",
+      "project_deployments",
       "security",
     ]);
     expect(DEFAULT_TABLE_PREFERENCES.visibleColumns).toEqual([
@@ -31,7 +32,8 @@ describe("Skill library facade defaults", () => {
       "purpose",
       "tags",
       "invocation",
-      "deployments",
+      "agent_deployments",
+      "project_deployments",
       "security",
     ]);
   });

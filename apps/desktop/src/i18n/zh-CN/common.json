@@ -505,6 +505,7 @@
     },
     "table": {
       "agentDeployments": "{{count}} 个 Agent",
+      "agentDeploymentSummary": "Agent 部署：{{count}} 个",
       "aliasLabel": "别名",
       "aiStatus": "AI：{{state}}",
       "basicStatus": "基础：{{state}}",
@@ -516,20 +517,19 @@
         "warning": "警告"
       },
       "columns": {
-        "deployments": "部署",
+        "agentDeployments": "Agent 部署",
         "invocation": "调用方式",
         "license": "许可证",
         "lifecycle": "生命周期",
         "name": "名称/别名",
-        "originalDescription": "原始描述",
         "ownership": "归属",
+        "projectDeployments": "项目部署",
         "purpose": "用途",
         "requirements": "要求",
         "security": "安全检查",
         "selection": "选择",
         "source": "来源",
         "tags": "标签",
-        "translatedDescription": "译文描述",
         "version": "版本"
       },
       "columnsAndDensity": "列与密度",

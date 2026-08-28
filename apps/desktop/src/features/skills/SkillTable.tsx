@@ -17,6 +17,7 @@ import {
   type SkillSelection,
 } from "./selection";
 import { InvocationBadge } from "./InvocationBadge";
+import { AgentDeploymentIcons } from "./AgentDeploymentIcons";
 
 export interface SkillTableProps {
   onOpenSkill: (skillId: string, rowElement: HTMLElement) => void;
@@ -40,25 +41,24 @@ interface SkillTableMeta {
 const LOCKED_COLUMNS: SkillColumnId[] = ["select", "name"];
 const PAGE_SIZES = [10, 25, 50, 100] as const;
 const COLUMN_IDS: SkillColumnId[] = [
-  "select", "name", "purpose", "tags", "invocation", "deployments", "version", "security",
-  "original_description", "translated_description", "source", "ownership", "license", "requirements", "lifecycle",
+  "select", "name", "purpose", "tags", "invocation", "agent_deployments", "project_deployments", "version", "security",
+  "source", "ownership", "license", "requirements", "lifecycle",
 ];
 
 const COLUMN_LABELS = {
-  deployments: "skillLibrary.table.columns.deployments",
+  agent_deployments: "skillLibrary.table.columns.agentDeployments",
   invocation: "skillLibrary.table.columns.invocation",
   license: "skillLibrary.table.columns.license",
   lifecycle: "skillLibrary.table.columns.lifecycle",
   name: "skillLibrary.table.columns.name",
-  original_description: "skillLibrary.table.columns.originalDescription",
   ownership: "skillLibrary.table.columns.ownership",
+  project_deployments: "skillLibrary.table.columns.projectDeployments",
   purpose: "skillLibrary.table.columns.purpose",
   requirements: "skillLibrary.table.columns.requirements",
   security: "skillLibrary.table.columns.security",
   select: "skillLibrary.table.columns.selection",
   source: "skillLibrary.table.columns.source",
   tags: "skillLibrary.table.columns.tags",
-  translated_description: "skillLibrary.table.columns.translatedDescription",
   version: "skillLibrary.table.columns.version",
 } as const satisfies Record<SkillColumnId, string>;
 
@@ -172,9 +172,19 @@ export function createSkillColumns(t: TFunction): ColumnDef<SkillTableRow>[] {
     { accessorKey: "tags", id: "tags", cell: ({ row }) => <span>{row.original.tags.join(", ")}</span>, header: t(COLUMN_LABELS.tags) },
     { accessorKey: "lifecycle", id: "lifecycle", cell: ({ row }) => <span>{t(LIFECYCLE_LABELS[row.original.lifecycle])}</span>, header: t(COLUMN_LABELS.lifecycle) },
     {
-      id: "deployments",
-      cell: ({ row }) => <div className="sh-skill-table__counts"><span>{t("skillLibrary.table.agentDeployments", { count: row.original.agentDeploymentCount })}</span><span>{t("skillLibrary.table.projectDeployments", { count: row.original.projectDeploymentCount })}</span></div>,
-      header: t(COLUMN_LABELS.deployments),
+      id: "agent_deployments",
+      cell: ({ row }) => (
+        <AgentDeploymentIcons
+          agents={row.original.agentDeployments ?? []}
+          ariaLabel={t("skillLibrary.table.agentDeploymentSummary", { count: row.original.agentDeploymentCount })}
+        />
+      ),
+      header: t(COLUMN_LABELS.agent_deployments),
+    },
+    {
+      id: "project_deployments",
+      cell: ({ row }) => <span>{t("skillLibrary.table.projectDeployments", { count: row.original.projectDeploymentCount })}</span>,
+      header: t(COLUMN_LABELS.project_deployments),
     },
     {
       id: "version",
@@ -182,8 +192,6 @@ export function createSkillColumns(t: TFunction): ColumnDef<SkillTableRow>[] {
       header: t(COLUMN_LABELS.version),
     },
     { id: "security", cell: ({ row }) => <SecurityCell row={row.original} />, header: t(COLUMN_LABELS.security) },
-    { id: "original_description", cell: ({ row }) => secondary(row.original.originalDescription), header: t(COLUMN_LABELS.original_description) },
-    { id: "translated_description", cell: ({ row }) => secondary(row.original.translatedDescription), header: t(COLUMN_LABELS.translated_description) },
     { accessorKey: "source", id: "source", cell: ({ row }) => secondary(row.original.source), header: t(COLUMN_LABELS.source) },
     { accessorKey: "ownership", id: "ownership", cell: ({ row }) => secondary(row.original.ownership), header: t(COLUMN_LABELS.ownership) },
     { accessorKey: "license", id: "license", cell: ({ row }) => secondary(row.original.license), header: t(COLUMN_LABELS.license) },
@@ -204,6 +212,7 @@ export function createSkillColumns(t: TFunction): ColumnDef<SkillTableRow>[] {
 function orderedColumnIds(preferences: SkillTablePreferences): SkillColumnId[] {
   const found = new Set<SkillColumnId>();
   const all = [...preferences.columnOrder, ...COLUMN_IDS].filter((id) => {
+    if (!COLUMN_IDS.includes(id)) return false;
     if (found.has(id)) return false;
     found.add(id);
     return true;
@@ -445,7 +454,7 @@ export function SkillTable(props: SkillTableProps) {
             })}</tr>)}
           </thead>
           <tbody>
-            {table.getRowModel().rows.map((row) => <tr data-skill-id={row.original.id} key={row.id} onClick={(event) => props.onOpenSkill(row.original.id, event.currentTarget)} onKeyDown={(event) => { if (event.target === event.currentTarget && event.key === "Enter") { event.preventDefault(); props.onOpenSkill(row.original.id, event.currentTarget); } }} tabIndex={0}>
+            {table.getRowModel().rows.map((row) => <tr data-agent-deployment-rows={Math.min(2, Math.ceil((row.original.agentDeployments?.length ?? 0) / 5)) || 1} data-skill-id={row.original.id} key={row.id} onClick={(event) => props.onOpenSkill(row.original.id, event.currentTarget)} onKeyDown={(event) => { if (event.target === event.currentTarget && event.key === "Enter") { event.preventDefault(); props.onOpenSkill(row.original.id, event.currentTarget); } }} tabIndex={0}>
               {row.getVisibleCells().map((cell) => <td data-column={cell.column.id} key={cell.id}>{flexRender(cell.column.columnDef.cell, cell.getContext())}</td>)}
             </tr>)}
           </tbody>

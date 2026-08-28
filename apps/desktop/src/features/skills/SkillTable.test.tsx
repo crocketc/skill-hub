@@ -16,6 +16,14 @@ const rows: SkillTableRow[] = [
   {
     aiCheck: "unavailable",
     agentDeploymentCount: 2,
+    agentDeployments: [
+      { id: "codex", name: "OpenAI Codex" },
+      { id: "claude", name: "Claude Code" },
+      { id: "cursor", name: "Cursor" },
+      { id: "gemini", name: "Gemini CLI" },
+      { id: "windsurf", name: "Windsurf" },
+      { id: "cline", name: "Cline" },
+    ],
     alias: "reader",
     basicCheck: "passed",
     currentVersion: "1.4.0",
@@ -61,11 +69,10 @@ const allColumnIds = [
   "purpose",
   "tags",
   "invocation",
-  "deployments",
+  "agent_deployments",
+  "project_deployments",
   "security",
   "version",
-  "original_description",
-  "translated_description",
   "source",
   "ownership",
   "license",
@@ -129,6 +136,37 @@ it("renders invocation actor badges instead of a raw invocation command", async 
   expect(invocationCell).toHaveAttribute("data-invocation-mode", "model_only");
 });
 
+it("splits deployments into project count and capped agent icons", async () => {
+  const manyAgents = Array.from({ length: 12 }, (_, index) => ({
+    id: `agent-${index + 1}`,
+    name: `Agent ${index + 1}`,
+  }));
+  await renderTable({
+    page: { ...page, items: [{ ...rows[0], agentDeploymentCount: manyAgents.length, agentDeployments: manyAgents }] },
+  });
+
+  expect(screen.getByRole("columnheader", { name: "Agent deployments" })).toBeVisible();
+  expect(screen.getByRole("columnheader", { name: "Project deployments" })).toBeVisible();
+  expect(screen.queryByRole("columnheader", { name: "Original description" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("columnheader", { name: "Translated description" })).not.toBeInTheDocument();
+
+  const agentCell = screen.getByLabelText("Agent deployments: 12");
+  expect(agentCell.querySelectorAll("[data-agent-id]")).toHaveLength(10);
+  expect(agentCell.querySelectorAll("[data-agent-row]")).toHaveLength(2);
+  expect(agentCell.querySelector('[data-agent-id="agent-1"]')).toHaveAttribute("title", "Agent 1");
+});
+
+it("keeps five agent deployments on one row", async () => {
+  const agents = Array.from({ length: 5 }, (_, index) => ({ id: `agent-${index + 1}`, name: `Agent ${index + 1}` }));
+  await renderTable({
+    page: { ...page, items: [{ ...rows[0], agentDeploymentCount: agents.length, agentDeployments: agents }] },
+  });
+
+  const agentCell = screen.getByLabelText("Agent deployments: 5");
+  expect(agentCell.querySelectorAll("[data-agent-id]")).toHaveLength(5);
+  expect(agentCell.querySelectorAll("[data-agent-row]")).toHaveLength(1);
+});
+
 it("opens a focused row with Enter and emits manual sort and pagination", async () => {
   const onOpenSkill = vi.fn();
   const onQueryChange = vi.fn();
@@ -154,12 +192,12 @@ it("does not allow the select or name columns to be hidden", async () => {
   expect(screen.getByRole("button", { name: "Selection" })).toHaveAttribute("aria-pressed", "true");
   expect(screen.getByRole("button", { name: "Name / Alias" })).toHaveAttribute("aria-pressed", "true");
   const versionColumn = screen.getByRole("button", { name: "Version" });
-  const deploymentsColumn = screen.getByRole("button", { name: "Deployments" });
+  const deploymentsColumn = screen.getByRole("button", { name: "Agent deployments" });
   fireEvent.dragStart(versionColumn);
   fireEvent.dragOver(deploymentsColumn);
   fireEvent.drop(deploymentsColumn);
   const next = onPreferencesChange.mock.calls.at(-1)?.[0];
-  expect(next.columnOrder.indexOf("version")).toBeLessThan(next.columnOrder.indexOf("deployments"));
+  expect(next.columnOrder.indexOf("version")).toBeLessThan(next.columnOrder.indexOf("agent_deployments"));
 });
 
 it("moves an adjacent column when dragging from left to right", async () => {
@@ -167,14 +205,14 @@ it("moves an adjacent column when dragging from left to right", async () => {
   await renderTable({ onPreferencesChange });
 
   fireEvent.click(screen.getByRole("button", { name: "Columns and density" }));
-  const deploymentsColumn = screen.getByRole("button", { name: "Deployments" });
+  const deploymentsColumn = screen.getByRole("button", { name: "Agent deployments" });
   const versionColumn = screen.getByRole("button", { name: "Version" });
   fireEvent.dragStart(deploymentsColumn);
   fireEvent.dragOver(versionColumn);
   fireEvent.drop(versionColumn);
 
   const next = onPreferencesChange.mock.calls.at(-1)?.[0];
-  expect(next.columnOrder.indexOf("deployments")).toBeGreaterThan(next.columnOrder.indexOf("version"));
+  expect(next.columnOrder.indexOf("agent_deployments")).toBeGreaterThan(next.columnOrder.indexOf("version"));
 });
 
 it("offers all supported page sizes and reports the current page range", async () => {
@@ -305,7 +343,7 @@ it("uses the visibility buttons as draggable order controls", async () => {
 
   fireEvent.click(screen.getByRole("button", { name: "Columns and density" }));
   const version = screen.getByRole("button", { name: "Version" });
-  const deployments = screen.getByRole("button", { name: "Deployments" });
+  const deployments = screen.getByRole("button", { name: "Agent deployments" });
   expect(version).toHaveAttribute("draggable", "true");
   expect(deployments).toHaveAttribute("draggable", "true");
   fireEvent.dragStart(version);
@@ -313,7 +351,7 @@ it("uses the visibility buttons as draggable order controls", async () => {
   fireEvent.drop(deployments);
 
   const next = onPreferencesChange.mock.calls.at(-1)?.[0];
-  expect(next.columnOrder.indexOf("version")).toBeLessThan(next.columnOrder.indexOf("deployments"));
+  expect(next.columnOrder.indexOf("version")).toBeLessThan(next.columnOrder.indexOf("agent_deployments"));
 });
 
 it("keeps row checkbox keyboard activation isolated from row opening", async () => {

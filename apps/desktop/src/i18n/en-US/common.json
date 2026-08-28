@@ -505,6 +505,7 @@
     },
     "table": {
       "agentDeployments": "{{count}} agents",
+      "agentDeploymentSummary": "Agent deployments: {{count}}",
       "aliasLabel": "Alias",
       "aiStatus": "AI: {{state}}",
       "basicStatus": "Basic: {{state}}",
@@ -516,20 +517,19 @@
         "warning": "Warning"
       },
       "columns": {
-        "deployments": "Deployments",
+        "agentDeployments": "Agent deployments",
         "invocation": "Invocation",
         "license": "License",
         "lifecycle": "Lifecycle",
         "name": "Name / Alias",
-        "originalDescription": "Original description",
         "ownership": "Ownership",
+        "projectDeployments": "Project deployments",
         "purpose": "Purpose",
         "requirements": "Requirements",
         "security": "Security",
         "selection": "Selection",
         "source": "Source",
         "tags": "Tags",
-        "translatedDescription": "Translated description",
         "version": "Version"
       },
       "columnsAndDensity": "Columns and density",

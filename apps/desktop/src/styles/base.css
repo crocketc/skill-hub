@@ -2265,15 +2265,14 @@ a {
 }
 
 .sh-skill-table [data-column="select"] { width: 2.75rem; min-width: 2.75rem; }
-.sh-skill-table [data-column="name"] { width: 15rem; min-width: 15rem; }
+.sh-skill-table [data-column="name"] { width: 13rem; min-width: 13rem; }
 .sh-skill-table [data-column="purpose"] { width: 12rem; min-width: 12rem; }
 .sh-skill-table [data-column="tags"] { width: 10rem; min-width: 10rem; }
 .sh-skill-table [data-column="lifecycle"] { width: 7rem; min-width: 7rem; }
-.sh-skill-table [data-column="deployments"] { width: 9rem; min-width: 9rem; }
+.sh-skill-table [data-column="agent_deployments"] { width: 10rem; min-width: 10rem; }
+.sh-skill-table [data-column="project_deployments"] { width: 9rem; min-width: 9rem; }
 .sh-skill-table [data-column="version"] { width: 9rem; min-width: 9rem; }
 .sh-skill-table [data-column="security"] { width: 22rem; min-width: 22rem; }
-.sh-skill-table [data-column="original_description"] { width: 16rem; min-width: 16rem; }
-.sh-skill-table [data-column="translated_description"] { width: 16rem; min-width: 16rem; }
 .sh-skill-table [data-column="source"] { width: 12rem; min-width: 12rem; }
 .sh-skill-table [data-column="ownership"] { width: 12rem; min-width: 12rem; }
 .sh-skill-table [data-column="license"] { width: 8rem; min-width: 8rem; }
@@ -2339,6 +2338,63 @@ a {
   gap: var(--space-2);
   overflow: hidden;
   white-space: nowrap;
+}
+
+.sh-skill-table__agent-deployments {
+  display: grid;
+  gap: 0.2rem;
+  justify-items: center;
+  min-width: 0;
+}
+
+.sh-skill-table__agent-deployment-row {
+  display: flex;
+  justify-content: center;
+  gap: 0.3rem;
+  min-width: 0;
+}
+
+.sh-skill-table__agent-deployment {
+  align-items: center;
+  background: color-mix(in srgb, var(--agent-accent) 12%, var(--color-surface));
+  border: 1px solid color-mix(in srgb, var(--agent-accent) 28%, var(--color-border));
+  border-radius: 50%;
+  color: var(--agent-accent);
+  display: inline-flex;
+  flex: 0 0 1.45rem;
+  height: 1.45rem;
+  justify-content: center;
+  overflow: hidden;
+  transition: transform 140ms ease, box-shadow 140ms ease;
+  width: 1.45rem;
+}
+
+.sh-skill-table__agent-deployment:hover,
+.sh-skill-table__agent-deployment:focus-visible {
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--agent-accent) 22%, transparent);
+  transform: translateY(-1px);
+}
+
+.sh-skill-table__agent-deployment-mark {
+  font-size: 0.58rem;
+  font-weight: 750;
+  letter-spacing: -0.04em;
+  line-height: 1;
+}
+
+.sh-skill-table__agent-deployments-empty {
+  color: var(--color-text-muted);
+}
+
+.sh-skill-table tbody tr[data-agent-deployment-rows="2"] {
+  height: 3.55rem;
+  max-height: none;
+}
+
+.sh-skill-table tbody tr[data-agent-deployment-rows="2"] td[data-column="agent_deployments"] {
+  height: 3.55rem;
+  max-height: none;
+  overflow: visible;
 }
 
 .sh-skill-table__inline {

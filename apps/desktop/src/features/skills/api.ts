@@ -9,17 +9,20 @@ export interface InvocationPolicy {
   source: InvocationSource;
   field?: string;
 }
+export interface AgentDeployment {
+  id: string;
+  name: string;
+}
 export type SkillColumnId =
   | "select"
   | "name"
   | "purpose"
   | "tags"
   | "lifecycle"
-  | "deployments"
+  | "agent_deployments"
+  | "project_deployments"
   | "version"
   | "security"
-  | "original_description"
-  | "translated_description"
   | "source"
   | "ownership"
   | "license"
@@ -47,6 +50,7 @@ export interface SkillLibraryQuery {
 export interface SkillTableRow {
   aiCheck: CheckState;
   agentDeploymentCount: number;
+  agentDeployments?: AgentDeployment[];
   alias?: string;
   basicCheck: CheckState;
   currentVersion: string;
@@ -178,11 +182,10 @@ const SKILL_COLUMN_ORDER = freeze<SkillColumnId[]>([
   "purpose",
   "tags",
   "invocation",
-  "deployments",
+  "agent_deployments",
+  "project_deployments",
   "security",
   "version",
-  "original_description",
-  "translated_description",
   "source",
   "ownership",
   "license",
@@ -196,7 +199,8 @@ const DEFAULT_VISIBLE_COLUMNS = freeze<SkillColumnId[]>([
   "purpose",
   "tags",
   "invocation",
-  "deployments",
+  "agent_deployments",
+  "project_deployments",
   "security",
 ]);
 

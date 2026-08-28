@@ -33,6 +33,19 @@ export interface MockSkillLibraryFacade extends SkillLibraryFacade {
   };
 }
 
+const MOCK_AGENT_DEPLOYMENTS = [
+  { id: "codex", name: "OpenAI Codex" },
+  { id: "claude", name: "Claude Code" },
+  { id: "cursor", name: "Cursor" },
+  { id: "gemini", name: "Gemini CLI" },
+  { id: "windsurf", name: "Windsurf" },
+  { id: "cline", name: "Cline" },
+  { id: "opencode", name: "OpenCode" },
+  { id: "kimi", name: "Kimi Code" },
+  { id: "grok", name: "Grok" },
+  { id: "qoder", name: "Qoder" },
+] as const;
+
 function clone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
 }
@@ -40,6 +53,7 @@ function clone<T>(value: T): T {
 export const MOCK_SKILL_PDF: SkillTableRow = {
   aiCheck: "unavailable",
   agentDeploymentCount: 2,
+  agentDeployments: [...MOCK_AGENT_DEPLOYMENTS.slice(0, 2)],
   alias: "reader",
   basicCheck: "passed",
   currentVersion: "1.4.0",
@@ -65,6 +79,7 @@ export const MOCK_SKILL_PDF: SkillTableRow = {
 export const MOCK_SKILL_DOCX: SkillTableRow = {
   aiCheck: "not_run",
   agentDeploymentCount: 1,
+  agentDeployments: [...MOCK_AGENT_DEPLOYMENTS.slice(0, 1)],
   basicCheck: "passed",
   currentVersion: "2.1.0",
   highRiskCount: 0,
@@ -88,6 +103,7 @@ export const MOCK_SKILL_DOCX: SkillTableRow = {
 export const MOCK_SKILL_BROWSER: SkillTableRow = {
   aiCheck: "passed",
   agentDeploymentCount: 3,
+  agentDeployments: [...MOCK_AGENT_DEPLOYMENTS.slice(0, 3)],
   basicCheck: "warning",
   currentVersion: "0.9.0",
   highRiskCount: 0,
@@ -115,6 +131,7 @@ function generatedRow(index: number): SkillTableRow {
   return {
     ...MOCK_SKILL_DOCX,
     agentDeploymentCount: index % 4,
+    agentDeployments: [...MOCK_AGENT_DEPLOYMENTS.slice(0, index % 4)],
     id: `skill-${ordinal}`,
     lifecycle: index % 5 === 0 ? "trial" : "active",
     name: `Local Skill ${ordinal}`,
