@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { I18nextProvider } from "react-i18next";
 import {
   MemoryRouter,
@@ -209,6 +209,20 @@ describe("SkillDetailPage shell", () => {
     expect(screen.getByText("2 deployments")).toBeVisible();
     expect(screen.getByRole("group", { name: "Skill status" })).toBeVisible();
     expect(screen.queryByRole("complementary", { name: "Skill status" })).not.toBeInTheDocument();
+  });
+
+  it("surfaces the same update review entry beside the overview version", async () => {
+    await renderDetail({
+      facade: createMockSkillDetailFacade({
+        summary: { upgradeAvailable: true, upstreamVersion: "v2.5.0" },
+      }),
+    });
+
+    expect(await screen.findByRole("heading", { name: "Upstream update available" })).toBeVisible();
+    await waitFor(() => {
+      expect(screen.getAllByText("Current v2.4.1 → upstream v2.5.0")).toHaveLength(2);
+      expect(screen.getAllByRole("button", { name: "View update diff" })).toHaveLength(2);
+    });
   });
 
   it("places identity before the content description in the detail navigation", async () => {

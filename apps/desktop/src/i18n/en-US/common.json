@@ -604,7 +604,12 @@
       "rollbackError": "Rollback did not complete. Review the impact and try again.",
       "rollbackPreview": "Rollback impact preview",
       "rollbackTo": "Rollback to {{version}}",
-      "selectCompare": "Select {{version}} for comparison"
+      "selectCompare": "Select {{version}} for comparison",
+      "updateAvailableTitle": "Upstream update available",
+      "updateUnavailable": "Upstream update comparison is not connected yet.",
+      "updateVersion": "Current {{current}} → upstream {{upstream}}",
+      "upstreamPending": "version pending",
+      "viewUpdateDiff": "View update diff"
     },
     "insights": {
       "basicSecurity": "Basic security check",

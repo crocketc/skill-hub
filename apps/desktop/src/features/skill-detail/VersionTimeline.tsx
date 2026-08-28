@@ -4,12 +4,14 @@ import { useTranslation } from "react-i18next";
 import { Button } from "../../ui/Button";
 import { StatusBadge } from "../../ui/StatusBadge";
 import { skillLibraryKeys } from "../skills/api";
-import type { SkillDetailFacade } from "./api";
+import type { SkillDetailFacade, SkillDetailSummary } from "./api";
 import { skillDetailKeys } from "./api";
+import { VersionUpdateNotice } from "./VersionUpdateNotice";
 
 interface VersionTimelineProps {
   facade: SkillDetailFacade;
   skillId: string;
+  summary?: SkillDetailSummary;
 }
 
 function toggleComparedVersion(selected: string[], versionId: string): string[] {
@@ -17,7 +19,7 @@ function toggleComparedVersion(selected: string[], versionId: string): string[] 
   return selected.length === 2 ? [selected[1], versionId] : [...selected, versionId];
 }
 
-export function VersionTimeline({ facade, skillId }: VersionTimelineProps) {
+export function VersionTimeline({ facade, skillId, summary }: VersionTimelineProps) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [selected, setSelected] = useState<string[]>([]);
@@ -79,6 +81,7 @@ export function VersionTimeline({ facade, skillId }: VersionTimelineProps) {
 
   return (
     <div className="sh-version-timeline">
+      {summary ? <VersionUpdateNotice summary={summary} /> : null}
       <ol>
         {versionsQuery.data.map((version, index) => (
           <li key={version.id}>

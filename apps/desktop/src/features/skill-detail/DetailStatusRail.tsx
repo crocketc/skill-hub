@@ -3,6 +3,7 @@ import { StatusBadge } from "../../ui/StatusBadge";
 import type { SkillDetailSummary } from "./api";
 import type { SkillDetailFacade } from "./api";
 import { TrialActions } from "./TrialActions";
+import { VersionUpdateNotice } from "./VersionUpdateNotice";
 
 interface DetailStatusRailProps {
   facade: SkillDetailFacade;
@@ -25,7 +26,11 @@ export function DetailStatusRail({ facade, skillId, summary }: DetailStatusRailP
           : t("skillDetail.statusRail.basicOther", { state: summary.basicCheck })}
       </StatusBadge>
       <dl>
-        <div><dt>{t("skillDetail.statusRail.versionLabel")}</dt><dd>{summary.currentVersion}</dd></div>
+        <div>
+          <dt>{t("skillDetail.statusRail.versionLabel")}</dt>
+          <dd>{summary.currentVersion}</dd>
+          <VersionUpdateNotice compact summary={summary} />
+        </div>
         <div><dt>{t("skillDetail.statusRail.deploymentLabel")}</dt><dd>{t("skillDetail.statusRail.deployments", { count: deployments })}</dd></div>
       </dl>
       <TrialActions facade={facade} skillId={skillId} summary={summary} />

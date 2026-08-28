@@ -48,6 +48,7 @@ export interface MockSkillDetailOptions {
   failTrialSave?: boolean;
   missingSkill?: boolean;
   sharedPhysicalTarget?: boolean;
+  summary?: Partial<SkillDetailSummary>;
   usageEvidence?: SkillDetailInsights["usageEvidence"] | null;
 }
 
@@ -344,6 +345,7 @@ export function createMockSkillDetailFacade(
       }
       return {
         ...summary,
+        ...options.summary,
         ...previewSkillSummaries[skillId],
         id: skillId,
       };

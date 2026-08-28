@@ -158,7 +158,9 @@ export function SkillDetailPage({
               {section === "external" && insightsQuery.data ? (
                 <ExternalHistoryEvidence insights={insightsQuery.data} />
               ) : null}
-              {section === "versions" ? <VersionTimeline facade={facade} skillId={skillId} /> : null}
+              {section === "versions" ? (
+                <VersionTimeline facade={facade} skillId={skillId} summary={summaryQuery.data} />
+              ) : null}
             </section>
           ))}
         </main>

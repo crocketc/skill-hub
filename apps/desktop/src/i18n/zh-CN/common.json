@@ -604,7 +604,12 @@
       "rollbackError": "回滚未完成，请保留当前影响预览后重试。",
       "rollbackPreview": "回滚影响预览",
       "rollbackTo": "回滚到 {{version}}",
-      "selectCompare": "选择 {{version}} 进行比较"
+      "selectCompare": "选择 {{version}} 进行比较",
+      "updateAvailableTitle": "上游更新可用",
+      "updateUnavailable": "上游更新比较尚未连接",
+      "updateVersion": "当前 {{current}} → 上游 {{upstream}}",
+      "upstreamPending": "版本待获取",
+      "viewUpdateDiff": "查看更新差异"
     },
     "insights": {
       "basicSecurity": "基础安全检查",
