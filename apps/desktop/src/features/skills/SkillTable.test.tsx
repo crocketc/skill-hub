@@ -105,6 +105,7 @@ it("uses compact density and keeps checkbox clicks separate from row opening", a
   if (!nameCell) throw new Error("Expected the PDF Reader name cell");
   expect(within(nameCell).getByText("Alias:")).toBeVisible();
   expect(within(nameCell).getByText("reader")).toBeVisible();
+  expect(within(nameCell).queryByText("Read and extract PDFs")).not.toBeInTheDocument();
   fireEvent.click(nameCell);
   expect(onOpenSkill).toHaveBeenCalledWith("skill-pdf", expect.any(HTMLElement));
 });

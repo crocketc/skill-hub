@@ -163,7 +163,6 @@ export function createSkillColumns(t: TFunction): ColumnDef<SkillTableRow>[] {
               <span className="sh-skill-table__alias-label">{t("skillLibrary.table.aliasLabel")}:</span> {row.original.alias}
             </span>
           ) : null}
-          <span className="sh-skill-table__secondary" title={row.original.purpose}>{row.original.purpose}</span>
         </div>
       ),
       header: t(COLUMN_LABELS.name),

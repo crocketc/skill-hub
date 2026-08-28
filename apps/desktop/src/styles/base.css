@@ -2265,7 +2265,7 @@ a {
 }
 
 .sh-skill-table [data-column="select"] { width: 2.75rem; min-width: 2.75rem; }
-.sh-skill-table [data-column="name"] { width: 18rem; min-width: 18rem; }
+.sh-skill-table [data-column="name"] { width: 15rem; min-width: 15rem; }
 .sh-skill-table [data-column="purpose"] { width: 12rem; min-width: 12rem; }
 .sh-skill-table [data-column="tags"] { width: 10rem; min-width: 10rem; }
 .sh-skill-table [data-column="lifecycle"] { width: 7rem; min-width: 7rem; }
