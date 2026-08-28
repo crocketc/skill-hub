@@ -101,6 +101,7 @@ it("isolates deterministic Skill detail preview data from production", async () 
 
   render(<AppRouter />);
   expect(await screen.findByRole("heading", { name: "PDF Reader" })).toBeVisible();
+  expect(screen.queryByRole("heading", { name: "Skill library" })).not.toBeInTheDocument();
   expect(
     await screen.findByRole("heading", { name: "Markdown workspace" }),
   ).toBeVisible();
@@ -116,6 +117,16 @@ it("isolates deterministic Skill detail preview data from production", async () 
   expect(
     screen.queryByRole("heading", { name: "Markdown workspace" }),
   ).not.toBeInTheDocument();
+});
+
+it("keeps the Skill library shell title on the library route", async () => {
+  mockBrowserPreferences();
+  await skillHubI18n.changeLanguage("en-US");
+  await appRouter.navigate("/__preview/skill-library");
+
+  render(<AppRouter />);
+
+  expect(await screen.findByRole("heading", { name: "Skill library" })).toBeVisible();
 });
 
 it("isolates development preview data from the production Skill library route", async () => {
