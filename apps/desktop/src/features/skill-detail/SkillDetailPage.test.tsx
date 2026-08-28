@@ -225,6 +225,14 @@ describe("SkillDetailPage shell", () => {
     expect(screen.getByRole("button", { name: "Edit My purpose" })).toBeVisible();
   });
 
+  it("shows invocation and declared runtime requirements in the detail page", async () => {
+    await renderDetail();
+
+    expect(await screen.findByText("pdf-reader <file>")).toBeVisible();
+    expect(screen.getByText("Poppler")).toBeVisible();
+    expect(screen.getByText("Executable used for PDF rendering")).toBeVisible();
+  });
+
   it("keeps Markdown in Description and editable fields in Metadata", async () => {
     await renderDetail();
 

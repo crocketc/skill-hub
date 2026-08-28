@@ -156,6 +156,31 @@ export function MetadataPanel({ facade, metadata, skillId }: MetadataPanelProps)
 
   return (
     <div className="sh-metadata-panel">
+      <section className="sh-metadata-panel__facts">
+        <h3>{t("skillDetail.metadata.identityFacts")}</h3>
+        <dl>
+          <div>
+            <dt>{t("skillDetail.metadata.source")}</dt>
+            <dd>{metadata.source ?? t("skillDetail.metadata.empty")}</dd>
+          </div>
+          <div>
+            <dt>{t("skillDetail.metadata.ownership")}</dt>
+            <dd>{metadata.ownership ?? t("skillDetail.metadata.empty")}</dd>
+          </div>
+          <div>
+            <dt>{t("skillDetail.metadata.author")}</dt>
+            <dd>{metadata.author ?? t("skillDetail.metadata.empty")}</dd>
+          </div>
+          <div>
+            <dt>{t("skillDetail.metadata.license")}</dt>
+            <dd>{metadata.license ?? t("skillDetail.metadata.empty")}</dd>
+          </div>
+          <div>
+            <dt>{t("skillDetail.metadata.copyright")}</dt>
+            <dd>{metadata.copyright ?? t("skillDetail.metadata.empty")}</dd>
+          </div>
+        </dl>
+      </section>
       <section>
         <h3>{t("skillDetail.metadata.originalDescription")}</h3>
         <p>{metadata.originalDescription ?? t("skillDetail.metadata.empty")}</p>

@@ -37,6 +37,7 @@ export interface SkillMetadata {
   alias?: string;
   author?: string;
   copyright?: string;
+  invocation?: string;
   license?: string;
   note?: string;
   originalDescription?: string;

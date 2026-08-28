@@ -592,7 +592,9 @@
       "retry": "Retry relations"
     },
     "requirements": {
-      "declaredOnly": "Declared by the Skill only; SkillHub has not installed or verified it."
+      "declaredOnly": "Declared by the Skill only; SkillHub has not installed or verified it.",
+      "empty": "No invocation declared",
+      "invocation": "Invocation"
     },
     "lifecycle": {
       "active": "Managed",
@@ -607,17 +609,23 @@
     },
     "metadata": {
       "alias": "Alias",
+      "author": "Author",
       "confirmRetranslate": "Replace translation",
+      "copyright": "Copyright",
       "edit": "Edit {{label}}",
       "editAction": "Edit",
       "empty": "Not provided",
+      "identityFacts": "Source identity",
+      "license": "License",
       "note": "My note",
+      "ownership": "Ownership",
       "originalDescription": "Original source text",
       "purpose": "My purpose",
       "retranslate": "Translate description again",
       "save": "Save {{label}}",
       "saveAction": "Save",
       "saveError": "Could not save. Your draft is still here.",
+      "source": "Source",
       "stale": "Translation may be outdated",
       "tags": "Tags",
       "tagsHint": "Separate multiple tags with commas",

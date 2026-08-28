@@ -1160,6 +1160,23 @@ a {
   gap: var(--space-4);
 }
 
+.sh-metadata-panel__facts dl {
+  display: grid;
+  gap: var(--space-3);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 0;
+}
+
+.sh-metadata-panel__facts dt {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+}
+
+.sh-metadata-panel__facts dd {
+  margin: var(--space-1) 0 0;
+  overflow-wrap: anywhere;
+}
+
 .sh-metadata-panel > section,
 .sh-metadata-panel__editable {
   background: var(--color-surface-muted);
@@ -1283,6 +1300,7 @@ a {
 }
 
 .sh-detail-relations > section,
+.sh-detail-requirements > section,
 .sh-detail-requirements article {
   background: var(--color-surface-muted);
   border: 1px solid var(--color-border);
@@ -1298,6 +1316,10 @@ a {
 .sh-detail-insights p,
 .sh-detail-insights ul {
   margin: 0;
+}
+
+.sh-detail-requirements__invocation p {
+  color: var(--color-text-secondary);
 }
 
 .sh-detail-relations ul,

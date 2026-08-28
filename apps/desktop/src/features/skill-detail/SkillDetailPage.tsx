@@ -134,7 +134,10 @@ export function SkillDetailPage({
                 ) : relationsQuery.data ? <RelationsPanel relations={relationsQuery.data} /> : null
               ) : null}
               {section === "requirements" && requirementsQuery.data ? (
-                <RequirementsPanel requirements={requirementsQuery.data} />
+                <RequirementsPanel
+                  invocation={metadataQuery.data?.invocation}
+                  requirements={requirementsQuery.data}
+                />
               ) : null}
               {section === "security" ? <SecurityEvidence summary={summaryQuery.data} /> : null}
               {section === "connections" && insightsQuery.data ? (

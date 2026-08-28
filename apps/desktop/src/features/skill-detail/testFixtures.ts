@@ -83,6 +83,7 @@ export function detailFixture(
       alias: "PDF 表格读取器",
       author: "Example Author",
       copyright: "Copyright 2026 Example Author",
+      invocation: "pdf-reader <file>",
       license: "MIT",
       note: "用于 PDF 表格提取",
       originalDescription: "Original description",

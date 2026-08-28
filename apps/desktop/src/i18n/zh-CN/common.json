@@ -592,7 +592,9 @@
       "retry": "重试关系"
     },
     "requirements": {
-      "declaredOnly": "仅来自 Skill 声明，SkillHub 未安装或验证"
+      "declaredOnly": "仅来自 Skill 声明，SkillHub 未安装或验证",
+      "empty": "未声明调用方式",
+      "invocation": "调用方式"
     },
     "lifecycle": {
       "active": "正式管理",
@@ -607,17 +609,23 @@
     },
     "metadata": {
       "alias": "别名",
+      "author": "作者",
       "confirmRetranslate": "替换译文",
+      "copyright": "版权",
       "edit": "编辑{{label}}",
       "editAction": "编辑",
       "empty": "未填写",
+      "identityFacts": "来源身份",
+      "license": "许可证",
       "note": "我的备注",
+      "ownership": "归属",
       "originalDescription": "原始描述",
       "purpose": "我的用途说明",
       "retranslate": "重新翻译描述",
       "save": "保存{{label}}",
       "saveAction": "保存",
       "saveError": "未能保存，草稿已保留。",
+      "source": "来源",
       "stale": "译文可能已过期",
       "tags": "标签",
       "tagsHint": "多个标签请用逗号分隔",
