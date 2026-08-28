@@ -15,6 +15,29 @@ describe("Skill library facade defaults", () => {
     expect(DEFAULT_DRAWER_PREFERENCES.widthPx).toBe(680);
   });
 
+  it("starts with the screenshot column order and visible set", () => {
+    expect(DEFAULT_TABLE_PREFERENCES.columnOrder.slice(0, 8)).toEqual([
+      "select",
+      "name",
+      "purpose",
+      "tags",
+      "invocation",
+      "agent_deployments",
+      "project_deployments",
+      "security",
+    ]);
+    expect(DEFAULT_TABLE_PREFERENCES.visibleColumns).toEqual([
+      "select",
+      "name",
+      "purpose",
+      "tags",
+      "invocation",
+      "agent_deployments",
+      "project_deployments",
+      "security",
+    ]);
+  });
+
   it("classifies only the missing production contract as unavailable", async () => {
     const error = await unavailableSkillLibraryFacade
       .listSkills(DEFAULT_SKILL_QUERY)

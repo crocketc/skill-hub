@@ -1,12 +1,13 @@
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { type CheckState, type SkillLibraryQuery, type SkillLifecycle } from "./api";
 
 export interface SkillFiltersProps {
   availableTags: string[];
+  id?: string;
   onChange: (query: SkillLibraryQuery) => void;
   onClear: () => void;
   query: SkillLibraryQuery;
-  resultCount: number;
 }
 
 const CHECK_STATES: readonly CheckState[] = ["passed", "warning", "failed", "not_run", "unavailable"];
@@ -33,11 +34,67 @@ const VERSION_OPTIONS = [
   ["upgrade_available", "skillLibrary.filters.versionOptions.upgradeAvailable"],
 ] as const;
 
-function selectedValues(event: React.ChangeEvent<HTMLSelectElement>): string[] {
-  return Array.from(event.currentTarget.selectedOptions, (option) => option.value);
+interface MultiSelectMenuProps {
+  label: string;
+  onChange: (values: string[]) => void;
+  options: Array<{ label: string; value: string }>;
+  selected: string[];
+  summary: string;
 }
 
-export function SkillFilters({ availableTags, onChange, onClear, query, resultCount }: SkillFiltersProps) {
+function MultiSelectMenu({ label, onChange, options, selected, summary }: MultiSelectMenuProps) {
+  const [open, setOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const closeOnOutsidePointer = (event: PointerEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener("pointerdown", closeOnOutsidePointer);
+    return () => document.removeEventListener("pointerdown", closeOnOutsidePointer);
+  }, [open]);
+  const toggle = (value: string, checked: boolean) => {
+    onChange(checked ? [...selected, value] : selected.filter((item) => item !== value));
+  };
+
+  return (
+    <div className="sh-filter-dropdown" ref={dropdownRef}>
+      <span className="sh-filter-dropdown__label">{label}</span>
+      <button
+        aria-label={label}
+        aria-expanded={open}
+        aria-haspopup="menu"
+        className="sh-filter-dropdown__trigger"
+        onClick={() => setOpen((current) => !current)}
+        type="button"
+      >
+        <span>{summary}</span>
+        <span aria-hidden="true">⌄</span>
+      </button>
+      {open ? (
+        <div aria-label={label} className="sh-filter-dropdown__menu" role="menu">
+          {options.map((option) => (
+            <label key={option.value}>
+              <input
+                aria-checked={selected.includes(option.value)}
+                aria-label={option.label}
+                checked={selected.includes(option.value)}
+                onChange={(event) => toggle(option.value, event.currentTarget.checked)}
+                role="menuitemcheckbox"
+                type="checkbox"
+              />
+              {option.label}
+            </label>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+export function SkillFilters({ availableTags, id, onChange, onClear, query }: SkillFiltersProps) {
   const { t } = useTranslation();
 
   const update = (change: Partial<SkillLibraryQuery>) => {
@@ -49,8 +106,8 @@ export function SkillFilters({ availableTags, onChange, onClear, query, resultCo
   };
 
   return (
-    <section aria-label={t("skillLibrary.filters.search")}>
-      <label>
+    <section aria-label={t("skillLibrary.filters.search")} id={id}>
+      <label className="sh-filter-search">
         {t("skillLibrary.filters.search")}
         <input
           name="skill-search"
@@ -60,41 +117,29 @@ export function SkillFilters({ availableTags, onChange, onClear, query, resultCo
         />
       </label>
 
-      <fieldset>
-        <legend>{t("skillLibrary.filters.basicCheck")}</legend>
-        <select
-          aria-label={t("skillLibrary.filters.basicCheck")}
-          multiple
-          onChange={(event) => updateFilters({ basicCheck: selectedValues(event) as CheckState[] })}
-          value={query.filters.basicCheck}
-        >
-          {CHECK_STATES.map((state) => <option key={state} value={state}>{t(CHECK_STATE_LABELS[state])}</option>)}
-        </select>
-      </fieldset>
+      <MultiSelectMenu
+        label={t("skillLibrary.filters.basicCheck")}
+        onChange={(values) => updateFilters({ basicCheck: values as CheckState[] })}
+        options={CHECK_STATES.map((state) => ({ label: t(CHECK_STATE_LABELS[state]), value: state }))}
+        selected={query.filters.basicCheck}
+        summary={query.filters.basicCheck.length > 0 ? t("skillLibrary.filters.selectedCount", { count: query.filters.basicCheck.length }) : t("skillLibrary.filters.any")}
+      />
 
-      <fieldset>
-        <legend>{t("skillLibrary.filters.aiCheck")}</legend>
-        <select
-          aria-label={t("skillLibrary.filters.aiCheck")}
-          multiple
-          onChange={(event) => updateFilters({ aiCheck: selectedValues(event) as CheckState[] })}
-          value={query.filters.aiCheck}
-        >
-          {CHECK_STATES.map((state) => <option key={state} value={state}>{t(CHECK_STATE_LABELS[state])}</option>)}
-        </select>
-      </fieldset>
+      <MultiSelectMenu
+        label={t("skillLibrary.filters.aiCheck")}
+        onChange={(values) => updateFilters({ aiCheck: values as CheckState[] })}
+        options={CHECK_STATES.map((state) => ({ label: t(CHECK_STATE_LABELS[state]), value: state }))}
+        selected={query.filters.aiCheck}
+        summary={query.filters.aiCheck.length > 0 ? t("skillLibrary.filters.selectedCount", { count: query.filters.aiCheck.length }) : t("skillLibrary.filters.any")}
+      />
 
-      <fieldset>
-        <legend>{t("skillLibrary.filters.lifecycle")}</legend>
-        <select
-          aria-label={t("skillLibrary.filters.lifecycle")}
-          multiple
-          onChange={(event) => updateFilters({ lifecycle: selectedValues(event) as SkillLifecycle[] })}
-          value={query.filters.lifecycle}
-        >
-          {LIFECYCLES.map((state) => <option key={state} value={state}>{t(LIFECYCLE_LABELS[state])}</option>)}
-        </select>
-      </fieldset>
+      <MultiSelectMenu
+        label={t("skillLibrary.filters.lifecycle")}
+        onChange={(values) => updateFilters({ lifecycle: values as SkillLifecycle[] })}
+        options={LIFECYCLES.map((state) => ({ label: t(LIFECYCLE_LABELS[state]), value: state }))}
+        selected={query.filters.lifecycle}
+        summary={query.filters.lifecycle.length > 0 ? t("skillLibrary.filters.selectedCount", { count: query.filters.lifecycle.length }) : t("skillLibrary.filters.any")}
+      />
 
       <label>
         {t("skillLibrary.filters.deployment")}
@@ -116,19 +161,14 @@ export function SkillFilters({ availableTags, onChange, onClear, query, resultCo
         </select>
       </label>
 
-      <fieldset>
-        <legend>{t("skillLibrary.filters.tags")}</legend>
-        <select
-          aria-label={t("skillLibrary.filters.tags")}
-          multiple
-          onChange={(event) => updateFilters({ tags: selectedValues(event) })}
-          value={query.filters.tags}
-        >
-          {availableTags.map((tag) => <option key={tag} value={tag}>{tag}</option>)}
-        </select>
-      </fieldset>
+      <MultiSelectMenu
+        label={t("skillLibrary.filters.tags")}
+        onChange={(values) => updateFilters({ tags: values })}
+        options={availableTags.map((tag) => ({ label: tag, value: tag }))}
+        selected={query.filters.tags}
+        summary={query.filters.tags.length > 0 ? t("skillLibrary.filters.selectedCount", { count: query.filters.tags.length }) : t("skillLibrary.filters.any")}
+      />
 
-      <p>{t("skillLibrary.filters.resultCount", { count: resultCount })}</p>
       <button onClick={onClear} type="button">{t("skillLibrary.filters.clear")}</button>
     </section>
   );

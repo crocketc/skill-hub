@@ -2,17 +2,32 @@ export type SkillLifecycle = "active" | "trial" | "archived";
 export type CheckState = "passed" | "warning" | "failed" | "not_run" | "unavailable";
 export type SkillDensity = "compact" | "standard" | "comfortable";
 export type DrawerPreset = "standard" | "wide" | "near_full";
+export type InvocationMode = "model_and_user" | "model_only" | "user_only" | "disabled";
+export type InvocationSource = "explicit" | "default" | "unknown";
+export interface InvocationPolicy {
+  mode: InvocationMode;
+  source: InvocationSource;
+  field?: string;
+}
+export interface AgentDeployment {
+  id: string;
+  name: string;
+}
+export interface ProjectDeployment {
+  id: string;
+  name: string;
+  path: string;
+}
 export type SkillColumnId =
   | "select"
   | "name"
   | "purpose"
   | "tags"
   | "lifecycle"
-  | "deployments"
+  | "agent_deployments"
+  | "project_deployments"
   | "version"
   | "security"
-  | "original_description"
-  | "translated_description"
   | "source"
   | "ownership"
   | "license"
@@ -40,12 +55,14 @@ export interface SkillLibraryQuery {
 export interface SkillTableRow {
   aiCheck: CheckState;
   agentDeploymentCount: number;
+  agentDeployments?: AgentDeployment[];
   alias?: string;
   basicCheck: CheckState;
   currentVersion: string;
   highRiskCount: number;
   id: string;
   invocation?: string;
+  invocationPolicy?: InvocationPolicy;
   license?: string;
   lifecycle: SkillLifecycle;
   name: string;
@@ -73,7 +90,14 @@ export interface SkillQuickView extends SkillTableRow {
   dependencies: string[];
   duplicateCandidates: string[];
   externalChanges: string[];
+  note?: string;
+  projectDeployments?: ProjectDeployment[];
   usageEvidence?: { invocationCount: number; lastUsedAt?: string };
+}
+
+export interface SkillMetadataPatch {
+  alias?: string | null;
+  note?: string | null;
 }
 
 export interface SkillTablePreferences {
@@ -112,7 +136,13 @@ export interface SavedSkillView {
   table: SkillTablePreferences;
 }
 
-export type BatchAction = "add_to" | "security_check" | "export" | "archive";
+export type BatchAction =
+  | "add_to"
+  | "security_check"
+  | "export"
+  | "archive"
+  | "add_tag"
+  | "remove_tag";
 export type SkillFilterSnapshot = Pick<SkillLibraryQuery, "filters" | "text">;
 export type BatchTarget =
   | { kind: "skill_ids"; skillIds: string[] }
@@ -120,6 +150,8 @@ export type BatchTarget =
 export interface SkillBatchIntent {
   action: BatchAction;
   target: BatchTarget;
+  /** Tags supplied by the batch tag workflow. Other actions omit this field. */
+  tags?: string[];
 }
 
 export interface SkillLibraryFacade {
@@ -131,7 +163,9 @@ export interface SkillLibraryFacade {
   loadTablePreferences(): Promise<SkillTablePreferences>;
   retainMatchingSkillIds(skillIds: string[], query: SkillLibraryQuery): Promise<string[]>;
   saveDrawerPreferences(preferences: SkillDrawerPreferences): Promise<void>;
+  saveSkillMetadata?: (skillId: string, patch: SkillMetadataPatch) => Promise<void>;
   saveTablePreferences(preferences: SkillTablePreferences): Promise<void>;
+  deleteView(viewId: string): Promise<void>;
   saveView(view: Omit<SavedSkillView, "builtIn" | "id">): Promise<SavedSkillView>;
 }
 
@@ -153,17 +187,16 @@ const SKILL_COLUMN_ORDER = freeze<SkillColumnId[]>([
   "name",
   "purpose",
   "tags",
-  "lifecycle",
-  "deployments",
-  "version",
+  "invocation",
+  "agent_deployments",
+  "project_deployments",
   "security",
-  "original_description",
-  "translated_description",
+  "version",
   "source",
   "ownership",
   "license",
-  "invocation",
   "requirements",
+  "lifecycle",
 ]);
 
 const DEFAULT_VISIBLE_COLUMNS = freeze<SkillColumnId[]>([
@@ -171,9 +204,9 @@ const DEFAULT_VISIBLE_COLUMNS = freeze<SkillColumnId[]>([
   "name",
   "purpose",
   "tags",
-  "lifecycle",
-  "deployments",
-  "version",
+  "invocation",
+  "agent_deployments",
+  "project_deployments",
   "security",
 ]);
 
@@ -295,5 +328,6 @@ export const unavailableSkillLibraryFacade: SkillLibraryFacade = {
   retainMatchingSkillIds: async () => EMPTY_SKILL_IDS,
   saveDrawerPreferences: unavailable,
   saveTablePreferences: unavailable,
+  deleteView: unavailable,
   saveView: unavailable,
 };

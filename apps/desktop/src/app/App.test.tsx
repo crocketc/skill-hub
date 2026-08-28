@@ -1,6 +1,7 @@
 import { act, render, screen } from "@testing-library/react";
 import { I18nextProvider } from "react-i18next";
 import { createSkillHubI18n } from "../i18n";
+import baseCss from "../styles/base.css?raw";
 import { App } from "./App";
 
 it("renders the local bootstrap state without network access", async () => {
@@ -39,4 +40,23 @@ it("keeps rendered and document language synchronized after switching", async ()
   expect(screen.getByRole("main")).toHaveAttribute("lang", "zh-CN");
   expect(document.documentElement).toHaveAttribute("lang", "zh-CN");
   expect(screen.getByText("正在读取本地数据")).toBeInTheDocument();
+});
+
+it("keeps the app shell within the viewport without an outer scrollbar at the default scale", () => {
+  const shellStart = baseCss.indexOf(".sh-app-shell {");
+  const shellBlock = baseCss.slice(shellStart, baseCss.indexOf("}", shellStart) + 1);
+  const contentStart = baseCss.indexOf(".sh-app-shell__content {");
+  const contentBlock = baseCss.slice(contentStart, baseCss.indexOf("}", contentStart) + 1);
+  expect(shellBlock).toMatch(/height:\s*100dvh/);
+  expect(shellBlock).toMatch(/overflow:\s*hidden/);
+  expect(contentBlock).toMatch(/min-height:\s*0/);
+  expect(contentBlock).toMatch(/overflow-y:\s*hidden/);
+});
+
+it("enables outer scrolling only at wrapped zoom widths", () => {
+  const wrappedStart = baseCss.indexOf("@media (max-width: 90rem)");
+  const wrappedEnd = baseCss.indexOf("@media (max-width: 48rem)", wrappedStart);
+  expect(baseCss.slice(wrappedStart, wrappedEnd)).toMatch(
+    /\.sh-app-shell__content\s*\{[\s\S]*overflow-y:\s*auto/,
+  );
 });

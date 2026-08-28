@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::{SkillId, VersionId};
+use crate::{catalog::CallPolicy, SkillId, VersionId};
 
 /// Portable paths and files that make up the central Skill library.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -79,6 +79,8 @@ pub struct PortableSkillRecord {
     #[serde(default)]
     pub license: Option<String>,
     #[serde(default)]
+    pub call_policy: CallPolicy,
+    #[serde(default)]
     pub declared_requirements: BTreeMap<String, String>,
     #[serde(default)]
     pub current_version: Option<VersionId>,
@@ -97,6 +99,7 @@ impl PortableSkillRecord {
             tags: Vec::new(),
             author: None,
             license: None,
+            call_policy: CallPolicy::default(),
             declared_requirements: BTreeMap::new(),
             current_version: None,
         }

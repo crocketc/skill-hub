@@ -21,6 +21,7 @@ export interface SkillDetailSummary {
   purpose: string;
   trialDue?: string;
   upgradeAvailable: boolean;
+  upstreamVersion?: string;
 }
 
 export interface SkillTranslation {
@@ -37,6 +38,7 @@ export interface SkillMetadata {
   alias?: string;
   author?: string;
   copyright?: string;
+  invocation?: string;
   license?: string;
   note?: string;
   originalDescription?: string;

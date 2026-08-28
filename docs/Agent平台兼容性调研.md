@@ -2,7 +2,7 @@
 
 > 文档状态：官方资料调研完成；按资料开发 profile，真机验证延后到开发完成后的测试阶段
 >
-> 调研基准日：2026-08-21
+> 调研基准日：2026-08-28
 >
 > 适用项目：SkillHub
 >
@@ -112,6 +112,32 @@
 8. Claude / Claude Desktop 聊天 Skills、TraeWork、WorkBuddy、Kimi Work、Grok Web/iOS/Android 和 Grok Bot 虽然支持 Skill 创建、上传、安装或账号管理，但尚不能证明存在稳定、公开、可由外部工具直接管理的目录。
 9. 项目级目录并不统一：目录名称、项目根识别、父级或嵌套扫描、同名优先级和可信要求均可能不同。
 10. 同一品牌的 CLI、桌面端、IDE 插件、云端 Agent 和聊天/办公客户端需要分别保存客户端 profile；只有官方资料或真机结果确认共享目录和规则时，才合并为一个实际目标。聊天桌面应用不能仅因品牌相同就套用同品牌 CLI 的本地 Skill 目录。
+
+### 3.3 调用方式字段与统一取值
+
+Agent Skills 开放标准本身没有规定“谁可以调用 Skill”的字段；标准 frontmatter 只有 `name`、`description`、`license`、`compatibility`、`metadata` 和 `allowed-tools`。调用策略属于客户端扩展能力，SkillHub 只在有官方依据时读取平台字段，不把命令字符串误当作调用策略。
+
+SkillHub 在 UI 中统一显示以下四个枚举值：
+
+| UI 枚举 | 含义 | 图标建议 |
+|---|---|---|
+| `model_and_user`（模型与用户） | Agent 模型可自动调用，用户也可手动调用 | 模型图标 + 用户图标 |
+| `model_only`（仅模型） | 仅允许模型自动调用，隐藏或不提供用户入口 | 模型图标 |
+| `user_only`（仅用户） | 禁止模型自动调用，只允许用户显式调用 | 用户图标 |
+| `disabled`（已禁用） | 当前 Skill 不可被调用 | 弱化的禁用图标 |
+
+同时保存证据来源：`explicit`（平台字段明确给出）、`default`（平台支持该能力但未配置，采用默认值）、`unknown`（官方格式没有对应字段或资料不足）。因此“模型与用户”既可能是明确配置，也可能是兼容默认值，UI 图标不应丢失来源提示。
+
+| 平台 | 字段位置 | 关键值与映射 | 缺省行为 |
+|---|---|---|---|
+| Claude Code、Cursor、Grok Build | `SKILL.md`：`disable-model-invocation` / `disable_model_invocation` / `disableModelInvocation`、`user-invocable` | `disable=true` → `user_only`；`user-invocable=false` → `model_only`；两者同时限制 → `disabled` | `model_and_user` |
+| OpenAI Codex | `agents/openai.yaml`：`policy.allow_implicit_invocation` | `false` → `user_only`（仍可用 `$skill-name` 手动调用）；`true` → `model_and_user` | `model_and_user` |
+| OpenCode V2 | frontmatter `slash`；`metadata.opencode.autoinvoke` | `slash=false` → 不显示用户入口；`autoinvoke=false` → 禁止模型自动调用；两者同时关闭 → `disabled` | `model_and_user` |
+| Kimi Code | `SKILL.md`：`disableModelInvocation`（兼容连字符和下划线写法）；流程 Skill 的 `type: flow` | 禁止模型调用或 flow → `user_only` | `model_and_user` |
+| Windsurf、Cline、Gemini CLI | 官方 Skill 格式未提供稳定的 Skill 级调用字段 | 按“模型+用户”展示，但来源标记 `unknown`；全局禁用状态另作为平台状态处理 | `model_and_user` |
+| 其他通用 Agent | 无平台专属字段 | 不猜测额外策略，采用通用默认 `model_and_user`，来源 `default` | `model_and_user` |
+
+官方依据：[Agent Skills specification](https://agentskills.io/specification)、[Claude Code invocation controls](https://code.claude.com/docs/en/slash-commands#frontmatter-reference)、[OpenAI Codex `openai.yaml`](https://github.com/openai/codex/blob/main/codex-rs/skills/src/assets/samples/skill-creator/references/openai_yaml.md)、[Gemini CLI Agent Skills](https://github.com/google-gemini/gemini-cli/blob/main/docs/cli/using-agent-skills.md)、[Cursor Skills](https://prod.cursor.com/docs/skills)、[Windsurf Skills](https://docs.windsurf.com/zh/windsurf/cascade/skills)、[Cline Skills](https://github.com/cline/cline/blob/main/docs/customization/skills.mdx)、[OpenCode V2 Skills](https://opencode.ai/v2/docs/skills)、[Kimi Code Skills](https://github.com/MoonshotAI/kimi-code/blob/main/docs/en/customization/skills.md)、[Grok Build Skills](https://github.com/xai-org/grok-build/blob/main/crates/codegen/xai-grok-pager/docs/user-guide/08-skills.md)。
 
 ---
 

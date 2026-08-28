@@ -1,8 +1,10 @@
 {
   "actions": {
+    "back": "Back",
     "cancel": "Cancel",
     "close": "Close",
     "confirm": "Confirm",
+    "continue": "Continue",
     "retry": "Retry"
   },
   "markdown": {
@@ -78,6 +80,193 @@
     "error": "Unable to read data",
     "loading": "Reading local data"
   },
+  "importWorkflow": {
+    "eyebrow": "Safe import workflow",
+    "title": "Import Skills",
+    "step": "Step {{current}} of {{total}}",
+    "phases": {
+      "source": "Choose a source",
+      "acquiring": "Reading candidates",
+      "candidate_gate": "Candidates ready",
+      "candidates": "Choose candidates",
+      "analyzing": "Analyzing conflicts",
+      "conflicts": "Resolve conflicts",
+      "committing": "Committing import",
+      "summary": "Import complete",
+      "failed": "Import needs attention",
+      "cancelled": "Import cancelled"
+    },
+    "acquisition": {
+      "complete": "Found {{count}} candidate(s). Review the list before continuing."
+    },
+    "cancelled": "Acquisition was cancelled. Your source is still here.",
+    "errors": {
+      "unknown": "The import step could not be completed."
+    },
+    "source": {
+      "eyebrow": "Import source",
+      "title": "Where should SkillHub look?",
+      "description": "Paste a local path, URL, Git reference, or an npx skills add reference.",
+      "label": "Source",
+      "placeholder": "C:/skills or https://github.com/owner/repository",
+      "parse": "Parse source",
+      "continueCandidates": "Continue to candidate selection",
+      "acquiring": "Reading candidates from the source",
+      "cancelAcquiring": "Cancel acquisition",
+      "retry": "Retry acquisition",
+      "npxParseOnly": "This reference is parsed only; no npx command will be executed.",
+      "detectedSource": "Detected source",
+      "type": "Type",
+      "target": "Target",
+      "kinds": {
+        "local_path": "Local path",
+        "url": "Web URL",
+        "git": "Git repository",
+        "npx_reference": "npx reference",
+        "unknown": "Unknown"
+      }
+    },
+    "candidates": {
+      "eyebrow": "Candidate review",
+      "title": "Choose Skills to import",
+      "description": "Only selected candidates continue to conflict analysis and import.",
+      "analyze": "Analyze conflicts",
+      "empty": "No candidates were found for this source.",
+      "basicCheck": {
+        "not_checked": "Not checked",
+        "passed": "Basic check passed",
+        "failed": "Basic check failed"
+      },
+      "ownership": {
+        "managed": "Managed by SkillHub",
+        "agent_builtin": "Built into an Agent",
+        "plugin": "Managed by a plugin",
+        "other_tool": "Managed by another tool",
+        "unknown": "Ownership unknown"
+      }
+    },
+    "conflicts": {
+      "eyebrow": "Conflict decisions",
+      "title": "Review required decisions",
+      "description": "Choose an explicit action for every required conflict. No choice overwrites existing files.",
+      "chooseAction": "Choose an action",
+      "commit": "Commit import",
+      "none": "No conflicts require a decision.",
+      "kinds": {
+        "exact_duplicate": "Exact duplicate",
+        "same_name": "Same name",
+        "semantic_match": "Possible match",
+        "agent_owned": "Agent-owned directory"
+      },
+      "actions": {
+        "reuse": "Reuse the managed Skill",
+        "copy": "Copy into SkillHub",
+        "takeover": "Keep location and bring under management",
+        "independent": "Import independently",
+        "skip": "Skip this candidate"
+      }
+    },
+    "summary": {
+      "eyebrow": "Import summary",
+      "title": "Import results",
+      "complete": "Every selected candidate finished.",
+      "partial": "Some candidates need attention; each outcome is listed below.",
+      "unavailable": "Import is not connected to the native service yet. No files or commands were changed.",
+      "openLibrary": "Open Skill library",
+      "actions": {
+        "reuse": "Reuse",
+        "copy": "Copy",
+        "takeover": "Take over",
+        "independent": "Import independently",
+        "skip": "Skip"
+      },
+      "status": {
+        "succeeded": "Succeeded",
+        "skipped": "Skipped",
+        "failed": "Failed"
+      }
+    }
+  },
+  "discovery": {
+    "eyebrow": "Source discovery",
+    "title": "Find Skills from trusted sources",
+    "description": "Review local and online source facts before starting the safe import workflow.",
+    "scope": "Read-only discovery",
+    "importSkill": "Import Skill",
+    "importUnavailable": "Import capability is not connected to the native service yet. No files or commands were changed.",
+    "local": {
+      "eyebrow": "On this device",
+      "title": "Local discovery",
+      "description": "Inspect a path you choose and review its candidates before import.",
+      "factPath": "Reads only the selected path",
+      "factReadOnly": "Discovery does not move or deploy files"
+    },
+    "online": {
+      "eyebrow": "Remote sources",
+      "title": "Online discovery",
+      "description": "A future source boundary for reviewing remote repositories with the same safe flow.",
+      "factNoNetwork": "Network access is not enabled in this preview",
+      "factPreview": "No remote repository is claimed or executed"
+    }
+  },
+  "agents": {
+    "eyebrow": "Agent workspace",
+    "title": "Agents",
+    "description": "Review discovered client and Skill directory facts.",
+    "loading": "Loading Agent facts",
+    "unavailable": "Agent data is not connected to the native service yet.",
+    "errors": { "unknown": "Agent data could not be read." },
+    "experimental": "Experimental, for reference only",
+    "runtimeHook": "Runtime Hook",
+    "runtimeHookStatus": "In development",
+    "detail": {
+      "eyebrow": "Observed Agent",
+      "discoveredFact": "Discovered client and Skill directory facts",
+      "observed": "Observed",
+      "identity": "Agent identity",
+      "brand": "Brand",
+      "client": "Client",
+      "instance": "Instance",
+      "paths": "Discovered paths"
+    },
+    "relations": {
+      "eyebrow": "Target relations",
+      "title": "Logical clients and physical directories",
+      "count": "{{logical}} logical clients · {{physical}} physical directories",
+      "physicalTarget": "Physical directory"
+    },
+    "evidence": {
+      "eyebrow": "Usage evidence",
+      "title": "Observed usage signals",
+      "empty": "No usage evidence has been collected."
+    }
+  },
+  "projects": {
+    "eyebrow": "Project workspace",
+    "title": "Projects",
+    "description": "Organize shared Skill requirements with flat, tag-based views.",
+    "loading": "Loading project facts",
+    "unavailable": "Project data is not connected to the native service yet.",
+    "empty": "No projects match the current filters.",
+    "filters": { "label": "Project filters", "search": "Search projects", "tags": "Tags" },
+    "drawer": { "identity": "Project location", "tags": "Tags", "targets": "Shared targets" },
+    "readOnly": "Read-only facts",
+    "detail": { "eyebrow": "Project detail" },
+    "sharedConfig": {
+      "eyebrow": "Shared configuration",
+      "title": "Project requirements",
+      "identity": "Identity hint",
+      "targets": "Shared targets",
+      "requirements": "Required Skills"
+    },
+    "assembly": {
+      "eyebrow": "Best-effort assembly",
+      "title": "Assembly preview",
+      "bestEffort": "Each item is reported independently",
+      "singleState": "Itemized result",
+      "status": { "satisfied": "Satisfied", "skipped": "Skipped", "conflict": "Conflict", "failed": "Failed" }
+    }
+  },
   "appShell": {
     "cachedData": "Cached skill library",
     "navigation": "Main navigation",
@@ -130,15 +319,33 @@
     "unavailable": "Unavailable"
   },
   "skillLibrary": {
+    "invocation": {
+      "modes": {
+        "modelAndUser": "Model and user",
+        "modelOnly": "Model only",
+        "userOnly": "User only",
+        "disabled": "Disabled"
+      }
+    },
     "fullDetailsBoundary": "Full Skill details are delivered in the next task",
     "page": {
       "batch": {
         "addTo": "Add to",
+        "addTags": "Add tags",
+        "addTagsDescription": "The entered tags will be added to every selected Skill.",
+        "addTagsTitle": "Add tags",
         "archive": "Archive",
         "error": "The batch workflow could not be started",
         "export": "Export",
+        "impact": "This will affect {{count}} Skill",
         "label": "Batch actions",
+        "removeTags": "Remove tags",
+        "removeTagsDescription": "The entered tags will be removed from every selected Skill.",
+        "removeTagsTitle": "Remove tags",
         "securityCheck": "Run security check",
+        "tagsHint": "Separate multiple tags with commas. Duplicate tags are ignored.",
+        "tagsLabel": "Tags",
+        "tagsPlaceholder": "e.g. review, customer-facing",
         "unconnected": "This batch workflow is not connected"
       },
       "pageStatus": "Page {{page}} · {{count}} results",
@@ -179,8 +386,10 @@
     "drawer": {
       "actions": {
         "addTo": "Add to",
+        "addTags": "Add tags",
         "archive": "Archive",
         "export": "Export",
+        "removeTags": "Remove tags",
         "securityCheck": "Run security check"
       },
       "configure": "Configure quick drawer",
@@ -191,7 +400,9 @@
         "loading": "Loading skill details"
       },
       "emptyValue": "Not available",
-      "fullDetails": "View full details",
+      "editAlias": "Edit alias",
+      "editNote": "Edit note",
+      "fullDetails": "View and edit full details",
       "modules": {
         "dependenciesDuplicates": "Dependencies and duplicates",
         "externalChanges": "External changes",
@@ -221,9 +432,15 @@
         "high": "{{count}} high risk",
         "pending": "{{count}} pending"
       },
+      "relations": {
+        "showFewerProjects": "Show fewer projects",
+        "showMoreProjects": "Show {{count}} more projects"
+      },
       "title": "Skill details",
+      "viewUpdate": "View update",
       "values": {
         "agents": "Agents",
+        "alias": "Alias",
         "currentVersion": "Current version: {{version}}",
         "dependencies": "Dependencies",
         "duplicates": "Possible duplicates",
@@ -231,9 +448,13 @@
         "invocationCount": "{{count}} invocations",
         "lastUsed": "Last used: {{value}}",
         "license": "License",
+        "note": "My note",
+        "originalDescription": "Original description",
         "ownership": "Ownership",
+        "purpose": "My purpose",
         "projects": "Projects",
         "source": "Source",
+        "translatedDescription": "Translation",
         "upToDate": "Up to date",
         "updateAvailable": "Update available"
       }
@@ -249,6 +470,8 @@
         "warning": "Warning"
       },
       "clear": "Clear filters",
+      "collapse": "Collapse filters",
+      "any": "Any",
       "deployment": "Deployment",
       "deploymentOptions": {
         "any": "Any deployment",
@@ -263,6 +486,8 @@
       },
       "resultCount": "{{count}} results",
       "search": "Search skills",
+      "expand": "Expand filters",
+      "selectedCount": "{{count}} selected",
       "tags": "Tags",
       "version": "Version",
       "versionOptions": {
@@ -277,12 +502,16 @@
         "attention": "Needs attention",
         "updates": "Updates"
       },
+      "delete": "Delete {{name}}",
+      "deleteError": "The view could not be deleted.",
       "more": "More views",
       "save": "Save current view",
       "unsaved": "Unsaved changes"
     },
     "table": {
       "agentDeployments": "{{count}} agents",
+      "agentDeploymentSummary": "Agent deployments: {{count}}",
+      "aliasLabel": "Alias",
       "aiStatus": "AI: {{state}}",
       "basicStatus": "Basic: {{state}}",
       "checkStates": {
@@ -293,20 +522,19 @@
         "warning": "Warning"
       },
       "columns": {
-        "deployments": "Deployments",
+        "agentDeployments": "Agent deployments",
         "invocation": "Invocation",
         "license": "License",
         "lifecycle": "Lifecycle",
-        "name": "Name",
-        "originalDescription": "Original description",
+        "name": "Name / Alias",
         "ownership": "Ownership",
+        "projectDeployments": "Project deployments",
         "purpose": "Purpose",
         "requirements": "Requirements",
         "security": "Security",
         "selection": "Selection",
         "source": "Source",
         "tags": "Tags",
-        "translatedDescription": "Translated description",
         "version": "Version"
       },
       "columnsAndDensity": "Columns and density",
@@ -318,12 +546,18 @@
       },
       "densityLabel": "Density",
       "highRiskCount": "{{count}} high risk",
+      "horizontalScroll": "Horizontal table scroll",
       "lifecycle": {
         "active": "Active",
         "archived": "Archived",
         "trial": "Trial"
       },
       "moveBefore": "Move {{column}} before {{before}}",
+      "moveUp": "Move {{column}} up",
+      "moveDown": "Move {{column}} down",
+      "dragColumn": "draggable column",
+      "lockedColumn": "Locked",
+      "reorderLabel": "Reorder columns",
       "nextPage": "Next page",
       "pageRange": "{{start}}–{{end}} of {{total}}",
       "pageSize": "Page size",
@@ -348,6 +582,13 @@
       "createsVersion": "Rollback creates a new current version; it does not erase history.",
       "current": "Current",
       "deploymentUpdates": "{{label}} will update",
+      "fileDetails": {
+        "added": "Added files",
+        "changed": "Changed files",
+        "empty": "No files",
+        "label": "Changed file details",
+        "removed": "Removed files"
+      },
       "impactLoading": "Loading rollback impact",
       "loadError": "Version history could not be loaded",
       "loading": "Loading version history",
@@ -363,7 +604,12 @@
       "rollbackError": "Rollback did not complete. Review the impact and try again.",
       "rollbackPreview": "Rollback impact preview",
       "rollbackTo": "Rollback to {{version}}",
-      "selectCompare": "Select {{version}} for comparison"
+      "selectCompare": "Select {{version}} for comparison",
+      "updateAvailableTitle": "Upstream update available",
+      "updateUnavailable": "Upstream update comparison is not connected yet.",
+      "updateVersion": "Current {{current}} → upstream {{upstream}}",
+      "upstreamPending": "version pending",
+      "viewUpdateDiff": "View update diff"
     },
     "insights": {
       "basicSecurity": "Basic security check",
@@ -383,7 +629,9 @@
       "retry": "Retry relations"
     },
     "requirements": {
-      "declaredOnly": "Declared by the Skill only; SkillHub has not installed or verified it."
+      "declaredOnly": "Declared by the Skill only; SkillHub has not installed or verified it.",
+      "empty": "No invocation declared",
+      "invocation": "Invocation"
     },
     "lifecycle": {
       "active": "Managed",
@@ -398,19 +646,26 @@
     },
     "metadata": {
       "alias": "Alias",
+      "author": "Author",
       "confirmRetranslate": "Replace translation",
+      "copyright": "Copyright",
       "edit": "Edit {{label}}",
       "editAction": "Edit",
       "empty": "Not provided",
+      "identityFacts": "Source identity",
+      "license": "License",
       "note": "My note",
+      "ownership": "Ownership",
       "originalDescription": "Original source text",
       "purpose": "My purpose",
       "retranslate": "Translate description again",
       "save": "Save {{label}}",
       "saveAction": "Save",
       "saveError": "Could not save. Your draft is still here.",
+      "source": "Source",
       "stale": "Translation may be outdated",
       "tags": "Tags",
+      "tagsHint": "Separate multiple tags with commas",
       "translation": "Saved translation",
       "translationText": "Translation text",
       "translationOverwrite": "The existing user-revised {{locale}} translation will be replaced.",
@@ -418,13 +673,14 @@
     },
     "navigation": {
       "back": "Back to Skill library",
+      "label": "Skill navigation",
       "next": "Next Skill",
       "position": "{{position}} of {{total}}",
       "previous": "Previous Skill",
       "sectionsLabel": "Detail sections",
       "sections": {
         "connections": "Related Skills",
-        "description": "Description",
+        "description": "Content description",
         "external": "External changes",
         "metadata": "Identity and source",
         "overview": "Overview",
@@ -464,10 +720,89 @@
       "set": "Set trial review"
     }
   },
+  "deployment": {
+    "eyebrow": "Safe deployment",
+    "heading": "Preview before changing Agent targets",
+    "description": "Select one or more targets, inspect the physical plan, then commit explicitly.",
+    "states": { "loading": "Loading deployment targets" },
+    "targets": { "heading": "Agent targets", "description": "Only discovered writable targets can be selected.", "unavailable": "Unavailable" },
+    "preview": "Preview deployment",
+    "commit": "Commit deployment",
+    "plan": { "heading": "Deployment plan", "description": "The plan is grouped by physical target; warnings stay visible before commit." },
+    "mode": { "symbolic_link": "Symbolic link", "directory_junction": "Directory junction", "managed_copy": "Managed copy" },
+    "results": { "heading": "Deployment results", "status": { "succeeded": "Succeeded", "failed": "Failed", "skipped": "Skipped" } }
+  },
+  "security": {
+    "eyebrow": "Security checks",
+    "heading": "Review findings before deployment",
+    "description": "Basic checks and optional LLM checks are separate facts and can be handled independently.",
+    "states": { "loading": "Loading security checks", "not_checked": "Not checked", "running": "Running", "passed": "Passed", "failed": "Failed" },
+    "basicHeading": "Basic security check",
+    "llmHeading": "LLM security check",
+    "experimental": "Experimental; informational only",
+    "findingsHeading": "Findings",
+    "findingCount": "{{count}} findings",
+    "noFindings": "No findings recorded.",
+    "notChecked": "This check has not run yet.",
+    "locationUnknown": "Location unavailable",
+    "actions": { "acknowledge": "Acknowledge", "confirmDismiss": "Confirm and dismiss" },
+    "disposition": { "actionable": "Actionable", "acknowledged": "Acknowledged", "dismissed": "Dismissed" }
+  },
+  "removal": {
+    "eyebrow": "Removal impact",
+    "heading": "Remove {{name}} from the managed library?",
+    "description": "Choose what should happen at every deployment target before deleting the central Skill.",
+    "dependents": "Dependent projects: {{projects}}",
+    "choiceLabel": "Deployment handling",
+    "choose": "Choose an action",
+    "choices": { "keep": "Keep deployed", "remove": "Remove deployment", "convert": "Convert to managed copy" },
+    "confirm": "Confirm deletion"
+  },
+  "pending": {
+    "eyebrow": "Pending work",
+    "heading": "Close the loop on pending items",
+    "description": "Each item exposes a direct follow-up action; unresolved work stays visible.",
+    "empty": "No pending items",
+    "listHeading": "Items needing attention",
+    "actions": { "resolve": "Resolve", "recheck": "Recheck", "convert": "Convert", "recover": "Recover", "remove": "Remove" }
+  },
+  "recovery": {
+    "eyebrow": "Recovery",
+    "heading": "Finish the interrupted operation",
+    "description": "Review the operation state before acknowledging recovery and continuing.",
+    "loading": "Loading recovery state",
+    "acknowledge": "Acknowledge recovery"
+  },
+  "operations": {
+    "eyebrow": "Operation progress",
+    "progressHeading": "Operation status",
+    "loading": "Loading operation",
+    "progressLabel": "Operation progress",
+    "technicalDetails": "Technical details",
+    "operationId": "Operation ID",
+    "completed": "Completed",
+    "phases": { "planned": "Planned", "prepared": "Prepared", "applying": "Applying", "verifying": "Verifying", "committed": "Committed", "needs_recovery": "Needs recovery", "rolled_back": "Rolled back" }
+  },
+  "settings": {
+    "eyebrow": "Settings",
+    "heading": "Shape SkillHub around your workflow",
+    "description": "Local management stays explicit, while network and future storage features remain bounded.",
+    "loading": "Loading settings",
+    "general": { "heading": "General", "language": "Language", "theme": "Theme" },
+    "library": { "heading": "Library", "path": "Library path", "migrationAvailable": "A library migration entry is available when the native service is connected." },
+    "view": { "heading": "View", "density": "Information density: {{density}}" },
+    "automation": { "heading": "Automation", "perSkill": "Per-Skill checks", "batch": "Batch checks", "global": "Global auto-checks" },
+    "network": { "heading": "AI and network", "description": "Network helpers are opt-in and never change local management by themselves.", "disableAll": "Turn off all network features", "localStillWorks": "Local scan, search, deployment, and backup remain available", "dataScope": "Data scope", "testProvider": "Test provider" },
+    "backup": { "heading": "Backup", "location": "Location", "retention": "Retention", "days": "days" },
+    "networkStorage": { "eyebrow": "Network storage", "heading": "Shared storage is not connected yet", "description": "This capability is intentionally reserved for the next major version. No credentials or remote actions are requested here.", "planned": "下一大版本规划" },
+    "update": { "heading": "Application update", "current": "You are on the current version.", "available": "Version {{version}} is available.", "unsigned": "This unsigned build opens the official release page for a manual download; it will not auto-install.", "signed": "The signed build still asks for explicit confirmation before applying an update.", "openRelease": "Open GitHub Release" }
+  },
   "navigation": {
     "agents": "Agents",
     "discovery": "Discover",
     "library": "Skill library",
+    "collapse": "Collapse navigation",
+    "expand": "Expand navigation",
     "operations": "Operations and recovery",
     "overview": "Overview",
     "pending": "Pending",

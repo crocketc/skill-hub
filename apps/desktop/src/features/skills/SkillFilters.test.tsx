@@ -1,8 +1,9 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { useState } from "react";
 import { I18nextProvider } from "react-i18next";
 import { vi, expect, it } from "vitest";
 import { createSkillHubI18n } from "../../i18n";
+import baseCss from "../../styles/base.css?raw";
 import {
   DEFAULT_SKILL_QUERY,
   DEFAULT_TABLE_PREFERENCES,
@@ -27,7 +28,6 @@ function ClearHarness() {
         onChange={setQuery}
         onClear={() => setQuery({ ...DEFAULT_SKILL_QUERY, pageSize: query.pageSize })}
         query={query}
-        resultCount={0}
       />
       <output>{query.pageSize}</output>
     </>
@@ -43,7 +43,6 @@ async function renderSkillFilters(props: Partial<SkillFiltersProps> = {}) {
         onChange={vi.fn()}
         onClear={vi.fn()}
         query={DEFAULT_SKILL_QUERY}
-        resultCount={0}
         {...props}
       />
     </I18nextProvider>,
@@ -87,11 +86,8 @@ it("emits a page-reset query when search or filters change", async () => {
 it("emits a page-reset query when a filter changes", async () => {
   const onChange = vi.fn();
   await renderSkillFilters({ onChange, query: { ...DEFAULT_SKILL_QUERY, page: 4 } });
-  const basicCheck = screen.getByRole("listbox", { name: "Basic check" });
-  const failed = within(basicCheck).getByRole("option", { name: "Failed" }) as HTMLOptionElement;
-  failed.selected = true;
-
-  fireEvent.change(basicCheck);
+  fireEvent.click(screen.getByRole("button", { name: "Basic check" }));
+  fireEvent.click(screen.getByRole("menuitemcheckbox", { name: "Failed" }));
 
   expect(onChange).toHaveBeenLastCalledWith(
     expect.objectContaining({
@@ -100,6 +96,25 @@ it("emits a page-reset query when a filter changes", async () => {
       savedViewId: undefined,
     }),
   );
+});
+
+it("keeps multi-value filters inside a compact dropdown menu", async () => {
+  await renderSkillFilters();
+  expect(screen.getByText("Basic check", { selector: ".sh-filter-dropdown__label" })).toBeVisible();
+  fireEvent.click(screen.getByRole("button", { name: "Tags" }));
+  expect(screen.getByRole("menu", { name: "Tags" })).toBeVisible();
+  expect(screen.getByRole("menuitemcheckbox", { name: "docs" })).toBeVisible();
+  expect(screen.queryByRole("listbox", { name: "Tags" })).not.toBeInTheDocument();
+});
+
+it("closes an open multi-value filter when focus moves outside the menu", async () => {
+  await renderSkillFilters();
+  fireEvent.click(screen.getByRole("button", { name: "Tags" }));
+  expect(screen.getByRole("menu", { name: "Tags" })).toBeVisible();
+
+  fireEvent.pointerDown(document.body);
+
+  expect(screen.queryByRole("menu", { name: "Tags" })).not.toBeInTheDocument();
 });
 
 it("delegates clearing to controlled state while preserving page size", async () => {
@@ -114,6 +129,12 @@ it("delegates clearing to controlled state while preserving page size", async ()
 
   expect(screen.getByRole("searchbox", { name: "Search skills" })).toHaveValue("");
   expect(screen.getByRole("status")).toHaveTextContent("50");
+});
+
+it("does not repeat the result total inside the filter controls", async () => {
+  await renderSkillFilters();
+
+  expect(screen.queryByText(/results/i)).not.toBeInTheDocument();
 });
 
 it("applies a saved view and exposes dirty state without saving page or selection", async () => {
@@ -173,4 +194,86 @@ it("places user views after the first four in a labelled details menu", async ()
   fireEvent.click(screen.getByText("More views"));
 
   expect(moreViews).toHaveAttribute("open");
+});
+
+it("wraps the filter grid before zoomed desktop widths can overflow", () => {
+  expect(baseCss).toMatch(
+    /@media \(max-width: 90rem\)[\s\S]*\.sh-skill-library__query-tools > section\s*\{[\s\S]*grid-template-columns:\s*repeat\(4, minmax\(0, 1fr\)/,
+  );
+});
+
+it("keeps the search field bounded inside the zoomed filter grid", () => {
+  const zoomedStart = baseCss.indexOf("@media (max-width: 90rem)");
+  const zoomedEnd = baseCss.indexOf("@media (max-width: 48rem)", zoomedStart);
+  const zoomedLayout = baseCss.slice(zoomedStart, zoomedEnd);
+  expect(zoomedLayout).toMatch(
+    /\.sh-skill-library__query-tools > section > \.sh-filter-search\s*\{[\s\S]*grid-column:\s*auto/,
+  );
+});
+
+it("keeps 100% and 110% filters on one compact row", () => {
+  const compactStart = baseCss.indexOf("@media (max-width: 112rem)");
+  const compactEnd = baseCss.indexOf("@media (max-width: 90rem)", compactStart);
+  const compactLayout = baseCss.slice(compactStart, compactEnd);
+  expect(compactLayout).toMatch(
+    /grid-template-columns:\s*minmax\(12rem, 2fr\) repeat\(6, minmax\(5\.5rem, 1fr\)\)/,
+  );
+  expect(compactLayout).not.toMatch(/grid-template-columns:\s*repeat\(4,/);
+});
+
+it("keeps the desktop shell fixed while enabling outer scroll only for wrapped zoom", () => {
+  expect(baseCss).toMatch(/\.sh-app-shell__content\s*\{[\s\S]*overflow-y:\s*hidden/);
+  const wrappedStart = baseCss.indexOf("@media (max-width: 90rem)");
+  const wrappedEnd = baseCss.indexOf("@media (max-width: 48rem)", wrappedStart);
+  expect(baseCss.slice(wrappedStart, wrappedEnd)).toMatch(/\.sh-app-shell__content\s*\{[\s\S]*overflow-y:\s*auto/);
+});
+
+it("lets the table workspace fill the remaining library height", () => {
+  expect(baseCss).toMatch(/\.sh-skill-library\s*\{[\s\S]*display:\s*flex[\s\S]*height:\s*100%/);
+  expect(baseCss).toMatch(/\.sh-skill-table-workspace\s*\{[\s\S]*min-height:\s*0[\s\S]*flex:\s*1 1 auto/);
+});
+
+it("uses compact spacing between the library controls and results", () => {
+  expect(baseCss).toMatch(/\.sh-skill-library\s*\{[\s\S]*gap:\s*var\(--space-2\)/);
+});
+
+it("places the filter toggle as a short centered rail below the filter card", () => {
+  const toggleStart = baseCss.indexOf(".sh-skill-library__query-toggle {");
+  const toggleEnd = baseCss.indexOf("}", toggleStart);
+  const toggleBlock = baseCss.slice(toggleStart, toggleEnd);
+  expect(toggleBlock).toMatch(/bottom:\s*0/);
+  expect(toggleBlock).toMatch(/left:\s*50%/);
+  expect(toggleBlock).toMatch(/width:\s*4rem/);
+  expect(toggleBlock).toMatch(/height:\s*0\.75rem/);
+});
+
+it("keeps the filter toggle rail as short as the scrollbar", () => {
+  const toggleStart = baseCss.indexOf(".sh-skill-library__query-toggle {");
+  const toggleEnd = baseCss.indexOf("}", toggleStart);
+  const toggleBlock = baseCss.slice(toggleStart, toggleEnd);
+  expect(toggleBlock).toMatch(/height:\s*0\.75rem/);
+});
+
+it("overrides the generic filter button minimum height for the toggle rail", () => {
+  const overrideStart = baseCss.indexOf(".sh-skill-library__query-tools button.sh-skill-library__query-toggle");
+  const overrideEnd = baseCss.indexOf("}", overrideStart);
+  const overrideBlock = baseCss.slice(overrideStart, overrideEnd);
+  expect(overrideBlock).toMatch(/min-height:\s*0/);
+});
+
+it("anchors the collapsed filter toggle directly below the preset views", () => {
+  const collapsedStart = baseCss.indexOf(".sh-skill-library__query-tools.is-collapsed {");
+  const collapsedEnd = baseCss.indexOf("}", collapsedStart);
+  const collapsedBlock = baseCss.slice(collapsedStart, collapsedEnd);
+  expect(collapsedBlock).toMatch(/min-height:\s*1\.25rem/);
+  expect(collapsedBlock).toMatch(/margin-top:\s*calc\(-1 \* var\(--space-2\)\)/);
+
+  const toggleStart = baseCss.indexOf(
+    ".sh-skill-library__query-tools.is-collapsed .sh-skill-library__query-toggle",
+  );
+  const toggleEnd = baseCss.indexOf("}", toggleStart);
+  const toggleBlock = baseCss.slice(toggleStart, toggleEnd);
+  expect(toggleBlock).toMatch(/top:\s*0/);
+  expect(toggleBlock).toMatch(/bottom:\s*auto/);
+  expect(toggleBlock).toMatch(/transform:\s*translate\(-50%,\s*0\)/);
 });

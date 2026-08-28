@@ -101,6 +101,7 @@ it("isolates deterministic Skill detail preview data from production", async () 
 
   render(<AppRouter />);
   expect(await screen.findByRole("heading", { name: "PDF Reader" })).toBeVisible();
+  expect(screen.queryByRole("heading", { name: "Skill library" })).not.toBeInTheDocument();
   expect(
     await screen.findByRole("heading", { name: "Markdown workspace" }),
   ).toBeVisible();
@@ -118,6 +119,16 @@ it("isolates deterministic Skill detail preview data from production", async () 
   ).not.toBeInTheDocument();
 });
 
+it("keeps the Skill library shell title on the library route", async () => {
+  mockBrowserPreferences();
+  await skillHubI18n.changeLanguage("en-US");
+  await appRouter.navigate("/__preview/skill-library");
+
+  render(<AppRouter />);
+
+  expect(await screen.findByRole("heading", { name: "Skill library" })).toBeVisible();
+});
+
 it("isolates development preview data from the production Skill library route", async () => {
   mockBrowserPreferences();
   await skillHubI18n.changeLanguage("en-US");
@@ -126,6 +137,10 @@ it("isolates development preview data from the production Skill library route", 
   render(<AppRouter />);
 
   expect(await screen.findByText("PDF Reader")).toBeVisible();
+  expect(screen.getByRole("link", { name: "Skill library" })).toHaveAttribute(
+    "aria-current",
+    "page",
+  );
 
   await act(async () => {
     await appRouter.navigate("/library");
@@ -144,6 +159,7 @@ it("uses exact matching for the overview link while nested routes own current-pa
   expect(resolveRouteTitleKey("/__preview/skill-library")).toBe("navigation.library");
   expect(resolveRouteTitleKey("/__preview/skill-detail/skill-pdf")).toBe("navigation.library");
   expect(resolveRouteTitleKey("/projects/project-aurora")).toBe("navigation.projects");
+  expect(resolveRouteTitleKey("/recovery")).toBe("navigation.operations");
 });
 
 it("keeps shell titles for filtered agent and project deployment destinations", async () => {
@@ -153,13 +169,38 @@ it("keeps shell titles for filtered agent and project deployment destinations", 
   await appRouter.navigate("/agents/openai.codex-cli?view=deployments");
   render(<AppRouter />);
 
-  expect(await screen.findAllByRole("heading", { name: "Agents" })).toHaveLength(2);
+  expect(await screen.findAllByRole("heading", { name: "Agents" })).toHaveLength(1);
   expect(screen.getByRole("link", { name: "Agents" })).toHaveAttribute("aria-current", "page");
 
   await act(async () => {
     await appRouter.navigate("/projects/project-aurora?view=deployments");
   });
 
-  expect(await screen.findAllByRole("heading", { name: "Projects" })).toHaveLength(2);
+  expect(await screen.findAllByRole("heading", { name: "Projects" })).toHaveLength(1);
   expect(screen.getByRole("link", { name: "Projects" })).toHaveAttribute("aria-current", "page");
+});
+
+it("does not show fixture Agents or projects through production routes", async () => {
+  mockBrowserPreferences();
+  await skillHubI18n.changeLanguage("en-US");
+  await appRouter.navigate("/agents");
+  render(<AppRouter />);
+
+  expect(await screen.findByText("Agent data is not connected to the native service yet.")).toBeVisible();
+  expect(screen.queryByText("Demo Project")).not.toBeInTheDocument();
+
+  await act(async () => {
+    await appRouter.navigate("/projects");
+  });
+  expect(await screen.findByText("Project data is not connected to the native service yet.")).toBeVisible();
+  expect(screen.queryByText("Demo Project")).not.toBeInTheDocument();
+});
+
+it("keeps the production settings route behind the native settings contract", async () => {
+  mockBrowserPreferences();
+  await skillHubI18n.changeLanguage("en-US");
+  await appRouter.navigate("/settings");
+  render(<AppRouter />);
+
+  expect(await screen.findByText("settings_query is unavailable until the native contract is generated.")).toBeVisible();
 });

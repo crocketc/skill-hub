@@ -12,8 +12,10 @@ import { Button } from "./Button";
 
 interface DrawerBaseProps {
   children: ReactNode;
+  compactHeader?: boolean;
   closeLabel?: string;
   description?: string;
+  hideHeader?: boolean;
   leadingAccessory?: ReactNode;
   onOpenChange: (open: boolean) => void;
   open: boolean;
@@ -59,8 +61,10 @@ function usePrefersReducedMotion() {
 
 export function Drawer({
   children,
+  compactHeader = false,
   closeLabel,
   description,
+  hideHeader = false,
   leadingAccessory,
   onOpenChange,
   open,
@@ -80,7 +84,9 @@ export function Drawer({
       <Dialog.Portal>
         <Dialog.Overlay className="sh-overlay" />
         <Dialog.Content
-          className={["sh-drawer", panelClassName].filter(Boolean).join(" ")}
+          className={["sh-drawer", hideHeader ? "sh-drawer--headerless" : "", panelClassName]
+            .filter(Boolean)
+            .join(" ")}
           data-reduced-motion={String(reducedMotion)}
           data-testid="drawer-panel"
           onCloseAutoFocus={(event) => {
@@ -92,23 +98,38 @@ export function Drawer({
           style={panelStyle}
         >
           {leadingAccessory}
-          <header className="sh-drawer__header">
-            <div>
-              <Dialog.Title className="sh-drawer__title">{title}</Dialog.Title>
-              <Dialog.Description
-                className={
-                  description ? "sh-drawer__description" : "sh-visually-hidden"
-                }
-              >
+          {hideHeader ? (
+            <>
+              <Dialog.Title className="sh-visually-hidden">{title}</Dialog.Title>
+              <Dialog.Description className="sh-visually-hidden">
                 {description ?? title}
               </Dialog.Description>
-            </div>
-            <Dialog.Close asChild>
-              <Button aria-label={resolvedCloseLabel} size="sm" variant="ghost">
-                <span aria-hidden="true">×</span>
-              </Button>
-            </Dialog.Close>
-          </header>
+            </>
+          ) : (
+            <header className={`sh-drawer__header${compactHeader ? " sh-drawer__header--compact" : ""}`}>
+              <div>
+                <Dialog.Title className={compactHeader ? "sh-visually-hidden" : "sh-drawer__title"}>
+                  {title}
+                </Dialog.Title>
+                <Dialog.Description
+                  className={
+                    compactHeader
+                      ? "sh-visually-hidden"
+                      : description
+                        ? "sh-drawer__description"
+                        : "sh-visually-hidden"
+                  }
+                >
+                  {description ?? title}
+                </Dialog.Description>
+              </div>
+              <Dialog.Close asChild>
+                <Button aria-label={resolvedCloseLabel} size="sm" variant="ghost">
+                  <span aria-hidden="true">×</span>
+                </Button>
+              </Dialog.Close>
+            </header>
+          )}
           <div className="sh-drawer__body">{children}</div>
         </Dialog.Content>
       </Dialog.Portal>

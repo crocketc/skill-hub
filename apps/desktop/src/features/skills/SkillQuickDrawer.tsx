@@ -11,7 +11,7 @@ import {
   useState,
 } from "react";
 import { useTranslation } from "react-i18next";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { Button } from "../../ui/Button";
 import { Drawer } from "../../ui/Drawer";
 import type { SkillLibraryReturnState } from "../skill-detail/detailContext";
@@ -23,9 +23,13 @@ import {
   type DrawerPreset,
   type SkillDrawerPreferences,
   type SkillLibraryFacade,
+  type SkillMetadataPatch,
   type SkillQuickView,
   skillLibraryKeys,
 } from "./api";
+import { InvocationBadge } from "./InvocationBadge";
+import { BatchTagDialog, type BatchTagAction } from "./BatchTagDialog";
+import { AgentDeploymentIcons } from "./AgentDeploymentIcons";
 import {
   OPTIONAL_DRAWER_MODULES,
   clampDrawerWidth,
@@ -52,6 +56,8 @@ type OptionalDrawerModule = (typeof OPTIONAL_DRAWER_MODULES)[number];
 
 interface ModuleProps {
   view: SkillQuickView;
+  versionsHref?: string;
+  versionsState?: { libraryReturn: SkillLibraryReturnState };
 }
 
 interface ModuleCardProps {
@@ -114,34 +120,99 @@ function ValueList({ values }: { values: string[] }) {
   );
 }
 
+const MAX_VISIBLE_PROJECTS = 3;
+
 function RelationsModule({ view }: ModuleProps) {
   const { t } = useTranslation();
+  const [projectsExpanded, setProjectsExpanded] = useState(false);
+  const agentDeployments = view.agentDeployments ?? [];
+  const projects = view.projectDeployments ?? [];
+  const visibleProjects = projectsExpanded ? projects : projects.slice(0, MAX_VISIBLE_PROJECTS);
+  const hiddenProjectCount = Math.max(0, projects.length - MAX_VISIBLE_PROJECTS);
+
   return (
     <ModuleCard title={t(MODULE_LABEL_KEYS.relations)}>
-      <dl className="sh-skill-drawer__facts">
-        <div>
-          <dt>{t("skillLibrary.drawer.values.agents")}</dt>
-          <dd>{view.agentDeploymentCount}</dd>
+      <div className="sh-skill-drawer__relations-grid">
+        <div className="sh-skill-drawer__relation-group">
+          <div className="sh-skill-drawer__relation-heading">
+            <strong>{t("skillLibrary.drawer.values.agents")}</strong>
+            <span className="sh-skill-drawer__relation-count">{view.agentDeploymentCount}</span>
+          </div>
+          {agentDeployments.length > 0 ? (
+            <AgentDeploymentIcons
+              agents={agentDeployments}
+              ariaLabel={t("skillLibrary.table.agentDeploymentSummary", {
+                count: view.agentDeploymentCount,
+              })}
+            />
+          ) : (
+            <EmptyValue />
+          )}
         </div>
-        <div>
-          <dt>{t("skillLibrary.drawer.values.projects")}</dt>
-          <dd>{view.projectDeploymentCount}</dd>
+        <div className="sh-skill-drawer__relation-group">
+          <div className="sh-skill-drawer__relation-heading">
+            <strong>{t("skillLibrary.drawer.values.projects")}</strong>
+            <span className="sh-skill-drawer__relation-count">{view.projectDeploymentCount}</span>
+          </div>
+          {projects.length > 0 ? (
+            <>
+              <ul className="sh-skill-drawer__project-list">
+                {visibleProjects.map((project) => (
+                  <li key={project.id}>
+                    <strong title={project.name}>{project.name}</strong>
+                    <code title={project.path}>{project.path}</code>
+                  </li>
+                ))}
+              </ul>
+              {hiddenProjectCount > 0 ? (
+                <button
+                  aria-expanded={projectsExpanded}
+                  className="sh-skill-drawer__project-toggle"
+                  onClick={() => setProjectsExpanded((current) => !current)}
+                  type="button"
+                >
+                  {projectsExpanded
+                    ? t("skillLibrary.drawer.relations.showFewerProjects")
+                    : t("skillLibrary.drawer.relations.showMoreProjects", {
+                        count: hiddenProjectCount,
+                      })}
+                </button>
+              ) : null}
+            </>
+          ) : (
+            <EmptyValue />
+          )}
         </div>
-      </dl>
+      </div>
     </ModuleCard>
   );
 }
 
-function VersionsModule({ view }: ModuleProps) {
+function VersionsModule({ versionsHref, versionsState, view }: ModuleProps) {
   const { t } = useTranslation();
   return (
     <ModuleCard title={t(MODULE_LABEL_KEYS.versions)}>
       <p>{t("skillLibrary.drawer.values.currentVersion", { version: view.currentVersion })}</p>
-      <p className="sh-skill-drawer__secondary">
-        {view.upgradeAvailable
-          ? t("skillLibrary.drawer.values.updateAvailable")
-          : t("skillLibrary.drawer.values.upToDate")}
-      </p>
+      {view.upgradeAvailable ? (
+        <div className="sh-skill-drawer__version-update">
+          <p className="sh-skill-drawer__secondary">
+            {t("skillLibrary.drawer.values.updateAvailable")}
+          </p>
+          {versionsHref ? (
+            <Link
+              className="sh-button sh-button--secondary sh-button--sm"
+              state={versionsState}
+              to={versionsHref}
+            >
+              {t("skillLibrary.drawer.viewUpdate")}
+            </Link>
+          ) : null}
+        </div>
+      ) : (
+        <p className="sh-skill-drawer__secondary">
+          {t("skillLibrary.drawer.values.upToDate")}
+        </p>
+      )}
     </ModuleCard>
   );
 }
@@ -192,6 +263,7 @@ function InvocationRequirementsModule({ view }: ModuleProps) {
     <ModuleCard title={t(MODULE_LABEL_KEYS.invocation_requirements)}>
       <p>
         <strong>{t("skillLibrary.drawer.values.invocation")}</strong>{" "}
+        <InvocationBadge policy={view.invocationPolicy} />{" "}
         {view.invocation ?? <EmptyValue />}
       </p>
       <ValueList values={view.requirements} />
@@ -222,23 +294,26 @@ function ExternalChangesModule({ view }: ModuleProps) {
 
 function UsageEvidenceModule({ view }: ModuleProps) {
   const { t } = useTranslation();
-  if (!view.usageEvidence) {
-    return null;
-  }
   return (
     <ModuleCard title={t(MODULE_LABEL_KEYS.usage_evidence)}>
-      <p>
-        {t("skillLibrary.drawer.values.invocationCount", {
-          count: view.usageEvidence.invocationCount,
-        })}
-      </p>
-      {view.usageEvidence.lastUsedAt ? (
-        <p className="sh-skill-drawer__secondary">
-          {t("skillLibrary.drawer.values.lastUsed", {
-            value: view.usageEvidence.lastUsedAt,
-          })}
-        </p>
-      ) : null}
+      {view.usageEvidence ? (
+        <>
+          <p>
+            {t("skillLibrary.drawer.values.invocationCount", {
+              count: view.usageEvidence.invocationCount,
+            })}
+          </p>
+          {view.usageEvidence.lastUsedAt ? (
+            <p className="sh-skill-drawer__secondary">
+              {t("skillLibrary.drawer.values.lastUsed", {
+                value: view.usageEvidence.lastUsedAt,
+              })}
+            </p>
+          ) : null}
+        </>
+      ) : (
+        <EmptyValue />
+      )}
     </ModuleCard>
   );
 }
@@ -257,27 +332,122 @@ const OPTIONAL_MODULE_RENDERERS: Record<
   versions: VersionsModule,
 };
 
-function IdentityRegion({ view }: ModuleProps) {
+interface IdentityRegionProps extends ModuleProps {
+  editingField?: "alias" | "note";
+  editingValue: string;
+  onBeginEdit: (field: "alias" | "note") => void;
+  onChange: (value: string) => void;
+  onCommit: () => void;
+}
+
+function IdentityRegion({
+  editingField,
+  editingValue,
+  onBeginEdit,
+  onChange,
+  onCommit,
+  view,
+}: IdentityRegionProps) {
   const { t } = useTranslation();
   return (
     <section className="sh-skill-drawer__identity">
-      <div>
+      <div className="sh-skill-drawer__identity-heading">
         <h2>{view.name}</h2>
-        {view.alias ? <span>{view.alias}</span> : null}
+        <span className="sh-skill-drawer__field-label">
+          {t("skillLibrary.drawer.values.alias")}:
+        </span>
+        {editingField === "alias" ? (
+          <input
+            aria-label={t("skillLibrary.drawer.values.alias")}
+            autoFocus
+            onBlur={onCommit}
+            onChange={(event) => onChange(event.currentTarget.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") onCommit();
+              if (event.key === "Escape") onCommit();
+            }}
+            type="text"
+            value={editingValue}
+          />
+        ) : (
+          <span>{view.alias ?? <EmptyValue />}</span>
+        )}
+        <button
+          aria-label={t("skillLibrary.drawer.editAlias")}
+          className="sh-skill-drawer__edit-icon"
+          onClick={() => onBeginEdit("alias")}
+          title={t("skillLibrary.drawer.editAlias")}
+          type="button"
+        >
+          <span aria-hidden="true">✎</span>
+        </button>
       </div>
-      <p>{view.purpose}</p>
-      <p className="sh-skill-drawer__secondary">
-        {view.translatedDescription ?? view.originalDescription ?? t("skillLibrary.drawer.emptyValue")}
-      </p>
+      <div className="sh-skill-drawer__field">
+        <span className="sh-skill-drawer__field-label">
+          {t("skillLibrary.drawer.values.originalDescription")}:
+        </span>
+        <span className="sh-skill-drawer__field-value">
+          {view.originalDescription ?? <EmptyValue />}
+        </span>
+      </div>
+      {view.translatedDescription ? (
+        <div className="sh-skill-drawer__field">
+          <span className="sh-skill-drawer__field-label">
+            {t("skillLibrary.drawer.values.translatedDescription")}:
+          </span>
+          <span className="sh-skill-drawer__field-value sh-skill-drawer__secondary">
+            {view.translatedDescription}
+          </span>
+        </div>
+      ) : null}
+      <div className="sh-skill-drawer__field">
+        <span className="sh-skill-drawer__field-label">
+          {t("skillLibrary.drawer.values.purpose")}:
+        </span>
+        <span className="sh-skill-drawer__field-value">{view.purpose}</span>
+      </div>
+      <div className="sh-skill-drawer__note">
+        <span className="sh-skill-drawer__note-label">
+          {t("skillLibrary.drawer.values.note")}:
+        </span>
+        {editingField === "note" ? (
+          <input
+            aria-label={t("skillLibrary.drawer.values.note")}
+            autoFocus
+            onBlur={onCommit}
+            onChange={(event) => onChange(event.currentTarget.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") onCommit();
+              if (event.key === "Escape") onCommit();
+            }}
+            type="text"
+            value={editingValue}
+          />
+        ) : (
+          <span className="sh-skill-drawer__secondary">
+            {view.note ?? <EmptyValue />}
+          </span>
+        )}
+        <button
+          aria-label={t("skillLibrary.drawer.editNote")}
+          className="sh-skill-drawer__edit-icon"
+          onClick={() => onBeginEdit("note")}
+          title={t("skillLibrary.drawer.editNote")}
+          type="button"
+        >
+          <span aria-hidden="true">✎</span>
+        </button>
+      </div>
     </section>
   );
 }
 
 interface PrimaryActionsProps extends ModuleProps {
   facade: SkillLibraryFacade;
+  onTagAction: (action: BatchTagAction) => void;
 }
 
-function PrimaryActions({ facade, view }: PrimaryActionsProps) {
+function PrimaryActions({ facade, onTagAction, view }: PrimaryActionsProps) {
   const { t } = useTranslation();
   const emitIntent = (action: BatchAction) => {
     void facade
@@ -291,6 +461,12 @@ function PrimaryActions({ facade, view }: PrimaryActionsProps) {
     <section aria-label={t(MODULE_LABEL_KEYS.primary_actions)} className="sh-skill-drawer__actions">
       <Button onClick={() => emitIntent("add_to")} size="sm">
         {t("skillLibrary.drawer.actions.addTo")}
+      </Button>
+      <Button onClick={() => onTagAction("add_tag")} size="sm" variant="secondary">
+        {t("skillLibrary.drawer.actions.addTags")}
+      </Button>
+      <Button onClick={() => onTagAction("remove_tag")} size="sm" variant="secondary">
+        {t("skillLibrary.drawer.actions.removeTags")}
       </Button>
       <Button onClick={() => emitIntent("security_check")} size="sm" variant="secondary">
         {t("skillLibrary.drawer.actions.securityCheck")}
@@ -317,6 +493,7 @@ function RiskSummary({ view }: ModuleProps) {
 }
 
 interface DrawerConfigurationProps {
+  onMoveAfter: (moved: DrawerModuleId, after: DrawerModuleId) => void;
   onMoveBefore: (moved: DrawerModuleId, before: DrawerModuleId) => void;
   onReset: () => void;
   onToggle: (moduleId: DrawerModuleId, visible: boolean) => void;
@@ -324,6 +501,7 @@ interface DrawerConfigurationProps {
 }
 
 function DrawerConfiguration({
+  onMoveAfter,
   onMoveBefore,
   onReset,
   onToggle,
@@ -331,46 +509,82 @@ function DrawerConfiguration({
 }: DrawerConfigurationProps) {
   const { t } = useTranslation();
   const visible = new Set(preferences.visibleModules);
-  const optionalOrder = preferences.moduleOrder.filter((moduleId) =>
-    OPTIONAL_DRAWER_MODULES.includes(moduleId as OptionalDrawerModule),
-  );
+  const [draggedModule, setDraggedModule] = useState<DrawerModuleId | null>(null);
+  const [dragOverModule, setDragOverModule] = useState<DrawerModuleId | null>(null);
+  const suppressToggleClick = useRef(false);
+
+  const clearDragState = () => {
+    setDraggedModule(null);
+    setDragOverModule(null);
+  };
+
   return (
     <section
       aria-label={t("skillLibrary.drawer.configure")}
       className="sh-skill-drawer__configuration"
     >
-      <fieldset>
+      <fieldset className="sh-skill-drawer__module-toggles">
         <legend>{t("skillLibrary.drawer.moduleVisibility")}</legend>
         {preferences.moduleOrder.map((moduleId) => (
-          <label key={moduleId}>
-            <input
-              aria-label={t(MODULE_LABEL_KEYS[moduleId])}
-              checked={visible.has(moduleId)}
-              disabled={isRequiredDrawerModule(moduleId)}
-              onChange={(event) => onToggle(moduleId, event.currentTarget.checked)}
-              type="checkbox"
-            />
+          <button
+            aria-pressed={visible.has(moduleId)}
+            className={`sh-skill-drawer__module-toggle${
+              visible.has(moduleId) ? " sh-skill-drawer__module-toggle--visible" : ""
+            }${
+              isRequiredDrawerModule(moduleId)
+                ? " sh-skill-drawer__module-toggle--locked"
+                : ""
+            }${dragOverModule === moduleId ? " sh-skill-drawer__module-toggle--target" : ""}`}
+            disabled={isRequiredDrawerModule(moduleId)}
+            draggable={!isRequiredDrawerModule(moduleId)}
+            key={moduleId}
+            onClick={() => {
+              if (suppressToggleClick.current) {
+                suppressToggleClick.current = false;
+                return;
+              }
+              onToggle(moduleId, !visible.has(moduleId));
+            }}
+            onDragEnd={() => {
+              clearDragState();
+              window.setTimeout(() => {
+                suppressToggleClick.current = false;
+              }, 0);
+            }}
+            onDragOver={(event) => {
+              if (draggedModule && draggedModule !== moduleId) {
+                event.preventDefault();
+                setDragOverModule(moduleId);
+              }
+            }}
+            onDragStart={() => {
+              suppressToggleClick.current = true;
+              setDraggedModule(moduleId);
+              setDragOverModule(null);
+            }}
+            onDrop={(event) => {
+              event.preventDefault();
+              if (draggedModule && draggedModule !== moduleId) {
+                const draggedIndex = preferences.moduleOrder.indexOf(draggedModule);
+                const targetIndex = preferences.moduleOrder.indexOf(moduleId);
+                if (draggedIndex < targetIndex) {
+                  onMoveAfter(draggedModule, moduleId);
+                } else {
+                  onMoveBefore(draggedModule, moduleId);
+                }
+                suppressToggleClick.current = true;
+                window.setTimeout(() => {
+                  suppressToggleClick.current = false;
+                }, 0);
+              }
+              clearDragState();
+            }}
+            type="button"
+          >
             {t(MODULE_LABEL_KEYS[moduleId])}
-          </label>
+          </button>
         ))}
       </fieldset>
-      <div className="sh-skill-drawer__reorder">
-        {optionalOrder.map((moduleId, index) => {
-          const before = optionalOrder[index - 1];
-          return before ? (
-            <button
-              key={moduleId}
-              onClick={() => onMoveBefore(moduleId, before)}
-              type="button"
-            >
-              {t("skillLibrary.drawer.moveBefore", {
-                before: t(MODULE_LABEL_KEYS[before]).toLocaleLowerCase(),
-                module: t(MODULE_LABEL_KEYS[moduleId]).toLocaleLowerCase(),
-              })}
-            </button>
-          ) : null;
-        })}
-      </div>
       <Button onClick={onReset} size="sm" variant="secondary">
         {t("skillLibrary.drawer.reset")}
       </Button>
@@ -407,9 +621,14 @@ export function SkillQuickDrawer({
   skillId,
 }: SkillQuickDrawerProps) {
   const { t } = useTranslation();
+  const location = useLocation();
   const [configurationOpen, setConfigurationOpen] = useState(false);
   const [dragWidthPx, setDragWidthPx] = useState<number>();
+  const [editingField, setEditingField] = useState<"alias" | "note">();
+  const [editingValue, setEditingValue] = useState("");
   const [localPreferenceSaveFailed, setLocalPreferenceSaveFailed] = useState(false);
+  const [localView, setLocalView] = useState<SkillQuickView>();
+  const [tagAction, setTagAction] = useState<BatchTagAction>();
   const dragSessionRef = useRef<DragSession>();
   const preferenceSaveQueueRef = useRef<Promise<void>>(Promise.resolve());
   const preferenceSaveRequestRef = useRef(0);
@@ -494,6 +713,19 @@ export function SkillQuickDrawer({
         before,
       ),
     });
+  };
+
+  const moveModuleAfter = (moved: DrawerModuleId, after: DrawerModuleId) => {
+    const moduleOrder = [...normalizedPreferences.moduleOrder];
+    const movedIndex = moduleOrder.indexOf(moved);
+    const afterIndex = moduleOrder.indexOf(after);
+    if (movedIndex < 0 || afterIndex < 0 || moved === after) {
+      return;
+    }
+    moduleOrder.splice(movedIndex, 1);
+    const nextAfterIndex = moduleOrder.indexOf(after);
+    moduleOrder.splice(nextAfterIndex + 1, 0, moved);
+    persistPreferences({ ...normalizedPreferences, moduleOrder });
   };
 
   const completeResize = (pointerId: number, persistWidth: boolean) => {
@@ -615,11 +847,62 @@ export function SkillQuickDrawer({
       tabIndex={0}
     />
   );
-  const view = detailQuery.data;
+  useEffect(() => {
+    if (detailQuery.data) {
+      setLocalView(detailQuery.data);
+      setEditingField(undefined);
+      setEditingValue("");
+    } else {
+      setLocalView(undefined);
+    }
+  }, [detailQuery.data]);
+
+  const view = localView ?? detailQuery.data;
+  const versionsHref = skillId
+    ? `${location.pathname.startsWith("/__preview") ? "/__preview/skill-detail" : "/library"}/${skillId}${detailSearch}#versions`
+    : undefined;
+  const versionsState = libraryReturn ? { libraryReturn } : undefined;
+
+  const beginEdit = (field: "alias" | "note") => {
+    if (!view) return;
+    setEditingField(field);
+    setEditingValue(field === "alias" ? view.alias ?? "" : view.note ?? "");
+  };
+
+  const commitEdit = () => {
+    if (!editingField || !view) return;
+    const value = editingValue.trim();
+    const patch: SkillMetadataPatch =
+      editingField === "alias" ? { alias: value || null } : { note: value || null };
+    setLocalView({
+      ...view,
+      ...(editingField === "alias"
+        ? { alias: value || undefined }
+        : { note: value || undefined }),
+    });
+    setEditingField(undefined);
+    setEditingValue("");
+    const save = facade.saveSkillMetadata?.(view.id, patch);
+    void save?.catch(() => undefined);
+  };
+
+  const confirmTagAction = (tags: string[]) => {
+    if (!tagAction || !view) return;
+    const action = tagAction;
+    setTagAction(undefined);
+    void facade
+      .emitBatchIntent({
+        action,
+        tags,
+        target: { kind: "skill_ids", skillIds: [view.id] },
+      })
+      .catch(() => undefined);
+  };
 
   return (
     <Drawer
       description={t("skillLibrary.drawer.description")}
+      hideHeader
       leadingAccessory={resizeHandle}
       onOpenChange={onOpenChange}
       open={open}
@@ -636,26 +919,52 @@ export function SkillQuickDrawer({
       >
         <div className="sh-skill-drawer__chrome">
           <div className="sh-skill-drawer__toolbar">
-            <Button
-              aria-expanded={configurationOpen}
-              onClick={() => setConfigurationOpen((current) => !current)}
-              size="sm"
-              variant="ghost"
-            >
-              {t("skillLibrary.drawer.configure")}
-            </Button>
-            <div aria-label={t("skillLibrary.drawer.presets.label")} className="sh-skill-drawer__presets" role="group">
-              {(["standard", "wide", "near_full"] as const).map((preset) => (
-                <Button
-                  aria-pressed={normalizedPreferences.preset === preset}
-                  key={preset}
-                  onClick={() => choosePreset(preset)}
-                  size="sm"
-                  variant={normalizedPreferences.preset === preset ? "secondary" : "ghost"}
-                >
-                  {t(PRESET_LABEL_KEYS[preset])}
-                </Button>
-              ))}
+            {view && skillId ? (
+              <Link
+                className="sh-button sh-button--primary sh-button--sm"
+                state={libraryReturn ? { libraryReturn } : undefined}
+                to={{ pathname: `${location.pathname.startsWith("/__preview") ? "/__preview/skill-detail" : "/library"}/${skillId}`, search: detailSearch }}
+              >
+                {t("skillLibrary.drawer.fullDetails")}
+              </Link>
+            ) : <span />}
+            <div className="sh-skill-drawer__toolbar-end">
+              <Button
+                aria-expanded={configurationOpen}
+                onClick={() => setConfigurationOpen((current) => !current)}
+                size="sm"
+                variant="ghost"
+              >
+                {t("skillLibrary.drawer.configure")}
+              </Button>
+              <div aria-label={t("skillLibrary.drawer.presets.label")} className="sh-skill-drawer__presets" role="group">
+                {(["standard", "wide", "near_full"] as const).map((preset) => (
+                  <Button
+                    aria-label={t(PRESET_LABEL_KEYS[preset])}
+                    aria-pressed={normalizedPreferences.preset === preset}
+                    className="sh-skill-drawer__preset-icon-button"
+                    key={preset}
+                    onClick={() => choosePreset(preset)}
+                    size="sm"
+                    title={t(PRESET_LABEL_KEYS[preset])}
+                    variant={normalizedPreferences.preset === preset ? "secondary" : "ghost"}
+                  >
+                    <span
+                      aria-hidden="true"
+                      className={`sh-skill-drawer__preset-icon sh-skill-drawer__preset-icon--${preset}`}
+                    />
+                  </Button>
+                ))}
+              </div>
+              <Button
+                aria-label={t("actions.close")}
+                className="sh-skill-drawer__close-button"
+                onClick={() => onOpenChange(false)}
+                size="sm"
+                variant="ghost"
+              >
+                <span aria-hidden="true">×</span>
+              </Button>
             </div>
           </div>
 
@@ -682,8 +991,15 @@ export function SkillQuickDrawer({
             </div>
           ) : view ? (
             <div className="sh-skill-drawer__fixed">
-              <IdentityRegion view={view} />
-              <PrimaryActions facade={facade} view={view} />
+              <IdentityRegion
+                editingField={editingField}
+                editingValue={editingValue}
+                onBeginEdit={beginEdit}
+                onChange={setEditingValue}
+                onCommit={commitEdit}
+                view={view}
+              />
+              <PrimaryActions facade={facade} onTagAction={setTagAction} view={view} />
               <RiskSummary view={view} />
             </div>
           ) : null}
@@ -695,6 +1011,7 @@ export function SkillQuickDrawer({
         >
           {configurationOpen ? (
             <DrawerConfiguration
+              onMoveAfter={moveModuleAfter}
               onMoveBefore={moveModuleBefore}
               onReset={() =>
                 persistPreferences({
@@ -713,28 +1030,29 @@ export function SkillQuickDrawer({
                 if (!visibleModules.has(moduleId)) {
                   return null;
                 }
-                if (moduleId === "usage_evidence" && !view.usageEvidence) {
-                  return null;
-                }
                 const ModuleRenderer = OPTIONAL_MODULE_RENDERERS[moduleId];
-                return <ModuleRenderer key={moduleId} view={view} />;
+                return (
+                  <ModuleRenderer
+                    key={moduleId}
+                    versionsHref={versionsHref}
+                    versionsState={versionsState}
+                    view={view}
+                  />
+                );
               })}
             </div>
           ) : null}
         </div>
 
-        {view && skillId ? (
-          <footer className="sh-skill-drawer__footer">
-            <Link
-              className="sh-button sh-button--secondary sh-button--sm"
-              state={libraryReturn ? { libraryReturn } : undefined}
-              to={{ pathname: `/library/${skillId}`, search: detailSearch }}
-            >
-              {t("skillLibrary.drawer.fullDetails")}
-            </Link>
-          </footer>
-        ) : null}
       </div>
+      {tagAction ? (
+        <BatchTagDialog
+          action={tagAction}
+          count={1}
+          onCancel={() => setTagAction(undefined)}
+          onConfirm={confirmTagAction}
+        />
+      ) : null}
     </Drawer>
   );
 }

@@ -1,6 +1,7 @@
 pub mod agent;
 pub mod deployment;
 pub mod import;
+pub mod invocation;
 pub mod requirements;
 pub mod scanner;
 pub mod security;

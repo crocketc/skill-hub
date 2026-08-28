@@ -42,6 +42,9 @@ export function SkillDetailPage({
   const { t } = useTranslation();
   const location = useLocation();
   const { skillId = "" } = useParams();
+  const isPreviewRoute = location.pathname.startsWith("/__preview/");
+  const backPathname = isPreviewRoute ? "/__preview/skill-library" : "/library";
+  const detailPathname = isPreviewRoute ? "/__preview/skill-detail" : "/library";
   const libraryReturn = readLibraryReturnState(location.state);
   const backSearch = detailSearchFromLibrary(location.search);
   const libraryQuery = parseSkillLibrarySearchParams(backSearch).query;
@@ -52,7 +55,7 @@ export function SkillDetailPage({
     retry: false,
   });
   const adjacentQuery = useQuery({
-    enabled: hasLibraryContext,
+    enabled: isPreviewRoute || hasLibraryContext,
     queryFn: () => facade.getAdjacentContext(skillId, libraryQuery),
     queryKey: skillDetailKeys.adjacent(skillId, libraryQuery),
   });
@@ -95,30 +98,42 @@ export function SkillDetailPage({
 
   return (
     <section className="sh-skill-detail">
-      <DetailHeader adjacent={adjacentQuery.data} backSearch={backSearch} summary={summaryQuery.data} />
       <div className="sh-skill-detail__layout">
-        <DetailSectionNav />
+        <aside className="sh-skill-detail__rail">
+          <DetailHeader
+            backPathname={backPathname}
+            backSearch={backSearch}
+            libraryReturn={libraryReturn}
+            summary={summaryQuery.data}
+          />
+          <DetailSectionNav
+            adjacent={adjacentQuery.data}
+            backSearch={backSearch}
+            detailPathname={detailPathname}
+          />
+        </aside>
         <main className="sh-skill-detail__content">
           {DETAIL_SECTIONS.map((section) => (
-            <section className="sh-skill-detail__section" id={section} key={section}>
+            <section className={`sh-skill-detail__section sh-skill-detail__section--${section}`} id={section} key={section}>
               <h2>{t(`skillDetail.navigation.sections.${section}`)}</h2>
               {section === "overview" ? (
                 <>
                   <p>{summaryQuery.data.purpose}</p>
                   <LifecyclePanel summary={summaryQuery.data} />
+                  <DetailStatusRail facade={facade} skillId={skillId} summary={summaryQuery.data} />
                 </>
               ) : null}
               {section === "description" ? (
-                <>
-                  {metadataQuery.isPending ? (
-                    <p role="status">{t("skillDetail.states.loadingMetadata")}</p>
-                  ) : metadataQuery.isError || !metadataQuery.data ? (
-                    <p role="alert">{t("skillDetail.states.metadataError")}</p>
-                  ) : (
-                    <MetadataPanel facade={facade} metadata={metadataQuery.data} skillId={skillId} />
-                  )}
-                  <MarkdownWorkspace facade={markdownFacade} skillId={skillId} />
-                </>
+                <MarkdownWorkspace facade={markdownFacade} skillId={skillId} />
+              ) : null}
+              {section === "metadata" ? (
+                metadataQuery.isPending ? (
+                  <p role="status">{t("skillDetail.states.loadingMetadata")}</p>
+                ) : metadataQuery.isError || !metadataQuery.data ? (
+                  <p role="alert">{t("skillDetail.states.metadataError")}</p>
+                ) : (
+                  <MetadataPanel facade={facade} metadata={metadataQuery.data} skillId={skillId} />
+                )
               ) : null}
               {section === "relations" ? (
                 relationsQuery.isError ? (
@@ -131,7 +146,10 @@ export function SkillDetailPage({
                 ) : relationsQuery.data ? <RelationsPanel relations={relationsQuery.data} /> : null
               ) : null}
               {section === "requirements" && requirementsQuery.data ? (
-                <RequirementsPanel requirements={requirementsQuery.data} />
+                <RequirementsPanel
+                  invocation={metadataQuery.data?.invocation}
+                  requirements={requirementsQuery.data}
+                />
               ) : null}
               {section === "security" ? <SecurityEvidence summary={summaryQuery.data} /> : null}
               {section === "connections" && insightsQuery.data ? (
@@ -140,11 +158,12 @@ export function SkillDetailPage({
               {section === "external" && insightsQuery.data ? (
                 <ExternalHistoryEvidence insights={insightsQuery.data} />
               ) : null}
-              {section === "versions" ? <VersionTimeline facade={facade} skillId={skillId} /> : null}
+              {section === "versions" ? (
+                <VersionTimeline facade={facade} skillId={skillId} summary={summaryQuery.data} />
+              ) : null}
             </section>
           ))}
         </main>
-        <DetailStatusRail facade={facade} skillId={skillId} summary={summaryQuery.data} />
       </div>
     </section>
   );

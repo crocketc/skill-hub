@@ -48,12 +48,44 @@ export interface MockSkillDetailOptions {
   failTrialSave?: boolean;
   missingSkill?: boolean;
   sharedPhysicalTarget?: boolean;
+  summary?: Partial<SkillDetailSummary>;
   usageEvidence?: SkillDetailInsights["usageEvidence"] | null;
 }
 
 export interface MockSkillDetailFacade extends SkillDetailFacade {
   calls: MockSkillDetailCalls;
 }
+
+const previewSkillOrder = ["skill-doc", "skill-pdf", "skill-sheet"] as const;
+const previewSkillTotal = 80;
+
+const previewSkillSummaries: Record<string, Partial<SkillDetailSummary>> = {
+  "skill-doc": {
+    alias: "DOCX 文档写作",
+    name: "DOCX Writer",
+    purpose: "Create Word documents",
+  },
+  "skill-sheet": {
+    alias: "表格数据读取",
+    name: "Spreadsheet Reader",
+    purpose: "Read spreadsheet data",
+  },
+};
+
+const previewSkillMetadata: Record<string, Partial<SkillMetadata>> = {
+  "skill-doc": {
+    invocation: "docx-writer <file>",
+    originalDescription: "Create and update Word documents.",
+    source: "github:example/docx-writer",
+    tags: ["documents", "word"],
+  },
+  "skill-sheet": {
+    invocation: "spreadsheet-reader <file>",
+    originalDescription: "Read spreadsheet data safely.",
+    source: "github:example/spreadsheet-reader",
+    tags: ["documents", "spreadsheet"],
+  },
+};
 
 export function detailFixture(
   options: DetailFixtureOptions = {},
@@ -83,6 +115,7 @@ export function detailFixture(
       alias: "PDF 表格读取器",
       author: "Example Author",
       copyright: "Copyright 2026 Example Author",
+      invocation: "pdf-reader <file>",
       license: "MIT",
       note: "用于 PDF 表格提取",
       originalDescription: "Original description",
@@ -256,23 +289,44 @@ export function createMockSkillDetailFacade(
     async emitIntent(intent) {
       calls.intents.push(intent);
     },
-    async getAdjacentContext() {
-      return "adjacent" in options
-        ? options.adjacent ?? { position: 1, total: 1 }
-        : fixture.adjacent;
+    async getAdjacentContext(skillId) {
+      if ("adjacent" in options) {
+        return options.adjacent ?? { position: 1, total: 1 };
+      }
+      const position = Math.max(0, previewSkillOrder.indexOf(skillId as (typeof previewSkillOrder)[number]));
+      const previousId = previewSkillOrder[position - 1];
+      const nextId = previewSkillOrder[position + 1];
+      return {
+        next: nextId
+          ? { id: nextId, name: previewSkillSummaries[nextId]?.name ?? nextId }
+          : undefined,
+        position: position + 1,
+        previous: previousId
+          ? { id: previousId, name: previewSkillSummaries[previousId]?.name ?? previousId }
+          : undefined,
+        total: previewSkillTotal,
+      };
     },
     async getInsights() {
       return insights;
     },
-    async getMetadata() {
-      return metadata;
+    async getMetadata(skillId) {
+      return {
+        ...metadata,
+        ...previewSkillSummaries[skillId],
+        ...previewSkillMetadata[skillId],
+      };
     },
-    async getRelations() {
+    async getRelations(skillId) {
       if (options.failRelations || relationFailures > 0) {
         relationFailures = Math.max(0, relationFailures - 1);
         throw new Error("relations failed");
       }
-      return relations;
+      if (skillId === "skill-pdf") return relations;
+      return relations.map((relation) => ({
+        ...relation,
+        physicalTarget: relation.physicalTarget.replace("pdf-reader", skillId),
+      }));
     },
     async getRequirements() {
       return fixture.requirements;
@@ -289,7 +343,12 @@ export function createMockSkillDetailFacade(
         summaryFailures -= 1;
         throw new Error("summary failed");
       }
-      return summary;
+      return {
+        ...summary,
+        ...options.summary,
+        ...previewSkillSummaries[skillId],
+        id: skillId,
+      };
     },
     async getVersionDiff() {
       return fixture.versionDiff;

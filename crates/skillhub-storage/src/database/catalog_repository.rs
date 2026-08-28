@@ -134,6 +134,8 @@ fn policy_code(v: CallPolicy) -> &'static str {
     match v {
         CallPolicy::AutomaticAndManual => "automatic_and_manual",
         CallPolicy::ManualOnly => "manual_only",
+        CallPolicy::ModelOnly => "model_only",
+        CallPolicy::Disabled => "disabled",
     }
 }
 fn lifecycle_code(v: SkillLifecycle) -> &'static str {
@@ -147,6 +149,8 @@ fn parse_policy(v: &str) -> AppResult<CallPolicy> {
     match v {
         "manual_only" => Ok(CallPolicy::ManualOnly),
         "automatic_and_manual" => Ok(CallPolicy::AutomaticAndManual),
+        "model_only" => Ok(CallPolicy::ModelOnly),
+        "disabled" => Ok(CallPolicy::Disabled),
         _ => Err(AppError::new(
             ErrorCode::CatalogInvalidMetadata,
             Severity::Error,

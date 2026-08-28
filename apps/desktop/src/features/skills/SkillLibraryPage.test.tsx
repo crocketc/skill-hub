@@ -86,6 +86,30 @@ afterEach(() => {
 });
 
 describe("SkillLibraryPage", () => {
+  it("collapses and expands the filters with a compact toggle", async () => {
+    const facade = createMockSkillLibraryFacade();
+    renderLibrary({ facade });
+
+    const collapse = await screen.findByRole("button", { name: "Collapse filters" });
+    expect(collapse).toHaveAttribute("aria-expanded", "true");
+    fireEvent.click(collapse);
+
+    expect(screen.queryByRole("searchbox", { name: "Search skills" })).not.toBeInTheDocument();
+    const expand = screen.getByRole("button", { name: "Expand filters" });
+    expect(expand).toHaveAttribute("aria-expanded", "false");
+    fireEvent.click(expand);
+
+    expect(await screen.findByRole("searchbox", { name: "Search skills" })).toBeVisible();
+  });
+
+  it("places the page result status in the results toolbar", async () => {
+    const facade = createMockSkillLibraryFacade({ total: 80 });
+    renderLibrary({ facade });
+
+    const status = await screen.findByText("Page 1 · 80 results");
+    expect(status.closest(".sh-skill-table__toolbar")).toBeInTheDocument();
+  });
+
   it("distinguishes current-page selection from all filtered results", async () => {
     const facade = createMockSkillLibraryFacade({ total: 80 });
     renderLibrary({ facade });
@@ -110,6 +134,57 @@ describe("SkillLibraryPage", () => {
       });
     });
     expect(screen.queryByText("Security check completed")).not.toBeInTheDocument();
+  });
+
+  it("previews and confirms batch tag additions for the selected skills", async () => {
+    const facade = createMockSkillLibraryFacade();
+    renderLibrary({ facade });
+
+    fireEvent.click(
+      await screen.findByRole("checkbox", { name: "Select PDF Reader" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Add tags" }));
+
+    const dialog = await screen.findByRole("dialog", { name: "Add tags" });
+    expect(within(dialog).getByText("This will affect 1 Skill")).toBeVisible();
+    fireEvent.change(within(dialog).getByRole("textbox", { name: "Tags" }), {
+      target: { value: "review, urgent" },
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Add tags" }));
+
+    await waitFor(() => {
+      expect(facade.calls.emitBatchIntent).toContainEqual({
+        action: "add_tag",
+        tags: ["review", "urgent"],
+        target: { kind: "skill_ids", skillIds: ["skill-pdf"] },
+      });
+    });
+  });
+
+  it("places tag actions directly after add-to in the batch action bar", async () => {
+    const facade = createMockSkillLibraryFacade();
+    renderLibrary({ facade });
+
+    fireEvent.click(
+      await screen.findByRole("checkbox", { name: "Select PDF Reader" }),
+    );
+
+    const batchBar = screen.getByRole("complementary", { name: "Batch actions" });
+    const actions = batchBar.querySelector(".sh-skill-library__batch-actions");
+    expect(actions).toBeInTheDocument();
+    expect(
+      within(actions as HTMLElement)
+        .getAllByRole("button")
+        .map((button) => button.textContent?.trim()),
+    ).toEqual([
+      "Add to",
+      "Add tags",
+      "Remove tags",
+      "Run security check",
+      "Export",
+      "Archive",
+      "Clear selection",
+    ]);
   });
 
   it("restores query and drawer state from the URL and preserves scroll and focus", async () => {
@@ -638,6 +713,48 @@ describe("SkillLibraryPage", () => {
       });
     });
     expect(screen.queryByText("View saved")).not.toBeInTheDocument();
+  });
+
+  it("shows and activates a saved shortcut after saving the current filters", async () => {
+    const facade = createMockSkillLibraryFacade();
+    renderLibrary({ facade, initialEntry: "/library?deployment=deployed" });
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Save current view" }),
+    );
+    fireEvent.change(screen.getByRole("textbox", { name: "View name" }), {
+      target: { value: "Deployed skills" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save view" }));
+
+    const savedView = await screen.findByRole("button", { name: "Deployed skills" });
+    expect(savedView).toHaveAttribute("aria-pressed", "true");
+    expect(screen.queryByText("Unsaved changes")).not.toBeInTheDocument();
+  });
+
+  it("deletes custom saved views while keeping built-in views available", async () => {
+    const facade = createMockSkillLibraryFacade();
+    renderLibrary({ facade });
+
+    await screen.findByRole("button", { name: "Document tools" });
+    expect(screen.queryByRole("button", { name: "Delete Active" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Delete Document tools" }));
+
+    await waitFor(() => {
+      expect(screen.queryByRole("button", { name: "Document tools" })).not.toBeInTheDocument();
+      expect(facade.calls.deleteView).toEqual(["documents"]);
+    });
+  });
+
+  it("keeps the built-in attention view clean immediately after applying it", async () => {
+    const facade = createMockSkillLibraryFacade();
+    renderLibrary({ facade });
+
+    fireEvent.click(await screen.findByRole("button", { name: "Needs attention" }));
+
+    await waitFor(() => {
+      expect(screen.queryByText("Unsaved changes")).not.toBeInTheDocument();
+    });
   });
 
   it("keeps a rejected saved-view form recoverable until a later save succeeds", async () => {

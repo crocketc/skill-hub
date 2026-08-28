@@ -1,4 +1,4 @@
-import { useLayoutEffect, useMemo, useRef, useState, type ChangeEvent, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
+import { useLayoutEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
 import { flexRender, getCoreRowModel, useReactTable, type ColumnDef } from "@tanstack/react-table";
 import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
@@ -16,6 +16,8 @@ import {
   setPageSelection,
   type SkillSelection,
 } from "./selection";
+import { InvocationBadge } from "./InvocationBadge";
+import { AgentDeploymentIcons } from "./AgentDeploymentIcons";
 
 export interface SkillTableProps {
   onOpenSkill: (skillId: string, rowElement: HTMLElement) => void;
@@ -23,6 +25,7 @@ export interface SkillTableProps {
   onQueryChange: (query: SkillLibraryQuery) => void;
   onSelectionChange: (selection: SkillSelection) => void;
   page: SkillPage;
+  pageStatus?: ReactNode;
   preferences: SkillTablePreferences;
   query: SkillLibraryQuery;
   returnPosition?: { focusSkillId: string; left: number; top: number };
@@ -38,25 +41,24 @@ interface SkillTableMeta {
 const LOCKED_COLUMNS: SkillColumnId[] = ["select", "name"];
 const PAGE_SIZES = [10, 25, 50, 100] as const;
 const COLUMN_IDS: SkillColumnId[] = [
-  "select", "name", "purpose", "tags", "lifecycle", "deployments", "version", "security",
-  "original_description", "translated_description", "source", "ownership", "license", "invocation", "requirements",
+  "select", "name", "purpose", "tags", "invocation", "agent_deployments", "project_deployments", "version", "security",
+  "source", "ownership", "license", "requirements", "lifecycle",
 ];
 
 const COLUMN_LABELS = {
-  deployments: "skillLibrary.table.columns.deployments",
+  agent_deployments: "skillLibrary.table.columns.agentDeployments",
   invocation: "skillLibrary.table.columns.invocation",
   license: "skillLibrary.table.columns.license",
   lifecycle: "skillLibrary.table.columns.lifecycle",
   name: "skillLibrary.table.columns.name",
-  original_description: "skillLibrary.table.columns.originalDescription",
   ownership: "skillLibrary.table.columns.ownership",
+  project_deployments: "skillLibrary.table.columns.projectDeployments",
   purpose: "skillLibrary.table.columns.purpose",
   requirements: "skillLibrary.table.columns.requirements",
   security: "skillLibrary.table.columns.security",
   select: "skillLibrary.table.columns.selection",
   source: "skillLibrary.table.columns.source",
   tags: "skillLibrary.table.columns.tags",
-  translated_description: "skillLibrary.table.columns.translatedDescription",
   version: "skillLibrary.table.columns.version",
 } as const satisfies Record<SkillColumnId, string>;
 
@@ -157,8 +159,11 @@ export function createSkillColumns(t: TFunction): ColumnDef<SkillTableRow>[] {
       cell: ({ row }) => (
         <div className="sh-skill-table__inline sh-skill-table__name">
           <strong>{row.original.name}</strong>
-          {row.original.alias ? <span className="sh-skill-table__alias">{row.original.alias}</span> : null}
-          <span className="sh-skill-table__secondary" title={row.original.purpose}>{row.original.purpose}</span>
+          {row.original.alias ? (
+            <span className="sh-skill-table__alias">
+              <span className="sh-skill-table__alias-label">{t("skillLibrary.table.aliasLabel")}:</span> {row.original.alias}
+            </span>
+          ) : null}
         </div>
       ),
       header: t(COLUMN_LABELS.name),
@@ -167,9 +172,19 @@ export function createSkillColumns(t: TFunction): ColumnDef<SkillTableRow>[] {
     { accessorKey: "tags", id: "tags", cell: ({ row }) => <span>{row.original.tags.join(", ")}</span>, header: t(COLUMN_LABELS.tags) },
     { accessorKey: "lifecycle", id: "lifecycle", cell: ({ row }) => <span>{t(LIFECYCLE_LABELS[row.original.lifecycle])}</span>, header: t(COLUMN_LABELS.lifecycle) },
     {
-      id: "deployments",
-      cell: ({ row }) => <div className="sh-skill-table__counts"><span>{t("skillLibrary.table.agentDeployments", { count: row.original.agentDeploymentCount })}</span><span>{t("skillLibrary.table.projectDeployments", { count: row.original.projectDeploymentCount })}</span></div>,
-      header: t(COLUMN_LABELS.deployments),
+      id: "agent_deployments",
+      cell: ({ row }) => (
+        <AgentDeploymentIcons
+          agents={row.original.agentDeployments ?? []}
+          ariaLabel={t("skillLibrary.table.agentDeploymentSummary", { count: row.original.agentDeploymentCount })}
+        />
+      ),
+      header: t(COLUMN_LABELS.agent_deployments),
+    },
+    {
+      id: "project_deployments",
+      cell: ({ row }) => <span>{t("skillLibrary.table.projectDeployments", { count: row.original.projectDeploymentCount })}</span>,
+      header: t(COLUMN_LABELS.project_deployments),
     },
     {
       id: "version",
@@ -177,12 +192,19 @@ export function createSkillColumns(t: TFunction): ColumnDef<SkillTableRow>[] {
       header: t(COLUMN_LABELS.version),
     },
     { id: "security", cell: ({ row }) => <SecurityCell row={row.original} />, header: t(COLUMN_LABELS.security) },
-    { id: "original_description", cell: ({ row }) => secondary(row.original.originalDescription), header: t(COLUMN_LABELS.original_description) },
-    { id: "translated_description", cell: ({ row }) => secondary(row.original.translatedDescription), header: t(COLUMN_LABELS.translated_description) },
     { accessorKey: "source", id: "source", cell: ({ row }) => secondary(row.original.source), header: t(COLUMN_LABELS.source) },
     { accessorKey: "ownership", id: "ownership", cell: ({ row }) => secondary(row.original.ownership), header: t(COLUMN_LABELS.ownership) },
     { accessorKey: "license", id: "license", cell: ({ row }) => secondary(row.original.license), header: t(COLUMN_LABELS.license) },
-    { accessorKey: "invocation", id: "invocation", cell: ({ row }) => secondary(row.original.invocation), header: t(COLUMN_LABELS.invocation) },
+    {
+      id: "invocation",
+      cell: ({ row }) => (
+        <div className="sh-skill-table__invocation-cell">
+          <InvocationBadge policy={row.original.invocationPolicy} />
+          {row.original.invocation ? <span className="sh-skill-table__invocation-command" title={row.original.invocation}>{row.original.invocation}</span> : null}
+        </div>
+      ),
+      header: t(COLUMN_LABELS.invocation),
+    },
     { id: "requirements", cell: ({ row }) => secondary(row.original.requirements.join(", ")), header: t(COLUMN_LABELS.requirements) },
   ];
 }
@@ -190,6 +212,7 @@ export function createSkillColumns(t: TFunction): ColumnDef<SkillTableRow>[] {
 function orderedColumnIds(preferences: SkillTablePreferences): SkillColumnId[] {
   const found = new Set<SkillColumnId>();
   const all = [...preferences.columnOrder, ...COLUMN_IDS].filter((id) => {
+    if (!COLUMN_IDS.includes(id)) return false;
     if (found.has(id)) return false;
     found.add(id);
     return true;
@@ -205,8 +228,14 @@ function isSelected(selection: SkillSelection, skillId: string) {
 export function SkillTable(props: SkillTableProps) {
   const { t } = useTranslation();
   const regionRef = useRef<HTMLDivElement>(null);
+  const horizontalScrollRef = useRef<HTMLDivElement>(null);
   const restoredKeyRef = useRef<string>();
   const [controlsOpen, setControlsOpen] = useState(false);
+  const [draggedColumn, setDraggedColumn] = useState<SkillColumnId>();
+  const [dragOverColumn, setDragOverColumn] = useState<SkillColumnId>();
+  const suppressToggleClickRef = useRef(false);
+  const [horizontalOverflow, setHorizontalOverflow] = useState(false);
+  const [tableScrollWidth, setTableScrollWidth] = useState(0);
   const columnOrder = orderedColumnIds(props.preferences);
   const visibleColumns = new Set([...LOCKED_COLUMNS, ...props.preferences.visibleColumns]);
   const columns = useMemo(() => createSkillColumns(t), [t]);
@@ -253,6 +282,47 @@ export function SkillTable(props: SkillTableProps) {
     region.scrollTop = position.top;
   }, [props.page.items, props.returnPosition]);
 
+  useLayoutEffect(() => {
+    const region = regionRef.current;
+    const horizontalScroll = horizontalScrollRef.current;
+    if (!region || !horizontalScroll) return;
+
+    const measure = () => {
+      const scrollWidth = region.scrollWidth;
+      setTableScrollWidth(scrollWidth);
+      setHorizontalOverflow(scrollWidth > region.clientWidth + 1);
+      if (horizontalScroll.scrollLeft !== region.scrollLeft) {
+        horizontalScroll.scrollLeft = region.scrollLeft;
+      }
+    };
+    measure();
+    const table = region.querySelector("table");
+    const observer = typeof ResizeObserver !== "undefined" ? new ResizeObserver(measure) : undefined;
+    observer?.observe(region);
+    if (table) observer?.observe(table);
+    window.addEventListener("resize", measure);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener("resize", measure);
+    };
+  }, [props.page.items, props.preferences.columnOrder, props.preferences.visibleColumns]);
+
+  const syncHorizontalScroll = () => {
+    const region = regionRef.current;
+    const horizontalScroll = horizontalScrollRef.current;
+    if (region && horizontalScroll && region.scrollLeft !== horizontalScroll.scrollLeft) {
+      region.scrollLeft = horizontalScroll.scrollLeft;
+    }
+  };
+
+  const syncRegionScroll = () => {
+    const region = regionRef.current;
+    const horizontalScroll = horizontalScrollRef.current;
+    if (region && horizontalScroll && horizontalScroll.scrollLeft !== region.scrollLeft) {
+      horizontalScroll.scrollLeft = region.scrollLeft;
+    }
+  };
+
   const updateQuery = (change: Partial<SkillLibraryQuery>) => props.onQueryChange({ ...props.query, ...change });
   const sortColumn = (column: SkillColumnId) => updateQuery({
     page: 1,
@@ -271,11 +341,34 @@ export function SkillTable(props: SkillTableProps) {
       ? [...new Set([...props.preferences.visibleColumns, column])]
       : props.preferences.visibleColumns.filter((id) => id !== column),
   });
-  const moveBefore = (column: SkillColumnId, before: SkillColumnId) => {
+  const moveColumnToIndex = (column: SkillColumnId, targetIndex: number) => {
     const next = [...columnOrder];
-    next.splice(next.indexOf(column), 1);
-    next.splice(next.indexOf(before), 0, column);
+    const index = next.indexOf(column);
+    if (index < LOCKED_COLUMNS.length || targetIndex < LOCKED_COLUMNS.length || targetIndex > next.length) return;
+    next.splice(index, 1);
+    next.splice(targetIndex, 0, column);
     props.onPreferencesChange({ ...props.preferences, columnOrder: next });
+  };
+  const moveColumnBefore = (column: SkillColumnId, before: SkillColumnId) => {
+    if (column === before || LOCKED_COLUMNS.includes(column) || LOCKED_COLUMNS.includes(before)) return;
+    const target = columnOrder.indexOf(before);
+    if (target < LOCKED_COLUMNS.length) return;
+    moveColumnToIndex(column, target);
+  };
+  const moveColumnByOffset = (column: SkillColumnId, offset: -1 | 1) => {
+    const index = columnOrder.indexOf(column);
+    moveColumnToIndex(column, index + offset);
+  };
+  const handleColumnDragOver = (event: DragEvent<HTMLElement>, column: SkillColumnId) => {
+    if (!draggedColumn || draggedColumn === column || LOCKED_COLUMNS.includes(column)) return;
+    event.preventDefault();
+    setDragOverColumn(column);
+  };
+  const handleColumnDrop = (event: DragEvent<HTMLElement>, column: SkillColumnId) => {
+    event.preventDefault();
+    if (draggedColumn && draggedColumn !== column) moveColumnBefore(draggedColumn, column);
+    setDraggedColumn(undefined);
+    setDragOverColumn(undefined);
   };
   const start = props.page.total === 0 ? 0 : (props.page.page - 1) * props.page.pageSize + 1;
   const end = Math.min(props.page.page * props.page.pageSize, props.page.total);
@@ -286,27 +379,70 @@ export function SkillTable(props: SkillTableProps) {
         <button aria-expanded={controlsOpen} aria-haspopup="dialog" className="sh-button sh-button--ghost sh-button--sm" onClick={() => setControlsOpen((open) => !open)} type="button">
           {t("skillLibrary.table.columnsAndDensity")}
         </button>
+        {props.pageStatus ? <p className="sh-skill-table__page-status">{props.pageStatus}</p> : null}
         {controlsOpen ? (
           <div aria-label={t("skillLibrary.table.columnsAndDensity")} className="sh-skill-table__controls" role="dialog">
             <fieldset>
               <legend>{t("skillLibrary.table.columnsLabel")}</legend>
-              {columnOrder.map((column) => <label key={column}><input aria-label={t(COLUMN_LABELS[column])} checked={visibleColumns.has(column)} disabled={LOCKED_COLUMNS.includes(column)} onChange={(event) => toggleColumn(column, event.currentTarget.checked)} type="checkbox" />{t(COLUMN_LABELS[column])}</label>)}
+              <div aria-label={t("skillLibrary.table.reorderLabel")} className="sh-skill-table__reorder" role="list">
+                {columnOrder.map((column) => {
+                  const locked = LOCKED_COLUMNS.includes(column);
+                  const visible = visibleColumns.has(column);
+                  return (
+                    <div key={column} role="listitem">
+                      <button
+                        aria-label={t(COLUMN_LABELS[column])}
+                        aria-pressed={visible}
+                        aria-roledescription={locked ? undefined : t("skillLibrary.table.dragColumn")}
+                        className={`sh-skill-table__reorder-item${visible ? " sh-skill-table__reorder-item--visible" : ""}${dragOverColumn === column ? " sh-skill-table__reorder-item--target" : ""}${locked ? " sh-skill-table__reorder-item--locked" : ""}`}
+                        disabled={locked}
+                        draggable={!locked}
+                        onClick={() => {
+                          if (suppressToggleClickRef.current) {
+                            suppressToggleClickRef.current = false;
+                            return;
+                          }
+                          toggleColumn(column, !visible);
+                        }}
+                        onDragEnd={() => {
+                          setDraggedColumn(undefined);
+                          setDragOverColumn(undefined);
+                          window.setTimeout(() => {
+                            suppressToggleClickRef.current = false;
+                          }, 0);
+                        }}
+                        onDragOver={(event) => handleColumnDragOver(event, column)}
+                        onDragStart={(event) => {
+                          suppressToggleClickRef.current = true;
+                          setDraggedColumn(column);
+                          if (event.dataTransfer) event.dataTransfer.effectAllowed = "move";
+                        }}
+                        onDrop={(event) => handleColumnDrop(event, column)}
+                        onKeyDown={(event) => {
+                          if (locked || (event.key !== "ArrowLeft" && event.key !== "ArrowRight")) return;
+                          event.preventDefault();
+                          moveColumnByOffset(column, event.key === "ArrowLeft" ? -1 : 1);
+                        }}
+                        type="button"
+                      >
+                        <span>{t(COLUMN_LABELS[column])}</span>
+                        {locked ? <span className="sh-skill-table__reorder-lock">{t("skillLibrary.table.lockedColumn")}</span> : null}
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
             </fieldset>
             <fieldset>
               <legend>{t("skillLibrary.table.densityLabel")}</legend>
                {(["compact", "standard", "comfortable"] as const).map((density) => <label key={density}><input checked={props.preferences.density === density} name="skill-density" onChange={() => props.onPreferencesChange({ ...props.preferences, density })} type="radio" />{t(DENSITY_LABELS[density])}</label>)}
             </fieldset>
-            <div className="sh-skill-table__reorder">
-              {columnOrder.map((column, index) => {
-                const before = columnOrder[index - 1];
-                return !LOCKED_COLUMNS.includes(column) && before ? <button key={column} onClick={() => moveBefore(column, before)} type="button">{t("skillLibrary.table.moveBefore", { column: t(COLUMN_LABELS[column]).toLocaleLowerCase(), before: t(COLUMN_LABELS[before]).toLocaleLowerCase() })}</button> : null;
-              })}
-            </div>
           </div>
         ) : null}
       </div>
-      <div aria-label={t("skillLibrary.table.resultsRegion")} className="sh-skill-table__region" ref={regionRef} role="region" tabIndex={-1}>
-        <table className="sh-skill-table" data-density={props.preferences.density}>
+      <div className="sh-skill-table__region-shell">
+        <div aria-label={t("skillLibrary.table.resultsRegion")} className="sh-skill-table__region" onScroll={syncRegionScroll} ref={regionRef} role="region" tabIndex={-1}>
+          <table className="sh-skill-table" data-density={props.preferences.density}>
           <thead>
             {table.getHeaderGroups().map((headerGroup) => <tr key={headerGroup.id}>{headerGroup.headers.map((header) => {
               const column = header.column.id as SkillColumnId;
@@ -318,11 +454,23 @@ export function SkillTable(props: SkillTableProps) {
             })}</tr>)}
           </thead>
           <tbody>
-            {table.getRowModel().rows.map((row) => <tr data-skill-id={row.original.id} key={row.id} onClick={(event) => props.onOpenSkill(row.original.id, event.currentTarget)} onKeyDown={(event) => { if (event.target === event.currentTarget && event.key === "Enter") { event.preventDefault(); props.onOpenSkill(row.original.id, event.currentTarget); } }} tabIndex={0}>
+            {table.getRowModel().rows.map((row) => <tr data-agent-deployment-rows={Math.min(2, Math.ceil((row.original.agentDeployments?.length ?? 0) / 5)) || 1} data-skill-id={row.original.id} key={row.id} onClick={(event) => props.onOpenSkill(row.original.id, event.currentTarget)} onKeyDown={(event) => { if (event.target === event.currentTarget && event.key === "Enter") { event.preventDefault(); props.onOpenSkill(row.original.id, event.currentTarget); } }} tabIndex={0}>
               {row.getVisibleCells().map((cell) => <td data-column={cell.column.id} key={cell.id}>{flexRender(cell.column.columnDef.cell, cell.getContext())}</td>)}
             </tr>)}
           </tbody>
-        </table>
+          </table>
+        </div>
+        <div
+          aria-label={t("skillLibrary.table.horizontalScroll")}
+          className="sh-skill-table__horizontal-scroll"
+          data-overflowing={horizontalOverflow ? "true" : "false"}
+          onScroll={syncHorizontalScroll}
+          ref={horizontalScrollRef}
+          role="region"
+          tabIndex={0}
+        >
+          <div aria-hidden="true" style={{ width: `${tableScrollWidth}px` }} />
+        </div>
       </div>
       <footer className="sh-skill-table__pagination">
         <label>{t("skillLibrary.table.pageSize")}<select aria-label={t("skillLibrary.table.pageSize")} onChange={(event) => updateQuery({ page: 1, pageSize: Number(event.currentTarget.value) as SkillLibraryQuery["pageSize"] })} value={props.query.pageSize}>{PAGE_SIZES.map((size) => <option key={size} value={size}>{size}</option>)}</select></label>

@@ -7,6 +7,7 @@ import {
   type SkillDrawerPreferences,
   type SkillLibraryFacade,
   type SkillLibraryQuery,
+  type SkillMetadataPatch,
   type SkillQuickView,
   type SkillTablePreferences,
   type SkillTableRow,
@@ -23,12 +24,33 @@ export interface MockSkillLibraryOptions {
 export interface MockSkillLibraryFacade extends SkillLibraryFacade {
   calls: {
     emitBatchIntent: SkillBatchIntent[];
+    deleteView: string[];
     listSkills: SkillLibraryQuery[];
     saveDrawerPreferences: SkillDrawerPreferences[];
+    saveSkillMetadata: Array<{ skillId: string; patch: SkillMetadataPatch }>;
     saveTablePreferences: SkillTablePreferences[];
     saveView: Array<Omit<SavedSkillView, "builtIn" | "id">>;
   };
 }
+
+const MOCK_AGENT_DEPLOYMENTS = [
+  { id: "codex", name: "OpenAI Codex" },
+  { id: "claude", name: "Claude Code" },
+  { id: "cursor", name: "Cursor" },
+  { id: "gemini", name: "Gemini CLI" },
+  { id: "windsurf", name: "Windsurf" },
+  { id: "cline", name: "Cline" },
+  { id: "opencode", name: "OpenCode" },
+  { id: "kimi", name: "Kimi Code" },
+  { id: "grok", name: "Grok" },
+  { id: "qoder", name: "Qoder" },
+] as const;
+
+const MOCK_PROJECT_DEPLOYMENTS = [
+  { id: "project-docs", name: "Document workflows", path: "C:\\workspace\\document-workflows" },
+  { id: "project-ops", name: "Operations", path: "C:\\workspace\\operations" },
+  { id: "project-lab", name: "Skill lab", path: "C:\\workspace\\skill-lab" },
+] as const;
 
 function clone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
@@ -37,12 +59,14 @@ function clone<T>(value: T): T {
 export const MOCK_SKILL_PDF: SkillTableRow = {
   aiCheck: "unavailable",
   agentDeploymentCount: 2,
+  agentDeployments: [...MOCK_AGENT_DEPLOYMENTS.slice(0, 2)],
   alias: "reader",
   basicCheck: "passed",
   currentVersion: "1.4.0",
   highRiskCount: 1,
   id: "skill-pdf",
   invocation: "pdf-reader <file>",
+  invocationPolicy: { mode: "model_and_user", source: "default" },
   license: "MIT",
   lifecycle: "active",
   name: "PDF Reader",
@@ -61,11 +85,13 @@ export const MOCK_SKILL_PDF: SkillTableRow = {
 export const MOCK_SKILL_DOCX: SkillTableRow = {
   aiCheck: "not_run",
   agentDeploymentCount: 1,
+  agentDeployments: [...MOCK_AGENT_DEPLOYMENTS.slice(0, 1)],
   basicCheck: "passed",
   currentVersion: "2.1.0",
   highRiskCount: 0,
   id: "skill-docx",
   invocation: "docx-writer <document>",
+  invocationPolicy: { mode: "user_only", source: "explicit", field: "disable-model-invocation" },
   license: "MIT",
   lifecycle: "active",
   name: "DOCX Writer",
@@ -83,11 +109,13 @@ export const MOCK_SKILL_DOCX: SkillTableRow = {
 export const MOCK_SKILL_BROWSER: SkillTableRow = {
   aiCheck: "passed",
   agentDeploymentCount: 3,
+  agentDeployments: [...MOCK_AGENT_DEPLOYMENTS.slice(0, 3)],
   basicCheck: "warning",
   currentVersion: "0.9.0",
   highRiskCount: 0,
   id: "skill-browser",
   invocation: "browser <url>",
+  invocationPolicy: { mode: "model_only", source: "explicit", field: "user-invocable" },
   license: "Apache-2.0",
   lifecycle: "trial",
   name: "Browser Automation",
@@ -109,6 +137,7 @@ function generatedRow(index: number): SkillTableRow {
   return {
     ...MOCK_SKILL_DOCX,
     agentDeploymentCount: index % 4,
+    agentDeployments: [...MOCK_AGENT_DEPLOYMENTS.slice(0, index % 4)],
     id: `skill-${ordinal}`,
     lifecycle: index % 5 === 0 ? "trial" : "active",
     name: `Local Skill ${ordinal}`,
@@ -130,6 +159,14 @@ function quickView(row: SkillTableRow): SkillQuickView {
     dependencies: row.id === "skill-pdf" ? ["pymupdf"] : [],
     duplicateCandidates: [],
     externalChanges: [],
+    projectDeployments:
+      row.id === "skill-pdf"
+        ? [...MOCK_PROJECT_DEPLOYMENTS]
+        : Array.from({ length: row.projectDeploymentCount }, (_, index) => ({
+            id: `${row.id}-project-${index + 1}`,
+            name: `${row.name} project ${index + 1}`,
+            path: `C:\\workspace\\${row.id}\\project-${index + 1}`,
+          })),
     usageEvidence:
       row.id === "skill-pdf"
         ? { invocationCount: 12, lastUsedAt: "2026-08-24T10:00:00Z" }
@@ -153,13 +190,19 @@ export function createMockSkillLibraryFacade(
   options: MockSkillLibraryOptions = {},
 ): MockSkillLibraryFacade {
   const calls: MockSkillLibraryFacade["calls"] = {
+    deleteView: [],
     emitBatchIntent: [],
     listSkills: [],
     saveDrawerPreferences: [],
+    saveSkillMetadata: [],
     saveTablePreferences: [],
     saveView: [],
   };
   const total = options.total ?? options.pageItems?.length ?? NAMED_ROWS.length;
+  let savedViews = [USER_SAVED_VIEW];
+  const metadata = new Map<string, SkillMetadataPatch>([
+    ["skill-pdf", { note: "Keep this reader near document workflows." }],
+  ]);
 
   return {
     calls,
@@ -171,10 +214,20 @@ export function createMockSkillLibraryFacade(
       const row = available.find((item) => item.id === skillId) ??
         NAMED_ROWS.find((item) => item.id === skillId) ??
         generatedRow(Number(skillId.replace("skill-", "")) - 1);
-      return clone(quickView(row));
+      const result = quickView(row);
+      const patch = metadata.get(skillId);
+      return clone({
+        ...result,
+        ...(patch?.alias === null ? { alias: undefined } : patch?.alias ? { alias: patch.alias } : {}),
+        ...(patch?.note === null ? { note: undefined } : patch?.note ? { note: patch.note } : {}),
+      });
     },
     async listSavedViews() {
-      return clone([USER_SAVED_VIEW]);
+      return clone(savedViews);
+    },
+    async deleteView(viewId) {
+      calls.deleteView.push(viewId);
+      savedViews = savedViews.filter((view) => view.id !== viewId);
     },
     async listSkills(query) {
       calls.listSkills.push(clone(query));
@@ -182,11 +235,20 @@ export function createMockSkillLibraryFacade(
         throw options.failPage;
       }
 
-      const itemCount = Math.min(query.pageSize, total);
-      const items = options.pageItems ?? defaultRows(itemCount);
+      const itemCount = options.total === undefined
+        ? Math.min(query.pageSize, total)
+        : Math.min(query.pageSize, Math.max(total - (query.page - 1) * query.pageSize, 0));
+      const allRows = options.pageItems ?? defaultRows(total);
+      const start = (query.page - 1) * query.pageSize;
+      // Keep the small default fixture backwards-compatible for tests that only
+      // need a row regardless of URL page state. Explicit totals opt into the
+      // deterministic multi-page preview used by the browser shell.
+      const items = options.pageItems ?? (
+        options.total === undefined ? defaultRows(itemCount) : allRows.slice(start, start + itemCount)
+      );
       return clone({
         facets: {
-          tags: [...new Set(defaultRows(Math.max(itemCount, 3)).flatMap((row) => row.tags))].sort(),
+          tags: [...new Set(allRows.flatMap((row) => row.tags))].sort(),
         },
         items,
         page: query.page,
@@ -210,17 +272,33 @@ export function createMockSkillLibraryFacade(
         throw new Error("drawer preference save failed");
       }
     },
+    async saveSkillMetadata(skillId, patch) {
+      calls.saveSkillMetadata.push(clone({ skillId, patch }));
+      const current = metadata.get(skillId) ?? {};
+      const next = { ...current };
+      if ("alias" in patch) {
+        if (patch.alias === null) delete next.alias;
+        else next.alias = patch.alias;
+      }
+      if ("note" in patch) {
+        if (patch.note === null) delete next.note;
+        else next.note = patch.note;
+      }
+      metadata.set(skillId, next);
+    },
     async saveTablePreferences(preferences) {
       calls.saveTablePreferences.push(clone(preferences));
     },
     async saveView(view) {
       const saved = clone(view);
       calls.saveView.push(saved);
-      return {
+      const result = {
         ...clone(saved),
         builtIn: false,
         id: `saved-${calls.saveView.length}`,
       };
+      savedViews = [...savedViews, result];
+      return clone(result);
     },
   };
 }

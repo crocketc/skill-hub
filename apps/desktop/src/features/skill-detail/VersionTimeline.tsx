@@ -4,12 +4,14 @@ import { useTranslation } from "react-i18next";
 import { Button } from "../../ui/Button";
 import { StatusBadge } from "../../ui/StatusBadge";
 import { skillLibraryKeys } from "../skills/api";
-import type { SkillDetailFacade } from "./api";
+import type { SkillDetailFacade, SkillDetailSummary } from "./api";
 import { skillDetailKeys } from "./api";
+import { VersionUpdateNotice } from "./VersionUpdateNotice";
 
 interface VersionTimelineProps {
   facade: SkillDetailFacade;
   skillId: string;
+  summary?: SkillDetailSummary;
 }
 
 function toggleComparedVersion(selected: string[], versionId: string): string[] {
@@ -17,7 +19,7 @@ function toggleComparedVersion(selected: string[], versionId: string): string[] 
   return selected.length === 2 ? [selected[1], versionId] : [...selected, versionId];
 }
 
-export function VersionTimeline({ facade, skillId }: VersionTimelineProps) {
+export function VersionTimeline({ facade, skillId, summary }: VersionTimelineProps) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [selected, setSelected] = useState<string[]>([]);
@@ -79,6 +81,7 @@ export function VersionTimeline({ facade, skillId }: VersionTimelineProps) {
 
   return (
     <div className="sh-version-timeline">
+      {summary ? <VersionUpdateNotice summary={summary} /> : null}
       <ol>
         {versionsQuery.data.map((version, index) => (
           <li key={version.id}>
@@ -115,10 +118,20 @@ export function VersionTimeline({ facade, skillId }: VersionTimelineProps) {
         {t("skillDetail.versions.compareSelected")}
       </Button>
       {diffQuery.data ? (
-        <div className="sh-version-timeline__diff">
+        <div className="sh-version-timeline__diff" role="region" aria-label={t("skillDetail.versions.fileDetails.label")}>
           <p>{t("skillDetail.versions.added", { count: diffQuery.data.added.length })}</p>
           <p>{t("skillDetail.versions.changed", { count: diffQuery.data.changed.length })}</p>
           <p>{t("skillDetail.versions.removed", { count: diffQuery.data.removed.length })}</p>
+          {(["added", "changed", "removed"] as const).map((kind) => (
+            <section className="sh-version-timeline__file-group" key={kind}>
+              <h4>{t(`skillDetail.versions.fileDetails.${kind}`)}</h4>
+              {diffQuery.data[kind].length > 0 ? (
+                <ul>
+                  {diffQuery.data[kind].map((path) => <li key={path}><code>{path}</code></li>)}
+                </ul>
+              ) : <p>{t("skillDetail.versions.fileDetails.empty")}</p>}
+            </section>
+          ))}
         </div>
       ) : null}
       {rollbackTarget ? (

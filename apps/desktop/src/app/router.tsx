@@ -1,8 +1,26 @@
 import { QueryClientProvider } from "@tanstack/react-query";
 import { MotionConfig } from "motion/react";
 import { I18nextProvider } from "react-i18next";
-import { createBrowserRouter, RouterProvider, useNavigate } from "react-router-dom";
+import { createBrowserRouter, RouterProvider, useNavigate, useParams } from "react-router-dom";
 import { OnboardingWizard } from "../features/onboarding/OnboardingWizard";
+import { AgentDetailPage } from "../features/agents/AgentDetailPage";
+import { AgentListPage } from "../features/agents/AgentListPage";
+import { ProjectDetailPage } from "../features/projects/ProjectDetailPage";
+import { ProjectListPage } from "../features/projects/ProjectListPage";
+import { unavailableAgentFacade } from "../features/agents/api";
+import { unavailableProjectFacade } from "../features/projects/api";
+import { DeploymentDialog } from "../features/deployment/DeploymentDialog";
+import { unavailableDeploymentFacade } from "../features/deployment/api";
+import { SecurityResults } from "../features/security/SecurityResults";
+import { unavailableSecurityFacade } from "../features/security/api";
+import { PendingPage } from "../features/pending/PendingPage";
+import { unavailablePendingFacade } from "../features/pending/api";
+import { OperationProgress } from "../features/operations/OperationProgress";
+import { unavailableOperationFacade } from "../features/operations/api";
+import { RecoveryPage } from "../features/recovery/RecoveryPage";
+import { SettingsPage } from "../features/settings/SettingsPage";
+import { unavailableSettingsFacade } from "../features/settings/api";
+import { DiscoveryPage } from "../features/discovery/DiscoveryPage";
 import { OverviewPage } from "../features/overview/OverviewPage";
 import { SkillLibraryPage } from "../features/skills/SkillLibraryPage";
 import { SkillDetailPage } from "../features/skill-detail/SkillDetailPage";
@@ -19,11 +37,35 @@ import "../styles/base.css";
 import { ThemeProvider } from "../styles/ThemeProvider";
 import { DesktopApp } from "./App";
 import { queryClient } from "./queryClient";
-import { RoutePlaceholder } from "./RoutePlaceholder";
 
 function OnboardingRoute() {
   const navigate = useNavigate();
   return <OnboardingWizard onComplete={() => navigate("/", { replace: true })} />;
+}
+
+function AgentDetailRoute() {
+  const { agentKey } = useParams();
+  return <AgentDetailPage agentId={agentKey} facade={unavailableAgentFacade} />;
+}
+
+function ProjectDetailRoute() {
+  const { projectKey } = useParams();
+  return <ProjectDetailPage facade={unavailableProjectFacade} projectId={projectKey} />;
+}
+
+function DeploymentRoute() {
+  const { skillId } = useParams();
+  return <DeploymentDialog facade={unavailableDeploymentFacade} skillId={skillId ?? "unknown"} versionId="current" />;
+}
+
+function SecurityRoute() {
+  const { skillId } = useParams();
+  return <SecurityResults facade={unavailableSecurityFacade} skillId={skillId ?? "unknown"} versionId="current" />;
+}
+
+function OperationRoute() {
+  const { operationId } = useParams();
+  return <OperationProgress facade={unavailableOperationFacade} operationId={operationId ?? "latest"} />;
 }
 
 export const appRouter = createBrowserRouter([
@@ -40,14 +82,18 @@ export const appRouter = createBrowserRouter([
         path: "library/:skillId",
         element: <SkillDetailPage facade={unavailableSkillDetailFacade} />,
       },
-      { path: "discovery", element: <RoutePlaceholder titleKey="navigation.discovery" /> },
-      { path: "agents", element: <RoutePlaceholder titleKey="navigation.agents" /> },
-      { path: "agents/:agentKey", element: <RoutePlaceholder titleKey="navigation.agents" /> },
-      { path: "projects", element: <RoutePlaceholder titleKey="navigation.projects" /> },
-      { path: "projects/:projectKey", element: <RoutePlaceholder titleKey="navigation.projects" /> },
-      { path: "pending", element: <RoutePlaceholder titleKey="navigation.pending" /> },
-      { path: "operations", element: <RoutePlaceholder titleKey="navigation.operations" /> },
-      { path: "settings", element: <RoutePlaceholder titleKey="navigation.settings" /> },
+      { path: "library/:skillId/deploy", element: <DeploymentRoute /> },
+      { path: "library/:skillId/security", element: <SecurityRoute /> },
+      { path: "discovery", element: <DiscoveryPage /> },
+      { path: "agents", element: <AgentListPage facade={unavailableAgentFacade} /> },
+      { path: "agents/:agentKey", element: <AgentDetailRoute /> },
+      { path: "projects", element: <ProjectListPage facade={unavailableProjectFacade} /> },
+      { path: "projects/:projectKey", element: <ProjectDetailRoute /> },
+      { path: "pending", element: <PendingPage facade={unavailablePendingFacade} /> },
+      { path: "operations/:operationId", element: <OperationRoute /> },
+      { path: "operations", element: <OperationRoute /> },
+      { path: "recovery", element: <RecoveryPage facade={unavailableOperationFacade} /> },
+      { path: "settings", element: <SettingsPage facade={unavailableSettingsFacade} /> },
     ],
   },
   { element: <OnboardingRoute />, path: "/initialize" },

@@ -1,5 +1,5 @@
 use skillhub_core::{
-    catalog::{CatalogRepository, Skill},
+    catalog::{CallPolicy, CatalogRepository, Skill},
     SkillId,
 };
 use skillhub_storage::{CatalogRepositorySqlite, Database};
@@ -63,6 +63,37 @@ fn repeated_insert_preserves_existing_version_relationships_and_timestamps() {
         )
         .unwrap();
     assert_eq!(count, 1);
+}
+
+#[test]
+fn catalog_round_trip_preserves_extended_invocation_policy() {
+    let db = Database::open_in_memory().unwrap();
+    let repo = CatalogRepositorySqlite::new(&db).unwrap();
+    let skill = Skill::from_parts(
+        SkillId::new(),
+        "model-only".to_owned(),
+        "model-only".to_owned(),
+        "Description".to_owned(),
+        None,
+        None,
+        Default::default(),
+        None,
+        None,
+        CallPolicy::ModelOnly,
+        skillhub_core::catalog::SkillLifecycle::Normal,
+        Vec::new(),
+        None,
+    )
+    .unwrap();
+
+    block_on(repo.insert(&skill)).unwrap();
+    assert_eq!(
+        block_on(repo.get(skill.id()))
+            .unwrap()
+            .unwrap()
+            .call_policy(),
+        CallPolicy::ModelOnly
+    );
 }
 
 fn block_on<F: std::future::Future>(future: F) -> F::Output {

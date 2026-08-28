@@ -48,6 +48,7 @@ import {
   type SkillSelection,
 } from "./selection";
 import { SkillFilters } from "./SkillFilters";
+import { BatchTagDialog, type BatchTagAction } from "./BatchTagDialog";
 import { SkillQuickDrawer } from "./SkillQuickDrawer";
 import { SkillTable } from "./SkillTable";
 
@@ -76,6 +77,7 @@ interface BatchBarProps {
   onAction: (action: BatchAction) => void;
   onClear: () => void;
   onSelectAll: () => void;
+  onTagAction: (action: BatchTagAction) => void;
   page: SkillPage;
   selection: Exclude<SkillSelection, { kind: "none" }>;
 }
@@ -89,8 +91,10 @@ const BATCH_ACTIONS: readonly BatchAction[] = [
 
 const BATCH_ACTION_KEYS = {
   add_to: "skillLibrary.page.batch.addTo",
+  add_tag: "skillLibrary.page.batch.addTags",
   archive: "skillLibrary.page.batch.archive",
   export: "skillLibrary.page.batch.export",
+  remove_tag: "skillLibrary.page.batch.removeTags",
   security_check: "skillLibrary.page.batch.securityCheck",
 } as const satisfies Record<BatchAction, string>;
 
@@ -132,8 +136,17 @@ function savedViewIsDirty(
   table: SkillTablePreferences,
 ): boolean {
   if (!view) return false;
-  return JSON.stringify({ query: savedViewScope(query), table }) !==
-    JSON.stringify({ query: view.query, table: view.table });
+  const current = {
+    filterKey: skillFilterKey(query),
+    sort: query.sort,
+    table,
+  };
+  const saved = {
+    filterKey: skillFilterKey({ ...query, ...view.query }),
+    sort: view.query.sort,
+    table: view.table,
+  };
+  return JSON.stringify(current) !== JSON.stringify(saved);
 }
 
 function mergeSavedViews(userViews: SavedSkillView[] | undefined): SavedSkillView[] {
@@ -239,6 +252,7 @@ function BatchBar({
   onAction,
   onClear,
   onSelectAll,
+  onTagAction,
   page,
   selection,
 }: BatchBarProps): JSX.Element {
@@ -270,7 +284,16 @@ function BatchBar({
         </Button>
       ) : null}
       <div className="sh-skill-library__batch-actions">
-        {BATCH_ACTIONS.map((action) => (
+        <Button onClick={() => onAction("add_to")} size="sm" variant="ghost">
+          {t(BATCH_ACTION_KEYS.add_to)}
+        </Button>
+        <Button onClick={() => onTagAction("add_tag")} size="sm" variant="ghost">
+          {t("skillLibrary.page.batch.addTags")}
+        </Button>
+        <Button onClick={() => onTagAction("remove_tag")} size="sm" variant="ghost">
+          {t("skillLibrary.page.batch.removeTags")}
+        </Button>
+        {BATCH_ACTIONS.slice(1).map((action) => (
           <Button key={action} onClick={() => onAction(action)} size="sm" variant="ghost">
             {t(BATCH_ACTION_KEYS[action])}
           </Button>
@@ -308,10 +331,13 @@ export function SkillLibraryPage({ facade }: SkillLibraryPageProps): JSX.Element
   const [drawerSaveFailure, setDrawerSaveFailure] = useState<SkillDrawerPreferences>();
   const [selectionAnnouncement, setSelectionAnnouncement] = useState<string>();
   const [batchAnnouncement, setBatchAnnouncement] = useState<string>();
+  const [batchTagAction, setBatchTagAction] = useState<BatchTagAction>();
   const [saveViewOpen, setSaveViewOpen] = useState(false);
   const [saveViewName, setSaveViewName] = useState("");
   const [saveViewError, setSaveViewError] = useState<string>();
   const [saveViewPending, setSaveViewPending] = useState(false);
+  const [savedViewDeleteError, setSavedViewDeleteError] = useState<string>();
+  const [filtersCollapsed, setFiltersCollapsed] = useState(false);
   const defaultPageRetry = queryClient.getDefaultOptions().queries?.retry;
 
   const clearBatchAnnouncement = () => {
@@ -481,6 +507,25 @@ export function SkillLibraryPage({ facade }: SkillLibraryPageProps): JSX.Element
     updateQuery(applied.query);
   };
 
+  const deleteSavedView = (view: SavedSkillView) => {
+    setSavedViewDeleteError(undefined);
+    void facade.deleteView(view.id).then(
+      () => {
+        queryClient.setQueryData<SavedSkillView[]>(
+          skillLibraryKeys.savedViews(),
+          (currentViews) => currentViews?.filter((current) => current.id !== view.id),
+        );
+        if (query.savedViewId === view.id) {
+          writeQuery({ ...query, savedViewId: undefined }, skillId);
+        }
+        return queryClient.invalidateQueries({
+          queryKey: skillLibraryKeys.savedViews(),
+        });
+      },
+      () => setSavedViewDeleteError(t("skillLibrary.savedViews.deleteError")),
+    );
+  };
+
   const persistTablePreferences = (next: SkillTablePreferences) => {
     setTablePreferences(next);
     setTableSaveFailure(undefined);
@@ -534,6 +579,21 @@ export function SkillLibraryPage({ facade }: SkillLibraryPageProps): JSX.Element
     });
   };
 
+  const emitBatchTagAction = (action: BatchTagAction, tags: string[]) => {
+    if (selection.kind === "none" || selectionCount(selection) <= 0) return;
+    const request = batchRequestRef.current + 1;
+    batchRequestRef.current = request;
+    setBatchAnnouncement(undefined);
+    void facade.emitBatchIntent({ action, tags, target: selectionToBatchTarget(selection) }).catch((error: unknown) => {
+      if (request !== batchRequestRef.current) return;
+      setBatchAnnouncement(
+        isSkillLibraryUnavailable(error)
+          ? t("skillLibrary.page.batch.unconnected")
+          : t("skillLibrary.page.batch.error"),
+      );
+    });
+  };
+
   const submitSavedView = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const name = saveViewName.trim();
@@ -547,7 +607,18 @@ export function SkillLibraryPage({ facade }: SkillLibraryPageProps): JSX.Element
         table: effectiveTablePreferences,
       })
       .then(
-        () => {
+        (savedView) => {
+          queryClient.setQueryData<SavedSkillView[]>(
+            skillLibraryKeys.savedViews(),
+            (currentViews) => {
+              const views = currentViews ?? [];
+              return [
+                ...views.filter((view) => view.id !== savedView.id),
+                savedView,
+              ];
+            },
+          );
+          writeQuery({ ...query, savedViewId: savedView.id }, skillId);
           setSaveViewOpen(false);
           setSaveViewName("");
           return queryClient.invalidateQueries({
@@ -675,10 +746,12 @@ export function SkillLibraryPage({ facade }: SkillLibraryPageProps): JSX.Element
       ref={rootRef}
     >
       <div className="sh-skill-library__saved-views">
+        {savedViewDeleteError ? <p role="alert">{savedViewDeleteError}</p> : null}
         <SavedViews
           activeViewId={query.savedViewId}
           dirty={savedViewIsDirty(activeSavedView, query, effectiveTablePreferences)}
           onApply={applyView}
+          onDelete={deleteSavedView}
           onSave={() => {
             setSaveViewError(undefined);
             setSaveViewOpen(true);
@@ -705,49 +778,57 @@ export function SkillLibraryPage({ facade }: SkillLibraryPageProps): JSX.Element
         </p>
       ) : null}
 
-      <div className="sh-skill-library__query-tools">
-        <SkillFilters
-          availableTags={page.facets.tags}
-          onChange={updateQuery}
-          onClear={clearFilters}
-          query={query}
-          resultCount={page.total}
-        />
+      <div className={`sh-skill-library__query-tools${filtersCollapsed ? " is-collapsed" : ""}`}>
+        <button
+          aria-controls="skill-library-filters"
+          aria-expanded={!filtersCollapsed}
+          aria-label={t(filtersCollapsed ? "skillLibrary.filters.expand" : "skillLibrary.filters.collapse")}
+          className="sh-skill-library__query-toggle"
+          onClick={() => setFiltersCollapsed((collapsed) => !collapsed)}
+          type="button"
+        >
+          <span aria-hidden="true">{filtersCollapsed ? "⌄" : "⌃"}</span>
+        </button>
+        {!filtersCollapsed ? (
+          <SkillFilters
+            availableTags={page.facets.tags}
+            id="skill-library-filters"
+            onChange={updateQuery}
+            onClear={clearFilters}
+            query={query}
+          />
+        ) : null}
       </div>
 
       {pageRefreshing ? (
         <SkillLibrarySkeleton />
       ) : (
-        <>
-          <p className="sh-skill-library__page-status">
-            {t("skillLibrary.page.pageStatus", {
-              count: page.total,
-              page: page.page,
-            })}
-          </p>
-          <SkillTable
-            onOpenSkill={openSkill}
-            onPreferencesChange={persistTablePreferences}
-            onQueryChange={updateQuery}
-            onSelectionChange={(next) => {
-              setSelectionAnnouncement(undefined);
-              changeSelection(next);
-            }}
-            page={page}
-            preferences={effectiveTablePreferences}
-            query={query}
-            returnPosition={
-              libraryReturnState
-                ? {
-                    focusSkillId: libraryReturnState.focusSkillId,
-                    left: libraryReturnState.scrollLeft,
-                    top: libraryReturnState.scrollTop,
-                  }
-                : undefined
-            }
-            selection={selection}
-          />
-        </>
+        <SkillTable
+          pageStatus={t("skillLibrary.page.pageStatus", {
+            count: page.total,
+            page: page.page,
+          })}
+          onOpenSkill={openSkill}
+          onPreferencesChange={persistTablePreferences}
+          onQueryChange={updateQuery}
+          onSelectionChange={(next) => {
+            setSelectionAnnouncement(undefined);
+            changeSelection(next);
+          }}
+          page={page}
+          preferences={effectiveTablePreferences}
+          query={query}
+          returnPosition={
+            libraryReturnState
+              ? {
+                  focusSkillId: libraryReturnState.focusSkillId,
+                  left: libraryReturnState.scrollLeft,
+                  top: libraryReturnState.scrollTop,
+                }
+              : undefined
+          }
+          selection={selection}
+        />
       )}
 
       {selectedBatchTarget ? (
@@ -766,8 +847,21 @@ export function SkillLibraryPage({ facade }: SkillLibraryPageProps): JSX.Element
                 page.total,
               ),
             )}
+          onTagAction={setBatchTagAction}
           page={page}
           selection={selectedBatchTarget}
+        />
+      ) : null}
+
+      {selectedBatchTarget && batchTagAction ? (
+        <BatchTagDialog
+          action={batchTagAction}
+          count={selectionCount(selectedBatchTarget)}
+          onCancel={() => setBatchTagAction(undefined)}
+          onConfirm={(tags) => {
+            setBatchTagAction(undefined);
+            emitBatchTagAction(batchTagAction, tags);
+          }}
         />
       ) : null}
 

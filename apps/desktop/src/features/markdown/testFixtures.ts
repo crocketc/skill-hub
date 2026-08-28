@@ -110,8 +110,18 @@ export function createMockMarkdownFacade(
     async openSkillFolder(skillId) {
       calls.openedFolders.push(skillId);
     },
-    async readMarkdownFile(_skillId, path) {
+    async readMarkdownFile(skillId, path) {
       const file = requireFile(path);
+      if (path === "SKILL.md" && (skillId === "skill-doc" || skillId === "skill-sheet")) {
+        const title = skillId === "skill-sheet" ? "Read spreadsheet data safely" : "Create Word documents safely";
+        const name = skillId === "skill-sheet" ? "spreadsheet-reader" : "docx-writer";
+        return {
+          ...file,
+          markdown: file.markdown
+            .replace("name: pdf-reader", `name: ${name}`)
+            .replace("# Extract PDF tables safely", `# ${title}`),
+        };
+      }
       return { ...file, draft: file.draft ? { ...file.draft } : undefined };
     },
     async requestTakeover(skillId) {

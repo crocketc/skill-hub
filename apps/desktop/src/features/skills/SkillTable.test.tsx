@@ -16,6 +16,14 @@ const rows: SkillTableRow[] = [
   {
     aiCheck: "unavailable",
     agentDeploymentCount: 2,
+    agentDeployments: [
+      { id: "codex", name: "OpenAI Codex" },
+      { id: "claude", name: "Claude Code" },
+      { id: "cursor", name: "Cursor" },
+      { id: "gemini", name: "Gemini CLI" },
+      { id: "windsurf", name: "Windsurf" },
+      { id: "cline", name: "Cline" },
+    ],
     alias: "reader",
     basicCheck: "passed",
     currentVersion: "1.4.0",
@@ -60,17 +68,16 @@ const allColumnIds = [
   "name",
   "purpose",
   "tags",
-  "lifecycle",
-  "deployments",
-  "version",
+  "invocation",
+  "agent_deployments",
+  "project_deployments",
   "security",
-  "original_description",
-  "translated_description",
+  "version",
   "source",
   "ownership",
   "license",
-  "invocation",
   "requirements",
+  "lifecycle",
 ] as const;
 
 async function renderTable(props: Partial<SkillTableProps> = {}) {
@@ -103,8 +110,64 @@ it("uses compact density and keeps checkbox clicks separate from row opening", a
   expect(onOpenSkill).not.toHaveBeenCalled();
   const nameCell = screen.getByText("PDF Reader").closest("td");
   if (!nameCell) throw new Error("Expected the PDF Reader name cell");
+  expect(within(nameCell).getByText("Alias:")).toBeVisible();
+  expect(within(nameCell).getByText("reader")).toBeVisible();
+  expect(within(nameCell).queryByText("Read and extract PDFs")).not.toBeInTheDocument();
   fireEvent.click(nameCell);
   expect(onOpenSkill).toHaveBeenCalledWith("skill-pdf", expect.any(HTMLElement));
+});
+
+it("labels the name column as name and alias", async () => {
+  await renderTable();
+
+  expect(screen.getByRole("columnheader", { name: "Name / Alias" })).toBeVisible();
+});
+
+it("renders invocation actor badges instead of a raw invocation command", async () => {
+  await renderTable({
+    page: {
+      ...page,
+      items: [{ ...rows[0], invocationPolicy: { mode: "model_only", source: "explicit" } }],
+    },
+  });
+
+  const invocationCell = screen.getByText("Model only").closest("[data-invocation-mode]");
+  expect(invocationCell).toBeVisible();
+  expect(invocationCell).toHaveAttribute("data-invocation-mode", "model_only");
+});
+
+it("splits deployments into project count and compact agent tags", async () => {
+  const manyAgents = Array.from({ length: 12 }, (_, index) => ({
+    id: `agent-${index + 1}`,
+    name: `Agent ${index + 1}`,
+  }));
+  await renderTable({
+    page: { ...page, items: [{ ...rows[0], agentDeploymentCount: manyAgents.length, agentDeployments: manyAgents }] },
+  });
+
+  expect(screen.getByRole("columnheader", { name: "Agent deployments" })).toBeVisible();
+  expect(screen.getByRole("columnheader", { name: "Project deployments" })).toBeVisible();
+  expect(screen.queryByRole("columnheader", { name: "Original description" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("columnheader", { name: "Translated description" })).not.toBeInTheDocument();
+
+  const agentCell = screen.getByLabelText("Agent deployments: 12");
+  expect(agentCell.querySelectorAll("[data-agent-id]")).toHaveLength(7);
+  expect(agentCell.querySelectorAll("[data-agent-row]")).toHaveLength(2);
+  expect(screen.getByText("+5")).toBeVisible();
+  expect(agentCell.querySelector('[data-agent-id="agent-1"]')).toHaveAttribute("title", "Agent 1");
+});
+
+it("keeps four agent tags on one row and wraps the fifth", async () => {
+  const agents = Array.from({ length: 5 }, (_, index) => ({ id: `agent-${index + 1}`, name: `Agent ${index + 1}` }));
+  await renderTable({
+    page: { ...page, items: [{ ...rows[0], agentDeploymentCount: agents.length, agentDeployments: agents }] },
+  });
+
+  const agentCell = screen.getByLabelText("Agent deployments: 5");
+  expect(agentCell.querySelectorAll("[data-agent-id]")).toHaveLength(5);
+  expect(agentCell.querySelectorAll("[data-agent-row]")).toHaveLength(2);
+  expect(agentCell.querySelector('[data-agent-row="0"]')?.querySelectorAll("[data-agent-id]")).toHaveLength(4);
+  expect(agentCell.querySelector('[data-agent-row="1"]')?.querySelectorAll("[data-agent-id]")).toHaveLength(1);
 });
 
 it("opens a focused row with Enter and emits manual sort and pagination", async () => {
@@ -114,7 +177,7 @@ it("opens a focused row with Enter and emits manual sort and pagination", async 
 
   fireEvent.keyDown(screen.getByRole("row", { name: /PDF Reader/ }), { key: "Enter" });
   expect(onOpenSkill).toHaveBeenCalledWith("skill-pdf", expect.any(HTMLElement));
-  fireEvent.click(screen.getByRole("button", { name: "Sort by name" }));
+  fireEvent.click(screen.getByRole("button", { name: "Sort by name / alias" }));
   expect(onQueryChange).toHaveBeenCalledWith(
     expect.objectContaining({ page: 1, sort: { column: "name", direction: "desc" } }),
   );
@@ -127,11 +190,32 @@ it("does not allow the select or name columns to be hidden", async () => {
   await renderTable({ onPreferencesChange });
 
   fireEvent.click(screen.getByRole("button", { name: "Columns and density" }));
-  expect(screen.getByRole("checkbox", { name: "Selection" })).toBeDisabled();
-  expect(screen.getByRole("checkbox", { name: "Name" })).toBeDisabled();
-  fireEvent.click(screen.getByRole("button", { name: "Move version before deployments" }));
+  expect(screen.getByRole("button", { name: "Selection" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "Name / Alias" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "Selection" })).toHaveAttribute("aria-pressed", "true");
+  expect(screen.getByRole("button", { name: "Name / Alias" })).toHaveAttribute("aria-pressed", "true");
+  const versionColumn = screen.getByRole("button", { name: "Version" });
+  const deploymentsColumn = screen.getByRole("button", { name: "Agent deployments" });
+  fireEvent.dragStart(versionColumn);
+  fireEvent.dragOver(deploymentsColumn);
+  fireEvent.drop(deploymentsColumn);
   const next = onPreferencesChange.mock.calls.at(-1)?.[0];
-  expect(next.columnOrder.indexOf("version")).toBeLessThan(next.columnOrder.indexOf("deployments"));
+  expect(next.columnOrder.indexOf("version")).toBeLessThan(next.columnOrder.indexOf("agent_deployments"));
+});
+
+it("moves an adjacent column when dragging from left to right", async () => {
+  const onPreferencesChange = vi.fn();
+  await renderTable({ onPreferencesChange });
+
+  fireEvent.click(screen.getByRole("button", { name: "Columns and density" }));
+  const deploymentsColumn = screen.getByRole("button", { name: "Agent deployments" });
+  const versionColumn = screen.getByRole("button", { name: "Version" });
+  fireEvent.dragStart(deploymentsColumn);
+  fireEvent.dragOver(versionColumn);
+  fireEvent.drop(versionColumn);
+
+  const next = onPreferencesChange.mock.calls.at(-1)?.[0];
+  expect(next.columnOrder.indexOf("agent_deployments")).toBeGreaterThan(next.columnOrder.indexOf("version"));
 });
 
 it("offers all supported page sizes and reports the current page range", async () => {
@@ -244,12 +328,33 @@ it("emits controlled visibility and density preference updates", async () => {
   await renderTable({ onPreferencesChange });
 
   fireEvent.click(screen.getByRole("button", { name: "Columns and density" }));
-  fireEvent.click(screen.getByRole("checkbox", { name: "Purpose" }));
+  const purpose = screen.getByRole("button", { name: "Purpose" });
+  expect(purpose).toHaveAttribute("aria-pressed", "true");
+  expect(purpose).toHaveClass("sh-skill-table__reorder-item--visible");
+  fireEvent.click(purpose);
   expect(onPreferencesChange).toHaveBeenLastCalledWith(expect.objectContaining({
     visibleColumns: expect.not.arrayContaining(["purpose"]),
   }));
+  expect(screen.getByRole("button", { name: "Version" })).not.toHaveClass("sh-skill-table__reorder-item--visible");
   fireEvent.click(screen.getByRole("radio", { name: "Standard" }));
   expect(onPreferencesChange).toHaveBeenLastCalledWith(expect.objectContaining({ density: "standard" }));
+});
+
+it("uses the visibility buttons as draggable order controls", async () => {
+  const onPreferencesChange = vi.fn();
+  await renderTable({ onPreferencesChange });
+
+  fireEvent.click(screen.getByRole("button", { name: "Columns and density" }));
+  const version = screen.getByRole("button", { name: "Version" });
+  const deployments = screen.getByRole("button", { name: "Agent deployments" });
+  expect(version).toHaveAttribute("draggable", "true");
+  expect(deployments).toHaveAttribute("draggable", "true");
+  fireEvent.dragStart(version);
+  fireEvent.dragOver(deployments);
+  fireEvent.drop(deployments);
+
+  const next = onPreferencesChange.mock.calls.at(-1)?.[0];
+  expect(next.columnOrder.indexOf("version")).toBeLessThan(next.columnOrder.indexOf("agent_deployments"));
 });
 
 it("keeps row checkbox keyboard activation isolated from row opening", async () => {
@@ -320,6 +425,38 @@ it("gives every visible column a semantic width contract for narrow overflow", a
   expect(baseCss.slice(narrowIndex)).toMatch(
     /\.sh-skill-table\s*\{[^}]*width:\s*max-content[^}]*min-width:\s*max-content/,
   );
+});
+
+it("keeps horizontal table scrolling visible above the vertically scrolling results", async () => {
+  await renderTable({
+    preferences: {
+      ...DEFAULT_TABLE_PREFERENCES,
+      visibleColumns: [...allColumnIds],
+    },
+  });
+
+  const horizontalScroll = document.querySelector<HTMLElement>(".sh-skill-table__horizontal-scroll");
+  expect(horizontalScroll).toBeInTheDocument();
+  if (!horizontalScroll) throw new Error("Expected the horizontal table scroll rail");
+  expect(horizontalScroll).toHaveClass("sh-skill-table__horizontal-scroll");
+  expect(horizontalScroll.previousElementSibling).toHaveClass("sh-skill-table__region");
+  expect(baseCss).toMatch(/\.sh-skill-table__horizontal-scroll\s*\{[\s\S]*overflow-x:\s*auto/);
+  expect(baseCss).toMatch(
+    /\.sh-skill-table__region\s*\{[\s\S]*overflow-x:\s*hidden[\s\S]*overflow-y:\s*auto/,
+  );
+});
+
+it("keeps the configuration panel and results shell constrained to the page width", async () => {
+  await renderTable();
+
+  fireEvent.click(screen.getByRole("button", { name: "Columns and density" }));
+
+  expect(baseCss).toMatch(/\.sh-skill-table-workspace\s*\{[^}]*min-width:\s*0/);
+  expect(baseCss).toMatch(/\.sh-skill-table__toolbar\s*,\s*\.sh-skill-table__pagination\s*\{[^}]*min-width:\s*0/);
+  expect(baseCss).toMatch(/\.sh-skill-table__controls\s*\{[^}]*min-width:\s*0[^}]*width:\s*100%/);
+  expect(baseCss).toMatch(/\.sh-skill-table__controls\s+fieldset\s*\{[^}]*min-width:\s*0/);
+  expect(baseCss).toMatch(/\.sh-skill-table__region-shell\s*\{[^}]*min-width:\s*0/);
+  expect(baseCss).toMatch(/\.sh-skill-table__reorder\s*\{[^}]*min-width:\s*0[^}]*overflow-x:\s*auto/);
 });
 
 it("disables pagination controls at the first and last pages", async () => {

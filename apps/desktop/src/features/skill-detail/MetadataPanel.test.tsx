@@ -32,6 +32,21 @@ describe("MetadataPanel", () => {
     expect(screen.getByLabelText("我的用途说明")).toHaveTextContent("用于 PDF 表格提取");
   });
 
+  it("shows source identity facts in the complete detail metadata", async () => {
+    await renderMetadata();
+
+    expect(screen.getByText("来源")).toBeVisible();
+    expect(screen.getByText("github:example/pdf-reader")).toBeVisible();
+    expect(screen.getByText("归属")).toBeVisible();
+    expect(screen.getByText("managed")).toBeVisible();
+    expect(screen.getByText("作者")).toBeVisible();
+    expect(screen.getByText("Example Author")).toBeVisible();
+    expect(screen.getByText("许可证")).toBeVisible();
+    expect(screen.getByText("MIT")).toBeVisible();
+    expect(screen.getByText("版权")).toBeVisible();
+    expect(screen.getByText("Copyright 2026 Example Author")).toBeVisible();
+  });
+
   it("keeps a failed purpose draft without putting unrelated sections in edit mode", async () => {
     const facade = createMockSkillDetailFacade({ failMetadataSave: true });
     await renderMetadata({ facade });
@@ -56,6 +71,13 @@ describe("MetadataPanel", () => {
       ]);
       expect(screen.getByLabelText("别名")).toHaveTextContent("PDF 助手");
     });
+  });
+
+  it("explains comma-separated tags while editing", async () => {
+    await renderMetadata();
+    fireEvent.click(screen.getByRole("button", { name: "编辑标签" }));
+
+    expect(screen.getByText("多个标签请用逗号分隔")).toBeVisible();
   });
 
   it("requires confirmation before replacing a user-revised translation", async () => {

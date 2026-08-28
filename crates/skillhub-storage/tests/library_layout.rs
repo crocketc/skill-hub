@@ -1,6 +1,9 @@
 use std::sync::{Arc, Mutex};
 
-use skillhub_core::SkillId;
+use skillhub_core::{
+    catalog::{CallPolicy, Skill},
+    SkillId,
+};
 use skillhub_storage::{CentralLibrary, LibraryManifest, PortableSkillRecord};
 use skillhub_testkit::TempWorkspace;
 
@@ -96,4 +99,30 @@ fn initialization_rejects_an_existing_unknown_manifest_version() {
 
     let error = CentralLibrary::initialize(ws.central_root()).unwrap_err();
     assert_eq!(error.code.as_str(), "input.invalid");
+}
+
+#[test]
+fn portable_manifest_preserves_invocation_policy() {
+    let ws = TempWorkspace::new().unwrap();
+    let library = CentralLibrary::initialize(ws.central_root()).unwrap();
+    let skill = Skill::from_parts(
+        SkillId::new(),
+        "model-only".to_owned(),
+        "model-only".to_owned(),
+        "Description".to_owned(),
+        None,
+        None,
+        Default::default(),
+        None,
+        None,
+        CallPolicy::ModelOnly,
+        skillhub_core::catalog::SkillLifecycle::Normal,
+        Vec::new(),
+        None,
+    )
+    .unwrap();
+
+    library.save_portable_skill(&skill, None).unwrap();
+    let (record, _) = library.load_portable_skill(skill.id()).unwrap().unwrap();
+    assert_eq!(record.call_policy, CallPolicy::ModelOnly);
 }
