@@ -6,9 +6,10 @@ pub enum TranslationState {
     Translated,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub enum CallPolicy {
     /// The Skill can be selected by the model or explicitly by the user.
+    #[default]
     AutomaticAndManual,
     /// Automatic model selection is disabled; explicit user invocation remains available.
     ManualOnly,
@@ -16,12 +17,6 @@ pub enum CallPolicy {
     ModelOnly,
     /// Neither automatic nor explicit invocation is currently available.
     Disabled,
-}
-
-impl Default for CallPolicy {
-    fn default() -> Self {
-        Self::AutomaticAndManual
-    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
