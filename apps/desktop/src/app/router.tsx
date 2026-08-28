@@ -26,10 +26,7 @@ import { SkillLibraryPage } from "../features/skills/SkillLibraryPage";
 import { SkillDetailPage } from "../features/skill-detail/SkillDetailPage";
 import { SkillDetailPreview } from "../features/skill-detail/SkillDetailPreview";
 import { unavailableSkillDetailFacade } from "../features/skill-detail/api";
-import {
-  SkillLibraryPreview,
-  SkillLibraryPreviewShell,
-} from "../features/skills/SkillLibraryPreview";
+import { SkillLibraryPreview } from "../features/skills/SkillLibraryPreview";
 import { unavailableSkillLibraryFacade } from "../features/skills/api";
 import { skillHubI18n } from "../i18n";
 import "../features/markdown/markdown.css";
@@ -37,6 +34,21 @@ import "../styles/base.css";
 import { ThemeProvider } from "../styles/ThemeProvider";
 import { DesktopApp } from "./App";
 import { queryClient } from "./queryClient";
+import {
+  PreviewAgentDetail,
+  PreviewAgentList,
+  PreviewDeployment,
+  PreviewDiscovery,
+  PreviewOperation,
+  PreviewOnboarding,
+  PreviewPending,
+  PreviewProjectDetail,
+  PreviewProjectList,
+  PreviewRecovery,
+  PreviewSecurity,
+  PreviewSettings,
+  PreviewShell,
+} from "./PreviewShell";
 
 function OnboardingRoute() {
   const navigate = useNavigate();
@@ -99,12 +111,25 @@ export const appRouter = createBrowserRouter([
   { element: <OnboardingRoute />, path: "/initialize" },
   ...(import.meta.env.DEV
     ? [
+        { path: "__preview/onboarding", element: <PreviewOnboarding /> },
         {
           path: "__preview",
-          element: <SkillLibraryPreviewShell />,
+          element: <PreviewShell />,
           children: [
+            { index: true, element: <OverviewPage /> },
             { path: "skill-library", element: <SkillLibraryPreview /> },
             { path: "skill-detail/:skillId", element: <SkillDetailPreview /> },
+            { path: "discovery", element: <PreviewDiscovery /> },
+            { path: "agents", element: <PreviewAgentList /> },
+            { path: "agents/:agentKey", element: <PreviewAgentDetail /> },
+            { path: "projects", element: <PreviewProjectList /> },
+            { path: "projects/:projectKey", element: <PreviewProjectDetail /> },
+            { path: "library/:skillId/deploy", element: <PreviewDeployment /> },
+            { path: "library/:skillId/security", element: <PreviewSecurity /> },
+            { path: "pending", element: <PreviewPending /> },
+            { path: "operations/:operationId", element: <PreviewOperation /> },
+            { path: "recovery", element: <PreviewRecovery /> },
+            { path: "settings", element: <PreviewSettings /> },
           ],
         },
       ]

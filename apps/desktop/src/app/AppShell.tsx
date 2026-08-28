@@ -21,35 +21,38 @@ export type RouteTitleKey =
   | "navigation.settings";
 
 export function resolveRouteTitleKey(pathname: string): RouteTitleKey {
-  if (pathname === "/") {
+  const routePath = pathname.startsWith("/__preview")
+    ? pathname.slice("/__preview".length) || "/"
+    : pathname;
+  if (routePath === "/") {
     return "navigation.overview";
   }
-  if (pathname.startsWith("/agents")) {
+  if (routePath.startsWith("/agents")) {
     return "navigation.agents";
   }
-  if (pathname.startsWith("/discovery")) {
+  if (routePath.startsWith("/discovery")) {
     return "navigation.discovery";
   }
   if (
-    pathname.startsWith("/library") ||
+    routePath.startsWith("/library") ||
     pathname === "/__preview/skill-library" ||
     pathname.startsWith("/__preview/skill-detail/")
   ) {
     return "navigation.library";
   }
-  if (pathname.startsWith("/operations")) {
+  if (routePath.startsWith("/operations")) {
     return "navigation.operations";
   }
-  if (pathname.startsWith("/recovery")) {
+  if (routePath.startsWith("/recovery")) {
     return "navigation.operations";
   }
-  if (pathname.startsWith("/pending")) {
+  if (routePath.startsWith("/pending")) {
     return "navigation.pending";
   }
-  if (pathname.startsWith("/projects")) {
+  if (routePath.startsWith("/projects")) {
     return "navigation.projects";
   }
-  if (pathname.startsWith("/settings")) {
+  if (routePath.startsWith("/settings")) {
     return "navigation.settings";
   }
 

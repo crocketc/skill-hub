@@ -4075,3 +4075,55 @@ a {
     padding-block: 0;
   }
 }
+
+.sh-preview-toolbar {
+  align-items: center;
+  background: var(--color-surface-strong, #18251f);
+  color: var(--color-on-surface-strong, #f3f7f1);
+  display: flex;
+  gap: var(--space-4, 1rem);
+  min-height: 2.5rem;
+  padding: 0.35rem 1rem;
+  position: fixed;
+  right: 0;
+  top: 0;
+  z-index: 50;
+}
+
+.sh-preview-toolbar strong {
+  font-size: 0.75rem;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+.sh-preview-toolbar div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+}
+
+.sh-preview-toolbar button {
+  background: transparent;
+  border: 1px solid color-mix(in srgb, currentColor 30%, transparent);
+  border-radius: 999px;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.72rem;
+  padding: 0.2rem 0.55rem;
+}
+
+.sh-preview-toolbar button:hover,
+.sh-preview-toolbar button[aria-current="page"] {
+  background: color-mix(in srgb, currentColor 18%, transparent);
+}
+
+@media (max-width: 58rem) {
+  .sh-preview-toolbar {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 0.25rem;
+    left: 0;
+    padding-inline: 0.75rem;
+  }
+}

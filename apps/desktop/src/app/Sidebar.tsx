@@ -71,10 +71,15 @@ function NavigationLinks({ items, collapsed }: { items: NavigationItem[]; collap
   return (
     <ul className="sh-sidebar__list">
       {items.map((item) => {
-        const isPreviewLibrary =
-          item.href === "/library" && pathname.startsWith("/__preview/skill-");
+        const previewPath = pathname.startsWith("/__preview")
+          ? pathname.slice("/__preview".length) || "/"
+          : undefined;
+        const isPreviewLibrary = item.href === "/library" && Boolean(
+          previewPath?.startsWith("/skill-library") || previewPath?.startsWith("/skill-detail"),
+        );
         const isCurrent =
           isPreviewLibrary ||
+          (previewPath !== undefined && (item.href === "/" ? previewPath === "/" : previewPath === item.href || previewPath.startsWith(`${item.href}/`))) ||
           (item.href === "/"
             ? pathname === "/"
             : pathname === item.href || pathname.startsWith(`${item.href}/`));
