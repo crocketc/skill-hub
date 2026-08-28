@@ -331,46 +331,70 @@ function DrawerConfiguration({
 }: DrawerConfigurationProps) {
   const { t } = useTranslation();
   const visible = new Set(preferences.visibleModules);
-  const optionalOrder = preferences.moduleOrder.filter((moduleId) =>
-    OPTIONAL_DRAWER_MODULES.includes(moduleId as OptionalDrawerModule),
-  );
+  const [draggedModule, setDraggedModule] = useState<DrawerModuleId | null>(null);
+  const [dragOverModule, setDragOverModule] = useState<DrawerModuleId | null>(null);
+  const suppressToggleClick = useRef(false);
+
+  const clearDragState = () => {
+    setDraggedModule(null);
+    setDragOverModule(null);
+  };
+
   return (
     <section
       aria-label={t("skillLibrary.drawer.configure")}
       className="sh-skill-drawer__configuration"
     >
-      <fieldset>
+      <fieldset className="sh-skill-drawer__module-toggles">
         <legend>{t("skillLibrary.drawer.moduleVisibility")}</legend>
         {preferences.moduleOrder.map((moduleId) => (
-          <label key={moduleId}>
-            <input
-              aria-label={t(MODULE_LABEL_KEYS[moduleId])}
-              checked={visible.has(moduleId)}
-              disabled={isRequiredDrawerModule(moduleId)}
-              onChange={(event) => onToggle(moduleId, event.currentTarget.checked)}
-              type="checkbox"
-            />
+          <button
+            aria-pressed={visible.has(moduleId)}
+            className={`sh-skill-drawer__module-toggle${
+              visible.has(moduleId) ? " sh-skill-drawer__module-toggle--visible" : ""
+            }${
+              isRequiredDrawerModule(moduleId)
+                ? " sh-skill-drawer__module-toggle--locked"
+                : ""
+            }${dragOverModule === moduleId ? " sh-skill-drawer__module-toggle--target" : ""}`}
+            disabled={isRequiredDrawerModule(moduleId)}
+            draggable={!isRequiredDrawerModule(moduleId)}
+            key={moduleId}
+            onClick={() => {
+              if (suppressToggleClick.current) {
+                suppressToggleClick.current = false;
+                return;
+              }
+              onToggle(moduleId, !visible.has(moduleId));
+            }}
+            onDragEnd={clearDragState}
+            onDragOver={(event) => {
+              if (draggedModule && draggedModule !== moduleId) {
+                event.preventDefault();
+                setDragOverModule(moduleId);
+              }
+            }}
+            onDragStart={() => {
+              setDraggedModule(moduleId);
+              setDragOverModule(null);
+            }}
+            onDrop={(event) => {
+              event.preventDefault();
+              if (draggedModule && draggedModule !== moduleId) {
+                onMoveBefore(draggedModule, moduleId);
+                suppressToggleClick.current = true;
+                window.setTimeout(() => {
+                  suppressToggleClick.current = false;
+                }, 0);
+              }
+              clearDragState();
+            }}
+            type="button"
+          >
             {t(MODULE_LABEL_KEYS[moduleId])}
-          </label>
+          </button>
         ))}
       </fieldset>
-      <div className="sh-skill-drawer__reorder">
-        {optionalOrder.map((moduleId, index) => {
-          const before = optionalOrder[index - 1];
-          return before ? (
-            <button
-              key={moduleId}
-              onClick={() => onMoveBefore(moduleId, before)}
-              type="button"
-            >
-              {t("skillLibrary.drawer.moveBefore", {
-                before: t(MODULE_LABEL_KEYS[before]).toLocaleLowerCase(),
-                module: t(MODULE_LABEL_KEYS[moduleId]).toLocaleLowerCase(),
-              })}
-            </button>
-          ) : null;
-        })}
-      </div>
       <Button onClick={onReset} size="sm" variant="secondary">
         {t("skillLibrary.drawer.reset")}
       </Button>
@@ -637,14 +661,25 @@ export function SkillQuickDrawer({
       >
         <div className="sh-skill-drawer__chrome">
           <div className="sh-skill-drawer__toolbar">
-            <Button
-              aria-expanded={configurationOpen}
-              onClick={() => setConfigurationOpen((current) => !current)}
-              size="sm"
-              variant="ghost"
-            >
-              {t("skillLibrary.drawer.configure")}
-            </Button>
+            <div className="sh-skill-drawer__toolbar-start">
+              <Button
+                aria-expanded={configurationOpen}
+                onClick={() => setConfigurationOpen((current) => !current)}
+                size="sm"
+                variant="ghost"
+              >
+                {t("skillLibrary.drawer.configure")}
+              </Button>
+              {view && skillId ? (
+                <Link
+                  className="sh-button sh-button--secondary sh-button--sm"
+                  state={libraryReturn ? { libraryReturn } : undefined}
+                  to={{ pathname: `${location.pathname.startsWith("/__preview") ? "/__preview/skill-detail" : "/library"}/${skillId}`, search: detailSearch }}
+                >
+                  {t("skillLibrary.drawer.fullDetails")}
+                </Link>
+              ) : null}
+            </div>
             <div aria-label={t("skillLibrary.drawer.presets.label")} className="sh-skill-drawer__presets" role="group">
               {(["standard", "wide", "near_full"] as const).map((preset) => (
                 <Button
@@ -724,17 +759,6 @@ export function SkillQuickDrawer({
           ) : null}
         </div>
 
-        {view && skillId ? (
-          <footer className="sh-skill-drawer__footer">
-            <Link
-              className="sh-button sh-button--secondary sh-button--sm"
-              state={libraryReturn ? { libraryReturn } : undefined}
-              to={{ pathname: `${location.pathname.startsWith("/__preview") ? "/__preview/skill-detail" : "/library"}/${skillId}`, search: detailSearch }}
-            >
-              {t("skillLibrary.drawer.fullDetails")}
-            </Link>
-          </footer>
-        ) : null}
       </div>
     </Drawer>
   );

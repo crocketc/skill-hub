@@ -41,6 +41,10 @@ async function renderDetail({
               element={<SkillDetailPage facade={facade} markdownFacade={markdownFacade} />}
               path="/library/:skillId"
             />
+            <Route
+              element={<SkillDetailPage facade={facade} markdownFacade={markdownFacade} />}
+              path="/__preview/skill-detail/:skillId"
+            />
           </Routes>
         </MemoryRouter>
       </I18nextProvider>
@@ -88,6 +92,31 @@ describe("SkillDetailPage shell", () => {
       "/library?q=pdf&sort=version%3Adesc",
     );
     expect(await screen.findByRole("heading", { name: "PDF Reader" })).toBeVisible();
+  });
+
+  it("returns to the preview Skill library instead of the unavailable production route", async () => {
+    await renderDetail({
+      entry: {
+        pathname: "/__preview/skill-detail/skill-pdf",
+        search: "?q=pdf",
+        state: {
+          libraryReturn: {
+            focusSkillId: "skill-pdf",
+            scrollLeft: 0,
+            scrollTop: 416,
+          },
+        },
+      },
+    });
+
+    expect(await screen.findByRole("link", { name: "Back to Skill library" })).toHaveAttribute(
+      "href",
+      "/__preview/skill-library?q=pdf",
+    );
+    expect(screen.getByRole("link", { name: "Next Skill" })).toHaveAttribute(
+      "href",
+      "/__preview/skill-detail/skill-sheet?q=pdf",
+    );
   });
 
   it("omits fabricated previous and next controls on direct entry", async () => {

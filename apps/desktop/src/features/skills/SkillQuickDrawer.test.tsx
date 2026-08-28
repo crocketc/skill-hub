@@ -299,17 +299,23 @@ describe("drawer preference helpers", () => {
   });
 });
 
-it("keeps required modules visible while reordering optional modules", async () => {
+it("keeps required modules visible while toggling and reordering modules", async () => {
   const facade = createMockSkillLibraryFacade();
   await renderDrawer({ facade });
   fireEvent.click(
     await screen.findByRole("button", { name: "Configure quick drawer" }),
   );
-  expect(screen.getByRole("checkbox", { name: "Identity" })).toBeDisabled();
-  expect(screen.getByRole("checkbox", { name: "Risk summary" })).toBeDisabled();
-  fireEvent.click(
-    screen.getByRole("button", { name: "Move versions before relations" }),
-  );
+  expect(screen.getByRole("button", { name: "Identity" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "Risk summary" })).toBeDisabled();
+  const relations = screen.getByRole("button", { name: "Relations" });
+  expect(relations).toHaveAttribute("aria-pressed", "true");
+  fireEvent.click(relations);
+  expect(relations).toHaveAttribute("aria-pressed", "false");
+
+  const versions = screen.getByRole("button", { name: "Versions" });
+  fireEvent.dragStart(versions);
+  fireEvent.dragOver(relations);
+  fireEvent.drop(relations);
   await waitFor(() => {
     const order = facade.calls.saveDrawerPreferences.at(-1)!.moduleOrder;
     expect(order.indexOf("versions")).toBeLessThan(order.indexOf("relations"));
@@ -489,7 +495,7 @@ it("resets defaults, keeps modules independently scrollable, and links to full d
   fireEvent.click(
     await screen.findByRole("button", { name: "Configure quick drawer" }),
   );
-  fireEvent.click(screen.getByRole("checkbox", { name: "Relations" }));
+  fireEvent.click(screen.getByRole("button", { name: "Relations" }));
   fireEvent.click(screen.getByRole("button", { name: "Reset to default" }));
   await waitFor(() => {
     expect(facade.calls.saveDrawerPreferences.at(-1)).toEqual(
@@ -502,6 +508,9 @@ it("resets defaults, keeps modules independently scrollable, and links to full d
   expect(screen.getByRole("link", { name: "View full details" })).toHaveAttribute(
     "href",
     "/library/skill-pdf",
+  );
+  expect(document.querySelector(".sh-skill-drawer__toolbar a")).toBe(
+    screen.getByRole("link", { name: "View full details" }),
   );
 });
 

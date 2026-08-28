@@ -42,6 +42,9 @@ export function SkillDetailPage({
   const { t } = useTranslation();
   const location = useLocation();
   const { skillId = "" } = useParams();
+  const isPreviewRoute = location.pathname.startsWith("/__preview/");
+  const backPathname = isPreviewRoute ? "/__preview/skill-library" : "/library";
+  const detailPathname = isPreviewRoute ? "/__preview/skill-detail" : "/library";
   const libraryReturn = readLibraryReturnState(location.state);
   const backSearch = detailSearchFromLibrary(location.search);
   const libraryQuery = parseSkillLibrarySearchParams(backSearch).query;
@@ -97,7 +100,14 @@ export function SkillDetailPage({
     <section className="sh-skill-detail">
       <div className="sh-skill-detail__layout">
         <aside className="sh-skill-detail__rail">
-          <DetailHeader adjacent={adjacentQuery.data} backSearch={backSearch} summary={summaryQuery.data} />
+          <DetailHeader
+            adjacent={adjacentQuery.data}
+            backPathname={backPathname}
+            backSearch={backSearch}
+            detailPathname={detailPathname}
+            libraryReturn={libraryReturn}
+            summary={summaryQuery.data}
+          />
           <DetailSectionNav />
         </aside>
         <main className="sh-skill-detail__content">
