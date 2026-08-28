@@ -2269,7 +2269,7 @@ a {
 .sh-skill-table [data-column="purpose"] { width: 12rem; min-width: 12rem; }
 .sh-skill-table [data-column="tags"] { width: 10rem; min-width: 10rem; }
 .sh-skill-table [data-column="lifecycle"] { width: 7rem; min-width: 7rem; }
-.sh-skill-table [data-column="agent_deployments"] { width: 10rem; min-width: 10rem; }
+.sh-skill-table [data-column="agent_deployments"] { width: 14rem; min-width: 14rem; }
 .sh-skill-table [data-column="project_deployments"] { width: 9rem; min-width: 9rem; }
 .sh-skill-table [data-column="version"] { width: 9rem; min-width: 9rem; }
 .sh-skill-table [data-column="security"] { width: 22rem; min-width: 22rem; }
@@ -2362,12 +2362,12 @@ a {
   color: var(--agent-accent);
   display: inline-flex;
   flex: 0 0 auto;
-  height: 1.45rem;
+  height: 1.35rem;
   justify-content: flex-start;
   overflow: hidden;
-  padding: 0 0.45rem;
+  padding: 0 0.35rem;
   transition: transform 140ms ease, box-shadow 140ms ease;
-  max-width: 9rem;
+  max-width: 5.8rem;
   min-width: 0;
 }
 
@@ -2381,10 +2381,27 @@ a {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 0.68rem;
+  font-size: 0.65rem;
   font-weight: 750;
   letter-spacing: 0.01em;
   line-height: 1;
+}
+
+.sh-skill-table__agent-deployment-overflow {
+  display: inline-flex;
+  min-width: 1.35rem;
+  height: 1.35rem;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  padding-inline: 0.25rem;
+  background: var(--color-surface-muted);
+  color: var(--color-text-secondary);
+  font-size: 0.65rem;
+  font-weight: 750;
+  line-height: 1;
+  white-space: nowrap;
 }
 
 .sh-skill-table__agent-deployments-empty {

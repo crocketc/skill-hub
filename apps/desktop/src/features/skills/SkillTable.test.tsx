@@ -136,7 +136,7 @@ it("renders invocation actor badges instead of a raw invocation command", async 
   expect(invocationCell).toHaveAttribute("data-invocation-mode", "model_only");
 });
 
-it("splits deployments into project count and capped agent icons", async () => {
+it("splits deployments into project count and compact agent tags", async () => {
   const manyAgents = Array.from({ length: 12 }, (_, index) => ({
     id: `agent-${index + 1}`,
     name: `Agent ${index + 1}`,
@@ -151,12 +151,13 @@ it("splits deployments into project count and capped agent icons", async () => {
   expect(screen.queryByRole("columnheader", { name: "Translated description" })).not.toBeInTheDocument();
 
   const agentCell = screen.getByLabelText("Agent deployments: 12");
-  expect(agentCell.querySelectorAll("[data-agent-id]")).toHaveLength(10);
+  expect(agentCell.querySelectorAll("[data-agent-id]")).toHaveLength(7);
   expect(agentCell.querySelectorAll("[data-agent-row]")).toHaveLength(2);
+  expect(screen.getByText("+5")).toBeVisible();
   expect(agentCell.querySelector('[data-agent-id="agent-1"]')).toHaveAttribute("title", "Agent 1");
 });
 
-it("keeps five agent deployments on one row", async () => {
+it("keeps four agent tags on one row and wraps the fifth", async () => {
   const agents = Array.from({ length: 5 }, (_, index) => ({ id: `agent-${index + 1}`, name: `Agent ${index + 1}` }));
   await renderTable({
     page: { ...page, items: [{ ...rows[0], agentDeploymentCount: agents.length, agentDeployments: agents }] },
@@ -164,7 +165,9 @@ it("keeps five agent deployments on one row", async () => {
 
   const agentCell = screen.getByLabelText("Agent deployments: 5");
   expect(agentCell.querySelectorAll("[data-agent-id]")).toHaveLength(5);
-  expect(agentCell.querySelectorAll("[data-agent-row]")).toHaveLength(1);
+  expect(agentCell.querySelectorAll("[data-agent-row]")).toHaveLength(2);
+  expect(agentCell.querySelector('[data-agent-row="0"]')?.querySelectorAll("[data-agent-id]")).toHaveLength(4);
+  expect(agentCell.querySelector('[data-agent-row="1"]')?.querySelectorAll("[data-agent-id]")).toHaveLength(1);
 });
 
 it("opens a focused row with Enter and emits manual sort and pagination", async () => {

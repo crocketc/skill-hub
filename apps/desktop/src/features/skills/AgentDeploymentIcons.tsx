@@ -54,8 +54,35 @@ const AGENT_VISUALS: Record<string, AgentVisual> = {
   zcode: { color: "#16a34a" },
 };
 
+const AGENT_DISPLAY_NAMES: Record<string, string> = {
+  anthropic: "Claude",
+  claude: "Claude",
+  cline: "Cline",
+  codebuddy: "CodeBuddy",
+  codex: "Codex",
+  comate: "CoMate",
+  cursor: "Cursor",
+  gemini: "Gemini",
+  "github-copilot": "Copilot",
+  google: "Gemini",
+  grok: "Grok",
+  hermes: "Hermes",
+  kimi: "Kimi",
+  openai: "OpenAI",
+  openclaw: "OpenClaw",
+  opencode: "OpenCode",
+  qoder: "Qoder",
+  trae: "Trae",
+  windsurf: "Windsurf",
+  zcode: "ZCode",
+};
+
 export function getAgentVisual(agent: AgentDeployment): AgentVisual {
   return AGENT_VISUALS[agent.id.toLowerCase()] ?? { color: "#64748b" };
+}
+
+export function getAgentDisplayName(agent: AgentDeployment) {
+  return AGENT_DISPLAY_NAMES[agent.id.toLowerCase()] ?? agent.name;
 }
 
 function AgentMark({ agent }: { agent: AgentDeployment }) {
@@ -68,7 +95,19 @@ function AgentMark({ agent }: { agent: AgentDeployment }) {
       style={style}
       title={agent.name}
     >
-      <span className="sh-skill-table__agent-deployment-label">{agent.name}</span>
+      <span className="sh-skill-table__agent-deployment-label">{getAgentDisplayName(agent)}</span>
+    </span>
+  );
+}
+
+function AgentOverflow({ count }: { count: number }) {
+  return (
+    <span
+      aria-label={`+${count} additional agents`}
+      className="sh-skill-table__agent-deployment-overflow"
+      title={`+${count} additional agents`}
+    >
+      +{count}
     </span>
   );
 }
@@ -79,14 +118,16 @@ export interface AgentDeploymentIconsProps {
 }
 
 export function AgentDeploymentIcons({ agents, ariaLabel }: AgentDeploymentIconsProps) {
-  const visibleAgents = agents.slice(0, 10);
+  const visibleAgents = agents.slice(0, 7);
+  const overflowCount = Math.max(0, agents.length - visibleAgents.length);
   if (visibleAgents.length === 0) return <span className="sh-skill-table__agent-deployments-empty">—</span>;
-  const rows = [visibleAgents.slice(0, 5), visibleAgents.slice(5, 10)].filter((row) => row.length > 0);
+  const rows = [visibleAgents.slice(0, 4), visibleAgents.slice(4, 7)].filter((row) => row.length > 0);
   return (
     <div aria-label={ariaLabel} className="sh-skill-table__agent-deployments">
       {rows.map((row, index) => (
         <div className="sh-skill-table__agent-deployment-row" data-agent-row={index} key={index}>
           {row.map((agent) => <AgentMark agent={agent} key={agent.id} />)}
+          {index === 1 && overflowCount > 0 ? <AgentOverflow count={overflowCount} /> : null}
         </div>
       ))}
     </div>
