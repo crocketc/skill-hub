@@ -674,8 +674,8 @@ export function SkillQuickDrawer({
 
   return (
     <Drawer
-      compactHeader
       description={t("skillLibrary.drawer.description")}
+      hideHeader
       leadingAccessory={resizeHandle}
       onOpenChange={onOpenChange}
       open={open}
@@ -702,6 +702,14 @@ export function SkillQuickDrawer({
               </Link>
             ) : <span />}
             <div className="sh-skill-drawer__toolbar-end">
+              <Button
+                aria-expanded={configurationOpen}
+                onClick={() => setConfigurationOpen((current) => !current)}
+                size="sm"
+                variant="ghost"
+              >
+                {t("skillLibrary.drawer.configure")}
+              </Button>
               <div aria-label={t("skillLibrary.drawer.presets.label")} className="sh-skill-drawer__presets" role="group">
                 {(["standard", "wide", "near_full"] as const).map((preset) => (
                   <Button
@@ -722,12 +730,13 @@ export function SkillQuickDrawer({
                 ))}
               </div>
               <Button
-                aria-expanded={configurationOpen}
-                onClick={() => setConfigurationOpen((current) => !current)}
+                aria-label={t("actions.close")}
+                className="sh-skill-drawer__close-button"
+                onClick={() => onOpenChange(false)}
                 size="sm"
                 variant="ghost"
               >
-                {t("skillLibrary.drawer.configure")}
+                <span aria-hidden="true">×</span>
               </Button>
             </div>
           </div>

@@ -501,9 +501,7 @@ it("resets defaults, keeps modules independently scrollable, and links to full d
   const facade = createMockSkillLibraryFacade();
   await renderDrawer({ facade });
   const drawer = await screen.findByRole("dialog", { name: "PDF Reader" });
-  expect(drawer.querySelector(".sh-drawer__header")).toHaveClass(
-    "sh-drawer__header--compact",
-  );
+  expect(drawer.querySelector(".sh-drawer__header")).not.toBeInTheDocument();
   fireEvent.click(
     await screen.findByRole("button", { name: "Configure quick drawer" }),
   );
@@ -533,6 +531,9 @@ it("resets defaults, keeps modules independently scrollable, and links to full d
   );
   expect(toolbar?.lastElementChild).toContainElement(
     screen.getByRole("button", { name: "Configure quick drawer" }),
+  );
+  expect(toolbar?.lastElementChild).toContainElement(
+    screen.getByRole("button", { name: "Close" }),
   );
   expect(screen.getByRole("button", { name: "Standard width" })).toHaveClass(
     "sh-skill-drawer__preset-icon-button",

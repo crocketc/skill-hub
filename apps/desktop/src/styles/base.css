@@ -125,6 +125,10 @@ a {
   animation: sh-drawer-in var(--motion-normal) var(--ease-standard);
 }
 
+.sh-drawer--headerless {
+  grid-template-rows: 1fr;
+}
+
 .sh-drawer__header,
 .sh-dialog__actions {
   display: flex;
@@ -2397,11 +2401,16 @@ a {
   flex-wrap: wrap;
 }
 
-.sh-skill-drawer__preset-icon-button {
+.sh-skill-drawer__preset-icon-button,
+.sh-skill-drawer__close-button {
   width: 2.25rem;
   min-width: 2.25rem;
   height: 2.25rem;
   padding: 0;
+}
+
+.sh-skill-drawer__close-button {
+  font-size: var(--font-size-base);
 }
 
 .sh-skill-drawer__preset-icon {
