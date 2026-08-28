@@ -31,6 +31,7 @@ import type {
   ProjectView,
 } from "../features/projects/api";
 import { projectFixture } from "../features/projects/api";
+import type { RemovalImpact } from "../features/removal/api";
 import type {
   SecurityCheck,
   SecurityFacade,
@@ -153,6 +154,16 @@ export function createPreviewSettingsFacade(): SettingsFacade {
     },
   };
 }
+
+export const previewRemovalImpact: RemovalImpact = {
+  dependentProjects: ["Demo Project"],
+  deployments: [
+    { id: "remove-codex", label: "Codex CLI", path: "C:/Users/demo/.codex/skills/pdf-reader", physicalId: "codex-skills" },
+    { id: "remove-claude", label: "Claude Code", path: "C:/Users/demo/.claude/skills/pdf-reader", physicalId: "claude-skills" },
+  ],
+  skillId: "skill-pdf",
+  skillName: "PDF Reader",
+};
 
 export function createPreviewImportFacade(): ImportFacade {
   return createMockImportFacade({ scenario: "agent-owned-partial" });

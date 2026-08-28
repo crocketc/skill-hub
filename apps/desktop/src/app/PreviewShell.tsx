@@ -11,6 +11,7 @@ import {
   createPreviewProjectFacade,
   createPreviewSecurityFacade,
   createPreviewSettingsFacade,
+  previewRemovalImpact,
   previewBootstrapSnapshot,
   previewBootstrapRuntime,
   previewOnboardingOperations,
@@ -26,6 +27,7 @@ const links = [
   ["/pending", "待处理"],
   ["/operations/op-preview-42", "操作进度"],
   ["/recovery", "恢复"],
+  ["/removal", "删除影响"],
   ["/settings", "设置"],
 ] as const;
 
@@ -67,6 +69,7 @@ export function PreviewPending() { return <Pending facade={createPreviewPendingF
 export function PreviewOperation({ id }: { id?: string }) { return <Operation facade={createPreviewOperationFacade()} id={id} />; }
 export function PreviewRecovery() { return <Recovery facade={createPreviewOperationFacade()} />; }
 export function PreviewSettings() { return <Settings facade={createPreviewSettingsFacade()} />; }
+export function PreviewRemoval() { return <RemovalImpactDialog impact={previewRemovalImpact} onConfirm={() => undefined} />; }
 export function PreviewOnboarding() {
   return <OnboardingWizard libraryPath="C:/SkillHub/library" operations={previewOnboardingOperations} runtime={previewBootstrapRuntime} />;
 }
@@ -81,6 +84,7 @@ import { PendingPage } from "../features/pending/PendingPage";
 import { ProjectDetailPage } from "../features/projects/ProjectDetailPage";
 import { ProjectListPage } from "../features/projects/ProjectListPage";
 import { RecoveryPage } from "../features/recovery/RecoveryPage";
+import { RemovalImpactDialog } from "../features/removal/RemovalImpactDialog";
 import { SecurityResults } from "../features/security/SecurityResults";
 import { SettingsPage } from "../features/settings/SettingsPage";
 
