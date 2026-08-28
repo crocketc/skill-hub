@@ -647,6 +647,26 @@ it("offers single-skill tag actions and saves alias and note edits on blur", asy
   expect(screen.getByText("Use for invoices")).toBeVisible();
 });
 
+it("labels drawer identity fields in source-first and user-metadata order", async () => {
+  const facade = createMockSkillLibraryFacade();
+  await renderDrawer({ facade });
+
+  const drawer = await screen.findByTestId("skill-quick-drawer");
+  const identity = within(drawer).getByRole("heading", { name: "PDF Reader" });
+  const region = identity.closest(".sh-skill-drawer__identity");
+  expect(region).toBeInTheDocument();
+
+  const originalDescription = within(region as HTMLElement).getByText(/Original description/);
+  const purpose = within(region as HTMLElement).getByText(/My purpose/);
+  const note = within(region as HTMLElement).getByText(/My note/);
+  expect(originalDescription).toBeVisible();
+  expect(within(region as HTMLElement).getByText("Extracts text from PDF files.")).toBeVisible();
+  expect(purpose).toBeVisible();
+  expect(note).toBeVisible();
+  expect(originalDescription.compareDocumentPosition(purpose) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(purpose.compareDocumentPosition(note) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+});
+
 it("does not fetch details while the drawer is disabled", async () => {
   const facade = createMockSkillLibraryFacade();
   await renderDrawer({ facade, open: false });

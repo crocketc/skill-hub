@@ -2561,6 +2561,7 @@ a {
 .sh-skill-drawer__identity > div {
   display: flex;
   align-items: baseline;
+  flex-wrap: wrap;
   gap: var(--space-2);
 }
 
@@ -2614,6 +2615,24 @@ a {
   text-wrap: balance;
 }
 
+.sh-skill-drawer__field {
+  margin-top: var(--space-1);
+}
+
+.sh-skill-drawer__field-label,
+.sh-skill-drawer__note-label {
+  flex: 0 0 auto;
+  color: var(--color-text-muted);
+  font-size: 0.8125rem;
+}
+
+.sh-skill-drawer__field-value {
+  min-width: 0;
+  flex: 1 1 12rem;
+  color: var(--color-text-secondary);
+  text-wrap: pretty;
+}
+
 .sh-skill-drawer__identity span,
 .sh-skill-drawer__secondary,
 .sh-skill-drawer__empty,
@@ -2635,8 +2654,7 @@ a {
 }
 
 .sh-skill-drawer__note-label {
-  color: var(--color-text-muted);
-  font-size: 0.8125rem;
+  margin-right: var(--space-1);
 }
 
 .sh-skill-drawer__actions {

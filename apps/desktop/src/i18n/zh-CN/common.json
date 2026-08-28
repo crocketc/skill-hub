@@ -436,9 +436,12 @@
         "lastUsed": "最近使用：{{value}}",
         "license": "许可证",
         "note": "我的备注",
+        "originalDescription": "原始描述",
         "ownership": "归属",
+        "purpose": "我的用途",
         "projects": "项目",
         "source": "来源",
+        "translatedDescription": "描述译文",
         "upToDate": "已是最新版本",
         "updateAvailable": "有可用更新"
       }

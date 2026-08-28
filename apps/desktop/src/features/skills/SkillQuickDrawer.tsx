@@ -283,6 +283,9 @@ function IdentityRegion({
     <section className="sh-skill-drawer__identity">
       <div className="sh-skill-drawer__identity-heading">
         <h2>{view.name}</h2>
+        <span className="sh-skill-drawer__field-label">
+          {t("skillLibrary.drawer.values.alias")}:
+        </span>
         {editingField === "alias" ? (
           <input
             aria-label={t("skillLibrary.drawer.values.alias")}
@@ -309,10 +312,30 @@ function IdentityRegion({
           <span aria-hidden="true">✎</span>
         </button>
       </div>
-      <p>{view.purpose}</p>
-      <p className="sh-skill-drawer__secondary">
-        {view.translatedDescription ?? view.originalDescription ?? t("skillLibrary.drawer.emptyValue")}
-      </p>
+      <div className="sh-skill-drawer__field">
+        <span className="sh-skill-drawer__field-label">
+          {t("skillLibrary.drawer.values.originalDescription")}:
+        </span>
+        <span className="sh-skill-drawer__field-value">
+          {view.originalDescription ?? <EmptyValue />}
+        </span>
+      </div>
+      {view.translatedDescription ? (
+        <div className="sh-skill-drawer__field">
+          <span className="sh-skill-drawer__field-label">
+            {t("skillLibrary.drawer.values.translatedDescription")}:
+          </span>
+          <span className="sh-skill-drawer__field-value sh-skill-drawer__secondary">
+            {view.translatedDescription}
+          </span>
+        </div>
+      ) : null}
+      <div className="sh-skill-drawer__field">
+        <span className="sh-skill-drawer__field-label">
+          {t("skillLibrary.drawer.values.purpose")}:
+        </span>
+        <span className="sh-skill-drawer__field-value">{view.purpose}</span>
+      </div>
       <div className="sh-skill-drawer__note">
         <span className="sh-skill-drawer__note-label">
           {t("skillLibrary.drawer.values.note")}:

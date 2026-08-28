@@ -436,9 +436,12 @@
         "lastUsed": "Last used: {{value}}",
         "license": "License",
         "note": "My note",
+        "originalDescription": "Original description",
         "ownership": "Ownership",
+        "purpose": "My purpose",
         "projects": "Projects",
         "source": "Source",
+        "translatedDescription": "Translation",
         "upToDate": "Up to date",
         "updateAvailable": "Update available"
       }
