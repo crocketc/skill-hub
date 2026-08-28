@@ -674,6 +674,7 @@ export function SkillQuickDrawer({
 
   return (
     <Drawer
+      compactHeader
       description={t("skillLibrary.drawer.description")}
       leadingAccessory={resizeHandle}
       onOpenChange={onOpenChange}

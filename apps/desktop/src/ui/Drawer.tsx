@@ -12,6 +12,7 @@ import { Button } from "./Button";
 
 interface DrawerBaseProps {
   children: ReactNode;
+  compactHeader?: boolean;
   closeLabel?: string;
   description?: string;
   leadingAccessory?: ReactNode;
@@ -59,6 +60,7 @@ function usePrefersReducedMotion() {
 
 export function Drawer({
   children,
+  compactHeader = false,
   closeLabel,
   description,
   leadingAccessory,
@@ -92,12 +94,18 @@ export function Drawer({
           style={panelStyle}
         >
           {leadingAccessory}
-          <header className="sh-drawer__header">
+          <header className={`sh-drawer__header${compactHeader ? " sh-drawer__header--compact" : ""}`}>
             <div>
-              <Dialog.Title className="sh-drawer__title">{title}</Dialog.Title>
+              <Dialog.Title className={compactHeader ? "sh-visually-hidden" : "sh-drawer__title"}>
+                {title}
+              </Dialog.Title>
               <Dialog.Description
                 className={
-                  description ? "sh-drawer__description" : "sh-visually-hidden"
+                  compactHeader
+                    ? "sh-visually-hidden"
+                    : description
+                      ? "sh-drawer__description"
+                      : "sh-visually-hidden"
                 }
               >
                 {description ?? title}

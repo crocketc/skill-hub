@@ -500,6 +500,10 @@ it("shows the detail error state", async () => {
 it("resets defaults, keeps modules independently scrollable, and links to full details", async () => {
   const facade = createMockSkillLibraryFacade();
   await renderDrawer({ facade });
+  const drawer = await screen.findByRole("dialog", { name: "PDF Reader" });
+  expect(drawer.querySelector(".sh-drawer__header")).toHaveClass(
+    "sh-drawer__header--compact",
+  );
   fireEvent.click(
     await screen.findByRole("button", { name: "Configure quick drawer" }),
   );
