@@ -31,8 +31,34 @@ it("keeps the supported adapter profiles mapped to stable local icon visuals", (
   for (const id of profileIds) {
     const visual = getAgentVisual({ id, name: id });
     expect(visual.color).toMatch(/^#/);
-    expect(visual.glyph).toMatch(/^(spark|orbit|copilot|knot|monogram|x)$/);
+    expect(visual.glyph).toMatch(/^(spark|orbit|copilot|knot|kite|monogram|terminal|x)$/);
     expect(visual.mark.length).toBeGreaterThan(0);
+  }
+});
+
+it("gives the recognizable primary agents a dedicated non-monogram mark", () => {
+  const primaryIds = [
+    "anthropic",
+    "codex",
+    "cline",
+    "cursor",
+    "github-copilot",
+    "google",
+    "grok",
+    "kimi",
+    "openai",
+    "opencode",
+    "windsurf",
+  ];
+
+  for (const id of primaryIds) {
+    expect(getAgentVisual({ id, name: id }).glyph, id).not.toBe("monogram");
+  }
+});
+
+it("keeps every built-in profile on an SVG glyph rather than a plain text badge", () => {
+  for (const id of profileIds) {
+    expect(getAgentVisual({ id, name: id }).glyph, id).not.toBe("monogram");
   }
 });
 
