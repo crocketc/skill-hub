@@ -222,23 +222,26 @@ function ExternalChangesModule({ view }: ModuleProps) {
 
 function UsageEvidenceModule({ view }: ModuleProps) {
   const { t } = useTranslation();
-  if (!view.usageEvidence) {
-    return null;
-  }
   return (
     <ModuleCard title={t(MODULE_LABEL_KEYS.usage_evidence)}>
-      <p>
-        {t("skillLibrary.drawer.values.invocationCount", {
-          count: view.usageEvidence.invocationCount,
-        })}
-      </p>
-      {view.usageEvidence.lastUsedAt ? (
-        <p className="sh-skill-drawer__secondary">
-          {t("skillLibrary.drawer.values.lastUsed", {
-            value: view.usageEvidence.lastUsedAt,
-          })}
-        </p>
-      ) : null}
+      {view.usageEvidence ? (
+        <>
+          <p>
+            {t("skillLibrary.drawer.values.invocationCount", {
+              count: view.usageEvidence.invocationCount,
+            })}
+          </p>
+          {view.usageEvidence.lastUsedAt ? (
+            <p className="sh-skill-drawer__secondary">
+              {t("skillLibrary.drawer.values.lastUsed", {
+                value: view.usageEvidence.lastUsedAt,
+              })}
+            </p>
+          ) : null}
+        </>
+      ) : (
+        <EmptyValue />
+      )}
     </ModuleCard>
   );
 }
@@ -317,6 +320,7 @@ function RiskSummary({ view }: ModuleProps) {
 }
 
 interface DrawerConfigurationProps {
+  onMoveAfter: (moved: DrawerModuleId, after: DrawerModuleId) => void;
   onMoveBefore: (moved: DrawerModuleId, before: DrawerModuleId) => void;
   onReset: () => void;
   onToggle: (moduleId: DrawerModuleId, visible: boolean) => void;
@@ -324,6 +328,7 @@ interface DrawerConfigurationProps {
 }
 
 function DrawerConfiguration({
+  onMoveAfter,
   onMoveBefore,
   onReset,
   onToggle,
@@ -367,7 +372,12 @@ function DrawerConfiguration({
               }
               onToggle(moduleId, !visible.has(moduleId));
             }}
-            onDragEnd={clearDragState}
+            onDragEnd={() => {
+              clearDragState();
+              window.setTimeout(() => {
+                suppressToggleClick.current = false;
+              }, 0);
+            }}
             onDragOver={(event) => {
               if (draggedModule && draggedModule !== moduleId) {
                 event.preventDefault();
@@ -375,13 +385,20 @@ function DrawerConfiguration({
               }
             }}
             onDragStart={() => {
+              suppressToggleClick.current = true;
               setDraggedModule(moduleId);
               setDragOverModule(null);
             }}
             onDrop={(event) => {
               event.preventDefault();
               if (draggedModule && draggedModule !== moduleId) {
-                onMoveBefore(draggedModule, moduleId);
+                const draggedIndex = preferences.moduleOrder.indexOf(draggedModule);
+                const targetIndex = preferences.moduleOrder.indexOf(moduleId);
+                if (draggedIndex < targetIndex) {
+                  onMoveAfter(draggedModule, moduleId);
+                } else {
+                  onMoveBefore(draggedModule, moduleId);
+                }
                 suppressToggleClick.current = true;
                 window.setTimeout(() => {
                   suppressToggleClick.current = false;
@@ -519,6 +536,19 @@ export function SkillQuickDrawer({
         before,
       ),
     });
+  };
+
+  const moveModuleAfter = (moved: DrawerModuleId, after: DrawerModuleId) => {
+    const moduleOrder = [...normalizedPreferences.moduleOrder];
+    const movedIndex = moduleOrder.indexOf(moved);
+    const afterIndex = moduleOrder.indexOf(after);
+    if (movedIndex < 0 || afterIndex < 0 || moved === after) {
+      return;
+    }
+    moduleOrder.splice(movedIndex, 1);
+    const nextAfterIndex = moduleOrder.indexOf(after);
+    moduleOrder.splice(nextAfterIndex + 1, 0, moved);
+    persistPreferences({ ...normalizedPreferences, moduleOrder });
   };
 
   const completeResize = (pointerId: number, persistWidth: boolean) => {
@@ -672,7 +702,7 @@ export function SkillQuickDrawer({
               </Button>
               {view && skillId ? (
                 <Link
-                  className="sh-button sh-button--secondary sh-button--sm"
+                  className="sh-button sh-button--primary sh-button--sm"
                   state={libraryReturn ? { libraryReturn } : undefined}
                   to={{ pathname: `${location.pathname.startsWith("/__preview") ? "/__preview/skill-detail" : "/library"}/${skillId}`, search: detailSearch }}
                 >
@@ -731,6 +761,7 @@ export function SkillQuickDrawer({
         >
           {configurationOpen ? (
             <DrawerConfiguration
+              onMoveAfter={moveModuleAfter}
               onMoveBefore={moveModuleBefore}
               onReset={() =>
                 persistPreferences({
@@ -747,9 +778,6 @@ export function SkillQuickDrawer({
             <div className="sh-skill-drawer__modules">
               {optionalOrder.map((moduleId) => {
                 if (!visibleModules.has(moduleId)) {
-                  return null;
-                }
-                if (moduleId === "usage_evidence" && !view.usageEvidence) {
                   return null;
                 }
                 const ModuleRenderer = OPTIONAL_MODULE_RENDERERS[moduleId];

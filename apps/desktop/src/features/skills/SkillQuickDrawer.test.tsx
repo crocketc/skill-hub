@@ -320,6 +320,14 @@ it("keeps required modules visible while toggling and reordering modules", async
     const order = facade.calls.saveDrawerPreferences.at(-1)!.moduleOrder;
     expect(order.indexOf("versions")).toBeLessThan(order.indexOf("relations"));
   });
+
+  fireEvent.dragStart(relations);
+  fireEvent.dragOver(versions);
+  fireEvent.drop(versions);
+  await waitFor(() => {
+    const order = facade.calls.saveDrawerPreferences.at(-1)!.moduleOrder;
+    expect(order.indexOf("relations")).toBeGreaterThan(order.indexOf("versions"));
+  });
 });
 
 it("starts wide, changes presets, and persists a clamped drag width", async () => {
@@ -512,6 +520,9 @@ it("resets defaults, keeps modules independently scrollable, and links to full d
   expect(document.querySelector(".sh-skill-drawer__toolbar a")).toBe(
     screen.getByRole("link", { name: "View full details" }),
   );
+  expect(screen.getByRole("link", { name: "View full details" })).toHaveClass(
+    "sh-button--primary",
+  );
 });
 
 it("carries the library query and return position into full details", async () => {
@@ -553,7 +564,7 @@ it("inherits reduced motion and emits only a single-skill action intent", async 
     });
   });
   expect(screen.queryByText(/completed/i)).not.toBeInTheDocument();
-  expect(screen.queryByText("Usage evidence")).not.toBeInTheDocument();
+  expect(screen.getByRole("heading", { name: "Usage evidence" })).toBeVisible();
   expect(screen.queryByText(/0 invocations/i)).not.toBeInTheDocument();
 });
 
