@@ -391,6 +391,19 @@ it("keeps horizontal table scrolling visible above the vertically scrolling resu
   );
 });
 
+it("keeps the configuration panel and results shell constrained to the page width", async () => {
+  await renderTable();
+
+  fireEvent.click(screen.getByRole("button", { name: "Columns and density" }));
+
+  expect(baseCss).toMatch(/\.sh-skill-table-workspace\s*\{[^}]*min-width:\s*0/);
+  expect(baseCss).toMatch(/\.sh-skill-table__toolbar\s*,\s*\.sh-skill-table__pagination\s*\{[^}]*min-width:\s*0/);
+  expect(baseCss).toMatch(/\.sh-skill-table__controls\s*\{[^}]*min-width:\s*0[^}]*width:\s*100%/);
+  expect(baseCss).toMatch(/\.sh-skill-table__controls\s+fieldset\s*\{[^}]*min-width:\s*0/);
+  expect(baseCss).toMatch(/\.sh-skill-table__region-shell\s*\{[^}]*min-width:\s*0/);
+  expect(baseCss).toMatch(/\.sh-skill-table__reorder\s*\{[^}]*min-width:\s*0[^}]*overflow-x:\s*auto/);
+});
+
 it("disables pagination controls at the first and last pages", async () => {
   await renderTable({ page: { ...page, page: 1 }, query: { ...DEFAULT_SKILL_QUERY, page: 1, pageSize: 10 } });
   expect(screen.getByRole("button", { name: "Previous page" })).toBeDisabled();
