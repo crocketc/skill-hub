@@ -46,6 +46,12 @@ const MOCK_AGENT_DEPLOYMENTS = [
   { id: "qoder", name: "Qoder" },
 ] as const;
 
+const MOCK_PROJECT_DEPLOYMENTS = [
+  { id: "project-docs", name: "Document workflows", path: "C:\\workspace\\document-workflows" },
+  { id: "project-ops", name: "Operations", path: "C:\\workspace\\operations" },
+  { id: "project-lab", name: "Skill lab", path: "C:\\workspace\\skill-lab" },
+] as const;
+
 function clone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
 }
@@ -153,6 +159,14 @@ function quickView(row: SkillTableRow): SkillQuickView {
     dependencies: row.id === "skill-pdf" ? ["pymupdf"] : [],
     duplicateCandidates: [],
     externalChanges: [],
+    projectDeployments:
+      row.id === "skill-pdf"
+        ? [...MOCK_PROJECT_DEPLOYMENTS]
+        : Array.from({ length: row.projectDeploymentCount }, (_, index) => ({
+            id: `${row.id}-project-${index + 1}`,
+            name: `${row.name} project ${index + 1}`,
+            path: `C:\\workspace\\${row.id}\\project-${index + 1}`,
+          })),
     usageEvidence:
       row.id === "skill-pdf"
         ? { invocationCount: 12, lastUsedAt: "2026-08-24T10:00:00Z" }

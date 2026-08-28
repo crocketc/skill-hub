@@ -55,6 +55,7 @@ const QUICK_VIEW: SkillQuickView = {
 interface MockOptions {
   failDrawerSave?: boolean;
   failQuickView?: boolean;
+  quickView?: SkillQuickView;
   quickViewPromise?: Promise<SkillQuickView>;
   saveDrawerPreference?: (
     preferences: SkillDrawerPreferences,
@@ -104,6 +105,9 @@ function createMockSkillLibraryFacade(options: MockOptions = {}): MockFacade {
       }
       if (options.quickViewPromise) {
         return options.quickViewPromise;
+      }
+      if (options.quickView) {
+        return options.quickView;
       }
       return {
         ...QUICK_VIEW,
@@ -503,6 +507,53 @@ it("shows the detail error state", async () => {
   expect(await screen.findByRole("alert")).toHaveTextContent(
     "Could not load skill details",
   );
+});
+
+it("shows agent tags and project names with paths in the relations module", async () => {
+  const facade = createMockSkillLibraryFacade({
+    quickView: {
+      ...QUICK_VIEW,
+      agentDeployments: [
+        { id: "codex", name: "OpenAI Codex" },
+        { id: "claude", name: "Claude Code" },
+      ],
+      projectDeployments: [
+        { id: "project-docs", name: "Document workflows", path: "C:\\workspace\\docs" },
+        { id: "project-ops", name: "Operations", path: "C:\\workspace\\ops" },
+      ],
+    } as SkillQuickView,
+  });
+  await renderDrawer({ facade });
+
+  expect(await screen.findByText("Codex")).toBeVisible();
+  expect(screen.getByText("Claude")).toBeVisible();
+  expect(screen.getByText("Document workflows")).toBeVisible();
+  expect(screen.getByText("C:\\workspace\\docs")).toBeVisible();
+  expect(screen.getByText("Operations")).toBeVisible();
+  expect(screen.getByText("C:\\workspace\\ops")).toBeVisible();
+});
+
+it("limits long project relations and expands the remaining entries on demand", async () => {
+  const facade = createMockSkillLibraryFacade({
+    quickView: {
+      ...QUICK_VIEW,
+      projectDeployments: Array.from({ length: 5 }, (_, index) => ({
+        id: `project-${index + 1}`,
+        name: `Project ${index + 1}`,
+        path: `C:\\workspace\\project-${index + 1}`,
+      })),
+    } as SkillQuickView,
+  });
+  await renderDrawer({ facade });
+
+  expect(await screen.findByText("Project 1")).toBeVisible();
+  expect(screen.getByText("Project 3")).toBeVisible();
+  expect(screen.queryByText("Project 4")).not.toBeInTheDocument();
+  const expand = screen.getByRole("button", { name: /Show 2 more projects/ });
+  expect(expand).toHaveAttribute("aria-expanded", "false");
+  fireEvent.click(expand);
+  expect(screen.getByText("Project 5")).toBeVisible();
+  expect(expand).toHaveAttribute("aria-expanded", "true");
 });
 
 it("resets defaults, keeps modules independently scrollable, and links to full details", async () => {

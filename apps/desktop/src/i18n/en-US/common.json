@@ -432,6 +432,10 @@
         "high": "{{count}} high risk",
         "pending": "{{count}} pending"
       },
+      "relations": {
+        "showFewerProjects": "Show fewer projects",
+        "showMoreProjects": "Show {{count}} more projects"
+      },
       "title": "Skill details",
       "values": {
         "agents": "Agents",

@@ -29,6 +29,7 @@ import {
 } from "./api";
 import { InvocationBadge } from "./InvocationBadge";
 import { BatchTagDialog, type BatchTagAction } from "./BatchTagDialog";
+import { AgentDeploymentIcons } from "./AgentDeploymentIcons";
 import {
   OPTIONAL_DRAWER_MODULES,
   clampDrawerWidth,
@@ -117,20 +118,70 @@ function ValueList({ values }: { values: string[] }) {
   );
 }
 
+const MAX_VISIBLE_PROJECTS = 3;
+
 function RelationsModule({ view }: ModuleProps) {
   const { t } = useTranslation();
+  const [projectsExpanded, setProjectsExpanded] = useState(false);
+  const agentDeployments = view.agentDeployments ?? [];
+  const projects = view.projectDeployments ?? [];
+  const visibleProjects = projectsExpanded ? projects : projects.slice(0, MAX_VISIBLE_PROJECTS);
+  const hiddenProjectCount = Math.max(0, projects.length - MAX_VISIBLE_PROJECTS);
+
   return (
     <ModuleCard title={t(MODULE_LABEL_KEYS.relations)}>
-      <dl className="sh-skill-drawer__facts">
-        <div>
-          <dt>{t("skillLibrary.drawer.values.agents")}</dt>
-          <dd>{view.agentDeploymentCount}</dd>
+      <div className="sh-skill-drawer__relations-grid">
+        <div className="sh-skill-drawer__relation-group">
+          <div className="sh-skill-drawer__relation-heading">
+            <strong>{t("skillLibrary.drawer.values.agents")}</strong>
+            <span className="sh-skill-drawer__relation-count">{view.agentDeploymentCount}</span>
+          </div>
+          {agentDeployments.length > 0 ? (
+            <AgentDeploymentIcons
+              agents={agentDeployments}
+              ariaLabel={t("skillLibrary.table.agentDeploymentSummary", {
+                count: view.agentDeploymentCount,
+              })}
+            />
+          ) : (
+            <EmptyValue />
+          )}
         </div>
-        <div>
-          <dt>{t("skillLibrary.drawer.values.projects")}</dt>
-          <dd>{view.projectDeploymentCount}</dd>
+        <div className="sh-skill-drawer__relation-group">
+          <div className="sh-skill-drawer__relation-heading">
+            <strong>{t("skillLibrary.drawer.values.projects")}</strong>
+            <span className="sh-skill-drawer__relation-count">{view.projectDeploymentCount}</span>
+          </div>
+          {projects.length > 0 ? (
+            <>
+              <ul className="sh-skill-drawer__project-list">
+                {visibleProjects.map((project) => (
+                  <li key={project.id}>
+                    <strong title={project.name}>{project.name}</strong>
+                    <code title={project.path}>{project.path}</code>
+                  </li>
+                ))}
+              </ul>
+              {hiddenProjectCount > 0 ? (
+                <button
+                  aria-expanded={projectsExpanded}
+                  className="sh-skill-drawer__project-toggle"
+                  onClick={() => setProjectsExpanded((current) => !current)}
+                  type="button"
+                >
+                  {projectsExpanded
+                    ? t("skillLibrary.drawer.relations.showFewerProjects")
+                    : t("skillLibrary.drawer.relations.showMoreProjects", {
+                        count: hiddenProjectCount,
+                      })}
+                </button>
+              ) : null}
+            </>
+          ) : (
+            <EmptyValue />
+          )}
         </div>
-      </dl>
+      </div>
     </ModuleCard>
   );
 }

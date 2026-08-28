@@ -432,6 +432,10 @@
         "high": "{{count}} 个高风险项",
         "pending": "{{count}} 项待处理"
       },
+      "relations": {
+        "showFewerProjects": "收起项目",
+        "showMoreProjects": "展开另外 {{count}} 个项目"
+      },
       "title": "Skill 详情",
       "values": {
         "agents": "Agent",

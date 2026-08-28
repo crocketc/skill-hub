@@ -13,6 +13,11 @@ export interface AgentDeployment {
   id: string;
   name: string;
 }
+export interface ProjectDeployment {
+  id: string;
+  name: string;
+  path: string;
+}
 export type SkillColumnId =
   | "select"
   | "name"
@@ -86,6 +91,7 @@ export interface SkillQuickView extends SkillTableRow {
   duplicateCandidates: string[];
   externalChanges: string[];
   note?: string;
+  projectDeployments?: ProjectDeployment[];
   usageEvidence?: { invocationCount: number; lastUsedAt?: string };
 }
 
