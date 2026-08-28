@@ -146,6 +146,28 @@ describe("SkillDetailPage shell", () => {
     );
   });
 
+  it("updates the preview detail and keeps adjacent controls after navigation", async () => {
+    await renderDetail({ entry: "/__preview/skill-detail/skill-pdf" });
+
+    expect(await screen.findByRole("heading", { name: "PDF Reader" })).toBeVisible();
+    fireEvent.click(screen.getByRole("link", { name: "Next Skill" }));
+
+    expect(await screen.findByRole("heading", { name: "Spreadsheet Reader" })).toBeVisible();
+    expect(await screen.findByRole("heading", { name: "Read spreadsheet data safely" })).toBeVisible();
+    expect(screen.getByRole("link", { name: "Previous Skill" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Next Skill" })).toBeDisabled();
+  });
+
+  it("renders adjacent controls as a compact horizontal navigation", async () => {
+    await renderDetail({ entry: "/__preview/skill-detail/skill-pdf" });
+
+    const navigation = await screen.findByRole("navigation", { name: "Skill navigation" });
+    expect(navigation).toHaveClass("sh-skill-detail__adjacent");
+    expect(navigation.querySelectorAll("a")).toHaveLength(2);
+    expect(baseCss).toMatch(/\.sh-skill-detail__adjacent\s*\{[\s\S]*display:\s*flex/);
+    expect(baseCss).toMatch(/\.sh-skill-detail__adjacent\s*\{[\s\S]*flex-direction:\s*row/);
+  });
+
   it("recovers from a summary failure without leaving the detail route", async () => {
     await renderDetail({
       facade: createMockSkillDetailFacade({ failSummaryOnce: true }),

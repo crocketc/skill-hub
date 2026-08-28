@@ -646,6 +646,7 @@
     },
     "navigation": {
       "back": "Back to Skill library",
+      "label": "Skill navigation",
       "next": "Next Skill",
       "position": "{{position}} of {{total}}",
       "previous": "Previous Skill",

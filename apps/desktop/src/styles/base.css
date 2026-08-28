@@ -1030,8 +1030,7 @@ a {
   width: fit-content;
 }
 
-.sh-skill-detail__title-row,
-.sh-skill-detail__adjacent {
+.sh-skill-detail__title-row {
   align-items: flex-end;
   display: flex;
   justify-content: space-between;
@@ -1047,10 +1046,6 @@ a {
 .sh-skill-detail__rail .sh-skill-detail__title-row h1 {
   overflow-wrap: anywhere;
   font-size: clamp(1.5rem, 3vw, 2rem);
-}
-
-.sh-skill-detail__rail .sh-skill-detail__adjacent {
-  justify-content: flex-start;
 }
 
 .sh-skill-detail__title-row h1,
@@ -1076,13 +1071,34 @@ a {
 
 .sh-skill-detail__adjacent {
   align-items: center;
+  display: flex;
+  flex-direction: row;
   flex-wrap: wrap;
-  justify-content: flex-end;
+  justify-content: space-between;
+  gap: var(--space-2);
 }
 
 .sh-skill-detail__adjacent span {
   color: var(--color-text-muted);
   font-size: 0.8125rem;
+}
+
+.sh-skill-detail__adjacent-controls {
+  align-items: center;
+  display: flex;
+  flex-direction: row;
+  gap: var(--space-1);
+}
+
+.sh-skill-detail__adjacent-controls .sh-button {
+  font-size: 0.75rem;
+  padding-inline: var(--space-2);
+  white-space: nowrap;
+}
+
+.sh-skill-detail__adjacent-controls .sh-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
 }
 
 .sh-skill-detail__layout {

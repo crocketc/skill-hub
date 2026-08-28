@@ -55,7 +55,7 @@ export function SkillDetailPage({
     retry: false,
   });
   const adjacentQuery = useQuery({
-    enabled: hasLibraryContext,
+    enabled: isPreviewRoute || hasLibraryContext,
     queryFn: () => facade.getAdjacentContext(skillId, libraryQuery),
     queryKey: skillDetailKeys.adjacent(skillId, libraryQuery),
   });

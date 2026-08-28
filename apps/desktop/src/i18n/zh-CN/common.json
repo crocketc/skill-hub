@@ -646,6 +646,7 @@
     },
     "navigation": {
       "back": "返回 Skill 库",
+      "label": "Skill 导航",
       "next": "下一个 Skill",
       "position": "第 {{position}} 个，共 {{total}} 个",
       "previous": "上一个 Skill",
