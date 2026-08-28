@@ -323,11 +323,21 @@
     "page": {
       "batch": {
         "addTo": "添加到",
+        "addTags": "添加标签",
+        "addTagsDescription": "输入的标签会添加到所有选中的 Skill。",
+        "addTagsTitle": "批量添加标签",
         "archive": "归档",
         "error": "无法启动批量流程",
         "export": "导出",
+        "impact": "将影响 {{count}} 个 Skill",
         "label": "批量操作",
+        "removeTags": "移除标签",
+        "removeTagsDescription": "输入的标签会从所有选中的 Skill 中移除。",
+        "removeTagsTitle": "批量移除标签",
         "securityCheck": "运行安全检查",
+        "tagsHint": "多个标签请用逗号分隔，重复标签会自动合并。",
+        "tagsLabel": "标签",
+        "tagsPlaceholder": "例如：待复核，客户可见",
         "unconnected": "此批量流程尚未连接"
       },
       "pageStatus": "第 {{page}} 页 · 共 {{count}} 条结果",

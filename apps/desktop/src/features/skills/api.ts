@@ -112,7 +112,13 @@ export interface SavedSkillView {
   table: SkillTablePreferences;
 }
 
-export type BatchAction = "add_to" | "security_check" | "export" | "archive";
+export type BatchAction =
+  | "add_to"
+  | "security_check"
+  | "export"
+  | "archive"
+  | "add_tag"
+  | "remove_tag";
 export type SkillFilterSnapshot = Pick<SkillLibraryQuery, "filters" | "text">;
 export type BatchTarget =
   | { kind: "skill_ids"; skillIds: string[] }
@@ -120,6 +126,8 @@ export type BatchTarget =
 export interface SkillBatchIntent {
   action: BatchAction;
   target: BatchTarget;
+  /** Tags supplied by the batch tag workflow. Other actions omit this field. */
+  tags?: string[];
 }
 
 export interface SkillLibraryFacade {

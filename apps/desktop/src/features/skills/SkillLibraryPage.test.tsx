@@ -136,6 +136,31 @@ describe("SkillLibraryPage", () => {
     expect(screen.queryByText("Security check completed")).not.toBeInTheDocument();
   });
 
+  it("previews and confirms batch tag additions for the selected skills", async () => {
+    const facade = createMockSkillLibraryFacade();
+    renderLibrary({ facade });
+
+    fireEvent.click(
+      await screen.findByRole("checkbox", { name: "Select PDF Reader" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Add tags" }));
+
+    const dialog = await screen.findByRole("dialog", { name: "Add tags" });
+    expect(within(dialog).getByText("This will affect 1 Skill")).toBeVisible();
+    fireEvent.change(within(dialog).getByRole("textbox", { name: "Tags" }), {
+      target: { value: "review, urgent" },
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Add tags" }));
+
+    await waitFor(() => {
+      expect(facade.calls.emitBatchIntent).toContainEqual({
+        action: "add_tag",
+        tags: ["review", "urgent"],
+        target: { kind: "skill_ids", skillIds: ["skill-pdf"] },
+      });
+    });
+  });
+
   it("restores query and drawer state from the URL and preserves scroll and focus", async () => {
     const facade = createMockSkillLibraryFacade();
     const view = renderLibrary({

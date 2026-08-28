@@ -189,11 +189,20 @@ export function createMockSkillLibraryFacade(
         throw options.failPage;
       }
 
-      const itemCount = Math.min(query.pageSize, total);
-      const items = options.pageItems ?? defaultRows(itemCount);
+      const itemCount = options.total === undefined
+        ? Math.min(query.pageSize, total)
+        : Math.min(query.pageSize, Math.max(total - (query.page - 1) * query.pageSize, 0));
+      const allRows = options.pageItems ?? defaultRows(total);
+      const start = (query.page - 1) * query.pageSize;
+      // Keep the small default fixture backwards-compatible for tests that only
+      // need a row regardless of URL page state. Explicit totals opt into the
+      // deterministic multi-page preview used by the browser shell.
+      const items = options.pageItems ?? (
+        options.total === undefined ? defaultRows(itemCount) : allRows.slice(start, start + itemCount)
+      );
       return clone({
         facets: {
-          tags: [...new Set(defaultRows(Math.max(itemCount, 3)).flatMap((row) => row.tags))].sort(),
+          tags: [...new Set(allRows.flatMap((row) => row.tags))].sort(),
         },
         items,
         page: query.page,

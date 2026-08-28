@@ -323,11 +323,21 @@
     "page": {
       "batch": {
         "addTo": "Add to",
+        "addTags": "Add tags",
+        "addTagsDescription": "The entered tags will be added to every selected Skill.",
+        "addTagsTitle": "Add tags",
         "archive": "Archive",
         "error": "The batch workflow could not be started",
         "export": "Export",
+        "impact": "This will affect {{count}} Skill",
         "label": "Batch actions",
+        "removeTags": "Remove tags",
+        "removeTagsDescription": "The entered tags will be removed from every selected Skill.",
+        "removeTagsTitle": "Remove tags",
         "securityCheck": "Run security check",
+        "tagsHint": "Separate multiple tags with commas. Duplicate tags are ignored.",
+        "tagsLabel": "Tags",
+        "tagsPlaceholder": "e.g. review, customer-facing",
         "unconnected": "This batch workflow is not connected"
       },
       "pageStatus": "Page {{page}} · {{count}} results",

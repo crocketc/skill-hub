@@ -48,6 +48,7 @@ import {
   type SkillSelection,
 } from "./selection";
 import { SkillFilters } from "./SkillFilters";
+import { BatchTagDialog, type BatchTagAction } from "./BatchTagDialog";
 import { SkillQuickDrawer } from "./SkillQuickDrawer";
 import { SkillTable } from "./SkillTable";
 
@@ -76,6 +77,7 @@ interface BatchBarProps {
   onAction: (action: BatchAction) => void;
   onClear: () => void;
   onSelectAll: () => void;
+  onTagAction: (action: BatchTagAction) => void;
   page: SkillPage;
   selection: Exclude<SkillSelection, { kind: "none" }>;
 }
@@ -89,8 +91,10 @@ const BATCH_ACTIONS: readonly BatchAction[] = [
 
 const BATCH_ACTION_KEYS = {
   add_to: "skillLibrary.page.batch.addTo",
+  add_tag: "skillLibrary.page.batch.addTags",
   archive: "skillLibrary.page.batch.archive",
   export: "skillLibrary.page.batch.export",
+  remove_tag: "skillLibrary.page.batch.removeTags",
   security_check: "skillLibrary.page.batch.securityCheck",
 } as const satisfies Record<BatchAction, string>;
 
@@ -248,6 +252,7 @@ function BatchBar({
   onAction,
   onClear,
   onSelectAll,
+  onTagAction,
   page,
   selection,
 }: BatchBarProps): JSX.Element {
@@ -284,6 +289,12 @@ function BatchBar({
             {t(BATCH_ACTION_KEYS[action])}
           </Button>
         ))}
+        <Button onClick={() => onTagAction("add_tag")} size="sm" variant="ghost">
+          {t("skillLibrary.page.batch.addTags")}
+        </Button>
+        <Button onClick={() => onTagAction("remove_tag")} size="sm" variant="ghost">
+          {t("skillLibrary.page.batch.removeTags")}
+        </Button>
         <Button onClick={onClear} size="sm" variant="ghost">
           {t("skillLibrary.page.selection.clear")}
         </Button>
@@ -317,6 +328,7 @@ export function SkillLibraryPage({ facade }: SkillLibraryPageProps): JSX.Element
   const [drawerSaveFailure, setDrawerSaveFailure] = useState<SkillDrawerPreferences>();
   const [selectionAnnouncement, setSelectionAnnouncement] = useState<string>();
   const [batchAnnouncement, setBatchAnnouncement] = useState<string>();
+  const [batchTagAction, setBatchTagAction] = useState<BatchTagAction>();
   const [saveViewOpen, setSaveViewOpen] = useState(false);
   const [saveViewName, setSaveViewName] = useState("");
   const [saveViewError, setSaveViewError] = useState<string>();
@@ -555,6 +567,21 @@ export function SkillLibraryPage({ facade }: SkillLibraryPageProps): JSX.Element
     setBatchAnnouncement(undefined);
     const intent = { action, target: selectionToBatchTarget(selection) };
     void facade.emitBatchIntent(intent).catch((error: unknown) => {
+      if (request !== batchRequestRef.current) return;
+      setBatchAnnouncement(
+        isSkillLibraryUnavailable(error)
+          ? t("skillLibrary.page.batch.unconnected")
+          : t("skillLibrary.page.batch.error"),
+      );
+    });
+  };
+
+  const emitBatchTagAction = (action: BatchTagAction, tags: string[]) => {
+    if (selection.kind === "none" || selectionCount(selection) <= 0) return;
+    const request = batchRequestRef.current + 1;
+    batchRequestRef.current = request;
+    setBatchAnnouncement(undefined);
+    void facade.emitBatchIntent({ action, tags, target: selectionToBatchTarget(selection) }).catch((error: unknown) => {
       if (request !== batchRequestRef.current) return;
       setBatchAnnouncement(
         isSkillLibraryUnavailable(error)
@@ -817,8 +844,21 @@ export function SkillLibraryPage({ facade }: SkillLibraryPageProps): JSX.Element
                 page.total,
               ),
             )}
+          onTagAction={setBatchTagAction}
           page={page}
           selection={selectedBatchTarget}
+        />
+      ) : null}
+
+      {selectedBatchTarget && batchTagAction ? (
+        <BatchTagDialog
+          action={batchTagAction}
+          count={selectionCount(selectedBatchTarget)}
+          onCancel={() => setBatchTagAction(undefined)}
+          onConfirm={(tags) => {
+            setBatchTagAction(undefined);
+            emitBatchTagAction(batchTagAction, tags);
+          }}
         />
       ) : null}
 
