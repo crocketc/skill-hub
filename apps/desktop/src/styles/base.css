@@ -2343,13 +2343,13 @@ a {
 .sh-skill-table__agent-deployments {
   display: grid;
   gap: 0.2rem;
-  justify-items: center;
+  justify-items: start;
   min-width: 0;
 }
 
 .sh-skill-table__agent-deployment-row {
   display: flex;
-  justify-content: center;
+  justify-content: flex-start;
   gap: 0.3rem;
   min-width: 0;
 }

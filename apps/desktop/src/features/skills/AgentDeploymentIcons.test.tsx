@@ -1,4 +1,5 @@
 import { expect, it } from "vitest";
+import baseCss from "../../styles/base.css?raw";
 import {
   AGENT_PROFILE_IDS,
   getAgentVisual,
@@ -68,4 +69,13 @@ it("uses the neutral monogram fallback for an unknown agent", () => {
     glyph: "monogram",
     mark: "NA",
   });
+});
+
+it("aligns deployment icons with the agent deployment column header", () => {
+  expect(baseCss).toMatch(
+    /\.sh-skill-table__agent-deployments\s*\{[^}]*justify-items:\s*start/,
+  );
+  expect(baseCss).toMatch(
+    /\.sh-skill-table__agent-deployment-row\s*\{[^}]*justify-content:\s*flex-start/,
+  );
 });
