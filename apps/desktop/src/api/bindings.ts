@@ -1254,6 +1254,13 @@ export type SkillResult = {
 	skill_id: SkillId,
 	display_name: string,
 	runtime_name: string,
+	original_description: string,
+	translated_description: string | null,
+	user_note: string | null,
+	tags: string[],
+	license: string | null,
+	lifecycle: SkillLifecycle,
+	trial_due: string | null,
 };
 
 export type SourceDescriptor = {

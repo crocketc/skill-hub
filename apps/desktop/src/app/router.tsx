@@ -25,7 +25,7 @@ import { OverviewPage } from "../features/overview/OverviewPage";
 import { SkillLibraryPage } from "../features/skills/SkillLibraryPage";
 import { SkillDetailPage } from "../features/skill-detail/SkillDetailPage";
 import { SkillDetailPreview } from "../features/skill-detail/SkillDetailPreview";
-import { unavailableSkillDetailFacade } from "../features/skill-detail/api";
+import { nativeSkillDetailFacade } from "../features/skill-detail/nativeApi";
 import {
   SkillLibraryPreview,
   SkillLibraryPreviewShell,
@@ -80,7 +80,7 @@ export const appRouter = createBrowserRouter([
       },
       {
         path: "library/:skillId",
-        element: <SkillDetailPage facade={unavailableSkillDetailFacade} />,
+        element: <SkillDetailPage facade={nativeSkillDetailFacade} />,
       },
       { path: "library/:skillId/deploy", element: <DeploymentRoute /> },
       { path: "library/:skillId/security", element: <SecurityRoute /> },

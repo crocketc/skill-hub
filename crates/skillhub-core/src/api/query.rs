@@ -62,6 +62,13 @@ pub struct SkillResult {
     pub skill_id: SkillId,
     pub display_name: String,
     pub runtime_name: String,
+    pub original_description: String,
+    pub translated_description: Option<String>,
+    pub user_note: Option<String>,
+    pub tags: Vec<String>,
+    pub license: Option<String>,
+    pub lifecycle: SkillLifecycle,
+    pub trial_due: Option<String>,
 }
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 pub struct VersionResult {

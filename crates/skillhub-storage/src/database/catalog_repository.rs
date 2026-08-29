@@ -32,6 +32,58 @@ impl<'a> CatalogRepositorySqlite<'a> {
             .map_err(error)
     }
 
+    /// Reads the persisted, user-visible detail projection without loading
+    /// version contents or deployment files.
+    pub fn get_detail(&self, id: SkillId) -> AppResult<Option<SkillListItem>> {
+        let id_text = id.to_string();
+        let row = self
+            .database
+            .connection
+            .query_row(
+                "SELECT display_name,runtime_name,original_description,translated_description,user_note,license,lifecycle,trial_due FROM skills LEFT JOIN catalog_skill_metadata ON catalog_skill_metadata.skill_id=skills.id WHERE skills.id=?1",
+                [&id_text],
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, String>(2)?,
+                        row.get::<_, Option<String>>(3)?,
+                        row.get::<_, String>(4)?,
+                        row.get::<_, Option<String>>(5)?,
+                        row.get::<_, String>(6)?,
+                        row.get::<_, Option<String>>(7)?,
+                    ))
+                },
+            )
+            .optional()
+            .map_err(error)?;
+        let Some((display, runtime, original, translated, note, license, lifecycle, due)) = row
+        else {
+            return Ok(None);
+        };
+        let tags = self
+            .database
+            .connection
+            .prepare("SELECT t.name FROM tags t JOIN skill_tags st ON st.tag_id=t.id WHERE st.skill_id=?1 ORDER BY t.name")
+            .map_err(error)?
+            .query_map([&id_text], |tag| tag.get::<_, String>(0))
+            .map_err(error)?
+            .map(|tag| tag.map_err(error))
+            .collect::<AppResult<Vec<_>>>()?;
+        Ok(Some(SkillListItem {
+            skill_id: id,
+            display_name: display,
+            runtime_name: runtime,
+            original_description: original,
+            translated_description: translated,
+            user_note: (!note.is_empty()).then_some(note),
+            tags,
+            license,
+            lifecycle: parse_lifecycle(&lifecycle)?,
+            trial_due: due,
+        }))
+    }
+
     /// Returns a deterministic, paged catalog projection for the desktop
     /// library. Text matching is literal and covers the user-visible catalog
     /// fields; facets are calculated from the complete catalog, not just the

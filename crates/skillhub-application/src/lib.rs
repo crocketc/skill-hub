@@ -93,12 +93,19 @@ impl ApplicationFacade for LocalApplicationFacade {
             AppQuery::GetSkill(request) => self.with_database("query.get_skill", |database| {
                 let skill = database
                     .catalog_repository()?
-                    .get_identity(request.skill_id)?
+                    .get_detail(request.skill_id)?
                     .ok_or_else(|| AppError::new(ErrorCode::ObjectNotFound, Severity::Error))?;
                 Ok(AppQueryResult::Skill(skillhub_core::api::SkillResult {
-                    skill_id: request.skill_id,
-                    display_name: skill.0,
-                    runtime_name: skill.1,
+                    skill_id: skill.skill_id,
+                    display_name: skill.display_name,
+                    runtime_name: skill.runtime_name,
+                    original_description: skill.original_description,
+                    translated_description: skill.translated_description,
+                    user_note: skill.user_note,
+                    tags: skill.tags,
+                    license: skill.license,
+                    lifecycle: skill.lifecycle,
+                    trial_due: skill.trial_due,
                 }))
             }),
             AppQuery::Search(request) => self.with_database("query.search", |database| {

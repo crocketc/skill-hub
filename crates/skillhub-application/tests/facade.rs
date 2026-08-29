@@ -82,7 +82,11 @@ async fn unsupported_operations_return_a_structured_internal_error() {
 async fn catalog_queries_return_skill_identity_and_ranked_search_hits() {
     let database = Database::open_in_memory().expect("database");
     let skill = Skill::new(skillhub_core::SkillId::new(), "Markdown tables")
-        .with_description("Create PDF tables");
+        .with_description("Create PDF tables")
+        .with_tag("documents")
+        .with_note("Useful for reports")
+        .with_license("MIT")
+        .with_trial_due(2026, 9, 15);
     database
         .catalog_repository()
         .expect("catalog repository")
@@ -119,6 +123,14 @@ async fn catalog_queries_return_skill_identity_and_ranked_search_hits() {
     assert_eq!(detail.skill_id, skill.id());
     assert_eq!(detail.display_name, "Markdown tables");
     assert_eq!(detail.runtime_name, "Markdown tables");
+    assert_eq!(detail.original_description, "Create PDF tables");
+    assert_eq!(detail.user_note.as_deref(), Some("Useful for reports"));
+    assert_eq!(
+        detail.tags,
+        vec!["documents".to_owned(), "temporary_trial".to_owned()]
+    );
+    assert_eq!(detail.license.as_deref(), Some("MIT"));
+    assert_eq!(detail.trial_due.as_deref(), Some("2026-09-15"));
 
     let search = facade
         .query(RootAppQuery::Search(SearchQuery::new("tables")))

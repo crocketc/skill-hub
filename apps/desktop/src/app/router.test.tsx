@@ -107,7 +107,7 @@ it("surfaces an unavailable state when the native Skill library result is not co
   expect(screen.queryByText("PDF Reader")).not.toBeInTheDocument();
 });
 
-it("uses the unavailable facade on the production Skill detail route", async () => {
+it("surfaces an unavailable state when the native Skill detail result is not connected", async () => {
   mockBrowserPreferences();
   await skillHubI18n.changeLanguage("en-US");
   await appRouter.navigate("/library/skill-pdf");
