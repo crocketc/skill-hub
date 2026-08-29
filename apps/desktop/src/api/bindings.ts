@@ -23,6 +23,11 @@ export type AgentProfile = {
 	clients: AgentClient[],
 };
 
+export type AnalyzeImport = {
+	candidate: ImportCandidate,
+	tree_hash: string | null,
+};
+
 export type AppCommand = { type: "create_skill"; payload: CreateSkill } | { type: "save_skill_content"; payload: SaveSkillContent } | { type: "rename_skill"; payload: RenameSkill } | { type: "set_lifecycle"; payload: SetLifecycle } | { type: "set_metadata"; payload: SetMetadata } | { type: "set_trial"; payload: SetTrial } | { type: "create_combination"; payload: CreateCombination } | { type: "set_current_version"; payload: SetCurrentVersion } | { type: "pin_project_skill_version"; payload: PinProjectSkillVersion } | { type: "create_custom_agent"; payload: CreateCustomAgent } | { type: "update_custom_agent"; payload: UpdateCustomAgent } | { type: "remove_custom_agent"; payload: RemoveCustomAgent } | { type: "reset_profile_override"; payload: ResetProfileOverride } | { type: "set_profile_override"; payload: SetProfileOverride } | { type: "register_project"; payload: RegisterProject } | { type: "update_project"; payload: UpdateProject } | { type: "set_project_tags"; payload: SetProjectTags } | { type: "save_project_view"; payload: SaveProjectView } | { type: "write_shared_project_config"; payload: WriteSharedProjectConfig } | { type: "read_shared_project_config"; payload: ReadSharedProjectConfig } | { type: "prepare_project_assembly"; payload: PrepareProjectAssembly } | { type: "commit_project_assembly"; payload: CommitProjectAssembly } | { type: "run_initialization_scan"; payload: RunInitializationScan } | { type: "scan_targets"; payload: ScanTargets } | { type: "rescan_skill"; payload: RescanSkill } | { type: "run_basic_check"; payload: RunBasicCheck } | { type: "recheck_basic"; payload: RecheckBasic } | { type: "set_finding_disposition"; payload: SetFindingDisposition } | { type: "cancel_operation"; payload: {
 	operation_id: OperationId,
 } } | { type: "acknowledge_recovery"; payload: {
@@ -33,9 +38,9 @@ export type AppCommandResult = { type: "operation_summary"; payload: OperationSu
 
 export type AppEvent = { type: "operation_progress"; payload: OperationProgress } | { type: "operation_finished"; payload: OperationSummary } | { type: "facts_changed"; payload: FactsChanged };
 
-export type AppQuery = { type: "get_skill"; payload: GetSkill } | { type: "list_versions"; payload: ListVersions } | { type: "diff_versions"; payload: DiffVersions } | { type: "list_combinations"; payload: ListCombinations } | { type: "search"; payload: SearchQuery } | { type: "get_bootstrap_snapshot" } | { type: "list_pending_items"; payload: ListPendingItems } | { type: "get_discovery_snapshot"; payload: GetDiscoverySnapshot } | { type: "list_custom_agents"; payload: ListCustomAgents } | { type: "list_projects"; payload: ListProjects } | { type: "list_saved_project_views"; payload: ListSavedProjectViews } | { type: "get_deployment_plan"; payload: GetDeploymentPlan } | { type: "get_basic_check_result"; payload: GetBasicCheckResult } | { type: "list_findings"; payload: ListFindings } | { type: "get_project_assembly_plan"; payload: GetProjectAssemblyPlan };
+export type AppQuery = { type: "get_skill"; payload: GetSkill } | { type: "list_versions"; payload: ListVersions } | { type: "diff_versions"; payload: DiffVersions } | { type: "list_combinations"; payload: ListCombinations } | { type: "search"; payload: SearchQuery } | { type: "get_bootstrap_snapshot" } | { type: "list_pending_items"; payload: ListPendingItems } | { type: "get_discovery_snapshot"; payload: GetDiscoverySnapshot } | { type: "list_custom_agents"; payload: ListCustomAgents } | { type: "list_projects"; payload: ListProjects } | { type: "list_saved_project_views"; payload: ListSavedProjectViews } | { type: "analyze_import"; payload: AnalyzeImport } | { type: "get_deployment_plan"; payload: GetDeploymentPlan } | { type: "get_basic_check_result"; payload: GetBasicCheckResult } | { type: "list_findings"; payload: ListFindings } | { type: "get_project_assembly_plan"; payload: GetProjectAssemblyPlan };
 
-export type AppQueryResult = { type: "skill"; payload: SkillResult } | { type: "versions"; payload: VersionResult[] } | { type: "version_diff"; payload: VersionDiffResult } | { type: "combinations"; payload: CombinationResult[] } | { type: "search_results"; payload: SearchHit[] } | { type: "bootstrap_snapshot"; payload: BootstrapSnapshot } | { type: "pending_items"; payload: PendingItem[] } | { type: "discovery_snapshot"; payload: DiscoverySnapshot } | { type: "custom_agents"; payload: CustomAgent[] } | { type: "projects"; payload: Project[] } | { type: "saved_project_views"; payload: SavedProjectView[] } | { type: "deployment_plan"; payload: DeploymentPlan } | { type: "basic_check_result"; payload: BasicCheckResult } | { type: "findings"; payload: FindingResult[] } | { type: "assembly_plan"; payload: AssemblyPlan };
+export type AppQueryResult = { type: "skill"; payload: SkillResult } | { type: "versions"; payload: VersionResult[] } | { type: "version_diff"; payload: VersionDiffResult } | { type: "combinations"; payload: CombinationResult[] } | { type: "search_results"; payload: SearchHit[] } | { type: "bootstrap_snapshot"; payload: BootstrapSnapshot } | { type: "pending_items"; payload: PendingItem[] } | { type: "discovery_snapshot"; payload: DiscoverySnapshot } | { type: "custom_agents"; payload: CustomAgent[] } | { type: "projects"; payload: Project[] } | { type: "saved_project_views"; payload: SavedProjectView[] } | { type: "import_analysis"; payload: ImportAnalysis } | { type: "deployment_plan"; payload: DeploymentPlan } | { type: "basic_check_result"; payload: BasicCheckResult } | { type: "findings"; payload: FindingResult[] } | { type: "assembly_plan"; payload: AssemblyPlan };
 
 export type AssemblyChoice = "acquire" | "skip" | "use_existing";
 
@@ -85,6 +90,8 @@ export type BootstrapSnapshot = {
 };
 
 export type CallPolicy = "automatic" | "user_selected" | "unknown";
+
+export type CandidateOwnership = "unclassified" | "central_library" | "known_agent_target" | "registered_project" | "read_only_builtin_or_plugin" | "arbitrary_local_directory" | "downloaded_source";
 
 /**  The two security checks are intentionally independent facts. */
 export type CheckKind = "basic" | "llm";
@@ -227,6 +234,9 @@ export type DiscoverySnapshot = {
 	physical_targets: PhysicalTarget[],
 };
 
+/**  The strongest deterministic relationship found for an imported candidate. */
+export type DuplicateKind = "exact_content" | "same_source" | "same_runtime_name_different_content" | "search_candidate";
+
 /**  Stable machine-readable failures returned by the application boundary. */
 export type ErrorCode = "input.invalid" | "path.outside_allowed_root" | "object.not_found" | "deployment.target_exists" | "deployment.target_changed" | "deployment.symlink_not_supported" | "deployment.junction_not_supported" | "target.ownership_unknown" | "deployment.ownership_mismatch" | "deployment.security_check_blocked" | "operation.conflict" | "operation.id_reused_with_different_request" | "credential.unavailable" | "migration.required" | "database.newer_schema" | "internal.error" | "combination.nesting_not_allowed" | "catalog.invalid_metadata" | "requirements.invalid_declaration" | "agent_profile.invalid_capability";
 
@@ -268,6 +278,49 @@ export type GetSkill = {
 	skill_id: SkillId,
 };
 
+export type ImportAction = "review" | "use_existing_managed_skill" | "establish_managed_relation" | "copy_into_library" | "copy_as_independent_managed_skill" | "skip";
+
+export type ImportAnalysis = {
+	candidate: ImportCandidate,
+	duplicate_kind: DuplicateKind | null,
+	matches: ImportMatch[],
+	conflicts: ImportConflict[],
+	actions: ImportDecision[],
+};
+
+export type ImportCandidate = {
+	source: SourceDescriptor,
+	absolute_root: string,
+	relative_root: string,
+	marker: string,
+	runtime_name: string,
+	ownership: CandidateOwnership,
+	default_action: ImportAction,
+	ownership_detail: string | null,
+};
+
+export type ImportConflict = {
+	skill_id: SkillId,
+	kind: DuplicateKind,
+	reason_code: string,
+	requires_choice: boolean,
+};
+
+/**
+ *  Explicit choices available after deterministic import analysis.
+ *  There is intentionally no overwrite action: importing a Skill must never
+ *  replace an existing deployment target or managed version implicitly.
+ */
+export type ImportDecision = "reuse_existing" | "establish_managed_relation" | "copy_into_library" | "take_over_after_verify" | "keep_independent" | "copy_as_independent_managed_skill" | "skip";
+
+export type ImportMatch = {
+	skill_id: SkillId,
+	ownership: CandidateOwnership,
+	basis: MatchBasis,
+	duplicate_kind: DuplicateKind,
+	matched_fields: SearchField[],
+};
+
 export type ListCombinations = null;
 
 export type ListCustomAgents = null;
@@ -302,6 +355,9 @@ export type LogicalTarget = {
 	available: boolean,
 	physical_id: string,
 };
+
+/**  Ordered evidence used to compare a candidate with an existing Skill. */
+export type MatchBasis = "canonical_tree_hash" | "skill_hub_identity" | "runtime_name" | "source_locator" | "fts_bm25";
 
 export type OperatingSystem = "windows" | "macos";
 
@@ -590,6 +646,15 @@ export type SkillResult = {
 	display_name: string,
 	runtime_name: string,
 };
+
+export type SourceDescriptor = {
+	kind: SourceKind,
+	locator: SourceLocator,
+};
+
+export type SourceKind = "local" | "https" | "git";
+
+export type SourceLocator = ({ local_path: string }) & { git_url?: never; https_url?: never } | ({ https_url: string }) & { git_url?: never; local_path?: never } | ({ git_url: string }) & { https_url?: never; local_path?: never };
 
 export type StartupRecoveryState = "clean" | "in_progress" | "needs_recovery";
 

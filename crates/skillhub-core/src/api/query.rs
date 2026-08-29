@@ -2,6 +2,7 @@ use crate::agent::{CustomAgent, DiscoverySnapshot};
 use crate::check::{
     CheckKind, CheckResult as DomainCheckResult, CheckState, Finding, FindingDisposition,
 };
+use crate::import::{ImportAnalysis, ImportCandidate};
 use crate::project::{AssemblyPlan, Project, SavedProjectView};
 use crate::search::{SearchHit, SearchQuery};
 use crate::{
@@ -64,6 +65,12 @@ pub struct ListProjects;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 pub struct ListSavedProjectViews;
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+pub struct AnalyzeImport {
+    pub candidate: ImportCandidate,
+    pub tree_hash: Option<String>,
+}
 
 /// Registered logical target IDs for a side-effect-free deployment preview.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
@@ -187,6 +194,8 @@ pub enum AppQuery {
     ListProjects(ListProjects),
     #[serde(rename = "list_saved_project_views")]
     ListSavedProjectViews(ListSavedProjectViews),
+    #[serde(rename = "analyze_import")]
+    AnalyzeImport(AnalyzeImport),
     #[serde(rename = "get_deployment_plan")]
     GetDeploymentPlan(GetDeploymentPlan),
     #[serde(rename = "get_basic_check_result")]
@@ -222,6 +231,8 @@ pub enum AppQueryResult {
     Projects(Vec<Project>),
     #[serde(rename = "saved_project_views")]
     SavedProjectViews(Vec<SavedProjectView>),
+    #[serde(rename = "import_analysis")]
+    ImportAnalysis(ImportAnalysis),
     #[serde(rename = "deployment_plan")]
     DeploymentPlan(DeploymentPlan),
     #[serde(rename = "basic_check_result")]

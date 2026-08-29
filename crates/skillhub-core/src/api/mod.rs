@@ -14,10 +14,10 @@ pub use command::{
 };
 pub use event::{AppEvent, FactsChanged};
 pub use query::{
-    AppQuery, AppQueryResult, BasicCheckResult, CombinationResult, DiffVersions, FindingResult,
-    GetBasicCheckResult, GetBootstrapSnapshot, GetDeploymentPlan, GetDiscoverySnapshot,
-    GetProjectAssemblyPlan, GetSkill, ListCombinations, ListCustomAgents, ListFindings,
-    ListPendingItems, ListProjects, ListSavedProjectViews, ListVersions, SkillResult,
+    AnalyzeImport, AppQuery, AppQueryResult, BasicCheckResult, CombinationResult, DiffVersions,
+    FindingResult, GetBasicCheckResult, GetBootstrapSnapshot, GetDeploymentPlan,
+    GetDiscoverySnapshot, GetProjectAssemblyPlan, GetSkill, ListCombinations, ListCustomAgents,
+    ListFindings, ListPendingItems, ListProjects, ListSavedProjectViews, ListVersions, SkillResult,
     VersionDiffResult, VersionResult,
 };
 

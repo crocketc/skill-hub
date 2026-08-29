@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use std::fmt;
 use std::path::PathBuf;
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize, specta::Type)]
 #[serde(rename_all = "snake_case")]
 pub enum SourceKind {
     Local,
@@ -11,7 +11,7 @@ pub enum SourceKind {
     Git,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize, specta::Type)]
 #[serde(rename_all = "snake_case")]
 pub enum SourceLocator {
     LocalPath(PathBuf),
@@ -43,7 +43,7 @@ impl SourceLocator {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 pub struct SourceDescriptor {
     pub kind: SourceKind,
     pub locator: SourceLocator,

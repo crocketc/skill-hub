@@ -4,6 +4,7 @@ mod catalog_repository;
 mod check_repository;
 mod custom_agent_repository;
 mod deployment_repository;
+mod import_repository;
 mod migrations;
 mod operation_repository;
 mod project_repository;
@@ -24,6 +25,7 @@ pub use catalog_repository::CatalogRepositorySqlite;
 pub use check_repository::CheckRepositorySqlite;
 pub use custom_agent_repository::CustomAgentRepository;
 pub use deployment_repository::{DeploymentRepository, DeploymentRepositorySqlite};
+pub use import_repository::ImportRepository;
 pub use migrations::MigrationReport;
 pub use operation_repository::OperationRepositorySqlite;
 pub use project_repository::ProjectRepository;
@@ -72,6 +74,10 @@ impl Database {
 
     pub fn project_repository(&self) -> ProjectRepository<'_> {
         ProjectRepository::new(self)
+    }
+
+    pub fn import_repository(&self) -> ImportRepository<'_> {
+        ImportRepository::new(self)
     }
 
     pub fn scan_repository(&self) -> ScanRepository<'_> {

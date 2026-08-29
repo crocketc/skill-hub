@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::source::SourceDescriptor;
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 #[serde(rename_all = "snake_case")]
 pub enum CandidateOwnership {
     Unclassified,
@@ -14,7 +14,7 @@ pub enum CandidateOwnership {
     DownloadedSource,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 #[serde(rename_all = "snake_case")]
 pub enum ImportAction {
     Review,
@@ -25,7 +25,7 @@ pub enum ImportAction {
     Skip,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 #[serde(deny_unknown_fields)]
 pub struct ImportCandidate {
     pub source: SourceDescriptor,

@@ -25,8 +25,8 @@ pub use agent::{
     TargetScope,
 };
 pub use api::{
-    AppCommand, AppCommandResult, AppEvent, AppQuery, AppQueryResult, ApplicationFacade,
-    FactsChanged, GetDeploymentPlan, GetProjectAssemblyPlan, Page,
+    AnalyzeImport, AppCommand, AppCommandResult, AppEvent, AppQuery, AppQueryResult,
+    ApplicationFacade, FactsChanged, GetDeploymentPlan, GetProjectAssemblyPlan, Page,
 };
 pub use application::{
     BasicCheckOutput, BasicCheckScanner, CheckService, OperationService, ProjectAssemblyService,
@@ -57,7 +57,10 @@ pub use ids::{
     AgentProfileId, ClientInstanceId, CombinationId, DeploymentId, LogicalTargetId, OperationId,
     PhysicalTargetId, ProjectId, SkillId, VersionId,
 };
-pub use import::{CandidateOwnership, ImportAction, ImportCandidate};
+pub use import::{
+    analyze_import, CandidateOwnership, DuplicateKind, ExistingSkillRecord, ImportAction,
+    ImportAnalysis, ImportCandidate, ImportConflict, ImportDecision, ImportMatch, MatchBasis,
+};
 pub use project::{
     AssemblyChoice, AssemblyConflictKind, AssemblyItemPlan, AssemblyItemStatus, AssemblyPlan,
     CheckPreparation, CheckPreparationPort, DeploymentPreparation, DeploymentPreparationPort,
