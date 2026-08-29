@@ -263,6 +263,9 @@ impl VersionStore {
     pub fn diff(&self, left: &VersionId, right: &VersionId) -> AppResult<VersionDiff> {
         let a = self.load_manifest(left)?;
         let b = self.load_manifest(right)?;
+        if a.skill_id != b.skill_id {
+            return Err(invalid("versions belong to different skills"));
+        }
         let ma: BTreeMap<_, _> = a.entries.into_iter().map(|e| (e.path.clone(), e)).collect();
         let mb: BTreeMap<_, _> = b.entries.into_iter().map(|e| (e.path.clone(), e)).collect();
         let mut result = VersionDiff::default();

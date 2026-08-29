@@ -91,11 +91,17 @@ pub struct SkillResult {
     pub license: Option<String>,
     pub lifecycle: SkillLifecycle,
     pub trial_due: Option<String>,
+    pub current_version: Option<VersionId>,
 }
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 pub struct VersionResult {
     pub version_id: VersionId,
     pub skill_id: SkillId,
+    pub current: bool,
+    pub file_count: u32,
+    pub added: u32,
+    pub changed: u32,
+    pub removed: u32,
 }
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 pub struct VersionDiffResult {

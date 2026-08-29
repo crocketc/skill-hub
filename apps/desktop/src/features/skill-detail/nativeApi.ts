@@ -37,7 +37,7 @@ function summaryOf(skill: SkillResult): SkillDetailSummary {
     agentDeploymentCount: 0,
     aiCheck: "not_run",
     basicCheck: "not_run",
-    currentVersion: "unknown",
+    currentVersion: skill.current_version ?? "unknown",
     highRiskCount: 0,
     id: skill.skill_id,
     lifecycle: lifecycleOf(skill),

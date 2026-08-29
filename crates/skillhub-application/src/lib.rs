@@ -119,24 +119,34 @@ impl ApplicationFacade for LocalApplicationFacade {
                         .map(AppQueryResult::PendingItems)
                 })
             }
-            AppQuery::GetSkill(request) => self.with_database("query.get_skill", |database| {
-                let skill = database
-                    .catalog_repository()?
-                    .get_detail(request.skill_id)?
-                    .ok_or_else(|| AppError::new(ErrorCode::ObjectNotFound, Severity::Error))?;
-                Ok(AppQueryResult::Skill(skillhub_core::api::SkillResult {
-                    skill_id: skill.skill_id,
-                    display_name: skill.display_name,
-                    runtime_name: skill.runtime_name,
-                    original_description: skill.original_description,
-                    translated_description: skill.translated_description,
-                    user_note: skill.user_note,
-                    tags: skill.tags,
-                    license: skill.license,
-                    lifecycle: skill.lifecycle,
-                    trial_due: skill.trial_due,
-                }))
-            }),
+            AppQuery::GetSkill(request) => {
+                let skill_id = request.skill_id;
+                let current_version = self
+                    .library
+                    .as_ref()
+                    .map(|library| library.current(skill_id))
+                    .transpose()?
+                    .flatten();
+                self.with_database("query.get_skill", move |database| {
+                    let skill = database
+                        .catalog_repository()?
+                        .get_detail(skill_id)?
+                        .ok_or_else(|| AppError::new(ErrorCode::ObjectNotFound, Severity::Error))?;
+                    Ok(AppQueryResult::Skill(skillhub_core::api::SkillResult {
+                        skill_id: skill.skill_id,
+                        display_name: skill.display_name,
+                        runtime_name: skill.runtime_name,
+                        original_description: skill.original_description,
+                        translated_description: skill.translated_description,
+                        user_note: skill.user_note,
+                        tags: skill.tags,
+                        license: skill.license,
+                        lifecycle: skill.lifecycle,
+                        trial_due: skill.trial_due,
+                        current_version,
+                    }))
+                })
+            }
             AppQuery::Search(request) => self.with_database("query.search", |database| {
                 database
                     .search_repository()
@@ -149,6 +159,8 @@ impl ApplicationFacade for LocalApplicationFacade {
                     .list_page(&request)
                     .map(AppQueryResult::SkillPage)
             }),
+            AppQuery::ListVersions(request) => self.list_versions(request.skill_id),
+            AppQuery::DiffVersions(request) => self.diff_versions(&request.left, &request.right),
             AppQuery::ListMarkdownFiles(request) => self.list_markdown_files(request.skill_id),
             AppQuery::ReadMarkdownFile(request) => {
                 self.read_markdown_file(request.skill_id, &request.path)
@@ -161,6 +173,56 @@ impl ApplicationFacade for LocalApplicationFacade {
 }
 
 impl LocalApplicationFacade {
+    fn list_versions(&self, skill_id: skillhub_core::SkillId) -> AppResult<AppQueryResult> {
+        let Some(library) = self.library.as_ref() else {
+            return Err(unsupported("query.list_versions"));
+        };
+        let current = library.current(skill_id)?;
+        let records = library.list(skill_id)?;
+        let mut results = Vec::with_capacity(records.len());
+        for (index, record) in records.iter().enumerate() {
+            let diff = if index == 0 {
+                skillhub_core::VersionDiff::default()
+            } else {
+                library.diff(&records[index - 1].id, &record.id)?
+            };
+            results.push(skillhub_core::api::VersionResult {
+                version_id: record.id.clone(),
+                skill_id,
+                current: current.as_ref() == Some(&record.id),
+                file_count: u32::try_from(record.manifest.entries.len()).unwrap_or(u32::MAX),
+                added: u32::try_from(diff.added.len()).unwrap_or(u32::MAX),
+                changed: u32::try_from(diff.changed.len()).unwrap_or(u32::MAX),
+                removed: u32::try_from(diff.removed.len()).unwrap_or(u32::MAX),
+            });
+        }
+        results.sort_by(|left, right| {
+            right
+                .current
+                .cmp(&left.current)
+                .then_with(|| right.version_id.as_str().cmp(left.version_id.as_str()))
+        });
+        Ok(AppQueryResult::Versions(results))
+    }
+
+    fn diff_versions(
+        &self,
+        left: &skillhub_core::VersionId,
+        right: &skillhub_core::VersionId,
+    ) -> AppResult<AppQueryResult> {
+        let Some(library) = self.library.as_ref() else {
+            return Err(unsupported("query.diff_versions"));
+        };
+        let diff = library.diff(left, right)?;
+        Ok(AppQueryResult::VersionDiff(
+            skillhub_core::api::VersionDiffResult {
+                added: diff.added,
+                removed: diff.removed,
+                changed: diff.changed,
+            },
+        ))
+    }
+
     fn list_markdown_files(&self, skill_id: skillhub_core::SkillId) -> AppResult<AppQueryResult> {
         let Some(library) = self.library.as_ref() else {
             return Err(unsupported("query.list_markdown_files"));

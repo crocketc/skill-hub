@@ -1,6 +1,9 @@
 use skillhub_application::LocalApplicationFacade;
 use skillhub_core::{
-    api::{AppQueryResult, GetSkill, ListMarkdownFiles, ListSkills, ReadMarkdownFile},
+    api::{
+        AppQueryResult, DiffVersions, GetSkill, ListMarkdownFiles, ListSkills, ListVersions,
+        ReadMarkdownFile,
+    },
     catalog::{CatalogRepository, Skill},
     search::{SearchDocument, SearchQuery},
     AppCommand, AppQuery as RootAppQuery, ApplicationFacade, ErrorCode, Severity,
@@ -197,6 +200,20 @@ async fn markdown_queries_read_the_current_version_as_read_only_content() {
         .expect("set current");
 
     let facade = LocalApplicationFacade::new_with_library(database, root.path());
+    let detail = facade
+        .query(RootAppQuery::GetSkill(GetSkill {
+            skill_id: skill.id(),
+        }))
+        .await
+        .expect("skill detail");
+    let AppQueryResult::Skill(detail) = detail else {
+        panic!("expected skill detail");
+    };
+    assert_eq!(
+        detail.current_version.as_ref().map(|id| id.as_str()),
+        Some(version.id.as_str())
+    );
+
     let files = facade
         .query(RootAppQuery::ListMarkdownFiles(ListMarkdownFiles {
             skill_id: skill.id(),
@@ -239,4 +256,29 @@ async fn markdown_queries_read_the_current_version_as_read_only_content() {
             .object_id
     );
     assert!(!content.editable);
+
+    let versions = facade
+        .query(RootAppQuery::ListVersions(ListVersions {
+            skill_id: skill.id(),
+        }))
+        .await
+        .expect("versions");
+    let AppQueryResult::Versions(versions) = versions else {
+        panic!("expected versions");
+    };
+    assert_eq!(versions.len(), 1);
+    assert!(versions[0].current);
+    assert_eq!(versions[0].file_count, 2);
+
+    let diff = facade
+        .query(RootAppQuery::DiffVersions(DiffVersions {
+            left: version.id.clone(),
+            right: version.id.clone(),
+        }))
+        .await
+        .expect("version diff");
+    let AppQueryResult::VersionDiff(diff) = diff else {
+        panic!("expected version diff");
+    };
+    assert!(diff.added.is_empty());
 }

@@ -1283,6 +1283,7 @@ export type SkillResult = {
 	license: string | null,
 	lifecycle: SkillLifecycle,
 	trial_due: string | null,
+	current_version: VersionId | null,
 };
 
 export type SourceDescriptor = {
@@ -1437,6 +1438,11 @@ export type VersionId = string;
 export type VersionResult = {
 	version_id: VersionId,
 	skill_id: SkillId,
+	current: boolean,
+	file_count: number,
+	added: number,
+	changed: number,
+	removed: number,
 };
 
 export type VersionSelection = "current" | { history: VersionId[] };

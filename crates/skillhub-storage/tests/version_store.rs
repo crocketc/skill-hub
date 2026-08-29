@@ -221,6 +221,22 @@ fn diff_reports_added_removed_and_changed_files() {
 }
 
 #[test]
+fn diff_rejects_versions_from_different_skills() {
+    let fixture = Fixture::new();
+    fixture.write("SKILL.md", b"one");
+    let first = fixture
+        .store
+        .capture(fixture.skill, fixture.source.path())
+        .unwrap();
+    let other = fixture
+        .store
+        .capture(SkillId::new(), fixture.source.path())
+        .unwrap();
+
+    assert!(fixture.store.diff(&first.id, &other.id).is_err());
+}
+
+#[test]
 fn concurrent_captures_and_current_updates_do_not_share_temporary_files() {
     let fixture = Fixture::new();
     fixture.write("SKILL.md", b"concurrent");

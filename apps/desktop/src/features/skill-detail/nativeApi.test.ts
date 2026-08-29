@@ -21,6 +21,7 @@ describe("native skill detail facade", () => {
         license: "MIT",
         lifecycle: "Normal",
         trial_due: "2026-09-15",
+        current_version: null,
       },
     });
 
