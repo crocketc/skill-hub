@@ -12,7 +12,9 @@ mod project_assembly_service;
 mod reconcile_service;
 mod recovery_service;
 mod removal_service;
+mod search_query_service;
 mod source_service;
+mod translation_service;
 mod version_service;
 mod watch_service;
 
@@ -36,7 +38,9 @@ pub use project_assembly_service::ProjectAssemblyService;
 pub use reconcile_service::{ReconcileBackend, ReconcileService};
 pub use recovery_service::{RecoveryBackend, RecoveryService};
 pub use removal_service::{RemovalBackend, RemovalService};
+pub use search_query_service::SearchQueryService;
 pub use source_service::SourceService;
+pub use translation_service::{TranslationRepository, TranslationService};
 pub use version_service::{
     CapturedVersion, ProjectVersionPinRepository, VersionCapture, VersionService,
 };

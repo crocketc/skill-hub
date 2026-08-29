@@ -67,6 +67,10 @@ pub enum ErrorCode {
     LlmInputTooLarge,
     #[serde(rename = "llm.evidence_reference_invalid")]
     LlmEvidenceReferenceInvalid,
+    #[serde(rename = "llm.not_configured")]
+    LlmNotConfigured,
+    #[serde(rename = "translation.user_revision_requires_confirmation")]
+    TranslationUserRevisionRequiresConfirmation,
 }
 
 #[allow(non_upper_case_globals)]
@@ -110,6 +114,10 @@ impl ErrorCode {
             Self::LlmEndpointNotAllowed => "llm.endpoint_not_allowed",
             Self::LlmInputTooLarge => "llm.input_too_large",
             Self::LlmEvidenceReferenceInvalid => "llm.evidence_reference_invalid",
+            Self::LlmNotConfigured => "llm.not_configured",
+            Self::TranslationUserRevisionRequiresConfirmation => {
+                "translation.user_revision_requires_confirmation"
+            }
         }
     }
 }

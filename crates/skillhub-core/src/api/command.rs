@@ -4,6 +4,8 @@ use crate::agent::{CustomAgent, CustomAgentDraft, CustomAgentOverride, PathGrant
 use crate::catalog::SkillLifecycle;
 use crate::check::{CheckKind, FindingDisposition};
 use crate::import::{ImportCandidate, ImportDecision};
+use crate::llm::search_query::SearchQuerySuggestion;
+use crate::llm::translation::TranslationResult;
 use crate::project::{AssemblyPlan, Project, SavedProjectView, SharedProjectConfig};
 use crate::scan::ScanResult;
 use crate::source::{SourceDescriptor, UpdateDecision};
@@ -311,6 +313,28 @@ pub struct AnalyzeSemanticDuplicates {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 #[serde(deny_unknown_fields)]
+pub struct TranslateDescription {
+    pub skill_id: SkillId,
+    pub language: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct SaveUserTranslationRevision {
+    pub skill_id: SkillId,
+    pub language: String,
+    pub source_description_hash: String,
+    pub text: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct GenerateOnlineSearchQuery {
+    pub text: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
 pub struct RunInitializationScan {
     pub scope_ids: Vec<String>,
 }
@@ -456,6 +480,12 @@ pub enum AppCommand {
     RecheckLlmSafety(RecheckLlmSafety),
     #[serde(rename = "analyze_semantic_duplicates")]
     AnalyzeSemanticDuplicates(AnalyzeSemanticDuplicates),
+    #[serde(rename = "translate_description")]
+    TranslateDescription(TranslateDescription),
+    #[serde(rename = "save_user_translation_revision")]
+    SaveUserTranslationRevision(SaveUserTranslationRevision),
+    #[serde(rename = "generate_online_search_query")]
+    GenerateOnlineSearchQuery(GenerateOnlineSearchQuery),
     #[serde(rename = "cancel_import")]
     CancelImport { prepared_import_id: OperationId },
     #[serde(rename = "run_initialization_scan")]
@@ -527,4 +557,8 @@ pub enum AppCommandResult {
     LlmSafetyCheckResult(LlmSafetyCheckResult),
     #[serde(rename = "duplicate_analysis")]
     DuplicateAnalysis(crate::duplicate::DuplicateAnalysis),
+    #[serde(rename = "translation_result")]
+    TranslationResult(TranslationResult),
+    #[serde(rename = "online_search_query")]
+    OnlineSearchQuery(SearchQuerySuggestion),
 }

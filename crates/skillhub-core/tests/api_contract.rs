@@ -364,3 +364,34 @@ fn semantic_duplicate_command_has_stable_wire_shape() {
         "analyze_semantic_duplicates"
     );
 }
+
+#[test]
+fn translation_and_search_helpers_have_stable_wire_shapes() {
+    let skill_id = skillhub_core::SkillId::new();
+    let commands = [
+        AppCommand::TranslateDescription(skillhub_core::TranslateDescription {
+            skill_id,
+            language: "zh-CN".into(),
+        }),
+        AppCommand::SaveUserTranslationRevision(skillhub_core::SaveUserTranslationRevision {
+            skill_id,
+            language: "zh-CN".into(),
+            source_description_hash: "sha256:abc".into(),
+            text: "译文".into(),
+        }),
+        AppCommand::GenerateOnlineSearchQuery(skillhub_core::GenerateOnlineSearchQuery {
+            text: "PDF".into(),
+        }),
+    ];
+    let expected = [
+        "translate_description",
+        "save_user_translation_revision",
+        "generate_online_search_query",
+    ];
+    for (command, expected_type) in commands.into_iter().zip(expected) {
+        assert_eq!(
+            serde_json::to_value(command).unwrap()["type"],
+            expected_type
+        );
+    }
+}

@@ -34,12 +34,13 @@ pub use api::{
     AppQueryResult, ApplicationFacade, ApplySourceUpdate, CheckSourceUpdate,
     CollectDeploymentChanges, CommitCallPolicyChange, CommitDeleteSkill, CommitDeployment,
     CommitImport, CommitRepair, CommitUndeploy, CreateIgnoreRule, DetachManagement, FactsChanged,
-    GetCallPolicy, GetDeploymentPlan, GetDeploymentRelations, GetLlmSafetyCheckResult,
-    GetProjectAssemblyPlan, GetReconcilePlan, GetRemovalImpact, IgnoreExternalChange,
-    KeepIndependentCopy, ListDeployments, Page, PrepareCallPolicyChange, PrepareDeleteSkill,
-    PrepareDeployment, PrepareImport, PrepareRepair, PrepareUndeploy, RecheckLlmSafety,
-    RelinkSource, RemoveIgnoreRule, ResolveRecovery, RestoreDeployment, RestoreOriginalCallPolicy,
-    RunHealthCheck, RunLlmSafetyCheck, SearchOnlineSources,
+    GenerateOnlineSearchQuery, GetCallPolicy, GetDeploymentPlan, GetDeploymentRelations,
+    GetLlmSafetyCheckResult, GetProjectAssemblyPlan, GetReconcilePlan, GetRemovalImpact,
+    IgnoreExternalChange, KeepIndependentCopy, ListDeployments, Page, PrepareCallPolicyChange,
+    PrepareDeleteSkill, PrepareDeployment, PrepareImport, PrepareRepair, PrepareUndeploy,
+    RecheckLlmSafety, RelinkSource, RemoveIgnoreRule, ResolveRecovery, RestoreDeployment,
+    RestoreOriginalCallPolicy, RunHealthCheck, RunLlmSafetyCheck, SaveUserTranslationRevision,
+    SearchOnlineSources, TranslateDescription,
 };
 pub use application::{
     BasicCheckOutput, BasicCheckScanner, CallPolicyBackend, CallPolicyService, CheckService,
@@ -47,8 +48,9 @@ pub use application::{
     DuplicateService, HealthBackend, HealthService, IgnoreBackend, IgnoreService, ImportBackend,
     ImportItemResult, ImportService, ImportSummary, LlmSafetyService, OperationService,
     PreparedDeployment, PreparedImport, ProjectAssemblyService, ReconcileBackend, ReconcileService,
-    RecoveryBackend, RecoveryService, RemovalBackend, RemovalService, TargetOperationResult,
-    TargetOperationStatus, VersionMaterializer,
+    RecoveryBackend, RecoveryService, RemovalBackend, RemovalService, SearchQueryService,
+    TargetOperationResult, TargetOperationStatus, TranslationRepository, TranslationService,
+    VersionMaterializer,
 };
 pub use application::{WatchConfirmation, WatchHint, WatchHintKind, WatchService};
 pub use bootstrap::{
@@ -88,6 +90,7 @@ pub use import::{
     analyze_import, CandidateOwnership, DuplicateKind, ExistingSkillRecord, ImportAction,
     ImportAnalysis, ImportCandidate, ImportConflict, ImportDecision, ImportMatch, MatchBasis,
 };
+pub use llm::{search_query, translation};
 pub use llm::{
     CredentialRef, CredentialStore, LlmProfile, LlmTaskKind, LlmTaskRequest, LlmTaskResponse,
     LlmTaskRunner,
