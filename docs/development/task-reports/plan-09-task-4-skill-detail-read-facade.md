@@ -20,7 +20,7 @@
 - `cargo fmt --all -- --check`：通过。
 - `cargo test -p skillhub-application --test facade`：5 项通过。
 - `cargo test -p skillhub-desktop --lib generate_bindings`：通过。
-- 前端新增 native detail facade 测试；Mac 端需在提交后运行完整本地 CI 复核前端测试、TypeScript、Lint 和构建。
+- 前端新增 native detail facade 测试；Mac 端在提交后完成完整本地 CI 复核：10/10 通过，54 个测试文件、312 项测试通过，TypeScript、Lint、安全审计和生产构建均通过。
 - `git diff --check`：通过。
 
 ## 明确未包含
