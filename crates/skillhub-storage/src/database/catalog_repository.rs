@@ -1,6 +1,7 @@
 use super::Database;
 use async_trait::async_trait;
 use rusqlite::{params, OptionalExtension};
+use skillhub_core::api::{ListSkills, SkillListItem, SkillListPage};
 use skillhub_core::catalog::{CallPolicy, CatalogRepository, Skill, SkillLifecycle};
 use skillhub_core::{AppError, AppResult, ErrorCode, RecoveryAction, Severity, SkillId};
 use std::collections::BTreeSet;
@@ -30,6 +31,114 @@ impl<'a> CatalogRepositorySqlite<'a> {
             .optional()
             .map_err(error)
     }
+
+    /// Returns a deterministic, paged catalog projection for the desktop
+    /// library. Text matching is literal and covers the user-visible catalog
+    /// fields; facets are calculated from the complete catalog, not just the
+    /// current page.
+    pub fn list_page(&self, request: &ListSkills) -> AppResult<SkillListPage> {
+        let page = request.page.max(1);
+        let page_size = request.page_size.clamp(1, 100);
+        let text = request.text.trim();
+        let pattern = format!("%{}%", escape_like(text));
+        let (where_sql, params): (&str, Vec<String>) = if text.is_empty() {
+            ("1=1", Vec::new())
+        } else {
+            (
+                "(display_name LIKE ?1 ESCAPE '\\' OR runtime_name LIKE ?1 ESCAPE '\\' OR original_description LIKE ?1 ESCAPE '\\' OR translated_description LIKE ?1 ESCAPE '\\' OR user_note LIKE ?1 ESCAPE '\\')",
+                vec![pattern.clone()],
+            )
+        };
+        let total_sql = format!("SELECT COUNT(*) FROM skills WHERE {where_sql}");
+        let total: u32 = self
+            .database
+            .connection
+            .query_row(
+                &total_sql,
+                rusqlite::params_from_iter(params.iter()),
+                |row| row.get::<_, i64>(0),
+            )
+            .map_err(error)?
+            .try_into()
+            .unwrap_or(u32::MAX);
+        let offset = u64::from(page.saturating_sub(1))
+            .saturating_mul(u64::from(page_size))
+            .min(i64::MAX as u64) as i64;
+        let list_sql = format!(
+            "SELECT id,display_name,runtime_name,original_description,translated_description,user_note,license,lifecycle,trial_due FROM skills LEFT JOIN catalog_skill_metadata ON catalog_skill_metadata.skill_id=skills.id WHERE {where_sql} ORDER BY display_name COLLATE NOCASE ASC,id ASC LIMIT ? OFFSET ?"
+        );
+        let mut bind = params;
+        bind.push(page_size.to_string());
+        bind.push(offset.to_string());
+        let mut statement = self.database.connection.prepare(&list_sql).map_err(error)?;
+        let rows = statement
+            .query_map(rusqlite::params_from_iter(bind.iter()), |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, String>(3)?,
+                    row.get::<_, Option<String>>(4)?,
+                    row.get::<_, String>(5)?,
+                    row.get::<_, Option<String>>(6)?,
+                    row.get::<_, String>(7)?,
+                    row.get::<_, Option<String>>(8)?,
+                ))
+            })
+            .map_err(error)?;
+        let mut items = Vec::new();
+        for row in rows {
+            let (id, display, runtime, original, translated, note, license, lifecycle, due) =
+                row.map_err(error)?;
+            let skill_id = id.parse().map_err(|_| bad_id())?;
+            let mut tags_statement = self
+                .database
+                .connection
+                .prepare("SELECT t.name FROM tags t JOIN skill_tags st ON st.tag_id=t.id WHERE st.skill_id=?1 ORDER BY t.name")
+                .map_err(error)?;
+            let tags = tags_statement
+                .query_map([&id], |tag| tag.get::<_, String>(0))
+                .map_err(error)?
+                .map(|tag| tag.map_err(error))
+                .collect::<AppResult<Vec<_>>>()?;
+            items.push(SkillListItem {
+                skill_id,
+                display_name: display,
+                runtime_name: runtime,
+                original_description: original,
+                translated_description: translated,
+                user_note: (!note.is_empty()).then_some(note),
+                tags,
+                license,
+                lifecycle: parse_lifecycle(&lifecycle)?,
+                trial_due: due,
+            });
+        }
+        let mut facets = self
+            .database
+            .connection
+            .prepare("SELECT name FROM tags ORDER BY name")
+            .map_err(error)?
+            .query_map([], |row| row.get::<_, String>(0))
+            .map_err(error)?
+            .map(|tag| tag.map_err(error))
+            .collect::<AppResult<Vec<_>>>()?;
+        facets.dedup();
+        Ok(SkillListPage {
+            items,
+            total,
+            page,
+            page_size,
+            tags: facets,
+        })
+    }
+}
+
+fn escape_like(value: &str) -> String {
+    value
+        .replace('\\', "\\\\")
+        .replace('%', "\\%")
+        .replace('_', "\\_")
 }
 
 #[async_trait(?Send)]
@@ -194,5 +303,11 @@ fn parse_date(v: String) -> Option<(i32, u8, u8)> {
 fn error(e: rusqlite::Error) -> AppError {
     AppError::new(ErrorCode::InternalError, Severity::Error)
         .with_param("source", e.to_string())
+        .with_action(RecoveryAction::Retry)
+}
+
+fn bad_id() -> AppError {
+    AppError::new(ErrorCode::InternalError, Severity::Error)
+        .with_param("source", "invalid persisted skill id")
         .with_action(RecoveryAction::Retry)
 }

@@ -107,6 +107,12 @@ impl ApplicationFacade for LocalApplicationFacade {
                     .search(request)
                     .map(AppQueryResult::SearchResults)
             }),
+            AppQuery::ListSkills(request) => self.with_database("query.list_skills", |database| {
+                database
+                    .catalog_repository()?
+                    .list_page(&request)
+                    .map(AppQueryResult::SkillPage)
+            }),
             _ => Err(AppError::new(ErrorCode::InternalError, Severity::Error)
                 .with_param("operation", "query.unsupported")
                 .with_action(RecoveryAction::Retry)),

@@ -1,7 +1,7 @@
 import { act, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, vi } from "vitest";
 import { skillHubI18n } from "../i18n";
-import { unavailableSkillLibraryFacade } from "../features/skills/api";
+import { nativeSkillLibraryFacade } from "../features/skills/nativeApi";
 import { sidebarNavigationEnd } from "./Sidebar";
 import { resolveRouteTitleKey } from "./AppShell";
 import { queryClient } from "./queryClient";
@@ -92,11 +92,11 @@ it("wires theme, language, data and motion providers at the production entry wit
   });
 });
 
-it("uses the unavailable facade on the production Skill library route", async () => {
+it("surfaces an unavailable state when the native Skill library result is not connected", async () => {
   mockBrowserPreferences();
   await skillHubI18n.changeLanguage("en-US");
   await appRouter.navigate("/library");
-  const listSkills = vi.spyOn(unavailableSkillLibraryFacade, "listSkills");
+  const listSkills = vi.spyOn(nativeSkillLibraryFacade, "listSkills");
 
   render(<AppRouter />);
 

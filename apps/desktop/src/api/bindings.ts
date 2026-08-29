@@ -49,9 +49,9 @@ export type AppCommandResult = { type: "application_update"; payload: Applicatio
 
 export type AppEvent = { type: "operation_progress"; payload: OperationProgress } | { type: "operation_finished"; payload: OperationSummary } | { type: "facts_changed"; payload: FactsChanged };
 
-export type AppQuery = { type: "check_application_update"; payload: CheckApplicationUpdate } | { type: "get_skill"; payload: GetSkill } | { type: "list_versions"; payload: ListVersions } | { type: "diff_versions"; payload: DiffVersions } | { type: "list_combinations"; payload: ListCombinations } | { type: "search"; payload: SearchQuery } | { type: "get_bootstrap_snapshot" } | { type: "list_pending_items"; payload: ListPendingItems } | { type: "get_discovery_snapshot"; payload: GetDiscoverySnapshot } | { type: "list_custom_agents"; payload: ListCustomAgents } | { type: "list_projects"; payload: ListProjects } | { type: "list_saved_project_views"; payload: ListSavedProjectViews } | { type: "analyze_import"; payload: AnalyzeImport } | { type: "search_online_sources"; payload: SearchOnlineSources } | { type: "analyze_global_skill_evidence"; payload: AnalyzeGlobalSkillEvidence } | { type: "get_deployment_plan"; payload: GetDeploymentPlan } | { type: "list_deployments"; payload: ListDeployments } | { type: "get_deployment_relations"; payload: GetDeploymentRelations } | { type: "get_reconcile_plan"; payload: GetReconcilePlan } | { type: "get_removal_impact"; payload: GetRemovalImpact } | { type: "list_recovery_candidates" } | { type: "get_call_policy"; payload: GetCallPolicy } | { type: "get_llm_safety_check_result"; payload: GetLlmSafetyCheckResult } | { type: "list_ignore_rules" } | { type: "get_basic_check_result"; payload: GetBasicCheckResult } | { type: "list_findings"; payload: ListFindings } | { type: "get_project_assembly_plan"; payload: GetProjectAssemblyPlan };
+export type AppQuery = { type: "check_application_update"; payload: CheckApplicationUpdate } | { type: "get_skill"; payload: GetSkill } | { type: "list_skills"; payload: ListSkills } | { type: "list_versions"; payload: ListVersions } | { type: "diff_versions"; payload: DiffVersions } | { type: "list_combinations"; payload: ListCombinations } | { type: "search"; payload: SearchQuery } | { type: "get_bootstrap_snapshot" } | { type: "list_pending_items"; payload: ListPendingItems } | { type: "get_discovery_snapshot"; payload: GetDiscoverySnapshot } | { type: "list_custom_agents"; payload: ListCustomAgents } | { type: "list_projects"; payload: ListProjects } | { type: "list_saved_project_views"; payload: ListSavedProjectViews } | { type: "analyze_import"; payload: AnalyzeImport } | { type: "search_online_sources"; payload: SearchOnlineSources } | { type: "analyze_global_skill_evidence"; payload: AnalyzeGlobalSkillEvidence } | { type: "get_deployment_plan"; payload: GetDeploymentPlan } | { type: "list_deployments"; payload: ListDeployments } | { type: "get_deployment_relations"; payload: GetDeploymentRelations } | { type: "get_reconcile_plan"; payload: GetReconcilePlan } | { type: "get_removal_impact"; payload: GetRemovalImpact } | { type: "list_recovery_candidates" } | { type: "get_call_policy"; payload: GetCallPolicy } | { type: "get_llm_safety_check_result"; payload: GetLlmSafetyCheckResult } | { type: "list_ignore_rules" } | { type: "get_basic_check_result"; payload: GetBasicCheckResult } | { type: "list_findings"; payload: ListFindings } | { type: "get_project_assembly_plan"; payload: GetProjectAssemblyPlan };
 
-export type AppQueryResult = { type: "application_update"; payload: ApplicationUpdate } | { type: "skill"; payload: SkillResult } | { type: "versions"; payload: VersionResult[] } | { type: "version_diff"; payload: VersionDiffResult } | { type: "combinations"; payload: CombinationResult[] } | { type: "search_results"; payload: SearchHit[] } | { type: "global_skill_evidence"; payload: UsageEvidenceAnalysis } | { type: "bootstrap_snapshot"; payload: BootstrapSnapshot } | { type: "pending_items"; payload: PendingItem[] } | { type: "discovery_snapshot"; payload: DiscoverySnapshot } | { type: "custom_agents"; payload: CustomAgent[] } | { type: "projects"; payload: Project[] } | { type: "saved_project_views"; payload: SavedProjectView[] } | { type: "import_analysis"; payload: ImportAnalysis } | { type: "source_search_page"; payload: SourceSearchPage } | { type: "deployment_plan"; payload: DeploymentPlan } | { type: "deployments"; payload: DeploymentRecord[] } | { type: "deployment_relations"; payload: DeploymentRecord[] } | { type: "reconcile_plan"; payload: ReconcilePlan } | { type: "removal_impact"; payload: RemovalImpact } | { type: "recovery_candidates"; payload: RecoveryCandidate[] } | { type: "call_policy"; payload: CallPolicyResult } | { type: "llm_safety_check_result"; payload: LlmSafetyCheckResult } | { type: "ignore_rules"; payload: IgnoreRule[] } | { type: "basic_check_result"; payload: BasicCheckResult } | { type: "findings"; payload: FindingResult[] } | { type: "assembly_plan"; payload: AssemblyPlan };
+export type AppQueryResult = { type: "application_update"; payload: ApplicationUpdate } | { type: "skill"; payload: SkillResult } | { type: "skill_page"; payload: SkillListPage } | { type: "versions"; payload: VersionResult[] } | { type: "version_diff"; payload: VersionDiffResult } | { type: "combinations"; payload: CombinationResult[] } | { type: "search_results"; payload: SearchHit[] } | { type: "global_skill_evidence"; payload: UsageEvidenceAnalysis } | { type: "bootstrap_snapshot"; payload: BootstrapSnapshot } | { type: "pending_items"; payload: PendingItem[] } | { type: "discovery_snapshot"; payload: DiscoverySnapshot } | { type: "custom_agents"; payload: CustomAgent[] } | { type: "projects"; payload: Project[] } | { type: "saved_project_views"; payload: SavedProjectView[] } | { type: "import_analysis"; payload: ImportAnalysis } | { type: "source_search_page"; payload: SourceSearchPage } | { type: "deployment_plan"; payload: DeploymentPlan } | { type: "deployments"; payload: DeploymentRecord[] } | { type: "deployment_relations"; payload: DeploymentRecord[] } | { type: "reconcile_plan"; payload: ReconcilePlan } | { type: "removal_impact"; payload: RemovalImpact } | { type: "recovery_candidates"; payload: RecoveryCandidate[] } | { type: "call_policy"; payload: CallPolicyResult } | { type: "llm_safety_check_result"; payload: LlmSafetyCheckResult } | { type: "ignore_rules"; payload: IgnoreRule[] } | { type: "basic_check_result"; payload: BasicCheckResult } | { type: "findings"; payload: FindingResult[] } | { type: "assembly_plan"; payload: AssemblyPlan };
 
 export type ApplicationUpdate = {
 	available: boolean,
@@ -685,6 +685,12 @@ export type ListProjects = null;
 
 export type ListSavedProjectViews = null;
 
+export type ListSkills = {
+	text: string,
+	page: number,
+	page_size: number,
+};
+
 export type ListVersions = {
 	skill_id: SkillId,
 };
@@ -1222,6 +1228,27 @@ export type SkillCallPolicy =
 export type SkillId = string;
 
 export type SkillLifecycle = "Normal" | "Deprecated" | "Archived";
+
+export type SkillListItem = {
+	skill_id: SkillId,
+	display_name: string,
+	runtime_name: string,
+	original_description: string,
+	translated_description: string | null,
+	user_note: string | null,
+	tags: string[],
+	license: string | null,
+	lifecycle: SkillLifecycle,
+	trial_due: string | null,
+};
+
+export type SkillListPage = {
+	items: SkillListItem[],
+	total: number,
+	page: number,
+	page_size: number,
+	tags: string[],
+};
 
 export type SkillResult = {
 	skill_id: SkillId,

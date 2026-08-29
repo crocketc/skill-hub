@@ -1,6 +1,6 @@
 use skillhub_application::LocalApplicationFacade;
 use skillhub_core::{
-    api::{AppQueryResult, GetSkill},
+    api::{AppQueryResult, GetSkill, ListSkills},
     catalog::{CatalogRepository, Skill},
     search::{SearchDocument, SearchQuery},
     AppCommand, AppQuery as RootAppQuery, ApplicationFacade, ErrorCode, Severity,
@@ -129,4 +129,32 @@ async fn catalog_queries_return_skill_identity_and_ranked_search_hits() {
     };
     assert_eq!(hits.len(), 1);
     assert_eq!(hits[0].skill_id, skill.id());
+}
+
+#[tokio::test]
+async fn list_skills_query_returns_a_stable_page_and_tag_facets() {
+    let database = Database::open_in_memory().expect("database");
+    let first = Skill::new(skillhub_core::SkillId::new(), "Alpha").with_tag("documents");
+    let second = Skill::new(skillhub_core::SkillId::new(), "Beta").with_tag("media");
+    let repository = database.catalog_repository().expect("catalog repository");
+    repository.insert(&first).await.expect("insert first");
+    repository.insert(&second).await.expect("insert second");
+
+    let facade = LocalApplicationFacade::new_with_today(database, (2026, 8, 29));
+    let result = facade
+        .query(RootAppQuery::ListSkills(ListSkills {
+            text: "".into(),
+            page: 1,
+            page_size: 1,
+        }))
+        .await
+        .expect("list result");
+
+    let AppQueryResult::SkillPage(page) = result else {
+        panic!("expected skill page");
+    };
+    assert_eq!(page.total, 2);
+    assert_eq!(page.items.len(), 1);
+    assert_eq!(page.items[0].display_name, "Alpha");
+    assert_eq!(page.tags, vec!["documents".to_owned(), "media".to_owned()]);
 }

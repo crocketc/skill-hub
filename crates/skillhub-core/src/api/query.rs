@@ -1,5 +1,6 @@
 use crate::agent::{CustomAgent, DiscoverySnapshot};
 use crate::app_update::{ApplicationUpdate, CheckApplicationUpdate};
+use crate::catalog::SkillLifecycle;
 use crate::check::{
     CheckKind, CheckResult as DomainCheckResult, CheckState, Finding, FindingDisposition,
 };
@@ -16,6 +17,34 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 pub struct GetSkill {
     pub skill_id: SkillId,
+}
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct ListSkills {
+    pub text: String,
+    pub page: u32,
+    pub page_size: u32,
+}
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+pub struct SkillListItem {
+    pub skill_id: SkillId,
+    pub display_name: String,
+    pub runtime_name: String,
+    pub original_description: String,
+    pub translated_description: Option<String>,
+    pub user_note: Option<String>,
+    pub tags: Vec<String>,
+    pub license: Option<String>,
+    pub lifecycle: SkillLifecycle,
+    pub trial_due: Option<String>,
+}
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+pub struct SkillListPage {
+    pub items: Vec<SkillListItem>,
+    pub total: u32,
+    pub page: u32,
+    pub page_size: u32,
+    pub tags: Vec<String>,
 }
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 pub struct ListVersions {
@@ -273,6 +302,8 @@ pub enum AppQuery {
     CheckApplicationUpdate(CheckApplicationUpdate),
     #[serde(rename = "get_skill")]
     GetSkill(GetSkill),
+    #[serde(rename = "list_skills")]
+    ListSkills(ListSkills),
     #[serde(rename = "list_versions")]
     ListVersions(ListVersions),
     #[serde(rename = "diff_versions")]
@@ -332,6 +363,8 @@ pub enum AppQueryResult {
     ApplicationUpdate(ApplicationUpdate),
     #[serde(rename = "skill")]
     Skill(SkillResult),
+    #[serde(rename = "skill_page")]
+    SkillPage(SkillListPage),
     #[serde(rename = "versions")]
     Versions(Vec<VersionResult>),
     #[serde(rename = "version_diff")]

@@ -31,8 +31,9 @@ pub use query::{
     GetCallPolicy, GetDeploymentPlan, GetDeploymentRelations, GetDiscoverySnapshot,
     GetLlmSafetyCheckResult, GetProjectAssemblyPlan, GetReconcilePlan, GetRemovalImpact, GetSkill,
     ListCombinations, ListCustomAgents, ListDeployments, ListFindings, ListPendingItems,
-    ListProjects, ListSavedProjectViews, ListVersions, LlmSafetyCheckResult, SearchOnlineSources,
-    SkillResult, VersionDiffResult, VersionResult,
+    ListProjects, ListSavedProjectViews, ListSkills, ListVersions, LlmSafetyCheckResult,
+    SearchOnlineSources, SkillListItem, SkillListPage, SkillResult, VersionDiffResult,
+    VersionResult,
 };
 
 use crate::AppResult;
