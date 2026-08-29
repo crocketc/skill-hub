@@ -3,17 +3,38 @@ import "@testing-library/jest-dom/vitest";
 export function installDomAbortPrimitives(): void {
   if (typeof window === "undefined") return;
 
-  if (globalThis.AbortController !== window.AbortController) {
+  // Node's Request validates AbortSignal by constructor identity. Prefer the
+  // constructor used by Request, then expose it in both test realms.
+  const requestSignal =
+    typeof globalThis.Request === "function"
+      ? new globalThis.Request("http://localhost/").signal
+      : undefined;
+  const requestSignalConstructor = requestSignal?.constructor;
+  const controller = globalThis.AbortController;
+
+  if (
+    requestSignalConstructor &&
+    controller &&
+    new controller().signal.constructor === requestSignalConstructor
+  ) {
     Object.defineProperty(globalThis, "AbortController", {
       configurable: true,
-      value: window.AbortController,
+      value: controller,
       writable: true,
     });
-  }
-  if (globalThis.AbortSignal !== window.AbortSignal) {
     Object.defineProperty(globalThis, "AbortSignal", {
       configurable: true,
-      value: window.AbortSignal,
+      value: requestSignalConstructor,
+      writable: true,
+    });
+    Object.defineProperty(window, "AbortController", {
+      configurable: true,
+      value: controller,
+      writable: true,
+    });
+    Object.defineProperty(window, "AbortSignal", {
+      configurable: true,
+      value: requestSignalConstructor,
       writable: true,
     });
   }

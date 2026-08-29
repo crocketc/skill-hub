@@ -54,6 +54,20 @@ it("keeps AbortController and AbortSignal in the same DOM realm", () => {
   expect(controller.signal).toBeInstanceOf(window.AbortSignal);
 });
 
+it("accepts a DOM AbortSignal in the native Request constructor", () => {
+  installDomAbortPrimitives();
+
+  const controller = new AbortController();
+  expect(controller.signal.constructor).toBe(
+    new Request("http://localhost/").signal.constructor,
+  );
+  expect(() =>
+    new Request("http://localhost/", {
+      signal: controller.signal,
+    }),
+  ).not.toThrow();
+});
+
 afterEach(() => {
   queryClient.clear();
   localStorage.clear();
