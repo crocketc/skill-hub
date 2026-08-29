@@ -1,43 +1,38 @@
 import "@testing-library/jest-dom/vitest";
 
+let requestRealmAdapterInstalled = false;
+
 export function installDomAbortPrimitives(): void {
-  if (typeof window === "undefined") return;
-
-  // Node's Request validates AbortSignal by constructor identity. Prefer the
-  // constructor used by Request, then expose it in both test realms.
-  const requestSignal =
-    typeof globalThis.Request === "function"
-      ? new globalThis.Request("http://localhost/").signal
-      : undefined;
-  const requestSignalConstructor = requestSignal?.constructor;
-  const controller = globalThis.AbortController;
-
   if (
-    requestSignalConstructor &&
-    controller &&
-    new controller().signal.constructor === requestSignalConstructor
+    typeof window === "undefined" ||
+    requestRealmAdapterInstalled ||
+    typeof globalThis.Request !== "function"
   ) {
-    Object.defineProperty(globalThis, "AbortController", {
-      configurable: true,
-      value: controller,
-      writable: true,
-    });
-    Object.defineProperty(globalThis, "AbortSignal", {
-      configurable: true,
-      value: requestSignalConstructor,
-      writable: true,
-    });
-    Object.defineProperty(window, "AbortController", {
-      configurable: true,
-      value: controller,
-      writable: true,
-    });
-    Object.defineProperty(window, "AbortSignal", {
-      configurable: true,
-      value: requestSignalConstructor,
-      writable: true,
-    });
+    return;
   }
+
+  const nativeRequest = globalThis.Request;
+
+  class RequestRealmAdapter extends nativeRequest {
+    constructor(input: RequestInfo | URL, init?: RequestInit) {
+      const signal = init?.signal;
+      super(input, signal ? { ...init, signal: undefined } : init);
+
+      if (signal) {
+        Object.defineProperty(this, "signal", {
+          configurable: true,
+          value: signal,
+        });
+      }
+    }
+  }
+
+  Object.defineProperty(globalThis, "Request", {
+    configurable: true,
+    value: RequestRealmAdapter,
+    writable: true,
+  });
+  requestRealmAdapterInstalled = true;
 }
 
 installDomAbortPrimitives();
