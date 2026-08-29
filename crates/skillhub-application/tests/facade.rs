@@ -1,7 +1,8 @@
 use skillhub_application::LocalApplicationFacade;
 use skillhub_core::{
-    api::AppQueryResult,
+    api::{AppQueryResult, GetSkill},
     catalog::{CatalogRepository, Skill},
+    search::{SearchDocument, SearchQuery},
     AppCommand, AppQuery as RootAppQuery, ApplicationFacade, ErrorCode, Severity,
 };
 use skillhub_storage::Database;
@@ -75,4 +76,57 @@ async fn unsupported_operations_return_a_structured_internal_error() {
     assert_eq!(error.code, ErrorCode::InternalError);
     assert_eq!(error.severity, Severity::Error);
     assert_eq!(error.params["operation"], "execute.cancel_operation");
+}
+
+#[tokio::test]
+async fn catalog_queries_return_skill_identity_and_ranked_search_hits() {
+    let database = Database::open_in_memory().expect("database");
+    let skill = Skill::new(skillhub_core::SkillId::new(), "Markdown tables")
+        .with_description("Create PDF tables");
+    database
+        .catalog_repository()
+        .expect("catalog repository")
+        .insert(&skill)
+        .await
+        .expect("insert skill");
+    database
+        .search_repository()
+        .reindex_skill(&SearchDocument {
+            skill_id: skill.id(),
+            display_name: skill.display_name().to_owned(),
+            runtime_name: skill.runtime_name().to_owned(),
+            original_description: skill.original_description().to_owned(),
+            translated_description: None,
+            user_note: None,
+            tags: Vec::new(),
+            author: None,
+            license: None,
+            requirements: Vec::new(),
+            markdown: "tables".into(),
+        })
+        .expect("index skill");
+
+    let facade = LocalApplicationFacade::new_with_today(database, (2026, 8, 29));
+    let detail = facade
+        .query(RootAppQuery::GetSkill(GetSkill {
+            skill_id: skill.id(),
+        }))
+        .await
+        .expect("skill result");
+    let AppQueryResult::Skill(detail) = detail else {
+        panic!("expected skill result");
+    };
+    assert_eq!(detail.skill_id, skill.id());
+    assert_eq!(detail.display_name, "Markdown tables");
+    assert_eq!(detail.runtime_name, "Markdown tables");
+
+    let search = facade
+        .query(RootAppQuery::Search(SearchQuery::new("tables")))
+        .await
+        .expect("search result");
+    let AppQueryResult::SearchResults(hits) = search else {
+        panic!("expected search result");
+    };
+    assert_eq!(hits.len(), 1);
+    assert_eq!(hits[0].skill_id, skill.id());
 }

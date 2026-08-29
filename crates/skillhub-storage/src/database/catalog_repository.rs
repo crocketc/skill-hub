@@ -1,6 +1,6 @@
 use super::Database;
 use async_trait::async_trait;
-use rusqlite::params;
+use rusqlite::{params, OptionalExtension};
 use skillhub_core::catalog::{CallPolicy, CatalogRepository, Skill, SkillLifecycle};
 use skillhub_core::{AppError, AppResult, ErrorCode, RecoveryAction, Severity, SkillId};
 use std::collections::BTreeSet;
@@ -14,6 +14,21 @@ impl<'a> CatalogRepositorySqlite<'a> {
             return Err(AppError::new(ErrorCode::MigrationRequired, Severity::Error));
         }
         Ok(Self { database })
+    }
+
+    /// Reads the stable identity fields without crossing the async repository
+    /// boundary. The application facade uses this for synchronous SQLite
+    /// query dispatch while richer catalog reads remain on the trait.
+    pub fn get_identity(&self, id: SkillId) -> AppResult<Option<(String, String)>> {
+        self.database
+            .connection
+            .query_row(
+                "SELECT display_name, runtime_name FROM skills WHERE id=?1",
+                [id.to_string()],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .optional()
+            .map_err(error)
     }
 }
 
@@ -181,4 +196,3 @@ fn error(e: rusqlite::Error) -> AppError {
         .with_param("source", e.to_string())
         .with_action(RecoveryAction::Retry)
 }
-use rusqlite::OptionalExtension;

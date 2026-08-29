@@ -90,6 +90,23 @@ impl ApplicationFacade for LocalApplicationFacade {
                         .map(AppQueryResult::PendingItems)
                 })
             }
+            AppQuery::GetSkill(request) => self.with_database("query.get_skill", |database| {
+                let skill = database
+                    .catalog_repository()?
+                    .get_identity(request.skill_id)?
+                    .ok_or_else(|| AppError::new(ErrorCode::ObjectNotFound, Severity::Error))?;
+                Ok(AppQueryResult::Skill(skillhub_core::api::SkillResult {
+                    skill_id: request.skill_id,
+                    display_name: skill.0,
+                    runtime_name: skill.1,
+                }))
+            }),
+            AppQuery::Search(request) => self.with_database("query.search", |database| {
+                database
+                    .search_repository()
+                    .search(request)
+                    .map(AppQueryResult::SearchResults)
+            }),
             _ => Err(AppError::new(ErrorCode::InternalError, Severity::Error)
                 .with_param("operation", "query.unsupported")
                 .with_action(RecoveryAction::Retry)),
