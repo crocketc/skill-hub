@@ -26,10 +26,12 @@ pub use agent::{
 };
 pub use api::{
     AnalyzeImport, AppCommand, AppCommandResult, AppEvent, AppQuery, AppQueryResult,
-    ApplicationFacade, FactsChanged, GetDeploymentPlan, GetProjectAssemblyPlan, Page,
+    ApplicationFacade, CommitImport, FactsChanged, GetDeploymentPlan, GetProjectAssemblyPlan, Page,
+    PrepareImport,
 };
 pub use application::{
-    BasicCheckOutput, BasicCheckScanner, CheckService, OperationService, ProjectAssemblyService,
+    BasicCheckOutput, BasicCheckScanner, CheckService, ImportBackend, ImportItemResult,
+    ImportService, ImportSummary, OperationService, PreparedImport, ProjectAssemblyService,
     VersionMaterializer,
 };
 pub use application::{WatchConfirmation, WatchHint, WatchHintKind, WatchService};
@@ -69,4 +71,5 @@ pub use project::{
     SourcePreparation, SourcePreparationPort,
 };
 pub use scan::{DiscoveredSkill, ScanGeneration, ScanIssue, ScanRepository, ScanResult, ScanScope};
+pub use source::{SourceDescriptor, SourceKind, SourceLocator};
 pub use versioning::{FileEntry, VersionDiff, VersionManifest, VersionRecord, VersionRepository};

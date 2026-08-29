@@ -1,5 +1,6 @@
 use skillhub_core::{
-    AppCommand, AppEvent, AppQuery, OperationId, OperationPhase, OperationProgress,
+    AppCommand, AppEvent, AppQuery, ImportAction, ImportCandidate, ImportDecision, OperationId,
+    OperationPhase, OperationProgress, SourceDescriptor, SourceKind, SourceLocator,
 };
 
 #[test]
@@ -31,4 +32,47 @@ fn application_envelopes_include_foundation_operations() {
         assert_send(command);
     }
     let _query = AppQuery::GetBootstrapSnapshot;
+}
+
+#[test]
+fn import_prepare_commit_and_cancel_have_stable_wire_shapes() {
+    let candidate = ImportCandidate::detected(
+        SourceDescriptor::new(
+            SourceKind::Local,
+            SourceLocator::local_path("C:/incoming/notes"),
+        ),
+        "C:/incoming/notes",
+        ".",
+        "SKILL.md",
+        "notes",
+    )
+    .with_ownership(
+        skillhub_core::CandidateOwnership::ArbitraryLocalDirectory,
+        ImportAction::Review,
+        None,
+    );
+    let prepared = OperationId::new();
+    let prepare = AppCommand::PrepareImport(skillhub_core::PrepareImport {
+        candidate,
+        tree_hash: None,
+    });
+    let commit = AppCommand::CommitImport(skillhub_core::CommitImport {
+        prepared_import_id: prepared,
+        decision: ImportDecision::CopyIntoLibrary,
+    });
+    let cancel = AppCommand::CancelImport {
+        prepared_import_id: prepared,
+    };
+    assert_eq!(
+        serde_json::to_value(prepare).unwrap()["type"],
+        "prepare_import"
+    );
+    assert_eq!(
+        serde_json::to_value(commit).unwrap()["type"],
+        "commit_import"
+    );
+    assert_eq!(
+        serde_json::to_value(cancel).unwrap()["type"],
+        "cancel_import"
+    );
 }

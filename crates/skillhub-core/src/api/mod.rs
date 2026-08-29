@@ -4,12 +4,12 @@ mod query;
 
 pub use crate::deployment::DeploymentPlanRequest;
 pub use command::{
-    AppCommand, AppCommandResult, CommitProjectAssembly, CreateCombination, CreateCustomAgent,
-    CreateSkill, PinProjectSkillVersion, PrepareProjectAssembly, ReadSharedProjectConfig,
-    RecheckBasic, RegisterProject, RemoveCustomAgent, RenameSkill, RescanSkill,
-    ResetProfileOverride, RunBasicCheck, RunInitializationScan, SaveProjectView, SaveSkillContent,
-    ScanTargets, SetCurrentVersion, SetFindingDisposition, SetLifecycle, SetMetadata,
-    SetProfileOverride, SetProjectTags, SetTrial, UpdateCustomAgent, UpdateProject,
+    AppCommand, AppCommandResult, CommitImport, CommitProjectAssembly, CreateCombination,
+    CreateCustomAgent, CreateSkill, PinProjectSkillVersion, PrepareImport, PrepareProjectAssembly,
+    ReadSharedProjectConfig, RecheckBasic, RegisterProject, RemoveCustomAgent, RenameSkill,
+    RescanSkill, ResetProfileOverride, RunBasicCheck, RunInitializationScan, SaveProjectView,
+    SaveSkillContent, ScanTargets, SetCurrentVersion, SetFindingDisposition, SetLifecycle,
+    SetMetadata, SetProfileOverride, SetProjectTags, SetTrial, UpdateCustomAgent, UpdateProject,
     WriteSharedProjectConfig,
 };
 pub use event::{AppEvent, FactsChanged};

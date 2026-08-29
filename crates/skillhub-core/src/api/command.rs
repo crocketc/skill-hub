@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use crate::agent::{CustomAgent, CustomAgentDraft, CustomAgentOverride, PathGrant};
 use crate::catalog::SkillLifecycle;
 use crate::check::{CheckKind, FindingDisposition};
+use crate::import::{ImportCandidate, ImportDecision};
 use crate::project::{AssemblyPlan, Project, SavedProjectView, SharedProjectConfig};
 use crate::scan::ScanResult;
 use crate::{OperationId, OperationSummary, ProjectId, SkillId, VersionId};
@@ -131,6 +132,20 @@ pub struct CommitProjectAssembly {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 #[serde(deny_unknown_fields)]
+pub struct PrepareImport {
+    pub candidate: ImportCandidate,
+    pub tree_hash: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct CommitImport {
+    pub prepared_import_id: OperationId,
+    pub decision: ImportDecision,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
 pub struct RunInitializationScan {
     pub scope_ids: Vec<String>,
 }
@@ -220,6 +235,12 @@ pub enum AppCommand {
     PrepareProjectAssembly(PrepareProjectAssembly),
     #[serde(rename = "commit_project_assembly")]
     CommitProjectAssembly(CommitProjectAssembly),
+    #[serde(rename = "prepare_import")]
+    PrepareImport(PrepareImport),
+    #[serde(rename = "commit_import")]
+    CommitImport(CommitImport),
+    #[serde(rename = "cancel_import")]
+    CancelImport { prepared_import_id: OperationId },
     #[serde(rename = "run_initialization_scan")]
     RunInitializationScan(RunInitializationScan),
     #[serde(rename = "scan_targets")]
@@ -259,4 +280,8 @@ pub enum AppCommandResult {
     ScanResult(ScanResult),
     #[serde(rename = "basic_check_result")]
     BasicCheckResult(BasicCheckResult),
+    #[serde(rename = "prepared_import")]
+    PreparedImport(Box<crate::application::PreparedImport>),
+    #[serde(rename = "import_summary")]
+    ImportSummary(Box<crate::application::ImportSummary>),
 }

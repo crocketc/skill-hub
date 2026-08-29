@@ -158,6 +158,9 @@ pub fn analyze_import(
                     super::ImportDecision::KeepIndependent,
                     super::ImportDecision::Skip,
                 ]);
+                if supports_takeover(candidate.ownership) {
+                    actions.push(super::ImportDecision::TakeOverAfterVerify);
+                }
                 conflicts.push(ImportConflict {
                     skill_id: primary.skill_id,
                     kind: primary.duplicate_kind,
@@ -171,6 +174,9 @@ pub fn analyze_import(
                     super::ImportDecision::KeepIndependent,
                     super::ImportDecision::Skip,
                 ]);
+                if supports_takeover(candidate.ownership) {
+                    actions.push(super::ImportDecision::TakeOverAfterVerify);
+                }
             }
             DuplicateKind::SearchCandidate => {
                 actions.extend([
@@ -185,6 +191,9 @@ pub fn analyze_import(
             super::ImportDecision::CopyIntoLibrary,
             super::ImportDecision::Skip,
         ]);
+        if supports_takeover(candidate.ownership) {
+            actions.push(super::ImportDecision::TakeOverAfterVerify);
+        }
     }
 
     actions.sort_by_key(|action| {
@@ -205,4 +214,11 @@ pub fn analyze_import(
 
 fn normalize_runtime_name(value: &str) -> String {
     value.trim().to_lowercase()
+}
+
+fn supports_takeover(ownership: CandidateOwnership) -> bool {
+    matches!(
+        ownership,
+        CandidateOwnership::KnownAgentTarget | CandidateOwnership::RegisteredProject
+    )
 }
