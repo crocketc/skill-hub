@@ -7,7 +7,8 @@
     "test:frontend": "pnpm --dir apps/desktop test --run",
     "build:frontend": "pnpm --dir apps/desktop build",
     "audit:frontend": "pnpm audit --json",
-    "test:e2e": "playwright test --config=tests/e2e/playwright.config.ts"
+    "test:e2e": "playwright test --config=tests/e2e/playwright.config.ts",
+    "ci:local": "node scripts/ci-local.mjs"
   },
   "devDependencies": {
     "@playwright/test": "1.55.1"

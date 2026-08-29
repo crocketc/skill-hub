@@ -223,6 +223,24 @@ describe("SkillLibraryPage", () => {
     expect(region.scrollLeft).toBe(96);
   });
 
+  it("closes the drawer while preserving the latest URL filters", async () => {
+    const facade = createMockSkillLibraryFacade();
+    const view = renderLibrary({
+      facade,
+      initialEntry: "/library?q=pdf&page=1&skill=skill-pdf",
+    });
+
+    await act(async () => {
+      await view.router.navigate(
+        "/library?q=reader&page=2&skill=skill-pdf",
+      );
+    });
+    const close = await screen.findByRole("button", { name: "Close" });
+    fireEvent.click(close);
+
+    expect(view.router.state.location.search).toBe("?q=reader&page=2");
+  });
+
   it("restores the table position supplied by a returning detail page", async () => {
     const facade = createMockSkillLibraryFacade();
     const view = renderLibrary({
@@ -284,9 +302,10 @@ describe("SkillLibraryPage", () => {
 
     renderLibrary({ facade });
 
-    expect(await screen.findByRole("status")).toHaveTextContent(
+    expect(await screen.findByRole("status", { name: "Loading skill library" })).toHaveTextContent(
       "Loading skill library",
     );
+    expect(screen.getAllByRole("status")).toHaveLength(1);
     expect(screen.getAllByTestId("skill-loading-row")).toHaveLength(6);
   });
 
@@ -304,9 +323,10 @@ describe("SkillLibraryPage", () => {
       target: { value: "reader" },
     });
 
-    expect(await screen.findByRole("status")).toHaveTextContent(
+    expect(await screen.findByRole("status", { name: "Loading skill library" })).toHaveTextContent(
       "Loading skill library",
     );
+    expect(screen.getAllByRole("status")).toHaveLength(1);
     expect(screen.getByRole("searchbox", { name: "Search skills" })).toHaveValue(
       "reader",
     );
@@ -727,7 +747,10 @@ describe("SkillLibraryPage", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "Save view" }));
 
-    const savedView = await screen.findByRole("button", { name: "Deployed skills" });
+    const savedView = await screen.findByRole("button", {
+      name: "Deployed skills",
+      pressed: true,
+    });
     expect(savedView).toHaveAttribute("aria-pressed", "true");
     expect(screen.queryByText("Unsaved changes")).not.toBeInTheDocument();
   });
