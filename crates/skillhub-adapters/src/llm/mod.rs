@@ -1,3 +1,4 @@
 mod http_runner;
+pub mod safety_prompt;
 
 pub use http_runner::HttpLlmTaskRunner;

@@ -33,19 +33,20 @@ pub use api::{
     ApplicationFacade, ApplySourceUpdate, CheckSourceUpdate, CollectDeploymentChanges,
     CommitCallPolicyChange, CommitDeleteSkill, CommitDeployment, CommitImport, CommitRepair,
     CommitUndeploy, CreateIgnoreRule, DetachManagement, FactsChanged, GetCallPolicy,
-    GetDeploymentPlan, GetDeploymentRelations, GetProjectAssemblyPlan, GetReconcilePlan,
-    GetRemovalImpact, IgnoreExternalChange, KeepIndependentCopy, ListDeployments, Page,
-    PrepareCallPolicyChange, PrepareDeleteSkill, PrepareDeployment, PrepareImport, PrepareRepair,
-    PrepareUndeploy, RelinkSource, RemoveIgnoreRule, ResolveRecovery, RestoreDeployment,
-    RestoreOriginalCallPolicy, RunHealthCheck, SearchOnlineSources,
+    GetDeploymentPlan, GetDeploymentRelations, GetLlmSafetyCheckResult, GetProjectAssemblyPlan,
+    GetReconcilePlan, GetRemovalImpact, IgnoreExternalChange, KeepIndependentCopy, ListDeployments,
+    Page, PrepareCallPolicyChange, PrepareDeleteSkill, PrepareDeployment, PrepareImport,
+    PrepareRepair, PrepareUndeploy, RecheckLlmSafety, RelinkSource, RemoveIgnoreRule,
+    ResolveRecovery, RestoreDeployment, RestoreOriginalCallPolicy, RunHealthCheck,
+    RunLlmSafetyCheck, SearchOnlineSources,
 };
 pub use application::{
     BasicCheckOutput, BasicCheckScanner, CallPolicyBackend, CallPolicyService, CheckService,
     DeploymentBackend, DeploymentService, DeploymentSummary, HealthBackend, HealthService,
     IgnoreBackend, IgnoreService, ImportBackend, ImportItemResult, ImportService, ImportSummary,
-    OperationService, PreparedDeployment, PreparedImport, ProjectAssemblyService, ReconcileBackend,
-    ReconcileService, RecoveryBackend, RecoveryService, RemovalBackend, RemovalService,
-    TargetOperationResult, TargetOperationStatus, VersionMaterializer,
+    LlmSafetyService, OperationService, PreparedDeployment, PreparedImport, ProjectAssemblyService,
+    ReconcileBackend, ReconcileService, RecoveryBackend, RecoveryService, RemovalBackend,
+    RemovalService, TargetOperationResult, TargetOperationStatus, VersionMaterializer,
 };
 pub use application::{WatchConfirmation, WatchHint, WatchHintKind, WatchService};
 pub use bootstrap::{

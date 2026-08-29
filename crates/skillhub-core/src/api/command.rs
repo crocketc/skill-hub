@@ -9,7 +9,7 @@ use crate::scan::ScanResult;
 use crate::source::{SourceDescriptor, UpdateDecision};
 use crate::{OperationId, OperationSummary, ProjectId, SkillId, VersionId};
 
-use super::query::BasicCheckResult;
+use super::query::{BasicCheckResult, LlmSafetyCheckResult};
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 pub struct CreateSkill {
@@ -291,6 +291,20 @@ pub struct RemoveIgnoreRule {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 #[serde(deny_unknown_fields)]
+pub struct RunLlmSafetyCheck {
+    pub skill_id: SkillId,
+    pub version_id: VersionId,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct RecheckLlmSafety {
+    pub skill_id: SkillId,
+    pub version_id: VersionId,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
 pub struct RunInitializationScan {
     pub scope_ids: Vec<String>,
 }
@@ -430,6 +444,10 @@ pub enum AppCommand {
     CreateIgnoreRule(CreateIgnoreRule),
     #[serde(rename = "remove_ignore_rule")]
     RemoveIgnoreRule(RemoveIgnoreRule),
+    #[serde(rename = "run_llm_safety_check")]
+    RunLlmSafetyCheck(RunLlmSafetyCheck),
+    #[serde(rename = "recheck_llm_safety")]
+    RecheckLlmSafety(RecheckLlmSafety),
     #[serde(rename = "cancel_import")]
     CancelImport { prepared_import_id: OperationId },
     #[serde(rename = "run_initialization_scan")]
@@ -497,4 +515,6 @@ pub enum AppCommandResult {
     CallPolicyPlan(crate::CallPolicyPlan),
     #[serde(rename = "ignore_rule")]
     IgnoreRule(crate::IgnoreRule),
+    #[serde(rename = "llm_safety_check_result")]
+    LlmSafetyCheckResult(LlmSafetyCheckResult),
 }

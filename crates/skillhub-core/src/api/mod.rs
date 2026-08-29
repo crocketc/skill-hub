@@ -10,21 +10,22 @@ pub use command::{
     CreateIgnoreRule, CreateSkill, DetachManagement, IgnoreExternalChange, KeepIndependentCopy,
     PinProjectSkillVersion, PrepareCallPolicyChange, PrepareDeleteSkill, PrepareDeployment,
     PrepareImport, PrepareProjectAssembly, PrepareRepair, PrepareUndeploy, ReadSharedProjectConfig,
-    RecheckBasic, RegisterProject, RelinkSource, RemoveCustomAgent, RemoveIgnoreRule, RenameSkill,
-    RescanSkill, ResetProfileOverride, ResolveRecovery, RestoreDeployment,
-    RestoreOriginalCallPolicy, RunBasicCheck, RunHealthCheck, RunInitializationScan,
-    SaveProjectView, SaveSkillContent, ScanTargets, SetCurrentVersion, SetFindingDisposition,
-    SetLifecycle, SetMetadata, SetProfileOverride, SetProjectTags, SetTrial, UpdateCustomAgent,
-    UpdateProject, WriteSharedProjectConfig,
+    RecheckBasic, RecheckLlmSafety, RegisterProject, RelinkSource, RemoveCustomAgent,
+    RemoveIgnoreRule, RenameSkill, RescanSkill, ResetProfileOverride, ResolveRecovery,
+    RestoreDeployment, RestoreOriginalCallPolicy, RunBasicCheck, RunHealthCheck,
+    RunInitializationScan, RunLlmSafetyCheck, SaveProjectView, SaveSkillContent, ScanTargets,
+    SetCurrentVersion, SetFindingDisposition, SetLifecycle, SetMetadata, SetProfileOverride,
+    SetProjectTags, SetTrial, UpdateCustomAgent, UpdateProject, WriteSharedProjectConfig,
 };
 pub use event::{AppEvent, FactsChanged};
 pub use query::{
     AnalyzeImport, AppQuery, AppQueryResult, BasicCheckResult, CombinationResult, DiffVersions,
     FindingResult, GetBasicCheckResult, GetBootstrapSnapshot, GetCallPolicy, GetDeploymentPlan,
-    GetDeploymentRelations, GetDiscoverySnapshot, GetProjectAssemblyPlan, GetReconcilePlan,
-    GetRemovalImpact, GetSkill, ListCombinations, ListCustomAgents, ListDeployments, ListFindings,
-    ListPendingItems, ListProjects, ListSavedProjectViews, ListVersions, SearchOnlineSources,
-    SkillResult, VersionDiffResult, VersionResult,
+    GetDeploymentRelations, GetDiscoverySnapshot, GetLlmSafetyCheckResult, GetProjectAssemblyPlan,
+    GetReconcilePlan, GetRemovalImpact, GetSkill, ListCombinations, ListCustomAgents,
+    ListDeployments, ListFindings, ListPendingItems, ListProjects, ListSavedProjectViews,
+    ListVersions, LlmSafetyCheckResult, SearchOnlineSources, SkillResult, VersionDiffResult,
+    VersionResult,
 };
 
 use crate::AppResult;

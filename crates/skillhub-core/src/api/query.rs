@@ -111,6 +111,18 @@ pub struct BasicCheckResult {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+pub struct LlmSafetyCheckResult {
+    pub skill_id: SkillId,
+    pub version_id: VersionId,
+    pub state: CheckState,
+    pub run_id: Option<String>,
+    pub model_id: Option<String>,
+    pub checked_at: Option<String>,
+    pub finding_count: u32,
+    pub actionable_count: u32,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 pub struct FindingResult {
     pub id: String,
     pub code: String,
@@ -171,6 +183,38 @@ impl From<&Finding> for FindingResult {
     }
 }
 
+impl LlmSafetyCheckResult {
+    pub fn from_check_result(
+        skill_id: SkillId,
+        version_id: VersionId,
+        result: &DomainCheckResult,
+    ) -> Self {
+        let run = result.run.as_ref();
+        Self {
+            skill_id,
+            version_id,
+            state: result.state,
+            run_id: run.map(|run| run.id.clone()),
+            model_id: run.and_then(|run| run.model_id.clone()),
+            checked_at: run.and_then(|run| run.ended_at.map(|value| value.to_string())),
+            finding_count: run
+                .map(|run| u32::try_from(run.findings.len()).unwrap_or(u32::MAX))
+                .unwrap_or_default(),
+            actionable_count: run
+                .map(|run| {
+                    u32::try_from(
+                        run.findings
+                            .iter()
+                            .filter(|finding| finding.is_actionable())
+                            .count(),
+                    )
+                    .unwrap_or(u32::MAX)
+                })
+                .unwrap_or_default(),
+        }
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 #[serde(deny_unknown_fields)]
 pub struct ListDeployments {
@@ -199,6 +243,13 @@ pub struct GetRemovalImpact {
 #[serde(deny_unknown_fields)]
 pub struct GetCallPolicy {
     pub skill_id: SkillId,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct GetLlmSafetyCheckResult {
+    pub skill_id: SkillId,
+    pub version_id: VersionId,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
@@ -249,6 +300,8 @@ pub enum AppQuery {
     ListRecoveryCandidates,
     #[serde(rename = "get_call_policy")]
     GetCallPolicy(GetCallPolicy),
+    #[serde(rename = "get_llm_safety_check_result")]
+    GetLlmSafetyCheckResult(GetLlmSafetyCheckResult),
     #[serde(rename = "list_ignore_rules")]
     ListIgnoreRules,
     #[serde(rename = "get_basic_check_result")]
@@ -302,6 +355,8 @@ pub enum AppQueryResult {
     RecoveryCandidates(Vec<crate::RecoveryCandidate>),
     #[serde(rename = "call_policy")]
     CallPolicy(crate::CallPolicyResult),
+    #[serde(rename = "llm_safety_check_result")]
+    LlmSafetyCheckResult(LlmSafetyCheckResult),
     #[serde(rename = "ignore_rules")]
     IgnoreRules(Vec<crate::IgnoreRule>),
     #[serde(rename = "basic_check_result")]

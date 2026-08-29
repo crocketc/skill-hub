@@ -65,6 +65,8 @@ pub enum ErrorCode {
     LlmEndpointNotAllowed,
     #[serde(rename = "llm.input_too_large")]
     LlmInputTooLarge,
+    #[serde(rename = "llm.evidence_reference_invalid")]
+    LlmEvidenceReferenceInvalid,
 }
 
 #[allow(non_upper_case_globals)]
@@ -107,6 +109,7 @@ impl ErrorCode {
             Self::LlmInvalidStructuredResponse => "llm.invalid_structured_response",
             Self::LlmEndpointNotAllowed => "llm.endpoint_not_allowed",
             Self::LlmInputTooLarge => "llm.input_too_large",
+            Self::LlmEvidenceReferenceInvalid => "llm.evidence_reference_invalid",
         }
     }
 }

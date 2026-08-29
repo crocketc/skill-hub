@@ -5,6 +5,7 @@ mod deployment_service;
 mod health_service;
 mod ignore_service;
 mod import_service;
+mod llm_safety_service;
 mod operation_service;
 mod project_assembly_service;
 mod reconcile_service;
@@ -27,6 +28,7 @@ pub use ignore_service::{IgnoreBackend, IgnoreService};
 pub use import_service::{
     ImportBackend, ImportItemResult, ImportService, ImportSummary, PreparedImport,
 };
+pub use llm_safety_service::LlmSafetyService;
 pub use operation_service::OperationService;
 pub use project_assembly_service::ProjectAssemblyService;
 pub use reconcile_service::{ReconcileBackend, ReconcileService};

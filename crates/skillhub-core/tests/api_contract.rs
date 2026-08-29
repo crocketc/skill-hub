@@ -319,3 +319,37 @@ fn ignore_rule_commands_and_query_have_stable_wire_shapes() {
         "list_ignore_rules"
     );
 }
+
+#[test]
+fn llm_safety_commands_and_query_have_stable_wire_shapes() {
+    let commands = [
+        AppCommand::RunLlmSafetyCheck(skillhub_core::RunLlmSafetyCheck {
+            skill_id: skillhub_core::SkillId::new(),
+            version_id: skillhub_core::VersionId::parse(&format!("sha256:{}", "a".repeat(64)))
+                .unwrap(),
+        }),
+        AppCommand::RecheckLlmSafety(skillhub_core::RecheckLlmSafety {
+            skill_id: skillhub_core::SkillId::new(),
+            version_id: skillhub_core::VersionId::parse(&format!("sha256:{}", "b".repeat(64)))
+                .unwrap(),
+        }),
+    ];
+    let expected = ["run_llm_safety_check", "recheck_llm_safety"];
+    for (command, expected_type) in commands.into_iter().zip(expected) {
+        assert_eq!(
+            serde_json::to_value(command).unwrap()["type"],
+            expected_type
+        );
+    }
+    assert_eq!(
+        serde_json::to_value(AppQuery::GetLlmSafetyCheckResult(
+            skillhub_core::api::GetLlmSafetyCheckResult {
+                skill_id: skillhub_core::SkillId::new(),
+                version_id: skillhub_core::VersionId::parse(&format!("sha256:{}", "c".repeat(64)))
+                    .unwrap(),
+            },
+        ))
+        .unwrap()["type"],
+        "get_llm_safety_check_result"
+    );
+}

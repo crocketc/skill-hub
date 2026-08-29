@@ -1,0 +1,23 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["findings"],
+  "properties": {
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["code", "severity", "file", "line_start", "line_end", "explanation"],
+        "properties": {
+          "code": {"type": "string", "enum": ["llm.prompt_injection", "llm.sensitive_instruction", "llm.unsafe_intent", "llm.external_data_exfiltration", "llm.credential_handling"]},
+          "severity": {"type": "string", "enum": ["info", "warning", "error", "critical"]},
+          "file": {"type": "string"},
+          "line_start": {"type": "integer", "minimum": 1},
+          "line_end": {"type": "integer", "minimum": 1},
+          "explanation": {"type": "string", "maxLength": 2000}
+        }
+      }
+    }
+  }
+}
