@@ -30,9 +30,9 @@ pub use query::{
     CombinationResult, DiffVersions, FindingResult, GetBasicCheckResult, GetBootstrapSnapshot,
     GetCallPolicy, GetDeploymentPlan, GetDeploymentRelations, GetDiscoverySnapshot,
     GetLlmSafetyCheckResult, GetProjectAssemblyPlan, GetReconcilePlan, GetRemovalImpact, GetSkill,
-    ListCombinations, ListCustomAgents, ListDeployments, ListFindings, ListProjects,
-    ListSavedProjectViews, ListVersions, LlmSafetyCheckResult, SearchOnlineSources, SkillResult,
-    VersionDiffResult, VersionResult,
+    ListCombinations, ListCustomAgents, ListDeployments, ListFindings, ListPendingItems,
+    ListProjects, ListSavedProjectViews, ListVersions, LlmSafetyCheckResult, SearchOnlineSources,
+    SkillResult, VersionDiffResult, VersionResult,
 };
 
 use crate::AppResult;

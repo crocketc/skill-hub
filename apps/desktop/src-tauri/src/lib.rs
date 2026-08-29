@@ -1,11 +1,9 @@
+use std::path::PathBuf;
 use std::sync::Arc;
 
-#[cfg(test)]
-use std::path::PathBuf;
-
+use skillhub_application::LocalApplicationFacade;
 use skillhub_core::{
-    AppCommand, AppCommandResult, AppError, AppEvent, AppQuery, AppQueryResult, AppResult,
-    ApplicationFacade, ErrorCode, Severity,
+    AppCommand, AppCommandResult, AppEvent, AppQuery, AppQueryResult, AppResult, ApplicationFacade,
 };
 use tauri::{AppHandle, Emitter, State};
 
@@ -56,21 +54,39 @@ pub fn run_with_facade(facade: Arc<dyn ApplicationFacade>) -> tauri::Result<()> 
         .run(tauri::generate_context!())
 }
 
-struct UnconfiguredFacade;
-
-#[async_trait::async_trait]
-impl ApplicationFacade for UnconfiguredFacade {
-    async fn execute(&self, _command: AppCommand) -> AppResult<AppCommandResult> {
-        Err(AppError::new(ErrorCode::InternalError, Severity::Error))
-    }
-
-    async fn query(&self, _query: AppQuery) -> AppResult<AppQueryResult> {
-        Err(AppError::new(ErrorCode::InternalError, Severity::Error))
-    }
+pub fn run() -> tauri::Result<()> {
+    let facade = LocalApplicationFacade::open(default_database_path())
+        .expect("failed to open SkillHub application database");
+    run_with_facade(Arc::new(facade))
 }
 
-pub fn run() -> tauri::Result<()> {
-    run_with_facade(Arc::new(UnconfiguredFacade))
+#[cfg(windows)]
+fn default_database_path() -> PathBuf {
+    std::env::var_os("APPDATA")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| {
+            std::env::var_os("USERPROFILE")
+                .map(PathBuf::from)
+                .unwrap_or_else(|| PathBuf::from("."))
+        })
+        .join("SkillHub")
+        .join("skillhub.sqlite")
+}
+
+#[cfg(target_os = "macos")]
+fn default_database_path() -> PathBuf {
+    std::env::var_os("HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join("Library")
+        .join("Application Support")
+        .join("SkillHub")
+        .join("skillhub.sqlite")
+}
+
+#[cfg(not(any(windows, target_os = "macos")))]
+fn default_database_path() -> PathBuf {
+    PathBuf::from("skillhub.sqlite")
 }
 
 #[cfg(test)]

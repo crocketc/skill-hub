@@ -5,6 +5,7 @@ members = [
     "crates/skillhub-testkit",
     "crates/skillhub-storage",
     "crates/skillhub-adapters",
+    "crates/skillhub-application",
     "crates/skillhub-cli",
     "apps/desktop/src-tauri",
 ]

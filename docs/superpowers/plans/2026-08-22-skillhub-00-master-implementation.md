@@ -41,8 +41,13 @@ Execute the following plans in order. A later plan may start only when every int
 | 06 | [Security, search enhancement and LLM](./2026-08-22-skillhub-06-security-search-ai.md) | Basic scanner, independent LLM checks, semantic duplication, translation, experimental evidence analysis |
 | 07 | [Desktop experience](./2026-08-22-skillhub-07-desktop-experience.md) | Initialization, cached home, library/detail/editor, Agent/project/deployment, pending/settings UI and i18n |
 | 08 | [Backup, CLI and release](./2026-08-22-skillhub-08-backup-cli-release.md) | Backup/restore/migration, CLI, packaging, supply-chain controls, full compatibility and release gates |
+| 09 | Desktop runtime integration (follow-up) | Shared local `ApplicationFacade`, real IPC queries, and staged native business-flow integration |
 
 This is a dependency-oriented development order, not a reduced product version plan. Every confirmed feature remains in the complete implementation target.
+
+Plan 09 is an integration follow-up after the eight feature plans. It does not add
+new product scope; it connects the already-frozen contracts to the desktop and
+CLI runtime in independently testable slices.
 
 ---
 

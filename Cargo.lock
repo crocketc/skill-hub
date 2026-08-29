@@ -4334,6 +4334,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "skillhub-application"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "skillhub-core",
+ "skillhub-storage",
+ "tokio",
+]
+
+[[package]]
 name = "skillhub-cli"
 version = "0.1.0"
 dependencies = [
@@ -4362,6 +4372,7 @@ name = "skillhub-desktop"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "skillhub-application",
  "skillhub-core",
  "specta",
  "specta-serde",
