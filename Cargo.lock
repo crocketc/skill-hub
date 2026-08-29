@@ -4340,6 +4340,7 @@ dependencies = [
  "async-trait",
  "skillhub-core",
  "skillhub-storage",
+ "tempfile",
  "tokio",
 ]
 

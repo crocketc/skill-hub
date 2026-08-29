@@ -9,7 +9,7 @@ use skillhub_core::{
     AppCommand, AppCommandResult, AppError, AppQuery, AppQueryResult, AppResult, ApplicationFacade,
     ErrorCode, RecoveryAction, Severity,
 };
-use skillhub_storage::Database;
+use skillhub_storage::{Database, LibraryPaths, VersionStore};
 
 /// The date provider is kept on the facade so all date-sensitive projections
 /// in one request use the same day boundary. Production uses the current UTC
@@ -17,6 +17,7 @@ use skillhub_storage::Database;
 pub struct LocalApplicationFacade {
     database: Mutex<Database>,
     today: (i32, u8, u8),
+    library: Option<VersionStore>,
 }
 
 impl LocalApplicationFacade {
@@ -33,6 +34,22 @@ impl LocalApplicationFacade {
         Database::open(path).map(Self::new)
     }
 
+    /// Opens a file-backed facade and connects it to the immutable central library.
+    pub fn open_with_library(
+        path: impl AsRef<Path>,
+        library_root: impl AsRef<Path>,
+    ) -> AppResult<Self> {
+        let path = path.as_ref();
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).map_err(|error| {
+                AppError::new(ErrorCode::InternalError, Severity::Error)
+                    .with_param("source", error.to_string())
+                    .with_action(RecoveryAction::Retry)
+            })?;
+        }
+        Database::open(path).map(|database| Self::new_with_library(database, library_root))
+    }
+
     /// Creates a facade backed by the supplied SQLite database.
     pub fn new(database: Database) -> Self {
         Self::new_with_today(database, current_utc_date())
@@ -43,6 +60,18 @@ impl LocalApplicationFacade {
         Self {
             database: Mutex::new(database),
             today,
+            library: None,
+        }
+    }
+
+    /// Creates a facade with read-only access to a central library root.
+    pub fn new_with_library(database: Database, library_root: impl AsRef<Path>) -> Self {
+        Self {
+            database: Mutex::new(database),
+            today: current_utc_date(),
+            library: Some(VersionStore::new(LibraryPaths::from_root(
+                library_root.as_ref(),
+            ))),
         }
     }
 
@@ -120,11 +149,81 @@ impl ApplicationFacade for LocalApplicationFacade {
                     .list_page(&request)
                     .map(AppQueryResult::SkillPage)
             }),
+            AppQuery::ListMarkdownFiles(request) => self.list_markdown_files(request.skill_id),
+            AppQuery::ReadMarkdownFile(request) => {
+                self.read_markdown_file(request.skill_id, &request.path)
+            }
             _ => Err(AppError::new(ErrorCode::InternalError, Severity::Error)
                 .with_param("operation", "query.unsupported")
                 .with_action(RecoveryAction::Retry)),
         }
     }
+}
+
+impl LocalApplicationFacade {
+    fn list_markdown_files(&self, skill_id: skillhub_core::SkillId) -> AppResult<AppQueryResult> {
+        let Some(library) = self.library.as_ref() else {
+            return Err(unsupported("query.list_markdown_files"));
+        };
+        let Some(version_id) = library.current(skill_id)? else {
+            return Ok(AppQueryResult::MarkdownFiles(Vec::new()));
+        };
+        let paths = library.list_markdown_files(&version_id)?;
+        Ok(AppQueryResult::MarkdownFiles(
+            paths
+                .into_iter()
+                .map(|path| skillhub_core::api::MarkdownFileEntry {
+                    primary: path.eq_ignore_ascii_case("SKILL.md"),
+                    label: path.clone(),
+                    path,
+                })
+                .collect(),
+        ))
+    }
+
+    fn read_markdown_file(
+        &self,
+        skill_id: skillhub_core::SkillId,
+        path: &str,
+    ) -> AppResult<AppQueryResult> {
+        let Some(library) = self.library.as_ref() else {
+            return Err(unsupported("query.read_markdown_file"));
+        };
+        let extension_is_markdown = Path::new(path)
+            .extension()
+            .and_then(|value| value.to_str())
+            .is_some_and(|extension| extension.eq_ignore_ascii_case("md"));
+        if !extension_is_markdown {
+            return Err(AppError::new(ErrorCode::InvalidInput, Severity::Error)
+                .with_param("field", "path")
+                .with_param("reason", "markdown_only")
+                .with_action(RecoveryAction::ChooseAnotherName));
+        }
+        let version_id = library
+            .current(skill_id)?
+            .ok_or_else(|| AppError::new(ErrorCode::ObjectNotFound, Severity::Error))?;
+        const MAX_MARKDOWN_BYTES: u64 = 1_048_576;
+        let (identity, bytes) = library.read_file(&version_id, path, MAX_MARKDOWN_BYTES)?;
+        let markdown = String::from_utf8(bytes).map_err(|_| {
+            AppError::new(ErrorCode::InvalidInput, Severity::Error)
+                .with_param("field", "markdown_encoding")
+                .with_action(RecoveryAction::ChooseAnotherName)
+        })?;
+        Ok(AppQueryResult::MarkdownFile(
+            skillhub_core::api::MarkdownFileContent {
+                content_identity: identity,
+                editable: false,
+                markdown,
+                path: path.to_owned(),
+            },
+        ))
+    }
+}
+
+fn unsupported(operation: &'static str) -> AppError {
+    AppError::new(ErrorCode::InternalError, Severity::Error)
+        .with_param("operation", operation)
+        .with_action(RecoveryAction::Retry)
 }
 
 fn current_utc_date() -> (i32, u8, u8) {

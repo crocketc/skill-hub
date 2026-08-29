@@ -82,6 +82,61 @@ fn materialized_version_matches_manifest_hashes() {
 }
 
 #[test]
+fn read_file_returns_verified_object_content_and_identity() {
+    let fixture = Fixture::new();
+    fixture.write("SKILL.md", b"# Safe preview\n");
+    let version = fixture
+        .store
+        .capture(fixture.skill, fixture.source.path())
+        .unwrap();
+
+    let (identity, content) = fixture
+        .store
+        .read_file(&version.id, "SKILL.md", 1024)
+        .unwrap();
+    assert_eq!(identity, version.manifest.entries[0].object_id);
+    assert_eq!(content, b"# Safe preview\n");
+}
+
+#[test]
+fn list_markdown_files_returns_only_markdown_entries_with_skill_md_primary() {
+    let fixture = Fixture::new();
+    fixture.write("SKILL.md", b"# Safe preview\n");
+    fixture.write("docs/usage.md", b"# Usage\n");
+    fixture.write("bin/run.sh", b"echo ok\n");
+    let version = fixture
+        .store
+        .capture(fixture.skill, fixture.source.path())
+        .unwrap();
+
+    let files = fixture.store.list_markdown_files(&version.id).unwrap();
+    assert_eq!(
+        files,
+        vec!["SKILL.md".to_owned(), "docs/usage.md".to_owned()]
+    );
+}
+
+#[test]
+fn read_file_rejects_path_escape_missing_file_and_size_over_limit() {
+    let fixture = Fixture::new();
+    fixture.write("SKILL.md", b"too large");
+    let version = fixture
+        .store
+        .capture(fixture.skill, fixture.source.path())
+        .unwrap();
+
+    assert!(fixture
+        .store
+        .read_file(&version.id, "../SKILL.md", 1024)
+        .is_err());
+    assert!(fixture
+        .store
+        .read_file(&version.id, "missing.md", 1024)
+        .is_err());
+    assert!(fixture.store.read_file(&version.id, "SKILL.md", 4).is_err());
+}
+
+#[test]
 fn traversal_and_symlink_escape_are_rejected() {
     let fixture = Fixture::new();
     #[cfg(unix)]

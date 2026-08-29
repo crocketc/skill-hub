@@ -1,11 +1,12 @@
 use skillhub_application::LocalApplicationFacade;
 use skillhub_core::{
-    api::{AppQueryResult, GetSkill, ListSkills},
+    api::{AppQueryResult, GetSkill, ListMarkdownFiles, ListSkills, ReadMarkdownFile},
     catalog::{CatalogRepository, Skill},
     search::{SearchDocument, SearchQuery},
     AppCommand, AppQuery as RootAppQuery, ApplicationFacade, ErrorCode, Severity,
 };
 use skillhub_storage::Database;
+use skillhub_storage::{CentralLibrary, VersionStore};
 
 #[tokio::test]
 async fn bootstrap_query_reads_counts_from_the_shared_database() {
@@ -169,4 +170,73 @@ async fn list_skills_query_returns_a_stable_page_and_tag_facets() {
     assert_eq!(page.items.len(), 1);
     assert_eq!(page.items[0].display_name, "Alpha");
     assert_eq!(page.tags, vec!["documents".to_owned(), "media".to_owned()]);
+}
+
+#[tokio::test]
+async fn markdown_queries_read_the_current_version_as_read_only_content() {
+    let database = Database::open_in_memory().expect("database");
+    let skill = Skill::new(skillhub_core::SkillId::new(), "Markdown preview");
+    database
+        .catalog_repository()
+        .expect("catalog repository")
+        .insert(&skill)
+        .await
+        .expect("insert skill");
+    let root = tempfile::tempdir().expect("library root");
+    let source = tempfile::tempdir().expect("source");
+    std::fs::write(source.path().join("SKILL.md"), "# Preview\n").expect("write skill");
+    std::fs::create_dir_all(source.path().join("docs")).expect("docs");
+    std::fs::write(source.path().join("docs/usage.md"), "## Usage\n").expect("write usage");
+    let library = CentralLibrary::initialize(root.path()).expect("central library");
+    let store = VersionStore::from_library(&library);
+    let version = store
+        .capture(skill.id(), source.path())
+        .expect("capture version");
+    store
+        .set_current(skill.id(), &version.id)
+        .expect("set current");
+
+    let facade = LocalApplicationFacade::new_with_library(database, root.path());
+    let files = facade
+        .query(RootAppQuery::ListMarkdownFiles(ListMarkdownFiles {
+            skill_id: skill.id(),
+        }))
+        .await
+        .expect("markdown files");
+    let AppQueryResult::MarkdownFiles(files) = files else {
+        panic!("expected markdown files");
+    };
+    assert_eq!(
+        files
+            .iter()
+            .map(|file| file.path.as_str())
+            .collect::<Vec<_>>(),
+        ["SKILL.md", "docs/usage.md"]
+    );
+    assert!(files[0].primary);
+    assert!(!files[1].primary);
+
+    let content = facade
+        .query(RootAppQuery::ReadMarkdownFile(ReadMarkdownFile {
+            skill_id: skill.id(),
+            path: "SKILL.md".into(),
+        }))
+        .await
+        .expect("markdown content");
+    let AppQueryResult::MarkdownFile(content) = content else {
+        panic!("expected markdown content");
+    };
+    assert_eq!(content.path, "SKILL.md");
+    assert_eq!(content.markdown, "# Preview\n");
+    assert_eq!(
+        content.content_identity,
+        version
+            .manifest
+            .entries
+            .iter()
+            .find(|entry| entry.path == "SKILL.md")
+            .unwrap()
+            .object_id
+    );
+    assert!(!content.editable);
 }

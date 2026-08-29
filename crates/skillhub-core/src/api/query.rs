@@ -51,6 +51,28 @@ pub struct ListVersions {
     pub skill_id: SkillId,
 }
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+pub struct ListMarkdownFiles {
+    pub skill_id: SkillId,
+}
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+pub struct ReadMarkdownFile {
+    pub skill_id: SkillId,
+    pub path: String,
+}
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+pub struct MarkdownFileEntry {
+    pub label: String,
+    pub path: String,
+    pub primary: bool,
+}
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+pub struct MarkdownFileContent {
+    pub content_identity: String,
+    pub editable: bool,
+    pub markdown: String,
+    pub path: String,
+}
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 pub struct DiffVersions {
     pub left: VersionId,
     pub right: VersionId,
@@ -313,6 +335,10 @@ pub enum AppQuery {
     ListSkills(ListSkills),
     #[serde(rename = "list_versions")]
     ListVersions(ListVersions),
+    #[serde(rename = "list_markdown_files")]
+    ListMarkdownFiles(ListMarkdownFiles),
+    #[serde(rename = "read_markdown_file")]
+    ReadMarkdownFile(ReadMarkdownFile),
     #[serde(rename = "diff_versions")]
     DiffVersions(DiffVersions),
     #[serde(rename = "list_combinations")]
@@ -374,6 +400,10 @@ pub enum AppQueryResult {
     SkillPage(SkillListPage),
     #[serde(rename = "versions")]
     Versions(Vec<VersionResult>),
+    #[serde(rename = "markdown_files")]
+    MarkdownFiles(Vec<MarkdownFileEntry>),
+    #[serde(rename = "markdown_file")]
+    MarkdownFile(MarkdownFileContent),
     #[serde(rename = "version_diff")]
     VersionDiff(VersionDiffResult),
     #[serde(rename = "combinations")]

@@ -5,8 +5,8 @@ import { DataState } from "../../ui/DataState";
 import { MarkdownWorkspace } from "../markdown/MarkdownWorkspace";
 import {
   type MarkdownFacade,
-  unavailableMarkdownFacade,
 } from "../markdown/api";
+import { nativeMarkdownFacade } from "../markdown/nativeApi";
 import { parseSkillLibrarySearchParams } from "../skills/queryState";
 import type { SkillDetailFacade } from "./api";
 import {
@@ -37,7 +37,7 @@ interface SkillDetailPageProps {
 
 export function SkillDetailPage({
   facade,
-  markdownFacade = unavailableMarkdownFacade,
+  markdownFacade = nativeMarkdownFacade,
 }: SkillDetailPageProps) {
   const { t } = useTranslation();
   const location = useLocation();

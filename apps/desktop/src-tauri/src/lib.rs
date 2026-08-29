@@ -55,9 +55,31 @@ pub fn run_with_facade(facade: Arc<dyn ApplicationFacade>) -> tauri::Result<()> 
 }
 
 pub fn run() -> tauri::Result<()> {
-    let facade = LocalApplicationFacade::open(default_database_path())
-        .expect("failed to open SkillHub application database");
+    let facade =
+        LocalApplicationFacade::open_with_library(default_database_path(), default_library_root())
+            .expect("failed to open SkillHub application database");
     run_with_facade(Arc::new(facade))
+}
+
+#[cfg(windows)]
+fn default_library_root() -> PathBuf {
+    std::env::var_os("USERPROFILE")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join("SkillHub")
+}
+
+#[cfg(target_os = "macos")]
+fn default_library_root() -> PathBuf {
+    std::env::var_os("HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join("SkillHub")
+}
+
+#[cfg(not(any(windows, target_os = "macos")))]
+fn default_library_root() -> PathBuf {
+    PathBuf::from("SkillHub")
 }
 
 #[cfg(windows)]

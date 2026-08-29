@@ -218,6 +218,48 @@ impl VersionStore {
         Ok(())
     }
 
+    /// Reads one immutable version object after validating the manifest and
+    /// enforcing a caller-provided size limit. The path is always relative to
+    /// the version tree; no filesystem path supplied by a caller is opened.
+    pub fn read_file(
+        &self,
+        id: &VersionId,
+        path: &str,
+        max_bytes: u64,
+    ) -> AppResult<(String, Vec<u8>)> {
+        let relative = safe_relative(path)?;
+        let manifest = self.load_manifest(id)?;
+        let entry = manifest
+            .entries
+            .iter()
+            .find(|entry| entry.path == relative.to_string_lossy())
+            .ok_or_else(|| AppError::new(ErrorCode::ObjectNotFound, Severity::Error))?;
+        if entry.size > max_bytes {
+            return Err(AppError::new(ErrorCode::InvalidInput, Severity::Error)
+                .with_param("field", "markdown_size")
+                .with_param("reason", "size_limit")
+                .with_action(RecoveryAction::ChooseAnotherName));
+        }
+        let bytes = object_store::get(&self.paths.objects_dir, &entry.object_id, entry.size)?;
+        Ok((entry.object_id.clone(), bytes))
+    }
+
+    /// Lists Markdown files recorded in an immutable version manifest.
+    pub fn list_markdown_files(&self, id: &VersionId) -> AppResult<Vec<String>> {
+        let manifest = self.load_manifest(id)?;
+        Ok(manifest
+            .entries
+            .into_iter()
+            .filter(|entry| {
+                Path::new(&entry.path)
+                    .extension()
+                    .and_then(|value| value.to_str())
+                    .is_some_and(|extension| extension.eq_ignore_ascii_case("md"))
+            })
+            .map(|entry| entry.path)
+            .collect())
+    }
+
     pub fn diff(&self, left: &VersionId, right: &VersionId) -> AppResult<VersionDiff> {
         let a = self.load_manifest(left)?;
         let b = self.load_manifest(right)?;
