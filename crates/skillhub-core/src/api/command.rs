@@ -1,7 +1,10 @@
 use serde::{Deserialize, Serialize};
 
 use crate::agent::{CustomAgent, CustomAgentDraft, CustomAgentOverride, PathGrant};
-use crate::backup::{BackupManifest, BackupPlan, BackupScope, SensitiveContentDecision};
+use crate::backup::{
+    BackupManifest, BackupPlan, BackupRetentionPolicy, BackupRetentionResult, BackupScope,
+    RestoreConflictDecision, RestorePlan, RestoreResult, SensitiveContentDecision,
+};
 use crate::catalog::SkillLifecycle;
 use crate::check::{CheckKind, FindingDisposition};
 use crate::import::{ImportCandidate, ImportDecision};
@@ -362,6 +365,34 @@ pub struct VerifyBackup {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 #[serde(deny_unknown_fields)]
+pub struct PrepareRestore {
+    pub path: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct RestoreDecision {
+    pub skill_id: SkillId,
+    pub decision: RestoreConflictDecision,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct CommitRestore {
+    pub path: String,
+    pub decisions: Vec<RestoreDecision>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct RunRollingBackup {
+    pub scope: BackupScope,
+    pub retention: BackupRetentionPolicy,
+    pub decisions: Vec<BackupDecision>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
 pub struct RunInitializationScan {
     pub scope_ids: Vec<String>,
 }
@@ -519,6 +550,12 @@ pub enum AppCommand {
     CreateBackup(CreateBackup),
     #[serde(rename = "verify_backup")]
     VerifyBackup(VerifyBackup),
+    #[serde(rename = "prepare_restore")]
+    PrepareRestore(PrepareRestore),
+    #[serde(rename = "commit_restore")]
+    CommitRestore(CommitRestore),
+    #[serde(rename = "run_rolling_backup")]
+    RunRollingBackup(RunRollingBackup),
     #[serde(rename = "cancel_import")]
     CancelImport { prepared_import_id: OperationId },
     #[serde(rename = "run_initialization_scan")]
@@ -598,4 +635,10 @@ pub enum AppCommandResult {
     BackupPlan(BackupPlan),
     #[serde(rename = "backup_manifest")]
     BackupManifest(BackupManifest),
+    #[serde(rename = "restore_plan")]
+    RestorePlan(RestorePlan),
+    #[serde(rename = "restore_result")]
+    RestoreResult(RestoreResult),
+    #[serde(rename = "backup_retention_result")]
+    BackupRetentionResult(BackupRetentionResult),
 }

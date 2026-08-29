@@ -434,3 +434,28 @@ fn backup_commands_have_stable_wire_shapes() {
         );
     }
 }
+
+#[test]
+fn restore_commands_have_stable_wire_shapes() {
+    let commands = [
+        AppCommand::PrepareRestore(skillhub_core::PrepareRestore {
+            path: "backup".into(),
+        }),
+        AppCommand::CommitRestore(skillhub_core::CommitRestore {
+            path: "backup".into(),
+            decisions: Vec::new(),
+        }),
+        AppCommand::RunRollingBackup(skillhub_core::RunRollingBackup {
+            scope: skillhub_core::backup::BackupScope::Full,
+            retention: skillhub_core::backup::BackupRetentionPolicy { max_backups: 3 },
+            decisions: Vec::new(),
+        }),
+    ];
+    let expected = ["prepare_restore", "commit_restore", "run_rolling_backup"];
+    for (command, expected_type) in commands.into_iter().zip(expected) {
+        assert_eq!(
+            serde_json::to_value(command).unwrap()["type"],
+            expected_type
+        );
+    }
+}

@@ -37,7 +37,7 @@ export type AnalyzeSemanticDuplicates = {
 	skill_id: SkillId,
 };
 
-export type AppCommand = { type: "create_skill"; payload: CreateSkill } | { type: "save_skill_content"; payload: SaveSkillContent } | { type: "rename_skill"; payload: RenameSkill } | { type: "set_lifecycle"; payload: SetLifecycle } | { type: "set_metadata"; payload: SetMetadata } | { type: "set_trial"; payload: SetTrial } | { type: "create_combination"; payload: CreateCombination } | { type: "set_current_version"; payload: SetCurrentVersion } | { type: "pin_project_skill_version"; payload: PinProjectSkillVersion } | { type: "create_custom_agent"; payload: CreateCustomAgent } | { type: "update_custom_agent"; payload: UpdateCustomAgent } | { type: "remove_custom_agent"; payload: RemoveCustomAgent } | { type: "reset_profile_override"; payload: ResetProfileOverride } | { type: "set_profile_override"; payload: SetProfileOverride } | { type: "register_project"; payload: RegisterProject } | { type: "update_project"; payload: UpdateProject } | { type: "set_project_tags"; payload: SetProjectTags } | { type: "save_project_view"; payload: SaveProjectView } | { type: "write_shared_project_config"; payload: WriteSharedProjectConfig } | { type: "read_shared_project_config"; payload: ReadSharedProjectConfig } | { type: "prepare_project_assembly"; payload: PrepareProjectAssembly } | { type: "commit_project_assembly"; payload: CommitProjectAssembly } | { type: "prepare_import"; payload: PrepareImport } | { type: "commit_import"; payload: CommitImport } | { type: "relink_source"; payload: RelinkSource } | { type: "check_source_update"; payload: CheckSourceUpdate } | { type: "apply_source_update"; payload: ApplySourceUpdate } | { type: "prepare_deployment"; payload: PrepareDeployment } | { type: "commit_deployment"; payload: CommitDeployment } | { type: "collect_deployment_changes"; payload: CollectDeploymentChanges } | { type: "restore_deployment"; payload: RestoreDeployment } | { type: "keep_independent_copy"; payload: KeepIndependentCopy } | { type: "ignore_external_change"; payload: IgnoreExternalChange } | { type: "prepare_undeploy"; payload: PrepareUndeploy } | { type: "commit_undeploy"; payload: CommitUndeploy } | { type: "prepare_delete_skill"; payload: PrepareDeleteSkill } | { type: "commit_delete_skill"; payload: CommitDeleteSkill } | { type: "detach_management"; payload: DetachManagement } | { type: "run_health_check"; payload: RunHealthCheck } | { type: "prepare_repair"; payload: PrepareRepair } | { type: "commit_repair"; payload: CommitRepair } | { type: "resolve_recovery"; payload: ResolveRecovery } | { type: "prepare_call_policy_change"; payload: PrepareCallPolicyChange } | { type: "commit_call_policy_change"; payload: CommitCallPolicyChange } | { type: "restore_original_call_policy"; payload: RestoreOriginalCallPolicy } | { type: "create_ignore_rule"; payload: CreateIgnoreRule } | { type: "remove_ignore_rule"; payload: RemoveIgnoreRule } | { type: "run_llm_safety_check"; payload: RunLlmSafetyCheck } | { type: "recheck_llm_safety"; payload: RecheckLlmSafety } | { type: "analyze_semantic_duplicates"; payload: AnalyzeSemanticDuplicates } | { type: "translate_description"; payload: TranslateDescription } | { type: "save_user_translation_revision"; payload: SaveUserTranslationRevision } | { type: "generate_online_search_query"; payload: GenerateOnlineSearchQuery } | { type: "prepare_backup"; payload: PrepareBackup } | { type: "create_backup"; payload: CreateBackup } | { type: "verify_backup"; payload: VerifyBackup } | { type: "cancel_import"; payload: {
+export type AppCommand = { type: "create_skill"; payload: CreateSkill } | { type: "save_skill_content"; payload: SaveSkillContent } | { type: "rename_skill"; payload: RenameSkill } | { type: "set_lifecycle"; payload: SetLifecycle } | { type: "set_metadata"; payload: SetMetadata } | { type: "set_trial"; payload: SetTrial } | { type: "create_combination"; payload: CreateCombination } | { type: "set_current_version"; payload: SetCurrentVersion } | { type: "pin_project_skill_version"; payload: PinProjectSkillVersion } | { type: "create_custom_agent"; payload: CreateCustomAgent } | { type: "update_custom_agent"; payload: UpdateCustomAgent } | { type: "remove_custom_agent"; payload: RemoveCustomAgent } | { type: "reset_profile_override"; payload: ResetProfileOverride } | { type: "set_profile_override"; payload: SetProfileOverride } | { type: "register_project"; payload: RegisterProject } | { type: "update_project"; payload: UpdateProject } | { type: "set_project_tags"; payload: SetProjectTags } | { type: "save_project_view"; payload: SaveProjectView } | { type: "write_shared_project_config"; payload: WriteSharedProjectConfig } | { type: "read_shared_project_config"; payload: ReadSharedProjectConfig } | { type: "prepare_project_assembly"; payload: PrepareProjectAssembly } | { type: "commit_project_assembly"; payload: CommitProjectAssembly } | { type: "prepare_import"; payload: PrepareImport } | { type: "commit_import"; payload: CommitImport } | { type: "relink_source"; payload: RelinkSource } | { type: "check_source_update"; payload: CheckSourceUpdate } | { type: "apply_source_update"; payload: ApplySourceUpdate } | { type: "prepare_deployment"; payload: PrepareDeployment } | { type: "commit_deployment"; payload: CommitDeployment } | { type: "collect_deployment_changes"; payload: CollectDeploymentChanges } | { type: "restore_deployment"; payload: RestoreDeployment } | { type: "keep_independent_copy"; payload: KeepIndependentCopy } | { type: "ignore_external_change"; payload: IgnoreExternalChange } | { type: "prepare_undeploy"; payload: PrepareUndeploy } | { type: "commit_undeploy"; payload: CommitUndeploy } | { type: "prepare_delete_skill"; payload: PrepareDeleteSkill } | { type: "commit_delete_skill"; payload: CommitDeleteSkill } | { type: "detach_management"; payload: DetachManagement } | { type: "run_health_check"; payload: RunHealthCheck } | { type: "prepare_repair"; payload: PrepareRepair } | { type: "commit_repair"; payload: CommitRepair } | { type: "resolve_recovery"; payload: ResolveRecovery } | { type: "prepare_call_policy_change"; payload: PrepareCallPolicyChange } | { type: "commit_call_policy_change"; payload: CommitCallPolicyChange } | { type: "restore_original_call_policy"; payload: RestoreOriginalCallPolicy } | { type: "create_ignore_rule"; payload: CreateIgnoreRule } | { type: "remove_ignore_rule"; payload: RemoveIgnoreRule } | { type: "run_llm_safety_check"; payload: RunLlmSafetyCheck } | { type: "recheck_llm_safety"; payload: RecheckLlmSafety } | { type: "analyze_semantic_duplicates"; payload: AnalyzeSemanticDuplicates } | { type: "translate_description"; payload: TranslateDescription } | { type: "save_user_translation_revision"; payload: SaveUserTranslationRevision } | { type: "generate_online_search_query"; payload: GenerateOnlineSearchQuery } | { type: "prepare_backup"; payload: PrepareBackup } | { type: "create_backup"; payload: CreateBackup } | { type: "verify_backup"; payload: VerifyBackup } | { type: "prepare_restore"; payload: PrepareRestore } | { type: "commit_restore"; payload: CommitRestore } | { type: "run_rolling_backup"; payload: RunRollingBackup } | { type: "cancel_import"; payload: {
 	prepared_import_id: OperationId,
 } } | { type: "run_initialization_scan"; payload: RunInitializationScan } | { type: "scan_targets"; payload: ScanTargets } | { type: "rescan_skill"; payload: RescanSkill } | { type: "run_basic_check"; payload: RunBasicCheck } | { type: "recheck_basic"; payload: RecheckBasic } | { type: "set_finding_disposition"; payload: SetFindingDisposition } | { type: "cancel_operation"; payload: {
 	operation_id: OperationId,
@@ -45,7 +45,7 @@ export type AppCommand = { type: "create_skill"; payload: CreateSkill } | { type
 	operation_id: OperationId,
 } };
 
-export type AppCommandResult = { type: "operation_summary"; payload: OperationSummary } | { type: "custom_agent"; payload: CustomAgent } | { type: "custom_agent_override"; payload: CustomAgentOverride } | { type: "project"; payload: Project } | { type: "saved_project_view"; payload: SavedProjectView } | { type: "shared_project_config"; payload: SharedProjectConfig } | { type: "assembly_plan"; payload: AssemblyPlan } | { type: "scan_result"; payload: ScanResult } | { type: "basic_check_result"; payload: BasicCheckResult } | { type: "prepared_import"; payload: PreparedImport } | { type: "import_summary"; payload: ImportSummary } | { type: "upstream_check_result"; payload: UpstreamCheckResult } | { type: "applied_source_update"; payload: AppliedSourceUpdate } | { type: "prepared_deployment"; payload: PreparedDeployment } | { type: "deployment_summary"; payload: DeploymentSummary } | { type: "reconcile_result"; payload: ReconcileResult } | { type: "removal_impact"; payload: RemovalImpact } | { type: "removal_result"; payload: RemovalResult } | { type: "health_report"; payload: HealthReport } | { type: "repair_plan"; payload: RepairPlan } | { type: "call_policy_plan"; payload: CallPolicyPlan } | { type: "ignore_rule"; payload: IgnoreRule } | { type: "llm_safety_check_result"; payload: LlmSafetyCheckResult } | { type: "duplicate_analysis"; payload: DuplicateAnalysis } | { type: "translation_result"; payload: TranslationResult } | { type: "online_search_query"; payload: SearchQuerySuggestion } | { type: "backup_plan"; payload: BackupPlan } | { type: "backup_manifest"; payload: BackupManifest };
+export type AppCommandResult = { type: "operation_summary"; payload: OperationSummary } | { type: "custom_agent"; payload: CustomAgent } | { type: "custom_agent_override"; payload: CustomAgentOverride } | { type: "project"; payload: Project } | { type: "saved_project_view"; payload: SavedProjectView } | { type: "shared_project_config"; payload: SharedProjectConfig } | { type: "assembly_plan"; payload: AssemblyPlan } | { type: "scan_result"; payload: ScanResult } | { type: "basic_check_result"; payload: BasicCheckResult } | { type: "prepared_import"; payload: PreparedImport } | { type: "import_summary"; payload: ImportSummary } | { type: "upstream_check_result"; payload: UpstreamCheckResult } | { type: "applied_source_update"; payload: AppliedSourceUpdate } | { type: "prepared_deployment"; payload: PreparedDeployment } | { type: "deployment_summary"; payload: DeploymentSummary } | { type: "reconcile_result"; payload: ReconcileResult } | { type: "removal_impact"; payload: RemovalImpact } | { type: "removal_result"; payload: RemovalResult } | { type: "health_report"; payload: HealthReport } | { type: "repair_plan"; payload: RepairPlan } | { type: "call_policy_plan"; payload: CallPolicyPlan } | { type: "ignore_rule"; payload: IgnoreRule } | { type: "llm_safety_check_result"; payload: LlmSafetyCheckResult } | { type: "duplicate_analysis"; payload: DuplicateAnalysis } | { type: "translation_result"; payload: TranslationResult } | { type: "online_search_query"; payload: SearchQuerySuggestion } | { type: "backup_plan"; payload: BackupPlan } | { type: "backup_manifest"; payload: BackupManifest } | { type: "restore_plan"; payload: RestorePlan } | { type: "restore_result"; payload: RestoreResult } | { type: "backup_retention_result"; payload: BackupRetentionResult };
 
 export type AppEvent = { type: "operation_progress"; payload: OperationProgress } | { type: "operation_finished"; payload: OperationSummary } | { type: "facts_changed"; payload: FactsChanged };
 
@@ -108,6 +108,15 @@ export type BackupManifest = {
 export type BackupPlan = {
 	scope: BackupScope,
 	sensitive_items: SensitiveItem[],
+};
+
+export type BackupRetentionPolicy = {
+	max_backups: number,
+};
+
+export type BackupRetentionResult = {
+	retained: number,
+	removed: number,
 };
 
 export type BackupScope = "full" | "selected_skills";
@@ -210,6 +219,11 @@ export type CommitProjectAssembly = {
 
 export type CommitRepair = {
 	repair_id: OperationId,
+};
+
+export type CommitRestore = {
+	path: string,
+	decisions: RestoreDecision[],
 };
 
 export type CommitUndeploy = {
@@ -403,7 +417,7 @@ export type DuplicateRelation = {
 };
 
 /**  Stable machine-readable failures returned by the application boundary. */
-export type ErrorCode = "input.invalid" | "path.outside_allowed_root" | "object.not_found" | "deployment.target_exists" | "deployment.target_changed" | "deployment.symlink_not_supported" | "deployment.junction_not_supported" | "target.ownership_unknown" | "deployment.ownership_mismatch" | "deployment.security_check_blocked" | "operation.conflict" | "operation.id_reused_with_different_request" | "credential.unavailable" | "migration.required" | "database.newer_schema" | "internal.error" | "combination.nesting_not_allowed" | "catalog.invalid_metadata" | "requirements.invalid_declaration" | "agent_profile.invalid_capability" | "source.search_rate_limited" | "source.provider_authentication_unavailable" | "source.search_unavailable" | "network.disabled" | "call_policy.not_supported" | "ignore.only_exact_subjects_supported" | "llm.invalid_structured_response" | "llm.endpoint_not_allowed" | "llm.input_too_large" | "llm.evidence_reference_invalid" | "llm.not_configured" | "translation.user_revision_requires_confirmation" | "backup.checksum_mismatch" | "backup.sensitive_decision_required";
+export type ErrorCode = "input.invalid" | "path.outside_allowed_root" | "object.not_found" | "deployment.target_exists" | "deployment.target_changed" | "deployment.symlink_not_supported" | "deployment.junction_not_supported" | "target.ownership_unknown" | "deployment.ownership_mismatch" | "deployment.security_check_blocked" | "operation.conflict" | "operation.id_reused_with_different_request" | "credential.unavailable" | "migration.required" | "database.newer_schema" | "internal.error" | "combination.nesting_not_allowed" | "catalog.invalid_metadata" | "requirements.invalid_declaration" | "agent_profile.invalid_capability" | "source.search_rate_limited" | "source.provider_authentication_unavailable" | "source.search_unavailable" | "network.disabled" | "call_policy.not_supported" | "ignore.only_exact_subjects_supported" | "llm.invalid_structured_response" | "llm.endpoint_not_allowed" | "llm.input_too_large" | "llm.evidence_reference_invalid" | "llm.not_configured" | "translation.user_revision_requires_confirmation" | "backup.checksum_mismatch" | "backup.sensitive_decision_required" | "backup.restore_decision_required";
 
 export type EvidenceCoverage = {
 	sources: string[],
@@ -730,6 +744,10 @@ export type PrepareRepair = {
 	finding_index: number,
 };
 
+export type PrepareRestore = {
+	path: string,
+};
+
 export type PrepareUndeploy = {
 	deployment_id: DeploymentId,
 };
@@ -893,12 +911,40 @@ export type ResolvedPathGrant = {
 	operating_system: OperatingSystem,
 };
 
+export type RestoreConflict = {
+	skill_id: SkillId | null,
+	kind: RestoreConflictKind,
+	detail: string,
+};
+
+export type RestoreConflictDecision = "overwrite" | "keep_both" | "skip";
+
+export type RestoreConflictKind = "existing_skill" | "invalid_portable_data";
+
+export type RestoreDecision = {
+	skill_id: SkillId,
+	decision: RestoreConflictDecision,
+};
+
 export type RestoreDeployment = {
 	deployment_id: DeploymentId,
 };
 
 export type RestoreOriginalCallPolicy = {
 	skill_id: SkillId,
+};
+
+export type RestorePlan = {
+	format_version: number,
+	skills: number,
+	deployments_requiring_rediscovery: number,
+	conflicts: RestoreConflict[],
+};
+
+export type RestoreResult = {
+	skills_restored: number,
+	skills_skipped: number,
+	deployments_requiring_rediscovery: number,
 };
 
 export type RetentionRecommendation = "keep_a" | "keep_b" | "keep_both" | "archive_a" | "archive_b" | "manual_decision";
@@ -917,6 +963,12 @@ export type RunInitializationScan = {
 export type RunLlmSafetyCheck = {
 	skill_id: SkillId,
 	version_id: VersionId,
+};
+
+export type RunRollingBackup = {
+	scope: BackupScope,
+	retention: BackupRetentionPolicy,
+	decisions: BackupDecision[],
 };
 
 export type SaveProjectView = {

@@ -75,6 +75,8 @@ pub enum ErrorCode {
     BackupChecksumMismatch,
     #[serde(rename = "backup.sensitive_decision_required")]
     BackupSensitiveDecisionRequired,
+    #[serde(rename = "backup.restore_decision_required")]
+    BackupRestoreDecisionRequired,
 }
 
 #[allow(non_upper_case_globals)]
@@ -124,6 +126,7 @@ impl ErrorCode {
             }
             Self::BackupChecksumMismatch => "backup.checksum_mismatch",
             Self::BackupSensitiveDecisionRequired => "backup.sensitive_decision_required",
+            Self::BackupRestoreDecisionRequired => "backup.restore_decision_required",
         }
     }
 }
