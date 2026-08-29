@@ -22,7 +22,7 @@
 - `cargo test --workspace --locked`：通过。
 - `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings`：通过。
 - `cargo test -p skillhub-desktop --lib generate_bindings`：通过。
-- Windows 前端检查未执行成功：本机 pnpm 检测到 modules 目录需要交互式清理，属于依赖目录状态问题，未修改依赖或切换 Node；待 macOS 端在干净依赖环境运行完整 CI。
+- Windows 前端检查：TypeScript、ESLint、Vitest（55 个文件、315 项测试）和生产构建均通过。此前失败是本机 pnpm 安装索引和虚拟依赖链接损坏；已停止挂起的安装进程并按锁文件重建本地生成依赖目录，未修改源码、lockfile 或依赖版本。完整跨平台 CI 仍待 macOS 端复核。
 
 ## 明确未包含
 
