@@ -116,3 +116,44 @@ fn online_source_search_query_has_stable_wire_shape() {
         "search_online_sources"
     );
 }
+
+#[test]
+fn deployment_commands_and_queries_have_stable_wire_shapes() {
+    let command = AppCommand::PrepareDeployment(skillhub_core::PrepareDeployment {
+        plan: skillhub_core::DeploymentPlan {
+            skill_id: skillhub_core::SkillId::new(),
+            version_id: skillhub_core::VersionId::parse(
+                "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            )
+            .unwrap(),
+            runtime_name: "notes".into(),
+            mode: skillhub_core::DeploymentMode::ManagedCopy,
+            targets: vec![],
+            warnings: vec![],
+            conflicts: vec![],
+        },
+    });
+    let commit = AppCommand::CommitDeployment(skillhub_core::CommitDeployment {
+        prepared_deployment_id: OperationId::new(),
+    });
+    let list = AppQuery::ListDeployments(skillhub_core::ListDeployments { skill_id: None });
+    let relations = AppQuery::GetDeploymentRelations(skillhub_core::GetDeploymentRelations {
+        skill_id: skillhub_core::SkillId::new(),
+    });
+    assert_eq!(
+        serde_json::to_value(command).unwrap()["type"],
+        "prepare_deployment"
+    );
+    assert_eq!(
+        serde_json::to_value(commit).unwrap()["type"],
+        "commit_deployment"
+    );
+    assert_eq!(
+        serde_json::to_value(list).unwrap()["type"],
+        "list_deployments"
+    );
+    assert_eq!(
+        serde_json::to_value(relations).unwrap()["type"],
+        "get_deployment_relations"
+    );
+}

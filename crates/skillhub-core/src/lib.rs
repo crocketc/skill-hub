@@ -26,14 +26,15 @@ pub use agent::{
 };
 pub use api::{
     AnalyzeImport, AppCommand, AppCommandResult, AppEvent, AppQuery, AppQueryResult,
-    ApplicationFacade, ApplySourceUpdate, CheckSourceUpdate, CommitImport, FactsChanged,
-    GetDeploymentPlan, GetProjectAssemblyPlan, Page, PrepareImport, RelinkSource,
-    SearchOnlineSources,
+    ApplicationFacade, ApplySourceUpdate, CheckSourceUpdate, CommitDeployment, CommitImport,
+    FactsChanged, GetDeploymentPlan, GetDeploymentRelations, GetProjectAssemblyPlan,
+    ListDeployments, Page, PrepareDeployment, PrepareImport, RelinkSource, SearchOnlineSources,
 };
 pub use application::{
-    BasicCheckOutput, BasicCheckScanner, CheckService, ImportBackend, ImportItemResult,
-    ImportService, ImportSummary, OperationService, PreparedImport, ProjectAssemblyService,
-    VersionMaterializer,
+    BasicCheckOutput, BasicCheckScanner, CheckService, DeploymentBackend, DeploymentService,
+    DeploymentSummary, ImportBackend, ImportItemResult, ImportService, ImportSummary,
+    OperationService, PreparedDeployment, PreparedImport, ProjectAssemblyService,
+    TargetOperationResult, TargetOperationStatus, VersionMaterializer,
 };
 pub use application::{WatchConfirmation, WatchHint, WatchHintKind, WatchService};
 pub use bootstrap::{

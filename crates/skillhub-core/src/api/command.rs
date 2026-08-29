@@ -167,6 +167,18 @@ pub struct ApplySourceUpdate {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 #[serde(deny_unknown_fields)]
+pub struct PrepareDeployment {
+    pub plan: crate::deployment::DeploymentPlan,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct CommitDeployment {
+    pub prepared_deployment_id: OperationId,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
 pub struct RunInitializationScan {
     pub scope_ids: Vec<String>,
 }
@@ -266,6 +278,10 @@ pub enum AppCommand {
     CheckSourceUpdate(CheckSourceUpdate),
     #[serde(rename = "apply_source_update")]
     ApplySourceUpdate(ApplySourceUpdate),
+    #[serde(rename = "prepare_deployment")]
+    PrepareDeployment(PrepareDeployment),
+    #[serde(rename = "commit_deployment")]
+    CommitDeployment(CommitDeployment),
     #[serde(rename = "cancel_import")]
     CancelImport { prepared_import_id: OperationId },
     #[serde(rename = "run_initialization_scan")]
@@ -315,4 +331,8 @@ pub enum AppCommandResult {
     UpstreamCheckResult(crate::source::UpstreamCheckResult),
     #[serde(rename = "applied_source_update")]
     AppliedSourceUpdate(crate::source::AppliedSourceUpdate),
+    #[serde(rename = "prepared_deployment")]
+    PreparedDeployment(Box<crate::application::PreparedDeployment>),
+    #[serde(rename = "deployment_summary")]
+    DeploymentSummary(Box<crate::application::DeploymentSummary>),
 }

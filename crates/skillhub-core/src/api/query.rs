@@ -172,6 +172,18 @@ impl From<&Finding> for FindingResult {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct ListDeployments {
+    pub skill_id: Option<SkillId>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct GetDeploymentRelations {
+    pub skill_id: SkillId,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 pub struct GetProjectAssemblyPlan {
     pub project_id: crate::ProjectId,
 }
@@ -207,6 +219,10 @@ pub enum AppQuery {
     SearchOnlineSources(SearchOnlineSources),
     #[serde(rename = "get_deployment_plan")]
     GetDeploymentPlan(GetDeploymentPlan),
+    #[serde(rename = "list_deployments")]
+    ListDeployments(ListDeployments),
+    #[serde(rename = "get_deployment_relations")]
+    GetDeploymentRelations(GetDeploymentRelations),
     #[serde(rename = "get_basic_check_result")]
     GetBasicCheckResult(GetBasicCheckResult),
     #[serde(rename = "list_findings")]
@@ -246,6 +262,10 @@ pub enum AppQueryResult {
     SourceSearchPage(SourceSearchPage),
     #[serde(rename = "deployment_plan")]
     DeploymentPlan(DeploymentPlan),
+    #[serde(rename = "deployments")]
+    Deployments(Vec<crate::DeploymentRecord>),
+    #[serde(rename = "deployment_relations")]
+    DeploymentRelations(Vec<crate::DeploymentRecord>),
     #[serde(rename = "basic_check_result")]
     BasicCheckResult(BasicCheckResult),
     #[serde(rename = "findings")]
