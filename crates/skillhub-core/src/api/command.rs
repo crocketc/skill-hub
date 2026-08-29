@@ -234,6 +234,29 @@ pub struct DetachManagement {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+pub struct RunHealthCheck;
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct PrepareRepair {
+    pub health_report_id: OperationId,
+    pub finding_index: u32,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct CommitRepair {
+    pub repair_id: OperationId,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct ResolveRecovery {
+    pub operation_id: OperationId,
+    pub action: crate::RecoveryAction,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 #[serde(deny_unknown_fields)]
 pub struct RunInitializationScan {
     pub scope_ids: Vec<String>,
@@ -356,6 +379,14 @@ pub enum AppCommand {
     CommitDeleteSkill(CommitDeleteSkill),
     #[serde(rename = "detach_management")]
     DetachManagement(DetachManagement),
+    #[serde(rename = "run_health_check")]
+    RunHealthCheck(RunHealthCheck),
+    #[serde(rename = "prepare_repair")]
+    PrepareRepair(PrepareRepair),
+    #[serde(rename = "commit_repair")]
+    CommitRepair(CommitRepair),
+    #[serde(rename = "resolve_recovery")]
+    ResolveRecovery(ResolveRecovery),
     #[serde(rename = "cancel_import")]
     CancelImport { prepared_import_id: OperationId },
     #[serde(rename = "run_initialization_scan")]
@@ -415,4 +446,8 @@ pub enum AppCommandResult {
     RemovalImpact(crate::RemovalImpact),
     #[serde(rename = "removal_result")]
     RemovalResult(crate::RemovalResult),
+    #[serde(rename = "health_report")]
+    HealthReport(crate::HealthReport),
+    #[serde(rename = "repair_plan")]
+    RepairPlan(crate::RepairPlan),
 }

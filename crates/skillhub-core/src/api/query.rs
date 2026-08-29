@@ -239,6 +239,8 @@ pub enum AppQuery {
     GetReconcilePlan(GetReconcilePlan),
     #[serde(rename = "get_removal_impact")]
     GetRemovalImpact(GetRemovalImpact),
+    #[serde(rename = "list_recovery_candidates")]
+    ListRecoveryCandidates,
     #[serde(rename = "get_basic_check_result")]
     GetBasicCheckResult(GetBasicCheckResult),
     #[serde(rename = "list_findings")]
@@ -286,6 +288,8 @@ pub enum AppQueryResult {
     ReconcilePlan(crate::ReconcilePlan),
     #[serde(rename = "removal_impact")]
     RemovalImpact(crate::RemovalImpact),
+    #[serde(rename = "recovery_candidates")]
+    RecoveryCandidates(Vec<crate::RecoveryCandidate>),
     #[serde(rename = "basic_check_result")]
     BasicCheckResult(BasicCheckResult),
     #[serde(rename = "findings")]

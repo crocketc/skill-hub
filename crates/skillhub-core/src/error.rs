@@ -107,7 +107,7 @@ pub enum Severity {
 }
 
 /// Structured actions a client may offer to recover from an error.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize, specta::Type)]
 #[serde(rename_all = "snake_case")]
 pub enum RecoveryAction {
     ChooseAnotherName,

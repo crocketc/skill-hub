@@ -5,14 +5,15 @@ mod query;
 pub use crate::deployment::DeploymentPlanRequest;
 pub use command::{
     AppCommand, AppCommandResult, ApplySourceUpdate, CheckSourceUpdate, CollectDeploymentChanges,
-    CommitDeleteSkill, CommitDeployment, CommitImport, CommitProjectAssembly, CommitUndeploy,
-    CreateCombination, CreateCustomAgent, CreateSkill, DetachManagement, IgnoreExternalChange,
-    KeepIndependentCopy, PinProjectSkillVersion, PrepareDeleteSkill, PrepareDeployment,
-    PrepareImport, PrepareProjectAssembly, PrepareUndeploy, ReadSharedProjectConfig, RecheckBasic,
-    RegisterProject, RelinkSource, RemoveCustomAgent, RenameSkill, RescanSkill,
-    ResetProfileOverride, RestoreDeployment, RunBasicCheck, RunInitializationScan, SaveProjectView,
-    SaveSkillContent, ScanTargets, SetCurrentVersion, SetFindingDisposition, SetLifecycle,
-    SetMetadata, SetProfileOverride, SetProjectTags, SetTrial, UpdateCustomAgent, UpdateProject,
+    CommitDeleteSkill, CommitDeployment, CommitImport, CommitProjectAssembly, CommitRepair,
+    CommitUndeploy, CreateCombination, CreateCustomAgent, CreateSkill, DetachManagement,
+    IgnoreExternalChange, KeepIndependentCopy, PinProjectSkillVersion, PrepareDeleteSkill,
+    PrepareDeployment, PrepareImport, PrepareProjectAssembly, PrepareRepair, PrepareUndeploy,
+    ReadSharedProjectConfig, RecheckBasic, RegisterProject, RelinkSource, RemoveCustomAgent,
+    RenameSkill, RescanSkill, ResetProfileOverride, ResolveRecovery, RestoreDeployment,
+    RunBasicCheck, RunHealthCheck, RunInitializationScan, SaveProjectView, SaveSkillContent,
+    ScanTargets, SetCurrentVersion, SetFindingDisposition, SetLifecycle, SetMetadata,
+    SetProfileOverride, SetProjectTags, SetTrial, UpdateCustomAgent, UpdateProject,
     WriteSharedProjectConfig,
 };
 pub use event::{AppEvent, FactsChanged};

@@ -224,3 +224,39 @@ fn removal_commands_and_query_have_stable_wire_shapes() {
         "get_removal_impact"
     );
 }
+
+#[test]
+fn health_and_recovery_commands_and_queries_have_stable_wire_shapes() {
+    let operation_id = skillhub_core::OperationId::new();
+    let commands = [
+        AppCommand::RunHealthCheck(skillhub_core::RunHealthCheck),
+        AppCommand::PrepareRepair(skillhub_core::PrepareRepair {
+            health_report_id: operation_id,
+            finding_index: 0,
+        }),
+        AppCommand::CommitRepair(skillhub_core::CommitRepair {
+            repair_id: operation_id,
+        }),
+        AppCommand::ResolveRecovery(skillhub_core::ResolveRecovery {
+            operation_id,
+            action: skillhub_core::RecoveryAction::RollbackOperation,
+        }),
+    ];
+    let expected = [
+        "run_health_check",
+        "prepare_repair",
+        "commit_repair",
+        "resolve_recovery",
+    ];
+    for (command, expected_type) in commands.into_iter().zip(expected) {
+        assert_eq!(
+            serde_json::to_value(command).unwrap()["type"],
+            expected_type
+        );
+    }
+    let query = AppQuery::ListRecoveryCandidates;
+    assert_eq!(
+        serde_json::to_value(query).unwrap()["type"],
+        "list_recovery_candidates"
+    );
+}

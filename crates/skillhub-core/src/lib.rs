@@ -6,6 +6,7 @@ pub mod catalog;
 pub mod check;
 pub mod deployment;
 mod error;
+pub mod health;
 mod ids;
 pub mod import;
 mod operation;
@@ -27,17 +28,19 @@ pub use agent::{
 pub use api::{
     AnalyzeImport, AppCommand, AppCommandResult, AppEvent, AppQuery, AppQueryResult,
     ApplicationFacade, ApplySourceUpdate, CheckSourceUpdate, CollectDeploymentChanges,
-    CommitDeleteSkill, CommitDeployment, CommitImport, CommitUndeploy, DetachManagement,
-    FactsChanged, GetDeploymentPlan, GetDeploymentRelations, GetProjectAssemblyPlan,
-    GetReconcilePlan, GetRemovalImpact, IgnoreExternalChange, KeepIndependentCopy, ListDeployments,
-    Page, PrepareDeleteSkill, PrepareDeployment, PrepareImport, PrepareUndeploy, RelinkSource,
-    RestoreDeployment, SearchOnlineSources,
+    CommitDeleteSkill, CommitDeployment, CommitImport, CommitRepair, CommitUndeploy,
+    DetachManagement, FactsChanged, GetDeploymentPlan, GetDeploymentRelations,
+    GetProjectAssemblyPlan, GetReconcilePlan, GetRemovalImpact, IgnoreExternalChange,
+    KeepIndependentCopy, ListDeployments, Page, PrepareDeleteSkill, PrepareDeployment,
+    PrepareImport, PrepareRepair, PrepareUndeploy, RelinkSource, ResolveRecovery,
+    RestoreDeployment, RunHealthCheck, SearchOnlineSources,
 };
 pub use application::{
     BasicCheckOutput, BasicCheckScanner, CheckService, DeploymentBackend, DeploymentService,
-    DeploymentSummary, ImportBackend, ImportItemResult, ImportService, ImportSummary,
-    OperationService, PreparedDeployment, PreparedImport, ProjectAssemblyService, ReconcileBackend,
-    ReconcileService, RemovalBackend, RemovalService, TargetOperationResult, TargetOperationStatus,
+    DeploymentSummary, HealthBackend, HealthService, ImportBackend, ImportItemResult,
+    ImportService, ImportSummary, OperationService, PreparedDeployment, PreparedImport,
+    ProjectAssemblyService, ReconcileBackend, ReconcileService, RecoveryBackend, RecoveryService,
+    RemovalBackend, RemovalService, TargetOperationResult, TargetOperationStatus,
     VersionMaterializer,
 };
 pub use application::{WatchConfirmation, WatchHint, WatchHintKind, WatchService};
@@ -67,6 +70,7 @@ pub use deployment::{
     RegisteredTargetIndex, RegisteredTargetResolver, TargetCapabilities, TargetChange,
     TargetConflict, TargetConflictReason, TargetFact, TargetFactSource, TargetPlan, VerifiedTarget,
 };
+pub use health::{HealthFinding, HealthReport, RecoveryCandidate, RepairAction, RepairPlan};
 pub use ids::{
     AgentProfileId, ClientInstanceId, CombinationId, DeploymentId, LogicalTargetId, OperationId,
     PhysicalTargetId, ProjectId, SkillId, VersionId,
