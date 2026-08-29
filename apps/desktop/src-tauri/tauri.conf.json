@@ -5,7 +5,7 @@
   "identifier": "com.skillhub.desktop",
   "build": {
     "beforeDevCommand": "pnpm --dir apps/desktop dev",
-    "beforeBuildCommand": "pnpm --dir apps/desktop build",
+    "beforeBuildCommand": "pnpm build",
     "frontendDist": "../dist"
   },
   "app": {
@@ -23,6 +23,7 @@
   },
   "bundle": {
     "active": false,
+    "targets": ["nsis", "dmg"],
     "icon": []
   }
 }
