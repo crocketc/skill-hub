@@ -1,5 +1,6 @@
 pub mod backup;
 mod database;
+pub mod export;
 mod library;
 mod version_store;
 

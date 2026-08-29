@@ -7,13 +7,16 @@ use crate::backup::{
 };
 use crate::catalog::SkillLifecycle;
 use crate::check::{CheckKind, FindingDisposition};
+use crate::export::{
+    ExportDecision, ExportInput, ExportPlan, ExportResult, UninstallAction, UninstallImpact,
+};
 use crate::import::{ImportCandidate, ImportDecision};
 use crate::llm::search_query::SearchQuerySuggestion;
 use crate::llm::translation::TranslationResult;
 use crate::project::{AssemblyPlan, Project, SavedProjectView, SharedProjectConfig};
 use crate::scan::ScanResult;
 use crate::source::{SourceDescriptor, UpdateDecision};
-use crate::{OperationId, OperationSummary, ProjectId, SkillId, VersionId};
+use crate::{DeploymentId, OperationId, OperationSummary, ProjectId, SkillId, VersionId};
 
 use super::query::{BasicCheckResult, LlmSafetyCheckResult};
 
@@ -393,6 +396,31 @@ pub struct RunRollingBackup {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 #[serde(deny_unknown_fields)]
+pub struct PrepareStandardExport {
+    pub input: ExportInput,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct CreateStandardExport {
+    pub input: ExportInput,
+    pub decisions: Vec<ExportDecision>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct PrepareUninstall {
+    pub deployment_ids: Vec<DeploymentId>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct ApplyUninstallDecision {
+    pub actions: Vec<UninstallAction>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
 pub struct RunInitializationScan {
     pub scope_ids: Vec<String>,
 }
@@ -556,6 +584,14 @@ pub enum AppCommand {
     CommitRestore(CommitRestore),
     #[serde(rename = "run_rolling_backup")]
     RunRollingBackup(RunRollingBackup),
+    #[serde(rename = "prepare_standard_export")]
+    PrepareStandardExport(PrepareStandardExport),
+    #[serde(rename = "create_standard_export")]
+    CreateStandardExport(CreateStandardExport),
+    #[serde(rename = "prepare_uninstall")]
+    PrepareUninstall(PrepareUninstall),
+    #[serde(rename = "apply_uninstall_decision")]
+    ApplyUninstallDecision(ApplyUninstallDecision),
     #[serde(rename = "cancel_import")]
     CancelImport { prepared_import_id: OperationId },
     #[serde(rename = "run_initialization_scan")]
@@ -641,4 +677,10 @@ pub enum AppCommandResult {
     RestoreResult(RestoreResult),
     #[serde(rename = "backup_retention_result")]
     BackupRetentionResult(BackupRetentionResult),
+    #[serde(rename = "export_plan")]
+    ExportPlan(ExportPlan),
+    #[serde(rename = "export_result")]
+    ExportResult(ExportResult),
+    #[serde(rename = "uninstall_impact")]
+    UninstallImpact(UninstallImpact),
 }

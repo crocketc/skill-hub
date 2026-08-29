@@ -459,3 +459,39 @@ fn restore_commands_have_stable_wire_shapes() {
         );
     }
 }
+
+#[test]
+fn export_and_uninstall_commands_have_stable_wire_shapes() {
+    let empty = skillhub_core::ExportInput {
+        selection: skillhub_core::ExportSelection::Skills(Vec::new()),
+        versions: skillhub_core::VersionSelection::Current,
+        skills: Vec::new(),
+    };
+    let commands = [
+        AppCommand::PrepareStandardExport(skillhub_core::PrepareStandardExport {
+            input: empty.clone(),
+        }),
+        AppCommand::CreateStandardExport(skillhub_core::CreateStandardExport {
+            input: empty,
+            decisions: Vec::new(),
+        }),
+        AppCommand::PrepareUninstall(skillhub_core::PrepareUninstall {
+            deployment_ids: Vec::new(),
+        }),
+        AppCommand::ApplyUninstallDecision(skillhub_core::ApplyUninstallDecision {
+            actions: vec![skillhub_core::UninstallAction::Cancel],
+        }),
+    ];
+    let expected = [
+        "prepare_standard_export",
+        "create_standard_export",
+        "prepare_uninstall",
+        "apply_uninstall_decision",
+    ];
+    for (command, expected_type) in commands.into_iter().zip(expected) {
+        assert_eq!(
+            serde_json::to_value(command).unwrap()["type"],
+            expected_type
+        );
+    }
+}
