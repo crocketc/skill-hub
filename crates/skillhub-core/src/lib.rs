@@ -8,6 +8,7 @@ pub mod check;
 pub mod deployment;
 pub mod duplicate;
 mod error;
+pub mod evidence;
 pub mod health;
 mod ids;
 pub mod ignore;
@@ -30,17 +31,17 @@ pub use agent::{
     TargetScope,
 };
 pub use api::{
-    AnalyzeImport, AnalyzeSemanticDuplicates, AppCommand, AppCommandResult, AppEvent, AppQuery,
-    AppQueryResult, ApplicationFacade, ApplySourceUpdate, CheckSourceUpdate,
-    CollectDeploymentChanges, CommitCallPolicyChange, CommitDeleteSkill, CommitDeployment,
-    CommitImport, CommitRepair, CommitUndeploy, CreateIgnoreRule, DetachManagement, FactsChanged,
-    GenerateOnlineSearchQuery, GetCallPolicy, GetDeploymentPlan, GetDeploymentRelations,
-    GetLlmSafetyCheckResult, GetProjectAssemblyPlan, GetReconcilePlan, GetRemovalImpact,
-    IgnoreExternalChange, KeepIndependentCopy, ListDeployments, Page, PrepareCallPolicyChange,
-    PrepareDeleteSkill, PrepareDeployment, PrepareImport, PrepareRepair, PrepareUndeploy,
-    RecheckLlmSafety, RelinkSource, RemoveIgnoreRule, ResolveRecovery, RestoreDeployment,
-    RestoreOriginalCallPolicy, RunHealthCheck, RunLlmSafetyCheck, SaveUserTranslationRevision,
-    SearchOnlineSources, TranslateDescription,
+    AnalyzeGlobalSkillEvidence, AnalyzeImport, AnalyzeSemanticDuplicates, AppCommand,
+    AppCommandResult, AppEvent, AppQuery, AppQueryResult, ApplicationFacade, ApplySourceUpdate,
+    CheckSourceUpdate, CollectDeploymentChanges, CommitCallPolicyChange, CommitDeleteSkill,
+    CommitDeployment, CommitImport, CommitRepair, CommitUndeploy, CreateIgnoreRule,
+    DetachManagement, FactsChanged, GenerateOnlineSearchQuery, GetCallPolicy, GetDeploymentPlan,
+    GetDeploymentRelations, GetLlmSafetyCheckResult, GetProjectAssemblyPlan, GetReconcilePlan,
+    GetRemovalImpact, IgnoreExternalChange, KeepIndependentCopy, ListDeployments, Page,
+    PrepareCallPolicyChange, PrepareDeleteSkill, PrepareDeployment, PrepareImport, PrepareRepair,
+    PrepareUndeploy, RecheckLlmSafety, RelinkSource, RemoveIgnoreRule, ResolveRecovery,
+    RestoreDeployment, RestoreOriginalCallPolicy, RunHealthCheck, RunLlmSafetyCheck,
+    SaveUserTranslationRevision, SearchOnlineSources, TranslateDescription,
 };
 pub use application::{
     BasicCheckOutput, BasicCheckScanner, CallPolicyBackend, CallPolicyService, CheckService,
@@ -58,6 +59,10 @@ pub use bootstrap::{
     RecentOperationSummary, StartupRecoveryState,
 };
 pub use error::{AppError, AppResult, ErrorCode, RecoveryAction, Severity};
+pub use evidence::{
+    EvidenceCoverage, EvidenceProvider, GlobalSkillRecommendation, GlobalSkillSuggestion,
+    UsageEvidence, UsageEvidenceAnalysis, UsageEvidenceAnalyzer,
+};
 pub use operation::{
     InverseOperation, OperationContext, OperationJournal, OperationObjectResult, OperationPhase,
     OperationProgress, OperationRecord, OperationRepository, OperationStatus, OperationSummary,

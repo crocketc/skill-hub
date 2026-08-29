@@ -20,13 +20,13 @@ pub use command::{
 };
 pub use event::{AppEvent, FactsChanged};
 pub use query::{
-    AnalyzeImport, AppQuery, AppQueryResult, BasicCheckResult, CombinationResult, DiffVersions,
-    FindingResult, GetBasicCheckResult, GetBootstrapSnapshot, GetCallPolicy, GetDeploymentPlan,
-    GetDeploymentRelations, GetDiscoverySnapshot, GetLlmSafetyCheckResult, GetProjectAssemblyPlan,
-    GetReconcilePlan, GetRemovalImpact, GetSkill, ListCombinations, ListCustomAgents,
-    ListDeployments, ListFindings, ListPendingItems, ListProjects, ListSavedProjectViews,
-    ListVersions, LlmSafetyCheckResult, SearchOnlineSources, SkillResult, VersionDiffResult,
-    VersionResult,
+    AnalyzeGlobalSkillEvidence, AnalyzeImport, AppQuery, AppQueryResult, BasicCheckResult,
+    CombinationResult, DiffVersions, FindingResult, GetBasicCheckResult, GetBootstrapSnapshot,
+    GetCallPolicy, GetDeploymentPlan, GetDeploymentRelations, GetDiscoverySnapshot,
+    GetLlmSafetyCheckResult, GetProjectAssemblyPlan, GetReconcilePlan, GetRemovalImpact, GetSkill,
+    ListCombinations, ListCustomAgents, ListDeployments, ListFindings, ListPendingItems,
+    ListProjects, ListSavedProjectViews, ListVersions, LlmSafetyCheckResult, SearchOnlineSources,
+    SkillResult, VersionDiffResult, VersionResult,
 };
 
 use crate::AppResult;

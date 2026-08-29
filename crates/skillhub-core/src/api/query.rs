@@ -2,6 +2,7 @@ use crate::agent::{CustomAgent, DiscoverySnapshot};
 use crate::check::{
     CheckKind, CheckResult as DomainCheckResult, CheckState, Finding, FindingDisposition,
 };
+use crate::evidence::UsageEvidenceAnalysis;
 use crate::import::{ImportAnalysis, ImportCandidate};
 use crate::project::{AssemblyPlan, Project, SavedProjectView};
 use crate::search::{SearchHit, SearchQuery};
@@ -77,6 +78,13 @@ pub struct AnalyzeImport {
 #[serde(deny_unknown_fields)]
 pub struct SearchOnlineSources {
     pub query: SourceSearchQuery,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct AnalyzeGlobalSkillEvidence {
+    pub window_days: u32,
+    pub threshold_calls: u32,
 }
 
 /// Registered logical target IDs for a side-effect-free deployment preview.
@@ -286,6 +294,8 @@ pub enum AppQuery {
     AnalyzeImport(AnalyzeImport),
     #[serde(rename = "search_online_sources")]
     SearchOnlineSources(SearchOnlineSources),
+    #[serde(rename = "analyze_global_skill_evidence")]
+    AnalyzeGlobalSkillEvidence(AnalyzeGlobalSkillEvidence),
     #[serde(rename = "get_deployment_plan")]
     GetDeploymentPlan(GetDeploymentPlan),
     #[serde(rename = "list_deployments")]
@@ -325,6 +335,8 @@ pub enum AppQueryResult {
     Combinations(Vec<CombinationResult>),
     #[serde(rename = "search_results")]
     SearchResults(Vec<SearchHit>),
+    #[serde(rename = "global_skill_evidence")]
+    GlobalSkillEvidence(UsageEvidenceAnalysis),
     #[serde(rename = "bootstrap_snapshot")]
     BootstrapSnapshot(BootstrapSnapshot),
     #[serde(rename = "pending_items")]

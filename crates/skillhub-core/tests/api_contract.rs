@@ -395,3 +395,15 @@ fn translation_and_search_helpers_have_stable_wire_shapes() {
         );
     }
 }
+
+#[test]
+fn usage_evidence_query_has_stable_wire_shape() {
+    let query = AppQuery::AnalyzeGlobalSkillEvidence(skillhub_core::AnalyzeGlobalSkillEvidence {
+        window_days: 90,
+        threshold_calls: 2,
+    });
+    assert_eq!(
+        serde_json::to_value(query).unwrap()["type"],
+        "analyze_global_skill_evidence"
+    );
+}

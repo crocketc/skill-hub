@@ -1,6 +1,7 @@
 pub mod agent;
 pub mod credentials;
 pub mod deployment;
+pub mod evidence;
 pub mod import;
 pub mod invocation;
 pub mod llm;
