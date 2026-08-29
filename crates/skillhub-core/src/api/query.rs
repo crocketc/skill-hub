@@ -184,6 +184,12 @@ pub struct GetDeploymentRelations {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct GetReconcilePlan {
+    pub deployment_id: crate::DeploymentId,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 pub struct GetProjectAssemblyPlan {
     pub project_id: crate::ProjectId,
 }
@@ -223,6 +229,8 @@ pub enum AppQuery {
     ListDeployments(ListDeployments),
     #[serde(rename = "get_deployment_relations")]
     GetDeploymentRelations(GetDeploymentRelations),
+    #[serde(rename = "get_reconcile_plan")]
+    GetReconcilePlan(GetReconcilePlan),
     #[serde(rename = "get_basic_check_result")]
     GetBasicCheckResult(GetBasicCheckResult),
     #[serde(rename = "list_findings")]
@@ -266,6 +274,8 @@ pub enum AppQueryResult {
     Deployments(Vec<crate::DeploymentRecord>),
     #[serde(rename = "deployment_relations")]
     DeploymentRelations(Vec<crate::DeploymentRecord>),
+    #[serde(rename = "reconcile_plan")]
+    ReconcilePlan(crate::ReconcilePlan),
     #[serde(rename = "basic_check_result")]
     BasicCheckResult(BasicCheckResult),
     #[serde(rename = "findings")]

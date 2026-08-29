@@ -1,5 +1,6 @@
 mod model;
 mod planner;
+pub mod reconcile;
 
 pub use model::{
     DeploymentCapabilities, DeploymentMode, DeploymentPlan, DeploymentPlanInput,
@@ -9,6 +10,9 @@ pub use model::{
     VerifiedTarget,
 };
 pub use planner::DeploymentPlanner;
+pub use reconcile::{
+    ExternalChangeObservation, ExternalChangeState, ReconcileAction, ReconcilePlan, ReconcileResult,
+};
 
 /// Resolves logical IDs selected by an API caller to currently verified target
 /// facts.  The application implementation is responsible for loading only

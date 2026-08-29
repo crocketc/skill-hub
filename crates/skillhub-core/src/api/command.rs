@@ -179,6 +179,30 @@ pub struct CommitDeployment {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 #[serde(deny_unknown_fields)]
+pub struct CollectDeploymentChanges {
+    pub deployment_id: crate::DeploymentId,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct RestoreDeployment {
+    pub deployment_id: crate::DeploymentId,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct KeepIndependentCopy {
+    pub deployment_id: crate::DeploymentId,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct IgnoreExternalChange {
+    pub deployment_id: crate::DeploymentId,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
 pub struct RunInitializationScan {
     pub scope_ids: Vec<String>,
 }
@@ -282,6 +306,14 @@ pub enum AppCommand {
     PrepareDeployment(PrepareDeployment),
     #[serde(rename = "commit_deployment")]
     CommitDeployment(CommitDeployment),
+    #[serde(rename = "collect_deployment_changes")]
+    CollectDeploymentChanges(CollectDeploymentChanges),
+    #[serde(rename = "restore_deployment")]
+    RestoreDeployment(RestoreDeployment),
+    #[serde(rename = "keep_independent_copy")]
+    KeepIndependentCopy(KeepIndependentCopy),
+    #[serde(rename = "ignore_external_change")]
+    IgnoreExternalChange(IgnoreExternalChange),
     #[serde(rename = "cancel_import")]
     CancelImport { prepared_import_id: OperationId },
     #[serde(rename = "run_initialization_scan")]
@@ -335,4 +367,6 @@ pub enum AppCommandResult {
     PreparedDeployment(Box<crate::application::PreparedDeployment>),
     #[serde(rename = "deployment_summary")]
     DeploymentSummary(Box<crate::application::DeploymentSummary>),
+    #[serde(rename = "reconcile_result")]
+    ReconcileResult(crate::ReconcileResult),
 }

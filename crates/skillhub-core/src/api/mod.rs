@@ -4,21 +4,22 @@ mod query;
 
 pub use crate::deployment::DeploymentPlanRequest;
 pub use command::{
-    AppCommand, AppCommandResult, ApplySourceUpdate, CheckSourceUpdate, CommitDeployment,
-    CommitImport, CommitProjectAssembly, CreateCombination, CreateCustomAgent, CreateSkill,
-    PinProjectSkillVersion, PrepareDeployment, PrepareImport, PrepareProjectAssembly,
-    ReadSharedProjectConfig, RecheckBasic, RegisterProject, RelinkSource, RemoveCustomAgent,
-    RenameSkill, RescanSkill, ResetProfileOverride, RunBasicCheck, RunInitializationScan,
-    SaveProjectView, SaveSkillContent, ScanTargets, SetCurrentVersion, SetFindingDisposition,
-    SetLifecycle, SetMetadata, SetProfileOverride, SetProjectTags, SetTrial, UpdateCustomAgent,
-    UpdateProject, WriteSharedProjectConfig,
+    AppCommand, AppCommandResult, ApplySourceUpdate, CheckSourceUpdate, CollectDeploymentChanges,
+    CommitDeployment, CommitImport, CommitProjectAssembly, CreateCombination, CreateCustomAgent,
+    CreateSkill, IgnoreExternalChange, KeepIndependentCopy, PinProjectSkillVersion,
+    PrepareDeployment, PrepareImport, PrepareProjectAssembly, ReadSharedProjectConfig,
+    RecheckBasic, RegisterProject, RelinkSource, RemoveCustomAgent, RenameSkill, RescanSkill,
+    ResetProfileOverride, RestoreDeployment, RunBasicCheck, RunInitializationScan, SaveProjectView,
+    SaveSkillContent, ScanTargets, SetCurrentVersion, SetFindingDisposition, SetLifecycle,
+    SetMetadata, SetProfileOverride, SetProjectTags, SetTrial, UpdateCustomAgent, UpdateProject,
+    WriteSharedProjectConfig,
 };
 pub use event::{AppEvent, FactsChanged};
 pub use query::{
     AnalyzeImport, AppQuery, AppQueryResult, BasicCheckResult, CombinationResult, DiffVersions,
     FindingResult, GetBasicCheckResult, GetBootstrapSnapshot, GetDeploymentPlan,
-    GetDeploymentRelations, GetDiscoverySnapshot, GetProjectAssemblyPlan, GetSkill,
-    ListCombinations, ListCustomAgents, ListDeployments, ListFindings, ListPendingItems,
+    GetDeploymentRelations, GetDiscoverySnapshot, GetProjectAssemblyPlan, GetReconcilePlan,
+    GetSkill, ListCombinations, ListCustomAgents, ListDeployments, ListFindings, ListPendingItems,
     ListProjects, ListSavedProjectViews, ListVersions, SearchOnlineSources, SkillResult,
     VersionDiffResult, VersionResult,
 };

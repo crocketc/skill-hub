@@ -26,15 +26,17 @@ pub use agent::{
 };
 pub use api::{
     AnalyzeImport, AppCommand, AppCommandResult, AppEvent, AppQuery, AppQueryResult,
-    ApplicationFacade, ApplySourceUpdate, CheckSourceUpdate, CommitDeployment, CommitImport,
-    FactsChanged, GetDeploymentPlan, GetDeploymentRelations, GetProjectAssemblyPlan,
-    ListDeployments, Page, PrepareDeployment, PrepareImport, RelinkSource, SearchOnlineSources,
+    ApplicationFacade, ApplySourceUpdate, CheckSourceUpdate, CollectDeploymentChanges,
+    CommitDeployment, CommitImport, FactsChanged, GetDeploymentPlan, GetDeploymentRelations,
+    GetProjectAssemblyPlan, GetReconcilePlan, IgnoreExternalChange, KeepIndependentCopy,
+    ListDeployments, Page, PrepareDeployment, PrepareImport, RelinkSource, RestoreDeployment,
+    SearchOnlineSources,
 };
 pub use application::{
     BasicCheckOutput, BasicCheckScanner, CheckService, DeploymentBackend, DeploymentService,
     DeploymentSummary, ImportBackend, ImportItemResult, ImportService, ImportSummary,
-    OperationService, PreparedDeployment, PreparedImport, ProjectAssemblyService,
-    TargetOperationResult, TargetOperationStatus, VersionMaterializer,
+    OperationService, PreparedDeployment, PreparedImport, ProjectAssemblyService, ReconcileBackend,
+    ReconcileService, TargetOperationResult, TargetOperationStatus, VersionMaterializer,
 };
 pub use application::{WatchConfirmation, WatchHint, WatchHintKind, WatchService};
 pub use bootstrap::{
@@ -50,6 +52,9 @@ pub use operation::{
 pub use path_policy::{physical_id_for_path, AllowedRoot, AllowedRootId, PathPolicy, SafePath};
 
 pub use catalog::{LibraryManifest, LibraryPaths, PortableSkillRecord};
+pub use deployment::reconcile::{
+    ExternalChangeObservation, ExternalChangeState, ReconcileAction, ReconcilePlan, ReconcileResult,
+};
 pub use deployment::{
     DeploymentCapabilities, DeploymentMode, DeploymentPlan, DeploymentPlanInput,
     DeploymentPlanRequest, DeploymentPlanner, DeploymentRecord, DeploymentRepository,

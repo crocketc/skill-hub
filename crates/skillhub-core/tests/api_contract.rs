@@ -157,3 +157,33 @@ fn deployment_commands_and_queries_have_stable_wire_shapes() {
         "get_deployment_relations"
     );
 }
+
+#[test]
+fn external_change_commands_and_query_have_stable_wire_shapes() {
+    let deployment_id = skillhub_core::DeploymentId::new();
+    let commands = [
+        AppCommand::CollectDeploymentChanges(skillhub_core::CollectDeploymentChanges {
+            deployment_id,
+        }),
+        AppCommand::RestoreDeployment(skillhub_core::RestoreDeployment { deployment_id }),
+        AppCommand::KeepIndependentCopy(skillhub_core::KeepIndependentCopy { deployment_id }),
+        AppCommand::IgnoreExternalChange(skillhub_core::IgnoreExternalChange { deployment_id }),
+    ];
+    let expected = [
+        "collect_deployment_changes",
+        "restore_deployment",
+        "keep_independent_copy",
+        "ignore_external_change",
+    ];
+    for (command, expected_type) in commands.into_iter().zip(expected) {
+        assert_eq!(
+            serde_json::to_value(command).unwrap()["type"],
+            expected_type
+        );
+    }
+    let query = AppQuery::GetReconcilePlan(skillhub_core::GetReconcilePlan { deployment_id });
+    assert_eq!(
+        serde_json::to_value(query).unwrap()["type"],
+        "get_reconcile_plan"
+    );
+}
