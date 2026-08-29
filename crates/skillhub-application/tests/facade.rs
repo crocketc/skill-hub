@@ -1,10 +1,11 @@
 use skillhub_application::LocalApplicationFacade;
 use skillhub_core::{
     api::{
-        AppQueryResult, DiffVersions, GetSkill, ListMarkdownFiles, ListSkills, ListVersions,
-        ReadMarkdownFile,
+        AppQueryResult, DiffVersions, GetDeploymentRelations, GetSkill, ListDeployments,
+        ListMarkdownFiles, ListSkills, ListVersions, ReadMarkdownFile,
     },
     catalog::{CatalogRepository, Skill},
+    deployment::{DeploymentMode, DeploymentRecord, DeploymentRepository, DeploymentState},
     search::{SearchDocument, SearchQuery},
     AppCommand, AppQuery as RootAppQuery, ApplicationFacade, ErrorCode, Severity,
 };
@@ -281,4 +282,109 @@ async fn markdown_queries_read_the_current_version_as_read_only_content() {
         panic!("expected version diff");
     };
     assert!(diff.added.is_empty());
+}
+
+#[tokio::test]
+async fn deployment_queries_return_only_relationships_for_the_requested_skill() {
+    let database = Database::open_in_memory().expect("database");
+    let skill = Skill::new(skillhub_core::SkillId::new(), "Relations");
+    let other_skill = Skill::new(skillhub_core::SkillId::new(), "Other");
+    let catalog = database.catalog_repository().expect("catalog repository");
+    catalog.insert(&skill).await.expect("insert skill");
+    catalog
+        .insert(&other_skill)
+        .await
+        .expect("insert other skill");
+    let version_id = skillhub_core::VersionId::parse(
+        "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    )
+    .expect("version id");
+    database
+        .connection_for_test()
+        .execute_batch(&format!(
+            "INSERT INTO versions (id,skill_id,content_hash,manifest_json,created_at) VALUES ('{version_id}','{}','hash','{{}}',0);\
+             INSERT INTO versions (id,skill_id,content_hash,manifest_json,created_at) VALUES ('sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb','{}','hash','{{}}',0);\
+             INSERT INTO targets (id,agent_id,scope,path,created_at) VALUES ('agent-codex','codex','global','C:/agents/codex',0);\
+             INSERT INTO targets (id,agent_id,scope,path,created_at) VALUES ('agent-planned','planned','global','C:/agents/planned',0);\
+             INSERT INTO targets (id,agent_id,scope,path,created_at) VALUES ('agent-removed','removed','global','C:/agents/removed',0);\
+             INSERT INTO targets (id,agent_id,scope,path,created_at) VALUES ('agent-other','other','global','C:/agents/other',0);",
+            skill.id(), other_skill.id()
+        ))
+        .expect("insert version and target facts");
+    let other_version_id = skillhub_core::VersionId::parse(
+        "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    )
+    .expect("other version id");
+    let make_deployment = |skill_id: skillhub_core::SkillId,
+                           version_id: skillhub_core::VersionId,
+                           target_id: &str| DeploymentRecord {
+        id: skillhub_core::DeploymentId::new(),
+        skill_id,
+        version_id,
+        target_id: target_id.into(),
+        state: DeploymentState::Deployed,
+        mode: DeploymentMode::ManagedCopy,
+        managed: true,
+        runtime_name: "relations".into(),
+        expected_hash: "sha256:tree".into(),
+        observed_hash: Some("sha256:tree".into()),
+    };
+    let repository = database.deployment_repository();
+    repository
+        .insert(&make_deployment(
+            skill.id(),
+            version_id.clone(),
+            "agent-codex",
+        ))
+        .await
+        .expect("insert skill deployment");
+    let mut planned = make_deployment(skill.id(), version_id.clone(), "agent-planned");
+    planned.state = DeploymentState::Planned;
+    repository
+        .insert(&planned)
+        .await
+        .expect("insert planned deployment");
+    let mut removed = make_deployment(skill.id(), version_id.clone(), "agent-removed");
+    removed.state = DeploymentState::Removed;
+    repository
+        .insert(&removed)
+        .await
+        .expect("insert removed deployment");
+    repository
+        .insert(&make_deployment(
+            other_skill.id(),
+            other_version_id,
+            "agent-other",
+        ))
+        .await
+        .expect("insert other deployment");
+
+    let facade = LocalApplicationFacade::new_with_today(database, (2026, 8, 29));
+    let list = facade
+        .query(RootAppQuery::ListDeployments(ListDeployments {
+            skill_id: Some(skill.id()),
+        }))
+        .await
+        .expect("list deployments");
+    let AppQueryResult::Deployments(deployments) = list else {
+        panic!("expected deployment list");
+    };
+    assert_eq!(deployments.len(), 3);
+    assert!(deployments
+        .iter()
+        .any(|deployment| deployment.target_id == "agent-codex"));
+
+    let relations = facade
+        .query(RootAppQuery::GetDeploymentRelations(
+            GetDeploymentRelations {
+                skill_id: skill.id(),
+            },
+        ))
+        .await
+        .expect("deployment relations");
+    let AppQueryResult::DeploymentRelations(relations) = relations else {
+        panic!("expected deployment relations");
+    };
+    assert_eq!(relations.len(), 1);
+    assert_eq!(relations[0].target_id, "agent-codex");
 }

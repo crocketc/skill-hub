@@ -19,6 +19,44 @@ impl<'a> DeploymentRepositorySqlite<'a> {
     pub(crate) fn new(database: &'a Database) -> Self {
         Self { database }
     }
+
+    /// Synchronous projection used by the local application facade. The
+    /// repository trait remains async for service compatibility, while this
+    /// read has no I/O beyond the already-open SQLite connection.
+    pub fn list_all(&self) -> AppResult<Vec<DeploymentRecord>> {
+        let mut statement = self
+            .database
+            .connection
+            .prepare("SELECT id,skill_id,version_id,target_id,state,method,managed,runtime_name,expected_hash,observed_hash FROM deployments ORDER BY created_at,id")
+            .map_err(database_error)?;
+        let rows = statement
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, String>(3)?,
+                    row.get::<_, String>(4)?,
+                    row.get::<_, String>(5)?,
+                    row.get::<_, i64>(6)?,
+                    row.get::<_, String>(7)?,
+                    row.get::<_, String>(8)?,
+                    row.get::<_, Option<String>>(9)?,
+                ))
+            })
+            .map_err(database_error)?;
+        rows.map(|row| {
+            let row = row.map_err(database_error)?;
+            let id = row.0.parse().map_err(|_| invalid_record())?;
+            decode_record(
+                id,
+                (
+                    row.1, row.2, row.3, row.4, row.5, row.6, row.7, row.8, row.9,
+                ),
+            )
+        })
+        .collect()
+    }
 }
 
 #[async_trait(?Send)]
@@ -73,38 +111,7 @@ impl DeploymentRepositoryPort for DeploymentRepositorySqlite<'_> {
     }
 
     async fn list(&self) -> AppResult<Vec<DeploymentRecord>> {
-        let mut statement = self
-            .database
-            .connection
-            .prepare("SELECT id,skill_id,version_id,target_id,state,method,managed,runtime_name,expected_hash,observed_hash FROM deployments ORDER BY created_at,id")
-            .map_err(database_error)?;
-        let rows = statement
-            .query_map([], |row| {
-                Ok((
-                    row.get::<_, String>(0)?,
-                    row.get::<_, String>(1)?,
-                    row.get::<_, String>(2)?,
-                    row.get::<_, String>(3)?,
-                    row.get::<_, String>(4)?,
-                    row.get::<_, String>(5)?,
-                    row.get::<_, i64>(6)?,
-                    row.get::<_, String>(7)?,
-                    row.get::<_, String>(8)?,
-                    row.get::<_, Option<String>>(9)?,
-                ))
-            })
-            .map_err(database_error)?;
-        rows.map(|row| {
-            let row = row.map_err(database_error)?;
-            let id = row.0.parse().map_err(|_| invalid_record())?;
-            decode_record(
-                id,
-                (
-                    row.1, row.2, row.3, row.4, row.5, row.6, row.7, row.8, row.9,
-                ),
-            )
-        })
-        .collect()
+        self.list_all()
     }
 
     async fn list_for_target(&self, target_id: &str) -> AppResult<Vec<DeploymentRecord>> {

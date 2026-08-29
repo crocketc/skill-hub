@@ -161,6 +161,10 @@ impl ApplicationFacade for LocalApplicationFacade {
             }),
             AppQuery::ListVersions(request) => self.list_versions(request.skill_id),
             AppQuery::DiffVersions(request) => self.diff_versions(&request.left, &request.right),
+            AppQuery::ListDeployments(request) => self.list_deployments(request.skill_id),
+            AppQuery::GetDeploymentRelations(request) => {
+                self.list_deployment_relations(request.skill_id)
+            }
             AppQuery::ListMarkdownFiles(request) => self.list_markdown_files(request.skill_id),
             AppQuery::ReadMarkdownFile(request) => {
                 self.read_markdown_file(request.skill_id, &request.path)
@@ -221,6 +225,43 @@ impl LocalApplicationFacade {
                 changed: diff.changed,
             },
         ))
+    }
+
+    fn list_deployments(
+        &self,
+        skill_id: Option<skillhub_core::SkillId>,
+    ) -> AppResult<AppQueryResult> {
+        self.with_database("query.list_deployments", |database| {
+            let deployments = database.deployment_repository().list_all()?;
+            Ok(AppQueryResult::Deployments(
+                deployments
+                    .into_iter()
+                    .filter(|deployment| skill_id.is_none_or(|id| deployment.skill_id == id))
+                    .collect(),
+            ))
+        })
+    }
+
+    fn list_deployment_relations(
+        &self,
+        skill_id: skillhub_core::SkillId,
+    ) -> AppResult<AppQueryResult> {
+        self.with_database("query.get_deployment_relations", |database| {
+            let deployments = database.deployment_repository().list_all()?;
+            Ok(AppQueryResult::DeploymentRelations(
+                deployments
+                    .into_iter()
+                    .filter(|deployment| {
+                        deployment.skill_id == skill_id
+                            && !matches!(
+                                deployment.state,
+                                skillhub_core::DeploymentState::Planned
+                                    | skillhub_core::DeploymentState::Removed
+                            )
+                    })
+                    .collect(),
+            ))
+        })
     }
 
     fn list_markdown_files(&self, skill_id: skillhub_core::SkillId) -> AppResult<AppQueryResult> {
