@@ -407,3 +407,30 @@ fn usage_evidence_query_has_stable_wire_shape() {
         "analyze_global_skill_evidence"
     );
 }
+
+#[test]
+fn backup_commands_have_stable_wire_shapes() {
+    let skill_id = skillhub_core::SkillId::new();
+    let commands = [
+        AppCommand::PrepareBackup(skillhub_core::PrepareBackup {
+            scope: skillhub_core::backup::BackupScope::Full,
+        }),
+        AppCommand::CreateBackup(skillhub_core::CreateBackup {
+            scope: skillhub_core::backup::BackupScope::Full,
+            decisions: vec![skillhub_core::BackupDecision {
+                skill_id,
+                decision: skillhub_core::backup::SensitiveContentDecision::ExcludeSkill,
+            }],
+        }),
+        AppCommand::VerifyBackup(skillhub_core::VerifyBackup {
+            path: "backup".into(),
+        }),
+    ];
+    let expected = ["prepare_backup", "create_backup", "verify_backup"];
+    for (command, expected_type) in commands.into_iter().zip(expected) {
+        assert_eq!(
+            serde_json::to_value(command).unwrap()["type"],
+            expected_type
+        );
+    }
+}

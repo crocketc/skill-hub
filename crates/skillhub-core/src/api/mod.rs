@@ -4,19 +4,20 @@ mod query;
 
 pub use crate::deployment::DeploymentPlanRequest;
 pub use command::{
-    AnalyzeSemanticDuplicates, AppCommand, AppCommandResult, ApplySourceUpdate, CheckSourceUpdate,
-    CollectDeploymentChanges, CommitCallPolicyChange, CommitDeleteSkill, CommitDeployment,
-    CommitImport, CommitProjectAssembly, CommitRepair, CommitUndeploy, CreateCombination,
-    CreateCustomAgent, CreateIgnoreRule, CreateSkill, DetachManagement, GenerateOnlineSearchQuery,
-    IgnoreExternalChange, KeepIndependentCopy, PinProjectSkillVersion, PrepareCallPolicyChange,
-    PrepareDeleteSkill, PrepareDeployment, PrepareImport, PrepareProjectAssembly, PrepareRepair,
-    PrepareUndeploy, ReadSharedProjectConfig, RecheckBasic, RecheckLlmSafety, RegisterProject,
-    RelinkSource, RemoveCustomAgent, RemoveIgnoreRule, RenameSkill, RescanSkill,
-    ResetProfileOverride, ResolveRecovery, RestoreDeployment, RestoreOriginalCallPolicy,
-    RunBasicCheck, RunHealthCheck, RunInitializationScan, RunLlmSafetyCheck, SaveProjectView,
-    SaveSkillContent, SaveUserTranslationRevision, ScanTargets, SetCurrentVersion,
-    SetFindingDisposition, SetLifecycle, SetMetadata, SetProfileOverride, SetProjectTags, SetTrial,
-    TranslateDescription, UpdateCustomAgent, UpdateProject, WriteSharedProjectConfig,
+    AnalyzeSemanticDuplicates, AppCommand, AppCommandResult, ApplySourceUpdate, BackupDecision,
+    CheckSourceUpdate, CollectDeploymentChanges, CommitCallPolicyChange, CommitDeleteSkill,
+    CommitDeployment, CommitImport, CommitProjectAssembly, CommitRepair, CommitUndeploy,
+    CreateBackup, CreateCombination, CreateCustomAgent, CreateIgnoreRule, CreateSkill,
+    DetachManagement, GenerateOnlineSearchQuery, IgnoreExternalChange, KeepIndependentCopy,
+    PinProjectSkillVersion, PrepareBackup, PrepareCallPolicyChange, PrepareDeleteSkill,
+    PrepareDeployment, PrepareImport, PrepareProjectAssembly, PrepareRepair, PrepareUndeploy,
+    ReadSharedProjectConfig, RecheckBasic, RecheckLlmSafety, RegisterProject, RelinkSource,
+    RemoveCustomAgent, RemoveIgnoreRule, RenameSkill, RescanSkill, ResetProfileOverride,
+    ResolveRecovery, RestoreDeployment, RestoreOriginalCallPolicy, RunBasicCheck, RunHealthCheck,
+    RunInitializationScan, RunLlmSafetyCheck, SaveProjectView, SaveSkillContent,
+    SaveUserTranslationRevision, ScanTargets, SetCurrentVersion, SetFindingDisposition,
+    SetLifecycle, SetMetadata, SetProfileOverride, SetProjectTags, SetTrial, TranslateDescription,
+    UpdateCustomAgent, UpdateProject, VerifyBackup, WriteSharedProjectConfig,
 };
 pub use event::{AppEvent, FactsChanged};
 pub use query::{

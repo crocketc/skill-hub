@@ -1,6 +1,7 @@
 pub mod agent;
 pub mod api;
 pub mod application;
+pub mod backup;
 pub mod bootstrap;
 pub mod call_policy;
 pub mod catalog;
@@ -33,15 +34,16 @@ pub use agent::{
 pub use api::{
     AnalyzeGlobalSkillEvidence, AnalyzeImport, AnalyzeSemanticDuplicates, AppCommand,
     AppCommandResult, AppEvent, AppQuery, AppQueryResult, ApplicationFacade, ApplySourceUpdate,
-    CheckSourceUpdate, CollectDeploymentChanges, CommitCallPolicyChange, CommitDeleteSkill,
-    CommitDeployment, CommitImport, CommitRepair, CommitUndeploy, CreateIgnoreRule,
-    DetachManagement, FactsChanged, GenerateOnlineSearchQuery, GetCallPolicy, GetDeploymentPlan,
-    GetDeploymentRelations, GetLlmSafetyCheckResult, GetProjectAssemblyPlan, GetReconcilePlan,
-    GetRemovalImpact, IgnoreExternalChange, KeepIndependentCopy, ListDeployments, Page,
-    PrepareCallPolicyChange, PrepareDeleteSkill, PrepareDeployment, PrepareImport, PrepareRepair,
-    PrepareUndeploy, RecheckLlmSafety, RelinkSource, RemoveIgnoreRule, ResolveRecovery,
-    RestoreDeployment, RestoreOriginalCallPolicy, RunHealthCheck, RunLlmSafetyCheck,
-    SaveUserTranslationRevision, SearchOnlineSources, TranslateDescription,
+    BackupDecision, CheckSourceUpdate, CollectDeploymentChanges, CommitCallPolicyChange,
+    CommitDeleteSkill, CommitDeployment, CommitImport, CommitRepair, CommitUndeploy, CreateBackup,
+    CreateIgnoreRule, DetachManagement, FactsChanged, GenerateOnlineSearchQuery, GetCallPolicy,
+    GetDeploymentPlan, GetDeploymentRelations, GetLlmSafetyCheckResult, GetProjectAssemblyPlan,
+    GetReconcilePlan, GetRemovalImpact, IgnoreExternalChange, KeepIndependentCopy, ListDeployments,
+    Page, PrepareBackup, PrepareCallPolicyChange, PrepareDeleteSkill, PrepareDeployment,
+    PrepareImport, PrepareRepair, PrepareUndeploy, RecheckLlmSafety, RelinkSource,
+    RemoveIgnoreRule, ResolveRecovery, RestoreDeployment, RestoreOriginalCallPolicy,
+    RunHealthCheck, RunLlmSafetyCheck, SaveUserTranslationRevision, SearchOnlineSources,
+    TranslateDescription, VerifyBackup,
 };
 pub use application::{
     BasicCheckOutput, BasicCheckScanner, CallPolicyBackend, CallPolicyService, CheckService,

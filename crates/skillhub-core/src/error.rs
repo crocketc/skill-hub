@@ -71,6 +71,10 @@ pub enum ErrorCode {
     LlmNotConfigured,
     #[serde(rename = "translation.user_revision_requires_confirmation")]
     TranslationUserRevisionRequiresConfirmation,
+    #[serde(rename = "backup.checksum_mismatch")]
+    BackupChecksumMismatch,
+    #[serde(rename = "backup.sensitive_decision_required")]
+    BackupSensitiveDecisionRequired,
 }
 
 #[allow(non_upper_case_globals)]
@@ -118,6 +122,8 @@ impl ErrorCode {
             Self::TranslationUserRevisionRequiresConfirmation => {
                 "translation.user_revision_requires_confirmation"
             }
+            Self::BackupChecksumMismatch => "backup.checksum_mismatch",
+            Self::BackupSensitiveDecisionRequired => "backup.sensitive_decision_required",
         }
     }
 }

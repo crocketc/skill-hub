@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::agent::{CustomAgent, CustomAgentDraft, CustomAgentOverride, PathGrant};
+use crate::backup::{BackupManifest, BackupPlan, BackupScope, SensitiveContentDecision};
 use crate::catalog::SkillLifecycle;
 use crate::check::{CheckKind, FindingDisposition};
 use crate::import::{ImportCandidate, ImportDecision};
@@ -335,6 +336,32 @@ pub struct GenerateOnlineSearchQuery {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 #[serde(deny_unknown_fields)]
+pub struct PrepareBackup {
+    pub scope: BackupScope,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct BackupDecision {
+    pub skill_id: SkillId,
+    pub decision: SensitiveContentDecision,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct CreateBackup {
+    pub scope: BackupScope,
+    pub decisions: Vec<BackupDecision>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct VerifyBackup {
+    pub path: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
 pub struct RunInitializationScan {
     pub scope_ids: Vec<String>,
 }
@@ -486,6 +513,12 @@ pub enum AppCommand {
     SaveUserTranslationRevision(SaveUserTranslationRevision),
     #[serde(rename = "generate_online_search_query")]
     GenerateOnlineSearchQuery(GenerateOnlineSearchQuery),
+    #[serde(rename = "prepare_backup")]
+    PrepareBackup(PrepareBackup),
+    #[serde(rename = "create_backup")]
+    CreateBackup(CreateBackup),
+    #[serde(rename = "verify_backup")]
+    VerifyBackup(VerifyBackup),
     #[serde(rename = "cancel_import")]
     CancelImport { prepared_import_id: OperationId },
     #[serde(rename = "run_initialization_scan")]
@@ -561,4 +594,8 @@ pub enum AppCommandResult {
     TranslationResult(TranslationResult),
     #[serde(rename = "online_search_query")]
     OnlineSearchQuery(SearchQuerySuggestion),
+    #[serde(rename = "backup_plan")]
+    BackupPlan(BackupPlan),
+    #[serde(rename = "backup_manifest")]
+    BackupManifest(BackupManifest),
 }
