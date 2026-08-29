@@ -23,7 +23,8 @@
 - `cargo fmt --all -- --check`：通过。
 - `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings`：通过。
 - Windows 前端 TypeScript、ESLint、Vitest（55 个文件、315 项测试）和生产构建：通过。
+- macOS `./scripts/ci-local.sh`：通过 10/10；Rust 测试、前端 55 个文件/315 项测试、TypeScript、ESLint、安全审计和生产构建均通过。镜像源不提供 audit 接口，切换官方 npm 源复核后已恢复原镜像。
 
 ## 后续
 
-需要在 macOS 上对最新 `main` 重新运行本地 CI，并在后续 Task 中决定如何把真实版本查询映射到版本时间线，以及何时冻结回滚、部署关系和检查状态的完整原生契约。
+后续 Task 需要决定如何把真实版本查询映射到版本时间线，以及何时冻结回滚、部署关系和检查状态的完整原生契约。
