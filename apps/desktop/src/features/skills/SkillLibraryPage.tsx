@@ -162,7 +162,11 @@ function SkillLibrarySkeleton(): JSX.Element {
   const { t } = useTranslation();
   return (
     <div className="sh-skill-library__loading">
-      <p aria-live="polite" role="status">
+      <p
+        aria-label={t("skillLibrary.page.states.loading")}
+        aria-live="polite"
+        role="status"
+      >
         {t("skillLibrary.page.states.loading")}
       </p>
       <div
@@ -459,13 +463,15 @@ export function SkillLibraryPage({ facade }: SkillLibraryPageProps): JSX.Element
   };
 
   const writeDrawerSkill = (nextSkillId?: string) => {
-    const nextSearchParams = new URLSearchParams(searchParams);
-    if (nextSkillId) {
-      nextSearchParams.set("skill", nextSkillId);
-    } else {
-      nextSearchParams.delete("skill");
-    }
-    setSearchParams(nextSearchParams);
+    setSearchParams((currentSearchParams) => {
+      const nextSearchParams = new URLSearchParams(currentSearchParams);
+      if (nextSkillId) {
+        nextSearchParams.set("skill", nextSkillId);
+      } else {
+        nextSearchParams.delete("skill");
+      }
+      return nextSearchParams;
+    });
   };
 
   const updateQuery = (nextQuery: SkillLibraryQuery) => {

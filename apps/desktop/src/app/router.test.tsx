@@ -6,6 +6,7 @@ import { sidebarNavigationEnd } from "./Sidebar";
 import { resolveRouteTitleKey } from "./AppShell";
 import { queryClient } from "./queryClient";
 import { appRouter, AppRouter } from "./router";
+import { installDomAbortPrimitives } from "../test-setup";
 
 vi.mock("../api/bindings", async (importOriginal) => {
   const original = await importOriginal<typeof import("../api/bindings")>();
@@ -43,6 +44,15 @@ function mockBrowserPreferences() {
     })),
   );
 }
+
+it("keeps AbortController and AbortSignal in the same DOM realm", () => {
+  installDomAbortPrimitives();
+
+  const controller = new AbortController();
+  expect(globalThis.AbortSignal).toBe(window.AbortSignal);
+  expect(globalThis.AbortController).toBe(window.AbortController);
+  expect(controller.signal).toBeInstanceOf(window.AbortSignal);
+});
 
 afterEach(() => {
   queryClient.clear();
