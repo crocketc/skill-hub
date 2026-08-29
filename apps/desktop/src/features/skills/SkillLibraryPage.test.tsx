@@ -747,7 +747,10 @@ describe("SkillLibraryPage", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "Save view" }));
 
-    const savedView = await screen.findByRole("button", { name: "Deployed skills" });
+    const savedView = await screen.findByRole("button", {
+      name: "Deployed skills",
+      pressed: true,
+    });
     expect(savedView).toHaveAttribute("aria-pressed", "true");
     expect(screen.queryByText("Unsaved changes")).not.toBeInTheDocument();
   });
