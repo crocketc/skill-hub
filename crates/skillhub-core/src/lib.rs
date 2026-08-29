@@ -11,6 +11,7 @@ pub mod health;
 mod ids;
 pub mod ignore;
 pub mod import;
+pub mod llm;
 mod operation;
 mod path_policy;
 pub mod pending;
@@ -83,6 +84,10 @@ pub use ignore::{IgnoreRule, IgnoreSubject};
 pub use import::{
     analyze_import, CandidateOwnership, DuplicateKind, ExistingSkillRecord, ImportAction,
     ImportAnalysis, ImportCandidate, ImportConflict, ImportDecision, ImportMatch, MatchBasis,
+};
+pub use llm::{
+    CredentialRef, CredentialStore, LlmProfile, LlmTaskKind, LlmTaskRequest, LlmTaskResponse,
+    LlmTaskRunner,
 };
 pub use project::{
     AssemblyChoice, AssemblyConflictKind, AssemblyItemPlan, AssemblyItemStatus, AssemblyPlan,

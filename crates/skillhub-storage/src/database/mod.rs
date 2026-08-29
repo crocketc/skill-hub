@@ -5,6 +5,7 @@ mod check_repository;
 mod custom_agent_repository;
 mod deployment_repository;
 mod import_repository;
+mod llm_profile_repository;
 mod migrations;
 mod operation_repository;
 mod project_repository;
@@ -28,6 +29,7 @@ pub use check_repository::CheckRepositorySqlite;
 pub use custom_agent_repository::CustomAgentRepository;
 pub use deployment_repository::{DeploymentRepository, DeploymentRepositorySqlite};
 pub use import_repository::ImportRepository;
+pub use llm_profile_repository::LlmProfileRepository;
 pub use migrations::MigrationReport;
 pub use operation_repository::OperationRepositorySqlite;
 pub use project_repository::ProjectRepository;
@@ -90,6 +92,10 @@ impl Database {
 
     pub fn source_search_cache(&self) -> SourceSearchCache<'_> {
         SourceSearchCache::new(self)
+    }
+
+    pub fn llm_profile_repository(&self) -> LlmProfileRepository<'_> {
+        LlmProfileRepository::new(self)
     }
 
     pub fn scan_repository(&self) -> ScanRepository<'_> {

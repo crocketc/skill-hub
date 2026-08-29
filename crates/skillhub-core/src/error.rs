@@ -59,6 +59,12 @@ pub enum ErrorCode {
     CallPolicyNotSupported,
     #[serde(rename = "ignore.only_exact_subjects_supported")]
     IgnoreOnlyExactSubjectsSupported,
+    #[serde(rename = "llm.invalid_structured_response")]
+    LlmInvalidStructuredResponse,
+    #[serde(rename = "llm.endpoint_not_allowed")]
+    LlmEndpointNotAllowed,
+    #[serde(rename = "llm.input_too_large")]
+    LlmInputTooLarge,
 }
 
 #[allow(non_upper_case_globals)]
@@ -98,6 +104,9 @@ impl ErrorCode {
             Self::NetworkDisabled => "network.disabled",
             Self::CallPolicyNotSupported => "call_policy.not_supported",
             Self::IgnoreOnlyExactSubjectsSupported => "ignore.only_exact_subjects_supported",
+            Self::LlmInvalidStructuredResponse => "llm.invalid_structured_response",
+            Self::LlmEndpointNotAllowed => "llm.endpoint_not_allowed",
+            Self::LlmInputTooLarge => "llm.input_too_large",
         }
     }
 }
