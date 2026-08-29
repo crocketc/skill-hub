@@ -19,7 +19,8 @@
 - `cargo test -p skillhub-storage --test check_repository`：5/5 通过。
 - `cargo fmt --all -- --check`：通过。
 - `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings`：通过。
+- macOS `./scripts/ci-local.sh`：通过 10/10；Rust 与前端全量检查、55 个测试文件/315 项测试、安全审计和生产构建均通过。Markdown 工作区与详情页测试通过，未出现新增失败。
 
 ## 后续
 
-需要在 macOS 上复核最新提交；后续 Task 再接入检查结果到详情页、发现项处置命令、部署门禁和检查运行编排。
+后续 Task 再接入检查结果到详情页、发现项处置命令、部署门禁和检查运行编排。
