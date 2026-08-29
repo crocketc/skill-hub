@@ -549,6 +549,10 @@ Windows 必须分别验证：
 
 该标记仍不代表 Skill 功能验证、Agent 运行时兼容认证或安全认证。
 
+### 7.4 Task11 证据记录规则
+
+兼容性验收结果按平台和客户端分别记录在 `tests/compatibility/results/`。没有安装或无法操作的客户端必须写为“未安装—未进行真实机验证”，不能从官方目录资料、profile 契约测试或其他操作系统结果推断“文件接入已验证”。平台验收模板见 `tests/compatibility/platform_smoke.md`；发布候选的质量门禁见 `docs/release-checklist.md`。
+
 ---
 
 ## 8. 对后续工作的影响
@@ -604,3 +608,5 @@ Windows 必须分别验证：
 - Roo Code 已移出候选范围，不再占用后续调研和开发资源。
 
 下一步进入功能优先级、产品与技术设计，并按本文实现平台 profile。真机测试在功能开发完成后执行，用于修正目录和部署规则；所有未覆盖平台继续使用用户自选 Skill 目录兜底。
+
+Task11 的当前证据只覆盖 profile 文件事实和跨平台占位验收记录；没有已安装客户端时，不宣称任何 Agent 的真实文件接入已经通过。Windows/macOS 真实客户端、Universal DMG 和 Draft Release 产物必须在后续设备或 CI 环境中补采证据。
