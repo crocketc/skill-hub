@@ -165,6 +165,19 @@ impl ApplicationFacade for LocalApplicationFacade {
             AppQuery::GetDeploymentRelations(request) => {
                 self.list_deployment_relations(request.skill_id)
             }
+            AppQuery::GetBasicCheckResult(request) => self.get_check_result(
+                request.skill_id,
+                request.version_id,
+                skillhub_core::check::CheckKind::Basic,
+            ),
+            AppQuery::GetLlmSafetyCheckResult(request) => self.get_check_result(
+                request.skill_id,
+                request.version_id,
+                skillhub_core::check::CheckKind::Llm,
+            ),
+            AppQuery::ListFindings(request) => {
+                self.list_findings(request.skill_id, request.version_id, request.kind)
+            }
             AppQuery::ListMarkdownFiles(request) => self.list_markdown_files(request.skill_id),
             AppQuery::ReadMarkdownFile(request) => {
                 self.read_markdown_file(request.skill_id, &request.path)
@@ -261,6 +274,65 @@ impl LocalApplicationFacade {
                     })
                     .collect(),
             ))
+        })
+    }
+
+    fn get_check_result(
+        &self,
+        skill_id: skillhub_core::SkillId,
+        version_id: skillhub_core::VersionId,
+        kind: skillhub_core::check::CheckKind,
+    ) -> AppResult<AppQueryResult> {
+        self.with_database("query.get_check_result", |database| {
+            let run = database.check_repository().current_for_version_sync(
+                skill_id,
+                &version_id,
+                kind,
+            )?;
+            let projection = skillhub_core::check::CheckResult {
+                state: run
+                    .as_ref()
+                    .map(skillhub_core::check::derive_check_state)
+                    .unwrap_or(skillhub_core::check::CheckState::NotChecked),
+                run,
+            };
+            match kind {
+                skillhub_core::check::CheckKind::Basic => Ok(AppQueryResult::BasicCheckResult(
+                    skillhub_core::api::BasicCheckResult::from_check_result(
+                        skill_id,
+                        version_id,
+                        &projection,
+                    ),
+                )),
+                skillhub_core::check::CheckKind::Llm => Ok(AppQueryResult::LlmSafetyCheckResult(
+                    skillhub_core::api::LlmSafetyCheckResult::from_check_result(
+                        skill_id,
+                        version_id,
+                        &projection,
+                    ),
+                )),
+            }
+        })
+    }
+
+    fn list_findings(
+        &self,
+        skill_id: skillhub_core::SkillId,
+        version_id: skillhub_core::VersionId,
+        kind: skillhub_core::check::CheckKind,
+    ) -> AppResult<AppQueryResult> {
+        self.with_database("query.list_findings", |database| {
+            let findings = database
+                .check_repository()
+                .current_for_version_sync(skill_id, &version_id, kind)?
+                .map(|run| {
+                    run.findings
+                        .iter()
+                        .map(skillhub_core::api::FindingResult::from)
+                        .collect()
+                })
+                .unwrap_or_default();
+            Ok(AppQueryResult::Findings(findings))
         })
     }
 

@@ -18,39 +18,11 @@ impl<'a> CheckRepositorySqlite<'a> {
     pub(crate) fn new(database: &'a Database) -> Self {
         Self { database }
     }
-}
 
-#[async_trait(?Send)]
-impl CheckRepositoryPort for CheckRepositorySqlite<'_> {
-    async fn insert(&self, run: &CheckRun) -> AppResult<()> {
-        let tx = self
-            .database
-            .connection
-            .unchecked_transaction()
-            .map_err(error)?;
-        tx.execute(
-            "INSERT INTO check_runs(id,skill_id,version_id,kind,generation,state,ruleset_id,model_id,started_at,ended_at,coverage_json,failure_code) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12)",
-            params![
-                run.id,
-                run.skill_id.to_string(),
-                run.version_id.to_string(),
-                kind_code(run.kind),
-                i64::try_from(run.generation).map_err(|_| invalid_record())?,
-                state_code(run),
-                run.ruleset_id,
-                run.model_id,
-                run.started_at,
-                run.ended_at,
-                serde_json::to_string(&run.coverage_inputs).map_err(|_| invalid_record())?,
-                run.failure_code,
-            ],
-        )
-        .map_err(error)?;
-        insert_findings(&tx, run)?;
-        tx.commit().map_err(error)
-    }
-
-    async fn get(&self, id: &str) -> AppResult<Option<CheckRun>> {
+    /// Reads one persisted run synchronously for the local application
+    /// facade. The data is already in the open SQLite connection; the async
+    /// trait below remains available to service callers.
+    pub fn get_sync(&self, id: &str) -> AppResult<Option<CheckRun>> {
         let row = self
             .database
             .connection
@@ -117,6 +89,63 @@ impl CheckRepositoryPort for CheckRepositorySqlite<'_> {
         .transpose()
     }
 
+    pub fn current_for_version_sync(
+        &self,
+        skill_id: SkillId,
+        version_id: &VersionId,
+        kind: CheckKind,
+    ) -> AppResult<Option<CheckRun>> {
+        let id = self
+            .database
+            .connection
+            .query_row(
+                "SELECT id FROM check_runs WHERE skill_id=?1 AND version_id=?2 AND kind=?3 ORDER BY generation DESC,started_at DESC,COALESCE(ended_at,-1) DESC,id DESC LIMIT 1",
+                params![skill_id.to_string(), version_id.to_string(), kind_code(kind)],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()
+            .map_err(error)?;
+        match id {
+            Some(id) => self.get_sync(&id),
+            None => Ok(None),
+        }
+    }
+}
+
+#[async_trait(?Send)]
+impl CheckRepositoryPort for CheckRepositorySqlite<'_> {
+    async fn insert(&self, run: &CheckRun) -> AppResult<()> {
+        let tx = self
+            .database
+            .connection
+            .unchecked_transaction()
+            .map_err(error)?;
+        tx.execute(
+            "INSERT INTO check_runs(id,skill_id,version_id,kind,generation,state,ruleset_id,model_id,started_at,ended_at,coverage_json,failure_code) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12)",
+            params![
+                run.id,
+                run.skill_id.to_string(),
+                run.version_id.to_string(),
+                kind_code(run.kind),
+                i64::try_from(run.generation).map_err(|_| invalid_record())?,
+                state_code(run),
+                run.ruleset_id,
+                run.model_id,
+                run.started_at,
+                run.ended_at,
+                serde_json::to_string(&run.coverage_inputs).map_err(|_| invalid_record())?,
+                run.failure_code,
+            ],
+        )
+        .map_err(error)?;
+        insert_findings(&tx, run)?;
+        tx.commit().map_err(error)
+    }
+
+    async fn get(&self, id: &str) -> AppResult<Option<CheckRun>> {
+        self.get_sync(id)
+    }
+
     async fn update(&self, run: &CheckRun) -> AppResult<()> {
         let tx = self
             .database
@@ -178,7 +207,7 @@ impl CheckRepositoryPort for CheckRepositorySqlite<'_> {
         let mut runs = Vec::new();
         for id in ids {
             let id = id.map_err(error)?;
-            if let Some(run) = self.get(&id).await? {
+            if let Some(run) = self.get_sync(&id)? {
                 runs.push(run);
             }
         }
@@ -202,7 +231,7 @@ impl CheckRepositoryPort for CheckRepositorySqlite<'_> {
             .optional()
             .map_err(error)?;
         match id {
-            Some(id) => self.get(&id).await,
+            Some(id) => self.get_sync(&id),
             None => Ok(None),
         }
     }

@@ -1,10 +1,12 @@
 use skillhub_application::LocalApplicationFacade;
 use skillhub_core::{
     api::{
-        AppQueryResult, DiffVersions, GetDeploymentRelations, GetSkill, ListDeployments,
-        ListMarkdownFiles, ListSkills, ListVersions, ReadMarkdownFile,
+        AppQueryResult, DiffVersions, GetBasicCheckResult, GetDeploymentRelations, GetSkill,
+        ListDeployments, ListFindings, ListMarkdownFiles, ListSkills, ListVersions,
+        ReadMarkdownFile,
     },
     catalog::{CatalogRepository, Skill},
+    check::{CheckKind, CheckState},
     deployment::{DeploymentMode, DeploymentRecord, DeploymentRepository, DeploymentState},
     search::{SearchDocument, SearchQuery},
     AppCommand, AppQuery as RootAppQuery, ApplicationFacade, ErrorCode, Severity,
@@ -387,4 +389,48 @@ async fn deployment_queries_return_only_relationships_for_the_requested_skill() 
     };
     assert_eq!(relations.len(), 1);
     assert_eq!(relations[0].target_id, "agent-codex");
+}
+
+#[tokio::test]
+async fn check_queries_return_independent_not_checked_results_without_runs() {
+    let database = Database::open_in_memory().expect("database");
+    let skill = Skill::new(skillhub_core::SkillId::new(), "Checks");
+    database
+        .catalog_repository()
+        .expect("catalog repository")
+        .insert(&skill)
+        .await
+        .expect("insert skill");
+    let version_id = skillhub_core::VersionId::parse(
+        "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    )
+    .expect("version id");
+    let facade = LocalApplicationFacade::new_with_today(database, (2026, 8, 29));
+
+    let result = facade
+        .query(RootAppQuery::GetBasicCheckResult(GetBasicCheckResult {
+            skill_id: skill.id(),
+            version_id: version_id.clone(),
+        }))
+        .await
+        .expect("basic result");
+    let AppQueryResult::BasicCheckResult(result) = result else {
+        panic!("expected basic result");
+    };
+    assert_eq!(result.state, CheckState::NotChecked);
+    assert_eq!(result.finding_count, 0);
+    assert_eq!(result.actionable_count, 0);
+
+    let findings = facade
+        .query(RootAppQuery::ListFindings(ListFindings {
+            skill_id: skill.id(),
+            version_id,
+            kind: CheckKind::Basic,
+        }))
+        .await
+        .expect("findings");
+    let AppQueryResult::Findings(findings) = findings else {
+        panic!("expected findings");
+    };
+    assert!(findings.is_empty());
 }
