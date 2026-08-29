@@ -3,6 +3,7 @@ mod catalog_service;
 mod check_service;
 mod deployment_service;
 mod health_service;
+mod ignore_service;
 mod import_service;
 mod operation_service;
 mod project_assembly_service;
@@ -22,6 +23,7 @@ pub use deployment_service::{
     TargetOperationResult, TargetOperationStatus,
 };
 pub use health_service::{HealthBackend, HealthService};
+pub use ignore_service::{IgnoreBackend, IgnoreService};
 pub use import_service::{
     ImportBackend, ImportItemResult, ImportService, ImportSummary, PreparedImport,
 };

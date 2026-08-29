@@ -249,6 +249,8 @@ pub enum AppQuery {
     ListRecoveryCandidates,
     #[serde(rename = "get_call_policy")]
     GetCallPolicy(GetCallPolicy),
+    #[serde(rename = "list_ignore_rules")]
+    ListIgnoreRules,
     #[serde(rename = "get_basic_check_result")]
     GetBasicCheckResult(GetBasicCheckResult),
     #[serde(rename = "list_findings")]
@@ -300,6 +302,8 @@ pub enum AppQueryResult {
     RecoveryCandidates(Vec<crate::RecoveryCandidate>),
     #[serde(rename = "call_policy")]
     CallPolicy(crate::CallPolicyResult),
+    #[serde(rename = "ignore_rules")]
+    IgnoreRules(Vec<crate::IgnoreRule>),
     #[serde(rename = "basic_check_result")]
     BasicCheckResult(BasicCheckResult),
     #[serde(rename = "findings")]

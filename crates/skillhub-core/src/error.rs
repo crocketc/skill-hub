@@ -57,6 +57,8 @@ pub enum ErrorCode {
     NetworkDisabled,
     #[serde(rename = "call_policy.not_supported")]
     CallPolicyNotSupported,
+    #[serde(rename = "ignore.only_exact_subjects_supported")]
+    IgnoreOnlyExactSubjectsSupported,
 }
 
 #[allow(non_upper_case_globals)]
@@ -95,6 +97,7 @@ impl ErrorCode {
             Self::SourceSearchUnavailable => "source.search_unavailable",
             Self::NetworkDisabled => "network.disabled",
             Self::CallPolicyNotSupported => "call_policy.not_supported",
+            Self::IgnoreOnlyExactSubjectsSupported => "ignore.only_exact_subjects_supported",
         }
     }
 }

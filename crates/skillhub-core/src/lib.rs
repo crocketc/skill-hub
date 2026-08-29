@@ -9,6 +9,7 @@ pub mod deployment;
 mod error;
 pub mod health;
 mod ids;
+pub mod ignore;
 pub mod import;
 mod operation;
 mod path_policy;
@@ -30,20 +31,20 @@ pub use api::{
     AnalyzeImport, AppCommand, AppCommandResult, AppEvent, AppQuery, AppQueryResult,
     ApplicationFacade, ApplySourceUpdate, CheckSourceUpdate, CollectDeploymentChanges,
     CommitCallPolicyChange, CommitDeleteSkill, CommitDeployment, CommitImport, CommitRepair,
-    CommitUndeploy, DetachManagement, FactsChanged, GetCallPolicy, GetDeploymentPlan,
-    GetDeploymentRelations, GetProjectAssemblyPlan, GetReconcilePlan, GetRemovalImpact,
-    IgnoreExternalChange, KeepIndependentCopy, ListDeployments, Page, PrepareCallPolicyChange,
-    PrepareDeleteSkill, PrepareDeployment, PrepareImport, PrepareRepair, PrepareUndeploy,
-    RelinkSource, ResolveRecovery, RestoreDeployment, RestoreOriginalCallPolicy, RunHealthCheck,
-    SearchOnlineSources,
+    CommitUndeploy, CreateIgnoreRule, DetachManagement, FactsChanged, GetCallPolicy,
+    GetDeploymentPlan, GetDeploymentRelations, GetProjectAssemblyPlan, GetReconcilePlan,
+    GetRemovalImpact, IgnoreExternalChange, KeepIndependentCopy, ListDeployments, Page,
+    PrepareCallPolicyChange, PrepareDeleteSkill, PrepareDeployment, PrepareImport, PrepareRepair,
+    PrepareUndeploy, RelinkSource, RemoveIgnoreRule, ResolveRecovery, RestoreDeployment,
+    RestoreOriginalCallPolicy, RunHealthCheck, SearchOnlineSources,
 };
 pub use application::{
     BasicCheckOutput, BasicCheckScanner, CallPolicyBackend, CallPolicyService, CheckService,
     DeploymentBackend, DeploymentService, DeploymentSummary, HealthBackend, HealthService,
-    ImportBackend, ImportItemResult, ImportService, ImportSummary, OperationService,
-    PreparedDeployment, PreparedImport, ProjectAssemblyService, ReconcileBackend, ReconcileService,
-    RecoveryBackend, RecoveryService, RemovalBackend, RemovalService, TargetOperationResult,
-    TargetOperationStatus, VersionMaterializer,
+    IgnoreBackend, IgnoreService, ImportBackend, ImportItemResult, ImportService, ImportSummary,
+    OperationService, PreparedDeployment, PreparedImport, ProjectAssemblyService, ReconcileBackend,
+    ReconcileService, RecoveryBackend, RecoveryService, RemovalBackend, RemovalService,
+    TargetOperationResult, TargetOperationStatus, VersionMaterializer,
 };
 pub use application::{WatchConfirmation, WatchHint, WatchHintKind, WatchService};
 pub use bootstrap::{
@@ -78,6 +79,7 @@ pub use ids::{
     AgentProfileId, ClientInstanceId, CombinationId, DeploymentId, LogicalTargetId, OperationId,
     PhysicalTargetId, ProjectId, SkillId, VersionId,
 };
+pub use ignore::{IgnoreRule, IgnoreSubject};
 pub use import::{
     analyze_import, CandidateOwnership, DuplicateKind, ExistingSkillRecord, ImportAction,
     ImportAnalysis, ImportCandidate, ImportConflict, ImportDecision, ImportMatch, MatchBasis,

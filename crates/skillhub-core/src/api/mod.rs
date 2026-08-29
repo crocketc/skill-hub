@@ -7,15 +7,15 @@ pub use command::{
     AppCommand, AppCommandResult, ApplySourceUpdate, CheckSourceUpdate, CollectDeploymentChanges,
     CommitCallPolicyChange, CommitDeleteSkill, CommitDeployment, CommitImport,
     CommitProjectAssembly, CommitRepair, CommitUndeploy, CreateCombination, CreateCustomAgent,
-    CreateSkill, DetachManagement, IgnoreExternalChange, KeepIndependentCopy,
+    CreateIgnoreRule, CreateSkill, DetachManagement, IgnoreExternalChange, KeepIndependentCopy,
     PinProjectSkillVersion, PrepareCallPolicyChange, PrepareDeleteSkill, PrepareDeployment,
     PrepareImport, PrepareProjectAssembly, PrepareRepair, PrepareUndeploy, ReadSharedProjectConfig,
-    RecheckBasic, RegisterProject, RelinkSource, RemoveCustomAgent, RenameSkill, RescanSkill,
-    ResetProfileOverride, ResolveRecovery, RestoreDeployment, RestoreOriginalCallPolicy,
-    RunBasicCheck, RunHealthCheck, RunInitializationScan, SaveProjectView, SaveSkillContent,
-    ScanTargets, SetCurrentVersion, SetFindingDisposition, SetLifecycle, SetMetadata,
-    SetProfileOverride, SetProjectTags, SetTrial, UpdateCustomAgent, UpdateProject,
-    WriteSharedProjectConfig,
+    RecheckBasic, RegisterProject, RelinkSource, RemoveCustomAgent, RemoveIgnoreRule, RenameSkill,
+    RescanSkill, ResetProfileOverride, ResolveRecovery, RestoreDeployment,
+    RestoreOriginalCallPolicy, RunBasicCheck, RunHealthCheck, RunInitializationScan,
+    SaveProjectView, SaveSkillContent, ScanTargets, SetCurrentVersion, SetFindingDisposition,
+    SetLifecycle, SetMetadata, SetProfileOverride, SetProjectTags, SetTrial, UpdateCustomAgent,
+    UpdateProject, WriteSharedProjectConfig,
 };
 pub use event::{AppEvent, FactsChanged};
 pub use query::{

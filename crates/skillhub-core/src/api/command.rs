@@ -277,6 +277,20 @@ pub struct RestoreOriginalCallPolicy {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 #[serde(deny_unknown_fields)]
+pub struct CreateIgnoreRule {
+    pub subject: crate::IgnoreSubject,
+    pub reason: String,
+    pub defer_until: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct RemoveIgnoreRule {
+    pub rule_id: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
 pub struct RunInitializationScan {
     pub scope_ids: Vec<String>,
 }
@@ -412,6 +426,10 @@ pub enum AppCommand {
     CommitCallPolicyChange(CommitCallPolicyChange),
     #[serde(rename = "restore_original_call_policy")]
     RestoreOriginalCallPolicy(RestoreOriginalCallPolicy),
+    #[serde(rename = "create_ignore_rule")]
+    CreateIgnoreRule(CreateIgnoreRule),
+    #[serde(rename = "remove_ignore_rule")]
+    RemoveIgnoreRule(RemoveIgnoreRule),
     #[serde(rename = "cancel_import")]
     CancelImport { prepared_import_id: OperationId },
     #[serde(rename = "run_initialization_scan")]
@@ -477,4 +495,6 @@ pub enum AppCommandResult {
     RepairPlan(crate::RepairPlan),
     #[serde(rename = "call_policy_plan")]
     CallPolicyPlan(crate::CallPolicyPlan),
+    #[serde(rename = "ignore_rule")]
+    IgnoreRule(crate::IgnoreRule),
 }

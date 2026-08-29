@@ -294,3 +294,28 @@ fn call_policy_commands_and_query_have_stable_wire_shapes() {
         "get_call_policy"
     );
 }
+
+#[test]
+fn ignore_rule_commands_and_query_have_stable_wire_shapes() {
+    let commands = [
+        AppCommand::CreateIgnoreRule(skillhub_core::CreateIgnoreRule {
+            subject: skillhub_core::IgnoreSubject::exact_pending("pending-1"),
+            reason: "later".into(),
+            defer_until: None,
+        }),
+        AppCommand::RemoveIgnoreRule(skillhub_core::RemoveIgnoreRule {
+            rule_id: "rule-1".into(),
+        }),
+    ];
+    let expected = ["create_ignore_rule", "remove_ignore_rule"];
+    for (command, expected_type) in commands.into_iter().zip(expected) {
+        assert_eq!(
+            serde_json::to_value(command).unwrap()["type"],
+            expected_type
+        );
+    }
+    assert_eq!(
+        serde_json::to_value(AppQuery::ListIgnoreRules).unwrap()["type"],
+        "list_ignore_rules"
+    );
+}
