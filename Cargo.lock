@@ -4334,6 +4334,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "skillhub-cli"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "skillhub-core",
+]
+
+[[package]]
 name = "skillhub-core"
 version = "0.1.0"
 dependencies = [
