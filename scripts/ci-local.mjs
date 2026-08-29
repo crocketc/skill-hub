@@ -13,6 +13,7 @@ const steps = [
   { name: "Rust lints", command: "cargo", args: ["clippy", "--locked", "--workspace", "--all-targets", "--all-features", "--", "-D", "warnings"] },
   { name: "Rust tests", command: "cargo", args: ["test", "--locked", "--workspace"] },
   { name: "Frontend dependencies", command: pnpm, args: ["install", "--frozen-lockfile", "--ignore-scripts"] },
+  { name: "Frontend lifecycle policy", command: pnpm, args: ["verify:lifecycle"] },
   { name: "Frontend dependency audit", command: pnpm, args: ["audit:frontend"] },
   { name: "Frontend lint and typecheck", command: pnpm, args: ["check:frontend"] },
   { name: "Frontend tests", command: pnpm, args: ["test:frontend"] },

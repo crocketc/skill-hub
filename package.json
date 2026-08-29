@@ -7,6 +7,8 @@
     "test:frontend": "pnpm --dir apps/desktop test --run",
     "build:frontend": "pnpm --dir apps/desktop build",
     "audit:frontend": "pnpm audit --json",
+    "verify:lifecycle": "node scripts/verify_frontend_lifecycle_scripts.mjs",
+    "sbom": "node scripts/generate_sbom.mjs --out-dir artifacts/sbom",
     "test:e2e": "playwright test --config=tests/e2e/playwright.config.ts",
     "ci:local": "node scripts/ci-local.mjs"
   },

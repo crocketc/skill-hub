@@ -1,0 +1,60 @@
+name: Supply chain
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  policy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source (actions/checkout v4)
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - name: Check Rust policy
+        shell: bash
+        run: |
+          rustup toolchain install stable --profile minimal
+          cargo install cargo-deny --locked
+          cargo deny check advisories bans licenses sources
+
+      - name: Install locked frontend dependencies without lifecycle scripts
+        shell: bash
+        run: |
+          corepack enable
+          corepack prepare pnpm@11.21.0 --activate
+          pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Verify lifecycle allowlist
+        run: node scripts/verify_frontend_lifecycle_scripts.mjs
+
+      - name: Audit production frontend dependencies
+        run: pnpm audit --prod
+
+      - name: Verify generated bindings are committed
+        shell: bash
+        run: |
+          cargo test -p skillhub-desktop generate_bindings
+          git diff --exit-code -- apps/desktop/src/api/bindings.ts
+
+      - name: Scan committed source for common credential formats
+        shell: bash
+        run: |
+          if git grep -n -E 'sk-[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16}|gh[pousr]_[A-Za-z0-9_]{20,}' -- ':!*.lock'; then
+            echo "Potential credential material found in tracked source"
+            exit 1
+          fi
+
+      - name: Generate CycloneDX SBOMs
+        run: node scripts/generate_sbom.mjs --out-dir artifacts/sbom
+
+      - name: Upload SBOMs (actions/upload-artifact v4)
+        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08
+        with:
+          name: skillhub-sbom-${{ github.sha }}
+          path: artifacts/sbom/*.cdx.json
+          if-no-files-found: error
