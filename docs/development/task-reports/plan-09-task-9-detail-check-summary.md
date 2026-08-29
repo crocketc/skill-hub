@@ -17,6 +17,8 @@
 - `tsc --noEmit`：通过。
 - `vitest` 原生详情门面测试：3/3 通过。
 - Windows 前端全量测试、ESLint、TypeScript 和生产构建：待本 Task 提交前完成。
+- Windows 前端全量测试、ESLint、TypeScript 和生产构建：通过，Vitest 55 个文件/316 项测试。
+- macOS `./scripts/ci-local.sh`：通过 10/10；详情页原生门面测试通过，前端 55 个文件/316 项测试、安全审计和生产构建均通过。
 
 ## 后续
 
