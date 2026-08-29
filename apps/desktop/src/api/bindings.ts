@@ -28,7 +28,11 @@ export type AnalyzeImport = {
 	tree_hash: string | null,
 };
 
-export type AppCommand = { type: "create_skill"; payload: CreateSkill } | { type: "save_skill_content"; payload: SaveSkillContent } | { type: "rename_skill"; payload: RenameSkill } | { type: "set_lifecycle"; payload: SetLifecycle } | { type: "set_metadata"; payload: SetMetadata } | { type: "set_trial"; payload: SetTrial } | { type: "create_combination"; payload: CreateCombination } | { type: "set_current_version"; payload: SetCurrentVersion } | { type: "pin_project_skill_version"; payload: PinProjectSkillVersion } | { type: "create_custom_agent"; payload: CreateCustomAgent } | { type: "update_custom_agent"; payload: UpdateCustomAgent } | { type: "remove_custom_agent"; payload: RemoveCustomAgent } | { type: "reset_profile_override"; payload: ResetProfileOverride } | { type: "set_profile_override"; payload: SetProfileOverride } | { type: "register_project"; payload: RegisterProject } | { type: "update_project"; payload: UpdateProject } | { type: "set_project_tags"; payload: SetProjectTags } | { type: "save_project_view"; payload: SaveProjectView } | { type: "write_shared_project_config"; payload: WriteSharedProjectConfig } | { type: "read_shared_project_config"; payload: ReadSharedProjectConfig } | { type: "prepare_project_assembly"; payload: PrepareProjectAssembly } | { type: "commit_project_assembly"; payload: CommitProjectAssembly } | { type: "prepare_import"; payload: PrepareImport } | { type: "commit_import"; payload: CommitImport } | { type: "relink_source"; payload: RelinkSource } | { type: "check_source_update"; payload: CheckSourceUpdate } | { type: "apply_source_update"; payload: ApplySourceUpdate } | { type: "prepare_deployment"; payload: PrepareDeployment } | { type: "commit_deployment"; payload: CommitDeployment } | { type: "collect_deployment_changes"; payload: CollectDeploymentChanges } | { type: "restore_deployment"; payload: RestoreDeployment } | { type: "keep_independent_copy"; payload: KeepIndependentCopy } | { type: "ignore_external_change"; payload: IgnoreExternalChange } | { type: "prepare_undeploy"; payload: PrepareUndeploy } | { type: "commit_undeploy"; payload: CommitUndeploy } | { type: "prepare_delete_skill"; payload: PrepareDeleteSkill } | { type: "commit_delete_skill"; payload: CommitDeleteSkill } | { type: "detach_management"; payload: DetachManagement } | { type: "run_health_check"; payload: RunHealthCheck } | { type: "prepare_repair"; payload: PrepareRepair } | { type: "commit_repair"; payload: CommitRepair } | { type: "resolve_recovery"; payload: ResolveRecovery } | { type: "prepare_call_policy_change"; payload: PrepareCallPolicyChange } | { type: "commit_call_policy_change"; payload: CommitCallPolicyChange } | { type: "restore_original_call_policy"; payload: RestoreOriginalCallPolicy } | { type: "create_ignore_rule"; payload: CreateIgnoreRule } | { type: "remove_ignore_rule"; payload: RemoveIgnoreRule } | { type: "run_llm_safety_check"; payload: RunLlmSafetyCheck } | { type: "recheck_llm_safety"; payload: RecheckLlmSafety } | { type: "cancel_import"; payload: {
+export type AnalyzeSemanticDuplicates = {
+	skill_id: SkillId,
+};
+
+export type AppCommand = { type: "create_skill"; payload: CreateSkill } | { type: "save_skill_content"; payload: SaveSkillContent } | { type: "rename_skill"; payload: RenameSkill } | { type: "set_lifecycle"; payload: SetLifecycle } | { type: "set_metadata"; payload: SetMetadata } | { type: "set_trial"; payload: SetTrial } | { type: "create_combination"; payload: CreateCombination } | { type: "set_current_version"; payload: SetCurrentVersion } | { type: "pin_project_skill_version"; payload: PinProjectSkillVersion } | { type: "create_custom_agent"; payload: CreateCustomAgent } | { type: "update_custom_agent"; payload: UpdateCustomAgent } | { type: "remove_custom_agent"; payload: RemoveCustomAgent } | { type: "reset_profile_override"; payload: ResetProfileOverride } | { type: "set_profile_override"; payload: SetProfileOverride } | { type: "register_project"; payload: RegisterProject } | { type: "update_project"; payload: UpdateProject } | { type: "set_project_tags"; payload: SetProjectTags } | { type: "save_project_view"; payload: SaveProjectView } | { type: "write_shared_project_config"; payload: WriteSharedProjectConfig } | { type: "read_shared_project_config"; payload: ReadSharedProjectConfig } | { type: "prepare_project_assembly"; payload: PrepareProjectAssembly } | { type: "commit_project_assembly"; payload: CommitProjectAssembly } | { type: "prepare_import"; payload: PrepareImport } | { type: "commit_import"; payload: CommitImport } | { type: "relink_source"; payload: RelinkSource } | { type: "check_source_update"; payload: CheckSourceUpdate } | { type: "apply_source_update"; payload: ApplySourceUpdate } | { type: "prepare_deployment"; payload: PrepareDeployment } | { type: "commit_deployment"; payload: CommitDeployment } | { type: "collect_deployment_changes"; payload: CollectDeploymentChanges } | { type: "restore_deployment"; payload: RestoreDeployment } | { type: "keep_independent_copy"; payload: KeepIndependentCopy } | { type: "ignore_external_change"; payload: IgnoreExternalChange } | { type: "prepare_undeploy"; payload: PrepareUndeploy } | { type: "commit_undeploy"; payload: CommitUndeploy } | { type: "prepare_delete_skill"; payload: PrepareDeleteSkill } | { type: "commit_delete_skill"; payload: CommitDeleteSkill } | { type: "detach_management"; payload: DetachManagement } | { type: "run_health_check"; payload: RunHealthCheck } | { type: "prepare_repair"; payload: PrepareRepair } | { type: "commit_repair"; payload: CommitRepair } | { type: "resolve_recovery"; payload: ResolveRecovery } | { type: "prepare_call_policy_change"; payload: PrepareCallPolicyChange } | { type: "commit_call_policy_change"; payload: CommitCallPolicyChange } | { type: "restore_original_call_policy"; payload: RestoreOriginalCallPolicy } | { type: "create_ignore_rule"; payload: CreateIgnoreRule } | { type: "remove_ignore_rule"; payload: RemoveIgnoreRule } | { type: "run_llm_safety_check"; payload: RunLlmSafetyCheck } | { type: "recheck_llm_safety"; payload: RecheckLlmSafety } | { type: "analyze_semantic_duplicates"; payload: AnalyzeSemanticDuplicates } | { type: "cancel_import"; payload: {
 	prepared_import_id: OperationId,
 } } | { type: "run_initialization_scan"; payload: RunInitializationScan } | { type: "scan_targets"; payload: ScanTargets } | { type: "rescan_skill"; payload: RescanSkill } | { type: "run_basic_check"; payload: RunBasicCheck } | { type: "recheck_basic"; payload: RecheckBasic } | { type: "set_finding_disposition"; payload: SetFindingDisposition } | { type: "cancel_operation"; payload: {
 	operation_id: OperationId,
@@ -36,7 +40,7 @@ export type AppCommand = { type: "create_skill"; payload: CreateSkill } | { type
 	operation_id: OperationId,
 } };
 
-export type AppCommandResult = { type: "operation_summary"; payload: OperationSummary } | { type: "custom_agent"; payload: CustomAgent } | { type: "custom_agent_override"; payload: CustomAgentOverride } | { type: "project"; payload: Project } | { type: "saved_project_view"; payload: SavedProjectView } | { type: "shared_project_config"; payload: SharedProjectConfig } | { type: "assembly_plan"; payload: AssemblyPlan } | { type: "scan_result"; payload: ScanResult } | { type: "basic_check_result"; payload: BasicCheckResult } | { type: "prepared_import"; payload: PreparedImport } | { type: "import_summary"; payload: ImportSummary } | { type: "upstream_check_result"; payload: UpstreamCheckResult } | { type: "applied_source_update"; payload: AppliedSourceUpdate } | { type: "prepared_deployment"; payload: PreparedDeployment } | { type: "deployment_summary"; payload: DeploymentSummary } | { type: "reconcile_result"; payload: ReconcileResult } | { type: "removal_impact"; payload: RemovalImpact } | { type: "removal_result"; payload: RemovalResult } | { type: "health_report"; payload: HealthReport } | { type: "repair_plan"; payload: RepairPlan } | { type: "call_policy_plan"; payload: CallPolicyPlan } | { type: "ignore_rule"; payload: IgnoreRule } | { type: "llm_safety_check_result"; payload: LlmSafetyCheckResult };
+export type AppCommandResult = { type: "operation_summary"; payload: OperationSummary } | { type: "custom_agent"; payload: CustomAgent } | { type: "custom_agent_override"; payload: CustomAgentOverride } | { type: "project"; payload: Project } | { type: "saved_project_view"; payload: SavedProjectView } | { type: "shared_project_config"; payload: SharedProjectConfig } | { type: "assembly_plan"; payload: AssemblyPlan } | { type: "scan_result"; payload: ScanResult } | { type: "basic_check_result"; payload: BasicCheckResult } | { type: "prepared_import"; payload: PreparedImport } | { type: "import_summary"; payload: ImportSummary } | { type: "upstream_check_result"; payload: UpstreamCheckResult } | { type: "applied_source_update"; payload: AppliedSourceUpdate } | { type: "prepared_deployment"; payload: PreparedDeployment } | { type: "deployment_summary"; payload: DeploymentSummary } | { type: "reconcile_result"; payload: ReconcileResult } | { type: "removal_impact"; payload: RemovalImpact } | { type: "removal_result"; payload: RemovalResult } | { type: "health_report"; payload: HealthReport } | { type: "repair_plan"; payload: RepairPlan } | { type: "call_policy_plan"; payload: CallPolicyPlan } | { type: "ignore_rule"; payload: IgnoreRule } | { type: "llm_safety_check_result"; payload: LlmSafetyCheckResult } | { type: "duplicate_analysis"; payload: DuplicateAnalysis };
 
 export type AppEvent = { type: "operation_progress"; payload: OperationProgress } | { type: "operation_finished"; payload: OperationSummary } | { type: "facts_changed"; payload: FactsChanged };
 
@@ -184,6 +188,8 @@ export type CommitUndeploy = {
 	prepared_undeploy_id: OperationId,
 	decision: RemovalDecision,
 };
+
+export type CoverageRelation = "a_contains_b" | "b_contains_a" | "overlap" | "independent" | "uncertain";
 
 export type CreateCombination = {
 	name: string,
@@ -342,8 +348,26 @@ export type DiscoverySnapshot = {
 	physical_targets: PhysicalTarget[],
 };
 
+export type DuplicateAnalysis = {
+	anchor_skill_id: SkillId,
+	candidate_count: number,
+	relations: DuplicateRelation[],
+	applied_automatically: boolean,
+};
+
 /**  The strongest deterministic relationship found for an imported candidate. */
 export type DuplicateKind = "exact_content" | "same_source" | "same_runtime_name_different_content" | "search_candidate";
+
+export type DuplicateRelation = {
+	skill_a: SkillId,
+	skill_b: SkillId,
+	coverage: CoverageRelation,
+	shared_abilities: string[],
+	unique_a: string[],
+	unique_b: string[],
+	evidence: string[],
+	recommendation: RetentionRecommendation,
+};
 
 /**  Stable machine-readable failures returned by the application boundary. */
 export type ErrorCode = "input.invalid" | "path.outside_allowed_root" | "object.not_found" | "deployment.target_exists" | "deployment.target_changed" | "deployment.symlink_not_supported" | "deployment.junction_not_supported" | "target.ownership_unknown" | "deployment.ownership_mismatch" | "deployment.security_check_blocked" | "operation.conflict" | "operation.id_reused_with_different_request" | "credential.unavailable" | "migration.required" | "database.newer_schema" | "internal.error" | "combination.nesting_not_allowed" | "catalog.invalid_metadata" | "requirements.invalid_declaration" | "agent_profile.invalid_capability" | "source.search_rate_limited" | "source.provider_authentication_unavailable" | "source.search_unavailable" | "network.disabled" | "call_policy.not_supported" | "ignore.only_exact_subjects_supported" | "llm.invalid_structured_response" | "llm.endpoint_not_allowed" | "llm.input_too_large" | "llm.evidence_reference_invalid";
@@ -820,6 +844,8 @@ export type RestoreDeployment = {
 export type RestoreOriginalCallPolicy = {
 	skill_id: SkillId,
 };
+
+export type RetentionRecommendation = "keep_a" | "keep_b" | "keep_both" | "archive_a" | "archive_b" | "manual_decision";
 
 export type RunBasicCheck = {
 	skill_id: SkillId,

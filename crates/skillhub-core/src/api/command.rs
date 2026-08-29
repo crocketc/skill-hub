@@ -305,6 +305,12 @@ pub struct RecheckLlmSafety {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 #[serde(deny_unknown_fields)]
+pub struct AnalyzeSemanticDuplicates {
+    pub skill_id: SkillId,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
 pub struct RunInitializationScan {
     pub scope_ids: Vec<String>,
 }
@@ -448,6 +454,8 @@ pub enum AppCommand {
     RunLlmSafetyCheck(RunLlmSafetyCheck),
     #[serde(rename = "recheck_llm_safety")]
     RecheckLlmSafety(RecheckLlmSafety),
+    #[serde(rename = "analyze_semantic_duplicates")]
+    AnalyzeSemanticDuplicates(AnalyzeSemanticDuplicates),
     #[serde(rename = "cancel_import")]
     CancelImport { prepared_import_id: OperationId },
     #[serde(rename = "run_initialization_scan")]
@@ -517,4 +525,6 @@ pub enum AppCommandResult {
     IgnoreRule(crate::IgnoreRule),
     #[serde(rename = "llm_safety_check_result")]
     LlmSafetyCheckResult(LlmSafetyCheckResult),
+    #[serde(rename = "duplicate_analysis")]
+    DuplicateAnalysis(crate::duplicate::DuplicateAnalysis),
 }

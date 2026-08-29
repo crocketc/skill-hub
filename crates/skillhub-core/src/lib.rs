@@ -6,6 +6,7 @@ pub mod call_policy;
 pub mod catalog;
 pub mod check;
 pub mod deployment;
+pub mod duplicate;
 mod error;
 pub mod health;
 mod ids;
@@ -29,24 +30,25 @@ pub use agent::{
     TargetScope,
 };
 pub use api::{
-    AnalyzeImport, AppCommand, AppCommandResult, AppEvent, AppQuery, AppQueryResult,
-    ApplicationFacade, ApplySourceUpdate, CheckSourceUpdate, CollectDeploymentChanges,
-    CommitCallPolicyChange, CommitDeleteSkill, CommitDeployment, CommitImport, CommitRepair,
-    CommitUndeploy, CreateIgnoreRule, DetachManagement, FactsChanged, GetCallPolicy,
-    GetDeploymentPlan, GetDeploymentRelations, GetLlmSafetyCheckResult, GetProjectAssemblyPlan,
-    GetReconcilePlan, GetRemovalImpact, IgnoreExternalChange, KeepIndependentCopy, ListDeployments,
-    Page, PrepareCallPolicyChange, PrepareDeleteSkill, PrepareDeployment, PrepareImport,
-    PrepareRepair, PrepareUndeploy, RecheckLlmSafety, RelinkSource, RemoveIgnoreRule,
-    ResolveRecovery, RestoreDeployment, RestoreOriginalCallPolicy, RunHealthCheck,
-    RunLlmSafetyCheck, SearchOnlineSources,
+    AnalyzeImport, AnalyzeSemanticDuplicates, AppCommand, AppCommandResult, AppEvent, AppQuery,
+    AppQueryResult, ApplicationFacade, ApplySourceUpdate, CheckSourceUpdate,
+    CollectDeploymentChanges, CommitCallPolicyChange, CommitDeleteSkill, CommitDeployment,
+    CommitImport, CommitRepair, CommitUndeploy, CreateIgnoreRule, DetachManagement, FactsChanged,
+    GetCallPolicy, GetDeploymentPlan, GetDeploymentRelations, GetLlmSafetyCheckResult,
+    GetProjectAssemblyPlan, GetReconcilePlan, GetRemovalImpact, IgnoreExternalChange,
+    KeepIndependentCopy, ListDeployments, Page, PrepareCallPolicyChange, PrepareDeleteSkill,
+    PrepareDeployment, PrepareImport, PrepareRepair, PrepareUndeploy, RecheckLlmSafety,
+    RelinkSource, RemoveIgnoreRule, ResolveRecovery, RestoreDeployment, RestoreOriginalCallPolicy,
+    RunHealthCheck, RunLlmSafetyCheck, SearchOnlineSources,
 };
 pub use application::{
     BasicCheckOutput, BasicCheckScanner, CallPolicyBackend, CallPolicyService, CheckService,
-    DeploymentBackend, DeploymentService, DeploymentSummary, HealthBackend, HealthService,
-    IgnoreBackend, IgnoreService, ImportBackend, ImportItemResult, ImportService, ImportSummary,
-    LlmSafetyService, OperationService, PreparedDeployment, PreparedImport, ProjectAssemblyService,
-    ReconcileBackend, ReconcileService, RecoveryBackend, RecoveryService, RemovalBackend,
-    RemovalService, TargetOperationResult, TargetOperationStatus, VersionMaterializer,
+    DeploymentBackend, DeploymentService, DeploymentSummary, DuplicateCandidateProvider,
+    DuplicateService, HealthBackend, HealthService, IgnoreBackend, IgnoreService, ImportBackend,
+    ImportItemResult, ImportService, ImportSummary, LlmSafetyService, OperationService,
+    PreparedDeployment, PreparedImport, ProjectAssemblyService, ReconcileBackend, ReconcileService,
+    RecoveryBackend, RecoveryService, RemovalBackend, RemovalService, TargetOperationResult,
+    TargetOperationStatus, VersionMaterializer,
 };
 pub use application::{WatchConfirmation, WatchHint, WatchHintKind, WatchService};
 pub use bootstrap::{

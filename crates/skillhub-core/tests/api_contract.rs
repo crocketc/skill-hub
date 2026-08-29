@@ -353,3 +353,14 @@ fn llm_safety_commands_and_query_have_stable_wire_shapes() {
         "get_llm_safety_check_result"
     );
 }
+
+#[test]
+fn semantic_duplicate_command_has_stable_wire_shape() {
+    let command = AppCommand::AnalyzeSemanticDuplicates(skillhub_core::AnalyzeSemanticDuplicates {
+        skill_id: skillhub_core::SkillId::new(),
+    });
+    assert_eq!(
+        serde_json::to_value(command).unwrap()["type"],
+        "analyze_semantic_duplicates"
+    );
+}

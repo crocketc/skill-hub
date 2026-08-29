@@ -1,0 +1,25 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["relations"],
+  "properties": {
+    "relations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["skill_a", "skill_b", "coverage", "shared_abilities", "unique_a", "unique_b", "evidence", "recommendation"],
+        "properties": {
+          "skill_a": {"type": "string"},
+          "skill_b": {"type": "string"},
+          "coverage": {"type": "string", "enum": ["a_contains_b", "b_contains_a", "overlap", "independent", "uncertain"]},
+          "shared_abilities": {"type": "array", "items": {"type": "string"}},
+          "unique_a": {"type": "array", "items": {"type": "string"}},
+          "unique_b": {"type": "array", "items": {"type": "string"}},
+          "evidence": {"type": "array", "items": {"type": "string"}},
+          "recommendation": {"type": "string", "enum": ["keep_a", "keep_b", "keep_both", "archive_a", "archive_b", "manual_decision"]}
+        }
+      }
+    }
+  }
+}
