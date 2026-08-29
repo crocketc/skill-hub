@@ -3,9 +3,11 @@ mod check_service;
 mod import_service;
 mod operation_service;
 mod project_assembly_service;
+mod source_service;
 mod version_service;
 mod watch_service;
 
+pub use crate::source::update::SourceUpdateBackend;
 pub use catalog_service::{CatalogService, PortableMetadataRepository};
 pub use check_service::{BasicCheckOutput, BasicCheckScanner, CheckService, VersionMaterializer};
 pub use import_service::{
@@ -13,6 +15,7 @@ pub use import_service::{
 };
 pub use operation_service::OperationService;
 pub use project_assembly_service::ProjectAssemblyService;
+pub use source_service::SourceService;
 pub use version_service::{
     CapturedVersion, ProjectVersionPinRepository, VersionCapture, VersionService,
 };

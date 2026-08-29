@@ -6,6 +6,7 @@ use crate::check::{CheckKind, FindingDisposition};
 use crate::import::{ImportCandidate, ImportDecision};
 use crate::project::{AssemblyPlan, Project, SavedProjectView, SharedProjectConfig};
 use crate::scan::ScanResult;
+use crate::source::{SourceDescriptor, UpdateDecision};
 use crate::{OperationId, OperationSummary, ProjectId, SkillId, VersionId};
 
 use super::query::BasicCheckResult;
@@ -146,6 +147,26 @@ pub struct CommitImport {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 #[serde(deny_unknown_fields)]
+pub struct RelinkSource {
+    pub skill_id: SkillId,
+    pub source: SourceDescriptor,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct CheckSourceUpdate {
+    pub skill_id: SkillId,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct ApplySourceUpdate {
+    pub skill_id: SkillId,
+    pub decision: UpdateDecision,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
 pub struct RunInitializationScan {
     pub scope_ids: Vec<String>,
 }
@@ -239,6 +260,12 @@ pub enum AppCommand {
     PrepareImport(PrepareImport),
     #[serde(rename = "commit_import")]
     CommitImport(CommitImport),
+    #[serde(rename = "relink_source")]
+    RelinkSource(RelinkSource),
+    #[serde(rename = "check_source_update")]
+    CheckSourceUpdate(CheckSourceUpdate),
+    #[serde(rename = "apply_source_update")]
+    ApplySourceUpdate(ApplySourceUpdate),
     #[serde(rename = "cancel_import")]
     CancelImport { prepared_import_id: OperationId },
     #[serde(rename = "run_initialization_scan")]
@@ -284,4 +311,8 @@ pub enum AppCommandResult {
     PreparedImport(Box<crate::application::PreparedImport>),
     #[serde(rename = "import_summary")]
     ImportSummary(Box<crate::application::ImportSummary>),
+    #[serde(rename = "upstream_check_result")]
+    UpstreamCheckResult(crate::source::UpstreamCheckResult),
+    #[serde(rename = "applied_source_update")]
+    AppliedSourceUpdate(crate::source::AppliedSourceUpdate),
 }

@@ -76,3 +76,32 @@ fn import_prepare_commit_and_cancel_have_stable_wire_shapes() {
         "cancel_import"
     );
 }
+
+#[test]
+fn source_update_commands_have_stable_wire_shapes() {
+    let skill_id = skillhub_core::SkillId::new();
+    let relink = AppCommand::RelinkSource(skillhub_core::RelinkSource {
+        skill_id,
+        source: SourceDescriptor::new(
+            SourceKind::Git,
+            SourceLocator::git_url("https://github.com/example/skill"),
+        ),
+    });
+    let check = AppCommand::CheckSourceUpdate(skillhub_core::CheckSourceUpdate { skill_id });
+    let apply = AppCommand::ApplySourceUpdate(skillhub_core::ApplySourceUpdate {
+        skill_id,
+        decision: skillhub_core::UpdateDecision::KeepLocal,
+    });
+    assert_eq!(
+        serde_json::to_value(relink).unwrap()["type"],
+        "relink_source"
+    );
+    assert_eq!(
+        serde_json::to_value(check).unwrap()["type"],
+        "check_source_update"
+    );
+    assert_eq!(
+        serde_json::to_value(apply).unwrap()["type"],
+        "apply_source_update"
+    );
+}

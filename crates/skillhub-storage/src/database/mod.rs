@@ -10,6 +10,7 @@ mod operation_repository;
 mod project_repository;
 mod scan_repository;
 mod search_repository;
+mod source_repository;
 
 use std::fmt;
 use std::path::Path;
@@ -31,6 +32,7 @@ pub use operation_repository::OperationRepositorySqlite;
 pub use project_repository::ProjectRepository;
 pub use scan_repository::ScanRepository;
 pub use search_repository::SearchRepository;
+pub use source_repository::SourceRepository;
 
 /// An application database backed by SQLite.
 pub struct Database {
@@ -78,6 +80,10 @@ impl Database {
 
     pub fn import_repository(&self) -> ImportRepository<'_> {
         ImportRepository::new(self)
+    }
+
+    pub fn source_repository(&self) -> SourceRepository<'_> {
+        SourceRepository::new(self)
     }
 
     pub fn scan_repository(&self) -> ScanRepository<'_> {
