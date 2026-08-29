@@ -64,4 +64,58 @@ describe("native skill detail facade", () => {
         error instanceof Error && error.name === "SkillDetailUnavailableError",
     );
   });
+
+  it("maps independent native check states when a current version exists", async () => {
+    vi.clearAllMocks();
+    vi.mocked(queryApplication)
+      .mockResolvedValueOnce({
+        type: "skill",
+        payload: {
+          skill_id: "skill-1",
+          display_name: "PDF Reader",
+          runtime_name: "pdf-reader",
+          original_description: "Extract tables",
+          translated_description: null,
+          user_note: null,
+          tags: [],
+          license: null,
+          lifecycle: "Normal",
+          trial_due: null,
+          current_version: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        },
+      })
+      .mockResolvedValueOnce({
+        type: "basic_check_result",
+        payload: {
+          skill_id: "skill-1",
+          version_id: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          state: "passed",
+          run_id: "basic-run",
+          ruleset_id: "rules-v1",
+          checked_at: "2026-08-29T00:00:00Z",
+          finding_count: 0,
+          actionable_count: 0,
+        },
+      })
+      .mockResolvedValueOnce({
+        type: "llm_safety_check_result",
+        payload: {
+          skill_id: "skill-1",
+          version_id: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          state: "failed",
+          run_id: "llm-run",
+          model_id: "model-v1",
+          checked_at: "2026-08-29T00:00:00Z",
+          finding_count: 1,
+          actionable_count: 1,
+        },
+      });
+
+    await expect(nativeSkillDetailFacade.getSummary("skill-1")).resolves.toMatchObject({
+      basicCheck: "passed",
+      aiCheck: "failed",
+      currentVersion: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    });
+    expect(queryApplication).toHaveBeenCalledTimes(3);
+  });
 });

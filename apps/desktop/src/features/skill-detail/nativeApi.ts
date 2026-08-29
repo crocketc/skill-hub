@@ -50,6 +50,28 @@ function summaryOf(skill: SkillResult): SkillDetailSummary {
   };
 }
 
+function checkStateOf(state: "not_checked" | "running" | "passed" | "failed"):
+  SkillDetailSummary["basicCheck"] {
+  if (state === "not_checked") return "not_run";
+  if (state === "running") return "warning";
+  return state;
+}
+
+async function checkState(
+  skillId: string,
+  versionId: string,
+  kind: "basic" | "llm",
+): Promise<SkillDetailSummary["basicCheck"]> {
+  const result = await queryApplication(
+    kind === "basic"
+      ? { type: "get_basic_check_result", payload: { skill_id: skillId, version_id: versionId } }
+      : { type: "get_llm_safety_check_result", payload: { skill_id: skillId, version_id: versionId } },
+  );
+  const expectedType = kind === "basic" ? "basic_check_result" : "llm_safety_check_result";
+  if (result.type !== expectedType) throw unavailableResult();
+  return checkStateOf(result.payload.state);
+}
+
 function metadataOf(skill: SkillResult): SkillMetadata {
   return {
     license: skill.license ?? undefined,
@@ -65,7 +87,14 @@ function metadataOf(skill: SkillResult): SkillMetadata {
 export const nativeSkillDetailFacade: SkillDetailFacade = {
   ...unavailableSkillDetailFacade,
   async getSummary(skillId) {
-    return summaryOf(await getSkill(skillId));
+    const skill = await getSkill(skillId);
+    const summary = summaryOf(skill);
+    if (!skill.current_version) return summary;
+    const [basicCheck, aiCheck] = await Promise.all([
+      checkState(skillId, skill.current_version, "basic"),
+      checkState(skillId, skill.current_version, "llm"),
+    ]);
+    return { ...summary, aiCheck, basicCheck };
   },
   async getMetadata(skillId) {
     return metadataOf(await getSkill(skillId));
