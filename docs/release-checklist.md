@@ -4,7 +4,7 @@
 
 ## 当前候选
 
-- 提交：Task11 验收工作树（基于 Task10 提交 `b80652f`）
+- 提交：`3bd4ae3db5e2ab4d6537877b2f62ef417bfcb301`
 - 日期：2026-08-29
 - 发布信任级别：Windows 未签名；macOS ad-hoc、未公证
 - 发布方式：GitHub Draft Release，人工核对后发布
@@ -18,7 +18,7 @@
 | Rust Clippy | 通过 | `cargo clippy --locked --workspace --all-targets --all-features -- -D warnings` |
 | Rust 测试 | 通过 | `cargo test --locked --workspace` |
 | 前端依赖安装 | 通过 | `pnpm install --frozen-lockfile --ignore-scripts` |
-| 前端审计 | 待在发布环境复核 | 官方 registry 通过；镜像若无审计端点需切换官方源 |
+| 前端审计 | 通过 | macOS 官方 registry 复核，0 个漏洞；用户镜像不支持端点时需临时切换官方源 |
 | 前端 lint/TypeScript | 通过 | `pnpm check:frontend` |
 | 前端测试 | 通过 | 52 个文件、307 项测试 |
 | 前端生产构建 | 通过 | `pnpm --dir apps/desktop build` |
@@ -28,8 +28,8 @@
 | 备份/恢复 | 待执行 | 需要在本提交重新采集证据 |
 | 性能基准 | 待执行 | 需要在本提交重新采集证据 |
 | Windows NSIS | 环境受限 | Rust release 编译通过；NSIS 工具下载被本机网络策略中止 |
-| macOS Universal DMG | 待执行 | 必须在 macOS runner/设备验证 |
-| Agent 真机接入 | 待执行 | 未安装客户端统一记录为未验证 |
+| macOS Universal DMG | 环境受限 | ARM64 编译通过；x86_64 Rust target 未安装且下载受网络阻塞 |
+| Agent 真机接入 | 部分通过 | Codex CLI、Claude Code 文件级通过；应用门面返回 `cli.not_connected` |
 
 ## 发布前人工确认
 
