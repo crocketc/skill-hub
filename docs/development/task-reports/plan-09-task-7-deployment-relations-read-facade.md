@@ -19,7 +19,8 @@
 - 新增测试覆盖：按 Skill 过滤、排除其他 Skill、排除计划中和已移除记录。
 - `cargo fmt --all -- --check`：通过。
 - `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings`：通过。
+- macOS `./scripts/ci-local.sh`：通过 10/10；Rust 与前端全量检查、315 项前端测试、安全审计和生产构建均通过。官方 npm 源用于审计后已恢复项目镜像配置。
 
 ## 后续
 
-需要在 macOS 上复核最新提交；后续 Task 再接入 Agent/项目目录投影、关系标签、检查状态和部署写操作，保持当前查询只反映已持久化事实。
+后续 Task 再接入 Agent/项目目录投影、关系标签、检查状态和部署写操作，保持当前查询只反映已持久化事实。
