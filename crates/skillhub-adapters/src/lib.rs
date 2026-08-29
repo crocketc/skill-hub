@@ -5,6 +5,7 @@ pub mod evidence;
 pub mod import;
 pub mod invocation;
 pub mod llm;
+pub mod logging;
 pub mod requirements;
 pub mod scanner;
 pub mod security;

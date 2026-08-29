@@ -54,9 +54,9 @@ pub use application::{
     DuplicateService, HealthBackend, HealthService, IgnoreBackend, IgnoreService, ImportBackend,
     ImportItemResult, ImportService, ImportSummary, LlmSafetyService, OperationService,
     PreparedDeployment, PreparedImport, ProjectAssemblyService, ReconcileBackend, ReconcileService,
-    RecoveryBackend, RecoveryService, RemovalBackend, RemovalService, SearchQueryService,
-    TargetOperationResult, TargetOperationStatus, TranslationRepository, TranslationService,
-    VersionMaterializer,
+    RecoveryBackend, RecoveryService, RemovalBackend, RemovalService, RuntimeScheduler,
+    SearchQueryService, TargetOperationResult, TargetOperationStatus, TranslationRepository,
+    TranslationService, VersionMaterializer,
 };
 pub use application::{WatchConfirmation, WatchHint, WatchHintKind, WatchService};
 pub use bootstrap::{
