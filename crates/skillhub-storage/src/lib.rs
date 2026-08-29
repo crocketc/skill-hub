@@ -7,7 +7,7 @@ mod version_store;
 pub use database::{
     CatalogRepositorySqlite, CheckRepositorySqlite, CustomAgentRepository, Database,
     DeploymentRepository, DeploymentRepositorySqlite, ImportRepository, LlmProfileRepository,
-    MigrationReport, OperationRepositorySqlite, ProjectRepository, ScanRepository,
+    MigrationReport, OperationRepositorySqlite, ProjectRepository, RecoveryPoint, ScanRepository,
     SearchRepository, UsageEvidenceRepository,
 };
 pub use library::{CentralLibrary, ManifestFaultHandler, PortableManifestStore};

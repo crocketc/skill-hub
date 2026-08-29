@@ -10,6 +10,7 @@ mod llm_profile_repository;
 mod migrations;
 mod operation_repository;
 mod project_repository;
+pub mod recovery_point;
 mod scan_repository;
 mod search_repository;
 mod source_repository;
@@ -35,6 +36,7 @@ pub use llm_profile_repository::LlmProfileRepository;
 pub use migrations::MigrationReport;
 pub use operation_repository::OperationRepositorySqlite;
 pub use project_repository::ProjectRepository;
+pub use recovery_point::RecoveryPoint;
 pub use scan_repository::ScanRepository;
 pub use search_repository::SearchRepository;
 pub use source_repository::SourceRepository;
@@ -122,14 +124,46 @@ impl Database {
     }
     /// Opens a database file and applies all migrations required by this build.
     pub fn open(path: impl AsRef<Path>) -> AppResult<Self> {
-        let mut connection = Connection::open(path).map_err(database_error)?;
-        enable_foreign_keys(&connection)?;
-        let migration_report = migrations::run(&mut connection)?;
-        Ok(Self {
+        let path = path.as_ref();
+        let recovery = recovery_point::RecoveryPoint::create(path)?;
+        let mut connection = match Connection::open(path) {
+            Ok(connection) => connection,
+            Err(error) => {
+                if let Some(point) = recovery {
+                    point.restore()?;
+                    point.discard()?;
+                }
+                return Err(database_error(error));
+            }
+        };
+        if let Err(error) = enable_foreign_keys(&connection) {
+            drop(connection);
+            if let Some(point) = recovery {
+                point.restore()?;
+                point.discard()?;
+            }
+            return Err(error);
+        }
+        let migration_report = match migrations::run(&mut connection) {
+            Ok(report) => report,
+            Err(error) => {
+                drop(connection);
+                if let Some(point) = recovery {
+                    point.restore()?;
+                    point.discard()?;
+                }
+                return Err(error);
+            }
+        };
+        let database = Self {
             connection,
             migration_report,
             operation_writer: Arc::new(Mutex::new(())),
-        })
+        };
+        if let Some(point) = recovery {
+            point.discard()?;
+        }
+        Ok(database)
     }
 
     /// Opens an isolated in-memory database and applies all migrations.
