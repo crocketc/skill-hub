@@ -1,6 +1,7 @@
 mod model;
 mod planner;
 pub mod reconcile;
+pub mod removal;
 
 pub use model::{
     DeploymentCapabilities, DeploymentMode, DeploymentPlan, DeploymentPlanInput,
@@ -12,6 +13,9 @@ pub use model::{
 pub use planner::DeploymentPlanner;
 pub use reconcile::{
     ExternalChangeObservation, ExternalChangeState, ReconcileAction, ReconcilePlan, ReconcileResult,
+};
+pub use removal::{
+    DeploymentRemovalResult, RemovalChoice, RemovalDecision, RemovalImpact, RemovalResult,
 };
 
 /// Resolves logical IDs selected by an API caller to currently verified target

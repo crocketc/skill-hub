@@ -203,6 +203,38 @@ pub struct IgnoreExternalChange {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 #[serde(deny_unknown_fields)]
+pub struct PrepareUndeploy {
+    pub deployment_id: crate::DeploymentId,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct CommitUndeploy {
+    pub prepared_undeploy_id: OperationId,
+    pub decision: crate::RemovalDecision,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct PrepareDeleteSkill {
+    pub skill_id: SkillId,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct CommitDeleteSkill {
+    pub prepared_delete_id: OperationId,
+    pub decisions: Vec<crate::RemovalChoice>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct DetachManagement {
+    pub deployment_id: crate::DeploymentId,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
 pub struct RunInitializationScan {
     pub scope_ids: Vec<String>,
 }
@@ -314,6 +346,16 @@ pub enum AppCommand {
     KeepIndependentCopy(KeepIndependentCopy),
     #[serde(rename = "ignore_external_change")]
     IgnoreExternalChange(IgnoreExternalChange),
+    #[serde(rename = "prepare_undeploy")]
+    PrepareUndeploy(PrepareUndeploy),
+    #[serde(rename = "commit_undeploy")]
+    CommitUndeploy(CommitUndeploy),
+    #[serde(rename = "prepare_delete_skill")]
+    PrepareDeleteSkill(PrepareDeleteSkill),
+    #[serde(rename = "commit_delete_skill")]
+    CommitDeleteSkill(CommitDeleteSkill),
+    #[serde(rename = "detach_management")]
+    DetachManagement(DetachManagement),
     #[serde(rename = "cancel_import")]
     CancelImport { prepared_import_id: OperationId },
     #[serde(rename = "run_initialization_scan")]
@@ -369,4 +411,8 @@ pub enum AppCommandResult {
     DeploymentSummary(Box<crate::application::DeploymentSummary>),
     #[serde(rename = "reconcile_result")]
     ReconcileResult(crate::ReconcileResult),
+    #[serde(rename = "removal_impact")]
+    RemovalImpact(crate::RemovalImpact),
+    #[serde(rename = "removal_result")]
+    RemovalResult(crate::RemovalResult),
 }

@@ -190,6 +190,12 @@ pub struct GetReconcilePlan {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct GetRemovalImpact {
+    pub skill_id: SkillId,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 pub struct GetProjectAssemblyPlan {
     pub project_id: crate::ProjectId,
 }
@@ -231,6 +237,8 @@ pub enum AppQuery {
     GetDeploymentRelations(GetDeploymentRelations),
     #[serde(rename = "get_reconcile_plan")]
     GetReconcilePlan(GetReconcilePlan),
+    #[serde(rename = "get_removal_impact")]
+    GetRemovalImpact(GetRemovalImpact),
     #[serde(rename = "get_basic_check_result")]
     GetBasicCheckResult(GetBasicCheckResult),
     #[serde(rename = "list_findings")]
@@ -276,6 +284,8 @@ pub enum AppQueryResult {
     DeploymentRelations(Vec<crate::DeploymentRecord>),
     #[serde(rename = "reconcile_plan")]
     ReconcilePlan(crate::ReconcilePlan),
+    #[serde(rename = "removal_impact")]
+    RemovalImpact(crate::RemovalImpact),
     #[serde(rename = "basic_check_result")]
     BasicCheckResult(BasicCheckResult),
     #[serde(rename = "findings")]

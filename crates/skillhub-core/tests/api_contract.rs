@@ -187,3 +187,40 @@ fn external_change_commands_and_query_have_stable_wire_shapes() {
         "get_reconcile_plan"
     );
 }
+
+#[test]
+fn removal_commands_and_query_have_stable_wire_shapes() {
+    let skill_id = skillhub_core::SkillId::new();
+    let deployment_id = skillhub_core::DeploymentId::new();
+    let commands = [
+        AppCommand::PrepareUndeploy(skillhub_core::PrepareUndeploy { deployment_id }),
+        AppCommand::CommitUndeploy(skillhub_core::CommitUndeploy {
+            prepared_undeploy_id: skillhub_core::OperationId::new(),
+            decision: skillhub_core::RemovalDecision::KeepSharedDeployment,
+        }),
+        AppCommand::PrepareDeleteSkill(skillhub_core::PrepareDeleteSkill { skill_id }),
+        AppCommand::CommitDeleteSkill(skillhub_core::CommitDeleteSkill {
+            prepared_delete_id: skillhub_core::OperationId::new(),
+            decisions: vec![],
+        }),
+        AppCommand::DetachManagement(skillhub_core::DetachManagement { deployment_id }),
+    ];
+    let expected = [
+        "prepare_undeploy",
+        "commit_undeploy",
+        "prepare_delete_skill",
+        "commit_delete_skill",
+        "detach_management",
+    ];
+    for (command, expected_type) in commands.into_iter().zip(expected) {
+        assert_eq!(
+            serde_json::to_value(command).unwrap()["type"],
+            expected_type
+        );
+    }
+    let query = AppQuery::GetRemovalImpact(skillhub_core::GetRemovalImpact { skill_id });
+    assert_eq!(
+        serde_json::to_value(query).unwrap()["type"],
+        "get_removal_impact"
+    );
+}

@@ -5,6 +5,7 @@ mod import_service;
 mod operation_service;
 mod project_assembly_service;
 mod reconcile_service;
+mod removal_service;
 mod source_service;
 mod version_service;
 mod watch_service;
@@ -22,6 +23,7 @@ pub use import_service::{
 pub use operation_service::OperationService;
 pub use project_assembly_service::ProjectAssemblyService;
 pub use reconcile_service::{ReconcileBackend, ReconcileService};
+pub use removal_service::{RemovalBackend, RemovalService};
 pub use source_service::SourceService;
 pub use version_service::{
     CapturedVersion, ProjectVersionPinRepository, VersionCapture, VersionService,

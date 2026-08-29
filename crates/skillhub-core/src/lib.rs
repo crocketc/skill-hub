@@ -27,16 +27,18 @@ pub use agent::{
 pub use api::{
     AnalyzeImport, AppCommand, AppCommandResult, AppEvent, AppQuery, AppQueryResult,
     ApplicationFacade, ApplySourceUpdate, CheckSourceUpdate, CollectDeploymentChanges,
-    CommitDeployment, CommitImport, FactsChanged, GetDeploymentPlan, GetDeploymentRelations,
-    GetProjectAssemblyPlan, GetReconcilePlan, IgnoreExternalChange, KeepIndependentCopy,
-    ListDeployments, Page, PrepareDeployment, PrepareImport, RelinkSource, RestoreDeployment,
-    SearchOnlineSources,
+    CommitDeleteSkill, CommitDeployment, CommitImport, CommitUndeploy, DetachManagement,
+    FactsChanged, GetDeploymentPlan, GetDeploymentRelations, GetProjectAssemblyPlan,
+    GetReconcilePlan, GetRemovalImpact, IgnoreExternalChange, KeepIndependentCopy, ListDeployments,
+    Page, PrepareDeleteSkill, PrepareDeployment, PrepareImport, PrepareUndeploy, RelinkSource,
+    RestoreDeployment, SearchOnlineSources,
 };
 pub use application::{
     BasicCheckOutput, BasicCheckScanner, CheckService, DeploymentBackend, DeploymentService,
     DeploymentSummary, ImportBackend, ImportItemResult, ImportService, ImportSummary,
     OperationService, PreparedDeployment, PreparedImport, ProjectAssemblyService, ReconcileBackend,
-    ReconcileService, TargetOperationResult, TargetOperationStatus, VersionMaterializer,
+    ReconcileService, RemovalBackend, RemovalService, TargetOperationResult, TargetOperationStatus,
+    VersionMaterializer,
 };
 pub use application::{WatchConfirmation, WatchHint, WatchHintKind, WatchService};
 pub use bootstrap::{
@@ -54,6 +56,9 @@ pub use path_policy::{physical_id_for_path, AllowedRoot, AllowedRootId, PathPoli
 pub use catalog::{LibraryManifest, LibraryPaths, PortableSkillRecord};
 pub use deployment::reconcile::{
     ExternalChangeObservation, ExternalChangeState, ReconcileAction, ReconcilePlan, ReconcileResult,
+};
+pub use deployment::removal::{
+    DeploymentRemovalResult, RemovalChoice, RemovalDecision, RemovalImpact, RemovalResult,
 };
 pub use deployment::{
     DeploymentCapabilities, DeploymentMode, DeploymentPlan, DeploymentPlanInput,
