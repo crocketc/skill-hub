@@ -2,6 +2,9 @@ mod command;
 mod event;
 mod query;
 
+pub use crate::app_update::{
+    CheckApplicationUpdate, OpenOfficialRelease, SetApplicationUpdatePolicy,
+};
 pub use crate::deployment::DeploymentPlanRequest;
 pub use command::{
     AnalyzeSemanticDuplicates, AppCommand, AppCommandResult, ApplySourceUpdate,
@@ -27,9 +30,9 @@ pub use query::{
     CombinationResult, DiffVersions, FindingResult, GetBasicCheckResult, GetBootstrapSnapshot,
     GetCallPolicy, GetDeploymentPlan, GetDeploymentRelations, GetDiscoverySnapshot,
     GetLlmSafetyCheckResult, GetProjectAssemblyPlan, GetReconcilePlan, GetRemovalImpact, GetSkill,
-    ListCombinations, ListCustomAgents, ListDeployments, ListFindings, ListPendingItems,
-    ListProjects, ListSavedProjectViews, ListVersions, LlmSafetyCheckResult, SearchOnlineSources,
-    SkillResult, VersionDiffResult, VersionResult,
+    ListCombinations, ListCustomAgents, ListDeployments, ListFindings, ListProjects,
+    ListSavedProjectViews, ListVersions, LlmSafetyCheckResult, SearchOnlineSources, SkillResult,
+    VersionDiffResult, VersionResult,
 };
 
 use crate::AppResult;

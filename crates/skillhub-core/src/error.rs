@@ -79,6 +79,10 @@ pub enum ErrorCode {
     BackupRestoreDecisionRequired,
     #[serde(rename = "backup.export_decision_required")]
     BackupExportDecisionRequired,
+    #[serde(rename = "application_update.unavailable")]
+    ApplicationUpdateUnavailable,
+    #[serde(rename = "application_update.install_blocked")]
+    ApplicationUpdateInstallBlocked,
 }
 
 #[allow(non_upper_case_globals)]
@@ -130,6 +134,8 @@ impl ErrorCode {
             Self::BackupSensitiveDecisionRequired => "backup.sensitive_decision_required",
             Self::BackupRestoreDecisionRequired => "backup.restore_decision_required",
             Self::BackupExportDecisionRequired => "backup.export_decision_required",
+            Self::ApplicationUpdateUnavailable => "application_update.unavailable",
+            Self::ApplicationUpdateInstallBlocked => "application_update.install_blocked",
         }
     }
 }

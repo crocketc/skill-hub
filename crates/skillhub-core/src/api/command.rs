@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::agent::{CustomAgent, CustomAgentDraft, CustomAgentOverride, PathGrant};
+use crate::app_update::{ApplicationUpdate, OpenOfficialRelease, SetApplicationUpdatePolicy};
 use crate::backup::{
     BackupManifest, BackupPlan, BackupRetentionPolicy, BackupRetentionResult, BackupScope,
     RestoreConflictDecision, RestorePlan, RestoreResult, SensitiveContentDecision,
@@ -466,6 +467,10 @@ pub struct SetFindingDisposition {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 #[serde(tag = "type", content = "payload")]
 pub enum AppCommand {
+    #[serde(rename = "open_official_release")]
+    OpenOfficialRelease(OpenOfficialRelease),
+    #[serde(rename = "set_application_update_policy")]
+    SetApplicationUpdatePolicy(SetApplicationUpdatePolicy),
     #[serde(rename = "create_skill")]
     CreateSkill(CreateSkill),
     #[serde(rename = "save_skill_content")]
@@ -615,6 +620,10 @@ pub enum AppCommand {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 #[serde(tag = "type", content = "payload")]
 pub enum AppCommandResult {
+    #[serde(rename = "application_update")]
+    ApplicationUpdate(ApplicationUpdate),
+    #[serde(rename = "application_update_policy")]
+    ApplicationUpdatePolicy(crate::ApplicationUpdatePolicy),
     #[serde(rename = "operation_summary")]
     OperationSummary(OperationSummary),
     #[serde(rename = "custom_agent")]

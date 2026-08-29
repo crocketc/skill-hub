@@ -1,4 +1,5 @@
 use crate::agent::{CustomAgent, DiscoverySnapshot};
+use crate::app_update::{ApplicationUpdate, CheckApplicationUpdate};
 use crate::check::{
     CheckKind, CheckResult as DomainCheckResult, CheckState, Finding, FindingDisposition,
 };
@@ -268,6 +269,8 @@ pub struct GetProjectAssemblyPlan {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 #[serde(tag = "type", content = "payload")]
 pub enum AppQuery {
+    #[serde(rename = "check_application_update")]
+    CheckApplicationUpdate(CheckApplicationUpdate),
     #[serde(rename = "get_skill")]
     GetSkill(GetSkill),
     #[serde(rename = "list_versions")]
@@ -325,6 +328,8 @@ pub enum AppQuery {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 #[serde(tag = "type", content = "payload")]
 pub enum AppQueryResult {
+    #[serde(rename = "application_update")]
+    ApplicationUpdate(ApplicationUpdate),
     #[serde(rename = "skill")]
     Skill(SkillResult),
     #[serde(rename = "versions")]

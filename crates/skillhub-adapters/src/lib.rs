@@ -1,4 +1,5 @@
 pub mod agent;
+pub mod app_update;
 pub mod credentials;
 pub mod deployment;
 pub mod evidence;

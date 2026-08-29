@@ -1,4 +1,5 @@
 mod agent_repository;
+mod app_update_repository;
 mod bootstrap_repository;
 mod catalog_repository;
 mod check_repository;
@@ -25,6 +26,7 @@ use skillhub_core::{AppError, AppResult, ErrorCode, RecoveryAction, Severity};
 use tokio::sync::Mutex;
 
 pub use agent_repository::AgentRepository;
+pub use app_update_repository::ApplicationUpdateRepository;
 pub use bootstrap_repository::BootstrapRepository;
 pub use catalog_repository::CatalogRepositorySqlite;
 pub use check_repository::CheckRepositorySqlite;
@@ -76,6 +78,10 @@ impl Database {
 
     pub fn agent_repository(&self) -> AgentRepository<'_> {
         AgentRepository::new(self)
+    }
+
+    pub fn application_update_repository(&self) -> ApplicationUpdateRepository<'_> {
+        ApplicationUpdateRepository::new(self)
     }
 
     pub fn custom_agent_repository(&self) -> CustomAgentRepository<'_> {
