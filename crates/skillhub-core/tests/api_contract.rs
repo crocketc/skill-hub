@@ -105,3 +105,14 @@ fn source_update_commands_have_stable_wire_shapes() {
         "apply_source_update"
     );
 }
+
+#[test]
+fn online_source_search_query_has_stable_wire_shape() {
+    let query = AppQuery::SearchOnlineSources(skillhub_core::SearchOnlineSources {
+        query: skillhub_core::SourceSearchQuery::new("pdf"),
+    });
+    assert_eq!(
+        serde_json::to_value(query).unwrap()["type"],
+        "search_online_sources"
+    );
+}

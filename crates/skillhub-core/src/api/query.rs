@@ -5,6 +5,7 @@ use crate::check::{
 use crate::import::{ImportAnalysis, ImportCandidate};
 use crate::project::{AssemblyPlan, Project, SavedProjectView};
 use crate::search::{SearchHit, SearchQuery};
+use crate::source::{SourceSearchPage, SourceSearchQuery};
 use crate::{
     BootstrapSnapshot, DeploymentPlan, DeploymentPlanRequest, Severity, SkillId, VersionId,
 };
@@ -70,6 +71,12 @@ pub struct ListSavedProjectViews;
 pub struct AnalyzeImport {
     pub candidate: ImportCandidate,
     pub tree_hash: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct SearchOnlineSources {
+    pub query: SourceSearchQuery,
 }
 
 /// Registered logical target IDs for a side-effect-free deployment preview.
@@ -196,6 +203,8 @@ pub enum AppQuery {
     ListSavedProjectViews(ListSavedProjectViews),
     #[serde(rename = "analyze_import")]
     AnalyzeImport(AnalyzeImport),
+    #[serde(rename = "search_online_sources")]
+    SearchOnlineSources(SearchOnlineSources),
     #[serde(rename = "get_deployment_plan")]
     GetDeploymentPlan(GetDeploymentPlan),
     #[serde(rename = "get_basic_check_result")]
@@ -233,6 +242,8 @@ pub enum AppQueryResult {
     SavedProjectViews(Vec<SavedProjectView>),
     #[serde(rename = "import_analysis")]
     ImportAnalysis(ImportAnalysis),
+    #[serde(rename = "source_search_page")]
+    SourceSearchPage(SourceSearchPage),
     #[serde(rename = "deployment_plan")]
     DeploymentPlan(DeploymentPlan),
     #[serde(rename = "basic_check_result")]

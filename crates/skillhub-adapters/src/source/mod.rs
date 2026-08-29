@@ -4,6 +4,7 @@ mod git;
 mod http;
 mod parser;
 mod redirect_policy;
+mod skills_sh;
 
 pub use acquisition::{
     AcquiredSource, AcquisitionError, AcquisitionErrorCode, AcquisitionLimits, AcquisitionResult,
@@ -16,3 +17,4 @@ pub use http::{
 };
 pub use parser::SourceInputParser;
 pub use redirect_policy::RedirectPolicy;
+pub use skills_sh::SkillsShProvider;

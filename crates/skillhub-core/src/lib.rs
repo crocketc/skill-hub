@@ -28,6 +28,7 @@ pub use api::{
     AnalyzeImport, AppCommand, AppCommandResult, AppEvent, AppQuery, AppQueryResult,
     ApplicationFacade, ApplySourceUpdate, CheckSourceUpdate, CommitImport, FactsChanged,
     GetDeploymentPlan, GetProjectAssemblyPlan, Page, PrepareImport, RelinkSource,
+    SearchOnlineSources,
 };
 pub use application::{
     BasicCheckOutput, BasicCheckScanner, CheckService, ImportBackend, ImportItemResult,
@@ -74,5 +75,8 @@ pub use scan::{DiscoveredSkill, ScanGeneration, ScanIssue, ScanRepository, ScanR
 pub use source::{
     AppliedSourceUpdate, SourceState, SourceUpdateBackend, UpdateDecision, UpstreamCheckResult,
 };
-pub use source::{SourceDescriptor, SourceKind, SourceLocator};
+pub use source::{
+    SourceDescriptor, SourceKind, SourceLocator, SourceSearchHit, SourceSearchPage,
+    SourceSearchQuery,
+};
 pub use versioning::{FileEntry, VersionDiff, VersionManifest, VersionRecord, VersionRepository};

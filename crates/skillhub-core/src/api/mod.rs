@@ -18,8 +18,8 @@ pub use query::{
     AnalyzeImport, AppQuery, AppQueryResult, BasicCheckResult, CombinationResult, DiffVersions,
     FindingResult, GetBasicCheckResult, GetBootstrapSnapshot, GetDeploymentPlan,
     GetDiscoverySnapshot, GetProjectAssemblyPlan, GetSkill, ListCombinations, ListCustomAgents,
-    ListFindings, ListPendingItems, ListProjects, ListSavedProjectViews, ListVersions, SkillResult,
-    VersionDiffResult, VersionResult,
+    ListFindings, ListPendingItems, ListProjects, ListSavedProjectViews, ListVersions,
+    SearchOnlineSources, SkillResult, VersionDiffResult, VersionResult,
 };
 
 use crate::AppResult;

@@ -47,6 +47,14 @@ pub enum ErrorCode {
     RequirementsInvalidDeclaration,
     #[serde(rename = "agent_profile.invalid_capability")]
     AgentProfileInvalidCapability,
+    #[serde(rename = "source.search_rate_limited")]
+    SourceSearchRateLimited,
+    #[serde(rename = "source.provider_authentication_unavailable")]
+    SourceProviderAuthenticationUnavailable,
+    #[serde(rename = "source.search_unavailable")]
+    SourceSearchUnavailable,
+    #[serde(rename = "network.disabled")]
+    NetworkDisabled,
 }
 
 #[allow(non_upper_case_globals)]
@@ -78,6 +86,12 @@ impl ErrorCode {
             Self::CatalogInvalidMetadata => "catalog.invalid_metadata",
             Self::RequirementsInvalidDeclaration => "requirements.invalid_declaration",
             Self::AgentProfileInvalidCapability => "agent_profile.invalid_capability",
+            Self::SourceSearchRateLimited => "source.search_rate_limited",
+            Self::SourceProviderAuthenticationUnavailable => {
+                "source.provider_authentication_unavailable"
+            }
+            Self::SourceSearchUnavailable => "source.search_unavailable",
+            Self::NetworkDisabled => "network.disabled",
         }
     }
 }
