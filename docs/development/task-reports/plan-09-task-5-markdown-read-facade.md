@@ -1,6 +1,6 @@
 # Plan 09 Task 5：集中库 Markdown 安全只读预览
 
-状态：已完成代码实现，待 macOS 端完整 CI 复核
+状态：已完成
 
 ## 目标
 
@@ -22,7 +22,8 @@
 - `cargo test --workspace --locked`：通过。
 - `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings`：通过。
 - `cargo test -p skillhub-desktop --lib generate_bindings`：通过。
-- Windows 前端检查：TypeScript、ESLint、Vitest（55 个文件、315 项测试）和生产构建均通过。此前失败是本机 pnpm 安装索引和虚拟依赖链接损坏；已停止挂起的安装进程并按锁文件重建本地生成依赖目录，未修改源码、lockfile 或依赖版本。完整跨平台 CI 仍待 macOS 端复核。
+- Windows 前端检查：TypeScript、ESLint、Vitest（55 个文件、315 项测试）和生产构建均通过。此前失败是本机 pnpm 安装索引和虚拟依赖链接损坏；已停止挂起的安装进程并按锁文件重建本地生成依赖目录，未修改源码、lockfile 或依赖版本。
+- macOS 完整本地 CI：10/10 通过，Rust 测试包含 Markdown 查询回归；前端 55 个测试文件、315 项测试通过，安全审计 0 个漏洞，生产构建通过。详情页真实只读复核确认默认读取 `SKILL.md`、返回内容身份且 `editable: false`。
 
 ## 明确未包含
 
