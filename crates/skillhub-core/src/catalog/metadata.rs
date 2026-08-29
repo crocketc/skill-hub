@@ -6,8 +6,8 @@ pub enum TranslationState {
     Translated,
 }
 
-#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
-pub enum CallPolicy {
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize, specta::Type)]
+pub enum SkillCallPolicy {
     /// The Skill can be selected by the model or explicitly by the user.
     #[default]
     AutomaticAndManual,
@@ -18,6 +18,8 @@ pub enum CallPolicy {
     /// Neither automatic nor explicit invocation is currently available.
     Disabled,
 }
+
+pub type CallPolicy = SkillCallPolicy;
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum RequirementKind {

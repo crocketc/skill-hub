@@ -258,6 +258,25 @@ pub struct ResolveRecovery {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 #[serde(deny_unknown_fields)]
+pub struct PrepareCallPolicyChange {
+    pub skill_id: SkillId,
+    pub policy: crate::catalog::CallPolicy,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct CommitCallPolicyChange {
+    pub plan_id: OperationId,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct RestoreOriginalCallPolicy {
+    pub skill_id: SkillId,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
 pub struct RunInitializationScan {
     pub scope_ids: Vec<String>,
 }
@@ -387,6 +406,12 @@ pub enum AppCommand {
     CommitRepair(CommitRepair),
     #[serde(rename = "resolve_recovery")]
     ResolveRecovery(ResolveRecovery),
+    #[serde(rename = "prepare_call_policy_change")]
+    PrepareCallPolicyChange(PrepareCallPolicyChange),
+    #[serde(rename = "commit_call_policy_change")]
+    CommitCallPolicyChange(CommitCallPolicyChange),
+    #[serde(rename = "restore_original_call_policy")]
+    RestoreOriginalCallPolicy(RestoreOriginalCallPolicy),
     #[serde(rename = "cancel_import")]
     CancelImport { prepared_import_id: OperationId },
     #[serde(rename = "run_initialization_scan")]
@@ -450,4 +475,6 @@ pub enum AppCommandResult {
     HealthReport(crate::HealthReport),
     #[serde(rename = "repair_plan")]
     RepairPlan(crate::RepairPlan),
+    #[serde(rename = "call_policy_plan")]
+    CallPolicyPlan(crate::CallPolicyPlan),
 }

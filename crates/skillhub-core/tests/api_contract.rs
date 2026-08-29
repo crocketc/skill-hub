@@ -260,3 +260,37 @@ fn health_and_recovery_commands_and_queries_have_stable_wire_shapes() {
         "list_recovery_candidates"
     );
 }
+
+#[test]
+fn call_policy_commands_and_query_have_stable_wire_shapes() {
+    let skill_id = skillhub_core::SkillId::new();
+    let operation_id = skillhub_core::OperationId::new();
+    let commands = [
+        AppCommand::PrepareCallPolicyChange(skillhub_core::PrepareCallPolicyChange {
+            skill_id,
+            policy: skillhub_core::catalog::CallPolicy::ManualOnly,
+        }),
+        AppCommand::CommitCallPolicyChange(skillhub_core::CommitCallPolicyChange {
+            plan_id: operation_id,
+        }),
+        AppCommand::RestoreOriginalCallPolicy(skillhub_core::RestoreOriginalCallPolicy {
+            skill_id,
+        }),
+    ];
+    let expected = [
+        "prepare_call_policy_change",
+        "commit_call_policy_change",
+        "restore_original_call_policy",
+    ];
+    for (command, expected_type) in commands.into_iter().zip(expected) {
+        assert_eq!(
+            serde_json::to_value(command).unwrap()["type"],
+            expected_type
+        );
+    }
+    let query = AppQuery::GetCallPolicy(skillhub_core::GetCallPolicy { skill_id });
+    assert_eq!(
+        serde_json::to_value(query).unwrap()["type"],
+        "get_call_policy"
+    );
+}

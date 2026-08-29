@@ -5,12 +5,13 @@ mod query;
 pub use crate::deployment::DeploymentPlanRequest;
 pub use command::{
     AppCommand, AppCommandResult, ApplySourceUpdate, CheckSourceUpdate, CollectDeploymentChanges,
-    CommitDeleteSkill, CommitDeployment, CommitImport, CommitProjectAssembly, CommitRepair,
-    CommitUndeploy, CreateCombination, CreateCustomAgent, CreateSkill, DetachManagement,
-    IgnoreExternalChange, KeepIndependentCopy, PinProjectSkillVersion, PrepareDeleteSkill,
-    PrepareDeployment, PrepareImport, PrepareProjectAssembly, PrepareRepair, PrepareUndeploy,
-    ReadSharedProjectConfig, RecheckBasic, RegisterProject, RelinkSource, RemoveCustomAgent,
-    RenameSkill, RescanSkill, ResetProfileOverride, ResolveRecovery, RestoreDeployment,
+    CommitCallPolicyChange, CommitDeleteSkill, CommitDeployment, CommitImport,
+    CommitProjectAssembly, CommitRepair, CommitUndeploy, CreateCombination, CreateCustomAgent,
+    CreateSkill, DetachManagement, IgnoreExternalChange, KeepIndependentCopy,
+    PinProjectSkillVersion, PrepareCallPolicyChange, PrepareDeleteSkill, PrepareDeployment,
+    PrepareImport, PrepareProjectAssembly, PrepareRepair, PrepareUndeploy, ReadSharedProjectConfig,
+    RecheckBasic, RegisterProject, RelinkSource, RemoveCustomAgent, RenameSkill, RescanSkill,
+    ResetProfileOverride, ResolveRecovery, RestoreDeployment, RestoreOriginalCallPolicy,
     RunBasicCheck, RunHealthCheck, RunInitializationScan, SaveProjectView, SaveSkillContent,
     ScanTargets, SetCurrentVersion, SetFindingDisposition, SetLifecycle, SetMetadata,
     SetProfileOverride, SetProjectTags, SetTrial, UpdateCustomAgent, UpdateProject,
@@ -19,7 +20,7 @@ pub use command::{
 pub use event::{AppEvent, FactsChanged};
 pub use query::{
     AnalyzeImport, AppQuery, AppQueryResult, BasicCheckResult, CombinationResult, DiffVersions,
-    FindingResult, GetBasicCheckResult, GetBootstrapSnapshot, GetDeploymentPlan,
+    FindingResult, GetBasicCheckResult, GetBootstrapSnapshot, GetCallPolicy, GetDeploymentPlan,
     GetDeploymentRelations, GetDiscoverySnapshot, GetProjectAssemblyPlan, GetReconcilePlan,
     GetRemovalImpact, GetSkill, ListCombinations, ListCustomAgents, ListDeployments, ListFindings,
     ListPendingItems, ListProjects, ListSavedProjectViews, ListVersions, SearchOnlineSources,

@@ -55,6 +55,8 @@ pub enum ErrorCode {
     SourceSearchUnavailable,
     #[serde(rename = "network.disabled")]
     NetworkDisabled,
+    #[serde(rename = "call_policy.not_supported")]
+    CallPolicyNotSupported,
 }
 
 #[allow(non_upper_case_globals)]
@@ -92,6 +94,7 @@ impl ErrorCode {
             }
             Self::SourceSearchUnavailable => "source.search_unavailable",
             Self::NetworkDisabled => "network.disabled",
+            Self::CallPolicyNotSupported => "call_policy.not_supported",
         }
     }
 }

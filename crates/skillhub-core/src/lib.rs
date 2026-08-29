@@ -2,6 +2,7 @@ pub mod agent;
 pub mod api;
 pub mod application;
 pub mod bootstrap;
+pub mod call_policy;
 pub mod catalog;
 pub mod check;
 pub mod deployment;
@@ -28,20 +29,21 @@ pub use agent::{
 pub use api::{
     AnalyzeImport, AppCommand, AppCommandResult, AppEvent, AppQuery, AppQueryResult,
     ApplicationFacade, ApplySourceUpdate, CheckSourceUpdate, CollectDeploymentChanges,
-    CommitDeleteSkill, CommitDeployment, CommitImport, CommitRepair, CommitUndeploy,
-    DetachManagement, FactsChanged, GetDeploymentPlan, GetDeploymentRelations,
-    GetProjectAssemblyPlan, GetReconcilePlan, GetRemovalImpact, IgnoreExternalChange,
-    KeepIndependentCopy, ListDeployments, Page, PrepareDeleteSkill, PrepareDeployment,
-    PrepareImport, PrepareRepair, PrepareUndeploy, RelinkSource, ResolveRecovery,
-    RestoreDeployment, RunHealthCheck, SearchOnlineSources,
+    CommitCallPolicyChange, CommitDeleteSkill, CommitDeployment, CommitImport, CommitRepair,
+    CommitUndeploy, DetachManagement, FactsChanged, GetCallPolicy, GetDeploymentPlan,
+    GetDeploymentRelations, GetProjectAssemblyPlan, GetReconcilePlan, GetRemovalImpact,
+    IgnoreExternalChange, KeepIndependentCopy, ListDeployments, Page, PrepareCallPolicyChange,
+    PrepareDeleteSkill, PrepareDeployment, PrepareImport, PrepareRepair, PrepareUndeploy,
+    RelinkSource, ResolveRecovery, RestoreDeployment, RestoreOriginalCallPolicy, RunHealthCheck,
+    SearchOnlineSources,
 };
 pub use application::{
-    BasicCheckOutput, BasicCheckScanner, CheckService, DeploymentBackend, DeploymentService,
-    DeploymentSummary, HealthBackend, HealthService, ImportBackend, ImportItemResult,
-    ImportService, ImportSummary, OperationService, PreparedDeployment, PreparedImport,
-    ProjectAssemblyService, ReconcileBackend, ReconcileService, RecoveryBackend, RecoveryService,
-    RemovalBackend, RemovalService, TargetOperationResult, TargetOperationStatus,
-    VersionMaterializer,
+    BasicCheckOutput, BasicCheckScanner, CallPolicyBackend, CallPolicyService, CheckService,
+    DeploymentBackend, DeploymentService, DeploymentSummary, HealthBackend, HealthService,
+    ImportBackend, ImportItemResult, ImportService, ImportSummary, OperationService,
+    PreparedDeployment, PreparedImport, ProjectAssemblyService, ReconcileBackend, ReconcileService,
+    RecoveryBackend, RecoveryService, RemovalBackend, RemovalService, TargetOperationResult,
+    TargetOperationStatus, VersionMaterializer,
 };
 pub use application::{WatchConfirmation, WatchHint, WatchHintKind, WatchService};
 pub use bootstrap::{
@@ -56,6 +58,7 @@ pub use operation::{
 };
 pub use path_policy::{physical_id_for_path, AllowedRoot, AllowedRootId, PathPolicy, SafePath};
 
+pub use call_policy::{CallPolicyCapability, CallPolicyPlan, CallPolicyResult};
 pub use catalog::{LibraryManifest, LibraryPaths, PortableSkillRecord};
 pub use deployment::reconcile::{
     ExternalChangeObservation, ExternalChangeState, ReconcileAction, ReconcilePlan, ReconcileResult,

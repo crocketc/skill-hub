@@ -1,3 +1,4 @@
+mod call_policy_service;
 mod catalog_service;
 mod check_service;
 mod deployment_service;
@@ -13,6 +14,7 @@ mod version_service;
 mod watch_service;
 
 pub use crate::source::update::SourceUpdateBackend;
+pub use call_policy_service::{CallPolicyBackend, CallPolicyService};
 pub use catalog_service::{CatalogService, PortableMetadataRepository};
 pub use check_service::{BasicCheckOutput, BasicCheckScanner, CheckService, VersionMaterializer};
 pub use deployment_service::{

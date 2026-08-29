@@ -196,6 +196,12 @@ pub struct GetRemovalImpact {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct GetCallPolicy {
+    pub skill_id: SkillId,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 pub struct GetProjectAssemblyPlan {
     pub project_id: crate::ProjectId,
 }
@@ -241,6 +247,8 @@ pub enum AppQuery {
     GetRemovalImpact(GetRemovalImpact),
     #[serde(rename = "list_recovery_candidates")]
     ListRecoveryCandidates,
+    #[serde(rename = "get_call_policy")]
+    GetCallPolicy(GetCallPolicy),
     #[serde(rename = "get_basic_check_result")]
     GetBasicCheckResult(GetBasicCheckResult),
     #[serde(rename = "list_findings")]
@@ -290,6 +298,8 @@ pub enum AppQueryResult {
     RemovalImpact(crate::RemovalImpact),
     #[serde(rename = "recovery_candidates")]
     RecoveryCandidates(Vec<crate::RecoveryCandidate>),
+    #[serde(rename = "call_policy")]
+    CallPolicy(crate::CallPolicyResult),
     #[serde(rename = "basic_check_result")]
     BasicCheckResult(BasicCheckResult),
     #[serde(rename = "findings")]
