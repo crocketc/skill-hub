@@ -51,26 +51,7 @@ impl VersionCapture for VersionStore {
     }
 
     async fn discard(&self, record: &VersionRecord) -> AppResult<()> {
-        let manifest_path = self.find_manifest(&record.id)?;
-        if manifest_path.exists() {
-            fs::remove_file(&manifest_path).map_err(io_error)?;
-        }
-        for entry in &record.manifest.entries {
-            let object = self.paths.objects_dir.join(
-                entry
-                    .object_id
-                    .strip_prefix("sha256:")
-                    .unwrap_or(&entry.object_id),
-            );
-            if !object.exists() {
-                continue;
-            }
-            let still_referenced = self.any_manifest_references(&entry.object_id, &record.id)?;
-            if !still_referenced {
-                let _ = fs::remove_file(object);
-            }
-        }
-        Ok(())
+        self.discard_sync(record)
     }
 }
 
@@ -168,6 +149,29 @@ impl VersionStore {
             created,
             record: VersionRecord { id, manifest },
         })
+    }
+
+    pub fn discard_sync(&self, record: &VersionRecord) -> AppResult<()> {
+        let manifest_path = self.find_manifest(&record.id)?;
+        if manifest_path.exists() {
+            fs::remove_file(&manifest_path).map_err(io_error)?;
+        }
+        for entry in &record.manifest.entries {
+            let object = self.paths.objects_dir.join(
+                entry
+                    .object_id
+                    .strip_prefix("sha256:")
+                    .unwrap_or(&entry.object_id),
+            );
+            if !object.exists() {
+                continue;
+            }
+            let still_referenced = self.any_manifest_references(&entry.object_id, &record.id)?;
+            if !still_referenced {
+                let _ = fs::remove_file(object);
+            }
+        }
+        Ok(())
     }
 
     pub fn materialize(&self, id: &VersionId, output: impl AsRef<Path>) -> AppResult<()> {

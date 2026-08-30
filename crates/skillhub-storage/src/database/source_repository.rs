@@ -15,7 +15,7 @@ impl<'a> SourceRepository<'a> {
     }
 
     pub fn relink(&self, skill_id: SkillId, source: SourceDescriptor) -> AppResult<()> {
-        let source_id = source_id(&source);
+        let source_id = source_id(&source)?;
         let (kind, locator) = encode_source(&source)?;
         let transaction = self
             .database
@@ -59,13 +59,13 @@ impl<'a> SourceRepository<'a> {
     }
 }
 
-fn source_id(source: &SourceDescriptor) -> String {
-    let (kind, locator) = encode_source(source).expect("source descriptor is encodable");
+fn source_id(source: &SourceDescriptor) -> AppResult<String> {
+    let (kind, locator) = encode_source(source)?;
     let mut hasher = Sha256::new();
     hasher.update(kind.as_bytes());
     hasher.update([0]);
     hasher.update(locator.as_bytes());
-    format!("source:{:x}", hasher.finalize())
+    Ok(format!("source:{:x}", hasher.finalize()))
 }
 
 fn encode_source(source: &SourceDescriptor) -> AppResult<(&'static str, String)> {

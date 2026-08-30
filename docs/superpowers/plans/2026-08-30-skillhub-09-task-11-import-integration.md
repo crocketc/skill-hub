@@ -75,31 +75,31 @@ git commit -m "feat: expose native import analysis"
 - Consumes: `PrepareImport`、`CommitImport`、`CancelImport`、`ImportService`、`CatalogService`、`VersionStore`。
 - Produces: `PreparedImport`、`ImportSummary`；复制导入保留原目录，接管操作只有在复制和校验成功后才允许删除原目录。
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
   - 准备导入返回稳定的 `OperationId` 和冲突分析。
   - 提交 `CopyIntoLibrary` 后可通过 `ListSkills` 和 `GetSkill` 读取新 Skill。
   - 取消准备后再次提交返回 `ObjectNotFound`。
   - 提交失败时集中库和 SQLite 不留下半成品，原始目录仍存在。
 
-- [ ] **Step 2: Run focused tests and verify the expected unsupported-command failure**
+- [x] **Step 2: Run focused tests and verify the expected unsupported-command failure**
 
 ```text
 cargo test -p skillhub-application --test facade prepare_and_commit_import
 ```
 
-- [ ] **Step 3: Implement the minimal backend and command dispatch**
+- [x] **Step 3: Implement the minimal backend and command dispatch**
   - 为本地目录候选建立受控 `ImportBackend`，使用 `VersionStore::capture` 写入对象和版本清单。
   - 使用 `CatalogRepositorySqlite::insert` 持久化最小 Skill 元数据和当前版本。
   - 所有路径先经过现有安全校验；不删除用户原始目录。
 
-- [ ] **Step 4: Run focused tests and verify they pass**
+- [x] **Step 4: Run focused tests and verify they pass**
 
 ```text
 cargo test -p skillhub-application --test facade prepare_and_commit_import
 cargo test -p skillhub-storage --test import_repository
 ```
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```text
 git add crates/skillhub-application crates/skillhub-storage

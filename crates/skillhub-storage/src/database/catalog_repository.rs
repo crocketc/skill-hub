@@ -48,6 +48,27 @@ impl<'a> CatalogRepositorySqlite<'a> {
         tx.commit().map_err(error)
     }
 
+    pub fn remove_sync(&self, id: SkillId) -> AppResult<()> {
+        let tx = self
+            .database
+            .connection
+            .unchecked_transaction()
+            .map_err(error)?;
+        let id = id.to_string();
+        tx.execute("DELETE FROM skill_sources WHERE skill_id=?1", [&id])
+            .map_err(error)?;
+        tx.execute("DELETE FROM skill_tags WHERE skill_id=?1", [&id])
+            .map_err(error)?;
+        tx.execute(
+            "DELETE FROM catalog_skill_metadata WHERE skill_id=?1",
+            [&id],
+        )
+        .map_err(error)?;
+        tx.execute("DELETE FROM skills WHERE id=?1", [&id])
+            .map_err(error)?;
+        tx.commit().map_err(error)
+    }
+
     /// Reads the stable identity fields without crossing the async repository
     /// boundary. The application facade uses this for synchronous SQLite
     /// query dispatch while richer catalog reads remain on the trait.

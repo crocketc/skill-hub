@@ -352,12 +352,33 @@ impl LocalApplicationFacade {
             let source = Path::new(&prepared.candidate.absolute_root);
             let version = store.capture(skill_id, source)?;
             let skill = Skill::new(skill_id, prepared.candidate.runtime_name.clone());
-            database.catalog_repository()?.insert_sync(&skill)?;
-            store.set_current(skill_id, &version.id)?;
-            central.save_portable_skill(&skill, Some(&version.id))?;
-            database
+            if let Err(error) = database.catalog_repository()?.insert_sync(&skill) {
+                return Err(cleanup_import_error(
+                    error,
+                    cleanup_import_state(database, &central, &store, skill_id, &version),
+                ));
+            }
+            if let Err(error) = store.set_current(skill_id, &version.id) {
+                return Err(cleanup_import_error(
+                    error,
+                    cleanup_import_state(database, &central, &store, skill_id, &version),
+                ));
+            }
+            if let Err(error) = central.save_portable_skill(&skill, Some(&version.id)) {
+                return Err(cleanup_import_error(
+                    error,
+                    cleanup_import_state(database, &central, &store, skill_id, &version),
+                ));
+            }
+            if let Err(error) = database
                 .source_repository()
-                .relink(skill_id, prepared.candidate.source.clone())?;
+                .relink(skill_id, prepared.candidate.source.clone())
+            {
+                return Err(cleanup_import_error(
+                    error,
+                    cleanup_import_state(database, &central, &store, skill_id, &version),
+                ));
+            }
             self.prepared_imports
                 .lock()
                 .map_err(|_| {
@@ -584,6 +605,30 @@ impl LocalApplicationFacade {
                 path: path.to_owned(),
             },
         ))
+    }
+}
+
+fn cleanup_import_state(
+    database: &Database,
+    central: &CentralLibrary,
+    store: &VersionStore,
+    skill_id: skillhub_core::SkillId,
+    version: &skillhub_core::VersionRecord,
+) -> AppResult<()> {
+    database.catalog_repository()?.remove_sync(skill_id)?;
+    store.clear_current(skill_id)?;
+    central.remove_portable_skill(skill_id)?;
+    store.discard_sync(version)
+}
+
+fn cleanup_import_error(original: AppError, cleanup: AppResult<()>) -> AppError {
+    match cleanup {
+        Ok(()) => original,
+        Err(error) => AppError::new(ErrorCode::OperationConflict, Severity::Critical)
+            .with_param("original_error", original.code.as_str())
+            .with_param("cleanup_error", error.code.as_str())
+            .with_action(RecoveryAction::RollbackOperation)
+            .with_action(RecoveryAction::CompleteOperation),
     }
 }
 

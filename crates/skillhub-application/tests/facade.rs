@@ -228,6 +228,78 @@ async fn commit_import_copies_skill_into_the_central_library() {
 }
 
 #[tokio::test]
+async fn failed_import_commit_removes_partial_catalog_and_version_state() {
+    let database = Database::open_in_memory().expect("database");
+    let library_root = tempfile::tempdir().expect("library root");
+    CentralLibrary::initialize(library_root.path()).expect("initialize library");
+    let source = tempfile::tempdir().expect("source");
+    std::fs::write(source.path().join("SKILL.md"), "# Notes\n").expect("write skill");
+    let candidate = ImportCandidate::detected(
+        SourceDescriptor::new(
+            SourceKind::Local,
+            SourceLocator::https_url("https://example.invalid/notes"),
+        ),
+        source.path().to_string_lossy(),
+        ".",
+        "SKILL.md",
+        "Notes",
+    );
+    let facade = LocalApplicationFacade::new_with_library(database, library_root.path());
+    let prepared = facade
+        .execute(AppCommand::PrepareImport(PrepareImport {
+            candidate,
+            tree_hash: None,
+        }))
+        .await
+        .expect("prepared import");
+    let AppCommandResult::PreparedImport(prepared) = prepared else {
+        panic!("expected prepared import");
+    };
+
+    let error = facade
+        .execute(AppCommand::CommitImport(skillhub_core::CommitImport {
+            prepared_import_id: prepared.id,
+            decision: skillhub_core::ImportDecision::CopyIntoLibrary,
+        }))
+        .await
+        .expect_err("malformed source descriptor should fail");
+    assert_eq!(error.code, ErrorCode::InvalidInput);
+
+    let page = facade
+        .query(RootAppQuery::ListSkills(ListSkills {
+            text: String::new(),
+            page: 1,
+            page_size: 25,
+        }))
+        .await
+        .expect("list after failed import");
+    let AppQueryResult::SkillPage(page) = page else {
+        panic!("expected skill page");
+    };
+    assert!(page.items.is_empty());
+    let version_files = walk_files(&library_root.path().join(".skillhub/versions"));
+    let object_files = walk_files(&library_root.path().join(".skillhub/objects"));
+    assert!(version_files.is_empty());
+    assert!(object_files.is_empty());
+}
+
+fn walk_files(root: &std::path::Path) -> Vec<std::path::PathBuf> {
+    let mut files = Vec::new();
+    let mut pending = vec![root.to_path_buf()];
+    while let Some(directory) = pending.pop() {
+        for entry in std::fs::read_dir(directory).expect("read directory") {
+            let path = entry.expect("directory entry").path();
+            if path.is_dir() {
+                pending.push(path);
+            } else {
+                files.push(path);
+            }
+        }
+    }
+    files
+}
+
+#[tokio::test]
 async fn catalog_queries_return_skill_identity_and_ranked_search_hits() {
     let database = Database::open_in_memory().expect("database");
     let skill = Skill::new(skillhub_core::SkillId::new(), "Markdown tables")
