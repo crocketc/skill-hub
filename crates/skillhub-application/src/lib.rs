@@ -20,6 +20,7 @@ use skillhub_core::deployment::{
     DeploymentPlanRequest, DeploymentRecord, DeploymentState, RegisteredTargetIndex, TargetFact,
     TargetPlan,
 };
+use skillhub_core::llm::LlmTaskRunner;
 use skillhub_core::{
     physical_id_for_path, AllowedRoot, AppCommand, AppCommandResult, AppError, AppQuery,
     AppQueryResult, AppResult, ApplicationFacade, DeploymentCapability, ErrorCode, OperationId,
@@ -39,6 +40,7 @@ pub struct LocalApplicationFacade {
     deployment_service: Arc<DeploymentService<LocalDeploymentBackend>>,
     removal_service: Arc<RemovalService<LocalDeploymentBackend>>,
     reconcile_service: Arc<ReconcileService<LocalDeploymentBackend>>,
+    llm_runner: Option<Arc<dyn LlmTaskRunner>>,
     prepared_imports: Mutex<HashMap<OperationId, PreparedImport>>,
 }
 
@@ -482,6 +484,7 @@ impl LocalApplicationFacade {
             deployment_service,
             removal_service,
             reconcile_service,
+            llm_runner: None,
             prepared_imports: Mutex::new(HashMap::new()),
         }
     }
@@ -506,6 +509,7 @@ impl LocalApplicationFacade {
             deployment_service,
             removal_service,
             reconcile_service,
+            llm_runner: None,
             prepared_imports: Mutex::new(HashMap::new()),
         }
     }
@@ -520,6 +524,19 @@ impl LocalApplicationFacade {
     ) -> Self {
         let mut facade = Self::new_with_library(database, library_root);
         facade.deployment_targets = Some(deployment_targets);
+        facade
+    }
+
+    /// Creates a library-backed facade with an injected LLM runner. Production
+    /// wiring may supply the HTTP runner after credentials are configured;
+    /// tests use a deterministic in-memory runner and never access the network.
+    pub fn new_with_library_and_llm_runner(
+        database: Database,
+        library_root: impl AsRef<Path>,
+        runner: Arc<dyn LlmTaskRunner>,
+    ) -> Self {
+        let mut facade = Self::new_with_library(database, library_root);
+        facade.llm_runner = Some(runner);
         facade
     }
 
@@ -596,6 +613,102 @@ impl LocalApplicationFacade {
         })?;
         Ok(AppCommandResult::BasicCheckResult(
             BasicCheckResult::from_check_result(skill_id, version_id, &result),
+        ))
+    }
+
+    async fn run_llm_safety_check(
+        &self,
+        skill_id: skillhub_core::SkillId,
+        version_id: skillhub_core::VersionId,
+    ) -> AppResult<AppCommandResult> {
+        let Some(library) = self.library.as_ref() else {
+            return Err(unsupported("execute.run_llm_safety_check.library"));
+        };
+        let Some(runner) = self.llm_runner.clone() else {
+            return Err(AppError::new(ErrorCode::LlmNotConfigured, Severity::Info));
+        };
+        let profile = self.with_database("execute.run_llm_safety_check.profile", |database| {
+            Ok(database.llm_profile_repository().list()?.into_iter().next())
+        })?;
+        let Some(profile) = profile else {
+            return Err(AppError::new(ErrorCode::LlmNotConfigured, Severity::Info));
+        };
+        let allowed_files = library.list_markdown_files(&version_id)?;
+        let mut evidence = String::new();
+        for file in &allowed_files {
+            let (_, bytes) = library.read_file(&version_id, file, 256 * 1024)?;
+            let text = String::from_utf8(bytes).map_err(|_| {
+                AppError::new(ErrorCode::LlmEvidenceReferenceInvalid, Severity::Error)
+            })?;
+            evidence.push_str("FILE: ");
+            evidence.push_str(file);
+            evidence.push('\n');
+            evidence.push_str(&text);
+            evidence.push_str("\n\n");
+        }
+        let request = skillhub_core::llm::safety::build_safety_request(&evidence)?;
+        let generation =
+            self.with_database("execute.run_llm_safety_check.generation", |database| {
+                Ok(database
+                    .check_repository()
+                    .current_for_version_sync(skill_id, &version_id, CheckKind::Llm)?
+                    .map(|run| run.generation + 1)
+                    .unwrap_or(0))
+            })?;
+        let run_id = format!("llm-safety-{}-{generation}", version_id.as_str());
+        let started_at = now_millis();
+        let model_id = profile.model.clone();
+        let response = std::thread::spawn(move || {
+            let runtime = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .map_err(|error| {
+                    AppError::new(ErrorCode::InternalError, Severity::Error)
+                        .with_param("source", error.to_string())
+                        .with_action(RecoveryAction::Retry)
+                })?;
+            runtime.block_on(runner.run(&profile, request))
+        })
+        .join()
+        .map_err(|_| internal("execute.run_llm_safety_check.runner"))?;
+        let mut run = match response {
+            Ok(response) => match skillhub_core::llm::safety::parse_safety_response(
+                response.output,
+                &allowed_files,
+            ) {
+                Ok(findings) => {
+                    let mut run = CheckRun::completed(
+                        run_id,
+                        skill_id,
+                        version_id.clone(),
+                        CheckKind::Llm,
+                        findings,
+                    );
+                    run.model_id = Some(model_id);
+                    run.coverage_inputs = serde_json::json!({
+                        "files": allowed_files,
+                        "evidence_bytes": evidence.len()
+                    });
+                    run
+                }
+                Err(error) => failed_llm_run(run_id, skill_id, version_id.clone(), error),
+            },
+            Err(error) => failed_llm_run(run_id, skill_id, version_id.clone(), error),
+        };
+        run.generation = generation;
+        run.started_at = started_at;
+        run.ended_at = Some(now_millis());
+        let result = skillhub_core::check::CheckResult {
+            state: run.state(),
+            run: Some(run.clone()),
+        };
+        self.with_database("execute.run_llm_safety_check.persist", |database| {
+            database.check_repository().insert_sync(&run)
+        })?;
+        Ok(AppCommandResult::LlmSafetyCheckResult(
+            skillhub_core::api::LlmSafetyCheckResult::from_check_result(
+                skill_id, version_id, &result,
+            ),
         ))
     }
 
@@ -733,6 +846,16 @@ impl ApplicationFacade for LocalApplicationFacade {
             }
             AppCommand::SetFindingDisposition(request) => {
                 return self.set_finding_disposition(request);
+            }
+            AppCommand::RunLlmSafetyCheck(request) => {
+                return self
+                    .run_llm_safety_check(request.skill_id, request.version_id)
+                    .await;
+            }
+            AppCommand::RecheckLlmSafety(request) => {
+                return self
+                    .run_llm_safety_check(request.skill_id, request.version_id)
+                    .await;
             }
             _ => "execute.unsupported",
         };
@@ -1390,6 +1513,18 @@ fn now_millis() -> i64 {
         .duration_since(UNIX_EPOCH)
         .map(|duration| i64::try_from(duration.as_millis()).unwrap_or(i64::MAX))
         .unwrap_or_default()
+}
+
+fn failed_llm_run(
+    id: String,
+    skill_id: skillhub_core::SkillId,
+    version_id: skillhub_core::VersionId,
+    error: AppError,
+) -> CheckRun {
+    let mut run = CheckRun::running(id, skill_id, version_id, CheckKind::Llm);
+    run.phase = CheckRunPhase::Failed;
+    run.failure_code = Some(error.code.as_str().to_owned());
+    run
 }
 
 // Howard Hinnant's civil_from_days algorithm, kept local to avoid adding a

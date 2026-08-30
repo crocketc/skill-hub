@@ -10,7 +10,7 @@ use skillhub_core::{
         GetDeploymentRelations, GetReconcilePlan, GetRemovalImpact, GetSkill, KeepIndependentCopy,
         ListDeployments, ListFindings, ListMarkdownFiles, ListSkills, ListVersions,
         PrepareDeployment, PrepareImport, PrepareUndeploy, ReadMarkdownFile, RecheckBasic,
-        RunBasicCheck, SetFindingDisposition,
+        RunBasicCheck, RunLlmSafetyCheck, SetFindingDisposition,
     },
     catalog::{CatalogRepository, Skill},
     check::{CheckKind, CheckState, FindingDisposition},
@@ -27,6 +27,32 @@ use skillhub_core::{
 };
 use skillhub_storage::Database;
 use skillhub_storage::{CentralLibrary, VersionStore};
+
+struct StaticLlmRunner;
+
+#[async_trait::async_trait(?Send)]
+impl skillhub_core::LlmTaskRunner for StaticLlmRunner {
+    async fn run(
+        &self,
+        _profile: &skillhub_core::LlmProfile,
+        request: skillhub_core::LlmTaskRequest,
+    ) -> skillhub_core::AppResult<skillhub_core::LlmTaskResponse> {
+        Ok(skillhub_core::LlmTaskResponse {
+            request_id: "test-request".to_owned(),
+            kind: request.kind,
+            output: serde_json::json!({
+                "findings": [{
+                    "code": "llm.prompt_injection",
+                    "severity": "warning",
+                    "file": "SKILL.md",
+                    "line_start": 1,
+                    "line_end": 1,
+                    "explanation": "test finding"
+                }]
+            }),
+        })
+    }
+}
 
 #[tokio::test]
 async fn bootstrap_query_reads_counts_from_the_shared_database() {
@@ -1435,4 +1461,127 @@ async fn finding_disposition_requires_confirmation_for_high_risk_findings() {
         }))
         .await
         .expect("acknowledge finding");
+}
+
+#[tokio::test]
+async fn llm_check_without_configuration_returns_info_without_persisting_a_run() {
+    let database = Database::open_in_memory().expect("database");
+    let skill = Skill::new(skillhub_core::SkillId::new(), "Checks");
+    database
+        .catalog_repository()
+        .expect("catalog repository")
+        .insert(&skill)
+        .await
+        .expect("insert skill");
+    let library_root = tempfile::tempdir().expect("library");
+    CentralLibrary::initialize(library_root.path()).expect("initialize library");
+    let source = tempfile::tempdir().expect("source");
+    std::fs::write(source.path().join("SKILL.md"), "safe content\n").expect("write skill");
+    let version = VersionStore::new(skillhub_core::LibraryPaths::from_root(
+        library_root.path().to_path_buf(),
+    ))
+    .capture(skill.id(), source.path())
+    .expect("capture version");
+    database
+        .connection_for_test()
+        .execute(
+            "INSERT INTO versions (id, skill_id, content_hash, manifest_json, created_at) VALUES (?1, ?2, 'hash', '{}', 0)",
+            rusqlite::params![version.id.to_string(), skill.id().to_string()],
+        )
+        .expect("insert version");
+    let facade = LocalApplicationFacade::new_with_library(database, library_root.path());
+    let error = facade
+        .execute(AppCommand::RunLlmSafetyCheck(RunLlmSafetyCheck {
+            skill_id: skill.id(),
+            version_id: version.id.clone(),
+        }))
+        .await
+        .expect_err("LLM must be optional");
+    assert_eq!(error.code, ErrorCode::LlmNotConfigured);
+    assert_eq!(error.severity, Severity::Info);
+    let result = facade
+        .query(RootAppQuery::GetLlmSafetyCheckResult(
+            skillhub_core::GetLlmSafetyCheckResult {
+                skill_id: skill.id(),
+                version_id: version.id,
+            },
+        ))
+        .await
+        .expect("LLM result");
+    let AppQueryResult::LlmSafetyCheckResult(result) = result else {
+        panic!("expected LLM result");
+    };
+    assert_eq!(result.state, CheckState::NotChecked);
+}
+
+#[tokio::test]
+async fn configured_llm_check_persists_structured_findings_and_rechecks() {
+    let database = Database::open_in_memory().expect("database");
+    let skill = Skill::new(skillhub_core::SkillId::new(), "Checks");
+    database
+        .catalog_repository()
+        .expect("catalog repository")
+        .insert(&skill)
+        .await
+        .expect("insert skill");
+    let profile = skillhub_core::LlmProfile::new(
+        "test",
+        "https://llm.example.test/v1/chat/completions",
+        "test-model",
+        None,
+    )
+    .expect("profile");
+    database
+        .llm_profile_repository()
+        .save(&profile)
+        .expect("save profile");
+    let library_root = tempfile::tempdir().expect("library");
+    CentralLibrary::initialize(library_root.path()).expect("initialize library");
+    let source = tempfile::tempdir().expect("source");
+    std::fs::write(source.path().join("SKILL.md"), "quoted content\n").expect("write skill");
+    let version = VersionStore::new(skillhub_core::LibraryPaths::from_root(
+        library_root.path().to_path_buf(),
+    ))
+    .capture(skill.id(), source.path())
+    .expect("capture version");
+    database
+        .connection_for_test()
+        .execute(
+            "INSERT INTO versions (id, skill_id, content_hash, manifest_json, created_at) VALUES (?1, ?2, 'hash', '{}', 0)",
+            rusqlite::params![version.id.to_string(), skill.id().to_string()],
+        )
+        .expect("insert version");
+    let facade = LocalApplicationFacade::new_with_library_and_llm_runner(
+        database,
+        library_root.path(),
+        std::sync::Arc::new(StaticLlmRunner),
+    );
+    let result = facade
+        .execute(AppCommand::RunLlmSafetyCheck(RunLlmSafetyCheck {
+            skill_id: skill.id(),
+            version_id: version.id.clone(),
+        }))
+        .await
+        .expect("LLM check");
+    let AppCommandResult::LlmSafetyCheckResult(result) = result else {
+        panic!("expected LLM result");
+    };
+    assert_eq!(result.state, CheckState::Failed);
+    assert_eq!(result.finding_count, 1);
+    let rechecked = facade
+        .execute(AppCommand::RecheckLlmSafety(
+            skillhub_core::RecheckLlmSafety {
+                skill_id: skill.id(),
+                version_id: version.id,
+            },
+        ))
+        .await
+        .expect("LLM recheck");
+    let AppCommandResult::LlmSafetyCheckResult(rechecked) = rechecked else {
+        panic!("expected LLM result");
+    };
+    assert!(rechecked
+        .run_id
+        .as_deref()
+        .is_some_and(|id| id.ends_with("-1")));
 }
