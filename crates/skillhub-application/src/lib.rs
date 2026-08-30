@@ -1,6 +1,7 @@
 //! Shared application boundary implementations.
 
 use std::collections::HashMap;
+use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -17,6 +18,8 @@ use skillhub_core::application::{
     CallPolicyBackend, CallPolicyService, DeploymentBackend, DeploymentService, HealthBackend,
     HealthService, IgnoreBackend, IgnoreService, PreparedImport, ReconcileBackend,
     ReconcileService, RecoveryBackend, RecoveryService, RemovalBackend, RemovalService,
+    DuplicateCandidateProvider, DuplicateService, SearchQueryService, TranslationRepository,
+    TranslationService,
 };
 use skillhub_core::backup::{
     BackupCreated, BackupInput, BackupPackage, BackupScope, SensitiveContentDecision,
@@ -31,6 +34,9 @@ use skillhub_core::deployment::{
 };
 use skillhub_core::health::{HealthFinding, RecoveryCandidate, RepairAction};
 use skillhub_core::ignore::IgnoreRule;
+use skillhub_core::duplicate::DuplicateCandidate;
+use skillhub_core::evidence::UsageEvidenceAnalyzer;
+use skillhub_core::llm::translation::TranslationRecord;
 use skillhub_core::llm::LlmTaskRunner;
 use skillhub_core::{
     physical_id_for_path, AllowedRoot, AppCommand, AppCommandResult, AppError, AppQuery,
@@ -39,7 +45,9 @@ use skillhub_core::{
 };
 use skillhub_storage::backup::{BackupService, RestoreService, RetentionService};
 use skillhub_storage::export::ExportService;
-use skillhub_storage::{CentralLibrary, Database, LibraryPaths, VersionStore};
+use skillhub_storage::{
+    CentralLibrary, Database, LibraryPaths, UsageEvidenceRepository, VersionStore,
+};
 
 /// The date provider is kept on the facade so all date-sensitive projections
 /// in one request use the same day boundary. Production uses the current UTC
@@ -58,6 +66,8 @@ pub struct LocalApplicationFacade {
     call_policy_service: Arc<CallPolicyService<LocalCallPolicyBackend>>,
     ignore_service: Arc<IgnoreService<LocalIgnoreBackend>>,
     llm_runner: Option<Arc<dyn LlmTaskRunner>>,
+    translation_records: Arc<Mutex<HashMap<(skillhub_core::SkillId, String), TranslationRecord>>>,
+    evidence_repository: UsageEvidenceRepository,
     prepared_imports: Mutex<HashMap<OperationId, PreparedImport>>,
     prepared_uninstall: Mutex<Option<skillhub_core::UninstallImpact>>,
 }
@@ -66,6 +76,75 @@ struct LocalDeploymentBackend {
     database: Arc<Mutex<Database>>,
     library_root: Option<PathBuf>,
     filesystem: DeploymentFilesystem,
+}
+
+#[derive(Clone)]
+struct SharedLlmRunner(Arc<dyn LlmTaskRunner>);
+
+#[async_trait(?Send)]
+impl LlmTaskRunner for SharedLlmRunner {
+    async fn run(
+        &self,
+        profile: &skillhub_core::LlmProfile,
+        request: skillhub_core::LlmTaskRequest,
+    ) -> AppResult<skillhub_core::LlmTaskResponse> {
+        self.0.run(profile, request).await
+    }
+}
+
+struct NoopLlmRunner;
+
+#[async_trait(?Send)]
+impl LlmTaskRunner for NoopLlmRunner {
+    async fn run(
+        &self,
+        _profile: &skillhub_core::LlmProfile,
+        _request: skillhub_core::LlmTaskRequest,
+    ) -> AppResult<skillhub_core::LlmTaskResponse> {
+        Err(AppError::new(ErrorCode::LlmNotConfigured, Severity::Info))
+    }
+}
+
+#[derive(Clone)]
+struct LocalTranslationRepository {
+    records: Arc<Mutex<HashMap<(skillhub_core::SkillId, String), TranslationRecord>>>,
+}
+
+#[async_trait(?Send)]
+impl TranslationRepository for LocalTranslationRepository {
+    async fn get(
+        &self,
+        skill_id: skillhub_core::SkillId,
+        language: &str,
+    ) -> AppResult<Option<TranslationRecord>> {
+        self.records
+            .lock()
+            .map_err(|_| internal("translation.get"))
+            .map(|records| records.get(&(skill_id, language.to_owned())).cloned())
+    }
+
+    async fn save(&self, record: TranslationRecord) -> AppResult<()> {
+        self.records
+            .lock()
+            .map_err(|_| internal("translation.save"))?
+            .insert((record.skill_id, record.language.clone()), record);
+        Ok(())
+    }
+}
+
+#[derive(Clone)]
+struct StaticDuplicateCandidateProvider {
+    candidates: Vec<DuplicateCandidate>,
+}
+
+#[async_trait(?Send)]
+impl DuplicateCandidateProvider for StaticDuplicateCandidateProvider {
+    async fn candidates(
+        &self,
+        _skill_id: skillhub_core::SkillId,
+    ) -> AppResult<Vec<DuplicateCandidate>> {
+        Ok(self.candidates.clone())
+    }
 }
 
 impl LocalDeploymentBackend {
@@ -574,6 +653,8 @@ impl LocalApplicationFacade {
             call_policy_service,
             ignore_service,
             llm_runner: None,
+            translation_records: Arc::new(Mutex::new(HashMap::new())),
+            evidence_repository: UsageEvidenceRepository::default(),
             prepared_imports: Mutex::new(HashMap::new()),
             prepared_uninstall: Mutex::new(None),
         }
@@ -618,6 +699,8 @@ impl LocalApplicationFacade {
             call_policy_service,
             ignore_service,
             llm_runner: None,
+            translation_records: Arc::new(Mutex::new(HashMap::new())),
+            evidence_repository: UsageEvidenceRepository::default(),
             prepared_imports: Mutex::new(HashMap::new()),
             prepared_uninstall: Mutex::new(None),
         }
@@ -649,6 +732,28 @@ impl LocalApplicationFacade {
         facade
     }
 
+    /// Creates a facade with explicit local usage evidence for integrations
+    /// that provide authorized invocation records. Evidence remains advisory
+    /// and experimental; it is never synthesized from missing runtime data.
+    pub fn new_with_evidence(database: Database, evidence: UsageEvidenceRepository) -> Self {
+        let mut facade = Self::new(database);
+        facade.evidence_repository = evidence;
+        facade
+    }
+
+    /// Creates a library-backed facade with an LLM runner and explicit local
+    /// usage evidence for deterministic integration tests and adapters.
+    pub fn new_with_library_and_llm_runner_and_evidence(
+        database: Database,
+        library_root: impl AsRef<Path>,
+        runner: Arc<dyn LlmTaskRunner>,
+        evidence: UsageEvidenceRepository,
+    ) -> Self {
+        let mut facade = Self::new_with_library_and_llm_runner(database, library_root, runner);
+        facade.evidence_repository = evidence;
+        facade
+    }
+
     fn with_database<T>(
         &self,
         operation: &'static str,
@@ -660,6 +765,189 @@ impl LocalApplicationFacade {
                 .with_action(RecoveryAction::Retry)
         })?;
         action(&database)
+    }
+
+    fn llm_context(
+        &self,
+        operation: &'static str,
+    ) -> AppResult<(Arc<dyn LlmTaskRunner>, skillhub_core::LlmProfile)> {
+        let runner = self
+            .llm_runner
+            .clone()
+            .ok_or_else(|| AppError::new(ErrorCode::LlmNotConfigured, Severity::Info))?;
+        let profile = self.with_database(operation, |database| {
+            Ok(database.llm_profile_repository().list()?.into_iter().next())
+        })?;
+        let profile =
+            profile.ok_or_else(|| AppError::new(ErrorCode::LlmNotConfigured, Severity::Info))?;
+        Ok((runner, profile))
+    }
+
+    fn load_duplicate_candidates(
+        &self,
+        skill_id: skillhub_core::SkillId,
+    ) -> AppResult<Vec<DuplicateCandidate>> {
+        let database = self
+            .database
+            .lock()
+            .map_err(|_| internal("duplicate.candidates"))?;
+        let pairs = database.search_repository().duplicate_candidates()?;
+        let mut ids = Vec::new();
+        for pair in pairs {
+            if pair.left_skill_id == skill_id {
+                ids.push(pair.right_skill_id);
+            } else if pair.right_skill_id == skill_id {
+                ids.push(pair.left_skill_id);
+            }
+        }
+        ids.sort_by_key(|id| id.to_string());
+        ids.dedup();
+        let mut candidates = Vec::with_capacity(ids.len() + 1);
+        let mut all_ids = Vec::with_capacity(ids.len() + 1);
+        all_ids.push(skill_id);
+        all_ids.extend(ids);
+        for id in all_ids {
+            let Some(detail) = database.catalog_repository()?.get_detail(id)? else {
+                continue;
+            };
+            candidates.push(DuplicateCandidate {
+                skill_id: id,
+                name: detail.display_name,
+                description: detail.original_description,
+                trigger: String::new(),
+                permissions: Vec::new(),
+                source: "local_catalog".to_owned(),
+                basic_check_state: "unknown".to_owned(),
+                locally_modified: false,
+            });
+        }
+        Ok(candidates)
+    }
+
+    async fn analyze_semantic_duplicates(
+        &self,
+        skill_id: skillhub_core::SkillId,
+    ) -> AppResult<AppCommandResult> {
+        let (runner, profile) = self.llm_context("execute.analyze_semantic_duplicates.profile")?;
+        let candidates = self.load_duplicate_candidates(skill_id)?;
+        let service = DuplicateService::new(
+            StaticDuplicateCandidateProvider { candidates },
+            SharedLlmRunner(runner),
+        );
+        let result =
+            run_non_send(move || async move { service.analyze(skill_id, &profile).await })?;
+        Ok(AppCommandResult::DuplicateAnalysis(result))
+    }
+
+    async fn translate_description(
+        &self,
+        request: skillhub_core::TranslateDescription,
+    ) -> AppResult<AppCommandResult> {
+        let detail = self.with_database("execute.translate_description.skill", |database| {
+            database.catalog_repository()?.get_detail(request.skill_id)
+        })?;
+        let detail =
+            detail.ok_or_else(|| AppError::new(ErrorCode::ObjectNotFound, Severity::Error))?;
+        let (runner, profile) = self.llm_context("execute.translate_description.profile")?;
+        let hash = description_hash(&detail.original_description);
+        let service = TranslationService::new(
+            LocalTranslationRepository {
+                records: self.translation_records.clone(),
+            },
+            SharedLlmRunner(runner),
+        );
+        let original_description = detail.original_description;
+        let language = request.language;
+        let request_skill_id = request.skill_id;
+        let result = run_non_send(move || async move {
+            service
+                .translate(
+                    request_skill_id,
+                    &original_description,
+                    &hash,
+                    &language,
+                    Some(&profile),
+                )
+                .await
+        })?;
+        Ok(AppCommandResult::TranslationResult(result))
+    }
+
+    async fn save_user_translation_revision(
+        &self,
+        request: skillhub_core::SaveUserTranslationRevision,
+    ) -> AppResult<AppCommandResult> {
+        let exists = self
+            .with_database("execute.save_user_translation_revision.skill", |database| {
+                database.catalog_repository()?.get_detail(request.skill_id)
+            })?;
+        if exists.is_none() {
+            return Err(AppError::new(ErrorCode::ObjectNotFound, Severity::Error));
+        }
+        let service = TranslationService::new(
+            LocalTranslationRepository {
+                records: self.translation_records.clone(),
+            },
+            SharedLlmRunner(Arc::new(NoopLlmRunner)),
+        );
+        let skill_id = request.skill_id;
+        let language = request.language;
+        let source_description_hash = request.source_description_hash;
+        let text = request.text;
+        let save_language = language.clone();
+        let save_source_description_hash = source_description_hash.clone();
+        let save_text = text.clone();
+        run_non_send(move || async move {
+            service
+                .save_user_revision(
+                    skill_id,
+                    &save_language,
+                    &save_source_description_hash,
+                    &save_text,
+                )
+                .await
+        })?;
+        Ok(AppCommandResult::TranslationResult(
+            skillhub_core::llm::translation::TranslationResult {
+                skill_id,
+                language,
+                text,
+                provenance: skillhub_core::llm::translation::TranslationProvenance {
+                    source_description_hash,
+                    provider: "user".to_owned(),
+                    model: "user_revision".to_owned(),
+                    origin: skillhub_core::llm::translation::TranslationOrigin::UserRevision,
+                },
+            },
+        ))
+    }
+
+    async fn generate_online_search_query(&self, text: String) -> AppResult<AppCommandResult> {
+        let (runner, profile) = self.llm_context("execute.generate_online_search_query.profile")?;
+        let result = run_non_send(move || async move {
+            SearchQueryService::new(SharedLlmRunner(runner))
+                .generate(&text, Some(&profile))
+                .await
+        })?;
+        Ok(AppCommandResult::OnlineSearchQuery(result))
+    }
+
+    async fn analyze_global_skill_evidence(
+        &self,
+        request: skillhub_core::AnalyzeGlobalSkillEvidence,
+    ) -> AppResult<AppQueryResult> {
+        let evidence_repository = self.evidence_repository.clone();
+        let analyzer = UsageEvidenceAnalyzer::new(evidence_repository);
+        let mut analysis = run_non_send(move || async move {
+            analyzer
+                .analyze(request.window_days, request.threshold_calls)
+                .await
+        })?;
+        if analysis.coverage.sources.is_empty() {
+            analysis.coverage.complete = false;
+            analysis.suggestions.clear();
+        }
+        Ok(AppQueryResult::GlobalSkillEvidence(analysis))
     }
 
     fn build_backup_input(&self, scope: BackupScope) -> AppResult<BackupInput> {
@@ -1758,6 +2046,18 @@ impl ApplicationFacade for LocalApplicationFacade {
                     .run_llm_safety_check(request.skill_id, request.version_id)
                     .await;
             }
+            AppCommand::AnalyzeSemanticDuplicates(request) => {
+                return self.analyze_semantic_duplicates(request.skill_id).await;
+            }
+            AppCommand::TranslateDescription(request) => {
+                return self.translate_description(request).await;
+            }
+            AppCommand::SaveUserTranslationRevision(request) => {
+                return self.save_user_translation_revision(request).await;
+            }
+            AppCommand::GenerateOnlineSearchQuery(request) => {
+                return self.generate_online_search_query(request.text).await;
+            }
             _ => "execute.unsupported",
         };
         Err(AppError::new(ErrorCode::InternalError, Severity::Error)
@@ -1895,6 +2195,9 @@ impl ApplicationFacade for LocalApplicationFacade {
             AppQuery::ListMarkdownFiles(request) => self.list_markdown_files(request.skill_id),
             AppQuery::ReadMarkdownFile(request) => {
                 self.read_markdown_file(request.skill_id, &request.path)
+            }
+            AppQuery::AnalyzeGlobalSkillEvidence(request) => {
+                self.analyze_global_skill_evidence(request).await
             }
             _ => Err(AppError::new(ErrorCode::InternalError, Severity::Error)
                 .with_param("operation", "query.unsupported")
@@ -2498,6 +2801,36 @@ fn now_millis() -> i64 {
         .duration_since(UNIX_EPOCH)
         .map(|duration| i64::try_from(duration.as_millis()).unwrap_or(i64::MAX))
         .unwrap_or_default()
+}
+
+fn description_hash(description: &str) -> String {
+    let mut hash = 0xcbf29ce484222325_u64;
+    for byte in description.as_bytes() {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(0x100000001b3);
+    }
+    format!("fnv1a:{hash:016x}")
+}
+
+fn run_non_send<T, F, B>(build: B) -> AppResult<T>
+where
+    T: Send + 'static,
+    F: Future<Output = AppResult<T>> + 'static,
+    B: FnOnce() -> F + Send + 'static,
+{
+    std::thread::spawn(move || {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .map_err(|error| {
+                AppError::new(ErrorCode::InternalError, Severity::Error)
+                    .with_param("source", error.to_string())
+                    .with_action(RecoveryAction::Retry)
+            })?;
+        runtime.block_on(build())
+    })
+    .join()
+    .map_err(|_| internal("application.non_send_task"))?
 }
 
 fn failed_llm_run(
