@@ -10,7 +10,9 @@
     "verify:lifecycle": "node scripts/verify_frontend_lifecycle_scripts.mjs",
     "sbom": "node scripts/generate_sbom.mjs --out-dir artifacts/sbom",
     "test:e2e": "playwright test --config=tests/e2e/playwright.config.ts",
-    "ci:local": "node scripts/ci-local.mjs"
+    "ci:local": "node scripts/ci-local.mjs",
+    "verify:release": "node scripts/verify_release_readiness.mjs",
+    "test:release": "node --test scripts/verify_release_readiness.test.mjs"
   },
   "devDependencies": {
     "@playwright/test": "1.55.1"

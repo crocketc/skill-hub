@@ -52,6 +52,32 @@ node ./scripts/ci-local.mjs
 node ./scripts/ci-local.mjs --list
 ```
 
+## 桌面端启动与发布预检
+
+Tauri 的开发和构建前置命令都在 `apps/desktop` 包目录内执行。启动桌面壳时使用：
+
+```powershell
+pnpm --dir apps/desktop tauri dev
+```
+
+```bash
+pnpm --dir apps/desktop tauri dev
+```
+
+发布前可运行不依赖网络或构建工具的确定性静态预检；它会核对 root/desktop 命令路径、Tauri Windows/macOS 配置、tag-bound 发布工作流、锁定 action 引用、安装说明安全边界和前端 `dist/.gitkeep` 占位文件：
+
+```bash
+pnpm verify:release
+```
+
+如需运行该预检的自动化回归测试：
+
+```bash
+pnpm test:release
+```
+
+前端构建会清空 `apps/desktop/dist`。`build` 的 `postbuild` 钩子会恢复已跟踪的 `.gitkeep`，因此本地 CI 或发布预检完成后不应留下该占位文件的删除状态；若发现异常，先运行 `pnpm verify:release` 并检查 `git status`。
+
 ## 前端安全审计与 npm 镜像
 
 前端安全审计需要 pnpm 能访问 npm audit 接口。部分镜像（例如 `https://registry.npmmirror.com`）可以正常安装依赖，但不提供 pnpm 所需的审计端点，因此会在“前端依赖审计”阶段失败。这是镜像能力差异，不是项目依赖本身必然存在漏洞。

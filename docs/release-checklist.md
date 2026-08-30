@@ -22,6 +22,7 @@
 | 前端 lint/TypeScript | 通过 | `pnpm check:frontend` |
 | 前端测试 | 通过 | 52 个文件、307 项测试 |
 | 前端生产构建 | 通过 | `pnpm --dir apps/desktop build` |
+| 发布静态预检 | 通过 | `pnpm verify:release`；root/desktop 命令、Tauri 启动配置、tag-bound 工作流、锁定 action、安装说明和 `dist/.gitkeep` 均通过 |
 | 兼容性契约 | 通过 | `cargo test -p skillhub-adapters --test profile_contract` |
 | E2E | 待执行 | 需要桌面运行时和可用测试环境 |
 | 迁移/恢复 | 待执行 | 需要在本提交重新采集证据 |

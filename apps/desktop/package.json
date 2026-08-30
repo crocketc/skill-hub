@@ -4,11 +4,13 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
+    "dev": "vite",
     "test": "vitest",
     "check": "pnpm lint && pnpm typecheck",
     "lint": "eslint . --max-warnings 0",
     "typecheck": "tsc --noEmit",
     "build": "tsc --noEmit && vite build",
+    "postbuild": "node ../../scripts/ensure_frontend_dist_placeholder.mjs",
     "tauri": "tauri"
   },
   "dependencies": {
