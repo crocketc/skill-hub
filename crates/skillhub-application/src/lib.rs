@@ -9,7 +9,8 @@ use async_trait::async_trait;
 use skillhub_adapters::deployment::{DeploymentFilesystem, OwnershipProof};
 use skillhub_adapters::import::SkillDetector;
 use skillhub_core::application::{
-    DeploymentBackend, DeploymentService, PreparedImport, RemovalBackend, RemovalService,
+    DeploymentBackend, DeploymentService, PreparedImport, ReconcileBackend, ReconcileService,
+    RemovalBackend, RemovalService,
 };
 use skillhub_core::catalog::Skill;
 use skillhub_core::deployment::{
@@ -34,6 +35,7 @@ pub struct LocalApplicationFacade {
     deployment_targets: Option<RegisteredTargetIndex>,
     deployment_service: Arc<DeploymentService<LocalDeploymentBackend>>,
     removal_service: Arc<RemovalService<LocalDeploymentBackend>>,
+    reconcile_service: Arc<ReconcileService<LocalDeploymentBackend>>,
     prepared_imports: Mutex<HashMap<OperationId, PreparedImport>>,
 }
 
@@ -79,7 +81,7 @@ impl LocalDeploymentBackend {
         Ok(materialized)
     }
 
-    fn deployment_proof(&self, deployment: &DeploymentRecord) -> AppResult<OwnershipProof> {
+    fn target_root(&self, deployment: &DeploymentRecord) -> AppResult<PathBuf> {
         let target_root: String = {
             let database = self
                 .database
@@ -98,7 +100,17 @@ impl LocalDeploymentBackend {
                         .with_action(RecoveryAction::Retry)
                 })?
         };
-        let destination_path = PathBuf::from(target_root).join(&deployment.runtime_name);
+        Ok(PathBuf::from(target_root))
+    }
+
+    fn deployment_proof(&self, deployment: &DeploymentRecord) -> AppResult<OwnershipProof> {
+        let target_root = self.target_root(deployment)?;
+        if physical_id_for_path(&target_root).as_deref() != Some(deployment.target_id.as_str()) {
+            return Err(AppError::new(ErrorCode::OwnershipMismatch, Severity::Error)
+                .with_param("detail", "registered deployment target identity changed")
+                .with_action(RecoveryAction::InspectTarget));
+        }
+        let destination_path = target_root.join(&deployment.runtime_name);
         let target_identity = physical_id_for_path(&destination_path).ok_or_else(|| {
             AppError::new(ErrorCode::OperationConflict, Severity::Error)
                 .with_param("detail", "deployment target identity is unavailable")
@@ -136,6 +148,10 @@ impl LocalDeploymentBackend {
             .into_iter()
             .filter(|record| record.state == DeploymentState::Deployed)
             .collect())
+    }
+
+    fn deployment_destination(&self, deployment: &DeploymentRecord) -> AppResult<PathBuf> {
+        Ok(self.target_root(deployment)?.join(&deployment.runtime_name))
     }
 }
 
@@ -261,6 +277,153 @@ impl RemovalBackend for LocalDeploymentBackend {
     }
 }
 
+#[async_trait]
+impl ReconcileBackend for LocalDeploymentBackend {
+    async fn get_deployment(&self, id: skillhub_core::DeploymentId) -> AppResult<DeploymentRecord> {
+        self.active_deployments()?
+            .into_iter()
+            .find(|record| record.id == id)
+            .ok_or_else(|| {
+                AppError::new(ErrorCode::ObjectNotFound, Severity::Error)
+                    .with_param("field", "deployment")
+                    .with_action(RecoveryAction::Retry)
+            })
+    }
+
+    async fn inspect_target(
+        &self,
+        deployment: &DeploymentRecord,
+    ) -> AppResult<skillhub_core::ExternalChangeObservation> {
+        let root = self.target_root(deployment)?;
+        let root_identity = physical_id_for_path(&root);
+        let destination = root.join(&deployment.runtime_name);
+        if root_identity.as_deref() != Some(deployment.target_id.as_str()) || !destination.exists()
+        {
+            return Ok(skillhub_core::ExternalChangeObservation {
+                state: skillhub_core::ExternalChangeState::Missing,
+                observed_hash: None,
+            });
+        }
+        let observed_hash = DeploymentFilesystem::hash_tree(&destination)?;
+        let state = if observed_hash == deployment.expected_hash {
+            skillhub_core::ExternalChangeState::Unchanged
+        } else if deployment.observed_hash.as_deref() == Some(observed_hash.as_str()) {
+            skillhub_core::ExternalChangeState::Ignored
+        } else {
+            skillhub_core::ExternalChangeState::Modified
+        };
+        Ok(skillhub_core::ExternalChangeObservation {
+            state,
+            observed_hash: Some(observed_hash),
+        })
+    }
+
+    async fn collect_target_changes(
+        &self,
+        deployment: &DeploymentRecord,
+    ) -> AppResult<skillhub_core::VersionId> {
+        let Some(library_root) = self.library_root.as_ref() else {
+            return Err(unsupported("execute.collect_deployment_changes.library"));
+        };
+        let destination = self.deployment_destination(deployment)?;
+        let store = VersionStore::new(LibraryPaths::from_root(library_root.clone()));
+        let version = store.capture(deployment.skill_id, &destination)?;
+        let observed_hash = version.manifest.tree_hash.clone();
+        let database = self
+            .database
+            .lock()
+            .map_err(|_| internal("reconcile.collect"))?;
+        database
+            .deployment_repository()
+            .update_reconcile_facts_sync(
+                deployment.id,
+                &version.id,
+                &observed_hash,
+                Some(&observed_hash),
+            )?;
+        Ok(version.id)
+    }
+
+    async fn restore_target(&self, deployment: &DeploymentRecord) -> AppResult<()> {
+        let Some(library_root) = self.library_root.as_ref() else {
+            return Err(unsupported("execute.restore_deployment.library"));
+        };
+        let destination = self.deployment_destination(deployment)?;
+        let source = library_root
+            .join("versions")
+            .join(deployment.skill_id.to_string())
+            .join(deployment.version_id.as_str());
+        let target = TargetPlan {
+            physical_target_id: deployment.target_id.clone(),
+            logical_target_ids: Vec::new(),
+            target_path: destination
+                .parent()
+                .unwrap_or_else(|| Path::new("."))
+                .to_string_lossy()
+                .into_owned(),
+            destination_path: destination.to_string_lossy().into_owned(),
+            source_path: source.to_string_lossy().into_owned(),
+            runtime_name: deployment.runtime_name.clone(),
+            skill_id: deployment.skill_id,
+            version_id: deployment.version_id.clone(),
+            mode: deployment.mode,
+            change: skillhub_core::TargetChange::Create,
+            warnings: Vec::new(),
+            conflicts: Vec::new(),
+        };
+        let proof = self.deployment_proof(deployment)?;
+        self.filesystem.replace_owned(&proof)?;
+        let source = self.materialized_source(&target)?;
+        let mut effective = target;
+        effective.source_path = source.to_string_lossy().into_owned();
+        let applied = self
+            .filesystem
+            .apply(self.filesystem.prepare(&effective)?)?;
+        let observed_hash = applied.observed_tree_hash.clone();
+        let database = self
+            .database
+            .lock()
+            .map_err(|_| internal("reconcile.restore"))?;
+        database
+            .deployment_repository()
+            .update_reconcile_facts_sync(
+                deployment.id,
+                &deployment.version_id,
+                &deployment.expected_hash,
+                Some(&observed_hash),
+            )
+    }
+
+    async fn keep_independent(&self, deployment: &DeploymentRecord) -> AppResult<()> {
+        let database = self
+            .database
+            .lock()
+            .map_err(|_| internal("reconcile.keep_independent"))?;
+        database
+            .deployment_repository()
+            .detach_management_sync(deployment.id)
+    }
+
+    async fn ignore_external_change(&self, deployment: &DeploymentRecord) -> AppResult<()> {
+        let observation = self.inspect_target(deployment).await?;
+        let Some(observed_hash) = observation.observed_hash else {
+            return Ok(());
+        };
+        let database = self
+            .database
+            .lock()
+            .map_err(|_| internal("reconcile.ignore"))?;
+        database
+            .deployment_repository()
+            .update_reconcile_facts_sync(
+                deployment.id,
+                &deployment.version_id,
+                &deployment.expected_hash,
+                Some(&observed_hash),
+            )
+    }
+}
+
 impl LocalApplicationFacade {
     /// Opens a file-backed facade, creating its parent directory when needed.
     pub fn open(path: impl AsRef<Path>) -> AppResult<Self> {
@@ -304,6 +467,9 @@ impl LocalApplicationFacade {
         let backend = Arc::new(LocalDeploymentBackend::new(database.clone(), None));
         let deployment_service = Arc::new(DeploymentService::new(backend.clone()));
         let removal_service = Arc::new(RemovalService::new(backend));
+        let reconcile_service = Arc::new(ReconcileService::new(Arc::new(
+            LocalDeploymentBackend::new(database.clone(), None),
+        )));
         Self {
             database,
             today,
@@ -312,6 +478,7 @@ impl LocalApplicationFacade {
             deployment_targets: None,
             deployment_service,
             removal_service,
+            reconcile_service,
             prepared_imports: Mutex::new(HashMap::new()),
         }
     }
@@ -325,7 +492,8 @@ impl LocalApplicationFacade {
             Some(library_root.clone()),
         ));
         let deployment_service = Arc::new(DeploymentService::new(backend.clone()));
-        let removal_service = Arc::new(RemovalService::new(backend));
+        let removal_service = Arc::new(RemovalService::new(backend.clone()));
+        let reconcile_service = Arc::new(ReconcileService::new(backend));
         Self {
             database,
             today: current_utc_date(),
@@ -334,6 +502,7 @@ impl LocalApplicationFacade {
             deployment_targets: None,
             deployment_service,
             removal_service,
+            reconcile_service,
             prepared_imports: Mutex::new(HashMap::new()),
         }
     }
@@ -404,6 +573,34 @@ impl ApplicationFacade for LocalApplicationFacade {
                     )
                     .await?;
                 return Ok(AppCommandResult::RemovalResult(result));
+            }
+            AppCommand::CollectDeploymentChanges(request) => {
+                return self
+                    .reconcile_service
+                    .collect_changes(request.deployment_id)
+                    .await
+                    .map(AppCommandResult::ReconcileResult);
+            }
+            AppCommand::RestoreDeployment(request) => {
+                return self
+                    .reconcile_service
+                    .restore(request.deployment_id)
+                    .await
+                    .map(AppCommandResult::ReconcileResult);
+            }
+            AppCommand::KeepIndependentCopy(request) => {
+                return self
+                    .reconcile_service
+                    .keep_independent(request.deployment_id)
+                    .await
+                    .map(AppCommandResult::ReconcileResult);
+            }
+            AppCommand::IgnoreExternalChange(request) => {
+                return self
+                    .reconcile_service
+                    .ignore_external_change(request.deployment_id)
+                    .await
+                    .map(AppCommandResult::ReconcileResult);
             }
             _ => "execute.unsupported",
         };
@@ -498,6 +695,11 @@ impl ApplicationFacade for LocalApplicationFacade {
                 .prepare_delete(request.skill_id)
                 .await
                 .map(AppQueryResult::RemovalImpact),
+            AppQuery::GetReconcilePlan(request) => self
+                .reconcile_service
+                .plan(request.deployment_id)
+                .await
+                .map(AppQueryResult::ReconcilePlan),
             AppQuery::GetDeploymentPlan(request) => self.get_deployment_plan(request.request),
             AppQuery::ListDeploymentTargets(_) => self.list_deployment_targets(),
             AppQuery::GetBasicCheckResult(request) => self.get_check_result(

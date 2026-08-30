@@ -120,6 +120,37 @@ impl<'a> DeploymentRepositorySqlite<'a> {
                 }
             })
     }
+
+    pub fn update_reconcile_facts_sync(
+        &self,
+        id: DeploymentId,
+        version_id: &skillhub_core::VersionId,
+        expected_hash: &str,
+        observed_hash: Option<&str>,
+    ) -> AppResult<()> {
+        self.database
+            .connection
+            .execute(
+                "UPDATE deployments SET version_id=?1, expected_hash=?2, observed_hash=?3, updated_at=?4 WHERE id=?5 AND state IN ('deployed','active')",
+                params![
+                    version_id.to_string(),
+                    expected_hash,
+                    observed_hash,
+                    now(),
+                    id.to_string(),
+                ],
+            )
+            .map_err(database_error)
+            .and_then(|changed| {
+                if changed == 1 {
+                    Ok(())
+                } else {
+                    Err(AppError::new(ErrorCode::ObjectNotFound, Severity::Error)
+                        .with_param("field", "deployment")
+                        .with_action(RecoveryAction::Retry))
+                }
+            })
+    }
 }
 
 #[async_trait(?Send)]

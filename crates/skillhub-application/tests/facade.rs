@@ -7,9 +7,9 @@ use skillhub_core::{
     api::{
         AnalyzeImport, AppCommandResult, AppQueryResult, CommitDeployment, CommitUndeploy,
         DiffVersions, DiscoverImportCandidates, GetBasicCheckResult, GetDeploymentPlan,
-        GetDeploymentRelations, GetRemovalImpact, GetSkill, ListDeployments, ListFindings,
-        ListMarkdownFiles, ListSkills, ListVersions, PrepareDeployment, PrepareImport,
-        PrepareUndeploy, ReadMarkdownFile,
+        GetDeploymentRelations, GetReconcilePlan, GetRemovalImpact, GetSkill, KeepIndependentCopy,
+        ListDeployments, ListFindings, ListMarkdownFiles, ListSkills, ListVersions,
+        PrepareDeployment, PrepareImport, PrepareUndeploy, ReadMarkdownFile,
     },
     catalog::{CatalogRepository, Skill},
     check::{CheckKind, CheckState},
@@ -22,7 +22,7 @@ use skillhub_core::{
     search::{SearchDocument, SearchQuery},
     source::{SourceDescriptor, SourceKind, SourceLocator},
     AppCommand, AppQuery as RootAppQuery, ApplicationFacade, DeploymentCapability, ErrorCode,
-    PathPolicy, RemovalDecision, Severity,
+    ExternalChangeState, PathPolicy, ReconcileAction, RemovalDecision, Severity,
 };
 use skillhub_storage::Database;
 use skillhub_storage::{CentralLibrary, VersionStore};
@@ -1176,6 +1176,84 @@ async fn undeploy_preserves_modified_target_and_relation_for_review() {
         panic!("expected deployment records");
     };
     assert_eq!(records[0].state, DeploymentState::Deployed);
+}
+
+#[tokio::test]
+async fn reconcile_query_detects_modified_target_and_keep_independent_updates_relation() {
+    let database = Database::open_in_memory().expect("database");
+    let skill = Skill::new(skillhub_core::SkillId::new(), "Reconcile");
+    database
+        .catalog_repository()
+        .expect("catalog repository")
+        .insert(&skill)
+        .await
+        .expect("insert skill");
+    let version_id = skillhub_core::VersionId::parse(
+        "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    )
+    .expect("version id");
+    let target = tempfile::tempdir().expect("target");
+    let destination = target.path().join("reconcile");
+    std::fs::create_dir_all(&destination).expect("create destination");
+    std::fs::write(destination.join("SKILL.md"), "# changed\n").expect("write destination");
+    let target_id = skillhub_core::physical_id_for_path(target.path()).expect("target id");
+    let original_hash = "sha256:original-tree";
+    let deployment_id = skillhub_core::DeploymentId::new();
+    database
+        .connection_for_test()
+        .execute(
+            "INSERT INTO versions (id, skill_id, content_hash, manifest_json, created_at) VALUES (?1, ?2, 'hash', '{}', 0)",
+            rusqlite::params![version_id.to_string(), skill.id().to_string()],
+        )
+        .expect("insert version");
+    database
+        .connection_for_test()
+        .execute(
+            "INSERT INTO targets (id, agent_id, scope, path, created_at) VALUES (?1, 'agent-codex', 'global', ?2, 0)",
+            rusqlite::params![target_id, target.path().to_string_lossy().into_owned()],
+        )
+        .expect("insert target");
+    database
+        .connection_for_test()
+        .execute(
+            "INSERT INTO deployments (id, skill_id, version_id, target_id, state, method, managed, runtime_name, expected_hash, observed_hash, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, 'deployed', 'managed_copy', 1, 'reconcile', ?5, ?5, 0, 0)",
+            rusqlite::params![
+                deployment_id.to_string(),
+                skill.id().to_string(),
+                version_id.to_string(),
+                target_id,
+                original_hash,
+            ],
+        )
+        .expect("insert deployment");
+
+    let facade = LocalApplicationFacade::new_with_today(database, (2026, 8, 30));
+    let plan = facade
+        .query(RootAppQuery::GetReconcilePlan(GetReconcilePlan {
+            deployment_id,
+        }))
+        .await
+        .expect("reconcile plan");
+    let AppQueryResult::ReconcilePlan(plan) = plan else {
+        panic!("expected reconcile plan");
+    };
+    assert_eq!(plan.state, ExternalChangeState::Modified);
+    assert!(plan
+        .allowed_actions
+        .contains(&ReconcileAction::KeepIndependentCopy));
+
+    let result = facade
+        .execute(AppCommand::KeepIndependentCopy(KeepIndependentCopy {
+            deployment_id,
+        }))
+        .await
+        .expect("keep independent copy");
+    let AppCommandResult::ReconcileResult(result) = result else {
+        panic!("expected reconcile result");
+    };
+    assert_eq!(result.action, ReconcileAction::KeepIndependentCopy);
+    assert!(!result.management_retained);
+    assert!(destination.join("SKILL.md").is_file());
 }
 
 #[tokio::test]

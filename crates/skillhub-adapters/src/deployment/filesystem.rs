@@ -151,19 +151,31 @@ impl DeploymentFilesystem {
 
     pub fn remove_owned(&self, proof: &OwnershipProof) -> AppResult<()> {
         verify_owned(proof)?;
-        match proof.mode {
-            DeploymentMode::ManagedCopy => {
-                fs::remove_dir_all(&proof.destination_path).map_err(io_error)?;
-            }
-            DeploymentMode::SymbolicLink => {
-                symlink::remove_dir_link(&proof.destination_path).map_err(io_error)?;
-            }
-            DeploymentMode::DirectoryJunction => {
-                fs::remove_dir(&proof.destination_path).map_err(io_error)?;
-            }
-        }
-        Ok(())
+        remove_target(proof)
     }
+
+    /// Removes a target after the caller has explicitly confirmed a restore.
+    /// The physical identity is still checked, but the content hash is allowed
+    /// to differ because this operation intentionally replaces external edits.
+    pub fn replace_owned(&self, proof: &OwnershipProof) -> AppResult<()> {
+        verify_identity(proof)?;
+        remove_target(proof)
+    }
+}
+
+fn remove_target(proof: &OwnershipProof) -> AppResult<()> {
+    match proof.mode {
+        DeploymentMode::ManagedCopy => {
+            fs::remove_dir_all(&proof.destination_path).map_err(io_error)?;
+        }
+        DeploymentMode::SymbolicLink => {
+            symlink::remove_dir_link(&proof.destination_path).map_err(io_error)?;
+        }
+        DeploymentMode::DirectoryJunction => {
+            fs::remove_dir(&proof.destination_path).map_err(io_error)?;
+        }
+    }
+    Ok(())
 }
 
 fn verify_owned(proof: &OwnershipProof) -> AppResult<()> {
@@ -171,13 +183,22 @@ fn verify_owned(proof: &OwnershipProof) -> AppResult<()> {
     if !destination.exists() {
         return Err(ownership_mismatch(destination));
     }
+    verify_identity(proof)?;
+    let current_hash = tree_hash(destination)?;
+    if current_hash != proof.expected_hash {
+        return Err(ownership_mismatch(destination));
+    }
+    Ok(())
+}
+
+fn verify_identity(proof: &OwnershipProof) -> AppResult<()> {
+    let destination = &proof.destination_path;
+    if !destination.exists() {
+        return Err(ownership_mismatch(destination));
+    }
     let current_identity = physical_id_for_path(destination)
         .ok_or_else(|| operation_conflict("target filesystem identity is unavailable"))?;
     if current_identity != proof.target_identity {
-        return Err(ownership_mismatch(destination));
-    }
-    let current_hash = tree_hash(destination)?;
-    if current_hash != proof.expected_hash {
         return Err(ownership_mismatch(destination));
     }
     Ok(())
