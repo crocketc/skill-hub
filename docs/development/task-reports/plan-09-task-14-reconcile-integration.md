@@ -17,6 +17,8 @@
 - reconcile 原生门面定向测试：2/2 通过。
 - TypeScript、ESLint、Rust 格式检查通过。
 - Windows 本地 CI：10/10 全部通过；前端安全审计 0 个漏洞，生产构建通过。
+- macOS 本地 CI：10/10 全部通过；前端安全审计 0 个漏洞，生产构建通过。
+- macOS 专项测试：`facade reconcile_query` 1/1、`external_changes` 4/4、`reconcileNativeApi.test.ts` 2/2、TypeScript 通过。
 
 ## 安全边界
 
@@ -27,4 +29,4 @@
 
 ## 待完成
 
-- macOS 本地 CI 和真实客户端验收尚未收口。
+- Task14 的 Windows/macOS 本地 CI 和专项测试均已收口；真实 Agent 是否执行 Skill 仍不属于本 Task 的验收范围。
