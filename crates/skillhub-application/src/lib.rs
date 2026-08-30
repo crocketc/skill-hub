@@ -6,18 +6,20 @@ use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use async_trait::async_trait;
-use skillhub_adapters::deployment::DeploymentFilesystem;
+use skillhub_adapters::deployment::{DeploymentFilesystem, OwnershipProof};
 use skillhub_adapters::import::SkillDetector;
-use skillhub_core::application::{DeploymentBackend, DeploymentService, PreparedImport};
+use skillhub_core::application::{
+    DeploymentBackend, DeploymentService, PreparedImport, RemovalBackend, RemovalService,
+};
 use skillhub_core::catalog::Skill;
 use skillhub_core::deployment::{
     DeploymentPlanRequest, DeploymentRecord, DeploymentState, RegisteredTargetIndex, TargetFact,
     TargetPlan,
 };
 use skillhub_core::{
-    AllowedRoot, AppCommand, AppCommandResult, AppError, AppQuery, AppQueryResult, AppResult,
-    ApplicationFacade, DeploymentCapability, ErrorCode, OperationId, PathPolicy, RecoveryAction,
-    Severity,
+    physical_id_for_path, AllowedRoot, AppCommand, AppCommandResult, AppError, AppQuery,
+    AppQueryResult, AppResult, ApplicationFacade, DeploymentCapability, ErrorCode, OperationId,
+    PathPolicy, RecoveryAction, Severity,
 };
 use skillhub_storage::{CentralLibrary, Database, LibraryPaths, VersionStore};
 
@@ -31,6 +33,7 @@ pub struct LocalApplicationFacade {
     library_root: Option<PathBuf>,
     deployment_targets: Option<RegisteredTargetIndex>,
     deployment_service: Arc<DeploymentService<LocalDeploymentBackend>>,
+    removal_service: Arc<RemovalService<LocalDeploymentBackend>>,
     prepared_imports: Mutex<HashMap<OperationId, PreparedImport>>,
 }
 
@@ -75,6 +78,65 @@ impl LocalDeploymentBackend {
         }
         Ok(materialized)
     }
+
+    fn deployment_proof(&self, deployment: &DeploymentRecord) -> AppResult<OwnershipProof> {
+        let target_root: String = {
+            let database = self
+                .database
+                .lock()
+                .map_err(|_| internal("removal.target"))?;
+            database
+                .connection_for_test()
+                .query_row(
+                    "SELECT path FROM targets WHERE id=?1",
+                    [deployment.target_id.as_str()],
+                    |row| row.get(0),
+                )
+                .map_err(|_| {
+                    AppError::new(ErrorCode::ObjectNotFound, Severity::Error)
+                        .with_param("field", "deployment_target")
+                        .with_action(RecoveryAction::Retry)
+                })?
+        };
+        let destination_path = PathBuf::from(target_root).join(&deployment.runtime_name);
+        let target_identity = physical_id_for_path(&destination_path).ok_or_else(|| {
+            AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                .with_param("detail", "deployment target identity is unavailable")
+                .with_action(RecoveryAction::InspectTarget)
+        })?;
+        let source_path = self
+            .library_root
+            .as_ref()
+            .map(|root| {
+                root.join("versions")
+                    .join(deployment.skill_id.to_string())
+                    .join(deployment.version_id.as_str())
+            })
+            .unwrap_or_else(|| destination_path.clone());
+        Ok(OwnershipProof {
+            mode: deployment.mode,
+            destination_path,
+            source_path,
+            expected_hash: deployment.expected_hash.clone(),
+            target_identity,
+            skill_id: deployment.skill_id,
+            version_id: deployment.version_id.clone(),
+            runtime_name: deployment.runtime_name.clone(),
+        })
+    }
+
+    fn active_deployments(&self) -> AppResult<Vec<DeploymentRecord>> {
+        let database = self
+            .database
+            .lock()
+            .map_err(|_| internal("removal.inspect"))?;
+        Ok(database
+            .deployment_repository()
+            .list_all()?
+            .into_iter()
+            .filter(|record| record.state == DeploymentState::Deployed)
+            .collect())
+    }
 }
 
 #[async_trait]
@@ -104,6 +166,98 @@ impl DeploymentBackend for LocalDeploymentBackend {
         })?;
         database.deployment_repository().insert_sync(&record)?;
         Ok(record)
+    }
+}
+
+#[async_trait]
+impl RemovalBackend for LocalDeploymentBackend {
+    async fn inspect_delete(
+        &self,
+        skill_id: skillhub_core::SkillId,
+    ) -> AppResult<skillhub_core::RemovalImpact> {
+        let deployments = self
+            .active_deployments()?
+            .into_iter()
+            .filter(|record| record.skill_id == skill_id)
+            .collect::<Vec<_>>();
+        let requires_shared_target_choice = deployments.iter().any(|record| {
+            deployments
+                .iter()
+                .filter(|other| other.target_id == record.target_id)
+                .count()
+                > 1
+        });
+        Ok(skillhub_core::RemovalImpact {
+            operation_id: OperationId::new(),
+            skill_id,
+            deployments,
+            requires_shared_target_choice,
+            dependencies: Vec::new(),
+        })
+    }
+
+    async fn inspect_undeploy(
+        &self,
+        deployment_id: skillhub_core::DeploymentId,
+    ) -> AppResult<skillhub_core::RemovalImpact> {
+        let deployment = self
+            .active_deployments()?
+            .into_iter()
+            .find(|record| record.id == deployment_id)
+            .ok_or_else(|| {
+                AppError::new(ErrorCode::ObjectNotFound, Severity::Error)
+                    .with_param("field", "deployment")
+                    .with_action(RecoveryAction::Retry)
+            })?;
+        let shared = self
+            .active_deployments()?
+            .into_iter()
+            .filter(|record| record.target_id == deployment.target_id)
+            .count()
+            > 1;
+        Ok(skillhub_core::RemovalImpact {
+            operation_id: OperationId::new(),
+            skill_id: deployment.skill_id,
+            deployments: vec![deployment],
+            requires_shared_target_choice: shared,
+            dependencies: Vec::new(),
+        })
+    }
+
+    async fn remove_owned_target(&self, deployment: &DeploymentRecord) -> AppResult<()> {
+        self.filesystem
+            .remove_owned(&self.deployment_proof(deployment)?)?;
+        let database = self
+            .database
+            .lock()
+            .map_err(|_| internal("removal.remove_target"))?;
+        database
+            .deployment_repository()
+            .mark_removed_sync(deployment.id)
+    }
+
+    async fn remove_relation(&self, deployment: &DeploymentRecord) -> AppResult<()> {
+        let database = self
+            .database
+            .lock()
+            .map_err(|_| internal("removal.remove_relation"))?;
+        database
+            .deployment_repository()
+            .mark_removed_sync(deployment.id)
+    }
+
+    async fn detach_management(&self, deployment: &DeploymentRecord) -> AppResult<()> {
+        let database = self
+            .database
+            .lock()
+            .map_err(|_| internal("removal.detach_management"))?;
+        database
+            .deployment_repository()
+            .detach_management_sync(deployment.id)
+    }
+
+    async fn delete_skill(&self, _skill_id: skillhub_core::SkillId) -> AppResult<()> {
+        Err(unsupported("execute.delete_skill"))
     }
 }
 
@@ -147,9 +301,9 @@ impl LocalApplicationFacade {
     /// Creates a facade with an explicit date boundary for deterministic tests.
     pub fn new_with_today(database: Database, today: (i32, u8, u8)) -> Self {
         let database = Arc::new(Mutex::new(database));
-        let deployment_service = Arc::new(DeploymentService::new(Arc::new(
-            LocalDeploymentBackend::new(database.clone(), None),
-        )));
+        let backend = Arc::new(LocalDeploymentBackend::new(database.clone(), None));
+        let deployment_service = Arc::new(DeploymentService::new(backend.clone()));
+        let removal_service = Arc::new(RemovalService::new(backend));
         Self {
             database,
             today,
@@ -157,6 +311,7 @@ impl LocalApplicationFacade {
             library_root: None,
             deployment_targets: None,
             deployment_service,
+            removal_service,
             prepared_imports: Mutex::new(HashMap::new()),
         }
     }
@@ -165,9 +320,12 @@ impl LocalApplicationFacade {
     pub fn new_with_library(database: Database, library_root: impl AsRef<Path>) -> Self {
         let library_root = library_root.as_ref().to_path_buf();
         let database = Arc::new(Mutex::new(database));
-        let deployment_service = Arc::new(DeploymentService::new(Arc::new(
-            LocalDeploymentBackend::new(database.clone(), Some(library_root.clone())),
-        )));
+        let backend = Arc::new(LocalDeploymentBackend::new(
+            database.clone(),
+            Some(library_root.clone()),
+        ));
+        let deployment_service = Arc::new(DeploymentService::new(backend.clone()));
+        let removal_service = Arc::new(RemovalService::new(backend));
         Self {
             database,
             today: current_utc_date(),
@@ -175,6 +333,7 @@ impl LocalApplicationFacade {
             library_root: Some(library_root),
             deployment_targets: None,
             deployment_service,
+            removal_service,
             prepared_imports: Mutex::new(HashMap::new()),
         }
     }
@@ -221,6 +380,30 @@ impl ApplicationFacade for LocalApplicationFacade {
             AppCommand::CommitImport(request) => return self.commit_import(request),
             AppCommand::CancelImport { prepared_import_id } => {
                 return self.cancel_import(prepared_import_id)
+            }
+            AppCommand::PrepareUndeploy(request) => {
+                let impact = self
+                    .removal_service
+                    .prepare_undeploy(request.deployment_id)
+                    .await?;
+                return Ok(AppCommandResult::RemovalImpact(impact));
+            }
+            AppCommand::CommitUndeploy(request) => {
+                let result = self
+                    .removal_service
+                    .commit_undeploy(request.prepared_undeploy_id, request.decision)
+                    .await?;
+                return Ok(AppCommandResult::RemovalResult(result));
+            }
+            AppCommand::DetachManagement(request) => {
+                let result = self
+                    .removal_service
+                    .undeploy(
+                        request.deployment_id,
+                        skillhub_core::RemovalDecision::DetachManagement,
+                    )
+                    .await?;
+                return Ok(AppCommandResult::RemovalResult(result));
             }
             _ => "execute.unsupported",
         };
@@ -310,6 +493,11 @@ impl ApplicationFacade for LocalApplicationFacade {
             AppQuery::GetDeploymentRelations(request) => {
                 self.list_deployment_relations(request.skill_id)
             }
+            AppQuery::GetRemovalImpact(request) => self
+                .removal_service
+                .prepare_delete(request.skill_id)
+                .await
+                .map(AppQueryResult::RemovalImpact),
             AppQuery::GetDeploymentPlan(request) => self.get_deployment_plan(request.request),
             AppQuery::ListDeploymentTargets(_) => self.list_deployment_targets(),
             AppQuery::GetBasicCheckResult(request) => self.get_check_result(
@@ -843,6 +1031,12 @@ fn cleanup_import_error(original: AppError, cleanup: AppResult<()>) -> AppError 
 }
 
 fn unsupported(operation: &'static str) -> AppError {
+    AppError::new(ErrorCode::InternalError, Severity::Error)
+        .with_param("operation", operation)
+        .with_action(RecoveryAction::Retry)
+}
+
+fn internal(operation: &'static str) -> AppError {
     AppError::new(ErrorCode::InternalError, Severity::Error)
         .with_param("operation", operation)
         .with_action(RecoveryAction::Retry)

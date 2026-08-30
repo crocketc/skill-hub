@@ -82,6 +82,44 @@ impl<'a> DeploymentRepositorySqlite<'a> {
             .map(|_| ())
             .map_err(database_error)
     }
+
+    pub fn mark_removed_sync(&self, id: DeploymentId) -> AppResult<()> {
+        self.database
+            .connection
+            .execute(
+                "UPDATE deployments SET state='removed', updated_at=?1 WHERE id=?2 AND state IN ('deployed','active')",
+                params![now(), id.to_string()],
+            )
+            .map_err(database_error)
+            .and_then(|changed| {
+                if changed == 1 {
+                    Ok(())
+                } else {
+                    Err(AppError::new(ErrorCode::ObjectNotFound, Severity::Error)
+                        .with_param("field", "deployment")
+                        .with_action(RecoveryAction::Retry))
+                }
+            })
+    }
+
+    pub fn detach_management_sync(&self, id: DeploymentId) -> AppResult<()> {
+        self.database
+            .connection
+            .execute(
+                "UPDATE deployments SET managed=0, updated_at=?1 WHERE id=?2 AND state IN ('deployed','active')",
+                params![now(), id.to_string()],
+            )
+            .map_err(database_error)
+            .and_then(|changed| {
+                if changed == 1 {
+                    Ok(())
+                } else {
+                    Err(AppError::new(ErrorCode::ObjectNotFound, Severity::Error)
+                        .with_param("field", "deployment")
+                        .with_action(RecoveryAction::Retry))
+                }
+            })
+    }
 }
 
 #[async_trait(?Send)]

@@ -5,10 +5,11 @@ use skillhub_core::{
         LogicalTarget, OperatingSystem, TargetScope,
     },
     api::{
-        AnalyzeImport, AppCommandResult, AppQueryResult, CommitDeployment, DiffVersions,
-        DiscoverImportCandidates, GetBasicCheckResult, GetDeploymentPlan, GetDeploymentRelations,
-        GetSkill, ListDeployments, ListFindings, ListMarkdownFiles, ListSkills, ListVersions,
-        PrepareDeployment, PrepareImport, ReadMarkdownFile,
+        AnalyzeImport, AppCommandResult, AppQueryResult, CommitDeployment, CommitUndeploy,
+        DiffVersions, DiscoverImportCandidates, GetBasicCheckResult, GetDeploymentPlan,
+        GetDeploymentRelations, GetRemovalImpact, GetSkill, ListDeployments, ListFindings,
+        ListMarkdownFiles, ListSkills, ListVersions, PrepareDeployment, PrepareImport,
+        PrepareUndeploy, ReadMarkdownFile,
     },
     catalog::{CatalogRepository, Skill},
     check::{CheckKind, CheckState},
@@ -21,7 +22,7 @@ use skillhub_core::{
     search::{SearchDocument, SearchQuery},
     source::{SourceDescriptor, SourceKind, SourceLocator},
     AppCommand, AppQuery as RootAppQuery, ApplicationFacade, DeploymentCapability, ErrorCode,
-    PathPolicy, Severity,
+    PathPolicy, RemovalDecision, Severity,
 };
 use skillhub_storage::Database;
 use skillhub_storage::{CentralLibrary, VersionStore};
@@ -951,6 +952,53 @@ async fn deployment_commands_prepare_commit_and_persist_managed_copy() {
     };
     assert_eq!(records.len(), 1);
     assert_eq!(records[0].version_id, version_id);
+
+    let impact = facade
+        .query(RootAppQuery::GetRemovalImpact(GetRemovalImpact {
+            skill_id: skill.id(),
+        }))
+        .await
+        .expect("removal impact");
+    let AppQueryResult::RemovalImpact(impact) = impact else {
+        panic!("expected removal impact");
+    };
+    assert_eq!(impact.skill_id, skill.id());
+    assert_eq!(impact.deployments, records);
+    assert!(!impact.requires_shared_target_choice);
+
+    let prepared = facade
+        .execute(AppCommand::PrepareUndeploy(PrepareUndeploy {
+            deployment_id: impact.deployments[0].id,
+        }))
+        .await
+        .expect("prepare undeploy");
+    let AppCommandResult::RemovalImpact(prepared) = prepared else {
+        panic!("expected prepared removal impact");
+    };
+    let removed = facade
+        .execute(AppCommand::CommitUndeploy(CommitUndeploy {
+            prepared_undeploy_id: prepared.operation_id,
+            decision: RemovalDecision::RemoveOwnedTarget,
+        }))
+        .await
+        .expect("commit undeploy");
+    let AppCommandResult::RemovalResult(removed) = removed else {
+        panic!("expected removal result");
+    };
+    assert!(removed.decisions[0].target_removed);
+    assert!(removed.decisions[0].relation_removed);
+    assert!(!target.path().join("deployable").exists());
+    let after_removal = facade
+        .query(RootAppQuery::ListDeployments(ListDeployments {
+            skill_id: Some(skill.id()),
+        }))
+        .await
+        .expect("deployment records after removal");
+    let AppQueryResult::Deployments(after_removal) = after_removal else {
+        panic!("expected deployment records after removal");
+    };
+    assert_eq!(after_removal.len(), 1);
+    assert_eq!(after_removal[0].state, DeploymentState::Removed);
 }
 
 #[tokio::test]
@@ -1045,6 +1093,89 @@ async fn failed_deployment_keeps_prepared_operation_and_source_for_retry() {
     };
     assert!(second.committed);
     assert!(missing_parent.join("retryable/SKILL.md").is_file());
+}
+
+#[tokio::test]
+async fn undeploy_preserves_modified_target_and_relation_for_review() {
+    let database = Database::open_in_memory().expect("database");
+    let skill = Skill::new(skillhub_core::SkillId::new(), "Protected");
+    database
+        .catalog_repository()
+        .expect("catalog repository")
+        .insert(&skill)
+        .await
+        .expect("insert skill");
+    let version_id = skillhub_core::VersionId::parse(
+        "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    )
+    .expect("version id");
+    let target = tempfile::tempdir().expect("target");
+    let destination = target.path().join("protected");
+    std::fs::create_dir_all(&destination).expect("create destination");
+    std::fs::write(destination.join("SKILL.md"), "# original\n").expect("write destination");
+    let target_id = skillhub_core::physical_id_for_path(target.path()).expect("target id");
+    let expected_hash =
+        skillhub_adapters::deployment::DeploymentFilesystem::hash_tree(&destination)
+            .expect("hash destination");
+    let deployment_id = skillhub_core::DeploymentId::new();
+    database
+        .connection_for_test()
+        .execute(
+            "INSERT INTO versions (id, skill_id, content_hash, manifest_json, created_at) VALUES (?1, ?2, 'hash', '{}', 0)",
+            rusqlite::params![version_id.to_string(), skill.id().to_string()],
+        )
+        .expect("insert version");
+    database
+        .connection_for_test()
+        .execute(
+            "INSERT INTO targets (id, agent_id, scope, path, created_at) VALUES (?1, 'agent-codex', 'global', ?2, 0)",
+            rusqlite::params![target_id, target.path().to_string_lossy().into_owned()],
+        )
+        .expect("insert target");
+    database
+        .connection_for_test()
+        .execute(
+            "INSERT INTO deployments (id, skill_id, version_id, target_id, state, method, managed, runtime_name, expected_hash, observed_hash, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, 'deployed', 'managed_copy', 1, 'protected', ?5, ?5, 0, 0)",
+            rusqlite::params![
+                deployment_id.to_string(),
+                skill.id().to_string(),
+                version_id.to_string(),
+                target_id,
+                expected_hash,
+            ],
+        )
+        .expect("insert deployment");
+
+    let facade = LocalApplicationFacade::new_with_today(database, (2026, 8, 30));
+    let prepared = facade
+        .execute(AppCommand::PrepareUndeploy(PrepareUndeploy {
+            deployment_id,
+        }))
+        .await
+        .expect("prepare undeploy");
+    let AppCommandResult::RemovalImpact(prepared) = prepared else {
+        panic!("expected prepared removal impact");
+    };
+    std::fs::write(destination.join("SKILL.md"), "# changed\n").expect("modify destination");
+    let error = facade
+        .execute(AppCommand::CommitUndeploy(CommitUndeploy {
+            prepared_undeploy_id: prepared.operation_id,
+            decision: RemovalDecision::RemoveOwnedTarget,
+        }))
+        .await
+        .expect_err("modified target must be protected");
+    assert_eq!(error.code, ErrorCode::OwnershipMismatch);
+    assert!(destination.is_dir());
+    let records = facade
+        .query(RootAppQuery::ListDeployments(ListDeployments {
+            skill_id: Some(skill.id()),
+        }))
+        .await
+        .expect("deployment records");
+    let AppQueryResult::Deployments(records) = records else {
+        panic!("expected deployment records");
+    };
+    assert_eq!(records[0].state, DeploymentState::Deployed);
 }
 
 #[tokio::test]
