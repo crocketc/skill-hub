@@ -168,7 +168,7 @@ pnpm --dir apps/desktop build
 
 Expected: all focused tests, typecheck, lint, and production build pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 Implementation note: the native adapter carries the generated plan privately through the existing facade shape. It resolves the current version/runtime name when the route uses the `current` placeholder, and maps failed target rows without exposing absolute target paths in error messages. The application facade builds a production `RegisteredTargetIndex` from persisted discovery facts; unavailable or non-directory targets are excluded from planning.
 
@@ -184,7 +184,7 @@ git commit -m "feat: connect deployment dialog to native facade"
 - Modify: `docs/development/当前开发状态.md`
 - Test: `tests/integration/deployment_flow.rs` when the existing fixture can exercise the command boundary.
 
-- [ ] **Step 1: Run Windows focused tests and the complete local CI**
+- [x] **Step 1: Run Windows focused tests and the complete local CI**
 - [ ] **Step 2: Push the verified commit and send macOS validation instructions**
 - [ ] **Step 3: Record filesystem mode, permission, rollback, and shared-physical-target results for both platforms**
 - [ ] **Step 4: Run `git diff --check`, update the task report, and commit the documentation**
