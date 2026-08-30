@@ -47,10 +47,10 @@
 - Consumes: `SetFindingDisposition`、`CheckService::set_finding_disposition`。
 - Produces: `AppCommandResult::BasicCheckResult` 及类型化 `setFindingDisposition` 调用。
 
-- [ ] 编写失败测试：未知发现项被拒绝；高风险发现项未确认时被拒绝；确认后处置结果更新。
-- [ ] 运行定向 Rust/前端测试确认失败。
-- [ ] 接入 facade 命令分发和前端原生门面，严格保留 kind/version 校验。
-- [ ] 运行 Rust facade、前端定向测试、TypeScript 和 ESLint。
+- [x] 编写失败测试：未知发现项被拒绝；高风险发现项未确认时被拒绝；确认后处置结果更新。
+- [x] 运行定向 Rust/前端测试确认失败。
+- [x] 接入 facade 命令分发和前端原生门面，严格保留 kind/version 校验。
+- [x] 运行 Rust facade、前端定向测试、TypeScript 和 ESLint。
 
 ### Task 15.3：文档、双平台 CI 与验收收口
 

@@ -9,13 +9,13 @@ use async_trait::async_trait;
 use skillhub_adapters::deployment::{DeploymentFilesystem, OwnershipProof};
 use skillhub_adapters::import::SkillDetector;
 use skillhub_adapters::security::BasicScanner;
-use skillhub_core::api::BasicCheckResult;
+use skillhub_core::api::{BasicCheckResult, SetFindingDisposition};
 use skillhub_core::application::{
     DeploymentBackend, DeploymentService, PreparedImport, ReconcileBackend, ReconcileService,
     RemovalBackend, RemovalService,
 };
 use skillhub_core::catalog::Skill;
-use skillhub_core::check::{CheckKind, CheckRun, CheckRunPhase};
+use skillhub_core::check::{CheckKind, CheckRun, CheckRunPhase, FindingDisposition};
 use skillhub_core::deployment::{
     DeploymentPlanRequest, DeploymentRecord, DeploymentState, RegisteredTargetIndex, TargetFact,
     TargetPlan,
@@ -598,6 +598,59 @@ impl LocalApplicationFacade {
             BasicCheckResult::from_check_result(skill_id, version_id, &result),
         ))
     }
+
+    fn set_finding_disposition(
+        &self,
+        request: SetFindingDisposition,
+    ) -> AppResult<AppCommandResult> {
+        let updated = self.with_database("execute.set_finding_disposition", |database| {
+            let repository = database.check_repository();
+            let run = repository
+                .current_for_version_sync(request.skill_id, &request.version_id, request.kind)?
+                .ok_or_else(|| {
+                    AppError::new(ErrorCode::ObjectNotFound, Severity::Error)
+                        .with_param("version_id", request.version_id.to_string())
+                        .with_action(RecoveryAction::ReviewSecurityFindings)
+                })?;
+            let finding = run
+                .findings
+                .iter()
+                .find(|finding| finding.id == request.finding_id)
+                .ok_or_else(|| {
+                    AppError::new(ErrorCode::ObjectNotFound, Severity::Error)
+                        .with_param("finding_id", request.finding_id.clone())
+                        .with_action(RecoveryAction::ReviewSecurityFindings)
+                })?;
+            if request.disposition != FindingDisposition::Actionable
+                && finding.is_high_risk()
+                && !request.high_risk_confirmed
+            {
+                return Err(AppError::new(ErrorCode::InvalidInput, Severity::Error)
+                    .with_param("finding_id", request.finding_id.clone())
+                    .with_param("requires_high_risk_confirmation", true)
+                    .with_action(RecoveryAction::ReviewSecurityFindings));
+            }
+            let updated = run.set_disposition(&request.finding_id, request.disposition)?;
+            repository.update_sync(&updated)?;
+            Ok(updated)
+        })?;
+        let result = skillhub_core::check::CheckResult {
+            state: updated.state(),
+            run: Some(updated.clone()),
+        };
+        Ok(match request.kind {
+            CheckKind::Basic => AppCommandResult::BasicCheckResult(
+                BasicCheckResult::from_check_result(request.skill_id, request.version_id, &result),
+            ),
+            CheckKind::Llm => AppCommandResult::LlmSafetyCheckResult(
+                skillhub_core::api::LlmSafetyCheckResult::from_check_result(
+                    request.skill_id,
+                    request.version_id,
+                    &result,
+                ),
+            ),
+        })
+    }
 }
 
 #[async_trait]
@@ -677,6 +730,9 @@ impl ApplicationFacade for LocalApplicationFacade {
                 return self
                     .run_basic_check(request.skill_id, request.version_id)
                     .await;
+            }
+            AppCommand::SetFindingDisposition(request) => {
+                return self.set_finding_disposition(request);
             }
             _ => "execute.unsupported",
         };

@@ -1,8 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
-import { queryApplication } from "../../api/bindings";
-import { nativeSkillDetailFacade } from "./nativeApi";
+import { executeCommand, queryApplication } from "../../api/bindings";
+import { nativeSkillDetailFacade, setNativeFindingDisposition } from "./nativeApi";
 
 vi.mock("../../api/bindings", () => ({
+  executeCommand: vi.fn(),
   queryApplication: vi.fn(),
 }));
 
@@ -147,5 +148,42 @@ describe("native skill detail facade", () => {
       disposition: "actionable",
       highRisk: true,
     }]);
+  });
+
+  it("submits an explicit finding disposition through the typed native command", async () => {
+    vi.clearAllMocks();
+    vi.mocked(executeCommand).mockResolvedValue({
+      type: "basic_check_result",
+      payload: {
+        skill_id: "skill-1",
+        version_id: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        state: "passed",
+        run_id: "basic-run",
+        ruleset_id: "basic-v1",
+        checked_at: "2026-08-29T00:00:00Z",
+        finding_count: 1,
+        actionable_count: 0,
+      },
+    });
+
+    await expect(setNativeFindingDisposition(
+      "skill-1",
+      "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "basic",
+      "finding-1",
+      "acknowledged",
+      true,
+    )).resolves.toBeUndefined();
+    expect(executeCommand).toHaveBeenCalledWith({
+      type: "set_finding_disposition",
+      payload: {
+        skill_id: "skill-1",
+        version_id: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        kind: "basic",
+        finding_id: "finding-1",
+        disposition: "acknowledged",
+        high_risk_confirmed: true,
+      },
+    });
   });
 });

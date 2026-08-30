@@ -1,4 +1,11 @@
-import { queryApplication, type AppQueryResult, type SkillResult } from "../../api/bindings";
+import {
+  executeCommand,
+  queryApplication,
+  type AppCommandResult,
+  type AppQueryResult,
+  type FindingDisposition,
+  type SkillResult,
+} from "../../api/bindings";
 import {
   SkillDetailUnavailableError,
   unavailableSkillDetailFacade,
@@ -120,3 +127,28 @@ export const nativeSkillDetailFacade: SkillDetailFacade = {
     }));
   },
 };
+
+/** Applies an explicit disposition to a persisted security finding. */
+export async function setNativeFindingDisposition(
+  skillId: string,
+  versionId: string,
+  kind: "basic" | "llm",
+  findingId: string,
+  disposition: FindingDisposition,
+  highRiskConfirmed: boolean,
+): Promise<void> {
+  const result: AppCommandResult = await executeCommand({
+    type: "set_finding_disposition",
+    payload: {
+      skill_id: skillId,
+      version_id: versionId,
+      kind,
+      finding_id: findingId,
+      disposition,
+      high_risk_confirmed: highRiskConfirmed,
+    },
+  });
+  if (result.type !== (kind === "basic" ? "basic_check_result" : "llm_safety_check_result")) {
+    throw unavailableResult();
+  }
+}

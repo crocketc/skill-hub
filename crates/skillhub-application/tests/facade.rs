@@ -10,10 +10,10 @@ use skillhub_core::{
         GetDeploymentRelations, GetReconcilePlan, GetRemovalImpact, GetSkill, KeepIndependentCopy,
         ListDeployments, ListFindings, ListMarkdownFiles, ListSkills, ListVersions,
         PrepareDeployment, PrepareImport, PrepareUndeploy, ReadMarkdownFile, RecheckBasic,
-        RunBasicCheck,
+        RunBasicCheck, SetFindingDisposition,
     },
     catalog::{CatalogRepository, Skill},
-    check::{CheckKind, CheckState},
+    check::{CheckKind, CheckState, FindingDisposition},
     deployment::{
         DeploymentMode, DeploymentPlan, DeploymentPlanRequest, DeploymentRecord,
         DeploymentRepository, DeploymentState, RegisteredTargetIndex, TargetChange, TargetFact,
@@ -1361,4 +1361,78 @@ async fn basic_check_commands_persist_results_and_increment_rechecks() {
         .run_id
         .as_deref()
         .is_some_and(|id| id.ends_with("-1")));
+}
+
+#[tokio::test]
+async fn finding_disposition_requires_confirmation_for_high_risk_findings() {
+    let database = Database::open_in_memory().expect("database");
+    let skill = Skill::new(skillhub_core::SkillId::new(), "Checks");
+    database
+        .catalog_repository()
+        .expect("catalog repository")
+        .insert(&skill)
+        .await
+        .expect("insert skill");
+    let library_root = tempfile::tempdir().expect("library");
+    CentralLibrary::initialize(library_root.path()).expect("initialize library");
+    let source = tempfile::tempdir().expect("source");
+    std::fs::write(source.path().join("SKILL.md"), "rm -rf /tmp/example\n").expect("write skill");
+    let version = VersionStore::new(skillhub_core::LibraryPaths::from_root(
+        library_root.path().to_path_buf(),
+    ))
+    .capture(skill.id(), source.path())
+    .expect("capture version");
+    database
+        .connection_for_test()
+        .execute(
+            "INSERT INTO versions (id, skill_id, content_hash, manifest_json, created_at) VALUES (?1, ?2, 'hash', '{}', 0)",
+            rusqlite::params![version.id.to_string(), skill.id().to_string()],
+        )
+        .expect("insert version");
+    let facade = LocalApplicationFacade::new_with_library(database, library_root.path());
+    facade
+        .execute(AppCommand::RunBasicCheck(RunBasicCheck {
+            skill_id: skill.id(),
+            version_id: version.id.clone(),
+        }))
+        .await
+        .expect("check");
+    let findings = facade
+        .query(RootAppQuery::ListFindings(ListFindings {
+            skill_id: skill.id(),
+            version_id: version.id.clone(),
+            kind: CheckKind::Basic,
+        }))
+        .await
+        .expect("findings");
+    let AppQueryResult::Findings(findings) = findings else {
+        panic!("expected findings");
+    };
+    let finding = findings
+        .iter()
+        .find(|finding| finding.high_risk)
+        .expect("high risk finding");
+    let error = facade
+        .execute(AppCommand::SetFindingDisposition(SetFindingDisposition {
+            skill_id: skill.id(),
+            version_id: version.id.clone(),
+            kind: CheckKind::Basic,
+            finding_id: finding.id.clone(),
+            disposition: FindingDisposition::Acknowledged,
+            high_risk_confirmed: false,
+        }))
+        .await
+        .expect_err("high risk confirmation required");
+    assert_eq!(error.code, ErrorCode::InvalidInput);
+    facade
+        .execute(AppCommand::SetFindingDisposition(SetFindingDisposition {
+            skill_id: skill.id(),
+            version_id: version.id,
+            kind: CheckKind::Basic,
+            finding_id: finding.id.clone(),
+            disposition: FindingDisposition::Acknowledged,
+            high_risk_confirmed: true,
+        }))
+        .await
+        .expect("acknowledge finding");
 }

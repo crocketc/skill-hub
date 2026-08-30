@@ -141,19 +141,9 @@ impl<'a> CheckRepositorySqlite<'a> {
         insert_findings(&tx, run)?;
         tx.commit().map_err(error)
     }
-}
 
-#[async_trait(?Send)]
-impl CheckRepositoryPort for CheckRepositorySqlite<'_> {
-    async fn insert(&self, run: &CheckRun) -> AppResult<()> {
-        self.insert_sync(run)
-    }
-
-    async fn get(&self, id: &str) -> AppResult<Option<CheckRun>> {
-        self.get_sync(id)
-    }
-
-    async fn update(&self, run: &CheckRun) -> AppResult<()> {
+    /// Updates a persisted run synchronously for the local application facade.
+    pub fn update_sync(&self, run: &CheckRun) -> AppResult<()> {
         let tx = self
             .database
             .connection
@@ -190,6 +180,21 @@ impl CheckRepositoryPort for CheckRepositorySqlite<'_> {
         .map_err(error)?;
         insert_findings(&tx, run)?;
         tx.commit().map_err(error)
+    }
+}
+
+#[async_trait(?Send)]
+impl CheckRepositoryPort for CheckRepositorySqlite<'_> {
+    async fn insert(&self, run: &CheckRun) -> AppResult<()> {
+        self.insert_sync(run)
+    }
+
+    async fn get(&self, id: &str) -> AppResult<Option<CheckRun>> {
+        self.get_sync(id)
+    }
+
+    async fn update(&self, run: &CheckRun) -> AppResult<()> {
+        self.update_sync(run)
     }
 
     async fn list_for_version(
