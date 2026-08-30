@@ -10,8 +10,8 @@ use skillhub_adapters::deployment::{DeploymentFilesystem, OwnershipProof};
 use skillhub_adapters::import::SkillDetector;
 use skillhub_adapters::security::BasicScanner;
 use skillhub_core::api::{
-    BasicCheckResult, RenameSkill, SetCurrentVersion, SetFindingDisposition, SetLifecycle,
-    SetMetadata, SetTrial,
+    BasicCheckResult, RenameSkill, SaveSkillContent, SetCurrentVersion, SetFindingDisposition,
+    SetLifecycle, SetMetadata, SetTrial,
 };
 use skillhub_core::application::{
     DeploymentBackend, DeploymentService, PreparedImport, ReconcileBackend, ReconcileService,
@@ -856,6 +856,71 @@ impl LocalApplicationFacade {
         ))
     }
 
+    fn save_skill_content(&self, request: SaveSkillContent) -> AppResult<AppCommandResult> {
+        let Some(library) = self.library.as_ref() else {
+            return Err(unsupported("execute.save_skill_content.library"));
+        };
+        let Some(library_root) = self.library_root.as_ref() else {
+            return Err(unsupported("execute.save_skill_content.library"));
+        };
+        let source = Path::new(&request.source_path);
+        validate_skill_source(source)?;
+        let previous = library.current(request.skill_id)?;
+        let skill = self.with_database("execute.save_skill_content", |database| {
+            database
+                .catalog_repository()?
+                .get_sync(request.skill_id)?
+                .ok_or_else(|| {
+                    AppError::new(ErrorCode::ObjectNotFound, Severity::Error)
+                        .with_param("skill_id", request.skill_id.to_string())
+                        .with_action(RecoveryAction::Retry)
+                })
+        })?;
+        let captured = library.capture_with_status(request.skill_id, source)?;
+        let version = captured.record;
+        if let Err(error) = library.set_current(request.skill_id, &version.id) {
+            let cleanup = if captured.created {
+                library.discard_sync(&version)
+            } else {
+                Ok(())
+            };
+            return Err(cleanup_import_error(error, cleanup));
+        }
+        let central = match CentralLibrary::initialize(library_root) {
+            Ok(central) => central,
+            Err(error) => {
+                let rollback = restore_version_pointer(library, request.skill_id, previous.clone());
+                let cleanup = rollback.and_then(|()| {
+                    if captured.created {
+                        library.discard_sync(&version)
+                    } else {
+                        Ok(())
+                    }
+                });
+                return Err(cleanup_import_error(error, cleanup));
+            }
+        };
+        if let Err(error) = central.save_portable_skill(&skill, Some(&version.id)) {
+            let rollback = restore_version_pointer(library, request.skill_id, previous);
+            let cleanup = rollback.and_then(|()| {
+                if captured.created {
+                    library.discard_sync(&version)
+                } else {
+                    Ok(())
+                }
+            });
+            return Err(cleanup_import_error(error, cleanup));
+        }
+        Ok(AppCommandResult::OperationSummary(
+            skillhub_core::OperationSummary {
+                operation_id: OperationId::new(),
+                phase: skillhub_core::OperationPhase::Committed,
+                message_code: "catalog.version_saved".to_owned(),
+                error_code: None,
+            },
+        ))
+    }
+
     fn set_finding_disposition(
         &self,
         request: SetFindingDisposition,
@@ -996,6 +1061,7 @@ impl ApplicationFacade for LocalApplicationFacade {
             AppCommand::SetLifecycle(request) => return self.set_lifecycle(request),
             AppCommand::SetTrial(request) => return self.set_trial(request),
             AppCommand::SetCurrentVersion(request) => return self.set_current_version(request),
+            AppCommand::SaveSkillContent(request) => return self.save_skill_content(request),
             AppCommand::RunLlmSafetyCheck(request) => {
                 return self
                     .run_llm_safety_check(request.skill_id, request.version_id)
@@ -1634,6 +1700,41 @@ fn cleanup_import_error(original: AppError, cleanup: AppResult<()>) -> AppError 
             .with_action(RecoveryAction::RollbackOperation)
             .with_action(RecoveryAction::CompleteOperation),
     }
+}
+
+fn restore_version_pointer(
+    library: &VersionStore,
+    skill_id: skillhub_core::SkillId,
+    previous: Option<skillhub_core::VersionId>,
+) -> AppResult<()> {
+    match previous {
+        Some(previous) => library.set_current(skill_id, &previous),
+        None => library.clear_current(skill_id),
+    }
+}
+
+fn validate_skill_source(source: &Path) -> AppResult<()> {
+    let path = source.join("SKILL.md");
+    let metadata = std::fs::metadata(&path).map_err(|_| {
+        AppError::new(ErrorCode::InvalidInput, Severity::Error)
+            .with_param("field", "SKILL.md")
+            .with_action(RecoveryAction::ChooseAnotherName)
+    })?;
+    if !metadata.is_file()
+        || std::fs::read_to_string(path)
+            .map_err(|_| {
+                AppError::new(ErrorCode::InvalidInput, Severity::Error)
+                    .with_param("field", "SKILL.md")
+                    .with_action(RecoveryAction::ChooseAnotherName)
+            })?
+            .trim()
+            .is_empty()
+    {
+        return Err(AppError::new(ErrorCode::InvalidInput, Severity::Error)
+            .with_param("field", "SKILL.md")
+            .with_action(RecoveryAction::ChooseAnotherName));
+    }
+    Ok(())
 }
 
 fn unsupported(operation: &'static str) -> AppError {

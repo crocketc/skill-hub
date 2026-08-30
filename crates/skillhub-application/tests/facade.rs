@@ -10,8 +10,8 @@ use skillhub_core::{
         GetDeploymentRelations, GetReconcilePlan, GetRemovalImpact, GetSkill, KeepIndependentCopy,
         ListDeployments, ListFindings, ListMarkdownFiles, ListSkills, ListVersions,
         PrepareDeployment, PrepareImport, PrepareUndeploy, ReadMarkdownFile, RecheckBasic,
-        RenameSkill, RunBasicCheck, RunLlmSafetyCheck, SetCurrentVersion, SetFindingDisposition,
-        SetLifecycle, SetMetadata, SetTrial,
+        RenameSkill, RunBasicCheck, RunLlmSafetyCheck, SaveSkillContent, SetCurrentVersion,
+        SetFindingDisposition, SetLifecycle, SetMetadata, SetTrial,
     },
     catalog::{CatalogRepository, Skill},
     check::{CheckKind, CheckState, FindingDisposition},
@@ -655,6 +655,79 @@ async fn current_version_command_switches_only_to_a_version_of_the_same_skill() 
         panic!("expected skill detail");
     };
     assert_eq!(current.current_version, Some(second.id));
+}
+
+#[tokio::test]
+async fn save_skill_content_captures_a_new_version_and_rejects_invalid_sources() {
+    let database = Database::open_in_memory().expect("database");
+    let skill = Skill::new(skillhub_core::SkillId::new(), "Editable skill");
+    database
+        .catalog_repository()
+        .expect("catalog repository")
+        .insert(&skill)
+        .await
+        .expect("insert skill");
+    let root = tempfile::tempdir().expect("library root");
+    let library = CentralLibrary::initialize(root.path()).expect("central library");
+    let store = VersionStore::from_library(&library);
+    let initial = tempfile::tempdir().expect("initial source");
+    std::fs::write(initial.path().join("SKILL.md"), "# Initial\n").expect("write initial");
+    let first = store
+        .capture(skill.id(), initial.path())
+        .expect("capture initial");
+    store
+        .set_current(skill.id(), &first.id)
+        .expect("set initial current");
+
+    let updated = tempfile::tempdir().expect("updated source");
+    std::fs::write(updated.path().join("SKILL.md"), "# Updated\n").expect("write updated");
+    let facade = LocalApplicationFacade::new_with_library(database, root.path());
+    let result = facade
+        .execute(AppCommand::SaveSkillContent(SaveSkillContent {
+            skill_id: skill.id(),
+            source_path: updated.path().to_string_lossy().into_owned(),
+        }))
+        .await
+        .expect("save skill content");
+    assert!(
+        matches!(result, AppCommandResult::OperationSummary(summary) if summary.phase == skillhub_core::OperationPhase::Committed)
+    );
+
+    let versions = facade
+        .query(RootAppQuery::ListVersions(ListVersions {
+            skill_id: skill.id(),
+        }))
+        .await
+        .expect("list versions");
+    let AppQueryResult::Versions(versions) = versions else {
+        panic!("expected versions");
+    };
+    assert_eq!(versions.len(), 2);
+    assert_eq!(versions.iter().filter(|version| version.current).count(), 1);
+    assert!(!versions
+        .iter()
+        .any(|version| version.current && version.version_id == first.id));
+
+    let invalid = tempfile::tempdir().expect("invalid source");
+    let error = facade
+        .execute(AppCommand::SaveSkillContent(SaveSkillContent {
+            skill_id: skill.id(),
+            source_path: invalid.path().to_string_lossy().into_owned(),
+        }))
+        .await
+        .expect_err("missing SKILL.md must be rejected");
+    assert_eq!(error.code, ErrorCode::InvalidInput);
+    let after = facade
+        .query(RootAppQuery::ListVersions(ListVersions {
+            skill_id: skill.id(),
+        }))
+        .await
+        .expect("list versions after rejection");
+    let AppQueryResult::Versions(after) = after else {
+        panic!("expected versions");
+    };
+    assert_eq!(after.len(), 2);
+    assert_eq!(after.iter().filter(|version| version.current).count(), 1);
 }
 
 #[tokio::test]
