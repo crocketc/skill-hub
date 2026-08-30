@@ -13,3 +13,9 @@ path = "src/main.rs"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 skillhub-core = { path = "../skillhub-core", version = "0.1.0" }
+skillhub-application = { path = "../skillhub-application", version = "0.1.0" }
+skillhub-storage = { path = "../skillhub-storage", version = "0.1.0" }
+tokio = { version = "1", features = ["rt", "time"] }
+
+[dev-dependencies]
+tempfile = "3"

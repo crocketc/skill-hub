@@ -1,4 +1,10 @@
 use std::fmt;
+use std::path::PathBuf;
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum BackupAction {
+    Verify,
+}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CliCommand {
@@ -50,10 +56,19 @@ impl fmt::Display for CliCommand {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CliArgs {
     pub command: CliCommand,
+    pub backup_action: Option<BackupAction>,
     pub json: bool,
     pub non_interactive: bool,
     pub yes: bool,
     pub authorize_high_risk: Option<String>,
+    pub database: Option<PathBuf>,
+    pub library: Option<PathBuf>,
+    pub query: Option<String>,
+    pub skill: Option<String>,
+    pub version: Option<String>,
+    pub path: Option<PathBuf>,
+    pub page: u32,
+    pub page_size: u32,
 }
 
 impl CliArgs {
@@ -84,19 +99,54 @@ impl CliArgs {
         };
         let mut result = Self {
             command,
+            backup_action: None,
             json: false,
             non_interactive: false,
             yes: false,
             authorize_high_risk: None,
+            database: None,
+            library: None,
+            query: None,
+            skill: None,
+            version: None,
+            path: None,
+            page: 1,
+            page_size: 100,
         };
         while let Some(argument) = args.next() {
             match argument.as_str() {
                 "--json" => result.json = true,
                 "--non-interactive" => result.non_interactive = true,
                 "--yes" => result.yes = true,
-                "--authorize-high-risk" => result.authorize_high_risk = args.next(),
+                "--authorize-high-risk" => {
+                    result.authorize_high_risk =
+                        Some(next_value(&mut args, "--authorize-high-risk")?)
+                }
+                "--database" => {
+                    result.database = Some(PathBuf::from(next_value(&mut args, "--database")?))
+                }
+                "--library" => {
+                    result.library = Some(PathBuf::from(next_value(&mut args, "--library")?))
+                }
+                "--query" => result.query = Some(next_value(&mut args, "--query")?),
+                "--skill" => result.skill = Some(next_value(&mut args, "--skill")?),
+                "--version" => result.version = Some(next_value(&mut args, "--version")?),
+                "--path" => result.path = Some(PathBuf::from(next_value(&mut args, "--path")?)),
+                "--page" => {
+                    result.page = parse_positive_u32(&next_value(&mut args, "--page")?, "--page")?
+                }
+                "--page-size" => {
+                    result.page_size =
+                        parse_positive_u32(&next_value(&mut args, "--page-size")?, "--page-size")?
+                }
                 "--help" => return Err(Self::help()),
                 value if value.starts_with('-') => return Err(format!("unknown option `{value}`")),
+                "verify" if result.command == CliCommand::Backup => {
+                    result.backup_action = Some(BackupAction::Verify)
+                }
+                value if result.command == CliCommand::Search && result.query.is_none() => {
+                    result.query = Some(value.to_owned())
+                }
                 value => return Err(format!("unexpected argument `{value}`")),
             }
         }
@@ -109,10 +159,32 @@ impl CliArgs {
         {
             return Err("high-risk command requires --authorize-high-risk <fingerprint>".into());
         }
+        if result.command == CliCommand::Backup && result.backup_action.is_none() {
+            return Err("backup requires the `verify` action".into());
+        }
         Ok(result)
     }
 
     pub fn help() -> String {
-        "Usage: skillhub <command> [options]\n\nCommands: list search scan import deploy undeploy align update check health pending backup restore project-assemble status\n\nOptions: --json --yes --non-interactive --authorize-high-risk <fingerprint>".into()
+        "Usage: skillhub <command> [options]\n\nCommands: list search scan import deploy undeploy align update check health pending backup verify restore project-assemble status\n\nOptions: --json --yes --non-interactive --authorize-high-risk <fingerprint> --database <path> --library <path> --query <text> --skill <id> --version <id> --path <path> --page <n> --page-size <n>".into()
     }
+}
+
+fn next_value<I>(args: &mut I, option: &str) -> Result<String, String>
+where
+    I: Iterator<Item = String>,
+{
+    args.next()
+        .filter(|value| !value.starts_with('-'))
+        .ok_or_else(|| format!("option `{option}` requires a value"))
+}
+
+fn parse_positive_u32(value: &str, option: &str) -> Result<u32, String> {
+    let parsed = value
+        .parse::<u32>()
+        .map_err(|_| format!("option `{option}` requires a positive integer"))?;
+    if parsed == 0 {
+        return Err(format!("option `{option}` requires a positive integer"));
+    }
+    Ok(parsed)
 }

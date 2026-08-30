@@ -4353,7 +4353,11 @@ version = "0.1.0"
 dependencies = [
  "serde",
  "serde_json",
+ "skillhub-application",
  "skillhub-core",
+ "skillhub-storage",
+ "tempfile",
+ "tokio",
 ]
 
 [[package]]
