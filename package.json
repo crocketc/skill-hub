@@ -15,6 +15,6 @@
     "test:release": "node --test scripts/verify_release_readiness.test.mjs"
   },
   "devDependencies": {
-    "@playwright/test": "1.55.1"
+    "@playwright/test": "1.62.1"
   }
 }
