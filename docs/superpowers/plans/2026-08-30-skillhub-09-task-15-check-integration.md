@@ -59,6 +59,6 @@
 - Modify: `docs/development/当前开发状态.md`
 - Modify: `docs/superpowers/plans/2026-08-30-skillhub-09-task-15-check-integration.md`
 
-- [ ] 记录测试、风险和未接入的 LLM 检查边界。
-- [ ] Windows 本地 CI 通过后提交并推送，交由 macOS 只读复核同一提交。
-- [ ] 双平台通过后勾选本计划并更新当前开发状态。
+- [x] 记录测试、风险和未接入的 LLM 检查边界。
+- [x] Windows 本地 CI 通过后提交并推送，交由 macOS 只读复核同一提交。
+- [x] 双平台通过后勾选本计划并更新当前开发状态。
