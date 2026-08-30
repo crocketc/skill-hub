@@ -468,6 +468,26 @@ fn backup_commands_have_stable_wire_shapes() {
 }
 
 #[test]
+fn backup_created_result_has_path_and_portable_manifest() {
+    let result =
+        skillhub_core::AppCommandResult::BackupCreated(skillhub_core::backup::BackupCreated {
+            path: "C:/SkillHub/backups/skillhub-backup-1".into(),
+            manifest: skillhub_core::backup::BackupManifest {
+                format_version: 1,
+                entries: vec![],
+                contains_sensitive_skill_content: false,
+            },
+        });
+    let json = serde_json::to_value(result).unwrap();
+    assert_eq!(json["type"], "backup_created");
+    assert_eq!(
+        json["payload"]["path"],
+        "C:/SkillHub/backups/skillhub-backup-1"
+    );
+    assert!(json["payload"]["manifest"].get("path").is_none());
+}
+
+#[test]
 fn restore_commands_have_stable_wire_shapes() {
     let commands = [
         AppCommand::PrepareRestore(skillhub_core::PrepareRestore {

@@ -3,8 +3,8 @@ use serde::{Deserialize, Serialize};
 use crate::agent::{CustomAgent, CustomAgentDraft, CustomAgentOverride, PathGrant};
 use crate::app_update::{ApplicationUpdate, OpenOfficialRelease, SetApplicationUpdatePolicy};
 use crate::backup::{
-    BackupManifest, BackupPlan, BackupRetentionPolicy, BackupRetentionResult, BackupScope,
-    RestoreConflictDecision, RestorePlan, RestoreResult, SensitiveContentDecision,
+    BackupCreated, BackupManifest, BackupPlan, BackupRetentionPolicy, BackupRetentionResult,
+    BackupScope, RestoreConflictDecision, RestorePlan, RestoreResult, SensitiveContentDecision,
 };
 use crate::catalog::SkillLifecycle;
 use crate::check::{CheckKind, FindingDisposition};
@@ -691,6 +691,8 @@ pub enum AppCommandResult {
     BackupPlan(BackupPlan),
     #[serde(rename = "backup_manifest")]
     BackupManifest(BackupManifest),
+    #[serde(rename = "backup_created")]
+    BackupCreated(BackupCreated),
     #[serde(rename = "restore_plan")]
     RestorePlan(RestorePlan),
     #[serde(rename = "restore_result")]

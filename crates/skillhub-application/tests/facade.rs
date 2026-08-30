@@ -6,13 +6,13 @@ use skillhub_core::{
     },
     api::{
         AnalyzeImport, AppCommandResult, AppQueryResult, CommitDeployment, CommitUndeploy,
-        DiffVersions, DiscoverImportCandidates, GetBasicCheckResult, GetDeploymentPlan,
-        GetDeploymentRelations, GetReconcilePlan, GetRemovalImpact, GetSkill, KeepIndependentCopy,
-        ListDeployments, ListFindings, ListMarkdownFiles, ListSkills, ListVersions,
-        PrepareDeleteSkill, PrepareDeployment, PrepareImport, PrepareUndeploy, ReadMarkdownFile,
-        RecheckBasic, RenameSkill, RunBasicCheck, RunLlmSafetyCheck, SaveMarkdownContent,
-        SaveSkillContent, SetCurrentVersion, SetFindingDisposition, SetLifecycle, SetMetadata,
-        SetTrial,
+        CreateBackup, DiffVersions, DiscoverImportCandidates, GetBasicCheckResult,
+        GetDeploymentPlan, GetDeploymentRelations, GetReconcilePlan, GetRemovalImpact, GetSkill,
+        KeepIndependentCopy, ListDeployments, ListFindings, ListMarkdownFiles, ListSkills,
+        ListVersions, PrepareDeleteSkill, PrepareDeployment, PrepareImport, PrepareUndeploy,
+        ReadMarkdownFile, RecheckBasic, RenameSkill, RunBasicCheck, RunLlmSafetyCheck,
+        SaveMarkdownContent, SaveSkillContent, SetCurrentVersion, SetFindingDisposition,
+        SetLifecycle, SetMetadata, SetTrial, VerifyBackup,
     },
     backup::BackupScope,
     catalog::{CatalogRepository, Skill},
@@ -662,6 +662,72 @@ async fn backup_preflight_reports_sensitive_skill_content() {
         plan.sensitive_items[0].reason,
         "possible_plaintext_credential"
     );
+}
+
+#[tokio::test]
+async fn backup_create_returns_a_verified_package_path_and_verify_rejects_missing_decision() {
+    let database = Database::open_in_memory().expect("database");
+    let skill = Skill::new(skillhub_core::SkillId::new(), "Backup export");
+    database
+        .catalog_repository()
+        .expect("catalog repository")
+        .insert(&skill)
+        .await
+        .expect("insert skill");
+    let root = tempfile::tempdir().expect("library root");
+    let source = tempfile::tempdir().expect("source");
+    std::fs::write(source.path().join("SKILL.md"), "api_key=placeholder\n").expect("write skill");
+    let library = CentralLibrary::initialize(root.path()).expect("central library");
+    let store = VersionStore::from_library(&library);
+    let version = store
+        .capture(skill.id(), source.path())
+        .expect("capture version");
+    store
+        .set_current(skill.id(), &version.id)
+        .expect("set current");
+    library
+        .save_portable_skill(&skill, Some(&version.id))
+        .expect("save portable skill");
+    let facade = LocalApplicationFacade::new_with_library(database, root.path());
+
+    let missing = facade
+        .execute(AppCommand::CreateBackup(CreateBackup {
+            scope: BackupScope::Full,
+            decisions: vec![],
+        }))
+        .await
+        .expect_err("sensitive decision is required");
+    assert_eq!(missing.code, ErrorCode::BackupSensitiveDecisionRequired);
+
+    let result = facade
+        .execute(AppCommand::CreateBackup(CreateBackup {
+            scope: BackupScope::Full,
+            decisions: vec![skillhub_core::BackupDecision {
+                skill_id: skill.id(),
+                decision: skillhub_core::backup::SensitiveContentDecision::IncludeAndMark,
+            }],
+        }))
+        .await
+        .expect("create backup");
+    let AppCommandResult::BackupCreated(created) = result else {
+        panic!("expected created backup result");
+    };
+    assert!(std::path::Path::new(&created.path).is_dir());
+    let backup_json =
+        std::fs::read_to_string(std::path::Path::new(&created.path).join("backup.json"))
+            .expect("backup manifest");
+    assert!(!backup_json.contains(root.path().to_string_lossy().as_ref()));
+
+    let verified = facade
+        .execute(AppCommand::VerifyBackup(VerifyBackup {
+            path: created.path,
+        }))
+        .await
+        .expect("verify backup");
+    let AppCommandResult::BackupManifest(manifest) = verified else {
+        panic!("expected backup manifest");
+    };
+    assert!(manifest.contains_sensitive_skill_content);
 }
 
 #[tokio::test]

@@ -17,7 +17,7 @@ use skillhub_core::application::{
     DeploymentBackend, DeploymentService, PreparedImport, ReconcileBackend, ReconcileService,
     RemovalBackend, RemovalService,
 };
-use skillhub_core::backup::{BackupInput, BackupScope};
+use skillhub_core::backup::{BackupCreated, BackupInput, BackupPackage, BackupScope};
 use skillhub_core::catalog::{CatalogRepository, Skill};
 use skillhub_core::check::{CheckKind, CheckRun, CheckRunPhase, FindingDisposition};
 use skillhub_core::deployment::{
@@ -1278,6 +1278,37 @@ impl ApplicationFacade for LocalApplicationFacade {
                 let plan = BackupService::new(LibraryPaths::from_root(root).backups_dir)
                     .prepare(&input)?;
                 return Ok(AppCommandResult::BackupPlan(plan));
+            }
+            AppCommand::CreateBackup(request) => {
+                let input = self.build_backup_input(request.scope)?;
+                let Some(root) = self.library_root.as_ref() else {
+                    return Err(unsupported("execute.create_backup.library"));
+                };
+                let service = BackupService::new(LibraryPaths::from_root(root).backups_dir);
+                let plan = service.prepare(&input)?;
+                let decisions = request
+                    .decisions
+                    .into_iter()
+                    .map(|decision| (decision.skill_id, decision.decision))
+                    .collect::<Vec<_>>();
+                let package = service.create(&input, &plan, &decisions)?;
+                let verification = service.verify(&package)?;
+                return Ok(AppCommandResult::BackupCreated(BackupCreated {
+                    path: package.root.to_string_lossy().into_owned(),
+                    manifest: verification.manifest,
+                }));
+            }
+            AppCommand::VerifyBackup(request) => {
+                let package = BackupPackage {
+                    root: PathBuf::from(request.path),
+                };
+                let destination = package
+                    .root
+                    .parent()
+                    .map(Path::to_path_buf)
+                    .unwrap_or_else(|| PathBuf::from("."));
+                let verification = BackupService::new(destination).verify(&package)?;
+                return Ok(AppCommandResult::BackupManifest(verification.manifest));
             }
             AppCommand::RunLlmSafetyCheck(request) => {
                 return self

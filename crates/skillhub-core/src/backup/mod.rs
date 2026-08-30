@@ -1,7 +1,8 @@
 mod model;
 
 pub use model::{
-    BackupEntry, BackupInput, BackupManifest, BackupPackage, BackupPlan, BackupRetentionPolicy,
-    BackupRetentionResult, BackupScope, RestoreConflict, RestoreConflictDecision,
-    RestoreConflictKind, RestorePlan, RestoreResult, SensitiveContentDecision, SensitiveItem,
+    BackupCreated, BackupEntry, BackupInput, BackupManifest, BackupPackage, BackupPlan,
+    BackupRetentionPolicy, BackupRetentionResult, BackupScope, RestoreConflict,
+    RestoreConflictDecision, RestoreConflictKind, RestorePlan, RestoreResult,
+    SensitiveContentDecision, SensitiveItem,
 };

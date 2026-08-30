@@ -47,6 +47,15 @@ pub struct BackupManifest {
     pub contains_sensitive_skill_content: bool,
 }
 
+/// Non-portable command result that locates a newly created package while
+/// keeping the persisted manifest portable.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct BackupCreated {
+    pub path: String,
+    pub manifest: BackupManifest,
+}
+
 #[derive(Clone, Debug)]
 pub struct BackupInput {
     pub scope: BackupScope,
