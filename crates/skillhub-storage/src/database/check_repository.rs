@@ -110,11 +110,11 @@ impl<'a> CheckRepositorySqlite<'a> {
             None => Ok(None),
         }
     }
-}
 
-#[async_trait(?Send)]
-impl CheckRepositoryPort for CheckRepositorySqlite<'_> {
-    async fn insert(&self, run: &CheckRun) -> AppResult<()> {
+    /// Persists a run synchronously for the local application facade. The
+    /// facade owns the database mutex and must not hold its guard across an
+    /// async boundary.
+    pub fn insert_sync(&self, run: &CheckRun) -> AppResult<()> {
         let tx = self
             .database
             .connection
@@ -140,6 +140,13 @@ impl CheckRepositoryPort for CheckRepositorySqlite<'_> {
         .map_err(error)?;
         insert_findings(&tx, run)?;
         tx.commit().map_err(error)
+    }
+}
+
+#[async_trait(?Send)]
+impl CheckRepositoryPort for CheckRepositorySqlite<'_> {
+    async fn insert(&self, run: &CheckRun) -> AppResult<()> {
+        self.insert_sync(run)
     }
 
     async fn get(&self, id: &str) -> AppResult<Option<CheckRun>> {
@@ -237,12 +244,23 @@ impl CheckRepositoryPort for CheckRepositorySqlite<'_> {
     }
 }
 
+fn storage_finding_id(run_id: &str, finding_id: &str) -> String {
+    format!("{run_id}::{finding_id}")
+}
+
+fn public_finding_id(run_id: &str, finding_id: &str) -> String {
+    finding_id
+        .strip_prefix(&format!("{run_id}::"))
+        .unwrap_or(finding_id)
+        .to_owned()
+}
+
 fn insert_findings(tx: &rusqlite::Transaction<'_>, run: &CheckRun) -> AppResult<()> {
     for finding in &run.findings {
         tx.execute(
             "INSERT INTO check_findings(id,run_id,code,severity,file_path,line_start,line_end,evidence_hash,message_params_json,disposition,allowed_dispositions_json) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)",
             params![
-                finding.id,
+                storage_finding_id(&run.id, &finding.id),
                 run.id,
                 finding.code,
                 severity_code(finding.severity),
@@ -286,7 +304,7 @@ fn load_findings(connection: &rusqlite::Connection, run_id: &str) -> AppResult<V
         let message_params = serde_json::from_str::<BTreeMap<String, Value>>(&params)
             .map_err(|_| invalid_record())?;
         Ok(Finding {
-            id,
+            id: public_finding_id(run_id, &id),
             code,
             severity: parse_severity(&severity)?,
             file,

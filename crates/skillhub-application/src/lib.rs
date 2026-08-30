@@ -8,11 +8,14 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use async_trait::async_trait;
 use skillhub_adapters::deployment::{DeploymentFilesystem, OwnershipProof};
 use skillhub_adapters::import::SkillDetector;
+use skillhub_adapters::security::BasicScanner;
+use skillhub_core::api::BasicCheckResult;
 use skillhub_core::application::{
     DeploymentBackend, DeploymentService, PreparedImport, ReconcileBackend, ReconcileService,
     RemovalBackend, RemovalService,
 };
 use skillhub_core::catalog::Skill;
+use skillhub_core::check::{CheckKind, CheckRun, CheckRunPhase};
 use skillhub_core::deployment::{
     DeploymentPlanRequest, DeploymentRecord, DeploymentState, RegisteredTargetIndex, TargetFact,
     TargetPlan,
@@ -532,6 +535,69 @@ impl LocalApplicationFacade {
         })?;
         action(&database)
     }
+
+    async fn run_basic_check(
+        &self,
+        skill_id: skillhub_core::SkillId,
+        version_id: skillhub_core::VersionId,
+    ) -> AppResult<AppCommandResult> {
+        let Some(library) = self.library.as_ref() else {
+            return Err(unsupported("execute.run_basic_check.library"));
+        };
+        let generation = self.with_database("execute.run_basic_check.generation", |database| {
+            Ok(database
+                .check_repository()
+                .current_for_version_sync(skill_id, &version_id, CheckKind::Basic)?
+                .map(|run| run.generation + 1)
+                .unwrap_or(0))
+        })?;
+        let run_id = format!("basic-{}-{generation}", version_id.as_str());
+        let started_at = now_millis();
+        let scan_root = std::env::temp_dir().join(format!("skillhub-check-{}", OperationId::new()));
+        std::fs::create_dir_all(&scan_root).map_err(|error| {
+            AppError::new(ErrorCode::InternalError, Severity::Error)
+                .with_param("source", error.to_string())
+                .with_action(RecoveryAction::Retry)
+        })?;
+        let scan_result = library
+            .materialize(&version_id, &scan_root)
+            .and_then(|_| BasicScanner::default().scan_version(&scan_root));
+        let _ = std::fs::remove_dir_all(&scan_root);
+        let mut run = match scan_result {
+            Ok(findings) => {
+                let mut run = CheckRun::completed(
+                    run_id,
+                    skill_id,
+                    version_id.clone(),
+                    CheckKind::Basic,
+                    findings,
+                );
+                run.ruleset_id = Some("basic-v1".to_owned());
+                run.coverage_inputs = serde_json::Value::Object(Default::default());
+                run
+            }
+            Err(error) => {
+                let mut run =
+                    CheckRun::running(run_id, skill_id, version_id.clone(), CheckKind::Basic);
+                run.phase = CheckRunPhase::Failed;
+                run.failure_code = Some(error.code.as_str().to_owned());
+                run
+            }
+        };
+        run.generation = generation;
+        run.started_at = started_at;
+        run.ended_at = Some(now_millis());
+        let result = skillhub_core::check::CheckResult {
+            state: run.state(),
+            run: Some(run.clone()),
+        };
+        self.with_database("execute.run_basic_check.persist", |database| {
+            database.check_repository().insert_sync(&run)
+        })?;
+        Ok(AppCommandResult::BasicCheckResult(
+            BasicCheckResult::from_check_result(skill_id, version_id, &result),
+        ))
+    }
 }
 
 #[async_trait]
@@ -601,6 +667,16 @@ impl ApplicationFacade for LocalApplicationFacade {
                     .ignore_external_change(request.deployment_id)
                     .await
                     .map(AppCommandResult::ReconcileResult);
+            }
+            AppCommand::RunBasicCheck(request) => {
+                return self
+                    .run_basic_check(request.skill_id, request.version_id)
+                    .await;
+            }
+            AppCommand::RecheckBasic(request) => {
+                return self
+                    .run_basic_check(request.skill_id, request.version_id)
+                    .await;
             }
             _ => "execute.unsupported",
         };
@@ -1251,6 +1327,13 @@ fn current_utc_date() -> (i32, u8, u8) {
         .as_secs()
         / 86_400;
     civil_date_from_days(days as i64)
+}
+
+fn now_millis() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| i64::try_from(duration.as_millis()).unwrap_or(i64::MAX))
+        .unwrap_or_default()
 }
 
 // Howard Hinnant's civil_from_days algorithm, kept local to avoid adding a

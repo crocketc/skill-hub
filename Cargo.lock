@@ -4339,6 +4339,7 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "rusqlite",
+ "serde_json",
  "skillhub-adapters",
  "skillhub-core",
  "skillhub-storage",
