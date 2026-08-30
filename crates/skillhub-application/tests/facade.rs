@@ -99,10 +99,7 @@ async fn analyze_import_query_returns_deterministic_conflict_matches() {
         .expect("insert skill");
 
     let candidate = ImportCandidate::detected(
-        SourceDescriptor::new(
-            SourceKind::Local,
-            SourceLocator::local_path("C:/incoming"),
-        ),
+        SourceDescriptor::new(SourceKind::Local, SourceLocator::local_path("C:/incoming")),
         "C:/incoming/pdf-reader",
         "pdf-reader",
         "SKILL.md",
@@ -123,21 +120,25 @@ async fn analyze_import_query_returns_deterministic_conflict_matches() {
 
     assert_eq!(analysis.matches.len(), 1);
     assert_eq!(analysis.matches[0].skill_id, existing.id());
-    assert_eq!(analysis.matches[0].duplicate_kind, skillhub_core::DuplicateKind::SameRuntimeNameDifferentContent);
-    assert!(analysis.conflicts.iter().any(|conflict| conflict.requires_choice));
+    assert_eq!(
+        analysis.matches[0].duplicate_kind,
+        skillhub_core::DuplicateKind::SameRuntimeNameDifferentContent
+    );
+    assert!(analysis
+        .conflicts
+        .iter()
+        .any(|conflict| conflict.requires_choice));
 }
 
 #[tokio::test]
 async fn prepare_import_command_persists_a_retryable_preparation() {
     let database = Database::open_in_memory().expect("database");
     let library_root = tempfile::tempdir().expect("library root");
+    CentralLibrary::initialize(library_root.path()).expect("initialize library");
     let source = tempfile::tempdir().expect("source");
     std::fs::write(source.path().join("SKILL.md"), "# Notes\n").expect("write skill");
     let candidate = ImportCandidate::detected(
-        SourceDescriptor::new(
-            SourceKind::Local,
-            SourceLocator::local_path(source.path()),
-        ),
+        SourceDescriptor::new(SourceKind::Local, SourceLocator::local_path(source.path())),
         source.path().to_string_lossy(),
         ".",
         "SKILL.md",
@@ -169,6 +170,61 @@ async fn prepare_import_command_persists_a_retryable_preparation() {
     };
     assert_eq!(summary.operation_id, prepared.id);
     assert_eq!(summary.phase, skillhub_core::OperationPhase::RolledBack);
+}
+
+#[tokio::test]
+async fn commit_import_copies_skill_into_the_central_library() {
+    let database = Database::open_in_memory().expect("database");
+    let library_root = tempfile::tempdir().expect("library root");
+    CentralLibrary::initialize(library_root.path()).expect("initialize library");
+    let source = tempfile::tempdir().expect("source");
+    std::fs::write(source.path().join("SKILL.md"), "# Notes\n").expect("write skill");
+    let candidate = ImportCandidate::detected(
+        SourceDescriptor::new(SourceKind::Local, SourceLocator::local_path(source.path())),
+        source.path().to_string_lossy(),
+        ".",
+        "SKILL.md",
+        "Notes",
+    );
+    let facade = LocalApplicationFacade::new_with_library(database, library_root.path());
+    let prepared = facade
+        .execute(AppCommand::PrepareImport(PrepareImport {
+            candidate,
+            tree_hash: None,
+        }))
+        .await
+        .expect("prepared import");
+    let AppCommandResult::PreparedImport(prepared) = prepared else {
+        panic!("expected prepared import");
+    };
+
+    let committed = facade
+        .execute(AppCommand::CommitImport(skillhub_core::CommitImport {
+            prepared_import_id: prepared.id,
+            decision: skillhub_core::ImportDecision::CopyIntoLibrary,
+        }))
+        .await
+        .expect("committed import");
+    let AppCommandResult::ImportSummary(summary) = committed else {
+        panic!("expected import summary");
+    };
+    assert!(summary.committed);
+    let skill_id = summary.items[0].skill_id.expect("imported skill id");
+    assert_eq!(
+        summary.items[0].decision,
+        skillhub_core::ImportDecision::CopyIntoLibrary
+    );
+    assert!(source.path().join("SKILL.md").is_file());
+
+    let detail = facade
+        .query(RootAppQuery::GetSkill(GetSkill { skill_id }))
+        .await
+        .expect("imported skill detail");
+    let AppQueryResult::Skill(detail) = detail else {
+        panic!("expected skill detail");
+    };
+    assert_eq!(detail.display_name, "Notes");
+    assert!(detail.current_version.is_some());
 }
 
 #[tokio::test]

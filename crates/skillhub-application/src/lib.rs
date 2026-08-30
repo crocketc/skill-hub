@@ -1,17 +1,18 @@
 //! Shared application boundary implementations.
 
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use async_trait::async_trait;
+use skillhub_core::application::PreparedImport;
+use skillhub_core::catalog::Skill;
 use skillhub_core::{
     AppCommand, AppCommandResult, AppError, AppQuery, AppQueryResult, AppResult, ApplicationFacade,
     ErrorCode, OperationId, RecoveryAction, Severity,
 };
-use skillhub_core::application::PreparedImport;
-use skillhub_storage::{Database, LibraryPaths, VersionStore};
+use skillhub_storage::{CentralLibrary, Database, LibraryPaths, VersionStore};
 
 /// The date provider is kept on the facade so all date-sensitive projections
 /// in one request use the same day boundary. Production uses the current UTC
@@ -20,6 +21,7 @@ pub struct LocalApplicationFacade {
     database: Mutex<Database>,
     today: (i32, u8, u8),
     library: Option<VersionStore>,
+    library_root: Option<PathBuf>,
     prepared_imports: Mutex<HashMap<OperationId, PreparedImport>>,
 }
 
@@ -43,6 +45,7 @@ impl LocalApplicationFacade {
         library_root: impl AsRef<Path>,
     ) -> AppResult<Self> {
         let path = path.as_ref();
+        let library_root = library_root.as_ref();
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent).map_err(|error| {
                 AppError::new(ErrorCode::InternalError, Severity::Error)
@@ -50,6 +53,7 @@ impl LocalApplicationFacade {
                     .with_action(RecoveryAction::Retry)
             })?;
         }
+        CentralLibrary::initialize(library_root)?;
         Database::open(path).map(|database| Self::new_with_library(database, library_root))
     }
 
@@ -64,6 +68,7 @@ impl LocalApplicationFacade {
             database: Mutex::new(database),
             today,
             library: None,
+            library_root: None,
             prepared_imports: Mutex::new(HashMap::new()),
         }
     }
@@ -76,6 +81,7 @@ impl LocalApplicationFacade {
             library: Some(VersionStore::new(LibraryPaths::from_root(
                 library_root.as_ref(),
             ))),
+            library_root: Some(library_root.as_ref().to_path_buf()),
             prepared_imports: Mutex::new(HashMap::new()),
         }
     }
@@ -100,9 +106,10 @@ impl ApplicationFacade for LocalApplicationFacade {
         let operation = match command {
             AppCommand::CancelOperation { .. } => "execute.cancel_operation",
             AppCommand::PrepareImport(request) => return self.prepare_import(request),
-            AppCommand::CancelImport {
-                prepared_import_id,
-            } => return self.cancel_import(prepared_import_id),
+            AppCommand::CommitImport(request) => return self.commit_import(request),
+            AppCommand::CancelImport { prepared_import_id } => {
+                return self.cancel_import(prepared_import_id)
+            }
             _ => "execute.unsupported",
         };
         Err(AppError::new(ErrorCode::InternalError, Severity::Error)
@@ -207,10 +214,7 @@ impl ApplicationFacade for LocalApplicationFacade {
 }
 
 impl LocalApplicationFacade {
-    fn prepare_import(
-        &self,
-        request: skillhub_core::PrepareImport,
-    ) -> AppResult<AppCommandResult> {
+    fn prepare_import(&self, request: skillhub_core::PrepareImport) -> AppResult<AppCommandResult> {
         self.with_database("execute.prepare_import", |database| {
             let analysis = database
                 .import_repository()
@@ -255,6 +259,125 @@ impl LocalApplicationFacade {
                 error_code: None,
             },
         ))
+    }
+
+    fn commit_import(&self, request: skillhub_core::CommitImport) -> AppResult<AppCommandResult> {
+        let prepared = self
+            .prepared_imports
+            .lock()
+            .map_err(|_| {
+                AppError::new(ErrorCode::InternalError, Severity::Error)
+                    .with_param("operation", "execute.commit_import")
+                    .with_action(RecoveryAction::Retry)
+            })?
+            .get(&request.prepared_import_id)
+            .cloned()
+            .ok_or_else(|| {
+                AppError::new(ErrorCode::ObjectNotFound, Severity::Error)
+                    .with_param("prepared_import_id", request.prepared_import_id.to_string())
+                    .with_action(RecoveryAction::ChooseAnotherName)
+            })?;
+        if !prepared.analysis.actions.contains(&request.decision) {
+            return Err(AppError::new(ErrorCode::InvalidInput, Severity::Error)
+                .with_param("field", "decision")
+                .with_action(RecoveryAction::ChooseAnotherName));
+        }
+        if request.decision == skillhub_core::ImportDecision::Skip {
+            self.prepared_imports
+                .lock()
+                .map_err(|_| {
+                    AppError::new(ErrorCode::InternalError, Severity::Error)
+                        .with_param("operation", "execute.commit_import")
+                        .with_action(RecoveryAction::Retry)
+                })?
+                .remove(&request.prepared_import_id);
+            return Ok(AppCommandResult::ImportSummary(Box::new(
+                skillhub_core::ImportSummary {
+                    operation_id: request.prepared_import_id,
+                    items: vec![skillhub_core::ImportItemResult {
+                        skill_id: None,
+                        decision: request.decision,
+                        original_preserved: true,
+                    }],
+                    committed: true,
+                },
+            )));
+        }
+        if request.decision == skillhub_core::ImportDecision::ReuseExisting {
+            let skill_id = prepared
+                .analysis
+                .matches
+                .first()
+                .map(|item| item.skill_id)
+                .ok_or_else(|| {
+                    AppError::new(ErrorCode::ObjectNotFound, Severity::Error)
+                        .with_param("field", "existing_skill")
+                        .with_action(RecoveryAction::ChooseAnotherName)
+                })?;
+            self.prepared_imports
+                .lock()
+                .map_err(|_| {
+                    AppError::new(ErrorCode::InternalError, Severity::Error)
+                        .with_param("operation", "execute.commit_import")
+                        .with_action(RecoveryAction::Retry)
+                })?
+                .remove(&request.prepared_import_id);
+            return Ok(AppCommandResult::ImportSummary(Box::new(
+                skillhub_core::ImportSummary {
+                    operation_id: request.prepared_import_id,
+                    items: vec![skillhub_core::ImportItemResult {
+                        skill_id: Some(skill_id),
+                        decision: request.decision,
+                        original_preserved: true,
+                    }],
+                    committed: true,
+                },
+            )));
+        }
+        if !matches!(
+            request.decision,
+            skillhub_core::ImportDecision::CopyIntoLibrary
+                | skillhub_core::ImportDecision::KeepIndependent
+                | skillhub_core::ImportDecision::CopyAsIndependentManagedSkill
+        ) {
+            return Err(unsupported("execute.commit_import.decision"));
+        }
+        let Some(library_root) = self.library_root.as_ref() else {
+            return Err(unsupported("execute.commit_import.library"));
+        };
+        self.with_database("execute.commit_import", |database| {
+            let central = CentralLibrary::initialize(library_root)?;
+            let store = VersionStore::from_library(&central);
+            let skill_id = skillhub_core::SkillId::new();
+            let source = Path::new(&prepared.candidate.absolute_root);
+            let version = store.capture(skill_id, source)?;
+            let skill = Skill::new(skill_id, prepared.candidate.runtime_name.clone());
+            database.catalog_repository()?.insert_sync(&skill)?;
+            store.set_current(skill_id, &version.id)?;
+            central.save_portable_skill(&skill, Some(&version.id))?;
+            database
+                .source_repository()
+                .relink(skill_id, prepared.candidate.source.clone())?;
+            self.prepared_imports
+                .lock()
+                .map_err(|_| {
+                    AppError::new(ErrorCode::InternalError, Severity::Error)
+                        .with_param("operation", "execute.commit_import")
+                        .with_action(RecoveryAction::Retry)
+                })?
+                .remove(&request.prepared_import_id);
+            Ok(AppCommandResult::ImportSummary(Box::new(
+                skillhub_core::ImportSummary {
+                    operation_id: request.prepared_import_id,
+                    items: vec![skillhub_core::ImportItemResult {
+                        skill_id: Some(skill_id),
+                        decision: request.decision,
+                        original_preserved: true,
+                    }],
+                    committed: true,
+                },
+            )))
+        })
     }
 }
 

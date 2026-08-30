@@ -17,6 +17,37 @@ impl<'a> CatalogRepositorySqlite<'a> {
         Ok(Self { database })
     }
 
+    /// Synchronous insert for local facade commands that hold the database
+    /// mutex while applying one atomic catalog update.
+    pub fn insert_sync(&self, skill: &Skill) -> AppResult<()> {
+        skill.validate()?;
+        let conn = &self.database.connection;
+        let tx = conn.unchecked_transaction().map_err(error)?;
+        let timestamp = now();
+        tx.execute("INSERT INTO skills (id,display_name,runtime_name,original_description,translated_description,user_note,author,license,call_policy,lifecycle,created_at,updated_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?11) ON CONFLICT(id) DO UPDATE SET display_name=excluded.display_name,runtime_name=excluded.runtime_name,original_description=excluded.original_description,translated_description=excluded.translated_description,user_note=excluded.user_note,author=excluded.author,license=excluded.license,call_policy=excluded.call_policy,lifecycle=excluded.lifecycle,updated_at=excluded.updated_at", params![skill.id().to_string(), skill.display_name(), skill.runtime_name(), skill.original_description(), skill.translated_description(), skill.note().unwrap_or_default(), skill.author(), skill.license(), policy_code(skill.call_policy()), lifecycle_code(skill.lifecycle()), timestamp]).map_err(error)?;
+        tx.execute(
+            "DELETE FROM skill_tags WHERE skill_id=?1",
+            [skill.id().to_string()],
+        )
+        .map_err(error)?;
+        for tag in skill.tags() {
+            tx.execute("INSERT OR IGNORE INTO tags (id,name) VALUES (?1,?1)", [tag])
+                .map_err(error)?;
+            tx.execute(
+                "INSERT INTO skill_tags (skill_id,tag_id) SELECT ?1,id FROM tags WHERE name=?2",
+                params![skill.id().to_string(), tag],
+            )
+            .map_err(error)?;
+        }
+        let req = serde_json::to_string(skill.requirements())
+            .map_err(|_| error(rusqlite::Error::InvalidQuery))?;
+        let due = skill
+            .trial_due()
+            .map(|(y, m, d)| format!("{y:04}-{m:02}-{d:02}"));
+        tx.execute("INSERT OR REPLACE INTO catalog_skill_metadata(skill_id,requirements_json,trial_due) VALUES (?1,?2,?3)", params![skill.id().to_string(), req, due]).map_err(error)?;
+        tx.commit().map_err(error)
+    }
+
     /// Reads the stable identity fields without crossing the async repository
     /// boundary. The application facade uses this for synchronous SQLite
     /// query dispatch while richer catalog reads remain on the trait.
