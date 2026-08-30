@@ -185,8 +185,8 @@ git commit -m "feat: connect deployment dialog to native facade"
 - Test: `tests/integration/deployment_flow.rs` when the existing fixture can exercise the command boundary.
 
 - [x] **Step 1: Run Windows focused tests and the complete local CI**
-- [ ] **Step 2: Push the verified commit and send macOS validation instructions**
-- [ ] **Step 3: Record filesystem mode, permission, rollback, and shared-physical-target results for both platforms**
-- [ ] **Step 4: Run `git diff --check`, update the task report, and commit the documentation**
+- [x] **Step 2: Push the verified commit and send macOS validation instructions**
+- [x] **Step 3: Record filesystem mode, permission, rollback, and shared-physical-target results for both platforms**
+- [x] **Step 4: Run `git diff --check`, update the task report, and commit the documentation**
 
 Expected: Windows and macOS local CI pass; any unavailable filesystem capability is recorded as a platform limitation rather than silently treated as a successful deployment.

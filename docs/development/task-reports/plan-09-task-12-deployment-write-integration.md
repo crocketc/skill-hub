@@ -2,8 +2,8 @@
 
 ## 当前提交
 
-- Windows 集成分支：`main`
-- Task12.3 提交：`276b8b5`
+- Windows/macOS 集成分支：`main`
+- 验收提交：`ca42c37`
 - 远端：`origin/main`
 
 ## 已完成内容
@@ -27,10 +27,19 @@
 
 ## macOS 验证
 
-待在 macOS 的 `main` 分支同步本报告对应提交后运行本地 CI，并按现有兼容性夹具补充至少一个已登记目标的预览/受管复制验证。Universal DMG 不作为本 Task 的阻断条件；若缺少交叉编译 target，记录为工具链限制。
+2026-08-30 在 macOS 的 `main@ca42c37` 上完成验证，未修改源码、依赖、配置或 Git。
+
+- 3 个此前超时的测试单独运行均通过：Sidebar 4/4、ConfirmDialog 2/2、SkillLibraryPage 34/34。
+- 全量 Vitest：57 个测试文件、323 个测试全部通过。
+- TypeScript、ESLint、Vite 生产构建：全部通过；仅有大分块警告。
+- Rust 格式、cargo-deny、Clippy、workspace 测试：通过。
+- 前端依赖、生命周期策略、安全审计：通过，0 个漏洞。
+- 部署定向测试拆分运行后通过：deployment plan 3/3，deployment command 1/1。
+- 初次完整 CI 的超时归类为 macOS 完整运行负载波动，未修改测试超时配置。
 
 ## 已知边界
 
 - 当前发现快照只声明受管复制能力；软链接/目录联接能力仍需 Agent profile 明确声明后再开放。
 - 部署成功代表文件系统写入和关系记录成功，不代表目标 Agent 已加载、调用或正确执行 Skill。
+- 本 Task 验证的是应用门面、注册目标、受管复制和回滚安全边界；未将 Universal DMG 交叉编译或所有第三方 Agent 真机覆盖作为阻断条件。
 - 本报告不记录本机路径、用户 Skill 内容、凭据或依赖缓存。
