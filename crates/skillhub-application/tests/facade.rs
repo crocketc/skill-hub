@@ -1,9 +1,9 @@
 use skillhub_application::LocalApplicationFacade;
 use skillhub_core::{
     api::{
-        AnalyzeImport, AppQueryResult, DiffVersions, GetBasicCheckResult,
+        AnalyzeImport, AppCommandResult, AppQueryResult, DiffVersions, GetBasicCheckResult,
         GetDeploymentRelations, GetSkill, ListDeployments, ListFindings, ListMarkdownFiles,
-        ListSkills, ListVersions, ReadMarkdownFile,
+        ListSkills, ListVersions, PrepareImport, ReadMarkdownFile,
     },
     catalog::{CatalogRepository, Skill},
     check::{CheckKind, CheckState},
@@ -125,6 +125,50 @@ async fn analyze_import_query_returns_deterministic_conflict_matches() {
     assert_eq!(analysis.matches[0].skill_id, existing.id());
     assert_eq!(analysis.matches[0].duplicate_kind, skillhub_core::DuplicateKind::SameRuntimeNameDifferentContent);
     assert!(analysis.conflicts.iter().any(|conflict| conflict.requires_choice));
+}
+
+#[tokio::test]
+async fn prepare_import_command_persists_a_retryable_preparation() {
+    let database = Database::open_in_memory().expect("database");
+    let library_root = tempfile::tempdir().expect("library root");
+    let source = tempfile::tempdir().expect("source");
+    std::fs::write(source.path().join("SKILL.md"), "# Notes\n").expect("write skill");
+    let candidate = ImportCandidate::detected(
+        SourceDescriptor::new(
+            SourceKind::Local,
+            SourceLocator::local_path(source.path()),
+        ),
+        source.path().to_string_lossy(),
+        ".",
+        "SKILL.md",
+        "Notes",
+    );
+    let facade = LocalApplicationFacade::new_with_library(database, library_root.path());
+
+    let result = facade
+        .execute(AppCommand::PrepareImport(PrepareImport {
+            candidate,
+            tree_hash: None,
+        }))
+        .await
+        .expect("prepared import");
+    let AppCommandResult::PreparedImport(prepared) = result else {
+        panic!("expected prepared import");
+    };
+    assert_eq!(prepared.analysis.candidate.runtime_name, "Notes");
+    assert!(!prepared.id.to_string().is_empty());
+
+    let cancelled = facade
+        .execute(AppCommand::CancelImport {
+            prepared_import_id: prepared.id,
+        })
+        .await
+        .expect("cancelled import");
+    let AppCommandResult::OperationSummary(summary) = cancelled else {
+        panic!("expected operation summary");
+    };
+    assert_eq!(summary.operation_id, prepared.id);
+    assert_eq!(summary.phase, skillhub_core::OperationPhase::RolledBack);
 }
 
 #[tokio::test]

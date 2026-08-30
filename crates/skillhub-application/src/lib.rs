@@ -1,5 +1,6 @@
 //! Shared application boundary implementations.
 
+use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -7,8 +8,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use async_trait::async_trait;
 use skillhub_core::{
     AppCommand, AppCommandResult, AppError, AppQuery, AppQueryResult, AppResult, ApplicationFacade,
-    ErrorCode, RecoveryAction, Severity,
+    ErrorCode, OperationId, RecoveryAction, Severity,
 };
+use skillhub_core::application::PreparedImport;
 use skillhub_storage::{Database, LibraryPaths, VersionStore};
 
 /// The date provider is kept on the facade so all date-sensitive projections
@@ -18,6 +20,7 @@ pub struct LocalApplicationFacade {
     database: Mutex<Database>,
     today: (i32, u8, u8),
     library: Option<VersionStore>,
+    prepared_imports: Mutex<HashMap<OperationId, PreparedImport>>,
 }
 
 impl LocalApplicationFacade {
@@ -61,6 +64,7 @@ impl LocalApplicationFacade {
             database: Mutex::new(database),
             today,
             library: None,
+            prepared_imports: Mutex::new(HashMap::new()),
         }
     }
 
@@ -72,6 +76,7 @@ impl LocalApplicationFacade {
             library: Some(VersionStore::new(LibraryPaths::from_root(
                 library_root.as_ref(),
             ))),
+            prepared_imports: Mutex::new(HashMap::new()),
         }
     }
 
@@ -94,6 +99,10 @@ impl ApplicationFacade for LocalApplicationFacade {
     async fn execute(&self, command: AppCommand) -> AppResult<AppCommandResult> {
         let operation = match command {
             AppCommand::CancelOperation { .. } => "execute.cancel_operation",
+            AppCommand::PrepareImport(request) => return self.prepare_import(request),
+            AppCommand::CancelImport {
+                prepared_import_id,
+            } => return self.cancel_import(prepared_import_id),
             _ => "execute.unsupported",
         };
         Err(AppError::new(ErrorCode::InternalError, Severity::Error)
@@ -194,6 +203,58 @@ impl ApplicationFacade for LocalApplicationFacade {
                 .with_param("operation", "query.unsupported")
                 .with_action(RecoveryAction::Retry)),
         }
+    }
+}
+
+impl LocalApplicationFacade {
+    fn prepare_import(
+        &self,
+        request: skillhub_core::PrepareImport,
+    ) -> AppResult<AppCommandResult> {
+        self.with_database("execute.prepare_import", |database| {
+            let analysis = database
+                .import_repository()
+                .analyze(request.candidate.clone(), request.tree_hash.as_deref())?;
+            let prepared = PreparedImport {
+                id: OperationId::new(),
+                candidate: request.candidate,
+                analysis,
+            };
+            self.prepared_imports
+                .lock()
+                .map_err(|_| {
+                    AppError::new(ErrorCode::InternalError, Severity::Error)
+                        .with_param("operation", "execute.prepare_import")
+                        .with_action(RecoveryAction::Retry)
+                })?
+                .insert(prepared.id, prepared.clone());
+            Ok(AppCommandResult::PreparedImport(Box::new(prepared)))
+        })
+    }
+
+    fn cancel_import(&self, prepared_import_id: OperationId) -> AppResult<AppCommandResult> {
+        let removed = self
+            .prepared_imports
+            .lock()
+            .map_err(|_| {
+                AppError::new(ErrorCode::InternalError, Severity::Error)
+                    .with_param("operation", "execute.cancel_import")
+                    .with_action(RecoveryAction::Retry)
+            })?
+            .remove(&prepared_import_id);
+        if removed.is_none() {
+            return Err(AppError::new(ErrorCode::ObjectNotFound, Severity::Error)
+                .with_param("prepared_import_id", prepared_import_id.to_string())
+                .with_action(RecoveryAction::ChooseAnotherName));
+        }
+        Ok(AppCommandResult::OperationSummary(
+            skillhub_core::OperationSummary {
+                operation_id: prepared_import_id,
+                phase: skillhub_core::OperationPhase::RolledBack,
+                message_code: "import.cancelled".to_owned(),
+                error_code: None,
+            },
+        ))
     }
 }
 
