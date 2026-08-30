@@ -4,19 +4,24 @@ import {
   type AppCommandResult,
   type AppQueryResult,
   type RemovalDecision,
-  type RemovalImpact,
-  type RemovalResult,
+  type RemovalImpact as NativeRemovalImpact,
+  type RemovalResult as NativeRemovalResult,
 } from "../../api/bindings";
-import type { RemovalChoice } from "./api";
+import type {
+  RemovalChoice,
+  RemovalFacade,
+  RemovalImpact as DesktopRemovalImpact,
+  RemovalResult as DesktopRemovalResult,
+} from "./api";
 
-function impactResult(result: AppQueryResult | AppCommandResult): RemovalImpact {
+function impactResult(result: AppQueryResult | AppCommandResult): NativeRemovalImpact {
   if (result.type !== "removal_impact") {
     throw new Error("解除部署影响查询返回了无法识别的结果");
   }
   return result.payload;
 }
 
-function removalResult(result: AppCommandResult): RemovalResult {
+function removalResult(result: AppCommandResult): NativeRemovalResult {
   if (result.type !== "removal_result") {
     throw new Error("解除部署提交返回了无法识别的结果");
   }
@@ -24,14 +29,14 @@ function removalResult(result: AppCommandResult): RemovalResult {
 }
 
 export const nativeRemovalFacade = {
-  async getImpact(skillId: string): Promise<RemovalImpact> {
+  async getImpact(skillId: string): Promise<NativeRemovalImpact> {
     return impactResult(await queryApplication({
       type: "get_removal_impact",
       payload: { skill_id: skillId },
     }));
   },
 
-  async undeploy(deploymentId: string, decision: RemovalDecision): Promise<RemovalResult> {
+  async undeploy(deploymentId: string, decision: RemovalDecision): Promise<NativeRemovalResult> {
     const prepared = impactResult(await executeCommand({
       type: "prepare_undeploy",
       payload: { deployment_id: deploymentId },
@@ -42,26 +47,56 @@ export const nativeRemovalFacade = {
     }));
   },
 
-  async detachManagement(deploymentId: string): Promise<RemovalResult> {
+  async detachManagement(deploymentId: string): Promise<NativeRemovalResult> {
     return removalResult(await executeCommand({
       type: "detach_management",
       payload: { deployment_id: deploymentId },
     }));
   },
 
-  async deleteSkill(skillId: string, choices: Record<string, RemovalChoice>): Promise<RemovalResult> {
-    const prepared = impactResult(await executeCommand({
+  async deleteSkill(skillId: string, choices: Record<string, RemovalChoice>): Promise<DesktopRemovalResult> {
+    const prepared = await this.prepareDelete(skillId);
+    return this.commitDelete(prepared.operationId ?? "", choices);
+  },
+
+  async prepareDelete(skillId: string, skillName?: string): Promise<DesktopRemovalImpact> {
+    const impact = impactResult(await executeCommand({
       type: "prepare_delete_skill",
       payload: { skill_id: skillId },
     }));
+    return {
+      operationId: impact.operation_id,
+      skillId: impact.skill_id,
+      skillName: skillName ?? skillId,
+      deployments: impact.deployments.map((deployment) => ({
+        id: deployment.id,
+        label: deployment.runtime_name,
+        path: deployment.target_id,
+        physicalId: deployment.target_id,
+      })),
+      dependentProjects: impact.dependencies,
+    };
+  },
+
+  async commitDelete(operationId: string, choices: Record<string, RemovalChoice>): Promise<DesktopRemovalResult> {
     const decisions = Object.entries(choices).map(([deploymentId, choice]) => ({
       deployment_id: deploymentId,
       decision: deleteChoiceToDecision(choice),
     }));
-    return removalResult(await executeCommand({
+    const result = removalResult(await executeCommand({
       type: "commit_delete_skill",
-      payload: { prepared_delete_id: prepared.operation_id, decisions },
+      payload: { prepared_delete_id: operationId, decisions },
     }));
+    return { centralSkillDeleted: result.central_skill_deleted };
+  },
+};
+
+export const unavailableRemovalFacade: RemovalFacade = {
+  prepareDelete: async () => {
+    throw new Error("删除功能尚未接入");
+  },
+  commitDelete: async () => {
+    throw new Error("删除功能尚未接入");
   },
 };
 

@@ -572,6 +572,7 @@
     }
   },
   "skillDetail": {
+    "actions": { "delete": "Delete Skill" },
     "versions": {
       "added": "Added files: {{count}}",
       "changed": "Changed files: {{count}}",
@@ -754,11 +755,15 @@
     "eyebrow": "Removal impact",
     "heading": "Remove {{name}} from the managed library?",
     "description": "Choose what should happen at every deployment target before deleting the central Skill.",
+    "loading": "Loading deletion impact…",
+    "loadError": "Deletion impact could not be loaded. Try again.",
+    "commitError": "Deletion did not complete. The managed library was preserved; review and retry.",
     "dependents": "Dependent projects: {{projects}}",
     "choiceLabel": "Deployment handling",
     "choose": "Choose an action",
     "choices": { "keep": "Keep files and remove relation", "remove": "Remove deployment", "convert": "Keep as an independent copy" },
-    "confirm": "Confirm deletion"
+    "confirm": "Confirm deletion",
+    "submitting": "Deleting…"
   },
   "pending": {
     "eyebrow": "Pending work",

@@ -105,7 +105,9 @@ it("prepares and commits central Skill deletion with explicit mapped choices", a
     .mockResolvedValueOnce({ type: "removal_impact", payload: impact })
     .mockResolvedValueOnce({ type: "removal_result", payload: result });
 
-  await expect(nativeRemovalFacade.deleteSkill("skill-pdf", { "deployment-1": "convert_to_copy" })).resolves.toEqual(result);
+  await expect(nativeRemovalFacade.deleteSkill("skill-pdf", { "deployment-1": "convert_to_copy" })).resolves.toEqual({
+    centralSkillDeleted: true,
+  });
   expect(executeCommand).toHaveBeenNthCalledWith(1, {
     type: "prepare_delete_skill",
     payload: { skill_id: "skill-pdf" },

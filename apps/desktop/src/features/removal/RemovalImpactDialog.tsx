@@ -3,12 +3,20 @@ import { useTranslation } from "react-i18next";
 import { Button } from "../../ui/Button";
 import type { RemovalChoice, RemovalImpact } from "./api";
 
-export function RemovalImpactDialog({ impact, onConfirm }: { impact: RemovalImpact; onConfirm: (choices: Record<string, RemovalChoice>) => void }) {
+interface RemovalImpactDialogProps {
+  error?: string;
+  impact: RemovalImpact;
+  onCancel?: () => void;
+  onConfirm: (choices: Record<string, RemovalChoice>) => void | Promise<void>;
+  submitting?: boolean;
+}
+
+export function RemovalImpactDialog({ error, impact, onCancel, onConfirm, submitting = false }: RemovalImpactDialogProps) {
   const { t } = useTranslation();
   const [choices, setChoices] = useState<Record<string, RemovalChoice>>({});
   const complete = impact.deployments.every((deployment) => choices[deployment.id]);
   return (
-    <section aria-labelledby="removal-impact-heading" className="sh-workflow-card sh-removal-impact">
+    <section aria-labelledby="removal-impact-heading" className="sh-workflow-card sh-removal-impact" role="dialog">
       <p className="sh-eyebrow">{t("removal.eyebrow")}</p>
       <h2 id="removal-impact-heading">{t("removal.heading", { name: impact.skillName })}</h2>
       <p>{t("removal.description")}</p>
@@ -26,7 +34,13 @@ export function RemovalImpactDialog({ impact, onConfirm }: { impact: RemovalImpa
           </label>
         ))}
       </div>
-      <div className="sh-workflow-actions"><Button disabled={!complete} onClick={() => onConfirm(choices)} variant="danger">{t("removal.confirm")}</Button></div>
+      {error ? <p role="alert">{error}</p> : null}
+      <div className="sh-workflow-actions">
+        {onCancel ? <Button disabled={submitting} onClick={onCancel} variant="secondary">{t("actions.cancel")}</Button> : null}
+        <Button disabled={!complete || submitting} onClick={() => void onConfirm(choices)} variant="danger">
+          {submitting ? t("removal.submitting") : t("removal.confirm")}
+        </Button>
+      </div>
     </section>
   );
 }

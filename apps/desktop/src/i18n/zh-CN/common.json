@@ -572,6 +572,7 @@
     }
   },
   "skillDetail": {
+    "actions": { "delete": "删除 Skill" },
     "versions": {
       "added": "新增文件：{{count}}",
       "changed": "修改文件：{{count}}",
@@ -754,11 +755,15 @@
     "eyebrow": "移除影响",
     "heading": "要从托管库移除 {{name}} 吗？",
     "description": "删除中心 Skill 前，请先为每个部署目标选择处理方式。",
+    "loading": "正在读取删除影响…",
+    "loadError": "无法读取删除影响，请稍后重试。",
+    "commitError": "删除未完成，集中库保持不变，请检查后重试。",
     "dependents": "依赖项目：{{projects}}",
     "choiceLabel": "部署处理方式",
     "choose": "选择处理方式",
     "choices": { "keep": "保留部署文件并解除关系", "remove": "移除部署", "convert": "保留为独立副本" },
-    "confirm": "确认删除"
+    "confirm": "确认删除",
+    "submitting": "正在删除…"
   },
   "pending": {
     "eyebrow": "待处理事项",

@@ -6,11 +6,24 @@ export type RemovalDeployment = {
   physicalId: string;
 };
 export type RemovalImpact = {
+  operationId?: string;
   skillId: string;
   skillName: string;
   deployments: RemovalDeployment[];
   dependentProjects: string[];
 };
+
+export type RemovalResult = {
+  centralSkillDeleted: boolean;
+};
+
+export interface RemovalFacade {
+  prepareDelete(skillId: string, skillName?: string): Promise<RemovalImpact>;
+  commitDelete(
+    operationId: string,
+    choices: Record<string, RemovalChoice>,
+  ): Promise<RemovalResult>;
+}
 
 export function removalImpactFixture(): RemovalImpact {
   return {

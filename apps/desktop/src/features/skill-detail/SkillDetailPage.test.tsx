@@ -7,7 +7,7 @@ import {
   Routes,
   type InitialEntry,
 } from "react-router-dom";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createSkillHubI18n } from "../../i18n";
 import "../../styles/base.css";
 import baseCss from "../../styles/base.css?raw";
@@ -16,17 +16,20 @@ import type { MarkdownFacade } from "../markdown/api";
 import { createMockMarkdownFacade } from "../markdown/testFixtures";
 import { SkillDetailPage } from "./SkillDetailPage";
 import { createMockSkillDetailFacade } from "./testFixtures";
+import type { RemovalFacade } from "../removal/api";
 
 interface RenderDetailOptions {
   entry?: InitialEntry;
   facade?: SkillDetailFacade;
   markdownFacade?: MarkdownFacade;
+  removalFacade?: RemovalFacade;
 }
 
 async function renderDetail({
   entry = "/library/skill-pdf",
   facade = createMockSkillDetailFacade(),
   markdownFacade = createMockMarkdownFacade(),
+  removalFacade,
 }: RenderDetailOptions = {}) {
   const i18n = await createSkillHubI18n(["en-US"]);
   const client = new QueryClient({
@@ -38,13 +41,14 @@ async function renderDetail({
         <MemoryRouter initialEntries={[entry]}>
           <Routes>
             <Route
-              element={<SkillDetailPage facade={facade} markdownFacade={markdownFacade} />}
+              element={<SkillDetailPage facade={facade} markdownFacade={markdownFacade} removalFacade={removalFacade} />}
               path="/library/:skillId"
             />
             <Route
-              element={<SkillDetailPage facade={facade} markdownFacade={markdownFacade} />}
+              element={<SkillDetailPage facade={facade} markdownFacade={markdownFacade} removalFacade={removalFacade} />}
               path="/__preview/skill-detail/:skillId"
             />
+            <Route element={<p>Library route</p>} path="/library" />
           </Routes>
         </MemoryRouter>
       </I18nextProvider>
@@ -67,6 +71,27 @@ describe("SkillDetailPage shell", () => {
 
   afterEach(() => {
     document.body.innerHTML = "";
+  });
+
+  it("loads deletion impact and returns to the library after confirmation", async () => {
+    const removalFacade: RemovalFacade = {
+      prepareDelete: vi.fn().mockResolvedValue({
+        operationId: "op-delete",
+        skillId: "skill-pdf",
+        skillName: "PDF Reader",
+        deployments: [],
+        dependentProjects: [],
+      }),
+      commitDelete: vi.fn().mockResolvedValue({ centralSkillDeleted: true }),
+    };
+    await renderDetail({ removalFacade });
+
+    fireEvent.click(await screen.findByRole("button", { name: "Delete Skill" }));
+    expect(await screen.findByRole("dialog")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Confirm deletion" }));
+
+    await waitFor(() => expect(removalFacade.commitDelete).toHaveBeenCalledWith("op-delete", {}));
+    expect(await screen.findByText("Library route")).toBeVisible();
   });
 
   it("returns to the filtered Skill library with its scroll and focus context", async () => {

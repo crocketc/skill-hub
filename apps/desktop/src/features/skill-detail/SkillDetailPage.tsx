@@ -1,6 +1,7 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { useLocation, useParams } from "react-router-dom";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { DataState } from "../../ui/DataState";
 import { MarkdownWorkspace } from "../markdown/MarkdownWorkspace";
 import {
@@ -29,20 +30,28 @@ import {
 } from "./InsightPanels";
 import { Button } from "../../ui/Button";
 import { VersionTimeline } from "./VersionTimeline";
+import { RemovalImpactDialog } from "../removal/RemovalImpactDialog";
+import type { RemovalFacade, RemovalImpact, RemovalChoice } from "../removal/api";
+import { nativeRemovalFacade, unavailableRemovalFacade } from "../removal/nativeApi";
 
 interface SkillDetailPageProps {
   facade: SkillDetailFacade;
   markdownFacade?: MarkdownFacade;
+  removalFacade?: RemovalFacade;
 }
 
 export function SkillDetailPage({
   facade,
   markdownFacade = nativeMarkdownFacade,
+  removalFacade,
 }: SkillDetailPageProps) {
   const { t } = useTranslation();
   const location = useLocation();
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const { skillId = "" } = useParams();
   const isPreviewRoute = location.pathname.startsWith("/__preview/");
+  const effectiveRemovalFacade = removalFacade ?? (isPreviewRoute ? unavailableRemovalFacade : nativeRemovalFacade);
   const backPathname = isPreviewRoute ? "/__preview/skill-library" : "/library";
   const detailPathname = isPreviewRoute ? "/__preview/skill-detail" : "/library";
   const libraryReturn = readLibraryReturnState(location.state);
@@ -87,6 +96,40 @@ export function SkillDetailPage({
     queryFn: () => facade.getFindings(skillId, currentVersion ?? "", "llm"),
     queryKey: [...skillDetailKeys.summary(skillId), "findings", "llm", currentVersion],
   });
+  const [removalImpact, setRemovalImpact] = useState<RemovalImpact | null>(null);
+  const [removalLoading, setRemovalLoading] = useState(false);
+  const [removalSubmitting, setRemovalSubmitting] = useState(false);
+  const [removalError, setRemovalError] = useState<string>();
+
+  const startRemoval = async () => {
+    setRemovalLoading(true);
+    setRemovalError(undefined);
+    try {
+      setRemovalImpact(await effectiveRemovalFacade.prepareDelete(skillId, summaryQuery.data?.name));
+    } catch {
+      setRemovalError(t("removal.loadError"));
+    } finally {
+      setRemovalLoading(false);
+    }
+  };
+
+  const commitRemoval = async (choices: Record<string, RemovalChoice>) => {
+    if (!removalImpact?.operationId) return;
+    setRemovalSubmitting(true);
+    setRemovalError(undefined);
+    try {
+      const result = await effectiveRemovalFacade.commitDelete(removalImpact.operationId, choices);
+      if (!result.centralSkillDeleted) {
+        throw new Error("central skill was not deleted");
+      }
+      await queryClient.invalidateQueries({ queryKey: ["skills"] });
+      navigate({ pathname: backPathname, search: backSearch }, { replace: true, state: libraryReturn ? { libraryReturn } : undefined });
+    } catch {
+      setRemovalError(t("removal.commitError"));
+    } finally {
+      setRemovalSubmitting(false);
+    }
+  };
 
   if (summaryQuery.isPending) {
     return <DataState state="loading" message={t("skillDetail.states.loading")} />;
@@ -116,6 +159,7 @@ export function SkillDetailPage({
             backPathname={backPathname}
             backSearch={backSearch}
             libraryReturn={libraryReturn}
+            onDelete={!isPreviewRoute ? () => void startRemoval() : undefined}
             summary={summaryQuery.data}
           />
           <DetailSectionNav
@@ -183,6 +227,16 @@ export function SkillDetailPage({
           ))}
         </main>
       </div>
+      {removalLoading ? <p role="status">{t("removal.loading")}</p> : null}
+      {removalImpact ? (
+        <RemovalImpactDialog
+          error={removalError}
+          impact={removalImpact}
+          onCancel={() => setRemovalImpact(null)}
+          onConfirm={commitRemoval}
+          submitting={removalSubmitting}
+        />
+      ) : removalError && !removalLoading ? <p role="alert">{removalError}</p> : null}
     </section>
   );
 }
