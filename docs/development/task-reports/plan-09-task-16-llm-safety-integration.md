@@ -2,7 +2,7 @@
 
 ## 状态
 
-Windows 实现与定向测试已完成，等待提交后由 macOS 在同一提交上复核。
+Windows 与 macOS 双平台复核已完成。
 
 ## 已完成内容
 
@@ -23,4 +23,4 @@ Windows 实现与定向测试已完成，等待提交后由 macOS 在同一提�
 ## 未完成与边界
 
 - 本 Task 不提供真实 HTTP runner 的凭据配置界面，不执行 Skill 内容，也不把 LLM 结果合并到基础检查。
-- 需要在提交推送后由 macOS 对同一提交运行完整本地 CI 和专项测试；双平台通过后再将本报告标记为完成。
+- Windows 与 macOS 均在提交 `d2079b2` 上完成本地 CI 10/10；macOS 额外通过 LLM facade 2/2 和桌面端原生测试 2/2。macOS 首次使用根目录 Vitest 路径不适用，改用实际 `apps/desktop` 依赖路径后通过；未修改仓库。

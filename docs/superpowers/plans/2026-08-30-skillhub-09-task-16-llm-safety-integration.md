@@ -45,6 +45,6 @@
 - Modify: `docs/development/当前开发状态.md`
 - Modify: `docs/superpowers/plans/2026-08-30-skillhub-09-task-16-llm-safety-integration.md`
 
-- [ ] 记录无配置边界、注入 runner 测试和安全限制。
-- [ ] Windows CI 通过后提交推送，交由 macOS 在同一提交上只读复核。
-- [ ] 双平台通过后勾选本计划并更新开发状态。
+- [x] 记录无配置边界、注入 runner 测试和安全限制。
+- [x] Windows CI 通过后提交推送，交由 macOS 在同一提交上只读复核。
+- [x] 双平台通过后勾选本计划并更新开发状态。
