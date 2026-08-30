@@ -3024,9 +3024,6 @@ impl ApplicationFacade for LocalApplicationFacade {
                             .with_action(RecoveryAction::Retry)
                     })
             }
-            _ => Err(AppError::new(ErrorCode::InternalError, Severity::Error)
-                .with_param("operation", "query.unsupported")
-                .with_action(RecoveryAction::Retry)),
         }
     }
 }
