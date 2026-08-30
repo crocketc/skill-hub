@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "../../ui/Button";
 import { DataState } from "../../ui/DataState";
@@ -8,17 +8,22 @@ import {
   type DeploymentPlan,
   type DeploymentResult,
   type DeploymentTarget,
-  unavailableDeploymentFacade,
 } from "./api";
+import { createNativeDeploymentFacade } from "./nativeApi";
 
 export interface DeploymentDialogProps {
   facade?: DeploymentFacade;
   skillId: string;
   versionId: string;
+  runtimeName?: string;
 }
 
-export function DeploymentDialog({ facade = unavailableDeploymentFacade, skillId, versionId }: DeploymentDialogProps) {
+export function DeploymentDialog({ facade, skillId, versionId, runtimeName }: DeploymentDialogProps) {
   const { t } = useTranslation();
+  const activeFacade = useMemo(
+    () => facade ?? createNativeDeploymentFacade({ skillId, versionId, runtimeName }),
+    [facade, runtimeName, skillId, versionId],
+  );
   const [targets, setTargets] = useState<DeploymentTarget[]>([]);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [plan, setPlan] = useState<DeploymentPlan>();
@@ -27,17 +32,17 @@ export function DeploymentDialog({ facade = unavailableDeploymentFacade, skillId
 
   useEffect(() => {
     let active = true;
-    void facade.listTargets().then((value) => active && setTargets(value)).catch((reason: unknown) => {
+    void activeFacade.listTargets().then((value) => active && setTargets(value)).catch((reason: unknown) => {
       if (active) setError(reason instanceof Error ? reason.message : String(reason));
     });
     return () => { active = false; };
-  }, [facade]);
+  }, [activeFacade]);
 
   const selected = targets.filter((target) => selectedIds.includes(target.id));
   const preview = async () => {
     setError(undefined);
     try {
-      setPlan(await facade.preview(selected));
+      setPlan(await activeFacade.preview(selected));
       setResults(undefined);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
@@ -47,7 +52,7 @@ export function DeploymentDialog({ facade = unavailableDeploymentFacade, skillId
     if (!plan) return;
     setError(undefined);
     try {
-      setResults(await facade.commit(plan));
+      setResults(await activeFacade.commit(plan));
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
     }

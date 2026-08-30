@@ -4,6 +4,7 @@ use crate::catalog::SkillLifecycle;
 use crate::check::{
     CheckKind, CheckResult as DomainCheckResult, CheckState, Finding, FindingDisposition,
 };
+use crate::deployment::DeploymentMode;
 use crate::evidence::UsageEvidenceAnalysis;
 use crate::import::{ImportAnalysis, ImportCandidate};
 use crate::project::{AssemblyPlan, Project, SavedProjectView};
@@ -163,6 +164,22 @@ pub struct AnalyzeGlobalSkillEvidence {
 pub struct GetDeploymentPlan {
     pub request: DeploymentPlanRequest,
 }
+
+/// A registered logical filesystem target available for deployment selection.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct DeploymentTarget {
+    pub id: String,
+    pub label: String,
+    pub path: String,
+    pub available: bool,
+    pub physical_id: String,
+    pub modes: Vec<DeploymentMode>,
+}
+
+/// Lists registered logical targets without scanning arbitrary directories.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+pub struct ListDeploymentTargets;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 pub struct GetBasicCheckResult {
@@ -379,6 +396,8 @@ pub enum AppQuery {
     AnalyzeGlobalSkillEvidence(AnalyzeGlobalSkillEvidence),
     #[serde(rename = "get_deployment_plan")]
     GetDeploymentPlan(GetDeploymentPlan),
+    #[serde(rename = "list_deployment_targets")]
+    ListDeploymentTargets(ListDeploymentTargets),
     #[serde(rename = "list_deployments")]
     ListDeployments(ListDeployments),
     #[serde(rename = "get_deployment_relations")]
@@ -446,6 +465,8 @@ pub enum AppQueryResult {
     SourceSearchPage(SourceSearchPage),
     #[serde(rename = "deployment_plan")]
     DeploymentPlan(DeploymentPlan),
+    #[serde(rename = "deployment_targets")]
+    DeploymentTargets(Vec<DeploymentTarget>),
     #[serde(rename = "deployments")]
     Deployments(Vec<crate::DeploymentRecord>),
     #[serde(rename = "deployment_relations")]

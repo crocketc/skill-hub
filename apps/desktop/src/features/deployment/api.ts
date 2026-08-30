@@ -1,3 +1,5 @@
+import type { DeploymentPlan as NativeDeploymentPlan } from "../../api/bindings";
+
 export type DeploymentMode = "symbolic_link" | "directory_junction" | "managed_copy";
 export type DeploymentTarget = {
   id: string;
@@ -18,6 +20,7 @@ export type DeploymentPlan = {
   versionId: string;
   targets: DeploymentPlanTarget[];
   warnings: string[];
+  native?: NativeDeploymentPlan;
 };
 export type DeploymentResult = {
   targetId: string;

@@ -134,14 +134,14 @@ git commit -m "feat: execute prepared deployments safely"
 - Test: `apps/desktop/src/features/deployment/DeploymentDialog.test.tsx`
 
 **Interfaces:**
-- Consumes: generated `get_deployment_plan`, `prepare_deployment`, and `commit_deployment` bindings.
+- Consumes: generated `list_deployment_targets`, `get_deployment_plan`, `prepare_deployment`, and `commit_deployment` bindings.
 - Produces: the existing `DeploymentFacade` shape with native target selection, preview warnings, per-target results, and recoverable errors.
 
-- [ ] **Step 1: Write failing adapter and dialog tests**
+- [x] **Step 1: Write failing adapter and dialog tests**
 
 Assert that native plans map logical and physical target information without exposing untrusted absolute paths in user messages, that commit results preserve failed target rows, and that the dialog disables confirmation until a preview exists.
 
-- [ ] **Step 2: Run focused Vitest tests and verify failure**
+- [x] **Step 2: Run focused Vitest tests and verify failure**
 
 Run:
 
@@ -151,11 +151,11 @@ pnpm --dir apps/desktop exec vitest run src/features/deployment/nativeApi.test.t
 
 Expected: the adapter test fails because no native deployment facade exists.
 
-- [ ] **Step 3: Implement the adapter and production wiring**
+- [x] **Step 3: Implement the adapter and production wiring**
 
 Map generated result codes to existing localized error states, preserve the dialog’s preview-then-confirm sequence, and refresh deployment results after a successful commit. Keep fixture facades available for isolated UI tests.
 
-- [ ] **Step 4: Run frontend checks**
+- [x] **Step 4: Run frontend checks**
 
 Run:
 
@@ -169,6 +169,8 @@ pnpm --dir apps/desktop build
 Expected: all focused tests, typecheck, lint, and production build pass.
 
 - [ ] **Step 5: Commit**
+
+Implementation note: the native adapter carries the generated plan privately through the existing facade shape. It resolves the current version/runtime name when the route uses the `current` placeholder, and maps failed target rows without exposing absolute target paths in error messages. The application facade builds a production `RegisteredTargetIndex` from persisted discovery facts; unavailable or non-directory targets are excluded from planning.
 
 ```text
 git add apps/desktop/src/features/deployment

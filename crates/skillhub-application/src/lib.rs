@@ -11,11 +11,13 @@ use skillhub_adapters::import::SkillDetector;
 use skillhub_core::application::{DeploymentBackend, DeploymentService, PreparedImport};
 use skillhub_core::catalog::Skill;
 use skillhub_core::deployment::{
-    DeploymentPlanRequest, DeploymentRecord, DeploymentState, RegisteredTargetIndex, TargetPlan,
+    DeploymentPlanRequest, DeploymentRecord, DeploymentState, RegisteredTargetIndex, TargetFact,
+    TargetPlan,
 };
 use skillhub_core::{
-    AppCommand, AppCommandResult, AppError, AppQuery, AppQueryResult, AppResult, ApplicationFacade,
-    ErrorCode, OperationId, RecoveryAction, Severity,
+    AllowedRoot, AppCommand, AppCommandResult, AppError, AppQuery, AppQueryResult, AppResult,
+    ApplicationFacade, DeploymentCapability, ErrorCode, OperationId, PathPolicy, RecoveryAction,
+    Severity,
 };
 use skillhub_storage::{CentralLibrary, Database, LibraryPaths, VersionStore};
 
@@ -309,6 +311,7 @@ impl ApplicationFacade for LocalApplicationFacade {
                 self.list_deployment_relations(request.skill_id)
             }
             AppQuery::GetDeploymentPlan(request) => self.get_deployment_plan(request.request),
+            AppQuery::ListDeploymentTargets(_) => self.list_deployment_targets(),
             AppQuery::GetBasicCheckResult(request) => self.get_check_result(
                 request.skill_id,
                 request.version_id,
@@ -334,6 +337,33 @@ impl ApplicationFacade for LocalApplicationFacade {
 }
 
 impl LocalApplicationFacade {
+    fn list_deployment_targets(&self) -> AppResult<AppQueryResult> {
+        self.with_database("query.list_deployment_targets", |database| {
+            let targets = database
+                .agent_repository()
+                .load()?
+                .map(|snapshot| {
+                    snapshot
+                        .logical_targets
+                        .into_iter()
+                        .map(|target| skillhub_core::api::DeploymentTarget {
+                            id: target.id,
+                            label: target.client_id,
+                            path: target.path,
+                            available: target.available,
+                            physical_id: target.physical_id,
+                            // Discovery only records target facts; until a
+                            // profile explicitly confirms link support, use
+                            // managed copy as the safe advertised mode.
+                            modes: vec![skillhub_core::DeploymentMode::ManagedCopy],
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+            Ok(AppQueryResult::DeploymentTargets(targets))
+        })
+    }
+
     async fn prepare_deployment(
         &self,
         plan: skillhub_core::DeploymentPlan,
@@ -348,10 +378,6 @@ impl LocalApplicationFacade {
     }
 
     fn get_deployment_plan(&self, request: DeploymentPlanRequest) -> AppResult<AppQueryResult> {
-        let resolver = self
-            .deployment_targets
-            .as_ref()
-            .ok_or_else(|| unsupported("query.get_deployment_plan"))?;
         let library_root = self
             .library_root
             .as_ref()
@@ -360,10 +386,42 @@ impl LocalApplicationFacade {
             .join("versions")
             .join(request.skill_id.to_string())
             .join(request.version_id.as_str());
-        let input = request.resolve(resolver, source_path.to_string_lossy().into_owned())?;
+        let source_path = source_path.to_string_lossy().into_owned();
+        let input = if let Some(resolver) = self.deployment_targets.as_ref() {
+            request.resolve(resolver, source_path)?
+        } else {
+            let resolver = self.discovery_target_index()?;
+            request.resolve(&resolver, source_path)?
+        };
         skillhub_core::DeploymentPlanner
             .plan_request(&input)
             .map(AppQueryResult::DeploymentPlan)
+    }
+
+    fn discovery_target_index(&self) -> AppResult<RegisteredTargetIndex> {
+        self.with_database("query.get_deployment_plan", |database| {
+            let Some(snapshot) = database.agent_repository().load()? else {
+                return RegisteredTargetIndex::from_facts([], PathPolicy::new());
+            };
+            let mut facts = Vec::new();
+            let mut roots = Vec::new();
+            for target in snapshot.logical_targets {
+                if !target.available || !target.exists {
+                    continue;
+                }
+                let path = PathBuf::from(&target.path);
+                let Ok(root) = AllowedRoot::new(&path) else {
+                    continue;
+                };
+                roots.push(root);
+                facts.push(TargetFact::from_logical_target(
+                    &target,
+                    DeploymentCapability::new(false, false, true),
+                ));
+            }
+            let policy = PathPolicy::from_roots(roots)?;
+            RegisteredTargetIndex::from_facts(facts, policy)
+        })
     }
 
     fn prepare_import(&self, request: skillhub_core::PrepareImport) -> AppResult<AppCommandResult> {

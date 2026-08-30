@@ -10,7 +10,6 @@ import { ProjectListPage } from "../features/projects/ProjectListPage";
 import { unavailableAgentFacade } from "../features/agents/api";
 import { unavailableProjectFacade } from "../features/projects/api";
 import { DeploymentDialog } from "../features/deployment/DeploymentDialog";
-import { unavailableDeploymentFacade } from "../features/deployment/api";
 import { SecurityResults } from "../features/security/SecurityResults";
 import { unavailableSecurityFacade } from "../features/security/api";
 import { PendingPage } from "../features/pending/PendingPage";
@@ -55,7 +54,7 @@ function ProjectDetailRoute() {
 
 function DeploymentRoute() {
   const { skillId } = useParams();
-  return <DeploymentDialog facade={unavailableDeploymentFacade} skillId={skillId ?? "unknown"} versionId="current" />;
+  return <DeploymentDialog skillId={skillId ?? "unknown"} versionId="current" />;
 }
 
 function SecurityRoute() {

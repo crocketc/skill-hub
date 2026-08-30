@@ -1,5 +1,9 @@
 use skillhub_application::LocalApplicationFacade;
 use skillhub_core::{
+    agent::{
+        ClientInstance, ClientKind, ClientPresence, DirectoryPrecedence, DiscoverySnapshot,
+        LogicalTarget, OperatingSystem, TargetScope,
+    },
     api::{
         AnalyzeImport, AppCommandResult, AppQueryResult, CommitDeployment, DiffVersions,
         DiscoverImportCandidates, GetBasicCheckResult, GetDeploymentPlan, GetDeploymentRelations,
@@ -743,6 +747,118 @@ async fn deployment_plan_query_rejects_unregistered_target() {
         .await
         .expect_err("unregistered target should fail");
     assert_eq!(error.code, ErrorCode::ObjectNotFound);
+}
+
+#[tokio::test]
+async fn deployment_plan_query_builds_target_index_from_discovery_for_production_facade() {
+    let database = Database::open_in_memory().expect("database");
+    let skill = Skill::new(skillhub_core::SkillId::new(), "Deployable");
+    database
+        .catalog_repository()
+        .expect("catalog repository")
+        .insert(&skill)
+        .await
+        .expect("insert skill");
+    let library_root = tempfile::tempdir().expect("library root");
+    let source = tempfile::tempdir().expect("source");
+    std::fs::write(source.path().join("SKILL.md"), "# Deployable\n").expect("write skill");
+    let library = CentralLibrary::initialize(library_root.path()).expect("central library");
+    let version = VersionStore::from_library(&library)
+        .capture(skill.id(), source.path())
+        .expect("capture version");
+    let target = tempfile::tempdir().expect("target");
+    let physical_id = skillhub_core::physical_id_for_path(target.path()).expect("target id");
+    database
+        .agent_repository()
+        .replace(&DiscoverySnapshot {
+            generation: "1".into(),
+            observed_at: "2026-08-30T00:00:00Z".into(),
+            instances: Vec::new(),
+            logical_targets: vec![LogicalTarget {
+                id: "agent-codex".into(),
+                profile_id: "codex".into(),
+                client_id: "codex.cli".into(),
+                scope: TargetScope::Global,
+                path: target.path().to_string_lossy().into_owned(),
+                marker: "SKILL.md".into(),
+                precedence: DirectoryPrecedence::Preferred,
+                exists: true,
+                readable: true,
+                writable: true,
+                available: true,
+                physical_id,
+            }],
+            physical_targets: Vec::new(),
+        })
+        .expect("save discovery");
+
+    let facade = LocalApplicationFacade::new_with_library(database, library_root.path());
+    let result = facade
+        .query(RootAppQuery::GetDeploymentPlan(GetDeploymentPlan {
+            request: DeploymentPlanRequest {
+                skill_id: skill.id(),
+                version_id: version.id,
+                runtime_name: "deployable".into(),
+                logical_target_ids: vec!["agent-codex".into()],
+                mode_override: Some(DeploymentMode::ManagedCopy),
+            },
+        }))
+        .await
+        .expect("production deployment plan");
+    let AppQueryResult::DeploymentPlan(plan) = result else {
+        panic!("expected deployment plan");
+    };
+    assert_eq!(plan.targets.len(), 1);
+    assert_eq!(plan.targets[0].logical_target_ids, ["agent-codex"]);
+}
+
+#[tokio::test]
+async fn deployment_target_query_reads_registered_discovery_targets_only() {
+    let database = Database::open_in_memory().expect("database");
+    let snapshot = DiscoverySnapshot {
+        generation: "1".into(),
+        observed_at: "2026-08-30T00:00:00Z".into(),
+        instances: vec![ClientInstance {
+            profile_id: "codex".into(),
+            client_id: "codex.cli".into(),
+            kind: ClientKind::Cli,
+            supported_os: vec![OperatingSystem::Windows],
+            client_presence: ClientPresence::Unknown,
+        }],
+        logical_targets: vec![LogicalTarget {
+            id: "codex-global".into(),
+            profile_id: "codex".into(),
+            client_id: "codex.cli".into(),
+            scope: TargetScope::Global,
+            path: "C:/Users/demo/.codex/skills".into(),
+            marker: "SKILL.md".into(),
+            precedence: DirectoryPrecedence::Preferred,
+            exists: true,
+            readable: true,
+            writable: true,
+            available: true,
+            physical_id: "fs:codex".into(),
+        }],
+        physical_targets: Vec::new(),
+    };
+    database
+        .agent_repository()
+        .replace(&snapshot)
+        .expect("save discovery");
+    let facade = LocalApplicationFacade::new_with_today(database, (2026, 8, 30));
+    let result = facade
+        .query(RootAppQuery::ListDeploymentTargets(
+            skillhub_core::ListDeploymentTargets,
+        ))
+        .await
+        .expect("deployment targets");
+    let AppQueryResult::DeploymentTargets(targets) = result else {
+        panic!("expected deployment targets");
+    };
+    assert_eq!(targets.len(), 1);
+    assert_eq!(targets[0].id, "codex-global");
+    assert_eq!(targets[0].modes, [DeploymentMode::ManagedCopy]);
+    assert!(targets[0].available);
 }
 
 #[tokio::test]

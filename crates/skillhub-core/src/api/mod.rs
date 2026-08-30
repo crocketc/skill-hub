@@ -27,14 +27,14 @@ pub use command::{
 pub use event::{AppEvent, FactsChanged};
 pub use query::{
     AnalyzeGlobalSkillEvidence, AnalyzeImport, AppQuery, AppQueryResult, BasicCheckResult,
-    CombinationResult, DiffVersions, DiscoverImportCandidates, FindingResult, GetBasicCheckResult,
-    GetBootstrapSnapshot, GetCallPolicy, GetDeploymentPlan, GetDeploymentRelations,
-    GetDiscoverySnapshot, GetLlmSafetyCheckResult, GetProjectAssemblyPlan, GetReconcilePlan,
-    GetRemovalImpact, GetSkill, ListCombinations, ListCustomAgents, ListDeployments, ListFindings,
-    ListMarkdownFiles, ListPendingItems, ListProjects, ListSavedProjectViews, ListSkills,
-    ListVersions, LlmSafetyCheckResult, MarkdownFileContent, MarkdownFileEntry, ReadMarkdownFile,
-    SearchOnlineSources, SkillListItem, SkillListPage, SkillResult, VersionDiffResult,
-    VersionResult,
+    CombinationResult, DeploymentTarget, DiffVersions, DiscoverImportCandidates, FindingResult,
+    GetBasicCheckResult, GetBootstrapSnapshot, GetCallPolicy, GetDeploymentPlan,
+    GetDeploymentRelations, GetDiscoverySnapshot, GetLlmSafetyCheckResult, GetProjectAssemblyPlan,
+    GetReconcilePlan, GetRemovalImpact, GetSkill, ListCombinations, ListCustomAgents,
+    ListDeploymentTargets, ListDeployments, ListFindings, ListMarkdownFiles, ListPendingItems,
+    ListProjects, ListSavedProjectViews, ListSkills, ListVersions, LlmSafetyCheckResult,
+    MarkdownFileContent, MarkdownFileEntry, ReadMarkdownFile, SearchOnlineSources, SkillListItem,
+    SkillListPage, SkillResult, VersionDiffResult, VersionResult,
 };
 
 use crate::AppResult;
