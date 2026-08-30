@@ -5,16 +5,19 @@ use skillhub_core::{
         LogicalTarget, OperatingSystem, TargetScope,
     },
     api::{
-        AnalyzeImport, AppCommandResult, AppQueryResult, CommitDeployment, CommitUndeploy,
-        CreateBackup, DiffVersions, DiscoverImportCandidates, GetBasicCheckResult,
+        AnalyzeImport, AppCommandResult, AppQueryResult, CommitDeployment, CommitRestore,
+        CommitUndeploy, CreateBackup, DiffVersions, DiscoverImportCandidates, GetBasicCheckResult,
         GetDeploymentPlan, GetDeploymentRelations, GetReconcilePlan, GetRemovalImpact, GetSkill,
         KeepIndependentCopy, ListDeployments, ListFindings, ListMarkdownFiles, ListSkills,
-        ListVersions, PrepareDeleteSkill, PrepareDeployment, PrepareImport, PrepareUndeploy,
-        ReadMarkdownFile, RecheckBasic, RenameSkill, RunBasicCheck, RunLlmSafetyCheck,
-        SaveMarkdownContent, SaveSkillContent, SetCurrentVersion, SetFindingDisposition,
-        SetLifecycle, SetMetadata, SetTrial, VerifyBackup,
+        ListVersions, PrepareDeleteSkill, PrepareDeployment, PrepareImport, PrepareRestore,
+        PrepareUndeploy, ReadMarkdownFile, RecheckBasic, RenameSkill, RestoreDecision,
+        RunBasicCheck, RunLlmSafetyCheck, RunRollingBackup, SaveMarkdownContent, SaveSkillContent,
+        SetCurrentVersion, SetFindingDisposition, SetLifecycle, SetMetadata, SetTrial,
+        VerifyBackup,
     },
-    backup::BackupScope,
+    backup::{
+        BackupRetentionPolicy, BackupScope, RestoreConflictDecision, SensitiveContentDecision,
+    },
     catalog::{CatalogRepository, Skill},
     check::{CheckKind, CheckState, FindingDisposition},
     deployment::{
@@ -728,6 +731,195 @@ async fn backup_create_returns_a_verified_package_path_and_verify_rejects_missin
         panic!("expected backup manifest");
     };
     assert!(manifest.contains_sensitive_skill_content);
+}
+
+#[tokio::test]
+async fn restore_commands_prepare_and_commit_portable_package_with_explicit_conflict_choice() {
+    let database = Database::open_in_memory().expect("database");
+    let skill = Skill::new(skillhub_core::SkillId::new(), "Restorable skill");
+    database
+        .catalog_repository()
+        .expect("catalog repository")
+        .insert(&skill)
+        .await
+        .expect("insert skill");
+    let root = tempfile::tempdir().expect("library root");
+    let package_root = tempfile::tempdir().expect("package root");
+    let source = tempfile::tempdir().expect("source");
+    std::fs::write(source.path().join("SKILL.md"), "# Restored\n").expect("write skill");
+    let library = CentralLibrary::initialize(root.path()).expect("central library");
+    let store = VersionStore::from_library(&library);
+    let version = store
+        .capture(skill.id(), source.path())
+        .expect("capture version");
+    store
+        .set_current(skill.id(), &version.id)
+        .expect("set current");
+    library
+        .save_portable_skill(&skill, Some(&version.id))
+        .expect("save portable skill");
+
+    let backup = skillhub_storage::backup::BackupService::new(package_root.path().to_path_buf());
+    let input = skillhub_core::backup::BackupInput::new(
+        BackupScope::Full,
+        r#"{"deployments":[{"target_path":"C:\\Users\\old\\.agents"}]}"#,
+        vec![(skill.id(), "# Restored\n".to_owned())],
+    );
+    let package = backup
+        .create(&input, &backup.prepare(&input).expect("backup plan"), &[])
+        .expect("backup package");
+    std::fs::create_dir_all(root.path().join("skills").join(skill.id().to_string()))
+        .expect("existing skill dir");
+    std::fs::write(
+        root.path()
+            .join("skills")
+            .join(skill.id().to_string())
+            .join("SKILL.md"),
+        "# Keep live\n",
+    )
+    .expect("existing live skill");
+    let facade = LocalApplicationFacade::new_with_library(database, root.path());
+
+    let prepared = facade
+        .execute(AppCommand::PrepareRestore(PrepareRestore {
+            path: package.root.to_string_lossy().into_owned(),
+        }))
+        .await
+        .expect("prepare restore");
+    let AppCommandResult::RestorePlan(plan) = prepared else {
+        panic!("expected restore plan");
+    };
+    assert_eq!(plan.skills, 1);
+    assert_eq!(plan.deployments_requiring_rediscovery, 1);
+    assert_eq!(plan.conflicts.len(), 1);
+
+    let missing = facade
+        .execute(AppCommand::CommitRestore(CommitRestore {
+            path: package.root.to_string_lossy().into_owned(),
+            decisions: Vec::new(),
+        }))
+        .await
+        .expect_err("conflict decision is required");
+    assert_eq!(missing.code, ErrorCode::BackupRestoreDecisionRequired);
+
+    let committed = facade
+        .execute(AppCommand::CommitRestore(CommitRestore {
+            path: package.root.to_string_lossy().into_owned(),
+            decisions: vec![RestoreDecision {
+                skill_id: skill.id(),
+                decision: RestoreConflictDecision::Skip,
+            }],
+        }))
+        .await
+        .expect("commit restore");
+    let AppCommandResult::RestoreResult(result) = committed else {
+        panic!("expected restore result");
+    };
+    assert_eq!(result.skills_restored, 0);
+    assert_eq!(result.skills_skipped, 1);
+    assert_eq!(result.deployments_requiring_rediscovery, 1);
+    assert_eq!(
+        std::fs::read_to_string(
+            root.path()
+                .join("skills")
+                .join(skill.id().to_string())
+                .join("SKILL.md")
+        )
+        .expect("live skill"),
+        "# Keep live\n"
+    );
+    let restored_metadata = std::fs::read_to_string(root.path().join("portable/skills.json"))
+        .expect("restored portable metadata");
+    assert!(!restored_metadata.contains("C:\\Users\\old"));
+}
+
+#[tokio::test]
+async fn restore_prepare_rejects_missing_package_path() {
+    let database = Database::open_in_memory().expect("database");
+    let root = tempfile::tempdir().expect("library root");
+    CentralLibrary::initialize(root.path()).expect("central library");
+    let facade = LocalApplicationFacade::new_with_library(database, root.path());
+    let missing_path = root.path().join("does-not-exist");
+
+    let error = facade
+        .execute(AppCommand::PrepareRestore(PrepareRestore {
+            path: missing_path.to_string_lossy().into_owned(),
+        }))
+        .await
+        .expect_err("missing package must fail");
+    assert_eq!(error.code, ErrorCode::ObjectNotFound);
+}
+
+#[tokio::test]
+async fn rolling_backup_creates_verified_package_then_applies_retention() {
+    let database = Database::open_in_memory().expect("database");
+    let skill = Skill::new(skillhub_core::SkillId::new(), "Rolling backup skill");
+    database
+        .catalog_repository()
+        .expect("catalog repository")
+        .insert(&skill)
+        .await
+        .expect("insert skill");
+    let root = tempfile::tempdir().expect("library root");
+    let source = tempfile::tempdir().expect("source");
+    std::fs::write(source.path().join("SKILL.md"), "api_key=placeholder\n")
+        .expect("write sensitive skill");
+    let library = CentralLibrary::initialize(root.path()).expect("central library");
+    let store = VersionStore::from_library(&library);
+    let version = store
+        .capture(skill.id(), source.path())
+        .expect("capture version");
+    store
+        .set_current(skill.id(), &version.id)
+        .expect("set current");
+    library
+        .save_portable_skill(&skill, Some(&version.id))
+        .expect("save portable skill");
+    let facade = LocalApplicationFacade::new_with_library(database, root.path());
+
+    let missing = facade
+        .execute(AppCommand::RunRollingBackup(RunRollingBackup {
+            scope: BackupScope::Full,
+            retention: BackupRetentionPolicy { max_backups: 1 },
+            decisions: Vec::new(),
+        }))
+        .await
+        .expect_err("sensitive decision is required");
+    assert_eq!(missing.code, ErrorCode::BackupSensitiveDecisionRequired);
+    assert_eq!(
+        std::fs::read_dir(root.path().join(".skillhub").join("backups"))
+            .expect("backup directory")
+            .count(),
+        0
+    );
+
+    for _ in 0..2 {
+        let result = facade
+            .execute(AppCommand::RunRollingBackup(RunRollingBackup {
+                scope: BackupScope::Full,
+                retention: BackupRetentionPolicy { max_backups: 1 },
+                decisions: vec![skillhub_core::BackupDecision {
+                    skill_id: skill.id(),
+                    decision: SensitiveContentDecision::IncludeAndMark,
+                }],
+            }))
+            .await
+            .expect("rolling backup");
+        let AppCommandResult::BackupRetentionResult(retention) = result else {
+            panic!("expected retention result");
+        };
+        assert_eq!(retention.retained, 1);
+    }
+    let backups = std::fs::read_dir(root.path().join(".skillhub").join("backups"))
+        .expect("backup directory")
+        .filter_map(Result::ok)
+        .filter(|entry| entry.path().is_dir())
+        .collect::<Vec<_>>();
+    assert_eq!(backups.len(), 1);
+    assert!(backups[0]
+        .file_name()
+        .to_string_lossy()
+        .starts_with("skillhub-backup-"));
 }
 
 #[tokio::test]

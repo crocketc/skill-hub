@@ -30,7 +30,7 @@ use skillhub_core::{
     AppQueryResult, AppResult, ApplicationFacade, DeploymentCapability, ErrorCode, OperationId,
     PathPolicy, RecoveryAction, Severity,
 };
-use skillhub_storage::backup::BackupService;
+use skillhub_storage::backup::{BackupService, RestoreService, RetentionService};
 use skillhub_storage::{CentralLibrary, Database, LibraryPaths, VersionStore};
 
 /// The date provider is kept on the facade so all date-sensitive projections
@@ -651,6 +651,33 @@ impl LocalApplicationFacade {
             portable_metadata,
             skills,
         ))
+    }
+
+    fn backup_package(path: impl AsRef<Path>) -> AppResult<BackupPackage> {
+        let root = path.as_ref().to_path_buf();
+        let metadata = std::fs::symlink_metadata(&root).map_err(|error| {
+            let code = if error.kind() == std::io::ErrorKind::NotFound {
+                ErrorCode::ObjectNotFound
+            } else {
+                ErrorCode::InternalError
+            };
+            AppError::new(code, Severity::Error)
+                .with_param("path", root.to_string_lossy().into_owned())
+                .with_action(RecoveryAction::ChooseAnotherName)
+        })?;
+        if metadata.file_type().is_symlink() {
+            return Err(
+                AppError::new(ErrorCode::PathOutsideAllowedRoots, Severity::Error)
+                    .with_param("path", root.to_string_lossy().into_owned())
+                    .with_action(RecoveryAction::InspectTarget),
+            );
+        }
+        if !metadata.is_dir() {
+            return Err(AppError::new(ErrorCode::InvalidInput, Severity::Error)
+                .with_param("field", "backup_path")
+                .with_action(RecoveryAction::ChooseAnotherName));
+        }
+        Ok(BackupPackage { root })
     }
 
     async fn run_basic_check(
@@ -1299,9 +1326,7 @@ impl ApplicationFacade for LocalApplicationFacade {
                 }));
             }
             AppCommand::VerifyBackup(request) => {
-                let package = BackupPackage {
-                    root: PathBuf::from(request.path),
-                };
+                let package = Self::backup_package(request.path)?;
                 let destination = package
                     .root
                     .parent()
@@ -1309,6 +1334,48 @@ impl ApplicationFacade for LocalApplicationFacade {
                     .unwrap_or_else(|| PathBuf::from("."));
                 let verification = BackupService::new(destination).verify(&package)?;
                 return Ok(AppCommandResult::BackupManifest(verification.manifest));
+            }
+            AppCommand::PrepareRestore(request) => {
+                let package = Self::backup_package(request.path)?;
+                let Some(root) = self.library_root.as_ref() else {
+                    return Err(unsupported("execute.prepare_restore.library"));
+                };
+                let plan = RestoreService::new(root.clone()).prepare(&package)?;
+                return Ok(AppCommandResult::RestorePlan(plan));
+            }
+            AppCommand::CommitRestore(request) => {
+                let package = Self::backup_package(request.path)?;
+                let Some(root) = self.library_root.as_ref() else {
+                    return Err(unsupported("execute.commit_restore.library"));
+                };
+                let service = RestoreService::new(root.clone());
+                let plan = service.prepare(&package)?;
+                let decisions = request
+                    .decisions
+                    .into_iter()
+                    .map(|decision| (decision.skill_id, decision.decision))
+                    .collect::<Vec<_>>();
+                let result = service.commit(&package, &plan, &decisions)?;
+                return Ok(AppCommandResult::RestoreResult(result));
+            }
+            AppCommand::RunRollingBackup(request) => {
+                let input = self.build_backup_input(request.scope)?;
+                let Some(root) = self.library_root.as_ref() else {
+                    return Err(unsupported("execute.run_rolling_backup.library"));
+                };
+                let paths = LibraryPaths::from_root(root);
+                let backup = BackupService::new(paths.backups_dir.clone());
+                let plan = backup.prepare(&input)?;
+                let decisions = request
+                    .decisions
+                    .into_iter()
+                    .map(|decision| (decision.skill_id, decision.decision))
+                    .collect::<Vec<_>>();
+                let package = backup.create(&input, &plan, &decisions)?;
+                backup.verify(&package)?;
+                let retention =
+                    RetentionService::new(paths.backups_dir).apply(request.retention)?;
+                return Ok(AppCommandResult::BackupRetentionResult(retention));
             }
             AppCommand::RunLlmSafetyCheck(request) => {
                 return self
