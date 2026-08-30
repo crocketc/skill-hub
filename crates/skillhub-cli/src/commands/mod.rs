@@ -69,7 +69,7 @@ pub async fn run(args: &CliArgs, facade: &dyn ApplicationFacade) -> Result<Value
                     .await,
             )
         }
-        _ => return Err(not_connected(args.command.name())),
+        _ => Err(not_connected(args.command.name())),
     }
 }
 
