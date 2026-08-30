@@ -310,6 +310,18 @@ export function createMockSkillDetailFacade(
     async getInsights() {
       return insights;
     },
+    async getFindings(_skillId, _versionId, kind) {
+      return kind === "basic"
+        ? [{
+            id: "finding-basic",
+            code: "fixture_rule",
+            disposition: "actionable" as const,
+            file: "SKILL.md",
+            highRisk: false,
+            severity: "warning" as const,
+          }]
+        : [];
+    },
     async getMetadata(skillId) {
       return {
         ...metadata,

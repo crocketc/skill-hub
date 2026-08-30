@@ -4,6 +4,7 @@ import {
   unavailableSkillDetailFacade,
   type SkillDetailFacade,
   type SkillDetailSummary,
+  type SkillFinding,
   type SkillMetadata,
 } from "./api";
 
@@ -98,5 +99,24 @@ export const nativeSkillDetailFacade: SkillDetailFacade = {
   },
   async getMetadata(skillId) {
     return metadataOf(await getSkill(skillId));
+  },
+  async getFindings(skillId, versionId, kind): Promise<SkillFinding[]> {
+    const result = await queryApplication({
+      type: "list_findings",
+      payload: {
+        skill_id: skillId,
+        version_id: versionId,
+        kind: kind === "basic" ? "basic" : "llm",
+      },
+    });
+    if (result.type !== "findings") throw unavailableResult();
+    return result.payload.map((finding) => ({
+      code: finding.code,
+      disposition: finding.disposition,
+      file: finding.file ?? undefined,
+      highRisk: finding.high_risk,
+      id: finding.id,
+      severity: finding.severity,
+    }));
   },
 };

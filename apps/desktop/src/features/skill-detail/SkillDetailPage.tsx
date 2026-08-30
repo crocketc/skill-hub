@@ -75,6 +75,18 @@ export function SkillDetailPage({
     queryFn: () => facade.getInsights(skillId),
     queryKey: skillDetailKeys.insights(skillId),
   });
+  const currentVersion = summaryQuery.data?.currentVersion;
+  const hasCurrentVersion = Boolean(currentVersion && currentVersion !== "unknown");
+  const basicFindingsQuery = useQuery({
+    enabled: hasCurrentVersion,
+    queryFn: () => facade.getFindings(skillId, currentVersion ?? "", "basic"),
+    queryKey: [...skillDetailKeys.summary(skillId), "findings", "basic", currentVersion],
+  });
+  const llmFindingsQuery = useQuery({
+    enabled: hasCurrentVersion,
+    queryFn: () => facade.getFindings(skillId, currentVersion ?? "", "llm"),
+    queryKey: [...skillDetailKeys.summary(skillId), "findings", "llm", currentVersion],
+  });
 
   if (summaryQuery.isPending) {
     return <DataState state="loading" message={t("skillDetail.states.loading")} />;
@@ -151,7 +163,13 @@ export function SkillDetailPage({
                   requirements={requirementsQuery.data}
                 />
               ) : null}
-              {section === "security" ? <SecurityEvidence summary={summaryQuery.data} /> : null}
+              {section === "security" ? (
+                <SecurityEvidence
+                  findings={basicFindingsQuery.data}
+                  llmFindings={llmFindingsQuery.data}
+                  summary={summaryQuery.data}
+                />
+              ) : null}
               {section === "connections" && insightsQuery.data ? (
                 <ConnectionEvidence insights={insightsQuery.data} />
               ) : null}

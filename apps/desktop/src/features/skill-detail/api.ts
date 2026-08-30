@@ -85,6 +85,15 @@ export interface SkillDetailInsights {
   usageEvidence?: { invocationCount: number; lastUsedAt?: string };
 }
 
+export interface SkillFinding {
+  code: string;
+  disposition: "actionable" | "acknowledged" | "dismissed";
+  file?: string;
+  highRisk: boolean;
+  id: string;
+  severity: "info" | "warning" | "error" | "critical";
+}
+
 export interface SkillVersionEntry {
   basicCheck: CheckState;
   changes: { added: number; changed: number; removed: number };
@@ -144,6 +153,11 @@ export interface SkillDetailFacade {
     query: SkillLibraryQuery,
   ): Promise<AdjacentSkillContext>;
   getInsights(skillId: string): Promise<SkillDetailInsights>;
+  getFindings(
+    skillId: string,
+    versionId: string,
+    kind: "basic" | "llm",
+  ): Promise<SkillFinding[]>;
   getMetadata(skillId: string): Promise<SkillMetadata>;
   getRelations(skillId: string): Promise<SkillRelation[]>;
   getRequirements(skillId: string): Promise<SkillRequirementFact[]>;
@@ -208,6 +222,7 @@ export const unavailableSkillDetailFacade: SkillDetailFacade = {
   emitIntent: unavailable,
   getAdjacentContext: unavailable,
   getInsights: unavailable,
+  getFindings: unavailable,
   getMetadata: unavailable,
   getRelations: unavailable,
   getRequirements: unavailable,

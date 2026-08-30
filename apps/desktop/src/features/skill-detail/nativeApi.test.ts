@@ -118,4 +118,34 @@ describe("native skill detail facade", () => {
     });
     expect(queryApplication).toHaveBeenCalledTimes(3);
   });
+
+  it("maps structured findings for the selected check kind", async () => {
+    vi.clearAllMocks();
+    vi.mocked(queryApplication).mockResolvedValue({
+      type: "findings",
+      payload: [{
+        id: "finding-1",
+        code: "prompt_injection",
+        severity: "critical",
+        file: "SKILL.md",
+        line_start: 4,
+        line_end: 4,
+        disposition: "actionable",
+        high_risk: true,
+      }],
+    });
+
+    await expect(nativeSkillDetailFacade.getFindings(
+      "skill-1",
+      "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "basic",
+    )).resolves.toEqual([{
+      id: "finding-1",
+      code: "prompt_injection",
+      severity: "critical",
+      file: "SKILL.md",
+      disposition: "actionable",
+      highRisk: true,
+    }]);
+  });
 });

@@ -613,6 +613,8 @@
     },
     "insights": {
       "basicSecurity": "Basic security check",
+      "findings": "Check findings",
+      "llmFindings": "LLM check findings",
       "connections": "Dependencies, duplicates, and combinations",
       "externalHistory": "External changes and operation history",
       "invocations_one": "{{count}} recorded invocation",

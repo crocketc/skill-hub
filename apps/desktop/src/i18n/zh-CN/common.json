@@ -613,6 +613,8 @@
     },
     "insights": {
       "basicSecurity": "基础安全检查",
+      "findings": "检查发现项",
+      "llmFindings": "LLM 检查发现项",
       "connections": "依赖、重复项与组合",
       "externalHistory": "外部变化与操作历史",
       "invocations_one": "记录到 {{count}} 次调用",

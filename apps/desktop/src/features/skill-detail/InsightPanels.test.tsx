@@ -31,6 +31,13 @@ describe("Skill detail evidence panels", () => {
     expect(screen.queryByText(/已安装|运行验证通过/)).not.toBeInTheDocument();
   });
 
+  it("shows current basic findings in the security section", async () => {
+    await renderEvidence();
+    expect(await screen.findByText("检查发现项")).toBeVisible();
+    expect(screen.getByText("fixture_rule")).toBeVisible();
+    expect(screen.getAllByText(/SKILL\.md/)[0]).toBeVisible();
+  });
+
   it("keeps successful panels visible when relations fail", async () => {
     await renderEvidence(createMockSkillDetailFacade({ failRelations: true }));
     expect(await screen.findByRole("alert", { name: "关系加载失败" })).toBeVisible();

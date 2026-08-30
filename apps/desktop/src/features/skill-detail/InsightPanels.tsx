@@ -1,8 +1,12 @@
 import { useTranslation } from "react-i18next";
 import { StatusBadge } from "../../ui/StatusBadge";
-import type { SkillDetailInsights, SkillDetailSummary } from "./api";
+import type { SkillDetailInsights, SkillDetailSummary, SkillFinding } from "./api";
 
-export function SecurityEvidence({ summary }: { summary: SkillDetailSummary }) {
+export function SecurityEvidence({
+  findings = [],
+  llmFindings = [],
+  summary,
+}: { findings?: SkillFinding[]; llmFindings?: SkillFinding[]; summary: SkillDetailSummary }) {
   const { t } = useTranslation();
   return (
     <div className="sh-detail-insights">
@@ -11,6 +15,32 @@ export function SecurityEvidence({ summary }: { summary: SkillDetailSummary }) {
         {t(`skillLibrary.table.checkStates.${summary.basicCheck === "not_run" ? "notRun" : summary.basicCheck}`)}
       </StatusBadge>
       <p>{t("skillDetail.insights.riskSummary", { high: summary.highRiskCount, pending: summary.pendingCount })}</p>
+      {findings.length ? (
+        <section>
+          <h4>{t("skillDetail.insights.findings")}</h4>
+          <ul aria-label={t("skillDetail.insights.findings")}>
+            {findings.map((finding) => (
+              <li key={finding.id}>
+                <code>{finding.code}</code>
+                {finding.file ? <span> · {finding.file}</span> : null}
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+      {llmFindings.length ? (
+        <section>
+          <h4>{t("skillDetail.insights.llmFindings")}</h4>
+          <ul aria-label={t("skillDetail.insights.llmFindings")}>
+            {llmFindings.map((finding) => (
+              <li key={finding.id}>
+                <code>{finding.code}</code>
+                {finding.file ? <span> · {finding.file}</span> : null}
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
     </div>
   );
 }
