@@ -174,6 +174,21 @@ impl VersionStore {
         Ok(())
     }
 
+    /// Removes all immutable versions owned by a Skill after the caller has
+    /// completed its dependency and deployment checks.
+    pub fn remove_skill_sync(&self, skill_id: SkillId) -> AppResult<()> {
+        let versions = self.list(skill_id)?;
+        for version in &versions {
+            self.discard_sync(version)?;
+        }
+        self.clear_current(skill_id)?;
+        let directory = self.paths.versions_dir.join(skill_id.to_string());
+        if directory.is_dir() && fs::read_dir(&directory).map_err(io_error)?.next().is_none() {
+            fs::remove_dir(directory).map_err(io_error)?;
+        }
+        Ok(())
+    }
+
     pub fn materialize(&self, id: &VersionId, output: impl AsRef<Path>) -> AppResult<()> {
         let manifest = self.load_manifest(id)?;
         let output = output.as_ref();

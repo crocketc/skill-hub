@@ -280,8 +280,61 @@ impl RemovalBackend for LocalDeploymentBackend {
             .detach_management_sync(deployment.id)
     }
 
-    async fn delete_skill(&self, _skill_id: skillhub_core::SkillId) -> AppResult<()> {
-        Err(unsupported("execute.delete_skill"))
+    async fn delete_skill(&self, skill_id: skillhub_core::SkillId) -> AppResult<()> {
+        let Some(library_root) = self.library_root.as_ref() else {
+            return Err(unsupported("execute.delete_skill.library"));
+        };
+        let (skill, current) = {
+            let database = self
+                .database
+                .lock()
+                .map_err(|_| internal("execute.delete_skill"))?;
+            if database
+                .deployment_repository()
+                .list_all()?
+                .into_iter()
+                .any(|record| {
+                    record.skill_id == skill_id && record.state == DeploymentState::Deployed
+                })
+            {
+                return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                    .with_param("detail", "active deployment relation remains")
+                    .with_action(RecoveryAction::InspectTarget));
+            }
+            let skill = database
+                .catalog_repository()?
+                .get_sync(skill_id)?
+                .ok_or_else(|| AppError::new(ErrorCode::ObjectNotFound, Severity::Error))?;
+            let store = VersionStore::new(LibraryPaths::from_root(library_root.clone()));
+            (skill, store.current(skill_id)?)
+        };
+        let central = CentralLibrary::initialize(library_root)?;
+        let store = VersionStore::from_library(&central);
+        self.database
+            .lock()
+            .map_err(|_| internal("execute.delete_skill.catalog"))?
+            .catalog_repository()?
+            .remove_sync(skill_id)?;
+        if let Err(error) = central.remove_portable_skill(skill_id) {
+            let restore = self
+                .database
+                .lock()
+                .map_err(|_| internal("execute.delete_skill.rollback"))?
+                .catalog_repository()?
+                .insert_sync(&skill);
+            return Err(cleanup_import_error(error, restore));
+        }
+        if let Err(error) = store.remove_skill_sync(skill_id) {
+            let restore = self
+                .database
+                .lock()
+                .map_err(|_| internal("execute.delete_skill.rollback"))?
+                .catalog_repository()?
+                .insert_sync(&skill)
+                .and_then(|()| central.save_portable_skill(&skill, current.as_ref()));
+            return Err(cleanup_import_error(error, restore));
+        }
+        Ok(())
     }
 }
 
@@ -1088,6 +1141,25 @@ impl ApplicationFacade for LocalApplicationFacade {
                     .prepare_undeploy(request.deployment_id)
                     .await?;
                 return Ok(AppCommandResult::RemovalImpact(impact));
+            }
+            AppCommand::PrepareDeleteSkill(request) => {
+                let impact = self
+                    .removal_service
+                    .prepare_delete(request.skill_id)
+                    .await?;
+                return Ok(AppCommandResult::RemovalImpact(impact));
+            }
+            AppCommand::CommitDeleteSkill(request) => {
+                let decisions = request
+                    .decisions
+                    .into_iter()
+                    .map(|choice| (choice.deployment_id, choice.decision))
+                    .collect();
+                let result = self
+                    .removal_service
+                    .commit_delete(request.prepared_delete_id, decisions)
+                    .await?;
+                return Ok(AppCommandResult::RemovalResult(result));
             }
             AppCommand::CommitUndeploy(request) => {
                 let result = self

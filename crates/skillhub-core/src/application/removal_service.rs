@@ -195,6 +195,14 @@ fn validate_decisions(
     {
         return Err(conflict("every deployment requires one explicit decision"));
     }
+    if decisions
+        .iter()
+        .any(|(_, decision)| *decision == RemovalDecision::DetachManagement)
+    {
+        return Err(conflict(
+            "detach management is only available when keeping the central Skill",
+        ));
+    }
     Ok(())
 }
 

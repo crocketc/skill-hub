@@ -128,6 +128,26 @@ fn delete_with_deployments_requires_explicit_relationship_decisions() {
 }
 
 #[test]
+fn delete_rejects_detach_management_before_mutating_relationships() {
+    block_on(async {
+        let (service, backend) = fixture();
+        let impact = service.prepare_delete(backend.skill_id).await.unwrap();
+        let decisions = impact
+            .deployments
+            .iter()
+            .map(|deployment| (deployment.id, RemovalDecision::DetachManagement))
+            .collect();
+
+        assert!(service
+            .commit_delete(impact.operation_id, decisions)
+            .await
+            .is_err());
+        assert!(backend.detached.lock().unwrap().is_empty());
+        assert!(backend.deleted_skills.lock().unwrap().is_empty());
+    });
+}
+
+#[test]
 fn undeploy_removes_owned_target_and_preserves_central_skill() {
     block_on(async {
         let (service, backend) = fixture();

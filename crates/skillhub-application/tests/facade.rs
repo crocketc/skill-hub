@@ -9,9 +9,10 @@ use skillhub_core::{
         DiffVersions, DiscoverImportCandidates, GetBasicCheckResult, GetDeploymentPlan,
         GetDeploymentRelations, GetReconcilePlan, GetRemovalImpact, GetSkill, KeepIndependentCopy,
         ListDeployments, ListFindings, ListMarkdownFiles, ListSkills, ListVersions,
-        PrepareDeployment, PrepareImport, PrepareUndeploy, ReadMarkdownFile, RecheckBasic,
-        RenameSkill, RunBasicCheck, RunLlmSafetyCheck, SaveMarkdownContent, SaveSkillContent,
-        SetCurrentVersion, SetFindingDisposition, SetLifecycle, SetMetadata, SetTrial,
+        PrepareDeleteSkill, PrepareDeployment, PrepareImport, PrepareUndeploy, ReadMarkdownFile,
+        RecheckBasic, RenameSkill, RunBasicCheck, RunLlmSafetyCheck, SaveMarkdownContent,
+        SaveSkillContent, SetCurrentVersion, SetFindingDisposition, SetLifecycle, SetMetadata,
+        SetTrial,
     },
     catalog::{CatalogRepository, Skill},
     check::{CheckKind, CheckState, FindingDisposition},
@@ -796,6 +797,91 @@ async fn save_markdown_content_creates_a_version_and_rejects_stale_identity() {
         .await
         .expect_err("stale identity must be rejected");
     assert_eq!(error.code, ErrorCode::OperationConflict);
+}
+
+#[tokio::test]
+async fn prepare_delete_skill_command_returns_explicit_impact() {
+    let database = Database::open_in_memory().expect("database");
+    let skill = Skill::new(skillhub_core::SkillId::new(), "Delete me");
+    database
+        .catalog_repository()
+        .expect("catalog repository")
+        .insert(&skill)
+        .await
+        .expect("insert skill");
+    let facade = LocalApplicationFacade::new(database);
+    let result = facade
+        .execute(AppCommand::PrepareDeleteSkill(PrepareDeleteSkill {
+            skill_id: skill.id(),
+        }))
+        .await
+        .expect("prepare delete");
+    let AppCommandResult::RemovalImpact(impact) = result else {
+        panic!("expected removal impact");
+    };
+    assert_eq!(impact.skill_id, skill.id());
+    assert!(impact.deployments.is_empty());
+}
+
+#[tokio::test]
+async fn delete_skill_commit_removes_catalog_portable_metadata_and_versions() {
+    let database = Database::open_in_memory().expect("database");
+    let skill = Skill::new(skillhub_core::SkillId::new(), "Delete me");
+    database
+        .catalog_repository()
+        .expect("catalog repository")
+        .insert(&skill)
+        .await
+        .expect("insert skill");
+    let root = tempfile::tempdir().expect("library root");
+    let library = CentralLibrary::initialize(root.path()).expect("central library");
+    let source = tempfile::tempdir().expect("source");
+    std::fs::write(source.path().join("SKILL.md"), "# Delete me\n").expect("write source");
+    let store = VersionStore::from_library(&library);
+    let version = store
+        .capture(skill.id(), source.path())
+        .expect("capture version");
+    store
+        .set_current(skill.id(), &version.id)
+        .expect("set current");
+    library
+        .save_portable_skill(&skill, Some(&version.id))
+        .expect("save portable metadata");
+
+    let facade = LocalApplicationFacade::new_with_library(database, root.path());
+    let prepared = facade
+        .execute(AppCommand::PrepareDeleteSkill(PrepareDeleteSkill {
+            skill_id: skill.id(),
+        }))
+        .await
+        .expect("prepare delete");
+    let AppCommandResult::RemovalImpact(impact) = prepared else {
+        panic!("expected removal impact");
+    };
+    let result = facade
+        .execute(AppCommand::CommitDeleteSkill(
+            skillhub_core::api::CommitDeleteSkill {
+                prepared_delete_id: impact.operation_id,
+                decisions: Vec::new(),
+            },
+        ))
+        .await
+        .expect("commit delete");
+    let AppCommandResult::RemovalResult(result) = result else {
+        panic!("expected removal result");
+    };
+    assert!(result.central_skill_deleted);
+    assert!(facade
+        .query(RootAppQuery::GetSkill(GetSkill {
+            skill_id: skill.id()
+        }))
+        .await
+        .is_err());
+    assert!(store.list(skill.id()).expect("list versions").is_empty());
+    assert!(library
+        .load_portable_skill(skill.id())
+        .expect("portable metadata")
+        .is_none());
 }
 
 #[tokio::test]
