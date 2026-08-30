@@ -25,6 +25,11 @@
 - 共享物理目标的关系选择由领域服务区分，`KeepSharedDeployment`/`RemoveRelationOnly` 不触碰目标文件。
 - 集中库 Skill 删除、多目标删除向导、外部变化收集和独立副本转换不在本 Task。
 
-## 待完成
+## 双平台验收
 
-- Windows/macOS 本地 CI 和真实 Agent 客户端验收尚未在本 Task 报告中收口。
+- Windows 本地 CI：10/10 通过；Rust 工作区测试、前端 58 个文件/326 项测试、TypeScript、ESLint 和生产构建均通过。
+- macOS 本地 CI：10/10 通过；Rust 工作区测试、前端 58 个文件/326 项测试、TypeScript、ESLint 和生产构建均通过。
+- macOS 额外测试：ApplicationFacade 20/20、核心解除部署 3/3、桌面解除部署前端 2 个文件/4 项测试通过。
+- 两端均确认构建产生的 `apps/desktop/dist/.gitkeep` 已恢复，未跟踪个人文件未纳入提交。
+
+Task13 已完成双平台验收并收口。
