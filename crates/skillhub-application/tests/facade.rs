@@ -1,14 +1,16 @@
 use skillhub_application::LocalApplicationFacade;
 use skillhub_core::{
     api::{
-        AppQueryResult, DiffVersions, GetBasicCheckResult, GetDeploymentRelations, GetSkill,
-        ListDeployments, ListFindings, ListMarkdownFiles, ListSkills, ListVersions,
-        ReadMarkdownFile,
+        AnalyzeImport, AppQueryResult, DiffVersions, GetBasicCheckResult,
+        GetDeploymentRelations, GetSkill, ListDeployments, ListFindings, ListMarkdownFiles,
+        ListSkills, ListVersions, ReadMarkdownFile,
     },
     catalog::{CatalogRepository, Skill},
     check::{CheckKind, CheckState},
     deployment::{DeploymentMode, DeploymentRecord, DeploymentRepository, DeploymentState},
+    import::ImportCandidate,
     search::{SearchDocument, SearchQuery},
+    source::{SourceDescriptor, SourceKind, SourceLocator},
     AppCommand, AppQuery as RootAppQuery, ApplicationFacade, ErrorCode, Severity,
 };
 use skillhub_storage::Database;
@@ -83,6 +85,46 @@ async fn unsupported_operations_return_a_structured_internal_error() {
     assert_eq!(error.code, ErrorCode::InternalError);
     assert_eq!(error.severity, Severity::Error);
     assert_eq!(error.params["operation"], "execute.cancel_operation");
+}
+
+#[tokio::test]
+async fn analyze_import_query_returns_deterministic_conflict_matches() {
+    let database = Database::open_in_memory().expect("database");
+    let existing = Skill::new(skillhub_core::SkillId::new(), "PDF Reader");
+    database
+        .catalog_repository()
+        .expect("catalog repository")
+        .insert(&existing)
+        .await
+        .expect("insert skill");
+
+    let candidate = ImportCandidate::detected(
+        SourceDescriptor::new(
+            SourceKind::Local,
+            SourceLocator::local_path("C:/incoming"),
+        ),
+        "C:/incoming/pdf-reader",
+        "pdf-reader",
+        "SKILL.md",
+        "PDF Reader",
+    );
+    let facade = LocalApplicationFacade::new_with_today(database, (2026, 8, 29));
+
+    let result = facade
+        .query(RootAppQuery::AnalyzeImport(AnalyzeImport {
+            candidate,
+            tree_hash: None,
+        }))
+        .await
+        .expect("import analysis");
+    let AppQueryResult::ImportAnalysis(analysis) = result else {
+        panic!("expected import analysis");
+    };
+
+    assert_eq!(analysis.matches.len(), 1);
+    assert_eq!(analysis.matches[0].skill_id, existing.id());
+    assert_eq!(analysis.matches[0].duplicate_kind, skillhub_core::DuplicateKind::SameRuntimeNameDifferentContent);
+    assert!(analysis.conflicts.iter().any(|conflict| conflict.requires_choice));
 }
 
 #[tokio::test]

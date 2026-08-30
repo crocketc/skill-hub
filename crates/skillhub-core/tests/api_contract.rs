@@ -78,6 +78,27 @@ fn import_prepare_commit_and_cancel_have_stable_wire_shapes() {
 }
 
 #[test]
+fn import_analysis_query_has_stable_wire_shape() {
+    let query = AppQuery::AnalyzeImport(skillhub_core::AnalyzeImport {
+        candidate: ImportCandidate::detected(
+            SourceDescriptor::new(
+                SourceKind::Local,
+                SourceLocator::local_path("C:/incoming/notes"),
+            ),
+            "C:/incoming/notes",
+            ".",
+            "SKILL.md",
+            "notes",
+        ),
+        tree_hash: None,
+    });
+    assert_eq!(
+        serde_json::to_value(query).unwrap()["type"],
+        "analyze_import"
+    );
+}
+
+#[test]
 fn source_update_commands_have_stable_wire_shapes() {
     let skill_id = skillhub_core::SkillId::new();
     let relink = AppCommand::RelinkSource(skillhub_core::RelinkSource {

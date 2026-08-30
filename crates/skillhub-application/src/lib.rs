@@ -153,6 +153,14 @@ impl ApplicationFacade for LocalApplicationFacade {
                     .search(request)
                     .map(AppQueryResult::SearchResults)
             }),
+            AppQuery::AnalyzeImport(request) => {
+                self.with_database("query.analyze_import", |database| {
+                    database
+                        .import_repository()
+                        .analyze(request.candidate, request.tree_hash.as_deref())
+                        .map(AppQueryResult::ImportAnalysis)
+                })
+            }
             AppQuery::ListSkills(request) => self.with_database("query.list_skills", |database| {
                 database
                     .catalog_repository()?
