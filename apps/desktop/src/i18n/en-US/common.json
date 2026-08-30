@@ -757,7 +757,7 @@
     "dependents": "Dependent projects: {{projects}}",
     "choiceLabel": "Deployment handling",
     "choose": "Choose an action",
-    "choices": { "keep": "Keep deployed", "remove": "Remove deployment", "convert": "Convert to managed copy" },
+    "choices": { "keep": "Keep files and remove relation", "remove": "Remove deployment", "convert": "Keep as an independent copy" },
     "confirm": "Confirm deletion"
   },
   "pending": {

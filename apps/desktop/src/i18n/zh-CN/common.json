@@ -757,7 +757,7 @@
     "dependents": "依赖项目：{{projects}}",
     "choiceLabel": "部署处理方式",
     "choose": "选择处理方式",
-    "choices": { "keep": "保留部署", "remove": "移除部署", "convert": "转换为托管复制" },
+    "choices": { "keep": "保留部署文件并解除关系", "remove": "移除部署", "convert": "保留为独立副本" },
     "confirm": "确认删除"
   },
   "pending": {
