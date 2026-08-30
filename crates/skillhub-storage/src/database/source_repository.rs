@@ -57,6 +57,29 @@ impl<'a> SourceRepository<'a> {
         row.map(|(kind, locator)| decode_source(&kind, &locator))
             .transpose()
     }
+
+    pub fn revision_for_skill(&self, skill_id: SkillId) -> AppResult<Option<String>> {
+        self.database
+            .connection
+            .query_row(
+                "SELECT s.revision FROM sources s JOIN skill_sources ss ON ss.source_id=s.id WHERE ss.skill_id=?1 ORDER BY s.id ASC LIMIT 1",
+                [skill_id.to_string()],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(error)
+    }
+
+    pub fn set_revision(&self, skill_id: SkillId, revision: Option<&str>) -> AppResult<()> {
+        self.database
+            .connection
+            .execute(
+                "UPDATE sources SET revision=?1 WHERE id=(SELECT source_id FROM skill_sources WHERE skill_id=?2 ORDER BY source_id ASC LIMIT 1)",
+                rusqlite::params![revision, skill_id.to_string()],
+            )
+            .map(|_| ())
+            .map_err(error)
+    }
 }
 
 fn source_id(source: &SourceDescriptor) -> AppResult<String> {

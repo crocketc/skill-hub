@@ -1,5 +1,6 @@
 use super::Database;
 use rusqlite::{params, OptionalExtension};
+use serde::{Deserialize, Serialize};
 use skillhub_core::project::{
     Project, ProjectRepository as ProjectRepositoryPort, ProjectTag, SavedProjectView,
     SharedProjectConfig,
@@ -9,6 +10,14 @@ use std::path::Path;
 
 const PROJECTS_KEY: &str = "projects";
 const VIEWS_KEY: &str = "saved_project_views";
+const VERSION_PINS_KEY: &str = "project_skill_version_pins";
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+struct VersionPin {
+    project_id: ProjectId,
+    skill_id: skillhub_core::SkillId,
+    version_id: skillhub_core::VersionId,
+}
 
 pub struct ProjectRepository<'a> {
     database: &'a Database,
@@ -110,6 +119,30 @@ impl<'a> ProjectRepository<'a> {
 
     pub fn list_views(&self) -> AppResult<Vec<SavedProjectView>> {
         load_value(&self.database.connection, VIEWS_KEY)
+    }
+
+    pub fn pin_skill_version(
+        &self,
+        project_id: ProjectId,
+        skill_id: skillhub_core::SkillId,
+        version_id: skillhub_core::VersionId,
+    ) -> AppResult<()> {
+        self.get(project_id)?;
+        let mut pins: Vec<VersionPin> = load_value(&self.database.connection, VERSION_PINS_KEY)?;
+        if let Some(existing) = pins
+            .iter_mut()
+            .find(|pin| pin.project_id == project_id && pin.skill_id == skill_id)
+        {
+            existing.version_id = version_id;
+        } else {
+            pins.push(VersionPin {
+                project_id,
+                skill_id,
+                version_id,
+            });
+        }
+        pins.sort_by_key(|pin| (pin.project_id.to_string(), pin.skill_id.to_string()));
+        self.write_value(VERSION_PINS_KEY, &pins)
     }
 
     pub fn matching_view(&self, id: &str) -> AppResult<Vec<ProjectId>> {

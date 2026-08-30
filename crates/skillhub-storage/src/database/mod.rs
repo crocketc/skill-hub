@@ -3,6 +3,7 @@ mod app_update_repository;
 mod bootstrap_repository;
 mod catalog_repository;
 mod check_repository;
+mod combination_repository;
 mod custom_agent_repository;
 mod deployment_repository;
 pub mod evidence_repository;
@@ -30,6 +31,7 @@ pub use app_update_repository::ApplicationUpdateRepository;
 pub use bootstrap_repository::BootstrapRepository;
 pub use catalog_repository::CatalogRepositorySqlite;
 pub use check_repository::CheckRepositorySqlite;
+pub use combination_repository::CombinationRepository;
 pub use custom_agent_repository::CustomAgentRepository;
 pub use deployment_repository::{DeploymentRepository, DeploymentRepositorySqlite};
 pub use evidence_repository::UsageEvidenceRepository;
@@ -70,6 +72,10 @@ impl Database {
 
     pub fn search_repository(&self) -> SearchRepository<'_> {
         SearchRepository::new(self)
+    }
+
+    pub fn combination_repository(&self) -> CombinationRepository<'_> {
+        CombinationRepository::new(self)
     }
 
     pub fn bootstrap_repository(&self) -> BootstrapRepository<'_> {

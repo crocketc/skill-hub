@@ -12,8 +12,10 @@ use skillhub_adapters::import::SkillDetector;
 use skillhub_adapters::scanner::ScanService;
 use skillhub_adapters::security::BasicScanner;
 use skillhub_core::api::{
-    BasicCheckResult, RenameSkill, SaveMarkdownContent, SaveSkillContent, SavedSkillContent,
-    SetCurrentVersion, SetFindingDisposition, SetLifecycle, SetMetadata, SetTrial,
+    ApplySourceUpdate, BasicCheckResult, CheckSourceUpdate, CreateCombination, CreateSkill,
+    PinProjectSkillVersion, RelinkSource, RenameSkill, SaveMarkdownContent, SaveSkillContent,
+    SavedSkillContent, SetCurrentVersion, SetFindingDisposition, SetLifecycle, SetMetadata,
+    SetTrial,
 };
 use skillhub_core::application::{
     CallPolicyBackend, CallPolicyService, DeploymentBackend, DeploymentService,
@@ -39,6 +41,7 @@ use skillhub_core::health::{HealthFinding, RecoveryCandidate, RepairAction};
 use skillhub_core::ignore::IgnoreRule;
 use skillhub_core::llm::translation::TranslationRecord;
 use skillhub_core::llm::LlmTaskRunner;
+use skillhub_core::source::{SourceDescriptor, SourceLocator, SourceState, UpdateDecision};
 use skillhub_core::{
     physical_id_for_path, AllowedRoot, AppCommand, AppCommandResult, AppError, AppQuery,
     AppQueryResult, AppResult, ApplicationFacade, DeploymentCapability, DeploymentMode, ErrorCode,
@@ -1700,6 +1703,331 @@ impl LocalApplicationFacade {
         })
     }
 
+    fn create_skill(&self, request: CreateSkill) -> AppResult<AppCommandResult> {
+        let Some(library) = self.library.as_ref() else {
+            return Err(unsupported("execute.create_skill.library"));
+        };
+        let Some(library_root) = self.library_root.as_ref() else {
+            return Err(unsupported("execute.create_skill.library"));
+        };
+        let source = Path::new(&request.source_path);
+        validate_skill_source(source)?;
+        let skill = Skill::new(skillhub_core::SkillId::new(), request.name);
+        skill.validate()?;
+        let captured = library.capture_with_status(skill.id(), source)?;
+        let version = captured.record;
+        let central = match CentralLibrary::initialize(library_root) {
+            Ok(central) => central,
+            Err(error) => {
+                let cleanup = if captured.created {
+                    library.discard_sync(&version)
+                } else {
+                    Ok(())
+                };
+                return Err(cleanup_import_error(error, cleanup));
+            }
+        };
+        let result = self.with_database("execute.create_skill", |database| {
+            if let Err(error) = database.catalog_repository()?.insert_sync(&skill) {
+                return Err(cleanup_import_error(
+                    error,
+                    if captured.created {
+                        library.discard_sync(&version)
+                    } else {
+                        Ok(())
+                    },
+                ));
+            }
+            if let Err(error) = library.set_current(skill.id(), &version.id) {
+                return Err(cleanup_import_error(
+                    error,
+                    cleanup_import_state(database, &central, library, skill.id(), &version),
+                ));
+            }
+            if let Err(error) = central.save_portable_skill(&skill, Some(&version.id)) {
+                return Err(cleanup_import_error(
+                    error,
+                    cleanup_import_state(database, &central, library, skill.id(), &version),
+                ));
+            }
+            let source_descriptor = SourceDescriptor::new(
+                skillhub_core::SourceKind::Local,
+                SourceLocator::local_path(source),
+            );
+            if let Err(error) = database
+                .source_repository()
+                .relink(skill.id(), source_descriptor)
+            {
+                return Err(cleanup_import_error(
+                    error,
+                    cleanup_import_state(database, &central, library, skill.id(), &version),
+                ));
+            }
+            database
+                .source_repository()
+                .set_revision(skill.id(), Some(&version.manifest.tree_hash))?;
+            Ok(AppCommandResult::OperationSummary(operation_summary(
+                "catalog.skill_created",
+            )))
+        });
+        if result.is_err() && captured.created {
+            // The normal error paths above clean up while the database mutex is held.
+            // This guard only handles failure before entering the closure.
+            let _ = library.discard_sync(&version);
+        }
+        result
+    }
+
+    fn create_combination(&self, request: CreateCombination) -> AppResult<AppCommandResult> {
+        self.with_database("execute.create_combination", |database| {
+            database
+                .combination_repository()
+                .create(&request.name, &request.members)?;
+            Ok(AppCommandResult::OperationSummary(operation_summary(
+                "catalog.combination_created",
+            )))
+        })
+    }
+
+    fn pin_project_skill_version(
+        &self,
+        request: PinProjectSkillVersion,
+    ) -> AppResult<AppCommandResult> {
+        let Some(library) = self.library.as_ref() else {
+            return Err(unsupported("execute.pin_project_skill_version.library"));
+        };
+        let belongs = library
+            .list(request.skill_id)?
+            .into_iter()
+            .any(|record| record.id == request.version_id);
+        if !belongs {
+            return Err(AppError::new(ErrorCode::InvalidInput, Severity::Error)
+                .with_param("field", "version_id")
+                .with_action(RecoveryAction::ChooseAnotherName));
+        }
+        self.with_database("execute.pin_project_skill_version", |database| {
+            if database
+                .catalog_repository()?
+                .get_sync(request.skill_id)?
+                .is_none()
+            {
+                return Err(AppError::new(ErrorCode::ObjectNotFound, Severity::Error)
+                    .with_param("skill_id", request.skill_id.to_string())
+                    .with_action(RecoveryAction::ChooseAnotherName));
+            }
+            database.project_repository().pin_skill_version(
+                request.project_id,
+                request.skill_id,
+                request.version_id,
+            )?;
+            Ok(AppCommandResult::OperationSummary(operation_summary(
+                "catalog.project_version_pinned",
+            )))
+        })
+    }
+
+    fn relink_source(&self, request: RelinkSource) -> AppResult<AppCommandResult> {
+        let Some(library) = self.library.as_ref() else {
+            return Err(unsupported("execute.relink_source.library"));
+        };
+        let source_revision = match &request.source.locator {
+            SourceLocator::LocalPath(path) => {
+                validate_skill_source(path)?;
+                library.current(request.skill_id)?.and_then(|current| {
+                    library
+                        .list(request.skill_id)
+                        .ok()
+                        .and_then(|records| records.into_iter().find(|record| record.id == current))
+                        .map(|record| record.manifest.tree_hash)
+                })
+            }
+            SourceLocator::HttpsUrl(_) | SourceLocator::GitUrl(_) => None,
+        };
+        self.with_database("execute.relink_source", |database| {
+            if database
+                .catalog_repository()?
+                .get_sync(request.skill_id)?
+                .is_none()
+            {
+                return Err(AppError::new(ErrorCode::ObjectNotFound, Severity::Error)
+                    .with_param("skill_id", request.skill_id.to_string())
+                    .with_action(RecoveryAction::ChooseAnotherName));
+            }
+            database
+                .source_repository()
+                .relink(request.skill_id, request.source)?;
+            database
+                .source_repository()
+                .set_revision(request.skill_id, source_revision.as_deref())?;
+            Ok(AppCommandResult::OperationSummary(operation_summary(
+                "source.relinked",
+            )))
+        })
+    }
+
+    fn check_source_update(&self, request: CheckSourceUpdate) -> AppResult<AppCommandResult> {
+        let Some(library) = self.library.as_ref() else {
+            return Err(unsupported("execute.check_source_update.library"));
+        };
+        let (source, revision) =
+            self.with_database("execute.check_source_update.source", |database| {
+                Ok((
+                    database.source_repository().for_skill(request.skill_id)?,
+                    database
+                        .source_repository()
+                        .revision_for_skill(request.skill_id)?,
+                ))
+            })?;
+        let Some(source) = source else {
+            return Ok(AppCommandResult::UpstreamCheckResult(
+                skillhub_core::UpstreamCheckResult::new(
+                    request.skill_id,
+                    SourceState::SourceUnavailable,
+                ),
+            ));
+        };
+        let Some(path) = source.locator.as_local_path() else {
+            return Ok(AppCommandResult::UpstreamCheckResult(
+                skillhub_core::UpstreamCheckResult::new(
+                    request.skill_id,
+                    SourceState::SourceUnavailable,
+                ),
+            ));
+        };
+        if !path.is_dir() {
+            return Ok(AppCommandResult::UpstreamCheckResult(
+                skillhub_core::UpstreamCheckResult::new(
+                    request.skill_id,
+                    SourceState::SourceUnavailable,
+                ),
+            ));
+        }
+        let source_hash = library.hash_tree(path)?;
+        let current = library.current(request.skill_id)?;
+        let current_hash = current.as_ref().and_then(|current| {
+            library
+                .list(request.skill_id)
+                .ok()
+                .and_then(|records| records.into_iter().find(|record| &record.id == current))
+                .map(|record| record.manifest.tree_hash)
+        });
+        let baseline = revision.or(current_hash.clone());
+        let state = if baseline.as_deref() == Some(source_hash.as_str()) {
+            if current_hash == baseline {
+                SourceState::UpToDate
+            } else {
+                SourceState::UpdateAvailableWithLocalChanges
+            }
+        } else if current_hash == baseline {
+            SourceState::UpdateAvailable
+        } else {
+            SourceState::UpdateAvailableWithLocalChanges
+        };
+        Ok(AppCommandResult::UpstreamCheckResult(
+            skillhub_core::UpstreamCheckResult::new(request.skill_id, state)
+                .with_versions(current, None),
+        ))
+    }
+
+    fn apply_source_update(&self, request: ApplySourceUpdate) -> AppResult<AppCommandResult> {
+        if matches!(
+            request.decision,
+            UpdateDecision::KeepLocal | UpdateDecision::Cancel
+        ) {
+            return Ok(AppCommandResult::AppliedSourceUpdate(
+                skillhub_core::AppliedSourceUpdate::new(request.skill_id, request.decision),
+            ));
+        }
+        let AppCommandResult::UpstreamCheckResult(check) =
+            self.check_source_update(CheckSourceUpdate {
+                skill_id: request.skill_id,
+            })?
+        else {
+            return Err(internal("execute.apply_source_update.check"));
+        };
+        if request.decision == UpdateDecision::TakeUpstream
+            && check.state != SourceState::UpdateAvailable
+        {
+            return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                .with_param(
+                    "detail",
+                    "upstream update would overwrite local modifications",
+                )
+                .with_action(RecoveryAction::Acknowledge));
+        }
+        if request.decision == UpdateDecision::CreateIndependentBranch {
+            return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                .with_param(
+                    "detail",
+                    "independent source branches are not persisted by this facade",
+                )
+                .with_action(RecoveryAction::Acknowledge));
+        }
+        let Some(library) = self.library.as_ref() else {
+            return Err(unsupported("execute.apply_source_update.library"));
+        };
+        let source = self.with_database("execute.apply_source_update.source", |database| {
+            database.source_repository().for_skill(request.skill_id)
+        })?;
+        let Some(source) = source else {
+            return Err(AppError::new(ErrorCode::ObjectNotFound, Severity::Error)
+                .with_param("skill_id", request.skill_id.to_string())
+                .with_action(RecoveryAction::ChooseAnotherName));
+        };
+        let Some(path) = source.locator.as_local_path() else {
+            return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                .with_param("detail", "remote source acquisition is not configured")
+                .with_action(RecoveryAction::Retry));
+        };
+        validate_skill_source(path)?;
+        let captured = library.capture_with_status(request.skill_id, path)?;
+        let version = captured.record;
+        if let Err(error) = library.set_current(request.skill_id, &version.id) {
+            return Err(cleanup_import_error(
+                error,
+                if captured.created {
+                    library.discard_sync(&version)
+                } else {
+                    Ok(())
+                },
+            ));
+        }
+        let skill = self.with_database("execute.apply_source_update.skill", |database| {
+            database
+                .catalog_repository()?
+                .get_sync(request.skill_id)?
+                .ok_or_else(|| {
+                    AppError::new(ErrorCode::ObjectNotFound, Severity::Error)
+                        .with_param("skill_id", request.skill_id.to_string())
+                        .with_action(RecoveryAction::ChooseAnotherName)
+                })
+        })?;
+        let Some(root) = self.library_root.as_ref() else {
+            return Err(unsupported("execute.apply_source_update.library"));
+        };
+        let central = CentralLibrary::initialize(root)?;
+        if let Err(error) = central.save_portable_skill(&skill, Some(&version.id)) {
+            let _ = restore_version_pointer(library, request.skill_id, check.local_version);
+            if captured.created {
+                let _ = library.discard_sync(&version);
+            }
+            return Err(error);
+        }
+        self.with_database("execute.apply_source_update.persist", |database| {
+            database
+                .source_repository()
+                .set_revision(request.skill_id, Some(&version.manifest.tree_hash))
+        })?;
+        Ok(AppCommandResult::AppliedSourceUpdate(
+            skillhub_core::AppliedSourceUpdate {
+                skill_id: request.skill_id,
+                decision: request.decision,
+                new_version: Some(version.id),
+                deployments_need_reconciliation: true,
+            },
+        ))
+    }
+
     fn rename_skill(&self, request: RenameSkill) -> AppResult<AppCommandResult> {
         self.update_catalog_skill(
             request.skill_id,
@@ -2224,6 +2552,14 @@ impl ApplicationFacade for LocalApplicationFacade {
                 return self.set_finding_disposition(request);
             }
             AppCommand::RenameSkill(request) => return self.rename_skill(request),
+            AppCommand::CreateSkill(request) => return self.create_skill(request),
+            AppCommand::CreateCombination(request) => return self.create_combination(request),
+            AppCommand::PinProjectSkillVersion(request) => {
+                return self.pin_project_skill_version(request)
+            }
+            AppCommand::RelinkSource(request) => return self.relink_source(request),
+            AppCommand::CheckSourceUpdate(request) => return self.check_source_update(request),
+            AppCommand::ApplySourceUpdate(request) => return self.apply_source_update(request),
             AppCommand::SetMetadata(request) => return self.set_metadata(request),
             AppCommand::SetLifecycle(request) => return self.set_lifecycle(request),
             AppCommand::SetTrial(request) => return self.set_trial(request),
@@ -2489,6 +2825,14 @@ impl ApplicationFacade for LocalApplicationFacade {
                     .list_page(&request)
                     .map(AppQueryResult::SkillPage)
             }),
+            AppQuery::ListCombinations(_) => {
+                self.with_database("query.list_combinations", |database| {
+                    database
+                        .combination_repository()
+                        .list()
+                        .map(AppQueryResult::Combinations)
+                })
+            }
             AppQuery::ListVersions(request) => self.list_versions(request.skill_id),
             AppQuery::DiffVersions(request) => self.diff_versions(&request.left, &request.right),
             AppQuery::ListDeployments(request) => self.list_deployments(request.skill_id),
