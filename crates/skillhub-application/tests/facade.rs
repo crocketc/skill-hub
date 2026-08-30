@@ -31,6 +31,304 @@ use skillhub_core::{
     AppCommand, AppQuery as RootAppQuery, ApplicationFacade, DeploymentCapability, ErrorCode,
     ExternalChangeState, PathPolicy, ReconcileAction, RemovalDecision, Severity,
 };
+
+#[tokio::test]
+async fn standard_export_prepare_uses_the_real_facade_and_stays_read_only() {
+    let database = Database::open_in_memory().expect("database");
+    let skill = Skill::new(skillhub_core::SkillId::new(), "Standard export");
+    database
+        .catalog_repository()
+        .expect("catalog repository")
+        .insert(&skill)
+        .await
+        .expect("insert skill");
+    let root = tempfile::tempdir().expect("library root");
+    let source = tempfile::tempdir().expect("source");
+    std::fs::write(source.path().join("SKILL.md"), "# Portable\n").expect("write skill");
+    let library = CentralLibrary::initialize(root.path()).expect("central library");
+    let version = VersionStore::from_library(&library)
+        .capture(skill.id(), source.path())
+        .expect("capture version");
+    VersionStore::from_library(&library)
+        .set_current(skill.id(), &version.id)
+        .expect("set current");
+
+    let facade = LocalApplicationFacade::new_with_library(database, root.path());
+    let result = facade
+        .execute(AppCommand::PrepareStandardExport(
+            skillhub_core::PrepareStandardExport {
+                input: skillhub_core::ExportInput {
+                    selection: skillhub_core::ExportSelection::Skills(vec![skill.id()]),
+                    versions: skillhub_core::VersionSelection::Current,
+                    skills: vec![skillhub_core::ExportSkill {
+                        skill_id: skill.id(),
+                        version_id: version.id.clone(),
+                        content: "# Portable\n".into(),
+                        display_name: "Standard export".into(),
+                    }],
+                },
+            },
+        ))
+        .await
+        .expect("export plan");
+    let AppCommandResult::ExportPlan(plan) = result else {
+        panic!("expected export plan");
+    };
+    assert_eq!(plan.skills.len(), 1);
+    assert!(plan.sensitive_items.is_empty());
+    assert!(!root.path().join(".skillhub/exports").exists());
+}
+
+#[tokio::test]
+async fn standard_export_create_requires_sensitive_decision_and_returns_neutral_package() {
+    let database = Database::open_in_memory().expect("database");
+    let skill = Skill::new(skillhub_core::SkillId::new(), "Sensitive export");
+    database
+        .catalog_repository()
+        .expect("catalog repository")
+        .insert(&skill)
+        .await
+        .expect("insert skill");
+    let root = tempfile::tempdir().expect("library root");
+    let source = tempfile::tempdir().expect("source");
+    let secret = "OPENAI_API_KEY=sk-live-secret\n";
+    std::fs::write(source.path().join("SKILL.md"), secret).expect("write skill");
+    let library = CentralLibrary::initialize(root.path()).expect("central library");
+    let version = VersionStore::from_library(&library)
+        .capture(skill.id(), source.path())
+        .expect("capture version");
+    VersionStore::from_library(&library)
+        .set_current(skill.id(), &version.id)
+        .expect("set current");
+    let input = skillhub_core::ExportInput {
+        selection: skillhub_core::ExportSelection::Skills(vec![skill.id()]),
+        versions: skillhub_core::VersionSelection::Current,
+        skills: vec![skillhub_core::ExportSkill {
+            skill_id: skill.id(),
+            version_id: version.id,
+            content: secret.into(),
+            display_name: "Sensitive export".into(),
+        }],
+    };
+    let facade = LocalApplicationFacade::new_with_library(database, root.path());
+    let missing = facade
+        .execute(AppCommand::CreateStandardExport(
+            skillhub_core::CreateStandardExport {
+                input: input.clone(),
+                decisions: Vec::new(),
+            },
+        ))
+        .await
+        .expect_err("sensitive decision is required");
+    assert_eq!(missing.code, ErrorCode::BackupExportDecisionRequired);
+
+    let result = facade
+        .execute(AppCommand::CreateStandardExport(
+            skillhub_core::CreateStandardExport {
+                input,
+                decisions: vec![skillhub_core::ExportDecision {
+                    skill_id: skill.id(),
+                    decision: skillhub_core::backup::SensitiveContentDecision::IncludeAndMark,
+                }],
+            },
+        ))
+        .await
+        .expect("create export");
+    let AppCommandResult::ExportResult(result) = result else {
+        panic!("expected export result");
+    };
+    let export_root = std::path::Path::new(&result.path);
+    assert!(export_root.is_dir());
+    assert_eq!(result.skills_exported, 1);
+    let manifest = std::fs::read_to_string(export_root.join("manifest.json")).expect("manifest");
+    assert!(!manifest.contains(root.path().to_string_lossy().as_ref()));
+    assert!(!manifest.contains("sk-live-secret"));
+}
+
+#[tokio::test]
+async fn uninstall_prepare_returns_selected_impact_without_mutating_relations() {
+    let database = Database::open_in_memory().expect("database");
+    let skill = Skill::new(skillhub_core::SkillId::new(), "Uninstall candidate");
+    database
+        .catalog_repository()
+        .expect("catalog repository")
+        .insert(&skill)
+        .await
+        .expect("insert skill");
+    let version_id = skillhub_core::VersionId::parse(
+        "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    )
+    .expect("version id");
+    database
+        .connection_for_test()
+        .execute(
+            "INSERT INTO versions (id,skill_id,content_hash,manifest_json,created_at) VALUES (?1,?2,'hash','{}',0)",
+            rusqlite::params![version_id.to_string(), skill.id().to_string()],
+        )
+        .expect("insert version");
+    database
+        .connection_for_test()
+        .execute(
+            "INSERT INTO targets (id,agent_id,scope,path,created_at) VALUES ('target-uninstall','agent','global','C:/agent',0)",
+            [],
+        )
+        .expect("insert target");
+    let deployment = DeploymentRecord {
+        id: skillhub_core::DeploymentId::new(),
+        skill_id: skill.id(),
+        version_id,
+        target_id: "target-uninstall".into(),
+        state: DeploymentState::Deployed,
+        mode: DeploymentMode::ManagedCopy,
+        managed: true,
+        runtime_name: "uninstall-candidate".into(),
+        expected_hash: "sha256:tree".into(),
+        observed_hash: Some("sha256:tree".into()),
+    };
+    database
+        .deployment_repository()
+        .insert(&deployment)
+        .await
+        .expect("insert deployment");
+    let facade = LocalApplicationFacade::new_with_today(database, (2026, 8, 30));
+
+    let result = facade
+        .execute(AppCommand::PrepareUninstall(
+            skillhub_core::PrepareUninstall {
+                deployment_ids: vec![deployment.id],
+            },
+        ))
+        .await
+        .expect("uninstall impact");
+    let AppCommandResult::UninstallImpact(impact) = result else {
+        panic!("expected uninstall impact");
+    };
+    assert_eq!(impact.deployments, vec![deployment.clone()]);
+    assert!(impact
+        .actions
+        .contains(&skillhub_core::UninstallAction::RetainCentralLibrary));
+
+    let listed = facade
+        .query(RootAppQuery::ListDeployments(ListDeployments {
+            skill_id: Some(skill.id()),
+        }))
+        .await
+        .expect("deployment list");
+    let AppQueryResult::Deployments(listed) = listed else {
+        panic!("expected deployments");
+    };
+    assert_eq!(listed[0], deployment);
+}
+
+#[tokio::test]
+async fn uninstall_decision_can_cancel_or_detach_management_without_deleting_library_data() {
+    let database = Database::open_in_memory().expect("database");
+    let skill = Skill::new(skillhub_core::SkillId::new(), "Uninstall decision");
+    database
+        .catalog_repository()
+        .expect("catalog repository")
+        .insert(&skill)
+        .await
+        .expect("insert skill");
+    let root = tempfile::tempdir().expect("library root");
+    let source = tempfile::tempdir().expect("source");
+    std::fs::write(source.path().join("SKILL.md"), "# Keep me\n").expect("write skill");
+    let library = CentralLibrary::initialize(root.path()).expect("central library");
+    let store = VersionStore::from_library(&library);
+    let version = store
+        .capture(skill.id(), source.path())
+        .expect("capture version");
+    store
+        .set_current(skill.id(), &version.id)
+        .expect("set current");
+    let deployment = DeploymentRecord {
+        id: skillhub_core::DeploymentId::new(),
+        skill_id: skill.id(),
+        version_id: version.id,
+        target_id: "target-uninstall-decision".into(),
+        state: DeploymentState::Deployed,
+        mode: DeploymentMode::ManagedCopy,
+        managed: true,
+        runtime_name: "uninstall-decision".into(),
+        expected_hash: "sha256:tree".into(),
+        observed_hash: Some("sha256:tree".into()),
+    };
+    database
+        .connection_for_test()
+        .execute(
+            "INSERT INTO versions (id,skill_id,content_hash,manifest_json,created_at) VALUES (?1,?2,'hash','{}',0)",
+            rusqlite::params![deployment.version_id.to_string(), skill.id().to_string()],
+        )
+        .expect("insert version");
+    database
+        .connection_for_test()
+        .execute(
+            "INSERT INTO targets (id,agent_id,scope,path,created_at) VALUES ('target-uninstall-decision','agent','global','C:/agent',0)",
+            [],
+        )
+        .expect("insert target");
+    database
+        .deployment_repository()
+        .insert(&deployment)
+        .await
+        .expect("insert deployment");
+    let facade = LocalApplicationFacade::new_with_library(database, root.path());
+
+    facade
+        .execute(AppCommand::PrepareUninstall(
+            skillhub_core::PrepareUninstall {
+                deployment_ids: vec![deployment.id],
+            },
+        ))
+        .await
+        .expect("prepare cancellation");
+    facade
+        .execute(AppCommand::ApplyUninstallDecision(
+            skillhub_core::ApplyUninstallDecision {
+                actions: vec![skillhub_core::UninstallAction::Cancel],
+            },
+        ))
+        .await
+        .expect("cancel uninstall");
+    let cancelled = facade
+        .query(RootAppQuery::ListDeployments(ListDeployments {
+            skill_id: Some(skill.id()),
+        }))
+        .await
+        .expect("list after cancellation");
+    let AppQueryResult::Deployments(cancelled) = cancelled else {
+        panic!("expected deployments");
+    };
+    assert_eq!(cancelled[0], deployment);
+
+    facade
+        .execute(AppCommand::PrepareUninstall(
+            skillhub_core::PrepareUninstall {
+                deployment_ids: vec![deployment.id],
+            },
+        ))
+        .await
+        .expect("prepare detach");
+    facade
+        .execute(AppCommand::ApplyUninstallDecision(
+            skillhub_core::ApplyUninstallDecision {
+                actions: vec![skillhub_core::UninstallAction::LeaveTargetsIndependent],
+            },
+        ))
+        .await
+        .expect("detach management");
+    let detached = facade
+        .query(RootAppQuery::ListDeployments(ListDeployments {
+            skill_id: Some(skill.id()),
+        }))
+        .await
+        .expect("list after detach");
+    let AppQueryResult::Deployments(detached) = detached else {
+        panic!("expected deployments");
+    };
+    assert!(!detached[0].managed);
+    assert!(root.path().join(".skillhub/versions").is_dir());
+}
 use skillhub_storage::Database;
 use skillhub_storage::{CentralLibrary, VersionStore};
 

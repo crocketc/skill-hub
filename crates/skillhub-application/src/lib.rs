@@ -17,7 +17,9 @@ use skillhub_core::application::{
     DeploymentBackend, DeploymentService, PreparedImport, ReconcileBackend, ReconcileService,
     RemovalBackend, RemovalService,
 };
-use skillhub_core::backup::{BackupCreated, BackupInput, BackupPackage, BackupScope};
+use skillhub_core::backup::{
+    BackupCreated, BackupInput, BackupPackage, BackupScope, SensitiveContentDecision,
+};
 use skillhub_core::catalog::{CatalogRepository, Skill};
 use skillhub_core::check::{CheckKind, CheckRun, CheckRunPhase, FindingDisposition};
 use skillhub_core::deployment::{
@@ -31,6 +33,7 @@ use skillhub_core::{
     PathPolicy, RecoveryAction, Severity,
 };
 use skillhub_storage::backup::{BackupService, RestoreService, RetentionService};
+use skillhub_storage::export::ExportService;
 use skillhub_storage::{CentralLibrary, Database, LibraryPaths, VersionStore};
 
 /// The date provider is kept on the facade so all date-sensitive projections
@@ -47,6 +50,7 @@ pub struct LocalApplicationFacade {
     reconcile_service: Arc<ReconcileService<LocalDeploymentBackend>>,
     llm_runner: Option<Arc<dyn LlmTaskRunner>>,
     prepared_imports: Mutex<HashMap<OperationId, PreparedImport>>,
+    prepared_uninstall: Mutex<Option<skillhub_core::UninstallImpact>>,
 }
 
 struct LocalDeploymentBackend {
@@ -544,6 +548,7 @@ impl LocalApplicationFacade {
             reconcile_service,
             llm_runner: None,
             prepared_imports: Mutex::new(HashMap::new()),
+            prepared_uninstall: Mutex::new(None),
         }
     }
 
@@ -569,6 +574,7 @@ impl LocalApplicationFacade {
             reconcile_service,
             llm_runner: None,
             prepared_imports: Mutex::new(HashMap::new()),
+            prepared_uninstall: Mutex::new(None),
         }
     }
 
@@ -678,6 +684,188 @@ impl LocalApplicationFacade {
                 .with_action(RecoveryAction::ChooseAnotherName));
         }
         Ok(BackupPackage { root })
+    }
+
+    fn export_input(
+        &self,
+        mut input: skillhub_core::ExportInput,
+    ) -> AppResult<skillhub_core::ExportInput> {
+        let Some(library) = self.library.as_ref() else {
+            return Err(unsupported("execute.standard_export.library"));
+        };
+        if input.skills.is_empty() {
+            let skill_ids = match &input.selection {
+                skillhub_core::ExportSelection::Skills(ids) => ids.clone(),
+                skillhub_core::ExportSelection::Combination(_) => {
+                    return Err(AppError::new(ErrorCode::InvalidInput, Severity::Error)
+                        .with_param("field", "skills")
+                        .with_param("reason", "combination_members_required")
+                        .with_action(RecoveryAction::ChooseAnotherName));
+                }
+            };
+            for skill_id in skill_ids {
+                let version_ids = match &input.versions {
+                    skillhub_core::VersionSelection::Current => {
+                        library.current(skill_id)?.into_iter().collect::<Vec<_>>()
+                    }
+                    skillhub_core::VersionSelection::History(ids) => ids.clone(),
+                };
+                for version_id in version_ids {
+                    let (_, bytes) = library.read_file(&version_id, "SKILL.md", 1_048_576)?;
+                    let content = String::from_utf8(bytes).map_err(|_| {
+                        AppError::new(ErrorCode::InvalidInput, Severity::Error)
+                            .with_param("skill_id", skill_id.to_string())
+                            .with_param("reason", "skill_markdown_not_utf8")
+                            .with_action(RecoveryAction::InspectTarget)
+                    })?;
+                    let display_name =
+                        self.with_database("execute.standard_export.catalog", |database| {
+                            database
+                                .catalog_repository()?
+                                .get_sync(skill_id)?
+                                .map(|skill| skill.display_name().to_owned())
+                                .ok_or_else(|| {
+                                    AppError::new(ErrorCode::ObjectNotFound, Severity::Error)
+                                        .with_param("skill_id", skill_id.to_string())
+                                        .with_action(RecoveryAction::Retry)
+                                })
+                        })?;
+                    input.skills.push(skillhub_core::ExportSkill {
+                        skill_id,
+                        version_id,
+                        content,
+                        display_name,
+                    });
+                }
+            }
+        }
+        Ok(input)
+    }
+
+    fn standard_export_destination(&self) -> AppResult<PathBuf> {
+        let Some(root) = self.library_root.as_ref() else {
+            return Err(unsupported("execute.standard_export.library"));
+        };
+        Ok(LibraryPaths::from_root(root).management_dir.join("exports"))
+    }
+
+    fn uninstall_deployments(
+        &self,
+        requested: &[skillhub_core::DeploymentId],
+    ) -> AppResult<Vec<DeploymentRecord>> {
+        self.with_database("execute.prepare_uninstall", |database| {
+            let active = database
+                .deployment_repository()
+                .list_all()?
+                .into_iter()
+                .filter(|record| record.state == DeploymentState::Deployed)
+                .collect::<Vec<_>>();
+            let deployments = if requested.is_empty() {
+                active
+            } else {
+                requested
+                    .iter()
+                    .map(|id| {
+                        active
+                            .iter()
+                            .find(|record| record.id == *id)
+                            .cloned()
+                            .ok_or_else(|| {
+                                AppError::new(ErrorCode::ObjectNotFound, Severity::Error)
+                                    .with_param("field", "deployment")
+                                    .with_param("deployment_id", id.to_string())
+                                    .with_action(RecoveryAction::Retry)
+                            })
+                    })
+                    .collect::<AppResult<Vec<_>>>()?
+            };
+            Ok(deployments)
+        })
+    }
+
+    async fn apply_uninstall_decision(
+        &self,
+        actions: Vec<skillhub_core::UninstallAction>,
+    ) -> AppResult<AppCommandResult> {
+        if actions.is_empty() {
+            return Err(AppError::new(ErrorCode::InvalidInput, Severity::Error)
+                .with_param("field", "actions")
+                .with_action(RecoveryAction::ChooseAnotherName));
+        }
+        if actions.contains(&skillhub_core::UninstallAction::Cancel) {
+            if actions.len() != 1 {
+                return Err(AppError::new(ErrorCode::InvalidInput, Severity::Error)
+                    .with_param("field", "actions")
+                    .with_param("reason", "cancel_cannot_be_combined")
+                    .with_action(RecoveryAction::ChooseAnotherName));
+            }
+            self.prepared_uninstall
+                .lock()
+                .map_err(|_| internal("execute.apply_uninstall_decision"))?
+                .take();
+            return Ok(AppCommandResult::OperationSummary(
+                skillhub_core::OperationSummary {
+                    operation_id: OperationId::new(),
+                    phase: skillhub_core::OperationPhase::RolledBack,
+                    message_code: "uninstall.cancelled".into(),
+                    error_code: None,
+                },
+            ));
+        }
+        let unsupported_action = actions.iter().find(|action| {
+            matches!(
+                action,
+                skillhub_core::UninstallAction::Backup
+                    | skillhub_core::UninstallAction::StandardExport
+                    | skillhub_core::UninstallAction::RemoveDeviceData
+                    | skillhub_core::UninstallAction::ClearCredentials
+            )
+        });
+        if unsupported_action.is_some() {
+            return Err(unsupported("execute.apply_uninstall_decision.action"));
+        }
+        let deployments = self
+            .prepared_uninstall
+            .lock()
+            .map_err(|_| internal("execute.apply_uninstall_decision"))?
+            .as_ref()
+            .map(|impact| impact.deployments.clone())
+            .ok_or_else(|| {
+                AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                    .with_param("detail", "uninstall impact must be prepared first")
+                    .with_action(RecoveryAction::Retry)
+            })?;
+        if actions.contains(&skillhub_core::UninstallAction::UndeployAll) {
+            for deployment in deployments.iter().filter(|deployment| deployment.managed) {
+                self.removal_service
+                    .undeploy(
+                        deployment.id,
+                        skillhub_core::RemovalDecision::RemoveOwnedTarget,
+                    )
+                    .await?;
+            }
+        } else if actions.contains(&skillhub_core::UninstallAction::LeaveTargetsIndependent) {
+            for deployment in deployments.iter().filter(|deployment| deployment.managed) {
+                self.removal_service
+                    .undeploy(
+                        deployment.id,
+                        skillhub_core::RemovalDecision::DetachManagement,
+                    )
+                    .await?;
+            }
+        }
+        self.prepared_uninstall
+            .lock()
+            .map_err(|_| internal("execute.apply_uninstall_decision"))?
+            .take();
+        Ok(AppCommandResult::OperationSummary(
+            skillhub_core::OperationSummary {
+                operation_id: OperationId::new(),
+                phase: skillhub_core::OperationPhase::Committed,
+                message_code: "uninstall.decision_applied".into(),
+                error_code: None,
+            },
+        ))
     }
 
     async fn run_basic_check(
@@ -1376,6 +1564,53 @@ impl ApplicationFacade for LocalApplicationFacade {
                 let retention =
                     RetentionService::new(paths.backups_dir).apply(request.retention)?;
                 return Ok(AppCommandResult::BackupRetentionResult(retention));
+            }
+            AppCommand::PrepareStandardExport(request) => {
+                let input = self.export_input(request.input)?;
+                let service = ExportService::new(self.standard_export_destination()?);
+                return service.prepare(&input).map(AppCommandResult::ExportPlan);
+            }
+            AppCommand::CreateStandardExport(request) => {
+                let input = self.export_input(request.input)?;
+                let service = ExportService::new(self.standard_export_destination()?);
+                let plan = service.prepare(&input)?;
+                let decisions = request
+                    .decisions
+                    .into_iter()
+                    .map(|decision| (decision.skill_id, decision.decision))
+                    .collect::<Vec<_>>();
+                let export = service.create(&input, &plan, &decisions)?;
+                let skills_exported = input
+                    .skills
+                    .iter()
+                    .filter(|skill| {
+                        decisions
+                            .iter()
+                            .find(|(skill_id, _)| *skill_id == skill.skill_id)
+                            .map(|(_, decision)| {
+                                *decision != SensitiveContentDecision::ExcludeSkill
+                            })
+                            .unwrap_or(true)
+                    })
+                    .count() as u32;
+                return Ok(AppCommandResult::ExportResult(
+                    skillhub_core::ExportResult {
+                        path: export.root.to_string_lossy().into_owned(),
+                        skills_exported,
+                    },
+                ));
+            }
+            AppCommand::PrepareUninstall(request) => {
+                let deployments = self.uninstall_deployments(&request.deployment_ids)?;
+                let impact = skillhub_core::UninstallService::prepare(deployments);
+                self.prepared_uninstall
+                    .lock()
+                    .map_err(|_| internal("execute.prepare_uninstall"))?
+                    .replace(impact.clone());
+                return Ok(AppCommandResult::UninstallImpact(impact));
+            }
+            AppCommand::ApplyUninstallDecision(request) => {
+                return self.apply_uninstall_decision(request.actions).await;
             }
             AppCommand::RunLlmSafetyCheck(request) => {
                 return self
