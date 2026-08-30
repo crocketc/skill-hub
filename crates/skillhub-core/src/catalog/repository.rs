@@ -6,6 +6,9 @@ use async_trait::async_trait;
 pub trait CatalogRepository {
     async fn insert(&self, skill: &Skill) -> AppResult<()>;
     async fn get(&self, id: SkillId) -> AppResult<Option<Skill>>;
+    fn get_sync(&self, _id: SkillId) -> AppResult<Option<Skill>> {
+        Ok(None)
+    }
     async fn remove(&self, _id: SkillId) -> AppResult<()> {
         Ok(())
     }

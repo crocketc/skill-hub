@@ -276,7 +276,9 @@ impl CatalogRepository for CatalogRepositorySqlite<'_> {
         tx.commit().map_err(error)
     }
 
-    async fn get(&self, id: SkillId) -> AppResult<Option<Skill>> {
+    /// Synchronous full skill read for application-facade mutations that hold
+    /// the database mutex while applying one atomic update.
+    fn get_sync(&self, id: SkillId) -> AppResult<Option<Skill>> {
         let conn = &self.database.connection;
         let mut stmt = conn.prepare("SELECT display_name,runtime_name,original_description,translated_description,user_note,author,license,call_policy,lifecycle FROM skills WHERE id=?1").map_err(error)?;
         let row = stmt
@@ -341,6 +343,10 @@ impl CatalogRepository for CatalogRepositorySqlite<'_> {
             requirements,
             due.and_then(parse_date),
         )?))
+    }
+
+    async fn get(&self, id: SkillId) -> AppResult<Option<Skill>> {
+        self.get_sync(id)
     }
 
     async fn remove(&self, id: SkillId) -> AppResult<()> {

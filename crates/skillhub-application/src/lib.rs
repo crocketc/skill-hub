@@ -9,12 +9,14 @@ use async_trait::async_trait;
 use skillhub_adapters::deployment::{DeploymentFilesystem, OwnershipProof};
 use skillhub_adapters::import::SkillDetector;
 use skillhub_adapters::security::BasicScanner;
-use skillhub_core::api::{BasicCheckResult, SetFindingDisposition};
+use skillhub_core::api::{
+    BasicCheckResult, RenameSkill, SetFindingDisposition, SetLifecycle, SetMetadata, SetTrial,
+};
 use skillhub_core::application::{
     DeploymentBackend, DeploymentService, PreparedImport, ReconcileBackend, ReconcileService,
     RemovalBackend, RemovalService,
 };
-use skillhub_core::catalog::Skill;
+use skillhub_core::catalog::{CatalogRepository, Skill};
 use skillhub_core::check::{CheckKind, CheckRun, CheckRunPhase, FindingDisposition};
 use skillhub_core::deployment::{
     DeploymentPlanRequest, DeploymentRecord, DeploymentState, RegisteredTargetIndex, TargetFact,
@@ -712,6 +714,101 @@ impl LocalApplicationFacade {
         ))
     }
 
+    fn update_catalog_skill<F>(
+        &self,
+        skill_id: skillhub_core::SkillId,
+        operation: &'static str,
+        message_code: &'static str,
+        update: F,
+    ) -> AppResult<AppCommandResult>
+    where
+        F: FnOnce(&mut Skill) -> AppResult<()>,
+    {
+        let current = self
+            .library
+            .as_ref()
+            .map(|library| library.current(skill_id))
+            .transpose()?
+            .flatten();
+        let library_root = self.library_root.clone();
+        self.with_database(operation, |database| {
+            let repository = database.catalog_repository()?;
+            let old = repository.get_sync(skill_id)?.ok_or_else(|| {
+                AppError::new(ErrorCode::ObjectNotFound, Severity::Error)
+                    .with_param("skill_id", skill_id.to_string())
+                    .with_action(RecoveryAction::ChooseAnotherName)
+            })?;
+            let mut updated = old.clone();
+            update(&mut updated)?;
+            updated.validate()?;
+            repository.insert_sync(&updated)?;
+            if let Some(root) = library_root {
+                let central = CentralLibrary::initialize(root)?;
+                if let Err(error) = central.save_portable_skill(&updated, current.as_ref()) {
+                    return Err(cleanup_import_error(error, repository.insert_sync(&old)));
+                }
+            }
+            Ok(AppCommandResult::OperationSummary(
+                skillhub_core::OperationSummary {
+                    operation_id: OperationId::new(),
+                    phase: skillhub_core::OperationPhase::Committed,
+                    message_code: message_code.to_owned(),
+                    error_code: None,
+                },
+            ))
+        })
+    }
+
+    fn rename_skill(&self, request: RenameSkill) -> AppResult<AppCommandResult> {
+        self.update_catalog_skill(
+            request.skill_id,
+            "execute.rename_skill",
+            "catalog.skill_renamed",
+            move |skill| skill.rename(request.name.clone()),
+        )
+    }
+
+    fn set_metadata(&self, request: SetMetadata) -> AppResult<AppCommandResult> {
+        self.update_catalog_skill(
+            request.skill_id,
+            "execute.set_metadata",
+            "catalog.metadata_updated",
+            move |skill| {
+                skill.set_metadata(
+                    request.display_name,
+                    request.note,
+                    request.tags.into_iter().collect(),
+                    request.author,
+                    request.license,
+                )
+            },
+        )
+    }
+
+    fn set_lifecycle(&self, request: SetLifecycle) -> AppResult<AppCommandResult> {
+        self.update_catalog_skill(
+            request.skill_id,
+            "execute.set_lifecycle",
+            "catalog.lifecycle_updated",
+            move |skill| {
+                skill.set_lifecycle(request.lifecycle);
+                Ok(())
+            },
+        )
+    }
+
+    fn set_trial(&self, request: SetTrial) -> AppResult<AppCommandResult> {
+        self.update_catalog_skill(
+            request.skill_id,
+            "execute.set_trial",
+            "catalog.trial_updated",
+            move |skill| {
+                skill.set_trial_due(request.due);
+                Ok(())
+            },
+        )
+    }
+
     fn set_finding_disposition(
         &self,
         request: SetFindingDisposition,
@@ -847,6 +944,10 @@ impl ApplicationFacade for LocalApplicationFacade {
             AppCommand::SetFindingDisposition(request) => {
                 return self.set_finding_disposition(request);
             }
+            AppCommand::RenameSkill(request) => return self.rename_skill(request),
+            AppCommand::SetMetadata(request) => return self.set_metadata(request),
+            AppCommand::SetLifecycle(request) => return self.set_lifecycle(request),
+            AppCommand::SetTrial(request) => return self.set_trial(request),
             AppCommand::RunLlmSafetyCheck(request) => {
                 return self
                     .run_llm_safety_check(request.skill_id, request.version_id)

@@ -10,7 +10,8 @@ use skillhub_core::{
         GetDeploymentRelations, GetReconcilePlan, GetRemovalImpact, GetSkill, KeepIndependentCopy,
         ListDeployments, ListFindings, ListMarkdownFiles, ListSkills, ListVersions,
         PrepareDeployment, PrepareImport, PrepareUndeploy, ReadMarkdownFile, RecheckBasic,
-        RunBasicCheck, RunLlmSafetyCheck, SetFindingDisposition,
+        RenameSkill, RunBasicCheck, RunLlmSafetyCheck, SetFindingDisposition, SetLifecycle,
+        SetMetadata, SetTrial,
     },
     catalog::{CatalogRepository, Skill},
     check::{CheckKind, CheckState, FindingDisposition},
@@ -1584,4 +1585,99 @@ async fn configured_llm_check_persists_structured_findings_and_rechecks() {
         .run_id
         .as_deref()
         .is_some_and(|id| id.ends_with("-1")));
+}
+
+#[tokio::test]
+async fn catalog_metadata_commands_update_skill_detail_atomically() {
+    let database = Database::open_in_memory().expect("database");
+    let skill = Skill::new(skillhub_core::SkillId::new(), "Original");
+    database
+        .catalog_repository()
+        .expect("catalog repository")
+        .insert(&skill)
+        .await
+        .expect("insert skill");
+    let facade = LocalApplicationFacade::new_with_today(database, (2026, 8, 30));
+
+    facade
+        .execute(AppCommand::RenameSkill(RenameSkill {
+            skill_id: skill.id(),
+            name: "Renamed".to_owned(),
+        }))
+        .await
+        .expect("rename");
+    facade
+        .execute(AppCommand::SetMetadata(SetMetadata {
+            skill_id: skill.id(),
+            display_name: None,
+            note: Some("for tests".to_owned()),
+            tags: vec!["utility".to_owned(), "utility".to_owned()],
+            author: Some("Author".to_owned()),
+            license: Some("MIT".to_owned()),
+        }))
+        .await
+        .expect("metadata");
+    facade
+        .execute(AppCommand::SetLifecycle(SetLifecycle {
+            skill_id: skill.id(),
+            lifecycle: skillhub_core::catalog::SkillLifecycle::Deprecated,
+        }))
+        .await
+        .expect("lifecycle");
+    facade
+        .execute(AppCommand::SetTrial(SetTrial {
+            skill_id: skill.id(),
+            due: Some((2026, 9, 1)),
+        }))
+        .await
+        .expect("trial");
+
+    let AppQueryResult::Skill(detail) = facade
+        .query(RootAppQuery::GetSkill(GetSkill {
+            skill_id: skill.id(),
+        }))
+        .await
+        .expect("detail")
+    else {
+        panic!("expected skill detail");
+    };
+    assert_eq!(detail.display_name, "Renamed");
+    assert_eq!(detail.user_note.as_deref(), Some("for tests"));
+    assert_eq!(detail.tags, vec!["temporary_trial", "utility"]);
+    assert_eq!(
+        detail.lifecycle,
+        skillhub_core::catalog::SkillLifecycle::Deprecated
+    );
+    assert_eq!(detail.trial_due, Some("2026-09-01".to_owned()));
+}
+
+#[tokio::test]
+async fn catalog_metadata_rejects_invalid_updates_without_partial_write() {
+    let database = Database::open_in_memory().expect("database");
+    let skill = Skill::new(skillhub_core::SkillId::new(), "Original");
+    database
+        .catalog_repository()
+        .expect("catalog repository")
+        .insert(&skill)
+        .await
+        .expect("insert skill");
+    let facade = LocalApplicationFacade::new_with_today(database, (2026, 8, 30));
+    let error = facade
+        .execute(AppCommand::RenameSkill(RenameSkill {
+            skill_id: skill.id(),
+            name: "  ".to_owned(),
+        }))
+        .await
+        .expect_err("empty name");
+    assert_eq!(error.code, ErrorCode::InvalidInput);
+    let AppQueryResult::Skill(detail) = facade
+        .query(RootAppQuery::GetSkill(GetSkill {
+            skill_id: skill.id(),
+        }))
+        .await
+        .expect("detail")
+    else {
+        panic!("expected skill detail");
+    };
+    assert_eq!(detail.display_name, "Original");
 }
