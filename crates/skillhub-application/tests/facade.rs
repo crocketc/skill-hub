@@ -26,11 +26,272 @@ use skillhub_core::{
         TargetFactSource, TargetPlan,
     },
     import::ImportCandidate,
+    project::{Project, SavedProjectView, SharedProjectConfig},
     search::{SearchDocument, SearchQuery},
     source::{SourceDescriptor, SourceKind, SourceLocator},
     AppCommand, AppQuery as RootAppQuery, ApplicationFacade, DeploymentCapability, ErrorCode,
     ExternalChangeState, PathPolicy, ReconcileAction, RemovalDecision, Severity,
 };
+
+#[tokio::test]
+async fn project_commands_and_queries_use_the_real_facade() {
+    let database = Database::open_in_memory().expect("database");
+    let project_root = tempfile::tempdir().expect("project root");
+    let project = Project::new(skillhub_core::ProjectId::new(), "Demo", project_root.path());
+    let facade = LocalApplicationFacade::new(database);
+
+    let result = facade
+        .execute(AppCommand::RegisterProject(
+            skillhub_core::api::RegisterProject {
+                project: project.clone(),
+            },
+        ))
+        .await
+        .expect("register project");
+    let AppCommandResult::Project(registered) = result else {
+        panic!("expected project result");
+    };
+    assert_eq!(registered.name, "Demo");
+
+    let result = facade
+        .execute(AppCommand::SetProjectTags(
+            skillhub_core::api::SetProjectTags {
+                project_id: project.id,
+                tags: vec!["rust".into(), "client".into()],
+            },
+        ))
+        .await
+        .expect("set tags");
+    let AppCommandResult::Project(tagged) = result else {
+        panic!("expected project result");
+    };
+    assert_eq!(tagged.tags.len(), 2);
+
+    let result = facade
+        .query(RootAppQuery::ListProjects(skillhub_core::api::ListProjects))
+        .await
+        .expect("list projects");
+    let AppQueryResult::Projects(projects) = result else {
+        panic!("expected projects result");
+    };
+    assert_eq!(projects, vec![tagged.clone()]);
+
+    let view = SavedProjectView::all_tags("Rust clients", ["rust", "client"]);
+    let result = facade
+        .execute(AppCommand::SaveProjectView(
+            skillhub_core::api::SaveProjectView { view },
+        ))
+        .await
+        .expect("save project view");
+    assert!(matches!(result, AppCommandResult::SavedProjectView(_)));
+
+    let config = SharedProjectConfig::new("demo", Vec::new());
+    let result = facade
+        .execute(AppCommand::WriteSharedProjectConfig(
+            skillhub_core::api::WriteSharedProjectConfig {
+                project_id: tagged.id,
+                config: config.clone(),
+            },
+        ))
+        .await
+        .expect("write config");
+    assert!(matches!(result, AppCommandResult::SharedProjectConfig(_)));
+    let result = facade
+        .execute(AppCommand::ReadSharedProjectConfig(
+            skillhub_core::api::ReadSharedProjectConfig {
+                project_id: tagged.id,
+            },
+        ))
+        .await
+        .expect("read config");
+    assert!(matches!(result, AppCommandResult::SharedProjectConfig(value) if value == config));
+}
+
+#[tokio::test]
+async fn scan_commands_persist_confirmed_results_and_reject_unregistered_paths() {
+    let database = Database::open_in_memory().expect("database");
+    let root = tempfile::tempdir().expect("scan root");
+    let skill = root.path().join("example");
+    std::fs::create_dir_all(&skill).expect("skill dir");
+    std::fs::write(skill.join("SKILL.md"), "# Example\n").expect("marker");
+    let facade = LocalApplicationFacade::new(database);
+    let project = Project::new(skillhub_core::ProjectId::new(), "Scan", root.path());
+    let registered = facade
+        .execute(AppCommand::RegisterProject(
+            skillhub_core::api::RegisterProject { project },
+        ))
+        .await
+        .expect("register scan project");
+    let AppCommandResult::Project(project) = registered else {
+        panic!("expected project result");
+    };
+
+    let result = facade
+        .execute(AppCommand::RunInitializationScan(
+            skillhub_core::api::RunInitializationScan {
+                scope_ids: vec![project.id.to_string()],
+            },
+        ))
+        .await
+        .expect("scan");
+    let AppCommandResult::ScanResult(scan) = result else {
+        panic!("expected scan result");
+    };
+    assert_eq!(scan.discovered.len(), 1);
+    let result = facade
+        .query(RootAppQuery::GetDiscoverySnapshot(
+            skillhub_core::api::GetDiscoverySnapshot,
+        ))
+        .await
+        .expect("discovery snapshot");
+    assert!(matches!(result, AppQueryResult::DiscoverySnapshot(_)));
+    let outside = tempfile::tempdir().expect("outside root");
+    let error = facade
+        .execute(AppCommand::RescanSkill(skillhub_core::api::RescanSkill {
+            scope_id: project.id.to_string(),
+            path: outside.path().to_string_lossy().into_owned(),
+        }))
+        .await
+        .expect_err("outside path must fail");
+    assert_eq!(error.code, ErrorCode::PathOutsideAllowedRoots);
+    let error = facade
+        .execute(AppCommand::RescanSkill(skillhub_core::api::RescanSkill {
+            scope_id: project.id.to_string(),
+            path: root.path().join("missing").to_string_lossy().into_owned(),
+        }))
+        .await
+        .expect_err("missing path must fail");
+    assert_eq!(error.code, ErrorCode::InternalError);
+}
+
+#[tokio::test]
+async fn custom_agent_rejects_unregistered_picker_grants() {
+    let facade = LocalApplicationFacade::new(Database::open_in_memory().expect("database"));
+    let profile = skillhub_core::AgentProfile {
+        profile_version: 1,
+        research_date: "2026-08-30".into(),
+        official_references: vec!["https://example.com/agent".into()],
+        brand: "Custom".into(),
+        clients: vec![skillhub_core::AgentClient {
+            id: "custom.cli".into(),
+            kind: skillhub_core::ClientKind::Cli,
+            supported_os: vec![skillhub_core::OperatingSystem::Windows],
+            path_candidates: vec![skillhub_core::PathCandidate {
+                path: "C:/Users/demo/.custom/skills".into(),
+                scope: skillhub_core::TargetScope::Global,
+                precedence: skillhub_core::DirectoryPrecedence::Preferred,
+                marker: "SKILL.md".into(),
+            }],
+            skill_marker: "SKILL.md".into(),
+            deployment: skillhub_core::DeploymentCapability {
+                copy: true,
+                symlink: false,
+                junction: false,
+                limitations: Vec::new(),
+            },
+            call_policy: skillhub_core::CallPolicy::Unknown,
+        }],
+    };
+    let error = facade
+        .execute(AppCommand::CreateCustomAgent(
+            skillhub_core::api::CreateCustomAgent {
+                agent: skillhub_core::CustomAgentDraft {
+                    id: "custom".into(),
+                    display_name: "Custom".into(),
+                    directory: skillhub_core::PathGrant::from_file_picker("not-registered"),
+                    profile,
+                },
+            },
+        ))
+        .await
+        .expect_err("unregistered grant must be rejected");
+    assert_eq!(error.code, ErrorCode::AgentProfileInvalidCapability);
+}
+
+#[tokio::test]
+async fn project_assembly_prepare_uses_local_config_and_is_queryable() {
+    let database = Database::open_in_memory().expect("database");
+    let library_root = tempfile::tempdir().expect("library root");
+    let source = tempfile::tempdir().expect("source");
+    std::fs::write(source.path().join("SKILL.md"), "# Assembly\n").expect("marker");
+    let skill = Skill::new(skillhub_core::SkillId::new(), "Assembly");
+    database
+        .catalog_repository()
+        .expect("catalog repository")
+        .insert(&skill)
+        .await
+        .expect("insert skill");
+    let central = CentralLibrary::initialize(library_root.path()).expect("central library");
+    let version = VersionStore::from_library(&central)
+        .capture(skill.id(), source.path())
+        .expect("capture version");
+    VersionStore::from_library(&central)
+        .set_current(skill.id(), &version.id)
+        .expect("current version");
+    let project_root = tempfile::tempdir().expect("project root");
+    let project = Project::new(
+        skillhub_core::ProjectId::new(),
+        "Assembly project",
+        project_root.path(),
+    );
+    let facade = LocalApplicationFacade::new_with_library(database, library_root.path());
+    let registered = facade
+        .execute(AppCommand::RegisterProject(
+            skillhub_core::api::RegisterProject { project },
+        ))
+        .await
+        .expect("register project");
+    let AppCommandResult::Project(project) = registered else {
+        panic!("expected project result");
+    };
+    let config = SharedProjectConfig::new(
+        "assembly",
+        vec![skillhub_core::SharedSkillRequirement {
+            skill_id: skill.id(),
+            source: skillhub_core::PortableSource::catalog("local").expect("source"),
+            name: "Assembly".into(),
+            version_constraint: None,
+            version_id: Some(version.id),
+            content_identity: None,
+            logical_agent_id: None,
+            project_subdirectory: None,
+            note: None,
+        }],
+    );
+    facade
+        .execute(AppCommand::WriteSharedProjectConfig(
+            skillhub_core::api::WriteSharedProjectConfig {
+                project_id: project.id,
+                config,
+            },
+        ))
+        .await
+        .expect("write config");
+    let result = facade
+        .execute(AppCommand::PrepareProjectAssembly(
+            skillhub_core::api::PrepareProjectAssembly {
+                project_id: project.id,
+            },
+        ))
+        .await
+        .expect("prepare assembly");
+    let AppCommandResult::AssemblyPlan(plan) = result else {
+        panic!("expected assembly plan");
+    };
+    assert_eq!(
+        plan.items[0].status,
+        skillhub_core::AssemblyItemStatus::AlreadySatisfied
+    );
+    let result = facade
+        .query(RootAppQuery::GetProjectAssemblyPlan(
+            skillhub_core::api::GetProjectAssemblyPlan {
+                project_id: project.id,
+            },
+        ))
+        .await
+        .expect("assembly query");
+    assert!(matches!(result, AppQueryResult::AssemblyPlan(_)));
+}
 
 #[tokio::test]
 async fn standard_export_prepare_uses_the_real_facade_and_stays_read_only() {

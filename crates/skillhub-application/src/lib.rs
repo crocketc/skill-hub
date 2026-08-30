@@ -9,16 +9,17 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use async_trait::async_trait;
 use skillhub_adapters::deployment::{DeploymentFilesystem, OwnershipProof};
 use skillhub_adapters::import::SkillDetector;
+use skillhub_adapters::scanner::ScanService;
 use skillhub_adapters::security::BasicScanner;
 use skillhub_core::api::{
     BasicCheckResult, RenameSkill, SaveMarkdownContent, SaveSkillContent, SavedSkillContent,
     SetCurrentVersion, SetFindingDisposition, SetLifecycle, SetMetadata, SetTrial,
 };
 use skillhub_core::application::{
-    CallPolicyBackend, CallPolicyService, DeploymentBackend, DeploymentService, HealthBackend,
-    HealthService, IgnoreBackend, IgnoreService, PreparedImport, ReconcileBackend,
-    ReconcileService, RecoveryBackend, RecoveryService, RemovalBackend, RemovalService,
-    DuplicateCandidateProvider, DuplicateService, SearchQueryService, TranslationRepository,
+    CallPolicyBackend, CallPolicyService, DeploymentBackend, DeploymentService,
+    DuplicateCandidateProvider, DuplicateService, HealthBackend, HealthService, IgnoreBackend,
+    IgnoreService, PreparedImport, ReconcileBackend, ReconcileService, RecoveryBackend,
+    RecoveryService, RemovalBackend, RemovalService, SearchQueryService, TranslationRepository,
     TranslationService,
 };
 use skillhub_core::backup::{
@@ -32,16 +33,16 @@ use skillhub_core::deployment::{
     DeploymentPlanRequest, DeploymentRecord, DeploymentState, RegisteredTargetIndex, TargetFact,
     TargetPlan,
 };
-use skillhub_core::health::{HealthFinding, RecoveryCandidate, RepairAction};
-use skillhub_core::ignore::IgnoreRule;
 use skillhub_core::duplicate::DuplicateCandidate;
 use skillhub_core::evidence::UsageEvidenceAnalyzer;
+use skillhub_core::health::{HealthFinding, RecoveryCandidate, RepairAction};
+use skillhub_core::ignore::IgnoreRule;
 use skillhub_core::llm::translation::TranslationRecord;
 use skillhub_core::llm::LlmTaskRunner;
 use skillhub_core::{
     physical_id_for_path, AllowedRoot, AppCommand, AppCommandResult, AppError, AppQuery,
-    AppQueryResult, AppResult, ApplicationFacade, DeploymentCapability, ErrorCode, OperationId,
-    PathPolicy, RecoveryAction, Severity,
+    AppQueryResult, AppResult, ApplicationFacade, DeploymentCapability, DeploymentMode, ErrorCode,
+    OperationId, PathPolicy, RecoveryAction, ResolvedPathGrant, Severity, TargetChange,
 };
 use skillhub_storage::backup::{BackupService, RestoreService, RetentionService};
 use skillhub_storage::export::ExportService;
@@ -70,6 +71,9 @@ pub struct LocalApplicationFacade {
     evidence_repository: UsageEvidenceRepository,
     prepared_imports: Mutex<HashMap<OperationId, PreparedImport>>,
     prepared_uninstall: Mutex<Option<skillhub_core::UninstallImpact>>,
+    scan_service: Mutex<ScanService>,
+    path_grants: Mutex<HashMap<String, ResolvedPathGrant>>,
+    assembly_plans: Mutex<HashMap<OperationId, skillhub_core::AssemblyPlan>>,
 }
 
 struct LocalDeploymentBackend {
@@ -657,6 +661,9 @@ impl LocalApplicationFacade {
             evidence_repository: UsageEvidenceRepository::default(),
             prepared_imports: Mutex::new(HashMap::new()),
             prepared_uninstall: Mutex::new(None),
+            scan_service: Mutex::new(ScanService::new()),
+            path_grants: Mutex::new(HashMap::new()),
+            assembly_plans: Mutex::new(HashMap::new()),
         }
     }
 
@@ -703,7 +710,24 @@ impl LocalApplicationFacade {
             evidence_repository: UsageEvidenceRepository::default(),
             prepared_imports: Mutex::new(HashMap::new()),
             prepared_uninstall: Mutex::new(None),
+            scan_service: Mutex::new(ScanService::new()),
+            path_grants: Mutex::new(HashMap::new()),
+            assembly_plans: Mutex::new(HashMap::new()),
         }
+    }
+
+    /// Registers a directory grant issued by the native file picker. The
+    /// facade never interprets caller-provided paths as grants; the host must
+    /// resolve the opaque picker identifier and pass the resulting fact here.
+    pub fn register_path_grant(&self, grant: ResolvedPathGrant) -> AppResult<()> {
+        if grant.grant_id.trim().is_empty() || grant.path.trim().is_empty() {
+            return Err(agent_invalid("path grant is incomplete"));
+        }
+        self.path_grants
+            .lock()
+            .map_err(|_| internal("register_path_grant"))?
+            .insert(grant.grant_id.clone(), grant);
+        Ok(())
     }
 
     /// Creates a library-backed facade with an explicitly registered target
@@ -948,6 +972,277 @@ impl LocalApplicationFacade {
             analysis.suggestions.clear();
         }
         Ok(AppQueryResult::GlobalSkillEvidence(analysis))
+    }
+
+    fn create_custom_agent(
+        &self,
+        request: skillhub_core::api::CreateCustomAgent,
+    ) -> AppResult<AppCommandResult> {
+        let resolver = LocalGrantResolver {
+            grants: &self.path_grants,
+        };
+        let agent = skillhub_core::CustomAgent::from_draft(request.agent, &resolver)
+            .map_err(|error| agent_invalid(format!("{error:?}")))?;
+        self.with_database("execute.create_custom_agent", |database| {
+            database
+                .custom_agent_repository()
+                .create(agent)
+                .map(AppCommandResult::CustomAgent)
+        })
+    }
+
+    fn update_custom_agent(
+        &self,
+        request: skillhub_core::api::UpdateCustomAgent,
+    ) -> AppResult<AppCommandResult> {
+        let resolver = LocalGrantResolver {
+            grants: &self.path_grants,
+        };
+        let agent = skillhub_core::CustomAgent::from_draft(request.agent, &resolver)
+            .map_err(|error| agent_invalid(format!("{error:?}")))?;
+        self.with_database("execute.update_custom_agent", |database| {
+            database
+                .custom_agent_repository()
+                .update(agent)
+                .map(AppCommandResult::CustomAgent)
+        })
+    }
+
+    fn remove_custom_agent(
+        &self,
+        request: skillhub_core::api::RemoveCustomAgent,
+    ) -> AppResult<AppCommandResult> {
+        self.with_database("execute.remove_custom_agent", |database| {
+            database.custom_agent_repository().remove(&request.id)?;
+            Ok(AppCommandResult::OperationSummary(operation_summary(
+                "custom_agent.removed",
+            )))
+        })
+    }
+
+    fn reset_profile_override(
+        &self,
+        request: skillhub_core::api::ResetProfileOverride,
+    ) -> AppResult<AppCommandResult> {
+        self.with_database("execute.reset_profile_override", |database| {
+            database
+                .custom_agent_repository()
+                .reset_override(&request.profile_id)?;
+            Ok(AppCommandResult::OperationSummary(operation_summary(
+                "agent_profile.override_reset",
+            )))
+        })
+    }
+
+    fn set_profile_override(
+        &self,
+        request: skillhub_core::api::SetProfileOverride,
+    ) -> AppResult<AppCommandResult> {
+        let resolver = LocalGrantResolver {
+            grants: &self.path_grants,
+        };
+        let directory = skillhub_core::PathGrantResolver::resolve(&resolver, &request.directory)
+            .map_err(|error| agent_invalid(format!("{error:?}")))?;
+        let override_profile = skillhub_core::CustomAgentOverride {
+            profile_id: request.profile_id,
+            directory,
+            profile: request.profile,
+        };
+        self.with_database("execute.set_profile_override", |database| {
+            database
+                .custom_agent_repository()
+                .set_override(override_profile)
+                .map(AppCommandResult::CustomAgentOverride)
+        })
+    }
+
+    fn register_project(
+        &self,
+        request: skillhub_core::api::RegisterProject,
+    ) -> AppResult<AppCommandResult> {
+        self.with_database("execute.register_project", |database| {
+            database
+                .project_repository()
+                .register(request.project)
+                .map(AppCommandResult::Project)
+        })
+    }
+
+    fn update_project(
+        &self,
+        request: skillhub_core::api::UpdateProject,
+    ) -> AppResult<AppCommandResult> {
+        self.with_database("execute.update_project", |database| {
+            database
+                .project_repository()
+                .update(request.project)
+                .map(AppCommandResult::Project)
+        })
+    }
+
+    fn set_project_tags(
+        &self,
+        request: skillhub_core::api::SetProjectTags,
+    ) -> AppResult<AppCommandResult> {
+        self.with_database("execute.set_project_tags", |database| {
+            database
+                .project_repository()
+                .set_tags(request.project_id, request.tags)
+                .map(AppCommandResult::Project)
+        })
+    }
+
+    fn save_project_view(
+        &self,
+        request: skillhub_core::api::SaveProjectView,
+    ) -> AppResult<AppCommandResult> {
+        self.with_database("execute.save_project_view", |database| {
+            database
+                .project_repository()
+                .save_view(request.view)
+                .map(AppCommandResult::SavedProjectView)
+        })
+    }
+
+    fn write_shared_project_config(
+        &self,
+        request: skillhub_core::api::WriteSharedProjectConfig,
+    ) -> AppResult<AppCommandResult> {
+        self.with_database("execute.write_shared_project_config", |database| {
+            database
+                .project_repository()
+                .write_shared_config(request.project_id, &request.config)?;
+            Ok(AppCommandResult::SharedProjectConfig(request.config))
+        })
+    }
+
+    fn read_shared_project_config(
+        &self,
+        request: skillhub_core::api::ReadSharedProjectConfig,
+    ) -> AppResult<AppCommandResult> {
+        self.with_database("execute.read_shared_project_config", |database| {
+            database
+                .project_repository()
+                .read_shared_config(request.project_id)
+                .map(AppCommandResult::SharedProjectConfig)
+        })
+    }
+
+    fn prepare_project_assembly(
+        &self,
+        project_id: skillhub_core::ProjectId,
+    ) -> AppResult<AppCommandResult> {
+        let service = LocalAssemblyService { facade: self };
+        let plan = service.prepare(project_id)?;
+        self.assembly_plans
+            .lock()
+            .map_err(|_| internal("execute.prepare_project_assembly"))?
+            .insert(plan.operation_id, plan.clone());
+        Ok(AppCommandResult::AssemblyPlan(plan))
+    }
+
+    fn commit_project_assembly(
+        &self,
+        request: skillhub_core::api::CommitProjectAssembly,
+    ) -> AppResult<AppCommandResult> {
+        let service = LocalAssemblyService { facade: self };
+        let result = service.commit(request.plan)?;
+        self.assembly_plans
+            .lock()
+            .map_err(|_| internal("execute.commit_project_assembly"))?
+            .insert(result.operation_id, result.clone());
+        Ok(AppCommandResult::AssemblyPlan(result))
+    }
+
+    fn scan_scope_ids(&self, requested: Vec<String>) -> AppResult<Vec<String>> {
+        self.with_database("execute.scan_scopes", |database| {
+            let snapshot = database
+                .agent_repository()
+                .load()?
+                .unwrap_or_else(empty_discovery);
+            let mut ids = requested;
+            if ids.is_empty() {
+                ids.extend(
+                    snapshot
+                        .logical_targets
+                        .iter()
+                        .map(|target| target.id.clone()),
+                );
+                ids.extend(
+                    database
+                        .project_repository()
+                        .list()?
+                        .into_iter()
+                        .map(|project| project.id.to_string()),
+                );
+            }
+            let mut roots = Vec::new();
+            for target in &snapshot.logical_targets {
+                if target.available && target.exists {
+                    if let Ok(root) = AllowedRoot::new(&target.path) {
+                        roots.push(root);
+                    }
+                }
+            }
+            for project in database.project_repository().list()? {
+                if let Ok(root) = AllowedRoot::new(project.path()) {
+                    roots.push(root);
+                }
+            }
+            let policy = PathPolicy::from_roots(roots)?;
+            let mut scanner = self
+                .scan_service
+                .lock()
+                .map_err(|_| internal("execute.scan_scopes"))?;
+            for id in &ids {
+                if snapshot
+                    .logical_targets
+                    .iter()
+                    .any(|target| target.id == *id)
+                {
+                    scanner.register_discovery_target(id, &database.agent_repository(), &policy)?;
+                } else {
+                    let project_id = id
+                        .parse()
+                        .map_err(|_| invalid_input("unknown scan scope"))?;
+                    scanner.register_project_scope(
+                        project_id,
+                        &database.project_repository(),
+                        &policy,
+                    )?;
+                }
+            }
+            Ok(ids)
+        })
+    }
+
+    fn run_scan(&self, requested: Vec<String>) -> AppResult<AppCommandResult> {
+        let ids = self.scan_scope_ids(requested)?;
+        self.with_database("execute.scan_targets", |database| {
+            let mut scanner = self
+                .scan_service
+                .lock()
+                .map_err(|_| internal("execute.scan_targets"))?;
+            let result =
+                scanner.scan_registered_with_repository(&ids, &database.scan_repository())?;
+            Ok(AppCommandResult::ScanResult(result))
+        })
+    }
+
+    fn rescan_skill(
+        &self,
+        request: skillhub_core::api::RescanSkill,
+    ) -> AppResult<AppCommandResult> {
+        self.scan_scope_ids(vec![request.scope_id.clone()])?;
+        self.with_database("execute.rescan_skill", |database| {
+            let mut scanner = self
+                .scan_service
+                .lock()
+                .map_err(|_| internal("execute.rescan_skill"))?;
+            let result = scanner.rescan_registered_skill(&request.scope_id, request.path)?;
+            let result = database.scan_repository().replace(&result)?;
+            Ok(AppCommandResult::ScanResult(result))
+        })
     }
 
     fn build_backup_input(&self, scope: BackupScope) -> AppResult<BackupInput> {
@@ -1899,6 +2194,32 @@ impl ApplicationFacade for LocalApplicationFacade {
                     .run_basic_check(request.skill_id, request.version_id)
                     .await;
             }
+            AppCommand::CreateCustomAgent(request) => return self.create_custom_agent(request),
+            AppCommand::UpdateCustomAgent(request) => return self.update_custom_agent(request),
+            AppCommand::RemoveCustomAgent(request) => return self.remove_custom_agent(request),
+            AppCommand::ResetProfileOverride(request) => {
+                return self.reset_profile_override(request)
+            }
+            AppCommand::SetProfileOverride(request) => return self.set_profile_override(request),
+            AppCommand::RegisterProject(request) => return self.register_project(request),
+            AppCommand::UpdateProject(request) => return self.update_project(request),
+            AppCommand::SetProjectTags(request) => return self.set_project_tags(request),
+            AppCommand::SaveProjectView(request) => return self.save_project_view(request),
+            AppCommand::WriteSharedProjectConfig(request) => {
+                return self.write_shared_project_config(request)
+            }
+            AppCommand::ReadSharedProjectConfig(request) => {
+                return self.read_shared_project_config(request)
+            }
+            AppCommand::PrepareProjectAssembly(request) => {
+                return self.prepare_project_assembly(request.project_id)
+            }
+            AppCommand::CommitProjectAssembly(request) => {
+                return self.commit_project_assembly(request)
+            }
+            AppCommand::RunInitializationScan(request) => return self.run_scan(request.scope_ids),
+            AppCommand::ScanTargets(request) => return self.run_scan(request.scope_ids),
+            AppCommand::RescanSkill(request) => return self.rescan_skill(request),
             AppCommand::SetFindingDisposition(request) => {
                 return self.set_finding_disposition(request);
             }
@@ -2075,6 +2396,34 @@ impl ApplicationFacade for LocalApplicationFacade {
                         .map(AppQueryResult::BootstrapSnapshot)
                 })
             }
+            AppQuery::GetDiscoverySnapshot(_) => {
+                self.with_database("query.discovery_snapshot", |database| {
+                    let snapshot = database
+                        .agent_repository()
+                        .load()?
+                        .unwrap_or_else(empty_discovery);
+                    Ok(AppQueryResult::DiscoverySnapshot(snapshot))
+                })
+            }
+            AppQuery::ListCustomAgents(_) => {
+                self.with_database("query.custom_agents", |database| {
+                    Ok(AppQueryResult::CustomAgents(
+                        database.custom_agent_repository().list()?,
+                    ))
+                })
+            }
+            AppQuery::ListProjects(_) => self.with_database("query.projects", |database| {
+                Ok(AppQueryResult::Projects(
+                    database.project_repository().list()?,
+                ))
+            }),
+            AppQuery::ListSavedProjectViews(_) => {
+                self.with_database("query.project_views", |database| {
+                    Ok(AppQueryResult::SavedProjectViews(
+                        database.project_repository().list_views()?,
+                    ))
+                })
+            }
             AppQuery::ListPendingItems(_) => {
                 self.with_database("query.list_pending_items", |database| {
                     database
@@ -2198,6 +2547,23 @@ impl ApplicationFacade for LocalApplicationFacade {
             }
             AppQuery::AnalyzeGlobalSkillEvidence(request) => {
                 self.analyze_global_skill_evidence(request).await
+            }
+            AppQuery::GetProjectAssemblyPlan(request) => {
+                let plans = self
+                    .assembly_plans
+                    .lock()
+                    .map_err(|_| internal("query.assembly_plan"))?;
+                plans
+                    .values()
+                    .filter(|plan| plan.project_id == request.project_id)
+                    .max_by_key(|plan| plan.operation_id.to_string())
+                    .cloned()
+                    .map(AppQueryResult::AssemblyPlan)
+                    .ok_or_else(|| {
+                        AppError::new(ErrorCode::ObjectNotFound, Severity::Error)
+                            .with_param("kind", "project assembly plan")
+                            .with_action(RecoveryAction::Retry)
+                    })
             }
             _ => Err(AppError::new(ErrorCode::InternalError, Severity::Error)
                 .with_param("operation", "query.unsupported")
@@ -2773,6 +3139,281 @@ fn validate_markdown_path(path: &str) -> AppResult<PathBuf> {
             .with_action(RecoveryAction::ChooseAnotherName));
     }
     Ok(relative.to_path_buf())
+}
+
+struct LocalGrantResolver<'a> {
+    grants: &'a Mutex<HashMap<String, ResolvedPathGrant>>,
+}
+
+impl skillhub_core::PathGrantResolver for LocalGrantResolver<'_> {
+    fn resolve(
+        &self,
+        grant: &skillhub_core::PathGrant,
+    ) -> Result<ResolvedPathGrant, skillhub_core::CustomAgentValidationError> {
+        self.grants
+            .lock()
+            .map_err(|_| skillhub_core::CustomAgentValidationError::GrantNotAuthorized)?
+            .get(&grant.grant_id)
+            .cloned()
+            .ok_or(skillhub_core::CustomAgentValidationError::GrantNotAuthorized)
+    }
+}
+
+struct LocalAssemblyService<'a> {
+    facade: &'a LocalApplicationFacade,
+}
+
+impl LocalAssemblyService<'_> {
+    fn prepare(
+        &self,
+        project_id: skillhub_core::ProjectId,
+    ) -> AppResult<skillhub_core::AssemblyPlan> {
+        let service = skillhub_core::ProjectAssemblyService::new(
+            LocalResolution {
+                facade: self.facade,
+            },
+            LocalSource,
+            LocalChecks,
+            LocalAssemblyDeployment {
+                facade: self.facade,
+            },
+        );
+        service.prepare_assembly(project_id)
+    }
+
+    fn commit(&self, plan: skillhub_core::AssemblyPlan) -> AppResult<skillhub_core::AssemblyPlan> {
+        let service = skillhub_core::ProjectAssemblyService::new(
+            LocalResolution {
+                facade: self.facade,
+            },
+            LocalSource,
+            LocalChecks,
+            LocalAssemblyDeployment {
+                facade: self.facade,
+            },
+        );
+        service.commit_assembly(plan)
+    }
+}
+
+struct LocalResolution<'a> {
+    facade: &'a LocalApplicationFacade,
+}
+
+impl skillhub_core::SkillResolutionPort for LocalResolution<'_> {
+    fn shared_config(
+        &self,
+        project_id: skillhub_core::ProjectId,
+    ) -> AppResult<skillhub_core::SharedProjectConfig> {
+        self.facade
+            .with_database("assembly.shared_config", |database| {
+                database.project_repository().read_shared_config(project_id)
+            })
+    }
+
+    fn resolve_requirement(
+        &self,
+        requirement: &skillhub_core::SharedSkillRequirement,
+    ) -> AppResult<skillhub_core::SkillResolution> {
+        let Some(library) = self.facade.library.as_ref() else {
+            return Ok(skillhub_core::SkillResolution::Missing {
+                requested_source: requirement.source.as_str().to_owned(),
+            });
+        };
+        let version = if let Some(version) = requirement.version_id.clone() {
+            Some(version)
+        } else {
+            library.current(requirement.skill_id)?
+        };
+        let Some(version) = version else {
+            return Ok(skillhub_core::SkillResolution::Missing {
+                requested_source: requirement.source.as_str().to_owned(),
+            });
+        };
+        if library.load_manifest(&version).is_ok() {
+            Ok(skillhub_core::SkillResolution::Satisfied {
+                version_id: version,
+            })
+        } else {
+            Ok(skillhub_core::SkillResolution::Missing {
+                requested_source: requirement.source.as_str().to_owned(),
+            })
+        }
+    }
+}
+
+struct LocalSource;
+impl skillhub_core::SourcePreparationPort for LocalSource {
+    fn prepare_source(
+        &self,
+        requirement: &skillhub_core::SharedSkillRequirement,
+    ) -> AppResult<skillhub_core::SourcePreparation> {
+        Ok(requirement
+            .version_id
+            .clone()
+            .map(|version_id| skillhub_core::SourcePreparation::Ready { version_id })
+            .unwrap_or_else(|| skillhub_core::SourcePreparation::Failed {
+                reasons: vec!["assembly.source_acquisition_required".into()],
+            }))
+    }
+}
+
+struct LocalChecks;
+impl skillhub_core::CheckPreparationPort for LocalChecks {
+    fn prepare_checks(
+        &self,
+        _requirement: &skillhub_core::SharedSkillRequirement,
+        _version_id: &skillhub_core::VersionId,
+    ) -> AppResult<skillhub_core::CheckPreparation> {
+        Ok(skillhub_core::CheckPreparation::NotNeeded)
+    }
+}
+
+struct LocalAssemblyDeployment<'a> {
+    facade: &'a LocalApplicationFacade,
+}
+impl skillhub_core::DeploymentPreparationPort for LocalAssemblyDeployment<'_> {
+    fn prepare_project_deployment(
+        &self,
+        requirement: &skillhub_core::SharedSkillRequirement,
+        _version_id: &skillhub_core::VersionId,
+    ) -> AppResult<skillhub_core::DeploymentPreparation> {
+        let Some(target_id) = requirement.logical_agent_id.as_ref() else {
+            return Ok(skillhub_core::DeploymentPreparation::NotNeeded);
+        };
+        if requirement.name.contains(['/', '\\'])
+            || requirement.name == "."
+            || requirement.name == ".."
+        {
+            return Ok(skillhub_core::DeploymentPreparation::Failed {
+                reasons: vec!["assembly.runtime_name_invalid".into()],
+            });
+        }
+        let available = self.facade.with_database("assembly.target", |database| {
+            Ok(database.agent_repository().load()?.is_some_and(|snapshot| {
+                snapshot.logical_targets.iter().any(|target| {
+                    target.id == *target_id && target.available && target.exists && target.readable
+                })
+            }))
+        })?;
+        if available {
+            Ok(skillhub_core::DeploymentPreparation::Ready)
+        } else {
+            Ok(skillhub_core::DeploymentPreparation::Failed {
+                reasons: vec!["assembly.target_unavailable".into()],
+            })
+        }
+    }
+
+    fn commit_project_deployment(
+        &self,
+        requirement: &skillhub_core::SharedSkillRequirement,
+        version_id: &skillhub_core::VersionId,
+    ) -> AppResult<()> {
+        let Some(target_id) = requirement.logical_agent_id.as_ref() else {
+            return Ok(());
+        };
+        let Some(library_root) = self.facade.library_root.as_ref() else {
+            return Err(unsupported("assembly.commit.library"));
+        };
+        let (target, source_path) =
+            self.facade
+                .with_database("assembly.commit.target", |database| {
+                    let snapshot = database.agent_repository().load()?.ok_or_else(|| {
+                        AppError::new(ErrorCode::ObjectNotFound, Severity::Error)
+                            .with_param("kind", "discovery snapshot")
+                            .with_action(RecoveryAction::Retry)
+                    })?;
+                    let target = snapshot
+                        .logical_targets
+                        .iter()
+                        .find(|target| {
+                            target.id == *target_id
+                                && target.available
+                                && target.exists
+                                && target.readable
+                        })
+                        .ok_or_else(|| {
+                            AppError::new(ErrorCode::ObjectNotFound, Severity::Error)
+                                .with_param("kind", "assembly target")
+                                .with_action(RecoveryAction::InspectTarget)
+                        })?
+                        .clone();
+                    let source = library_root
+                        .join("versions")
+                        .join(requirement.skill_id.to_string())
+                        .join(version_id.as_str());
+                    Ok((target, source))
+                })?;
+        let target_plan = TargetPlan {
+            physical_target_id: target.physical_id.clone(),
+            logical_target_ids: vec![target.id.clone()],
+            target_path: target.path.clone(),
+            destination_path: Path::new(&target.path)
+                .join(&requirement.name)
+                .to_string_lossy()
+                .into_owned(),
+            source_path: source_path.to_string_lossy().into_owned(),
+            runtime_name: requirement.name.clone(),
+            skill_id: requirement.skill_id,
+            version_id: version_id.clone(),
+            mode: DeploymentMode::ManagedCopy,
+            change: TargetChange::Create,
+            warnings: Vec::new(),
+            conflicts: Vec::new(),
+        };
+        let filesystem = DeploymentFilesystem::new();
+        let prepared = filesystem.prepare(&target_plan)?;
+        let applied = filesystem.apply(prepared)?;
+        let record = skillhub_core::DeploymentRecord {
+            id: skillhub_core::DeploymentId::new(),
+            skill_id: requirement.skill_id,
+            version_id: version_id.clone(),
+            target_id: target.physical_id,
+            state: skillhub_core::DeploymentState::Deployed,
+            mode: DeploymentMode::ManagedCopy,
+            managed: true,
+            runtime_name: requirement.name.clone(),
+            expected_hash: applied.ownership.expected_hash,
+            observed_hash: Some(applied.observed_tree_hash),
+        };
+        self.facade
+            .with_database("assembly.commit.persist", |database| {
+                database.deployment_repository().insert_sync(&record)
+            })?;
+        Ok(())
+    }
+}
+
+fn empty_discovery() -> skillhub_core::DiscoverySnapshot {
+    skillhub_core::DiscoverySnapshot {
+        generation: "0".into(),
+        observed_at: "0".into(),
+        instances: Vec::new(),
+        logical_targets: Vec::new(),
+        physical_targets: Vec::new(),
+    }
+}
+
+fn agent_invalid(detail: impl Into<String>) -> AppError {
+    AppError::new(ErrorCode::AgentProfileInvalidCapability, Severity::Error)
+        .with_param("detail", detail.into())
+        .with_action(RecoveryAction::Acknowledge)
+}
+
+fn invalid_input(detail: impl Into<String>) -> AppError {
+    AppError::new(ErrorCode::InvalidInput, Severity::Error)
+        .with_param("detail", detail.into())
+        .with_action(RecoveryAction::Acknowledge)
+}
+
+fn operation_summary(message_code: &str) -> skillhub_core::OperationSummary {
+    skillhub_core::OperationSummary {
+        operation_id: OperationId::new(),
+        phase: skillhub_core::OperationPhase::Committed,
+        message_code: message_code.to_owned(),
+        error_code: None,
+    }
 }
 
 fn unsupported(operation: &'static str) -> AppError {
