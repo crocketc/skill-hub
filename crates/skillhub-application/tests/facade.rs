@@ -2,16 +2,20 @@ use skillhub_application::LocalApplicationFacade;
 use skillhub_core::{
     api::{
         AnalyzeImport, AppCommandResult, AppQueryResult, DiffVersions, DiscoverImportCandidates,
-        GetBasicCheckResult, GetDeploymentRelations, GetSkill, ListDeployments, ListFindings,
-        ListMarkdownFiles, ListSkills, ListVersions, PrepareImport, ReadMarkdownFile,
+        GetBasicCheckResult, GetDeploymentPlan, GetDeploymentRelations, GetSkill, ListDeployments,
+        ListFindings, ListMarkdownFiles, ListSkills, ListVersions, PrepareImport, ReadMarkdownFile,
     },
     catalog::{CatalogRepository, Skill},
     check::{CheckKind, CheckState},
-    deployment::{DeploymentMode, DeploymentRecord, DeploymentRepository, DeploymentState},
+    deployment::{
+        DeploymentMode, DeploymentPlanRequest, DeploymentRecord, DeploymentRepository,
+        DeploymentState, RegisteredTargetIndex, TargetFact, TargetFactSource,
+    },
     import::ImportCandidate,
     search::{SearchDocument, SearchQuery},
     source::{SourceDescriptor, SourceKind, SourceLocator},
-    AppCommand, AppQuery as RootAppQuery, ApplicationFacade, ErrorCode, Severity,
+    AppCommand, AppQuery as RootAppQuery, ApplicationFacade, DeploymentCapability, ErrorCode,
+    PathPolicy, Severity,
 };
 use skillhub_storage::Database;
 use skillhub_storage::{CentralLibrary, VersionStore};
@@ -630,6 +634,113 @@ async fn deployment_queries_return_only_relationships_for_the_requested_skill() 
     };
     assert_eq!(relations.len(), 1);
     assert_eq!(relations[0].target_id, "agent-codex");
+}
+
+#[tokio::test]
+async fn deployment_plan_query_resolves_registered_target_and_returns_preview() {
+    let database = Database::open_in_memory().expect("database");
+    let skill = Skill::new(skillhub_core::SkillId::new(), "Deployable");
+    database
+        .catalog_repository()
+        .expect("catalog repository")
+        .insert(&skill)
+        .await
+        .expect("insert skill");
+    let library_root = tempfile::tempdir().expect("library root");
+    let source = tempfile::tempdir().expect("source");
+    std::fs::write(source.path().join("SKILL.md"), "# Deployable\n").expect("write skill");
+    let library = CentralLibrary::initialize(library_root.path()).expect("central library");
+    let version = VersionStore::from_library(&library)
+        .capture(skill.id(), source.path())
+        .expect("capture version");
+    let target = tempfile::tempdir().expect("target");
+    let physical_id = skillhub_core::physical_id_for_path(target.path()).expect("target id");
+    let targets = RegisteredTargetIndex::from_facts(
+        [TargetFact::registered(
+            "agent-codex",
+            target.path(),
+            physical_id,
+            TargetFactSource::Discovery,
+            DeploymentCapability::new(false, false, true),
+        )],
+        PathPolicy::from_roots([skillhub_core::AllowedRoot::new(target.path()).expect("root")])
+            .expect("policy"),
+    )
+    .expect("target index");
+
+    let facade = LocalApplicationFacade::new_with_library_and_targets(
+        database,
+        library_root.path(),
+        targets,
+    );
+    let result = facade
+        .query(RootAppQuery::GetDeploymentPlan(GetDeploymentPlan {
+            request: DeploymentPlanRequest {
+                skill_id: skill.id(),
+                version_id: version.id.clone(),
+                runtime_name: "deployable".into(),
+                logical_target_ids: vec!["agent-codex".into()],
+                mode_override: Some(DeploymentMode::ManagedCopy),
+            },
+        }))
+        .await
+        .expect("deployment plan");
+    let AppQueryResult::DeploymentPlan(plan) = result else {
+        panic!("expected deployment plan");
+    };
+    assert_eq!(plan.skill_id, skill.id());
+    assert_eq!(plan.version_id, version.id);
+    assert_eq!(plan.targets.len(), 1);
+    assert_eq!(plan.targets[0].logical_target_ids, ["agent-codex"]);
+}
+
+#[tokio::test]
+async fn deployment_plan_query_rejects_unregistered_target() {
+    let database = Database::open_in_memory().expect("database");
+    let skill = Skill::new(skillhub_core::SkillId::new(), "Deployable");
+    database
+        .catalog_repository()
+        .expect("catalog repository")
+        .insert(&skill)
+        .await
+        .expect("insert skill");
+    let library_root = tempfile::tempdir().expect("library root");
+    CentralLibrary::initialize(library_root.path()).expect("central library");
+    let target = tempfile::tempdir().expect("target");
+    let physical_id = skillhub_core::physical_id_for_path(target.path()).expect("target id");
+    let targets = RegisteredTargetIndex::from_facts(
+        [TargetFact::registered(
+            "agent-codex",
+            target.path(),
+            physical_id,
+            TargetFactSource::Discovery,
+            DeploymentCapability::new(false, false, true),
+        )],
+        PathPolicy::from_roots([skillhub_core::AllowedRoot::new(target.path()).expect("root")])
+            .expect("policy"),
+    )
+    .expect("target index");
+    let facade = LocalApplicationFacade::new_with_library_and_targets(
+        database,
+        library_root.path(),
+        targets,
+    );
+    let error = facade
+        .query(RootAppQuery::GetDeploymentPlan(GetDeploymentPlan {
+            request: DeploymentPlanRequest {
+                skill_id: skill.id(),
+                version_id: skillhub_core::VersionId::parse(
+                    "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                )
+                .expect("version id"),
+                runtime_name: "deployable".into(),
+                logical_target_ids: vec!["missing".into()],
+                mode_override: None,
+            },
+        }))
+        .await
+        .expect_err("unregistered target should fail");
+    assert_eq!(error.code, ErrorCode::ObjectNotFound);
 }
 
 #[tokio::test]

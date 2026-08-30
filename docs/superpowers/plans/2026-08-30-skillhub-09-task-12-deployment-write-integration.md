@@ -33,11 +33,11 @@
 - Consumes: `GetDeploymentPlan`, `DeploymentPlanRequest`, `RegisteredTargetIndex`, `DeploymentPlanner`.
 - Produces: `AppQueryResult::DeploymentPlan` containing the selected logical targets, physical grouping, selected mode, conflicts, and warnings.
 
-- [ ] **Step 1: Write failing facade tests**
+- [x] **Step 1: Write failing facade tests**
 
 Add tests that create a temporary registered target directory and assert that `GetDeploymentPlan` returns a plan for a valid logical target, groups two logical targets sharing one physical directory, and returns a structured error for an unregistered target.
 
-- [ ] **Step 2: Run the focused tests and verify failure**
+- [x] **Step 2: Run the focused tests and verify failure**
 
 Run:
 
@@ -47,11 +47,11 @@ cargo test -p skillhub-application --test facade deployment_plan
 
 Expected: the valid-plan tests fail because `LocalApplicationFacade` currently reports `query.unsupported` for `GetDeploymentPlan`.
 
-- [ ] **Step 3: Implement the minimal target resolver and planner dispatch**
+- [x] **Step 3: Implement the minimal target resolver and planner dispatch**
 
 Add a facade-owned registered-target resolver initialized by tests and by the production constructor. Resolve `request.logical_target_ids` through `RegisteredTargetIndex`, obtain the selected central-library version path, call `DeploymentPlanner::plan_request`, and return `AppQueryResult::DeploymentPlan`. Do not accept raw target paths from the frontend.
 
-- [ ] **Step 4: Run focused Rust tests and contract checks**
+- [x] **Step 4: Run focused Rust tests and contract checks**
 
 Run:
 
@@ -63,7 +63,7 @@ cargo test -p skillhub-core --test api_contract
 
 Expected: all tests pass and no API binding drift is reported.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```text
 git add crates/skillhub-application crates/skillhub-core/tests/deployment_planner.rs

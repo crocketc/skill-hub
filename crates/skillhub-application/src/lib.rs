@@ -9,6 +9,7 @@ use async_trait::async_trait;
 use skillhub_adapters::import::SkillDetector;
 use skillhub_core::application::PreparedImport;
 use skillhub_core::catalog::Skill;
+use skillhub_core::deployment::{DeploymentPlanRequest, RegisteredTargetIndex};
 use skillhub_core::{
     AppCommand, AppCommandResult, AppError, AppQuery, AppQueryResult, AppResult, ApplicationFacade,
     ErrorCode, OperationId, RecoveryAction, Severity,
@@ -23,6 +24,7 @@ pub struct LocalApplicationFacade {
     today: (i32, u8, u8),
     library: Option<VersionStore>,
     library_root: Option<PathBuf>,
+    deployment_targets: Option<RegisteredTargetIndex>,
     prepared_imports: Mutex<HashMap<OperationId, PreparedImport>>,
 }
 
@@ -70,6 +72,7 @@ impl LocalApplicationFacade {
             today,
             library: None,
             library_root: None,
+            deployment_targets: None,
             prepared_imports: Mutex::new(HashMap::new()),
         }
     }
@@ -83,8 +86,22 @@ impl LocalApplicationFacade {
                 library_root.as_ref(),
             ))),
             library_root: Some(library_root.as_ref().to_path_buf()),
+            deployment_targets: None,
             prepared_imports: Mutex::new(HashMap::new()),
         }
+    }
+
+    /// Creates a library-backed facade with an explicitly registered target
+    /// index. Production target discovery populates this index; tests can
+    /// inject deterministic filesystem facts without scanning arbitrary paths.
+    pub fn new_with_library_and_targets(
+        database: Database,
+        library_root: impl AsRef<Path>,
+        deployment_targets: RegisteredTargetIndex,
+    ) -> Self {
+        let mut facade = Self::new_with_library(database, library_root);
+        facade.deployment_targets = Some(deployment_targets);
+        facade
     }
 
     fn with_database<T>(
@@ -199,6 +216,7 @@ impl ApplicationFacade for LocalApplicationFacade {
             AppQuery::GetDeploymentRelations(request) => {
                 self.list_deployment_relations(request.skill_id)
             }
+            AppQuery::GetDeploymentPlan(request) => self.get_deployment_plan(request.request),
             AppQuery::GetBasicCheckResult(request) => self.get_check_result(
                 request.skill_id,
                 request.version_id,
@@ -224,6 +242,25 @@ impl ApplicationFacade for LocalApplicationFacade {
 }
 
 impl LocalApplicationFacade {
+    fn get_deployment_plan(&self, request: DeploymentPlanRequest) -> AppResult<AppQueryResult> {
+        let resolver = self
+            .deployment_targets
+            .as_ref()
+            .ok_or_else(|| unsupported("query.get_deployment_plan"))?;
+        let library_root = self
+            .library_root
+            .as_ref()
+            .ok_or_else(|| unsupported("query.get_deployment_plan"))?;
+        let source_path = library_root
+            .join("versions")
+            .join(request.skill_id.to_string())
+            .join(request.version_id.as_str());
+        let input = request.resolve(resolver, source_path.to_string_lossy().into_owned())?;
+        skillhub_core::DeploymentPlanner
+            .plan_request(&input)
+            .map(AppQueryResult::DeploymentPlan)
+    }
+
     fn prepare_import(&self, request: skillhub_core::PrepareImport) -> AppResult<AppCommandResult> {
         self.with_database("execute.prepare_import", |database| {
             let analysis = database
