@@ -14,6 +14,7 @@ use skillhub_core::{
         SaveSkillContent, SetCurrentVersion, SetFindingDisposition, SetLifecycle, SetMetadata,
         SetTrial,
     },
+    backup::BackupScope,
     catalog::{CatalogRepository, Skill},
     check::{CheckKind, CheckState, FindingDisposition},
     deployment::{
@@ -565,6 +566,98 @@ async fn markdown_queries_read_the_current_version_as_read_only_content() {
         panic!("expected version diff");
     };
     assert!(diff.added.is_empty());
+}
+
+#[tokio::test]
+async fn backup_preflight_reads_current_skill_content_and_rejects_unscoped_selection() {
+    let database = Database::open_in_memory().expect("database");
+    let skill = Skill::new(skillhub_core::SkillId::new(), "Backup candidate");
+    database
+        .catalog_repository()
+        .expect("catalog repository")
+        .insert(&skill)
+        .await
+        .expect("insert skill");
+    let root = tempfile::tempdir().expect("library root");
+    let source = tempfile::tempdir().expect("source");
+    std::fs::write(source.path().join("SKILL.md"), "# Safe backup\n")
+        .expect("write skill");
+    let library = CentralLibrary::initialize(root.path()).expect("central library");
+    let store = VersionStore::from_library(&library);
+    let version = store
+        .capture(skill.id(), source.path())
+        .expect("capture version");
+    store
+        .set_current(skill.id(), &version.id)
+        .expect("set current");
+    library
+        .save_portable_skill(&skill, Some(&version.id))
+        .expect("save portable skill");
+
+    let facade = LocalApplicationFacade::new_with_library(database, root.path());
+    let result = facade
+        .execute(AppCommand::PrepareBackup(skillhub_core::api::PrepareBackup {
+            scope: BackupScope::Full,
+        }))
+        .await
+        .expect("backup plan");
+    let AppCommandResult::BackupPlan(plan) = result else {
+        panic!("expected backup plan");
+    };
+    assert_eq!(plan.scope, BackupScope::Full);
+    assert!(plan.sensitive_items.is_empty());
+
+    let error = facade
+        .execute(AppCommand::PrepareBackup(skillhub_core::api::PrepareBackup {
+            scope: BackupScope::SelectedSkills,
+        }))
+        .await
+        .expect_err("selected scope should require skill IDs");
+    assert_eq!(error.code, ErrorCode::InvalidInput);
+}
+
+#[tokio::test]
+async fn backup_preflight_reports_sensitive_skill_content() {
+    let database = Database::open_in_memory().expect("database");
+    let skill = Skill::new(skillhub_core::SkillId::new(), "Sensitive backup candidate");
+    database
+        .catalog_repository()
+        .expect("catalog repository")
+        .insert(&skill)
+        .await
+        .expect("insert skill");
+    let root = tempfile::tempdir().expect("library root");
+    let source = tempfile::tempdir().expect("source");
+    std::fs::write(source.path().join("SKILL.md"), "api_key=placeholder\n")
+        .expect("write skill");
+    let library = CentralLibrary::initialize(root.path()).expect("central library");
+    let store = VersionStore::from_library(&library);
+    let version = store
+        .capture(skill.id(), source.path())
+        .expect("capture version");
+    store
+        .set_current(skill.id(), &version.id)
+        .expect("set current");
+    library
+        .save_portable_skill(&skill, Some(&version.id))
+        .expect("save portable skill");
+
+    let facade = LocalApplicationFacade::new_with_library(database, root.path());
+    let result = facade
+        .execute(AppCommand::PrepareBackup(skillhub_core::api::PrepareBackup {
+            scope: BackupScope::Full,
+        }))
+        .await
+        .expect("backup plan");
+    let AppCommandResult::BackupPlan(plan) = result else {
+        panic!("expected backup plan");
+    };
+    assert_eq!(plan.sensitive_items.len(), 1);
+    assert_eq!(plan.sensitive_items[0].skill_id, skill.id());
+    assert_eq!(
+        plan.sensitive_items[0].reason,
+        "possible_plaintext_credential"
+    );
 }
 
 #[tokio::test]

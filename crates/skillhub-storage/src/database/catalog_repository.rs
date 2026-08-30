@@ -84,6 +84,22 @@ impl<'a> CatalogRepositorySqlite<'a> {
             .map_err(error)
     }
 
+    /// Returns all catalog Skill IDs in a stable order for read-only exports
+    /// and backup preparation.
+    pub fn list_ids_sync(&self) -> AppResult<Vec<SkillId>> {
+        let mut statement = self
+            .database
+            .connection
+            .prepare("SELECT id FROM skills ORDER BY id")
+            .map_err(error)?;
+        let ids = statement
+            .query_map([], |row| row.get::<_, String>(0))
+            .map_err(error)?
+            .map(|row| row.map_err(error)?.parse().map_err(|_| bad_id()))
+            .collect();
+        ids
+    }
+
     /// Reads the persisted, user-visible detail projection without loading
     /// version contents or deployment files.
     pub fn get_detail(&self, id: SkillId) -> AppResult<Option<SkillListItem>> {

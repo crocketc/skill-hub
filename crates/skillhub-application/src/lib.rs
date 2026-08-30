@@ -17,6 +17,7 @@ use skillhub_core::application::{
     DeploymentBackend, DeploymentService, PreparedImport, ReconcileBackend, ReconcileService,
     RemovalBackend, RemovalService,
 };
+use skillhub_core::backup::{BackupInput, BackupScope};
 use skillhub_core::catalog::{CatalogRepository, Skill};
 use skillhub_core::check::{CheckKind, CheckRun, CheckRunPhase, FindingDisposition};
 use skillhub_core::deployment::{
@@ -29,6 +30,7 @@ use skillhub_core::{
     AppQueryResult, AppResult, ApplicationFacade, DeploymentCapability, ErrorCode, OperationId,
     PathPolicy, RecoveryAction, Severity,
 };
+use skillhub_storage::backup::BackupService;
 use skillhub_storage::{CentralLibrary, Database, LibraryPaths, VersionStore};
 
 /// The date provider is kept on the facade so all date-sensitive projections
@@ -607,6 +609,44 @@ impl LocalApplicationFacade {
                 .with_action(RecoveryAction::Retry)
         })?;
         action(&database)
+    }
+
+    fn build_backup_input(&self, scope: BackupScope) -> AppResult<BackupInput> {
+        if scope != BackupScope::Full {
+            return Err(AppError::new(ErrorCode::InvalidInput, Severity::Error)
+                .with_param("scope", "selected_skills_requires_explicit_ids")
+                .with_action(RecoveryAction::ChooseAnotherName));
+        }
+        let Some(library) = self.library.as_ref() else {
+            return Err(unsupported("execute.prepare_backup.library"));
+        };
+        let Some(root) = self.library_root.as_ref() else {
+            return Err(unsupported("execute.prepare_backup.library"));
+        };
+        let central = CentralLibrary::initialize(root)?;
+        let portable_metadata = serde_json::to_string(&central.load_manifest()?)
+            .map_err(|_| AppError::new(ErrorCode::InternalError, Severity::Error))?;
+        let skill_ids = self.with_database("execute.prepare_backup.catalog", |database| {
+            database.catalog_repository()?.list_ids_sync()
+        })?;
+        let mut skills = Vec::with_capacity(skill_ids.len());
+        for skill_id in skill_ids {
+            let version_id = library.current(skill_id)?.ok_or_else(|| {
+                AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                    .with_param("skill_id", skill_id.to_string())
+                    .with_param("reason", "current_version_missing")
+                    .with_action(RecoveryAction::Retry)
+            })?;
+            let (_, bytes) = library.read_file(&version_id, "SKILL.md", 1_048_576)?;
+            let content = String::from_utf8(bytes).map_err(|_| {
+                AppError::new(ErrorCode::InvalidInput, Severity::Error)
+                    .with_param("skill_id", skill_id.to_string())
+                    .with_param("reason", "skill_markdown_not_utf8")
+                    .with_action(RecoveryAction::InspectTarget)
+            })?;
+            skills.push((skill_id, content));
+        }
+        Ok(BackupInput::new(BackupScope::Full, portable_metadata, skills))
     }
 
     async fn run_basic_check(
@@ -1226,6 +1266,15 @@ impl ApplicationFacade for LocalApplicationFacade {
             AppCommand::SetCurrentVersion(request) => return self.set_current_version(request),
             AppCommand::SaveSkillContent(request) => return self.save_skill_content(request),
             AppCommand::SaveMarkdownContent(request) => return self.save_markdown_content(request),
+            AppCommand::PrepareBackup(request) => {
+                let input = self.build_backup_input(request.scope)?;
+                let Some(root) = self.library_root.as_ref() else {
+                    return Err(unsupported("execute.prepare_backup.library"));
+                };
+                let plan = BackupService::new(LibraryPaths::from_root(root).backups_dir)
+                    .prepare(&input)?;
+                return Ok(AppCommandResult::BackupPlan(plan));
+            }
             AppCommand::RunLlmSafetyCheck(request) => {
                 return self
                     .run_llm_safety_check(request.skill_id, request.version_id)
