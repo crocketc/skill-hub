@@ -4,7 +4,7 @@
 
 ## 当前候选
 
-- 提交：`3bd4ae3db5e2ab4d6537877b2f62ef417bfcb301`
+- 提交：`ea5583d`
 - 日期：2026-08-29
 - 发布信任级别：Windows 未签名；macOS ad-hoc、未公证
 - 发布方式：GitHub Draft Release，人工核对后发布
@@ -20,7 +20,7 @@
 | 前端依赖安装 | 通过 | `pnpm install --frozen-lockfile --ignore-scripts` |
 | 前端审计 | 通过 | macOS 官方 registry 复核，0 个漏洞；用户镜像不支持端点时需临时切换官方源 |
 | 前端 lint/TypeScript | 通过 | `pnpm check:frontend` |
-| 前端测试 | 通过 | 52 个文件、307 项测试 |
+| 前端测试 | 待执行 | 需在候选提交 `ea5583d` 重新采集证据 |
 | 前端生产构建 | 通过 | `pnpm --dir apps/desktop build` |
 | 发布静态预检 | 通过 | `pnpm verify:release`；root/desktop 命令、Tauri 启动配置、tag-bound 工作流、锁定 action、安装说明和 `dist/.gitkeep` 均通过 |
 | 兼容性契约 | 通过 | `cargo test -p skillhub-adapters --test profile_contract` |
