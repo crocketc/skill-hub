@@ -40,7 +40,11 @@ for (const [index, step] of steps.entries()) {
     cwd: projectRoot,
     env: { ...process.env, CI: "1" },
     stdio: "inherit",
-    shell: false,
+    // Windows exposes pnpm through a .cmd shim, which Node cannot launch
+    // with shell=false. Every command and argument here is repository-owned;
+    // enabling the platform shell only fixes shim resolution and does not
+    // accept user-provided command text.
+    shell: process.platform === "win32",
   });
   if (result.error) {
     console.error(`\n${step.name} 无法启动：${result.error.message}`);

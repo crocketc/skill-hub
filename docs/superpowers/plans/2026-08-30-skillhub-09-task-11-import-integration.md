@@ -109,10 +109,10 @@ git commit -m "feat: connect native import commands"
 ### Task 11.3：将桌面导入向导切换到原生门面
 
 **Files:**
-- Create: `apps/desktop/src/features/import/nativeFacade.ts`
+- Create: `apps/desktop/src/features/import/nativeApi.ts`
 - Modify: `apps/desktop/src/features/import/ImportWizard.tsx`
 - Modify: `apps/desktop/src/api/bindings.ts`（仅在 Specta 生成流程要求时更新）
-- Test: `apps/desktop/src/features/import/nativeFacade.test.ts`
+- Test: `apps/desktop/src/features/import/nativeApi.test.ts`
 - Test: `apps/desktop/src/features/import/ImportWizard.test.tsx`
 
 **Interfaces:**
@@ -127,7 +127,7 @@ git commit -m "feat: connect native import commands"
 - [x] **Step 2: Run focused Vitest tests and verify they fail**
 
 ```text
-pnpm --dir apps/desktop exec vitest run src/features/import/nativeFacade.test.ts src/features/import/ImportWizard.test.tsx
+pnpm --dir apps/desktop exec vitest run src/features/import/nativeApi.test.ts src/features/import/ImportWizard.test.tsx
 ```
 
 - [x] **Step 3: Implement the native facade adapter and production wiring**
@@ -143,7 +143,7 @@ pnpm --dir apps/desktop lint
 pnpm --dir apps/desktop build
 ```
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```text
 git add apps/desktop/src/features/import
@@ -157,7 +157,7 @@ git commit -m "feat: connect import wizard to native facade"
 - Modify: `docs/development/当前开发状态.md`
 - Test: `tests/integration/import_flow.rs`（如现有集成夹具适用）
 
-- [ ] **Step 1: Run Windows focused tests and complete local CI**
-- [ ] **Step 2: Send macOS validation instructions after the Windows commit is pushed**
-- [ ] **Step 3: Record both platform results, known limitations and recovery behavior**
-- [ ] **Step 4: Run `git diff --check` and commit the report**
+- [x] **Step 1: Run Windows focused tests and complete local CI**
+- [x] **Step 2: Send macOS validation instructions after the Windows commit is pushed**
+- [x] **Step 3: Record both platform results, known limitations and recovery behavior**
+- [x] **Step 4: Run `git diff --check` and commit the report**
