@@ -2,8 +2,8 @@
 
 ## 当前状态
 
-- Task 21.1–21.2 已完成，待 macOS 只读验收后收尾。
-- 当前变更尚未提交。
+- Task 21.1–21.3 已完成并合并到 `main`。
+- 提交：`d2dd341`。
 
 ## 完成内容
 
@@ -25,9 +25,9 @@
 - ESLint 与生产构建：包含于完整 CI，均通过。
 - 构建导致的 `apps/desktop/dist/.gitkeep` 删除已恢复；pnpm registry 已恢复为 `https://registry.npmmirror.com`。
 
-## macOS 验证指令
+## macOS 验证结果
 
-应在 macOS `main` 分支同步本 Task 提交后只读执行：
+macOS 已在 `main` 的 `d2dd341` 上只读完成验收：
 
 ```bash
 ./scripts/ci-local.sh
@@ -39,7 +39,12 @@ git diff --check
 git status --short
 ```
 
-仅验证，不修改源码、依赖、文档，不提交或推送。若镜像源不支持安全审计，临时切换官方 npm 源并在结束后恢复。
+- 完整本地 CI：10/10 通过。
+- `nativeApi.test.ts`：4/4 通过。
+- `RemovalImpactDialog.test.tsx`：1/1 通过。
+- TypeScript：通过。
+- 未修改源码、依赖或文档；仅保留构建副作用 `.gitkeep` 删除和本地 `.DS_Store` 未跟踪文件。
+- pnpm 使用官方源，安全审计 0 个漏洞。
 
 ## 已知边界
 
