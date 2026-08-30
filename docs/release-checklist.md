@@ -4,8 +4,8 @@
 
 ## 当前候选
 
-- 提交：`ea5583d`
-- 日期：2026-08-29
+- 提交：`6100939`
+- 日期：2026-08-31
 - 发布信任级别：Windows 未签名；macOS ad-hoc、未公证
 - 发布方式：GitHub Draft Release，人工核对后发布
 
@@ -20,7 +20,7 @@
 | 前端依赖安装 | 通过 | `pnpm install --frozen-lockfile --ignore-scripts` |
 | 前端审计 | 通过 | macOS 官方 registry 复核，0 个漏洞；用户镜像不支持端点时需临时切换官方源 |
 | 前端 lint/TypeScript | 通过 | `pnpm check:frontend` |
-| 前端测试 | 待执行 | 需在候选提交 `ea5583d` 重新采集证据 |
+| 前端测试 | 通过 | Windows/macOS：60 个文件、336 项测试 |
 | 前端生产构建 | 通过 | `pnpm --dir apps/desktop build` |
 | 发布静态预检 | 通过 | `pnpm verify:release`；root/desktop 命令、Tauri 启动配置、tag-bound 工作流、锁定 action、安装说明和 `dist/.gitkeep` 均通过 |
 | 兼容性契约 | 通过 | `cargo test -p skillhub-adapters --test profile_contract` |
@@ -30,7 +30,7 @@
 | 性能基准 | 待执行 | 需要在本提交重新采集证据 |
 | Windows NSIS | 环境受限 | Rust release 编译通过；NSIS 工具下载被本机网络策略中止 |
 | macOS Universal DMG | 环境受限 | ARM64 编译通过；x86_64 Rust target 未安装且下载受网络阻塞 |
-| Agent 真机接入 | 部分通过 | Codex CLI、Claude Code 文件级通过；应用门面返回 `cli.not_connected` |
+| Agent 真机接入 | 部分通过 | macOS Codex CLI、Claude Code 文件级通过；其余客户端未安装或未完成应用级接入 |
 
 ## 发布前人工确认
 
