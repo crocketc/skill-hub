@@ -82,11 +82,11 @@ git commit -m "feat: connect deployment plan query"
 - Consumes: `PrepareDeployment`, `CommitDeployment`, `DeploymentService`, `DeploymentBackend`, `DeploymentRepository`.
 - Produces: `AppCommandResult::PreparedDeployment` and `AppCommandResult::DeploymentSummary` with per-target status and structured error codes.
 
-- [ ] **Step 1: Write failing command tests**
+- [x] **Step 1: Write failing command tests**
 
 Cover a successful managed-copy deployment, a no-op re-run, a target permission failure that leaves the source intact and returns `committed: false`, and reuse of the prepared operation after a partial failure.
 
-- [ ] **Step 2: Run the focused tests and verify failure**
+- [x] **Step 2: Run the focused tests and verify failure**
 
 Run:
 
@@ -97,11 +97,11 @@ cargo test -p skillhub-core --test deploy_flow
 
 Expected: command tests fail because `LocalApplicationFacade::execute` currently routes deployment commands to `execute.unsupported`.
 
-- [ ] **Step 3: Implement the filesystem deployment backend**
+- [x] **Step 3: Implement the filesystem deployment backend**
 
 Use the existing planner-selected mode: create a symbolic link when supported, use the Windows directory junction fallback when selected, and otherwise copy into a managed destination. Before mutation, reject an occupied unknown target; after success, persist `DeploymentRecord` with expected and observed hashes. On a per-target failure, return a failed result without deleting the central-library source and keep the prepared operation for retry.
 
-- [ ] **Step 4: Run focused tests and verify recovery behavior**
+- [x] **Step 4: Run focused tests and verify recovery behavior**
 
 Run:
 
@@ -113,11 +113,11 @@ cargo test -p skillhub-storage --test deployment_repository
 
 Expected: all success, no-op, permission, partial-failure, and retry tests pass.
 
-- [ ] **Step 5: Regenerate and verify TypeScript bindings**
+- [x] **Step 5: Regenerate and verify TypeScript bindings**
 
 Run the repository binding-generation test and ensure `apps/desktop/src/api/bindings.ts` changes only through the generated output.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```text
 git add crates/skillhub-application crates/skillhub-storage apps/desktop/src/api/bindings.ts

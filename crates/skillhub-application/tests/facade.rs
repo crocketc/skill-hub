@@ -1,15 +1,17 @@
 use skillhub_application::LocalApplicationFacade;
 use skillhub_core::{
     api::{
-        AnalyzeImport, AppCommandResult, AppQueryResult, DiffVersions, DiscoverImportCandidates,
-        GetBasicCheckResult, GetDeploymentPlan, GetDeploymentRelations, GetSkill, ListDeployments,
-        ListFindings, ListMarkdownFiles, ListSkills, ListVersions, PrepareImport, ReadMarkdownFile,
+        AnalyzeImport, AppCommandResult, AppQueryResult, CommitDeployment, DiffVersions,
+        DiscoverImportCandidates, GetBasicCheckResult, GetDeploymentPlan, GetDeploymentRelations,
+        GetSkill, ListDeployments, ListFindings, ListMarkdownFiles, ListSkills, ListVersions,
+        PrepareDeployment, PrepareImport, ReadMarkdownFile,
     },
     catalog::{CatalogRepository, Skill},
     check::{CheckKind, CheckState},
     deployment::{
-        DeploymentMode, DeploymentPlanRequest, DeploymentRecord, DeploymentRepository,
-        DeploymentState, RegisteredTargetIndex, TargetFact, TargetFactSource,
+        DeploymentMode, DeploymentPlan, DeploymentPlanRequest, DeploymentRecord,
+        DeploymentRepository, DeploymentState, RegisteredTargetIndex, TargetChange, TargetFact,
+        TargetFactSource, TargetPlan,
     },
     import::ImportCandidate,
     search::{SearchDocument, SearchQuery},
@@ -741,6 +743,192 @@ async fn deployment_plan_query_rejects_unregistered_target() {
         .await
         .expect_err("unregistered target should fail");
     assert_eq!(error.code, ErrorCode::ObjectNotFound);
+}
+
+#[tokio::test]
+async fn deployment_commands_prepare_commit_and_persist_managed_copy() {
+    let database = Database::open_in_memory().expect("database");
+    let skill = Skill::new(skillhub_core::SkillId::new(), "Deployable");
+    database
+        .catalog_repository()
+        .expect("catalog repository")
+        .insert(&skill)
+        .await
+        .expect("insert skill");
+    let source = tempfile::tempdir().expect("source");
+    std::fs::write(source.path().join("SKILL.md"), "# Deployable\n").expect("write source");
+    let target = tempfile::tempdir().expect("target");
+    let version_id = skillhub_core::VersionId::parse(
+        "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    )
+    .expect("version id");
+    database
+        .connection_for_test()
+        .execute(
+            "INSERT INTO versions (id, skill_id, content_hash, manifest_json, created_at) VALUES (?1, ?2, 'hash', '{}', 0)",
+            rusqlite::params![version_id.to_string(), skill.id().to_string()],
+        )
+        .expect("insert version");
+    let target_id = skillhub_core::physical_id_for_path(target.path()).expect("target id");
+    database
+        .connection_for_test()
+        .execute(
+            "INSERT INTO targets (id, agent_id, scope, path, created_at) VALUES (?1, 'agent-codex', 'global', ?2, 0)",
+            rusqlite::params![target_id, target.path().to_string_lossy().into_owned()],
+        )
+        .expect("insert target");
+    let plan = DeploymentPlan {
+        skill_id: skill.id(),
+        version_id: version_id.clone(),
+        runtime_name: "deployable".into(),
+        mode: DeploymentMode::ManagedCopy,
+        warnings: Vec::new(),
+        conflicts: Vec::new(),
+        targets: vec![TargetPlan {
+            physical_target_id: target_id,
+            logical_target_ids: vec!["agent-codex".into()],
+            target_path: target.path().to_string_lossy().into_owned(),
+            destination_path: target
+                .path()
+                .join("deployable")
+                .to_string_lossy()
+                .into_owned(),
+            source_path: source.path().to_string_lossy().into_owned(),
+            runtime_name: "deployable".into(),
+            skill_id: skill.id(),
+            version_id: version_id.clone(),
+            mode: DeploymentMode::ManagedCopy,
+            change: TargetChange::Create,
+            warnings: Vec::new(),
+            conflicts: Vec::new(),
+        }],
+    };
+    let library_root = tempfile::tempdir().expect("library root");
+    CentralLibrary::initialize(library_root.path()).expect("central library");
+    let facade = LocalApplicationFacade::new_with_library(database, library_root.path());
+    let prepared = facade
+        .execute(AppCommand::PrepareDeployment(PrepareDeployment { plan }))
+        .await
+        .expect("prepare deployment");
+    let AppCommandResult::PreparedDeployment(prepared) = prepared else {
+        panic!("expected prepared deployment");
+    };
+    let summary = facade
+        .execute(AppCommand::CommitDeployment(CommitDeployment {
+            prepared_deployment_id: prepared.id,
+        }))
+        .await
+        .expect("commit deployment");
+    let AppCommandResult::DeploymentSummary(summary) = summary else {
+        panic!("expected deployment summary");
+    };
+    assert!(summary.committed);
+    assert!(target.path().join("deployable/SKILL.md").is_file());
+    let records = facade
+        .query(RootAppQuery::ListDeployments(ListDeployments {
+            skill_id: Some(skill.id()),
+        }))
+        .await
+        .expect("deployment records");
+    let AppQueryResult::Deployments(records) = records else {
+        panic!("expected deployment records");
+    };
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0].version_id, version_id);
+}
+
+#[tokio::test]
+async fn failed_deployment_keeps_prepared_operation_and_source_for_retry() {
+    let database = Database::open_in_memory().expect("database");
+    let skill = Skill::new(skillhub_core::SkillId::new(), "Retryable");
+    database
+        .catalog_repository()
+        .expect("catalog repository")
+        .insert(&skill)
+        .await
+        .expect("insert skill");
+    let source = tempfile::tempdir().expect("source");
+    let source_file = source.path().join("SKILL.md");
+    std::fs::write(&source_file, "# Retryable\n").expect("write source");
+    let target = tempfile::tempdir().expect("target");
+    let version_id = skillhub_core::VersionId::parse(
+        "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    )
+    .expect("version id");
+    let target_id = skillhub_core::physical_id_for_path(target.path()).expect("target id");
+    database
+        .connection_for_test()
+        .execute(
+            "INSERT INTO versions (id, skill_id, content_hash, manifest_json, created_at) VALUES (?1, ?2, 'hash', '{}', 0)",
+            rusqlite::params![version_id.to_string(), skill.id().to_string()],
+        )
+        .expect("insert version");
+    database
+        .connection_for_test()
+        .execute(
+            "INSERT INTO targets (id, agent_id, scope, path, created_at) VALUES (?1, 'agent-codex', 'global', ?2, 0)",
+            rusqlite::params![target_id, target.path().to_string_lossy().into_owned()],
+        )
+        .expect("insert target");
+    let missing_parent = target.path().join("not-ready");
+    let plan = DeploymentPlan {
+        skill_id: skill.id(),
+        version_id: version_id.clone(),
+        runtime_name: "retryable".into(),
+        mode: DeploymentMode::ManagedCopy,
+        warnings: Vec::new(),
+        conflicts: Vec::new(),
+        targets: vec![TargetPlan {
+            physical_target_id: target_id,
+            logical_target_ids: vec!["agent-codex".into()],
+            target_path: missing_parent.to_string_lossy().into_owned(),
+            destination_path: missing_parent
+                .join("retryable")
+                .to_string_lossy()
+                .into_owned(),
+            source_path: source.path().to_string_lossy().into_owned(),
+            runtime_name: "retryable".into(),
+            skill_id: skill.id(),
+            version_id: version_id.clone(),
+            mode: DeploymentMode::ManagedCopy,
+            change: TargetChange::Create,
+            warnings: Vec::new(),
+            conflicts: Vec::new(),
+        }],
+    };
+    let library_root = tempfile::tempdir().expect("library root");
+    CentralLibrary::initialize(library_root.path()).expect("central library");
+    let facade = LocalApplicationFacade::new_with_library(database, library_root.path());
+    let prepared = facade
+        .execute(AppCommand::PrepareDeployment(PrepareDeployment { plan }))
+        .await
+        .expect("prepare deployment");
+    let AppCommandResult::PreparedDeployment(prepared) = prepared else {
+        panic!("expected prepared deployment");
+    };
+    let first = facade
+        .execute(AppCommand::CommitDeployment(CommitDeployment {
+            prepared_deployment_id: prepared.id,
+        }))
+        .await
+        .expect("failed commit should return summary");
+    let AppCommandResult::DeploymentSummary(first) = first else {
+        panic!("expected deployment summary");
+    };
+    assert!(!first.committed);
+    assert!(source_file.is_file());
+    std::fs::create_dir_all(&missing_parent).expect("repair target");
+    let second = facade
+        .execute(AppCommand::CommitDeployment(CommitDeployment {
+            prepared_deployment_id: prepared.id,
+        }))
+        .await
+        .expect("retry commit");
+    let AppCommandResult::DeploymentSummary(second) = second else {
+        panic!("expected deployment summary");
+    };
+    assert!(second.committed);
+    assert!(missing_parent.join("retryable/SKILL.md").is_file());
 }
 
 #[tokio::test]

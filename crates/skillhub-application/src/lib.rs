@@ -2,14 +2,17 @@
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use async_trait::async_trait;
+use skillhub_adapters::deployment::DeploymentFilesystem;
 use skillhub_adapters::import::SkillDetector;
-use skillhub_core::application::PreparedImport;
+use skillhub_core::application::{DeploymentBackend, DeploymentService, PreparedImport};
 use skillhub_core::catalog::Skill;
-use skillhub_core::deployment::{DeploymentPlanRequest, RegisteredTargetIndex};
+use skillhub_core::deployment::{
+    DeploymentPlanRequest, DeploymentRecord, DeploymentState, RegisteredTargetIndex, TargetPlan,
+};
 use skillhub_core::{
     AppCommand, AppCommandResult, AppError, AppQuery, AppQueryResult, AppResult, ApplicationFacade,
     ErrorCode, OperationId, RecoveryAction, Severity,
@@ -20,12 +23,86 @@ use skillhub_storage::{CentralLibrary, Database, LibraryPaths, VersionStore};
 /// in one request use the same day boundary. Production uses the current UTC
 /// date; tests can inject a fixed value with [`LocalApplicationFacade::new_with_today`].
 pub struct LocalApplicationFacade {
-    database: Mutex<Database>,
+    database: Arc<Mutex<Database>>,
     today: (i32, u8, u8),
     library: Option<VersionStore>,
     library_root: Option<PathBuf>,
     deployment_targets: Option<RegisteredTargetIndex>,
+    deployment_service: Arc<DeploymentService<LocalDeploymentBackend>>,
     prepared_imports: Mutex<HashMap<OperationId, PreparedImport>>,
+}
+
+struct LocalDeploymentBackend {
+    database: Arc<Mutex<Database>>,
+    library_root: Option<PathBuf>,
+    filesystem: DeploymentFilesystem,
+}
+
+impl LocalDeploymentBackend {
+    fn new(database: Arc<Mutex<Database>>, library_root: Option<PathBuf>) -> Self {
+        Self {
+            database,
+            library_root,
+            filesystem: DeploymentFilesystem::new(),
+        }
+    }
+
+    fn materialized_source(&self, target: &TargetPlan) -> AppResult<PathBuf> {
+        let source = PathBuf::from(&target.source_path);
+        if source.is_dir() {
+            return Ok(source);
+        }
+        let Some(library_root) = &self.library_root else {
+            return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                .with_param("detail", "central library source is unavailable")
+                .with_action(RecoveryAction::Retry));
+        };
+        let paths = LibraryPaths::from_root(library_root.clone());
+        let materialized = paths
+            .management_dir
+            .join("deployment-trees")
+            .join(target.skill_id.to_string())
+            .join(target.version_id.as_str());
+        if !materialized.is_dir() {
+            std::fs::create_dir_all(&materialized).map_err(|error| {
+                AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                    .with_param("io_kind", format!("{:?}", error.kind()))
+                    .with_action(RecoveryAction::Retry)
+            })?;
+            VersionStore::new(paths).materialize(&target.version_id, &materialized)?;
+        }
+        Ok(materialized)
+    }
+}
+
+#[async_trait]
+impl DeploymentBackend for LocalDeploymentBackend {
+    async fn apply_target(&self, target: &TargetPlan) -> AppResult<DeploymentRecord> {
+        let source = self.materialized_source(target)?;
+        let mut effective = target.clone();
+        effective.source_path = source.to_string_lossy().into_owned();
+        let prepared = self.filesystem.prepare(&effective)?;
+        let applied = self.filesystem.apply(prepared)?;
+        let record = DeploymentRecord {
+            id: skillhub_core::DeploymentId::new(),
+            skill_id: target.skill_id,
+            version_id: target.version_id.clone(),
+            target_id: target.physical_target_id.clone(),
+            state: DeploymentState::Deployed,
+            mode: target.mode,
+            managed: true,
+            runtime_name: target.runtime_name.clone(),
+            expected_hash: applied.ownership.expected_hash,
+            observed_hash: Some(applied.observed_tree_hash),
+        };
+        let database = self.database.lock().map_err(|_| {
+            AppError::new(ErrorCode::InternalError, Severity::Error)
+                .with_param("operation", "execute.commit_deployment")
+                .with_action(RecoveryAction::Retry)
+        })?;
+        database.deployment_repository().insert_sync(&record)?;
+        Ok(record)
+    }
 }
 
 impl LocalApplicationFacade {
@@ -67,26 +144,35 @@ impl LocalApplicationFacade {
 
     /// Creates a facade with an explicit date boundary for deterministic tests.
     pub fn new_with_today(database: Database, today: (i32, u8, u8)) -> Self {
+        let database = Arc::new(Mutex::new(database));
+        let deployment_service = Arc::new(DeploymentService::new(Arc::new(
+            LocalDeploymentBackend::new(database.clone(), None),
+        )));
         Self {
-            database: Mutex::new(database),
+            database,
             today,
             library: None,
             library_root: None,
             deployment_targets: None,
+            deployment_service,
             prepared_imports: Mutex::new(HashMap::new()),
         }
     }
 
     /// Creates a facade with read-only access to a central library root.
     pub fn new_with_library(database: Database, library_root: impl AsRef<Path>) -> Self {
+        let library_root = library_root.as_ref().to_path_buf();
+        let database = Arc::new(Mutex::new(database));
+        let deployment_service = Arc::new(DeploymentService::new(Arc::new(
+            LocalDeploymentBackend::new(database.clone(), Some(library_root.clone())),
+        )));
         Self {
-            database: Mutex::new(database),
+            database,
             today: current_utc_date(),
-            library: Some(VersionStore::new(LibraryPaths::from_root(
-                library_root.as_ref(),
-            ))),
-            library_root: Some(library_root.as_ref().to_path_buf()),
+            library: Some(VersionStore::new(LibraryPaths::from_root(&library_root))),
+            library_root: Some(library_root),
             deployment_targets: None,
+            deployment_service,
             prepared_imports: Mutex::new(HashMap::new()),
         }
     }
@@ -123,6 +209,12 @@ impl ApplicationFacade for LocalApplicationFacade {
     async fn execute(&self, command: AppCommand) -> AppResult<AppCommandResult> {
         let operation = match command {
             AppCommand::CancelOperation { .. } => "execute.cancel_operation",
+            AppCommand::PrepareDeployment(request) => {
+                return self.prepare_deployment(request.plan).await
+            }
+            AppCommand::CommitDeployment(request) => {
+                return self.commit_deployment(request.prepared_deployment_id).await
+            }
             AppCommand::PrepareImport(request) => return self.prepare_import(request),
             AppCommand::CommitImport(request) => return self.commit_import(request),
             AppCommand::CancelImport { prepared_import_id } => {
@@ -242,6 +334,19 @@ impl ApplicationFacade for LocalApplicationFacade {
 }
 
 impl LocalApplicationFacade {
+    async fn prepare_deployment(
+        &self,
+        plan: skillhub_core::DeploymentPlan,
+    ) -> AppResult<AppCommandResult> {
+        let prepared = self.deployment_service.prepare(plan).await?;
+        Ok(AppCommandResult::PreparedDeployment(Box::new(prepared)))
+    }
+
+    async fn commit_deployment(&self, id: OperationId) -> AppResult<AppCommandResult> {
+        let summary = self.deployment_service.commit(id).await?;
+        Ok(AppCommandResult::DeploymentSummary(Box::new(summary)))
+    }
+
     fn get_deployment_plan(&self, request: DeploymentPlanRequest) -> AppResult<AppQueryResult> {
         let resolver = self
             .deployment_targets

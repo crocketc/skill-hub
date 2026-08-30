@@ -57,11 +57,10 @@ impl<'a> DeploymentRepositorySqlite<'a> {
         })
         .collect()
     }
-}
 
-#[async_trait(?Send)]
-impl DeploymentRepositoryPort for DeploymentRepositorySqlite<'_> {
-    async fn insert(&self, deployment: &DeploymentRecord) -> AppResult<()> {
+    /// Synchronous write used by filesystem-backed application operations.
+    /// The caller already serializes access to the open database connection.
+    pub fn insert_sync(&self, deployment: &DeploymentRecord) -> AppResult<()> {
         self.database
             .connection
             .execute(
@@ -82,6 +81,13 @@ impl DeploymentRepositoryPort for DeploymentRepositorySqlite<'_> {
             )
             .map(|_| ())
             .map_err(database_error)
+    }
+}
+
+#[async_trait(?Send)]
+impl DeploymentRepositoryPort for DeploymentRepositorySqlite<'_> {
+    async fn insert(&self, deployment: &DeploymentRecord) -> AppResult<()> {
+        self.insert_sync(deployment)
     }
 
     async fn get(&self, id: DeploymentId) -> AppResult<Option<DeploymentRecord>> {
