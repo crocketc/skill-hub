@@ -137,7 +137,7 @@ pnpm --dir apps/desktop exec vitest run src/features/import/nativeApi.test.ts sr
 - [x] **Step 4: Run frontend focused tests, typecheck, lint and build**
 
 ```text
-pnpm --dir apps/desktop exec vitest run src/features/import/nativeFacade.test.ts src/features/import/ImportWizard.test.tsx
+pnpm --dir apps/desktop exec vitest run src/features/import/nativeApi.test.ts src/features/import/ImportWizard.test.tsx
 pnpm --dir apps/desktop typecheck
 pnpm --dir apps/desktop lint
 pnpm --dir apps/desktop build
