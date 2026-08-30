@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import { executeCommand, queryApplication } from "../../api/bindings";
-import { nativeSkillDetailFacade, setNativeFindingDisposition } from "./nativeApi";
+import {
+  nativeSkillDetailFacade,
+  setNativeCurrentVersion,
+  setNativeFindingDisposition,
+} from "./nativeApi";
 
 vi.mock("../../api/bindings", () => ({
   executeCommand: vi.fn(),
@@ -184,6 +188,25 @@ describe("native skill detail facade", () => {
         disposition: "acknowledged",
         high_risk_confirmed: true,
       },
+    });
+  });
+
+  it("switches the current version through the typed native command", async () => {
+    vi.clearAllMocks();
+    vi.mocked(executeCommand).mockResolvedValue({
+      type: "operation_summary",
+      payload: {
+        operation_id: "op-1",
+        phase: "committed",
+        message_code: "catalog.current_version_changed",
+        error_code: null,
+      },
+    });
+
+    await expect(setNativeCurrentVersion("skill-1", "sha256:bbb")).resolves.toBeUndefined();
+    expect(executeCommand).toHaveBeenCalledWith({
+      type: "set_current_version",
+      payload: { skill_id: "skill-1", version_id: "sha256:bbb" },
     });
   });
 });

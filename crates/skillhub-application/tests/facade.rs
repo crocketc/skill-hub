@@ -10,8 +10,8 @@ use skillhub_core::{
         GetDeploymentRelations, GetReconcilePlan, GetRemovalImpact, GetSkill, KeepIndependentCopy,
         ListDeployments, ListFindings, ListMarkdownFiles, ListSkills, ListVersions,
         PrepareDeployment, PrepareImport, PrepareUndeploy, ReadMarkdownFile, RecheckBasic,
-        RenameSkill, RunBasicCheck, RunLlmSafetyCheck, SetFindingDisposition, SetLifecycle,
-        SetMetadata, SetTrial,
+        RenameSkill, RunBasicCheck, RunLlmSafetyCheck, SetCurrentVersion, SetFindingDisposition,
+        SetLifecycle, SetMetadata, SetTrial,
     },
     catalog::{CatalogRepository, Skill},
     check::{CheckKind, CheckState, FindingDisposition},
@@ -564,6 +564,97 @@ async fn markdown_queries_read_the_current_version_as_read_only_content() {
         panic!("expected version diff");
     };
     assert!(diff.added.is_empty());
+}
+
+#[tokio::test]
+async fn current_version_command_switches_only_to_a_version_of_the_same_skill() {
+    let database = Database::open_in_memory().expect("database");
+    let skill = Skill::new(skillhub_core::SkillId::new(), "Versioned skill");
+    let other_skill = Skill::new(skillhub_core::SkillId::new(), "Other skill");
+    database
+        .catalog_repository()
+        .expect("catalog repository")
+        .insert(&skill)
+        .await
+        .expect("insert skill");
+    database
+        .catalog_repository()
+        .expect("catalog repository")
+        .insert(&other_skill)
+        .await
+        .expect("insert other skill");
+
+    let root = tempfile::tempdir().expect("library root");
+    let source_a = tempfile::tempdir().expect("source a");
+    std::fs::write(source_a.path().join("SKILL.md"), "# First\n").expect("write first");
+    let source_b = tempfile::tempdir().expect("source b");
+    std::fs::write(source_b.path().join("SKILL.md"), "# Second\n").expect("write second");
+    let source_other = tempfile::tempdir().expect("other source");
+    std::fs::write(source_other.path().join("SKILL.md"), "# Other\n").expect("write other");
+    let library = CentralLibrary::initialize(root.path()).expect("central library");
+    let store = VersionStore::from_library(&library);
+    let first = store
+        .capture(skill.id(), source_a.path())
+        .expect("capture first");
+    let second = store
+        .capture(skill.id(), source_b.path())
+        .expect("capture second");
+    let other = store
+        .capture(other_skill.id(), source_other.path())
+        .expect("capture other");
+    store
+        .set_current(skill.id(), &first.id)
+        .expect("set initial current");
+
+    let facade = LocalApplicationFacade::new_with_library(database, root.path());
+    let result = facade
+        .execute(AppCommand::SetCurrentVersion(SetCurrentVersion {
+            skill_id: skill.id(),
+            version_id: second.id.clone(),
+        }))
+        .await
+        .expect("switch current version");
+    assert!(
+        matches!(result, AppCommandResult::OperationSummary(summary) if summary.phase == skillhub_core::OperationPhase::Committed)
+    );
+
+    let detail = facade
+        .query(RootAppQuery::GetSkill(GetSkill {
+            skill_id: skill.id(),
+        }))
+        .await
+        .expect("skill detail");
+    let AppQueryResult::Skill(detail) = detail else {
+        panic!("expected skill detail");
+    };
+    assert_eq!(detail.current_version, Some(second.id.clone()));
+    assert_eq!(
+        CentralLibrary::initialize(root.path())
+            .expect("central library")
+            .load_portable_skill(skill.id())
+            .expect("portable skill")
+            .and_then(|(_, current)| current),
+        Some(second.id.clone())
+    );
+
+    let error = facade
+        .execute(AppCommand::SetCurrentVersion(SetCurrentVersion {
+            skill_id: skill.id(),
+            version_id: other.id,
+        }))
+        .await
+        .expect_err("cross-skill version must be rejected");
+    assert_eq!(error.code, ErrorCode::InvalidInput);
+    let current = facade
+        .query(RootAppQuery::GetSkill(GetSkill {
+            skill_id: skill.id(),
+        }))
+        .await
+        .expect("skill detail after rejection");
+    let AppQueryResult::Skill(current) = current else {
+        panic!("expected skill detail");
+    };
+    assert_eq!(current.current_version, Some(second.id));
 }
 
 #[tokio::test]

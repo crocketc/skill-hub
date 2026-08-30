@@ -152,3 +152,15 @@ export async function setNativeFindingDisposition(
     throw unavailableResult();
   }
 }
+
+/** Switches the catalog pointer to an existing version after native validation. */
+export async function setNativeCurrentVersion(
+  skillId: string,
+  versionId: string,
+): Promise<void> {
+  const result: AppCommandResult = await executeCommand({
+    type: "set_current_version",
+    payload: { skill_id: skillId, version_id: versionId },
+  });
+  if (result.type !== "operation_summary") throw unavailableResult();
+}
