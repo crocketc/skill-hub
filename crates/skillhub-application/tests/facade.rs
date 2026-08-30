@@ -580,8 +580,7 @@ async fn backup_preflight_reads_current_skill_content_and_rejects_unscoped_selec
         .expect("insert skill");
     let root = tempfile::tempdir().expect("library root");
     let source = tempfile::tempdir().expect("source");
-    std::fs::write(source.path().join("SKILL.md"), "# Safe backup\n")
-        .expect("write skill");
+    std::fs::write(source.path().join("SKILL.md"), "# Safe backup\n").expect("write skill");
     let library = CentralLibrary::initialize(root.path()).expect("central library");
     let store = VersionStore::from_library(&library);
     let version = store
@@ -596,9 +595,11 @@ async fn backup_preflight_reads_current_skill_content_and_rejects_unscoped_selec
 
     let facade = LocalApplicationFacade::new_with_library(database, root.path());
     let result = facade
-        .execute(AppCommand::PrepareBackup(skillhub_core::api::PrepareBackup {
-            scope: BackupScope::Full,
-        }))
+        .execute(AppCommand::PrepareBackup(
+            skillhub_core::api::PrepareBackup {
+                scope: BackupScope::Full,
+            },
+        ))
         .await
         .expect("backup plan");
     let AppCommandResult::BackupPlan(plan) = result else {
@@ -608,9 +609,11 @@ async fn backup_preflight_reads_current_skill_content_and_rejects_unscoped_selec
     assert!(plan.sensitive_items.is_empty());
 
     let error = facade
-        .execute(AppCommand::PrepareBackup(skillhub_core::api::PrepareBackup {
-            scope: BackupScope::SelectedSkills,
-        }))
+        .execute(AppCommand::PrepareBackup(
+            skillhub_core::api::PrepareBackup {
+                scope: BackupScope::SelectedSkills,
+            },
+        ))
         .await
         .expect_err("selected scope should require skill IDs");
     assert_eq!(error.code, ErrorCode::InvalidInput);
@@ -628,8 +631,7 @@ async fn backup_preflight_reports_sensitive_skill_content() {
         .expect("insert skill");
     let root = tempfile::tempdir().expect("library root");
     let source = tempfile::tempdir().expect("source");
-    std::fs::write(source.path().join("SKILL.md"), "api_key=placeholder\n")
-        .expect("write skill");
+    std::fs::write(source.path().join("SKILL.md"), "api_key=placeholder\n").expect("write skill");
     let library = CentralLibrary::initialize(root.path()).expect("central library");
     let store = VersionStore::from_library(&library);
     let version = store
@@ -644,9 +646,11 @@ async fn backup_preflight_reports_sensitive_skill_content() {
 
     let facade = LocalApplicationFacade::new_with_library(database, root.path());
     let result = facade
-        .execute(AppCommand::PrepareBackup(skillhub_core::api::PrepareBackup {
-            scope: BackupScope::Full,
-        }))
+        .execute(AppCommand::PrepareBackup(
+            skillhub_core::api::PrepareBackup {
+                scope: BackupScope::Full,
+            },
+        ))
         .await
         .expect("backup plan");
     let AppCommandResult::BackupPlan(plan) = result else {

@@ -646,7 +646,11 @@ impl LocalApplicationFacade {
             })?;
             skills.push((skill_id, content));
         }
-        Ok(BackupInput::new(BackupScope::Full, portable_metadata, skills))
+        Ok(BackupInput::new(
+            BackupScope::Full,
+            portable_metadata,
+            skills,
+        ))
     }
 
     async fn run_basic_check(
