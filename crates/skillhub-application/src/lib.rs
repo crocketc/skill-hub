@@ -14,18 +14,23 @@ use skillhub_core::api::{
     SetCurrentVersion, SetFindingDisposition, SetLifecycle, SetMetadata, SetTrial,
 };
 use skillhub_core::application::{
-    DeploymentBackend, DeploymentService, PreparedImport, ReconcileBackend, ReconcileService,
-    RemovalBackend, RemovalService,
+    CallPolicyBackend, CallPolicyService, DeploymentBackend, DeploymentService, HealthBackend,
+    HealthService, IgnoreBackend, IgnoreService, PreparedImport, ReconcileBackend,
+    ReconcileService, RecoveryBackend, RecoveryService, RemovalBackend, RemovalService,
 };
 use skillhub_core::backup::{
     BackupCreated, BackupInput, BackupPackage, BackupScope, SensitiveContentDecision,
 };
+use skillhub_core::call_policy::CallPolicyCapability;
+use skillhub_core::catalog::CallPolicy;
 use skillhub_core::catalog::{CatalogRepository, Skill};
 use skillhub_core::check::{CheckKind, CheckRun, CheckRunPhase, FindingDisposition};
 use skillhub_core::deployment::{
     DeploymentPlanRequest, DeploymentRecord, DeploymentState, RegisteredTargetIndex, TargetFact,
     TargetPlan,
 };
+use skillhub_core::health::{HealthFinding, RecoveryCandidate, RepairAction};
+use skillhub_core::ignore::IgnoreRule;
 use skillhub_core::llm::LlmTaskRunner;
 use skillhub_core::{
     physical_id_for_path, AllowedRoot, AppCommand, AppCommandResult, AppError, AppQuery,
@@ -48,6 +53,10 @@ pub struct LocalApplicationFacade {
     deployment_service: Arc<DeploymentService<LocalDeploymentBackend>>,
     removal_service: Arc<RemovalService<LocalDeploymentBackend>>,
     reconcile_service: Arc<ReconcileService<LocalDeploymentBackend>>,
+    health_service: Arc<HealthService<LocalHealthBackend>>,
+    recovery_service: Arc<RecoveryService<LocalRecoveryBackend>>,
+    call_policy_service: Arc<CallPolicyService<LocalCallPolicyBackend>>,
+    ignore_service: Arc<IgnoreService<LocalIgnoreBackend>>,
     llm_runner: Option<Arc<dyn LlmTaskRunner>>,
     prepared_imports: Mutex<HashMap<OperationId, PreparedImport>>,
     prepared_uninstall: Mutex<Option<skillhub_core::UninstallImpact>>,
@@ -537,6 +546,20 @@ impl LocalApplicationFacade {
         let reconcile_service = Arc::new(ReconcileService::new(Arc::new(
             LocalDeploymentBackend::new(database.clone(), None),
         )));
+        let health_service = Arc::new(HealthService::new(Arc::new(LocalHealthBackend {
+            database: database.clone(),
+        })));
+        let recovery_service = Arc::new(RecoveryService::new(Arc::new(LocalRecoveryBackend {
+            database: database.clone(),
+        })));
+        let call_policy_service =
+            Arc::new(CallPolicyService::new(Arc::new(LocalCallPolicyBackend {
+                database: database.clone(),
+                originals: Arc::new(Mutex::new(HashMap::new())),
+            })));
+        let ignore_service = Arc::new(IgnoreService::new(Arc::new(LocalIgnoreBackend {
+            rules: Arc::new(Mutex::new(Vec::new())),
+        })));
         Self {
             database,
             today,
@@ -546,6 +569,10 @@ impl LocalApplicationFacade {
             deployment_service,
             removal_service,
             reconcile_service,
+            health_service,
+            recovery_service,
+            call_policy_service,
+            ignore_service,
             llm_runner: None,
             prepared_imports: Mutex::new(HashMap::new()),
             prepared_uninstall: Mutex::new(None),
@@ -563,6 +590,20 @@ impl LocalApplicationFacade {
         let deployment_service = Arc::new(DeploymentService::new(backend.clone()));
         let removal_service = Arc::new(RemovalService::new(backend.clone()));
         let reconcile_service = Arc::new(ReconcileService::new(backend));
+        let health_service = Arc::new(HealthService::new(Arc::new(LocalHealthBackend {
+            database: database.clone(),
+        })));
+        let recovery_service = Arc::new(RecoveryService::new(Arc::new(LocalRecoveryBackend {
+            database: database.clone(),
+        })));
+        let call_policy_service =
+            Arc::new(CallPolicyService::new(Arc::new(LocalCallPolicyBackend {
+                database: database.clone(),
+                originals: Arc::new(Mutex::new(HashMap::new())),
+            })));
+        let ignore_service = Arc::new(IgnoreService::new(Arc::new(LocalIgnoreBackend {
+            rules: Arc::new(Mutex::new(Vec::new())),
+        })));
         Self {
             database,
             today: current_utc_date(),
@@ -572,6 +613,10 @@ impl LocalApplicationFacade {
             deployment_service,
             removal_service,
             reconcile_service,
+            health_service,
+            recovery_service,
+            call_policy_service,
+            ignore_service,
             llm_runner: None,
             prepared_imports: Mutex::new(HashMap::new()),
             prepared_uninstall: Mutex::new(None),
@@ -1437,6 +1482,97 @@ impl ApplicationFacade for LocalApplicationFacade {
                     .await?;
                 return Ok(AppCommandResult::RemovalResult(result));
             }
+            AppCommand::RunHealthCheck(_) => {
+                return self
+                    .health_service
+                    .run()
+                    .await
+                    .map(AppCommandResult::HealthReport);
+            }
+            AppCommand::PrepareRepair(request) => {
+                return self
+                    .health_service
+                    .prepare_repair(request.health_report_id, request.finding_index)
+                    .await
+                    .map(AppCommandResult::RepairPlan);
+            }
+            AppCommand::CommitRepair(request) => {
+                self.health_service.commit_repair(request.repair_id).await?;
+                return Ok(AppCommandResult::OperationSummary(
+                    skillhub_core::OperationSummary {
+                        operation_id: request.repair_id,
+                        phase: skillhub_core::OperationPhase::Committed,
+                        message_code: "health.repair_committed".to_owned(),
+                        error_code: None,
+                    },
+                ));
+            }
+            AppCommand::ResolveRecovery(request) => {
+                self.recovery_service
+                    .resolve(request.operation_id, request.action)
+                    .await?;
+                return Ok(AppCommandResult::OperationSummary(
+                    skillhub_core::OperationSummary {
+                        operation_id: request.operation_id,
+                        phase: if request.action == RecoveryAction::CompleteOperation {
+                            skillhub_core::OperationPhase::Committed
+                        } else {
+                            skillhub_core::OperationPhase::RolledBack
+                        },
+                        message_code: "recovery.resolved".to_owned(),
+                        error_code: None,
+                    },
+                ));
+            }
+            AppCommand::PrepareCallPolicyChange(request) => {
+                return self
+                    .call_policy_service
+                    .prepare(request.skill_id, request.policy)
+                    .await
+                    .map(AppCommandResult::CallPolicyPlan);
+            }
+            AppCommand::CommitCallPolicyChange(request) => {
+                self.call_policy_service.commit(request.plan_id).await?;
+                return Ok(AppCommandResult::OperationSummary(
+                    skillhub_core::OperationSummary {
+                        operation_id: request.plan_id,
+                        phase: skillhub_core::OperationPhase::Committed,
+                        message_code: "call_policy.change_committed".to_owned(),
+                        error_code: None,
+                    },
+                ));
+            }
+            AppCommand::RestoreOriginalCallPolicy(request) => {
+                self.call_policy_service
+                    .restore_original(request.skill_id)
+                    .await?;
+                return Ok(AppCommandResult::OperationSummary(
+                    skillhub_core::OperationSummary {
+                        operation_id: OperationId::new(),
+                        phase: skillhub_core::OperationPhase::Committed,
+                        message_code: "call_policy.restored".to_owned(),
+                        error_code: None,
+                    },
+                ));
+            }
+            AppCommand::CreateIgnoreRule(request) => {
+                return self
+                    .ignore_service
+                    .create(request.subject, request.reason, request.defer_until)
+                    .await
+                    .map(AppCommandResult::IgnoreRule);
+            }
+            AppCommand::RemoveIgnoreRule(request) => {
+                self.ignore_service.remove(request.rule_id).await?;
+                return Ok(AppCommandResult::OperationSummary(
+                    skillhub_core::OperationSummary {
+                        operation_id: OperationId::new(),
+                        phase: skillhub_core::OperationPhase::Committed,
+                        message_code: "ignore.removed".to_owned(),
+                        error_code: None,
+                    },
+                ));
+            }
             AppCommand::CollectDeploymentChanges(request) => {
                 return self
                     .reconcile_service
@@ -1715,6 +1851,27 @@ impl ApplicationFacade for LocalApplicationFacade {
                 .prepare_delete(request.skill_id)
                 .await
                 .map(AppQueryResult::RemovalImpact),
+            AppQuery::ListRecoveryCandidates => self
+                .recovery_service
+                .list()
+                .await
+                .map(AppQueryResult::RecoveryCandidates),
+            AppQuery::GetCallPolicy(request) => self
+                .call_policy_service
+                .inspect(request.skill_id)
+                .await
+                .map(|(capability, policy)| {
+                    AppQueryResult::CallPolicy(skillhub_core::CallPolicyResult {
+                        skill_id: request.skill_id,
+                        capability,
+                        policy,
+                    })
+                }),
+            AppQuery::ListIgnoreRules => self
+                .ignore_service
+                .list()
+                .await
+                .map(AppQueryResult::IgnoreRules),
             AppQuery::GetReconcilePlan(request) => self
                 .reconcile_service
                 .plan(request.deployment_id)
@@ -2371,12 +2528,530 @@ fn civil_date_from_days(days_since_epoch: i64) -> (i32, u8, u8) {
     (year as i32, month as u8, day as u8)
 }
 
+#[allow(clippy::items_after_test_module)]
 #[cfg(test)]
 mod tests {
-    use super::civil_date_from_days;
+    use super::{civil_date_from_days, LocalApplicationFacade};
+    use skillhub_core::api::{AppCommand, AppQuery};
+    use skillhub_core::catalog::{CallPolicy, Skill};
+    use skillhub_core::{
+        ApplicationFacade, IgnoreSubject, OperationRecord, OperationRepository, RecoveryAction,
+        SkillId,
+    };
+    use skillhub_storage::Database;
 
     #[test]
     fn converts_unix_epoch_to_utc_calendar_date() {
         assert_eq!(civil_date_from_days(0), (1970, 1, 1));
     }
+
+    #[tokio::test]
+    async fn facade_runs_health_and_lists_recovery_and_ignore_policy_state() {
+        let database = Database::open_in_memory().unwrap();
+        let skill_id = SkillId::new();
+        database
+            .catalog_repository()
+            .unwrap()
+            .insert_sync(&Skill::new(skill_id, "test"))
+            .unwrap();
+        let facade = LocalApplicationFacade::new(database);
+        let health = facade
+            .execute(AppCommand::RunHealthCheck(skillhub_core::RunHealthCheck))
+            .await
+            .unwrap();
+        assert!(matches!(
+            health,
+            skillhub_core::AppCommandResult::HealthReport(_)
+        ));
+
+        let recovery = facade
+            .query(AppQuery::ListRecoveryCandidates)
+            .await
+            .unwrap();
+        assert!(matches!(
+            recovery,
+            skillhub_core::AppQueryResult::RecoveryCandidates(_)
+        ));
+
+        let policy = facade
+            .query(AppQuery::GetCallPolicy(skillhub_core::GetCallPolicy {
+                skill_id,
+            }))
+            .await
+            .unwrap();
+        assert!(matches!(
+            policy,
+            skillhub_core::AppQueryResult::CallPolicy(_)
+        ));
+
+        let ignored = facade
+            .execute(AppCommand::CreateIgnoreRule(
+                skillhub_core::CreateIgnoreRule {
+                    subject: IgnoreSubject::exact_path("skills/test").unwrap(),
+                    reason: "test".into(),
+                    defer_until: None,
+                },
+            ))
+            .await
+            .unwrap();
+        assert!(matches!(
+            ignored,
+            skillhub_core::AppCommandResult::IgnoreRule(_)
+        ));
+    }
+
+    #[tokio::test]
+    async fn facade_commits_and_restores_policy_and_rejects_repeated_or_unknown_writes() {
+        let database = Database::open_in_memory().unwrap();
+        let skill_id = SkillId::new();
+        database
+            .catalog_repository()
+            .unwrap()
+            .insert_sync(&Skill::new(skill_id, "test"))
+            .unwrap();
+        let facade = LocalApplicationFacade::new(database);
+
+        let prepared = facade
+            .execute(AppCommand::PrepareCallPolicyChange(
+                skillhub_core::PrepareCallPolicyChange {
+                    skill_id,
+                    policy: CallPolicy::ManualOnly,
+                },
+            ))
+            .await
+            .unwrap();
+        let plan = match prepared {
+            skillhub_core::AppCommandResult::CallPolicyPlan(plan) => plan,
+            other => panic!("unexpected result: {other:?}"),
+        };
+        facade
+            .execute(AppCommand::CommitCallPolicyChange(
+                skillhub_core::CommitCallPolicyChange { plan_id: plan.id },
+            ))
+            .await
+            .unwrap();
+        assert_eq!(
+            facade
+                .query(AppQuery::GetCallPolicy(skillhub_core::GetCallPolicy {
+                    skill_id
+                }))
+                .await
+                .unwrap(),
+            skillhub_core::AppQueryResult::CallPolicy(skillhub_core::CallPolicyResult {
+                skill_id,
+                capability: skillhub_core::CallPolicyCapability::Editable,
+                policy: CallPolicy::ManualOnly,
+            })
+        );
+        let repeated = facade
+            .execute(AppCommand::CommitCallPolicyChange(
+                skillhub_core::CommitCallPolicyChange { plan_id: plan.id },
+            ))
+            .await
+            .unwrap_err();
+        assert_eq!(repeated.code, skillhub_core::ErrorCode::ObjectNotFound);
+        facade
+            .execute(AppCommand::RestoreOriginalCallPolicy(
+                skillhub_core::RestoreOriginalCallPolicy { skill_id },
+            ))
+            .await
+            .unwrap();
+        let unknown_restore = facade
+            .execute(AppCommand::RestoreOriginalCallPolicy(
+                skillhub_core::RestoreOriginalCallPolicy { skill_id },
+            ))
+            .await
+            .unwrap_err();
+        assert_eq!(
+            unknown_restore.code,
+            skillhub_core::ErrorCode::ObjectNotFound
+        );
+    }
+
+    #[tokio::test]
+    async fn facade_repairs_unfinished_operation_and_requires_valid_ignore_removal() {
+        let database = Database::open_in_memory().unwrap();
+        let operation_id = skillhub_core::OperationId::new();
+        database
+            .operation_repository()
+            .insert(&OperationRecord::planned(
+                operation_id,
+                "test",
+                "fingerprint",
+            ))
+            .await
+            .unwrap();
+        let facade = LocalApplicationFacade::new(database);
+
+        let candidates = facade
+            .query(AppQuery::ListRecoveryCandidates)
+            .await
+            .unwrap();
+        assert!(matches!(
+            candidates,
+            skillhub_core::AppQueryResult::RecoveryCandidates(ref values)
+                if values.len() == 1 && values[0].operation_id == operation_id
+        ));
+        let report = match facade
+            .execute(AppCommand::RunHealthCheck(skillhub_core::RunHealthCheck))
+            .await
+            .unwrap()
+        {
+            skillhub_core::AppCommandResult::HealthReport(report) => report,
+            other => panic!("unexpected result: {other:?}"),
+        };
+        let repair = match facade
+            .execute(AppCommand::PrepareRepair(skillhub_core::PrepareRepair {
+                health_report_id: report.id,
+                finding_index: 0,
+            }))
+            .await
+            .unwrap()
+        {
+            skillhub_core::AppCommandResult::RepairPlan(plan) => plan,
+            other => panic!("unexpected result: {other:?}"),
+        };
+        facade
+            .execute(AppCommand::CommitRepair(skillhub_core::CommitRepair {
+                repair_id: repair.id,
+            }))
+            .await
+            .unwrap();
+        assert!(matches!(
+            facade.query(AppQuery::ListRecoveryCandidates).await.unwrap(),
+            skillhub_core::AppQueryResult::RecoveryCandidates(ref values)
+                if values.len() == 1 && values[0].operation_id == operation_id
+        ));
+        facade
+            .execute(AppCommand::ResolveRecovery(
+                skillhub_core::ResolveRecovery {
+                    operation_id,
+                    action: RecoveryAction::RollbackOperation,
+                },
+            ))
+            .await
+            .unwrap();
+        assert!(matches!(
+            facade.query(AppQuery::ListRecoveryCandidates).await.unwrap(),
+            skillhub_core::AppQueryResult::RecoveryCandidates(values) if values.is_empty()
+        ));
+
+        let rule = match facade
+            .execute(AppCommand::CreateIgnoreRule(
+                skillhub_core::CreateIgnoreRule {
+                    subject: IgnoreSubject::exact_path("skills/test").unwrap(),
+                    reason: "test".into(),
+                    defer_until: None,
+                },
+            ))
+            .await
+            .unwrap()
+        {
+            skillhub_core::AppCommandResult::IgnoreRule(rule) => rule,
+            other => panic!("unexpected result: {other:?}"),
+        };
+        let duplicate = facade
+            .execute(AppCommand::CreateIgnoreRule(
+                skillhub_core::CreateIgnoreRule {
+                    subject: IgnoreSubject::exact_path("skills/test").unwrap(),
+                    reason: "duplicate".into(),
+                    defer_until: None,
+                },
+            ))
+            .await
+            .unwrap_err();
+        assert_eq!(duplicate.code, skillhub_core::ErrorCode::OperationConflict);
+        facade
+            .execute(AppCommand::RemoveIgnoreRule(
+                skillhub_core::RemoveIgnoreRule { rule_id: rule.id },
+            ))
+            .await
+            .unwrap();
+        let missing = facade
+            .execute(AppCommand::RemoveIgnoreRule(
+                skillhub_core::RemoveIgnoreRule {
+                    rule_id: "missing".into(),
+                },
+            ))
+            .await
+            .unwrap_err();
+        assert_eq!(missing.code, skillhub_core::ErrorCode::ObjectNotFound);
+
+        let invalid_recovery = facade
+            .execute(AppCommand::ResolveRecovery(
+                skillhub_core::ResolveRecovery {
+                    operation_id,
+                    action: RecoveryAction::Acknowledge,
+                },
+            ))
+            .await
+            .unwrap_err();
+        assert_eq!(
+            invalid_recovery.code,
+            skillhub_core::ErrorCode::ObjectNotFound
+        );
+    }
+}
+
+fn database_error(operation: &'static str, source: String) -> AppError {
+    AppError::new(ErrorCode::InternalError, Severity::Error)
+        .with_param("operation", operation)
+        .with_param("source", source)
+        .with_action(RecoveryAction::Retry)
+}
+
+#[async_trait]
+impl HealthBackend for LocalHealthBackend {
+    async fn check(&self) -> AppResult<Vec<HealthFinding>> {
+        let database = self.database.lock().map_err(|_| internal("health.check"))?;
+        let mut statement = database
+            .connection_for_test()
+            .prepare(
+                "SELECT operation_id FROM operations WHERE phase IN ('planned','prepared','applying','verifying') ORDER BY operation_id",
+            )
+            .map_err(|error| database_error("health.check", error.to_string()))?;
+        let rows = statement
+            .query_map([], |row| row.get::<_, String>(0))
+            .map_err(|error| database_error("health.check", error.to_string()))?;
+        let mut findings = Vec::new();
+        for row in rows {
+            row.map_err(|error| database_error("health.check", error.to_string()))?;
+            findings.push(HealthFinding {
+                code: "health.unfinished_operation".to_owned(),
+                severity: Severity::Warning,
+                repair: RepairAction::MarkOperationNeedsRecovery,
+            });
+        }
+        Ok(findings)
+    }
+
+    async fn repair(&self, finding: &HealthFinding) -> AppResult<()> {
+        if finding.repair != RepairAction::MarkOperationNeedsRecovery {
+            return Err(unsupported("health.repair"));
+        }
+        let database = self
+            .database
+            .lock()
+            .map_err(|_| internal("health.repair"))?;
+        database
+            .connection_for_test()
+            .execute(
+                "UPDATE operations SET phase='needs_recovery', state='needs_recovery' WHERE phase IN ('planned','prepared','applying','verifying')",
+                [],
+            )
+            .map_err(|error| database_error("health.repair", error.to_string()))?;
+        Ok(())
+    }
+}
+
+#[async_trait]
+impl RecoveryBackend for LocalRecoveryBackend {
+    async fn list_candidates(&self) -> AppResult<Vec<RecoveryCandidate>> {
+        let database = self
+            .database
+            .lock()
+            .map_err(|_| internal("recovery.list"))?;
+        let mut statement = database
+            .connection_for_test()
+            .prepare(
+                "SELECT operation_id FROM operations WHERE phase IN ('planned','prepared','applying','verifying','needs_recovery') ORDER BY operation_id",
+            )
+            .map_err(|error| database_error("recovery.list", error.to_string()))?;
+        let rows = statement
+            .query_map([], |row| row.get::<_, String>(0))
+            .map_err(|error| database_error("recovery.list", error.to_string()))?;
+        let mut candidates = Vec::new();
+        for row in rows {
+            let id = row
+                .map_err(|error| database_error("recovery.list", error.to_string()))?
+                .parse()
+                .map_err(|_| database_error("recovery.list", "invalid operation id".to_owned()))?;
+            candidates.push(RecoveryCandidate {
+                operation_id: id,
+                actions: vec![
+                    RecoveryAction::CompleteOperation,
+                    RecoveryAction::RollbackOperation,
+                ],
+            });
+        }
+        Ok(candidates)
+    }
+
+    async fn resolve(&self, operation_id: OperationId, action: RecoveryAction) -> AppResult<()> {
+        let phase = match action {
+            RecoveryAction::CompleteOperation => ("committed", "completed"),
+            RecoveryAction::RollbackOperation => ("rolled_back", "rolled_back"),
+            _ => return Err(unsupported("recovery.resolve")),
+        };
+        let database = self
+            .database
+            .lock()
+            .map_err(|_| internal("recovery.resolve"))?;
+        let operation_id = operation_id.to_string();
+        let changed = database
+            .connection_for_test()
+            .execute(
+                &format!(
+                    "UPDATE operations SET phase='{}', state='{}' WHERE operation_id='{}' AND phase IN ('planned','prepared','applying','verifying','needs_recovery')",
+                    phase.0, phase.1, operation_id
+                ),
+                [],
+            )
+            .map_err(|error| database_error("recovery.resolve", error.to_string()))?;
+        if changed == 0 {
+            return Err(AppError::new(ErrorCode::ObjectNotFound, Severity::Error)
+                .with_param("field", "recovery_candidate")
+                .with_action(RecoveryAction::Retry));
+        }
+        Ok(())
+    }
+}
+
+#[async_trait]
+impl CallPolicyBackend for LocalCallPolicyBackend {
+    async fn inspect(
+        &self,
+        skill_id: skillhub_core::SkillId,
+    ) -> AppResult<(CallPolicyCapability, CallPolicy)> {
+        let database = self
+            .database
+            .lock()
+            .map_err(|_| internal("call_policy.inspect"))?;
+        let skill = database
+            .catalog_repository()?
+            .get_sync(skill_id)?
+            .ok_or_else(|| {
+                AppError::new(ErrorCode::ObjectNotFound, Severity::Error)
+                    .with_param("field", "skill")
+                    .with_action(RecoveryAction::Retry)
+            })?;
+        Ok((CallPolicyCapability::Editable, skill.call_policy()))
+    }
+
+    async fn apply(&self, skill_id: skillhub_core::SkillId, policy: CallPolicy) -> AppResult<()> {
+        let database = self
+            .database
+            .lock()
+            .map_err(|_| internal("call_policy.apply"))?;
+        let repository = database.catalog_repository()?;
+        let skill = repository.get_sync(skill_id)?.ok_or_else(|| {
+            AppError::new(ErrorCode::ObjectNotFound, Severity::Error)
+                .with_param("field", "skill")
+                .with_action(RecoveryAction::Retry)
+        })?;
+        self.originals
+            .lock()
+            .map_err(|_| internal("call_policy.apply.original"))?
+            .entry(skill_id)
+            .or_insert_with(|| skill.call_policy());
+        let updated = Skill::from_parts(
+            skill.id(),
+            skill.display_name().to_owned(),
+            skill.runtime_name().to_owned(),
+            skill.original_description().to_owned(),
+            skill.translated_description().map(str::to_owned),
+            skill.note().map(str::to_owned),
+            skill.tags().clone(),
+            skill.author().map(str::to_owned),
+            skill.license().map(str::to_owned),
+            policy,
+            skill.lifecycle(),
+            skill.requirements().to_vec(),
+            skill.trial_due(),
+        )?;
+        repository.insert_sync(&updated)
+    }
+
+    async fn restore_original(&self, skill_id: skillhub_core::SkillId) -> AppResult<()> {
+        let original = self
+            .originals
+            .lock()
+            .map_err(|_| internal("call_policy.restore"))?
+            .remove(&skill_id)
+            .ok_or_else(|| {
+                AppError::new(ErrorCode::ObjectNotFound, Severity::Error)
+                    .with_param("field", "original_call_policy")
+                    .with_action(RecoveryAction::Retry)
+            })?;
+        let database = self
+            .database
+            .lock()
+            .map_err(|_| internal("call_policy.restore"))?;
+        let repository = database.catalog_repository()?;
+        let skill = repository.get_sync(skill_id)?.ok_or_else(|| {
+            AppError::new(ErrorCode::ObjectNotFound, Severity::Error)
+                .with_param("field", "skill")
+                .with_action(RecoveryAction::Retry)
+        })?;
+        let updated = Skill::from_parts(
+            skill.id(),
+            skill.display_name().to_owned(),
+            skill.runtime_name().to_owned(),
+            skill.original_description().to_owned(),
+            skill.translated_description().map(str::to_owned),
+            skill.note().map(str::to_owned),
+            skill.tags().clone(),
+            skill.author().map(str::to_owned),
+            skill.license().map(str::to_owned),
+            original,
+            skill.lifecycle(),
+            skill.requirements().to_vec(),
+            skill.trial_due(),
+        )?;
+        repository.insert_sync(&updated)
+    }
+}
+
+#[async_trait]
+impl IgnoreBackend for LocalIgnoreBackend {
+    async fn create(&self, mut rule: IgnoreRule) -> AppResult<IgnoreRule> {
+        rule.created_at = now_millis().to_string();
+        let mut rules = self.rules.lock().map_err(|_| internal("ignore.create"))?;
+        if rules
+            .iter()
+            .any(|existing| existing.subject == rule.subject)
+        {
+            return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                .with_param("reason", "ignore_rule_exists")
+                .with_action(RecoveryAction::Acknowledge));
+        }
+        rules.push(rule.clone());
+        Ok(rule)
+    }
+
+    async fn remove(&self, id: String) -> AppResult<()> {
+        let mut rules = self.rules.lock().map_err(|_| internal("ignore.remove"))?;
+        let Some(index) = rules.iter().position(|rule| rule.id == id) else {
+            return Err(AppError::new(ErrorCode::ObjectNotFound, Severity::Error)
+                .with_param("field", "ignore_rule")
+                .with_action(RecoveryAction::Retry));
+        };
+        rules.remove(index);
+        Ok(())
+    }
+
+    async fn list(&self) -> AppResult<Vec<IgnoreRule>> {
+        Ok(self
+            .rules
+            .lock()
+            .map_err(|_| internal("ignore.list"))?
+            .clone())
+    }
+}
+
+struct LocalHealthBackend {
+    database: Arc<Mutex<Database>>,
+}
+
+struct LocalRecoveryBackend {
+    database: Arc<Mutex<Database>>,
+}
+
+struct LocalCallPolicyBackend {
+    database: Arc<Mutex<Database>>,
+    originals: Arc<Mutex<HashMap<skillhub_core::SkillId, CallPolicy>>>,
+}
+
+struct LocalIgnoreBackend {
+    rules: Arc<Mutex<Vec<IgnoreRule>>>,
 }
