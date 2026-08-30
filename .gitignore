@@ -3,6 +3,7 @@
 /target/
 /node_modules/
 /apps/desktop/node_modules/
+/.pnpm-store/
 /apps/desktop/dist/*
 !/apps/desktop/dist/.gitkeep
 /apps/desktop/src-tauri/icons/
