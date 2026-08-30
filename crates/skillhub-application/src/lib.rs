@@ -7,10 +7,12 @@ use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use async_trait::async_trait;
+use skillhub_adapters::app_update::github_releases::GithubReleaseProvider;
 use skillhub_adapters::deployment::{DeploymentFilesystem, OwnershipProof};
 use skillhub_adapters::import::SkillDetector;
 use skillhub_adapters::scanner::ScanService;
 use skillhub_adapters::security::BasicScanner;
+use skillhub_adapters::source::SkillsShProvider;
 use skillhub_core::api::{
     ApplySourceUpdate, BasicCheckResult, CheckSourceUpdate, CreateCombination, CreateSkill,
     PinProjectSkillVersion, RelinkSource, RenameSkill, SaveMarkdownContent, SaveSkillContent,
@@ -72,6 +74,8 @@ pub struct LocalApplicationFacade {
     llm_runner: Option<Arc<dyn LlmTaskRunner>>,
     translation_records: Arc<Mutex<HashMap<(skillhub_core::SkillId, String), TranslationRecord>>>,
     evidence_repository: UsageEvidenceRepository,
+    app_update_provider: Arc<GithubReleaseProvider>,
+    source_search_provider: Arc<SkillsShProvider>,
     prepared_imports: Mutex<HashMap<OperationId, PreparedImport>>,
     prepared_uninstall: Mutex<Option<skillhub_core::UninstallImpact>>,
     scan_service: Mutex<ScanService>,
@@ -587,6 +591,80 @@ impl ReconcileBackend for LocalDeploymentBackend {
 }
 
 impl LocalApplicationFacade {
+    async fn check_application_update(
+        &self,
+        request: skillhub_core::CheckApplicationUpdate,
+    ) -> AppResult<AppQueryResult> {
+        let policy = self.with_database("query.check_application_update.policy", |database| {
+            database.application_update_repository().get_policy()
+        })?;
+        if !policy.enabled {
+            return Ok(AppQueryResult::ApplicationUpdate(
+                skillhub_core::ApplicationUpdate::none(request.current_version),
+            ));
+        }
+        self.app_update_provider
+            .latest(
+                &request.repository,
+                &request.current_version,
+                request.build_trust,
+            )
+            .await
+            .map(AppQueryResult::ApplicationUpdate)
+    }
+
+    fn set_application_update_policy(
+        &self,
+        request: skillhub_core::SetApplicationUpdatePolicy,
+    ) -> AppResult<AppCommandResult> {
+        let policy = skillhub_core::ApplicationUpdatePolicy {
+            enabled: request.enabled,
+            check_on_startup: request.check_on_startup,
+        };
+        self.with_database("execute.set_application_update_policy", |database| {
+            database
+                .application_update_repository()
+                .save_policy(&policy)
+                .map(AppCommandResult::ApplicationUpdatePolicy)
+        })
+    }
+
+    fn open_official_release(
+        &self,
+        request: skillhub_core::OpenOfficialRelease,
+    ) -> AppResult<AppCommandResult> {
+        if !skillhub_core::validate_official_release_url(&request.release_url) {
+            return Err(invalid_input(
+                "release_url must be an official GitHub release URL",
+            ));
+        }
+        Ok(AppCommandResult::OperationSummary(operation_summary(
+            "application_update.opened",
+        )))
+    }
+
+    async fn search_online_sources(
+        &self,
+        request: skillhub_core::SearchOnlineSources,
+    ) -> AppResult<AppQueryResult> {
+        let now = now_seconds();
+        if let Some(page) = self.with_database("query.search_online_sources.cache", |database| {
+            database.source_search_cache().get(&request.query, now)
+        })? {
+            return Ok(AppQueryResult::SourceSearchPage(page));
+        }
+        let page = self
+            .source_search_provider
+            .search(request.query.clone())
+            .await?;
+        self.with_database("query.search_online_sources.cache", |database| {
+            database
+                .source_search_cache()
+                .put(&request.query, &page, now)
+        })?;
+        Ok(AppQueryResult::SourceSearchPage(page))
+    }
+
     /// Opens a file-backed facade, creating its parent directory when needed.
     pub fn open(path: impl AsRef<Path>) -> AppResult<Self> {
         let path = path.as_ref();
@@ -662,6 +740,8 @@ impl LocalApplicationFacade {
             llm_runner: None,
             translation_records: Arc::new(Mutex::new(HashMap::new())),
             evidence_repository: UsageEvidenceRepository::default(),
+            app_update_provider: Arc::new(GithubReleaseProvider::new()),
+            source_search_provider: Arc::new(SkillsShProvider::new("https://skills.sh")),
             prepared_imports: Mutex::new(HashMap::new()),
             prepared_uninstall: Mutex::new(None),
             scan_service: Mutex::new(ScanService::new()),
@@ -711,12 +791,39 @@ impl LocalApplicationFacade {
             llm_runner: None,
             translation_records: Arc::new(Mutex::new(HashMap::new())),
             evidence_repository: UsageEvidenceRepository::default(),
+            app_update_provider: Arc::new(GithubReleaseProvider::new()),
+            source_search_provider: Arc::new(SkillsShProvider::new("https://skills.sh")),
             prepared_imports: Mutex::new(HashMap::new()),
             prepared_uninstall: Mutex::new(None),
             scan_service: Mutex::new(ScanService::new()),
             path_grants: Mutex::new(HashMap::new()),
             assembly_plans: Mutex::new(HashMap::new()),
         }
+    }
+
+    /// Creates a facade with explicit online providers. Production uses the
+    /// built-in GitHub releases and skills.sh providers; tests can inject
+    /// providers pointed at a local HTTP fixture without touching the network.
+    pub fn new_with_providers(
+        database: Database,
+        app_update_provider: Arc<GithubReleaseProvider>,
+        source_search_provider: Arc<SkillsShProvider>,
+    ) -> Self {
+        let mut facade = Self::new(database);
+        facade.app_update_provider = app_update_provider;
+        facade.source_search_provider = source_search_provider;
+        facade
+    }
+
+    /// Creates a facade whose built-in online providers share one network
+    /// switch. The switch affects only online operations; local queries and
+    /// mutations continue to work when it is disabled.
+    pub fn new_with_network_enabled(database: Database, enabled: bool) -> Self {
+        Self::new_with_providers(
+            database,
+            Arc::new(GithubReleaseProvider::new().with_network_enabled(enabled)),
+            Arc::new(SkillsShProvider::new("https://skills.sh").with_network_enabled(enabled)),
+        )
     }
 
     /// Registers a directory grant issued by the native file picker. The
@@ -2338,6 +2445,10 @@ impl LocalApplicationFacade {
 impl ApplicationFacade for LocalApplicationFacade {
     async fn execute(&self, command: AppCommand) -> AppResult<AppCommandResult> {
         let operation = match command {
+            AppCommand::OpenOfficialRelease(request) => return self.open_official_release(request),
+            AppCommand::SetApplicationUpdatePolicy(request) => {
+                return self.set_application_update_policy(request)
+            }
             AppCommand::CancelOperation { .. } => "execute.cancel_operation",
             AppCommand::PrepareDeployment(request) => {
                 return self.prepare_deployment(request.plan).await
@@ -2724,6 +2835,10 @@ impl ApplicationFacade for LocalApplicationFacade {
 
     async fn query(&self, query: AppQuery) -> AppResult<AppQueryResult> {
         match query {
+            AppQuery::CheckApplicationUpdate(request) => {
+                self.check_application_update(request).await
+            }
+            AppQuery::SearchOnlineSources(request) => self.search_online_sources(request).await,
             AppQuery::GetBootstrapSnapshot => {
                 self.with_database("query.get_bootstrap_snapshot", |database| {
                     database
@@ -3785,6 +3900,13 @@ fn now_millis() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|duration| i64::try_from(duration.as_millis()).unwrap_or(i64::MAX))
+        .unwrap_or_default()
+}
+
+fn now_seconds() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| i64::try_from(duration.as_secs()).unwrap_or(i64::MAX))
         .unwrap_or_default()
 }
 
