@@ -10,8 +10,8 @@ use skillhub_adapters::deployment::{DeploymentFilesystem, OwnershipProof};
 use skillhub_adapters::import::SkillDetector;
 use skillhub_adapters::security::BasicScanner;
 use skillhub_core::api::{
-    BasicCheckResult, RenameSkill, SaveSkillContent, SetCurrentVersion, SetFindingDisposition,
-    SetLifecycle, SetMetadata, SetTrial,
+    BasicCheckResult, RenameSkill, SaveMarkdownContent, SaveSkillContent, SavedSkillContent,
+    SetCurrentVersion, SetFindingDisposition, SetLifecycle, SetMetadata, SetTrial,
 };
 use skillhub_core::application::{
     DeploymentBackend, DeploymentService, PreparedImport, ReconcileBackend, ReconcileService,
@@ -921,6 +921,97 @@ impl LocalApplicationFacade {
         ))
     }
 
+    fn save_markdown_content(&self, request: SaveMarkdownContent) -> AppResult<AppCommandResult> {
+        let Some(library) = self.library.as_ref() else {
+            return Err(unsupported("execute.save_markdown_content.library"));
+        };
+        let Some(library_root) = self.library_root.as_ref() else {
+            return Err(unsupported("execute.save_markdown_content.library"));
+        };
+        let relative = validate_markdown_path(&request.path)?;
+        if request.markdown.len() > 1_048_576 {
+            return Err(AppError::new(ErrorCode::InvalidInput, Severity::Error)
+                .with_param("field", "markdown_size")
+                .with_action(RecoveryAction::ChooseAnotherName));
+        }
+        let current = library
+            .current(request.skill_id)?
+            .ok_or_else(|| AppError::new(ErrorCode::ObjectNotFound, Severity::Error))?;
+        let (identity, _) = library.read_file(&current, &request.path, 1_048_576)?;
+        if identity != request.expected_identity {
+            return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                .with_param("path", request.path.clone())
+                .with_action(RecoveryAction::Retry));
+        }
+        let skill = self.with_database("execute.save_markdown_content", |database| {
+            database
+                .catalog_repository()?
+                .get_sync(request.skill_id)?
+                .ok_or_else(|| {
+                    AppError::new(ErrorCode::ObjectNotFound, Severity::Error)
+                        .with_param("skill_id", request.skill_id.to_string())
+                        .with_action(RecoveryAction::Retry)
+                })
+        })?;
+        let staging =
+            std::env::temp_dir().join(format!("skillhub-markdown-{}", OperationId::new()));
+        let result = (|| {
+            library.materialize(&current, &staging)?;
+            let target = staging.join(&relative);
+            std::fs::write(&target, request.markdown.as_bytes()).map_err(|error| {
+                AppError::new(ErrorCode::InternalError, Severity::Error)
+                    .with_param("source", error.to_string())
+                    .with_action(RecoveryAction::Retry)
+            })?;
+            let captured = library.capture_with_status(request.skill_id, &staging)?;
+            let version = captured.record;
+            if let Err(error) = library.set_current(request.skill_id, &version.id) {
+                let cleanup = if captured.created {
+                    library.discard_sync(&version)
+                } else {
+                    Ok(())
+                };
+                return Err(cleanup_import_error(error, cleanup));
+            }
+            let central = match CentralLibrary::initialize(library_root) {
+                Ok(central) => central,
+                Err(error) => {
+                    let rollback =
+                        restore_version_pointer(library, request.skill_id, Some(current.clone()));
+                    let cleanup = rollback.and_then(|()| {
+                        if captured.created {
+                            library.discard_sync(&version)
+                        } else {
+                            Ok(())
+                        }
+                    });
+                    return Err(cleanup_import_error(error, cleanup));
+                }
+            };
+            if let Err(error) = central.save_portable_skill(&skill, Some(&version.id)) {
+                let rollback =
+                    restore_version_pointer(library, request.skill_id, Some(current.clone()));
+                let cleanup = rollback.and_then(|()| {
+                    if captured.created {
+                        library.discard_sync(&version)
+                    } else {
+                        Ok(())
+                    }
+                });
+                return Err(cleanup_import_error(error, cleanup));
+            }
+            let (content_identity, _) = library.read_file(&version.id, &request.path, 1_048_576)?;
+            Ok(AppCommandResult::SavedSkillContent(SavedSkillContent {
+                skill_id: request.skill_id,
+                path: request.path.clone(),
+                version_id: version.id,
+                content_identity,
+            }))
+        })();
+        let _ = std::fs::remove_dir_all(&staging);
+        result
+    }
+
     fn set_finding_disposition(
         &self,
         request: SetFindingDisposition,
@@ -1062,6 +1153,7 @@ impl ApplicationFacade for LocalApplicationFacade {
             AppCommand::SetTrial(request) => return self.set_trial(request),
             AppCommand::SetCurrentVersion(request) => return self.set_current_version(request),
             AppCommand::SaveSkillContent(request) => return self.save_skill_content(request),
+            AppCommand::SaveMarkdownContent(request) => return self.save_markdown_content(request),
             AppCommand::RunLlmSafetyCheck(request) => {
                 return self
                     .run_llm_safety_check(request.skill_id, request.version_id)
@@ -1670,7 +1762,7 @@ impl LocalApplicationFacade {
         Ok(AppQueryResult::MarkdownFile(
             skillhub_core::api::MarkdownFileContent {
                 content_identity: identity,
-                editable: false,
+                editable: true,
                 markdown,
                 path: path.to_owned(),
             },
@@ -1735,6 +1827,34 @@ fn validate_skill_source(source: &Path) -> AppResult<()> {
             .with_action(RecoveryAction::ChooseAnotherName));
     }
     Ok(())
+}
+
+fn validate_markdown_path(path: &str) -> AppResult<PathBuf> {
+    if path.is_empty() || path.contains('\\') {
+        return Err(AppError::new(ErrorCode::InvalidInput, Severity::Error)
+            .with_param("field", "path")
+            .with_action(RecoveryAction::ChooseAnotherName));
+    }
+    let relative = Path::new(path);
+    if relative.is_absolute()
+        || relative.components().any(|component| {
+            matches!(
+                component,
+                std::path::Component::ParentDir
+                    | std::path::Component::RootDir
+                    | std::path::Component::Prefix(_)
+            )
+        })
+        || !relative
+            .extension()
+            .and_then(|extension| extension.to_str())
+            .is_some_and(|extension| extension.eq_ignore_ascii_case("md"))
+    {
+        return Err(AppError::new(ErrorCode::InvalidInput, Severity::Error)
+            .with_param("field", "path")
+            .with_action(RecoveryAction::ChooseAnotherName));
+    }
+    Ok(relative.to_path_buf())
 }
 
 fn unsupported(operation: &'static str) -> AppError {

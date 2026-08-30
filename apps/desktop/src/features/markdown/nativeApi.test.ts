@@ -1,9 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { queryApplication } from "../../api/bindings";
+import { executeCommand, queryApplication } from "../../api/bindings";
 import { MarkdownUnavailableError } from "./api";
 import { nativeMarkdownFacade } from "./nativeApi";
 
-vi.mock("../../api/bindings", () => ({ queryApplication: vi.fn() }));
+vi.mock("../../api/bindings", () => ({
+  executeCommand: vi.fn(),
+  queryApplication: vi.fn(),
+}));
 
 describe("nativeMarkdownFacade", () => {
   beforeEach(() => vi.clearAllMocks());
@@ -22,21 +25,52 @@ describe("nativeMarkdownFacade", () => {
     });
   });
 
-  it("maps Markdown content as read-only", async () => {
+  it("maps Markdown content with its native editability", async () => {
     vi.mocked(queryApplication).mockResolvedValue({
       type: "markdown_file",
       payload: {
         content_identity: "sha256:abc",
-        editable: false,
+        editable: true,
         markdown: "# Preview",
         path: "SKILL.md",
       },
     });
     await expect(nativeMarkdownFacade.readMarkdownFile("skill-1", "SKILL.md")).resolves.toEqual({
       contentIdentity: "sha256:abc",
-      editable: false,
+      editable: true,
       markdown: "# Preview",
       path: "SKILL.md",
+    });
+  });
+
+  it("saves Markdown through the versioned native command", async () => {
+    vi.mocked(executeCommand).mockResolvedValue({
+      type: "saved_skill_content",
+      payload: {
+        skill_id: "skill-1",
+        path: "SKILL.md",
+        version_id: "sha256:version-2",
+        content_identity: "sha256:content-2",
+      },
+    });
+
+    await expect(nativeMarkdownFacade.saveSkillContent(
+      "skill-1",
+      "SKILL.md",
+      "# Updated",
+      "sha256:content-1",
+    )).resolves.toEqual({
+      contentIdentity: "sha256:content-2",
+      newVersionId: "sha256:version-2",
+    });
+    expect(executeCommand).toHaveBeenCalledWith({
+      type: "save_markdown_content",
+      payload: {
+        skill_id: "skill-1",
+        path: "SKILL.md",
+        markdown: "# Updated",
+        expected_identity: "sha256:content-1",
+      },
     });
   });
 

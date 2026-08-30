@@ -19,10 +19,11 @@ pub use command::{
     RecheckBasic, RecheckLlmSafety, RegisterProject, RelinkSource, RemoveCustomAgent,
     RemoveIgnoreRule, RenameSkill, RescanSkill, ResetProfileOverride, ResolveRecovery,
     RestoreDecision, RestoreDeployment, RestoreOriginalCallPolicy, RunBasicCheck, RunHealthCheck,
-    RunInitializationScan, RunLlmSafetyCheck, RunRollingBackup, SaveProjectView, SaveSkillContent,
-    SaveUserTranslationRevision, ScanTargets, SetCurrentVersion, SetFindingDisposition,
-    SetLifecycle, SetMetadata, SetProfileOverride, SetProjectTags, SetTrial, TranslateDescription,
-    UpdateCustomAgent, UpdateProject, VerifyBackup, WriteSharedProjectConfig,
+    RunInitializationScan, RunLlmSafetyCheck, RunRollingBackup, SaveMarkdownContent,
+    SaveProjectView, SaveSkillContent, SaveUserTranslationRevision, SavedSkillContent, ScanTargets,
+    SetCurrentVersion, SetFindingDisposition, SetLifecycle, SetMetadata, SetProfileOverride,
+    SetProjectTags, SetTrial, TranslateDescription, UpdateCustomAgent, UpdateProject, VerifyBackup,
+    WriteSharedProjectConfig,
 };
 pub use event::{AppEvent, FactsChanged};
 pub use query::{

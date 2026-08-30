@@ -1,4 +1,8 @@
-import { queryApplication, type AppQueryResult } from "../../api/bindings";
+import {
+  executeCommand,
+  queryApplication,
+  type AppQueryResult,
+} from "../../api/bindings";
 import {
   MarkdownUnavailableError,
   unavailableMarkdownFacade,
@@ -43,5 +47,21 @@ export const nativeMarkdownFacade: MarkdownFacade = {
     } catch {
       throw unavailableResult();
     }
+  },
+  async saveSkillContent(skillId, path, markdown, expectedIdentity) {
+    const result = await executeCommand({
+      type: "save_markdown_content",
+      payload: {
+        skill_id: skillId,
+        path,
+        markdown,
+        expected_identity: expectedIdentity,
+      },
+    });
+    if (result.type !== "saved_skill_content") throw unavailableResult();
+    return {
+      contentIdentity: result.payload.content_identity,
+      newVersionId: result.payload.version_id,
+    };
   },
 };

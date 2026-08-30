@@ -32,6 +32,13 @@ pub struct SaveSkillContent {
     pub source_path: String,
 }
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+pub struct SaveMarkdownContent {
+    pub skill_id: SkillId,
+    pub path: String,
+    pub markdown: String,
+    pub expected_identity: String,
+}
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 pub struct RenameSkill {
     pub skill_id: SkillId,
     pub name: String,
@@ -475,6 +482,8 @@ pub enum AppCommand {
     CreateSkill(CreateSkill),
     #[serde(rename = "save_skill_content")]
     SaveSkillContent(SaveSkillContent),
+    #[serde(rename = "save_markdown_content")]
+    SaveMarkdownContent(SaveMarkdownContent),
     #[serde(rename = "rename_skill")]
     RenameSkill(RenameSkill),
     #[serde(rename = "set_lifecycle")]
@@ -626,6 +635,8 @@ pub enum AppCommandResult {
     ApplicationUpdatePolicy(crate::ApplicationUpdatePolicy),
     #[serde(rename = "operation_summary")]
     OperationSummary(OperationSummary),
+    #[serde(rename = "saved_skill_content")]
+    SavedSkillContent(SavedSkillContent),
     #[serde(rename = "custom_agent")]
     CustomAgent(CustomAgent),
     #[serde(rename = "custom_agent_override")]
@@ -692,4 +703,12 @@ pub enum AppCommandResult {
     ExportResult(ExportResult),
     #[serde(rename = "uninstall_impact")]
     UninstallImpact(UninstallImpact),
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+pub struct SavedSkillContent {
+    pub skill_id: SkillId,
+    pub path: String,
+    pub version_id: VersionId,
+    pub content_identity: String,
 }

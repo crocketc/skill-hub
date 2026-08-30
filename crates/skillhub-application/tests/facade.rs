@@ -10,8 +10,8 @@ use skillhub_core::{
         GetDeploymentRelations, GetReconcilePlan, GetRemovalImpact, GetSkill, KeepIndependentCopy,
         ListDeployments, ListFindings, ListMarkdownFiles, ListSkills, ListVersions,
         PrepareDeployment, PrepareImport, PrepareUndeploy, ReadMarkdownFile, RecheckBasic,
-        RenameSkill, RunBasicCheck, RunLlmSafetyCheck, SaveSkillContent, SetCurrentVersion,
-        SetFindingDisposition, SetLifecycle, SetMetadata, SetTrial,
+        RenameSkill, RunBasicCheck, RunLlmSafetyCheck, SaveMarkdownContent, SaveSkillContent,
+        SetCurrentVersion, SetFindingDisposition, SetLifecycle, SetMetadata, SetTrial,
     },
     catalog::{CatalogRepository, Skill},
     check::{CheckKind, CheckState, FindingDisposition},
@@ -538,7 +538,7 @@ async fn markdown_queries_read_the_current_version_as_read_only_content() {
             .unwrap()
             .object_id
     );
-    assert!(!content.editable);
+    assert!(content.editable);
 
     let versions = facade
         .query(RootAppQuery::ListVersions(ListVersions {
@@ -728,6 +728,74 @@ async fn save_skill_content_captures_a_new_version_and_rejects_invalid_sources()
     };
     assert_eq!(after.len(), 2);
     assert_eq!(after.iter().filter(|version| version.current).count(), 1);
+}
+
+#[tokio::test]
+async fn save_markdown_content_creates_a_version_and_rejects_stale_identity() {
+    let database = Database::open_in_memory().expect("database");
+    let skill = Skill::new(skillhub_core::SkillId::new(), "Markdown editor");
+    database
+        .catalog_repository()
+        .expect("catalog repository")
+        .insert(&skill)
+        .await
+        .expect("insert skill");
+    let root = tempfile::tempdir().expect("library root");
+    let library = CentralLibrary::initialize(root.path()).expect("central library");
+    let store = VersionStore::from_library(&library);
+    let source = tempfile::tempdir().expect("source");
+    std::fs::write(source.path().join("SKILL.md"), "# Initial\n").expect("write source");
+    let first = store
+        .capture(skill.id(), source.path())
+        .expect("capture source");
+    store
+        .set_current(skill.id(), &first.id)
+        .expect("set current");
+    let (identity, _) = store
+        .read_file(&first.id, "SKILL.md", 1024)
+        .expect("read identity");
+
+    let facade = LocalApplicationFacade::new_with_library(database, root.path());
+    let result = facade
+        .execute(AppCommand::SaveMarkdownContent(SaveMarkdownContent {
+            skill_id: skill.id(),
+            path: "SKILL.md".into(),
+            markdown: "# Edited\n".into(),
+            expected_identity: identity.clone(),
+        }))
+        .await
+        .expect("save markdown");
+    let AppCommandResult::SavedSkillContent(saved) = result else {
+        panic!("expected saved skill content");
+    };
+    assert_eq!(saved.skill_id, skill.id());
+    assert_eq!(saved.path, "SKILL.md");
+    assert_ne!(saved.version_id, first.id);
+    assert_ne!(saved.content_identity, identity);
+
+    let content = facade
+        .query(RootAppQuery::ReadMarkdownFile(ReadMarkdownFile {
+            skill_id: skill.id(),
+            path: "SKILL.md".into(),
+        }))
+        .await
+        .expect("read saved markdown");
+    let AppQueryResult::MarkdownFile(content) = content else {
+        panic!("expected markdown content");
+    };
+    assert_eq!(content.markdown, "# Edited\n");
+    assert_eq!(content.content_identity, saved.content_identity);
+
+    let error = facade
+        .execute(AppCommand::SaveMarkdownContent(SaveMarkdownContent {
+            skill_id: skill.id(),
+            path: "SKILL.md".into(),
+            markdown: "# Stale\n".into(),
+            expected_identity: identity,
+        }))
+        .await
+        .expect_err("stale identity must be rejected");
+    assert_eq!(error.code, ErrorCode::OperationConflict);
 }
 
 #[tokio::test]
