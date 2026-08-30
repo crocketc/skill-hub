@@ -6,6 +6,7 @@ use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use async_trait::async_trait;
+use skillhub_adapters::import::SkillDetector;
 use skillhub_core::application::PreparedImport;
 use skillhub_core::catalog::Skill;
 use skillhub_core::{
@@ -176,6 +177,15 @@ impl ApplicationFacade for LocalApplicationFacade {
                         .analyze(request.candidate, request.tree_hash.as_deref())
                         .map(AppQueryResult::ImportAnalysis)
                 })
+            }
+            AppQuery::DiscoverImportCandidates(request) => {
+                let source = request.source;
+                let Some(root) = source.locator.as_local_path().cloned() else {
+                    return Err(unsupported("query.discover_import_candidates"));
+                };
+                SkillDetector::default()
+                    .detect(root, source)
+                    .map(AppQueryResult::ImportCandidates)
             }
             AppQuery::ListSkills(request) => self.with_database("query.list_skills", |database| {
                 database

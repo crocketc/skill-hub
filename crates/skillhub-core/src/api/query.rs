@@ -8,7 +8,7 @@ use crate::evidence::UsageEvidenceAnalysis;
 use crate::import::{ImportAnalysis, ImportCandidate};
 use crate::project::{AssemblyPlan, Project, SavedProjectView};
 use crate::search::{SearchHit, SearchQuery};
-use crate::source::{SourceSearchPage, SourceSearchQuery};
+use crate::source::{SourceDescriptor, SourceSearchPage, SourceSearchQuery};
 use crate::{
     BootstrapSnapshot, DeploymentPlan, DeploymentPlanRequest, Severity, SkillId, VersionId,
 };
@@ -137,6 +137,12 @@ pub struct ListSavedProjectViews;
 pub struct AnalyzeImport {
     pub candidate: ImportCandidate,
     pub tree_hash: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct DiscoverImportCandidates {
+    pub source: SourceDescriptor,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
@@ -365,6 +371,8 @@ pub enum AppQuery {
     ListSavedProjectViews(ListSavedProjectViews),
     #[serde(rename = "analyze_import")]
     AnalyzeImport(AnalyzeImport),
+    #[serde(rename = "discover_import_candidates")]
+    DiscoverImportCandidates(DiscoverImportCandidates),
     #[serde(rename = "search_online_sources")]
     SearchOnlineSources(SearchOnlineSources),
     #[serde(rename = "analyze_global_skill_evidence")]
@@ -432,6 +440,8 @@ pub enum AppQueryResult {
     SavedProjectViews(Vec<SavedProjectView>),
     #[serde(rename = "import_analysis")]
     ImportAnalysis(ImportAnalysis),
+    #[serde(rename = "import_candidates")]
+    ImportCandidates(Vec<ImportCandidate>),
     #[serde(rename = "source_search_page")]
     SourceSearchPage(SourceSearchPage),
     #[serde(rename = "deployment_plan")]

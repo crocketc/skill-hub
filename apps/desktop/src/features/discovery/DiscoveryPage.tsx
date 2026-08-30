@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { DataState } from "../../ui/DataState";
 import { ImportWizard } from "../import/ImportWizard";
-import { type ImportFacade, unavailableImportFacade } from "../import/api";
+import { type ImportFacade } from "../import/api";
+import { nativeImportFacade } from "../import/nativeApi";
 import { LocalDiscovery } from "./LocalDiscovery";
 import { OnlineDiscovery } from "./OnlineDiscovery";
 
@@ -10,7 +10,7 @@ export interface DiscoveryPageProps {
   importFacade?: ImportFacade;
 }
 
-export function DiscoveryPage({ importFacade = unavailableImportFacade }: DiscoveryPageProps) {
+export function DiscoveryPage({ importFacade = nativeImportFacade }: DiscoveryPageProps) {
   const { t } = useTranslation();
   const [showImport, setShowImport] = useState(false);
 
@@ -21,7 +21,6 @@ export function DiscoveryPage({ importFacade = unavailableImportFacade }: Discov
           <button className="sh-discovery-page__back" onClick={() => setShowImport(false)} type="button">
             {t("actions.back")}
           </button>
-          <DataState message={t("discovery.importUnavailable")} state="unavailable" />
         </div>
         <ImportWizard facade={importFacade} />
       </div>

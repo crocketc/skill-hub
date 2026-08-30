@@ -27,12 +27,12 @@ pub use command::{
 pub use event::{AppEvent, FactsChanged};
 pub use query::{
     AnalyzeGlobalSkillEvidence, AnalyzeImport, AppQuery, AppQueryResult, BasicCheckResult,
-    CombinationResult, DiffVersions, FindingResult, GetBasicCheckResult, GetBootstrapSnapshot,
-    GetCallPolicy, GetDeploymentPlan, GetDeploymentRelations, GetDiscoverySnapshot,
-    GetLlmSafetyCheckResult, GetProjectAssemblyPlan, GetReconcilePlan, GetRemovalImpact, GetSkill,
-    ListCombinations, ListCustomAgents, ListDeployments, ListFindings, ListMarkdownFiles,
-    ListPendingItems, ListProjects, ListSavedProjectViews, ListSkills, ListVersions,
-    LlmSafetyCheckResult, MarkdownFileContent, MarkdownFileEntry, ReadMarkdownFile,
+    CombinationResult, DiffVersions, DiscoverImportCandidates, FindingResult, GetBasicCheckResult,
+    GetBootstrapSnapshot, GetCallPolicy, GetDeploymentPlan, GetDeploymentRelations,
+    GetDiscoverySnapshot, GetLlmSafetyCheckResult, GetProjectAssemblyPlan, GetReconcilePlan,
+    GetRemovalImpact, GetSkill, ListCombinations, ListCustomAgents, ListDeployments, ListFindings,
+    ListMarkdownFiles, ListPendingItems, ListProjects, ListSavedProjectViews, ListSkills,
+    ListVersions, LlmSafetyCheckResult, MarkdownFileContent, MarkdownFileEntry, ReadMarkdownFile,
     SearchOnlineSources, SkillListItem, SkillListPage, SkillResult, VersionDiffResult,
     VersionResult,
 };

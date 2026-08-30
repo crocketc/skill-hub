@@ -119,22 +119,22 @@ git commit -m "feat: connect native import commands"
 - Consumes: `query(AppQuery)`、`executeCommand(AppCommand)`、`ImportAnalysis`、`PreparedImport`、`ImportSummary`。
 - Produces: `ImportFacade` 的 `parseSource`、`acquireCandidates`、`analyzeConflicts`、`commitImport`、`cancel` 实现；Unavailable 门面只保留测试和未连接运行时使用。
 
-- [ ] **Step 1: Write failing frontend tests**
+- [x] **Step 1: Write failing frontend tests**
   - 原生门面将候选目录查询映射为向导候选。
   - 冲突决策映射到 `CommitImport`，完成后回调导入结果。
   - 取消和结构化错误不会重复提交。
 
-- [ ] **Step 2: Run focused Vitest tests and verify they fail**
+- [x] **Step 2: Run focused Vitest tests and verify they fail**
 
 ```text
 pnpm --dir apps/desktop exec vitest run src/features/import/nativeFacade.test.ts src/features/import/ImportWizard.test.tsx
 ```
 
-- [ ] **Step 3: Implement the native facade adapter and production wiring**
+- [x] **Step 3: Implement the native facade adapter and production wiring**
   - 保持向导现有阶段和可访问状态，不改变已确认的交互文案。
   - 对结构化错误只展示可恢复消息，不暴露本地绝对路径中的敏感片段。
 
-- [ ] **Step 4: Run frontend focused tests, typecheck, lint and build**
+- [x] **Step 4: Run frontend focused tests, typecheck, lint and build**
 
 ```text
 pnpm --dir apps/desktop exec vitest run src/features/import/nativeFacade.test.ts src/features/import/ImportWizard.test.tsx

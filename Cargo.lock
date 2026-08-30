@@ -4338,6 +4338,7 @@ name = "skillhub-application"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "skillhub-adapters",
  "skillhub-core",
  "skillhub-storage",
  "tempfile",

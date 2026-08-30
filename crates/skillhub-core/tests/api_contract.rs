@@ -99,6 +99,17 @@ fn import_analysis_query_has_stable_wire_shape() {
 }
 
 #[test]
+fn import_candidate_discovery_query_has_stable_wire_shape() {
+    let query = AppQuery::DiscoverImportCandidates(skillhub_core::DiscoverImportCandidates {
+        source: SourceDescriptor::new(SourceKind::Local, SourceLocator::local_path("C:/incoming")),
+    });
+    assert_eq!(
+        serde_json::to_value(query).unwrap()["type"],
+        "discover_import_candidates"
+    );
+}
+
+#[test]
 fn source_update_commands_have_stable_wire_shapes() {
     let skill_id = skillhub_core::SkillId::new();
     let relink = AppCommand::RelinkSource(skillhub_core::RelinkSource {

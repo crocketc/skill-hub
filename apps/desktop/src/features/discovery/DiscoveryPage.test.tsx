@@ -17,7 +17,7 @@ it("shows local and online discovery entry points without runtime claims", async
   expect(screen.queryByText(/已授权|可用|验证通过/)).not.toBeInTheDocument();
 });
 
-it("opens the production import boundary without showing mock candidates", async () => {
+it("opens the production import wizard without showing mock candidates", async () => {
   const i18n = await createSkillHubI18n(["zh-CN"]);
   render(
     <I18nextProvider i18n={i18n}>
@@ -27,7 +27,8 @@ it("opens the production import boundary without showing mock candidates", async
 
   fireEvent.click(screen.getAllByRole("button", { name: "导入 Skill" })[0]);
 
-  expect(await screen.findByText(/导入能力尚未连接/)).toBeVisible();
+  expect(await screen.findByRole("heading", { name: "导入 Skill" })).toBeVisible();
+  expect(screen.queryByText(/导入能力尚未连接/)).not.toBeInTheDocument();
   expect(screen.queryByText("PDF Reader")).not.toBeInTheDocument();
 });
 

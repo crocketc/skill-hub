@@ -1,9 +1,9 @@
 use skillhub_application::LocalApplicationFacade;
 use skillhub_core::{
     api::{
-        AnalyzeImport, AppCommandResult, AppQueryResult, DiffVersions, GetBasicCheckResult,
-        GetDeploymentRelations, GetSkill, ListDeployments, ListFindings, ListMarkdownFiles,
-        ListSkills, ListVersions, PrepareImport, ReadMarkdownFile,
+        AnalyzeImport, AppCommandResult, AppQueryResult, DiffVersions, DiscoverImportCandidates,
+        GetBasicCheckResult, GetDeploymentRelations, GetSkill, ListDeployments, ListFindings,
+        ListMarkdownFiles, ListSkills, ListVersions, PrepareImport, ReadMarkdownFile,
     },
     catalog::{CatalogRepository, Skill},
     check::{CheckKind, CheckState},
@@ -128,6 +128,33 @@ async fn analyze_import_query_returns_deterministic_conflict_matches() {
         .conflicts
         .iter()
         .any(|conflict| conflict.requires_choice));
+}
+
+#[tokio::test]
+async fn discover_import_candidates_query_reads_local_skill_directories() {
+    let database = Database::open_in_memory().expect("database");
+    let root = tempfile::tempdir().expect("source root");
+    std::fs::create_dir_all(root.path().join("nested/notes")).expect("nested directory");
+    std::fs::write(root.path().join("nested/notes/SKILL.md"), "# Notes\n").expect("write skill");
+    let facade = LocalApplicationFacade::new_with_today(database, (2026, 8, 29));
+
+    let result = facade
+        .query(RootAppQuery::DiscoverImportCandidates(
+            DiscoverImportCandidates {
+                source: SourceDescriptor::new(
+                    SourceKind::Local,
+                    SourceLocator::local_path(root.path()),
+                ),
+            },
+        ))
+        .await
+        .expect("candidate discovery");
+    let AppQueryResult::ImportCandidates(candidates) = result else {
+        panic!("expected import candidates");
+    };
+    assert_eq!(candidates.len(), 1);
+    assert_eq!(candidates[0].marker, "SKILL.md");
+    assert_eq!(candidates[0].runtime_name, "notes");
 }
 
 #[tokio::test]
