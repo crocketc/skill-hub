@@ -130,7 +130,7 @@ fn validate_artifact_url(value: &str) -> AppResult<()> {
         .path_segments()
         .map(|segments| segments.collect::<Vec<_>>())
         .unwrap_or_default();
-    if segments.len() < 6
+    if segments.len() != 6
         || segments[0] != OFFICIAL_RELEASE_OWNER
         || segments[1] != OFFICIAL_RELEASE_REPO
         || segments[2] != "releases"

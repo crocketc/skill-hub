@@ -282,6 +282,18 @@ fn artifact_verification_rejects_unofficial_https_url() {
 }
 
 #[test]
+fn artifact_verification_rejects_official_url_with_extra_path_segments() {
+    let mut artifact = signed_test_artifact();
+    artifact.url =
+        "https://github.com/crocketc/skill-hub/releases/download/v1.2.3/skillhub.zip/extra"
+            .to_owned();
+
+    let error = verify_artifact(b"test", &artifact, &test_public_key()).unwrap_err();
+
+    assert_eq!(error.code, ErrorCode::ApplicationUpdateInvalidArtifactUrl);
+}
+
+#[test]
 fn artifact_verification_rejects_invalid_url() {
     let mut artifact = signed_test_artifact();
     artifact.url = "not a url".to_owned();
