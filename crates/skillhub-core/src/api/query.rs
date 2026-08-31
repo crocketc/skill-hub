@@ -1,5 +1,5 @@
 use crate::agent::{CustomAgent, DiscoverySnapshot};
-use crate::app_update::{ApplicationUpdate, CheckApplicationUpdate};
+use crate::app_update::{ApplicationUpdate, CheckApplicationUpdate, UpdateState};
 use crate::catalog::SkillLifecycle;
 use crate::check::{
     CheckKind, CheckResult as DomainCheckResult, CheckState, Finding, FindingDisposition,
@@ -427,6 +427,8 @@ pub enum AppQuery {
 pub enum AppQueryResult {
     #[serde(rename = "application_update")]
     ApplicationUpdate(ApplicationUpdate),
+    #[serde(rename = "application_update_state")]
+    ApplicationUpdateState(UpdateState),
     #[serde(rename = "skill")]
     Skill(SkillResult),
     #[serde(rename = "skill_page")]

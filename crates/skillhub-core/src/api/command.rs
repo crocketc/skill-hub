@@ -1,7 +1,10 @@
 use serde::{Deserialize, Serialize};
 
 use crate::agent::{CustomAgent, CustomAgentDraft, CustomAgentOverride, PathGrant};
-use crate::app_update::{ApplicationUpdate, OpenOfficialRelease, SetApplicationUpdatePolicy};
+use crate::app_update::{
+    ApplicationUpdate, DownloadedApplicationUpdate, OpenOfficialRelease, PreparedApplicationUpdate,
+    SetApplicationUpdatePolicy, UpdateArtifact, UpdateManifest, UpdatePlatform, UpdateState,
+};
 use crate::backup::{
     BackupCreated, BackupManifest, BackupPlan, BackupRetentionPolicy, BackupRetentionResult,
     BackupScope, RestoreConflictDecision, RestorePlan, RestoreResult, SensitiveContentDecision,
@@ -121,6 +124,26 @@ pub struct SetProjectTags {
     pub project_id: ProjectId,
     pub tags: Vec<String>,
 }
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct PrepareApplicationUpdate {
+    pub current_version: String,
+    pub manifest: UpdateManifest,
+    pub platform: UpdatePlatform,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct DownloadApplicationUpdate {
+    pub artifact: UpdateArtifact,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+pub struct InstallApplicationUpdate;
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+pub struct RollbackApplicationUpdate;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 pub struct SaveProjectView {
@@ -478,6 +501,14 @@ pub enum AppCommand {
     OpenOfficialRelease(OpenOfficialRelease),
     #[serde(rename = "set_application_update_policy")]
     SetApplicationUpdatePolicy(SetApplicationUpdatePolicy),
+    #[serde(rename = "prepare_application_update")]
+    PrepareApplicationUpdate(PrepareApplicationUpdate),
+    #[serde(rename = "download_application_update")]
+    DownloadApplicationUpdate(DownloadApplicationUpdate),
+    #[serde(rename = "install_application_update")]
+    InstallApplicationUpdate(InstallApplicationUpdate),
+    #[serde(rename = "rollback_application_update")]
+    RollbackApplicationUpdate(RollbackApplicationUpdate),
     #[serde(rename = "create_skill")]
     CreateSkill(CreateSkill),
     #[serde(rename = "save_skill_content")]
@@ -633,6 +664,12 @@ pub enum AppCommandResult {
     ApplicationUpdate(ApplicationUpdate),
     #[serde(rename = "application_update_policy")]
     ApplicationUpdatePolicy(crate::ApplicationUpdatePolicy),
+    #[serde(rename = "prepared_application_update")]
+    PreparedApplicationUpdate(PreparedApplicationUpdate),
+    #[serde(rename = "downloaded_application_update")]
+    DownloadedApplicationUpdate(DownloadedApplicationUpdate),
+    #[serde(rename = "application_update_state")]
+    ApplicationUpdateState(UpdateState),
     #[serde(rename = "operation_summary")]
     OperationSummary(OperationSummary),
     #[serde(rename = "saved_skill_content")]

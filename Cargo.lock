@@ -4365,8 +4365,10 @@ name = "skillhub-core"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "semver",
  "serde",
  "serde_json",
+ "sha2",
  "specta",
  "tempfile",
  "tokio",

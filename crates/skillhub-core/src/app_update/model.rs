@@ -114,17 +114,10 @@ pub fn validate_official_release_url(value: &str) -> bool {
 }
 
 pub fn version_is_newer(current: &str, latest: &str) -> Option<bool> {
-    fn parts(value: &str) -> Option<[u64; 3]> {
-        let value = value.strip_prefix('v').unwrap_or(value);
-        let core = value.split_once('-').map_or(value, |(core, _)| core);
-        let mut values = core.split('.').map(str::parse::<u64>);
-        Some([
-            values.next()?.ok()?,
-            values.next()?.ok()?,
-            values.next()?.ok()?,
-        ])
+    fn parse(value: &str) -> Option<semver::Version> {
+        semver::Version::parse(value.strip_prefix('v').unwrap_or(value)).ok()
     }
-    Some(parts(latest)? > parts(current)?)
+    Some(parse(latest)? > parse(current)?)
 }
 
 #[cfg(test)]

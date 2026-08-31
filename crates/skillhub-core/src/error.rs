@@ -83,6 +83,12 @@ pub enum ErrorCode {
     ApplicationUpdateUnavailable,
     #[serde(rename = "application_update.install_blocked")]
     ApplicationUpdateInstallBlocked,
+    #[serde(rename = "application_update.integrity_failed")]
+    ApplicationUpdateIntegrityFailed,
+    #[serde(rename = "application_update.signature_missing")]
+    ApplicationUpdateSignatureMissing,
+    #[serde(rename = "application_update.invalid_artifact_url")]
+    ApplicationUpdateInvalidArtifactUrl,
 }
 
 #[allow(non_upper_case_globals)]
@@ -136,6 +142,9 @@ impl ErrorCode {
             Self::BackupExportDecisionRequired => "backup.export_decision_required",
             Self::ApplicationUpdateUnavailable => "application_update.unavailable",
             Self::ApplicationUpdateInstallBlocked => "application_update.install_blocked",
+            Self::ApplicationUpdateIntegrityFailed => "application_update.integrity_failed",
+            Self::ApplicationUpdateSignatureMissing => "application_update.signature_missing",
+            Self::ApplicationUpdateInvalidArtifactUrl => "application_update.invalid_artifact_url",
         }
     }
 }
