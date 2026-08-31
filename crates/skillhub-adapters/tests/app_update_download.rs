@@ -44,7 +44,10 @@ async fn serve_once(status: &str, headers: &[(&str, String)], body: &'static [u8
     url
 }
 
-async fn serve_release_with_sidecar(signature: &'static [u8]) -> String {
+async fn serve_release_with_sidecar_response(
+    sidecar_status: &'static str,
+    sidecar_body: &'static [u8],
+) -> String {
     let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
     let address = listener.local_addr().unwrap();
     let base = format!("http://{address}/");
@@ -64,7 +67,7 @@ async fn serve_release_with_sidecar(signature: &'static [u8]) -> String {
     tokio::spawn(async move {
         for (status, body) in [
             ("200 OK", release.into_bytes()),
-            ("200 OK", signature.to_vec()),
+            (sidecar_status, sidecar_body.to_vec()),
         ] {
             let (mut stream, _) = listener.accept().await.unwrap();
             let mut request = [0_u8; 1024];
@@ -195,7 +198,7 @@ async fn manifest_maps_current_platform_asset_metadata() {
 
 #[tokio::test]
 async fn manifest_skips_unrelated_assets_and_reads_signature_sidecar() {
-    let base = serve_release_with_sidecar(b"signed").await;
+    let base = serve_release_with_sidecar_response("200 OK", b"signed").await;
     let provider =
         GithubReleaseProvider::with_download_base_for_tests(&base, "http://127.0.0.1/").unwrap();
 
@@ -213,6 +216,46 @@ async fn manifest_skips_unrelated_assets_and_reads_signature_sidecar() {
     assert_eq!(manifest.artifacts.len(), 1);
     assert_eq!(manifest.artifacts[0].target, "windows-x86_64");
     assert_eq!(manifest.artifacts[0].signature, "signed");
+}
+
+#[tokio::test]
+async fn manifest_propagates_signature_sidecar_rate_limit() {
+    let base = serve_release_with_sidecar_response("429 Too Many Requests", b"rate limited").await;
+    let provider =
+        GithubReleaseProvider::with_download_base_for_tests(&base, "http://127.0.0.1/").unwrap();
+
+    let error = provider
+        .fetch_manifest(
+            "crocketc/skill-hub",
+            &UpdatePlatform {
+                target: "windows".to_owned(),
+                arch: "x86_64".to_owned(),
+            },
+        )
+        .await
+        .unwrap_err();
+
+    assert_eq!(error.code, ErrorCode::SourceSearchRateLimited);
+}
+
+#[tokio::test]
+async fn manifest_propagates_signature_sidecar_server_error() {
+    let base = serve_release_with_sidecar_response("500 Internal Server Error", b"error").await;
+    let provider =
+        GithubReleaseProvider::with_download_base_for_tests(&base, "http://127.0.0.1/").unwrap();
+
+    let error = provider
+        .fetch_manifest(
+            "crocketc/skill-hub",
+            &UpdatePlatform {
+                target: "windows".to_owned(),
+                arch: "x86_64".to_owned(),
+            },
+        )
+        .await
+        .unwrap_err();
+
+    assert_eq!(error.code, ErrorCode::ApplicationUpdateUnavailable);
 }
 
 #[tokio::test]

@@ -311,8 +311,20 @@ async fn fetch_signature_sidecar(
         .send()
         .await
         .map_err(|error| unavailable(error.to_string()))?;
-    if !response.status().is_success() {
+    if response.status().as_u16() == 404 {
         return Err(signature_missing());
+    }
+    if response.status().as_u16() == 429 {
+        return Err(
+            AppError::new(ErrorCode::SourceSearchRateLimited, Severity::Warning)
+                .with_action(RecoveryAction::Retry),
+        );
+    }
+    if !response.status().is_success() {
+        return Err(unavailable(format!(
+            "signature sidecar returned {}",
+            response.status()
+        )));
     }
     let content_length = response.content_length().unwrap_or(sidecar.size);
     if content_length > MAX_SIGNATURE_BYTES {
