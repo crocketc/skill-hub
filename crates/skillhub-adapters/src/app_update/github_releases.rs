@@ -2,10 +2,17 @@ use reqwest::Client;
 use serde::Deserialize;
 use skillhub_core::app_update::{
     install_action_for, validate_official_release_url, version_is_newer, ApplicationUpdate,
-    BuildTrust,
+    BuildTrust, UpdateArtifact, UpdateManifest, UpdatePlatform,
 };
 use skillhub_core::{AppError, AppResult, ErrorCode, RecoveryAction, Severity};
+use std::path::Path;
+use std::sync::{atomic::AtomicBool, Arc};
 use url::Url;
+
+use super::download::{
+    download_artifact, validate_download_metadata, validate_download_url, DownloadedUpdate,
+    UpdateDownloadProvider,
+};
 
 const DEFAULT_API_BASE: &str = "https://api.github.com/";
 
@@ -101,6 +108,84 @@ impl GithubReleaseProvider {
     }
 }
 
+#[async_trait::async_trait]
+impl UpdateDownloadProvider for GithubReleaseProvider {
+    async fn fetch_manifest(
+        &self,
+        repository: &str,
+        platform: &UpdatePlatform,
+    ) -> AppResult<UpdateManifest> {
+        if !self.network_enabled {
+            return Err(AppError::new(ErrorCode::NetworkDisabled, Severity::Info)
+                .with_action(RecoveryAction::Acknowledge));
+        }
+        validate_repository(repository)?;
+        let endpoint = self
+            .api_base
+            .join(&format!("repos/{repository}/releases/latest"))
+            .map_err(|_| unavailable("invalid GitHub repository"))?;
+        let response = self
+            .client
+            .get(endpoint)
+            .send()
+            .await
+            .map_err(|error| unavailable(error.to_string()))?;
+        if response.status().as_u16() == 404 {
+            return Err(unavailable("official release was not found"));
+        }
+        if response.status().as_u16() == 429 {
+            return Err(
+                AppError::new(ErrorCode::SourceSearchRateLimited, Severity::Warning)
+                    .with_action(RecoveryAction::Retry),
+            );
+        }
+        if !response.status().is_success() {
+            return Err(unavailable(format!(
+                "GitHub returned {}",
+                response.status()
+            )));
+        }
+        let release: GithubManifestRelease = response
+            .json()
+            .await
+            .map_err(|error| unavailable(error.to_string()))?;
+        let artifacts = release
+            .assets
+            .into_iter()
+            .map(UpdateArtifact::try_from)
+            .collect::<AppResult<Vec<_>>>()?;
+        let manifest = UpdateManifest {
+            version: release
+                .tag_name
+                .strip_prefix('v')
+                .unwrap_or(&release.tag_name)
+                .to_owned(),
+            notes: release.body.unwrap_or_default(),
+            published_at: release.published_at,
+            artifacts,
+        };
+        skillhub_core::select_artifact(&manifest, platform)?;
+        Ok(manifest)
+    }
+
+    async fn download<P>(
+        &self,
+        artifact: &UpdateArtifact,
+        destination: &Path,
+        progress: P,
+        cancel: Arc<AtomicBool>,
+    ) -> AppResult<DownloadedUpdate>
+    where
+        P: FnMut(u64) + Send,
+    {
+        if !self.network_enabled {
+            return Err(AppError::new(ErrorCode::NetworkDisabled, Severity::Info)
+                .with_action(RecoveryAction::Acknowledge));
+        }
+        download_artifact(&self.client, artifact, destination, progress, cancel).await
+    }
+}
+
 impl Default for GithubReleaseProvider {
     fn default() -> Self {
         Self::new()
@@ -120,6 +205,61 @@ struct GithubRelease {
 #[derive(Deserialize)]
 struct GithubAsset {
     name: String,
+}
+
+#[derive(Deserialize)]
+struct GithubManifestRelease {
+    tag_name: String,
+    #[serde(default)]
+    body: Option<String>,
+    #[serde(default)]
+    published_at: Option<String>,
+    #[serde(default)]
+    assets: Vec<GithubManifestAsset>,
+}
+
+#[derive(Deserialize)]
+struct GithubManifestAsset {
+    browser_download_url: String,
+    size: u64,
+    digest: Option<String>,
+    label: Option<String>,
+}
+
+impl TryFrom<GithubManifestAsset> for UpdateArtifact {
+    type Error = AppError;
+
+    fn try_from(asset: GithubManifestAsset) -> AppResult<Self> {
+        let artifact = UpdateArtifact {
+            target: metadata_value(asset.label.as_deref(), "target")
+                .ok_or_else(|| unavailable("release asset is missing target metadata"))?,
+            url: asset.browser_download_url,
+            size: asset.size,
+            sha256: asset
+                .digest
+                .as_deref()
+                .and_then(|digest| digest.strip_prefix("sha256:"))
+                .ok_or_else(|| unavailable("release asset is missing sha256 metadata"))?
+                .to_owned(),
+            signature: metadata_value(asset.label.as_deref(), "signature").ok_or_else(|| {
+                AppError::new(
+                    ErrorCode::ApplicationUpdateSignatureMissing,
+                    Severity::Error,
+                )
+            })?,
+        };
+        validate_download_url(&artifact.url)?;
+        validate_download_metadata(&artifact)?;
+        Ok(artifact)
+    }
+}
+
+fn metadata_value(metadata: Option<&str>, key: &str) -> Option<String> {
+    metadata?
+        .split(';')
+        .filter_map(|part| part.split_once('='))
+        .find_map(|(candidate, value)| (candidate.trim() == key).then(|| value.trim().to_owned()))
+        .filter(|value| !value.is_empty())
 }
 
 fn validate_repository(value: &str) -> AppResult<()> {

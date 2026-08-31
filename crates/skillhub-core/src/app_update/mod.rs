@@ -7,6 +7,7 @@ pub use model::{
     OpenOfficialRelease, SetApplicationUpdatePolicy,
 };
 pub use update::{
-    select_artifact, verify_artifact, DownloadedApplicationUpdate, PreparedApplicationUpdate,
-    UpdateArtifact, UpdateManifest, UpdatePlatform, UpdateSignaturePublicKey, UpdateState,
+    select_artifact, validate_official_artifact_url, verify_artifact, DownloadedApplicationUpdate,
+    PreparedApplicationUpdate, UpdateArtifact, UpdateManifest, UpdatePlatform,
+    UpdateSignaturePublicKey, UpdateState,
 };

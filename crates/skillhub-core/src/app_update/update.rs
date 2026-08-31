@@ -88,7 +88,7 @@ pub fn verify_artifact(
     artifact: &UpdateArtifact,
     public_key: &UpdateSignaturePublicKey,
 ) -> AppResult<()> {
-    validate_artifact_url(&artifact.url)?;
+    validate_official_artifact_url(&artifact.url)?;
 
     if artifact.signature.is_empty() {
         return Err(AppError::new(
@@ -112,7 +112,7 @@ pub fn verify_artifact(
     Ok(())
 }
 
-fn validate_artifact_url(value: &str) -> AppResult<()> {
+pub fn validate_official_artifact_url(value: &str) -> AppResult<()> {
     let Ok(url) = url::Url::parse(value) else {
         return Err(invalid_artifact_url());
     };
