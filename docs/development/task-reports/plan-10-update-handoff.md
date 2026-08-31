@@ -9,8 +9,8 @@
 ## 当前 Git 状态
 
 - 分支：`main`
-- 当前提交：`2020e1e`（`feat: install updates and restart desktop app`）
-- 本地相对 `origin/main`：领先 12 个提交，尚未推送
+- 当前提交：`0626464`（`fix: validate Windows updater archive`）
+- 本地相对 `origin/main`：领先 14 个提交，尚未推送
 - 当前工作区：交接文档创建前无源码未提交修改
 - 实施计划：`docs/superpowers/plans/2026-08-31-应用内更新功能实施计划.md`
 - 进度账本：`.superpowers/sdd/2026-08-31-应用内更新功能实施计划/progress.md`
@@ -41,10 +41,10 @@
 
 ### Task 4：Tauri Windows/macOS 安装、自动重启和启动探针
 
-- 提交：`2020e1e`
-- 状态：实现完成，任务级审查尚未完成
+- 提交：`2020e1e`，主 Agent 修正：`0626464`
+- 状态：实现完成，任务级审查尚未完成；主 Agent 已修正 Windows updater 资产后缀
 - 已验证：`cargo test -p skillhub-desktop updater`（7 项）、桌面 crate 全量测试、bindings、fmt、diff check
-- 已实现：updater capability、staging 路径和后缀校验、Windows NSIS/macOS `.app.tar.gz` 区分、自动重启请求、启动探针状态
+- 已实现：updater capability、staging 路径和后缀校验、Windows NSIS `.nsis.zip` / macOS `.app.tar.gz` 区分、自动重启请求、启动探针状态
 - 待审查风险：当前 updater public key 是测试 key，发布前必须与生产私钥匹配；确认未签名/ad-hoc 构建仍走官方发布页备用入口；确认 Tauri 配置不会在未签名构建中误启用可信安装
 
 ## 未完成任务
