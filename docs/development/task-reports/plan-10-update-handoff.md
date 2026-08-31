@@ -9,13 +9,10 @@
 ## 当前 Git 状态
 
 - 分支：`main`
-- 当前提交：`d4a50b7`（`fix: wire real update download and Tauri installer`）
-- 本地与 `origin/main` 已同步
-- 当前工作区：无源码未提交修改
-- 已删除已确认干净的旧 worktree 及其 `target`/`node_modules` 缓存；释放约 75GB
-- 保留两个含未提交改动的 worktree：`catalog-task-06`、`project-task-05`；未强制删除
+- 当前提交：`d8ec586`（`feat: add in-app update experience`，Task 5）
+- 本地与 `origin/main` 已同步（截至 Task 5 完成时）
 - 实施计划：`docs/superpowers/plans/2026-08-31-应用内更新功能实施计划.md`
-- 进度账本：`.superpowers/sdd/2026-08-31-应用内更新功能实施计划/progress.md`
+- 进度账本：`.superpowers/sdd/2026-08-31-应用内更新功能实施计划/progress.md`（gitignore 内，仅本地）
 
 ## 已完成任务
 
@@ -58,10 +55,27 @@
   - 当前 updater public key 是测试 key，发布前必须与生产私钥匹配（见 Task 6）。
 - 审查结论：通过
 
+### Task 5：设置页更新交互与 i18n
+
+- 提交：`d8ec586`
+- 状态：实现完成，已通过前端质量门禁（定向 13 项、全量 Vitest 346 项、ESLint、tsc、生产构建）；任务级审查尚未进行
+- 修改文件：`ApplicationUpdate.tsx`、`ApplicationUpdate.test.tsx`（新增）、`SettingsPage.tsx`、`SettingsPage.test.tsx`、`api.ts`、`i18n/zh-CN/common.json`、`i18n/en-US/common.json`
+- 已实现：
+  - `ApplicationUpdate` 改为按计划接口的纯展示状态机组件：props 为 `update`、`policy`、`state`、`progress` 及 `onCheck`/`onDownload`/`onInstall`/`onCancel`/`onRollback`/`onOpenRelease` 回调；覆盖全部 9 个 `UpdateState`
+  - 安装按钮仅在 `ready_to_install`（完整性校验通过后）渲染；下载中显示 `role="progressbar"`（含 `aria-valuenow`）与取消按钮；`ready_to_install` 与 `rolled_back` 展示自动重启与系统安全提示文案（明确由 Windows/macOS 接管）
+  - 开发者详情 `<details>` 展开源 URL 与 SHA-256；错误码经 `updateErrorKey`（字面量联合，TS 安全）映射为中英可操作提示；按钮均为原生 `<button>`，可键盘操作且有可访问名称
+  - `api.ts` 新增 `UpdateState`/`UpdatePolicy`/`UpdateProgress`/`ApplicationUpdateOperations`；`SettingsSnapshot` 增加 `updateState`、`updatePolicy`；`nativeApplicationUpdateOperations` 绑定冻结契约（`check_application_update` 查询、`rollback_application_update` 命令、`open_official_release`）
+  - `SettingsPage` 内 `ApplicationUpdateCard` 持有阶段状态机，生产经 `facade.updates` 注入，测试/预览继续用假 facade
+- 已验证：`pnpm exec vitest run src/features/settings/ApplicationUpdate.test.tsx src/features/settings/SettingsPage.test.tsx`（13 项）、`pnpm run check:frontend`、`pnpm run test:frontend`、`pnpm run build:frontend`
+- 重要边界与已知限制（需要在 Task 6/7 处理）：
+  1. **契约缺口（原样记录，未擅自扩大范围）**：`CheckApplicationUpdate` 查询结果只返回事实（版本/资产名/URL），不含 manifest；而 `PrepareApplicationUpdate` 命令要求调用方提供完整 manifest。前端因此无法独立发起端到端自动下载。`nativeApplicationUpdateOperations.download/install/cancel` 暂以结构化错误拒绝（前端显示"从官方发布页下载"指引）。修复方向：让 check 缓存 manifest 并允许 prepare 从上次检查推导，或让查询返回所选 artifact——需要后端小改 + Specta bindings 再生，属于后端任务，建议在 Task 6 或专门修复轮中处理
+  2. 未签名构建（当前现实）主路径为打开官方发布页，符合设计的安全边界；下载/安装全流程 UI 已就绪，等签名发布（Task 6）与后端修复后即可贯通
+  3. 真实下载进度事件在冻结契约中没有载体，`progress` prop 已预留；取消下载同理（adapter 层 Task 2 已支持取消 flag，但命令契约未暴露）
+
 ## 未完成任务
 
-- Task 5：设置页更新交互与 i18n
-- Task 6：发布清单、签名资产和构建验证
+- Task 5：任务级审查（实现与门禁已完成，建议按本文件所列边界核对组件与 facade 行为）
+- Task 6：发布清单、签名资产和构建验证（含上述契约缺口的修复决策）
 - Task 7：Windows/macOS 双平台验收与收口
 
 ## 已知非阻断警告
