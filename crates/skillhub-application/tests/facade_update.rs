@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+use std::path::Path;
 use std::sync::Arc;
 
 use skillhub_adapters::app_update::github_releases::GithubReleaseProvider;
@@ -25,6 +27,23 @@ async fn serve_once(body: &'static str) -> String {
             body
         );
         stream.write_all(response.as_bytes()).await.unwrap();
+    });
+    format!("http://{address}/")
+}
+
+async fn serve_bytes_once(body: &'static [u8]) -> String {
+    let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+    let address = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        let mut request = [0_u8; 2048];
+        let _ = stream.read(&mut request).await;
+        let response = format!(
+            "HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nContent-Length: {}\r\n\r\n",
+            body.len()
+        );
+        stream.write_all(response.as_bytes()).await.unwrap();
+        stream.write_all(body).await.unwrap();
     });
     format!("http://{address}/")
 }
@@ -60,12 +79,28 @@ fn fixture_manifest() -> UpdateManifest {
     }
 }
 
+fn fixture_manifest_with_version_and_artifact(
+    version: &str,
+    artifact: UpdateArtifact,
+) -> UpdateManifest {
+    UpdateManifest {
+        version: version.to_owned(),
+        notes: "Release notes".to_owned(),
+        published_at: Some("2026-08-31T00:00:00Z".to_owned()),
+        artifacts: vec![artifact],
+    }
+}
+
 async fn prepare_update(facade: &LocalApplicationFacade) {
+    prepare_update_with_manifest(facade, fixture_manifest()).await;
+}
+
+async fn prepare_update_with_manifest(facade: &LocalApplicationFacade, manifest: UpdateManifest) {
     let result = facade
         .execute(AppCommand::PrepareApplicationUpdate(
             skillhub_core::PrepareApplicationUpdate {
                 current_version: "0.1.0".to_owned(),
-                manifest: fixture_manifest(),
+                manifest,
                 platform: UpdatePlatform {
                     target: "windows".to_owned(),
                     arch: "x86_64".to_owned(),
@@ -79,6 +114,31 @@ async fn prepare_update(facade: &LocalApplicationFacade) {
         AppCommandResult::PreparedApplicationUpdate(prepared)
             if prepared.state == UpdateState::ReadyToInstall
     ));
+}
+
+fn snapshot_tree(root: &Path) -> BTreeMap<String, Vec<u8>> {
+    fn visit(base: &Path, path: &Path, snapshot: &mut BTreeMap<String, Vec<u8>>) {
+        let mut entries = std::fs::read_dir(path)
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .collect::<Vec<_>>();
+        entries.sort();
+        for entry in entries {
+            if entry.is_dir() {
+                visit(base, &entry, snapshot);
+            } else {
+                let relative = entry
+                    .strip_prefix(base)
+                    .unwrap()
+                    .to_string_lossy()
+                    .replace('\\', "/");
+                snapshot.insert(relative, std::fs::read(&entry).unwrap());
+            }
+        }
+    }
+    let mut snapshot = BTreeMap::new();
+    visit(root, root, &mut snapshot);
+    snapshot
 }
 
 #[tokio::test]
@@ -176,6 +236,55 @@ async fn prepared_download_is_queryable_without_storing_package_body() {
 }
 
 #[tokio::test]
+async fn download_application_update_is_metadata_only_and_does_not_write_package_file() {
+    let download_base = serve_bytes_once(b"test").await;
+    let unique = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let version = format!("0.2.1-test{unique}");
+    let mut artifact = fixture_artifact();
+    artifact.url = format!("{download_base}skillhub-{unique}.zip");
+    artifact.size = 4;
+    artifact.sha256 = "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08".to_owned();
+    let provider =
+        GithubReleaseProvider::with_download_base_for_tests(&download_base, &download_base)
+            .unwrap();
+    let workspace = tempfile::tempdir().unwrap();
+    let database_path = workspace.path().join("skillhub.sqlite");
+    let facade = facade_with_app_update(Database::open(&database_path).unwrap(), provider);
+    prepare_update_with_manifest(
+        &facade,
+        fixture_manifest_with_version_and_artifact(&version, artifact.clone()),
+    )
+    .await;
+    let staging_path = Database::open(&database_path)
+        .unwrap()
+        .application_update_repository()
+        .get_pending()
+        .unwrap()
+        .staging_path
+        .unwrap();
+
+    let error = facade
+        .execute(AppCommand::DownloadApplicationUpdate(
+            skillhub_core::DownloadApplicationUpdate { artifact },
+        ))
+        .await
+        .unwrap_err();
+    assert_eq!(error.code, ErrorCode::ApplicationUpdateInstallBlocked);
+    assert!(!Path::new(&staging_path).exists());
+    drop(facade);
+
+    let pending = Database::open(&database_path)
+        .unwrap()
+        .application_update_repository()
+        .get_pending()
+        .unwrap();
+    assert_eq!(pending.state, UpdateState::ReadyToInstall);
+}
+
+#[tokio::test]
 async fn install_blocked_keeps_current_version_unchanged() {
     let workspace = tempfile::tempdir().unwrap();
     let database_path = workspace.path().join("skillhub.sqlite");
@@ -228,6 +337,14 @@ async fn network_disabled_update_query_returns_structured_error() {
 async fn startup_failure_rolls_back_once_without_touching_skill_data() {
     let workspace = tempfile::tempdir().unwrap();
     let database_path = workspace.path().join("skillhub.sqlite");
+    let central_library = workspace.path().join("central-library");
+    let user_skill = workspace.path().join("user-skill");
+    std::fs::create_dir_all(central_library.join("skills/demo")).unwrap();
+    std::fs::create_dir_all(&user_skill).unwrap();
+    std::fs::write(central_library.join("skills/demo/SKILL.md"), b"central").unwrap();
+    std::fs::write(user_skill.join("SKILL.md"), b"user").unwrap();
+    let central_before = snapshot_tree(&central_library);
+    let user_before = snapshot_tree(&user_skill);
     let database = Database::open(&database_path).unwrap();
     let skill_id = SkillId::new();
     database
@@ -235,10 +352,7 @@ async fn startup_failure_rolls_back_once_without_touching_skill_data() {
         .unwrap()
         .insert_sync(&Skill::new(skill_id, "demo"))
         .unwrap();
-    let facade = facade_with_app_update(
-        database,
-        GithubReleaseProvider::new().with_network_enabled(false),
-    );
+    let facade = LocalApplicationFacade::new_with_library(database, &central_library);
     prepare_update(&facade).await;
 
     let result = facade.rollback_if_unhealthy().await.unwrap();
@@ -270,4 +384,6 @@ async fn startup_failure_rolls_back_once_without_touching_skill_data() {
         .get_sync(skill_id)
         .unwrap()
         .is_some());
+    assert_eq!(snapshot_tree(&central_library), central_before);
+    assert_eq!(snapshot_tree(&user_skill), user_before);
 }

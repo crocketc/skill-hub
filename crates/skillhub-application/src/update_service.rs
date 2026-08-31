@@ -1,7 +1,6 @@
 use std::path::PathBuf;
-use std::sync::{atomic::AtomicBool, Arc, Mutex};
+use std::sync::{Arc, Mutex};
 
-use skillhub_adapters::app_update::download::UpdateDownloadProvider;
 use skillhub_adapters::app_update::github_releases::GithubReleaseProvider;
 use skillhub_core::{
     select_artifact, version_is_newer, AppError, AppResult, CheckApplicationUpdate,
@@ -149,31 +148,16 @@ impl UpdateService {
                     .with_action(RecoveryAction::Retry),
             );
         }
-        let staging_path = pending.staging_path.as_ref().ok_or_else(|| {
+        pending.staging_path.as_ref().ok_or_else(|| {
             AppError::new(ErrorCode::ApplicationUpdateUnavailable, Severity::Warning)
                 .with_param("detail", "update staging path is missing")
                 .with_action(RecoveryAction::Retry)
         })?;
-        let destination = PathBuf::from(staging_path);
-        self.provider
-            .download(
-                artifact,
-                &destination,
-                |_| {},
-                Arc::new(AtomicBool::new(false)),
-            )
-            .await?;
-        self.with_database("update.download.save", |database| {
-            database.application_update_repository().mark_downloaded(
-                artifact,
-                destination.to_string_lossy().into_owned(),
-                now_seconds(),
-            )
-        })?;
-        Ok(DownloadedApplicationUpdate {
-            artifact: artifact.clone(),
-            state: UpdateState::ReadyToInstall,
-        })
+        Err(
+            AppError::new(ErrorCode::ApplicationUpdateInstallBlocked, Severity::Info)
+                .with_param("reason", "package download is not implemented in this task")
+                .with_action(RecoveryAction::Acknowledge),
+        )
     }
 
     pub async fn install(&self) -> AppResult<()> {

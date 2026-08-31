@@ -45,3 +45,36 @@
 
 - Windows test linking prints `linker stdout` warnings while tests still pass; clippy is clean with `-D warnings`.
 - Platform installer/restart remains intentionally blocked with `ErrorCode::ApplicationUpdateInstallBlocked` for a later task.
+
+## Fix Round 1
+
+### Review finding
+
+- `DownloadApplicationUpdate` was calling the Task 2 adapter download path and writing package bytes into the staging location. Task 3 only owns metadata orchestration and download preparation, so real package download belongs to a later task.
+- Rollback coverage only proved the catalog row survived; it now also snapshots isolated central Skill library and user Skill directories before and after rollback.
+
+### Changes
+
+- `UpdateService::download` now validates the pending update and artifact identity, confirms a staging path is recorded, and returns `ErrorCode::ApplicationUpdateInstallBlocked` without invoking `GithubReleaseProvider::download` or writing package bytes.
+- Added `download_application_update_is_metadata_only_and_does_not_write_package_file`, which uses a localhost-download-capable provider and proves the command is blocked, no staging file is created, and pending update state remains queryable as `ReadyToInstall`.
+- Enhanced `startup_failure_rolls_back_once_without_touching_skill_data` with byte-for-byte snapshots of temporary central library and user Skill paths.
+
+### Verification
+
+- RED before fix:
+  - `cargo test -p skillhub-application --test facade_update download_application_update_is_metadata_only_and_does_not_write_package_file`
+  - Result: failed as expected because `DownloadApplicationUpdate` returned `Ok(DownloadedApplicationUpdate)` and followed the real download path.
+- Final verification:
+  - `cargo test -p skillhub-application --test facade_update`
+  - Result: passed, 7 passed, 0 failed.
+  - `cargo test -p skillhub-storage --test app_update_repository`
+  - Result: passed, 2 passed, 0 failed.
+  - `cargo clippy -p skillhub-application -p skillhub-storage --all-targets --all-features --locked -- -D warnings`
+  - Result: passed.
+  - `git diff --check`
+  - Result: passed; Git reported CRLF normalization warnings for touched Rust files.
+
+### Concerns
+
+- Windows test linking still prints `linker stdout` warnings while tests pass.
+- The Task 2 `GithubReleaseProvider` download implementation remains intact for a later task; Task 3 facade now deliberately blocks the command before calling it.
