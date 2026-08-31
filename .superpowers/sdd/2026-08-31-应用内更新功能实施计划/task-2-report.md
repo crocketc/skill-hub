@@ -36,3 +36,34 @@
 ## Commit
 
 - `a88e796 feat: download and verify update artifacts`
+
+## Revision 2 — fix pass
+
+This round kept the Task 2 boundary on the adapter side and tightened the manifest/download edge cases that the review called out.
+
+### Updated files in this round
+
+- `crates/skillhub-adapters/src/app_update/download.rs`
+- `crates/skillhub-adapters/src/app_update/github_releases.rs`
+- `crates/skillhub-adapters/tests/app_update_download.rs`
+
+### What changed
+
+- Skipped unrelated release assets while mapping the current platform updater artifact.
+- Read the matching `.sig` sidecar content when the signature was not embedded in release metadata.
+- Kept failed and cancelled downloads confined to the temporary file created by this download attempt.
+- Preserved any pre-existing destination file on download failure or cancellation.
+- Kept production download validation on the official artifact URL path, with localhost only available through the test-only download provider.
+- Separated SHA-256 integrity failures from missing-signature failures in download metadata validation.
+
+### Verification
+
+- `cargo test -p skillhub-adapters --test app_update_download` passed, 15 passed, 0 failed.
+- `cargo test -p skillhub-adapters --lib app_update` passed, 2 passed, 0 failed.
+- `cargo fmt --all -- --check` passed.
+- `git diff --check` passed with only CRLF normalization warnings from Git.
+
+### Concerns
+
+- No functional blocker remains in Task 2 from this round.
+- The workspace still emits linker warnings during the test build on Windows, but they are not test failures.

@@ -44,11 +44,51 @@ async fn serve_once(status: &str, headers: &[(&str, String)], body: &'static [u8
     url
 }
 
+async fn serve_release_with_sidecar(signature: &'static [u8]) -> String {
+    let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let base = format!("http://{address}/");
+    let download_base = base.trim_end_matches('/');
+    let release = format!(
+        r#"{{
+        "tag_name":"v1.2.3",
+        "body":"Release notes",
+        "assets":[
+            {{"name":"README.txt","browser_download_url":"{download_base}/README.txt","size":12}},
+            {{"name":"skillhub-macos-aarch64.dmg","browser_download_url":"{download_base}/skillhub-macos-aarch64.dmg","size":4,"digest":"sha256:9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08","label":"target=macos-aarch64"}},
+            {{"name":"skillhub-windows-x86_64.zip","browser_download_url":"{download_base}/skillhub-windows-x86_64.zip","size":4,"digest":"sha256:9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08","label":"target=windows-x86_64"}},
+            {{"name":"skillhub-windows-x86_64.zip.sig","browser_download_url":"{download_base}/skillhub-windows-x86_64.zip.sig","size":6}}
+        ]
+    }}"#
+    );
+    tokio::spawn(async move {
+        for (status, body) in [
+            ("200 OK", release.into_bytes()),
+            ("200 OK", signature.to_vec()),
+        ] {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut request = [0_u8; 1024];
+            let _ = stream.read(&mut request).await;
+            let response = format!(
+                "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n",
+                body.len()
+            );
+            stream.write_all(response.as_bytes()).await.unwrap();
+            stream.write_all(&body).await.unwrap();
+        }
+    });
+    base
+}
+
 #[tokio::test]
 async fn cancelled_download_removes_partial_file() {
     let body = b"partial download body";
     let url = serve_once("200 OK", &[], body).await;
-    let provider = GithubReleaseProvider::with_api_base("http://127.0.0.1:1/").unwrap();
+    let provider = GithubReleaseProvider::with_download_base_for_tests(
+        "http://127.0.0.1:1/",
+        "http://127.0.0.1/",
+    )
+    .unwrap();
     let temp = TempDir::new().unwrap();
     let destination = temp.path().join("skillhub.zip");
     let progress = Arc::new(Mutex::new(Vec::new()));
@@ -154,6 +194,28 @@ async fn manifest_maps_current_platform_asset_metadata() {
 }
 
 #[tokio::test]
+async fn manifest_skips_unrelated_assets_and_reads_signature_sidecar() {
+    let base = serve_release_with_sidecar(b"signed").await;
+    let provider =
+        GithubReleaseProvider::with_download_base_for_tests(&base, "http://127.0.0.1/").unwrap();
+
+    let manifest = provider
+        .fetch_manifest(
+            "crocketc/skill-hub",
+            &UpdatePlatform {
+                target: "windows".to_owned(),
+                arch: "x86_64".to_owned(),
+            },
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(manifest.artifacts.len(), 1);
+    assert_eq!(manifest.artifacts[0].target, "windows-x86_64");
+    assert_eq!(manifest.artifacts[0].signature, "signed");
+}
+
+#[tokio::test]
 async fn manifest_rejects_non_https_asset_endpoint() {
     let body = br#"{
         "tag_name":"v1.2.3",
@@ -214,7 +276,7 @@ async fn manifest_rejects_missing_hash_metadata() {
         .await
         .unwrap_err();
 
-    assert_eq!(error.code, ErrorCode::ApplicationUpdateUnavailable);
+    assert_eq!(error.code, ErrorCode::ApplicationUpdateIntegrityFailed);
 }
 
 #[tokio::test]
@@ -253,7 +315,11 @@ async fn manifest_rejects_missing_signature_metadata() {
 async fn response_over_size_limit_removes_partial_file() {
     let body = b"too large";
     let url = serve_once("200 OK", &[], body).await;
-    let provider = GithubReleaseProvider::with_api_base("http://127.0.0.1:1/").unwrap();
+    let provider = GithubReleaseProvider::with_download_base_for_tests(
+        "http://127.0.0.1:1/",
+        "http://127.0.0.1/",
+    )
+    .unwrap();
     let temp = TempDir::new().unwrap();
     let destination = temp.path().join("skillhub.zip");
     let mut artifact = artifact(url, body);
@@ -274,10 +340,155 @@ async fn response_over_size_limit_removes_partial_file() {
 }
 
 #[tokio::test]
+async fn failed_download_keeps_existing_destination_file() {
+    let body = b"too large";
+    let url = serve_once("200 OK", &[], body).await;
+    let provider = GithubReleaseProvider::with_download_base_for_tests(
+        "http://127.0.0.1:1/",
+        "http://127.0.0.1/",
+    )
+    .unwrap();
+    let temp = TempDir::new().unwrap();
+    let destination = temp.path().join("skillhub.zip");
+    std::fs::write(&destination, b"existing package").unwrap();
+    let mut artifact = artifact(url, body);
+    artifact.size = (body.len() - 1) as u64;
+
+    let error = provider
+        .download(
+            &artifact,
+            &destination,
+            |_| {},
+            Arc::new(AtomicBool::new(false)),
+        )
+        .await
+        .unwrap_err();
+
+    assert_eq!(error.code, ErrorCode::ApplicationUpdateIntegrityFailed);
+    assert_eq!(std::fs::read(&destination).unwrap(), b"existing package");
+}
+
+#[tokio::test]
+async fn cancelled_download_keeps_existing_destination_file() {
+    let body = b"partial download body";
+    let url = serve_once("200 OK", &[], body).await;
+    let provider = GithubReleaseProvider::with_download_base_for_tests(
+        "http://127.0.0.1:1/",
+        "http://127.0.0.1/",
+    )
+    .unwrap();
+    let temp = TempDir::new().unwrap();
+    let destination = temp.path().join("skillhub.zip");
+    std::fs::write(&destination, b"existing package").unwrap();
+    let cancel = Arc::new(AtomicBool::new(false));
+    let cancel_on_first_chunk = {
+        let cancel = Arc::clone(&cancel);
+        move |_| {
+            cancel.store(true, Ordering::SeqCst);
+        }
+    };
+
+    let error = provider
+        .download(
+            &artifact(url, body),
+            &destination,
+            cancel_on_first_chunk,
+            cancel,
+        )
+        .await
+        .unwrap_err();
+
+    assert_eq!(error.code, ErrorCode::ApplicationUpdateDownloadCancelled);
+    assert_eq!(std::fs::read(&destination).unwrap(), b"existing package");
+}
+
+#[tokio::test]
+async fn production_download_rejects_localhost_artifact_url() {
+    let body = b"test";
+    let url = serve_once("200 OK", &[], body).await;
+    let provider = GithubReleaseProvider::new();
+    let temp = TempDir::new().unwrap();
+    let destination = temp.path().join("skillhub.zip");
+
+    let error = provider
+        .download(
+            &artifact(url, body),
+            &destination,
+            |_| {},
+            Arc::new(AtomicBool::new(false)),
+        )
+        .await
+        .unwrap_err();
+
+    assert_eq!(error.code, ErrorCode::ApplicationUpdateInvalidArtifactUrl);
+    assert!(!destination.exists());
+}
+
+#[tokio::test]
+async fn download_rejects_invalid_sha256_metadata() {
+    let body = b"test";
+    let url = serve_once("200 OK", &[], body).await;
+    let provider = GithubReleaseProvider::with_download_base_for_tests(
+        "http://127.0.0.1:1/",
+        "http://127.0.0.1/",
+    )
+    .unwrap();
+    let temp = TempDir::new().unwrap();
+    let destination = temp.path().join("skillhub.zip");
+    let mut artifact = artifact(url, body);
+    artifact.sha256 = "sha256-not-hex".to_owned();
+
+    let error = provider
+        .download(
+            &artifact,
+            &destination,
+            |_| {},
+            Arc::new(AtomicBool::new(false)),
+        )
+        .await
+        .unwrap_err();
+
+    assert_eq!(error.code, ErrorCode::ApplicationUpdateIntegrityFailed);
+    assert!(!destination.exists());
+}
+
+#[tokio::test]
+async fn download_rejects_missing_signature_metadata() {
+    let body = b"test";
+    let url = serve_once("200 OK", &[], body).await;
+    let provider = GithubReleaseProvider::with_download_base_for_tests(
+        "http://127.0.0.1:1/",
+        "http://127.0.0.1/",
+    )
+    .unwrap();
+    let temp = TempDir::new().unwrap();
+    let destination = temp.path().join("skillhub.zip");
+    let mut artifact = artifact(url, body);
+    artifact.signature.clear();
+
+    let error = provider
+        .download(
+            &artifact,
+            &destination,
+            |_| {},
+            Arc::new(AtomicBool::new(false)),
+        )
+        .await
+        .unwrap_err();
+
+    assert_eq!(error.code, ErrorCode::ApplicationUpdateSignatureMissing);
+    assert!(!destination.exists());
+}
+
+#[tokio::test]
 async fn http_429_removes_partial_file() {
     let body = b"rate limited";
     let url = serve_once("429 Too Many Requests", &[], body).await;
-    let provider = GithubReleaseProvider::with_api_base("http://127.0.0.1:1/").unwrap();
+    let provider = GithubReleaseProvider::with_download_base_for_tests(
+        "http://127.0.0.1:1/",
+        "http://127.0.0.1/",
+    )
+    .unwrap();
     let temp = TempDir::new().unwrap();
     let destination = temp.path().join("skillhub.zip");
 
@@ -299,7 +510,11 @@ async fn http_429_removes_partial_file() {
 async fn successful_download_returns_bytes_hash_and_final_path() {
     let body = b"test";
     let url = serve_once("200 OK", &[], body).await;
-    let provider = GithubReleaseProvider::with_api_base("http://127.0.0.1:1/").unwrap();
+    let provider = GithubReleaseProvider::with_download_base_for_tests(
+        "http://127.0.0.1:1/",
+        "http://127.0.0.1/",
+    )
+    .unwrap();
     let temp = TempDir::new().unwrap();
     let destination = temp.path().join("skillhub.zip");
 

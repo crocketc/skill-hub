@@ -10,16 +10,18 @@ use std::sync::{atomic::AtomicBool, Arc};
 use url::Url;
 
 use super::download::{
-    download_artifact, validate_download_metadata, validate_download_url, DownloadedUpdate,
-    UpdateDownloadProvider,
+    download_artifact, download_artifact_for_tests, is_localhost_http, validate_download_metadata,
+    validate_download_url, DownloadedUpdate, UpdateDownloadProvider,
 };
 
 const DEFAULT_API_BASE: &str = "https://api.github.com/";
+const MAX_SIGNATURE_BYTES: u64 = 16 * 1024;
 
 pub struct GithubReleaseProvider {
     client: Client,
     api_base: Url,
     network_enabled: bool,
+    allow_localhost_downloads: bool,
 }
 
 impl GithubReleaseProvider {
@@ -43,6 +45,19 @@ impl GithubReleaseProvider {
                 .map_err(|_| unavailable("cannot create HTTP client"))?,
             api_base,
             network_enabled: true,
+            allow_localhost_downloads: false,
+        })
+    }
+
+    pub fn with_download_base_for_tests(api_base: &str, download_base: &str) -> AppResult<Self> {
+        let download_base =
+            Url::parse(download_base).map_err(|_| unavailable("invalid download base URL"))?;
+        if !is_localhost_http(download_base.as_str()) {
+            return Err(unavailable("test download base must be localhost HTTP"));
+        }
+        Ok(Self {
+            allow_localhost_downloads: true,
+            ..Self::with_api_base(api_base)?
         })
     }
 
@@ -149,11 +164,13 @@ impl UpdateDownloadProvider for GithubReleaseProvider {
             .json()
             .await
             .map_err(|error| unavailable(error.to_string()))?;
-        let artifacts = release
-            .assets
-            .into_iter()
-            .map(UpdateArtifact::try_from)
-            .collect::<AppResult<Vec<_>>>()?;
+        let artifacts = manifest_artifacts(
+            &self.client,
+            release.assets,
+            platform,
+            self.allow_localhost_downloads,
+        )
+        .await?;
         let manifest = UpdateManifest {
             version: release
                 .tag_name
@@ -182,7 +199,11 @@ impl UpdateDownloadProvider for GithubReleaseProvider {
             return Err(AppError::new(ErrorCode::NetworkDisabled, Severity::Info)
                 .with_action(RecoveryAction::Acknowledge));
         }
-        download_artifact(&self.client, artifact, destination, progress, cancel).await
+        if self.allow_localhost_downloads {
+            download_artifact_for_tests(&self.client, artifact, destination, progress, cancel).await
+        } else {
+            download_artifact(&self.client, artifact, destination, progress, cancel).await
+        }
     }
 }
 
@@ -220,38 +241,105 @@ struct GithubManifestRelease {
 
 #[derive(Deserialize)]
 struct GithubManifestAsset {
+    name: String,
     browser_download_url: String,
     size: u64,
     digest: Option<String>,
     label: Option<String>,
 }
 
-impl TryFrom<GithubManifestAsset> for UpdateArtifact {
-    type Error = AppError;
-
-    fn try_from(asset: GithubManifestAsset) -> AppResult<Self> {
-        let artifact = UpdateArtifact {
-            target: metadata_value(asset.label.as_deref(), "target")
-                .ok_or_else(|| unavailable("release asset is missing target metadata"))?,
-            url: asset.browser_download_url,
-            size: asset.size,
-            sha256: asset
-                .digest
-                .as_deref()
-                .and_then(|digest| digest.strip_prefix("sha256:"))
-                .ok_or_else(|| unavailable("release asset is missing sha256 metadata"))?
-                .to_owned(),
-            signature: metadata_value(asset.label.as_deref(), "signature").ok_or_else(|| {
-                AppError::new(
-                    ErrorCode::ApplicationUpdateSignatureMissing,
-                    Severity::Error,
-                )
-            })?,
-        };
-        validate_download_url(&artifact.url)?;
-        validate_download_metadata(&artifact)?;
-        Ok(artifact)
+async fn manifest_artifacts(
+    client: &Client,
+    assets: Vec<GithubManifestAsset>,
+    platform: &UpdatePlatform,
+    allow_localhost_downloads: bool,
+) -> AppResult<Vec<UpdateArtifact>> {
+    let expected_target = format!("{}-{}", platform.target, platform.arch);
+    let package_assets = assets
+        .iter()
+        .filter(|asset| !asset.name.ends_with(".sig"))
+        .filter(|asset| {
+            metadata_value(asset.label.as_deref(), "target").as_deref() == Some(&expected_target)
+        })
+        .collect::<Vec<_>>();
+    if package_assets.is_empty() {
+        return Err(AppError::new(
+            ErrorCode::ApplicationUpdateUnavailable,
+            Severity::Warning,
+        ));
     }
+
+    let mut artifacts = Vec::with_capacity(package_assets.len());
+    for asset in package_assets {
+        let signature = match metadata_value(asset.label.as_deref(), "signature") {
+            Some(signature) => signature,
+            None => {
+                fetch_signature_sidecar(client, asset, &assets, allow_localhost_downloads).await?
+            }
+        };
+        let artifact = UpdateArtifact {
+            target: expected_target.clone(),
+            url: asset.browser_download_url.clone(),
+            size: asset.size,
+            sha256: parse_sha256(asset.digest.as_deref())?,
+            signature,
+        };
+        validate_download_url(&artifact.url, allow_localhost_downloads)?;
+        validate_download_metadata(&artifact)?;
+        artifacts.push(artifact);
+    }
+    Ok(artifacts)
+}
+
+async fn fetch_signature_sidecar(
+    client: &Client,
+    package: &GithubManifestAsset,
+    assets: &[GithubManifestAsset],
+    allow_localhost_downloads: bool,
+) -> AppResult<String> {
+    let sidecar_name = format!("{}.sig", package.name);
+    let sidecar = assets
+        .iter()
+        .find(|asset| asset.name == sidecar_name)
+        .ok_or_else(signature_missing)?;
+    validate_download_url(&sidecar.browser_download_url, allow_localhost_downloads)?;
+    if sidecar.size > MAX_SIGNATURE_BYTES {
+        return Err(signature_missing());
+    }
+    let response = client
+        .get(&sidecar.browser_download_url)
+        .send()
+        .await
+        .map_err(|error| unavailable(error.to_string()))?;
+    if !response.status().is_success() {
+        return Err(signature_missing());
+    }
+    let content_length = response.content_length().unwrap_or(sidecar.size);
+    if content_length > MAX_SIGNATURE_BYTES {
+        return Err(signature_missing());
+    }
+    let signature = response
+        .text()
+        .await
+        .map_err(|error| unavailable(error.to_string()))?;
+    if signature.is_empty() || signature.len() as u64 > MAX_SIGNATURE_BYTES {
+        return Err(signature_missing());
+    }
+    Ok(signature)
+}
+
+fn parse_sha256(value: Option<&str>) -> AppResult<String> {
+    value
+        .and_then(|digest| digest.strip_prefix("sha256:"))
+        .map(str::to_owned)
+        .ok_or_else(|| AppError::new(ErrorCode::ApplicationUpdateIntegrityFailed, Severity::Error))
+}
+
+fn signature_missing() -> AppError {
+    AppError::new(
+        ErrorCode::ApplicationUpdateSignatureMissing,
+        Severity::Error,
+    )
 }
 
 fn metadata_value(metadata: Option<&str>, key: &str) -> Option<String> {

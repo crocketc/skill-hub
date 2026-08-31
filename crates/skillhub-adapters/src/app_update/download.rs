@@ -54,30 +54,54 @@ pub async fn download_artifact<P>(
 where
     P: FnMut(u64) + Send,
 {
-    download_artifact_with_limit(
+    download_artifact_with_policy(
         client,
         artifact,
         destination,
         progress,
         cancel,
         DEFAULT_MAX_DOWNLOAD_BYTES,
+        false,
     )
     .await
 }
 
-async fn download_artifact_with_limit<P>(
+pub async fn download_artifact_for_tests<P>(
+    client: &Client,
+    artifact: &UpdateArtifact,
+    destination: &Path,
+    progress: P,
+    cancel: Arc<AtomicBool>,
+) -> AppResult<DownloadedUpdate>
+where
+    P: FnMut(u64) + Send,
+{
+    download_artifact_with_policy(
+        client,
+        artifact,
+        destination,
+        progress,
+        cancel,
+        DEFAULT_MAX_DOWNLOAD_BYTES,
+        true,
+    )
+    .await
+}
+
+async fn download_artifact_with_policy<P>(
     client: &Client,
     artifact: &UpdateArtifact,
     destination: &Path,
     mut progress: P,
     cancel: Arc<AtomicBool>,
     max_bytes: u64,
+    allow_localhost_downloads: bool,
 ) -> AppResult<DownloadedUpdate>
 where
     P: FnMut(u64) + Send,
 {
     validate_download_metadata(artifact)?;
-    validate_download_url(&artifact.url)?;
+    validate_download_url(&artifact.url, allow_localhost_downloads)?;
     if artifact.size > max_bytes {
         return Err(integrity_error());
     }
@@ -160,10 +184,6 @@ where
 
     match result {
         Ok(downloaded) => {
-            if destination.exists() {
-                fs::remove_file(destination)
-                    .map_err(|_| unavailable("cannot replace update package"))?;
-            }
             temp_file
                 .persist(destination)
                 .map_err(|_| unavailable("cannot persist update package"))?;
@@ -172,40 +192,42 @@ where
         Err(error) => {
             drop(temp_file);
             let _ = fs::remove_file(&temp_path);
-            let _ = fs::remove_file(destination);
             Err(error)
         }
     }
 }
 
 pub fn validate_download_metadata(artifact: &UpdateArtifact) -> AppResult<()> {
+    if !is_lower_hex_sha256(&artifact.sha256) {
+        return Err(integrity_error());
+    }
     if artifact.signature.is_empty() {
         return Err(AppError::new(
             ErrorCode::ApplicationUpdateSignatureMissing,
             Severity::Error,
         ));
     }
-    if !is_lower_hex_sha256(&artifact.sha256) {
-        return Err(integrity_error());
-    }
     Ok(())
 }
 
-pub fn validate_download_url(value: &str) -> AppResult<()> {
+pub fn validate_download_url(value: &str, allow_localhost_downloads: bool) -> AppResult<()> {
     if validate_official_artifact_url(value).is_ok() {
         return Ok(());
     }
-    let Ok(url) = Url::parse(value) else {
-        return Err(invalid_url());
-    };
-    let local_test_base = url.scheme() == "http"
-        && url
-            .host_str()
-            .is_some_and(|host| host == "127.0.0.1" || host == "localhost");
-    if local_test_base {
+    if allow_localhost_downloads && is_localhost_http(value) {
         return Ok(());
     }
     Err(invalid_url())
+}
+
+pub fn is_localhost_http(value: &str) -> bool {
+    let Ok(url) = Url::parse(value) else {
+        return false;
+    };
+    url.scheme() == "http"
+        && url
+            .host_str()
+            .is_some_and(|host| host == "127.0.0.1" || host == "localhost")
 }
 
 fn is_lower_hex_sha256(value: &str) -> bool {
