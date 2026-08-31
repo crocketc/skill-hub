@@ -7,6 +7,12 @@ const OFFICIAL_RELEASE_HOST: &str = "github.com";
 const OFFICIAL_RELEASE_OWNER: &str = "crocketc";
 const OFFICIAL_RELEASE_REPO: &str = "skill-hub";
 
+/// Tauri updater public key used for release signing. It must stay identical
+/// to the value in `apps/desktop/src-tauri/tauri.conf.json`; the release
+/// pipeline publishes it as a non-secret alongside the signed artifacts.
+pub const DEFAULT_UPDATE_SIGNATURE_PUBLIC_KEY: &str =
+    "RWQf6LRCGA9i53mlYecO4IzT51TGPpvWucNSCh1CBM0QTaLn73Y7GFO3";
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 #[serde(deny_unknown_fields)]
 pub struct UpdatePlatform {
@@ -89,7 +95,17 @@ pub fn verify_artifact(
     public_key: &UpdateSignaturePublicKey,
 ) -> AppResult<()> {
     validate_official_artifact_url(&artifact.url)?;
+    verify_downloaded_artifact(bytes, artifact, public_key)
+}
 
+/// Verifies size, SHA-256 and Tauri/minisign signature of an already downloaded
+/// package. The download URL is not re-checked here; it was validated when the
+/// manifest was selected and when the download was admitted.
+pub fn verify_downloaded_artifact(
+    bytes: &[u8],
+    artifact: &UpdateArtifact,
+    public_key: &UpdateSignaturePublicKey,
+) -> AppResult<()> {
     if artifact.signature.is_empty() {
         return Err(AppError::new(
             ErrorCode::ApplicationUpdateSignatureMissing,

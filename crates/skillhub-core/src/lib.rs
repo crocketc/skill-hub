@@ -55,10 +55,10 @@ pub use api::{
 };
 pub use app_update::{
     install_action_for, select_artifact, validate_official_artifact_url,
-    validate_official_release_url, verify_artifact, version_is_newer, ApplicationUpdate,
-    ApplicationUpdatePolicy, BuildTrust, DownloadedApplicationUpdate, InstallAction,
-    PreparedApplicationUpdate, UpdateArtifact, UpdateManifest, UpdatePlatform,
-    UpdateSignaturePublicKey, UpdateState,
+    validate_official_release_url, verify_artifact, verify_downloaded_artifact, version_is_newer,
+    ApplicationUpdate, ApplicationUpdatePolicy, BuildTrust, DownloadedApplicationUpdate,
+    InstallAction, PreparedApplicationUpdate, UpdateArtifact, UpdateManifest, UpdatePlatform,
+    UpdateSignaturePublicKey, UpdateState, DEFAULT_UPDATE_SIGNATURE_PUBLIC_KEY,
 };
 pub use application::{
     BasicCheckOutput, BasicCheckScanner, CallPolicyBackend, CallPolicyService, CheckService,

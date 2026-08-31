@@ -56,7 +56,9 @@ use skillhub_storage::export::ExportService;
 use skillhub_storage::{
     CentralLibrary, Database, LibraryPaths, UsageEvidenceRepository, VersionStore,
 };
-pub use update_service::{RollbackResult, RollbackState, UpdateDownloadPlan, UpdateService};
+pub use update_service::{
+    ApplicationUpdateInstaller, RollbackResult, RollbackState, UpdateDownloadPlan, UpdateService,
+};
 
 /// The date provider is kept on the facade so all date-sensitive projections
 /// in one request use the same day boundary. Production uses the current UTC
@@ -871,6 +873,16 @@ impl LocalApplicationFacade {
             Arc::new(GithubReleaseProvider::new().with_network_enabled(enabled)),
             Arc::new(SkillsShProvider::new("https://skills.sh").with_network_enabled(enabled)),
         )
+    }
+
+    /// Registers the desktop shell's platform installer so confirmed updates
+    /// can actually launch. Facades without one keep installs blocked, so
+    /// tests never start a real installer.
+    pub fn set_application_update_installer(
+        &self,
+        installer: Arc<dyn update_service::ApplicationUpdateInstaller>,
+    ) {
+        self.update_service.set_installer(installer);
     }
 
     /// Registers a directory grant issued by the native file picker. The

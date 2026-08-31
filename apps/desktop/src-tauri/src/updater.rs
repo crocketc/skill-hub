@@ -1,15 +1,11 @@
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+use skillhub_application::ApplicationUpdateInstaller;
 use skillhub_core::{AppError, ErrorCode, RecoveryAction, Severity};
+use tauri_plugin_updater::UpdaterExt;
 
 pub type UpdateInstallError = AppError;
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct InstallStarted {
-    pub package_path: PathBuf,
-    pub restart_requested: bool,
-}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum StartupProbeResult {
@@ -19,23 +15,109 @@ pub enum StartupProbeResult {
     TimedOut,
 }
 
+/// Failure detail reported by [`UpdaterPlugin`]: a stable machine reason plus
+/// the display form of the underlying error for diagnostics.
+#[derive(Debug, Eq, PartialEq)]
+pub struct UpdaterPluginFailure {
+    pub reason: &'static str,
+    pub source: String,
+}
+
+/// Drives the Tauri updater plugin for one verified staging package. Split
+/// from [`TauriUpdateInstaller`] so tests can fake the plugin without booting
+/// a Tauri runtime; the real implementation is [`PluginBackedUpdater`].
+#[async_trait::async_trait]
+pub trait UpdaterPlugin: Send + Sync {
+    /// Checks the configured official endpoint and installs the given package
+    /// bytes. On success the process exits (Windows NSIS) or is restarted
+    /// (macOS), so a normal return usually means the process is being torn
+    /// down by the plugin.
+    async fn check_and_install(&self, bytes: Vec<u8>) -> Result<(), UpdaterPluginFailure>;
+}
+
+#[async_trait::async_trait]
+impl<P: UpdaterPlugin + ?Sized> UpdaterPlugin for &P {
+    async fn check_and_install(&self, bytes: Vec<u8>) -> Result<(), UpdaterPluginFailure> {
+        (**self).check_and_install(bytes).await
+    }
+}
+
+/// Real [`UpdaterPlugin`] backed by a Tauri app handle. The plugin reads the
+/// static endpoint and public key from `tauri.conf.json`, re-verifies the
+/// minisign signature, and runs the per-platform installer; this type never
+/// spawns a command or opens a URL on its own.
+pub struct PluginBackedUpdater<R: tauri::Runtime> {
+    app: tauri::AppHandle<R>,
+}
+
+impl<R: tauri::Runtime> PluginBackedUpdater<R> {
+    pub fn new(app: tauri::AppHandle<R>) -> Self {
+        Self { app }
+    }
+}
+
+#[async_trait::async_trait]
+impl<R: tauri::Runtime> UpdaterPlugin for PluginBackedUpdater<R> {
+    async fn check_and_install(&self, bytes: Vec<u8>) -> Result<(), UpdaterPluginFailure> {
+        let fail = |reason: &'static str, source: String| UpdaterPluginFailure { reason, source };
+        let update = self
+            .app
+            .updater()
+            .map_err(|error| fail("updater_unavailable", error.to_string()))?
+            .check()
+            .await
+            .map_err(|error| fail("update_check_failed", error.to_string()))?
+            .ok_or_else(|| fail("update_no_longer_available", String::new()))?;
+        update
+            .install(bytes)
+            .map_err(|error| fail("update_install_failed", error.to_string()))?;
+        // Windows NSIS updates exit the process inside the plugin; macOS
+        // replaces the bundle and must be relaunched explicitly.
+        #[cfg(target_os = "macos")]
+        {
+            self.app.restart()
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            Ok(())
+        }
+    }
+}
+
+/// Hands the verified staging package to the Tauri updater plugin. Only paths
+/// inside the application update staging directory with the platform updater
+/// artifact suffix reach the plugin.
+pub struct TauriUpdateInstaller<P> {
+    plugin: P,
+}
+
+impl<P> TauriUpdateInstaller<P> {
+    pub fn new(plugin: P) -> Self {
+        Self { plugin }
+    }
+}
+
+impl TauriUpdateInstaller<PluginBackedUpdater<tauri::Wry>> {
+    pub fn for_app(app: tauri::AppHandle<tauri::Wry>) -> Self {
+        Self::new(PluginBackedUpdater::new(app))
+    }
+}
+
+#[async_trait::async_trait]
+impl<P: UpdaterPlugin> ApplicationUpdateInstaller for TauriUpdateInstaller<P> {
+    async fn install(&self, package_path: &Path) -> Result<(), UpdateInstallError> {
+        validate_update_package(package_path)?;
+        let bytes = std::fs::read(package_path)
+            .map_err(|error| io_error("update_package_unreadable", error))?;
+        self.plugin
+            .check_and_install(bytes)
+            .await
+            .map_err(|failure| updater_error(failure.reason, failure.source))
+    }
+}
+
 pub fn validate_update_package(path: &Path) -> Result<(), UpdateInstallError> {
     validate_update_package_in(path, &default_update_staging_directory()).map(|_| ())
-}
-
-pub fn install_update(path: &Path) -> Result<InstallStarted, UpdateInstallError> {
-    let updater = ValidatedPlatformUpdater;
-    let relauncher = DeferredRelaunchRequester;
-    install_update_with(
-        path,
-        &default_update_staging_directory(),
-        &updater,
-        &relauncher,
-    )
-}
-
-pub fn restart_after_install() -> Result<(), UpdateInstallError> {
-    DeferredRelaunchRequester.request_relaunch()
 }
 
 pub fn startup_probe() -> StartupProbeResult {
@@ -91,29 +173,6 @@ pub fn write_healthy_probe(probe_directory: &Path) -> Result<(), UpdateInstallEr
     write_probe(probe_directory, "healthy\n")
 }
 
-pub trait PlatformUpdater {
-    fn install_package(&self, path: &Path) -> Result<(), UpdateInstallError>;
-}
-
-pub trait RelaunchRequester {
-    fn request_relaunch(&self) -> Result<(), UpdateInstallError>;
-}
-
-pub fn install_update_with(
-    path: &Path,
-    staging_directory: &Path,
-    updater: &dyn PlatformUpdater,
-    relauncher: &dyn RelaunchRequester,
-) -> Result<InstallStarted, UpdateInstallError> {
-    let package_path = validate_update_package_in(path, staging_directory)?;
-    updater.install_package(&package_path)?;
-    relauncher.request_relaunch()?;
-    Ok(InstallStarted {
-        package_path,
-        restart_requested: true,
-    })
-}
-
 fn validate_update_package_in(
     path: &Path,
     staging_directory: &Path,
@@ -148,6 +207,16 @@ fn blocked(reason: &'static str) -> AppError {
 }
 
 fn io_error(reason: &'static str, error: std::io::Error) -> AppError {
+    AppError::new(
+        ErrorCode::ApplicationUpdateInstallBlocked,
+        Severity::Warning,
+    )
+    .with_param("reason", reason)
+    .with_param("source", error.to_string())
+    .with_action(RecoveryAction::Retry)
+}
+
+fn updater_error(reason: &'static str, error: impl std::fmt::Display) -> AppError {
     AppError::new(
         ErrorCode::ApplicationUpdateInstallBlocked,
         Severity::Warning,
@@ -197,24 +266,6 @@ fn unix_timestamp(time: SystemTime) -> u64 {
     time.duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs()
-}
-
-struct ValidatedPlatformUpdater;
-
-impl PlatformUpdater for ValidatedPlatformUpdater {
-    fn install_package(&self, _path: &Path) -> Result<(), UpdateInstallError> {
-        // The signed platform install is exposed through the Tauri updater plugin.
-        // This boundary only accepts packages that already passed app-layer checks.
-        Ok(())
-    }
-}
-
-struct DeferredRelaunchRequester;
-
-impl RelaunchRequester for DeferredRelaunchRequester {
-    fn request_relaunch(&self) -> Result<(), UpdateInstallError> {
-        Ok(())
-    }
 }
 
 #[cfg(test)]
@@ -301,59 +352,136 @@ mod tests {
         );
     }
 
+    #[test]
+    fn tauri_installer_refuses_package_outside_staging_without_checking_plugin() {
+        struct UnusedPlugin {
+            calls: std::sync::Mutex<u32>,
+        }
+
+        #[async_trait::async_trait]
+        impl UpdaterPlugin for UnusedPlugin {
+            async fn check_and_install(&self, _bytes: Vec<u8>) -> Result<(), UpdaterPluginFailure> {
+                *self.calls.lock().expect("calls mutex") += 1;
+                Ok(())
+            }
+        }
+
+        let plugin = UnusedPlugin {
+            calls: std::sync::Mutex::new(0),
+        };
+        let installer = TauriUpdateInstaller::new(&plugin);
+        let outside = tempfile::tempdir().unwrap();
+        let package = outside.path().join("update-package");
+        std::fs::write(&package, b"package").unwrap();
+
+        let error = tauri::async_runtime::block_on(installer.install(&package)).unwrap_err();
+
+        assert_eq!(error.code, ErrorCode::ApplicationUpdateInstallBlocked);
+        assert_eq!(
+            error
+                .params
+                .get("reason")
+                .and_then(serde_json::Value::as_str),
+            Some("update_package_outside_staging_directory")
+        );
+        assert_eq!(*plugin.calls.lock().expect("calls mutex"), 0);
+    }
+
     #[cfg(any(windows, target_os = "macos"))]
     #[test]
-    fn install_hands_validated_package_to_platform_updater_and_requests_relaunch() {
+    fn tauri_installer_passes_staged_package_bytes_to_plugin() {
         use std::sync::Mutex;
 
-        struct RecordingUpdater {
-            paths: Mutex<Vec<PathBuf>>,
+        struct RecordingPlugin {
+            packages: Mutex<Vec<Vec<u8>>>,
         }
 
-        impl PlatformUpdater for RecordingUpdater {
-            fn install_package(&self, path: &Path) -> Result<(), UpdateInstallError> {
-                self.paths
-                    .lock()
-                    .expect("paths mutex")
-                    .push(path.to_path_buf());
+        #[async_trait::async_trait]
+        impl UpdaterPlugin for RecordingPlugin {
+            async fn check_and_install(&self, bytes: Vec<u8>) -> Result<(), UpdaterPluginFailure> {
+                self.packages.lock().expect("packages mutex").push(bytes);
                 Ok(())
             }
         }
 
-        struct RecordingRelauncher {
-            count: Mutex<u32>,
+        // The installer validates against the production staging root, so the
+        // fixture package is created there and cleaned up afterwards.
+        let staging = default_update_staging_directory();
+        std::fs::create_dir_all(&staging).unwrap();
+        let package = staging.join(valid_update_artifact_name());
+        std::fs::write(&package, b"signed updater package").unwrap();
+        let plugin = RecordingPlugin {
+            packages: Mutex::new(Vec::new()),
+        };
+        let installer = TauriUpdateInstaller::new(&plugin);
+
+        let result = tauri::async_runtime::block_on(installer.install(&package));
+
+        let _ = std::fs::remove_file(&package);
+        result.unwrap();
+
+        assert_eq!(
+            plugin.packages.lock().expect("packages mutex").as_slice(),
+            &[b"signed updater package".to_vec()]
+        );
+    }
+
+    #[cfg(any(windows, target_os = "macos"))]
+    #[test]
+    fn tauri_installer_maps_plugin_failure_to_install_blocked() {
+        use std::sync::Mutex;
+
+        struct FailingPlugin {
+            calls: Mutex<u32>,
         }
 
-        impl RelaunchRequester for RecordingRelauncher {
-            fn request_relaunch(&self) -> Result<(), UpdateInstallError> {
-                let mut count = self.count.lock().expect("count mutex");
-                *count += 1;
-                Ok(())
+        #[async_trait::async_trait]
+        impl UpdaterPlugin for FailingPlugin {
+            async fn check_and_install(&self, _bytes: Vec<u8>) -> Result<(), UpdaterPluginFailure> {
+                *self.calls.lock().expect("calls mutex") += 1;
+                Err(UpdaterPluginFailure {
+                    reason: "update_install_failed",
+                    source: "boom".to_owned(),
+                })
             }
         }
 
-        let staging = tempfile::tempdir().unwrap();
-        let package = staging.path().join(valid_update_artifact_name());
-        std::fs::write(&package, b"updater package").unwrap();
-        let updater = RecordingUpdater {
-            paths: Mutex::new(Vec::new()),
+        // The installer validates against the production staging root, so the
+        // fixture package is created there and cleaned up afterwards.
+        let staging = default_update_staging_directory();
+        std::fs::create_dir_all(&staging).unwrap();
+        let package = staging.join(valid_update_artifact_name());
+        std::fs::write(&package, b"signed updater package").unwrap();
+        let plugin = FailingPlugin {
+            calls: Mutex::new(0),
         };
-        let relauncher = RecordingRelauncher {
-            count: Mutex::new(0),
-        };
+        let installer = TauriUpdateInstaller::new(&plugin);
 
-        let result = install_update_with(&package, staging.path(), &updater, &relauncher).unwrap();
+        let error = tauri::async_runtime::block_on(installer.install(&package)).unwrap_err();
 
+        let _ = std::fs::remove_file(&package);
+        assert_eq!(*plugin.calls.lock().expect("calls mutex"), 1);
+        assert_eq!(error.code, ErrorCode::ApplicationUpdateInstallBlocked);
         assert_eq!(
-            updater.paths.lock().expect("paths mutex").as_slice(),
-            &[std::fs::canonicalize(&package).unwrap()]
+            error
+                .params
+                .get("reason")
+                .and_then(serde_json::Value::as_str),
+            Some("update_install_failed")
         );
-        assert_eq!(*relauncher.count.lock().expect("count mutex"), 1);
         assert_eq!(
-            result.package_path,
-            std::fs::canonicalize(&package).unwrap()
+            error
+                .params
+                .get("source")
+                .and_then(serde_json::Value::as_str),
+            Some("boom")
         );
-        assert!(result.restart_requested);
+    }
+
+    #[test]
+    fn tauri_installer_type_is_send_sync() {
+        fn assert_send_sync<T: Send + Sync>() {}
+        assert_send_sync::<TauriUpdateInstaller<PluginBackedUpdater<tauri::Wry>>>();
     }
 
     #[cfg(windows)]

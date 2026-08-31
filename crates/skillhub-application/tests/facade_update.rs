@@ -14,6 +14,13 @@ use skillhub_storage::Database;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 
+/// Signature of the 4 bytes `b"test"` made with the Tauri test keypair whose
+/// public half matches `skillhub_core::DEFAULT_UPDATE_SIGNATURE_PUBLIC_KEY`.
+const TEST_TAURI_SIGNATURE: &str = "untrusted comment: signature from minisign secret key
+RWQf6LRCGA9i59SLOFxz6NxvASXDJeRtuZykwQepbDEGt87ig1BNpWaVWuNrm73YiIiJbq71Wi+dP9eKL8OC351vwIasSSbXxwA=
+trusted comment: timestamp:1555779966\tfile:test
+QtKMXWyYcwdpZAlPF7tE2ENJkRd1ujvKjlj1m9RtHTBnZPa5WKU5uWRs5GoP5M/VqE81QFuMKI5k/SfNQUaOAA==";
+
 async fn serve_once(body: &'static str) -> String {
     let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
     let address = listener.local_addr().unwrap();
@@ -236,7 +243,7 @@ async fn prepared_download_is_queryable_without_storing_package_body() {
 }
 
 #[tokio::test]
-async fn download_application_update_is_metadata_only_and_does_not_write_package_file() {
+async fn download_writes_verified_package_to_staging_and_marks_ready() {
     let download_base = serve_bytes_once(b"test").await;
     let unique = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -247,6 +254,63 @@ async fn download_application_update_is_metadata_only_and_does_not_write_package
     artifact.url = format!("{download_base}skillhub-{unique}.zip");
     artifact.size = 4;
     artifact.sha256 = "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08".to_owned();
+    artifact.signature = TEST_TAURI_SIGNATURE.to_owned();
+    let provider =
+        GithubReleaseProvider::with_download_base_for_tests(&download_base, &download_base)
+            .unwrap();
+    let workspace = tempfile::tempdir().unwrap();
+    let database_path = workspace.path().join("skillhub.sqlite");
+    let facade = facade_with_app_update(Database::open(&database_path).unwrap(), provider);
+    prepare_update_with_manifest(
+        &facade,
+        fixture_manifest_with_version_and_artifact(&version, artifact.clone()),
+    )
+    .await;
+    let staging_path = Database::open(&database_path)
+        .unwrap()
+        .application_update_repository()
+        .get_pending()
+        .unwrap()
+        .staging_path
+        .unwrap();
+
+    let result = facade
+        .execute(AppCommand::DownloadApplicationUpdate(
+            skillhub_core::DownloadApplicationUpdate { artifact },
+        ))
+        .await
+        .unwrap();
+    let downloaded = match result {
+        AppCommandResult::DownloadedApplicationUpdate(downloaded) => downloaded,
+        other => panic!("expected downloaded application update, got {other:?}"),
+    };
+    assert_eq!(downloaded.state, UpdateState::ReadyToInstall);
+    let package = std::fs::read(&staging_path).expect("staged update package");
+    assert_eq!(package, b"test");
+    drop(facade);
+
+    let pending = Database::open(&database_path)
+        .unwrap()
+        .application_update_repository()
+        .get_pending()
+        .unwrap();
+    assert_eq!(pending.state, UpdateState::ReadyToInstall);
+    assert_eq!(pending.rollback_point, Some("0.1.0".to_owned()));
+}
+
+#[tokio::test]
+async fn download_rejects_forged_signature_and_cleans_up_staged_file() {
+    let download_base = serve_bytes_once(b"test").await;
+    let unique = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let version = format!("0.2.1-test{unique}");
+    let mut artifact = fixture_artifact();
+    artifact.url = format!("{download_base}skillhub-{unique}.zip");
+    artifact.size = 4;
+    artifact.sha256 = "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08".to_owned();
+    artifact.signature = TEST_TAURI_SIGNATURE.replace("SSbXxwA=", "SSbXxwB=");
     let provider =
         GithubReleaseProvider::with_download_base_for_tests(&download_base, &download_base)
             .unwrap();
@@ -272,7 +336,7 @@ async fn download_application_update_is_metadata_only_and_does_not_write_package
         ))
         .await
         .unwrap_err();
-    assert_eq!(error.code, ErrorCode::ApplicationUpdateInstallBlocked);
+    assert_eq!(error.code, ErrorCode::ApplicationUpdateSignatureInvalid);
     assert!(!Path::new(&staging_path).exists());
     drop(facade);
 
@@ -281,7 +345,7 @@ async fn download_application_update_is_metadata_only_and_does_not_write_package
         .application_update_repository()
         .get_pending()
         .unwrap();
-    assert_eq!(pending.state, UpdateState::ReadyToInstall);
+    assert_eq!(pending.state, UpdateState::Failed);
 }
 
 #[tokio::test]
@@ -310,6 +374,75 @@ async fn install_blocked_keeps_current_version_unchanged() {
         .unwrap();
     assert_eq!(pending.current_version, "0.1.0");
     assert_eq!(pending.target_version, "0.2.0");
+    assert_eq!(pending.state, UpdateState::ReadyToInstall);
+}
+
+#[tokio::test]
+async fn install_with_injected_installer_launches_platform_install_and_keeps_rollback_marker() {
+    use std::path::PathBuf;
+    use std::sync::Mutex;
+
+    use skillhub_application::ApplicationUpdateInstaller;
+
+    struct RecordingInstaller {
+        package_paths: Mutex<Vec<PathBuf>>,
+    }
+
+    #[async_trait::async_trait]
+    impl ApplicationUpdateInstaller for RecordingInstaller {
+        async fn install(&self, package_path: &Path) -> skillhub_core::AppResult<()> {
+            self.package_paths
+                .lock()
+                .expect("package paths mutex")
+                .push(package_path.to_path_buf());
+            Ok(())
+        }
+    }
+
+    let workspace = tempfile::tempdir().unwrap();
+    let database_path = workspace.path().join("skillhub.sqlite");
+    let facade = facade_with_app_update(
+        Database::open(&database_path).unwrap(),
+        GithubReleaseProvider::new().with_network_enabled(false),
+    );
+    prepare_update(&facade).await;
+    let staging_path: PathBuf = Database::open(&database_path)
+        .unwrap()
+        .application_update_repository()
+        .get_pending()
+        .unwrap()
+        .staging_path
+        .unwrap()
+        .into();
+    let installer = Arc::new(RecordingInstaller {
+        package_paths: Mutex::new(Vec::new()),
+    });
+    facade.set_application_update_installer(installer.clone());
+
+    facade
+        .execute(AppCommand::InstallApplicationUpdate(
+            skillhub_core::InstallApplicationUpdate,
+        ))
+        .await
+        .unwrap();
+
+    assert_eq!(
+        installer
+            .package_paths
+            .lock()
+            .expect("package paths mutex")
+            .as_slice(),
+        &[staging_path]
+    );
+    drop(facade);
+
+    let pending = Database::open(&database_path)
+        .unwrap()
+        .application_update_repository()
+        .get_pending()
+        .unwrap();
+    assert_eq!(pending.state, UpdateState::ReadyToInstall);
+    assert_eq!(pending.rollback_point, Some("0.1.0".to_owned()));
 }
 
 #[tokio::test]

@@ -1,9 +1,9 @@
 use skillhub_core::{
-    select_artifact, verify_artifact, AppCommand, AppQuery, AppQueryResult, BuildTrust,
-    CheckApplicationUpdate, DownloadApplicationUpdate, ErrorCode, InstallApplicationUpdate,
-    OpenOfficialRelease, PrepareApplicationUpdate, RollbackApplicationUpdate,
-    SetApplicationUpdatePolicy, UpdateArtifact, UpdateManifest, UpdatePlatform,
-    UpdateSignaturePublicKey, UpdateState,
+    select_artifact, verify_artifact, verify_downloaded_artifact, AppCommand, AppQuery,
+    AppQueryResult, BuildTrust, CheckApplicationUpdate, DownloadApplicationUpdate, ErrorCode,
+    InstallApplicationUpdate, OpenOfficialRelease, PrepareApplicationUpdate,
+    RollbackApplicationUpdate, SetApplicationUpdatePolicy, UpdateArtifact, UpdateManifest,
+    UpdatePlatform, UpdateSignaturePublicKey, UpdateState, DEFAULT_UPDATE_SIGNATURE_PUBLIC_KEY,
 };
 
 const TEST_TAURI_PUBLIC_KEY: &str = "RWQf6LRCGA9i53mlYecO4IzT51TGPpvWucNSCh1CBM0QTaLn73Y7GFO3";
@@ -258,6 +258,34 @@ fn artifact_verification_rejects_empty_signature() {
     let error = verify_artifact(b"test", &artifact, &test_public_key()).unwrap_err();
 
     assert_eq!(error.code, ErrorCode::ApplicationUpdateSignatureMissing);
+}
+
+#[test]
+fn downloaded_artifact_verification_accepts_valid_signature_without_official_url() {
+    let mut artifact = signed_test_artifact();
+    artifact.url = "http://127.0.0.1:9/skillhub-update.zip".to_owned();
+
+    verify_downloaded_artifact(b"test", &artifact, &test_public_key()).unwrap();
+}
+
+#[test]
+fn downloaded_artifact_verification_rejects_forged_signature() {
+    let mut artifact = signed_test_artifact();
+    artifact.url = "http://127.0.0.1:9/skillhub-update.zip".to_owned();
+    artifact.signature = TEST_TAURI_SIGNATURE.replace("SSbXxwA=", "SSbXxwB=");
+
+    let error = verify_downloaded_artifact(b"test", &artifact, &test_public_key()).unwrap_err();
+
+    assert_eq!(error.code, ErrorCode::ApplicationUpdateSignatureInvalid);
+}
+
+#[test]
+fn default_signature_public_key_verifies_signed_test_artifact() {
+    let public_key = UpdateSignaturePublicKey {
+        value: DEFAULT_UPDATE_SIGNATURE_PUBLIC_KEY.to_owned(),
+    };
+
+    verify_artifact(b"test", &signed_test_artifact(), &public_key).unwrap();
 }
 
 #[test]

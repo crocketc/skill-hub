@@ -49,9 +49,18 @@ pub fn emit_app_event<R: tauri::Runtime>(app: &AppHandle<R>, event: AppEvent) ->
     app.emit("app_event", event)
 }
 
-pub fn run_with_facade(facade: Arc<dyn ApplicationFacade>) -> tauri::Result<()> {
+pub fn run_with_facade(facade: Arc<LocalApplicationFacade>) -> tauri::Result<()> {
     tauri::Builder::default()
         .plugin(tauri_plugin_updater::Builder::new().build())
+        .setup({
+            let facade = facade.clone();
+            move |app| {
+                facade.set_application_update_installer(Arc::new(
+                    updater::TauriUpdateInstaller::for_app(app.handle().clone()),
+                ));
+                Ok(())
+            }
+        })
         .manage(CommandBridge::new(facade))
         .invoke_handler(tauri::generate_handler![execute_command, query_application])
         .run(tauri::generate_context!())

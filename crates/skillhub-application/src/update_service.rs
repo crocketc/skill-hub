@@ -1,13 +1,24 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 
+use skillhub_adapters::app_update::download::UpdateDownloadProvider;
 use skillhub_adapters::app_update::github_releases::GithubReleaseProvider;
 use skillhub_core::{
-    select_artifact, version_is_newer, AppError, AppResult, CheckApplicationUpdate,
-    DownloadedApplicationUpdate, ErrorCode, PrepareApplicationUpdate, PreparedApplicationUpdate,
-    RecoveryAction, Severity, UpdateArtifact, UpdateManifest, UpdateState,
+    select_artifact, verify_downloaded_artifact, version_is_newer, AppError, AppResult,
+    CheckApplicationUpdate, DownloadedApplicationUpdate, ErrorCode, PrepareApplicationUpdate,
+    PreparedApplicationUpdate, RecoveryAction, Severity, UpdateArtifact, UpdateManifest,
+    UpdateSignaturePublicKey, UpdateState, DEFAULT_UPDATE_SIGNATURE_PUBLIC_KEY,
 };
 use skillhub_storage::Database;
+
+/// Hands a verified update package to the platform installer. The desktop
+/// shell provides the real implementation; tests inject a fake so the facade
+/// never launches a real installer.
+#[async_trait::async_trait]
+pub trait ApplicationUpdateInstaller: Send + Sync {
+    async fn install(&self, package_path: &Path) -> AppResult<()>;
+}
 
 const CHECK_CACHE_SECONDS: i64 = 24 * 60 * 60;
 
@@ -36,7 +47,9 @@ pub struct RollbackResult {
 pub struct UpdateService {
     database: Arc<Mutex<Database>>,
     provider: Arc<GithubReleaseProvider>,
+    installer: Arc<Mutex<Option<Arc<dyn ApplicationUpdateInstaller>>>>,
     staging_root: PathBuf,
+    public_key: UpdateSignaturePublicKey,
 }
 
 impl UpdateService {
@@ -44,9 +57,21 @@ impl UpdateService {
         Self {
             database,
             provider,
+            installer: Arc::new(Mutex::new(None)),
             staging_root: std::env::temp_dir()
                 .join("skillhub")
                 .join("application-updates"),
+            public_key: UpdateSignaturePublicKey {
+                value: DEFAULT_UPDATE_SIGNATURE_PUBLIC_KEY.to_owned(),
+            },
+        }
+    }
+
+    /// Replaces the platform installer used by `install`. Production injects
+    /// the desktop shell's installer; without one, installs stay blocked.
+    pub fn set_installer(&self, installer: Arc<dyn ApplicationUpdateInstaller>) {
+        if let Ok(mut slot) = self.installer.lock() {
+            *slot = Some(installer);
         }
     }
 
@@ -148,30 +173,111 @@ impl UpdateService {
                     .with_action(RecoveryAction::Retry),
             );
         }
-        pending.staging_path.as_ref().ok_or_else(|| {
+        let staging_path = PathBuf::from(pending.staging_path.clone().ok_or_else(|| {
             AppError::new(ErrorCode::ApplicationUpdateUnavailable, Severity::Warning)
                 .with_param("detail", "update staging path is missing")
                 .with_action(RecoveryAction::Retry)
-        })?;
-        Err(
-            AppError::new(ErrorCode::ApplicationUpdateInstallBlocked, Severity::Info)
-                .with_param("reason", "package download is not implemented in this task")
-                .with_action(RecoveryAction::Acknowledge),
-        )
+        })?);
+
+        // The downloader refuses to overwrite an existing destination, so a
+        // failed or cancelled attempt must clear its own staging file first.
+        if staging_path.is_file() {
+            std::fs::remove_file(&staging_path).map_err(|_| {
+                AppError::new(
+                    ErrorCode::ApplicationUpdateInstallBlocked,
+                    Severity::Warning,
+                )
+                .with_param("reason", "cannot replace previous download")
+                .with_action(RecoveryAction::Retry)
+            })?;
+        }
+
+        let cancel = Arc::new(AtomicBool::new(false));
+        let downloaded = self
+            .provider
+            .download(artifact, &staging_path, |_| {}, cancel)
+            .await;
+
+        let verified = downloaded.and_then(|downloaded| {
+            let bytes = std::fs::read(&downloaded.path).map_err(|_| {
+                AppError::new(ErrorCode::ApplicationUpdateIntegrityFailed, Severity::Error)
+            })?;
+            verify_downloaded_artifact(&bytes, artifact, &self.public_key)?;
+            Ok(downloaded)
+        });
+
+        match verified {
+            Ok(downloaded) => {
+                self.with_database("update.download.save", |database| {
+                    database.application_update_repository().mark_downloaded(
+                        artifact,
+                        downloaded.path.to_string_lossy().into_owned(),
+                        now_seconds(),
+                    )
+                })?;
+                Ok(DownloadedApplicationUpdate {
+                    artifact: artifact.clone(),
+                    state: UpdateState::ReadyToInstall,
+                })
+            }
+            Err(error) => {
+                let _ = std::fs::remove_file(&staging_path);
+                self.with_database("update.download.failed", |database| {
+                    database
+                        .application_update_repository()
+                        .mark_failed(now_seconds())
+                        .map(|_| ())
+                })?;
+                Err(error)
+            }
+        }
     }
 
     pub async fn install(&self) -> AppResult<()> {
-        self.with_database("update.install.failed", |database| {
-            database
-                .application_update_repository()
-                .mark_failed(now_seconds())
-                .map(|_| ())
+        let installer = self
+            .installer
+            .lock()
+            .map_err(|_| internal_mutex("update.installer.locked"))?
+            .clone()
+            .ok_or_else(|| {
+                AppError::new(ErrorCode::ApplicationUpdateInstallBlocked, Severity::Info)
+                    .with_param("reason", "platform installer is not available")
+                    .with_action(RecoveryAction::Acknowledge)
+            })?;
+
+        let pending = self.with_database("update.install.pending", |database| {
+            database.application_update_repository().get_pending()
         })?;
-        Err(
-            AppError::new(ErrorCode::ApplicationUpdateInstallBlocked, Severity::Info)
-                .with_param("reason", "platform installer is not implemented")
-                .with_action(RecoveryAction::Acknowledge),
-        )
+        if pending.state != UpdateState::ReadyToInstall {
+            return Err(AppError::new(
+                ErrorCode::ApplicationUpdateInstallBlocked,
+                Severity::Warning,
+            )
+            .with_param("reason", "no verified update package is ready to install")
+            .with_action(RecoveryAction::Retry));
+        }
+        let staging_path = pending.staging_path.clone().ok_or_else(|| {
+            AppError::new(
+                ErrorCode::ApplicationUpdateInstallBlocked,
+                Severity::Warning,
+            )
+            .with_param("reason", "update staging path is missing")
+            .with_action(RecoveryAction::Retry)
+        })?;
+        let package_path = PathBuf::from(staging_path);
+        if !package_path.is_file() {
+            return Err(AppError::new(
+                ErrorCode::ApplicationUpdateInstallBlocked,
+                Severity::Warning,
+            )
+            .with_param("reason", "downloaded update package is missing")
+            .with_action(RecoveryAction::Retry));
+        }
+
+        // The pending record stays ReadyToInstall after a successful launch:
+        // it is the rollback marker consumed on the next unhealthy startup,
+        // and mark_launched clears it after the new version probes healthy.
+        installer.install(&package_path).await
     }
 
     pub fn mark_launched(&self, version: &str) -> AppResult<()> {
@@ -242,6 +348,12 @@ fn safe_artifact_name(url: &str) -> String {
 fn now_seconds() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .map(|duration| i64::try_from(duration.as_secs()).unwrap_or(i64::MAX))
+        .map(|duration| duration.as_secs() as i64)
         .unwrap_or_default()
+}
+
+fn internal_mutex(operation: &'static str) -> AppError {
+    AppError::new(ErrorCode::InternalError, Severity::Error)
+        .with_param("operation", operation)
+        .with_action(RecoveryAction::Retry)
 }
