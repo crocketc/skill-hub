@@ -6,6 +6,7 @@
   "permissions": [
     "core:event:allow-listen",
     "core:event:allow-unlisten",
+    "updater:default",
     "allow-execute-command",
     "allow-query-application"
   ]

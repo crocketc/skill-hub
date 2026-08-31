@@ -7,6 +7,8 @@ use skillhub_core::{
 };
 use tauri::{AppHandle, Emitter, State};
 
+pub mod updater;
+
 /// The only state exposed to Tauri commands. It deliberately accepts domain
 /// envelopes instead of stringly-typed command names or ad-hoc payloads.
 pub struct CommandBridge {
@@ -49,15 +51,44 @@ pub fn emit_app_event<R: tauri::Runtime>(app: &AppHandle<R>, event: AppEvent) ->
 
 pub fn run_with_facade(facade: Arc<dyn ApplicationFacade>) -> tauri::Result<()> {
     tauri::Builder::default()
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(CommandBridge::new(facade))
         .invoke_handler(tauri::generate_handler![execute_command, query_application])
         .run(tauri::generate_context!())
 }
 
 pub fn run() -> tauri::Result<()> {
-    let facade =
-        LocalApplicationFacade::open_with_library(default_database_path(), default_library_root())
-            .expect("failed to open SkillHub application database");
+    let previous_probe = updater::startup_probe();
+    let probe_directory = updater::default_startup_probe_directory();
+    let _ = updater::write_starting_probe(&probe_directory, std::time::SystemTime::now());
+
+    let facade = match LocalApplicationFacade::open_with_library(
+        default_database_path(),
+        default_library_root(),
+    ) {
+        Ok(facade) => facade,
+        Err(error) => {
+            let _ = updater::write_failed_probe(&probe_directory);
+            panic!("failed to open SkillHub application database: {error}");
+        }
+    };
+
+    if matches!(
+        previous_probe,
+        updater::StartupProbeResult::Failed | updater::StartupProbeResult::TimedOut
+    ) {
+        let _ = tauri::async_runtime::block_on(facade.rollback_if_unhealthy());
+    }
+
+    match tauri::async_runtime::block_on(facade.query(AppQuery::GetBootstrapSnapshot)) {
+        Ok(_) => {
+            let _ = updater::write_healthy_probe(&probe_directory);
+        }
+        Err(error) => {
+            let _ = updater::write_failed_probe(&probe_directory);
+            panic!("failed to initialize SkillHub application facade: {error}");
+        }
+    }
     run_with_facade(Arc::new(facade))
 }
 
@@ -242,4 +273,30 @@ fn capabilities_allow_only_typed_ipc_and_event_subscription() {
     assert!(capabilities.contains("core:event:allow-unlisten"));
     assert!(capabilities.contains("allow-execute-command"));
     assert!(capabilities.contains("allow-query-application"));
+    assert!(capabilities.contains("updater:default"));
+}
+
+#[test]
+fn tauri_config_enables_signed_static_updater_artifacts() {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tauri.conf.json");
+    let config = std::fs::read_to_string(path).expect("desktop Tauri config");
+    let config: serde_json::Value = serde_json::from_str(&config).expect("valid Tauri config");
+
+    assert_eq!(config["bundle"]["createUpdaterArtifacts"], true);
+    assert_eq!(
+        config["bundle"]["windows"]["nsis"]["installMode"],
+        "currentUser"
+    );
+    assert_eq!(
+        config["plugins"]["updater"]["pubkey"],
+        "RWQf6LRCGA9i53mlYecO4IzT51TGPpvWucNSCh1CBM0QTaLn73Y7GFO3"
+    );
+    assert_eq!(
+        config["plugins"]["updater"]["endpoints"][0],
+        "https://github.com/crocketc/skill-hub/releases/latest/download/latest.json"
+    );
+    assert_eq!(
+        config["plugins"]["updater"]["windows"]["installMode"],
+        "passive"
+    );
 }

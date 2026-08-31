@@ -24,6 +24,23 @@
   "bundle": {
     "active": false,
     "targets": ["nsis", "dmg"],
+    "createUpdaterArtifacts": true,
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser"
+      }
+    },
     "icon": []
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "RWQf6LRCGA9i53mlYecO4IzT51TGPpvWucNSCh1CBM0QTaLn73Y7GFO3",
+      "endpoints": [
+        "https://github.com/crocketc/skill-hub/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
   }
 }
