@@ -9,9 +9,9 @@
 ## 当前 Git 状态
 
 - 分支：`main`
-- 当前提交：`0626464`（`fix: validate Windows updater archive`）
+- 当前提交：`d4a50b7`（`fix: wire real update download and Tauri installer`）
 - 本地与 `origin/main` 已同步
-- 当前工作区：交接文档创建前无源码未提交修改
+- 当前工作区：无源码未提交修改
 - 已删除已确认干净的旧 worktree 及其 `target`/`node_modules` 缓存；释放约 75GB
 - 保留两个含未提交改动的 worktree：`catalog-task-06`、`project-task-05`；未强制删除
 - 实施计划：`docs/superpowers/plans/2026-08-31-应用内更新功能实施计划.md`
@@ -43,15 +43,23 @@
 
 ### Task 4：Tauri Windows/macOS 安装、自动重启和启动探针
 
-- 提交：`2020e1e`，主 Agent 修正：`0626464`
-- 状态：实现完成，任务级审查尚未完成；主 Agent 已修正 Windows updater 资产后缀
-- 已验证：`cargo test -p skillhub-desktop updater`（7 项）、桌面 crate 全量测试、bindings、fmt、diff check
+- 提交：`2020e1e`，修正 `0626464`；任务级审查后修复 `d4a50b7`
+- 状态：实现完成，任务级审查完成（发现并修复 3 个重要缺口）
 - 已实现：updater capability、staging 路径和后缀校验、Windows NSIS `.nsis.zip` / macOS `.app.tar.gz` 区分、自动重启请求、启动探针状态
-- 待审查风险：当前 updater public key 是测试 key，发布前必须与生产私钥匹配；确认未签名/ad-hoc 构建仍走官方发布页备用入口；确认 Tauri 配置不会在未签名构建中误启用可信安装
+- 审查发现并修复（`d4a50b7`）：
+  1. facade 的 `InstallApplicationUpdate` 原为硬编码 stub，desktop updater 模块无任何调用方，安装链路实际不通。现在 `UpdateService.install` 校验 ReadyToInstall 与 staging 文件后委托注入的 `ApplicationUpdateInstaller`，desktop `TauriUpdateInstaller` 经 Tauri updater 插件执行真实安装（插件自校验 minisign 签名；Windows NSIS 由插件退出进程，macOS 显式 `app.restart()`）。
+  2. 计划接口 “run_with_facade 注入 updater capability” 原未实现。现在 `run_with_facade` 在 `setup` 中注入 `TauriUpdateInstaller::for_app`；无注入的 facade（测试）保持安装被阻止。
+  3. `DownloadApplicationUpdate` 原不写包正文。现在经 Task 2 下载器流式写入 staging 路径，下载后以 `verify_downloaded_artifact`（大小/SHA-256/签名，含测试密钥对向量）校验，失败清理文件并将 pending 标记为 Failed。
+- 新增验证：core `app_update` 19 项、application `facade_update` 9 项、desktop updater 10 项全部通过；clippy、fmt、bindings 漂移检查通过
+- 已知边界：
+  - 计划中的自由函数 `install_update(path)`/`restart_after_install()` 被注入 trait seam 取代（更符合“测试 facade 不启动真实安装器”边界）。
+  - `tauri::test` mock runtime 在本 Windows 工具链上使测试进程崩溃（STATUS_ENTRYPOINT_NOT_FOUND），因此 desktop 侧以 `UpdaterPlugin` trait 注入假插件测试；真实安装行为留给 Task 7 双平台验收取证。
+  - Tauri 插件安装时会再次访问同一官方端点做插件侧签名校验下载，与 facade 层 staged 包并存属已知重复下载代价，两层使用同一公钥。
+  - 当前 updater public key 是测试 key，发布前必须与生产私钥匹配（见 Task 6）。
+- 审查结论：通过
 
 ## 未完成任务
 
-- Task 4：主 Agent 进行任务级规范/质量审查，必要时修复
 - Task 5：设置页更新交互与 i18n
 - Task 6：发布清单、签名资产和构建验证
 - Task 7：Windows/macOS 双平台验收与收口
@@ -64,11 +72,10 @@
 
 ## 主 Agent 后续顺序
 
-1. 审查 Task 4 完整差异，补齐任何规范或安全缺口，并运行桌面专项测试。
-2. 在同一工作区实现 Task 5，先测试后代码，完成前端质量门禁。
-3. 实现 Task 6 发布清单与签名预检，确保 DMG 仅用于首次安装、`.app.tar.gz` 用于 macOS 应用内更新。
-4. 实现 Task 7 验收文档，分别在 Windows 和 macOS 运行本地 CI；真实安装若受签名/工具链限制，必须如实记录。
-5. 全部任务完成后运行完整本地 CI、发布预检、bindings 漂移检查和 `git diff --check`，再决定推送/合并。
+1. 在同一工作区实现 Task 5，先测试后代码，完成前端质量门禁。
+2. 实现 Task 6 发布清单与签名预检，确保 DMG 仅用于首次安装、`.app.tar.gz` 用于 macOS 应用内更新。
+3. 实现 Task 7 验收文档，分别在 Windows 和 macOS 运行本地 CI；真实安装若受签名/工具链限制，必须如实记录。
+4. 全部任务完成后运行完整本地 CI、发布预检、bindings 漂移检查和 `git diff --check`，再决定推送/合并。
 
 ## 交接原则
 
