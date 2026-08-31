@@ -10,8 +10,10 @@
 
 - 分支：`main`
 - 当前提交：`0626464`（`fix: validate Windows updater archive`）
-- 本地相对 `origin/main`：领先 14 个提交，尚未推送
+- 本地与 `origin/main` 已同步
 - 当前工作区：交接文档创建前无源码未提交修改
+- 已删除已确认干净的旧 worktree 及其 `target`/`node_modules` 缓存；释放约 75GB
+- 保留两个含未提交改动的 worktree：`catalog-task-06`、`project-task-05`；未强制删除
 - 实施计划：`docs/superpowers/plans/2026-08-31-应用内更新功能实施计划.md`
 - 进度账本：`.superpowers/sdd/2026-08-31-应用内更新功能实施计划/progress.md`
 
