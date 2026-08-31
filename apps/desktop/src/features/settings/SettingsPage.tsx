@@ -1,7 +1,15 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { DataState } from "../../ui/DataState";
-import { type SettingsFacade, type SettingsSnapshot, unavailableSettingsFacade } from "./api";
+import {
+  type AppUpdate,
+  errorCodeOf,
+  type SettingsFacade,
+  type SettingsSnapshot,
+  type UpdateProgress,
+  type UpdateState,
+  unavailableSettingsFacade,
+} from "./api";
 import { AiNetworkSettings } from "./AiNetworkSettings";
 import { ApplicationUpdate } from "./ApplicationUpdate";
 import { AutomationSettings } from "./AutomationSettings";
@@ -18,5 +26,106 @@ export function SettingsPage({ facade = unavailableSettingsFacade, initialSettin
   useEffect(() => { if (initialSettings || !facade.get) return; void facade.get().then(setSettings).catch((reason: unknown) => setError(reason instanceof Error ? reason.message : String(reason))); }, [facade, initialSettings]);
   if (error) return <DataState message={error} state="unavailable" />;
   if (!settings) return <DataState message={t("settings.loading")} state="loading" />;
-  return <main className="sh-page sh-settings-page"><header className="sh-page__header"><div><p className="sh-eyebrow">{t("settings.eyebrow")}</p><h1>{t("settings.heading")}</h1><p>{t("settings.description")}</p></div></header><div className="sh-settings-grid"><GeneralSettings settings={settings} /><LibrarySettings settings={settings} /><ViewSettings settings={settings} /><AutomationSettings settings={settings} /><AiNetworkSettings facade={facade} settings={settings.network} /><BackupSettings settings={settings} /><NetworkStoragePlaceholder /><ApplicationUpdate buildTrust={settings.buildTrust} facade={facade} update={settings.update} /></div></main>;
+  return (
+    <main className="sh-page sh-settings-page">
+      <header className="sh-page__header">
+        <div>
+          <p className="sh-eyebrow">{t("settings.eyebrow")}</p>
+          <h1>{t("settings.heading")}</h1>
+          <p>{t("settings.description")}</p>
+        </div>
+      </header>
+      <div className="sh-settings-grid">
+        <GeneralSettings settings={settings} />
+        <LibrarySettings settings={settings} />
+        <ViewSettings settings={settings} />
+        <AutomationSettings settings={settings} />
+        <AiNetworkSettings facade={facade} settings={settings.network} />
+        <BackupSettings settings={settings} />
+        <NetworkStoragePlaceholder />
+        <ApplicationUpdateCard facade={facade} settings={settings} />
+      </div>
+    </main>
+  );
+}
+
+function ApplicationUpdateCard({ facade, settings }: { facade: SettingsFacade; settings: SettingsSnapshot }) {
+  const [state, setState] = useState<UpdateState>(settings.updateState);
+  const [update, setUpdate] = useState<AppUpdate | null>(settings.update);
+  const [progress] = useState<UpdateProgress>(null);
+  const [errorCode, setErrorCode] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const updates = facade.updates;
+
+  const run = (phase: UpdateState, action: () => Promise<void>) => {
+    if (!updates || busy) return;
+    setBusy(true);
+    setState(phase);
+    void action()
+      .then(() => setBusy(false))
+      .catch((reason: unknown) => {
+        setBusy(false);
+        setState("failed");
+        setErrorCode(errorCodeOf(reason));
+      });
+  };
+
+  return (
+    <ApplicationUpdate
+      busy={busy}
+      buildTrust={settings.buildTrust}
+      errorCode={errorCode}
+      onCheck={
+        updates
+          ? () =>
+              run("checking", async () => {
+                const result = await updates.check();
+                setUpdate(result);
+                setState(result ? "available" : "up_to_date");
+              })
+          : undefined
+      }
+      onCancel={
+        updates
+          ? () =>
+              run("downloading", async () => {
+                await updates.cancel();
+                setState("available");
+              })
+          : undefined
+      }
+      onDownload={
+        updates
+          ? () =>
+              run("downloading", async () => {
+                setState("verifying");
+                await updates.download();
+                setState("ready_to_install");
+              })
+          : undefined
+      }
+      onInstall={
+        updates
+          ? () =>
+              run("ready_to_install", async () => {
+                await updates.install();
+              })
+          : undefined
+      }
+      onOpenRelease={() => void facade.execute({ type: "open_official_release" })}
+      onRollback={
+        updates
+          ? () =>
+              run("ready_to_install", async () => {
+                await updates.rollback();
+                setState("rolled_back");
+              })
+          : undefined
+      }
+      policy={settings.updatePolicy}
+      progress={progress}
+      state={state}
+      update={update}
+    />
+  );
 }

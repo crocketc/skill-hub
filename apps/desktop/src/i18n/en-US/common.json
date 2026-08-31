@@ -215,7 +215,9 @@
     "description": "Review discovered client and Skill directory facts.",
     "loading": "Loading Agent facts",
     "unavailable": "Agent data is not connected to the native service yet.",
-    "errors": { "unknown": "Agent data could not be read." },
+    "errors": {
+      "unknown": "Agent data could not be read."
+    },
     "experimental": "Experimental, for reference only",
     "runtimeHook": "Runtime Hook",
     "runtimeHookStatus": "In development",
@@ -248,10 +250,20 @@
     "loading": "Loading project facts",
     "unavailable": "Project data is not connected to the native service yet.",
     "empty": "No projects match the current filters.",
-    "filters": { "label": "Project filters", "search": "Search projects", "tags": "Tags" },
-    "drawer": { "identity": "Project location", "tags": "Tags", "targets": "Shared targets" },
+    "filters": {
+      "label": "Project filters",
+      "search": "Search projects",
+      "tags": "Tags"
+    },
+    "drawer": {
+      "identity": "Project location",
+      "tags": "Tags",
+      "targets": "Shared targets"
+    },
     "readOnly": "Read-only facts",
-    "detail": { "eyebrow": "Project detail" },
+    "detail": {
+      "eyebrow": "Project detail"
+    },
     "sharedConfig": {
       "eyebrow": "Shared configuration",
       "title": "Project requirements",
@@ -264,7 +276,12 @@
       "title": "Assembly preview",
       "bestEffort": "Each item is reported independently",
       "singleState": "Itemized result",
-      "status": { "satisfied": "Satisfied", "skipped": "Skipped", "conflict": "Conflict", "failed": "Failed" }
+      "status": {
+        "satisfied": "Satisfied",
+        "skipped": "Skipped",
+        "conflict": "Conflict",
+        "failed": "Failed"
+      }
     }
   },
   "appShell": {
@@ -572,7 +589,9 @@
     }
   },
   "skillDetail": {
-    "actions": { "delete": "Delete Skill" },
+    "actions": {
+      "delete": "Delete Skill"
+    },
     "versions": {
       "added": "Added files: {{count}}",
       "changed": "Changed files: {{count}}",
@@ -727,19 +746,45 @@
     "eyebrow": "Safe deployment",
     "heading": "Preview before changing Agent targets",
     "description": "Select one or more targets, inspect the physical plan, then commit explicitly.",
-    "states": { "loading": "Loading deployment targets" },
-    "targets": { "heading": "Agent targets", "description": "Only discovered writable targets can be selected.", "unavailable": "Unavailable" },
+    "states": {
+      "loading": "Loading deployment targets"
+    },
+    "targets": {
+      "heading": "Agent targets",
+      "description": "Only discovered writable targets can be selected.",
+      "unavailable": "Unavailable"
+    },
     "preview": "Preview deployment",
     "commit": "Commit deployment",
-    "plan": { "heading": "Deployment plan", "description": "The plan is grouped by physical target; warnings stay visible before commit." },
-    "mode": { "symbolic_link": "Symbolic link", "directory_junction": "Directory junction", "managed_copy": "Managed copy" },
-    "results": { "heading": "Deployment results", "status": { "succeeded": "Succeeded", "failed": "Failed", "skipped": "Skipped" } }
+    "plan": {
+      "heading": "Deployment plan",
+      "description": "The plan is grouped by physical target; warnings stay visible before commit."
+    },
+    "mode": {
+      "symbolic_link": "Symbolic link",
+      "directory_junction": "Directory junction",
+      "managed_copy": "Managed copy"
+    },
+    "results": {
+      "heading": "Deployment results",
+      "status": {
+        "succeeded": "Succeeded",
+        "failed": "Failed",
+        "skipped": "Skipped"
+      }
+    }
   },
   "security": {
     "eyebrow": "Security checks",
     "heading": "Review findings before deployment",
     "description": "Basic checks and optional LLM checks are separate facts and can be handled independently.",
-    "states": { "loading": "Loading security checks", "not_checked": "Not checked", "running": "Running", "passed": "Passed", "failed": "Failed" },
+    "states": {
+      "loading": "Loading security checks",
+      "not_checked": "Not checked",
+      "running": "Running",
+      "passed": "Passed",
+      "failed": "Failed"
+    },
     "basicHeading": "Basic security check",
     "llmHeading": "LLM security check",
     "experimental": "Experimental; informational only",
@@ -748,8 +793,15 @@
     "noFindings": "No findings recorded.",
     "notChecked": "This check has not run yet.",
     "locationUnknown": "Location unavailable",
-    "actions": { "acknowledge": "Acknowledge", "confirmDismiss": "Confirm and dismiss" },
-    "disposition": { "actionable": "Actionable", "acknowledged": "Acknowledged", "dismissed": "Dismissed" }
+    "actions": {
+      "acknowledge": "Acknowledge",
+      "confirmDismiss": "Confirm and dismiss"
+    },
+    "disposition": {
+      "actionable": "Actionable",
+      "acknowledged": "Acknowledged",
+      "dismissed": "Dismissed"
+    }
   },
   "removal": {
     "eyebrow": "Removal impact",
@@ -761,7 +813,11 @@
     "dependents": "Dependent projects: {{projects}}",
     "choiceLabel": "Deployment handling",
     "choose": "Choose an action",
-    "choices": { "keep": "Keep files and remove relation", "remove": "Remove deployment", "convert": "Keep as an independent copy" },
+    "choices": {
+      "keep": "Keep files and remove relation",
+      "remove": "Remove deployment",
+      "convert": "Keep as an independent copy"
+    },
     "confirm": "Confirm deletion",
     "submitting": "Deleting…"
   },
@@ -771,7 +827,13 @@
     "description": "Each item exposes a direct follow-up action; unresolved work stays visible.",
     "empty": "No pending items",
     "listHeading": "Items needing attention",
-    "actions": { "resolve": "Resolve", "recheck": "Recheck", "convert": "Convert", "recover": "Recover", "remove": "Remove" }
+    "actions": {
+      "resolve": "Resolve",
+      "recheck": "Recheck",
+      "convert": "Convert",
+      "recover": "Recover",
+      "remove": "Remove"
+    }
   },
   "recovery": {
     "eyebrow": "Recovery",
@@ -788,21 +850,101 @@
     "technicalDetails": "Technical details",
     "operationId": "Operation ID",
     "completed": "Completed",
-    "phases": { "planned": "Planned", "prepared": "Prepared", "applying": "Applying", "verifying": "Verifying", "committed": "Committed", "needs_recovery": "Needs recovery", "rolled_back": "Rolled back" }
+    "phases": {
+      "planned": "Planned",
+      "prepared": "Prepared",
+      "applying": "Applying",
+      "verifying": "Verifying",
+      "committed": "Committed",
+      "needs_recovery": "Needs recovery",
+      "rolled_back": "Rolled back"
+    }
   },
   "settings": {
     "eyebrow": "Settings",
     "heading": "Shape SkillHub around your workflow",
     "description": "Local management stays explicit, while network and future storage features remain bounded.",
     "loading": "Loading settings",
-    "general": { "heading": "General", "language": "Language", "theme": "Theme" },
-    "library": { "heading": "Library", "path": "Library path", "migrationAvailable": "A library migration entry is available when the native service is connected." },
-    "view": { "heading": "View", "density": "Information density: {{density}}" },
-    "automation": { "heading": "Automation", "perSkill": "Per-Skill checks", "batch": "Batch checks", "global": "Global auto-checks" },
-    "network": { "heading": "AI and network", "description": "Network helpers are opt-in and never change local management by themselves.", "disableAll": "Turn off all network features", "localStillWorks": "Local scan, search, deployment, and backup remain available", "dataScope": "Data scope", "testProvider": "Test provider" },
-    "backup": { "heading": "Backup", "location": "Location", "retention": "Retention", "days": "days" },
-    "networkStorage": { "eyebrow": "Network storage", "heading": "Shared storage is not connected yet", "description": "This capability is intentionally reserved for the next major version. No credentials or remote actions are requested here.", "planned": "下一大版本规划" },
-    "update": { "heading": "Application update", "current": "You are on the current version.", "available": "Version {{version}} is available.", "unsigned": "This unsigned build opens the official release page for a manual download; it will not auto-install.", "signed": "The signed build still asks for explicit confirmation before applying an update.", "openRelease": "Open GitHub Release" }
+    "general": {
+      "heading": "General",
+      "language": "Language",
+      "theme": "Theme"
+    },
+    "library": {
+      "heading": "Library",
+      "path": "Library path",
+      "migrationAvailable": "A library migration entry is available when the native service is connected."
+    },
+    "view": {
+      "heading": "View",
+      "density": "Information density: {{density}}"
+    },
+    "automation": {
+      "heading": "Automation",
+      "perSkill": "Per-Skill checks",
+      "batch": "Batch checks",
+      "global": "Global auto-checks"
+    },
+    "network": {
+      "heading": "AI and network",
+      "description": "Network helpers are opt-in and never change local management by themselves.",
+      "disableAll": "Turn off all network features",
+      "localStillWorks": "Local scan, search, deployment, and backup remain available",
+      "dataScope": "Data scope",
+      "testProvider": "Test provider"
+    },
+    "backup": {
+      "heading": "Backup",
+      "location": "Location",
+      "retention": "Retention",
+      "days": "days"
+    },
+    "networkStorage": {
+      "eyebrow": "Network storage",
+      "heading": "Shared storage is not connected yet",
+      "description": "This capability is intentionally reserved for the next major version. No credentials or remote actions are requested here.",
+      "planned": "下一大版本规划"
+    },
+    "update": {
+      "heading": "Application update",
+      "check": "Check for updates",
+      "checking": "Checking for updates…",
+      "notChecked": "No update check has run yet.",
+      "current": "You are on the current version.",
+      "available": "Version {{version}} is available.",
+      "download": "Download update",
+      "downloading": "Downloading update…",
+      "cancel": "Cancel download",
+      "verifying": "Verifying package integrity…",
+      "ready": "Package {{version}} passed verification and can be installed.",
+      "install": "Install now",
+      "autoRestart": "After confirmation the installer starts and the app restarts automatically; Windows/macOS security prompts are handled by the system.",
+      "securityNotice": "The installer is finally confirmed by Windows/macOS; SkillHub never changes system security policy.",
+      "failed": "Update failed: {{message}}",
+      "retry": "Retry",
+      "rolledBack": "The update did not finish; the previous version was restored. Skill data is untouched.",
+      "reDownload": "Download again",
+      "rollback": "Record rollback",
+      "unsigned": "This unsigned build opens the official release page for a manual download; it will not auto-install.",
+      "signed": "The signed build still asks for explicit confirmation before applying an update.",
+      "openRelease": "Open GitHub Release",
+      "details": "Developer details",
+      "detailsSource": "Source",
+      "detailsHash": "SHA-256",
+      "policyDisabled": "Update checks are disabled in settings.",
+      "errors": {
+        "generic": "The update did not finish. Try again later or download from the official release page.",
+        "unavailable": "No update information is available right now. Try again later.",
+        "integrity_failed": "Package verification failed; installation was refused. Re-download or use the official release page.",
+        "signature_missing": "The package is missing its update signature; installation was refused.",
+        "signature_invalid": "The package signature does not match; installation was refused.",
+        "invalid_artifact_url": "The package URL is not trusted; the download was stopped.",
+        "download_cancelled": "The download was cancelled.",
+        "install_blocked": "Automatic installation is not allowed in this environment; use the official release page.",
+        "network_disabled": "Network features are disabled; the update check cannot run.",
+        "rate_limited": "The update check is rate limited. Try again later."
+      }
+    }
   },
   "navigation": {
     "agents": "Agents",

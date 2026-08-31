@@ -32,7 +32,17 @@ it("opens the release page instead of claiming automatic update on unsigned buil
   const i18n = await createSkillHubI18n(["zh-CN"]);
   const commands: unknown[] = [];
   const facade: SettingsFacade = { execute: async (command) => { commands.push(command); } };
-  render(<I18nextProvider i18n={i18n}><ApplicationUpdate buildTrust="windows_unsigned" facade={facade} update={availableUpdate()} /></I18nextProvider>);
+  render(
+    <I18nextProvider i18n={i18n}>
+      <ApplicationUpdate
+        buildTrust="windows_unsigned"
+        onOpenRelease={() => void facade.execute({ type: "open_official_release" })}
+        policy={{ enabled: true, checkOnStartup: true }}
+        state="available"
+        update={availableUpdate()}
+      />
+    </I18nextProvider>,
+  );
   await user.click(screen.getByRole("button", { name: "打开 GitHub Release" }));
   expect(commands).toContainEqual({ type: "open_official_release" });
   expect(screen.queryByText("自动安装中")).not.toBeInTheDocument();

@@ -215,7 +215,9 @@
     "description": "查看已发现的客户端和 Skill 目录事实。",
     "loading": "正在加载 Agent 事实",
     "unavailable": "Agent 数据尚未连接到本机服务。",
-    "errors": { "unknown": "无法读取 Agent 数据。" },
+    "errors": {
+      "unknown": "无法读取 Agent 数据。"
+    },
     "experimental": "实验功能，仅供参考",
     "runtimeHook": "Runtime Hook",
     "runtimeHookStatus": "研发中",
@@ -248,10 +250,20 @@
     "loading": "正在加载项目事实",
     "unavailable": "项目数据尚未连接到本机服务。",
     "empty": "没有项目符合当前筛选条件。",
-    "filters": { "label": "项目筛选", "search": "搜索项目", "tags": "标签" },
-    "drawer": { "identity": "项目位置", "tags": "标签", "targets": "共享目标" },
+    "filters": {
+      "label": "项目筛选",
+      "search": "搜索项目",
+      "tags": "标签"
+    },
+    "drawer": {
+      "identity": "项目位置",
+      "tags": "标签",
+      "targets": "共享目标"
+    },
     "readOnly": "只读事实",
-    "detail": { "eyebrow": "项目详情" },
+    "detail": {
+      "eyebrow": "项目详情"
+    },
     "sharedConfig": {
       "eyebrow": "共享配置",
       "title": "项目要求",
@@ -264,7 +276,12 @@
       "title": "组装预览",
       "bestEffort": "每个条目独立展示结果",
       "singleState": "逐项结果",
-      "status": { "satisfied": "满足", "skipped": "已跳过", "conflict": "冲突", "failed": "失败" }
+      "status": {
+        "satisfied": "满足",
+        "skipped": "已跳过",
+        "conflict": "冲突",
+        "failed": "失败"
+      }
     }
   },
   "appShell": {
@@ -572,7 +589,9 @@
     }
   },
   "skillDetail": {
-    "actions": { "delete": "删除 Skill" },
+    "actions": {
+      "delete": "删除 Skill"
+    },
     "versions": {
       "added": "新增文件：{{count}}",
       "changed": "修改文件：{{count}}",
@@ -727,19 +746,45 @@
     "eyebrow": "安全部署",
     "heading": "先预览，再修改 Agent 目标",
     "description": "选择一个或多个目标，检查物理计划后再显式提交。",
-    "states": { "loading": "正在加载部署目标" },
-    "targets": { "heading": "Agent 目标", "description": "只有已发现且可写的目标可以选择。", "unavailable": "不可用" },
+    "states": {
+      "loading": "正在加载部署目标"
+    },
+    "targets": {
+      "heading": "Agent 目标",
+      "description": "只有已发现且可写的目标可以选择。",
+      "unavailable": "不可用"
+    },
     "preview": "预览部署",
     "commit": "提交部署",
-    "plan": { "heading": "部署计划", "description": "计划按物理目标归组；提交前始终保留警告。" },
-    "mode": { "symbolic_link": "符号链接", "directory_junction": "目录联接", "managed_copy": "托管复制" },
-    "results": { "heading": "部署结果", "status": { "succeeded": "已成功", "failed": "失败", "skipped": "已跳过" } }
+    "plan": {
+      "heading": "部署计划",
+      "description": "计划按物理目标归组；提交前始终保留警告。"
+    },
+    "mode": {
+      "symbolic_link": "符号链接",
+      "directory_junction": "目录联接",
+      "managed_copy": "托管复制"
+    },
+    "results": {
+      "heading": "部署结果",
+      "status": {
+        "succeeded": "已成功",
+        "failed": "失败",
+        "skipped": "已跳过"
+      }
+    }
   },
   "security": {
     "eyebrow": "安全检查",
     "heading": "部署前处理安全问题",
     "description": "基础检查与可选的 LLM 检查是彼此独立的事实，可以分别处理。",
-    "states": { "loading": "正在加载安全检查", "not_checked": "未检查", "running": "检查中", "passed": "通过", "failed": "失败" },
+    "states": {
+      "loading": "正在加载安全检查",
+      "not_checked": "未检查",
+      "running": "检查中",
+      "passed": "通过",
+      "failed": "失败"
+    },
     "basicHeading": "基础安全检查",
     "llmHeading": "LLM 安全检查",
     "experimental": "实验功能，仅供参考",
@@ -748,8 +793,15 @@
     "noFindings": "暂无安全问题记录。",
     "notChecked": "此检查尚未运行。",
     "locationUnknown": "位置不可用",
-    "actions": { "acknowledge": "确认已知晓", "confirmDismiss": "确认并忽略此项" },
-    "disposition": { "actionable": "待处理", "acknowledged": "已知晓", "dismissed": "已忽略" }
+    "actions": {
+      "acknowledge": "确认已知晓",
+      "confirmDismiss": "确认并忽略此项"
+    },
+    "disposition": {
+      "actionable": "待处理",
+      "acknowledged": "已知晓",
+      "dismissed": "已忽略"
+    }
   },
   "removal": {
     "eyebrow": "移除影响",
@@ -761,7 +813,11 @@
     "dependents": "依赖项目：{{projects}}",
     "choiceLabel": "部署处理方式",
     "choose": "选择处理方式",
-    "choices": { "keep": "保留部署文件并解除关系", "remove": "移除部署", "convert": "保留为独立副本" },
+    "choices": {
+      "keep": "保留部署文件并解除关系",
+      "remove": "移除部署",
+      "convert": "保留为独立副本"
+    },
     "confirm": "确认删除",
     "submitting": "正在删除…"
   },
@@ -771,7 +827,13 @@
     "description": "每个事项都提供直接的后续操作；未完成的工作会持续显示。",
     "empty": "没有待处理事项",
     "listHeading": "需要关注的事项",
-    "actions": { "resolve": "处理", "recheck": "重新检查", "convert": "转换", "recover": "恢复", "remove": "移除" }
+    "actions": {
+      "resolve": "处理",
+      "recheck": "重新检查",
+      "convert": "转换",
+      "recover": "恢复",
+      "remove": "移除"
+    }
   },
   "recovery": {
     "eyebrow": "恢复",
@@ -788,21 +850,101 @@
     "technicalDetails": "技术细节",
     "operationId": "操作 ID",
     "completed": "已完成",
-    "phases": { "planned": "已计划", "prepared": "已准备", "applying": "执行中", "verifying": "验证中", "committed": "已提交", "needs_recovery": "需要恢复", "rolled_back": "已回滚" }
+    "phases": {
+      "planned": "已计划",
+      "prepared": "已准备",
+      "applying": "执行中",
+      "verifying": "验证中",
+      "committed": "已提交",
+      "needs_recovery": "需要恢复",
+      "rolled_back": "已回滚"
+    }
   },
   "settings": {
     "eyebrow": "设置",
     "heading": "让 SkillHub 适应你的工作方式",
     "description": "本地管理保持明确可控，网络与未来存储能力保持边界清晰。",
     "loading": "正在加载设置",
-    "general": { "heading": "通用", "language": "语言", "theme": "主题" },
-    "library": { "heading": "技能库", "path": "技能库路径", "migrationAvailable": "连接本机服务后可使用技能库迁移入口。" },
-    "view": { "heading": "视图", "density": "信息密度：{{density}}" },
-    "automation": { "heading": "自动化", "perSkill": "单个 Skill 检查", "batch": "批量检查", "global": "全局自动检查" },
-    "network": { "heading": "AI 与网络", "description": "网络辅助功能默认需要明确开启，不会自行改变本地管理行为。", "disableAll": "关闭所有网络功能", "localStillWorks": "本地扫描、搜索、部署和备份仍可使用", "dataScope": "数据范围", "testProvider": "测试提供商" },
-    "backup": { "heading": "备份", "location": "备份位置", "retention": "保留时间", "days": "天" },
-    "networkStorage": { "eyebrow": "网络存储", "heading": "网络存储尚未接入", "description": "该能力规划在下一大版本实现；当前不会在这里请求凭据或执行远程操作。", "planned": "下一大版本规划" },
-    "update": { "heading": "应用更新", "current": "当前已是最新版本。", "available": "发现可用版本 {{version}}。", "unsigned": "当前为未签名构建，将打开官方 Release 页面供手动下载，不会自动安装。", "signed": "即使是签名构建，应用更新前仍会要求显式确认。", "openRelease": "打开 GitHub Release" }
+    "general": {
+      "heading": "通用",
+      "language": "语言",
+      "theme": "主题"
+    },
+    "library": {
+      "heading": "技能库",
+      "path": "技能库路径",
+      "migrationAvailable": "连接本机服务后可使用技能库迁移入口。"
+    },
+    "view": {
+      "heading": "视图",
+      "density": "信息密度：{{density}}"
+    },
+    "automation": {
+      "heading": "自动化",
+      "perSkill": "单个 Skill 检查",
+      "batch": "批量检查",
+      "global": "全局自动检查"
+    },
+    "network": {
+      "heading": "AI 与网络",
+      "description": "网络辅助功能默认需要明确开启，不会自行改变本地管理行为。",
+      "disableAll": "关闭所有网络功能",
+      "localStillWorks": "本地扫描、搜索、部署和备份仍可使用",
+      "dataScope": "数据范围",
+      "testProvider": "测试提供商"
+    },
+    "backup": {
+      "heading": "备份",
+      "location": "备份位置",
+      "retention": "保留时间",
+      "days": "天"
+    },
+    "networkStorage": {
+      "eyebrow": "网络存储",
+      "heading": "网络存储尚未接入",
+      "description": "该能力规划在下一大版本实现；当前不会在这里请求凭据或执行远程操作。",
+      "planned": "下一大版本规划"
+    },
+    "update": {
+      "heading": "应用更新",
+      "check": "检查更新",
+      "checking": "正在检查更新…",
+      "notChecked": "尚未检查更新。",
+      "current": "当前已是最新版本。",
+      "available": "发现可用版本 {{version}}。",
+      "download": "下载更新",
+      "downloading": "正在下载更新…",
+      "cancel": "取消下载",
+      "verifying": "正在校验安装包完整性…",
+      "ready": "安装包 {{version}} 校验通过，可以安装。",
+      "install": "立即安装",
+      "autoRestart": "确认后应用将启动安装器并自动重启；Windows/macOS 的安全提示由系统负责确认。",
+      "securityNotice": "安装包由 Windows/macOS 系统负责最终安全确认，SkillHub 不修改系统安全策略。",
+      "failed": "更新失败：{{message}}",
+      "retry": "重试",
+      "rolledBack": "更新未完成，已恢复上一版本。Skill 数据不受影响。",
+      "reDownload": "重新下载",
+      "rollback": "记录回滚",
+      "unsigned": "当前为未签名构建，将打开官方 Release 页面供手动下载，不会自动安装。",
+      "signed": "即使是签名构建，应用更新前仍会要求显式确认。",
+      "openRelease": "打开 GitHub Release",
+      "details": "开发者详情",
+      "detailsSource": "来源",
+      "detailsHash": "SHA-256",
+      "policyDisabled": "更新检查已在设置中关闭。",
+      "errors": {
+        "generic": "更新未能完成，请稍后重试或打开官方发布页下载。",
+        "unavailable": "暂时没有可用的更新信息，请稍后重试。",
+        "integrity_failed": "安装包校验失败，已放弃安装。请重新下载或从官方发布页获取。",
+        "signature_missing": "安装包缺少更新签名，已放弃安装。",
+        "signature_invalid": "安装包更新签名不匹配，已放弃安装。",
+        "invalid_artifact_url": "更新包地址不受信任，已停止下载。",
+        "download_cancelled": "下载已取消。",
+        "install_blocked": "当前环境不允许自动安装，请从官方发布页下载。",
+        "network_disabled": "网络功能已关闭，无法检查更新。",
+        "rate_limited": "检查频率受限，请稍后再试。"
+      }
+    }
   },
   "navigation": {
     "agents": "Agent",
