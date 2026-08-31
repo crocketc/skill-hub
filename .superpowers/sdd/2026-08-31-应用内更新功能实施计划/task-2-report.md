@@ -67,3 +67,36 @@ This round kept the Task 2 boundary on the adapter side and tightened the manife
 
 - No functional blocker remains in Task 2 from this round.
 - The workspace still emits linker warnings during the test build on Windows, but they are not test failures.
+
+## Revision 3 — signature sidecar error semantics
+
+This round narrowed the `fetch_signature_sidecar` error mapping so that sidecar lookup keeps real missing-signature cases distinct from transient transport or server failures.
+
+### Updated files in this round
+
+- `crates/skillhub-adapters/src/app_update/github_releases.rs`
+- `crates/skillhub-adapters/tests/app_update_download.rs`
+
+### What changed
+
+- Kept sidecar `404` responses mapped to `ApplicationUpdateSignatureMissing`.
+- Mapped sidecar `429` responses to `SourceSearchRateLimited`.
+- Mapped other non-success sidecar responses to `ApplicationUpdateUnavailable` with a retry action.
+- Added regression tests for sidecar `429 Too Many Requests` and `500 Internal Server Error`.
+
+### Verification
+
+- `cargo test -p skillhub-adapters --test app_update_download manifest_propagates_signature_sidecar_rate_limit -- --nocapture` passed.
+- `cargo test -p skillhub-adapters --test app_update_download manifest_propagates_signature_sidecar_server_error -- --nocapture` passed.
+- `cargo test -p skillhub-adapters --test app_update_download` passed, 17 passed, 0 failed.
+- `cargo test -p skillhub-adapters --lib app_update` passed, 2 passed, 0 failed.
+- `cargo fmt --all -- --check` passed.
+- `git diff --check` passed with only CRLF normalization warnings from Git.
+
+### Concerns
+
+- No additional concerns from this round.
+
+### Commit
+
+- `33d0fc2 fix: preserve signature sidecar error semantics`
