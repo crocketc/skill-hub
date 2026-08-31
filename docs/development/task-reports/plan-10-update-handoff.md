@@ -72,9 +72,21 @@
   2. 未签名构建（当前现实）主路径为打开官方发布页，符合设计的安全边界；下载/安装全流程 UI 已就绪，等签名发布（Task 6）与后端修复后即可贯通
   3. 真实下载进度事件在冻结契约中没有载体，`progress` prop 已预留；取消下载同理（adapter 层 Task 2 已支持取消 flag，但命令契约未暴露）
 
+#### Task 5 任务级审查结论
+
+- 审查结果：通过。`ApplicationUpdate` 状态机覆盖 9 个状态，安装操作只在 `ready_to_install` 呈现，按钮具备键盘可访问名称；中英文资源、错误码映射和 mock facade 注入边界均符合 Task 5 计划。
+- 验证结果：定向测试 13/13 通过；前端全量 Vitest 346/346 通过；ESLint、TypeScript 和生产构建通过；`git diff --check` 通过。
+- 定向命令曾因 pnpm 在当前机器的可执行文件链接异常无法直接解析 `vitest`，随后使用 `apps/desktop/node_modules/.bin/vitest` 等价入口复核通过；该问题属于本机依赖链接，不是实现失败。
+
+#### 契约缺口处理决定（Task 6 前置说明）
+
+本轮不在 Task 5 中扩大核心 API。原因是 `CheckApplicationUpdate` 当前只返回版本事实，而 `PrepareApplicationUpdate` 需要完整 manifest 和平台架构；要打通前端独立下载，至少需要同步修改检查请求/缓存模型、平台架构来源、ApplicationUpdate 结果、ApplicationFacade 编排和 Specta bindings。当前发布仍以未签名/未公证早期构建为主，贸然增加半套下载入口会造成 UI 显示可用但运行时无法完成的误导。
+
+因此 Task 6/7 保留以下边界并在验收中明确记录：设置页提供状态展示和官方发布页备用入口；原生下载/安装命令仍由后端契约保护，缺少 manifest 时返回结构化错误。后续若要实现签名版本的应用内自动下载，应单独设计并冻结“检查结果携带已验证 manifest（含平台资产）”的 API，再同步生成 bindings 和端到端测试。
+
 ## 未完成任务
 
-- Task 5：任务级审查（实现与门禁已完成，建议按本文件所列边界核对组件与 facade 行为）
+- Task 5：完成（实现与任务级审查通过）
 - Task 6：发布清单、签名资产和构建验证（含上述契约缺口的修复决策）
 - Task 7：Windows/macOS 双平台验收与收口
 
@@ -86,10 +98,9 @@
 
 ## 主 Agent 后续顺序
 
-1. 在同一工作区实现 Task 5，先测试后代码，完成前端质量门禁。
-2. 实现 Task 6 发布清单与签名预检，确保 DMG 仅用于首次安装、`.app.tar.gz` 用于 macOS 应用内更新。
-3. 实现 Task 7 验收文档，分别在 Windows 和 macOS 运行本地 CI；真实安装若受签名/工具链限制，必须如实记录。
-4. 全部任务完成后运行完整本地 CI、发布预检、bindings 漂移检查和 `git diff --check`，再决定推送/合并。
+1. 实现 Task 6 发布清单与签名预检，确保 DMG 仅用于首次安装、`.app.tar.gz` 用于 macOS 应用内更新。
+2. 实现 Task 7 验收文档，分别在 Windows 和 macOS 运行本地 CI；真实安装若受签名/工具链限制，必须如实记录。
+3. 全部任务完成后运行完整本地 CI、发布预检、bindings 漂移检查和 `git diff --check`，再决定推送/合并。
 
 ## 交接原则
 
