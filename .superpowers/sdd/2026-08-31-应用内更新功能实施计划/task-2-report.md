@@ -35,7 +35,7 @@
 
 ## Commit
 
-- `a88e796 feat: download and verify update artifacts`
+- `9e28ce9 fix: harden update artifact download mapping`
 
 ## Revision 2 — fix pass
 
