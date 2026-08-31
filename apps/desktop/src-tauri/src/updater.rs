@@ -159,7 +159,9 @@ fn io_error(reason: &'static str, error: std::io::Error) -> AppError {
 
 #[cfg(windows)]
 fn is_supported_updater_artifact(file_name: &str) -> bool {
-    file_name.ends_with("-setup.exe")
+    // Tauri's Windows updater consumes the signed NSIS archive, not the
+    // first-install setup executable.
+    file_name.ends_with(".nsis.zip")
 }
 
 #[cfg(target_os = "macos")]
@@ -245,13 +247,13 @@ mod tests {
     #[test]
     fn windows_accepts_only_current_user_nsis_updater_artifact() {
         let staging = tempfile::tempdir().unwrap();
-        let package = staging.path().join("SkillHub_0.2.0_x64-setup.exe");
-        let msi = staging.path().join("SkillHub_0.2.0_x64.msi");
-        std::fs::write(&package, b"nsis installer").unwrap();
-        std::fs::write(&msi, b"msi installer").unwrap();
+        let package = staging.path().join("SkillHub_0.2.0_x64.nsis.zip");
+        let setup = staging.path().join("SkillHub_0.2.0_x64-setup.exe");
+        std::fs::write(&package, b"nsis updater archive").unwrap();
+        std::fs::write(&setup, b"first-install setup").unwrap();
 
         validate_update_package_in(&package, staging.path()).unwrap();
-        let error = validate_update_package_in(&msi, staging.path()).unwrap_err();
+        let error = validate_update_package_in(&setup, staging.path()).unwrap_err();
 
         assert_eq!(error.code, ErrorCode::ApplicationUpdateInstallBlocked);
     }
@@ -356,7 +358,7 @@ mod tests {
 
     #[cfg(windows)]
     fn valid_update_artifact_name() -> &'static str {
-        "SkillHub_0.2.0_x64-setup.exe"
+        "SkillHub_0.2.0_x64.nsis.zip"
     }
 
     #[cfg(target_os = "macos")]
