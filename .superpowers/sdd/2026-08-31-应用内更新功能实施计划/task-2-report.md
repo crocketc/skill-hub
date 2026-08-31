@@ -35,4 +35,4 @@
 
 ## Commit
 
-- Pending at report creation time.
+- `a88e796 feat: download and verify update artifacts`
