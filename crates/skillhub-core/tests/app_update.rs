@@ -2,17 +2,40 @@ use skillhub_core::{
     select_artifact, verify_artifact, AppCommand, AppQuery, AppQueryResult, BuildTrust,
     CheckApplicationUpdate, DownloadApplicationUpdate, ErrorCode, InstallApplicationUpdate,
     OpenOfficialRelease, PrepareApplicationUpdate, RollbackApplicationUpdate,
-    SetApplicationUpdatePolicy, UpdateArtifact, UpdateManifest, UpdatePlatform, UpdateState,
+    SetApplicationUpdatePolicy, UpdateArtifact, UpdateManifest, UpdatePlatform,
+    UpdateSignaturePublicKey, UpdateState,
 };
 
-fn fixture_artifact(target: &str, size: u64, sha256: String) -> UpdateArtifact {
+const TEST_TAURI_PUBLIC_KEY: &str = "RWQf6LRCGA9i53mlYecO4IzT51TGPpvWucNSCh1CBM0QTaLn73Y7GFO3";
+const TEST_TAURI_SIGNATURE: &str = "untrusted comment: signature from minisign secret key
+RWQf6LRCGA9i59SLOFxz6NxvASXDJeRtuZykwQepbDEGt87ig1BNpWaVWuNrm73YiIiJbq71Wi+dP9eKL8OC351vwIasSSbXxwA=
+trusted comment: timestamp:1555779966\tfile:test
+QtKMXWyYcwdpZAlPF7tE2ENJkRd1ujvKjlj1m9RtHTBnZPa5WKU5uWRs5GoP5M/VqE81QFuMKI5k/SfNQUaOAA==";
+
+fn test_public_key() -> UpdateSignaturePublicKey {
+    UpdateSignaturePublicKey {
+        value: TEST_TAURI_PUBLIC_KEY.to_owned(),
+    }
+}
+
+fn fixture_artifact(target: &str, size: u64, sha256: String, signature: String) -> UpdateArtifact {
     UpdateArtifact {
         target: target.to_owned(),
-        url: "https://updates.example.invalid/skillhub.zip".to_owned(),
+        url: "https://github.com/crocketc/skill-hub/releases/download/v1.2.3/skillhub.zip"
+            .to_owned(),
         size,
         sha256,
-        signature: "signature".to_owned(),
+        signature,
     }
+}
+
+fn signed_test_artifact() -> UpdateArtifact {
+    fixture_artifact(
+        "windows-x86_64",
+        4,
+        "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08".to_owned(),
+        TEST_TAURI_SIGNATURE.to_owned(),
+    )
 }
 
 #[test]
@@ -55,6 +78,7 @@ fn application_update_signed_commands_keep_stable_wire_shapes() {
             "windows-x86_64",
             3,
             "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad".to_owned(),
+            TEST_TAURI_SIGNATURE.to_owned(),
         )],
     };
     let platform = UpdatePlatform {
@@ -102,6 +126,7 @@ fn update_artifact_size_uses_lossless_string_wire_shape() {
         "windows-x86_64",
         9007199254740993,
         "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad".to_owned(),
+        TEST_TAURI_SIGNATURE.to_owned(),
     );
 
     let json = serde_json::to_value(&artifact).unwrap();
@@ -138,11 +163,13 @@ fn select_artifact_uses_exact_platform_architecture() {
                 "windows-aarch64",
                 3,
                 "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad".to_owned(),
+                TEST_TAURI_SIGNATURE.to_owned(),
             ),
             fixture_artifact(
                 "windows-x86_64",
                 3,
                 "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad".to_owned(),
+                TEST_TAURI_SIGNATURE.to_owned(),
             ),
         ],
     };
@@ -168,6 +195,7 @@ fn select_artifact_rejects_missing_exact_platform_architecture() {
             "windows-aarch64",
             3,
             "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad".to_owned(),
+            TEST_TAURI_SIGNATURE.to_owned(),
         )],
     };
 
@@ -184,74 +212,81 @@ fn select_artifact_rejects_missing_exact_platform_architecture() {
 }
 
 #[test]
-fn artifact_verification_accepts_correct_size_hash_signature_and_https_url() {
-    let artifact = fixture_artifact(
-        "windows-x86_64",
-        3,
-        "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad".to_owned(),
-    );
+fn artifact_verification_accepts_correct_size_hash_tauri_signature_and_official_url() {
+    let artifact = signed_test_artifact();
 
-    verify_artifact(b"abc", &artifact).unwrap();
+    verify_artifact(b"test", &artifact, &test_public_key()).unwrap();
+}
+
+#[test]
+fn artifact_verification_rejects_forged_tauri_signature() {
+    let mut artifact = signed_test_artifact();
+    artifact.signature = TEST_TAURI_SIGNATURE.replace("SSbXxwA=", "SSbXxwB=");
+
+    let error = verify_artifact(b"test", &artifact, &test_public_key()).unwrap_err();
+
+    assert_eq!(error.code, ErrorCode::ApplicationUpdateSignatureInvalid);
 }
 
 #[test]
 fn artifact_verification_rejects_size_mismatch() {
-    let artifact = fixture_artifact(
-        "windows-x86_64",
-        4,
-        "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad".to_owned(),
-    );
+    let mut artifact = signed_test_artifact();
+    artifact.size = 5;
 
-    let error = verify_artifact(b"abc", &artifact).unwrap_err();
+    let error = verify_artifact(b"test", &artifact, &test_public_key()).unwrap_err();
 
     assert_eq!(error.code, ErrorCode::ApplicationUpdateIntegrityFailed);
 }
 
 #[test]
 fn artifact_verification_rejects_hash_mismatch() {
-    let artifact = fixture_artifact("windows-x86_64", 3, "00".repeat(32));
-    let error = verify_artifact(b"abc", &artifact).unwrap_err();
+    let artifact = fixture_artifact(
+        "windows-x86_64",
+        4,
+        "00".repeat(32),
+        TEST_TAURI_SIGNATURE.to_owned(),
+    );
+    let error = verify_artifact(b"test", &artifact, &test_public_key()).unwrap_err();
     assert_eq!(error.code, ErrorCode::ApplicationUpdateIntegrityFailed);
 }
 
 #[test]
 fn artifact_verification_rejects_empty_signature() {
-    let mut artifact = fixture_artifact(
-        "windows-x86_64",
-        3,
-        "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad".to_owned(),
-    );
+    let mut artifact = signed_test_artifact();
     artifact.signature.clear();
 
-    let error = verify_artifact(b"abc", &artifact).unwrap_err();
+    let error = verify_artifact(b"test", &artifact, &test_public_key()).unwrap_err();
 
     assert_eq!(error.code, ErrorCode::ApplicationUpdateSignatureMissing);
 }
 
 #[test]
 fn artifact_verification_rejects_non_https_url() {
-    let mut artifact = fixture_artifact(
-        "windows-x86_64",
-        3,
-        "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad".to_owned(),
-    );
-    artifact.url = "http://updates.example.invalid/skillhub.zip".to_owned();
+    let mut artifact = signed_test_artifact();
+    artifact.url =
+        "http://github.com/crocketc/skill-hub/releases/download/v1.2.3/skillhub.zip".to_owned();
 
-    let error = verify_artifact(b"abc", &artifact).unwrap_err();
+    let error = verify_artifact(b"test", &artifact, &test_public_key()).unwrap_err();
+
+    assert_eq!(error.code, ErrorCode::ApplicationUpdateInvalidArtifactUrl);
+}
+
+#[test]
+fn artifact_verification_rejects_unofficial_https_url() {
+    let mut artifact = signed_test_artifact();
+    artifact.url = "https://updates.example.invalid/skillhub.zip".to_owned();
+
+    let error = verify_artifact(b"test", &artifact, &test_public_key()).unwrap_err();
 
     assert_eq!(error.code, ErrorCode::ApplicationUpdateInvalidArtifactUrl);
 }
 
 #[test]
 fn artifact_verification_rejects_invalid_url() {
-    let mut artifact = fixture_artifact(
-        "windows-x86_64",
-        3,
-        "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad".to_owned(),
-    );
+    let mut artifact = signed_test_artifact();
     artifact.url = "not a url".to_owned();
 
-    let error = verify_artifact(b"abc", &artifact).unwrap_err();
+    let error = verify_artifact(b"test", &artifact, &test_public_key()).unwrap_err();
 
     assert_eq!(error.code, ErrorCode::ApplicationUpdateInvalidArtifactUrl);
 }

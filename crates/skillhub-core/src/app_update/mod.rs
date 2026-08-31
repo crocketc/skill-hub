@@ -8,5 +8,5 @@ pub use model::{
 };
 pub use update::{
     select_artifact, verify_artifact, DownloadedApplicationUpdate, PreparedApplicationUpdate,
-    UpdateArtifact, UpdateManifest, UpdatePlatform, UpdateState,
+    UpdateArtifact, UpdateManifest, UpdatePlatform, UpdateSignaturePublicKey, UpdateState,
 };

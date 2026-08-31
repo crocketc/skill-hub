@@ -87,6 +87,8 @@ pub enum ErrorCode {
     ApplicationUpdateIntegrityFailed,
     #[serde(rename = "application_update.signature_missing")]
     ApplicationUpdateSignatureMissing,
+    #[serde(rename = "application_update.signature_invalid")]
+    ApplicationUpdateSignatureInvalid,
     #[serde(rename = "application_update.invalid_artifact_url")]
     ApplicationUpdateInvalidArtifactUrl,
 }
@@ -144,6 +146,7 @@ impl ErrorCode {
             Self::ApplicationUpdateInstallBlocked => "application_update.install_blocked",
             Self::ApplicationUpdateIntegrityFailed => "application_update.integrity_failed",
             Self::ApplicationUpdateSignatureMissing => "application_update.signature_missing",
+            Self::ApplicationUpdateSignatureInvalid => "application_update.signature_invalid",
             Self::ApplicationUpdateInvalidArtifactUrl => "application_update.invalid_artifact_url",
         }
     }

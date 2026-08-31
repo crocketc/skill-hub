@@ -57,7 +57,7 @@ pub use app_update::{
     install_action_for, select_artifact, validate_official_release_url, verify_artifact,
     version_is_newer, ApplicationUpdate, ApplicationUpdatePolicy, BuildTrust,
     DownloadedApplicationUpdate, InstallAction, PreparedApplicationUpdate, UpdateArtifact,
-    UpdateManifest, UpdatePlatform, UpdateState,
+    UpdateManifest, UpdatePlatform, UpdateSignaturePublicKey, UpdateState,
 };
 pub use application::{
     BasicCheckOutput, BasicCheckScanner, CallPolicyBackend, CallPolicyService, CheckService,
