@@ -1,5 +1,7 @@
 //! Shared application boundary implementations.
 
+mod update_service;
+
 use std::collections::HashMap;
 use std::future::Future;
 use std::path::{Path, PathBuf};
@@ -54,6 +56,7 @@ use skillhub_storage::export::ExportService;
 use skillhub_storage::{
     CentralLibrary, Database, LibraryPaths, UsageEvidenceRepository, VersionStore,
 };
+pub use update_service::{RollbackResult, RollbackState, UpdateDownloadPlan, UpdateService};
 
 /// The date provider is kept on the facade so all date-sensitive projections
 /// in one request use the same day boundary. Production uses the current UTC
@@ -75,6 +78,7 @@ pub struct LocalApplicationFacade {
     translation_records: Arc<Mutex<HashMap<(skillhub_core::SkillId, String), TranslationRecord>>>,
     evidence_repository: UsageEvidenceRepository,
     app_update_provider: Arc<GithubReleaseProvider>,
+    update_service: Arc<UpdateService>,
     source_search_provider: Arc<SkillsShProvider>,
     prepared_imports: Mutex<HashMap<OperationId, PreparedImport>>,
     prepared_uninstall: Mutex<Option<skillhub_core::UninstallImpact>>,
@@ -595,20 +599,8 @@ impl LocalApplicationFacade {
         &self,
         request: skillhub_core::CheckApplicationUpdate,
     ) -> AppResult<AppQueryResult> {
-        let policy = self.with_database("query.check_application_update.policy", |database| {
-            database.application_update_repository().get_policy()
-        })?;
-        if !policy.enabled {
-            return Ok(AppQueryResult::ApplicationUpdate(
-                skillhub_core::ApplicationUpdate::none(request.current_version),
-            ));
-        }
-        self.app_update_provider
-            .latest(
-                &request.repository,
-                &request.current_version,
-                request.build_trust,
-            )
+        self.update_service
+            .check(request)
             .await
             .map(AppQueryResult::ApplicationUpdate)
     }
@@ -641,6 +633,45 @@ impl LocalApplicationFacade {
         Ok(AppCommandResult::OperationSummary(operation_summary(
             "application_update.opened",
         )))
+    }
+
+    fn prepare_application_update(
+        &self,
+        request: skillhub_core::PrepareApplicationUpdate,
+    ) -> AppResult<AppCommandResult> {
+        let plan = self.update_service.prepare_download(request)?;
+        self.update_service
+            .record_ready(&plan, Some(&plan.current_version))
+            .map(AppCommandResult::PreparedApplicationUpdate)
+    }
+
+    async fn download_application_update(
+        &self,
+        request: skillhub_core::DownloadApplicationUpdate,
+    ) -> AppResult<AppCommandResult> {
+        self.update_service
+            .download(&request.artifact)
+            .await
+            .map(AppCommandResult::DownloadedApplicationUpdate)
+    }
+
+    async fn install_application_update(&self) -> AppResult<AppCommandResult> {
+        self.update_service.install().await.map(|()| {
+            AppCommandResult::ApplicationUpdateState(skillhub_core::UpdateState::ReadyToInstall)
+        })
+    }
+
+    pub async fn rollback_if_unhealthy(&self) -> AppResult<RollbackResult> {
+        self.update_service.rollback_if_unhealthy().await
+    }
+
+    async fn rollback_application_update(&self) -> AppResult<AppCommandResult> {
+        let result = self.rollback_if_unhealthy().await?;
+        let state = match result.state {
+            RollbackState::RolledBack => skillhub_core::UpdateState::RolledBack,
+            RollbackState::NoRollback => skillhub_core::UpdateState::UpToDate,
+        };
+        Ok(AppCommandResult::ApplicationUpdateState(state))
     }
 
     async fn search_online_sources(
@@ -724,6 +755,11 @@ impl LocalApplicationFacade {
         let ignore_service = Arc::new(IgnoreService::new(Arc::new(LocalIgnoreBackend {
             rules: Arc::new(Mutex::new(Vec::new())),
         })));
+        let app_update_provider = Arc::new(GithubReleaseProvider::new());
+        let update_service = Arc::new(UpdateService::new(
+            database.clone(),
+            app_update_provider.clone(),
+        ));
         Self {
             database,
             today,
@@ -740,7 +776,8 @@ impl LocalApplicationFacade {
             llm_runner: None,
             translation_records: Arc::new(Mutex::new(HashMap::new())),
             evidence_repository: UsageEvidenceRepository::default(),
-            app_update_provider: Arc::new(GithubReleaseProvider::new()),
+            app_update_provider,
+            update_service,
             source_search_provider: Arc::new(SkillsShProvider::new("https://skills.sh")),
             prepared_imports: Mutex::new(HashMap::new()),
             prepared_uninstall: Mutex::new(None),
@@ -775,6 +812,11 @@ impl LocalApplicationFacade {
         let ignore_service = Arc::new(IgnoreService::new(Arc::new(LocalIgnoreBackend {
             rules: Arc::new(Mutex::new(Vec::new())),
         })));
+        let app_update_provider = Arc::new(GithubReleaseProvider::new());
+        let update_service = Arc::new(UpdateService::new(
+            database.clone(),
+            app_update_provider.clone(),
+        ));
         Self {
             database,
             today: current_utc_date(),
@@ -791,7 +833,8 @@ impl LocalApplicationFacade {
             llm_runner: None,
             translation_records: Arc::new(Mutex::new(HashMap::new())),
             evidence_repository: UsageEvidenceRepository::default(),
-            app_update_provider: Arc::new(GithubReleaseProvider::new()),
+            app_update_provider,
+            update_service,
             source_search_provider: Arc::new(SkillsShProvider::new("https://skills.sh")),
             prepared_imports: Mutex::new(HashMap::new()),
             prepared_uninstall: Mutex::new(None),
@@ -810,6 +853,10 @@ impl LocalApplicationFacade {
         source_search_provider: Arc<SkillsShProvider>,
     ) -> Self {
         let mut facade = Self::new(database);
+        facade.update_service = Arc::new(UpdateService::new(
+            facade.database.clone(),
+            app_update_provider.clone(),
+        ));
         facade.app_update_provider = app_update_provider;
         facade.source_search_provider = source_search_provider;
         facade
@@ -2448,6 +2495,18 @@ impl ApplicationFacade for LocalApplicationFacade {
             AppCommand::OpenOfficialRelease(request) => return self.open_official_release(request),
             AppCommand::SetApplicationUpdatePolicy(request) => {
                 return self.set_application_update_policy(request)
+            }
+            AppCommand::PrepareApplicationUpdate(request) => {
+                return self.prepare_application_update(request)
+            }
+            AppCommand::DownloadApplicationUpdate(request) => {
+                return self.download_application_update(request).await
+            }
+            AppCommand::InstallApplicationUpdate(_) => {
+                return self.install_application_update().await
+            }
+            AppCommand::RollbackApplicationUpdate(_) => {
+                return self.rollback_application_update().await
             }
             AppCommand::CancelOperation { .. } => "execute.cancel_operation",
             AppCommand::PrepareDeployment(request) => {

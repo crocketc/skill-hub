@@ -27,7 +27,7 @@ use skillhub_core::{AppError, AppResult, ErrorCode, RecoveryAction, Severity};
 use tokio::sync::Mutex;
 
 pub use agent_repository::AgentRepository;
-pub use app_update_repository::ApplicationUpdateRepository;
+pub use app_update_repository::{ApplicationUpdateRepository, PendingApplicationUpdate};
 pub use bootstrap_repository::BootstrapRepository;
 pub use catalog_repository::CatalogRepositorySqlite;
 pub use check_repository::CheckRepositorySqlite;
