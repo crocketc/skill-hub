@@ -11,6 +11,17 @@
 
 ## 证据状态
 
+### 应用内更新发布链路（Task 6）
+
+| 检查项 | 状态 | 证据/备注 |
+| --- | --- | --- |
+| updater endpoint | 通过 | 固定为 `https://github.com/crocketc/skill-hub/releases/latest/download/latest.json` |
+| Windows updater 资产 | 已配置 | `.nsis.zip` 与 `.sig`；首次安装 `.exe` 仍单独保留 |
+| macOS updater 资产 | 已配置 | `.app.tar.gz` 与 `.sig`；首次安装 DMG 不进入 updater 清单 |
+| latest.json | 已配置 | `scripts/generate_update_manifest.mjs` 生成四个平台条目 |
+| 生产密钥 | 待发布配置 | CI 必须提供 `TAURI_SIGNING_PRIVATE_KEY`、密码和匹配的 `TAURI_UPDATER_PUBLIC_KEY`；当前仓库公钥仍为测试 key |
+| manifest 前端交接 | 明确限制 | 当前检查查询不携带 manifest，设置页暂保留官方发布页备用入口；后续需单独冻结 API 才能打通独立下载 |
+
 | 检查项 | 状态 | 证据/备注 |
 | --- | --- | --- |
 | Rust 格式 | 通过 | `cargo fmt --all -- --check` |

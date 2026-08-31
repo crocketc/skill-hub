@@ -84,10 +84,18 @@
 
 因此 Task 6/7 保留以下边界并在验收中明确记录：设置页提供状态展示和官方发布页备用入口；原生下载/安装命令仍由后端契约保护，缺少 manifest 时返回结构化错误。后续若要实现签名版本的应用内自动下载，应单独设计并冻结“检查结果携带已验证 manifest（含平台资产）”的 API，再同步生成 bindings 和端到端测试。
 
+### Task 6：发布清单、签名资产和构建验证
+
+- 状态：实现完成，任务级静态预检通过；真实生产签名仍待配置密钥后在 CI 验证。
+- 修改范围：`.github/workflows/release.yml`、`apps/desktop/src-tauri/tauri.windows.conf.json`、`apps/desktop/src-tauri/tauri.macos.conf.json`、`scripts/generate_update_manifest.mjs`、`scripts/verify_release_readiness.mjs`、`scripts/verify_release_readiness.test.mjs`、`docs/release-process.md`、`docs/release-checklist.md`。
+- 已实现：Windows/macOS 平台配置显式开启 `createUpdaterArtifacts`；macOS 同时保留 DMG 首次安装和 `app` updater 资产；工作流从 CI Secret 注入 Tauri 私钥，仅收集 `.nsis.zip`/`.app.tar.gz` 及 `.sig`；发布阶段生成固定 GitHub Release URL 的 `latest.json`，覆盖 Windows x64/ARM64 与 macOS x64/ARM64 条目。
+- 安全门禁：工作流要求 `TAURI_SIGNING_PRIVATE_KEY`、`TAURI_SIGNING_PRIVATE_KEY_PASSWORD` 和与仓库配置一致的 `TAURI_UPDATER_PUBLIC_KEY`；明确拒绝当前测试公钥用于正式发布。私钥不入库、不写日志、不进入发布产物。
+- 验证：`node --test scripts/verify_release_readiness.test.mjs` 5/5 通过；`node scripts/verify_release_readiness.mjs --json` 通过；manifest 生成器覆盖平台资产、签名缺失和官方 URL 结构测试。
+- 未解决问题：当前工作区仍使用测试公钥，尚未生成/配置生产密钥，因此不能声称已完成真实签名发布或应用内安装；Task 5 记录的 manifest 前端契约缺口仍保留。
+
 ## 未完成任务
 
 - Task 5：完成（实现与任务级审查通过）
-- Task 6：发布清单、签名资产和构建验证（含上述契约缺口的修复决策）
 - Task 7：Windows/macOS 双平台验收与收口
 
 ## 已知非阻断警告
@@ -98,9 +106,8 @@
 
 ## 主 Agent 后续顺序
 
-1. 实现 Task 6 发布清单与签名预检，确保 DMG 仅用于首次安装、`.app.tar.gz` 用于 macOS 应用内更新。
-2. 实现 Task 7 验收文档，分别在 Windows 和 macOS 运行本地 CI；真实安装若受签名/工具链限制，必须如实记录。
-3. 全部任务完成后运行完整本地 CI、发布预检、bindings 漂移检查和 `git diff --check`，再决定推送/合并。
+1. 实现 Task 7 验收文档，分别在 Windows 和 macOS 运行本地 CI；真实安装若受签名/工具链限制，必须如实记录。
+2. 全部任务完成后运行完整本地 CI、发布预检、bindings 漂移检查和 `git diff --check`，再决定推送/合并。
 
 ## 交接原则
 
