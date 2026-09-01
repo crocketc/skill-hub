@@ -9,7 +9,7 @@
 ## 当前 Git 状态
 
 - 分支：`main`
-- 当前提交：`d00d37f`（更新下载测试夹具竞态修复，Task 7 回归修复）
+- 当前提交：`e1e5bff`（更新下载测试夹具竞态修复及验收记录，Task 7 回归修复）
 - 本地与 `origin/main` 已同步
 - 实施计划：`docs/superpowers/plans/2026-08-31-应用内更新功能实施计划.md`
 - 进度账本：`.superpowers/sdd/2026-08-31-应用内更新功能实施计划/progress.md`（gitignore 内，仅本地）
