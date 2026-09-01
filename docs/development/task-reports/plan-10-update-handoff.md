@@ -9,7 +9,7 @@
 ## 当前 Git 状态
 
 - 分支：`main`
-- 当前提交：`cc06037`（manifest handoff 与设置页原生更新操作接通，并完成发布文档复核）
+- 当前提交：`1c3c13d`（manifest handoff 与设置页原生更新操作接通，并补充已验证安装动作回归）
 - 本地与 `origin/main` 已同步
 - 实施计划：`docs/superpowers/plans/2026-08-31-应用内更新功能实施计划.md`
 - 进度账本：`.superpowers/sdd/2026-08-31-应用内更新功能实施计划/progress.md`（gitignore 内，仅本地）
