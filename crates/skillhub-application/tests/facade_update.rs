@@ -50,8 +50,20 @@ async fn serve_release_and_manifest() -> String {
     let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
     let address = listener.local_addr().unwrap();
     let base = format!("http://{address}/");
+    let target = if cfg!(windows) {
+        format!("windows-{}", std::env::consts::ARCH)
+    } else if cfg!(target_os = "macos") {
+        format!("darwin-{}", std::env::consts::ARCH)
+    } else {
+        format!("unknown-{}", std::env::consts::ARCH)
+    };
+    let package_name = if target.starts_with("darwin-") {
+        "SkillHub_0.2.0_x64.app.tar.gz"
+    } else {
+        "SkillHub_0.2.0_x64.nsis.zip"
+    };
     let manifest = format!(
-        r#"{{"tag_name":"v0.2.0","body":"Release notes","published_at":"2026-08-31T00:00:00Z","assets":[{{"name":"SkillHub_0.2.0_x64.nsis.zip","browser_download_url":"{base}SkillHub_0.2.0_x64.nsis.zip","size":4,"digest":"sha256:9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08","label":"target=windows-x86_64;signature=verified"}}]}}"#
+        r#"{{"tag_name":"v0.2.0","body":"Release notes","published_at":"2026-08-31T00:00:00Z","assets":[{{"name":"{package_name}","browser_download_url":"{base}{package_name}","size":4,"digest":"sha256:9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08","label":"target={target};signature=verified"}}]}}"#
     );
     let release = r#"{"tag_name":"v0.2.0","html_url":"https://github.com/crocketc/skill-hub/releases/tag/v0.2.0","published_at":"2026-08-31T00:00:00Z","assets":[{"name":"SkillHub_0.2.0_x64.exe"}]}"#.to_owned();
     tokio::spawn(async move {
@@ -267,7 +279,17 @@ async fn update_check_exposes_manifest_for_in_app_download() {
     assert_eq!(serialized["manifest"]["version"], "0.2.0");
     assert_eq!(
         serialized["manifest"]["artifacts"][0]["target"],
-        "windows-x86_64"
+        format!(
+            "{}-{}",
+            if cfg!(windows) {
+                "windows"
+            } else if cfg!(target_os = "macos") {
+                "darwin"
+            } else {
+                "unknown"
+            },
+            std::env::consts::ARCH
+        )
     );
     assert_eq!(serialized["install_action"], "install_verified_asset");
 }
