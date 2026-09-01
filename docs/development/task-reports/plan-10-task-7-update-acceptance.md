@@ -4,7 +4,7 @@
 
 ## 验收基线
 
-- 当前提交：`3e392c8`（Task 6 发布清单、签名资产与预检）
+- 当前提交：`15f8b44`（包含 Task 7 staging 测试夹具修复）
 - 验收方式：Windows 当前 `main` 工作区先行；macOS 使用同一提交只读复核
 - 安全边界：当前仓库仍使用测试 updater 公钥，没有生产私钥或已签名发布资产；因此不把应用内安装、自动重启和回滚写成已验证通过
 
@@ -19,6 +19,10 @@
 | 完整本地 CI | 环境阻塞 | cargo-deny 在下载锁定 crate 时无法连接 `static.crates.io`；授权重跑超过 90 秒无进展后停止 |
 | Windows NSIS/updater 安装 | 待执行 | 当前无生产签名资产，不能进行真实应用内安装取证 |
 | SmartScreen 行为 | 待执行 | 仅在实际未签名安装包生成后记录，不提供绕过命令 |
+
+### 已修复的跨平台回归
+
+Mac 首次验收发现 `facade_update::install_with_injected_installer_launches_platform_install_and_keeps_rollback_marker` 仅写入待安装元数据、未创建 staging 包，触发了正确的“包不存在”保护。提交 `15f8b44` 为测试夹具创建临时包文件；生产安装校验未修改。Windows 与 Mac 需在该提交上重新跑完整 CI。
 
 ## macOS
 
