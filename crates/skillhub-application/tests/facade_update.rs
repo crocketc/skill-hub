@@ -414,6 +414,8 @@ async fn install_with_injected_installer_launches_platform_install_and_keeps_rol
         .staging_path
         .unwrap()
         .into();
+    std::fs::create_dir_all(staging_path.parent().unwrap()).unwrap();
+    std::fs::write(&staging_path, b"verified update package").unwrap();
     let installer = Arc::new(RecordingInstaller {
         package_paths: Mutex::new(Vec::new()),
     });
