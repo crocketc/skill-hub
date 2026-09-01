@@ -2,11 +2,11 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use skillhub_application::LocalApplicationFacade;
+#[cfg(test)]
+use skillhub_core::DEFAULT_UPDATE_SIGNATURE_PUBLIC_KEY;
 use skillhub_core::{
     AppCommand, AppCommandResult, AppEvent, AppQuery, AppQueryResult, AppResult, ApplicationFacade,
 };
-#[cfg(test)]
-use skillhub_core::DEFAULT_UPDATE_SIGNATURE_PUBLIC_KEY;
 use tauri::{AppHandle, Emitter, State};
 
 pub mod updater;
