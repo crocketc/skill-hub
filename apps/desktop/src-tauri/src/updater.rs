@@ -405,10 +405,12 @@ mod tests {
         }
 
         // The installer validates against the production staging root, so the
-        // fixture package is created there and cleaned up afterwards.
+        // fixture package is created there and cleaned up afterwards. Keep
+        // this name distinct from the failure-path fixture because Rust runs
+        // unit tests in parallel and both otherwise share the staging root.
         let staging = default_update_staging_directory();
         std::fs::create_dir_all(&staging).unwrap();
-        let package = staging.join(valid_update_artifact_name());
+        let package = staging.join(valid_update_artifact_name("passes-bytes"));
         std::fs::write(&package, b"signed updater package").unwrap();
         let plugin = RecordingPlugin {
             packages: Mutex::new(Vec::new()),
@@ -450,7 +452,7 @@ mod tests {
         // fixture package is created there and cleaned up afterwards.
         let staging = default_update_staging_directory();
         std::fs::create_dir_all(&staging).unwrap();
-        let package = staging.join(valid_update_artifact_name());
+        let package = staging.join(valid_update_artifact_name("maps-failure"));
         std::fs::write(&package, b"signed updater package").unwrap();
         let plugin = FailingPlugin {
             calls: Mutex::new(0),
@@ -485,12 +487,12 @@ mod tests {
     }
 
     #[cfg(windows)]
-    fn valid_update_artifact_name() -> &'static str {
-        "SkillHub_0.2.0_x64.nsis.zip"
+    fn valid_update_artifact_name(label: &str) -> String {
+        format!("SkillHub_test_{label}.nsis.zip")
     }
 
     #[cfg(target_os = "macos")]
-    fn valid_update_artifact_name() -> &'static str {
-        "SkillHub.app.tar.gz"
+    fn valid_update_artifact_name(label: &str) -> String {
+        format!("SkillHub_test_{label}.app.tar.gz")
     }
 }
