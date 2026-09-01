@@ -95,7 +95,7 @@
 - 状态：实现完成，任务级静态预检通过；真实生产签名仍待配置密钥后在 CI 验证。
 - 修改范围：`.github/workflows/release.yml`、`apps/desktop/src-tauri/tauri.windows.conf.json`、`apps/desktop/src-tauri/tauri.macos.conf.json`、`scripts/generate_update_manifest.mjs`、`scripts/verify_release_readiness.mjs`、`scripts/verify_release_readiness.test.mjs`、`docs/release-process.md`、`docs/release-checklist.md`。
 - 已实现：Windows/macOS 平台配置显式开启 `createUpdaterArtifacts`；macOS 同时保留 DMG 首次安装和 `app` updater 资产；工作流从 CI Secret 注入 Tauri 私钥，仅收集 `.nsis.zip`/`.app.tar.gz` 及 `.sig`；发布阶段生成固定 GitHub Release URL 的 `latest.json`，覆盖 Windows x64/ARM64 与 macOS x64/ARM64 条目。
-- 安全门禁：工作流要求 `TAURI_SIGNING_PRIVATE_KEY`、`TAURI_SIGNING_PRIVATE_KEY_PASSWORD` 和与仓库配置一致的 `TAURI_UPDATER_PUBLIC_KEY`；明确拒绝当前测试公钥用于正式发布。私钥不入库、不写日志、不进入发布产物。
+- 安全门禁：工作流要求 `TAURI_SIGNING_PRIVATE_KEY` 和与仓库配置一致的 `TAURI_UPDATER_PUBLIC_KEY`；`TAURI_SIGNING_PRIVATE_KEY_PASSWORD` 仅在私钥加密时提供。明确拒绝当前测试公钥用于正式发布。私钥不入库、不写日志、不进入发布产物。
 - 验证：`node --test scripts/verify_release_readiness.test.mjs` 5/5 通过；`node scripts/verify_release_readiness.mjs --json` 通过；manifest 生成器覆盖平台资产、签名缺失和官方 URL 结构测试。
 - 未解决问题：当前工作区仍使用测试公钥，尚未生成/配置生产密钥，因此不能声称已完成真实签名发布或应用内安装；取消下载事件仍未纳入冻结命令契约。
 
