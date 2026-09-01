@@ -9,7 +9,7 @@
 ## 当前 Git 状态
 
 - 分支：`main`
-- 当前提交：待本轮应用内更新闭环修复提交
+- 当前提交：`c7f38f7`（manifest handoff 与设置页原生更新操作接通）
 - 本地与 `origin/main` 已同步
 - 实施计划：`docs/superpowers/plans/2026-08-31-应用内更新功能实施计划.md`
 - 进度账本：`.superpowers/sdd/2026-08-31-应用内更新功能实施计划/progress.md`（gitignore 内，仅本地）
@@ -88,7 +88,7 @@
 - 状态：已实现，待本轮提交后的双平台完整 CI 复核。
 - 修改范围：`crates/skillhub-core/src/app_update/model.rs`、`crates/skillhub-application/src/update_service.rs`、`crates/skillhub-adapters/src/app_update/github_releases.rs`、`crates/skillhub-storage/tests/app_update_repository.rs`、`crates/skillhub-application/tests/facade_update.rs`、`apps/desktop/src/api/bindings.ts`、`apps/desktop/src/features/settings/api.ts`、`apps/desktop/src/features/settings/api.test.ts`。
 - 已实现：检查结果携带当前平台 manifest/platform；设置页将清单转换为版本说明、资产 URL、SHA-256 和大小，并按 prepare→download→install 调用原生命令；无清单时保持可解释的失败和官方发布页回退。
-- 测试：manifest facade 回归、绑定漂移、设置页原生操作测试已在 Windows 定向运行；完整前端和双平台 CI 需在提交后复核。
+- 测试：manifest facade 回归、绑定漂移、设置页原生操作测试已在 Windows 定向运行；Rust workspace、前端 62 个测试文件/348 项测试、ESLint、TypeScript、生产构建和发布预检均通过。
 
 ### Task 6：发布清单、签名资产和构建验证
 
