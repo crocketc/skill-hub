@@ -117,6 +117,8 @@ impl GithubReleaseProvider {
             latest_version,
             release_url: release.html_url,
             asset_name: release.assets.into_iter().next().map(|asset| asset.name),
+            manifest: None,
+            platform: None,
             published_at: release.published_at,
             install_action: install_action_for(trust),
         })

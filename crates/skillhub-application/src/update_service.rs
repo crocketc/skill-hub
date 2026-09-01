@@ -8,7 +8,7 @@ use skillhub_core::{
     select_artifact, verify_downloaded_artifact, version_is_newer, AppError, AppResult,
     CheckApplicationUpdate, DownloadedApplicationUpdate, ErrorCode, PrepareApplicationUpdate,
     PreparedApplicationUpdate, RecoveryAction, Severity, UpdateArtifact, UpdateManifest,
-    UpdateSignaturePublicKey, UpdateState, DEFAULT_UPDATE_SIGNATURE_PUBLIC_KEY,
+    UpdatePlatform, UpdateSignaturePublicKey, UpdateState, DEFAULT_UPDATE_SIGNATURE_PUBLIC_KEY,
 };
 use skillhub_storage::Database;
 
@@ -89,15 +89,23 @@ impl UpdateService {
         }
 
         let now = now_seconds();
-        if let Some(update) = self.with_database("update.check.cache", |database| {
+        if let Some(mut update) = self.with_database("update.check.cache", |database| {
             database
                 .application_update_repository()
                 .fresh_check(&request, now, CHECK_CACHE_SECONDS)
         })? {
+            if update.available && update.manifest.is_none() {
+                update = self.attach_manifest(&request, update).await;
+                self.with_database("update.check.cache_manifest", |database| {
+                    database
+                        .application_update_repository()
+                        .save_check(&request, &update, now)
+                })?;
+            }
             return Ok(update);
         }
 
-        let update = self
+        let mut update = self
             .provider
             .latest(
                 &request.repository,
@@ -105,12 +113,36 @@ impl UpdateService {
                 request.build_trust,
             )
             .await?;
+        update = self.attach_manifest(&request, update).await;
         self.with_database("update.check.save", |database| {
             database
                 .application_update_repository()
                 .save_check(&request, &update, now)
         })?;
         Ok(update)
+    }
+
+    async fn attach_manifest(
+        &self,
+        request: &CheckApplicationUpdate,
+        mut update: skillhub_core::ApplicationUpdate,
+    ) -> skillhub_core::ApplicationUpdate {
+        if !update.available {
+            return update;
+        }
+        let platform = current_update_platform();
+        if let Ok(manifest) = self
+            .provider
+            .fetch_manifest(&request.repository, &platform)
+            .await
+        {
+            if manifest.version == update.latest_version {
+                update.manifest = Some(manifest);
+                update.platform = Some(platform);
+                update.install_action = skillhub_core::InstallAction::InstallVerifiedAsset;
+            }
+        }
+        update
     }
 
     pub fn prepare_download(
@@ -319,6 +351,20 @@ impl UpdateService {
                 .with_action(RecoveryAction::Retry)
         })?;
         action(&database)
+    }
+}
+
+fn current_update_platform() -> UpdatePlatform {
+    let target = if cfg!(windows) {
+        "windows"
+    } else if cfg!(target_os = "macos") {
+        "darwin"
+    } else {
+        "unknown"
+    };
+    UpdatePlatform {
+        target: target.to_owned(),
+        arch: std::env::consts::ARCH.to_owned(),
     }
 }
 

@@ -1,4 +1,4 @@
-import { executeCommand, queryApplication } from "../../api/bindings";
+import { executeCommand, queryApplication, type UpdateArtifact, type UpdateManifest, type UpdatePlatform } from "../../api/bindings";
 
 export type BuildTrust = "windows_signed" | "windows_unsigned" | "macos_signed" | "unknown";
 export type NetworkSettings = { networkEnabled: boolean; llmProvider: string; dataScope: string };
@@ -10,6 +10,8 @@ export type AppUpdate = {
   assetUrl?: string | null;
   sha256?: string | null;
   sizeBytes?: number | null;
+  manifest?: UpdateManifest | null;
+  platform?: UpdatePlatform | null;
 };
 export type UpdateState =
   | "not_checked"
@@ -104,18 +106,10 @@ export function errorCodeOf(reason: unknown): string | null {
 }
 
 function unavailableOperation(operation: string): Promise<never> {
-  return Promise.reject(
-    new Error(`${operation} is unavailable until its native contract is generated.`),
-  );
+  return Promise.reject(new Error(`${operation} is unavailable until the native contract is added.`));
 }
 
-/**
- * Binds the update card to the frozen typed contracts. The check query and
- * rollback/release commands are fully wired; download and install execute the
- * frozen prepare/download/install commands, which currently depend on the
- * caller supplying the release manifest, so they surface a structured error
- * until the manifest handoff exists (tracked for the release task).
- */
+/** Binds the update card to the typed native update contracts. */
 export function nativeApplicationUpdateOperations(input: {
   currentVersion: () => Promise<string>;
   buildTrust: () => BuildTrust;
@@ -130,6 +124,10 @@ export function nativeApplicationUpdateOperations(input: {
         return "unknown" as const;
     }
   };
+  let checkedManifest: UpdateManifest | null = null;
+  let checkedPlatform: UpdatePlatform | null = null;
+  let preparedArtifact: UpdateArtifact | null = null;
+
   return {
     async check() {
       const currentVersion = await input.currentVersion();
@@ -143,18 +141,63 @@ export function nativeApplicationUpdateOperations(input: {
       });
       if (facts.type !== "application_update") return null;
       const result = facts.payload;
-      if (!result.available) return null;
+      if (!result.available) {
+        checkedManifest = null;
+        checkedPlatform = null;
+        preparedArtifact = null;
+        return null;
+      }
+      checkedManifest = result.manifest ?? null;
+      checkedPlatform = result.platform ?? null;
+      preparedArtifact = null;
+      const expectedTarget = checkedPlatform
+        ? `${checkedPlatform.target}-${checkedPlatform.arch}`
+        : null;
+      const selectedArtifact = checkedManifest?.artifacts.find(
+        (candidate) => candidate.target === expectedTarget,
+      );
       return {
         version: result.latest_version,
-        notes: "",
+        notes: checkedManifest?.notes ?? "",
         releaseUrl: result.release_url,
+        assetName: selectedArtifact?.url.split("/").pop() ?? result.asset_name,
+        assetUrl: selectedArtifact?.url ?? null,
+        sha256: selectedArtifact?.sha256 ?? null,
+        sizeBytes: selectedArtifact ? Number(selectedArtifact.size) : null,
+        manifest: checkedManifest,
+        platform: checkedPlatform,
       };
     },
     async download() {
-      await unavailableOperation("download_application_update");
+      if (!checkedManifest || !checkedPlatform) {
+        throw new Error("download_application_update is unavailable until a signed update manifest is checked.");
+      }
+      const currentVersion = await input.currentVersion();
+      const prepared = await executeCommand({
+        type: "prepare_application_update",
+        payload: {
+          current_version: currentVersion,
+          manifest: checkedManifest,
+          platform: checkedPlatform,
+        },
+      });
+      if (prepared.type !== "prepared_application_update") {
+        throw new Error("prepare_application_update returned an unexpected result.");
+      }
+      preparedArtifact = prepared.payload.artifact;
+      const downloaded = await executeCommand({
+        type: "download_application_update",
+        payload: { artifact: preparedArtifact },
+      });
+      if (downloaded.type !== "downloaded_application_update") {
+        throw new Error("download_application_update returned an unexpected result.");
+      }
     },
     async install() {
-      await unavailableOperation("install_application_update");
+      const result = await executeCommand({ type: "install_application_update", payload: null });
+      if (result.type !== "application_update_state") {
+        throw new Error("install_application_update returned an unexpected result.");
+      }
     },
     async cancel() {
       await unavailableOperation("cancel_download");

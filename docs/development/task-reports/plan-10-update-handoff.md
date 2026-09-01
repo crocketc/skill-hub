@@ -9,7 +9,7 @@
 ## 当前 Git 状态
 
 - 分支：`main`
-- 当前提交：`e1e5bff`（更新下载测试夹具竞态修复及验收记录，Task 7 回归修复）
+- 当前提交：待本轮应用内更新闭环修复提交
 - 本地与 `origin/main` 已同步
 - 实施计划：`docs/superpowers/plans/2026-08-31-应用内更新功能实施计划.md`
 - 进度账本：`.superpowers/sdd/2026-08-31-应用内更新功能实施计划/progress.md`（gitignore 内，仅本地）
@@ -64,13 +64,12 @@
   - `ApplicationUpdate` 改为按计划接口的纯展示状态机组件：props 为 `update`、`policy`、`state`、`progress` 及 `onCheck`/`onDownload`/`onInstall`/`onCancel`/`onRollback`/`onOpenRelease` 回调；覆盖全部 9 个 `UpdateState`
   - 安装按钮仅在 `ready_to_install`（完整性校验通过后）渲染；下载中显示 `role="progressbar"`（含 `aria-valuenow`）与取消按钮；`ready_to_install` 与 `rolled_back` 展示自动重启与系统安全提示文案（明确由 Windows/macOS 接管）
   - 开发者详情 `<details>` 展开源 URL 与 SHA-256；错误码经 `updateErrorKey`（字面量联合，TS 安全）映射为中英可操作提示；按钮均为原生 `<button>`，可键盘操作且有可访问名称
-  - `api.ts` 新增 `UpdateState`/`UpdatePolicy`/`UpdateProgress`/`ApplicationUpdateOperations`；`SettingsSnapshot` 增加 `updateState`、`updatePolicy`；`nativeApplicationUpdateOperations` 绑定冻结契约（`check_application_update` 查询、`rollback_application_update` 命令、`open_official_release`）
+  - `api.ts` 新增 `UpdateState`/`UpdatePolicy`/`UpdateProgress`/`ApplicationUpdateOperations`；`SettingsSnapshot` 增加 `updateState`、`updatePolicy`；`nativeApplicationUpdateOperations` 绑定冻结契约（`check_application_update` 查询、`prepare_application_update`/`download_application_update`/`install_application_update` 命令、`rollback_application_update` 命令、`open_official_release`）
   - `SettingsPage` 内 `ApplicationUpdateCard` 持有阶段状态机，生产经 `facade.updates` 注入，测试/预览继续用假 facade
 - 已验证：`pnpm exec vitest run src/features/settings/ApplicationUpdate.test.tsx src/features/settings/SettingsPage.test.tsx`（13 项）、`pnpm run check:frontend`、`pnpm run test:frontend`、`pnpm run build:frontend`
-- 重要边界与已知限制（需要在 Task 6/7 处理）：
-  1. **契约缺口（原样记录，未擅自扩大范围）**：`CheckApplicationUpdate` 查询结果只返回事实（版本/资产名/URL），不含 manifest；而 `PrepareApplicationUpdate` 命令要求调用方提供完整 manifest。前端因此无法独立发起端到端自动下载。`nativeApplicationUpdateOperations.download/install/cancel` 暂以结构化错误拒绝（前端显示"从官方发布页下载"指引）。修复方向：让 check 缓存 manifest 并允许 prepare 从上次检查推导，或让查询返回所选 artifact——需要后端小改 + Specta bindings 再生，属于后端任务，建议在 Task 6 或专门修复轮中处理
-  2. 未签名构建（当前现实）主路径为打开官方发布页，符合设计的安全边界；下载/安装全流程 UI 已就绪，等签名发布（Task 6）与后端修复后即可贯通
-  3. 真实下载进度事件在冻结契约中没有载体，`progress` prop 已预留；取消下载同理（adapter 层 Task 2 已支持取消 flag，但命令契约未暴露）
+- 重要边界与已知限制：
+  1. 检查结果现在会携带当前平台 manifest/platform；设置页可独立调用准备、下载和安装。缺少 manifest、平台不匹配或清单获取失败时，不发起下载并保留官方发布页兜底。
+  2. 真实下载进度事件在冻结契约中没有载体，`progress` prop 已预留；取消下载同理（adapter 层支持取消 flag，但命令契约未暴露）。
 
 #### Task 5 任务级审查结论
 
@@ -78,11 +77,18 @@
 - 验证结果：定向测试 13/13 通过；前端全量 Vitest 346/346 通过；ESLint、TypeScript 和生产构建通过；`git diff --check` 通过。
 - 定向命令曾因 pnpm 在当前机器的可执行文件链接异常无法直接解析 `vitest`，随后使用 `apps/desktop/node_modules/.bin/vitest` 等价入口复核通过；该问题属于本机依赖链接，不是实现失败。
 
-#### 契约缺口处理决定（Task 6 前置说明）
+#### 契约缺口处理决定（已完成）
 
-本轮不在 Task 5 中扩大核心 API。原因是 `CheckApplicationUpdate` 当前只返回版本事实，而 `PrepareApplicationUpdate` 需要完整 manifest 和平台架构；要打通前端独立下载，至少需要同步修改检查请求/缓存模型、平台架构来源、ApplicationUpdate 结果、ApplicationFacade 编排和 Specta bindings。当前发布仍以未签名/未公证早期构建为主，贸然增加半套下载入口会造成 UI 显示可用但运行时无法完成的误导。
+后续闭环修复采用最小契约扩展：检查服务在发现新版本后按当前平台获取并缓存匹配的 manifest/platform，`ApplicationUpdate` 通过 Specta 暴露两者；前端据此调用既有 prepare/download/install 命令，不复制版本选择或签名判断。
 
-因此 Task 6/7 保留以下边界并在验收中明确记录：设置页提供状态展示和官方发布页备用入口；原生下载/安装命令仍由后端契约保护，缺少 manifest 时返回结构化错误。后续若要实现签名版本的应用内自动下载，应单独设计并冻结“检查结果携带已验证 manifest（含平台资产）”的 API，再同步生成 bindings 和端到端测试。
+缺少 manifest、平台不匹配或清单获取失败时，前端不发起下载并保留官方发布页兜底；取消下载仍等待后续命令契约，避免伪造取消能力。
+
+### 应用内更新闭环修复：manifest handoff
+
+- 状态：已实现，待本轮提交后的双平台完整 CI 复核。
+- 修改范围：`crates/skillhub-core/src/app_update/model.rs`、`crates/skillhub-application/src/update_service.rs`、`crates/skillhub-adapters/src/app_update/github_releases.rs`、`crates/skillhub-storage/tests/app_update_repository.rs`、`crates/skillhub-application/tests/facade_update.rs`、`apps/desktop/src/api/bindings.ts`、`apps/desktop/src/features/settings/api.ts`、`apps/desktop/src/features/settings/api.test.ts`。
+- 已实现：检查结果携带当前平台 manifest/platform；设置页将清单转换为版本说明、资产 URL、SHA-256 和大小，并按 prepare→download→install 调用原生命令；无清单时保持可解释的失败和官方发布页回退。
+- 测试：manifest facade 回归、绑定漂移、设置页原生操作测试已在 Windows 定向运行；完整前端和双平台 CI 需在提交后复核。
 
 ### Task 6：发布清单、签名资产和构建验证
 
@@ -91,7 +97,7 @@
 - 已实现：Windows/macOS 平台配置显式开启 `createUpdaterArtifacts`；macOS 同时保留 DMG 首次安装和 `app` updater 资产；工作流从 CI Secret 注入 Tauri 私钥，仅收集 `.nsis.zip`/`.app.tar.gz` 及 `.sig`；发布阶段生成固定 GitHub Release URL 的 `latest.json`，覆盖 Windows x64/ARM64 与 macOS x64/ARM64 条目。
 - 安全门禁：工作流要求 `TAURI_SIGNING_PRIVATE_KEY`、`TAURI_SIGNING_PRIVATE_KEY_PASSWORD` 和与仓库配置一致的 `TAURI_UPDATER_PUBLIC_KEY`；明确拒绝当前测试公钥用于正式发布。私钥不入库、不写日志、不进入发布产物。
 - 验证：`node --test scripts/verify_release_readiness.test.mjs` 5/5 通过；`node scripts/verify_release_readiness.mjs --json` 通过；manifest 生成器覆盖平台资产、签名缺失和官方 URL 结构测试。
-- 未解决问题：当前工作区仍使用测试公钥，尚未生成/配置生产密钥，因此不能声称已完成真实签名发布或应用内安装；Task 5 记录的 manifest 前端契约缺口仍保留。
+- 未解决问题：当前工作区仍使用测试公钥，尚未生成/配置生产密钥，因此不能声称已完成真实签名发布或应用内安装；取消下载事件仍未纳入冻结命令契约。
 
 ### Task 7：Windows/macOS 双平台验收与收口
 
@@ -116,8 +122,8 @@
 
 ## 主 Agent 后续顺序
 
-1. 生成生产签名资产后，进行双平台真实安装、自动重启和失败回滚取证。
-2. 资产具备后运行完整本地 CI、发布预检、bindings 漂移检查和 `git diff --check`，再决定最终发布。
+1. 运行完整本地 CI、发布预检、bindings 漂移检查和 `git diff --check`，确认本轮闭环修复未引入回归。
+2. 生成生产签名资产后，进行双平台真实安装、自动重启和失败回滚取证。
 
 ## 交接原则
 

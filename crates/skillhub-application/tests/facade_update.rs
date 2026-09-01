@@ -46,6 +46,30 @@ async fn serve_once(body: &'static str) -> String {
     format!("http://{address}/")
 }
 
+async fn serve_release_and_manifest() -> String {
+    let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let base = format!("http://{address}/");
+    let manifest = format!(
+        r#"{{"tag_name":"v0.2.0","body":"Release notes","published_at":"2026-08-31T00:00:00Z","assets":[{{"name":"SkillHub_0.2.0_x64.nsis.zip","browser_download_url":"{base}SkillHub_0.2.0_x64.nsis.zip","size":4,"digest":"sha256:9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08","label":"target=windows-x86_64;signature=verified"}}]}}"#
+    );
+    let release = r#"{"tag_name":"v0.2.0","html_url":"https://github.com/crocketc/skill-hub/releases/tag/v0.2.0","published_at":"2026-08-31T00:00:00Z","assets":[{"name":"SkillHub_0.2.0_x64.exe"}]}"#.to_owned();
+    tokio::spawn(async move {
+        for body in [release, manifest] {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut request = [0_u8; 2048];
+            let _ = stream.read(&mut request).await;
+            let response = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
+                body.len(),
+                body
+            );
+            stream.write_all(response.as_bytes()).await.unwrap();
+        }
+    });
+    base
+}
+
 async fn serve_bytes_once(body: &'static [u8]) -> String {
     let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
     let address = listener.local_addr().unwrap();
@@ -216,6 +240,35 @@ async fn update_check_uses_fresh_24_hour_cache() {
         AppQueryResult::ApplicationUpdate(update)
             if update.available && update.install_action == InstallAction::InstallVerifiedAsset
     ));
+}
+
+#[tokio::test]
+async fn update_check_exposes_manifest_for_in_app_download() {
+    let api_base = serve_release_and_manifest().await;
+    let provider =
+        GithubReleaseProvider::with_download_base_for_tests(&api_base, &api_base).unwrap();
+    let facade = facade_with_app_update(Database::open_in_memory().unwrap(), provider);
+
+    let result = facade
+        .query(AppQuery::CheckApplicationUpdate(
+            skillhub_core::CheckApplicationUpdate {
+                current_version: "0.1.0".to_owned(),
+                repository: "crocketc/skill-hub".to_owned(),
+                build_trust: BuildTrust::WindowsUnsigned,
+            },
+        ))
+        .await
+        .unwrap();
+    let AppQueryResult::ApplicationUpdate(update) = result else {
+        panic!("expected application update");
+    };
+
+    let serialized = serde_json::to_value(update).unwrap();
+    assert_eq!(serialized["manifest"]["version"], "0.2.0");
+    assert_eq!(
+        serialized["manifest"]["artifacts"][0]["target"],
+        "windows-x86_64"
+    );
 }
 
 #[tokio::test]

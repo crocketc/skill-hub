@@ -11,6 +11,8 @@ fn fixture_update(current: &str, latest: &str) -> ApplicationUpdate {
         latest_version: latest.to_owned(),
         release_url: format!("https://github.com/crocketc/skill-hub/releases/tag/v{latest}"),
         asset_name: Some("SkillHub.zip".to_owned()),
+        manifest: None,
+        platform: None,
         published_at: Some("2026-08-31T00:00:00Z".to_owned()),
         install_action: InstallAction::InstallVerifiedAsset,
     }

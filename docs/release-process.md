@@ -16,7 +16,7 @@
 | Windows ARM64 | NSIS `.exe` | 未签名 | 当前用户安装 |
 | macOS Universal | `.dmg` | ad-hoc、未公证 | Finder 确认后手动打开 |
 
-应用内更新使用独立的 Tauri updater 资产：Windows 为带签名的 `.nsis.zip`，macOS 为带签名的 `.app.tar.gz`。DMG 只用于首次安装，不写入 `latest.json` 的 updater 平台条目。
+应用内更新使用独立的 Tauri updater 资产：Windows 为带 minisign 签名的 `.nsis.zip`，macOS 为带 minisign 签名的 `.app.tar.gz`。DMG 只用于首次安装，不写入 `latest.json` 的 updater 平台条目。操作系统代码签名/公证仍是独立能力；没有付费 Developer ID 或 Authenticode 证书时，首次安装可能出现系统提示，但应用内更新仍可依靠清单、摘要和 minisign 校验完成。
 
 每个安装包都要有 SHA-256 摘要。发布工作流同时生成 CycloneDX SBOM 和发布元数据，其中元数据记录源提交、tag、构建平台、产物名称与信任级别。
 
@@ -26,10 +26,10 @@
 2. 工作流在 Windows 与 macOS 上检出同一提交，安装锁定依赖，执行质量检查并构建平台产物。
 3. 工作流生成校验和、SBOM 和发布元数据，创建 GitHub Draft Release；不会自动公开发布。
 4. 发布者逐项核对提交号、产物名称、摘要、SBOM、安装说明和 CI 结果。
-5. 确认无误后手动将 Draft Release 发布。正式签名构建会生成 `latest.json`，受信任构建可走应用内更新；未签名/未公证构建仍只打开官方发布页。
+5. 确认无误后手动将 Draft Release 发布。只要配置了免费的 minisign 密钥并生成 `latest.json`，应用会优先走“检查→下载→校验→安装→自动重启”；清单缺失、平台不匹配或校验失败时才回退到官方发布页。首次安装的未签名/未公证包仍按平台安全提示操作。
 
 ## 安全边界
 
-- 发布工作流只从 CI Secret 读取 Tauri updater 私钥及密码，并从仓库变量读取与配置文件一致的公钥，不写入仓库、日志或产物。当前仓库中的公钥是测试 key；在第一次正式发布前，必须生成生产密钥对，将公钥同时替换 `tauri.conf.json` 与 `DEFAULT_UPDATE_SIGNATURE_PUBLIC_KEY`，再配置 `TAURI_SIGNING_PRIVATE_KEY`、`TAURI_SIGNING_PRIVATE_KEY_PASSWORD` 和 `TAURI_UPDATER_PUBLIC_KEY`。早期构建不要求付费签名服务，但未配置这些值时不得声称支持应用内安装。
+- 发布工作流只从 CI Secret 读取 Tauri updater 私钥及密码，并从仓库变量读取与配置文件一致的公钥，不写入仓库、日志或产物。免费方案使用 minisign/Tauri updater 密钥，不需要购买 Windows 或 Apple 的代码签名服务：在安全设备上执行 `minisign -G -p skillhub-updater.pub -s skillhub-updater.key`，把 `.key` 文件和密码仅保存为 GitHub Actions Secrets `TAURI_SIGNING_PRIVATE_KEY`、`TAURI_SIGNING_PRIVATE_KEY_PASSWORD`，把 `.pub` 内容配置为仓库变量 `TAURI_UPDATER_PUBLIC_KEY`，并将同一个公钥提交到 `tauri.conf.json` 与 `DEFAULT_UPDATE_SIGNATURE_PUBLIC_KEY`。私钥绝不提交仓库或发送给他人。当前仓库中的公钥是测试 key，第一次发布前必须替换。未配置这些值时只能发布首次安装包，不能声称支持应用内安装。
 - 不提供绕过 SmartScreen 或 Gatekeeper 的命令，也不因为构建失败而跳过测试、审计或摘要生成。
 - 未来启用受信任签名/公证时，应新增独立的信任门禁与回归证据，不能直接把早期未签名产物升级为自动安装渠道。

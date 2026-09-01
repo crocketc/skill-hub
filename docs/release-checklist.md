@@ -4,7 +4,7 @@
 
 ## 当前候选
 
-- 提交：`6100939`
+- 提交：`待本次实现提交后更新`
 - 日期：2026-08-31
 - 发布信任级别：Windows 未签名；macOS ad-hoc、未公证
 - 发布方式：GitHub Draft Release，人工核对后发布
@@ -20,7 +20,7 @@
 | macOS updater 资产 | 已配置 | `.app.tar.gz` 与 `.sig`；首次安装 DMG 不进入 updater 清单 |
 | latest.json | 已配置 | `scripts/generate_update_manifest.mjs` 生成四个平台条目 |
 | 生产密钥 | 待发布配置 | CI 必须提供 `TAURI_SIGNING_PRIVATE_KEY`、密码和匹配的 `TAURI_UPDATER_PUBLIC_KEY`；当前仓库公钥仍为测试 key |
-| manifest 前端交接 | 明确限制 | 当前检查查询不携带 manifest，设置页暂保留官方发布页备用入口；后续需单独冻结 API 才能打通独立下载 |
+| manifest 前端交接 | 已完成 | 检查查询返回当前平台 manifest/platform；设置页按“准备→下载→安装”调用原生契约，缺少清单时保留官方发布页兜底 |
 
 | 检查项 | 状态 | 证据/备注 |
 | --- | --- | --- |
@@ -50,4 +50,4 @@
 - [ ] 安装说明没有要求关闭 SmartScreen/Gatekeeper 或运行绕过命令。
 - [ ] Draft Release 中没有 API Key、用户 Skill 正文、个人路径、`node_modules` 或 `target`。
 - [ ] 未验证的 Agent、未完成的 E2E/真机项目没有被标记为通过。
-- [ ] 应用更新仍只对未签名/未公证构建提供官方发布页操作。
+- [ ] 应用更新清单、摘要和 minisign 签名已配置并与构建产物一致；清单缺失或校验失败时回退官方发布页。

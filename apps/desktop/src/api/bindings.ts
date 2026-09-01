@@ -59,6 +59,13 @@ export type ApplicationUpdate = {
 	latest_version: string,
 	release_url: string,
 	asset_name: string | null,
+	/**
+	 *  Signed updater metadata, when available for the current platform.
+	 *  Missing manifests retain the official release-page fallback.
+	 */
+	manifest?: UpdateManifest | null,
+	/**  Platform selected for the signed updater artifact. */
+	platform?: UpdatePlatform | null,
 	published_at: string | null,
 	install_action: InstallAction,
 };

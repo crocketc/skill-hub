@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+use super::{UpdateManifest, UpdatePlatform};
+
 /// Trust level of the currently running application build.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 #[serde(rename_all = "snake_case")]
@@ -26,6 +28,13 @@ pub struct ApplicationUpdate {
     pub latest_version: String,
     pub release_url: String,
     pub asset_name: Option<String>,
+    /// Signed updater metadata, when available for the current platform.
+    /// Missing manifests retain the official release-page fallback.
+    #[serde(default)]
+    pub manifest: Option<UpdateManifest>,
+    /// Platform selected for the signed updater artifact.
+    #[serde(default)]
+    pub platform: Option<UpdatePlatform>,
     pub published_at: Option<String>,
     pub install_action: InstallAction,
 }
@@ -39,6 +48,8 @@ impl ApplicationUpdate {
             current_version,
             release_url: String::new(),
             asset_name: None,
+            manifest: None,
+            platform: None,
             published_at: None,
             install_action: InstallAction::OpenOfficialRelease,
         }
