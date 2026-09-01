@@ -50,6 +50,7 @@ test("release configuration keeps updater artifacts separate from first-install 
   assert.match(workflow, /latest\.json/);
   assert.match(workflow, /TAURI_SIGNING_PRIVATE_KEY_PASSWORD/);
   assert.match(workflow, /TAURI_UPDATER_PUBLIC_KEY/);
+  assert.match(workflow, /apt-get install -y pkg-config libglib2\.0-dev/);
   assert.doesNotMatch(workflow, /TAURI_SIGNING_PRIVATE_KEY_PASSWORD secret is required/);
 });
 

@@ -60,6 +60,8 @@ jobs:
       - name: Install Rust toolchain
         shell: bash
         run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config libglib2.0-dev
           rustup toolchain install stable --profile minimal
           rustup default stable
           rustup component add rustfmt clippy
