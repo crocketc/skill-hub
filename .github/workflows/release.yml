@@ -101,7 +101,7 @@ jobs:
             "$RELEASE_TAG" "$(git rev-parse HEAD)" > artifacts/release-metadata.txt
 
       - name: Upload source metadata and SBOM
-        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: release-metadata
           path: artifacts
@@ -164,7 +164,7 @@ jobs:
           "tag=$env:RELEASE_TAG`ncommit=$(git rev-parse HEAD)`nplatform=windows`ntarget=${{ matrix.target }}`ntrust=tauri-updater-signed;installer-unsigned" | Set-Content -Encoding ascii artifacts/release-metadata-${{ matrix.target }}.txt
 
       - name: Upload Windows artifacts
-        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: windows-${{ matrix.target }}
           path: artifacts
@@ -220,7 +220,7 @@ jobs:
             "$RELEASE_TAG" "$(git rev-parse HEAD)" > artifacts/release-metadata-macos-universal.txt
 
       - name: Upload macOS artifacts
-        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: macos-universal
           path: artifacts

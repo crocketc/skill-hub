@@ -53,7 +53,7 @@ jobs:
         run: node scripts/generate_sbom.mjs --out-dir artifacts/sbom
 
       - name: Upload SBOMs (actions/upload-artifact v4)
-        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: skillhub-sbom-${{ github.sha }}
           path: artifacts/sbom/*.cdx.json
