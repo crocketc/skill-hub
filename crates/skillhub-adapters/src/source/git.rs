@@ -65,18 +65,7 @@ impl GixSourceFetcher {
         loop {
             tokio::select! {
                 result = &mut task => {
-                    let result = result.map_err(|error| SourceFetchError::new(SourceFetchErrorCode::GitFetchFailed, error.to_string()))?;
-                    if result.is_err()
-                        && clone_workspace
-                            .as_ref()
-                            .is_some_and(|workspace| directory_size(workspace.path()) > self.limits.max_expanded_bytes)
-                    {
-                        return Err(SourceFetchError::new(
-                            SourceFetchErrorCode::DownloadSizeLimit,
-                            "Git download exceeds the configured size limit",
-                        ));
-                    }
-                    return result;
+                    return result.map_err(|error| SourceFetchError::new(SourceFetchErrorCode::GitFetchFailed, error.to_string()))?;
                 }
                 _ = sleep(Duration::from_millis(50)) => {
                     if let Some(clone_path) = clone_workspace.as_ref().map(|workspace| workspace.path()) {

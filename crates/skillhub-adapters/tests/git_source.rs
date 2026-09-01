@@ -30,6 +30,10 @@ async fn git_fetch_accepts_a_file_url_and_reads_the_remote_tree_without_hooks() 
 }
 
 fn temporary_git_repository() -> tempfile::TempDir {
+    temporary_git_repository_with_content(b"# fixture\n")
+}
+
+fn temporary_git_repository_with_content(content: &[u8]) -> tempfile::TempDir {
     let fixture = tempfile::tempdir().unwrap();
     run_git(fixture.path(), &["init"]);
     run_git(
@@ -37,7 +41,7 @@ fn temporary_git_repository() -> tempfile::TempDir {
         &["config", "user.email", "skillhub-tests@example.com"],
     );
     run_git(fixture.path(), &["config", "user.name", "SkillHub Tests"]);
-    fs::write(fixture.path().join("SKILL.md"), "# fixture\n").unwrap();
+    fs::write(fixture.path().join("SKILL.md"), content).unwrap();
     run_git(fixture.path(), &["add", "SKILL.md"]);
     run_git(
         fixture.path(),
@@ -98,7 +102,7 @@ async fn git_tree_limits_apply_across_nested_directories() {
 
 #[tokio::test]
 async fn git_clone_download_is_bounded_before_tree_materialization() {
-    let repository = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let repository = temporary_git_repository_with_content(b"0123456789abcdef");
     let url = url::Url::from_directory_path(&repository)
         .unwrap()
         .to_string();
