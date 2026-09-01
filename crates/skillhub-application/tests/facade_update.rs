@@ -269,6 +269,7 @@ async fn update_check_exposes_manifest_for_in_app_download() {
         serialized["manifest"]["artifacts"][0]["target"],
         "windows-x86_64"
     );
+    assert_eq!(serialized["install_action"], "install_verified_asset");
 }
 
 #[tokio::test]
