@@ -50,6 +50,7 @@ use skillhub_core::{
     physical_id_for_path, AllowedRoot, AppCommand, AppCommandResult, AppError, AppQuery,
     AppQueryResult, AppResult, ApplicationFacade, DeploymentCapability, DeploymentMode, ErrorCode,
     OperationId, PathPolicy, RecoveryAction, ResolvedPathGrant, Severity, TargetChange,
+    UpdateSignaturePublicKey,
 };
 use skillhub_storage::backup::{BackupService, RestoreService, RetentionService};
 use skillhub_storage::export::ExportService;
@@ -854,10 +855,30 @@ impl LocalApplicationFacade {
         app_update_provider: Arc<GithubReleaseProvider>,
         source_search_provider: Arc<SkillsShProvider>,
     ) -> Self {
+        Self::new_with_providers_and_update_key(
+            database,
+            app_update_provider,
+            source_search_provider,
+            UpdateSignaturePublicKey {
+                value: skillhub_core::DEFAULT_UPDATE_SIGNATURE_PUBLIC_KEY.to_owned(),
+            },
+        )
+    }
+
+    /// Creates a facade with explicit online providers and an update key.
+    /// Production callers should use [`Self::new_with_providers`]; the key
+    /// override keeps test fixtures isolated from the production signing key.
+    pub fn new_with_providers_and_update_key(
+        database: Database,
+        app_update_provider: Arc<GithubReleaseProvider>,
+        source_search_provider: Arc<SkillsShProvider>,
+        update_public_key: UpdateSignaturePublicKey,
+    ) -> Self {
         let mut facade = Self::new(database);
-        facade.update_service = Arc::new(UpdateService::new(
+        facade.update_service = Arc::new(UpdateService::with_public_key(
             facade.database.clone(),
             app_update_provider.clone(),
+            update_public_key,
         ));
         facade.app_update_provider = app_update_provider;
         facade.source_search_provider = source_search_provider;

@@ -30,6 +30,6 @@
 
 ## 安全边界
 
-- 发布工作流只从 CI Secret 读取 Tauri updater 私钥及密码，并从仓库变量读取与配置文件一致的公钥，不写入仓库、日志或产物。Tauri v2 已内置 signer，不使用 `minisign -G`：在项目目录执行 `pnpm --dir apps/desktop tauri signer generate -- -w ~/.tauri/skillhub.key`（Windows PowerShell 可将路径改为 `$env:USERPROFILE\\.tauri\\skillhub.key`）。把生成的私钥文件内容和密码仅保存为 GitHub Actions Secrets `TAURI_SIGNING_PRIVATE_KEY`、`TAURI_SIGNING_PRIVATE_KEY_PASSWORD`，把命令输出的公钥内容配置为仓库变量 `TAURI_UPDATER_PUBLIC_KEY`，并将同一个公钥提交到 `tauri.conf.json` 与 `DEFAULT_UPDATE_SIGNATURE_PUBLIC_KEY`。私钥绝不提交仓库或发送给他人。当前仓库中的公钥是测试 key，第一次发布前必须替换。未配置这些值时只能发布首次安装包，不能声称支持应用内安装。
+- 发布工作流只从 CI Secret 读取 Tauri updater 私钥及密码，并从仓库变量读取与配置文件一致的公钥，不写入仓库、日志或产物。Tauri v2 已内置 signer，不使用 `minisign -G`：在项目目录执行 `pnpm --dir apps/desktop tauri signer generate -- -w ~/.tauri/skillhub.key`（Windows PowerShell 可将路径改为 `$env:USERPROFILE\\.tauri\\skillhub.key`）。把生成的私钥文件内容和密码仅保存为 GitHub Actions Secrets `TAURI_SIGNING_PRIVATE_KEY`、`TAURI_SIGNING_PRIVATE_KEY_PASSWORD`，把命令输出的公钥配置为仓库变量 `TAURI_UPDATER_PUBLIC_KEY`，并将同一个公钥提交到 `tauri.conf.json` 与 `DEFAULT_UPDATE_SIGNATURE_PUBLIC_KEY`。私钥绝不提交仓库或发送给他人。当前仓库已切换为生产公钥；只有与这把私钥匹配的签名资产才能通过应用内更新校验。未配置私钥和密码时只能发布首次安装包，不能声称支持应用内安装。
 - 不提供绕过 SmartScreen 或 Gatekeeper 的命令，也不因为构建失败而跳过测试、审计或摘要生成。
 - 未来启用受信任签名/公证时，应新增独立的信任门禁与回归证据，不能直接把早期未签名产物升级为自动安装渠道。

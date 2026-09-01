@@ -11,7 +11,7 @@ const OFFICIAL_RELEASE_REPO: &str = "skill-hub";
 /// to the value in `apps/desktop/src-tauri/tauri.conf.json`; the release
 /// pipeline publishes it as a non-secret alongside the signed artifacts.
 pub const DEFAULT_UPDATE_SIGNATURE_PUBLIC_KEY: &str =
-    "RWQf6LRCGA9i53mlYecO4IzT51TGPpvWucNSCh1CBM0QTaLn73Y7GFO3";
+    "RWQTMMSblUX0iEW5YvJZ40R7NPBkfadPSRSHPvWo7ascexmHPzo91Dqz";
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 #[serde(deny_unknown_fields)]

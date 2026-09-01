@@ -9,14 +9,16 @@ use skillhub_application::{LocalApplicationFacade, RollbackState};
 use skillhub_core::catalog::{CatalogRepository, Skill};
 use skillhub_core::{
     AppCommand, AppCommandResult, AppQuery, AppQueryResult, ApplicationFacade, BuildTrust,
-    ErrorCode, InstallAction, SkillId, UpdateArtifact, UpdateManifest, UpdatePlatform, UpdateState,
+    ErrorCode, InstallAction, SkillId, UpdateArtifact, UpdateManifest, UpdatePlatform,
+    UpdateSignaturePublicKey, UpdateState,
 };
 use skillhub_storage::Database;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 
 /// Signature of the 4 bytes `b"test"` made with the Tauri test keypair whose
-/// public half matches `skillhub_core::DEFAULT_UPDATE_SIGNATURE_PUBLIC_KEY`.
+/// public half is injected into the facade so tests remain independent from
+/// the production signing key.
 const TEST_TAURI_SIGNATURE: &str = "untrusted comment: signature from minisign secret key
 RWQf6LRCGA9i59SLOFxz6NxvASXDJeRtuZykwQepbDEGt87ig1BNpWaVWuNrm73YiIiJbq71Wi+dP9eKL8OC351vwIasSSbXxwA=
 trusted comment: timestamp:1555779966\tfile:test
@@ -103,10 +105,13 @@ fn facade_with_app_update(
     database: Database,
     provider: GithubReleaseProvider,
 ) -> LocalApplicationFacade {
-    LocalApplicationFacade::new_with_providers(
+    LocalApplicationFacade::new_with_providers_and_update_key(
         database,
         Arc::new(provider),
         Arc::new(SkillsShProvider::new("http://127.0.0.1:1/").with_network_enabled(false)),
+        UpdateSignaturePublicKey {
+            value: "RWQf6LRCGA9i53mlYecO4IzT51TGPpvWucNSCh1CBM0QTaLn73Y7GFO3".to_owned(),
+        },
     )
 }
 

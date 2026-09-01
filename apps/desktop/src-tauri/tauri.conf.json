@@ -34,7 +34,7 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "RWQf6LRCGA9i53mlYecO4IzT51TGPpvWucNSCh1CBM0QTaLn73Y7GFO3",
+      "pubkey": "RWQTMMSblUX0iEW5YvJZ40R7NPBkfadPSRSHPvWo7ascexmHPzo91Dqz",
       "endpoints": [
         "https://github.com/crocketc/skill-hub/releases/latest/download/latest.json"
       ],

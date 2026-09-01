@@ -4,7 +4,7 @@
 
 ## 当前候选
 
-- 提交：`1c3c13d`
+- 提交：`9e9032d`
 - 日期：2026-08-31
 - 发布信任级别：Windows 未签名；macOS ad-hoc、未公证
 - 发布方式：GitHub Draft Release，人工核对后发布
@@ -19,7 +19,7 @@
 | Windows updater 资产 | 已配置 | `.nsis.zip` 与 `.sig`；首次安装 `.exe` 仍单独保留 |
 | macOS updater 资产 | 已配置 | `.app.tar.gz` 与 `.sig`；首次安装 DMG 不进入 updater 清单 |
 | latest.json | 已配置 | `scripts/generate_update_manifest.mjs` 生成四个平台条目 |
-| 生产密钥 | 待发布配置 | CI 必须提供 `TAURI_SIGNING_PRIVATE_KEY`、密码和匹配的 `TAURI_UPDATER_PUBLIC_KEY`；当前仓库公钥仍为测试 key |
+| 生产密钥 | 公钥已配置 | `TAURI_UPDATER_PUBLIC_KEY` 仓库变量已配置；仍需配置匹配的 `TAURI_SIGNING_PRIVATE_KEY` 与密码 Secret，并用该密钥生成首个签名发布 |
 | manifest 前端交接 | 已完成 | 检查查询返回当前平台 manifest/platform；设置页按“准备→下载→安装”调用原生契约，缺少清单时保留官方发布页兜底 |
 
 | 检查项 | 状态 | 证据/备注 |

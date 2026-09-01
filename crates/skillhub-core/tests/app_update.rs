@@ -280,12 +280,8 @@ fn downloaded_artifact_verification_rejects_forged_signature() {
 }
 
 #[test]
-fn default_signature_public_key_verifies_signed_test_artifact() {
-    let public_key = UpdateSignaturePublicKey {
-        value: DEFAULT_UPDATE_SIGNATURE_PUBLIC_KEY.to_owned(),
-    };
-
-    verify_artifact(b"test", &signed_test_artifact(), &public_key).unwrap();
+fn default_signature_public_key_is_not_the_test_fixture_key() {
+    assert_ne!(DEFAULT_UPDATE_SIGNATURE_PUBLIC_KEY, TEST_TAURI_PUBLIC_KEY);
 }
 
 #[test]

@@ -5,6 +5,8 @@ use skillhub_application::LocalApplicationFacade;
 use skillhub_core::{
     AppCommand, AppCommandResult, AppEvent, AppQuery, AppQueryResult, AppResult, ApplicationFacade,
 };
+#[cfg(test)]
+use skillhub_core::DEFAULT_UPDATE_SIGNATURE_PUBLIC_KEY;
 use tauri::{AppHandle, Emitter, State};
 
 pub mod updater;
@@ -298,7 +300,7 @@ fn tauri_config_enables_signed_static_updater_artifacts() {
     );
     assert_eq!(
         config["plugins"]["updater"]["pubkey"],
-        "RWQf6LRCGA9i53mlYecO4IzT51TGPpvWucNSCh1CBM0QTaLn73Y7GFO3"
+        DEFAULT_UPDATE_SIGNATURE_PUBLIC_KEY
     );
     assert_eq!(
         config["plugins"]["updater"]["endpoints"][0],

@@ -54,6 +54,25 @@ pub struct UpdateService {
 
 impl UpdateService {
     pub fn new(database: Arc<Mutex<Database>>, provider: Arc<GithubReleaseProvider>) -> Self {
+        Self::with_public_key(
+            database,
+            provider,
+            UpdateSignaturePublicKey {
+                value: DEFAULT_UPDATE_SIGNATURE_PUBLIC_KEY.to_owned(),
+            },
+        )
+    }
+
+    /// Creates an update service with an explicit verification key.
+    ///
+    /// Production callers should use [`Self::new`]. This constructor exists
+    /// so isolated tests can verify fixtures signed by a dedicated test key
+    /// without ever shipping that key as the application default.
+    pub fn with_public_key(
+        database: Arc<Mutex<Database>>,
+        provider: Arc<GithubReleaseProvider>,
+        public_key: UpdateSignaturePublicKey,
+    ) -> Self {
         Self {
             database,
             provider,
@@ -61,9 +80,7 @@ impl UpdateService {
             staging_root: std::env::temp_dir()
                 .join("skillhub")
                 .join("application-updates"),
-            public_key: UpdateSignaturePublicKey {
-                value: DEFAULT_UPDATE_SIGNATURE_PUBLIC_KEY.to_owned(),
-            },
+            public_key,
         }
     }
 
