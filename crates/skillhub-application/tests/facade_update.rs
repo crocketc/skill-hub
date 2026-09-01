@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 use std::path::Path;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
 use skillhub_adapters::app_update::github_releases::GithubReleaseProvider;
@@ -20,6 +21,13 @@ const TEST_TAURI_SIGNATURE: &str = "untrusted comment: signature from minisign s
 RWQf6LRCGA9i59SLOFxz6NxvASXDJeRtuZykwQepbDEGt87ig1BNpWaVWuNrm73YiIiJbq71Wi+dP9eKL8OC351vwIasSSbXxwA=
 trusted comment: timestamp:1555779966\tfile:test
 QtKMXWyYcwdpZAlPF7tE2ENJkRd1ujvKjlj1m9RtHTBnZPa5WKU5uWRs5GoP5M/VqE81QFuMKI5k/SfNQUaOAA==";
+
+static TEST_UPDATE_SEQUENCE: AtomicU64 = AtomicU64::new(0);
+
+fn unique_update_token(label: &str) -> String {
+    let sequence = TEST_UPDATE_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+    format!("{label}-{}-{sequence}", std::process::id())
+}
 
 async fn serve_once(body: &'static str) -> String {
     let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
@@ -245,10 +253,7 @@ async fn prepared_download_is_queryable_without_storing_package_body() {
 #[tokio::test]
 async fn download_writes_verified_package_to_staging_and_marks_ready() {
     let download_base = serve_bytes_once(b"test").await;
-    let unique = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
+    let unique = unique_update_token("verified");
     let version = format!("0.2.1-test{unique}");
     let mut artifact = fixture_artifact();
     artifact.url = format!("{download_base}skillhub-{unique}.zip");
@@ -301,10 +306,7 @@ async fn download_writes_verified_package_to_staging_and_marks_ready() {
 #[tokio::test]
 async fn download_rejects_forged_signature_and_cleans_up_staged_file() {
     let download_base = serve_bytes_once(b"test").await;
-    let unique = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
+    let unique = unique_update_token("forged");
     let version = format!("0.2.1-test{unique}");
     let mut artifact = fixture_artifact();
     artifact.url = format!("{download_base}skillhub-{unique}.zip");
