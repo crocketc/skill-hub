@@ -115,7 +115,7 @@ async fn git_clone_download_is_bounded_before_tree_materialization() {
     .unwrap_err();
 
     assert_eq!(error.code, SourceFetchErrorCode::DownloadSizeLimit);
-    assert!(error.message.contains("Git download"));
+    assert!(error.message.contains("size limit"));
 }
 
 #[tokio::test]
