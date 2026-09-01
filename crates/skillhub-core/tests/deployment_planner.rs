@@ -180,8 +180,10 @@ fn recreated_registered_directory_is_rejected_when_physical_identity_changes() {
         capabilities(true, true, true),
     );
     let policy = PathPolicy::from_roots([AllowedRoot::new(workspace.path()).unwrap()]).unwrap();
+    let replacement = workspace.path().join("replacement");
+    std::fs::create_dir(&replacement).unwrap();
     std::fs::remove_dir(&path).unwrap();
-    std::fs::create_dir(&path).unwrap();
+    std::fs::rename(&replacement, &path).unwrap();
 
     let error = VerifiedTarget::from_fact(fact, &policy).unwrap_err();
     assert_eq!(error.code.as_str(), "operation.conflict");
