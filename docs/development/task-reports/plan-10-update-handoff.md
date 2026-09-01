@@ -1,6 +1,6 @@
 # Plan 10 应用内更新功能交接记录
 
-更新时间：2026-08-31
+更新时间：2026-09-01
 
 ## 执行方式变更
 
@@ -9,8 +9,8 @@
 ## 当前 Git 状态
 
 - 分支：`main`
-- 当前提交：`d8ec586`（`feat: add in-app update experience`，Task 5）
-- 本地与 `origin/main` 已同步（截至 Task 5 完成时）
+- 当前提交：`956fb23`（更新器测试夹具竞态修复，Task 7 回归修复）
+- 本地与 `origin/main` 已同步
 - 实施计划：`docs/superpowers/plans/2026-08-31-应用内更新功能实施计划.md`
 - 进度账本：`.superpowers/sdd/2026-08-31-应用内更新功能实施计划/progress.md`（gitignore 内，仅本地）
 
@@ -58,7 +58,7 @@
 ### Task 5：设置页更新交互与 i18n
 
 - 提交：`d8ec586`
-- 状态：实现完成，已通过前端质量门禁（定向 13 项、全量 Vitest 346 项、ESLint、tsc、生产构建）；任务级审查尚未进行
+- 状态：实现完成，已通过前端质量门禁和任务级审查（定向 13 项、全量 Vitest 346 项、ESLint、tsc、生产构建）
 - 修改文件：`ApplicationUpdate.tsx`、`ApplicationUpdate.test.tsx`（新增）、`SettingsPage.tsx`、`SettingsPage.test.tsx`、`api.ts`、`i18n/zh-CN/common.json`、`i18n/en-US/common.json`
 - 已实现：
   - `ApplicationUpdate` 改为按计划接口的纯展示状态机组件：props 为 `update`、`policy`、`state`、`progress` 及 `onCheck`/`onDownload`/`onInstall`/`onCancel`/`onRollback`/`onOpenRelease` 回调；覆盖全部 9 个 `UpdateState`
@@ -93,10 +93,20 @@
 - 验证：`node --test scripts/verify_release_readiness.test.mjs` 5/5 通过；`node scripts/verify_release_readiness.mjs --json` 通过；manifest 生成器覆盖平台资产、签名缺失和官方 URL 结构测试。
 - 未解决问题：当前工作区仍使用测试公钥，尚未生成/配置生产密钥，因此不能声称已完成真实签名发布或应用内安装；Task 5 记录的 manifest 前端契约缺口仍保留。
 
+### Task 7：Windows/macOS 双平台验收与收口
+
+- 状态：质量门禁验收通过；真实签名安装、自动重启和回滚取证待生产密钥与安装资产具备后补充。
+- 当前基线：`956fb23`（`fix: isolate updater test fixtures`），已推送并与 `origin/main` 同步。
+- Windows：官方 npm registry 下 `./scripts/ci-local.ps1` 10/10 通过；Rust 测试、前端 61 个测试文件/346 项测试、前端安全审计 0 漏洞、生产构建均通过。镜像源已恢复为 `https://registry.npmmirror.com`。
+- Windows 发布预检：`pnpm run verify:release` 通过；`node --test scripts/verify_release_readiness.test.mjs` 5/5 通过。
+- macOS：此前在 `3cb15f8` 上完成 `./scripts/ci-local.sh` 10/10、发布预检 5/5 和 `facade_update` 9/9；由于 `956fb23` 仅调整并行测试夹具命名，需在 macOS 的 `956fb23` 上补跑同一套命令，作为最终同提交证据。
+- 回归修复：`956fb23` 为两个共享系统暂存目录的 updater 单测使用独立文件名，消除并行清理导致的间歇性 `update_package_unavailable`；生产安装逻辑未改变。
+- 未验证：当前没有生产签名资产，因此未进行真实 NSIS/`.app.tar.gz` 安装、自动重启、失败回滚和 Windows SmartScreen/macOS Gatekeeper 行为取证；不把未签名版本描述为绕过系统安全审查。
+
 ## 未完成任务
 
 - Task 5：完成（实现与任务级审查通过）
-- Task 7：Windows/macOS 双平台验收与收口
+- Task 7：质量门禁已通过；等待 macOS 在 `956fb23` 补跑和生产签名资产后完成真实安装取证
 
 ## 已知非阻断警告
 
@@ -106,8 +116,9 @@
 
 ## 主 Agent 后续顺序
 
-1. 实现 Task 7 验收文档，分别在 Windows 和 macOS 运行本地 CI；真实安装若受签名/工具链限制，必须如实记录。
-2. 全部任务完成后运行完整本地 CI、发布预检、bindings 漂移检查和 `git diff --check`，再决定推送/合并。
+1. 请 macOS 在 `956fb23` 上补跑 `./scripts/ci-local.sh`、发布预检和 `facade_update` 专项测试，并只读回报结果。
+2. 生成生产签名资产后，再进行双平台真实安装、自动重启和失败回滚取证。
+3. 资产具备后运行完整本地 CI、发布预检、bindings 漂移检查和 `git diff --check`，再决定最终发布。
 
 ## 交接原则
 
