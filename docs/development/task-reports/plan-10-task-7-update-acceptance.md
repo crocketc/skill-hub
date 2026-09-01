@@ -4,7 +4,7 @@
 
 ## 验收基线
 
-- 当前提交：`15f8b44`（包含 Task 7 staging 测试夹具修复）
+- 当前提交：`3cb15f8`（包含 Task 7 staging 测试夹具修复及验收记录）
 - 验收方式：Windows 当前 `main` 工作区先行；macOS 使用同一提交只读复核
 - 安全边界：当前仓库仍使用测试 updater 公钥，没有生产私钥或已签名发布资产；因此不把应用内安装、自动重启和回滚写成已验证通过
 
@@ -26,7 +26,15 @@ Mac 首次验收发现 `facade_update::install_with_injected_installer_launches_
 
 ## macOS
 
-待在最新 `main` 执行以下只读命令并回填结果：
+- 分支：`main`，提交：`3cb15f8`
+- `pnpm run verify:release`：通过
+- `node --test scripts/verify_release_readiness.test.mjs`：5/5 通过
+- `cargo test -p skillhub-application --test facade_update`：9/9 通过
+- `./scripts/ci-local.sh`：10/10 通过；前端安全审计 0 漏洞，未切换 npm 源
+- `git diff --check`：通过；无跟踪文件修改，仅保留 `.DS_Store`
+- 未进行真实应用安装、自动重启或回滚：当前没有生产签名资产
+
+验收使用的只读命令如下：
 
 ```bash
 git fetch origin
@@ -43,7 +51,7 @@ node --test scripts/verify_release_readiness.test.mjs
 
 1. 生产 updater 密钥对尚未生成/配置；工作流会拒绝测试公钥和缺失 Secret。
 2. Task 5 记录的 manifest 前端契约缺口仍保留，设置页继续提供官方发布页备用入口。
-3. Windows 完整 CI 需要网络可访问 Rust crate 源后重跑；macOS 完整 CI 需要在设备上补齐证据。
+3. Windows 完整 CI 需要网络可访问 Rust crate 源后重跑；macOS 完整 CI 已在 `3cb15f8` 补齐并通过。
 
 ## 收口条件
 
