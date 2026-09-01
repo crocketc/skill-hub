@@ -96,17 +96,17 @@
 ### Task 7：Windows/macOS 双平台验收与收口
 
 - 状态：质量门禁验收通过；真实签名安装、自动重启和回滚取证待生产密钥与安装资产具备后补充。
-- 当前基线：`d00d37f`（`fix: isolate update download fixtures`），已推送并与 `origin/main` 同步。
+- 当前基线：`b083d16`（包含 `d00d37f` 测试夹具竞态修复及最终验收记录），已推送并与 `origin/main` 同步。
 - Windows：在 `956fb23` 修复 updater 单测竞态后，官方 npm registry 下 `./scripts/ci-local.ps1` 10/10 通过；Rust 测试、前端 61 个测试文件/346 项测试、前端安全审计 0 漏洞、生产构建均通过。镜像源已恢复为 `https://registry.npmmirror.com`。
 - Windows 发布预检：`pnpm run verify:release` 通过；`node --test scripts/verify_release_readiness.test.mjs` 5/5 通过。
-- macOS：此前在 `3cb15f8` 上完成 `./scripts/ci-local.sh` 10/10、发布预检 5/5 和 `facade_update` 9/9；在 `0a5ef5d` 上补跑时又发现下载测试的时间戳标识在 macOS 上可能碰撞，导致 8/9 失败。`d00d37f` 已改为进程号加原子序列生成唯一标识，需在 macOS 的 `d00d37f` 上补跑同一套命令，作为最终同提交证据。
+- macOS：在最新 `b083d16` 上完成 `./scripts/ci-local.sh` 10/10、发布预检 5/5 和 `facade_update` 9/9；前端安全审计 0 漏洞，未切换 npm 源。
 - 回归修复：`956fb23` 为两个共享系统暂存目录的 updater 单测使用独立文件名；`d00d37f` 进一步隔离 facade 下载测试标识，消除并行清理导致的间歇性完整性/残留文件断言失败；生产安装逻辑未改变。
 - 未验证：当前没有生产签名资产，因此未进行真实 NSIS/`.app.tar.gz` 安装、自动重启、失败回滚和 Windows SmartScreen/macOS Gatekeeper 行为取证；不把未签名版本描述为绕过系统安全审查。
 
 ## 未完成任务
 
 - Task 5：完成（实现与任务级审查通过）
-- Task 7：质量门禁已通过；等待 macOS 在 `d00d37f` 补跑和生产签名资产后完成真实安装取证
+- Task 7：双平台质量门禁已通过；真实签名资产与安装取证仍待补充
 
 ## 已知非阻断警告
 
@@ -116,9 +116,8 @@
 
 ## 主 Agent 后续顺序
 
-1. 请 macOS 在 `d00d37f` 上补跑 `./scripts/ci-local.sh`、发布预检和 `facade_update` 专项测试，并只读回报结果。
-2. 生成生产签名资产后，再进行双平台真实安装、自动重启和失败回滚取证。
-3. 资产具备后运行完整本地 CI、发布预检、bindings 漂移检查和 `git diff --check`，再决定最终发布。
+1. 生成生产签名资产后，进行双平台真实安装、自动重启和失败回滚取证。
+2. 资产具备后运行完整本地 CI、发布预检、bindings 漂移检查和 `git diff --check`，再决定最终发布。
 
 ## 交接原则
 
