@@ -12,7 +12,7 @@ SkillHub 是面向 Windows 和 macOS 的本地 Skill 全生命周期管理工具
 [![Platforms](https://img.shields.io/badge/platforms-Windows%20%7C%20macOS-5b6ee1)](#下载与安装)
 [![Stage](https://img.shields.io/badge/stage-early%20release-f59e0b)](#当前状态)
 
-[立即下载](https://github.com/crocketc/skill-hub/releases/tag/v0.1.0) · [查看需求](docs/需求文档.md) · [报告问题](https://github.com/crocketc/skill-hub/issues)
+[立即下载](https://github.com/crocketc/skill-hub/releases/tag/v0.1.0) · [报告问题](https://github.com/crocketc/skill-hub/issues)
 
 </div>
 
@@ -140,7 +140,7 @@ Windows 更新包使用 `.nsis.zip`，macOS 更新包使用 `.app.tar.gz`。DMG 
 
 SkillHub 使用适配器识别各 Agent 的个人级、项目级和自定义 Skill 目录。候选平台包括 Codex、Claude Code、Claude Desktop、Gemini CLI、Cursor、Cline、GitHub Copilot、Windsurf、OpenCode、Trae、Qoder、CodeBuddy、Comate、Kimi Code、OpenClaw、Hermes Agent、Grok Build、ZCode 等。
 
-兼容性分为“能识别目录”和“Agent 实际会执行 Skill”两个层次。SkillHub 负责前者以及文件部署，不假设目标 Agent 一定会加载或执行某个 Skill。完整目录、项目级差异和适配边界见 [Agent 平台兼容性调研](docs/Agent平台兼容性调研.md)。
+兼容性分为“能识别目录”和“Agent 实际会执行 Skill”两个层次。SkillHub 负责前者以及文件部署，不假设目标 Agent 一定会加载或执行某个 Skill。
 
 ## 数据、隐私与安全边界
 
@@ -204,7 +204,7 @@ chmod +x ./scripts/ci-local.sh
 node ./scripts/ci-local.mjs
 ```
 
-本地 CI 会按顺序执行 Rust 格式、依赖与许可证策略、Clippy、Rust 测试、前端依赖与安全审计、ESLint、TypeScript、Vitest 和生产构建。详见 [本地 CI 使用说明](docs/本地CI使用.md)。
+本地 CI 会按顺序执行 Rust 格式、依赖与许可证策略、Clippy、Rust 测试、前端依赖与安全审计、ESLint、TypeScript、Vitest 和生产构建。
 
 ## 项目结构
 
@@ -216,19 +216,15 @@ crates/skillhub-cli/           轻量 CLI 入口
 apps/desktop/src-tauri/        Tauri 2 本地后端
 apps/desktop/src/              React/Vite 前端
 tests/                         跨平台夹具、集成测试和端到端测试
-docs/                          需求、设计、架构、兼容性和发布文档
+docs/                          安装、发布和依赖说明
 ```
 
 ## 文档导航
 
-- [需求文档](docs/需求文档.md)
-- [产品与交互设计](docs/产品与交互设计.md)
-- [技术架构设计](docs/技术架构设计.md)
-- [Agent 平台兼容性调研](docs/Agent平台兼容性调研.md)
-- [本地 CI 使用说明](docs/本地CI使用.md)
 - [发布流程](docs/release-process.md)
 - [发布检查清单](docs/release-checklist.md)
 - [依赖与供应链策略](docs/dependency-policy.md)
+- [安装说明](docs/install/)
 
 ## 反馈与贡献
 

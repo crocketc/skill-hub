@@ -1,4 +1,12 @@
 .superpowers/
+/docs/superpowers/
+/docs/development/
+/docs/需求文档.md
+/docs/产品与交互设计.md
+/docs/技术架构设计.md
+/docs/Agent平台兼容性调研.md
+/docs/本地CI使用.md
+/tests/compatibility/results/
 .worktrees/
 /target/
 /node_modules/

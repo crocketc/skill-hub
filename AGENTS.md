@@ -15,17 +15,11 @@ SkillHub 是一个面向 Windows 和 macOS 的本地 Skill 全生命周期管理
 - Rust 合约到 TypeScript 的 bindings 必须由 Specta 生成并进行完整漂移校验，不能手工维护接口副本。
 - 前后端可以并行开发；前端允许使用 Mock Facade，但真实联调必须遵守已冻结的命令、查询、事件和错误契约。
 
-## 2. 权威文档
+## 2. 公开协作资料
 
-开始任何开发任务前，先阅读本文件和对应任务的实施计划。需求和设计以以下文档为准：
+开始开发前先阅读本文件、README.md，以及与变更相关的源码和测试。发布、依赖和安装规则见 `docs/` 下仍受版本控制的公开说明。个人需求、产品设计、技术设计、实施计划、Task 报告和设备验收记录位于本地，不作为远端协作依赖。
 
-1. `docs/需求文档.md`：功能范围和业务规则的唯一需求来源。
-2. `docs/产品与交互设计.md`：页面、交互、状态和操作流程。
-3. `docs/Agent平台兼容性调研.md`：Agent 平台目录、项目级 Skill 和适配边界。
-4. `docs/技术架构设计.md`：技术边界、模块职责和数据流。
-5. `docs/superpowers/plans/`：按阶段拆分的实施任务、测试要求和验收门槛。
-
-如果代码实现与需求或设计文档冲突，不要自行扩大或改变范围，先报告冲突并等待确认。
+如果代码实现与已公开的行为说明或测试冲突，不要自行扩大范围，先报告冲突并等待确认。
 
 ## 3. 开发方法
 
@@ -63,7 +57,7 @@ SkillHub 是一个面向 Windows 和 macOS 的本地 Skill 全生命周期管理
 - 完整检查入口：Windows 使用 `./scripts/ci-local.ps1`，macOS 使用 `./scripts/ci-local.sh`，也可使用跨平台入口 `node ./scripts/ci-local.mjs`。
 - 本地 CI 必须使用锁定依赖并执行 Rust 格式、cargo-deny、Clippy、Rust 测试、前端依赖审计、Lint、TypeScript、Vitest 和生产构建。
 - 两台设备通过 Git 分支同步代码：先 `git fetch`/`git pull --ff-only`，再运行本机入口；不要同步 `.git`、worktree、`node_modules` 或 `target` 目录。
-- Mac 上新建开发会话时，先阅读本文件和 `docs/本地CI使用.md`，默认只做验证，不修改代码、不提交，除非任务明确要求。
+- Mac 上新建开发会话时，先阅读本文件；本地 CI 操作细节属于开发者本地资料，默认只做验证，不修改代码、不提交，除非任务明确要求。
 - 本地 Skill 集中库、API Key、用户配置和个人 Skill 内容不属于代码仓库，不得提交或通过 Git 同步。
 
 ## 6. 文件和数据安全
