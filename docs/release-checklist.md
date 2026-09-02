@@ -4,8 +4,8 @@
 
 ## 当前候选
 
-- 提交：`1db3eb1`
-- 日期：2026-08-31
+- 提交：`3027ac1`
+- 日期：2026-09-02
 - 发布信任级别：Windows 未签名；macOS ad-hoc、未公证
 - 发布方式：GitHub Draft Release，人工核对后发布
 
@@ -31,23 +31,23 @@
 | 前端依赖安装 | 通过 | `pnpm install --frozen-lockfile --ignore-scripts` |
 | 前端审计 | 通过 | macOS 官方 registry 复核，0 个漏洞；用户镜像不支持端点时需临时切换官方源 |
 | 前端 lint/TypeScript | 通过 | `pnpm check:frontend` |
-| 前端测试 | 通过 | Windows/macOS：60 个文件、336 项测试 |
+| 前端测试 | 通过 | 当前 Windows 基线：62 个文件、348 项测试；macOS 最近基线已通过 |
 | 前端生产构建 | 通过 | `pnpm --dir apps/desktop build` |
-| 发布静态预检 | 通过 | `pnpm verify:release`；root/desktop 命令、Tauri 启动配置、tag-bound 工作流、锁定 action、安装说明和 `dist/.gitkeep` 均通过 |
+| 发布静态预检 | 通过 | `node scripts/verify_release_readiness.mjs` 与对应 Node 测试通过；工作流、Tauri 启动配置、tag-bound 约束、锁定 action、安装说明和 `dist/.gitkeep` 均通过 |
 | 兼容性契约 | 通过 | `cargo test -p skillhub-adapters --test profile_contract` |
 | E2E | 待执行 | 需要桌面运行时和可用测试环境 |
 | 迁移/恢复 | 待执行 | 需要在本提交重新采集证据 |
 | 备份/恢复 | 待执行 | 需要在本提交重新采集证据 |
 | 性能基准 | 待执行 | 需要在本提交重新采集证据 |
-| Windows NSIS | 环境受限 | Rust release 编译通过；NSIS 工具下载被本机网络策略中止 |
-| macOS Universal DMG | 环境受限 | ARM64 编译通过；x86_64 Rust target 未安装且下载受网络阻塞 |
+| Windows NSIS | 待发布资产复核 | 代码和发布预检通过；真实签名安装需使用发布工作流生成的资产复核 |
+| macOS Universal DMG | 环境受限/待资产复核 | 代码和发布预检通过；Universal 构建受本机 target/签名环境影响，需在发布环境复核 |
 | Agent 真机接入 | 部分通过 | macOS Codex CLI、Claude Code 文件级通过；其余客户端未安装或未完成应用级接入 |
 
 ## 发布前人工确认
 
-- [ ] Windows、macOS 构建均来自同一 tag 和提交。
+- [ ] Windows、macOS 构建均来自同一 tag 和提交，并完成双平台安装取证。
 - [ ] 安装包 SHA-256、SBOM、提交溯源和信任级别元数据齐全。
 - [ ] 安装说明没有要求关闭 SmartScreen/Gatekeeper 或运行绕过命令。
-- [ ] Draft Release 中没有 API Key、用户 Skill 正文、个人路径、`node_modules` 或 `target`。
+- [ ] Release 中没有 API Key、用户 Skill 正文、个人路径、`node_modules` 或 `target`。
 - [ ] 未验证的 Agent、未完成的 E2E/真机项目没有被标记为通过。
 - [ ] 应用更新清单、摘要和 minisign 签名已配置并与构建产物一致；清单缺失或校验失败时回退官方发布页。
