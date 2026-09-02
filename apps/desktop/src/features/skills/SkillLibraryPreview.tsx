@@ -6,6 +6,9 @@ import { SkillLibraryPage } from "./SkillLibraryPage";
 import { createMockSkillLibraryFacade } from "./testFixtures";
 
 const PREVIEW_BOOTSTRAP_SNAPSHOT: BootstrapSnapshot = {
+  initialization_state: "initialized",
+  library_path: "C:\\Users\\preview\\SkillHub",
+  onboarding_skipped: false,
   agent_count: 2,
   deployed_count: 12,
   deployment_categories: [],

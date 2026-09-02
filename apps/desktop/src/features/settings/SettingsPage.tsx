@@ -34,6 +34,7 @@ export function SettingsPage({ facade = unavailableSettingsFacade, initialSettin
           <h1>{t("settings.heading")}</h1>
           <p>{t("settings.description")}</p>
         </div>
+        <a href="/initialize">{t("settings.reopenOnboarding")}</a>
       </header>
       <div className="sh-settings-grid">
         <GeneralSettings settings={settings} />

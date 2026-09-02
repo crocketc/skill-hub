@@ -6,7 +6,26 @@ import { createSkillHubI18n } from "../../i18n";
 import { AiNetworkSettings } from "./AiNetworkSettings";
 import { ApplicationUpdate } from "./ApplicationUpdate";
 import { NetworkStoragePlaceholder } from "./NetworkStoragePlaceholder";
-import { availableUpdate, networkSettings, type SettingsFacade } from "./api";
+import { availableUpdate, networkSettings, settingsFixture, type SettingsFacade } from "./api";
+import { SettingsPage } from "./SettingsPage";
+
+it("offers an explicit way to rerun initialization", async () => {
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+
+  render(
+    <I18nextProvider i18n={i18n}>
+      <SettingsPage
+        facade={{ execute: async () => undefined }}
+        initialSettings={settingsFixture()}
+      />
+    </I18nextProvider>,
+  );
+
+  expect(screen.getByRole("link", { name: "重新运行初始化向导" })).toHaveAttribute(
+    "href",
+    "/initialize",
+  );
+});
 
 it("turns off online helpers while leaving local management enabled", async () => {
   const user = userEvent.setup();

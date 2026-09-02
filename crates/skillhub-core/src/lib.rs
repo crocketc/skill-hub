@@ -73,8 +73,8 @@ pub use application::{
 };
 pub use application::{WatchConfirmation, WatchHint, WatchHintKind, WatchService};
 pub use bootstrap::{
-    BootstrapSnapshot, DeploymentChartCategory, DeploymentDimension, PendingSummary,
-    RecentOperationSummary, StartupRecoveryState,
+    BootstrapSnapshot, DeploymentChartCategory, DeploymentDimension, InitializationState,
+    InitializationStatus, PendingSummary, RecentOperationSummary, StartupRecoveryState,
 };
 pub use error::{AppError, AppResult, ErrorCode, RecoveryAction, Severity};
 pub use evidence::{

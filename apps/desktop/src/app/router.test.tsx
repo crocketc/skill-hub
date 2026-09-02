@@ -15,6 +15,9 @@ vi.mock("../api/bindings", async (importOriginal) => {
     queryApplication: vi.fn(async () => ({
       type: "bootstrap_snapshot" as const,
       payload: {
+        initialization_state: "initialized" as const,
+        library_path: "C:\\Users\\Test\\SkillHub",
+        onboarding_skipped: false,
         agent_count: 0,
         deployed_count: 0,
         deployment_categories: [],

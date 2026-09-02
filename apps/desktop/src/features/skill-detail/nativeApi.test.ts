@@ -52,6 +52,9 @@ describe("native skill detail facade", () => {
     vi.mocked(queryApplication).mockResolvedValue({
       type: "bootstrap_snapshot",
       payload: {
+        initialization_state: "initialized",
+        library_path: "C:\\Users\\Test\\SkillHub",
+        onboarding_skipped: false,
         skill_count: 0,
         project_count: 0,
         agent_count: 0,

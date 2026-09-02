@@ -861,6 +861,7 @@
     }
   },
   "settings": {
+    "reopenOnboarding": "重新运行初始化向导",
     "eyebrow": "设置",
     "heading": "让 SkillHub 适应你的工作方式",
     "description": "本地管理保持明确可控，网络与未来存储能力保持边界清晰。",

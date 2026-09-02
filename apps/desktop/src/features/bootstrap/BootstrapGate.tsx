@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { Navigate } from "react-router-dom";
 import type { BootstrapSnapshot, StartupRecoveryState } from "../../api/bindings";
 import { AppShell } from "../../app/AppShell";
 import {
@@ -89,6 +90,9 @@ export function BootstrapGate({ runtime = desktopBootstrapRuntime }: BootstrapGa
   }
   if (state.snapshot.recovery_state !== "clean") {
     return <RecoveryBlocker recoveryState={state.snapshot.recovery_state} />;
+  }
+  if (state.snapshot.initialization_state === "not_initialized") {
+    return <Navigate replace to="/initialize" />;
   }
 
   return <AppShell snapshot={state.snapshot} verification={state.verification} />;

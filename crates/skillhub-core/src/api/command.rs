@@ -20,7 +20,10 @@ use crate::llm::translation::TranslationResult;
 use crate::project::{AssemblyPlan, Project, SavedProjectView, SharedProjectConfig};
 use crate::scan::ScanResult;
 use crate::source::{SourceDescriptor, UpdateDecision};
-use crate::{DeploymentId, OperationId, OperationSummary, ProjectId, SkillId, VersionId};
+use crate::{
+    DeploymentId, InitializationStatus, OperationId, OperationSummary, ProjectId, SkillId,
+    VersionId,
+};
 
 use super::query::{BasicCheckResult, LlmSafetyCheckResult};
 
@@ -458,6 +461,16 @@ pub struct RunInitializationScan {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 #[serde(deny_unknown_fields)]
+pub struct CompleteOnboarding {
+    pub library_path: String,
+    pub skipped: bool,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+pub struct DiscoverAgentTargets;
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
 pub struct ScanTargets {
     pub scope_ids: Vec<String>,
 }
@@ -641,6 +654,10 @@ pub enum AppCommand {
     CancelImport { prepared_import_id: OperationId },
     #[serde(rename = "run_initialization_scan")]
     RunInitializationScan(RunInitializationScan),
+    #[serde(rename = "complete_onboarding")]
+    CompleteOnboarding(CompleteOnboarding),
+    #[serde(rename = "discover_agent_targets")]
+    DiscoverAgentTargets(DiscoverAgentTargets),
     #[serde(rename = "scan_targets")]
     ScanTargets(ScanTargets),
     #[serde(rename = "rescan_skill")]
@@ -672,6 +689,10 @@ pub enum AppCommandResult {
     ApplicationUpdateState(UpdateState),
     #[serde(rename = "operation_summary")]
     OperationSummary(OperationSummary),
+    #[serde(rename = "initialization_status")]
+    InitializationStatus(InitializationStatus),
+    #[serde(rename = "discovery_snapshot")]
+    DiscoverySnapshot(crate::DiscoverySnapshot),
     #[serde(rename = "saved_skill_content")]
     SavedSkillContent(SavedSkillContent),
     #[serde(rename = "custom_agent")]

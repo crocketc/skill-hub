@@ -1,14 +1,15 @@
 use super::Database;
 use rusqlite::{params, OptionalExtension};
 use skillhub_core::bootstrap::{
-    BootstrapSnapshot, DeploymentChartCategory, DeploymentDimension, PendingSummary,
-    RecentOperationSummary, StartupRecoveryState,
+    BootstrapSnapshot, DeploymentChartCategory, DeploymentDimension, InitializationStatus,
+    PendingSummary, RecentOperationSummary, StartupRecoveryState,
 };
 use skillhub_core::pending::{PendingItem, PendingKind};
 use skillhub_core::OperationPhase;
 use skillhub_core::{AppError, AppResult, ErrorCode, RecoveryAction, Severity, SkillId};
 
 const SNAPSHOT_KEY: &str = "bootstrap_snapshot";
+const INITIALIZATION_KEY: &str = "bootstrap_initialization";
 
 pub struct BootstrapRepository<'a> {
     database: &'a Database,
@@ -40,6 +41,31 @@ impl<'a> BootstrapRepository<'a> {
         self.database.connection.execute(
             "INSERT INTO settings(key,value_json,updated_at) VALUES(?1,?2,?3) ON CONFLICT(key) DO UPDATE SET value_json=excluded.value_json,updated_at=excluded.updated_at",
             params![SNAPSHOT_KEY, json, now()],
+        ).map_err(error)?;
+        Ok(())
+    }
+
+    pub fn load_initialization(&self) -> AppResult<Option<InitializationStatus>> {
+        let value: Option<String> = self
+            .database
+            .connection
+            .query_row(
+                "SELECT value_json FROM settings WHERE key=?1",
+                [INITIALIZATION_KEY],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(error)?;
+        value
+            .map(|json| serde_json::from_str(&json).map_err(|_| invalid_snapshot()))
+            .transpose()
+    }
+
+    pub fn save_initialization(&self, status: &InitializationStatus) -> AppResult<()> {
+        let json = serde_json::to_string(status).map_err(|_| invalid_snapshot())?;
+        self.database.connection.execute(
+            "INSERT INTO settings(key,value_json,updated_at) VALUES(?1,?2,?3) ON CONFLICT(key) DO UPDATE SET value_json=excluded.value_json,updated_at=excluded.updated_at",
+            params![INITIALIZATION_KEY, json, now()],
         ).map_err(error)?;
         Ok(())
     }
@@ -186,6 +212,9 @@ impl<'a> BootstrapRepository<'a> {
             StartupRecoveryState::Clean
         };
         Ok(BootstrapSnapshot {
+            initialization_state: Default::default(),
+            library_path: String::new(),
+            onboarding_skipped: false,
             skill_count,
             project_count,
             agent_count,

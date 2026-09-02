@@ -58,6 +58,44 @@ export const unavailableOnboardingOperations: OnboardingOperations = {
   discoverAgents: () => unavailable("discover_agents"),
 };
 
+export const desktopOnboardingOperations: OnboardingOperations = {
+  async completeOnboarding(input) {
+    const result = await executeCommand({
+      type: "complete_onboarding",
+      payload: {
+        library_path: input.libraryPath,
+        skipped: input.skipped,
+      },
+    });
+    if (result.type !== "initialization_status") {
+      throw new Error("Unexpected onboarding response from the native application.");
+    }
+  },
+  async discoverAgents() {
+    const result = await executeCommand({
+      type: "discover_agent_targets",
+      payload: null,
+    });
+    if (result.type !== "discovery_snapshot") {
+      throw new Error("Unexpected Agent discovery response from the native application.");
+    }
+    return {
+      targets: result.payload.instances.map((instance) => ({
+        id: `${instance.profile_id}:${instance.client_id}`,
+        label: instance.client_id,
+        availability: result.payload.logical_targets.some(
+          (target) =>
+            target.profile_id === instance.profile_id &&
+            target.client_id === instance.client_id &&
+            target.available,
+        )
+          ? "available"
+          : "unavailable",
+      })),
+    };
+  },
+};
+
 export const desktopBootstrapRuntime: BootstrapRuntime = {
   async getBootstrapView() {
     const result = await queryApplication({ type: "get_bootstrap_snapshot" });

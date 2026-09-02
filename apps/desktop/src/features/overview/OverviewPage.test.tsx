@@ -8,6 +8,9 @@ import { ThemeProvider } from "../../styles/ThemeProvider";
 import { OverviewPage } from "./OverviewPage";
 
 const overviewSnapshot: BootstrapSnapshot = {
+  initialization_state: "initialized",
+  library_path: "C:\\Users\\Test\\SkillHub",
+  onboarding_skipped: false,
   agent_count: 3,
   deployed_count: 18,
   deployment_categories: [

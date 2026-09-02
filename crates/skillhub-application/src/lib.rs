@@ -9,6 +9,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use async_trait::async_trait;
+use skillhub_adapters::agent::discovery::{DiscoverAgents, DiscoveryRoots};
 use skillhub_adapters::app_update::github_releases::GithubReleaseProvider;
 use skillhub_adapters::deployment::{DeploymentFilesystem, OwnershipProof};
 use skillhub_adapters::import::SkillDetector;
@@ -598,6 +599,45 @@ impl ReconcileBackend for LocalDeploymentBackend {
 }
 
 impl LocalApplicationFacade {
+    fn configured_library_path(&self) -> AppResult<PathBuf> {
+        self.library_root
+            .clone()
+            .ok_or_else(|| unsupported("bootstrap.library_path"))
+    }
+
+    fn complete_onboarding(
+        &self,
+        request: skillhub_core::api::CompleteOnboarding,
+    ) -> AppResult<AppCommandResult> {
+        let configured = self.configured_library_path()?;
+        let selected = PathBuf::from(request.library_path.trim());
+        if request.library_path.trim().is_empty() || !same_path(&configured, &selected) {
+            return Err(invalid_input(
+                "library_path must match the configured central library",
+            ));
+        }
+        CentralLibrary::initialize(&configured)?;
+        let status = skillhub_core::InitializationStatus::initialized(
+            configured.to_string_lossy(),
+            request.skipped,
+        );
+        self.with_database("execute.complete_onboarding", |database| {
+            database
+                .bootstrap_repository()
+                .save_initialization(&status)?;
+            Ok(AppCommandResult::InitializationStatus(status))
+        })
+    }
+
+    fn discover_agent_targets(&self) -> AppResult<AppCommandResult> {
+        let roots = DiscoveryRoots::new(current_operating_system(), user_home());
+        let snapshot = DiscoverAgents::builtin().discover(&roots)?;
+        self.with_database("execute.discover_agent_targets", |database| {
+            let snapshot = database.agent_repository().replace(&snapshot)?;
+            Ok(AppCommandResult::DiscoverySnapshot(snapshot))
+        })
+    }
+
     async fn check_application_update(
         &self,
         request: skillhub_core::CheckApplicationUpdate,
@@ -2749,6 +2789,8 @@ impl ApplicationFacade for LocalApplicationFacade {
                 return self.commit_project_assembly(request)
             }
             AppCommand::RunInitializationScan(request) => return self.run_scan(request.scope_ids),
+            AppCommand::CompleteOnboarding(request) => return self.complete_onboarding(request),
+            AppCommand::DiscoverAgentTargets(_) => return self.discover_agent_targets(),
             AppCommand::ScanTargets(request) => return self.run_scan(request.scope_ids),
             AppCommand::RescanSkill(request) => return self.rescan_skill(request),
             AppCommand::SetFindingDisposition(request) => {
@@ -2932,10 +2974,19 @@ impl ApplicationFacade for LocalApplicationFacade {
             }
             AppQuery::SearchOnlineSources(request) => self.search_online_sources(request).await,
             AppQuery::GetBootstrapSnapshot => {
+                let default_library_path = self
+                    .library_root
+                    .as_ref()
+                    .map(|path| path.to_string_lossy().into_owned())
+                    .unwrap_or_default();
                 self.with_database("query.get_bootstrap_snapshot", |database| {
-                    database
-                        .bootstrap_repository()
+                    let repository = database.bootstrap_repository();
+                    let initialization = repository.load_initialization()?.unwrap_or_else(|| {
+                        skillhub_core::InitializationStatus::not_initialized(default_library_path)
+                    });
+                    repository
                         .build_snapshot(self.today)
+                        .map(|snapshot| snapshot.with_initialization(initialization))
                         .map(AppQueryResult::BootstrapSnapshot)
                 })
             }
@@ -3974,6 +4025,47 @@ fn internal(operation: &'static str) -> AppError {
     AppError::new(ErrorCode::InternalError, Severity::Error)
         .with_param("operation", operation)
         .with_action(RecoveryAction::Retry)
+}
+
+fn same_path(configured: &Path, selected: &Path) -> bool {
+    let configured = std::fs::canonicalize(configured).unwrap_or_else(|_| configured.to_path_buf());
+    let selected = std::fs::canonicalize(selected).unwrap_or_else(|_| selected.to_path_buf());
+    if cfg!(windows) {
+        configured
+            .to_string_lossy()
+            .eq_ignore_ascii_case(&selected.to_string_lossy())
+    } else {
+        configured == selected
+    }
+}
+
+#[cfg(windows)]
+fn current_operating_system() -> skillhub_core::OperatingSystem {
+    skillhub_core::OperatingSystem::Windows
+}
+
+#[cfg(target_os = "macos")]
+fn current_operating_system() -> skillhub_core::OperatingSystem {
+    skillhub_core::OperatingSystem::Macos
+}
+
+#[cfg(not(any(windows, target_os = "macos")))]
+fn current_operating_system() -> skillhub_core::OperatingSystem {
+    skillhub_core::OperatingSystem::Windows
+}
+
+#[cfg(windows)]
+fn user_home() -> PathBuf {
+    std::env::var_os("USERPROFILE")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("."))
+}
+
+#[cfg(not(windows))]
+fn user_home() -> PathBuf {
+    std::env::var_os("HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("."))
 }
 
 fn current_utc_date() -> (i32, u8, u8) {

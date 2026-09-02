@@ -42,6 +42,39 @@ pub enum StartupRecoveryState {
     NeedsRecovery,
 }
 
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(rename_all = "snake_case")]
+pub enum InitializationState {
+    #[default]
+    NotInitialized,
+    Initialized,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+pub struct InitializationStatus {
+    pub state: InitializationState,
+    pub library_path: String,
+    pub skipped: bool,
+}
+
+impl InitializationStatus {
+    pub fn not_initialized(library_path: impl Into<String>) -> Self {
+        Self {
+            state: InitializationState::NotInitialized,
+            library_path: library_path.into(),
+            skipped: false,
+        }
+    }
+
+    pub fn initialized(library_path: impl Into<String>, skipped: bool) -> Self {
+        Self {
+            state: InitializationState::Initialized,
+            library_path: library_path.into(),
+            skipped,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 pub struct PendingSummary {
     pub total: u32,
@@ -73,6 +106,9 @@ pub struct RecentOperationSummary {
 
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 pub struct BootstrapSnapshot {
+    pub initialization_state: InitializationState,
+    pub library_path: String,
+    pub onboarding_skipped: bool,
     pub skill_count: u32,
     pub project_count: u32,
     pub agent_count: u32,
@@ -90,5 +126,12 @@ impl BootstrapSnapshot {
             recovery_state: StartupRecoveryState::Clean,
             ..Self::default()
         }
+    }
+
+    pub fn with_initialization(mut self, status: InitializationStatus) -> Self {
+        self.initialization_state = status.state;
+        self.library_path = status.library_path;
+        self.onboarding_skipped = status.skipped;
+        self
     }
 }

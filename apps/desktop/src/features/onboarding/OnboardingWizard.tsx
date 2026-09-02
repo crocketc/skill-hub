@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "../../ui/Button";
 import { ConfirmDialog } from "../../ui/ConfirmDialog";
@@ -8,7 +8,7 @@ import {
   type BootstrapRuntime,
   type InitializationScanState,
   type OnboardingOperations,
-  unavailableOnboardingOperations,
+  desktopOnboardingOperations,
 } from "../bootstrap/api";
 import { CompatibilityStep } from "./CompatibilityStep";
 import { LibraryStep } from "./LibraryStep";
@@ -24,7 +24,7 @@ interface OnboardingWizardProps {
 export function OnboardingWizard({
   libraryPath,
   onComplete,
-  operations = unavailableOnboardingOperations,
+  operations = desktopOnboardingOperations,
   runtime = desktopBootstrapRuntime,
 }: OnboardingWizardProps) {
   const { t } = useTranslation();
@@ -38,6 +38,26 @@ export function OnboardingWizard({
   const [targets, setTargets] = useState<CompatibilityTarget[] | null>(null);
   const [completionState, setCompletionState] = useState<"idle" | "pending" | "complete">("idle");
   const [message, setMessage] = useState<string | null>(null);
+  const [nativeLibraryPath, setNativeLibraryPath] = useState(libraryPath);
+
+  useEffect(() => {
+    setNativeLibraryPath(libraryPath);
+    if (libraryPath) {
+      return;
+    }
+    let active = true;
+    void runtime
+      .getBootstrapView()
+      .then((view) => {
+        if (active && view.snapshot.library_path) {
+          setNativeLibraryPath(view.snapshot.library_path);
+        }
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, [libraryPath, runtime]);
 
   const showError = () => setMessage(t("onboarding.contractUnavailable"));
 
@@ -76,13 +96,13 @@ export function OnboardingWizard({
   };
 
   const complete = async (skipped: boolean) => {
-    if (!libraryPath || completionState !== "idle") {
+    if (!nativeLibraryPath || completionState !== "idle") {
       return;
     }
     setCompletionState("pending");
     setMessage(null);
     try {
-      await operations.completeOnboarding({ libraryPath, skipped });
+      await operations.completeOnboarding({ libraryPath: nativeLibraryPath, skipped });
       setCompletionState("complete");
       onComplete?.();
     } catch {
@@ -100,14 +120,14 @@ export function OnboardingWizard({
 
   const canContinue =
     step === 0
-      ? Boolean(libraryPath)
+      ? Boolean(nativeLibraryPath)
       : step === 1
         ? selectedTargetIds.length === 0 || selectionConfirmed
         : false;
 
   const activeStep =
     step === 0 ? (
-      <LibraryStep libraryPath={libraryPath} />
+      <LibraryStep libraryPath={nativeLibraryPath} />
     ) : step === 1 ? (
       <CompatibilityStep
         confirmed={compatibilityConfirmed}
@@ -162,10 +182,10 @@ export function OnboardingWizard({
             </Button>
           ) : (
             <>
-              <Button disabled={completionState !== "idle" || !libraryPath} onClick={() => void complete(false)}>
+              <Button disabled={completionState !== "idle" || !nativeLibraryPath} onClick={() => void complete(false)}>
                 {t("onboarding.finish")}
               </Button>
-              <Button disabled={completionState !== "idle" || !libraryPath} onClick={() => void complete(false)} variant="secondary">
+              <Button disabled={completionState !== "idle" || !nativeLibraryPath} onClick={() => void complete(false)} variant="secondary">
                 {t("onboarding.skipScan")}
               </Button>
             </>
@@ -173,10 +193,10 @@ export function OnboardingWizard({
           <ConfirmDialog
             cancelLabel={t("actions.cancel")}
             confirmLabel={t("onboarding.confirmSkip")}
-            description={t("onboarding.skipDescription", { path: libraryPath })}
+            description={t("onboarding.skipDescription", { path: nativeLibraryPath })}
             onConfirm={() => void complete(true)}
             title={t("onboarding.skipTitle")}
-            trigger={<Button disabled={!libraryPath || completionState !== "idle"} variant="ghost">{t("onboarding.skip")}</Button>}
+            trigger={<Button disabled={!nativeLibraryPath || completionState !== "idle"} variant="ghost">{t("onboarding.skip")}</Button>}
             variant="primary"
           />
         </footer>

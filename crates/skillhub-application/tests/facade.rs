@@ -646,6 +646,111 @@ async fn bootstrap_query_reads_counts_from_the_shared_database() {
 }
 
 #[tokio::test]
+async fn bootstrap_query_reports_a_fresh_library_as_not_initialized() {
+    let database = Database::open_in_memory().expect("database");
+    let library_root = tempfile::tempdir().expect("library root");
+    let facade = LocalApplicationFacade::new_with_library(database, library_root.path());
+
+    let result = facade
+        .query(RootAppQuery::GetBootstrapSnapshot)
+        .await
+        .expect("bootstrap result");
+
+    let AppQueryResult::BootstrapSnapshot(snapshot) = result else {
+        panic!("expected bootstrap snapshot");
+    };
+    assert_eq!(
+        snapshot.initialization_state,
+        skillhub_core::InitializationState::NotInitialized
+    );
+    assert_eq!(snapshot.library_path, library_root.path().to_string_lossy());
+    assert!(!snapshot.onboarding_skipped);
+}
+
+#[tokio::test]
+async fn completing_onboarding_persists_the_selected_library_and_skip_state() {
+    let database = Database::open_in_memory().expect("database");
+    let library_root = tempfile::tempdir().expect("library root");
+    let selected_path = library_root.path().to_string_lossy().into_owned();
+    let facade = LocalApplicationFacade::new_with_library(database, library_root.path());
+
+    let completion = facade
+        .execute(AppCommand::CompleteOnboarding(
+            skillhub_core::api::CompleteOnboarding {
+                library_path: selected_path.clone(),
+                skipped: true,
+            },
+        ))
+        .await
+        .expect("complete onboarding");
+    let AppCommandResult::InitializationStatus(status) = completion else {
+        panic!("expected initialization status");
+    };
+    assert_eq!(
+        status.state,
+        skillhub_core::InitializationState::Initialized
+    );
+    assert_eq!(status.library_path, selected_path);
+    assert!(status.skipped);
+
+    let result = facade
+        .query(RootAppQuery::GetBootstrapSnapshot)
+        .await
+        .expect("persisted bootstrap result");
+    let AppQueryResult::BootstrapSnapshot(snapshot) = result else {
+        panic!("expected bootstrap snapshot");
+    };
+    assert_eq!(
+        snapshot.initialization_state,
+        skillhub_core::InitializationState::Initialized
+    );
+    assert_eq!(snapshot.library_path, selected_path);
+    assert!(snapshot.onboarding_skipped);
+}
+
+#[tokio::test]
+async fn onboarding_completion_is_repeatable_and_rejects_an_unconfigured_path() {
+    let database = Database::open_in_memory().expect("database");
+    let library_root = tempfile::tempdir().expect("library root");
+    let other_root = tempfile::tempdir().expect("other root");
+    let selected_path = library_root.path().to_string_lossy().into_owned();
+    let facade = LocalApplicationFacade::new_with_library(database, library_root.path());
+
+    for _ in 0..2 {
+        facade
+            .execute(AppCommand::CompleteOnboarding(
+                skillhub_core::api::CompleteOnboarding {
+                    library_path: selected_path.clone(),
+                    skipped: false,
+                },
+            ))
+            .await
+            .expect("repeat completion");
+    }
+
+    let error = facade
+        .execute(AppCommand::CompleteOnboarding(
+            skillhub_core::api::CompleteOnboarding {
+                library_path: other_root.path().to_string_lossy().into_owned(),
+                skipped: false,
+            },
+        ))
+        .await
+        .expect_err("unconfigured library path must be rejected");
+    assert_eq!(error.code, ErrorCode::InvalidInput);
+
+    let result = facade
+        .query(RootAppQuery::GetBootstrapSnapshot)
+        .await
+        .expect("bootstrap result");
+    let AppQueryResult::BootstrapSnapshot(snapshot) = result else {
+        panic!("expected bootstrap snapshot");
+    };
+    assert_eq!(snapshot.library_path, selected_path);
+    assert!(!snapshot.onboarding_skipped);
+}
+
+#[tokio::test]
 async fn pending_query_uses_the_same_date_boundary_as_bootstrap() {
     let database = Database::open_in_memory().expect("database");
     let skill = Skill::new(skillhub_core::SkillId::new(), "Trial").with_trial_due(2026, 8, 29);

@@ -861,6 +861,7 @@
     }
   },
   "settings": {
+    "reopenOnboarding": "Run initialization again",
     "eyebrow": "Settings",
     "heading": "Shape SkillHub around your workflow",
     "description": "Local management stays explicit, while network and future storage features remain bounded.",

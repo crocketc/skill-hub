@@ -12,7 +12,10 @@ const cachedSnapshot = {
   agent_count: 3,
   deployed_count: 9,
   deployment_categories: [],
+  initialization_state: "initialized" as const,
   last_scan_at: null,
+  library_path: "C:\\Users\\Test\\SkillHub",
+  onboarding_skipped: false,
   pending: { by_kind: {}, total: 0 },
   project_count: 5,
   recent_operations: [],
@@ -65,6 +68,7 @@ async function renderBootstrapGate(view: BootstrapView) {
               >
                 <Route index element={<OverviewPage />} />
               </Route>
+              <Route element={<h1>初始化向导</h1>} path="/initialize" />
             </Routes>
           </MemoryRouter>
         </ThemeProvider>
@@ -72,6 +76,19 @@ async function renderBootstrapGate(view: BootstrapView) {
     );
   });
 }
+
+it("routes a fresh local profile to initialization", async () => {
+  await renderBootstrapGate({
+    snapshot: {
+      ...cachedSnapshot,
+      initialization_state: "not_initialized" as const,
+    },
+    verification: { kind: "unavailable" },
+  });
+
+  expect(await screen.findByRole("heading", { name: "初始化向导" })).toBeVisible();
+  expect(screen.queryByRole("link", { name: "概览" })).not.toBeInTheDocument();
+});
 
 it("shows cached home data while filesystem verification continues", async () => {
   await renderBootstrapGate({
