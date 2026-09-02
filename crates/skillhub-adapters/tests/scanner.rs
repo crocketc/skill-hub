@@ -440,9 +440,11 @@ fn directory_recreation_invalidates_the_persisted_scope_identity() {
     let first = scan_scope(&mut service, scope);
     assert_eq!(first.discovered.len(), 1);
 
+    let replacement = workspace.path().join("replacement");
+    std::fs::create_dir_all(replacement.join("one")).unwrap();
+    std::fs::write(replacement.join("one/SKILL.md"), "name: one\n").unwrap();
     std::fs::remove_dir_all(&root).unwrap();
-    std::fs::create_dir_all(root.join("one")).unwrap();
-    std::fs::write(root.join("one/SKILL.md"), "name: one\n").unwrap();
+    std::fs::rename(&replacement, &root).unwrap();
 
     assert!(service.scan_registered(&["recreated".into()]).is_err());
 }
