@@ -247,12 +247,25 @@ jobs:
           path: artifacts
           merge-multiple: true
 
-      - name: Add release provenance
+      - name: Separate release evidence from public assets
         shell: bash
         run: |
-          printf 'tag=%s\ncommit=%s\n' "$RELEASE_TAG" "$(git rev-parse HEAD)" > artifacts/release-provenance.txt
-          cp docs/install/windows-unsigned.md artifacts/
-          cp docs/install/macos-unnotarized.md artifacts/
+          set -euo pipefail
+          mkdir -p release-evidence
+          find artifacts -maxdepth 1 -type f \
+            \( -name 'SHA256SUMS-*' -o -name 'release-*.txt' -o -name '*.cdx.json' -o -name '*-unsigned.md' \) \
+            -exec mv {} release-evidence/ \;
+          if [ -d artifacts/sbom ]; then
+            mv artifacts/sbom release-evidence/sbom
+          fi
+          printf 'tag=%s\ncommit=%s\n' "$RELEASE_TAG" "$(git rev-parse HEAD)" > release-evidence/release-provenance.txt
+
+      - name: Upload release evidence
+        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08
+        with:
+          name: release-evidence-${{ env.RELEASE_TAG }}
+          path: release-evidence
+          if-no-files-found: error
 
       - name: Generate signed updater manifest
         shell: bash

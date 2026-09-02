@@ -121,3 +121,13 @@ test("update manifest generator emits all supported updater platforms", () => {
     rmSync(temporaryDirectory, { recursive: true, force: true });
   }
 });
+
+test("release workflow keeps audit evidence out of public release assets", () => {
+  const workflow = readFileSync(resolve(projectRoot, ".github/workflows/release.yml"), "utf8");
+  assert.match(workflow, /Separate release evidence from public assets/);
+  assert.match(workflow, /Upload release evidence/);
+  assert.match(workflow, /name: release-evidence-\$\{\{ env\.RELEASE_TAG \}\}/);
+  assert.match(workflow, /find artifacts -maxdepth 1 -type f/);
+  assert.doesNotMatch(workflow, /cp docs\/install\/windows-unsigned\.md artifacts/);
+  assert.doesNotMatch(workflow, /cp docs\/install\/macos-unnotarized\.md artifacts/);
+});
