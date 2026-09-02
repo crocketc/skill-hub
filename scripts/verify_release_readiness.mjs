@@ -87,7 +87,10 @@ record(
 record("Tauri updater public key is configured", typeof tauriConfig?.plugins?.updater?.pubkey === "string" && tauriConfig.plugins.updater.pubkey.length > 20);
 record("Windows installer is current-user", windowsConfig?.bundle?.windows?.nsis?.installMode === "currentUser");
 record("macOS build is ad-hoc", macosConfig?.bundle?.macOS?.signingIdentity === "-");
-record("Windows updater artifact generation enabled", windowsConfig?.bundle?.createUpdaterArtifacts === true);
+record(
+  "Windows updater artifact generation enabled",
+  windowsConfig?.bundle?.createUpdaterArtifacts === true || windowsConfig?.bundle?.createUpdaterArtifacts === "v1Compatible",
+);
 record("macOS updater artifact generation enabled", macosConfig?.bundle?.createUpdaterArtifacts === true);
 record("macOS first-install DMG and updater app target are both configured", macosConfig?.bundle?.targets?.includes("dmg") && macosConfig?.bundle?.targets?.includes("app"));
 

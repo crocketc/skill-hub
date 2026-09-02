@@ -82,6 +82,11 @@ test("release workflow collects bundles from the Tauri workspace target director
   assert.doesNotMatch(workflow, /apps\/desktop\/src-tauri\/target/);
 });
 
+test("Windows updater configuration requests NSIS zip artifacts", () => {
+  const windowsConfig = JSON.parse(readFileSync(resolve(projectRoot, "apps/desktop/src-tauri/tauri.windows.conf.json"), "utf8"));
+  assert.equal(windowsConfig.bundle.createUpdaterArtifacts, "v1Compatible");
+});
+
 test("update manifest generator emits all supported updater platforms", () => {
   const temporaryDirectory = mkdtempSync(resolve(tmpdir(), "skillhub-manifest-"));
   try {
