@@ -7,11 +7,14 @@ const OFFICIAL_RELEASE_HOST: &str = "github.com";
 const OFFICIAL_RELEASE_OWNER: &str = "crocketc";
 const OFFICIAL_RELEASE_REPO: &str = "skill-hub";
 
-/// Tauri updater public key used for release signing. It must stay identical
-/// to the value in `apps/desktop/src-tauri/tauri.conf.json`; the release
-/// pipeline publishes it as a non-secret alongside the signed artifacts.
+/// Raw minisign public key used by the application-side verifier.
 pub const DEFAULT_UPDATE_SIGNATURE_PUBLIC_KEY: &str =
     "RWQTMMSblUX0iEW5YvJZ40R7NPBkfadPSRSHPvWo7ascexmHPzo91Dqz";
+
+/// Base64-encoded minisign public-key envelope required by the Tauri updater
+/// plugin. It decodes to the same raw key as [`DEFAULT_UPDATE_SIGNATURE_PUBLIC_KEY`].
+pub const TAURI_UPDATE_SIGNATURE_PUBLIC_KEY: &str =
+    "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDg4RjQ0NTk1OUJDNDMwMTMKUldRVE1NU2JsVVgwaUVXNVl2Slo0MFI3TlBCa2ZhZFBTUlNIUHZXbzdhc2NleG1IUHpvOTFEcXoK";
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 #[serde(deny_unknown_fields)]

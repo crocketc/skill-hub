@@ -19,7 +19,7 @@
 | Windows updater 资产 | 已配置 | `.nsis.zip` 与 `.sig`；首次安装 `.exe` 仍单独保留 |
 | macOS updater 资产 | 已配置 | `.app.tar.gz` 与 `.sig`；首次安装 DMG 不进入 updater 清单 |
 | latest.json | 已配置 | `scripts/generate_update_manifest.mjs` 生成四个平台条目 |
-| 生产密钥 | 公钥已配置 | `TAURI_UPDATER_PUBLIC_KEY` 和匹配的 `TAURI_SIGNING_PRIVATE_KEY` 已配置；无密码私钥无需设置密码 Secret，用该密钥生成首个签名发布 |
+| 生产密钥 | 公钥已配置 | `TAURI_UPDATER_PUBLIC_KEY` 和匹配的 `TAURI_SIGNING_PRIVATE_KEY` 已配置；公钥变量与 `tauri.conf.json` 使用 `.pub` 文件的完整 base64 外壳，Rust 校验器使用其中的原始公钥行；无密码私钥无需设置密码 Secret |
 | manifest 前端交接 | 已完成 | 检查查询返回当前平台 manifest/platform；设置页按“准备→下载→安装”调用原生契约，缺少清单时保留官方发布页兜底 |
 
 | 检查项 | 状态 | 证据/备注 |

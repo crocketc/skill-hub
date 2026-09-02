@@ -59,6 +59,7 @@ pub use app_update::{
     ApplicationUpdate, ApplicationUpdatePolicy, BuildTrust, DownloadedApplicationUpdate,
     InstallAction, PreparedApplicationUpdate, UpdateArtifact, UpdateManifest, UpdatePlatform,
     UpdateSignaturePublicKey, UpdateState, DEFAULT_UPDATE_SIGNATURE_PUBLIC_KEY,
+    TAURI_UPDATE_SIGNATURE_PUBLIC_KEY,
 };
 pub use application::{
     BasicCheckOutput, BasicCheckScanner, CallPolicyBackend, CallPolicyService, CheckService,

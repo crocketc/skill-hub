@@ -10,4 +10,5 @@ pub use update::{
     select_artifact, validate_official_artifact_url, verify_artifact, verify_downloaded_artifact,
     DownloadedApplicationUpdate, PreparedApplicationUpdate, UpdateArtifact, UpdateManifest,
     UpdatePlatform, UpdateSignaturePublicKey, UpdateState, DEFAULT_UPDATE_SIGNATURE_PUBLIC_KEY,
+    TAURI_UPDATE_SIGNATURE_PUBLIC_KEY,
 };

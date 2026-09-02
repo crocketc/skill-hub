@@ -66,6 +66,15 @@ test("release readiness rejects updater endpoints that are not fixed HTTPS GitHu
   }
 });
 
+test("release configuration stores the complete base64 minisign public key envelope", () => {
+  const config = JSON.parse(readFileSync(resolve(projectRoot, "apps/desktop/src-tauri/tauri.conf.json"), "utf8"));
+  const encodedPublicKey = config.plugins?.updater?.pubkey;
+  assert.equal(typeof encodedPublicKey, "string");
+  const decodedPublicKey = Buffer.from(encodedPublicKey, "base64").toString("utf8");
+  assert.match(decodedPublicKey, /^untrusted comment: minisign public key:/);
+  assert.match(decodedPublicKey, /\nRWQ[A-Za-z0-9+/=]+\s*$/);
+});
+
 test("update manifest generator emits all supported updater platforms", () => {
   const temporaryDirectory = mkdtempSync(resolve(tmpdir(), "skillhub-manifest-"));
   try {
