@@ -75,6 +75,13 @@ test("release configuration stores the complete base64 minisign public key envel
   assert.match(decodedPublicKey, /\nRWQ[A-Za-z0-9+/=]+\s*$/);
 });
 
+test("release workflow collects bundles from the Tauri workspace target directory", () => {
+  const workflow = readFileSync(resolve(projectRoot, ".github/workflows/release.yml"), "utf8");
+  assert.match(workflow, /target\/\$\{\{ matrix\.target \}\}\/release\/bundle/);
+  assert.match(workflow, /target\/universal-apple-darwin\/release\/bundle/);
+  assert.doesNotMatch(workflow, /apps\/desktop\/src-tauri\/target/);
+});
+
 test("update manifest generator emits all supported updater platforms", () => {
   const temporaryDirectory = mkdtempSync(resolve(tmpdir(), "skillhub-manifest-"));
   try {

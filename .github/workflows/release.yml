@@ -150,14 +150,14 @@ jobs:
       - name: Collect Windows installer and checksum
         shell: pwsh
         run: |
-          $source = Get-ChildItem "apps/desktop/src-tauri/target/${{ matrix.target }}/release/bundle/nsis/*.exe" | Select-Object -First 1
+          $source = Get-ChildItem "target/${{ matrix.target }}/release/bundle/nsis/*.exe" | Select-Object -First 1
           if (-not $source) { throw "NSIS installer was not produced" }
           New-Item -ItemType Directory -Force artifacts | Out-Null
           $name = "SkillHub-${{ matrix.target }}.exe"
           Copy-Item $source.FullName "artifacts/$name"
           $hash = (Get-FileHash "artifacts/$name" -Algorithm SHA256).Hash.ToLowerInvariant()
           "$hash  $name" | Set-Content -Encoding ascii artifacts/SHA256SUMS-${{ matrix.target }}.txt
-          $updater = Get-ChildItem "apps/desktop/src-tauri/target/${{ matrix.target }}/release/bundle/nsis/*.nsis.zip" | Select-Object -First 1
+          $updater = Get-ChildItem "target/${{ matrix.target }}/release/bundle/nsis/*.nsis.zip" | Select-Object -First 1
           if (-not $updater) { throw "Signed NSIS updater archive was not produced" }
           Copy-Item $updater.FullName "artifacts/SkillHub-${{ matrix.target }}.nsis.zip"
           $signature = "{0}.sig" -f $updater.FullName
@@ -208,12 +208,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          source_file="$(find apps/desktop/src-tauri/target/universal-apple-darwin/release/bundle/dmg -maxdepth 1 -name '*.dmg' -print -quit)"
+          source_file="$(find target/universal-apple-darwin/release/bundle/dmg -maxdepth 1 -name '*.dmg' -print -quit)"
           test -n "$source_file"
           mkdir -p artifacts
           cp "$source_file" artifacts/SkillHub-macos-universal.dmg
           shasum -a 256 artifacts/SkillHub-macos-universal.dmg > artifacts/SHA256SUMS-macos-universal.txt
-          updater_file="$(find apps/desktop/src-tauri/target/universal-apple-darwin/release/bundle -maxdepth 2 -name '*.app.tar.gz' -print -quit)"
+          updater_file="$(find target/universal-apple-darwin/release/bundle -maxdepth 2 -name '*.app.tar.gz' -print -quit)"
           test -n "$updater_file"
           test -f "${updater_file}.sig"
           cp "$updater_file" artifacts/SkillHub-macos-universal.app.tar.gz
