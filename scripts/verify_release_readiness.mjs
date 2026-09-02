@@ -43,7 +43,6 @@ for (const relativePath of [
   "scripts/ci-local.mjs",
   "scripts/ci-local.ps1",
   "scripts/ci-local.sh",
-  "docs/本地CI使用.md",
   "docs/release-process.md",
   "docs/release-checklist.md",
   "scripts/generate_update_manifest.mjs",
