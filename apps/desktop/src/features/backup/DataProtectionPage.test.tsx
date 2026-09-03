@@ -45,17 +45,17 @@ describe("DataProtectionPage", () => {
     expect(await screen.findByText(/Restored 1 skills/)).toBeVisible();
   });
 
-  it("preflights and creates a combination export after sensitive-content decisions", async () => {
+  it("preflights and creates a selected-skill export after sensitive-content decisions", async () => {
     const facade = createFacade();
     renderPage(facade);
-    fireEvent.change(screen.getByLabelText("Combination ID"), { target: { value: "combo-1" } });
+    fireEvent.change(screen.getByLabelText("Skill IDs"), { target: { value: "skill-1, skill-2" } });
     fireEvent.click(screen.getByRole("button", { name: "Review export" }));
     expect(await screen.findByText(/skill-2/)).toBeVisible();
     const create = screen.getByRole("button", { name: "Create export" });
     expect(create).toBeDisabled();
     fireEvent.change(screen.getByLabelText("Export decision for skill-2"), { target: { value: "include_and_mark" } });
     fireEvent.click(create);
-    await waitFor(() => expect(facade.createExport).toHaveBeenCalledWith({ selection: { combination: "combo-1" }, versions: "current", skills: [] }, [{ skill_id: "skill-2", decision: "include_and_mark" }]));
+    await waitFor(() => expect(facade.createExport).toHaveBeenCalledWith({ selection: { skills: ["skill-1", "skill-2"] }, versions: "current", skills: [] }, [{ skill_id: "skill-2", decision: "include_and_mark" }]));
     expect(await screen.findByText(/C:\/export.skillhub/)).toBeVisible();
   });
 });

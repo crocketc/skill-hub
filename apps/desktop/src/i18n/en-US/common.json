@@ -998,8 +998,8 @@
       "result": "Restored {{skills_restored}} skills; skipped {{skills_skipped}}."
     },
     "export": {
-      "heading": "Export a combination",
-      "combination": "Combination ID",
+      "heading": "Export selected Skills",
+      "skillIds": "Skill IDs",
       "review": "Review export",
       "summary": "{{count}} skills are ready to export.",
       "decision": "Export decision for {{skillId}}",

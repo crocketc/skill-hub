@@ -22,7 +22,7 @@ export function DataProtectionPage({ facade }: { facade: BackupFacade }) {
   const [restorePlan, setRestorePlan] = useState<RestorePlan>();
   const [restoreDecisions, setRestoreDecisions] = useState<Record<string, Decision>>({});
   const [restoreResult, setRestoreResult] = useState<RestoreResult>();
-  const [exportCombination, setExportCombination] = useState("");
+  const [exportSkillIds, setExportSkillIds] = useState("");
   const [exportPlan, setExportPlan] = useState<ExportPlan>();
   const [exportDecisions, setExportDecisions] = useState<Record<string, SensitiveDecision>>({});
   const [exportPath, setExportPath] = useState<string>();
@@ -48,15 +48,15 @@ export function DataProtectionPage({ facade }: { facade: BackupFacade }) {
     setRestoreResult(await facade.commitRestore(path.trim(), decisions));
   });
   const reviewExport = () => run(async () => {
-    if (!exportCombination.trim()) return;
+    if (!exportSkillIds.trim()) return;
     setExportPath(undefined);
     setExportDecisions({});
-    const input: ExportInput = { selection: { combination: exportCombination.trim() }, versions: "current", skills: [] };
+    const input: ExportInput = { selection: { skills: exportSkillIds.split(",").map((id) => id.trim()).filter(Boolean) }, versions: "current", skills: [] };
     setExportPlan(await facade.prepareExport(input));
   });
   const commitExport = () => run(async () => {
     if (!exportPlan) return;
-    const input: ExportInput = { selection: { combination: exportCombination.trim() }, versions: "current", skills: [] };
+    const input: ExportInput = { selection: { skills: exportSkillIds.split(",").map((id) => id.trim()).filter(Boolean) }, versions: "current", skills: [] };
     const decisions: ExportDecision[] = exportPlan.sensitive_items.map((item) => ({ skill_id: item.skill_id, decision: exportDecisions[item.skill_id] })) as ExportDecision[];
     const result = await facade.createExport(input, decisions);
     setExportPath(result.path);
@@ -80,8 +80,8 @@ export function DataProtectionPage({ facade }: { facade: BackupFacade }) {
       </section>
       <section className="sh-workflow-card">
         <h2>{t("dataProtection.export.heading")}</h2>
-        <label>{t("dataProtection.export.combination")}<input aria-label={t("dataProtection.export.combination")} value={exportCombination} onChange={(event) => setExportCombination(event.target.value)} placeholder="combination-id" /></label>
-        <Button disabled={!exportCombination.trim() || busy} onClick={() => void reviewExport()}>{t("dataProtection.export.review")}</Button>
+        <label>{t("dataProtection.export.skillIds")}<input aria-label={t("dataProtection.export.skillIds")} value={exportSkillIds} onChange={(event) => setExportSkillIds(event.target.value)} placeholder="skill-1, skill-2" /></label>
+        <Button disabled={!exportSkillIds.trim() || busy} onClick={() => void reviewExport()}>{t("dataProtection.export.review")}</Button>
         {exportPlan ? <ExportReview plan={exportPlan} decisions={exportDecisions} onDecision={(skillId, decision) => setExportDecisions((current) => ({ ...current, [skillId]: decision }))} /> : null}
         {exportPlan ? <Button disabled={busy || !hasExportDecisions} onClick={() => void commitExport()}>{t("dataProtection.export.commit")}</Button> : null}
         {exportPath ? <p role="status">{t("dataProtection.export.result", { path: exportPath })}</p> : null}

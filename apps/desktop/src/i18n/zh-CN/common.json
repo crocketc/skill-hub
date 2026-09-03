@@ -998,8 +998,8 @@
       "result": "已恢复 {{skills_restored}} 个 Skill；跳过 {{skills_skipped}} 个。"
     },
     "export": {
-      "heading": "导出组合",
-      "combination": "组合 ID",
+      "heading": "导出所选 Skill",
+      "skillIds": "Skill ID 列表",
       "review": "检查导出内容",
       "summary": "已准备导出 {{count}} 个 Skill。",
       "decision": "{{skillId}} 的导出处理方式",
