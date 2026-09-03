@@ -25,7 +25,7 @@ export function SecurityResults({ facade = unavailableSecurityFacade, skillId, v
 
   const checkByKind = (kind: SecurityCheck["kind"]) => checks.find((check) => check.kind === kind);
   const handleDisposition = async (finding: SecurityFinding, disposition: SecurityFinding["disposition"]) => {
-    await facade.setFindingDisposition(finding.id, disposition);
+    await facade.setFindingDisposition(finding.id, disposition, skillId, versionId);
     setFindings((current) => current.map((item) => item.id === finding.id ? { ...item, disposition } : item));
   };
 

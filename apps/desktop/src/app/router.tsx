@@ -11,11 +11,11 @@ import { nativeAgentFacade } from "../features/agents/nativeApi";
 import { nativeProjectFacade } from "../features/projects/nativeApi";
 import { DeploymentDialog } from "../features/deployment/DeploymentDialog";
 import { SecurityResults } from "../features/security/SecurityResults";
-import { unavailableSecurityFacade } from "../features/security/api";
+import { nativeSecurityFacade } from "../features/security/nativeApi";
 import { PendingPage } from "../features/pending/PendingPage";
 import { nativePendingFacade } from "../features/pending/nativeApi";
 import { OperationProgress } from "../features/operations/OperationProgress";
-import { unavailableOperationFacade } from "../features/operations/api";
+import { nativeOperationFacade } from "../features/operations/nativeApi";
 import { RecoveryPage } from "../features/recovery/RecoveryPage";
 import { SettingsPage } from "../features/settings/SettingsPage";
 import { nativeSettingsFacade } from "../features/settings/nativeApi";
@@ -94,12 +94,12 @@ function DiscoveryRoute() {
 
 function SecurityRoute() {
   const { skillId } = useParams();
-  return <SecurityResults facade={unavailableSecurityFacade} skillId={skillId ?? "unknown"} versionId="current" />;
+  return <SecurityResults facade={nativeSecurityFacade} skillId={skillId ?? "unknown"} versionId="current" />;
 }
 
 function OperationRoute() {
   const { operationId } = useParams();
-  return <OperationProgress facade={unavailableOperationFacade} operationId={operationId ?? "latest"} />;
+  return <OperationProgress facade={nativeOperationFacade} operationId={operationId ?? "latest"} />;
 }
 
 export const appRouter = createBrowserRouter([
@@ -126,7 +126,7 @@ export const appRouter = createBrowserRouter([
       { path: "pending", element: <PendingPage facade={nativePendingFacade} /> },
       { path: "operations/:operationId", element: <OperationRoute /> },
       { path: "operations", element: <OperationRoute /> },
-      { path: "recovery", element: <RecoveryPage facade={unavailableOperationFacade} /> },
+      { path: "recovery", element: <RecoveryPage facade={nativeOperationFacade} /> },
       { path: "settings", element: <SettingsPage facade={nativeSettingsFacade} /> },
     ],
   },

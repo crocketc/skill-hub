@@ -1,21 +1,46 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { executeCommand } from "../../api/bindings";
+import { executeCommand, queryApplication } from "../../api/bindings";
 import {
   renameNativeSkill,
   runNativeLlmSafetyCheck,
   setNativeSkillLifecycle,
   setNativeSkillMetadata,
   setNativeSkillTrial,
+  nativeSecurityFacade,
 } from "./nativeApi";
 
 vi.mock("../../api/bindings", async () => {
   const original = await vi.importActual<typeof import("../../api/bindings")>("../../api/bindings");
-  return { ...original, executeCommand: vi.fn() };
+  return { ...original, executeCommand: vi.fn(), queryApplication: vi.fn() };
 });
 
 describe("security native API", () => {
   beforeEach(() => {
     vi.mocked(executeCommand).mockReset();
+    vi.mocked(queryApplication).mockReset();
+  });
+
+  it("maps basic and LLM checks plus findings from native queries", async () => {
+    vi.mocked(queryApplication)
+      .mockResolvedValueOnce({ type: "basic_check_result", payload: {
+        state: "passed", checked_at: "2026-09-01T00:00:00Z", finding_count: 1, actionable_count: 1,
+      } as never })
+      .mockResolvedValueOnce({ type: "llm_safety_check_result", payload: {
+        state: "not_checked", checked_at: null, finding_count: 0, actionable_count: 0,
+      } as never })
+      .mockResolvedValueOnce({ type: "findings", payload: [{
+        id: "finding-1", code: "secret", severity: "error", file: "SKILL.md", line_start: 4, line_end: 4,
+        disposition: "actionable", high_risk: true,
+      }] });
+
+    await expect(nativeSecurityFacade.getChecks("skill-1", "version-1")).resolves.toEqual([
+      expect.objectContaining({ kind: "basic", state: "passed", findingCount: 1 }),
+      expect.objectContaining({ kind: "llm", state: "not_checked", findingCount: 0 }),
+    ]);
+    await expect(nativeSecurityFacade.listFindings("skill-1", "version-1")).resolves.toEqual([{
+      id: "finding-1", code: "secret", severity: "high", file: "SKILL.md", line: 4,
+      highRisk: true, disposition: "actionable", message: "secret",
+    }]);
   });
 
   it("runs an LLM safety check through the generated command binding", async () => {

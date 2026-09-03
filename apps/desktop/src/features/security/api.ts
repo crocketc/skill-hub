@@ -20,7 +20,12 @@ export type SecurityFinding = {
 export interface SecurityFacade {
   getChecks(skillId: string, versionId: string): Promise<SecurityCheck[]>;
   listFindings(skillId: string, versionId: string): Promise<SecurityFinding[]>;
-  setFindingDisposition(findingId: string, disposition: SecurityFinding["disposition"]): Promise<void>;
+  setFindingDisposition(
+    findingId: string,
+    disposition: SecurityFinding["disposition"],
+    skillId?: string,
+    versionId?: string,
+  ): Promise<void>;
 }
 
 const unavailable = (operation: string): Promise<never> =>
