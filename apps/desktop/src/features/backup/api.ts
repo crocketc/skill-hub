@@ -3,6 +3,8 @@ import type {
   BackupDecision,
   BackupPlan,
   BackupScope,
+  ExportDecision,
+  ExportPlan,
   ExportInput,
   ExportResult,
   RestoreDecision,
@@ -16,6 +18,6 @@ export interface BackupFacade {
   verifyBackup(path: string): Promise<void>;
   prepareRestore(path: string): Promise<RestorePlan>;
   commitRestore(path: string, decisions: RestoreDecision[]): Promise<RestoreResult>;
-  prepareExport(input: ExportInput): Promise<unknown>;
-  createExport(input: ExportInput, decisions: unknown[]): Promise<ExportResult>;
+  prepareExport(input: ExportInput): Promise<ExportPlan>;
+  createExport(input: ExportInput, decisions: ExportDecision[]): Promise<ExportResult>;
 }

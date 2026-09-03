@@ -924,6 +924,7 @@
       "notConfigured": "Not configured",
       "prepare": "Review backup",
       "create": "Create backup",
+      "manage": "Manage data protection",
       "choose": "Choose sensitive-content handling",
       "sensitive": "Sensitive content in {{skill}}",
       "created": "Backup created at {{path}}",
@@ -974,6 +975,40 @@
         "network_disabled": "Network features are disabled; the update check cannot run.",
         "rate_limited": "The update check is rate limited. Try again later."
       }
+    }
+  },
+  "dataProtection": {
+    "eyebrow": "Data protection",
+    "heading": "Back up, restore, and export safely",
+    "description": "Every destructive operation starts with a review so you can confirm the exact impact.",
+    "restore": {
+      "heading": "Restore a backup",
+      "path": "Backup package path",
+      "verify": "Verify backup",
+      "verified": "Backup package verified.",
+      "review": "Review restore",
+      "commit": "Restore backup",
+      "summary": "{{skills}} skills found; {{deployments_requiring_rediscovery}} deployments will need rediscovery.",
+      "decision": "Decision for {{skillId}}",
+      "choose": "Choose a decision",
+      "overwrite": "Overwrite existing",
+      "keepBoth": "Keep both",
+      "skip": "Skip",
+      "invalid": "This backup contains invalid portable data and cannot be restored automatically.",
+      "result": "Restored {{skills_restored}} skills; skipped {{skills_skipped}}."
+    },
+    "export": {
+      "heading": "Export a combination",
+      "combination": "Combination ID",
+      "review": "Review export",
+      "summary": "{{count}} skills are ready to export.",
+      "decision": "Export decision for {{skillId}}",
+      "choose": "Choose handling",
+      "resolve": "Resolve first",
+      "exclude": "Exclude this Skill",
+      "include": "Include and mark",
+      "commit": "Create export",
+      "result": "Export created at {{path}}"
     }
   },
   "navigation": {

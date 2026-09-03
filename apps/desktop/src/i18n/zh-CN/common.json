@@ -924,6 +924,7 @@
       "notConfigured": "未配置",
       "prepare": "检查备份",
       "create": "创建备份",
+      "manage": "管理数据保护",
       "choose": "选择敏感内容处理方式",
       "sensitive": "{{skill}} 含有敏感内容",
       "created": "备份已创建：{{path}}",
@@ -974,6 +975,40 @@
         "network_disabled": "网络功能已关闭，无法检查更新。",
         "rate_limited": "检查频率受限，请稍后再试。"
       }
+    }
+  },
+  "dataProtection": {
+    "eyebrow": "数据保护",
+    "heading": "安全备份、恢复与导出",
+    "description": "所有可能改变数据的操作都会先展示预检结果，确认影响后才会执行。",
+    "restore": {
+      "heading": "恢复备份",
+      "path": "备份包路径",
+      "verify": "校验备份",
+      "verified": "备份包校验通过。",
+      "review": "检查恢复影响",
+      "commit": "恢复备份",
+      "summary": "发现 {{skills}} 个 Skill；{{deployments_requiring_rediscovery}} 个部署需要重新发现。",
+      "decision": "{{skillId}} 的处理方式",
+      "choose": "选择处理方式",
+      "overwrite": "覆盖现有 Skill",
+      "keepBoth": "保留两份",
+      "skip": "跳过",
+      "invalid": "备份包含无效便携数据，无法自动恢复。",
+      "result": "已恢复 {{skills_restored}} 个 Skill；跳过 {{skills_skipped}} 个。"
+    },
+    "export": {
+      "heading": "导出组合",
+      "combination": "组合 ID",
+      "review": "检查导出内容",
+      "summary": "已准备导出 {{count}} 个 Skill。",
+      "decision": "{{skillId}} 的导出处理方式",
+      "choose": "选择处理方式",
+      "resolve": "先处理",
+      "exclude": "排除该 Skill",
+      "include": "包含并标记",
+      "commit": "创建导出",
+      "result": "导出已创建：{{path}}"
     }
   },
   "navigation": {
