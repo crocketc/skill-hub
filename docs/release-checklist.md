@@ -4,7 +4,7 @@
 
 ## 当前候选
 
-- 提交：`76b51e0`
+- 提交：`f1a437c`
 - 日期：2026-09-03
 - 发布信任级别：Windows 未签名；macOS ad-hoc、未公证
 - 发布方式：GitHub Draft Release，人工核对后发布
