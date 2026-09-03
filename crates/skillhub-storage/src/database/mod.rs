@@ -6,6 +6,7 @@ mod check_repository;
 mod combination_repository;
 mod custom_agent_repository;
 mod deployment_repository;
+mod desktop_settings_repository;
 pub mod evidence_repository;
 mod import_repository;
 mod llm_profile_repository;
@@ -34,6 +35,7 @@ pub use check_repository::CheckRepositorySqlite;
 pub use combination_repository::CombinationRepository;
 pub use custom_agent_repository::CustomAgentRepository;
 pub use deployment_repository::{DeploymentRepository, DeploymentRepositorySqlite};
+pub use desktop_settings_repository::DesktopSettingsRepository;
 pub use evidence_repository::UsageEvidenceRepository;
 pub use import_repository::ImportRepository;
 pub use llm_profile_repository::LlmProfileRepository;
@@ -88,6 +90,10 @@ impl Database {
 
     pub fn application_update_repository(&self) -> ApplicationUpdateRepository<'_> {
         ApplicationUpdateRepository::new(self)
+    }
+
+    pub fn desktop_settings_repository(&self) -> DesktopSettingsRepository<'_> {
+        DesktopSettingsRepository::new(self)
     }
 
     pub fn custom_agent_repository(&self) -> CustomAgentRepository<'_> {

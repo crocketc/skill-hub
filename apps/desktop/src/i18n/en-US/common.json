@@ -825,6 +825,7 @@
     "eyebrow": "Pending work",
     "heading": "Close the loop on pending items",
     "description": "Each item exposes a direct follow-up action; unresolved work stays visible.",
+    "loading": "Loading pending items",
     "empty": "No pending items",
     "listHeading": "Items needing attention",
     "actions": {

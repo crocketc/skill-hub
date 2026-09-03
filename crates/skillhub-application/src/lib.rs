@@ -642,6 +642,7 @@ impl LocalApplicationFacade {
         &self,
         request: skillhub_core::CheckApplicationUpdate,
     ) -> AppResult<AppQueryResult> {
+        self.ensure_network_enabled()?;
         self.update_service
             .check(request)
             .await
@@ -721,6 +722,7 @@ impl LocalApplicationFacade {
         &self,
         request: skillhub_core::SearchOnlineSources,
     ) -> AppResult<AppQueryResult> {
+        self.ensure_network_enabled()?;
         let now = now_seconds();
         if let Some(page) = self.with_database("query.search_online_sources.cache", |database| {
             database.source_search_cache().get(&request.query, now)
@@ -737,6 +739,21 @@ impl LocalApplicationFacade {
                 .put(&request.query, &page, now)
         })?;
         Ok(AppQueryResult::SourceSearchPage(page))
+    }
+
+    fn ensure_network_enabled(&self) -> AppResult<()> {
+        let enabled = self.with_database("settings.network_enabled", |database| {
+            Ok(database
+                .desktop_settings_repository()
+                .get()?
+                .network_enabled)
+        })?;
+        if enabled {
+            Ok(())
+        } else {
+            Err(AppError::new(ErrorCode::NetworkDisabled, Severity::Warning)
+                .with_action(RecoveryAction::Retry))
+        }
     }
 
     /// Opens a file-backed facade, creating its parent directory when needed.
@@ -2565,6 +2582,14 @@ impl LocalApplicationFacade {
 impl ApplicationFacade for LocalApplicationFacade {
     async fn execute(&self, command: AppCommand) -> AppResult<AppCommandResult> {
         let operation = match command {
+            AppCommand::SetDesktopPreferences(preferences) => {
+                return self.with_database("execute.set_desktop_preferences", |database| {
+                    database
+                        .desktop_settings_repository()
+                        .save(&preferences)
+                        .map(AppCommandResult::DesktopPreferences)
+                })
+            }
             AppCommand::OpenOfficialRelease(request) => return self.open_official_release(request),
             AppCommand::SetApplicationUpdatePolicy(request) => {
                 return self.set_application_update_policy(request)
@@ -2969,6 +2994,14 @@ impl ApplicationFacade for LocalApplicationFacade {
 
     async fn query(&self, query: AppQuery) -> AppResult<AppQueryResult> {
         match query {
+            AppQuery::GetApplicationUpdatePolicy => {
+                self.with_database("query.get_application_update_policy", |database| {
+                    database
+                        .application_update_repository()
+                        .get_policy()
+                        .map(AppQueryResult::ApplicationUpdatePolicy)
+                })
+            }
             AppQuery::CheckApplicationUpdate(request) => {
                 self.check_application_update(request).await
             }
@@ -2988,6 +3021,14 @@ impl ApplicationFacade for LocalApplicationFacade {
                         .build_snapshot(self.today)
                         .map(|snapshot| snapshot.with_initialization(initialization))
                         .map(AppQueryResult::BootstrapSnapshot)
+                })
+            }
+            AppQuery::GetDesktopPreferences => {
+                self.with_database("query.get_desktop_preferences", |database| {
+                    database
+                        .desktop_settings_repository()
+                        .get()
+                        .map(AppQueryResult::DesktopPreferences)
                 })
             }
             AppQuery::GetDiscoverySnapshot(_) => {

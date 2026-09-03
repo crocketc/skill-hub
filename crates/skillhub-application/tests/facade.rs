@@ -34,6 +34,42 @@ use skillhub_core::{
 };
 
 #[tokio::test]
+async fn desktop_preferences_default_and_persist_through_the_real_facade() {
+    let facade = LocalApplicationFacade::new(Database::open_in_memory().expect("database"));
+
+    let result = facade
+        .query(RootAppQuery::GetDesktopPreferences)
+        .await
+        .expect("default desktop preferences");
+    let AppQueryResult::DesktopPreferences(defaults) = result else {
+        panic!("expected desktop preferences");
+    };
+    assert!(defaults.network_enabled);
+    assert_eq!(defaults.language, "system");
+
+    let mut changed = defaults;
+    changed.network_enabled = false;
+    changed.language = "en-US".into();
+    let result = facade
+        .execute(AppCommand::SetDesktopPreferences(changed.clone()))
+        .await
+        .expect("save desktop preferences");
+    assert!(matches!(result, AppCommandResult::DesktopPreferences(value) if value == changed));
+
+    let result = facade
+        .query(RootAppQuery::GetDesktopPreferences)
+        .await
+        .expect("saved desktop preferences");
+    assert!(matches!(result, AppQueryResult::DesktopPreferences(value) if value == changed));
+
+    let result = facade
+        .query(RootAppQuery::GetApplicationUpdatePolicy)
+        .await
+        .expect("application update policy");
+    assert!(matches!(result, AppQueryResult::ApplicationUpdatePolicy(policy) if policy.enabled));
+}
+
+#[tokio::test]
 async fn project_commands_and_queries_use_the_real_facade() {
     let database = Database::open_in_memory().expect("database");
     let project_root = tempfile::tempdir().expect("project root");

@@ -358,6 +358,8 @@ pub struct GetProjectAssemblyPlan {
 pub enum AppQuery {
     #[serde(rename = "check_application_update")]
     CheckApplicationUpdate(CheckApplicationUpdate),
+    #[serde(rename = "get_application_update_policy")]
+    GetApplicationUpdatePolicy,
     #[serde(rename = "get_skill")]
     GetSkill(GetSkill),
     #[serde(rename = "list_skills")]
@@ -376,6 +378,8 @@ pub enum AppQuery {
     Search(SearchQuery),
     #[serde(rename = "get_bootstrap_snapshot")]
     GetBootstrapSnapshot,
+    #[serde(rename = "get_desktop_preferences")]
+    GetDesktopPreferences,
     #[serde(rename = "list_pending_items")]
     ListPendingItems(ListPendingItems),
     #[serde(rename = "get_discovery_snapshot")]
@@ -429,6 +433,8 @@ pub enum AppQueryResult {
     ApplicationUpdate(ApplicationUpdate),
     #[serde(rename = "application_update_state")]
     ApplicationUpdateState(UpdateState),
+    #[serde(rename = "application_update_policy")]
+    ApplicationUpdatePolicy(crate::ApplicationUpdatePolicy),
     #[serde(rename = "skill")]
     Skill(SkillResult),
     #[serde(rename = "skill_page")]
@@ -449,6 +455,8 @@ pub enum AppQueryResult {
     GlobalSkillEvidence(UsageEvidenceAnalysis),
     #[serde(rename = "bootstrap_snapshot")]
     BootstrapSnapshot(BootstrapSnapshot),
+    #[serde(rename = "desktop_preferences")]
+    DesktopPreferences(crate::DesktopPreferences),
     #[serde(rename = "pending_items")]
     PendingItems(Vec<crate::pending::PendingItem>),
     #[serde(rename = "discovery_snapshot")]

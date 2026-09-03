@@ -12,9 +12,34 @@ vi.mock("../api/bindings", async (importOriginal) => {
   const original = await importOriginal<typeof import("../api/bindings")>();
   return {
     ...original,
-    queryApplication: vi.fn(async () => ({
-      type: "bootstrap_snapshot" as const,
-      payload: {
+    queryApplication: vi.fn(async (query: { type: string }) => {
+      if (query.type === "get_discovery_snapshot") {
+        return { type: "discovery_snapshot" as const, payload: { generation: "g", observed_at: "now", instances: [], logical_targets: [], physical_targets: [] } };
+      }
+      if (query.type === "list_custom_agents") return { type: "custom_agents" as const, payload: [] };
+      if (query.type === "list_projects") return { type: "projects" as const, payload: [] };
+      if (query.type === "list_pending_items") return { type: "pending_items" as const, payload: [] };
+      if (query.type === "get_desktop_preferences") return {
+        type: "desktop_preferences" as const,
+        payload: {
+          network_enabled: true,
+          llm_provider: "",
+          data_scope: "explicit_selection",
+          language: "system",
+          theme: "moss-neutral",
+          density: "standard",
+          automation_per_skill: false,
+          automation_batch: false,
+          automation_global: false,
+          backup_location: "",
+          backup_retention_days: 30,
+        },
+      };
+      if (query.type === "get_application_update_policy") return {
+        type: "application_update_policy" as const,
+        payload: { enabled: true, check_on_startup: true },
+      };
+      return { type: "bootstrap_snapshot" as const, payload: {
         initialization_state: "initialized" as const,
         library_path: "C:\\Users\\Test\\SkillHub",
         onboarding_skipped: false,
@@ -27,8 +52,8 @@ vi.mock("../api/bindings", async (importOriginal) => {
         recent_operations: [],
         recovery_state: "clean" as const,
         skill_count: 0,
-      },
-    })),
+      } };
+    }),
   };
 });
 
@@ -207,27 +232,35 @@ it("keeps shell titles for filtered agent and project deployment destinations", 
   expect(screen.getByRole("link", { name: "Projects" })).toHaveAttribute("aria-current", "page");
 });
 
-it("does not show fixture Agents or projects through production routes", async () => {
+it("uses native empty results for Agents, projects and pending work in production", async () => {
   mockBrowserPreferences();
   await skillHubI18n.changeLanguage("en-US");
   await appRouter.navigate("/agents");
   render(<AppRouter />);
 
-  expect(await screen.findByText("Agent data is not connected to the native service yet.")).toBeVisible();
+  expect(await screen.findByRole("heading", { name: "Agents" })).toBeVisible();
+  expect(screen.queryByText("Agent data is not connected to the native service yet.")).not.toBeInTheDocument();
   expect(screen.queryByText("Demo Project")).not.toBeInTheDocument();
 
   await act(async () => {
     await appRouter.navigate("/projects");
   });
-  expect(await screen.findByText("Project data is not connected to the native service yet.")).toBeVisible();
+  expect(await screen.findByText("No projects match the current filters.")).toBeVisible();
   expect(screen.queryByText("Demo Project")).not.toBeInTheDocument();
+
+  await act(async () => {
+    await appRouter.navigate("/pending");
+  });
+  expect(await screen.findByText("No pending items")).toBeVisible();
 });
 
-it("keeps the production settings route behind the native settings contract", async () => {
+it("loads the production settings route from native preferences", async () => {
   mockBrowserPreferences();
   await skillHubI18n.changeLanguage("en-US");
   await appRouter.navigate("/settings");
   render(<AppRouter />);
 
-  expect(await screen.findByText("settings_query is unavailable until the native contract is generated.")).toBeVisible();
+  expect(await screen.findByRole("heading", { name: "Settings" })).toBeVisible();
+  expect(await screen.findByText("C:\\Users\\Test\\SkillHub")).toBeVisible();
+  expect(screen.queryByText("settings_query is unavailable until the native contract is generated.")).not.toBeInTheDocument();
 });

@@ -1,5 +1,5 @@
 export type PendingKind = "trial_due" | "security_finding" | "recovery";
-export type PendingItem = { id: string; subject: string; kind: PendingKind; message: string };
+export type PendingItem = { id: string; subject: string; kind: PendingKind; code: string; message: string };
 export interface PendingFacade {
   list(): Promise<PendingItem[]>;
   resolve(item: PendingItem): Promise<void>;

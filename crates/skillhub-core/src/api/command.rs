@@ -510,6 +510,8 @@ pub struct SetFindingDisposition {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 #[serde(tag = "type", content = "payload")]
 pub enum AppCommand {
+    #[serde(rename = "set_desktop_preferences")]
+    SetDesktopPreferences(crate::DesktopPreferences),
     #[serde(rename = "open_official_release")]
     OpenOfficialRelease(OpenOfficialRelease),
     #[serde(rename = "set_application_update_policy")]
@@ -677,6 +679,8 @@ pub enum AppCommand {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 #[serde(tag = "type", content = "payload")]
 pub enum AppCommandResult {
+    #[serde(rename = "desktop_preferences")]
+    DesktopPreferences(crate::DesktopPreferences),
     #[serde(rename = "application_update")]
     ApplicationUpdate(ApplicationUpdate),
     #[serde(rename = "application_update_policy")]

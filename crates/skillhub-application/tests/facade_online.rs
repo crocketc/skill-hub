@@ -44,6 +44,47 @@ fn facade_with_providers(
 }
 
 #[tokio::test]
+async fn persisted_network_switch_blocks_online_queries_before_provider_access() {
+    let database = Database::open_in_memory().expect("database");
+    let mut preferences = database
+        .desktop_settings_repository()
+        .get()
+        .expect("preferences");
+    preferences.network_enabled = false;
+    database
+        .desktop_settings_repository()
+        .save(&preferences)
+        .expect("save preferences");
+    let facade = facade_with_providers(
+        database,
+        GithubReleaseProvider::with_api_base("http://127.0.0.1:1/").expect("provider"),
+        SkillsShProvider::new("http://127.0.0.1:1/"),
+    );
+
+    let error = facade
+        .query(AppQuery::SearchOnlineSources(
+            skillhub_core::SearchOnlineSources {
+                query: skillhub_core::SourceSearchQuery::new("pdf"),
+            },
+        ))
+        .await
+        .expect_err("network switch must block source search");
+    assert_eq!(error.code, ErrorCode::NetworkDisabled);
+
+    let error = facade
+        .query(AppQuery::CheckApplicationUpdate(
+            skillhub_core::CheckApplicationUpdate {
+                current_version: "0.1.0".into(),
+                repository: "crocketc/skill-hub".into(),
+                build_trust: BuildTrust::Unknown,
+            },
+        ))
+        .await
+        .expect_err("network switch must block update check");
+    assert_eq!(error.code, ErrorCode::NetworkDisabled);
+}
+
+#[tokio::test]
 async fn update_query_uses_provider_and_preserves_trust_gate() {
     let base = serve_once(
         r#"{"tag_name":"v0.2.0","html_url":"https://github.com/crocketc/skill-hub/releases/tag/v0.2.0","published_at":"2026-08-29T00:00:00Z","assets":[{"name":"SkillHub_0.2.0_x64.exe"}]}"#,

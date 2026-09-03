@@ -825,6 +825,7 @@
     "eyebrow": "待处理事项",
     "heading": "完成待处理事项",
     "description": "每个事项都提供直接的后续操作；未完成的工作会持续显示。",
+    "loading": "正在加载待处理事项",
     "empty": "没有待处理事项",
     "listHeading": "需要关注的事项",
     "actions": {

@@ -27,7 +27,7 @@ export type UpdatePolicy = { enabled: boolean; checkOnStartup: boolean };
 export type UpdateProgress = { receivedBytes: number; totalBytes: number | null } | null;
 export type SettingsSnapshot = {
   network: NetworkSettings;
-  appearance: { language: "zh-CN" | "en-US"; theme: string };
+  appearance: { language: "system" | "zh-CN" | "en-US"; theme: string };
   library: { path: string; migrationAvailable: boolean };
   view: { density: "compact" | "standard" | "comfortable" };
   automation: { perSkill: boolean; batch: boolean; global: boolean };

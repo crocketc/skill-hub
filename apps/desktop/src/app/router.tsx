@@ -7,18 +7,18 @@ import { AgentDetailPage } from "../features/agents/AgentDetailPage";
 import { AgentListPage } from "../features/agents/AgentListPage";
 import { ProjectDetailPage } from "../features/projects/ProjectDetailPage";
 import { ProjectListPage } from "../features/projects/ProjectListPage";
-import { unavailableAgentFacade } from "../features/agents/api";
-import { unavailableProjectFacade } from "../features/projects/api";
+import { nativeAgentFacade } from "../features/agents/nativeApi";
+import { nativeProjectFacade } from "../features/projects/nativeApi";
 import { DeploymentDialog } from "../features/deployment/DeploymentDialog";
 import { SecurityResults } from "../features/security/SecurityResults";
 import { unavailableSecurityFacade } from "../features/security/api";
 import { PendingPage } from "../features/pending/PendingPage";
-import { unavailablePendingFacade } from "../features/pending/api";
+import { nativePendingFacade } from "../features/pending/nativeApi";
 import { OperationProgress } from "../features/operations/OperationProgress";
 import { unavailableOperationFacade } from "../features/operations/api";
 import { RecoveryPage } from "../features/recovery/RecoveryPage";
 import { SettingsPage } from "../features/settings/SettingsPage";
-import { unavailableSettingsFacade } from "../features/settings/api";
+import { nativeSettingsFacade } from "../features/settings/nativeApi";
 import { DiscoveryPage } from "../features/discovery/DiscoveryPage";
 import { OverviewPage } from "../features/overview/OverviewPage";
 import { SkillLibraryPage } from "../features/skills/SkillLibraryPage";
@@ -44,12 +44,12 @@ function OnboardingRoute() {
 
 function AgentDetailRoute() {
   const { agentKey } = useParams();
-  return <AgentDetailPage agentId={agentKey} facade={unavailableAgentFacade} />;
+  return <AgentDetailPage agentId={agentKey} facade={nativeAgentFacade} />;
 }
 
 function ProjectDetailRoute() {
   const { projectKey } = useParams();
-  return <ProjectDetailPage facade={unavailableProjectFacade} projectId={projectKey} />;
+  return <ProjectDetailPage facade={nativeProjectFacade} projectId={projectKey} />;
 }
 
 function DeploymentRoute() {
@@ -84,15 +84,15 @@ export const appRouter = createBrowserRouter([
       { path: "library/:skillId/deploy", element: <DeploymentRoute /> },
       { path: "library/:skillId/security", element: <SecurityRoute /> },
       { path: "discovery", element: <DiscoveryPage /> },
-      { path: "agents", element: <AgentListPage facade={unavailableAgentFacade} /> },
+      { path: "agents", element: <AgentListPage facade={nativeAgentFacade} /> },
       { path: "agents/:agentKey", element: <AgentDetailRoute /> },
-      { path: "projects", element: <ProjectListPage facade={unavailableProjectFacade} /> },
+      { path: "projects", element: <ProjectListPage facade={nativeProjectFacade} /> },
       { path: "projects/:projectKey", element: <ProjectDetailRoute /> },
-      { path: "pending", element: <PendingPage facade={unavailablePendingFacade} /> },
+      { path: "pending", element: <PendingPage facade={nativePendingFacade} /> },
       { path: "operations/:operationId", element: <OperationRoute /> },
       { path: "operations", element: <OperationRoute /> },
       { path: "recovery", element: <RecoveryPage facade={unavailableOperationFacade} /> },
-      { path: "settings", element: <SettingsPage facade={unavailableSettingsFacade} /> },
+      { path: "settings", element: <SettingsPage facade={nativeSettingsFacade} /> },
     ],
   },
   { element: <OnboardingRoute />, path: "/initialize" },

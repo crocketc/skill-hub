@@ -206,6 +206,9 @@ export function onAppEvent(handler: (event: AppEvent) => void): Promise<Unlisten
 fn generate_bindings() {
     let generated = generated_bindings_source().expect("generate TypeScript from Rust contracts");
     let destination = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../src/api/bindings.ts");
+    if std::env::var_os("SKILLHUB_WRITE_BINDINGS").is_some() {
+        std::fs::write(&destination, &generated).expect("write generated bindings output");
+    }
     let committed = std::fs::read_to_string(destination).expect("committed bindings output");
     assert_eq!(
         committed.replace("\r\n", "\n"),

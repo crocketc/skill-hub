@@ -23,6 +23,7 @@ pub mod pending;
 pub mod project;
 pub mod scan;
 pub mod search;
+pub mod settings;
 pub mod source;
 pub mod versioning;
 
@@ -91,6 +92,7 @@ pub use operation::{
     UndoPlan,
 };
 pub use path_policy::{physical_id_for_path, AllowedRoot, AllowedRootId, PathPolicy, SafePath};
+pub use settings::DesktopPreferences;
 
 pub use call_policy::{CallPolicyCapability, CallPolicyPlan, CallPolicyResult};
 pub use catalog::{LibraryManifest, LibraryPaths, PortableSkillRecord};
