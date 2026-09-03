@@ -4,8 +4,8 @@
 
 ## 当前候选
 
-- 提交：`3027ac1`
-- 日期：2026-09-02
+- 提交：`c7fadd1`
+- 日期：2026-09-03
 - 发布信任级别：Windows 未签名；macOS ad-hoc、未公证
 - 发布方式：GitHub Draft Release，人工核对后发布
 
@@ -35,6 +35,8 @@
 | 前端生产构建 | 通过 | `pnpm --dir apps/desktop build` |
 | 发布静态预检 | 通过 | `node scripts/verify_release_readiness.mjs` 与对应 Node 测试通过；工作流、Tauri 启动配置、tag-bound 约束、锁定 action、安装说明和 `dist/.gitkeep` 均通过 |
 | 兼容性契约 | 通过 | `cargo test -p skillhub-adapters --test profile_contract` |
+| 数据保护页面 | 通过（自动化） | `/settings/data-protection` 已接入备份包校验、恢复预检/冲突决策、组合导出；真实桌面文件烟测待执行 |
+| 备份/恢复/导出 native facade | 通过（自动化） | typed preflight/commit 适配器与 Rust facade 测试通过 |
 | E2E | 待执行 | 需要桌面运行时和可用测试环境 |
 | 迁移/恢复 | 待执行 | 需要在本提交重新采集证据 |
 | 备份/恢复 | 待执行 | 需要在本提交重新采集证据 |
