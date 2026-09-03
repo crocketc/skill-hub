@@ -1,7 +1,9 @@
 import { fireEvent, render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { I18nextProvider } from "react-i18next";
 import { expect, it, vi } from "vitest";
 import { createSkillHubI18n } from "../../i18n";
+import { createMockImportFacade } from "../import/api";
 import { DiscoveryPage } from "./DiscoveryPage";
 
 it("shows local and online discovery entry points without runtime claims", async () => {
@@ -42,4 +44,34 @@ it("uses the supplied facade only for the import wizard entry", async () => {
   );
 
   expect(screen.getAllByRole("button", { name: "Import Skill" })[0]).toBeVisible();
+});
+
+it("reports committed imports and lets the user open the refreshed library", async () => {
+  const user = userEvent.setup();
+  const i18n = await createSkillHubI18n(["en-US"]);
+  const onImportComplete = vi.fn();
+  const onOpenLibrary = vi.fn();
+  render(
+    <I18nextProvider i18n={i18n}>
+      <DiscoveryPage
+        importFacade={createMockImportFacade({ scenario: "safe-local" })}
+        onImportComplete={onImportComplete}
+        onOpenLibrary={onOpenLibrary}
+      />
+    </I18nextProvider>,
+  );
+
+  await user.click(screen.getAllByRole("button", { name: "Import Skill" })[0]);
+  await user.type(screen.getByLabelText("Source"), "C:\\Skills");
+  await user.click(screen.getByRole("button", { name: "Parse source" }));
+  await user.click(await screen.findByRole("button", { name: "Continue to candidate selection" }));
+  await user.click(screen.getByRole("checkbox", { name: /PDF/ }));
+  await user.click(screen.getByRole("button", { name: "Analyze conflicts" }));
+  await user.click(await screen.findByRole("button", { name: "Commit import" }));
+
+  expect(onImportComplete).toHaveBeenCalledWith([
+    expect.objectContaining({ status: "succeeded" }),
+  ]);
+  await user.click(await screen.findByRole("button", { name: "Open Skill library" }));
+  expect(onOpenLibrary).toHaveBeenCalledTimes(1);
 });

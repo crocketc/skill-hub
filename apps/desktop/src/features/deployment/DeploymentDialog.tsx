@@ -16,15 +16,22 @@ export interface DeploymentDialogProps {
   skillId: string;
   versionId: string;
   runtimeName?: string;
+  onCommitted?: (results: DeploymentResult[]) => void;
 }
 
-export function DeploymentDialog({ facade, skillId, versionId, runtimeName }: DeploymentDialogProps) {
+export function DeploymentDialog({
+  facade,
+  skillId,
+  versionId,
+  runtimeName,
+  onCommitted,
+}: DeploymentDialogProps) {
   const { t } = useTranslation();
   const activeFacade = useMemo(
     () => facade ?? createNativeDeploymentFacade({ skillId, versionId, runtimeName }),
     [facade, runtimeName, skillId, versionId],
   );
-  const [targets, setTargets] = useState<DeploymentTarget[]>([]);
+  const [targets, setTargets] = useState<DeploymentTarget[]>();
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [plan, setPlan] = useState<DeploymentPlan>();
   const [results, setResults] = useState<DeploymentResult[]>();
@@ -38,7 +45,7 @@ export function DeploymentDialog({ facade, skillId, versionId, runtimeName }: De
     return () => { active = false; };
   }, [activeFacade]);
 
-  const selected = targets.filter((target) => selectedIds.includes(target.id));
+  const selected = (targets ?? []).filter((target) => selectedIds.includes(target.id));
   const preview = async () => {
     setError(undefined);
     try {
@@ -52,10 +59,17 @@ export function DeploymentDialog({ facade, skillId, versionId, runtimeName }: De
     if (!plan) return;
     setError(undefined);
     try {
-      setResults(await activeFacade.commit(plan));
+      const committed = await activeFacade.commit(plan);
+      setResults(committed);
+      onCommitted?.(committed);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
     }
+  };
+  const retryFailed = () => {
+    setSelectedIds(results?.filter((result) => result.status === "failed").map((result) => result.targetId) ?? []);
+    setPlan(undefined);
+    setResults(undefined);
   };
 
   return (
@@ -68,8 +82,9 @@ export function DeploymentDialog({ facade, skillId, versionId, runtimeName }: De
         </div>
       </header>
       {error ? <DataState message={error} state="unavailable" /> : null}
-      {!error && targets.length === 0 ? <DataState message={t("deployment.states.loading")} state="loading" /> : null}
-      {targets.length > 0 ? (
+      {!error && targets === undefined ? <DataState message={t("deployment.states.loading")} state="loading" /> : null}
+      {!error && targets?.length === 0 ? <DataState message={t("deployment.states.empty")} state="empty" /> : null}
+      {targets && targets.length > 0 ? (
         <section aria-labelledby="deployment-targets-heading" className="sh-workflow-card">
           <div className="sh-section-heading">
             <div>
@@ -121,7 +136,18 @@ export function DeploymentDialog({ facade, skillId, versionId, runtimeName }: De
           </ul>
         </section>
       ) : null}
-      {results ? <DeploymentResults results={results} /> : null}
+      {results ? (
+        <>
+          <DeploymentResults results={results} />
+          {results.some((result) => result.status === "failed") ? (
+            <div className="sh-workflow-actions">
+              <Button onClick={retryFailed} variant="secondary">
+                {t("deployment.retryFailed")}
+              </Button>
+            </div>
+          ) : null}
+        </>
+      ) : null}
       <span className="sh-visually-hidden">{skillId}:{versionId}</span>
     </main>
   );

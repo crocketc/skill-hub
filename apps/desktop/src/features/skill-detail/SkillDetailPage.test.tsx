@@ -17,6 +17,7 @@ import { createMockMarkdownFacade } from "../markdown/testFixtures";
 import { SkillDetailPage } from "./SkillDetailPage";
 import { createMockSkillDetailFacade } from "./testFixtures";
 import type { RemovalFacade } from "../removal/api";
+import { skillLibraryKeys } from "../skills/api";
 
 interface RenderDetailOptions {
   entry?: InitialEntry;
@@ -75,6 +76,8 @@ describe("SkillDetailPage shell", () => {
 
   it("loads deletion impact and returns to the library after confirmation", async () => {
     const removalFacade: RemovalFacade = {
+      prepareUndeploy: vi.fn(),
+      commitUndeploy: vi.fn(),
       prepareDelete: vi.fn().mockResolvedValue({
         operationId: "op-delete",
         skillId: "skill-pdf",
@@ -84,14 +87,67 @@ describe("SkillDetailPage shell", () => {
       }),
       commitDelete: vi.fn().mockResolvedValue({ centralSkillDeleted: true }),
     };
-    await renderDetail({ removalFacade });
+    const { client } = await renderDetail({ removalFacade });
+    client.setQueryData(skillLibraryKeys.root, { cached: true });
 
     fireEvent.click(await screen.findByRole("button", { name: "Delete Skill" }));
     expect(await screen.findByRole("dialog")).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "Confirm deletion" }));
 
     await waitFor(() => expect(removalFacade.commitDelete).toHaveBeenCalledWith("op-delete", {}));
+    expect(client.getQueryState(skillLibraryKeys.root)?.isInvalidated).toBe(true);
     expect(await screen.findByText("Library route")).toBeVisible();
+  });
+
+  it("cancels deletion without committing a prepared operation", async () => {
+    const removalFacade: RemovalFacade = {
+      prepareUndeploy: vi.fn(),
+      commitUndeploy: vi.fn(),
+      prepareDelete: vi.fn().mockResolvedValue({
+        operationId: "op-delete",
+        skillId: "skill-pdf",
+        skillName: "PDF Reader",
+        deployments: [],
+        dependentProjects: [],
+      }),
+      commitDelete: vi.fn(),
+    };
+    await renderDetail({ removalFacade });
+
+    fireEvent.click(await screen.findByRole("button", { name: "Delete Skill" }));
+    expect(await screen.findByRole("dialog")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(removalFacade.commitDelete).not.toHaveBeenCalled();
+  });
+
+  it("prepares and commits a shared-target undeploy from the relations section", async () => {
+    const removalFacade: RemovalFacade = {
+      prepareUndeploy: vi.fn().mockResolvedValue({
+        deploymentId: "relation-codex",
+        label: "Codex CLI",
+        operationId: "op-undeploy",
+        sharedTarget: true,
+      }),
+      commitUndeploy: vi.fn().mockResolvedValue(undefined),
+      prepareDelete: vi.fn(),
+      commitDelete: vi.fn(),
+    };
+    await renderDetail({ removalFacade });
+
+    fireEvent.click(await screen.findByRole("button", { name: "Undeploy Codex CLI" }));
+    expect(await screen.findByRole("dialog", { name: "Undeploy from Codex CLI?" })).toBeVisible();
+    fireEvent.change(screen.getByRole("combobox", { name: "Undeploy handling" }), {
+      target: { value: "keep_shared_deployment" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Confirm undeploy" }));
+
+    await waitFor(() => expect(removalFacade.commitUndeploy).toHaveBeenCalledWith(
+      "op-undeploy",
+      "keep_shared_deployment",
+    ));
+    expect(screen.queryByRole("dialog", { name: "Undeploy from Codex CLI?" })).not.toBeInTheDocument();
   });
 
   it("returns to the filtered Skill library with its scroll and focus context", async () => {

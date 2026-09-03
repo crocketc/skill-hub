@@ -29,12 +29,12 @@ it("loads removal impact through the native query contract", async () => {
   });
 });
 
-it("prepares and commits an explicit undeploy decision", async () => {
+it("prepares a shared-target undeploy before committing the explicit relation-only decision", async () => {
   const impact = {
     operation_id: "op-2",
     skill_id: "skill-pdf",
     deployments: [],
-    requires_shared_target_choice: false,
+    requires_shared_target_choice: true,
     dependencies: [],
   };
   const result = {
@@ -47,14 +47,20 @@ it("prepares and commits an explicit undeploy decision", async () => {
     .mockResolvedValueOnce({ type: "removal_impact", payload: impact })
     .mockResolvedValueOnce({ type: "removal_result", payload: result });
 
-  await expect(nativeRemovalFacade.undeploy("deployment-1", "remove_owned_target")).resolves.toEqual(result);
+  await expect(nativeRemovalFacade.prepareUndeploy("deployment-1", "Codex CLI")).resolves.toEqual({
+    deploymentId: "deployment-1",
+    label: "Codex CLI",
+    operationId: "op-2",
+    sharedTarget: true,
+  });
+  await expect(nativeRemovalFacade.commitUndeploy("op-2", "keep_shared_deployment")).resolves.toBeUndefined();
   expect(executeCommand).toHaveBeenNthCalledWith(1, {
     type: "prepare_undeploy",
     payload: { deployment_id: "deployment-1" },
   });
   expect(executeCommand).toHaveBeenNthCalledWith(2, {
     type: "commit_undeploy",
-    payload: { prepared_undeploy_id: "op-2", decision: "remove_owned_target" },
+    payload: { prepared_undeploy_id: "op-2", decision: "keep_shared_deployment" },
   });
 });
 

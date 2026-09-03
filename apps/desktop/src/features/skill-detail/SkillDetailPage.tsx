@@ -9,6 +9,7 @@ import {
 } from "../markdown/api";
 import { nativeMarkdownFacade } from "../markdown/nativeApi";
 import { parseSkillLibrarySearchParams } from "../skills/queryState";
+import { skillLibraryKeys } from "../skills/api";
 import type { SkillDetailFacade } from "./api";
 import {
   SkillDetailNotFoundError,
@@ -31,8 +32,16 @@ import {
 import { Button } from "../../ui/Button";
 import { VersionTimeline } from "./VersionTimeline";
 import { RemovalImpactDialog } from "../removal/RemovalImpactDialog";
-import type { RemovalFacade, RemovalImpact, RemovalChoice } from "../removal/api";
+import type {
+  RemovalFacade,
+  RemovalImpact,
+  RemovalChoice,
+  UndeployDecision,
+  UndeployImpact,
+} from "../removal/api";
 import { nativeRemovalFacade, unavailableRemovalFacade } from "../removal/nativeApi";
+import { UndeployDialog } from "../removal/UndeployDialog";
+import type { SkillRelation } from "./api";
 
 interface SkillDetailPageProps {
   facade: SkillDetailFacade;
@@ -100,6 +109,9 @@ export function SkillDetailPage({
   const [removalLoading, setRemovalLoading] = useState(false);
   const [removalSubmitting, setRemovalSubmitting] = useState(false);
   const [removalError, setRemovalError] = useState<string>();
+  const [undeployImpact, setUndeployImpact] = useState<UndeployImpact | null>(null);
+  const [undeploySubmitting, setUndeploySubmitting] = useState(false);
+  const [undeployError, setUndeployError] = useState<string>();
 
   const startRemoval = async () => {
     setRemovalLoading(true);
@@ -122,12 +134,40 @@ export function SkillDetailPage({
       if (!result.centralSkillDeleted) {
         throw new Error("central skill was not deleted");
       }
-      await queryClient.invalidateQueries({ queryKey: ["skills"] });
+      await queryClient.invalidateQueries({ queryKey: skillLibraryKeys.root });
       navigate({ pathname: backPathname, search: backSearch }, { replace: true, state: libraryReturn ? { libraryReturn } : undefined });
     } catch {
       setRemovalError(t("removal.commitError"));
     } finally {
       setRemovalSubmitting(false);
+    }
+  };
+
+  const startUndeploy = async (relation: SkillRelation) => {
+    setUndeployError(undefined);
+    try {
+      setUndeployImpact(await effectiveRemovalFacade.prepareUndeploy(relation.id, relation.label));
+    } catch {
+      setUndeployError(t("undeploy.loadError"));
+    }
+  };
+
+  const commitUndeploy = async (decision: UndeployDecision) => {
+    if (!undeployImpact) return;
+    setUndeploySubmitting(true);
+    setUndeployError(undefined);
+    try {
+      await effectiveRemovalFacade.commitUndeploy(undeployImpact.operationId, decision);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: skillDetailKeys.relations(skillId) }),
+        queryClient.invalidateQueries({ queryKey: skillDetailKeys.summary(skillId) }),
+        queryClient.invalidateQueries({ queryKey: skillLibraryKeys.root }),
+      ]);
+      setUndeployImpact(null);
+    } catch {
+      setUndeployError(t("undeploy.commitError"));
+    } finally {
+      setUndeploySubmitting(false);
     }
   };
 
@@ -199,7 +239,12 @@ export function SkillDetailPage({
                       {t("skillDetail.relations.retry")}
                     </Button>
                   </div>
-                ) : relationsQuery.data ? <RelationsPanel relations={relationsQuery.data} /> : null
+                ) : relationsQuery.data ? (
+                  <RelationsPanel
+                    onUndeploy={!isPreviewRoute ? (relation) => void startUndeploy(relation) : undefined}
+                    relations={relationsQuery.data}
+                  />
+                ) : null
               ) : null}
               {section === "requirements" && requirementsQuery.data ? (
                 <RequirementsPanel
@@ -237,6 +282,15 @@ export function SkillDetailPage({
           submitting={removalSubmitting}
         />
       ) : removalError && !removalLoading ? <p role="alert">{removalError}</p> : null}
+      {undeployImpact ? (
+        <UndeployDialog
+          error={undeployError}
+          impact={undeployImpact}
+          onCancel={() => setUndeployImpact(null)}
+          onConfirm={commitUndeploy}
+          submitting={undeploySubmitting}
+        />
+      ) : undeployError ? <p role="alert">{undeployError}</p> : null}
     </section>
   );
 }

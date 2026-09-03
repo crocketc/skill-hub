@@ -12,6 +12,8 @@ import type {
   RemovalFacade,
   RemovalImpact as DesktopRemovalImpact,
   RemovalResult as DesktopRemovalResult,
+  UndeployDecision,
+  UndeployImpact,
 } from "./api";
 
 function impactResult(result: AppQueryResult | AppCommandResult): NativeRemovalImpact {
@@ -44,6 +46,26 @@ export const nativeRemovalFacade = {
     return removalResult(await executeCommand({
       type: "commit_undeploy",
       payload: { prepared_undeploy_id: prepared.operation_id, decision },
+    }));
+  },
+
+  async prepareUndeploy(deploymentId: string, label: string): Promise<UndeployImpact> {
+    const impact = impactResult(await executeCommand({
+      type: "prepare_undeploy",
+      payload: { deployment_id: deploymentId },
+    }));
+    return {
+      deploymentId,
+      label,
+      operationId: impact.operation_id,
+      sharedTarget: impact.requires_shared_target_choice,
+    };
+  },
+
+  async commitUndeploy(operationId: string, decision: UndeployDecision): Promise<void> {
+    removalResult(await executeCommand({
+      type: "commit_undeploy",
+      payload: { prepared_undeploy_id: operationId, decision },
     }));
   },
 
@@ -92,6 +114,12 @@ export const nativeRemovalFacade = {
 };
 
 export const unavailableRemovalFacade: RemovalFacade = {
+  prepareUndeploy: async () => {
+    throw new Error("解除部署功能尚未接入");
+  },
+  commitUndeploy: async () => {
+    throw new Error("解除部署功能尚未接入");
+  },
   prepareDelete: async () => {
     throw new Error("删除功能尚未接入");
   },

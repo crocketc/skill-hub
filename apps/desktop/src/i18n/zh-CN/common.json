@@ -648,7 +648,9 @@
       "loadErrorLabel": "关系加载失败",
       "physicalTarget": "物理目标：",
       "pinned": "已固定版本",
-      "retry": "重试关系"
+      "retry": "重试关系",
+      "undeploy": "解除部署",
+      "undeployTarget": "从 {{target}} 解除部署"
     },
     "requirements": {
       "declaredOnly": "仅来自 Skill 声明，SkillHub 未安装或验证",
@@ -747,7 +749,8 @@
     "heading": "先预览，再修改 Agent 目标",
     "description": "选择一个或多个目标，检查物理计划后再显式提交。",
     "states": {
-      "loading": "正在加载部署目标"
+      "loading": "正在加载部署目标",
+      "empty": "未发现可部署的 Agent 目标"
     },
     "targets": {
       "heading": "Agent 目标",
@@ -755,6 +758,7 @@
       "unavailable": "不可用"
     },
     "preview": "预览部署",
+    "retryFailed": "重试失败目标",
     "commit": "提交部署",
     "plan": {
       "heading": "部署计划",
@@ -820,6 +824,23 @@
     },
     "confirm": "确认删除",
     "submitting": "正在删除…"
+  },
+  "undeploy": {
+    "eyebrow": "解除部署影响",
+    "heading": "要从 {{target}} 解除部署吗？",
+    "description": "请选择移除托管目标，或将文件保留为独立副本。",
+    "sharedNotice": "此目标由多个关系共享；解除后文件仍会保留给其他关系使用。",
+    "choiceLabel": "解除部署处理方式",
+    "choose": "选择处理方式",
+    "choices": {
+      "keepShared": "仅解除当前关系并保留共享文件",
+      "remove": "移除托管部署",
+      "keepCopy": "保留为独立副本"
+    },
+    "confirm": "确认解除部署",
+    "submitting": "正在解除部署…",
+    "loadError": "无法读取解除部署影响。",
+    "commitError": "解除部署未完成，请检查目标后重试。"
   },
   "pending": {
     "eyebrow": "待处理事项",

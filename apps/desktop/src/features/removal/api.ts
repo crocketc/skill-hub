@@ -17,7 +17,17 @@ export type RemovalResult = {
   centralSkillDeleted: boolean;
 };
 
+export type UndeployDecision = "remove_owned_target" | "keep_shared_deployment" | "remove_relation_only";
+export type UndeployImpact = {
+  deploymentId: string;
+  label: string;
+  operationId: string;
+  sharedTarget: boolean;
+};
+
 export interface RemovalFacade {
+  prepareUndeploy(deploymentId: string, label: string): Promise<UndeployImpact>;
+  commitUndeploy(operationId: string, decision: UndeployDecision): Promise<void>;
   prepareDelete(skillId: string, skillName?: string): Promise<RemovalImpact>;
   commitDelete(
     operationId: string,

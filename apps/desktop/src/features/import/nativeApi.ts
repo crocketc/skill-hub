@@ -152,6 +152,29 @@ function importSummary(result: AppCommandResult) {
   return result.payload;
 }
 
+const discoveredCandidates = new Map<string, NativeImportCandidate>();
+
+function reconstructedCandidate(candidate: ImportCandidate): NativeImportCandidate {
+  return {
+    absolute_root: candidate.path,
+    default_action: "review",
+    marker: "SKILL.md",
+    ownership: candidate.ownership === "managed"
+      ? "central_library"
+      : candidate.ownership === "agent_builtin"
+        ? "known_agent_target"
+        : "arbitrary_local_directory",
+    ownership_detail: null,
+    relative_root: ".",
+    runtime_name: candidate.name,
+    source: nativeSource(candidate.source),
+  };
+}
+
+function nativeCandidateFor(candidate: ImportCandidate): NativeImportCandidate {
+  return discoveredCandidates.get(candidate.id) ?? reconstructedCandidate(candidate);
+}
+
 export const nativeImportFacade: ImportFacade = {
   parseSource: parseSourceInput,
 
@@ -163,7 +186,11 @@ export const nativeImportFacade: ImportFacade = {
       payload: { source: descriptor },
     });
     if (signal?.aborted) throw new ImportCancelledError();
-    return queryImportCandidates(result).map(toCandidate);
+    const nativeCandidates = queryImportCandidates(result);
+    for (const candidate of nativeCandidates) {
+      discoveredCandidates.set(candidateId(candidate), candidate);
+    }
+    return nativeCandidates.map(toCandidate);
   },
 
   async analyzeConflicts(candidates) {
@@ -172,20 +199,7 @@ export const nativeImportFacade: ImportFacade = {
       const result = await queryApplication({
         type: "analyze_import",
         payload: {
-          candidate: {
-            absolute_root: candidate.path,
-            default_action: "review",
-            marker: "SKILL.md",
-            ownership: candidate.ownership === "managed"
-              ? "central_library"
-              : candidate.ownership === "agent_builtin"
-                ? "known_agent_target"
-                : "arbitrary_local_directory",
-            ownership_detail: null,
-            relative_root: ".",
-            runtime_name: candidate.name,
-            source: nativeSource(candidate.source),
-          },
+          candidate: nativeCandidateFor(candidate),
           tree_hash: null,
         },
       });
@@ -216,20 +230,7 @@ export const nativeImportFacade: ImportFacade = {
         const prepared = preparedImport(await executeCommand({
           type: "prepare_import",
           payload: {
-            candidate: {
-              absolute_root: candidate.path,
-              default_action: "review",
-              marker: "SKILL.md",
-              ownership: candidate.ownership === "managed"
-                ? "central_library"
-                : candidate.ownership === "agent_builtin"
-                  ? "known_agent_target"
-                  : "arbitrary_local_directory",
-              ownership_detail: null,
-              relative_root: ".",
-              runtime_name: candidate.name,
-              source: nativeSource(candidate.source),
-            },
+            candidate: nativeCandidateFor(candidate),
             tree_hash: null,
           },
         }));
@@ -253,5 +254,8 @@ export const nativeImportFacade: ImportFacade = {
     return results;
   },
 
-  cancel: () => Promise.resolve(),
+  cancel: () => {
+    discoveredCandidates.clear();
+    return Promise.resolve();
+  },
 };

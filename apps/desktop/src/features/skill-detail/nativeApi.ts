@@ -13,6 +13,7 @@ import {
   type SkillDetailSummary,
   type SkillFinding,
   type SkillMetadata,
+  type SkillRelation,
 } from "./api";
 
 function unavailableResult(): SkillDetailUnavailableError {
@@ -90,8 +91,8 @@ function metadataOf(skill: SkillResult): SkillMetadata {
   };
 }
 
-/** Real IPC-backed detail reads. Mutations and secondary panels remain on the
- * unavailable facade until their native contracts are connected. */
+/** Real IPC-backed detail reads. Mutations and remaining secondary panels stay
+ * on the unavailable facade until their native contracts are connected. */
 export const nativeSkillDetailFacade: SkillDetailFacade = {
   ...unavailableSkillDetailFacade,
   async getSummary(skillId) {
@@ -106,6 +107,30 @@ export const nativeSkillDetailFacade: SkillDetailFacade = {
   },
   async getMetadata(skillId) {
     return metadataOf(await getSkill(skillId));
+  },
+  async getRelations(skillId): Promise<SkillRelation[]> {
+    const relationsResult = await queryApplication({
+      type: "get_deployment_relations",
+      payload: { skill_id: skillId },
+    });
+    if (relationsResult.type !== "deployment_relations") throw unavailableResult();
+    const targetsResult = await queryApplication({ type: "list_deployment_targets", payload: null });
+    if (targetsResult.type !== "deployment_targets") throw unavailableResult();
+    const targets = new Map(targetsResult.payload.map((target) => [target.id, target]));
+    return relationsResult.payload.map((relation) => {
+      const target = targets.get(relation.target_id);
+      const targetPath = target?.path.replace(/[\\/]+$/, "") ?? relation.target_id;
+      return {
+        affectedByCurrentVersion: true,
+        id: relation.id,
+        kind: relation.target_id.startsWith("project") ? "project" : "agent",
+        label: target?.label ?? relation.target_id,
+        logicalTarget: relation.target_id,
+        physicalTarget: `${targetPath}/${relation.runtime_name}`,
+        pinned: false,
+        version: relation.version_id,
+      };
+    });
   },
   async getFindings(skillId, versionId, kind): Promise<SkillFinding[]> {
     const result = await queryApplication({

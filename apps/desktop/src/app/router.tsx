@@ -25,11 +25,14 @@ import { SkillLibraryPage } from "../features/skills/SkillLibraryPage";
 import { SkillDetailPage } from "../features/skill-detail/SkillDetailPage";
 import { SkillDetailPreview } from "../features/skill-detail/SkillDetailPreview";
 import { nativeSkillDetailFacade } from "../features/skill-detail/nativeApi";
+import { skillDetailKeys } from "../features/skill-detail/api";
 import {
   SkillLibraryPreview,
   SkillLibraryPreviewShell,
 } from "../features/skills/SkillLibraryPreview";
 import { nativeSkillLibraryFacade } from "../features/skills/nativeApi";
+import { skillLibraryKeys } from "../features/skills/api";
+import { type ImportResult } from "../features/import/api";
 import { skillHubI18n } from "../i18n";
 import "../features/markdown/markdown.css";
 import "../styles/base.css";
@@ -54,7 +57,39 @@ function ProjectDetailRoute() {
 
 function DeploymentRoute() {
   const { skillId } = useParams();
-  return <DeploymentDialog skillId={skillId ?? "unknown"} versionId="current" />;
+  const effectiveSkillId = skillId ?? "unknown";
+  return (
+    <DeploymentDialog
+      onCommitted={(results) => {
+        if (results.some((result) => result.status === "succeeded")) {
+          void Promise.all([
+            queryClient.invalidateQueries({ queryKey: skillLibraryKeys.root }),
+            queryClient.invalidateQueries({ queryKey: skillDetailKeys.relations(effectiveSkillId) }),
+            queryClient.invalidateQueries({ queryKey: skillDetailKeys.summary(effectiveSkillId) }),
+          ]);
+        }
+      }}
+      skillId={effectiveSkillId}
+      versionId="current"
+    />
+  );
+}
+
+function DiscoveryRoute() {
+  const navigate = useNavigate();
+
+  const handleImportComplete = (results: ImportResult[]) => {
+    if (results.some((result) => result.status === "succeeded")) {
+      void queryClient.invalidateQueries({ queryKey: skillLibraryKeys.root });
+    }
+  };
+
+  return (
+    <DiscoveryPage
+      onImportComplete={handleImportComplete}
+      onOpenLibrary={() => navigate("/library")}
+    />
+  );
 }
 
 function SecurityRoute() {
@@ -83,7 +118,7 @@ export const appRouter = createBrowserRouter([
       },
       { path: "library/:skillId/deploy", element: <DeploymentRoute /> },
       { path: "library/:skillId/security", element: <SecurityRoute /> },
-      { path: "discovery", element: <DiscoveryPage /> },
+      { path: "discovery", element: <DiscoveryRoute /> },
       { path: "agents", element: <AgentListPage facade={nativeAgentFacade} /> },
       { path: "agents/:agentKey", element: <AgentDetailRoute /> },
       { path: "projects", element: <ProjectListPage facade={nativeProjectFacade} /> },

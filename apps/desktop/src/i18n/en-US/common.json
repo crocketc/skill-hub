@@ -648,7 +648,9 @@
       "loadErrorLabel": "Relations failed to load",
       "physicalTarget": "Physical target:",
       "pinned": "Pinned",
-      "retry": "Retry relations"
+      "retry": "Retry relations",
+      "undeploy": "Undeploy",
+      "undeployTarget": "Undeploy {{target}}"
     },
     "requirements": {
       "declaredOnly": "Declared by the Skill only; SkillHub has not installed or verified it.",
@@ -747,7 +749,8 @@
     "heading": "Preview before changing Agent targets",
     "description": "Select one or more targets, inspect the physical plan, then commit explicitly.",
     "states": {
-      "loading": "Loading deployment targets"
+      "loading": "Loading deployment targets",
+      "empty": "No deployable Agent targets found"
     },
     "targets": {
       "heading": "Agent targets",
@@ -755,6 +758,7 @@
       "unavailable": "Unavailable"
     },
     "preview": "Preview deployment",
+    "retryFailed": "Retry failed targets",
     "commit": "Commit deployment",
     "plan": {
       "heading": "Deployment plan",
@@ -820,6 +824,23 @@
     },
     "confirm": "Confirm deletion",
     "submitting": "Deleting…"
+  },
+  "undeploy": {
+    "eyebrow": "Undeploy impact",
+    "heading": "Undeploy from {{target}}?",
+    "description": "Choose whether to remove the managed target or keep its files as an independent copy.",
+    "sharedNotice": "This target is shared. Its files will remain available to other relations.",
+    "choiceLabel": "Undeploy handling",
+    "choose": "Choose an action",
+    "choices": {
+      "keepShared": "Remove only this relation and keep shared files",
+      "remove": "Remove the managed deployment",
+      "keepCopy": "Keep files as an independent copy"
+    },
+    "confirm": "Confirm undeploy",
+    "submitting": "Undeploying…",
+    "loadError": "Undeploy impact could not be loaded.",
+    "commitError": "Undeploy did not complete. Review the target and retry."
   },
   "pending": {
     "eyebrow": "Pending work",

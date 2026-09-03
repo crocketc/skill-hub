@@ -1,16 +1,22 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ImportWizard } from "../import/ImportWizard";
-import { type ImportFacade } from "../import/api";
+import { type ImportFacade, type ImportResult } from "../import/api";
 import { nativeImportFacade } from "../import/nativeApi";
 import { LocalDiscovery } from "./LocalDiscovery";
 import { OnlineDiscovery } from "./OnlineDiscovery";
 
 export interface DiscoveryPageProps {
   importFacade?: ImportFacade;
+  onImportComplete?: (results: ImportResult[]) => void;
+  onOpenLibrary?: () => void;
 }
 
-export function DiscoveryPage({ importFacade = nativeImportFacade }: DiscoveryPageProps) {
+export function DiscoveryPage({
+  importFacade = nativeImportFacade,
+  onImportComplete,
+  onOpenLibrary,
+}: DiscoveryPageProps) {
   const { t } = useTranslation();
   const [showImport, setShowImport] = useState(false);
 
@@ -22,7 +28,11 @@ export function DiscoveryPage({ importFacade = nativeImportFacade }: DiscoveryPa
             {t("actions.back")}
           </button>
         </div>
-        <ImportWizard facade={importFacade} />
+        <ImportWizard
+          facade={importFacade}
+          onComplete={onImportComplete}
+          onOpenLibrary={onOpenLibrary}
+        />
       </div>
     );
   }

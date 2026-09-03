@@ -157,6 +157,56 @@ describe("native skill detail facade", () => {
     }]);
   });
 
+  it("maps native deployment relations with their registered target labels and paths", async () => {
+    vi.clearAllMocks();
+    vi.mocked(queryApplication)
+      .mockResolvedValueOnce({
+        type: "deployment_relations",
+        payload: [{
+          id: "deployment-1",
+          skill_id: "skill-1",
+          version_id: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          target_id: "codex-global",
+          state: "deployed",
+          mode: "managed_copy",
+          managed: true,
+          runtime_name: "pdf-reader",
+          expected_hash: "sha256:tree",
+          observed_hash: "sha256:tree",
+        }],
+      })
+      .mockResolvedValueOnce({
+        type: "deployment_targets",
+        payload: [{
+          id: "codex-global",
+          label: "Codex CLI",
+          path: "C:/Users/demo/.codex/skills",
+          available: true,
+          physical_id: "fs:codex",
+          modes: ["managed_copy"],
+        }],
+      });
+
+    await expect(nativeSkillDetailFacade.getRelations("skill-1")).resolves.toEqual([{
+      affectedByCurrentVersion: true,
+      id: "deployment-1",
+      kind: "agent",
+      label: "Codex CLI",
+      logicalTarget: "codex-global",
+      physicalTarget: "C:/Users/demo/.codex/skills/pdf-reader",
+      pinned: false,
+      version: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    }]);
+    expect(queryApplication).toHaveBeenNthCalledWith(1, {
+      type: "get_deployment_relations",
+      payload: { skill_id: "skill-1" },
+    });
+    expect(queryApplication).toHaveBeenNthCalledWith(2, {
+      type: "list_deployment_targets",
+      payload: null,
+    });
+  });
+
   it("submits an explicit finding disposition through the typed native command", async () => {
     vi.clearAllMocks();
     vi.mocked(executeCommand).mockResolvedValue({
