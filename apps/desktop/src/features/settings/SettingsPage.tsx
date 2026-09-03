@@ -42,7 +42,7 @@ export function SettingsPage({ facade = unavailableSettingsFacade, initialSettin
         <ViewSettings settings={settings} />
         <AutomationSettings settings={settings} />
         <AiNetworkSettings facade={facade} settings={settings.network} />
-        <BackupSettings settings={settings} />
+        <BackupSettings facade={facade.backup} settings={settings} />
         <NetworkStoragePlaceholder />
         <ApplicationUpdateCard facade={facade} settings={settings} />
       </div>

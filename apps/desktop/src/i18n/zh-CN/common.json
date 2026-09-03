@@ -920,7 +920,14 @@
       "heading": "备份",
       "location": "备份位置",
       "retention": "保留时间",
-      "days": "天"
+      "days": "天",
+      "notConfigured": "未配置",
+      "prepare": "检查备份",
+      "create": "创建备份",
+      "choose": "选择敏感内容处理方式",
+      "sensitive": "{{skill}} 含有敏感内容",
+      "created": "备份已创建：{{path}}",
+      "decisions": { "resolve": "先处理敏感内容", "exclude": "排除该 Skill", "include": "包含并标记" }
     },
     "networkStorage": {
       "eyebrow": "网络存储",

@@ -1,4 +1,5 @@
 import { executeCommand, queryApplication, type UpdateArtifact, type UpdateManifest, type UpdatePlatform } from "../../api/bindings";
+import type { BackupFacade } from "../backup/api";
 
 export type BuildTrust = "windows_signed" | "windows_unsigned" | "macos_signed" | "unknown";
 export type NetworkSettings = { networkEnabled: boolean; llmProvider: string; dataScope: string };
@@ -60,6 +61,7 @@ export interface SettingsFacade {
   execute(command: SettingsCommand): Promise<void>;
   get?: () => Promise<SettingsSnapshot>;
   updates?: ApplicationUpdateOperations;
+  backup?: BackupFacade;
 }
 const unavailable = (operation: string): Promise<never> => Promise.reject(new Error(`${operation} is unavailable until the native contract is generated.`));
 export const unavailableSettingsFacade: SettingsFacade = { execute: () => unavailable("settings_command"), get: () => unavailable("settings_query") };

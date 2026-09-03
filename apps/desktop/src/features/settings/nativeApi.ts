@@ -10,6 +10,7 @@ import {
   type SettingsFacade,
   type SettingsSnapshot,
 } from "./api";
+import { nativeBackupFacade } from "../backup/nativeApi";
 
 const OFFICIAL_RELEASE_URL = "https://github.com/crocketc/skill-hub/releases";
 
@@ -105,6 +106,7 @@ async function get(): Promise<SettingsSnapshot> {
 export const nativeSettingsFacade: SettingsFacade = {
   execute: save,
   get,
+  backup: nativeBackupFacade,
   updates: nativeApplicationUpdateOperations({
     currentVersion: async () => (await import("@tauri-apps/api/app")).getVersion(),
     buildTrust,

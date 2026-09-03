@@ -920,7 +920,14 @@
       "heading": "Backup",
       "location": "Location",
       "retention": "Retention",
-      "days": "days"
+      "days": "days",
+      "notConfigured": "Not configured",
+      "prepare": "Review backup",
+      "create": "Create backup",
+      "choose": "Choose sensitive-content handling",
+      "sensitive": "Sensitive content in {{skill}}",
+      "created": "Backup created at {{path}}",
+      "decisions": { "resolve": "Resolve first", "exclude": "Exclude this Skill", "include": "Include and mark" }
     },
     "networkStorage": {
       "eyebrow": "Network storage",
