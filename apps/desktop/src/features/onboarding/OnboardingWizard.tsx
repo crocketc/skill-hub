@@ -21,6 +21,14 @@ interface OnboardingWizardProps {
   runtime?: BootstrapRuntime;
 }
 
+function nativeErrorCode(error: unknown): string | null {
+  if (typeof error !== "object" || error === null || !("code" in error)) {
+    return null;
+  }
+  const code = (error as { code?: unknown }).code;
+  return typeof code === "string" && code.trim() ? code : null;
+}
+
 export function OnboardingWizard({
   libraryPath,
   onComplete,
@@ -88,8 +96,10 @@ export function OnboardingWizard({
           ? t("onboarding.scanComplete")
           : t("onboarding.scanStarted"),
       );
-    } catch {
-      setMessage(t("onboarding.scanFailed"));
+    } catch (error) {
+      const code = nativeErrorCode(error);
+      console.error("initialization_scan_failed", code ?? "unknown");
+      setMessage(code ? t("onboarding.scanFailedWithCode", { code }) : t("onboarding.scanFailed"));
     } finally {
       setIsScanning(false);
     }

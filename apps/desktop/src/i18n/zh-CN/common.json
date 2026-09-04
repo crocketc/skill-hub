@@ -325,6 +325,7 @@
     "scanComplete": "已完成只读扫描预览。",
     "scanDescription": "扫描只生成预览，不会移动、导入或部署技能。",
     "scanFailed": "无法完成扫描。现有技能和目录没有被修改。",
+    "scanFailedWithCode": "无法完成扫描。现有技能和目录没有被修改。（错误代码：{{code}}）",
     "scanStarted": "扫描已启动，正在执行。",
     "scanTitle": "扫描已有技能",
     "skip": "跳过初始化",

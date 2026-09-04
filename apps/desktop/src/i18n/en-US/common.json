@@ -325,6 +325,7 @@
     "scanComplete": "Read-only scan preview completed.",
     "scanDescription": "The scan only creates a preview. It will not move, import, or deploy skills.",
     "scanFailed": "The scan could not be completed. Existing skills and directories were not changed.",
+    "scanFailedWithCode": "The scan could not be completed. Existing skills and directories were not changed. (Error code: {{code}})",
     "scanStarted": "The scan has started and is in progress.",
     "scanTitle": "Scan existing skills",
     "skip": "Skip initialization",

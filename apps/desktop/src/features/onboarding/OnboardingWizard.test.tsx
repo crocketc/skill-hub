@@ -248,3 +248,27 @@ it("reports a scan operation as started and completes the wizard once", async ()
   expect(completeOnboarding).toHaveBeenCalledOnce();
   expect(screen.getByText("初始化已完成")).toBeVisible();
 });
+
+it("includes the native error code when a scan is rejected", async () => {
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  render(
+    <I18nextProvider i18n={i18n}>
+      <OnboardingWizard
+        libraryPath={defaultLibraryPath}
+        operations={{ completeOnboarding: async () => undefined, discoverAgents: async () => ({ targets: [] }) }}
+        runtime={{
+          getBootstrapView: async () => { throw new Error("not used"); },
+          runInitializationScan: async () => {
+            throw { code: "input.invalid" };
+          },
+        }}
+      />
+    </I18nextProvider>,
+  );
+
+  await click(screen.getByRole("button", { name: "继续" }));
+  await click(screen.getByRole("button", { name: "继续" }));
+  await click(screen.getByRole("button", { name: "开始只读扫描" }));
+
+  expect(screen.getByText("无法完成扫描。现有技能和目录没有被修改。（错误代码：input.invalid）")).toBeVisible();
+});
