@@ -22,6 +22,17 @@ interface OnboardingWizardProps {
 }
 
 function nativeErrorCode(error: unknown): string | null {
+  if (typeof error === "string") {
+    try {
+      return nativeErrorCode(JSON.parse(error) as unknown);
+    } catch {
+      const match = error.match(/(?:code["']?\s*[:=]\s*["']?)([a-z0-9_.-]+)/i);
+      return match?.[1] ?? null;
+    }
+  }
+  if (error instanceof Error) {
+    return nativeErrorCode(error.message);
+  }
   if (typeof error !== "object" || error === null || !("code" in error)) {
     return null;
   }
@@ -99,7 +110,7 @@ export function OnboardingWizard({
     } catch (error) {
       const code = nativeErrorCode(error);
       console.error("initialization_scan_failed", code ?? "unknown");
-      setMessage(code ? t("onboarding.scanFailedWithCode", { code }) : t("onboarding.scanFailed"));
+      setMessage(code ? t("onboarding.scanFailedWithCode", { code }) : t("onboarding.scanFailedWithoutCode"));
     } finally {
       setIsScanning(false);
     }

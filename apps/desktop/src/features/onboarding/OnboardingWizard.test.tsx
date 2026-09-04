@@ -65,7 +65,7 @@ it("keeps compatibility discovery opt-in and scan read-only while allowing back 
   await click(screen.getByRole("button", { name: "识别 Agent" }));
   expect(discoverAgents).not.toHaveBeenCalled();
 
-  await click(screen.getByLabelText("我确认此步骤只识别，不会部署技能"));
+  await click(screen.getByLabelText("我确认这里只识别 Agent，不会部署技能"));
   await click(screen.getByRole("button", { name: "识别 Agent" }));
   expect(discoverAgents).toHaveBeenCalledOnce();
 
@@ -141,7 +141,7 @@ it("reports missing native discovery and completion seams without a fake success
   );
 
   await click(screen.getByRole("button", { name: "继续" }));
-  await click(screen.getByLabelText("我确认此步骤只识别，不会部署技能"));
+  await click(screen.getByLabelText("我确认这里只识别 Agent，不会部署技能"));
   await click(screen.getByRole("button", { name: "识别 Agent" }));
   expect(screen.getByText("此操作尚未连接到本机服务。不会创建目录、部署或导入任何技能。"))
     .toBeVisible();
@@ -172,14 +172,14 @@ it("shows discovery targets without deploying and requires selection confirmatio
   );
 
   await click(screen.getByRole("button", { name: "继续" }));
-  await click(screen.getByLabelText("我确认此步骤只识别，不会部署技能"));
+  await click(screen.getByLabelText("我确认这里只识别 Agent，不会部署技能"));
   await click(screen.getByRole("button", { name: "识别 Agent" }));
 
   expect(await screen.findByLabelText("Codex")).toBeVisible();
   expect(screen.getByLabelText("Missing Agent")).toBeDisabled();
   await click(screen.getByLabelText("Codex"));
   expect(screen.getByRole("button", { name: "继续" })).toBeDisabled();
-  await click(screen.getByLabelText("我确认所选目标只保存兼容性选择，不会部署技能"));
+  await click(screen.getByLabelText("我确认所选目标只用于只读扫描，不会部署技能"));
   expect(screen.getByRole("button", { name: "继续" })).toBeEnabled();
 });
 
@@ -203,10 +203,10 @@ it("selects all available targets and scans only the confirmed targets", async (
     </I18nextProvider>,
   );
   await click(screen.getByRole("button", { name: "继续" }));
-  await click(screen.getByLabelText("我确认此步骤只识别，不会部署技能"));
+  await click(screen.getByLabelText("我确认这里只识别 Agent，不会部署技能"));
   await click(screen.getByRole("button", { name: "识别 Agent" }));
   await click(screen.getByRole("button", { name: "全选可用目标" }));
-  await click(screen.getByLabelText("我确认所选目标只保存兼容性选择，不会部署技能"));
+  await click(screen.getByLabelText("我确认所选目标只用于只读扫描，不会部署技能"));
   await click(screen.getByRole("button", { name: "继续" }));
   await click(screen.getByRole("button", { name: "开始只读扫描" }));
   expect(runInitializationScan).toHaveBeenCalledWith(["codex", "claude"]);
@@ -271,4 +271,26 @@ it("includes the native error code when a scan is rejected", async () => {
   await click(screen.getByRole("button", { name: "开始只读扫描" }));
 
   expect(screen.getByText("无法完成扫描。现有技能和目录没有被修改。（错误代码：input.invalid）")).toBeVisible();
+});
+
+it("states when the native scan failure has no error code", async () => {
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  render(
+    <I18nextProvider i18n={i18n}>
+      <OnboardingWizard
+        libraryPath={defaultLibraryPath}
+        operations={{ completeOnboarding: async () => undefined, discoverAgents: async () => ({ targets: [] }) }}
+        runtime={{
+          getBootstrapView: async () => { throw new Error("not used"); },
+          runInitializationScan: async () => { throw new Error("native service failed"); },
+        }}
+      />
+    </I18nextProvider>,
+  );
+
+  await click(screen.getByRole("button", { name: "继续" }));
+  await click(screen.getByRole("button", { name: "继续" }));
+  await click(screen.getByRole("button", { name: "开始只读扫描" }));
+
+  expect(screen.getByText("无法完成扫描。现有技能和目录没有被修改。（本机服务未返回错误代码）")).toBeVisible();
 });
