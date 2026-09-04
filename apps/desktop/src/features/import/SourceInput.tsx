@@ -6,16 +6,24 @@ export interface SourceInputProps {
   value: string;
   descriptor?: SourceDescriptor;
   disabled?: boolean;
+  suggestedSources?: string[];
+  selectedSources?: string[];
   onChange: (value: string) => void;
   onParse: () => void;
+  onToggleSource?: (source: string) => void;
+  onSelectAllSources?: () => void;
 }
 
 export function SourceInput({
   value,
   descriptor,
   disabled = false,
+  suggestedSources = [],
+  selectedSources = [],
   onChange,
   onParse,
+  onToggleSource,
+  onSelectAllSources,
 }: SourceInputProps) {
   const { t } = useTranslation();
   const isNpxReference = /^npx\s+skills\s+add\s+/i.test(value.trim());
@@ -30,6 +38,29 @@ export function SourceInput({
         </div>
         <span className="sh-import-source__step">{t("importWorkflow.step", { current: 1, total: 4 })}</span>
       </div>
+
+      {suggestedSources.length > 0 ? (
+        <fieldset className="sh-import-source__suggestions">
+          <legend>{t("importWorkflow.source.scannedSources")}</legend>
+          <p>{t("importWorkflow.source.scannedSourcesDescription")}</p>
+          {onSelectAllSources ? (
+            <Button disabled={disabled} onClick={onSelectAllSources} variant="secondary">
+              {t("importWorkflow.source.selectAllSources")}
+            </Button>
+          ) : null}
+          {suggestedSources.map((source) => (
+            <label key={source}>
+              <input
+                checked={selectedSources.includes(source)}
+                disabled={disabled}
+                onChange={() => onToggleSource?.(source)}
+                type="checkbox"
+              />
+              <code>{source}</code>
+            </label>
+          ))}
+        </fieldset>
+      ) : null}
 
       <label className="sh-import-source__field">
         <span>{t("importWorkflow.source.label")}</span>

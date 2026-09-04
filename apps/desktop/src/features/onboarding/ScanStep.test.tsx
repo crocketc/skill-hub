@@ -42,10 +42,10 @@ it("renders a read-only scan preview without import actions", async () => {
   expect(screen.getByText("问题 1 个")).toBeVisible();
   expect(screen.getByText("alpha")).toBeVisible();
   expect(screen.getByText("C:\\Users\\Test\\.codex\\skills\\alpha")).toBeVisible();
-  expect(screen.getByRole("button", { name: "进入批量导入" })).toBeVisible();
+  expect(screen.getByRole("button", { name: "完成初始化并进入批量导入" })).toBeVisible();
   expect(screen.queryByRole("button", { name: "导入" })).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "开始只读扫描" }));
-  fireEvent.click(screen.getByRole("button", { name: "进入批量导入" }));
+  fireEvent.click(screen.getByRole("button", { name: "完成初始化并进入批量导入" }));
   expect(onOpenImport).toHaveBeenCalledWith(result.roots);
 });
 

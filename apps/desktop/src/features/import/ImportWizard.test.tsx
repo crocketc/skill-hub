@@ -16,6 +16,20 @@ async function renderWizard(facade = createMockImportFacade({ scenario: "safe-lo
   return facade;
 }
 
+async function renderGuidedWizard(facade = createMockImportFacade({ scenario: "safe-local" })) {
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  render(
+    <I18nextProvider i18n={i18n}>
+      <ImportWizard
+        facade={facade}
+        initialSources={["C:/codex/skills", "C:/claude/skills"]}
+        initialSourceText="C:/codex/skills"
+      />
+    </I18nextProvider>,
+  );
+  return facade;
+}
+
 it("parses npx text without executing it and reaches candidate selection", async () => {
   const user = userEvent.setup();
   const facade = await renderWizard();
@@ -49,4 +63,15 @@ it("preserves source text after cancellation", async () => {
   await user.click(await screen.findByRole("button", { name: "取消获取" }));
 
   expect(screen.getByLabelText("来源")).toHaveValue("C:\\Skills\\pdf");
+});
+
+it("acquires candidates from every selected scanned source", async () => {
+  const user = userEvent.setup();
+  const facade = await renderGuidedWizard();
+
+  await user.click(screen.getByRole("button", { name: "解析来源" }));
+
+  expect(await screen.findByRole("button", { name: "继续选择候选" })).toBeVisible();
+  expect(facade.calls.acquiredSources).toEqual(["C:/codex/skills", "C:/claude/skills"]);
+  expect(screen.getByText("找到 4 个候选项，请先审阅列表。")).toBeVisible();
 });

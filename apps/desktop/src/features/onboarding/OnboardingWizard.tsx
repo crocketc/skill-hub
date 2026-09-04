@@ -128,7 +128,7 @@ export function OnboardingWizard({
     return () => window.clearTimeout(timer);
   }, [isScanning, scanInBackground]);
 
-  const complete = async (skipped: boolean) => {
+  const complete = async (skipped: boolean, afterComplete?: () => void) => {
     if (!nativeLibraryPath || completionState !== "idle") {
       return;
     }
@@ -137,7 +137,7 @@ export function OnboardingWizard({
     try {
       await operations.completeOnboarding({ libraryPath: nativeLibraryPath, skipped });
       setCompletionState("complete");
-      onComplete?.();
+      (afterComplete ?? onComplete)?.();
     } catch {
       setCompletionState("idle");
       showError();
@@ -186,7 +186,7 @@ export function OnboardingWizard({
           setIsScanning(false);
           setMessage(t("onboarding.scanBackground"));
         } : undefined}
-        onOpenImport={onOpenImport ? (roots) => onOpenImport(roots) : undefined}
+        onOpenImport={onOpenImport ? (roots) => void complete(false, () => onOpenImport(roots)) : undefined}
         scanInBackground={scanInBackground}
         scanResult={scanState?.kind === "completed" ? scanState.result : undefined}
       />

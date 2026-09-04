@@ -176,4 +176,29 @@ describe("native import facade", () => {
       payload: { candidate: nativeCandidate, tree_hash: null },
     });
   });
+
+  it("preserves native error codes and parameters for failed imports", async () => {
+    vi.mocked(executeCommand).mockRejectedValue({
+      code: "io_error",
+      params: { operation: "capture", path: "C:/incoming/notes" },
+    });
+
+    const candidate = {
+      basicCheck: "passed" as const,
+      id: "C:/incoming/notes#notes",
+      name: "notes",
+      ownership: "unknown" as const,
+      path: "C:/incoming/notes",
+      source: await nativeImportFacade.parseSource("C:/incoming"),
+    };
+    const [result] = await nativeImportFacade.commitImport(
+      { candidates: [candidate], conflicts: [] },
+      { [candidate.id]: "copy" },
+    );
+
+    expect(result).toEqual(expect.objectContaining({
+      message: "导入失败（错误代码：io_error；operation=capture, path=C:/incoming/notes）",
+      status: "failed",
+    }));
+  });
 });

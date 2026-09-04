@@ -101,6 +101,7 @@
     },
     "cancelled": "获取已取消，来源内容仍然保留。",
     "errors": {
+      "emptySource": "没有可用的导入来源。",
       "unknown": "导入步骤未能完成。"
     },
     "source": {
@@ -108,6 +109,9 @@
       "title": "从哪里查找 Skill？",
       "description": "可粘贴本地路径、URL、Git 地址，或 npx skills add 来源引用。",
       "label": "来源",
+      "scannedSources": "初始化扫描来源",
+      "scannedSourcesDescription": "可批量选择扫描发现的目录；导入前仍会逐项审阅候选和冲突。",
+      "selectAllSources": "全选扫描来源",
       "placeholder": "C:/skills 或 https://github.com/owner/repository",
       "parse": "解析来源",
       "continueCandidates": "继续选择候选",
@@ -336,7 +340,7 @@
     "scanIssueDetails": "查看问题详情",
     "scanIssues": "问题 {{count}} 个",
     "scanNoSkills": "没有发现符合 Skill 标记的目录。",
-    "scanOpenImport": "进入批量导入",
+    "scanOpenImport": "完成初始化并进入批量导入",
     "scanPreviewTitle": "扫描预览",
     "scanStarted": "扫描已启动，正在执行。",
     "scanVisited": "扫描 {{count}} 个路径",

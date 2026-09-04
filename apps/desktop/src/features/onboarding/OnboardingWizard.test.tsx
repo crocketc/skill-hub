@@ -259,6 +259,50 @@ it("reports a scan operation as started and completes the wizard once", async ()
   expect(screen.getByText("初始化已完成")).toBeVisible();
 });
 
+it("completes initialization before opening the guided import flow", async () => {
+  const completeOnboarding = vi.fn(async () => undefined);
+  const onOpenImport = vi.fn();
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  const scanResult = {
+    ...emptyScanResult,
+    roots: ["C:\\Users\\Test\\.codex\\skills"],
+    discovered: [{
+      root: "C:\\Users\\Test\\.codex\\skills",
+      relative_path: "alpha",
+      path: "C:\\Users\\Test\\.codex\\skills\\alpha",
+      marker: "SKILL.md",
+      marker_size: 1,
+      marker_modified_at: 1,
+      size: 1,
+      latest_modified_at: 1,
+      fingerprint: "a",
+      metadata_fingerprint: "b",
+    }],
+  };
+
+  render(
+    <I18nextProvider i18n={i18n}>
+      <OnboardingWizard
+        libraryPath={defaultLibraryPath}
+        onOpenImport={onOpenImport}
+        operations={{ completeOnboarding, discoverAgents: async () => ({ targets: [] }) }}
+        runtime={{
+          getBootstrapView: async () => { throw new Error("not used"); },
+          runInitializationScan: async () => ({ kind: "completed" as const, result: scanResult }),
+        }}
+      />
+    </I18nextProvider>,
+  );
+
+  await click(screen.getByRole("button", { name: "继续" }));
+  await click(screen.getByRole("button", { name: "继续" }));
+  await click(screen.getByRole("button", { name: "开始只读扫描" }));
+  await click(screen.getByRole("button", { name: "完成初始化并进入批量导入" }));
+
+  expect(completeOnboarding).toHaveBeenCalledWith({ libraryPath: defaultLibraryPath, skipped: false });
+  expect(onOpenImport).toHaveBeenCalledWith(scanResult.roots);
+});
+
 it("includes the native error code when a scan is rejected", async () => {
   const i18n = await createSkillHubI18n(["zh-CN"]);
   render(

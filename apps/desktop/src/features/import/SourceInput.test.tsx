@@ -33,3 +33,21 @@ it("emits controlled input changes", async () => {
 
   expect(onChange).toHaveBeenCalledWith("C:/skills");
 });
+
+it("lists scanned sources with explicit bulk selection controls", async () => {
+  const onToggleSource = vi.fn();
+  const onSelectAllSources = vi.fn();
+  await renderSourceInput({
+    onSelectAllSources,
+    onToggleSource,
+    selectedSources: ["C:/codex/skills"],
+    suggestedSources: ["C:/codex/skills", "C:/claude/skills"],
+  });
+
+  expect(screen.getByText("初始化扫描来源")).toBeVisible();
+  expect(screen.getByRole("checkbox", { name: "C:/codex/skills" })).toBeChecked();
+  fireEvent.click(screen.getByRole("checkbox", { name: "C:/claude/skills" }));
+  fireEvent.click(screen.getByRole("button", { name: "全选扫描来源" }));
+  expect(onToggleSource).toHaveBeenCalledWith("C:/claude/skills");
+  expect(onSelectAllSources).toHaveBeenCalledOnce();
+});

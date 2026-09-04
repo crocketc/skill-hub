@@ -119,9 +119,35 @@ function resultForSummary(
   return {
     action,
     candidateId: candidate.id,
-    message: item?.skill_id ? "已导入" : "已处理",
+    message: item?.skill_id
+      ? "已导入"
+      : "导入未提交（本机服务未返回详细原因）",
     status: result.committed ? "succeeded" : "failed",
   };
+}
+
+function importErrorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message || "导入失败";
+  if (typeof error === "string") {
+    try {
+      return importErrorMessage(JSON.parse(error) as unknown);
+    } catch {
+      return error;
+    }
+  }
+  if (typeof error === "object" && error !== null) {
+    const record = error as { code?: unknown; message?: unknown; params?: unknown };
+    const code = typeof record.code === "string" ? record.code : null;
+    const message = typeof record.message === "string" ? record.message : null;
+    const params = record.params && typeof record.params === "object"
+      ? Object.entries(record.params as Record<string, unknown>)
+        .map(([key, value]) => `${key}=${String(value)}`)
+        .join(", ")
+      : "";
+    if (code) return `导入失败（错误代码：${code}${params ? `；${params}` : ""}）`;
+    if (message) return message;
+  }
+  return "导入失败（未返回错误详情）";
 }
 
 function queryImportCandidates(result: AppQueryResult): NativeImportCandidate[] {
@@ -246,7 +272,7 @@ export const nativeImportFacade: ImportFacade = {
         results.push({
           action,
           candidateId: candidate.id,
-          message: error instanceof Error ? error.message : "导入失败",
+          message: importErrorMessage(error),
           status: "failed",
         });
       }

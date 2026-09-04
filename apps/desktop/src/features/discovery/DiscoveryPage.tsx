@@ -40,6 +40,7 @@ export function DiscoveryPage({
         <ImportWizard
           facade={importFacade}
           importGuide={importGuide}
+          initialSources={initialSources}
           initialSourceText={initialSourceText}
           onComplete={onImportComplete}
           onOpenLibrary={onOpenLibrary}

@@ -1,4 +1,4 @@
-import { useReducer, useRef } from "react";
+import { useReducer, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "../../ui/Button";
 import { DataState } from "../../ui/DataState";
@@ -106,6 +106,7 @@ function reducer(state: WizardState, event: WizardEvent): WizardState {
 
 export interface ImportWizardProps {
   facade?: ImportFacade;
+  initialSources?: string[];
   initialSourceText?: string;
   importGuide?: string;
   onComplete?: (results: ImportResult[]) => void;
@@ -114,6 +115,7 @@ export interface ImportWizardProps {
 
 export function ImportWizard({
   facade = unavailableImportFacade,
+  initialSources = [],
   initialSourceText = "",
   importGuide,
   onComplete,
@@ -121,6 +123,7 @@ export function ImportWizard({
 }: ImportWizardProps) {
   const { t } = useTranslation();
   const [state, dispatch] = useReducer(reducer, { ...initialState, sourceText: initialSourceText });
+  const [selectedSources, setSelectedSources] = useState(initialSources);
   const operationRef = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
 
@@ -130,10 +133,19 @@ export function ImportWizard({
     abortRef.current = controller;
     dispatch({ type: "parse_started" });
     try {
-      const descriptor = await facade.parseSource(state.sourceText);
+      const inputs = selectedSources.length > 0 ? selectedSources : [state.sourceText];
+      const descriptors = [];
+      const candidates = [];
+      for (const input of inputs) {
+        const descriptor = await facade.parseSource(input);
+        if (operation !== operationRef.current) return;
+        descriptors.push(descriptor);
+        candidates.push(...await facade.acquireCandidates(descriptor, controller.signal));
+      }
       if (operation !== operationRef.current) return;
+      const descriptor = descriptors[0];
+      if (!descriptor) throw new Error(t("importWorkflow.errors.emptySource"));
       dispatch({ type: "parse_succeeded", descriptor });
-      const candidates = await facade.acquireCandidates(descriptor, controller.signal);
       if (operation !== operationRef.current) return;
       dispatch({ type: "acquire_succeeded", candidates });
     } catch (error) {
@@ -207,8 +219,15 @@ export function ImportWizard({
           <SourceInput
             descriptor={state.descriptor}
             disabled={state.phase === "acquiring"}
-            onChange={(value) => dispatch({ type: "source_changed", value })}
+            onChange={(value) => {
+              setSelectedSources([]);
+              dispatch({ type: "source_changed", value });
+            }}
             onParse={() => void runAcquisition()}
+            onSelectAllSources={() => setSelectedSources(initialSources)}
+            onToggleSource={(source) => setSelectedSources((current) => current.includes(source) ? current.filter((item) => item !== source) : [...current, source])}
+            selectedSources={selectedSources}
+            suggestedSources={initialSources}
             value={state.sourceText}
           />
         ) : null}

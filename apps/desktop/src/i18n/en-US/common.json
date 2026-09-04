@@ -101,6 +101,7 @@
     },
     "cancelled": "Acquisition was cancelled. Your source is still here.",
     "errors": {
+      "emptySource": "No import source is available.",
       "unknown": "The import step could not be completed."
     },
     "source": {
@@ -108,6 +109,9 @@
       "title": "Where should SkillHub look?",
       "description": "Paste a local path, URL, Git reference, or an npx skills add reference.",
       "label": "Source",
+      "scannedSources": "Sources from initialization scan",
+      "scannedSourcesDescription": "Select scanned directories in bulk; candidates and conflicts are still reviewed before import.",
+      "selectAllSources": "Select all scanned sources",
       "placeholder": "C:/skills or https://github.com/owner/repository",
       "parse": "Parse source",
       "continueCandidates": "Continue to candidate selection",
@@ -336,7 +340,7 @@
     "scanIssueDetails": "View issue details",
     "scanIssues": "{{count}} issues",
     "scanNoSkills": "No directories with the Skill marker were found.",
-    "scanOpenImport": "Continue to batch import",
+    "scanOpenImport": "Finish initialization and batch import",
     "scanPreviewTitle": "Scan preview",
     "scanStarted": "The scan has started and is in progress.",
     "scanVisited": "{{count}} paths scanned",
