@@ -49,7 +49,7 @@ use skillhub_core::llm::LlmTaskRunner;
 use skillhub_core::source::{SourceDescriptor, SourceLocator, SourceState, UpdateDecision};
 use skillhub_core::{
     physical_id_for_path, AllowedRoot, AppCommand, AppCommandResult, AppError, AppQuery,
-    AppQueryResult, AppResult, ApplicationFacade, DeploymentCapability, DeploymentMode, ErrorCode,
+    AppQueryResult, AppResult, ApplicationFacade, DeploymentMode, ErrorCode,
     OperationId, PathPolicy, RecoveryAction, ResolvedPathGrant, Severity, TargetChange,
     UpdateSignaturePublicKey,
 };
@@ -186,6 +186,18 @@ impl LocalDeploymentBackend {
                 .with_action(RecoveryAction::Retry));
         };
         let paths = LibraryPaths::from_root(library_root.clone());
+        if matches!(target.mode, DeploymentMode::SymbolicLink | DeploymentMode::DirectoryJunction) {
+            let central = CentralLibrary::initialize(library_root)?;
+            if let Some((record, current)) = central.load_portable_skill(target.skill_id)? {
+                if current.as_ref() == Some(&target.version_id) {
+                    let visible = central
+                        .visible_skill_path_for_runtime(target.skill_id, &record.runtime_name);
+                    if visible.is_dir() {
+                        return Ok(visible);
+                    }
+                }
+            }
+        }
         let materialized = paths
             .management_dir
             .join("deployment-trees")
@@ -2012,6 +2024,12 @@ impl LocalApplicationFacade {
                     cleanup_import_state(database, &central, library, skill.id(), &version),
                 ));
             }
+            if let Err(error) = central.materialize_current_skill(&skill, &version.id) {
+                return Err(cleanup_import_error(
+                    error,
+                    cleanup_import_state(database, &central, library, skill.id(), &version),
+                ));
+            }
             if let Err(error) = central.save_portable_skill(&skill, Some(&version.id)) {
                 return Err(cleanup_import_error(
                     error,
@@ -2274,6 +2292,13 @@ impl LocalApplicationFacade {
             return Err(unsupported("execute.apply_source_update.library"));
         };
         let central = CentralLibrary::initialize(root)?;
+        if let Err(error) = central.materialize_current_skill(&skill, &version.id) {
+            let _ = restore_version_pointer(library, request.skill_id, check.local_version);
+            if captured.created {
+                let _ = library.discard_sync(&version);
+            }
+            return Err(error);
+        }
         if let Err(error) = central.save_portable_skill(&skill, Some(&version.id)) {
             let _ = restore_version_pointer(library, request.skill_id, check.local_version);
             if captured.created {
@@ -2375,6 +2400,13 @@ impl LocalApplicationFacade {
                 return Err(cleanup_import_error(error, rollback));
             }
         };
+        if let Err(error) = central.materialize_current_skill(&skill, &request.version_id) {
+            let rollback = match previous.clone() {
+                Some(previous) => library.set_current(request.skill_id, &previous),
+                None => library.clear_current(request.skill_id),
+            };
+            return Err(cleanup_import_error(error, rollback));
+        }
         if let Err(error) = central.save_portable_skill(&skill, Some(&request.version_id)) {
             let rollback = match previous {
                 Some(previous) => library.set_current(request.skill_id, &previous),
@@ -2436,6 +2468,17 @@ impl LocalApplicationFacade {
                 return Err(cleanup_import_error(error, cleanup));
             }
         };
+        if let Err(error) = central.materialize_current_skill(&skill, &version.id) {
+            let rollback = restore_version_pointer(library, request.skill_id, previous.clone());
+            let cleanup = rollback.and_then(|()| {
+                if captured.created {
+                    library.discard_sync(&version)
+                } else {
+                    Ok(())
+                }
+            });
+            return Err(cleanup_import_error(error, cleanup));
+        }
         if let Err(error) = central.save_portable_skill(&skill, Some(&version.id)) {
             let rollback = restore_version_pointer(library, request.skill_id, previous);
             let cleanup = rollback.and_then(|()| {
@@ -2524,6 +2567,18 @@ impl LocalApplicationFacade {
                     return Err(cleanup_import_error(error, cleanup));
                 }
             };
+            if let Err(error) = central.materialize_current_skill(&skill, &version.id) {
+                let rollback =
+                    restore_version_pointer(library, request.skill_id, Some(current.clone()));
+                let cleanup = rollback.and_then(|()| {
+                    if captured.created {
+                        library.discard_sync(&version)
+                    } else {
+                        Ok(())
+                    }
+                });
+                return Err(cleanup_import_error(error, cleanup));
+            }
             if let Err(error) = central.save_portable_skill(&skill, Some(&version.id)) {
                 let rollback =
                     restore_version_pointer(library, request.skill_id, Some(current.clone()));
@@ -3238,6 +3293,15 @@ impl ApplicationFacade for LocalApplicationFacade {
 
 impl LocalApplicationFacade {
     fn list_deployment_targets(&self) -> AppResult<AppQueryResult> {
+        let capabilities = DeploymentFilesystem::new().available_capabilities();
+        let modes = [
+            (capabilities.symlink, skillhub_core::DeploymentMode::SymbolicLink),
+            (capabilities.junction, skillhub_core::DeploymentMode::DirectoryJunction),
+            (capabilities.copy, skillhub_core::DeploymentMode::ManagedCopy),
+        ]
+        .into_iter()
+        .filter_map(|(supported, mode)| supported.then_some(mode))
+        .collect::<Vec<_>>();
         self.with_database("query.list_deployment_targets", |database| {
             let targets = database
                 .agent_repository()
@@ -3252,10 +3316,7 @@ impl LocalApplicationFacade {
                             path: target.path,
                             available: target.available,
                             physical_id: target.physical_id,
-                            // Discovery only records target facts; until a
-                            // profile explicitly confirms link support, use
-                            // managed copy as the safe advertised mode.
-                            modes: vec![skillhub_core::DeploymentMode::ManagedCopy],
+                            modes: modes.clone(),
                         })
                         .collect()
                 })
@@ -3299,6 +3360,7 @@ impl LocalApplicationFacade {
     }
 
     fn discovery_target_index(&self) -> AppResult<RegisteredTargetIndex> {
+        let capabilities = DeploymentFilesystem::new().available_capabilities();
         self.with_database("query.get_deployment_plan", |database| {
             let Some(snapshot) = database.agent_repository().load()? else {
                 return RegisteredTargetIndex::from_facts([], PathPolicy::new());
@@ -3316,7 +3378,7 @@ impl LocalApplicationFacade {
                 roots.push(root);
                 facts.push(TargetFact::from_logical_target(
                     &target,
-                    DeploymentCapability::new(false, false, true),
+                    capabilities.clone(),
                 ));
             }
             let policy = PathPolicy::from_roots(roots)?;
@@ -3469,6 +3531,12 @@ impl LocalApplicationFacade {
                 ));
             }
             if let Err(error) = store.set_current(skill_id, &version.id) {
+                return Err(cleanup_import_error(
+                    error,
+                    cleanup_import_state(database, &central, &store, skill_id, &version),
+                ));
+            }
+            if let Err(error) = central.materialize_current_skill(&skill, &version.id) {
                 return Err(cleanup_import_error(
                     error,
                     cleanup_import_state(database, &central, &store, skill_id, &version),

@@ -630,7 +630,7 @@ a {
 .sh-overview__content-grid {
   display: grid;
   gap: var(--space-4);
-  grid-template-columns: minmax(0, 1fr) minmax(17rem, 22rem);
+  grid-template-columns: minmax(0, 1fr) clamp(12rem, 24vw, 22rem);
   align-items: stretch;
 }
 
@@ -648,6 +648,7 @@ a {
 
 .sh-overview__rail {
   display: grid;
+  min-width: 0;
   align-content: start;
   gap: var(--space-4);
 }
@@ -807,17 +808,6 @@ a {
 .sh-overview__pending-item strong {
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.02em;
-}
-
-@media (max-width: 72rem) {
-  .sh-overview__metrics,
-  .sh-overview__content-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .sh-overview__panel {
-    grid-template-rows: auto auto;
-  }
 }
 
 .sh-startup-loading,

@@ -63,7 +63,7 @@ it("supports one or many Agent targets and reports each result", async () => {
   expect(screen.getByLabelText("Codex CLI")).not.toBeChecked();
   expect(screen.getByLabelText("Claude Code")).toBeChecked();
   await user.click(screen.getByRole("button", { name: "预览部署" }));
-  expect(preview).toHaveBeenLastCalledWith([targets[1]]);
+  expect(preview).toHaveBeenLastCalledWith([targets[1]], undefined);
 });
 
 it("shows an empty state after target discovery completes", async () => {
@@ -82,4 +82,29 @@ it("shows an empty state after target discovery completes", async () => {
 
   expect(await screen.findByText("未发现可部署的 Agent 目标")).toBeInTheDocument();
   expect(screen.queryByText("正在加载部署目标")).not.toBeInTheDocument();
+});
+
+it("lets the user override the target default with a managed copy or a link", async () => {
+  const user = userEvent.setup();
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  const targets = deploymentTargetsFixture();
+  const preview = vi.fn<DeploymentFacade["preview"]>(async () => ({
+    skillId: "skill-pdf",
+    versionId: "v1",
+    targets: [],
+    warnings: [],
+  }));
+  const facade: DeploymentFacade = { listTargets: async () => targets, preview, commit: vi.fn() };
+
+  render(
+    <I18nextProvider i18n={i18n}>
+      <DeploymentDialog skillId="skill-pdf" versionId="v1" facade={facade} />
+    </I18nextProvider>,
+  );
+
+  await user.click(await screen.findByLabelText("Codex CLI"));
+  await user.selectOptions(screen.getByLabelText("部署方式"), "managed_copy");
+  await user.click(screen.getByRole("button", { name: "预览部署" }));
+
+  expect(preview).toHaveBeenCalledWith([targets[0]], "managed_copy");
 });

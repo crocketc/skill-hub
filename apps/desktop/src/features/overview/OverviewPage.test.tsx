@@ -4,6 +4,7 @@ import { MemoryRouter, Outlet, Route, Routes, useLocation } from "react-router-d
 import { afterEach, vi } from "vitest";
 import type { BootstrapSnapshot } from "../../api/bindings";
 import { createSkillHubI18n } from "../../i18n";
+import baseCss from "../../styles/base.css?raw";
 import { ThemeProvider } from "../../styles/ThemeProvider";
 import { OverviewPage } from "./OverviewPage";
 
@@ -177,4 +178,12 @@ it("explains when the selected deployment dimension has no relationships", async
   expect(screen.getByRole("status")).toHaveTextContent("No deployment relationships by agent yet");
   expect(screen.queryByRole("img", { name: "Deployment count by agent" })).not.toBeInTheDocument();
   expect(screen.getByText("No pending items")).toBeVisible();
+});
+
+it("keeps the desktop overview grid at smaller window widths instead of switching to one column", () => {
+  const compactOverviewRule = baseCss.match(/@media \(max-width: 72rem\) \{([\s\S]*?)\n\}/)?.[1] ?? "";
+
+  expect(compactOverviewRule).not.toContain(".sh-overview__metrics");
+  expect(compactOverviewRule).not.toContain(".sh-overview__content-grid");
+  expect(baseCss).toMatch(/\.sh-overview__content-grid\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\) clamp\(/);
 });

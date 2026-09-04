@@ -1,6 +1,7 @@
 use std::fs;
 use std::path::Path;
 use std::sync::Arc;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use skillhub_core::catalog::Skill;
 use skillhub_core::{
@@ -9,6 +10,7 @@ use skillhub_core::{
 };
 
 use super::portable::{ManifestFaultHandler, PortableManifestStore};
+use crate::version_store::VersionStore;
 
 /// Filesystem-backed central library.
 pub struct CentralLibrary {
@@ -53,7 +55,9 @@ impl CentralLibrary {
             // Existing files are never overwritten during initialization.
             store.load()?;
         }
-        Ok(Self { paths, store })
+        let library = Self { paths, store };
+        library.materialize_missing_visible_skills()?;
+        Ok(library)
     }
 
     pub fn paths(&self) -> &LibraryPaths {
@@ -105,6 +109,119 @@ impl CentralLibrary {
         let mut manifest = self.load_manifest()?;
         manifest.skills.retain(|record| record.id != id);
         self.write_manifest_atomic(&manifest)
+    }
+
+    /// Returns the user-visible, managed copy of a Skill's current version.
+    /// The directory name is stable for the Skill id and readable enough to
+    /// inspect without exposing internal object-store paths.
+    pub fn visible_skill_path(&self, skill: &Skill) -> std::path::PathBuf {
+        self.visible_skill_path_for(skill.id(), skill.runtime_name())
+    }
+
+    pub fn visible_skill_path_for_runtime(
+        &self,
+        skill_id: SkillId,
+        runtime_name: &str,
+    ) -> std::path::PathBuf {
+        self.visible_skill_path_for(skill_id, runtime_name)
+    }
+
+    /// Rebuilds the visible central-library tree for the supplied version.
+    /// Immutable version objects remain the source of truth; this tree is the
+    /// stable source used for human inspection and linked Agent deployments.
+    pub fn materialize_current_skill(&self, skill: &Skill, version: &VersionId) -> AppResult<()> {
+        self.materialize_visible_tree(skill.id(), skill.runtime_name(), version, true)
+    }
+
+    fn materialize_missing_visible_skills(&self) -> AppResult<()> {
+        for record in self.load_manifest()?.skills {
+            let Some(version) = record.current_version else {
+                continue;
+            };
+            let output = self.visible_skill_path_for(record.id, &record.runtime_name);
+            if !output.exists() {
+                self.materialize_visible_tree(record.id, &record.runtime_name, &version, false)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn materialize_visible_tree(
+        &self,
+        skill_id: SkillId,
+        runtime_name: &str,
+        version: &VersionId,
+        replace_existing: bool,
+    ) -> AppResult<()> {
+        let output = self.visible_skill_path_for(skill_id, runtime_name);
+        if output.exists() && !replace_existing {
+            return Ok(());
+        }
+        if output.exists()
+            && (!output.is_dir()
+                || fs::symlink_metadata(&output)
+                    .map_err(io_error)?
+                    .file_type()
+                    .is_symlink())
+        {
+            return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                .with_param("path", output.to_string_lossy().into_owned())
+                .with_action(RecoveryAction::InspectTarget));
+        }
+
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|duration| duration.as_nanos())
+            .unwrap_or_default();
+        let staging = self
+            .paths
+            .tmp_dir
+            .join(format!("visible-{skill_id}-{nonce}"));
+        let backup = self
+            .paths
+            .tmp_dir
+            .join(format!("visible-backup-{skill_id}-{nonce}"));
+        if let Err(error) = VersionStore::from_library(self).materialize(version, &staging) {
+            let _ = fs::remove_dir_all(&staging);
+            return Err(error);
+        }
+
+        if !output.exists() {
+            return fs::rename(&staging, &output).map_err(io_error);
+        }
+        fs::rename(&output, &backup).map_err(io_error)?;
+        if let Err(error) = fs::rename(&staging, &output) {
+            let _ = fs::rename(&backup, &output);
+            return Err(io_error(error));
+        }
+        // The replacement is already complete; a leftover backup can be
+        // recovered during housekeeping and must not turn a successful import
+        // into a failed one.
+        let _ = fs::remove_dir_all(&backup);
+        Ok(())
+    }
+
+    fn visible_skill_path_for(&self, skill_id: SkillId, runtime_name: &str) -> std::path::PathBuf {
+        let readable_name = runtime_name
+            .chars()
+            .map(|character| {
+                if character.is_alphanumeric() || matches!(character, '-' | '_' | '.') {
+                    character
+                } else {
+                    '-'
+                }
+            })
+            .collect::<String>()
+            .trim_matches(['.', '-'])
+            .to_owned();
+        let readable_name = if readable_name.is_empty() {
+            "skill".to_owned()
+        } else {
+            readable_name
+        };
+        self.paths
+            .skills_dir
+            .join(format!("{readable_name}--{skill_id}"))
     }
 }
 

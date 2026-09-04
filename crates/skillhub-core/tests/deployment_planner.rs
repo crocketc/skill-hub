@@ -72,6 +72,57 @@ fn planner_prefers_link_then_junction_then_managed_copy() {
 }
 
 #[test]
+fn planner_defaults_project_targets_to_managed_copies_while_agent_targets_stay_linked() {
+    let workspace = tempdir().unwrap();
+    let agent_path = workspace.path().join("agent-skills");
+    let project_path = workspace.path().join("project-skills");
+    std::fs::create_dir_all(&agent_path).unwrap();
+    std::fs::create_dir_all(&project_path).unwrap();
+    let policy = PathPolicy::from_roots([AllowedRoot::new(workspace.path()).unwrap()]).unwrap();
+    let agent = TargetFact::registered(
+        "agent",
+        &agent_path,
+        physical_id_for_path(&agent_path).unwrap(),
+        TargetFactSource::Discovery,
+        capabilities(true, true, true),
+    )
+    .verify(&policy)
+    .unwrap();
+    let project = TargetFact::registered(
+        "project",
+        &project_path,
+        physical_id_for_path(&project_path).unwrap(),
+        TargetFactSource::Project,
+        capabilities(true, true, true),
+    )
+    .verify(&policy)
+    .unwrap();
+    let version = VersionId::parse(&format!("sha256:{}", "a".repeat(64))).unwrap();
+
+    let agent_plan = DeploymentPlanner
+        .plan(DeploymentPlanInput::new(
+            SkillId::new(),
+            version.clone(),
+            "pdf",
+            "central/pdf",
+            vec![agent],
+        ))
+        .unwrap();
+    let project_plan = DeploymentPlanner
+        .plan(DeploymentPlanInput::new(
+            SkillId::new(),
+            version,
+            "pdf",
+            "central/pdf",
+            vec![project],
+        ))
+        .unwrap();
+
+    assert_eq!(agent_plan.mode, DeploymentMode::SymbolicLink);
+    assert_eq!(project_plan.mode, DeploymentMode::ManagedCopy);
+}
+
+#[test]
 fn same_runtime_name_in_one_physical_target_requires_resolution() {
     let (_workspace, mut request) = input(capabilities(true, true, true));
     request.targets[0] = request.targets[0]

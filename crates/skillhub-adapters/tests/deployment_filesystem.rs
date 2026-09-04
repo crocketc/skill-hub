@@ -90,6 +90,28 @@ fn symbolic_link_round_trip_is_verified_or_reports_capability() {
     }
 }
 
+#[test]
+fn managed_symbolic_link_can_be_removed_after_its_central_source_updates() {
+    let fixture = DeploymentFixture::new();
+    let outcome = fixture.deploy(DeploymentMode::SymbolicLink);
+
+    match outcome {
+        Ok(applied) => {
+            let replacement = fixture.source.with_file_name("updated-source");
+            let previous = fixture.source.with_file_name("previous-source");
+            fs::create_dir(&replacement).unwrap();
+            fs::write(replacement.join("SKILL.md"), "# Updated Notes\n").unwrap();
+            fs::rename(&fixture.source, &previous).unwrap();
+            fs::rename(&replacement, &fixture.source).unwrap();
+            DeploymentFilesystem::new()
+                .remove_owned(&applied.ownership)
+                .expect("the managed link should still point to the central source");
+            assert!(!applied.destination_path.exists());
+        }
+        Err(error) => assert_eq!(error.code.as_str(), "deployment.symlink_not_supported"),
+    }
+}
+
 #[cfg(windows)]
 #[test]
 fn junction_fallback_does_not_require_elevated_test_process() {

@@ -1077,6 +1077,16 @@ async fn commit_import_copies_skill_into_the_central_library() {
         skillhub_core::ImportDecision::CopyIntoLibrary
     );
     assert!(source.path().join("SKILL.md").is_file());
+    let visible_skill_roots = std::fs::read_dir(library_root.path().join("skills"))
+        .expect("visible central skill directory")
+        .map(|entry| entry.expect("visible skill entry").path())
+        .collect::<Vec<_>>();
+    assert_eq!(visible_skill_roots.len(), 1);
+    assert_eq!(
+        std::fs::read_to_string(visible_skill_roots[0].join("SKILL.md"))
+            .expect("materialized central skill"),
+        "# Notes\n"
+    );
 
     let detail = facade
         .query(RootAppQuery::GetSkill(GetSkill { skill_id }))

@@ -790,6 +790,8 @@
       "description": "The plan is grouped by physical target; warnings stay visible before commit."
     },
     "mode": {
+      "label": "Deployment mode",
+      "automatic": "Automatic (recommended per target)",
       "symbolic_link": "Symbolic link",
       "directory_junction": "Directory junction",
       "managed_copy": "Managed copy"

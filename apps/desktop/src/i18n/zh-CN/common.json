@@ -790,6 +790,8 @@
       "description": "计划按物理目标归组；提交前始终保留警告。"
     },
     "mode": {
+      "label": "部署方式",
+      "automatic": "自动（按目标推荐）",
       "symbolic_link": "符号链接",
       "directory_junction": "目录联接",
       "managed_copy": "托管复制"

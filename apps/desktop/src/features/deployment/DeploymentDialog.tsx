@@ -5,6 +5,7 @@ import { DataState } from "../../ui/DataState";
 import { DeploymentResults } from "./DeploymentResults";
 import {
   type DeploymentFacade,
+  type DeploymentMode,
   type DeploymentPlan,
   type DeploymentResult,
   type DeploymentTarget,
@@ -33,6 +34,7 @@ export function DeploymentDialog({
   );
   const [targets, setTargets] = useState<DeploymentTarget[]>();
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [mode, setMode] = useState<DeploymentMode>();
   const [plan, setPlan] = useState<DeploymentPlan>();
   const [results, setResults] = useState<DeploymentResult[]>();
   const [error, setError] = useState<string>();
@@ -46,10 +48,13 @@ export function DeploymentDialog({
   }, [activeFacade]);
 
   const selected = (targets ?? []).filter((target) => selectedIds.includes(target.id));
+  const availableModes = selected.length === 0
+    ? []
+    : selected[0].modes.filter((candidate) => selected.every((target) => target.modes.includes(candidate)));
   const preview = async () => {
     setError(undefined);
     try {
-      setPlan(await activeFacade.preview(selected));
+      setPlan(await activeFacade.preview(selected, mode));
       setResults(undefined);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
@@ -100,7 +105,11 @@ export function DeploymentDialog({
                   aria-label={target.label}
                   checked={selectedIds.includes(target.id)}
                   disabled={!target.available}
-                  onChange={(event) => setSelectedIds((current) => event.target.checked ? [...current, target.id] : current.filter((id) => id !== target.id))}
+                  onChange={(event) => {
+                    setMode(undefined);
+                    setPlan(undefined);
+                    setSelectedIds((current) => event.target.checked ? [...current, target.id] : current.filter((id) => id !== target.id));
+                  }}
                   type="checkbox"
                 />
                 <span>
@@ -112,6 +121,22 @@ export function DeploymentDialog({
             ))}
           </div>
           <div className="sh-workflow-actions">
+            <label>
+              <span className="sh-visually-hidden">{t("deployment.mode.label")}</span>
+              <select
+                aria-label={t("deployment.mode.label")}
+                onChange={(event) => {
+                  setMode(event.currentTarget.value ? event.currentTarget.value as DeploymentMode : undefined);
+                  setPlan(undefined);
+                }}
+                value={mode ?? ""}
+              >
+                <option value="">{t("deployment.mode.automatic")}</option>
+                {availableModes.map((candidate) => (
+                  <option key={candidate} value={candidate}>{t(`deployment.mode.${candidate}`)}</option>
+                ))}
+              </select>
+            </label>
             <Button disabled={selected.length === 0} onClick={() => void preview()}>{t("deployment.preview")}</Button>
           </div>
         </section>

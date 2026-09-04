@@ -1,4 +1,4 @@
-use crate::agent::LogicalTarget;
+use crate::agent::{LogicalTarget, TargetScope};
 use crate::check::CheckRun;
 use crate::path_policy::{physical_id_for_path, PathPolicy};
 use crate::project::Project;
@@ -103,7 +103,10 @@ impl TargetFact {
             target.id.clone(),
             &target.path,
             target.physical_id.clone(),
-            TargetFactSource::Discovery,
+            match target.scope {
+                TargetScope::Project => TargetFactSource::Project,
+                TargetScope::Global | TargetScope::Extra => TargetFactSource::Discovery,
+            },
             capabilities,
         )
     }
@@ -137,6 +140,7 @@ pub struct VerifiedTarget {
     physical_target_id: String,
     canonical_path: String,
     capabilities: DeploymentCapability,
+    source: TargetFactSource,
     existing: Vec<ExistingDeployment>,
     case_sensitive: bool,
 }
@@ -169,6 +173,7 @@ impl VerifiedTarget {
             // authorization above canonicalizes it before any identity check.
             canonical_path: fact.registered_path,
             capabilities: fact.capabilities,
+            source: fact.source,
             existing: Vec::new(),
             case_sensitive: fact.case_sensitive,
         })
@@ -188,6 +193,10 @@ impl VerifiedTarget {
 
     pub fn capabilities(&self) -> &DeploymentCapability {
         &self.capabilities
+    }
+
+    pub fn source(&self) -> TargetFactSource {
+        self.source
     }
 
     pub fn existing(&self) -> &[ExistingDeployment] {

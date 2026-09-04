@@ -52,7 +52,15 @@ impl DeploymentPlanner {
             let existing = merged_existing(&target_group);
             let capabilities = merged_capabilities(&target_group);
             let case_sensitive = target_group.iter().all(|target| target.case_sensitive());
-            let mode = select_mode(input.mode_override, &capabilities, &physical_id)?;
+            let prefers_managed_copy = target_group
+                .iter()
+                .any(|target| matches!(target.source(), super::model::TargetFactSource::Project));
+            let mode = select_mode(
+                input.mode_override,
+                &capabilities,
+                prefers_managed_copy,
+                &physical_id,
+            )?;
             let target_warnings = mode_warnings(mode, &capabilities);
             let target_conflicts = conflicts_for(
                 &physical_id,
@@ -179,9 +187,16 @@ fn merged_capabilities(targets: &[&VerifiedTarget]) -> DeploymentCapability {
 fn select_mode(
     override_mode: Option<DeploymentMode>,
     capabilities: &DeploymentCapability,
+    prefers_managed_copy: bool,
     physical_target_id: &str,
 ) -> AppResult<DeploymentMode> {
-    let mode = override_mode.or_else(|| DeploymentMode::select(capabilities));
+    let mode = override_mode.or_else(|| {
+        if prefers_managed_copy && capabilities.copy {
+            Some(DeploymentMode::ManagedCopy)
+        } else {
+            DeploymentMode::select(capabilities)
+        }
+    });
     let Some(mode) = mode else {
         return Err(
             AppError::new(ErrorCode::AgentProfileInvalidCapability, Severity::Error)

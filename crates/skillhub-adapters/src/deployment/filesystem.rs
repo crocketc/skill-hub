@@ -5,8 +5,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use sha2::{Digest, Sha256};
 use skillhub_core::{
-    physical_id_for_path, AppError, AppResult, DeploymentMode, ErrorCode, RecoveryAction, Severity,
-    SkillId, TargetPlan, VersionId,
+    physical_id_for_path, AppError, AppResult, DeploymentCapability, DeploymentMode, ErrorCode,
+    RecoveryAction, Severity, SkillId, TargetPlan, VersionId,
 };
 
 use super::{junction_windows, managed_copy, symlink};
@@ -48,6 +48,25 @@ pub struct DeploymentFilesystem;
 impl DeploymentFilesystem {
     pub fn new() -> Self {
         Self
+    }
+
+    /// Checks the running account's ability to create directory links without
+    /// touching an Agent or project directory. Copy deployments remain
+    /// available even if the platform rejects links.
+    pub fn available_capabilities(&self) -> DeploymentCapability {
+        let symlink = tempfile::tempdir().ok().is_some_and(|workspace| {
+            let source = workspace.path().join("source");
+            let destination = workspace.path().join("destination");
+            if fs::create_dir(&source).is_err() {
+                return false;
+            }
+            let created = symlink::create_dir_link(&source, &destination).is_ok();
+            if created {
+                let _ = symlink::remove_dir_link(&destination);
+            }
+            created
+        });
+        DeploymentCapability::new(symlink, false, true)
     }
 
     pub fn hash_tree(root: impl AsRef<Path>) -> AppResult<String> {
