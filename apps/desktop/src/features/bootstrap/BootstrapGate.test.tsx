@@ -7,6 +7,17 @@ import { ThemeProvider } from "../../styles/ThemeProvider";
 import { OverviewPage } from "../overview/OverviewPage";
 import { BootstrapGate } from "./BootstrapGate";
 import type { BootstrapView } from "./api";
+import type { ScanResult } from "../../api/bindings";
+
+const emptyScanResult: ScanResult = {
+  generation: { generation: 1, observed_at: 1 },
+  roots: [],
+  discovered: [],
+  visited_paths: [],
+  reparsed_count: 0,
+  unchanged_count: 0,
+  errors: [],
+};
 
 const cachedSnapshot = {
   agent_count: 3,
@@ -60,7 +71,7 @@ async function renderBootstrapGate(view: BootstrapView) {
                   <BootstrapGate
                     runtime={{
                       getBootstrapView: async () => view,
-                      runInitializationScan: async () => ({ kind: "completed" }),
+                      runInitializationScan: async () => ({ kind: "completed", result: emptyScanResult }),
                     }}
                   />
                 }

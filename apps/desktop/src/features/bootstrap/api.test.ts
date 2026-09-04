@@ -106,3 +106,21 @@ it("completes onboarding and discovers Agent targets through typed native comman
     { id: "target-1", label: "codex", availability: "available" },
   ]);
 });
+
+it("keeps the native scan result for the read-only preview", async () => {
+  const scanResult = {
+    generation: { generation: 1, observed_at: 2 },
+    roots: ["C:\\Users\\Test\\.codex\\skills"],
+    discovered: [],
+    visited_paths: ["C:\\Users\\Test\\.codex\\skills"],
+    reparsed_count: 0,
+    unchanged_count: 0,
+    errors: [],
+  };
+  mocks.executeCommand.mockResolvedValue({ type: "scan_result", payload: scanResult });
+
+  await expect(desktopBootstrapRuntime.runInitializationScan([])).resolves.toEqual({
+    kind: "completed",
+    result: scanResult,
+  });
+});

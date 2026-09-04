@@ -166,7 +166,11 @@ export function OnboardingWizard({
         }}
       />
     ) : (
-      <ScanStep isScanning={isScanning} onScan={() => void scan()} />
+      <ScanStep
+        isScanning={isScanning}
+        onScan={() => void scan()}
+        scanResult={scanState?.kind === "completed" ? scanState.result : undefined}
+      />
     );
 
   if (completionState === "complete") {

@@ -3,6 +3,7 @@ import {
   queryApplication,
   type BootstrapSnapshot,
   type OperationPhase,
+  type ScanResult,
 } from "../../api/bindings";
 
 export type BootstrapVerificationState =
@@ -15,7 +16,7 @@ export interface BootstrapView {
 }
 
 export type InitializationScanState =
-  | { kind: "completed" }
+  | { kind: "completed"; result: ScanResult }
   | { kind: "in_progress"; operationId: string; phase: OperationPhase };
 
 export interface BootstrapRuntime {
@@ -126,7 +127,7 @@ export const desktopBootstrapRuntime: BootstrapRuntime = {
       };
     }
     if (result.type === "scan_result") {
-      return { kind: "completed" };
+      return { kind: "completed", result: result.payload };
     }
     throw new Error("Unexpected initialization scan response from the native application.");
   },

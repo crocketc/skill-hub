@@ -1,12 +1,14 @@
 import { useTranslation } from "react-i18next";
 import { Button } from "../../ui/Button";
+import type { ScanResult } from "../../api/bindings";
 
 interface ScanStepProps {
   isScanning: boolean;
   onScan: () => void;
+  scanResult?: ScanResult;
 }
 
-export function ScanStep({ isScanning, onScan }: ScanStepProps) {
+export function ScanStep({ isScanning, onScan, scanResult }: ScanStepProps) {
   const { t } = useTranslation();
 
   return (
@@ -17,6 +19,41 @@ export function ScanStep({ isScanning, onScan }: ScanStepProps) {
       <Button loading={isScanning} onClick={onScan}>
         {t("onboarding.startReadOnlyScan")}
       </Button>
+      {scanResult ? (
+        <section aria-labelledby="scan-preview-title" className="sh-onboarding__scan-preview">
+          <h2 id="scan-preview-title">{t("onboarding.scanPreviewTitle")}</h2>
+          <div className="sh-onboarding__scan-stats">
+            <span>{t("onboarding.scanDiscovered", { count: scanResult.discovered.length })}</span>
+            <span>{t("onboarding.scanVisited", { count: scanResult.visited_paths.length })}</span>
+            <span>{t("onboarding.scanIssues", { count: scanResult.errors.length })}</span>
+          </div>
+          {scanResult.discovered.length > 0 ? (
+            <ul className="sh-onboarding__scan-list">
+              {scanResult.discovered.map((skill) => (
+                <li key={skill.path}>
+                  <strong>{skill.relative_path || skill.path}</strong>
+                  <code>{skill.path}</code>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p>{t("onboarding.scanNoSkills")}</p>
+          )}
+          {scanResult.errors.length > 0 ? (
+            <details>
+              <summary>{t("onboarding.scanIssueDetails")}</summary>
+              <ul className="sh-onboarding__scan-list">
+                {scanResult.errors.map((issue) => (
+                  <li key={`${issue.path}:${issue.code}`}>
+                    <code>{issue.path}</code>
+                    <span>{issue.code}</span>
+                  </li>
+                ))}
+              </ul>
+            </details>
+          ) : null}
+        </section>
+      ) : null}
     </section>
   );
 }

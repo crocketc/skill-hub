@@ -1,9 +1,19 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { I18nextProvider } from "react-i18next";
 import { createSkillHubI18n } from "../../i18n";
+import type { ScanResult } from "../../api/bindings";
 import { OnboardingWizard } from "./OnboardingWizard";
 
 const defaultLibraryPath = "C:\\Users\\Test\\SkillHub\\skills";
+const emptyScanResult: ScanResult = {
+  generation: { generation: 1, observed_at: 1 },
+  roots: [],
+  discovered: [],
+  visited_paths: [],
+  reparsed_count: 0,
+  unchanged_count: 0,
+  errors: [],
+};
 
 async function click(element: HTMLElement) {
   await act(async () => {
@@ -53,7 +63,7 @@ it("keeps compatibility discovery opt-in and scan read-only while allowing back 
           },
           runInitializationScan: async (scopeIds) => {
             await runInitializationScan(scopeIds);
-            return { kind: "completed" };
+            return { kind: "completed", result: emptyScanResult };
           },
         }}
       />
@@ -96,7 +106,7 @@ it("lets users finish without scanning", async () => {
           },
           runInitializationScan: async (scopeIds) => {
             await runInitializationScan(scopeIds);
-            return { kind: "completed" };
+            return { kind: "completed", result: emptyScanResult };
           },
         }}
       />
@@ -184,7 +194,7 @@ it("shows discovery targets without deploying and requires selection confirmatio
 });
 
 it("selects all available targets and scans only the confirmed targets", async () => {
-  const runInitializationScan = vi.fn(async () => ({ kind: "completed" as const }));
+  const runInitializationScan = vi.fn(async () => ({ kind: "completed" as const, result: emptyScanResult }));
   const i18n = await createSkillHubI18n(["zh-CN"]);
   render(
     <I18nextProvider i18n={i18n}>
