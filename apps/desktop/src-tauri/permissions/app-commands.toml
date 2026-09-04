@@ -19,3 +19,13 @@ commands.allow = ["query_application"]
 identifier = "deny-query-application"
 description = "Denies the typed AppQuery envelope."
 commands.deny = ["query_application"]
+
+[[permission]]
+identifier = "allow-pick-local-directory"
+description = "Allows the desktop shell to open a native local directory picker."
+commands.allow = ["pick_local_directory"]
+
+[[permission]]
+identifier = "deny-pick-local-directory"
+description = "Denies the native local directory picker."
+commands.deny = ["pick_local_directory"]

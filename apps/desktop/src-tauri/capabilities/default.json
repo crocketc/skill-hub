@@ -8,6 +8,7 @@
     "core:event:allow-unlisten",
     "updater:default",
     "allow-execute-command",
-    "allow-query-application"
+    "allow-query-application",
+    "allow-pick-local-directory"
   ]
 }

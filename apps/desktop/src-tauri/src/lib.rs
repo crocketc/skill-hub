@@ -47,6 +47,23 @@ async fn query_application(
     bridge.query(query).await
 }
 
+#[tauri::command]
+async fn pick_local_directory() -> Result<Option<String>, String> {
+    tauri::async_runtime::spawn_blocking(|| {
+        let Some(path) = rfd::FileDialog::new().pick_folder() else {
+            return Ok(None);
+        };
+        let canonical = std::fs::canonicalize(&path)
+            .map_err(|error| format!("directory_picker.canonicalize_failed: {error}"))?;
+        if !canonical.is_dir() {
+            return Err("directory_picker.not_a_directory".to_owned());
+        }
+        Ok(Some(canonical.to_string_lossy().into_owned()))
+    })
+    .await
+    .map_err(|error| format!("directory_picker.join_failed: {error}"))?
+}
+
 pub fn emit_app_event<R: tauri::Runtime>(app: &AppHandle<R>, event: AppEvent) -> tauri::Result<()> {
     app.emit("app_event", event)
 }
@@ -64,7 +81,11 @@ pub fn run_with_facade(facade: Arc<LocalApplicationFacade>) -> tauri::Result<()>
             }
         })
         .manage(CommandBridge::new(facade))
-        .invoke_handler(tauri::generate_handler![execute_command, query_application])
+        .invoke_handler(tauri::generate_handler![
+            execute_command,
+            query_application,
+            pick_local_directory
+        ])
         .run(tauri::generate_context!())
 }
 

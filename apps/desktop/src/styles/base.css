@@ -3250,6 +3250,18 @@ a {
   font-weight: 650;
 }
 
+.sh-import-source__picker {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.sh-import-source__picker > span {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+
 .sh-import-source__suggestions {
   display: grid;
   gap: var(--space-2);

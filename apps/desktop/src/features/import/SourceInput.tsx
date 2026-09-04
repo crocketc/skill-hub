@@ -10,6 +10,7 @@ export interface SourceInputProps {
   selectedSources?: string[];
   onChange: (value: string) => void;
   onParse: () => void;
+  onPickLocalPath?: () => void;
   onToggleSource?: (source: string) => void;
   onSelectAllSources?: () => void;
 }
@@ -22,6 +23,7 @@ export function SourceInput({
   selectedSources = [],
   onChange,
   onParse,
+  onPickLocalPath,
   onToggleSource,
   onSelectAllSources,
 }: SourceInputProps) {
@@ -60,6 +62,15 @@ export function SourceInput({
             </label>
           ))}
         </fieldset>
+      ) : null}
+
+      {onPickLocalPath ? (
+        <div className="sh-import-source__picker">
+          <Button disabled={disabled} onClick={onPickLocalPath} variant="secondary">
+            {t("importWorkflow.source.pickLocalDirectory")}
+          </Button>
+          <span>{t("importWorkflow.source.manualFallback")}</span>
+        </div>
       ) : null}
 
       <label className="sh-import-source__field">

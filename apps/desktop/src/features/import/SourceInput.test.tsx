@@ -51,3 +51,12 @@ it("lists scanned sources with explicit bulk selection controls", async () => {
   expect(onToggleSource).toHaveBeenCalledWith("C:/claude/skills");
   expect(onSelectAllSources).toHaveBeenCalledOnce();
 });
+
+it("offers a native directory picker when the host provides one", async () => {
+  const onPickLocalPath = vi.fn();
+  await renderSourceInput({ onPickLocalPath });
+
+  fireEvent.click(screen.getByRole("button", { name: "选择本地目录" }));
+
+  expect(onPickLocalPath).toHaveBeenCalledOnce();
+});

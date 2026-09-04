@@ -18,6 +18,7 @@ import {
 } from "./api";
 import { ImportSummary } from "./ImportSummary";
 import { SourceInput } from "./SourceInput";
+import { desktopDirectoryPicker, type DirectoryPicker } from "../../platform/directoryPicker";
 
 type WizardPhase =
   | "source"
@@ -105,6 +106,7 @@ function reducer(state: WizardState, event: WizardEvent): WizardState {
 }
 
 export interface ImportWizardProps {
+  directoryPicker?: DirectoryPicker;
   facade?: ImportFacade;
   initialSources?: string[];
   initialSourceText?: string;
@@ -114,6 +116,7 @@ export interface ImportWizardProps {
 }
 
 export function ImportWizard({
+  directoryPicker = desktopDirectoryPicker,
   facade = unavailableImportFacade,
   initialSources = [],
   initialSourceText = "",
@@ -124,6 +127,7 @@ export function ImportWizard({
   const { t } = useTranslation();
   const [state, dispatch] = useReducer(reducer, { ...initialState, sourceText: initialSourceText });
   const [selectedSources, setSelectedSources] = useState(initialSources);
+  const [pickerError, setPickerError] = useState<string | null>(null);
   const operationRef = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
 
@@ -159,6 +163,18 @@ export function ImportWizard({
           type: "failed",
         });
       }
+    }
+  };
+
+  const pickLocalDirectory = async () => {
+    setPickerError(null);
+    try {
+      const path = await directoryPicker.pickDirectory();
+      if (!path) return;
+      setSelectedSources([]);
+      dispatch({ type: "source_changed", value: path });
+    } catch (error) {
+      setPickerError(error instanceof Error ? error.message : t("importWorkflow.source.pickerFailed"));
     }
   };
 
@@ -215,6 +231,7 @@ export function ImportWizard({
 
       <div className="sh-import-wizard__panel">
         {importGuide ? <p aria-live="polite" className="sh-import-wizard__guide">{importGuide}</p> : null}
+        {pickerError ? <p aria-live="polite" className="sh-import-source__notice">{pickerError}</p> : null}
         {(["source", "acquiring", "candidate_gate", "cancelled", "failed"] as WizardPhase[]).includes(state.phase) ? (
           <SourceInput
             descriptor={state.descriptor}
@@ -224,6 +241,7 @@ export function ImportWizard({
               dispatch({ type: "source_changed", value });
             }}
             onParse={() => void runAcquisition()}
+            onPickLocalPath={() => void pickLocalDirectory()}
             onSelectAllSources={() => setSelectedSources(initialSources)}
             onToggleSource={(source) => setSelectedSources((current) => current.includes(source) ? current.filter((item) => item !== source) : [...current, source])}
             selectedSources={selectedSources}
