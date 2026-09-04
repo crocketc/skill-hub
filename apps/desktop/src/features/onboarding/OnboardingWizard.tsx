@@ -81,7 +81,7 @@ export function OnboardingWizard({
     setScanState(null);
     setMessage(null);
     try {
-      const result = await runtime.runInitializationScan([]);
+      const result = await runtime.runInitializationScan(selectedTargetIds);
       setScanState(result);
       setMessage(
         result.kind === "completed"
@@ -139,6 +139,10 @@ export function OnboardingWizard({
         onDiscover={() => void discoverAgents()}
         onSelectionConfirmChange={setSelectionConfirmed}
         onTargetSelectionChange={selectTarget}
+        onSelectAllAvailable={() => {
+          setSelectedTargetIds(targets?.filter((target) => target.availability === "available").map((target) => target.id) ?? []);
+          setSelectionConfirmed(false);
+        }}
       />
     ) : (
       <ScanStep isScanning={isScanning} onScan={() => void scan()} />

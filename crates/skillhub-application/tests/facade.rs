@@ -2,7 +2,7 @@ use skillhub_application::LocalApplicationFacade;
 use skillhub_core::{
     agent::{
         ClientInstance, ClientKind, ClientPresence, DirectoryPrecedence, DiscoverySnapshot,
-        LogicalTarget, OperatingSystem, TargetScope,
+        LogicalTarget, OperatingSystem, PhysicalTarget, TargetScope,
     },
     api::{
         AnalyzeImport, AppCommandResult, AppQueryResult, CommitDeployment, CommitRestore,
@@ -198,6 +198,53 @@ async fn scan_commands_persist_confirmed_results_and_reject_unregistered_paths()
         .await
         .expect_err("missing path must fail");
     assert_eq!(error.code, ErrorCode::InternalError);
+}
+
+#[tokio::test]
+async fn initialization_scan_without_selection_ignores_unavailable_agent_targets() {
+    let database = Database::open_in_memory().expect("database");
+    let available_root = tempfile::tempdir().expect("available root");
+    let skill = available_root.path().join("example");
+    std::fs::create_dir_all(&skill).expect("skill dir");
+    std::fs::write(skill.join("SKILL.md"), "# Example\n").expect("marker");
+    let unavailable_path = available_root.path().join("missing-agent");
+    database
+        .agent_repository()
+        .replace(&DiscoverySnapshot {
+            generation: "1".into(),
+            observed_at: "2026-09-04T00:00:00Z".into(),
+            instances: Vec::new(),
+            logical_targets: vec![
+                LogicalTarget {
+                    id: "available".into(), profile_id: "codex".into(), client_id: "codex".into(),
+                    scope: TargetScope::Global, path: available_root.path().to_string_lossy().into_owned(),
+                    marker: "SKILL.md".into(), precedence: DirectoryPrecedence::Preferred,
+                    exists: true, readable: true, writable: true, available: true,
+                    physical_id: skillhub_core::physical_id_for_path(available_root.path()).expect("physical id"),
+                },
+                LogicalTarget {
+                    id: "unavailable".into(), profile_id: "unknown".into(), client_id: "unknown".into(),
+                    scope: TargetScope::Global, path: unavailable_path.to_string_lossy().into_owned(),
+                    marker: "SKILL.md".into(), precedence: DirectoryPrecedence::Unknown,
+                    exists: false, readable: false, writable: false, available: false,
+                    physical_id: "missing".into(),
+                },
+            ],
+            physical_targets: vec![PhysicalTarget {
+                id: skillhub_core::physical_id_for_path(available_root.path()).expect("physical id"),
+                path: available_root.path().to_string_lossy().into_owned(),
+                exists: true,
+                readable: true,
+                writable: true,
+                case_behavior: "unknown".into(),
+                logical_target_ids: vec!["available".into()],
+            }],
+        })
+        .expect("save discovery");
+    let facade = LocalApplicationFacade::new(database);
+    let result = facade.execute(AppCommand::RunInitializationScan(skillhub_core::api::RunInitializationScan { scope_ids: Vec::new() })).await.expect("scan");
+    let AppCommandResult::ScanResult(scan) = result else { panic!("expected scan result"); };
+    assert_eq!(scan.discovered.len(), 1);
 }
 
 #[tokio::test]

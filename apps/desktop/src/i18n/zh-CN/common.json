@@ -311,6 +311,7 @@
     "contractUnavailable": "此操作尚未连接到本机服务。不会创建目录、部署或导入任何技能。",
     "defaultLocation": "默认集中库位置",
     "discoverAgents": "识别 Agent",
+    "selectAllAvailable": "全选可用目标",
     "eyebrow": "初始化",
     "finish": "完成初始化",
     "finishedDescription": "初始化设置已提交。",
@@ -395,6 +396,7 @@
         "empty": "技能库中还没有技能",
         "error": "无法加载技能库",
         "importBoundary": "导入流程尚未连接",
+        "openDiscovery": "打开发现",
         "loading": "正在加载技能库",
         "noResults": "没有符合当前筛选条件的技能",
         "unavailable": "技能目录数据尚未连接"

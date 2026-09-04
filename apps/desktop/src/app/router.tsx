@@ -77,6 +77,11 @@ function DeploymentRoute() {
   );
 }
 
+function SkillLibraryRoute() {
+  const navigate = useNavigate();
+  return <SkillLibraryPage facade={nativeSkillLibraryFacade} onOpenDiscovery={() => navigate("/discovery")} />;
+}
+
 function DiscoveryRoute() {
   const navigate = useNavigate();
 
@@ -112,7 +117,7 @@ export const appRouter = createBrowserRouter([
       { index: true, element: <OverviewPage /> },
       {
         path: "library",
-        element: <SkillLibraryPage facade={nativeSkillLibraryFacade} />,
+        element: <SkillLibraryRoute />,
       },
       {
         path: "library/:skillId",

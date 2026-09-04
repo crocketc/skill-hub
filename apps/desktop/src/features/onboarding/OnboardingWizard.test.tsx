@@ -183,6 +183,35 @@ it("shows discovery targets without deploying and requires selection confirmatio
   expect(screen.getByRole("button", { name: "继续" })).toBeEnabled();
 });
 
+it("selects all available targets and scans only the confirmed targets", async () => {
+  const runInitializationScan = vi.fn(async () => ({ kind: "completed" as const }));
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  render(
+    <I18nextProvider i18n={i18n}>
+      <OnboardingWizard
+        libraryPath={defaultLibraryPath}
+        operations={{
+          completeOnboarding: async () => undefined,
+          discoverAgents: async () => ({ targets: [
+            { id: "codex", label: "Codex", availability: "available" as const },
+            { id: "claude", label: "Claude", availability: "available" as const },
+            { id: "missing", label: "Missing", availability: "unavailable" as const },
+          ] }),
+        }}
+        runtime={{ getBootstrapView: async () => { throw new Error("not used"); }, runInitializationScan }}
+      />
+    </I18nextProvider>,
+  );
+  await click(screen.getByRole("button", { name: "继续" }));
+  await click(screen.getByLabelText("我确认此步骤只识别，不会部署技能"));
+  await click(screen.getByRole("button", { name: "识别 Agent" }));
+  await click(screen.getByRole("button", { name: "全选可用目标" }));
+  await click(screen.getByLabelText("我确认所选目标只保存兼容性选择，不会部署技能"));
+  await click(screen.getByRole("button", { name: "继续" }));
+  await click(screen.getByRole("button", { name: "开始只读扫描" }));
+  expect(runInitializationScan).toHaveBeenCalledWith(["codex", "claude"]);
+});
+
 it("reports a scan operation as started and completes the wizard once", async () => {
   const completeOnboarding = vi.fn(async () => undefined);
   const onComplete = vi.fn();

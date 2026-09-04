@@ -1413,6 +1413,7 @@ impl LocalApplicationFacade {
                     snapshot
                         .logical_targets
                         .iter()
+                        .filter(|target| target.available && target.exists)
                         .map(|target| target.id.clone()),
                 );
                 ids.extend(

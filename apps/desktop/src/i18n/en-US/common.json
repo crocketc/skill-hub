@@ -311,6 +311,7 @@
     "contractUnavailable": "This action is not yet connected to the native service. No directory, deployment, or import was made.",
     "defaultLocation": "Default library location",
     "discoverAgents": "Discover agents",
+    "selectAllAvailable": "Select all available targets",
     "eyebrow": "Initialization",
     "finish": "Finish initialization",
     "finishedDescription": "Initialization settings were submitted.",
@@ -395,6 +396,7 @@
         "empty": "No skills are in the library yet",
         "error": "Could not load the skill library",
         "importBoundary": "Import is not connected yet",
+        "openDiscovery": "Open discovery",
         "loading": "Loading skill library",
         "noResults": "No skills match the current filters",
         "unavailable": "Skill catalog data is not connected yet"

@@ -54,6 +54,7 @@ import { SkillTable } from "./SkillTable";
 
 export interface SkillLibraryPageProps {
   facade: SkillLibraryFacade;
+  onOpenDiscovery?: () => void;
 }
 
 interface SaveViewFormProps {
@@ -311,7 +312,7 @@ function BatchBar({
   );
 }
 
-export function SkillLibraryPage({ facade }: SkillLibraryPageProps): JSX.Element {
+export function SkillLibraryPage({ facade, onOpenDiscovery }: SkillLibraryPageProps): JSX.Element {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const location = useLocation();
@@ -723,7 +724,9 @@ export function SkillLibraryPage({ facade }: SkillLibraryPageProps): JSX.Element
     return (
       <section className="sh-skill-library" ref={rootRef}>
         <DataState
+          actionLabel={onOpenDiscovery ? t("skillLibrary.page.states.openDiscovery") : undefined}
           message={t("skillLibrary.page.states.empty")}
+          onAction={onOpenDiscovery}
           state="empty"
         />
         <p className="sh-skill-library__boundary">

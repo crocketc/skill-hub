@@ -26,6 +26,7 @@ import {
 interface RenderLibraryOptions {
   facade: SkillLibraryFacade;
   initialEntry?: InitialEntry;
+  onOpenDiscovery?: () => void;
   queryRetry?: boolean | number;
 }
 
@@ -37,13 +38,14 @@ interface RenderedLibrary {
 function renderLibrary({
   facade,
   initialEntry = "/library",
+  onOpenDiscovery,
   queryRetry = false,
 }: RenderLibraryOptions): RenderedLibrary {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: queryRetry, retryDelay: 0 } },
   });
   const router = createMemoryRouter(
-    [{ path: "/library", element: <SkillLibraryPage facade={facade} /> }],
+    [{ path: "/library", element: <SkillLibraryPage facade={facade} onOpenDiscovery={onOpenDiscovery} /> }],
     { initialEntries: [initialEntry] },
   );
 
@@ -345,10 +347,13 @@ describe("SkillLibraryPage", () => {
 
   it("distinguishes an empty library from an empty filtered result", async () => {
     const emptyLibrary = createMockSkillLibraryFacade({ pageItems: [], total: 0 });
-    const first = renderLibrary({ facade: emptyLibrary });
+    const onOpenDiscovery = vi.fn();
+    const first = renderLibrary({ facade: emptyLibrary, onOpenDiscovery });
 
     expect(await screen.findByText("No skills are in the library yet")).toBeVisible();
     expect(screen.getByText("Import is not connected yet")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Open discovery" }));
+    expect(onOpenDiscovery).toHaveBeenCalledOnce();
 
     first.queryClient.clear();
     await act(() => first.router.navigate("/library?q=missing"));

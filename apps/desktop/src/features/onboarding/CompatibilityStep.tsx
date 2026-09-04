@@ -12,6 +12,7 @@ interface CompatibilityStepProps {
   onDiscover: () => void;
   onSelectionConfirmChange: (confirmed: boolean) => void;
   onTargetSelectionChange: (targetId: string, selected: boolean) => void;
+  onSelectAllAvailable: () => void;
 }
 
 export function CompatibilityStep({
@@ -24,6 +25,7 @@ export function CompatibilityStep({
   onDiscover,
   onSelectionConfirmChange,
   onTargetSelectionChange,
+  onSelectAllAvailable,
 }: CompatibilityStepProps) {
   const { t } = useTranslation();
 
@@ -51,6 +53,11 @@ export function CompatibilityStep({
       {targets && targets.length > 0 ? (
         <fieldset className="sh-onboarding__targets">
           <legend>{t("onboarding.compatibilityTargets")}</legend>
+          {targets.some((target) => target.availability === "available") ? (
+            <Button onClick={onSelectAllAvailable} size="sm" variant="secondary">
+              {t("onboarding.selectAllAvailable")}
+            </Button>
+          ) : null}
           {targets.map((target) => (
             <label className="sh-onboarding__check" key={target.id}>
               <input
