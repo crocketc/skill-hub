@@ -201,4 +201,68 @@ describe("native import facade", () => {
       status: "failed",
     }));
   });
+
+  it("normalizes Windows extended prefixes for display and native requests", async () => {
+    const extendedRoot = "\\\\?\\C:\\Users\\crock\\.agents\\skills";
+    vi.mocked(queryApplication).mockResolvedValue({
+      type: "import_candidates",
+      payload: [{
+        absolute_root: `${extendedRoot}\\pptx`,
+        default_action: "review",
+        marker: "SKILL.md",
+        ownership: "arbitrary_local_directory",
+        ownership_detail: null,
+        relative_root: "pptx",
+        runtime_name: "pptx",
+        source: { kind: "local", locator: { local_path: extendedRoot } },
+      }],
+    });
+
+    const candidates = await nativeImportFacade.acquireCandidates(await nativeImportFacade.parseSource(extendedRoot));
+
+    expect(candidates[0]).toEqual(expect.objectContaining({
+      id: "C:\\Users\\crock\\.agents\\skills\\pptx#pptx",
+      path: "C:\\Users\\crock\\.agents\\skills\\pptx",
+      source: expect.objectContaining({
+        displayTarget: "C:\\Users\\crock\\.agents\\skills",
+        input: "C:\\Users\\crock\\.agents\\skills",
+      }),
+    }));
+    expect(queryApplication).toHaveBeenCalledWith({
+      type: "discover_import_candidates",
+      payload: { source: { kind: "local", locator: { local_path: "C:\\Users\\crock\\.agents\\skills" } } },
+    });
+  });
+
+  it("maps the independent action to the decision allowed by native conflict analysis", async () => {
+    const candidate = {
+      basicCheck: "not_checked" as const,
+      id: "C:/incoming/notes#notes",
+      name: "notes",
+      ownership: "unknown" as const,
+      path: "C:/incoming/notes",
+      source: await nativeImportFacade.parseSource("C:/incoming"),
+    };
+    vi.mocked(queryApplication).mockResolvedValue({
+      type: "import_analysis",
+      payload: {
+        actions: ["keep_independent", "skip"],
+        candidate: {} as never,
+        conflicts: [],
+        duplicate_kind: "same_runtime_name_different_content",
+        matches: [],
+      },
+    });
+    await nativeImportFacade.analyzeConflicts([candidate]);
+    vi.mocked(executeCommand)
+      .mockResolvedValueOnce({ type: "prepared_import", payload: { id: "operation-3", candidate: {} as never, analysis: {} as never } })
+      .mockResolvedValueOnce({ type: "import_summary", payload: { committed: true, items: [{ decision: "keep_independent", original_preserved: true, skill_id: "skill-3" }], operation_id: "operation-3" } });
+
+    await nativeImportFacade.commitImport({ candidates: [candidate], conflicts: [] }, { [candidate.id]: "independent" });
+
+    expect(executeCommand).toHaveBeenLastCalledWith({
+      type: "commit_import",
+      payload: { decision: "keep_independent", prepared_import_id: "operation-3" },
+    });
+  });
 });

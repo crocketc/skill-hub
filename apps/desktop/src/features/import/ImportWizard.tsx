@@ -73,7 +73,17 @@ const initialState: WizardState = {
 function reducer(state: WizardState, event: WizardEvent): WizardState {
   switch (event.type) {
     case "source_changed":
-      return { ...state, error: undefined, phase: "source", sourceText: event.value };
+      return {
+        ...state,
+        actions: {},
+        candidates: [],
+        descriptor: undefined,
+        error: undefined,
+        phase: "source",
+        plan: undefined,
+        selectedIds: [],
+        sourceText: event.value,
+      };
     case "parse_started":
       return { ...state, error: undefined, phase: "acquiring" };
     case "parse_succeeded":
@@ -99,7 +109,12 @@ function reducer(state: WizardState, event: WizardEvent): WizardState {
     case "cancelled":
       return { ...state, error: undefined, phase: "cancelled", previousPhase: "source" };
     case "retry":
-      return { ...state, error: undefined, phase: state.previousPhase ?? "source" };
+      return {
+        ...state,
+        actions: state.previousPhase === "conflicts" ? {} : state.actions,
+        error: undefined,
+        phase: state.previousPhase ?? "source",
+      };
     default:
       return state;
   }

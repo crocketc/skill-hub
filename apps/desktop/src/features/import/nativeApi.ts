@@ -22,11 +22,17 @@ function nativeSource(source: SourceDescriptor) {
   if (source.kind !== "local_path") {
     throw new Error("当前版本仅支持从本地目录导入，联网来源将在后续版本接入");
   }
-  return { kind: "local" as const, locator: { local_path: source.displayTarget } };
+  return { kind: "local" as const, locator: { local_path: normalizeWindowsPath(source.displayTarget) } };
 }
 
 function candidateId(candidate: NativeImportCandidate): string {
-  return `${candidate.absolute_root}#${candidate.relative_root}`;
+  return `${normalizeWindowsPath(candidate.absolute_root)}#${candidate.relative_root}`;
+}
+
+function normalizeWindowsPath(path: string): string {
+  if (path.startsWith("\\\\?\\UNC\\")) return `\\\\${path.slice(8)}`;
+  if (path.startsWith("\\\\?\\")) return path.slice(4);
+  return path;
 }
 
 function ownership(ownership: NativeImportCandidate["ownership"]): ImportCandidate["ownership"] {
@@ -52,11 +58,11 @@ function toCandidate(candidate: NativeImportCandidate): ImportCandidate {
     id: candidateId(candidate),
     name: candidate.runtime_name,
     ownership: ownership(candidate.ownership),
-    path: candidate.absolute_root,
+    path: normalizeWindowsPath(candidate.absolute_root),
     source: {
-      displayTarget: candidate.source.locator.local_path ?? candidate.absolute_root,
+      displayTarget: normalizeWindowsPath(candidate.source.locator.local_path ?? candidate.absolute_root),
       executesCommand: false,
-      input: candidate.source.locator.local_path ?? candidate.absolute_root,
+      input: normalizeWindowsPath(candidate.source.locator.local_path ?? candidate.absolute_root),
       kind: "local_path",
     },
   };
@@ -92,7 +98,7 @@ function actionForDecision(decision: ImportDecision): ImportAction | undefined {
   }
 }
 
-function decisionForAction(action: ImportAction): ImportDecision {
+function decisionForAction(action: ImportAction, allowed?: ImportDecision[]): ImportDecision {
   switch (action) {
     case "reuse":
       return "reuse_existing";
@@ -101,7 +107,9 @@ function decisionForAction(action: ImportAction): ImportDecision {
     case "takeover":
       return "take_over_after_verify";
     case "independent":
-      return "copy_as_independent_managed_skill";
+      return allowed?.includes("copy_as_independent_managed_skill")
+        ? "copy_as_independent_managed_skill"
+        : "keep_independent";
     case "skip":
       return "skip";
   }
@@ -179,6 +187,7 @@ function importSummary(result: AppCommandResult) {
 }
 
 const discoveredCandidates = new Map<string, NativeImportCandidate>();
+const candidateDecisions = new Map<string, ImportDecision[]>();
 
 function reconstructedCandidate(candidate: ImportCandidate): NativeImportCandidate {
   return {
@@ -221,6 +230,7 @@ export const nativeImportFacade: ImportFacade = {
 
   async analyzeConflicts(candidates) {
     const conflicts: ImportConflict[] = [];
+    candidateDecisions.clear();
     for (const candidate of candidates) {
       const result = await queryApplication({
         type: "analyze_import",
@@ -230,6 +240,7 @@ export const nativeImportFacade: ImportFacade = {
         },
       });
       const analysis = queryImportAnalysis(result);
+      candidateDecisions.set(candidate.id, analysis.actions);
       for (const conflict of analysis.conflicts) {
         if (!conflict.requires_choice) continue;
         const allowedActions = analysis.actions
@@ -263,7 +274,7 @@ export const nativeImportFacade: ImportFacade = {
         const summary = importSummary(await executeCommand({
           type: "commit_import",
           payload: {
-            decision: decisionForAction(action),
+            decision: decisionForAction(action, candidateDecisions.get(candidate.id)),
             prepared_import_id: prepared.id,
           },
         }));
@@ -282,6 +293,7 @@ export const nativeImportFacade: ImportFacade = {
 
   cancel: () => {
     discoveredCandidates.clear();
+    candidateDecisions.clear();
     return Promise.resolve();
   },
 };

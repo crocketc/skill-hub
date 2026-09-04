@@ -91,3 +91,25 @@ it("fills the source from the native directory picker", async () => {
   expect(await screen.findByDisplayValue("C:/picked/skills")).toBeVisible();
   expect(picker.pickDirectory).toHaveBeenCalledOnce();
 });
+
+it("requires a fresh conflict decision when retrying an import", async () => {
+  const user = userEvent.setup();
+  await renderWizard(createMockImportFacade({ scenario: "conflict-required" }));
+
+  await user.type(screen.getByLabelText("来源"), "C:/incoming");
+  await user.click(screen.getByRole("button", { name: "解析来源" }));
+  await user.click(await screen.findByRole("button", { name: "继续选择候选" }));
+  await user.click(screen.getByRole("checkbox", { name: /PDF/ }));
+  await user.click(screen.getByRole("button", { name: "分析冲突" }));
+  await user.click(await screen.findByRole("radio", { name: "独立导入" }));
+  await user.click(screen.getByRole("button", { name: "上一步" }));
+  await user.click(screen.getByRole("button", { name: "上一步" }));
+  await user.click(screen.getByRole("button", { name: "解析来源" }));
+  await user.click(await screen.findByRole("button", { name: "继续选择候选" }));
+  await user.click(screen.getByRole("checkbox", { name: /PDF/ }));
+  await user.click(screen.getByRole("button", { name: "分析冲突" }));
+
+  expect(screen.getByRole("button", { name: "提交导入" })).toBeDisabled();
+  await user.click(screen.getByRole("radio", { name: "跳过此候选项" }));
+  expect(screen.getByRole("button", { name: "提交导入" })).toBeEnabled();
+});
