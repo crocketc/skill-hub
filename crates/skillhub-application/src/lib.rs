@@ -1424,6 +1424,29 @@ impl LocalApplicationFacade {
                         .map(|project| project.id.to_string()),
                 );
             }
+            // Accept the pre-v0.2 profile/client identifiers emitted by older
+            // renderers while preferring the immutable logical target IDs.
+            let mut normalized_ids = Vec::with_capacity(ids.len());
+            for id in ids {
+                if snapshot.logical_targets.iter().any(|target| target.id == id) {
+                    normalized_ids.push(id);
+                    continue;
+                }
+                let legacy_matches = snapshot
+                    .logical_targets
+                    .iter()
+                    .filter(|target| format!("{}:{}", target.profile_id, target.client_id) == id)
+                    .map(|target| target.id.clone())
+                    .collect::<Vec<_>>();
+                if legacy_matches.is_empty() {
+                    normalized_ids.push(id);
+                } else {
+                    normalized_ids.extend(legacy_matches);
+                }
+            }
+            normalized_ids.sort();
+            normalized_ids.dedup();
+
             let mut roots = Vec::new();
             for target in &snapshot.logical_targets {
                 if target.available && target.exists {
@@ -1442,7 +1465,7 @@ impl LocalApplicationFacade {
                 .scan_service
                 .lock()
                 .map_err(|_| internal("execute.scan_scopes"))?;
-            for id in &ids {
+            for id in &normalized_ids {
                 if snapshot
                     .logical_targets
                     .iter()
@@ -1460,7 +1483,7 @@ impl LocalApplicationFacade {
                     )?;
                 }
             }
-            Ok(ids)
+            Ok(normalized_ids)
         })
     }
 

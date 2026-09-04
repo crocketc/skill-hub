@@ -248,6 +248,50 @@ async fn initialization_scan_without_selection_ignores_unavailable_agent_targets
 }
 
 #[tokio::test]
+async fn initialization_scan_accepts_legacy_profile_client_scope_ids() {
+    let database = Database::open_in_memory().expect("database");
+    let root = tempfile::tempdir().expect("root");
+    let skill = root.path().join("example");
+    std::fs::create_dir_all(&skill).expect("skill dir");
+    std::fs::write(skill.join("SKILL.md"), "# Example\n").expect("marker");
+    let physical_id = skillhub_core::physical_id_for_path(root.path()).expect("physical id");
+    database
+        .agent_repository()
+        .replace(&DiscoverySnapshot {
+            generation: "1".into(),
+            observed_at: "2026-09-04T00:00:00Z".into(),
+            instances: vec![ClientInstance {
+                profile_id: "codex".into(),
+                client_id: "codex".into(),
+                kind: ClientKind::Cli,
+                supported_os: vec![OperatingSystem::Windows],
+                client_presence: ClientPresence::Unknown,
+            }],
+            logical_targets: vec![LogicalTarget {
+                id: "target-1".into(), profile_id: "codex".into(), client_id: "codex".into(),
+                scope: TargetScope::Global, path: root.path().to_string_lossy().into_owned(),
+                marker: "SKILL.md".into(), precedence: DirectoryPrecedence::Preferred,
+                exists: true, readable: true, writable: true, available: true,
+                physical_id: physical_id.clone(),
+            }],
+            physical_targets: vec![PhysicalTarget {
+                id: physical_id, path: root.path().to_string_lossy().into_owned(), exists: true,
+                readable: true, writable: true, case_behavior: "unknown".into(),
+                logical_target_ids: vec!["target-1".into()],
+            }],
+        })
+        .expect("save discovery");
+    let facade = LocalApplicationFacade::new(database);
+    let result = facade
+        .execute(AppCommand::RunInitializationScan(skillhub_core::api::RunInitializationScan {
+            scope_ids: vec!["codex:codex".into()],
+        }))
+        .await
+        .expect("scan");
+    assert!(matches!(result, AppCommandResult::ScanResult(_)));
+}
+
+#[tokio::test]
 async fn custom_agent_rejects_unregistered_picker_grants() {
     let facade = LocalApplicationFacade::new(Database::open_in_memory().expect("database"));
     let profile = skillhub_core::AgentProfile {
