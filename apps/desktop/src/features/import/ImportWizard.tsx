@@ -12,6 +12,7 @@ import {
   type ImportAction,
   type ImportFacade,
   type ImportPlan,
+  type ImportProgress,
   type ImportResult,
   type SourceDescriptor,
   unavailableImportFacade,
@@ -45,6 +46,7 @@ interface WizardState {
   selectedIds: string[];
   plan?: ImportPlan;
   actions: Record<string, ImportAction>;
+  commitProgress?: ImportProgress;
   results: ImportResult[];
   error?: string;
 }
@@ -59,7 +61,8 @@ type WizardEvent =
   | { type: "analysis_started" }
   | { type: "analysis_succeeded"; plan: ImportPlan }
   | { type: "action_selected"; candidateId: string; action: ImportAction }
-  | { type: "commit_started" }
+  | { type: "commit_started"; total: number }
+  | { type: "commit_progress"; progress: ImportProgress }
   | { type: "commit_succeeded"; results: ImportResult[] }
   | { type: "failed"; error: string; previousPhase: WizardPhase }
   | { type: "cancelled" }
@@ -85,6 +88,7 @@ function reducer(state: WizardState, event: WizardEvent): WizardState {
         error: undefined,
         phase: "source",
         plan: undefined,
+        commitProgress: undefined,
         selectedIds: [],
         sourceText: event.value,
       };
@@ -105,9 +109,16 @@ function reducer(state: WizardState, event: WizardEvent): WizardState {
     case "action_selected":
       return { ...state, actions: { ...state.actions, [event.candidateId]: event.action } };
     case "commit_started":
-      return { ...state, error: undefined, phase: "committing" };
+      return {
+        ...state,
+        commitProgress: { candidateId: "", completed: 0, total: event.total },
+        error: undefined,
+        phase: "committing",
+      };
+    case "commit_progress":
+      return { ...state, commitProgress: event.progress };
     case "commit_succeeded":
-      return { ...state, error: undefined, phase: "summary", results: event.results };
+      return { ...state, commitProgress: undefined, error: undefined, phase: "summary", results: event.results };
     case "failed":
       return { ...state, error: event.error, phase: "failed", previousPhase: event.previousPhase };
     case "cancelled":
@@ -116,6 +127,7 @@ function reducer(state: WizardState, event: WizardEvent): WizardState {
       return {
         ...state,
         actions: state.previousPhase === "conflicts" ? {} : state.actions,
+        commitProgress: undefined,
         error: undefined,
         phase: state.previousPhase ?? "source",
       };
@@ -225,9 +237,11 @@ export function ImportWizard({
   const commit = async () => {
     if (!state.plan) return;
     const operation = ++operationRef.current;
-    dispatch({ type: "commit_started" });
+    dispatch({ type: "commit_started", total: state.plan.candidates.length });
     try {
-      const results = await facade.commitImport(state.plan, state.actions);
+      const results = await facade.commitImport(state.plan, state.actions, (progress) => {
+        if (operation === operationRef.current) dispatch({ type: "commit_progress", progress });
+      });
       if (operation === operationRef.current) {
         dispatch({ type: "commit_succeeded", results });
         onComplete?.(results);
@@ -308,7 +322,12 @@ export function ImportWizard({
           />
         ) : null}
 
-        {state.phase === "committing" ? <DataState message={t("importWorkflow.phases.committing")} state="loading" /> : null}
+        {state.phase === "committing" ? (
+          <DataState
+            message={state.commitProgress ? t("importWorkflow.phases.committingProgress", state.commitProgress) : t("importWorkflow.phases.committing")}
+            state="loading"
+          />
+        ) : null}
 
         {state.phase === "summary" ? <ImportSummary onOpenLibrary={onOpenLibrary} onRetry={() => dispatch({ type: "retry" })} results={state.results} /> : null}
 

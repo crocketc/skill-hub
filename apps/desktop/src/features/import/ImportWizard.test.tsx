@@ -1,7 +1,7 @@
-import { screen, render } from "@testing-library/react";
+import { act, screen, render } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { I18nextProvider } from "react-i18next";
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
 import { createSkillHubI18n } from "../../i18n";
 import { createMockImportFacade } from "./api";
 import { ImportWizard } from "./ImportWizard";
@@ -112,4 +112,30 @@ it("requires a fresh conflict decision when retrying an import", async () => {
   expect(screen.getByRole("button", { name: "提交导入" })).toBeDisabled();
   await user.click(screen.getByRole("radio", { name: "跳过此候选项" }));
   expect(screen.getByRole("button", { name: "提交导入" })).toBeEnabled();
+});
+
+it("shows candidate progress while commit is in flight", async () => {
+  const user = userEvent.setup();
+  const facade = createMockImportFacade({ scenario: "safe-local" });
+  let release!: (results: Awaited<ReturnType<typeof facade.commitImport>>) => void;
+  const pending = new Promise<Awaited<ReturnType<typeof facade.commitImport>>>((resolve) => {
+    release = resolve;
+  });
+  facade.commitImport = vi.fn(async (plan, actions, onProgress) => {
+    onProgress?.({ candidateId: plan.candidates[0]?.id ?? "", completed: 0, total: plan.candidates.length });
+    return pending;
+  });
+  await renderWizard(facade);
+
+  await user.type(screen.getByLabelText("来源"), "C:/incoming");
+  await user.click(screen.getByRole("button", { name: "解析来源" }));
+  await user.click(await screen.findByRole("button", { name: "继续选择候选" }));
+  await user.click(screen.getByRole("button", { name: "全选可导入候选" }));
+  await user.click(screen.getByRole("button", { name: "分析冲突" }));
+  await user.click(await screen.findByRole("button", { name: "提交导入" }));
+
+  expect(await screen.findByText("正在提交导入（已完成 0/2，当前：safe-pdf）")).toBeVisible();
+  await act(async () => {
+    release([]);
+  });
 });

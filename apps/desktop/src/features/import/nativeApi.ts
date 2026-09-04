@@ -14,6 +14,7 @@ import {
   type ImportCandidate,
   type ImportConflict,
   type ImportFacade,
+  type ImportProgress,
   type ImportResult,
   type SourceDescriptor,
 } from "./api";
@@ -250,9 +251,14 @@ export const nativeImportFacade: ImportFacade = {
     return { candidates, conflicts };
   },
 
-  async commitImport(plan, actions) {
+  async commitImport(plan, actions, onProgress) {
     const results: ImportResult[] = [];
-    for (const candidate of plan.candidates) {
+    for (const [index, candidate] of plan.candidates.entries()) {
+      onProgress?.({
+        candidateId: candidate.id,
+        completed: index,
+        total: plan.candidates.length,
+      });
       const action = actions[candidate.id] ?? "copy";
       try {
         const prepared = preparedImport(await executeCommand({
@@ -278,6 +284,11 @@ export const nativeImportFacade: ImportFacade = {
           status: "failed",
         });
       }
+      onProgress?.({
+        candidateId: candidate.id,
+        completed: index + 1,
+        total: plan.candidates.length,
+      });
     }
     return results;
   },

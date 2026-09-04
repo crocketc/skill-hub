@@ -92,6 +92,7 @@
       "analyzing": "Analyzing conflicts",
       "conflicts": "Resolve conflicts",
       "committing": "Committing import",
+      "committingProgress": "Committing import ({{completed}}/{{total}} candidates complete, current: {{candidateId}})",
       "summary": "Import complete",
       "failed": "Import needs attention",
       "cancelled": "Import cancelled"
@@ -202,7 +203,7 @@
     "scope": "Read-only discovery",
     "importSkill": "Import Skill",
     "onboardingImportGuideSingle": "The initialization scan found importable Skills. Review the candidates before importing.",
-    "onboardingImportGuideMultiple": "The initialization scan found {{count}} source directories. The first is prefilled; return here to import the others one by one.",
+    "onboardingImportGuideMultiple": "The initialization scan found {{count}} source directories. All are selected by default and will be imported in one flow.",
     "importUnavailable": "Import capability is not connected to the native service yet. No files or commands were changed.",
     "local": {
       "eyebrow": "On this device",

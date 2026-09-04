@@ -155,8 +155,11 @@ export function OnboardingWizard({
     step === 0
       ? Boolean(nativeLibraryPath)
       : step === 1
-        ? selectedTargetIds.length === 0 || selectionConfirmed
+        ? targets !== null && (targets.length === 0 || (selectedTargetIds.length > 0 && selectionConfirmed))
         : false;
+
+  const scannedRoots = scanState?.kind === "completed" ? scanState.result.roots : [];
+  const shouldOpenImport = Boolean(onOpenImport && scannedRoots.length > 0);
 
   const activeStep =
     step === 0 ? (
@@ -186,7 +189,6 @@ export function OnboardingWizard({
           setIsScanning(false);
           setMessage(t("onboarding.scanBackground"));
         } : undefined}
-        onOpenImport={onOpenImport ? (roots) => void complete(false, () => onOpenImport(roots)) : undefined}
         scanInBackground={scanInBackground}
         scanResult={scanState?.kind === "completed" ? scanState.result : undefined}
       />
@@ -230,8 +232,11 @@ export function OnboardingWizard({
             </Button>
           ) : (
             <>
-              <Button disabled={completionState !== "idle" || !nativeLibraryPath} onClick={() => void complete(false)}>
-                {t("onboarding.finish")}
+              <Button
+                disabled={completionState !== "idle" || !nativeLibraryPath}
+                onClick={() => void complete(false, shouldOpenImport ? () => onOpenImport?.(scannedRoots) : undefined)}
+              >
+                {t(shouldOpenImport ? "onboarding.scanOpenImport" : "onboarding.finish")}
               </Button>
               <Button disabled={completionState !== "idle" || !nativeLibraryPath} onClick={() => void complete(false)} variant="secondary">
                 {t("onboarding.skipScan")}

@@ -72,6 +72,12 @@ export interface ImportResult {
   message: string;
 }
 
+export interface ImportProgress {
+  candidateId: string;
+  completed: number;
+  total: number;
+}
+
 export interface ImportFacade {
   parseSource(input: string): Promise<SourceDescriptor>;
   acquireCandidates(
@@ -82,6 +88,7 @@ export interface ImportFacade {
   commitImport(
     plan: ImportPlan,
     actions: Record<string, ImportAction>,
+    onProgress?: (progress: ImportProgress) => void,
   ): Promise<ImportResult[]>;
   cancel(): Promise<void>;
 }

@@ -97,6 +97,7 @@ describe("native import facade", () => {
   });
 
   it("prepares and commits a selected local candidate", async () => {
+    const progress = vi.fn();
     vi.mocked(executeCommand)
       .mockResolvedValueOnce({
         type: "prepared_import",
@@ -119,6 +120,7 @@ describe("native import facade", () => {
     const results = await nativeImportFacade.commitImport(
       { candidates: [candidate], conflicts: [] },
       { [candidate.id]: "copy" },
+      progress,
     );
 
     expect(executeCommand).toHaveBeenNthCalledWith(1, expect.objectContaining({ type: "prepare_import" }));
@@ -127,6 +129,7 @@ describe("native import facade", () => {
       payload: { decision: "copy_into_library", prepared_import_id: "operation-1" },
     });
     expect(results).toEqual([{ action: "copy", candidateId: candidate.id, message: "已导入", status: "succeeded" }]);
+    expect(progress).toHaveBeenLastCalledWith({ candidateId: candidate.id, completed: 1, total: 1 });
   });
 
   it("reuses the discovered native candidate for analysis and preparation", async () => {

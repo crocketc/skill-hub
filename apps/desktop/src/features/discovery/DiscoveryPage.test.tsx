@@ -88,7 +88,7 @@ it("opens the guided import flow with the first scanned source prefilled", async
   );
 
   expect(await screen.findByRole("heading", { name: "导入 Skill" })).toBeVisible();
-  expect(screen.getByText("初始化扫描发现 2 个来源目录。当前先填入第一个目录，其他目录请返回后逐个导入。"))
+  expect(screen.getByText("初始化扫描发现 2 个来源目录，已默认全部选中，将在同一流程中批量导入。"))
     .toBeVisible();
   expect(screen.getByLabelText("来源")).toHaveValue("C:\\Users\\Test\\.codex\\skills");
 });

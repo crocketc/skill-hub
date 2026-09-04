@@ -47,7 +47,7 @@ it("allows skipping only after explicitly confirming the visible default library
   });
 });
 
-it("keeps compatibility discovery opt-in and scan read-only while allowing back navigation", async () => {
+it("requires compatibility discovery before the read-only scan and keeps back navigation", async () => {
   const discoverAgents = vi.fn(async () => ({ targets: [] }));
   const runInitializationScan = vi.fn(async (_scopeIds: string[]) => undefined);
   const i18n = await createSkillHubI18n(["zh-CN"]);
@@ -114,6 +114,8 @@ it("lets users finish without scanning", async () => {
   );
 
   await click(screen.getByRole("button", { name: "继续" }));
+  await click(screen.getByLabelText("我确认这里只识别 Agent，不会部署技能"));
+  await click(screen.getByRole("button", { name: "识别 Agent" }));
   await click(screen.getByRole("button", { name: "继续" }));
   await click(screen.getByRole("button", { name: "跳过扫描" }));
 
@@ -155,11 +157,7 @@ it("reports missing native discovery and completion seams without a fake success
   await click(screen.getByRole("button", { name: "识别 Agent" }));
   expect(screen.getByText("此操作尚未连接到本机服务。不会创建目录、部署或导入任何技能。"))
     .toBeVisible();
-
-  await click(screen.getByRole("button", { name: "继续" }));
-  await click(screen.getByRole("button", { name: "完成初始化" }));
-  expect(screen.getByText("此操作尚未连接到本机服务。不会创建目录、部署或导入任何技能。"))
-    .toBeVisible();
+  expect(screen.getByRole("button", { name: "继续" })).toBeDisabled();
   expect(screen.queryByText("初始化已完成")).not.toBeInTheDocument();
 });
 
@@ -248,6 +246,8 @@ it("reports a scan operation as started and completes the wizard once", async ()
   );
 
   await click(screen.getByRole("button", { name: "继续" }));
+  await click(screen.getByLabelText("我确认这里只识别 Agent，不会部署技能"));
+  await click(screen.getByRole("button", { name: "识别 Agent" }));
   await click(screen.getByRole("button", { name: "继续" }));
   await click(screen.getByRole("button", { name: "开始只读扫描" }));
   expect(screen.getByText("扫描已启动，正在执行。")).toBeVisible();
@@ -295,6 +295,8 @@ it("completes initialization before opening the guided import flow", async () =>
   );
 
   await click(screen.getByRole("button", { name: "继续" }));
+  await click(screen.getByLabelText("我确认这里只识别 Agent，不会部署技能"));
+  await click(screen.getByRole("button", { name: "识别 Agent" }));
   await click(screen.getByRole("button", { name: "继续" }));
   await click(screen.getByRole("button", { name: "开始只读扫描" }));
   await click(screen.getByRole("button", { name: "完成初始化并进入批量导入" }));
@@ -321,6 +323,8 @@ it("includes the native error code when a scan is rejected", async () => {
   );
 
   await click(screen.getByRole("button", { name: "继续" }));
+  await click(screen.getByLabelText("我确认这里只识别 Agent，不会部署技能"));
+  await click(screen.getByRole("button", { name: "识别 Agent" }));
   await click(screen.getByRole("button", { name: "继续" }));
   await click(screen.getByRole("button", { name: "开始只读扫描" }));
 
@@ -343,6 +347,8 @@ it("states when the native scan failure has no error code", async () => {
   );
 
   await click(screen.getByRole("button", { name: "继续" }));
+  await click(screen.getByLabelText("我确认这里只识别 Agent，不会部署技能"));
+  await click(screen.getByRole("button", { name: "识别 Agent" }));
   await click(screen.getByRole("button", { name: "继续" }));
   await click(screen.getByRole("button", { name: "开始只读扫描" }));
 
@@ -368,6 +374,8 @@ it("offers to continue initialization while a slow scan keeps running", async ()
     );
 
     await click(screen.getByRole("button", { name: "继续" }));
+    await click(screen.getByLabelText("我确认这里只识别 Agent，不会部署技能"));
+    await click(screen.getByRole("button", { name: "识别 Agent" }));
     await click(screen.getByRole("button", { name: "继续" }));
     await click(screen.getByRole("button", { name: "开始只读扫描" }));
     expect(screen.queryByRole("button", { name: "转入后台，继续完成初始化" })).not.toBeInTheDocument();

@@ -92,6 +92,7 @@
       "analyzing": "正在分析冲突",
       "conflicts": "处理冲突",
       "committing": "正在提交导入",
+      "committingProgress": "正在提交导入（已完成 {{completed}}/{{total}}，当前：{{candidateId}}）",
       "summary": "导入完成",
       "failed": "导入需要处理",
       "cancelled": "导入已取消"
@@ -202,7 +203,7 @@
     "scope": "只读发现",
     "importSkill": "导入 Skill",
     "onboardingImportGuideSingle": "初始化扫描已发现可导入 Skill，开始前请先审阅候选项。",
-    "onboardingImportGuideMultiple": "初始化扫描发现 {{count}} 个来源目录。当前先填入第一个目录，其他目录请返回后逐个导入。",
+    "onboardingImportGuideMultiple": "初始化扫描发现 {{count}} 个来源目录，已默认全部选中，将在同一流程中批量导入。",
     "importUnavailable": "导入能力尚未连接到本机服务，未修改任何文件，也未执行命令。",
     "local": {
       "eyebrow": "本机来源",
