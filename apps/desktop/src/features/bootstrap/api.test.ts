@@ -103,6 +103,6 @@ it("completes onboarding and discovers Agent targets through typed native comman
     payload: null,
   });
   expect(result.targets).toEqual([
-    { id: "openai:codex", label: "codex", availability: "available" },
+    { id: "target-1", label: "codex", availability: "available" },
   ]);
 });

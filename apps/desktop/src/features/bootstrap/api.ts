@@ -79,19 +79,25 @@ export const desktopOnboardingOperations: OnboardingOperations = {
     if (result.type !== "discovery_snapshot") {
       throw new Error("Unexpected Agent discovery response from the native application.");
     }
-    return {
-      targets: result.payload.instances.map((instance) => ({
+    const logicalTargets = result.payload.logical_targets.map((target) => ({
+      id: target.id,
+      label: target.client_id,
+      availability: target.available && target.exists && target.readable
+        ? ("available" as const)
+        : ("unavailable" as const),
+    }));
+    const representedClients = new Set(
+      result.payload.logical_targets.map((target) => `${target.profile_id}:${target.client_id}`),
+    );
+    const instancesWithoutTargets = result.payload.instances
+      .filter((instance) => !representedClients.has(`${instance.profile_id}:${instance.client_id}`))
+      .map((instance) => ({
         id: `${instance.profile_id}:${instance.client_id}`,
         label: instance.client_id,
-        availability: result.payload.logical_targets.some(
-          (target) =>
-            target.profile_id === instance.profile_id &&
-            target.client_id === instance.client_id &&
-            target.available,
-        )
-          ? "available"
-          : "unavailable",
-      })),
+        availability: "unavailable" as const,
+      }));
+    return {
+      targets: [...logicalTargets, ...instancesWithoutTargets],
     };
   },
 };
