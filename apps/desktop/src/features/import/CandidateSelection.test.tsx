@@ -91,3 +91,12 @@ it("requires a selection before continuing", async () => {
   );
   expect(screen.getByRole("button", { name: "Continue" })).toBeEnabled();
 });
+
+it("supports selecting every discovered candidate in one explicit step", async () => {
+  const onSelectAll = vi.fn();
+  await renderCandidateSelection({ onSelectAll });
+
+  fireEvent.click(screen.getByRole("button", { name: "Select all importable candidates" }));
+
+  expect(onSelectAll).toHaveBeenCalledOnce();
+});

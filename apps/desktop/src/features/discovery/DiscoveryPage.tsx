@@ -8,17 +8,26 @@ import { OnlineDiscovery } from "./OnlineDiscovery";
 
 export interface DiscoveryPageProps {
   importFacade?: ImportFacade;
+  initialSources?: string[];
+  initialSourceText?: string;
   onImportComplete?: (results: ImportResult[]) => void;
   onOpenLibrary?: () => void;
 }
 
 export function DiscoveryPage({
   importFacade = nativeImportFacade,
+  initialSources = [],
+  initialSourceText,
   onImportComplete,
   onOpenLibrary,
 }: DiscoveryPageProps) {
   const { t } = useTranslation();
-  const [showImport, setShowImport] = useState(false);
+  const [showImport, setShowImport] = useState(Boolean(initialSourceText));
+  const importGuide = initialSources.length > 1
+    ? t("discovery.onboardingImportGuideMultiple", { count: initialSources.length })
+    : initialSources.length === 1
+      ? t("discovery.onboardingImportGuideSingle")
+      : undefined;
 
   if (showImport) {
     return (
@@ -30,6 +39,8 @@ export function DiscoveryPage({
         </div>
         <ImportWizard
           facade={importFacade}
+          importGuide={importGuide}
+          initialSourceText={initialSourceText}
           onComplete={onImportComplete}
           onOpenLibrary={onOpenLibrary}
         />

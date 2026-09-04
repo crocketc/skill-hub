@@ -17,6 +17,7 @@ import { ScanStep } from "./ScanStep";
 interface OnboardingWizardProps {
   libraryPath?: string;
   onComplete?: () => void;
+  onOpenImport?: (roots: string[]) => void;
   operations?: OnboardingOperations;
   runtime?: BootstrapRuntime;
 }
@@ -43,6 +44,7 @@ function nativeErrorCode(error: unknown): string | null {
 export function OnboardingWizard({
   libraryPath,
   onComplete,
+  onOpenImport,
   operations = desktopOnboardingOperations,
   runtime = desktopBootstrapRuntime,
 }: OnboardingWizardProps) {
@@ -51,6 +53,8 @@ export function OnboardingWizard({
   const [compatibilityConfirmed, setCompatibilityConfirmed] = useState(false);
   const [isDiscovering, setIsDiscovering] = useState(false);
   const [isScanning, setIsScanning] = useState(false);
+  const [scanSlow, setScanSlow] = useState(false);
+  const [scanInBackground, setScanInBackground] = useState(false);
   const [scanState, setScanState] = useState<InitializationScanState | null>(null);
   const [selectedTargetIds, setSelectedTargetIds] = useState<string[]>([]);
   const [selectionConfirmed, setSelectionConfirmed] = useState(false);
@@ -97,6 +101,8 @@ export function OnboardingWizard({
 
   const scan = async () => {
     setIsScanning(true);
+    setScanSlow(false);
+    setScanInBackground(false);
     setScanState(null);
     setMessage(null);
     try {
@@ -115,6 +121,12 @@ export function OnboardingWizard({
       setIsScanning(false);
     }
   };
+
+  useEffect(() => {
+    if (!isScanning || scanInBackground) return;
+    const timer = window.setTimeout(() => setScanSlow(true), 10_000);
+    return () => window.clearTimeout(timer);
+  }, [isScanning, scanInBackground]);
 
   const complete = async (skipped: boolean) => {
     if (!nativeLibraryPath || completionState !== "idle") {
@@ -167,8 +179,15 @@ export function OnboardingWizard({
       />
     ) : (
       <ScanStep
-        isScanning={isScanning}
+        isScanning={isScanning && !scanInBackground}
         onScan={() => void scan()}
+        onContinueInBackground={scanSlow ? () => {
+          setScanInBackground(true);
+          setIsScanning(false);
+          setMessage(t("onboarding.scanBackground"));
+        } : undefined}
+        onOpenImport={onOpenImport ? (roots) => onOpenImport(roots) : undefined}
+        scanInBackground={scanInBackground}
         scanResult={scanState?.kind === "completed" ? scanState.result : undefined}
       />
     );

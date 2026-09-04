@@ -5,10 +5,20 @@ import type { ScanResult } from "../../api/bindings";
 interface ScanStepProps {
   isScanning: boolean;
   onScan: () => void;
+  onContinueInBackground?: () => void;
+  onOpenImport?: (roots: string[]) => void;
   scanResult?: ScanResult;
+  scanInBackground?: boolean;
 }
 
-export function ScanStep({ isScanning, onScan, scanResult }: ScanStepProps) {
+export function ScanStep({
+  isScanning,
+  onContinueInBackground,
+  onOpenImport,
+  onScan,
+  scanInBackground = false,
+  scanResult,
+}: ScanStepProps) {
   const { t } = useTranslation();
 
   return (
@@ -16,9 +26,15 @@ export function ScanStep({ isScanning, onScan, scanResult }: ScanStepProps) {
       <span className="sh-onboarding__ordinal">3</span>
       <h1 id="scan-step-title">{t("onboarding.scanTitle")}</h1>
       <p>{t("onboarding.scanDescription")}</p>
-      <Button loading={isScanning} onClick={onScan}>
+      <Button disabled={scanInBackground} loading={isScanning} onClick={onScan}>
         {t("onboarding.startReadOnlyScan")}
       </Button>
+      {scanInBackground ? <p role="status">{t("onboarding.scanBackground")}</p> : null}
+      {isScanning && onContinueInBackground ? (
+        <Button onClick={onContinueInBackground} variant="secondary">
+          {t("onboarding.scanContinueInBackground")}
+        </Button>
+      ) : null}
       {scanResult ? (
         <section aria-labelledby="scan-preview-title" className="sh-onboarding__scan-preview">
           <h2 id="scan-preview-title">{t("onboarding.scanPreviewTitle")}</h2>
@@ -51,6 +67,11 @@ export function ScanStep({ isScanning, onScan, scanResult }: ScanStepProps) {
                 ))}
               </ul>
             </details>
+          ) : null}
+          {onOpenImport && scanResult.discovered.length > 0 ? (
+            <Button onClick={() => onOpenImport(scanResult.roots)} variant="secondary">
+              {t("onboarding.scanOpenImport")}
+            </Button>
           ) : null}
         </section>
       ) : null}

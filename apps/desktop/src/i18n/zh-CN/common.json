@@ -130,6 +130,7 @@
       "eyebrow": "候选审阅",
       "title": "选择要导入的 Skill",
       "description": "只有选中的候选项会继续进入冲突分析和导入流程。",
+      "selectAll": "全选可导入候选",
       "analyze": "分析冲突",
       "empty": "此来源没有找到候选 Skill。",
       "basicCheck": {
@@ -193,6 +194,8 @@
     "description": "先查看本地和在线来源事实，再进入安全导入流程。",
     "scope": "只读发现",
     "importSkill": "导入 Skill",
+    "onboardingImportGuideSingle": "初始化扫描已发现可导入 Skill，开始前请先审阅候选项。",
+    "onboardingImportGuideMultiple": "初始化扫描发现 {{count}} 个来源目录。当前先填入第一个目录，其他目录请返回后逐个导入。",
     "importUnavailable": "导入能力尚未连接到本机服务，未修改任何文件，也未执行命令。",
     "local": {
       "eyebrow": "本机来源",
@@ -323,6 +326,8 @@
     "pathUnavailableDescription": "当前原生契约未提供精确的 Windows 或 macOS 集中库路径，因此不会创建目录或确认初始化。",
     "pathUnavailableTitle": "无法确认默认集中库位置",
     "scanComplete": "已完成只读扫描预览。",
+    "scanBackground": "扫描已转入后台，仍会继续执行。你可以先完成初始化。",
+    "scanContinueInBackground": "转入后台，继续完成初始化",
     "scanDescription": "扫描只生成预览，不会移动、导入或部署技能。",
     "scanDiscovered": "发现 {{count}} 个 Skill",
     "scanFailed": "无法完成扫描。现有技能和目录没有被修改。",
@@ -331,6 +336,7 @@
     "scanIssueDetails": "查看问题详情",
     "scanIssues": "问题 {{count}} 个",
     "scanNoSkills": "没有发现符合 Skill 标记的目录。",
+    "scanOpenImport": "进入批量导入",
     "scanPreviewTitle": "扫描预览",
     "scanStarted": "扫描已启动，正在执行。",
     "scanVisited": "扫描 {{count}} 个路径",

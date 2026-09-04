@@ -6,6 +6,7 @@ import { ScanStep } from "./ScanStep";
 
 it("renders a read-only scan preview without import actions", async () => {
   const i18n = await createSkillHubI18n(["zh-CN"]);
+  const onOpenImport = vi.fn();
   const result: ScanResult = {
     generation: { generation: 1, observed_at: 1 },
     roots: ["C:\\Users\\Test\\.codex\\skills"],
@@ -31,7 +32,7 @@ it("renders a read-only scan preview without import actions", async () => {
 
   render(
     <I18nextProvider i18n={i18n}>
-      <ScanStep isScanning={false} onScan={() => undefined} scanResult={result} />
+      <ScanStep isScanning={false} onOpenImport={onOpenImport} onScan={() => undefined} scanResult={result} />
     </I18nextProvider>,
   );
 
@@ -41,6 +42,31 @@ it("renders a read-only scan preview without import actions", async () => {
   expect(screen.getByText("问题 1 个")).toBeVisible();
   expect(screen.getByText("alpha")).toBeVisible();
   expect(screen.getByText("C:\\Users\\Test\\.codex\\skills\\alpha")).toBeVisible();
+  expect(screen.getByRole("button", { name: "进入批量导入" })).toBeVisible();
   expect(screen.queryByRole("button", { name: "导入" })).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "开始只读扫描" }));
+  fireEvent.click(screen.getByRole("button", { name: "进入批量导入" }));
+  expect(onOpenImport).toHaveBeenCalledWith(result.roots);
+});
+
+it("offers background continuation while a scan is running", async () => {
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  render(
+    <I18nextProvider i18n={i18n}>
+      <ScanStep isScanning onContinueInBackground={() => undefined} onScan={() => undefined} />
+    </I18nextProvider>,
+  );
+
+  expect(screen.getByRole("button", { name: "转入后台，继续完成初始化" })).toBeVisible();
+});
+
+it("prevents starting a second scan after handing the first one to the background", async () => {
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  render(
+    <I18nextProvider i18n={i18n}>
+      <ScanStep isScanning={false} onScan={() => undefined} scanInBackground />
+    </I18nextProvider>,
+  );
+
+  expect(screen.getByRole("button", { name: "开始只读扫描" })).toBeDisabled();
 });

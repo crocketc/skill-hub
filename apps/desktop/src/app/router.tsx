@@ -1,7 +1,7 @@
 import { QueryClientProvider } from "@tanstack/react-query";
 import { MotionConfig } from "motion/react";
 import { I18nextProvider } from "react-i18next";
-import { createBrowserRouter, RouterProvider, useNavigate, useParams } from "react-router-dom";
+import { createBrowserRouter, RouterProvider, useLocation, useNavigate, useParams } from "react-router-dom";
 import { OnboardingWizard } from "../features/onboarding/OnboardingWizard";
 import { AgentDetailPage } from "../features/agents/AgentDetailPage";
 import { AgentListPage } from "../features/agents/AgentListPage";
@@ -44,7 +44,17 @@ import { queryClient } from "./queryClient";
 
 function OnboardingRoute() {
   const navigate = useNavigate();
-  return <OnboardingWizard onComplete={() => navigate("/", { replace: true })} />;
+  return (
+    <OnboardingWizard
+      onComplete={() => navigate("/", { replace: true })}
+      onOpenImport={(roots) => navigate("/discovery", {
+        state: {
+          initialSources: roots,
+          initialSourceText: roots[0] ?? "",
+        },
+      })}
+    />
+  );
 }
 
 function AgentDetailRoute() {
@@ -84,6 +94,8 @@ function SkillLibraryRoute() {
 
 function DiscoveryRoute() {
   const navigate = useNavigate();
+  const location = useLocation();
+  const state = location.state as { initialSources?: string[]; initialSourceText?: string } | null;
 
   const handleImportComplete = (results: ImportResult[]) => {
     if (results.some((result) => result.status === "succeeded")) {
@@ -93,6 +105,8 @@ function DiscoveryRoute() {
 
   return (
     <DiscoveryPage
+      initialSources={state?.initialSources}
+      initialSourceText={state?.initialSourceText}
       onImportComplete={handleImportComplete}
       onOpenLibrary={() => navigate("/library")}
     />

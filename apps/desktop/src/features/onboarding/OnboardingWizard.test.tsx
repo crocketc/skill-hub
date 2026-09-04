@@ -304,3 +304,35 @@ it("states when the native scan failure has no error code", async () => {
 
   expect(screen.getByText("无法完成扫描。现有技能和目录没有被修改。（本机服务未返回错误代码）")).toBeVisible();
 });
+
+it("offers to continue initialization while a slow scan keeps running", async () => {
+  vi.useFakeTimers();
+  try {
+    const i18n = await createSkillHubI18n(["zh-CN"]);
+    const pendingScan = new Promise<never>(() => undefined);
+    render(
+      <I18nextProvider i18n={i18n}>
+        <OnboardingWizard
+          libraryPath={defaultLibraryPath}
+          operations={{ completeOnboarding: async () => undefined, discoverAgents: async () => ({ targets: [] }) }}
+          runtime={{
+            getBootstrapView: async () => { throw new Error("not used"); },
+            runInitializationScan: async () => pendingScan,
+          }}
+        />
+      </I18nextProvider>,
+    );
+
+    await click(screen.getByRole("button", { name: "继续" }));
+    await click(screen.getByRole("button", { name: "继续" }));
+    await click(screen.getByRole("button", { name: "开始只读扫描" }));
+    expect(screen.queryByRole("button", { name: "转入后台，继续完成初始化" })).not.toBeInTheDocument();
+
+    await act(async () => {
+      vi.advanceTimersByTime(10_000);
+    });
+    expect(screen.getByRole("button", { name: "转入后台，继续完成初始化" })).toBeVisible();
+  } finally {
+    vi.useRealTimers();
+  }
+});

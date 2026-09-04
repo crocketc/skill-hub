@@ -7,6 +7,7 @@ export interface CandidateSelectionProps {
   candidates: ImportCandidate[];
   selectedIds: string[];
   onToggle: (id: string) => void;
+  onSelectAll?: () => void;
   onContinue: () => void;
   onBack: () => void;
   continueLabel?: string;
@@ -24,6 +25,7 @@ export function CandidateSelection({
   candidates,
   selectedIds,
   onToggle,
+  onSelectAll,
   onContinue,
   onBack,
   continueLabel,
@@ -42,8 +44,14 @@ export function CandidateSelection({
       </div>
 
       {candidates.length ? (
-        <ul className="sh-import-candidates__list">
-          {candidates.map((candidate) => {
+        <>
+          {onSelectAll ? (
+            <Button onClick={onSelectAll} variant="secondary">
+              {t("importWorkflow.candidates.selectAll")}
+            </Button>
+          ) : null}
+          <ul className="sh-import-candidates__list">
+            {candidates.map((candidate) => {
             const checked = selectedIds.includes(candidate.id);
             return (
               <li className="sh-import-candidates__item" key={candidate.id}>
@@ -67,8 +75,9 @@ export function CandidateSelection({
                 </div>
               </li>
             );
-          })}
-        </ul>
+            })}
+          </ul>
+        </>
       ) : (
         <p className="sh-import-candidates__empty" role="status">
           {t("importWorkflow.candidates.empty")}

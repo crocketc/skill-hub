@@ -130,6 +130,7 @@
       "eyebrow": "Candidate review",
       "title": "Choose Skills to import",
       "description": "Only selected candidates continue to conflict analysis and import.",
+      "selectAll": "Select all importable candidates",
       "analyze": "Analyze conflicts",
       "empty": "No candidates were found for this source.",
       "basicCheck": {
@@ -193,6 +194,8 @@
     "description": "Review local and online source facts before starting the safe import workflow.",
     "scope": "Read-only discovery",
     "importSkill": "Import Skill",
+    "onboardingImportGuideSingle": "The initialization scan found importable Skills. Review the candidates before importing.",
+    "onboardingImportGuideMultiple": "The initialization scan found {{count}} source directories. The first is prefilled; return here to import the others one by one.",
     "importUnavailable": "Import capability is not connected to the native service yet. No files or commands were changed.",
     "local": {
       "eyebrow": "On this device",
@@ -323,6 +326,8 @@
     "pathUnavailableDescription": "The current native contract does not provide an exact Windows or macOS library path, so no directory will be created or initialization confirmed.",
     "pathUnavailableTitle": "The default library location cannot be confirmed",
     "scanComplete": "Read-only scan preview completed.",
+    "scanBackground": "The scan is continuing in the background. You can finish initialization now.",
+    "scanContinueInBackground": "Continue initialization in the background",
     "scanDescription": "The scan only creates a preview. It will not move, import, or deploy skills.",
     "scanDiscovered": "{{count}} Skills discovered",
     "scanFailed": "The scan could not be completed. Existing skills and directories were not changed.",
@@ -331,6 +336,7 @@
     "scanIssueDetails": "View issue details",
     "scanIssues": "{{count}} issues",
     "scanNoSkills": "No directories with the Skill marker were found.",
+    "scanOpenImport": "Continue to batch import",
     "scanPreviewTitle": "Scan preview",
     "scanStarted": "The scan has started and is in progress.",
     "scanVisited": "{{count}} paths scanned",

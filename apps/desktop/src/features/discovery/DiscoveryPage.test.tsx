@@ -75,3 +75,20 @@ it("reports committed imports and lets the user open the refreshed library", asy
   await user.click(await screen.findByRole("button", { name: "Open Skill library" }));
   expect(onOpenLibrary).toHaveBeenCalledTimes(1);
 });
+
+it("opens the guided import flow with the first scanned source prefilled", async () => {
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  render(
+    <I18nextProvider i18n={i18n}>
+      <DiscoveryPage
+        initialSources={["C:\\Users\\Test\\.codex\\skills", "C:\\Users\\Test\\.claude\\skills"]}
+        initialSourceText={"C:\\Users\\Test\\.codex\\skills"}
+      />
+    </I18nextProvider>,
+  );
+
+  expect(await screen.findByRole("heading", { name: "导入 Skill" })).toBeVisible();
+  expect(screen.getByText("初始化扫描发现 2 个来源目录。当前先填入第一个目录，其他目录请返回后逐个导入。"))
+    .toBeVisible();
+  expect(screen.getByLabelText("来源")).toHaveValue("C:\\Users\\Test\\.codex\\skills");
+});

@@ -106,17 +106,21 @@ function reducer(state: WizardState, event: WizardEvent): WizardState {
 
 export interface ImportWizardProps {
   facade?: ImportFacade;
+  initialSourceText?: string;
+  importGuide?: string;
   onComplete?: (results: ImportResult[]) => void;
   onOpenLibrary?: () => void;
 }
 
 export function ImportWizard({
   facade = unavailableImportFacade,
+  initialSourceText = "",
+  importGuide,
   onComplete,
   onOpenLibrary = () => undefined,
 }: ImportWizardProps) {
   const { t } = useTranslation();
-  const [state, dispatch] = useReducer(reducer, initialState);
+  const [state, dispatch] = useReducer(reducer, { ...initialState, sourceText: initialSourceText });
   const operationRef = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
 
@@ -198,6 +202,7 @@ export function ImportWizard({
       </div>
 
       <div className="sh-import-wizard__panel">
+        {importGuide ? <p aria-live="polite" className="sh-import-wizard__guide">{importGuide}</p> : null}
         {(["source", "acquiring", "candidate_gate", "cancelled", "failed"] as WizardPhase[]).includes(state.phase) ? (
           <SourceInput
             descriptor={state.descriptor}
@@ -224,6 +229,7 @@ export function ImportWizard({
             candidates={state.candidates}
             continueLabel={t("importWorkflow.candidates.analyze")}
             onBack={() => dispatch({ type: "source_changed", value: state.sourceText })}
+            onSelectAll={() => dispatch({ type: "candidates_selected", ids: state.candidates.map(({ id }) => id) })}
             onContinue={() => void analyze()}
             onToggle={(id) => dispatch({ type: "candidates_selected", ids: state.selectedIds.includes(id) ? state.selectedIds.filter((selectedId) => selectedId !== id) : [...state.selectedIds, id] })}
             selectedIds={state.selectedIds}
