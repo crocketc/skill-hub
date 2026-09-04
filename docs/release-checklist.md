@@ -4,8 +4,8 @@
 
 ## 当前候选
 
-- 提交：`f1a437c`
-- 日期：2026-09-03
+- 提交：`434de1e`
+- 日期：2026-09-04
 - 发布信任级别：Windows 未签名；macOS ad-hoc、未公证
 - 发布方式：GitHub Draft Release，人工核对后发布
 
@@ -31,7 +31,7 @@
 | 前端依赖安装 | 通过 | `pnpm install --frozen-lockfile --ignore-scripts` |
 | 前端审计 | 通过 | macOS 官方 registry 复核，0 个漏洞；用户镜像不支持端点时需临时切换官方源 |
 | 前端 lint/TypeScript | 通过 | `pnpm check:frontend` |
-| 前端测试 | 通过 | 当前 Windows 基线：62 个文件、348 项测试；macOS 最近基线已通过 |
+| 前端测试 | 通过 | 当前 Windows 基线：71 个文件、377 项测试；macOS 最近基线已通过 |
 | 前端生产构建 | 通过 | `pnpm --dir apps/desktop build` |
 | 发布静态预检 | 通过 | `node scripts/verify_release_readiness.mjs` 与对应 Node 测试通过；工作流、Tauri 启动配置、tag-bound 约束、锁定 action、安装说明和 `dist/.gitkeep` 均通过 |
 | 兼容性契约 | 通过 | `cargo test -p skillhub-adapters --test profile_contract` |
