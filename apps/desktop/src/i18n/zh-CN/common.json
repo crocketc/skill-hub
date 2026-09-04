@@ -118,6 +118,7 @@
       "selectAllSources": "全选扫描来源",
       "placeholder": "C:/skills 或 https://github.com/owner/repository",
       "parse": "解析来源",
+      "acquireSelectedSources": "读取已选目录候选",
       "continueCandidates": "继续选择候选",
       "acquiring": "正在读取来源中的候选 Skill",
       "cancelAcquiring": "取消获取",

@@ -69,11 +69,38 @@ it("acquires candidates from every selected scanned source", async () => {
   const user = userEvent.setup();
   const facade = await renderGuidedWizard();
 
-  await user.click(screen.getByRole("button", { name: "解析来源" }));
+  await user.click(screen.getByRole("button", { name: "读取已选目录候选" }));
 
   expect(await screen.findByRole("button", { name: "继续选择候选" })).toBeVisible();
   expect(facade.calls.acquiredSources).toEqual(["C:/codex/skills", "C:/claude/skills"]);
   expect(screen.getByText("找到 4 个候选项，请先审阅列表。")).toBeVisible();
+});
+
+it("normalizes every initialization source before displaying and acquiring it", async () => {
+  const user = userEvent.setup();
+  const facade = createMockImportFacade({ scenario: "safe-local" });
+  const firstSource = "\\\\?\\C:\\Users\\crock\\.claude\\skills";
+  const secondSource = "\\\\?\\C:\\Users\\crock\\.codex\\skills";
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  render(
+    <I18nextProvider i18n={i18n}>
+      <ImportWizard
+        facade={facade}
+        initialSourceText={firstSource}
+        initialSources={[firstSource, secondSource]}
+      />
+    </I18nextProvider>,
+  );
+
+  expect(screen.getByRole("textbox", { name: "来源" })).toHaveValue("C:\\Users\\crock\\.claude\\skills");
+  expect(screen.getByRole("checkbox", { name: "C:\\Users\\crock\\.claude\\skills" })).toBeChecked();
+  expect(screen.getByRole("checkbox", { name: "C:\\Users\\crock\\.codex\\skills" })).toBeChecked();
+  await user.click(screen.getByRole("button", { name: "读取已选目录候选" }));
+
+  expect(facade.calls.acquiredSources).toEqual([
+    "C:\\Users\\crock\\.claude\\skills",
+    "C:\\Users\\crock\\.codex\\skills",
+  ]);
 });
 
 it("fills the source from the native directory picker", async () => {
@@ -121,7 +148,7 @@ it("shows candidate progress while commit is in flight", async () => {
   const pending = new Promise<Awaited<ReturnType<typeof facade.commitImport>>>((resolve) => {
     release = resolve;
   });
-  facade.commitImport = vi.fn(async (plan, actions, onProgress) => {
+  facade.commitImport = vi.fn(async (plan, _actions, onProgress) => {
     onProgress?.({ candidateId: plan.candidates[0]?.id ?? "", completed: 0, total: plan.candidates.length });
     return pending;
   });

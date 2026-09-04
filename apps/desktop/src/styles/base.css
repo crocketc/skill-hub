@@ -3230,7 +3230,9 @@ a {
 }
 
 .sh-import-wizard {
-  min-height: min(42rem, calc(100vh - 9rem));
+  height: 100%;
+  min-height: 0;
+  grid-template-rows: auto minmax(0, 1fr);
 }
 
 .sh-import-wizard__panel {
@@ -3489,6 +3491,9 @@ a {
 
 .sh-discovery-page--import {
   position: relative;
+  height: 100%;
+  min-height: 0;
+  grid-template-rows: auto minmax(0, 1fr);
 }
 
 .sh-discovery-page__backdrop {

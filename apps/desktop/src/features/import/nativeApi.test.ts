@@ -101,7 +101,11 @@ describe("native import facade", () => {
     vi.mocked(executeCommand)
       .mockResolvedValueOnce({
         type: "prepared_import",
-        payload: { id: "operation-1", candidate: {} as never, analysis: {} as never },
+        payload: {
+          id: "operation-1",
+          candidate: {} as never,
+          analysis: { actions: ["copy_into_library", "skip"] } as never,
+        },
       })
       .mockResolvedValueOnce({
         type: "import_summary",
@@ -132,6 +136,48 @@ describe("native import facade", () => {
     expect(progress).toHaveBeenLastCalledWith({ candidateId: candidate.id, completed: 1, total: 1 });
   });
 
+  it("uses an allowed default decision when a candidate has no required conflict", async () => {
+    vi.mocked(executeCommand)
+      .mockResolvedValueOnce({
+        type: "prepared_import",
+        payload: {
+          id: "operation-default",
+          candidate: {} as never,
+          analysis: { actions: ["copy_as_independent_managed_skill", "skip"] } as never,
+        },
+      })
+      .mockResolvedValueOnce({
+        type: "import_summary",
+        payload: {
+          committed: true,
+          items: [{ decision: "copy_as_independent_managed_skill", original_preserved: true, skill_id: "skill-default" }],
+          operation_id: "operation-default",
+        },
+      });
+    const candidate = {
+      basicCheck: "passed" as const,
+      id: "C:/incoming/builtin#builtin",
+      name: "builtin",
+      ownership: "plugin" as const,
+      path: "C:/incoming/builtin",
+      source: await nativeImportFacade.parseSource("C:/incoming"),
+    };
+
+    const [result] = await nativeImportFacade.commitImport(
+      { candidates: [candidate], conflicts: [] },
+      {},
+    );
+
+    expect(executeCommand).toHaveBeenLastCalledWith({
+      type: "commit_import",
+      payload: {
+        decision: "copy_as_independent_managed_skill",
+        prepared_import_id: "operation-default",
+      },
+    });
+    expect(result).toEqual(expect.objectContaining({ action: "independent", status: "succeeded" }));
+  });
+
   it("reuses the discovered native candidate for analysis and preparation", async () => {
     const nativeCandidate = {
       absolute_root: "C:/workspace/skills/notes",
@@ -158,7 +204,11 @@ describe("native import facade", () => {
     vi.mocked(executeCommand)
       .mockResolvedValueOnce({
         type: "prepared_import",
-        payload: { id: "operation-2", candidate: nativeCandidate, analysis: {} as never },
+        payload: {
+          id: "operation-2",
+          candidate: nativeCandidate,
+          analysis: { actions: ["copy_into_library", "skip"] } as never,
+        },
       })
       .mockResolvedValueOnce({
         type: "import_summary",

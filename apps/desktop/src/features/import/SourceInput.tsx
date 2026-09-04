@@ -4,6 +4,7 @@ import type { SourceDescriptor } from "./api";
 
 export interface SourceInputProps {
   value: string;
+  actionLabel?: string;
   descriptor?: SourceDescriptor;
   disabled?: boolean;
   suggestedSources?: string[];
@@ -17,6 +18,7 @@ export interface SourceInputProps {
 
 export function SourceInput({
   value,
+  actionLabel,
   descriptor,
   disabled = false,
   suggestedSources = [],
@@ -106,7 +108,7 @@ export function SourceInput({
 
       <div className="sh-import-source__actions">
         <Button disabled={disabled || !value.trim()} onClick={onParse}>
-          {t("importWorkflow.source.parse")}
+          {actionLabel ?? t("importWorkflow.source.parse")}
         </Button>
       </div>
     </section>

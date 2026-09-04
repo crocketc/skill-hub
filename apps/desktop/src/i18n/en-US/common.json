@@ -118,6 +118,7 @@
       "selectAllSources": "Select all scanned sources",
       "placeholder": "C:/skills or https://github.com/owner/repository",
       "parse": "Parse source",
+      "acquireSelectedSources": "Read selected directory candidates",
       "continueCandidates": "Continue to candidate selection",
       "acquiring": "Reading candidates from the source",
       "cancelAcquiring": "Cancel acquisition",

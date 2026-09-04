@@ -156,8 +156,10 @@ export function ImportWizard({
   onOpenLibrary = () => undefined,
 }: ImportWizardProps) {
   const { t } = useTranslation();
-  const [state, dispatch] = useReducer(reducer, { ...initialState, sourceText: initialSourceText });
-  const [selectedSources, setSelectedSources] = useState(initialSources);
+  const normalizedInitialSources = Array.from(new Set(initialSources.map(normalizeWindowsPath)));
+  const normalizedInitialSourceText = normalizeWindowsPath(initialSourceText);
+  const [state, dispatch] = useReducer(reducer, { ...initialState, sourceText: normalizedInitialSourceText });
+  const [selectedSources, setSelectedSources] = useState(normalizedInitialSources);
   const [pickerError, setPickerError] = useState<string | null>(null);
   const operationRef = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
@@ -270,6 +272,7 @@ export function ImportWizard({
         {pickerError ? <p aria-live="polite" className="sh-import-source__notice">{pickerError}</p> : null}
         {(["source", "acquiring", "candidate_gate", "cancelled", "failed"] as WizardPhase[]).includes(state.phase) ? (
           <SourceInput
+            actionLabel={selectedSources.length > 0 ? t("importWorkflow.source.acquireSelectedSources") : undefined}
             descriptor={state.descriptor}
             disabled={state.phase === "acquiring"}
             onChange={(value) => {
@@ -278,10 +281,10 @@ export function ImportWizard({
             }}
             onParse={() => void runAcquisition()}
             onPickLocalPath={() => void pickLocalDirectory()}
-            onSelectAllSources={() => setSelectedSources(initialSources)}
+            onSelectAllSources={() => setSelectedSources(normalizedInitialSources)}
             onToggleSource={(source) => setSelectedSources((current) => current.includes(source) ? current.filter((item) => item !== source) : [...current, source])}
             selectedSources={selectedSources}
-            suggestedSources={initialSources}
+            suggestedSources={normalizedInitialSources}
             value={state.sourceText}
           />
         ) : null}
@@ -324,7 +327,7 @@ export function ImportWizard({
 
         {state.phase === "committing" ? (
           <DataState
-            message={state.commitProgress ? t("importWorkflow.phases.committingProgress", state.commitProgress) : t("importWorkflow.phases.committing")}
+            message={state.commitProgress ? t("importWorkflow.phases.committingProgress", { ...state.commitProgress }) : t("importWorkflow.phases.committing")}
             state="loading"
           />
         ) : null}

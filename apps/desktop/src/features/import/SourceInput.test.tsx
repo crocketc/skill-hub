@@ -52,6 +52,20 @@ it("lists scanned sources with explicit bulk selection controls", async () => {
   expect(onSelectAllSources).toHaveBeenCalledOnce();
 });
 
+it("labels the batch action as acquiring selected directory candidates", async () => {
+  const onParse = vi.fn();
+  await renderSourceInput({
+    actionLabel: "读取已选目录候选",
+    onParse,
+    selectedSources: ["C:/codex/skills"],
+    suggestedSources: ["C:/codex/skills"],
+    value: "C:/codex/skills",
+  });
+
+  fireEvent.click(screen.getByRole("button", { name: "读取已选目录候选" }));
+  expect(onParse).toHaveBeenCalledOnce();
+});
+
 it("offers a native directory picker when the host provides one", async () => {
   const onPickLocalPath = vi.fn();
   await renderSourceInput({ onPickLocalPath });

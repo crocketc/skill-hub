@@ -60,3 +60,15 @@ it("enables outer scrolling only at wrapped zoom widths", () => {
     /\.sh-app-shell__content\s*\{[\s\S]*overflow-y:\s*auto/,
   );
 });
+
+it("keeps the guided import route scrollable inside the default desktop viewport", () => {
+  const routeStart = baseCss.indexOf(".sh-discovery-page--import {");
+  const routeBlock = baseCss.slice(routeStart, baseCss.indexOf("}", routeStart) + 1);
+  const wizardStart = baseCss.lastIndexOf(".sh-import-wizard {");
+  const wizardBlock = baseCss.slice(wizardStart, baseCss.indexOf("}", wizardStart) + 1);
+
+  expect(routeBlock).toMatch(/height:\s*100%/);
+  expect(routeBlock).toMatch(/grid-template-rows:\s*auto minmax\(0, 1fr\)/);
+  expect(wizardBlock).toMatch(/height:\s*100%/);
+  expect(wizardBlock).toMatch(/grid-template-rows:\s*auto minmax\(0, 1fr\)/);
+});

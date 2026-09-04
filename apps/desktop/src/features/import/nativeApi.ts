@@ -14,7 +14,6 @@ import {
   type ImportCandidate,
   type ImportConflict,
   type ImportFacade,
-  type ImportProgress,
   type ImportResult,
   type SourceDescriptor,
 } from "./api";
@@ -109,6 +108,22 @@ function decisionForAction(action: ImportAction, allowed?: ImportDecision[]): Im
     case "skip":
       return "skip";
   }
+}
+
+function defaultDecision(allowed: ImportDecision[]): ImportDecision {
+  const supportedDefaults: ImportDecision[] = [
+    "copy_into_library",
+    "copy_as_independent_managed_skill",
+    "keep_independent",
+    "reuse_existing",
+    "take_over_after_verify",
+    "skip",
+  ];
+  const decision = supportedDefaults.find((candidate) => allowed.includes(candidate));
+  if (!decision) {
+    throw new Error("本机导入分析没有提供可提交的默认操作");
+  }
+  return decision;
 }
 
 function resultForSummary(
@@ -259,7 +274,8 @@ export const nativeImportFacade: ImportFacade = {
         completed: index,
         total: plan.candidates.length,
       });
-      const action = actions[candidate.id] ?? "copy";
+      const selectedAction = actions[candidate.id];
+      let action = selectedAction ?? "copy";
       try {
         const prepared = preparedImport(await executeCommand({
           type: "prepare_import",
@@ -268,10 +284,14 @@ export const nativeImportFacade: ImportFacade = {
             tree_hash: null,
           },
         }));
+        const decision = selectedAction
+          ? decisionForAction(selectedAction, prepared.analysis.actions)
+          : defaultDecision(prepared.analysis.actions);
+        action = actionForDecision(decision) ?? action;
         const summary = importSummary(await executeCommand({
           type: "commit_import",
           payload: {
-            decision: decisionForAction(action, prepared.analysis.actions),
+            decision,
             prepared_import_id: prepared.id,
           },
         }));
