@@ -52,29 +52,29 @@ export function CandidateSelection({
           ) : null}
           <ul className="sh-import-candidates__list">
             {candidates.map((candidate) => {
-            const checked = selectedIds.includes(candidate.id);
-            return (
-              <li className="sh-import-candidates__item" key={candidate.id}>
-                <label>
-                  <input
-                    aria-label={candidate.name}
-                    checked={checked}
-                    onChange={() => onToggle(candidate.id)}
-                    type="checkbox"
-                  />
-                  <span className="sh-import-candidates__name">{candidate.name}</span>
-                </label>
-                <div className="sh-import-candidates__meta">
-                  <StatusBadge tone={candidate.basicCheck === "passed" ? "success" : "neutral"}>
-                    {t(`importWorkflow.candidates.basicCheck.${candidate.basicCheck}`)}
-                  </StatusBadge>
-                  <StatusBadge tone={ownershipTone[candidate.ownership]}>
-                    {t(`importWorkflow.candidates.ownership.${candidate.ownership}`)}
-                  </StatusBadge>
-                  <code title={candidate.path}>{candidate.path}</code>
-                </div>
-              </li>
-            );
+              const checked = selectedIds.includes(candidate.id);
+              return (
+                <li className="sh-import-candidates__item" key={candidate.id}>
+                  <label>
+                    <input
+                      aria-label={candidate.name}
+                      checked={checked}
+                      onChange={() => onToggle(candidate.id)}
+                      type="checkbox"
+                    />
+                    <span className="sh-import-candidates__name">{candidate.name}</span>
+                  </label>
+                  <div className="sh-import-candidates__meta">
+                    <StatusBadge tone={candidate.basicCheck === "passed" ? "success" : "neutral"}>
+                      {t(`importWorkflow.candidates.basicCheck.${candidate.basicCheck}`)}
+                    </StatusBadge>
+                    <StatusBadge tone={ownershipTone[candidate.ownership]}>
+                      {t(`importWorkflow.candidates.ownership.${candidate.ownership}`)}
+                    </StatusBadge>
+                    <code title={candidate.path}>{candidate.path}</code>
+                  </div>
+                </li>
+              );
             })}
           </ul>
         </>
