@@ -107,7 +107,7 @@
     "source": {
       "eyebrow": "Import source",
       "title": "Where should SkillHub look?",
-      "description": "Paste a local path, URL, Git reference, or an npx skills add reference.",
+      "description": "Choose a local directory to import; URLs, Git references, and npx references are recognized only. Remote download and import are not connected yet.",
       "label": "Source",
       "pickLocalDirectory": "Choose a local directory",
       "manualFallback": "You can also enter a path manually",

@@ -18,7 +18,11 @@ import {
 } from "./api";
 import { ImportSummary } from "./ImportSummary";
 import { SourceInput } from "./SourceInput";
-import { desktopDirectoryPicker, type DirectoryPicker } from "../../platform/directoryPicker";
+import {
+  desktopDirectoryPicker,
+  normalizeWindowsPath,
+  type DirectoryPicker,
+} from "../../platform/directoryPicker";
 
 type WizardPhase =
   | "source"
@@ -159,12 +163,15 @@ export function ImportWizard({
         const descriptor = await facade.parseSource(input);
         if (operation !== operationRef.current) return;
         descriptors.push(descriptor);
-        candidates.push(...await facade.acquireCandidates(descriptor, controller.signal));
       }
       if (operation !== operationRef.current) return;
       const descriptor = descriptors[0];
       if (!descriptor) throw new Error(t("importWorkflow.errors.emptySource"));
       dispatch({ type: "parse_succeeded", descriptor });
+      for (const descriptor of descriptors) {
+        if (operation !== operationRef.current) return;
+        candidates.push(...await facade.acquireCandidates(descriptor, controller.signal));
+      }
       if (operation !== operationRef.current) return;
       dispatch({ type: "acquire_succeeded", candidates });
     } catch (error) {
@@ -187,7 +194,7 @@ export function ImportWizard({
       const path = await directoryPicker.pickDirectory();
       if (!path) return;
       setSelectedSources([]);
-      dispatch({ type: "source_changed", value: path });
+      dispatch({ type: "source_changed", value: normalizeWindowsPath(path) });
     } catch (error) {
       setPickerError(error instanceof Error ? error.message : t("importWorkflow.source.pickerFailed"));
     }
@@ -253,7 +260,7 @@ export function ImportWizard({
             disabled={state.phase === "acquiring"}
             onChange={(value) => {
               setSelectedSources([]);
-              dispatch({ type: "source_changed", value });
+              dispatch({ type: "source_changed", value: normalizeWindowsPath(value) });
             }}
             onParse={() => void runAcquisition()}
             onPickLocalPath={() => void pickLocalDirectory()}

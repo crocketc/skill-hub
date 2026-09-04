@@ -17,22 +17,17 @@ import {
   type ImportResult,
   type SourceDescriptor,
 } from "./api";
+import { normalizeWindowsPath } from "../../platform/directoryPicker";
 
 function nativeSource(source: SourceDescriptor) {
   if (source.kind !== "local_path") {
-    throw new Error("当前版本仅支持从本地目录导入，联网来源将在后续版本接入");
+    throw new Error("已识别为远程来源，但当前版本尚未接入远程下载导入；请先下载到本机目录");
   }
   return { kind: "local" as const, locator: { local_path: normalizeWindowsPath(source.displayTarget) } };
 }
 
 function candidateId(candidate: NativeImportCandidate): string {
   return `${normalizeWindowsPath(candidate.absolute_root)}#${candidate.relative_root}`;
-}
-
-function normalizeWindowsPath(path: string): string {
-  if (path.startsWith("\\\\?\\UNC\\")) return `\\\\${path.slice(8)}`;
-  if (path.startsWith("\\\\?\\")) return path.slice(4);
-  return path;
 }
 
 function ownership(ownership: NativeImportCandidate["ownership"]): ImportCandidate["ownership"] {
@@ -187,8 +182,6 @@ function importSummary(result: AppCommandResult) {
 }
 
 const discoveredCandidates = new Map<string, NativeImportCandidate>();
-const candidateDecisions = new Map<string, ImportDecision[]>();
-
 function reconstructedCandidate(candidate: ImportCandidate): NativeImportCandidate {
   return {
     absolute_root: candidate.path,
@@ -230,7 +223,6 @@ export const nativeImportFacade: ImportFacade = {
 
   async analyzeConflicts(candidates) {
     const conflicts: ImportConflict[] = [];
-    candidateDecisions.clear();
     for (const candidate of candidates) {
       const result = await queryApplication({
         type: "analyze_import",
@@ -240,7 +232,6 @@ export const nativeImportFacade: ImportFacade = {
         },
       });
       const analysis = queryImportAnalysis(result);
-      candidateDecisions.set(candidate.id, analysis.actions);
       for (const conflict of analysis.conflicts) {
         if (!conflict.requires_choice) continue;
         const allowedActions = analysis.actions
@@ -274,7 +265,7 @@ export const nativeImportFacade: ImportFacade = {
         const summary = importSummary(await executeCommand({
           type: "commit_import",
           payload: {
-            decision: decisionForAction(action, candidateDecisions.get(candidate.id)),
+            decision: decisionForAction(action, prepared.analysis.actions),
             prepared_import_id: prepared.id,
           },
         }));
@@ -293,7 +284,6 @@ export const nativeImportFacade: ImportFacade = {
 
   cancel: () => {
     discoveredCandidates.clear();
-    candidateDecisions.clear();
     return Promise.resolve();
   },
 };

@@ -78,7 +78,7 @@ it("acquires candidates from every selected scanned source", async () => {
 
 it("fills the source from the native directory picker", async () => {
   const user = userEvent.setup();
-  const picker = { pickDirectory: vi.fn(async () => "C:/picked/skills") };
+  const picker = { pickDirectory: vi.fn(async () => "\\\\?\\C:\\picked\\skills") };
   const i18n = await createSkillHubI18n(["zh-CN"]);
   render(
     <I18nextProvider i18n={i18n}>
@@ -88,7 +88,7 @@ it("fills the source from the native directory picker", async () => {
 
   await user.click(screen.getByRole("button", { name: "选择本地目录" }));
 
-  expect(await screen.findByDisplayValue("C:/picked/skills")).toBeVisible();
+  expect(await screen.findByDisplayValue("C:\\picked\\skills")).toBeVisible();
   expect(picker.pickDirectory).toHaveBeenCalledOnce();
 });
 

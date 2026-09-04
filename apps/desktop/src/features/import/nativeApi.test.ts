@@ -234,6 +234,14 @@ describe("native import facade", () => {
     });
   });
 
+  it("distinguishes recognized remote sources from unsupported remote acquisition", async () => {
+    const source = await nativeImportFacade.parseSource("https://github.com/example/skills");
+
+    await expect(nativeImportFacade.acquireCandidates(source)).rejects.toThrow(
+      "已识别为远程来源，但当前版本尚未接入远程下载导入",
+    );
+  });
+
   it("maps the independent action to the decision allowed by native conflict analysis", async () => {
     const candidate = {
       basicCheck: "not_checked" as const,
@@ -255,14 +263,21 @@ describe("native import facade", () => {
     });
     await nativeImportFacade.analyzeConflicts([candidate]);
     vi.mocked(executeCommand)
-      .mockResolvedValueOnce({ type: "prepared_import", payload: { id: "operation-3", candidate: {} as never, analysis: {} as never } })
-      .mockResolvedValueOnce({ type: "import_summary", payload: { committed: true, items: [{ decision: "keep_independent", original_preserved: true, skill_id: "skill-3" }], operation_id: "operation-3" } });
+      .mockResolvedValueOnce({
+        type: "prepared_import",
+        payload: {
+          id: "operation-3",
+          candidate: {} as never,
+          analysis: { actions: ["copy_as_independent_managed_skill", "skip"] } as never,
+        },
+      })
+      .mockResolvedValueOnce({ type: "import_summary", payload: { committed: true, items: [{ decision: "copy_as_independent_managed_skill", original_preserved: true, skill_id: "skill-3" }], operation_id: "operation-3" } });
 
     await nativeImportFacade.commitImport({ candidates: [candidate], conflicts: [] }, { [candidate.id]: "independent" });
 
     expect(executeCommand).toHaveBeenLastCalledWith({
       type: "commit_import",
-      payload: { decision: "keep_independent", prepared_import_id: "operation-3" },
+      payload: { decision: "copy_as_independent_managed_skill", prepared_import_id: "operation-3" },
     });
   });
 });

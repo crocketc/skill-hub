@@ -107,7 +107,7 @@
     "source": {
       "eyebrow": "导入来源",
       "title": "从哪里查找 Skill？",
-      "description": "可粘贴本地路径、URL、Git 地址，或 npx skills add 来源引用。",
+      "description": "可选择本地目录导入；URL、Git 地址和 npx 引用目前只做来源识别，远程下载导入尚未接入。",
       "label": "来源",
       "pickLocalDirectory": "选择本地目录",
       "manualFallback": "也可以手动填写路径",
