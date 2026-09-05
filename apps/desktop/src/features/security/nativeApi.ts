@@ -7,7 +7,7 @@ import {
   type SetMetadata,
   type SkillLifecycle,
 } from "../../api/bindings";
-import type { SecurityCheck, SecurityFacade, SecurityFinding } from "./api";
+import type { SecurityCheck, SecurityCheckKind, SecurityFacade, SecurityFinding, SecurityPreferences } from "./api";
 
 function checkResult(result: AppQueryResult): SecurityCheck {
   if (result.type === "basic_check_result") return { kind: "basic", state: result.payload.state, checkedAt: result.payload.checked_at ?? undefined, findingCount: result.payload.finding_count, actionableCount: result.payload.actionable_count };
@@ -15,14 +15,16 @@ function checkResult(result: AppQueryResult): SecurityCheck {
   throw new Error("安全检查查询返回了无法识别的结果");
 }
 
-function findingsResult(result: AppQueryResult): SecurityFinding[] {
+function findingsResult(result: AppQueryResult, kind: SecurityCheckKind): SecurityFinding[] {
   if (result.type !== "findings") throw new Error("安全发现项查询返回了无法识别的结果");
   return result.payload.map((finding) => ({
     id: finding.id,
     code: finding.code,
+    kind,
     severity: finding.severity === "critical" ? "critical" : finding.severity === "error" ? "high" : finding.severity === "warning" ? "medium" : "low",
     file: finding.file ?? undefined,
     line: finding.line_start ?? undefined,
+    lineEnd: finding.line_end ?? undefined,
     highRisk: finding.high_risk,
     disposition: finding.disposition,
     message: finding.code,
@@ -47,12 +49,27 @@ export const nativeSecurityFacade: SecurityFacade = {
   },
   async listFindings(skillId, versionId) {
     const resolved = await resolvedVersion(skillId, versionId);
-    return findingsResult(await queryApplication({ type: "list_findings", payload: { skill_id: skillId, version_id: resolved, kind: "basic" } }));
+    const [basic, llm] = await Promise.all([
+      queryApplication({ type: "list_findings", payload: { skill_id: skillId, version_id: resolved, kind: "basic" } }),
+      queryApplication({ type: "list_findings", payload: { skill_id: skillId, version_id: resolved, kind: "llm" } }),
+    ]);
+    return [...findingsResult(basic, "basic"), ...findingsResult(llm, "llm")];
   },
-  async setFindingDisposition(findingId, disposition, skillId, versionId) {
+  async setFindingDisposition(finding, disposition, skillId, versionId, highRiskConfirmed) {
     if (!skillId || !versionId) throw new Error("安全发现项缺少 Skill 版本上下文");
-    const result = await executeCommand({ type: "set_finding_disposition", payload: { skill_id: skillId, version_id: versionId, kind: "basic", finding_id: findingId, disposition, high_risk_confirmed: disposition !== "actionable" } });
-    if (result.type !== "basic_check_result") throw new Error("安全发现项处置返回了无法识别的结果");
+    if (finding.highRisk && disposition !== "actionable" && !highRiskConfirmed) {
+      throw new Error("高风险发现项的处置需要显式确认");
+    }
+    const result = await executeCommand({ type: "set_finding_disposition", payload: { skill_id: skillId, version_id: versionId, kind: finding.kind, finding_id: finding.id, disposition, high_risk_confirmed: highRiskConfirmed } });
+    if (result.type !== "basic_check_result" && result.type !== "llm_safety_check_result") throw new Error("安全发现项处置返回了无法识别的结果");
+  },
+  async getPreferences() {
+    const result = await queryApplication({ type: "get_desktop_preferences" });
+    if (result.type !== "desktop_preferences") throw new Error("桌面偏好设置查询返回了无法识别的结果");
+    return { llmProvider: result.payload.llm_provider, dataScope: result.payload.data_scope } satisfies SecurityPreferences;
+  },
+  async runLlmCheck(skillId, versionId) {
+    await runNativeLlmSafetyCheck(skillId, await resolvedVersion(skillId, versionId));
   },
 };
 

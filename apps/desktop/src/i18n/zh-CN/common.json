@@ -288,7 +288,13 @@
     "loading": "正在加载 Agent 事实",
     "unavailable": "Agent 数据尚未连接到本机服务。",
     "actions": {
-      "rescan": "重新扫描"
+      "rescan": "重新扫描",
+      "addCustom": "新增自定义 Agent",
+      "edit": "编辑",
+      "remove": "删除",
+      "pickDirectory": "选择目录",
+      "save": "保存",
+      "cancel": "取消"
     },
     "managedDeploymentCount": "{{count}} 个受管部署",
     "status": {
@@ -324,6 +330,33 @@
       "eyebrow": "使用证据",
       "title": "已观测使用信号",
       "empty": "尚未收集使用证据。"
+    },
+    "managedDeploymentSummary": "{{skills}} 个 Skill · {{relations}} 条部署关系",
+    "customForm": {
+      "addTitle": "新增自定义 Agent",
+      "editTitle": "编辑自定义 Agent",
+      "description": "自定义 Agent 只记录你选择的全局 Skill 目录，并标记为未验证自定义目标。",
+      "displayName": "显示名称",
+      "brand": "品牌",
+      "referenceUrl": "官方参考链接",
+      "directory": "全局 Skill 目录",
+      "directoryMissing": "尚未选择",
+      "errors": {
+        "incomplete": "请填写显示名称、品牌、官方参考链接并选择目录。",
+        "invalidReferenceUrl": "官方参考链接必须以 https:// 或 http:// 开头。"
+      }
+    },
+    "removeDialog": {
+      "title": "删除自定义 Agent",
+      "description": "将从 SkillHub 移除 {{name}} 的自定义 Agent 记录，目录中的现有文件不会被修改。",
+      "confirm": "确认删除",
+      "cancel": "取消"
+    },
+    "limits": {
+      "eyebrow": "目录管理",
+      "title": "管理边界",
+      "relocateUnsupported": "重新定位需要原生契约支持，暂未提供。",
+      "ignoreUnsupported": "Agent 级忽略需要原生契约支持，暂未提供。"
     }
   },
   "projects": {
@@ -357,7 +390,8 @@
         "loading": "正在只读分析所选目录…",
         "skills": "可扫描的项目 Skill（不会自动导入）",
         "skillsEmpty": "未发现可扫描的 Skill 目录。",
-        "title": "目录预览（只读）"
+        "title": "目录预览（只读）",
+        "skillsSortHint": "与已发现 Agent 目录同前缀或同根的候选排在前面，其余保持原有顺序。"
       },
       "title": "注册本地项目"
     },
@@ -379,6 +413,21 @@
         "save": "保存关联",
         "saved": "已保存 Agent 关联。",
         "saveFailed": "无法保存 Agent 关联。"
+      },
+      "access": {
+        "eyebrow": "本机位置",
+        "title": "路径与访问状态",
+        "path": "项目路径",
+        "state": "访问状态",
+        "states": {
+          "accessible": "可访问",
+          "inaccessible": "不可访问",
+          "read_only": "只读",
+          "untracked": "未记录",
+          "unknown": "未知"
+        },
+        "untrackedNote": "未在发现快照中找到对应物理目标，无法判断访问状态。",
+        "snapshotFailed": "无法读取发现快照，暂时无法判断访问状态。"
       }
     },
     "sharedConfig": {
@@ -399,6 +448,23 @@
         "conflict": "冲突",
         "failed": "失败"
       }
+    },
+    "assemblyPlan": {
+      "eyebrow": "装配计划",
+      "title": "项目 Skill 装配",
+      "empty": "尚未生成装配计划，项目要求不会在这里自动部署。",
+      "emptyItems": "装配计划中没有条目。",
+      "unavailable": "无法读取装配计划。",
+      "groupCount": "{{count}} 项",
+      "groups": {
+        "already_satisfied": "已满足",
+        "succeeded": "已成功",
+        "ready_to_acquire": "待获取",
+        "conflict_needs_choice": "冲突待选择",
+        "skipped": "已跳过",
+        "failed": "失败"
+      },
+      "detachNote": "解除管理针对单个部署关系，需在部署管理中按部署处理；项目详情没有可解除的部署入口。"
     }
   },
   "appShell": {
@@ -1020,12 +1086,25 @@
     "locationUnknown": "位置不可用",
     "actions": {
       "acknowledge": "确认已知晓",
-      "confirmDismiss": "确认并忽略此项"
+      "confirmDismiss": "确认并忽略此项",
+      "dismiss": "忽略此项",
+      "confirmAcknowledge": "确认并知晓此项"
     },
     "disposition": {
       "actionable": "待处理",
       "acknowledged": "已知晓",
       "dismissed": "已忽略"
+    },
+    "findingsBasic": "基础检查发现",
+    "findingsLlm": "AI 检查发现",
+    "highRiskTitle": "高风险发现项处置确认",
+    "highRiskDescription": "该发现项被标记为高风险。处置前需要显式确认，处置结果会记录到检查结果中。",
+    "llm": {
+      "run": "运行 AI 检查",
+      "providerMissing": "未配置 LLM 提供商，AI 检查不可用",
+      "scopeExplicitSelection": "仅发送显式选择的 Skill 内容",
+      "scopeOther": "当前发送范围：{{scope}}",
+      "runFailed": "AI 检查运行失败：{{message}}"
     }
   },
   "removal": {

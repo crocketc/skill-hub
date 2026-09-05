@@ -288,7 +288,13 @@
     "loading": "Loading Agent facts",
     "unavailable": "Agent data is not connected to the native service yet.",
     "actions": {
-      "rescan": "Rescan agents"
+      "rescan": "Rescan agents",
+      "addCustom": "Add custom agent",
+      "edit": "Edit",
+      "remove": "Remove",
+      "pickDirectory": "Pick directory",
+      "save": "Save",
+      "cancel": "Cancel"
     },
     "managedDeploymentCount": "{{count}} managed deployments",
     "status": {
@@ -324,6 +330,33 @@
       "eyebrow": "Usage evidence",
       "title": "Observed usage signals",
       "empty": "No usage evidence has been collected."
+    },
+    "managedDeploymentSummary": "{{skills}} skills · {{relations}} deployment relations",
+    "customForm": {
+      "addTitle": "Add custom agent",
+      "editTitle": "Edit custom agent",
+      "description": "A custom agent only records the global Skill directory you chose and is marked as an unverified custom target.",
+      "displayName": "Display name",
+      "brand": "Brand",
+      "referenceUrl": "Official reference URL",
+      "directory": "Global Skill directory",
+      "directoryMissing": "Not chosen yet",
+      "errors": {
+        "incomplete": "Fill in the display name, brand, official reference URL and pick a directory.",
+        "invalidReferenceUrl": "The official reference URL must start with https:// or http://."
+      }
+    },
+    "removeDialog": {
+      "title": "Remove custom agent",
+      "description": "The custom agent record {{name}} will be removed from SkillHub. Existing files in the directory are not modified.",
+      "confirm": "Confirm removal",
+      "cancel": "Cancel"
+    },
+    "limits": {
+      "eyebrow": "Directory management",
+      "title": "Management boundaries",
+      "relocateUnsupported": "Relocation needs native contract support and is not available yet.",
+      "ignoreUnsupported": "Agent-level ignore needs native contract support and is not available yet."
     }
   },
   "projects": {
@@ -357,7 +390,8 @@
         "loading": "Analyzing the chosen directory read-only…",
         "skills": "Scannable project Skills (not imported automatically)",
         "skillsEmpty": "No scannable Skill directories were found.",
-        "title": "Directory preview (read-only)"
+        "title": "Directory preview (read-only)",
+        "skillsSortHint": "Candidates sharing a prefix or root with a discovered Agent directory come first; the rest keep their original order."
       },
       "title": "Register local project"
     },
@@ -379,6 +413,21 @@
         "save": "Save associations",
         "saved": "Agent associations saved.",
         "saveFailed": "Agent associations could not be saved."
+      },
+      "access": {
+        "eyebrow": "On this device",
+        "title": "Path and access",
+        "path": "Project path",
+        "state": "Access state",
+        "states": {
+          "accessible": "Accessible",
+          "inaccessible": "Inaccessible",
+          "read_only": "Read-only",
+          "untracked": "Untracked",
+          "unknown": "Unknown"
+        },
+        "untrackedNote": "The discovery snapshot has no matching physical target, so the access state is unknown.",
+        "snapshotFailed": "The discovery snapshot could not be read, so the access state is unknown for now."
       }
     },
     "sharedConfig": {
@@ -399,6 +448,23 @@
         "conflict": "Conflict",
         "failed": "Failed"
       }
+    },
+    "assemblyPlan": {
+      "eyebrow": "Assembly plan",
+      "title": "Project Skill assembly",
+      "empty": "No assembly plan exists yet; project requirements are not deployed from here.",
+      "emptyItems": "The assembly plan has no items.",
+      "unavailable": "The assembly plan could not be read.",
+      "groupCount": "{{count}} items",
+      "groups": {
+        "already_satisfied": "Already satisfied",
+        "succeeded": "Succeeded",
+        "ready_to_acquire": "Ready to acquire",
+        "conflict_needs_choice": "Conflict needs a choice",
+        "skipped": "Skipped",
+        "failed": "Failed"
+      },
+      "detachNote": "Detaching management applies to a single deployment relation and is handled per deployment in deployment management; this page offers no deployment to detach."
     }
   },
   "appShell": {
@@ -1020,12 +1086,25 @@
     "locationUnknown": "Location unavailable",
     "actions": {
       "acknowledge": "Acknowledge",
-      "confirmDismiss": "Confirm and dismiss"
+      "confirmDismiss": "Confirm and dismiss",
+      "dismiss": "Dismiss",
+      "confirmAcknowledge": "Acknowledge this finding"
     },
     "disposition": {
       "actionable": "Actionable",
       "acknowledged": "Acknowledged",
       "dismissed": "Dismissed"
+    },
+    "findingsBasic": "Basic check findings",
+    "findingsLlm": "AI check findings",
+    "highRiskTitle": "Confirm high-risk finding action",
+    "highRiskDescription": "This finding is marked high risk. Explicit confirmation is required before disposing of it, and the disposition is recorded with the check result.",
+    "llm": {
+      "run": "Run AI check",
+      "providerMissing": "No LLM provider is configured; AI checks are unavailable.",
+      "scopeExplicitSelection": "Only explicitly selected Skill content is sent.",
+      "scopeOther": "Current data scope: {{scope}}",
+      "runFailed": "AI check failed: {{message}}"
     }
   },
   "removal": {

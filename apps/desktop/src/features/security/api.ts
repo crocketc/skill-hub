@@ -10,22 +10,31 @@ export type SecurityCheck = {
 export type SecurityFinding = {
   id: string;
   code: string;
+  kind: SecurityCheckKind;
   severity: "low" | "medium" | "high" | "critical";
   file?: string;
   line?: number;
+  lineEnd?: number;
   highRisk: boolean;
   disposition: "actionable" | "acknowledged" | "dismissed";
   message: string;
+};
+export type SecurityPreferences = {
+  llmProvider: string;
+  dataScope: string;
 };
 export interface SecurityFacade {
   getChecks(skillId: string, versionId: string): Promise<SecurityCheck[]>;
   listFindings(skillId: string, versionId: string): Promise<SecurityFinding[]>;
   setFindingDisposition(
-    findingId: string,
+    finding: SecurityFinding,
     disposition: SecurityFinding["disposition"],
-    skillId?: string,
-    versionId?: string,
+    skillId: string,
+    versionId: string,
+    highRiskConfirmed: boolean,
   ): Promise<void>;
+  getPreferences?(): Promise<SecurityPreferences>;
+  runLlmCheck?(skillId: string, versionId: string): Promise<void>;
 }
 
 const unavailable = (operation: string): Promise<never> =>
@@ -47,6 +56,7 @@ export function separateCheckFixture(): { checks: SecurityCheck[]; findings: Sec
       {
         id: "finding-1",
         code: "secret-like-string",
+        kind: "basic",
         severity: "high",
         file: "SKILL.md",
         line: 18,
