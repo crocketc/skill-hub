@@ -226,15 +226,13 @@ export function SkillDetailPage({
               ) : null}
               {section === "metadata" ? (
                 <>
-                  
-                metadataQuery.isPending ? (
-                  <p role="status">{t("skillDetail.states.loadingMetadata")}</p>
-                ) : metadataQuery.isError || !metadataQuery.data ? (
-                  <p role="alert">{t("skillDetail.states.metadataError")}</p>
-                ) : (
-                  <MetadataPanel facade={facade} metadata={metadataQuery.data} skillId={skillId} />
-                )
-              
+                  {metadataQuery.isPending ? (
+                    <p role="status">{t("skillDetail.states.loadingMetadata")}</p>
+                  ) : metadataQuery.isError || !metadataQuery.data ? (
+                    <p role="alert">{t("skillDetail.states.metadataError")}</p>
+                  ) : (
+                    <MetadataPanel facade={facade} metadata={metadataQuery.data} skillId={skillId} />
+                  )}
                   <SourceRelinkPanel facade={facade} skillId={skillId} />
                 </>
               ) : null}
