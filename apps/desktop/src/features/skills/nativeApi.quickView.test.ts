@@ -32,9 +32,9 @@ function skillPayload() {
 }
 
 it("enriches the quick view with real check states, versions and deployment relations", async () => {
-  vi.mocked(queryApplication).mockImplementation(async (query: never) => {
+  vi.mocked(queryApplication).mockImplementation(async (query: unknown) => {
     const request = query as { type: string; payload?: { skill_id?: string; version_id?: string } };
-    if (request.type === "get_skill") return skillPayload();
+    if (request.type === "get_skill") return skillPayload() as never;
     if (request.type === "get_basic_check_result") {
       return {
         type: "basic_check_result",
@@ -48,7 +48,7 @@ it("enriches the quick view with real check states, versions and deployment rela
           finding_count: 0,
           actionable_count: 0,
         },
-      };
+      } as never;
     }
     if (request.type === "get_llm_safety_check_result") {
       return {
@@ -63,7 +63,7 @@ it("enriches the quick view with real check states, versions and deployment rela
           finding_count: 2,
           actionable_count: 1,
         },
-      };
+      } as never;
     }
     if (request.type === "get_deployment_relations") {
       return {
@@ -71,7 +71,7 @@ it("enriches the quick view with real check states, versions and deployment rela
         payload: [
           { id: "d1", skill_id: "skill-pdf", version_id: "v3", target_id: "t1", state: "active", mode: "managed_copy", managed: true, runtime_name: "pdf-reader", expected_hash: "h", observed_hash: "h" },
         ],
-      };
+      } as never;
     }
     throw new Error(`unexpected query ${request.type}`);
   });
@@ -92,9 +92,9 @@ it("enriches the quick view with real check states, versions and deployment rela
 it("keeps the quick view honest when the skill has no current version", async () => {
   const payload = skillPayload();
   (payload.payload as { current_version: string | null }).current_version = null;
-  vi.mocked(queryApplication).mockImplementation(async (query: never) => {
+  vi.mocked(queryApplication).mockImplementation(async (query: unknown) => {
     const request = query as { type: string };
-    if (request.type === "get_skill") return payload;
+    if (request.type === "get_skill") return payload as never;
     throw new Error(`unexpected query ${request.type}`);
   });
 
