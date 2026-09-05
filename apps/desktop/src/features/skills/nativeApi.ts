@@ -184,7 +184,36 @@ export const nativeSkillLibraryFacade: SkillLibraryFacade = {
         type: "get_skill",
         payload: { skill_id: skillId },
       });
-      return asQuickView(result);
+      if (result.type !== "skill") throw unavailableResult();
+      const skill = result.payload;
+      const view = asQuickView(result);
+      // 用真实读模型填充抽屉各模块（FE-05）：身份/版本/检查/部署关系。
+      view.currentVersion = skill.current_version ?? "unknown";
+      view.purpose = skill.translated_description ?? skill.original_description;
+      view.originalDescription = skill.original_description;
+      view.translatedDescription = skill.translated_description ?? undefined;
+      view.tags = skill.tags;
+      view.license = skill.license ?? undefined;
+      view.note = skill.user_note ?? undefined;
+      view.lifecycle = skill.trial_due ? "trial" : skill.lifecycle === "Normal" ? "active" : "archived";
+      if (skill.current_version) {
+        const checks = await Promise.all([
+          queryApplication({ type: "get_basic_check_result", payload: { skill_id: skillId, version_id: skill.current_version } }),
+          queryApplication({ type: "get_llm_safety_check_result", payload: { skill_id: skillId, version_id: skill.current_version } }),
+        ]).catch(() => [] as AppQueryResult[]);
+        if (checks[0]?.type === "basic_check_result") view.basicCheck = checkStateOf(checks[0].payload.state);
+        if (checks[1]?.type === "llm_safety_check_result") view.aiCheck = checkStateOf(checks[1].payload.state);
+      }
+      try {
+        const relations = await queryApplication({ type: "get_deployment_relations", payload: { skill_id: skillId } });
+        if (relations.type === "deployment_relations") {
+          view.agentDeployments = relations.payload.map((record) => ({ id: record.id, name: record.runtime_name }));
+          view.agentDeploymentCount = relations.payload.length;
+        }
+      } catch {
+        // 部署关系读取失败时保持占位零值，不在抽屉里伪造数据。
+      }
+      return view;
     } catch (error) {
       if (error instanceof SkillLibraryUnavailableError) throw error;
       throw unavailableResult();
