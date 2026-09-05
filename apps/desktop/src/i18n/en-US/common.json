@@ -932,12 +932,20 @@
     "loading": "Loading pending items",
     "empty": "No pending items",
     "listHeading": "Items needing attention",
+    "filteredEmpty": "No pending items match this filter.",
+    "filters": {
+      "kind": "Item type",
+      "all": "All items"
+    },
+    "kinds": {
+      "trial_due": "Trial review",
+      "security_finding": "Security finding",
+      "recovery": "Recovery"
+    },
     "actions": {
-      "resolve": "Resolve",
       "recheck": "Recheck",
-      "convert": "Convert",
-      "recover": "Recover",
-      "remove": "Remove"
+      "convert": "Make regular",
+      "recover": "Acknowledge recovery"
     }
   },
   "recovery": {

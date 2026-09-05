@@ -932,12 +932,20 @@
     "loading": "正在加载待处理事项",
     "empty": "没有待处理事项",
     "listHeading": "需要关注的事项",
+    "filteredEmpty": "没有符合当前筛选条件的事项",
+    "filters": {
+      "kind": "事项类型",
+      "all": "全部事项"
+    },
+    "kinds": {
+      "trial_due": "待确认试用",
+      "security_finding": "安全发现",
+      "recovery": "恢复事项"
+    },
     "actions": {
-      "resolve": "处理",
       "recheck": "重新检查",
-      "convert": "转换",
-      "recover": "恢复",
-      "remove": "移除"
+      "convert": "转为常规",
+      "recover": "确认恢复"
     }
   },
   "recovery": {
