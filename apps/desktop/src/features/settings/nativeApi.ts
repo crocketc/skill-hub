@@ -123,6 +123,46 @@ export const nativeSettingsFacade: SettingsFacade = {
       }
       return result.payload;
     },
+    async listIgnoreRules() {
+      const result = await queryApplication({ type: "list_ignore_rules" });
+      if (result.type !== "ignore_rules") {
+        throw new Error("list_ignore_rules returned an unexpected native result.");
+      }
+      return result.payload;
+    },
+    async createIgnoreRule(draft) {
+      const result = await executeCommand({
+        type: "create_ignore_rule",
+        payload: { subject: draft.subject, reason: draft.reason, defer_until: draft.deferUntil },
+      });
+      if (result.type !== "ignore_rule") {
+        throw new Error("create_ignore_rule returned an unexpected native result.");
+      }
+      return result.payload;
+    },
+    async removeIgnoreRule(ruleId) {
+      const result = await executeCommand({ type: "remove_ignore_rule", payload: { rule_id: ruleId } });
+      if (result.type !== "operation_summary") {
+        throw new Error("remove_ignore_rule returned an unexpected native result.");
+      }
+    },
+    async prepareRepair(healthReportId, findingIndex) {
+      const result = await executeCommand({
+        type: "prepare_repair",
+        payload: { health_report_id: healthReportId, finding_index: findingIndex },
+      });
+      if (result.type !== "repair_plan") {
+        throw new Error("prepare_repair returned an unexpected native result.");
+      }
+      return result.payload;
+    },
+    async commitRepair(repairId) {
+      const result = await executeCommand({ type: "commit_repair", payload: { repair_id: repairId } });
+      if (result.type !== "operation_summary") {
+        throw new Error("commit_repair returned an unexpected native result.");
+      }
+      return result.payload;
+    },
   },
   updates: nativeApplicationUpdateOperations({
     currentVersion: async () => (await import("@tauri-apps/api/app")).getVersion(),

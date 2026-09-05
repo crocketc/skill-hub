@@ -95,7 +95,8 @@
       "committingProgress": "正在提交导入（已完成 {{completed}}/{{total}}，当前：{{candidateId}}）",
       "summary": "导入完成",
       "failed": "导入需要处理",
-      "cancelled": "导入已取消"
+      "cancelled": "导入已取消",
+      "committingBackgroundHint": "可以离开此页面，导入将在后台继续；进度与结果可在任意页面的顶部指示器查看。"
     },
     "acquisition": {
       "complete": "找到 {{count}} 个候选项，请先审阅列表。",
@@ -1088,7 +1089,6 @@
     "progressLabel": "操作进度",
     "technicalDetails": "技术细节",
     "operationId": "操作 ID",
-    "completed": "已完成",
     "phases": {
       "planned": "已计划",
       "prepared": "已准备",
@@ -1097,7 +1097,8 @@
       "committed": "已提交",
       "needs_recovery": "需要恢复",
       "rolled_back": "已回滚"
-    }
+    },
+    "completed": "已完成"
   },
   "settings": {
     "reopenOnboarding": "重新运行初始化向导",
@@ -1221,6 +1222,45 @@
         "network_disabled": "网络功能已关闭，无法检查更新。",
         "rate_limited": "检查频率受限，请稍后再试。"
       }
+    },
+    "ignore": {
+      "heading": "忽略项",
+      "description": "命中以下规则的条目会在健康检查中被跳过。",
+      "empty": "暂无忽略规则。",
+      "subjectLabel": "主体类型",
+      "subjectPath": "精确路径",
+      "subjectSkill": "精确 Skill ID",
+      "subjectPending": "精确待处理 ID",
+      "valueLabel": "主体值",
+      "valuePlaceholder": "路径或 ID",
+      "reasonLabel": "理由",
+      "reasonPlaceholder": "说明忽略原因",
+      "add": "添加规则",
+      "adding": "添加中…",
+      "created": "创建于",
+      "remove": "移除",
+      "confirmRemoveTitle": "移除忽略规则",
+      "confirmRemoveDescription": "移除后{{subject}}将重新参与健康检查。",
+      "confirmRemove": "确认移除",
+      "loadFailed": "忽略规则加载失败。",
+      "addFailed": "忽略规则添加失败。",
+      "removeFailed": "忽略规则移除失败。",
+      "valueRequired": "请填写主体值。",
+      "reasonRequired": "请填写忽略理由。"
+    },
+    "repair": {
+      "preview": "修复预览",
+      "preparing": "生成预览…",
+      "previewFailed": "修复预览生成失败。",
+      "panelLabel": "修复计划",
+      "planHeading": "修复计划明细",
+      "findingLabel": "问题",
+      "severityLabel": "严重级别",
+      "actionLabel": "建议动作",
+      "execute": "执行修复",
+      "executing": "执行中…",
+      "commitFailed": "修复执行失败。",
+      "committed": "修复已执行。"
     }
   },
   "dataProtection": {

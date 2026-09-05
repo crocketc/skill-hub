@@ -95,7 +95,8 @@
       "committingProgress": "Committing import ({{completed}}/{{total}} candidates complete, current: {{candidateId}})",
       "summary": "Import complete",
       "failed": "Import needs attention",
-      "cancelled": "Import cancelled"
+      "cancelled": "Import cancelled",
+      "committingBackgroundHint": "You can leave this page; the import keeps running in the background. Progress and results appear in the indicator at the top of every page."
     },
     "acquisition": {
       "complete": "Found {{count}} candidate(s). Review the list before continuing.",
@@ -1088,7 +1089,6 @@
     "progressLabel": "Operation progress",
     "technicalDetails": "Technical details",
     "operationId": "Operation ID",
-    "completed": "Completed",
     "phases": {
       "planned": "Planned",
       "prepared": "Prepared",
@@ -1097,7 +1097,8 @@
       "committed": "Committed",
       "needs_recovery": "Needs recovery",
       "rolled_back": "Rolled back"
-    }
+    },
+    "completed": "Completed"
   },
   "settings": {
     "reopenOnboarding": "Run initialization again",
@@ -1221,6 +1222,45 @@
         "network_disabled": "Network features are disabled; the update check cannot run.",
         "rate_limited": "The update check is rate limited. Try again later."
       }
+    },
+    "ignore": {
+      "heading": "Ignored items",
+      "description": "Entries matching these rules are skipped during health checks.",
+      "empty": "No ignore rules yet.",
+      "subjectLabel": "Subject type",
+      "subjectPath": "Exact path",
+      "subjectSkill": "Exact skill ID",
+      "subjectPending": "Exact pending ID",
+      "valueLabel": "Subject value",
+      "valuePlaceholder": "Path or ID",
+      "reasonLabel": "Reason",
+      "reasonPlaceholder": "Explain why this is ignored",
+      "add": "Add rule",
+      "adding": "Adding…",
+      "created": "Created",
+      "remove": "Remove",
+      "confirmRemoveTitle": "Remove ignore rule",
+      "confirmRemoveDescription": "{{subject}} will participate in health checks again after removal.",
+      "confirmRemove": "Confirm removal",
+      "loadFailed": "Failed to load ignore rules.",
+      "addFailed": "Failed to add the ignore rule.",
+      "removeFailed": "Failed to remove the ignore rule.",
+      "valueRequired": "A subject value is required.",
+      "reasonRequired": "A reason is required."
+    },
+    "repair": {
+      "preview": "Repair preview",
+      "preparing": "Preparing…",
+      "previewFailed": "Failed to prepare the repair preview.",
+      "panelLabel": "Repair plan",
+      "planHeading": "Repair plan details",
+      "findingLabel": "Finding",
+      "severityLabel": "Severity",
+      "actionLabel": "Suggested action",
+      "execute": "Apply repair",
+      "executing": "Applying…",
+      "commitFailed": "Failed to apply the repair.",
+      "committed": "Repair applied."
     }
   },
   "dataProtection": {

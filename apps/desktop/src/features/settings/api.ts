@@ -1,8 +1,21 @@
-import { executeCommand, queryApplication, type HealthReport, type UpdateArtifact, type UpdateManifest, type UpdatePlatform } from "../../api/bindings";
+import { executeCommand, queryApplication, type HealthReport, type IgnoreRule, type OperationSummary, type RepairPlan, type UpdateArtifact, type UpdateManifest, type UpdatePlatform } from "../../api/bindings";
 import type { BackupFacade } from "../backup/api";
+
+export type IgnoreRuleSubject = IgnoreRule["subject"];
+export type IgnoreRuleDraft = {
+  subject: IgnoreRuleSubject;
+  reason: string;
+  /** Kept explicit so callers state the deferral decision; the UI sends null. */
+  deferUntil: string | null;
+};
 
 export interface LibraryHealthOperations {
   runHealthCheck: () => Promise<HealthReport>;
+  listIgnoreRules: () => Promise<IgnoreRule[]>;
+  createIgnoreRule: (draft: IgnoreRuleDraft) => Promise<IgnoreRule>;
+  removeIgnoreRule: (ruleId: string) => Promise<void>;
+  prepareRepair: (healthReportId: string, findingIndex: number) => Promise<RepairPlan>;
+  commitRepair: (repairId: string) => Promise<OperationSummary>;
 }
 
 export type BuildTrust = "windows_signed" | "windows_unsigned" | "macos_signed" | "unknown";
