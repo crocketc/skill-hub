@@ -28,8 +28,10 @@ it("maps registered project facts and does not invent assembly results", async (
     agentIds: [],
     assembly: [],
     description: "Release workspace",
+    devicePath: "D:/Work/Aurora",
     id: "project-aurora",
     name: "Aurora",
+    physicalId: "physical-project",
     sharedConfig: {
       identityHint: "github.com/acme/aurora",
       requirements: [],
@@ -37,6 +39,76 @@ it("maps registered project facts and does not invent assembly results", async (
     },
     tags: ["Rust", "Desktop"],
   }]);
+});
+
+it("maps physical target access facts from the discovery snapshot", async () => {
+  query.mockResolvedValue({
+    type: "discovery_snapshot",
+    payload: {
+      generation: "generation-1",
+      observed_at: "2026-09-06T00:00:00Z",
+      instances: [],
+      logical_targets: [],
+      physical_targets: [
+        {
+          id: "fs-aurora",
+          path: "D:/Work/Aurora",
+          exists: true,
+          readable: true,
+          writable: false,
+          case_behavior: "case_insensitive",
+          logical_target_ids: [],
+        },
+      ],
+    },
+  });
+
+  await expect(nativeProjectFacade.listPhysicalTargets()).resolves.toEqual([
+    { exists: true, id: "fs-aurora", path: "D:/Work/Aurora", readable: true, writable: false },
+  ]);
+});
+
+it("maps the project assembly plan items without inventing fields", async () => {
+  query.mockResolvedValueOnce({
+    type: "assembly_plan",
+    payload: {
+      id: "plan-1",
+      operation_id: "op-1",
+      project_id: "project-aurora",
+      committed: false,
+      items: [{
+        requirement: {
+          skill_id: "pdf-reader",
+          source: "github.com/acme/pdf-reader",
+          name: "PDF Reader",
+          version_constraint: null,
+          version_id: null,
+          content_identity: null,
+          logical_agent_id: null,
+          project_subdirectory: null,
+          note: null,
+        },
+        status: "ready_to_acquire",
+        version_id: null,
+        reasons: ["需要获取版本"],
+        choice: null,
+        conflict_kind: null,
+        allowed_choices: ["acquire", "skip", "use_existing"],
+      }],
+    },
+  });
+
+  await expect(nativeProjectFacade.getAssemblyPlan("project-aurora")).resolves.toEqual({
+    items: [{ name: "PDF Reader", reasons: ["需要获取版本"], skillId: "pdf-reader", status: "ready_to_acquire" }],
+  });
+});
+
+it("reports a missing assembly plan as null and keeps other failures visible", async () => {
+  query.mockRejectedValueOnce({ code: "object.not_found" });
+  await expect(nativeProjectFacade.getAssemblyPlan("project-aurora")).resolves.toBeNull();
+
+  query.mockRejectedValueOnce({ code: "internal.error", message: "boom" });
+  await expect(nativeProjectFacade.getAssemblyPlan("project-aurora")).rejects.toMatchObject({ code: "internal.error" });
 });
 
 it("distinguishes a missing project from an unavailable native result", async () => {

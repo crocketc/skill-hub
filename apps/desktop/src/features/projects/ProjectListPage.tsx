@@ -4,7 +4,7 @@ import { desktopDirectoryPicker, normalizeWindowsPath, type DirectoryPicker } fr
 import { Button } from "../../ui/Button";
 import { DataState } from "../../ui/DataState";
 import { ProjectQuickDrawer } from "./ProjectQuickDrawer";
-import { type ProjectAgentCandidate, type ProjectDirectoryPreview, type ProjectFacade, type ProjectView, unavailableProjectFacade } from "./api";
+import { sortSkillCandidatesByTraceAffinity, type ProjectAgentCandidate, type ProjectDirectoryPreview, type ProjectFacade, type ProjectView, unavailableProjectFacade } from "./api";
 
 export function matchesProjectFilters(project: ProjectView, text: string, selectedTags: string[]) {
   const normalizedText = text.trim().toLocaleLowerCase();
@@ -154,10 +154,10 @@ export function ProjectListPage({
                   {preview.agentTraces.map((trace) => <li key={trace.targetId}><strong>{trace.label}</strong><small>{trace.path}</small></li>)}
                 </ul>
               ) : <p>{t("projects.registration.preview.agentsEmpty")}</p>}
-              <h4>{t("projects.registration.preview.skills")}</h4>
+              <h4 title={t("projects.registration.preview.skillsSortHint")}>{t("projects.registration.preview.skills")}</h4>
               {preview.skillCandidates.length ? (
-                <ul>
-                  {preview.skillCandidates.map((candidate) => <li key={candidate.path}>{candidate.name}<small>{candidate.path}</small></li>)}
+                <ul aria-label={t("projects.registration.preview.skills")}>
+                  {sortSkillCandidatesByTraceAffinity(preview.skillCandidates, preview.agentTraces).map((candidate) => <li key={candidate.path}>{candidate.name}<small>{candidate.path}</small></li>)}
                 </ul>
               ) : <p>{t("projects.registration.preview.skillsEmpty")}</p>}
             </section>

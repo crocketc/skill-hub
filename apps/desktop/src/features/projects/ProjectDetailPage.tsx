@@ -1,9 +1,11 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { useNavigate } from "react-router-dom";
 import { DataState } from "../../ui/DataState";
 import { Button } from "../../ui/Button";
-import { BestEffortAssembly } from "./BestEffortAssembly";
-import { type ProjectFacade, type ProjectView, unavailableProjectFacade } from "./api";
+import { type ProjectAssemblyPlanView, type ProjectFacade, type ProjectPhysicalTargetView, type ProjectView, unavailableProjectFacade } from "./api";
+import { ProjectAccessPanel } from "./ProjectAccessPanel";
+import { ProjectAssemblyPlanGroups } from "./ProjectAssemblyPlanGroups";
 import { SharedConfigPanel } from "./SharedConfigPanel";
 
 export interface ProjectDetailPageProps {
@@ -12,10 +14,15 @@ export interface ProjectDetailPageProps {
 }
 
 export function ProjectDetailPage({ projectId = "default", facade = unavailableProjectFacade }: ProjectDetailPageProps) {
+  const navigate = useNavigate();
   const { t } = useTranslation();
   const [project, setProject] = useState<ProjectView>();
   const [agentCandidates, setAgentCandidates] = useState<Awaited<ReturnType<ProjectFacade["listAgentCandidates"]>>>([]);
   const [agentIds, setAgentIds] = useState<string[]>([]);
+  const [assemblyPlan, setAssemblyPlan] = useState<ProjectAssemblyPlanView | null>(null);
+  const [assemblyPlanFailed, setAssemblyPlanFailed] = useState(false);
+  const [physicalTargets, setPhysicalTargets] = useState<ProjectPhysicalTargetView[]>([]);
+  const [snapshotFailed, setSnapshotFailed] = useState(false);
   const [savingAgents, setSavingAgents] = useState(false);
   const [saveError, setSaveError] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -28,6 +35,16 @@ export function ProjectDetailPage({ projectId = "default", facade = unavailableP
       setAgentIds(value.agentIds);
     }).catch(() => { if (active) setError(true); });
     void facade.listAgentCandidates().then((value) => { if (active) setAgentCandidates(value); }).catch(() => { if (active) setAgentCandidates([]); });
+    void facade.getAssemblyPlan(projectId).then((value) => {
+      if (!active) return;
+      setAssemblyPlan(value);
+      setAssemblyPlanFailed(false);
+    }).catch(() => { if (active) setAssemblyPlanFailed(true); });
+    void facade.listPhysicalTargets().then((value) => {
+      if (!active) return;
+      setPhysicalTargets(value);
+      setSnapshotFailed(false);
+    }).catch(() => { if (active) setSnapshotFailed(true); });
     return () => { active = false; };
   }, [facade, projectId]);
   if (error) return <DataState message={t("projects.unavailable")} state="unavailable" />;
@@ -49,7 +66,8 @@ export function ProjectDetailPage({ projectId = "default", facade = unavailableP
   };
   return (
     <div className="sh-project-detail">
-      <header className="sh-project-detail__header"><p className="sh-project-eyebrow">{t("projects.detail.eyebrow")}</p><h1>{project.name}</h1><p>{project.description}</p></header>
+      <header className="sh-project-detail__header"><p className="sh-project-eyebrow">{t("projects.detail.eyebrow")}</p><h1>{project.name}</h1><p>{project.description}</p><Button onClick={() => navigate("/library", { state: { deployTarget: { id: project.id, label: project.name } } })} variant="secondary">{t("projects.detail.launchDeployment")}</Button></header>
+      <ProjectAccessPanel project={project} snapshotFailed={snapshotFailed} targets={physicalTargets} />
       <section aria-labelledby="project-agent-associations" className="sh-project-detail__panel">
         <div className="sh-project-section-heading"><div><p className="sh-project-eyebrow">{t("projects.detail.agentAssociations.eyebrow")}</p><h2 id="project-agent-associations">{t("projects.detail.agentAssociations.title")}</h2></div></div>
         <p>{t("projects.detail.agentAssociations.description")}</p>
@@ -59,7 +77,7 @@ export function ProjectDetailPage({ projectId = "default", facade = unavailableP
         {saveError ? <p aria-live="polite" role="status">{t("projects.detail.agentAssociations.saveFailed")}</p> : null}
       </section>
       <SharedConfigPanel config={project.sharedConfig} />
-      <BestEffortAssembly items={project.assembly} />
+      <ProjectAssemblyPlanGroups failed={assemblyPlanFailed} plan={assemblyPlan} />
     </div>
   );
 }

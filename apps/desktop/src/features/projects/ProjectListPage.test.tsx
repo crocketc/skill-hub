@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { I18nextProvider } from "react-i18next";
 import { expect, it, vi } from "vitest";
@@ -7,14 +7,27 @@ import type { DirectoryPicker } from "../../platform/directoryPicker";
 import { projectFixture, type ProjectFacade } from "./api";
 import { ProjectListPage } from "./ProjectListPage";
 
+function listFacade(project: ReturnType<typeof projectFixture>, overrides: Partial<ProjectFacade> = {}): ProjectFacade {
+  return {
+    get: async () => project,
+    list: async () => [project],
+    register: async () => project,
+    updateAgentIds: async () => project,
+    listAgentCandidates: async () => [],
+    previewDirectory: async () => ({ path: "", agentTraces: [], skillCandidates: [] }),
+    getAssemblyPlan: async () => null,
+    listPhysicalTargets: async () => [],
+    ...overrides,
+  };
+}
+
 it("filters one project through multiple tags without creating a folder tree", async () => {
   const user = userEvent.setup();
   const i18n = await createSkillHubI18n(["zh-CN"]);
   const project = projectFixture();
-  const facade: ProjectFacade = { get: async () => project, list: async () => [project], register: async () => project, updateAgentIds: async () => project, listAgentCandidates: async () => [], previewDirectory: async () => ({ path: "", agentTraces: [], skillCandidates: [] }) };
   render(
     <I18nextProvider i18n={i18n}>
-      <ProjectListPage facade={facade} />
+      <ProjectListPage facade={listFacade(project)} />
     </I18nextProvider>,
   );
 
@@ -31,7 +44,7 @@ it("opens a flat project summary drawer from its row", async () => {
   const project = projectFixture();
   render(
     <I18nextProvider i18n={i18n}>
-      <ProjectListPage facade={{ get: async () => project, list: async () => [project], register: async () => project, updateAgentIds: async () => project, listAgentCandidates: async () => [], previewDirectory: async () => ({ path: "", agentTraces: [], skillCandidates: [] }) }} />
+      <ProjectListPage facade={listFacade(project)} />
     </I18nextProvider>,
   );
 
@@ -47,7 +60,7 @@ it("opens project management from the project summary", async () => {
   const onOpenProject = vi.fn();
   render(
     <I18nextProvider i18n={i18n}>
-      <ProjectListPage facade={{ get: async () => project, list: async () => [project], register: async () => project, updateAgentIds: async () => project, listAgentCandidates: async () => [], previewDirectory: async () => ({ path: "", agentTraces: [], skillCandidates: [] }) }} onOpenProject={onOpenProject} />
+      <ProjectListPage facade={listFacade(project)} onOpenProject={onOpenProject} />
     </I18nextProvider>,
   );
 
@@ -65,7 +78,7 @@ it("registers a user-selected local directory without creating a shared config",
   const directoryPicker: DirectoryPicker = { pickDirectory: vi.fn(async () => "C:/Projects/Aurora") };
   render(
     <I18nextProvider i18n={i18n}>
-      <ProjectListPage directoryPicker={directoryPicker} facade={{ get: async () => project, list: async () => [], register, updateAgentIds: async () => project, listAgentCandidates: async () => [{ id: "codex-cli", label: "OpenAI · Codex CLI", available: true }], previewDirectory: async () => ({ path: "C:/Projects/Aurora", agentTraces: [], skillCandidates: [] }) }} />
+      <ProjectListPage directoryPicker={directoryPicker} facade={listFacade(project, { list: async () => [], register, listAgentCandidates: async () => [{ id: "codex-cli", label: "OpenAI · Codex CLI", available: true }], previewDirectory: async () => ({ path: "C:/Projects/Aurora", agentTraces: [], skillCandidates: [] }) })} />
     </I18nextProvider>,
   );
 
@@ -93,7 +106,7 @@ it("leaves project registration unchanged when directory selection is cancelled"
   const register = vi.fn(async () => project);
   render(
     <I18nextProvider i18n={i18n}>
-      <ProjectListPage directoryPicker={{ pickDirectory: vi.fn(async () => null) }} facade={{ get: async () => project, list: async () => [], register, updateAgentIds: async () => project, listAgentCandidates: async () => [], previewDirectory: async () => ({ path: "", agentTraces: [], skillCandidates: [] }) }} />
+      <ProjectListPage directoryPicker={{ pickDirectory: vi.fn(async () => null) }} facade={listFacade(project, { list: async () => [], register })} />
     </I18nextProvider>,
   );
 
@@ -118,22 +131,20 @@ it("previews the chosen directory read-only and suggests traced agents before re
       marker: "SKILL.md",
       available: true,
     }],
-    skillCandidates: [{ name: "research", path: "C:/Projects/Aurora/.agents/skills/research" }],
+    skillCandidates: [{ name: "research", path: "C:/Projects/Aurora/.claude/skills/research" }],
   }));
   const directoryPicker: DirectoryPicker = { pickDirectory: vi.fn(async () => "C:/Projects/Aurora") };
   render(
     <I18nextProvider i18n={i18n}>
-      <ProjectListPage directoryPicker={directoryPicker} facade={{
-        get: async () => project,
+      <ProjectListPage directoryPicker={directoryPicker} facade={listFacade(project, {
         list: async () => [],
         register,
-        updateAgentIds: async () => project,
         listAgentCandidates: async () => [
           { id: "codex-cli", label: "OpenAI · Codex CLI", available: true },
           { id: "claude-code", label: "anthropic · anthropic.claude-code", available: true },
         ],
         previewDirectory,
-      }} />
+      })} />
     </I18nextProvider>,
   );
 
@@ -155,6 +166,47 @@ it("previews the chosen directory read-only and suggests traced agents before re
   }));
 });
 
+it("orders preview skill candidates by agent trace affinity and explains the order on hover", async () => {
+  const user = userEvent.setup();
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  const project = projectFixture();
+  const previewDirectory = vi.fn(async () => ({
+    path: "C:/Projects/Aurora",
+    agentTraces: [{
+      targetId: "anthropic:claude-code:project:C:/Projects/Aurora/.claude/skills",
+      label: "anthropic · anthropic.claude-code",
+      path: "C:/Projects/Aurora/.claude/skills",
+      marker: "SKILL.md",
+      available: true,
+    }],
+    skillCandidates: [
+      { name: "docs-skill", path: "C:/Projects/Aurora/docs/docs-skill" },
+      { name: "research", path: "C:/Projects/Aurora/.claude/skills/research" },
+      { name: "elsewhere", path: "D:/Other/elsewhere" },
+    ],
+  }));
+  const directoryPicker: DirectoryPicker = { pickDirectory: vi.fn(async () => "C:/Projects/Aurora") };
+  render(
+    <I18nextProvider i18n={i18n}>
+      <ProjectListPage directoryPicker={directoryPicker} facade={listFacade(project, {
+        list: async () => [],
+        previewDirectory,
+      })} />
+    </I18nextProvider>,
+  );
+
+  await user.click(await screen.findByRole("button", { name: "注册项目" }));
+  await user.click(screen.getByRole("button", { name: "选择项目目录" }));
+
+  const skillList = await screen.findByRole("list", { name: "可扫描的项目 Skill（不会自动导入）" });
+  expect(within(skillList).getAllByRole("listitem").map((item) => item.textContent)).toEqual([
+    "researchC:/Projects/Aurora/.claude/skills/research",
+    "docs-skillC:/Projects/Aurora/docs/docs-skill",
+    "elsewhereD:/Other/elsewhere",
+  ]);
+  expect(screen.getByTitle("与已发现 Agent 目录同前缀或同根的候选排在前面，其余保持原有顺序。")).toBeInTheDocument();
+});
+
 it("blocks registration when the directory cannot be previewed", async () => {
   const user = userEvent.setup();
   const i18n = await createSkillHubI18n(["zh-CN"]);
@@ -163,14 +215,11 @@ it("blocks registration when the directory cannot be previewed", async () => {
   const directoryPicker: DirectoryPicker = { pickDirectory: vi.fn(async () => "C:/Projects/Gone") };
   render(
     <I18nextProvider i18n={i18n}>
-      <ProjectListPage directoryPicker={directoryPicker} facade={{
-        get: async () => project,
+      <ProjectListPage directoryPicker={directoryPicker} facade={listFacade(project, {
         list: async () => [],
         register,
-        updateAgentIds: async () => project,
-        listAgentCandidates: async () => [],
         previewDirectory: vi.fn(async () => { throw new Error("unreadable"); }),
-      }} />
+      })} />
     </I18nextProvider>,
   );
 
@@ -192,14 +241,11 @@ it("registers only once when the confirm button is activated repeatedly", async 
   const directoryPicker: DirectoryPicker = { pickDirectory: vi.fn(async () => "C:/Projects/Aurora") };
   render(
     <I18nextProvider i18n={i18n}>
-      <ProjectListPage directoryPicker={directoryPicker} facade={{
-        get: async () => project,
+      <ProjectListPage directoryPicker={directoryPicker} facade={listFacade(project, {
         list: async () => [],
         register,
-        updateAgentIds: async () => project,
-        listAgentCandidates: async () => [],
         previewDirectory: async () => ({ path: "C:/Projects/Aurora", agentTraces: [], skillCandidates: [] }),
-      }} />
+      })} />
     </I18nextProvider>,
   );
 

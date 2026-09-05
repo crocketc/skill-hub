@@ -1,13 +1,19 @@
 import { executeCommand, queryApplication, type Project } from "../../api/bindings";
-import type { ProjectAgentCandidate, ProjectFacade, ProjectRegistration, ProjectView } from "./api";
+import type { ProjectAgentCandidate, ProjectFacade, ProjectPhysicalTargetView, ProjectRegistration, ProjectView } from "./api";
+
+function isNotFoundError(reason: unknown): boolean {
+  return Boolean(reason && typeof reason === "object" && "code" in reason && reason.code === "object.not_found");
+}
 
 function projectView(project: Project): ProjectView {
   return {
     agentIds: project.agent_ids ?? [],
     assembly: [],
     description: project.logical.note ?? "",
+    devicePath: project.device_path,
     id: project.id,
     name: project.name,
+    physicalId: project.physical_id,
     sharedConfig: {
       identityHint: project.logical.identity_hint ?? project.device_path,
       requirements: [],
@@ -45,7 +51,7 @@ export const nativeProjectFacade: ProjectFacade = {
         ))],
       };
     } catch (reason) {
-      if (!(reason && typeof reason === "object" && "code" in reason && reason.code === "object.not_found")) {
+      if (!isNotFoundError(reason)) {
         throw reason;
       }
     }
@@ -113,5 +119,41 @@ export const nativeProjectFacade: ProjectFacade = {
         path: candidate.absolute_root,
       })),
     };
+  },
+  async getAssemblyPlan(projectId) {
+    let result: Awaited<ReturnType<typeof queryApplication>>;
+    try {
+      result = await queryApplication({
+        type: "get_project_assembly_plan",
+        payload: { project_id: projectId },
+      });
+    } catch (reason) {
+      if (isNotFoundError(reason)) return null;
+      throw reason;
+    }
+    if (result.type !== "assembly_plan") {
+      throw new Error("get_project_assembly_plan returned an unexpected native result.");
+    }
+    return {
+      items: result.payload.items.map((item) => ({
+        name: item.requirement.name,
+        reasons: item.reasons,
+        skillId: item.requirement.skill_id,
+        status: item.status,
+      })),
+    };
+  },
+  async listPhysicalTargets(): Promise<ProjectPhysicalTargetView[]> {
+    const result = await queryApplication({ type: "get_discovery_snapshot", payload: null });
+    if (result.type !== "discovery_snapshot") {
+      throw new Error("get_discovery_snapshot returned an unexpected native result.");
+    }
+    return result.payload.physical_targets.map((target) => ({
+      exists: target.exists,
+      id: target.id,
+      path: target.path,
+      readable: target.readable,
+      writable: target.writable,
+    }));
   },
 };
