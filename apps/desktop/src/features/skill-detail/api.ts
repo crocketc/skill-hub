@@ -1,3 +1,4 @@
+import type { AppliedSourceUpdate, UpdateDecision, UpstreamCheckResult } from "../../api/bindings";
 import type {
   BatchAction,
   CheckState,
@@ -174,6 +175,11 @@ export interface SkillDetailFacade {
   getVersions(skillId: string): Promise<SkillVersionEntry[]>;
   saveMetadata(skillId: string, patch: SkillMetadataPatch): Promise<void>;
   setTrial(skillId: string, due: string | null): Promise<void>;
+  checkSourceUpdate(skillId: string): Promise<UpstreamCheckResult>;
+  applySourceUpdate(
+    skillId: string,
+    decision: UpdateDecision,
+  ): Promise<AppliedSourceUpdate>;
 }
 
 const skillKey = (skillId: string) => ["skill-detail", skillId] as const;
@@ -230,6 +236,8 @@ export const unavailableSkillDetailFacade: SkillDetailFacade = {
   getSummary: unavailable,
   getVersionDiff: unavailable,
   getVersions: unavailable,
+  checkSourceUpdate: unavailable,
+  applySourceUpdate: unavailable,
   saveMetadata: unavailable,
   setTrial: unavailable,
 };

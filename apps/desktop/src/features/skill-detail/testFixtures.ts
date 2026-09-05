@@ -1,3 +1,4 @@
+import type { UpdateDecision, UpstreamCheckResult } from "../../api/bindings";
 import type {
   AdjacentSkillContext,
   SkillDetailFacade,
@@ -31,6 +32,8 @@ export interface SkillDetailFixture {
 }
 
 export interface MockSkillDetailCalls {
+  appliedSourceUpdates: Array<{ skillId: string; decision: UpdateDecision }>;
+  checkedSourceUpdates: Array<{ skillId: string }>;
   committedRollbacks: Array<{ skillId: string; versionId: string }>;
   intents: SkillDetailIntent[];
   metadataPatches: Array<{ patch: SkillMetadataPatch; skillId: string }>;
@@ -39,6 +42,7 @@ export interface MockSkillDetailCalls {
 
 export interface MockSkillDetailOptions {
   adjacent?: AdjacentSkillContext | null;
+  sourceUpdateResult?: UpstreamCheckResult;
   deferredRollbackImpact?: boolean;
   failMetadataSave?: boolean;
   failRelations?: boolean;
@@ -255,6 +259,8 @@ export function createMockSkillDetailFacade(
 ): MockSkillDetailFacade {
   const fixture = detailFixture();
   const calls: MockSkillDetailCalls = {
+    appliedSourceUpdates: [],
+    checkedSourceUpdates: [],
     committedRollbacks: [],
     intents: [],
     metadataPatches: [],
@@ -387,7 +393,16 @@ export function createMockSkillDetailFacade(
                 : undefined,
       };
     },
-    async setTrial(skillId, due) {
+    async checkSourceUpdate(skillId) {
+      calls.checkedSourceUpdates.push({ skillId });
+      if (options.sourceUpdateResult) return options.sourceUpdateResult;
+      return { skill_id: skillId, state: "up_to_date", local_version: null, upstream_version: null };
+    },
+    async applySourceUpdate(skillId, decision) {
+      calls.appliedSourceUpdates.push({ skillId, decision });
+      return { skill_id: skillId, decision, new_version: null, deployments_need_reconciliation: false };
+    },
+        async setTrial(skillId, due) {
       calls.trials.push({ due, skillId });
       if (options.failTrialSave) throw new Error("trial save failed");
       summary = { ...summary, trialDue: due ?? undefined };

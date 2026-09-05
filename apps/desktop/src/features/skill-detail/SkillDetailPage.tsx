@@ -31,6 +31,7 @@ import {
 } from "./InsightPanels";
 import { Button } from "../../ui/Button";
 import { VersionTimeline } from "./VersionTimeline";
+import { SourceUpdatePanel } from "./SourceUpdatePanel";
 import { RemovalImpactDialog } from "../removal/RemovalImpactDialog";
 import type {
   RemovalFacade,
@@ -266,7 +267,10 @@ export function SkillDetailPage({
                 <ExternalHistoryEvidence insights={insightsQuery.data} />
               ) : null}
               {section === "versions" ? (
-                <VersionTimeline facade={facade} skillId={skillId} summary={summaryQuery.data} />
+                <>
+                  <SourceUpdatePanel facade={facade} skillId={skillId} />
+                  <VersionTimeline facade={facade} skillId={skillId} summary={summaryQuery.data} />
+                </>
               ) : null}
             </section>
           ))}

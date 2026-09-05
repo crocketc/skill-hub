@@ -933,6 +933,26 @@
       "saveError": "未能保存试用日期。",
       "saved": "复核日期已保存为 {{date}}。",
       "set": "设置试用复核"
+    },
+    "sourceUpdate": {
+      "ariaLabel": "来源更新",
+      "check": "检查来源更新",
+      "checking": "正在检查…",
+      "recheck": "重新检查",
+      "upToDate": "已是最新：本地与上游版本一致。",
+      "unavailable": "来源暂不可用，无法检查更新。",
+      "authRequired": "来源需要认证，无法检查更新。",
+      "available": "发现更新：本地 {{local}} → 上游 {{upstream}}。",
+      "availableWithChanges": "发现更新（本地有修改，采用前请确认）：本地 {{local}} → 上游 {{upstream}}。",
+      "takeUpstream": "采用上游版本",
+      "keepLocal": "保留本地版本",
+      "independent": "建独立分支",
+      "appliedUpstream": "已采用上游版本 {{version}}。",
+      "keptLocal": "已保留本地版本。",
+      "appliedBranch": "已创建独立分支 {{version}}。",
+      "appliedGeneric": "已应用所选决策。",
+      "reconcile": "存在需要重新同步的部署，请在部署页处理。",
+      "failed": "来源更新操作失败：{{error}}"
     }
   },
   "deployment": {
@@ -1406,5 +1426,6 @@
     "success": "成功",
     "unknown": "未知",
     "warning": "需要注意"
-  }
+  },
+  "backup": {}
 }

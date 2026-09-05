@@ -5,6 +5,8 @@ import {
   type AppQueryResult,
   type FindingDisposition,
   type SkillResult,
+  type UpdateDecision,
+  type UpstreamCheckResult,
 } from "../../api/bindings";
 import {
   SkillDetailUnavailableError,
@@ -93,8 +95,29 @@ function metadataOf(skill: SkillResult): SkillMetadata {
 
 /** Real IPC-backed detail reads. Mutations and remaining secondary panels stay
  * on the unavailable facade until their native contracts are connected. */
+
+async function checkSourceUpdate(skillId: string): Promise<UpstreamCheckResult> {
+  const result = await executeCommand({
+    type: "check_source_update",
+    payload: { skill_id: skillId },
+  });
+  if (result.type !== "upstream_check_result") throw unavailableResult();
+  return result.payload;
+}
+
+async function applySourceUpdate(skillId: string, decision: UpdateDecision) {
+  const result = await executeCommand({
+    type: "apply_source_update",
+    payload: { skill_id: skillId, decision },
+  });
+  if (result.type !== "applied_source_update") throw unavailableResult();
+  return result.payload;
+}
+
 export const nativeSkillDetailFacade: SkillDetailFacade = {
   ...unavailableSkillDetailFacade,
+  checkSourceUpdate,
+  applySourceUpdate,
   async getSummary(skillId) {
     const skill = await getSkill(skillId);
     const summary = summaryOf(skill);

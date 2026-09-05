@@ -933,6 +933,26 @@
       "saveError": "Could not save the trial date.",
       "saved": "Review date saved as {{date}}.",
       "set": "Set trial review"
+    },
+    "sourceUpdate": {
+      "ariaLabel": "Source updates",
+      "check": "Check source updates",
+      "checking": "Checking…",
+      "recheck": "Check again",
+      "upToDate": "Up to date: local and upstream versions match.",
+      "unavailable": "The source is unavailable; cannot check for updates.",
+      "authRequired": "The source requires authentication; cannot check for updates.",
+      "available": "Update available: local {{local}} → upstream {{upstream}}.",
+      "availableWithChanges": "Update available with local modifications (review before taking): local {{local}} → upstream {{upstream}}.",
+      "takeUpstream": "Take upstream",
+      "keepLocal": "Keep local",
+      "independent": "Create independent branch",
+      "appliedUpstream": "Took upstream version {{version}}.",
+      "keptLocal": "Kept the local version.",
+      "appliedBranch": "Created independent branch {{version}}.",
+      "appliedGeneric": "Applied the selected decision.",
+      "reconcile": "Some deployments need reconciliation; handle them on the deployment page.",
+      "failed": "Source update failed: {{error}}"
     }
   },
   "deployment": {
@@ -1406,5 +1426,6 @@
     "success": "Success",
     "unknown": "Unknown",
     "warning": "Needs attention"
-  }
+  },
+  "backup": {}
 }

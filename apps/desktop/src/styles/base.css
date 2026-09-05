@@ -4393,3 +4393,16 @@ a {
   padding: var(--space-2) var(--space-3);
   background: var(--color-surface-raised);
 }
+
+/* Skill 详情来源更新面板 */
+.sh-source-update {
+  display: grid;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+}
+
+.sh-source-update__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
