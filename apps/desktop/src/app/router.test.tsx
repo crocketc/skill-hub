@@ -17,6 +17,7 @@ vi.mock("../api/bindings", async (importOriginal) => {
         return { type: "discovery_snapshot" as const, payload: { generation: "g", observed_at: "now", instances: [], logical_targets: [], physical_targets: [] } };
       }
       if (query.type === "list_custom_agents") return { type: "custom_agents" as const, payload: [] };
+      if (query.type === "list_deployments") return { type: "deployments" as const, payload: [] };
       if (query.type === "list_projects") return { type: "projects" as const, payload: [] };
       if (query.type === "list_pending_items") return { type: "pending_items" as const, payload: [] };
       if (query.type === "get_desktop_preferences") return {

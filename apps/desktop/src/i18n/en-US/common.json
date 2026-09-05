@@ -227,6 +227,16 @@
     "description": "Review discovered client and Skill directory facts.",
     "loading": "Loading Agent facts",
     "unavailable": "Agent data is not connected to the native service yet.",
+    "actions": {
+      "rescan": "Rescan agents"
+    },
+    "managedDeploymentCount": "{{count}} managed deployments",
+    "status": {
+      "accessible": "Accessible",
+      "custom": "Custom Agent",
+      "directory_only": "Related directory only",
+      "inaccessible": "Currently inaccessible"
+    },
     "errors": {
       "unknown": "Agent data could not be read."
     },

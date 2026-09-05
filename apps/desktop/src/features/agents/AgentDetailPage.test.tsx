@@ -10,7 +10,7 @@ it("shows discovered directory facts without trust or usability status", async (
   const i18n = await createSkillHubI18n(["zh-CN"]);
   render(
     <I18nextProvider i18n={i18n}>
-      <AgentDetailPage facade={{ get: async () => agentFixture(), list: async () => [agentFixture()] }} />
+      <AgentDetailPage facade={{ get: async () => agentFixture(), list: async () => [agentFixture()], rescan: async () => undefined }} />
     </I18nextProvider>,
   );
 

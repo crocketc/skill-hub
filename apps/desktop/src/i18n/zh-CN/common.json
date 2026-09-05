@@ -227,6 +227,16 @@
     "description": "查看已发现的客户端和 Skill 目录事实。",
     "loading": "正在加载 Agent 事实",
     "unavailable": "Agent 数据尚未连接到本机服务。",
+    "actions": {
+      "rescan": "重新扫描"
+    },
+    "managedDeploymentCount": "{{count}} 个受管部署",
+    "status": {
+      "accessible": "可访问",
+      "custom": "自定义 Agent",
+      "directory_only": "仅发现相关目录",
+      "inaccessible": "当前不可访问"
+    },
     "errors": {
       "unknown": "无法读取 Agent 数据。"
     },

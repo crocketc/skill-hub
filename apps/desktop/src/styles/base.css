@@ -3610,6 +3610,16 @@ a {
   list-style: none;
 }
 
+.sh-agent-list__brand {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.sh-agent-list__brand > h2 {
+  margin: 0;
+  font-size: var(--font-size-md);
+}
+
 .sh-agent-list__items a {
   display: grid;
   gap: var(--space-1);
@@ -3632,6 +3642,13 @@ a {
 .sh-agent-experimental {
   color: var(--color-text-muted);
   font-size: var(--font-size-xs);
+}
+
+.sh-agent-list__summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
 }
 
 .sh-agent-facts {
