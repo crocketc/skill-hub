@@ -1060,6 +1060,32 @@ describe("SkillLibraryPage", () => {
     expect(screen.queryByText("Export completed")).not.toBeInTheDocument();
   });
 
+
+  it("toggles to the card view and persists the choice", async () => {
+    const facade = createMockSkillLibraryFacade();
+    facade.saveViewMode = vi.fn(async () => undefined);
+    const view = renderLibrary({ facade });
+
+    // 默认表格视图：表格可见
+    await screen.findByRole("checkbox", { name: "Select PDF Reader" });
+
+    const toggle = screen.getByRole("button", { name: /卡片视图/ });
+    await act(async () => {
+      fireEvent.click(toggle);
+    });
+    expect(facade.saveViewMode).toHaveBeenCalledWith("cards");
+    // 卡片渲染了技能名
+    expect(await screen.findByTestId("skill-card-skill-pdf")).toBeVisible();
+  });
+
+  it("restores a persisted card view on load", async () => {
+    const facade = createMockSkillLibraryFacade();
+    facade.loadViewMode = vi.fn(async () => "cards" as const);
+    renderLibrary({ facade });
+
+    expect(await screen.findByTestId("skill-card-skill-pdf")).toBeVisible();
+  });
+
   it("opens the unified deployment flow with every explicitly selected Skill", async () => {
     const facade = createMockSkillLibraryFacade();
     const view = renderLibrary({ facade });

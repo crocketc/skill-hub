@@ -657,7 +657,11 @@
         "noResults": "没有符合当前筛选条件的技能",
         "unavailable": "技能目录数据尚未连接"
       },
-      "deployTargetBanner": "部署目标已预选：{{label}}。勾选 Skill 后点“统一部署”，将自动选中该目标。"
+      "deployTargetBanner": "部署目标已预选：{{label}}。勾选 Skill 后点“统一部署”，将自动选中该目标。",
+      "card": {
+        "tags": "标签",
+        "deploymentCount": "部署 {{count}} 个 Agent"
+      }
     },
     "drawer": {
       "actions": {
@@ -847,6 +851,9 @@
       "selectSkill": "选择 {{name}}",
       "sortBy": "按{{column}}排序",
       "updateAvailable": "有可用更新"
+    },
+    "viewMode": {
+      "toggle": "卡片视图"
     }
   },
   "skillDetail": {

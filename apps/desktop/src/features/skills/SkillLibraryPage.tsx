@@ -427,6 +427,28 @@ export function SkillLibraryPage({
   );
   const activeSavedView = savedViews.find((view) => view.id === query.savedViewId);
 
+  // FE-04 卡片视图：视图模式经 ui 偏好持久化；facade 未提供时静默用表格视图。
+  const [viewMode, setViewMode] = useState<LibraryViewMode>("table");
+  const viewModeRef = useRef<LibraryViewMode>("table");
+  useEffect(() => {
+    let active = true;
+    void facade.loadViewMode?.().then((mode) => {
+      if (!active) return;
+      viewModeRef.current = mode;
+      setViewMode(mode);
+    }).catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, [facade]);
+
+  const toggleViewMode = useCallback(() => {
+    const next: LibraryViewMode = viewModeRef.current === "table" ? "cards" : "table";
+    viewModeRef.current = next;
+    setViewMode(next);
+    void facade.saveViewMode?.(next).catch(() => undefined);
+  }, [facade]);
+
   const persistDrawerPreferences = useCallback(
     async (next: SkillDrawerPreferences) => {
       setDrawerSaveFailure(undefined);
@@ -901,6 +923,16 @@ export function SkillLibraryPage({
           {t("skillLibrary.page.deployTargetBanner", { label: deployTarget.label })}
         </p>
       ) : null}
+      <div className="sh-skill-library__view-toggle">
+        <Button
+          aria-pressed={viewMode === "cards"}
+          onClick={toggleViewMode}
+          size="sm"
+          variant="ghost"
+        >
+          {viewMode === "table" ? t("skillLibrary.viewMode.toggle") : t("skillLibrary.viewMode.toggle")}
+        </Button>
+      </div>
       {preferenceStatus}
       {selectionAnnouncement ? (
         <p className="sh-skill-library__announcement" role="status">
@@ -934,6 +966,30 @@ export function SkillLibraryPage({
       {pageRefreshing ? (
         <SkillLibrarySkeleton />
       ) : (
+        {viewMode === "cards" ? (
+          <div className="sh-skill-cards" data-testid="skill-cards">
+            {page.items.map((item) => (
+              <article
+                className="sh-skill-card"
+                data-testid={`skill-card-${item.id}`}
+                key={item.id}
+              >
+                <button className="sh-skill-card__open" onClick={() => openSkill(item.id)} type="button">
+                  <strong>{item.name}</strong>
+                </button>
+                {item.purpose ? <p>{item.purpose}</p> : null}
+                {item.tags.length > 0 ? (
+                  <ul aria-label={t("skillLibrary.page.card.tags")} className="sh-skill-card__tags">
+                    {item.tags.map((tag) => <li key={tag}>{tag}</li>)}
+                  </ul>
+                ) : null}
+                <span className="sh-skill-card__facts">
+                  {t("skillLibrary.page.card.deploymentCount", { count: item.agentDeploymentCount })}
+                </span>
+              </article>
+            ))}
+          </div>
+        ) : (
         <SkillTable
           pageStatus={t("skillLibrary.page.pageStatus", {
             count: page.total,
@@ -961,6 +1017,7 @@ export function SkillLibraryPage({
           selection={selection}
           sortableColumns={capabilities?.sortableColumns}
         />
+        )}
       )}
 
       {selectedBatchTarget ? (

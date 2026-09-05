@@ -188,6 +188,16 @@ export const nativeSkillLibraryFacade: SkillLibraryFacade = {
       throw unavailableResult();
     }
   },
+  async loadViewMode() {
+    const raw = await readUiPreference("library_view_mode");
+    return raw === "cards" ? "cards" : "table";
+  },
+  async saveViewMode(mode) {
+    await executeCommand({
+      type: "set_ui_preference",
+      payload: { key: "library_view_mode", value_json: JSON.stringify(mode) },
+    });
+  },
   async loadTablePreferences() {
     return JSON.parse(await readUiPreference("table_preferences")) as SkillTablePreferences;
   },

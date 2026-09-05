@@ -154,6 +154,8 @@ export interface SkillBatchIntent {
   tags?: string[];
 }
 
+export type LibraryViewMode = "table" | "cards";
+
 export interface SkillLibraryFacade {
   emitBatchIntent(intent: SkillBatchIntent): Promise<void>;
   getSkillQuickView(skillId: string): Promise<SkillQuickView>;
@@ -161,6 +163,9 @@ export interface SkillLibraryFacade {
   listSkills(query: SkillLibraryQuery): Promise<SkillPage>;
   loadDrawerPreferences(): Promise<SkillDrawerPreferences>;
   loadTablePreferences(): Promise<SkillTablePreferences>;
+  /** 库视图模式（表格/卡片）持久化；未提供时页面默认表格且不持久化。 */
+  loadViewMode?: () => Promise<LibraryViewMode>;
+  saveViewMode?: (mode: LibraryViewMode) => Promise<void>;
   retainMatchingSkillIds(skillIds: string[], query: SkillLibraryQuery): Promise<string[]>;
   saveDrawerPreferences(preferences: SkillDrawerPreferences): Promise<void>;
   saveSkillMetadata?: (skillId: string, patch: SkillMetadataPatch) => Promise<void>;

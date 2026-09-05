@@ -657,7 +657,11 @@
         "noResults": "No skills match the current filters",
         "unavailable": "Skill catalog data is not connected yet"
       },
-      "deployTargetBanner": "Deployment target preselected: {{label}}. Select Skills and choose Unified deploy to target it automatically."
+      "deployTargetBanner": "Deployment target preselected: {{label}}. Select Skills and choose Unified deploy to target it automatically.",
+      "card": {
+        "tags": "Tags",
+        "deploymentCount": "Deployed to {{count}} agents"
+      }
     },
     "drawer": {
       "actions": {
@@ -847,6 +851,9 @@
       "selectSkill": "Select {{name}}",
       "sortBy": "Sort by {{column}}",
       "updateAvailable": "Update available"
+    },
+    "viewMode": {
+      "toggle": "Card view"
     }
   },
   "skillDetail": {
