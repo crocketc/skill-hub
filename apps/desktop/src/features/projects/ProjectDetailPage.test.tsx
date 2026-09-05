@@ -27,7 +27,7 @@ it("shows shared configuration as read-only project facts", async () => {
   const project = projectFixture();
   render(
     <I18nextProvider i18n={i18n}>
-      <ProjectDetailPage facade={{ get: async () => project, list: async () => [project], register: async () => project, updateAgentIds: async () => project, listAgentCandidates: async () => [] }} />
+      <ProjectDetailPage facade={{ get: async () => project, list: async () => [project], register: async () => project, updateAgentIds: async () => project, listAgentCandidates: async () => [], previewDirectory: async () => ({ path: "", agentTraces: [], skillCandidates: [] }) }} />
     </I18nextProvider>,
   );
 
@@ -52,6 +52,7 @@ it("updates the Agent associations without changing the project shared configura
           { id: "codex-cli", label: "OpenAI · Codex CLI", available: true },
           { id: "claude-code", label: "Anthropic · Claude Code", available: true },
         ],
+        previewDirectory: async () => ({ path: "", agentTraces: [], skillCandidates: [] }),
       }} />
     </I18nextProvider>,
   );

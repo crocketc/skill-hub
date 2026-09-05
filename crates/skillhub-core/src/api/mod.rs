@@ -35,10 +35,10 @@ pub use query::{
     GetReconcilePlan, GetRemovalImpact, GetSkill, ListCombinations, ListCustomAgents,
     ListDeploymentTargets, ListDeployments, ListFindings, ListMarkdownFiles, ListPendingItems,
     ListProjects, ListSavedProjectViews, ListSkills, ListVersions, LlmSafetyCheckResult,
-    MarkdownFileContent, MarkdownFileEntry, ReadMarkdownFile, SearchOnlineSources,
-    SkillDeploymentFilter, SkillLifecycleFilter, SkillListFilters, SkillListItem, SkillListPage,
-    SkillListSort, SkillResult, SkillSortColumn, SkillSortDirection, VersionDiffResult,
-    VersionResult,
+    MarkdownFileContent, MarkdownFileEntry, PreviewProjectDirectory, ProjectDirectoryPreview,
+    ReadMarkdownFile, SearchOnlineSources, SkillDeploymentFilter, SkillLifecycleFilter,
+    SkillListFilters, SkillListItem, SkillListPage, SkillListSort, SkillResult, SkillSortColumn,
+    SkillSortDirection, VersionDiffResult, VersionResult,
 };
 
 use crate::AppResult;

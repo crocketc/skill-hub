@@ -9,12 +9,12 @@ use skillhub_core::{
         AnalyzeImport, AppCommandResult, AppQueryResult, CommitDeployment, CommitRestore,
         CommitUndeploy, CreateBackup, DiffVersions, DiscoverImportCandidates, GetBasicCheckResult,
         GetDeploymentPlan, GetDeploymentRelations, GetReconcilePlan, GetRemovalImpact, GetSkill,
-        KeepIndependentCopy, ListDeployments, ListFindings, ListMarkdownFiles, ListSkills,
-        ListVersions, PrepareDeleteSkill, PrepareDeployment, PrepareImport, PrepareRestore,
-        PrepareUndeploy, ReadMarkdownFile, RecheckBasic, RenameSkill, RestoreDecision,
-        RunBasicCheck, RunLlmSafetyCheck, RunRollingBackup, SaveMarkdownContent, SaveSkillContent,
-        SetCurrentVersion, SetFindingDisposition, SetLifecycle, SetMetadata, SetTrial,
-        VerifyBackup,
+        KeepIndependentCopy, ListDeployments, ListFindings, ListMarkdownFiles, ListProjects,
+        ListSkills, ListVersions, PrepareDeleteSkill, PrepareDeployment, PrepareImport,
+        PrepareRestore, PrepareUndeploy, PreviewProjectDirectory, ReadMarkdownFile, RecheckBasic,
+        RenameSkill, RestoreDecision, RunBasicCheck, RunLlmSafetyCheck, RunRollingBackup,
+        SaveMarkdownContent, SaveSkillContent, SetCurrentVersion, SetFindingDisposition,
+        SetLifecycle, SetMetadata, SetTrial, VerifyBackup,
     },
     backup::{
         BackupRetentionPolicy, BackupScope, RestoreConflictDecision, SensitiveContentDecision,
@@ -217,22 +217,38 @@ async fn initialization_scan_without_selection_ignores_unavailable_agent_targets
             instances: Vec::new(),
             logical_targets: vec![
                 LogicalTarget {
-                    id: "available".into(), profile_id: "codex".into(), client_id: "codex".into(),
-                    scope: TargetScope::Global, path: available_root.path().to_string_lossy().into_owned(),
-                    marker: "SKILL.md".into(), precedence: DirectoryPrecedence::Preferred,
-                    exists: true, readable: true, writable: true, available: true,
-                    physical_id: skillhub_core::physical_id_for_path(available_root.path()).expect("physical id"),
+                    id: "available".into(),
+                    profile_id: "codex".into(),
+                    client_id: "codex".into(),
+                    scope: TargetScope::Global,
+                    path: available_root.path().to_string_lossy().into_owned(),
+                    marker: "SKILL.md".into(),
+                    precedence: DirectoryPrecedence::Preferred,
+                    exists: true,
+                    readable: true,
+                    writable: true,
+                    available: true,
+                    physical_id: skillhub_core::physical_id_for_path(available_root.path())
+                        .expect("physical id"),
                 },
                 LogicalTarget {
-                    id: "unavailable".into(), profile_id: "unknown".into(), client_id: "unknown".into(),
-                    scope: TargetScope::Global, path: unavailable_path.to_string_lossy().into_owned(),
-                    marker: "SKILL.md".into(), precedence: DirectoryPrecedence::Unknown,
-                    exists: false, readable: false, writable: false, available: false,
+                    id: "unavailable".into(),
+                    profile_id: "unknown".into(),
+                    client_id: "unknown".into(),
+                    scope: TargetScope::Global,
+                    path: unavailable_path.to_string_lossy().into_owned(),
+                    marker: "SKILL.md".into(),
+                    precedence: DirectoryPrecedence::Unknown,
+                    exists: false,
+                    readable: false,
+                    writable: false,
+                    available: false,
                     physical_id: "missing".into(),
                 },
             ],
             physical_targets: vec![PhysicalTarget {
-                id: skillhub_core::physical_id_for_path(available_root.path()).expect("physical id"),
+                id: skillhub_core::physical_id_for_path(available_root.path())
+                    .expect("physical id"),
                 path: available_root.path().to_string_lossy().into_owned(),
                 exists: true,
                 readable: true,
@@ -243,8 +259,17 @@ async fn initialization_scan_without_selection_ignores_unavailable_agent_targets
         })
         .expect("save discovery");
     let facade = LocalApplicationFacade::new(database);
-    let result = facade.execute(AppCommand::RunInitializationScan(skillhub_core::api::RunInitializationScan { scope_ids: Vec::new() })).await.expect("scan");
-    let AppCommandResult::ScanResult(scan) = result else { panic!("expected scan result"); };
+    let result = facade
+        .execute(AppCommand::RunInitializationScan(
+            skillhub_core::api::RunInitializationScan {
+                scope_ids: Vec::new(),
+            },
+        ))
+        .await
+        .expect("scan");
+    let AppCommandResult::ScanResult(scan) = result else {
+        panic!("expected scan result");
+    };
     assert_eq!(scan.discovered.len(), 1);
 }
 
@@ -269,24 +294,37 @@ async fn initialization_scan_accepts_legacy_profile_client_scope_ids() {
                 client_presence: ClientPresence::Unknown,
             }],
             logical_targets: vec![LogicalTarget {
-                id: "target-1".into(), profile_id: "codex".into(), client_id: "codex".into(),
-                scope: TargetScope::Global, path: root.path().to_string_lossy().into_owned(),
-                marker: "SKILL.md".into(), precedence: DirectoryPrecedence::Preferred,
-                exists: true, readable: true, writable: true, available: true,
+                id: "target-1".into(),
+                profile_id: "codex".into(),
+                client_id: "codex".into(),
+                scope: TargetScope::Global,
+                path: root.path().to_string_lossy().into_owned(),
+                marker: "SKILL.md".into(),
+                precedence: DirectoryPrecedence::Preferred,
+                exists: true,
+                readable: true,
+                writable: true,
+                available: true,
                 physical_id: physical_id.clone(),
             }],
             physical_targets: vec![PhysicalTarget {
-                id: physical_id, path: root.path().to_string_lossy().into_owned(), exists: true,
-                readable: true, writable: true, case_behavior: "unknown".into(),
+                id: physical_id,
+                path: root.path().to_string_lossy().into_owned(),
+                exists: true,
+                readable: true,
+                writable: true,
+                case_behavior: "unknown".into(),
                 logical_target_ids: vec!["target-1".into()],
             }],
         })
         .expect("save discovery");
     let facade = LocalApplicationFacade::new(database);
     let result = facade
-        .execute(AppCommand::RunInitializationScan(skillhub_core::api::RunInitializationScan {
-            scope_ids: vec!["codex:codex".into()],
-        }))
+        .execute(AppCommand::RunInitializationScan(
+            skillhub_core::api::RunInitializationScan {
+                scope_ids: vec!["codex:codex".into()],
+            },
+        ))
         .await
         .expect("scan");
     assert!(matches!(result, AppCommandResult::ScanResult(_)));
@@ -994,6 +1032,126 @@ async fn discover_import_candidates_query_reads_local_skill_directories() {
 }
 
 #[tokio::test]
+async fn preview_project_directory_query_reports_traces_and_candidates_without_writes() {
+    let database = Database::open_in_memory().expect("database");
+    let root = tempfile::tempdir().expect("project root");
+    std::fs::create_dir_all(root.path().join(".claude/skills")).expect("claude skills directory");
+    std::fs::create_dir_all(root.path().join(".agents/skills/research"))
+        .expect("agents skills directory");
+    std::fs::write(
+        root.path().join(".agents/skills/research/SKILL.md"),
+        "# Research
+",
+    )
+    .expect("write project skill");
+    let before = directory_listing(root.path());
+    let facade = LocalApplicationFacade::new_with_today(database, (2026, 9, 5));
+    let request = PreviewProjectDirectory {
+        path: root.path().to_string_lossy().into_owned(),
+    };
+
+    async fn run(
+        facade: &LocalApplicationFacade,
+        request: PreviewProjectDirectory,
+    ) -> skillhub_core::api::ProjectDirectoryPreview {
+        let result = facade
+            .query(RootAppQuery::PreviewProjectDirectory(request))
+            .await
+            .expect("project preview");
+        let AppQueryResult::ProjectDirectoryPreview(preview) = result else {
+            panic!("expected project directory preview");
+        };
+        preview
+    }
+
+    let first = run(&facade, request.clone()).await;
+    let second = run(&facade, request).await;
+    assert_eq!(first, second);
+
+    let claude_trace = first
+        .agent_traces
+        .iter()
+        .find(|trace| trace.client_id == "anthropic.claude-code")
+        .expect("claude-code trace");
+    let claude_path = claude_trace.path.replace('\\', "/");
+    assert!(claude_path.ends_with(".claude/skills"));
+    assert!(first
+        .agent_traces
+        .iter()
+        .any(|trace| { trace.path.replace('\\', "/").ends_with(".agents/skills") }));
+    assert!(first
+        .agent_traces
+        .iter()
+        .all(|trace| trace.scope == TargetScope::Project));
+
+    assert_eq!(first.skill_candidates.len(), 1);
+    assert_eq!(first.skill_candidates[0].runtime_name, "research");
+    assert!(first.skill_candidates[0]
+        .absolute_root
+        .replace('\\', "/")
+        .contains("research"));
+
+    // The preview is read-only: no project records and no directory changes.
+    let projects = facade
+        .query(RootAppQuery::ListProjects(ListProjects))
+        .await
+        .expect("list projects");
+    let AppQueryResult::Projects(projects) = projects else {
+        panic!("expected project list");
+    };
+    assert!(projects.is_empty());
+    assert_eq!(before, directory_listing(root.path()));
+}
+
+fn directory_listing(root: &std::path::Path) -> Vec<String> {
+    let mut entries = Vec::new();
+    let mut stack = vec![root.to_path_buf()];
+    while let Some(directory) = stack.pop() {
+        for entry in std::fs::read_dir(&directory).expect("read directory") {
+            let entry = entry.expect("directory entry");
+            let path = entry.path();
+            entries.push(path.to_string_lossy().into_owned());
+            if path.is_dir() {
+                stack.push(path);
+            }
+        }
+    }
+    entries.sort();
+    entries
+}
+
+#[tokio::test]
+async fn preview_project_directory_query_rejects_missing_and_non_directory_paths() {
+    let database = Database::open_in_memory().expect("database");
+    let facade = LocalApplicationFacade::new_with_today(database, (2026, 9, 5));
+
+    let missing = facade
+        .query(RootAppQuery::PreviewProjectDirectory(
+            PreviewProjectDirectory {
+                path: "Z:/definitely-not-here".into(),
+            },
+        ))
+        .await;
+    assert!(matches!(
+        missing.err().map(|error| error.code),
+        Some(ErrorCode::InvalidInput)
+    ));
+
+    let file = tempfile::NamedTempFile::new().expect("plain file");
+    let not_a_directory = facade
+        .query(RootAppQuery::PreviewProjectDirectory(
+            PreviewProjectDirectory {
+                path: file.path().to_string_lossy().into_owned(),
+            },
+        ))
+        .await;
+    assert!(matches!(
+        not_a_directory.err().map(|error| error.code),
+        Some(ErrorCode::InvalidInput)
+    ));
+}
+
+#[tokio::test]
 async fn prepare_import_command_persists_a_retryable_preparation() {
     let database = Database::open_in_memory().expect("database");
     let library_root = tempfile::tempdir().expect("library root");
@@ -1383,7 +1541,11 @@ async fn list_skills_query_filters_by_tags_lifecycle_and_deployment_state() {
     assert_eq!(
         query_skill_names(
             &facade,
-            filters(&["documents"], &[], skillhub_core::api::SkillDeploymentFilter::Any),
+            filters(
+                &["documents"],
+                &[],
+                skillhub_core::api::SkillDeploymentFilter::Any
+            ),
             default_sort.clone()
         )
         .await,
@@ -1505,14 +1667,13 @@ async fn list_skills_query_filters_by_current_version_check_state() {
         .insert(&stale_failed)
         .await
         .expect("insert stale run");
-    let mut current_passed =
-        skillhub_core::check::CheckRun::completed(
-            "alpha-current-basic",
-            alpha.id(),
-            alpha_current.clone(),
-            CheckKind::Basic,
-            Vec::new(),
-        );
+    let mut current_passed = skillhub_core::check::CheckRun::completed(
+        "alpha-current-basic",
+        alpha.id(),
+        alpha_current.clone(),
+        CheckKind::Basic,
+        Vec::new(),
+    );
     current_passed.generation = 2;
     current_passed.started_at = 20;
     check_repository
@@ -1542,11 +1703,21 @@ async fn list_skills_query_filters_by_current_version_check_state() {
     };
 
     assert_eq!(
-        query_skill_names(&facade, with_basic(&[CheckState::Passed]), Default::default()).await,
+        query_skill_names(
+            &facade,
+            with_basic(&[CheckState::Passed]),
+            Default::default()
+        )
+        .await,
         vec!["Alpha".to_owned()]
     );
     assert_eq!(
-        query_skill_names(&facade, with_basic(&[CheckState::Failed]), Default::default()).await,
+        query_skill_names(
+            &facade,
+            with_basic(&[CheckState::Failed]),
+            Default::default()
+        )
+        .await,
         vec!["Beta".to_owned()]
     );
     assert_eq!(

@@ -289,6 +289,16 @@
       "name": "Project name",
       "pickDirectory": "Choose project directory",
       "pickFailed": "The directory picker could not be opened.",
+      "preview": {
+        "agents": "Discovered Agent directory traces",
+        "agentsEmpty": "No known Agent project directories were found.",
+        "boundary": "The preview only reads the directory. It creates no project, imports no Skill, and writes no files.",
+        "error": "The chosen directory could not be read. Confirm it exists and is accessible.",
+        "loading": "Analyzing the chosen directory read-only…",
+        "skills": "Scannable project Skills (not imported automatically)",
+        "skillsEmpty": "No scannable Skill directories were found.",
+        "title": "Directory preview (read-only)"
+      },
       "title": "Register local project"
     },
     "drawer": {

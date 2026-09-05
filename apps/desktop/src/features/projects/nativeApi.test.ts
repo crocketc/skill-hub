@@ -151,3 +151,65 @@ it("updates only a project's Agent associations while preserving its local facts
     }) },
   });
 });
+
+it("previews a chosen project directory read-only before registration", async () => {
+  query.mockResolvedValueOnce({
+    type: "project_directory_preview",
+    payload: {
+      path: "D:/Work/Aurora",
+      agent_traces: [{
+        id: "anthropic:claude-code:project:D:/Work/Aurora/.claude/skills",
+        profile_id: "anthropic",
+        client_id: "anthropic.claude-code",
+        scope: "project",
+        path: "D:/Work/Aurora/.claude/skills",
+        marker: "SKILL.md",
+        precedence: "preferred",
+        exists: true,
+        readable: true,
+        writable: true,
+        available: true,
+        physical_id: "fs:claude-skills",
+      }],
+      skill_candidates: [{
+        source: { kind: "local", locator: { local_path: "D:/Work/Aurora" } },
+        absolute_root: "D:/Work/Aurora/.agents/skills/research",
+        relative_root: ".agents/skills/research",
+        marker: "SKILL.md",
+        runtime_name: "research",
+        ownership: "unclassified",
+        default_action: "review",
+        ownership_detail: null,
+      }],
+    },
+  });
+
+  await expect(nativeProjectFacade.previewDirectory("D:/Work/Aurora")).resolves.toEqual({
+    path: "D:/Work/Aurora",
+    agentTraces: [{
+      targetId: "anthropic:claude-code:project:D:/Work/Aurora/.claude/skills",
+      label: "anthropic · anthropic.claude-code",
+      path: "D:/Work/Aurora/.claude/skills",
+      marker: "SKILL.md",
+      available: true,
+    }],
+    skillCandidates: [{
+      name: "research",
+      path: "D:/Work/Aurora/.agents/skills/research",
+    }],
+  });
+  expect(query).toHaveBeenCalledWith({
+    type: "preview_project_directory",
+    payload: { path: "D:/Work/Aurora" },
+  });
+  expect(execute).not.toHaveBeenCalled();
+});
+
+it("rejects unreadable directories instead of showing an empty preview", async () => {
+  query.mockRejectedValueOnce({ code: "input.invalid", message: "path must be an existing readable project directory" });
+
+  await expect(nativeProjectFacade.previewDirectory("Z:/missing")).rejects.toMatchObject({
+    code: "input.invalid",
+  });
+  expect(execute).not.toHaveBeenCalled();
+});

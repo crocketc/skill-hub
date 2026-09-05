@@ -212,6 +212,24 @@ pub struct ListCustomAgents;
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 pub struct ListProjects;
 
+/// Read-only analysis of a user-chosen local directory before project
+/// registration. It never creates catalog, project, or deployment records and
+/// never writes to the analyzed directory.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct PreviewProjectDirectory {
+    pub path: String,
+}
+
+/// Project-scoped agent directories found inside the chosen root, plus the
+/// skill directories the bounded detector can scan from it.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+pub struct ProjectDirectoryPreview {
+    pub path: String,
+    pub agent_traces: Vec<crate::agent::LogicalTarget>,
+    pub skill_candidates: Vec<crate::import::ImportCandidate>,
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 pub struct ListSavedProjectViews;
 
@@ -469,6 +487,8 @@ pub enum AppQuery {
     ListCustomAgents(ListCustomAgents),
     #[serde(rename = "list_projects")]
     ListProjects(ListProjects),
+    #[serde(rename = "preview_project_directory")]
+    PreviewProjectDirectory(PreviewProjectDirectory),
     #[serde(rename = "list_saved_project_views")]
     ListSavedProjectViews(ListSavedProjectViews),
     #[serde(rename = "analyze_import")]
@@ -546,6 +566,8 @@ pub enum AppQueryResult {
     CustomAgents(Vec<CustomAgent>),
     #[serde(rename = "projects")]
     Projects(Vec<Project>),
+    #[serde(rename = "project_directory_preview")]
+    ProjectDirectoryPreview(ProjectDirectoryPreview),
     #[serde(rename = "saved_project_views")]
     SavedProjectViews(Vec<SavedProjectView>),
     #[serde(rename = "import_analysis")]

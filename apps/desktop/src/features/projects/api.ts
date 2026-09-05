@@ -31,15 +31,36 @@ export interface ProjectRegistration {
   tags: string[];
 }
 
+export interface ProjectAgentCandidate { id: string; label: string; available: boolean; }
+
+export interface ProjectAgentTrace {
+  available: boolean;
+  label: string;
+  marker: string;
+  path: string;
+  targetId: string;
+}
+
+export interface ProjectSkillCandidatePreview {
+  name: string;
+  path: string;
+}
+
+/** Read-only facts about a chosen directory, gathered before registration. */
+export interface ProjectDirectoryPreview {
+  agentTraces: ProjectAgentTrace[];
+  path: string;
+  skillCandidates: ProjectSkillCandidatePreview[];
+}
+
 export interface ProjectFacade {
   list(): Promise<ProjectView[]>;
   get(id: string): Promise<ProjectView>;
   register(input: ProjectRegistration): Promise<ProjectView>;
   updateAgentIds(projectId: string, agentIds: string[]): Promise<ProjectView>;
   listAgentCandidates(): Promise<ProjectAgentCandidate[]>;
+  previewDirectory(path: string): Promise<ProjectDirectoryPreview>;
 }
-
-export interface ProjectAgentCandidate { id: string; label: string; available: boolean; }
 
 function unavailable(operation: string): Promise<never> {
   return Promise.reject(new Error(`${operation} is unavailable until the native contract is generated.`));
@@ -51,6 +72,7 @@ export const unavailableProjectFacade: ProjectFacade = {
   register: () => unavailable("project_register"),
   updateAgentIds: () => unavailable("project_update_agent_ids"),
   listAgentCandidates: () => unavailable("project_agent_candidates"),
+  previewDirectory: () => unavailable("project_preview_directory"),
 };
 
 export function projectFixture(): ProjectView {

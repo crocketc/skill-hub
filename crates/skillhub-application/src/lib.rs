@@ -49,8 +49,8 @@ use skillhub_core::llm::LlmTaskRunner;
 use skillhub_core::source::{SourceDescriptor, SourceLocator, SourceState, UpdateDecision};
 use skillhub_core::{
     physical_id_for_path, AllowedRoot, AppCommand, AppCommandResult, AppError, AppQuery,
-    AppQueryResult, AppResult, ApplicationFacade, DeploymentMode, ErrorCode,
-    OperationId, PathPolicy, RecoveryAction, ResolvedPathGrant, Severity, TargetChange,
+    AppQueryResult, AppResult, ApplicationFacade, DeploymentMode, ErrorCode, OperationId,
+    PathPolicy, RecoveryAction, ResolvedPathGrant, Severity, TargetChange,
     UpdateSignaturePublicKey,
 };
 use skillhub_storage::backup::{BackupService, RestoreService, RetentionService};
@@ -186,7 +186,10 @@ impl LocalDeploymentBackend {
                 .with_action(RecoveryAction::Retry));
         };
         let paths = LibraryPaths::from_root(library_root.clone());
-        if matches!(target.mode, DeploymentMode::SymbolicLink | DeploymentMode::DirectoryJunction) {
+        if matches!(
+            target.mode,
+            DeploymentMode::SymbolicLink | DeploymentMode::DirectoryJunction
+        ) {
             let central = CentralLibrary::initialize(library_root)?;
             if let Some((record, current)) = central.load_portable_skill(target.skill_id)? {
                 if current.as_ref() == Some(&target.version_id) {
@@ -1440,7 +1443,11 @@ impl LocalApplicationFacade {
             // renderers while preferring the immutable logical target IDs.
             let mut normalized_ids = Vec::with_capacity(ids.len());
             for id in ids {
-                if snapshot.logical_targets.iter().any(|target| target.id == id) {
+                if snapshot
+                    .logical_targets
+                    .iter()
+                    .any(|target| target.id == id)
+                {
                     normalized_ids.push(id);
                     continue;
                 }
@@ -3131,6 +3138,9 @@ impl ApplicationFacade for LocalApplicationFacade {
                     database.project_repository().list()?,
                 ))
             }),
+            AppQuery::PreviewProjectDirectory(request) => {
+                self.preview_project_directory(&request.path)
+            }
             AppQuery::ListSavedProjectViews(_) => {
                 self.with_database("query.project_views", |database| {
                     Ok(AppQueryResult::SavedProjectViews(
@@ -3292,12 +3302,64 @@ impl ApplicationFacade for LocalApplicationFacade {
 }
 
 impl LocalApplicationFacade {
+    /// Read-only project directory analysis used before registration: reports
+    /// the project-scoped agent directories that already exist under the
+    /// chosen root and the skill directories the bounded detector can scan.
+    /// It must not create records, import skills, or touch the directory.
+    fn preview_project_directory(&self, path: &str) -> AppResult<AppQueryResult> {
+        let root = std::path::PathBuf::from(path);
+        if !root.is_dir() {
+            return Err(invalid_input(
+                "path must be an existing readable project directory",
+            ));
+        }
+        let canonical = root
+            .canonicalize()
+            .map_err(|_| invalid_input("path must be a readable project directory"))?;
+        let roots = DiscoveryRoots {
+            operating_system: current_operating_system(),
+            user_home: user_home(),
+            project_roots: vec![canonical.clone()],
+        };
+        let snapshot = DiscoverAgents::builtin().discover(&roots)?;
+        let agent_traces = snapshot
+            .logical_targets
+            .into_iter()
+            .filter(|target| {
+                target.scope == skillhub_core::agent::TargetScope::Project
+                    && target.exists
+                    && std::path::Path::new(&target.path).starts_with(&canonical)
+            })
+            .collect::<Vec<_>>();
+        let source = SourceDescriptor::new(
+            skillhub_core::SourceKind::Local,
+            skillhub_core::SourceLocator::local_path(canonical.clone()),
+        );
+        let skill_candidates = SkillDetector::default().detect(&canonical, source)?;
+        Ok(AppQueryResult::ProjectDirectoryPreview(
+            skillhub_core::api::ProjectDirectoryPreview {
+                path: canonical.to_string_lossy().into_owned(),
+                agent_traces,
+                skill_candidates,
+            },
+        ))
+    }
+
     fn list_deployment_targets(&self) -> AppResult<AppQueryResult> {
         let capabilities = DeploymentFilesystem::new().available_capabilities();
         let modes = [
-            (capabilities.symlink, skillhub_core::DeploymentMode::SymbolicLink),
-            (capabilities.junction, skillhub_core::DeploymentMode::DirectoryJunction),
-            (capabilities.copy, skillhub_core::DeploymentMode::ManagedCopy),
+            (
+                capabilities.symlink,
+                skillhub_core::DeploymentMode::SymbolicLink,
+            ),
+            (
+                capabilities.junction,
+                skillhub_core::DeploymentMode::DirectoryJunction,
+            ),
+            (
+                capabilities.copy,
+                skillhub_core::DeploymentMode::ManagedCopy,
+            ),
         ]
         .into_iter()
         .filter_map(|(supported, mode)| supported.then_some(mode))

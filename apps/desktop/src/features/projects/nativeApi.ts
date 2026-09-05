@@ -91,4 +91,27 @@ export const nativeProjectFacade: ProjectFacade = {
       available: target.available,
     }));
   },
+  async previewDirectory(path) {
+    const result = await queryApplication({
+      type: "preview_project_directory",
+      payload: { path },
+    });
+    if (result.type !== "project_directory_preview") {
+      throw new Error("preview_project_directory returned an unexpected native result.");
+    }
+    return {
+      path: result.payload.path,
+      agentTraces: result.payload.agent_traces.map((trace) => ({
+        targetId: trace.id,
+        label: `${trace.profile_id} · ${trace.client_id}`,
+        path: trace.path,
+        marker: trace.marker,
+        available: trace.available,
+      })),
+      skillCandidates: result.payload.skill_candidates.map((candidate) => ({
+        name: candidate.runtime_name,
+        path: candidate.absolute_root,
+      })),
+    };
+  },
 };

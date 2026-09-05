@@ -4,7 +4,7 @@ import { desktopDirectoryPicker, normalizeWindowsPath, type DirectoryPicker } fr
 import { Button } from "../../ui/Button";
 import { DataState } from "../../ui/DataState";
 import { ProjectQuickDrawer } from "./ProjectQuickDrawer";
-import { type ProjectAgentCandidate, type ProjectFacade, type ProjectView, unavailableProjectFacade } from "./api";
+import { type ProjectAgentCandidate, type ProjectDirectoryPreview, type ProjectFacade, type ProjectView, unavailableProjectFacade } from "./api";
 
 export function matchesProjectFilters(project: ProjectView, text: string, selectedTags: string[]) {
   const normalizedText = text.trim().toLocaleLowerCase();
@@ -44,8 +44,12 @@ export function ProjectListPage({
   const [registering, setRegistering] = useState(false);
   const [agentCandidates, setAgentCandidates] = useState<ProjectAgentCandidate[]>([]);
   const [selectedAgentIds, setSelectedAgentIds] = useState<string[]>([]);
+  const [preview, setPreview] = useState<ProjectDirectoryPreview>();
+  const [previewPending, setPreviewPending] = useState(false);
+  const [previewFailed, setPreviewFailed] = useState(false);
   const [revision, setRevision] = useState(0);
   const triggerRef = useRef<HTMLElement | null>(null);
+  const registeringRef = useRef(false);
 
   useEffect(() => {
     let active = true;
@@ -56,6 +60,12 @@ export function ProjectListPage({
   const tags = useMemo(() => Array.from(new Set(projects?.flatMap((project) => project.tags) ?? [])).sort(), [projects]);
   const visibleProjects = useMemo(() => projects?.filter((project) => matchesProjectFilters(project, text, selectedTags)) ?? [], [projects, selectedTags, text]);
 
+  const resetPreview = () => {
+    setPreview(undefined);
+    setPreviewPending(false);
+    setPreviewFailed(false);
+  };
+
   const chooseDirectory = async () => {
     setRegistrationError(undefined);
     try {
@@ -64,13 +74,35 @@ export function ProjectListPage({
       const normalized = normalizeWindowsPath(path);
       setRegistrationPath(normalized);
       setRegistrationName(inferredProjectName(normalized));
+      resetPreview();
+      setPreviewPending(true);
+      try {
+        const result = await facade.previewDirectory(normalized);
+        setPreview(result);
+        const tracedLabels = new Set(result.agentTraces.map((trace) => trace.label));
+        setSelectedAgentIds((current) => [
+          ...new Set([
+            ...current,
+            ...agentCandidates
+              .filter((candidate) => tracedLabels.has(candidate.label))
+              .map((candidate) => candidate.id),
+          ]),
+        ]);
+      } catch {
+        setPreviewFailed(true);
+      } finally {
+        setPreviewPending(false);
+      }
     } catch (reason) {
       setRegistrationError(reason instanceof Error ? reason.message : t("projects.registration.pickFailed"));
     }
   };
 
   const registerProject = async () => {
-    if (!registrationPath.trim() || !registrationName.trim()) return;
+    if (!registrationPath.trim() || !registrationName.trim() || previewPending || previewFailed || !preview) return;
+    // Synchronous re-entry guard: rapid double activation must not register twice.
+    if (registeringRef.current) return;
+    registeringRef.current = true;
     setRegistering(true);
     setRegistrationError(undefined);
     try {
@@ -83,10 +115,12 @@ export function ProjectListPage({
       setRegistrationOpen(false);
       setRegistrationPath("");
       setRegistrationName("");
+      resetPreview();
       setRevision((current) => current + 1);
     } catch (reason) {
       setRegistrationError(reason instanceof Error ? reason.message : t("projects.registration.failed"));
     } finally {
+      registeringRef.current = false;
       setRegistering(false);
     }
   };
@@ -108,12 +142,32 @@ export function ProjectListPage({
           </div>
           <Button disabled={registering} onClick={() => void chooseDirectory()} variant="secondary">{t("projects.registration.pickDirectory")}</Button>
           {registrationPath ? <p className="sh-project-registration__path">{registrationPath}</p> : null}
+          {previewPending ? <p role="status">{t("projects.registration.preview.loading")}</p> : null}
+          {previewFailed ? <p className="sh-project-registration__preview-error" role="alert">{t("projects.registration.preview.error")}</p> : null}
+          {preview ? (
+            <section aria-labelledby="project-preview-heading" className="sh-project-registration__preview">
+              <h3 id="project-preview-heading">{t("projects.registration.preview.title")}</h3>
+              <p>{t("projects.registration.preview.boundary")}</p>
+              <h4>{t("projects.registration.preview.agents")}</h4>
+              {preview.agentTraces.length ? (
+                <ul>
+                  {preview.agentTraces.map((trace) => <li key={trace.targetId}><strong>{trace.label}</strong><small>{trace.path}</small></li>)}
+                </ul>
+              ) : <p>{t("projects.registration.preview.agentsEmpty")}</p>}
+              <h4>{t("projects.registration.preview.skills")}</h4>
+              {preview.skillCandidates.length ? (
+                <ul>
+                  {preview.skillCandidates.map((candidate) => <li key={candidate.path}>{candidate.name}<small>{candidate.path}</small></li>)}
+                </ul>
+              ) : <p>{t("projects.registration.preview.skillsEmpty")}</p>}
+            </section>
+          ) : null}
           <label><span>{t("projects.registration.name")}</span><input aria-label={t("projects.registration.name")} disabled={registering} onChange={(event) => setRegistrationName(event.currentTarget.value)} value={registrationName} /></label>
           {agentCandidates.length ? <fieldset><legend>{t("projects.registration.agents")}</legend>{agentCandidates.map((agent) => <label key={agent.id}><input aria-label={agent.label} checked={selectedAgentIds.includes(agent.id)} disabled={registering || !agent.available} onChange={() => setSelectedAgentIds((current) => current.includes(agent.id) ? current.filter((id) => id !== agent.id) : [...current, agent.id])} type="checkbox" />{agent.label}</label>)}</fieldset> : null}
           {registrationError ? <p aria-live="polite" role="status">{registrationError}</p> : null}
           <div className="sh-project-registration__actions">
-            <Button disabled={registering} onClick={() => setRegistrationOpen(false)} variant="ghost">{t("actions.cancel")}</Button>
-            <Button disabled={registering || !registrationPath.trim() || !registrationName.trim()} loading={registering} onClick={() => void registerProject()}>{t("projects.registration.confirm")}</Button>
+            <Button disabled={registering} onClick={() => { setRegistrationOpen(false); resetPreview(); }} variant="ghost">{t("actions.cancel")}</Button>
+            <Button disabled={registering || previewPending || previewFailed || !preview || !registrationPath.trim() || !registrationName.trim()} loading={registering} onClick={() => void registerProject()}>{t("projects.registration.confirm")}</Button>
           </div>
         </section>
       ) : null}

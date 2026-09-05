@@ -289,6 +289,16 @@
       "name": "项目名称",
       "pickDirectory": "选择项目目录",
       "pickFailed": "无法打开目录选择器。",
+      "preview": {
+        "agents": "发现的 Agent 目录痕迹",
+        "agentsEmpty": "未发现已知 Agent 的项目级目录。",
+        "boundary": "预览仅读取目录，不会创建项目、导入 Skill 或写入任何文件。",
+        "error": "无法读取所选目录，请确认路径存在且可访问。",
+        "loading": "正在只读分析所选目录…",
+        "skills": "可扫描的项目 Skill（不会自动导入）",
+        "skillsEmpty": "未发现可扫描的 Skill 目录。",
+        "title": "目录预览（只读）"
+      },
       "title": "注册本地项目"
     },
     "drawer": {
