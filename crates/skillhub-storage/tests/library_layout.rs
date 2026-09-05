@@ -126,3 +126,25 @@ fn portable_manifest_preserves_invocation_policy() {
     let (record, _) = library.load_portable_skill(skill.id()).unwrap().unwrap();
     assert_eq!(record.call_policy, CallPolicy::ModelOnly);
 }
+
+#[test]
+fn removing_a_portable_skill_also_removes_its_visible_managed_directory() {
+    let ws = TempWorkspace::new().unwrap();
+    let library = CentralLibrary::initialize(ws.central_root()).unwrap();
+    let skill_id = SkillId::new();
+    let record = PortableSkillRecord::new(skill_id, "visible-skill");
+    let visible = library.visible_skill_path_for_runtime(skill_id, &record.runtime_name);
+    std::fs::create_dir_all(&visible).unwrap();
+    std::fs::write(visible.join("SKILL.md"), "# managed copy").unwrap();
+    library
+        .write_manifest_atomic(&LibraryManifest {
+            format_version: 1,
+            skills: vec![record],
+        })
+        .unwrap();
+
+    library.remove_portable_skill(skill_id).unwrap();
+
+    assert!(!visible.exists());
+    assert!(library.load_manifest().unwrap().skills.is_empty());
+}

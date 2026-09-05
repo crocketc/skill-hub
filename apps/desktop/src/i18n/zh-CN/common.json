@@ -357,7 +357,24 @@
     "selectionConfirmation": "我确认所选目标只用于只读扫描，不会部署技能",
     "startReadOnlyScan": "开始只读扫描",
     "step": "第 {{current}} 步，共 3 步",
+    "themeDescription": "选择你偏好的界面颜色。选中后会立即预览，并在继续时保存。",
+    "themeTitle": "选择界面主题",
     "unavailable": "不可用"
+  },
+  "theme": {
+    "choiceLabel": "主题颜色",
+    "palettePreview": "主题颜色预览",
+    "choices": {
+      "moss-neutral": "苔藓中性",
+      "spring-signal": "春日信号",
+      "terracotta": "赤陶",
+      "codex-light": "Codex 浅色",
+      "ocean-cobalt": "海洋钴蓝",
+      "sakura": "樱花",
+      "aurora": "极光",
+      "roast": "烘焙",
+      "grok-night": "Grok 夜色"
+    }
   },
   "skillLibrary": {
     "invocation": {
@@ -376,6 +393,7 @@
         "addTagsDescription": "输入的标签会添加到所有选中的 Skill。",
         "addTagsTitle": "批量添加标签",
         "archive": "归档",
+        "delete": "删除所选 Skill",
         "error": "无法启动批量流程",
         "export": "导出",
         "impact": "将影响 {{count}} 个 Skill",
@@ -430,6 +448,7 @@
         "addTo": "添加到",
         "addTags": "添加标签",
         "archive": "归档",
+        "delete": "删除 Skill",
         "export": "导出",
         "removeTags": "移除标签",
         "securityCheck": "运行安全检查"
@@ -850,7 +869,20 @@
       "convert": "保留为独立副本"
     },
     "confirm": "确认删除",
-    "submitting": "正在删除…"
+    "submitting": "正在删除…",
+    "batch": {
+      "eyebrow": "批量删除影响",
+      "heading": "检查批量删除影响",
+      "description": "已选择删除 {{count}} 个 Skill。请先处理每个部署关系。",
+      "noDeployments": "没有部署关系，可以直接删除。",
+      "continue": "继续并强制删除",
+      "forceTitle": "确认强制删除？",
+      "forceDescription": "这会按你刚才选择的方式处理 {{count}} 个 Skill 及其部署。此操作无法撤销。",
+      "forceInputLabel": "输入“FORCE DELETE”以继续",
+      "forceConfirm": "强制删除 {{count}} 个 Skill",
+      "loadError": "无法读取批量删除影响，请稍后重试。",
+      "commitError": "批量删除未能全部完成。尚未删除的 Skill 保持不变，请检查后重试。"
+    }
   },
   "undeploy": {
     "eyebrow": "解除部署影响",
@@ -918,7 +950,9 @@
     "general": {
       "heading": "通用",
       "language": "语言",
-      "theme": "主题"
+      "theme": "主题",
+      "themeDescription": "选择主题后会立即应用，并保存到本机偏好。",
+      "themeSaveError": "主题未能保存，已恢复为原来的设置。"
     },
     "library": {
       "heading": "技能库",

@@ -357,7 +357,24 @@
     "selectionConfirmation": "I understand selected targets are only used for a read-only scan and will not deploy skills",
     "startReadOnlyScan": "Start read-only scan",
     "step": "Step {{current}} of 3",
+    "themeDescription": "Choose an interface color. Selection previews immediately and is saved when you continue.",
+    "themeTitle": "Choose an interface theme",
     "unavailable": "Unavailable"
+  },
+  "theme": {
+    "choiceLabel": "Theme colors",
+    "palettePreview": "Theme palette preview",
+    "choices": {
+      "moss-neutral": "Moss Neutral",
+      "spring-signal": "Spring Signal",
+      "terracotta": "Terracotta",
+      "codex-light": "Codex Light",
+      "ocean-cobalt": "Ocean Cobalt",
+      "sakura": "Sakura",
+      "aurora": "Aurora",
+      "roast": "Roast",
+      "grok-night": "Grok Night"
+    }
   },
   "skillLibrary": {
     "invocation": {
@@ -376,6 +393,7 @@
         "addTagsDescription": "The entered tags will be added to every selected Skill.",
         "addTagsTitle": "Add tags",
         "archive": "Archive",
+        "delete": "Delete selected Skills",
         "error": "The batch workflow could not be started",
         "export": "Export",
         "impact": "This will affect {{count}} Skill",
@@ -430,6 +448,7 @@
         "addTo": "Add to",
         "addTags": "Add tags",
         "archive": "Archive",
+        "delete": "Delete Skill",
         "export": "Export",
         "removeTags": "Remove tags",
         "securityCheck": "Run security check"
@@ -850,7 +869,20 @@
       "convert": "Keep as an independent copy"
     },
     "confirm": "Confirm deletion",
-    "submitting": "Deleting…"
+    "submitting": "Deleting…",
+    "batch": {
+      "eyebrow": "Batch deletion impact",
+      "heading": "Review batch deletion impact",
+      "description": "{{count}} Skills are selected for deletion. Handle every deployment relationship first.",
+      "noDeployments": "No deployments need handling.",
+      "continue": "Continue to force deletion",
+      "forceTitle": "Force deletion?",
+      "forceDescription": "This will handle {{count}} Skills and their deployments using the choices above. This cannot be undone.",
+      "forceInputLabel": "Type \"FORCE DELETE\" to continue",
+      "forceConfirm": "Force delete {{count}} Skills",
+      "loadError": "Could not read the batch deletion impact. Please try again.",
+      "commitError": "The batch deletion did not fully complete. Skills not yet deleted remain unchanged; please review and try again."
+    }
   },
   "undeploy": {
     "eyebrow": "Undeploy impact",
@@ -918,7 +950,9 @@
     "general": {
       "heading": "General",
       "language": "Language",
-      "theme": "Theme"
+      "theme": "Theme",
+      "themeDescription": "Your choice applies immediately and is saved to local preferences.",
+      "themeSaveError": "The theme could not be saved, so the previous setting was restored."
     },
     "library": {
       "heading": "Library",

@@ -38,14 +38,19 @@ import { type ImportResult } from "../features/import/api";
 import { skillHubI18n } from "../i18n";
 import "../features/markdown/markdown.css";
 import "../styles/base.css";
-import { ThemeProvider } from "../styles/ThemeProvider";
+import { ThemeProvider, useTheme } from "../styles/ThemeProvider";
 import { DesktopApp } from "./App";
 import { queryClient } from "./queryClient";
 
 function OnboardingRoute() {
   const navigate = useNavigate();
+  const { resolvedTheme, setAppearance } = useTheme();
   return (
     <OnboardingWizard
+      onThemeChange={(theme) => {
+        setAppearance(theme);
+        void nativeSettingsFacade.execute({ type: "set_theme", payload: { theme } });
+      }}
       onComplete={() => navigate("/", { replace: true })}
       onOpenImport={(roots) => navigate("/discovery", {
         state: {
@@ -53,6 +58,7 @@ function OnboardingRoute() {
           initialSourceText: roots[0] ?? "",
         },
       })}
+      theme={resolvedTheme}
     />
   );
 }

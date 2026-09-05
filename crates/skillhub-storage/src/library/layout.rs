@@ -107,8 +107,20 @@ impl CentralLibrary {
 
     pub fn remove_portable_skill(&self, id: SkillId) -> AppResult<()> {
         let mut manifest = self.load_manifest()?;
+        let removed = manifest
+            .skills
+            .iter()
+            .find(|record| record.id == id)
+            .cloned();
         manifest.skills.retain(|record| record.id != id);
-        self.write_manifest_atomic(&manifest)
+        self.write_manifest_atomic(&manifest)?;
+        if let Some(record) = removed {
+            let visible = self.visible_skill_path_for(id, &record.runtime_name);
+            if visible.exists() {
+                fs::remove_dir_all(visible).map_err(io_error)?;
+            }
+        }
+        Ok(())
     }
 
     /// Returns the user-visible, managed copy of a Skill's current version.

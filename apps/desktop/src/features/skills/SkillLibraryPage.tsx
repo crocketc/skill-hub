@@ -51,10 +51,14 @@ import { SkillFilters } from "./SkillFilters";
 import { BatchTagDialog, type BatchTagAction } from "./BatchTagDialog";
 import { SkillQuickDrawer } from "./SkillQuickDrawer";
 import { SkillTable } from "./SkillTable";
+import { BatchRemovalImpactDialog } from "../removal/BatchRemovalImpactDialog";
+import type { RemovalChoice, RemovalFacade, RemovalImpact } from "../removal/api";
+import { nativeRemovalFacade } from "../removal/nativeApi";
 
 export interface SkillLibraryPageProps {
   facade: SkillLibraryFacade;
   onOpenDiscovery?: () => void;
+  removalFacade?: RemovalFacade;
 }
 
 interface SaveViewFormProps {
@@ -77,6 +81,7 @@ interface BatchBarProps {
   barRef: Ref<HTMLElement>;
   onAction: (action: BatchAction) => void;
   onClear: () => void;
+  onDelete: () => void;
   onSelectAll: () => void;
   onTagAction: (action: BatchTagAction) => void;
   page: SkillPage;
@@ -256,6 +261,7 @@ function BatchBar({
   barRef,
   onAction,
   onClear,
+  onDelete,
   onSelectAll,
   onTagAction,
   page,
@@ -303,6 +309,9 @@ function BatchBar({
             {t(BATCH_ACTION_KEYS[action])}
           </Button>
         ))}
+        <Button onClick={onDelete} size="sm" variant="danger">
+          {t("skillLibrary.page.batch.delete")}
+        </Button>
         <Button onClick={onClear} size="sm" variant="ghost">
           {t("skillLibrary.page.selection.clear")}
         </Button>
@@ -312,7 +321,7 @@ function BatchBar({
   );
 }
 
-export function SkillLibraryPage({ facade, onOpenDiscovery }: SkillLibraryPageProps): JSX.Element {
+export function SkillLibraryPage({ facade, onOpenDiscovery, removalFacade = nativeRemovalFacade }: SkillLibraryPageProps): JSX.Element {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const location = useLocation();
@@ -343,6 +352,10 @@ export function SkillLibraryPage({ facade, onOpenDiscovery }: SkillLibraryPagePr
   const [saveViewPending, setSaveViewPending] = useState(false);
   const [savedViewDeleteError, setSavedViewDeleteError] = useState<string>();
   const [filtersCollapsed, setFiltersCollapsed] = useState(false);
+  const [batchRemovalImpacts, setBatchRemovalImpacts] = useState<RemovalImpact[] | null>(null);
+  const [batchRemovalLoading, setBatchRemovalLoading] = useState(false);
+  const [batchRemovalSubmitting, setBatchRemovalSubmitting] = useState(false);
+  const [batchRemovalError, setBatchRemovalError] = useState<string>();
   const defaultPageRetry = queryClient.getDefaultOptions().queries?.retry;
 
   const clearBatchAnnouncement = () => {
@@ -601,6 +614,61 @@ export function SkillLibraryPage({ facade, onOpenDiscovery }: SkillLibraryPagePr
     });
   };
 
+  const selectedSkillsForRemoval = async (): Promise<Array<{ id: string; name: string }>> => {
+    if (selection.kind === "explicit") {
+      const names = new Map(pageQuery.data?.items.map((item) => [item.id, item.name]));
+      return Promise.all(selection.skillIds.map(async (id) => ({
+        id,
+        name: names.get(id) ?? (await facade.getSkillQuickView(id)).name,
+      })));
+    }
+    const items: Array<{ id: string; name: string }> = [];
+    let pageNumber = 1;
+    while (true) {
+      const result = await facade.listSkills({ ...query, page: pageNumber, pageSize: 100 });
+      items.push(...result.items.map((item) => ({ id: item.id, name: item.name })));
+      if (items.length >= result.total || result.items.length === 0) return items;
+      pageNumber += 1;
+    }
+  };
+
+  const startBatchRemoval = async (single?: { id: string; name: string }) => {
+    setBatchRemovalLoading(true);
+    setBatchRemovalError(undefined);
+    try {
+      const selected = single ? [single] : await selectedSkillsForRemoval();
+      const impacts: RemovalImpact[] = [];
+      for (const skill of selected) {
+        impacts.push(await removalFacade.prepareDelete(skill.id, skill.name));
+      }
+      setBatchRemovalImpacts(impacts);
+    } catch {
+      setBatchRemovalError(t("removal.batch.loadError"));
+    } finally {
+      setBatchRemovalLoading(false);
+    }
+  };
+
+  const commitBatchRemoval = async (choices: Record<string, Record<string, RemovalChoice>>) => {
+    if (!batchRemovalImpacts) return;
+    setBatchRemovalSubmitting(true);
+    setBatchRemovalError(undefined);
+    try {
+      for (const impact of batchRemovalImpacts) {
+        if (!impact.operationId) throw new Error("missing prepared delete id");
+        const result = await removalFacade.commitDelete(impact.operationId, choices[impact.operationId] ?? {});
+        if (!result.centralSkillDeleted) throw new Error("central skill was not deleted");
+      }
+      await queryClient.invalidateQueries({ queryKey: skillLibraryKeys.root });
+      setBatchRemovalImpacts(null);
+      changeSelection({ kind: "none" });
+    } catch {
+      setBatchRemovalError(t("removal.batch.commitError"));
+    } finally {
+      setBatchRemovalSubmitting(false);
+    }
+  };
+
   const submitSavedView = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const name = saveViewName.trim();
@@ -848,6 +916,7 @@ export function SkillLibraryPage({ facade, onOpenDiscovery }: SkillLibraryPagePr
           onClear={() => {
             changeSelection({ kind: "none" });
           }}
+          onDelete={() => void startBatchRemoval()}
           onSelectAll={() =>
             changeSelection(
               selectAllFiltered(
@@ -889,6 +958,10 @@ export function SkillLibraryPage({ facade, onOpenDiscovery }: SkillLibraryPagePr
         onOpenChange={(open) => {
           if (!open) closeDrawer();
         }}
+        onDelete={(id, name) => {
+          closeDrawer();
+          void startBatchRemoval({ id, name });
+        }}
         onPreferencesChange={setDrawerPreferences}
         open={Boolean(skillId)}
         preferenceSaveFailed={Boolean(drawerSaveFailure)}
@@ -896,6 +969,15 @@ export function SkillLibraryPage({ facade, onOpenDiscovery }: SkillLibraryPagePr
         returnFocusRef={returnFocusRef}
         skillId={skillId}
       />
+      {batchRemovalLoading ? <p role="status">{t("removal.loading")}</p> : null}
+      {batchRemovalImpacts ? <BatchRemovalImpactDialog
+        error={batchRemovalError}
+        impacts={batchRemovalImpacts}
+        onCancel={() => setBatchRemovalImpacts(null)}
+        onConfirm={commitBatchRemoval}
+        submitting={batchRemovalSubmitting}
+      /> : null}
+      {batchRemovalError && !batchRemovalLoading && !batchRemovalImpacts ? <p role="alert">{batchRemovalError}</p> : null}
     </section>
   );
 }

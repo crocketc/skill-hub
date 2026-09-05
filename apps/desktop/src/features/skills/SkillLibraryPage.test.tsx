@@ -17,6 +17,7 @@ import {
   type SkillPage,
 } from "./api";
 import { SkillLibraryPage } from "./SkillLibraryPage";
+import type { RemovalFacade } from "../removal/api";
 import {
   createMockSkillLibraryFacade,
   MOCK_SKILL_PDF,
@@ -28,6 +29,7 @@ interface RenderLibraryOptions {
   initialEntry?: InitialEntry;
   onOpenDiscovery?: () => void;
   queryRetry?: boolean | number;
+  removalFacade?: RemovalFacade;
 }
 
 interface RenderedLibrary {
@@ -40,12 +42,13 @@ function renderLibrary({
   initialEntry = "/library",
   onOpenDiscovery,
   queryRetry = false,
+  removalFacade,
 }: RenderLibraryOptions): RenderedLibrary {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: queryRetry, retryDelay: 0 } },
   });
   const router = createMemoryRouter(
-    [{ path: "/library", element: <SkillLibraryPage facade={facade} onOpenDiscovery={onOpenDiscovery} /> }],
+    [{ path: "/library", element: <SkillLibraryPage facade={facade} onOpenDiscovery={onOpenDiscovery} removalFacade={removalFacade} /> }],
     { initialEntries: [initialEntry] },
   );
 
@@ -88,6 +91,48 @@ afterEach(() => {
 });
 
 describe("SkillLibraryPage", () => {
+  it("previews selected Skills and requires a forced-delete confirmation before committing", async () => {
+    const facade = createMockSkillLibraryFacade();
+    const removalFacade: RemovalFacade = {
+      prepareUndeploy: vi.fn(),
+      commitUndeploy: vi.fn(),
+      prepareDelete: vi.fn().mockResolvedValue({
+        deployments: [], dependentProjects: [], operationId: "delete-pdf", skillId: "skill-pdf", skillName: "PDF Reader",
+      }),
+      commitDelete: vi.fn().mockResolvedValue({ centralSkillDeleted: true }),
+    };
+    renderLibrary({ facade, removalFacade });
+
+    fireEvent.click(await screen.findByRole("checkbox", { name: "Select PDF Reader" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete selected Skills" }));
+    expect(await screen.findByRole("dialog", { name: "Review batch deletion impact" })).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Continue to force deletion" }));
+    fireEvent.change(screen.getByLabelText('Type "FORCE DELETE" to continue'), { target: { value: "FORCE DELETE" } });
+    fireEvent.click(screen.getByRole("button", { name: "Force delete 1 Skills" }));
+
+    await waitFor(() => expect(removalFacade.commitDelete).toHaveBeenCalledWith("delete-pdf", {}));
+  });
+
+  it("offers the same safe deletion flow from a selected Skill's quick drawer", async () => {
+    const facade = createMockSkillLibraryFacade();
+    const removalFacade: RemovalFacade = {
+      prepareUndeploy: vi.fn(),
+      commitUndeploy: vi.fn(),
+      prepareDelete: vi.fn().mockResolvedValue({
+        deployments: [], dependentProjects: [], operationId: "delete-pdf", skillId: "skill-pdf", skillName: "PDF Reader",
+      }),
+      commitDelete: vi.fn(),
+    };
+    renderLibrary({ facade, removalFacade });
+
+    await screen.findByText("PDF Reader");
+    fireEvent.click(skillNameCell("PDF Reader"));
+    fireEvent.click(await screen.findByRole("button", { name: "Delete Skill" }));
+
+    expect(await screen.findByRole("dialog", { name: "Review batch deletion impact" })).toBeVisible();
+    expect(removalFacade.prepareDelete).toHaveBeenCalledWith("skill-pdf", "PDF Reader");
+  });
+
   it("collapses and expands the filters with a compact toggle", async () => {
     const facade = createMockSkillLibraryFacade();
     renderLibrary({ facade });
@@ -185,6 +230,7 @@ describe("SkillLibraryPage", () => {
       "Run security check",
       "Export",
       "Archive",
+      "Delete selected Skills",
       "Clear selection",
     ]);
   });

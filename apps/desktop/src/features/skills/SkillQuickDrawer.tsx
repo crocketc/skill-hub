@@ -43,6 +43,7 @@ export interface SkillQuickDrawerProps {
   detailSearch?: string;
   facade: SkillLibraryFacade;
   libraryReturn?: SkillLibraryReturnState;
+  onDelete?: (skillId: string, skillName: string) => void;
   onOpenChange: (open: boolean) => void;
   onPreferencesChange: (preferences: SkillDrawerPreferences) => void;
   open: boolean;
@@ -444,10 +445,11 @@ function IdentityRegion({
 
 interface PrimaryActionsProps extends ModuleProps {
   facade: SkillLibraryFacade;
+  onDelete?: (skillId: string, skillName: string) => void;
   onTagAction: (action: BatchTagAction) => void;
 }
 
-function PrimaryActions({ facade, onTagAction, view }: PrimaryActionsProps) {
+function PrimaryActions({ facade, onDelete, onTagAction, view }: PrimaryActionsProps) {
   const { t } = useTranslation();
   const emitIntent = (action: BatchAction) => {
     void facade
@@ -477,6 +479,9 @@ function PrimaryActions({ facade, onTagAction, view }: PrimaryActionsProps) {
       <Button onClick={() => emitIntent("archive")} size="sm" variant="ghost">
         {t("skillLibrary.drawer.actions.archive")}
       </Button>
+      {onDelete ? <Button onClick={() => onDelete(view.id, view.name)} size="sm" variant="danger">
+        {t("skillLibrary.drawer.actions.delete")}
+      </Button> : null}
     </section>
   );
 }
@@ -612,6 +617,7 @@ export function SkillQuickDrawer({
   detailSearch = "",
   facade,
   libraryReturn,
+  onDelete,
   onOpenChange,
   onPreferencesChange,
   open,
@@ -999,7 +1005,7 @@ export function SkillQuickDrawer({
                 onCommit={commitEdit}
                 view={view}
               />
-              <PrimaryActions facade={facade} onTagAction={setTagAction} view={view} />
+              <PrimaryActions facade={facade} onDelete={onDelete} onTagAction={setTagAction} view={view} />
               <RiskSummary view={view} />
             </div>
           ) : null}

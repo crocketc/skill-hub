@@ -191,6 +191,26 @@ it("shows discovery targets without deploying and requires selection confirmatio
   expect(screen.getByRole("button", { name: "继续" })).toBeEnabled();
 });
 
+it("offers named color themes during initialization and previews the chosen theme", async () => {
+  const onThemeChange = vi.fn();
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+
+  render(
+    <I18nextProvider i18n={i18n}>
+      <OnboardingWizard
+        libraryPath={defaultLibraryPath}
+        onThemeChange={onThemeChange}
+        operations={{ completeOnboarding: async () => undefined, discoverAgents: async () => ({ targets: [] }) }}
+        theme="moss-neutral"
+      />
+    </I18nextProvider>,
+  );
+
+  expect(screen.getByRole("heading", { name: "选择界面主题" })).toBeVisible();
+  await click(screen.getByRole("button", { name: "樱花" }));
+  expect(onThemeChange).toHaveBeenCalledWith("sakura");
+});
+
 it("selects all available targets and scans only the confirmed targets", async () => {
   const runInitializationScan = vi.fn(async () => ({ kind: "completed" as const, result: emptyScanResult }));
   const i18n = await createSkillHubI18n(["zh-CN"]);

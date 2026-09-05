@@ -13,6 +13,7 @@ import {
 import { CompatibilityStep } from "./CompatibilityStep";
 import { LibraryStep } from "./LibraryStep";
 import { ScanStep } from "./ScanStep";
+import type { ThemeName } from "../../styles/theme";
 
 interface OnboardingWizardProps {
   libraryPath?: string;
@@ -20,6 +21,8 @@ interface OnboardingWizardProps {
   onOpenImport?: (roots: string[]) => void;
   operations?: OnboardingOperations;
   runtime?: BootstrapRuntime;
+  onThemeChange?: (theme: ThemeName) => void;
+  theme?: ThemeName;
 }
 
 function nativeErrorCode(error: unknown): string | null {
@@ -47,6 +50,8 @@ export function OnboardingWizard({
   onOpenImport,
   operations = desktopOnboardingOperations,
   runtime = desktopBootstrapRuntime,
+  onThemeChange,
+  theme = "moss-neutral",
 }: OnboardingWizardProps) {
   const { t } = useTranslation();
   const [step, setStep] = useState(0);
@@ -163,7 +168,7 @@ export function OnboardingWizard({
 
   const activeStep =
     step === 0 ? (
-      <LibraryStep libraryPath={nativeLibraryPath} />
+      <LibraryStep libraryPath={nativeLibraryPath} onThemeChange={onThemeChange ?? (() => undefined)} theme={theme} />
     ) : step === 1 ? (
       <CompatibilityStep
         confirmed={compatibilityConfirmed}

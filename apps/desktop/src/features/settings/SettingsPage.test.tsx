@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { I18nextProvider } from "react-i18next";
 import { expect, it } from "vitest";
 import { createSkillHubI18n } from "../../i18n";
+import { ThemeProvider } from "../../styles/ThemeProvider";
 import { AiNetworkSettings } from "./AiNetworkSettings";
 import { ApplicationUpdate } from "./ApplicationUpdate";
 import { NetworkStoragePlaceholder } from "./NetworkStoragePlaceholder";
@@ -14,10 +15,12 @@ it("offers an explicit way to rerun initialization", async () => {
 
   render(
     <I18nextProvider i18n={i18n}>
-      <SettingsPage
-        facade={{ execute: async () => undefined }}
-        initialSettings={settingsFixture()}
-      />
+      <ThemeProvider>
+        <SettingsPage
+          facade={{ execute: async () => undefined }}
+          initialSettings={settingsFixture()}
+        />
+      </ThemeProvider>
     </I18nextProvider>,
   );
 
@@ -25,6 +28,27 @@ it("offers an explicit way to rerun initialization", async () => {
     "href",
     "/initialize",
   );
+});
+
+it("lets users choose and immediately apply a named theme", async () => {
+  const user = userEvent.setup();
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  const commands: unknown[] = [];
+  render(
+    <I18nextProvider i18n={i18n}>
+      <ThemeProvider>
+        <SettingsPage
+          facade={{ execute: async (command) => { commands.push(command); } }}
+          initialSettings={settingsFixture()}
+        />
+      </ThemeProvider>
+    </I18nextProvider>,
+  );
+
+  await user.click(screen.getByRole("button", { name: "樱花" }));
+
+  expect(document.documentElement).toHaveAttribute("data-theme", "sakura");
+  expect(commands).toContainEqual({ type: "set_theme", payload: { theme: "sakura" } });
 });
 
 it("turns off online helpers while leaving local management enabled", async () => {
