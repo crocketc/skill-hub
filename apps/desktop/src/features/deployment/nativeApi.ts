@@ -7,6 +7,9 @@ import {
   type DeploymentTarget as NativeDeploymentTarget,
 } from "../../api/bindings";
 import type {
+  BatchDeploymentFacade,
+  BatchDeploymentPlan,
+  BatchDeploymentResult,
   DeploymentFacade,
   DeploymentMode,
   DeploymentPlan,
@@ -153,6 +156,65 @@ export function createNativeDeploymentFacade(context: NativeDeploymentContext): 
         status: target.status,
         message: resultMessage(target.error_code, target.status),
       }));
+    },
+  };
+}
+
+function messageOf(reason: unknown) {
+  return reason instanceof Error ? reason.message : String(reason);
+}
+
+type BatchPreviewAttempt =
+  | { ok: true; skillId: string; plan: DeploymentPlan }
+  | { ok: false; skillId: string; message: string };
+
+/**
+ * The native boundary prepares and commits exactly one Skill per operation.
+ * Compose those operations here so the UI can offer one consistent batch flow
+ * while preserving a result for every Skill and target.
+ */
+export function createNativeBatchDeploymentFacade(): BatchDeploymentFacade {
+  return {
+    listTargets: () => createNativeDeploymentFacade({ skillId: "", versionId: "current" }).listTargets(),
+
+    async preview(skillIds, targets, mode) {
+      const previews: BatchPreviewAttempt[] = await Promise.all(skillIds.map(async (skillId) => {
+        try {
+          const plan = await createNativeDeploymentFacade({ skillId, versionId: "current" }).preview(targets, mode);
+          return { ok: true, skillId, plan };
+        } catch (reason) {
+          return { ok: false, skillId, message: messageOf(reason) };
+        }
+      }));
+      const plans: BatchDeploymentPlan[] = [];
+      const failures: Array<{ skillId: string; message: string }> = [];
+      for (const preview of previews) {
+        if (preview.ok) {
+          plans.push({ skillId: preview.skillId, plan: preview.plan });
+        } else {
+          failures.push({ skillId: preview.skillId, message: preview.message });
+        }
+      }
+      return { plans, failures };
+    },
+
+    async commit(plans: BatchDeploymentPlan[]): Promise<BatchDeploymentResult[]> {
+      const results: BatchDeploymentResult[] = [];
+      for (const { skillId, plan } of plans) {
+        try {
+          const committed = await createNativeDeploymentFacade({ skillId, versionId: plan.versionId }).commit(plan);
+          results.push(...committed.map((result) => ({ ...result, skillId })));
+        } catch (reason) {
+          results.push(...plan.targets.map((target) => ({
+            skillId,
+            targetId: target.targetId,
+            label: target.label,
+            status: "failed" as const,
+            message: messageOf(reason),
+          })));
+        }
+      }
+      return results;
     },
   };
 }

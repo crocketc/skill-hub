@@ -818,7 +818,8 @@
     "description": "Select one or more targets, inspect the physical plan, then commit explicitly.",
     "states": {
       "loading": "Loading deployment targets",
-      "empty": "No deployable Agent targets found"
+      "empty": "No deployable Agent targets found",
+      "noSkills": "No Skills were selected for deployment"
     },
     "targets": {
       "heading": "Agent targets",
@@ -831,6 +832,12 @@
     "plan": {
       "heading": "Deployment plan",
       "description": "The plan is grouped by physical target; warnings stay visible before commit."
+    },
+    "batch": {
+      "heading": "Deploy {{count}} Skills",
+      "description": "Each Skill is previewed independently; committing is enabled only when every preview succeeds.",
+      "planDescription": "Plans are shown per Skill, preserving target warnings and conflicts.",
+      "previewFailed": "A deployment preview could not be prepared for {{skillId}}: {{message}}"
     },
     "mode": {
       "label": "Deployment mode",

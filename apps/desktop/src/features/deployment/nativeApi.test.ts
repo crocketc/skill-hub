@@ -1,6 +1,6 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import { executeCommand, queryApplication } from "../../api/bindings";
-import { createNativeDeploymentFacade } from "./nativeApi";
+import { createNativeBatchDeploymentFacade, createNativeDeploymentFacade } from "./nativeApi";
 import type { DeploymentTarget } from "./api";
 
 vi.mock("../../api/bindings", async (importOriginal) => {
@@ -93,4 +93,49 @@ it("maps a native plan and commits through prepare then commit", async () => {
   expect(result).toEqual([{ targetId: "codex-global", label: "Codex CLI", status: "failed", message: "deployment.target_exists" }]);
   expect(executeCommand).toHaveBeenNthCalledWith(1, expect.objectContaining({ type: "prepare_deployment" }));
   expect(executeCommand).toHaveBeenNthCalledWith(2, { type: "commit_deployment", payload: { prepared_deployment_id: "op-1" } });
+});
+
+it("keeps a failed Skill preview out of the batch commit candidates", async () => {
+  vi.mocked(queryApplication).mockImplementation(async (request) => {
+    if (request.type === "get_skill") {
+      return {
+        type: "skill",
+        payload: {
+          skill_id: request.payload.skill_id,
+          display_name: request.payload.skill_id,
+          runtime_name: request.payload.skill_id,
+          original_description: "",
+          translated_description: null,
+          user_note: null,
+          tags: [],
+          license: null,
+          lifecycle: "Normal",
+          trial_due: null,
+          current_version: "v1",
+        },
+      };
+    }
+    if (request.type === "get_deployment_plan") {
+      if (request.payload.request.skill_id === "skill-docx") throw new Error("basic check required");
+      return {
+        type: "deployment_plan",
+        payload: {
+          skill_id: "skill-pdf",
+          version_id: "v1",
+          runtime_name: "skill-pdf",
+          mode: "managed_copy",
+          targets: [],
+          warnings: [],
+          conflicts: [],
+        },
+      };
+    }
+    throw new Error(`Unexpected request ${request.type}`);
+  });
+  const target: DeploymentTarget = { id: "codex-global", label: "Codex CLI", path: "hidden", available: true, physicalId: "fs:codex", modes: ["managed_copy"] };
+
+  await expect(createNativeBatchDeploymentFacade().preview(["skill-pdf", "skill-docx"], [target])).resolves.toEqual({
+    plans: [expect.objectContaining({ skillId: "skill-pdf" })],
+    failures: [{ skillId: "skill-docx", message: "basic check required" }],
+  });
 });

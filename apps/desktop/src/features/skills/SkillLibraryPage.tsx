@@ -11,7 +11,7 @@ import {
   type Ref,
 } from "react";
 import { useTranslation } from "react-i18next";
-import { useLocation, useSearchParams } from "react-router-dom";
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { Button } from "../../ui/Button";
 import { DataState } from "../../ui/DataState";
 import {
@@ -339,6 +339,7 @@ export function SkillLibraryPage({
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const location = useLocation();
+  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const libraryReturnState = readLibraryReturnState(location.state);
   const search = searchParams.toString();
@@ -599,6 +600,17 @@ export function SkillLibraryPage({
 
   const emitBatchAction = (action: BatchAction) => {
     if (selection.kind === "none" || selectionCount(selection) <= 0) return;
+    if (action === "add_to") {
+      void selectedSkillsForRemoval().then(
+        (skills) => {
+          const search = new URLSearchParams();
+          skills.forEach((skill) => search.append("skill", skill.id));
+          navigate({ pathname: "/deploy", search: `?${search.toString()}` });
+        },
+        () => setBatchAnnouncement(t("skillLibrary.page.batch.error")),
+      );
+      return;
+    }
     const request = batchRequestRef.current + 1;
     batchRequestRef.current = request;
     setBatchAnnouncement(undefined);

@@ -1,7 +1,7 @@
 import { QueryClientProvider } from "@tanstack/react-query";
 import { MotionConfig } from "motion/react";
 import { I18nextProvider } from "react-i18next";
-import { createBrowserRouter, RouterProvider, useLocation, useNavigate, useParams } from "react-router-dom";
+import { createBrowserRouter, RouterProvider, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { OnboardingWizard } from "../features/onboarding/OnboardingWizard";
 import { AgentDetailPage } from "../features/agents/AgentDetailPage";
 import { AgentListPage } from "../features/agents/AgentListPage";
@@ -10,6 +10,7 @@ import { ProjectListPage } from "../features/projects/ProjectListPage";
 import { nativeAgentFacade } from "../features/agents/nativeApi";
 import { nativeProjectFacade } from "../features/projects/nativeApi";
 import { DeploymentDialog } from "../features/deployment/DeploymentDialog";
+import { BatchDeploymentPage } from "../features/deployment/BatchDeploymentPage";
 import { SecurityResults } from "../features/security/SecurityResults";
 import { nativeSecurityFacade } from "../features/security/nativeApi";
 import { PendingPage } from "../features/pending/PendingPage";
@@ -97,6 +98,19 @@ function DeploymentRoute() {
   );
 }
 
+function BatchDeploymentRoute() {
+  const [searchParams] = useSearchParams();
+  const skillIds = [...new Set(searchParams.getAll("skill").filter(Boolean))];
+  return <BatchDeploymentPage
+    onCommitted={(results) => {
+      if (results.some((result) => result.status === "succeeded")) {
+        void queryClient.invalidateQueries({ queryKey: skillLibraryKeys.root });
+      }
+    }}
+    skillIds={skillIds}
+  />;
+}
+
 function SkillLibraryRoute() {
   const navigate = useNavigate();
   return (
@@ -157,6 +171,7 @@ export const appRouter = createBrowserRouter([
         element: <SkillDetailPage facade={nativeSkillDetailFacade} />,
       },
       { path: "library/:skillId/deploy", element: <DeploymentRoute /> },
+      { path: "deploy", element: <BatchDeploymentRoute /> },
       { path: "library/:skillId/security", element: <SecurityRoute /> },
       { path: "discovery", element: <DiscoveryRoute /> },
       { path: "agents", element: <AgentListPage facade={nativeAgentFacade} /> },

@@ -818,7 +818,8 @@
     "description": "选择一个或多个目标，检查物理计划后再显式提交。",
     "states": {
       "loading": "正在加载部署目标",
-      "empty": "未发现可部署的 Agent 目标"
+      "empty": "未发现可部署的 Agent 目标",
+      "noSkills": "没有选择要部署的 Skill"
     },
     "targets": {
       "heading": "Agent 目标",
@@ -831,6 +832,12 @@
     "plan": {
       "heading": "部署计划",
       "description": "计划按物理目标归组；提交前始终保留警告。"
+    },
+    "batch": {
+      "heading": "部署 {{count}} 个 Skill",
+      "description": "每个 Skill 都会先单独预览；只有全部预览成功后才可提交。",
+      "planDescription": "以下计划按 Skill 展示，保留每个目标的警告与冲突。",
+      "previewFailed": "{{skillId}} 无法生成部署预览：{{message}}"
     },
     "mode": {
       "label": "部署方式",

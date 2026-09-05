@@ -23,6 +23,7 @@ export type DeploymentPlan = {
   native?: NativeDeploymentPlan;
 };
 export type DeploymentResult = {
+  skillId?: string;
   targetId: string;
   label: string;
   status: "succeeded" | "failed" | "skipped";
@@ -32,6 +33,24 @@ export interface DeploymentFacade {
   listTargets(): Promise<DeploymentTarget[]>;
   preview(targets: DeploymentTarget[], mode?: DeploymentMode): Promise<DeploymentPlan>;
   commit(plan: DeploymentPlan): Promise<DeploymentResult[]>;
+}
+
+export type BatchDeploymentPlan = { skillId: string; plan: DeploymentPlan };
+export type BatchDeploymentPreview = {
+  plans: BatchDeploymentPlan[];
+  failures: Array<{ skillId: string; message: string }>;
+};
+export type BatchDeploymentResult = DeploymentResult & { skillId: string };
+
+/**
+ * A batch is deliberately composed of per-Skill plans. The native contract
+ * only prepares one Skill at a time, so this shape keeps every preview and
+ * commit result visible instead of pretending the batch is atomic.
+ */
+export interface BatchDeploymentFacade {
+  listTargets(): Promise<DeploymentTarget[]>;
+  preview(skillIds: string[], targets: DeploymentTarget[], mode?: DeploymentMode): Promise<BatchDeploymentPreview>;
+  commit(plans: BatchDeploymentPlan[]): Promise<BatchDeploymentResult[]>;
 }
 
 const unavailable = (operation: string): Promise<never> =>

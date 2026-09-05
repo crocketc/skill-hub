@@ -48,7 +48,10 @@ function renderLibrary({
     defaultOptions: { queries: { retry: queryRetry, retryDelay: 0 } },
   });
   const router = createMemoryRouter(
-    [{ path: "/library", element: <SkillLibraryPage facade={facade} onOpenDiscovery={onOpenDiscovery} removalFacade={removalFacade} /> }],
+    [
+      { path: "/library", element: <SkillLibraryPage facade={facade} onOpenDiscovery={onOpenDiscovery} removalFacade={removalFacade} /> },
+      { path: "/deploy", element: <p>Batch deployment</p> },
+    ],
     { initialEntries: [initialEntry] },
   );
 
@@ -1009,6 +1012,20 @@ describe("SkillLibraryPage", () => {
       "This batch workflow is not connected",
     );
     expect(screen.queryByText("Export completed")).not.toBeInTheDocument();
+  });
+
+  it("opens the unified deployment flow with every explicitly selected Skill", async () => {
+    const facade = createMockSkillLibraryFacade();
+    const view = renderLibrary({ facade });
+
+    fireEvent.click(await screen.findByRole("checkbox", { name: "Select PDF Reader" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select DOCX Writer" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add to" }));
+
+    await screen.findByText("Batch deployment");
+    expect(view.router.state.location.pathname).toBe("/deploy");
+    expect(new URLSearchParams(view.router.state.location.search).getAll("skill")).toEqual(["skill-docx", "skill-pdf"]);
+    expect(facade.calls.emitBatchIntent).not.toContainEqual(expect.objectContaining({ action: "add_to" }));
   });
 
   it("clears a failed batch announcement when the selected scope changes", async () => {
