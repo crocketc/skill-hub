@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { useOutletContext } from "react-router-dom";
+import { Link, useOutletContext } from "react-router-dom";
 import type { BootstrapSnapshot } from "../../api/bindings";
 import { DataState } from "../../ui/DataState";
 import { DeploymentBarChart, DeploymentDetailList } from "./DeploymentBarChart";
@@ -13,23 +13,35 @@ import {
 
 function OverviewMetricCard({
   count,
+  href,
   label,
   tone,
 }: {
   count: number;
+  href?: string;
   label: string;
   tone: "accent" | "neutral";
 }) {
-  return (
-    <article
-      className={
-        tone === "accent"
-          ? "sh-overview__metric sh-overview__metric--hero"
-          : "sh-overview__metric"
-      }
-    >
+  const body = (
+    <>
       <strong>{count}</strong>
       <span>{label}</span>
+    </>
+  );
+  const className =
+    tone === "accent"
+      ? "sh-overview__metric sh-overview__metric--hero"
+      : "sh-overview__metric";
+  if (href) {
+    return (
+      <Link className={className} to={href}>
+        {body}
+      </Link>
+    );
+  }
+  return (
+    <article className={className}>
+      {body}
     </article>
   );
 }
@@ -81,6 +93,7 @@ export function OverviewPage() {
         {metrics.map((metric, index) => (
           <OverviewMetricCard
             count={metric.count}
+            href={metric.href}
             key={`${metric.label}-${index}`}
             label={metric.label}
             tone={metric.tone}

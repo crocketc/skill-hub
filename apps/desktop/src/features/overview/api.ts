@@ -9,6 +9,7 @@ import type { TFunction } from "i18next";
 export type OverviewDimension = DeploymentDimension;
 
 export interface OverviewMetric {
+  href?: string;
   count: number;
   label: string;
   tone: "accent" | "neutral";
@@ -49,21 +50,25 @@ export function getOverviewMetrics(
   return [
     {
       count: snapshot.skill_count,
+      href: "/library",
       label: t("overview.metrics.skills", { count: snapshot.skill_count }),
       tone: "accent",
     },
     {
       count: snapshot.agent_count,
+      href: "/agents",
       label: t("overview.metrics.agents", { count: snapshot.agent_count }),
       tone: "neutral",
     },
     {
       count: snapshot.project_count,
+      href: "/projects",
       label: t("overview.metrics.projects", { count: snapshot.project_count }),
       tone: "neutral",
     },
     {
       count: snapshot.deployed_count,
+      href: "/library?deployment=deployed",
       label: t("overview.metrics.deployments", { count: snapshot.deployed_count }),
       tone: "neutral",
     },
