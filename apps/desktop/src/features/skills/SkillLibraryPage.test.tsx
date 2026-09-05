@@ -1069,7 +1069,7 @@ describe("SkillLibraryPage", () => {
     // 默认表格视图：表格可见
     await screen.findByRole("checkbox", { name: "Select PDF Reader" });
 
-    const toggle = screen.getByRole("button", { name: /卡片视图/ });
+    const toggle = screen.getByRole("button", { name: /Card view/ });
     await act(async () => {
       fireEvent.click(toggle);
     });

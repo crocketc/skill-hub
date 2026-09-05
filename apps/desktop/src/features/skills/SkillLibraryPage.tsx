@@ -965,8 +965,7 @@ export function SkillLibraryPage({
 
       {pageRefreshing ? (
         <SkillLibrarySkeleton />
-      ) : (
-        {viewMode === "cards" ? (
+      ) : viewMode === "cards" ? (
           <div className="sh-skill-cards" data-testid="skill-cards">
             {page.items.map((item) => (
               <article
@@ -1017,7 +1016,6 @@ export function SkillLibraryPage({
           selection={selection}
           sortableColumns={capabilities?.sortableColumns}
         />
-        )}
       )}
 
       {selectedBatchTarget ? (
