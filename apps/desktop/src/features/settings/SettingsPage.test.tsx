@@ -51,6 +51,27 @@ it("lets users choose and immediately apply a named theme", async () => {
   expect(commands).toContainEqual({ type: "set_theme", payload: { theme: "sakura" } });
 });
 
+it("lets users choose and immediately apply the interface language", async () => {
+  const user = userEvent.setup();
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  const commands: unknown[] = [];
+  render(
+    <I18nextProvider i18n={i18n}>
+      <ThemeProvider>
+        <SettingsPage
+          facade={{ execute: async (command) => { commands.push(command); } }}
+          initialSettings={settingsFixture()}
+        />
+      </ThemeProvider>
+    </I18nextProvider>,
+  );
+
+  await user.selectOptions(screen.getByLabelText("语言"), "en-US");
+
+  expect(commands).toContainEqual({ type: "set_language", payload: { language: "en-US" } });
+  expect(await screen.findByRole("heading", { name: "Shape SkillHub around your workflow" })).toBeVisible();
+});
+
 it("turns off online helpers while leaving local management enabled", async () => {
   const user = userEvent.setup();
   const i18n = await createSkillHubI18n(["zh-CN"]);
@@ -61,6 +82,7 @@ it("turns off online helpers while leaving local management enabled", async () =
   await user.click(screen.getByLabelText("关闭所有网络功能"));
   expect(commands).toContainEqual({ type: "set_network_enabled", payload: { enabled: false } });
   expect(screen.getByText("本地扫描、搜索、部署和备份仍可使用")).toBeVisible();
+  expect(screen.queryByRole("button", { name: "测试提供商" })).not.toBeInTheDocument();
 });
 
 it("network storage page has no connect authorize or test button", async () => {

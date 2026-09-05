@@ -982,6 +982,13 @@
     "general": {
       "heading": "General",
       "language": "Language",
+      "languageDescription": "The interface changes immediately and the choice is saved locally.",
+      "languageSaveError": "The language could not be saved, so the previous setting was restored.",
+      "languages": {
+        "system": "Follow system",
+        "zhCN": "Simplified Chinese",
+        "enUS": "English"
+      },
       "theme": "Theme",
       "themeDescription": "Your choice applies immediately and is saved to local preferences.",
       "themeSaveError": "The theme could not be saved, so the previous setting was restored."
@@ -1006,8 +1013,7 @@
       "description": "Network helpers are opt-in and never change local management by themselves.",
       "disableAll": "Turn off all network features",
       "localStillWorks": "Local scan, search, deployment, and backup remain available",
-      "dataScope": "Data scope",
-      "testProvider": "Test provider"
+      "dataScope": "Data scope"
     },
     "backup": {
       "heading": "Backup",

@@ -982,6 +982,13 @@
     "general": {
       "heading": "通用",
       "language": "语言",
+      "languageDescription": "切换后立即更新界面，并保存到本机偏好。",
+      "languageSaveError": "语言未能保存，已恢复为原来的设置。",
+      "languages": {
+        "system": "跟随系统",
+        "zhCN": "简体中文",
+        "enUS": "English"
+      },
       "theme": "主题",
       "themeDescription": "选择主题后会立即应用，并保存到本机偏好。",
       "themeSaveError": "主题未能保存，已恢复为原来的设置。"
@@ -1006,8 +1013,7 @@
       "description": "网络辅助功能默认需要明确开启，不会自行改变本地管理行为。",
       "disableAll": "关闭所有网络功能",
       "localStillWorks": "本地扫描、搜索、部署和备份仍可使用",
-      "dataScope": "数据范围",
-      "testProvider": "测试提供商"
+      "dataScope": "数据范围"
     },
     "backup": {
       "heading": "备份",
