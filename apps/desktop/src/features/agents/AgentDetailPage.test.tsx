@@ -15,6 +15,8 @@ it("shows discovered directory facts without trust or usability status", async (
   );
 
   expect(await screen.findByText("已发现客户端和 Skill 目录")).toBeVisible();
+  expect(screen.getByText("可访问")).toBeVisible();
+  expect(screen.getByText("0 个受管部署")).toBeVisible();
   expect(screen.queryByText(/已授权|可用|验证通过/)).not.toBeInTheDocument();
   expect(screen.getByText("实验功能，仅供参考")).toBeVisible();
   expect(screen.getByText("研发中")).toBeVisible();

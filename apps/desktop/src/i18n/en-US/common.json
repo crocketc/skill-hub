@@ -248,6 +248,7 @@
       "discoveredFact": "Discovered client and Skill directory facts",
       "observed": "Observed",
       "identity": "Agent identity",
+      "managedDeployments": "Managed deployments",
       "brand": "Brand",
       "client": "Client",
       "instance": "Instance",

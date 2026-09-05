@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { DataState } from "../../ui/DataState";
 import { StatusBadge } from "../../ui/StatusBadge";
-import { type AgentFacade, type AgentView, unavailableAgentFacade } from "./api";
+import { type AgentFacade, type AgentStatus, type AgentView, unavailableAgentFacade } from "./api";
 import { RelationsView } from "./RelationsView";
 import { UsageEvidencePanel } from "./UsageEvidencePanel";
 
@@ -37,13 +37,14 @@ export function AgentDetailPage({ agentId = "default", facade = unavailableAgent
           <h1>{agent.brand} · {agent.instance}</h1>
           <p>{t("agents.detail.discoveredFact")}</p>
         </div>
-        <StatusBadge tone="info">{t("agents.detail.observed")}</StatusBadge>
+        <StatusBadge tone={statusTone(agent.status)}>{t(`agents.status.${agent.status}`)}</StatusBadge>
       </header>
       <section className="sh-agent-facts" aria-label={t("agents.detail.identity")}>
         <div><dt>{t("agents.detail.brand")}</dt><dd>{agent.brand}</dd></div>
         <div><dt>{t("agents.detail.client")}</dt><dd>{agent.client}</dd></div>
         <div><dt>{t("agents.detail.instance")}</dt><dd>{agent.instance}</dd></div>
         <div><dt>{t("agents.detail.paths")}</dt><dd>{agent.discoveredPaths.join("、")}</dd></div>
+        <div><dt>{t("agents.detail.managedDeployments")}</dt><dd>{t("agents.managedDeploymentCount", { count: agent.managedDeploymentCount })}</dd></div>
       </section>
       <RelationsView relations={agent.relations} />
       <div className="sh-agent-detail__capabilities">
@@ -55,4 +56,11 @@ export function AgentDetailPage({ agentId = "default", facade = unavailableAgent
       <UsageEvidencePanel />
     </div>
   );
+}
+
+function statusTone(status: AgentStatus): "info" | "neutral" | "success" | "warning" {
+  if (status === "accessible") return "success";
+  if (status === "inaccessible") return "warning";
+  if (status === "custom") return "info";
+  return "neutral";
 }

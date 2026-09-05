@@ -248,6 +248,7 @@
       "discoveredFact": "已发现客户端和 Skill 目录",
       "observed": "已观测",
       "identity": "Agent 身份",
+      "managedDeployments": "受管部署",
       "brand": "品牌",
       "client": "客户端",
       "instance": "实例",
