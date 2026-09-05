@@ -1,5 +1,6 @@
 export type SkillLifecycle = "active" | "trial" | "archived";
 import type { DeploymentRecord, DeploymentTarget } from "../../api/bindings";
+export type { DeploymentRecord, DeploymentTarget };
 export type CheckState = "passed" | "warning" | "failed" | "not_run" | "unavailable";
 export type SkillDensity = "compact" | "standard" | "comfortable";
 export type DrawerPreset = "standard" | "wide" | "near_full";

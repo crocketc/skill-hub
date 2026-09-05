@@ -1083,11 +1083,11 @@ describe("SkillLibraryPage", () => {
     facade.loadViewMode = vi.fn(async () => "matrix" as const);
     facade.listDeployments = vi.fn(async () => [
       { id: "d1", skill_id: "skill-pdf", version_id: "v3", target_id: "target-codex", state: "active", mode: "managed_copy", managed: true, runtime_name: "pdf-reader", expected_hash: "h", observed_hash: "h" },
-    ]);
+    ] as never);
     facade.listDeploymentTargets = vi.fn(async () => [
       { id: "target-codex", label: "Codex CLI", path: "C:/codex", available: true, physicalId: "p1", modes: ["managed_copy"] },
       { id: "target-claude", label: "Claude Code", path: "C:/claude", available: true, physicalId: "p2", modes: ["managed_copy"] },
-    ]);
+    ] as never);
     renderLibrary({ facade });
 
     // 矩阵列：仅显示有部署关系的目标（列标签用已注册目标名）
