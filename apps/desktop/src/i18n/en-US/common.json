@@ -266,6 +266,9 @@
     }
   },
   "projects": {
+    "actions": {
+      "register": "Register project"
+    },
     "eyebrow": "Project workspace",
     "title": "Projects",
     "description": "Organize shared Skill requirements with flat, tag-based views.",
@@ -276,6 +279,15 @@
       "label": "Project filters",
       "search": "Search projects",
       "tags": "Tags"
+    },
+    "registration": {
+      "confirm": "Register project",
+      "description": "Choose a project root to create a local management record only. SkillHub will not import Skills or write project files.",
+      "failed": "This project could not be registered.",
+      "name": "Project name",
+      "pickDirectory": "Choose project directory",
+      "pickFailed": "The directory picker could not be opened.",
+      "title": "Register local project"
     },
     "drawer": {
       "identity": "Project location",

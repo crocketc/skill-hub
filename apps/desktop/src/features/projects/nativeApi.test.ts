@@ -75,3 +75,44 @@ it("loads portable shared requirements for project detail", async () => {
     },
   }));
 });
+
+it("registers a selected local directory without writing a shared project config", async () => {
+  execute.mockResolvedValue({
+    type: "project",
+    payload: {
+      id: "project-aurora",
+      name: "Aurora",
+      device_path: "D:/Work/Aurora",
+      physical_id: "fs:project-aurora",
+      logical: { identity_hint: null, note: null },
+      tags: [{ name: "Desktop" }],
+      created_at: "2026-09-05T00:00:00Z",
+      updated_at: "2026-09-05T00:00:00Z",
+    },
+  });
+
+  await expect(nativeProjectFacade.register({
+    id: "project-aurora",
+    name: "Aurora",
+    path: "D:/Work/Aurora",
+    tags: ["Desktop"],
+  })).resolves.toEqual(expect.objectContaining({
+    id: "project-aurora",
+    name: "Aurora",
+    tags: ["Desktop"],
+  }));
+
+  expect(execute).toHaveBeenCalledWith({
+    type: "register_project",
+    payload: {
+      project: expect.objectContaining({
+        id: "project-aurora",
+        name: "Aurora",
+        device_path: "D:/Work/Aurora",
+        logical: { identity_hint: null, note: null },
+        physical_id: "",
+        tags: [{ name: "Desktop" }],
+      }),
+    },
+  });
+});

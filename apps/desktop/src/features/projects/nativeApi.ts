@@ -1,5 +1,5 @@
 import { executeCommand, queryApplication, type Project } from "../../api/bindings";
-import type { ProjectFacade, ProjectView } from "./api";
+import type { ProjectFacade, ProjectRegistration, ProjectView } from "./api";
 
 function projectView(project: Project): ProjectView {
   return {
@@ -45,5 +45,25 @@ export const nativeProjectFacade: ProjectFacade = {
       }
     }
     return project;
+  },
+  async register(input: ProjectRegistration) {
+    const timestamp = new Date().toISOString();
+    const result = await executeCommand({
+      type: "register_project",
+      payload: {
+        project: {
+          id: input.id,
+          name: input.name,
+          device_path: input.path,
+          physical_id: "",
+          logical: { identity_hint: null, note: null },
+          tags: input.tags.map((name) => ({ name })),
+          created_at: timestamp,
+          updated_at: timestamp,
+        },
+      },
+    });
+    if (result.type !== "project") throw new Error("register_project returned an unexpected native result.");
+    return projectView(result.payload);
   },
 };

@@ -266,6 +266,9 @@
     }
   },
   "projects": {
+    "actions": {
+      "register": "注册项目"
+    },
     "eyebrow": "项目工作区",
     "title": "项目",
     "description": "用扁平的标签视图组织项目共享的 Skill 要求。",
@@ -276,6 +279,15 @@
       "label": "项目筛选",
       "search": "搜索项目",
       "tags": "标签"
+    },
+    "registration": {
+      "confirm": "确认注册",
+      "description": "选择项目根目录后，SkillHub 只建立本机管理记录，不会导入 Skill 或写入项目文件。",
+      "failed": "无法注册此项目。",
+      "name": "项目名称",
+      "pickDirectory": "选择项目目录",
+      "pickFailed": "无法打开目录选择器。",
+      "title": "注册本地项目"
     },
     "drawer": {
       "identity": "项目位置",

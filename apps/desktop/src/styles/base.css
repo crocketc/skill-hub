@@ -3755,6 +3755,63 @@ a {
   color: var(--color-text-muted);
 }
 
+.sh-project-list__header {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+}
+
+.sh-project-registration {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-5);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface-raised);
+  box-shadow: var(--shadow-sm);
+}
+
+.sh-project-registration h2,
+.sh-project-registration p {
+  margin: 0;
+}
+
+.sh-project-registration > label {
+  display: grid;
+  gap: var(--space-2);
+  max-width: 28rem;
+}
+
+.sh-project-registration > label > span {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+  font-weight: 650;
+}
+
+.sh-project-registration input {
+  width: 100%;
+  min-height: 2.25rem;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+
+.sh-project-registration__path {
+  overflow-wrap: anywhere;
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+}
+
+.sh-project-registration__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
 .sh-project-eyebrow {
   margin: 0 0 var(--space-1) !important;
   color: var(--color-accent-strong) !important;
@@ -4176,6 +4233,10 @@ a {
   }
 
   .sh-project-list__filters {
+    grid-template-columns: 1fr;
+  }
+
+  .sh-project-list__header {
     grid-template-columns: 1fr;
   }
 

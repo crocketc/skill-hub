@@ -22,9 +22,17 @@ export interface ProjectView {
   tags: string[];
 }
 
+export interface ProjectRegistration {
+  id: string;
+  name: string;
+  path: string;
+  tags: string[];
+}
+
 export interface ProjectFacade {
   list(): Promise<ProjectView[]>;
   get(id: string): Promise<ProjectView>;
+  register(input: ProjectRegistration): Promise<ProjectView>;
 }
 
 function unavailable(operation: string): Promise<never> {
@@ -34,6 +42,7 @@ function unavailable(operation: string): Promise<never> {
 export const unavailableProjectFacade: ProjectFacade = {
   get: () => unavailable("project_get"),
   list: () => unavailable("project_list"),
+  register: () => unavailable("project_register"),
 };
 
 export function projectFixture(): ProjectView {
