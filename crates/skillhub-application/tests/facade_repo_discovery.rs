@@ -1,6 +1,8 @@
 use skillhub_application::LocalApplicationFacade;
 use skillhub_core::source::SkillRepo;
-use skillhub_core::{AppCommand, AppCommandResult, AppQuery, AppQueryResult, ApplicationFacade, ErrorCode};
+use skillhub_core::{
+    AppCommand, AppCommandResult, AppQuery, AppQueryResult, ApplicationFacade, ErrorCode,
+};
 use skillhub_storage::Database;
 
 fn repo(owner: &str, name: &str, branch: &str, enabled: bool) -> SkillRepo {
@@ -145,7 +147,10 @@ async fn download_repo_skill_rejects_invalid_coordinates_before_network() {
 #[tokio::test]
 async fn discovery_query_respects_the_network_switch() {
     let database = Database::open_in_memory().expect("database");
-    let mut preferences = database.desktop_settings_repository().get().expect("preferences");
+    let mut preferences = database
+        .desktop_settings_repository()
+        .get()
+        .expect("preferences");
     preferences.network_enabled = false;
     database
         .desktop_settings_repository()
@@ -164,7 +169,10 @@ async fn discovery_query_respects_the_network_switch() {
 #[tokio::test]
 async fn download_repo_skill_respects_the_network_switch() {
     let database = Database::open_in_memory().expect("database");
-    let mut preferences = database.desktop_settings_repository().get().expect("preferences");
+    let mut preferences = database
+        .desktop_settings_repository()
+        .get()
+        .expect("preferences");
     preferences.network_enabled = false;
     database
         .desktop_settings_repository()

@@ -24,8 +24,8 @@ pub use command::{
     RunInitializationScan, RunLlmSafetyCheck, RunRollingBackup, SaveMarkdownContent,
     SaveProjectView, SaveSkillContent, SaveUserTranslationRevision, SavedSkillContent, ScanTargets,
     SetCurrentVersion, SetFindingDisposition, SetLibraryRoot, SetLifecycle, SetMetadata,
-    SetProfileOverride, SetProjectTags, SetTrial, TranslateDescription, UpdateCustomAgent,
-    UpdateProject, VerifyBackup, WriteSharedProjectConfig,
+    SetProfileOverride, SetProjectTags, SetTrial, SetUiPreference, TranslateDescription,
+    UpdateCustomAgent, UpdateProject, VerifyBackup, WriteSharedProjectConfig,
 };
 pub use event::{AppEvent, FactsChanged};
 pub use query::{
@@ -33,14 +33,14 @@ pub use query::{
     CombinationResult, DeploymentTarget, DiffVersions, DiscoverImportCandidates,
     DiscoverRepoSkills, FindingResult, GetBasicCheckResult, GetBootstrapSnapshot, GetCallPolicy,
     GetDeploymentPlan, GetDeploymentRelations, GetDiscoverySnapshot, GetLlmSafetyCheckResult,
-    GetProjectAssemblyPlan, GetReconcilePlan, GetRemovalImpact, GetSkill, ListCombinations,
-    ListCustomAgents, ListDeploymentTargets, ListDeployments, ListFindings, ListMarkdownFiles,
-    ListPendingItems, ListProjects, ListSavedProjectViews, ListSkillRepos, ListSkills,
-    ListVersions, LlmSafetyCheckResult, MarkdownFileContent, MarkdownFileEntry,
-    PreviewProjectDirectory, ProjectDirectoryPreview, ReadMarkdownFile, SearchOnlineSources,
-    SkillDeploymentFilter, SkillLifecycleFilter, SkillListFilters, SkillListItem, SkillListPage,
-    SkillListSort, SkillResult, SkillSortColumn, SkillSortDirection, VersionDiffResult,
-    VersionResult,
+    GetProjectAssemblyPlan, GetReconcilePlan, GetRemovalImpact, GetSkill, GetUiPreference,
+    GetUiPreferenceResult, ListCombinations, ListCustomAgents, ListDeploymentTargets,
+    ListDeployments, ListFindings, ListMarkdownFiles, ListPendingItems, ListProjects,
+    ListSavedProjectViews, ListSkillRepos, ListSkills, ListVersions, LlmSafetyCheckResult,
+    MarkdownFileContent, MarkdownFileEntry, PreviewProjectDirectory, ProjectDirectoryPreview,
+    ReadMarkdownFile, SearchOnlineSources, SkillDeploymentFilter, SkillLifecycleFilter,
+    SkillListFilters, SkillListItem, SkillListPage, SkillListSort, SkillResult, SkillSortColumn,
+    SkillSortDirection, VersionDiffResult, VersionResult,
 };
 
 use crate::AppResult;

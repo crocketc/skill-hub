@@ -3108,6 +3108,16 @@ impl ApplicationFacade for LocalApplicationFacade {
                 return self.pin_project_skill_version(request)
             }
             AppCommand::RelinkSource(request) => return self.relink_source(request),
+            AppCommand::SetUiPreference(request) => {
+                return self.with_database("execute.set_ui_preference", |database| {
+                    database
+                        .ui_preference_repository()
+                        .set(&request.key, &request.value_json)?;
+                    Ok(AppCommandResult::OperationSummary(operation_summary(
+                        "ui_preferences.saved",
+                    )))
+                })
+            }
             AppCommand::AddSkillRepo(request) => return self.add_skill_repo(request),
             AppCommand::RemoveSkillRepo(request) => return self.remove_skill_repo(request),
             AppCommand::DownloadRepoSkill(request) => {
@@ -3291,6 +3301,17 @@ impl ApplicationFacade for LocalApplicationFacade {
                 self.check_application_update(request).await
             }
             AppQuery::SearchOnlineSources(request) => self.search_online_sources(request).await,
+            AppQuery::GetUiPreference(request) => {
+                let value = self.with_database("query.get_ui_preference", |database| {
+                    database.ui_preference_repository().get(&request.key)
+                })?;
+                Ok(AppQueryResult::UiPreference(
+                    skillhub_core::api::GetUiPreferenceResult {
+                        key: request.key,
+                        value_json: value,
+                    },
+                ))
+            }
             AppQuery::ListSkillRepos(_) => self.list_skill_repos(),
             AppQuery::DiscoverRepoSkills(_) => self.discover_repo_skills().await,
             AppQuery::GetBootstrapSnapshot => {

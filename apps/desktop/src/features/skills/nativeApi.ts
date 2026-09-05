@@ -1,4 +1,5 @@
 import {
+  executeCommand,
   queryApplication,
   type AppQueryResult,
   type CheckState as NativeCheckState,
@@ -12,8 +13,10 @@ import {
   type AgentDeployment,
   type CheckState,
   type SkillColumnId,
+  type SkillDrawerPreferences,
   type SkillLibraryFacade,
   type SkillQuickView,
+  type SkillTablePreferences,
   type SkillTableRow,
 } from "./api";
 
@@ -137,6 +140,13 @@ function asQuickView(result: AppQueryResult): SkillQuickView {
 
 /** Real IPC-backed read facade. Mutations and preference persistence remain
  * on the unavailable facade until their native contracts are connected. */
+async function readUiPreference(key: string): Promise<string> {
+  const result = await queryApplication({ type: "get_ui_preference", payload: { key } });
+  if (result.type !== "ui_preference") throw unavailableResult();
+  if (!result.payload.value_json) throw unavailableResult();
+  return result.payload.value_json;
+}
+
 export const nativeSkillLibraryFacade: SkillLibraryFacade = {
   ...unavailableSkillLibraryFacade,
   async listSkills(query) {
@@ -177,6 +187,24 @@ export const nativeSkillLibraryFacade: SkillLibraryFacade = {
       if (error instanceof SkillLibraryUnavailableError) throw error;
       throw unavailableResult();
     }
+  },
+  async loadTablePreferences() {
+    return JSON.parse(await readUiPreference("table_preferences")) as SkillTablePreferences;
+  },
+  async saveTablePreferences(preferences) {
+    await executeCommand({
+      type: "set_ui_preference",
+      payload: { key: "table_preferences", value_json: JSON.stringify(preferences) },
+    });
+  },
+  async loadDrawerPreferences() {
+    return JSON.parse(await readUiPreference("drawer_preferences")) as SkillDrawerPreferences;
+  },
+  async saveDrawerPreferences(preferences) {
+    await executeCommand({
+      type: "set_ui_preference",
+      payload: { key: "drawer_preferences", value_json: JSON.stringify(preferences) },
+    });
   },
   async getSkillQuickView(skillId) {
     try {

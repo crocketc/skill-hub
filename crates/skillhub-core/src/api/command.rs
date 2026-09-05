@@ -472,6 +472,14 @@ pub struct SetLibraryRoot {
     pub path: String,
 }
 
+/// Stores a UI preference value (raw JSON) under a non-empty key.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct SetUiPreference {
+    pub key: String,
+    pub value_json: String,
+}
+
 /// Adds or replaces a GitHub repo entry (upsert on owner+name). Empty branch
 /// or "HEAD" is the default-branch sentinel.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
@@ -689,6 +697,8 @@ pub enum AppCommand {
     CompleteOnboarding(CompleteOnboarding),
     #[serde(rename = "set_library_root")]
     SetLibraryRoot(SetLibraryRoot),
+    #[serde(rename = "set_ui_preference")]
+    SetUiPreference(SetUiPreference),
     #[serde(rename = "add_skill_repo")]
     AddSkillRepo(AddSkillRepo),
     #[serde(rename = "remove_skill_repo")]

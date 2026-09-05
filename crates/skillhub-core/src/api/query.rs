@@ -251,6 +251,13 @@ pub struct SearchOnlineSources {
     pub query: SourceSearchQuery,
 }
 
+/// Reads a UI preference value (raw JSON) by key; absent keys return null.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct GetUiPreference {
+    pub key: String,
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 pub struct ListSkillRepos;
 
@@ -506,6 +513,8 @@ pub enum AppQuery {
     DiscoverImportCandidates(DiscoverImportCandidates),
     #[serde(rename = "search_online_sources")]
     SearchOnlineSources(SearchOnlineSources),
+    #[serde(rename = "get_ui_preference")]
+    GetUiPreference(GetUiPreference),
     #[serde(rename = "list_skill_repos")]
     ListSkillRepos(ListSkillRepos),
     #[serde(rename = "discover_repo_skills")]
@@ -538,6 +547,14 @@ pub enum AppQuery {
     ListFindings(ListFindings),
     #[serde(rename = "get_project_assembly_plan")]
     GetProjectAssemblyPlan(GetProjectAssemblyPlan),
+}
+
+/// A single UI preference entry (raw JSON payload stored verbatim).
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct GetUiPreferenceResult {
+    pub key: String,
+    pub value_json: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
@@ -589,6 +606,8 @@ pub enum AppQueryResult {
     ImportCandidates(Vec<ImportCandidate>),
     #[serde(rename = "source_search_page")]
     SourceSearchPage(SourceSearchPage),
+    #[serde(rename = "ui_preference")]
+    UiPreference(crate::GetUiPreferenceResult),
     #[serde(rename = "skill_repos")]
     SkillRepos(Vec<crate::source::SkillRepo>),
     #[serde(rename = "repo_discovery_report")]
