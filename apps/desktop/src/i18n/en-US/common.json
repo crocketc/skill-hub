@@ -404,7 +404,19 @@
     "step": "Step {{current}} of 3",
     "themeDescription": "Choose an interface color. Selection previews immediately and is saved when you continue.",
     "themeTitle": "Choose an interface theme",
-    "unavailable": "Unavailable"
+    "unavailable": "Unavailable",
+    "branchTitle": "Choose how to initialize",
+    "branchDescription": "The library can start in three ways: create a new empty library, reuse an existing library, or restore from a backup.",
+    "createLibrary": "Create a new library",
+    "useExistingLibrary": "Use an existing library",
+    "restoreBackup": "Restore from a backup",
+    "restoreTitle": "Restore the library from a backup",
+    "restoreDescription": "Pick a backup directory for a read-only preview. Skills are restored only after you confirm; nothing is changed until then.",
+    "selectBackupDirectory": "Select backup directory",
+    "restoreFoundSkills": "{{n}} restorable skills found",
+    "restoreNoSkills": "No restorable skills",
+    "restoreAndContinue": "Restore and continue",
+    "restoreBack": "Back"
   },
   "theme": {
     "choiceLabel": "Theme colors",

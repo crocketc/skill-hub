@@ -404,7 +404,19 @@
     "step": "第 {{current}} 步，共 3 步",
     "themeDescription": "选择你偏好的界面颜色。选中后会立即预览，并在继续时保存。",
     "themeTitle": "选择界面主题",
-    "unavailable": "不可用"
+    "unavailable": "不可用",
+    "branchTitle": "选择初始化方式",
+    "branchDescription": "集中库可以通过三种方式开始：新建空库、复用已有集中库，或从备份恢复。",
+    "createLibrary": "新建集中库",
+    "useExistingLibrary": "使用已有集中库",
+    "restoreBackup": "从备份恢复",
+    "restoreTitle": "从备份恢复集中库",
+    "restoreDescription": "选择一个备份目录进行只读预览。只有在你确认后才会恢复技能，恢复前不会修改现有目录。",
+    "selectBackupDirectory": "选择备份目录",
+    "restoreFoundSkills": "发现 {{n}} 个可恢复技能",
+    "restoreNoSkills": "没有可恢复的技能",
+    "restoreAndContinue": "恢复并继续",
+    "restoreBack": "返回"
   },
   "theme": {
     "choiceLabel": "主题颜色",

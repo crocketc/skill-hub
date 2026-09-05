@@ -10,12 +10,15 @@ import {
   type OnboardingOperations,
   desktopOnboardingOperations,
 } from "../bootstrap/api";
+import { BranchSelection, type InitializationBranch } from "./BranchSelection";
 import { CompatibilityStep } from "./CompatibilityStep";
 import { LibraryStep } from "./LibraryStep";
+import { RestoreStep } from "./RestoreStep";
 import { ScanStep } from "./ScanStep";
 import type { ThemeName } from "../../styles/theme";
 
 interface OnboardingWizardProps {
+  initialBranch?: "create" | "select";
   libraryPath?: string;
   onComplete?: () => void;
   onOpenImport?: (roots: string[]) => void;
@@ -45,6 +48,7 @@ function nativeErrorCode(error: unknown): string | null {
 }
 
 export function OnboardingWizard({
+  initialBranch = "create",
   libraryPath,
   onComplete,
   onOpenImport,
@@ -54,6 +58,9 @@ export function OnboardingWizard({
   theme = "moss-neutral",
 }: OnboardingWizardProps) {
   const { t } = useTranslation();
+  const [branch, setBranch] = useState<InitializationBranch | null>(
+    initialBranch === "select" ? null : "create",
+  );
   const [step, setStep] = useState(0);
   const [compatibilityConfirmed, setCompatibilityConfirmed] = useState(false);
   const [isDiscovering, setIsDiscovering] = useState(false);
@@ -206,6 +213,36 @@ export function OnboardingWizard({
           <h1>{t("onboarding.finishedTitle")}</h1>
           <p>{t("onboarding.finishedDescription")}</p>
         </section>
+      </main>
+    );
+  }
+
+  if (branch === null) {
+    return (
+      <main className="sh-onboarding">
+        <div className="sh-onboarding__frame">
+          <header className="sh-onboarding__header">
+            <p>{t("onboarding.eyebrow")}</p>
+          </header>
+          <BranchSelection onSelect={(selected) => { setBranch(selected); setStep(0); }} />
+        </div>
+      </main>
+    );
+  }
+
+  if (branch === "restore") {
+    return (
+      <main className="sh-onboarding">
+        <div className="sh-onboarding__frame">
+          <header className="sh-onboarding__header">
+            <p>{t("onboarding.eyebrow")}</p>
+          </header>
+          <RestoreStep
+            operations={operations}
+            onBack={() => setBranch(null)}
+            onComplete={() => void complete(false)}
+          />
+        </div>
       </main>
     );
   }

@@ -3,8 +3,12 @@ import {
   queryApplication,
   type BootstrapSnapshot,
   type OperationPhase,
+  type RestoreDecision,
+  type RestorePlan,
+  type RestoreResult,
   type ScanResult,
 } from "../../api/bindings";
+import { desktopDirectoryPicker } from "../../platform/directoryPicker";
 
 export type BootstrapVerificationState =
   | { kind: "unavailable" }
@@ -36,6 +40,9 @@ export interface CompleteOnboardingInput {
 export interface OnboardingOperations {
   completeOnboarding: (input: CompleteOnboardingInput) => Promise<void>;
   discoverAgents: () => Promise<CompatibilityDiscoveryResult>;
+  prepareRestore?: (path: string) => Promise<RestorePlan>;
+  commitRestore?: (path: string, decisions: RestoreDecision[]) => Promise<RestoreResult>;
+  pickDirectory?: () => Promise<string | null>;
 }
 
 export interface CompatibilityTarget {
@@ -100,6 +107,26 @@ export const desktopOnboardingOperations: OnboardingOperations = {
     return {
       targets: [...logicalTargets, ...instancesWithoutTargets],
     };
+  },
+  async prepareRestore(path) {
+    const result = await executeCommand({ type: "prepare_restore", payload: { path } });
+    if (result.type !== "restore_plan") {
+      throw new Error("Unexpected restore plan response from the native application.");
+    }
+    return result.payload;
+  },
+  async commitRestore(path, decisions) {
+    const result = await executeCommand({
+      type: "commit_restore",
+      payload: { path, decisions },
+    });
+    if (result.type !== "restore_result") {
+      throw new Error("Unexpected restore result response from the native application.");
+    }
+    return result.payload;
+  },
+  async pickDirectory() {
+    return desktopDirectoryPicker.pickDirectory();
   },
 };
 

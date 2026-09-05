@@ -52,6 +52,7 @@ function OnboardingRoute() {
   const { resolvedTheme, setAppearance } = useTheme();
   return (
     <OnboardingWizard
+      initialBranch="select"
       onThemeChange={(theme) => {
         setAppearance(theme);
         void nativeSettingsFacade.execute({ type: "set_theme", payload: { theme } });
