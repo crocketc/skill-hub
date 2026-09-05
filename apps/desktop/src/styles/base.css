@@ -4325,3 +4325,71 @@ a {
     padding-block: 0;
   }
 }
+
+/* 全局操作指示器（后台导入等，跨路由存续） */
+.sh-operation-indicator {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0 var(--space-5) var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-raised);
+  color: var(--color-text-secondary);
+  font-size: 0.875rem;
+}
+
+.sh-operation-indicator__row {
+  margin: 0;
+}
+
+.sh-operation-indicator__row a {
+  color: var(--color-info);
+  text-decoration: underline;
+}
+
+.sh-data-state__hint {
+  color: var(--color-text-secondary);
+  font-size: 0.875rem;
+}
+
+/* 恢复页双页签（操作记录 / 备份恢复） */
+.sh-tabs {
+  display: flex;
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
+}
+
+.sh-tabs__tab {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-2) var(--space-4);
+  background: var(--color-surface-raised);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+}
+
+.sh-tabs__tab[aria-selected="true"] {
+  background: var(--color-info-soft);
+  color: var(--color-info);
+  border-color: var(--color-info);
+}
+
+.sh-operations-list ul {
+  display: grid;
+  gap: var(--space-2);
+  padding: 0;
+  margin: var(--space-2) 0 0;
+  list-style: none;
+}
+
+.sh-operations-list__row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  align-items: baseline;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-surface-raised);
+}

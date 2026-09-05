@@ -3,14 +3,15 @@ import userEvent from "@testing-library/user-event";
 import { I18nextProvider } from "react-i18next";
 import { expect, it, vi } from "vitest";
 import { createSkillHubI18n } from "../../i18n";
+import { createOperationTracker } from "../../platform/operationTracker";
 import { createMockImportFacade } from "./api";
 import { ImportWizard } from "./ImportWizard";
 
-async function renderWizard(facade = createMockImportFacade({ scenario: "safe-local" })) {
+async function renderWizard(facade = createMockImportFacade({ scenario: "safe-local" }), tracker?: ReturnType<typeof createOperationTracker>) {
   const i18n = await createSkillHubI18n(["zh-CN"]);
   render(
     <I18nextProvider i18n={i18n}>
-      <ImportWizard facade={facade} />
+      <ImportWizard facade={facade} tracker={tracker} />
     </I18nextProvider>,
   );
   return facade;
@@ -160,6 +161,52 @@ it("requires a fresh conflict decision when retrying an import", async () => {
   expect(screen.getByRole("button", { name: "提交导入" })).toBeDisabled();
   await user.click(screen.getByRole("radio", { name: "跳过此候选项" }));
   expect(screen.getByRole("button", { name: "提交导入" })).toBeEnabled();
+});
+
+async function renderWithTracker(facade: ReturnType<typeof createMockImportFacade>, tracker: ReturnType<typeof createOperationTracker>) {
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  return render(
+    <I18nextProvider i18n={i18n}>
+      <ImportWizard facade={facade} tracker={tracker} />
+    </I18nextProvider>,
+  );
+}
+
+it("keeps the commit running in the global tracker after the wizard unmounts", async () => {
+  const user = userEvent.setup();
+  const tracker = createOperationTracker();
+  const facade = createMockImportFacade({ scenario: "safe-local" });
+  let release!: (results: Awaited<ReturnType<typeof facade.commitImport>>) => void;
+  const pending = new Promise<Awaited<ReturnType<typeof facade.commitImport>>>((resolve) => {
+    release = resolve;
+  });
+  facade.commitImport = vi.fn(async (plan, _actions, onProgress) => {
+    onProgress?.({ candidateId: plan.candidates[0]?.id ?? "", completed: 1, total: plan.candidates.length });
+    return pending;
+  });
+  const { unmount } = await renderWithTracker(facade, tracker);
+
+  await user.type(screen.getByLabelText("来源"), "C:/incoming");
+  await user.click(screen.getByRole("button", { name: "解析来源" }));
+  await user.click(await screen.findByRole("button", { name: "继续选择候选" }));
+  await user.click(screen.getByRole("button", { name: "全选可导入候选" }));
+  await user.click(screen.getByRole("button", { name: "分析冲突" }));
+  await user.click(await screen.findByRole("button", { name: "提交导入" }));
+
+  // 提交期间离开页面（卸载向导）
+  unmount();
+  await act(async () => {
+    release([
+      { candidateId: "c1", action: "copy", status: "succeeded", message: "ok" },
+      { candidateId: "c2", action: "skip", status: "skipped", message: "dup" },
+    ]);
+  });
+
+  const [operation] = tracker.getSnapshot();
+  expect(operation.kind).toBe("import");
+  expect(operation.status).toBe("completed");
+  expect(operation.completed).toBe(operation.total);
+  expect(operation.resultSummary).toEqual({ succeeded: 1, failed: 0, skipped: 1 });
 });
 
 it("shows candidate progress while commit is in flight", async () => {

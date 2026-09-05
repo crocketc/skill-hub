@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import { Button } from "../ui/Button";
 import { Sidebar } from "./Sidebar";
+import { OperationIndicator } from "./OperationIndicator";
 import type { BootstrapVerificationState } from "../features/bootstrap/api";
 
 interface AppShellProps {
@@ -132,6 +133,7 @@ export function AppShell({ snapshot, verification }: AppShellProps) {
         <main className="sh-app-shell__content">
           <Outlet context={snapshot} />
         </main>
+        <OperationIndicator />
       </section>
     </div>
   );

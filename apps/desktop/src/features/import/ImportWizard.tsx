@@ -24,6 +24,11 @@ import {
   normalizeWindowsPath,
   type DirectoryPicker,
 } from "../../platform/directoryPicker";
+import {
+  operationTracker,
+  type OperationTracker,
+  type TrackedResultSummary,
+} from "../../platform/operationTracker";
 
 type WizardPhase =
   | "source"
@@ -150,6 +155,8 @@ export interface ImportWizardProps {
   initialSources?: string[];
   initialSourceText?: string;
   importGuide?: string;
+  /** 全局操作跟踪；测试可注入独立实例，默认模块级单例（跨路由存续）。 */
+  tracker?: OperationTracker;
   onComplete?: (results: ImportResult[]) => void;
   onOpenLibrary?: () => void;
 }
@@ -160,6 +167,7 @@ export function ImportWizard({
   initialSources = [],
   initialSourceText = "",
   importGuide,
+  tracker = operationTracker,
   onComplete,
   onOpenLibrary = () => undefined,
 }: ImportWizardProps) {
@@ -250,16 +258,35 @@ export function ImportWizard({
   const commit = async () => {
     if (!state.plan) return;
     const operation = ++operationRef.current;
-    dispatch({ type: "commit_started", total: state.plan.candidates.length });
+    const total = state.plan.candidates.length;
+    dispatch({ type: "commit_started", total });
+    // 提交循环挂在全局 tracker 上：用户离开本页（组件卸载）后循环继续，
+    // 进度与结果通过全局指示器可见（验收反馈 #12）。
+    const trackedId = tracker.begin({
+      kind: "import",
+      label: t("importWorkflow.tracker.label"),
+      total,
+    });
     try {
       const results = await facade.commitImport(state.plan, state.actions, (progress) => {
+        tracker.progress(trackedId, progress.completed, progress.total);
         if (operation === operationRef.current) dispatch({ type: "commit_progress", progress });
       });
+      const summary: TrackedResultSummary = {
+        succeeded: results.filter((result) => result.status === "succeeded").length,
+        failed: results.filter((result) => result.status === "failed").length,
+        skipped: results.filter((result) => result.status === "skipped").length,
+      };
+      tracker.complete(trackedId, summary);
       if (operation === operationRef.current) {
         dispatch({ type: "commit_succeeded", results });
         onComplete?.(results);
       }
     } catch (error) {
+      tracker.fail(
+        trackedId,
+        error instanceof Error ? error.message : t("importWorkflow.errors.unknown"),
+      );
       if (operation === operationRef.current) {
         dispatch({ type: "failed", error: error instanceof Error ? error.message : t("importWorkflow.errors.unknown"), previousPhase: "conflicts" });
       }
@@ -352,6 +379,7 @@ export function ImportWizard({
           <DataState
             message={state.commitProgress ? t("importWorkflow.phases.committingProgress", { ...state.commitProgress }) : t("importWorkflow.phases.committing")}
             state="loading"
+            hint={t("importWorkflow.phases.committingBackgroundHint")}
           />
         ) : null}
 
