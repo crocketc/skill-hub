@@ -28,6 +28,16 @@ interface OnboardingWizardProps {
   theme?: ThemeName;
 }
 
+/**
+ * Snapshot taken when onboarding commits. The summary page renders from this
+ * so it can state honestly what ran (and what did not) instead of showing
+ * fabricated zero counts.
+ */
+interface CompletionSnapshot {
+  branch: InitializationBranch;
+  skipped: boolean;
+}
+
 function nativeErrorCode(error: unknown): string | null {
   if (typeof error === "string") {
     try {
@@ -72,6 +82,7 @@ export function OnboardingWizard({
   const [selectionConfirmed, setSelectionConfirmed] = useState(false);
   const [targets, setTargets] = useState<CompatibilityTarget[] | null>(null);
   const [completionState, setCompletionState] = useState<"idle" | "pending" | "complete">("idle");
+  const [completionSnapshot, setCompletionSnapshot] = useState<CompletionSnapshot | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [nativeLibraryPath, setNativeLibraryPath] = useState(libraryPath);
   const [customLibraryPath, setCustomLibraryPath] = useState<string | null>(null);
@@ -141,7 +152,9 @@ export function OnboardingWizard({
     return () => window.clearTimeout(timer);
   }, [isScanning, scanInBackground]);
 
-  const complete = async (skipped: boolean, afterComplete?: () => void) => {
+  // Completion stays on the summary page; the user explicitly enters the app
+  // or the import flow from there, so nothing jumps away automatically.
+  const complete = async (skipped: boolean) => {
     if (!nativeLibraryPath || completionState !== "idle") {
       return;
     }
@@ -149,8 +162,8 @@ export function OnboardingWizard({
     setMessage(null);
     try {
       await operations.completeOnboarding({ libraryPath: nativeLibraryPath, skipped });
+      setCompletionSnapshot({ branch: branch ?? "create", skipped });
       setCompletionState("complete");
-      (afterComplete ?? onComplete)?.();
     } catch {
       setCompletionState("idle");
       showError();
@@ -207,7 +220,6 @@ export function OnboardingWizard({
         : false;
 
   const scannedRoots = scanState?.kind === "completed" ? scanState.result.roots : [];
-  const shouldOpenImport = Boolean(onOpenImport && scannedRoots.length > 0);
 
   const activeStep =
     step === 0 ? (
@@ -249,11 +261,50 @@ export function OnboardingWizard({
     );
 
   if (completionState === "complete") {
+    const summary = completionSnapshot;
+    const restoreSummary = summary?.branch === "restore";
+    const scanResult = scanState?.kind === "completed" ? scanState.result : null;
     return (
       <main className="sh-onboarding">
         <section aria-live="polite" className="sh-onboarding__card">
           <h1>{t("onboarding.finishedTitle")}</h1>
           <p>{t("onboarding.finishedDescription")}</p>
+          {summary && !restoreSummary && summary.skipped ? (
+            <p className="sh-onboarding__message">{t("onboarding.summary.initSkipped")}</p>
+          ) : null}
+          {summary && !restoreSummary && !summary.skipped ? (
+            <div className="sh-onboarding__scan-stats">
+              {targets !== null ? (
+                <span>
+                  {t("onboarding.summary.targets", { count: targets.length, selected: selectedTargetIds.length })}
+                </span>
+              ) : null}
+              {scanResult ? (
+                <>
+                  <span>{t("onboarding.summary.scanRoots", { count: scanResult.roots.length })}</span>
+                  <span>{t("onboarding.summary.discovered", { count: scanResult.discovered.length })}</span>
+                  <span>
+                    {t("onboarding.summary.skipped", {
+                      count: scanResult.unchanged_count + scanResult.errors.length,
+                    })}
+                  </span>
+                </>
+              ) : null}
+            </div>
+          ) : null}
+          {summary && !restoreSummary && !summary.skipped && !scanResult ? (
+            <p className="sh-onboarding__message">
+              {scanState?.kind === "in_progress"
+                ? t("onboarding.summary.scanInProgress")
+                : t("onboarding.summary.scanSkipped")}
+            </p>
+          ) : null}
+          {onOpenImport && scannedRoots.length > 0 ? (
+            <Button onClick={() => onOpenImport(scannedRoots)} variant="secondary">
+              {t("onboarding.summary.openImport")}
+            </Button>
+          ) : null}
+          <Button onClick={() => onComplete?.()}>{t("onboarding.summary.enterApp")}</Button>
         </section>
       </main>
     );
@@ -325,9 +376,9 @@ export function OnboardingWizard({
             <>
               <Button
                 disabled={completionState !== "idle" || !nativeLibraryPath}
-                onClick={() => void complete(false, shouldOpenImport ? () => onOpenImport?.(scannedRoots) : undefined)}
+                onClick={() => void complete(false)}
               >
-                {t(shouldOpenImport ? "onboarding.scanOpenImport" : "onboarding.finish")}
+                {t("onboarding.finish")}
               </Button>
               <Button disabled={completionState !== "idle" || !nativeLibraryPath} onClick={() => void complete(false)} variant="secondary">
                 {t("onboarding.skipScan")}

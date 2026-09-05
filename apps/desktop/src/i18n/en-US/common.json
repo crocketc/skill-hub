@@ -452,6 +452,17 @@
     "selectionConfirmation": "I understand selected targets are only used for a read-only scan and will not deploy skills",
     "startReadOnlyScan": "Start read-only scan",
     "step": "Step {{current}} of 3",
+    "summary": {
+      "discovered": "Skills discovered: {{count}}",
+      "enterApp": "Go to SkillHub",
+      "initSkipped": "Initialization skipped: no Agents were discovered and no directories were scanned.",
+      "openImport": "Open batch import",
+      "scanInProgress": "The scan is still running in the background. The preview appears in Discover when it finishes.",
+      "scanRoots": "Scanned source directories: {{count}}",
+      "scanSkipped": "Scan skipped: no source directories were scanned and no existing skills were read.",
+      "skipped": "Unchanged or skipped with errors: {{count}}",
+      "targets": "Agents discovered: {{count}} ({{selected}} selected)"
+    },
     "themeDescription": "Choose an interface color. Selection previews immediately and is saved when you continue.",
     "themeTitle": "Choose an interface theme",
     "unavailable": "Unavailable",
@@ -1136,7 +1147,11 @@
       "choose": "Choose sensitive-content handling",
       "sensitive": "Sensitive content in {{skill}}",
       "created": "Backup created at {{path}}",
-      "decisions": { "resolve": "Resolve first", "exclude": "Exclude this Skill", "include": "Include and mark" }
+      "decisions": {
+        "resolve": "Resolve first",
+        "exclude": "Exclude this Skill",
+        "include": "Include and mark"
+      }
     },
     "networkStorage": {
       "eyebrow": "Network storage",

@@ -452,6 +452,17 @@
     "selectionConfirmation": "我确认所选目标只用于只读扫描，不会部署技能",
     "startReadOnlyScan": "开始只读扫描",
     "step": "第 {{current}} 步，共 3 步",
+    "summary": {
+      "discovered": "发现 Skill：{{count}} 个",
+      "enterApp": "进入主界面",
+      "initSkipped": "已跳过初始化：未识别 Agent，也未扫描来源目录。",
+      "openImport": "打开批量导入",
+      "scanInProgress": "扫描仍在后台进行，完成后可在发现中查看预览。",
+      "scanRoots": "扫描来源目录：{{count}} 个",
+      "scanSkipped": "已跳过扫描：本次未扫描任何来源目录，未读取已有技能。",
+      "skipped": "未变化或出错跳过：{{count}} 个",
+      "targets": "识别 Agent：{{count}} 个（已选择 {{selected}} 个）"
+    },
     "themeDescription": "选择你偏好的界面颜色。选中后会立即预览，并在继续时保存。",
     "themeTitle": "选择界面主题",
     "unavailable": "不可用",
@@ -1136,7 +1147,11 @@
       "choose": "选择敏感内容处理方式",
       "sensitive": "{{skill}} 含有敏感内容",
       "created": "备份已创建：{{path}}",
-      "decisions": { "resolve": "先处理敏感内容", "exclude": "排除该 Skill", "include": "包含并标记" }
+      "decisions": {
+        "resolve": "先处理敏感内容",
+        "exclude": "排除该 Skill",
+        "include": "包含并标记"
+      }
     },
     "networkStorage": {
       "eyebrow": "网络存储",
