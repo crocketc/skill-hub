@@ -98,7 +98,9 @@
       "cancelled": "导入已取消"
     },
     "acquisition": {
-      "complete": "找到 {{count}} 个候选项，请先审阅列表。"
+      "complete": "找到 {{count}} 个候选项，请先审阅列表。",
+      "multiSource": "已从 {{count}} 个来源目录获取候选",
+      "perSource": "{{source}}：{{count}} 个候选"
     },
     "cancelled": "获取已取消，来源内容仍然保留。",
     "errors": {
@@ -229,10 +231,15 @@
       "unavailable": "发现快照暂不可用",
       "scanFailed": "扫描失败，请稍后重试",
       "unmanaged": "未纳管 {{count}}",
-      "related": "已有关系 {{count}}",
+      "related": "已关联目录 {{count}}",
       "conflict": "冲突 {{count}}",
-      "suspected": "疑似 {{count}}",
-      "unreadable": "无法读取 {{count}}"
+      "suspected": "疑似重复 {{count}}",
+      "unreadable": "无法读取 {{count}}",
+      "unmanagedHint": "扫描发现、尚未纳入集中库管理的 Skill 数量",
+      "relatedHint": "目录存在、可读写且已与客户端建立关联的目标目录数量",
+      "conflictHint": "目录存在但当前不可用（不可读、不可写或已断开关联）的目标数量",
+      "suspectedHint": "不同位置发现了内容指纹相同的 Skill，可能是重复副本",
+      "unreadableHint": "本次扫描中读取失败或被跳过的路径数量"
     },
     "search": {
       "label": "搜索 skills.sh",
@@ -364,6 +371,7 @@
     }
   },
   "appShell": {
+    "back": "返回",
     "cachedData": "技能库缓存",
     "navigation": "主导航",
     "placeholder": "已显示上次已知的本地数据。详细工作台将在后续功能中提供。",
@@ -391,6 +399,18 @@
     "defaultLocation": "默认集中库位置",
     "discoverAgents": "识别 Agent",
     "selectAllAvailable": "全选可用目标",
+    "brandOther": "其他",
+    "clientKind": {
+      "cli": "命令行",
+      "desktop": "桌面应用",
+      "ide_extension": "IDE 插件",
+      "tui": "终端界面",
+      "headless": "无界面",
+      "acp": "ACP 协议",
+      "web": "网页",
+      "mobile": "移动端",
+      "bot": "机器人"
+    },
     "eyebrow": "初始化",
     "finish": "完成初始化",
     "finishedDescription": "初始化设置已提交。",

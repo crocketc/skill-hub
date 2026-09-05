@@ -1,9 +1,9 @@
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, vi } from "vitest";
 import { skillHubI18n } from "../i18n";
 import { nativeSkillLibraryFacade } from "../features/skills/nativeApi";
 import { sidebarNavigationEnd } from "./Sidebar";
-import { resolveRouteTitleKey } from "./AppShell";
+import { resolveRouteTitleKey, resolveSubRouteFallback } from "./AppShell";
 import { queryClient } from "./queryClient";
 import { appRouter, AppRouter } from "./router";
 import { installDomAbortPrimitives } from "../test-setup";
@@ -213,6 +213,37 @@ it("uses exact matching for the overview link while nested routes own current-pa
   expect(resolveRouteTitleKey("/__preview/skill-detail/skill-pdf")).toBe("navigation.library");
   expect(resolveRouteTitleKey("/projects/project-aurora")).toBe("navigation.projects");
   expect(resolveRouteTitleKey("/recovery")).toBe("navigation.operations");
+});
+
+it("offers a topbar back target for sub-routes and none for main tabs", () => {
+  expect(resolveSubRouteFallback("/agents/openai.codex-cli")).toBe("/agents");
+  expect(resolveSubRouteFallback("/projects/project-aurora")).toBe("/projects");
+  expect(resolveSubRouteFallback("/library/skill-pdf/deploy")).toBe("/library");
+  expect(resolveSubRouteFallback("/deploy")).toBe("/library");
+  expect(resolveSubRouteFallback("/library/skill-pdf/security")).toBe("/library");
+  expect(resolveSubRouteFallback("/operations/op-1")).toBe("/operations");
+  expect(resolveSubRouteFallback("/settings/data-protection")).toBe("/settings");
+  expect(resolveSubRouteFallback("/agents")).toBeNull();
+  expect(resolveSubRouteFallback("/library")).toBeNull();
+  expect(resolveSubRouteFallback("/settings")).toBeNull();
+  expect(resolveSubRouteFallback("/")).toBeNull();
+  expect(resolveSubRouteFallback("/initialize")).toBeNull();
+});
+
+it("renders a topbar back button on sub-routes that returns to the parent tab", async () => {
+  mockBrowserPreferences();
+  await skillHubI18n.changeLanguage("zh-CN");
+
+  await appRouter.navigate("/settings");
+  await appRouter.navigate("/settings/data-protection");
+  render(<AppRouter />);
+
+  const back = await screen.findByRole("button", { name: "返回" });
+  await act(async () => {
+    fireEvent.click(back);
+  });
+
+  await waitFor(() => expect(appRouter.state.location.pathname).toBe("/settings"));
 });
 
 it("keeps shell titles for filtered agent and project deployment destinations", async () => {

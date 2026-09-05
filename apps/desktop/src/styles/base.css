@@ -522,6 +522,19 @@ a {
   font-size: var(--font-size-md);
 }
 
+.sh-app-shell__topbar-start {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.sh-app-shell__topbar-start h1 {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .sh-app-shell__verification {
   color: var(--color-text-muted);
   font-size: var(--font-size-xs);
@@ -531,7 +544,7 @@ a {
   display: grid;
   min-height: 0;
   gap: var(--space-4);
-  overflow-y: hidden;
+  overflow-y: auto;
   padding: var(--space-5);
   scrollbar-gutter: stable;
 }
@@ -951,6 +964,27 @@ a {
   margin-top: var(--space-5);
   padding-top: var(--space-4);
   border-top: 1px solid var(--color-border);
+}
+
+.sh-onboarding__brand-group {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  margin: 0 0 var(--space-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-muted);
+}
+
+.sh-onboarding__brand {
+  margin: 0;
+  font-weight: 700;
+  font-size: var(--font-size-sm);
+}
+
+.sh-onboarding__kind {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
 }
 
 .sh-onboarding__scan-preview {

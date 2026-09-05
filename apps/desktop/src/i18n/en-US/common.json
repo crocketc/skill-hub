@@ -98,7 +98,9 @@
       "cancelled": "Import cancelled"
     },
     "acquisition": {
-      "complete": "Found {{count}} candidate(s). Review the list before continuing."
+      "complete": "Found {{count}} candidate(s). Review the list before continuing.",
+      "multiSource": "Acquired candidates from {{count}} source directories",
+      "perSource": "{{source}}: {{count}} candidate(s)"
     },
     "cancelled": "Acquisition was cancelled. Your source is still here.",
     "errors": {
@@ -229,10 +231,15 @@
       "unavailable": "Discovery snapshot is unavailable",
       "scanFailed": "Scan failed. Please try again later.",
       "unmanaged": "Unmanaged {{count}}",
-      "related": "Related {{count}}",
+      "related": "Linked targets {{count}}",
       "conflict": "Conflicts {{count}}",
-      "suspected": "Suspected {{count}}",
-      "unreadable": "Unreadable {{count}}"
+      "suspected": "Suspected duplicates {{count}}",
+      "unreadable": "Unreadable {{count}}",
+      "unmanagedHint": "Skills found by the scan that are not managed in the central library yet",
+      "relatedHint": "Target directories that exist, are readable/writable, and are linked to a client",
+      "conflictHint": "Target directories that exist but are currently unavailable (unreadable, unwritable, or unlinked)",
+      "suspectedHint": "Skills with identical content fingerprints found in different locations, likely duplicates",
+      "unreadableHint": "Paths that failed to read or were skipped during this scan"
     },
     "search": {
       "label": "Search skills.sh",
@@ -364,6 +371,7 @@
     }
   },
   "appShell": {
+    "back": "Back",
     "cachedData": "Cached skill library",
     "navigation": "Main navigation",
     "placeholder": "The last known local data is shown. Detailed workspaces will be available in later features.",
@@ -391,6 +399,18 @@
     "defaultLocation": "Default library location",
     "discoverAgents": "Discover agents",
     "selectAllAvailable": "Select all available targets",
+    "brandOther": "Other",
+    "clientKind": {
+      "cli": "CLI",
+      "desktop": "Desktop app",
+      "ide_extension": "IDE extension",
+      "tui": "Terminal UI",
+      "headless": "Headless",
+      "acp": "ACP protocol",
+      "web": "Web",
+      "mobile": "Mobile",
+      "bot": "Bot"
+    },
     "eyebrow": "Initialization",
     "finish": "Finish initialization",
     "finishedDescription": "Initialization settings were submitted.",

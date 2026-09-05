@@ -1,7 +1,8 @@
 import type { BootstrapSnapshot } from "../api/bindings";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Outlet, useLocation } from "react-router-dom";
+import { Outlet, useLocation, useNavigate } from "react-router-dom";
+import { Button } from "../ui/Button";
 import { Sidebar } from "./Sidebar";
 import type { BootstrapVerificationState } from "../features/bootstrap/api";
 
@@ -56,13 +57,53 @@ export function resolveRouteTitleKey(pathname: string): RouteTitleKey {
   return "navigation.overview";
 }
 
+/**
+ * Returns the parent tab for sub-routes reached from a main navigation tab,
+ * or null when the route already is a main tab (no back affordance needed).
+ */
+export function resolveSubRouteFallback(pathname: string): string | null {
+  if (pathname.startsWith("/library/") && pathname.endsWith("/deploy")) {
+    return "/library";
+  }
+  if (pathname.startsWith("/library/") && pathname.endsWith("/security")) {
+    return "/library";
+  }
+  if (pathname === "/deploy") {
+    return "/library";
+  }
+  if (pathname.startsWith("/agents/")) {
+    return "/agents";
+  }
+  if (pathname.startsWith("/projects/")) {
+    return "/projects";
+  }
+  if (pathname.startsWith("/operations/")) {
+    return "/operations";
+  }
+  if (pathname === "/settings/data-protection") {
+    return "/settings";
+  }
+  return null;
+}
+
 export function AppShell({ snapshot, verification }: AppShellProps) {
   const { t } = useTranslation();
   const { pathname } = useLocation();
+  const navigate = useNavigate();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const title = t(resolveRouteTitleKey(pathname));
   const isSkillDetailRoute =
     pathname.startsWith("/library/") || pathname.startsWith("/__preview/skill-detail/");
+  const backFallback = resolveSubRouteFallback(pathname);
+
+  const goBack = () => {
+    const historyState = window.history.state as { idx?: number } | null;
+    if (typeof historyState?.idx === "number" && historyState.idx > 0) {
+      navigate(-1);
+    } else if (backFallback) {
+      navigate(backFallback);
+    }
+  };
 
   return (
     <div className={`sh-app-shell${sidebarCollapsed ? " is-sidebar-collapsed" : ""}`}>
@@ -73,7 +114,14 @@ export function AppShell({ snapshot, verification }: AppShellProps) {
       <section className={`sh-app-shell__workspace${isSkillDetailRoute ? " is-detail-route" : ""}`}>
         {!isSkillDetailRoute ? (
           <header className="sh-app-shell__topbar">
-            <h1>{title}</h1>
+            <div className="sh-app-shell__topbar-start">
+              {backFallback ? (
+                <Button onClick={goBack} variant="ghost">
+                  {t("appShell.back")}
+                </Button>
+              ) : null}
+              <h1>{title}</h1>
+            </div>
             {verification.kind === "verifying" ? (
               <span className="sh-app-shell__verification" role="status">
                 {t("appShell.verification")}

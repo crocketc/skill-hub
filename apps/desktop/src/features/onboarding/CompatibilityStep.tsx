@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "../../ui/Button";
 import type { CompatibilityTarget } from "../bootstrap/api";
@@ -28,6 +29,19 @@ export function CompatibilityStep({
   onSelectAllAvailable,
 }: CompatibilityStepProps) {
   const { t } = useTranslation();
+  const brandGroups = useMemo(() => {
+    if (!targets) return [];
+    const byBrand = new Map<string, CompatibilityTarget[]>();
+    for (const target of targets) {
+      const key = target.profileId ?? "";
+      const list = byBrand.get(key) ?? [];
+      list.push(target);
+      byBrand.set(key, list);
+    }
+    return [...byBrand.entries()].map(([brand, items]) => ({ brand, items }));
+  }, [targets]);
+  // Grouped rendering only when the snapshot actually carries brand keys.
+  const hasBrands = brandGroups.some((group) => group.brand !== "");
 
   return (
     <section aria-labelledby="compatibility-step-title" className="sh-onboarding__card">
@@ -58,19 +72,32 @@ export function CompatibilityStep({
               {t("onboarding.selectAllAvailable")}
             </Button>
           ) : null}
-          {targets.map((target) => (
-            <label className="sh-onboarding__check" key={target.id}>
-              <input
-                aria-label={target.label}
-                checked={selectedTargetIds.includes(target.id)}
-                disabled={target.availability === "unavailable"}
-                onChange={(event) => onTargetSelectionChange(target.id, event.target.checked)}
-                type="checkbox"
+          {hasBrands ? (
+            brandGroups.map((group) => (
+              <div className="sh-onboarding__brand-group" key={group.brand || "__other"}>
+                <p className="sh-onboarding__brand">
+                  {group.brand || t("onboarding.brandOther")}
+                </p>
+                {group.items.map((target) => (
+                  <TargetCheckbox
+                    key={target.id}
+                    target={target}
+                    selectedTargetIds={selectedTargetIds}
+                    onTargetSelectionChange={onTargetSelectionChange}
+                  />
+                ))}
+              </div>
+            ))
+          ) : (
+            targets.map((target) => (
+              <TargetCheckbox
+                key={target.id}
+                target={target}
+                selectedTargetIds={selectedTargetIds}
+                onTargetSelectionChange={onTargetSelectionChange}
               />
-              {target.label}
-              {target.availability === "unavailable" ? ` (${t("onboarding.unavailable")})` : null}
-            </label>
-          ))}
+            ))
+          )}
         </fieldset>
       ) : null}
       {selectedTargetIds.length > 0 ? (
@@ -85,4 +112,49 @@ export function CompatibilityStep({
       ) : null}
     </section>
   );
+}
+
+function TargetCheckbox({
+  target,
+  selectedTargetIds,
+  onTargetSelectionChange,
+}: {
+  target: CompatibilityTarget;
+  selectedTargetIds: string[];
+  onTargetSelectionChange: (targetId: string, selected: boolean) => void;
+}) {
+  const { t } = useTranslation();
+  const kindKey = target.kind && isClientKind(target.kind)
+    ? (`onboarding.clientKind.${target.kind}` as const)
+    : null;
+  return (
+    <label className="sh-onboarding__check">
+      <input
+        aria-label={target.label}
+        checked={selectedTargetIds.includes(target.id)}
+        disabled={target.availability === "unavailable"}
+        onChange={(event) => onTargetSelectionChange(target.id, event.target.checked)}
+        type="checkbox"
+      />
+      {target.label}
+      {kindKey ? <span className="sh-onboarding__kind">{t(kindKey)}</span> : null}
+      {target.availability === "unavailable" ? ` (${t("onboarding.unavailable")})` : null}
+    </label>
+  );
+}
+
+const clientKindKeys = {
+  cli: true,
+  desktop: true,
+  ide_extension: true,
+  tui: true,
+  headless: true,
+  acp: true,
+  web: true,
+  mobile: true,
+  bot: true,
+} as const;
+
+function isClientKind(kind: string): kind is keyof typeof clientKindKeys {
+  return kind in clientKindKeys;
 }

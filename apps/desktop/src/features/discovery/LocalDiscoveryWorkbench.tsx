@@ -88,11 +88,21 @@ export function LocalDiscoveryWorkbench({ facade }: LocalDiscoveryWorkbenchProps
       {error ? <p role="alert">{error}</p> : null}
       {classification ? (
         <ul className="sh-discovery-workbench__categories">
-          <li>{t("discovery.workbench.unmanaged", { count: classification.unmanaged })}</li>
-          <li>{t("discovery.workbench.related", { count: classification.related })}</li>
-          <li>{t("discovery.workbench.conflict", { count: classification.conflict })}</li>
-          <li>{t("discovery.workbench.suspected", { count: classification.suspected })}</li>
-          <li>{t("discovery.workbench.unreadable", { count: classification.unreadable })}</li>
+          <li title={t("discovery.workbench.unmanagedHint")}>
+            {t("discovery.workbench.unmanaged", { count: classification.unmanaged })}
+          </li>
+          <li title={t("discovery.workbench.relatedHint")}>
+            {t("discovery.workbench.related", { count: classification.related })}
+          </li>
+          <li title={t("discovery.workbench.conflictHint")}>
+            {t("discovery.workbench.conflict", { count: classification.conflict })}
+          </li>
+          <li title={t("discovery.workbench.suspectedHint")}>
+            {t("discovery.workbench.suspected", { count: classification.suspected })}
+          </li>
+          <li title={t("discovery.workbench.unreadableHint")}>
+            {t("discovery.workbench.unreadable", { count: classification.unreadable })}
+          </li>
         </ul>
       ) : null}
     </section>

@@ -27,7 +27,7 @@ export function DiscoveryPage({
   onOpenLibrary,
 }: DiscoveryPageProps) {
   const { t } = useTranslation();
-  const [showImport, setShowImport] = useState(Boolean(initialSourceText));
+  const [showImport, setShowImport] = useState(Boolean(initialSourceText) || initialSources.length > 0);
   const importGuide = initialSources.length > 1
     ? t("discovery.onboardingImportGuideMultiple", { count: initialSources.length })
     : initialSources.length === 1

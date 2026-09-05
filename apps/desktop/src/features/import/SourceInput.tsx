@@ -107,7 +107,7 @@ export function SourceInput({
       ) : null}
 
       <div className="sh-import-source__actions">
-        <Button disabled={disabled || !value.trim()} onClick={onParse}>
+        <Button disabled={disabled || (!value.trim() && selectedSources.length === 0)} onClick={onParse}>
           {actionLabel ?? t("importWorkflow.source.parse")}
         </Button>
       </div>

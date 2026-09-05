@@ -76,6 +76,27 @@ it("acquires candidates from every selected scanned source", async () => {
   expect(screen.getByText("找到 4 个候选项，请先审阅列表。")).toBeVisible();
 });
 
+it("keeps the acquire action available and shows per-source counts when the source box is empty", async () => {
+  const user = userEvent.setup();
+  const facade = createMockImportFacade({ scenario: "safe-local" });
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  render(
+    <I18nextProvider i18n={i18n}>
+      <ImportWizard facade={facade} initialSources={["C:/codex/skills", "C:/claude/skills"]} initialSourceText="" />
+    </I18nextProvider>,
+  );
+
+  expect(screen.getByRole("textbox", { name: "来源" })).toHaveValue("");
+  const acquire = screen.getByRole("button", { name: "读取已选目录候选" });
+  expect(acquire).toBeEnabled();
+  await user.click(acquire);
+
+  expect(facade.calls.acquiredSources).toEqual(["C:/codex/skills", "C:/claude/skills"]);
+  expect(await screen.findByText("已从 2 个来源目录获取候选")).toBeVisible();
+  expect(screen.getByText("C:/codex/skills：2 个候选")).toBeVisible();
+  expect(screen.getByText("C:/claude/skills：2 个候选")).toBeVisible();
+});
+
 it("normalizes every initialization source before displaying and acquiring it", async () => {
   const user = userEvent.setup();
   const facade = createMockImportFacade({ scenario: "safe-local" });

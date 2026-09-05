@@ -124,10 +124,24 @@ it("re-scans and classifies results into the five categories", async () => {
 
   expect(scanTargets).toHaveBeenCalledWith([]);
   await waitFor(() => expect(screen.getByText("未纳管 1")).toBeVisible());
-  expect(screen.getByText("已有关系 1")).toBeVisible();
+  expect(screen.getByText("已关联目录 1")).toBeVisible();
   expect(screen.getByText("冲突 1")).toBeVisible();
-  expect(screen.getByText("疑似 0")).toBeVisible();
+  expect(screen.getByText("疑似重复 0")).toBeVisible();
   expect(screen.getByText("无法读取 1")).toBeVisible();
+});
+
+it("explains each category through tooltips", async () => {
+  render(
+    <I18nextProvider i18n={createSkillHubI18nSync()}>
+      <LocalDiscoveryWorkbench facade={{ getDiscoverySnapshot: async () => snapshot, scanTargets: async () => scanResult, searchOnlineSources: async () => searchPage([]) }} />
+    </I18nextProvider>,
+  );
+
+  await click(await screen.findByRole("button", { name: "重新扫描" }));
+  await waitFor(() => expect(screen.getByText("已关联目录 1")).toBeVisible());
+
+  expect(screen.getByText("已关联目录 1").getAttribute("title")).toContain("客户端");
+  expect(screen.getByText("疑似重复 0").getAttribute("title")).toContain("指纹");
 });
 
 function searchPage(items: SourceSearchHit[]): SourceSearchPage {

@@ -62,7 +62,9 @@ function OnboardingRoute() {
       onOpenImport={(roots) => navigate("/discovery", {
         state: {
           initialSources: roots,
-          initialSourceText: roots[0] ?? "",
+          // With multiple scanned sources the checkbox list drives selection;
+          // the manual source box stays empty unless the user picks their own.
+          initialSourceText: roots.length > 1 ? "" : roots[0] ?? "",
         },
       })}
       theme={resolvedTheme}

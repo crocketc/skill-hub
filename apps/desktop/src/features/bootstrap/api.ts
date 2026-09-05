@@ -48,6 +48,10 @@ export interface OnboardingOperations {
 export interface CompatibilityTarget {
   id: string;
   label: string;
+  /** Brand key (builtin profile id, e.g. "openai"). Absent in legacy callers. */
+  profileId?: string;
+  /** Client form factor when the snapshot provides it. */
+  kind?: string | null;
   availability: "available" | "unavailable";
 }
 
@@ -87,9 +91,17 @@ export const desktopOnboardingOperations: OnboardingOperations = {
     if (result.type !== "discovery_snapshot") {
       throw new Error("Unexpected Agent discovery response from the native application.");
     }
+    const kindByClient = new Map(
+      result.payload.instances.map((instance) => [
+        `${instance.profile_id}:${instance.client_id}`,
+        instance.kind,
+      ]),
+    );
     const logicalTargets = result.payload.logical_targets.map((target) => ({
       id: target.id,
       label: target.client_id,
+      profileId: target.profile_id,
+      kind: kindByClient.get(`${target.profile_id}:${target.client_id}`) ?? null,
       availability: target.available && target.exists && target.readable
         ? ("available" as const)
         : ("unavailable" as const),
@@ -102,6 +114,8 @@ export const desktopOnboardingOperations: OnboardingOperations = {
       .map((instance) => ({
         id: `${instance.profile_id}:${instance.client_id}`,
         label: instance.client_id,
+        profileId: instance.profile_id,
+        kind: instance.kind as string | null,
         availability: "unavailable" as const,
       }));
     return {

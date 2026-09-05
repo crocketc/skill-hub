@@ -48,6 +48,7 @@ interface WizardState {
   actions: Record<string, ImportAction>;
   commitProgress?: ImportProgress;
   results: ImportResult[];
+  sourceCounts?: { source: string; count: number }[];
   error?: string;
 }
 
@@ -55,7 +56,7 @@ type WizardEvent =
   | { type: "source_changed"; value: string }
   | { type: "parse_started" }
   | { type: "parse_succeeded"; descriptor: SourceDescriptor }
-  | { type: "acquire_succeeded"; candidates: WizardState["candidates"] }
+  | { type: "acquire_succeeded"; candidates: WizardState["candidates"]; sourceCounts: { source: string; count: number }[] }
   | { type: "show_candidates" }
   | { type: "candidates_selected"; ids: string[] }
   | { type: "analysis_started" }
@@ -90,6 +91,7 @@ function reducer(state: WizardState, event: WizardEvent): WizardState {
         plan: undefined,
         commitProgress: undefined,
         selectedIds: [],
+        sourceCounts: undefined,
         sourceText: event.value,
       };
     case "parse_started":
@@ -97,7 +99,13 @@ function reducer(state: WizardState, event: WizardEvent): WizardState {
     case "parse_succeeded":
       return { ...state, descriptor: event.descriptor };
     case "acquire_succeeded":
-      return { ...state, candidates: event.candidates, error: undefined, phase: "candidate_gate" };
+      return {
+        ...state,
+        candidates: event.candidates,
+        error: undefined,
+        phase: "candidate_gate",
+        sourceCounts: event.sourceCounts,
+      };
     case "show_candidates":
       return { ...state, phase: "candidates" };
     case "candidates_selected":
@@ -172,6 +180,7 @@ export function ImportWizard({
     try {
       const inputs = selectedSources.length > 0 ? selectedSources : [state.sourceText];
       const descriptors = [];
+      const sourceCounts: { source: string; count: number }[] = [];
       const candidates = [];
       for (const input of inputs) {
         const descriptor = await facade.parseSource(input);
@@ -182,12 +191,14 @@ export function ImportWizard({
       const descriptor = descriptors[0];
       if (!descriptor) throw new Error(t("importWorkflow.errors.emptySource"));
       dispatch({ type: "parse_succeeded", descriptor });
-      for (const descriptor of descriptors) {
+      for (let index = 0; index < descriptors.length; index += 1) {
         if (operation !== operationRef.current) return;
-        candidates.push(...await facade.acquireCandidates(descriptor, controller.signal));
+        const acquired = await facade.acquireCandidates(descriptors[index], controller.signal);
+        candidates.push(...acquired);
+        sourceCounts.push({ source: inputs[index], count: acquired.length });
       }
       if (operation !== operationRef.current) return;
-      dispatch({ type: "acquire_succeeded", candidates });
+      dispatch({ type: "acquire_succeeded", candidates, sourceCounts });
     } catch (error) {
       if (operation !== operationRef.current) return;
       if (error instanceof ImportCancelledError) {
@@ -295,6 +306,18 @@ export function ImportWizard({
 
         {state.phase === "candidate_gate" ? (
           <div className="sh-import-wizard__gate" role="status">
+            {state.sourceCounts && state.sourceCounts.length > 1 ? (
+              <>
+                <p>{t("importWorkflow.acquisition.multiSource", { count: state.sourceCounts.length })}</p>
+                <ul>
+                  {state.sourceCounts.map(({ source, count }) => (
+                    <li key={source}>
+                      {t("importWorkflow.acquisition.perSource", { source, count })}
+                    </li>
+                  ))}
+                </ul>
+              </>
+            ) : null}
             <p>{t("importWorkflow.acquisition.complete", { count: state.candidates.length })}</p>
             <Button onClick={() => dispatch({ type: "show_candidates" })}>{t("importWorkflow.source.continueCandidates")}</Button>
           </div>
