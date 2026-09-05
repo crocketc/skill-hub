@@ -1554,6 +1554,16 @@
         "clear_credentials": "清除已保存的凭据",
         "cancel": "取消退出"
       }
+    },
+    "retention": {
+      "heading": "滚动备份与保留策略",
+      "description": "按保留策略创建一份完整备份，并清理超出保留数量的历史备份。",
+      "maxBackups": "保留最近备份数",
+      "run": "运行滚动备份",
+      "running": "正在运行…",
+      "cacheNote": "缓存清理：临时下载目录（仓库发现）超过 24 小时的残留会在下次下载时自动清理；集中库内没有需要手动清理的缓存。",
+      "failed": "滚动备份失败：{{error}}",
+      "result": "滚动备份完成：保留 {{retained}} 份，清理 {{removed}} 份。"
     }
   }
 }

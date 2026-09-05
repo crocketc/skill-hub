@@ -1554,6 +1554,16 @@
         "clear_credentials": "Clear stored credentials",
         "cancel": "Cancel the uninstall"
       }
+    },
+    "retention": {
+      "heading": "Rolling backup & retention",
+      "description": "Creates a full backup under the retention policy and removes history beyond the kept count.",
+      "maxBackups": "Backups to keep",
+      "run": "Run rolling backup",
+      "running": "Running…",
+      "cacheNote": "Cache cleanup: stale repository-discovery downloads older than 24 hours are removed automatically before the next download; the central library has no cache that needs manual cleanup.",
+      "failed": "Rolling backup failed: {{error}}",
+      "result": "Rolling backup finished: {{retained}} kept, {{removed}} removed."
     }
   }
 }

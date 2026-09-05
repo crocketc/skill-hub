@@ -13,6 +13,8 @@ import type {
   RestoreResult,
   UninstallAction,
   UninstallImpact,
+
+  BackupRetentionResult,
 } from "../../api/bindings";
 import { Button } from "../../ui/Button";
 import type { BackupFacade } from "./api";
@@ -45,6 +47,25 @@ export function DataProtectionPage({ facade }: { facade: BackupFacade }) {
   const [restoreDecisions, setRestoreDecisions] = useState<Record<string, Decision>>({});
   const [restoreResult, setRestoreResult] = useState<RestoreResult>();
   const [exportSkillIds, setExportSkillIds] = useState("");
+  const [rollingMax, setRollingMax] = useState(3);
+  const [rollingBusy, setRollingBusy] = useState(false);
+  const [rollingResult, setRollingResult] = useState<BackupRetentionResult>();
+  const [rollingError, setRollingError] = useState<string>();
+  const runRolling = async () => {
+    setRollingBusy(true);
+    setRollingError(undefined);
+    try {
+      setRollingResult(await facade.runRollingBackup!({
+        decisions: [],
+        retention: { max_backups: rollingMax },
+        scope: "full",
+      }));
+    } catch (reason) {
+      setRollingError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setRollingBusy(false);
+    }
+  };
   const [exportPlan, setExportPlan] = useState<ExportPlan>();
   const [exportDecisions, setExportDecisions] = useState<Record<string, SensitiveDecision>>({});
   const [exportPath, setExportPath] = useState<string>();
@@ -193,6 +214,31 @@ export function DataProtectionPage({ facade }: { facade: BackupFacade }) {
         {exportPlan ? <ExportReview plan={exportPlan} decisions={exportDecisions} onDecision={(skillId, decision) => setExportDecisions((current) => ({ ...current, [skillId]: decision }))} /> : null}
         {exportPlan ? <Button disabled={busy || !hasExportDecisions} onClick={() => void commitExport()}>{t("dataProtection.export.commit")}</Button> : null}
         {exportPath ? <p role="status">{t("dataProtection.export.result", { path: exportPath })}</p> : null}
+      </section>
+      <section className="sh-workflow-card">
+        <h2>{t("backup.retention.heading")}</h2>
+        <p>{t("backup.retention.description")}</p>
+        <label className="sh-workflow-actions">
+          <span>{t("backup.retention.maxBackups")}</span>
+          <input
+            aria-label={t("backup.retention.maxBackups")}
+            min={1}
+            onChange={(event) => setRollingMax(Number(event.target.value) || 1)}
+            style={{ width: "5rem" }}
+            type="number"
+            value={rollingMax}
+          />
+        </label>
+        <Button disabled={rollingBusy} onClick={() => void runRolling()}>
+          {rollingBusy ? t("backup.retention.running") : t("backup.retention.run")}
+        </Button>
+        <p>{t("backup.retention.cacheNote")}</p>
+        {rollingError ? <p role="alert">{t("backup.retention.failed", { error: rollingError })}</p> : null}
+        {rollingResult ? (
+          <p role="status">
+            {t("backup.retention.result", { retained: rollingResult.retained, removed: rollingResult.removed })}
+          </p>
+        ) : null}
       </section>
       <section className="sh-workflow-card">
         <h2>{t("backup.uninstall.heading")}</h2>

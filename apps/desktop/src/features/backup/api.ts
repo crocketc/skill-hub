@@ -16,6 +16,8 @@ import type {
   UninstallAction,
   UninstallImpact,
   VersionResult,
+
+  BackupRetentionResult,
 } from "../../api/bindings";
 
 export interface BackupFacade {
@@ -32,4 +34,11 @@ export interface BackupFacade {
   listVersions(skillId: string): Promise<VersionResult[]>;
   prepareUninstall(deploymentIds: DeploymentId[]): Promise<UninstallImpact>;
   applyUninstallDecision(actions: UninstallAction[]): Promise<OperationSummary>;
+  /** 滚动备份：按保留策略创建备份并清理超量历史。 */
+  runRollingBackup?(input: {
+    scope: BackupScope;
+    retention: { max_backups: number };
+    decisions: BackupDecision[];
+  }): Promise<BackupRetentionResult>;
 }
+export type BackupRetentionOutcome = BackupRetentionResult;

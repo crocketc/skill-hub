@@ -26,6 +26,20 @@ export const nativeBackupFacade: BackupFacade = {
     if (result.type !== "restore_result") throw new Error("restore returned an unexpected result");
     return result.payload;
   },
+  async runRollingBackup(input) {
+    const result = await executeCommand({
+      type: "run_rolling_backup",
+      payload: {
+        scope: input.scope,
+        retention: input.retention,
+        decisions: input.decisions as never,
+      },
+    });
+    if (result.type !== "backup_retention_result") {
+      throw new Error("rolling backup returned an unexpected result");
+    }
+    return result.payload;
+  },
   async prepareExport(input) {
     const result = await executeCommand({ type: "prepare_standard_export", payload: { input } });
     if (result.type !== "export_plan") throw new Error("export preflight returned an unexpected result");

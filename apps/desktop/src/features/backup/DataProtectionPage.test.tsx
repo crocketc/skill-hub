@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { I18nextProvider } from "react-i18next";
 import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
@@ -189,4 +190,37 @@ describe("DataProtectionPage", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("deployments unavailable");
     expect(screen.queryByLabelText("Select deployment dep-1")).not.toBeInTheDocument();
   });
+});
+
+it("runs a rolling backup with the configured retention policy and reports cleanup", async () => {
+  const user = userEvent.setup();
+  const runRollingBackup = vi.fn(async () => ({ retained: 3, removed: 2 }));
+  const facade = {
+    ...createFacade(),
+    runRollingBackup,
+  };
+  renderPage(facade);
+
+  await user.click(await screen.findByRole("button", { name: "Run rolling backup" }));
+  await waitFor(() =>
+    expect(runRollingBackup).toHaveBeenCalledWith(
+      expect.objectContaining({ retention: { max_backups: 3 } }),
+    ),
+  );
+  expect(await screen.findByText(/3 kept/)).toBeVisible();
+  expect(screen.getByText(/2 removed/)).toBeVisible();
+});
+
+it("displays rolling backup failures without faking success", async () => {
+  const user = userEvent.setup();
+  const facade = {
+    ...createFacade(),
+    runRollingBackup: async () => {
+      throw new Error("dir not writable");
+    },
+  };
+  renderPage(facade);
+
+  await user.click(await screen.findByRole("button", { name: "Run rolling backup" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent("dir not writable");
 });
