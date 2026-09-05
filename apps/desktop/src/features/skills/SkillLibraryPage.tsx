@@ -33,6 +33,7 @@ import {
   type SkillLibraryQuery,
   type SkillPage,
   type SkillTablePreferences,
+  type LibraryViewMode,
 } from "./api";
 import {
   applySavedView,
@@ -973,7 +974,11 @@ export function SkillLibraryPage({
                 data-testid={`skill-card-${item.id}`}
                 key={item.id}
               >
-                <button className="sh-skill-card__open" onClick={() => openSkill(item.id)} type="button">
+                <button
+                  className="sh-skill-card__open"
+                  onClick={(event) => openSkill(item.id, event.currentTarget)}
+                  type="button"
+                >
                   <strong>{item.name}</strong>
                 </button>
                 {item.purpose ? <p>{item.purpose}</p> : null}
