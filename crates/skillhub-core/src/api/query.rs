@@ -252,6 +252,15 @@ pub struct SearchOnlineSources {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+pub struct ListSkillRepos;
+
+/// Downloads every enabled GitHub repo archive and scans it for SKILL.md
+/// directories. Per-repo failures surface as warnings; the query never writes
+/// outside temporary download directories.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+pub struct DiscoverRepoSkills;
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 #[serde(deny_unknown_fields)]
 pub struct AnalyzeGlobalSkillEvidence {
     pub window_days: u32,
@@ -497,6 +506,10 @@ pub enum AppQuery {
     DiscoverImportCandidates(DiscoverImportCandidates),
     #[serde(rename = "search_online_sources")]
     SearchOnlineSources(SearchOnlineSources),
+    #[serde(rename = "list_skill_repos")]
+    ListSkillRepos(ListSkillRepos),
+    #[serde(rename = "discover_repo_skills")]
+    DiscoverRepoSkills(DiscoverRepoSkills),
     #[serde(rename = "analyze_global_skill_evidence")]
     AnalyzeGlobalSkillEvidence(AnalyzeGlobalSkillEvidence),
     #[serde(rename = "get_deployment_plan")]
@@ -576,6 +589,10 @@ pub enum AppQueryResult {
     ImportCandidates(Vec<ImportCandidate>),
     #[serde(rename = "source_search_page")]
     SourceSearchPage(SourceSearchPage),
+    #[serde(rename = "skill_repos")]
+    SkillRepos(Vec<crate::source::SkillRepo>),
+    #[serde(rename = "repo_discovery_report")]
+    RepoDiscoveryReport(crate::source::RepoDiscoveryReport),
     #[serde(rename = "deployment_plan")]
     DeploymentPlan(DeploymentPlan),
     #[serde(rename = "deployment_targets")]

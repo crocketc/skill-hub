@@ -252,6 +252,29 @@
       "failed": "Search failed. Please try again later.",
       "source": "Source: {{provider}}",
       "installs": "Installs: {{count}}"
+    },
+    "repo": {
+      "eyebrow": "Repository sources",
+      "title": "Repository discovery",
+      "description": "Downloads configured GitHub repo archives and scans them for SKILL.md; a failing repo only warns, downloads stay in a local temp directory.",
+      "scan": "Scan repositories",
+      "scanning": "Scanning…",
+      "failed": "Repository discovery failed. Please try again later.",
+      "owner": "Owner",
+      "name": "Repository",
+      "branch": "Branch (empty = default)",
+      "add": "Add repository",
+      "remove": "Remove",
+      "enabled": "Include in discovery",
+      "empty": "No repositories yet. Add one to discover Skills.",
+      "confirmRemoveTitle": "Remove repository",
+      "confirmRemove": "Confirm removal",
+      "confirmRemoveDescription": "{{repo}} will be removed from the discovery list. Already imported Skills are not deleted.",
+      "warning": "{{repo}} failed to scan: {{reason}}",
+      "noResults": "No Skills found in the enabled repositories.",
+      "downloadImport": "Download & import",
+      "downloading": "Downloading…",
+      "downloadFailed": "Download failed. Please try again later."
     }
   },
   "agents": {

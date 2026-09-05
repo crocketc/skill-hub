@@ -218,7 +218,7 @@ async fn set_update_policy_persists_and_open_release_validates_url() {
 #[tokio::test]
 async fn online_source_query_maps_provider_and_reuses_fresh_cache() {
     let base = serve_once(
-        r#"{"data":[{"id":"github:acme/pdf","name":"PDF skill","source":"acme/pdf","sourceType":"github","installUrl":"https://github.com/acme/pdf.git","url":"https://skills.sh/acme/pdf","installs":42,"isDuplicate":false}],"query":"pdf","count":1,"searchType":"keyword","durationMs":4}"#,
+        r#"{"query":"pdf","searchType":"keyword","skills":[{"id":"acme/pdf","skillId":"pdf","name":"PDF skill","installs":42,"source":"acme/pdf"}],"count":1,"duration_ms":4}"#,
     )
     .await;
     let app_update = GithubReleaseProvider::new().with_network_enabled(false);
@@ -242,7 +242,7 @@ async fn online_source_query_maps_provider_and_reuses_fresh_cache() {
         panic!("expected source search page");
     };
     assert_eq!(first.items.len(), 1);
-    assert_eq!(first.items[0].source_id, "github:acme/pdf");
+    assert_eq!(first.items[0].source_id, "acme/pdf");
 
     let second = facade
         .query(AppQuery::SearchOnlineSources(

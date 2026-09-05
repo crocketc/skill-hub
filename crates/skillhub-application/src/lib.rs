@@ -15,7 +15,9 @@ use skillhub_adapters::deployment::{DeploymentFilesystem, OwnershipProof};
 use skillhub_adapters::import::SkillDetector;
 use skillhub_adapters::scanner::ScanService;
 use skillhub_adapters::security::BasicScanner;
-use skillhub_adapters::source::SkillsShProvider;
+use skillhub_adapters::source::{
+    cleanup_stale_downloads, stale_download_retention, RepoDiscoveryProvider, SkillsShProvider,
+};
 use skillhub_core::api::{
     ApplySourceUpdate, BasicCheckResult, CheckSourceUpdate, CreateCombination, CreateSkill,
     PinProjectSkillVersion, RelinkSource, RenameSkill, SaveMarkdownContent, SaveSkillContent,
@@ -84,6 +86,7 @@ pub struct LocalApplicationFacade {
     app_update_provider: Arc<GithubReleaseProvider>,
     update_service: Arc<UpdateService>,
     source_search_provider: Arc<SkillsShProvider>,
+    repo_discovery_provider: Arc<RepoDiscoveryProvider>,
     prepared_imports: Mutex<HashMap<OperationId, PreparedImport>>,
     prepared_uninstall: Mutex<Option<skillhub_core::UninstallImpact>>,
     scan_service: Mutex<ScanService>,
@@ -687,6 +690,127 @@ impl LocalApplicationFacade {
         Ok(AppCommandResult::InitializationStatus(status))
     }
 
+    fn list_skill_repos(&self) -> AppResult<AppQueryResult> {
+        let repos = self.with_database("query.list_skill_repos", |database| {
+            database.skill_repo_repository().list()
+        })?;
+        Ok(AppQueryResult::SkillRepos(repos))
+    }
+
+    /// 仓库发现（联网）：逐仓库下载扫描；单仓库失败只进 warnings，不拖垮整体。
+    async fn discover_repo_skills(&self) -> AppResult<AppQueryResult> {
+        self.ensure_network_enabled()?;
+        let repos = self.with_database("query.discover_repo_skills.repos", |database| {
+            database.skill_repo_repository().list()
+        })?;
+        let discovery = self.repo_discovery_provider.discover(repos).await;
+        Ok(AppQueryResult::RepoDiscoveryReport(
+            skillhub_core::source::RepoDiscoveryReport {
+                skills: discovery.skills,
+                warnings: discovery
+                    .failures
+                    .into_iter()
+                    .map(
+                        |(owner, name, reason)| skillhub_core::source::RepoDiscoveryWarning {
+                            owner,
+                            name,
+                            reason,
+                        },
+                    )
+                    .collect(),
+            },
+        ))
+    }
+
+    /// 仓库 CRUD：upsert（owner+name 相同则替换）；坐标校验拒绝非法引用。
+    fn add_skill_repo(
+        &self,
+        request: skillhub_core::api::AddSkillRepo,
+    ) -> AppResult<AppCommandResult> {
+        let repo = request.repo;
+        if let Err(error) = self.repo_discovery_provider.validate_repo(&repo) {
+            return Err(AppError::new(ErrorCode::InvalidInput, Severity::Warning)
+                .with_param("reason", error.to_string())
+                .with_action(RecoveryAction::Retry));
+        }
+        let repos = self.with_database("execute.add_skill_repo", |database| {
+            let mut repos = database.skill_repo_repository().list()?;
+            if let Some(existing) = repos
+                .iter_mut()
+                .find(|existing| existing.owner == repo.owner && existing.name == repo.name)
+            {
+                *existing = repo.clone();
+            } else {
+                repos.push(repo.clone());
+            }
+            repos.sort_by(|a, b| (&a.owner, &a.name).cmp(&(&b.owner, &b.name)));
+            database.skill_repo_repository().save(&repos)?;
+            Ok(repos)
+        })?;
+        Ok(AppCommandResult::SkillRepos(repos))
+    }
+
+    fn remove_skill_repo(
+        &self,
+        request: skillhub_core::api::RemoveSkillRepo,
+    ) -> AppResult<AppCommandResult> {
+        let repos = self.with_database("execute.remove_skill_repo", |database| {
+            let mut repos = database.skill_repo_repository().list()?;
+            let before = repos.len();
+            repos.retain(|repo| !(repo.owner == request.owner && repo.name == request.name));
+            if repos.len() == before {
+                return Err(AppError::new(ErrorCode::ObjectNotFound, Severity::Warning)
+                    .with_action(RecoveryAction::Acknowledge));
+            }
+            database.skill_repo_repository().save(&repos)?;
+            Ok(repos)
+        })?;
+        Ok(AppCommandResult::SkillRepos(repos))
+    }
+
+    /// 下载仓库 Skill 到本机下载目录（预算受限），返回的本地路径随后
+    /// 以 Local 来源身份进入现有导入管线；导入物化后才产生受管对象。
+    async fn download_repo_skill(
+        &self,
+        request: skillhub_core::api::DownloadRepoSkill,
+    ) -> AppResult<AppCommandResult> {
+        self.ensure_network_enabled()?;
+        let skill = request.skill;
+        let repo = skillhub_core::source::SkillRepo {
+            owner: skill.repo_owner.clone(),
+            name: skill.repo_name.clone(),
+            branch: skill.repo_branch.clone(),
+            enabled: true,
+        };
+        if let Err(error) = self.repo_discovery_provider.validate_repo(&repo) {
+            return Err(AppError::new(ErrorCode::InvalidInput, Severity::Warning)
+                .with_param("reason", error.to_string())
+                .with_action(RecoveryAction::Retry));
+        }
+        let root = repo_downloads_root()?;
+        let path = self
+            .repo_discovery_provider
+            .download_skill_directory(&repo, &skill.directory, &root)
+            .await
+            .map_err(|error| {
+                AppError::new(ErrorCode::SourceSearchUnavailable, Severity::Error)
+                    .with_param("source", error.to_string())
+                    .with_action(RecoveryAction::Retry)
+            })?;
+        // 每次下载都尽力清理超过保留期的历史残留。
+        cleanup_stale_downloads(&root, stale_download_retention());
+        let runtime_name = path
+            .file_name()
+            .map(|name| name.to_string_lossy().to_string())
+            .unwrap_or_else(|| skill.name.clone());
+        Ok(AppCommandResult::DownloadedRepoSkill(
+            skillhub_core::source::DownloadedRepoSkill {
+                local_path: path.to_string_lossy().to_string(),
+                runtime_name,
+            },
+        ))
+    }
+
     fn complete_onboarding(
         &self,
         request: skillhub_core::api::CompleteOnboarding,
@@ -921,6 +1045,7 @@ impl LocalApplicationFacade {
             app_update_provider,
             update_service,
             source_search_provider: Arc::new(SkillsShProvider::new("https://skills.sh")),
+            repo_discovery_provider: Arc::new(RepoDiscoveryProvider::new()),
             prepared_imports: Mutex::new(HashMap::new()),
             prepared_uninstall: Mutex::new(None),
             scan_service: Mutex::new(ScanService::new()),
@@ -978,6 +1103,7 @@ impl LocalApplicationFacade {
             app_update_provider,
             update_service,
             source_search_provider: Arc::new(SkillsShProvider::new("https://skills.sh")),
+            repo_discovery_provider: Arc::new(RepoDiscoveryProvider::new()),
             prepared_imports: Mutex::new(HashMap::new()),
             prepared_uninstall: Mutex::new(None),
             scan_service: Mutex::new(ScanService::new()),
@@ -2982,6 +3108,11 @@ impl ApplicationFacade for LocalApplicationFacade {
                 return self.pin_project_skill_version(request)
             }
             AppCommand::RelinkSource(request) => return self.relink_source(request),
+            AppCommand::AddSkillRepo(request) => return self.add_skill_repo(request),
+            AppCommand::RemoveSkillRepo(request) => return self.remove_skill_repo(request),
+            AppCommand::DownloadRepoSkill(request) => {
+                return self.download_repo_skill(request).await
+            }
             AppCommand::CheckSourceUpdate(request) => return self.check_source_update(request),
             AppCommand::ApplySourceUpdate(request) => return self.apply_source_update(request),
             AppCommand::SetMetadata(request) => return self.set_metadata(request),
@@ -3160,6 +3291,8 @@ impl ApplicationFacade for LocalApplicationFacade {
                 self.check_application_update(request).await
             }
             AppQuery::SearchOnlineSources(request) => self.search_online_sources(request).await,
+            AppQuery::ListSkillRepos(_) => self.list_skill_repos(),
+            AppQuery::DiscoverRepoSkills(_) => self.discover_repo_skills().await,
             AppQuery::GetBootstrapSnapshot => {
                 let default_library_path = self
                     .configured_library_path()
@@ -4284,6 +4417,17 @@ fn agent_invalid(detail: impl Into<String>) -> AppError {
     AppError::new(ErrorCode::AgentProfileInvalidCapability, Severity::Error)
         .with_param("detail", detail.into())
         .with_action(RecoveryAction::Acknowledge)
+}
+
+/// 仓库 Skill 下载根目录（系统临时目录下的独立子目录）。
+fn repo_downloads_root() -> AppResult<std::path::PathBuf> {
+    let root = std::env::temp_dir().join("skillhub-repo-skills");
+    std::fs::create_dir_all(&root).map_err(|error| {
+        AppError::new(ErrorCode::InternalError, Severity::Error)
+            .with_param("source", error.to_string())
+            .with_action(RecoveryAction::Retry)
+    })?;
+    Ok(root)
 }
 
 fn invalid_input(detail: impl Into<String>) -> AppError {

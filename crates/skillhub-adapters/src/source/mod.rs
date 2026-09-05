@@ -4,6 +4,7 @@ mod git;
 mod http;
 mod parser;
 mod redirect_policy;
+mod repo_discovery;
 mod repo_ref;
 mod skills_sh;
 
@@ -18,4 +19,7 @@ pub use http::{
 };
 pub use parser::SourceInputParser;
 pub use redirect_policy::RedirectPolicy;
+pub use repo_discovery::{
+    cleanup_stale_downloads, stale_download_retention, RepoDiscovery, RepoDiscoveryProvider,
+};
 pub use skills_sh::SkillsShProvider;

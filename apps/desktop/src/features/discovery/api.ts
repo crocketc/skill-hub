@@ -1,8 +1,12 @@
 import {
   executeCommand,
   queryApplication,
+  type DiscoverableRepoSkill,
   type DiscoverySnapshot,
+  type DownloadedRepoSkill,
+  type RepoDiscoveryReport,
   type ScanResult,
+  type SkillRepo,
   type SourceSearchPage,
   type SourceSearchQuery,
 } from "../../api/bindings";
@@ -17,6 +21,11 @@ export interface DiscoveryFacade {
   getDiscoverySnapshot: () => Promise<DiscoverySnapshot>;
   scanTargets: (scopeIds: string[]) => Promise<ScanResult>;
   searchOnlineSources: (query: SourceSearchQuery) => Promise<SourceSearchPage>;
+  listSkillRepos: () => Promise<SkillRepo[]>;
+  discoverRepoSkills: () => Promise<RepoDiscoveryReport>;
+  addSkillRepo: (repo: SkillRepo) => Promise<SkillRepo[]>;
+  removeSkillRepo: (owner: string, name: string) => Promise<SkillRepo[]>;
+  downloadRepoSkill: (skill: DiscoverableRepoSkill) => Promise<DownloadedRepoSkill>;
 }
 
 export const desktopDiscoveryFacade: DiscoveryFacade = {
@@ -47,6 +56,47 @@ export const desktopDiscoveryFacade: DiscoveryFacade = {
     });
     if (result.type !== "source_search_page") {
       throw new Error("Unexpected source search response from the native application.");
+    }
+    return result.payload;
+  },
+  async listSkillRepos() {
+    const result = await queryApplication({ type: "list_skill_repos", payload: null });
+    if (result.type !== "skill_repos") {
+      throw new Error("Unexpected skill repos response from the native application.");
+    }
+    return result.payload;
+  },
+  async discoverRepoSkills() {
+    const result = await queryApplication({ type: "discover_repo_skills", payload: null });
+    if (result.type !== "repo_discovery_report") {
+      throw new Error("Unexpected repo discovery response from the native application.");
+    }
+    return result.payload;
+  },
+  async addSkillRepo(repo) {
+    const result = await executeCommand({ type: "add_skill_repo", payload: { repo } });
+    if (result.type !== "skill_repos") {
+      throw new Error("Unexpected skill repos response from the native application.");
+    }
+    return result.payload;
+  },
+  async removeSkillRepo(owner, name) {
+    const result = await executeCommand({
+      type: "remove_skill_repo",
+      payload: { owner, name },
+    });
+    if (result.type !== "skill_repos") {
+      throw new Error("Unexpected skill repos response from the native application.");
+    }
+    return result.payload;
+  },
+  async downloadRepoSkill(skill) {
+    const result = await executeCommand({
+      type: "download_repo_skill",
+      payload: { skill },
+    });
+    if (result.type !== "downloaded_repo_skill") {
+      throw new Error("Unexpected downloaded repo skill response from the native application.");
     }
     return result.payload;
   },

@@ -472,6 +472,29 @@ pub struct SetLibraryRoot {
     pub path: String,
 }
 
+/// Adds or replaces a GitHub repo entry (upsert on owner+name). Empty branch
+/// or "HEAD" is the default-branch sentinel.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct AddSkillRepo {
+    pub repo: crate::source::SkillRepo,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct RemoveSkillRepo {
+    pub owner: String,
+    pub name: String,
+}
+
+/// Downloads the requested repo skill into an application-managed temporary
+/// directory so it can enter the existing import wizard as a local source.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct DownloadRepoSkill {
+    pub skill: crate::source::DiscoverableRepoSkill,
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 pub struct DiscoverAgentTargets;
 
@@ -666,6 +689,12 @@ pub enum AppCommand {
     CompleteOnboarding(CompleteOnboarding),
     #[serde(rename = "set_library_root")]
     SetLibraryRoot(SetLibraryRoot),
+    #[serde(rename = "add_skill_repo")]
+    AddSkillRepo(AddSkillRepo),
+    #[serde(rename = "remove_skill_repo")]
+    RemoveSkillRepo(RemoveSkillRepo),
+    #[serde(rename = "download_repo_skill")]
+    DownloadRepoSkill(DownloadRepoSkill),
     #[serde(rename = "discover_agent_targets")]
     DiscoverAgentTargets(DiscoverAgentTargets),
     #[serde(rename = "scan_targets")]
@@ -775,6 +804,10 @@ pub enum AppCommandResult {
     ExportResult(ExportResult),
     #[serde(rename = "uninstall_impact")]
     UninstallImpact(UninstallImpact),
+    #[serde(rename = "skill_repos")]
+    SkillRepos(Vec<crate::source::SkillRepo>),
+    #[serde(rename = "downloaded_repo_skill")]
+    DownloadedRepoSkill(crate::source::DownloadedRepoSkill),
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]

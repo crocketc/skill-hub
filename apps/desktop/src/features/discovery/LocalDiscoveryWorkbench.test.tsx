@@ -8,6 +8,15 @@ import type {
   SourceSearchPage,
 } from "../../api/bindings";
 import { LocalDiscoveryWorkbench } from "./LocalDiscoveryWorkbench";
+import type { SkillRepo } from "../../api/bindings";
+
+const repoDiscoveryStubs = {
+  listSkillRepos: async () => [] as SkillRepo[],
+  discoverRepoSkills: async () => ({ skills: [], warnings: [] }) as never,
+  addSkillRepo: async (repo: SkillRepo) => [repo],
+  removeSkillRepo: async () => [] as SkillRepo[],
+  downloadRepoSkill: async () => ({ local_path: "", runtime_name: "" }),
+};
 import { OnlineDiscovery } from "./OnlineDiscovery";
 
 const snapshot: DiscoverySnapshot = {
@@ -104,7 +113,7 @@ it("shows the last scan time and scope from the discovery snapshot", async () =>
   const getDiscoverySnapshot = vi.fn(async () => snapshot);
   render(
     <I18nextProvider i18n={createSkillHubI18nSync()}>
-      <LocalDiscoveryWorkbench facade={{ getDiscoverySnapshot, scanTargets: async () => scanResult, searchOnlineSources: async () => searchPage([]) }} />
+      <LocalDiscoveryWorkbench facade={{ getDiscoverySnapshot, scanTargets: async () => scanResult, searchOnlineSources: async () => searchPage([]), ...repoDiscoveryStubs }} />
     </I18nextProvider>,
   );
 
@@ -116,7 +125,7 @@ it("re-scans and classifies results into the five categories", async () => {
   const scanTargets = vi.fn(async () => scanResult);
   render(
     <I18nextProvider i18n={createSkillHubI18nSync()}>
-      <LocalDiscoveryWorkbench facade={{ getDiscoverySnapshot: async () => snapshot, scanTargets, searchOnlineSources: async () => searchPage([]) }} />
+      <LocalDiscoveryWorkbench facade={{ getDiscoverySnapshot: async () => snapshot, scanTargets, searchOnlineSources: async () => searchPage([]), ...repoDiscoveryStubs }} />
     </I18nextProvider>,
   );
 
@@ -133,7 +142,7 @@ it("re-scans and classifies results into the five categories", async () => {
 it("explains each category through tooltips", async () => {
   render(
     <I18nextProvider i18n={createSkillHubI18nSync()}>
-      <LocalDiscoveryWorkbench facade={{ getDiscoverySnapshot: async () => snapshot, scanTargets: async () => scanResult, searchOnlineSources: async () => searchPage([]) }} />
+      <LocalDiscoveryWorkbench facade={{ getDiscoverySnapshot: async () => snapshot, scanTargets: async () => scanResult, searchOnlineSources: async () => searchPage([]), ...repoDiscoveryStubs }} />
     </I18nextProvider>,
   );
 
@@ -169,7 +178,7 @@ it("searches skills.sh and renders the real source results", async () => {
   ]));
   render(
     <I18nextProvider i18n={createSkillHubI18nSync()}>
-      <OnlineDiscovery facade={{ getDiscoverySnapshot: async () => snapshot, scanTargets: async () => scanResult, searchOnlineSources }} onStartImport={() => undefined} />
+      <OnlineDiscovery facade={{ getDiscoverySnapshot: async () => snapshot, scanTargets: async () => scanResult, searchOnlineSources, ...repoDiscoveryStubs }} onStartImport={() => undefined} />
     </I18nextProvider>,
   );
 

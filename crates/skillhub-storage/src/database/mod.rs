@@ -16,6 +16,7 @@ mod project_repository;
 pub mod recovery_point;
 mod scan_repository;
 mod search_repository;
+mod skill_repo_repository;
 mod source_repository;
 mod source_search_cache;
 
@@ -45,6 +46,7 @@ pub use project_repository::ProjectRepository;
 pub use recovery_point::RecoveryPoint;
 pub use scan_repository::ScanRepository;
 pub use search_repository::SearchRepository;
+pub use skill_repo_repository::SkillRepoRepository;
 pub use source_repository::SourceRepository;
 pub use source_search_cache::SourceSearchCache;
 
@@ -94,6 +96,10 @@ impl Database {
 
     pub fn desktop_settings_repository(&self) -> DesktopSettingsRepository<'_> {
         DesktopSettingsRepository::new(self)
+    }
+
+    pub fn skill_repo_repository(&self) -> SkillRepoRepository<'_> {
+        SkillRepoRepository::new(self)
     }
 
     pub fn custom_agent_repository(&self) -> CustomAgentRepository<'_> {

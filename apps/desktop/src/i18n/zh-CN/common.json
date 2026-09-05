@@ -252,6 +252,29 @@
       "failed": "搜索失败，请稍后重试",
       "source": "来源：{{provider}}",
       "installs": "安装次数：{{count}}"
+    },
+    "repo": {
+      "eyebrow": "仓库来源",
+      "title": "仓库发现",
+      "description": "从配置的 GitHub 仓库下载归档并扫描 SKILL.md；单仓库失败只告警，下载仅写入本机临时目录。",
+      "scan": "扫描仓库",
+      "scanning": "正在扫描…",
+      "failed": "仓库发现失败，请稍后重试。",
+      "owner": "所有者",
+      "name": "仓库名",
+      "branch": "分支（留空=默认）",
+      "add": "添加仓库",
+      "remove": "移除",
+      "enabled": "参与发现",
+      "empty": "暂无仓库，添加后可扫描发现 Skill。",
+      "confirmRemoveTitle": "移除仓库",
+      "confirmRemove": "确认移除",
+      "confirmRemoveDescription": "将从发现列表移除 {{repo}}。这只影响发现入口，不会删除已导入的 Skill。",
+      "warning": "{{repo}} 扫描失败：{{reason}}",
+      "noResults": "已启用仓库中未发现 Skill。",
+      "downloadImport": "下载并导入",
+      "downloading": "正在下载…",
+      "downloadFailed": "下载失败，请稍后重试。"
     }
   },
   "agents": {
