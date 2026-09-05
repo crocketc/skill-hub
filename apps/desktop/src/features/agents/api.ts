@@ -13,15 +13,31 @@ export interface AgentView {
   discoveredPaths: string[];
   id: string;
   instance: string;
+  /** Number of unique deployed skills behind this agent. */
   managedDeploymentCount: number;
+  /** Raw deployment relation count kept as auxiliary context. */
+  managedDeploymentRelationCount: number;
+  /** First official profile reference of a custom agent, when registered. */
+  officialReference: string | null;
   relations: AgentRelation[];
   status: AgentStatus;
+}
+
+/** View-level values collected by the custom agent form. */
+export interface CustomAgentFormValues {
+  brand: string;
+  displayName: string;
+  directoryPath: string;
+  referenceUrl: string;
 }
 
 export interface AgentFacade {
   list(): Promise<AgentView[]>;
   get(id: string): Promise<AgentView>;
   rescan(): Promise<void>;
+  createCustomAgent(values: CustomAgentFormValues): Promise<void>;
+  updateCustomAgent(id: string, values: CustomAgentFormValues): Promise<void>;
+  removeCustomAgent(id: string): Promise<void>;
 }
 
 function unavailable(operation: string): Promise<never> {
@@ -32,6 +48,9 @@ export const unavailableAgentFacade: AgentFacade = {
   get: () => unavailable("agent_get"),
   list: () => unavailable("agent_list"),
   rescan: () => unavailable("agent_rescan"),
+  createCustomAgent: () => unavailable("create_custom_agent"),
+  updateCustomAgent: () => unavailable("update_custom_agent"),
+  removeCustomAgent: () => unavailable("remove_custom_agent"),
 };
 
 export function sharedTargetFixture(): AgentView {
@@ -41,7 +60,9 @@ export function sharedTargetFixture(): AgentView {
     discoveredPaths: ["C:/Users/demo/.agents/skills"],
     id: "openai-codex",
     instance: "Codex CLI",
-    managedDeploymentCount: 0,
+    managedDeploymentCount: 2,
+    managedDeploymentRelationCount: 5,
+    officialReference: null,
     relations: [
       {
         logicalLabel: "Codex CLI",
@@ -62,4 +83,26 @@ export function sharedTargetFixture(): AgentView {
 
 export function agentFixture(): AgentView {
   return sharedTargetFixture();
+}
+
+export function customAgentFixture(): AgentView {
+  return {
+    brand: "Acme",
+    client: "custom",
+    discoveredPaths: ["D:/Agents/reviewer"],
+    id: "custom-reviewer",
+    instance: "Reviewer",
+    managedDeploymentCount: 0,
+    managedDeploymentRelationCount: 0,
+    officialReference: "https://acme.example/docs",
+    relations: [
+      {
+        logicalLabel: "Reviewer",
+        logicalTargetId: "custom-reviewer",
+        physicalPath: "D:/Agents/reviewer",
+        physicalTargetId: "grant-1",
+      },
+    ],
+    status: "custom",
+  };
 }
