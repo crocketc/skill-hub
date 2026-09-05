@@ -3303,7 +3303,7 @@ impl LocalApplicationFacade {
         .filter_map(|(supported, mode)| supported.then_some(mode))
         .collect::<Vec<_>>();
         self.with_database("query.list_deployment_targets", |database| {
-            let targets = database
+            let mut targets: Vec<skillhub_core::api::DeploymentTarget> = database
                 .agent_repository()
                 .load()?
                 .map(|snapshot| {
@@ -3321,6 +3321,23 @@ impl LocalApplicationFacade {
                         .collect()
                 })
                 .unwrap_or_default();
+            targets.extend(
+                database
+                    .project_repository()
+                    .list()?
+                    .into_iter()
+                    .map(|project| {
+                        let available = Path::new(project.path()).is_dir();
+                        skillhub_core::api::DeploymentTarget {
+                            id: project.id.to_string(),
+                            label: project.name,
+                            path: project.device_path.clone(),
+                            available,
+                            physical_id: project.physical_id,
+                            modes: modes.clone(),
+                        }
+                    }),
+            );
             Ok(AppQueryResult::DeploymentTargets(targets))
         })
     }
@@ -3362,24 +3379,31 @@ impl LocalApplicationFacade {
     fn discovery_target_index(&self) -> AppResult<RegisteredTargetIndex> {
         let capabilities = DeploymentFilesystem::new().available_capabilities();
         self.with_database("query.get_deployment_plan", |database| {
-            let Some(snapshot) = database.agent_repository().load()? else {
-                return RegisteredTargetIndex::from_facts([], PathPolicy::new());
-            };
             let mut facts = Vec::new();
             let mut roots = Vec::new();
-            for target in snapshot.logical_targets {
-                if !target.available || !target.exists {
-                    continue;
+            if let Some(snapshot) = database.agent_repository().load()? {
+                for target in snapshot.logical_targets {
+                    if !target.available || !target.exists {
+                        continue;
+                    }
+                    let path = PathBuf::from(&target.path);
+                    let Ok(root) = AllowedRoot::new(&path) else {
+                        continue;
+                    };
+                    roots.push(root);
+                    facts.push(TargetFact::from_logical_target(
+                        &target,
+                        capabilities.clone(),
+                    ));
                 }
-                let path = PathBuf::from(&target.path);
+            }
+            for project in database.project_repository().list()? {
+                let path = PathBuf::from(project.path());
                 let Ok(root) = AllowedRoot::new(&path) else {
                     continue;
                 };
                 roots.push(root);
-                facts.push(TargetFact::from_logical_target(
-                    &target,
-                    capabilities.clone(),
-                ));
+                facts.push(TargetFact::from_project(&project, capabilities.clone()));
             }
             let policy = PathPolicy::from_roots(roots)?;
             RegisteredTargetIndex::from_facts(facts, policy)

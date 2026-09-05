@@ -2746,7 +2746,55 @@ async fn deployment_plan_query_builds_target_index_from_discovery_for_production
 }
 
 #[tokio::test]
-async fn deployment_target_query_reads_registered_discovery_targets_only() {
+async fn deployment_plan_query_resolves_registered_project_with_copy_as_default() {
+    let database = Database::open_in_memory().expect("database");
+    let skill = Skill::new(skillhub_core::SkillId::new(), "Deployable");
+    database
+        .catalog_repository()
+        .expect("catalog repository")
+        .insert(&skill)
+        .await
+        .expect("insert skill");
+    let library_root = tempfile::tempdir().expect("library root");
+    let source = tempfile::tempdir().expect("source");
+    std::fs::write(source.path().join("SKILL.md"), "# Deployable\n").expect("write skill");
+    let library = CentralLibrary::initialize(library_root.path()).expect("central library");
+    let version = VersionStore::from_library(&library)
+        .capture(skill.id(), source.path())
+        .expect("capture version");
+    let project_root = tempfile::tempdir().expect("project root");
+    let project = database
+        .project_repository()
+        .register(Project::new(
+            skillhub_core::ProjectId::new(),
+            "Aurora",
+            project_root.path(),
+        ))
+        .expect("register project");
+
+    let facade = LocalApplicationFacade::new_with_library(database, library_root.path());
+    let result = facade
+        .query(RootAppQuery::GetDeploymentPlan(GetDeploymentPlan {
+            request: DeploymentPlanRequest {
+                skill_id: skill.id(),
+                version_id: version.id,
+                runtime_name: "deployable".into(),
+                logical_target_ids: vec![project.id.to_string()],
+                mode_override: None,
+            },
+        }))
+        .await
+        .expect("project deployment plan");
+    let AppQueryResult::DeploymentPlan(plan) = result else {
+        panic!("expected deployment plan");
+    };
+    assert_eq!(plan.targets.len(), 1);
+    assert_eq!(plan.targets[0].logical_target_ids, [project.id.to_string()]);
+    assert_eq!(plan.targets[0].mode, DeploymentMode::ManagedCopy);
+}
+
+#[tokio::test]
+async fn deployment_target_query_includes_discovery_and_registered_project_targets() {
     let database = Database::open_in_memory().expect("database");
     let snapshot = DiscoverySnapshot {
         generation: "1".into(),
@@ -2778,6 +2826,16 @@ async fn deployment_target_query_reads_registered_discovery_targets_only() {
         .agent_repository()
         .replace(&snapshot)
         .expect("save discovery");
+    let project_root = tempfile::tempdir().expect("project root");
+    let project = Project::new(
+        skillhub_core::ProjectId::new(),
+        "Aurora",
+        project_root.path(),
+    );
+    let project = database
+        .project_repository()
+        .register(project)
+        .expect("register project");
     let facade = LocalApplicationFacade::new_with_today(database, (2026, 8, 30));
     let result = facade
         .query(RootAppQuery::ListDeploymentTargets(
@@ -2788,10 +2846,18 @@ async fn deployment_target_query_reads_registered_discovery_targets_only() {
     let AppQueryResult::DeploymentTargets(targets) = result else {
         panic!("expected deployment targets");
     };
-    assert_eq!(targets.len(), 1);
+    assert_eq!(targets.len(), 2);
     assert_eq!(targets[0].id, "codex-global");
     assert_eq!(targets[0].modes, [DeploymentMode::ManagedCopy]);
     assert!(targets[0].available);
+    let project_target = targets
+        .iter()
+        .find(|target| target.id == project.id.to_string())
+        .expect("project target");
+    assert_eq!(project_target.label, "Aurora");
+    assert_eq!(project_target.path, project.device_path);
+    assert!(project_target.available);
+    assert!(project_target.modes.contains(&DeploymentMode::ManagedCopy));
 }
 
 #[tokio::test]
