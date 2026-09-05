@@ -1064,7 +1064,7 @@ describe("SkillLibraryPage", () => {
   it("toggles to the card view and persists the choice", async () => {
     const facade = createMockSkillLibraryFacade();
     facade.saveViewMode = vi.fn(async () => undefined);
-    const view = renderLibrary({ facade });
+    renderLibrary({ facade });
 
     // 默认表格视图：表格可见
     await screen.findByRole("checkbox", { name: "Select PDF Reader" });
