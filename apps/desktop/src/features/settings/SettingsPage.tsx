@@ -39,8 +39,8 @@ export function SettingsPage({ facade = unavailableSettingsFacade, initialSettin
       <div className="sh-settings-grid">
         <GeneralSettings facade={facade} settings={settings} />
         <LibrarySettings settings={settings} />
-        <ViewSettings settings={settings} />
-        <AutomationSettings settings={settings} />
+        <ViewSettings facade={facade} settings={settings} />
+        <AutomationSettings facade={facade} settings={settings} />
         <AiNetworkSettings facade={facade} settings={settings.network} />
         <BackupSettings facade={facade.backup} settings={settings} />
         <NetworkStoragePlaceholder />

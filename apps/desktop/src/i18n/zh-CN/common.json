@@ -1018,13 +1018,21 @@
     },
     "view": {
       "heading": "视图",
-      "density": "信息密度：{{density}}"
+      "densityLabel": "信息密度",
+      "density": "信息密度：{{density}}",
+      "densities": {
+        "compact": "紧凑",
+        "standard": "标准",
+        "comfortable": "宽松"
+      },
+      "saveFailed": "无法保存信息密度设置。"
     },
     "automation": {
       "heading": "自动化",
       "perSkill": "单个 Skill 检查",
       "batch": "批量检查",
-      "global": "全局自动检查"
+      "global": "全局自动检查",
+      "saveFailed": "无法保存自动化设置。"
     },
     "network": {
       "heading": "AI 与网络",

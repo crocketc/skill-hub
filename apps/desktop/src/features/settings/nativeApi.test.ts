@@ -75,3 +75,14 @@ it("persists the network switch without replacing unrelated preferences", async 
     payload: { ...preferences, network_enabled: false },
   });
 });
+
+it("persists view density and automation choices without replacing unrelated preferences", async () => {
+  query.mockResolvedValue({ type: "desktop_preferences", payload: preferences });
+  execute.mockResolvedValue({ type: "desktop_preferences", payload: { ...preferences, density: "comfortable", automation_batch: true } });
+
+  await nativeSettingsFacade.execute({ type: "set_density", payload: { density: "comfortable" } });
+  await nativeSettingsFacade.execute({ type: "set_automation", payload: { automation: { perSkill: true, batch: true, global: false } } });
+
+  expect(execute).toHaveBeenNthCalledWith(1, { type: "set_desktop_preferences", payload: { ...preferences, density: "comfortable" } });
+  expect(execute).toHaveBeenNthCalledWith(2, { type: "set_desktop_preferences", payload: { ...preferences, automation_per_skill: true, automation_batch: true, automation_global: false } });
+});

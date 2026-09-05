@@ -42,6 +42,8 @@ export type SettingsCommand =
   | { type: "set_network_enabled"; payload: { enabled: boolean } }
   | { type: "set_theme"; payload: { theme: string } }
   | { type: "set_language"; payload: { language: SettingsSnapshot["appearance"]["language"] } }
+  | { type: "set_density"; payload: { density: SettingsSnapshot["view"]["density"] } }
+  | { type: "set_automation"; payload: { automation: SettingsSnapshot["automation"] } }
   | { type: "set_library_path"; payload: { path: string } }
   | { type: "set_backup_location"; payload: { path: string } }
   | { type: "open_official_release" };

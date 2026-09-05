@@ -72,6 +72,25 @@ it("lets users choose and immediately apply the interface language", async () =>
   expect(await screen.findByRole("heading", { name: "Shape SkillHub around your workflow" })).toBeVisible();
 });
 
+it("persists view density and automation choices", async () => {
+  const user = userEvent.setup();
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  const commands: unknown[] = [];
+  render(
+    <I18nextProvider i18n={i18n}>
+      <ThemeProvider>
+        <SettingsPage facade={{ execute: async (command) => { commands.push(command); } }} initialSettings={settingsFixture()} />
+      </ThemeProvider>
+    </I18nextProvider>,
+  );
+
+  await user.selectOptions(screen.getByLabelText("信息密度"), "comfortable");
+  await user.click(screen.getByLabelText("批量检查"));
+
+  expect(commands).toContainEqual({ type: "set_density", payload: { density: "comfortable" } });
+  expect(commands).toContainEqual({ type: "set_automation", payload: { automation: { perSkill: true, batch: true, global: false } } });
+});
+
 it("turns off online helpers while leaving local management enabled", async () => {
   const user = userEvent.setup();
   const i18n = await createSkillHubI18n(["zh-CN"]);

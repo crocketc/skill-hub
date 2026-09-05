@@ -58,6 +58,14 @@ async function save(command: SettingsCommand): Promise<void> {
     case "set_language":
       next.language = command.payload.language;
       break;
+    case "set_density":
+      next.density = command.payload.density;
+      break;
+    case "set_automation":
+      next.automation_per_skill = command.payload.automation.perSkill;
+      next.automation_batch = command.payload.automation.batch;
+      next.automation_global = command.payload.automation.global;
+      break;
     case "set_backup_location":
       next.backup_location = command.payload.path;
       break;

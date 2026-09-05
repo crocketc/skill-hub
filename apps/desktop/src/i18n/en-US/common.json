@@ -1018,13 +1018,21 @@
     },
     "view": {
       "heading": "View",
-      "density": "Information density: {{density}}"
+      "densityLabel": "Information density",
+      "density": "Information density: {{density}}",
+      "densities": {
+        "compact": "Compact",
+        "standard": "Standard",
+        "comfortable": "Comfortable"
+      },
+      "saveFailed": "The information density setting could not be saved."
     },
     "automation": {
       "heading": "Automation",
       "perSkill": "Per-Skill checks",
       "batch": "Batch checks",
-      "global": "Global auto-checks"
+      "global": "Global auto-checks",
+      "saveFailed": "The automation settings could not be saved."
     },
     "network": {
       "heading": "AI and network",
