@@ -4,6 +4,7 @@ mod git;
 mod http;
 mod parser;
 mod redirect_policy;
+mod repo_ref;
 mod skills_sh;
 
 pub use acquisition::{

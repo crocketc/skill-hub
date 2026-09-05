@@ -8,14 +8,48 @@ use std::thread;
 fn maps_skills_sh_search_results_to_importable_source_hits() {
     let server = fixture_server(
         200,
-        r#"{"data":[{"id":"anthropics/skills/pdf","slug":"pdf","name":"PDF","source":"anthropics/skills","installs":42,"sourceType":"github","installUrl":"https://github.com/anthropics/skills","url":"https://skills.sh/anthropics/skills/pdf","isDuplicate":false}],"query":"pdf","searchType":"semantic","count":1,"durationMs":12}"#,
+        r#"{"query":"pdf","searchType":"semantic","skills":[{"id":"anthropics/skills:pdf","skillId":"pdf","name":"PDF","installs":42,"source":"anthropics/skills"}],"count":1,"duration_ms":12}"#,
     );
     let page =
         block_on(SkillsShProvider::new(server.as_ref()).search(SourceSearchQuery::new("pdf")))
             .unwrap();
-    assert_eq!(page.items[0].source_id, "anthropics/skills/pdf");
+    assert_eq!(page.items.len(), 1);
+    assert_eq!(page.items[0].source_id, "anthropics/skills:pdf");
+    assert_eq!(page.items[0].name, "PDF");
     assert_eq!(page.items[0].source.kind, SourceKind::Git);
-    assert!(page.items[0].page_url.starts_with("https://skills.sh/"));
+    assert_eq!(
+        page.items[0].source.locator.as_url(),
+        Some("https://github.com/anthropics/skills")
+    );
+    assert_eq!(
+        page.items[0].page_url,
+        "https://skills.sh/anthropics/skills/pdf"
+    );
+    assert_eq!(page.items[0].installs, 42);
+    assert!(!page.items[0].is_duplicate);
+    assert_eq!(page.query, "pdf");
+    assert_eq!(page.count, 1);
+    assert_eq!(page.search_type.as_deref(), Some("semantic"));
+    assert_eq!(page.duration_ms, Some(12));
+}
+
+#[test]
+fn filters_out_entries_without_valid_github_owner_repo_coordinates() {
+    let server = fixture_server(
+        200,
+        r#"{"query":"pdf","searchType":"semantic","skills":[
+            {"id":"anthropics/skills:pdf","skillId":"pdf","name":"PDF","installs":42,"source":"anthropics/skills"},
+            {"id":"orphan","skillId":"orphan","name":"No Slash","installs":7,"source":"just-a-name"},
+            {"id":"x","skillId":"x","name":"Dot Owner","installs":3,"source":"skills.volces.com/skills"},
+            {"id":"y","skillId":"y","name":"Escape","installs":5,"source":"../../etc/passwd"}
+        ],"count":4,"duration_ms":9}"#,
+    );
+    let page =
+        block_on(SkillsShProvider::new(server.as_ref()).search(SourceSearchQuery::new("pdf")))
+            .unwrap();
+    assert_eq!(page.items.len(), 1);
+    assert_eq!(page.items[0].source_id, "anthropics/skills:pdf");
+    assert_eq!(page.count, 4);
 }
 
 #[test]

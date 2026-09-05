@@ -6,6 +6,7 @@ license = "MIT"
 
 [dependencies]
 skillhub-core = { path = "../skillhub-core", version = "0.1.0" }
+anyhow = "1.0"
 serde = { version = "1", features = ["derive"] }
 async-trait = "0.1"
 gix = { version = "0.87", default-features = false, features = ["basic", "sha1", "blocking-http-transport-reqwest-rust-tls"] }
