@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "../../ui/Button";
 import type { RestoreDecision, RestorePlan } from "../../api/bindings";
@@ -16,7 +16,17 @@ export function RestoreStep({ operations, onComplete, onBack }: RestoreStepProps
   const [plan, setPlan] = useState<RestorePlan | null>(null);
   const [isPreparing, setIsPreparing] = useState(false);
   const [isRestoring, setIsRestoring] = useState(false);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [message, setMessage] = useState<string | null>(null);
+
+  // Restore currently commits in one native call; keep an honest running
+  // status (count + elapsed time) instead of leaving the UI frozen.
+  useEffect(() => {
+    if (!isRestoring) return;
+    setElapsedSeconds(0);
+    const timer = window.setInterval(() => setElapsedSeconds((seconds) => seconds + 1), 1000);
+    return () => window.clearInterval(timer);
+  }, [isRestoring]);
 
   const selectDirectory = async () => {
     setIsPreparing(true);
@@ -78,6 +88,11 @@ export function RestoreStep({ operations, onComplete, onBack }: RestoreStepProps
         <Button disabled={isPreparing} loading={isRestoring} onClick={() => void restore()}>
           {t("onboarding.restoreAndContinue")}
         </Button>
+      ) : null}
+      {isRestoring && plan ? (
+        <p aria-live="polite" className="sh-onboarding__message" role="status">
+          {t("onboarding.restoreRunning", { count: plan.skills, seconds: elapsedSeconds })}
+        </p>
       ) : null}
       {message ? <p aria-live="polite" className="sh-onboarding__message">{message}</p> : null}
       <Button disabled={isRestoring} onClick={onBack} variant="secondary">

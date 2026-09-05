@@ -185,3 +185,44 @@ it("routes the existing-library branch through a read-only compatibility scan", 
   await click(screen.getByRole("button", { name: "开始只读扫描" }));
   expect(runInitializationScan).toHaveBeenCalled();
 });
+
+it("shows an honest running status while the restore commits", async () => {
+  const completeOnboarding = vi.fn(async () => undefined);
+  let release!: () => void;
+  const pending = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const prepareRestore = vi.fn(async (): Promise<RestorePlan> => ({
+    format_version: 1,
+    skills: 3,
+    deployments_requiring_rediscovery: 0,
+    conflicts: [],
+  }));
+  const commitRestore = vi.fn(async () => {
+    await pending;
+    return {
+      skills_restored: 3,
+      skills_skipped: 0,
+      deployments_requiring_rediscovery: 0,
+    } satisfies RestoreResult;
+  });
+  const pickDirectory = vi.fn(async () => "C:/backup.skillhub");
+
+  renderWizard(
+    { completeOnboarding, discoverAgents: async () => ({ targets: [] }), prepareRestore, commitRestore, pickDirectory },
+  );
+
+  await click(screen.getByRole("button", { name: "从备份恢复" }));
+  await click(screen.getByRole("button", { name: "选择备份目录" }));
+  await waitFor(() => expect(screen.getByText("发现 3 个可恢复技能")).toBeVisible());
+
+  await click(screen.getByRole("button", { name: "恢复并继续" }));
+  expect(screen.getByText(/正在恢复 3 个 Skill/)).toBeVisible();
+  expect(screen.getByRole("button", { name: "恢复并继续" })).toBeDisabled();
+
+  await act(async () => {
+    release();
+    await Promise.resolve();
+  });
+  expect(completeOnboarding).toHaveBeenCalled();
+});

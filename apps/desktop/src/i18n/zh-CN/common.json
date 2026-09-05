@@ -162,6 +162,10 @@
       "title": "处理需要确认的冲突",
       "description": "请为每个必选冲突明确选择处理方式，不会覆盖已有文件。",
       "chooseAction": "选择处理方式",
+      "groupCount": "共 {{count}} 项",
+      "batchLabel": "按类别批量处理",
+      "candidatePath": "候选来源：",
+      "matchedWith": "与已有 Skill 冲突：",
       "commit": "提交导入",
       "none": "没有需要处理的冲突。",
       "kinds": {
@@ -462,6 +466,7 @@
     "restoreFoundSkills": "发现 {{n}} 个可恢复技能",
     "restoreNoSkills": "没有可恢复的技能",
     "restoreAndContinue": "恢复并继续",
+    "restoreRunning": "正在恢复 {{count}} 个 Skill…（已用时 {{seconds}} 秒，完成后自动继续）",
     "restoreBack": "返回"
   },
   "theme": {

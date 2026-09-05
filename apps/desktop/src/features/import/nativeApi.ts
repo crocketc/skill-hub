@@ -257,7 +257,10 @@ export const nativeImportFacade: ImportFacade = {
         conflicts.push({
           allowedActions,
           candidateId: candidate.id,
+          candidatePath: candidate.path,
+          duplicateKind: analysis.duplicate_kind,
           kind: conflictKind(conflict.kind),
+          matchedSkillIds: analysis.matches.map((match) => match.skill_id),
           required: true,
           summary: conflict.reason_code,
         });

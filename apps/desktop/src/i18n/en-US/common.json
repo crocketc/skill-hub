@@ -162,6 +162,10 @@
       "title": "Review required decisions",
       "description": "Choose an explicit action for every required conflict. No choice overwrites existing files.",
       "chooseAction": "Choose an action",
+      "groupCount": "{{count}} items",
+      "batchLabel": "Batch action by kind",
+      "candidatePath": "Candidate source: ",
+      "matchedWith": "Conflicts with existing skills: ",
       "commit": "Commit import",
       "none": "No conflicts require a decision.",
       "kinds": {
@@ -462,6 +466,7 @@
     "restoreFoundSkills": "{{n}} restorable skills found",
     "restoreNoSkills": "No restorable skills",
     "restoreAndContinue": "Restore and continue",
+    "restoreRunning": "Restoring {{count}} skill(s)… ({{seconds}}s elapsed, will continue automatically)",
     "restoreBack": "Back"
   },
   "theme": {

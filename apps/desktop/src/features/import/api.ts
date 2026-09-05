@@ -58,6 +58,11 @@ export interface ImportConflict {
   summary: string;
   allowedActions: ImportAction[];
   required: true;
+  /** Where the imported skill comes from. */
+  candidatePath?: string;
+  /** Existing skills the candidate collides with, per the analysis contract. */
+  matchedSkillIds?: string[];
+  duplicateKind?: string | null;
 }
 
 export interface ImportPlan {
