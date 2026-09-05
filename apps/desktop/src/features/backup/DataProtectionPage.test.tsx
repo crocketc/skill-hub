@@ -168,6 +168,34 @@ describe("DataProtectionPage", () => {
     expect(await screen.findByText("Uninstall decision applied (committed).")).toBeVisible();
   });
 
+  it("sends the backup action through the uninstall decision when selected", async () => {
+    const facade = createFacade();
+    facade.listDeployments = vi.fn().mockResolvedValue([deploymentRecord("dep-1", "skill-1")]);
+    facade.prepareUninstall = vi.fn().mockResolvedValue({
+      deployments: [deploymentRecord("dep-1", "skill-1")],
+      actions: ["backup", "undeploy_all", "retain_central_library"],
+      preserves_central_library: true,
+    });
+    facade.applyUninstallDecision = vi.fn().mockResolvedValue({
+      operation_id: "op-uninstall",
+      phase: "committed",
+      message_code: "uninstall.decision_applied_with_backup",
+      error_code: null,
+    });
+    renderPage(facade);
+
+    fireEvent.click(await screen.findByLabelText("Select deployment dep-1"));
+    fireEvent.click(screen.getByRole("button", { name: "Preview impact" }));
+    const backup = await screen.findByLabelText("Back up selected data");
+    fireEvent.click(backup);
+    fireEvent.click(screen.getByLabelText("Undeploy all selected deployments"));
+    fireEvent.click(screen.getByRole("button", { name: "Apply selected actions" }));
+
+    await waitFor(() =>
+      expect(facade.applyUninstallDecision).toHaveBeenCalledWith(["backup", "undeploy_all"]),
+    );
+  });
+
   it("keeps uninstall failures structured instead of faking success", async () => {
     const facade = createFacade();
     facade.listDeployments = vi.fn().mockResolvedValue([deploymentRecord("dep-1", "skill-1")]);
