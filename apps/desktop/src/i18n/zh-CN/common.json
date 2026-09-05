@@ -202,6 +202,9 @@
         "skipped": "已跳过",
         "failed": "失败"
       }
+    },
+    "tracker": {
+      "label": "批量导入 Skill"
     }
   },
   "discovery": {
@@ -1080,7 +1083,12 @@
     "heading": "完成中断的操作",
     "description": "确认操作状态后，再确认恢复并继续。",
     "loading": "正在加载恢复状态",
-    "acknowledge": "确认恢复"
+    "acknowledge": "确认恢复",
+    "tabs": {
+      "records": "操作记录",
+      "backupRestore": "备份恢复",
+      "backupRestoreHint": "备份与恢复的完整流程在“数据保护”页；此处承接需要确认的恢复事项。"
+    }
   },
   "operations": {
     "eyebrow": "操作进度",
@@ -1098,7 +1106,30 @@
       "needs_recovery": "需要恢复",
       "rolled_back": "已回滚"
     },
-    "completed": "已完成"
+    "tracker": {
+      "ariaLabel": "后台操作",
+      "running": "{{label}}：进行中（{{completed}}/{{total}}）",
+      "completed": "{{label}} 已完成：成功 {{succeeded}}、失败 {{failed}}、跳过 {{skipped}}",
+      "completedPlain": "{{label}} 已完成",
+      "failed": "{{label}} 失败：{{error}}",
+      "cancelled": "{{label}} 已取消",
+      "viewOperations": "查看操作记录"
+    },
+    "completed": "已完成",
+    "list": {
+      "ariaLabel": "操作记录",
+      "sessionTitle": "本会话后台操作",
+      "recentTitle": "最近操作记录",
+      "empty": "尚未有任何操作记录。执行导入、部署等操作后会在这里显示。",
+      "recentEmpty": "暂无持久化操作记录。",
+      "loading": "正在读取操作记录…",
+      "error": "操作记录读取失败：{{error}}",
+      "state": "状态：{{state}}",
+      "errorCode": "错误码：{{code}}",
+      "sessionRunning": "进行中（{{completed}}/{{total}}）",
+      "sessionCompleted": "成功 {{succeeded}}、失败 {{failed}}、跳过 {{skipped}}",
+      "sessionFailed": "失败"
+    }
   },
   "settings": {
     "reopenOnboarding": "重新运行初始化向导",

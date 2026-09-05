@@ -202,6 +202,9 @@
         "skipped": "Skipped",
         "failed": "Failed"
       }
+    },
+    "tracker": {
+      "label": "Batch import Skills"
     }
   },
   "discovery": {
@@ -1080,7 +1083,12 @@
     "heading": "Finish the interrupted operation",
     "description": "Review the operation state before acknowledging recovery and continuing.",
     "loading": "Loading recovery state",
-    "acknowledge": "Acknowledge recovery"
+    "acknowledge": "Acknowledge recovery",
+    "tabs": {
+      "records": "Operation records",
+      "backupRestore": "Backup & restore",
+      "backupRestoreHint": "The full backup/restore flow lives in Data protection; confirmations for recovery appear here."
+    }
   },
   "operations": {
     "eyebrow": "Operation progress",
@@ -1098,7 +1106,30 @@
       "needs_recovery": "Needs recovery",
       "rolled_back": "Rolled back"
     },
-    "completed": "Completed"
+    "tracker": {
+      "ariaLabel": "Background operations",
+      "running": "{{label}}: running ({{completed}}/{{total}})",
+      "completed": "{{label}} completed: {{succeeded}} succeeded, {{failed}} failed, {{skipped}} skipped",
+      "completedPlain": "{{label}} completed",
+      "failed": "{{label}} failed: {{error}}",
+      "cancelled": "{{label}} cancelled",
+      "viewOperations": "View operations"
+    },
+    "completed": "Completed",
+    "list": {
+      "ariaLabel": "Operation records",
+      "sessionTitle": "Background operations in this session",
+      "recentTitle": "Recent operations",
+      "empty": "No operation records yet. Imports, deployments and similar operations will appear here.",
+      "recentEmpty": "No persisted operation records.",
+      "loading": "Loading operation records…",
+      "error": "Failed to read operation records: {{error}}",
+      "state": "State: {{state}}",
+      "errorCode": "Error code: {{code}}",
+      "sessionRunning": "running ({{completed}}/{{total}})",
+      "sessionCompleted": "{{succeeded}} succeeded, {{failed}} failed, {{skipped}} skipped",
+      "sessionFailed": "failed"
+    }
   },
   "settings": {
     "reopenOnboarding": "Run initialization again",

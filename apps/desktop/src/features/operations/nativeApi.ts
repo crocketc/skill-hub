@@ -1,5 +1,15 @@
 import { executeCommand, queryApplication } from "../../api/bindings";
-import type { OperationFacade, OperationState } from "./api";
+import type { OperationFacade, OperationState, RecentOperationRow, RecentOperationsReader } from "./api";
+
+export type { RecentOperationsReader, RecentOperationRow };
+
+export const nativeRecentOperations: RecentOperationsReader = {
+  async listRecentOperations() {
+    const result = await queryApplication({ type: "get_bootstrap_snapshot" });
+    if (result.type !== "bootstrap_snapshot") throw new Error("operation query returned an unexpected result");
+    return result.payload.recent_operations;
+  },
+};
 
 export const nativeOperationFacade: OperationFacade = {
   async get(operationId) {
