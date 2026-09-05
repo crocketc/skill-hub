@@ -864,6 +864,11 @@
       "loading": "正在读取部署关系…",
       "empty": "尚无部署关系，先部署 Skill 后即可在此查看矩阵。",
       "hint": "矩阵仅显示当前页的 Skill；✓ 表示该 Skill 已部署到对应目标。"
+    },
+    "groupMode": {
+      "label": "分组方式",
+      "none": "不分组",
+      "tags": "按标签分组"
     }
   },
   "skillDetail": {

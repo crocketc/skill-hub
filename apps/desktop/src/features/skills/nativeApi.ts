@@ -208,6 +208,16 @@ export const nativeSkillLibraryFacade: SkillLibraryFacade = {
     if (result.type !== "deployment_targets") throw unavailableResult();
     return result.payload;
   },
+  async loadGroupMode() {
+    const raw = await readUiPreference("library_group_mode");
+    return raw === "tags" ? "tags" : "none";
+  },
+  async saveGroupMode(mode) {
+    await executeCommand({
+      type: "set_ui_preference",
+      payload: { key: "library_group_mode", value_json: JSON.stringify(mode) },
+    });
+  },
   async loadTablePreferences() {
     return JSON.parse(await readUiPreference("table_preferences")) as SkillTablePreferences;
   },

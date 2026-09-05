@@ -157,6 +157,7 @@ export interface SkillBatchIntent {
 }
 
 export type LibraryViewMode = "table" | "cards" | "matrix";
+export type LibraryGroupMode = "none" | "tags";
 
 export interface SkillLibraryFacade {
   emitBatchIntent(intent: SkillBatchIntent): Promise<void>;
@@ -172,6 +173,9 @@ export interface SkillLibraryFacade {
   listDeployments?: () => Promise<DeploymentRecord[]>;
   /** 已注册部署目标（矩阵列标签）。 */
   listDeploymentTargets?: () => Promise<DeploymentTarget[]>;
+  /** 卡片分组模式持久化。 */
+  loadGroupMode?: () => Promise<LibraryGroupMode>;
+  saveGroupMode?: (mode: LibraryGroupMode) => Promise<void>;
   retainMatchingSkillIds(skillIds: string[], query: SkillLibraryQuery): Promise<string[]>;
   saveDrawerPreferences(preferences: SkillDrawerPreferences): Promise<void>;
   saveSkillMetadata?: (skillId: string, patch: SkillMetadataPatch) => Promise<void>;

@@ -1100,6 +1100,22 @@ describe("SkillLibraryPage", () => {
     expect(facade.listDeployments).toHaveBeenCalled();
   });
 
+
+  it("groups card view sections by tag when tag grouping is selected", async () => {
+    const facade = createMockSkillLibraryFacade();
+    facade.saveGroupMode = vi.fn(async () => undefined);
+    renderLibrary({ facade });
+
+    // 等数据加载完成，再切换视图与分组
+    await screen.findByRole("checkbox", { name: "Select PDF Reader" });
+    fireEvent.change(screen.getByLabelText(/View mode|视图模式/), { target: { value: "cards" } });
+    fireEvent.change(screen.getByLabelText(/Group by|分组方式/), { target: { value: "tags" } });
+
+    expect(facade.saveGroupMode).toHaveBeenCalledWith("tags");
+    const headings = await screen.findAllByRole("heading", { name: "documents" });
+    expect(headings.length).toBeGreaterThanOrEqual(1);
+  });
+
   it("restores a persisted card view on load", async () => {
     const facade = createMockSkillLibraryFacade();
     facade.loadViewMode = vi.fn(async () => "cards" as const);

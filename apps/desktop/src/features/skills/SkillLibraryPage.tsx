@@ -36,6 +36,8 @@ import {
   type LibraryViewMode,
   type DeploymentRecord,
   type DeploymentTarget,
+  type LibraryGroupMode,
+  type SkillTableRow,
 } from "./api";
 import {
   applySavedView,
@@ -459,6 +461,23 @@ export function SkillLibraryPage({
       active = false;
     };
   }, [facade]);
+  const [groupMode, setGroupMode] = useState<LibraryGroupMode>("none");
+  useEffect(() => {
+    let active = true;
+    void facade.loadGroupMode?.().then((mode) => {
+      if (active) setGroupMode(mode);
+    }).catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, [facade]);
+  const changeGroupMode = useCallback(
+    (next: LibraryGroupMode) => {
+      setGroupMode(next);
+      void facade.saveGroupMode?.(next).catch(() => undefined);
+    },
+    [facade],
+  );
 
   const changeViewMode = useCallback(
     (next: LibraryViewMode) => {
@@ -877,6 +896,36 @@ export function SkillLibraryPage({
   }
 
   const page = pageQuery.data;
+  const renderSkillCard = (item: SkillTableRow) => (
+    <article
+      className="sh-skill-card"
+      data-testid={`skill-card-${item.id}`}
+      key={item.id}
+    >
+      <button className="sh-skill-card__open" onClick={(event) => openSkill(item.id, event.currentTarget)} type="button">
+        <strong>{item.name}</strong>
+      </button>
+      {item.purpose ? <p>{item.purpose}</p> : null}
+      {item.tags.length > 0 ? (
+        <ul aria-label={t("skillLibrary.page.card.tags")} className="sh-skill-card__tags">
+          {item.tags.map((tag) => <li key={tag}>{tag}</li>)}
+        </ul>
+      ) : null}
+      <span className="sh-skill-card__facts">
+        {t("skillLibrary.page.card.deploymentCount", { count: item.agentDeploymentCount })}
+      </span>
+    </article>
+  );
+
+  const groupedCards = new Map<string, SkillTableRow[]>();
+  for (const item of page.items) {
+    const tags = item.tags.length > 0 ? item.tags : ["—"];
+    for (const tag of tags) {
+      const bucket = groupedCards.get(tag) ?? [];
+      bucket.push(item);
+      groupedCards.set(tag, bucket);
+    }
+  }
   const pageRefreshing = pageQuery.isPlaceholderData;
   if (!pageRefreshing && page.total === 0 && !hasActiveFilter(query)) {
     return (
@@ -956,6 +1005,17 @@ export function SkillLibraryPage({
             <option value="matrix">{t("skillLibrary.viewMode.matrix")}</option>
           </select>
         </label>
+        <label>
+          <span className="sh-visually-hidden">{t("skillLibrary.groupMode.label")}</span>
+          <select
+            aria-label={t("skillLibrary.groupMode.label")}
+            onChange={(event) => changeGroupMode(event.currentTarget.value as LibraryGroupMode)}
+            value={groupMode}
+          >
+            <option value="none">{t("skillLibrary.groupMode.none")}</option>
+            <option value="tags">{t("skillLibrary.groupMode.tags")}</option>
+          </select>
+        </label>
       </div>
       {preferenceStatus}
       {selectionAnnouncement ? (
@@ -996,33 +1056,21 @@ export function SkillLibraryPage({
             items={page.items}
           />
       ) : viewMode === "cards" ? (
-          <div className="sh-skill-cards" data-testid="skill-cards">
-            {page.items.map((item) => (
-              <article
-                className="sh-skill-card"
-                data-testid={`skill-card-${item.id}`}
-                key={item.id}
-              >
-                <button
-                  className="sh-skill-card__open"
-                  onClick={(event) => openSkill(item.id, event.currentTarget)}
-                  type="button"
-                >
-                  <strong>{item.name}</strong>
-                </button>
-                {item.purpose ? <p>{item.purpose}</p> : null}
-                {item.tags.length > 0 ? (
-                  <ul aria-label={t("skillLibrary.page.card.tags")} className="sh-skill-card__tags">
-                    {item.tags.map((tag) => <li key={tag}>{tag}</li>)}
-                  </ul>
-                ) : null}
-                <span className="sh-skill-card__facts">
-                  {t("skillLibrary.page.card.deploymentCount", { count: item.agentDeploymentCount })}
-                </span>
-              </article>
-            ))}
-          </div>
+        groupMode === "tags" ? (
+          [...groupedCards.entries()].map(([tag, groupItems]) => (
+            <section key={tag}>
+              <h3>{tag}</h3>
+              <div className="sh-skill-cards">
+                {groupItems.map((item) => renderSkillCard(item))}
+              </div>
+            </section>
+          ))
         ) : (
+          <div className="sh-skill-cards" data-testid="skill-cards">
+            {page.items.map((item) => renderSkillCard(item))}
+          </div>
+        )
+      ) : (
         <SkillTable
           pageStatus={t("skillLibrary.page.pageStatus", {
             count: page.total,
