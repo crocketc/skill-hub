@@ -219,6 +219,28 @@
       "description": "未来将使用相同安全流程审阅远程仓库来源。",
       "factNoNetwork": "此预览未启用网络访问",
       "factPreview": "不会宣称或执行任何远程仓库"
+    },
+    "workbench": {
+      "title": "本机发现工作台",
+      "lastScan": "上次扫描：",
+      "scope": "扫描范围：{{clients}} 个客户端、{{targets}} 个物理目标",
+      "rescan": "重新扫描",
+      "scanning": "扫描中…",
+      "unavailable": "发现快照暂不可用",
+      "scanFailed": "扫描失败，请稍后重试",
+      "unmanaged": "未纳管 {{count}}",
+      "related": "已有关系 {{count}}",
+      "conflict": "冲突 {{count}}",
+      "suspected": "疑似 {{count}}",
+      "unreadable": "无法读取 {{count}}"
+    },
+    "search": {
+      "label": "搜索 skills.sh",
+      "action": "搜索",
+      "searching": "搜索中…",
+      "failed": "搜索失败，请稍后重试",
+      "source": "来源：{{provider}}",
+      "installs": "安装次数：{{count}}"
     }
   },
   "agents": {

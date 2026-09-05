@@ -219,6 +219,28 @@
       "description": "A future source boundary for reviewing remote repositories with the same safe flow.",
       "factNoNetwork": "Network access is not enabled in this preview",
       "factPreview": "No remote repository is claimed or executed"
+    },
+    "workbench": {
+      "title": "Local discovery workbench",
+      "lastScan": "Last scan: ",
+      "scope": "Scan scope: {{clients}} clients, {{targets}} physical targets",
+      "rescan": "Rescan",
+      "scanning": "Scanning…",
+      "unavailable": "Discovery snapshot is unavailable",
+      "scanFailed": "Scan failed. Please try again later.",
+      "unmanaged": "Unmanaged {{count}}",
+      "related": "Related {{count}}",
+      "conflict": "Conflicts {{count}}",
+      "suspected": "Suspected {{count}}",
+      "unreadable": "Unreadable {{count}}"
+    },
+    "search": {
+      "label": "Search skills.sh",
+      "action": "Search",
+      "searching": "Searching…",
+      "failed": "Search failed. Please try again later.",
+      "source": "Source: {{provider}}",
+      "installs": "Installs: {{count}}"
     }
   },
   "agents": {

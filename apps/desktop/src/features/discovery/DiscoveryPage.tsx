@@ -4,10 +4,14 @@ import { ImportWizard } from "../import/ImportWizard";
 import { type ImportFacade, type ImportResult } from "../import/api";
 import { nativeImportFacade } from "../import/nativeApi";
 import { LocalDiscovery } from "./LocalDiscovery";
+import { LocalDiscoveryWorkbench } from "./LocalDiscoveryWorkbench";
 import { OnlineDiscovery } from "./OnlineDiscovery";
+import type { DiscoveryFacade } from "./api";
 
 export interface DiscoveryPageProps {
   importFacade?: ImportFacade;
+  /** When provided, the local discovery card renders the FE-07 workbench. */
+  discoveryFacade?: DiscoveryFacade;
   initialSources?: string[];
   initialSourceText?: string;
   onImportComplete?: (results: ImportResult[]) => void;
@@ -16,6 +20,7 @@ export interface DiscoveryPageProps {
 
 export function DiscoveryPage({
   importFacade = nativeImportFacade,
+  discoveryFacade,
   initialSources = [],
   initialSourceText,
   onImportComplete,
@@ -60,8 +65,11 @@ export function DiscoveryPage({
         <span className="sh-discovery-page__count">{t("discovery.scope")}</span>
       </div>
       <div className="sh-discovery-page__grid">
-        <LocalDiscovery onStartImport={() => setShowImport(true)} />
-        <OnlineDiscovery onStartImport={() => setShowImport(true)} />
+        <div className="sh-discovery-page__local">
+          {discoveryFacade ? <LocalDiscoveryWorkbench facade={discoveryFacade} /> : null}
+          <LocalDiscovery onStartImport={() => setShowImport(true)} />
+        </div>
+        <OnlineDiscovery facade={discoveryFacade} onStartImport={() => setShowImport(true)} />
       </div>
     </div>
   );

@@ -23,6 +23,7 @@ import { nativeBackupFacade } from "../features/backup/nativeApi";
 import { SettingsPage } from "../features/settings/SettingsPage";
 import { nativeSettingsFacade } from "../features/settings/nativeApi";
 import { DiscoveryPage } from "../features/discovery/DiscoveryPage";
+import { desktopDiscoveryFacade } from "../features/discovery/api";
 import { OverviewPage } from "../features/overview/OverviewPage";
 import { SkillLibraryPage } from "../features/skills/SkillLibraryPage";
 import { SkillDetailPage } from "../features/skill-detail/SkillDetailPage";
@@ -144,6 +145,7 @@ function DiscoveryRoute() {
 
   return (
     <DiscoveryPage
+      discoveryFacade={desktopDiscoveryFacade}
       initialSources={state?.initialSources}
       initialSourceText={state?.initialSourceText}
       onImportComplete={handleImportComplete}
