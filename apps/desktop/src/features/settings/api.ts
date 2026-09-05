@@ -1,5 +1,9 @@
-import { executeCommand, queryApplication, type UpdateArtifact, type UpdateManifest, type UpdatePlatform } from "../../api/bindings";
+import { executeCommand, queryApplication, type HealthReport, type UpdateArtifact, type UpdateManifest, type UpdatePlatform } from "../../api/bindings";
 import type { BackupFacade } from "../backup/api";
+
+export interface LibraryHealthOperations {
+  runHealthCheck: () => Promise<HealthReport>;
+}
 
 export type BuildTrust = "windows_signed" | "windows_unsigned" | "macos_signed" | "unknown";
 export type NetworkSettings = { networkEnabled: boolean; llmProvider: string; dataScope: string };
@@ -64,6 +68,8 @@ export interface SettingsFacade {
   get?: () => Promise<SettingsSnapshot>;
   updates?: ApplicationUpdateOperations;
   backup?: BackupFacade;
+  /** When provided, the library card renders the health check entry (FE-16). */
+  libraryHealth?: LibraryHealthOperations;
 }
 const unavailable = (operation: string): Promise<never> => Promise.reject(new Error(`${operation} is unavailable until the native contract is generated.`));
 export const unavailableSettingsFacade: SettingsFacade = { execute: () => unavailable("settings_command"), get: () => unavailable("settings_query") };

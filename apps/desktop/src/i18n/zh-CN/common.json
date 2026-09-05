@@ -1059,7 +1059,16 @@
     "library": {
       "heading": "技能库",
       "path": "技能库路径",
-      "migrationAvailable": "连接本机服务后可使用技能库迁移入口。"
+      "migrationAvailable": "连接本机服务后可使用技能库迁移入口。",
+      "runHealthCheck": "运行健康检查",
+      "checking": "检查中…",
+      "checkFailed": "健康检查失败，请稍后重试",
+      "allClear": "未发现问题",
+      "findingsSummary": "发现 {{count}} 个问题",
+      "severityCritical": "严重",
+      "severityError": "错误",
+      "severityWarning": "警告",
+      "severityInfo": "提示"
     },
     "view": {
       "heading": "视图",

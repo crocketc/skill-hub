@@ -1059,7 +1059,16 @@
     "library": {
       "heading": "Library",
       "path": "Library path",
-      "migrationAvailable": "A library migration entry is available when the native service is connected."
+      "migrationAvailable": "A library migration entry is available when the native service is connected.",
+      "runHealthCheck": "Run health check",
+      "checking": "Checking…",
+      "checkFailed": "Health check failed. Please try again later.",
+      "allClear": "No issues found",
+      "findingsSummary": "{{count}} issues found",
+      "severityCritical": "Critical",
+      "severityError": "Error",
+      "severityWarning": "Warning",
+      "severityInfo": "Info"
     },
     "view": {
       "heading": "View",

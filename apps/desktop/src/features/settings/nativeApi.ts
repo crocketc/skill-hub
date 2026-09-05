@@ -115,6 +115,15 @@ export const nativeSettingsFacade: SettingsFacade = {
   execute: save,
   get,
   backup: nativeBackupFacade,
+  libraryHealth: {
+    async runHealthCheck() {
+      const result = await executeCommand({ type: "run_health_check", payload: null });
+      if (result.type !== "health_report") {
+        throw new Error("run_health_check returned an unexpected native result.");
+      }
+      return result.payload;
+    },
+  },
   updates: nativeApplicationUpdateOperations({
     currentVersion: async () => (await import("@tauri-apps/api/app")).getVersion(),
     buildTrust,
