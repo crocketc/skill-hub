@@ -1926,8 +1926,7 @@ impl LocalApplicationFacade {
         let unsupported_action = actions.iter().find(|action| {
             matches!(
                 action,
-                skillhub_core::UninstallAction::Backup
-                    | skillhub_core::UninstallAction::StandardExport
+                skillhub_core::UninstallAction::StandardExport
                     | skillhub_core::UninstallAction::RemoveDeviceData
                     | skillhub_core::UninstallAction::ClearCredentials
             )
@@ -1946,6 +1945,19 @@ impl LocalApplicationFacade {
                     .with_param("detail", "uninstall impact must be prepared first")
                     .with_action(RecoveryAction::Retry)
             })?;
+        // 卸载备份（Q17）：在任何写动作之前创建完整备份包；失败则整体中止，
+        // 保证"先备份后卸载"的顺序。库根或版本库缺失时如实报错。
+        let wants_backup = actions.contains(&skillhub_core::UninstallAction::Backup);
+        if wants_backup {
+            let input = self.build_backup_input(BackupScope::Full)?;
+            let Some(root) = self.library_root.as_ref() else {
+                return Err(unsupported("execute.apply_uninstall_decision.library"));
+            };
+            let service = BackupService::new(LibraryPaths::from_root(root).backups_dir);
+            let plan = service.prepare(&input)?;
+            let package = service.create(&input, &plan, &[])?;
+            service.verify(&package)?;
+        }
         if actions.contains(&skillhub_core::UninstallAction::UndeployAll) {
             for deployment in deployments.iter().filter(|deployment| deployment.managed) {
                 self.removal_service
@@ -1965,6 +1977,7 @@ impl LocalApplicationFacade {
                     .await?;
             }
         }
+        let ran_backup = wants_backup;
         self.prepared_uninstall
             .lock()
             .map_err(|_| internal("execute.apply_uninstall_decision"))?
@@ -1973,7 +1986,11 @@ impl LocalApplicationFacade {
             skillhub_core::OperationSummary {
                 operation_id: OperationId::new(),
                 phase: skillhub_core::OperationPhase::Committed,
-                message_code: "uninstall.decision_applied".into(),
+                message_code: if ran_backup {
+                    "uninstall.decision_applied_with_backup".into()
+                } else {
+                    "uninstall.decision_applied".into()
+                },
                 error_code: None,
             },
         ))

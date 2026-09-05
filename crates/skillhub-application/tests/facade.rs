@@ -3919,3 +3919,236 @@ async fn catalog_metadata_rejects_invalid_updates_without_partial_write() {
     };
     assert_eq!(detail.display_name, "Original");
 }
+
+#[tokio::test]
+async fn uninstall_backup_action_creates_restorable_package_before_undeploy() {
+    let database = Database::open_in_memory().expect("database");
+    let skill = Skill::new(skillhub_core::SkillId::new(), "Backup before removal");
+    database
+        .catalog_repository()
+        .expect("catalog repository")
+        .insert(&skill)
+        .await
+        .expect("insert skill");
+    let source = tempfile::tempdir().expect("source");
+    std::fs::write(
+        source.path().join("SKILL.md"),
+        "# Backup me
+",
+    )
+    .expect("write source");
+    let target = tempfile::tempdir().expect("target");
+    let root = tempfile::tempdir().expect("library root");
+    let library = CentralLibrary::initialize(root.path()).expect("central library");
+    let version = VersionStore::from_library(&library)
+        .capture(skill.id(), source.path())
+        .expect("capture version");
+    VersionStore::from_library(&library)
+        .set_current(skill.id(), &version.id)
+        .expect("set current");
+    let version_id = skillhub_core::VersionId::parse(
+        "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    )
+    .expect("version id");
+    database
+        .connection_for_test()
+        .execute(
+            "INSERT INTO versions (id, skill_id, content_hash, manifest_json, created_at) VALUES (?1, ?2, 'hash', '{}', 0)",
+            rusqlite::params![version_id.to_string(), skill.id().to_string()],
+        )
+        .expect("insert version");
+    let target_id = skillhub_core::physical_id_for_path(target.path()).expect("target id");
+    database
+        .connection_for_test()
+        .execute(
+            "INSERT INTO targets (id, agent_id, scope, path, created_at) VALUES (?1, 'agent-codex', 'global', ?2, 0)",
+            rusqlite::params![target_id, target.path().to_string_lossy().into_owned()],
+        )
+        .expect("insert target");
+    let plan = DeploymentPlan {
+        skill_id: skill.id(),
+        version_id: version_id.clone(),
+        runtime_name: "backup-candidate".into(),
+        mode: DeploymentMode::ManagedCopy,
+        warnings: Vec::new(),
+        conflicts: Vec::new(),
+        targets: vec![TargetPlan {
+            physical_target_id: target_id,
+            logical_target_ids: vec!["agent-codex".into()],
+            target_path: target.path().to_string_lossy().into_owned(),
+            destination_path: target
+                .path()
+                .join("backup-candidate")
+                .to_string_lossy()
+                .into_owned(),
+            source_path: source.path().to_string_lossy().into_owned(),
+            runtime_name: "backup-candidate".into(),
+            skill_id: skill.id(),
+            version_id: version_id.clone(),
+            mode: DeploymentMode::ManagedCopy,
+            change: TargetChange::Create,
+            warnings: Vec::new(),
+            conflicts: Vec::new(),
+        }],
+    };
+    let facade = LocalApplicationFacade::new_with_library(database, root.path());
+    let prepared = facade
+        .execute(AppCommand::PrepareDeployment(PrepareDeployment { plan }))
+        .await
+        .expect("prepare deployment");
+    let AppCommandResult::PreparedDeployment(prepared) = prepared else {
+        panic!("expected prepared deployment");
+    };
+    facade
+        .execute(AppCommand::CommitDeployment(CommitDeployment {
+            prepared_deployment_id: prepared.id,
+        }))
+        .await
+        .expect("commit deployment");
+    let records = facade
+        .query(RootAppQuery::ListDeployments(ListDeployments {
+            skill_id: Some(skill.id()),
+        }))
+        .await
+        .expect("deployment records");
+    let AppQueryResult::Deployments(records) = records else {
+        panic!("expected deployment records");
+    };
+    assert_eq!(records.len(), 1);
+
+    facade
+        .execute(AppCommand::PrepareUninstall(
+            skillhub_core::PrepareUninstall {
+                deployment_ids: vec![records[0].id],
+            },
+        ))
+        .await
+        .expect("prepare uninstall");
+
+    let result = facade
+        .execute(AppCommand::ApplyUninstallDecision(
+            skillhub_core::ApplyUninstallDecision {
+                actions: vec![
+                    skillhub_core::UninstallAction::Backup,
+                    skillhub_core::UninstallAction::UndeployAll,
+                ],
+            },
+        ))
+        .await
+        .expect("apply with backup");
+    let AppCommandResult::OperationSummary(summary) = result else {
+        panic!("expected operation summary");
+    };
+    assert_eq!(
+        summary.message_code,
+        "uninstall.decision_applied_with_backup"
+    );
+
+    // 卸载备份必须真实落盘（可恢复的包），而不是只改一条状态记录。
+    let backups_dir = root.path().join(".skillhub").join("backups");
+    assert!(backups_dir.is_dir(), "backups dir missing");
+    let manifest_files = walk_files(&backups_dir)
+        .into_iter()
+        .filter(|file| {
+            file.file_name()
+                .map(|name| name == "backup.json")
+                .unwrap_or(false)
+        })
+        .count();
+    assert!(manifest_files >= 1, "no backup package manifest found");
+
+    // undeploy 依然生效
+    let listed = facade
+        .query(RootAppQuery::ListDeployments(ListDeployments {
+            skill_id: Some(skill.id()),
+        }))
+        .await
+        .expect("list after uninstall");
+    let AppQueryResult::Deployments(listed) = listed else {
+        panic!("expected deployments");
+    };
+    assert!(listed.is_empty() || listed.iter().all(|d| d.state != DeploymentState::Deployed));
+}
+
+#[tokio::test]
+async fn uninstall_backup_without_library_root_aborts_before_undeploy() {
+    let database = Database::open_in_memory().expect("database");
+    let skill = Skill::new(skillhub_core::SkillId::new(), "No library");
+    database
+        .catalog_repository()
+        .expect("catalog repository")
+        .insert(&skill)
+        .await
+        .expect("insert skill");
+    let version_id = skillhub_core::VersionId::parse(
+        "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    )
+    .expect("version id");
+    database
+        .connection_for_test()
+        .execute(
+            "INSERT INTO versions (id,skill_id,content_hash,manifest_json,created_at) VALUES (?1,?2,'hash','{}',0)",
+            rusqlite::params![version_id.to_string(), skill.id().to_string()],
+        )
+        .expect("insert version");
+    database
+        .connection_for_test()
+        .execute(
+            "INSERT INTO targets (id,agent_id,scope,path,created_at) VALUES ('target-uninstall','agent','global','C:/agent',0)",
+            [],
+        )
+        .expect("insert target");
+    let deployment = DeploymentRecord {
+        id: skillhub_core::DeploymentId::new(),
+        skill_id: skill.id(),
+        version_id,
+        target_id: "target-uninstall".into(),
+        state: DeploymentState::Deployed,
+        mode: DeploymentMode::ManagedCopy,
+        managed: true,
+        runtime_name: "uninstall-candidate".into(),
+        expected_hash: "sha256:tree".into(),
+        observed_hash: Some("sha256:tree".into()),
+    };
+    database
+        .deployment_repository()
+        .insert(&deployment)
+        .await
+        .expect("insert deployment");
+    let facade = LocalApplicationFacade::new_with_today(database, (2026, 8, 30));
+
+    facade
+        .execute(AppCommand::PrepareUninstall(
+            skillhub_core::PrepareUninstall {
+                deployment_ids: vec![deployment.id],
+            },
+        ))
+        .await
+        .expect("prepare uninstall");
+
+    // 无集中库根时 backup 无法创建：整体中止，不得先卸载。
+    let error = facade
+        .execute(AppCommand::ApplyUninstallDecision(
+            skillhub_core::ApplyUninstallDecision {
+                actions: vec![
+                    skillhub_core::UninstallAction::Backup,
+                    skillhub_core::UninstallAction::UndeployAll,
+                ],
+            },
+        ))
+        .await
+        .expect_err("backup without library must abort");
+    let _ = error;
+
+    let listed = facade
+        .query(RootAppQuery::ListDeployments(ListDeployments {
+            skill_id: Some(skill.id()),
+        }))
+        .await
+        .expect("list after abort");
+    let AppQueryResult::Deployments(listed) = listed else {
+        panic!("expected deployments");
+    };
+    assert_eq!(listed[0].managed, true);
+    assert_eq!(listed[0].state, DeploymentState::Deployed);
+}
