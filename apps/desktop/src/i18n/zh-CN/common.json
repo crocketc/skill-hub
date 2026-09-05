@@ -297,7 +297,17 @@
     },
     "readOnly": "只读事实",
     "detail": {
-      "eyebrow": "项目详情"
+      "eyebrow": "项目详情",
+      "agentAssociations": {
+        "eyebrow": "关联目标",
+        "title": "关联 Agent",
+        "description": "关联用于组织本机项目；取消全部选择只会移除关联，不会删除项目或 Agent。",
+        "legend": "可关联的已发现 Agent",
+        "none": "尚未发现可关联的 Agent。",
+        "save": "保存关联",
+        "saved": "已保存 Agent 关联。",
+        "saveFailed": "无法保存 Agent 关联。"
+      }
     },
     "sharedConfig": {
       "eyebrow": "共享配置",

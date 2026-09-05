@@ -17,10 +17,14 @@ function projectView(project: Project): ProjectView {
   };
 }
 
-async function listProjects(): Promise<ProjectView[]> {
+async function listRawProjects(): Promise<Project[]> {
   const result = await queryApplication({ type: "list_projects", payload: null });
   if (result.type !== "projects") throw new Error("list_projects returned an unexpected native result.");
-  return result.payload.map(projectView);
+  return result.payload;
+}
+
+async function listProjects(): Promise<ProjectView[]> {
+  return (await listRawProjects()).map(projectView);
 }
 
 export const nativeProjectFacade: ProjectFacade = {
@@ -66,6 +70,16 @@ export const nativeProjectFacade: ProjectFacade = {
       },
     });
     if (result.type !== "project") throw new Error("register_project returned an unexpected native result.");
+    return projectView(result.payload);
+  },
+  async updateAgentIds(id, agentIds) {
+    const project = (await listRawProjects()).find((candidate) => candidate.id === id);
+    if (!project) throw new Error(`Project ${id} was not found.`);
+    const result = await executeCommand({
+      type: "update_project",
+      payload: { project: { ...project, agent_ids: agentIds, updated_at: new Date().toISOString() } },
+    });
+    if (result.type !== "project") throw new Error("update_project returned an unexpected native result.");
     return projectView(result.payload);
   },
   async listAgentCandidates(): Promise<ProjectAgentCandidate[]> {

@@ -297,7 +297,17 @@
     },
     "readOnly": "Read-only facts",
     "detail": {
-      "eyebrow": "Project detail"
+      "eyebrow": "Project detail",
+      "agentAssociations": {
+        "eyebrow": "Associated targets",
+        "title": "Associated Agents",
+        "description": "Associations organize this local project. Clearing every selection removes associations only; it does not delete the project or an Agent.",
+        "legend": "Discovered Agents available for association",
+        "none": "No discovered Agents are available for association.",
+        "save": "Save associations",
+        "saved": "Agent associations saved.",
+        "saveFailed": "Agent associations could not be saved."
+      }
     },
     "sharedConfig": {
       "eyebrow": "Shared configuration",

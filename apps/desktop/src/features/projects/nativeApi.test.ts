@@ -118,3 +118,36 @@ it("registers a selected local directory without writing a shared project config
     },
   });
 });
+
+it("updates only a project's Agent associations while preserving its local facts", async () => {
+  const rawProject = {
+    id: "project-aurora",
+    name: "Aurora",
+    device_path: "D:/Work/Aurora",
+    physical_id: "fs:project-aurora",
+    logical: { identity_hint: "github.com/acme/aurora", note: "Release workspace" },
+    tags: [{ name: "Desktop" }],
+    agent_ids: ["codex-cli"],
+    created_at: "2026-09-02T00:00:00Z",
+    updated_at: "2026-09-02T00:00:00Z",
+  };
+  query.mockResolvedValue({ type: "projects", payload: [rawProject] });
+  execute.mockResolvedValue({ type: "project", payload: { ...rawProject, agent_ids: ["claude-code"] } });
+
+  await expect(nativeProjectFacade.updateAgentIds("project-aurora", ["claude-code"])).resolves.toEqual(expect.objectContaining({
+    agentIds: ["claude-code"],
+    sharedConfig: expect.objectContaining({ identityHint: "github.com/acme/aurora" }),
+  }));
+
+  expect(execute).toHaveBeenCalledWith({
+    type: "update_project",
+    payload: { project: expect.objectContaining({
+      id: "project-aurora",
+      device_path: "D:/Work/Aurora",
+      physical_id: "fs:project-aurora",
+      logical: { identity_hint: "github.com/acme/aurora", note: "Release workspace" },
+      tags: [{ name: "Desktop" }],
+      agent_ids: ["claude-code"],
+    }) },
+  });
+});

@@ -35,6 +35,7 @@ export interface ProjectFacade {
   list(): Promise<ProjectView[]>;
   get(id: string): Promise<ProjectView>;
   register(input: ProjectRegistration): Promise<ProjectView>;
+  updateAgentIds(projectId: string, agentIds: string[]): Promise<ProjectView>;
   listAgentCandidates(): Promise<ProjectAgentCandidate[]>;
 }
 
@@ -48,6 +49,7 @@ export const unavailableProjectFacade: ProjectFacade = {
   get: () => unavailable("project_get"),
   list: () => unavailable("project_list"),
   register: () => unavailable("project_register"),
+  updateAgentIds: () => unavailable("project_update_agent_ids"),
   listAgentCandidates: () => unavailable("project_agent_candidates"),
 };
 
