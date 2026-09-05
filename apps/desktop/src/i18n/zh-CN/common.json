@@ -1023,6 +1023,14 @@
       "appliedGeneric": "已应用所选决策。",
       "reconcile": "存在需要重新同步的部署，请在部署页处理。",
       "failed": "来源更新操作失败：{{error}}"
+    },
+    "sourceRelink": {
+      "ariaLabel": "来源重新关联",
+      "inputLabel": "新的来源",
+      "inputPlaceholder": "本地路径 / Git / HTTPS 地址",
+      "submit": "重新关联",
+      "done": "已重新关联来源。",
+      "failed": "重新关联失败：{{error}}"
     }
   },
   "deployment": {

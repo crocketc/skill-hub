@@ -32,6 +32,7 @@ import {
 import { Button } from "../../ui/Button";
 import { VersionTimeline } from "./VersionTimeline";
 import { SourceUpdatePanel } from "./SourceUpdatePanel";
+import { SourceRelinkPanel } from "./SourceRelinkPanel";
 import { RemovalImpactDialog } from "../removal/RemovalImpactDialog";
 import type {
   RemovalFacade,
@@ -224,6 +225,8 @@ export function SkillDetailPage({
                 <MarkdownWorkspace facade={markdownFacade} skillId={skillId} />
               ) : null}
               {section === "metadata" ? (
+                <>
+                  
                 metadataQuery.isPending ? (
                   <p role="status">{t("skillDetail.states.loadingMetadata")}</p>
                 ) : metadataQuery.isError || !metadataQuery.data ? (
@@ -231,6 +234,9 @@ export function SkillDetailPage({
                 ) : (
                   <MetadataPanel facade={facade} metadata={metadataQuery.data} skillId={skillId} />
                 )
+              
+                  <SourceRelinkPanel facade={facade} skillId={skillId} />
+                </>
               ) : null}
               {section === "relations" ? (
                 relationsQuery.isError ? (

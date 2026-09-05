@@ -180,6 +180,7 @@ export interface SkillDetailFacade {
     skillId: string,
     decision: UpdateDecision,
   ): Promise<AppliedSourceUpdate>;
+  relinkSource(skillId: string, sourceInput: string): Promise<{ messageCode: string }>;
 }
 
 const skillKey = (skillId: string) => ["skill-detail", skillId] as const;
@@ -238,6 +239,7 @@ export const unavailableSkillDetailFacade: SkillDetailFacade = {
   getVersions: unavailable,
   checkSourceUpdate: unavailable,
   applySourceUpdate: unavailable,
+  relinkSource: unavailable,
   saveMetadata: unavailable,
   setTrial: unavailable,
 };

@@ -114,10 +114,27 @@ async function applySourceUpdate(skillId: string, decision: UpdateDecision) {
   return result.payload;
 }
 
+async function relinkSource(skillId: string, sourceInput: string) {
+  const trimmed = sourceInput.trim();
+  const locator = /^https:\/\//i.test(trimmed)
+    ? { https_url: trimmed }
+    : /\.git$/i.test(trimmed) || /^git@/i.test(trimmed)
+      ? { git_url: trimmed }
+      : { local_path: trimmed };
+  const kind = "https_url" in locator ? "https" : "git_url" in locator ? "git" : "local";
+  const result = await executeCommand({
+    type: "relink_source",
+    payload: { skill_id: skillId, source: { kind, locator } },
+  });
+  if (result.type !== "operation_summary") throw unavailableResult();
+  return { messageCode: result.payload.message_code };
+}
+
 export const nativeSkillDetailFacade: SkillDetailFacade = {
   ...unavailableSkillDetailFacade,
   checkSourceUpdate,
   applySourceUpdate,
+  relinkSource,
   async getSummary(skillId) {
     const skill = await getSkill(skillId);
     const summary = summaryOf(skill);

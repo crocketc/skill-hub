@@ -1023,6 +1023,14 @@
       "appliedGeneric": "Applied the selected decision.",
       "reconcile": "Some deployments need reconciliation; handle them on the deployment page.",
       "failed": "Source update failed: {{error}}"
+    },
+    "sourceRelink": {
+      "ariaLabel": "Source relink",
+      "inputLabel": "New source",
+      "inputPlaceholder": "Local path / Git / HTTPS URL",
+      "submit": "Relink source",
+      "done": "Source relinked.",
+      "failed": "Relink failed: {{error}}"
     }
   },
   "deployment": {

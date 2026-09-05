@@ -33,6 +33,7 @@ export interface SkillDetailFixture {
 
 export interface MockSkillDetailCalls {
   appliedSourceUpdates: Array<{ skillId: string; decision: UpdateDecision }>;
+  relinkSourceInputs: Array<{ skillId: string; sourceInput: string }>;
   checkedSourceUpdates: Array<{ skillId: string }>;
   committedRollbacks: Array<{ skillId: string; versionId: string }>;
   intents: SkillDetailIntent[];
@@ -261,6 +262,7 @@ export function createMockSkillDetailFacade(
   const calls: MockSkillDetailCalls = {
     appliedSourceUpdates: [],
     checkedSourceUpdates: [],
+    relinkSourceInputs: [],
     committedRollbacks: [],
     intents: [],
     metadataPatches: [],
@@ -401,6 +403,10 @@ export function createMockSkillDetailFacade(
     async applySourceUpdate(skillId, decision) {
       calls.appliedSourceUpdates.push({ skillId, decision });
       return { skill_id: skillId, decision, new_version: null, deployments_need_reconciliation: false };
+    },
+    async relinkSource(skillId, sourceInput) {
+      calls.relinkSourceInputs.push({ skillId, sourceInput });
+      return { messageCode: "source.relinked" };
     },
         async setTrial(skillId, due) {
       calls.trials.push({ due, skillId });
