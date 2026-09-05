@@ -1,6 +1,7 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { I18nextProvider } from "react-i18next";
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
 import { createSkillHubI18n } from "../../i18n";
 import type { PendingFacade } from "./api";
 import { PendingPage } from "./PendingPage";
@@ -40,4 +41,27 @@ it("filters pending work by its actual kind", async () => {
 
   expect(screen.getByText("未完成部署")).toBeInTheDocument();
   expect(screen.queryByText("skill-a")).not.toBeInTheDocument();
+});
+
+it("prevents duplicate pending actions while one item is being processed", async () => {
+  const user = userEvent.setup();
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  let release: (() => void) | undefined;
+  const convert = vi.fn(() => new Promise<void>((resolve) => { release = resolve; }));
+  const facade: PendingFacade = {
+    list: async () => [{ id: "trial", subject: "skill-a", kind: "trial_due", code: "trial", message: "trial" }],
+    resolve: async () => undefined,
+    recheck: async () => undefined,
+    convert,
+    remove: async () => undefined,
+    recover: async () => undefined,
+  };
+  render(<I18nextProvider i18n={i18n}><PendingPage facade={facade} /></I18nextProvider>);
+  const action = await screen.findByRole("button", { name: "转为常规" });
+
+  await user.click(action);
+  expect(convert).toHaveBeenCalledTimes(1);
+  expect(action).toBeDisabled();
+
+  await act(async () => { release?.(); });
 });

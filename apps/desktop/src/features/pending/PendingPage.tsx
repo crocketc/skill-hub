@@ -9,6 +9,7 @@ export function PendingPage({ facade = unavailablePendingFacade }: { facade?: Pe
   const [items, setItems] = useState<PendingItem[]>();
   const [error, setError] = useState<string>();
   const [kind, setKind] = useState<PendingKind | "all">("all");
+  const [processingItemId, setProcessingItemId] = useState<string>();
   const reload = () => void facade.list().then(setItems).catch((reason: unknown) => setError(reason instanceof Error ? reason.message : String(reason)));
   useEffect(reload, [facade]);
   if (error) return <DataState message={error} state="unavailable" />;
@@ -17,11 +18,15 @@ export function PendingPage({ facade = unavailablePendingFacade }: { facade?: Pe
   const visibleItems = kind === "all" ? items : items.filter((item) => item.kind === kind);
   const run = async (item: PendingItem, action: keyof PendingFacade) => {
     if (action === "list") return;
+    if (processingItemId) return;
+    setProcessingItemId(item.id);
     try {
       await facade[action](item);
       reload();
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setProcessingItemId(undefined);
     }
   };
   return <main className="sh-page sh-workflow-page">
@@ -50,9 +55,9 @@ export function PendingPage({ facade = unavailablePendingFacade }: { facade?: Pe
             <p>{t(item.message, { defaultValue: item.code })}</p>
           </div>
           <div className="sh-workflow-actions">
-            {item.kind === "recovery" ? <Button onClick={() => void run(item, "recover")} size="sm">{t("pending.actions.recover")}</Button> : null}
-            {item.kind === "security_finding" ? <Button onClick={() => void run(item, "recheck")} size="sm" variant="secondary">{t("pending.actions.recheck")}</Button> : null}
-            {item.kind === "trial_due" ? <Button onClick={() => void run(item, "convert")} size="sm" variant="secondary">{t("pending.actions.convert")}</Button> : null}
+            {item.kind === "recovery" ? <Button disabled={Boolean(processingItemId)} loading={processingItemId === item.id} onClick={() => void run(item, "recover")} size="sm">{t("pending.actions.recover")}</Button> : null}
+            {item.kind === "security_finding" ? <Button disabled={Boolean(processingItemId)} loading={processingItemId === item.id} onClick={() => void run(item, "recheck")} size="sm" variant="secondary">{t("pending.actions.recheck")}</Button> : null}
+            {item.kind === "trial_due" ? <Button disabled={Boolean(processingItemId)} loading={processingItemId === item.id} onClick={() => void run(item, "convert")} size="sm" variant="secondary">{t("pending.actions.convert")}</Button> : null}
           </div>
         </li>)}
       </ul> : <p role="status">{t("pending.filteredEmpty")}</p>}
