@@ -74,6 +74,7 @@ export function OnboardingWizard({
   const [completionState, setCompletionState] = useState<"idle" | "pending" | "complete">("idle");
   const [message, setMessage] = useState<string | null>(null);
   const [nativeLibraryPath, setNativeLibraryPath] = useState(libraryPath);
+  const [customLibraryPath, setCustomLibraryPath] = useState<string | null>(null);
 
   useEffect(() => {
     setNativeLibraryPath(libraryPath);
@@ -156,6 +157,41 @@ export function OnboardingWizard({
     }
   };
 
+  const pickCustomDirectory = async () => {
+    setMessage(null);
+    try {
+      const path = await operations.pickDirectory?.();
+      if (path) setCustomLibraryPath(path);
+    } catch {
+      showError();
+    }
+  };
+
+  // A custom root is persisted through `set_library_root` and applied by
+  // restarting, which rebuilds every library handle against the chosen path.
+  const applyCustomRoot = async () => {
+    if (!customLibraryPath || completionState !== "idle") return;
+    setCompletionState("pending");
+    setMessage(null);
+    try {
+      await operations.setLibraryRoot?.(customLibraryPath);
+      await operations.restart?.();
+      setCompletionState("idle");
+      setMessage(t("onboarding.restartPending"));
+    } catch {
+      setCompletionState("idle");
+      showError();
+    }
+  };
+
+  const continueFromLibraryStep = () => {
+    if (customLibraryPath) {
+      void applyCustomRoot();
+    } else {
+      setStep(1);
+    }
+  };
+
   const selectTarget = (targetId: string, selected: boolean) => {
     setSelectedTargetIds((current) =>
       selected ? [...current, targetId] : current.filter((id) => id !== targetId),
@@ -175,7 +211,13 @@ export function OnboardingWizard({
 
   const activeStep =
     step === 0 ? (
-      <LibraryStep libraryPath={nativeLibraryPath} onThemeChange={onThemeChange ?? (() => undefined)} theme={theme} />
+      <LibraryStep
+        libraryPath={nativeLibraryPath}
+        customLibraryPath={customLibraryPath}
+        onPickCustomDirectory={operations.pickDirectory ? () => void pickCustomDirectory() : undefined}
+        onThemeChange={onThemeChange ?? (() => undefined)}
+        theme={theme}
+      />
     ) : step === 1 ? (
       <CompatibilityStep
         confirmed={compatibilityConfirmed}
@@ -267,10 +309,17 @@ export function OnboardingWizard({
             <Button onClick={() => setStep((current) => current - 1)} variant="secondary">
               {t("onboarding.back")}
             </Button>
+          ) : initialBranch === "select" ? (
+            <Button onClick={() => setBranch(null)} variant="secondary">
+              {t("onboarding.back")}
+            </Button>
           ) : null}
           {step < 2 ? (
-            <Button disabled={!canContinue} onClick={() => setStep((current) => current + 1)}>
-              {t("onboarding.continue")}
+            <Button
+              disabled={!canContinue || (step === 0 && completionState === "pending")}
+              onClick={() => (step === 0 ? continueFromLibraryStep() : setStep((current) => current + 1))}
+            >
+              {step === 0 && customLibraryPath ? t("onboarding.applyCustomRoot") : t("onboarding.continue")}
             </Button>
           ) : (
             <>

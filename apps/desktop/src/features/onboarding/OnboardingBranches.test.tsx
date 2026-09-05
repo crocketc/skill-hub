@@ -28,6 +28,8 @@ interface Operations {
   prepareRestore?: (path: string) => Promise<RestorePlan>;
   commitRestore?: (path: string, decisions: RestoreDecision[]) => Promise<RestoreResult>;
   pickDirectory?: () => Promise<string | null>;
+  setLibraryRoot?: (path: string) => Promise<void>;
+  restart?: () => Promise<void>;
 }
 
 function renderWizard(operations: Operations, runtime?: unknown) {
@@ -66,6 +68,41 @@ it("shows three initialization branches and routes to the create flow", async ()
 
   await click(screen.getByRole("button", { name: "新建集中库" }));
   expect(screen.getByText(defaultLibraryPath)).toBeVisible();
+});
+
+it("returns from the library step to the branch selection", async () => {
+  const completeOnboarding = vi.fn(async () => undefined);
+  renderWizard({ completeOnboarding, discoverAgents: async () => ({ targets: [] }) });
+
+  await click(screen.getByRole("button", { name: "新建集中库" }));
+  await click(screen.getByRole("button", { name: "上一步" }));
+
+  expect(screen.getByRole("heading", { name: "选择初始化方式" })).toBeVisible();
+});
+
+it("persists a custom library root and restarts instead of continuing", async () => {
+  const completeOnboarding = vi.fn(async () => undefined);
+  const setLibraryRoot = vi.fn(async () => undefined);
+  const restart = vi.fn(async () => undefined);
+  const pickDirectory = vi.fn(async () => "D:\\SkillHub\\custom");
+
+  renderWizard({
+    completeOnboarding,
+    discoverAgents: async () => ({ targets: [] }),
+    pickDirectory,
+    setLibraryRoot,
+    restart,
+  });
+
+  await click(screen.getByRole("button", { name: "新建集中库" }));
+  await click(screen.getByRole("button", { name: "选择其他目录" }));
+  expect(await screen.findByText("D:\\SkillHub\\custom")).toBeVisible();
+
+  await click(screen.getByRole("button", { name: "保存并重启" }));
+
+  expect(setLibraryRoot).toHaveBeenCalledWith("D:\\SkillHub\\custom");
+  expect(restart).toHaveBeenCalled();
+  expect(completeOnboarding).not.toHaveBeenCalled();
 });
 
 it("restores from a backup through prepare and commit before finishing", async () => {

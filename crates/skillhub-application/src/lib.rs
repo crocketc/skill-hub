@@ -614,10 +614,77 @@ impl ReconcileBackend for LocalDeploymentBackend {
 }
 
 impl LocalApplicationFacade {
+    /// Reads the central library root persisted via `set_library_root`, if any.
+    /// Used by the desktop shell before constructing the facade so a restarted
+    /// application resumes with the root chosen during onboarding.
+    pub fn persisted_library_root(database_path: impl AsRef<Path>) -> Option<PathBuf> {
+        let database = Database::open(database_path).ok()?;
+        database
+            .bootstrap_repository()
+            .load_library_root()
+            .ok()
+            .flatten()
+            .map(PathBuf::from)
+            .filter(|path| !path.as_os_str().is_empty())
+    }
+
     fn configured_library_path(&self) -> AppResult<PathBuf> {
+        // A root chosen via `set_library_root` persists in the database and
+        // wins over the constructor value once present.
+        let persisted = self.with_database("bootstrap.library_root", |database| {
+            database.bootstrap_repository().load_library_root()
+        })?;
+        if let Some(path) = persisted {
+            return Ok(PathBuf::from(path));
+        }
         self.library_root
             .clone()
             .ok_or_else(|| unsupported("bootstrap.library_path"))
+    }
+
+    /// Chooses the central library root before initialization completes. The
+    /// chosen path is materialized immediately and persisted so the next
+    /// application start uses it as the configured root. After initialization
+    /// the root is immutable here; moving an initialized library is a migration.
+    fn set_library_root(
+        &self,
+        request: skillhub_core::api::SetLibraryRoot,
+    ) -> AppResult<AppCommandResult> {
+        let path = request.path.trim();
+        if path.is_empty() {
+            return Err(invalid_input("library root path must not be empty"));
+        }
+        let already_initialized = self
+            .with_database("execute.set_library_root.status", |database| {
+                database.bootstrap_repository().load_initialization()
+            })?;
+        if already_initialized.as_ref().is_some_and(|status| {
+            matches!(
+                status.state,
+                skillhub_core::InitializationState::Initialized
+            )
+        }) {
+            return Err(AppError::new(
+                skillhub_core::ErrorCode::OperationConflict,
+                Severity::Error,
+            )
+            .with_param("detail", "library root cannot change after initialization")
+            .with_action(RecoveryAction::Acknowledge));
+        }
+        let root = PathBuf::from(path);
+        CentralLibrary::initialize(&root)?;
+        let status = self.with_database("execute.set_library_root.persist", |database| {
+            database.bootstrap_repository().save_library_root(path)?;
+            Ok(database
+                .bootstrap_repository()
+                .load_initialization()?
+                .unwrap_or_else(|| {
+                    skillhub_core::InitializationStatus::not_initialized(
+                        root.to_string_lossy().to_string(),
+                    )
+                }))
+        })?;
+        Ok(AppCommandResult::InitializationStatus(status))
     }
 
     fn complete_onboarding(
@@ -2900,6 +2967,7 @@ impl ApplicationFacade for LocalApplicationFacade {
                 return self.commit_project_assembly(request)
             }
             AppCommand::RunInitializationScan(request) => return self.run_scan(request.scope_ids),
+            AppCommand::SetLibraryRoot(request) => return self.set_library_root(request),
             AppCommand::CompleteOnboarding(request) => return self.complete_onboarding(request),
             AppCommand::DiscoverAgentTargets(_) => return self.discover_agent_targets(),
             AppCommand::ScanTargets(request) => return self.run_scan(request.scope_ids),
@@ -3094,8 +3162,7 @@ impl ApplicationFacade for LocalApplicationFacade {
             AppQuery::SearchOnlineSources(request) => self.search_online_sources(request).await,
             AppQuery::GetBootstrapSnapshot => {
                 let default_library_path = self
-                    .library_root
-                    .as_ref()
+                    .configured_library_path()
                     .map(|path| path.to_string_lossy().into_owned())
                     .unwrap_or_default();
                 self.with_database("query.get_bootstrap_snapshot", |database| {

@@ -64,6 +64,17 @@ async fn pick_local_directory() -> Result<Option<String>, String> {
     .map_err(|error| format!("directory_picker.join_failed: {error}"))?
 }
 
+/// Restarts the application so a persisted library-root change takes effect.
+#[tauri::command]
+fn restart_application(app: AppHandle) -> Result<(), String> {
+    let exe = std::env::current_exe().map_err(|error| error.to_string())?;
+    std::process::Command::new(exe)
+        .spawn()
+        .map_err(|error| format!("restart_application.spawn_failed: {error}"))?;
+    app.exit(0);
+    Ok(())
+}
+
 pub fn emit_app_event<R: tauri::Runtime>(app: &AppHandle<R>, event: AppEvent) -> tauri::Result<()> {
     app.emit("app_event", event)
 }
@@ -84,7 +95,8 @@ pub fn run_with_facade(facade: Arc<LocalApplicationFacade>) -> tauri::Result<()>
         .invoke_handler(tauri::generate_handler![
             execute_command,
             query_application,
-            pick_local_directory
+            pick_local_directory,
+            restart_application
         ])
         .run(tauri::generate_context!())
 }
@@ -96,7 +108,7 @@ pub fn run() -> tauri::Result<()> {
 
     let facade = match LocalApplicationFacade::open_with_library(
         default_database_path(),
-        default_library_root(),
+        persisted_or_default_library_root(),
     ) {
         Ok(facade) => facade,
         Err(error) => {
@@ -130,6 +142,14 @@ fn default_library_root() -> PathBuf {
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("."))
         .join("SkillHub")
+}
+
+/// A library root chosen during onboarding persists in the database and wins
+/// over the platform default. Reading it before the facade is constructed
+/// lets a restarted application resume with the chosen root.
+fn persisted_or_default_library_root() -> PathBuf {
+    LocalApplicationFacade::persisted_library_root(default_database_path())
+        .unwrap_or_else(default_library_root)
 }
 
 #[cfg(target_os = "macos")]

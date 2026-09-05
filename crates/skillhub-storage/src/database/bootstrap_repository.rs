@@ -10,6 +10,7 @@ use skillhub_core::{AppError, AppResult, ErrorCode, RecoveryAction, Severity, Sk
 
 const SNAPSHOT_KEY: &str = "bootstrap_snapshot";
 const INITIALIZATION_KEY: &str = "bootstrap_initialization";
+const LIBRARY_ROOT_KEY: &str = "bootstrap_library_root";
 
 pub struct BootstrapRepository<'a> {
     database: &'a Database,
@@ -66,6 +67,31 @@ impl<'a> BootstrapRepository<'a> {
         self.database.connection.execute(
             "INSERT INTO settings(key,value_json,updated_at) VALUES(?1,?2,?3) ON CONFLICT(key) DO UPDATE SET value_json=excluded.value_json,updated_at=excluded.updated_at",
             params![INITIALIZATION_KEY, json, now()],
+        ).map_err(error)?;
+        Ok(())
+    }
+
+    /// The persisted central library root chosen during onboarding, if any.
+    pub fn load_library_root(&self) -> AppResult<Option<String>> {
+        self.database
+            .connection
+            .query_row(
+                "SELECT value_json FROM settings WHERE key=?1",
+                [LIBRARY_ROOT_KEY],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()
+            .map_err(error)?
+            .map(|json| serde_json::from_str::<String>(&json))
+            .transpose()
+            .map_err(|_| invalid_snapshot())
+    }
+
+    pub fn save_library_root(&self, path: &str) -> AppResult<()> {
+        let json = serde_json::to_string(path).map_err(|_| invalid_snapshot())?;
+        self.database.connection.execute(
+            "INSERT INTO settings(key,value_json,updated_at) VALUES(?1,?2,?3) ON CONFLICT(key) DO UPDATE SET value_json=excluded.value_json,updated_at=excluded.updated_at",
+            params![LIBRARY_ROOT_KEY, json, now()],
         ).map_err(error)?;
         Ok(())
     }

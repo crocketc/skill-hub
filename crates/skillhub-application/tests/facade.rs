@@ -917,6 +917,103 @@ async fn onboarding_completion_is_repeatable_and_rejects_an_unconfigured_path() 
 }
 
 #[tokio::test]
+async fn set_library_root_persists_the_chosen_root_before_initialization() {
+    let database = Database::open_in_memory().expect("database");
+    let library_root = tempfile::tempdir().expect("library root");
+    let chosen_root = tempfile::tempdir().expect("chosen root");
+    let chosen_path = chosen_root.path().to_string_lossy().into_owned();
+    let facade = LocalApplicationFacade::new_with_library(database, library_root.path());
+
+    let result = facade
+        .execute(AppCommand::SetLibraryRoot(
+            skillhub_core::api::SetLibraryRoot {
+                path: chosen_path.clone(),
+            },
+        ))
+        .await
+        .expect("set library root");
+    let AppCommandResult::InitializationStatus(status) = result else {
+        panic!("expected initialization status");
+    };
+    assert_eq!(status.library_path, chosen_path);
+
+    // The bootstrap snapshot immediately reflects the chosen root.
+    let result = facade
+        .query(RootAppQuery::GetBootstrapSnapshot)
+        .await
+        .expect("bootstrap result");
+    let AppQueryResult::BootstrapSnapshot(snapshot) = result else {
+        panic!("expected bootstrap snapshot");
+    };
+    assert_eq!(snapshot.library_path, chosen_path);
+    assert_eq!(
+        snapshot.initialization_state,
+        skillhub_core::InitializationState::NotInitialized
+    );
+
+    // The chosen root was materialized as a central library directory.
+    let paths = skillhub_storage::LibraryPaths::from_root(chosen_root.path());
+    assert!(
+        paths.management_dir.exists(),
+        "library management dir must be materialized"
+    );
+
+    // Completion now accepts the newly configured root in the same session.
+    let completion = facade
+        .execute(AppCommand::CompleteOnboarding(
+            skillhub_core::api::CompleteOnboarding {
+                library_path: chosen_path.clone(),
+                skipped: false,
+            },
+        ))
+        .await
+        .expect("complete onboarding with the chosen root");
+    let AppCommandResult::InitializationStatus(status) = completion else {
+        panic!("expected initialization status");
+    };
+    assert_eq!(
+        status.state,
+        skillhub_core::InitializationState::Initialized
+    );
+}
+
+#[tokio::test]
+async fn set_library_root_rejects_empty_paths_and_initialized_libraries() {
+    let database = Database::open_in_memory().expect("database");
+    let library_root = tempfile::tempdir().expect("library root");
+    let chosen_root = tempfile::tempdir().expect("chosen root");
+    let facade = LocalApplicationFacade::new_with_library(database, library_root.path());
+
+    let empty = facade
+        .execute(AppCommand::SetLibraryRoot(
+            skillhub_core::api::SetLibraryRoot { path: "   ".into() },
+        ))
+        .await
+        .expect_err("empty path must be rejected");
+    assert_eq!(empty.code, ErrorCode::InvalidInput);
+
+    facade
+        .execute(AppCommand::CompleteOnboarding(
+            skillhub_core::api::CompleteOnboarding {
+                library_path: library_root.path().to_string_lossy().into_owned(),
+                skipped: false,
+            },
+        ))
+        .await
+        .expect("complete onboarding");
+
+    let conflict = facade
+        .execute(AppCommand::SetLibraryRoot(
+            skillhub_core::api::SetLibraryRoot {
+                path: chosen_root.path().to_string_lossy().into_owned(),
+            },
+        ))
+        .await
+        .expect_err("changing root after initialization must be rejected");
+    assert_eq!(conflict.code, ErrorCode::OperationConflict);
+}
+
+#[tokio::test]
 async fn pending_query_uses_the_same_date_boundary_as_bootstrap() {
     let database = Database::open_in_memory().expect("database");
     let skill = Skill::new(skillhub_core::SkillId::new(), "Trial").with_trial_due(2026, 8, 29);

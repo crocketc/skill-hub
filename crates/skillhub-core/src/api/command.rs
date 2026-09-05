@@ -467,6 +467,12 @@ pub struct CompleteOnboarding {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct SetLibraryRoot {
+    pub path: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 pub struct DiscoverAgentTargets;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
@@ -658,6 +664,8 @@ pub enum AppCommand {
     RunInitializationScan(RunInitializationScan),
     #[serde(rename = "complete_onboarding")]
     CompleteOnboarding(CompleteOnboarding),
+    #[serde(rename = "set_library_root")]
+    SetLibraryRoot(SetLibraryRoot),
     #[serde(rename = "discover_agent_targets")]
     DiscoverAgentTargets(DiscoverAgentTargets),
     #[serde(rename = "scan_targets")]

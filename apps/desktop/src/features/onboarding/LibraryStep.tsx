@@ -1,14 +1,24 @@
 import { useTranslation } from "react-i18next";
+import { Button } from "../../ui/Button";
 import { ThemeChoiceGrid } from "../../styles/ThemeChoiceGrid";
 import type { ThemeName } from "../../styles/theme";
 
 interface LibraryStepProps {
   libraryPath?: string;
+  /** A directory chosen through the system picker, overriding the default. */
+  customLibraryPath?: string | null;
+  onPickCustomDirectory?: () => void;
   onThemeChange: (theme: ThemeName) => void;
   theme: ThemeName;
 }
 
-export function LibraryStep({ libraryPath, onThemeChange, theme }: LibraryStepProps) {
+export function LibraryStep({
+  libraryPath,
+  customLibraryPath,
+  onPickCustomDirectory,
+  onThemeChange,
+  theme,
+}: LibraryStepProps) {
   const { t } = useTranslation();
 
   if (!libraryPath) {
@@ -28,8 +38,20 @@ export function LibraryStep({ libraryPath, onThemeChange, theme }: LibraryStepPr
       <p>{t("onboarding.libraryDescription")}</p>
       <div className="sh-onboarding__path">
         <span>{t("onboarding.defaultLocation")}</span>
-        <code>{libraryPath}</code>
+        <code>{customLibraryPath ?? libraryPath}</code>
       </div>
+      {onPickCustomDirectory ? (
+        <div className="sh-onboarding__custom-root">
+          <Button disabled={Boolean(customLibraryPath)} onClick={onPickCustomDirectory} size="sm" variant="secondary">
+            {t("onboarding.pickOtherDirectory")}
+          </Button>
+          {customLibraryPath ? (
+            <p aria-live="polite" className="sh-onboarding__helper">
+              {t("onboarding.customDirectoryApplied")}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
       <p className="sh-onboarding__helper">{t("onboarding.libraryHelper")}</p>
       <section aria-labelledby="onboarding-theme-title">
         <h2 id="onboarding-theme-title">{t("onboarding.themeTitle")}</h2>

@@ -23,8 +23,9 @@ pub use command::{
     RollbackApplicationUpdate, RunBasicCheck, RunHealthCheck, RunInitializationScan,
     RunLlmSafetyCheck, RunRollingBackup, SaveMarkdownContent, SaveProjectView, SaveSkillContent,
     SaveUserTranslationRevision, SavedSkillContent, ScanTargets, SetCurrentVersion,
-    SetFindingDisposition, SetLifecycle, SetMetadata, SetProfileOverride, SetProjectTags, SetTrial,
-    TranslateDescription, UpdateCustomAgent, UpdateProject, VerifyBackup, WriteSharedProjectConfig,
+    SetFindingDisposition, SetLibraryRoot, SetLifecycle, SetMetadata, SetProfileOverride,
+    SetProjectTags, SetTrial, TranslateDescription, UpdateCustomAgent, UpdateProject, VerifyBackup,
+    WriteSharedProjectConfig,
 };
 pub use event::{AppEvent, FactsChanged};
 pub use query::{

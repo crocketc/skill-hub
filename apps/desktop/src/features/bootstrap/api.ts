@@ -9,6 +9,7 @@ import {
   type ScanResult,
 } from "../../api/bindings";
 import { desktopDirectoryPicker } from "../../platform/directoryPicker";
+import { desktopRestarter } from "../../platform/restart";
 
 export type BootstrapVerificationState =
   | { kind: "unavailable" }
@@ -43,6 +44,10 @@ export interface OnboardingOperations {
   prepareRestore?: (path: string) => Promise<RestorePlan>;
   commitRestore?: (path: string, decisions: RestoreDecision[]) => Promise<RestoreResult>;
   pickDirectory?: () => Promise<string | null>;
+  /** Chooses the central library root before initialization completes. */
+  setLibraryRoot?: (path: string) => Promise<void>;
+  /** Restarts the application so the persisted library root takes effect. */
+  restart?: () => Promise<void>;
 }
 
 export interface CompatibilityTarget {
@@ -141,6 +146,15 @@ export const desktopOnboardingOperations: OnboardingOperations = {
   },
   async pickDirectory() {
     return desktopDirectoryPicker.pickDirectory();
+  },
+  async setLibraryRoot(path) {
+    const result = await executeCommand({ type: "set_library_root", payload: { path } });
+    if (result.type !== "initialization_status") {
+      throw new Error("Unexpected library root response from the native application.");
+    }
+  },
+  async restart() {
+    await desktopRestarter.restart();
   },
 };
 
