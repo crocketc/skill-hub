@@ -428,7 +428,8 @@
         },
         "untrackedNote": "The discovery snapshot has no matching physical target, so the access state is unknown.",
         "snapshotFailed": "The discovery snapshot could not be read, so the access state is unknown for now."
-      }
+      },
+      "launchDeployment": "Deploy skills"
     },
     "sharedConfig": {
       "eyebrow": "Shared configuration",
@@ -654,7 +655,8 @@
         "loading": "Loading skill library",
         "noResults": "No skills match the current filters",
         "unavailable": "Skill catalog data is not connected yet"
-      }
+      },
+      "deployTargetBanner": "Deployment target preselected: {{label}}. Select Skills and choose Unified deploy to target it automatically."
     },
     "drawer": {
       "actions": {
@@ -1047,7 +1049,10 @@
       "heading": "Deploy {{count}} Skills",
       "description": "Each Skill is previewed independently; committing is enabled only when every preview succeeds.",
       "planDescription": "Plans are shown per Skill, preserving target warnings and conflicts.",
-      "previewFailed": "A deployment preview could not be prepared for {{skillId}}: {{message}}"
+      "previewFailed": "A deployment preview could not be prepared for {{skillId}}: {{message}}",
+      "expandAgents": "Expand linked agents ({{count}})",
+      "expandAgentsHint": "Adds the agents associated with the selected projects to the deployment selection.",
+      "nonAtomicNotice": "The batch commits per skill and per target and is not atomic: partial success does not roll back completed parts."
     },
     "mode": {
       "label": "Deployment mode",

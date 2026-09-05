@@ -428,7 +428,8 @@
         },
         "untrackedNote": "未在发现快照中找到对应物理目标，无法判断访问状态。",
         "snapshotFailed": "无法读取发现快照，暂时无法判断访问状态。"
-      }
+      },
+      "launchDeployment": "发起部署"
     },
     "sharedConfig": {
       "eyebrow": "共享配置",
@@ -654,7 +655,8 @@
         "loading": "正在加载技能库",
         "noResults": "没有符合当前筛选条件的技能",
         "unavailable": "技能目录数据尚未连接"
-      }
+      },
+      "deployTargetBanner": "部署目标已预选：{{label}}。勾选 Skill 后点“统一部署”，将自动选中该目标。"
     },
     "drawer": {
       "actions": {
@@ -1047,7 +1049,10 @@
       "heading": "部署 {{count}} 个 Skill",
       "description": "每个 Skill 都会先单独预览；只有全部预览成功后才可提交。",
       "planDescription": "以下计划按 Skill 展示，保留每个目标的警告与冲突。",
-      "previewFailed": "{{skillId}} 无法生成部署预览：{{message}}"
+      "previewFailed": "{{skillId}} 无法生成部署预览：{{message}}",
+      "expandAgents": "展开关联 Agent（{{count}} 个）",
+      "expandAgentsHint": "把所选项目已关联的 Agent 目标一并加入部署选择。",
+      "nonAtomicNotice": "批次将逐个 Skill、逐个目标提交，不是原子操作：部分成功不会自动回滚已成功的部分。"
     },
     "mode": {
       "label": "部署方式",

@@ -47,10 +47,14 @@ export type BatchDeploymentResult = DeploymentResult & { skillId: string };
  * only prepares one Skill at a time, so this shape keeps every preview and
  * commit result visible instead of pretending the batch is atomic.
  */
+export type BatchProjectInfo = { id: string; agentIds: string[] };
+
 export interface BatchDeploymentFacade {
   listTargets(): Promise<DeploymentTarget[]>;
   preview(skillIds: string[], targets: DeploymentTarget[], mode?: DeploymentMode): Promise<BatchDeploymentPreview>;
   commit(plans: BatchDeploymentPlan[]): Promise<BatchDeploymentResult[]>;
+  /** 项目关联 Agent（可选）：用于"项目目标展开为关联 Agent 目标"。 */
+  listProjects?(): Promise<BatchProjectInfo[]>;
 }
 
 const unavailable = (operation: string): Promise<never> =>

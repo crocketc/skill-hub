@@ -347,6 +347,8 @@ export function SkillLibraryPage({
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const libraryReturnState = readLibraryReturnState(location.state);
+  // 反向发起部署：Agent/项目详情携带的目标预选。
+  const deployTarget = (location.state as { deployTarget?: { id: string; label: string } } | null)?.deployTarget;
   const search = searchParams.toString();
   const parsed = useMemo(() => parseSkillLibrarySearchParams(search), [search]);
   const { query, skillId } = parsed;
@@ -610,6 +612,7 @@ export function SkillLibraryPage({
         (skills) => {
           const search = new URLSearchParams();
           skills.forEach((skill) => search.append("skill", skill.id));
+          if (deployTarget) search.append("target", deployTarget.id);
           navigate({ pathname: "/deploy", search: `?${search.toString()}` });
         },
         () => setBatchAnnouncement(t("skillLibrary.page.batch.error")),
@@ -893,6 +896,11 @@ export function SkillLibraryPage({
         />
       ) : null}
 
+      {deployTarget ? (
+        <p aria-live="polite" className="sh-notice" role="status">
+          {t("skillLibrary.page.deployTargetBanner", { label: deployTarget.label })}
+        </p>
+      ) : null}
       {preferenceStatus}
       {selectionAnnouncement ? (
         <p className="sh-skill-library__announcement" role="status">

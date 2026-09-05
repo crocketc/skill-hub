@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { useSearchParams } from "react-router-dom";
 import { Button } from "../../ui/Button";
 import { DataState } from "../../ui/DataState";
 import { DeploymentResults } from "./DeploymentResults";
 import {
   type BatchDeploymentFacade,
   type BatchDeploymentPreview,
+  type BatchProjectInfo,
   type BatchDeploymentResult,
   type DeploymentMode,
   type DeploymentTarget,
@@ -33,14 +35,41 @@ export function BatchDeploymentPage({ facade, skillIds, onCommitted }: BatchDepl
   const [results, setResults] = useState<BatchDeploymentResult[]>();
   const [error, setError] = useState<string>();
   const [committing, setCommitting] = useState(false);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const preselectedTargetId = searchParams.get("target");
 
+  const [projects, setProjects] = useState<BatchProjectInfo[]>();
   useEffect(() => {
     let active = true;
     void activeFacade.listTargets().then((value) => active && setTargets(value)).catch((reason: unknown) => {
       if (active) setError(reason instanceof Error ? reason.message : String(reason));
     });
+    // 关联 Agent 展开是可选能力；facade 未提供时按钮不出现。
+    void activeFacade.listProjects?.().then((value) => active && setProjects(value)).catch(() => {
+      if (active) setProjects([]);
+    });
     return () => { active = false; };
   }, [activeFacade]);
+
+  // 反向入口：?target= 预选一个目标（Agent/项目详情"发起部署"跳转携带）。
+  useEffect(() => {
+    if (!preselectedTargetId || !targets) return;
+    const target = targets.find((candidate) => candidate.id === preselectedTargetId);
+    if (!target?.available) return;
+    setSelectedIds((current) => current.includes(preselectedTargetId) ? current : [...current, preselectedTargetId]);
+    setSearchParams({}, { replace: true });
+  }, [preselectedTargetId, setSearchParams, targets]);
+
+  const selectedProjects = (targets ?? [])
+    .filter((target) => selectedIds.includes(target.id))
+    .map((target) => ({
+      target,
+      info: projects?.find((project) => project.id === target.id),
+    }))
+    .filter((entry): entry is { target: DeploymentTarget; info: BatchProjectInfo } => Boolean(entry.info));
+  const expandableLinks = selectedProjects.flatMap(({ target, info }) => info.agentIds
+    .filter((agentId) => !selectedIds.includes(agentId))
+    .map((agentId) => ({ project: target, agentId })));
 
   const selected = (targets ?? []).filter((target) => selectedIds.includes(target.id));
   const availableModes = selected.length === 0
@@ -102,6 +131,19 @@ export function BatchDeploymentPage({ facade, skillIds, onCommitted }: BatchDepl
           {!target.available ? <em>{t("deployment.targets.unavailable")}</em> : null}
         </label>)}
       </div>
+      {expandableLinks.length > 0 ? <div className="sh-workflow-actions">
+        <Button onClick={() => {
+          setMode(undefined);
+          setPreview(undefined);
+          setSelectedIds((current) => [...new Set([...current, ...expandableLinks.map((link) => link.agentId)])]);
+        }} variant="secondary">
+          {t("deployment.batch.expandAgents", { count: expandableLinks.length })}
+        </Button>
+        <small>{t("deployment.batch.expandAgentsHint")}</small>
+      </div> : null}
+      <p role="status" className="sh-workflow-actions">
+        <small>{t("deployment.batch.nonAtomicNotice")}</small>
+      </p>
       <div className="sh-workflow-actions">
         <label>
           <span className="sh-visually-hidden">{t("deployment.mode.label")}</span>

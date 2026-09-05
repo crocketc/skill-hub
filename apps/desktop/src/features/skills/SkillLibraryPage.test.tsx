@@ -1074,6 +1074,28 @@ describe("SkillLibraryPage", () => {
     expect(facade.calls.emitBatchIntent).not.toContainEqual(expect.objectContaining({ action: "add_to" }));
   });
 
+  it("carries a reverse-launch target from agent or project detail into the deploy URL", async () => {
+    const facade = createMockSkillLibraryFacade();
+    const view = renderLibrary({
+      facade,
+      initialEntry: {
+        pathname: "/library",
+        state: { deployTarget: { id: "codex-cli", label: "Codex CLI" } },
+      },
+    });
+
+    // 预选目标提示可见
+    expect(await screen.findByText(/Codex CLI/)).toBeVisible();
+
+    fireEvent.click(await screen.findByRole("checkbox", { name: "Select PDF Reader" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add to" }));
+
+    await screen.findByText("Batch deployment");
+    const params = new URLSearchParams(view.router.state.location.search);
+    expect(params.get("target")).toBe("codex-cli");
+    expect(params.getAll("skill")).toContain("skill-pdf");
+  });
+
   it("clears a failed batch announcement when the selected scope changes", async () => {
     const facade = createMockSkillLibraryFacade();
     vi.spyOn(facade, "emitBatchIntent").mockRejectedValue(

@@ -173,9 +173,16 @@ type BatchPreviewAttempt =
  * Compose those operations here so the UI can offer one consistent batch flow
  * while preserving a result for every Skill and target.
  */
+async function listProjects() {
+  const result = await queryApplication({ type: "list_projects", payload: null });
+  if (result.type !== "projects") throw new Error("list_projects returned an unexpected result.");
+  return result.payload.map((project) => ({ id: project.id, agentIds: project.agent_ids ?? [] }));
+}
+
 export function createNativeBatchDeploymentFacade(): BatchDeploymentFacade {
   return {
     listTargets: () => createNativeDeploymentFacade({ skillId: "", versionId: "current" }).listTargets(),
+    listProjects: () => listProjects(),
 
     async preview(skillIds, targets, mode) {
       const previews: BatchPreviewAttempt[] = await Promise.all(skillIds.map(async (skillId) => {
