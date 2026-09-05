@@ -853,7 +853,17 @@
       "updateAvailable": "Update available"
     },
     "viewMode": {
-      "toggle": "Card view"
+      "label": "View mode",
+      "table": "Table view",
+      "cards": "Card view",
+      "matrix": "Relations matrix"
+    },
+    "matrix": {
+      "ariaLabel": "Skill deployment relations matrix",
+      "skillColumn": "Skill",
+      "loading": "Loading deployment relations…",
+      "empty": "No deployment relations yet. Deploy a Skill to see the matrix.",
+      "hint": "The matrix shows Skills on the current page; ✓ means the Skill is deployed to that target."
     }
   },
   "skillDetail": {

@@ -1069,13 +1069,35 @@ describe("SkillLibraryPage", () => {
     // 默认表格视图：表格可见
     await screen.findByRole("checkbox", { name: "Select PDF Reader" });
 
-    const toggle = screen.getByRole("button", { name: /Card view/ });
-    await act(async () => {
-      fireEvent.click(toggle);
+    fireEvent.change(screen.getByLabelText("View mode"), {
+      target: { value: "cards" },
     });
     expect(facade.saveViewMode).toHaveBeenCalledWith("cards");
     // 卡片渲染了技能名
     expect(await screen.findByTestId("skill-card-skill-pdf")).toBeVisible();
+  });
+
+
+  it("toggles to the relations matrix view built from real deployment records", async () => {
+    const facade = createMockSkillLibraryFacade();
+    facade.loadViewMode = vi.fn(async () => "matrix" as const);
+    facade.listDeployments = vi.fn(async () => [
+      { id: "d1", skill_id: "skill-pdf", version_id: "v3", target_id: "target-codex", state: "active", mode: "managed_copy", managed: true, runtime_name: "pdf-reader", expected_hash: "h", observed_hash: "h" },
+    ]);
+    facade.listDeploymentTargets = vi.fn(async () => [
+      { id: "target-codex", label: "Codex CLI", path: "C:/codex", available: true, physicalId: "p1", modes: ["managed_copy"] },
+      { id: "target-claude", label: "Claude Code", path: "C:/claude", available: true, physicalId: "p2", modes: ["managed_copy"] },
+    ]);
+    renderLibrary({ facade });
+
+    // 矩阵列：仅显示有部署关系的目标（列标签用已注册目标名）
+    expect(await screen.findByText("Codex CLI")).toBeVisible();
+    // 命中的 skill × target 单元格有部署标记
+    const cell = await screen.findByTestId("matrix-skill-pdf-target-codex");
+    expect(cell).toHaveTextContent("✓");
+    // 未命中的单元格为空标记
+    expect(screen.getByTestId("matrix-skill-docx-target-codex").textContent ?? "").not.toContain("✓");
+    expect(facade.listDeployments).toHaveBeenCalled();
   });
 
   it("restores a persisted card view on load", async () => {

@@ -190,13 +190,23 @@ export const nativeSkillLibraryFacade: SkillLibraryFacade = {
   },
   async loadViewMode() {
     const raw = await readUiPreference("library_view_mode");
-    return raw === "cards" ? "cards" : "table";
+    return raw === "cards" || raw === "matrix" ? raw : "table";
   },
   async saveViewMode(mode) {
     await executeCommand({
       type: "set_ui_preference",
       payload: { key: "library_view_mode", value_json: JSON.stringify(mode) },
     });
+  },
+  async listDeployments() {
+    const result = await queryApplication({ type: "list_deployments", payload: { skill_id: null } });
+    if (result.type !== "deployments") throw unavailableResult();
+    return result.payload;
+  },
+  async listDeploymentTargets() {
+    const result = await queryApplication({ type: "list_deployment_targets", payload: null });
+    if (result.type !== "deployment_targets") throw unavailableResult();
+    return result.payload;
   },
   async loadTablePreferences() {
     return JSON.parse(await readUiPreference("table_preferences")) as SkillTablePreferences;

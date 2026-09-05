@@ -1,4 +1,5 @@
 export type SkillLifecycle = "active" | "trial" | "archived";
+import type { DeploymentRecord, DeploymentTarget } from "../../api/bindings";
 export type CheckState = "passed" | "warning" | "failed" | "not_run" | "unavailable";
 export type SkillDensity = "compact" | "standard" | "comfortable";
 export type DrawerPreset = "standard" | "wide" | "near_full";
@@ -154,7 +155,7 @@ export interface SkillBatchIntent {
   tags?: string[];
 }
 
-export type LibraryViewMode = "table" | "cards";
+export type LibraryViewMode = "table" | "cards" | "matrix";
 
 export interface SkillLibraryFacade {
   emitBatchIntent(intent: SkillBatchIntent): Promise<void>;
@@ -163,9 +164,13 @@ export interface SkillLibraryFacade {
   listSkills(query: SkillLibraryQuery): Promise<SkillPage>;
   loadDrawerPreferences(): Promise<SkillDrawerPreferences>;
   loadTablePreferences(): Promise<SkillTablePreferences>;
-  /** 库视图模式（表格/卡片）持久化；未提供时页面默认表格且不持久化。 */
+  /** 库视图模式（表格/卡片/关系矩阵）持久化；未提供时页面默认表格且不持久化。 */
   loadViewMode?: () => Promise<LibraryViewMode>;
   saveViewMode?: (mode: LibraryViewMode) => Promise<void>;
+  /** 全部部署关系（关系矩阵数据源）。 */
+  listDeployments?: () => Promise<DeploymentRecord[]>;
+  /** 已注册部署目标（矩阵列标签）。 */
+  listDeploymentTargets?: () => Promise<DeploymentTarget[]>;
   retainMatchingSkillIds(skillIds: string[], query: SkillLibraryQuery): Promise<string[]>;
   saveDrawerPreferences(preferences: SkillDrawerPreferences): Promise<void>;
   saveSkillMetadata?: (skillId: string, patch: SkillMetadataPatch) => Promise<void>;

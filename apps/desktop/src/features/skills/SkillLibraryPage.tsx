@@ -34,6 +34,8 @@ import {
   type SkillPage,
   type SkillTablePreferences,
   type LibraryViewMode,
+  type DeploymentRecord,
+  type DeploymentTarget,
 } from "./api";
 import {
   applySavedView,
@@ -52,6 +54,7 @@ import {
 import { SkillFilters } from "./SkillFilters";
 import { BatchTagDialog, type BatchTagAction } from "./BatchTagDialog";
 import { SkillQuickDrawer } from "./SkillQuickDrawer";
+import { SkillMatrix } from "./SkillMatrix";
 import { SkillTable } from "./SkillTable";
 import { BatchRemovalImpactDialog } from "../removal/BatchRemovalImpactDialog";
 import type { RemovalChoice, RemovalFacade, RemovalImpact } from "../removal/api";
@@ -442,13 +445,29 @@ export function SkillLibraryPage({
       active = false;
     };
   }, [facade]);
-
-  const toggleViewMode = useCallback(() => {
-    const next: LibraryViewMode = viewModeRef.current === "table" ? "cards" : "table";
-    viewModeRef.current = next;
-    setViewMode(next);
-    void facade.saveViewMode?.(next).catch(() => undefined);
+  const [deploymentRecords, setDeploymentRecords] = useState<DeploymentRecord[]>();
+  const [deploymentTargets, setDeploymentTargets] = useState<DeploymentTarget[]>();
+  useEffect(() => {
+    let active = true;
+    void facade.listDeployments?.().then((records) => {
+      if (active) setDeploymentRecords(records);
+    }).catch(() => undefined);
+    void facade.listDeploymentTargets?.().then((targets) => {
+      if (active) setDeploymentTargets(targets);
+    }).catch(() => undefined);
+    return () => {
+      active = false;
+    };
   }, [facade]);
+
+  const changeViewMode = useCallback(
+    (next: LibraryViewMode) => {
+      viewModeRef.current = next;
+      setViewMode(next);
+      void facade.saveViewMode?.(next).catch(() => undefined);
+    },
+    [facade],
+  );
 
   const persistDrawerPreferences = useCallback(
     async (next: SkillDrawerPreferences) => {
@@ -925,14 +944,18 @@ export function SkillLibraryPage({
         </p>
       ) : null}
       <div className="sh-skill-library__view-toggle">
-        <Button
-          aria-pressed={viewMode === "cards"}
-          onClick={toggleViewMode}
-          size="sm"
-          variant="ghost"
-        >
-          {viewMode === "table" ? t("skillLibrary.viewMode.toggle") : t("skillLibrary.viewMode.toggle")}
-        </Button>
+        <label>
+          <span className="sh-visually-hidden">{t("skillLibrary.viewMode.label")}</span>
+          <select
+            aria-label={t("skillLibrary.viewMode.label")}
+            onChange={(event) => changeViewMode(event.currentTarget.value as LibraryViewMode)}
+            value={viewMode}
+          >
+            <option value="table">{t("skillLibrary.viewMode.table")}</option>
+            <option value="cards">{t("skillLibrary.viewMode.cards")}</option>
+            <option value="matrix">{t("skillLibrary.viewMode.matrix")}</option>
+          </select>
+        </label>
       </div>
       {preferenceStatus}
       {selectionAnnouncement ? (
@@ -966,6 +989,12 @@ export function SkillLibraryPage({
 
       {pageRefreshing ? (
         <SkillLibrarySkeleton />
+      ) : viewMode === "matrix" ? (
+          <SkillMatrix
+            deploymentRecords={deploymentRecords}
+            deploymentTargets={deploymentTargets}
+            items={page.items}
+          />
       ) : viewMode === "cards" ? (
           <div className="sh-skill-cards" data-testid="skill-cards">
             {page.items.map((item) => (

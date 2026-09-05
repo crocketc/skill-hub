@@ -853,7 +853,17 @@
       "updateAvailable": "有可用更新"
     },
     "viewMode": {
-      "toggle": "卡片视图"
+      "label": "视图模式",
+      "table": "表格视图",
+      "cards": "卡片视图",
+      "matrix": "关系矩阵"
+    },
+    "matrix": {
+      "ariaLabel": "Skill 部署关系矩阵",
+      "skillColumn": "Skill",
+      "loading": "正在读取部署关系…",
+      "empty": "尚无部署关系，先部署 Skill 后即可在此查看矩阵。",
+      "hint": "矩阵仅显示当前页的 Skill；✓ 表示该 Skill 已部署到对应目标。"
     }
   },
   "skillDetail": {
