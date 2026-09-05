@@ -78,6 +78,11 @@ function ProjectDetailRoute() {
   return <ProjectDetailPage facade={nativeProjectFacade} projectId={projectKey} />;
 }
 
+function ProjectListRoute() {
+  const navigate = useNavigate();
+  return <ProjectListPage facade={nativeProjectFacade} onOpenProject={(projectId) => navigate(`/projects/${projectId}`)} />;
+}
+
 function DeploymentRoute() {
   const { skillId } = useParams();
   const effectiveSkillId = skillId ?? "unknown";
@@ -176,7 +181,7 @@ export const appRouter = createBrowserRouter([
       { path: "discovery", element: <DiscoveryRoute /> },
       { path: "agents", element: <AgentListPage facade={nativeAgentFacade} /> },
       { path: "agents/:agentKey", element: <AgentDetailRoute /> },
-      { path: "projects", element: <ProjectListPage facade={nativeProjectFacade} /> },
+      { path: "projects", element: <ProjectListRoute /> },
       { path: "projects/:projectKey", element: <ProjectDetailRoute /> },
       { path: "pending", element: <PendingPage facade={nativePendingFacade} /> },
       { path: "operations/:operationId", element: <OperationRoute /> },

@@ -40,6 +40,23 @@ it("opens a flat project summary drawer from its row", async () => {
   expect(screen.getByText("C:/Projects/demo")).toBeVisible();
 });
 
+it("opens project management from the project summary", async () => {
+  const user = userEvent.setup();
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  const project = projectFixture();
+  const onOpenProject = vi.fn();
+  render(
+    <I18nextProvider i18n={i18n}>
+      <ProjectListPage facade={{ get: async () => project, list: async () => [project], register: async () => project, updateAgentIds: async () => project, listAgentCandidates: async () => [] }} onOpenProject={onOpenProject} />
+    </I18nextProvider>,
+  );
+
+  await user.click(await screen.findByRole("button", { name: "Demo Project" }));
+  await user.click(screen.getByRole("button", { name: "管理项目" }));
+
+  expect(onOpenProject).toHaveBeenCalledWith("demo-project");
+});
+
 it("registers a user-selected local directory without creating a shared config", async () => {
   const user = userEvent.setup();
   const i18n = await createSkillHubI18n(["zh-CN"]);

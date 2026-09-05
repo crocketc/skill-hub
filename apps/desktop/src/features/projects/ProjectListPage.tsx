@@ -15,6 +15,7 @@ export function matchesProjectFilters(project: ProjectView, text: string, select
 export interface ProjectListPageProps {
   directoryPicker?: DirectoryPicker;
   facade?: ProjectFacade;
+  onOpenProject?: (projectId: string) => void;
 }
 
 function inferredProjectName(path: string): string {
@@ -28,6 +29,7 @@ function newProjectId(): string {
 export function ProjectListPage({
   directoryPicker = desktopDirectoryPicker,
   facade = unavailableProjectFacade,
+  onOpenProject,
 }: ProjectListPageProps) {
   const { t } = useTranslation();
   const [projects, setProjects] = useState<ProjectView[]>();
@@ -123,7 +125,7 @@ export function ProjectListPage({
         {visibleProjects.map((project) => <li key={project.id}><Button aria-label={project.name} onClick={(event) => { triggerRef.current = event.currentTarget; setSelectedProject(project); }} variant="ghost"><span>{project.name}</span><small>{project.tags.join(" · ")}</small></Button></li>)}
       </ul>
       {!visibleProjects.length ? <p role="status">{t("projects.empty")}</p> : null}
-      <ProjectQuickDrawer onClose={() => setSelectedProject(undefined)} open={Boolean(selectedProject)} project={selectedProject} returnFocusRef={triggerRef} />
+      <ProjectQuickDrawer onClose={() => setSelectedProject(undefined)} onOpenProject={onOpenProject} open={Boolean(selectedProject)} project={selectedProject} returnFocusRef={triggerRef} />
     </div>
   );
 }

@@ -292,6 +292,7 @@
     },
     "drawer": {
       "identity": "Project location",
+      "manage": "Manage project",
       "tags": "Tags",
       "targets": "Shared targets"
     },

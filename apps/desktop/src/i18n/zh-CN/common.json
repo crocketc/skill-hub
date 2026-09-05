@@ -292,6 +292,7 @@
     },
     "drawer": {
       "identity": "项目位置",
+      "manage": "管理项目",
       "tags": "标签",
       "targets": "共享目标"
     },
