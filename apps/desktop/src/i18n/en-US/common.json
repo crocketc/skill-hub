@@ -357,7 +357,8 @@
       "title": "Management boundaries",
       "relocateUnsupported": "Relocation needs native contract support and is not available yet.",
       "ignoreUnsupported": "Agent-level ignore needs native contract support and is not available yet."
-    }
+    },
+    "launchDeployment": "Deploy skills"
   },
   "projects": {
     "actions": {

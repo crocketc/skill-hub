@@ -357,7 +357,8 @@
       "title": "管理边界",
       "relocateUnsupported": "重新定位需要原生契约支持，暂未提供。",
       "ignoreUnsupported": "Agent 级忽略需要原生契约支持，暂未提供。"
-    }
+    },
+    "launchDeployment": "发起部署"
   },
   "projects": {
     "actions": {
