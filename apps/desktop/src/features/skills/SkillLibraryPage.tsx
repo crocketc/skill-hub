@@ -27,6 +27,7 @@ import {
   skillLibraryKeys,
   type BatchAction,
   type SavedSkillView,
+  type SkillColumnId,
   type SkillDrawerPreferences,
   type SkillLibraryFacade,
   type SkillLibraryQuery,
@@ -55,7 +56,15 @@ import { BatchRemovalImpactDialog } from "../removal/BatchRemovalImpactDialog";
 import type { RemovalChoice, RemovalFacade, RemovalImpact } from "../removal/api";
 import { nativeRemovalFacade } from "../removal/nativeApi";
 
+export interface SkillLibraryCapabilities {
+  /** Columns the facade can sort on; omitted keeps every column sortable. */
+  sortableColumns?: SkillColumnId[];
+  /** Whether the upgrade-available version filter has a real read model. */
+  versionFilterSupported?: boolean;
+}
+
 export interface SkillLibraryPageProps {
+  capabilities?: SkillLibraryCapabilities;
   facade: SkillLibraryFacade;
   onOpenDiscovery?: () => void;
   removalFacade?: RemovalFacade;
@@ -321,7 +330,12 @@ function BatchBar({
   );
 }
 
-export function SkillLibraryPage({ facade, onOpenDiscovery, removalFacade = nativeRemovalFacade }: SkillLibraryPageProps): JSX.Element {
+export function SkillLibraryPage({
+  capabilities,
+  facade,
+  onOpenDiscovery,
+  removalFacade = nativeRemovalFacade,
+}: SkillLibraryPageProps): JSX.Element {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const location = useLocation();
@@ -873,6 +887,7 @@ export function SkillLibraryPage({ facade, onOpenDiscovery, removalFacade = nati
             onChange={updateQuery}
             onClear={clearFilters}
             query={query}
+            versionFilterSupported={capabilities?.versionFilterSupported ?? true}
           />
         ) : null}
       </div>
@@ -905,6 +920,7 @@ export function SkillLibraryPage({ facade, onOpenDiscovery, removalFacade = nati
               : undefined
           }
           selection={selection}
+          sortableColumns={capabilities?.sortableColumns}
         />
       )}
 

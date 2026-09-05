@@ -40,6 +40,10 @@ async fn create_skill_command_captures_version_and_registers_local_source() {
             text: String::new(),
             page: 1,
             page_size: 10,
+
+            filters: Default::default(),
+
+            sort: Default::default(),
         }))
         .await
         .expect("list skills");
@@ -153,6 +157,10 @@ async fn source_relink_check_and_take_upstream_create_new_version() {
             text: String::new(),
             page: 1,
             page_size: 10,
+
+            filters: Default::default(),
+
+            sort: Default::default(),
         }))
         .await
         .expect("skills")
@@ -212,6 +220,10 @@ async fn applying_upstream_update_rejects_local_modifications_without_choice() {
             text: String::new(),
             page: 1,
             page_size: 10,
+
+            filters: Default::default(),
+
+            sort: Default::default(),
         }))
         .await
         .expect("skills")

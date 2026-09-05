@@ -554,7 +554,8 @@
       "versionOptions": {
         "any": "Any version",
         "upgradeAvailable": "Upgrade available"
-      }
+      },
+      "versionUnavailable": "Upgrade detection has not been connected yet."
     },
     "savedViews": {
       "builtIn": {

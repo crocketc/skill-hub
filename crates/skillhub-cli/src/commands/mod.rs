@@ -28,6 +28,8 @@ pub async fn run(args: &CliArgs, facade: &dyn ApplicationFacade) -> Result<Value
                     text: args.query.clone().unwrap_or_default(),
                     page: args.page,
                     page_size: args.page_size,
+                    filters: Default::default(),
+                    sort: Default::default(),
                 }))
                 .await,
         ),

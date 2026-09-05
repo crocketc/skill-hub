@@ -554,7 +554,8 @@
       "versionOptions": {
         "any": "任意版本",
         "upgradeAvailable": "有可用更新"
-      }
+      },
+      "versionUnavailable": "上游更新检测尚未接入。"
     },
     "savedViews": {
       "builtIn": {

@@ -1,4 +1,5 @@
 use skillhub_application::LocalApplicationFacade;
+use skillhub_core::check::CheckRepository;
 use skillhub_core::{
     agent::{
         ClientInstance, ClientKind, ClientPresence, DirectoryPrecedence, DiscoverySnapshot,
@@ -30,7 +31,7 @@ use skillhub_core::{
     search::{SearchDocument, SearchQuery},
     source::{SourceDescriptor, SourceKind, SourceLocator},
     AppCommand, AppQuery as RootAppQuery, ApplicationFacade, DeploymentCapability, ErrorCode,
-    ExternalChangeState, PathPolicy, ReconcileAction, RemovalDecision, Severity,
+    ExternalChangeState, PathPolicy, ReconcileAction, RemovalDecision, Severity, SkillId,
 };
 
 #[tokio::test]
@@ -1142,6 +1143,8 @@ async fn failed_import_commit_removes_partial_catalog_and_version_state() {
             text: String::new(),
             page: 1,
             page_size: 25,
+            filters: Default::default(),
+            sort: Default::default(),
         }))
         .await
         .expect("list after failed import");
@@ -1251,6 +1254,8 @@ async fn list_skills_query_returns_a_stable_page_and_tag_facets() {
             text: "".into(),
             page: 1,
             page_size: 1,
+            filters: Default::default(),
+            sort: Default::default(),
         }))
         .await
         .expect("list result");
@@ -1262,6 +1267,431 @@ async fn list_skills_query_returns_a_stable_page_and_tag_facets() {
     assert_eq!(page.items.len(), 1);
     assert_eq!(page.items[0].display_name, "Alpha");
     assert_eq!(page.tags, vec!["documents".to_owned(), "media".to_owned()]);
+}
+
+async fn query_skill_names(
+    facade: &LocalApplicationFacade,
+    filters: skillhub_core::api::SkillListFilters,
+    sort: skillhub_core::api::SkillListSort,
+) -> Vec<String> {
+    let result = facade
+        .query(RootAppQuery::ListSkills(ListSkills {
+            text: String::new(),
+            page: 1,
+            page_size: 50,
+            filters,
+            sort,
+        }))
+        .await
+        .expect("list result");
+    let AppQueryResult::SkillPage(page) = result else {
+        panic!("expected skill page");
+    };
+    page.items
+        .into_iter()
+        .map(|item| item.display_name)
+        .collect()
+}
+
+fn seed_version_and_current_pointer(
+    database: &skillhub_storage::Database,
+    skill: SkillId,
+    version: &skillhub_core::VersionId,
+    source_version: &str,
+) {
+    database
+        .connection_for_test()
+        .execute_batch(&format!(
+            "INSERT INTO versions (id,skill_id,content_hash,manifest_json,created_at,source_version) VALUES ('{version}','{}','hash','{{}}',0,'{source_version}');\
+             INSERT INTO current_pointers (skill_id,version_id,updated_at) VALUES ('{}','{version}',0);",
+            skill, skill
+        ))
+        .expect("seed version and current pointer");
+}
+
+#[tokio::test]
+async fn list_skills_query_filters_by_tags_lifecycle_and_deployment_state() {
+    let database = Database::open_in_memory().expect("database");
+    let alpha = Skill::new(SkillId::new(), "Alpha").with_tag("documents");
+    let beta = Skill::new(SkillId::new(), "Beta")
+        .with_tag("media")
+        .with_trial_due(2026, 10, 1);
+    let gamma = Skill::from_parts(
+        SkillId::new(),
+        "Gamma".into(),
+        "Gamma".into(),
+        String::new(),
+        None,
+        None,
+        ["documents".to_owned(), "media".to_owned()]
+            .into_iter()
+            .collect(),
+        None,
+        None,
+        skillhub_core::catalog::CallPolicy::AutomaticAndManual,
+        skillhub_core::catalog::SkillLifecycle::Archived,
+        Vec::new(),
+        None,
+    )
+    .expect("archived skill");
+    let repository = database.catalog_repository().expect("catalog repository");
+    repository.insert(&alpha).await.expect("insert alpha");
+    repository.insert(&beta).await.expect("insert beta");
+    repository.insert(&gamma).await.expect("insert gamma");
+
+    let version_id = skillhub_core::VersionId::parse(
+        "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    )
+    .expect("version id");
+    seed_version_and_current_pointer(&database, alpha.id(), &version_id, "1.0.0");
+    database
+        .connection_for_test()
+        .execute_batch(
+            "INSERT INTO targets (id,agent_id,scope,path,created_at) VALUES ('agent-codex','codex','global','C:/agents/codex',0);",
+        )
+        .expect("seed agent target");
+    let deployment = DeploymentRecord {
+        id: skillhub_core::DeploymentId::new(),
+        skill_id: alpha.id(),
+        version_id: version_id.clone(),
+        target_id: "agent-codex".into(),
+        state: DeploymentState::Deployed,
+        mode: DeploymentMode::ManagedCopy,
+        managed: true,
+        runtime_name: "alpha".into(),
+        expected_hash: "sha256:tree".into(),
+        observed_hash: None,
+    };
+    database
+        .deployment_repository()
+        .insert(&deployment)
+        .await
+        .expect("insert deployment");
+
+    let facade = LocalApplicationFacade::new_with_today(database, (2026, 9, 5));
+    let default_sort = skillhub_core::api::SkillListSort::default();
+    let filters =
+        |tags: &[&str], lifecycle: &[skillhub_core::api::SkillLifecycleFilter], deployment| {
+            skillhub_core::api::SkillListFilters {
+                tags: tags.iter().map(|tag| tag.to_string()).collect(),
+                lifecycle: lifecycle.to_vec(),
+                deployment,
+                ..Default::default()
+            }
+        };
+
+    assert_eq!(
+        query_skill_names(
+            &facade,
+            filters(&["documents"], &[], skillhub_core::api::SkillDeploymentFilter::Any),
+            default_sort.clone()
+        )
+        .await,
+        vec!["Alpha".to_owned(), "Gamma".to_owned()]
+    );
+    assert_eq!(
+        query_skill_names(
+            &facade,
+            filters(
+                &[],
+                &[skillhub_core::api::SkillLifecycleFilter::Trial],
+                skillhub_core::api::SkillDeploymentFilter::Any
+            ),
+            default_sort.clone()
+        )
+        .await,
+        vec!["Beta".to_owned()]
+    );
+    assert_eq!(
+        query_skill_names(
+            &facade,
+            filters(
+                &[],
+                &[skillhub_core::api::SkillLifecycleFilter::Active],
+                skillhub_core::api::SkillDeploymentFilter::Any
+            ),
+            default_sort.clone()
+        )
+        .await,
+        vec!["Alpha".to_owned()]
+    );
+    assert_eq!(
+        query_skill_names(
+            &facade,
+            filters(
+                &[],
+                &[skillhub_core::api::SkillLifecycleFilter::Archived],
+                skillhub_core::api::SkillDeploymentFilter::Any
+            ),
+            default_sort.clone()
+        )
+        .await,
+        vec!["Gamma".to_owned()]
+    );
+    assert_eq!(
+        query_skill_names(
+            &facade,
+            filters(
+                &[],
+                &[],
+                skillhub_core::api::SkillDeploymentFilter::Deployed
+            ),
+            default_sort.clone()
+        )
+        .await,
+        vec!["Alpha".to_owned()]
+    );
+    assert_eq!(
+        query_skill_names(
+            &facade,
+            filters(
+                &[],
+                &[],
+                skillhub_core::api::SkillDeploymentFilter::NotDeployed
+            ),
+            default_sort
+        )
+        .await,
+        vec!["Beta".to_owned(), "Gamma".to_owned()]
+    );
+}
+
+#[tokio::test]
+async fn list_skills_query_filters_by_current_version_check_state() {
+    let database = Database::open_in_memory().expect("database");
+    let alpha = Skill::new(SkillId::new(), "Alpha");
+    let beta = Skill::new(SkillId::new(), "Beta");
+    let repository = database.catalog_repository().expect("catalog repository");
+    repository.insert(&alpha).await.expect("insert alpha");
+    repository.insert(&beta).await.expect("insert beta");
+
+    let alpha_current = skillhub_core::VersionId::parse(
+        "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    )
+    .expect("alpha current");
+    let alpha_stale = skillhub_core::VersionId::parse(
+        "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    )
+    .expect("alpha stale");
+    let beta_current = skillhub_core::VersionId::parse(
+        "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    )
+    .expect("beta current");
+    seed_version_and_current_pointer(&database, alpha.id(), &alpha_current, "1.0.0");
+    database
+        .connection_for_test()
+        .execute_batch(&format!(
+            "INSERT INTO versions (id,skill_id,content_hash,manifest_json,created_at,source_version) VALUES ('{alpha_stale}','{}','hash-stale','{{}}',0,'0.9.0');",
+            alpha.id()
+        ))
+        .expect("seed stale version");
+    seed_version_and_current_pointer(&database, beta.id(), &beta_current, "2.0.0");
+
+    let check_repository = database.check_repository();
+    let mut stale_failed = skillhub_core::check::CheckRun::completed(
+        "alpha-stale-basic",
+        alpha.id(),
+        alpha_stale.clone(),
+        CheckKind::Basic,
+        vec![skillhub_core::check::Finding::new(
+            "stale-finding",
+            "security.secret",
+            Severity::Error,
+        )],
+    );
+    stale_failed.generation = 1;
+    stale_failed.started_at = 10;
+    check_repository
+        .insert(&stale_failed)
+        .await
+        .expect("insert stale run");
+    let mut current_passed =
+        skillhub_core::check::CheckRun::completed(
+            "alpha-current-basic",
+            alpha.id(),
+            alpha_current.clone(),
+            CheckKind::Basic,
+            Vec::new(),
+        );
+    current_passed.generation = 2;
+    current_passed.started_at = 20;
+    check_repository
+        .insert(&current_passed)
+        .await
+        .expect("insert current run");
+    let beta_failed = skillhub_core::check::CheckRun::completed(
+        "beta-current-basic",
+        beta.id(),
+        beta_current.clone(),
+        CheckKind::Basic,
+        vec![skillhub_core::check::Finding::new(
+            "beta-finding",
+            "security.secret",
+            Severity::Warning,
+        )],
+    );
+    check_repository
+        .insert(&beta_failed)
+        .await
+        .expect("insert beta run");
+
+    let facade = LocalApplicationFacade::new_with_today(database, (2026, 9, 5));
+    let with_basic = |states: &[CheckState]| skillhub_core::api::SkillListFilters {
+        basic_check: states.to_vec(),
+        ..Default::default()
+    };
+
+    assert_eq!(
+        query_skill_names(&facade, with_basic(&[CheckState::Passed]), Default::default()).await,
+        vec!["Alpha".to_owned()]
+    );
+    assert_eq!(
+        query_skill_names(&facade, with_basic(&[CheckState::Failed]), Default::default()).await,
+        vec!["Beta".to_owned()]
+    );
+    assert_eq!(
+        query_skill_names(
+            &facade,
+            skillhub_core::api::SkillListFilters {
+                ai_check: vec![CheckState::NotChecked],
+                ..Default::default()
+            },
+            Default::default()
+        )
+        .await,
+        vec!["Alpha".to_owned(), "Beta".to_owned()]
+    );
+}
+
+#[tokio::test]
+async fn list_skills_query_returns_real_status_fields_and_sorts_by_agent_deployments() {
+    let database = Database::open_in_memory().expect("database");
+    let alpha = Skill::new(SkillId::new(), "Alpha")
+        .with_tag("documents")
+        .with_author("Ada");
+    let beta = Skill::new(SkillId::new(), "Beta");
+    let repository = database.catalog_repository().expect("catalog repository");
+    repository.insert(&alpha).await.expect("insert alpha");
+    repository.insert(&beta).await.expect("insert beta");
+
+    let source_root = tempfile::tempdir().expect("source root");
+    database
+        .source_repository()
+        .relink(
+            alpha.id(),
+            SourceDescriptor::new(
+                SourceKind::Local,
+                SourceLocator::LocalPath(source_root.path().to_path_buf()),
+            ),
+        )
+        .expect("relink source");
+
+    let alpha_current = skillhub_core::VersionId::parse(
+        "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    )
+    .expect("alpha current");
+    seed_version_and_current_pointer(&database, alpha.id(), &alpha_current, "1.0.0");
+    database
+        .connection_for_test()
+        .execute_batch(
+            "INSERT INTO targets (id,agent_id,scope,path,created_at) VALUES ('agent-codex','codex','global','C:/agents/codex',0);\
+             INSERT INTO targets (id,agent_id,scope,path,created_at) VALUES ('agent-claude','claude','global','C:/agents/claude',0);",
+        )
+        .expect("seed agent targets");
+    let make_deployment = |target_id: &str| DeploymentRecord {
+        id: skillhub_core::DeploymentId::new(),
+        skill_id: alpha.id(),
+        version_id: alpha_current.clone(),
+        target_id: target_id.into(),
+        state: DeploymentState::Deployed,
+        mode: DeploymentMode::ManagedCopy,
+        managed: true,
+        runtime_name: "alpha".into(),
+        expected_hash: "sha256:tree".into(),
+        observed_hash: None,
+    };
+    let deployment_repository = database.deployment_repository();
+    deployment_repository
+        .insert(&make_deployment("agent-codex"))
+        .await
+        .expect("insert codex deployment");
+    deployment_repository
+        .insert(&make_deployment("agent-claude"))
+        .await
+        .expect("insert claude deployment");
+
+    let high_risk_run = skillhub_core::check::CheckRun::completed(
+        "alpha-basic",
+        alpha.id(),
+        alpha_current.clone(),
+        CheckKind::Basic,
+        vec![skillhub_core::check::Finding::new(
+            "alpha-finding",
+            "security.secret",
+            Severity::Error,
+        )],
+    );
+    database
+        .check_repository()
+        .insert(&high_risk_run)
+        .await
+        .expect("insert basic run");
+
+    let facade = LocalApplicationFacade::new_with_today(database, (2026, 9, 5));
+    let result = facade
+        .query(RootAppQuery::ListSkills(ListSkills {
+            text: String::new(),
+            page: 1,
+            page_size: 50,
+            filters: Default::default(),
+            sort: skillhub_core::api::SkillListSort {
+                column: skillhub_core::api::SkillSortColumn::AgentDeployments,
+                direction: skillhub_core::api::SkillSortDirection::Desc,
+            },
+        }))
+        .await
+        .expect("list result");
+    let AppQueryResult::SkillPage(page) = result else {
+        panic!("expected skill page");
+    };
+    assert_eq!(page.items.len(), 2);
+    let alpha_item = page
+        .items
+        .iter()
+        .find(|item| item.display_name == "Alpha")
+        .expect("alpha item");
+    assert_eq!(alpha_item.author.as_deref(), Some("Ada"));
+    assert_eq!(alpha_item.source_kind.as_deref(), Some("local"));
+    assert_eq!(
+        alpha_item.source_locator.as_deref(),
+        Some(source_root.path().to_string_lossy().as_ref())
+    );
+    assert_eq!(alpha_item.current_version, Some(alpha_current.clone()));
+    assert_eq!(alpha_item.current_version_label.as_deref(), Some("1.0.0"));
+    assert_eq!(alpha_item.agent_deployment_count, 2);
+    assert_eq!(
+        alpha_item.agent_deployment_target_ids,
+        vec!["agent-claude".to_owned(), "agent-codex".to_owned()]
+    );
+    assert_eq!(alpha_item.project_deployment_count, 0);
+    assert_eq!(alpha_item.basic_check, CheckState::Failed);
+    assert_eq!(alpha_item.ai_check, CheckState::NotChecked);
+    assert_eq!(alpha_item.high_risk_count, 1);
+
+    let beta_item = page
+        .items
+        .iter()
+        .find(|item| item.display_name == "Beta")
+        .expect("beta item");
+    assert_eq!(beta_item.author, None);
+    assert_eq!(beta_item.source_kind, None);
+    assert_eq!(beta_item.current_version, None);
+    assert_eq!(beta_item.agent_deployment_count, 0);
+    assert_eq!(beta_item.basic_check, CheckState::NotChecked);
+    assert_eq!(beta_item.high_risk_count, 0);
+
+    assert_eq!(page.items[0].display_name, "Alpha");
+    assert_eq!(page.items[1].display_name, "Beta");
 }
 
 #[tokio::test]

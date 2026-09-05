@@ -277,3 +277,14 @@ it("anchors the collapsed filter toggle directly below the preset views", () => 
   expect(toggleBlock).toMatch(/bottom:\s*auto/);
   expect(toggleBlock).toMatch(/transform:\s*translate\(-50%,\s*0\)/);
 });
+
+it("disables the upgrade filter while upstream update data has no read model", async () => {
+  await renderSkillFilters({ versionFilterSupported: false });
+
+  const versionSelect = screen.getByRole("combobox", { name: /Version/ });
+  expect(versionSelect).toBeDisabled();
+  expect(versionSelect).toHaveAccessibleDescription(
+    "Upgrade detection has not been connected yet.",
+  );
+  expect(screen.getByRole("combobox", { name: "Deployment" })).toBeEnabled();
+});

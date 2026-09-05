@@ -30,6 +30,9 @@ export interface SkillTableProps {
   query: SkillLibraryQuery;
   returnPosition?: { focusSkillId: string; left: number; top: number };
   selection: SkillSelection;
+  /** Columns the current facade can actually sort on. Omitted means every
+   * column stays sortable (browser preview and test doubles). */
+  sortableColumns?: SkillColumnId[];
 }
 
 interface SkillTableMeta {
@@ -236,6 +239,7 @@ export function SkillTable(props: SkillTableProps) {
   const suppressToggleClickRef = useRef(false);
   const [horizontalOverflow, setHorizontalOverflow] = useState(false);
   const [tableScrollWidth, setTableScrollWidth] = useState(0);
+  const sortable = new Set(props.sortableColumns ?? COLUMN_IDS);
   const columnOrder = orderedColumnIds(props.preferences);
   const visibleColumns = new Set([...LOCKED_COLUMNS, ...props.preferences.visibleColumns]);
   const columns = useMemo(() => createSkillColumns(t), [t]);
@@ -446,10 +450,10 @@ export function SkillTable(props: SkillTableProps) {
           <thead>
             {table.getHeaderGroups().map((headerGroup) => <tr key={headerGroup.id}>{headerGroup.headers.map((header) => {
               const column = header.column.id as SkillColumnId;
-              const sortable = column !== "select";
+              const isSortable = column !== "select" && sortable.has(column);
               const sort = props.query.sort.column === column ? props.query.sort.direction : undefined;
-              return <th aria-sort={sortable ? (sort === "asc" ? "ascending" : sort === "desc" ? "descending" : "none") : undefined} data-column={column} key={header.id} scope="col">
-                {column === "select" ? <CheckboxTarget><input aria-label={t("skillLibrary.table.selectCurrentPage")} checked={allPageSelected} onChange={togglePage} onClick={stopRowOpen} onKeyDown={stopRowOpen} type="checkbox" /></CheckboxTarget> : sortable ? <button aria-label={t("skillLibrary.table.sortBy", { column: t(COLUMN_LABELS[column]).toLocaleLowerCase() })} className="sh-skill-table__sort" onClick={() => sortColumn(column)} type="button">{flexRender(header.column.columnDef.header, header.getContext())}</button> : flexRender(header.column.columnDef.header, header.getContext())}
+              return <th aria-sort={isSortable ? (sort === "asc" ? "ascending" : sort === "desc" ? "descending" : "none") : undefined} data-column={column} key={header.id} scope="col">
+                {column === "select" ? <CheckboxTarget><input aria-label={t("skillLibrary.table.selectCurrentPage")} checked={allPageSelected} onChange={togglePage} onClick={stopRowOpen} onKeyDown={stopRowOpen} type="checkbox" /></CheckboxTarget> : isSortable ? <button aria-label={t("skillLibrary.table.sortBy", { column: t(COLUMN_LABELS[column]).toLocaleLowerCase() })} className="sh-skill-table__sort" onClick={() => sortColumn(column)} type="button">{flexRender(header.column.columnDef.header, header.getContext())}</button> : flexRender(header.column.columnDef.header, header.getContext())}
               </th>;
             })}</tr>)}
           </thead>

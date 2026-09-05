@@ -769,6 +769,8 @@ export type ListSkills = {
 	text: string,
 	page: number,
 	page_size: number,
+	filters?: SkillListFilters,
+	sort?: SkillListSort,
 };
 
 export type ListVersions = {
@@ -1351,9 +1353,30 @@ export type SkillCallPolicy =
 /**  Neither automatic nor explicit invocation is currently available. */
 "Disabled";
 
+export type SkillDeploymentFilter = "any" | "deployed" | "not_deployed";
+
 export type SkillId = string;
 
 export type SkillLifecycle = "Normal" | "Deprecated" | "Archived";
+
+/**
+ *  User-facing lifecycle bucket used by the library list filter. `Trial`
+ *  covers any skill with a pending trial date regardless of the stored
+ *  lifecycle, mirroring the display mapping used by the desktop clients.
+ */
+export type SkillLifecycleFilter = "active" | "trial" | "archived";
+
+/**
+ *  Combined library list filter. Empty vectors match every value; the tag and
+ *  check-state vectors use any-of semantics.
+ */
+export type SkillListFilters = {
+	ai_check?: CheckState[],
+	basic_check?: CheckState[],
+	deployment?: SkillDeploymentFilter,
+	lifecycle?: SkillLifecycleFilter[],
+	tags?: string[],
+};
 
 export type SkillListItem = {
 	skill_id: SkillId,
@@ -1366,6 +1389,17 @@ export type SkillListItem = {
 	license: string | null,
 	lifecycle: SkillLifecycle,
 	trial_due: string | null,
+	author: string | null,
+	source_kind: string | null,
+	source_locator: string | null,
+	current_version: VersionId | null,
+	current_version_label: string | null,
+	agent_deployment_count: number,
+	agent_deployment_target_ids: string[],
+	project_deployment_count: number,
+	basic_check: CheckState,
+	ai_check: CheckState,
+	high_risk_count: number,
 };
 
 export type SkillListPage = {
@@ -1374,6 +1408,11 @@ export type SkillListPage = {
 	page: number,
 	page_size: number,
 	tags: string[],
+};
+
+export type SkillListSort = {
+	column: SkillSortColumn,
+	direction: SkillSortDirection,
 };
 
 export type SkillResult = {
@@ -1389,6 +1428,10 @@ export type SkillResult = {
 	trial_due: string | null,
 	current_version: VersionId | null,
 };
+
+export type SkillSortColumn = "name" | "lifecycle" | "agent_deployments" | "project_deployments" | "version" | "updated";
+
+export type SkillSortDirection = "asc" | "desc";
 
 export type SourceDescriptor = {
 	kind: SourceKind,

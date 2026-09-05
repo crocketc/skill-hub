@@ -32,7 +32,11 @@ import {
   SkillLibraryPreview,
   SkillLibraryPreviewShell,
 } from "../features/skills/SkillLibraryPreview";
-import { nativeSkillLibraryFacade } from "../features/skills/nativeApi";
+import {
+  NATIVE_SORTABLE_COLUMNS,
+  NATIVE_VERSION_UPGRADE_FILTER_SUPPORTED,
+  nativeSkillLibraryFacade,
+} from "../features/skills/nativeApi";
 import { skillLibraryKeys } from "../features/skills/api";
 import { type ImportResult } from "../features/import/api";
 import { skillHubI18n } from "../i18n";
@@ -95,7 +99,16 @@ function DeploymentRoute() {
 
 function SkillLibraryRoute() {
   const navigate = useNavigate();
-  return <SkillLibraryPage facade={nativeSkillLibraryFacade} onOpenDiscovery={() => navigate("/discovery")} />;
+  return (
+    <SkillLibraryPage
+      capabilities={{
+        sortableColumns: NATIVE_SORTABLE_COLUMNS,
+        versionFilterSupported: NATIVE_VERSION_UPGRADE_FILTER_SUPPORTED,
+      }}
+      facade={nativeSkillLibraryFacade}
+      onOpenDiscovery={() => navigate("/discovery")}
+    />
+  );
 }
 
 function DiscoveryRoute() {

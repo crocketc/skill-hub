@@ -470,3 +470,16 @@ it("disables the next page control at the final page", async () => {
   expect(screen.getByRole("button", { name: "Previous page" })).not.toBeDisabled();
   expect(screen.getByRole("button", { name: "Next page" })).toBeDisabled();
 });
+
+it("renders constrained sort columns as plain headers instead of unavailable queries", async () => {
+  const onQueryChange = vi.fn();
+  await renderTable({ onQueryChange, sortableColumns: ["name", "version"] });
+
+  expect(screen.getByRole("button", { name: "Sort by name / alias" })).toBeVisible();
+  expect(
+    screen.queryByRole("button", { name: "Sort by purpose / translated description" }),
+  ).not.toBeInTheDocument();
+  const purposeHeader = screen.getByRole("columnheader", { name: /Purpose/ });
+  expect(purposeHeader).not.toHaveAttribute("aria-sort");
+  expect(onQueryChange).not.toHaveBeenCalled();
+});

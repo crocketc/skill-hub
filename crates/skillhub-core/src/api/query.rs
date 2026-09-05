@@ -19,12 +19,82 @@ use serde::{Deserialize, Serialize};
 pub struct GetSkill {
     pub skill_id: SkillId,
 }
+/// User-facing lifecycle bucket used by the library list filter. `Trial`
+/// covers any skill with a pending trial date regardless of the stored
+/// lifecycle, mirroring the display mapping used by the desktop clients.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(rename_all = "snake_case")]
+pub enum SkillLifecycleFilter {
+    Active,
+    Trial,
+    Archived,
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(rename_all = "snake_case")]
+pub enum SkillDeploymentFilter {
+    #[default]
+    Any,
+    Deployed,
+    NotDeployed,
+}
+
+/// Combined library list filter. Empty vectors match every value; the tag and
+/// check-state vectors use any-of semantics.
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields, default)]
+pub struct SkillListFilters {
+    pub ai_check: Vec<CheckState>,
+    pub basic_check: Vec<CheckState>,
+    pub deployment: SkillDeploymentFilter,
+    pub lifecycle: Vec<SkillLifecycleFilter>,
+    pub tags: Vec<String>,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(rename_all = "snake_case")]
+pub enum SkillSortColumn {
+    Name,
+    Lifecycle,
+    AgentDeployments,
+    ProjectDeployments,
+    Version,
+    Updated,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(rename_all = "snake_case")]
+pub enum SkillSortDirection {
+    Asc,
+    Desc,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct SkillListSort {
+    pub column: SkillSortColumn,
+    pub direction: SkillSortDirection,
+}
+
+impl Default for SkillListSort {
+    fn default() -> Self {
+        Self {
+            column: SkillSortColumn::Name,
+            direction: SkillSortDirection::Asc,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 #[serde(deny_unknown_fields)]
 pub struct ListSkills {
     pub text: String,
     pub page: u32,
     pub page_size: u32,
+    #[serde(default)]
+    pub filters: SkillListFilters,
+    #[serde(default)]
+    pub sort: SkillListSort,
 }
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 pub struct SkillListItem {
@@ -38,6 +108,17 @@ pub struct SkillListItem {
     pub license: Option<String>,
     pub lifecycle: SkillLifecycle,
     pub trial_due: Option<String>,
+    pub author: Option<String>,
+    pub source_kind: Option<String>,
+    pub source_locator: Option<String>,
+    pub current_version: Option<VersionId>,
+    pub current_version_label: Option<String>,
+    pub agent_deployment_count: u32,
+    pub agent_deployment_target_ids: Vec<String>,
+    pub project_deployment_count: u32,
+    pub basic_check: CheckState,
+    pub ai_check: CheckState,
+    pub high_risk_count: u32,
 }
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 pub struct SkillListPage {

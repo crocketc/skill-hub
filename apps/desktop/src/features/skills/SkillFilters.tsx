@@ -8,6 +8,9 @@ export interface SkillFiltersProps {
   onChange: (query: SkillLibraryQuery) => void;
   onClear: () => void;
   query: SkillLibraryQuery;
+  /** Set to false when the production read model cannot answer the upgrade
+   * filter yet; the control is disabled instead of failing the whole page. */
+  versionFilterSupported?: boolean;
 }
 
 const CHECK_STATES: readonly CheckState[] = ["passed", "warning", "failed", "not_run", "unavailable"];
@@ -94,7 +97,14 @@ function MultiSelectMenu({ label, onChange, options, selected, summary }: MultiS
   );
 }
 
-export function SkillFilters({ availableTags, id, onChange, onClear, query }: SkillFiltersProps) {
+export function SkillFilters({
+  availableTags,
+  id,
+  onChange,
+  onClear,
+  query,
+  versionFilterSupported = true,
+}: SkillFiltersProps) {
   const { t } = useTranslation();
 
   const update = (change: Partial<SkillLibraryQuery>) => {
@@ -154,11 +164,18 @@ export function SkillFilters({ availableTags, id, onChange, onClear, query }: Sk
       <label>
         {t("skillLibrary.filters.version")}
         <select
+          aria-describedby={versionFilterSupported ? undefined : `${id ?? "skill"}-version-filter-hint`}
+          disabled={!versionFilterSupported}
           onChange={(event) => updateFilters({ version: event.currentTarget.value as SkillLibraryQuery["filters"]["version"] })}
           value={query.filters.version}
         >
           {VERSION_OPTIONS.map(([value, label]) => <option key={value} value={value}>{t(label)}</option>)}
         </select>
+        {versionFilterSupported ? null : (
+          <p className="sh-filter-dropdown__hint" id={`${id ?? "skill"}-version-filter-hint`}>
+            {t("skillLibrary.filters.versionUnavailable")}
+          </p>
+        )}
       </label>
 
       <MultiSelectMenu
