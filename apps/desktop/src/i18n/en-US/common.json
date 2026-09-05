@@ -281,6 +281,7 @@
       "tags": "Tags"
     },
     "registration": {
+      "agents": "Associate discovered Agents (optional)",
       "confirm": "Register project",
       "description": "Choose a project root to create a local management record only. SkillHub will not import Skills or write project files.",
       "failed": "This project could not be registered.",

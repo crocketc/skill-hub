@@ -974,6 +974,7 @@ export type Project = {
 	physical_id: string,
 	logical: ProjectMetadata,
 	tags: ProjectTag[],
+	agent_ids?: string[],
 	created_at: string,
 	updated_at: string,
 };

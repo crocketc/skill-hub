@@ -26,7 +26,7 @@ it("shows shared configuration as read-only project facts", async () => {
   const project = projectFixture();
   render(
     <I18nextProvider i18n={i18n}>
-      <ProjectDetailPage facade={{ get: async () => project, list: async () => [project], register: async () => project }} />
+      <ProjectDetailPage facade={{ get: async () => project, list: async () => [project], register: async () => project, listAgentCandidates: async () => [] }} />
     </I18nextProvider>,
   );
 

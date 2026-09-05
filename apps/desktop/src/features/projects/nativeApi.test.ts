@@ -25,6 +25,7 @@ it("maps registered project facts and does not invent assembly results", async (
   });
 
   await expect(nativeProjectFacade.list()).resolves.toEqual([{
+    agentIds: [],
     assembly: [],
     description: "Release workspace",
     id: "project-aurora",
@@ -96,6 +97,7 @@ it("registers a selected local directory without writing a shared project config
     name: "Aurora",
     path: "D:/Work/Aurora",
     tags: ["Desktop"],
+    agentIds: [],
   })).resolves.toEqual(expect.objectContaining({
     id: "project-aurora",
     name: "Aurora",

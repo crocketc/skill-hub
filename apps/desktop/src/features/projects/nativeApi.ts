@@ -1,8 +1,9 @@
 import { executeCommand, queryApplication, type Project } from "../../api/bindings";
-import type { ProjectFacade, ProjectRegistration, ProjectView } from "./api";
+import type { ProjectAgentCandidate, ProjectFacade, ProjectRegistration, ProjectView } from "./api";
 
 function projectView(project: Project): ProjectView {
   return {
+    agentIds: project.agent_ids ?? [],
     assembly: [],
     description: project.logical.note ?? "",
     id: project.id,
@@ -58,6 +59,7 @@ export const nativeProjectFacade: ProjectFacade = {
           physical_id: "",
           logical: { identity_hint: null, note: null },
           tags: input.tags.map((name) => ({ name })),
+          agent_ids: input.agentIds,
           created_at: timestamp,
           updated_at: timestamp,
         },
@@ -65,5 +67,14 @@ export const nativeProjectFacade: ProjectFacade = {
     });
     if (result.type !== "project") throw new Error("register_project returned an unexpected native result.");
     return projectView(result.payload);
+  },
+  async listAgentCandidates(): Promise<ProjectAgentCandidate[]> {
+    const result = await queryApplication({ type: "get_discovery_snapshot", payload: null });
+    if (result.type !== "discovery_snapshot") throw new Error("get_discovery_snapshot returned an unexpected native result.");
+    return result.payload.logical_targets.map((target) => ({
+      id: target.id,
+      label: `${target.profile_id} · ${target.client_id}`,
+      available: target.available,
+    }));
   },
 };

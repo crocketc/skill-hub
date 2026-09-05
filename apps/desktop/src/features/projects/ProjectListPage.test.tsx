@@ -11,7 +11,7 @@ it("filters one project through multiple tags without creating a folder tree", a
   const user = userEvent.setup();
   const i18n = await createSkillHubI18n(["zh-CN"]);
   const project = projectFixture();
-  const facade: ProjectFacade = { get: async () => project, list: async () => [project], register: async () => project };
+  const facade: ProjectFacade = { get: async () => project, list: async () => [project], register: async () => project, listAgentCandidates: async () => [] };
   render(
     <I18nextProvider i18n={i18n}>
       <ProjectListPage facade={facade} />
@@ -31,7 +31,7 @@ it("opens a flat project summary drawer from its row", async () => {
   const project = projectFixture();
   render(
     <I18nextProvider i18n={i18n}>
-      <ProjectListPage facade={{ get: async () => project, list: async () => [project], register: async () => project }} />
+      <ProjectListPage facade={{ get: async () => project, list: async () => [project], register: async () => project, listAgentCandidates: async () => [] }} />
     </I18nextProvider>,
   );
 
@@ -48,7 +48,7 @@ it("registers a user-selected local directory without creating a shared config",
   const directoryPicker: DirectoryPicker = { pickDirectory: vi.fn(async () => "C:/Projects/Aurora") };
   render(
     <I18nextProvider i18n={i18n}>
-      <ProjectListPage directoryPicker={directoryPicker} facade={{ get: async () => project, list: async () => [], register }} />
+      <ProjectListPage directoryPicker={directoryPicker} facade={{ get: async () => project, list: async () => [], register, listAgentCandidates: async () => [{ id: "codex-cli", label: "OpenAI · Codex CLI", available: true }] }} />
     </I18nextProvider>,
   );
 
@@ -57,6 +57,7 @@ it("registers a user-selected local directory without creating a shared config",
 
   expect(screen.getByText("C:/Projects/Aurora")).toBeVisible();
   expect(screen.getByRole("textbox", { name: "项目名称" })).toHaveValue("Aurora");
+  await user.click(await screen.findByRole("checkbox", { name: "OpenAI · Codex CLI" }));
   await user.click(screen.getByRole("button", { name: "确认注册" }));
 
   expect(register).toHaveBeenCalledWith(expect.objectContaining({
@@ -64,6 +65,7 @@ it("registers a user-selected local directory without creating a shared config",
     name: "Aurora",
     path: "C:/Projects/Aurora",
     tags: [],
+    agentIds: ["codex-cli"],
   }));
 });
 
@@ -74,7 +76,7 @@ it("leaves project registration unchanged when directory selection is cancelled"
   const register = vi.fn(async () => project);
   render(
     <I18nextProvider i18n={i18n}>
-      <ProjectListPage directoryPicker={{ pickDirectory: vi.fn(async () => null) }} facade={{ get: async () => project, list: async () => [], register }} />
+      <ProjectListPage directoryPicker={{ pickDirectory: vi.fn(async () => null) }} facade={{ get: async () => project, list: async () => [], register, listAgentCandidates: async () => [] }} />
     </I18nextProvider>,
   );
 

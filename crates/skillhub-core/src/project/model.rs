@@ -14,6 +14,8 @@ pub struct Project {
     pub physical_id: String,
     pub logical: ProjectMetadata,
     pub tags: Vec<ProjectTag>,
+    #[serde(default)]
+    pub agent_ids: Vec<String>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -28,6 +30,7 @@ impl Project {
             physical_id: String::new(),
             logical: ProjectMetadata::default(),
             tags: Vec::new(),
+            agent_ids: Vec::new(),
             created_at: now.clone(),
             updated_at: now,
         }

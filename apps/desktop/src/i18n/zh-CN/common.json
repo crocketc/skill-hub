@@ -281,6 +281,7 @@
       "tags": "标签"
     },
     "registration": {
+      "agents": "关联已发现的 Agent（可选）",
       "confirm": "确认注册",
       "description": "选择项目根目录后，SkillHub 只建立本机管理记录，不会导入 Skill 或写入项目文件。",
       "failed": "无法注册此项目。",

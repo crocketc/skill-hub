@@ -55,6 +55,7 @@ impl<'a> ProjectRepository<'a> {
             return Err(invalid_input("project path is already registered"));
         }
         project.set_tags(project.tags.clone());
+        project.agent_ids = normalize_agent_ids(project.agent_ids);
         projects.push(project.clone());
         self.write_projects(&projects)?;
         Ok(project)
@@ -66,6 +67,7 @@ impl<'a> ProjectRepository<'a> {
         project.device_path = device_path;
         project.physical_id = physical_id;
         validate_project(&project)?;
+        project.agent_ids = normalize_agent_ids(project.agent_ids);
         let mut projects = self.list()?;
         if projects.iter().any(|candidate| {
             candidate.id != project.id && candidate.physical_id == project.physical_id
@@ -246,6 +248,17 @@ fn validate_project(project: &Project) -> AppResult<()> {
         return Err(invalid_input("project physical identity is required"));
     }
     Ok(())
+}
+
+fn normalize_agent_ids(ids: Vec<String>) -> Vec<String> {
+    let mut unique = ids
+        .into_iter()
+        .map(|id| id.trim().to_owned())
+        .filter(|id| !id.is_empty())
+        .collect::<Vec<_>>();
+    unique.sort();
+    unique.dedup();
+    unique
 }
 
 fn normalize_project_path(path: &str) -> AppResult<(String, String)> {

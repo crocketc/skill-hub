@@ -4,7 +4,7 @@ import { desktopDirectoryPicker, normalizeWindowsPath, type DirectoryPicker } fr
 import { Button } from "../../ui/Button";
 import { DataState } from "../../ui/DataState";
 import { ProjectQuickDrawer } from "./ProjectQuickDrawer";
-import { type ProjectFacade, type ProjectView, unavailableProjectFacade } from "./api";
+import { type ProjectAgentCandidate, type ProjectFacade, type ProjectView, unavailableProjectFacade } from "./api";
 
 export function matchesProjectFilters(project: ProjectView, text: string, selectedTags: string[]) {
   const normalizedText = text.trim().toLocaleLowerCase();
@@ -40,6 +40,8 @@ export function ProjectListPage({
   const [registrationName, setRegistrationName] = useState("");
   const [registrationError, setRegistrationError] = useState<string>();
   const [registering, setRegistering] = useState(false);
+  const [agentCandidates, setAgentCandidates] = useState<ProjectAgentCandidate[]>([]);
+  const [selectedAgentIds, setSelectedAgentIds] = useState<string[]>([]);
   const [revision, setRevision] = useState(0);
   const triggerRef = useRef<HTMLElement | null>(null);
 
@@ -74,7 +76,7 @@ export function ProjectListPage({
         id: newProjectId(),
         name: registrationName.trim(),
         path: registrationPath,
-        tags: [],
+        tags: [], agentIds: selectedAgentIds,
       });
       setRegistrationOpen(false);
       setRegistrationPath("");
@@ -94,7 +96,7 @@ export function ProjectListPage({
     <div className="sh-project-list">
       <header className="sh-project-list__header">
         <div><p className="sh-project-eyebrow">{t("projects.eyebrow")}</p><h1>{t("projects.title")}</h1><p>{t("projects.description")}</p></div>
-        <Button onClick={() => { setRegistrationError(undefined); setRegistrationOpen(true); }} variant="secondary">{t("projects.actions.register")}</Button>
+        <Button onClick={() => { setRegistrationError(undefined); setRegistrationOpen(true); void facade.listAgentCandidates().then(setAgentCandidates).catch(() => setAgentCandidates([])); }} variant="secondary">{t("projects.actions.register")}</Button>
       </header>
       {registrationOpen ? (
         <section aria-labelledby="project-registration-heading" className="sh-project-registration">
@@ -105,6 +107,7 @@ export function ProjectListPage({
           <Button disabled={registering} onClick={() => void chooseDirectory()} variant="secondary">{t("projects.registration.pickDirectory")}</Button>
           {registrationPath ? <p className="sh-project-registration__path">{registrationPath}</p> : null}
           <label><span>{t("projects.registration.name")}</span><input aria-label={t("projects.registration.name")} disabled={registering} onChange={(event) => setRegistrationName(event.currentTarget.value)} value={registrationName} /></label>
+          {agentCandidates.length ? <fieldset><legend>{t("projects.registration.agents")}</legend>{agentCandidates.map((agent) => <label key={agent.id}><input aria-label={agent.label} checked={selectedAgentIds.includes(agent.id)} disabled={registering || !agent.available} onChange={() => setSelectedAgentIds((current) => current.includes(agent.id) ? current.filter((id) => id !== agent.id) : [...current, agent.id])} type="checkbox" />{agent.label}</label>)}</fieldset> : null}
           {registrationError ? <p aria-live="polite" role="status">{registrationError}</p> : null}
           <div className="sh-project-registration__actions">
             <Button disabled={registering} onClick={() => setRegistrationOpen(false)} variant="ghost">{t("actions.cancel")}</Button>

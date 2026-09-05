@@ -132,6 +132,19 @@ fn tags_are_normalized_and_duplicate_tags_do_not_duplicate_membership() {
 }
 
 #[test]
+fn project_registration_persists_distinct_selected_agent_targets() {
+    let database = Database::open_in_memory().unwrap();
+    let directory = tempfile::tempdir().unwrap();
+    let mut project = Project::new(ProjectId::new(), "demo", directory.path());
+    project.agent_ids = vec![" codex-cli ".into(), "claude-code".into(), "codex-cli".into()];
+
+    let registered = database.project_repository().register(project).unwrap();
+
+    assert_eq!(registered.agent_ids, ["claude-code", "codex-cli"]);
+    assert_eq!(database.project_repository().get(registered.id).unwrap().agent_ids, ["claude-code", "codex-cli"]);
+}
+
+#[test]
 fn project_registration_requires_real_directory_and_persists_canonical_physical_identity() {
     let database = Database::open_in_memory().unwrap();
     let directory = tempfile::tempdir().unwrap();

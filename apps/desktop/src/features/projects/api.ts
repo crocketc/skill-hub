@@ -14,6 +14,7 @@ export interface ProjectSharedConfig {
 }
 
 export interface ProjectView {
+  agentIds: string[];
   assembly: ProjectAssemblyItem[];
   description: string;
   id: string;
@@ -23,6 +24,7 @@ export interface ProjectView {
 }
 
 export interface ProjectRegistration {
+  agentIds: string[];
   id: string;
   name: string;
   path: string;
@@ -33,7 +35,10 @@ export interface ProjectFacade {
   list(): Promise<ProjectView[]>;
   get(id: string): Promise<ProjectView>;
   register(input: ProjectRegistration): Promise<ProjectView>;
+  listAgentCandidates(): Promise<ProjectAgentCandidate[]>;
 }
+
+export interface ProjectAgentCandidate { id: string; label: string; available: boolean; }
 
 function unavailable(operation: string): Promise<never> {
   return Promise.reject(new Error(`${operation} is unavailable until the native contract is generated.`));
@@ -43,10 +48,12 @@ export const unavailableProjectFacade: ProjectFacade = {
   get: () => unavailable("project_get"),
   list: () => unavailable("project_list"),
   register: () => unavailable("project_register"),
+  listAgentCandidates: () => unavailable("project_agent_candidates"),
 };
 
 export function projectFixture(): ProjectView {
   return {
+    agentIds: [],
     assembly: [
       { message: "已满足项目要求", skillId: "pdf-reader", skillName: "PDF Reader", status: "satisfied" },
       { message: "项目选择跳过此 Skill", skillId: "browser-helper", skillName: "Browser Helper", status: "skipped" },
