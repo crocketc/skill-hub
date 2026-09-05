@@ -1,4 +1,4 @@
-import { executeCommand } from "../../api/bindings";
+import { executeCommand, queryApplication } from "../../api/bindings";
 import type { BackupFacade } from "./api";
 
 export const nativeBackupFacade: BackupFacade = {
@@ -34,6 +34,26 @@ export const nativeBackupFacade: BackupFacade = {
   async createExport(input, decisions) {
     const result = await executeCommand({ type: "create_standard_export", payload: { input, decisions: decisions as never } });
     if (result.type !== "export_result") throw new Error("export returned an unexpected result");
+    return result.payload;
+  },
+  async listDeployments() {
+    const result = await queryApplication({ type: "list_deployments", payload: { skill_id: null } });
+    if (result.type !== "deployments") throw new Error("deployment list returned an unexpected result");
+    return result.payload;
+  },
+  async listVersions(skillId) {
+    const result = await queryApplication({ type: "list_versions", payload: { skill_id: skillId } });
+    if (result.type !== "versions") throw new Error("version list returned an unexpected result");
+    return result.payload;
+  },
+  async prepareUninstall(deploymentIds) {
+    const result = await executeCommand({ type: "prepare_uninstall", payload: { deployment_ids: deploymentIds } });
+    if (result.type !== "uninstall_impact") throw new Error("uninstall preflight returned an unexpected result");
+    return result.payload;
+  },
+  async applyUninstallDecision(actions) {
+    const result = await executeCommand({ type: "apply_uninstall_decision", payload: { actions } });
+    if (result.type !== "operation_summary") throw new Error("uninstall decision returned an unexpected result");
     return result.payload;
   },
 };

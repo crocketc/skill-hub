@@ -1,13 +1,16 @@
 import { beforeEach, expect, it, vi } from "vitest";
-import { executeCommand } from "../../api/bindings";
+import { executeCommand, queryApplication } from "../../api/bindings";
 import { nativeBackupFacade } from "./nativeApi";
 
 vi.mock("../../api/bindings", async (importOriginal) => {
   const original = await importOriginal<typeof import("../../api/bindings")>();
-  return { ...original, executeCommand: vi.fn() };
+  return { ...original, executeCommand: vi.fn(), queryApplication: vi.fn() };
 });
 
-beforeEach(() => vi.mocked(executeCommand).mockReset());
+beforeEach(() => {
+  vi.mocked(executeCommand).mockReset();
+  vi.mocked(queryApplication).mockReset();
+});
 
 it("runs backup preflight and creation through typed commands", async () => {
   vi.mocked(executeCommand)
@@ -31,4 +34,26 @@ it("keeps restore and export as explicit preflight then commit operations", asyn
   await nativeBackupFacade.createExport({ selection: { skills: ["skill-1"] }, versions: "current", skills: [] }, []);
   expect(executeCommand).toHaveBeenNthCalledWith(2, { type: "commit_restore", payload: { path: "C:/backup.skillhub", decisions: [] } });
   expect(executeCommand).toHaveBeenNthCalledWith(4, expect.objectContaining({ type: "create_standard_export" }));
+});
+
+it("lists deployments and skill versions through read-only queries", async () => {
+  vi.mocked(queryApplication)
+    .mockResolvedValueOnce({ type: "deployments", payload: [] })
+    .mockResolvedValueOnce({ type: "versions", payload: [] });
+  await nativeBackupFacade.listDeployments();
+  await nativeBackupFacade.listVersions("skill-1");
+  expect(queryApplication).toHaveBeenNthCalledWith(1, { type: "list_deployments", payload: { skill_id: null } });
+  expect(queryApplication).toHaveBeenNthCalledWith(2, { type: "list_versions", payload: { skill_id: "skill-1" } });
+});
+
+it("previews uninstall impact and applies explicit decisions through typed commands", async () => {
+  vi.mocked(executeCommand)
+    .mockResolvedValueOnce({ type: "uninstall_impact", payload: { deployments: [], actions: ["undeploy_all"], preserves_central_library: true } })
+    .mockResolvedValueOnce({ type: "operation_summary", payload: { operation_id: "op-1", phase: "committed", message_code: "uninstall.decision_applied", error_code: null } });
+  const impact = await nativeBackupFacade.prepareUninstall(["dep-1"]);
+  const summary = await nativeBackupFacade.applyUninstallDecision(["undeploy_all"]);
+  expect(impact).toEqual({ deployments: [], actions: ["undeploy_all"], preserves_central_library: true });
+  expect(summary.phase).toBe("committed");
+  expect(executeCommand).toHaveBeenNthCalledWith(1, { type: "prepare_uninstall", payload: { deployment_ids: ["dep-1"] } });
+  expect(executeCommand).toHaveBeenNthCalledWith(2, { type: "apply_uninstall_decision", payload: { actions: ["undeploy_all"] } });
 });

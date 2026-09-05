@@ -51,6 +51,7 @@ function renderLibrary({
     [
       { path: "/library", element: <SkillLibraryPage facade={facade} onOpenDiscovery={onOpenDiscovery} removalFacade={removalFacade} /> },
       { path: "/deploy", element: <p>Batch deployment</p> },
+      { path: "/settings/data-protection", element: <p>Data protection export</p> },
     ],
     { initialEntries: [initialEntry] },
   );
@@ -233,9 +234,54 @@ describe("SkillLibraryPage", () => {
       "Run security check",
       "Export",
       "Archive",
+      "Start export",
       "Delete selected Skills",
       "Clear selection",
     ]);
+  });
+
+  it("starts the standard export flow with the explicitly selected skill ids", async () => {
+    const facade = createMockSkillLibraryFacade();
+    const { router } = renderLibrary({ facade });
+
+    fireEvent.click(await screen.findByRole("checkbox", { name: "Select PDF Reader" }));
+    fireEvent.click(screen.getByRole("button", { name: "Start export" }));
+
+    expect(await screen.findByText("Data protection export")).toBeVisible();
+    expect(router.state.location.pathname).toBe("/settings/data-protection");
+    expect(router.state.location.state).toEqual({ exportSkillIds: ["skill-pdf"] });
+  });
+
+  it("carries every filtered skill id when the export entry runs on an all-filtered selection", async () => {
+    const facade = createMockSkillLibraryFacade({ total: 80 });
+    const { router } = renderLibrary({ facade });
+
+    fireEvent.click(await screen.findByRole("checkbox", { name: "Select current page" }));
+    fireEvent.click(screen.getByRole("button", { name: "Select all 80 filtered results" }));
+    fireEvent.click(screen.getByRole("button", { name: "Start export" }));
+
+    expect(await screen.findByText("Data protection export")).toBeVisible();
+    expect(router.state.location.pathname).toBe("/settings/data-protection");
+    const state = router.state.location.state as { exportSkillIds: string[] };
+    expect(state.exportSkillIds).toHaveLength(80);
+    expect(state.exportSkillIds).toEqual(expect.arrayContaining(["skill-pdf", "skill-docx", "skill-browser"]));
+  });
+
+  it("keeps the library in place when resolving filtered ids for export fails", async () => {
+    const facade = createMockSkillLibraryFacade({ total: 80 });
+    const { router } = renderLibrary({ facade });
+
+    fireEvent.click(await screen.findByRole("checkbox", { name: "Select current page" }));
+    fireEvent.click(screen.getByRole("button", { name: "Select all 80 filtered results" }));
+    facade.listSkills = () => Promise.reject(new Error("offline"));
+    fireEvent.click(screen.getByRole("button", { name: "Start export" }));
+
+    const batchBar = screen.getByRole("complementary", { name: "Batch actions" });
+    expect(await within(batchBar).findByRole("status")).toHaveTextContent(
+      "The batch workflow could not be started",
+    );
+    expect(screen.queryByText("Data protection export")).not.toBeInTheDocument();
+    expect(router.state.location.pathname).toBe("/library");
   });
 
   it("restores query and drawer state from the URL and preserves scroll and focus", async () => {

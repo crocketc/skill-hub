@@ -92,6 +92,7 @@ interface BatchBarProps {
   onClear: () => void;
   onDelete: () => void;
   onSelectAll: () => void;
+  onStartExport: () => void;
   onTagAction: (action: BatchTagAction) => void;
   page: SkillPage;
   selection: Exclude<SkillSelection, { kind: "none" }>;
@@ -272,6 +273,7 @@ function BatchBar({
   onClear,
   onDelete,
   onSelectAll,
+  onStartExport,
   onTagAction,
   page,
   selection,
@@ -318,6 +320,9 @@ function BatchBar({
             {t(BATCH_ACTION_KEYS[action])}
           </Button>
         ))}
+        <Button onClick={onStartExport} size="sm" variant="ghost">
+          {t("skillLibrary.page.batch.startExport")}
+        </Button>
         <Button onClick={onDelete} size="sm" variant="danger">
           {t("skillLibrary.page.batch.delete")}
         </Button>
@@ -640,6 +645,20 @@ export function SkillLibraryPage({
     });
   };
 
+  const startBatchExport = () => {
+    if (selection.kind === "none" || selectionCount(selection) <= 0) return;
+    if (selection.kind === "explicit") {
+      navigate("/settings/data-protection", { state: { exportSkillIds: [...selection.skillIds] } });
+      return;
+    }
+    void selectedSkillsForRemoval().then(
+      (skills) => navigate("/settings/data-protection", {
+        state: { exportSkillIds: skills.map((skill) => skill.id) },
+      }),
+      () => setBatchAnnouncement(t("skillLibrary.page.batch.error")),
+    );
+  };
+
   const selectedSkillsForRemoval = async (): Promise<Array<{ id: string; name: string }>> => {
     if (selection.kind === "explicit") {
       const names = new Map(pageQuery.data?.items.map((item) => [item.id, item.name]));
@@ -953,6 +972,7 @@ export function SkillLibraryPage({
                 page.total,
               ),
             )}
+          onStartExport={startBatchExport}
           onTagAction={setBatchTagAction}
           page={page}
           selection={selectedBatchTarget}

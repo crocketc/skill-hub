@@ -551,7 +551,8 @@
         "tagsHint": "多个标签请用逗号分隔，重复标签会自动合并。",
         "tagsLabel": "标签",
         "tagsPlaceholder": "例如：待复核，客户可见",
-        "unconnected": "此批量流程尚未连接"
+        "unconnected": "此批量流程尚未连接",
+        "startExport": "发起导出"
       },
       "pageStatus": "第 {{page}} 页 · 共 {{count}} 条结果",
       "preferences": {
@@ -1427,5 +1428,39 @@
     "unknown": "未知",
     "warning": "需要注意"
   },
-  "backup": {}
+  "backup": {
+    "export": {
+      "prefilled": "已从技能库带入 {{count}} 个 Skill，可继续增删。",
+      "readinessTitle": "带入 Skill 的可导出性",
+      "checking": "正在检查版本…",
+      "ready": "可导出（当前版本 {{versionId}}）",
+      "noCurrentVersion": "不可导出：该 Skill 没有当前版本。",
+      "unavailable": "不可导出：无法读取版本信息。"
+    },
+    "uninstall": {
+      "heading": "退出管理",
+      "description": "先选择部署关系并预览影响，再逐项勾选要执行的动作；未勾选的动作不会执行。",
+      "loadingDeployments": "正在读取部署关系…",
+      "noDeployments": "当前没有部署关系。",
+      "selectDeployment": "选择部署关系 {{id}}",
+      "deploymentLabel": "{{id}}：{{skill_id}} → {{target_id}}（{{state}}）",
+      "preview": "预览影响",
+      "apply": "应用所选动作",
+      "impactSummary": "将影响 {{count}} 个部署关系。",
+      "preservesYes": "中央 Skill 库会保留。",
+      "preservesNo": "中央 Skill 库不会保留。",
+      "actionsHeading": "可用动作（默认全不选）",
+      "applied": "已应用退出动作（{{phase}}）。",
+      "actions": {
+        "backup": "备份所选数据",
+        "standard_export": "创建标准导出",
+        "undeploy_all": "取消全部所选部署",
+        "leave_targets_independent": "将目标保留为独立副本",
+        "remove_device_data": "删除设备本地数据",
+        "retain_central_library": "保留中央 Skill 库",
+        "clear_credentials": "清除已保存的凭据",
+        "cancel": "取消退出"
+      }
+    }
+  }
 }

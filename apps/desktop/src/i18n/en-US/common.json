@@ -551,7 +551,8 @@
         "tagsHint": "Separate multiple tags with commas. Duplicate tags are ignored.",
         "tagsLabel": "Tags",
         "tagsPlaceholder": "e.g. review, customer-facing",
-        "unconnected": "This batch workflow is not connected"
+        "unconnected": "This batch workflow is not connected",
+        "startExport": "Start export"
       },
       "pageStatus": "Page {{page}} · {{count}} results",
       "preferences": {
@@ -1427,5 +1428,39 @@
     "unknown": "Unknown",
     "warning": "Needs attention"
   },
-  "backup": {}
+  "backup": {
+    "export": {
+      "prefilled": "Carried over {{count}} skills from the library. You can still add or remove skills.",
+      "readinessTitle": "Export readiness of the carried-over skills",
+      "checking": "Checking versions…",
+      "ready": "Ready to export (current version {{versionId}})",
+      "noCurrentVersion": "Cannot export: this skill has no current version.",
+      "unavailable": "Cannot export: version information is unavailable."
+    },
+    "uninstall": {
+      "heading": "Uninstall preparation",
+      "description": "Select deployments, preview the impact, then tick each action you want to run. Unticked actions never run.",
+      "loadingDeployments": "Loading deployments…",
+      "noDeployments": "No deployments are registered.",
+      "selectDeployment": "Select deployment {{id}}",
+      "deploymentLabel": "{{id}}: {{skill_id}} → {{target_id}} ({{state}})",
+      "preview": "Preview impact",
+      "apply": "Apply selected actions",
+      "impactSummary": "{{count}} deployments are affected.",
+      "preservesYes": "The central Skill library will be preserved.",
+      "preservesNo": "The central Skill library will not be preserved.",
+      "actionsHeading": "Available actions (nothing is selected by default)",
+      "applied": "Uninstall decision applied ({{phase}}).",
+      "actions": {
+        "backup": "Back up selected data",
+        "standard_export": "Create a standard export",
+        "undeploy_all": "Undeploy all selected deployments",
+        "leave_targets_independent": "Leave targets as independent copies",
+        "remove_device_data": "Remove device-local data",
+        "retain_central_library": "Retain the central Skill library",
+        "clear_credentials": "Clear stored credentials",
+        "cancel": "Cancel the uninstall"
+      }
+    }
+  }
 }
