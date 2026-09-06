@@ -1071,7 +1071,7 @@ impl LocalApplicationFacade {
                 originals: Arc::new(Mutex::new(HashMap::new())),
             })));
         let ignore_service = Arc::new(IgnoreService::new(Arc::new(LocalIgnoreBackend {
-            rules: Arc::new(Mutex::new(Vec::new())),
+            database: database.clone(),
         })));
         let app_update_provider = Arc::new(GithubReleaseProvider::new());
         let update_service = Arc::new(UpdateService::new(
@@ -1132,7 +1132,7 @@ impl LocalApplicationFacade {
                 originals: Arc::new(Mutex::new(HashMap::new())),
             })));
         let ignore_service = Arc::new(IgnoreService::new(Arc::new(LocalIgnoreBackend {
-            rules: Arc::new(Mutex::new(Vec::new())),
+            database: database.clone(),
         })));
         let app_update_provider = Arc::new(GithubReleaseProvider::new());
         let update_service = Arc::new(UpdateService::new(
@@ -3714,12 +3714,13 @@ impl ApplicationFacade for LocalApplicationFacade {
                 })
             }
             AppQuery::ListPendingItems(_) => {
-                self.with_database("query.list_pending_items", |database| {
-                    database
-                        .bootstrap_repository()
-                        .list_pending(self.today)
-                        .map(AppQueryResult::PendingItems)
-                })
+                let items = self.with_database("query.list_pending_items", |database| {
+                    database.bootstrap_repository().list_pending(self.today)
+                })?;
+                let rules = self.ignore_service.list().await?;
+                Ok(AppQueryResult::PendingItems(filter_pending_items(
+                    items, &rules, self.today,
+                )))
             }
             AppQuery::GetSkill(request) => {
                 let skill_id = request.skill_id;
@@ -5526,38 +5527,25 @@ impl CallPolicyBackend for LocalCallPolicyBackend {
 
 #[async_trait]
 impl IgnoreBackend for LocalIgnoreBackend {
-    async fn create(&self, mut rule: IgnoreRule) -> AppResult<IgnoreRule> {
-        rule.created_at = now_millis().to_string();
-        let mut rules = self.rules.lock().map_err(|_| internal("ignore.create"))?;
-        if rules
-            .iter()
-            .any(|existing| existing.subject == rule.subject)
-        {
-            return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
-                .with_param("reason", "ignore_rule_exists")
-                .with_action(RecoveryAction::Acknowledge));
-        }
-        rules.push(rule.clone());
-        Ok(rule)
+    async fn create(&self, rule: IgnoreRule) -> AppResult<IgnoreRule> {
+        let database = self
+            .database
+            .lock()
+            .map_err(|_| internal("ignore.create"))?;
+        database.ignore_rule_repository().create(rule)
     }
 
     async fn remove(&self, id: String) -> AppResult<()> {
-        let mut rules = self.rules.lock().map_err(|_| internal("ignore.remove"))?;
-        let Some(index) = rules.iter().position(|rule| rule.id == id) else {
-            return Err(AppError::new(ErrorCode::ObjectNotFound, Severity::Error)
-                .with_param("field", "ignore_rule")
-                .with_action(RecoveryAction::Retry));
-        };
-        rules.remove(index);
-        Ok(())
+        let database = self
+            .database
+            .lock()
+            .map_err(|_| internal("ignore.remove"))?;
+        database.ignore_rule_repository().remove(&id)
     }
 
     async fn list(&self) -> AppResult<Vec<IgnoreRule>> {
-        Ok(self
-            .rules
-            .lock()
-            .map_err(|_| internal("ignore.list"))?
-            .clone())
+        let database = self.database.lock().map_err(|_| internal("ignore.list"))?;
+        database.ignore_rule_repository().list()
     }
 }
 
@@ -5575,5 +5563,36 @@ struct LocalCallPolicyBackend {
 }
 
 struct LocalIgnoreBackend {
-    rules: Arc<Mutex<Vec<IgnoreRule>>>,
+    database: Arc<Mutex<Database>>,
+}
+
+fn filter_pending_items(
+    items: Vec<skillhub_core::pending::PendingItem>,
+    rules: &[IgnoreRule],
+    today: (i32, u8, u8),
+) -> Vec<skillhub_core::pending::PendingItem> {
+    let today = format!("{:04}-{:02}-{:02}", today.0, today.1, today.2);
+    items
+        .into_iter()
+        .filter(|item| {
+            let kind = match item.kind {
+                skillhub_core::pending::PendingKind::TrialDue => "trial_due",
+                skillhub_core::pending::PendingKind::SecurityFinding => "security_finding",
+                skillhub_core::pending::PendingKind::Recovery => "recovery",
+            };
+            let pending_id = format!("{kind}:{}:{}", item.subject, item.code);
+            !rules.iter().any(|rule| {
+                let active = rule
+                    .defer_until
+                    .as_deref()
+                    .is_none_or(|until| today.as_str() < until);
+                active
+                    && match &rule.subject {
+                        skillhub_core::IgnoreSubject::ExactPending(value) => value == &pending_id,
+                        skillhub_core::IgnoreSubject::ExactSkill(value) => value == &item.subject,
+                        skillhub_core::IgnoreSubject::ExactPath(_) => false,
+                    }
+            })
+        })
+        .collect()
 }

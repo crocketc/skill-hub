@@ -1042,6 +1042,103 @@ async fn pending_query_uses_the_same_date_boundary_as_bootstrap() {
 }
 
 #[tokio::test]
+async fn ignore_rules_survive_reopening_the_application_database() {
+    let workspace = tempfile::tempdir().expect("workspace");
+    let database_path = workspace.path().join("skillhub.sqlite");
+    let facade = LocalApplicationFacade::open(&database_path).expect("open facade");
+    facade
+        .execute(AppCommand::CreateIgnoreRule(
+            skillhub_core::CreateIgnoreRule {
+                subject: skillhub_core::IgnoreSubject::exact_pending("trial_due:skill-a:trial.due"),
+                reason: "review after the release".into(),
+                defer_until: Some("2026-09-10".into()),
+            },
+        ))
+        .await
+        .expect("create ignore rule");
+    drop(facade);
+
+    let reopened = LocalApplicationFacade::open(&database_path).expect("reopen facade");
+    let result = reopened
+        .query(RootAppQuery::ListIgnoreRules)
+        .await
+        .expect("list persisted ignore rules");
+    assert!(
+        matches!(result, AppQueryResult::IgnoreRules(rules) if rules.len() == 1
+        && rules[0].reason == "review after the release"
+        && rules[0].defer_until.as_deref() == Some("2026-09-10"))
+    );
+}
+
+#[tokio::test]
+async fn deferred_pending_item_is_hidden_until_its_due_date() {
+    let database = Database::open_in_memory().expect("database");
+    let skill = Skill::new(skillhub_core::SkillId::new(), "Trial").with_trial_due(2026, 8, 29);
+    database
+        .catalog_repository()
+        .expect("catalog repository")
+        .insert(&skill)
+        .await
+        .expect("insert skill");
+    let facade = LocalApplicationFacade::new_with_today(database, (2026, 8, 29));
+    facade
+        .execute(AppCommand::CreateIgnoreRule(
+            skillhub_core::CreateIgnoreRule {
+                subject: skillhub_core::IgnoreSubject::exact_pending(format!(
+                    "trial_due:{}:trial.due",
+                    skill.id()
+                )),
+                reason: "deferred for review".into(),
+                defer_until: Some("2026-08-30".into()),
+            },
+        ))
+        .await
+        .expect("defer pending item");
+
+    let result = facade
+        .query(RootAppQuery::ListPendingItems(
+            skillhub_core::ListPendingItems,
+        ))
+        .await
+        .expect("pending result");
+    assert!(matches!(result, AppQueryResult::PendingItems(items) if items.is_empty()));
+}
+
+#[tokio::test]
+async fn deferred_pending_item_reappears_on_its_due_date() {
+    let database = Database::open_in_memory().expect("database");
+    let skill = Skill::new(skillhub_core::SkillId::new(), "Trial").with_trial_due(2026, 8, 29);
+    database
+        .catalog_repository()
+        .expect("catalog repository")
+        .insert(&skill)
+        .await
+        .expect("insert skill");
+    let facade = LocalApplicationFacade::new_with_today(database, (2026, 8, 30));
+    facade
+        .execute(AppCommand::CreateIgnoreRule(
+            skillhub_core::CreateIgnoreRule {
+                subject: skillhub_core::IgnoreSubject::exact_pending(format!(
+                    "trial_due:{}:trial.due",
+                    skill.id()
+                )),
+                reason: "deferred for review".into(),
+                defer_until: Some("2026-08-30".into()),
+            },
+        ))
+        .await
+        .expect("defer pending item");
+
+    let result = facade
+        .query(RootAppQuery::ListPendingItems(
+            skillhub_core::ListPendingItems,
+        ))
+        .await
+        .expect("pending result");
+    assert!(matches!(result, AppQueryResult::PendingItems(items) if items.len() == 1));
+}
+
+#[tokio::test]
 async fn unsupported_operations_return_a_structured_internal_error() {
     let facade = LocalApplicationFacade::new_with_today(
         Database::open_in_memory().expect("database"),

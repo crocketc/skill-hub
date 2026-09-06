@@ -8,6 +8,7 @@ mod custom_agent_repository;
 mod deployment_repository;
 mod desktop_settings_repository;
 pub mod evidence_repository;
+mod ignore_rule_repository;
 mod import_repository;
 mod llm_profile_repository;
 mod migrations;
@@ -39,6 +40,7 @@ pub use custom_agent_repository::CustomAgentRepository;
 pub use deployment_repository::{DeploymentRepository, DeploymentRepositorySqlite};
 pub use desktop_settings_repository::DesktopSettingsRepository;
 pub use evidence_repository::UsageEvidenceRepository;
+pub use ignore_rule_repository::IgnoreRuleRepository;
 pub use import_repository::ImportRepository;
 pub use llm_profile_repository::LlmProfileRepository;
 pub use migrations::MigrationReport;
@@ -118,6 +120,10 @@ impl Database {
 
     pub fn import_repository(&self) -> ImportRepository<'_> {
         ImportRepository::new(self)
+    }
+
+    pub fn ignore_rule_repository(&self) -> IgnoreRuleRepository<'_> {
+        IgnoreRuleRepository::new(self)
     }
 
     pub fn source_repository(&self) -> SourceRepository<'_> {
