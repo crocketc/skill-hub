@@ -23,6 +23,7 @@ const cachedSnapshot = {
   agent_count: 3,
   deployed_count: 9,
   deployment_categories: [],
+  tag_categories: [],
   initialization_state: "initialized" as const,
   last_scan_at: null,
   library_path: "C:\\Users\\Test\\SkillHub",

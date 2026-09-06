@@ -19,6 +19,10 @@ const overviewSnapshot: BootstrapSnapshot = {
     { count: 3, dimension: "agent", key: "anthropic.claude-code", label_code: "Claude Code" },
     { count: 3, dimension: "project", key: "project-aurora", label_code: "Aurora" },
   ],
+  tag_categories: [
+    { key: "writing", count: 5 },
+    { key: "pdf", count: 2 },
+  ],
   last_scan_at: null,
   pending: { by_kind: { recovery: 1, security_finding: 2, trial_due: 1 }, total: 4 },
   project_count: 2,
@@ -68,6 +72,16 @@ function mockBrowserPreferences() {
   );
 }
 
+it("drills down into the library filtered by tag from the overview", async () => {
+  await renderOverview();
+
+  const tagList = await screen.findByRole("list", { name: "Skill count by tag" });
+  const link = within(tagList).getByRole("button", { name: "View 5 skills tagged writing" });
+  fireEvent.click(link);
+
+  expect(screen.getByTestId("location")).toHaveTextContent("/library?tag=writing");
+});
+
 afterEach(() => {
   localStorage.clear();
   document.documentElement.removeAttribute("data-theme");
@@ -87,6 +101,7 @@ async function renderOverview(snapshot = overviewSnapshot) {
               <Route index element={<OverviewPage />} />
               <Route path="agents/:agentKey" element={<LocationDisplay />} />
               <Route path="projects/:projectKey" element={<LocationDisplay />} />
+              <Route path="library" element={<LocationDisplay />} />
             </Route>
           </Routes>
         </MemoryRouter>

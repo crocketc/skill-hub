@@ -88,6 +88,43 @@ fn deployment_chart_can_aggregate_by_agent_and_project() {
 }
 
 #[test]
+#[test]
+fn tag_chart_aggregates_skill_counts_per_tag() {
+    let db = Database::open_in_memory().unwrap();
+    let skill_a = SkillId::new();
+    let skill_b = SkillId::new();
+    let skill_c = SkillId::new();
+    db.connection_for_test()
+        .execute_batch(&format!(
+            "INSERT INTO skills (id,display_name,runtime_name,created_at,updated_at) VALUES ('{skill_a}','a','a',0,0);
+             INSERT INTO skills (id,display_name,runtime_name,created_at,updated_at) VALUES ('{skill_b}','b','b',0,0);
+             INSERT INTO skills (id,display_name,runtime_name,created_at,updated_at) VALUES ('{skill_c}','c','c',0,0);
+             INSERT INTO tags (id,name) VALUES ('tag-writing','writing');
+             INSERT INTO tags (id,name) VALUES ('tag-pdf','pdf');
+             INSERT INTO skill_tags (skill_id,tag_id) VALUES ('{skill_a}','tag-writing');
+             INSERT INTO skill_tags (skill_id,tag_id) VALUES ('{skill_b}','tag-writing');
+             INSERT INTO skill_tags (skill_id,tag_id) VALUES ('{skill_c}','tag-pdf');"
+        ))
+        .unwrap();
+
+    let snapshot = db
+        .bootstrap_repository()
+        .build_snapshot((2026, 8, 23))
+        .unwrap();
+
+    let mut tags: Vec<(String, u32)> = snapshot
+        .tag_categories
+        .iter()
+        .map(|category| (category.key.clone(), category.count))
+        .collect();
+    tags.sort();
+    assert_eq!(
+        tags,
+        vec![("pdf".to_string(), 1), ("writing".to_string(), 2)]
+    );
+}
+
+#[test]
 fn pending_query_derives_due_trial_and_unresolved_finding_from_facts() {
     let db = Database::open_in_memory().unwrap();
     let skill = SkillId::new();

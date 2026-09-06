@@ -196,6 +196,7 @@ export type BootstrapSnapshot = {
 	agent_count: number,
 	deployed_count: number,
 	deployment_categories: DeploymentChartCategory[],
+	tag_categories: TagChartCategory[],
 	recent_operations: RecentOperationSummary[],
 	pending: PendingSummary,
 	last_scan_at: string | null,
@@ -1671,6 +1672,12 @@ export type SourceSearchQuery = {
 export type SourceState = "up_to_date" | "update_available" | "update_available_with_local_changes" | "source_unavailable" | "authentication_required";
 
 export type StartupRecoveryState = "clean" | "in_progress" | "needs_recovery";
+
+/**  Per-tag skill counts so the overview can drill down into the library by tag. */
+export type TagChartCategory = {
+	key: string,
+	count: number,
+};
 
 /**  Names used by the operation executor to summarize the filesystem change. */
 export type TargetChange = "create" | "no_op";

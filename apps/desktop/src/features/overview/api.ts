@@ -98,6 +98,28 @@ export function getDeploymentItems(
     });
 }
 
+/**
+ * Per-tag skill counts from the bootstrap snapshot, each drilling into the
+ * library with the tag URL parameter the library page already parses.
+ */
+export function getTagItems(
+  snapshot: BootstrapSnapshot,
+  t: TFunction,
+): OverviewDeploymentItem[] {
+  return [...snapshot.tag_categories]
+    .sort((left, right) => right.count - left.count || left.key.localeCompare(right.key))
+    .map((category) => ({
+      buttonLabel: t("overview.tags.drilldown", {
+        count: category.count,
+        label: category.key,
+      }),
+      count: category.count,
+      key: category.key,
+      label: category.key,
+      target: `/library?tag=${encodeURIComponent(category.key)}`,
+    }));
+}
+
 export function getPendingSummaryItems(
   snapshot: BootstrapSnapshot,
   t: TFunction,

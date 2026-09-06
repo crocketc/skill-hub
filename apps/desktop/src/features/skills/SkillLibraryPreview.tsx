@@ -12,6 +12,7 @@ const PREVIEW_BOOTSTRAP_SNAPSHOT: BootstrapSnapshot = {
   agent_count: 2,
   deployed_count: 12,
   deployment_categories: [],
+  tag_categories: [],
   last_scan_at: null,
   pending: { by_kind: {}, total: 0 },
   project_count: 6,

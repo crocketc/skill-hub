@@ -1574,6 +1574,11 @@
       },
       "none": "No pending items",
       "title": "{{count}} pending items"
+    },
+    "tags": {
+      "heading": "Skill count by tag",
+      "drilldown": "View {{count}} skills tagged {{label}}",
+      "detailCount": "{{count}} tags"
     }
   },
   "status": {

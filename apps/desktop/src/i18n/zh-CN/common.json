@@ -1574,6 +1574,11 @@
       },
       "none": "没有待处理事项",
       "title": "{{count}} 项待处理"
+    },
+    "tags": {
+      "heading": "按标签的 Skill 数量",
+      "drilldown": "查看 {{label}} 的 {{count}} 个 Skill",
+      "detailCount": "{{count}} 个标签"
     }
   },
   "status": {

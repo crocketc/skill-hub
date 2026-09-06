@@ -172,10 +172,11 @@ interface DeploymentDetailListProps {
 }
 
 export function DeploymentDetailList({
+  countLabel,
   detailsLabel,
   dimension,
   items,
-}: DeploymentDetailListProps) {
+}: DeploymentDetailListProps & { countLabel?: string }) {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const isScrollable = items.length > scrollableDetailThreshold;
@@ -185,7 +186,7 @@ export function DeploymentDetailList({
       <div className="sh-overview__details-head">
         <h2>{detailsLabel}</h2>
         <span>
-          {t(`overview.chart.detailCount.${dimension}`, { count: items.length })}
+          {countLabel ?? t(`overview.chart.detailCount.${dimension}`, { count: items.length })}
         </span>
       </div>
       <div

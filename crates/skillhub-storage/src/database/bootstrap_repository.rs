@@ -2,7 +2,7 @@ use super::Database;
 use rusqlite::{params, OptionalExtension};
 use skillhub_core::bootstrap::{
     BootstrapSnapshot, DeploymentChartCategory, DeploymentDimension, InitializationStatus,
-    PendingSummary, RecentOperationSummary, StartupRecoveryState,
+    PendingSummary, RecentOperationSummary, StartupRecoveryState, TagChartCategory,
 };
 use skillhub_core::pending::{PendingItem, PendingKind};
 use skillhub_core::OperationPhase;
@@ -180,6 +180,28 @@ impl<'a> BootstrapRepository<'a> {
         Ok(result)
     }
 
+    /// Aggregates skill counts per tag for the overview tag drill-down.
+    /// Tags without any skill are omitted; the library page remains the source
+    /// of truth for the full facet list.
+    pub fn tag_chart(&self) -> AppResult<Vec<TagChartCategory>> {
+        let sql = "SELECT t.name, COUNT(st.skill_id) FROM tags t JOIN skill_tags st ON st.tag_id=t.id GROUP BY t.name ORDER BY t.name";
+        let mut statement = self.database.connection.prepare(sql).map_err(error)?;
+        let mut result = Vec::new();
+        for row in statement
+            .query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+            })
+            .map_err(error)?
+        {
+            let (key, count) = row.map_err(error)?;
+            result.push(TagChartCategory {
+                key,
+                count: count as u32,
+            });
+        }
+        Ok(result)
+    }
+
     pub fn build_snapshot(&self, today: (i32, u8, u8)) -> AppResult<BootstrapSnapshot> {
         let pending = self.list_pending(today)?;
         let skill_count = self.count("SELECT COUNT(*) FROM skills")?;
@@ -195,6 +217,7 @@ impl<'a> BootstrapRepository<'a> {
             self.count("SELECT COUNT(*) FROM deployments WHERE state IN ('deployed','active')")?;
         let mut deployment_categories = self.deployment_chart(DeploymentDimension::Agent)?;
         deployment_categories.extend(self.deployment_chart(DeploymentDimension::Project)?);
+        let tag_categories = self.tag_chart()?;
         let mut recent_operations = Vec::new();
         let mut ops = self.database.connection.prepare("SELECT operation_id,kind,state,phase,error_code,created_at FROM operations ORDER BY created_at DESC,operation_id DESC LIMIT 10").map_err(error)?;
         for row in ops
@@ -246,6 +269,7 @@ impl<'a> BootstrapRepository<'a> {
             agent_count,
             deployed_count,
             deployment_categories,
+            tag_categories,
             recent_operations,
             pending: PendingSummary::from_items(&pending),
             last_scan_at,

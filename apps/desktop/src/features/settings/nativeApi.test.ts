@@ -38,6 +38,7 @@ it("composes the settings page from persisted preferences and native bootstrap f
         agent_count: 0,
         deployed_count: 0,
         deployment_categories: [],
+        tag_categories: [],
         last_scan_at: null,
         pending: { by_kind: {}, total: 0 },
         project_count: 0,

@@ -21,6 +21,13 @@ pub struct DeploymentChartCategory {
     pub count: u32,
 }
 
+/// Per-tag skill counts so the overview can drill down into the library by tag.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+pub struct TagChartCategory {
+    pub key: String,
+    pub count: u32,
+}
+
 #[derive(
     Clone,
     Copy,
@@ -114,6 +121,7 @@ pub struct BootstrapSnapshot {
     pub agent_count: u32,
     pub deployed_count: u32,
     pub deployment_categories: Vec<DeploymentChartCategory>,
+    pub tag_categories: Vec<TagChartCategory>,
     pub recent_operations: Vec<RecentOperationSummary>,
     pub pending: PendingSummary,
     pub last_scan_at: Option<String>,

@@ -8,6 +8,7 @@ import { PendingSummary } from "./PendingSummary";
 import {
   getDeploymentItems,
   getOverviewMetrics,
+  getTagItems,
   type OverviewDimension,
 } from "./api";
 
@@ -86,6 +87,7 @@ export function OverviewPage() {
   const [dimension, setDimension] = useState<OverviewDimension>("agent");
   const metrics = getOverviewMetrics(snapshot, t);
   const deploymentItems = getDeploymentItems(snapshot, dimension, t);
+  const tagItems = getTagItems(snapshot, t);
 
   return (
     <section className="sh-overview">
@@ -131,6 +133,14 @@ export function OverviewPage() {
               detailsLabel={t("overview.chart.detailsLabel")}
               dimension={dimension}
               items={deploymentItems}
+            />
+          ) : null}
+          {tagItems.length > 0 ? (
+            <DeploymentDetailList
+              countLabel={t("overview.tags.detailCount", { count: tagItems.length })}
+              detailsLabel={t("overview.tags.heading")}
+              dimension={dimension}
+              items={tagItems}
             />
           ) : null}
         </div>

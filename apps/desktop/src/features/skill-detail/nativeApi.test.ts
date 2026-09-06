@@ -60,6 +60,7 @@ describe("native skill detail facade", () => {
         agent_count: 0,
         deployed_count: 0,
         deployment_categories: [],
+        tag_categories: [],
         recent_operations: [],
         pending: { total: 0, by_kind: {} },
         last_scan_at: null,
