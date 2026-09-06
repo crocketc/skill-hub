@@ -502,6 +502,21 @@ pub struct GetLlmSafetyCheckResult {
     pub version_id: VersionId,
 }
 
+/// N8：批量来源更新检查。显式传入 Skill 列表（由前端选择决定范围），
+/// 逐条复用单 Skill 检测；单条失败按项降级，不影响批次其余结果。
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct CheckSourceUpdates {
+    pub skill_ids: Vec<SkillId>,
+}
+
+/// N8：批量检查的单条结果——Skill 及其来源状态（含诚实的 SourceUnavailable）。
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+pub struct SourceUpdateCheckOutcome {
+    pub skill_id: SkillId,
+    pub state: crate::SourceState,
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 pub struct GetProjectAssemblyPlan {
     pub project_id: crate::ProjectId,
@@ -524,6 +539,8 @@ pub enum AppQuery {
     ListSkillOperations(ListSkillOperations),
     #[serde(rename = "list_running_llm_checks")]
     ListRunningLlmChecks,
+    #[serde(rename = "check_source_updates")]
+    CheckSourceUpdates(CheckSourceUpdates),
     #[serde(rename = "list_markdown_files")]
     ListMarkdownFiles(ListMarkdownFiles),
     #[serde(rename = "read_markdown_file")]
@@ -677,6 +694,8 @@ pub enum AppQueryResult {
     SkillOperations(SkillOperationsResult),
     #[serde(rename = "running_llm_checks")]
     RunningLlmChecks(Vec<LlmCheckRun>),
+    #[serde(rename = "source_update_checks")]
+    SourceUpdateChecks(Vec<SourceUpdateCheckOutcome>),
     #[serde(rename = "call_policy")]
     CallPolicy(crate::CallPolicyResult),
     #[serde(rename = "llm_safety_check_result")]

@@ -159,6 +159,21 @@ export interface SkillBatchIntent {
 export type LibraryViewMode = "table" | "cards" | "matrix";
 export type LibraryGroupMode = "none" | "tags";
 
+/** N8：批量来源更新检查的单条状态（与后端 SourceState 语义对齐）。 */
+export type SourceUpdateCheckState =
+  | "up_to_date"
+  | "update_available"
+  | "update_available_with_local_changes"
+  | "source_unavailable"
+  | "authentication_required";
+export interface SourceUpdateCheckEntry {
+  skillId: string;
+  state: SourceUpdateCheckState;
+}
+export interface SourceUpdateCheckReport extends SourceUpdateCheckEntry {
+  name: string;
+}
+
 export interface SkillLibraryFacade {
   emitBatchIntent(intent: SkillBatchIntent): Promise<void>;
   getSkillQuickView(skillId: string): Promise<SkillQuickView>;
@@ -189,6 +204,8 @@ export interface SkillLibraryFacade {
   deleteCombination?: (name: string) => Promise<void>;
   /** 组合标准导出（文件夹/ZIP 由偏好决定），失败时如实抛错。 */
   exportCombination?: (name: string) => Promise<{ path: string }>;
+  /** N8 批量来源更新检查：未提供时页面不渲染入口（预览 facade 诚实缺省）。 */
+  checkSourceUpdates?: (skillIds: string[]) => Promise<SourceUpdateCheckEntry[]>;
 }
 
 function freeze<T>(value: T): T {

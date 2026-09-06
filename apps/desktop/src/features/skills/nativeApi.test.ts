@@ -226,4 +226,42 @@ describe("native skill library facade", () => {
     );
     expect(queryApplication).not.toHaveBeenCalled();
   });
+
+  it("runs a batch source update check through the native query contract", async () => {
+    vi.mocked(queryApplication).mockResolvedValue({
+      type: "source_update_checks",
+      payload: [
+        { skill_id: "skill-1", state: "up_to_date" },
+        { skill_id: "skill-2", state: "update_available" },
+        { skill_id: "skill-3", state: "source_unavailable" },
+      ],
+    } as AppQueryResult);
+
+    const entries = await nativeSkillLibraryFacade.checkSourceUpdates?.([
+      "skill-1",
+      "skill-2",
+      "skill-3",
+    ]);
+
+    expect(queryApplication).toHaveBeenCalledWith({
+      type: "check_source_updates",
+      payload: { skill_ids: ["skill-1", "skill-2", "skill-3"] },
+    });
+    expect(entries).toEqual([
+      { skillId: "skill-1", state: "up_to_date" },
+      { skillId: "skill-2", state: "update_available" },
+      { skillId: "skill-3", state: "source_unavailable" },
+    ]);
+  });
+
+  it("turns an unexpected batch source update result into the standard unavailable error", async () => {
+    vi.mocked(queryApplication).mockResolvedValue({
+      type: "running_llm_checks",
+      payload: [],
+    } as AppQueryResult);
+
+    await expect(nativeSkillLibraryFacade.checkSourceUpdates?.(["skill-1"])).rejects.toSatisfy(
+      (error) => error instanceof Error && error.name === "SkillLibraryUnavailableError",
+    );
+  });
 });

@@ -635,7 +635,9 @@
         "tagsLabel": "Tags",
         "tagsPlaceholder": "e.g. review, customer-facing",
         "unconnected": "This batch workflow is not connected",
-        "startExport": "Start export"
+        "startExport": "Start export",
+        "checkUpdates": "Check source updates",
+        "checkUpdatesPending": "Checking source updates…"
       },
       "pageStatus": "Page {{page}} · {{count}} results",
       "preferences": {
@@ -676,6 +678,14 @@
       "card": {
         "tags": "Tags",
         "deploymentCount": "Deployed to {{count}} agents"
+      },
+      "sourceUpdates": {
+        "title": "Source update check results",
+        "upToDate": "Up to date ({{count}})",
+        "upgradable": "Upgradable ({{count}})",
+        "unavailable": "Source unavailable ({{count}})",
+        "hint": "Apply upgrades one by one from each Skill detail page; nothing is overwritten automatically here. Sources may be unavailable when the network is disabled or the origin record is missing.",
+        "authRequired": "Authentication required ({{count}})"
       }
     },
     "drawer": {

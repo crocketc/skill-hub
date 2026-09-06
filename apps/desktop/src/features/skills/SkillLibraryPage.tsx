@@ -38,6 +38,7 @@ import {
   type DeploymentTarget,
   type LibraryGroupMode,
   type SkillTableRow,
+  type SourceUpdateCheckReport,
 } from "./api";
 import {
   applySavedView,
@@ -59,6 +60,7 @@ import { BatchTagDialog, type BatchTagAction } from "./BatchTagDialog";
 import { SkillQuickDrawer } from "./SkillQuickDrawer";
 import { SkillMatrix } from "./SkillMatrix";
 import { SkillTable } from "./SkillTable";
+import { SourceUpdateCheckSummary } from "./SourceUpdateCheckSummary";
 import { BatchRemovalImpactDialog } from "../removal/BatchRemovalImpactDialog";
 import { BatchOperationSummary, type BatchOutcome } from "../../ui/BatchOperationSummary";
 import type { RemovalChoice, RemovalFacade, RemovalImpact } from "../removal/api";
@@ -96,7 +98,9 @@ interface PreferenceStatusProps {
 interface BatchBarProps {
   announcement?: string;
   barRef: Ref<HTMLElement>;
+  checkUpdatesPending?: boolean;
   onAction: (action: BatchAction) => void;
+  onCheckUpdates?: () => void;
   onClear: () => void;
   onDelete: () => void;
   onSelectAll: () => void;
@@ -277,7 +281,9 @@ function PreferenceStatus({
 function BatchBar({
   announcement,
   barRef,
+  checkUpdatesPending,
   onAction,
+  onCheckUpdates,
   onClear,
   onDelete,
   onSelectAll,
@@ -328,6 +334,18 @@ function BatchBar({
             {t(BATCH_ACTION_KEYS[action])}
           </Button>
         ))}
+        {onCheckUpdates ? (
+          <Button
+            disabled={checkUpdatesPending}
+            onClick={onCheckUpdates}
+            size="sm"
+            variant="ghost"
+          >
+            {checkUpdatesPending
+              ? t("skillLibrary.page.batch.checkUpdatesPending")
+              : t("skillLibrary.page.batch.checkUpdates")}
+          </Button>
+        ) : null}
         <Button onClick={onStartExport} size="sm" variant="ghost">
           {t("skillLibrary.page.batch.startExport")}
         </Button>
@@ -387,11 +405,14 @@ export function SkillLibraryPage({
   const [batchRemovalSubmitting, setBatchRemovalSubmitting] = useState(false);
   const [batchRemovalError, setBatchRemovalError] = useState<string>();
   const [batchRemovalSummary, setBatchRemovalSummary] = useState<BatchOutcome[]>();
+  const [sourceUpdateReports, setSourceUpdateReports] = useState<SourceUpdateCheckReport[]>();
+  const [sourceUpdatesPending, setSourceUpdatesPending] = useState(false);
   const defaultPageRetry = queryClient.getDefaultOptions().queries?.retry;
 
   const clearBatchAnnouncement = () => {
     batchRequestRef.current += 1;
     setBatchAnnouncement(undefined);
+    setSourceUpdateReports(undefined);
   };
 
   const changeSelection = (next: SkillSelection) => {
@@ -712,8 +733,42 @@ export function SkillLibraryPage({
     });
   };
 
-  const startBatchExport = () => {
+  // N8 批量来源更新检查：显式选择或全量过滤集逐项检测；单条失败由后端
+  // 诚实降级为 source_unavailable，不在前端伪造结果。
+  const startBatchUpdateCheck = () => {
     if (selection.kind === "none" || selectionCount(selection) <= 0) return;
+    if (!facade.checkSourceUpdates) return;
+    const request = batchRequestRef.current + 1;
+    batchRequestRef.current = request;
+    setBatchAnnouncement(undefined);
+    setSourceUpdatesPending(true);
+    const checkFacade = facade.checkSourceUpdates;
+    void selectedSkillsForRemoval()
+      .then(async (skills) => {
+        const entries = await checkFacade(skills.map((skill) => skill.id));
+        if (request !== batchRequestRef.current) return;
+        const names = new Map(skills.map((skill) => [skill.id, skill.name]));
+        setSourceUpdateReports(
+          entries.map((entry) => ({
+            ...entry,
+            name: names.get(entry.skillId) ?? entry.skillId,
+          })),
+        );
+      })
+      .catch((error: unknown) => {
+        if (request !== batchRequestRef.current) return;
+        setBatchAnnouncement(
+          isSkillLibraryUnavailable(error)
+            ? t("skillLibrary.page.batch.unconnected")
+            : t("skillLibrary.page.batch.error"),
+        );
+      })
+      .finally(() => {
+        if (request === batchRequestRef.current) setSourceUpdatesPending(false);
+      });
+  };
+
+  const startBatchExport = () => {    if (selection.kind === "none" || selectionCount(selection) <= 0) return;
     if (selection.kind === "explicit") {
       navigate("/settings/data-protection", { state: { exportSkillIds: [...selection.skillIds] } });
       return;
@@ -1128,7 +1183,9 @@ export function SkillLibraryPage({
         <BatchBar
           announcement={batchAnnouncement}
           barRef={setBatchBarElement}
+          checkUpdatesPending={sourceUpdatesPending}
           onAction={emitBatchAction}
+          onCheckUpdates={facade.checkSourceUpdates ? startBatchUpdateCheck : undefined}
           onClear={() => {
             changeSelection({ kind: "none" });
           }}
@@ -1147,6 +1204,7 @@ export function SkillLibraryPage({
           selection={selectedBatchTarget}
         />
       ) : null}
+      {sourceUpdateReports ? <SourceUpdateCheckSummary reports={sourceUpdateReports} /> : null}
 
       {selectedBatchTarget && batchTagAction ? (
         <BatchTagDialog

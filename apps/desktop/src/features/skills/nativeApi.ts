@@ -302,4 +302,22 @@ export const nativeSkillLibraryFacade: SkillLibraryFacade = {
     if (export_.type !== "export_result") throw unavailableResult();
     return { path: export_.payload.path };
   },
+
+  // N8 批量来源更新检查：单条失败由后端按项降级为 source_unavailable。
+  async checkSourceUpdates(skillIds) {
+    try {
+      const result = await queryApplication({
+        type: "check_source_updates",
+        payload: { skill_ids: skillIds },
+      });
+      if (result.type !== "source_update_checks") throw unavailableResult();
+      return result.payload.map((outcome) => ({
+        skillId: outcome.skill_id,
+        state: outcome.state,
+      }));
+    } catch (error) {
+      if (error instanceof SkillLibraryUnavailableError) throw error;
+      throw unavailableResult();
+    }
+  },
 };

@@ -635,7 +635,9 @@
         "tagsLabel": "标签",
         "tagsPlaceholder": "例如：待复核，客户可见",
         "unconnected": "此批量流程尚未连接",
-        "startExport": "发起导出"
+        "startExport": "发起导出",
+        "checkUpdates": "检查来源更新",
+        "checkUpdatesPending": "正在检查来源更新…"
       },
       "pageStatus": "第 {{page}} 页 · 共 {{count}} 条结果",
       "preferences": {
@@ -676,6 +678,14 @@
       "card": {
         "tags": "标签",
         "deploymentCount": "部署 {{count}} 个 Agent"
+      },
+      "sourceUpdates": {
+        "title": "来源更新检查结果",
+        "upToDate": "已是最新（{{count}}）",
+        "upgradable": "可升级（{{count}}）",
+        "unavailable": "来源不可用（{{count}}）",
+        "hint": "升级需逐个进入 Skill 详情确认应用，此处不会自动覆盖本地内容；来源不可用可能因网络关闭或来源记录缺失。",
+        "authRequired": "需要认证（{{count}}）"
       }
     },
     "drawer": {

@@ -24,10 +24,11 @@ use skillhub_adapters::source::{
     RepoDiscoveryProvider, SkillsShProvider,
 };
 use skillhub_core::api::{
-    ApplySourceUpdate, BasicCheckResult, CheckSourceUpdate, CreateCombination, CreateSkill,
-    DeleteCombination, PinProjectSkillVersion, RelinkSource, RenameSkill, SaveMarkdownContent,
-    SaveSkillContent, SavedSkillContent, SetCurrentVersion, SetFindingDisposition, SetLifecycle,
-    SetMetadata, SetTrial, UpdateCombination,
+    ApplySourceUpdate, BasicCheckResult, CheckSourceUpdate, CheckSourceUpdates, CreateCombination,
+    CreateSkill, DeleteCombination, PinProjectSkillVersion, RelinkSource, RenameSkill,
+    SaveMarkdownContent, SaveSkillContent, SavedSkillContent, SetCurrentVersion,
+    SetFindingDisposition, SetLifecycle, SetMetadata, SetTrial, SourceUpdateCheckOutcome,
+    UpdateCombination,
 };
 use skillhub_core::application::{
     CallPolicyBackend, CallPolicyService, DeploymentBackend, DeploymentService,
@@ -2719,6 +2720,24 @@ impl LocalApplicationFacade {
         ))
     }
 
+    /// N8：批量来源更新检查。逐 Skill 复用单条 check_source_update（本地与
+    /// 远端 git 来源都支持）；任何单条错误（未知 Skill、网络关闭、来源缺失、
+    /// 远端不可达）都按项诚实降级为 SourceUnavailable——批次不整体失败，
+    /// 单条问题绝不掩盖其余 Skill 的结果。
+    async fn check_source_updates(&self, request: CheckSourceUpdates) -> AppResult<AppQueryResult> {
+        let mut outcomes = Vec::with_capacity(request.skill_ids.len());
+        for skill_id in request.skill_ids {
+            let state = match self.check_source_update(CheckSourceUpdate {
+                skill_id: skill_id.clone(),
+            }) {
+                Ok(AppCommandResult::UpstreamCheckResult(check)) => check.state,
+                _ => SourceState::SourceUnavailable,
+            };
+            outcomes.push(SourceUpdateCheckOutcome { skill_id, state });
+        }
+        Ok(AppQueryResult::SourceUpdateChecks(outcomes))
+    }
+
     fn apply_source_update(&self, request: ApplySourceUpdate) -> AppResult<AppCommandResult> {
         if matches!(
             request.decision,
@@ -3778,6 +3797,7 @@ impl ApplicationFacade for LocalApplicationFacade {
             AppQuery::ListVersions(request) => self.list_versions(request.skill_id),
             AppQuery::ListSkillOperations(request) => self.list_skill_operations(request.skill_id),
             AppQuery::ListRunningLlmChecks => self.list_running_llm_checks(),
+            AppQuery::CheckSourceUpdates(request) => self.check_source_updates(request).await,
             AppQuery::DiffVersions(request) => self.diff_versions(&request.left, &request.right),
             AppQuery::ListDeployments(request) => self.list_deployments(request.skill_id),
             AppQuery::GetDeploymentRelations(request) => {
