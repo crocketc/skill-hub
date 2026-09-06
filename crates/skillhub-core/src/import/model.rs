@@ -36,6 +36,9 @@ pub struct ImportCandidate {
     pub ownership: CandidateOwnership,
     pub default_action: ImportAction,
     pub ownership_detail: Option<String>,
+    /// 仓库发现导入盖章的长期上游坐标；本地导入为 None。
+    #[serde(default)]
+    pub upstream: Option<crate::source::UpstreamOrigin>,
 }
 
 impl ImportCandidate {
@@ -55,7 +58,14 @@ impl ImportCandidate {
             ownership: CandidateOwnership::Unclassified,
             default_action: ImportAction::Review,
             ownership_detail: None,
+            upstream: None,
         }
+    }
+
+    /// 仓库发现导入路径盖章长期上游坐标。
+    pub fn with_upstream(mut self, upstream: crate::source::UpstreamOrigin) -> Self {
+        self.upstream = Some(upstream);
+        self
     }
 
     pub fn with_ownership(

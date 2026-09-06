@@ -47,6 +47,18 @@ pub struct RepoDiscoveryReport {
 }
 
 /// 已下载到本机临时目录、可进入导入向导的仓库 Skill。
+/// 仓库发现导入产生的长期上游坐标：url 指向仓库根（https://github.com/{owner}/{repo}），
+/// branch/directory 定位 Skill 在仓库内的位置。提交导入后写入 sources/skill_sources
+/// 成为长期来源记录，供后续远端更新检测使用。
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct UpstreamOrigin {
+    pub url: String,
+    pub branch: String,
+    pub directory: String,
+}
+
+/// 已下载到本机临时目录、可进入导入向导的仓库 Skill。
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 #[serde(deny_unknown_fields)]
 pub struct DownloadedRepoSkill {

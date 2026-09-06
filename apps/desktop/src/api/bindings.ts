@@ -775,6 +775,8 @@ export type ImportCandidate = {
 	ownership: CandidateOwnership,
 	default_action: ImportAction,
 	ownership_detail: string | null,
+	/**  仓库发现导入盖章的长期上游坐标；本地导入为 None。 */
+	upstream?: UpstreamOrigin | null,
 };
 
 export type ImportConflict = {
@@ -1791,6 +1793,18 @@ export type UpstreamCheckResult = {
 	state: SourceState,
 	local_version: VersionId | null,
 	upstream_version: VersionId | null,
+};
+
+/**
+ *  已下载到本机临时目录、可进入导入向导的仓库 Skill。
+ *  仓库发现导入产生的长期上游坐标：url 指向仓库根（https://github.com/{owner}/{repo}），
+ *  branch/directory 定位 Skill 在仓库内的位置。提交导入后写入 sources/skill_sources
+ *  成为长期来源记录，供后续远端更新检测使用。
+ */
+export type UpstreamOrigin = {
+	url: string,
+	branch: string,
+	directory: string,
 };
 
 export type UsageEvidenceAnalysis = {

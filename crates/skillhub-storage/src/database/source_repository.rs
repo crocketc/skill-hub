@@ -43,6 +43,75 @@ impl<'a> SourceRepository<'a> {
         transaction.commit().map_err(error)
     }
 
+    /// 将仓库导入的长期上游坐标写入 sources（kind=git，metadata_json 记 branch/directory）
+    /// 并挂到 skill_sources（relation=origin）。幂等：重复导入同一来源不会产生重复行。
+    /// 与 relink 不同，这里不删除既有来源行。
+    pub fn record_upstream(
+        &self,
+        skill_id: SkillId,
+        upstream: &skillhub_core::UpstreamOrigin,
+    ) -> AppResult<()> {
+        let descriptor = SourceDescriptor::new(
+            SourceKind::Git,
+            SourceLocator::git_url(upstream.url.clone()),
+        );
+        let source_id = source_id(&descriptor)?;
+        let metadata = serde_json::json!({
+            "branch": upstream.branch,
+            "directory": upstream.directory,
+        });
+        let transaction = self
+            .database
+            .connection
+            .unchecked_transaction()
+            .map_err(error)?;
+        transaction
+            .execute(
+                "INSERT OR IGNORE INTO sources (id, kind, locator, metadata_json, created_at) VALUES (?1, 'git', ?2, ?3, strftime('%s','now'))",
+                rusqlite::params![source_id, upstream.url, metadata.to_string()],
+            )
+            .map_err(error)?;
+        transaction
+            .execute(
+                "INSERT OR IGNORE INTO skill_sources (skill_id, source_id, relation) VALUES (?1, ?2, 'origin')",
+                rusqlite::params![skill_id.to_string(), source_id],
+            )
+            .map_err(error)?;
+        transaction.commit().map_err(error)
+    }
+
+    /// 读取 Skill 的长期上游坐标；无记录返回 None（本地导入）。
+    pub fn upstream_for_skill(
+        &self,
+        skill_id: SkillId,
+    ) -> AppResult<Option<skillhub_core::UpstreamOrigin>> {
+        let row: Option<(String, String)> = self
+            .database
+            .connection
+            .query_row(
+                "SELECT s.locator, s.metadata_json FROM sources s JOIN skill_sources ss ON ss.source_id=s.id WHERE ss.skill_id=?1 AND s.kind='git' ORDER BY s.id ASC LIMIT 1",
+                [skill_id.to_string()],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .optional()
+            .map_err(error)?;
+        let Some((locator, metadata_json)) = row else {
+            return Ok(None);
+        };
+        let metadata: serde_json::Value = serde_json::from_str(&metadata_json).map_err(|err| {
+            AppError::new(ErrorCode::InternalError, Severity::Error)
+                .with_param("source", err.to_string())
+        })?;
+        Ok(Some(skillhub_core::UpstreamOrigin {
+            url: locator,
+            branch: metadata["branch"].as_str().unwrap_or_default().to_string(),
+            directory: metadata["directory"]
+                .as_str()
+                .unwrap_or_default()
+                .to_string(),
+        }))
+    }
+
     pub fn for_skill(&self, skill_id: SkillId) -> AppResult<Option<SourceDescriptor>> {
         let row: Option<(String, String)> = self
             .database

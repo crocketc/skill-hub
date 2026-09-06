@@ -99,6 +99,7 @@ pub struct LocalApplicationFacade {
     assembly_plans: Mutex<HashMap<OperationId, skillhub_core::AssemblyPlan>>,
     external_link_service: ExternalLinkService,
     llm_runs: Mutex<HashMap<(String, String), RunningLlmCheck>>,
+    upstream_origins: Mutex<HashMap<String, skillhub_core::UpstreamOrigin>>,
 }
 
 /// One in-flight LLM check: its externally visible operation id plus the flag
@@ -817,6 +818,17 @@ impl LocalApplicationFacade {
             .file_name()
             .map(|name| name.to_string_lossy().to_string())
             .unwrap_or_else(|| skill.name.clone());
+        self.register_upstream_origin(
+            path.to_string_lossy(),
+            skillhub_core::UpstreamOrigin {
+                url: format!(
+                    "https://github.com/{}/{}",
+                    skill.repo_owner, skill.repo_name
+                ),
+                branch: skill.repo_branch.clone(),
+                directory: skill.directory.clone(),
+            },
+        );
         Ok(AppCommandResult::DownloadedRepoSkill(
             skillhub_core::source::DownloadedRepoSkill {
                 local_path: path.to_string_lossy().to_string(),
@@ -1089,6 +1101,7 @@ impl LocalApplicationFacade {
             assembly_plans: Mutex::new(HashMap::new()),
             external_link_service: ExternalLinkService::new(),
             llm_runs: Mutex::new(HashMap::new()),
+            upstream_origins: Mutex::new(HashMap::new()),
         }
     }
 
@@ -1149,6 +1162,7 @@ impl LocalApplicationFacade {
             assembly_plans: Mutex::new(HashMap::new()),
             external_link_service: ExternalLinkService::new(),
             llm_runs: Mutex::new(HashMap::new()),
+            upstream_origins: Mutex::new(HashMap::new()),
         }
     }
 
@@ -1214,6 +1228,18 @@ impl LocalApplicationFacade {
     /// Registers the desktop shell's external URL opener so validated links
     /// can really be opened. Facades without one keep opening blocked, so
     /// tests never launch a browser.
+    /// 记录仓库发现下载目录 → 上游坐标的映射；扫描该目录的导入候选会被盖章，
+    /// 提交导入后坐标落库为长期 git 来源。
+    pub fn register_upstream_origin(
+        &self,
+        local_path: impl Into<String>,
+        origin: skillhub_core::UpstreamOrigin,
+    ) {
+        if let Ok(mut registry) = self.upstream_origins.lock() {
+            registry.insert(local_path.into(), origin);
+        }
+    }
+
     pub fn set_external_url_opener(&self, opener: Arc<dyn ExternalUrlOpener>) {
         self.external_link_service.set_opener(opener);
     }
@@ -3621,9 +3647,17 @@ impl ApplicationFacade for LocalApplicationFacade {
                 let Some(root) = source.locator.as_local_path().cloned() else {
                     return Err(unsupported("query.discover_import_candidates"));
                 };
-                SkillDetector::default()
-                    .detect(root, source)
-                    .map(AppQueryResult::ImportCandidates)
+                let mut candidates = SkillDetector::default().detect(root.clone(), source)?;
+                // 仓库发现下载目录 → 给候选盖上长期上游坐标，随 prepare/commit 原样回流。
+                if let Ok(registry) = self.upstream_origins.lock() {
+                    let key = root.to_string_lossy().to_string();
+                    if let Some(origin) = registry.get(&key) {
+                        for candidate in &mut candidates {
+                            candidate.upstream = Some(origin.clone());
+                        }
+                    }
+                }
+                Ok(AppQueryResult::ImportCandidates(candidates))
             }
             AppQuery::ListSkills(request) => self.with_database("query.list_skills", |database| {
                 database
@@ -4062,6 +4096,17 @@ impl LocalApplicationFacade {
                     error,
                     cleanup_import_state(database, &central, &store, skill_id, &version),
                 ));
+            }
+            if let Some(upstream) = prepared.candidate.upstream.clone() {
+                if let Err(error) = database
+                    .source_repository()
+                    .record_upstream(skill_id, &upstream)
+                {
+                    return Err(cleanup_import_error(
+                        error,
+                        cleanup_import_state(database, &central, &store, skill_id, &version),
+                    ));
+                }
             }
             self.prepared_imports
                 .lock()
