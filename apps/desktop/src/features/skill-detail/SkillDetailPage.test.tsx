@@ -1,9 +1,11 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { I18nextProvider } from "react-i18next";
 import {
   MemoryRouter,
   Route,
+  useLocation,
   Routes,
   type InitialEntry,
 } from "react-router-dom";
@@ -50,12 +52,19 @@ async function renderDetail({
               path="/__preview/skill-detail/:skillId"
             />
             <Route element={<p>Library route</p>} path="/library" />
+            <Route element={<ExportProbe />} path="/settings/data-protection" />
           </Routes>
         </MemoryRouter>
       </I18nextProvider>
     </QueryClientProvider>,
   );
   return { client };
+}
+
+function ExportProbe() {
+  const location = useLocation();
+  const ids = (location.state as { exportSkillIds?: string[] } | null)?.exportSkillIds ?? [];
+  return <p>export probe: {ids.join(",")}</p>;
 }
 
 describe("SkillDetailPage shell", () => {
@@ -421,4 +430,13 @@ describe("SkillDetailPage shell", () => {
       await screen.findByRole("heading", { name: "Extract PDF tables safely" }),
     ).toBeVisible();
   });
+});
+
+it("exports the skill from the versions section with the skill id carried over", async () => {
+  const user = userEvent.setup();
+  await renderDetail({ entry: "/library/skill-pdf" });
+
+  const exportBtn = await screen.findByRole("button", { name: /Export this skill/ });
+  await user.click(exportBtn);
+  expect(await screen.findByText("export probe: skill-pdf")).toBeVisible();
 });
