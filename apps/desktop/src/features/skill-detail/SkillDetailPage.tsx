@@ -1,6 +1,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
+import { describeNativeError } from "../../api/nativeErrors";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { DataState } from "../../ui/DataState";
 import { MarkdownWorkspace } from "../markdown/MarkdownWorkspace";
@@ -120,8 +121,8 @@ export function SkillDetailPage({
     setRemovalError(undefined);
     try {
       setRemovalImpact(await effectiveRemovalFacade.prepareDelete(skillId, summaryQuery.data?.name));
-    } catch {
-      setRemovalError(t("removal.loadError"));
+    } catch (reason) {
+      setRemovalError(describeNativeError(reason, (key, options) => String(t(key as never, options as never)), "removal.loadError"));
     } finally {
       setRemovalLoading(false);
     }
@@ -138,8 +139,8 @@ export function SkillDetailPage({
       }
       await queryClient.invalidateQueries({ queryKey: skillLibraryKeys.root });
       navigate({ pathname: backPathname, search: backSearch }, { replace: true, state: libraryReturn ? { libraryReturn } : undefined });
-    } catch {
-      setRemovalError(t("removal.commitError"));
+    } catch (reason) {
+      setRemovalError(describeNativeError(reason, (key, options) => String(t(key as never, options as never)), "removal.commitError"));
     } finally {
       setRemovalSubmitting(false);
     }
@@ -149,8 +150,8 @@ export function SkillDetailPage({
     setUndeployError(undefined);
     try {
       setUndeployImpact(await effectiveRemovalFacade.prepareUndeploy(relation.id, relation.label));
-    } catch {
-      setUndeployError(t("undeploy.loadError"));
+    } catch (reason) {
+      setUndeployError(describeNativeError(reason, (key, options) => String(t(key as never, options as never)), "undeploy.loadError"));
     }
   };
 

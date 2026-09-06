@@ -12,11 +12,11 @@ import type { SecurityCheck, SecurityCheckKind, SecurityFacade, SecurityFinding,
 function checkResult(result: AppQueryResult): SecurityCheck {
   if (result.type === "basic_check_result") return { kind: "basic", state: result.payload.state, checkedAt: result.payload.checked_at ?? undefined, findingCount: result.payload.finding_count, actionableCount: result.payload.actionable_count };
   if (result.type === "llm_safety_check_result") return { kind: "llm", state: result.payload.state, checkedAt: result.payload.checked_at ?? undefined, findingCount: result.payload.finding_count, actionableCount: result.payload.actionable_count };
-  throw new Error("安全检查查询返回了无法识别的结果");
+  throw new Error("security.check_unexpected_result");
 }
 
 function findingsResult(result: AppQueryResult, kind: SecurityCheckKind): SecurityFinding[] {
-  if (result.type !== "findings") throw new Error("安全发现项查询返回了无法识别的结果");
+  if (result.type !== "findings") throw new Error("security.findings_unexpected_result");
   return result.payload.map((finding) => ({
     id: finding.id,
     code: finding.code,
@@ -34,7 +34,7 @@ function findingsResult(result: AppQueryResult, kind: SecurityCheckKind): Securi
 async function resolvedVersion(skillId: string, versionId: string): Promise<string> {
   if (versionId !== "current") return versionId;
   const result = await queryApplication({ type: "get_skill", payload: { skill_id: skillId } });
-  if (result.type !== "skill" || !result.payload.current_version) throw new Error("该 Skill 尚无可检查版本");
+  if (result.type !== "skill" || !result.payload.current_version) throw new Error("security.no_checkable_version");
   return result.payload.current_version;
 }
 
@@ -56,16 +56,16 @@ export const nativeSecurityFacade: SecurityFacade = {
     return [...findingsResult(basic, "basic"), ...findingsResult(llm, "llm")];
   },
   async setFindingDisposition(finding, disposition, skillId, versionId, highRiskConfirmed) {
-    if (!skillId || !versionId) throw new Error("安全发现项缺少 Skill 版本上下文");
+    if (!skillId || !versionId) throw new Error("security.missing_version_context");
     if (finding.highRisk && disposition !== "actionable" && !highRiskConfirmed) {
-      throw new Error("高风险发现项的处置需要显式确认");
+      throw new Error("security.high_risk_confirmation_required");
     }
     const result = await executeCommand({ type: "set_finding_disposition", payload: { skill_id: skillId, version_id: versionId, kind: finding.kind, finding_id: finding.id, disposition, high_risk_confirmed: highRiskConfirmed } });
-    if (result.type !== "basic_check_result" && result.type !== "llm_safety_check_result") throw new Error("安全发现项处置返回了无法识别的结果");
+    if (result.type !== "basic_check_result" && result.type !== "llm_safety_check_result") throw new Error("security.disposition_unexpected_result");
   },
   async getPreferences() {
     const result = await queryApplication({ type: "get_desktop_preferences" });
-    if (result.type !== "desktop_preferences") throw new Error("桌面偏好设置查询返回了无法识别的结果");
+    if (result.type !== "desktop_preferences") throw new Error("security.preferences_unexpected_result");
     return { llmProvider: result.payload.llm_provider, dataScope: result.payload.data_scope } satisfies SecurityPreferences;
   },
   async runLlmCheck(skillId, versionId) {
@@ -77,13 +77,13 @@ export const nativeSecurityFacade: SecurityFacade = {
       payload: { operation_id: operationId },
     });
     if (result.type !== "operation_summary") {
-      throw new Error("取消操作返回了无法识别的结果");
+      throw new Error("security.cancel_unexpected_result");
     }
   },
   async listRunningLlmChecks() {
     const result = await queryApplication({ type: "list_running_llm_checks" });
     if (result.type !== "running_llm_checks") {
-      throw new Error("运行中检查查询返回了无法识别的结果");
+      throw new Error("security.running_checks_unexpected_result");
     }
     return result.payload.map((run) => ({
       skillId: run.skill_id,
@@ -97,7 +97,7 @@ type OperationSummary = Extract<AppCommandResult, { type: "operation_summary" }>
 
 function llmSafetyResult(result: AppCommandResult): LlmSafetyCheckResult {
   if (result.type !== "llm_safety_check_result") {
-    throw new Error("LLM 安全检查返回了无法识别的结果");
+    throw new Error("security.llm_check_unexpected_result");
   }
   return result.payload;
 }
@@ -115,7 +115,7 @@ export async function runNativeLlmSafetyCheck(
 
 function operationSummary(result: AppCommandResult): OperationSummary {
   if (result.type !== "operation_summary") {
-    throw new Error("技能元数据操作返回了无法识别的结果");
+    throw new Error("security.metadata_unexpected_result");
   }
   return result.payload;
 }

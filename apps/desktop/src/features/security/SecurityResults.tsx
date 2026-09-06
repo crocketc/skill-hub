@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { describeNativeError } from "../../api/nativeErrors";
 import { Button } from "../../ui/Button";
 import { DataState } from "../../ui/DataState";
 import { FindingActions } from "./FindingActions";
@@ -33,7 +34,7 @@ export function SecurityResults({ facade = unavailableSecurityFacade, skillId, v
         setFindings(nextFindings);
         setPreferences(nextPreferences);
       })
-      .catch((reason: unknown) => { if (active) setError(reason instanceof Error ? reason.message : String(reason)); });
+      .catch((reason: unknown) => { if (active) setError(describeNativeError(reason, (key, options) => String(t(key as never, options as never)), "security.errors.generic")); });
     return () => { active = false; };
   }, [facade, skillId, versionId, reloadKey]);
 
@@ -57,7 +58,7 @@ export function SecurityResults({ facade = unavailableSecurityFacade, skillId, v
     } catch (reason: unknown) {
       // A run the user cancelled must not surface as a failure.
       if (!cancelledRef.current) {
-        setRunError(reason instanceof Error ? reason.message : String(reason));
+        setRunError(describeNativeError(reason, (key, options) => String(t(key as never, options as never)), "security.errors.generic"));
       }
     } finally {
       setRunning(false);

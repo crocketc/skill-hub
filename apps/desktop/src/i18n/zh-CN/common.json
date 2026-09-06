@@ -1264,6 +1264,9 @@
   },
   "security": {
     "eyebrow": "安全检查",
+  "errors": {
+    "generic": "安全操作失败（{{code}}）。请重试；若持续出现请记录该错误码。"
+  },
     "heading": "部署前处理安全问题",
     "description": "基础检查与可选的 LLM 检查是彼此独立的事实，可以分别处理。",
     "states": {

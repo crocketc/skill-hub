@@ -18,14 +18,14 @@ import type {
 
 function impactResult(result: AppQueryResult | AppCommandResult): NativeRemovalImpact {
   if (result.type !== "removal_impact") {
-    throw new Error("解除部署影响查询返回了无法识别的结果");
+    throw new Error("removal.undeploy_impact_unexpected_result");
   }
   return result.payload;
 }
 
 function removalResult(result: AppCommandResult): NativeRemovalResult {
   if (result.type !== "removal_result") {
-    throw new Error("解除部署提交返回了无法识别的结果");
+    throw new Error("removal.undeploy_commit_unexpected_result");
   }
   return result.payload;
 }
@@ -115,16 +115,16 @@ export const nativeRemovalFacade = {
 
 export const unavailableRemovalFacade: RemovalFacade = {
   prepareUndeploy: async () => {
-    throw new Error("解除部署功能尚未接入");
+    throw new Error("removal.undeploy_not_wired");
   },
   commitUndeploy: async () => {
-    throw new Error("解除部署功能尚未接入");
+    throw new Error("removal.undeploy_not_wired");
   },
   prepareDelete: async () => {
-    throw new Error("删除功能尚未接入");
+    throw new Error("removal.delete_not_wired");
   },
   commitDelete: async () => {
-    throw new Error("删除功能尚未接入");
+    throw new Error("removal.delete_not_wired");
   },
 };
 
@@ -137,6 +137,6 @@ function deleteChoiceToDecision(choice: RemovalChoice): RemovalDecision {
     case "convert_to_copy":
       return "remove_relation_only";
     default:
-      throw new Error("删除处理方式无法识别");
+      throw new Error("removal.decision_unexpected_result");
   }
 }

@@ -99,7 +99,7 @@ describe("security native API", () => {
     vi.mocked(executeCommand).mockResolvedValue({ type: "basic_check_result", payload: {} as never });
 
     await expect(runNativeLlmSafetyCheck("skill-1", "version-1", true)).rejects.toThrow(
-      "LLM 安全检查返回了无法识别的结果",
+      "security.llm_check_unexpected_result",
     );
     expect(executeCommand).toHaveBeenCalledWith({
       type: "recheck_llm_safety",
@@ -160,7 +160,7 @@ describe("security native API", () => {
         "version-1",
         false,
       ),
-    ).rejects.toThrow("高风险发现项的处置需要显式确认");
+    ).rejects.toThrow("security.high_risk_confirmation_required");
     expect(executeCommand).not.toHaveBeenCalled();
   });
 
@@ -192,7 +192,7 @@ describe("security native API", () => {
     vi.mocked(queryApplication).mockResolvedValue({ type: "bootstrap_snapshot", payload: {} as never });
 
     await expect(nativeSecurityFacade.getPreferences!()).rejects.toThrow(
-      "桌面偏好设置查询返回了无法识别的结果",
+      "security.preferences_unexpected_result",
     );
   });
 
@@ -243,4 +243,16 @@ describe("security native API", () => {
       payload: { skill_id: "skill-1", due: [2026, 9, 1] },
     });
   });
+
+  it("surfaces unexpected native results as stable codes without hardcoded sentences", async () => {
+    vi.mocked(queryApplication).mockResolvedValue({ type: "bootstrap_snapshot", payload: {} } as never);
+    const error = await nativeSecurityFacade.getChecks("skill-1", "v1").then(
+      () => null,
+      (reason: unknown) => reason as Error,
+    );
+    expect(error).toBeInstanceOf(Error);
+    expect(error?.message).toBe("security.check_unexpected_result");
+    expect(error?.message).not.toMatch(/[一-龥]/);
+  });
+
 });

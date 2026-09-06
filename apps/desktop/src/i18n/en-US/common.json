@@ -1264,6 +1264,9 @@
   },
   "security": {
     "eyebrow": "Security checks",
+  "errors": {
+    "generic": "The security operation failed ({{code}}). Please retry; note the error code if it persists."
+  },
     "heading": "Review findings before deployment",
     "description": "Basic checks and optional LLM checks are separate facts and can be handled independently.",
     "states": {
