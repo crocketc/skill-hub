@@ -57,6 +57,7 @@ function baseFacade(overrides: Partial<DiscoveryFacade> = {}): DiscoveryFacade {
       local_path: "C:/temp/skillhub-repo-skills/1/pdf",
       runtime_name: "pdf",
     }),
+    openExternalUrl: vi.fn(async () => {}),
     ...overrides,
   };
 }
@@ -102,15 +103,24 @@ it("renders the configured repositories with enabled state", async () => {
 
 it("discovers skills across repositories and surfaces per-repo warnings", async () => {
   const discoverRepoSkills = vi.fn(async () => report);
-  renderCard(baseFacade({ discoverRepoSkills }));
+  const openExternalUrl = vi.fn(async () => {});
+  renderCard(baseFacade({ discoverRepoSkills, openExternalUrl }));
 
   await click(await screen.findByRole("button", { name: "扫描仓库" }));
 
   await waitFor(() => expect(screen.getByText("PDF")).toBeVisible());
   expect(screen.getByText("Handle PDF files")).toBeVisible();
   const readme = screen.getByRole("link", { name: "README" });
-  expect(readme.getAttribute("href")).toBe(
-    "https://github.com/anthropics/skills/blob/main/pdf/SKILL.md",
+
+  // The README link opens through the native shell after an explicit confirm,
+  // never as a raw anchor that the packaged WebView would silently ignore.
+  await click(readme);
+  const openLink = await screen.findByRole("button", { name: "打开链接" });
+  await click(openLink);
+  await waitFor(() =>
+    expect(openExternalUrl).toHaveBeenCalledWith(
+      "https://github.com/anthropics/skills/blob/main/pdf/SKILL.md",
+    ),
   );
   expect(
     screen.getByText(/gone\/missing/),

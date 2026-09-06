@@ -64,4 +64,15 @@ export const nativeMarkdownFacade: MarkdownFacade = {
       newVersionId: result.payload.version_id,
     };
   },
+  async openExternalUrl(target: string) {
+    try {
+      const result = await executeCommand({
+        type: "open_external_url",
+        payload: { url: target },
+      });
+      if (result.type !== "operation_summary") throw unavailableResult();
+    } catch (error) {
+      throw error instanceof Error ? error : unavailableResult();
+    }
+  },
 };

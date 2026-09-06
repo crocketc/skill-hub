@@ -28,6 +28,8 @@ export interface DiscoveryFacade {
   addSkillRepo: (repo: SkillRepo) => Promise<SkillRepo[]>;
   removeSkillRepo: (owner: string, name: string) => Promise<SkillRepo[]>;
   downloadRepoSkill: (skill: DiscoverableRepoSkill) => Promise<DownloadedRepoSkill>;
+  /** Opens a repository README link in the platform browser via the native shell. */
+  openExternalUrl: (url: string) => Promise<void>;
 }
 
 export const desktopDiscoveryFacade: DiscoveryFacade = {
@@ -108,6 +110,15 @@ export const desktopDiscoveryFacade: DiscoveryFacade = {
       throw new Error("Unexpected downloaded repo skill response from the native application.");
     }
     return result.payload;
+  },
+  async openExternalUrl(url: string) {
+    const result = await executeCommand({
+      type: "open_external_url",
+      payload: { url },
+    });
+    if (result.type !== "operation_summary") {
+      throw new Error("Unexpected external link response from the native application.");
+    }
   },
 };
 

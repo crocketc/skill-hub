@@ -83,4 +83,32 @@ describe("nativeMarkdownFacade", () => {
       MarkdownUnavailableError,
     );
   });
+
+  it("opens a link through the native external opener", async () => {
+    vi.mocked(executeCommand).mockResolvedValue({
+      type: "operation_summary",
+      payload: {
+        operation_id: "op-1",
+        phase: "committed",
+        message_code: "external_link.opened",
+        error_code: null,
+      },
+    });
+
+    await expect(
+      nativeMarkdownFacade.openExternalUrl("https://github.com/anthropics/skills"),
+    ).resolves.toBeUndefined();
+    expect(executeCommand).toHaveBeenCalledWith({
+      type: "open_external_url",
+      payload: { url: "https://github.com/anthropics/skills" },
+    });
+  });
+
+  it("rejects when the native layer refuses the link", async () => {
+    vi.mocked(executeCommand).mockRejectedValue({ code: "input.invalid" });
+
+    await expect(
+      nativeMarkdownFacade.openExternalUrl("https://example.com/readme"),
+    ).rejects.toBeTruthy();
+  });
 });

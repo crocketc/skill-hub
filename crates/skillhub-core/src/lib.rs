@@ -12,6 +12,7 @@ pub mod duplicate;
 mod error;
 pub mod evidence;
 pub mod export;
+pub mod external_link;
 pub mod health;
 mod ids;
 pub mod ignore;
@@ -87,6 +88,9 @@ pub use evidence::{
 pub use export::{
     ExportDecision, ExportInput, ExportPlan, ExportResult, ExportSelection, ExportSkill,
     ExportSkillSummary, UninstallAction, UninstallImpact, UninstallService, VersionSelection,
+};
+pub use external_link::{
+    external_url_host, validate_external_url, OpenExternalUrl, EXTERNAL_URL_ALLOWED_HOSTS,
 };
 pub use operation::{
     InverseOperation, OperationContext, OperationJournal, OperationObjectResult, OperationPhase,

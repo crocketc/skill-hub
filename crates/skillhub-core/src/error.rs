@@ -93,6 +93,8 @@ pub enum ErrorCode {
     ApplicationUpdateInvalidArtifactUrl,
     #[serde(rename = "application_update.download_cancelled")]
     ApplicationUpdateDownloadCancelled,
+    #[serde(rename = "external_link.opener_unavailable")]
+    ExternalLinkOpenerUnavailable,
 }
 
 #[allow(non_upper_case_globals)]
@@ -151,6 +153,7 @@ impl ErrorCode {
             Self::ApplicationUpdateSignatureInvalid => "application_update.signature_invalid",
             Self::ApplicationUpdateInvalidArtifactUrl => "application_update.invalid_artifact_url",
             Self::ApplicationUpdateDownloadCancelled => "application_update.download_cancelled",
+            Self::ExternalLinkOpenerUnavailable => "external_link.opener_unavailable",
         }
     }
 }

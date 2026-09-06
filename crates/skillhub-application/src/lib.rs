@@ -1,5 +1,6 @@
 //! Shared application boundary implementations.
 
+mod external_link;
 mod update_service;
 
 use std::collections::HashMap;
@@ -9,6 +10,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use async_trait::async_trait;
+pub use external_link::{ExternalLinkService, ExternalUrlOpener, SystemExternalUrlOpener};
 use skillhub_adapters::agent::discovery::{DiscoverAgents, DiscoveryRoots};
 use skillhub_adapters::app_update::github_releases::GithubReleaseProvider;
 use skillhub_adapters::deployment::{DeploymentFilesystem, OwnershipProof};
@@ -93,6 +95,7 @@ pub struct LocalApplicationFacade {
     scan_service: Mutex<ScanService>,
     path_grants: Mutex<HashMap<String, ResolvedPathGrant>>,
     assembly_plans: Mutex<HashMap<OperationId, skillhub_core::AssemblyPlan>>,
+    external_link_service: ExternalLinkService,
 }
 
 struct LocalDeploymentBackend {
@@ -881,8 +884,30 @@ impl LocalApplicationFacade {
                 "release_url must be an official GitHub release URL",
             ));
         }
+        self.external_link_service.open(&request.release_url)?;
         Ok(AppCommandResult::OperationSummary(operation_summary(
             "application_update.opened",
+        )))
+    }
+
+    /// Opens one allowlisted https link in the platform browser. The URL comes
+    /// from imported content, so it is validated before the platform opener is
+    /// called; a rejection never reaches the browser.
+    fn open_external_url(
+        &self,
+        request: skillhub_core::OpenExternalUrl,
+    ) -> AppResult<AppCommandResult> {
+        if !skillhub_core::validate_external_url(&request.url) {
+            return Err(
+                invalid_input("url must be an https URL on an allowlisted host").with_param(
+                    "host",
+                    skillhub_core::external_url_host(&request.url).unwrap_or_default(),
+                ),
+            );
+        }
+        self.external_link_service.open(&request.url)?;
+        Ok(AppCommandResult::OperationSummary(operation_summary(
+            "external_link.opened",
         )))
     }
 
@@ -1052,6 +1077,7 @@ impl LocalApplicationFacade {
             scan_service: Mutex::new(ScanService::new()),
             path_grants: Mutex::new(HashMap::new()),
             assembly_plans: Mutex::new(HashMap::new()),
+            external_link_service: ExternalLinkService::new(),
         }
     }
 
@@ -1110,6 +1136,7 @@ impl LocalApplicationFacade {
             scan_service: Mutex::new(ScanService::new()),
             path_grants: Mutex::new(HashMap::new()),
             assembly_plans: Mutex::new(HashMap::new()),
+            external_link_service: ExternalLinkService::new(),
         }
     }
 
@@ -1170,6 +1197,13 @@ impl LocalApplicationFacade {
         installer: Arc<dyn update_service::ApplicationUpdateInstaller>,
     ) {
         self.update_service.set_installer(installer);
+    }
+
+    /// Registers the desktop shell's external URL opener so validated links
+    /// can really be opened. Facades without one keep opening blocked, so
+    /// tests never launch a browser.
+    pub fn set_external_url_opener(&self, opener: Arc<dyn ExternalUrlOpener>) {
+        self.external_link_service.set_opener(opener);
     }
 
     /// Registers a directory grant issued by the native file picker. The
@@ -2888,6 +2922,7 @@ impl ApplicationFacade for LocalApplicationFacade {
                 })
             }
             AppCommand::OpenOfficialRelease(request) => return self.open_official_release(request),
+            AppCommand::OpenExternalUrl(request) => return self.open_external_url(request),
             AppCommand::SetApplicationUpdatePolicy(request) => {
                 return self.set_application_update_policy(request)
             }

@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use skillhub_application::LocalApplicationFacade;
+use skillhub_application::{ExternalUrlOpener, LocalApplicationFacade, SystemExternalUrlOpener};
 use skillhub_core::{
     AppCommand, AppCommandResult, AppEvent, AppQuery, AppQueryResult, AppResult, ApplicationFacade,
 };
@@ -186,6 +186,16 @@ pub fn emit_app_event<R: tauri::Runtime>(app: &AppHandle<R>, event: AppEvent) ->
     app.emit("app_event", event)
 }
 
+/// Hands the platform browser to the facade. Without it every external link
+/// (README links, the official release page) is refused by the facade, so the
+/// registration is part of the startup contract rather than an optimization.
+fn register_external_url_opener(
+    facade: &LocalApplicationFacade,
+    opener: Arc<dyn ExternalUrlOpener>,
+) {
+    facade.set_external_url_opener(opener);
+}
+
 pub fn run_with_facade(facade: Arc<LocalApplicationFacade>) -> tauri::Result<()> {
     re_register_custom_agent_grants(&facade);
     tauri::Builder::default()
@@ -196,6 +206,7 @@ pub fn run_with_facade(facade: Arc<LocalApplicationFacade>) -> tauri::Result<()>
                 facade.set_application_update_installer(Arc::new(
                     updater::TauriUpdateInstaller::for_app(app.handle().clone()),
                 ));
+                register_external_url_opener(&facade, Arc::new(SystemExternalUrlOpener::default()));
                 Ok(())
             }
         })
@@ -466,6 +477,83 @@ fn tauri_config_enables_signed_static_updater_artifacts() {
         config["plugins"]["updater"]["windows"]["installMode"],
         "passive"
     );
+}
+
+#[cfg(test)]
+mod external_link_tests {
+    use super::*;
+    use std::sync::Mutex;
+
+    struct RecordingOpener {
+        opened: Mutex<Vec<String>>,
+    }
+
+    impl ExternalUrlOpener for RecordingOpener {
+        fn open(&self, url: &str) -> AppResult<()> {
+            self.opened
+                .lock()
+                .expect("recorder mutex")
+                .push(url.to_owned());
+            Ok(())
+        }
+    }
+
+    fn open_command(url: &str) -> AppCommand {
+        AppCommand::OpenExternalUrl(skillhub_core::OpenExternalUrl {
+            url: url.to_owned(),
+        })
+    }
+
+    #[test]
+    fn host_registration_lets_validated_links_reach_the_platform_browser() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let facade =
+            Arc::new(LocalApplicationFacade::open(dir.path().join("app.sqlite")).expect("facade"));
+        let opener = Arc::new(RecordingOpener {
+            opened: Mutex::new(Vec::new()),
+        });
+        register_external_url_opener(&facade, opener.clone());
+
+        let bridge = CommandBridge::new(facade.clone()).with_local(facade);
+        let result = tauri::async_runtime::block_on(
+            bridge.execute(open_command("https://github.com/anthropics/skills")),
+        );
+
+        assert!(matches!(result, Ok(AppCommandResult::OperationSummary(_))));
+        assert_eq!(
+            opener.opened.lock().expect("recorder mutex").clone(),
+            vec!["https://github.com/anthropics/skills".to_owned()]
+        );
+    }
+
+    #[test]
+    fn without_host_registration_the_facade_refuses_to_open_links() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let facade =
+            Arc::new(LocalApplicationFacade::open(dir.path().join("app.sqlite")).expect("facade"));
+        let bridge = CommandBridge::new(facade.clone()).with_local(facade);
+
+        let error = tauri::async_runtime::block_on(
+            bridge.execute(open_command("https://github.com/anthropics/skills")),
+        )
+        .expect_err("links stay blocked until the shell registers an opener");
+
+        assert_eq!(
+            error.code.as_str(),
+            skillhub_core::ErrorCode::ExternalLinkOpenerUnavailable.as_str()
+        );
+    }
+
+    #[test]
+    fn startup_registers_the_system_opener() {
+        let source =
+            std::fs::read_to_string(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/lib.rs"))
+                .expect("desktop shell source");
+        assert!(
+            source.contains("register_external_url_opener(&facade, Arc::new(SystemExternalUrlOpener::default()))"),
+            "the desktop shell must register the system opener during setup"
+        );
+    }
 }
 
 #[cfg(test)]

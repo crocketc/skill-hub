@@ -17,6 +17,7 @@ const repoDiscoveryStubs = {
   addSkillRepo: async (repo: SkillRepo) => [repo],
   removeSkillRepo: async () => [] as SkillRepo[],
   downloadRepoSkill: async () => ({ local_path: "", runtime_name: "" }),
+  openExternalUrl: async () => {},
 };
 import { OnlineDiscovery } from "./OnlineDiscovery";
 

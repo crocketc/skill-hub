@@ -14,6 +14,7 @@ use crate::check::{CheckKind, FindingDisposition};
 use crate::export::{
     ExportDecision, ExportInput, ExportPlan, ExportResult, UninstallAction, UninstallImpact,
 };
+pub use crate::external_link::OpenExternalUrl;
 use crate::import::{ImportCandidate, ImportDecision};
 use crate::llm::search_query::SearchQuerySuggestion;
 use crate::llm::translation::TranslationResult;
@@ -551,6 +552,8 @@ pub enum AppCommand {
     SetDesktopPreferences(crate::DesktopPreferences),
     #[serde(rename = "open_official_release")]
     OpenOfficialRelease(OpenOfficialRelease),
+    #[serde(rename = "open_external_url")]
+    OpenExternalUrl(OpenExternalUrl),
     #[serde(rename = "set_application_update_policy")]
     SetApplicationUpdatePolicy(SetApplicationUpdatePolicy),
     #[serde(rename = "prepare_application_update")]

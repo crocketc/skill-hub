@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "../../ui/Button";
 import { ConfirmDialog } from "../../ui/ConfirmDialog";
+import { ExternalLink } from "../markdown/ExternalLink";
 import type { DiscoverableRepoSkill, SkillRepo } from "../../api/bindings";
 import type { DiscoveryFacade } from "./api";
 
@@ -243,9 +244,12 @@ export function RepoDiscovery({ facade, onImportDirectory }: RepoDiscoveryProps)
                 <span>{skill.description}</span>
                 <span>{`${skill.repo_owner}/${skill.repo_name}@${skill.repo_branch}`}</span>
                 {skill.readme_url ? (
-                  <a href={skill.readme_url} rel="noreferrer" target="_blank" title={skill.readme_url}>
+                  <ExternalLink
+                    onOpen={() => void facade.openExternalUrl(skill.readme_url as string)}
+                    target={skill.readme_url}
+                  >
                     README
-                  </a>
+                  </ExternalLink>
                 ) : null}
                 <Button
                   disabled={downloadingKey !== null}

@@ -1,15 +1,31 @@
 use std::sync::Arc;
 
+use std::sync::Mutex;
+
 use skillhub_adapters::app_update::github_releases::GithubReleaseProvider;
 use skillhub_adapters::source::SkillsShProvider;
-use skillhub_application::LocalApplicationFacade;
+use skillhub_application::{ExternalUrlOpener, LocalApplicationFacade};
 use skillhub_core::{
-    AppCommand, AppCommandResult, AppQuery, AppQueryResult, ApplicationFacade, BuildTrust,
-    ErrorCode,
+    AppCommand, AppCommandResult, AppQuery, AppQueryResult, AppResult, ApplicationFacade,
+    BuildTrust, ErrorCode,
 };
 use skillhub_storage::Database;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
+
+/// Records the URLs passed to the platform opener without actually launching
+/// a browser, so tests can assert the open path without side effects.
+#[derive(Default)]
+struct RecordingOpener {
+    opened: Mutex<Vec<String>>,
+}
+
+impl ExternalUrlOpener for RecordingOpener {
+    fn open(&self, url: &str) -> AppResult<()> {
+        self.opened.lock().expect("recorder").push(url.to_owned());
+        Ok(())
+    }
+}
 
 async fn serve_once(body: &'static str) -> String {
     let listener = TcpListener::bind(("127.0.0.1", 0)).await.expect("listener");
@@ -178,6 +194,9 @@ async fn set_update_policy_persists_and_open_release_validates_url() {
             if !policy.enabled && policy.check_on_startup
     ));
 
+    let opener = Arc::new(RecordingOpener::default());
+    facade.set_external_url_opener(opener.clone());
+
     let result = facade
         .execute(AppCommand::OpenOfficialRelease(
             skillhub_core::OpenOfficialRelease {
@@ -188,6 +207,10 @@ async fn set_update_policy_persists_and_open_release_validates_url() {
         .expect("open official release");
     assert!(
         matches!(result, AppCommandResult::OperationSummary(summary) if summary.message_code == "application_update.opened")
+    );
+    assert_eq!(
+        opener.opened.lock().expect("recorder").clone(),
+        vec!["https://github.com/crocketc/skill-hub/releases/tag/v0.2.0".to_owned()]
     );
 
     drop(facade);
