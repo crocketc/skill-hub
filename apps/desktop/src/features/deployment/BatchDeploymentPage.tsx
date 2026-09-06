@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import { useSearchParams } from "react-router-dom";
 import { Button } from "../../ui/Button";
 import { DataState } from "../../ui/DataState";
-import { DeploymentResults } from "./DeploymentResults";
+import { BatchOperationSummary, type BatchOutcome } from "../../ui/BatchOperationSummary";
 import {
   type BatchDeploymentFacade,
   type BatchDeploymentPreview,
@@ -178,6 +178,13 @@ export function BatchDeploymentPage({ facade, skillIds, onCommitted }: BatchDepl
         </ul>
       </section>)}
     </section> : null}
-    {results ? <DeploymentResults results={results} /> : null}
+    {results ? <BatchOperationSummary
+      outcomes={results.map((result): BatchOutcome => ({
+        id: `${result.skillId ?? "single"}:${result.targetId}`,
+        label: result.skillId ? `${result.skillId} · ${result.label}` : result.label,
+        message: result.message,
+        status: result.status,
+      }))}
+    /> : null}
   </main>;
 }

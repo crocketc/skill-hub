@@ -117,6 +117,34 @@ describe("SkillLibraryPage", () => {
     await waitFor(() => expect(removalFacade.commitDelete).toHaveBeenCalledWith("delete-pdf", {}));
   });
 
+  it("reports per-skill batch deletion outcomes instead of failing the whole batch", async () => {
+    const facade = createMockSkillLibraryFacade();
+    const removalFacade: RemovalFacade = {
+      prepareUndeploy: vi.fn(),
+      commitUndeploy: vi.fn(),
+      prepareDelete: vi.fn()
+        .mockResolvedValueOnce({ deployments: [], dependentProjects: [], operationId: "delete-pdf", skillId: "skill-pdf", skillName: "PDF Reader" })
+        .mockResolvedValueOnce({ deployments: [], dependentProjects: [], operationId: "delete-docx", skillId: "skill-docx", skillName: "DOCX Writer" }),
+      commitDelete: vi.fn()
+        .mockResolvedValueOnce({ centralSkillDeleted: true })
+        .mockRejectedValueOnce(new Error("locked by another process")),
+    };
+    renderLibrary({ facade, removalFacade });
+
+    fireEvent.click(await screen.findByRole("checkbox", { name: "Select PDF Reader" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select DOCX Writer" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete selected Skills" }));
+    expect(await screen.findByRole("dialog", { name: "Review batch deletion impact" })).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Continue to force deletion" }));
+    fireEvent.change(screen.getByLabelText('Type "FORCE DELETE" to continue'), { target: { value: "FORCE DELETE" } });
+    fireEvent.click(screen.getByRole("button", { name: "Force delete 2 Skills" }));
+
+    const summary = await screen.findByTestId("batch-summary");
+    expect(summary).toHaveTextContent("1 succeeded");
+    expect(summary).toHaveTextContent("1 failed");
+    expect(screen.getAllByTestId("batch-outcome-failed")).toHaveLength(1);
+  });
+
   it("offers the same safe deletion flow from a selected Skill's quick drawer", async () => {
     const facade = createMockSkillLibraryFacade();
     const removalFacade: RemovalFacade = {

@@ -42,7 +42,8 @@ it("previews every selected Skill before explicitly committing a batch", async (
   expect(preview).toHaveBeenCalledWith(["skill-pdf", "skill-docx"], [targets[0]], undefined);
 
   await user.click(screen.getByRole("button", { name: "提交部署" }));
-  expect(await screen.findAllByTestId("deployment-result")).toHaveLength(2);
+  const summary = await screen.findByTestId("batch-summary");
+  expect(summary).toHaveTextContent("成功 2");
   expect(commit).toHaveBeenCalledWith(expect.arrayContaining([
     expect.objectContaining({ skillId: "skill-pdf" }),
     expect.objectContaining({ skillId: "skill-docx" }),
@@ -99,6 +100,41 @@ it("states that batch commits are not atomic", async () => {
   expect(await screen.findByText(/不是原子操作/)).toBeVisible();
 });
 
+
+it("aggregates mixed batch outcomes into executable, skipped, conflict and failed groups", async () => {
+  const user = userEvent.setup();
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  const targets = deploymentTargetsFixture().slice(0, 2);
+  const preview = vi.fn<BatchDeploymentFacade["preview"]>(async (skillIds, selected) => ({
+    failures: [],
+    plans: skillIds.map((skillId) => ({
+      skillId,
+      plan: { skillId, versionId: "v1", targets: selected.map((target) => ({ targetId: target.id, label: target.label, mode: "managed_copy" as const, warnings: [] })), warnings: [] },
+    })),
+  }));
+  const statuses = ["succeeded", "skipped", "failed"] as const;
+  let index = 0;
+  const commit = vi.fn<BatchDeploymentFacade["commit"]>(async (plans) => plans.flatMap(({ skillId, plan }) => plan.targets.map((target) => ({
+    skillId,
+    targetId: target.targetId,
+    label: target.label,
+    status: statuses[index++ % statuses.length],
+    message: "结果说明",
+  }))));
+  const facade: BatchDeploymentFacade = { listTargets: async () => targets, preview, commit };
+
+  render(<I18nextProvider i18n={i18n}><MemoryRouter><BatchDeploymentPage facade={facade} skillIds={["skill-a", "skill-b", "skill-c"]} /></MemoryRouter></I18nextProvider>);
+
+  await user.click(await screen.findByLabelText("Codex CLI"));
+  await user.click(screen.getByRole("button", { name: "预览部署" }));
+  await user.click(await screen.findByRole("button", { name: "提交部署" }));
+
+  const summary = await screen.findByTestId("batch-summary");
+  expect(summary).toHaveTextContent("成功 1");
+  expect(summary).toHaveTextContent("跳过 1");
+  expect(summary).toHaveTextContent("失败 1");
+  expect(screen.getAllByTestId("batch-outcome-failed")).toHaveLength(1);
+});
 
 it("preselects the target passed via the target search parameter", async () => {
   const user = userEvent.setup();

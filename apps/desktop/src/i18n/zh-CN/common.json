@@ -1208,7 +1208,8 @@
       "forceInputLabel": "输入“FORCE DELETE”以继续",
       "forceConfirm": "强制删除 {{count}} 个 Skill",
       "loadError": "无法读取批量删除影响，请稍后重试。",
-      "commitError": "批量删除未能全部完成。尚未删除的 Skill 保持不变，请检查后重试。"
+      "commitError": "批量删除未能全部完成。尚未删除的 Skill 保持不变，请检查后重试。",
+      "missingPreparation": "缺少已准备的删除记录，无法提交该项。"
     }
   },
   "undeploy": {
@@ -1626,6 +1627,15 @@
       "cacheNote": "缓存清理：临时下载目录（仓库发现）超过 24 小时的残留会在下次下载时自动清理；集中库内没有需要手动清理的缓存。",
       "failed": "滚动备份失败：{{error}}",
       "result": "滚动备份完成：保留 {{retained}} 份，清理 {{removed}} 份。"
+    }
+  },
+  "batchSummary": {
+    "heading": "批量操作汇总（共 {{count}} 项）",
+    "status": {
+      "succeeded": "成功 {{count}}",
+      "skipped": "跳过 {{count}}",
+      "conflict": "冲突 {{count}}",
+      "failed": "失败 {{count}}"
     }
   }
 }

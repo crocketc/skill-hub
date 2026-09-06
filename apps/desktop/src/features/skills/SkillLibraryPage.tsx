@@ -60,6 +60,7 @@ import { SkillQuickDrawer } from "./SkillQuickDrawer";
 import { SkillMatrix } from "./SkillMatrix";
 import { SkillTable } from "./SkillTable";
 import { BatchRemovalImpactDialog } from "../removal/BatchRemovalImpactDialog";
+import { BatchOperationSummary, type BatchOutcome } from "../../ui/BatchOperationSummary";
 import type { RemovalChoice, RemovalFacade, RemovalImpact } from "../removal/api";
 import { nativeRemovalFacade } from "../removal/nativeApi";
 
@@ -385,6 +386,7 @@ export function SkillLibraryPage({
   const [batchRemovalLoading, setBatchRemovalLoading] = useState(false);
   const [batchRemovalSubmitting, setBatchRemovalSubmitting] = useState(false);
   const [batchRemovalError, setBatchRemovalError] = useState<string>();
+  const [batchRemovalSummary, setBatchRemovalSummary] = useState<BatchOutcome[]>();
   const defaultPageRetry = queryClient.getDefaultOptions().queries?.retry;
 
   const clearBatchAnnouncement = () => {
@@ -745,6 +747,7 @@ export function SkillLibraryPage({
   const startBatchRemoval = async (single?: { id: string; name: string }) => {
     setBatchRemovalLoading(true);
     setBatchRemovalError(undefined);
+    setBatchRemovalSummary(undefined);
     try {
       const selected = single ? [single] : await selectedSkillsForRemoval();
       const impacts: RemovalImpact[] = [];
@@ -763,20 +766,33 @@ export function SkillLibraryPage({
     if (!batchRemovalImpacts) return;
     setBatchRemovalSubmitting(true);
     setBatchRemovalError(undefined);
-    try {
-      for (const impact of batchRemovalImpacts) {
-        if (!impact.operationId) throw new Error("missing prepared delete id");
+    const outcomes: BatchOutcome[] = [];
+    // 批量删除刻意逐项推进并汇总，而不是首错即停：单个 Skill 失败不掩盖其余结果。
+    for (const impact of batchRemovalImpacts) {
+      const label = impact.skillName ?? impact.skillId ?? "unknown";
+      const outcomeId = impact.operationId ?? label;
+      if (!impact.operationId) {
+        outcomes.push({ id: outcomeId, label, status: "failed", message: t("removal.batch.missingPreparation") });
+        continue;
+      }
+      try {
         const result = await removalFacade.commitDelete(impact.operationId, choices[impact.operationId] ?? {});
         if (!result.centralSkillDeleted) throw new Error("central skill was not deleted");
+        outcomes.push({ id: outcomeId, label, status: "succeeded" });
+      } catch (reason: unknown) {
+        outcomes.push({
+          id: outcomeId,
+          label,
+          status: "failed",
+          message: reason instanceof Error ? reason.message : String(reason),
+        });
       }
-      await queryClient.invalidateQueries({ queryKey: skillLibraryKeys.root });
-      setBatchRemovalImpacts(null);
-      changeSelection({ kind: "none" });
-    } catch {
-      setBatchRemovalError(t("removal.batch.commitError"));
-    } finally {
-      setBatchRemovalSubmitting(false);
     }
+    await queryClient.invalidateQueries({ queryKey: skillLibraryKeys.root });
+    setBatchRemovalSummary(outcomes);
+    setBatchRemovalImpacts(null);
+    changeSelection({ kind: "none" });
+    setBatchRemovalSubmitting(false);
   };
 
   const submitSavedView = (event: FormEvent<HTMLFormElement>) => {
@@ -1179,6 +1195,7 @@ export function SkillLibraryPage({
         submitting={batchRemovalSubmitting}
       /> : null}
       {batchRemovalError && !batchRemovalLoading && !batchRemovalImpacts ? <p role="alert">{batchRemovalError}</p> : null}
+      {batchRemovalSummary ? <BatchOperationSummary outcomes={batchRemovalSummary} /> : null}
     </section>
   );
 }

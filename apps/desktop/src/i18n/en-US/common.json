@@ -1208,7 +1208,8 @@
       "forceInputLabel": "Type \"FORCE DELETE\" to continue",
       "forceConfirm": "Force delete {{count}} Skills",
       "loadError": "Could not read the batch deletion impact. Please try again.",
-      "commitError": "The batch deletion did not fully complete. Skills not yet deleted remain unchanged; please review and try again."
+      "commitError": "The batch deletion did not fully complete. Skills not yet deleted remain unchanged; please review and try again.",
+      "missingPreparation": "No prepared deletion record exists for this item; it cannot be committed."
     }
   },
   "undeploy": {
@@ -1626,6 +1627,15 @@
       "cacheNote": "Cache cleanup: stale repository-discovery downloads older than 24 hours are removed automatically before the next download; the central library has no cache that needs manual cleanup.",
       "failed": "Rolling backup failed: {{error}}",
       "result": "Rolling backup finished: {{retained}} kept, {{removed}} removed."
+    }
+  },
+  "batchSummary": {
+    "heading": "Batch summary ({{count}} items)",
+    "status": {
+      "succeeded": "{{count}} succeeded",
+      "skipped": "{{count}} skipped",
+      "conflict": "{{count}} conflicts",
+      "failed": "{{count}} failed"
     }
   }
 }
