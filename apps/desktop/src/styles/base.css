@@ -4396,6 +4396,19 @@ a {
   gap: var(--space-5);
 }
 
+.sh-settings-section {
+  display: block;
+}
+
+.sh-settings-section__title {
+  border-bottom: 1px solid var(--color-border);
+  color: var(--color-text-muted);
+  font-size: var(--font-size-md);
+  font-weight: 600;
+  margin: var(--space-2) 0 var(--space-3);
+  padding-bottom: var(--space-1);
+}
+
 .sh-settings-grid {
   display: grid;
   gap: var(--space-4);

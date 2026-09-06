@@ -37,14 +37,41 @@ export function SettingsPage({ facade = unavailableSettingsFacade, initialSettin
         <a href="/initialize">{t("settings.reopenOnboarding")}</a>
       </header>
       <div className="sh-settings-grid">
-        <GeneralSettings facade={facade} settings={settings} />
-        <LibrarySettings health={facade.libraryHealth} settings={settings} />
-        <ViewSettings facade={facade} settings={settings} />
-        <AutomationSettings facade={facade} settings={settings} />
-        <AiNetworkSettings facade={facade} settings={settings.network} />
-        <BackupSettings facade={facade.backup} settings={settings} />
-        <NetworkStoragePlaceholder />
-        <ApplicationUpdateCard facade={facade} settings={settings} />
+        {(
+          [
+            {
+              heading: t("settings.sections.general"),
+              cards: [<GeneralSettings key="general" facade={facade} settings={settings} />, <ViewSettings key="view" facade={facade} settings={settings} />],
+            },
+            {
+              heading: t("settings.sections.dataProtection"),
+              cards: [<BackupSettings key="backup" facade={facade.backup} settings={settings} />],
+            },
+            {
+              heading: t("settings.sections.networkAi"),
+              cards: [<AiNetworkSettings key="ai" facade={facade} settings={settings.network} />],
+            },
+            {
+              heading: t("settings.sections.automation"),
+              cards: [<AutomationSettings key="auto" facade={facade} settings={settings} />],
+            },
+            {
+              heading: t("settings.sections.libraryMaintenance"),
+              cards: [<LibrarySettings key="library" health={facade.libraryHealth} settings={settings} />],
+            },
+            {
+              heading: t("settings.sections.appUpdate"),
+              cards: [<ApplicationUpdateCard key="update" facade={facade} settings={settings} />, <NetworkStoragePlaceholder key="storage" />],
+            },
+          ] as const
+        ).map((section) => (
+          <section className="sh-settings-section" key={section.heading}>
+            <h3 className="sh-settings-section__title">{section.heading}</h3>
+            <div className="sh-settings-grid">
+              {section.cards}
+            </div>
+          </section>
+        ))}
       </div>
     </main>
   );

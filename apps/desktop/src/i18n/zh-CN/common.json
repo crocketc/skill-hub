@@ -1500,6 +1500,14 @@
     }
   },
   "settings": {
+    "sections": {
+      "general": "通用",
+      "dataProtection": "数据保护",
+      "networkAi": "网络与 AI",
+      "automation": "自动化",
+      "libraryMaintenance": "技能库维护",
+      "appUpdate": "应用更新"
+    },
     "reopenOnboarding": "重新运行初始化向导",
     "eyebrow": "设置",
     "heading": "让 SkillHub 适应你的工作方式",

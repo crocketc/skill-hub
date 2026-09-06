@@ -1500,6 +1500,14 @@
     }
   },
   "settings": {
+    "sections": {
+      "general": "General",
+      "dataProtection": "Data protection",
+      "networkAi": "Network & AI",
+      "automation": "Automation",
+      "libraryMaintenance": "Library maintenance",
+      "appUpdate": "App update"
+    },
     "reopenOnboarding": "Run initialization again",
     "eyebrow": "Settings",
     "heading": "Shape SkillHub around your workflow",

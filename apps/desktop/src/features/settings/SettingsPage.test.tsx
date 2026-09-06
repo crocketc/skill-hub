@@ -131,3 +131,34 @@ it("opens the release page instead of claiming automatic update on unsigned buil
   expect(commands).toContainEqual({ type: "open_official_release" });
   expect(screen.queryByText("自动安装中")).not.toBeInTheDocument();
 });
+
+it("renders setting sections in the inventory order with density inside general", async () => {
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+
+  render(
+    <I18nextProvider i18n={i18n}>
+      <ThemeProvider>
+        <SettingsPage
+          facade={{ execute: async () => undefined }}
+          initialSettings={settingsFixture()}
+        />
+      </ThemeProvider>
+    </I18nextProvider>,
+  );
+
+  // AR-027：分区标题按盘点顺序出现，密度控件并入“通用”分区。
+  const order = ["通用", "数据保护", "网络与 AI", "自动化", "技能库维护", "应用更新"];
+  const headings = order.map((name) => {
+    const heading = screen.getByRole("heading", { level: 3, name });
+    return heading;
+  });
+  for (let i = 1; i < headings.length; i++) {
+    expect(headings[i - 1].compareDocumentPosition(headings[i]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  }
+  // 密度选择在“通用”之后、“数据保护”之前。
+  const general = headings[0];
+  const density = screen.getByLabelText("信息密度");
+  const dataProtection = headings[1];
+  expect(general.compareDocumentPosition(density) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(density.compareDocumentPosition(dataProtection) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+});
