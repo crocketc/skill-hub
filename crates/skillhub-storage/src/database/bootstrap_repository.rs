@@ -96,6 +96,43 @@ impl<'a> BootstrapRepository<'a> {
         Ok(())
     }
 
+    /// AR-021：为版本写入或替换用户可读名称。同一版本重复命名即替换，
+    /// 内容哈希（version_id）本身不变。
+    pub fn set_version_label(
+        &self,
+        skill_id: &str,
+        version_id: &str,
+        label: &str,
+    ) -> AppResult<()> {
+        self.database.connection.execute(
+            "INSERT INTO version_labels(version_id,skill_id,label,created_at,updated_at) VALUES(?1,?2,?3,?4,?4) ON CONFLICT(version_id) DO UPDATE SET label=excluded.label,updated_at=excluded.updated_at",
+            params![version_id, skill_id, label, now()],
+        ).map_err(error)?;
+        Ok(())
+    }
+
+    /// 读取一批版本的用户名称（未命名的版本不在结果中）。
+    pub fn version_labels(
+        &self,
+        version_ids: &[String],
+    ) -> AppResult<std::collections::HashMap<String, String>> {
+        let mut map = std::collections::HashMap::new();
+        for version_id in version_ids {
+            let mut statement = self
+                .database
+                .connection
+                .prepare("SELECT label FROM version_labels WHERE version_id=?1")
+                .map_err(error)?;
+            let mut rows = statement
+                .query_map([version_id], |row| row.get::<_, String>(0))
+                .map_err(error)?;
+            if let Some(Ok(label)) = rows.next() {
+                map.insert(version_id.clone(), label);
+            }
+        }
+        Ok(map)
+    }
+
     pub fn list_pending(&self, today: (i32, u8, u8)) -> AppResult<Vec<PendingItem>> {
         let date = format_date(today);
         let mut result = Vec::new();

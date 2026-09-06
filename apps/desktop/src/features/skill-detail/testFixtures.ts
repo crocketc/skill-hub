@@ -37,6 +37,7 @@ export interface MockSkillDetailCalls {
   checkedSourceUpdates: Array<{ skillId: string }>;
   committedRollbacks: Array<{ skillId: string; versionId: string }>;
   intents: SkillDetailIntent[];
+  versionLabels: Array<{ skillId: string; versionId: string; label: string }>;
   metadataPatches: Array<{ patch: SkillMetadataPatch; skillId: string }>;
   trials: Array<{ due: string | null; skillId: string }>;
 }
@@ -269,6 +270,7 @@ export function createMockSkillDetailFacade(
     relinkSourceInputs: [],
     committedRollbacks: [],
     intents: [],
+    versionLabels: [],
     metadataPatches: [],
     trials: [],
   };
@@ -298,6 +300,9 @@ export function createMockSkillDetailFacade(
       calls.committedRollbacks.push({ skillId, versionId });
       if (options.failRollbackCommit) throw new Error("rollback failed");
       return { newVersionId: "version-rollback" };
+    },
+    async setVersionLabel(skillId, versionId, label) {
+      calls.versionLabels.push({ skillId, versionId, label });
     },
     async emitIntent(intent) {
       calls.intents.push(intent);

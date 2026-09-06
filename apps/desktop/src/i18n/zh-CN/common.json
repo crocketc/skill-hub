@@ -1024,6 +1024,11 @@
       "delete": "删除 Skill"
     },
     "versions": {
+  "rename": "命名版本",
+      "renameAria": "命名版本 {{version}}",
+      "labelLabel": "版本名称",
+      "saveName": "保存名称",
+      "renameFailed": "命名失败（{{code}}）。请重试。",
       "added": "新增文件：{{count}}",
       "changed": "修改文件：{{count}}",
       "changes": "新增 {{added}} · 修改 {{changed}} · 删除 {{removed}}",

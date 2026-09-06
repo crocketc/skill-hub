@@ -1024,6 +1024,11 @@
       "delete": "Delete Skill"
     },
     "versions": {
+  "rename": "Rename version",
+      "renameAria": "Rename version {{version}}",
+      "labelLabel": "Version name",
+      "saveName": "Save name",
+      "renameFailed": "Renaming failed ({{code}}). Please retry.",
       "added": "Added files: {{count}}",
       "changed": "Changed files: {{count}}",
       "changes": "+{{added}} added · {{changed}} changed · −{{removed}} removed",

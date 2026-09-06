@@ -225,6 +225,9 @@ pub struct VersionResult {
     /// 按捕获时间排序的序号（最早 = 1）；时间未知时为 None。
     #[serde(default)]
     pub sequence: Option<u32>,
+    /// 用户显式命名的版本名（AR-021）；未命名时 None。
+    #[serde(default)]
+    pub label: Option<String>,
 }
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 pub struct VersionDiffResult {

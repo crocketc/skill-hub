@@ -106,8 +106,10 @@ export interface SkillVersionEntry {
   createdAtEpoch?: string | null;
   current: boolean;
   id: string;
-  /** 用户可读标签：有序号用 vN；时间未知时回退短哈希。 */
+  /** 用户可读标签：用户命名优先，其次 vN 序号，最后短哈希。 */
   label: string;
+  /** 用户显式命名的版本名（AR-021）；未命名时为空。 */
+  userLabel?: string;
   origin?: "edit" | "import" | "rollback" | "upstream";
   sequence?: number | null;
 }
@@ -156,6 +158,8 @@ export interface SkillDetailFacade {
     skillId: string,
     versionId: string,
   ): Promise<{ newVersionId: string }>;
+  /** AR-021：为版本设置用户可读名称。 */
+  setVersionLabel(skillId: string, versionId: string, label: string): Promise<void>;
   emitIntent(intent: SkillDetailIntent): Promise<void>;
   getAdjacentContext(
     skillId: string,
@@ -234,6 +238,7 @@ const unavailable = (): Promise<never> =>
 
 export const unavailableSkillDetailFacade: SkillDetailFacade = {
   commitRollback: unavailable,
+  setVersionLabel: unavailable,
   emitIntent: unavailable,
   getAdjacentContext: unavailable,
   getInsights: unavailable,

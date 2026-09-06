@@ -1,6 +1,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { describeNativeError } from "../../api/nativeErrors";
 import { Button } from "../../ui/Button";
 import { StatusBadge } from "../../ui/StatusBadge";
 import { skillLibraryKeys } from "../skills/api";
@@ -27,6 +28,10 @@ export function VersionTimeline({ facade, skillId, summary }: VersionTimelinePro
   const [rollbackTarget, setRollbackTarget] = useState<string>();
   const [commitPending, setCommitPending] = useState(false);
   const [commitError, setCommitError] = useState<string>();
+  // AR-021：行内命名——用户显式为版本维护可读名称。
+  const [renamingId, setRenamingId] = useState<string>();
+  const [labelDraft, setLabelDraft] = useState("");
+  const [renameError, setRenameError] = useState<string>();
   const commitGuardRef = useRef(false);
   const previewHeadingRef = useRef<HTMLHeadingElement>(null);
 
@@ -53,6 +58,17 @@ export function VersionTimeline({ facade, skillId, summary }: VersionTimelinePro
     setCommitError(undefined);
     setRollbackTarget(versionId);
     queueMicrotask(() => previewHeadingRef.current?.focus());
+  };
+  const saveLabel = async (versionId: string) => {
+    setRenameError(undefined);
+    try {
+      await facade.setVersionLabel(skillId, versionId, labelDraft.trim());
+      await queryClient.invalidateQueries({ queryKey: skillDetailKeys.versions(skillId) });
+      setRenamingId(undefined);
+      setLabelDraft("");
+    } catch (reason) {
+      setRenameError(describeNativeError(reason, (key, options) => String(t(key as never, options as never)), "skillDetail.versions.renameFailed"));
+    }
   };
   const commitRollback = () => {
     if (!rollbackTarget || commitGuardRef.current || !impactQuery.data) return;
@@ -96,6 +112,35 @@ export function VersionTimeline({ facade, skillId, summary }: VersionTimelinePro
                 {version.origin ? ` · ${t(`skillDetail.versions.origin.${version.origin}`)}` : ""}
               </p>
               <p>{t("skillDetail.versions.changes", version.changes)}</p>
+              {renamingId === version.id ? (
+                <div className="sh-version-timeline__rename">
+                  <label>
+                    <span className="sh-visually-hidden">{t("skillDetail.versions.labelLabel")}</span>
+                    <input
+                      aria-label={t("skillDetail.versions.labelLabel")}
+                      maxLength={64}
+                      onChange={(event) => setLabelDraft(event.target.value)}
+                      placeholder={version.userLabel || version.label}
+                      value={labelDraft}
+                    />
+                  </label>
+                  <Button onClick={() => void saveLabel(version.id)} size="sm" variant="primary">
+                    {t("skillDetail.versions.saveName")}
+                  </Button>
+                  <Button onClick={() => { setRenamingId(undefined); setLabelDraft(""); setRenameError(undefined); }} size="sm" variant="ghost">
+                    {t("actions.cancel")}
+                  </Button>
+                </div>
+              ) : (
+                <Button
+                  onClick={() => { setRenamingId(version.id); setLabelDraft(version.userLabel ?? ""); setRenameError(undefined); }}
+                  size="sm"
+                  variant="ghost"
+                >
+                  {t("skillDetail.versions.renameAria", { version: version.label })}
+                </Button>
+              )}
+              {renamingId === version.id && renameError ? <p role="alert">{renameError}</p> : null}
               <label>
                 <input
                   aria-label={t("skillDetail.versions.selectCompare", { version: version.label })}

@@ -490,6 +490,16 @@ pub struct SetUiPreference {
     pub value_json: String,
 }
 
+/// AR-021：为指定版本设置用户可读名称（来源版本/用户版本/内容哈希分离
+/// 中的“用户版本”）。名称去除首尾空白、非空且不超过 64 字符。
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct SetVersionLabel {
+    pub skill_id: crate::SkillId,
+    pub version_id: crate::VersionId,
+    pub label: String,
+}
+
 /// Adds or replaces a GitHub repo entry (upsert on owner+name). Empty branch
 /// or "HEAD" is the default-branch sentinel.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
@@ -715,6 +725,8 @@ pub enum AppCommand {
     SetLibraryRoot(SetLibraryRoot),
     #[serde(rename = "set_ui_preference")]
     SetUiPreference(SetUiPreference),
+    #[serde(rename = "set_version_label")]
+    SetVersionLabel(SetVersionLabel),
     #[serde(rename = "add_skill_repo")]
     AddSkillRepo(AddSkillRepo),
     #[serde(rename = "remove_skill_repo")]

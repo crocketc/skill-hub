@@ -25,8 +25,8 @@ pub use command::{
     RunLlmSafetyCheck, RunRollingBackup, SaveMarkdownContent, SaveProjectView, SaveSkillContent,
     SaveUserTranslationRevision, SavedSkillContent, ScanTargets, SetCurrentVersion,
     SetFindingDisposition, SetLibraryRoot, SetLifecycle, SetMetadata, SetProfileOverride,
-    SetProjectTags, SetTrial, SetUiPreference, TranslateDescription, UpdateCombination,
-    UpdateCustomAgent, UpdateProject, VerifyBackup, WriteSharedProjectConfig,
+    SetProjectTags, SetTrial, SetUiPreference, SetVersionLabel, TranslateDescription,
+    UpdateCombination, UpdateCustomAgent, UpdateProject, VerifyBackup, WriteSharedProjectConfig,
 };
 pub use event::{AppEvent, FactsChanged};
 pub use query::{

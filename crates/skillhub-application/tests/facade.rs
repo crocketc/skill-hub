@@ -4489,3 +4489,83 @@ async fn list_versions_reports_readable_sequence_from_capture_times() {
     assert!(second_entry.current);
     assert!(!first_entry.current);
 }
+
+#[tokio::test]
+async fn version_labels_are_user_maintainable_and_surface_in_list_versions() {
+    let database = Database::open_in_memory().expect("database");
+    let skill = Skill::new(skillhub_core::SkillId::new(), "Labeled");
+    database
+        .catalog_repository()
+        .expect("catalog repository")
+        .insert(&skill)
+        .await
+        .expect("insert skill");
+    let root = tempfile::tempdir().expect("library root");
+    let source = tempfile::tempdir().expect("source");
+    std::fs::write(source.path().join("SKILL.md"), "# Labeled\n").expect("write skill");
+    let library = CentralLibrary::initialize(root.path()).expect("central library");
+    let version = VersionStore::from_library(&library)
+        .capture(skill.id(), source.path())
+        .expect("capture version");
+    VersionStore::from_library(&library)
+        .set_current(skill.id(), &version.id)
+        .expect("set current");
+    let facade = LocalApplicationFacade::new_with_library(database, root.path());
+
+    // 空名称拒绝。
+    let empty = facade
+        .execute(AppCommand::SetVersionLabel(
+            skillhub_core::api::SetVersionLabel {
+                skill_id: skill.id(),
+                version_id: version.id.clone(),
+                label: "   ".into(),
+            },
+        ))
+        .await
+        .expect_err("empty label must be rejected");
+    assert_eq!(empty.code, ErrorCode::InvalidInput);
+
+    // 正常命名后 list_versions 返回 label。
+    facade
+        .execute(AppCommand::SetVersionLabel(
+            skillhub_core::api::SetVersionLabel {
+                skill_id: skill.id(),
+                version_id: version.id.clone(),
+                label: "  1.0 正式版  ".into(),
+            },
+        ))
+        .await
+        .expect("set label");
+    let versions = facade
+        .query(RootAppQuery::ListVersions(ListVersions {
+            skill_id: skill.id(),
+        }))
+        .await
+        .expect("versions");
+    let AppQueryResult::Versions(versions) = versions else {
+        panic!("expected versions");
+    };
+    assert_eq!(versions[0].label.as_deref(), Some("1.0 正式版"));
+
+    // 重复命名即替换。
+    facade
+        .execute(AppCommand::SetVersionLabel(
+            skillhub_core::api::SetVersionLabel {
+                skill_id: skill.id(),
+                version_id: version.id.clone(),
+                label: "1.0".into(),
+            },
+        ))
+        .await
+        .expect("rename");
+    let versions = facade
+        .query(RootAppQuery::ListVersions(ListVersions {
+            skill_id: skill.id(),
+        }))
+        .await
+        .expect("versions");
+    let AppQueryResult::Versions(versions) = versions else {
+        panic!("expected versions");
+    };
+    assert_eq!(versions[0].label.as_deref(), Some("1.0"), "重复命名应替换");
+}

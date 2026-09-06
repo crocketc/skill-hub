@@ -231,6 +231,13 @@ export const nativeSkillDetailFacade: SkillDetailFacade = {
     // set_current_version 切换目录指针；"新当前版本"即被切换到的版本。
     return { newVersionId: versionId };
   },
+  async setVersionLabel(skillId, versionId, label) {
+    const result: AppCommandResult = await executeCommand({
+      type: "set_version_label",
+      payload: { skill_id: skillId, version_id: versionId, label },
+    });
+    if (result.type !== "operation_summary") throw unavailableResult();
+  },
   async getSummary(skillId) {
     const skill = await getSkill(skillId);
     const summary = summaryOf(skill);

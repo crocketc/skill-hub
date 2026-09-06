@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { I18nextProvider } from "react-i18next";
 import { describe, expect, it } from "vitest";
 import { createSkillHubI18n } from "../../i18n";
@@ -79,4 +80,21 @@ describe("VersionTimeline", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("回滚未完成");
     expect(screen.getByText("Demo Project 固定版本不受影响")).toBeVisible();
   });
+
+  it("renames a version through the native label command and refreshes", async () => {
+    const user = userEvent.setup();
+    const facade = await renderTimeline();
+
+    await user.click(await screen.findByRole("button", { name: "命名版本 v2.4.1" }));
+    const input = screen.getByLabelText("版本名称");
+    await user.clear(input);
+    await user.type(input, "1.0 正式版");
+    await user.click(screen.getByRole("button", { name: "保存名称" }));
+
+    await waitFor(() => {
+      expect(facade.calls.versionLabels.at(-1)?.label).toBe("1.0 正式版");
+      expect(facade.calls.versionLabels.at(-1)?.versionId).toBe("version-241");
+    });
+  });
+
 });

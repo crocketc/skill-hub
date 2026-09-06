@@ -16,7 +16,7 @@ fn fixture_database_with_schema_version(version: u32) -> NamedTempFile {
 fn empty_database_migrates_to_current_schema_and_enables_fts5() {
     let db = Database::open_in_memory().unwrap();
 
-    assert_eq!(db.schema_version().unwrap(), 7);
+    assert_eq!(db.schema_version().unwrap(), 8);
     assert!(db.has_table("skills_fts").unwrap());
 }
 
@@ -38,8 +38,8 @@ fn open_exposes_the_migration_report() {
     let report = db.migration_report();
 
     assert_eq!(report.from_version, 0);
-    assert_eq!(report.to_version, 7);
-    assert_eq!(report.applied_versions, vec![1, 2, 3, 4, 5, 6, 7]);
+    assert_eq!(report.to_version, 8);
+    assert_eq!(report.applied_versions, vec![1, 2, 3, 4, 5, 6, 7, 8]);
 }
 
 #[test]
@@ -62,8 +62,8 @@ fn v4_database_upgrades_check_run_metadata_in_v5() {
     drop(connection);
 
     let db = Database::open(file.path()).unwrap();
-    assert_eq!(db.schema_version().unwrap(), 7);
-    assert_eq!(db.migration_report().applied_versions, vec![5, 6, 7]);
+    assert_eq!(db.schema_version().unwrap(), 8);
+    assert_eq!(db.migration_report().applied_versions, vec![5, 6, 7, 8]);
     let generation: String = db
         .connection_for_test()
         .query_row(

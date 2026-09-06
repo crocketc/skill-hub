@@ -3523,6 +3523,9 @@ impl ApplicationFacade for LocalApplicationFacade {
                     )))
                 })
             }
+            AppCommand::SetVersionLabel(request) => {
+                return self.set_version_label(request).await;
+            }
             AppCommand::AddSkillRepo(request) => return self.add_skill_repo(request),
             AppCommand::RemoveSkillRepo(request) => return self.remove_skill_repo(request),
             AppCommand::DownloadRepoSkill(request) => {
@@ -4398,6 +4401,36 @@ impl LocalApplicationFacade {
         ))
     }
 
+    /// AR-021：为版本设置用户可读名称。名称去首尾空白、非空且不超过
+    /// 64 字符；内容哈希（version_id）不变。
+    async fn set_version_label(
+        &self,
+        request: skillhub_core::api::SetVersionLabel,
+    ) -> AppResult<AppCommandResult> {
+        let label = request.label.trim();
+        if label.is_empty() {
+            return Err(AppError::new(ErrorCode::InvalidInput, Severity::Warning)
+                .with_param("field", "label")
+                .with_action(RecoveryAction::Retry));
+        }
+        if label.chars().count() > 64 {
+            return Err(AppError::new(ErrorCode::InvalidInput, Severity::Warning)
+                .with_param("field", "label")
+                .with_param("reason", "label_too_long")
+                .with_action(RecoveryAction::Retry));
+        }
+        self.with_database("execute.set_version_label", |database| {
+            database.bootstrap_repository().set_version_label(
+                &request.skill_id.to_string(),
+                &request.version_id.to_string(),
+                label,
+            )
+        })?;
+        Ok(AppCommandResult::OperationSummary(operation_summary(
+            "version.label_set",
+        )))
+    }
+
     fn list_versions(&self, skill_id: skillhub_core::SkillId) -> AppResult<AppQueryResult> {
         let Some(library) = self.library.as_ref() else {
             return Err(unsupported("query.list_versions"));
@@ -4423,6 +4456,14 @@ impl LocalApplicationFacade {
             .into_iter()
             .map(|(epoch, record)| (record.id.clone(), epoch.to_string()))
             .collect();
+        let label_by_id: HashMap<String, String> = {
+            let ids: Vec<String> = records.iter().map(|record| record.id.to_string()).collect();
+            self.with_database("query.list_version_labels", |database| {
+                database.bootstrap_repository().version_labels(&ids)
+            })?
+            .into_iter()
+            .collect()
+        };
         let mut results = Vec::with_capacity(records.len());
         for (index, record) in records.iter().enumerate() {
             let diff = if index == 0 {
@@ -4440,6 +4481,7 @@ impl LocalApplicationFacade {
                 removed: u32::try_from(diff.removed.len()).unwrap_or(u32::MAX),
                 created_at_epoch: epoch_by_id.get(&record.id).cloned(),
                 sequence: sequence_by_id.get(&record.id).copied(),
+                label: label_by_id.get(&record.id.to_string()).cloned(),
             });
         }
         results.sort_by(|left, right| {
