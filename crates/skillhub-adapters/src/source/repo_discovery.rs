@@ -79,6 +79,53 @@ impl RepoDiscoveryProvider {
         validate_repo_ref(&repo.owner, &repo.name, &repo.branch)
     }
 
+    /// AR-021：下载指定 tag 的归档并定位 Skill 目录。
+    /// tag 归档 URL：{base}/{owner}/{name}/archive/refs/tags/{tag}.zip；
+    /// 顶层 {repo}-{tag} 包装目录按既有先例展平。
+    pub async fn download_tag_skill_directory(
+        &self,
+        owner: &str,
+        name: &str,
+        tag: &str,
+        directory: &str,
+        dest_root: &Path,
+    ) -> Result<PathBuf> {
+        validate_repo_ref(owner, name, tag)?;
+
+        let trimmed = directory.trim();
+        let sanitized = if trimmed.is_empty() {
+            None
+        } else {
+            Some(
+                sanitize_skill_source_path(directory)
+                    .ok_or_else(|| anyhow!("INVALID_SKILL_DIRECTORY: {directory}"))?,
+            )
+        };
+
+        let url = format!(
+            "{}/{}/{}/archive/refs/tags/{}.zip",
+            self.archive_base, owner, name, tag
+        );
+        assert_tag_archive_landing(&url, &self.archive_base, owner, name)?;
+
+        let temp_dir = tempfile::tempdir()?;
+        let temp_path = temp_dir.path().to_path_buf();
+        tokio::time::timeout(
+            Duration::from_secs(DOWNLOAD_TIMEOUT_SECONDS),
+            download_and_extract(&self.client, &url, &temp_path),
+        )
+        .await
+        .map_err(|_| anyhow!("DOWNLOAD_TIMEOUT: {}/{}", owner, name))??;
+
+        let source_dir = match &sanitized {
+            Some(relative) => resolve_skill_source_dir(temp_dir.path(), relative)?,
+            None => temp_dir.path().to_path_buf(),
+        };
+        let dest_dir = dest_root.join(unique_download_id()).join(name);
+        copy_dir_recursive(&source_dir, &dest_dir)?;
+        Ok(dest_dir)
+    }
+
     /// AR-021：抓取仓库最新 release/tag 名作为“来源版本”。GitHub 的
     /// /releases/latest 会 302 到 /releases/tag/<tag>，从最终 URL 提取；
     /// 无 release（404）或无跳转时诚实返回 None。15 秒超时。
@@ -257,6 +304,29 @@ fn assert_archive_landing(url: &str, archive_base: &str, owner: &str, name: &str
     }
     let parsed = url::Url::parse(url).map_err(|e| anyhow!("Invalid archive URL: {e}"))?;
     let expected_prefix = format!("/{owner}/{name}/archive/refs/heads/");
+    if !parsed.path().starts_with(&expected_prefix) {
+        return Err(anyhow!("INVALID_REPO_REF: URL 落点被改写"));
+    }
+    Ok(())
+}
+
+/// tag 归档落点断言：与 heads 版同构，前缀为 archive/refs/tags/。
+fn assert_tag_archive_landing(
+    url: &str,
+    archive_base: &str,
+    owner: &str,
+    name: &str,
+) -> Result<()> {
+    if archive_base == GITHUB_ARCHIVE_BASE {
+        let parsed = url::Url::parse(url).map_err(|e| anyhow!("Invalid archive URL: {e}"))?;
+        let expected_prefix = format!("/{owner}/{name}/archive/refs/tags/");
+        if !parsed.path().starts_with(&expected_prefix) {
+            return Err(anyhow!("INVALID_REPO_REF: URL 落点被改写"));
+        }
+        return Ok(());
+    }
+    let parsed = url::Url::parse(url).map_err(|e| anyhow!("Invalid archive URL: {e}"))?;
+    let expected_prefix = format!("/{owner}/{name}/archive/refs/tags/");
     if !parsed.path().starts_with(&expected_prefix) {
         return Err(anyhow!("INVALID_REPO_REF: URL 落点被改写"));
     }

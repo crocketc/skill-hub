@@ -376,3 +376,56 @@ Connection: close
         .expect("404 must degrade to None");
     assert_eq!(tag, None);
 }
+
+/// AR-021：tag 归档下载——/archive/refs/tags/{tag}.zip，顶层 {repo}-{tag}
+/// 包装目录展平后定位 Skill 目录，复制到目标根。
+#[tokio::test]
+async fn downloads_tag_archive_into_skill_directory() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap();
+    let base = format!("http://{address}");
+    let mut cursor = std::io::Cursor::new(Vec::new());
+    {
+        let mut zip = ZipWriter::new(&mut cursor);
+        zip.start_file("skills-v1.2.3/pdf/SKILL.md", SimpleFileOptions::default())
+            .unwrap();
+        zip.write_all(b"# Tag pdf\n").unwrap();
+        zip.finish().unwrap();
+    }
+    let zip_bytes = cursor.into_inner();
+    let route = "/anthropics/skills/archive/refs/tags/v1.2.3.zip";
+    std::thread::spawn(move || {
+        for stream in listener.incoming() {
+            let Ok(mut stream) = stream else { break };
+            let zip_bytes = zip_bytes.clone();
+            std::thread::spawn(move || {
+                let mut request = [0_u8; 2048];
+                let _ = stream.read(&mut request);
+                let head = String::from_utf8_lossy(&request);
+                let path = head.split_whitespace().nth(1).unwrap_or("/");
+                if path == route {
+                    let response = format!(
+                        "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                        zip_bytes.len()
+                    );
+                    let _ = stream.write_all(response.as_bytes());
+                    let _ = stream.write_all(&zip_bytes);
+                }
+            });
+        }
+    });
+
+    let dest = tempfile::tempdir().unwrap();
+    let provider = RepoDiscoveryProvider::with_archive_base_for_tests(&base);
+    let dir = provider
+        .download_tag_skill_directory(
+            "anthropics",
+            "skills",
+            "v1.2.3",
+            "pdf",
+            &dest.path().join("root"),
+        )
+        .await
+        .expect("tag archive download must succeed");
+    assert!(dir.join("SKILL.md").is_file(), "path: {}", dir.display());
+}

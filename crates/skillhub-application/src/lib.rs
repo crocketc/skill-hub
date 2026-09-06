@@ -2672,11 +2672,16 @@ impl LocalApplicationFacade {
     /// 读取 Skill 的 UpstreamOrigin 坐标，经仓库归档下载把远端 Skill 目录
     /// 取回到调用方持有的临时工作区。check 与 apply 的远端路径共用，
     /// 保证"检查到什么"和"采用到什么"是同一条下载管线。
+    /// AR-021 口径对齐：远端对比基线优先取最新 release/tag 的归档
+    /// （/archive/refs/tags/{tag}.zip），并返回 tag 作为"来源版本"；
+    /// 无 release（tag 抓取为 None）时回退分支归档（tag 为 None）。
+    /// 下载是异步阻塞操作：在独立线程上跑临时 current-thread runtime，
+    /// 产物落到调用方持有的临时目录。
     fn fetch_remote_source_dir(
         &self,
         skill_id: skillhub_core::SkillId,
         workspace_path: &std::path::Path,
-    ) -> AppResult<std::path::PathBuf> {
+    ) -> AppResult<(std::path::PathBuf, Option<String>)> {
         self.ensure_network_enabled()?;
         let unavailable = || {
             AppError::new(ErrorCode::OperationConflict, Severity::Warning)
@@ -2702,8 +2707,6 @@ impl LocalApplicationFacade {
         if self.repo_provider().validate_repo(&repo).is_err() {
             return Err(unavailable());
         }
-        // 归档下载是异步阻塞操作：在独立线程上跑临时 current-thread runtime，
-        // 下载产物落到调用方持有的临时目录。
         let provider = Arc::clone(&*self.repo_provider());
         let directory = upstream.directory.clone();
         let workspace = workspace_path.to_path_buf();
@@ -2713,9 +2716,31 @@ impl LocalApplicationFacade {
                 .build()
                 .map_err(|error| anyhow::anyhow!("runtime: {error}"))?;
             runtime.block_on(async {
-                provider
-                    .download_skill_directory(&repo, &directory, &workspace)
+                // 取数口径：release tag 归档优先；无 release 回退分支归档。
+                let tag: Option<String> = provider
+                    .fetch_latest_release_tag(&repo)
                     .await
+                    .ok()
+                    .flatten();
+                let dir: std::path::PathBuf = match &tag {
+                    Some(tag) => {
+                        provider
+                            .download_tag_skill_directory(
+                                &repo.owner,
+                                &repo.name,
+                                tag,
+                                &directory,
+                                &workspace,
+                            )
+                            .await?
+                    }
+                    None => {
+                        provider
+                            .download_skill_directory(&repo, &directory, &workspace)
+                            .await?
+                    }
+                };
+                Ok::<_, anyhow::Error>((dir, tag))
             })
         })
         .join()
@@ -2755,55 +2780,22 @@ impl LocalApplicationFacade {
             AppError::new(ErrorCode::InternalError, Severity::Error)
                 .with_param("source", error.to_string())
         })?;
-        let remote_dir = match self.fetch_remote_source_dir(skill_id, workspace.path()) {
-            Ok(path) => path,
-            Err(_) => return unavailable(),
-        };
+        let (remote_dir, upstream_label) =
+            match self.fetch_remote_source_dir(skill_id, workspace.path()) {
+                Ok(pair) => pair,
+                Err(_) => return unavailable(),
+            };
         let remote_hash = library.hash_tree(remote_dir)?;
         let state = if remote_hash == baseline {
             SourceState::UpToDate
         } else {
             SourceState::UpdateAvailable
         };
-        // AR-021：尽力抓取上游最新 release/tag 名作为“来源版本”；
-        // 抓取失败不影响检查结论（label 诚实缺省为 None）。
-        let upstream_label = self.fetch_upstream_release_label(skill_id);
         Ok(AppCommandResult::UpstreamCheckResult(
             skillhub_core::UpstreamCheckResult::new(skill_id, state)
                 .with_versions(current, None)
                 .with_upstream_label(upstream_label),
         ))
-    }
-
-    /// 尽力抓取上游 release/tag 名；任何失败都返回 None，不影响主流程。
-    fn fetch_upstream_release_label(&self, skill_id: skillhub_core::SkillId) -> Option<String> {
-        let upstream = self
-            .with_database("execute.check_source_update.upstream", |database| {
-                database.source_repository().upstream_for_skill(skill_id)
-            })
-            .ok()
-            .flatten()?;
-        let (owner, name) = parse_github_repo_url(&upstream.url)?;
-        let provider = Arc::clone(&*self.repo_provider());
-        std::thread::spawn(move || {
-            let runtime = tokio::runtime::Builder::new_current_thread()
-                .enable_all()
-                .build()
-                .ok()?;
-            let repo = skillhub_core::source::SkillRepo {
-                owner,
-                name,
-                branch: String::new(),
-                enabled: true,
-            };
-            runtime
-                .block_on(provider.fetch_latest_release_tag(&repo))
-                .ok()
-                .flatten()
-        })
-        .join()
-        .ok()
-        .flatten()
     }
 
     /// N8：批量来源更新检查。逐 Skill 复用单条 check_source_update（本地与
@@ -2894,7 +2886,8 @@ impl LocalApplicationFacade {
         let capture_source = match (&remote_workspace, source.locator.as_local_path()) {
             (_, Some(path)) => std::borrow::Cow::Borrowed(path),
             (Some(workspace), None) => std::borrow::Cow::Owned(
-                self.fetch_remote_source_dir(request.skill_id, workspace.path())?,
+                self.fetch_remote_source_dir(request.skill_id, workspace.path())?
+                    .0,
             ),
             (None, None) => {
                 return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)

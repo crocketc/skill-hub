@@ -48,16 +48,39 @@ fn archive_server_with_release_tag(
     body: Vec<u8>,
     release_tag: Option<&'static str>,
 ) -> String {
+    archive_server_dual_archive(
+        route,
+        body,
+        "/anthropics/skills/archive/refs/tags/v2.0.0.zip",
+        repo_zip(vec![(
+            "skills-v2.0.0/pdf/SKILL.md".into(),
+            b"# Tag archive
+"
+            .to_vec(),
+        )]),
+        release_tag,
+    )
+}
+
+/// 双路由归档 fixture：分支归档 + tag 归档各自独立内容，
+/// /releases/latest 302 到 tag 展示页（AR-021 取数口径验证）。
+fn archive_server_dual_archive(
+    branch_route: &'static str,
+    branch_body: Vec<u8>,
+    tag_route: &'static str,
+    tag_body: Vec<u8>,
+    release_tag: Option<&'static str>,
+) -> String {
     let listener = TcpListener::bind("127.0.0.1:0").expect("listener");
     let address = listener.local_addr().expect("address");
-    let body = Arc::new(body);
+    let branch_body = Arc::new(branch_body);
+    let tag_body = Arc::new(tag_body);
     let release_tag = release_tag.map(str::to_owned);
     std::thread::spawn(move || {
-        let address = address;
-
         for stream in listener.incoming() {
             let Ok(mut stream) = stream else { break };
-            let body = Arc::clone(&body);
+            let branch_body = Arc::clone(&branch_body);
+            let tag_body = Arc::clone(&tag_body);
             let release_tag = release_tag.clone();
             std::thread::spawn(move || {
                 let mut request = [0_u8; 4096];
@@ -80,12 +103,16 @@ Connection: close
                     let _ = stream.write_all(response.as_bytes());
                     return;
                 }
-                let (status, payload) =
-                    if path.starts_with(route) || path.contains("/releases/tag/") {
-                        (200, body.as_slice())
-                    } else {
-                        (404, b"not found".as_slice())
-                    };
+                let (status, payload) = if path.starts_with(branch_route) {
+                    (200, branch_body.as_slice())
+                } else if path.contains("/releases/tag/") {
+                    // 302 的落点页：只需 200，tag 已从最终 URL 提取。
+                    (200, b"release page".as_slice())
+                } else if path.starts_with(tag_route) {
+                    (200, tag_body.as_slice())
+                } else {
+                    (404, b"not found".as_slice())
+                };
                 let response = format!(
                     "HTTP/1.1 {status} Test
 Content-Type: application/zip
@@ -254,16 +281,23 @@ async fn git_source_without_recorded_coordinates_reports_unavailable() {
         "缺坐标的 git 来源不应伪造更新检查结果"
     );
 }
-
 #[tokio::test]
 async fn remote_check_reports_the_upstream_release_tag_as_source_version() {
-    // AR-021：检查结论附带来源版本（release/tag 名），作为版本模型的
-    // “来源版本”一环；抓取与内容哈希对比互不影响。
-    let base = archive_server_with_release_tag(
+    // AR-021 取数口径对齐：比较基线必须是 tag 归档（v2.0.0），不是分支归档。
+    // 分支归档内容与导入基线不同（若误用分支基线会得到 UpdateAvailable），
+    // tag 归档内容与导入基线一致（正确实现应得到 UpToDate）。
+    let base = archive_server_dual_archive(
         "/anthropics/skills/archive/refs/heads/main.zip",
         repo_zip(vec![(
             "skills-main/pdf/SKILL.md".into(),
-            b"# Changed upstream
+            b"# BRANCH HEAD
+"
+            .to_vec(),
+        )]),
+        "/anthropics/skills/archive/refs/tags/v2.0.0.zip",
+        repo_zip(vec![(
+            "skills-v2.0.0/pdf/SKILL.md".into(),
+            b"# Portable
 "
             .to_vec(),
         )]),
@@ -293,7 +327,11 @@ async fn remote_check_reports_the_upstream_release_tag_as_source_version() {
     let AppCommandResult::UpstreamCheckResult(check) = result else {
         panic!("expected upstream check result");
     };
-    assert_eq!(check.state, SourceState::UpdateAvailable);
+    assert_eq!(
+        check.state,
+        SourceState::UpToDate,
+        "tag 归档内容与基线一致时必须是 UpToDate（口径对齐）"
+    );
     assert_eq!(
         check.upstream_label.as_deref(),
         Some("v2.0.0"),
