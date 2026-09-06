@@ -1486,7 +1486,8 @@
       "dataScope": "Data scope"
     },
     "backup": {
-      "heading": "Backup",
+      "heading": "Data protection",
+      "hierarchy": "“Data protection” is the parent module: backup, restore, export and uninstall preparation are its child capabilities, managed on the data protection page.",
       "location": "Location",
       "retention": "Retention",
       "days": "days",

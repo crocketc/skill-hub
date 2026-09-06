@@ -1486,7 +1486,8 @@
       "dataScope": "数据范围"
     },
     "backup": {
-      "heading": "备份",
+      "heading": "数据保护",
+      "hierarchy": "“数据保护”是父模块：备份、恢复、导出与退出管理都是它下面的子能力，在“数据保护”页集中管理。",
       "location": "备份位置",
       "retention": "保留时间",
       "days": "天",
