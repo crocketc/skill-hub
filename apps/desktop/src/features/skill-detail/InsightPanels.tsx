@@ -58,13 +58,21 @@ export function ConnectionEvidence({ insights }: { insights: SkillDetailInsights
 
 export function ExternalHistoryEvidence({ insights }: { insights: SkillDetailInsights }) {
   const { t } = useTranslation();
+  const hasEntries = insights.externalChanges.length > 0 || insights.operationHistory.length > 0;
   return (
     <div className="sh-detail-insights">
       <h3>{t("skillDetail.insights.externalHistory")}</h3>
-      <ul>
-        {insights.externalChanges.map((value) => <li key={value}>{value}</li>)}
-        {insights.operationHistory.map((entry) => <li key={entry.id}>{entry.label}</li>)}
-      </ul>
+      {insights.operationHistoryLimitation ? (
+        <p>{t("skillDetail.insights.operationHistoryLimitation")}</p>
+      ) : null}
+      {hasEntries ? (
+        <ul>
+          {insights.externalChanges.map((value) => <li key={value}>{value}</li>)}
+          {insights.operationHistory.map((entry) => <li key={entry.id}>{entry.label}</li>)}
+        </ul>
+      ) : (
+        <p>{t("skillDetail.insights.operationHistoryEmpty")}</p>
+      )}
       {insights.usageEvidence ? (
         <section>
           <h3>{t("skillDetail.insights.usageEvidence")}</h3>

@@ -52,6 +52,7 @@ export interface MockSkillDetailOptions {
   failSummaryOnce?: boolean;
   failTrialSave?: boolean;
   missingSkill?: boolean;
+  operationHistoryLimitation?: string;
   sharedPhysicalTarget?: boolean;
   summary?: Partial<SkillDetailSummary>;
   usageEvidence?: SkillDetailInsights["usageEvidence"] | null;
@@ -281,6 +282,7 @@ export function createMockSkillDetailFacade(
     : fixture.relations;
   const insights = {
     ...fixture.insights,
+    operationHistoryLimitation: options.operationHistoryLimitation,
     usageEvidence:
       "usageEvidence" in options
         ? options.usageEvidence ?? undefined

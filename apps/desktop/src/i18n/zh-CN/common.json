@@ -938,6 +938,8 @@
       "invocations_one": "记录到 {{count}} 次调用",
       "invocations_other": "记录到 {{count}} 次调用",
       "none": "暂无已确认的关联",
+      "operationHistoryEmpty": "暂无操作日志记录。",
+      "operationHistoryLimitation": "操作日志暂未记录 Skill 维度，以下为全局日志记录。",
       "riskSummary": "{{high}} 个高风险，{{pending}} 个待处理项",
       "usageEvidence": "使用证据"
     },

@@ -3512,6 +3512,7 @@ impl ApplicationFacade for LocalApplicationFacade {
                 })
             }
             AppQuery::ListVersions(request) => self.list_versions(request.skill_id),
+            AppQuery::ListSkillOperations(request) => self.list_skill_operations(request.skill_id),
             AppQuery::DiffVersions(request) => self.diff_versions(&request.left, &request.right),
             AppQuery::ListDeployments(request) => self.list_deployments(request.skill_id),
             AppQuery::GetDeploymentRelations(request) => {
@@ -3957,6 +3958,60 @@ impl LocalApplicationFacade {
 }
 
 impl LocalApplicationFacade {
+    fn list_skill_operations(&self, skill_id: skillhub_core::SkillId) -> AppResult<AppQueryResult> {
+        let database = self
+            .database
+            .lock()
+            .map_err(|_| internal("query.list_skill_operations"))?;
+        let mut statement = database
+            .connection_for_test()
+            .prepare(
+                "SELECT operation_id,kind,phase,error_code FROM operations ORDER BY created_at,operation_id",
+            )
+            .map_err(|error| database_error("query.list_skill_operations", error.to_string()))?;
+        let rows = statement
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, Option<String>>(3)?,
+                ))
+            })
+            .map_err(|error| database_error("query.list_skill_operations", error.to_string()))?;
+        let mut entries = Vec::new();
+        for row in rows {
+            let (operation_id, kind, phase, error_code) = row.map_err(|error| {
+                database_error("query.list_skill_operations", error.to_string())
+            })?;
+            entries.push(skillhub_core::SkillOperationEntry {
+                operation_id,
+                kind,
+                phase: serde_json::from_value(serde_json::Value::String(phase)).map_err(
+                    |error| database_error("query.list_skill_operations", error.to_string()),
+                )?,
+                error_code: error_code
+                    .map(|code| {
+                        serde_json::from_value(serde_json::Value::String(code)).map_err(|error| {
+                            database_error("query.list_skill_operations", error.to_string())
+                        })
+                    })
+                    .transpose()?,
+            });
+        }
+        // The journal does not record a skill dimension yet, so the answer is
+        // the global journal plus an explicit limitation marker instead of a
+        // filter the storage cannot actually perform.
+        Ok(AppQueryResult::SkillOperations(
+            skillhub_core::SkillOperationsResult {
+                skill_id,
+                entries,
+                filtered: false,
+                limitation: Some("skill_dimension_not_recorded".to_owned()),
+            },
+        ))
+    }
+
     fn list_versions(&self, skill_id: skillhub_core::SkillId) -> AppResult<AppQueryResult> {
         let Some(library) = self.library.as_ref() else {
             return Err(unsupported("query.list_versions"));

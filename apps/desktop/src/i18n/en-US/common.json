@@ -938,6 +938,8 @@
       "invocations_one": "{{count}} recorded invocation",
       "invocations_other": "{{count}} recorded invocations",
       "none": "No established relationships",
+      "operationHistoryEmpty": "No operation journal entries yet.",
+      "operationHistoryLimitation": "The operation journal does not record a per-skill dimension yet; the entries below are the global journal.",
       "riskSummary": "{{high}} high-risk and {{pending}} pending findings",
       "usageEvidence": "Usage evidence"
     },

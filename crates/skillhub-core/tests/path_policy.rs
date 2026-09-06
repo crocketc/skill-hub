@@ -42,7 +42,7 @@ fn existing_symlink_cannot_escape_registered_root() {
     #[cfg(unix)]
     std::os::unix::fs::symlink(outside.path(), root.path().join("link/escape")).unwrap();
     #[cfg(windows)]
-    if std::os::windows::fs::symlink_dir(outside.path(), root.path().join("link/escape")).is_err() {
+    if !creates_real_symlink(outside.path(), &root.path().join("link/escape")) {
         // Creating symlinks requires a privilege that is not enabled on all Windows CI runners.
         return;
     }
@@ -58,7 +58,7 @@ fn create_rejects_existing_symlink_ancestor_that_escapes_root() {
     #[cfg(unix)]
     std::os::unix::fs::symlink(outside.path(), root.path().join("link")).unwrap();
     #[cfg(windows)]
-    if std::os::windows::fs::symlink_dir(outside.path(), root.path().join("link")).is_err() {
+    if !creates_real_symlink(outside.path(), &root.path().join("link")) {
         return;
     }
     let (root_id, policy) = policy_for(root.path());
@@ -66,6 +66,21 @@ fn create_rejects_existing_symlink_ancestor_that_escapes_root() {
         .resolve_for_create(root_id, "link/new-skill")
         .unwrap_err();
     assert_eq!(error.code.as_str(), "path.outside_allowed_root");
+}
+
+/// Creates a directory symlink and reports whether the filesystem actually
+/// materialized it. Some Windows environments (sandboxed or filtered volumes)
+/// report success for `symlink_dir` while silently dropping the link; tests
+/// that depend on the link must skip instead of exercising a case that does
+/// not exist.
+#[cfg(windows)]
+fn creates_real_symlink(target: &std::path::Path, link: &std::path::Path) -> bool {
+    if std::os::windows::fs::symlink_dir(target, link).is_err() {
+        return false;
+    }
+    std::fs::symlink_metadata(link)
+        .map(|metadata| metadata.file_type().is_symlink())
+        .unwrap_or(false)
 }
 
 #[test]

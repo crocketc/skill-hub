@@ -207,6 +207,44 @@ describe("native skill detail facade", () => {
     });
   });
 
+  it("maps the persisted journal into the operation history with an honest limitation", async () => {
+    vi.clearAllMocks();
+    vi.mocked(queryApplication).mockResolvedValue({
+      type: "skill_operations",
+      payload: {
+        skill_id: "skill-1",
+        entries: [
+          { operation_id: "op-1", kind: "deploy_skill", phase: "committed", error_code: null },
+          {
+            operation_id: "op-2",
+            kind: "remove_skill",
+            phase: "rolled_back",
+            error_code: "operation.conflict",
+          },
+        ],
+        filtered: false,
+        limitation: "skill_dimension_not_recorded",
+      },
+    });
+
+    await expect(nativeSkillDetailFacade.getInsights("skill-1")).resolves.toEqual({
+      combinations: [],
+      dependencies: [],
+      deterministicDuplicates: [],
+      externalChanges: [],
+      semanticDuplicates: [],
+      operationHistory: [
+        { id: "op-1", label: "deploy_skill · committed" },
+        { id: "op-2", label: "remove_skill · rolled_back · operation.conflict" },
+      ],
+      operationHistoryLimitation: "skill_dimension_not_recorded",
+    });
+    expect(queryApplication).toHaveBeenCalledWith({
+      type: "list_skill_operations",
+      payload: { skill_id: "skill-1" },
+    });
+  });
+
   it("submits an explicit finding disposition through the typed native command", async () => {
     vi.clearAllMocks();
     vi.mocked(executeCommand).mockResolvedValue({

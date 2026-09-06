@@ -51,6 +51,17 @@ describe("Skill detail evidence panels", () => {
     expect(screen.queryByText("使用证据")).not.toBeInTheDocument();
   });
 
+  it("explains honestly when the operation history is not skill-scoped", async () => {
+    await renderEvidence(
+      createMockSkillDetailFacade({ operationHistoryLimitation: "skill_dimension_not_recorded" }),
+    );
+    expect(await screen.findByText("外部变化与操作历史")).toBeVisible();
+    expect(
+      screen.getByText("操作日志暂未记录 Skill 维度，以下为全局日志记录。"),
+    ).toBeVisible();
+    expect(screen.getByText("Imported")).toBeVisible();
+  });
+
   it("retries a failed relation panel without reloading successful panels", async () => {
     await renderEvidence(createMockSkillDetailFacade({ failRelationsOnce: true }));
     const retry = await screen.findByRole("button", { name: "重试关系" });

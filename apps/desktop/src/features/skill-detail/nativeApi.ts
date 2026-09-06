@@ -12,6 +12,7 @@ import {
   SkillDetailUnavailableError,
   unavailableSkillDetailFacade,
   type SkillDetailFacade,
+  type SkillDetailInsights,
   type SkillDetailSummary,
   type SkillFinding,
   type SkillMetadata,
@@ -190,6 +191,30 @@ export const nativeSkillDetailFacade: SkillDetailFacade = {
       id: finding.id,
       severity: finding.severity,
     }));
+  },
+  async getInsights(skillId): Promise<SkillDetailInsights> {
+    const result = await queryApplication({
+      type: "list_skill_operations",
+      payload: { skill_id: skillId },
+    });
+    if (result.type !== "skill_operations") throw unavailableResult();
+    const insights: SkillDetailInsights = {
+      combinations: [],
+      dependencies: [],
+      deterministicDuplicates: [],
+      externalChanges: [],
+      semanticDuplicates: [],
+      operationHistory: result.payload.entries.map((entry) => ({
+        id: entry.operation_id,
+        label: [entry.kind, entry.phase, entry.error_code ?? undefined]
+          .filter((part) => part !== undefined)
+          .join(" · "),
+      })),
+    };
+    if (result.payload.limitation) {
+      insights.operationHistoryLimitation = result.payload.limitation;
+    }
+    return insights;
   },
 };
 
