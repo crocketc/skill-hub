@@ -133,7 +133,7 @@ describe("native import facade", () => {
       type: "commit_import",
       payload: { decision: "copy_into_library", prepared_import_id: "operation-1" },
     });
-    expect(results).toEqual([{ action: "copy", candidateId: candidate.id, message: "已导入", status: "succeeded" }]);
+    expect(results).toEqual([{ action: "copy", candidateId: candidate.id, message: "importWorkflow.commitMessages.imported", status: "succeeded" }]);
     expect(progress).toHaveBeenLastCalledWith({ candidateId: candidate.id, completed: 1, total: 1 });
   });
 
@@ -251,7 +251,7 @@ describe("native import facade", () => {
     );
 
     expect(result).toEqual(expect.objectContaining({
-      message: "导入失败（错误代码：io_error；operation=capture, path=C:/incoming/notes）",
+      message: "io_error",
       status: "failed",
     }));
   });
@@ -292,7 +292,7 @@ describe("native import facade", () => {
     const source = await nativeImportFacade.parseSource("https://github.com/example/skills");
 
     await expect(nativeImportFacade.acquireCandidates(source)).rejects.toThrow(
-      "已识别为远程来源，但当前版本尚未接入远程下载导入",
+      "import.remote_download_not_wired",
     );
   });
 

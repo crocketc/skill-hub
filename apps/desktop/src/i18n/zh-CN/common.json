@@ -102,6 +102,11 @@
     "loading": "正在读取本地数据"
   },
   "importWorkflow": {
+    "errors": {
+      "generic": "导入操作失败（{{code}}）。请重试；若持续出现请记录该错误码。",
+      "remoteNotWired": "已识别为远程来源，但当前版本尚未接入远程下载导入；请先用仓库发现下载到本机目录。",
+      "noDefaultAction": "本机导入分析没有提供可提交的默认操作，请逐条选择处理方式。"
+    },
     "eyebrow": "安全导入流程",
     "title": "导入 Skill",
     "step": "第 {{current}} 步，共 {{total}} 步",
@@ -257,6 +262,11 @@
         "failed": "失败"
       }
     },
+      "commitMessages": {
+        "imported": "已导入",
+        "skipped": "已跳过",
+        "noDetail": "导入未提交（本机服务未返回详细原因）"
+      },
     "tracker": {
       "label": "批量导入 Skill"
     },

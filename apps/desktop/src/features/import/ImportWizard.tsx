@@ -1,5 +1,6 @@
 import { useEffect, useReducer, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { describeNativeError } from "../../api/nativeErrors";
 import { Button } from "../../ui/Button";
 import { DataState } from "../../ui/DataState";
 import { ConflictResolution } from "./ConflictResolution";
@@ -253,9 +254,9 @@ export function ImportWizard({
         dispatch({ type: "cancelled" });
       } else {
         dispatch({
-          error: error instanceof Error ? error.message : t("importWorkflow.errors.unknown"),
-          previousPhase: "source",
-          type: "failed",
+error: describeNativeError(error, (key, options) => String(t(key as never, options as never)), "importWorkflow.errors.generic"),
+previousPhase: "source",
+type: "failed",
         });
       }
     }
@@ -305,7 +306,7 @@ export function ImportWizard({
       if (operation === operationRef.current) dispatch({ type: "analysis_succeeded", plan });
     } catch (error) {
       if (operation === operationRef.current) {
-        dispatch({ type: "failed", error: error instanceof Error ? error.message : t("importWorkflow.errors.unknown"), previousPhase: "candidates" });
+        dispatch({ type: "failed", error: describeNativeError(error, (key, options) => String(t(key as never, options as never)), "importWorkflow.errors.generic"), previousPhase: "candidates" });
       }
     }
   };
@@ -346,10 +347,10 @@ export function ImportWizard({
     } catch (error) {
       tracker.fail(
         trackedId,
-        error instanceof Error ? error.message : t("importWorkflow.errors.unknown"),
+        describeNativeError(error, (key, options) => String(t(key as never, options as never)), "importWorkflow.errors.generic"),
       );
       if (operation === operationRef.current) {
-        dispatch({ type: "failed", error: error instanceof Error ? error.message : t("importWorkflow.errors.unknown"), previousPhase: "conflicts" });
+        dispatch({ type: "failed", error: describeNativeError(error, (key, options) => String(t(key as never, options as never)), "importWorkflow.errors.generic"), previousPhase: "conflicts" });
       }
     }
   };

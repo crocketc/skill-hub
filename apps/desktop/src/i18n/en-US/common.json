@@ -102,6 +102,11 @@
     "loading": "Reading local data"
   },
   "importWorkflow": {
+    "errors": {
+      "generic": "The import operation failed ({{code}}). Please retry; note the error code if it persists.",
+      "remoteNotWired": "The source was recognized as remote, but remote download import is not wired yet; download it to a local folder via repository discovery first.",
+      "noDefaultAction": "The local import analysis provided no committable default action; choose a handling per candidate."
+    },
     "eyebrow": "Safe import workflow",
     "title": "Import Skills",
     "step": "Step {{current}} of {{total}}",
@@ -257,6 +262,11 @@
         "failed": "Failed"
       }
     },
+      "commitMessages": {
+        "imported": "Imported",
+        "skipped": "Skipped",
+        "noDetail": "Import was not committed (the native service returned no detail)"
+      },
     "tracker": {
       "label": "Batch import Skills"
     },

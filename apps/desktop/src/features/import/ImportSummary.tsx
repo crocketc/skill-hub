@@ -56,7 +56,7 @@ export function ImportSummary({
             <StatusBadge tone={result.status === "succeeded" ? "success" : result.status === "skipped" ? "neutral" : "danger"}>
               {t(`importWorkflow.summary.status.${result.status}`)}
             </StatusBadge>
-            <p>{result.message}</p>
+            <p>{t(result.message, { defaultValue: result.message })}</p>
           </li>
         ))}
       </ul>

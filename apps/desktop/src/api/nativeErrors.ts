@@ -89,6 +89,8 @@ function keyedMessage(
   if (code === "object.not_found") return "errors.objectNotFound";
   if (code === "network.disabled") return "errors.networkDisabled";
   if (code === "backup.checksum_mismatch") return "errors.backupChecksumMismatch";
+  if (code === "import.remote_download_not_wired") return "importWorkflow.errors.remoteNotWired";
+  if (code === "import.no_default_action") return "importWorkflow.errors.noDefaultAction";
   if (code === "input.invalid") return "errors.inputInvalid";
   return null;
 }

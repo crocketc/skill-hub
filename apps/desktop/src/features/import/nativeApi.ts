@@ -21,7 +21,7 @@ import { normalizeWindowsPath } from "../../platform/directoryPicker";
 
 function nativeSource(source: SourceDescriptor) {
   if (source.kind !== "local_path") {
-    throw new Error("已识别为远程来源，但当前版本尚未接入远程下载导入；请先下载到本机目录");
+    throw new Error("import.remote_download_not_wired");
   }
   return { kind: "local" as const, locator: { local_path: normalizeWindowsPath(source.displayTarget) } };
 }
@@ -121,7 +121,7 @@ function defaultDecision(allowed: ImportDecision[]): ImportDecision {
   ];
   const decision = supportedDefaults.find((candidate) => allowed.includes(candidate));
   if (!decision) {
-    throw new Error("本机导入分析没有提供可提交的默认操作");
+    throw new Error("import.no_default_action");
   }
   return decision;
 }
@@ -133,20 +133,20 @@ function resultForSummary(
 ): ImportResult {
   const item = result.items[0];
   if (action === "skip") {
-    return { action, candidateId: candidate.id, message: "已跳过", status: "skipped" };
+    return { action, candidateId: candidate.id, message: "importWorkflow.commitMessages.skipped", status: "skipped" };
   }
   return {
     action,
     candidateId: candidate.id,
     message: item?.skill_id
-      ? "已导入"
-      : "导入未提交（本机服务未返回详细原因）",
+      ? "importWorkflow.commitMessages.imported"
+      : "importWorkflow.commitMessages.noDetail",
     status: result.committed ? "succeeded" : "failed",
   };
 }
 
 function importErrorMessage(error: unknown): string {
-  if (error instanceof Error) return error.message || "导入失败";
+  if (error instanceof Error) return error.message || "import.import_failed";
   if (typeof error === "string") {
     try {
       return importErrorMessage(JSON.parse(error) as unknown);
@@ -158,15 +158,10 @@ function importErrorMessage(error: unknown): string {
     const record = error as { code?: unknown; message?: unknown; params?: unknown };
     const code = typeof record.code === "string" ? record.code : null;
     const message = typeof record.message === "string" ? record.message : null;
-    const params = record.params && typeof record.params === "object"
-      ? Object.entries(record.params as Record<string, unknown>)
-        .map(([key, value]) => `${key}=${String(value)}`)
-        .join(", ")
-      : "";
-    if (code) return `导入失败（错误代码：${code}${params ? `；${params}` : ""}）`;
+    if (code) return code;
     if (message) return message;
   }
-  return "导入失败（未返回错误详情）";
+  return "import.import_failed";
 }
 
 function queryImportCandidates(result: AppQueryResult): NativeImportCandidate[] {
