@@ -1211,6 +1211,9 @@
   },
   "deployment": {
     "eyebrow": "安全部署",
+      "errors": {
+        "generic": "部署操作失败（{{code}}）。请重试；若持续出现请记录该错误码。"
+      },
     "heading": "先预览，再修改 Agent 目标",
     "description": "选择一个或多个目标，检查物理计划后再显式提交。",
     "states": {
@@ -1251,6 +1254,10 @@
       "status": {
         "succeeded": "已成功",
         "failed": "失败",
+        "message": {
+          "succeeded": "部署成功",
+          "failed": "部署失败"
+        },
         "skipped": "已跳过"
       }
     }
@@ -1356,6 +1363,13 @@
     "empty": "没有待处理事项",
     "listHeading": "需要关注的事项",
     "filteredEmpty": "没有符合当前筛选条件的事项",
+    "dueDate": "到期日：{{date}}",
+    "risk": {
+      "high": "高风险",
+      "medium": "中风险",
+      "low": "低风险"
+    },
+    "impact": "影响 {{count}} 个部署关系",
     "filters": {
       "kind": "事项类型",
       "all": "全部事项"
@@ -1368,7 +1382,48 @@
     "actions": {
       "recheck": "重新检查",
       "convert": "转为常规",
-      "recover": "确认恢复"
+      "recover": "确认恢复",
+      "defer": "暂缓",
+      "ignore": "忽略",
+      "deferReason": "暂缓 {{days}} 天，到期后再提醒",
+      "ignoreReason": "永久忽略该待处理事项"
+    },
+    "defer": {
+      "durationLabel": "暂缓时长",
+      "days7": "7 天",
+      "days30": "30 天"
+    },
+    "ignoreConfirm": {
+      "title": "永久忽略该事项？",
+      "description": "该事项将从待处理列表中永久隐藏；你可以在下方“处理历史”里撤销。",
+      "confirm": "确认忽略"
+    },
+    "batch": {
+      "label": "批量处置",
+      "selectAll": "全选",
+      "selectItem": "选择 {{subject}}",
+      "defer7": "批量暂缓 7 天",
+      "ignore": "批量永久忽略",
+      "ignoreConfirmTitle": "永久忽略所选事项？",
+      "ignoreConfirmDescription": "所选 {{count}} 项将从待处理列表中永久隐藏；你可以在下方“处理历史”里撤销。",
+      "ignoreConfirmConfirm": "确认批量忽略",
+      "progress": "正在处理 {{completed}}/{{total}}",
+      "noBatchContract": "转换、重查与恢复暂无批量契约，请逐条处理。"
+    },
+    "history": {
+      "heading": "处理历史",
+      "empty": "暂无暂缓/忽略记录。",
+      "undo": "撤销",
+      "createdAt": "创建于",
+      "deferUntil": "暂缓截止",
+      "permanent": "永久"
+    },
+    "savedView": {
+      "loadFailed": "视图偏好未能恢复，本次会话使用默认筛选。",
+      "saveFailed": "视图偏好未能保存，本次会话内筛选仍然有效。"
+    },
+    "errors": {
+      "generic": "操作失败（{{code}}）。请稍后重试。"
     }
   },
   "recovery": {

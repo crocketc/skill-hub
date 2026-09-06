@@ -1211,6 +1211,9 @@
   },
   "deployment": {
     "eyebrow": "Safe deployment",
+      "errors": {
+        "generic": "The deployment operation failed ({{code}}). Please retry; note the error code if it persists."
+      },
     "heading": "Preview before changing Agent targets",
     "description": "Select one or more targets, inspect the physical plan, then commit explicitly.",
     "states": {
@@ -1251,6 +1254,10 @@
       "status": {
         "succeeded": "Succeeded",
         "failed": "Failed",
+        "message": {
+          "succeeded": "Deployment succeeded",
+          "failed": "Deployment failed"
+        },
         "skipped": "Skipped"
       }
     }
@@ -1356,6 +1363,13 @@
     "empty": "No pending items",
     "listHeading": "Items needing attention",
     "filteredEmpty": "No pending items match this filter.",
+    "dueDate": "Due {{date}}",
+    "risk": {
+      "high": "High risk",
+      "medium": "Medium risk",
+      "low": "Low risk"
+    },
+    "impact": "Affects {{count}} deployments",
     "filters": {
       "kind": "Item type",
       "all": "All items"
@@ -1368,7 +1382,48 @@
     "actions": {
       "recheck": "Recheck",
       "convert": "Make regular",
-      "recover": "Acknowledge recovery"
+      "recover": "Acknowledge recovery",
+      "defer": "Defer",
+      "ignore": "Ignore",
+      "deferReason": "Deferred for {{days}} days; remind me when it is due",
+      "ignoreReason": "Permanently ignore this pending item"
+    },
+    "defer": {
+      "durationLabel": "Defer duration",
+      "days7": "7 days",
+      "days30": "30 days"
+    },
+    "ignoreConfirm": {
+      "title": "Permanently ignore this item?",
+      "description": "The item will be hidden from the pending list; you can undo this in the handled history below.",
+      "confirm": "Ignore permanently"
+    },
+    "batch": {
+      "label": "Batch disposition",
+      "selectAll": "Select all",
+      "selectItem": "Select {{subject}}",
+      "defer7": "Defer selected for 7 days",
+      "ignore": "Ignore selected permanently",
+      "ignoreConfirmTitle": "Permanently ignore the selected items?",
+      "ignoreConfirmDescription": "The {{count}} selected items will be hidden from the pending list; you can undo this in the handled history below.",
+      "ignoreConfirmConfirm": "Ignore selected permanently",
+      "progress": "Processing {{completed}}/{{total}}",
+      "noBatchContract": "Convert, recheck and recovery have no batch contract yet; handle them one by one."
+    },
+    "history": {
+      "heading": "Handled history",
+      "empty": "No deferred or ignored items yet.",
+      "undo": "Undo",
+      "createdAt": "Created",
+      "deferUntil": "Deferred until",
+      "permanent": "Permanent"
+    },
+    "savedView": {
+      "loadFailed": "The saved view could not be restored; the default filter is used for this session.",
+      "saveFailed": "The view preference could not be saved; the filter still applies for this session."
+    },
+    "errors": {
+      "generic": "The operation failed ({{code}}). Please try again later."
     }
   },
   "recovery": {
