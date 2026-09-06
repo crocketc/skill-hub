@@ -59,6 +59,8 @@ export function DataProtectionPage({
   const [restoreResult, setRestoreResult] = useState<RestoreResult>();
   const [exportSkillIds, setExportSkillIds] = useState("");
   const [exportFormat, setExportFormat] = useState<ExportInput["format"]>("folder");
+  // N10：版本范围——仅当前版本或全部历史版本（历史范围按真实版本列表展开）。
+  const [exportVersionScope, setExportVersionScope] = useState<"current" | "history">("current");
   const [outputDir, setOutputDir] = useState<string>();
   const [pickerError, setPickerError] = useState<string>();
   const [rollingMax, setRollingMax] = useState(3);
@@ -151,16 +153,28 @@ export function DataProtectionPage({
     const decisions = restorePlan.conflicts.filter((conflict) => conflict.skill_id).map((conflict) => ({ skill_id: conflict.skill_id!, decision: restoreDecisions[conflict.skill_id!] })) as RestoreDecision[];
     setRestoreResult(await facade.commitRestore(path.trim(), decisions));
   });
+  const buildVersions = async (skillIds: string[]): Promise<ExportInput["versions"]> => {
+    if (exportVersionScope === "current") return "current";
+    // N10：全部历史版本——逐个 Skill 读取真实版本列表后展开。
+    const ids: string[] = [];
+    for (const skillId of skillIds) {
+      const versions = await facade.listVersions(skillId);
+      for (const version of versions) ids.push(version.version_id);
+    }
+    return { history: ids };
+  };
   const reviewExport = () => run(async () => {
     if (!exportSkillIds.trim()) return;
     setExportPath(undefined);
     setExportDecisions({});
-    const input: ExportInput = { selection: { skills: exportSkillIds.split(",").map((id) => id.trim()).filter(Boolean) }, versions: "current", skills: [], format: exportFormat, output_dir: outputDir ?? null };
+    const skillIds = exportSkillIds.split(",").map((id) => id.trim()).filter(Boolean);
+    const input: ExportInput = { selection: { skills: skillIds }, versions: await buildVersions(skillIds), skills: [], format: exportFormat, output_dir: outputDir ?? null };
     setExportPlan(await facade.prepareExport(input));
   });
   const commitExport = () => run(async () => {
     if (!exportPlan) return;
-    const input: ExportInput = { selection: { skills: exportSkillIds.split(",").map((id) => id.trim()).filter(Boolean) }, versions: "current", skills: [], format: exportFormat, output_dir: outputDir ?? null };
+    const skillIds = exportSkillIds.split(",").map((id) => id.trim()).filter(Boolean);
+    const input: ExportInput = { selection: { skills: skillIds }, versions: await buildVersions(skillIds), skills: [], format: exportFormat, output_dir: outputDir ?? null };
     const decisions: ExportDecision[] = exportPlan.sensitive_items.map((item) => ({ skill_id: item.skill_id, decision: exportDecisions[item.skill_id] })) as ExportDecision[];
     const result = await facade.createExport(input, decisions);
     setExportPath(result.path);
@@ -213,6 +227,10 @@ export function DataProtectionPage({
         <label>{t("dataProtection.export.format")}<select aria-label={t("dataProtection.export.format")} value={exportFormat} onChange={(event) => setExportFormat(event.target.value as ExportInput["format"])}>
           <option value="folder">{t("dataProtection.export.formatFolder")}</option>
           <option value="zip">{t("dataProtection.export.formatZip")}</option>
+        </select></label>
+        <label>{t("dataProtection.export.versionScope")}<select aria-label={t("dataProtection.export.versionScope")} value={exportVersionScope} onChange={(event) => setExportVersionScope(event.target.value as "current" | "history")}>
+          <option value="current">{t("dataProtection.export.versionCurrent")}</option>
+          <option value="history">{t("dataProtection.export.versionHistory")}</option>
         </select></label>
         <p>{t("dataProtection.export.formatHint")}</p>
         <div className="sh-button-row">

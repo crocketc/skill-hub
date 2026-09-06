@@ -291,6 +291,9 @@ it("runs a rolling backup with the configured retention policy and reports clean
   );
   expect(await screen.findByText(/3 kept/)).toBeVisible();
   expect(screen.getByText(/2 removed/)).toBeVisible();
+
+
+
 });
 
 it("displays rolling backup failures without faking success", async () => {
@@ -305,4 +308,28 @@ it("displays rolling backup failures without faking success", async () => {
 
   await user.click(await screen.findByRole("button", { name: "Run rolling backup" }));
   expect(await screen.findByRole("alert")).toHaveTextContent("dir not writable");
+});
+
+it("exports every historical version when the history scope is chosen", async () => {
+  const facade = createFacade();
+  facade.listVersions = vi.fn(async () => [
+    versionResult("skill-1", "v1", false),
+    versionResult("skill-1", "v2", true),
+  ]);
+  renderPage(facade);
+  fireEvent.change(screen.getByLabelText("Skill IDs"), { target: { value: "skill-1" } });
+  fireEvent.change(screen.getByLabelText("Version scope"), { target: { value: "history" } });
+  fireEvent.click(screen.getByRole("button", { name: "Review export" }));
+
+  await waitFor(() =>
+    expect(facade.prepareExport).toHaveBeenCalledWith(
+      expect.objectContaining({
+        versions: { history: ["v1", "v2"] },
+      }),
+    ),
+  );
+  // mock 计划固定含 skill-2 的敏感项：先设置决策再提交。
+  fireEvent.change(screen.getByLabelText("Export decision for skill-2"), { target: { value: "include_and_mark" } });
+  fireEvent.click(screen.getByRole("button", { name: "Create export" }));
+  await waitFor(() => expect(facade.createExport).toHaveBeenCalledWith(expect.objectContaining({ versions: { history: ["v1", "v2"] } }), [{ skill_id: "skill-2", decision: "include_and_mark" }]));
 });

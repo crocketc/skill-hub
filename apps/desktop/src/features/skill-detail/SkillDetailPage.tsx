@@ -273,6 +273,16 @@ export function SkillDetailPage({
               ) : null}
               {section === "versions" ? (
                 <>
+                  <div className="sh-button-row">
+                    <Button
+                      onClick={() => navigate("/settings/data-protection", {
+                        state: { exportSkillIds: [skillId] },
+                      })}
+                      variant="secondary"
+                    >
+                      {t("skillDetail.versions.exportSkill")}
+                    </Button>
+                  </div>
                   <SourceUpdatePanel facade={facade} skillId={skillId} />
                   <VersionTimeline facade={facade} skillId={skillId} summary={summaryQuery.data} />
                 </>

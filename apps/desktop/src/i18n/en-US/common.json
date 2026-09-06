@@ -1024,6 +1024,7 @@
       "delete": "Delete Skill"
     },
     "versions": {
+  "exportSkill": "Export this skill (standard export)",
   "rename": "Rename version",
       "renameAria": "Rename version {{version}}",
       "labelLabel": "Version name",
@@ -1677,6 +1678,9 @@
       "heading": "Export selected Skills",
       "skillIds": "Skill IDs",
       "format": "Export format",
+      "versionScope": "Version scope",
+      "versionCurrent": "Current version only",
+      "versionHistory": "All historical versions",
       "formatFolder": "Folder mode (complete skill folders inside an outer ZIP)",
       "formatZip": "ZIP mode (individual skill ZIPs inside an outer ZIP)",
       "formatHint": "Either format always produces a single outer ZIP archive; folder names use each skill's display name (not the internal ID) and contain every file of the skill folder. ZIP mode yields standalone skill ZIPs that Trae, Cline and similar IDE agents can import directly.",
