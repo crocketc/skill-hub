@@ -122,7 +122,9 @@
     "acquisition": {
       "complete": "Found {{count}} candidate(s). Review the list before continuing.",
       "multiSource": "Acquired candidates from {{count}} source directories",
-      "perSource": "{{source}}: {{count}} candidate(s)"
+      "perSource": "{{source}}: {{count}} candidate(s)",
+      "remove": "Remove",
+      "removeSource": "Remove source {{source}}"
     },
     "cancelled": "Acquisition was cancelled. Your source is still here.",
     "errors": {
@@ -139,6 +141,7 @@
       "pickerFailed": "The directory picker could not be opened.",
       "scannedSources": "Sources from initialization scan",
       "scannedSourcesDescription": "Select scanned directories in bulk; candidates and conflicts are still reviewed before import.",
+      "addSource": "Add to selected sources",
       "selectAllSources": "Select all scanned sources",
       "placeholder": "C:/skills or https://github.com/owner/repository",
       "parse": "Parse source",

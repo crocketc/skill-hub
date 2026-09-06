@@ -77,6 +77,47 @@ it("acquires candidates from every selected scanned source", async () => {
   expect(screen.getByText("找到 4 个候选项，请先审阅列表。")).toBeVisible();
 });
 
+it("removes one scanned source at the gate and keeps the other sources' candidates", async () => {
+  const user = userEvent.setup();
+  const facade = await renderGuidedWizard();
+
+  await user.click(screen.getByRole("button", { name: "读取已选目录候选" }));
+  expect(await screen.findByText("找到 4 个候选项，请先审阅列表。")).toBeVisible();
+
+  await user.click(screen.getByRole("button", { name: "移除来源 C:/codex/skills" }));
+
+  expect(await screen.findByText("找到 2 个候选项，请先审阅列表。")).toBeVisible();
+  // 门槛页不再展示被移除来源的计数行。
+  // 剩余来源的候选行仍在（文本含按钮文案，用子串匹配）。
+  const claudeRow = await screen.findByText((_, element) =>
+    element?.tagName === "LI" && element.textContent?.includes("C:/claude/skills：2 个候选") === true,
+  );
+  expect(claudeRow).toBeVisible();
+  expect(screen.queryByText((_, element) =>
+    element?.tagName === "LI" && element.textContent?.includes("C:/codex/skills：2 个候选") === true,
+  )).toBeNull();
+  expect(facade.calls.acquiredSources).toEqual(["C:/codex/skills", "C:/claude/skills"]);
+});
+
+it("adds a manual directory alongside scanned sources for mixed import", async () => {
+  const user = userEvent.setup();
+  const facade = await renderGuidedWizard();
+
+  await user.clear(screen.getByLabelText("来源"));
+  await user.type(screen.getByLabelText("来源"), "C:/windsurf/skills");
+  await user.click(screen.getByRole("button", { name: "添加到已选来源" }));
+
+  expect(await screen.findByRole("button", { name: "添加到已选来源" })).toBeDisabled();
+
+  await user.click(screen.getByRole("button", { name: "读取已选目录候选" }));
+  expect(await screen.findByRole("button", { name: "继续选择候选" })).toBeVisible();
+  expect(facade.calls.acquiredSources).toEqual([
+    "C:/codex/skills",
+    "C:/claude/skills",
+    "C:/windsurf/skills",
+  ]);
+});
+
 it("keeps the acquire action available and shows per-source counts when the source box is empty", async () => {
   const user = userEvent.setup();
   const facade = createMockImportFacade({ scenario: "safe-local" });

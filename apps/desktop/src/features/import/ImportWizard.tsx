@@ -49,6 +49,8 @@ interface WizardState {
   sourceText: string;
   descriptor?: SourceDescriptor;
   candidates: CandidateSelectionProps["candidates"];
+  /** AR-006：候选按来源分组，支持在门槛页移除单个来源及其候选。 */
+  candidatesBySource: { source: string; candidates: CandidateSelectionProps["candidates"] }[];
   selectedIds: string[];
   plan?: ImportPlan;
   actions: Record<string, ImportAction>;
@@ -62,7 +64,8 @@ type WizardEvent =
   | { type: "source_changed"; value: string }
   | { type: "parse_started" }
   | { type: "parse_succeeded"; descriptor: SourceDescriptor }
-  | { type: "acquire_succeeded"; candidates: WizardState["candidates"]; sourceCounts: { source: string; count: number }[] }
+  | { type: "acquire_succeeded"; candidates: WizardState["candidates"]; sourceCounts: { source: string; count: number }[]; candidatesBySource: WizardState["candidatesBySource"] }
+  | { type: "source_removed"; source: string }
   | { type: "show_candidates" }
   | { type: "candidates_selected"; ids: string[] }
   | { type: "analysis_started" }
@@ -78,6 +81,7 @@ type WizardEvent =
 const initialState: WizardState = {
   actions: {},
   candidates: [],
+  candidatesBySource: [],
   phase: "source",
   results: [],
   selectedIds: [],
@@ -108,10 +112,34 @@ function reducer(state: WizardState, event: WizardEvent): WizardState {
       return {
         ...state,
         candidates: event.candidates,
+        candidatesBySource: event.candidatesBySource,
         error: undefined,
         phase: "candidate_gate",
         sourceCounts: event.sourceCounts,
       };
+    case "source_removed": {
+      // AR-006：局部调整来源——仅丢弃被移除来源的候选，其余保留。
+      const remaining = state.candidatesBySource.filter(
+        (entry) => entry.source !== event.source,
+      );
+      const remainingCounts = remaining.map((entry) => ({
+        source: entry.source,
+        count: entry.candidates.length,
+      }));
+      const remainingCandidates = remaining.flatMap((entry) => entry.candidates);
+      const remainingIds = new Set(remainingCandidates.map((candidate) => candidate.id));
+      if (remaining.length === 0) {
+        return { ...initialState, sourceText: state.sourceText };
+      }
+      return {
+        ...state,
+        candidates: remainingCandidates,
+        candidatesBySource: remaining,
+        phase: "candidate_gate",
+        selectedIds: state.selectedIds.filter((id) => remainingIds.has(id)),
+        sourceCounts: remainingCounts,
+      };
+    }
     case "show_candidates":
       return { ...state, phase: "candidates" };
     case "candidates_selected":
@@ -199,6 +227,7 @@ export function ImportWizard({
       const inputs = selectedSources.length > 0 ? selectedSources : [state.sourceText];
       const descriptors = [];
       const sourceCounts: { source: string; count: number }[] = [];
+      const candidatesBySource: WizardState["candidatesBySource"] = [];
       const candidates = [];
       for (const input of inputs) {
         const descriptor = await facade.parseSource(input);
@@ -214,9 +243,10 @@ export function ImportWizard({
         const acquired = await facade.acquireCandidates(descriptors[index], controller.signal);
         candidates.push(...acquired);
         sourceCounts.push({ source: inputs[index], count: acquired.length });
+        candidatesBySource.push({ source: inputs[index], candidates: acquired });
       }
       if (operation !== operationRef.current) return;
-      dispatch({ type: "acquire_succeeded", candidates, sourceCounts });
+      dispatch({ type: "acquire_succeeded", candidates, sourceCounts, candidatesBySource });
     } catch (error) {
       if (operation !== operationRef.current) return;
       if (error instanceof ImportCancelledError) {
@@ -248,6 +278,21 @@ export function ImportWizard({
     abortRef.current?.abort();
     await facade.cancel();
     dispatch({ type: "cancelled" });
+  };
+
+  // AR-006：门槛页局部移除来源——同步勾选列表，避免后续重读时又带上。
+  const removeSource = (source: string) => {
+    setSelectedSources((current) => current.filter((item) => item !== source));
+    dispatch({ type: "source_removed", source });
+  };
+
+  // AR-006：混合导入——手动目录追加进已选扫描来源，不再整体清空。
+  const addManualSource = async (source: string) => {
+    const normalized = normalizeWindowsPath(source);
+    if (!normalized.trim() || selectedSources.includes(normalized)) return;
+    await facade.parseSource(normalized);
+    setSelectedSources((current) => [...new Set([...current, normalized])]);
+    dispatch({ type: "source_changed", value: "" });
   };
 
   const analyze = async () => {
@@ -332,10 +377,11 @@ export function ImportWizard({
         {(["source", "acquiring", "candidate_gate", "cancelled", "failed"] as WizardPhase[]).includes(state.phase) ? (
           <SourceInput
             actionLabel={selectedSources.length > 0 ? t("importWorkflow.source.acquireSelectedSources") : undefined}
+            onAddSource={(source) => void addManualSource(source)}
             descriptor={state.descriptor}
             disabled={state.phase === "acquiring"}
             onChange={(value) => {
-              setSelectedSources([]);
+              // AR-006：输入手动来源不再清空已选扫描来源（混合导入）。
               dispatch({ type: "source_changed", value: normalizeWindowsPath(value) });
             }}
             onParse={() => void runAcquisition()}
@@ -354,13 +400,22 @@ export function ImportWizard({
 
         {state.phase === "candidate_gate" ? (
           <div className="sh-import-wizard__gate" role="status">
-            {state.sourceCounts && state.sourceCounts.length > 1 ? (
+            {state.sourceCounts && state.sourceCounts.length > 0 ? (
               <>
                 <p>{t("importWorkflow.acquisition.multiSource", { count: state.sourceCounts.length })}</p>
                 <ul>
                   {state.sourceCounts.map(({ source, count }) => (
                     <li key={source}>
                       {t("importWorkflow.acquisition.perSource", { source, count })}
+                      <Button
+                        aria-label={t("importWorkflow.acquisition.removeSource", { source })}
+                        disabled={state.phase !== "candidate_gate"}
+                        onClick={() => removeSource(source)}
+                        size="sm"
+                        variant="ghost"
+                      >
+                        {t("importWorkflow.acquisition.remove")}
+                      </Button>
                     </li>
                   ))}
                 </ul>

@@ -122,7 +122,9 @@
     "acquisition": {
       "complete": "找到 {{count}} 个候选项，请先审阅列表。",
       "multiSource": "已从 {{count}} 个来源目录获取候选",
-      "perSource": "{{source}}：{{count}} 个候选"
+      "perSource": "{{source}}：{{count}} 个候选",
+      "remove": "移除",
+      "removeSource": "移除来源 {{source}}"
     },
     "cancelled": "获取已取消，来源内容仍然保留。",
     "errors": {
@@ -139,6 +141,7 @@
       "pickerFailed": "无法打开目录选择器。",
       "scannedSources": "初始化扫描来源",
       "scannedSourcesDescription": "可批量选择扫描发现的目录；导入前仍会逐项审阅候选和冲突。",
+      "addSource": "添加到已选来源",
       "selectAllSources": "全选扫描来源",
       "placeholder": "C:/skills 或 https://github.com/owner/repository",
       "parse": "解析来源",

@@ -11,6 +11,8 @@ export interface SourceInputProps {
   selectedSources?: string[];
   onChange: (value: string) => void;
   onParse: () => void;
+  /** AR-006：把手动输入追加为第 N 个来源（混合导入），不清空已选来源。 */
+  onAddSource?: (source: string) => void;
   onPickLocalPath?: () => void;
   onToggleSource?: (source: string) => void;
   onSelectAllSources?: () => void;
@@ -25,6 +27,7 @@ export function SourceInput({
   selectedSources = [],
   onChange,
   onParse,
+  onAddSource,
   onPickLocalPath,
   onToggleSource,
   onSelectAllSources,
@@ -110,6 +113,11 @@ export function SourceInput({
         <Button disabled={disabled || (!value.trim() && selectedSources.length === 0)} onClick={onParse}>
           {actionLabel ?? t("importWorkflow.source.parse")}
         </Button>
+        {onAddSource && selectedSources.length > 0 ? (
+          <Button disabled={disabled || !value.trim()} onClick={() => onAddSource(value)} variant="secondary">
+            {t("importWorkflow.source.addSource")}
+          </Button>
+        ) : null}
       </div>
     </section>
   );
