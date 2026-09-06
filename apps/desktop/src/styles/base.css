@@ -4238,6 +4238,59 @@ a {
   padding: 0 var(--space-2);
 }
 
+.sh-pending-item__info {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.sh-pending-item__info p {
+  margin: 0;
+}
+
+.sh-pending-item__risk {
+  border-radius: var(--radius-sm);
+  display: inline-flex;
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  justify-self: start;
+  padding: 0 var(--space-2);
+}
+
+.sh-pending-item__risk--high {
+  color: var(--color-danger);
+}
+
+.sh-pending-item__risk--medium {
+  color: var(--color-warning);
+}
+
+.sh-pending-item__risk--low {
+  color: var(--color-text-muted);
+}
+
+.sh-pending-batch {
+  align-items: center;
+  border-top: 1px solid var(--color-border-subtle);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
+}
+
+.sh-pending-batch__select-all {
+  align-items: center;
+  display: inline-flex;
+  gap: var(--space-1);
+}
+
+.sh-pending-batch__note {
+  color: var(--color-text-muted);
+  flex-basis: 100%;
+  font-size: var(--font-size-xs);
+}
+
 .sh-count-badge {
   align-items: center;
   background: var(--color-accent-soft);
