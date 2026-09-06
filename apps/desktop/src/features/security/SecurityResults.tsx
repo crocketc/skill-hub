@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "../../ui/Button";
 import { DataState } from "../../ui/DataState";
@@ -43,17 +43,60 @@ export function SecurityResults({ facade = unavailableSecurityFacade, skillId, v
     setFindings((current) => current.map((item) => item.id === finding.id ? { ...item, disposition } : item));
   };
   const llmConfigured = preferences ? preferences.llmProvider.trim().length > 0 : true;
+  const [runningOperation, setRunningOperation] = useState<string | undefined>(undefined);
+  const [cancelRequested, setCancelRequested] = useState(false);
+  const cancelledRef = useRef(false);
   const handleRun = async () => {
     if (!facade.runLlmCheck || !llmConfigured) return;
     setRunning(true);
     setRunError(undefined);
+    cancelledRef.current = false;
     try {
       await facade.runLlmCheck(skillId, versionId);
       setReloadKey((key) => key + 1);
     } catch (reason: unknown) {
-      setRunError(reason instanceof Error ? reason.message : String(reason));
+      // A run the user cancelled must not surface as a failure.
+      if (!cancelledRef.current) {
+        setRunError(reason instanceof Error ? reason.message : String(reason));
+      }
     } finally {
       setRunning(false);
+      setRunningOperation(undefined);
+    }
+  };
+  // While a run is in flight, discover its operation id so the cancel entry
+  // can target it; the native facade keeps the check discoverable.
+  useEffect(() => {
+    const listRunning = facade.listRunningLlmChecks;
+    if (!running || !listRunning) return undefined;
+    let active = true;
+    const poll = async () => {
+      while (active) {
+        try {
+          const runs = await listRunning();
+          if (!active) return;
+          const match = runs.find((run) => run.skillId === skillId && run.versionId === versionId);
+          setRunningOperation(match?.operationId);
+          if (match) return;
+        } catch {
+          // Progress discovery is best-effort; the run continues regardless.
+        }
+        await new Promise((resolve) => setTimeout(resolve, 300));
+      }
+    };
+    void poll();
+    return () => {
+      active = false;
+    };
+  }, [running, facade, skillId, versionId]);
+  const handleCancel = async () => {
+    if (!runningOperation || !facade.cancelLlmCheck) return;
+    setCancelRequested(true);
+    try {
+      await facade.cancelLlmCheck(runningOperation);
+      cancelledRef.current = true;
+    } finally {
+      setCancelRequested(false);
     }
   };
 
@@ -76,7 +119,11 @@ export function SecurityResults({ facade = unavailableSecurityFacade, skillId, v
           <CheckSummary check={checkByKind("llm")} experimental />
           <div className="sh-workflow-actions">
             <Button disabled={!llmConfigured} loading={running} onClick={() => void handleRun()} size="sm">{t("security.llm.run")}</Button>
+            {running && facade.cancelLlmCheck ? (
+              <Button disabled={!runningOperation} loading={cancelRequested} onClick={() => void handleCancel()} size="sm" variant="danger">{t("security.llm.cancel")}</Button>
+            ) : null}
           </div>
+          {running ? <p className="sh-settings-local-note">{t("security.llm.running")}</p> : null}
           {preferences ? (
             <p className="sh-settings-local-note">
               {preferences.llmProvider.trim()

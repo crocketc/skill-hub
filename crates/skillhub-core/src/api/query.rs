@@ -136,6 +136,14 @@ pub struct ListVersions {
 pub struct ListSkillOperations {
     pub skill_id: SkillId,
 }
+/// One LLM check currently running in the facade, exposed so the UI can show
+/// progress and hand the operation id to `cancel_operation`.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+pub struct LlmCheckRun {
+    pub skill_id: String,
+    pub version_id: String,
+    pub operation_id: crate::OperationId,
+}
 /// One persisted journal entry as surfaced by the per-skill history. The
 /// journal has no skill dimension yet, so entries describe the operation
 /// itself rather than a relation to the queried skill.
@@ -514,6 +522,8 @@ pub enum AppQuery {
     ListVersions(ListVersions),
     #[serde(rename = "list_skill_operations")]
     ListSkillOperations(ListSkillOperations),
+    #[serde(rename = "list_running_llm_checks")]
+    ListRunningLlmChecks,
     #[serde(rename = "list_markdown_files")]
     ListMarkdownFiles(ListMarkdownFiles),
     #[serde(rename = "read_markdown_file")]
@@ -665,6 +675,8 @@ pub enum AppQueryResult {
     RecoveryCandidates(Vec<crate::RecoveryCandidate>),
     #[serde(rename = "skill_operations")]
     SkillOperations(SkillOperationsResult),
+    #[serde(rename = "running_llm_checks")]
+    RunningLlmChecks(Vec<LlmCheckRun>),
     #[serde(rename = "call_policy")]
     CallPolicy(crate::CallPolicyResult),
     #[serde(rename = "llm_safety_check_result")]

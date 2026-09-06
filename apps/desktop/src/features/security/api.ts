@@ -35,6 +35,10 @@ export interface SecurityFacade {
   ): Promise<void>;
   getPreferences?(): Promise<SecurityPreferences>;
   runLlmCheck?(skillId: string, versionId: string): Promise<void>;
+  /** Cancels the running LLM check identified by its native operation id. */
+  cancelLlmCheck?(operationId: string): Promise<void>;
+  /** Lists the LLM checks currently running (used to show progress and the cancel entry). */
+  listRunningLlmChecks?(): Promise<Array<{ skillId: string; versionId: string; operationId: string }>>;
 }
 
 const unavailable = (operation: string): Promise<never> =>

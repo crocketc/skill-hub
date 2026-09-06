@@ -1154,6 +1154,8 @@
     "highRiskDescription": "This finding is marked high risk. Explicit confirmation is required before disposing of it, and the disposition is recorded with the check result.",
     "llm": {
       "run": "Run AI check",
+      "running": "AI check is running; results will appear once it completes.",
+      "cancel": "Cancel check",
       "providerMissing": "No LLM provider is configured; AI checks are unavailable.",
       "scopeExplicitSelection": "Only explicitly selected Skill content is sent.",
       "scopeOther": "Current data scope: {{scope}}",

@@ -37,10 +37,12 @@ interface FacadeOverrides {
   findings?: SecurityFinding[];
   preferences?: SecurityPreferences;
   runLlmCheck?: (skillId: string, versionId: string) => Promise<void>;
+  cancelLlmCheck?: (operationId: string) => Promise<void>;
+  listRunningLlmChecks?: () => Promise<Array<{ skillId: string; versionId: string; operationId: string }>>;
   onDisposition?: (call: DispositionCall) => void;
 }
 
-async function renderSecurity({ checks, findings, preferences, runLlmCheck, onDisposition }: FacadeOverrides) {
+async function renderSecurity({ checks, findings, preferences, runLlmCheck, cancelLlmCheck, listRunningLlmChecks, onDisposition }: FacadeOverrides) {
   const dispositionCalls: DispositionCall[] = [];
   const fixture = separateCheckFixture();
   const listFindings = vi.fn(async () => findings ?? fixture.findings);
@@ -62,6 +64,8 @@ async function renderSecurity({ checks, findings, preferences, runLlmCheck, onDi
     },
     ...(preferences === undefined ? {} : { getPreferences: async () => preferences }),
     runLlmCheck: runSpy,
+    ...(cancelLlmCheck ? { cancelLlmCheck: vi.fn(cancelLlmCheck) } : {}),
+    ...(listRunningLlmChecks ? { listRunningLlmChecks: vi.fn(listRunningLlmChecks) } : {}),
   };
 
   const i18n = await createSkillHubI18n(["zh-CN"]);
@@ -70,7 +74,8 @@ async function renderSecurity({ checks, findings, preferences, runLlmCheck, onDi
       <SecurityResults facade={facade} skillId="skill-pdf" versionId="v1" />
     </I18nextProvider>,
   );
-  return { dispositionCalls, listFindings, runSpy, ...view };
+  const cancelSpy = facade.cancelLlmCheck ?? vi.fn();
+  return { dispositionCalls, listFindings, runSpy, cancelSpy, ...view };
 }
 
 it("renders basic and LLM checks independently and requires explicit confirmation for high-risk handling", async () => {
@@ -194,8 +199,7 @@ it("explains the send scope for explicit selection and refreshes results after r
   });
 });
 
-it("surfaces run failures inline without discarding the recorded findings", async () => {
-  const { runSpy } = await renderSecurity({
+it("surfaces run failures inline without discarding the recorded findings", async () => {  const { runSpy } = await renderSecurity({
     preferences: { llmProvider: "local-model", dataScope: "explicit_selection" },
     findings: [makeFinding({ id: "lf-1", kind: "llm" })],
     runLlmCheck: async () => {
@@ -209,6 +213,37 @@ it("surfaces run failures inline without discarding the recorded findings", asyn
   expect(await screen.findByText("AI 检查运行失败：提供商未就绪")).toBeVisible();
   expect(screen.getByRole("heading", { name: "AI 检查发现" })).toBeVisible();
   expect(runSpy).toHaveBeenCalledOnce();
+});
+
+it("shows progress and a cancel entry that targets the running operation", async () => {
+  let resolveRun: () => void = () => {};
+  const gate = new Promise<void>((resolve) => {
+    resolveRun = resolve;
+  });
+  const { cancelSpy } = await renderSecurity({
+    preferences: { llmProvider: "local-model", dataScope: "explicit_selection" },
+    runLlmCheck: async () => {
+      await gate;
+    },
+    listRunningLlmChecks: async () => [
+      { skillId: "skill-pdf", versionId: "v1", operationId: "op-live" },
+    ],
+    cancelLlmCheck: async () => {
+      resolveRun();
+    },
+  });
+
+  expect(await screen.findByText("仅发送显式选择的 Skill 内容")).toBeVisible();
+  fireEvent.click(screen.getByRole("button", { name: "运行 AI 检查" }));
+
+  expect(await screen.findByText("AI 检查进行中，结果将在完成后展示。")).toBeVisible();
+  const cancel = await screen.findByRole("button", { name: "取消检查" });
+  fireEvent.click(cancel);
+
+  await waitFor(() => expect(cancelSpy).toHaveBeenCalledWith("op-live"));
+  await waitFor(() =>
+    expect(screen.queryByText("AI 检查进行中，结果将在完成后展示。")).not.toBeInTheDocument(),
+  );
 });
 
 it("shows the raw data scope next to the AI check when it is not the explicit-selection default", async () => {

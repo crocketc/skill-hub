@@ -6,7 +6,9 @@ mod update_service;
 use std::collections::HashMap;
 use std::future::Future;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use async_trait::async_trait;
@@ -96,6 +98,14 @@ pub struct LocalApplicationFacade {
     path_grants: Mutex<HashMap<String, ResolvedPathGrant>>,
     assembly_plans: Mutex<HashMap<OperationId, skillhub_core::AssemblyPlan>>,
     external_link_service: ExternalLinkService,
+    llm_runs: Mutex<HashMap<(String, String), RunningLlmCheck>>,
+}
+
+/// One in-flight LLM check: its externally visible operation id plus the flag
+/// `cancel_operation` sets to abandon it.
+struct RunningLlmCheck {
+    operation_id: skillhub_core::OperationId,
+    cancelled: Arc<AtomicBool>,
 }
 
 struct LocalDeploymentBackend {
@@ -1078,6 +1088,7 @@ impl LocalApplicationFacade {
             path_grants: Mutex::new(HashMap::new()),
             assembly_plans: Mutex::new(HashMap::new()),
             external_link_service: ExternalLinkService::new(),
+            llm_runs: Mutex::new(HashMap::new()),
         }
     }
 
@@ -1137,6 +1148,7 @@ impl LocalApplicationFacade {
             path_grants: Mutex::new(HashMap::new()),
             assembly_plans: Mutex::new(HashMap::new()),
             external_link_service: ExternalLinkService::new(),
+            llm_runs: Mutex::new(HashMap::new()),
         }
     }
 
@@ -2136,7 +2148,28 @@ impl LocalApplicationFacade {
         let run_id = format!("llm-safety-{}-{generation}", version_id.as_str());
         let started_at = now_millis();
         let model_id = profile.model.clone();
-        let response = std::thread::spawn(move || {
+        let run_key = (skill_id.to_string(), version_id.to_string());
+        let operation_id = skillhub_core::OperationId::new();
+        let cancelled = Arc::new(AtomicBool::new(false));
+        {
+            let mut runs = self
+                .llm_runs
+                .lock()
+                .map_err(|_| internal("execute.run_llm_safety_check.register"))?;
+            if runs.contains_key(&run_key) {
+                return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                    .with_param("reason", "llm_check_already_running"));
+            }
+            runs.insert(
+                run_key.clone(),
+                RunningLlmCheck {
+                    operation_id,
+                    cancelled: cancelled.clone(),
+                },
+            );
+        }
+        let (sender, receiver) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
             let runtime = tokio::runtime::Builder::new_current_thread()
                 .enable_all()
                 .build()
@@ -2144,11 +2177,43 @@ impl LocalApplicationFacade {
                     AppError::new(ErrorCode::InternalError, Severity::Error)
                         .with_param("source", error.to_string())
                         .with_action(RecoveryAction::Retry)
-                })?;
-            runtime.block_on(runner.run(&profile, request))
-        })
-        .join()
-        .map_err(|_| internal("execute.run_llm_safety_check.runner"))?;
+                });
+            let response =
+                runtime.and_then(|runtime| runtime.block_on(runner.run(&profile, request)));
+            let _ = sender.send(response);
+        });
+        // Wait for the worker without blocking the executor, so progress
+        // queries and cancel_operation stay responsive while the check runs.
+        let response = loop {
+            if cancelled.load(Ordering::SeqCst) {
+                self.llm_runs
+                    .lock()
+                    .map_err(|_| internal("execute.run_llm_safety_check.registry"))?
+                    .remove(&run_key);
+                return Err(
+                    AppError::new(ErrorCode::OperationConflict, Severity::Warning)
+                        .with_param("operation_id", operation_id.to_string())
+                        .with_param("reason", "operation_cancelled"),
+                );
+            }
+            match receiver.try_recv() {
+                Ok(response) => break response,
+                Err(std::sync::mpsc::TryRecvError::Empty) => {
+                    tokio::time::sleep(Duration::from_millis(50)).await;
+                }
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                    self.llm_runs
+                        .lock()
+                        .map_err(|_| internal("execute.run_llm_safety_check.registry"))?
+                        .remove(&run_key);
+                    return Err(internal("execute.run_llm_safety_check.worker"));
+                }
+            }
+        };
+        self.llm_runs
+            .lock()
+            .map_err(|_| internal("execute.run_llm_safety_check.registry"))?
+            .remove(&run_key);
         let mut run = match response {
             Ok(response) => match skillhub_core::llm::safety::parse_safety_response(
                 response.output,
@@ -2187,6 +2252,45 @@ impl LocalApplicationFacade {
             skillhub_core::api::LlmSafetyCheckResult::from_check_result(
                 skill_id, version_id, &result,
             ),
+        ))
+    }
+
+    /// Marks a running LLM check as cancelled. The awaiting run command stops
+    /// waiting for the worker and refuses to persist or report a result.
+    fn cancel_operation(
+        &self,
+        operation_id: skillhub_core::OperationId,
+    ) -> AppResult<AppCommandResult> {
+        let mut runs = self
+            .llm_runs
+            .lock()
+            .map_err(|_| internal("execute.cancel_operation"))?;
+        let entry = runs
+            .values_mut()
+            .find(|run| run.operation_id == operation_id)
+            .ok_or_else(|| {
+                AppError::new(ErrorCode::ObjectNotFound, Severity::Error)
+                    .with_param("operation_id", operation_id.to_string())
+            })?;
+        entry.cancelled.store(true, Ordering::SeqCst);
+        Ok(AppCommandResult::OperationSummary(operation_summary(
+            "operation.cancel_requested",
+        )))
+    }
+
+    fn list_running_llm_checks(&self) -> AppResult<AppQueryResult> {
+        let runs = self
+            .llm_runs
+            .lock()
+            .map_err(|_| internal("query.list_running_llm_checks"))?;
+        Ok(AppQueryResult::RunningLlmChecks(
+            runs.iter()
+                .map(|((skill_id, version_id), run)| skillhub_core::LlmCheckRun {
+                    skill_id: skill_id.clone(),
+                    version_id: version_id.clone(),
+                    operation_id: run.operation_id,
+                })
+                .collect(),
         ))
     }
 
@@ -2938,7 +3042,9 @@ impl ApplicationFacade for LocalApplicationFacade {
             AppCommand::RollbackApplicationUpdate(_) => {
                 return self.rollback_application_update().await
             }
-            AppCommand::CancelOperation { .. } => "execute.cancel_operation",
+            AppCommand::CancelOperation { operation_id } => {
+                return self.cancel_operation(operation_id);
+            }
             AppCommand::PrepareDeployment(request) => {
                 return self.prepare_deployment(request.plan).await
             }
@@ -3513,6 +3619,7 @@ impl ApplicationFacade for LocalApplicationFacade {
             }
             AppQuery::ListVersions(request) => self.list_versions(request.skill_id),
             AppQuery::ListSkillOperations(request) => self.list_skill_operations(request.skill_id),
+            AppQuery::ListRunningLlmChecks => self.list_running_llm_checks(),
             AppQuery::DiffVersions(request) => self.diff_versions(&request.left, &request.right),
             AppQuery::ListDeployments(request) => self.list_deployments(request.skill_id),
             AppQuery::GetDeploymentRelations(request) => {

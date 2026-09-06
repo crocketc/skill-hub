@@ -1047,7 +1047,7 @@ async fn unsupported_operations_return_a_structured_internal_error() {
     );
 
     let error = facade
-        .execute(AppCommand::CancelOperation {
+        .execute(AppCommand::AcknowledgeRecovery {
             operation_id: skillhub_core::OperationId::new(),
         })
         .await
@@ -1055,7 +1055,7 @@ async fn unsupported_operations_return_a_structured_internal_error() {
 
     assert_eq!(error.code, ErrorCode::InternalError);
     assert_eq!(error.severity, Severity::Error);
-    assert_eq!(error.params["operation"], "execute.cancel_operation");
+    assert_eq!(error.params["operation"], "execute.unsupported");
 }
 
 #[tokio::test]
@@ -3116,7 +3116,16 @@ async fn deployment_target_query_includes_discovery_and_registered_project_targe
     };
     assert_eq!(targets.len(), 2);
     assert_eq!(targets[0].id, "codex-global");
-    assert_eq!(targets[0].modes, [DeploymentMode::ManagedCopy]);
+    // The advertised modes mirror the running environment's link support, so
+    // derive the expectation from the same probe instead of hard-coding it.
+    let symlink_supported = skillhub_adapters::deployment::DeploymentFilesystem::new()
+        .available_capabilities()
+        .symlink;
+    let mut expected_modes = vec![DeploymentMode::ManagedCopy];
+    if symlink_supported {
+        expected_modes.insert(0, DeploymentMode::SymbolicLink);
+    }
+    assert_eq!(targets[0].modes, expected_modes);
     assert!(targets[0].available);
     let project_target = targets
         .iter()

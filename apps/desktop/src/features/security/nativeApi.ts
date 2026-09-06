@@ -71,6 +71,26 @@ export const nativeSecurityFacade: SecurityFacade = {
   async runLlmCheck(skillId, versionId) {
     await runNativeLlmSafetyCheck(skillId, await resolvedVersion(skillId, versionId));
   },
+  async cancelLlmCheck(operationId) {
+    const result = await executeCommand({
+      type: "cancel_operation",
+      payload: { operation_id: operationId },
+    });
+    if (result.type !== "operation_summary") {
+      throw new Error("取消操作返回了无法识别的结果");
+    }
+  },
+  async listRunningLlmChecks() {
+    const result = await queryApplication({ type: "list_running_llm_checks" });
+    if (result.type !== "running_llm_checks") {
+      throw new Error("运行中检查查询返回了无法识别的结果");
+    }
+    return result.payload.map((run) => ({
+      skillId: run.skill_id,
+      versionId: run.version_id,
+      operationId: run.operation_id,
+    }));
+  },
 };
 
 type OperationSummary = Extract<AppCommandResult, { type: "operation_summary" }>["payload"];

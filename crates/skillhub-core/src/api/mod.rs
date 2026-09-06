@@ -37,11 +37,11 @@ pub use query::{
     GetRemovalImpact, GetSkill, GetUiPreference, GetUiPreferenceResult, ListCombinations,
     ListCustomAgents, ListDeploymentTargets, ListDeployments, ListFindings, ListMarkdownFiles,
     ListPendingItems, ListProjects, ListSavedProjectViews, ListSkillOperations, ListSkillRepos,
-    ListSkills, ListVersions, LlmSafetyCheckResult, MarkdownFileContent, MarkdownFileEntry,
-    PreviewProjectDirectory, ProjectDirectoryPreview, ReadMarkdownFile, SearchOnlineSources,
-    SkillDeploymentFilter, SkillLifecycleFilter, SkillListFilters, SkillListItem, SkillListPage,
-    SkillListSort, SkillOperationEntry, SkillOperationsResult, SkillResult, SkillSortColumn,
-    SkillSortDirection, VersionDiffResult, VersionResult,
+    ListSkills, ListVersions, LlmCheckRun, LlmSafetyCheckResult, MarkdownFileContent,
+    MarkdownFileEntry, PreviewProjectDirectory, ProjectDirectoryPreview, ReadMarkdownFile,
+    SearchOnlineSources, SkillDeploymentFilter, SkillLifecycleFilter, SkillListFilters,
+    SkillListItem, SkillListPage, SkillListSort, SkillOperationEntry, SkillOperationsResult,
+    SkillResult, SkillSortColumn, SkillSortDirection, VersionDiffResult, VersionResult,
 };
 
 use crate::AppResult;

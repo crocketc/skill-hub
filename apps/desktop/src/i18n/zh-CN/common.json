@@ -1154,6 +1154,8 @@
     "highRiskDescription": "该发现项被标记为高风险。处置前需要显式确认，处置结果会记录到检查结果中。",
     "llm": {
       "run": "运行 AI 检查",
+      "running": "AI 检查进行中，结果将在完成后展示。",
+      "cancel": "取消检查",
       "providerMissing": "未配置 LLM 提供商，AI 检查不可用",
       "scopeExplicitSelection": "仅发送显式选择的 Skill 内容",
       "scopeOther": "当前发送范围：{{scope}}",

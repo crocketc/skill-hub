@@ -52,7 +52,9 @@ impl DeploymentFilesystem {
 
     /// Checks the running account's ability to create directory links without
     /// touching an Agent or project directory. Copy deployments remain
-    /// available even if the platform rejects links.
+    /// available even if the platform rejects links. A creation that reports
+    /// success without actually materializing a link (observed on filtered or
+    /// virtualized volumes) is treated as "unsupported".
     pub fn available_capabilities(&self) -> DeploymentCapability {
         let symlink = tempfile::tempdir().ok().is_some_and(|workspace| {
             let source = workspace.path().join("source");
@@ -60,11 +62,14 @@ impl DeploymentFilesystem {
             if fs::create_dir(&source).is_err() {
                 return false;
             }
-            let created = symlink::create_dir_link(&source, &destination).is_ok();
-            if created {
+            let materialized = symlink::create_dir_link(&source, &destination).is_ok()
+                && fs::symlink_metadata(&destination)
+                    .map(|metadata| metadata.file_type().is_symlink())
+                    .unwrap_or(false);
+            if materialized {
                 let _ = symlink::remove_dir_link(&destination);
             }
-            created
+            materialized
         });
         DeploymentCapability::new(symlink, false, true)
     }
@@ -127,6 +132,15 @@ impl DeploymentFilesystem {
             DeploymentMode::SymbolicLink => {
                 symlink::create_dir_link(&prepared.source_path, &prepared.destination_path)
                     .map_err(|_| unsupported_symlink())?;
+                // Some Windows configurations report success for symlink_dir
+                // without actually materializing the link. Verify before
+                // treating the deployment as applied so failures stay honest.
+                let materialized = fs::symlink_metadata(&prepared.destination_path)
+                    .map(|meta| meta.file_type().is_symlink())
+                    .unwrap_or(false);
+                if !materialized {
+                    return Err(unsupported_symlink());
+                }
             }
             DeploymentMode::DirectoryJunction => {
                 junction_windows::create_junction(
