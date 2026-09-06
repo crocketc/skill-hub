@@ -95,6 +95,20 @@ it("does not offer custom agent entries for discovered agents", async () => {
   expect(screen.queryByRole("button", { name: "删除" })).not.toBeInTheDocument();
 });
 
+it("presents the brand as a branded tag in the header and identity facts", async () => {
+  await renderDetailPage(facadeWith(agentFixture()));
+
+  const heading = await screen.findByRole("heading", { name: /OpenAI/ });
+  expect(heading.querySelector(".sh-brand-tag")).toHaveClass(
+    "sh-brand-tag--openai",
+  );
+
+  const facts = screen.getByRole("region", { name: "Agent 身份" });
+  expect(facts.querySelector(".sh-brand-tag")).toHaveClass(
+    "sh-brand-tag--openai",
+  );
+});
+
 it("renders two logical clients connected to one physical directory", async () => {
   const i18n = await createSkillHubI18n(["en-US"]);
   render(

@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "../../ui/Button";
+import { BrandTag } from "../../ui/BrandTag";
 import type { CompatibilityTarget } from "../bootstrap/api";
 
 interface CompatibilityStepProps {
@@ -76,7 +77,11 @@ export function CompatibilityStep({
             brandGroups.map((group) => (
               <div className="sh-onboarding__brand-group" key={group.brand || "__other"}>
                 <p className="sh-onboarding__brand">
-                  {group.brand || t("onboarding.brandOther")}
+                  {group.brand ? (
+                    <BrandTag brand={group.brand} />
+                  ) : (
+                    t("onboarding.brandOther")
+                  )}
                 </p>
                 {group.items.map((target) => (
                   <TargetCheckbox

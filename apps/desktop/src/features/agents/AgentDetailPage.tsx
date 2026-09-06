@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import { desktopDirectoryPicker, type DirectoryPicker } from "../../platform/directoryPicker";
 import { Button } from "../../ui/Button";
+import { BrandTag } from "../../ui/BrandTag";
 import { ConfirmDialog } from "../../ui/ConfirmDialog";
 import { DataState } from "../../ui/DataState";
 import { Drawer } from "../../ui/Drawer";
@@ -54,7 +55,7 @@ export function AgentDetailPage({ agentId = "default", facade = unavailableAgent
       <header className="sh-agent-detail__header">
         <div>
           <p className="sh-agent-eyebrow">{t("agents.detail.eyebrow")}</p>
-          <h1>{agent.brand} · {agent.instance}</h1>
+          <h1><BrandTag brand={agent.brand} /> · {agent.instance}</h1>
           <p>{t("agents.detail.discoveredFact")}</p>
         </div>
         <div className="sh-agent-detail__header-side">
@@ -81,7 +82,7 @@ export function AgentDetailPage({ agentId = "default", facade = unavailableAgent
         </div>
       </header>
       <section className="sh-agent-facts" aria-label={t("agents.detail.identity")}>
-        <div><dt>{t("agents.detail.brand")}</dt><dd>{agent.brand}</dd></div>
+        <div><dt>{t("agents.detail.brand")}</dt><dd><BrandTag brand={agent.brand} /></dd></div>
         <div><dt>{t("agents.detail.client")}</dt><dd>{agent.client}</dd></div>
         <div><dt>{t("agents.detail.instance")}</dt><dd>{agent.instance}</dd></div>
         <div><dt>{t("agents.detail.paths")}</dt><dd>{agent.discoveredPaths.join("、")}</dd></div>

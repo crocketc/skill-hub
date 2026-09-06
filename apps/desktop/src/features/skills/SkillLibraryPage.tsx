@@ -12,6 +12,7 @@ import {
 } from "react";
 import { useTranslation } from "react-i18next";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
+import "./batchBar.css";
 import { Button } from "../../ui/Button";
 import { DataState } from "../../ui/DataState";
 import {
@@ -109,13 +110,6 @@ interface BatchBarProps {
   page: SkillPage;
   selection: Exclude<SkillSelection, { kind: "none" }>;
 }
-
-const BATCH_ACTIONS: readonly BatchAction[] = [
-  "add_to",
-  "security_check",
-  "export",
-  "archive",
-];
 
 const BATCH_ACTION_KEYS = {
   add_to: "skillLibrary.page.batch.addTo",
@@ -319,8 +313,17 @@ function BatchBar({
           {t("skillLibrary.page.selection.selectAll", { count: page.total })}
         </Button>
       ) : null}
+      <Button onClick={onClear} size="sm" variant="ghost">
+        {t("skillLibrary.page.selection.clear")}
+      </Button>
+      {/* AR-024 按使用频率分组：高频（部署/标签/导出/检查更新）→ 管理类（安全检查/批量流程/归档）→ 破坏性（删除，单独分组降级呈现）。 */}
       <div className="sh-skill-library__batch-actions">
-        <Button onClick={() => onAction("add_to")} size="sm" variant="ghost">
+        <Button
+          onClick={() => onAction("add_to")}
+          size="sm"
+          title={t("skillLibrary.page.batch.addToTitle")}
+          variant="ghost"
+        >
           {t(BATCH_ACTION_KEYS.add_to)}
         </Button>
         <Button onClick={() => onTagAction("add_tag")} size="sm" variant="ghost">
@@ -329,11 +332,14 @@ function BatchBar({
         <Button onClick={() => onTagAction("remove_tag")} size="sm" variant="ghost">
           {t("skillLibrary.page.batch.removeTags")}
         </Button>
-        {BATCH_ACTIONS.slice(1).map((action) => (
-          <Button key={action} onClick={() => onAction(action)} size="sm" variant="ghost">
-            {t(BATCH_ACTION_KEYS[action])}
-          </Button>
-        ))}
+        <Button
+          onClick={onStartExport}
+          size="sm"
+          title={t("skillLibrary.page.batch.startExportTitle")}
+          variant="ghost"
+        >
+          {t("skillLibrary.page.batch.startExport")}
+        </Button>
         {onCheckUpdates ? (
           <Button
             disabled={checkUpdatesPending}
@@ -346,15 +352,29 @@ function BatchBar({
               : t("skillLibrary.page.batch.checkUpdates")}
           </Button>
         ) : null}
-        <Button onClick={onStartExport} size="sm" variant="ghost">
-          {t("skillLibrary.page.batch.startExport")}
+        <Button
+          onClick={() => onAction("security_check")}
+          size="sm"
+          variant="ghost"
+        >
+          {t(BATCH_ACTION_KEYS.security_check)}
         </Button>
-        <Button onClick={onDelete} size="sm" variant="danger">
-          {t("skillLibrary.page.batch.delete")}
+        <Button
+          onClick={() => onAction("export")}
+          size="sm"
+          title={t("skillLibrary.page.batch.exportTitle")}
+          variant="ghost"
+        >
+          {t(BATCH_ACTION_KEYS.export)}
         </Button>
-        <Button onClick={onClear} size="sm" variant="ghost">
-          {t("skillLibrary.page.selection.clear")}
+        <Button onClick={() => onAction("archive")} size="sm" variant="ghost">
+          {t(BATCH_ACTION_KEYS.archive)}
         </Button>
+        <div className="sh-skill-library__batch-destructive">
+          <Button onClick={onDelete} size="sm" variant="ghost">
+            {t("skillLibrary.page.batch.delete")}
+          </Button>
+        </div>
       </div>
       {announcement ? <p aria-live="polite" role="status">{announcement}</p> : null}
     </aside>

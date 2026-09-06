@@ -83,6 +83,20 @@ it("groups agents by brand and refreshes the real discovery facts", async () => 
   await waitFor(() => expect(facade.list).toHaveBeenCalledTimes(2));
 });
 
+it("renders brand group headings as branded color tags", async () => {
+  renderListPage(facadeWith());
+
+  const openaiHeading = await screen.findByRole("heading", { name: "OpenAI" });
+  expect(openaiHeading.querySelector(".sh-brand-tag")).toHaveClass(
+    "sh-brand-tag--openai",
+  );
+
+  const acmeHeading = screen.getByRole("heading", { name: "Acme" });
+  const acmeTag = acmeHeading.querySelector(".sh-brand-tag");
+  expect(acmeTag).toHaveClass("sh-brand-tag--neutral");
+  expect(acmeTag).toHaveAttribute("title", "Acme");
+});
+
 it("aggregates duplicate deployment relations by unique skill per agent", async () => {
   const duplicated: AgentView[] = [
     { ...agents[0], managedDeploymentCount: 2, managedDeploymentRelationCount: 5 },

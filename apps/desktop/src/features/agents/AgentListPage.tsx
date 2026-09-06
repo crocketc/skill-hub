@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
 import { desktopDirectoryPicker, type DirectoryPicker } from "../../platform/directoryPicker";
 import { Button } from "../../ui/Button";
+import { BrandTag } from "../../ui/BrandTag";
 import { ConfirmDialog } from "../../ui/ConfirmDialog";
 import { DataState } from "../../ui/DataState";
 import { Drawer } from "../../ui/Drawer";
@@ -80,7 +81,7 @@ export function AgentListPage({ facade = unavailableAgentFacade, picker = deskto
       </header>
       {agentGroups.map(([brand, groupedAgents]) => (
         <section aria-labelledby={`agent-brand-${brand}`} className="sh-agent-list__brand" key={brand}>
-          <h2 id={`agent-brand-${brand}`}>{brand}</h2>
+          <h2 id={`agent-brand-${brand}`}><BrandTag brand={brand} /></h2>
           <ul className="sh-agent-list__items">
             {groupedAgents.map((agent) => (
               <li key={agent.id}>

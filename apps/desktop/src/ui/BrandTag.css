@@ -1,0 +1,114 @@
+/* AR-005 品牌化彩色标签：品牌特征倾向色只做浅色调，
+   文字使用同色系深色，保证任意主题下芯片内对比度可读。 */
+.sh-brand-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.1rem 0.55rem;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+
+.sh-brand-tag--neutral {
+  background: #eef1f4;
+  border-color: #d3dae1;
+  color: #3d4a57;
+}
+
+.sh-brand-tag--openai {
+  background: #e2f6ef;
+  border-color: #b8e6d6;
+  color: #0b6b54;
+}
+
+.sh-brand-tag--anthropic,
+.sh-brand-tag--claude {
+  background: #faeae3;
+  border-color: #f0cdbc;
+  color: #93431f;
+}
+
+.sh-brand-tag--codex {
+  background: #e2f1ea;
+  border-color: #bde0d1;
+  color: #14503d;
+}
+
+.sh-brand-tag--github-copilot {
+  background: #e9edf1;
+  border-color: #ccd5de;
+  color: #24292f;
+}
+
+.sh-brand-tag--google,
+.sh-brand-tag--gemini {
+  background: #e4edfc;
+  border-color: #c3d7f6;
+  color: #1a4fc4;
+}
+
+.sh-brand-tag--zcode {
+  background: #e3f4e6;
+  border-color: #bce3c7;
+  color: #166534;
+}
+
+.sh-brand-tag--kimi,
+.sh-brand-tag--trae {
+  background: #e2f2fb;
+  border-color: #c0e1f5;
+  color: #075e85;
+}
+
+.sh-brand-tag--windsurf,
+.sh-brand-tag--codebuddy {
+  background: #e4ebfc;
+  border-color: #c5d3f6;
+  color: #1d4ed8;
+}
+
+.sh-brand-tag--cline,
+.sh-brand-tag--qoder {
+  background: #efe9fc;
+  border-color: #dccdf5;
+  color: #6d28d9;
+}
+
+.sh-brand-tag--comate {
+  background: #dff3f1;
+  border-color: #bae2dd;
+  color: #115e59;
+}
+
+.sh-brand-tag--grok {
+  background: #e8eaee;
+  border-color: #cfd4dc;
+  color: #111827;
+}
+
+.sh-brand-tag--hermes {
+  background: #fbe9de;
+  border-color: #f2cdb5;
+  color: #8a3a0f;
+}
+
+.sh-brand-tag--openclaw {
+  background: #fdeadd;
+  border-color: #f8cdac;
+  color: #b54708;
+}
+
+.sh-brand-tag--opencode {
+  background: #e8edf2;
+  border-color: #cdd7e0;
+  color: #334155;
+}
+
+.sh-brand-tag--cursor {
+  background: #e9edf1;
+  border-color: #d0d8e0;
+  color: #3a4a5c;
+}

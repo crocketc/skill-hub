@@ -31,8 +31,9 @@ it("groups agent targets by brand with clients listed underneath", async () => {
     </I18nextProvider>,
   );
 
-  expect(screen.getByText("openai")).toBeVisible();
-  expect(screen.getByText("anthropic")).toBeVisible();
+  // 品牌分组标题以品牌化彩色标签呈现（规范化友好名 + 品牌特征色）
+  expect(screen.getByText("OpenAI")).toHaveClass("sh-brand-tag sh-brand-tag--openai");
+  expect(screen.getByText("Claude")).toHaveClass("sh-brand-tag sh-brand-tag--anthropic");
   expect(screen.getByText("其他", { exact: false })).toBeVisible();
   expect(screen.getByLabelText("codex-cli")).toBeVisible();
   expect(screen.getByLabelText("codex-desktop")).toBeVisible();

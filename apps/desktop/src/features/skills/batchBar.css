@@ -1,0 +1,13 @@
+/* AR-024 批量操作栏分组：破坏性操作（删除）与其余动作之间保留分隔边距与
+   分组边框，并以 ghost 次要形态呈现，仅以危险色文字提示语义。 */
+.sh-skill-library__batch-destructive {
+  display: flex;
+  align-items: center;
+  margin-left: var(--space-2);
+  padding-left: var(--space-3);
+  border-left: 1px solid var(--color-border);
+}
+
+.sh-skill-library__batch-destructive > .sh-button {
+  color: var(--color-danger);
+}

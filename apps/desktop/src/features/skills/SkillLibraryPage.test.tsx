@@ -240,7 +240,7 @@ describe("SkillLibraryPage", () => {
     });
   });
 
-  it("places tag actions directly after add-to in the batch action bar", async () => {
+  it("orders batch actions from high-frequency flows to a separated destructive group", async () => {
     const facade = createMockSkillLibraryFacade();
     renderLibrary({ facade });
 
@@ -256,16 +256,96 @@ describe("SkillLibraryPage", () => {
         .getAllByRole("button")
         .map((button) => button.textContent?.trim()),
     ).toEqual([
-      "Add to",
+      // 高频：部署、标签、导出、检查更新
+      "Deploy…",
       "Add tags",
       "Remove tags",
-      "Run security check",
-      "Export",
-      "Archive",
       "Start export",
+      // 管理类
+      "Run security check",
+      "Submit export job",
+      "Archive",
+      // 破坏性操作单独分组且位于最右侧
       "Delete selected Skills",
-      "Clear selection",
     ]);
+    const destructive = (actions as HTMLElement).querySelector(
+      ".sh-skill-library__batch-destructive",
+    );
+    expect(destructive).not.toBeNull();
+    expect(
+      within(destructive as HTMLElement).getByRole("button", {
+        name: "Delete selected Skills",
+      }),
+    ).toBeInTheDocument();
+    // “清除选择”保持轻量操作，与批量动作分离且不占用破坏性分组位置
+    expect(
+      within(batchBar).getByRole("button", { name: "Clear selection" }),
+    ).toHaveClass("sh-button--ghost");
+  });
+
+  it("downgrades batch deletion to a secondary action while keeping the force-delete flow", async () => {
+    const facade = createMockSkillLibraryFacade();
+    const removalFacade: RemovalFacade = {
+      prepareUndeploy: vi.fn(),
+      commitUndeploy: vi.fn(),
+      prepareDelete: vi.fn().mockResolvedValue({
+        deployments: [], dependentProjects: [], operationId: "delete-pdf", skillId: "skill-pdf", skillName: "PDF Reader",
+      }),
+      commitDelete: vi.fn().mockResolvedValue({ centralSkillDeleted: true }),
+    };
+    renderLibrary({ facade, removalFacade });
+
+    fireEvent.click(await screen.findByRole("checkbox", { name: "Select PDF Reader" }));
+
+    const batchBar = screen.getByRole("complementary", { name: "Batch actions" });
+    const destructive = batchBar.querySelector(".sh-skill-library__batch-destructive");
+    expect(destructive).not.toBeNull();
+    const deleteButton = within(destructive as HTMLElement).getByRole("button", {
+      name: "Delete selected Skills",
+    });
+    expect(deleteButton).toHaveClass("sh-button--ghost");
+    expect(deleteButton).not.toHaveClass("sh-button--danger");
+
+    fireEvent.click(deleteButton);
+    expect(
+      await screen.findByRole("dialog", { name: "Review batch deletion impact" }),
+    ).toBeVisible();
+  });
+
+  it("keeps one control per batch behavior without duplicated accessible names", async () => {
+    const facade = createMockSkillLibraryFacade();
+    renderLibrary({ facade });
+
+    fireEvent.click(
+      await screen.findByRole("checkbox", { name: "Select PDF Reader" }),
+    );
+
+    const batchBar = screen.getByRole("complementary", { name: "Batch actions" });
+    const names = within(batchBar)
+      .getAllByRole("button")
+      .map((button) => button.getAttribute("aria-label") ?? button.textContent?.trim());
+    expect(names.length).toBeGreaterThan(0);
+    expect(new Set(names).size).toBe(names.length);
+    // 语义重复的历史命名已消除：不再出现与“发起导出”难以区分的裸“Export”按钮
+    expect(
+      within(batchBar).queryByRole("button", { name: "Export" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("distinguishes the export wizard entry from the native batch export submission", async () => {
+    const facade = createMockSkillLibraryFacade();
+    renderLibrary({ facade });
+
+    fireEvent.click(
+      await screen.findByRole("checkbox", { name: "Select PDF Reader" }),
+    );
+
+    const batchBar = screen.getByRole("complementary", { name: "Batch actions" });
+    const wizard = within(batchBar).getByRole("button", { name: "Start export" });
+    const submission = within(batchBar).getByRole("button", { name: "Submit export job" });
+    expect(wizard.getAttribute("title")).toBeTruthy();
+    expect(submission.getAttribute("title")).toBeTruthy();
+    expect(wizard.getAttribute("title")).not.toBe(submission.getAttribute("title"));
   });
 
   it("starts the standard export flow with the explicitly selected skill ids", async () => {
@@ -1080,7 +1160,7 @@ describe("SkillLibraryPage", () => {
     fireEvent.click(
       await screen.findByRole("checkbox", { name: "Select PDF Reader" }),
     );
-    fireEvent.click(screen.getByRole("button", { name: "Export" }));
+    fireEvent.click(screen.getByRole("button", { name: "Submit export job" }));
 
     expect(await screen.findByRole("status")).toHaveTextContent(
       "This batch workflow is not connected",
@@ -1158,7 +1238,7 @@ describe("SkillLibraryPage", () => {
 
     fireEvent.click(await screen.findByRole("checkbox", { name: "Select PDF Reader" }));
     fireEvent.click(screen.getByRole("checkbox", { name: "Select DOCX Writer" }));
-    fireEvent.click(screen.getByRole("button", { name: "Add to" }));
+    fireEvent.click(screen.getByRole("button", { name: "Deploy…" }));
 
     await screen.findByText("Batch deployment");
     expect(view.router.state.location.pathname).toBe("/deploy");
@@ -1180,7 +1260,7 @@ describe("SkillLibraryPage", () => {
     expect(await screen.findByText(/Codex CLI/)).toBeVisible();
 
     fireEvent.click(await screen.findByRole("checkbox", { name: "Select PDF Reader" }));
-    fireEvent.click(screen.getByRole("button", { name: "Add to" }));
+    fireEvent.click(screen.getByRole("button", { name: "Deploy…" }));
 
     await screen.findByText("Batch deployment");
     const params = new URLSearchParams(view.router.state.location.search);
@@ -1198,7 +1278,7 @@ describe("SkillLibraryPage", () => {
     fireEvent.click(
       await screen.findByRole("checkbox", { name: "Select PDF Reader" }),
     );
-    fireEvent.click(screen.getByRole("button", { name: "Export" }));
+    fireEvent.click(screen.getByRole("button", { name: "Submit export job" }));
     const batchBar = screen.getByRole("complementary", { name: "Batch actions" });
     expect(await within(batchBar).findByRole("status")).toHaveTextContent(
       "The batch workflow could not be started",
