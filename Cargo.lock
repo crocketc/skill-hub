@@ -4832,6 +4832,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
+ "base64 0.21.7",
  "open",
  "rusqlite",
  "serde_json",
@@ -4897,6 +4898,7 @@ name = "skillhub-storage"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "base64 0.21.7",
  "rusqlite",
  "serde",
  "serde_json",

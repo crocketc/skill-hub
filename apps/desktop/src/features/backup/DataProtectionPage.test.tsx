@@ -29,13 +29,14 @@ function versionResult(skillId: string, versionId: string, current: boolean): Ve
 
 interface RenderPageOptions {
   state?: unknown;
+  picker?: { pickDirectory: () => Promise<string | null> };
 }
 
 function renderPage(facade: BackupFacade, options: RenderPageOptions = {}) {
   return render(
     <I18nextProvider i18n={skillHubI18n}>
       <MemoryRouter initialEntries={[{ pathname: "/settings/data-protection", state: options.state }]}>
-        <DataProtectionPage facade={facade} />
+        <DataProtectionPage facade={facade} directoryPicker={options.picker} />
       </MemoryRouter>
     </I18nextProvider>,
   );
@@ -87,7 +88,7 @@ describe("DataProtectionPage", () => {
     expect(create).toBeDisabled();
     fireEvent.change(screen.getByLabelText("Export decision for skill-2"), { target: { value: "include_and_mark" } });
     fireEvent.click(create);
-    await waitFor(() => expect(facade.createExport).toHaveBeenCalledWith({ selection: { skills: ["skill-1", "skill-2"] }, versions: "current", skills: [], format: "folder" }, [{ skill_id: "skill-2", decision: "include_and_mark" }]));
+    await waitFor(() => expect(facade.createExport).toHaveBeenCalledWith(expect.objectContaining({ selection: { skills: ["skill-1", "skill-2"] }, versions: "current", format: "folder", output_dir: null }), [{ skill_id: "skill-2", decision: "include_and_mark" }]));
     expect(await screen.findByText(/C:\/export.skillhub/)).toBeVisible();
   });
 
@@ -97,12 +98,51 @@ describe("DataProtectionPage", () => {
     fireEvent.change(screen.getByLabelText("Skill IDs"), { target: { value: "skill-1" } });
     fireEvent.change(screen.getByLabelText("Export format"), { target: { value: "zip" } });
     fireEvent.click(screen.getByRole("button", { name: "Review export" }));
-    await waitFor(() => expect(facade.prepareExport).toHaveBeenCalledWith({ selection: { skills: ["skill-1"] }, versions: "current", skills: [], format: "zip" }));
+    await waitFor(() => expect(facade.prepareExport).toHaveBeenCalledWith(expect.objectContaining({ selection: { skills: ["skill-1"] }, versions: "current", format: "zip", output_dir: null })));
     expect(await screen.findByText(/skill-2/)).toBeVisible();
     fireEvent.change(screen.getByLabelText("Export decision for skill-2"), { target: { value: "include_and_mark" } });
     fireEvent.click(screen.getByRole("button", { name: "Create export" }));
     await waitFor(() => expect(facade.createExport).toHaveBeenCalledWith(expect.objectContaining({ format: "zip" }), expect.anything()));
     expect(await screen.findByText(/C:\/export.skillhub/)).toBeVisible();
+  });
+
+  it("passes the chosen output directory through to the export creation", async () => {
+    const facade = createFacade();
+    const picker = { pickDirectory: vi.fn().mockResolvedValue("C:/chosen/exports") };
+    renderPage(facade, { picker });
+
+    fireEvent.click(screen.getByRole("button", { name: "Choose output directory" }));
+    expect(await screen.findByText(/C:\/chosen\/exports/)).toBeVisible();
+    expect(picker.pickDirectory).toHaveBeenCalled();
+
+    fireEvent.change(screen.getByLabelText("Skill IDs"), { target: { value: "skill-1" } });
+    fireEvent.click(screen.getByRole("button", { name: "Review export" }));
+    await screen.findByText(/skill-2/);
+    fireEvent.change(screen.getByLabelText("Export decision for skill-2"), { target: { value: "include_and_mark" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create export" }));
+    await waitFor(() =>
+      expect(facade.createExport).toHaveBeenCalledWith(
+        expect.objectContaining({ output_dir: "C:/chosen/exports" }),
+        expect.anything(),
+      ),
+    );
+  });
+
+  it("omits the output directory when the user cancels the picker", async () => {
+    const facade = createFacade();
+    const picker = { pickDirectory: vi.fn().mockResolvedValue(null) };
+    renderPage(facade, { picker });
+
+    fireEvent.click(screen.getByRole("button", { name: "Choose output directory" }));
+    await waitFor(() => expect(picker.pickDirectory).toHaveBeenCalled());
+
+    fireEvent.change(screen.getByLabelText("Skill IDs"), { target: { value: "skill-1" } });
+    fireEvent.click(screen.getByRole("button", { name: "Review export" }));
+    await waitFor(() =>
+      expect(facade.prepareExport).toHaveBeenCalledWith(
+        expect.objectContaining({ output_dir: null }),
+      ),
+    );
   });
 
   it("prefills the export selection from library navigation state and marks readiness per skill", async () => {
@@ -123,7 +163,7 @@ describe("DataProtectionPage", () => {
     expect(facade.listVersions).toHaveBeenCalledWith("skill-2");
 
     fireEvent.click(screen.getByRole("button", { name: "Review export" }));
-    await waitFor(() => expect(facade.prepareExport).toHaveBeenCalledWith({ selection: { skills: ["skill-1", "skill-2"] }, versions: "current", skills: [], format: "folder" }));
+    await waitFor(() => expect(facade.prepareExport).toHaveBeenCalledWith(expect.objectContaining({ selection: { skills: ["skill-1", "skill-2"] }, versions: "current", format: "folder", output_dir: null })));
   });
 
   it("marks carried-over skills as unexportable when their versions cannot be read", async () => {

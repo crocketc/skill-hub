@@ -492,8 +492,10 @@ async fn standard_export_prepare_uses_the_real_facade_and_stays_read_only() {
                         version_id: version.id.clone(),
                         content: "# Portable\n".into(),
                         display_name: "Standard export".into(),
+                        files: Vec::new(),
                     }],
                     format: skillhub_core::ExportFormat::Folder,
+                    output_dir: None,
                 },
             },
         ))
@@ -536,8 +538,10 @@ async fn standard_export_create_requires_sensitive_decision_and_returns_neutral_
             version_id: version.id,
             content: secret.into(),
             display_name: "Sensitive export".into(),
+            files: Vec::new(),
         }],
         format: skillhub_core::ExportFormat::Folder,
+        output_dir: None,
     };
     let facade = LocalApplicationFacade::new_with_library(database, root.path());
     let missing = facade
@@ -566,12 +570,160 @@ async fn standard_export_create_requires_sensitive_decision_and_returns_neutral_
     let AppCommandResult::ExportResult(result) = result else {
         panic!("expected export result");
     };
+    // AR-025：导出是外层压缩包，manifest.json 在包内。
     let export_root = std::path::Path::new(&result.path);
-    assert!(export_root.is_dir());
+    assert_eq!(
+        export_root.extension().and_then(|name| name.to_str()),
+        Some("zip")
+    );
     assert_eq!(result.skills_exported, 1);
-    let manifest = std::fs::read_to_string(export_root.join("manifest.json")).expect("manifest");
+    let file = std::fs::File::open(export_root).expect("open export archive");
+    let mut archive = zip::ZipArchive::new(file).expect("read archive");
+    let manifest = std::io::read_to_string(archive.by_name("manifest.json").expect("manifest"))
+        .expect("manifest utf8");
     assert!(!manifest.contains(root.path().to_string_lossy().as_ref()));
     assert!(!manifest.contains("sk-live-secret"));
+}
+
+#[tokio::test]
+async fn standard_export_exports_full_folder_content_using_display_name() {
+    let database = Database::open_in_memory().expect("database");
+    let skill = Skill::new(skillhub_core::SkillId::new(), "Full export");
+    database
+        .catalog_repository()
+        .expect("catalog repository")
+        .insert(&skill)
+        .await
+        .expect("insert skill");
+    let root = tempfile::tempdir().expect("library root");
+    let source = tempfile::tempdir().expect("source");
+    std::fs::write(source.path().join("SKILL.md"), "# Full\n").expect("write skill");
+    std::fs::create_dir_all(source.path().join("assets")).expect("create assets dir");
+    std::fs::write(source.path().join("assets").join("note.txt"), "hello").expect("write asset");
+    let library = CentralLibrary::initialize(root.path()).expect("central library");
+    let version = VersionStore::from_library(&library)
+        .capture(skill.id(), source.path())
+        .expect("capture version");
+    VersionStore::from_library(&library)
+        .set_current(skill.id(), &version.id)
+        .expect("set current");
+    let facade = LocalApplicationFacade::new_with_library(database, root.path());
+
+    let result = facade
+        .execute(AppCommand::CreateStandardExport(
+            skillhub_core::CreateStandardExport {
+                input: skillhub_core::ExportInput {
+                    selection: skillhub_core::ExportSelection::Skills(vec![skill.id()]),
+                    versions: skillhub_core::VersionSelection::Current,
+                    skills: Vec::new(),
+                    format: skillhub_core::ExportFormat::Folder,
+                    output_dir: None,
+                },
+                decisions: Vec::new(),
+            },
+        ))
+        .await
+        .expect("create export");
+    let AppCommandResult::ExportResult(result) = result else {
+        panic!("expected export result");
+    };
+    let file = std::fs::File::open(std::path::Path::new(&result.path)).expect("open archive");
+    let mut archive = zip::ZipArchive::new(file).expect("read archive");
+    assert!(
+        archive.by_name("skills/full-export/SKILL.md").is_ok(),
+        "目录名必须来自显示名而不是内部 ID"
+    );
+    assert!(
+        archive
+            .by_name("skills/full-export/assets/note.txt")
+            .is_ok(),
+        "SKILL.md 之外的内容也必须包含"
+    );
+    let note = std::io::read_to_string(
+        archive
+            .by_name("skills/full-export/assets/note.txt")
+            .expect("note"),
+    )
+    .expect("note utf8");
+    assert_eq!(note, "hello");
+}
+
+#[tokio::test]
+async fn standard_export_to_user_directory_requires_a_granted_path() {
+    let database = Database::open_in_memory().expect("database");
+    let skill = Skill::new(skillhub_core::SkillId::new(), "Granted export");
+    database
+        .catalog_repository()
+        .expect("catalog repository")
+        .insert(&skill)
+        .await
+        .expect("insert skill");
+    let root = tempfile::tempdir().expect("library root");
+    let source = tempfile::tempdir().expect("source");
+    std::fs::write(source.path().join("SKILL.md"), "# Granted\n").expect("write skill");
+    let library = CentralLibrary::initialize(root.path()).expect("central library");
+    let version = VersionStore::from_library(&library)
+        .capture(skill.id(), source.path())
+        .expect("capture version");
+    VersionStore::from_library(&library)
+        .set_current(skill.id(), &version.id)
+        .expect("set current");
+    let output = tempfile::tempdir().expect("output dir");
+    let canonical = std::fs::canonicalize(output.path()).expect("canonicalize output");
+    let facade = LocalApplicationFacade::new_with_library(database, root.path());
+
+    // 未签发 grant：拒绝写入用户选择的目录。
+    let denied = facade
+        .execute(AppCommand::CreateStandardExport(
+            skillhub_core::CreateStandardExport {
+                input: skillhub_core::ExportInput {
+                    selection: skillhub_core::ExportSelection::Skills(vec![skill.id()]),
+                    versions: skillhub_core::VersionSelection::Current,
+                    skills: Vec::new(),
+                    format: skillhub_core::ExportFormat::Folder,
+                    output_dir: Some(output.path().to_string_lossy().into_owned()),
+                },
+                decisions: Vec::new(),
+            },
+        ))
+        .await
+        .expect_err("an ungranted output directory must be refused");
+    assert_eq!(denied.code, ErrorCode::PathOutsideAllowedRoots);
+
+    // 宿主选择器签发 grant（grant_id 即规范化路径）后允许。
+    facade
+        .register_path_grant(skillhub_core::agent::ResolvedPathGrant {
+            grant_id: canonical.to_string_lossy().into_owned(),
+            path: canonical.to_string_lossy().into_owned(),
+            operating_system: skillhub_core::agent::OperatingSystem::Windows,
+        })
+        .expect("register grant");
+    let result = facade
+        .execute(AppCommand::CreateStandardExport(
+            skillhub_core::CreateStandardExport {
+                input: skillhub_core::ExportInput {
+                    selection: skillhub_core::ExportSelection::Skills(vec![skill.id()]),
+                    versions: skillhub_core::VersionSelection::Current,
+                    skills: Vec::new(),
+                    format: skillhub_core::ExportFormat::Folder,
+                    output_dir: Some(output.path().to_string_lossy().into_owned()),
+                },
+                decisions: Vec::new(),
+            },
+        ))
+        .await
+        .expect("granted export must succeed");
+    let AppCommandResult::ExportResult(result) = result else {
+        panic!("expected export result");
+    };
+    assert_eq!(
+        std::path::Path::new(&result.path)
+            .parent()
+            .and_then(|parent| std::fs::canonicalize(parent).ok())
+            .as_deref(),
+        std::fs::canonicalize(output.path()).ok().as_deref(),
+        "导出包必须落在用户选择的输出目录"
+    );
 }
 
 #[tokio::test]

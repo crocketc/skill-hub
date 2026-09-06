@@ -16,11 +16,16 @@ import type {
 
   BackupRetentionResult,
 } from "../../api/bindings";
+import { desktopDirectoryPicker } from "../../platform/directoryPicker";
 import { Button } from "../../ui/Button";
 import type { BackupFacade } from "./api";
 
 type Decision = "overwrite" | "keep_both" | "skip";
 type SensitiveDecision = "resolve_first" | "exclude_skill" | "include_and_mark";
+
+interface OutputDirectoryPicker {
+  pickDirectory: () => Promise<string | null>;
+}
 
 /**
  * Version lookup outcome for a skill carried over from the library.
@@ -38,7 +43,13 @@ function readCarriedExportSkillIds(state: unknown): string[] {
   return [...new Set(carried as string[])].filter((id) => id.trim().length > 0);
 }
 
-export function DataProtectionPage({ facade }: { facade: BackupFacade }) {
+export function DataProtectionPage({
+  facade,
+  directoryPicker = desktopDirectoryPicker,
+}: {
+  facade: BackupFacade;
+  directoryPicker?: OutputDirectoryPicker;
+}) {
   const { t } = useTranslation();
   const location = useLocation();
   const [path, setPath] = useState("");
@@ -48,6 +59,8 @@ export function DataProtectionPage({ facade }: { facade: BackupFacade }) {
   const [restoreResult, setRestoreResult] = useState<RestoreResult>();
   const [exportSkillIds, setExportSkillIds] = useState("");
   const [exportFormat, setExportFormat] = useState<ExportInput["format"]>("folder");
+  const [outputDir, setOutputDir] = useState<string>();
+  const [pickerError, setPickerError] = useState<string>();
   const [rollingMax, setRollingMax] = useState(3);
   const [rollingBusy, setRollingBusy] = useState(false);
   const [rollingResult, setRollingResult] = useState<BackupRetentionResult>();
@@ -142,15 +155,20 @@ export function DataProtectionPage({ facade }: { facade: BackupFacade }) {
     if (!exportSkillIds.trim()) return;
     setExportPath(undefined);
     setExportDecisions({});
-    const input: ExportInput = { selection: { skills: exportSkillIds.split(",").map((id) => id.trim()).filter(Boolean) }, versions: "current", skills: [], format: exportFormat };
+    const input: ExportInput = { selection: { skills: exportSkillIds.split(",").map((id) => id.trim()).filter(Boolean) }, versions: "current", skills: [], format: exportFormat, output_dir: outputDir ?? null };
     setExportPlan(await facade.prepareExport(input));
   });
   const commitExport = () => run(async () => {
     if (!exportPlan) return;
-    const input: ExportInput = { selection: { skills: exportSkillIds.split(",").map((id) => id.trim()).filter(Boolean) }, versions: "current", skills: [], format: exportFormat };
+    const input: ExportInput = { selection: { skills: exportSkillIds.split(",").map((id) => id.trim()).filter(Boolean) }, versions: "current", skills: [], format: exportFormat, output_dir: outputDir ?? null };
     const decisions: ExportDecision[] = exportPlan.sensitive_items.map((item) => ({ skill_id: item.skill_id, decision: exportDecisions[item.skill_id] })) as ExportDecision[];
     const result = await facade.createExport(input, decisions);
     setExportPath(result.path);
+  });
+  const pickOutputDirectory = () => run(async () => {
+    setPickerError(undefined);
+    const picked = await directoryPicker.pickDirectory();
+    if (picked) setOutputDir(picked);
   });
   const toggleDeploymentSelection = (deploymentId: string) => {
     setSelectedDeploymentIds((current) => current.includes(deploymentId)
@@ -196,6 +214,14 @@ export function DataProtectionPage({ facade }: { facade: BackupFacade }) {
           <option value="folder">{t("dataProtection.export.formatFolder")}</option>
           <option value="zip">{t("dataProtection.export.formatZip")}</option>
         </select></label>
+        <p>{t("dataProtection.export.formatHint")}</p>
+        <div className="sh-button-row">
+          <Button disabled={busy} onClick={() => void pickOutputDirectory()} variant="secondary">
+            {t("dataProtection.export.pickOutputDir")}
+          </Button>
+          {outputDir ? <span role="status">{outputDir}</span> : <span>{t("dataProtection.export.outputDirDefault")}</span>}
+        </div>
+        {pickerError ? <p role="alert">{pickerError}</p> : null}
         {carriedSkillIds.length > 0 ? (
           <div>
             <p>{t("backup.export.prefilled", { count: carriedSkillIds.length })}</p>

@@ -609,6 +609,15 @@ export type ExportDecision = {
 	decision: SensitiveContentDecision,
 };
 
+/**
+ *  AR-025：版本内的单个文件。`path` 是版本内安全相对路径；
+ *  `data_base64` 是文件字节的 base64 编码（wire 层只传文本）。
+ */
+export type ExportFile = {
+	path: string,
+	data_base64: string,
+};
+
 export type ExportFormat = "folder" | "zip";
 
 export type ExportInput = {
@@ -620,6 +629,11 @@ export type ExportInput = {
 	 *  recorded before the field existed keep deserializing.
 	 */
 	format?: ExportFormat,
+	/**
+	 *  AR-025：用户通过系统目录选择器选定的输出目录；缺省时仍写到集中库
+	 *  的导出目录。宿主必须先为该路径签发 grant（选择器已自动签发）。
+	 */
+	output_dir?: string | null,
 };
 
 export type ExportPlan = {
@@ -641,6 +655,11 @@ export type ExportSkill = {
 	version_id: VersionId,
 	content: string,
 	display_name: string,
+	/**
+	 *  版本内全部文件（AR-025：导出完整目录内容，而不只是 SKILL.md）。
+	 *  旧载荷可以缺省；缺省时导出回退为仅 SKILL.md。
+	 */
+	files?: ExportFile[],
 };
 
 export type ExportSkillSummary = {

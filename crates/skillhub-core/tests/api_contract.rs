@@ -538,6 +538,7 @@ fn export_and_uninstall_commands_have_stable_wire_shapes() {
         versions: skillhub_core::VersionSelection::Current,
         skills: Vec::new(),
         format: skillhub_core::ExportFormat::Folder,
+        output_dir: None,
     };
     let commands = [
         AppCommand::PrepareStandardExport(skillhub_core::PrepareStandardExport {

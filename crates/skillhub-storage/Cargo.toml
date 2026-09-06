@@ -12,6 +12,7 @@ serde_json = "1"
 sha2 = "0.10"
 zip = { version = "2", default-features = false, features = ["deflate"] }
 async-trait = "0.1"
+base64 = "0.21"
 skillhub-core = { path = "../skillhub-core", version = "0.1.0" }
 tokio = { version = "1", features = ["sync"] }
 

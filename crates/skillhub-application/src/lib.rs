@@ -1929,11 +1929,42 @@ impl LocalApplicationFacade {
                                         .with_action(RecoveryAction::Retry)
                                 })
                         })?;
+                    // AR-025：导出完整目录内容——逐文件读出版本内容并 base64
+                    // 编码；单文件上限 16 MiB、单版本累计 64 MiB，超出时诚实
+                    // 报错而不是静默截断。
+                    use base64::Engine as _;
+                    let manifest = library.load_manifest(&version_id)?;
+                    let mut files = Vec::with_capacity(manifest.entries.len());
+                    let mut total_bytes: u64 = 0;
+                    for entry in &manifest.entries {
+                        const MAX_FILE_BYTES: u64 = 16 * 1024 * 1024;
+                        const MAX_VERSION_BYTES: u64 = 64 * 1024 * 1024;
+                        if entry.size > MAX_FILE_BYTES {
+                            return Err(AppError::new(ErrorCode::InvalidInput, Severity::Error)
+                                .with_param("skill_id", skill_id.to_string())
+                                .with_param("path", entry.path.clone())
+                                .with_param("reason", "export_file_too_large"));
+                        }
+                        total_bytes += entry.size;
+                        if total_bytes > MAX_VERSION_BYTES {
+                            return Err(AppError::new(ErrorCode::InvalidInput, Severity::Error)
+                                .with_param("skill_id", skill_id.to_string())
+                                .with_param("reason", "export_version_too_large"));
+                        }
+                        let (_, file_bytes) =
+                            library.read_file(&version_id, &entry.path, MAX_FILE_BYTES)?;
+                        files.push(skillhub_core::ExportFile {
+                            path: entry.path.clone(),
+                            data_base64: base64::engine::general_purpose::STANDARD
+                                .encode(file_bytes),
+                        });
+                    }
                     input.skills.push(skillhub_core::ExportSkill {
                         skill_id,
                         version_id,
                         content,
                         display_name,
+                        files,
                     });
                 }
             }
@@ -1946,6 +1977,44 @@ impl LocalApplicationFacade {
             return Err(unsupported("execute.standard_export.library"));
         };
         Ok(LibraryPaths::from_root(root).management_dir.join("exports"))
+    }
+
+    /// AR-025：校验用户选择的导出输出目录——必须是已存在的目录，且宿主
+    /// 已通过系统选择器为其签发路径 grant（grant_id 即规范化路径）。
+    /// 未授权的路径一律拒绝，不绕过路径边界。
+    fn granted_export_destination(&self, raw: &str) -> AppResult<PathBuf> {
+        let canonical = std::fs::canonicalize(raw).map_err(|error| {
+            AppError::new(ErrorCode::ObjectNotFound, Severity::Error)
+                .with_param("path", raw.to_owned())
+                .with_param("source", error.to_string())
+                .with_action(RecoveryAction::ChooseAnotherName)
+        })?;
+        if !canonical.is_dir() {
+            return Err(AppError::new(ErrorCode::InvalidInput, Severity::Error)
+                .with_param("field", "output_dir")
+                .with_action(RecoveryAction::ChooseAnotherName));
+        }
+        let normalized = normalize_windows_path(&canonical.to_string_lossy());
+        let raw = canonical.to_string_lossy().into_owned();
+        let authorized = self
+            .path_grants
+            .lock()
+            .map_err(|_| internal("execute.standard_export.grants"))?
+            .values()
+            .any(|grant| {
+                let id = grant.grant_id.as_str();
+                let path = grant.path.as_str();
+                id == normalized || path == normalized || id == raw || path == raw
+            });
+        if !authorized {
+            return Err(AppError::new(
+                skillhub_core::ErrorCode::PathOutsideAllowedRoots,
+                Severity::Error,
+            )
+            .with_param("path", normalized)
+            .with_action(RecoveryAction::InspectTarget));
+        }
+        Ok(canonical)
     }
 
     fn uninstall_deployments(
@@ -3553,8 +3622,14 @@ impl ApplicationFacade for LocalApplicationFacade {
                 return service.prepare(&input).map(AppCommandResult::ExportPlan);
             }
             AppCommand::CreateStandardExport(request) => {
+                // AR-025：用户可通过系统选择器指定输出目录（宿主在拾取时
+                // 已签发路径 grant）；未指定时仍写集中库导出目录。
+                let destination = match request.input.output_dir.as_deref() {
+                    Some(dir) if !dir.trim().is_empty() => self.granted_export_destination(dir)?,
+                    _ => self.standard_export_destination()?,
+                };
                 let input = self.export_input(request.input)?;
-                let service = ExportService::new(self.standard_export_destination()?);
+                let service = ExportService::new(destination);
                 let plan = service.prepare(&input)?;
                 let decisions = request
                     .decisions
@@ -4873,6 +4948,18 @@ fn agent_invalid(detail: impl Into<String>) -> AppError {
     AppError::new(ErrorCode::AgentProfileInvalidCapability, Severity::Error)
         .with_param("detail", detail.into())
         .with_action(RecoveryAction::Acknowledge)
+}
+
+/// 与桌面宿主 normalize_grant_path / 前端 normalizeWindowsPath 同口径：
+/// 剥掉 Windows 扩展长度前缀，得到 grant 注册与比较用的路径字符串。
+fn normalize_windows_path(raw: &str) -> String {
+    if let Some(rest) = raw.strip_prefix(r"\\?\UNC\") {
+        return format!(r"\\{rest}");
+    }
+    if let Some(rest) = raw.strip_prefix(r"\\?\") {
+        return rest.to_owned();
+    }
+    raw.to_owned()
 }
 
 /// 仓库 Skill 下载根目录（系统临时目录下的独立子目录）。
