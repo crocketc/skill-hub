@@ -15,11 +15,63 @@ pub mod updater;
 /// envelopes instead of stringly-typed command names or ad-hoc payloads.
 pub struct CommandBridge {
     facade: Arc<dyn ApplicationFacade>,
+    /// 具体门面句柄：仅桌面宿主注入，供目录选择器签发路径 grant。
+    local: Option<Arc<LocalApplicationFacade>>,
 }
 
 impl CommandBridge {
     pub fn new(facade: Arc<dyn ApplicationFacade>) -> Self {
-        Self { facade }
+        Self {
+            facade,
+            local: None,
+        }
+    }
+
+    /// 桌面宿主注入具体门面；测试替身（RecordingFacade）保持 None。
+    pub fn with_local(mut self, local: Arc<LocalApplicationFacade>) -> Self {
+        self.local = Some(local);
+        self
+    }
+
+    /// 注册一个路径 grant（grant_id 即规范化路径）。
+    pub fn register_path_grant(
+        &self,
+        grant: skillhub_core::agent::ResolvedPathGrant,
+    ) -> AppResult<()> {
+        let Some(local) = &self.local else {
+            return Err(skillhub_core::AppError::new(
+                skillhub_core::ErrorCode::InternalError,
+                skillhub_core::Severity::Error,
+            )
+            .with_param("detail", "local facade is not attached to this bridge"));
+        };
+        local.register_path_grant(grant)
+    }
+
+    /// 规范化目录并签发路径 grant，返回 grant_id（即规范化路径字符串）。
+    pub fn issue_grant_for_path(&self, path: &std::path::Path) -> AppResult<String> {
+        let canonical = std::fs::canonicalize(path).map_err(|error| {
+            skillhub_core::AppError::new(
+                skillhub_core::ErrorCode::InvalidInput,
+                skillhub_core::Severity::Warning,
+            )
+            .with_param("source", error.to_string())
+        })?;
+        if !canonical.is_dir() {
+            return Err(skillhub_core::AppError::new(
+                skillhub_core::ErrorCode::InvalidInput,
+                skillhub_core::Severity::Warning,
+            )
+            .with_param("field", "path"));
+        }
+        // grant_id 即规范化路径；与前端展示口径一致（剥掉扩展长度前缀）。
+        let grant_id = normalize_grant_path(&canonical);
+        self.register_path_grant(skillhub_core::agent::ResolvedPathGrant {
+            grant_id: grant_id.clone(),
+            path: grant_id.clone(),
+            operating_system: host_operating_system(),
+        })?;
+        Ok(grant_id)
     }
 
     pub async fn execute(&self, command: AppCommand) -> AppResult<AppCommandResult> {
@@ -48,8 +100,8 @@ async fn query_application(
 }
 
 #[tauri::command]
-async fn pick_local_directory() -> Result<Option<String>, String> {
-    tauri::async_runtime::spawn_blocking(|| {
+async fn pick_local_directory(bridge: State<'_, CommandBridge>) -> Result<Option<String>, String> {
+    let picked = tauri::async_runtime::spawn_blocking(|| {
         let Some(path) = rfd::FileDialog::new().pick_folder() else {
             return Ok(None);
         };
@@ -58,10 +110,65 @@ async fn pick_local_directory() -> Result<Option<String>, String> {
         if !canonical.is_dir() {
             return Err("directory_picker.not_a_directory".to_owned());
         }
-        Ok(Some(canonical.to_string_lossy().into_owned()))
+        Ok(Some(canonical))
     })
     .await
-    .map_err(|error| format!("directory_picker.join_failed: {error}"))?
+    .map_err(|error| format!("directory_picker.join_failed: {error}"))??;
+    let Some(canonical) = picked else {
+        return Ok(None);
+    };
+    let grant_id = bridge
+        .issue_grant_for_path(&canonical)
+        .map_err(|error| error.to_string())?;
+    Ok(Some(
+        serde_json::json!({ "path": canonical.to_string_lossy(), "grant_id": grant_id })
+            .to_string(),
+    ))
+}
+
+/// 启动时为已存储的自定义 Agent 重新签发路径 grant：
+/// grant 注册表在内存中，重启后需按记录里的目录路径恢复，编辑才可用。
+fn re_register_custom_agent_grants(facade: &LocalApplicationFacade) {
+    let query = AppQuery::ListCustomAgents(skillhub_core::api::ListCustomAgents);
+    let Ok(AppQueryResult::CustomAgents(agents)) =
+        tauri::async_runtime::block_on(facade.query(query))
+    else {
+        return;
+    };
+    for agent in agents {
+        let path = agent.directory.path;
+        if path.trim().is_empty() {
+            continue;
+        }
+        let path = normalize_grant_path(std::path::Path::new(&path));
+        if let Err(error) = facade.register_path_grant(skillhub_core::agent::ResolvedPathGrant {
+            grant_id: path.clone(),
+            path,
+            operating_system: host_operating_system(),
+        }) {
+            eprintln!("re_register_custom_agent_grants failed: {error:?}");
+        }
+    }
+}
+
+/// 与前端 normalizeWindowsPath 一致：剥掉 Windows 扩展长度前缀。
+fn normalize_grant_path(path: &std::path::Path) -> String {
+    let raw = path.to_string_lossy();
+    if let Some(rest) = raw.strip_prefix(r"\?\UNC\") {
+        return format!(r"\{rest}");
+    }
+    if let Some(rest) = raw.strip_prefix(r"\?\") {
+        return rest.to_string();
+    }
+    raw.into_owned()
+}
+
+fn host_operating_system() -> skillhub_core::agent::OperatingSystem {
+    if cfg!(windows) {
+        skillhub_core::agent::OperatingSystem::Windows
+    } else {
+        skillhub_core::agent::OperatingSystem::Macos
+    }
 }
 
 /// Restarts the application so a persisted library-root change takes effect.
@@ -80,6 +187,7 @@ pub fn emit_app_event<R: tauri::Runtime>(app: &AppHandle<R>, event: AppEvent) ->
 }
 
 pub fn run_with_facade(facade: Arc<LocalApplicationFacade>) -> tauri::Result<()> {
+    re_register_custom_agent_grants(&facade);
     tauri::Builder::default()
         .plugin(tauri_plugin_updater::Builder::new().build())
         .setup({
@@ -358,4 +466,157 @@ fn tauri_config_enables_signed_static_updater_artifacts() {
         config["plugins"]["updater"]["windows"]["installMode"],
         "passive"
     );
+}
+
+#[cfg(test)]
+mod path_grant_tests {
+    use super::*;
+
+    fn custom_agent_draft(
+        grant_id: &str,
+        candidate_path: &str,
+    ) -> skillhub_core::api::CreateCustomAgent {
+        skillhub_core::api::CreateCustomAgent {
+            agent: skillhub_core::agent::CustomAgentDraft {
+                id: "custom-test-agent".into(),
+                display_name: "Test Agent".into(),
+                directory: skillhub_core::agent::PathGrant::from_file_picker(grant_id),
+                profile: skillhub_core::AgentProfile {
+                    profile_version: 1,
+                    research_date: "2026-09-06".into(),
+                    official_references: vec!["https://example.com/agent".into()],
+                    brand: "Test".into(),
+                    clients: vec![skillhub_core::agent::AgentClient {
+                        id: "custom-test-agent-client".into(),
+                        kind: skillhub_core::agent::ClientKind::Cli,
+                        supported_os: vec![skillhub_core::agent::OperatingSystem::Windows],
+                        path_candidates: vec![skillhub_core::PathCandidate {
+                            path: candidate_path.into(),
+                            scope: skillhub_core::TargetScope::Global,
+                            precedence: skillhub_core::DirectoryPrecedence::Preferred,
+                            marker: "SKILL.md".into(),
+                        }],
+                        skill_marker: "SKILL.md".into(),
+                        deployment: skillhub_core::DeploymentCapability {
+                            copy: true,
+                            symlink: true,
+                            junction: true,
+                            limitations: Vec::new(),
+                        },
+                        call_policy: skillhub_core::CallPolicy::Unknown,
+                    }],
+                },
+            },
+        }
+    }
+
+    #[test]
+    fn issue_grant_registers_canonical_path_and_unlocks_custom_agent_creation() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let facade =
+            Arc::new(LocalApplicationFacade::open(dir.path().join("app.sqlite")).expect("facade"));
+        let bridge = CommandBridge::new(facade.clone()).with_local(facade.clone());
+        let picked = dir.path().join("my-agent");
+        std::fs::create_dir_all(&picked).expect("create picked dir");
+        let canonical = std::fs::canonicalize(&picked).expect("canonicalize");
+
+        let grant_id = bridge
+            .issue_grant_for_path(&picked)
+            .expect("issue grant for path");
+        assert_eq!(grant_id, canonical.to_string_lossy());
+
+        let result = tauri::async_runtime::block_on(bridge.execute(AppCommand::CreateCustomAgent(
+            custom_agent_draft(&grant_id, canonical.to_string_lossy().as_ref()),
+        )));
+        let created = result.expect("custom agent creation must succeed with a registered grant");
+        assert!(matches!(created, AppCommandResult::CustomAgent(_)));
+    }
+
+    #[test]
+    fn custom_agent_creation_fails_while_the_grant_is_unregistered() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let facade =
+            Arc::new(LocalApplicationFacade::open(dir.path().join("app.sqlite")).expect("facade"));
+        let bridge = CommandBridge::new(facade.clone()).with_local(facade.clone());
+        let picked = dir.path().join("never-registered");
+        let canonical =
+            std::fs::canonicalize(&picked.parent().expect("parent")).expect("canonicalize parent");
+        let candidate = canonical
+            .join("never-registered")
+            .to_string_lossy()
+            .into_owned();
+
+        let result = tauri::async_runtime::block_on(bridge.execute(AppCommand::CreateCustomAgent(
+            custom_agent_draft(&candidate, candidate.as_str()),
+        )));
+        match result {
+            Ok(AppCommandResult::CustomAgent(_)) => {
+                panic!("creation must fail while the grant is unregistered");
+            }
+            other => {
+                let error = other.expect_err("expected structured error");
+                // grant 未注册时从草稿解析失败，归入 profile 无效错误码（含原因参数）
+                assert_eq!(
+                    error.code.as_str(),
+                    skillhub_core::ErrorCode::AgentProfileInvalidCapability.as_str()
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn startup_re_registration_restores_grants_for_stored_custom_agents() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let facade =
+            Arc::new(LocalApplicationFacade::open(dir.path().join("app.sqlite")).expect("facade"));
+        let picked = dir.path().join("stored-agent");
+        std::fs::create_dir_all(&picked).expect("create stored dir");
+        let canonical = std::fs::canonicalize(&picked).expect("canonicalize");
+        let grant_id = canonical.to_string_lossy().into_owned();
+        bridge_setup_register(
+            facade.clone(),
+            &grant_id,
+            canonical.to_string_lossy().as_ref(),
+        );
+
+        // 模拟重启：新 facade、无会话 grant，仅启动重注册。
+        let facade_after_restart =
+            Arc::new(LocalApplicationFacade::open(dir.path().join("app.sqlite")).expect("facade"));
+        re_register_custom_agent_grants(&facade_after_restart);
+
+        let bridge = CommandBridge::new(facade_after_restart.clone())
+            .with_local(facade_after_restart.clone());
+        let mut edited = custom_agent_draft(&grant_id, canonical.to_string_lossy().as_ref());
+        edited.agent.display_name = "Renamed after restart".into();
+        let result = tauri::async_runtime::block_on(bridge.execute(AppCommand::UpdateCustomAgent(
+            skillhub_core::api::UpdateCustomAgent {
+                agent: edited.agent,
+            },
+        )));
+        if let Err(ref error) = result {
+            eprintln!("restart edit failed: {error:?}");
+        }
+        assert!(
+            matches!(result, Ok(AppCommandResult::CustomAgent(_))),
+            "stored custom agents must stay editable after a restart"
+        );
+    }
+
+    fn bridge_setup_register(facade: Arc<LocalApplicationFacade>, grant_id: &str, path: &str) {
+        use skillhub_core::agent::OperatingSystem;
+        let _ = facade.register_path_grant(skillhub_core::agent::ResolvedPathGrant {
+            grant_id: grant_id.to_string(),
+            path: path.to_string(),
+            operating_system: if cfg!(windows) {
+                OperatingSystem::Windows
+            } else {
+                OperatingSystem::Macos
+            },
+        });
+        // 同时真实创建一个自定义 Agent，让"重启后"有已存储对象可重注册。
+        let bridge = CommandBridge::new(facade.clone()).with_local(facade);
+        let draft = custom_agent_draft(grant_id, path);
+        tauri::async_runtime::block_on(bridge.execute(AppCommand::CreateCustomAgent(draft)))
+            .expect("seed custom agent");
+    }
 }
