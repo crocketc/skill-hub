@@ -687,6 +687,7 @@ impl LocalApplicationFacade {
                 skillhub_core::ErrorCode::OperationConflict,
                 Severity::Error,
             )
+            .with_param("reason", "library_root_locked")
             .with_param("detail", "library root cannot change after initialization")
             .with_action(RecoveryAction::Acknowledge));
         }
