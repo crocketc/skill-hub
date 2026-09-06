@@ -52,6 +52,7 @@ function renderLibrary({
       { path: "/library", element: <SkillLibraryPage facade={facade} onOpenDiscovery={onOpenDiscovery} removalFacade={removalFacade} /> },
       { path: "/deploy", element: <p>Batch deployment</p> },
       { path: "/settings/data-protection", element: <p>Data protection export</p> },
+      { path: "/library/combinations", element: <p>Combination manager</p> },
     ],
     { initialEntries: [initialEntry] },
   );
@@ -1310,5 +1311,19 @@ describe("SkillLibraryPage", () => {
     expect(status).toHaveTextContent("Table preferences could not be loaded");
     fireEvent.click(within(status).getByRole("button", { name: "Retry" }));
     await waitFor(() => expect(tablePreferences).toHaveBeenCalledTimes(2));
+  });
+
+  it("links to the combination manager instead of embedding the panel", async () => {
+    const facade = createMockSkillLibraryFacade();
+    facade.listCombinations = vi.fn().mockResolvedValue([]);
+    const { router } = renderLibrary({ facade });
+
+    // AR-022：库页只保留入口，不再内嵌组合面板。
+    const entry = await screen.findByRole("link", { name: "Combination manager" });
+    expect(entry).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "New combination" })).toBeNull();
+
+    fireEvent.click(entry);
+    await waitFor(() => expect(router.state.location.pathname).toBe("/library/combinations"));
   });
 });

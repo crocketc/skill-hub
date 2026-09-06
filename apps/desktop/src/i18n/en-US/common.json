@@ -992,6 +992,12 @@
       "tags": "Group by tag"
     },
     "combinations": {
+      "managerEntry": "Combination manager",
+      "managerEyebrow": "Combination manager",
+      "managerHeading": "Combination manager",
+      "managerDescription": "Group skills by use case; create combinations, maintain members and export a whole combination from one place.",
+      "managerBack": "Back to library",
+      "memberNamesUnavailable": "Member display names could not be loaded; internal IDs are shown instead.",
       "heading": "Combinations",
       "create": "New combination",
       "nameLabel": "Combination name",

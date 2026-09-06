@@ -11,7 +11,7 @@ import {
   type Ref,
 } from "react";
 import { useTranslation } from "react-i18next";
-import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
+import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import "./batchBar.css";
 import { Button } from "../../ui/Button";
 import { DataState } from "../../ui/DataState";
@@ -48,7 +48,6 @@ import {
   skillFilterKey,
 } from "./queryState";
 import { SavedViews } from "./SavedViews";
-import { CombinationPanel } from "./CombinationPanel";
 import {
   retainExplicitSelection,
   selectAllFiltered,
@@ -1080,10 +1079,9 @@ export function SkillLibraryPage({
       ) : null}
 
       {facade.listCombinations ? (
-        <CombinationPanel
-          facade={facade}
-          skillNames={Object.fromEntries((pageQuery.data?.items ?? []).map((item) => [item.id, item.name]))}
-        />
+        <p className="sh-skill-library__combination-entry">
+          <Link to="/library/combinations">{t("skillLibrary.combinations.managerEntry")}</Link>
+        </p>
       ) : null}
 
       {deployTarget ? (

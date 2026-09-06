@@ -40,6 +40,7 @@ import {
   NATIVE_VERSION_UPGRADE_FILTER_SUPPORTED,
   nativeSkillLibraryFacade,
 } from "../features/skills/nativeApi";
+import { CombinationManagerPage } from "../features/skills/CombinationManagerPage";
 import { skillLibraryKeys } from "../features/skills/api";
 import { type ImportResult } from "../features/import/api";
 import { skillHubI18n } from "../i18n";
@@ -135,6 +136,10 @@ function SkillLibraryRoute() {
   );
 }
 
+function CombinationManagerRoute() {
+  return <CombinationManagerPage facade={nativeSkillLibraryFacade} />;
+}
+
 function DiscoveryRoute({ view }: { view?: DiscoveryModuleView }) {
   const navigate = useNavigate();
   const location = useLocation();
@@ -179,6 +184,10 @@ export const appRouter = createBrowserRouter([
       {
         path: "library",
         element: <SkillLibraryRoute />,
+      },
+      {
+        path: "library/combinations",
+        element: <CombinationManagerRoute />,
       },
       {
         path: "library/:skillId",

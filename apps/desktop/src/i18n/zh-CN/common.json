@@ -992,6 +992,12 @@
       "tags": "按标签分组"
     },
     "combinations": {
+      "managerEntry": "组合管理",
+      "managerEyebrow": "组合管理",
+      "managerHeading": "组合管理",
+      "managerDescription": "按使用场景组合多个 Skill；在这里集中创建、维护成员、导出整个组合。",
+      "managerBack": "返回技能库",
+      "memberNamesUnavailable": "无法读取成员显示名，已改用内部 ID 呈现。",
       "heading": "组合视图",
       "create": "新建组合",
       "nameLabel": "组合名称",
