@@ -14,6 +14,17 @@ pub enum PendingKind {
     Recovery,
 }
 
+/// N9：待处理事项的风险档位（由检查发现的严重级别映射）。
+#[derive(
+    Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, specta::Type,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum PendingRisk {
+    High,
+    Medium,
+    Low,
+}
+
 /// A check finding projected into pending work. The projection intentionally
 /// keeps codes and identifiers rather than localized display text.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
@@ -41,6 +52,16 @@ pub struct PendingItem {
     pub kind: PendingKind,
     pub code: String,
     pub message_code: Option<String>,
+    /// N9：到期日（YYYY-MM-DD）。试用到期项填试用截止日；其余 None。
+    #[serde(default)]
+    pub due_date: Option<String>,
+    /// N9：风险档位。检查发现按严重级别映射（critical/error→high、
+    /// warning→medium、info→low）；无级别数据时诚实缺省 None。
+    #[serde(default)]
+    pub risk: Option<PendingRisk>,
+    /// N9：影响面——该 Skill 当前生效的部署关系数量；无法计算时 None。
+    #[serde(default)]
+    pub affected_deployments: Option<u32>,
 }
 
 impl Ord for PendingItem {
@@ -68,11 +89,17 @@ pub fn derive_pending(
     let mut result = Vec::new();
     for skill in skills {
         if skill.trial_state(today) == TrialState::Due {
+            let due_date = skill
+                .trial_due()
+                .map(|(year, month, day)| format!("{year:04}-{month:02}-{day:02}"));
             result.push(PendingItem {
                 subject: skill.id(),
                 kind: PendingKind::TrialDue,
                 code: "trial.due".to_owned(),
                 message_code: Some("pending.trial_due".to_owned()),
+                due_date,
+                risk: None,
+                affected_deployments: None,
             });
         }
     }
@@ -82,6 +109,9 @@ pub fn derive_pending(
             kind: PendingKind::SecurityFinding,
             code: finding.code.clone(),
             message_code: Some("pending.security_finding".to_owned()),
+            due_date: None,
+            risk: None,
+            affected_deployments: None,
         });
     }
     result.sort();

@@ -1,3 +1,4 @@
+use skillhub_core::pending::PendingKind;
 use skillhub_core::{
     BootstrapSnapshot, DeploymentDimension, OperationId, SkillId, StartupRecoveryState,
 };
@@ -146,6 +147,55 @@ fn pending_query_derives_due_trial_and_unresolved_finding_from_facts() {
         .unwrap();
     assert_eq!(pending.len(), 2);
     assert!(pending.iter().all(|item| item.subject == skill));
+}
+
+#[test]
+fn pending_items_expose_due_date_risk_and_deployment_impact() {
+    // N9：待处理事项必须带时间（试用到期日）、风险（严重级别映射）
+    // 与影响面（当前生效部署关系数）三个真实字段。
+    let db = Database::open_in_memory().unwrap();
+    let skill = SkillId::new();
+    let version = "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+    let run = "run-impact";
+    let target = "target-impact";
+    db.connection_for_test()
+        .execute_batch(&format!(
+            "INSERT INTO skills (id,display_name,runtime_name,created_at,updated_at) VALUES ('{skill}','impact','impact',0,0);
+             INSERT INTO catalog_skill_metadata (skill_id,requirements_json,trial_due) VALUES ('{skill}','[]','2026-08-01');
+             INSERT INTO versions (id,skill_id,content_hash,manifest_json,created_at) VALUES ('{version}','{skill}','hash','{{}}',0);
+             INSERT INTO current_pointers (skill_id,version_id,updated_at) VALUES ('{skill}','{version}',0);
+             INSERT INTO check_runs (id,skill_id,version_id,kind,state,started_at) VALUES ('{run}','{skill}','{version}','basic','completed',0);
+             INSERT INTO check_findings (id,run_id,code,severity,disposition) VALUES ('finding-impact','{run}','basic.secret','critical','actionable');
+             INSERT INTO targets (id,agent_id,scope,path,created_at) VALUES ('{target}','agent-impact','global','C:/agent-impact',0);
+             INSERT INTO deployments (id,skill_id,version_id,target_id,state,method,managed,runtime_name,expected_hash,created_at,updated_at) VALUES ('dep-impact','{skill}','{version}','{target}','deployed','managed_copy',1,'impact','hash',0,0);"
+        ))
+        .unwrap();
+
+    let pending = db
+        .bootstrap_repository()
+        .list_pending((2026, 8, 23))
+        .unwrap();
+    assert_eq!(pending.len(), 2);
+
+    let trial = pending
+        .iter()
+        .find(|item| item.kind == PendingKind::TrialDue)
+        .expect("trial item");
+    assert_eq!(trial.due_date.as_deref(), Some("2026-08-01"));
+    assert_eq!(trial.risk, None);
+    assert_eq!(trial.affected_deployments, Some(1));
+
+    let finding = pending
+        .iter()
+        .find(|item| item.kind == PendingKind::SecurityFinding)
+        .expect("finding item");
+    assert_eq!(finding.due_date, None);
+    assert_eq!(
+        finding.risk,
+        Some(skillhub_core::pending::PendingRisk::High),
+        "critical 发现必须映射为高风险"
+    );
+    assert_eq!(finding.affected_deployments, Some(1));
 }
 
 #[test]

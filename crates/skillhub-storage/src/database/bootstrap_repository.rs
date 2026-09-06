@@ -99,15 +99,39 @@ impl<'a> BootstrapRepository<'a> {
     pub fn list_pending(&self, today: (i32, u8, u8)) -> AppResult<Vec<PendingItem>> {
         let date = format_date(today);
         let mut result = Vec::new();
+        // N9：影响面——每个 Skill 当前生效的部署关系数量，一次聚合查询。
+        let mut deployment_counts: std::collections::HashMap<String, u32> =
+            std::collections::HashMap::new();
+        {
+            let mut counts = self.database.connection.prepare(
+                "SELECT skill_id, COUNT(*) FROM deployments WHERE state IN ('deployed','active') GROUP BY skill_id",
+            ).map_err(error)?;
+            let rows = counts
+                .query_map([], |row| {
+                    Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+                })
+                .map_err(error)?;
+            for row in rows {
+                let (skill_id, count) = row.map_err(error)?;
+                deployment_counts.insert(skill_id, count.max(0) as u32);
+            }
+        }
         let mut trials = self.database.connection.prepare(
-            "SELECT skill_id FROM catalog_skill_metadata WHERE trial_due IS NOT NULL AND trial_due <= ?1 ORDER BY skill_id",
+            "SELECT skill_id, trial_due FROM catalog_skill_metadata WHERE trial_due IS NOT NULL AND trial_due <= ?1 ORDER BY skill_id",
         ).map_err(error)?;
         for row in trials
-            .query_map([date], |row| row.get::<_, String>(0))
+            .query_map([date], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })
             .map_err(error)?
         {
+            let (skill_id, trial_due) = row.map_err(error)?;
+            let subject = parse_skill(skill_id.clone())?;
             result.push(PendingItem {
-                subject: parse_skill(row.map_err(error)?)?,
+                affected_deployments: Some(deployment_counts.get(&skill_id).copied().unwrap_or(0)),
+                due_date: Some(trial_due),
+                risk: None,
+                subject,
                 kind: PendingKind::TrialDue,
                 code: "trial.due".into(),
                 message_code: Some("pending.trial_due".into()),
@@ -119,7 +143,7 @@ impl<'a> BootstrapRepository<'a> {
             "current.started_at DESC,COALESCE(current.ended_at,-1) DESC,current.id DESC"
         };
         let findings_sql = format!(
-            "SELECT r.skill_id, f.code FROM check_findings f JOIN check_runs r ON r.id=f.run_id WHERE f.disposition NOT IN ('resolved','dismissed') AND r.version_id = (SELECT pointer.version_id FROM current_pointers pointer WHERE pointer.skill_id=r.skill_id) AND r.id = (SELECT current.id FROM check_runs current WHERE current.skill_id=r.skill_id AND current.version_id=r.version_id AND current.kind=r.kind ORDER BY {ordering} LIMIT 1) ORDER BY r.skill_id, f.code, f.id"
+            "SELECT r.skill_id, f.code, f.severity FROM check_findings f JOIN check_runs r ON r.id=f.run_id WHERE f.disposition NOT IN ('resolved','dismissed') AND r.version_id = (SELECT pointer.version_id FROM current_pointers pointer WHERE pointer.skill_id=r.skill_id) AND r.id = (SELECT current.id FROM check_runs current WHERE current.skill_id=r.skill_id AND current.version_id=r.version_id AND current.kind=r.kind ORDER BY {ordering} LIMIT 1) ORDER BY r.skill_id, f.code, f.id"
         );
         let mut findings = self
             .database
@@ -128,12 +152,25 @@ impl<'a> BootstrapRepository<'a> {
             .map_err(error)?;
         for row in findings
             .query_map([], |row| {
-                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, Option<String>>(2)?,
+                ))
             })
             .map_err(error)?
         {
-            let (subject, code) = row.map_err(error)?;
+            let (subject, code, severity) = row.map_err(error)?;
+            let risk = match severity.as_deref() {
+                Some("critical") | Some("error") => Some(skillhub_core::pending::PendingRisk::High),
+                Some("warning") => Some(skillhub_core::pending::PendingRisk::Medium),
+                Some("info") => Some(skillhub_core::pending::PendingRisk::Low),
+                _ => None,
+            };
             result.push(PendingItem {
+                affected_deployments: Some(deployment_counts.get(&subject).copied().unwrap_or(0)),
+                due_date: None,
+                risk,
                 subject: parse_skill(subject)?,
                 kind: PendingKind::SecurityFinding,
                 code,

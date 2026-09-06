@@ -1008,10 +1008,22 @@ export type PendingItem = {
 	kind: PendingKind,
 	code: string,
 	message_code: string | null,
+	/**  N9：到期日（YYYY-MM-DD）。试用到期项填试用截止日；其余 None。 */
+	due_date?: string | null,
+	/**
+	 *  N9：风险档位。检查发现按严重级别映射（critical/error→high、
+	 *  warning→medium、info→low）；无级别数据时诚实缺省 None。
+	 */
+	risk?: PendingRisk | null,
+	/**  N9：影响面——该 Skill 当前生效的部署关系数量；无法计算时 None。 */
+	affected_deployments?: number | null,
 };
 
 /**  A stable category for work the user may need to handle. */
 export type PendingKind = "trial_due" | "security_finding" | "recovery";
+
+/**  N9：待处理事项的风险档位（由检查发现的严重级别映射）。 */
+export type PendingRisk = "high" | "medium" | "low";
 
 export type PendingSummary = {
 	total: number,
