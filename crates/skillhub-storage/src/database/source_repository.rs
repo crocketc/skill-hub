@@ -44,8 +44,8 @@ impl<'a> SourceRepository<'a> {
     }
 
     /// 将仓库导入的长期上游坐标写入 sources（kind=git，metadata_json 记 branch/directory）
-    /// 并挂到 skill_sources（relation=origin）。幂等：重复导入同一来源不会产生重复行。
-    /// 与 relink 不同，这里不删除既有来源行。
+    /// 并挂到 skill_sources（relation=origin）。幂等：重复导入同一来源不会产生重复行，
+    /// 已存在的行只补写坐标元数据。与 relink 不同，这里不删除既有来源行。
     pub fn record_upstream(
         &self,
         skill_id: SkillId,
@@ -67,7 +67,8 @@ impl<'a> SourceRepository<'a> {
             .map_err(error)?;
         transaction
             .execute(
-                "INSERT OR IGNORE INTO sources (id, kind, locator, metadata_json, created_at) VALUES (?1, 'git', ?2, ?3, strftime('%s','now'))",
+                // 行可能已由 relink 建好（metadata='{}'）：冲突时补写坐标元数据。
+                "INSERT INTO sources (id, kind, locator, metadata_json, created_at) VALUES (?1, 'git', ?2, ?3, strftime('%s','now')) ON CONFLICT(id) DO UPDATE SET metadata_json=excluded.metadata_json",
                 rusqlite::params![source_id, upstream.url, metadata.to_string()],
             )
             .map_err(error)?;
@@ -102,13 +103,20 @@ impl<'a> SourceRepository<'a> {
             AppError::new(ErrorCode::InternalError, Severity::Error)
                 .with_param("source", err.to_string())
         })?;
+        let branch = metadata["branch"].as_str().unwrap_or_default().to_string();
+        let directory = metadata["directory"]
+            .as_str()
+            .unwrap_or_default()
+            .to_string();
+        if branch.is_empty() || directory.is_empty() {
+            // 只有 URL 没有 branch/directory 坐标（如手动 relink 的 git 来源）
+            // 无法在远端定位 Skill 目录，视为无上游记录。
+            return Ok(None);
+        }
         Ok(Some(skillhub_core::UpstreamOrigin {
             url: locator,
-            branch: metadata["branch"].as_str().unwrap_or_default().to_string(),
-            directory: metadata["directory"]
-                .as_str()
-                .unwrap_or_default()
-                .to_string(),
+            branch,
+            directory,
         }))
     }
 
@@ -133,10 +141,12 @@ impl<'a> SourceRepository<'a> {
             .query_row(
                 "SELECT s.revision FROM sources s JOIN skill_sources ss ON ss.source_id=s.id WHERE ss.skill_id=?1 ORDER BY s.id ASC LIMIT 1",
                 [skill_id.to_string()],
-                |row| row.get(0),
+                // revision 列可为 NULL（git 来源无 revision），必须按 Option 读取。
+                |row| row.get::<_, Option<String>>(0),
             )
             .optional()
             .map_err(error)
+            .map(|row| row.flatten())
     }
 
     pub fn set_revision(&self, skill_id: SkillId, revision: Option<&str>) -> AppResult<()> {

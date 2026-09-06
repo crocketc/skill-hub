@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, RwLock};
 use std::time::Duration;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -91,7 +91,7 @@ pub struct LocalApplicationFacade {
     app_update_provider: Arc<GithubReleaseProvider>,
     update_service: Arc<UpdateService>,
     source_search_provider: Arc<SkillsShProvider>,
-    repo_discovery_provider: Arc<RepoDiscoveryProvider>,
+    repo_discovery_provider: RwLock<Arc<RepoDiscoveryProvider>>,
     prepared_imports: Mutex<HashMap<OperationId, PreparedImport>>,
     prepared_uninstall: Mutex<Option<skillhub_core::UninstallImpact>>,
     scan_service: Mutex<ScanService>,
@@ -718,7 +718,9 @@ impl LocalApplicationFacade {
         let repos = self.with_database("query.discover_repo_skills.repos", |database| {
             database.skill_repo_repository().list()
         })?;
-        let discovery = self.repo_discovery_provider.discover(repos).await;
+        // 先克隆 Arc 再 await：RwLockReadGuard 不是 Send，不能跨 await 持有。
+        let provider = Arc::clone(&*self.repo_provider());
+        let discovery = provider.discover(repos).await;
         Ok(AppQueryResult::RepoDiscoveryReport(
             skillhub_core::source::RepoDiscoveryReport {
                 skills: discovery.skills,
@@ -743,7 +745,7 @@ impl LocalApplicationFacade {
         request: skillhub_core::api::AddSkillRepo,
     ) -> AppResult<AppCommandResult> {
         let repo = request.repo;
-        if let Err(error) = self.repo_discovery_provider.validate_repo(&repo) {
+        if let Err(error) = self.repo_provider().validate_repo(&repo) {
             return Err(AppError::new(ErrorCode::InvalidInput, Severity::Warning)
                 .with_param("reason", error.to_string())
                 .with_action(RecoveryAction::Retry));
@@ -797,14 +799,15 @@ impl LocalApplicationFacade {
             branch: skill.repo_branch.clone(),
             enabled: true,
         };
-        if let Err(error) = self.repo_discovery_provider.validate_repo(&repo) {
+        if let Err(error) = self.repo_provider().validate_repo(&repo) {
             return Err(AppError::new(ErrorCode::InvalidInput, Severity::Warning)
                 .with_param("reason", error.to_string())
                 .with_action(RecoveryAction::Retry));
         }
         let root = repo_downloads_root()?;
-        let path = self
-            .repo_discovery_provider
+        // 先克隆 Arc 再 await：RwLockReadGuard 不是 Send，不能跨 await 持有。
+        let provider = Arc::clone(&*self.repo_provider());
+        let path = provider
             .download_skill_directory(&repo, &skill.directory, &root)
             .await
             .map_err(|error| {
@@ -1093,7 +1096,7 @@ impl LocalApplicationFacade {
             app_update_provider,
             update_service,
             source_search_provider: Arc::new(SkillsShProvider::new("https://skills.sh")),
-            repo_discovery_provider: Arc::new(RepoDiscoveryProvider::new()),
+            repo_discovery_provider: RwLock::new(Arc::new(RepoDiscoveryProvider::new())),
             prepared_imports: Mutex::new(HashMap::new()),
             prepared_uninstall: Mutex::new(None),
             scan_service: Mutex::new(ScanService::new()),
@@ -1154,7 +1157,7 @@ impl LocalApplicationFacade {
             app_update_provider,
             update_service,
             source_search_provider: Arc::new(SkillsShProvider::new("https://skills.sh")),
-            repo_discovery_provider: Arc::new(RepoDiscoveryProvider::new()),
+            repo_discovery_provider: RwLock::new(Arc::new(RepoDiscoveryProvider::new())),
             prepared_imports: Mutex::new(HashMap::new()),
             prepared_uninstall: Mutex::new(None),
             scan_service: Mutex::new(ScanService::new()),
@@ -1228,6 +1231,10 @@ impl LocalApplicationFacade {
     /// Registers the desktop shell's external URL opener so validated links
     /// can really be opened. Facades without one keep opening blocked, so
     /// tests never launch a browser.
+    fn repo_provider(&self) -> std::sync::RwLockReadGuard<'_, Arc<RepoDiscoveryProvider>> {
+        self.repo_discovery_provider.read().expect("repo provider")
+    }
+
     /// 记录仓库发现下载目录 → 上游坐标的映射；扫描该目录的导入候选会被盖章，
     /// 提交导入后坐标落库为长期 git 来源。
     pub fn register_upstream_origin(
@@ -1238,6 +1245,12 @@ impl LocalApplicationFacade {
         if let Ok(mut registry) = self.upstream_origins.lock() {
             registry.insert(local_path.into(), origin);
         }
+    }
+
+    /// 仅供测试：把仓库归档下载指向本地 fixture 服务器。
+    #[doc(hidden)]
+    pub fn set_repo_discovery_provider_for_tests(&self, provider: Arc<RepoDiscoveryProvider>) {
+        *self.repo_discovery_provider.write().expect("repo provider") = provider;
     }
 
     pub fn set_external_url_opener(&self, opener: Arc<dyn ExternalUrlOpener>) {
@@ -2575,6 +2588,10 @@ impl LocalApplicationFacade {
             ));
         };
         let Some(path) = source.locator.as_local_path() else {
+            // 远端 git 来源（含 N7a 记录的仓库导入坐标）：拉取远端归档做哈希对比。
+            if source.kind == skillhub_core::SourceKind::Git {
+                return self.check_remote_source_update(request.skill_id);
+            }
             return Ok(AppCommandResult::UpstreamCheckResult(
                 skillhub_core::UpstreamCheckResult::new(
                     request.skill_id,
@@ -2614,6 +2631,91 @@ impl LocalApplicationFacade {
         Ok(AppCommandResult::UpstreamCheckResult(
             skillhub_core::UpstreamCheckResult::new(request.skill_id, state)
                 .with_versions(current, None),
+        ))
+    }
+
+    /// N7b：远端 git 来源的更新检测。读取 N7a 记录的 UpstreamOrigin 坐标，
+    /// 经仓库归档下载定位远端 Skill 目录，与当前版本 tree_hash 对比：
+    /// 一致 → UpToDate；不一致 → UpdateAvailable（无本地改动维度可判定，
+    /// 不伪造 UpdateAvailableWithLocalChanges）。任何远端不可达/坐标缺失都
+    /// 诚实降级为 SourceUnavailable。
+    fn check_remote_source_update(
+        &self,
+        skill_id: skillhub_core::SkillId,
+    ) -> AppResult<AppCommandResult> {
+        self.ensure_network_enabled()?;
+        let Some(library) = self.library.as_ref() else {
+            return Err(unsupported("execute.check_source_update.library"));
+        };
+        let unavailable = || {
+            Ok(AppCommandResult::UpstreamCheckResult(
+                skillhub_core::UpstreamCheckResult::new(skill_id, SourceState::SourceUnavailable),
+            ))
+        };
+        let Some(upstream) = self
+            .with_database("execute.check_source_update.upstream", |database| {
+                database.source_repository().upstream_for_skill(skill_id)
+            })?
+        else {
+            return unavailable();
+        };
+        let Some((owner, name)) = parse_github_repo_url(&upstream.url) else {
+            return unavailable();
+        };
+        let repo = skillhub_core::source::SkillRepo {
+            owner,
+            name,
+            branch: upstream.branch.clone(),
+            enabled: true,
+        };
+        if self.repo_provider().validate_repo(&repo).is_err() {
+            return unavailable();
+        }
+        let current = library.current(skill_id)?;
+        let current_hash = current.as_ref().and_then(|current| {
+            library
+                .list(skill_id)
+                .ok()
+                .and_then(|records| records.into_iter().find(|record| &record.id == current))
+                .map(|record| record.manifest.tree_hash)
+        });
+        let Some(baseline) = current_hash.clone() else {
+            return unavailable();
+        };
+        // 归档下载是异步阻塞操作：在独立线程上跑临时 current-thread runtime，
+        // 下载产物落到调用方持有的临时目录，哈希在本线程用同一 hash_tree 计算。
+        let provider = Arc::clone(&*self.repo_provider());
+        let directory = upstream.directory.clone();
+        let workspace = tempfile::tempdir().map_err(|error| {
+            AppError::new(ErrorCode::InternalError, Severity::Error)
+                .with_param("source", error.to_string())
+        })?;
+        let workspace_path = workspace.path().to_path_buf();
+        let remote_dir = std::thread::spawn(move || {
+            let runtime = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .map_err(|error| anyhow::anyhow!("runtime: {error}"))?;
+            runtime.block_on(async {
+                provider
+                    .download_skill_directory(&repo, &directory, &workspace_path)
+                    .await
+            })
+        })
+        .join()
+        .map_err(|_| internal("execute.check_source_update.remote_fetch"))?;
+        let remote_dir = match remote_dir {
+            Ok(path) => path,
+            Err(_) => return unavailable(),
+        };
+        let remote_hash = library.hash_tree(remote_dir)?;
+        let state = if remote_hash == baseline {
+            SourceState::UpToDate
+        } else {
+            SourceState::UpdateAvailable
+        };
+        Ok(AppCommandResult::UpstreamCheckResult(
+            skillhub_core::UpstreamCheckResult::new(skill_id, state).with_versions(current, None),
         ))
     }
 
@@ -4088,10 +4190,16 @@ impl LocalApplicationFacade {
                     cleanup_import_state(database, &central, &store, skill_id, &version),
                 ));
             }
-            if let Err(error) = database
-                .source_repository()
-                .relink(skill_id, prepared.candidate.source.clone())
-            {
+            // 仓库导入（带上游坐标）：git 来源即长期 origin——临时下载目录不是
+            // 真实来源，不能落库，否则 for_skill 取行非确定且目录随时会被清理。
+            let origin_source = match prepared.candidate.upstream.clone() {
+                Some(upstream) => SourceDescriptor::new(
+                    skillhub_core::SourceKind::Git,
+                    SourceLocator::git_url(upstream.url.clone()),
+                ),
+                None => prepared.candidate.source.clone(),
+            };
+            if let Err(error) = database.source_repository().relink(skill_id, origin_source) {
                 return Err(cleanup_import_error(
                     error,
                     cleanup_import_state(database, &central, &store, skill_id, &version),
@@ -4779,6 +4887,19 @@ fn unsupported(operation: &'static str) -> AppError {
     AppError::new(ErrorCode::InternalError, Severity::Error)
         .with_param("operation", operation)
         .with_action(RecoveryAction::Retry)
+}
+
+/// 从 https://github.com/{owner}/{repo} 形态的 URL 提取 owner/repo。
+/// 非 github.com 或路径段不足时返回 None（上游坐标由 N7a 只写入该形态）。
+fn parse_github_repo_url(url: &str) -> Option<(String, String)> {
+    let rest = url.strip_prefix("https://github.com/")?;
+    let mut segments = rest.trim_end_matches('/').split('/');
+    let owner = segments.next()?;
+    let name = segments.next()?;
+    if owner.is_empty() || name.is_empty() || segments.next().is_some() {
+        return None;
+    }
+    Some((owner.to_string(), name.to_string()))
 }
 
 fn internal(operation: &'static str) -> AppError {
