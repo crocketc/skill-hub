@@ -83,15 +83,18 @@ export function VersionTimeline({ facade, skillId, summary }: VersionTimelinePro
     <div className="sh-version-timeline">
       {summary ? <VersionUpdateNotice summary={summary} /> : null}
       <ol>
-        {versionsQuery.data.map((version, index) => (
+        {versionsQuery.data.map((version) => (
           <li key={version.id}>
             <div className="sh-version-timeline__node" />
             <article>
               <div className="sh-version-timeline__heading">
                 <h3>{version.label}</h3>
-                {index === 0 ? <StatusBadge tone="info">{t("skillDetail.versions.current")}</StatusBadge> : null}
+                {version.current ? <StatusBadge tone="info">{t("skillDetail.versions.current")}</StatusBadge> : null}
               </div>
-              <p>{version.createdAt} · {t(`skillDetail.versions.origin.${version.origin}`)}</p>
+              <p>
+                {version.createdAt ? version.createdAt : t("skillDetail.versions.timeUnknown")}
+                {version.origin ? ` · ${t(`skillDetail.versions.origin.${version.origin}`)}` : ""}
+              </p>
               <p>{t("skillDetail.versions.changes", version.changes)}</p>
               <label>
                 <input
@@ -105,7 +108,7 @@ export function VersionTimeline({ facade, skillId, summary }: VersionTimelinePro
                 />
                 {t("skillDetail.versions.compare")}
               </label>
-              {index > 0 ? (
+              {!version.current ? (
                 <Button onClick={() => prepareRollback(version.id)} size="sm" variant="ghost">
                   {t("skillDetail.versions.rollbackTo", { version: version.label })}
                 </Button>

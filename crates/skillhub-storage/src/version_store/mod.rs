@@ -397,7 +397,20 @@ impl VersionStore {
         self.paths
             .versions_dir
             .join(skill_id.to_string())
-            .join(format!("{}.json", digest_name(id)))
+            .join(format!(
+                "{}.json",
+                id.as_str().trim_start_matches("sha256:")
+            ))
+    }
+
+    /// 版本清单文件的修改时间（Unix 秒）。这是"版本何时被捕获"的
+    /// 真实文件系统事实；不可用时返回 None，由调用方诚实缺省。
+    pub fn manifest_modified_epoch(&self, skill_id: SkillId, id: &VersionId) -> Option<i64> {
+        let path = self.manifest_path_for_test(skill_id, id);
+        let metadata = std::fs::metadata(path).ok()?;
+        let modified = metadata.modified().ok()?;
+        let elapsed = modified.duration_since(std::time::UNIX_EPOCH).ok()?;
+        Some(elapsed.as_secs() as i64)
     }
 
     pub fn hash_tree(&self, root: impl AsRef<Path>) -> AppResult<String> {

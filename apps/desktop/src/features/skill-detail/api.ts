@@ -98,12 +98,18 @@ export interface SkillFinding {
 }
 
 export interface SkillVersionEntry {
-  basicCheck: CheckState;
+  basicCheck?: CheckState;
   changes: { added: number; changed: number; removed: number };
+  /** 捕获时间（已本地化的可读字符串）；时间未知时为空串（诚实缺省）。 */
   createdAt: string;
+  /** Unix 秒的十进制字符串（原生契约直传），用于前端格式化。 */
+  createdAtEpoch?: string | null;
+  current: boolean;
   id: string;
+  /** 用户可读标签：有序号用 vN；时间未知时回退短哈希。 */
   label: string;
-  origin: "edit" | "import" | "rollback" | "upstream";
+  origin?: "edit" | "import" | "rollback" | "upstream";
+  sequence?: number | null;
 }
 
 export interface SkillVersionDiff {

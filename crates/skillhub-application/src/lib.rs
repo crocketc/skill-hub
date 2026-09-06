@@ -4404,6 +4404,25 @@ impl LocalApplicationFacade {
         };
         let current = library.current(skill_id)?;
         let records = library.list(skill_id)?;
+        // AR-021：以清单文件修改时间推导捕获顺序，生成用户可读的版本序号；
+        // 时间不可得的版本诚实标为无序号。
+        let mut timed: Vec<(i64, &skillhub_core::VersionRecord)> = Vec::new();
+        let mut untimed: Vec<&skillhub_core::VersionRecord> = Vec::new();
+        for record in &records {
+            match library.manifest_modified_epoch(skill_id, &record.id) {
+                Some(epoch) => timed.push((epoch, record)),
+                None => untimed.push(record),
+            }
+        }
+        timed.sort_by_key(|(epoch, _)| *epoch);
+        let mut sequence_by_id: HashMap<&skillhub_core::VersionId, u32> = HashMap::new();
+        for (index, (_, record)) in timed.iter().enumerate() {
+            sequence_by_id.insert(&record.id, (index + 1) as u32);
+        }
+        let epoch_by_id: HashMap<skillhub_core::VersionId, String> = timed
+            .into_iter()
+            .map(|(epoch, record)| (record.id.clone(), epoch.to_string()))
+            .collect();
         let mut results = Vec::with_capacity(records.len());
         for (index, record) in records.iter().enumerate() {
             let diff = if index == 0 {
@@ -4419,12 +4438,16 @@ impl LocalApplicationFacade {
                 added: u32::try_from(diff.added.len()).unwrap_or(u32::MAX),
                 changed: u32::try_from(diff.changed.len()).unwrap_or(u32::MAX),
                 removed: u32::try_from(diff.removed.len()).unwrap_or(u32::MAX),
+                created_at_epoch: epoch_by_id.get(&record.id).cloned(),
+                sequence: sequence_by_id.get(&record.id).copied(),
             });
         }
         results.sort_by(|left, right| {
             right
                 .current
                 .cmp(&left.current)
+                .then_with(|| right.created_at_epoch.cmp(&left.created_at_epoch))
+                .then_with(|| right.sequence.cmp(&left.sequence))
                 .then_with(|| right.version_id.as_str().cmp(left.version_id.as_str()))
         });
         Ok(AppQueryResult::Versions(results))

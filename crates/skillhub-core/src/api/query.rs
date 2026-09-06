@@ -218,6 +218,13 @@ pub struct VersionResult {
     pub added: u32,
     pub changed: u32,
     pub removed: u32,
+    /// 版本清单文件的修改时间（Unix 秒的十进制字符串，Specta 不放行
+    /// 64 位整数）——作为可读版本序号的依据；不可得时为 None（诚实缺省）。
+    #[serde(default)]
+    pub created_at_epoch: Option<String>,
+    /// 按捕获时间排序的序号（最早 = 1）；时间未知时为 None。
+    #[serde(default)]
+    pub sequence: Option<u32>,
 }
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 pub struct VersionDiffResult {

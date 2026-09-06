@@ -1873,6 +1873,13 @@ export type VersionResult = {
 	added: number,
 	changed: number,
 	removed: number,
+	/**
+	 *  版本清单文件的修改时间（Unix 秒的十进制字符串，Specta 不放行
+	 *  64 位整数）——作为可读版本序号的依据；不可得时为 None（诚实缺省）。
+	 */
+	created_at_epoch?: string | null,
+	/**  按捕获时间排序的序号（最早 = 1）；时间未知时为 None。 */
+	sequence?: number | null,
 };
 
 export type VersionSelection = "current" | { history: VersionId[] };

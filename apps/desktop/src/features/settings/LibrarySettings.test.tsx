@@ -127,7 +127,7 @@ it("lists existing ignore rules with subject, reason and creation time", async (
   expect(listIgnoreRules).toHaveBeenCalledWith();
 });
 
-it("adds an ignore rule with the selected subject type, value and reason", async () => {
+it("adds a directory ignore rule and no longer offers raw skill ids as subjects", async () => {
   const createIgnoreRule = vi.fn(async (draft: Parameters<LibraryHealthOperations["createIgnoreRule"]>[0]) => ({
     id: "rule-new",
     subject: draft.subject,
@@ -138,18 +138,31 @@ it("adds an ignore rule with the selected subject type, value and reason", async
   await renderLibrary(healthFacade({ createIgnoreRule }));
   expect(await screen.findByText("暂无忽略规则。")).toBeVisible();
 
-  fireEvent.change(screen.getByLabelText("主体类型"), { target: { value: "exact_skill" } });
-  fireEvent.change(screen.getByLabelText("主体值"), { target: { value: "pdf-helper" } });
-  fireEvent.change(screen.getByLabelText("理由"), { target: { value: "稳定复现问题，先跳过" } });
+  // AR-016：用户无法理解的“精确 Skill/精确待处理”自由输入不再提供。
+  const subjectSelect = screen.getByLabelText("主体类型");
+  const options = Array.from(subjectSelect.querySelectorAll("option")).map(
+    (option) => option.value,
+  );
+  expect(options).toEqual(["exact_path"]);
+
+  fireEvent.change(screen.getByLabelText("要忽略的目录路径"), { target: { value: "C:/temp/drafts" } });
+  fireEvent.change(screen.getByLabelText("理由"), { target: { value: "草稿目录不参与检查" } });
   await click(screen.getByRole("button", { name: "添加规则" }));
 
   expect(createIgnoreRule).toHaveBeenCalledWith({
-    subject: { type: "exact_skill", value: "pdf-helper" },
-    reason: "稳定复现问题，先跳过",
+    subject: { type: "exact_path", value: "C:/temp/drafts" },
+    reason: "草稿目录不参与检查",
     deferUntil: null,
   });
-  expect(await screen.findByText("pdf-helper")).toBeVisible();
-  expect(screen.getByText("理由")).toBeVisible();
+  expect(await screen.findByText("C:/temp/drafts")).toBeVisible();
+});
+
+it("explains how the ignore, health check and repair workflow fit together", async () => {
+  await renderLibrary(healthFacade());
+
+  // AR-016：整合说明——检查发现问题、修复预览执行、忽略只针对路径。
+  expect(screen.getByText(/健康检查发现问题/)).toBeVisible();
+  expect(screen.getByText(/修复预览/)).toBeVisible();
 });
 
 it("blocks adding an ignore rule without a reason and reports it", async () => {
@@ -159,7 +172,7 @@ it("blocks adding an ignore rule without a reason and reports it", async () => {
   await renderLibrary(healthFacade({ createIgnoreRule }));
   expect(await screen.findByText("暂无忽略规则。")).toBeVisible();
 
-  fireEvent.change(screen.getByLabelText("主体值"), { target: { value: "C:/temp" } });
+  fireEvent.change(screen.getByLabelText("要忽略的目录路径"), { target: { value: "C:/temp" } });
   await click(screen.getByRole("button", { name: "添加规则" }));
 
   expect(createIgnoreRule).not.toHaveBeenCalled();

@@ -219,6 +219,7 @@ export function detailFixture(
         id: "version-241",
         label: "v2.4.1",
         origin: "upstream",
+        current: true,
       },
       {
         basicCheck: "passed",
@@ -227,6 +228,7 @@ export function detailFixture(
         id: "version-240",
         label: "v2.4.0",
         origin: "edit",
+        current: false,
       },
       {
         basicCheck: "passed",
@@ -235,6 +237,7 @@ export function detailFixture(
         id: "version-232",
         label: "v2.3.2",
         origin: "import",
+        current: false,
       },
     ],
   };

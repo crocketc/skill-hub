@@ -301,4 +301,75 @@ describe("native skill detail facade", () => {
       payload: { skill_id: "skill-1", version_id: "sha256:bbb" },
     });
   });
+
+  it("maps native versions into readable entries with sequence labels", async () => {
+    vi.mocked(queryApplication).mockResolvedValue({
+      type: "versions",
+      payload: [
+        { version_id: "sha256:aaaa", skill_id: "skill-1", current: false, file_count: 2, added: 0, changed: 0, removed: 0, created_at_epoch: "1700000000", sequence: 1 },
+        { version_id: "sha256:bbbb", skill_id: "skill-1", current: true, file_count: 2, added: 1, changed: 0, removed: 0, created_at_epoch: "1700003600", sequence: 2 },
+      ],
+    });
+    const versions = await nativeSkillDetailFacade.getVersions("skill-1");
+    expect(versions[0]).toMatchObject({ id: "sha256:aaaa", label: "v1", sequence: 1, current: false });
+    expect(versions[1]).toMatchObject({ id: "sha256:bbbb", label: "v2", sequence: 2, current: true });
+    expect(versions[1].createdAtEpoch).toBe("1700003600");
+    expect(versions[1].createdAt).not.toBe("");
+  });
+
+  it("falls back to a short hash label when capture time is unknown", async () => {
+    vi.mocked(queryApplication).mockResolvedValue({
+      type: "versions",
+      payload: [
+        { version_id: "sha256:cdef1234abcd5678", skill_id: "skill-1", current: true, file_count: 1, added: 0, changed: 0, removed: 0, created_at_epoch: null, sequence: null },
+      ],
+    });
+    const versions = await nativeSkillDetailFacade.getVersions("skill-1");
+    expect(versions[0].label).toBe("sha256:cdef1234…");
+    expect(versions[0].createdAt).toBe("");
+    expect(versions[0].current).toBe(true);
+  });
+
+  it("maps the native version diff", async () => {
+    vi.mocked(queryApplication).mockResolvedValue({
+      type: "version_diff",
+      payload: { added: ["new.md"], removed: [], changed: ["SKILL.md"] },
+    });
+    const diff = await nativeSkillDetailFacade.getVersionDiff("skill-1", "sha256:a", "sha256:b");
+    expect(diff).toMatchObject({ added: ["new.md"], changed: ["SKILL.md"], removed: [] });
+  });
+
+  it("derives rollback impact from real deployment relations", async () => {
+    vi.mocked(queryApplication)
+      .mockResolvedValueOnce({
+        type: "deployment_relations",
+        payload: [
+          { id: "dep-1", skill_id: "skill-1", version_id: "sha256:old", target_id: "target-1", state: "deployed", mode: "managed_copy", managed: true, runtime_name: "pdf", expected_hash: "h", observed_hash: "h" },
+        ],
+      })
+      .mockResolvedValueOnce({
+        type: "deployment_targets",
+        payload: [{ id: "target-1", label: "Claude Code", path: "C:/x", available: true, physical_id: "p", modes: ["managed_copy"] }],
+      });
+    const impact = await nativeSkillDetailFacade.getRollbackImpact("skill-1", "sha256:old");
+    expect(impact).toEqual({
+      deployments: [
+        { id: "dep-1", label: "Claude Code", affected: true, pinned: false, version: "sha256:old" },
+      ],
+      rerunsBasicCheck: true,
+      targetVersionId: "sha256:old",
+    });
+  });
+
+  it("commits a rollback through the native current-version switch", async () => {
+    vi.mocked(executeCommand).mockResolvedValue({
+      type: "operation_summary",
+      payload: { operation_id: "op-1", phase: "committed", message_code: "ok", error_code: null },
+    });
+    await nativeSkillDetailFacade.commitRollback("skill-1", "sha256:old");
+    expect(executeCommand).toHaveBeenCalledWith({
+      type: "set_current_version",
+      payload: { skill_id: "skill-1", version_id: "sha256:old" },
+    });
+  });
 });

@@ -29,12 +29,9 @@ type SeverityKey =
 
 type SubjectKind = IgnoreRuleSubject["type"];
 
-type SubjectKey =
-  | "settings.ignore.subjectPath"
-  | "settings.ignore.subjectSkill"
-  | "settings.ignore.subjectPending";
-
-const SUBJECT_KINDS: SubjectKind[] = ["exact_path", "exact_skill", "exact_pending"];
+/** AR-016：创建入口只保留用户可理解的“路径忽略”；
+ * 精确 Skill / 精确待处理不再作为自由输入暴露。 */
+const SUBJECT_KINDS: SubjectKind[] = ["exact_path"];
 
 function severityKey(severity: HealthFinding["severity"]): SeverityKey {
   switch (severity) {
@@ -49,7 +46,7 @@ function severityKey(severity: HealthFinding["severity"]): SeverityKey {
   }
 }
 
-function subjectKey(kind: SubjectKind): SubjectKey {
+function subjectKey(kind: SubjectKind): string {
   switch (kind) {
     case "exact_skill":
       return "settings.ignore.subjectSkill";
@@ -281,7 +278,7 @@ export function LibrarySettings({ settings, health }: LibrarySettingsProps) {
               {rules.map((rule) => (
                 <li key={rule.id}>
                   <span>{rule.subject.value}</span>
-                  <span>{t(subjectKey(rule.subject.type))}</span>
+                  <span>{String(t(subjectKey(rule.subject.type) as never))}</span>
                   <span>{rule.reason}</span>
                   <span>
                     {t("settings.ignore.created")}
@@ -319,7 +316,7 @@ export function LibrarySettings({ settings, health }: LibrarySettingsProps) {
                 >
                   {SUBJECT_KINDS.map((kind) => (
                     <option key={kind} value={kind}>
-                      {t(subjectKey(kind))}
+                      {String(t(subjectKey(kind) as never))}
                     </option>
                   ))}
                 </select>

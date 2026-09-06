@@ -4420,3 +4420,72 @@ async fn uninstall_backup_without_library_root_aborts_before_undeploy() {
     assert_eq!(listed[0].managed, true);
     assert_eq!(listed[0].state, DeploymentState::Deployed);
 }
+
+#[tokio::test]
+async fn list_versions_reports_readable_sequence_from_capture_times() {
+    let database = Database::open_in_memory().expect("database");
+    let skill = Skill::new(skillhub_core::SkillId::new(), "Sequence");
+    database
+        .catalog_repository()
+        .expect("catalog repository")
+        .insert(&skill)
+        .await
+        .expect("insert skill");
+    let root = tempfile::tempdir().expect("library root");
+    let library = CentralLibrary::initialize(root.path()).expect("central library");
+
+    let first_source = tempfile::tempdir().expect("first source");
+    std::fs::write(first_source.path().join("SKILL.md"), "# First\n").expect("write first");
+    let first = VersionStore::from_library(&library)
+        .capture(skill.id(), first_source.path())
+        .expect("capture first");
+    std::thread::sleep(std::time::Duration::from_millis(50));
+    let second_source = tempfile::tempdir().expect("second source");
+    std::fs::write(second_source.path().join("SKILL.md"), "# Second\n").expect("write second");
+    let second = VersionStore::from_library(&library)
+        .capture(skill.id(), second_source.path())
+        .expect("capture second");
+    VersionStore::from_library(&library)
+        .set_current(skill.id(), &second.id)
+        .expect("set current");
+
+    let facade = LocalApplicationFacade::new_with_library(database, root.path());
+    let versions = facade
+        .query(RootAppQuery::ListVersions(ListVersions {
+            skill_id: skill.id(),
+        }))
+        .await
+        .expect("versions");
+    let AppQueryResult::Versions(versions) = versions else {
+        panic!("expected versions");
+    };
+    assert_eq!(versions.len(), 2);
+    let by_id: std::collections::HashMap<_, _> = versions
+        .iter()
+        .map(|version| (version.version_id.clone(), version))
+        .collect();
+    let first_entry = by_id.get(&first.id).expect("first version listed");
+    let second_entry = by_id.get(&second.id).expect("second version listed");
+    // AR-021：序号来自真实捕获时间；时间并列时按确定性次序编号。
+    let first_sequence = first_entry.sequence.expect("first has a sequence");
+    let second_sequence = second_entry.sequence.expect("second has a sequence");
+    assert_ne!(first_sequence, second_sequence, "序号必须互不相同");
+    assert!(first_entry.created_at_epoch.is_some());
+    assert!(second_entry.created_at_epoch.is_some());
+    let (first_epoch, second_epoch) = (
+        first_entry.created_at_epoch.clone().unwrap(),
+        second_entry.created_at_epoch.clone().unwrap(),
+    );
+    if first_epoch != second_epoch {
+        // 时间可区分时：较早捕获的版本序号必须为 1。
+        let older = if first_epoch < second_epoch {
+            first_sequence
+        } else {
+            second_sequence
+        };
+        assert_eq!(older, 1);
+    }
+    // 时间并列（文件系统粒度）时按确定性次序编号，不做虚假断言。
+    assert!(second_entry.current);
+    assert!(!first_entry.current);
+}

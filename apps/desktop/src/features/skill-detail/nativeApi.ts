@@ -3,6 +3,7 @@ import {
   queryApplication,
   type AppCommandResult,
   type AppQueryResult,
+  type DeploymentTarget,
   type FindingDisposition,
   type SkillResult,
   type UpdateDecision,
@@ -17,6 +18,9 @@ import {
   type SkillFinding,
   type SkillMetadata,
   type SkillRelation,
+  type SkillRollbackImpact,
+  type SkillVersionDiff,
+  type SkillVersionEntry,
 } from "./api";
 
 function unavailableResult(): SkillDetailUnavailableError {
@@ -94,8 +98,92 @@ function metadataOf(skill: SkillResult): SkillMetadata {
   };
 }
 
-/** Real IPC-backed detail reads. Mutations and remaining secondary panels stay
- * on the unavailable facade until their native contracts are connected. */
+/** AR-021：把原生版本记录映射为用户可读条目——有序号用 vN，
+ * 时间未知回退短哈希；完整哈希不再直接作为版本名展示。 */
+function shortHash(versionId: string): string {
+  if (versionId.startsWith("sha256:")) {
+    const hex = versionId.slice("sha256:".length);
+    return `sha256:${hex.slice(0, 8)}…`;
+  }
+  return versionId.slice(0, 18);
+}
+
+async function getVersions(skillId: string): Promise<SkillVersionEntry[]> {
+  const result = await queryApplication({
+    type: "list_versions",
+    payload: { skill_id: skillId },
+  });
+  if (result.type !== "versions") throw unavailableResult();
+  return result.payload.map((version) => {
+    const epoch = version.created_at_epoch ?? null;
+    const sequence = version.sequence ?? null;
+    return {
+      changes: {
+        added: version.added,
+        changed: version.changed,
+        removed: version.removed,
+      },
+      createdAt: epoch
+        ? new Date(Number(epoch) * 1000).toLocaleString()
+        : "",
+      createdAtEpoch: epoch,
+      current: version.current,
+      id: version.version_id,
+      label: sequence !== null ? `v${sequence}` : shortHash(version.version_id),
+      sequence,
+    };
+  });
+}
+
+async function getVersionDiff(
+  _skillId: string,
+  leftVersionId: string,
+  rightVersionId: string,
+): Promise<SkillVersionDiff> {
+  const result = await queryApplication({
+    type: "diff_versions",
+    payload: { left: leftVersionId, right: rightVersionId },
+  });
+  if (result.type !== "version_diff") throw unavailableResult();
+  return {
+    added: result.payload.added,
+    changed: result.payload.changed,
+    leftVersionId,
+    removed: result.payload.removed,
+    rightVersionId,
+  };
+}
+
+async function getRollbackImpact(
+  skillId: string,
+  versionId: string,
+): Promise<SkillRollbackImpact> {
+  const relationsResult = await queryApplication({
+    type: "get_deployment_relations",
+    payload: { skill_id: skillId },
+  });
+  if (relationsResult.type !== "deployment_relations") throw unavailableResult();
+  const targetsResult = await queryApplication({
+    type: "list_deployment_targets",
+    payload: null,
+  });
+  const targets =
+    targetsResult.type === "deployment_targets"
+      ? new Map(targetsResult.payload.map((target) => [target.id, target]))
+      : new Map<string, DeploymentTarget>();
+  return {
+    deployments: relationsResult.payload.map((relation) => ({
+      affected: true,
+      id: relation.id,
+      label: targets.get(relation.target_id)?.label ?? relation.target_id,
+      pinned: false,
+      version: relation.version_id,
+    })),
+    rerunsBasicCheck: true,
+    targetVersionId: versionId,
+  };
+}
+
 
 async function checkSourceUpdate(skillId: string): Promise<UpstreamCheckResult> {
   const result = await executeCommand({
@@ -126,8 +214,7 @@ async function relinkSource(skillId: string, sourceInput: string) {
   const result = await executeCommand({
     type: "relink_source",
     payload: { skill_id: skillId, source: { kind, locator } },
-  });
-  if (result.type !== "operation_summary") throw unavailableResult();
+  });  if (result.type !== "operation_summary") throw unavailableResult();
   return { messageCode: result.payload.message_code };
 }
 
@@ -136,6 +223,14 @@ export const nativeSkillDetailFacade: SkillDetailFacade = {
   checkSourceUpdate,
   applySourceUpdate,
   relinkSource,
+  getVersions,
+  getVersionDiff,
+  getRollbackImpact,
+  async commitRollback(skillId, versionId) {
+    await setNativeCurrentVersion(skillId, versionId);
+    // set_current_version 切换目录指针；"新当前版本"即被切换到的版本。
+    return { newVersionId: versionId };
+  },
   async getSummary(skillId) {
     const skill = await getSkill(skillId);
     const summary = summaryOf(skill);
