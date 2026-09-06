@@ -240,8 +240,32 @@
 }
 
 .sh-markdown-editor__toolbar {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
   min-height: 2.25rem;
   justify-content: space-between;
+}
+
+.sh-markdown-editor__save-cluster {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.sh-markdown-editor__save-hint {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+
+.sh-markdown-editor__copy-note {
+  align-items: center;
+  color: var(--color-text-muted);
+  display: flex;
+  font-size: var(--font-size-xs);
+  gap: var(--space-2);
 }
 
 .sh-markdown-editor__toolbar > div {
@@ -286,6 +310,12 @@
     flex-direction: column;
   }
 
+  /* AR-018：56rem 不再收成单列——常见窗口宽度下内容区本就不足 56rem，
+     收敛会让编辑区横跨整页、把实时预览挤到视口外；分屏改由更窄的
+     断点（40rem）接管。 */
+}
+
+@media (max-width: 40rem) {
   .sh-markdown-editor__split {
     grid-template-columns: 1fr;
   }

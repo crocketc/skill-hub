@@ -214,6 +214,7 @@ export function LibrarySettings({ settings, health }: LibrarySettingsProps) {
             <Button disabled={checking} onClick={() => void runCheck()} variant="secondary">
               {checking ? t("settings.library.checking") : t("settings.library.runHealthCheck")}
             </Button>
+            <p className="sh-settings-note">{t("settings.library.healthScope")}</p>
             {error ? <p role="alert">{error}</p> : null}
             {planError ? <p role="alert">{planError}</p> : null}
             {report && !error ? (

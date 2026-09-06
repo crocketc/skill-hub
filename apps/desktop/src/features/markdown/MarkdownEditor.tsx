@@ -5,6 +5,7 @@ import CodeMirror from "@uiw/react-codemirror";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "../../ui/Button";
+import { ConfirmDialog } from "../../ui/ConfirmDialog";
 import {
   MarkdownContentConflictError,
   type MarkdownFacade,
@@ -18,10 +19,12 @@ interface MarkdownEditorProps {
   facade: MarkdownFacade;
   file: MarkdownFileContent;
   onSaved: (newVersionId: string) => void;
+  /** 用户明确结束编辑（保存后或放弃后）时回调；工作流据此回到阅读模式。 */
+  onExit?: () => void;
   skillId: string;
 }
 
-export function MarkdownEditor({ facade, file, onSaved, skillId }: MarkdownEditorProps) {
+export function MarkdownEditor({ facade, file, onSaved, onExit, skillId }: MarkdownEditorProps) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const initial = file.draft?.markdown ?? file.markdown;
@@ -117,19 +120,64 @@ export function MarkdownEditor({ facade, file, onSaved, skillId }: MarkdownEdito
   };
 
   const hasWarnings = issues.some((issue) => issue.severity === "warning");
+  const dirty = source !== file.markdown;
+
+  const discardAndExit = async () => {
+    try {
+      await facade.discardDraft(skillId, file.path);
+      await queryClient.invalidateQueries({ queryKey: markdownKeys.file(skillId, file.path) });
+    } finally {
+      onExit?.();
+    }
+  };
 
   return (
     <section className="sh-markdown-editor">
       <div className="sh-markdown-editor__toolbar">
+        {onExit && dirty ? (
+          <ConfirmDialog
+            cancelLabel={t("actions.cancel")}
+            confirmLabel={t("markdown.editor.exitConfirmConfirm")}
+            description={t("markdown.editor.exitConfirmDescription")}
+            onConfirm={() => void discardAndExit()}
+            title={t("markdown.editor.exitConfirmTitle")}
+            trigger={
+              <Button size="sm" variant="ghost">
+                {t("markdown.editor.exitWithoutSaving")}
+              </Button>
+            }
+            variant="danger"
+          />
+        ) : onExit ? (
+          <Button onClick={onExit} size="sm" variant="ghost">
+            {t("markdown.editor.exit")}
+          </Button>
+        ) : null}
         <div aria-live="polite">
           {draftState === "saving" ? t("markdown.editor.draftSaving") : null}
           {draftState === "saved" ? t("markdown.editor.draftSaved") : null}
           {draftState === "error" ? t("markdown.editor.draftError") : null}
           {savedVersion ? t("markdown.editor.versionCreated", { version: savedVersion }) : null}
         </div>
-        <Button loading={saving} onClick={() => void validateAndSave()}>
-          {t("markdown.editor.save")}
-        </Button>
+        <div className="sh-markdown-editor__save-cluster">
+          <span className="sh-markdown-editor__save-hint">
+            {t("markdown.editor.saveHint")}
+          </span>
+          <span className="sh-markdown-editor__copy-note">
+            <Button
+              aria-label={t("markdown.editor.saveAsCopy")}
+              disabled
+              size="sm"
+              variant="secondary"
+            >
+              {t("markdown.editor.saveAsCopy")}
+            </Button>
+            {t("markdown.editor.copyUnavailable")}
+          </span>
+          <Button loading={saving} onClick={() => void validateAndSave()}>
+            {t("markdown.editor.save")}
+          </Button>
+        </div>
       </div>
       {issues.length > 0 ? (
         <section

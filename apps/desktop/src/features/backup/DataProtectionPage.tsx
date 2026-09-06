@@ -248,6 +248,7 @@ export function DataProtectionPage({ facade }: { facade: BackupFacade }) {
       <section className="sh-workflow-card">
         <h2>{t("backup.uninstall.heading")}</h2>
         <p>{t("backup.uninstall.description")}</p>
+        <p className="sh-settings-note">{t("backup.uninstall.scenario")}</p>
         {deploymentError ? <p role="alert">{deploymentError}</p> : null}
         {deployments ? (
           deployments.length === 0

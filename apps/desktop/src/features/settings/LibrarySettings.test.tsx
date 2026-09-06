@@ -85,6 +85,16 @@ it("runs a library health check and shows each finding", async () => {
   expect(screen.getByText("警告")).toBeVisible();
 });
 
+it("states the health check scope honestly before running it", async () => {
+  await renderLibrary(healthFacade());
+
+  // AR-004：用户需要知道检查覆盖什么、不覆盖什么（例如重名/重复不属于范围）。
+  expect(
+    screen.getByText(/只检查未完成的应用操作/),
+  ).toBeVisible();
+  expect(screen.getByText(/不包含重名或重复内容检测/)).toBeVisible();
+});
+
 it("shows the all-clear message when the health check finds nothing", async () => {
   await renderLibrary(healthFacade());
 

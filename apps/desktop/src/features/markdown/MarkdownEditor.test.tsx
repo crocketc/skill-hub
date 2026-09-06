@@ -10,7 +10,10 @@ import {
   type MockMarkdownOptions,
 } from "./testFixtures";
 
-async function renderEditor(options: MockMarkdownOptions = {}) {
+async function renderEditor(
+  options: MockMarkdownOptions = {},
+  props: { onExit?: () => void } = {},
+) {
   const facade = createMockMarkdownFacade(options);
   const file = await facade.readMarkdownFile("pdf-reader", "SKILL.md");
   const i18n = await createSkillHubI18n(["en-US"]);
@@ -24,6 +27,7 @@ async function renderEditor(options: MockMarkdownOptions = {}) {
           facade={facade}
           file={file}
           onSaved={() => undefined}
+          onExit={props.onExit}
           skillId="pdf-reader"
         />
       </I18nextProvider>
@@ -105,5 +109,30 @@ describe("MarkdownEditor", () => {
         "Keep this draft",
       );
     });
+  });
+
+  it("discards the local draft and exits without creating a version", async () => {
+    const onExit = vi.fn();
+    const facade = await renderEditor({}, { onExit });
+    await replaceEditorText("Unwanted changes");
+    await screen.findByText("Draft saved locally");
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Discard changes and go back" }),
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "Discard changes" }));
+
+    await waitFor(() => expect(onExit).toHaveBeenCalled());
+    expect(facade.calls.discardedDrafts).toHaveLength(1);
+    expect(facade.calls.savedVersions).toEqual([]);
+  });
+
+  it("explains the save decision and marks copy-save as unavailable", async () => {
+    await renderEditor();
+
+    expect(screen.getByText(/Saving creates a new version/)).toBeVisible();
+    const copyButton = screen.getByRole("button", { name: "Save as copy" });
+    expect(copyButton).toBeDisabled();
+    expect(screen.getByText(/independent copy needs a native contract/)).toBeVisible();
   });
 });

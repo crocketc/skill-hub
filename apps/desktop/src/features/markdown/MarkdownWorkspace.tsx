@@ -188,6 +188,7 @@ export function MarkdownWorkspace({ facade, skillId }: MarkdownWorkspaceProps) {
               facade={facade}
               file={file}
               key={`${file.path}-${file.contentIdentity}-${file.draft?.savedAt ?? "formal"}`}
+              onExit={() => setMode("read")}
               onSaved={() => {
                 void queryClient.invalidateQueries({
                   queryKey: ["skill-detail", skillId, "summary"],
