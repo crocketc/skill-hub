@@ -1679,7 +1679,12 @@ export type SourceSearchQuery = {
  *  Deterministic state returned by an upstream check. It describes observed
  *  facts only; it does not imply that an update should be applied.
  */
-export type SourceState = "up_to_date" | "update_available" | "update_available_with_local_changes" | "source_unavailable" | "authentication_required";
+export type SourceState = "up_to_date" | "update_available" | "update_available_with_local_changes" | "source_unavailable" | "authentication_required" |
+/**
+ *  该 Skill 没有可检查更新的上游来源（本地创建或仅有本地目录来源）。
+ *  这是观察事实而非错误；本地文件变化由外部变化与健康检查追踪。
+ */
+"no_upstream";
 
 /**  N8：批量检查的单条结果——Skill 及其来源状态（含诚实的 SourceUnavailable）。 */
 export type SourceUpdateCheckOutcome = {

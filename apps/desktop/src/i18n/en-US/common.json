@@ -1,4 +1,17 @@
 {
+  "errors": {
+    "objectNotFound": "The target does not exist or has been removed ({{code}}).",
+    "networkDisabled": "Network features are disabled; enable them in Settings before using online operations.",
+    "backupChecksumMismatch": "Backup verification failed: contents do not match the manifest or files are missing.",
+    "inputInvalid": "The input failed validation ({{code}}).",
+    "sourceUpdate": {
+      "noUpstreamConflict": "This skill has no upstream source to take, so “Take upstream” cannot run ({{code}}).",
+      "sourceUnavailable": "The source is currently unavailable. Check the network and the source record, then retry."
+    },
+    "onboarding": {
+      "libraryRootLocked": "The library root cannot change after initialization. To move the library, use the backup/migration flow under data protection."
+    }
+  },
   "actions": {
     "back": "Back",
     "cancel": "Cancel",
@@ -685,7 +698,8 @@
         "upgradable": "Upgradable ({{count}})",
         "unavailable": "Source unavailable ({{count}})",
         "hint": "Apply upgrades one by one from each Skill detail page; nothing is overwritten automatically here. Sources may be unavailable when the network is disabled or the origin record is missing.",
-        "authRequired": "Authentication required ({{count}})"
+        "authRequired": "Authentication required ({{count}})",
+        "noUpstream": "No upstream source ({{count}})"
       }
     },
     "drawer": {
@@ -1089,7 +1103,10 @@
       "appliedBranch": "Created independent branch {{version}}.",
       "appliedGeneric": "Applied the selected decision.",
       "reconcile": "Some deployments need reconciliation; handle them on the deployment page.",
-      "failed": "Source update failed: {{error}}"
+      "failed": "Source update failed: {{error}}",
+      "failedGeneric": "The operation failed ({{code}}). Please retry; if it persists, note the error code.",
+      "noUpstream": "This skill has no upstream source to check for updates (created locally or only a local directory is registered). Local file changes appear under health checks and external changes.",
+      "takeUpstreamBlocked": "There are local modifications: taking the upstream version would overwrite them. Choose “Keep local”, or back up first."
     },
     "sourceRelink": {
       "ariaLabel": "Source relink",

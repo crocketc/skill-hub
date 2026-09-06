@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { AppliedSourceUpdate, UpdateDecision, UpstreamCheckResult } from "../../api/bindings";
+import { describeNativeError } from "../../api/nativeErrors";
 import { Button } from "../../ui/Button";
 
 export interface SourceUpdateFacade {
@@ -27,6 +28,13 @@ type PanelState =
 export function SourceUpdatePanel({ facade, skillId }: SourceUpdatePanelProps) {
   const { t } = useTranslation();
   const [state, setState] = useState<PanelState>({ phase: "idle" });
+  // describeNativeError 以动态键调用翻译；i18next 的强类型键联合在此收窄。
+  const describe = (error: unknown) =>
+    describeNativeError(
+      error,
+      (key, options) => String(t(key as never, options as never)),
+      "skillDetail.sourceUpdate.failedGeneric",
+    );
 
   const check = async () => {
     setState({ phase: "checking" });
@@ -34,7 +42,7 @@ export function SourceUpdatePanel({ facade, skillId }: SourceUpdatePanelProps) {
       const result = await facade.checkSourceUpdate(skillId);
       setState({ phase: "result", result });
     } catch (error) {
-      setState({ phase: "error", message: error instanceof Error ? error.message : String(error) });
+      setState({ phase: "error", message: describe(error) });
     }
   };
 
@@ -48,7 +56,7 @@ export function SourceUpdatePanel({ facade, skillId }: SourceUpdatePanelProps) {
       const applied = await facade.applySourceUpdate(skillId, decision);
       setState({ phase: "applied", applied });
     } catch (error) {
-      setState({ phase: "error", message: error instanceof Error ? error.message : String(error) });
+      setState({ phase: "error", message: describe(error) });
     }
   };
 
@@ -113,6 +121,9 @@ function ResultView({
   if (result.state === "authentication_required") {
     return <p role="status">{t("skillDetail.sourceUpdate.authRequired")}</p>;
   }
+  if (result.state === "no_upstream") {
+    return <p role="status">{t("skillDetail.sourceUpdate.noUpstream")}</p>;
+  }
 
   const withLocalChanges = result.state === "update_available_with_local_changes";
   return (
@@ -129,9 +140,13 @@ function ResultView({
             })}
       </p>
       <div className="sh-source-update__actions">
-        <Button onClick={() => void decide("take_upstream")} variant="primary">
-          {t("skillDetail.sourceUpdate.takeUpstream")}
-        </Button>
+        {withLocalChanges ? (
+          <p role="note">{t("skillDetail.sourceUpdate.takeUpstreamBlocked")}</p>
+        ) : (
+          <Button onClick={() => void decide("take_upstream")} variant="primary">
+            {t("skillDetail.sourceUpdate.takeUpstream")}
+          </Button>
+        )}
         <Button onClick={() => void decide("keep_local")} variant="secondary">
           {t("skillDetail.sourceUpdate.keepLocal")}
         </Button>

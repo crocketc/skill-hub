@@ -165,7 +165,8 @@ export type SourceUpdateCheckState =
   | "update_available"
   | "update_available_with_local_changes"
   | "source_unavailable"
-  | "authentication_required";
+  | "authentication_required"
+  | "no_upstream";
 export interface SourceUpdateCheckEntry {
   skillId: string;
   state: SourceUpdateCheckState;

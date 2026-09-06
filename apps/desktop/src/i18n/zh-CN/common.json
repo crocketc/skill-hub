@@ -1,4 +1,17 @@
 {
+  "errors": {
+    "objectNotFound": "目标不存在或已被移除（{{code}}）。",
+    "networkDisabled": "网络功能已关闭；需要在设置中开启后才能联网操作。",
+    "backupChecksumMismatch": "备份校验失败：备份内容与清单不一致或文件缺失。",
+    "inputInvalid": "输入未通过校验（{{code}}）。",
+    "sourceUpdate": {
+      "noUpstreamConflict": "此 Skill 没有可采用的 upstream 来源，无法执行“采用上游版本”（{{code}}）。",
+      "sourceUnavailable": "来源暂不可用，无法完成操作。请确认网络与来源记录后重试。"
+    },
+    "onboarding": {
+      "libraryRootLocked": "集中库初始化完成后不能更换库根目录。如需移动集中库，请使用数据保护中的备份/迁移流程。"
+    }
+  },
   "actions": {
     "back": "上一步",
     "cancel": "取消",
@@ -685,7 +698,8 @@
         "upgradable": "可升级（{{count}}）",
         "unavailable": "来源不可用（{{count}}）",
         "hint": "升级需逐个进入 Skill 详情确认应用，此处不会自动覆盖本地内容；来源不可用可能因网络关闭或来源记录缺失。",
-        "authRequired": "需要认证（{{count}}）"
+        "authRequired": "需要认证（{{count}}）",
+        "noUpstream": "无上游来源（{{count}}）"
       }
     },
     "drawer": {
@@ -1089,7 +1103,10 @@
       "appliedBranch": "已创建独立分支 {{version}}。",
       "appliedGeneric": "已应用所选决策。",
       "reconcile": "存在需要重新同步的部署，请在部署页处理。",
-      "failed": "来源更新操作失败：{{error}}"
+      "failed": "来源更新操作失败：{{error}}",
+      "failedGeneric": "操作失败（{{code}}）。请稍后重试；若持续出现请记录该错误码。",
+      "noUpstream": "此 Skill 没有可检查更新的上游来源（本地创建或仅登记了本地目录）。本地文件变化请在健康检查与外部变化中查看。",
+      "takeUpstreamBlocked": "本地已有修改：直接采用上游版本会覆盖这些修改。可选择“保留本地版本”，或先备份后处理。"
     },
     "sourceRelink": {
       "ariaLabel": "来源重新关联",

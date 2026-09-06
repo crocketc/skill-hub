@@ -2568,71 +2568,89 @@ impl LocalApplicationFacade {
     }
 
     fn check_source_update(&self, request: CheckSourceUpdate) -> AppResult<AppCommandResult> {
-        let Some(library) = self.library.as_ref() else {
-            return Err(unsupported("execute.check_source_update.library"));
-        };
-        let (source, revision) =
+        let (skill_exists, source) =
             self.with_database("execute.check_source_update.source", |database| {
                 Ok((
-                    database.source_repository().for_skill(request.skill_id)?,
                     database
-                        .source_repository()
-                        .revision_for_skill(request.skill_id)?,
+                        .catalog_repository()?
+                        .get_sync(request.skill_id)?
+                        .is_some(),
+                    database.source_repository().for_skill(request.skill_id)?,
                 ))
             })?;
+        if !skill_exists {
+            return Err(AppError::new(ErrorCode::ObjectNotFound, Severity::Error)
+                .with_param("skill_id", request.skill_id.to_string()));
+        }
         let Some(source) = source else {
+            // AR-020：没有来源记录就没有上游；本地目录不是上游来源。
             return Ok(AppCommandResult::UpstreamCheckResult(
-                skillhub_core::UpstreamCheckResult::new(
-                    request.skill_id,
-                    SourceState::SourceUnavailable,
-                ),
+                skillhub_core::UpstreamCheckResult::new(request.skill_id, SourceState::NoUpstream),
             ));
         };
-        let Some(path) = source.locator.as_local_path() else {
-            // 远端 git 来源（含 N7a 记录的仓库导入坐标）：拉取远端归档做哈希对比。
-            if source.kind == skillhub_core::SourceKind::Git {
-                return self.check_remote_source_update(request.skill_id);
-            }
+        if source.kind != skillhub_core::SourceKind::Git {
+            // AR-020：本地目录来源（导入路径或用户自建）不是可检查的上游；
+            // 本地文件变化由外部变化与健康检查追踪，不伪装成"来源更新"。
             return Ok(AppCommandResult::UpstreamCheckResult(
-                skillhub_core::UpstreamCheckResult::new(
-                    request.skill_id,
-                    SourceState::SourceUnavailable,
-                ),
-            ));
-        };
-        if !path.is_dir() {
-            return Ok(AppCommandResult::UpstreamCheckResult(
-                skillhub_core::UpstreamCheckResult::new(
-                    request.skill_id,
-                    SourceState::SourceUnavailable,
-                ),
+                skillhub_core::UpstreamCheckResult::new(request.skill_id, SourceState::NoUpstream),
             ));
         }
-        let source_hash = library.hash_tree(path)?;
-        let current = library.current(request.skill_id)?;
-        let current_hash = current.as_ref().and_then(|current| {
-            library
-                .list(request.skill_id)
-                .ok()
-                .and_then(|records| records.into_iter().find(|record| &record.id == current))
-                .map(|record| record.manifest.tree_hash)
-        });
-        let baseline = revision.or(current_hash.clone());
-        let state = if baseline.as_deref() == Some(source_hash.as_str()) {
-            if current_hash == baseline {
-                SourceState::UpToDate
-            } else {
-                SourceState::UpdateAvailableWithLocalChanges
-            }
-        } else if current_hash == baseline {
-            SourceState::UpdateAvailable
-        } else {
-            SourceState::UpdateAvailableWithLocalChanges
+        // 远端 git 来源（含 N7a 记录的仓库导入坐标）：拉取远端归档做哈希对比。
+        self.check_remote_source_update(request.skill_id)
+    }
+
+    /// 读取 Skill 的 UpstreamOrigin 坐标，经仓库归档下载把远端 Skill 目录
+    /// 取回到调用方持有的临时工作区。check 与 apply 的远端路径共用，
+    /// 保证"检查到什么"和"采用到什么"是同一条下载管线。
+    fn fetch_remote_source_dir(
+        &self,
+        skill_id: skillhub_core::SkillId,
+        workspace_path: &std::path::Path,
+    ) -> AppResult<std::path::PathBuf> {
+        self.ensure_network_enabled()?;
+        let unavailable = || {
+            AppError::new(ErrorCode::OperationConflict, Severity::Warning)
+                .with_param("reason", "source_unavailable")
+                .with_param("skill_id", skill_id.to_string())
         };
-        Ok(AppCommandResult::UpstreamCheckResult(
-            skillhub_core::UpstreamCheckResult::new(request.skill_id, state)
-                .with_versions(current, None),
-        ))
+        let Some(upstream) = self
+            .with_database("execute.check_source_update.upstream", |database| {
+                database.source_repository().upstream_for_skill(skill_id)
+            })?
+        else {
+            return Err(unavailable());
+        };
+        let Some((owner, name)) = parse_github_repo_url(&upstream.url) else {
+            return Err(unavailable());
+        };
+        let repo = skillhub_core::source::SkillRepo {
+            owner,
+            name,
+            branch: upstream.branch.clone(),
+            enabled: true,
+        };
+        if self.repo_provider().validate_repo(&repo).is_err() {
+            return Err(unavailable());
+        }
+        // 归档下载是异步阻塞操作：在独立线程上跑临时 current-thread runtime，
+        // 下载产物落到调用方持有的临时目录。
+        let provider = Arc::clone(&*self.repo_provider());
+        let directory = upstream.directory.clone();
+        let workspace = workspace_path.to_path_buf();
+        std::thread::spawn(move || {
+            let runtime = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .map_err(|error| anyhow::anyhow!("runtime: {error}"))?;
+            runtime.block_on(async {
+                provider
+                    .download_skill_directory(&repo, &directory, &workspace)
+                    .await
+            })
+        })
+        .join()
+        .map_err(|_| internal("execute.check_source_update.remote_fetch"))?
+        .map_err(|_| unavailable())
     }
 
     /// N7b：远端 git 来源的更新检测。读取 N7a 记录的 UpstreamOrigin 坐标，
@@ -2644,7 +2662,6 @@ impl LocalApplicationFacade {
         &self,
         skill_id: skillhub_core::SkillId,
     ) -> AppResult<AppCommandResult> {
-        self.ensure_network_enabled()?;
         let Some(library) = self.library.as_ref() else {
             return Err(unsupported("execute.check_source_update.library"));
         };
@@ -2653,25 +2670,6 @@ impl LocalApplicationFacade {
                 skillhub_core::UpstreamCheckResult::new(skill_id, SourceState::SourceUnavailable),
             ))
         };
-        let Some(upstream) = self
-            .with_database("execute.check_source_update.upstream", |database| {
-                database.source_repository().upstream_for_skill(skill_id)
-            })?
-        else {
-            return unavailable();
-        };
-        let Some((owner, name)) = parse_github_repo_url(&upstream.url) else {
-            return unavailable();
-        };
-        let repo = skillhub_core::source::SkillRepo {
-            owner,
-            name,
-            branch: upstream.branch.clone(),
-            enabled: true,
-        };
-        if self.repo_provider().validate_repo(&repo).is_err() {
-            return unavailable();
-        }
         let current = library.current(skill_id)?;
         let current_hash = current.as_ref().and_then(|current| {
             library
@@ -2683,29 +2681,11 @@ impl LocalApplicationFacade {
         let Some(baseline) = current_hash.clone() else {
             return unavailable();
         };
-        // 归档下载是异步阻塞操作：在独立线程上跑临时 current-thread runtime，
-        // 下载产物落到调用方持有的临时目录，哈希在本线程用同一 hash_tree 计算。
-        let provider = Arc::clone(&*self.repo_provider());
-        let directory = upstream.directory.clone();
         let workspace = tempfile::tempdir().map_err(|error| {
             AppError::new(ErrorCode::InternalError, Severity::Error)
                 .with_param("source", error.to_string())
         })?;
-        let workspace_path = workspace.path().to_path_buf();
-        let remote_dir = std::thread::spawn(move || {
-            let runtime = tokio::runtime::Builder::new_current_thread()
-                .enable_all()
-                .build()
-                .map_err(|error| anyhow::anyhow!("runtime: {error}"))?;
-            runtime.block_on(async {
-                provider
-                    .download_skill_directory(&repo, &directory, &workspace_path)
-                    .await
-            })
-        })
-        .join()
-        .map_err(|_| internal("execute.check_source_update.remote_fetch"))?;
-        let remote_dir = match remote_dir {
+        let remote_dir = match self.fetch_remote_source_dir(skill_id, workspace.path()) {
             Ok(path) => path,
             Err(_) => return unavailable(),
         };
@@ -2754,15 +2734,23 @@ impl LocalApplicationFacade {
         else {
             return Err(internal("execute.apply_source_update.check"));
         };
-        if request.decision == UpdateDecision::TakeUpstream
-            && check.state != SourceState::UpdateAvailable
-        {
-            return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
-                .with_param(
-                    "detail",
-                    "upstream update would overwrite local modifications",
-                )
-                .with_action(RecoveryAction::Acknowledge));
+        if request.decision == UpdateDecision::TakeUpstream {
+            if check.state == SourceState::NoUpstream {
+                // AR-020：没有上游就没有"采用上游"可执行，如实拒绝并给出
+                // 可读原因，而不是笼统冲突。
+                return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                    .with_param("reason", "no_upstream_source")
+                    .with_param("skill_id", request.skill_id.to_string())
+                    .with_action(RecoveryAction::Acknowledge));
+            }
+            if check.state != SourceState::UpdateAvailable {
+                return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                    .with_param(
+                        "detail",
+                        "upstream update would overwrite local modifications",
+                    )
+                    .with_action(RecoveryAction::Acknowledge));
+            }
         }
         if request.decision == UpdateDecision::CreateIndependentBranch {
             return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
@@ -2775,6 +2763,9 @@ impl LocalApplicationFacade {
         let Some(library) = self.library.as_ref() else {
             return Err(unsupported("execute.apply_source_update.library"));
         };
+        let Some(root) = self.library_root.as_ref() else {
+            return Err(unsupported("execute.apply_source_update.library"));
+        };
         let source = self.with_database("execute.apply_source_update.source", |database| {
             database.source_repository().for_skill(request.skill_id)
         })?;
@@ -2783,13 +2774,32 @@ impl LocalApplicationFacade {
                 .with_param("skill_id", request.skill_id.to_string())
                 .with_action(RecoveryAction::ChooseAnotherName));
         };
-        let Some(path) = source.locator.as_local_path() else {
-            return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
-                .with_param("detail", "remote source acquisition is not configured")
-                .with_action(RecoveryAction::Retry));
+        // AR-017：git 来源（远端坐标）的"采用上游"必须真实下载远端内容，
+        // 与检查阶段共用同一条下载管线；本地路径来源才直接从路径捕获。
+        // 临时工作区必须活到捕获完成，不能在 match 臂内提前释放。
+        let remote_workspace = if source.locator.as_local_path().is_none() {
+            Some(tempfile::tempdir().map_err(|error| {
+                AppError::new(ErrorCode::InternalError, Severity::Error)
+                    .with_param("source", error.to_string())
+            })?)
+        } else {
+            None
         };
-        validate_skill_source(path)?;
-        let captured = library.capture_with_status(request.skill_id, path)?;
+        let capture_source = match (&remote_workspace, source.locator.as_local_path()) {
+            (_, Some(path)) => std::borrow::Cow::Borrowed(path),
+            (Some(workspace), None) => std::borrow::Cow::Owned(
+                self.fetch_remote_source_dir(request.skill_id, workspace.path())?,
+            ),
+            (None, None) => {
+                return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                    .with_param("reason", "source_unavailable")
+                    .with_param("skill_id", request.skill_id.to_string())
+                    .with_action(RecoveryAction::Retry));
+            }
+        };
+        let capture_source = capture_source.as_ref();
+        validate_skill_source(capture_source)?;
+        let captured = library.capture_with_status(request.skill_id, capture_source)?;
         let version = captured.record;
         if let Err(error) = library.set_current(request.skill_id, &version.id) {
             return Err(cleanup_import_error(
@@ -2811,9 +2821,6 @@ impl LocalApplicationFacade {
                         .with_action(RecoveryAction::ChooseAnotherName)
                 })
         })?;
-        let Some(root) = self.library_root.as_ref() else {
-            return Err(unsupported("execute.apply_source_update.library"));
-        };
         let central = CentralLibrary::initialize(root)?;
         if let Err(error) = central.materialize_current_skill(&skill, &version.id) {
             let _ = restore_version_pointer(library, request.skill_id, check.local_version);

@@ -12,6 +12,9 @@ pub enum SourceState {
     UpdateAvailableWithLocalChanges,
     SourceUnavailable,
     AuthenticationRequired,
+    /// 该 Skill 没有可检查更新的上游来源（本地创建或仅有本地目录来源）。
+    /// 这是观察事实而非错误；本地文件变化由外部变化与健康检查追踪。
+    NoUpstream,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]

@@ -18,6 +18,7 @@ export function SourceUpdateCheckSummary({
   );
   const unavailable = reports.filter((item) => item.state === "source_unavailable");
   const authRequired = reports.filter((item) => item.state === "authentication_required");
+  const noUpstream = reports.filter((item) => item.state === "no_upstream");
 
   const renderGroup = (label: string, items: SourceUpdateCheckReport[]) =>
     items.length > 0 ? (
@@ -46,6 +47,10 @@ export function SourceUpdateCheckSummary({
       {renderGroup(
         t("skillLibrary.page.sourceUpdates.authRequired", { count: authRequired.length }),
         authRequired,
+      )}
+      {renderGroup(
+        t("skillLibrary.page.sourceUpdates.noUpstream", { count: noUpstream.length }),
+        noUpstream,
       )}
       <p>{t("skillLibrary.page.sourceUpdates.hint")}</p>
     </section>

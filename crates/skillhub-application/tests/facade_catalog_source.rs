@@ -222,7 +222,7 @@ async fn pin_project_skill_version_validates_project_and_version() {
 }
 
 #[tokio::test]
-async fn source_relink_check_and_take_upstream_create_new_version() {
+async fn relinking_to_local_directory_stops_reporting_upstream_updates() {
     let database = Database::open_in_memory().expect("database");
     let library = tempfile::tempdir().expect("library");
     let source_a = source_with("# Original\n");
@@ -271,18 +271,8 @@ async fn source_relink_check_and_take_upstream_create_new_version() {
     let AppCommandResult::UpstreamCheckResult(check) = check else {
         panic!("expected check")
     };
-    assert_eq!(check.state, SourceState::UpdateAvailable);
-    let applied = facade
-        .execute(AppCommand::ApplySourceUpdate(ApplySourceUpdate {
-            skill_id,
-            decision: UpdateDecision::TakeUpstream,
-        }))
-        .await
-        .expect("apply");
-    let AppCommandResult::AppliedSourceUpdate(applied) = applied else {
-        panic!("expected update")
-    };
-    assert!(applied.new_version.is_some());
+    // AR-020：本地目录不是上游来源；重关联到本地目录后不再报告"可更新"。
+    assert_eq!(check.state, SourceState::NoUpstream);
 }
 
 #[tokio::test]

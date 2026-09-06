@@ -62,13 +62,45 @@ it("offers explicit decisions when an update is available", async () => {
   expect(await screen.findByText(/已采用上游版本/)).toBeVisible();
 });
 
-it("warns about local changes before offering decisions", async () => {
+it("warns about local changes and refuses silent overwrite via take-upstream", async () => {
   const user = userEvent.setup();
   await renderPanel(makeFacade({ checkSourceUpdate: async () => ({ ...result, state: "update_available_with_local_changes" }) }));
 
   await user.click(screen.getByRole("button", { name: "检查来源更新" }));
   expect(await screen.findByText(/本地有修改/)).toBeVisible();
-  expect(screen.getByRole("button", { name: "采用上游版本" })).toBeVisible();
+  expect(
+    screen.queryByRole("button", { name: "采用上游版本" }),
+  ).not.toBeInTheDocument();
+  expect(screen.getByText(/覆盖这些修改/)).toBeVisible();
+});
+
+it("states honestly when a skill has no upstream to check", async () => {
+  const user = userEvent.setup();
+  await renderPanel(makeFacade({ checkSourceUpdate: async () => ({ ...result, state: "no_upstream" }) }));
+
+  await user.click(screen.getByRole("button", { name: "检查来源更新" }));
+  expect(await screen.findByText(/没有可检查更新的上游来源/)).toBeVisible();
+  expect(screen.queryByRole("button", { name: "采用上游版本" })).not.toBeInTheDocument();
+});
+
+it("renders a structured native error readably instead of [object Object]", async () => {
+  const user = userEvent.setup();
+  await renderPanel(makeFacade({
+    applySourceUpdate: async () => {
+      throw {
+        code: "operation.conflict",
+        severity: "error",
+        params: { reason: "no_upstream_source" },
+        actions: [],
+      };
+    },
+  }));
+
+  await user.click(screen.getByRole("button", { name: "检查来源更新" }));
+  await user.click(await screen.findByRole("button", { name: "采用上游版本" }));
+  const alert = await screen.findByRole("alert");
+  expect(alert.textContent).not.toContain("[object Object]");
+  expect(alert.textContent).toContain("operation.conflict");
 });
 
 it("states unavailability instead of pretending a check succeeded", async () => {
