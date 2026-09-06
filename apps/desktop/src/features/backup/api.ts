@@ -21,6 +21,8 @@ import type {
 } from "../../api/bindings";
 
 export interface BackupFacade {
+  /** N11：当前集中库根路径（来自引导快照）。 */
+  libraryPath?: () => Promise<string>;
   prepareBackup(scope: BackupScope): Promise<BackupPlan>;
   createBackup(scope: BackupScope, decisions: BackupDecision[]): Promise<BackupCreated>;
   verifyBackup(path: string): Promise<void>;

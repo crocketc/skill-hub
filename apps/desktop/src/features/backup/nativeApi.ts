@@ -50,6 +50,11 @@ export const nativeBackupFacade: BackupFacade = {
     if (result.type !== "export_result") throw new Error("export returned an unexpected result");
     return result.payload;
   },
+  async libraryPath() {
+    const result = await queryApplication({ type: "get_bootstrap_snapshot" });
+    if (result.type !== "bootstrap_snapshot") throw new Error("bootstrap snapshot returned an unexpected result");
+    return result.payload.library_path;
+  },
   async listDeployments() {
     const result = await queryApplication({ type: "list_deployments", payload: { skill_id: null } });
     if (result.type !== "deployments") throw new Error("deployment list returned an unexpected result");

@@ -17,6 +17,7 @@ import type {
   BackupRetentionResult,
 } from "../../api/bindings";
 import { desktopDirectoryPicker } from "../../platform/directoryPicker";
+import { desktopDirectoryOpener } from "../../platform/directoryOpener";
 import { Button } from "../../ui/Button";
 import type { BackupFacade } from "./api";
 
@@ -46,9 +47,11 @@ function readCarriedExportSkillIds(state: unknown): string[] {
 export function DataProtectionPage({
   facade,
   directoryPicker = desktopDirectoryPicker,
+  directoryOpener = desktopDirectoryOpener,
 }: {
   facade: BackupFacade;
   directoryPicker?: OutputDirectoryPicker;
+  directoryOpener?: { openDirectory: (path: string) => Promise<void> };
 }) {
   const { t } = useTranslation();
   const location = useLocation();
@@ -62,6 +65,7 @@ export function DataProtectionPage({
   // N10：版本范围——仅当前版本或全部历史版本（历史范围按真实版本列表展开）。
   const [exportVersionScope, setExportVersionScope] = useState<"current" | "history">("current");
   const [outputDir, setOutputDir] = useState<string>();
+  const [libraryPath, setLibraryPath] = useState<string>();
   const [pickerError, setPickerError] = useState<string>();
   const [rollingMax, setRollingMax] = useState(3);
   const [rollingBusy, setRollingBusy] = useState(false);
@@ -130,6 +134,14 @@ export function DataProtectionPage({
     return () => { cancelled = true; };
   }, [facade, location.state]);
 
+  useEffect(() => {
+    let cancelled = false;
+    facade.libraryPath?.().then(
+      (value) => { if (!cancelled) setLibraryPath(value); },
+      () => { if (!cancelled) setLibraryPath(undefined); },
+    );
+    return () => { cancelled = true; };
+  }, [facade]);
   useEffect(() => {
     let cancelled = false;
     facade.listDeployments().then(
@@ -212,6 +224,24 @@ export function DataProtectionPage({
     <main className="sh-page sh-workflow-page">
       <header className="sh-page__header"><div><p className="sh-eyebrow">{t("dataProtection.eyebrow")}</p><h1>{t("dataProtection.heading")}</h1><p>{t("dataProtection.description")}</p></div></header>
       {error ? <p className="sh-settings-error" role="alert">{error}</p> : null}
+      <section className="sh-workflow-card">
+        <h2>{t("dataProtection.openLibrary.heading")}</h2>
+        <p>{t("dataProtection.openLibrary.description")}</p>
+        <div className="sh-button-row">
+          <Button
+            disabled={!libraryPath || busy}
+            onClick={() => void run(async () => {
+              if (!libraryPath) return;
+              await directoryOpener.openDirectory(libraryPath);
+            })}
+            variant="secondary"
+          >
+            {t("dataProtection.openLibrary.open")}
+          </Button>
+          {libraryPath ? <span role="status">{libraryPath}</span> : <span>{t("dataProtection.openLibrary.pathUnknown")}</span>}
+        </div>
+        <p>{t("dataProtection.recoveryPointNote")}</p>
+      </section>
       <section className="sh-workflow-card">
         <h2>{t("dataProtection.restore.heading")}</h2>
         <label>{t("dataProtection.restore.path")}<input aria-label={t("dataProtection.restore.path")} value={path} onChange={(event) => setPath(event.target.value)} placeholder="C:/SkillHub/backups/backup.skillhub" /></label>

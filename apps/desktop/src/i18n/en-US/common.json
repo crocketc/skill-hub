@@ -1665,6 +1665,13 @@
     }
   },
   "dataProtection": {
+  "recoveryPointNote": "Recovery points: before a database migration the app keeps an automatic recovery copy and cleans it up after success — no manual management needed. To relocate the library after initialization, use the backup → import-at-new-location migration flow.",
+    "openLibrary": {
+      "heading": "Library folder",
+      "description": "Inspect the raw library folder contents in your file manager (read-only; nothing is modified).",
+      "open": "Open library folder",
+      "pathUnknown": "Library path unavailable"
+    },
     "eyebrow": "Data protection",
     "heading": "Back up, restore, and export safely",
     "description": "Every destructive operation starts with a review so you can confirm the exact impact.",

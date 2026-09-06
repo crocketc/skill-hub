@@ -130,6 +130,41 @@ fn picker_payload_with_lenient_grant(
     .to_string())
 }
 
+/// N11：打开目录前的路径校验——必须是真实存在的目录。
+fn validate_openable_directory(path: &std::path::Path) -> Result<std::path::PathBuf, String> {
+    let canonical = std::fs::canonicalize(path)
+        .map_err(|error| format!("open_directory.canonicalize_failed: {error}"))?;
+    if !canonical.is_dir() {
+        return Err("open_directory.not_a_directory".to_owned());
+    }
+    Ok(canonical)
+}
+
+/// N11：用系统文件管理器打开本地目录（当前为集中库目录）。只读操作。
+#[tauri::command]
+fn open_local_directory(path: String) -> Result<(), String> {
+    let canonical = validate_openable_directory(std::path::Path::new(&path))?;
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg(&canonical)
+            .spawn()
+            .map_err(|error| format!("open_directory.spawn_failed: {error}"))?;
+    }
+    #[cfg(windows)]
+    {
+        std::process::Command::new("explorer")
+            .arg(&canonical)
+            .spawn()
+            .map_err(|error| format!("open_directory.spawn_failed: {error}"))?;
+    }
+    #[cfg(not(any(windows, target_os = "macos")))]
+    {
+        let _ = &canonical;
+    }
+    Ok(())
+}
+
 #[tauri::command]
 async fn pick_local_directory(bridge: State<'_, CommandBridge>) -> Result<Option<String>, String> {
     let picked = tauri::async_runtime::spawn_blocking(|| {
@@ -237,6 +272,7 @@ pub fn run_with_facade(facade: Arc<LocalApplicationFacade>) -> tauri::Result<()>
             execute_command,
             query_application,
             pick_local_directory,
+            open_local_directory,
             restart_application
         ])
         .run(tauri::generate_context!())
@@ -729,6 +765,20 @@ mod path_grant_tests {
         let error = super::canonicalize_picked_directory(&file_path)
             .expect_err("a plain file must keep failing the picker");
         assert_eq!(error, "directory_picker.not_a_directory");
+    }
+
+    #[test]
+    fn open_directory_validation_keeps_rejecting_non_directories() {
+        // N11：打开目录是只读操作，但路径必须是真实存在的目录。
+        let dir = tempfile::tempdir().expect("tempdir");
+        let file_path = dir.path().join("plain-file.txt");
+        std::fs::write(&file_path, b"x").expect("write file");
+        let file_error = super::validate_openable_directory(&file_path)
+            .expect_err("a plain file must be rejected");
+        assert_eq!(file_error, "open_directory.not_a_directory");
+
+        let missing = dir.path().join("missing-dir");
+        assert!(super::validate_openable_directory(&missing).is_err());
     }
 
     #[test]

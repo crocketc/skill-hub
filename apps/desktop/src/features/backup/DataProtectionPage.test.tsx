@@ -30,13 +30,14 @@ function versionResult(skillId: string, versionId: string, current: boolean): Ve
 interface RenderPageOptions {
   state?: unknown;
   picker?: { pickDirectory: () => Promise<string | null> };
+  opener?: { openDirectory: (path: string) => Promise<void> };
 }
 
 function renderPage(facade: BackupFacade, options: RenderPageOptions = {}) {
   return render(
     <I18nextProvider i18n={skillHubI18n}>
       <MemoryRouter initialEntries={[{ pathname: "/settings/data-protection", state: options.state }]}>
-        <DataProtectionPage facade={facade} directoryPicker={options.picker} />
+        <DataProtectionPage facade={facade} directoryPicker={options.picker} directoryOpener={options.opener} />
       </MemoryRouter>
     </I18nextProvider>,
   );
@@ -292,8 +293,6 @@ it("runs a rolling backup with the configured retention policy and reports clean
   expect(await screen.findByText(/3 kept/)).toBeVisible();
   expect(screen.getByText(/2 removed/)).toBeVisible();
 
-
-
 });
 
 it("displays rolling backup failures without faking success", async () => {
@@ -332,4 +331,17 @@ it("exports every historical version when the history scope is chosen", async ()
   fireEvent.change(screen.getByLabelText("Export decision for skill-2"), { target: { value: "include_and_mark" } });
   fireEvent.click(screen.getByRole("button", { name: "Create export" }));
   await waitFor(() => expect(facade.createExport).toHaveBeenCalledWith(expect.objectContaining({ versions: { history: ["v1", "v2"] } }), [{ skill_id: "skill-2", decision: "include_and_mark" }]));
+
 });
+  
+it("shows the library path and opens it through the native opener", async () => {
+  const facade = createFacade();
+  facade.libraryPath = vi.fn(async () => "C:/Users/demo/SkillHub");
+  const opener = { openDirectory: vi.fn(async () => undefined) };
+  renderPage(facade, { opener });
+
+  expect(await screen.findByText("C:/Users/demo/SkillHub")).toBeVisible();
+  fireEvent.click(screen.getByRole("button", { name: "Open library folder" }));
+  await waitFor(() => expect(opener.openDirectory).toHaveBeenCalledWith("C:/Users/demo/SkillHub"));
+});
+
