@@ -146,6 +146,67 @@ it("downloads a discovered skill and hands the local path to the import wizard",
   );
 });
 
+it("shows elapsed scanning progress while discovering and clears it when the scan finishes", async () => {
+  vi.useFakeTimers();
+  try {
+    let resolveDiscover!: (value: RepoDiscoveryReport) => void;
+    const pending = new Promise<RepoDiscoveryReport>((resolve) => {
+      resolveDiscover = resolve;
+    });
+    const discoverRepoSkills = vi.fn(() => pending);
+    renderCard(baseFacade({ discoverRepoSkills }));
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "扫描仓库" }));
+
+    const progress = screen.getByRole("status");
+    expect(progress).toHaveTextContent("已用时 0 秒");
+    expect(progress).toHaveTextContent("正在逐个完整下载已启用的仓库并扫描 Skill");
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2000);
+    });
+    expect(screen.getByRole("status")).toHaveTextContent("已用时 2 秒");
+    expect(discoverRepoSkills).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      resolveDiscover(report);
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    expect(screen.queryByText(/已用时/)).not.toBeInTheDocument();
+    expect(screen.getByText("PDF")).toBeVisible();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("describes the native reason when the scan fails with a known error code", async () => {
+  const discoverRepoSkills = vi.fn(async () => {
+    throw { code: "network.disabled", severity: "error", params: {}, actions: [] };
+  });
+  renderCard(baseFacade({ discoverRepoSkills }));
+
+  await click(await screen.findByRole("button", { name: "扫描仓库" }));
+
+  const alert = await screen.findByRole("alert");
+  expect(alert).toHaveTextContent("网络功能已关闭");
+  expect(alert).not.toHaveTextContent("仓库发现失败，请稍后重试。");
+});
+
+it("keeps the raw error code visible for unknown scan failures", async () => {
+  const discoverRepoSkills = vi.fn(async () => {
+    throw { code: "repo.archive_unavailable", severity: "error", params: {}, actions: [] };
+  });
+  renderCard(baseFacade({ discoverRepoSkills }));
+
+  await click(await screen.findByRole("button", { name: "扫描仓库" }));
+
+  expect(await screen.findByRole("alert")).toHaveTextContent("repo.archive_unavailable");
+});
+
 it("adds a repository through the facade and refreshes the list", async () => {
   const addSkillRepo = vi.fn(async (repo: SkillRepo) => [...defaultRepos, repo]);
   renderCard(baseFacade({ addSkillRepo }));

@@ -1,4 +1,4 @@
-import { useReducer, useRef, useState } from "react";
+import { useEffect, useReducer, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "../../ui/Button";
 import { DataState } from "../../ui/DataState";
@@ -26,6 +26,7 @@ import {
 } from "../../platform/directoryPicker";
 import {
   operationTracker,
+  useHasRunningOperation,
   type OperationTracker,
   type TrackedResultSummary,
 } from "../../platform/operationTracker";
@@ -177,8 +178,17 @@ export function ImportWizard({
   const [state, dispatch] = useReducer(reducer, { ...initialState, sourceText: normalizedInitialSourceText });
   const [selectedSources, setSelectedSources] = useState(normalizedInitialSources);
   const [pickerError, setPickerError] = useState<string | null>(null);
+  // AR-014 导入互斥：已有后台导入进行中时禁止第二次提交。
+  const importLocked = useHasRunningOperation(tracker, "import");
+  const [commitBlockedNotice, setCommitBlockedNotice] = useState(false);
+  const commitLockNotice = importLocked || commitBlockedNotice;
   const operationRef = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
+
+  // 互斥的 import 结束后自动解除本地锁定提示。
+  useEffect(() => {
+    if (!importLocked) setCommitBlockedNotice(false);
+  }, [importLocked]);
 
   const runAcquisition = async () => {
     const operation = ++operationRef.current;
@@ -257,6 +267,12 @@ export function ImportWizard({
 
   const commit = async () => {
     if (!state.plan) return;
+    // 在 begin 之前检查：进行中的 import（包括其他向导实例提交的）阻塞本次提交；
+    // 自己后续的 begin 不会被误判，因为检查发生在登记之前。
+    if (tracker.hasRunningKind("import")) {
+      setCommitBlockedNotice(true);
+      return;
+    }
     const operation = ++operationRef.current;
     const total = state.plan.candidates.length;
     dispatch({ type: "commit_started", total });
@@ -308,6 +324,11 @@ export function ImportWizard({
       <div className="sh-import-wizard__panel">
         {importGuide ? <p aria-live="polite" className="sh-import-wizard__guide">{importGuide}</p> : null}
         {pickerError ? <p aria-live="polite" className="sh-import-source__notice">{pickerError}</p> : null}
+        {commitLockNotice && state.phase === "conflicts" ? (
+          <p aria-live="polite" role="alert" className="sh-import-source__notice">
+            {t("importWorkflow.commit.locked")}
+          </p>
+        ) : null}
         {(["source", "acquiring", "candidate_gate", "cancelled", "failed"] as WizardPhase[]).includes(state.phase) ? (
           <SourceInput
             actionLabel={selectedSources.length > 0 ? t("importWorkflow.source.acquireSelectedSources") : undefined}
@@ -367,6 +388,7 @@ export function ImportWizard({
         {state.phase === "conflicts" && state.plan ? (
           <ConflictResolution
             actions={state.actions}
+            commitDisabled={commitLockNotice}
             conflicts={state.plan.conflicts}
             continueLabel={t("importWorkflow.conflicts.commit")}
             onAction={(candidateId, action) => dispatch({ type: "action_selected", candidateId, action })}

@@ -73,6 +73,22 @@ describe("operationTracker", () => {
     expect(snapshot[0].label).toBe("op-11");
   });
 
+  it("reports whether any running operation matches a kind", () => {
+    const tracker = createOperationTracker();
+    expect(tracker.hasRunningKind("import")).toBe(false);
+
+    const id = tracker.begin({ kind: "import", label: "导入 2 个 Skill", total: 2 });
+    expect(tracker.hasRunningKind("import")).toBe(true);
+    expect(tracker.hasRunningKind("scan")).toBe(false);
+
+    tracker.complete(id, { succeeded: 2, failed: 0, skipped: 0 });
+    expect(tracker.hasRunningKind("import")).toBe(false);
+
+    const failedId = tracker.begin({ kind: "import", label: "导入", total: 1 });
+    tracker.fail(failedId, "boom");
+    expect(tracker.hasRunningKind("import")).toBe(false);
+  });
+
   it("continues running and completes after the probing component unmounts", async () => {
     const tracker = createOperationTracker();
     let release!: () => void;

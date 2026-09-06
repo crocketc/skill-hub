@@ -7,6 +7,8 @@ import type { ImportAction, ImportConflict } from "./api";
 export interface ConflictResolutionProps {
   conflicts: ImportConflict[];
   actions: Record<string, ImportAction>;
+  /** AR-014 导入互斥：为 true 时禁用提交按钮。 */
+  commitDisabled?: boolean;
   onAction: (candidateId: string, action: ImportAction) => void;
   onContinue: () => void;
   onBack: () => void;
@@ -25,6 +27,7 @@ function sharedActions(conflicts: ImportConflict[]): ImportAction[] {
 export function ConflictResolution({
   conflicts,
   actions,
+  commitDisabled = false,
   onAction,
   onContinue,
   onBack,
@@ -139,7 +142,7 @@ export function ConflictResolution({
 
       <div className="sh-import-conflicts__actions">
         <Button onClick={onBack} variant="ghost">{t("actions.back")}</Button>
-        <Button disabled={hasMissingRequiredAction} onClick={onContinue}>{continueLabel ?? t("actions.continue")}</Button>
+        <Button disabled={hasMissingRequiredAction || commitDisabled} onClick={onContinue}>{continueLabel ?? t("actions.continue")}</Button>
       </div>
     </section>
   );

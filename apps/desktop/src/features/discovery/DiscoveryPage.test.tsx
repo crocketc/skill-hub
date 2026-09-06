@@ -4,6 +4,7 @@ import { I18nextProvider } from "react-i18next";
 import { expect, it, vi } from "vitest";
 import { createSkillHubI18n } from "../../i18n";
 import { createMockImportFacade } from "../import/api";
+import { createOperationTracker } from "../../platform/operationTracker";
 import { DiscoveryPage } from "./DiscoveryPage";
 
 it("shows local and online discovery entry points without runtime claims", async () => {
@@ -74,6 +75,22 @@ it("reports committed imports and lets the user open the refreshed library", asy
   ]);
   await user.click(await screen.findByRole("button", { name: "Open Skill library" }));
   expect(onOpenLibrary).toHaveBeenCalledTimes(1);
+});
+
+it("blocks a second import while a background import is already running", async () => {
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  const tracker = createOperationTracker();
+  tracker.begin({ kind: "import", label: "批量导入 Skill", total: 2 });
+  render(
+    <I18nextProvider i18n={i18n}>
+      <DiscoveryPage tracker={tracker} />
+    </I18nextProvider>,
+  );
+
+  fireEvent.click(screen.getAllByRole("button", { name: "导入 Skill" })[0]);
+
+  expect(screen.queryByRole("heading", { name: "导入 Skill" })).not.toBeInTheDocument();
+  expect(screen.getByText(/有一个批量导入正在进行，完成后才能开始新的导入/)).toBeVisible();
 });
 
 it("opens the guided import flow with the first scanned source prefilled", async () => {

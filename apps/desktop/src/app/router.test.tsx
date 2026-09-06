@@ -2,6 +2,10 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, vi } from "vitest";
 import { skillHubI18n } from "../i18n";
 import { nativeSkillLibraryFacade } from "../features/skills/nativeApi";
+import {
+  nativeOperationFacade,
+  nativeRecentOperations,
+} from "../features/operations/nativeApi";
 import { sidebarNavigationEnd } from "./Sidebar";
 import { resolveRouteTitleKey, resolveSubRouteFallback } from "./AppShell";
 import { queryClient } from "./queryClient";
@@ -285,6 +289,45 @@ it("uses native empty results for Agents, projects and pending work in productio
     await appRouter.navigate("/pending");
   });
   expect(await screen.findByText("No pending items")).toBeVisible();
+});
+
+it("renders real operation records at /operations and keeps the single operation detail route", async () => {
+  mockBrowserPreferences();
+  await skillHubI18n.changeLanguage("zh-CN");
+  await appRouter.navigate("/operations");
+  const listRecentOperations = vi
+    .spyOn(nativeRecentOperations, "listRecentOperations")
+    .mockResolvedValue([
+      {
+        operation_id: "op-42",
+        kind: "import",
+        state: "committed",
+        phase: "committed",
+        error_code: null,
+        created_at: "2026-09-07T10:00:00Z",
+      },
+    ]);
+  const getOperation = vi
+    .spyOn(nativeOperationFacade, "get")
+    .mockReturnValue(new Promise(() => {}));
+
+  render(<AppRouter />);
+
+  expect(await screen.findByRole("heading", { name: "操作记录" })).toBeVisible();
+  expect(await screen.findByRole("link", { name: "import" })).toHaveAttribute(
+    "href",
+    "/operations/op-42",
+  );
+  expect(getOperation).not.toHaveBeenCalled();
+
+  await act(async () => {
+    await appRouter.navigate("/operations/op-1");
+  });
+  expect(await screen.findByText("正在加载操作")).toBeVisible();
+  expect(getOperation).toHaveBeenCalledWith("op-1");
+
+  listRecentOperations.mockRestore();
+  getOperation.mockRestore();
 });
 
 it("loads the production settings route from native preferences", async () => {

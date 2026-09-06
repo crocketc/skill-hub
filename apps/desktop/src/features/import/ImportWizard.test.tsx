@@ -209,6 +209,36 @@ it("keeps the commit running in the global tracker after the wizard unmounts", a
   expect(operation.resultSummary).toEqual({ succeeded: 1, failed: 0, skipped: 1 });
 });
 
+it("refuses to commit while another import is still running", async () => {
+  const user = userEvent.setup();
+  const tracker = createOperationTracker();
+  tracker.begin({ kind: "import", label: "后台导入进行中", total: 3 });
+  const facade = createMockImportFacade({ scenario: "safe-local" });
+  facade.commitImport = vi.fn(async () => []);
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  render(
+    <I18nextProvider i18n={i18n}>
+      <ImportWizard facade={facade} tracker={tracker} />
+    </I18nextProvider>,
+  );
+
+  await user.type(screen.getByLabelText("来源"), "C:/incoming");
+  await user.click(screen.getByRole("button", { name: "解析来源" }));
+  await user.click(await screen.findByRole("button", { name: "继续选择候选" }));
+  await user.click(screen.getByRole("button", { name: "全选可导入候选" }));
+  await user.click(screen.getByRole("button", { name: "分析冲突" }));
+
+  const commitButton = await screen.findByRole("button", { name: "提交导入" });
+  expect(commitButton).toBeDisabled();
+  expect(screen.getByText(/另一个导入正在进行，完成后才能提交本次导入/)).toBeVisible();
+
+  await user.click(commitButton);
+
+  expect(facade.commitImport).not.toHaveBeenCalled();
+  expect(tracker.getSnapshot()).toHaveLength(1);
+  expect(tracker.getSnapshot()[0].status).toBe("running");
+});
+
 it("shows candidate progress while commit is in flight", async () => {
   const user = userEvent.setup();
   const facade = createMockImportFacade({ scenario: "safe-local" });

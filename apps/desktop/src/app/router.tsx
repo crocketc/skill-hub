@@ -16,6 +16,7 @@ import { nativeSecurityFacade } from "../features/security/nativeApi";
 import { PendingPage } from "../features/pending/PendingPage";
 import { nativePendingFacade } from "../features/pending/nativeApi";
 import { OperationProgress } from "../features/operations/OperationProgress";
+import { OperationsRecordsPage } from "../features/operations/OperationsRecordsPage";
 import { nativeOperationFacade } from "../features/operations/nativeApi";
 import { RecoveryPage } from "../features/recovery/RecoveryPage";
 import { DataProtectionPage } from "../features/backup/DataProtectionPage";
@@ -190,7 +191,7 @@ export const appRouter = createBrowserRouter([
       { path: "projects/:projectKey", element: <ProjectDetailRoute /> },
       { path: "pending", element: <PendingPage facade={nativePendingFacade} /> },
       { path: "operations/:operationId", element: <OperationRoute /> },
-      { path: "operations", element: <OperationRoute /> },
+      { path: "operations", element: <OperationsRecordsPage /> },
       { path: "recovery", element: <RecoveryPage facade={nativeOperationFacade} /> },
       { path: "settings", element: <SettingsPage facade={nativeSettingsFacade} /> },
       { path: "settings/data-protection", element: <DataProtectionPage facade={nativeBackupFacade} /> },

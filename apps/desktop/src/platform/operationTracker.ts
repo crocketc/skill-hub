@@ -36,6 +36,8 @@ export interface OperationTracker {
   complete: (id: string, summary: TrackedResultSummary) => void;
   fail: (id: string, error: string) => void;
   cancel: (id: string) => void;
+  /** Whether any still-running operation has the given kind（导入互斥用）. */
+  hasRunningKind: (kind: string) => boolean;
 }
 
 const MAX_HISTORY = 10;
@@ -68,6 +70,11 @@ export function createOperationTracker(): OperationTracker {
     },
     getSnapshot() {
       return operations;
+    },
+    hasRunningKind(kind) {
+      return operations.some(
+        (operation) => operation.status === "running" && operation.kind === kind,
+      );
     },
     begin(input) {
       const id = `op-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
@@ -146,4 +153,15 @@ export const operationTracker = createOperationTracker();
 /** React 订阅入口；默认订阅应用级单例，测试可注入独立 store。 */
 export function useTrackedOperations(source: OperationTracker = operationTracker): TrackedOperation[] {
   return useSyncExternalStore(source.subscribe, source.getSnapshot);
+}
+
+/**
+ * 是否存在进行中的指定类型操作（AR-014 导入互斥）。跟随 store 订阅更新，
+ * running 状态结束后自动解除，无需手动清理。
+ */
+export function useHasRunningOperation(source: OperationTracker, kind: string): boolean {
+  const operations = useTrackedOperations(source);
+  return operations.some(
+    (operation) => operation.status === "running" && operation.kind === kind,
+  );
 }

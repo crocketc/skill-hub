@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { describeNativeError } from "../../api/nativeErrors";
 import { Button } from "../../ui/Button";
 import { ConfirmDialog } from "../../ui/ConfirmDialog";
 import { ExternalLink } from "../markdown/ExternalLink";
@@ -25,6 +26,7 @@ export function RepoDiscovery({ facade, onImportDirectory }: RepoDiscoveryProps)
   const [name, setName] = useState("");
   const [branch, setBranch] = useState("");
   const [discovering, setDiscovering] = useState(false);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [downloadingKey, setDownloadingKey] = useState<string | null>(null);
   const [report, setReport] = useState<{
     skills: DiscoverableRepoSkill[];
@@ -32,6 +34,29 @@ export function RepoDiscovery({ facade, onImportDirectory }: RepoDiscoveryProps)
   } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pendingRemoval, setPendingRemoval] = useState<SkillRepo | null>(null);
+
+  // describeNativeError 以动态键调用翻译；i18next 的强类型键联合在此收窄。
+  const describe = useCallback(
+    (scanError: unknown) =>
+      describeNativeError(
+        scanError,
+        (key, options) => String(t(key as never, options as never)),
+        "discovery.repo.failedGeneric",
+      ),
+    [t],
+  );
+
+  // AR-011：扫描期间诚实显示已用时秒数，让用户能区分“进行中”与“卡住”。
+  useEffect(() => {
+    if (!discovering) return;
+    setElapsedSeconds(0);
+    const timer = window.setInterval(() => {
+      setElapsedSeconds((current) => current + 1);
+    }, 1000);
+    return () => {
+      window.clearInterval(timer);
+    };
+  }, [discovering]);
 
   useEffect(() => {
     let cancelled = false;
@@ -42,13 +67,13 @@ export function RepoDiscovery({ facade, onImportDirectory }: RepoDiscoveryProps)
         setRepos(result);
         setReposLoaded(true);
       })
-      .catch(() => {
-        if (!cancelled) setError(t("discovery.repo.failed"));
+      .catch((reason: unknown) => {
+        if (!cancelled) setError(describe(reason));
       });
     return () => {
       cancelled = true;
     };
-  }, [facade, t]);
+  }, [describe, facade]);
 
   const discover = useCallback(async () => {
     setDiscovering(true);
@@ -56,12 +81,12 @@ export function RepoDiscovery({ facade, onImportDirectory }: RepoDiscoveryProps)
     try {
       const result = await facade.discoverRepoSkills();
       setReport({ skills: result.skills, warnings: result.warnings });
-    } catch {
-      setError(t("discovery.repo.failed"));
+    } catch (reason) {
+      setError(describe(reason));
     } finally {
       setDiscovering(false);
     }
-  }, [facade, t]);
+  }, [describe, facade]);
 
   const addRepo = useCallback(async () => {
     if (!owner.trim() || !name.trim()) return;
@@ -77,10 +102,10 @@ export function RepoDiscovery({ facade, onImportDirectory }: RepoDiscoveryProps)
       setOwner("");
       setName("");
       setBranch("");
-    } catch {
-      setError(t("discovery.repo.failed"));
+    } catch (reason) {
+      setError(describe(reason));
     }
-  }, [branch, facade, name, owner, t]);
+  }, [branch, describe, facade, name, owner]);
 
   const toggleRepo = useCallback(
     async (repo: SkillRepo) => {
@@ -88,11 +113,11 @@ export function RepoDiscovery({ facade, onImportDirectory }: RepoDiscoveryProps)
       try {
         const updated = await facade.addSkillRepo({ ...repo, enabled: !repo.enabled });
         setRepos(updated);
-      } catch {
-        setError(t("discovery.repo.failed"));
+      } catch (reason) {
+        setError(describe(reason));
       }
     },
-    [facade, t],
+    [describe, facade],
   );
 
   const removeRepo = useCallback(async () => {
@@ -118,12 +143,12 @@ export function RepoDiscovery({ facade, onImportDirectory }: RepoDiscoveryProps)
             }
           : current,
       );
-    } catch {
-      setError(t("discovery.repo.failed"));
+    } catch (reason) {
+      setError(describe(reason));
     } finally {
       setPendingRemoval(null);
     }
-  }, [facade, pendingRemoval, t]);
+  }, [describe, facade, pendingRemoval]);
 
   const downloadAndImport = useCallback(
     async (skill: DiscoverableRepoSkill) => {
@@ -219,6 +244,14 @@ export function RepoDiscovery({ facade, onImportDirectory }: RepoDiscoveryProps)
           {discovering ? t("discovery.repo.scanning") : t("discovery.repo.scan")}
         </Button>
       </div>
+
+      {discovering ? (
+        <p aria-live="polite" role="status" className="sh-discovery-card__scanning">
+          {t("discovery.repo.scanningElapsed", { seconds: elapsedSeconds })}
+          {" "}
+          {t("discovery.repo.scanningHint")}
+        </p>
+      ) : null}
 
       {error ? <p role="alert">{error}</p> : null}
 
