@@ -47,6 +47,7 @@ export function DataProtectionPage({ facade }: { facade: BackupFacade }) {
   const [restoreDecisions, setRestoreDecisions] = useState<Record<string, Decision>>({});
   const [restoreResult, setRestoreResult] = useState<RestoreResult>();
   const [exportSkillIds, setExportSkillIds] = useState("");
+  const [exportFormat, setExportFormat] = useState<ExportInput["format"]>("folder");
   const [rollingMax, setRollingMax] = useState(3);
   const [rollingBusy, setRollingBusy] = useState(false);
   const [rollingResult, setRollingResult] = useState<BackupRetentionResult>();
@@ -141,12 +142,12 @@ export function DataProtectionPage({ facade }: { facade: BackupFacade }) {
     if (!exportSkillIds.trim()) return;
     setExportPath(undefined);
     setExportDecisions({});
-    const input: ExportInput = { selection: { skills: exportSkillIds.split(",").map((id) => id.trim()).filter(Boolean) }, versions: "current", skills: [] };
+    const input: ExportInput = { selection: { skills: exportSkillIds.split(",").map((id) => id.trim()).filter(Boolean) }, versions: "current", skills: [], format: exportFormat };
     setExportPlan(await facade.prepareExport(input));
   });
   const commitExport = () => run(async () => {
     if (!exportPlan) return;
-    const input: ExportInput = { selection: { skills: exportSkillIds.split(",").map((id) => id.trim()).filter(Boolean) }, versions: "current", skills: [] };
+    const input: ExportInput = { selection: { skills: exportSkillIds.split(",").map((id) => id.trim()).filter(Boolean) }, versions: "current", skills: [], format: exportFormat };
     const decisions: ExportDecision[] = exportPlan.sensitive_items.map((item) => ({ skill_id: item.skill_id, decision: exportDecisions[item.skill_id] })) as ExportDecision[];
     const result = await facade.createExport(input, decisions);
     setExportPath(result.path);
@@ -191,6 +192,10 @@ export function DataProtectionPage({ facade }: { facade: BackupFacade }) {
       <section className="sh-workflow-card">
         <h2>{t("dataProtection.export.heading")}</h2>
         <label>{t("dataProtection.export.skillIds")}<input aria-label={t("dataProtection.export.skillIds")} value={exportSkillIds} onChange={(event) => setExportSkillIds(event.target.value)} placeholder="skill-1, skill-2" /></label>
+        <label>{t("dataProtection.export.format")}<select aria-label={t("dataProtection.export.format")} value={exportFormat} onChange={(event) => setExportFormat(event.target.value as ExportInput["format"])}>
+          <option value="folder">{t("dataProtection.export.formatFolder")}</option>
+          <option value="zip">{t("dataProtection.export.formatZip")}</option>
+        </select></label>
         {carriedSkillIds.length > 0 ? (
           <div>
             <p>{t("backup.export.prefilled", { count: carriedSkillIds.length })}</p>

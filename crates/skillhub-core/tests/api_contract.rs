@@ -513,11 +513,31 @@ fn restore_commands_have_stable_wire_shapes() {
 }
 
 #[test]
+fn export_input_without_format_field_defaults_to_folder() {
+    let input: skillhub_core::ExportInput = serde_json::from_value(serde_json::json!({
+        "selection": { "skills": [] },
+        "versions": "current",
+        "skills": []
+    }))
+    .unwrap();
+    assert_eq!(input.format, skillhub_core::ExportFormat::Folder);
+    let zipped: skillhub_core::ExportInput = serde_json::from_value(serde_json::json!({
+        "selection": { "skills": [] },
+        "versions": "current",
+        "skills": [],
+        "format": "zip"
+    }))
+    .unwrap();
+    assert_eq!(zipped.format, skillhub_core::ExportFormat::Zip);
+}
+
+#[test]
 fn export_and_uninstall_commands_have_stable_wire_shapes() {
     let empty = skillhub_core::ExportInput {
         selection: skillhub_core::ExportSelection::Skills(Vec::new()),
         versions: skillhub_core::VersionSelection::Current,
         skills: Vec::new(),
+        format: skillhub_core::ExportFormat::Folder,
     };
     let commands = [
         AppCommand::PrepareStandardExport(skillhub_core::PrepareStandardExport {

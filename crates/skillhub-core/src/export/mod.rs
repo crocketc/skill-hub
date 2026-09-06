@@ -26,12 +26,29 @@ pub struct ExportSkill {
     pub display_name: String,
 }
 
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(rename_all = "snake_case")]
+pub enum ExportFormat {
+    Folder,
+    Zip,
+}
+
+impl Default for ExportFormat {
+    fn default() -> Self {
+        Self::Folder
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 #[serde(deny_unknown_fields)]
 pub struct ExportInput {
     pub selection: ExportSelection,
     pub versions: VersionSelection,
     pub skills: Vec<ExportSkill>,
+    /// Export packaging. Defaults to the legacy folder layout so payloads
+    /// recorded before the field existed keep deserializing.
+    #[serde(default)]
+    pub format: ExportFormat,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]

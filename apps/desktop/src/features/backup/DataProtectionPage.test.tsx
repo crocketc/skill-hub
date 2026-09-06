@@ -87,7 +87,21 @@ describe("DataProtectionPage", () => {
     expect(create).toBeDisabled();
     fireEvent.change(screen.getByLabelText("Export decision for skill-2"), { target: { value: "include_and_mark" } });
     fireEvent.click(create);
-    await waitFor(() => expect(facade.createExport).toHaveBeenCalledWith({ selection: { skills: ["skill-1", "skill-2"] }, versions: "current", skills: [] }, [{ skill_id: "skill-2", decision: "include_and_mark" }]));
+    await waitFor(() => expect(facade.createExport).toHaveBeenCalledWith({ selection: { skills: ["skill-1", "skill-2"] }, versions: "current", skills: [], format: "folder" }, [{ skill_id: "skill-2", decision: "include_and_mark" }]));
+    expect(await screen.findByText(/C:\/export.skillhub/)).toBeVisible();
+  });
+
+  it("lets the user export as a single zip archive", async () => {
+    const facade = createFacade();
+    renderPage(facade);
+    fireEvent.change(screen.getByLabelText("Skill IDs"), { target: { value: "skill-1" } });
+    fireEvent.change(screen.getByLabelText("Export format"), { target: { value: "zip" } });
+    fireEvent.click(screen.getByRole("button", { name: "Review export" }));
+    await waitFor(() => expect(facade.prepareExport).toHaveBeenCalledWith({ selection: { skills: ["skill-1"] }, versions: "current", skills: [], format: "zip" }));
+    expect(await screen.findByText(/skill-2/)).toBeVisible();
+    fireEvent.change(screen.getByLabelText("Export decision for skill-2"), { target: { value: "include_and_mark" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create export" }));
+    await waitFor(() => expect(facade.createExport).toHaveBeenCalledWith(expect.objectContaining({ format: "zip" }), expect.anything()));
     expect(await screen.findByText(/C:\/export.skillhub/)).toBeVisible();
   });
 
@@ -109,7 +123,7 @@ describe("DataProtectionPage", () => {
     expect(facade.listVersions).toHaveBeenCalledWith("skill-2");
 
     fireEvent.click(screen.getByRole("button", { name: "Review export" }));
-    await waitFor(() => expect(facade.prepareExport).toHaveBeenCalledWith({ selection: { skills: ["skill-1", "skill-2"] }, versions: "current", skills: [] }));
+    await waitFor(() => expect(facade.prepareExport).toHaveBeenCalledWith({ selection: { skills: ["skill-1", "skill-2"] }, versions: "current", skills: [], format: "folder" }));
   });
 
   it("marks carried-over skills as unexportable when their versions cannot be read", async () => {

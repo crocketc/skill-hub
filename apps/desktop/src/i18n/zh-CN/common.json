@@ -1472,6 +1472,9 @@
     "export": {
       "heading": "导出所选 Skill",
       "skillIds": "Skill ID 列表",
+      "format": "导出格式",
+      "formatFolder": "文件夹",
+      "formatZip": "ZIP 压缩包",
       "review": "检查导出内容",
       "summary": "已准备导出 {{count}} 个 Skill。",
       "decision": "{{skillId}} 的导出处理方式",

@@ -87,8 +87,9 @@ pub use evidence::{
     UsageEvidence, UsageEvidenceAnalysis, UsageEvidenceAnalyzer,
 };
 pub use export::{
-    ExportDecision, ExportInput, ExportPlan, ExportResult, ExportSelection, ExportSkill,
-    ExportSkillSummary, UninstallAction, UninstallImpact, UninstallService, VersionSelection,
+    ExportDecision, ExportFormat, ExportInput, ExportPlan, ExportResult, ExportSelection,
+    ExportSkill, ExportSkillSummary, UninstallAction, UninstallImpact, UninstallService,
+    VersionSelection,
 };
 pub use external_link::{
     external_url_host, validate_external_url, OpenExternalUrl, EXTERNAL_URL_ALLOWED_HOSTS,

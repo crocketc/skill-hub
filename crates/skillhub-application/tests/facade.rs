@@ -493,6 +493,7 @@ async fn standard_export_prepare_uses_the_real_facade_and_stays_read_only() {
                         content: "# Portable\n".into(),
                         display_name: "Standard export".into(),
                     }],
+                    format: skillhub_core::ExportFormat::Folder,
                 },
             },
         ))
@@ -536,6 +537,7 @@ async fn standard_export_create_requires_sensitive_decision_and_returns_neutral_
             content: secret.into(),
             display_name: "Sensitive export".into(),
         }],
+        format: skillhub_core::ExportFormat::Folder,
     };
     let facade = LocalApplicationFacade::new_with_library(database, root.path());
     let missing = facade

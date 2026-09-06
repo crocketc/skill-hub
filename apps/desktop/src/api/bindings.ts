@@ -596,10 +596,17 @@ export type ExportDecision = {
 	decision: SensitiveContentDecision,
 };
 
+export type ExportFormat = "folder" | "zip";
+
 export type ExportInput = {
 	selection: ExportSelection,
 	versions: VersionSelection,
 	skills: ExportSkill[],
+	/**
+	 *  Export packaging. Defaults to the legacy folder layout so payloads
+	 *  recorded before the field existed keep deserializing.
+	 */
+	format?: ExportFormat,
 };
 
 export type ExportPlan = {

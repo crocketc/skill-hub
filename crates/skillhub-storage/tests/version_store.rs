@@ -142,9 +142,18 @@ fn traversal_and_symlink_escape_are_rejected() {
     #[cfg(unix)]
     std::os::unix::fs::symlink("/tmp", fixture.source.path().join("link")).unwrap();
     #[cfg(windows)]
-    if std::os::windows::fs::symlink_dir("C:\\Windows", fixture.source.path().join("link")).is_err()
     {
-        return;
+        // Some environments report success for symlink_dir without actually
+        // materializing the link; skip rather than assert against a tree
+        // that contains no symlink at all.
+        let link = fixture.source.path().join("link");
+        if std::os::windows::fs::symlink_dir("C:\\Windows", &link).is_err()
+            || !std::fs::symlink_metadata(&link)
+                .map(|meta| meta.file_type().is_symlink())
+                .unwrap_or(false)
+        {
+            return;
+        }
     }
     assert!(fixture
         .store

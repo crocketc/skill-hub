@@ -39,7 +39,9 @@ fn opening_an_existing_database_migrates_and_leaves_no_recovery_sidecar() {
     let root = tempdir().unwrap();
     let path = root.path().join("skillhub.sqlite");
     let database = Database::open(&path).unwrap();
-    assert_eq!(database.schema_version().unwrap(), 6);
+    // Pins the latest migration (0007_ui_preferences) so a dropped migration
+    // file or a silently skipped step fails this test instead of shipping.
+    assert_eq!(database.schema_version().unwrap(), 7);
     assert!(!root.path().read_dir().unwrap().any(|entry| {
         entry
             .unwrap()

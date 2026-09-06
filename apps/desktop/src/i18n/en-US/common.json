@@ -1472,6 +1472,9 @@
     "export": {
       "heading": "Export selected Skills",
       "skillIds": "Skill IDs",
+      "format": "Export format",
+      "formatFolder": "Folder",
+      "formatZip": "ZIP archive",
       "review": "Review export",
       "summary": "{{count}} skills are ready to export.",
       "decision": "Export decision for {{skillId}}",
