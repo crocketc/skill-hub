@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { describeNativeError } from "../../api/nativeErrors";
 import { Button } from "../../ui/Button";
 import type { RestoreDecision, RestorePlan } from "../../api/bindings";
 import type { OnboardingOperations } from "../bootstrap/api";
@@ -12,6 +13,13 @@ interface RestoreStepProps {
 
 export function RestoreStep({ operations, onComplete, onBack }: RestoreStepProps) {
   const { t } = useTranslation();
+  // describeNativeError 以动态键调用翻译；i18next 的强类型键联合在此收窄。
+  const describe = (error: unknown) =>
+    describeNativeError(
+      error,
+      (key, options) => String(t(key as never, options as never)),
+      "onboarding.genericError",
+    );
   const [path, setPath] = useState<string | null>(null);
   const [plan, setPlan] = useState<RestorePlan | null>(null);
   const [isPreparing, setIsPreparing] = useState(false);
@@ -40,8 +48,8 @@ export function RestoreStep({ operations, onComplete, onBack }: RestoreStepProps
       const result = await operations.prepareRestore?.(picked);
       setPath(picked);
       setPlan(result ?? null);
-    } catch {
-      setMessage(t("onboarding.contractUnavailable"));
+    } catch (error) {
+      setMessage(describe(error));
     } finally {
       setIsPreparing(false);
     }
@@ -60,8 +68,8 @@ export function RestoreStep({ operations, onComplete, onBack }: RestoreStepProps
       }));
       await operations.commitRestore?.(path, decisions);
       onComplete();
-    } catch {
-      setMessage(t("onboarding.contractUnavailable"));
+    } catch (error) {
+      setMessage(describe(error));
     } finally {
       setIsRestoring(false);
     }

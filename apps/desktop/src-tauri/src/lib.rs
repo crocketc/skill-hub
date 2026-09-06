@@ -99,31 +99,53 @@ async fn query_application(
     bridge.query(query).await
 }
 
+/// 规范化用户选取的目录并校验其为目录；路径本身的问题必须让选择器报错。
+fn canonicalize_picked_directory(path: &std::path::Path) -> Result<std::path::PathBuf, String> {
+    let canonical = std::fs::canonicalize(path)
+        .map_err(|error| format!("directory_picker.canonicalize_failed: {error}"))?;
+    if !canonical.is_dir() {
+        return Err("directory_picker.not_a_directory".to_owned());
+    }
+    Ok(canonical)
+}
+
+/// 组装选择器载荷：grant 签发是尽力而为（AR-007）。签发失败只降级为
+/// `grant_id: null`（自定义 Agent 表单随后不可引用该路径），绝不能让整个
+/// 选择器失败、掩盖用户实际选中的目录；路径本身的问题仍由调用方报错。
+fn picker_payload_with_lenient_grant(
+    bridge: &CommandBridge,
+    canonical: &std::path::Path,
+) -> Result<String, String> {
+    let grant_id = match bridge.issue_grant_for_path(canonical) {
+        Ok(grant_id) => Some(grant_id),
+        Err(error) => {
+            eprintln!("directory_picker.grant_failed: {error}");
+            None
+        }
+    };
+    Ok(serde_json::json!({
+        "path": canonical.to_string_lossy(),
+        "grant_id": grant_id,
+    })
+    .to_string())
+}
+
 #[tauri::command]
 async fn pick_local_directory(bridge: State<'_, CommandBridge>) -> Result<Option<String>, String> {
     let picked = tauri::async_runtime::spawn_blocking(|| {
         let Some(path) = rfd::FileDialog::new().pick_folder() else {
             return Ok(None);
         };
-        let canonical = std::fs::canonicalize(&path)
-            .map_err(|error| format!("directory_picker.canonicalize_failed: {error}"))?;
-        if !canonical.is_dir() {
-            return Err("directory_picker.not_a_directory".to_owned());
-        }
-        Ok(Some(canonical))
+        canonicalize_picked_directory(&path).map(Some)
     })
     .await
     .map_err(|error| format!("directory_picker.join_failed: {error}"))??;
     let Some(canonical) = picked else {
         return Ok(None);
     };
-    let grant_id = bridge
-        .issue_grant_for_path(&canonical)
-        .map_err(|error| error.to_string())?;
-    Ok(Some(
-        serde_json::json!({ "path": canonical.to_string_lossy(), "grant_id": grant_id })
-            .to_string(),
-    ))
+    Ok(Some(picker_payload_with_lenient_grant(
+        &bridge, &canonical,
+    )?))
 }
 
 /// 启动时为已存储的自定义 Agent 重新签发路径 grant：
@@ -687,6 +709,45 @@ mod path_grant_tests {
         assert!(
             matches!(result, Ok(AppCommandResult::CustomAgent(_))),
             "stored custom agents must stay editable after a restart"
+        );
+    }
+
+    #[test]
+    fn picker_canonicalization_keeps_rejecting_invalid_paths() {
+        // 路径本身的问题（不存在 / 非目录）必须继续让选择器报错。
+        let missing = std::env::temp_dir().join("skillhub-picker-missing-dir-should-not-exist");
+        let error = super::canonicalize_picked_directory(&missing)
+            .expect_err("a missing path must keep failing the picker");
+        assert!(
+            error.contains("canonicalize_failed"),
+            "unexpected error: {error}"
+        );
+
+        let file_dir = tempfile::tempdir().expect("tempdir");
+        let file_path = file_dir.path().join("plain-file.txt");
+        std::fs::write(&file_path, b"x").expect("write plain file");
+        let error = super::canonicalize_picked_directory(&file_path)
+            .expect_err("a plain file must keep failing the picker");
+        assert_eq!(error, "directory_picker.not_a_directory");
+    }
+
+    #[test]
+    fn picker_payload_survives_grant_issuance_failure() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let facade =
+            Arc::new(LocalApplicationFacade::open(dir.path().join("app.sqlite")).expect("facade"));
+        // 不附加 local facade：grant 注册必然失败（AR-007），
+        // 但选择器仍须返回用户所选目录，grant_id 置空即可。
+        let bridge = CommandBridge::new(facade);
+        let canonical = std::fs::canonicalize(dir.path()).expect("canonicalize tempdir");
+
+        let payload = super::picker_payload_with_lenient_grant(&bridge, &canonical)
+            .expect("grant failure must not fail the picker payload");
+        let parsed: serde_json::Value = serde_json::from_str(&payload).expect("json payload");
+        assert_eq!(parsed["path"], canonical.to_string_lossy().as_ref());
+        assert!(
+            parsed["grant_id"].is_null(),
+            "grant_id must be null when issuance failed, got: {parsed}"
         );
     }
 

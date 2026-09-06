@@ -38,6 +38,14 @@
       "issues": "Save issues",
       "preview": "Live preview",
       "save": "Save and create version",
+      "saveHint": "Saving creates a new version and makes it current; existing deployments need reconciliation to pick it up.",
+      "saveAsCopy": "Save as copy",
+      "copyUnavailable": "Saving an independent copy needs a native contract that is not available yet.",
+      "exit": "Back to preview",
+      "exitWithoutSaving": "Discard changes and go back",
+      "exitConfirmTitle": "Discard unsaved changes?",
+      "exitConfirmDescription": "Your edits are kept only as a local draft; discarding returns to the current version's preview without creating a version.",
+      "exitConfirmConfirm": "Discard changes",
       "saveError": "Could not save; your local draft is still available.",
       "saveWarnings": "Save despite warnings",
       "source": "Source editor",
@@ -218,6 +226,9 @@
     },
     "tracker": {
       "label": "Batch import Skills"
+    },
+    "commit": {
+      "locked": "Another import is already running; this import can be committed once it finishes."
     }
   },
   "discovery": {
@@ -229,6 +240,7 @@
     "onboardingImportGuideSingle": "The initialization scan found importable Skills. Review the candidates before importing.",
     "onboardingImportGuideMultiple": "The initialization scan found {{count}} source directories. All are selected by default and will be imported in one flow.",
     "importUnavailable": "Import capability is not connected to the native service yet. No files or commands were changed.",
+    "importRunning": "A batch import is already running; a new import can start only after it finishes. Check progress in the global indicator.",
     "local": {
       "eyebrow": "On this device",
       "title": "Local discovery",
@@ -276,7 +288,10 @@
       "description": "Downloads configured GitHub repo archives and scans them for SKILL.md; a failing repo only warns, downloads stay in a local temp directory.",
       "scan": "Scan repositories",
       "scanning": "Scanning…",
+      "scanningElapsed": "Elapsed {{seconds}} s",
+      "scanningHint": "Downloading each enabled repository in full and scanning it for Skills; each repository download is capped at about 60 seconds. Results and per-repository failure reasons appear when the scan finishes.",
       "failed": "Repository discovery failed. Please try again later.",
+      "failedGeneric": "Scan failed ({{code}}). Check the network switch and repository configuration, then retry.",
       "owner": "Owner",
       "name": "Repository",
       "branch": "Branch (empty = default)",
@@ -542,6 +557,7 @@
     "finish": "Finish initialization",
     "finishedDescription": "Initialization settings were submitted.",
     "finishedTitle": "Initialization complete",
+    "genericError": "The operation failed ({{code}}). Please retry or reopen the page.",
     "libraryDescription": "The library keeps managed skill content in one place. An empty directory is created only after confirmation.",
     "libraryHelper": "Confirm the default location to continue, or pick another system directory as the central library.",
     "pickOtherDirectory": "Pick another directory",
@@ -568,6 +584,7 @@
     "scanStarted": "The scan has started and is in progress.",
     "scanVisited": "{{count}} paths scanned",
     "scanTitle": "Scan existing skills",
+    "selectedLocation": "Selected library location",
     "skip": "Skip initialization",
     "skipScan": "Skip scan",
     "skipDescription": "An empty library will be created at {{path}}. No agents will be discovered and no skills will be scanned, imported, or deployed.",
@@ -1316,6 +1333,7 @@
       "cancelled": "{{label}} cancelled",
       "viewOperations": "View operations"
     },
+    "recordsTitle": "Operation records",
     "completed": "Completed",
     "list": {
       "ariaLabel": "Operation records",
@@ -1357,6 +1375,7 @@
       "path": "Library path",
       "migrationAvailable": "A library migration entry is available when the native service is connected.",
       "runHealthCheck": "Run health check",
+      "healthScope": "The health check only looks for unfinished application operations (such as interrupted imports or deployments) and offers recovery/repair paths. It does not include duplicate or same-name detection (duplicate analysis runs during import), content validation, or deployment consistency checks.",
       "checking": "Checking…",
       "checkFailed": "Health check failed. Please try again later.",
       "allClear": "No issues found",
@@ -1628,6 +1647,7 @@
     "uninstall": {
       "heading": "Uninstall preparation",
       "description": "Select deployments, preview the impact, then tick each action you want to run. Unticked actions never run.",
+      "scenario": "When to use this: when you no longer want SkillHub to manage a Skill that is deployed to Agents/projects. You can optionally back up first, undeploy everything, leave target folders as independent copies, and clear local data or credentials; the central library is preserved by default and your Agent's own files are never deleted. With no deployments there is nothing to manage here.",
       "loadingDeployments": "Loading deployments…",
       "noDeployments": "No deployments are registered.",
       "selectDeployment": "Select deployment {{id}}",

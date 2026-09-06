@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { I18nextProvider } from "react-i18next";
 import { createSkillHubI18n } from "../../i18n";
 import type { RestorePlan, RestoreResult, ScanResult } from "../../api/bindings";
+import { unavailableOnboardingOperations } from "../bootstrap/api";
 import { OnboardingWizard } from "./OnboardingWizard";
 
 const defaultLibraryPath = "C:\\Users\\Test\\SkillHub\\skills";
@@ -159,15 +160,16 @@ it("reports missing native discovery and completion seams without a fake success
 
   render(
     <I18nextProvider i18n={i18n}>
-      <OnboardingWizard libraryPath={defaultLibraryPath} />
+      <OnboardingWizard libraryPath={defaultLibraryPath} operations={unavailableOnboardingOperations} />
     </I18nextProvider>,
   );
 
   await click(screen.getByRole("button", { name: "继续" }));
   await click(screen.getByLabelText("我确认这里只识别 Agent，不会部署技能"));
   await click(screen.getByRole("button", { name: "识别 Agent" }));
-  expect(screen.getByText("此操作尚未连接到本机服务。不会创建目录、部署或导入任何技能。"))
-    .toBeVisible();
+  expect(
+    screen.getByText("discover_agents is unavailable until its native contract is generated."),
+  ).toBeVisible();
   expect(screen.getByRole("button", { name: "继续" })).toBeDisabled();
   expect(screen.queryByText("初始化已完成")).not.toBeInTheDocument();
 });
@@ -593,4 +595,134 @@ it("shows the restore branch summary without fabricated agent or scan counts", a
 
   await click(screen.getByRole("button", { name: "进入主界面" }));
   expect(onComplete).toHaveBeenCalledOnce();
+});
+
+it("echoes the chosen custom library path even when the restart after saving fails", async () => {
+  const completeOnboarding = vi.fn(async () => undefined);
+  const setLibraryRoot = vi.fn(async () => undefined);
+  const restart = vi.fn(async () => {
+    throw new Error("restart_failed");
+  });
+  const pickDirectory = vi.fn(async () => "D:\\Custom\\Hub");
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+
+  render(
+    <I18nextProvider i18n={i18n}>
+      <OnboardingWizard
+        libraryPath={defaultLibraryPath}
+        operations={{
+          completeOnboarding,
+          discoverAgents: async () => ({ targets: [] }),
+          pickDirectory,
+          setLibraryRoot,
+          restart,
+        }}
+      />
+    </I18nextProvider>,
+  );
+
+  await click(screen.getByRole("button", { name: "选择其他目录" }));
+  await click(screen.getByRole("button", { name: "保存并重启" }));
+
+  expect(setLibraryRoot).toHaveBeenCalledWith("D:\\Custom\\Hub");
+  // 重启失败的真实原因必须可见，而不是"尚未连接到本机服务"。
+  expect(await screen.findByText("restart_failed")).toBeVisible();
+  // set_library_root 成功后，库位置必须立即回显所选目录，即使重启未完成。
+  expect(screen.getByText("D:\\Custom\\Hub")).toBeVisible();
+  await click(screen.getByRole("button", { name: "跳过初始化" }));
+  expect(
+    screen.getByText("将创建空集中库：D:\\Custom\\Hub。不会识别 Agent、扫描、导入或部署技能。"),
+  ).toBeVisible();
+  await click(screen.getByRole("button", { name: "确认并跳过" }));
+  expect(completeOnboarding).toHaveBeenCalledWith({ libraryPath: "D:\\Custom\\Hub", skipped: true });
+});
+
+it("keeps the chosen custom library path visible while the restart never settles", async () => {
+  const setLibraryRoot = vi.fn(async () => undefined);
+  const restart = vi.fn(() => new Promise<void>(() => undefined));
+  const pickDirectory = vi.fn(async () => "D:\\Custom\\Hub");
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+
+  render(
+    <I18nextProvider i18n={i18n}>
+      <OnboardingWizard
+        libraryPath={defaultLibraryPath}
+        operations={{
+          completeOnboarding: async () => undefined,
+          discoverAgents: async () => ({ targets: [] }),
+          pickDirectory,
+          setLibraryRoot,
+          restart,
+        }}
+      />
+    </I18nextProvider>,
+  );
+
+  await click(screen.getByRole("button", { name: "选择其他目录" }));
+  await click(screen.getByRole("button", { name: "保存并重启" }));
+
+  expect(screen.getByText("D:\\Custom\\Hub")).toBeVisible();
+  expect(screen.queryByText(defaultLibraryPath)).not.toBeInTheDocument();
+  // 重启挂起期间不显示成功提示，也不允许再次提交。
+  expect(screen.queryByText("库根已保存，应用即将重启以应用新路径。")).not.toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "保存并重启" })).toBeDisabled();
+});
+
+it("shows the library-root-locked reason when set_library_root reports the conflict", async () => {
+  const setLibraryRoot = vi.fn(async () => {
+    throw {
+      code: "operation.conflict",
+      severity: "error",
+      params: { reason: "library_root_locked" },
+      actions: [],
+    };
+  });
+  const pickDirectory = vi.fn(async () => "D:\\Custom\\Hub");
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+
+  render(
+    <I18nextProvider i18n={i18n}>
+      <OnboardingWizard
+        libraryPath={defaultLibraryPath}
+        operations={{
+          completeOnboarding: async () => undefined,
+          discoverAgents: async () => ({ targets: [] }),
+          pickDirectory,
+          setLibraryRoot,
+        }}
+      />
+    </I18nextProvider>,
+  );
+
+  await click(screen.getByRole("button", { name: "选择其他目录" }));
+  await click(screen.getByRole("button", { name: "保存并重启" }));
+
+  expect(await screen.findByText(/不能更换库根目录/)).toBeVisible();
+  expect(screen.queryByText(/尚未连接到本机服务/)).not.toBeInTheDocument();
+});
+
+it("surfaces the native error code when agent discovery fails", async () => {
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  render(
+    <I18nextProvider i18n={i18n}>
+      <OnboardingWizard
+        libraryPath={defaultLibraryPath}
+        operations={{
+          completeOnboarding: async () => undefined,
+          discoverAgents: async () => {
+            throw { code: "discovery.host_unavailable", severity: "error", params: {}, actions: [] };
+          },
+        }}
+      />
+    </I18nextProvider>,
+  );
+
+  await click(screen.getByRole("button", { name: "继续" }));
+  await click(screen.getByLabelText("我确认这里只识别 Agent，不会部署技能"));
+  await click(screen.getByRole("button", { name: "识别 Agent" }));
+
+  expect(
+    await screen.findByText("操作失败（discovery.host_unavailable）。请稍后重试或重新打开页面。"),
+  ).toBeVisible();
+  expect(screen.queryByText(/尚未连接到本机服务/)).not.toBeInTheDocument();
 });

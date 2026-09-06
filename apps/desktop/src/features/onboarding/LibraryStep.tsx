@@ -37,7 +37,9 @@ export function LibraryStep({
       <h1 id="library-step-title">{t("onboarding.libraryTitle")}</h1>
       <p>{t("onboarding.libraryDescription")}</p>
       <div className="sh-onboarding__path">
-        <span>{t("onboarding.defaultLocation")}</span>
+        <span>
+          {customLibraryPath ? t("onboarding.selectedLocation") : t("onboarding.defaultLocation")}
+        </span>
         <code>{customLibraryPath ?? libraryPath}</code>
       </div>
       {onPickCustomDirectory ? (

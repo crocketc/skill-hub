@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { describeNativeError } from "../../api/nativeErrors";
 import { Button } from "../../ui/Button";
 import { ConfirmDialog } from "../../ui/ConfirmDialog";
 import {
@@ -68,6 +69,13 @@ export function OnboardingWizard({
   theme = "moss-neutral",
 }: OnboardingWizardProps) {
   const { t } = useTranslation();
+  // describeNativeError 以动态键调用翻译；i18next 的强类型键联合在此收窄。
+  const describe = (error: unknown) =>
+    describeNativeError(
+      error,
+      (key, options) => String(t(key as never, options as never)),
+      "onboarding.genericError",
+    );
   const [branch, setBranch] = useState<InitializationBranch | null>(
     initialBranch === "select" ? null : "create",
   );
@@ -106,8 +114,6 @@ export function OnboardingWizard({
     };
   }, [libraryPath, runtime]);
 
-  const showError = () => setMessage(t("onboarding.contractUnavailable"));
-
   const discoverAgents = async () => {
     setIsDiscovering(true);
     setMessage(null);
@@ -116,8 +122,8 @@ export function OnboardingWizard({
       setTargets(result.targets);
       setSelectedTargetIds([]);
       setSelectionConfirmed(false);
-    } catch {
-      showError();
+    } catch (error) {
+      setMessage(describe(error));
     } finally {
       setIsDiscovering(false);
     }
@@ -164,9 +170,9 @@ export function OnboardingWizard({
       await operations.completeOnboarding({ libraryPath: nativeLibraryPath, skipped });
       setCompletionSnapshot({ branch: branch ?? "create", skipped });
       setCompletionState("complete");
-    } catch {
+    } catch (error) {
       setCompletionState("idle");
-      showError();
+      setMessage(describe(error));
     }
   };
 
@@ -175,8 +181,8 @@ export function OnboardingWizard({
     try {
       const path = await operations.pickDirectory?.();
       if (path) setCustomLibraryPath(path);
-    } catch {
-      showError();
+    } catch (error) {
+      setMessage(describe(error));
     }
   };
 
@@ -188,12 +194,15 @@ export function OnboardingWizard({
     setMessage(null);
     try {
       await operations.setLibraryRoot?.(customLibraryPath);
+      // 后端 configured_library_path 以持久化值为准；保存成功后立即回显
+      // 所选目录，即使重启未完成或失败，UI 也如实反映已保存的库根。
+      setNativeLibraryPath(customLibraryPath);
       await operations.restart?.();
       setCompletionState("idle");
       setMessage(t("onboarding.restartPending"));
-    } catch {
+    } catch (error) {
       setCompletionState("idle");
-      showError();
+      setMessage(describe(error));
     }
   };
 
