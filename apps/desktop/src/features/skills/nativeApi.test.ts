@@ -265,3 +265,25 @@ describe("native skill library facade", () => {
     );
   });
 });
+
+it("fills the quick drawer duplicate candidates from the deterministic read model", async () => {
+  vi.mocked(queryApplication).mockImplementation(async (request) => {
+    if (request.type === "get_skill") {
+      return {
+        type: "skill",
+        payload: { skill_id: "skill-a", display_name: "Notes A", runtime_name: "notes-a", original_description: "", translated_description: null, user_note: null, tags: [], license: null, lifecycle: "Normal", trial_due: null, current_version: "v-hash" },
+      };
+    }
+    if (request.type === "list_deterministic_duplicates") {
+      expect(request.payload).toEqual({ skill_id: "skill-a" });
+      return {
+        type: "deterministic_duplicates",
+        payload: [{ skill_id: "skill-b", label: "Notes B", content_hash: "hash-a" }],
+      };
+    }
+    throw new Error("unexpected query " + request.type);
+  });
+
+  const view = await nativeSkillLibraryFacade.getSkillQuickView("skill-a");
+  expect(view.duplicateCandidates).toEqual(["Notes B"]);
+});

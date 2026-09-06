@@ -3835,6 +3835,25 @@ impl ApplicationFacade for LocalApplicationFacade {
                     ))
                 })
             }
+            AppQuery::ListDeterministicDuplicates(request) => {
+                let entries =
+                    self.with_database("query.list_deterministic_duplicates", |database| {
+                        database
+                            .bootstrap_repository()
+                            .list_deterministic_duplicates(&request.skill_id.to_string())
+                    })?;
+                let mut parsed = Vec::with_capacity(entries.len());
+                for (entry_skill_id, label, content_hash) in entries {
+                    parsed.push(skillhub_core::api::DeterministicDuplicateEntry {
+                        skill_id: entry_skill_id
+                            .parse::<skillhub_core::SkillId>()
+                            .map_err(|_| internal("query.deterministic_duplicates.parse"))?,
+                        label,
+                        content_hash,
+                    });
+                }
+                Ok(AppQueryResult::DeterministicDuplicates(parsed))
+            }
             AppQuery::ListPendingItems(_) => {
                 let items = self.with_database("query.list_pending_items", |database| {
                     database.bootstrap_repository().list_pending(self.today)

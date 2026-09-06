@@ -288,3 +288,46 @@ fn unfinished_operation_is_reported_as_in_progress_recovery_state() {
         .unwrap();
     assert_eq!(snapshot.recovery_state, StartupRecoveryState::InProgress);
 }
+
+#[test]
+fn deterministic_duplicates_match_by_current_version_content_hash() {
+    // N12：两个 Skill 的当前版本内容哈希相同时互为确定性重复；
+    // 哈希不同或未部署指针的不计入。
+    let db = Database::open_in_memory().unwrap();
+    let skill_a = SkillId::new();
+    let skill_b = SkillId::new();
+    let skill_c = SkillId::new();
+    let version_a = "sha256:1111111111111111111111111111111111111111111111111111111111111111";
+    let version_b = "sha256:1111111111111111111111111111111111111111111111111111111111111111";
+    let version_c = "sha256:2222222222222222222222222222222222222222222222222222222222222222";
+    db.connection_for_test()
+        .execute_batch(&format!(
+            "INSERT INTO skills (id,display_name,runtime_name,created_at,updated_at) VALUES ('{skill_a}','Notes A','notes-a',0,0);
+             INSERT INTO skills (id,display_name,runtime_name,created_at,updated_at) VALUES ('{skill_b}','Notes B','notes-b',0,0);
+             INSERT INTO skills (id,display_name,runtime_name,created_at,updated_at) VALUES ('{skill_c}','Other','other',0,0);
+             INSERT INTO versions (id,skill_id,content_hash,manifest_json,created_at) VALUES ('{version_a}','{skill_a}','hash-a','{{}}',0);
+             INSERT INTO versions (id,skill_id,content_hash,manifest_json,created_at) VALUES ('{version_c}','{skill_c}','hash-c','{{}}',0);
+             INSERT INTO current_pointers (skill_id,version_id,updated_at) VALUES ('{skill_a}','{version_a}',0);
+             INSERT INTO current_pointers (skill_id,version_id,updated_at) VALUES ('{skill_b}','{version_a}',0);
+             INSERT INTO current_pointers (skill_id,version_id,updated_at) VALUES ('{skill_c}','{version_c}',0);"
+        ))
+        .unwrap();
+
+    let direct: Vec<(String, String, String)> = db
+        .connection_for_test()
+        .prepare("SELECT v.skill_id, s.display_name, v.content_hash FROM current_pointers cp JOIN versions v ON v.id = cp.version_id JOIN skills s ON s.id = v.skill_id")
+        .unwrap()
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    eprintln!("DEBUG rows: {direct:?}");
+    let duplicates = db
+        .bootstrap_repository()
+        .list_deterministic_duplicates(&skill_a.to_string())
+        .unwrap();
+    assert_eq!(duplicates.len(), 1, "只应命中内容哈希相同的 Notes B");
+    assert_eq!(duplicates[0].0, skill_b.to_string());
+    assert_eq!(duplicates[0].1, "Notes B");
+    assert_eq!(duplicates[0].2, "hash-a");
+}

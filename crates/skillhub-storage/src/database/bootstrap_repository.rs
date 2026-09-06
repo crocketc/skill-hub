@@ -219,6 +219,37 @@ impl<'a> BootstrapRepository<'a> {
         Ok(result)
     }
 
+    /// N12：确定性重复——当前版本内容哈希与目标 Skill 完全相同的其他
+    /// Skill（含显示名与哈希）。目标自身不在结果中。
+    pub fn list_deterministic_duplicates(
+        &self,
+        skill_id: &str,
+    ) -> AppResult<Vec<(String, String, String)>> {
+        let mut statement = self.database.connection.prepare(
+            "SELECT cp.skill_id, s.display_name, v.content_hash
+             FROM current_pointers cp
+             JOIN versions v ON v.id = cp.version_id
+             JOIN skills s ON s.id = cp.skill_id
+             WHERE v.content_hash = (SELECT v2.content_hash FROM current_pointers cp2 JOIN versions v2 ON v2.id = cp2.version_id WHERE cp2.skill_id = ?1)
+               AND cp.skill_id != ?1
+             ORDER BY cp.skill_id",
+        ).map_err(error)?;
+        let rows = statement
+            .query_map([skill_id], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                ))
+            })
+            .map_err(error)?;
+        let mut result = Vec::new();
+        for row in rows {
+            result.push(row.map_err(error)?);
+        }
+        Ok(result)
+    }
+
     /// Returns deployment counts for one chart dimension. The key is a stable
     /// Agent id or Project id and the label is an i18n code, never a sentence.
     pub fn deployment_chart(

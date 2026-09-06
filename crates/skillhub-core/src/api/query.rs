@@ -247,6 +247,22 @@ pub struct GetBootstrapSnapshot;
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 pub struct ListPendingItems;
 
+/// N12：确定性重复（当前版本内容哈希相同的其他 Skill）。
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct ListDeterministicDuplicates {
+    pub skill_id: SkillId,
+}
+
+/// 单条确定性重复：对方 Skill 及其当前版本内容哈希。
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct DeterministicDuplicateEntry {
+    pub skill_id: SkillId,
+    pub label: String,
+    pub content_hash: String,
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 pub struct GetDiscoverySnapshot;
 
@@ -567,6 +583,8 @@ pub enum AppQuery {
     GetDesktopPreferences,
     #[serde(rename = "list_pending_items")]
     ListPendingItems(ListPendingItems),
+    #[serde(rename = "list_deterministic_duplicates")]
+    ListDeterministicDuplicates(ListDeterministicDuplicates),
     #[serde(rename = "get_discovery_snapshot")]
     GetDiscoverySnapshot(GetDiscoverySnapshot),
     #[serde(rename = "list_custom_agents")]
@@ -662,6 +680,8 @@ pub enum AppQueryResult {
     DesktopPreferences(crate::DesktopPreferences),
     #[serde(rename = "pending_items")]
     PendingItems(Vec<crate::pending::PendingItem>),
+    #[serde(rename = "deterministic_duplicates")]
+    DeterministicDuplicates(Vec<DeterministicDuplicateEntry>),
     #[serde(rename = "discovery_snapshot")]
     DiscoverySnapshot(DiscoverySnapshot),
     #[serde(rename = "custom_agents")]

@@ -31,19 +31,19 @@ pub use command::{
 pub use event::{AppEvent, FactsChanged};
 pub use query::{
     AnalyzeGlobalSkillEvidence, AnalyzeImport, AppQuery, AppQueryResult, BasicCheckResult,
-    CheckSourceUpdates, CombinationResult, DeploymentTarget, DiffVersions,
-    DiscoverAgentsLockSkills, DiscoverImportCandidates, DiscoverRepoSkills, FindingResult,
-    GetBasicCheckResult, GetBootstrapSnapshot, GetCallPolicy, GetDeploymentPlan,
+    CheckSourceUpdates, CombinationResult, DeploymentTarget, DeterministicDuplicateEntry,
+    DiffVersions, DiscoverAgentsLockSkills, DiscoverImportCandidates, DiscoverRepoSkills,
+    FindingResult, GetBasicCheckResult, GetBootstrapSnapshot, GetCallPolicy, GetDeploymentPlan,
     GetDeploymentRelations, GetDiscoverySnapshot, GetLlmSafetyCheckResult, GetProjectAssemblyPlan,
     GetReconcilePlan, GetRemovalImpact, GetSkill, GetUiPreference, GetUiPreferenceResult,
-    ListCombinations, ListCustomAgents, ListDeploymentTargets, ListDeployments, ListFindings,
-    ListMarkdownFiles, ListPendingItems, ListProjects, ListSavedProjectViews, ListSkillOperations,
-    ListSkillRepos, ListSkills, ListVersions, LlmCheckRun, LlmSafetyCheckResult,
-    MarkdownFileContent, MarkdownFileEntry, PreviewProjectDirectory, ProjectDirectoryPreview,
-    ReadMarkdownFile, SearchOnlineSources, SkillDeploymentFilter, SkillLifecycleFilter,
-    SkillListFilters, SkillListItem, SkillListPage, SkillListSort, SkillOperationEntry,
-    SkillOperationsResult, SkillResult, SkillSortColumn, SkillSortDirection,
-    SourceUpdateCheckOutcome, VersionDiffResult, VersionResult,
+    ListCombinations, ListCustomAgents, ListDeploymentTargets, ListDeployments,
+    ListDeterministicDuplicates, ListFindings, ListMarkdownFiles, ListPendingItems, ListProjects,
+    ListSavedProjectViews, ListSkillOperations, ListSkillRepos, ListSkills, ListVersions,
+    LlmCheckRun, LlmSafetyCheckResult, MarkdownFileContent, MarkdownFileEntry,
+    PreviewProjectDirectory, ProjectDirectoryPreview, ReadMarkdownFile, SearchOnlineSources,
+    SkillDeploymentFilter, SkillLifecycleFilter, SkillListFilters, SkillListItem, SkillListPage,
+    SkillListSort, SkillOperationEntry, SkillOperationsResult, SkillResult, SkillSortColumn,
+    SkillSortDirection, SourceUpdateCheckOutcome, VersionDiffResult, VersionResult,
 };
 
 use crate::AppResult;

@@ -271,6 +271,18 @@ export const nativeSkillLibraryFacade: SkillLibraryFacade = {
       } catch {
         // 部署关系读取失败时保持占位零值，不在抽屉里伪造数据。
       }
+      try {
+        // N12：确定性重复读模型——当前版本内容哈希相同的其他 Skill。
+        const duplicates = await queryApplication({
+          type: "list_deterministic_duplicates",
+          payload: { skill_id: skillId },
+        });
+        if (duplicates.type === "deterministic_duplicates") {
+          view.duplicateCandidates = duplicates.payload.map((entry) => entry.label);
+        }
+      } catch {
+        // 读取失败保持空列表，不在抽屉里伪造重复候选。
+      }
       return view;
     } catch (error) {
       if (error instanceof SkillLibraryUnavailableError) throw error;
