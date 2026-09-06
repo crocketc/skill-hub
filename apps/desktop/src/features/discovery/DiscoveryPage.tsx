@@ -6,6 +6,7 @@ import { nativeImportFacade } from "../import/nativeApi";
 import { LocalDiscovery } from "./LocalDiscovery";
 import { LocalDiscoveryWorkbench } from "./LocalDiscoveryWorkbench";
 import { OnlineDiscovery } from "./OnlineDiscovery";
+import { AgentsLockDiscovery } from "./AgentsLockDiscovery";
 import { RepoDiscovery } from "./RepoDiscovery";
 import type { DiscoveryFacade } from "./api";
 
@@ -85,6 +86,9 @@ export function DiscoveryPage({
         <OnlineDiscovery facade={discoveryFacade} onStartImport={() => setShowImport(true)} />
         {discoveryFacade ? (
           <RepoDiscovery facade={discoveryFacade} onImportDirectory={openWizardWithDirectory} />
+        ) : null}
+        {discoveryFacade ? (
+          <AgentsLockDiscovery facade={discoveryFacade} onImportDirectory={openWizardWithDirectory} />
         ) : null}
       </div>
     </div>

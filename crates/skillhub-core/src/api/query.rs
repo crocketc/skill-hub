@@ -267,6 +267,11 @@ pub struct ListSkillRepos;
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 pub struct DiscoverRepoSkills;
 
+/// 只读发现：解析 `~/.agents/.skill-lock.json`，列出其中 GitHub 来源的
+/// Skill 条目（不做网络请求）；随后可经 download_repo_skill 逐条导入。
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+pub struct DiscoverAgentsLockSkills;
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 #[serde(deny_unknown_fields)]
 pub struct AnalyzeGlobalSkillEvidence {
@@ -519,6 +524,8 @@ pub enum AppQuery {
     ListSkillRepos(ListSkillRepos),
     #[serde(rename = "discover_repo_skills")]
     DiscoverRepoSkills(DiscoverRepoSkills),
+    #[serde(rename = "discover_agents_lock_skills")]
+    DiscoverAgentsLockSkills(DiscoverAgentsLockSkills),
     #[serde(rename = "analyze_global_skill_evidence")]
     AnalyzeGlobalSkillEvidence(AnalyzeGlobalSkillEvidence),
     #[serde(rename = "get_deployment_plan")]
@@ -612,6 +619,8 @@ pub enum AppQueryResult {
     SkillRepos(Vec<crate::source::SkillRepo>),
     #[serde(rename = "repo_discovery_report")]
     RepoDiscoveryReport(crate::source::RepoDiscoveryReport),
+    #[serde(rename = "agents_lock_entries")]
+    AgentsLockEntries(Vec<crate::source::AgentsLockEntry>),
     #[serde(rename = "deployment_plan")]
     DeploymentPlan(DeploymentPlan),
     #[serde(rename = "deployment_targets")]

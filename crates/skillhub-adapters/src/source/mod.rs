@@ -1,4 +1,5 @@
 mod acquisition;
+mod agents_lock;
 mod archive;
 mod git;
 mod http;
@@ -12,6 +13,7 @@ pub use acquisition::{
     AcquiredSource, AcquisitionError, AcquisitionErrorCode, AcquisitionLimits, AcquisitionResult,
     AcquisitionWorkspace, CleanupFailure,
 };
+pub use agents_lock::{agents_lock_path, parse_agents_lock, read_agents_lock, AgentsLockEntry};
 pub use archive::ArchiveExtractor;
 pub use git::GixSourceFetcher;
 pub use http::{

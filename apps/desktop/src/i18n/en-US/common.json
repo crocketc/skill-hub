@@ -279,6 +279,21 @@
       "downloadImport": "Download & import",
       "downloading": "Downloading…",
       "downloadFailed": "Download failed. Please try again later."
+    },
+    "agentsLock": {
+      "eyebrow": "External installs",
+      "title": "~/.agents lock import",
+      "description": "Reads ~/.agents/.skill-lock.json and lists its GitHub-sourced Skills; read-only discovery, the file is never modified.",
+      "scan": "Scan lock file",
+      "scanning": "Scanning…",
+      "failed": "Failed to read the lock file.",
+      "empty": "No GitHub-sourced Skill entries found.",
+      "source": "{{repo}}@{{branch}}",
+      "defaultBranch": "default branch",
+      "skillPath": "Repo path: {{path}}",
+      "downloadImport": "Download & import",
+      "downloading": "Downloading…",
+      "downloadFailed": "Download failed. Please try again later."
     }
   },
   "agents": {

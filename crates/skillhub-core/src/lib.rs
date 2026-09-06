@@ -40,20 +40,20 @@ pub use api::{
     ApplyUninstallDecision, BackupDecision, CheckApplicationUpdate, CheckSourceUpdate,
     CollectDeploymentChanges, CommitCallPolicyChange, CommitDeleteSkill, CommitDeployment,
     CommitImport, CommitRepair, CommitRestore, CommitUndeploy, CreateBackup, CreateIgnoreRule,
-    CreateStandardExport, DeploymentTarget, DetachManagement, DiscoverImportCandidates,
-    DiscoverRepoSkills, DownloadApplicationUpdate, DownloadRepoSkill, FactsChanged,
-    GenerateOnlineSearchQuery, GetCallPolicy, GetDeploymentPlan, GetDeploymentRelations,
-    GetLlmSafetyCheckResult, GetProjectAssemblyPlan, GetReconcilePlan, GetRemovalImpact,
-    GetUiPreference, GetUiPreferenceResult, IgnoreExternalChange, InstallApplicationUpdate,
-    KeepIndependentCopy, ListDeploymentTargets, ListDeployments, ListMarkdownFiles,
-    ListPendingItems, ListSkillRepos, ListSkills, MarkdownFileContent, MarkdownFileEntry,
-    OpenOfficialRelease, Page, PrepareApplicationUpdate, PrepareBackup, PrepareCallPolicyChange,
-    PrepareDeleteSkill, PrepareDeployment, PrepareImport, PrepareRepair, PrepareRestore,
-    PrepareStandardExport, PrepareUndeploy, PrepareUninstall, ReadMarkdownFile, RecheckLlmSafety,
-    RelinkSource, RemoveIgnoreRule, RemoveSkillRepo, ResolveRecovery, RestoreDecision,
-    RestoreDeployment, RestoreOriginalCallPolicy, RollbackApplicationUpdate, RunHealthCheck,
-    RunLlmSafetyCheck, RunRollingBackup, SaveUserTranslationRevision, SearchOnlineSources,
-    SetApplicationUpdatePolicy, SetUiPreference, SkillListItem, SkillListPage,
+    CreateStandardExport, DeploymentTarget, DetachManagement, DiscoverAgentsLockSkills,
+    DiscoverImportCandidates, DiscoverRepoSkills, DownloadApplicationUpdate, DownloadRepoSkill,
+    FactsChanged, GenerateOnlineSearchQuery, GetCallPolicy, GetDeploymentPlan,
+    GetDeploymentRelations, GetLlmSafetyCheckResult, GetProjectAssemblyPlan, GetReconcilePlan,
+    GetRemovalImpact, GetUiPreference, GetUiPreferenceResult, IgnoreExternalChange,
+    InstallApplicationUpdate, KeepIndependentCopy, ListDeploymentTargets, ListDeployments,
+    ListMarkdownFiles, ListPendingItems, ListSkillRepos, ListSkills, MarkdownFileContent,
+    MarkdownFileEntry, OpenOfficialRelease, Page, PrepareApplicationUpdate, PrepareBackup,
+    PrepareCallPolicyChange, PrepareDeleteSkill, PrepareDeployment, PrepareImport, PrepareRepair,
+    PrepareRestore, PrepareStandardExport, PrepareUndeploy, PrepareUninstall, ReadMarkdownFile,
+    RecheckLlmSafety, RelinkSource, RemoveIgnoreRule, RemoveSkillRepo, ResolveRecovery,
+    RestoreDecision, RestoreDeployment, RestoreOriginalCallPolicy, RollbackApplicationUpdate,
+    RunHealthCheck, RunLlmSafetyCheck, RunRollingBackup, SaveUserTranslationRevision,
+    SearchOnlineSources, SetApplicationUpdatePolicy, SetUiPreference, SkillListItem, SkillListPage,
     TranslateDescription, VerifyBackup,
 };
 pub use app_update::{
@@ -135,10 +135,10 @@ pub use project::{
 };
 pub use scan::{DiscoveredSkill, ScanGeneration, ScanIssue, ScanRepository, ScanResult, ScanScope};
 pub use source::{
-    AppliedSourceUpdate, SourceState, SourceUpdateBackend, UpdateDecision, UpstreamCheckResult,
+    AgentsLockEntry, SourceDescriptor, SourceKind, SourceLocator, SourceSearchHit,
+    SourceSearchPage, SourceSearchQuery,
 };
 pub use source::{
-    SourceDescriptor, SourceKind, SourceLocator, SourceSearchHit, SourceSearchPage,
-    SourceSearchQuery,
+    AppliedSourceUpdate, SourceState, SourceUpdateBackend, UpdateDecision, UpstreamCheckResult,
 };
 pub use versioning::{FileEntry, VersionDiff, VersionManifest, VersionRecord, VersionRepository};

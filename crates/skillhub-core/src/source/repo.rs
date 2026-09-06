@@ -55,3 +55,17 @@ pub struct DownloadedRepoSkill {
     /// 目录末段名（导入候选的运行时名称参考）
     pub runtime_name: String,
 }
+
+/// `~/.agents/.skill-lock.json` 中的一条 GitHub 来源 Skill（Q17 lock 导入）。
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct AgentsLockEntry {
+    /// lock 文件中的 skill 名（导入后的显示名参考）
+    pub name: String,
+    pub owner: String,
+    pub repo: String,
+    /// 分支；None 表示走仓库默认分支回退（main → master）
+    pub branch: Option<String>,
+    /// 仓库内 Skill 子目录；None 表示仓库根整体即 Skill
+    pub skill_path: Option<String>,
+}

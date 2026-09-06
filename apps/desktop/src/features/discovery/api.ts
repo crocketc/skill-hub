@@ -1,6 +1,7 @@
 import {
   executeCommand,
   queryApplication,
+  type AgentsLockEntry,
   type DiscoverableRepoSkill,
   type DiscoverySnapshot,
   type DownloadedRepoSkill,
@@ -23,6 +24,7 @@ export interface DiscoveryFacade {
   searchOnlineSources: (query: SourceSearchQuery) => Promise<SourceSearchPage>;
   listSkillRepos: () => Promise<SkillRepo[]>;
   discoverRepoSkills: () => Promise<RepoDiscoveryReport>;
+  discoverAgentsLockSkills: () => Promise<AgentsLockEntry[]>;
   addSkillRepo: (repo: SkillRepo) => Promise<SkillRepo[]>;
   removeSkillRepo: (owner: string, name: string) => Promise<SkillRepo[]>;
   downloadRepoSkill: (skill: DiscoverableRepoSkill) => Promise<DownloadedRepoSkill>;
@@ -70,6 +72,13 @@ export const desktopDiscoveryFacade: DiscoveryFacade = {
     const result = await queryApplication({ type: "discover_repo_skills", payload: null });
     if (result.type !== "repo_discovery_report") {
       throw new Error("Unexpected repo discovery response from the native application.");
+    }
+    return result.payload;
+  },
+  async discoverAgentsLockSkills() {
+    const result = await queryApplication({ type: "discover_agents_lock_skills", payload: null });
+    if (result.type !== "agents_lock_entries") {
+      throw new Error("Unexpected agents lock response from the native application.");
     }
     return result.payload;
   },

@@ -12,6 +12,7 @@ import type { SkillRepo } from "../../api/bindings";
 
 const repoDiscoveryStubs = {
   listSkillRepos: async () => [] as SkillRepo[],
+  discoverAgentsLockSkills: async () => [] as never[],
   discoverRepoSkills: async () => ({ skills: [], warnings: [] }) as never,
   addSkillRepo: async (repo: SkillRepo) => [repo],
   removeSkillRepo: async () => [] as SkillRepo[],

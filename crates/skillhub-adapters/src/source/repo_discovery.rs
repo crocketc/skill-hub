@@ -110,13 +110,17 @@ impl RepoDiscoveryProvider {
         directory: &str,
         dest_root: &Path,
     ) -> Result<PathBuf> {
-        let sanitized = sanitize_skill_source_path(directory)
-            .ok_or_else(|| anyhow!("INVALID_SKILL_DIRECTORY: {directory}"))?;
-        let install_name = sanitized
-            .file_name()
-            .map(|name| name.to_string_lossy().to_string())
-            .ok_or_else(|| anyhow!("INVALID_SKILL_DIRECTORY: {directory}"))?;
-
+        // 空目录 = 仓库根整体即 Skill（lock 文件条目常无 skill_path）；
+        // 非空的非法值（穿越、绝对路径）仍必须拒绝。
+        let trimmed = directory.trim();
+        let sanitized = if trimmed.is_empty() {
+            None
+        } else {
+            Some(
+                sanitize_skill_source_path(directory)
+                    .ok_or_else(|| anyhow!("INVALID_SKILL_DIRECTORY: {directory}"))?,
+            )
+        };
         let (temp_guard, _resolved_branch) = tokio::time::timeout(
             Duration::from_secs(DOWNLOAD_TIMEOUT_SECONDS),
             download_repo(&self.client, &self.archive_base, repo),
@@ -124,7 +128,26 @@ impl RepoDiscoveryProvider {
         .await
         .map_err(|_| anyhow!("DOWNLOAD_TIMEOUT: {}/{}", repo.owner, repo.name))??;
 
-        let source_dir = resolve_skill_source_dir(temp_guard.path(), &sanitized)?;
+        let source_dir = match &sanitized {
+            Some(relative) => resolve_skill_source_dir(temp_guard.path(), relative)?,
+            None => {
+                let root = std::fs::canonicalize(temp_guard.path()).map_err(|error| {
+                    anyhow!("INVALID_SKILL_DIRECTORY: canonicalize failed: {error}")
+                })?;
+                let canonical_root = std::fs::canonicalize(temp_guard.path())?;
+                if !root.starts_with(&canonical_root) {
+                    return Err(anyhow!(
+                        "INVALID_SKILL_DIRECTORY: resolved path escapes temp root"
+                    ));
+                }
+                root
+            }
+        };
+        let install_name = sanitized
+            .as_ref()
+            .and_then(|relative| relative.file_name())
+            .map(|name| name.to_string_lossy().to_string())
+            .unwrap_or_else(|| repo.name.clone());
         let dest_dir = dest_root.join(unique_download_id()).join(&install_name);
         copy_dir_recursive(&source_dir, &dest_dir)?;
         Ok(dest_dir)

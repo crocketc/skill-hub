@@ -279,6 +279,21 @@
       "downloadImport": "下载并导入",
       "downloading": "正在下载…",
       "downloadFailed": "下载失败，请稍后重试。"
+    },
+    "agentsLock": {
+      "eyebrow": "外部安装",
+      "title": "~/.agents lock 导入",
+      "description": "解析 ~/.agents/.skill-lock.json，列出其中 GitHub 来源的 Skill；只读发现，不改动该文件。",
+      "scan": "扫描 lock 文件",
+      "scanning": "正在扫描…",
+      "failed": "lock 文件读取失败。",
+      "empty": "未发现任何 GitHub 来源的 Skill 条目。",
+      "source": "{{repo}}@{{branch}}",
+      "defaultBranch": "默认分支",
+      "skillPath": "仓库内路径：{{path}}",
+      "downloadImport": "下载并导入",
+      "downloading": "正在下载…",
+      "downloadFailed": "下载失败，请稍后重试。"
     }
   },
   "agents": {

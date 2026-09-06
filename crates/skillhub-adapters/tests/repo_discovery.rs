@@ -282,3 +282,20 @@ fn set_mtime(path: &Path, time: std::time::SystemTime) {
     let file = std::fs::File::options().write(true).open(path).unwrap();
     file.set_modified(time).unwrap();
 }
+#[test]
+fn download_repo_skill_with_empty_directory_copies_the_repo_root() {
+    // lock 文件条目常无 skill_path：整个仓库就是一个 Skill（cc-switch 语义）。
+    let zip = skill_zip(vec![
+        skill_entry("", "WholeRepo", "root skill"),
+        ("docs/notes.txt".into(), b"nested".to_vec()),
+    ]);
+    let base = routing_server(vec![("/o/r/archive/refs/heads/main.zip", 200, zip)]);
+    let provider = test_provider(&base);
+    let dest = tempfile::tempdir().unwrap();
+    let path =
+        block_on(provider.download_skill_directory(&repo("o", "r", "main", true), "", dest.path()))
+            .unwrap();
+    // 空 directory = 仓库根整体：SKILL.md 与子目录都被复制
+    assert!(path.join("SKILL.md").is_file(), "path: {}", path.display());
+    assert!(path.join("docs").is_dir());
+}

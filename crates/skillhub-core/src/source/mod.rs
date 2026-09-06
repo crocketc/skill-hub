@@ -14,8 +14,8 @@ pub use model::{
     SourceLocator,
 };
 pub use repo::{
-    DiscoverableRepoSkill, DownloadedRepoSkill, RepoDiscoveryReport, RepoDiscoveryWarning,
-    SkillRepo,
+    AgentsLockEntry, DiscoverableRepoSkill, DownloadedRepoSkill, RepoDiscoveryReport,
+    RepoDiscoveryWarning, SkillRepo,
 };
 pub use update::{
     AppliedSourceUpdate, SourceState, SourceUpdateBackend, UpdateDecision, UpstreamCheckResult,

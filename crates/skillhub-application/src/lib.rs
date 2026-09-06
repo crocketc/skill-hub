@@ -16,7 +16,8 @@ use skillhub_adapters::import::SkillDetector;
 use skillhub_adapters::scanner::ScanService;
 use skillhub_adapters::security::BasicScanner;
 use skillhub_adapters::source::{
-    cleanup_stale_downloads, stale_download_retention, RepoDiscoveryProvider, SkillsShProvider,
+    agents_lock_path, cleanup_stale_downloads, read_agents_lock, stale_download_retention,
+    RepoDiscoveryProvider, SkillsShProvider,
 };
 use skillhub_core::api::{
     ApplySourceUpdate, BasicCheckResult, CheckSourceUpdate, CreateCombination, CreateSkill,
@@ -3331,6 +3332,22 @@ impl ApplicationFacade for LocalApplicationFacade {
             }
             AppQuery::ListSkillRepos(_) => self.list_skill_repos(),
             AppQuery::DiscoverRepoSkills(_) => self.discover_repo_skills().await,
+            AppQuery::DiscoverAgentsLockSkills(_) => {
+                let home = agents_home_dir()?;
+                let entries = read_agents_lock(&home);
+                Ok(AppQueryResult::AgentsLockEntries(
+                    entries
+                        .into_iter()
+                        .map(|entry| skillhub_core::source::AgentsLockEntry {
+                            name: entry.name,
+                            owner: entry.owner,
+                            repo: entry.repo,
+                            branch: entry.branch,
+                            skill_path: entry.skill_path,
+                        })
+                        .collect(),
+                ))
+            }
             AppQuery::GetBootstrapSnapshot => {
                 let default_library_path = self
                     .configured_library_path()
@@ -4466,6 +4483,17 @@ fn repo_downloads_root() -> AppResult<std::path::PathBuf> {
             .with_action(RecoveryAction::Retry)
     })?;
     Ok(root)
+}
+
+/// 用户主目录（lock 发现等以家目录为基准的读取用）。
+fn agents_home_dir() -> AppResult<std::path::PathBuf> {
+    std::env::var("USERPROFILE")
+        .or_else(|_| std::env::var("HOME"))
+        .map(std::path::PathBuf::from)
+        .map_err(|_| {
+            AppError::new(ErrorCode::InternalError, Severity::Error)
+                .with_param("detail", "home directory is not configured")
+        })
 }
 
 fn invalid_input(detail: impl Into<String>) -> AppError {

@@ -30,17 +30,18 @@ pub use command::{
 pub use event::{AppEvent, FactsChanged};
 pub use query::{
     AnalyzeGlobalSkillEvidence, AnalyzeImport, AppQuery, AppQueryResult, BasicCheckResult,
-    CombinationResult, DeploymentTarget, DiffVersions, DiscoverImportCandidates,
-    DiscoverRepoSkills, FindingResult, GetBasicCheckResult, GetBootstrapSnapshot, GetCallPolicy,
-    GetDeploymentPlan, GetDeploymentRelations, GetDiscoverySnapshot, GetLlmSafetyCheckResult,
-    GetProjectAssemblyPlan, GetReconcilePlan, GetRemovalImpact, GetSkill, GetUiPreference,
-    GetUiPreferenceResult, ListCombinations, ListCustomAgents, ListDeploymentTargets,
-    ListDeployments, ListFindings, ListMarkdownFiles, ListPendingItems, ListProjects,
-    ListSavedProjectViews, ListSkillRepos, ListSkills, ListVersions, LlmSafetyCheckResult,
-    MarkdownFileContent, MarkdownFileEntry, PreviewProjectDirectory, ProjectDirectoryPreview,
-    ReadMarkdownFile, SearchOnlineSources, SkillDeploymentFilter, SkillLifecycleFilter,
-    SkillListFilters, SkillListItem, SkillListPage, SkillListSort, SkillResult, SkillSortColumn,
-    SkillSortDirection, VersionDiffResult, VersionResult,
+    CombinationResult, DeploymentTarget, DiffVersions, DiscoverAgentsLockSkills,
+    DiscoverImportCandidates, DiscoverRepoSkills, FindingResult, GetBasicCheckResult,
+    GetBootstrapSnapshot, GetCallPolicy, GetDeploymentPlan, GetDeploymentRelations,
+    GetDiscoverySnapshot, GetLlmSafetyCheckResult, GetProjectAssemblyPlan, GetReconcilePlan,
+    GetRemovalImpact, GetSkill, GetUiPreference, GetUiPreferenceResult, ListCombinations,
+    ListCustomAgents, ListDeploymentTargets, ListDeployments, ListFindings, ListMarkdownFiles,
+    ListPendingItems, ListProjects, ListSavedProjectViews, ListSkillRepos, ListSkills,
+    ListVersions, LlmSafetyCheckResult, MarkdownFileContent, MarkdownFileEntry,
+    PreviewProjectDirectory, ProjectDirectoryPreview, ReadMarkdownFile, SearchOnlineSources,
+    SkillDeploymentFilter, SkillLifecycleFilter, SkillListFilters, SkillListItem, SkillListPage,
+    SkillListSort, SkillResult, SkillSortColumn, SkillSortDirection, VersionDiffResult,
+    VersionResult,
 };
 
 use crate::AppResult;
