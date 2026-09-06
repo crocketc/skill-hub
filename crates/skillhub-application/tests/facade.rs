@@ -1015,7 +1015,10 @@ async fn set_library_root_rejects_empty_paths_and_initialized_libraries() {
     assert_eq!(conflict.code, ErrorCode::OperationConflict);
     // 前端依赖该 reason 映射出可读文案（AR-008）。
     assert_eq!(
-        conflict.params.get("reason").and_then(|value| value.as_str()),
+        conflict
+            .params
+            .get("reason")
+            .and_then(|value| value.as_str()),
         Some("library_root_locked")
     );
 }
