@@ -202,7 +202,37 @@
         "takeover": "Keep location and bring under management",
         "independent": "Import independently",
         "skip": "Skip this candidate"
-      }
+      },
+      "reasons": {
+        "exact_duplicate": "Content is identical to an existing Skill in the library",
+        "same_name": "The runtime name matches an existing Skill",
+        "semantic_match": "Content resembles an existing Skill in the library; it may be the same Skill",
+        "agent_owned": "The candidate lives in a directory managed by an Agent tool; ownership needs confirmation",
+        "unknown": "Unknown conflict type ({{kind}})"
+      },
+      "diffLabel": "Content difference: ",
+      "diffKinds": {
+        "exact_content": "Content is identical to the existing Skill",
+        "same_source": "The source is the same as an existing Skill",
+        "same_runtime_name_different_content": "Same runtime name, but different content",
+        "search_candidate": "Search-matched an existing Skill",
+        "unknown": "Unknown difference type ({{kind}})"
+      },
+      "diagnosticsLabel": "Diagnostics",
+      "impacts": {
+        "reuse": "Reuse: nothing new is imported; the existing managed Skill is used as-is",
+        "copy": "Copy into SkillHub: the candidate content is copied into the library; existing Skills and their deployments are not overwritten",
+        "takeover": "Keep location: the candidate stays where it is and comes under SkillHub management after content verification",
+        "independent": "Import independently: stored in the library as a new identity; existing Skills are not overwritten",
+        "skip": "Skip: this candidate is not imported"
+      },
+      "filterLabel": "Filter by conflict reason",
+      "filterAll": "All",
+      "filterCount": " ({{count}})",
+      "batchApply": "Apply",
+      "batchPrompt": "Choose an action",
+      "batchScopeCount": "Will apply to {{count}} items",
+      "batchScopeNote": "Only affects conflicts matching the current filter; each item can still be adjusted individually."
     },
     "summary": {
       "eyebrow": "Import summary",
@@ -647,14 +677,16 @@
     "fullDetailsBoundary": "Full Skill details are delivered in the next task",
     "page": {
       "batch": {
-        "addTo": "Add to",
+        "addTo": "Deploy…",
+        "addToTitle": "Open the batch deployment flow to add the selected Skills to agents",
         "addTags": "Add tags",
         "addTagsDescription": "The entered tags will be added to every selected Skill.",
         "addTagsTitle": "Add tags",
         "archive": "Archive",
         "delete": "Delete selected Skills",
         "error": "The batch workflow could not be started",
-        "export": "Export",
+        "export": "Submit export job",
+        "exportTitle": "Submit the selected Skills through the native batch export workflow; use Start export to open the export wizard",
         "impact": "This will affect {{count}} Skill",
         "label": "Batch actions",
         "removeTags": "Remove tags",
@@ -666,6 +698,7 @@
         "tagsPlaceholder": "e.g. review, customer-facing",
         "unconnected": "This batch workflow is not connected",
         "startExport": "Start export",
+        "startExportTitle": "Open the export wizard to configure and run an export for the selected Skills",
         "checkUpdates": "Check source updates",
         "checkUpdatesPending": "Checking source updates…"
       },
@@ -1538,8 +1571,11 @@
       "heading": "Export selected Skills",
       "skillIds": "Skill IDs",
       "format": "Export format",
-      "formatFolder": "Folder",
-      "formatZip": "ZIP archive",
+      "formatFolder": "Folder mode (complete skill folders inside an outer ZIP)",
+      "formatZip": "ZIP mode (individual skill ZIPs inside an outer ZIP)",
+      "formatHint": "Either format always produces a single outer ZIP archive; folder names use each skill's display name (not the internal ID) and contain every file of the skill folder. ZIP mode yields standalone skill ZIPs that Trae, Cline and similar IDE agents can import directly.",
+      "pickOutputDir": "Choose output directory",
+      "outputDirDefault": "Not chosen: the export goes to the central library's export folder.",
       "review": "Review export",
       "summary": "{{count}} skills are ready to export.",
       "decision": "Export decision for {{skillId}}",

@@ -202,7 +202,37 @@
         "takeover": "保留当前位置并纳入管理",
         "independent": "独立导入",
         "skip": "跳过此候选项"
-      }
+      },
+      "reasons": {
+        "exact_duplicate": "内容与库内已有 Skill 完全相同",
+        "same_name": "运行时名称与已有 Skill 相同",
+        "semantic_match": "内容与库内已有 Skill 相似，可能是同一 Skill",
+        "agent_owned": "候选所在目录由 Agent 工具管理，需要确认归属",
+        "unknown": "未知冲突类型（{{kind}}）"
+      },
+      "diffLabel": "内容差异：",
+      "diffKinds": {
+        "exact_content": "内容与已有 Skill 完全相同",
+        "same_source": "来源与已有 Skill 相同",
+        "same_runtime_name_different_content": "运行时名称相同，但内容不同",
+        "search_candidate": "与已有 Skill 搜索匹配",
+        "unknown": "未知差异类型（{{kind}}）"
+      },
+      "diagnosticsLabel": "排查信息",
+      "impacts": {
+        "reuse": "复用：不导入新内容，直接以库内已有 Skill 为准",
+        "copy": "复制到 SkillHub：将候选内容复制入库，已有 Skill 与其部署不会被覆盖",
+        "takeover": "保留原位置并纳入管理：候选目录留在原处，内容核对后由 SkillHub 管理",
+        "independent": "独立导入：以新身份存入库中，不覆盖已有 Skill",
+        "skip": "跳过：不导入该候选"
+      },
+      "filterLabel": "按冲突原因筛选",
+      "filterAll": "全部",
+      "filterCount": "（{{count}}）",
+      "batchApply": "应用",
+      "batchPrompt": "请选择处理方式",
+      "batchScopeCount": "将应用到 {{count}} 项",
+      "batchScopeNote": "仅作用于当前筛选出的冲突；每条冲突仍可单独调整。"
     },
     "summary": {
       "eyebrow": "导入摘要",
@@ -647,14 +677,16 @@
     "fullDetailsBoundary": "完整 Skill 详情将在下一任务中提供",
     "page": {
       "batch": {
-        "addTo": "添加到",
+        "addTo": "部署…",
+        "addToTitle": "打开批量部署流程，将所选 Skill 添加到 Agent",
         "addTags": "添加标签",
         "addTagsDescription": "输入的标签会添加到所有选中的 Skill。",
         "addTagsTitle": "批量添加标签",
         "archive": "归档",
         "delete": "删除所选 Skill",
         "error": "无法启动批量流程",
-        "export": "导出",
+        "export": "提交导出任务",
+        "exportTitle": "通过原生批量流程提交导出任务；要打开导出向导请使用「发起导出」",
         "impact": "将影响 {{count}} 个 Skill",
         "label": "批量操作",
         "removeTags": "移除标签",
@@ -666,6 +698,7 @@
         "tagsPlaceholder": "例如：待复核，客户可见",
         "unconnected": "此批量流程尚未连接",
         "startExport": "发起导出",
+        "startExportTitle": "打开导出向导，为所选 Skill 配置并执行导出",
         "checkUpdates": "检查来源更新",
         "checkUpdatesPending": "正在检查来源更新…"
       },
@@ -1538,8 +1571,11 @@
       "heading": "导出所选 Skill",
       "skillIds": "Skill ID 列表",
       "format": "导出格式",
-      "formatFolder": "文件夹",
-      "formatZip": "ZIP 压缩包",
+      "formatFolder": "文件夹模式（外层 ZIP 内为完整 Skill 文件夹）",
+      "formatZip": "ZIP 模式（外层 ZIP 内为独立 Skill ZIP）",
+      "formatHint": "无论哪种格式，整体导出都是一个外层 ZIP 压缩包；目录名使用 Skill 显示名（而非内部 ID），内容包含每个 Skill 文件夹的全部文件。ZIP 模式解压后得到可直接导入 Trae、Cline 等 IDE Agent 的独立 Skill ZIP。",
+      "pickOutputDir": "选择输出目录",
+      "outputDirDefault": "未选择：将导出到集中库的导出目录。",
       "review": "检查导出内容",
       "summary": "已准备导出 {{count}} 个 Skill。",
       "decision": "{{skillId}} 的导出处理方式",

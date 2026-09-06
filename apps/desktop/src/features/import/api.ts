@@ -54,6 +54,8 @@ export interface ImportCandidate {
 
 export interface ImportConflict {
   candidateId: string;
+  /** Display name of the candidate (runtime name or SKILL.md name) for readable conflict rows. */
+  candidateName?: string;
   kind: ConflictKind;
   summary: string;
   allowedActions: ImportAction[];
@@ -234,6 +236,7 @@ function fixtureConflicts(
       {
         allowedActions: ["takeover", "copy", "skip"],
         candidateId: candidates[0].id,
+        candidateName: candidates[0].name,
         kind: "agent_owned",
         required: true,
         summary: "目录已由 Agent 管理",
@@ -246,6 +249,7 @@ function fixtureConflicts(
       {
         allowedActions: ["copy", "independent", "skip"],
         candidateId: candidates[0].id,
+        candidateName: candidates[0].name,
         kind: "same_name",
         required: true,
         summary: "集中库中已有同名 Skill",

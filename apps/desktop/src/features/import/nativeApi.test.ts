@@ -90,6 +90,7 @@ describe("native import facade", () => {
       expect.objectContaining({
         allowedActions: ["independent", "skip"],
         candidateId: candidate.id,
+        candidateName: "notes",
         kind: "same_name",
         required: true,
       }),

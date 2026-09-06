@@ -3537,6 +3537,78 @@ a {
   gap: var(--space-2) var(--space-4);
 }
 
+.sh-import-conflicts__filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
+.sh-import-conflicts__filter {
+  padding: var(--space-1) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-raised);
+  color: var(--color-text-secondary);
+  font: inherit;
+  font-size: var(--font-size-xs);
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.sh-import-conflicts__filter[aria-pressed="true"] {
+  border-color: var(--color-accent);
+  background: var(--color-accent-soft);
+  color: var(--color-accent-strong);
+}
+
+.sh-import-conflicts__reason {
+  margin: 0;
+  color: var(--color-text-secondary);
+}
+
+.sh-import-conflicts__diagnostic {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+  overflow-wrap: anywhere;
+}
+
+.sh-import-conflicts__option {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.sh-import-conflicts__option-impact {
+  margin: 0;
+  padding-left: calc(1rem + var(--space-2));
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+}
+
+.sh-import-conflicts__batch {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  margin-bottom: var(--space-3);
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-md);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-xs);
+}
+
+.sh-import-conflicts__batch-note {
+  flex-basis: 100%;
+  margin: 0;
+  color: var(--color-text-muted);
+}
+
 .sh-import-conflicts__options label {
   display: inline-flex;
   align-items: center;
