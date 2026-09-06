@@ -1,7 +1,8 @@
 use skillhub_application::LocalApplicationFacade;
 use skillhub_core::api::{
     AppCommandResult, ApplySourceUpdate, CheckSourceUpdate, CreateCombination, CreateSkill,
-    GetSkill, ListCombinations, PinProjectSkillVersion, RelinkSource, SaveSkillContent,
+    DeleteCombination, GetSkill, ListCombinations, PinProjectSkillVersion, RelinkSource,
+    SaveSkillContent, UpdateCombination,
 };
 use skillhub_core::catalog::{CatalogRepository, Skill};
 use skillhub_core::project::Project;
@@ -94,6 +95,89 @@ async fn combinations_are_created_and_listed_with_stable_members() {
     };
     assert_eq!(items[0].name, "Writing stack");
     assert_eq!(items[0].members, vec![second.id(), first.id()]);
+}
+
+#[tokio::test]
+async fn combinations_can_update_members_and_be_deleted() {
+    let database = Database::open_in_memory().expect("database");
+    let first = Skill::new(skillhub_core::SkillId::new(), "First");
+    let second = Skill::new(skillhub_core::SkillId::new(), "Second");
+    for skill in [&first, &second] {
+        database
+            .catalog_repository()
+            .expect("catalog")
+            .insert(skill)
+            .await
+            .expect("insert");
+    }
+    let facade = LocalApplicationFacade::new(database);
+
+    facade
+        .execute(AppCommand::CreateCombination(CreateCombination {
+            name: "Writing stack".into(),
+            members: vec![first.id()],
+        }))
+        .await
+        .expect("create combination");
+
+    let result = facade
+        .execute(AppCommand::UpdateCombination(UpdateCombination {
+            name: "Writing stack".into(),
+            members: vec![first.id(), second.id()],
+        }))
+        .await
+        .expect("update combination");
+    let AppCommandResult::OperationSummary(summary) = result else {
+        panic!("expected operation summary");
+    };
+    assert_eq!(summary.message_code, "catalog.combination_updated");
+
+    let listed = facade
+        .query(AppQuery::ListCombinations(ListCombinations))
+        .await
+        .expect("list combinations");
+    let AppQueryResult::Combinations(items) = listed else {
+        panic!("expected combinations")
+    };
+    assert_eq!(items.len(), 1);
+    assert_eq!(items[0].members, vec![first.id(), second.id()]);
+
+    let missing = facade
+        .execute(AppCommand::UpdateCombination(UpdateCombination {
+            name: "No such combination".into(),
+            members: vec![first.id()],
+        }))
+        .await
+        .expect_err("updating a missing combination must fail");
+    assert_eq!(missing.code, ErrorCode::ObjectNotFound);
+
+    let result = facade
+        .execute(AppCommand::DeleteCombination(DeleteCombination {
+            name: "Writing stack".into(),
+        }))
+        .await
+        .expect("delete combination");
+    let AppCommandResult::OperationSummary(summary) = result else {
+        panic!("expected operation summary");
+    };
+    assert_eq!(summary.message_code, "catalog.combination_deleted");
+
+    let listed = facade
+        .query(AppQuery::ListCombinations(ListCombinations))
+        .await
+        .expect("list combinations");
+    let AppQueryResult::Combinations(items) = listed else {
+        panic!("expected combinations")
+    };
+    assert!(items.is_empty());
+
+    let missing = facade
+        .execute(AppCommand::DeleteCombination(DeleteCombination {
+            name: "Writing stack".into(),
+        }))
+        .await
+        .expect_err("deleting a missing combination must fail");
+    assert_eq!(missing.code, ErrorCode::ObjectNotFound);
 }
 
 #[tokio::test]

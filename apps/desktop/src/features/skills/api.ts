@@ -1,6 +1,6 @@
 export type SkillLifecycle = "active" | "trial" | "archived";
-import type { DeploymentRecord, DeploymentTarget } from "../../api/bindings";
-export type { DeploymentRecord, DeploymentTarget };
+import type { CombinationResult, DeploymentRecord, DeploymentTarget } from "../../api/bindings";
+export type { CombinationResult, DeploymentRecord, DeploymentTarget };
 export type CheckState = "passed" | "warning" | "failed" | "not_run" | "unavailable";
 export type SkillDensity = "compact" | "standard" | "comfortable";
 export type DrawerPreset = "standard" | "wide" | "near_full";
@@ -182,6 +182,13 @@ export interface SkillLibraryFacade {
   saveTablePreferences(preferences: SkillTablePreferences): Promise<void>;
   deleteView(viewId: string): Promise<void>;
   saveView(view: Omit<SavedSkillView, "builtIn" | "id">): Promise<SavedSkillView>;
+  /** FE-04 组合视图：未提供时组合面板不渲染。 */
+  listCombinations?: () => Promise<CombinationResult[]>;
+  createCombination?: (name: string, members: string[]) => Promise<void>;
+  updateCombination?: (name: string, members: string[]) => Promise<void>;
+  deleteCombination?: (name: string) => Promise<void>;
+  /** 组合标准导出（文件夹/ZIP 由偏好决定），失败时如实抛错。 */
+  exportCombination?: (name: string) => Promise<{ path: string }>;
 }
 
 function freeze<T>(value: T): T {

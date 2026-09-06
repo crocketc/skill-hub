@@ -59,6 +59,85 @@ impl<'a> CombinationRepository<'a> {
         tx.commit().map_err(error)
     }
 
+    pub fn update_members(&self, name: &str, members: &[SkillId]) -> AppResult<()> {
+        let name = name.trim();
+        if name.is_empty() || members.is_empty() {
+            return Err(invalid("combination name and members are required"));
+        }
+        let mut unique = std::collections::HashSet::new();
+        if members.iter().any(|member| !unique.insert(*member)) {
+            return Err(invalid("combination members must be unique"));
+        }
+        let tx = self
+            .database
+            .connection
+            .unchecked_transaction()
+            .map_err(error)?;
+        let id = match tx.query_row(
+            "SELECT id FROM combinations WHERE name=?1 ORDER BY created_at LIMIT 1",
+            [name],
+            |row| row.get::<_, String>(0),
+        ) {
+            Ok(id) => id,
+            Err(rusqlite::Error::QueryReturnedNoRows) => {
+                return Err(AppError::new(ErrorCode::ObjectNotFound, Severity::Error)
+                    .with_param("combination", name.to_string())
+                    .with_action(RecoveryAction::ChooseAnotherName));
+            }
+            Err(err) => return Err(error(err)),
+        };
+        for member in members {
+            let exists: bool = tx
+                .query_row(
+                    "SELECT EXISTS(SELECT 1 FROM skills WHERE id=?1)",
+                    [member.to_string()],
+                    |row| row.get(0),
+                )
+                .map_err(error)?;
+            if !exists {
+                return Err(AppError::new(ErrorCode::ObjectNotFound, Severity::Error)
+                    .with_param("skill_id", member.to_string())
+                    .with_action(RecoveryAction::ChooseAnotherName));
+            }
+        }
+        tx.execute(
+            "DELETE FROM combination_skills WHERE combination_id=?1",
+            [&id],
+        )
+        .map_err(error)?;
+        for (position, member) in members.iter().enumerate() {
+            tx.execute(
+                "INSERT INTO combination_skills(combination_id,skill_id,position) VALUES(?1,?2,?3)",
+                params![id, member.to_string(), position as i64],
+            )
+            .map_err(error)?;
+        }
+        tx.execute(
+            "UPDATE combinations SET updated_at=strftime('%s','now') WHERE id=?1",
+            [&id],
+        )
+        .map_err(error)?;
+        tx.commit().map_err(error)
+    }
+
+    pub fn delete(&self, name: &str) -> AppResult<()> {
+        let name = name.trim();
+        if name.is_empty() {
+            return Err(invalid("combination name is required"));
+        }
+        let deleted = self
+            .database
+            .connection
+            .execute("DELETE FROM combinations WHERE name=?1", [name])
+            .map_err(error)?;
+        if deleted == 0 {
+            return Err(AppError::new(ErrorCode::ObjectNotFound, Severity::Error)
+                .with_param("combination", name.to_string())
+                .with_action(RecoveryAction::ChooseAnotherName));
+        }
+        Ok(())
+    }
+
     pub fn list(&self) -> AppResult<Vec<CombinationResult>> {
         let mut statement = self
             .database

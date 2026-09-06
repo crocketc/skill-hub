@@ -46,6 +46,7 @@ import {
   skillFilterKey,
 } from "./queryState";
 import { SavedViews } from "./SavedViews";
+import { CombinationPanel } from "./CombinationPanel";
 import {
   retainExplicitSelection,
   selectAllFiltered,
@@ -984,6 +985,13 @@ export function SkillLibraryPage({
           onNameChange={setSaveViewName}
           onSubmit={submitSavedView}
           pending={saveViewPending}
+        />
+      ) : null}
+
+      {facade.listCombinations ? (
+        <CombinationPanel
+          facade={facade}
+          skillNames={Object.fromEntries((pageQuery.data?.items ?? []).map((item) => [item.id, item.name]))}
         />
       ) : null}
 

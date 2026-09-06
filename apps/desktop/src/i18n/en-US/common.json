@@ -884,6 +884,24 @@
       "label": "Group by",
       "none": "No grouping",
       "tags": "Group by tag"
+    },
+    "combinations": {
+      "heading": "Combinations",
+      "create": "New combination",
+      "nameLabel": "Combination name",
+      "namePlaceholder": "e.g. Writing stack",
+      "membersLabel": "Select member skills",
+      "save": "Save combination",
+      "cancel": "Cancel",
+      "delete": "Delete combination {{name}}",
+      "deleteTitle": "Delete combination {{name}}",
+      "deleteBody": "Only the combination record is removed; the skills themselves are untouched. This cannot be undone.",
+      "confirmDelete": "Confirm deletion",
+      "export": "Export combination {{name}}",
+      "exported": "Export created: {{path}}",
+      "empty": "No combinations yet. Create one to bundle frequently used skills for export.",
+      "noMembers": "No members",
+      "loading": "Loading combinations…"
     }
   },
   "skillDetail": {

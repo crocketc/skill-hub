@@ -25,9 +25,9 @@ use skillhub_adapters::source::{
 };
 use skillhub_core::api::{
     ApplySourceUpdate, BasicCheckResult, CheckSourceUpdate, CreateCombination, CreateSkill,
-    PinProjectSkillVersion, RelinkSource, RenameSkill, SaveMarkdownContent, SaveSkillContent,
-    SavedSkillContent, SetCurrentVersion, SetFindingDisposition, SetLifecycle, SetMetadata,
-    SetTrial,
+    DeleteCombination, PinProjectSkillVersion, RelinkSource, RenameSkill, SaveMarkdownContent,
+    SaveSkillContent, SavedSkillContent, SetCurrentVersion, SetFindingDisposition, SetLifecycle,
+    SetMetadata, SetTrial, UpdateCombination,
 };
 use skillhub_core::application::{
     CallPolicyBackend, CallPolicyService, DeploymentBackend, DeploymentService,
@@ -2431,6 +2431,26 @@ impl LocalApplicationFacade {
         })
     }
 
+    fn update_combination(&self, request: UpdateCombination) -> AppResult<AppCommandResult> {
+        self.with_database("execute.update_combination", |database| {
+            database
+                .combination_repository()
+                .update_members(&request.name, &request.members)?;
+            Ok(AppCommandResult::OperationSummary(operation_summary(
+                "catalog.combination_updated",
+            )))
+        })
+    }
+
+    fn delete_combination(&self, request: DeleteCombination) -> AppResult<AppCommandResult> {
+        self.with_database("execute.delete_combination", |database| {
+            database.combination_repository().delete(&request.name)?;
+            Ok(AppCommandResult::OperationSummary(operation_summary(
+                "catalog.combination_deleted",
+            )))
+        })
+    }
+
     fn pin_project_skill_version(
         &self,
         request: PinProjectSkillVersion,
@@ -3263,6 +3283,8 @@ impl ApplicationFacade for LocalApplicationFacade {
             AppCommand::RenameSkill(request) => return self.rename_skill(request),
             AppCommand::CreateSkill(request) => return self.create_skill(request),
             AppCommand::CreateCombination(request) => return self.create_combination(request),
+            AppCommand::UpdateCombination(request) => return self.update_combination(request),
+            AppCommand::DeleteCombination(request) => return self.delete_combination(request),
             AppCommand::PinProjectSkillVersion(request) => {
                 return self.pin_project_skill_version(request)
             }

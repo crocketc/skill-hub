@@ -75,6 +75,15 @@ pub struct CreateCombination {
     pub members: Vec<SkillId>,
 }
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+pub struct UpdateCombination {
+    pub name: String,
+    pub members: Vec<SkillId>,
+}
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+pub struct DeleteCombination {
+    pub name: String,
+}
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 pub struct SetCurrentVersion {
     pub skill_id: SkillId,
     pub version_id: VersionId,
@@ -580,6 +589,10 @@ pub enum AppCommand {
     SetTrial(SetTrial),
     #[serde(rename = "create_combination")]
     CreateCombination(CreateCombination),
+    #[serde(rename = "update_combination")]
+    UpdateCombination(UpdateCombination),
+    #[serde(rename = "delete_combination")]
+    DeleteCombination(DeleteCombination),
     #[serde(rename = "set_current_version")]
     SetCurrentVersion(SetCurrentVersion),
     #[serde(rename = "pin_project_skill_version")]

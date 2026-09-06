@@ -277,4 +277,29 @@ export const nativeSkillLibraryFacade: SkillLibraryFacade = {
       throw unavailableResult();
     }
   },
+
+  // FE-04 组合视图：读写组合目录；导出走标准导出（缺省格式由偏好决定）。
+  async listCombinations() {
+    const result = await queryApplication({ type: "list_combinations", payload: null });
+    if (result.type !== "combinations") throw unavailableResult();
+    return result.payload;
+  },
+  async createCombination(name, members) {
+    await executeCommand({ type: "create_combination", payload: { name, members } });
+  },
+  async updateCombination(name, members) {
+    await executeCommand({ type: "update_combination", payload: { name, members } });
+  },
+  async deleteCombination(name) {
+    await executeCommand({ type: "delete_combination", payload: { name } });
+  },
+  async exportCombination(name) {
+    // 敏感内容组合导出会被后端以 decision-required 诚实拒绝，由面板展示错误。
+    const export_ = await executeCommand({
+      type: "create_standard_export",
+      payload: { input: { selection: { combination: name }, versions: "current", skills: [] }, decisions: [] },
+    });
+    if (export_.type !== "export_result") throw unavailableResult();
+    return { path: export_.payload.path };
+  },
 };

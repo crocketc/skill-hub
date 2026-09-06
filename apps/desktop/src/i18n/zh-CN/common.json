@@ -884,6 +884,24 @@
       "label": "分组方式",
       "none": "不分组",
       "tags": "按标签分组"
+    },
+    "combinations": {
+      "heading": "组合视图",
+      "create": "新建组合",
+      "nameLabel": "组合名称",
+      "namePlaceholder": "例如：写作套装",
+      "membersLabel": "选择成员 Skill",
+      "save": "保存组合",
+      "cancel": "取消",
+      "delete": "删除组合 {{name}}",
+      "deleteTitle": "删除组合 {{name}}",
+      "deleteBody": "仅删除该组合记录，不影响其中的 Skill。此操作不可撤销。",
+      "confirmDelete": "确认删除",
+      "export": "导出组合 {{name}}",
+      "exported": "导出已创建：{{path}}",
+      "empty": "暂无组合。新建组合可把常用 Skill 打包导出。",
+      "noMembers": "无成员",
+      "loading": "正在读取组合…"
     }
   },
   "skillDetail": {
