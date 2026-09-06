@@ -180,7 +180,7 @@ it("searches skills.sh and renders the real source results", async () => {
   ]));
   render(
     <I18nextProvider i18n={createSkillHubI18nSync()}>
-      <OnlineDiscovery facade={{ getDiscoverySnapshot: async () => snapshot, scanTargets: async () => scanResult, searchOnlineSources, ...repoDiscoveryStubs }} onStartImport={() => undefined} />
+      <OnlineDiscovery facade={{ getDiscoverySnapshot: async () => snapshot, scanTargets: async () => scanResult, searchOnlineSources, ...repoDiscoveryStubs }} onImportDirectory={() => undefined} onStartImport={() => undefined} />
     </I18nextProvider>,
   );
 

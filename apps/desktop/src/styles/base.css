@@ -3300,6 +3300,84 @@ a {
   justify-self: start;
 }
 
+/* AR-012：发现主页的四张固定模块卡片，等宽等高、只承载入口。 */
+.sh-discovery-home__grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-4);
+  align-items: stretch;
+}
+
+.sh-discovery-home__card {
+  display: grid;
+  align-content: start;
+  gap: var(--space-3);
+  min-width: 0;
+  padding: var(--space-5);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-sm);
+}
+
+.sh-discovery-home__icon {
+  display: grid;
+  width: 2rem;
+  height: 2rem;
+  place-items: center;
+  border-radius: var(--radius-md);
+  background: var(--color-accent-soft);
+  color: var(--color-accent-strong);
+  font-size: var(--font-size-lg);
+}
+
+.sh-discovery-home__title {
+  margin: 0;
+  font-size: var(--font-size-lg);
+}
+
+.sh-discovery-home__description {
+  margin: 0;
+  color: var(--color-text-secondary);
+}
+
+.sh-discovery-home__note {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+}
+
+.sh-discovery-home__card .sh-button {
+  justify-self: start;
+  /* 入口按钮统一钉在卡片底部，保证四张卡片视觉等高。 */
+  margin-top: auto;
+}
+
+/* AR-013：~/.agents lock 是次级来源——灰色图标、更小的标题。 */
+.sh-discovery-home__card--secondary {
+  border-style: dashed;
+}
+
+.sh-discovery-home__card--secondary .sh-discovery-home__icon {
+  background: var(--color-surface-raised);
+  color: var(--color-text-muted);
+}
+
+.sh-discovery-home__card--secondary .sh-discovery-home__title {
+  font-size: var(--font-size-md);
+  color: var(--color-text-secondary);
+}
+
+/* AR-013：lock 子页顶部的次级来源说明。 */
+.sh-discovery-subpage__note {
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-md);
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+
 .sh-import-wizard {
   height: 100%;
   min-height: 0;
@@ -4325,6 +4403,7 @@ a {
 
 @media (max-width: 48rem) {
   .sh-discovery-page__grid,
+  .sh-discovery-home__grid,
   .sh-import-source__descriptor {
     grid-template-columns: 1fr;
   }

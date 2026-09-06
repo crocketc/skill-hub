@@ -23,7 +23,7 @@ import { DataProtectionPage } from "../features/backup/DataProtectionPage";
 import { nativeBackupFacade } from "../features/backup/nativeApi";
 import { SettingsPage } from "../features/settings/SettingsPage";
 import { nativeSettingsFacade } from "../features/settings/nativeApi";
-import { DiscoveryPage } from "../features/discovery/DiscoveryPage";
+import { DiscoveryPage, type DiscoveryModuleView } from "../features/discovery/DiscoveryPage";
 import { desktopDiscoveryFacade } from "../features/discovery/api";
 import { OverviewPage } from "../features/overview/OverviewPage";
 import { SkillLibraryPage } from "../features/skills/SkillLibraryPage";
@@ -60,7 +60,7 @@ function OnboardingRoute() {
         void nativeSettingsFacade.execute({ type: "set_theme", payload: { theme } });
       }}
       onComplete={() => navigate("/", { replace: true })}
-      onOpenImport={(roots) => navigate("/discovery", {
+      onOpenImport={(roots) => navigate("/discovery/local", {
         state: {
           initialSources: roots,
           // With multiple scanned sources the checkbox list drives selection;
@@ -135,7 +135,7 @@ function SkillLibraryRoute() {
   );
 }
 
-function DiscoveryRoute() {
+function DiscoveryRoute({ view }: { view?: DiscoveryModuleView }) {
   const navigate = useNavigate();
   const location = useLocation();
   const state = location.state as { initialSources?: string[]; initialSourceText?: string } | null;
@@ -148,11 +148,14 @@ function DiscoveryRoute() {
 
   return (
     <DiscoveryPage
+      view={view}
       discoveryFacade={desktopDiscoveryFacade}
       initialSources={state?.initialSources}
       initialSourceText={state?.initialSourceText}
       onImportComplete={handleImportComplete}
       onOpenLibrary={() => navigate("/library")}
+      onNavigate={(module) => navigate(`/discovery/${module}`)}
+      onBack={() => navigate("/discovery")}
     />
   );
 }
@@ -184,7 +187,12 @@ export const appRouter = createBrowserRouter([
       { path: "library/:skillId/deploy", element: <DeploymentRoute /> },
       { path: "deploy", element: <BatchDeploymentRoute /> },
       { path: "library/:skillId/security", element: <SecurityRoute /> },
+      // AR-012：发现主页 + 每种发现方式的独立子页（本机/在线/仓库/lock）。
       { path: "discovery", element: <DiscoveryRoute /> },
+      { path: "discovery/local", element: <DiscoveryRoute view="local" /> },
+      { path: "discovery/online", element: <DiscoveryRoute view="online" /> },
+      { path: "discovery/repo", element: <DiscoveryRoute view="repo" /> },
+      { path: "discovery/lock", element: <DiscoveryRoute view="lock" /> },
       { path: "agents", element: <AgentListPage facade={nativeAgentFacade} /> },
       { path: "agents/:agentKey", element: <AgentDetailRoute /> },
       { path: "projects", element: <ProjectListRoute /> },

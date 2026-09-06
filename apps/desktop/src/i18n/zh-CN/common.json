@@ -271,6 +271,33 @@
     "onboardingImportGuideMultiple": "初始化扫描发现 {{count}} 个来源目录，已默认全部选中，将在同一流程中批量导入。",
     "importUnavailable": "导入能力尚未连接到本机服务，未修改任何文件，也未执行命令。",
     "importRunning": "有一个批量导入正在进行，完成后才能开始新的导入。可在全局指示器查看进度。",
+    "home": {
+      "enter": "进入",
+      "enterAria": "进入{{module}}",
+      "cards": {
+        "local": {
+          "title": "本机发现",
+          "description": "扫描本机各客户端的 Skill 目录，导入前先审阅候选项。"
+        },
+        "online": {
+          "title": "在线发现",
+          "description": "搜索 skills.sh 的社区 Skill，查看详情或下载后导入。"
+        },
+        "repo": {
+          "title": "仓库发现",
+          "description": "从配置的 GitHub 仓库下载归档并扫描 SKILL.md。"
+        },
+        "lock": {
+          "title": "~/.agents lock",
+          "description": "读取 ~/.agents/.skill-lock.json 中已锁定的 GitHub Skill。",
+          "note": "次级来源：来自 ~/.agents/.skill-lock.json 的已锁定 GitHub 来源。"
+        }
+      }
+    },
+    "subpage": {
+      "back": "返回发现主页"
+    },
+    "lockNote": "本模块的数据来自 ~/.agents/.skill-lock.json 中已锁定的 GitHub 来源；该文件由其他工具维护，SkillHub 只读解析，不改动它。",
     "local": {
       "eyebrow": "本机来源",
       "title": "本地发现",
@@ -283,7 +310,12 @@
       "title": "在线发现",
       "description": "未来将使用相同安全流程审阅远程仓库来源。",
       "factNoNetwork": "此预览未启用网络访问",
-      "factPreview": "不会宣称或执行任何远程仓库"
+      "factPreview": "不会宣称或执行任何远程仓库",
+      "viewAction": "查看",
+      "installAction": "安装导入",
+      "installing": "下载中…",
+      "installFailed": "安装失败（{{code}}），请稍后重试。",
+      "installUnavailable": "无法识别该结果的 GitHub 来源，安装已禁用。"
     },
     "workbench": {
       "title": "本机发现工作台",

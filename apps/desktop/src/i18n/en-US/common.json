@@ -271,6 +271,33 @@
     "onboardingImportGuideMultiple": "The initialization scan found {{count}} source directories. All are selected by default and will be imported in one flow.",
     "importUnavailable": "Import capability is not connected to the native service yet. No files or commands were changed.",
     "importRunning": "A batch import is already running; a new import can start only after it finishes. Check progress in the global indicator.",
+    "home": {
+      "enter": "Open",
+      "enterAria": "Open {{module}}",
+      "cards": {
+        "local": {
+          "title": "Local discovery",
+          "description": "Scan Skill directories of local clients and review candidates before import."
+        },
+        "online": {
+          "title": "Online discovery",
+          "description": "Search community skills on skills.sh, view details or download for import."
+        },
+        "repo": {
+          "title": "Repository discovery",
+          "description": "Download archives from configured GitHub repositories and scan for SKILL.md."
+        },
+        "lock": {
+          "title": "~/.agents lock",
+          "description": "Read locked GitHub skills recorded in ~/.agents/.skill-lock.json.",
+          "note": "Secondary source: locked GitHub sources recorded in ~/.agents/.skill-lock.json."
+        }
+      }
+    },
+    "subpage": {
+      "back": "Back to discovery home"
+    },
+    "lockNote": "This module reads locked GitHub sources recorded in ~/.agents/.skill-lock.json. The file is maintained by other tools; SkillHub parses it read-only and never modifies it.",
     "local": {
       "eyebrow": "On this device",
       "title": "Local discovery",
@@ -283,7 +310,12 @@
       "title": "Online discovery",
       "description": "A future source boundary for reviewing remote repositories with the same safe flow.",
       "factNoNetwork": "Network access is not enabled in this preview",
-      "factPreview": "No remote repository is claimed or executed"
+      "factPreview": "No remote repository is claimed or executed",
+      "viewAction": "View",
+      "installAction": "Install & import",
+      "installing": "Downloading…",
+      "installFailed": "Install failed ({{code}}). Please try again later.",
+      "installUnavailable": "The GitHub source of this hit could not be recognized; install is disabled."
     },
     "workbench": {
       "title": "Local discovery workbench",
