@@ -299,3 +299,80 @@ fn download_repo_skill_with_empty_directory_copies_the_repo_root() {
     assert!(path.join("SKILL.md").is_file(), "path: {}", path.display());
     assert!(path.join("docs").is_dir());
 }
+/// AR-021：来源版本号抓取——GitHub releases 页的重定向 URL 中提取最新
+/// release/tag 名，作为"来源版本"。无认证要求，且 404/无跳转时诚实返回
+/// None（部分仓库没有 release）。
+#[tokio::test]
+async fn fetch_latest_release_tag_follows_the_redirect_of_releases_latest() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap();
+    let base = format!("http://{address}");
+    let redirect_response = format!(
+        "HTTP/1.1 302 Found
+Location: {base}/owner/repo/releases/tag/v1.2.3
+Content-Length: 0
+Connection: close
+
+"
+    );
+    std::thread::spawn(move || {
+        for stream in listener.incoming() {
+            let Ok(mut stream) = stream else { break };
+            let response = redirect_response.clone();
+            std::thread::spawn(move || {
+                let mut request = [0_u8; 2048];
+                let _ = stream.read(&mut request);
+                let head = String::from_utf8_lossy(&request);
+                let path = head.split_whitespace().nth(1).unwrap_or("/");
+                if path.ends_with("/releases/latest") {
+                    let _ = stream.write_all(response.as_bytes());
+                } else {
+                    let _ = stream.write_all(
+                        b"HTTP/1.1 200 OK
+Content-Length: 2
+Connection: close
+
+ok",
+                    );
+                }
+            });
+        }
+    });
+
+    let provider = RepoDiscoveryProvider::with_archive_base_for_tests(&base);
+    let tag = provider
+        .fetch_latest_release_tag(&repo("anthropics", "skills", "main", true))
+        .await
+        .expect("tag fetch must not fail");
+    assert_eq!(tag.as_deref(), Some("v1.2.3"), "应从重定向 URL 提取 tag");
+}
+
+#[tokio::test]
+async fn fetch_latest_release_tag_is_none_without_a_release_redirect() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap();
+    let base = format!("http://{address}");
+    std::thread::spawn(move || {
+        for stream in listener.incoming() {
+            let Ok(mut stream) = stream else { break };
+            std::thread::spawn(move || {
+                let mut request = [0_u8; 2048];
+                let _ = stream.read(&mut request);
+                let _ = stream.write_all(
+                    b"HTTP/1.1 404 Not Found
+Content-Length: 0
+Connection: close
+
+",
+                );
+            });
+        }
+    });
+
+    let provider = RepoDiscoveryProvider::with_archive_base_for_tests(&base);
+    let tag = provider
+        .fetch_latest_release_tag(&repo("anthropics", "skills", "main", true))
+        .await
+        .expect("404 must degrade to None");
+    assert_eq!(tag, None);
+}

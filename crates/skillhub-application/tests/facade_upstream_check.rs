@@ -38,13 +38,27 @@ fn origin() -> UpstreamOrigin {
 /// 单路由归档 fixture 服务器：路径前缀命中返回 zip 字节，未命中 404。
 /// 请求处理在后台线程循环，直到 listener 被 drop。
 fn archive_server(route: &'static str, body: Vec<u8>) -> String {
+    archive_server_with_release_tag(route, body, None)
+}
+
+/// 可选提供 release tag：设置后 /releases/latest 会 302 到
+/// /releases/tag/<tag>，供 AR-021 来源版本抓取使用。
+fn archive_server_with_release_tag(
+    route: &'static str,
+    body: Vec<u8>,
+    release_tag: Option<&'static str>,
+) -> String {
     let listener = TcpListener::bind("127.0.0.1:0").expect("listener");
     let address = listener.local_addr().expect("address");
     let body = Arc::new(body);
+    let release_tag = release_tag.map(str::to_owned);
     std::thread::spawn(move || {
+        let address = address;
+
         for stream in listener.incoming() {
             let Ok(mut stream) = stream else { break };
             let body = Arc::clone(&body);
+            let release_tag = release_tag.clone();
             std::thread::spawn(move || {
                 let mut request = [0_u8; 4096];
                 if stream.read(&mut request).is_err() {
@@ -52,13 +66,33 @@ fn archive_server(route: &'static str, body: Vec<u8>) -> String {
                 }
                 let head = String::from_utf8_lossy(&request);
                 let path = head.split_whitespace().nth(1).unwrap_or("/");
-                let (status, payload) = if path.starts_with(route) {
-                    (200, body.as_slice())
-                } else {
-                    (404, b"not found".as_slice())
-                };
+                if let (Some(tag), true) =
+                    (release_tag.as_deref(), path.ends_with("/releases/latest"))
+                {
+                    let response = format!(
+                        "HTTP/1.1 302 Found
+Location: http://{address}/anthropics/skills/releases/tag/{tag}
+Content-Length: 0
+Connection: close
+
+"
+                    );
+                    let _ = stream.write_all(response.as_bytes());
+                    return;
+                }
+                let (status, payload) =
+                    if path.starts_with(route) || path.contains("/releases/tag/") {
+                        (200, body.as_slice())
+                    } else {
+                        (404, b"not found".as_slice())
+                    };
                 let response = format!(
-                    "HTTP/1.1 {status} Test\r\nContent-Type: application/zip\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                    "HTTP/1.1 {status} Test
+Content-Type: application/zip
+Content-Length: {}
+Connection: close
+
+",
                     payload.len()
                 );
                 let _ = stream.write_all(response.as_bytes());
@@ -218,5 +252,51 @@ async fn git_source_without_recorded_coordinates_reports_unavailable() {
         check_state(&facade, skill_id).await,
         SourceState::SourceUnavailable,
         "缺坐标的 git 来源不应伪造更新检查结果"
+    );
+}
+
+#[tokio::test]
+async fn remote_check_reports_the_upstream_release_tag_as_source_version() {
+    // AR-021：检查结论附带来源版本（release/tag 名），作为版本模型的
+    // “来源版本”一环；抓取与内容哈希对比互不影响。
+    let base = archive_server_with_release_tag(
+        "/anthropics/skills/archive/refs/heads/main.zip",
+        repo_zip(vec![(
+            "skills-main/pdf/SKILL.md".into(),
+            b"# Changed upstream
+"
+            .to_vec(),
+        )]),
+        Some("v2.0.0"),
+    );
+    let workspace = tempfile::tempdir().expect("workspace");
+    let facade = facade_with_library(
+        &workspace.path().join("db.sqlite"),
+        &workspace.path().join("library"),
+    );
+    facade.set_repo_discovery_provider_for_tests(Arc::new(
+        RepoDiscoveryProvider::with_archive_base_for_tests(&base),
+    ));
+
+    let skill_id = import_skill_with_upstream(
+        &facade,
+        "# Portable
+",
+    )
+    .await;
+    let result = facade
+        .execute(AppCommand::CheckSourceUpdate(CheckSourceUpdate {
+            skill_id,
+        }))
+        .await
+        .expect("check source update");
+    let AppCommandResult::UpstreamCheckResult(check) = result else {
+        panic!("expected upstream check result");
+    };
+    assert_eq!(check.state, SourceState::UpdateAvailable);
+    assert_eq!(
+        check.upstream_label.as_deref(),
+        Some("v2.0.0"),
+        "来源版本应来自 releases 重定向的真实 tag"
     );
 }

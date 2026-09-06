@@ -33,6 +33,10 @@ pub struct UpstreamCheckResult {
     pub state: SourceState,
     pub local_version: Option<VersionId>,
     pub upstream_version: Option<VersionId>,
+    /// AR-021 来源版本：上游最新 release/tag 名（如 v1.2.3）。
+    /// 抓取失败或上游无 release 时诚实缺省 None。
+    #[serde(default)]
+    pub upstream_label: Option<String>,
 }
 
 impl UpstreamCheckResult {
@@ -42,6 +46,7 @@ impl UpstreamCheckResult {
             state,
             local_version: None,
             upstream_version: None,
+            upstream_label: None,
         }
     }
 
@@ -52,6 +57,11 @@ impl UpstreamCheckResult {
     ) -> Self {
         self.local_version = local_version;
         self.upstream_version = upstream_version;
+        self
+    }
+
+    pub fn with_upstream_label(mut self, label: Option<String>) -> Self {
+        self.upstream_label = label;
         self
     }
 }

@@ -126,17 +126,18 @@ function ResultView({
   }
 
   const withLocalChanges = result.state === "update_available_with_local_changes";
+  const upstreamLabel = result.upstream_label ?? "";
   return (
     <div>
       <p role="status">
         {withLocalChanges
           ? t("skillDetail.sourceUpdate.availableWithChanges", {
               local: result.local_version ?? "—",
-              upstream: result.upstream_version ?? "—",
+              upstream: upstreamLabel || result.upstream_version || "—",
             })
           : t("skillDetail.sourceUpdate.available", {
               local: result.local_version ?? "—",
-              upstream: result.upstream_version ?? "—",
+              upstream: upstreamLabel || result.upstream_version || "—",
             })}
       </p>
       <div className="sh-source-update__actions">

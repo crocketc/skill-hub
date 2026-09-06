@@ -2765,9 +2765,45 @@ impl LocalApplicationFacade {
         } else {
             SourceState::UpdateAvailable
         };
+        // AR-021：尽力抓取上游最新 release/tag 名作为“来源版本”；
+        // 抓取失败不影响检查结论（label 诚实缺省为 None）。
+        let upstream_label = self.fetch_upstream_release_label(skill_id);
         Ok(AppCommandResult::UpstreamCheckResult(
-            skillhub_core::UpstreamCheckResult::new(skill_id, state).with_versions(current, None),
+            skillhub_core::UpstreamCheckResult::new(skill_id, state)
+                .with_versions(current, None)
+                .with_upstream_label(upstream_label),
         ))
+    }
+
+    /// 尽力抓取上游 release/tag 名；任何失败都返回 None，不影响主流程。
+    fn fetch_upstream_release_label(&self, skill_id: skillhub_core::SkillId) -> Option<String> {
+        let upstream = self
+            .with_database("execute.check_source_update.upstream", |database| {
+                database.source_repository().upstream_for_skill(skill_id)
+            })
+            .ok()
+            .flatten()?;
+        let (owner, name) = parse_github_repo_url(&upstream.url)?;
+        let provider = Arc::clone(&*self.repo_provider());
+        std::thread::spawn(move || {
+            let runtime = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .ok()?;
+            let repo = skillhub_core::source::SkillRepo {
+                owner,
+                name,
+                branch: String::new(),
+                enabled: true,
+            };
+            runtime
+                .block_on(provider.fetch_latest_release_tag(&repo))
+                .ok()
+                .flatten()
+        })
+        .join()
+        .ok()
+        .flatten()
     }
 
     /// N8：批量来源更新检查。逐 Skill 复用单条 check_source_update（本地与

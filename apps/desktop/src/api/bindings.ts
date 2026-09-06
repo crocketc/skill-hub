@@ -1853,6 +1853,11 @@ export type UpstreamCheckResult = {
 	state: SourceState,
 	local_version: VersionId | null,
 	upstream_version: VersionId | null,
+	/**
+	 *  AR-021 来源版本：上游最新 release/tag 名（如 v1.2.3）。
+	 *  抓取失败或上游无 release 时诚实缺省 None。
+	 */
+	upstream_label?: string | null,
 };
 
 /**

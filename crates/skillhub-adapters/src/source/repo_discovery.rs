@@ -36,6 +36,8 @@ const DOWNLOAD_TIMEOUT_SECONDS: u64 = 60;
 const GITHUB_ARCHIVE_BASE: &str = "https://github.com";
 /// 本机临时下载目录中超过该时长的残留会被尽力清理
 const STALE_DOWNLOAD_MAX_AGE_SECONDS: u64 = 24 * 60 * 60;
+/// 来源版本 tag 抓取超时（AR-021）
+const RELEASE_TAG_TIMEOUT_SECONDS: u64 = 15;
 
 pub struct RepoDiscoveryProvider {
     client: Client,
@@ -75,6 +77,36 @@ impl RepoDiscoveryProvider {
 
     pub fn validate_repo(&self, repo: &SkillRepo) -> Result<()> {
         validate_repo_ref(&repo.owner, &repo.name, &repo.branch)
+    }
+
+    /// AR-021：抓取仓库最新 release/tag 名作为“来源版本”。GitHub 的
+    /// /releases/latest 会 302 到 /releases/tag/<tag>，从最终 URL 提取；
+    /// 无 release（404）或无跳转时诚实返回 None。15 秒超时。
+    pub async fn fetch_latest_release_tag(&self, repo: &SkillRepo) -> Result<Option<String>> {
+        let url = format!(
+            "{}/{}/{}/releases/latest",
+            self.archive_base, repo.owner, repo.name
+        );
+        if self.archive_base == GITHUB_ARCHIVE_BASE {
+            assert_github_archive_url(&url, &repo.owner, &repo.name)?;
+        }
+        let response = tokio::time::timeout(
+            Duration::from_secs(RELEASE_TAG_TIMEOUT_SECONDS),
+            self.client.get(&url).send(),
+        )
+        .await
+        .map_err(|_| anyhow!("RELEASE_TAG_TIMEOUT: {}/{}", repo.owner, repo.name))??;
+        if !response.status().is_success() {
+            return Ok(None);
+        }
+        let path = response.url().path();
+        if let Some(tag) = path.split("/releases/tag/").nth(1) {
+            let tag = tag.trim();
+            if !tag.is_empty() {
+                return Ok(Some(tag.to_owned()));
+            }
+        }
+        Ok(None)
     }
 
     /// 规格 §6.1：并行下载+扫描；单个仓库失败只告警；去重 + 按名称排序。
