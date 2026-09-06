@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { describeNativeError } from "../../api/nativeErrors";
 import { Button } from "../../ui/Button";
 import { DataState } from "../../ui/DataState";
 import { DeploymentResults } from "./DeploymentResults";
@@ -42,7 +43,7 @@ export function DeploymentDialog({
   useEffect(() => {
     let active = true;
     void activeFacade.listTargets().then((value) => active && setTargets(value)).catch((reason: unknown) => {
-      if (active) setError(reason instanceof Error ? reason.message : String(reason));
+      if (active) setError(describeNativeError(reason, (key, options) => String(t(key as never, options as never)), "deployment.errors.generic"));
     });
     return () => { active = false; };
   }, [activeFacade]);
@@ -57,7 +58,7 @@ export function DeploymentDialog({
       setPlan(await activeFacade.preview(selected, mode));
       setResults(undefined);
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason));
+      setError(describeNativeError(reason, (key, options) => String(t(key as never, options as never)), "deployment.errors.generic"));
     }
   };
   const commit = async () => {
@@ -68,7 +69,7 @@ export function DeploymentDialog({
       setResults(committed);
       onCommitted?.(committed);
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason));
+      setError(describeNativeError(reason, (key, options) => String(t(key as never, options as never)), "deployment.errors.generic"));
     }
   };
   const retryFailed = () => {

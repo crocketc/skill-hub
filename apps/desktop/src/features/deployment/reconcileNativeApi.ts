@@ -10,14 +10,14 @@ import {
 
 function planResult(result: AppQueryResult): ReconcilePlan {
   if (result.type !== "reconcile_plan") {
-    throw new Error("外部变化计划返回了无法识别的结果");
+    throw new Error("reconcile.plan_unexpected_result");
   }
   return result.payload;
 }
 
 function actionResult(result: AppCommandResult): ReconcileResult {
   if (result.type !== "reconcile_result") {
-    throw new Error("外部变化处理返回了无法识别的结果");
+    throw new Error("reconcile.process_unexpected_result");
   }
   return result.payload;
 }

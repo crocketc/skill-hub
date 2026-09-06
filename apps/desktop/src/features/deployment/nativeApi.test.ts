@@ -139,3 +139,29 @@ it("keeps a failed Skill preview out of the batch commit candidates", async () =
     failures: [{ skillId: "skill-docx", message: "basic check required" }],
   });
 });
+
+it("surfaces unexpected native results as stable codes, not localized sentences", async () => {
+  vi.mocked(queryApplication).mockResolvedValue({ type: "bootstrap_snapshot", payload: {} } as never);
+  const facade = createNativeDeploymentFacade({ skillId: "s", versionId: "current", runtimeName: "pdf" });
+  const error = await facade.listTargets().then(
+    () => null,
+    (reason) => reason,
+  );
+  expect(error).toBeInstanceOf(Error);
+  expect(error.message).toBe("deployment.targets_unexpected_result");
+  expect(error.message).not.toMatch(/[一-龥]/);
+});
+
+it("labels commit results with translation codes instead of hardcoded sentences", async () => {
+  vi.mocked(executeCommand)
+    .mockResolvedValueOnce({ type: "prepared_deployment", payload: { id: "prep-1" } } as never)
+    .mockResolvedValueOnce({
+      type: "deployment_summary",
+      payload: { targets: [{ logical_target_ids: ["t-1"], physical_target_id: "p-1", status: "succeeded", error_code: null }] },
+    } as never);
+  const facade = createNativeDeploymentFacade({ skillId: "s", versionId: "v1" });
+  const nativePlan = { skill_id: "s", version_id: "v1", targets: [], warnings: [] };
+  const result = await facade.commit({ skillId: "s", versionId: "v1", targets: [], native: nativePlan } as never);
+  expect(result[0].message).toBe("deployment.results.message.succeeded");
+  expect(result[0].message).not.toMatch(/[一-龥]/);
+});

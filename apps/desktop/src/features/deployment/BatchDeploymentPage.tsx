@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useSearchParams } from "react-router-dom";
+import { describeNativeError } from "../../api/nativeErrors";
 import { Button } from "../../ui/Button";
 import { DataState } from "../../ui/DataState";
 import { BatchOperationSummary, type BatchOutcome } from "../../ui/BatchOperationSummary";
@@ -42,7 +43,7 @@ export function BatchDeploymentPage({ facade, skillIds, onCommitted }: BatchDepl
   useEffect(() => {
     let active = true;
     void activeFacade.listTargets().then((value) => active && setTargets(value)).catch((reason: unknown) => {
-      if (active) setError(reason instanceof Error ? reason.message : String(reason));
+      if (active) setError(describeNativeError(reason, (key, options) => String(t(key as never, options as never)), "deployment.errors.generic"));
     });
     // 关联 Agent 展开是可选能力；facade 未提供时按钮不出现。
     void activeFacade.listProjects?.().then((value) => active && setProjects(value)).catch(() => {
@@ -81,7 +82,7 @@ export function BatchDeploymentPage({ facade, skillIds, onCommitted }: BatchDepl
       setPreview(await activeFacade.preview(selectedSkillIds, selected, mode));
       setResults(undefined);
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason));
+      setError(describeNativeError(reason, (key, options) => String(t(key as never, options as never)), "deployment.errors.generic"));
     }
   };
   const commit = async () => {
@@ -93,7 +94,7 @@ export function BatchDeploymentPage({ facade, skillIds, onCommitted }: BatchDepl
       setResults(committed);
       onCommitted?.(committed);
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason));
+      setError(describeNativeError(reason, (key, options) => String(t(key as never, options as never)), "deployment.errors.generic"));
     } finally {
       setCommitting(false);
     }

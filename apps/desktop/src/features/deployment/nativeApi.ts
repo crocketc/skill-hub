@@ -26,28 +26,28 @@ type NativeDeploymentContext = {
 
 function targetsResult(result: AppQueryResult): NativeDeploymentTarget[] {
   if (result.type !== "deployment_targets") {
-    throw new Error("部署目标查询返回了无法识别的结果");
+    throw new Error("deployment.targets_unexpected_result");
   }
   return result.payload;
 }
 
 function planResult(result: AppQueryResult): NativeDeploymentPlan {
   if (result.type !== "deployment_plan") {
-    throw new Error("部署预览返回了无法识别的结果");
+    throw new Error("deployment.plan_unexpected_result");
   }
   return result.payload;
 }
 
 function preparedResult(result: AppCommandResult) {
   if (result.type !== "prepared_deployment") {
-    throw new Error("部署准备返回了无法识别的结果");
+    throw new Error("deployment.prepare_unexpected_result");
   }
   return result.payload;
 }
 
 function summaryResult(result: AppCommandResult) {
   if (result.type !== "deployment_summary") {
-    throw new Error("部署提交返回了无法识别的结果");
+    throw new Error("deployment.commit_unexpected_result");
   }
   return result.payload;
 }
@@ -100,7 +100,10 @@ function toNativeMode(mode: DeploymentMode | undefined): DeploymentMode | null {
 
 function resultMessage(errorCode: string | null, status: "succeeded" | "failed"): string {
   if (errorCode) return errorCode;
-  return status === "succeeded" ? "部署成功" : "部署失败";
+  // i18n 键而非句子：页面负责翻译（deployment.results.message.*）。
+  return status === "succeeded"
+    ? "deployment.results.message.succeeded"
+    : "deployment.results.message.failed";
 }
 
 export function createNativeDeploymentFacade(context: NativeDeploymentContext): DeploymentFacade {
@@ -116,10 +119,10 @@ export function createNativeDeploymentFacade(context: NativeDeploymentContext): 
       let versionId = context.versionId;
       if (!runtimeName || versionId === "current") {
         const skill = await queryApplication({ type: "get_skill", payload: { skill_id: context.skillId } });
-        if (skill.type !== "skill") throw new Error("无法读取 Skill 的运行时名称");
+        if (skill.type !== "skill") throw new Error("deployment.runtime_name_unavailable");
         runtimeName ??= skill.payload.runtime_name;
         if (versionId === "current") {
-          if (!skill.payload.current_version) throw new Error("该 Skill 尚无可部署版本");
+          if (!skill.payload.current_version) throw new Error("deployment.no_current_version");
           versionId = skill.payload.current_version;
         }
       }
@@ -140,7 +143,7 @@ export function createNativeDeploymentFacade(context: NativeDeploymentContext): 
 
     async commit(plan) {
       const nativePlan = plan.native;
-      if (!nativePlan) throw new Error("部署预览数据已失效，请重新预览");
+      if (!nativePlan) throw new Error("deployment.plan_stale");
       const prepared = preparedResult(await executeCommand({
         type: "prepare_deployment",
         payload: { plan: nativePlan },

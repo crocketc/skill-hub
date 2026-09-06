@@ -11,7 +11,7 @@ export function DeploymentResults({ results }: { results: DeploymentResult[] }) 
           <li className="sh-workflow-list__item" data-testid="deployment-result" key={`${result.skillId ?? "single"}:${result.targetId}`}>
             <div>
               <strong>{result.skillId ? `${result.skillId} · ${result.label}` : result.label}</strong>
-              <p>{result.message}</p>
+              <p>{t(result.message, { defaultValue: result.message })}</p>
             </div>
             <span className={`sh-status sh-status--${result.status}`}>{t(`deployment.results.status.${result.status}`)}</span>
           </li>
