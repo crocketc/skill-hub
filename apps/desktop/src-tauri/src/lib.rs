@@ -263,7 +263,7 @@ pub fn run_with_facade(facade: Arc<LocalApplicationFacade>) -> tauri::Result<()>
                 facade.set_application_update_installer(Arc::new(
                     updater::TauriUpdateInstaller::for_app(app.handle().clone()),
                 ));
-                register_external_url_opener(&facade, Arc::new(SystemExternalUrlOpener::default()));
+                register_external_url_opener(&facade, Arc::new(SystemExternalUrlOpener));
                 Ok(())
             }
         })
@@ -686,7 +686,7 @@ mod path_grant_tests {
         let bridge = CommandBridge::new(facade.clone()).with_local(facade.clone());
         let picked = dir.path().join("never-registered");
         let canonical =
-            std::fs::canonicalize(&picked.parent().expect("parent")).expect("canonicalize parent");
+            std::fs::canonicalize(picked.parent().expect("parent")).expect("canonicalize parent");
         let candidate = canonical
             .join("never-registered")
             .to_string_lossy()

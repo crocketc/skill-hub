@@ -91,7 +91,7 @@ impl SkillsShProvider {
             items: payload
                 .skills
                 .into_iter()
-                .filter_map(|item| map_api_skill(item))
+                .filter_map(map_api_skill)
                 .collect(),
             query: payload.query,
             count: payload.count,

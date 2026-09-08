@@ -20,8 +20,8 @@ use skillhub_adapters::import::SkillDetector;
 use skillhub_adapters::scanner::ScanService;
 use skillhub_adapters::security::BasicScanner;
 use skillhub_adapters::source::{
-    agents_lock_path, cleanup_stale_downloads, read_agents_lock, stale_download_retention,
-    RepoDiscoveryProvider, SkillsShProvider,
+    cleanup_stale_downloads, read_agents_lock, stale_download_retention, RepoDiscoveryProvider,
+    SkillsShProvider,
 };
 use skillhub_core::api::{
     ApplySourceUpdate, BasicCheckResult, CheckSourceUpdate, CheckSourceUpdates, CreateCombination,
@@ -56,9 +56,9 @@ use skillhub_core::llm::translation::TranslationRecord;
 use skillhub_core::llm::LlmTaskRunner;
 use skillhub_core::source::{SourceDescriptor, SourceLocator, SourceState, UpdateDecision};
 use skillhub_core::{
-    physical_id_for_path, AllowedRoot, AppCommand, AppCommandResult, AppError, AppQuery,
-    AppQueryResult, AppResult, ApplicationFacade, DeploymentMode, ErrorCode, OperationId,
-    PathPolicy, RecoveryAction, ResolvedPathGrant, Severity, TargetChange,
+    physical_id_for_path, symlink_physical_id_for_path, AllowedRoot, AppCommand, AppCommandResult,
+    AppError, AppQuery, AppQueryResult, AppResult, ApplicationFacade, DeploymentMode, ErrorCode,
+    OperationId, PathPolicy, RecoveryAction, ResolvedPathGrant, Severity, TargetChange,
     UpdateSignaturePublicKey,
 };
 use skillhub_storage::backup::{BackupService, RestoreService, RetentionService};
@@ -266,7 +266,17 @@ impl LocalDeploymentBackend {
                 .with_action(RecoveryAction::InspectTarget));
         }
         let destination_path = target_root.join(&deployment.runtime_name);
-        let target_identity = physical_id_for_path(&destination_path).ok_or_else(|| {
+        // Symbolic-link deployments pin the proof to the link itself, so the
+        // reconstruction must use the same identity the adapters captured at
+        // apply time (the central source may have been replaced meanwhile).
+        let identity_for_mode = |path: &std::path::Path| {
+            if deployment.mode == DeploymentMode::SymbolicLink {
+                symlink_physical_id_for_path(path)
+            } else {
+                physical_id_for_path(path)
+            }
+        };
+        let target_identity = identity_for_mode(&destination_path).ok_or_else(|| {
             AppError::new(ErrorCode::OperationConflict, Severity::Error)
                 .with_param("detail", "deployment target identity is unavailable")
                 .with_action(RecoveryAction::InspectTarget)
@@ -2805,9 +2815,7 @@ impl LocalApplicationFacade {
     async fn check_source_updates(&self, request: CheckSourceUpdates) -> AppResult<AppQueryResult> {
         let mut outcomes = Vec::with_capacity(request.skill_ids.len());
         for skill_id in request.skill_ids {
-            let state = match self.check_source_update(CheckSourceUpdate {
-                skill_id: skill_id.clone(),
-            }) {
+            let state = match self.check_source_update(CheckSourceUpdate { skill_id }) {
                 Ok(AppCommandResult::UpstreamCheckResult(check)) => check.state,
                 _ => SourceState::SourceUnavailable,
             };

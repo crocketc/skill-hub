@@ -4417,7 +4417,7 @@ async fn uninstall_backup_without_library_root_aborts_before_undeploy() {
     let AppQueryResult::Deployments(listed) = listed else {
         panic!("expected deployments");
     };
-    assert_eq!(listed[0].managed, true);
+    assert!(listed[0].managed);
     assert_eq!(listed[0].state, DeploymentState::Deployed);
 }
 

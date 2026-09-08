@@ -62,7 +62,9 @@ pub(crate) fn assert_github_archive_url(url: &str, owner: &str, name: &str) -> R
         || parsed.host_str() != Some("github.com")
         || !parsed.path().starts_with(&expected_prefix)
     {
-        return Err(anyhow!("INVALID_REPO_REF: URL 落点被改写"));
+        return Err(anyhow!(
+            "INVALID_REPO_REF: archive URL landing was rewritten"
+        ));
     }
     Ok(())
 }
