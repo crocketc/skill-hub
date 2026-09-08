@@ -103,9 +103,8 @@
   },
   "importWorkflow": {
     "errors": {
-      "generic": "The import operation failed ({{code}}). Please retry; note the error code if it persists.",
-      "remoteNotWired": "The source was recognized as remote, but remote download import is not wired yet; download it to a local folder via repository discovery first.",
-      "noDefaultAction": "The local import analysis provided no committable default action; choose a handling per candidate."
+      "emptySource": "No import source is available.",
+      "unknown": "The import step could not be completed."
     },
     "eyebrow": "Safe import workflow",
     "title": "Import Skills",
@@ -132,10 +131,6 @@
       "removeSource": "Remove source {{source}}"
     },
     "cancelled": "Acquisition was cancelled. Your source is still here.",
-    "errors": {
-      "emptySource": "No import source is available.",
-      "unknown": "The import step could not be completed."
-    },
     "source": {
       "eyebrow": "Import source",
       "title": "Where should SkillHub look?",
@@ -262,11 +257,11 @@
         "failed": "Failed"
       }
     },
-      "commitMessages": {
-        "imported": "Imported",
-        "skipped": "Skipped",
-        "noDetail": "Import was not committed (the native service returned no detail)"
-      },
+    "commitMessages": {
+      "imported": "Imported",
+      "skipped": "Skipped",
+      "noDetail": "Import was not committed (the native service returned no detail)"
+    },
     "tracker": {
       "label": "Batch import Skills"
     },
@@ -328,7 +323,10 @@
       "installAction": "Install & import",
       "installing": "Downloading…",
       "installFailed": "Install failed ({{code}}). Please try again later.",
-      "installUnavailable": "The GitHub source of this hit could not be recognized; install is disabled."
+      "installUnavailable": "The GitHub source of this hit could not be recognized; install is disabled.",
+      "alreadyImported": "A skill with this name is already in the library",
+      "searchingStatus": "Searching…",
+      "empty": "No matching results."
     },
     "workbench": {
       "title": "Local discovery workbench",
@@ -347,7 +345,11 @@
       "relatedHint": "Target directories that exist, are readable/writable, and are linked to a client",
       "conflictHint": "Target directories that exist but are currently unavailable (unreadable, unwritable, or unlinked)",
       "suspectedHint": "Skills with identical content fingerprints found in different locations, likely duplicates",
-      "unreadableHint": "Paths that failed to read or were skipped during this scan"
+      "unreadableHint": "Paths that failed to read or were skipped during this scan",
+      "bannerHeading": "{{count}} candidates found to import",
+      "bannerHint": "Candidates enter the existing source selection and conflict flow; nothing is written to the library automatically.",
+      "reviewAction": "Review and import",
+      "scanningStatus": "Scanning local directories…"
     },
     "search": {
       "label": "Search skills.sh",
@@ -473,8 +475,9 @@
     "limits": {
       "eyebrow": "Directory management",
       "title": "Management boundaries",
-      "relocateUnsupported": "Relocation needs native contract support and is not available yet.",
-      "ignoreUnsupported": "Agent-level ignore needs native contract support and is not available yet."
+      "relocateUnsupported": "Discovered agent directories come from the discovery snapshot; in-app relocation is not available yet.",
+      "ignoreUnsupported": "Agent-level ignore needs native contract support and is not available yet.",
+      "relocateViaEdit": "Relocate the directory by editing this custom Agent and picking a new one; the new directory is registered as an allowed path."
     },
     "launchDeployment": "Deploy skills"
   },
@@ -522,6 +525,19 @@
     },
     "readOnly": "Read-only facts",
     "detail": {
+      "managedDeployments": {
+        "eyebrow": "Managed deployments",
+        "title": "Managed skill copies in this project directory",
+        "description": "After detaching, files stay in place and SkillHub no longer tracks external changes of that copy.",
+        "empty": "This project directory has no managed skill copies.",
+        "unavailable": "Unable to read deployment records.",
+        "detach": "Detach management",
+        "confirm": "Confirm detach",
+        "cancel": "Cancel",
+        "confirmBody": "Detach management of {{skill}} ({{path}})? Files stay in place; future changes are no longer tracked.",
+        "detached": "Management detached: {{skill}}.",
+        "failed": "Failed to detach management ({{code}}). Please retry; if it persists, note the error code."
+      },
       "eyebrow": "Project detail",
       "agentAssociations": {
         "eyebrow": "Associated targets",
@@ -693,7 +709,8 @@
     "restoreNoSkills": "No restorable skills",
     "restoreAndContinue": "Restore and continue",
     "restoreRunning": "Restoring {{count}} skill(s)… ({{seconds}}s elapsed, will continue automatically)",
-    "restoreBack": "Back"
+    "restoreBack": "Back",
+    "restoreConflictsHeading": "Restore conflicts"
   },
   "theme": {
     "choiceLabel": "Theme colors",
@@ -785,7 +802,10 @@
       "deployTargetBanner": "Deployment target preselected: {{label}}. Select Skills and choose Unified deploy to target it automatically.",
       "card": {
         "tags": "Tags",
-        "deploymentCount": "Deployed to {{count}} agents"
+        "deploymentCount": "Deployed to {{count}} agents",
+        "version": "Current version {{version}}",
+        "upgradeAvailable": "Upgrade available",
+        "highRisk": "{{count}} high-risk findings"
       },
       "sourceUpdates": {
         "title": "Source update check results",
@@ -795,6 +815,11 @@
         "hint": "Apply upgrades one by one from each Skill detail page; nothing is overwritten automatically here. Sources may be unavailable when the network is disabled or the origin record is missing.",
         "authRequired": "Authentication required ({{count}})",
         "noUpstream": "No upstream source ({{count}})"
+      },
+      "summary": {
+        "label": "Library summary",
+        "total": "{{count}} skills match the current filters",
+        "tags": "{{count}} tags available"
       }
     },
     "drawer": {
@@ -1024,6 +1049,8 @@
       "confirmDelete": "Confirm deletion",
       "export": "Export combination {{name}}",
       "exported": "Export created: {{path}}",
+      "deploy": "Deploy combination {{name}}",
+      "deployHint": "Members are preselected in the batch deployment page; writes still require per-target preflight and confirmation.",
       "empty": "No combinations yet. Create one to bundle frequently used skills for export.",
       "noMembers": "No members",
       "loading": "Loading combinations…"
@@ -1034,8 +1061,8 @@
       "delete": "Delete Skill"
     },
     "versions": {
-  "exportSkill": "Export this skill (standard export)",
-  "rename": "Rename version",
+      "exportSkill": "Export this skill (standard export)",
+      "rename": "Rename version",
       "renameAria": "Rename version {{version}}",
       "labelLabel": "Version name",
       "saveName": "Save name",
@@ -1227,9 +1254,9 @@
   },
   "deployment": {
     "eyebrow": "Safe deployment",
-      "errors": {
-        "generic": "The deployment operation failed ({{code}}). Please retry; note the error code if it persists."
-      },
+    "errors": {
+      "generic": "The deployment operation failed ({{code}}). Please retry; note the error code if it persists."
+    },
     "heading": "Preview before changing Agent targets",
     "description": "Select one or more targets, inspect the physical plan, then commit explicitly.",
     "states": {
@@ -1256,7 +1283,8 @@
       "previewFailed": "A deployment preview could not be prepared for {{skillId}}: {{message}}",
       "expandAgents": "Expand linked agents ({{count}})",
       "expandAgentsHint": "Adds the agents associated with the selected projects to the deployment selection.",
-      "nonAtomicNotice": "The batch commits per skill and per target and is not atomic: partial success does not roll back completed parts."
+      "nonAtomicNotice": "The batch commits per skill and per target and is not atomic: partial success does not roll back completed parts.",
+      "committing": "Deploying, please wait; the batch is not atomic, per-target results appear once finished."
     },
     "mode": {
       "label": "Deployment mode",
@@ -1280,9 +1308,9 @@
   },
   "security": {
     "eyebrow": "Security checks",
-  "errors": {
-    "generic": "The security operation failed ({{code}}). Please retry; note the error code if it persists."
-  },
+    "errors": {
+      "generic": "The security operation failed ({{code}}). Please retry; note the error code if it persists."
+    },
     "heading": "Review findings before deployment",
     "description": "Basic checks and optional LLM checks are separate facts and can be handled independently.",
     "states": {
@@ -1673,7 +1701,7 @@
     }
   },
   "dataProtection": {
-  "recoveryPointNote": "Recovery points: before a database migration the app keeps an automatic recovery copy and cleans it up after success — no manual management needed. To relocate the library after initialization, use the backup → import-at-new-location migration flow.",
+    "recoveryPointNote": "Recovery points: before a database migration the app keeps an automatic recovery copy and cleans it up after success — no manual management needed. To relocate the library after initialization, use the backup → import-at-new-location migration flow.",
     "openLibrary": {
       "heading": "Library folder",
       "description": "Inspect the raw library folder contents in your file manager (read-only; nothing is modified).",
@@ -1720,7 +1748,8 @@
       "include": "Include and mark",
       "commit": "Create export",
       "result": "Export created at {{path}}"
-    }
+    },
+    "working": "Working, please wait…"
   },
   "navigation": {
     "agents": "Agents",

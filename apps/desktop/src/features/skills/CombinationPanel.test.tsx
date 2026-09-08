@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { I18nextProvider } from "react-i18next";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { MemoryRouter, useLocation } from "react-router-dom";
 import { createSkillHubI18n } from "../../i18n";
 import { CombinationPanel } from "./CombinationPanel";
 import type { CombinationResult } from "../../api/bindings";
@@ -24,16 +25,25 @@ function createFacade(overrides: Record<string, unknown> = {}) {
 async function renderPanel(facade: ReturnType<typeof createFacade>) {
   const i18n = await createSkillHubI18n(["zh-CN"]);
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(
+  let location: { pathname: string; search: string } | undefined;
+  function LocationProbe() {
+    location = useLocation();
+    return null;
+  }
+  const result = render(
     <QueryClientProvider client={queryClient}>
       <I18nextProvider i18n={i18n}>
-        <CombinationPanel
-          facade={facade as never}
-          skillNames={{ "skill-1": "PDF", "skill-2": "Notes" }}
-        />
+        <MemoryRouter>
+          <CombinationPanel
+            facade={facade as never}
+            skillNames={{ "skill-1": "PDF", "skill-2": "Notes" }}
+          />
+          <LocationProbe />
+        </MemoryRouter>
       </I18nextProvider>
     </QueryClientProvider>,
   );
+  return { ...result, getLocation: () => location };
 }
 
 describe("CombinationPanel", () => {
@@ -65,10 +75,21 @@ describe("CombinationPanel", () => {
 
   it("exports a combination through the standard export and shows the result path", async () => {
     const facade = createFacade();
-    await renderPanel(facade);
+    const { getLocation } = await renderPanel(facade);
     await screen.findByText("Writing stack");
     fireEvent.click(screen.getByRole("button", { name: "导出组合 Writing stack" }));
     expect(await screen.findByText(/skillhub-export-1.zip/)).toBeVisible();
     expect(facade.exportCombination).toHaveBeenCalledWith("Writing stack");
+    expect(getLocation()?.pathname).toBe("/");
+  });
+
+  it("opens the batch deployment page with the members preselected", async () => {
+    const facade = createFacade();
+    const { getLocation } = await renderPanel(facade);
+    await screen.findByText("Writing stack");
+    fireEvent.click(screen.getByRole("button", { name: "部署组合 Writing stack" }));
+    await waitFor(() => expect(getLocation()?.pathname).toBe("/deploy"));
+    const params = new URLSearchParams(getLocation()?.search);
+    expect(params.getAll("skill")).toEqual(["skill-1", "skill-2"]);
   });
 });

@@ -9,6 +9,7 @@ import { ProjectDetailPage } from "../features/projects/ProjectDetailPage";
 import { ProjectListPage } from "../features/projects/ProjectListPage";
 import { nativeAgentFacade } from "../features/agents/nativeApi";
 import { nativeProjectFacade } from "../features/projects/nativeApi";
+import { nativeRemovalFacade } from "../features/removal/nativeApi";
 import { DeploymentDialog } from "../features/deployment/DeploymentDialog";
 import { BatchDeploymentPage } from "../features/deployment/BatchDeploymentPage";
 import { SecurityResults } from "../features/security/SecurityResults";
@@ -41,7 +42,7 @@ import {
   nativeSkillLibraryFacade,
 } from "../features/skills/nativeApi";
 import { CombinationManagerPage } from "../features/skills/CombinationManagerPage";
-import { skillLibraryKeys } from "../features/skills/api";
+import { DEFAULT_SKILL_QUERY, skillLibraryKeys } from "../features/skills/api";
 import { type ImportResult } from "../features/import/api";
 import { skillHubI18n } from "../i18n";
 import "../features/markdown/markdown.css";
@@ -81,7 +82,14 @@ function AgentDetailRoute() {
 
 function ProjectDetailRoute() {
   const { projectKey } = useParams();
-  return <ProjectDetailPage facade={nativeProjectFacade} projectId={projectKey} />;
+  return <ProjectDetailPage
+    facade={nativeProjectFacade}
+    managedDeploymentOps={{
+      list: () => nativeSkillLibraryFacade.listDeployments!(),
+      detach: (deploymentId) => nativeRemovalFacade.detachManagement(deploymentId),
+    }}
+    projectId={projectKey}
+  />;
 }
 
 function ProjectListRoute() {
@@ -151,10 +159,21 @@ function DiscoveryRoute({ view }: { view?: DiscoveryModuleView }) {
     }
   };
 
+  // C2 收口：复用既有 listSkills 查询提供库内显示名，驱动在线结果"已在库"标记。
+  const loadImportedNames = async () => {
+    const page = await nativeSkillLibraryFacade.listSkills({
+      ...DEFAULT_SKILL_QUERY,
+      page: 1,
+      pageSize: 100,
+    });
+    return page.items.map((item) => item.name);
+  };
+
   return (
     <DiscoveryPage
       view={view}
       discoveryFacade={desktopDiscoveryFacade}
+      importedNames={loadImportedNames}
       initialSources={state?.initialSources}
       initialSourceText={state?.initialSourceText}
       onImportComplete={handleImportComplete}

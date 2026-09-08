@@ -39,6 +39,7 @@ export function DeploymentDialog({
   const [plan, setPlan] = useState<DeploymentPlan>();
   const [results, setResults] = useState<DeploymentResult[]>();
   const [error, setError] = useState<string>();
+  const [committing, setCommitting] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -64,12 +65,15 @@ export function DeploymentDialog({
   const commit = async () => {
     if (!plan) return;
     setError(undefined);
+    setCommitting(true);
     try {
       const committed = await activeFacade.commit(plan);
       setResults(committed);
       onCommitted?.(committed);
     } catch (reason) {
       setError(describeNativeError(reason, (key, options) => String(t(key as never, options as never)), "deployment.errors.generic"));
+    } finally {
+      setCommitting(false);
     }
   };
   const retryFailed = () => {
@@ -149,7 +153,7 @@ export function DeploymentDialog({
               <h2 id="deployment-plan-heading">{t("deployment.plan.heading")}</h2>
               <p>{t("deployment.plan.description")}</p>
             </div>
-            <Button disabled={Boolean(results)} onClick={() => void commit()} variant="primary">{t("deployment.commit")}</Button>
+            <Button disabled={Boolean(results) || committing} loading={committing} onClick={() => void commit()} variant="primary">{t("deployment.commit")}</Button>
           </div>
           {plan.warnings.length > 0 ? <ul className="sh-notice-list">{plan.warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul> : null}
           <ul className="sh-workflow-list">

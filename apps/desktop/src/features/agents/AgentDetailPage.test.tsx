@@ -52,15 +52,21 @@ it("states contract boundaries instead of showing fake management actions", asyn
   await renderDetailPage(facadeWith(agentFixture()));
 
   expect(await screen.findByText("Agent 级忽略需要原生契约支持，暂未提供。")).toBeVisible();
-  expect(screen.queryByText(/重新定位需要原生契约支持/)).not.toBeInTheDocument();
+  expect(
+    screen.getByText("识别到的内置 Agent 目录来自发现快照，应用内重新定位暂未提供。"),
+  ).toBeVisible();
   expect(screen.queryByRole("button", { name: /重新定位/ })).not.toBeInTheDocument();
   expect(screen.queryByRole("button", { name: /忽略/ })).not.toBeInTheDocument();
 });
 
-it("marks the relocation boundary on custom agent directories", async () => {
+it("points custom agent relocation at the edit form instead of a missing contract", async () => {
   await renderDetailPage(facadeWith(customAgentFixture()));
 
-  expect(await screen.findByText("重新定位需要原生契约支持，暂未提供。")).toBeVisible();
+  expect(
+    await screen.findByText(
+      "重新定位目录：编辑该自定义 Agent 并重新选择目录即可；新目录会注册为授权路径。",
+    ),
+  ).toBeVisible();
   expect(screen.getByText("Agent 级忽略需要原生契约支持，暂未提供。")).toBeVisible();
 });
 

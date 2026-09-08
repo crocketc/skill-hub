@@ -103,9 +103,8 @@
   },
   "importWorkflow": {
     "errors": {
-      "generic": "导入操作失败（{{code}}）。请重试；若持续出现请记录该错误码。",
-      "remoteNotWired": "已识别为远程来源，但当前版本尚未接入远程下载导入；请先用仓库发现下载到本机目录。",
-      "noDefaultAction": "本机导入分析没有提供可提交的默认操作，请逐条选择处理方式。"
+      "emptySource": "没有可用的导入来源。",
+      "unknown": "导入步骤未能完成。"
     },
     "eyebrow": "安全导入流程",
     "title": "导入 Skill",
@@ -132,10 +131,6 @@
       "removeSource": "移除来源 {{source}}"
     },
     "cancelled": "获取已取消，来源内容仍然保留。",
-    "errors": {
-      "emptySource": "没有可用的导入来源。",
-      "unknown": "导入步骤未能完成。"
-    },
     "source": {
       "eyebrow": "导入来源",
       "title": "从哪里查找 Skill？",
@@ -262,11 +257,11 @@
         "failed": "失败"
       }
     },
-      "commitMessages": {
-        "imported": "已导入",
-        "skipped": "已跳过",
-        "noDetail": "导入未提交（本机服务未返回详细原因）"
-      },
+    "commitMessages": {
+      "imported": "已导入",
+      "skipped": "已跳过",
+      "noDetail": "导入未提交（本机服务未返回详细原因）"
+    },
     "tracker": {
       "label": "批量导入 Skill"
     },
@@ -328,7 +323,10 @@
       "installAction": "安装导入",
       "installing": "下载中…",
       "installFailed": "安装失败（{{code}}），请稍后重试。",
-      "installUnavailable": "无法识别该结果的 GitHub 来源，安装已禁用。"
+      "installUnavailable": "无法识别该结果的 GitHub 来源，安装已禁用。",
+      "alreadyImported": "同名 Skill 已在库中",
+      "searchingStatus": "正在搜索…",
+      "empty": "没有匹配的结果。"
     },
     "workbench": {
       "title": "本机发现工作台",
@@ -347,7 +345,11 @@
       "relatedHint": "目录存在、可读写且已与客户端建立关联的目标目录数量",
       "conflictHint": "目录存在但当前不可用（不可读、不可写或已断开关联）的目标数量",
       "suspectedHint": "不同位置发现了内容指纹相同的 Skill，可能是重复副本",
-      "unreadableHint": "本次扫描中读取失败或被跳过的路径数量"
+      "unreadableHint": "本次扫描中读取失败或被跳过的路径数量",
+      "bannerHeading": "发现 {{count}} 个待导入候选",
+      "bannerHint": "候选将进入既有的来源选择与冲突处理流程，不会自动写入集中库。",
+      "reviewAction": "审查并导入",
+      "scanningStatus": "正在扫描本机目录…"
     },
     "search": {
       "label": "搜索 skills.sh",
@@ -473,8 +475,9 @@
     "limits": {
       "eyebrow": "目录管理",
       "title": "管理边界",
-      "relocateUnsupported": "重新定位需要原生契约支持，暂未提供。",
-      "ignoreUnsupported": "Agent 级忽略需要原生契约支持，暂未提供。"
+      "relocateUnsupported": "识别到的内置 Agent 目录来自发现快照，应用内重新定位暂未提供。",
+      "ignoreUnsupported": "Agent 级忽略需要原生契约支持，暂未提供。",
+      "relocateViaEdit": "重新定位目录：编辑该自定义 Agent 并重新选择目录即可；新目录会注册为授权路径。"
     },
     "launchDeployment": "发起部署"
   },
@@ -522,6 +525,19 @@
     },
     "readOnly": "只读事实",
     "detail": {
+      "managedDeployments": {
+        "eyebrow": "受管部署",
+        "title": "本项目目录中的受管 Skill 副本",
+        "description": "解除管理后文件保留在原位，SkillHub 不再跟踪该副本的外部变化。",
+        "empty": "本项目目录没有受管的 Skill 副本。",
+        "unavailable": "无法读取部署记录。",
+        "detach": "解除管理",
+        "confirm": "确认解除管理",
+        "cancel": "取消",
+        "confirmBody": "确认解除对 {{skill}}（{{path}}）的管理？文件将保留，此后变化不再被跟踪。",
+        "detached": "已解除管理：{{skill}}。",
+        "failed": "解除管理失败（{{code}}）。请重试；若持续出现请记录该错误码。"
+      },
       "eyebrow": "项目详情",
       "agentAssociations": {
         "eyebrow": "关联目标",
@@ -693,7 +709,8 @@
     "restoreNoSkills": "没有可恢复的技能",
     "restoreAndContinue": "恢复并继续",
     "restoreRunning": "正在恢复 {{count}} 个 Skill…（已用时 {{seconds}} 秒，完成后自动继续）",
-    "restoreBack": "返回"
+    "restoreBack": "返回",
+    "restoreConflictsHeading": "恢复冲突处理"
   },
   "theme": {
     "choiceLabel": "主题颜色",
@@ -785,7 +802,10 @@
       "deployTargetBanner": "部署目标已预选：{{label}}。勾选 Skill 后点“统一部署”，将自动选中该目标。",
       "card": {
         "tags": "标签",
-        "deploymentCount": "部署 {{count}} 个 Agent"
+        "deploymentCount": "部署 {{count}} 个 Agent",
+        "version": "当前版本 {{version}}",
+        "upgradeAvailable": "有可升级版本",
+        "highRisk": "{{count}} 项高风险发现"
       },
       "sourceUpdates": {
         "title": "来源更新检查结果",
@@ -795,6 +815,11 @@
         "hint": "升级需逐个进入 Skill 详情确认应用，此处不会自动覆盖本地内容；来源不可用可能因网络关闭或来源记录缺失。",
         "authRequired": "需要认证（{{count}}）",
         "noUpstream": "无上游来源（{{count}}）"
+      },
+      "summary": {
+        "label": "技能库统计",
+        "total": "当前筛选共 {{count}} 个 Skill",
+        "tags": "可选标签 {{count}} 个"
       }
     },
     "drawer": {
@@ -1024,6 +1049,8 @@
       "confirmDelete": "确认删除",
       "export": "导出组合 {{name}}",
       "exported": "导出已创建：{{path}}",
+      "deploy": "部署组合 {{name}}",
+      "deployHint": "成员将预选进入批量部署页；仍需逐目标预检并确认后才会写入。",
       "empty": "暂无组合。新建组合可把常用 Skill 打包导出。",
       "noMembers": "无成员",
       "loading": "正在读取组合…"
@@ -1034,8 +1061,8 @@
       "delete": "删除 Skill"
     },
     "versions": {
-  "exportSkill": "导出此 Skill（标准导出）",
-  "rename": "命名版本",
+      "exportSkill": "导出此 Skill（标准导出）",
+      "rename": "命名版本",
       "renameAria": "命名版本 {{version}}",
       "labelLabel": "版本名称",
       "saveName": "保存名称",
@@ -1227,9 +1254,9 @@
   },
   "deployment": {
     "eyebrow": "安全部署",
-      "errors": {
-        "generic": "部署操作失败（{{code}}）。请重试；若持续出现请记录该错误码。"
-      },
+    "errors": {
+      "generic": "部署操作失败（{{code}}）。请重试；若持续出现请记录该错误码。"
+    },
     "heading": "先预览，再修改 Agent 目标",
     "description": "选择一个或多个目标，检查物理计划后再显式提交。",
     "states": {
@@ -1256,7 +1283,8 @@
       "previewFailed": "{{skillId}} 无法生成部署预览：{{message}}",
       "expandAgents": "展开关联 Agent（{{count}} 个）",
       "expandAgentsHint": "把所选项目已关联的 Agent 目标一并加入部署选择。",
-      "nonAtomicNotice": "批次将逐个 Skill、逐个目标提交，不是原子操作：部分成功不会自动回滚已成功的部分。"
+      "nonAtomicNotice": "批次将逐个 Skill、逐个目标提交，不是原子操作：部分成功不会自动回滚已成功的部分。",
+      "committing": "正在部署，请稍候；批次非原子，逐项结果将在完成后展示。"
     },
     "mode": {
       "label": "部署方式",
@@ -1280,9 +1308,9 @@
   },
   "security": {
     "eyebrow": "安全检查",
-  "errors": {
-    "generic": "安全操作失败（{{code}}）。请重试；若持续出现请记录该错误码。"
-  },
+    "errors": {
+      "generic": "安全操作失败（{{code}}）。请重试；若持续出现请记录该错误码。"
+    },
     "heading": "部署前处理安全问题",
     "description": "基础检查与可选的 LLM 检查是彼此独立的事实，可以分别处理。",
     "states": {
@@ -1673,7 +1701,7 @@
     }
   },
   "dataProtection": {
-  "recoveryPointNote": "恢复点说明：数据库迁移前应用会自动保留恢复点副本，成功后自动清理，无需手动管理。已初始化后如需更换集中库位置，请使用备份 → 新位置导入的迁移流程。",
+    "recoveryPointNote": "恢复点说明：数据库迁移前应用会自动保留恢复点副本，成功后自动清理，无需手动管理。已初始化后如需更换集中库位置，请使用备份 → 新位置导入的迁移流程。",
     "openLibrary": {
       "heading": "集中库目录",
       "description": "直接查看集中库的原始文件夹内容（只读操作，不会修改任何文件）。",
@@ -1720,7 +1748,8 @@
       "include": "包含并标记",
       "commit": "创建导出",
       "result": "导出已创建：{{path}}"
-    }
+    },
+    "working": "正在执行，请稍候…"
   },
   "navigation": {
     "agents": "Agent",

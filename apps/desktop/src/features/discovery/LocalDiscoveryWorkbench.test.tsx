@@ -193,3 +193,41 @@ it("searches skills.sh and renders the real source results", async () => {
   expect(screen.getByText("来源：skills.sh")).toBeVisible();
   expect(screen.getByText("安装次数：12")).toBeVisible();
 });
+
+it("shows a pending-import banner and review entry when unmanaged candidates exist", async () => {
+  const onReviewCandidates = vi.fn();
+  render(
+    <I18nextProvider i18n={createSkillHubI18nSync()}>
+      <LocalDiscoveryWorkbench
+        facade={{ getDiscoverySnapshot: async () => snapshot, scanTargets: async () => scanResult, searchOnlineSources: async () => searchPage([]), ...repoDiscoveryStubs }}
+        onReviewCandidates={onReviewCandidates}
+      />
+    </I18nextProvider>,
+  );
+
+  await click(await screen.findByRole("button", { name: "重新扫描" }));
+  const banner = await screen.findByRole("status");
+  expect(banner).toHaveTextContent("发现 1 个待导入候选");
+  fireEvent.click(screen.getByRole("button", { name: "审查并导入" }));
+  expect(onReviewCandidates).toHaveBeenCalledTimes(1);
+});
+
+it("announces the scanning state while a scan is running", async () => {
+  let resolveScan!: (value: ScanResult) => void;
+  const scanTargets = vi.fn(
+    () => new Promise<ScanResult>((resolve) => { resolveScan = resolve; }),
+  );
+  render(
+    <I18nextProvider i18n={createSkillHubI18nSync()}>
+      <LocalDiscoveryWorkbench
+        facade={{ getDiscoverySnapshot: async () => snapshot, scanTargets, searchOnlineSources: async () => searchPage([]), ...repoDiscoveryStubs }}
+      />
+    </I18nextProvider>,
+  );
+
+  await click(await screen.findByRole("button", { name: "重新扫描" }));
+  expect(screen.getByRole("status")).toHaveTextContent("正在扫描本机目录…");
+  resolveScan(scanResult);
+  // 扫描结束后状态播报消失，待导入横幅（同为 role=status）接管。
+  await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("发现 1 个待导入候选"));
+});

@@ -1184,6 +1184,23 @@ describe("SkillLibraryPage", () => {
     expect(facade.saveViewMode).toHaveBeenCalledWith("cards");
     // 卡片渲染了技能名
     expect(await screen.findByTestId("skill-card-skill-pdf")).toBeVisible();
+    // C1 收口：卡片事实行展示当前版本；PDF mock 有可升级版本与高风险发现
+    expect(screen.getByTestId("skill-card-skill-pdf")).toHaveTextContent(/1\.4\.0/);
+    expect(screen.getByTestId("skill-card-upgrade-skill-pdf")).toBeVisible();
+    expect(screen.getByTestId("skill-card-risk-skill-pdf")).toBeVisible();
+  });
+
+  it("shows a filter-scoped summary strip built from existing query fields", async () => {
+    const facade = createMockSkillLibraryFacade();
+    renderLibrary({ facade });
+
+    expect(await screen.findByTestId("library-summary-total")).toBeVisible();
+    expect(screen.getByTestId("library-summary-total")).toHaveTextContent(
+      /共 \d+ 个 Skill|skills match the current filters/,
+    );
+    expect(screen.getByTestId("library-summary-tags")).toHaveTextContent(
+      /标签 \d+ 个|tags available/,
+    );
   });
 
 

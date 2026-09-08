@@ -1,6 +1,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
+import { useNavigate } from "react-router-dom";
 import type { CombinationResult } from "../../api/bindings";
 import { Button } from "../../ui/Button";
 import type { SkillLibraryFacade } from "./api";
@@ -19,6 +20,7 @@ type PanelError = { message: string };
 export function CombinationPanel({ facade, skillNames }: CombinationPanelProps): JSX.Element {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const [error, setError] = useState<PanelError>();
   const [exportResult, setExportResult] = useState<string>();
   const [creatorOpen, setCreatorOpen] = useState(false);
@@ -66,6 +68,16 @@ export function CombinationPanel({ facade, skillNames }: CombinationPanelProps):
       const result = await facade.exportCombination!(combination.name);
       setExportResult(result.path);
     });
+
+  // 整体部署：复用既有批量部署页（/deploy?skill=…），组合成员预选进入；
+  // 不新增写语义——预检、目标选择与提交仍在批量部署页显式完成。
+  const deployCombination = (combination: CombinationResult) => {
+    setError(undefined);
+    setExportResult(undefined);
+    const params = new URLSearchParams();
+    for (const member of combination.members) params.append("skill", member);
+    navigate(`/deploy?${params.toString()}`);
+  };
 
   const confirmDelete = (combination: CombinationResult) =>
     run(async () => {
@@ -121,6 +133,13 @@ export function CombinationPanel({ facade, skillNames }: CombinationPanelProps):
                 <>
                   <Button size="sm" onClick={() => void exportCombination(combination)}>
                     {t("skillLibrary.combinations.export", { name: combination.name })}
+                  </Button>
+                  <Button
+                    size="sm"
+                    title={t("skillLibrary.combinations.deployHint")}
+                    onClick={() => deployCombination(combination)}
+                  >
+                    {t("skillLibrary.combinations.deploy", { name: combination.name })}
                   </Button>
                   <Button
                     size="sm"

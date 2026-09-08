@@ -100,7 +100,11 @@ export function AgentDetailPage({ agentId = "default", facade = unavailableAgent
           </div>
         </div>
         <ul>
-          {agent.status === "custom" ? <li data-testid="agent-limit-relocate">{t("agents.limits.relocateUnsupported")}</li> : null}
+          {agent.status === "custom" ? (
+            <li data-testid="agent-limit-relocate">{t("agents.limits.relocateViaEdit")}</li>
+          ) : (
+            <li data-testid="agent-limit-relocate">{t("agents.limits.relocateUnsupported")}</li>
+          )}
           <li data-testid="agent-limit-ignore">{t("agents.limits.ignoreUnsupported")}</li>
         </ul>
       </section>

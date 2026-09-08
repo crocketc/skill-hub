@@ -224,6 +224,7 @@ export function DataProtectionPage({
     <main className="sh-page sh-workflow-page">
       <header className="sh-page__header"><div><p className="sh-eyebrow">{t("dataProtection.eyebrow")}</p><h1>{t("dataProtection.heading")}</h1><p>{t("dataProtection.description")}</p></div></header>
       {error ? <p className="sh-settings-error" role="alert">{error}</p> : null}
+      {busy ? <p className="sh-settings-status" role="status">{t("dataProtection.working")}</p> : null}
       <section className="sh-workflow-card">
         <h2>{t("dataProtection.openLibrary.heading")}</h2>
         <p>{t("dataProtection.openLibrary.description")}</p>

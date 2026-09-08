@@ -1003,7 +1003,22 @@ export function SkillLibraryPage({
         </ul>
       ) : null}
       <span className="sh-skill-card__facts">
-        {t("skillLibrary.page.card.deploymentCount", { count: item.agentDeploymentCount })}
+        <span className="sh-skill-card__fact">
+          {t("skillLibrary.page.card.version", { version: item.currentVersion })}
+        </span>
+        <span className="sh-skill-card__fact">
+          {t("skillLibrary.page.card.deploymentCount", { count: item.agentDeploymentCount })}
+        </span>
+        {item.upgradeAvailable ? (
+          <span className="sh-status sh-status--warning" data-testid={`skill-card-upgrade-${item.id}`}>
+            {t("skillLibrary.page.card.upgradeAvailable")}
+          </span>
+        ) : null}
+        {item.highRiskCount > 0 ? (
+          <span className="sh-status sh-status--error" data-testid={`skill-card-risk-${item.id}`}>
+            {t("skillLibrary.page.card.highRisk", { count: item.highRiskCount })}
+          </span>
+        ) : null}
       </span>
     </article>
   );
@@ -1089,6 +1104,14 @@ export function SkillLibraryPage({
           {t("skillLibrary.page.deployTargetBanner", { label: deployTarget.label })}
         </p>
       ) : null}
+      <section aria-label={t("skillLibrary.page.summary.label")} className="sh-skill-library__summary">
+        <span data-testid="library-summary-total">
+          {t("skillLibrary.page.summary.total", { count: page.total })}
+        </span>
+        <span data-testid="library-summary-tags">
+          {t("skillLibrary.page.summary.tags", { count: page.facets.tags.length })}
+        </span>
+      </section>
       <div className="sh-skill-library__view-toggle">
         <label>
           <span className="sh-visually-hidden">{t("skillLibrary.viewMode.label")}</span>

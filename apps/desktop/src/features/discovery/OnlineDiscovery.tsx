@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { describeNativeError } from "../../api/nativeErrors";
 import { Button } from "../../ui/Button";
@@ -17,6 +17,11 @@ export interface OnlineDiscoveryProps {
   onImportDirectory: (directory: string) => void;
   /** When provided, the card renders the real skills.sh search workbench. */
   facade?: DiscoveryFacade;
+  /**
+   * C2 收口：可选地提供库内 Skill 显示名（复用既有 listSkills 查询），
+   * 用于结果卡的"已在库"标记；按名称保守比对，不声称是同一来源。
+   */
+  importedNames?: () => Promise<string[]>;
 }
 
 function sourceProvider(pageUrl: string, fallback: string | null): string {
@@ -59,7 +64,7 @@ function toRepoSkill(hit: SourceSearchHit): DiscoverableRepoSkill | null {
   };
 }
 
-export function OnlineDiscovery({ onStartImport, onImportDirectory, facade }: OnlineDiscoveryProps) {
+export function OnlineDiscovery({ onStartImport, onImportDirectory, facade, importedNames }: OnlineDiscoveryProps) {
   const { t } = useTranslation();
   const [query, setQuery] = useState("");
   const [searching, setSearching] = useState(false);
@@ -67,8 +72,22 @@ export function OnlineDiscovery({ onStartImport, onImportDirectory, facade }: On
   const [searchError, setSearchError] = useState<string | null>(null);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [installError, setInstallError] = useState<string | null>(null);
+  const [libraryNames, setLibraryNames] = useState<Set<string>>(new Set());
   // 在 JSX 闭包里使用收窄后的 facade 引用，避免可空参数的类型回退。
   const onlineFacade = facade;
+
+  useEffect(() => {
+    if (!importedNames) return;
+    let active = true;
+    importedNames()
+      .then((names) => {
+        if (active) setLibraryNames(new Set(names.map((name) => name.trim().toLowerCase())));
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, [importedNames]);
 
   const describeInstallError = useCallback(
     (reason: unknown) =>
@@ -138,10 +157,15 @@ export function OnlineDiscovery({ onStartImport, onImportDirectory, facade }: On
             {searching ? t("discovery.search.searching") : t("discovery.search.action")}
           </Button>
           {searchError ? <p role="alert">{searchError}</p> : null}
+          {searching ? <p role="status">{t("discovery.online.searchingStatus")}</p> : null}
+          {page && !searching && page.items.length === 0 ? (
+            <p>{t("discovery.online.empty")}</p>
+          ) : null}
           {page ? (
-            <ul className="sh-discovery-card__results">
+            <ul aria-busy={searching} className="sh-discovery-card__results">
               {page.items.map((hit) => {
                 const skill = toRepoSkill(hit);
+                const alreadyImported = libraryNames.has(hit.name.trim().toLowerCase());
                 return (
                   <li key={hit.source_id}>
                     <span>{hit.name}</span>
@@ -151,6 +175,11 @@ export function OnlineDiscovery({ onStartImport, onImportDirectory, facade }: On
                       })}
                     </span>
                     <span>{t("discovery.search.installs", { count: hit.installs })}</span>
+                    {alreadyImported ? (
+                      <span className="sh-status sh-status--success" data-testid={`imported-${hit.source_id}`}>
+                        {t("discovery.online.alreadyImported")}
+                      </span>
+                    ) : null}
                     <ExternalLink
                       onOpen={() => void onlineFacade.openExternalUrl(hit.page_url)}
                       target={hit.page_url}
@@ -158,9 +187,13 @@ export function OnlineDiscovery({ onStartImport, onImportDirectory, facade }: On
                       {t("discovery.online.viewAction")}
                     </ExternalLink>
                     <Button
-                      disabled={!skill || downloadingId !== null}
+                      disabled={!skill || downloadingId !== null || alreadyImported}
                       onClick={() => void install(hit)}
-                      title={skill ? undefined : t("discovery.online.installUnavailable")}
+                      title={skill
+                        ? alreadyImported
+                          ? t("discovery.online.alreadyImported")
+                          : undefined
+                        : t("discovery.online.installUnavailable")}
                       variant="secondary"
                     >
                       {downloadingId === hit.source_id
