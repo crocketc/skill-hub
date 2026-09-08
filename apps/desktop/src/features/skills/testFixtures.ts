@@ -235,25 +235,47 @@ export function createMockSkillLibraryFacade(
         throw options.failPage;
       }
 
-      const itemCount = options.total === undefined
-        ? Math.min(query.pageSize, total)
-        : Math.min(query.pageSize, Math.max(total - (query.page - 1) * query.pageSize, 0));
       const allRows = options.pageItems ?? defaultRows(total);
+      const normalizedText = query.text.trim().toLocaleLowerCase();
+      // The browser preview opts into realistic filtering through its explicit
+      // multi-page total. Keep the small unit-test fixture's historical
+      // behavior so tests that focus on URL/selection state can still render
+      // their named rows while changing the query.
+      const shouldFilterText = Boolean(
+        normalizedText && options.total !== undefined && options.matchingSkillIds === undefined,
+      );
+      const filteredRows = shouldFilterText
+        ? allRows.filter((row) => [
+          row.alias,
+          row.name,
+          row.originalDescription,
+          row.purpose,
+          row.source,
+          ...row.tags,
+          ...row.requirements,
+        ].some((value) => value?.toLocaleLowerCase().includes(normalizedText)))
+        : allRows;
+      const filteredTotal = shouldFilterText ? filteredRows.length : total;
+      const itemCount = options.total === undefined
+        ? Math.min(query.pageSize, filteredTotal)
+        : Math.min(query.pageSize, Math.max(filteredTotal - (query.page - 1) * query.pageSize, 0));
       const start = (query.page - 1) * query.pageSize;
       // Keep the small default fixture backwards-compatible for tests that only
       // need a row regardless of URL page state. Explicit totals opt into the
       // deterministic multi-page preview used by the browser shell.
-      const items = options.pageItems ?? (
-        options.total === undefined ? defaultRows(itemCount) : allRows.slice(start, start + itemCount)
-      );
+      const items = shouldFilterText
+        ? filteredRows.slice(start, start + itemCount)
+        : options.pageItems ?? (
+          options.total === undefined ? defaultRows(itemCount) : allRows.slice(start, start + itemCount)
+        );
       return clone({
         facets: {
-          tags: [...new Set(allRows.flatMap((row) => row.tags))].sort(),
+          tags: [...new Set(filteredRows.flatMap((row) => row.tags))].sort(),
         },
         items,
         page: query.page,
         pageSize: query.pageSize,
-        total,
+        total: filteredTotal,
       });
     },
     async loadDrawerPreferences() {

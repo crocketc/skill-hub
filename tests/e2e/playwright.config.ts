@@ -3,6 +3,9 @@ import { defineConfig, devices } from "@playwright/test";
 export default defineConfig({
   testDir: ".",
   fullyParallel: true,
+  // Keep the Vite preview server from competing with too many browser
+  // workers; the startup budget is measured against this deterministic load.
+  workers: 5,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
   reporter: process.env.CI ? "line" : "list",
