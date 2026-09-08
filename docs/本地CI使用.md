@@ -78,6 +78,18 @@ pnpm test:release
 
 前端构建会清空 `apps/desktop/dist`。`build` 的 `postbuild` 钩子会恢复已跟踪的 `.gitkeep`，因此本地 CI 或发布预检完成后不应留下该占位文件的删除状态；若发现异常，先运行 `pnpm verify:release` 并检查 `git status`。
 
+## 浏览器自动化验收
+
+可替代浏览器页面、路由、交互和部分 native-backed preview 的验收：
+
+```powershell
+pnpm test:e2e
+```
+
+测试使用 Playwright 的本机用户级 Chromium 缓存；Chromium 不属于项目依赖，不进入 Tauri 应用包，也不提交到 Git。当前套件覆盖 22 项，其中 12 项通过浏览器内的 IPC mock 验证生产路由与 facade 的 native-backed preview。
+
+浏览器自动化不能替代真实桌面人工验收：真实 Tauri IPC/数据库持久化、操作系统文件选择器和文件管理器、真实文件系统读写、真实 GitHub/网络、AI 运行与取消、备份恢复文件内容、跨平台安装包及签名更新回滚，仍须按验收指南取证。
+
 ## 前端安全审计与 npm 镜像
 
 前端安全审计需要 pnpm 能访问 npm audit 接口。部分镜像（例如 `https://registry.npmmirror.com`）可以正常安装依赖，但不提供 pnpm 所需的审计端点，因此会在“前端依赖审计”阶段失败。这是镜像能力差异，不是项目依赖本身必然存在漏洞。
