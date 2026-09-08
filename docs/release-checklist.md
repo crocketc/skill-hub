@@ -4,10 +4,10 @@
 
 ## 当前候选
 
-- 代码验收基线：`141597a`
-- 浏览器自动化基线：`eaee655`
-- 日期：2026-09-08
-- 说明：本轮已完成浏览器 E2E 验收；同步提交更新验收/状态文档，不改变产品运行时行为
+- 代码验收基线：`27042e6`（2026-09-09 全量自动化冻结提交）
+- 浏览器自动化基线：`27042e6`（`pnpm test:e2e` 22/22）
+- 日期：2026-09-09
+- 说明：功能缺口与借鉴 UI 收口开发完成；工作流限制与已知降级在 UI 中诚实可见；双平台真机取证与签名更新取证留待人工（发布门槛第 3/4 条）
 - 发布信任级别：Windows 未签名；macOS ad-hoc、未公证
 - 发布方式：GitHub Draft Release，人工核对后发布
 
@@ -26,21 +26,22 @@
 
 | 检查项 | 状态 | 证据/备注 |
 | --- | --- | --- |
-| Rust 格式 | 通过 | `cargo fmt --all -- --check` |
+| Rust 格式 | 通过 | `cargo fmt --all -- --check`（2026-09-09 于 `27042e6`） |
 | cargo-deny | 通过 | advisories/bans/licenses/sources 通过；重复 crate/yanked crate 为警告 |
-| Rust Clippy | 通过 | `cargo clippy --locked --workspace --all-targets --all-features -- -D warnings` |
-| Rust 测试 | 通过 | `cargo test --locked --workspace` |
+| Rust Clippy | 通过 | `cargo clippy --workspace --all-targets --all-features -- -D warnings`（2026-09-09 于 `27042e6`；历史 derivable_impls 阻断已清除） |
+| Rust 测试 | 通过 | `cargo test --workspace --locked`：111 套 641 项通过 / 0 失败（2026-09-09 于 `27042e6`，含 `generate_bindings` 漂移检查） |
 | 前端依赖安装 | 通过 | `pnpm install --frozen-lockfile --ignore-scripts` |
 | 前端审计 | 通过 | macOS 官方 registry 复核，0 个漏洞；用户镜像不支持端点时需临时切换官方源 |
-| 前端 lint/TypeScript | 通过 | `pnpm check:frontend` |
-| 前端测试 | 需在当前基线重跑 | 历史 Windows/macOS 结果不能直接作为 `1c937c2` 的当前证据 |
+| 前端 lint/TypeScript | 通过 | `pnpm check:frontend`（eslint + tsc，2026-09-09 于 `27042e6`） |
+| 前端测试 | 通过 | `pnpm test:frontend`：103 文件 714 项通过（2026-09-09 于 `27042e6`） |
 | 前端生产构建 | 通过 | `pnpm --dir apps/desktop build` |
-| 发布静态预检 | 通过 | `node scripts/verify_release_readiness.mjs` 与对应 Node 测试通过；工作流、Tauri 启动配置、tag-bound 约束、锁定 action、安装说明和 `dist/.gitkeep` 均通过 |
+| 发布静态预检 | 通过 | `node scripts/verify_release_readiness.mjs` 与对应 Node 测试通过（2026-09-09 于 `27042e6`）；工作流、Tauri 启动配置、tag-bound 约束、锁定 action、安装说明和 `dist/.gitkeep` 均通过 |
+| i18n 双语覆盖 | 通过 | `node scripts/i18n-cjk-audit.mjs`：用户可见命中 0；15 行豁免为测试 fixture（豁免理由内置于脚本）；zh/en 键集 parity 测试通过 |
 | 验收执行分流 | 已记录 | 页面/交互先走浏览器自动化；依赖 Tauri、真实文件系统、系统弹窗、真实网络、签名资产和双平台安装的项目必须补桌面人工证据，详见 `docs/development/v0.2.0-manual-acceptance-guide.md` |
 | 兼容性契约 | 通过 | `cargo test -p skillhub-adapters --test profile_contract` |
 | 数据保护页面 | 通过（自动化） | `/settings/data-protection` 已接入备份包校验、恢复预检/冲突决策、组合导出；真实桌面文件烟测待执行 |
 | 备份/恢复/导出 native facade | 通过（自动化） | typed preflight/commit 适配器与 Rust facade 测试通过 |
-| 浏览器 E2E | 通过（自动化） | `pnpm test:e2e` 在 `eaee655` 基线上 22/22 通过：既有 10 条，加 `native-flow-preview` 12 条；运行 Vite 预览页并注入固定 IPC 返回值，只证明页面/交互和预览边界，不证明 Tauri 原生行为 |
+| 浏览器 E2E | 通过（自动化） | `pnpm test:e2e` 在 `27042e6` 冻结基线上 22/22 通过（2026-09-09）：既有 10 条，加 `native-flow-preview` 12 条；运行 Vite 预览页并注入固定 IPC 返回值，只证明页面/交互和预览边界，不证明 Tauri 原生行为 |
 | Playwright 浏览器依赖 | 已满足（测试环境） | 项目 `@playwright/test 1.55.1` 匹配的 Chromium 已安装到用户级测试缓存；不进入仓库，也不会包含在 Tauri 打包产物中 |
 | 桌面 E2E/真机验收 | 待执行 | 需要 Tauri 运行时、真实文件系统、系统弹窗、真实网络或发布资产的项目按人工验收指南取证 |
 | 迁移/恢复 | 待执行 | 需要在本提交重新采集证据 |
