@@ -5,6 +5,7 @@
 ## 当前候选
 
 - 代码验收基线：`141597a`
+- 浏览器自动化基线：`18bcccc`
 - 日期：2026-09-08
 - 说明：本轮已完成浏览器 E2E 验收；同步提交更新验收/状态文档，不改变产品运行时行为
 - 发布信任级别：Windows 未签名；macOS ad-hoc、未公证
@@ -39,7 +40,7 @@
 | 兼容性契约 | 通过 | `cargo test -p skillhub-adapters --test profile_contract` |
 | 数据保护页面 | 通过（自动化） | `/settings/data-protection` 已接入备份包校验、恢复预检/冲突决策、组合导出；真实桌面文件烟测待执行 |
 | 备份/恢复/导出 native facade | 通过（自动化） | typed preflight/commit 适配器与 Rust facade 测试通过 |
-| 浏览器 E2E | 通过（自动化） | `pnpm test:e2e` 在 `141597a` 基线上 5/5 通过：`onboarding`、`keyboard-accessibility`、`startup-performance`、`import-deploy`、`edit-recover`；运行 Vite 预览页，只证明页面/交互和预览边界，不证明 Tauri 原生行为 |
+| 浏览器 E2E | 通过（自动化） | `pnpm test:e2e` 在 `18bcccc` 基线上 10/10 通过：既有 5 个 spec，加 `library-preview` 4 条和 `detail-preview` 1 条；运行 Vite 预览页，只证明页面/交互和预览边界，不证明 Tauri 原生行为 |
 | Playwright 浏览器依赖 | 已满足（测试环境） | 项目 `@playwright/test 1.55.1` 匹配的 Chromium 已安装到用户级测试缓存；不进入仓库，也不会包含在 Tauri 打包产物中 |
 | 桌面 E2E/真机验收 | 待执行 | 需要 Tauri 运行时、真实文件系统、系统弹窗、真实网络或发布资产的项目按人工验收指南取证 |
 | 迁移/恢复 | 待执行 | 需要在本提交重新采集证据 |
