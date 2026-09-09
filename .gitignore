@@ -11,3 +11,4 @@
 !/apps/desktop/dist/.gitkeep
 /apps/desktop/src-tauri/icons/
 /apps/desktop/src-tauri/gen/
+.DS_Store

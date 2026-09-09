@@ -36,6 +36,8 @@ export interface DiscoveryPageProps {
   tracker?: OperationTracker;
   onImportComplete?: (results: ImportResult[]) => void;
   onOpenLibrary?: () => void;
+  /** C2 收口：可选地提供库内 Skill 显示名，用于在线结果"已在库"标记。 */
+  importedNames?: () => Promise<string[]>;
 }
 
 /** 子页内共享的导入向导控制器：状态与拦截逻辑保持单一实现。 */
@@ -110,6 +112,7 @@ export function DiscoveryPage({
   tracker = operationTracker,
   onImportComplete,
   onOpenLibrary,
+  importedNames,
 }: DiscoveryPageProps) {
   const { t } = useTranslation();
   const [showImport, setShowImport] = useState(Boolean(initialSourceText) || initialSources.length > 0);
@@ -163,6 +166,7 @@ export function DiscoveryPage({
     <DiscoveryModulePage
       facade={discoveryFacade}
       importFacade={importFacade}
+      importedNames={importedNames}
       initialSourceText={initialSourceText}
       onBack={onBack}
       onImportComplete={onImportComplete}
@@ -229,6 +233,8 @@ interface DiscoveryModulePageProps {
   tracker: OperationTracker;
   onImportComplete?: (results: ImportResult[]) => void;
   onOpenLibrary?: () => void;
+  /** C2 收口：可选地提供库内 Skill 显示名，用于在线结果"已在库"标记。 */
+  importedNames?: () => Promise<string[]>;
 }
 
 /**
@@ -245,6 +251,7 @@ function DiscoveryModulePage({
   tracker,
   onImportComplete,
   onOpenLibrary,
+  importedNames,
 }: DiscoveryModulePageProps) {
   const { t } = useTranslation();
 
@@ -286,12 +293,13 @@ function DiscoveryModulePage({
       ) : null}
       {view === "local" ? (
         <>
-          {facade ? <LocalDiscoveryWorkbench facade={facade} /> : null}
+          {facade ? <LocalDiscoveryWorkbench facade={facade} onReviewCandidates={wizard.openImportWizard} /> : null}
           <LocalDiscovery onStartImport={wizard.openImportWizard} />
         </>
       ) : null}
       {view === "online" ? (
         <OnlineDiscovery
+          importedNames={importedNames}
           facade={facade}
           onImportDirectory={wizard.openWizardWithDirectory}
           onStartImport={wizard.openImportWizard}

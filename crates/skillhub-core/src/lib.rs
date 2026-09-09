@@ -99,7 +99,10 @@ pub use operation::{
     OperationProgress, OperationRecord, OperationRepository, OperationStatus, OperationSummary,
     UndoPlan,
 };
-pub use path_policy::{physical_id_for_path, AllowedRoot, AllowedRootId, PathPolicy, SafePath};
+pub use path_policy::{
+    physical_id_for_path, symlink_physical_id_for_path, AllowedRoot, AllowedRootId, PathPolicy,
+    SafePath,
+};
 pub use settings::DesktopPreferences;
 
 pub use call_policy::{CallPolicyCapability, CallPolicyPlan, CallPolicyResult};

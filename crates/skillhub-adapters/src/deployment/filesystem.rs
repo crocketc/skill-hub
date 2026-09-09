@@ -5,8 +5,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use sha2::{Digest, Sha256};
 use skillhub_core::{
-    physical_id_for_path, AppError, AppResult, DeploymentCapability, DeploymentMode, ErrorCode,
-    RecoveryAction, Severity, SkillId, TargetPlan, VersionId,
+    physical_id_for_path, symlink_physical_id_for_path, AppError, AppResult, DeploymentCapability,
+    DeploymentMode, ErrorCode, RecoveryAction, Severity, SkillId, TargetPlan, VersionId,
 };
 
 use super::{junction_windows, managed_copy, symlink};
@@ -154,8 +154,7 @@ impl DeploymentFilesystem {
         if observed_tree_hash != prepared.expected_tree_hash {
             return Err(target_changed(&prepared.destination_path));
         }
-        let target_identity = physical_id_for_path(&prepared.destination_path)
-            .ok_or_else(|| operation_conflict("target filesystem identity is unavailable"))?;
+        let target_identity = ownership_identity(prepared.mode, &prepared.destination_path)?;
         let ownership = OwnershipProof {
             mode: prepared.mode,
             destination_path: prepared.destination_path,
@@ -196,6 +195,19 @@ impl DeploymentFilesystem {
     }
 }
 
+/// Physical identity used in ownership proofs. Symbolic-link deployments pin
+/// the link itself (a trailing symlink is never followed) so removing the link
+/// keeps working after the central library replaces the source directory;
+/// every other mode keeps following to the real directory.
+fn ownership_identity(mode: DeploymentMode, path: &Path) -> AppResult<String> {
+    let lookup = if mode == DeploymentMode::SymbolicLink {
+        symlink_physical_id_for_path(path)
+    } else {
+        physical_id_for_path(path)
+    };
+    lookup.ok_or_else(|| operation_conflict("target filesystem identity is unavailable"))
+}
+
 fn remove_target(proof: &OwnershipProof) -> AppResult<()> {
     match proof.mode {
         DeploymentMode::ManagedCopy => {
@@ -217,6 +229,12 @@ fn verify_owned(proof: &OwnershipProof) -> AppResult<()> {
         return Err(ownership_mismatch(destination));
     }
     verify_identity(proof)?;
+    if proof.mode == DeploymentMode::SymbolicLink {
+        // The deployment owns the link, not the central content it points at:
+        // source updates legitimately replace that directory wholesale, so a
+        // stale content hash must not block removing the link we created.
+        return Ok(());
+    }
     let current_hash = tree_hash(destination)?;
     if current_hash != proof.expected_hash {
         return Err(ownership_mismatch(destination));
@@ -229,8 +247,7 @@ fn verify_identity(proof: &OwnershipProof) -> AppResult<()> {
     if !destination.exists() {
         return Err(ownership_mismatch(destination));
     }
-    let current_identity = physical_id_for_path(destination)
-        .ok_or_else(|| operation_conflict("target filesystem identity is unavailable"))?;
+    let current_identity = ownership_identity(proof.mode, destination)?;
     if current_identity != proof.target_identity {
         return Err(ownership_mismatch(destination));
     }

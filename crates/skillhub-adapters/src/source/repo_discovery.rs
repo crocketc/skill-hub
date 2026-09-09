@@ -293,7 +293,9 @@ async fn download_repo(
             }
         }
     }
-    Err(last_error.unwrap_or_else(|| anyhow!("所有分支下载失败")))
+    Err(last_error.unwrap_or_else(|| {
+        anyhow!("REPO_DOWNLOAD_EXHAUSTED: no branch archive could be downloaded")
+    }))
 }
 
 /// 出口断言（纵深防御）：默认落点走规格 §4 的 `assert_github_archive_url`
@@ -305,7 +307,9 @@ fn assert_archive_landing(url: &str, archive_base: &str, owner: &str, name: &str
     let parsed = url::Url::parse(url).map_err(|e| anyhow!("Invalid archive URL: {e}"))?;
     let expected_prefix = format!("/{owner}/{name}/archive/refs/heads/");
     if !parsed.path().starts_with(&expected_prefix) {
-        return Err(anyhow!("INVALID_REPO_REF: URL 落点被改写"));
+        return Err(anyhow!(
+            "INVALID_REPO_REF: archive URL landing was rewritten"
+        ));
     }
     Ok(())
 }
@@ -321,14 +325,18 @@ fn assert_tag_archive_landing(
         let parsed = url::Url::parse(url).map_err(|e| anyhow!("Invalid archive URL: {e}"))?;
         let expected_prefix = format!("/{owner}/{name}/archive/refs/tags/");
         if !parsed.path().starts_with(&expected_prefix) {
-            return Err(anyhow!("INVALID_REPO_REF: URL 落点被改写"));
+            return Err(anyhow!(
+                "INVALID_REPO_REF: archive URL landing was rewritten"
+            ));
         }
         return Ok(());
     }
     let parsed = url::Url::parse(url).map_err(|e| anyhow!("Invalid archive URL: {e}"))?;
     let expected_prefix = format!("/{owner}/{name}/archive/refs/tags/");
     if !parsed.path().starts_with(&expected_prefix) {
-        return Err(anyhow!("INVALID_REPO_REF: URL 落点被改写"));
+        return Err(anyhow!(
+            "INVALID_REPO_REF: archive URL landing was rewritten"
+        ));
     }
     Ok(())
 }
@@ -745,7 +753,7 @@ mod tests {
         let mut cursor = std::io::Cursor::new(Vec::new());
         {
             let mut zip = ZipWriter::new(&mut cursor);
-            zip.add_symlink("evil", &"x".repeat(5 * 1024), SimpleFileOptions::default())
+            zip.add_symlink("evil", "x".repeat(5 * 1024), SimpleFileOptions::default())
                 .unwrap();
             zip.finish().unwrap();
         }
@@ -794,7 +802,17 @@ mod tests {
         assert_eq!(sanitize_skill_source_path(""), None);
         assert_eq!(sanitize_skill_source_path("."), None);
         assert_eq!(sanitize_skill_source_path("/abs"), None);
-        assert_eq!(sanitize_skill_source_path("C:\\abs"), None);
+        if cfg!(windows) {
+            // Windows path syntax: a drive prefix must be rejected outright.
+            assert_eq!(sanitize_skill_source_path("C:\\abs"), None);
+        } else {
+            // POSIX path syntax: a backslash is a regular filename character,
+            // so "C:\abs" is an ordinary relative name there.
+            assert_eq!(
+                sanitize_skill_source_path("C:\\abs"),
+                Some(PathBuf::from("C:\\abs"))
+            );
+        }
     }
 
     #[test]

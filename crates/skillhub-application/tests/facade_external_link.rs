@@ -166,7 +166,7 @@ async fn the_facade_still_answers_queries_after_an_open_attempt() {
 #[tokio::test]
 async fn the_system_opener_can_be_registered() {
     let facade = LocalApplicationFacade::new(Database::open_in_memory().expect("database"));
-    facade.set_external_url_opener(Arc::new(SystemExternalUrlOpener::default()));
+    facade.set_external_url_opener(Arc::new(SystemExternalUrlOpener));
 
     let error = facade
         .execute(AppCommand::OpenExternalUrl(OpenExternalUrl {

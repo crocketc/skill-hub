@@ -39,17 +39,12 @@ pub struct ExportSkill {
     pub files: Vec<ExportFile>,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 #[serde(rename_all = "snake_case")]
 pub enum ExportFormat {
+    #[default]
     Folder,
     Zip,
-}
-
-impl Default for ExportFormat {
-    fn default() -> Self {
-        Self::Folder
-    }
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]

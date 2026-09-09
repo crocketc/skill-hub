@@ -89,7 +89,6 @@ fn deployment_chart_can_aggregate_by_agent_and_project() {
 }
 
 #[test]
-#[test]
 fn tag_chart_aggregates_skill_counts_per_tag() {
     let db = Database::open_in_memory().unwrap();
     let skill_a = SkillId::new();
@@ -298,7 +297,6 @@ fn deterministic_duplicates_match_by_current_version_content_hash() {
     let skill_b = SkillId::new();
     let skill_c = SkillId::new();
     let version_a = "sha256:1111111111111111111111111111111111111111111111111111111111111111";
-    let version_b = "sha256:1111111111111111111111111111111111111111111111111111111111111111";
     let version_c = "sha256:2222222222222222222222222222222222222222222222222222222222222222";
     db.connection_for_test()
         .execute_batch(&format!(

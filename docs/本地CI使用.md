@@ -88,7 +88,7 @@ pnpm test:e2e
 
 测试使用 Playwright 的本机用户级 Chromium 缓存；Chromium 不属于项目依赖，不进入 Tauri 应用包，也不提交到 Git。当前套件覆盖 22 项，其中 12 项通过浏览器内的 IPC mock 验证生产路由与 facade 的 native-backed preview。
 
-浏览器自动化不能替代真实桌面人工验收：真实 Tauri IPC/数据库持久化、操作系统文件选择器和文件管理器、真实文件系统读写、真实 GitHub/网络、AI 运行与取消、备份恢复文件内容、跨平台安装包及签名更新回滚，仍须按 `docs/development/人工验收清单-2026-09-08.md` 取证。浏览器验收的当前范围和结果见 `docs/development/自动化测试说明-2026-09-08.md`。
+浏览器自动化不能替代真实桌面人工验收：真实 Tauri IPC/数据库持久化、操作系统文件选择器和文件管理器、真实文件系统读写、真实 GitHub/网络、AI 运行与取消、备份恢复文件内容、跨平台安装包及签名更新回滚，仍须按 `docs/development/人工验收清单-2026-09-09.md` 取证。浏览器验收的当前范围和结果见 `docs/development/自动化测试说明-2026-09-09.md`。
 
 ## 前端安全审计与 npm 镜像
 

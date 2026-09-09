@@ -165,7 +165,7 @@ async fn batch_check_reports_states_per_skill() {
     let up_to_date = import_skill_with_upstream(&facade, "notes-up-to-date", "# Portable\n").await;
     let changed = import_skill_with_upstream(&facade, "notes-changed", "# Local edits\n").await;
 
-    let outcomes = batch_check(&facade, vec![up_to_date.clone(), changed.clone()]).await;
+    let outcomes = batch_check(&facade, vec![up_to_date, changed]).await;
     assert_eq!(outcomes.len(), 2, "每个 Skill 一条结果");
     let states: std::collections::HashMap<_, _> = outcomes.into_iter().collect();
     assert_eq!(
@@ -201,7 +201,7 @@ async fn batch_check_degrades_unknown_skill_without_failing_batch() {
     let known = import_skill_with_upstream(&facade, "notes-known", "# Portable\n").await;
     let unknown = skillhub_core::SkillId::new();
 
-    let outcomes = batch_check(&facade, vec![known.clone(), unknown.clone()]).await;
+    let outcomes = batch_check(&facade, vec![known, unknown]).await;
     assert_eq!(outcomes.len(), 2, "未知 Skill 也应有一条诚实结果");
     let states: std::collections::HashMap<_, _> = outcomes.into_iter().collect();
     assert_eq!(

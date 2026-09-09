@@ -10,6 +10,8 @@ import {
 
 export interface LocalDiscoveryWorkbenchProps {
   facade: DiscoveryFacade;
+  /** C3 收口：待导入横幅的"审查"入口；未提供时横幅不渲染动作按钮。 */
+  onReviewCandidates?: () => void;
 }
 
 interface SnapshotState {
@@ -23,7 +25,7 @@ interface SnapshotState {
  * snapshot, triggers scans through the existing `scan_targets` contract, and
  * classifies the results. It never writes records or directories.
  */
-export function LocalDiscoveryWorkbench({ facade }: LocalDiscoveryWorkbenchProps) {
+export function LocalDiscoveryWorkbench({ facade, onReviewCandidates }: LocalDiscoveryWorkbenchProps) {
   const { t } = useTranslation();
   const [snapshot, setSnapshot] = useState<SnapshotState | null>(null);
   const [classification, setClassification] = useState<ScanClassification | null>(null);
@@ -70,8 +72,9 @@ export function LocalDiscoveryWorkbench({ facade }: LocalDiscoveryWorkbenchProps
   }, [facade, t]);
 
   return (
-    <section aria-label={t("discovery.workbench.title")} className="sh-discovery-workbench">
+    <section aria-label={t("discovery.workbench.title")} aria-busy={scanning} className="sh-discovery-workbench">
       <h3>{t("discovery.workbench.title")}</h3>
+      {scanning ? <p role="status">{t("discovery.workbench.scanningStatus")}</p> : null}
       {snapshot ? (
         <p>
           {t("discovery.workbench.lastScan")}
@@ -86,6 +89,17 @@ export function LocalDiscoveryWorkbench({ facade }: LocalDiscoveryWorkbenchProps
         {scanning ? t("discovery.workbench.scanning") : t("discovery.workbench.rescan")}
       </Button>
       {error ? <p role="alert">{error}</p> : null}
+      {classification && classification.unmanaged > 0 ? (
+        <div className="sh-discovery-workbench__banner" role="status">
+          <strong>{t("discovery.workbench.bannerHeading", { count: classification.unmanaged })}</strong>
+          <small>{t("discovery.workbench.bannerHint")}</small>
+          {onReviewCandidates ? (
+            <Button onClick={onReviewCandidates} variant="primary">
+              {t("discovery.workbench.reviewAction")}
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
       {classification ? (
         <ul className="sh-discovery-workbench__categories">
           <li title={t("discovery.workbench.unmanagedHint")}>

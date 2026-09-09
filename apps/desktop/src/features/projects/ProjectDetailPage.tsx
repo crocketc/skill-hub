@@ -6,14 +6,20 @@ import { Button } from "../../ui/Button";
 import { type ProjectAssemblyPlanView, type ProjectFacade, type ProjectPhysicalTargetView, type ProjectView, unavailableProjectFacade } from "./api";
 import { ProjectAccessPanel } from "./ProjectAccessPanel";
 import { ProjectAssemblyPlanGroups } from "./ProjectAssemblyPlanGroups";
+import {
+  ProjectManagedDeployments,
+  type ProjectManagedDeploymentsOps,
+} from "./ProjectManagedDeployments";
 import { SharedConfigPanel } from "./SharedConfigPanel";
 
 export interface ProjectDetailPageProps {
   projectId?: string;
   facade?: ProjectFacade;
+  /** B2：解除管理落点；宿主注入原生实现，缺省时区块不渲染（降级环境）。 */
+  managedDeploymentOps?: ProjectManagedDeploymentsOps;
 }
 
-export function ProjectDetailPage({ projectId = "default", facade = unavailableProjectFacade }: ProjectDetailPageProps) {
+export function ProjectDetailPage({ projectId = "default", facade = unavailableProjectFacade, managedDeploymentOps }: ProjectDetailPageProps) {
   const navigate = useNavigate();
   const { t } = useTranslation();
   const [project, setProject] = useState<ProjectView>();
@@ -78,6 +84,7 @@ export function ProjectDetailPage({ projectId = "default", facade = unavailableP
       </section>
       <SharedConfigPanel config={project.sharedConfig} />
       <ProjectAssemblyPlanGroups failed={assemblyPlanFailed} plan={assemblyPlan} />
+      {managedDeploymentOps ? <ProjectManagedDeployments ops={managedDeploymentOps} projectId={project.id} /> : null}
     </div>
   );
 }

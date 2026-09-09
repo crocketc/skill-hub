@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { describeNativeError } from "../../api/nativeErrors";
 import { Button } from "../../ui/Button";
-import type { RestoreDecision, RestorePlan } from "../../api/bindings";
+import type { RestoreConflictDecision, RestoreDecision, RestorePlan } from "../../api/bindings";
 import type { OnboardingOperations } from "../bootstrap/api";
 
 interface RestoreStepProps {
@@ -26,6 +26,7 @@ export function RestoreStep({ operations, onComplete, onBack }: RestoreStepProps
   const [isRestoring, setIsRestoring] = useState(false);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [message, setMessage] = useState<string | null>(null);
+  const [decisions, setDecisions] = useState<Record<string, RestoreConflictDecision>>({});
 
   // Restore currently commits in one native call; keep an honest running
   // status (count + elapsed time) instead of leaving the UI frozen.
@@ -40,6 +41,7 @@ export function RestoreStep({ operations, onComplete, onBack }: RestoreStepProps
     setIsPreparing(true);
     setMessage(null);
     setPlan(null);
+    setDecisions({});
     try {
       const picked = await operations.pickDirectory?.();
       if (!picked) {
@@ -55,18 +57,26 @@ export function RestoreStep({ operations, onComplete, onBack }: RestoreStepProps
     }
   };
 
+  // B3：恢复冲突逐项决策。提交契约（CommitRestore.decisions）本就按条接收
+  // 决策，向导此前静默全部 skip；现在如实列出冲突并要求显式决策。
+  const conflicts = plan?.conflicts ?? [];
+  const invalidConflicts = conflicts.filter((conflict) => conflict.kind === "invalid_portable_data");
+  const decidableConflicts = conflicts.filter((conflict) => conflict.skill_id);
+  const allDecided = decidableConflicts.every((conflict) => decisions[conflict.skill_id!]);
+  const canRestore = Boolean(plan) && allDecided && invalidConflicts.length === 0;
+
   const restore = async () => {
-    if (!path || !plan) {
+    if (!path || !plan || !canRestore) {
       return;
     }
     setIsRestoring(true);
     setMessage(null);
     try {
-      const decisions: RestoreDecision[] = plan.conflicts.map((conflict) => ({
+      const submitted: RestoreDecision[] = decidableConflicts.map((conflict) => ({
         skill_id: conflict.skill_id ?? "",
-        decision: "skip",
+        decision: decisions[conflict.skill_id!],
       }));
-      await operations.commitRestore?.(path, decisions);
+      await operations.commitRestore?.(path, submitted);
       onComplete();
     } catch (error) {
       setMessage(describe(error));
@@ -93,9 +103,38 @@ export function RestoreStep({ operations, onComplete, onBack }: RestoreStepProps
         </p>
       ) : null}
       {plan && plan.skills > 0 ? (
-        <Button disabled={isPreparing} loading={isRestoring} onClick={() => void restore()}>
+        <Button disabled={!canRestore || isPreparing} loading={isRestoring} onClick={() => void restore()}>
           {t("onboarding.restoreAndContinue")}
         </Button>
+      ) : null}
+      {plan && decidableConflicts.length > 0 ? (
+        <fieldset aria-label={t("onboarding.restoreConflictsHeading")}>
+          <legend>{t("onboarding.restoreConflictsHeading")}</legend>
+          {decidableConflicts.map((conflict) => (
+            <label key={conflict.skill_id}>
+              {t("dataProtection.restore.decision", { skillId: conflict.skill_id })}
+              <select
+                value={decisions[conflict.skill_id!] ?? ""}
+                onChange={(event) =>
+                  setDecisions((current) => ({
+                    ...current,
+                    [conflict.skill_id!]: event.target.value as RestoreConflictDecision,
+                  }))
+                }
+              >
+                <option value="">{t("dataProtection.restore.choose")}</option>
+                <option value="overwrite">{t("dataProtection.restore.overwrite")}</option>
+                <option value="keep_both">{t("dataProtection.restore.keepBoth")}</option>
+                <option value="skip">{t("dataProtection.restore.skip")}</option>
+              </select>
+            </label>
+          ))}
+        </fieldset>
+      ) : null}
+      {plan && invalidConflicts.length > 0 ? (
+        <p role="alert" className="sh-onboarding__message">
+          {t("dataProtection.restore.invalid")}
+        </p>
       ) : null}
       {isRestoring && plan ? (
         <p aria-live="polite" className="sh-onboarding__message" role="status">

@@ -4669,6 +4669,32 @@ a {
   color: var(--color-text-secondary);
 }
 
+/* C1 收口：卡片事实行分层展示版本/部署/风险提示 */
+.sh-skill-card__facts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: 0.8125rem;
+  color: var(--color-text-secondary);
+}
+
+.sh-skill-card__fact {
+  min-width: 0;
+}
+
+/* C1 收口：统计摘要条（仅消费既有查询字段） */
+.sh-skill-library__summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  align-items: baseline;
+  font-size: 0.875rem;
+  color: var(--color-text-secondary);
+  border-bottom: 1px solid var(--color-border);
+  padding-bottom: var(--space-2);
+}
+
 /* 技能库关系矩阵 */
 .sh-skill-matrix {
   overflow-x: auto;

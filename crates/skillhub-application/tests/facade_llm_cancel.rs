@@ -35,8 +35,11 @@ impl skillhub_core::LlmTaskRunner for SlowRunner {
     }
 }
 
+/// The returned `TempDir` must be kept alive by the caller for the whole test:
+/// dropping it deletes the library directory the facade still points at.
 async fn facade_with_check() -> (
     Arc<LocalApplicationFacade>,
+    tempfile::TempDir,
     skillhub_core::SkillId,
     skillhub_core::VersionId,
 ) {
@@ -73,7 +76,7 @@ async fn facade_with_check() -> (
         library_root.path(),
         Arc::new(SlowRunner),
     ));
-    (facade, skill.id(), version.id)
+    (facade, library_root, skill.id(), version.id)
 }
 
 fn running_checks(result: AppQueryResult) -> Vec<skillhub_core::LlmCheckRun> {
@@ -85,60 +88,62 @@ fn running_checks(result: AppQueryResult) -> Vec<skillhub_core::LlmCheckRun> {
 
 #[tokio::test]
 async fn a_running_check_is_visible_and_cancel_operation_abandons_it() {
-    let (facade, skill_id, version_id) = facade_with_check().await;
+    let (facade, _library_root, skill_id, version_id) = facade_with_check().await;
     let local = tokio::task::LocalSet::new();
-    local.run_until(async move {
-        let check_task = {
-            let facade = facade.clone();
-            tokio::task::spawn_local(async move {
-                facade
-                    .execute(AppCommand::RunLlmSafetyCheck(RunLlmSafetyCheck {
-                        skill_id,
-                        version_id: version_id.clone(),
-                    }))
-                    .await
-            })
-        };
+    local
+        .run_until(async move {
+            let check_task = {
+                let facade = facade.clone();
+                tokio::task::spawn_local(async move {
+                    facade
+                        .execute(AppCommand::RunLlmSafetyCheck(RunLlmSafetyCheck {
+                            skill_id,
+                            version_id: version_id.clone(),
+                        }))
+                        .await
+                })
+            };
 
-        // The run announces itself for progress display before finishing.
-        let operation_id = loop {
+            // The run announces itself for progress display before finishing.
+            let operation_id = loop {
+                let runs = running_checks(
+                    facade
+                        .query(AppQuery::ListRunningLlmChecks)
+                        .await
+                        .expect("running checks"),
+                );
+                if let Some(run) = runs.first() {
+                    assert_eq!(run.skill_id, skill_id.to_string());
+                    break run.operation_id;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            };
+
+            let cancel = facade
+                .execute(AppCommand::CancelOperation { operation_id })
+                .await
+                .expect("cancel running check");
+            let AppCommandResult::OperationSummary(summary) = cancel else {
+                panic!("expected operation summary");
+            };
+            assert_eq!(summary.message_code, "operation.cancel_requested");
+
+            let outcome = check_task
+                .await
+                .expect("check task joins")
+                .expect_err("a cancelled check must not report a result");
+            assert_eq!(outcome.code, ErrorCode::OperationConflict);
+
+            // The registry no longer reports the abandoned run.
             let runs = running_checks(
                 facade
                     .query(AppQuery::ListRunningLlmChecks)
                     .await
-                    .expect("running checks"),
+                    .expect("running checks after cancel"),
             );
-            if let Some(run) = runs.first() {
-                assert_eq!(run.skill_id, skill_id.to_string());
-                break run.operation_id;
-            }
-            tokio::time::sleep(Duration::from_millis(10)).await;
-        };
-
-        let cancel = facade
-            .execute(AppCommand::CancelOperation { operation_id })
-            .await
-            .expect("cancel running check");
-        let AppCommandResult::OperationSummary(summary) = cancel else {
-            panic!("expected operation summary");
-        };
-        assert_eq!(summary.message_code, "operation.cancel_requested");
-
-        let outcome = check_task
-            .await
-            .expect("check task joins")
-            .expect_err("a cancelled check must not report a result");
-        assert_eq!(outcome.code, ErrorCode::OperationConflict);
-
-        // The registry no longer reports the abandoned run.
-        let runs = running_checks(
-            facade
-                .query(AppQuery::ListRunningLlmChecks)
-                .await
-                .expect("running checks after cancel"),
-        );
-        assert!(runs.is_empty());
-    });
+            assert!(runs.is_empty());
+        })
+        .await;
 }
 
 #[tokio::test]
@@ -155,58 +160,60 @@ async fn cancelling_an_unknown_operation_is_an_honest_object_not_found() {
 
 #[tokio::test]
 async fn a_second_check_for_the_same_version_is_refused_while_one_runs() {
-    let (facade, skill_id, version_id) = facade_with_check().await;
+    let (facade, _library_root, skill_id, version_id) = facade_with_check().await;
     let local = tokio::task::LocalSet::new();
-    local.run_until(async move {
-        let first = {
-            let facade = facade.clone();
-            let skill_id = skill_id;
-            let version_id = version_id.clone();
-            tokio::task::spawn_local(async move {
-                facade
-                    .execute(AppCommand::RunLlmSafetyCheck(RunLlmSafetyCheck {
-                        skill_id,
-                        version_id,
-                    }))
-                    .await
-            })
-        };
-        loop {
-            if !running_checks(
+    local
+        .run_until(async move {
+            let first = {
+                let facade = facade.clone();
+                let skill_id = skill_id;
+                let version_id = version_id.clone();
+                tokio::task::spawn_local(async move {
+                    facade
+                        .execute(AppCommand::RunLlmSafetyCheck(RunLlmSafetyCheck {
+                            skill_id,
+                            version_id,
+                        }))
+                        .await
+                })
+            };
+            loop {
+                if !running_checks(
+                    facade
+                        .query(AppQuery::ListRunningLlmChecks)
+                        .await
+                        .expect("running checks"),
+                )
+                .is_empty()
+                {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+
+            let error = facade
+                .execute(AppCommand::RunLlmSafetyCheck(RunLlmSafetyCheck {
+                    skill_id,
+                    version_id,
+                }))
+                .await
+                .expect_err("duplicate concurrent check");
+            assert_eq!(error.code, ErrorCode::OperationConflict);
+
+            // Clean up: cancel the first run so its worker thread does not linger.
+            let runs = running_checks(
                 facade
                     .query(AppQuery::ListRunningLlmChecks)
                     .await
                     .expect("running checks"),
-            )
-            .is_empty()
-            {
-                break;
-            }
-            tokio::time::sleep(Duration::from_millis(10)).await;
-        }
-
-        let error = facade
-            .execute(AppCommand::RunLlmSafetyCheck(RunLlmSafetyCheck {
-                skill_id,
-                version_id,
-            }))
-            .await
-            .expect_err("duplicate concurrent check");
-        assert_eq!(error.code, ErrorCode::OperationConflict);
-
-        // Clean up: cancel the first run so its worker thread does not linger.
-        let runs = running_checks(
+            );
             facade
-                .query(AppQuery::ListRunningLlmChecks)
+                .execute(AppCommand::CancelOperation {
+                    operation_id: runs[0].operation_id,
+                })
                 .await
-                .expect("running checks"),
-        );
-        facade
-            .execute(AppCommand::CancelOperation {
-                operation_id: runs[0].operation_id,
-            })
-            .await
-            .expect("cancel");
-        let _ = first.await;
-    });
+                .expect("cancel");
+            let _ = first.await;
+        })
+        .await;
 }

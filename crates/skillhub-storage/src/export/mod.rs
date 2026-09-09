@@ -167,7 +167,7 @@ impl ExportService {
             for entry in entries {
                 let dir = entry
                     .relative
-                    .splitn(3, '/')
+                    .split('/')
                     .nth(1)
                     .unwrap_or_default()
                     .to_owned();

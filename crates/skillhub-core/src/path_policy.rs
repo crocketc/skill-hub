@@ -11,6 +11,25 @@ pub fn physical_id_for_path(path: impl AsRef<Path>) -> Option<String> {
     metadata_identity(path, &metadata).map(|identity| format!("fs:{identity}"))
 }
 
+/// Physical identity of the path itself, never following a trailing symlink.
+/// Symbolic-link deployments pin their ownership proof to the link (not the
+/// central directory it points at) so the library can replace that directory
+/// wholesale during source updates without invalidating removal proofs.
+pub fn symlink_physical_id_for_path(path: impl AsRef<Path>) -> Option<String> {
+    let path = path.as_ref();
+    let metadata = std::fs::symlink_metadata(path).ok()?;
+    // On Unix the link identity is dev+ino of the symlink itself; other
+    // platforms reuse the platform identity helper over link metadata.
+    #[cfg(unix)]
+    let identity = {
+        use std::os::unix::fs::MetadataExt;
+        format!("link-dev-{}-ino-{}", metadata.dev(), metadata.ino())
+    };
+    #[cfg(not(unix))]
+    let identity = metadata_identity(path, &metadata).map(|value| format!("link-{value}"))?;
+    Some(identity)
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, specta::Type)]
 #[serde(transparent)]
 pub struct AllowedRootId(uuid::Uuid);

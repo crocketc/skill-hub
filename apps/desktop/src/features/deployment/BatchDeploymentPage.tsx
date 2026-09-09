@@ -111,6 +111,7 @@ export function BatchDeploymentPage({ facade, skillIds, onCommitted }: BatchDepl
       </div>
     </header>
     {error ? <DataState message={error} state="unavailable" /> : null}
+    {committing ? <p role="status">{t("deployment.batch.committing")}</p> : null}
     {!error && targets === undefined ? <DataState message={t("deployment.states.loading")} state="loading" /> : null}
     {!error && targets?.length === 0 ? <DataState message={t("deployment.states.empty")} state="empty" /> : null}
     {targets && targets.length > 0 ? <section aria-labelledby="deployment-targets-heading" className="sh-workflow-card">
@@ -165,7 +166,7 @@ export function BatchDeploymentPage({ facade, skillIds, onCommitted }: BatchDepl
           <h2 id="deployment-plan-heading">{t("deployment.plan.heading")}</h2>
           <p>{t("deployment.batch.planDescription")}</p>
         </div>
-        <Button disabled={Boolean(results) || Boolean(preview.failures.length) || committing} onClick={() => void commit()} variant="primary">{t("deployment.commit")}</Button>
+        <Button disabled={Boolean(results) || Boolean(preview.failures.length) || committing} loading={committing} onClick={() => void commit()} variant="primary">{t("deployment.commit")}</Button>
       </div>
       {preview.failures.length ? <ul className="sh-notice-list" role="alert">{preview.failures.map((failure) => <li key={failure.skillId}>{t("deployment.batch.previewFailed", failure)}</li>)}</ul> : null}
       {preview.plans.map(({ skillId, plan }) => <section key={skillId}>

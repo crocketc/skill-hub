@@ -70,11 +70,12 @@ beforeAll(async () => {
     .__skillhubOnlineDiscoveryI18n = await createSkillHubI18n(["zh-CN"]);
 });
 
-async function renderSearched(facade: DiscoveryFacade, onImportDirectory = vi.fn()) {
+async function renderSearched(facade: DiscoveryFacade, onImportDirectory = vi.fn(), importedNames?: () => Promise<string[]>) {
   render(
     <I18nextProvider i18n={createSkillHubI18nSync()}>
       <OnlineDiscovery
         facade={facade}
+        importedNames={importedNames}
         onImportDirectory={onImportDirectory}
         onStartImport={vi.fn()}
       />
@@ -193,4 +194,62 @@ it("disables install for hits without a recognizable GitHub source", async () =>
   expect(install).toBeDisabled();
   await click(install);
   expect(downloadRepoSkill).not.toHaveBeenCalled();
+});
+
+it("marks hits whose name already exists in the library and disables their install", async () => {
+  const downloadRepoSkill = vi.fn(async (): Promise<DownloadedRepoSkill> => ({
+    local_path: "C:/temp/x",
+    runtime_name: "x",
+  }));
+  await renderSearched(
+    baseFacade({ downloadRepoSkill }),
+    vi.fn(),
+    async () => ["pdf reader"],
+  );
+
+  expect(await screen.findByText("同名 Skill 已在库中")).toBeVisible();
+  expect(screen.getByRole("button", { name: "安装导入" })).toBeDisabled();
+  await click(screen.getByRole("button", { name: "安装导入" }));
+  expect(downloadRepoSkill).not.toHaveBeenCalled();
+});
+
+it("shows an honest empty state when the search returns no hits", async () => {
+  const emptyPage: SourceSearchPage = { ...page, items: [], count: 0 };
+  render(
+    <I18nextProvider i18n={createSkillHubI18nSync()}>
+      <OnlineDiscovery
+        facade={baseFacade({ searchOnlineSources: vi.fn(async () => emptyPage) })}
+        onImportDirectory={vi.fn()}
+        onStartImport={vi.fn()}
+      />
+    </I18nextProvider>,
+  );
+  fireEvent.change(screen.getByLabelText("搜索 skills.sh"), { target: { value: "pdf" } });
+  await click(screen.getByRole("button", { name: "搜索" }));
+
+  expect(await screen.findByText("没有匹配的结果。")).toBeVisible();
+  expect(screen.queryByRole("button", { name: "安装导入" })).not.toBeInTheDocument();
+});
+
+it("announces the searching state while the query is in flight", async () => {
+  let resolveSearch!: (value: SourceSearchPage) => void;
+  const searchOnlineSources = vi.fn(
+    () => new Promise<SourceSearchPage>((resolve) => { resolveSearch = resolve; }),
+  );
+  render(
+    <I18nextProvider i18n={createSkillHubI18nSync()}>
+      <OnlineDiscovery
+        facade={baseFacade({ searchOnlineSources })}
+        onImportDirectory={vi.fn()}
+        onStartImport={vi.fn()}
+      />
+    </I18nextProvider>,
+  );
+  fireEvent.change(screen.getByLabelText("搜索 skills.sh"), { target: { value: "pdf" } });
+  await click(screen.getByRole("button", { name: "搜索" }));
+
+  expect(screen.getByRole("status")).toHaveTextContent("正在搜索…");
+  resolveSearch(page);
+  await screen.findByText("PDF Reader");
+  expect(screen.queryByRole("status")).not.toBeInTheDocument();
 });
