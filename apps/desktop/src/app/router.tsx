@@ -1,7 +1,7 @@
 import { QueryClientProvider } from "@tanstack/react-query";
 import { MotionConfig } from "motion/react";
 import { I18nextProvider } from "react-i18next";
-import { createBrowserRouter, RouterProvider, useLocation, useNavigate, useOutletContext, useParams, useSearchParams } from "react-router-dom";
+import { createBrowserRouter, RouterProvider, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { OnboardingWizard } from "../features/onboarding/OnboardingWizard";
 import { AgentDetailPage } from "../features/agents/AgentDetailPage";
 import { AgentListPage } from "../features/agents/AgentListPage";
@@ -24,8 +24,7 @@ import { DataProtectionPage } from "../features/backup/DataProtectionPage";
 import { nativeBackupFacade } from "../features/backup/nativeApi";
 import { SettingsPage } from "../features/settings/SettingsPage";
 import { nativeSettingsFacade } from "../features/settings/nativeApi";
-import { DiscoveryPage, type DiscoveryModuleView } from "../features/discovery/DiscoveryPage";
-import { desktopDiscoveryFacade } from "../features/discovery/api";
+import { DiscoveryRoute } from "./DiscoveryRoute";
 import { OverviewPage } from "../features/overview/OverviewPage";
 import { SkillLibraryPage } from "../features/skills/SkillLibraryPage";
 import { SkillDetailPage } from "../features/skill-detail/SkillDetailPage";
@@ -42,14 +41,12 @@ import {
   nativeSkillLibraryFacade,
 } from "../features/skills/nativeApi";
 import { CombinationManagerPage } from "../features/skills/CombinationManagerPage";
-import { DEFAULT_SKILL_QUERY, skillLibraryKeys } from "../features/skills/api";
-import { type ImportResult } from "../features/import/api";
+import { skillLibraryKeys } from "../features/skills/api";
 import { skillHubI18n } from "../i18n";
 import "../features/markdown/markdown.css";
 import "../styles/base.css";
 import { ThemeProvider, useTheme } from "../styles/ThemeProvider";
 import { DesktopApp } from "./App";
-import type { BootstrapOutletContext } from "./AppShell";
 import { queryClient } from "./queryClient";
 
 function OnboardingRoute() {
@@ -147,44 +144,6 @@ function SkillLibraryRoute() {
 
 function CombinationManagerRoute() {
   return <CombinationManagerPage facade={nativeSkillLibraryFacade} />;
-}
-
-function DiscoveryRoute({ view }: { view?: DiscoveryModuleView }) {
-  const navigate = useNavigate();
-  const location = useLocation();
-  const { refreshSnapshot } = useOutletContext<BootstrapOutletContext>();
-  const state = location.state as { initialSources?: string[]; initialSourceText?: string } | null;
-
-  const handleImportComplete = (results: ImportResult[]) => {
-    if (results.some((result) => result.status === "succeeded")) {
-      void queryClient.invalidateQueries({ queryKey: skillLibraryKeys.root });
-      void refreshSnapshot();
-    }
-  };
-
-  // C2 收口：复用既有 listSkills 查询提供库内显示名，驱动在线结果"已在库"标记。
-  const loadImportedNames = async () => {
-    const page = await nativeSkillLibraryFacade.listSkills({
-      ...DEFAULT_SKILL_QUERY,
-      page: 1,
-      pageSize: 100,
-    });
-    return page.items.map((item) => item.name);
-  };
-
-  return (
-    <DiscoveryPage
-      view={view}
-      discoveryFacade={desktopDiscoveryFacade}
-      importedNames={loadImportedNames}
-      initialSources={state?.initialSources}
-      initialSourceText={state?.initialSourceText}
-      onImportComplete={handleImportComplete}
-      onOpenLibrary={() => navigate("/library")}
-      onNavigate={(module) => navigate(`/discovery/${module}`)}
-      onBack={() => navigate("/discovery")}
-    />
-  );
 }
 
 function SecurityRoute() {
