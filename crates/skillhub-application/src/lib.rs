@@ -25,12 +25,13 @@ use skillhub_adapters::source::{
     SkillsShProvider,
 };
 use skillhub_core::api::{
-    ApplySourceUpdate, BasicCheckResult, CheckSourceUpdate, CheckSourceUpdates, CreateCombination,
-    CreateSkill, DeleteCombination, DeleteLlmProvider, FetchLlmModels, FetchLlmProvider,
-    PinProjectSkillVersion, RelinkSource, RenameSkill, SaveLlmProvider, SaveMarkdownContent,
-    SaveSkillContent, SavedSkillContent, SetCurrentVersion, SetDefaultLlmProvider,
-    SetFindingDisposition, SetLifecycle, SetLlmProviderEnabled, SetMetadata, SetTrial,
-    SourceUpdateCheckOutcome, TestLlmConnection, UpdateCombination,
+    ApplySourceUpdate, BasicCheckResult, BatchTranslationItemFailure, BatchTranslationOutcome,
+    CheckSourceUpdate, CheckSourceUpdates, CreateCombination, CreateSkill, DeleteCombination,
+    DeleteLlmProvider, FetchLlmModels, FetchLlmProvider, PinProjectSkillVersion, RelinkSource,
+    RenameSkill, SaveLlmProvider, SaveMarkdownContent, SaveSkillContent, SavedSkillContent,
+    SetCurrentVersion, SetDefaultLlmProvider, SetFindingDisposition, SetLifecycle,
+    SetLlmProviderEnabled, SetMetadata, SetTrial, SourceUpdateCheckOutcome, TestLlmConnection,
+    TranslateDescriptionsBatch, UpdateCombination,
 };
 use skillhub_core::application::{
     CallPolicyBackend, CallPolicyService, DeploymentBackend, DeploymentService,
@@ -57,7 +58,7 @@ use skillhub_core::ignore::IgnoreRule;
 use skillhub_core::llm::translation::TranslationRecord;
 use skillhub_core::llm::{
     CredentialRef, CredentialStore, LlmAdmin, LlmProfile, LlmProviderConfig, LlmProviderView,
-    LlmTaskKind, LlmTaskRunner, NetworkGate,
+    LlmTaskKind, LlmTaskRunner, NetworkGate, TranslationResult, TranslationView,
 };
 use skillhub_core::source::{SourceDescriptor, SourceLocator, SourceState, UpdateDecision};
 use skillhub_core::{
@@ -69,7 +70,8 @@ use skillhub_core::{
 use skillhub_storage::backup::{BackupService, RestoreService, RetentionService};
 use skillhub_storage::export::ExportService;
 use skillhub_storage::{
-    CentralLibrary, Database, LibraryPaths, UsageEvidenceRepository, VersionStore,
+    CentralLibrary, Database, LibraryPaths, PersistedTranslation, UsageEvidenceRepository,
+    VersionStore,
 };
 pub use update_service::{
     ApplicationUpdateInstaller, RollbackResult, RollbackState, UpdateDownloadPlan, UpdateService,
@@ -95,7 +97,6 @@ pub struct LocalApplicationFacade {
     llm_credentials: Arc<dyn CredentialStore>,
     llm_admin: Option<Arc<dyn LlmAdmin>>,
     network_gate: NetworkGate,
-    translation_records: Arc<Mutex<HashMap<(skillhub_core::SkillId, String), TranslationRecord>>>,
     evidence_repository: UsageEvidenceRepository,
     app_update_provider: Arc<GithubReleaseProvider>,
     update_service: Arc<UpdateService>,
@@ -151,31 +152,57 @@ impl LlmTaskRunner for NoopLlmRunner {
     }
 }
 
+/// Storage-backed translation repository. Rows persist across restarts and
+/// record the skill's current version so provenance says what was translated.
 #[derive(Clone)]
-struct LocalTranslationRepository {
-    records: Arc<Mutex<HashMap<(skillhub_core::SkillId, String), TranslationRecord>>>,
+struct StorageTranslationRepository {
+    database: Arc<Mutex<Database>>,
 }
 
 #[async_trait(?Send)]
-impl TranslationRepository for LocalTranslationRepository {
+impl TranslationRepository for StorageTranslationRepository {
     async fn get(
         &self,
         skill_id: skillhub_core::SkillId,
         language: &str,
     ) -> AppResult<Option<TranslationRecord>> {
-        self.records
+        let database = self
+            .database
             .lock()
-            .map_err(|_| internal("translation.get"))
-            .map(|records| records.get(&(skill_id, language.to_owned())).cloned())
+            .map_err(|_| internal("translation.get"))?;
+        Ok(database
+            .translation_record_repository()
+            .get(&skill_id, language)?
+            .map(|row| row.record))
     }
 
     async fn save(&self, record: TranslationRecord) -> AppResult<()> {
-        self.records
+        let database = self
+            .database
             .lock()
-            .map_err(|_| internal("translation.save"))?
-            .insert((record.skill_id, record.language.clone()), record);
-        Ok(())
+            .map_err(|_| internal("translation.save"))?;
+        let version_id = database
+            .catalog_repository()?
+            .get_detail(record.skill_id)?
+            .and_then(|detail| detail.current_version)
+            .map(|version| version.to_string());
+        let now = now_epoch_seconds();
+        database
+            .translation_record_repository()
+            .save(&PersistedTranslation {
+                record,
+                version_id,
+                created_at: now,
+                updated_at: now,
+            })
     }
+}
+
+fn now_epoch_seconds() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64
 }
 
 #[derive(Clone)]
@@ -1133,7 +1160,6 @@ impl LocalApplicationFacade {
             call_policy_service,
             ignore_service,
             llm_runner: None,
-            translation_records: Arc::new(Mutex::new(HashMap::new())),
             evidence_repository: UsageEvidenceRepository::default(),
             app_update_provider,
             update_service,
@@ -1199,7 +1225,6 @@ impl LocalApplicationFacade {
             call_policy_service,
             ignore_service,
             llm_runner: None,
-            translation_records: Arc::new(Mutex::new(HashMap::new())),
             evidence_repository: UsageEvidenceRepository::default(),
             app_update_provider,
             update_service,
@@ -1737,8 +1762,8 @@ impl LocalApplicationFacade {
         let (runner, profile) = self.llm_context("execute.translate_description.profile")?;
         let hash = description_hash(&detail.original_description);
         let service = TranslationService::new(
-            LocalTranslationRepository {
-                records: self.translation_records.clone(),
+            StorageTranslationRepository {
+                database: self.database.clone(),
             },
             SharedLlmRunner(runner),
         );
@@ -1759,6 +1784,108 @@ impl LocalApplicationFacade {
         Ok(AppCommandResult::TranslationResult(result))
     }
 
+    /// Batch translation: every item is attempted independently so one
+    /// failure never loses the other results (requirement 5.35).
+    async fn translate_descriptions_batch(
+        &self,
+        request: TranslateDescriptionsBatch,
+    ) -> AppResult<AppCommandResult> {
+        let capabilities = self.llm_capabilities()?;
+        self.require_llm_capability(
+            capabilities.description_translation,
+            LlmTaskKind::Translation,
+        )?;
+        let (runner, profile) = self.llm_context("execute.translate_descriptions_batch.profile")?;
+        let repository = StorageTranslationRepository {
+            database: self.database.clone(),
+        };
+        let mut translated = Vec::new();
+        let mut failed = Vec::new();
+        for skill_id in request.skill_ids {
+            match self
+                .translate_one(
+                    &repository,
+                    runner.clone(),
+                    profile.clone(),
+                    skill_id,
+                    &request.language,
+                )
+                .await
+            {
+                Ok(result) => translated.push(result),
+                Err(error) => failed.push(BatchTranslationItemFailure {
+                    skill_id,
+                    code: error.code.as_str().to_owned(),
+                    message: error.to_string(),
+                }),
+            }
+        }
+        Ok(AppCommandResult::BatchTranslationResult(
+            BatchTranslationOutcome {
+                language: request.language,
+                translated,
+                failed,
+            },
+        ))
+    }
+
+    async fn translate_one(
+        &self,
+        repository: &StorageTranslationRepository,
+        runner: Arc<dyn LlmTaskRunner>,
+        profile: LlmProfile,
+        skill_id: skillhub_core::SkillId,
+        language: &str,
+    ) -> AppResult<TranslationResult> {
+        let detail = self
+            .with_database("execute.translate_descriptions_batch.skill", |database| {
+                database.catalog_repository()?.get_detail(skill_id)
+            })?;
+        let detail =
+            detail.ok_or_else(|| AppError::new(ErrorCode::ObjectNotFound, Severity::Error))?;
+        let hash = description_hash(&detail.original_description);
+        let service = TranslationService::new(repository.clone(), SharedLlmRunner(runner.clone()));
+        let original_description = detail.original_description;
+        let language = language.to_owned();
+        run_non_send(move || async move {
+            service
+                .translate(
+                    skill_id,
+                    &original_description,
+                    &hash,
+                    &language,
+                    Some(&profile),
+                )
+                .await
+        })
+    }
+
+    fn list_translations(&self, skill_id: skillhub_core::SkillId) -> AppResult<AppQueryResult> {
+        let detail = self.with_database("query.list_translations.skill", |database| {
+            database.catalog_repository()?.get_detail(skill_id)
+        })?;
+        let current_hash = detail
+            .as_ref()
+            .map(|detail| description_hash(&detail.original_description));
+        let rows = self.with_database("query.list_translations.rows", |database| {
+            database
+                .translation_record_repository()
+                .list_for_skill(&skill_id)
+        })?;
+        let translations = rows
+            .into_iter()
+            .map(|row| TranslationView {
+                needs_update: current_hash.as_deref()
+                    != Some(row.record.provenance.source_description_hash.as_str()),
+                version_id: row.version_id,
+                created_at: row.created_at.to_string(),
+                updated_at: row.updated_at.to_string(),
+                record: row.record,
+            })
+            .collect();
+        Ok(AppQueryResult::Translations(translations))
+    }
+
     async fn save_user_translation_revision(
         &self,
         request: skillhub_core::SaveUserTranslationRevision,
@@ -1771,8 +1898,8 @@ impl LocalApplicationFacade {
             return Err(AppError::new(ErrorCode::ObjectNotFound, Severity::Error));
         }
         let service = TranslationService::new(
-            LocalTranslationRepository {
-                records: self.translation_records.clone(),
+            StorageTranslationRepository {
+                database: self.database.clone(),
             },
             SharedLlmRunner(Arc::new(NoopLlmRunner)),
         );
@@ -4041,6 +4168,9 @@ impl ApplicationFacade for LocalApplicationFacade {
             AppCommand::TranslateDescription(request) => {
                 return self.translate_description(request).await;
             }
+            AppCommand::TranslateDescriptionsBatch(request) => {
+                return self.translate_descriptions_batch(request).await;
+            }
             AppCommand::SaveUserTranslationRevision(request) => {
                 return self.save_user_translation_revision(request).await;
             }
@@ -4285,6 +4415,7 @@ impl ApplicationFacade for LocalApplicationFacade {
             AppQuery::ListSkillOperations(request) => self.list_skill_operations(request.skill_id),
             AppQuery::ListRunningLlmChecks => self.list_running_llm_checks(),
             AppQuery::ListLlmProviders => self.list_llm_providers().await,
+            AppQuery::ListTranslations(request) => self.list_translations(request.skill_id),
             AppQuery::ListLlmProviderPresets => self.list_llm_provider_presets(),
             AppQuery::CheckSourceUpdates(request) => self.check_source_updates(request).await,
             AppQuery::DiffVersions(request) => self.diff_versions(&request.left, &request.right),

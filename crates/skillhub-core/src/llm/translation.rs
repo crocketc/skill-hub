@@ -49,6 +49,18 @@ pub struct TranslationResult {
     pub provenance: TranslationProvenance,
 }
 
+/// A persisted translation as shown in the UI: the domain record plus the
+/// storage metadata and the derived "source description changed" flag.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, serde::Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct TranslationView {
+    pub record: TranslationRecord,
+    pub version_id: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+    pub needs_update: bool,
+}
+
 pub fn build_translation_request(description: &str, language: &str) -> AppResult<LlmTaskRequest> {
     let schema: Value = serde_json::from_str(TRANSLATION_SCHEMA)
         .map_err(|_| AppError::new(ErrorCode::InternalError, Severity::Error))?;

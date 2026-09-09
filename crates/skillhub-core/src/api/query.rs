@@ -19,6 +19,12 @@ use serde::{Deserialize, Serialize};
 pub struct GetSkill {
     pub skill_id: SkillId,
 }
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct ListTranslations {
+    pub skill_id: SkillId,
+}
 /// User-facing lifecycle bucket used by the library list filter. `Trial`
 /// covers any skill with a pending trial date regardless of the stored
 /// lifecycle, mirroring the display mapping used by the desktop clients.
@@ -578,6 +584,8 @@ pub enum AppQuery {
     ListRunningLlmChecks,
     #[serde(rename = "list_llm_providers")]
     ListLlmProviders,
+    #[serde(rename = "list_translations")]
+    ListTranslations(ListTranslations),
     #[serde(rename = "list_llm_provider_presets")]
     ListLlmProviderPresets,
     #[serde(rename = "check_source_updates")]
@@ -741,6 +749,8 @@ pub enum AppQueryResult {
     RunningLlmChecks(Vec<LlmCheckRun>),
     #[serde(rename = "llm_providers")]
     LlmProviders(Vec<crate::llm::LlmProviderView>),
+    #[serde(rename = "translations")]
+    Translations(Vec<crate::llm::TranslationView>),
     #[serde(rename = "llm_provider_presets")]
     LlmProviderPresets(Vec<crate::llm::LlmProviderPreset>),
     #[serde(rename = "source_update_checks")]

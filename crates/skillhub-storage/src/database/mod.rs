@@ -21,6 +21,7 @@ mod search_repository;
 mod skill_repo_repository;
 mod source_repository;
 mod source_search_cache;
+mod translation_repository;
 mod ui_preference_repository;
 
 use std::fmt;
@@ -54,6 +55,7 @@ pub use search_repository::SearchRepository;
 pub use skill_repo_repository::SkillRepoRepository;
 pub use source_repository::SourceRepository;
 pub use source_search_cache::SourceSearchCache;
+pub use translation_repository::{PersistedTranslation, TranslationRecordRepository};
 pub use ui_preference_repository::UiPreferenceRepository;
 
 /// An application database backed by SQLite.
@@ -142,6 +144,10 @@ impl Database {
 
     pub fn llm_provider_repository(&self) -> LlmProviderRepository<'_> {
         LlmProviderRepository::new(self)
+    }
+
+    pub fn translation_record_repository(&self) -> TranslationRecordRepository<'_> {
+        TranslationRecordRepository::new(self)
     }
 
     pub fn scan_repository(&self) -> ScanRepository<'_> {

@@ -387,6 +387,31 @@ pub struct GenerateOnlineSearchQuery {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 #[serde(deny_unknown_fields)]
+pub struct TranslateDescriptionsBatch {
+    pub skill_ids: Vec<SkillId>,
+    pub language: String,
+}
+
+/// One failed item of a batch translation. The batch never aborts on a
+/// single failure; every item is reported so none is silently lost.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct BatchTranslationItemFailure {
+    pub skill_id: SkillId,
+    pub code: String,
+    pub message: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct BatchTranslationOutcome {
+    pub language: String,
+    pub translated: Vec<crate::llm::translation::TranslationResult>,
+    pub failed: Vec<BatchTranslationItemFailure>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
 pub struct SaveLlmProvider {
     pub provider: crate::llm::LlmProviderConfig,
     /// Credential material for the OS store. Never persisted anywhere else.
@@ -747,6 +772,8 @@ pub enum AppCommand {
     AnalyzeSemanticDuplicates(AnalyzeSemanticDuplicates),
     #[serde(rename = "translate_description")]
     TranslateDescription(TranslateDescription),
+    #[serde(rename = "translate_descriptions_batch")]
+    TranslateDescriptionsBatch(TranslateDescriptionsBatch),
     #[serde(rename = "save_user_translation_revision")]
     SaveUserTranslationRevision(SaveUserTranslationRevision),
     #[serde(rename = "generate_online_search_query")]
@@ -890,6 +917,8 @@ pub enum AppCommandResult {
     DuplicateAnalysis(crate::duplicate::DuplicateAnalysis),
     #[serde(rename = "translation_result")]
     TranslationResult(TranslationResult),
+    #[serde(rename = "batch_translation_result")]
+    BatchTranslationResult(BatchTranslationOutcome),
     #[serde(rename = "online_search_query")]
     OnlineSearchQuery(SearchQuerySuggestion),
     #[serde(rename = "llm_provider_view")]

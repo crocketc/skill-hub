@@ -37,13 +37,18 @@ where
     ) -> AppResult<TranslationResult> {
         let existing = self.repository.get(skill_id, language).await?;
         if let Some(record) = existing {
-            if record.provenance.source_description_hash == source_description_hash {
-                if record.origin == TranslationOrigin::UserRevision {
-                    return Err(AppError::new(
-                        ErrorCode::TranslationUserRevisionRequiresConfirmation,
-                        Severity::Warning,
-                    ));
-                }
+            let source_unchanged =
+                record.provenance.source_description_hash == source_description_hash;
+            if record.origin == TranslationOrigin::UserRevision {
+                // A user revision is never silently discarded — neither when
+                // the description is unchanged nor when it changed and a
+                // regeneration would overwrite the revision.
+                return Err(AppError::new(
+                    ErrorCode::TranslationUserRevisionRequiresConfirmation,
+                    Severity::Warning,
+                ));
+            }
+            if source_unchanged {
                 return Ok(TranslationResult {
                     skill_id,
                     language: record.language,

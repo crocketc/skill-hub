@@ -114,3 +114,50 @@ fn missing_llm_disables_optional_translation() {
             assert_eq!(error.code, ErrorCode::LlmNotConfigured);
         });
 }
+
+#[test]
+fn changed_source_never_silently_overwrites_user_revisions() {
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap()
+        .block_on(async {
+            let skill_id = SkillId::new();
+            let store = MemoryTranslations::default();
+            let service = TranslationService::new(store.clone(), Runner);
+            service
+                .translate(
+                    skill_id,
+                    "Extract PDF text",
+                    "hash-1",
+                    "zh-CN",
+                    Some(&profile()),
+                )
+                .await
+                .unwrap();
+            service
+                .save_user_revision(skill_id, "zh-CN", "hash-1", "我修改的译文")
+                .await
+                .unwrap();
+            // The source description changed: regeneration still may not
+            // discard the user's revision without explicit confirmation.
+            let error = service
+                .translate(
+                    skill_id,
+                    "Extract PDF pages",
+                    "hash-2",
+                    "zh-CN",
+                    Some(&profile()),
+                )
+                .await
+                .unwrap_err();
+            assert_eq!(
+                error.code,
+                ErrorCode::TranslationUserRevisionRequiresConfirmation
+            );
+            assert_eq!(
+                store.get(skill_id, "zh-CN").await.unwrap().unwrap().text,
+                "我修改的译文"
+            );
+        });
+}

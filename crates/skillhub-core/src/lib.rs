@@ -56,7 +56,7 @@ pub use api::{
     RestoreOriginalCallPolicy, RollbackApplicationUpdate, RunHealthCheck, RunLlmSafetyCheck,
     RunRollingBackup, SaveUserTranslationRevision, SearchOnlineSources, SetApplicationUpdatePolicy,
     SetUiPreference, SkillListItem, SkillListPage, SkillOperationEntry, SkillOperationsResult,
-    TranslateDescription, VerifyBackup,
+    TranslateDescription, TranslateDescriptionsBatch, VerifyBackup,
 };
 pub use app_update::{
     install_action_for, select_artifact, validate_official_artifact_url,
