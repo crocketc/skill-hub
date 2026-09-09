@@ -53,6 +53,17 @@ pub struct DuplicateRelation {
     pub recommendation: RetentionRecommendation,
 }
 
+/// Where the analysis relations came from. `DeterministicOnly` means the
+/// FTS/BM25 candidate layer is still shown, but the LLM layer failed or was
+/// unnecessary — the deterministic result is never lost behind an LLM error.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(rename_all = "snake_case")]
+pub enum DuplicateAnalysisSource {
+    #[default]
+    DeterministicOnly,
+    Llm,
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 #[serde(deny_unknown_fields)]
 pub struct DuplicateAnalysis {
@@ -60,6 +71,35 @@ pub struct DuplicateAnalysis {
     pub candidate_count: u32,
     pub relations: Vec<DuplicateRelation>,
     pub applied_automatically: bool,
+    /// The deterministic candidate layer, always carried back to the UI.
+    #[serde(default)]
+    pub candidates: Vec<DuplicateCandidate>,
+    #[serde(default)]
+    pub source: DuplicateAnalysisSource,
+    /// Set when the LLM layer failed; the code is safe for display.
+    #[serde(default)]
+    pub failure_code: Option<String>,
+}
+
+impl DuplicateAnalysis {
+    /// The always-available deterministic view: candidates from the local
+    /// FTS/BM25 prefilter without any LLM relations.
+    pub fn deterministic_only(
+        anchor_skill_id: SkillId,
+        candidates: Vec<DuplicateCandidate>,
+        failure_code: Option<String>,
+    ) -> Self {
+        let candidate_count = u32::try_from(candidates.len()).unwrap_or(u32::MAX);
+        Self {
+            anchor_skill_id,
+            candidate_count,
+            relations: Vec::new(),
+            applied_automatically: false,
+            candidates,
+            source: DuplicateAnalysisSource::DeterministicOnly,
+            failure_code,
+        }
+    }
 }
 
 pub fn build_duplicate_request(candidates: &[DuplicateCandidate]) -> AppResult<LlmTaskRequest> {
@@ -88,6 +128,9 @@ pub fn parse_duplicate_response(
         candidate_count: u32::try_from(candidate_count).unwrap_or(u32::MAX),
         relations: parsed.relations,
         applied_automatically: false,
+        candidates: Vec::new(),
+        source: DuplicateAnalysisSource::Llm,
+        failure_code: None,
     })
 }
 

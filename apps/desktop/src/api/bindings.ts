@@ -640,6 +640,29 @@ export type DuplicateAnalysis = {
 	candidate_count: number,
 	relations: DuplicateRelation[],
 	applied_automatically: boolean,
+	/**  The deterministic candidate layer, always carried back to the UI. */
+	candidates?: DuplicateCandidate[],
+	source?: DuplicateAnalysisSource,
+	/**  Set when the LLM layer failed; the code is safe for display. */
+	failure_code?: string | null,
+};
+
+/**
+ *  Where the analysis relations came from. `DeterministicOnly` means the
+ *  FTS/BM25 candidate layer is still shown, but the LLM layer failed or was
+ *  unnecessary — the deterministic result is never lost behind an LLM error.
+ */
+export type DuplicateAnalysisSource = "deterministic_only" | "llm";
+
+export type DuplicateCandidate = {
+	skill_id: SkillId,
+	name: string,
+	description: string,
+	trigger: string,
+	permissions: string[],
+	source: string,
+	basic_check_state: string,
+	locally_modified: boolean,
 };
 
 /**  The strongest deterministic relationship found for an imported candidate. */

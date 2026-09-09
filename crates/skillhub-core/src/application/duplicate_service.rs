@@ -32,9 +32,34 @@ where
     ) -> AppResult<DuplicateAnalysis> {
         let mut candidates = self.provider.candidates(skill_id).await?;
         candidates.truncate(8);
+        if candidates.is_empty() {
+            // Nothing to compare: answer deterministically without an LLM call.
+            return Ok(DuplicateAnalysis::deterministic_only(
+                skill_id, candidates, None,
+            ));
+        }
         let count = candidates.len();
         let request = build_duplicate_request(&candidates)?;
-        let response = self.runner.run(profile, request).await?;
-        parse_duplicate_response(skill_id, count, response.output)
+        let response = match self.runner.run(profile, request).await {
+            Ok(response) => response,
+            Err(error) => {
+                return Ok(DuplicateAnalysis::deterministic_only(
+                    skill_id,
+                    candidates,
+                    Some(error.code.as_str().to_owned()),
+                ))
+            }
+        };
+        match parse_duplicate_response(skill_id, count, response.output) {
+            Ok(mut analysis) => {
+                analysis.candidates = candidates;
+                Ok(analysis)
+            }
+            Err(error) => Ok(DuplicateAnalysis::deterministic_only(
+                skill_id,
+                candidates,
+                Some(error.code.as_str().to_owned()),
+            )),
+        }
     }
 }

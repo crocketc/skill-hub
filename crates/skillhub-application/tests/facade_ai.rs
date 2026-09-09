@@ -301,3 +301,105 @@ async fn evidence_query_reports_partial_local_records_as_experimental() {
     assert_eq!(result.suggestions[0].calls, 1);
     assert!(!result.suggestions[0].applied_automatically);
 }
+
+/// Always fails like an unreachable provider would.
+struct FailingLlmRunner;
+
+#[async_trait(?Send)]
+impl skillhub_core::LlmTaskRunner for FailingLlmRunner {
+    async fn run(
+        &self,
+        _profile: &skillhub_core::LlmProfile,
+        _request: skillhub_core::LlmTaskRequest,
+    ) -> skillhub_core::AppResult<skillhub_core::LlmTaskResponse> {
+        Err(skillhub_core::AppError::llm_request_timeout(1_000))
+    }
+}
+
+#[tokio::test]
+async fn duplicate_analysis_surfaces_deterministic_results_when_llm_fails() {
+    let database = Database::open_in_memory().expect("database");
+    let skill_a = Skill::new(
+        "00000000-0000-0000-0000-00000000000a"
+            .parse()
+            .expect("skill id"),
+        "PDF extraction A",
+    )
+    .with_description("Extract PDF text");
+    let skill_b = Skill::new(
+        "00000000-0000-0000-0000-00000000000b"
+            .parse()
+            .expect("skill id"),
+        "PDF extraction B",
+    )
+    .with_description("Extract PDF text");
+    for skill in [&skill_a, &skill_b] {
+        database
+            .catalog_repository()
+            .expect("catalog repository")
+            .insert(skill)
+            .await
+            .expect("insert skill");
+        database
+            .search_repository()
+            .reindex_skill(&skillhub_core::search::SearchDocument {
+                skill_id: skill.id(),
+                display_name: skill.display_name().to_owned(),
+                runtime_name: skill.runtime_name().to_owned(),
+                original_description: skill.original_description().to_owned(),
+                translated_description: None,
+                user_note: None,
+                tags: Vec::new(),
+                author: None,
+                license: None,
+                requirements: Vec::new(),
+                markdown: "extract PDF text".to_owned(),
+            })
+            .expect("index skill");
+    }
+    let profile = skillhub_core::LlmProfile::new(
+        "test",
+        "https://llm.example.test/v1/chat/completions",
+        "test-model",
+        None,
+    )
+    .expect("profile");
+    database
+        .llm_profile_repository()
+        .save(&profile)
+        .expect("save profile");
+    let root = tempfile::tempdir().expect("library");
+    let facade = LocalApplicationFacade::new_with_library_and_llm_runner(
+        database,
+        root.path(),
+        std::sync::Arc::new(FailingLlmRunner),
+    );
+    enable_all_llm_capabilities(&facade).await;
+
+    let duplicate = facade
+        .execute(AppCommand::AnalyzeSemanticDuplicates(
+            skillhub_core::AnalyzeSemanticDuplicates {
+                skill_id: skill_a.id(),
+            },
+        ))
+        .await
+        .expect("a failing LLM must not lose the deterministic layer");
+    let AppCommandResult::DuplicateAnalysis(duplicate) = duplicate else {
+        panic!("expected duplicate analysis");
+    };
+    assert_eq!(
+        duplicate.source,
+        skillhub_core::duplicate::DuplicateAnalysisSource::DeterministicOnly
+    );
+    assert_eq!(
+        duplicate.failure_code.as_deref(),
+        Some("llm.request_timeout")
+    );
+    assert!(duplicate.relations.is_empty());
+    assert!(!duplicate.applied_automatically);
+    assert!(duplicate.candidate_count >= 1);
+    assert_eq!(
+        duplicate.candidates.len(),
+        duplicate.candidate_count as usize
+    );
+}
