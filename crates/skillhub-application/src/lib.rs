@@ -1929,6 +1929,93 @@ impl LocalApplicationFacade {
         })
     }
 
+    /// Import-flow AI pre-checks (step 5): one advisory safety analysis per
+    /// prepared import. Findings never change the deterministic import gates;
+    /// failures are reported per object and never abort the batch.
+    async fn run_import_ai_checks(
+        &self,
+        request: skillhub_core::api::RunImportAiChecks,
+    ) -> AppResult<AppCommandResult> {
+        let capabilities = self.llm_capabilities()?;
+        self.require_llm_capability(capabilities.safety_check, LlmTaskKind::Safety)?;
+        let (runner, profile) = self.llm_context("execute.run_import_ai_checks.profile")?;
+        let mut outcomes = Vec::with_capacity(request.prepared_import_ids.len());
+        for id in request.prepared_import_ids {
+            let prepared = self
+                .prepared_imports
+                .lock()
+                .map_err(|_| internal("execute.run_import_ai_checks.registry"))?
+                .get(&id)
+                .cloned();
+            let Some(prepared) = prepared else {
+                outcomes.push(skillhub_core::api::ImportAiCheckOutcome {
+                    prepared_import_id: id,
+                    state: skillhub_core::check::CheckState::Failed,
+                    finding_count: 0,
+                    file_count: 0,
+                    failure_code: Some(ErrorCode::ObjectNotFound.as_str().to_owned()),
+                });
+                continue;
+            };
+            let files = import_markdown_files(&prepared.candidate.absolute_root);
+            let file_count = u32::try_from(files.len()).unwrap_or(u32::MAX);
+            let evidence = read_import_evidence(&prepared.candidate.absolute_root, &files);
+            let outcome = match evidence.and_then(|evidence| {
+                skillhub_core::llm::safety::build_safety_request(
+                    &skillhub_adapters::security::mask_credentials(&evidence),
+                )
+                .map(|request| {
+                    (
+                        request,
+                        skillhub_core::llm::safety::SAFETY_PROMPT_VERSION.to_owned(),
+                    )
+                })
+            }) {
+                Ok((safety_request, _prompt_version)) => {
+                    let model_profile = profile.clone();
+                    let task_runner = runner.clone();
+                    let llm = run_non_send(move || async move {
+                        task_runner.run(&model_profile, safety_request).await
+                    });
+                    match llm.and_then(|response| {
+                        skillhub_core::llm::safety::parse_safety_response(response.output, &files)
+                    }) {
+                        Ok(findings) => skillhub_core::api::ImportAiCheckOutcome {
+                            prepared_import_id: id,
+                            state: skillhub_core::check::CheckState::Passed,
+                            finding_count: u32::try_from(findings.len()).unwrap_or(u32::MAX),
+                            file_count,
+                            failure_code: None,
+                        },
+                        Err(error) => skillhub_core::api::ImportAiCheckOutcome {
+                            prepared_import_id: id,
+                            state: skillhub_core::check::CheckState::Failed,
+                            finding_count: 0,
+                            file_count,
+                            failure_code: Some(error.code.as_str().to_owned()),
+                        },
+                    }
+                }
+                Err(error) => skillhub_core::api::ImportAiCheckOutcome {
+                    prepared_import_id: id,
+                    state: skillhub_core::check::CheckState::Failed,
+                    finding_count: 0,
+                    file_count,
+                    failure_code: Some(error.code.as_str().to_owned()),
+                },
+            };
+            outcomes.push(outcome);
+        }
+        Ok(AppCommandResult::ImportAiChecksReport(
+            skillhub_core::api::ImportAiChecksReport {
+                provider: profile.provider.clone(),
+                model: profile.model.clone(),
+                requested: u32::try_from(outcomes.len()).unwrap_or(u32::MAX),
+                outcomes,
+            },
+        ))
+    }
+
     fn list_translations(&self, skill_id: skillhub_core::SkillId) -> AppResult<AppQueryResult> {
         let detail = self.with_database("query.list_translations.skill", |database| {
             database.catalog_repository()?.get_detail(skill_id)
@@ -4314,6 +4401,9 @@ impl ApplicationFacade for LocalApplicationFacade {
             AppCommand::TestLlmConnection(request) => {
                 return self.test_llm_connection(request).await;
             }
+            AppCommand::RunImportAiChecks(request) => {
+                return self.run_import_ai_checks(request).await;
+            }
             _ => "execute.unsupported",
         };
         Err(AppError::new(ErrorCode::InternalError, Severity::Error)
@@ -6020,6 +6110,57 @@ fn now_seconds() -> i64 {
         .duration_since(UNIX_EPOCH)
         .map(|duration| i64::try_from(duration.as_secs()).unwrap_or(i64::MAX))
         .unwrap_or_default()
+}
+
+/// Deterministic markdown evidence list for an import candidate: sorted,
+/// depth-bounded relative paths under the candidate root.
+fn import_markdown_files(root: &str) -> Vec<String> {
+    let base = std::path::Path::new(root);
+    let mut files = Vec::new();
+    let mut stack = vec![std::path::PathBuf::new()];
+    while let Some(relative) = stack.pop() {
+        let Ok(entries) = std::fs::read_dir(base.join(&relative)) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = relative.join(entry.file_name());
+            if entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+                stack.push(path);
+            } else if path
+                .extension()
+                .is_some_and(|extension| extension.eq_ignore_ascii_case("md"))
+            {
+                files.push(path.to_string_lossy().replace('\\', "/"));
+            }
+        }
+    }
+    files.sort();
+    files.truncate(32);
+    files
+}
+
+fn read_import_evidence(root: &str, files: &[String]) -> AppResult<String> {
+    let base = std::path::Path::new(root);
+    let mut evidence = String::new();
+    for file in files {
+        let bytes = std::fs::read(base.join(file)).map_err(|error| {
+            AppError::new(ErrorCode::LlmEvidenceReferenceInvalid, Severity::Error)
+                .with_param("source", error.to_string())
+        })?;
+        let bytes = if bytes.len() > 256 * 1024 {
+            &bytes[..256 * 1024]
+        } else {
+            &bytes[..]
+        };
+        let text = String::from_utf8(bytes.to_vec())
+            .map_err(|_| AppError::new(ErrorCode::LlmEvidenceReferenceInvalid, Severity::Error))?;
+        evidence.push_str("FILE: ");
+        evidence.push_str(file);
+        evidence.push('\n');
+        evidence.push_str(&text);
+        evidence.push_str("\n\n");
+    }
+    Ok(evidence)
 }
 
 fn description_hash(description: &str) -> String {

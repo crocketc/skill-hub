@@ -410,6 +410,37 @@ pub struct BatchTranslationOutcome {
     pub failed: Vec<BatchTranslationItemFailure>,
 }
 
+/// Step 5 of the import flow: run the AI safety layer over prepared imports.
+/// Strictly user-initiated (or enabled by preference); purely advisory.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct RunImportAiChecks {
+    pub prepared_import_ids: Vec<crate::OperationId>,
+}
+
+/// One prepared import's AI pre-check outcome. `Failed` objects carry a
+/// display-safe failure code; the rest of the batch is unaffected.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct ImportAiCheckOutcome {
+    pub prepared_import_id: crate::OperationId,
+    pub state: crate::check::CheckState,
+    pub finding_count: u32,
+    pub file_count: u32,
+    pub failure_code: Option<String>,
+}
+
+/// Batch report carrying the provider/model that answered, so the UI can
+/// show scope and cost-relevant facts before any commit.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct ImportAiChecksReport {
+    pub provider: String,
+    pub model: String,
+    pub requested: u32,
+    pub outcomes: Vec<ImportAiCheckOutcome>,
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 #[serde(deny_unknown_fields)]
 pub struct SaveLlmProvider {
@@ -790,6 +821,8 @@ pub enum AppCommand {
     FetchLlmModels(FetchLlmModels),
     #[serde(rename = "test_llm_connection")]
     TestLlmConnection(TestLlmConnection),
+    #[serde(rename = "run_import_ai_checks")]
+    RunImportAiChecks(RunImportAiChecks),
     #[serde(rename = "prepare_backup")]
     PrepareBackup(PrepareBackup),
     #[serde(rename = "create_backup")]
@@ -927,6 +960,8 @@ pub enum AppCommandResult {
     LlmModels(Vec<String>),
     #[serde(rename = "connection_test")]
     ConnectionTest(crate::llm::ConnectionTestResult),
+    #[serde(rename = "import_ai_checks_report")]
+    ImportAiChecksReport(ImportAiChecksReport),
     #[serde(rename = "backup_plan")]
     BackupPlan(BackupPlan),
     #[serde(rename = "backup_manifest")]
