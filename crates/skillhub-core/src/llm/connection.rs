@@ -25,12 +25,13 @@ impl ConnectionTestResult {
 #[serde(deny_unknown_fields)]
 pub struct EndpointCheckResult {
     pub reachable: bool,
-    pub latency_ms: Option<u64>,
+    // u32 keeps the generated TypeScript contract free of BigInt-only types.
+    pub latency_ms: Option<u32>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 #[serde(deny_unknown_fields)]
 pub struct ModelCheckResult {
     pub ok: bool,
-    pub latency_ms: Option<u64>,
+    pub latency_ms: Option<u32>,
 }

@@ -3,7 +3,7 @@ use url::Url;
 
 use crate::{AppError, AppResult, ErrorCode, Severity};
 
-use super::model::CredentialRef;
+use super::model::{CredentialRef, LlmProfile};
 
 /// Wire protocol spoken by a provider. Vendor differences are confined here.
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
@@ -120,19 +120,20 @@ pub struct LlmProviderConfig {
     pub custom_headers: Vec<CustomHeader>,
     #[serde(default = "default_true")]
     pub enabled: bool,
+    // u32 keeps the generated TypeScript contract free of BigInt-only types.
     #[serde(default = "default_timeout_ms")]
-    pub timeout_ms: u64,
+    pub timeout_ms: u32,
     #[serde(default = "default_max_input_bytes")]
-    pub max_input_bytes: usize,
+    pub max_input_bytes: u32,
 }
 
 fn default_true() -> bool {
     true
 }
-fn default_timeout_ms() -> u64 {
+fn default_timeout_ms() -> u32 {
     30_000
 }
-fn default_max_input_bytes() -> usize {
+fn default_max_input_bytes() -> u32 {
     256 * 1024
 }
 
@@ -192,7 +193,7 @@ impl LlmProviderConfig {
         Ok(self)
     }
 
-    pub fn with_limits(mut self, timeout_ms: u64, max_input_bytes: usize) -> AppResult<Self> {
+    pub fn with_limits(mut self, timeout_ms: u32, max_input_bytes: u32) -> AppResult<Self> {
         if timeout_ms == 0 || max_input_bytes == 0 {
             return Err(invalid_input("limits"));
         }
@@ -204,8 +205,8 @@ impl LlmProviderConfig {
     /// Endpoint rules: online providers must use https; local models may use
     /// plain http only on loopback addresses so LAN plaintext is rejected.
     pub fn validate(&self) -> AppResult<()> {
-        let parsed = Url::parse(&self.endpoint)
-            .map_err(|_| endpoint_not_allowed("endpoint_unparsable"))?;
+        let parsed =
+            Url::parse(&self.endpoint).map_err(|_| endpoint_not_allowed("endpoint_unparsable"))?;
         let host = parsed
             .host_str()
             .ok_or_else(|| endpoint_not_allowed("endpoint_host"))?;
@@ -238,9 +239,46 @@ impl LlmProviderConfig {
     }
 }
 
+impl LlmProviderConfig {
+    /// Derives the runtime task profile from this configuration. The
+    /// protocol, deployment and custom headers ride along so the HTTP runner
+    /// can dispatch to the right adapter.
+    pub fn to_profile(&self) -> AppResult<LlmProfile> {
+        LlmProfile::new(
+            self.id.clone(),
+            self.endpoint.clone(),
+            self.model.clone(),
+            self.credential_ref.clone(),
+        )
+        .and_then(|profile| {
+            profile
+                .with_protocol(self.protocol)
+                .and_then(|profile| profile.with_deployment(self.deployment))
+        })
+        .and_then(|profile| {
+            let mut profile = profile;
+            profile.timeout_ms = u64::from(self.timeout_ms);
+            profile.max_input_bytes = self.max_input_bytes as usize;
+            profile.custom_headers = self.custom_headers.clone();
+            profile.validate()?;
+            Ok(profile)
+        })
+    }
+}
+
+/// A listed provider configuration with UI-facing status fields. The secret
+/// value itself never leaves the OS credential store.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct LlmProviderView {
+    pub config: LlmProviderConfig,
+    #[serde(default)]
+    pub credential_configured: bool,
+    pub is_default: bool,
+}
+
 fn endpoint_not_allowed(reason: &'static str) -> AppError {
-    AppError::new(ErrorCode::LlmEndpointNotAllowed, Severity::Error)
-        .with_param("reason", reason)
+    AppError::new(ErrorCode::LlmEndpointNotAllowed, Severity::Error).with_param("reason", reason)
 }
 
 fn invalid_input(field: &'static str) -> AppError {
@@ -269,8 +307,7 @@ pub struct LlmProviderPreset {
 const API_DOCS_TOS: &str = "https://platform.openai.com/docs/api-reference";
 const ANTHROPIC_DOCS: &str = "https://docs.anthropic.com/en/api/messages";
 const GEMINI_DOCS: &str = "https://ai.google.dev/api/generate-content";
-const AZURE_DOCS: &str =
-    "https://learn.microsoft.com/azure/ai-services/openai/reference";
+const AZURE_DOCS: &str = "https://learn.microsoft.com/azure/ai-services/openai/reference";
 const OPENROUTER_DOCS: &str = "https://openrouter.ai/docs/api-reference/overview";
 const DEEPSEEK_DOCS: &str = "https://api-docs.deepseek.com/";
 const DASHSCOPE_DOCS: &str =
@@ -278,8 +315,7 @@ const DASHSCOPE_DOCS: &str =
 const MOONSHOT_DOCS: &str = "https://platform.moonshot.cn/docs/api/chat";
 const GLM_DOCS: &str = "https://docs.bigmodel.cn/cn/guide/start/model-overview";
 const MINIMAX_DOCS: &str = "https://platform.minimaxi.com/en/document/Announcement";
-const ARK_DOCS: &str =
-    "https://www.volcengine.com/docs/82379/1330621";
+const ARK_DOCS: &str = "https://www.volcengine.com/docs/82379/1330621";
 const XAI_DOCS: &str = "https://docs.x.ai/docs/api-reference";
 const OLLAMA_DOCS: &str = "https://github.com/ollama/ollama/blob/main/docs/openai.md";
 const LMSTUDIO_DOCS: &str = "https://lmstudio.ai/docs/app/api/endpoints/openai";

@@ -19,7 +19,10 @@ async fn session_store_supports_set_replace_and_delete() {
     assert_eq!(read.as_deref(), Some("sk-first-value"));
 
     // Replacing a credential overwrites the old value instead of stacking.
-    store.set(&reference, "sk-second-value").await.expect("replace");
+    store
+        .set(&reference, "sk-second-value")
+        .await
+        .expect("replace");
     let replaced = store.get(&reference).await.expect("get after replace");
     assert_eq!(replaced.as_deref(), Some("sk-second-value"));
 
@@ -46,7 +49,10 @@ async fn os_credential_store_round_trips_through_its_backend() {
     let read = store.get(&reference).await.expect("get");
     assert_eq!(read.as_deref(), Some("sk-test-fixture-value"));
 
-    store.set(&reference, "sk-rotated-value").await.expect("rotate");
+    store
+        .set(&reference, "sk-rotated-value")
+        .await
+        .expect("rotate");
     assert_eq!(
         backend.read_raw("llm-provider:deepseek").as_deref(),
         Some("sk-rotated-value"),

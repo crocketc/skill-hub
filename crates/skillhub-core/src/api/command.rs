@@ -387,6 +387,61 @@ pub struct GenerateOnlineSearchQuery {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 #[serde(deny_unknown_fields)]
+pub struct SaveLlmProvider {
+    pub provider: crate::llm::LlmProviderConfig,
+    /// Credential material for the OS store. Never persisted anywhere else.
+    pub credential: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct DeleteLlmProvider {
+    pub id: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct SetLlmProviderEnabled {
+    pub id: String,
+    pub enabled: bool,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct SetDefaultLlmProvider {
+    pub id: Option<String>,
+}
+
+/// Whether an administration call targets a stored provider or an unsaved
+/// draft straight from the settings form.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(tag = "kind", content = "payload", rename_all = "snake_case")]
+pub enum FetchLlmProvider {
+    Saved {
+        id: String,
+    },
+    Draft {
+        provider: crate::llm::LlmProviderConfig,
+    },
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct FetchLlmModels {
+    pub provider: FetchLlmProvider,
+    /// Inline credential for a draft (not yet stored in the OS store).
+    pub credential: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct TestLlmConnection {
+    pub provider: FetchLlmProvider,
+    pub credential: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
 pub struct PrepareBackup {
     pub scope: BackupScope,
 }
@@ -696,6 +751,18 @@ pub enum AppCommand {
     SaveUserTranslationRevision(SaveUserTranslationRevision),
     #[serde(rename = "generate_online_search_query")]
     GenerateOnlineSearchQuery(GenerateOnlineSearchQuery),
+    #[serde(rename = "save_llm_provider")]
+    SaveLlmProvider(SaveLlmProvider),
+    #[serde(rename = "delete_llm_provider")]
+    DeleteLlmProvider(DeleteLlmProvider),
+    #[serde(rename = "set_llm_provider_enabled")]
+    SetLlmProviderEnabled(SetLlmProviderEnabled),
+    #[serde(rename = "set_default_llm_provider")]
+    SetDefaultLlmProvider(SetDefaultLlmProvider),
+    #[serde(rename = "fetch_llm_models")]
+    FetchLlmModels(FetchLlmModels),
+    #[serde(rename = "test_llm_connection")]
+    TestLlmConnection(TestLlmConnection),
     #[serde(rename = "prepare_backup")]
     PrepareBackup(PrepareBackup),
     #[serde(rename = "create_backup")]
@@ -825,6 +892,12 @@ pub enum AppCommandResult {
     TranslationResult(TranslationResult),
     #[serde(rename = "online_search_query")]
     OnlineSearchQuery(SearchQuerySuggestion),
+    #[serde(rename = "llm_provider_view")]
+    LlmProviderView(crate::llm::LlmProviderView),
+    #[serde(rename = "llm_models")]
+    LlmModels(Vec<String>),
+    #[serde(rename = "connection_test")]
+    ConnectionTest(crate::llm::ConnectionTestResult),
     #[serde(rename = "backup_plan")]
     BackupPlan(BackupPlan),
     #[serde(rename = "backup_manifest")]

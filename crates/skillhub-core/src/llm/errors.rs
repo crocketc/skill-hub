@@ -51,8 +51,7 @@ impl AppError {
     }
 
     pub fn llm_invalid_json() -> Self {
-        AppError::new(ErrorCode::LlmInvalidJson, Severity::Error)
-            .with_action(RecoveryAction::Retry)
+        AppError::new(ErrorCode::LlmInvalidJson, Severity::Error).with_action(RecoveryAction::Retry)
     }
 
     pub fn llm_response_interrupted() -> Self {

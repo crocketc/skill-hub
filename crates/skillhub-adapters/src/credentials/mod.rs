@@ -14,6 +14,43 @@ use skillhub_core::{AppError, AppResult};
 
 pub use memory::InMemoryCredentialBackend;
 
+/// Read-only overlay serving one inline secret under a fixed reference id and
+/// falling back to the base store for everything else. Used by administration
+/// calls on unsaved drafts whose credential material is not persisted yet.
+pub struct OverlayCredentialStore {
+    base: Arc<dyn CredentialStore>,
+    overlay_id: String,
+    overlay_value: String,
+}
+
+impl OverlayCredentialStore {
+    pub fn new(base: Arc<dyn CredentialStore>, overlay_id: String, overlay_value: String) -> Self {
+        Self {
+            base,
+            overlay_id,
+            overlay_value,
+        }
+    }
+}
+
+#[async_trait::async_trait(?Send)]
+impl CredentialStore for OverlayCredentialStore {
+    async fn get(&self, reference: &CredentialRef) -> AppResult<Option<String>> {
+        if reference.id == self.overlay_id {
+            return Ok(Some(self.overlay_value.clone()));
+        }
+        self.base.get(reference).await
+    }
+
+    async fn set(&self, reference: &CredentialRef, secret: &str) -> AppResult<()> {
+        self.base.set(reference, secret).await
+    }
+
+    async fn delete(&self, reference: &CredentialRef) -> AppResult<()> {
+        self.base.delete(reference).await
+    }
+}
+
 /// Platform seam behind [`OsCredentialStore`]. Production builds use the
 /// keyring-backed implementation; tests inject in-memory backends so no test
 /// ever touches a real OS vault or real credential.

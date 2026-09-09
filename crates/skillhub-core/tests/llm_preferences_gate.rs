@@ -1,7 +1,6 @@
 use skillhub_core::llm::{LlmDeployment, NetworkGate};
 use skillhub_core::settings::DesktopPreferences;
 
-
 #[test]
 fn preferences_gain_llm_capability_fields_with_safe_defaults() {
     let preferences = DesktopPreferences::default();

@@ -76,6 +76,20 @@ async fn facade_with_check() -> (
         library_root.path(),
         Arc::new(SlowRunner),
     ));
+    // The capability switches default to off; this fixture exercises the
+    // safety-check path, so it opts in explicitly.
+    facade
+        .execute(AppCommand::SetDesktopPreferences(
+            skillhub_core::DesktopPreferences {
+                llm_capabilities: skillhub_core::settings::LlmCapabilitySettings {
+                    safety_check: true,
+                    ..skillhub_core::settings::LlmCapabilitySettings::default()
+                },
+                ..skillhub_core::DesktopPreferences::default()
+            },
+        ))
+        .await
+        .expect("enable safety check capability");
     (facade, library_root, skill.id(), version.id)
 }
 

@@ -4370,6 +4370,18 @@ async fn llm_check_without_configuration_returns_info_without_persisting_a_run()
         )
         .expect("insert version");
     let facade = LocalApplicationFacade::new_with_library(database, library_root.path());
+    facade
+        .execute(AppCommand::SetDesktopPreferences(
+            skillhub_core::DesktopPreferences {
+                llm_capabilities: skillhub_core::settings::LlmCapabilitySettings {
+                    safety_check: true,
+                    ..skillhub_core::settings::LlmCapabilitySettings::default()
+                },
+                ..skillhub_core::DesktopPreferences::default()
+            },
+        ))
+        .await
+        .expect("enable safety check capability");
     let error = facade
         .execute(AppCommand::RunLlmSafetyCheck(RunLlmSafetyCheck {
             skill_id: skill.id(),
@@ -4436,6 +4448,18 @@ async fn configured_llm_check_persists_structured_findings_and_rechecks() {
         library_root.path(),
         std::sync::Arc::new(StaticLlmRunner),
     );
+    facade
+        .execute(AppCommand::SetDesktopPreferences(
+            skillhub_core::DesktopPreferences {
+                llm_capabilities: skillhub_core::settings::LlmCapabilitySettings {
+                    safety_check: true,
+                    ..skillhub_core::settings::LlmCapabilitySettings::default()
+                },
+                ..skillhub_core::DesktopPreferences::default()
+            },
+        ))
+        .await
+        .expect("enable safety check capability");
     let result = facade
         .execute(AppCommand::RunLlmSafetyCheck(RunLlmSafetyCheck {
             skill_id: skill.id(),

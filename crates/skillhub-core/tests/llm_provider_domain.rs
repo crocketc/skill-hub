@@ -40,7 +40,9 @@ fn llm_failure_codes_map_to_stable_strings_and_recovery_actions() {
     let auth = AppError::llm_auth_failed();
     assert!(auth.actions.contains(&RecoveryAction::Reauthenticate));
     let credential = AppError::llm_credential_read_failed();
-    assert!(credential.actions.contains(&RecoveryAction::ConfigureCredential));
+    assert!(credential
+        .actions
+        .contains(&RecoveryAction::ConfigureCredential));
     let rate_limited = AppError::llm_rate_limited(Some(2_000));
     assert_eq!(
         rate_limited.params.get("retry_after_ms"),
@@ -91,7 +93,10 @@ fn online_configs_require_https_and_local_configs_allow_only_loopback_http() {
         None,
     )
     .expect_err("online http must be rejected");
-    assert!(endpoint_error(ErrorCode::LlmEndpointNotAllowed, &http_online));
+    assert!(endpoint_error(
+        ErrorCode::LlmEndpointNotAllowed,
+        &http_online
+    ));
 
     let plain_online = LlmProviderConfig::new(
         "acme",
@@ -103,7 +108,10 @@ fn online_configs_require_https_and_local_configs_allow_only_loopback_http() {
         None,
     )
     .expect_err("endpoints must parse as URLs");
-    assert!(endpoint_error(ErrorCode::LlmEndpointNotAllowed, &plain_online));
+    assert!(endpoint_error(
+        ErrorCode::LlmEndpointNotAllowed,
+        &plain_online
+    ));
 
     let lan_local = LlmProviderConfig::new(
         "ollama-lan",
@@ -142,7 +150,10 @@ fn provider_configs_require_provider_and_model_and_stable_id() {
         None,
     )
     .expect_err("blank model must be rejected");
-    assert!(endpoint_error(skillhub_core::ErrorCode::InvalidInput, &missing_model));
+    assert!(endpoint_error(
+        skillhub_core::ErrorCode::InvalidInput,
+        &missing_model
+    ));
 
     let configured = LlmProviderConfig::new(
         "deepseek",
@@ -177,8 +188,8 @@ fn custom_headers_are_bounded_and_sensitive_values_require_the_credential_store(
     let plain = CustomHeader::new("X-Trace-Id", "trace-123", false).expect("plain header");
     let config = config.with_header(plain).expect("plain header accepted");
 
-    let secret_without_ref =
-        CustomHeader::new("X-Api-Key", "sk-nope", true).expect_err("sensitive values need a credential reference");
+    let secret_without_ref = CustomHeader::new("X-Api-Key", "sk-nope", true)
+        .expect_err("sensitive values need a credential reference");
     let _ = secret_without_ref;
 
     let _ = config;
@@ -201,7 +212,10 @@ fn custom_headers_reject_invalid_names_and_overflow() {
         CustomHeader::new("bad header\n", "v", false).is_err(),
         "header names must be valid tokens"
     );
-    assert!(CustomHeader::new("", "v", false).is_err(), "empty names rejected");
+    assert!(
+        CustomHeader::new("", "v", false).is_err(),
+        "empty names rejected"
+    );
 
     let mut overflowing = config;
     for i in 0..16 {
@@ -209,9 +223,8 @@ fn custom_headers_reject_invalid_names_and_overflow() {
             .with_header(CustomHeader::new(format!("X-H{i}"), "v", false).expect("header"))
             .expect("header accepted");
     }
-    let overflow = overflowing.with_header(
-        CustomHeader::new("X-One-Too-Many", "v", false).expect("header"),
-    );
+    let overflow =
+        overflowing.with_header(CustomHeader::new("X-One-Too-Many", "v", false).expect("header"));
     assert!(overflow.is_err(), "custom headers must stay bounded");
 }
 
@@ -268,5 +281,7 @@ fn builtin_presets_cover_the_confirmed_provider_baseline() {
     );
     // Every online preset documents its official API reference for the
     // compatibility matrix and the settings page.
-    assert!(presets.iter().all(|p| p.api_docs_url.is_some() || p.id == "custom-openai-compatible"));
+    assert!(presets
+        .iter()
+        .all(|p| p.api_docs_url.is_some() || p.id == "custom-openai-compatible"));
 }

@@ -68,10 +68,7 @@ impl<'a> LlmProviderRepository<'a> {
     pub fn delete(&self, id: &str) -> AppResult<()> {
         self.database
             .connection
-            .execute(
-                "DELETE FROM llm_provider_configs WHERE id=?1",
-                [id],
-            )
+            .execute("DELETE FROM llm_provider_configs WHERE id=?1", [id])
             .map_err(database_error)?;
         Ok(())
     }

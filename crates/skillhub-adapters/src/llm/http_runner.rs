@@ -6,12 +6,14 @@ use std::time::Duration;
 use reqwest::Client;
 use serde_json::Value;
 
+use crate::credentials::OverlayCredentialStore;
 use crate::llm::protocol::{
     adapter_for, classify_transport_error, map_status, url_for_log, ChatRequestDraft,
 };
 use skillhub_core::llm::{
-    ConnectionTestResult, CredentialRef, CredentialStore, EndpointCheckResult, LlmProfile,
-    LlmTaskRequest, LlmTaskResponse, LlmTaskRunner, LlmTaskKind, ModelCheckResult, NetworkGate,
+    ConnectionTestResult, CredentialRef, CredentialStore, EndpointCheckResult, LlmAdmin,
+    LlmProfile, LlmTaskKind, LlmTaskRequest, LlmTaskResponse, LlmTaskRunner, ModelCheckResult,
+    NetworkGate,
 };
 use skillhub_core::{AppError, AppResult, ErrorCode, OperationId, RecoveryAction, Severity};
 
@@ -21,6 +23,9 @@ const RETRY_BACKOFF_CAP_MS: u64 = 2_000;
 const MODEL_FETCH_TIMEOUT_MS: u64 = 10_000;
 const ENDPOINT_PROBE_TIMEOUT_MS: u64 = 8_000;
 const CANCEL_POLL_MS: u64 = 50;
+/// Reference id used by administration calls on drafts that carry an inline
+/// credential but no persisted reference yet.
+const INLINE_CREDENTIAL_ID: &str = "llm-provider:inline-draft";
 
 /// The production LLM client: protocol adapter dispatch, bounded timeouts,
 /// bounded retries, cooperative cancellation, the network gate and uniform
@@ -67,12 +72,11 @@ impl HttpLlmTaskRunner {
     ) -> AppResult<LlmTaskResponse> {
         let adapter = adapter_for(profile.protocol);
         let content = adapter.extract_text(&response)?;
-        parse_content(&content, request.kind)
-            .map(|output| LlmTaskResponse {
-                request_id: OperationId::new().to_string(),
-                kind: request.kind,
-                output,
-            })
+        parse_content(&content, request.kind).map(|output| LlmTaskResponse {
+            request_id: OperationId::new().to_string(),
+            kind: request.kind,
+            output,
+        })
     }
 
     pub fn redact_input(input: &str, secret: &str) -> String {
@@ -86,6 +90,14 @@ impl HttpLlmTaskRunner {
     /// the next candidate; exhaustion surfaces a model-not-found error that
     /// the UI answers with manual input.
     pub async fn fetch_models(&self, profile: &LlmProfile) -> AppResult<Vec<String>> {
+        self.fetch_models_in(&self.credentials, profile).await
+    }
+
+    async fn fetch_models_in(
+        &self,
+        credentials: &Arc<dyn CredentialStore>,
+        profile: &LlmProfile,
+    ) -> AppResult<Vec<String>> {
         self.ensure_gate(profile)?;
         profile.validate()?;
         let adapter = adapter_for(profile.protocol);
@@ -96,7 +108,7 @@ impl HttpLlmTaskRunner {
                 "model list not provided by this provider; enter the model id manually",
             ));
         }
-        let credential = self.main_credential(profile).await?;
+        let credential = main_credential(credentials, profile).await?;
         let headers = adapter.request_headers(profile, credential.as_deref())?;
         let client = self.client(MODEL_FETCH_TIMEOUT_MS)?;
         let mut last_error: Option<AppError> = None;
@@ -117,10 +129,9 @@ impl HttpLlmTaskRunner {
                         let body = response.text().await.unwrap_or_default();
                         return Err(map_status(status, &body));
                     }
-                    let body: Value = response
-                        .json()
-                        .await
-                        .map_err(|error| AppError::llm_invalid_json().with_param("detail", error.to_string()))?;
+                    let body: Value = response.json().await.map_err(|error| {
+                        AppError::llm_invalid_json().with_param("detail", error.to_string())
+                    })?;
                     return adapter.extract_models(&body);
                 }
                 Err(error) => {
@@ -137,6 +148,14 @@ impl HttpLlmTaskRunner {
     /// availability and a minimal structured round-trip. Only a passing model
     /// level allows the UI to display "model connection available".
     pub async fn check_connection(&self, profile: &LlmProfile) -> ConnectionTestResult {
+        self.check_connection_in(&self.credentials, profile).await
+    }
+
+    async fn check_connection_in(
+        &self,
+        credentials: &Arc<dyn CredentialStore>,
+        profile: &LlmProfile,
+    ) -> ConnectionTestResult {
         let endpoint = self.probe_endpoint(profile).await;
         if !endpoint.reachable {
             return ConnectionTestResult {
@@ -163,14 +182,19 @@ impl HttpLlmTaskRunner {
         };
         let started = std::time::Instant::now();
         match self
-            .run_with_cancel(profile, probe, Arc::new(AtomicBool::new(false)))
+            .run_with_cancel_in(
+                credentials,
+                profile,
+                probe,
+                Arc::new(AtomicBool::new(false)),
+            )
             .await
         {
             Ok(_) => ConnectionTestResult {
                 endpoint,
                 model: Some(ModelCheckResult {
                     ok: true,
-                    latency_ms: Some(started.elapsed().as_millis() as u64),
+                    latency_ms: Some(started.elapsed().as_millis() as u32),
                 }),
                 model_failure_code: None,
             },
@@ -178,7 +202,7 @@ impl HttpLlmTaskRunner {
                 endpoint,
                 model: Some(ModelCheckResult {
                     ok: false,
-                    latency_ms: Some(started.elapsed().as_millis() as u64),
+                    latency_ms: Some(started.elapsed().as_millis() as u32),
                 }),
                 model_failure_code: Some(error.code.as_str().to_owned()),
             },
@@ -199,10 +223,14 @@ impl HttpLlmTaskRunner {
         // 401/404) proves DNS + TLS + reachability; only transport failures
         // mark the endpoint unreachable.
         let started = std::time::Instant::now();
-        match client.get(profile.endpoint.trim_end_matches('/')).send().await {
+        match client
+            .get(profile.endpoint.trim_end_matches('/'))
+            .send()
+            .await
+        {
             Ok(_) => EndpointCheckResult {
                 reachable: true,
-                latency_ms: Some(started.elapsed().as_millis() as u64),
+                latency_ms: Some(started.elapsed().as_millis() as u32),
             },
             Err(_) => EndpointCheckResult {
                 reachable: false,
@@ -214,10 +242,8 @@ impl HttpLlmTaskRunner {
     fn ensure_gate(&self, profile: &LlmProfile) -> AppResult<()> {
         if let Some(gate) = &self.network_gate {
             if !gate.allows(profile.deployment) {
-                return Err(
-                    AppError::new(ErrorCode::NetworkDisabled, Severity::Warning)
-                        .with_action(RecoveryAction::Acknowledge),
-                );
+                return Err(AppError::new(ErrorCode::NetworkDisabled, Severity::Warning)
+                    .with_action(RecoveryAction::Acknowledge));
             }
         }
         Ok(())
@@ -230,19 +256,73 @@ impl HttpLlmTaskRunner {
             .build()
             .map_err(|error| AppError::llm_endpoint_unreachable(format!("client_builder: {error}")))
     }
+}
 
-    async fn main_credential(&self, profile: &LlmProfile) -> AppResult<Option<String>> {
-        match &profile.credential_ref {
-            Some(reference) => self.read_credential(reference).await.map(Some),
-            None => Ok(None),
+async fn main_credential(
+    credentials: &Arc<dyn CredentialStore>,
+    profile: &LlmProfile,
+) -> AppResult<Option<String>> {
+    match &profile.credential_ref {
+        Some(reference) => read_credential(credentials, reference).await.map(Some),
+        None => Ok(None),
+    }
+}
+
+async fn read_credential(
+    credentials: &Arc<dyn CredentialStore>,
+    reference: &CredentialRef,
+) -> AppResult<String> {
+    credentials.get(reference).await?.ok_or_else(|| {
+        AppError::new(ErrorCode::CredentialUnavailable, Severity::Error)
+            .with_action(RecoveryAction::ConfigureCredential)
+    })
+}
+
+/// An administration call either reads the credential from the configured
+/// store or — for an unsaved draft — serves an inline secret through a
+/// scoped overlay without persisting it.
+fn scoped_for_admin(
+    credentials: &Arc<dyn CredentialStore>,
+    profile: &LlmProfile,
+    credential: Option<String>,
+) -> (Arc<dyn CredentialStore>, LlmProfile) {
+    match credential {
+        Some(secret) => {
+            let id = profile
+                .credential_ref
+                .as_ref()
+                .map(|reference| reference.id.clone())
+                .unwrap_or_else(|| INLINE_CREDENTIAL_ID.to_owned());
+            let mut resolved = profile.clone();
+            if resolved.credential_ref.is_none() {
+                resolved.credential_ref = Some(CredentialRef::new(&id));
+            }
+            let store: Arc<dyn CredentialStore> =
+                Arc::new(OverlayCredentialStore::new(credentials.clone(), id, secret));
+            (store, resolved)
         }
+        None => (credentials.clone(), profile.clone()),
+    }
+}
+
+#[async_trait(?Send)]
+impl LlmAdmin for HttpLlmTaskRunner {
+    async fn fetch_models(
+        &self,
+        profile: &LlmProfile,
+        credential: Option<String>,
+    ) -> AppResult<Vec<String>> {
+        let (store, profile) = scoped_for_admin(&self.credentials, profile, credential);
+        self.fetch_models_in(&store, &profile).await
     }
 
-    async fn read_credential(&self, reference: &CredentialRef) -> AppResult<String> {
-        self.credentials.get(reference).await?.ok_or_else(|| {
-            AppError::new(ErrorCode::CredentialUnavailable, Severity::Error)
-                .with_action(RecoveryAction::ConfigureCredential)
-        })
+    async fn check_connection(
+        &self,
+        profile: &LlmProfile,
+        credential: Option<String>,
+    ) -> ConnectionTestResult {
+        let (store, profile) = scoped_for_admin(&self.credentials, profile, credential);
+        self.check_connection_in(&store, &profile).await
     }
 }
 
@@ -266,6 +346,17 @@ impl HttpLlmTaskRunner {
     pub async fn run_with_cancel(
         &self,
         profile: &LlmProfile,
+        request: LlmTaskRequest,
+        cancel: Arc<AtomicBool>,
+    ) -> AppResult<LlmTaskResponse> {
+        self.run_with_cancel_in(&self.credentials, profile, request, cancel)
+            .await
+    }
+
+    async fn run_with_cancel_in(
+        &self,
+        credentials: &Arc<dyn CredentialStore>,
+        profile: &LlmProfile,
         mut request: LlmTaskRequest,
         cancel: Arc<AtomicBool>,
     ) -> AppResult<LlmTaskResponse> {
@@ -280,11 +371,11 @@ impl HttpLlmTaskRunner {
                 return Err(AppError::llm_cancelled());
             }
             self.ensure_gate(profile)?;
-            let secret = self.main_credential(profile).await?;
+            let secret = main_credential(credentials, profile).await?;
             let mut resolved = profile.clone();
             for header in &mut resolved.custom_headers {
                 if let Some(reference) = &header.credential_ref {
-                    header.value = Some(self.read_credential(reference).await?);
+                    header.value = Some(read_credential(credentials, reference).await?);
                 }
             }
             // The credential value must never travel inside the prompt.
@@ -302,9 +393,8 @@ impl HttpLlmTaskRunner {
                     let body: Value = match response.json().await {
                         Ok(body) => body,
                         Err(parse_error) => {
-                            return Err(
-                                AppError::llm_invalid_json().with_param("detail", parse_error.to_string())
-                            );
+                            return Err(AppError::llm_invalid_json()
+                                .with_param("detail", parse_error.to_string()));
                         }
                     };
                     let content = adapter.extract_text(&body)?;
@@ -319,7 +409,8 @@ impl HttpLlmTaskRunner {
                     let error = with_url(error, &draft.url);
                     if retryable(&error) && attempt < MAX_RETRIES {
                         attempt += 1;
-                        self.wait_before_retry(&cancel, retry_after, attempt).await?;
+                        self.wait_before_retry(&cancel, retry_after, attempt)
+                            .await?;
                         continue;
                     }
                     return Err(error);
@@ -367,7 +458,12 @@ async fn send_with_cancel(
         .headers(to_header_map(draft.headers.clone()))
         .json(&draft.body)
         .build()
-        .map_err(|error| (AppError::llm_endpoint_unreachable(format!("request_build: {error}")), None))?;
+        .map_err(|error| {
+            (
+                AppError::llm_endpoint_unreachable(format!("request_build: {error}")),
+                None,
+            )
+        })?;
     let send = client.execute(request);
     tokio::pin!(send);
     tokio::select! {
@@ -403,7 +499,10 @@ async fn poll_cancel(cancel: &Arc<AtomicBool>) {
 }
 
 fn retryable(error: &AppError) -> bool {
-    matches!(error.code, ErrorCode::LlmRateLimited | ErrorCode::LlmServerError)
+    matches!(
+        error.code,
+        ErrorCode::LlmRateLimited | ErrorCode::LlmServerError
+    )
 }
 
 fn with_url(mut error: AppError, url: &str) -> AppError {
@@ -441,12 +540,11 @@ fn parse_content(content: &str, kind: LlmTaskKind) -> AppResult<Value> {
             .with_action(RecoveryAction::Retry)
     })?;
     if !output.is_object() {
-        return Err(AppError::new(
-            ErrorCode::LlmInvalidStructuredResponse,
-            Severity::Error,
-        )
-        .with_action(RecoveryAction::Retry)
-        .with_param("task_kind", kind.schema_name()));
+        return Err(
+            AppError::new(ErrorCode::LlmInvalidStructuredResponse, Severity::Error)
+                .with_action(RecoveryAction::Retry)
+                .with_param("task_kind", kind.schema_name()),
+        );
     }
     Ok(output)
 }

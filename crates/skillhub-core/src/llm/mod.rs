@@ -13,6 +13,6 @@ pub use model::{CredentialRef, LlmProfile, LlmTaskKind, LlmTaskRequest, LlmTaskR
 pub use network_gate::NetworkGate;
 pub use provider::{
     builtin_provider_presets, CustomHeader, LlmDeployment, LlmProtocolFamily, LlmProviderConfig,
-    LlmProviderPreset,
+    LlmProviderPreset, LlmProviderView,
 };
-pub use task::{CredentialStore, LlmTaskRunner};
+pub use task::{CredentialStore, LlmAdmin, LlmTaskRunner};

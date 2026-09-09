@@ -69,7 +69,10 @@ impl DesktopPreferences {
         if !matches!(self.language.as_str(), "system" | "zh-CN" | "en-US") {
             return Err("unsupported language preference");
         }
-        if !matches!(self.ai_output_language.as_str(), "system" | "zh-CN" | "en-US") {
+        if !matches!(
+            self.ai_output_language.as_str(),
+            "system" | "zh-CN" | "en-US"
+        ) {
             return Err("unsupported AI output language preference");
         }
         if !matches!(

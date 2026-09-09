@@ -29,11 +29,15 @@ fn migration_0010_creates_provider_config_and_translation_tables() {
         "current schema version must be 10"
     );
     assert!(
-        database.has_table("llm_provider_configs").expect("table lookup"),
+        database
+            .has_table("llm_provider_configs")
+            .expect("table lookup"),
         "llm_provider_configs table must exist"
     );
     assert!(
-        database.has_table("translation_records").expect("table lookup"),
+        database
+            .has_table("translation_records")
+            .expect("table lookup"),
         "translation_records table must exist"
     );
 }
@@ -91,7 +95,10 @@ fn provider_config_rows_never_contain_secret_material() {
         !raw.contains(fake_secret),
         "stored provider config must not contain secret material"
     );
-    assert!(raw.contains("llm-header:deepseek"), "credential reference is stored");
+    assert!(
+        raw.contains("llm-header:deepseek"),
+        "credential reference is stored"
+    );
 }
 
 #[test]

@@ -19,15 +19,13 @@ mod native_impl {
 
     impl CredentialBackend for KeyringCredentialBackend {
         fn set(&self, account: &str, secret: &str) -> skillhub_core::AppResult<()> {
-            let entry =
-                keyring::Entry::new(SERVICE, account).map_err(|_| vault_failure())?;
+            let entry = keyring::Entry::new(SERVICE, account).map_err(|_| vault_failure())?;
             entry.set_password(secret).map_err(|_| vault_failure())?;
             Ok(())
         }
 
         fn get(&self, account: &str) -> skillhub_core::AppResult<Option<String>> {
-            let entry =
-                keyring::Entry::new(SERVICE, account).map_err(|_| vault_failure())?;
+            let entry = keyring::Entry::new(SERVICE, account).map_err(|_| vault_failure())?;
             match entry.get_password() {
                 Ok(secret) => Ok(Some(secret)),
                 Err(keyring::Error::NoEntry) => Ok(None),
@@ -36,8 +34,7 @@ mod native_impl {
         }
 
         fn delete(&self, account: &str) -> skillhub_core::AppResult<()> {
-            let entry =
-                keyring::Entry::new(SERVICE, account).map_err(|_| vault_failure())?;
+            let entry = keyring::Entry::new(SERVICE, account).map_err(|_| vault_failure())?;
             match entry.delete_credential() {
                 Ok(()) => Ok(()),
                 Err(keyring::Error::NoEntry) => Ok(()),

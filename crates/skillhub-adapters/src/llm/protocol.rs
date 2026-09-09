@@ -88,7 +88,10 @@ fn openai_chat_request(
     let url = if profile.endpoint.contains("/chat/completions") {
         profile.endpoint.clone()
     } else {
-        format!("{}/chat/completions", profile.endpoint.trim_end_matches('/'))
+        format!(
+            "{}/chat/completions",
+            profile.endpoint.trim_end_matches('/')
+        )
     };
     Ok(ChatRequestDraft {
         url,
@@ -219,7 +222,10 @@ impl ProtocolAdapter for AnthropicAdapter {
     }
 
     fn model_list_candidates(&self, profile: &LlmProfile) -> Vec<String> {
-        vec![format!("{}/v1/models", profile.endpoint.trim_end_matches('/'))]
+        vec![format!(
+            "{}/v1/models",
+            profile.endpoint.trim_end_matches('/')
+        )]
     }
 
     fn extract_text(&self, body: &Value) -> AppResult<String> {

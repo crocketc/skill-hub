@@ -6,10 +6,12 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use serde_json::json;
-use skillhub_adapters::credentials::{CredentialBackend, OsCredentialStore, SessionCredentialStore};
+use skillhub_adapters::credentials::{
+    CredentialBackend, OsCredentialStore, SessionCredentialStore,
+};
 use skillhub_adapters::llm::HttpLlmTaskRunner;
 use skillhub_core::llm::{
-    CredentialRef, CustomHeader, LlmDeployment, LlmProtocolFamily, LlmProfile, LlmTaskKind,
+    CredentialRef, CustomHeader, LlmDeployment, LlmProfile, LlmProtocolFamily, LlmTaskKind,
     LlmTaskRequest, NetworkGate,
 };
 use skillhub_core::ErrorCode;
@@ -64,9 +66,7 @@ async fn start_server(
                         .to_ascii_lowercase()
                         .split("content-length:")
                         .nth(1)
-                        .and_then(|rest| {
-                            rest.split_whitespace().next()?.parse().ok()
-                        });
+                        .and_then(|rest| rest.split_whitespace().next()?.parse().ok());
                     match length {
                         Some(length) => {
                             if raw.len() >= header_end + length {
@@ -118,11 +118,7 @@ async fn start_server(
                     custom = value;
                 }
             }
-            let body = raw
-                .split("\r\n\r\n")
-                .nth(1)
-                .unwrap_or("")
-                .to_owned();
+            let body = raw.split("\r\n\r\n").nth(1).unwrap_or("").to_owned();
             server.requests.lock().unwrap().push(RecordedRequest {
                 path,
                 authorization,
@@ -347,7 +343,9 @@ async fn rate_limit_retries_within_bounds_and_honours_retry_after() {
         ],
     )
     .await;
-    let response = run_once(&runner, &openai_chat(&base)).await.expect("retry succeeds");
+    let response = run_once(&runner, &openai_chat(&base))
+        .await
+        .expect("retry succeeds");
     assert_eq!(response.output["translation"], json!("bonjour"));
     assert_eq!(server.requests.lock().unwrap().len(), 2);
     handle.abort();
@@ -506,9 +504,8 @@ async fn missing_and_unreadable_credentials_are_actionable() {
 
     let backend = FixtureBackend::default();
     backend.fail.store(true, Ordering::SeqCst);
-    let runner = HttpLlmTaskRunner::new(Arc::new(OsCredentialStore::with_backend(Arc::new(
-        backend,
-    ))));
+    let runner =
+        HttpLlmTaskRunner::new(Arc::new(OsCredentialStore::with_backend(Arc::new(backend))));
     let server = Arc::new(MockLlmServer::default());
     let (base, handle) = start_server(server, vec![]).await;
     let error = run_once(&runner, &openai_chat(&base)).await.unwrap_err();
@@ -598,7 +595,9 @@ async fn anthropic_gemini_and_azure_speak_their_own_dialect() {
     )
     .unwrap();
     profile.deployment = LlmDeployment::Local;
-    profile = profile.with_protocol(LlmProtocolFamily::AzureOpenAi).unwrap();
+    profile = profile
+        .with_protocol(LlmProtocolFamily::AzureOpenAi)
+        .unwrap();
     let response = run_once(&runner, &profile).await.expect("azure run");
     let recorded = &server.requests.lock().unwrap()[0];
     assert_eq!(recorded.api_key, "sk-live-credential-42");
@@ -612,9 +611,7 @@ async fn custom_headers_and_sensitive_header_values_travel_correctly() {
     let backend = Arc::new(FixtureBackend::default());
     backend.seed("header-ref", "sk-header-secret-99");
     backend.seed("cred-1", "sk-live-credential-42");
-    let runner = HttpLlmTaskRunner::new(Arc::new(OsCredentialStore::with_backend(
-        backend.clone(),
-    )));
+    let runner = HttpLlmTaskRunner::new(Arc::new(OsCredentialStore::with_backend(backend.clone())));
 
     let server = Arc::new(MockLlmServer::default());
     let content = chat_content("{\"translation\": \"hej\"}");
@@ -712,9 +709,18 @@ async fn connection_test_reports_endpoint_and_model_levels_separately() {
     )
     .await;
     let report = runner.check_connection(&openai_chat(&base)).await;
-    assert!(report.endpoint.reachable, "any HTTP answer counts as reachable");
-    assert!(!report.model_ok(), "model level must gate the usable verdict");
-    assert_eq!(report.model_failure_code.as_deref(), Some("llm.auth_failed"));
+    assert!(
+        report.endpoint.reachable,
+        "any HTTP answer counts as reachable"
+    );
+    assert!(
+        !report.model_ok(),
+        "model level must gate the usable verdict"
+    );
+    assert_eq!(
+        report.model_failure_code.as_deref(),
+        Some("llm.auth_failed")
+    );
     handle.abort();
 
     // Fully working endpoint and model.

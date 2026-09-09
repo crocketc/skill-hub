@@ -63,7 +63,10 @@ fn v4_database_upgrades_check_run_metadata_in_v5() {
 
     let db = Database::open(file.path()).unwrap();
     assert_eq!(db.schema_version().unwrap(), 10);
-    assert_eq!(db.migration_report().applied_versions, vec![5, 6, 7, 8, 9, 10]);
+    assert_eq!(
+        db.migration_report().applied_versions,
+        vec![5, 6, 7, 8, 9, 10]
+    );
     let generation: String = db
         .connection_for_test()
         .query_row(

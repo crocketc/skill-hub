@@ -1,5 +1,7 @@
 use serde_json::json;
-use skillhub_adapters::llm::protocol::{adapter_for, derive_model_list_candidates, ChatRequestDraft};
+use skillhub_adapters::llm::protocol::{
+    adapter_for, derive_model_list_candidates, ChatRequestDraft,
+};
 use skillhub_core::llm::{
     CredentialRef, CustomHeader, LlmDeployment, LlmProfile, LlmProtocolFamily, LlmTaskKind,
     LlmTaskRequest,
@@ -7,10 +9,15 @@ use skillhub_core::llm::{
 use skillhub_core::ErrorCode;
 
 fn profile(protocol: LlmProtocolFamily, endpoint: &str) -> LlmProfile {
-    LlmProfile::new("acme", endpoint, "acme-chat", Some(CredentialRef::new("cred-1")))
-        .unwrap()
-        .with_protocol(protocol)
-        .unwrap()
+    LlmProfile::new(
+        "acme",
+        endpoint,
+        "acme-chat",
+        Some(CredentialRef::new("cred-1")),
+    )
+    .unwrap()
+    .with_protocol(protocol)
+    .unwrap()
 }
 
 fn request() -> LlmTaskRequest {
@@ -54,7 +61,9 @@ fn openai_family_uses_bearer_and_json_schema_response_format() {
         LlmProtocolFamily::OpenAiCompatible,
         "https://api.deepseek.test/v1",
     );
-    let draft = adapter.chat_request(&base, Some("sk-test"), &request()).unwrap();
+    let draft = adapter
+        .chat_request(&base, Some("sk-test"), &request())
+        .unwrap();
     assert_eq!(draft.url, "https://api.deepseek.test/v1/chat/completions");
 }
 
@@ -71,9 +80,9 @@ fn local_profiles_send_no_authorization_header_and_keep_custom_headers() {
     local.endpoint = "http://127.0.0.1:11434/v1".into();
     local.credential_ref = None;
     local.validate().unwrap();
-    local.custom_headers.push(
-        CustomHeader::new("X-Tracing", "trace-1", false).expect("header"),
-    );
+    local
+        .custom_headers
+        .push(CustomHeader::new("X-Tracing", "trace-1", false).expect("header"));
 
     let draft = adapter.chat_request(&local, None, &request()).unwrap();
     assert_eq!(header(&draft, "Authorization"), "");
@@ -85,7 +94,9 @@ fn anthropic_uses_x_api_key_version_header_and_message_payload() {
     let adapter = adapter_for(LlmProtocolFamily::Anthropic);
     let base = profile(LlmProtocolFamily::Anthropic, "https://api.anthropic.test");
 
-    let draft = adapter.chat_request(&base, Some("sk-ant"), &request()).unwrap();
+    let draft = adapter
+        .chat_request(&base, Some("sk-ant"), &request())
+        .unwrap();
     assert_eq!(draft.url, "https://api.anthropic.test/v1/messages");
     assert_eq!(header(&draft, "x-api-key"), "sk-ant");
     assert!(!header(&draft, "anthropic-version").is_empty());
@@ -111,7 +122,9 @@ fn gemini_uses_api_key_header_and_generate_content_shape() {
     let adapter = adapter_for(LlmProtocolFamily::Gemini);
     let base = profile(LlmProtocolFamily::Gemini, "https://generativelanguage.test");
 
-    let draft = adapter.chat_request(&base, Some("g-key"), &request()).unwrap();
+    let draft = adapter
+        .chat_request(&base, Some("g-key"), &request())
+        .unwrap();
     assert_eq!(
         draft.url,
         "https://generativelanguage.test/v1beta/models/acme-chat:generateContent"
@@ -127,12 +140,17 @@ fn gemini_uses_api_key_header_and_generate_content_shape() {
 #[test]
 fn azure_uses_deployment_path_and_api_key_header() {
     let adapter = adapter_for(LlmProtocolFamily::AzureOpenAi);
-    let base = profile(LlmProtocolFamily::AzureOpenAi, "https://acme.openai.azure.test");
+    let base = profile(
+        LlmProtocolFamily::AzureOpenAi,
+        "https://acme.openai.azure.test",
+    );
 
-    let draft = adapter.chat_request(&base, Some("az-key"), &request()).unwrap();
-    assert!(draft
-        .url
-        .starts_with("https://acme.openai.azure.test/openai/deployments/acme-chat/chat/completions"));
+    let draft = adapter
+        .chat_request(&base, Some("az-key"), &request())
+        .unwrap();
+    assert!(draft.url.starts_with(
+        "https://acme.openai.azure.test/openai/deployments/acme-chat/chat/completions"
+    ));
     assert!(draft.url.contains("api-version="));
     assert_eq!(header(&draft, "api-key"), "az-key");
 }
@@ -147,9 +165,7 @@ fn model_list_candidates_cover_version_segments_and_protocols() {
     // Base URL with a version segment tries its own /models first.
     assert_eq!(
         derive_model_list_candidates("https://open.bigmodel.test/api/paas/v4", None),
-        vec![
-            "https://open.bigmodel.test/api/paas/v4/models".to_string(),
-        ]
+        vec!["https://open.bigmodel.test/api/paas/v4/models".to_string(),]
     );
     // Base URL without version segment tries /v1/models then /models.
     let candidates = derive_model_list_candidates("https://gateway.test/api/anthropic", None);
@@ -166,8 +182,7 @@ fn model_list_candidates_cover_version_segments_and_protocols() {
 
     // Protocol-specific candidates.
     let anthropic = profile(LlmProtocolFamily::Anthropic, "https://api.anthropic.test");
-    let candidates = adapter_for(LlmProtocolFamily::Anthropic)
-        .model_list_candidates(&anthropic);
+    let candidates = adapter_for(LlmProtocolFamily::Anthropic).model_list_candidates(&anthropic);
     assert_eq!(
         candidates,
         vec!["https://api.anthropic.test/v1/models".to_string()]
@@ -180,7 +195,10 @@ fn model_list_candidates_cover_version_segments_and_protocols() {
         vec!["https://generativelanguage.test/v1beta/models".to_string()]
     );
 
-    let azure = profile(LlmProtocolFamily::AzureOpenAi, "https://acme.openai.azure.test");
+    let azure = profile(
+        LlmProtocolFamily::AzureOpenAi,
+        "https://acme.openai.azure.test",
+    );
     let candidates = adapter_for(LlmProtocolFamily::AzureOpenAi).model_list_candidates(&azure);
     assert!(
         candidates.is_empty(),
@@ -218,7 +236,10 @@ fn text_and_model_extraction_understands_each_protocol_shape() {
 
     // A body in the wrong shape is a protocol incompatibility, not a crash.
     assert_eq!(
-        openai.extract_text(&json!({"unexpected": true})).unwrap_err().code,
+        openai
+            .extract_text(&json!({"unexpected": true}))
+            .unwrap_err()
+            .code,
         ErrorCode::LlmProtocolIncompatible
     );
 }

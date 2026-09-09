@@ -576,6 +576,10 @@ pub enum AppQuery {
     ListSkillOperations(ListSkillOperations),
     #[serde(rename = "list_running_llm_checks")]
     ListRunningLlmChecks,
+    #[serde(rename = "list_llm_providers")]
+    ListLlmProviders,
+    #[serde(rename = "list_llm_provider_presets")]
+    ListLlmProviderPresets,
     #[serde(rename = "check_source_updates")]
     CheckSourceUpdates(CheckSourceUpdates),
     #[serde(rename = "list_markdown_files")]
@@ -735,6 +739,10 @@ pub enum AppQueryResult {
     SkillOperations(SkillOperationsResult),
     #[serde(rename = "running_llm_checks")]
     RunningLlmChecks(Vec<LlmCheckRun>),
+    #[serde(rename = "llm_providers")]
+    LlmProviders(Vec<crate::llm::LlmProviderView>),
+    #[serde(rename = "llm_provider_presets")]
+    LlmProviderPresets(Vec<crate::llm::LlmProviderPreset>),
     #[serde(rename = "source_update_checks")]
     SourceUpdateChecks(Vec<SourceUpdateCheckOutcome>),
     #[serde(rename = "call_policy")]

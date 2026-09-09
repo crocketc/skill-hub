@@ -46,6 +46,25 @@ impl skillhub_core::LlmTaskRunner for HelperLlmRunner {
     }
 }
 
+/// All capability switches default to off; these fixtures exercise the LLM
+/// paths, so they opt in explicitly through desktop preferences.
+async fn enable_all_llm_capabilities(facade: &LocalApplicationFacade) {
+    facade
+        .execute(AppCommand::SetDesktopPreferences(
+            skillhub_core::DesktopPreferences {
+                llm_capabilities: skillhub_core::settings::LlmCapabilitySettings {
+                    safety_check: true,
+                    semantic_duplicate: true,
+                    description_translation: true,
+                    online_search_assist: true,
+                },
+                ..skillhub_core::DesktopPreferences::default()
+            },
+        ))
+        .await
+        .expect("enable llm capabilities");
+}
+
 #[tokio::test]
 async fn optional_ai_helpers_are_wired_without_network_or_implicit_writes() {
     let database = Database::open_in_memory().expect("database");
@@ -58,6 +77,7 @@ async fn optional_ai_helpers_are_wired_without_network_or_implicit_writes() {
         .await
         .expect("insert skill");
     let facade = LocalApplicationFacade::new(database);
+    enable_all_llm_capabilities(&facade).await;
 
     let error = facade
         .execute(AppCommand::AnalyzeSemanticDuplicates(
@@ -181,6 +201,7 @@ async fn configured_facade_runs_helpers_and_preserves_user_translation_revision(
         root.path(),
         std::sync::Arc::new(HelperLlmRunner),
     );
+    enable_all_llm_capabilities(&facade).await;
 
     let duplicate = facade
         .execute(AppCommand::AnalyzeSemanticDuplicates(

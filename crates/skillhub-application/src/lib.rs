@@ -15,6 +15,7 @@ use async_trait::async_trait;
 pub use external_link::{ExternalLinkService, ExternalUrlOpener, SystemExternalUrlOpener};
 use skillhub_adapters::agent::discovery::{DiscoverAgents, DiscoveryRoots};
 use skillhub_adapters::app_update::github_releases::GithubReleaseProvider;
+use skillhub_adapters::credentials::SessionCredentialStore;
 use skillhub_adapters::deployment::{DeploymentFilesystem, OwnershipProof};
 use skillhub_adapters::import::SkillDetector;
 use skillhub_adapters::scanner::ScanService;
@@ -25,10 +26,11 @@ use skillhub_adapters::source::{
 };
 use skillhub_core::api::{
     ApplySourceUpdate, BasicCheckResult, CheckSourceUpdate, CheckSourceUpdates, CreateCombination,
-    CreateSkill, DeleteCombination, PinProjectSkillVersion, RelinkSource, RenameSkill,
-    SaveMarkdownContent, SaveSkillContent, SavedSkillContent, SetCurrentVersion,
-    SetFindingDisposition, SetLifecycle, SetMetadata, SetTrial, SourceUpdateCheckOutcome,
-    UpdateCombination,
+    CreateSkill, DeleteCombination, DeleteLlmProvider, FetchLlmModels, FetchLlmProvider,
+    PinProjectSkillVersion, RelinkSource, RenameSkill, SaveLlmProvider, SaveMarkdownContent,
+    SaveSkillContent, SavedSkillContent, SetCurrentVersion, SetDefaultLlmProvider,
+    SetFindingDisposition, SetLifecycle, SetLlmProviderEnabled, SetMetadata, SetTrial,
+    SourceUpdateCheckOutcome, TestLlmConnection, UpdateCombination,
 };
 use skillhub_core::application::{
     CallPolicyBackend, CallPolicyService, DeploymentBackend, DeploymentService,
@@ -53,7 +55,10 @@ use skillhub_core::evidence::UsageEvidenceAnalyzer;
 use skillhub_core::health::{HealthFinding, RecoveryCandidate, RepairAction};
 use skillhub_core::ignore::IgnoreRule;
 use skillhub_core::llm::translation::TranslationRecord;
-use skillhub_core::llm::LlmTaskRunner;
+use skillhub_core::llm::{
+    CredentialRef, CredentialStore, LlmAdmin, LlmProfile, LlmProviderConfig, LlmProviderView,
+    LlmTaskKind, LlmTaskRunner, NetworkGate,
+};
 use skillhub_core::source::{SourceDescriptor, SourceLocator, SourceState, UpdateDecision};
 use skillhub_core::{
     physical_id_for_path, symlink_physical_id_for_path, AllowedRoot, AppCommand, AppCommandResult,
@@ -87,6 +92,9 @@ pub struct LocalApplicationFacade {
     call_policy_service: Arc<CallPolicyService<LocalCallPolicyBackend>>,
     ignore_service: Arc<IgnoreService<LocalIgnoreBackend>>,
     llm_runner: Option<Arc<dyn LlmTaskRunner>>,
+    llm_credentials: Arc<dyn CredentialStore>,
+    llm_admin: Option<Arc<dyn LlmAdmin>>,
+    network_gate: NetworkGate,
     translation_records: Arc<Mutex<HashMap<(skillhub_core::SkillId, String), TranslationRecord>>>,
     evidence_repository: UsageEvidenceRepository,
     app_update_provider: Arc<GithubReleaseProvider>,
@@ -1111,7 +1119,7 @@ impl LocalApplicationFacade {
             database.clone(),
             app_update_provider.clone(),
         ));
-        Self {
+        let facade = Self {
             database,
             today,
             library: None,
@@ -1139,7 +1147,12 @@ impl LocalApplicationFacade {
             external_link_service: ExternalLinkService::new(),
             llm_runs: Mutex::new(HashMap::new()),
             upstream_origins: Mutex::new(HashMap::new()),
-        }
+            llm_credentials: Arc::new(SessionCredentialStore::default()),
+            llm_admin: None,
+            network_gate: NetworkGate::open(),
+        };
+        facade.sync_network_gate();
+        facade
     }
 
     /// Creates a facade with read-only access to a central library root.
@@ -1172,7 +1185,7 @@ impl LocalApplicationFacade {
             database.clone(),
             app_update_provider.clone(),
         ));
-        Self {
+        let facade = Self {
             database,
             today: current_utc_date(),
             library: Some(VersionStore::new(LibraryPaths::from_root(&library_root))),
@@ -1200,7 +1213,12 @@ impl LocalApplicationFacade {
             external_link_service: ExternalLinkService::new(),
             llm_runs: Mutex::new(HashMap::new()),
             upstream_origins: Mutex::new(HashMap::new()),
-        }
+            llm_credentials: Arc::new(SessionCredentialStore::default()),
+            llm_admin: None,
+            network_gate: NetworkGate::open(),
+        };
+        facade.sync_network_gate();
+        facade
     }
 
     /// Creates a facade with explicit online providers. Production uses the
@@ -1331,6 +1349,36 @@ impl LocalApplicationFacade {
         facade
     }
 
+    /// Attaches the provider-administration runtime: the network gate shared
+    /// with the HTTP runner, the OS credential store and the admin seam used
+    /// for model-list fetches and connection tests. Tests inject fakes so no
+    /// test touches a real vault or the network.
+    pub fn with_llm_runtime(
+        mut self,
+        gate: NetworkGate,
+        credentials: Arc<dyn CredentialStore>,
+        admin: Arc<dyn LlmAdmin>,
+    ) -> Self {
+        self.network_gate = gate;
+        self.llm_credentials = credentials;
+        self.llm_admin = Some(admin);
+        self
+    }
+
+    /// Aligns the LLM network gate with the stored preference so a persisted
+    /// "disable all networking" choice survives a restart.
+    fn sync_network_gate(&self) {
+        let enabled = self
+            .with_database("llm.sync_network_gate", |database| {
+                Ok(database
+                    .desktop_settings_repository()
+                    .get()?
+                    .network_enabled)
+            })
+            .unwrap_or(true);
+        self.network_gate.set_open(enabled);
+    }
+
     /// Creates a facade with explicit local usage evidence for integrations
     /// that provide authorized invocation records. Evidence remains advisory
     /// and experimental; it is never synthesized from missing runtime data.
@@ -1375,11 +1423,240 @@ impl LocalApplicationFacade {
             .clone()
             .ok_or_else(|| AppError::new(ErrorCode::LlmNotConfigured, Severity::Info))?;
         let profile = self.with_database(operation, |database| {
+            let preferences = database.desktop_settings_repository().get()?;
+            if let Some(id) = &preferences.default_llm_provider_id {
+                if let Some(config) = database.llm_provider_repository().get(id)? {
+                    if config.enabled {
+                        return config.to_profile().map(Some);
+                    }
+                }
+            }
             Ok(database.llm_profile_repository().list()?.into_iter().next())
         })?;
         let profile =
             profile.ok_or_else(|| AppError::new(ErrorCode::LlmNotConfigured, Severity::Info))?;
         Ok((runner, profile))
+    }
+
+    fn llm_capabilities(&self) -> AppResult<skillhub_core::settings::LlmCapabilitySettings> {
+        self.with_database("llm.capabilities", |database| {
+            Ok(database
+                .desktop_settings_repository()
+                .get()?
+                .llm_capabilities)
+        })
+    }
+
+    /// Capability switches default to off: no LLM call may happen that the
+    /// user has not opted into, regardless of provider configuration.
+    fn require_llm_capability(&self, enabled: bool, kind: LlmTaskKind) -> AppResult<()> {
+        if !enabled {
+            return Err(AppError::llm_capability_disabled(kind));
+        }
+        Ok(())
+    }
+
+    fn ensure_online_allowed(&self, profile: &LlmProfile) -> AppResult<()> {
+        if !self.network_gate.allows(profile.deployment) {
+            return Err(AppError::new(ErrorCode::NetworkDisabled, Severity::Warning)
+                .with_action(RecoveryAction::Acknowledge));
+        }
+        Ok(())
+    }
+
+    /// True when the provider needs no secret (local runtimes) or the OS
+    /// store currently holds its credential. The value itself never leaves
+    /// the store.
+    async fn credential_configured(&self, config: &LlmProviderConfig) -> AppResult<bool> {
+        let Some(reference) = &config.credential_ref else {
+            return Ok(true);
+        };
+        let store = self.llm_credentials.clone();
+        let reference = reference.clone();
+        run_non_send(
+            move || async move { store.get(&reference).await.map(|value| value.is_some()) },
+        )
+    }
+
+    fn resolve_admin_target(&self, provider: FetchLlmProvider) -> AppResult<LlmProfile> {
+        match provider {
+            FetchLlmProvider::Draft { provider } => provider.to_profile(),
+            FetchLlmProvider::Saved { id } => {
+                let config = self
+                    .with_database("llm.resolve_admin_target", |database| {
+                        database.llm_provider_repository().get(&id)
+                    })?
+                    .ok_or_else(|| AppError::new(ErrorCode::ObjectNotFound, Severity::Error))?;
+                if !config.enabled {
+                    return Err(AppError::new(ErrorCode::ObjectNotFound, Severity::Error));
+                }
+                config.to_profile()
+            }
+        }
+    }
+
+    async fn save_llm_provider(&self, request: SaveLlmProvider) -> AppResult<AppCommandResult> {
+        let mut config = request.provider;
+        if let Some(secret) = &request.credential {
+            let reference = config
+                .credential_ref
+                .clone()
+                .unwrap_or_else(|| CredentialRef::new(format!("llm-provider:{}", config.id)));
+            config.credential_ref = Some(reference.clone());
+            let store = self.llm_credentials.clone();
+            let secret = secret.clone();
+            run_non_send(move || async move { store.set(&reference, &secret).await })?;
+        }
+        self.with_database("execute.save_llm_provider", |database| {
+            database.llm_provider_repository().save(&config)?;
+            Ok(())
+        })?;
+        let credential_configured = self.credential_configured(&config).await?;
+        let is_default = self.with_database("execute.save_llm_provider.default", |database| {
+            Ok(database
+                .desktop_settings_repository()
+                .get()?
+                .default_llm_provider_id
+                .as_deref()
+                == Some(config.id.as_str()))
+        })?;
+        Ok(AppCommandResult::LlmProviderView(LlmProviderView {
+            config,
+            credential_configured,
+            is_default,
+        }))
+    }
+
+    async fn delete_llm_provider(&self, request: DeleteLlmProvider) -> AppResult<AppCommandResult> {
+        let config = self.with_database("execute.delete_llm_provider", |database| {
+            database.llm_provider_repository().get(&request.id)
+        })?;
+        if let Some(config) = &config {
+            if let Some(reference) = &config.credential_ref {
+                let store = self.llm_credentials.clone();
+                let reference = reference.clone();
+                run_non_send(move || async move { store.delete(&reference).await })?;
+            }
+        }
+        let preferences = self.with_database("execute.delete_llm_provider.row", |database| {
+            database.llm_provider_repository().delete(&request.id)?;
+            let mut preferences = database.desktop_settings_repository().get()?;
+            if preferences.default_llm_provider_id.as_deref() == Some(request.id.as_str()) {
+                preferences.default_llm_provider_id = None;
+                preferences = database.desktop_settings_repository().save(&preferences)?;
+            }
+            Ok(preferences)
+        })?;
+        Ok(AppCommandResult::DesktopPreferences(preferences))
+    }
+
+    async fn set_llm_provider_enabled(
+        &self,
+        request: SetLlmProviderEnabled,
+    ) -> AppResult<AppCommandResult> {
+        let mut config = self
+            .with_database("execute.set_llm_provider_enabled", |database| {
+                database.llm_provider_repository().get(&request.id)
+            })?
+            .ok_or_else(|| AppError::new(ErrorCode::ObjectNotFound, Severity::Error))?;
+        config.enabled = request.enabled;
+        self.with_database("execute.set_llm_provider_enabled.save", |database| {
+            database.llm_provider_repository().save(&config)?;
+            Ok(())
+        })?;
+        let credential_configured = self.credential_configured(&config).await?;
+        let is_default =
+            self.with_database("execute.set_llm_provider_enabled.default", |database| {
+                Ok(database
+                    .desktop_settings_repository()
+                    .get()?
+                    .default_llm_provider_id
+                    .as_deref()
+                    == Some(config.id.as_str()))
+            })?;
+        Ok(AppCommandResult::LlmProviderView(LlmProviderView {
+            config,
+            credential_configured,
+            is_default,
+        }))
+    }
+
+    fn set_default_llm_provider(
+        &self,
+        request: SetDefaultLlmProvider,
+    ) -> AppResult<AppCommandResult> {
+        let preferences = self.with_database("execute.set_default_llm_provider", |database| {
+            if let Some(id) = &request.id {
+                let config = database
+                    .llm_provider_repository()
+                    .get(id)?
+                    .ok_or_else(|| AppError::new(ErrorCode::ObjectNotFound, Severity::Error))?;
+                if !config.enabled {
+                    return Err(AppError::new(ErrorCode::ObjectNotFound, Severity::Error));
+                }
+            }
+            let mut preferences = database.desktop_settings_repository().get()?;
+            preferences.default_llm_provider_id = request.id.clone();
+            database.desktop_settings_repository().save(&preferences)
+        })?;
+        Ok(AppCommandResult::DesktopPreferences(preferences))
+    }
+
+    async fn fetch_llm_models(&self, request: FetchLlmModels) -> AppResult<AppCommandResult> {
+        let profile = self.resolve_admin_target(request.provider)?;
+        self.ensure_online_allowed(&profile)?;
+        let admin = self
+            .llm_admin
+            .clone()
+            .ok_or_else(|| AppError::new(ErrorCode::LlmNotConfigured, Severity::Info))?;
+        let credential = request.credential;
+        let models =
+            run_non_send(move || async move { admin.fetch_models(&profile, credential).await })?;
+        Ok(AppCommandResult::LlmModels(models))
+    }
+
+    async fn test_llm_connection(&self, request: TestLlmConnection) -> AppResult<AppCommandResult> {
+        let profile = self.resolve_admin_target(request.provider)?;
+        self.ensure_online_allowed(&profile)?;
+        let admin = self
+            .llm_admin
+            .clone()
+            .ok_or_else(|| AppError::new(ErrorCode::LlmNotConfigured, Severity::Info))?;
+        let credential = request.credential;
+        let report = run_non_send(move || async move {
+            let report = admin.check_connection(&profile, credential).await;
+            Ok(report)
+        })?;
+        Ok(AppCommandResult::ConnectionTest(report))
+    }
+
+    async fn list_llm_providers(&self) -> AppResult<AppQueryResult> {
+        let configs = self.with_database("query.list_llm_providers", |database| {
+            database.llm_provider_repository().list()
+        })?;
+        let default_id = self.with_database("query.list_llm_providers.default", |database| {
+            Ok(database
+                .desktop_settings_repository()
+                .get()?
+                .default_llm_provider_id)
+        })?;
+        let mut providers = Vec::with_capacity(configs.len());
+        for config in configs {
+            let is_default = default_id.as_deref() == Some(config.id.as_str());
+            let credential_configured = self.credential_configured(&config).await?;
+            providers.push(LlmProviderView {
+                config,
+                credential_configured,
+                is_default,
+            });
+        }
+        Ok(AppQueryResult::LlmProviders(providers))
+    }
+
+    fn list_llm_provider_presets(&self) -> AppResult<AppQueryResult> {
+        Ok(AppQueryResult::LlmProviderPresets(
+            skillhub_core::llm::builtin_provider_presets(),
+        ))
     }
 
     fn load_duplicate_candidates(
@@ -1427,6 +1704,11 @@ impl LocalApplicationFacade {
         &self,
         skill_id: skillhub_core::SkillId,
     ) -> AppResult<AppCommandResult> {
+        let capabilities = self.llm_capabilities()?;
+        self.require_llm_capability(
+            capabilities.semantic_duplicate,
+            LlmTaskKind::DuplicateAnalysis,
+        )?;
         let (runner, profile) = self.llm_context("execute.analyze_semantic_duplicates.profile")?;
         let candidates = self.load_duplicate_candidates(skill_id)?;
         let service = DuplicateService::new(
@@ -1447,6 +1729,11 @@ impl LocalApplicationFacade {
         })?;
         let detail =
             detail.ok_or_else(|| AppError::new(ErrorCode::ObjectNotFound, Severity::Error))?;
+        let capabilities = self.llm_capabilities()?;
+        self.require_llm_capability(
+            capabilities.description_translation,
+            LlmTaskKind::Translation,
+        )?;
         let (runner, profile) = self.llm_context("execute.translate_description.profile")?;
         let hash = description_hash(&detail.original_description);
         let service = TranslationService::new(
@@ -1522,6 +1809,8 @@ impl LocalApplicationFacade {
     }
 
     async fn generate_online_search_query(&self, text: String) -> AppResult<AppCommandResult> {
+        let capabilities = self.llm_capabilities()?;
+        self.require_llm_capability(capabilities.online_search_assist, LlmTaskKind::SearchQuery)?;
         let (runner, profile) = self.llm_context("execute.generate_online_search_query.profile")?;
         let result = run_non_send(move || async move {
             SearchQueryService::new(SharedLlmRunner(runner))
@@ -2253,6 +2542,8 @@ impl LocalApplicationFacade {
         skill_id: skillhub_core::SkillId,
         version_id: skillhub_core::VersionId,
     ) -> AppResult<AppCommandResult> {
+        let capabilities = self.llm_capabilities()?;
+        self.require_llm_capability(capabilities.safety_check, LlmTaskKind::Safety)?;
         let Some(library) = self.library.as_ref() else {
             return Err(unsupported("execute.run_llm_safety_check.library"));
         };
@@ -3322,12 +3613,14 @@ impl ApplicationFacade for LocalApplicationFacade {
     async fn execute(&self, command: AppCommand) -> AppResult<AppCommandResult> {
         let operation = match command {
             AppCommand::SetDesktopPreferences(preferences) => {
-                return self.with_database("execute.set_desktop_preferences", |database| {
+                let result = self.with_database("execute.set_desktop_preferences", |database| {
                     database
                         .desktop_settings_repository()
                         .save(&preferences)
                         .map(AppCommandResult::DesktopPreferences)
-                })
+                });
+                self.network_gate.set_open(preferences.network_enabled);
+                return result;
             }
             AppCommand::OpenOfficialRelease(request) => return self.open_official_release(request),
             AppCommand::OpenExternalUrl(request) => return self.open_external_url(request),
@@ -3754,6 +4047,24 @@ impl ApplicationFacade for LocalApplicationFacade {
             AppCommand::GenerateOnlineSearchQuery(request) => {
                 return self.generate_online_search_query(request.text).await;
             }
+            AppCommand::SaveLlmProvider(request) => {
+                return self.save_llm_provider(request).await;
+            }
+            AppCommand::DeleteLlmProvider(request) => {
+                return self.delete_llm_provider(request).await;
+            }
+            AppCommand::SetLlmProviderEnabled(request) => {
+                return self.set_llm_provider_enabled(request).await;
+            }
+            AppCommand::SetDefaultLlmProvider(request) => {
+                return self.set_default_llm_provider(request);
+            }
+            AppCommand::FetchLlmModels(request) => {
+                return self.fetch_llm_models(request).await;
+            }
+            AppCommand::TestLlmConnection(request) => {
+                return self.test_llm_connection(request).await;
+            }
             _ => "execute.unsupported",
         };
         Err(AppError::new(ErrorCode::InternalError, Severity::Error)
@@ -3973,6 +4284,8 @@ impl ApplicationFacade for LocalApplicationFacade {
             AppQuery::ListVersions(request) => self.list_versions(request.skill_id),
             AppQuery::ListSkillOperations(request) => self.list_skill_operations(request.skill_id),
             AppQuery::ListRunningLlmChecks => self.list_running_llm_checks(),
+            AppQuery::ListLlmProviders => self.list_llm_providers().await,
+            AppQuery::ListLlmProviderPresets => self.list_llm_provider_presets(),
             AppQuery::CheckSourceUpdates(request) => self.check_source_updates(request).await,
             AppQuery::DiffVersions(request) => self.diff_versions(&request.left, &request.right),
             AppQuery::ListDeployments(request) => self.list_deployments(request.skill_id),
