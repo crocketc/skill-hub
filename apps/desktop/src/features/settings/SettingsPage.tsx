@@ -16,6 +16,8 @@ import { AutomationSettings } from "./AutomationSettings";
 import { BackupSettings } from "./BackupSettings";
 import { GeneralSettings } from "./GeneralSettings";
 import { LibrarySettings } from "./LibrarySettings";
+import { LlmCapabilitiesSettings } from "./LlmCapabilitiesSettings";
+import { LlmProvidersSettings } from "./LlmProvidersSettings";
 import { NetworkStoragePlaceholder } from "./NetworkStoragePlaceholder";
 import { ViewSettings } from "./ViewSettings";
 
@@ -49,7 +51,15 @@ export function SettingsPage({ facade = unavailableSettingsFacade, initialSettin
             },
             {
               heading: t("settings.sections.networkAi"),
-              cards: [<AiNetworkSettings key="ai" facade={facade} settings={settings.network} />],
+              cards: [
+                <AiNetworkSettings key="ai" facade={facade} settings={settings.network} />,
+                ...(facade.llm
+                  ? [
+                      <LlmProvidersSettings key="llm-providers" facade={facade.llm} />,
+                      <LlmCapabilitiesSettings key="llm-capabilities" facade={facade.llm} />,
+                    ]
+                  : []),
+              ],
             },
             {
               heading: t("settings.sections.automation"),

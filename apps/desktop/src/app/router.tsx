@@ -24,6 +24,7 @@ import { DataProtectionPage } from "../features/backup/DataProtectionPage";
 import { nativeBackupFacade } from "../features/backup/nativeApi";
 import { SettingsPage } from "../features/settings/SettingsPage";
 import { nativeSettingsFacade } from "../features/settings/nativeApi";
+import { SettingsLlmPreview } from "../features/settings/SettingsLlmPreview";
 import { DiscoveryRoute } from "./DiscoveryRoute";
 import { OverviewPage } from "../features/overview/OverviewPage";
 import { SkillLibraryPage } from "../features/skills/SkillLibraryPage";
@@ -204,6 +205,7 @@ export const appRouter = createBrowserRouter([
           children: [
             { path: "skill-library", element: <SkillLibraryPreview /> },
             { path: "skill-detail/:skillId", element: <SkillDetailPreview /> },
+            { path: "settings-llm", element: <SettingsLlmPreview /> },
           ],
         },
       ]

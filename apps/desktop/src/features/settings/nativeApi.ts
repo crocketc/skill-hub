@@ -11,6 +11,7 @@ import {
   type SettingsSnapshot,
 } from "./api";
 import { nativeBackupFacade } from "../backup/nativeApi";
+import { nativeLlmFacade } from "./llmApi";
 
 const OFFICIAL_RELEASE_URL = "https://github.com/crocketc/skill-hub/releases";
 
@@ -115,6 +116,7 @@ export const nativeSettingsFacade: SettingsFacade = {
   execute: save,
   get,
   backup: nativeBackupFacade,
+  llm: nativeLlmFacade,
   libraryHealth: {
     async runHealthCheck() {
       const result = await executeCommand({ type: "run_health_check", payload: null });

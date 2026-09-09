@@ -72,10 +72,60 @@ function parseBranch(raw, title) {
 }
 
 function versionFor(storyId) {
-  if (storyId === "US-046" || storyId === "US-047") return "下一版本";
   if (storyId === "US-060") return "v0.2.0（仅边界说明）";
   return "v0.2.0";
 }
+
+// US-046/US-047 已随 v0.2.0 LLM 能力接入完成实现；这里把已建立的真实测试
+// 证据反向索引到生成的验收分支上。键是生成规则推导出的用例编号。
+const evidenceOverrides = new Map([
+  ["TC-US046-01", {
+    automation: "crates/skillhub-application/tests/facade_safety_flow.rs：llm_check_runs_a_fresh_basic_check_first_and_links_it；llm_check_reuses_a_current_basic_run_instead_of_rerunning",
+    result: "通过",
+    evidence: "LLM-阶段5",
+  }],
+  ["TC-US046-02", {
+    automation: "crates/skillhub-application/tests/facade_ai.rs：optional_ai_helpers_are_wired_without_network_or_implicit_writes（未配置返回 llm.not_configured，Severity::Info，不记为检查失败）；crates/skillhub-application/tests/facade_llm_admin.rs：capability_switches_gate_the_llm_commands（能力关闭返回 llm.capability_disabled）",
+    result: "通过",
+    evidence: "LLM-阶段5",
+  }],
+  ["TC-US046-03", {
+    automation: "crates/skillhub-application/tests/facade_safety_flow.rs：llm_check_runs_a_fresh_basic_check_first_and_links_it（先运行基础检查并记录 basic_run_id）；evidence_sent_to_the_llm_masks_plaintext_credentials（遮盖明文凭据后才进入 LLM 请求）；crates/skillhub-adapters/tests/security_masking.rs：flagged_lines_lose_their_values_but_keep_their_keys",
+    result: "通过",
+    evidence: "LLM-阶段5",
+  }],
+  ["TC-US046-04", {
+    automation: "crates/skillhub-adapters/tests/llm_safety_prompt.rs：safety_prompt_treats_skill_text_as_quoted_data（Skill 文本仅作为引号数据，无工具授权）；crates/skillhub-core/src/llm/safety.rs：SAFETY_PROMPT_VERSION 版本化提示词并进入检查记录 coverage_inputs",
+    result: "通过",
+    evidence: "LLM-阶段5",
+  }],
+  ["TC-US047-01", {
+    automation: "crates/skillhub-application/tests/facade_llm_admin.rs：model_fetch_and_connection_test_use_the_configured_protocol（模型列表与两级连接测试）；saving_a_provider_stores_the_credential_and_reports_status（默认供应商解析）；crates/skillhub-adapters/tests/llm_protocol_contract.rs：openai_family_uses_bearer_and_json_schema_response_format 等 5 协议族契约；tests/e2e/llm-settings.spec.ts：the two-level connection test reports endpoint and model levels separately",
+    result: "通过",
+    evidence: "LLM-阶段3a、阶段9",
+  }],
+  ["TC-US047-02", {
+    automation: "crates/skillhub-application/tests/facade_llm_admin.rs：saving_a_provider_stores_the_credential_and_reports_status（密钥只进入 CredentialStore，数据库仅存 llm-provider:{id} 引用）；deleting_a_provider_removes_its_credential_and_clears_the_default",
+    result: "通过",
+    evidence: "LLM-阶段2、阶段3b",
+  }],
+  ["TC-US047-03", {
+    automation: "crates/skillhub-application/tests/facade_llm_admin.rs：capability_switches_gate_the_llm_commands（四项能力分项门控）；apps/desktop/src/features/settings/LlmCapabilitiesSettings.test.tsx：keeps every AI capability off until the user opts in；writes the full merged preference set when one capability is enabled（每项开关展示数据范围说明）",
+    result: "通过",
+    evidence: "LLM-阶段3b、阶段9",
+  }],
+  ["TC-US047-04", {
+    automation: "crates/skillhub-application/tests/facade_ai.rs：duplicate_analysis_surfaces_deterministic_results_when_llm_fails（LLM 失败仍展示确定性结果并标注失败码）；crates/skillhub-application/tests/facade_ai.rs：optional_ai_helpers_are_wired_without_network_or_implicit_writes（未配置时明确返回可选功能不可用）",
+    result: "通过",
+    evidence: "LLM-阶段6",
+  }],
+  ["TC-US047-05", {
+    version: "v0.2.0（仅边界说明）",
+    automation: "边界说明：聊天、模型下载、训练微调、向量索引、多模型自动路由和复杂成本管理不在 v0.2.0 范围，命令契约与设置界面均无对应入口",
+    result: "不适用（v0.2.0）",
+    evidence: "docs/llm/用户配置与隐私说明-2026-09-10.md",
+  }],
+]);
 
 const stories = [];
 for (let index = 0; index < lines.length; index += 1) {
@@ -129,16 +179,20 @@ for (const story of stories) {
   branches.forEach((criterion, criterionIndex) => {
     const parsed = parseBranch(criterion, story.title);
     const caseNumber = String(criterionIndex + 1).padStart(2, "0");
+    const id = `TC-${story.id.replace("-", "")}-${caseNumber}`;
+    const override = evidenceOverrides.get(id);
     const future = versionFor(story.id) === "下一版本";
     rows.push({
-      id: `TC-${story.id.replace("-", "")}-${caseNumber}`,
+      id,
       story: `${story.id} ${story.title}`,
-      version: versionFor(story.id),
+      version: override?.version ?? versionFor(story.id),
       ...parsed,
       type: "自动化",
-      automation: future ? "非 v0.2.0 范围；待下一版本建立证据" : "待反向索引；缺失时先补失败测试",
-      result: future ? "不适用（v0.2.0）" : "未执行",
-      evidence: "—",
+      automation: future
+        ? "非 v0.2.0 范围；待下一版本建立证据"
+        : override?.automation ?? "待反向索引；缺失时先补失败测试",
+      result: future ? "不适用（v0.2.0）" : override?.result ?? "未执行",
+      evidence: override?.evidence ?? "—",
     });
   });
 }
@@ -478,6 +532,8 @@ const manualCases = [
   ["TC-US001-M02", "US-001 初始化集中库", "Windows 或 macOS 首次启动且有测试专用空目录", "通过原生目录选择器确认自定义目录", "向导显示所选真实路径并允许继续初始化", "QA-002"],
   ["TC-US045-M01", "US-045 安全处理 Skill 中的凭证", "系统安全凭据存储可用", "保存测试专用占位凭据", "凭据仅进入系统安全存储，不进入集中库、备份或日志", "—"],
   ["TC-US045-M02", "US-045 安全处理 Skill 中的凭证", "系统安全凭据存储中存在测试专用占位凭据", "清除该测试凭据", "凭据被移除且其他应用凭据不受影响", "—"],
+  ["TC-US047-M01", "US-047 配置可选 LLM 能力", "Windows 或 macOS 真实系统凭据存储可用", "保存一个测试专用 LLM API 密钥并检查磁盘文件", "密钥只出现在系统凭据存储（钥匙串/凭据管理器），集中库文件、备份与标准导出均无密钥明文", "—"],
+  ["TC-US047-M02", "US-047 配置可选 LLM 能力", "真实桌面应用中已配置一个在线 LLM 供应商", "在设置页对真实服务执行两级连接测试", "服务可达与模型连接分别展示；仅模型级通过才显示“模型连接可用”，失败时展示稳定错误码", "—"],
   ["TC-US053-M01", "US-053 创建完整备份并跨设备恢复", "Windows 测试库和 macOS 测试设备可用", "在 Windows 创建备份并在 macOS 恢复", "内容与逻辑关系恢复，Windows 绝对部署路径不沿用", "—"],
   ["TC-US053-M02", "US-053 创建完整备份并跨设备恢复", "macOS 测试库和 Windows 测试设备可用", "在 macOS 创建备份并在 Windows 恢复", "内容与逻辑关系恢复，macOS 绝对部署路径不沿用", "—"],
   ["TC-US056-M01", "US-056 退出管理或卸载前安全处理", "Windows 已安装且存在测试专用集中库", "使用系统卸载入口卸载应用", "应用被卸载，集中库和管理数据仍保留", "—"],

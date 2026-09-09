@@ -1,5 +1,6 @@
 import { executeCommand, queryApplication, type HealthReport, type IgnoreRule, type OperationSummary, type RepairPlan, type UpdateArtifact, type UpdateManifest, type UpdatePlatform } from "../../api/bindings";
 import type { BackupFacade } from "../backup/api";
+import type { LlmAdminFacade } from "./llmApi";
 
 export type IgnoreRuleSubject = IgnoreRule["subject"];
 export type IgnoreRuleDraft = {
@@ -83,6 +84,9 @@ export interface SettingsFacade {
   backup?: BackupFacade;
   /** When provided, the library card renders the health check entry (FE-16). */
   libraryHealth?: LibraryHealthOperations;
+  /** When provided, the settings page renders the LLM provider and capability
+   * cards; absent keeps the AI sections hidden entirely. */
+  llm?: LlmAdminFacade;
 }
 const unavailable = (operation: string): Promise<never> => Promise.reject(new Error(`${operation} is unavailable until the native contract is generated.`));
 export const unavailableSettingsFacade: SettingsFacade = { execute: () => unavailable("settings_command"), get: () => unavailable("settings_query") };
