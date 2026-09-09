@@ -2606,6 +2606,25 @@ impl LocalApplicationFacade {
         skill_id: skillhub_core::SkillId,
         version_id: skillhub_core::VersionId,
     ) -> AppResult<AppCommandResult> {
+        let run = self
+            .execute_basic_check(skill_id, version_id.clone())
+            .await?;
+        let result = skillhub_core::check::CheckResult {
+            state: run.state(),
+            run: Some(run),
+        };
+        Ok(AppCommandResult::BasicCheckResult(
+            BasicCheckResult::from_check_result(skill_id, version_id, &result),
+        ))
+    }
+
+    /// The deterministic basic check for one version, freshly executed and
+    /// persisted. The AI safety check builds on it.
+    async fn execute_basic_check(
+        &self,
+        skill_id: skillhub_core::SkillId,
+        version_id: skillhub_core::VersionId,
+    ) -> AppResult<CheckRun> {
         let Some(library) = self.library.as_ref() else {
             return Err(unsupported("execute.run_basic_check.library"));
         };
@@ -2652,16 +2671,36 @@ impl LocalApplicationFacade {
         run.generation = generation;
         run.started_at = started_at;
         run.ended_at = Some(now_millis());
-        let result = skillhub_core::check::CheckResult {
-            state: run.state(),
-            run: Some(run.clone()),
-        };
         self.with_database("execute.run_basic_check.persist", |database| {
             database.check_repository().insert_sync(&run)
         })?;
-        Ok(AppCommandResult::BasicCheckResult(
-            BasicCheckResult::from_check_result(skill_id, version_id, &result),
-        ))
+        Ok(run)
+    }
+
+    /// The AI check always stands on a current deterministic basic run
+    /// (requirement 5.36): a completed `basic-v1` run for this version is
+    /// reused, anything else is re-run first.
+    async fn ensure_current_basic_check(
+        &self,
+        skill_id: skillhub_core::SkillId,
+        version_id: &skillhub_core::VersionId,
+    ) -> AppResult<CheckRun> {
+        let current = self.with_database("execute.run_llm_safety_check.basic", |database| {
+            database.check_repository().current_for_version_sync(
+                skill_id,
+                version_id,
+                CheckKind::Basic,
+            )
+        })?;
+        match current {
+            Some(run)
+                if run.phase == CheckRunPhase::Completed
+                    && run.ruleset_id.as_deref() == Some("basic-v1") =>
+            {
+                Ok(run)
+            }
+            _ => self.execute_basic_check(skill_id, version_id.clone()).await,
+        }
     }
 
     async fn run_llm_safety_check(
@@ -2683,6 +2722,11 @@ impl LocalApplicationFacade {
         let Some(profile) = profile else {
             return Err(AppError::new(ErrorCode::LlmNotConfigured, Severity::Info));
         };
+        // The AI check runs on top of a fresh deterministic basic check and
+        // links it, so findings from both layers can be shown together.
+        let basic_run = self
+            .ensure_current_basic_check(skill_id, &version_id)
+            .await?;
         let allowed_files = library.list_markdown_files(&version_id)?;
         let mut evidence = String::new();
         for file in &allowed_files {
@@ -2696,6 +2740,9 @@ impl LocalApplicationFacade {
             evidence.push_str(&text);
             evidence.push_str("\n\n");
         }
+        // Plaintext credential values are masked before anything leaves the
+        // device; the deterministic basic rules decide, not an LLM.
+        let evidence = skillhub_adapters::security::mask_credentials(&evidence);
         let request = skillhub_core::llm::safety::build_safety_request(&evidence)?;
         let generation =
             self.with_database("execute.run_llm_safety_check.generation", |database| {
@@ -2790,7 +2837,10 @@ impl LocalApplicationFacade {
                     run.model_id = Some(model_id);
                     run.coverage_inputs = serde_json::json!({
                         "files": allowed_files,
-                        "evidence_bytes": evidence.len()
+                        "evidence_bytes": evidence.len(),
+                        "basic_run_id": basic_run.id,
+                        "prompt_version": skillhub_core::llm::safety::SAFETY_PROMPT_VERSION,
+                        "secret_masking": "applied",
                     });
                     run
                 }

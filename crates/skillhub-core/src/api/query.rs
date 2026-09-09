@@ -409,6 +409,8 @@ pub struct LlmSafetyCheckResult {
     pub version_id: VersionId,
     pub state: CheckState,
     pub run_id: Option<String>,
+    #[serde(default)]
+    pub basic_run_id: Option<String>,
     pub model_id: Option<String>,
     pub checked_at: Option<String>,
     pub finding_count: u32,
@@ -488,6 +490,12 @@ impl LlmSafetyCheckResult {
             version_id,
             state: result.state,
             run_id: run.map(|run| run.id.clone()),
+            basic_run_id: run.and_then(|run| {
+                run.coverage_inputs
+                    .get("basic_run_id")
+                    .and_then(|value| value.as_str())
+                    .map(str::to_owned)
+            }),
             model_id: run.and_then(|run| run.model_id.clone()),
             checked_at: run.and_then(|run| run.ended_at.map(|value| value.to_string())),
             finding_count: run

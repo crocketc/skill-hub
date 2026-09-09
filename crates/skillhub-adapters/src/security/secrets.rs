@@ -1,3 +1,42 @@
+/// Deterministic masking for text about to leave the device: every line the
+/// basic ruleset would flag as a plaintext credential keeps its structure but
+/// loses its literal value. Over-masking a flagged line is acceptable;
+/// transmitting the value is not.
+pub fn mask_credentials(text: &str) -> String {
+    let mut masked = String::with_capacity(text.len());
+    for line in text.split_inclusive('\n') {
+        let (body, ending) = match line.strip_suffix('\n') {
+            Some(body) => (body, "\n"),
+            None => (line, ""),
+        };
+        if has_plaintext_credential(body) {
+            masked.push_str(&mask_line(body));
+        } else {
+            masked.push_str(body);
+        }
+        masked.push_str(ending);
+    }
+    masked
+}
+
+fn mask_line(line: &str) -> String {
+    let lower = line.to_ascii_lowercase();
+    if lower.contains("-----begin ") && lower.contains(" private key-----") {
+        return "[REDACTED]".to_owned();
+    }
+    // Prefix-form tokens (sk-…, ghp_…): mask from the token onward.
+    for prefix in ["sk-", "ghp_", "github_pat_", "xoxb-", "xoxp-"] {
+        if let Some(position) = lower.find(prefix) {
+            return format!("{}[REDACTED]", &line[..position]);
+        }
+    }
+    // key = value / key: value forms keep the key side only.
+    if let Some(separator) = line.find(['=', ':']) {
+        return format!("{} [REDACTED]", &line[..=separator]);
+    }
+    "[REDACTED]".to_owned()
+}
+
 /// Return true when a line contains a likely literal credential rather than a
 /// variable reference or a documentation placeholder.
 pub fn has_plaintext_credential(line: &str) -> bool {

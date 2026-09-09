@@ -71,6 +71,15 @@ async fn facade_with_check() -> (
     ))
     .capture(skill.id(), source.path())
     .expect("capture version");
+    // The AI check now materializes the version for its deterministic basic
+    // check first, so the fixture needs the version row like production.
+    database
+        .connection_for_test()
+        .execute(
+            "INSERT INTO versions (id, skill_id, content_hash, manifest_json, created_at) VALUES (?1, ?2, 'hash', '{}', 0)",
+            rusqlite::params![version.id.to_string(), skill.id().to_string()],
+        )
+        .expect("insert version");
     let facade = Arc::new(LocalApplicationFacade::new_with_library_and_llm_runner(
         database,
         library_root.path(),

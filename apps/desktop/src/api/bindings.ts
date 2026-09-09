@@ -1090,6 +1090,7 @@ export type LlmSafetyCheckResult = {
 	version_id: VersionId,
 	state: CheckState,
 	run_id: string | null,
+	basic_run_id?: string | null,
 	model_id: string | null,
 	checked_at: string | null,
 	finding_count: number,

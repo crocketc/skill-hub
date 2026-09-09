@@ -7,6 +7,10 @@ use crate::{AppError, AppResult, ErrorCode, Severity};
 
 const SAFETY_SCHEMA: &str = include_str!("../../schemas/llm-safety-v1.json");
 
+/// Version of the shipped safety prompt + schema pair. Recorded on every run
+/// so results stay interpretable when the prompt evolves.
+pub const SAFETY_PROMPT_VERSION: &str = "safety-prompt-v1";
+
 pub fn build_safety_request(evidence: &str) -> AppResult<LlmTaskRequest> {
     let schema: Value = serde_json::from_str(SAFETY_SCHEMA)
         .map_err(|_| AppError::new(ErrorCode::InternalError, Severity::Error))?;
