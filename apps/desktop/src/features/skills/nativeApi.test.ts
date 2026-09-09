@@ -23,6 +23,7 @@ function nativeItem(overrides: Partial<SkillListItem> = {}): SkillListItem {
     original_description: "Extract tables",
     translated_description: null,
     user_note: null,
+    user_purpose: null,
     tags: ["documents"],
     license: "MIT",
     lifecycle: "Normal",
@@ -279,7 +280,7 @@ it("fills the quick drawer duplicate candidates from the deterministic read mode
     if (request.type === "get_skill") {
       return {
         type: "skill",
-        payload: { skill_id: "skill-a", display_name: "Notes A", runtime_name: "notes-a", original_description: "", translated_description: null, user_note: null, tags: [], author: null, license: null, lifecycle: "Normal", trial_due: null, current_version: "v-hash" },
+        payload: { skill_id: "skill-a", display_name: "Notes A", runtime_name: "notes-a", original_description: "", translated_description: null, user_note: null, user_purpose: null, tags: [], author: null, license: null, lifecycle: "Normal", trial_due: null, current_version: "v-hash" },
       };
     }
     if (request.type === "list_deterministic_duplicates") {
@@ -306,6 +307,7 @@ function persistedSkill(overrides: Partial<SkillResult> = {}): AppQueryResult {
       original_description: "Extract tables",
       translated_description: null,
       user_note: "Keep near docs",
+      user_purpose: "用于 PDF 表格提取",
       tags: ["documents"],
       author: "Platform team",
       license: "MIT",
@@ -349,6 +351,7 @@ describe("native skill metadata save", () => {
         tags: ["documents"],
         author: "Platform team",
         license: "MIT",
+        user_purpose: "用于 PDF 表格提取",
       },
     });
   });
@@ -368,6 +371,7 @@ describe("native skill metadata save", () => {
         tags: ["documents"],
         author: "Platform team",
         license: "MIT",
+        user_purpose: "用于 PDF 表格提取",
       },
     });
   });
@@ -387,6 +391,7 @@ describe("native skill metadata save", () => {
         tags: ["documents"],
         author: "Platform team",
         license: "MIT",
+        user_purpose: "用于 PDF 表格提取",
       },
     });
   });

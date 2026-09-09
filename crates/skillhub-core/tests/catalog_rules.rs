@@ -57,3 +57,36 @@ fn call_policy_supports_all_invocation_actor_combinations() {
     assert_ne!(CallPolicy::ModelOnly, CallPolicy::ManualOnly);
     assert_ne!(CallPolicy::Disabled, CallPolicy::AutomaticAndManual);
 }
+
+#[test]
+fn user_purpose_is_independent_metadata_not_a_description_alias() {
+    let mut skill = Skill::new(SkillId::new(), "pdf").with_description("Extracts tables");
+    skill
+        .set_metadata(
+            Some("PDF helper".to_owned()),
+            Some("keep near docs".to_owned()),
+            std::collections::BTreeSet::from(["documents".to_owned()]),
+            Some("Example Author".to_owned()),
+            Some("MIT".to_owned()),
+            Some("用于 PDF 表格提取".to_owned()),
+        )
+        .expect("metadata update validates");
+    // 用途是用户独立撰写的字段，不得用原文或译文冒充。
+    assert_eq!(skill.user_purpose().as_deref(), Some("用于 PDF 表格提取"));
+    assert_eq!(skill.original_description(), "Extracts tables");
+    assert_eq!(skill.note(), Some("keep near docs"));
+
+    skill
+        .set_metadata(
+            None,
+            Some("keep near docs".to_owned()),
+            std::collections::BTreeSet::from(["documents".to_owned()]),
+            Some("Example Author".to_owned()),
+            Some("MIT".to_owned()),
+            None,
+        )
+        .expect("clearing purpose validates");
+    assert_eq!(skill.user_purpose(), None);
+    // 未提供 display_name 时显示名保持不变。
+    assert_eq!(skill.display_name(), "PDF helper");
+}

@@ -276,6 +276,18 @@ rows.push(
     result: "通过",
     evidence: "QA-007",
   },
+  {
+    id: "TC-US039-08",
+    story: "US-039 重命名或重新关联来源",
+    version: "v0.2.0",
+    precondition: "完整详情页编辑别名、用途说明、标签或备注",
+    action: "保存元数据修改",
+    expected: "编辑经原生 set_metadata 全量契约持久化；用途说明写入领域独立 user_purpose 字段而非译文；未修改的标签、作者、许可证保持不变",
+    type: "自动化",
+    automation: "apps/desktop/src/features/skill-detail/nativeApi.test.ts：saves metadata patches through the full overwrite contract without dropping fields；maps the native skill projection to summary and metadata",
+    result: "通过",
+    evidence: "QA-008",
+  },
 );
 
 globalRules.forEach((rule) => {

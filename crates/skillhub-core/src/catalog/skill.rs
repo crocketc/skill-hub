@@ -25,6 +25,7 @@ pub struct Skill {
     translated_description: Option<String>,
     translation_state: TranslationState,
     user_note: Option<String>,
+    user_purpose: Option<String>,
     tags: BTreeSet<String>,
     author: Option<String>,
     license: Option<String>,
@@ -45,6 +46,7 @@ impl Skill {
             translated_description: None,
             translation_state: TranslationState::NotTranslated,
             user_note: None,
+            user_purpose: None,
             tags: BTreeSet::new(),
             author: None,
             license: None,
@@ -71,6 +73,9 @@ impl Skill {
     }
     pub fn note(&self) -> Option<&str> {
         self.user_note.as_deref()
+    }
+    pub fn user_purpose(&self) -> Option<&str> {
+        self.user_purpose.as_deref()
     }
     pub fn tags(&self) -> &BTreeSet<String> {
         &self.tags
@@ -132,6 +137,7 @@ impl Skill {
         description: String,
         translated: Option<String>,
         note: Option<String>,
+        user_purpose: Option<String>,
         tags: BTreeSet<String>,
         author: Option<String>,
         license: Option<String>,
@@ -150,6 +156,7 @@ impl Skill {
             TranslationState::NotTranslated
         };
         self.user_note = note;
+        self.user_purpose = user_purpose;
         self.tags = tags;
         self.author = author;
         self.license = license;
@@ -201,6 +208,7 @@ impl Skill {
         tags: BTreeSet<String>,
         author: Option<String>,
         license: Option<String>,
+        user_purpose: Option<String>,
     ) -> Result<(), AppError> {
         if let Some(name) = display_name {
             self.rename(name)?;
@@ -209,6 +217,7 @@ impl Skill {
         self.tags = tags;
         self.author = author;
         self.license = license;
+        self.user_purpose = user_purpose;
         self.validate()
     }
     #[allow(clippy::too_many_arguments)]
@@ -219,6 +228,7 @@ impl Skill {
         description: String,
         translated: Option<String>,
         note: Option<String>,
+        user_purpose: Option<String>,
         tags: BTreeSet<String>,
         author: Option<String>,
         license: Option<String>,
@@ -234,6 +244,7 @@ impl Skill {
             description,
             translated,
             note,
+            user_purpose,
             tags,
             author,
             license,

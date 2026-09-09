@@ -73,6 +73,8 @@ pub struct PortableSkillRecord {
     #[serde(default)]
     pub note: Option<String>,
     #[serde(default)]
+    pub user_purpose: Option<String>,
+    #[serde(default)]
     pub tags: Vec<String>,
     #[serde(default)]
     pub author: Option<String>,
@@ -96,6 +98,7 @@ impl PortableSkillRecord {
             description: String::new(),
             translated_description: None,
             note: None,
+            user_purpose: None,
             tags: Vec::new(),
             author: None,
             license: None,

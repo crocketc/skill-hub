@@ -114,6 +114,7 @@ where
         tags: Vec<String>,
         author: Option<String>,
         license: Option<String>,
+        user_purpose: Option<String>,
     ) -> AppResult<Skill> {
         self.update_skill_and_portable(id, move |skill| {
             skill.set_metadata(
@@ -122,6 +123,7 @@ where
                 tags.into_iter().collect::<BTreeSet<_>>(),
                 author,
                 license,
+                user_purpose,
             )
         })
         .await

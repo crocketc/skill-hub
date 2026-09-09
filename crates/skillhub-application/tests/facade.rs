@@ -1837,6 +1837,7 @@ async fn list_skills_query_filters_by_tags_lifecycle_and_deployment_state() {
         String::new(),
         None,
         None,
+        None,
         ["documents".to_owned(), "media".to_owned()]
             .into_iter()
             .collect(),
@@ -4120,6 +4121,7 @@ async fn catalog_metadata_commands_update_skill_detail_atomically() {
             tags: vec!["utility".to_owned(), "utility".to_owned()],
             author: Some("Author".to_owned()),
             license: Some("MIT".to_owned()),
+            user_purpose: Some("用于表格提取".to_owned()),
         }))
         .await
         .expect("metadata");

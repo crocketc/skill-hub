@@ -22,6 +22,7 @@ describe("native skill detail facade", () => {
         original_description: "Extract tables",
         translated_description: "提取表格",
         user_note: "Review before deployment",
+        user_purpose: "用于 PDF 表格提取",
         tags: ["documents", "pdf"],
 
         author: null,
@@ -39,14 +40,105 @@ describe("native skill detail facade", () => {
       lifecycle: "trial",
       trialDue: "2026-09-15",
     });
+    // QA-008：元数据面板的用途来自用户独立字段，不得用译文冒充；显示别名即 display_name。
     await expect(nativeSkillDetailFacade.getMetadata("skill-1")).resolves.toMatchObject({
+      alias: "PDF Reader",
       originalDescription: "Extract tables",
-      purpose: "提取表格",
+      purpose: "用于 PDF 表格提取",
       note: "Review before deployment",
       tags: ["documents", "pdf"],
       license: "MIT",
     });
     expect(queryApplication).toHaveBeenCalledTimes(2);
+  });
+
+  it("saves metadata patches through the full overwrite contract without dropping fields", async () => {
+    vi.clearAllMocks();
+    vi.mocked(queryApplication).mockResolvedValue({
+      type: "skill",
+      payload: {
+        skill_id: "skill-1",
+        display_name: "PDF Reader",
+        runtime_name: "pdf-reader",
+        original_description: "Extract tables",
+        translated_description: "提取表格",
+        user_note: "Review before deployment",
+        user_purpose: "用于 PDF 表格提取",
+        tags: ["documents"],
+        author: "Ada",
+        license: "MIT",
+        lifecycle: "Normal",
+        trial_due: null,
+        current_version: null,
+      },
+    });
+    vi.mocked(executeCommand).mockResolvedValue({
+      type: "operation_summary",
+      payload: { operation_id: "op-1", phase: "committed", message_code: "ok", error_code: null },
+    });
+
+    await nativeSkillDetailFacade.saveMetadata("skill-1", {
+      purpose: "新的本地用途",
+      tags: ["new-tag"],
+    });
+
+    expect(queryApplication).toHaveBeenCalledWith({
+      type: "get_skill",
+      payload: { skill_id: "skill-1" },
+    });
+    expect(executeCommand).toHaveBeenCalledWith({
+      type: "set_metadata",
+      payload: {
+        skill_id: "skill-1",
+        display_name: "PDF Reader",
+        note: "Review before deployment",
+        tags: ["new-tag"],
+        author: "Ada",
+        license: "MIT",
+        user_purpose: "新的本地用途",
+      },
+    });
+  });
+
+  it("clears an alias back to the runtime name through the metadata contract", async () => {
+    vi.clearAllMocks();
+    vi.mocked(queryApplication).mockResolvedValue({
+      type: "skill",
+      payload: {
+        skill_id: "skill-1",
+        display_name: "PDF Reader",
+        runtime_name: "pdf-reader",
+        original_description: "Extract tables",
+        translated_description: null,
+        user_note: null,
+        user_purpose: null,
+        tags: [],
+        author: null,
+        license: null,
+        lifecycle: "Normal",
+        trial_due: null,
+        current_version: null,
+      },
+    });
+    vi.mocked(executeCommand).mockResolvedValue({
+      type: "operation_summary",
+      payload: { operation_id: "op-2", phase: "committed", message_code: "ok", error_code: null },
+    });
+
+    await nativeSkillDetailFacade.saveMetadata("skill-1", { alias: null });
+
+    expect(executeCommand).toHaveBeenCalledWith({
+      type: "set_metadata",
+      payload: {
+        skill_id: "skill-1",
+        display_name: "pdf-reader",
+        note: null,
+        tags: [],
+        author: null,
+        license: null,
+        user_purpose: null,
+      },
+    });
   });
 
   it("turns an unexpected native result into the standard unavailable error", async () => {
@@ -88,6 +180,7 @@ describe("native skill detail facade", () => {
           original_description: "Extract tables",
           translated_description: null,
           user_note: null,
+          user_purpose: null,
           tags: [],
 
           author: null,

@@ -112,6 +112,7 @@ fn portable_manifest_preserves_invocation_policy() {
         "Description".to_owned(),
         None,
         None,
+        None,
         Default::default(),
         None,
         None,

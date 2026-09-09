@@ -66,6 +66,38 @@ fn repeated_insert_preserves_existing_version_relationships_and_timestamps() {
 }
 
 #[test]
+fn set_metadata_persists_user_purpose_independently_of_descriptions() {
+    let db = Database::open_in_memory().unwrap();
+    let repo = CatalogRepositorySqlite::new(&db).unwrap();
+    let mut skill = Skill::new(SkillId::new(), "pdf")
+        .with_description("Extract PDF tables")
+        .with_note("keep near docs");
+    skill
+        .set_metadata(
+            None,
+            Some("keep near docs".to_owned()),
+            Default::default(),
+            None,
+            None,
+            Some("用于 PDF 表格提取".to_owned()),
+        )
+        .unwrap();
+    block_on(repo.insert(&skill)).unwrap();
+
+    let reloaded = block_on(repo.get(skill.id())).unwrap().unwrap();
+    assert_eq!(reloaded.user_purpose(), Some("用于 PDF 表格提取"));
+    assert_eq!(reloaded.original_description(), "Extract PDF tables");
+    assert_eq!(reloaded.note(), Some("keep near docs"));
+
+    // 清空用途后原文与备注不受影响。
+    skill.set_metadata(None, None, Default::default(), None, None, None).unwrap();
+    block_on(repo.insert(&skill)).unwrap();
+    let reloaded = block_on(repo.get(skill.id())).unwrap().unwrap();
+    assert_eq!(reloaded.user_purpose(), None);
+    assert_eq!(reloaded.original_description(), "Extract PDF tables");
+}
+
+#[test]
 fn catalog_round_trip_preserves_extended_invocation_policy() {
     let db = Database::open_in_memory().unwrap();
     let repo = CatalogRepositorySqlite::new(&db).unwrap();
@@ -74,6 +106,7 @@ fn catalog_round_trip_preserves_extended_invocation_policy() {
         "model-only".to_owned(),
         "model-only".to_owned(),
         "Description".to_owned(),
+        None,
         None,
         None,
         Default::default(),

@@ -63,6 +63,7 @@ pub struct SetMetadata {
     pub tags: Vec<String>,
     pub author: Option<String>,
     pub license: Option<String>,
+    pub user_purpose: Option<String>,
 }
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 pub struct SetTrial {

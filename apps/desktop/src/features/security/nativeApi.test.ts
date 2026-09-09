@@ -222,6 +222,7 @@ describe("security native API", () => {
       tags: ["tag"],
       author: null,
       license: "MIT",
+      user_purpose: null,
     });
     await setNativeSkillLifecycle("skill-1", "Deprecated");
     await setNativeSkillTrial("skill-1", [2026, 9, 1]);
@@ -232,7 +233,7 @@ describe("security native API", () => {
     });
     expect(executeCommand).toHaveBeenNthCalledWith(2, {
       type: "set_metadata",
-      payload: { skill_id: "skill-1", display_name: null, note: "note", tags: ["tag"], author: null, license: "MIT" },
+      payload: { skill_id: "skill-1", display_name: null, note: "note", tags: ["tag"], author: null, license: "MIT", user_purpose: null },
     });
     expect(executeCommand).toHaveBeenNthCalledWith(3, {
       type: "set_lifecycle",

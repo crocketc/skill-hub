@@ -26,6 +26,7 @@ impl PortableMetadataRepository for CentralLibrary {
             record.description,
             record.translated_description,
             record.note,
+            record.user_purpose,
             record.tags.into_iter().collect::<BTreeSet<_>>(),
             record.author,
             record.license,

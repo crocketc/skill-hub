@@ -107,6 +107,7 @@ it("keeps a failed Skill preview out of the batch commit candidates", async () =
           original_description: "",
           translated_description: null,
           user_note: null,
+          user_purpose: null,
           tags: [],
 
           author: null,

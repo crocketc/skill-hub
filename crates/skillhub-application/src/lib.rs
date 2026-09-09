@@ -2979,6 +2979,7 @@ impl LocalApplicationFacade {
                     request.tags.into_iter().collect(),
                     request.author,
                     request.license,
+                    request.user_purpose,
                 )
             },
         )
@@ -3884,6 +3885,7 @@ impl ApplicationFacade for LocalApplicationFacade {
                         original_description: skill.original_description,
                         translated_description: skill.translated_description,
                         user_note: skill.user_note,
+                        user_purpose: skill.user_purpose,
                         tags: skill.tags,
                         author: skill.author,
                         license: skill.license,
@@ -5691,6 +5693,7 @@ impl CallPolicyBackend for LocalCallPolicyBackend {
             skill.original_description().to_owned(),
             skill.translated_description().map(str::to_owned),
             skill.note().map(str::to_owned),
+            skill.user_purpose().map(str::to_owned),
             skill.tags().clone(),
             skill.author().map(str::to_owned),
             skill.license().map(str::to_owned),
@@ -5730,6 +5733,7 @@ impl CallPolicyBackend for LocalCallPolicyBackend {
             skill.original_description().to_owned(),
             skill.translated_description().map(str::to_owned),
             skill.note().map(str::to_owned),
+            skill.user_purpose().map(str::to_owned),
             skill.tags().clone(),
             skill.author().map(str::to_owned),
             skill.license().map(str::to_owned),

@@ -95,6 +95,7 @@ impl CentralLibrary {
         record.runtime_name = skill.runtime_name().to_owned();
         record.description = skill.original_description().to_owned();
         record.note = skill.note().map(str::to_owned);
+        record.user_purpose = skill.user_purpose().map(str::to_owned);
         record.tags = skill.tags().iter().cloned().collect();
         record.author = skill.author().map(str::to_owned);
         record.license = skill.license().map(str::to_owned);

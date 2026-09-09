@@ -17,6 +17,7 @@ import {
   type SkillDetailSummary,
   type SkillFinding,
   type SkillMetadata,
+  type SkillMetadataPatch,
   type SkillRelation,
   type SkillRollbackImpact,
   type SkillVersionDiff,
@@ -90,12 +91,35 @@ async function checkState(
 
 function metadataOf(skill: SkillResult): SkillMetadata {
   return {
+    alias: skill.display_name,
     license: skill.license ?? undefined,
     note: skill.user_note ?? undefined,
     originalDescription: skill.original_description,
-    purpose: skill.translated_description ?? skill.original_description,
+    // QA-008：用途是用户独立撰写的字段，不得用原文或译文冒充。
+    purpose: skill.user_purpose ?? "",
     tags: skill.tags,
   };
+}
+
+/** QA-008：set_metadata 是整体覆盖命令；先读取当前值合并补丁，
+ * 避免只改一个字段时丢失标签、作者或许可证。 */
+async function saveMetadata(skillId: string, patch: SkillMetadataPatch): Promise<void> {
+  const skill = await getSkill(skillId);
+  const result: AppCommandResult = await executeCommand({
+    type: "set_metadata",
+    payload: {
+      skill_id: skillId,
+      display_name: patch.alias === undefined
+        ? skill.display_name
+        : patch.alias?.trim() || skill.runtime_name,
+      note: patch.note === undefined ? skill.user_note : patch.note || null,
+      tags: patch.tags === undefined ? skill.tags : patch.tags,
+      author: skill.author,
+      license: skill.license,
+      user_purpose: patch.purpose === undefined ? skill.user_purpose : patch.purpose || null,
+    },
+  });
+  if (result.type !== "operation_summary") throw unavailableResult();
 }
 
 /** AR-021：把原生版本记录映射为用户可读条目——有序号用 vN，
@@ -251,6 +275,7 @@ export const nativeSkillDetailFacade: SkillDetailFacade = {
   async getMetadata(skillId) {
     return metadataOf(await getSkill(skillId));
   },
+  saveMetadata,
   async getRelations(skillId): Promise<SkillRelation[]> {
     const relationsResult = await queryApplication({
       type: "get_deployment_relations",

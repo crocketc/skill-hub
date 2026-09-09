@@ -1509,6 +1509,7 @@ export type SetMetadata = {
 	tags: string[],
 	author: string | null,
 	license: string | null,
+	user_purpose: string | null,
 };
 
 export type SetProfileOverride = {
@@ -1610,6 +1611,7 @@ export type SkillListItem = {
 	original_description: string,
 	translated_description: string | null,
 	user_note: string | null,
+	user_purpose: string | null,
 	tags: string[],
 	license: string | null,
 	lifecycle: SkillLifecycle,
@@ -1683,6 +1685,7 @@ export type SkillResult = {
 	original_description: string,
 	translated_description: string | null,
 	user_note: string | null,
+	user_purpose: string | null,
 	tags: string[],
 	author: string | null,
 	license: string | null,

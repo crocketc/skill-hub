@@ -28,7 +28,7 @@ impl<'a> CatalogRepositorySqlite<'a> {
         let conn = &self.database.connection;
         let tx = conn.unchecked_transaction().map_err(error)?;
         let timestamp = now();
-        tx.execute("INSERT INTO skills (id,display_name,runtime_name,original_description,translated_description,user_note,author,license,call_policy,lifecycle,created_at,updated_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?11) ON CONFLICT(id) DO UPDATE SET display_name=excluded.display_name,runtime_name=excluded.runtime_name,original_description=excluded.original_description,translated_description=excluded.translated_description,user_note=excluded.user_note,author=excluded.author,license=excluded.license,call_policy=excluded.call_policy,lifecycle=excluded.lifecycle,updated_at=excluded.updated_at", params![skill.id().to_string(), skill.display_name(), skill.runtime_name(), skill.original_description(), skill.translated_description(), skill.note().unwrap_or_default(), skill.author(), skill.license(), policy_code(skill.call_policy()), lifecycle_code(skill.lifecycle()), timestamp]).map_err(error)?;
+        tx.execute("INSERT INTO skills (id,display_name,runtime_name,original_description,translated_description,user_note,user_purpose,author,license,call_policy,lifecycle,created_at,updated_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?12) ON CONFLICT(id) DO UPDATE SET display_name=excluded.display_name,runtime_name=excluded.runtime_name,original_description=excluded.original_description,translated_description=excluded.translated_description,user_note=excluded.user_note,user_purpose=excluded.user_purpose,author=excluded.author,license=excluded.license,call_policy=excluded.call_policy,lifecycle=excluded.lifecycle,updated_at=excluded.updated_at", params![skill.id().to_string(), skill.display_name(), skill.runtime_name(), skill.original_description(), skill.translated_description(), skill.note().unwrap_or_default(), skill.user_purpose().unwrap_or_default(), skill.author(), skill.license(), policy_code(skill.call_policy()), lifecycle_code(skill.lifecycle()), timestamp]).map_err(error)?;
         tx.execute(
             "DELETE FROM skill_tags WHERE skill_id=?1",
             [skill.id().to_string()],
@@ -375,7 +375,7 @@ fn status_columns() -> String {
     let latest_basic_id = latest_check_run_id_expr("s.id", "cp.version_id", "basic");
     let latest_llm_id = latest_check_run_id_expr("s.id", "cp.version_id", "llm");
     format!(
-        "s.display_name,s.runtime_name,s.original_description,s.translated_description,s.user_note,s.license,s.lifecycle,m.trial_due,s.author,\
+        "s.display_name,s.runtime_name,s.original_description,s.translated_description,s.user_note,s.user_purpose,s.license,s.lifecycle,m.trial_due,s.author,\
          (SELECT src.kind FROM skill_sources ss JOIN sources src ON src.id=ss.source_id WHERE ss.skill_id=s.id ORDER BY src.id ASC LIMIT 1),\
          (SELECT src.locator FROM skill_sources ss JOIN sources src ON src.id=ss.source_id WHERE ss.skill_id=s.id ORDER BY src.id ASC LIMIT 1),\
          cp.version_id,v.source_version,\
@@ -398,6 +398,7 @@ struct StatusRow {
     original_description: String,
     translated_description: Option<String>,
     user_note: String,
+    user_purpose: String,
     license: Option<String>,
     lifecycle: String,
     trial_due: Option<String>,
@@ -419,6 +420,7 @@ fn read_status_row(id: SkillId, row: StatusRow) -> AppResult<SkillListItem> {
         original_description: row.original_description,
         translated_description: row.translated_description,
         user_note: (!row.user_note.is_empty()).then_some(row.user_note),
+        user_purpose: (!row.user_purpose.is_empty()).then_some(row.user_purpose),
         tags: Vec::new(),
         license: row.license,
         lifecycle: parse_lifecycle(&row.lifecycle)?,
@@ -520,17 +522,18 @@ fn map_status_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<(String, StatusRo
             original_description: row.get(3)?,
             translated_description: row.get(4)?,
             user_note: row.get(5)?,
-            license: row.get(6)?,
-            lifecycle: row.get(7)?,
-            trial_due: row.get(8)?,
-            author: row.get(9)?,
-            source_kind: row.get(10)?,
-            source_locator: row.get(11)?,
-            current_version: row.get(12)?,
-            version_label: row.get(13)?,
-            basic_check: row.get(14)?,
-            ai_check: row.get(15)?,
-            high_risk_count: row.get(16)?,
+            user_purpose: row.get(6)?,
+            license: row.get(7)?,
+            lifecycle: row.get(8)?,
+            trial_due: row.get(9)?,
+            author: row.get(10)?,
+            source_kind: row.get(11)?,
+            source_locator: row.get(12)?,
+            current_version: row.get(13)?,
+            version_label: row.get(14)?,
+            basic_check: row.get(15)?,
+            ai_check: row.get(16)?,
+            high_risk_count: row.get(17)?,
         },
     ))
 }
@@ -549,7 +552,7 @@ impl CatalogRepository for CatalogRepositorySqlite<'_> {
         let conn = &self.database.connection;
         let tx = conn.unchecked_transaction().map_err(error)?;
         let timestamp = now();
-        tx.execute("INSERT INTO skills (id,display_name,runtime_name,original_description,translated_description,user_note,author,license,call_policy,lifecycle,created_at,updated_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?11) ON CONFLICT(id) DO UPDATE SET display_name=excluded.display_name,runtime_name=excluded.runtime_name,original_description=excluded.original_description,translated_description=excluded.translated_description,user_note=excluded.user_note,author=excluded.author,license=excluded.license,call_policy=excluded.call_policy,lifecycle=excluded.lifecycle,updated_at=excluded.updated_at", params![skill.id().to_string(), skill.display_name(), skill.runtime_name(), skill.original_description(), skill.translated_description(), skill.note().unwrap_or_default(), skill.author(), skill.license(), policy_code(skill.call_policy()), lifecycle_code(skill.lifecycle()), timestamp]).map_err(error)?;
+        tx.execute("INSERT INTO skills (id,display_name,runtime_name,original_description,translated_description,user_note,user_purpose,author,license,call_policy,lifecycle,created_at,updated_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?12) ON CONFLICT(id) DO UPDATE SET display_name=excluded.display_name,runtime_name=excluded.runtime_name,original_description=excluded.original_description,translated_description=excluded.translated_description,user_note=excluded.user_note,user_purpose=excluded.user_purpose,author=excluded.author,license=excluded.license,call_policy=excluded.call_policy,lifecycle=excluded.lifecycle,updated_at=excluded.updated_at", params![skill.id().to_string(), skill.display_name(), skill.runtime_name(), skill.original_description(), skill.translated_description(), skill.note().unwrap_or_default(), skill.user_purpose().unwrap_or_default(), skill.author(), skill.license(), policy_code(skill.call_policy()), lifecycle_code(skill.lifecycle()), timestamp]).map_err(error)?;
         tx.execute(
             "DELETE FROM skill_tags WHERE skill_id=?1",
             [skill.id().to_string()],
@@ -577,7 +580,7 @@ impl CatalogRepository for CatalogRepositorySqlite<'_> {
     /// the database mutex while applying one atomic update.
     fn get_sync(&self, id: SkillId) -> AppResult<Option<Skill>> {
         let conn = &self.database.connection;
-        let mut stmt = conn.prepare("SELECT display_name,runtime_name,original_description,translated_description,user_note,author,license,call_policy,lifecycle FROM skills WHERE id=?1").map_err(error)?;
+        let mut stmt = conn.prepare("SELECT display_name,runtime_name,original_description,translated_description,user_note,user_purpose,author,license,call_policy,lifecycle FROM skills WHERE id=?1").map_err(error)?;
         let row = stmt
             .query_row([id.to_string()], |r| {
                 Ok((
@@ -586,16 +589,27 @@ impl CatalogRepository for CatalogRepositorySqlite<'_> {
                     r.get::<_, String>(2)?,
                     r.get::<_, Option<String>>(3)?,
                     r.get::<_, String>(4)?,
-                    r.get::<_, Option<String>>(5)?,
+                    r.get::<_, String>(5)?,
                     r.get::<_, Option<String>>(6)?,
-                    r.get::<_, String>(7)?,
+                    r.get::<_, Option<String>>(7)?,
                     r.get::<_, String>(8)?,
+                    r.get::<_, String>(9)?,
                 ))
             })
             .optional()
             .map_err(error)?;
-        let Some((display, runtime, desc, translated, note, author, license, policy, lifecycle)) =
-            row
+        let Some((
+            display,
+            runtime,
+            desc,
+            translated,
+            note,
+            user_purpose,
+            author,
+            license,
+            policy,
+            lifecycle,
+        )) = row
         else {
             return Ok(None);
         };
@@ -632,6 +646,11 @@ impl CatalogRepository for CatalogRepositorySqlite<'_> {
             desc,
             translated,
             if note.is_empty() { None } else { Some(note) },
+            if user_purpose.is_empty() {
+                None
+            } else {
+                Some(user_purpose)
+            },
             tags,
             author,
             license,

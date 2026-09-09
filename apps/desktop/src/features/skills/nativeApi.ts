@@ -249,7 +249,8 @@ export const nativeSkillLibraryFacade: SkillLibraryFacade = {
       // QA-007：显示别名就是目录里的 display_name，抽屉编辑前需要真实现值。
       // 用真实读模型填充抽屉各模块（FE-05）：身份/版本/检查/部署关系。
       view.currentVersion = skill.current_version ?? "unknown";
-      view.purpose = skill.translated_description ?? skill.original_description;
+      // QA-008：用途显示用户独立撰写的字段，不用译文或原文冒充。
+      view.purpose = skill.user_purpose ?? "";
       view.originalDescription = skill.original_description;
       view.translatedDescription = skill.translated_description ?? undefined;
       view.tags = skill.tags;
@@ -312,6 +313,7 @@ export const nativeSkillLibraryFacade: SkillLibraryFacade = {
         tags: skill.tags,
         author: skill.author,
         license: skill.license,
+        user_purpose: skill.user_purpose,
       },
     });
     if (commandResult.type !== "operation_summary") throw unavailableResult();
