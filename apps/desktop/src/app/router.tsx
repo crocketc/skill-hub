@@ -1,7 +1,7 @@
 import { QueryClientProvider } from "@tanstack/react-query";
 import { MotionConfig } from "motion/react";
 import { I18nextProvider } from "react-i18next";
-import { createBrowserRouter, RouterProvider, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { createBrowserRouter, RouterProvider, useLocation, useNavigate, useOutletContext, useParams, useSearchParams } from "react-router-dom";
 import { OnboardingWizard } from "../features/onboarding/OnboardingWizard";
 import { AgentDetailPage } from "../features/agents/AgentDetailPage";
 import { AgentListPage } from "../features/agents/AgentListPage";
@@ -49,6 +49,7 @@ import "../features/markdown/markdown.css";
 import "../styles/base.css";
 import { ThemeProvider, useTheme } from "../styles/ThemeProvider";
 import { DesktopApp } from "./App";
+import type { BootstrapOutletContext } from "./AppShell";
 import { queryClient } from "./queryClient";
 
 function OnboardingRoute() {
@@ -151,11 +152,13 @@ function CombinationManagerRoute() {
 function DiscoveryRoute({ view }: { view?: DiscoveryModuleView }) {
   const navigate = useNavigate();
   const location = useLocation();
+  const { refreshSnapshot } = useOutletContext<BootstrapOutletContext>();
   const state = location.state as { initialSources?: string[]; initialSourceText?: string } | null;
 
   const handleImportComplete = (results: ImportResult[]) => {
     if (results.some((result) => result.status === "succeeded")) {
       void queryClient.invalidateQueries({ queryKey: skillLibraryKeys.root });
+      void refreshSnapshot();
     }
   };
 

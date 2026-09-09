@@ -1,6 +1,6 @@
 import { act, render, screen } from "@testing-library/react";
 import { I18nextProvider } from "react-i18next";
-import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { MemoryRouter, Route, Routes, useOutletContext } from "react-router-dom";
 import { afterEach, vi } from "vitest";
 import { createSkillHubI18n } from "../../i18n";
 import { ThemeProvider } from "../../styles/ThemeProvider";
@@ -8,6 +8,7 @@ import { OverviewPage } from "../overview/OverviewPage";
 import { BootstrapGate } from "./BootstrapGate";
 import type { BootstrapView } from "./api";
 import type { ScanResult } from "../../api/bindings";
+import type { BootstrapOutletContext } from "../../app/AppShell";
 
 const emptyScanResult: ScanResult = {
   generation: { generation: 1, observed_at: 1 },
@@ -146,4 +147,53 @@ it("names an in-progress recovery without pretending it is complete", async () =
 
   expect(await screen.findByText("正在恢复本地数据")).toBeVisible();
   expect(screen.getByRole("progressbar", { name: "阻塞启动" })).toBeVisible();
+});
+
+it("refreshes the shared bootstrap snapshot without remounting the shell", async () => {
+  mockBrowserPreferences();
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  const getBootstrapView = vi
+    .fn<() => Promise<BootstrapView>>()
+    .mockResolvedValueOnce({ snapshot: cachedSnapshot, verification: { kind: "unavailable" } })
+    .mockResolvedValueOnce({
+      snapshot: { ...cachedSnapshot, skill_count: 43 },
+      verification: { kind: "unavailable" },
+    });
+
+  function RefreshProbe() {
+    const { refreshSnapshot, snapshot } = useOutletContext<BootstrapOutletContext>();
+    return (
+      <>
+        <span>{snapshot.skill_count}</span>
+        <button onClick={() => void refreshSnapshot()} type="button">刷新概览</button>
+      </>
+    );
+  }
+
+  render(
+    <I18nextProvider i18n={i18n}>
+      <ThemeProvider>
+        <MemoryRouter initialEntries={["/"]}>
+          <Routes>
+            <Route
+              element={<BootstrapGate runtime={{
+                getBootstrapView,
+                runInitializationScan: async () => ({ kind: "completed", result: emptyScanResult }),
+              }} />}
+              path="/"
+            >
+              <Route index element={<RefreshProbe />} />
+            </Route>
+          </Routes>
+        </MemoryRouter>
+      </ThemeProvider>
+    </I18nextProvider>,
+  );
+
+  expect(await screen.findByText("42")).toBeVisible();
+  await act(async () => {
+    screen.getByRole("button", { name: "刷新概览" }).click();
+  });
+  expect(await screen.findByText("43")).toBeVisible();
+  expect(getBootstrapView).toHaveBeenCalledTimes(2);
 });

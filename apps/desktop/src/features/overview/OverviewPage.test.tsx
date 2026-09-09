@@ -53,7 +53,7 @@ function LocationDisplay() {
 }
 
 function OverviewRoute({ snapshot }: { snapshot: BootstrapSnapshot }) {
-  return <Outlet context={snapshot} />;
+  return <Outlet context={{ refreshSnapshot: async () => undefined, snapshot }} />;
 }
 
 function mockBrowserPreferences() {

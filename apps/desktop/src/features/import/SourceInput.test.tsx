@@ -52,6 +52,18 @@ it("lists scanned sources with explicit bulk selection controls", async () => {
   expect(onSelectAllSources).toHaveBeenCalledOnce();
 });
 
+it("offers a clear-all action when every scanned source is selected", async () => {
+  const onSelectAllSources = vi.fn();
+  await renderSourceInput({
+    onSelectAllSources,
+    selectedSources: ["C:/codex/skills", "C:/claude/skills"],
+    suggestedSources: ["C:/codex/skills", "C:/claude/skills"],
+  });
+
+  fireEvent.click(screen.getByRole("button", { name: "全不选扫描来源" }));
+  expect(onSelectAllSources).toHaveBeenCalledOnce();
+});
+
 it("labels the batch action as acquiring selected directory candidates", async () => {
   const onParse = vi.fn();
   await renderSourceInput({
@@ -73,4 +85,34 @@ it("offers a native directory picker when the host provides one", async () => {
   fireEvent.click(screen.getByRole("button", { name: "选择本地目录" }));
 
   expect(onPickLocalPath).toHaveBeenCalledOnce();
+});
+
+it("does not repeat a parsed local path in a descriptor block", async () => {
+  await renderSourceInput({
+    descriptor: {
+      displayTarget: "C:/picked/skills",
+      executesCommand: false,
+      input: "C:/picked/skills",
+      kind: "local_path",
+    },
+    value: "C:/picked/skills",
+  });
+
+  expect(screen.queryByLabelText("已识别来源")).not.toBeInTheDocument();
+  expect(screen.getByRole("textbox", { name: "来源" })).toHaveValue("C:/picked/skills");
+});
+
+it("keeps the descriptor block for non-local sources", async () => {
+  await renderSourceInput({
+    descriptor: {
+      displayTarget: "owner/repository",
+      executesCommand: false,
+      input: "https://github.com/owner/repository",
+      kind: "git",
+    },
+    value: "https://github.com/owner/repository",
+  });
+
+  expect(screen.getByLabelText("已识别来源")).toBeVisible();
+  expect(screen.getByText("owner/repository")).toBeVisible();
 });

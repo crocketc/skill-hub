@@ -597,13 +597,16 @@ it("shows the restore branch summary without fabricated agent or scan counts", a
   expect(onComplete).toHaveBeenCalledOnce();
 });
 
-it("echoes the chosen custom library path even when the restart after saving fails", async () => {
+it("allows choosing another custom library path after restart fails", async () => {
   const completeOnboarding = vi.fn(async () => undefined);
   const setLibraryRoot = vi.fn(async () => undefined);
   const restart = vi.fn(async () => {
     throw new Error("restart_failed");
   });
-  const pickDirectory = vi.fn(async () => "D:\\Custom\\Hub");
+  const pickDirectory = vi
+    .fn<() => Promise<string | null>>()
+    .mockResolvedValueOnce("D:\\Custom\\Hub")
+    .mockResolvedValueOnce("E:\\Recovered\\Hub");
   const i18n = await createSkillHubI18n(["zh-CN"]);
 
   render(
@@ -629,12 +632,13 @@ it("echoes the chosen custom library path even when the restart after saving fai
   expect(await screen.findByText("restart_failed")).toBeVisible();
   // set_library_root 成功后，库位置必须立即回显所选目录，即使重启未完成。
   expect(screen.getByText("D:\\Custom\\Hub")).toBeVisible();
-  await click(screen.getByRole("button", { name: "跳过初始化" }));
-  expect(
-    screen.getByText("将创建空集中库：D:\\Custom\\Hub。不会识别 Agent、扫描、导入或部署技能。"),
-  ).toBeVisible();
-  await click(screen.getByRole("button", { name: "确认并跳过" }));
-  expect(completeOnboarding).toHaveBeenCalledWith({ libraryPath: "D:\\Custom\\Hub", skipped: true });
+  await click(screen.getByRole("button", { name: "选择其他目录" }));
+  expect(await screen.findByText("E:\\Recovered\\Hub")).toBeVisible();
+  expect(screen.queryByText("D:\\Custom\\Hub")).not.toBeInTheDocument();
+
+  await click(screen.getByRole("button", { name: "保存并重启" }));
+  expect(setLibraryRoot).toHaveBeenLastCalledWith("E:\\Recovered\\Hub");
+  expect(completeOnboarding).not.toHaveBeenCalled();
 });
 
 it("keeps the chosen custom library path visible while the restart never settles", async () => {

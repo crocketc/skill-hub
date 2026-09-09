@@ -99,6 +99,19 @@ it("removes one scanned source at the gate and keeps the other sources' candidat
   expect(facade.calls.acquiredSources).toEqual(["C:/codex/skills", "C:/claude/skills"]);
 });
 
+it("removes all acquired sources from the candidate gate in one action", async () => {
+  const user = userEvent.setup();
+  await renderGuidedWizard();
+
+  await user.click(screen.getByRole("button", { name: "读取已选目录候选" }));
+  expect(await screen.findByText("找到 4 个候选项，请先审阅列表。")).toBeVisible();
+
+  await user.click(screen.getByRole("button", { name: "移除全部来源" }));
+
+  expect(screen.getByRole("heading", { name: "从哪里查找 Skill？" })).toBeVisible();
+  expect(screen.queryByRole("button", { name: "继续选择候选" })).not.toBeInTheDocument();
+});
+
 it("adds a manual directory alongside scanned sources for mixed import", async () => {
   const user = userEvent.setup();
   const facade = await renderGuidedWizard();
@@ -180,6 +193,31 @@ it("fills the source from the native directory picker", async () => {
 
   expect(await screen.findByDisplayValue("C:\\picked\\skills")).toBeVisible();
   expect(picker.pickDirectory).toHaveBeenCalledOnce();
+});
+
+it("adds a directory from the native picker without clearing selected scan sources", async () => {
+  const user = userEvent.setup();
+  const picker = { pickDirectory: vi.fn(async () => "C:/picked/skills") };
+  const facade = createMockImportFacade({ scenario: "safe-local" });
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  render(
+    <I18nextProvider i18n={i18n}>
+      <ImportWizard
+        directoryPicker={picker}
+        facade={facade}
+        initialSources={["C:/codex/skills", "C:/claude/skills"]}
+      />
+    </I18nextProvider>,
+  );
+
+  await user.click(screen.getByRole("button", { name: "选择本地目录" }));
+  await user.click(screen.getByRole("button", { name: "读取已选目录候选" }));
+
+  expect(facade.calls.acquiredSources).toEqual([
+    "C:/codex/skills",
+    "C:/claude/skills",
+    "C:/picked/skills",
+  ]);
 });
 
 it("requires a fresh conflict decision when retrying an import", async () => {

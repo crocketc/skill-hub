@@ -67,6 +67,7 @@ type WizardEvent =
   | { type: "parse_succeeded"; descriptor: SourceDescriptor }
   | { type: "acquire_succeeded"; candidates: WizardState["candidates"]; sourceCounts: { source: string; count: number }[]; candidatesBySource: WizardState["candidatesBySource"] }
   | { type: "source_removed"; source: string }
+  | { type: "sources_cleared" }
   | { type: "show_candidates" }
   | { type: "candidates_selected"; ids: string[] }
   | { type: "analysis_started" }
@@ -141,6 +142,8 @@ function reducer(state: WizardState, event: WizardEvent): WizardState {
         sourceCounts: remainingCounts,
       };
     }
+    case "sources_cleared":
+      return { ...initialState, sourceText: state.sourceText };
     case "show_candidates":
       return { ...state, phase: "candidates" };
     case "candidates_selected":
@@ -267,8 +270,9 @@ type: "failed",
     try {
       const path = await directoryPicker.pickDirectory();
       if (!path) return;
-      setSelectedSources([]);
-      dispatch({ type: "source_changed", value: normalizeWindowsPath(path) });
+      const normalized = normalizeWindowsPath(path);
+      setSelectedSources((current) => [...new Set([...current, normalized])]);
+      dispatch({ type: "source_changed", value: normalized });
     } catch (error) {
       setPickerError(error instanceof Error ? error.message : t("importWorkflow.source.pickerFailed"));
     }
@@ -285,6 +289,11 @@ type: "failed",
   const removeSource = (source: string) => {
     setSelectedSources((current) => current.filter((item) => item !== source));
     dispatch({ type: "source_removed", source });
+  };
+
+  const clearSources = () => {
+    setSelectedSources([]);
+    dispatch({ type: "sources_cleared" });
   };
 
   // AR-006：混合导入——手动目录追加进已选扫描来源，不再整体清空。
@@ -387,7 +396,13 @@ type: "failed",
             }}
             onParse={() => void runAcquisition()}
             onPickLocalPath={() => void pickLocalDirectory()}
-            onSelectAllSources={() => setSelectedSources(normalizedInitialSources)}
+            onSelectAllSources={() => setSelectedSources((current) => {
+              const allSelected = normalizedInitialSources.every((source) => current.includes(source));
+              if (allSelected) {
+                return current.filter((source) => !normalizedInitialSources.includes(source));
+              }
+              return [...new Set([...current, ...normalizedInitialSources])];
+            })}
             onToggleSource={(source) => setSelectedSources((current) => current.includes(source) ? current.filter((item) => item !== source) : [...current, source])}
             selectedSources={selectedSources}
             suggestedSources={normalizedInitialSources}
@@ -420,6 +435,9 @@ type: "failed",
                     </li>
                   ))}
                 </ul>
+                <Button onClick={clearSources} size="sm" variant="secondary">
+                  {t("importWorkflow.acquisition.removeAllSources")}
+                </Button>
               </>
             ) : null}
             <p>{t("importWorkflow.acquisition.complete", { count: state.candidates.length })}</p>

@@ -143,6 +143,33 @@ for (const story of stories) {
   });
 }
 
+rows.push(
+  {
+    id: "TC-US001-06",
+    story: "US-001 初始化集中库",
+    version: "v0.2.0",
+    precondition: "已通过原生目录选择器选择一个自定义集中库路径",
+    action: "再次点击选择其他目录并确认另一路径",
+    expected: "目录选择器保持可用，界面以第二次选择的路径替换第一次路径",
+    type: "自动化",
+    automation: "apps/desktop/src/features/onboarding/LibraryStep.test.tsx：keeps the native directory picker available after a custom directory is chosen",
+    result: "通过",
+    evidence: "QA-002",
+  },
+  {
+    id: "TC-US001-07",
+    story: "US-001 初始化集中库",
+    version: "v0.2.0",
+    precondition: "自定义集中库路径已保存但应用重启失败",
+    action: "重新选择另一个目录并再次保存",
+    expected: "新路径替换旧路径并提交给集中库设置命令，初始化不会被误报为完成",
+    type: "自动化",
+    automation: "apps/desktop/src/features/onboarding/OnboardingWizard.test.tsx：allows choosing another custom library path after restart fails",
+    result: "通过",
+    evidence: "QA-002",
+  },
+);
+
 globalRules.forEach((rule) => {
   rows.push({
     id: `TC-GR-${String(rule.number).padStart(2, "0")}`,

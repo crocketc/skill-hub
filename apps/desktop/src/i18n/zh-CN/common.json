@@ -128,7 +128,8 @@
       "multiSource": "已从 {{count}} 个来源目录获取候选",
       "perSource": "{{source}}：{{count}} 个候选",
       "remove": "移除",
-      "removeSource": "移除来源 {{source}}"
+      "removeSource": "移除来源 {{source}}",
+      "removeAllSources": "移除全部来源"
     },
     "cancelled": "获取已取消，来源内容仍然保留。",
     "source": {
@@ -143,6 +144,7 @@
       "scannedSourcesDescription": "可批量选择扫描发现的目录；导入前仍会逐项审阅候选和冲突。",
       "addSource": "添加到已选来源",
       "selectAllSources": "全选扫描来源",
+      "deselectAllSources": "全不选扫描来源",
       "placeholder": "C:/skills 或 https://github.com/owner/repository",
       "parse": "解析来源",
       "acquireSelectedSources": "读取已选目录候选",
@@ -244,6 +246,13 @@
       "partial": "部分候选项需要关注，下面逐项列出处理结果。",
       "unavailable": "导入功能尚未连接到本机服务，未修改任何文件，也未执行命令。",
       "openLibrary": "打开 Skill 库",
+      "showCompletedDetails": "查看成功和跳过明细",
+      "hideCompletedDetails": "收起成功和跳过明细",
+      "counts": {
+        "succeeded": "成功 {{count}}",
+        "skipped": "跳过 {{count}}",
+        "failed": "失败 {{count}}"
+      },
       "actions": {
         "reuse": "复用",
         "copy": "复制",

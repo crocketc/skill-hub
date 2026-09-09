@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { I18nextProvider } from "react-i18next";
 import { expect, it, vi } from "vitest";
 import { createSkillHubI18n } from "../../i18n";
@@ -11,7 +11,7 @@ const results: ImportResult[] = [
   { candidateId: "c", action: "independent", status: "failed", message: "写入失败" },
 ];
 
-it("renders partial success without collapsing skipped or failed candidates", async () => {
+it("summarizes all outcomes and expands successful details only on request", async () => {
   const i18n = await createSkillHubI18n(["zh-CN"]);
   render(
     <I18nextProvider i18n={i18n}>
@@ -19,9 +19,16 @@ it("renders partial success without collapsing skipped or failed candidates", as
     </I18nextProvider>,
   );
 
+  expect(screen.getByText("成功 1")).toBeVisible();
+  expect(screen.getByText("跳过 1")).toBeVisible();
+  expect(screen.getByText("失败 1")).toBeVisible();
+  expect(screen.getByText("写入失败")).toBeVisible();
+  expect(screen.queryByText("已跳过")).not.toBeInTheDocument();
+  expect(screen.getAllByRole("listitem")).toHaveLength(1);
+
+  fireEvent.click(screen.getByRole("button", { name: "查看成功和跳过明细" }));
   expect(screen.getAllByText("已导入")[0]).toBeVisible();
   expect(screen.getAllByText("已跳过")[0]).toBeVisible();
-  expect(screen.getByText("写入失败")).toBeVisible();
   expect(screen.getAllByRole("listitem")).toHaveLength(3);
 });
 

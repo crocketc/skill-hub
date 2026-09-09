@@ -40,6 +40,7 @@ export function SkillLibraryPreviewShell() {
   return (
     <QueryClientProvider client={previewQueryClient}>
       <AppShell
+        refreshSnapshot={async () => undefined}
         snapshot={PREVIEW_BOOTSTRAP_SNAPSHOT}
         verification={{ kind: "unavailable" }}
       />

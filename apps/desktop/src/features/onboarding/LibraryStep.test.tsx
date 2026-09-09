@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { I18nextProvider } from "react-i18next";
 import { createSkillHubI18n } from "../../i18n";
 import { LibraryStep } from "./LibraryStep";
@@ -40,4 +40,26 @@ it("keeps the default location label until a custom directory is chosen", async 
   expect(screen.getByText("默认集中库位置")).toBeVisible();
   expect(screen.queryByText("已选择的集中库位置")).not.toBeInTheDocument();
   expect(screen.getByText(defaultLibraryPath)).toBeVisible();
+});
+
+it("keeps the native directory picker available after a custom directory is chosen", async () => {
+  const onPickCustomDirectory = vi.fn();
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+
+  render(
+    <I18nextProvider i18n={i18n}>
+      <LibraryStep
+        customLibraryPath={customLibraryPath}
+        libraryPath={defaultLibraryPath}
+        onPickCustomDirectory={onPickCustomDirectory}
+        onThemeChange={noop}
+        theme="moss-neutral"
+      />
+    </I18nextProvider>,
+  );
+
+  const picker = screen.getByRole("button", { name: "选择其他目录" });
+  expect(picker).toBeEnabled();
+  fireEvent.click(picker);
+  expect(onPickCustomDirectory).toHaveBeenCalledOnce();
 });

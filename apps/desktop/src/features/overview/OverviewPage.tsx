@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Link, useOutletContext } from "react-router-dom";
-import type { BootstrapSnapshot } from "../../api/bindings";
+import type { BootstrapOutletContext } from "../../app/AppShell";
 import { DataState } from "../../ui/DataState";
 import { DeploymentBarChart, DeploymentDetailList } from "./DeploymentBarChart";
 import { PendingSummary } from "./PendingSummary";
@@ -82,7 +82,7 @@ function DeploymentDimensionToggle({
 }
 
 export function OverviewPage() {
-  const snapshot = useOutletContext<BootstrapSnapshot>();
+  const { snapshot } = useOutletContext<BootstrapOutletContext>();
   const { t } = useTranslation();
   const [dimension, setDimension] = useState<OverviewDimension>("agent");
   const metrics = getOverviewMetrics(snapshot, t);

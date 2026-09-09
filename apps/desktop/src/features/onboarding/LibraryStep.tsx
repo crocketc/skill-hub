@@ -44,7 +44,7 @@ export function LibraryStep({
       </div>
       {onPickCustomDirectory ? (
         <div className="sh-onboarding__custom-root">
-          <Button disabled={Boolean(customLibraryPath)} onClick={onPickCustomDirectory} size="sm" variant="secondary">
+          <Button onClick={onPickCustomDirectory} size="sm" variant="secondary">
             {t("onboarding.pickOtherDirectory")}
           </Button>
           {customLibraryPath ? (

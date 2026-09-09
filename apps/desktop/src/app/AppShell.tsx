@@ -10,6 +10,12 @@ import type { BootstrapVerificationState } from "../features/bootstrap/api";
 interface AppShellProps {
   snapshot: BootstrapSnapshot;
   verification: BootstrapVerificationState;
+  refreshSnapshot: () => Promise<void>;
+}
+
+export interface BootstrapOutletContext {
+  snapshot: BootstrapSnapshot;
+  refreshSnapshot: () => Promise<void>;
 }
 
 export type RouteTitleKey =
@@ -87,7 +93,7 @@ export function resolveSubRouteFallback(pathname: string): string | null {
   return null;
 }
 
-export function AppShell({ snapshot, verification }: AppShellProps) {
+export function AppShell({ refreshSnapshot, snapshot, verification }: AppShellProps) {
   const { t } = useTranslation();
   const { pathname } = useLocation();
   const navigate = useNavigate();
@@ -131,7 +137,7 @@ export function AppShell({ snapshot, verification }: AppShellProps) {
           </header>
         ) : null}
         <main className="sh-app-shell__content">
-          <Outlet context={snapshot} />
+          <Outlet context={{ refreshSnapshot, snapshot } satisfies BootstrapOutletContext} />
         </main>
         <OperationIndicator />
       </section>

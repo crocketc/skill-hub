@@ -64,8 +64,8 @@ function ErrorState({ retry }: { retry: () => void }) {
 export function BootstrapGate({ runtime = desktopBootstrapRuntime }: BootstrapGateProps) {
   const [state, setState] = useState<BootstrapLoadState>({ kind: "loading" });
 
-  const load = useCallback(async () => {
-    setState({ kind: "loading" });
+  const load = useCallback(async (showLoading = true) => {
+    if (showLoading) setState({ kind: "loading" });
     try {
       const view = await runtime.getBootstrapView();
       setState({
@@ -74,19 +74,19 @@ export function BootstrapGate({ runtime = desktopBootstrapRuntime }: BootstrapGa
         verification: view.verification,
       });
     } catch {
-      setState({ kind: "error" });
+      if (showLoading) setState({ kind: "error" });
     }
   }, [runtime]);
 
   useEffect(() => {
-    void load();
+    void load(true);
   }, [load]);
 
   if (state.kind === "loading") {
     return <LoadingState />;
   }
   if (state.kind === "error") {
-    return <ErrorState retry={() => void load()} />;
+    return <ErrorState retry={() => void load(true)} />;
   }
   if (state.snapshot.recovery_state !== "clean") {
     return <RecoveryBlocker recoveryState={state.snapshot.recovery_state} />;
@@ -95,5 +95,11 @@ export function BootstrapGate({ runtime = desktopBootstrapRuntime }: BootstrapGa
     return <Navigate replace to="/initialize" />;
   }
 
-  return <AppShell snapshot={state.snapshot} verification={state.verification} />;
+  return (
+    <AppShell
+      refreshSnapshot={() => load(false)}
+      snapshot={state.snapshot}
+      verification={state.verification}
+    />
+  );
 }

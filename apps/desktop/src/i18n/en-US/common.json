@@ -128,7 +128,8 @@
       "multiSource": "Acquired candidates from {{count}} source directories",
       "perSource": "{{source}}: {{count}} candidate(s)",
       "remove": "Remove",
-      "removeSource": "Remove source {{source}}"
+      "removeSource": "Remove source {{source}}",
+      "removeAllSources": "Remove all sources"
     },
     "cancelled": "Acquisition was cancelled. Your source is still here.",
     "source": {
@@ -143,6 +144,7 @@
       "scannedSourcesDescription": "Select scanned directories in bulk; candidates and conflicts are still reviewed before import.",
       "addSource": "Add to selected sources",
       "selectAllSources": "Select all scanned sources",
+      "deselectAllSources": "Deselect all scanned sources",
       "placeholder": "C:/skills or https://github.com/owner/repository",
       "parse": "Parse source",
       "acquireSelectedSources": "Read selected directory candidates",
@@ -244,6 +246,13 @@
       "partial": "Some candidates need attention; each outcome is listed below.",
       "unavailable": "Import is not connected to the native service yet. No files or commands were changed.",
       "openLibrary": "Open Skill library",
+      "showCompletedDetails": "Show successful and skipped details",
+      "hideCompletedDetails": "Hide successful and skipped details",
+      "counts": {
+        "succeeded": "Succeeded {{count}}",
+        "skipped": "Skipped {{count}}",
+        "failed": "Failed {{count}}"
+      },
       "actions": {
         "reuse": "Reuse",
         "copy": "Copy",

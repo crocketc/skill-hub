@@ -34,6 +34,8 @@ export function SourceInput({
 }: SourceInputProps) {
   const { t } = useTranslation();
   const isNpxReference = /^npx\s+skills\s+add\s+/i.test(value.trim());
+  const allSuggestedSourcesSelected = suggestedSources.length > 0
+    && suggestedSources.every((source) => selectedSources.includes(source));
 
   return (
     <section className="sh-import-source" aria-labelledby="import-source-title">
@@ -52,7 +54,9 @@ export function SourceInput({
           <p>{t("importWorkflow.source.scannedSourcesDescription")}</p>
           {onSelectAllSources ? (
             <Button disabled={disabled} onClick={onSelectAllSources} variant="secondary">
-              {t("importWorkflow.source.selectAllSources")}
+              {t(allSuggestedSourcesSelected
+                ? "importWorkflow.source.deselectAllSources"
+                : "importWorkflow.source.selectAllSources")}
             </Button>
           ) : null}
           {suggestedSources.map((source) => (
@@ -96,7 +100,7 @@ export function SourceInput({
         </p>
       ) : null}
 
-      {descriptor ? (
+      {descriptor && descriptor.kind !== "local_path" ? (
         <dl className="sh-import-source__descriptor" aria-label={t("importWorkflow.source.detectedSource")}>
           <div>
             <dt>{t("importWorkflow.source.type")}</dt>

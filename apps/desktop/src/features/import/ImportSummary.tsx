@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "../../ui/Button";
 import { DataState } from "../../ui/DataState";
@@ -18,6 +19,7 @@ export function ImportSummary({
   onOpenLibrary,
 }: ImportSummaryProps) {
   const { t } = useTranslation();
+  const [showCompletedDetails, setShowCompletedDetails] = useState(false);
 
   if (unavailable) {
     return (
@@ -34,6 +36,12 @@ export function ImportSummary({
   }
 
   const hasFailure = results.some((result) => result.status === "failed");
+  const succeeded = results.filter((result) => result.status === "succeeded").length;
+  const skipped = results.filter((result) => result.status === "skipped").length;
+  const failed = results.filter((result) => result.status === "failed").length;
+  const visibleResults = showCompletedDetails
+    ? results
+    : results.filter((result) => result.status === "failed");
 
   return (
     <section className="sh-import-summary" aria-labelledby="import-summary-title">
@@ -46,8 +54,14 @@ export function ImportSummary({
         <span className="sh-import-summary__step">{t("importWorkflow.step", { current: 4, total: 4 })}</span>
       </div>
 
+      <div className="sh-import-summary__counts">
+        <span>{t("importWorkflow.summary.counts.succeeded", { count: succeeded })}</span>
+        <span>{t("importWorkflow.summary.counts.skipped", { count: skipped })}</span>
+        <span>{t("importWorkflow.summary.counts.failed", { count: failed })}</span>
+      </div>
+
       <ul className="sh-import-summary__list">
-        {results.map((result) => (
+        {visibleResults.map((result) => (
           <li className="sh-import-summary__item" key={result.candidateId}>
             <div>
               <strong>{result.candidateId}</strong>
@@ -62,6 +76,13 @@ export function ImportSummary({
       </ul>
 
       <div className="sh-import-summary__actions">
+        {succeeded + skipped > 0 ? (
+          <Button onClick={() => setShowCompletedDetails((current) => !current)} variant="ghost">
+            {t(showCompletedDetails
+              ? "importWorkflow.summary.hideCompletedDetails"
+              : "importWorkflow.summary.showCompletedDetails")}
+          </Button>
+        ) : null}
         {hasFailure ? <Button onClick={onRetry} variant="secondary">{t("actions.retry")}</Button> : null}
         <Button onClick={onOpenLibrary}>{t("importWorkflow.summary.openLibrary")}</Button>
       </div>
