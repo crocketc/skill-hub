@@ -54,9 +54,10 @@ pub use api::{
     PrepareUndeploy, PrepareUninstall, ReadMarkdownFile, RecheckLlmSafety, RelinkSource,
     RemoveIgnoreRule, RemoveSkillRepo, ResolveRecovery, RestoreDecision, RestoreDeployment,
     RestoreOriginalCallPolicy, RollbackApplicationUpdate, RunHealthCheck, RunLlmSafetyCheck,
-    RunRollingBackup, SaveUserTranslationRevision, SearchOnlineSources, SetApplicationUpdatePolicy,
-    SetUiPreference, SkillListItem, SkillListPage, SkillOperationEntry, SkillOperationsResult,
-    TranslateDescription, TranslateDescriptionsBatch, VerifyBackup,
+    RunRollingBackup, SaveUserTranslationRevision, SearchOnlineSources,
+    SearchOnlineSourcesAssisted, SetApplicationUpdatePolicy, SetUiPreference, SkillListItem,
+    SkillListPage, SkillOperationEntry, SkillOperationsResult, TranslateDescription,
+    TranslateDescriptionsBatch, VerifyBackup,
 };
 pub use app_update::{
     install_action_for, select_artifact, validate_official_artifact_url,
@@ -145,7 +146,7 @@ pub use project::{
 };
 pub use scan::{DiscoveredSkill, ScanGeneration, ScanIssue, ScanRepository, ScanResult, ScanScope};
 pub use source::{
-    AgentsLockEntry, SourceDescriptor, SourceKind, SourceLocator, SourceSearchHit,
+    AgentsLockEntry, SearchHitOrigin, SourceDescriptor, SourceKind, SourceLocator, SourceSearchHit,
     SourceSearchPage, SourceSearchQuery, UpstreamOrigin,
 };
 pub use source::{

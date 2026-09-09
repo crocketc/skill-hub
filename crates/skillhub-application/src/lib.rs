@@ -1049,21 +1049,83 @@ impl LocalApplicationFacade {
         request: skillhub_core::SearchOnlineSources,
     ) -> AppResult<AppQueryResult> {
         self.ensure_network_enabled()?;
+        let page = self.cached_source_search(&request.query).await?;
+        Ok(AppQueryResult::SourceSearchPage(page))
+    }
+
+    async fn cached_source_search(
+        &self,
+        query: &skillhub_core::source::SourceSearchQuery,
+    ) -> AppResult<skillhub_core::source::SourceSearchPage> {
         let now = now_seconds();
         if let Some(page) = self.with_database("query.search_online_sources.cache", |database| {
-            database.source_search_cache().get(&request.query, now)
+            database.source_search_cache().get(query, now)
         })? {
+            return Ok(page);
+        }
+        let page = self.source_search_provider.search(query.clone()).await?;
+        self.with_database("query.search_online_sources.cache", |database| {
+            database.source_search_cache().put(query, &page, now)
+        })?;
+        Ok(page)
+    }
+
+    /// Assisted online search: the original text always runs first and its
+    /// hits keep their provider order. AI query extension may append further
+    /// REAL provider hits marked as such; any LLM failure falls back to the
+    /// plain results (requirement 5.38). The LLM cannot invent entries.
+    async fn search_online_sources_assisted(
+        &self,
+        request: skillhub_core::api::SearchOnlineSourcesAssisted,
+    ) -> AppResult<AppQueryResult> {
+        self.ensure_network_enabled()?;
+        let text = request.text.trim().to_owned();
+        let original_query = skillhub_core::source::SourceSearchQuery::new(&text);
+        let mut page = self.cached_source_search(&original_query).await?;
+
+        let capabilities = self.llm_capabilities()?;
+        if !capabilities.online_search_assist {
             return Ok(AppQueryResult::SourceSearchPage(page));
         }
-        let page = self
-            .source_search_provider
-            .search(request.query.clone())
-            .await?;
-        self.with_database("query.search_online_sources.cache", |database| {
-            database
-                .source_search_cache()
-                .put(&request.query, &page, now)
-        })?;
+        let Ok((runner, profile)) =
+            self.llm_context("query.search_online_sources_assisted.profile")
+        else {
+            // Unconfigured LLM: the plain results are the honest answer.
+            return Ok(AppQueryResult::SourceSearchPage(page));
+        };
+        let query_text = text.clone();
+        let expanded = run_non_send(move || async move {
+            SearchQueryService::new(SharedLlmRunner(runner))
+                .generate(&query_text, Some(&profile))
+                .await
+        });
+        let Ok(suggestion) = expanded else {
+            // Query expansion failing must not lose the base results.
+            return Ok(AppQueryResult::SourceSearchPage(page));
+        };
+        let expanded_text = suggestion.query.trim().to_owned();
+        if expanded_text.is_empty() || expanded_text == text {
+            return Ok(AppQueryResult::SourceSearchPage(page));
+        }
+        let expanded_query = skillhub_core::source::SourceSearchQuery::new(&expanded_text);
+        if expanded_query.query.trim().chars().count() < 2 {
+            return Ok(AppQueryResult::SourceSearchPage(page));
+        }
+        let Ok(extra) = self.cached_source_search(&expanded_query).await else {
+            // Extension search failing (provider hiccup) keeps the base page.
+            return Ok(AppQueryResult::SourceSearchPage(page));
+        };
+        let mut seen: std::collections::HashSet<String> =
+            page.items.iter().map(|hit| hit.source_id.clone()).collect();
+        for mut hit in extra.items {
+            if seen.insert(hit.source_id.clone()) {
+                hit.via = skillhub_core::source::SearchHitOrigin::ExpandedQuery;
+                page.items.push(hit);
+            }
+        }
+        page.count = u32::try_from(page.items.len()).unwrap_or(u32::MAX);
+        page.ai_assisted = true;
+        page.expanded_query = Some(expanded_text);
         Ok(AppQueryResult::SourceSearchPage(page))
     }
 
@@ -1372,6 +1434,13 @@ impl LocalApplicationFacade {
         let mut facade = Self::new_with_library(database, library_root);
         facade.llm_runner = Some(runner);
         facade
+    }
+
+    /// Attaches the LLM task runner after construction. Production wiring and
+    /// tests both use this to keep construction composable.
+    pub fn with_llm_runner(mut self, runner: Arc<dyn LlmTaskRunner>) -> Self {
+        self.llm_runner = Some(runner);
+        self
     }
 
     /// Attaches the provider-administration runtime: the network gate shared
@@ -4266,6 +4335,9 @@ impl ApplicationFacade for LocalApplicationFacade {
                 self.check_application_update(request).await
             }
             AppQuery::SearchOnlineSources(request) => self.search_online_sources(request).await,
+            AppQuery::SearchOnlineSourcesAssisted(request) => {
+                self.search_online_sources_assisted(request).await
+            }
             AppQuery::GetUiPreference(request) => {
                 let value = self.with_database("query.get_ui_preference", |database| {
                     database.ui_preference_repository().get(&request.key)

@@ -328,6 +328,14 @@ pub struct SearchOnlineSources {
     pub query: SourceSearchQuery,
 }
 
+/// An assisted online search: the original text always runs against the real
+/// provider; AI query extension may add marked hits, never invented ones.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct SearchOnlineSourcesAssisted {
+    pub text: String,
+}
+
 /// Reads a UI preference value (raw JSON) by key; absent keys return null.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 #[serde(deny_unknown_fields)]
@@ -608,6 +616,8 @@ pub enum AppQuery {
     ListCombinations(ListCombinations),
     #[serde(rename = "search")]
     Search(SearchQuery),
+    #[serde(rename = "search_online_sources_assisted")]
+    SearchOnlineSourcesAssisted(SearchOnlineSourcesAssisted),
     #[serde(rename = "get_bootstrap_snapshot")]
     GetBootstrapSnapshot,
     #[serde(rename = "get_desktop_preferences")]

@@ -27,6 +27,6 @@ where
             .runner
             .run(profile, build_search_query_request(text)?)
             .await?;
-        parse_search_query_response(response.output)
+        parse_search_query_response(response.output, text)
     }
 }

@@ -12,6 +12,8 @@ fn cache_round_trip_is_keyed_by_query_and_expiry_is_explicit() {
         search_type: None,
         duration_ms: None,
         cache_max_age_seconds: Some(30),
+        ai_assisted: false,
+        expanded_query: None,
     };
     database
         .source_search_cache()

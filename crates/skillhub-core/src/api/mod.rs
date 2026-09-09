@@ -44,9 +44,10 @@ pub use query::{
     ListSavedProjectViews, ListSkillOperations, ListSkillRepos, ListSkills, ListTranslations,
     ListVersions, LlmCheckRun, LlmSafetyCheckResult, MarkdownFileContent, MarkdownFileEntry,
     PreviewProjectDirectory, ProjectDirectoryPreview, ReadMarkdownFile, SearchOnlineSources,
-    SkillDeploymentFilter, SkillLifecycleFilter, SkillListFilters, SkillListItem, SkillListPage,
-    SkillListSort, SkillOperationEntry, SkillOperationsResult, SkillResult, SkillSortColumn,
-    SkillSortDirection, SourceUpdateCheckOutcome, VersionDiffResult, VersionResult,
+    SearchOnlineSourcesAssisted, SkillDeploymentFilter, SkillLifecycleFilter, SkillListFilters,
+    SkillListItem, SkillListPage, SkillListSort, SkillOperationEntry, SkillOperationsResult,
+    SkillResult, SkillSortColumn, SkillSortDirection, SourceUpdateCheckOutcome, VersionDiffResult,
+    VersionResult,
 };
 
 use crate::AppResult;

@@ -98,6 +98,8 @@ impl SkillsShProvider {
             search_type: payload.search_type,
             duration_ms: payload.duration_ms,
             cache_max_age_seconds,
+            ai_assisted: false,
+            expanded_query: None,
         })
     }
 }

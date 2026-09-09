@@ -19,6 +19,10 @@ const SEARCH_QUERY_SCHEMA: &str = r#"{
 pub struct SearchQuerySuggestion {
     pub query: String,
     pub source_filters: Vec<String>,
+    /// The untouched user text; the original query always stays available
+    /// even when the AI rewrite is shown.
+    #[serde(default)]
+    pub original_text: String,
 }
 
 pub fn build_search_query_request(text: &str) -> AppResult<LlmTaskRequest> {
@@ -33,7 +37,10 @@ pub fn build_search_query_request(text: &str) -> AppResult<LlmTaskRequest> {
     )
 }
 
-pub fn parse_search_query_response(response: Value) -> AppResult<SearchQuerySuggestion> {
+pub fn parse_search_query_response(
+    response: Value,
+    original_text: &str,
+) -> AppResult<SearchQuerySuggestion> {
     #[derive(Deserialize)]
     #[serde(deny_unknown_fields)]
     struct Response {
@@ -51,5 +58,6 @@ pub fn parse_search_query_response(response: Value) -> AppResult<SearchQuerySugg
     Ok(SearchQuerySuggestion {
         query: parsed.query,
         source_filters: parsed.source_filters,
+        original_text: original_text.to_owned(),
     })
 }
