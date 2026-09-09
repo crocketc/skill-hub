@@ -288,6 +288,18 @@ rows.push(
     result: "通过",
     evidence: "QA-008",
   },
+  {
+    id: "TC-US016-07",
+    story: "US-016 通过统一流程导入 Skill",
+    version: "v0.2.0",
+    precondition: "候选目录的 SKILL.md 头部含 description 字段",
+    action: "完成本地导入",
+    expected: "头部 description 进入目录 original_description，详情与快速抽屉的原始说明据此显示",
+    type: "自动化",
+    automation: "crates/skillhub-application/tests/facade.rs：commit_import_reads_frontmatter_description_into_the_catalog",
+    result: "通过",
+    evidence: "QA-009",
+  },
 );
 
 globalRules.forEach((rule) => {

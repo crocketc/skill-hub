@@ -4331,7 +4331,12 @@ impl LocalApplicationFacade {
             let skill_id = skillhub_core::SkillId::new();
             let source = Path::new(&prepared.candidate.absolute_root);
             let version = store.capture(skill_id, source)?;
-            let skill = Skill::new(skill_id, prepared.candidate.runtime_name.clone());
+            // QA-009：导入时读取 SKILL.md 头部 description 作为原始说明；
+            // 头部缺失或不可读时保持空串，不阻塞导入。
+            let mut skill = Skill::new(skill_id, prepared.candidate.runtime_name.clone());
+            if let Some(description) = read_frontmatter_description(source) {
+                skill = skill.with_description(description);
+            }
             if let Err(error) = database.catalog_repository()?.insert_sync(&skill) {
                 return Err(cleanup_import_error(
                     error,
@@ -4760,6 +4765,22 @@ fn restore_version_pointer(
         Some(previous) => library.set_current(skill_id, &previous),
         None => library.clear_current(skill_id),
     }
+}
+
+/// QA-009：读取 SKILL.md frontmatter 中的 description 字段。
+fn read_frontmatter_description(source: &Path) -> Option<String> {
+    let markdown = std::fs::read_to_string(source.join("SKILL.md")).ok()?;
+    let mut lines = markdown.lines();
+    if lines.next().map(str::trim) != Some("---") {
+        return None;
+    }
+    lines
+        .take_while(|line| line.trim() != "---")
+        .find_map(|line| {
+            let (key, value) = line.trim().split_once(':')?;
+            (key.trim() == "description").then(|| value.trim().trim_matches('"').to_owned())
+        })
+        .filter(|value| !value.is_empty())
 }
 
 fn validate_skill_source(source: &Path) -> AppResult<()> {

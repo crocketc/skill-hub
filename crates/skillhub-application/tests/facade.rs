@@ -1615,6 +1615,59 @@ async fn commit_import_copies_skill_into_the_central_library() {
 }
 
 #[tokio::test]
+async fn commit_import_reads_frontmatter_description_into_the_catalog() {
+    let database = Database::open_in_memory().expect("database");
+    let library_root = tempfile::tempdir().expect("library root");
+    CentralLibrary::initialize(library_root.path()).expect("initialize library");
+    let source = tempfile::tempdir().expect("source");
+    std::fs::write(
+        source.path().join("SKILL.md"),
+        "---\nname: Notes\ndescription: Extracts and organizes PDF tables.\n---\n\n# Notes\n",
+    )
+    .expect("write skill");
+    let candidate = ImportCandidate::detected(
+        SourceDescriptor::new(SourceKind::Local, SourceLocator::local_path(source.path())),
+        source.path().to_string_lossy(),
+        ".",
+        "SKILL.md",
+        "Notes",
+    );
+    let facade = LocalApplicationFacade::new_with_library(database, library_root.path());
+    let prepared = facade
+        .execute(AppCommand::PrepareImport(PrepareImport {
+            candidate,
+            tree_hash: None,
+        }))
+        .await
+        .expect("prepared import");
+    let AppCommandResult::PreparedImport(prepared) = prepared else {
+        panic!("expected prepared import");
+    };
+
+    let committed = facade
+        .execute(AppCommand::CommitImport(skillhub_core::CommitImport {
+            prepared_import_id: prepared.id,
+            decision: skillhub_core::ImportDecision::CopyIntoLibrary,
+        }))
+        .await
+        .expect("committed import");
+    let AppCommandResult::ImportSummary(summary) = committed else {
+        panic!("expected import summary");
+    };
+    let skill_id = summary.items[0].skill_id.expect("imported skill id");
+
+    let detail = facade
+        .query(RootAppQuery::GetSkill(GetSkill { skill_id }))
+        .await
+        .expect("imported skill detail");
+    let AppQueryResult::Skill(detail) = detail else {
+        panic!("expected skill detail");
+    };
+    // QA-009：导入必须读取 SKILL.md 头部 description 作为原始说明。
+    assert_eq!(detail.original_description, "Extracts and organizes PDF tables.");
+}
+
+#[tokio::test]
 async fn failed_import_commit_removes_partial_catalog_and_version_state() {
     let database = Database::open_in_memory().expect("database");
     let library_root = tempfile::tempdir().expect("library root");
