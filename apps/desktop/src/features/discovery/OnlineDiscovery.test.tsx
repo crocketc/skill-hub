@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { I18nextProvider } from "react-i18next";
-import { expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createSkillHubI18n } from "../../i18n";
 import type { DownloadedRepoSkill, SourceSearchPage } from "../../api/bindings";
 import { OnlineDiscovery } from "./OnlineDiscovery";
@@ -252,4 +252,65 @@ it("announces the searching state while the query is in flight", async () => {
   resolveSearch(page);
   await screen.findByText("PDF Reader");
   expect(screen.queryByRole("status")).not.toBeInTheDocument();
+});
+
+describe("AI search assist", () => {
+  async function toggleAssist() {
+    await click(screen.getByLabelText("AI 搜索辅助"));
+  }
+
+  it("keeps calling the plain search while the assist toggle is off", async () => {
+    const facade = baseFacade();
+    await renderSearched(facade);
+
+    expect(facade.searchOnlineSources).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText("AI 搜索辅助")).toBeVisible();
+  });
+
+  it("marks AI-extended hits and explains the expanded query", async () => {
+    const assistedPage: SourceSearchPage = {
+      items: [
+        hit,
+        {
+          ...hit,
+          source_id: "skills.sh/example/expanded",
+          name: "PDF Text Extractor",
+          via: "expanded_query",
+        },
+      ],
+      query: "pdf",
+      count: 2,
+      search_type: "skills",
+      duration_ms: 15,
+      cache_max_age_seconds: null,
+      ai_assisted: true,
+      expanded_query: "pdf extraction",
+    };
+    const assisted = vi.fn(async () => assistedPage);
+    const facade = baseFacade({ searchOnlineSourcesAssisted: assisted });
+    await renderSearched(facade);
+    await toggleAssist();
+    await click(screen.getByRole("button", { name: "搜索" }));
+
+    await screen.findByText("PDF Text Extractor");
+    expect(
+      screen.getByText(/AI 扩展查询“pdf extraction”新增 1 条命中/),
+    ).toBeVisible();
+    expect(screen.getByTestId("assist-skills.sh/example/expanded")).toBeVisible();
+    expect(assisted).toHaveBeenCalledWith("pdf");
+  });
+
+  it("falls back to the plain search with an explicit notice when the assist fails", async () => {
+    const assisted = vi.fn(async () => {
+      throw new Error("llm.request_timeout");
+    });
+    const facade = baseFacade({ searchOnlineSourcesAssisted: assisted });
+    await renderSearched(facade);
+    await toggleAssist();
+    await click(screen.getByRole("button", { name: "搜索" }));
+
+    expect(await screen.findByText("AI 搜索辅助不可用，已回退普通搜索。")).toBeVisible();
+    expect(screen.getByText("PDF Reader")).toBeVisible();
+    expect(facade.searchOnlineSources).toHaveBeenCalledTimes(2);
+  });
 });

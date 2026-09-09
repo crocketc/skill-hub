@@ -1,10 +1,10 @@
 import { act, screen, render } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { I18nextProvider } from "react-i18next";
-import { expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createSkillHubI18n } from "../../i18n";
 import { createOperationTracker } from "../../platform/operationTracker";
-import { createMockImportFacade } from "./api";
+import { createMockImportFacade, type ImportPlan } from "./api";
 import { ImportWizard } from "./ImportWizard";
 
 async function renderWizard(facade = createMockImportFacade({ scenario: "safe-local" }), tracker?: ReturnType<typeof createOperationTracker>) {
@@ -341,5 +341,93 @@ it("shows candidate progress while commit is in flight", async () => {
   expect(await screen.findByText("正在提交导入（已完成 0/2，当前：safe-pdf）")).toBeVisible();
   await act(async () => {
     release([]);
+  });
+});
+
+describe("AI import pre-check", () => {
+  async function reachConflicts(facade: ReturnType<typeof createMockImportFacade>) {
+    const user = userEvent.setup();
+    await renderWizard(facade);
+    await user.type(screen.getByLabelText("来源"), "C:\\skills\\pdf");
+    await user.click(screen.getByRole("button", { name: "解析来源" }));
+    await user.click(await screen.findByRole("button", { name: "继续选择候选" }));
+    await user.click(screen.getByRole("checkbox", { name: /PDF/ }));
+    await user.click(screen.getByRole("button", { name: "分析冲突" }));
+    await screen.findByRole("button", { name: "提交导入" });
+    return user;
+  }
+
+  it("shows the optional pre-check scope and lets users skip it", async () => {
+    const facade = createMockImportFacade({ scenario: "safe-local" });
+    facade.runAiPreChecks = vi.fn();
+    await reachConflicts(facade);
+
+    expect(screen.getByRole("heading", { name: "AI 预检（可选）" })).toBeVisible();
+    expect(screen.getByText("本次预检对象数量：1")).toBeVisible();
+    await userEvent.setup().click(screen.getByRole("button", { name: "跳过预检" }));
+    expect(
+      screen.getByText(/已跳过 AI 预检；基础检查与确定性门照常生效/),
+    ).toBeVisible();
+  });
+
+  it("renders the per-object report after the pre-check runs", async () => {
+    const facade = createMockImportFacade({ scenario: "safe-local" });
+    facade.runAiPreChecks = vi.fn(async (plan: ImportPlan) => ({
+      model: "test-model",
+      provider: "test",
+      requested: plan.candidates.length,
+      outcomes: plan.candidates.map((candidate) => ({
+        candidateId: candidate.id,
+        failureCode: null,
+        fileCount: 3,
+        findingCount: 0,
+        state: "passed" as const,
+      })),
+    }));
+    const user = await reachConflicts(facade);
+
+    await user.click(screen.getByRole("button", { name: "运行 AI 预检" }));
+
+    expect(
+      await screen.findByText("服务 test · 模型 test-model · 预检对象 1 个"),
+    ).toBeVisible();
+    expect(screen.getByText(/发现 0 项（3 个文件）/)).toBeVisible();
+    expect(screen.queryByText(/已跳过 AI 预检/)).not.toBeInTheDocument();
+  });
+
+  it("reports a failed object with its failure code without losing the rest", async () => {
+    const facade = createMockImportFacade({ scenario: "safe-local" });
+    facade.runAiPreChecks = vi.fn(async (plan: ImportPlan) => ({
+      model: "test-model",
+      provider: "test",
+      requested: plan.candidates.length,
+      outcomes: [
+        {
+          candidateId: plan.candidates[0].id,
+          failureCode: "llm.request_timeout",
+          fileCount: 2,
+          findingCount: 0,
+          state: "failed" as const,
+        },
+      ],
+    }));
+    const user = await reachConflicts(facade);
+
+    await user.click(screen.getByRole("button", { name: "运行 AI 预检" }));
+
+    expect(
+      await screen.findByText(/预检失败（llm.request_timeout）；不影响其他对象/),
+    ).toBeVisible();
+    expect(screen.getByText("失败")).toBeVisible();
+  });
+
+  it("keeps the wizard importable when the facade cannot run pre-checks", async () => {
+    const facade = createMockImportFacade({ scenario: "safe-local" });
+    delete (facade as { runAiPreChecks?: unknown }).runAiPreChecks;
+    await reachConflicts(facade);
+
+    expect(
+      screen.getByText("当前环境未提供 AI 预检能力，可直接继续导入。"),
+    ).toBeVisible();
   });
 });

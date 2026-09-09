@@ -88,6 +88,43 @@ export interface SkillDetailInsights {
   usageEvidence?: { invocationCount: number; lastUsedAt?: string };
 }
 
+/** One FTS/BM25 candidate handed to the semantic duplicate analysis. */
+export interface SemanticDuplicateCandidate {
+  basicCheckState: string;
+  description: string;
+  id: string;
+  locallyModified: boolean;
+  name: string;
+  permissions: string[];
+  source: string;
+  trigger: string;
+}
+
+export interface SemanticDuplicateRelation {
+  coverage: "a_contains_b" | "b_contains_a" | "overlap" | "independent" | "uncertain";
+  recommendation:
+    | "keep_a"
+    | "keep_b"
+    | "keep_both"
+    | "archive_a"
+    | "archive_b"
+    | "manual_decision";
+  sharedAbilities: string[];
+  skillA: string;
+  skillB: string;
+  uniqueA: string[];
+  uniqueB: string[];
+}
+
+/** Result of the optional AI layer over deterministic duplicate candidates.
+ * `deterministic_only` means the LLM layer failed or was unnecessary; the
+ * deterministic candidates are still shown and the failure code is displayed. */
+export interface SemanticDuplicateReport {
+  candidates: SemanticDuplicateCandidate[];
+  failureCode?: string | null;
+  source: "deterministic_only" | "llm";
+}
+
 export interface SkillFinding {
   code: string;
   disposition: "actionable" | "acknowledged" | "dismissed";
@@ -193,6 +230,8 @@ export interface SkillDetailFacade {
     decision: UpdateDecision,
   ): Promise<AppliedSourceUpdate>;
   relinkSource(skillId: string, sourceInput: string): Promise<{ messageCode: string }>;
+  /** Optional AI layer over deterministic duplicate candidates (US-018). */
+  analyzeSemanticDuplicates(skillId: string): Promise<SemanticDuplicateReport>;
 }
 
 const skillKey = (skillId: string) => ["skill-detail", skillId] as const;
@@ -253,6 +292,7 @@ export const unavailableSkillDetailFacade: SkillDetailFacade = {
   checkSourceUpdate: unavailable,
   applySourceUpdate: unavailable,
   relinkSource: unavailable,
+  analyzeSemanticDuplicates: unavailable,
   saveMetadata: unavailable,
   setTrial: unavailable,
 };

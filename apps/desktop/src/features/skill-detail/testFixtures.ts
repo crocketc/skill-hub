@@ -40,6 +40,7 @@ export interface MockSkillDetailCalls {
   versionLabels: Array<{ skillId: string; versionId: string; label: string }>;
   metadataPatches: Array<{ patch: SkillMetadataPatch; skillId: string }>;
   trials: Array<{ due: string | null; skillId: string }>;
+  analyzedDuplicateSkills: string[];
 }
 
 export interface MockSkillDetailOptions {
@@ -273,6 +274,7 @@ export function createMockSkillDetailFacade(
     versionLabels: [],
     metadataPatches: [],
     trials: [],
+    analyzedDuplicateSkills: [],
   };
   let metadata = fixture.metadata;
   let summary = fixture.summary;
@@ -306,6 +308,21 @@ export function createMockSkillDetailFacade(
     },
     async emitIntent(intent) {
       calls.intents.push(intent);
+      if (intent.type === "translate_description") {
+        // 预览闭环：模拟后端重新翻译成功，元数据中的译文随之刷新。
+        metadata = {
+          ...metadata,
+          translation: {
+            locale: intent.locale,
+            model: "preview-model",
+            sourceVersion: "current",
+            stale: false,
+            text: `Retranslated description (${intent.locale})`,
+            translatedAt: "2026-09-10T08:00:00Z",
+            userRevised: false,
+          },
+        };
+      }
     },
     async getAdjacentContext(skillId) {
       if ("adjacent" in options) {
@@ -422,6 +439,25 @@ export function createMockSkillDetailFacade(
       calls.trials.push({ due, skillId });
       if (options.failTrialSave) throw new Error("trial save failed");
       summary = { ...summary, trialDue: due ?? undefined };
+    },
+    async analyzeSemanticDuplicates(skillId) {
+      calls.analyzedDuplicateSkills.push(skillId);
+      return {
+        candidates: [
+          {
+            basicCheckState: "passed",
+            description: "Reads text out of PDF files",
+            id: "skill-pdf-alt",
+            locallyModified: false,
+            name: "PDF Text Extractor",
+            permissions: ["fs.read"],
+            source: "github.com/example/pdf-extractor",
+            trigger: "pdf text",
+          },
+        ],
+        failureCode: null,
+        source: "llm",
+      };
     },
   };
 }

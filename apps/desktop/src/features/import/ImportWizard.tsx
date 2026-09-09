@@ -11,6 +11,7 @@ import {
 import {
   ImportCancelledError,
   type ImportAction,
+  type ImportAiPreCheckReport,
   type ImportFacade,
   type ImportPlan,
   type ImportProgress,
@@ -216,6 +217,11 @@ export function ImportWizard({
   const commitLockNotice = importLocked || commitBlockedNotice;
   const operationRef = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
+  // US-016 第 5 步：AI 预检由用户主动发起，跳过不影响确定性导入门。
+  const [aiPreCheck, setAiPreCheck] = useState<ImportAiPreCheckReport>();
+  const [aiPreCheckRunning, setAiPreCheckRunning] = useState(false);
+  const [aiPreCheckError, setAiPreCheckError] = useState<string | null>(null);
+  const [aiPreCheckSkipped, setAiPreCheckSkipped] = useState(false);
 
   // 互斥的 import 结束后自动解除本地锁定提示。
   useEffect(() => {
@@ -364,6 +370,20 @@ type: "failed",
     }
   };
 
+  const runAiPreChecks = async () => {
+    if (!state.plan || !facade.runAiPreChecks || aiPreCheckRunning) return;
+    setAiPreCheckRunning(true);
+    setAiPreCheckError(null);
+    setAiPreCheckSkipped(false);
+    try {
+      setAiPreCheck(await facade.runAiPreChecks(state.plan));
+    } catch (error) {
+      setAiPreCheckError(describeNativeError(error, (key, options) => String(t(key as never, options as never)), "importWorkflow.errors.generic"));
+    } finally {
+      setAiPreCheckRunning(false);
+    }
+  };
+
   const phaseLabel = t(`importWorkflow.phases.${state.phase}`);
 
   return (
@@ -460,15 +480,77 @@ type: "failed",
         {state.phase === "analyzing" ? <DataState message={t("importWorkflow.phases.analyzing")} state="loading" /> : null}
 
         {state.phase === "conflicts" && state.plan ? (
-          <ConflictResolution
-            actions={state.actions}
-            commitDisabled={commitLockNotice}
-            conflicts={state.plan.conflicts}
-            continueLabel={t("importWorkflow.conflicts.commit")}
-            onAction={(candidateId, action) => dispatch({ type: "action_selected", candidateId, action })}
-            onBack={() => dispatch({ type: "show_candidates" })}
-            onContinue={() => void commit()}
-          />
+          <>
+            <ConflictResolution
+              actions={state.actions}
+              commitDisabled={commitLockNotice}
+              conflicts={state.plan.conflicts}
+              continueLabel={t("importWorkflow.conflicts.commit")}
+              onAction={(candidateId, action) => dispatch({ type: "action_selected", candidateId, action })}
+              onBack={() => dispatch({ type: "show_candidates" })}
+              onContinue={() => void commit()}
+            />
+            <section aria-labelledby="import-ai-precheck-heading" className="sh-import-wizard__gate">
+              <h2 id="import-ai-precheck-heading">{t("importWorkflow.aiPreCheck.heading")}</h2>
+              <p className="sh-settings-local-note">{t("importWorkflow.aiPreCheck.description")}</p>
+              <p>
+                {t("importWorkflow.aiPreCheck.scope", { count: state.plan.candidates.length })}
+              </p>
+              {facade.runAiPreChecks ? (
+                <div className="sh-button-row">
+                  <Button
+                    disabled={aiPreCheckRunning}
+                    loading={aiPreCheckRunning}
+                    onClick={() => void runAiPreChecks()}
+                    variant="secondary"
+                  >
+                    {aiPreCheckRunning
+                      ? t("importWorkflow.aiPreCheck.running")
+                      : t("importWorkflow.aiPreCheck.run")}
+                  </Button>
+                  <Button onClick={() => setAiPreCheckSkipped(true)} variant="ghost">
+                    {t("importWorkflow.aiPreCheck.skip")}
+                  </Button>
+                </div>
+              ) : (
+                <p>{t("importWorkflow.aiPreCheck.unavailable")}</p>
+              )}
+              {aiPreCheckSkipped ? <p role="status">{t("importWorkflow.aiPreCheck.skippedNote")}</p> : null}
+              {aiPreCheckError ? <p role="alert">{aiPreCheckError}</p> : null}
+              {aiPreCheck && !aiPreCheckSkipped ? (
+                <div>
+                  <p>
+                    {t("importWorkflow.aiPreCheck.reportHeader", {
+                      count: aiPreCheck.requested,
+                      model: aiPreCheck.model,
+                      provider: aiPreCheck.provider,
+                    })}
+                  </p>
+                  <ul>
+                    {aiPreCheck.outcomes.map((outcome) => (
+                      <li key={outcome.candidateId}>
+                        <strong>{outcome.candidateId}</strong>{" "}
+                        <span className="sh-status sh-status--muted">
+                          {t(`importWorkflow.aiPreCheck.states.${outcome.state}`)}
+                        </span>
+                        <span>
+                          {" · "}
+                          {t("importWorkflow.aiPreCheck.findings", { count: outcome.findingCount, files: outcome.fileCount })}
+                        </span>
+                        {outcome.failureCode ? (
+                          <span role="status">
+                            {" · "}
+                            {t("importWorkflow.aiPreCheck.failure", { code: outcome.failureCode })}
+                          </span>
+                        ) : null}
+                      </li>
+                    ))}
+                  </ul>
+                  <p className="sh-settings-local-note">{t("importWorkflow.aiPreCheck.gatesNote")}</p>
+                </div>
+              ) : null}
+            </section>
+          </>
         ) : null}
 
         {state.phase === "committing" ? (

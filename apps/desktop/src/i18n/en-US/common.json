@@ -276,6 +276,26 @@
     },
     "commit": {
       "locked": "Another import is already running; this import can be committed once it finishes."
+    },
+    "aiPreCheck": {
+      "heading": "AI pre-check (optional)",
+      "description": "Run an optional AI safety pre-check on the objects about to be imported; AI findings never bypass format checks, basic security, ownership or conflict handling.",
+      "scope": "Objects in this pre-check: {{count}}",
+      "run": "Run AI pre-check",
+      "running": "AI pre-check running…",
+      "skip": "Skip pre-check",
+      "skippedNote": "AI pre-check skipped; basic checks and deterministic gates still apply and import can continue.",
+      "unavailable": "AI pre-check is unavailable in this context; you can continue importing directly.",
+      "reportHeader": "Service {{provider}} · model {{model}} · {{count}} object(s)",
+      "findings": "{{count}} finding(s) across {{files}} file(s)",
+      "failure": "Pre-check failed ({{code}}); other objects are unaffected",
+      "gatesNote": "AI suggestions are never turned into write operations automatically; import decisions remain yours.",
+      "states": {
+        "not_checked": "Not checked",
+        "running": "Checking",
+        "passed": "Passed",
+        "failed": "Failed"
+      }
     }
   },
   "discovery": {
@@ -366,7 +386,11 @@
       "searching": "Searching…",
       "failed": "Search failed. Please try again later.",
       "source": "Source: {{provider}}",
-      "installs": "Installs: {{count}}"
+      "installs": "Installs: {{count}}",
+      "assistToggle": "AI search assist",
+      "assistExtended": "AI extended query \"{{query}}\" added {{count}} hits; your original query is unchanged and AI-extended hits are marked.",
+      "assistFallback": "AI search assist is unavailable; fell back to the plain search.",
+      "assistHit": "AI-extended hit"
     },
     "repo": {
       "eyebrow": "Repository sources",
@@ -1260,6 +1284,19 @@
       "submit": "Relink source",
       "done": "Source relinked.",
       "failed": "Relink failed: {{error}}"
+    },
+    "duplicates": {
+      "heading": "AI semantic duplicate analysis",
+      "run": "Run analysis",
+      "scopeNote": "Sends: candidate skill names, descriptions, triggers, permissions and sources only; candidates are preselected by local full-text search.",
+      "runFailed": "Analysis failed: {{message}}; the deterministic candidates remain available",
+      "sourceLlm": "Source: deterministic candidates + AI semantic analysis",
+      "sourceDeterministic": "Source: deterministic candidates only (the AI layer returned nothing)",
+      "failureCode": "AI layer failure code: {{code}}",
+      "candidates": "Candidates",
+      "locallyModified": "Locally modified",
+      "noCandidates": "No semantic candidates were found by the deterministic preselection.",
+      "confirmationNote": "Results are advisory only; merging, deleting or archiving always requires your separate confirmation and is never done automatically."
     }
   },
   "deployment": {

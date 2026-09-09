@@ -1839,6 +1839,7 @@ impl LocalApplicationFacade {
         let original_description = detail.original_description;
         let language = request.language;
         let request_skill_id = request.skill_id;
+        let overwrite = request.overwrite_user_revision;
         let result = run_non_send(move || async move {
             service
                 .translate(
@@ -1847,6 +1848,7 @@ impl LocalApplicationFacade {
                     &hash,
                     &language,
                     Some(&profile),
+                    overwrite,
                 )
                 .await
         })?;
@@ -1924,6 +1926,7 @@ impl LocalApplicationFacade {
                     &hash,
                     &language,
                     Some(&profile),
+                    false,
                 )
                 .await
         })
@@ -2050,9 +2053,16 @@ impl LocalApplicationFacade {
             .with_database("execute.save_user_translation_revision.skill", |database| {
                 database.catalog_repository()?.get_detail(request.skill_id)
             })?;
-        if exists.is_none() {
-            return Err(AppError::new(ErrorCode::ObjectNotFound, Severity::Error));
-        }
+        let detail =
+            exists.ok_or_else(|| AppError::new(ErrorCode::ObjectNotFound, Severity::Error))?;
+        // The UI cannot recompute the description hash; an empty hash means
+        // "hash of the current original description" so a freshly typed
+        // revision is not born stale.
+        let source_description_hash = if request.source_description_hash.is_empty() {
+            description_hash(&detail.original_description)
+        } else {
+            request.source_description_hash
+        };
         let service = TranslationService::new(
             StorageTranslationRepository {
                 database: self.database.clone(),
@@ -2061,7 +2071,6 @@ impl LocalApplicationFacade {
         );
         let skill_id = request.skill_id;
         let language = request.language;
-        let source_description_hash = request.source_description_hash;
         let text = request.text;
         let save_language = language.clone();
         let save_source_description_hash = source_description_hash.clone();

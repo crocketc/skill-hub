@@ -112,6 +112,7 @@ async fn translations_persist_across_restarts_and_flag_stale_descriptions() {
                 skillhub_core::TranslateDescription {
                     skill_id: id,
                     language: "zh-CN".to_owned(),
+                    overwrite_user_revision: false,
                 },
             ))
             .await
@@ -240,6 +241,7 @@ async fn regeneration_never_silently_overwrites_user_revisions() {
             skillhub_core::TranslateDescription {
                 skill_id: skill.id(),
                 language: "zh-CN".to_owned(),
+                overwrite_user_revision: false,
             },
         ))
         .await
@@ -261,6 +263,7 @@ async fn regeneration_never_silently_overwrites_user_revisions() {
             skillhub_core::TranslateDescription {
                 skill_id: skill.id(),
                 language: "zh-CN".to_owned(),
+                overwrite_user_revision: false,
             },
         ))
         .await
@@ -269,4 +272,70 @@ async fn regeneration_never_silently_overwrites_user_revisions() {
         error.code,
         ErrorCode::TranslationUserRevisionRequiresConfirmation
     );
+
+    // Requirement 5.35: after the user explicitly confirms the overwrite, the
+    // regeneration proceeds through the LLM and the stored row is generated
+    // again, replacing the revision.
+    let regenerated = facade
+        .execute(AppCommand::TranslateDescription(
+            skillhub_core::TranslateDescription {
+                skill_id: skill.id(),
+                language: "zh-CN".to_owned(),
+                overwrite_user_revision: true,
+            },
+        ))
+        .await
+        .expect("regeneration after explicit confirmation");
+    let AppCommandResult::TranslationResult(result) = regenerated else {
+        panic!("expected translation result");
+    };
+    assert_eq!(result.text, "提取 PDF 文本");
+    let translations = list_translations(&facade, skill.id()).await;
+    assert_eq!(translations.len(), 1);
+    assert_eq!(
+        translations[0].record.origin,
+        skillhub_core::llm::TranslationOrigin::Generated
+    );
+}
+
+/// A fresh user revision typed without a prior AI translation cannot know the
+/// description hash; an empty hash must mean "hash of the current original
+/// description" so the revision is not born stale.
+#[tokio::test]
+async fn user_revision_without_hash_uses_the_current_description_hash() {
+    let database = Database::open_in_memory().expect("database");
+    let skill = skill_with_description("a", "Extract PDF text");
+    database
+        .catalog_repository()
+        .expect("catalog repository")
+        .insert(&skill)
+        .await
+        .expect("insert skill");
+    let library = tempfile::tempdir().expect("library");
+    let facade = LocalApplicationFacade::new_with_library_and_llm_runner(
+        database,
+        library.path(),
+        std::sync::Arc::new(SelectiveRunner),
+    );
+    enable_translation(&facade).await;
+    facade
+        .execute(AppCommand::SaveUserTranslationRevision(
+            skillhub_core::SaveUserTranslationRevision {
+                skill_id: skill.id(),
+                language: "zh-CN".to_owned(),
+                source_description_hash: String::new(),
+                text: "我自己的译文".to_owned(),
+            },
+        ))
+        .await
+        .expect("save user revision");
+
+    let translations = list_translations(&facade, skill.id()).await;
+    assert_eq!(translations.len(), 1);
+    assert_eq!(translations[0].record.text, "我自己的译文");
+    assert_eq!(
+        translations[0].record.origin,
+        skillhub_core::llm::TranslationOrigin::UserRevision
+    );
+    assert!(!translations[0].needs_update);
 }

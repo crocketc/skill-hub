@@ -152,6 +152,9 @@ export function MetadataPanel({ facade, metadata, skillId }: MetadataPanelProps)
       type: "translate_description",
     });
     setTranslationConfirmation(false);
+    await queryClient.invalidateQueries({
+      queryKey: skillDetailKeys.metadata(skillId),
+    });
   };
 
   return (

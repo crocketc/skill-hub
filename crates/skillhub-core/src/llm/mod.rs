@@ -7,7 +7,7 @@ pub mod safety;
 pub mod search_query;
 mod task;
 pub mod translation;
-pub use translation::{TranslationRecord, TranslationResult, TranslationView};
+pub use translation::{TranslationOrigin, TranslationRecord, TranslationResult, TranslationView};
 
 pub use connection::{ConnectionTestResult, EndpointCheckResult, ModelCheckResult};
 pub use model::{CredentialRef, LlmProfile, LlmTaskKind, LlmTaskRequest, LlmTaskResponse};

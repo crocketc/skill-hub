@@ -2103,6 +2103,11 @@ export type TestLlmConnection = {
 export type TranslateDescription = {
 	skill_id: SkillId,
 	language: string,
+	/**
+	 *  Only an explicit user confirmation may replace a stored revision
+	 *  (requirement 5.35); the default keeps revisions refusal-protected.
+	 */
+	overwrite_user_revision?: boolean,
 };
 
 export type TranslateDescriptionsBatch = {

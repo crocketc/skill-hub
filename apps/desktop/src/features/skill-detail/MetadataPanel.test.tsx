@@ -92,4 +92,39 @@ describe("MetadataPanel", () => {
     expect(facade.calls.intents).toEqual([]);
     expect(screen.getByText("模型译文")).toBeVisible();
   });
+
+  it("regenerates the translation only after the user confirms overwriting a revision", async () => {
+    const facade = createMockSkillDetailFacade();
+    await renderMetadata({
+      facade,
+      metadata: detailFixture({ userRevisedTranslation: true }).metadata,
+    });
+    fireEvent.click(screen.getByRole("button", { name: "重新翻译描述" }));
+    fireEvent.click(screen.getByRole("button", { name: "替换译文" }));
+    await waitFor(() => {
+      expect(facade.calls.intents).toEqual([
+        {
+          locale: "zh-CN",
+          overwriteUserRevision: true,
+          skillId: "skill-pdf",
+          type: "translate_description",
+        },
+      ]);
+    });
+  });
+
+  it("retranslates immediately when no user revision exists", async () => {
+    const { facade } = await renderMetadata();
+    fireEvent.click(screen.getByRole("button", { name: "重新翻译描述" }));
+    await waitFor(() => {
+      expect(facade.calls.intents).toEqual([
+        {
+          locale: "zh-CN",
+          overwriteUserRevision: false,
+          skillId: "skill-pdf",
+          type: "translate_description",
+        },
+      ]);
+    });
+  });
 });

@@ -276,6 +276,26 @@
     },
     "commit": {
       "locked": "另一个导入正在进行，完成后才能提交本次导入。"
+    },
+    "aiPreCheck": {
+      "heading": "AI 预检（可选）",
+      "description": "对即将导入的对象运行可选的 AI 安全预检；AI 结果不绕过格式检查、基础安全、所有权与冲突处理。",
+      "scope": "本次预检对象数量：{{count}}",
+      "run": "运行 AI 预检",
+      "running": "AI 预检进行中…",
+      "skip": "跳过预检",
+      "skippedNote": "已跳过 AI 预检；基础检查与确定性门照常生效，可以直接继续导入。",
+      "unavailable": "当前环境未提供 AI 预检能力，可直接继续导入。",
+      "reportHeader": "服务 {{provider}} · 模型 {{model}} · 预检对象 {{count}} 个",
+      "findings": "发现 {{count}} 项（{{files}} 个文件）",
+      "failure": "预检失败（{{code}}）；不影响其他对象",
+      "gatesNote": "AI 建议不会自动转换为任何写操作；导入决定仍然由你确认。",
+      "states": {
+        "not_checked": "未检查",
+        "running": "检查中",
+        "passed": "通过",
+        "failed": "失败"
+      }
     }
   },
   "discovery": {
@@ -366,7 +386,11 @@
       "searching": "搜索中…",
       "failed": "搜索失败，请稍后重试",
       "source": "来源：{{provider}}",
-      "installs": "安装次数：{{count}}"
+      "installs": "安装次数：{{count}}",
+      "assistToggle": "AI 搜索辅助",
+      "assistExtended": "AI 扩展查询“{{query}}”新增 {{count}} 条命中；你的原始查询保持不变，扩展命中已标记。",
+      "assistFallback": "AI 搜索辅助不可用，已回退普通搜索。",
+      "assistHit": "AI 扩展命中"
     },
     "repo": {
       "eyebrow": "仓库来源",
@@ -1260,6 +1284,19 @@
       "submit": "重新关联",
       "done": "已重新关联来源。",
       "failed": "重新关联失败：{{error}}"
+    },
+    "duplicates": {
+      "heading": "AI 语义重复分析",
+      "run": "运行分析",
+      "scopeNote": "发送范围：仅候选 Skill 的名称、描述、触发词、权限与来源等元数据；候选先由本地全文检索确定性筛出。",
+      "runFailed": "分析失败：{{message}}；确定性候选仍然可用",
+      "sourceLlm": "结果来源：确定性候选 + AI 语义分析",
+      "sourceDeterministic": "结果来源：仅确定性候选（AI 层未返回结果）",
+      "failureCode": "AI 层失败码：{{code}}",
+      "candidates": "候选对象",
+      "locallyModified": "本地已修改",
+      "noCandidates": "本地确定性筛选未发现语义候选。",
+      "confirmationNote": "分析结果仅供参考；合并、删除、归档等操作始终需要你另行确认，AI 不会自动执行。"
     }
   },
   "deployment": {

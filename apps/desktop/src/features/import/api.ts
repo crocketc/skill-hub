@@ -85,6 +85,22 @@ export interface ImportProgress {
   total: number;
 }
 
+/** One per-object result of the optional AI import pre-check (US-016). */
+export interface ImportAiPreCheckOutcome {
+  candidateId: string;
+  failureCode: string | null;
+  fileCount: number;
+  findingCount: number;
+  state: "not_checked" | "running" | "passed" | "failed";
+}
+
+export interface ImportAiPreCheckReport {
+  model: string;
+  outcomes: ImportAiPreCheckOutcome[];
+  provider: string;
+  requested: number;
+}
+
 export interface ImportFacade {
   parseSource(input: string): Promise<SourceDescriptor>;
   acquireCandidates(
@@ -98,6 +114,10 @@ export interface ImportFacade {
     onProgress?: (progress: ImportProgress) => void,
   ): Promise<ImportResult[]>;
   cancel(): Promise<void>;
+  /** Optional advisory AI safety pre-check (step 5). Findings never change
+   * the deterministic import gates; failures are per object. Absent keeps
+   * the wizard importable without the AI step entirely. */
+  runAiPreChecks?(plan: ImportPlan): Promise<ImportAiPreCheckReport>;
 }
 
 export class ImportUnavailableError extends Error {

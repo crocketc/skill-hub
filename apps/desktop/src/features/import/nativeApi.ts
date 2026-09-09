@@ -316,4 +316,43 @@ export const nativeImportFacade: ImportFacade = {
     discoveredCandidates.clear();
     return Promise.resolve();
   },
+
+  async runAiPreChecks(plan) {
+    // Step-5 advisory pre-check: stage every candidate exactly like the
+    // commit loop does, then run one batched AI safety analysis. Findings
+    // never change the deterministic gates; commit re-prepares its own ids.
+    const preparedIds: string[] = [];
+    const candidateIds: string[] = [];
+    for (const candidate of plan.candidates) {
+      const prepared = preparedImport(await executeCommand({
+        type: "prepare_import",
+        payload: {
+          candidate: nativeCandidateFor(candidate),
+          tree_hash: null,
+        },
+      }));
+      preparedIds.push(prepared.id);
+      candidateIds.push(candidate.id);
+    }
+    const result: AppCommandResult = await executeCommand({
+      type: "run_import_ai_checks",
+      payload: { prepared_import_ids: preparedIds },
+    });
+    if (result.type !== "import_ai_checks_report") {
+      throw new Error("run_import_ai_checks returned an unexpected native result.");
+    }
+    const report = result.payload;
+    return {
+      model: report.model,
+      provider: report.provider,
+      requested: report.requested,
+      outcomes: report.outcomes.map((outcome, index) => ({
+        candidateId: candidateIds[index] ?? outcome.prepared_import_id,
+        failureCode: outcome.failure_code ?? null,
+        fileCount: outcome.file_count,
+        findingCount: outcome.finding_count,
+        state: outcome.state,
+      })),
+    };
+  },
 };

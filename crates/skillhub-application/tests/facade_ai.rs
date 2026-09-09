@@ -95,6 +95,7 @@ async fn optional_ai_helpers_are_wired_without_network_or_implicit_writes() {
             skillhub_core::TranslateDescription {
                 skill_id: skill.id(),
                 language: "zh-CN".to_owned(),
+                overwrite_user_revision: false,
             },
         ))
         .await
@@ -222,6 +223,7 @@ async fn configured_facade_runs_helpers_and_preserves_user_translation_revision(
             skillhub_core::TranslateDescription {
                 skill_id: skill_a.id(),
                 language: "zh-CN".to_owned(),
+                overwrite_user_revision: false,
             },
         ))
         .await
@@ -247,6 +249,7 @@ async fn configured_facade_runs_helpers_and_preserves_user_translation_revision(
             skillhub_core::TranslateDescription {
                 skill_id: skill_a.id(),
                 language: "zh-CN".to_owned(),
+                overwrite_user_revision: false,
             },
         ))
         .await

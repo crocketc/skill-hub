@@ -20,6 +20,8 @@ import {
   type SkillMetadataPatch,
   type SkillRelation,
   type SkillRollbackImpact,
+  type SemanticDuplicateReport,
+  type SkillTranslation,
   type SkillVersionDiff,
   type SkillVersionEntry,
 } from "./api";
@@ -90,7 +92,27 @@ async function checkState(
   return checkStateOf(result.payload.state);
 }
 
-function metadataOf(skill: SkillResult): SkillMetadata {
+/** Maps the persisted description translation (if any) to the UI contract. */
+async function translationOf(skillId: string): Promise<SkillTranslation | undefined> {
+  const result = await queryApplication({
+    type: "list_translations",
+    payload: { skill_id: skillId },
+  });
+  if (result.type !== "translations") throw unavailableResult();
+  const view = result.payload[0];
+  if (!view) return undefined;
+  return {
+    locale: view.record.language,
+    model: view.record.provenance.model,
+    sourceVersion: view.version_id ?? "current",
+    stale: view.needs_update,
+    text: view.record.text,
+    translatedAt: view.updated_at,
+    userRevised: view.record.origin === "user_revision",
+  };
+}
+
+function metadataOf(skill: SkillResult, translation?: SkillTranslation): SkillMetadata {
   return {
     alias: skill.display_name,
     license: skill.license ?? undefined,
@@ -99,12 +121,48 @@ function metadataOf(skill: SkillResult): SkillMetadata {
     // QA-008：用途是用户独立撰写的字段，不得用原文或译文冒充。
     purpose: skill.user_purpose ?? "",
     tags: skill.tags,
+    translation,
   };
+}
+
+/** 保存用户修订译文：hash 留空表示“按当前原文计算”，避免前端复算后端哈希。 */
+async function saveTranslationRevision(
+  skillId: string,
+  language: string,
+  text: string,
+): Promise<void> {
+  const listResult = await queryApplication({
+    type: "list_translations",
+    payload: { skill_id: skillId },
+  });
+  if (listResult.type !== "translations") throw unavailableResult();
+  const sourceDescriptionHash =
+    listResult.payload[0]?.record.provenance.source_description_hash ?? "";
+  const result: AppCommandResult = await executeCommand({
+    type: "save_user_translation_revision",
+    payload: {
+      skill_id: skillId,
+      language,
+      source_description_hash: sourceDescriptionHash,
+      text,
+    },
+  });
+  if (result.type !== "translation_result") throw unavailableResult();
 }
 
 /** QA-008：set_metadata 是整体覆盖命令；先读取当前值合并补丁，
  * 避免只改一个字段时丢失标签、作者或许可证。 */
 async function saveMetadata(skillId: string, patch: SkillMetadataPatch): Promise<void> {
+  // 译文修订走独立的 save_user_translation_revision 契约；清空（null）不是
+  // 需求内的操作，保持原值不动。
+  if (typeof patch.translationText === "string" && patch.translationText !== "") {
+    const current = await translationOf(skillId);
+    await saveTranslationRevision(
+      skillId,
+      current?.locale ?? "zh-CN",
+      patch.translationText,
+    );
+  }
   const skill = await getSkill(skillId);
   const result: AppCommandResult = await executeCommand({
     type: "set_metadata",
@@ -248,6 +306,31 @@ export const nativeSkillDetailFacade: SkillDetailFacade = {
   checkSourceUpdate,
   applySourceUpdate,
   relinkSource,
+  analyzeSemanticDuplicates: analyzeNativeSemanticDuplicates,
+  async emitIntent(intent) {
+    if (intent.type === "translate_description") {
+      const result: AppCommandResult = await executeCommand({
+        type: "translate_description",
+        payload: {
+          skill_id: intent.skillId,
+          language: intent.locale,
+          // 确认覆盖用户修订后允许重新生成（需求 5.35）。
+          overwrite_user_revision: intent.overwriteUserRevision,
+        },
+      });
+      if (result.type !== "translation_result") throw unavailableResult();
+      return;
+    }
+    if (intent.type === "abandon_trial") {
+      const result: AppCommandResult = await executeCommand({
+        type: "set_trial",
+        payload: { skill_id: intent.skillId, due: null },
+      });
+      if (result.type !== "operation_summary") throw unavailableResult();
+      return;
+    }
+    throw unavailableResult();
+  },
   getVersions,
   getVersionDiff,
   getRollbackImpact,
@@ -274,7 +357,12 @@ export const nativeSkillDetailFacade: SkillDetailFacade = {
     return { ...summary, aiCheck, basicCheck };
   },
   async getMetadata(skillId) {
-    return metadataOf(await getSkill(skillId));
+    // 译文是附属信息：查询失败只降级为“无译文”，不得拖垮整个元数据面板。
+    const [skill, translation] = await Promise.all([
+      getSkill(skillId),
+      translationOf(skillId).catch(() => undefined),
+    ]);
+    return metadataOf(skill, translation);
   },
   saveMetadata,
   async getRelations(skillId): Promise<SkillRelation[]> {
@@ -326,10 +414,15 @@ export const nativeSkillDetailFacade: SkillDetailFacade = {
       payload: { skill_id: skillId },
     });
     if (result.type !== "skill_operations") throw unavailableResult();
+    const duplicates = await queryApplication({
+      type: "list_deterministic_duplicates",
+      payload: { skill_id: skillId },
+    });
+    if (duplicates.type !== "deterministic_duplicates") throw unavailableResult();
     const insights: SkillDetailInsights = {
       combinations: [],
       dependencies: [],
-      deterministicDuplicates: [],
+      deterministicDuplicates: duplicates.payload.map((entry) => entry.label),
       externalChanges: [],
       semanticDuplicates: [],
       operationHistory: result.payload.entries.map((entry) => ({
@@ -369,6 +462,34 @@ export async function setNativeFindingDisposition(
   if (result.type !== (kind === "basic" ? "basic_check_result" : "llm_safety_check_result")) {
     throw unavailableResult();
   }
+}
+
+/** Runs the optional AI layer over the deterministic duplicate candidates.
+ * The backend always carries the deterministic layer back, so an LLM failure
+ * still yields a usable report with `deterministic_only` + failure code. */
+export async function analyzeNativeSemanticDuplicates(
+  skillId: string,
+): Promise<SemanticDuplicateReport> {
+  const result: AppCommandResult = await executeCommand({
+    type: "analyze_semantic_duplicates",
+    payload: { skill_id: skillId },
+  });
+  if (result.type !== "duplicate_analysis") throw unavailableResult();
+  const analysis = result.payload;
+  return {
+    candidates: (analysis.candidates ?? []).map((candidate) => ({
+      basicCheckState: candidate.basic_check_state,
+      description: candidate.description,
+      id: candidate.skill_id,
+      locallyModified: candidate.locally_modified,
+      name: candidate.name,
+      permissions: candidate.permissions,
+      source: candidate.source,
+      trigger: candidate.trigger,
+    })),
+    failureCode: analysis.failure_code ?? null,
+    source: analysis.source ?? "deterministic_only",
+  };
 }
 
 /** Switches the catalog pointer to an existing version after native validation. */

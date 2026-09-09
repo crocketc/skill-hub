@@ -13,6 +13,7 @@ import { nativeRemovalFacade } from "../features/removal/nativeApi";
 import { DeploymentDialog } from "../features/deployment/DeploymentDialog";
 import { BatchDeploymentPage } from "../features/deployment/BatchDeploymentPage";
 import { SecurityResults } from "../features/security/SecurityResults";
+import { SecurityLlmPreview } from "../features/security/SecurityLlmPreview";
 import { nativeSecurityFacade } from "../features/security/nativeApi";
 import { PendingPage } from "../features/pending/PendingPage";
 import { nativePendingFacade } from "../features/pending/nativeApi";
@@ -25,6 +26,8 @@ import { nativeBackupFacade } from "../features/backup/nativeApi";
 import { SettingsPage } from "../features/settings/SettingsPage";
 import { nativeSettingsFacade } from "../features/settings/nativeApi";
 import { SettingsLlmPreview } from "../features/settings/SettingsLlmPreview";
+import { ImportWizardPreview } from "../features/import/ImportWizardPreview";
+import { OnlineDiscoveryPreview } from "../features/discovery/OnlineDiscoveryPreview";
 import { DiscoveryRoute } from "./DiscoveryRoute";
 import { OverviewPage } from "../features/overview/OverviewPage";
 import { SkillLibraryPage } from "../features/skills/SkillLibraryPage";
@@ -206,6 +209,9 @@ export const appRouter = createBrowserRouter([
             { path: "skill-library", element: <SkillLibraryPreview /> },
             { path: "skill-detail/:skillId", element: <SkillDetailPreview /> },
             { path: "settings-llm", element: <SettingsLlmPreview /> },
+            { path: "security-llm", element: <SecurityLlmPreview /> },
+            { path: "discovery-online", element: <OnlineDiscoveryPreview /> },
+            { path: "import-wizard", element: <ImportWizardPreview /> },
           ],
         },
       ]

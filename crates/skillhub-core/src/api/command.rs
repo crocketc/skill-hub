@@ -368,6 +368,10 @@ pub struct AnalyzeSemanticDuplicates {
 pub struct TranslateDescription {
     pub skill_id: SkillId,
     pub language: String,
+    /// Only an explicit user confirmation may replace a stored revision
+    /// (requirement 5.35); the default keeps revisions refusal-protected.
+    #[serde(default)]
+    pub overwrite_user_revision: bool,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]

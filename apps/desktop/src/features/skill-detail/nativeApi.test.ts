@@ -13,8 +13,8 @@ vi.mock("../../api/bindings", () => ({
 
 describe("native skill detail facade", () => {
   it("maps the native skill projection to summary and metadata", async () => {
-    vi.mocked(queryApplication).mockResolvedValue({
-      type: "skill",
+    const skillPayload = {
+      type: "skill" as const,
       payload: {
         skill_id: "skill-1",
         display_name: "PDF Reader",
@@ -27,11 +27,39 @@ describe("native skill detail facade", () => {
 
         author: null,
         license: "MIT",
-        lifecycle: "Normal",
+        lifecycle: "Normal" as const,
         trial_due: "2026-09-15",
         current_version: null,
       },
-    });
+    };
+    const translationsPayload = {
+      type: "translations" as const,
+      payload: [
+        {
+          record: {
+            skill_id: "skill-1",
+            language: "zh-CN",
+            text: "提取表格的译文",
+            provenance: {
+              source_description_hash: "fnv1a:0abc",
+              provider: "test",
+              model: "test-model",
+              origin: "generated" as const,
+            },
+            origin: "generated" as const,
+          },
+          version_id: "version-1",
+          created_at: "1",
+          updated_at: "2",
+          needs_update: true,
+        },
+      ],
+    };
+    // getSummary 与 getMetadata 各读一次 skill；getMetadata 额外读取持久化译文。
+    vi.mocked(queryApplication)
+      .mockResolvedValueOnce(skillPayload)
+      .mockResolvedValueOnce(skillPayload)
+      .mockResolvedValueOnce(translationsPayload);
 
     await expect(nativeSkillDetailFacade.getSummary("skill-1")).resolves.toMatchObject({
       id: "skill-1",
@@ -41,15 +69,27 @@ describe("native skill detail facade", () => {
       trialDue: "2026-09-15",
     });
     // QA-008：元数据面板的用途来自用户独立字段，不得用译文冒充；显示别名即 display_name。
-    await expect(nativeSkillDetailFacade.getMetadata("skill-1")).resolves.toMatchObject({
+    await expect(nativeSkillDetailFacade.getMetadata("skill-1")).resolves.toEqual({
       alias: "PDF Reader",
       originalDescription: "Extract tables",
       purpose: "用于 PDF 表格提取",
       note: "Review before deployment",
       tags: ["documents", "pdf"],
       license: "MIT",
+      translation: {
+        locale: "zh-CN",
+        model: "test-model",
+        sourceVersion: "version-1",
+        stale: true,
+        text: "提取表格的译文",
+        translatedAt: "2",
+        userRevised: false,
+      },
     });
-    expect(queryApplication).toHaveBeenCalledTimes(2);
+    expect(queryApplication).toHaveBeenCalledWith({
+      type: "list_translations",
+      payload: { skill_id: "skill-1" },
+    });
   });
 
   it("saves metadata patches through the full overwrite contract without dropping fields", async () => {
@@ -67,7 +107,7 @@ describe("native skill detail facade", () => {
         tags: ["documents"],
         author: "Ada",
         license: "MIT",
-        lifecycle: "Normal",
+        lifecycle: "Normal" as const,
         trial_due: null,
         current_version: null,
       },
@@ -115,7 +155,7 @@ describe("native skill detail facade", () => {
         tags: [],
         author: null,
         license: null,
-        lifecycle: "Normal",
+        lifecycle: "Normal" as const,
         trial_due: null,
         current_version: null,
       },
@@ -185,7 +225,7 @@ describe("native skill detail facade", () => {
 
           author: null,
           license: null,
-          lifecycle: "Normal",
+          lifecycle: "Normal" as const,
           trial_due: null,
           // QA-010：后端推导的可读标签与原始版本身份（内容哈希）分离。
           current_version: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
@@ -310,28 +350,39 @@ describe("native skill detail facade", () => {
 
   it("maps the persisted journal into the operation history with an honest limitation", async () => {
     vi.clearAllMocks();
-    vi.mocked(queryApplication).mockResolvedValue({
-      type: "skill_operations",
-      payload: {
-        skill_id: "skill-1",
-        entries: [
-          { operation_id: "op-1", kind: "deploy_skill", phase: "committed", error_code: null },
+    vi.mocked(queryApplication)
+      .mockResolvedValueOnce({
+        type: "skill_operations",
+        payload: {
+          skill_id: "skill-1",
+          entries: [
+            { operation_id: "op-1", kind: "deploy_skill", phase: "committed", error_code: null },
+            {
+              operation_id: "op-2",
+              kind: "remove_skill",
+              phase: "rolled_back",
+              error_code: "operation.conflict",
+            },
+          ],
+          filtered: false,
+          limitation: "skill_dimension_not_recorded",
+        },
+      })
+      .mockResolvedValueOnce({
+        type: "deterministic_duplicates",
+        payload: [
           {
-            operation_id: "op-2",
-            kind: "remove_skill",
-            phase: "rolled_back",
-            error_code: "operation.conflict",
+            skill_id: "skill-1-copy",
+            label: "PDF Reader（副本）",
+            content_hash: "sha256:aa",
           },
         ],
-        filtered: false,
-        limitation: "skill_dimension_not_recorded",
-      },
-    });
+      });
 
     await expect(nativeSkillDetailFacade.getInsights("skill-1")).resolves.toEqual({
       combinations: [],
       dependencies: [],
-      deterministicDuplicates: [],
+      deterministicDuplicates: ["PDF Reader（副本）"],
       externalChanges: [],
       semanticDuplicates: [],
       operationHistory: [
@@ -470,6 +521,138 @@ describe("native skill detail facade", () => {
     expect(executeCommand).toHaveBeenCalledWith({
       type: "set_current_version",
       payload: { skill_id: "skill-1", version_id: "sha256:old" },
+    });
+  });
+});
+
+describe("native translation loop", () => {
+  it("runs translate_description through the typed command with the overwrite flag", async () => {
+    vi.clearAllMocks();
+    vi.mocked(executeCommand).mockResolvedValue({
+      type: "translation_result",
+      payload: {
+        skill_id: "skill-1",
+        language: "zh-CN",
+        text: "提取表格的译文",
+        provenance: {
+          source_description_hash: "fnv1a:0abc",
+          provider: "test",
+          model: "test-model",
+          origin: "generated" as const,
+        },
+      },
+    });
+
+    await expect(
+      nativeSkillDetailFacade.emitIntent({
+        locale: "zh-CN",
+        overwriteUserRevision: true,
+        skillId: "skill-1",
+        type: "translate_description",
+      }),
+    ).resolves.toBeUndefined();
+    expect(executeCommand).toHaveBeenCalledWith({
+      type: "translate_description",
+      payload: {
+        skill_id: "skill-1",
+        language: "zh-CN",
+        overwrite_user_revision: true,
+      },
+    });
+  });
+
+  it("persists edited translation text as a user revision via the dedicated contract", async () => {
+    vi.clearAllMocks();
+    // translationOf 与 saveTranslationRevision 各读一次持久化译文。
+    const translations = {
+      type: "translations" as const,
+      payload: [
+        {
+          record: {
+            skill_id: "skill-1",
+            language: "zh-CN",
+            text: "提取表格的译文",
+            provenance: {
+              source_description_hash: "fnv1a:0abc",
+              provider: "test",
+              model: "test-model",
+              origin: "generated" as const,
+            },
+            origin: "generated" as const,
+          },
+          version_id: "version-1",
+          created_at: "1",
+          updated_at: "2",
+          needs_update: false,
+        },
+      ],
+    };
+    vi.mocked(queryApplication)
+      .mockResolvedValueOnce(translations)
+      .mockResolvedValueOnce(translations)
+      .mockResolvedValue({
+        type: "skill",
+        payload: {
+          skill_id: "skill-1",
+          display_name: "PDF Reader",
+          runtime_name: "pdf-reader",
+          original_description: "Extract tables",
+          translated_description: null,
+          user_note: null,
+          user_purpose: null,
+          tags: [],
+          author: null,
+          license: null,
+          lifecycle: "Normal" as const,
+          trial_due: null,
+          current_version: null,
+        },
+      });
+    vi.mocked(executeCommand)
+      .mockResolvedValueOnce({
+        type: "translation_result",
+        payload: {
+          skill_id: "skill-1",
+          language: "zh-CN",
+          text: "我改的译文",
+          provenance: {
+            source_description_hash: "fnv1a:0abc",
+            provider: "user_revision",
+            model: "user_revision",
+            origin: "user_revision" as const,
+          },
+        },
+      })
+      .mockResolvedValueOnce({
+        type: "operation_summary",
+        payload: { operation_id: "op-2", phase: "committed", message_code: "ok", error_code: null },
+      });
+    vi.mocked(executeCommand).mockResolvedValue({
+      type: "translation_result",
+      payload: {
+        skill_id: "skill-1",
+        language: "zh-CN",
+        text: "我改的译文",
+        provenance: {
+          source_description_hash: "fnv1a:0abc",
+          provider: "user_revision",
+          model: "user_revision",
+          origin: "user_revision" as const,
+        },
+      },
+    });
+
+    await expect(
+      nativeSkillDetailFacade.saveMetadata("skill-1", { translationText: "我改的译文" }),
+    ).resolves.toBeUndefined();
+    expect(executeCommand).toHaveBeenCalledWith({
+      type: "save_user_translation_revision",
+      payload: {
+        skill_id: "skill-1",
+        language: "zh-CN",
+        source_description_hash: "fnv1a:0abc",
+        text: "我改的译文",
+      },
     });
   });
 });

@@ -34,12 +34,13 @@ where
         source_description_hash: &str,
         language: &str,
         profile: Option<&LlmProfile>,
+        overwrite_user_revision: bool,
     ) -> AppResult<TranslationResult> {
         let existing = self.repository.get(skill_id, language).await?;
         if let Some(record) = existing {
             let source_unchanged =
                 record.provenance.source_description_hash == source_description_hash;
-            if record.origin == TranslationOrigin::UserRevision {
+            if record.origin == TranslationOrigin::UserRevision && !overwrite_user_revision {
                 // A user revision is never silently discarded — neither when
                 // the description is unchanged nor when it changed and a
                 // regeneration would overwrite the revision.
@@ -48,7 +49,7 @@ where
                     Severity::Warning,
                 ));
             }
-            if source_unchanged {
+            if source_unchanged && record.origin != TranslationOrigin::UserRevision {
                 return Ok(TranslationResult {
                     skill_id,
                     language: record.language,

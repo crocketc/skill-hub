@@ -404,6 +404,7 @@ fn translation_and_search_helpers_have_stable_wire_shapes() {
         AppCommand::TranslateDescription(skillhub_core::TranslateDescription {
             skill_id,
             language: "zh-CN".into(),
+            overwrite_user_revision: false,
         }),
         AppCommand::SaveUserTranslationRevision(skillhub_core::SaveUserTranslationRevision {
             skill_id,

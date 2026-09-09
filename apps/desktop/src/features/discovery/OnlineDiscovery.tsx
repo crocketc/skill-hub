@@ -70,6 +70,9 @@ export function OnlineDiscovery({ onStartImport, onImportDirectory, facade, impo
   const [searching, setSearching] = useState(false);
   const [page, setPage] = useState<SourceSearchPage | null>(null);
   const [searchError, setSearchError] = useState<string | null>(null);
+  // US-014：AI 搜索辅助默认关闭；开启后只做查询扩展与标记，不替代真实结果。
+  const [assistEnabled, setAssistEnabled] = useState(false);
+  const [assistNotice, setAssistNotice] = useState<string | null>(null);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [installError, setInstallError] = useState<string | null>(null);
   const [libraryNames, setLibraryNames] = useState<Set<string>>(new Set());
@@ -103,9 +106,30 @@ export function OnlineDiscovery({ onStartImport, onImportDirectory, facade, impo
     if (!facade || !query.trim()) return;
     setSearching(true);
     setSearchError(null);
+    setAssistNotice(null);
     try {
-      const result = await facade.searchOnlineSources({ query: query.trim(), limit: 20, owner: null });
-      setPage(result);
+      if (assistEnabled && facade.searchOnlineSourcesAssisted) {
+        try {
+          const assisted = await facade.searchOnlineSourcesAssisted(query.trim());
+          setPage(assisted);
+          if (assisted.ai_assisted) {
+            setAssistNotice(
+              t("discovery.search.assistExtended", {
+                query: assisted.expanded_query ?? query.trim(),
+                count: assisted.items.filter((item) => item.via === "expanded_query").length,
+              }),
+            );
+          }
+        } catch {
+          // 辅助失败回退基础搜索（需求 5.9），并明确告知回退事实。
+          const plain = await facade.searchOnlineSources({ query: query.trim(), limit: 20, owner: null });
+          setPage(plain);
+          setAssistNotice(t("discovery.search.assistFallback"));
+        }
+      } else {
+        const result = await facade.searchOnlineSources({ query: query.trim(), limit: 20, owner: null });
+        setPage(result);
+      }
     } catch {
       setSearchError(t("discovery.search.failed"));
     } finally {
@@ -156,7 +180,20 @@ export function OnlineDiscovery({ onStartImport, onImportDirectory, facade, impo
           <Button disabled={searching || !query.trim()} onClick={() => void search()} variant="secondary">
             {searching ? t("discovery.search.searching") : t("discovery.search.action")}
           </Button>
+          <label className="sh-settings-toggle">
+            <input
+              aria-label={t("discovery.search.assistToggle")}
+              checked={assistEnabled}
+              onChange={(event) => {
+                setAssistEnabled(event.target.checked);
+                setAssistNotice(null);
+              }}
+              type="checkbox"
+            />
+            <span>{t("discovery.search.assistToggle")}</span>
+          </label>
           {searchError ? <p role="alert">{searchError}</p> : null}
+          {assistNotice && !searching ? <p role="status">{assistNotice}</p> : null}
           {searching ? <p role="status">{t("discovery.online.searchingStatus")}</p> : null}
           {page && !searching && page.items.length === 0 ? (
             <p>{t("discovery.online.empty")}</p>
@@ -175,6 +212,11 @@ export function OnlineDiscovery({ onStartImport, onImportDirectory, facade, impo
                       })}
                     </span>
                     <span>{t("discovery.search.installs", { count: hit.installs })}</span>
+                    {hit.via === "expanded_query" ? (
+                      <span className="sh-status sh-status--muted" data-testid={`assist-${hit.source_id}`}>
+                        {t("discovery.search.assistHit")}
+                      </span>
+                    ) : null}
                     {alreadyImported ? (
                       <span className="sh-status sh-status--success" data-testid={`imported-${hit.source_id}`}>
                         {t("discovery.online.alreadyImported")}

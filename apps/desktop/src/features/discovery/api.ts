@@ -22,6 +22,10 @@ export interface DiscoveryFacade {
   getDiscoverySnapshot: () => Promise<DiscoverySnapshot>;
   scanTargets: (scopeIds: string[]) => Promise<ScanResult>;
   searchOnlineSources: (query: SourceSearchQuery) => Promise<SourceSearchPage>;
+  /** Optional AI query extension (US-014): the original query always runs
+   * against the real provider; the AI layer only extends and marks hits.
+   * Absent keeps the plain search behaviour. */
+  searchOnlineSourcesAssisted?: (text: string) => Promise<SourceSearchPage>;
   listSkillRepos: () => Promise<SkillRepo[]>;
   discoverRepoSkills: () => Promise<RepoDiscoveryReport>;
   discoverAgentsLockSkills: () => Promise<AgentsLockEntry[]>;
@@ -60,6 +64,16 @@ export const desktopDiscoveryFacade: DiscoveryFacade = {
     });
     if (result.type !== "source_search_page") {
       throw new Error("Unexpected source search response from the native application.");
+    }
+    return result.payload;
+  },
+  async searchOnlineSourcesAssisted(text) {
+    const result = await queryApplication({
+      type: "search_online_sources_assisted",
+      payload: { text },
+    });
+    if (result.type !== "source_search_page") {
+      throw new Error("Unexpected assisted source search response from the native application.");
     }
     return result.payload;
   },

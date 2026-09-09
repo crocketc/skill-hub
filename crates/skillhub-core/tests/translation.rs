@@ -69,7 +69,14 @@ fn translation_is_saved_separately_and_user_revision_requires_confirmation() {
             let store = MemoryTranslations::default();
             let service = TranslationService::new(store.clone(), Runner);
             let generated = service
-                .translate(skill_id, original, "source-hash", "zh-CN", Some(&profile()))
+                .translate(
+                    skill_id,
+                    original,
+                    "source-hash",
+                    "zh-CN",
+                    Some(&profile()),
+                    false,
+                )
                 .await
                 .unwrap();
             assert_eq!(generated.text, "提取 PDF 文本");
@@ -84,6 +91,7 @@ fn translation_is_saved_separately_and_user_revision_requires_confirmation() {
                     "source-hash",
                     "zh-CN",
                     Some(&profile()),
+                    false,
                 )
                 .await
                 .unwrap_err();
@@ -108,7 +116,7 @@ fn missing_llm_disables_optional_translation() {
         .block_on(async {
             let service = TranslationService::new(MemoryTranslations::default(), Runner);
             let error = service
-                .translate(SkillId::new(), "PDF", "hash", "zh-CN", None)
+                .translate(SkillId::new(), "PDF", "hash", "zh-CN", None, false)
                 .await
                 .unwrap_err();
             assert_eq!(error.code, ErrorCode::LlmNotConfigured);
@@ -132,6 +140,7 @@ fn changed_source_never_silently_overwrites_user_revisions() {
                     "hash-1",
                     "zh-CN",
                     Some(&profile()),
+                    false,
                 )
                 .await
                 .unwrap();
@@ -148,6 +157,7 @@ fn changed_source_never_silently_overwrites_user_revisions() {
                     "hash-2",
                     "zh-CN",
                     Some(&profile()),
+                    false,
                 )
                 .await
                 .unwrap_err();

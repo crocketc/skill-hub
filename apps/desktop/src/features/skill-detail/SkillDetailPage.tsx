@@ -35,6 +35,7 @@ import { VersionTimeline } from "./VersionTimeline";
 import { SourceUpdatePanel } from "./SourceUpdatePanel";
 import { SourceRelinkPanel } from "./SourceRelinkPanel";
 import { RemovalImpactDialog } from "../removal/RemovalImpactDialog";
+import { SemanticDuplicatePanel } from "./SemanticDuplicatePanel";
 import type {
   RemovalFacade,
   RemovalImpact,
@@ -266,7 +267,10 @@ export function SkillDetailPage({
                 />
               ) : null}
               {section === "connections" && insightsQuery.data ? (
-                <ConnectionEvidence insights={insightsQuery.data} />
+                <>
+                  <ConnectionEvidence insights={insightsQuery.data} />
+                  <SemanticDuplicatePanel facade={facade} skillId={skillId} />
+                </>
               ) : null}
               {section === "external" && insightsQuery.data ? (
                 <ExternalHistoryEvidence insights={insightsQuery.data} />
