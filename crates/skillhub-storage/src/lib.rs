@@ -11,6 +11,7 @@ pub use database::{
     PendingApplicationUpdate, ProjectRepository, RecoveryPoint, ScanRepository, SearchRepository,
     UsageEvidenceRepository,
 };
+pub use database::VersionPin;
 pub use library::{CentralLibrary, ManifestFaultHandler, PortableManifestStore};
 pub use skillhub_core::{LibraryManifest, LibraryPaths, PortableSkillRecord};
 pub use version_store::VersionStore;

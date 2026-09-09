@@ -368,12 +368,32 @@ impl RemovalBackend for LocalDeploymentBackend {
                 .count()
                 > 1
         });
+        // QA-001/US-051：删除前重新扫描项目配置、固定版本、组合、
+        // 声明依赖、相关 Skill 和未知外部引用；未知内容只提示不修改。
+        let database = self
+            .database
+            .lock()
+            .map_err(|_| internal("removal.inspect_delete"))?;
+        let managed_target_ids: std::collections::HashSet<String> = deployments
+            .iter()
+            .map(|record| record.target_id.clone())
+            .collect();
+        let matrix = deletion_impact_matrix(
+            &database,
+            skill_id,
+            &managed_target_ids,
+        )?;
         Ok(skillhub_core::RemovalImpact {
             operation_id: OperationId::new(),
             skill_id,
             deployments,
             requires_shared_target_choice,
-            dependencies: Vec::new(),
+            dependencies: matrix.dependencies,
+            project_configs: matrix.project_configs,
+            pinned_versions: matrix.pinned_versions,
+            combinations: matrix.combinations,
+            related_skills: matrix.related_skills,
+            unknown_external_references: matrix.unknown_external_references,
         })
     }
 
@@ -401,7 +421,13 @@ impl RemovalBackend for LocalDeploymentBackend {
             skill_id: deployment.skill_id,
             deployments: vec![deployment],
             requires_shared_target_choice: shared,
+            // 解除部署不删除 Skill 本体，目录/组合/引用维度不适用。
             dependencies: Vec::new(),
+            project_configs: Vec::new(),
+            pinned_versions: Vec::new(),
+            combinations: Vec::new(),
+            related_skills: Vec::new(),
+            unknown_external_references: Vec::new(),
         })
     }
 
@@ -4773,6 +4799,145 @@ fn cleanup_import_state(
     store.clear_current(skill_id)?;
     central.remove_portable_skill(skill_id)?;
     store.discard_sync(version)
+}
+
+/// QA-001：删除影响矩阵的确定性扫描结果（US-051）。
+struct DeletionImpactMatrix {
+    dependencies: Vec<String>,
+    project_configs: Vec<String>,
+    pinned_versions: Vec<skillhub_core::ProjectVersionPin>,
+    combinations: Vec<String>,
+    related_skills: Vec<String>,
+    unknown_external_references: Vec<String>,
+}
+
+/// QA-001：删除前重新扫描项目配置、固定版本、组合、声明依赖、
+/// 相关 Skill 和未知外部引用；未知外部内容只提示、不修改。
+fn deletion_impact_matrix(
+    database: &Database,
+    skill_id: skillhub_core::SkillId,
+    managed_target_ids: &std::collections::HashSet<String>,
+) -> AppResult<DeletionImpactMatrix> {
+    let catalog = database.catalog_repository()?;
+    let own = catalog.get_sync(skill_id)?;
+    let runtime_name = own
+        .as_ref()
+        .map(|skill| skill.runtime_name().to_ascii_lowercase());
+    // 声明依赖：被删 Skill 自己声明的运行要求原文。
+    let dependencies = own
+        .as_ref()
+        .map(|skill| {
+            skill
+                .requirements()
+                .iter()
+                .map(|req| req.name.clone())
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    // 相关 Skill：声明依赖名字与该 Skill 运行名一致的其他 Skill。
+    let mut related_skills = Vec::new();
+    if let Some(runtime_name) = &runtime_name {
+        for other_id in catalog.list_ids_sync()? {
+            if other_id == skill_id {
+                continue;
+            }
+            if let Some(other) = catalog.get_sync(other_id)? {
+                if other
+                    .requirements()
+                    .iter()
+                    .any(|req| req.name.to_ascii_lowercase() == *runtime_name)
+                {
+                    related_skills.push(other.display_name().to_owned());
+                }
+            }
+        }
+    }
+    related_skills.sort();
+    // 轻量组合：成员包含该 Skill 的组合名。
+    let combinations = database
+        .combination_repository()
+        .list()?
+        .into_iter()
+        .filter(|combo| combo.members.contains(&skill_id))
+        .map(|combo| combo.name)
+        .collect();
+    // 项目配置与固定版本。
+    let projects = database.project_repository();
+    let mut project_configs = Vec::new();
+    for project in projects.list()? {
+        // 未写共享配置的项目是常态（读取返回 NotFound），跳过即可。
+        if let Ok(config) = projects.read_shared_config(project.id) {
+            if config.required_skills.iter().any(|req| req.skill_id == skill_id) {
+                project_configs.push(project.name);
+            }
+        }
+    }
+    project_configs.sort();
+    let pinned_versions = projects
+        .list_version_pins()?
+        .into_iter()
+        .filter(|pin| pin.skill_id == skill_id)
+        .map(|pin| skillhub_core::ProjectVersionPin {
+            project_id: pin.project_id,
+            version_id: pin.version_id,
+        })
+        .collect();
+    // 未知外部引用：未由本 Skill 部署托管的已注册目标根下，
+    // 与运行名同名的目录（最多向下两层）。只提示、不修改。
+    let mut unknown_external_references = Vec::new();
+    if let Some(runtime_name) = &runtime_name {
+        if let Some(snapshot) = database.agent_repository().load()? {
+            for target in &snapshot.physical_targets {
+                if managed_target_ids.contains(&target.id) {
+                    continue;
+                }
+                collect_unmanaged_name_matches(
+                    Path::new(&target.path),
+                    runtime_name,
+                    2,
+                    &mut unknown_external_references,
+                );
+            }
+        }
+    }
+    unknown_external_references.sort();
+    Ok(DeletionImpactMatrix {
+        dependencies,
+        project_configs,
+        pinned_versions,
+        combinations,
+        related_skills,
+        unknown_external_references,
+    })
+}
+
+/// QA-001：在目录树中收集与运行名同名的目录路径（大小写不敏感）；
+/// 读取失败的子树按不可见处理，不阻塞影响预览。
+fn collect_unmanaged_name_matches(
+    directory: &Path,
+    runtime_name: &str,
+    remaining_depth: u8,
+    matches: &mut Vec<String>,
+) {
+    let entries = match std::fs::read_dir(directory) {
+        Ok(entries) => entries,
+        Err(_) => return,
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_dir() {
+            continue;
+        }
+        let is_match = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(|name| name.eq_ignore_ascii_case(runtime_name));
+        if is_match {
+            matches.push(path.to_string_lossy().into_owned());
+        } else if remaining_depth > 0 {
+            collect_unmanaged_name_matches(&path, runtime_name, remaining_depth - 1, matches);
+        }
+    }
 }
 
 fn cleanup_import_error(original: AppError, cleanup: AppResult<()>) -> AppError {

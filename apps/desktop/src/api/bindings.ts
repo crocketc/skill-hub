@@ -1184,6 +1184,12 @@ export type ProjectTag = {
 	name: string,
 };
 
+/**  QA-001：项目对某 Skill 的固定版本（US-051“项目固定版本”）。 */
+export type ProjectVersionPin = {
+	project_id: ProjectId,
+	version_id: VersionId,
+};
+
 export type ReadMarkdownFile = {
 	skill_id: SkillId,
 	path: string,
@@ -1260,6 +1266,16 @@ export type RemovalImpact = {
 	deployments: DeploymentRecord[],
 	requires_shared_target_choice: boolean,
 	dependencies: string[],
+	/**
+	 *  QA-001/US-051：删除前必须重新扫描的其余影响维度；
+	 *  `serde(default)` 保持既有持久化操作负载的向后兼容。
+	 */
+	project_configs?: string[],
+	pinned_versions?: ProjectVersionPin[],
+	combinations?: string[],
+	related_skills?: string[],
+	/**  SkillHub 未托管的同名内容路径；只提示、不修改。 */
+	unknown_external_references?: string[],
 };
 
 export type RemovalResult = {

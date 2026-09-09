@@ -45,7 +45,7 @@ pub use import_repository::ImportRepository;
 pub use llm_profile_repository::LlmProfileRepository;
 pub use migrations::MigrationReport;
 pub use operation_repository::OperationRepositorySqlite;
-pub use project_repository::ProjectRepository;
+pub use project_repository::{ProjectRepository, VersionPin};
 pub use recovery_point::RecoveryPoint;
 pub use scan_repository::ScanRepository;
 pub use search_repository::SearchRepository;

@@ -111,7 +111,8 @@ pub use deployment::reconcile::{
     ExternalChangeObservation, ExternalChangeState, ReconcileAction, ReconcilePlan, ReconcileResult,
 };
 pub use deployment::removal::{
-    DeploymentRemovalResult, RemovalChoice, RemovalDecision, RemovalImpact, RemovalResult,
+    DeploymentRemovalResult, ProjectVersionPin, RemovalChoice, RemovalDecision, RemovalImpact,
+    RemovalResult,
 };
 pub use deployment::{
     DeploymentCapabilities, DeploymentMode, DeploymentPlan, DeploymentPlanInput,

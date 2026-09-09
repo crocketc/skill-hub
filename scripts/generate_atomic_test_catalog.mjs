@@ -409,6 +409,18 @@ rows.push(
     evidence: "QA-014",
   },
   {
+    id: "TC-US051-07",
+    story: "US-051 安全删除 Skill",
+    version: "v0.2.0",
+    precondition: "目录中存在带声明依赖的 Skill、包含它的组合、固定版本与共享项目配置，且 Agent 根下有同名未托管目录",
+    action: "触发 PrepareDeleteSkill 影响预览",
+    expected: "影响结果完整报告部署、声明依赖、组合、固定版本（项目+版本）、项目配置、相关 Skill 和未知外部引用路径；未知内容只提示不修改",
+    type: "自动化",
+    automation: "crates/skillhub-application/tests/facade.rs：prepare_delete_reports_the_full_deletion_impact_matrix",
+    result: "通过",
+    evidence: "QA-001",
+  },
+  {
     id: "TC-US016-07",
     story: "US-016 通过统一流程导入 Skill",
     version: "v0.2.0",

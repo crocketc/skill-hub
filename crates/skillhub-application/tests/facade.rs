@@ -27,7 +27,7 @@ use skillhub_core::{
         TargetFactSource, TargetPlan,
     },
     import::ImportCandidate,
-    project::{Project, SavedProjectView, SharedProjectConfig},
+    project::{PortableSource, Project, SavedProjectView, SharedProjectConfig, SharedSkillRequirement},
     search::{SearchDocument, SearchQuery},
     source::{SourceDescriptor, SourceKind, SourceLocator},
     AppCommand, AppQuery as RootAppQuery, ApplicationFacade, DeploymentCapability, ErrorCode,
@@ -1834,6 +1834,146 @@ async fn read_markdown_file_reports_ownership_from_the_domain_matrix() {
     // 无条件 editable: true。
     assert!(file.editable);
     assert_eq!(file.read_only_reason, None);
+}
+
+#[tokio::test]
+async fn prepare_delete_reports_the_full_deletion_impact_matrix() {
+    let database = Database::open_in_memory().expect("database");
+    // 被删技能：运行名 notes，带声明依赖（声明依赖维度）。
+    let skill = Skill::new(SkillId::new(), "notes");
+    database
+        .catalog_repository()
+        .expect("catalog repository")
+        .insert(&skill)
+        .await
+        .expect("insert skill");
+    database
+        .connection_for_test()
+        .execute(
+            "INSERT OR REPLACE INTO catalog_skill_metadata(skill_id,requirements_json,trial_due) VALUES (?1,?2,'')",
+            rusqlite::params![
+                skill.id().to_string(),
+                r#"[{"kind":"Python","name":"python 3.11 runtime","version":null,"explicit":true,"source":"Requires python 3.11"}]"#,
+            ],
+        )
+        .expect("seed declared requirements");
+    // 相关 Skill：另一个技能声明依赖 notes。
+    let dependent = Skill::new(SkillId::new(), "notes packager");
+    database
+        .catalog_repository()
+        .expect("catalog repository")
+        .insert(&dependent)
+        .await
+        .expect("insert dependent skill");
+    database
+        .connection_for_test()
+        .execute(
+            "INSERT OR REPLACE INTO catalog_skill_metadata(skill_id,requirements_json,trial_due) VALUES (?1,?2,'')",
+            rusqlite::params![
+                dependent.id().to_string(),
+                r#"[{"kind":"Mcp","name":"notes","version":null,"explicit":true,"source":"Requires mcp notes"}]"#,
+            ],
+        )
+        .expect("seed dependent requirements");
+    // 组合维度。
+    database
+        .combination_repository()
+        .create("Cleanup combo", &[skill.id()])
+        .expect("create combination");
+    // 项目配置与固定版本维度。
+    let project_root = tempfile::tempdir().expect("project root");
+    let project =
+        Project::new(skillhub_core::ProjectId::new(), "Demo Project", project_root.path());
+    let project = database
+        .project_repository()
+        .register(project)
+        .expect("register project");
+    database
+        .project_repository()
+        .pin_skill_version(
+            project.id,
+            skill.id(),
+            skillhub_core::VersionId::parse(
+                "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            )
+            .expect("version id"),
+        )
+        .expect("pin version");
+    database
+        .project_repository()
+        .write_shared_config(
+            project.id,
+            &SharedProjectConfig::new(
+                "demo-project",
+                vec![SharedSkillRequirement {
+                    skill_id: skill.id(),
+                    source: PortableSource::catalog("notes").expect("portable source"),
+                    name: "notes".into(),
+                    version_constraint: None,
+                    version_id: None,
+                    content_identity: None,
+                    logical_agent_id: None,
+                    project_subdirectory: None,
+                    note: None,
+                }],
+            ),
+        )
+        .expect("write shared config");
+    // 未知外部引用维度：已注册 Agent 根下存在同名未托管目录。
+    let agent_root = tempfile::tempdir().expect("agent root");
+    let external = agent_root.path().join("notes");
+    std::fs::create_dir_all(&external).expect("external copy");
+    std::fs::write(external.join("SKILL.md"), "# notes\n").expect("external marker");
+    database
+        .agent_repository()
+        .replace(&DiscoverySnapshot {
+            generation: "1".into(),
+            observed_at: "2026-09-09T00:00:00Z".into(),
+            instances: Vec::new(),
+            logical_targets: Vec::new(),
+            physical_targets: vec![PhysicalTarget {
+                id: "agent-root".into(),
+                path: agent_root.path().to_string_lossy().into_owned(),
+                exists: true,
+                readable: true,
+                writable: true,
+                case_behavior: "unknown".into(),
+                logical_target_ids: Vec::new(),
+            }],
+        })
+        .expect("seed discovery");
+
+    let library_root = tempfile::tempdir().expect("library root");
+    let facade = LocalApplicationFacade::new_with_library(database, library_root.path());
+    let prepared = facade
+        .execute(AppCommand::PrepareDeleteSkill(PrepareDeleteSkill {
+            skill_id: skill.id(),
+        }))
+        .await
+        .expect("prepare delete");
+    let AppCommandResult::RemovalImpact(impact) = prepared else {
+        panic!("expected removal impact");
+    };
+
+    // QA-001/US-051：删除前必须重新扫描完整影响矩阵。
+    assert!(impact.deployments.is_empty());
+    assert!(
+        !impact.dependencies.is_empty(),
+        "declared dependencies must be reported"
+    );
+    assert_eq!(impact.combinations, vec!["Cleanup combo".to_string()]);
+    assert_eq!(impact.pinned_versions.len(), 1);
+    assert_eq!(impact.pinned_versions[0].project_id, project.id);
+    assert_eq!(impact.project_configs, vec!["Demo Project".to_string()]);
+    assert_eq!(impact.related_skills, vec!["notes packager".to_string()]);
+    let external_path = external.to_string_lossy().into_owned();
+    assert!(
+        impact
+            .unknown_external_references
+            .iter()
+            .any(|path| *path == external_path),
+        "unmanaged copy must be reported as an unknown external reference"
+    );
 }
 
 #[tokio::test]

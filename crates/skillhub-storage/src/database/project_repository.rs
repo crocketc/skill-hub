@@ -12,11 +12,12 @@ const PROJECTS_KEY: &str = "projects";
 const VIEWS_KEY: &str = "saved_project_views";
 const VERSION_PINS_KEY: &str = "project_skill_version_pins";
 
+/// QA-001：项目固定版本记录；删除影响检查需要读取它们。
 #[derive(Clone, Debug, Deserialize, Serialize)]
-struct VersionPin {
-    project_id: ProjectId,
-    skill_id: skillhub_core::SkillId,
-    version_id: skillhub_core::VersionId,
+pub struct VersionPin {
+    pub project_id: ProjectId,
+    pub skill_id: skillhub_core::SkillId,
+    pub version_id: skillhub_core::VersionId,
 }
 
 pub struct ProjectRepository<'a> {
@@ -145,6 +146,11 @@ impl<'a> ProjectRepository<'a> {
         }
         pins.sort_by_key(|pin| (pin.project_id.to_string(), pin.skill_id.to_string()));
         self.write_value(VERSION_PINS_KEY, &pins)
+    }
+
+    /// QA-001：读取全部项目固定版本，供删除影响检查使用。
+    pub fn list_version_pins(&self) -> AppResult<Vec<VersionPin>> {
+        load_value(&self.database.connection, VERSION_PINS_KEY)
     }
 
     pub fn matching_view(&self, id: &str) -> AppResult<Vec<ProjectId>> {
