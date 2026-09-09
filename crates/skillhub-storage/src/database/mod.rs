@@ -11,6 +11,7 @@ pub mod evidence_repository;
 mod ignore_rule_repository;
 mod import_repository;
 mod llm_profile_repository;
+mod llm_provider_repository;
 mod migrations;
 mod operation_repository;
 mod project_repository;
@@ -43,6 +44,7 @@ pub use evidence_repository::UsageEvidenceRepository;
 pub use ignore_rule_repository::IgnoreRuleRepository;
 pub use import_repository::ImportRepository;
 pub use llm_profile_repository::LlmProfileRepository;
+pub use llm_provider_repository::LlmProviderRepository;
 pub use migrations::MigrationReport;
 pub use operation_repository::OperationRepositorySqlite;
 pub use project_repository::{ProjectRepository, VersionPin};
@@ -136,6 +138,10 @@ impl Database {
 
     pub fn llm_profile_repository(&self) -> LlmProfileRepository<'_> {
         LlmProfileRepository::new(self)
+    }
+
+    pub fn llm_provider_repository(&self) -> LlmProviderRepository<'_> {
+        LlmProviderRepository::new(self)
     }
 
     pub fn scan_repository(&self) -> ScanRepository<'_> {

@@ -1,5 +1,28 @@
 use serde::{Deserialize, Serialize};
 
+/// Per-capability LLM switches (requirement 5.42, US-047). Every capability
+/// defaults to off: the product never calls an online model without an
+/// explicit user decision.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, specta::Type)]
+#[serde(deny_unknown_fields, default)]
+pub struct LlmCapabilitySettings {
+    pub safety_check: bool,
+    pub semantic_duplicate: bool,
+    pub description_translation: bool,
+    pub online_search_assist: bool,
+}
+
+impl Default for LlmCapabilitySettings {
+    fn default() -> Self {
+        Self {
+            safety_check: false,
+            semantic_duplicate: false,
+            description_translation: false,
+            online_search_assist: false,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, specta::Type)]
 #[serde(deny_unknown_fields)]
 pub struct DesktopPreferences {
@@ -14,6 +37,20 @@ pub struct DesktopPreferences {
     pub automation_global: bool,
     pub backup_location: String,
     pub backup_retention_days: u32,
+    #[serde(default)]
+    pub default_llm_provider_id: Option<String>,
+    /// AI output language, independent from the interface language
+    /// ("system" follows the interface language).
+    #[serde(default = "default_ai_output_language")]
+    pub ai_output_language: String,
+    #[serde(default)]
+    pub llm_capabilities: LlmCapabilitySettings,
+    #[serde(default)]
+    pub import_auto_ai_check: bool,
+}
+
+fn default_ai_output_language() -> String {
+    "system".into()
 }
 
 impl Default for DesktopPreferences {
@@ -30,6 +67,10 @@ impl Default for DesktopPreferences {
             automation_global: false,
             backup_location: String::new(),
             backup_retention_days: 30,
+            default_llm_provider_id: None,
+            ai_output_language: default_ai_output_language(),
+            llm_capabilities: LlmCapabilitySettings::default(),
+            import_auto_ai_check: false,
         }
     }
 }
@@ -38,6 +79,9 @@ impl DesktopPreferences {
     pub fn validate(&self) -> Result<(), &'static str> {
         if !matches!(self.language.as_str(), "system" | "zh-CN" | "en-US") {
             return Err("unsupported language preference");
+        }
+        if !matches!(self.ai_output_language.as_str(), "system" | "zh-CN" | "en-US") {
+            return Err("unsupported AI output language preference");
         }
         if !matches!(
             self.density.as_str(),

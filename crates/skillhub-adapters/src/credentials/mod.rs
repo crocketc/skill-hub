@@ -1,15 +1,31 @@
-mod macos;
-mod windows;
+//! Credential storage. Secrets live in the operating system vault
+//! (macOS Keychain, Windows Credential Manager) through `OsCredentialStore`;
+//! the application database only ever holds `CredentialRef` identifiers.
+
+mod keyring_backend;
+mod memory;
 
 use async_trait::async_trait;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use skillhub_core::llm::{CredentialRef, CredentialStore};
-use skillhub_core::AppResult;
+use skillhub_core::{AppError, AppResult};
 
-/// A process-only credential store used when an OS vault is unavailable.
-/// The value is never serialised or written to the application database.
+pub use memory::InMemoryCredentialBackend;
+
+/// Platform seam behind [`OsCredentialStore`]. Production builds use the
+/// keyring-backed implementation; tests inject in-memory backends so no test
+/// ever touches a real OS vault or real credential.
+pub trait CredentialBackend: Send + Sync {
+    fn set(&self, account: &str, secret: &str) -> AppResult<()>;
+    fn get(&self, account: &str) -> AppResult<Option<String>>;
+    fn delete(&self, account: &str) -> AppResult<()>;
+}
+
+/// A process-only credential store used when an OS vault is unavailable
+/// (CLI runs, tests). The value is never serialised or written to the
+/// application database.
 #[derive(Clone, Default)]
 pub struct SessionCredentialStore {
     values: Arc<Mutex<HashMap<String, String>>>,
@@ -41,7 +57,62 @@ impl CredentialStore for SessionCredentialStore {
             .get(&reference.id)
             .cloned())
     }
+
+    async fn set(&self, reference: &CredentialRef, secret: &str) -> AppResult<()> {
+        self.values
+            .lock()
+            .expect("credential mutex poisoned")
+            .insert(reference.id.clone(), secret.to_owned());
+        Ok(())
+    }
+
+    async fn delete(&self, reference: &CredentialRef) -> AppResult<()> {
+        self.values
+            .lock()
+            .expect("credential mutex poisoned")
+            .remove(&reference.id);
+        Ok(())
+    }
 }
 
-pub use macos::MacosCredentialStore;
-pub use windows::WindowsCredentialStore;
+/// The production credential store. On macOS and Windows the native OS vault
+/// is used; other platforms fall back to the process-only store, which the
+/// user documentation states honestly.
+pub struct OsCredentialStore {
+    backend: Arc<dyn CredentialBackend>,
+}
+
+impl OsCredentialStore {
+    /// OS-vault-backed store for the current platform.
+    pub fn native() -> Self {
+        Self {
+            backend: Arc::new(keyring_backend::KeyringCredentialBackend::native()),
+        }
+    }
+
+    /// Test seam: run the same contract against an injected backend.
+    pub fn with_backend(backend: Arc<dyn CredentialBackend>) -> Self {
+        Self { backend }
+    }
+}
+
+#[async_trait(?Send)]
+impl CredentialStore for OsCredentialStore {
+    async fn get(&self, reference: &CredentialRef) -> AppResult<Option<String>> {
+        self.backend.get(&reference.id)
+    }
+
+    async fn set(&self, reference: &CredentialRef, secret: &str) -> AppResult<()> {
+        self.backend.set(&reference.id, secret)
+    }
+
+    async fn delete(&self, reference: &CredentialRef) -> AppResult<()> {
+        self.backend.delete(&reference.id)
+    }
+}
+
+/// Shared error mapping for vault access failures. The message never carries
+/// secret material; the recovery action points at the credential settings.
+pub(crate) fn vault_failure() -> AppError {
+    AppError::llm_credential_read_failed()
+}

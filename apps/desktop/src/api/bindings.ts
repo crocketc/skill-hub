@@ -477,6 +477,14 @@ export type DesktopPreferences = {
 	automation_global: boolean,
 	backup_location: string,
 	backup_retention_days: number,
+	default_llm_provider_id?: string | null,
+	/**
+	 *  AI output language, independent from the interface language
+	 *  ("system" follows the interface language).
+	 */
+	ai_output_language?: string,
+	llm_capabilities?: LlmCapabilitySettings,
+	import_auto_ai_check?: boolean,
 };
 
 export type DetachManagement = {
@@ -911,6 +919,18 @@ export type ListSkills = {
 
 export type ListVersions = {
 	skill_id: SkillId,
+};
+
+/**
+ *  Per-capability LLM switches (requirement 5.42, US-047). Every capability
+ *  defaults to off: the product never calls an online model without an
+ *  explicit user decision.
+ */
+export type LlmCapabilitySettings = {
+	safety_check?: boolean,
+	semantic_duplicate?: boolean,
+	description_translation?: boolean,
+	online_search_assist?: boolean,
 };
 
 /**
