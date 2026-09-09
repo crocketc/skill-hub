@@ -48,6 +48,39 @@ export function brandDisplayName(brand: string): string {
 }
 
 /**
+ * QA-014：已知品牌对应的内置 Logo 素材（public/brand/agents/lobehub/）。
+ * 每个条目都必须指向真实存在的素材文件（BrandTag.test.tsx 做双向完整性
+ * 校验）；没有素材的品牌（如 comate）保持颜色标签回退，不伪造图标。
+ */
+export const BRAND_ICON_FILES: Record<string, string> = {
+  anthropic: "anthropic.svg",
+  claude: "anthropic.svg",
+  cline: "cline.svg",
+  codebuddy: "codebuddy.svg",
+  codex: "codex.svg",
+  cursor: "cursor.svg",
+  gemini: "gemini.svg",
+  "github-copilot": "github-copilot.svg",
+  google: "gemini.svg",
+  grok: "grok.svg",
+  hermes: "hermes-agent.svg",
+  kimi: "kimi.svg",
+  openai: "openai.svg",
+  openclaw: "openclaw.svg",
+  opencode: "opencode.svg",
+  qoder: "qoder.svg",
+  trae: "trae.svg",
+  windsurf: "windsurf.svg",
+  zcode: "zai.svg",
+};
+
+/** Bundled logo asset URL for known brands; null keeps the color-tag fallback. */
+export function brandIconSrc(brand: string): string | null {
+  const file = BRAND_ICON_FILES[normalizeBrandKey(brand)];
+  return file ? `/brand/agents/lobehub/${file}` : null;
+}
+
+/**
  * Deterministic preset brand color class per profile id; unknown brands share
  * the neutral tag style. Colors themselves live in BrandTag.css.
  */
@@ -66,8 +99,19 @@ export interface BrandTagProps {
 export function BrandTag({ brand }: BrandTagProps): JSX.Element | null {
   const key = normalizeBrandKey(brand);
   if (!key) return null;
+  const icon = brandIconSrc(brand);
   return (
     <span className={`sh-brand-tag ${brandColorClass(brand)}`} title={brand.trim()}>
+      {icon ? (
+        <img
+          alt=""
+          aria-hidden="true"
+          className="sh-brand-tag__icon"
+          height={16}
+          src={icon}
+          width={16}
+        />
+      ) : null}
       {brandDisplayName(brand)}
     </span>
   );

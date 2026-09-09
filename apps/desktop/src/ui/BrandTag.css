@@ -3,6 +3,7 @@
 .sh-brand-tag {
   display: inline-flex;
   align-items: center;
+  gap: 0.3rem;
   padding: 0.1rem 0.55rem;
   border: 1px solid transparent;
   border-radius: 999px;
@@ -10,6 +11,13 @@
   font-weight: 600;
   line-height: 1.5;
   white-space: nowrap;
+}
+
+/* QA-014：已知品牌在颜色标签内渲染真实 Logo；未知品牌没有图标节点。 */
+.sh-brand-tag__icon {
+  width: 1rem;
+  height: 1rem;
+  flex: none;
 }
 
 .sh-brand-tag--neutral {
