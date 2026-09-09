@@ -283,6 +283,18 @@
      min-content 撑开，让源码编辑器溢出面板、盖住预览；显式
      minmax(0,1fr) 把轨道锁在面板宽度内，横向溢出交给内部滚动。 */
   grid-template-columns: minmax(0, 1fr);
+  /* QA-012：分屏面板在桌面收敛到固定高度，长预览在面板内独立滚动；
+     上限略高于源码编辑器（标题 + 420px + 间距），两个面板底边对齐。 */
+  max-height: 31.5rem;
+  overflow-y: auto;
+}
+
+/* QA-012：阅读与源码模式的直出内容同样收敛到桌面高度上限，
+   超长文档在工作区内部滚动，不再无限撑高页面。 */
+.sh-markdown-workspace > .sh-markdown-renderer,
+.sh-markdown-workspace > .sh-markdown-workspace__source {
+  max-height: 36rem;
+  overflow-y: auto;
 }
 
 .sh-markdown-editor .cm-editor {
