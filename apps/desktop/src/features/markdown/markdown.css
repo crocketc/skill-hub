@@ -279,6 +279,10 @@
 
 .sh-markdown-editor__split > div {
   align-content: start;
+  /* QA-011：无列约束的 grid 隐式 auto 轨道会按 CodeMirror 长行的
+     min-content 撑开，让源码编辑器溢出面板、盖住预览；显式
+     minmax(0,1fr) 把轨道锁在面板宽度内，横向溢出交给内部滚动。 */
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .sh-markdown-editor .cm-editor {
