@@ -37,7 +37,7 @@
 | 前端生产构建 | 通过 | `pnpm --dir apps/desktop build` |
 | 发布静态预检 | 通过 | `node scripts/verify_release_readiness.mjs` 与对应 Node 测试通过（2026-09-09 于 `27042e6`）；工作流、Tauri 启动配置、tag-bound 约束、锁定 action、安装说明和 `dist/.gitkeep` 均通过 |
 | i18n 双语覆盖 | 通过 | `node scripts/i18n-cjk-audit.mjs`：用户可见命中 0；15 行豁免为测试 fixture（豁免理由内置于脚本）；zh/en 键集 parity 测试通过 |
-| 验收执行分流 | 已记录 | 页面/交互先走浏览器自动化；依赖 Tauri、真实文件系统、系统弹窗、真实网络、签名资产和双平台安装的项目必须补桌面人工证据，详见 `docs/development/人工验收清单-2026-09-09.md` |
+| 验收执行分流 | 已记录 | 页面/交互先走浏览器自动化；依赖 Tauri、真实文件系统、系统弹窗、真实网络、签名资产和双平台安装的项目必须补桌面人工证据，详见 `docs/development/人工验收清单-2026-09-10.md` |
 | 兼容性契约 | 通过 | `cargo test -p skillhub-adapters --test profile_contract` |
 | 数据保护页面 | 通过（自动化） | `/settings/data-protection` 已接入备份包校验、恢复预检/冲突决策、组合导出；真实桌面文件烟测待执行 |
 | 备份/恢复/导出 native facade | 通过（自动化） | typed preflight/commit 适配器与 Rust facade 测试通过 |
