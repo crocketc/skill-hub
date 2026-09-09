@@ -22,7 +22,7 @@ skillhub-application = { path = "../../../crates/skillhub-application", version 
 skillhub-core = { path = "../../../crates/skillhub-core", version = "0.1.0" }
 serde_json = "1"
 specta = { version = "2.0.0-rc.25", features = ["derive"] }
-tauri = { version = "2" }
+tauri = { version = "2", features = [] }
 rfd = "0.15"
 tauri-plugin-updater = "2"
 specta-serde = "0.0.12"
