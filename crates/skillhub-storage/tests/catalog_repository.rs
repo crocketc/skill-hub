@@ -90,7 +90,9 @@ fn set_metadata_persists_user_purpose_independently_of_descriptions() {
     assert_eq!(reloaded.note(), Some("keep near docs"));
 
     // 清空用途后原文与备注不受影响。
-    skill.set_metadata(None, None, Default::default(), None, None, None).unwrap();
+    skill
+        .set_metadata(None, None, Default::default(), None, None, None)
+        .unwrap();
     block_on(repo.insert(&skill)).unwrap();
     let reloaded = block_on(repo.get(skill.id())).unwrap().unwrap();
     assert_eq!(reloaded.user_purpose(), None);

@@ -378,11 +378,7 @@ impl RemovalBackend for LocalDeploymentBackend {
             .iter()
             .map(|record| record.target_id.clone())
             .collect();
-        let matrix = deletion_impact_matrix(
-            &database,
-            skill_id,
-            &managed_target_ids,
-        )?;
+        let matrix = deletion_impact_matrix(&database, skill_id, &managed_target_ids)?;
         Ok(skillhub_core::RemovalImpact {
             operation_id: OperationId::new(),
             skill_id,
@@ -3901,7 +3897,9 @@ impl ApplicationFacade for LocalApplicationFacade {
                     .flatten();
                 // QA-010：可读标签在详情查询前计算，哈希不进入展示层。
                 let current_version_label = match current_version.as_ref() {
-                    Some(version_id) => self.readable_current_version_label(skill_id, version_id)?,
+                    Some(version_id) => {
+                        self.readable_current_version_label(skill_id, version_id)?
+                    }
                     None => None,
                 };
                 self.with_database("query.get_skill", move |database| {
@@ -4867,7 +4865,11 @@ fn deletion_impact_matrix(
     for project in projects.list()? {
         // 未写共享配置的项目是常态（读取返回 NotFound），跳过即可。
         if let Ok(config) = projects.read_shared_config(project.id) {
-            if config.required_skills.iter().any(|req| req.skill_id == skill_id) {
+            if config
+                .required_skills
+                .iter()
+                .any(|req| req.skill_id == skill_id)
+            {
                 project_configs.push(project.name);
             }
         }

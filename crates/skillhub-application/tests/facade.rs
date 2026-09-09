@@ -27,7 +27,9 @@ use skillhub_core::{
         TargetFactSource, TargetPlan,
     },
     import::ImportCandidate,
-    project::{PortableSource, Project, SavedProjectView, SharedProjectConfig, SharedSkillRequirement},
+    project::{
+        PortableSource, Project, SavedProjectView, SharedProjectConfig, SharedSkillRequirement,
+    },
     search::{SearchDocument, SearchQuery},
     source::{SourceDescriptor, SourceKind, SourceLocator},
     AppCommand, AppQuery as RootAppQuery, ApplicationFacade, DeploymentCapability, ErrorCode,
@@ -1664,7 +1666,10 @@ async fn commit_import_reads_frontmatter_description_into_the_catalog() {
         panic!("expected skill detail");
     };
     // QA-009：导入必须读取 SKILL.md 头部 description 作为原始说明。
-    assert_eq!(detail.original_description, "Extracts and organizes PDF tables.");
+    assert_eq!(
+        detail.original_description,
+        "Extracts and organizes PDF tables."
+    );
 }
 
 #[tokio::test]
@@ -1714,7 +1719,12 @@ async fn get_skill_exposes_capture_sequence_as_current_version_label() {
     // QA-010：当前版本必须带可读标签（首个捕获版本为 v1）；
     // 内容哈希只留在 current_version 里作为技术身份。
     assert_eq!(detail.current_version_label.as_deref(), Some("v1"));
-    assert!(detail.current_version.as_ref().unwrap().as_str().starts_with("sha256:"));
+    assert!(detail
+        .current_version
+        .as_ref()
+        .unwrap()
+        .as_str()
+        .starts_with("sha256:"));
 }
 
 #[tokio::test]
@@ -1882,8 +1892,11 @@ async fn prepare_delete_reports_the_full_deletion_impact_matrix() {
         .expect("create combination");
     // 项目配置与固定版本维度。
     let project_root = tempfile::tempdir().expect("project root");
-    let project =
-        Project::new(skillhub_core::ProjectId::new(), "Demo Project", project_root.path());
+    let project = Project::new(
+        skillhub_core::ProjectId::new(),
+        "Demo Project",
+        project_root.path(),
+    );
     let project = database
         .project_repository()
         .register(project)
@@ -1968,10 +1981,7 @@ async fn prepare_delete_reports_the_full_deletion_impact_matrix() {
     assert_eq!(impact.related_skills, vec!["notes packager".to_string()]);
     let external_path = external.to_string_lossy().into_owned();
     assert!(
-        impact
-            .unknown_external_references
-            .iter()
-            .any(|path| *path == external_path),
+        impact.unknown_external_references.contains(&external_path),
         "unmanaged copy must be reported as an unknown external reference"
     );
 }

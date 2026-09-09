@@ -18,9 +18,7 @@ pub enum ContentProvenance {
 }
 
 /// QA-013：Markdown 只读原因，与桌面端 `MarkdownReadOnlyReason` 对齐。
-#[derive(
-    Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, specta::Type,
-)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "snake_case")]
 pub enum MarkdownReadOnlyReason {
     Builtin,

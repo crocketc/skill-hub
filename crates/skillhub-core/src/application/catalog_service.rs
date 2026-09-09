@@ -106,6 +106,7 @@ where
         .await
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn set_metadata(
         &self,
         id: SkillId,

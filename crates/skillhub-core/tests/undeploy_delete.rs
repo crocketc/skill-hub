@@ -93,11 +93,11 @@ fn fixture() -> (RemovalService<FakeRemovalBackend>, FakeRemovalBackend) {
         ],
         requires_shared_target_choice: true,
         dependencies: vec!["agent:codex".into(), "project:demo".into()],
-            project_configs: Vec::new(),
-            pinned_versions: Vec::new(),
-            combinations: Vec::new(),
-            related_skills: Vec::new(),
-            unknown_external_references: Vec::new(),
+        project_configs: Vec::new(),
+        pinned_versions: Vec::new(),
+        combinations: Vec::new(),
+        related_skills: Vec::new(),
+        unknown_external_references: Vec::new(),
     };
     let backend = FakeRemovalBackend {
         skill_id,

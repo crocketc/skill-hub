@@ -4,6 +4,7 @@ pub mod export;
 mod library;
 mod version_store;
 
+pub use database::VersionPin;
 pub use database::{
     ApplicationUpdateRepository, CatalogRepositorySqlite, CheckRepositorySqlite,
     CustomAgentRepository, Database, DeploymentRepository, DeploymentRepositorySqlite,
@@ -11,7 +12,6 @@ pub use database::{
     PendingApplicationUpdate, ProjectRepository, RecoveryPoint, ScanRepository, SearchRepository,
     UsageEvidenceRepository,
 };
-pub use database::VersionPin;
 pub use library::{CentralLibrary, ManifestFaultHandler, PortableManifestStore};
 pub use skillhub_core::{LibraryManifest, LibraryPaths, PortableSkillRecord};
 pub use version_store::VersionStore;

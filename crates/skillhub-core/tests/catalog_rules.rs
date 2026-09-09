@@ -72,7 +72,7 @@ fn user_purpose_is_independent_metadata_not_a_description_alias() {
         )
         .expect("metadata update validates");
     // 用途是用户独立撰写的字段，不得用原文或译文冒充。
-    assert_eq!(skill.user_purpose().as_deref(), Some("用于 PDF 表格提取"));
+    assert_eq!(skill.user_purpose(), Some("用于 PDF 表格提取"));
     assert_eq!(skill.original_description(), "Extracts tables");
     assert_eq!(skill.note(), Some("keep near docs"));
 
