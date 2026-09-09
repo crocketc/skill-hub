@@ -26,6 +26,12 @@ pub struct LlmProfile {
     pub credential_ref: Option<CredentialRef>,
     pub timeout_ms: u64,
     pub max_input_bytes: usize,
+    #[serde(default)]
+    pub protocol: crate::llm::provider::LlmProtocolFamily,
+    #[serde(default)]
+    pub deployment: crate::llm::provider::LlmDeployment,
+    #[serde(default)]
+    pub custom_headers: Vec<crate::llm::provider::CustomHeader>,
 }
 
 impl LlmProfile {
@@ -49,14 +55,49 @@ impl LlmProfile {
             credential_ref,
             timeout_ms: 30_000,
             max_input_bytes: 256 * 1024,
+            protocol: Default::default(),
+            deployment: Default::default(),
+            custom_headers: Vec::new(),
         };
         profile.validate()?;
         Ok(profile)
     }
 
+    pub fn with_protocol(
+        mut self,
+        protocol: crate::llm::provider::LlmProtocolFamily,
+    ) -> AppResult<Self> {
+        self.protocol = protocol;
+        self.validate()?;
+        Ok(self)
+    }
+
+    pub fn with_deployment(
+        mut self,
+        deployment: crate::llm::provider::LlmDeployment,
+    ) -> AppResult<Self> {
+        self.deployment = deployment;
+        self.validate()?;
+        Ok(self)
+    }
+
     pub fn validate(&self) -> AppResult<()> {
         let parsed = Url::parse(&self.endpoint).map_err(|_| invalid_profile("endpoint"))?;
-        if parsed.scheme() != "https" || parsed.host_str().is_none() {
+        let host = parsed.host_str().unwrap_or_default();
+        let loopback = host.eq_ignore_ascii_case("localhost")
+            || host.ends_with(".localhost")
+            || host == "[::1]"
+            || host.starts_with("127.");
+        // Plain http is only ever acceptable on loopback: those addresses are
+        // local model services no matter how the deployment flag is set. The
+        // user-facing LlmProviderConfig keeps the stricter rule that requires
+        // the explicit Local deployment.
+        let scheme_ok = match parsed.scheme() {
+            "https" => parsed.host_str().is_some(),
+            "http" => loopback,
+            _ => false,
+        };
+        if !scheme_ok {
             return Err(AppError::new(
                 ErrorCode::LlmEndpointNotAllowed,
                 Severity::Error,

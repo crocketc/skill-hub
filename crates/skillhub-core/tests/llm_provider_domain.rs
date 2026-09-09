@@ -206,7 +206,7 @@ fn custom_headers_reject_invalid_names_and_overflow() {
     let mut overflowing = config;
     for i in 0..16 {
         overflowing = overflowing
-            .with_header(CustomHeader::new(&format!("X-H{i}"), "v", false).expect("header"))
+            .with_header(CustomHeader::new(format!("X-H{i}"), "v", false).expect("header"))
             .expect("header accepted");
     }
     let overflow = overflowing.with_header(

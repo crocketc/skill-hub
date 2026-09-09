@@ -387,7 +387,9 @@ pub fn builtin_provider_presets() -> Vec<LlmProviderPreset> {
             label: "MiniMax".into(),
             protocol: OpenAiCompatible,
             deployment: Online,
-            endpoint: "https://api.minimaxi.com/v1".into(),
+            // Official API hosts are api.minimax.io (international) and
+            // api.minimax.cn (China); minimaxi.com is the docs domain only.
+            endpoint: "https://api.minimax.io/v1".into(),
             requires_credential: true,
             models_hint: None,
             api_docs_url: Some(MINIMAX_DOCS.into()),

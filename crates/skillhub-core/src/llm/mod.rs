@@ -1,3 +1,4 @@
+pub mod connection;
 mod errors;
 mod model;
 pub mod network_gate;
@@ -7,6 +8,7 @@ pub mod search_query;
 mod task;
 pub mod translation;
 
+pub use connection::{ConnectionTestResult, EndpointCheckResult, ModelCheckResult};
 pub use model::{CredentialRef, LlmProfile, LlmTaskKind, LlmTaskRequest, LlmTaskResponse};
 pub use network_gate::NetworkGate;
 pub use provider::{

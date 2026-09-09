@@ -3,24 +3,13 @@ use serde::{Deserialize, Serialize};
 /// Per-capability LLM switches (requirement 5.42, US-047). Every capability
 /// defaults to off: the product never calls an online model without an
 /// explicit user decision.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, specta::Type)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize, specta::Type)]
 #[serde(deny_unknown_fields, default)]
 pub struct LlmCapabilitySettings {
     pub safety_check: bool,
     pub semantic_duplicate: bool,
     pub description_translation: bool,
     pub online_search_assist: bool,
-}
-
-impl Default for LlmCapabilitySettings {
-    fn default() -> Self {
-        Self {
-            safety_check: false,
-            semantic_duplicate: false,
-            description_translation: false,
-            online_search_assist: false,
-        }
-    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, specta::Type)]

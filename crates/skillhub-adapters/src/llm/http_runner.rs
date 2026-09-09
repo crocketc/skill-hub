@@ -1,15 +1,34 @@
 use async_trait::async_trait;
-use reqwest::Client;
-use serde_json::{json, Value};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::time::Duration;
 
+use reqwest::Client;
+use serde_json::Value;
+
+use crate::llm::protocol::{
+    adapter_for, classify_transport_error, map_status, url_for_log, ChatRequestDraft,
+};
 use skillhub_core::llm::{
-    CredentialStore, LlmProfile, LlmTaskRequest, LlmTaskResponse, LlmTaskRunner,
+    ConnectionTestResult, CredentialRef, CredentialStore, EndpointCheckResult, LlmProfile,
+    LlmTaskRequest, LlmTaskResponse, LlmTaskRunner, LlmTaskKind, ModelCheckResult, NetworkGate,
 };
 use skillhub_core::{AppError, AppResult, ErrorCode, OperationId, RecoveryAction, Severity};
 
+const MAX_RETRIES: u32 = 2;
+const RETRY_BACKOFF_BASE_MS: u64 = 100;
+const RETRY_BACKOFF_CAP_MS: u64 = 2_000;
+const MODEL_FETCH_TIMEOUT_MS: u64 = 10_000;
+const ENDPOINT_PROBE_TIMEOUT_MS: u64 = 8_000;
+const CANCEL_POLL_MS: u64 = 50;
+
+/// The production LLM client: protocol adapter dispatch, bounded timeouts,
+/// bounded retries, cooperative cancellation, the network gate and uniform
+/// credential redaction.
+#[derive(Clone)]
 pub struct HttpLlmTaskRunner {
     credentials: Arc<dyn CredentialStore>,
+    network_gate: Option<NetworkGate>,
 }
 
 impl HttpLlmTaskRunner {
@@ -19,52 +38,41 @@ impl HttpLlmTaskRunner {
     {
         Self {
             credentials: credentials as Arc<dyn CredentialStore>,
+            network_gate: None,
         }
     }
 
+    /// Attaches the "disable all networking" gate. Online calls are refused
+    /// while it is closed; local model calls keep running.
+    pub fn with_network_gate(mut self, gate: NetworkGate) -> Self {
+        self.network_gate = Some(gate);
+        self
+    }
+
+    /// Legacy static payload builder kept for existing callers: delegates to
+    /// the protocol adapter for the OpenAI-family payload shape.
     pub fn build_payload(profile: &LlmProfile, request: &LlmTaskRequest) -> AppResult<Value> {
         profile.validate()?;
         validate_input_size(profile, request)?;
-        Ok(json!({
-            "model": profile.model,
-            "messages": [
-                {"role": "system", "content": "Return only JSON matching the supplied schema."},
-                {"role": "user", "content": request.input},
-            ],
-            "temperature": 0,
-            "response_format": {
-                "type": "json_schema",
-                "json_schema": {
-                    "name": request.kind.schema_name(),
-                    "strict": true,
-                    "schema": request.response_schema,
-                }
-            }
-        }))
+        let adapter = adapter_for(profile.protocol);
+        let draft = adapter.chat_request(profile, Some(""), request)?;
+        Ok(draft.body)
     }
 
+    /// Legacy static response parser kept for existing callers.
     pub fn parse_response(
-        _profile: &LlmProfile,
+        profile: &LlmProfile,
         request: &LlmTaskRequest,
         response: Value,
     ) -> AppResult<LlmTaskResponse> {
-        let content = response
-            .get("choices")
-            .and_then(Value::as_array)
-            .and_then(|choices| choices.first())
-            .and_then(|choice| choice.get("message"))
-            .and_then(|message| message.get("content"))
-            .and_then(Value::as_str)
-            .ok_or_else(invalid_response)?;
-        let output: Value = serde_json::from_str(content).map_err(|_| invalid_response())?;
-        if !output.is_object() {
-            return Err(invalid_response());
-        }
-        Ok(LlmTaskResponse {
-            request_id: OperationId::new().to_string(),
-            kind: request.kind,
-            output,
-        })
+        let adapter = adapter_for(profile.protocol);
+        let content = adapter.extract_text(&response)?;
+        parse_content(&content, request.kind)
+            .map(|output| LlmTaskResponse {
+                request_id: OperationId::new().to_string(),
+                kind: request.kind,
+                output,
+            })
     }
 
     pub fn redact_input(input: &str, secret: &str) -> String {
@@ -72,6 +80,169 @@ impl HttpLlmTaskRunner {
             return input.to_owned();
         }
         input.replace(secret, "[REDACTED]")
+    }
+
+    /// Fetches the provider model list across candidate URLs. 404/405 move to
+    /// the next candidate; exhaustion surfaces a model-not-found error that
+    /// the UI answers with manual input.
+    pub async fn fetch_models(&self, profile: &LlmProfile) -> AppResult<Vec<String>> {
+        self.ensure_gate(profile)?;
+        profile.validate()?;
+        let adapter = adapter_for(profile.protocol);
+        let candidates = adapter.model_list_candidates(profile);
+        if candidates.is_empty() {
+            return Err(AppError::llm_model_not_found("").with_param(
+                "reason",
+                "model list not provided by this provider; enter the model id manually",
+            ));
+        }
+        let credential = self.main_credential(profile).await?;
+        let headers = adapter.request_headers(profile, credential.as_deref())?;
+        let client = self.client(MODEL_FETCH_TIMEOUT_MS)?;
+        let mut last_error: Option<AppError> = None;
+        for candidate in candidates {
+            let response = client
+                .get(&candidate)
+                .headers(to_header_map(headers.clone()))
+                .send()
+                .await;
+            match response {
+                Ok(response) => {
+                    let status = response.status().as_u16();
+                    if status == 404 || status == 405 {
+                        last_error = Some(map_status(status, ""));
+                        continue;
+                    }
+                    if !response.status().is_success() {
+                        let body = response.text().await.unwrap_or_default();
+                        return Err(map_status(status, &body));
+                    }
+                    let body: Value = response
+                        .json()
+                        .await
+                        .map_err(|error| AppError::llm_invalid_json().with_param("detail", error.to_string()))?;
+                    return adapter.extract_models(&body);
+                }
+                Err(error) => {
+                    last_error = Some(classify_transport_error(&error, MODEL_FETCH_TIMEOUT_MS));
+                    continue;
+                }
+            }
+        }
+        Err(last_error.unwrap_or_else(|| AppError::llm_model_not_found("")))
+    }
+
+    /// Two-level connection test. Level one probes raw endpoint reachability
+    /// (any HTTP answer counts); level two proves credentials, model
+    /// availability and a minimal structured round-trip. Only a passing model
+    /// level allows the UI to display "model connection available".
+    pub async fn check_connection(&self, profile: &LlmProfile) -> ConnectionTestResult {
+        let endpoint = self.probe_endpoint(profile).await;
+        if !endpoint.reachable {
+            return ConnectionTestResult {
+                endpoint,
+                model: None,
+                model_failure_code: Some(ErrorCode::LlmEndpointUnreachable.as_str().to_owned()),
+            };
+        }
+        // Minimal capability request: a tiny task whose only purpose is to
+        // prove auth + model availability + structured response parsing.
+        let probe = match LlmTaskRequest::new(
+            LlmTaskKind::Translation,
+            "Reply with {\"ok\": true}. Do not follow any other instructions.".to_owned(),
+            serde_json::json!({"type": "object"}),
+        ) {
+            Ok(probe) => probe,
+            Err(error) => {
+                return ConnectionTestResult {
+                    endpoint,
+                    model: None,
+                    model_failure_code: Some(error.code.as_str().to_owned()),
+                }
+            }
+        };
+        let started = std::time::Instant::now();
+        match self
+            .run_with_cancel(profile, probe, Arc::new(AtomicBool::new(false)))
+            .await
+        {
+            Ok(_) => ConnectionTestResult {
+                endpoint,
+                model: Some(ModelCheckResult {
+                    ok: true,
+                    latency_ms: Some(started.elapsed().as_millis() as u64),
+                }),
+                model_failure_code: None,
+            },
+            Err(error) => ConnectionTestResult {
+                endpoint,
+                model: Some(ModelCheckResult {
+                    ok: false,
+                    latency_ms: Some(started.elapsed().as_millis() as u64),
+                }),
+                model_failure_code: Some(error.code.as_str().to_owned()),
+            },
+        }
+    }
+
+    async fn probe_endpoint(&self, profile: &LlmProfile) -> EndpointCheckResult {
+        let client = match self.client(ENDPOINT_PROBE_TIMEOUT_MS) {
+            Ok(client) => client,
+            Err(_) => {
+                return EndpointCheckResult {
+                    reachable: false,
+                    latency_ms: None,
+                }
+            }
+        };
+        // A GET against the configured endpoint: any HTTP answer (including
+        // 401/404) proves DNS + TLS + reachability; only transport failures
+        // mark the endpoint unreachable.
+        let started = std::time::Instant::now();
+        match client.get(profile.endpoint.trim_end_matches('/')).send().await {
+            Ok(_) => EndpointCheckResult {
+                reachable: true,
+                latency_ms: Some(started.elapsed().as_millis() as u64),
+            },
+            Err(_) => EndpointCheckResult {
+                reachable: false,
+                latency_ms: None,
+            },
+        }
+    }
+
+    fn ensure_gate(&self, profile: &LlmProfile) -> AppResult<()> {
+        if let Some(gate) = &self.network_gate {
+            if !gate.allows(profile.deployment) {
+                return Err(
+                    AppError::new(ErrorCode::NetworkDisabled, Severity::Warning)
+                        .with_action(RecoveryAction::Acknowledge),
+                );
+            }
+        }
+        Ok(())
+    }
+
+    fn client(&self, timeout_ms: u64) -> AppResult<Client> {
+        Client::builder()
+            .timeout(Duration::from_millis(timeout_ms))
+            .no_proxy()
+            .build()
+            .map_err(|error| AppError::llm_endpoint_unreachable(format!("client_builder: {error}")))
+    }
+
+    async fn main_credential(&self, profile: &LlmProfile) -> AppResult<Option<String>> {
+        match &profile.credential_ref {
+            Some(reference) => self.read_credential(reference).await.map(Some),
+            None => Ok(None),
+        }
+    }
+
+    async fn read_credential(&self, reference: &CredentialRef) -> AppResult<String> {
+        self.credentials.get(reference).await?.ok_or_else(|| {
+            AppError::new(ErrorCode::CredentialUnavailable, Severity::Error)
+                .with_action(RecoveryAction::ConfigureCredential)
+        })
     }
 }
 
@@ -82,43 +253,202 @@ impl LlmTaskRunner for HttpLlmTaskRunner {
         profile: &LlmProfile,
         request: LlmTaskRequest,
     ) -> AppResult<LlmTaskResponse> {
-        profile.validate()?;
-        let secret = profile
-            .credential_ref
-            .as_ref()
-            .ok_or_else(credential_unavailable)?;
-        let token = self
-            .credentials
-            .get(secret)
-            .await?
-            .ok_or_else(credential_unavailable)?;
-        let mut request = request;
-        request.input = Self::redact_input(&request.input, &token);
-        let payload = Self::build_payload(profile, &request)?;
-        let client = Client::builder()
-            .timeout(std::time::Duration::from_millis(profile.timeout_ms))
-            .no_proxy()
-            .build()
-            .map_err(|error| transport_error(error.to_string()))?;
-        let response = client
-            .post(&profile.endpoint)
-            .bearer_auth(token)
-            .json(&payload)
-            .send()
+        self.run_with_cancel(profile, request, Arc::new(AtomicBool::new(false)))
             .await
-            .map_err(|error| transport_error(error.to_string()))?;
-        if !response.status().is_success() {
-            return Err(transport_error(format!(
-                "HTTP status {}",
-                response.status()
-            )));
-        }
-        let body = response
-            .json::<Value>()
-            .await
-            .map_err(|error| invalid_response_with_source(error.to_string()))?;
-        Self::parse_response(profile, &request, body)
     }
+}
+
+impl HttpLlmTaskRunner {
+    /// Runs one task with cooperative cancellation: the flag is checked
+    /// before every attempt, during each await point and during retry waits.
+    /// Credentials are re-read per attempt so a rotated secret is used and a
+    /// deleted credential fails fast.
+    pub async fn run_with_cancel(
+        &self,
+        profile: &LlmProfile,
+        mut request: LlmTaskRequest,
+        cancel: Arc<AtomicBool>,
+    ) -> AppResult<LlmTaskResponse> {
+        profile.validate()?;
+        validate_input_size(profile, &request)?;
+        self.ensure_gate(profile)?;
+        let adapter = adapter_for(profile.protocol);
+
+        let mut attempt: u32 = 0;
+        loop {
+            if cancel.load(Ordering::SeqCst) {
+                return Err(AppError::llm_cancelled());
+            }
+            self.ensure_gate(profile)?;
+            let secret = self.main_credential(profile).await?;
+            let mut resolved = profile.clone();
+            for header in &mut resolved.custom_headers {
+                if let Some(reference) = &header.credential_ref {
+                    header.value = Some(self.read_credential(reference).await?);
+                }
+            }
+            // The credential value must never travel inside the prompt.
+            if let Some(secret) = &secret {
+                request.input = Self::redact_input(&request.input, secret);
+            }
+
+            let headers = adapter.request_headers(&resolved, secret.as_deref())?;
+            let mut draft = adapter.chat_request(&resolved, secret.as_deref(), &request)?;
+            draft.headers = headers;
+
+            let client = self.client(profile.timeout_ms)?;
+            match send_with_cancel(&client, &draft, profile.timeout_ms, &cancel).await {
+                Ok(response) => {
+                    let body: Value = match response.json().await {
+                        Ok(body) => body,
+                        Err(parse_error) => {
+                            return Err(
+                                AppError::llm_invalid_json().with_param("detail", parse_error.to_string())
+                            );
+                        }
+                    };
+                    let content = adapter.extract_text(&body)?;
+                    let output = parse_content(&content, request.kind)?;
+                    return Ok(LlmTaskResponse {
+                        request_id: OperationId::new().to_string(),
+                        kind: request.kind,
+                        output,
+                    });
+                }
+                Err((error, retry_after)) => {
+                    let error = with_url(error, &draft.url);
+                    if retryable(&error) && attempt < MAX_RETRIES {
+                        attempt += 1;
+                        self.wait_before_retry(&cancel, retry_after, attempt).await?;
+                        continue;
+                    }
+                    return Err(error);
+                }
+            }
+        }
+    }
+
+    async fn wait_before_retry(
+        &self,
+        cancel: &Arc<AtomicBool>,
+        retry_after_ms: Option<u64>,
+        attempt: u32,
+    ) -> AppResult<()> {
+        let delay = retry_after_ms
+            .unwrap_or_else(|| {
+                (RETRY_BACKOFF_BASE_MS << (attempt - 1).min(4)).min(RETRY_BACKOFF_CAP_MS)
+            })
+            .min(RETRY_BACKOFF_CAP_MS);
+        let deadline = tokio::time::Instant::now() + Duration::from_millis(delay);
+        loop {
+            if cancel.load(Ordering::SeqCst) {
+                return Err(AppError::llm_cancelled());
+            }
+            let now = tokio::time::Instant::now();
+            if now >= deadline {
+                return Ok(());
+            }
+            tokio::time::sleep((deadline - now).min(Duration::from_millis(CANCEL_POLL_MS))).await;
+        }
+    }
+}
+
+/// Sends one request, aborting promptly when cancellation is requested.
+/// Returns `Ok(response)` on a 2xx answer, `Ok(Err((error, retry_after_ms)))`
+/// on a mapped HTTP status and `Err(error)` on transport failures or cancel.
+async fn send_with_cancel(
+    client: &Client,
+    draft: &ChatRequestDraft,
+    timeout_ms: u64,
+    cancel: &Arc<AtomicBool>,
+) -> Result<reqwest::Response, (AppError, Option<u64>)> {
+    let request = client
+        .post(&draft.url)
+        .headers(to_header_map(draft.headers.clone()))
+        .json(&draft.body)
+        .build()
+        .map_err(|error| (AppError::llm_endpoint_unreachable(format!("request_build: {error}")), None))?;
+    let send = client.execute(request);
+    tokio::pin!(send);
+    tokio::select! {
+        biased;
+        _ = poll_cancel(cancel) => Err((AppError::llm_cancelled(), None)),
+        outcome = &mut send => match outcome {
+            Ok(response) => {
+                if response.status().is_success() {
+                    Ok(response)
+                } else {
+                    let status = response.status().as_u16();
+                    let retry_after = if status == 429 {
+                        parse_retry_after(response.headers())
+                    } else {
+                        None
+                    };
+                    let body = response.text().await.unwrap_or_default();
+                    Err((map_status(status, &body), retry_after))
+                }
+            }
+            Err(error) => Err((classify_transport_error(&error, timeout_ms), None)),
+        },
+    }
+}
+
+async fn poll_cancel(cancel: &Arc<AtomicBool>) {
+    loop {
+        if cancel.load(Ordering::SeqCst) {
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(CANCEL_POLL_MS)).await;
+    }
+}
+
+fn retryable(error: &AppError) -> bool {
+    matches!(error.code, ErrorCode::LlmRateLimited | ErrorCode::LlmServerError)
+}
+
+fn with_url(mut error: AppError, url: &str) -> AppError {
+    let endpoint = url_for_log(url);
+    error.params.insert("endpoint".into(), endpoint.into());
+    error
+}
+
+fn parse_retry_after(headers: &reqwest::header::HeaderMap) -> Option<u64> {
+    let value = headers.get(reqwest::header::RETRY_AFTER)?.to_str().ok()?;
+    value.trim().parse::<u64>().ok().map(|secs| secs * 1000)
+}
+
+fn to_header_map(headers: Vec<(String, String)>) -> reqwest::header::HeaderMap {
+    let mut map = reqwest::header::HeaderMap::new();
+    for (name, value) in headers {
+        if let (Ok(name), Ok(value)) = (
+            reqwest::header::HeaderName::from_bytes(name.as_bytes()),
+            reqwest::header::HeaderValue::from_str(&value),
+        ) {
+            map.insert(name, value);
+        }
+    }
+    map
+}
+
+/// The runner-level structured parse: valid JSON object required. Task-level
+/// schema validation happens in the per-task core parsers afterwards.
+fn parse_content(content: &str, kind: LlmTaskKind) -> AppResult<Value> {
+    if content.trim().is_empty() {
+        return Err(AppError::llm_response_interrupted());
+    }
+    let output: Value = serde_json::from_str(content).map_err(|_| {
+        AppError::new(ErrorCode::LlmInvalidStructuredResponse, Severity::Error)
+            .with_action(RecoveryAction::Retry)
+    })?;
+    if !output.is_object() {
+        return Err(AppError::new(
+            ErrorCode::LlmInvalidStructuredResponse,
+            Severity::Error,
+        )
+        .with_action(RecoveryAction::Retry)
+        .with_param("task_kind", kind.schema_name()));
+    }
+    Ok(output)
 }
 
 fn validate_input_size(profile: &LlmProfile, request: &LlmTaskRequest) -> AppResult<()> {
@@ -127,24 +457,4 @@ fn validate_input_size(profile: &LlmProfile, request: &LlmTaskRequest) -> AppRes
             .with_param("max_input_bytes", profile.max_input_bytes));
     }
     Ok(())
-}
-
-fn credential_unavailable() -> AppError {
-    AppError::new(ErrorCode::CredentialUnavailable, Severity::Error)
-        .with_action(RecoveryAction::ConfigureCredential)
-}
-
-fn invalid_response() -> AppError {
-    AppError::new(ErrorCode::LlmInvalidStructuredResponse, Severity::Error)
-        .with_action(RecoveryAction::Retry)
-}
-
-fn invalid_response_with_source(source: String) -> AppError {
-    invalid_response().with_param("source", source)
-}
-
-fn transport_error(source: String) -> AppError {
-    AppError::new(ErrorCode::InternalError, Severity::Error)
-        .with_param("source", source)
-        .with_action(RecoveryAction::Retry)
 }

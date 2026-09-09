@@ -1,6 +1,7 @@
 use skillhub_core::llm::{LlmDeployment, NetworkGate};
 use skillhub_core::settings::DesktopPreferences;
 
+
 #[test]
 fn preferences_gain_llm_capability_fields_with_safe_defaults() {
     let preferences = DesktopPreferences::default();
@@ -38,24 +39,25 @@ fn older_preference_payloads_load_without_new_llm_fields() {
     assert_eq!(preferences.default_llm_provider_id, None);
 }
 
+fn with_output_language(language: &str) -> DesktopPreferences {
+    DesktopPreferences {
+        ai_output_language: language.to_owned(),
+        ..DesktopPreferences::default()
+    }
+}
+
 #[test]
 fn ai_output_language_validates_against_supported_values() {
-    let mut preferences = DesktopPreferences::default();
-    preferences.ai_output_language = "en-US".into();
+    let preferences = with_output_language("en-US");
     preferences.validate().expect("english output language");
-    preferences.ai_output_language = "zh-CN".into();
-    preferences.validate().expect("chinese output language");
-    preferences.ai_output_language = "system".into();
-    preferences.validate().expect("follow interface language");
-    preferences.ai_output_language = "klingon".into();
-    preferences
-        .validate()
-        .expect_err("unsupported output language must be rejected");
+    assert!(with_output_language("zh-CN").validate().is_ok());
+    assert!(with_output_language("system").validate().is_ok());
+    assert!(with_output_language("klingon").validate().is_err());
 }
 
 #[test]
 fn network_gate_stops_online_calls_but_never_local_models() {
-    let mut gate = NetworkGate::closed();
+    let gate = NetworkGate::with_state(false);
     assert!(!gate.allows(LlmDeployment::Online));
     assert!(
         gate.allows(LlmDeployment::Local),
