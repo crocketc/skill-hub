@@ -1684,6 +1684,7 @@ export type SkillResult = {
 	translated_description: string | null,
 	user_note: string | null,
 	tags: string[],
+	author: string | null,
 	license: string | null,
 	lifecycle: SkillLifecycle,
 	trial_due: string | null,

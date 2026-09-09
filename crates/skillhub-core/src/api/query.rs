@@ -204,6 +204,7 @@ pub struct SkillResult {
     pub translated_description: Option<String>,
     pub user_note: Option<String>,
     pub tags: Vec<String>,
+    pub author: Option<String>,
     pub license: Option<String>,
     pub lifecycle: SkillLifecycle,
     pub trial_due: Option<String>,

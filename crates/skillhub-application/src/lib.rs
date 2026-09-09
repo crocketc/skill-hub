@@ -3885,6 +3885,7 @@ impl ApplicationFacade for LocalApplicationFacade {
                         translated_description: skill.translated_description,
                         user_note: skill.user_note,
                         tags: skill.tags,
+                        author: skill.author,
                         license: skill.license,
                         lifecycle: skill.lifecycle,
                         trial_due: skill.trial_due,

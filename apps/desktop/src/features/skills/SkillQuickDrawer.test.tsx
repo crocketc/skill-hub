@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
 import { useRef, useState } from "react";
 import { I18nextProvider } from "react-i18next";
 import { MemoryRouter } from "react-router-dom";
@@ -8,7 +8,9 @@ import { createSkillHubI18n } from "../../i18n";
 import "../../styles/base.css";
 import {
   DEFAULT_DRAWER_PREFERENCES,
+  DEFAULT_SKILL_QUERY,
   DEFAULT_TABLE_PREFERENCES,
+  skillLibraryKeys,
   type SkillBatchIntent,
   type SkillDrawerPreferences,
   type SkillLibraryFacade,
@@ -70,6 +72,7 @@ interface MockFacade extends SkillLibraryFacade {
     deleteView: string[];
     emitBatchIntent: SkillBatchIntent[];
     getSkillQuickView: string[];
+    listSkills: number;
     saveDrawerPreferences: SkillDrawerPreferences[];
     saveSkillMetadata: Array<{ skillId: string; patch: { alias?: string | null; note?: string | null } }>;
   };
@@ -90,6 +93,7 @@ function createMockSkillLibraryFacade(options: MockOptions = {}): MockFacade {
     deleteView: [],
     emitBatchIntent: [],
     getSkillQuickView: [],
+    listSkills: 0,
     saveDrawerPreferences: [],
     saveSkillMetadata: [],
   };
@@ -124,6 +128,7 @@ function createMockSkillLibraryFacade(options: MockOptions = {}): MockFacade {
       return undefined;
     },
     async listSkills() {
+      calls.listSkills += 1;
       return { facets: { tags: [] }, items: [], page: 1, pageSize: 25, total: 0 };
     },
     async loadDrawerPreferences() {
@@ -182,6 +187,8 @@ function DrawerHarness({
     clonePreferences(preferences),
   );
   const returnFocusRef = useRef<HTMLButtonElement>(null);
+  // 探针：让技能库列表查询在抽屉测试中真实存在，用于断言元数据保存后的缓存失效。
+  useQuery({ queryFn: () => facade.listSkills(DEFAULT_SKILL_QUERY), queryKey: skillLibraryKeys.root });
   return (
     <>
       <button ref={returnFocusRef} type="button">
@@ -731,4 +738,72 @@ it("does not fetch details while the drawer is disabled", async () => {
   await waitFor(() => {
     expect(facade.calls.getSkillQuickView).toEqual([]);
   });
+});
+
+it("refetches the persisted quick view and library list after a metadata save succeeds", async () => {
+  const quickView: SkillQuickView = { ...QUICK_VIEW, alias: "reader" };
+  const facade = createMockSkillLibraryFacade({
+    quickView,
+    saveSkillMetadata: async () => {
+      // 保存成功后持久层已有新值，模拟失效触发的重新读取读到已保存内容。
+      quickView.alias = "PDF helper";
+    },
+  });
+  await renderDrawer({ facade });
+
+  fireEvent.click(await screen.findByRole("button", { name: "Edit alias" }));
+  const aliasInput = screen.getByRole("textbox", { name: "Alias" });
+  fireEvent.change(aliasInput, { target: { value: "PDF helper" } });
+  fireEvent.blur(aliasInput);
+
+  await waitFor(() => {
+    expect(facade.calls.saveSkillMetadata).toContainEqual({
+      skillId: "skill-pdf",
+      patch: { alias: "PDF helper" },
+    });
+    // 保存成功后快速视图与技能库列表查询都被失效并重新读取。
+    expect(facade.calls.getSkillQuickView).toHaveLength(2);
+    expect(facade.calls.listSkills).toBe(2);
+  });
+  expect(screen.getByText("PDF helper")).toBeVisible();
+});
+
+it("shows a save failure and restores the persisted value when saving metadata fails", async () => {
+  const facade = createMockSkillLibraryFacade({
+    saveSkillMetadata: async () => {
+      throw new Error("metadata write failed");
+    },
+  });
+  await renderDrawer({ facade });
+
+  fireEvent.click(await screen.findByRole("button", { name: "Edit alias" }));
+  const aliasInput = screen.getByRole("textbox", { name: "Alias" });
+  fireEvent.change(aliasInput, { target: { value: "Broken save" } });
+  fireEvent.blur(aliasInput);
+
+  const drawer = await screen.findByTestId("skill-quick-drawer");
+  await waitFor(() => {
+    expect(within(drawer).getByRole("alert")).toHaveTextContent(/was not saved/i);
+  });
+  // 乐观更新被回滚，界面回到已持久化的别名。
+  expect(within(drawer).getByText("reader")).toBeVisible();
+  expect(within(drawer).queryByText("Broken save")).not.toBeInTheDocument();
+});
+
+it("reports a failure instead of silently dropping edits when the facade cannot save metadata", async () => {
+  const facade = createMockSkillLibraryFacade();
+  delete (facade as { saveSkillMetadata?: unknown }).saveSkillMetadata;
+  await renderDrawer({ facade });
+
+  fireEvent.click(await screen.findByRole("button", { name: "Edit alias" }));
+  const aliasInput = screen.getByRole("textbox", { name: "Alias" });
+  fireEvent.change(aliasInput, { target: { value: "Unsaved alias" } });
+  fireEvent.blur(aliasInput);
+
+  const drawer = await screen.findByTestId("skill-quick-drawer");
+  await waitFor(() => {
+    expect(within(drawer).getByRole("alert")).toHaveTextContent(/was not saved/i);
+  });
+  expect(within(drawer).getByText("reader")).toBeVisible();
+  expect(within(drawer).queryByText("Unsaved alias")).not.toBeInTheDocument();
 });

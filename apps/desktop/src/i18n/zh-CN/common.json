@@ -869,6 +869,7 @@
       "moduleVisibility": "抽屉模块",
       "moveBefore": "将{{module}}移到{{before}}之前",
       "preferenceFailure": "偏好未保存，临时布局仍然有效。",
+      "metadataFailure": "别名或备注未保存，已恢复为已保存的内容。",
       "presets": {
         "label": "快速抽屉宽度",
         "nearFull": "近全屏",

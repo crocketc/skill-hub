@@ -252,6 +252,30 @@ rows.push(
     result: "通过",
     evidence: "QA-006",
   },
+  {
+    id: "TC-US039-06",
+    story: "US-039 重命名或重新关联来源",
+    version: "v0.2.0",
+    precondition: "快速抽屉中编辑某 Skill 的显示别名或备注",
+    action: "提交编辑",
+    expected: "编辑通过原生 set_metadata 持久化；显示别名映射 display_name 且保留标签、作者、许可证；成功后快速视图与技能库列表查询失效并重新读取",
+    type: "自动化",
+    automation: "apps/desktop/src/features/skills/SkillQuickDrawer.test.tsx：refetches the persisted quick view and library list after a metadata save succeeds；apps/desktop/src/features/skills/nativeApi.test.ts：merges an alias patch into the full metadata contract without dropping fields",
+    result: "通过",
+    evidence: "QA-007",
+  },
+  {
+    id: "TC-US039-07",
+    story: "US-039 重命名或重新关联来源",
+    version: "v0.2.0",
+    precondition: "元数据保存失败或门面未接入保存能力",
+    action: "提交抽屉中的别名或备注编辑",
+    expected: "抽屉显示保存失败告警，乐观更新回滚为已持久化的值，不静默丢弃编辑",
+    type: "自动化",
+    automation: "apps/desktop/src/features/skills/SkillQuickDrawer.test.tsx：shows a save failure and restores the persisted value when saving metadata fails；reports a failure instead of silently dropping edits when the facade cannot save metadata",
+    result: "通过",
+    evidence: "QA-007",
+  },
 );
 
 globalRules.forEach((rule) => {

@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   type ComponentType,
   type CSSProperties,
@@ -628,11 +628,13 @@ export function SkillQuickDrawer({
 }: SkillQuickDrawerProps) {
   const { t } = useTranslation();
   const location = useLocation();
+  const queryClient = useQueryClient();
   const [configurationOpen, setConfigurationOpen] = useState(false);
   const [dragWidthPx, setDragWidthPx] = useState<number>();
   const [editingField, setEditingField] = useState<"alias" | "note">();
   const [editingValue, setEditingValue] = useState("");
   const [localPreferenceSaveFailed, setLocalPreferenceSaveFailed] = useState(false);
+  const [metadataSaveFailed, setMetadataSaveFailed] = useState(false);
   const [localView, setLocalView] = useState<SkillQuickView>();
   const [tagAction, setTagAction] = useState<BatchTagAction>();
   const dragSessionRef = useRef<DragSession>();
@@ -880,6 +882,7 @@ export function SkillQuickDrawer({
     const value = editingValue.trim();
     const patch: SkillMetadataPatch =
       editingField === "alias" ? { alias: value || null } : { note: value || null };
+    const persistedView = detailQuery.data;
     setLocalView({
       ...view,
       ...(editingField === "alias"
@@ -888,8 +891,24 @@ export function SkillQuickDrawer({
     });
     setEditingField(undefined);
     setEditingValue("");
-    const save = facade.saveSkillMetadata?.(view.id, patch);
-    void save?.catch(() => undefined);
+    // QA-007：保存能力未接入或保存失败都必须让用户看到，不能静默吞掉编辑。
+    const save = facade.saveSkillMetadata?.bind(facade);
+    if (!save) {
+      setMetadataSaveFailed(true);
+      if (persistedView) setLocalView(persistedView);
+      return;
+    }
+    void save(view.id, patch).then(
+      () => {
+        setMetadataSaveFailed(false);
+        // 失效技能库根键：前缀匹配同时重新读取列表和当前快速视图。
+        void queryClient.invalidateQueries({ queryKey: skillLibraryKeys.root });
+      },
+      () => {
+        setMetadataSaveFailed(true);
+        if (persistedView) setLocalView(persistedView);
+      },
+    );
   };
 
   const confirmTagAction = (tags: string[]) => {
@@ -977,6 +996,11 @@ export function SkillQuickDrawer({
           {(preferenceSaveFailed ?? localPreferenceSaveFailed) ? (
             <p className="sh-skill-drawer__alert" role="alert">
               {t("skillLibrary.drawer.preferenceFailure")}
+            </p>
+          ) : null}
+          {metadataSaveFailed ? (
+            <p className="sh-skill-drawer__alert" role="alert">
+              {t("skillLibrary.drawer.metadataFailure")}
             </p>
           ) : null}
 

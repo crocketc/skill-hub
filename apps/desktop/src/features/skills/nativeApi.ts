@@ -117,6 +117,7 @@ function asQuickView(result: AppQueryResult): SkillQuickView {
   const row: SkillTableRow = {
     aiCheck: "not_run",
     agentDeploymentCount: 0,
+    alias: result.payload.display_name,
     basicCheck: "not_run",
     currentVersion: "unknown",
     highRiskCount: 0,
@@ -245,6 +246,7 @@ export const nativeSkillLibraryFacade: SkillLibraryFacade = {
       if (result.type !== "skill") throw unavailableResult();
       const skill = result.payload;
       const view = asQuickView(result);
+      // QA-007：显示别名就是目录里的 display_name，抽屉编辑前需要真实现值。
       // 用真实读模型填充抽屉各模块（FE-05）：身份/版本/检查/部署关系。
       view.currentVersion = skill.current_version ?? "unknown";
       view.purpose = skill.translated_description ?? skill.original_description;
@@ -288,6 +290,31 @@ export const nativeSkillLibraryFacade: SkillLibraryFacade = {
       if (error instanceof SkillLibraryUnavailableError) throw error;
       throw unavailableResult();
     }
+  },
+
+  // QA-007：抽屉别名/备注通过 set_metadata 持久化；该命令是整体覆盖，
+  // 必须先读取当前值合并补丁，避免丢失标签、作者或许可证。
+  async saveSkillMetadata(skillId, patch) {
+    const result = await queryApplication({
+      type: "get_skill",
+      payload: { skill_id: skillId },
+    });
+    if (result.type !== "skill") throw unavailableResult();
+    const skill = result.payload;
+    const commandResult = await executeCommand({
+      type: "set_metadata",
+      payload: {
+        skill_id: skillId,
+        display_name: patch.alias === undefined
+          ? skill.display_name
+          : patch.alias?.trim() || skill.runtime_name,
+        note: patch.note === undefined ? skill.user_note : patch.note || null,
+        tags: skill.tags,
+        author: skill.author,
+        license: skill.license,
+      },
+    });
+    if (commandResult.type !== "operation_summary") throw unavailableResult();
   },
 
   // FE-04 组合视图：读写组合目录；导出走标准导出（缺省格式由偏好决定）。

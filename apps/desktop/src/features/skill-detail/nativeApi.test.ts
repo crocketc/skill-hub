@@ -23,6 +23,8 @@ describe("native skill detail facade", () => {
         translated_description: "提取表格",
         user_note: "Review before deployment",
         tags: ["documents", "pdf"],
+
+        author: null,
         license: "MIT",
         lifecycle: "Normal",
         trial_due: "2026-09-15",
@@ -87,6 +89,8 @@ describe("native skill detail facade", () => {
           translated_description: null,
           user_note: null,
           tags: [],
+
+          author: null,
           license: null,
           lifecycle: "Normal",
           trial_due: null,

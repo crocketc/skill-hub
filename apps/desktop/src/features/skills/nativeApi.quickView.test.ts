@@ -23,6 +23,8 @@ function skillPayload() {
       translated_description: null,
       user_note: null,
       tags: ["pdf"],
+
+      author: null,
       license: "MIT",
       lifecycle: "Normal",
       trial_due: null,

@@ -869,6 +869,7 @@
       "moduleVisibility": "Drawer modules",
       "moveBefore": "Move {{module}} before {{before}}",
       "preferenceFailure": "Preference was not saved. The temporary layout is still active.",
+      "metadataFailure": "Alias or note was not saved. The last saved content was restored.",
       "presets": {
         "label": "Quick drawer width",
         "nearFull": "Near full screen",

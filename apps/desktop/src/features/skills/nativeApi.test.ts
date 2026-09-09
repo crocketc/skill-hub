@@ -1,9 +1,17 @@
 import { describe, expect, it, vi } from "vitest";
-import { queryApplication, type AppQueryResult, type SkillListItem } from "../../api/bindings";
+import {
+  executeCommand,
+  queryApplication,
+  type AppCommandResult,
+  type AppQueryResult,
+  type SkillListItem,
+  type SkillResult,
+} from "../../api/bindings";
 import { DEFAULT_SKILL_QUERY } from "./api";
 import { nativeSkillLibraryFacade } from "./nativeApi";
 
 vi.mock("../../api/bindings", () => ({
+  executeCommand: vi.fn(),
   queryApplication: vi.fn(),
 }));
 
@@ -271,7 +279,7 @@ it("fills the quick drawer duplicate candidates from the deterministic read mode
     if (request.type === "get_skill") {
       return {
         type: "skill",
-        payload: { skill_id: "skill-a", display_name: "Notes A", runtime_name: "notes-a", original_description: "", translated_description: null, user_note: null, tags: [], license: null, lifecycle: "Normal", trial_due: null, current_version: "v-hash" },
+        payload: { skill_id: "skill-a", display_name: "Notes A", runtime_name: "notes-a", original_description: "", translated_description: null, user_note: null, tags: [], author: null, license: null, lifecycle: "Normal", trial_due: null, current_version: "v-hash" },
       };
     }
     if (request.type === "list_deterministic_duplicates") {
@@ -286,4 +294,100 @@ it("fills the quick drawer duplicate candidates from the deterministic read mode
 
   const view = await nativeSkillLibraryFacade.getSkillQuickView("skill-a");
   expect(view.duplicateCandidates).toEqual(["Notes B"]);
+});
+
+function persistedSkill(overrides: Partial<SkillResult> = {}): AppQueryResult {
+  return {
+    type: "skill",
+    payload: {
+      skill_id: "skill-1",
+      display_name: "Renamed Reader",
+      runtime_name: "pdf-reader",
+      original_description: "Extract tables",
+      translated_description: null,
+      user_note: "Keep near docs",
+      tags: ["documents"],
+      author: "Platform team",
+      license: "MIT",
+      lifecycle: "Normal",
+      trial_due: null,
+      current_version: null,
+      ...overrides,
+    },
+  };
+}
+
+function savedSummary(): AppCommandResult {
+  return {
+    type: "operation_summary",
+    payload: {
+      operation_id: "op-metadata-1",
+      phase: "committed",
+      message_code: "metadata.saved",
+      error_code: null,
+    },
+  };
+}
+
+describe("native skill metadata save", () => {
+  it("merges an alias patch into the full metadata contract without dropping fields", async () => {
+    vi.mocked(queryApplication).mockResolvedValue(persistedSkill());
+    vi.mocked(executeCommand).mockResolvedValue(savedSummary());
+
+    await nativeSkillLibraryFacade.saveSkillMetadata!("skill-1", { alias: "PDF helper" });
+
+    expect(queryApplication).toHaveBeenCalledWith({
+      type: "get_skill",
+      payload: { skill_id: "skill-1" },
+    });
+    expect(executeCommand).toHaveBeenCalledWith({
+      type: "set_metadata",
+      payload: {
+        skill_id: "skill-1",
+        display_name: "PDF helper",
+        note: "Keep near docs",
+        tags: ["documents"],
+        author: "Platform team",
+        license: "MIT",
+      },
+    });
+  });
+
+  it("reverts a cleared alias to the runtime name and preserves the other metadata", async () => {
+    vi.mocked(queryApplication).mockResolvedValue(persistedSkill());
+    vi.mocked(executeCommand).mockResolvedValue(savedSummary());
+
+    await nativeSkillLibraryFacade.saveSkillMetadata!("skill-1", { alias: null });
+
+    expect(executeCommand).toHaveBeenCalledWith({
+      type: "set_metadata",
+      payload: {
+        skill_id: "skill-1",
+        display_name: "pdf-reader",
+        note: "Keep near docs",
+        tags: ["documents"],
+        author: "Platform team",
+        license: "MIT",
+      },
+    });
+  });
+
+  it("saves a note without changing the display alias", async () => {
+    vi.mocked(queryApplication).mockResolvedValue(persistedSkill());
+    vi.mocked(executeCommand).mockResolvedValue(savedSummary());
+
+    await nativeSkillLibraryFacade.saveSkillMetadata!("skill-1", { note: "Use for invoices" });
+
+    expect(executeCommand).toHaveBeenCalledWith({
+      type: "set_metadata",
+      payload: {
+        skill_id: "skill-1",
+        display_name: "Renamed Reader",
+        note: "Use for invoices",
+        tags: ["documents"],
+        author: "Platform team",
+        license: "MIT",
+      },
+    });
+  });
 });
