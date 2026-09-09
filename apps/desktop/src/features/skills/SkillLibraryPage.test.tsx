@@ -103,6 +103,7 @@ describe("SkillLibraryPage", () => {
       commitUndeploy: vi.fn(),
       prepareDelete: vi.fn().mockResolvedValue({
         deployments: [], dependentProjects: [], operationId: "delete-pdf", skillId: "skill-pdf", skillName: "PDF Reader",
+        declaredDependencies: [], pinnedVersions: [], combinations: [], relatedSkills: [], unknownExternalReferences: [],
       }),
       commitDelete: vi.fn().mockResolvedValue({ centralSkillDeleted: true }),
     };
@@ -112,8 +113,8 @@ describe("SkillLibraryPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Delete selected Skills" }));
     expect(await screen.findByRole("dialog", { name: "Review batch deletion impact" })).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "Continue to force deletion" }));
-    fireEvent.change(screen.getByLabelText('Type "FORCE DELETE" to continue'), { target: { value: "FORCE DELETE" } });
-    fireEvent.click(screen.getByRole("button", { name: "Force delete 1 Skills" }));
+    // QA-001：二次点击确认取代 FORCE DELETE 文本输入。
+    fireEvent.click(screen.getByRole("button", { name: "Click again to confirm deleting 1 Skills" }));
 
     await waitFor(() => expect(removalFacade.commitDelete).toHaveBeenCalledWith("delete-pdf", {}));
   });
@@ -124,8 +125,8 @@ describe("SkillLibraryPage", () => {
       prepareUndeploy: vi.fn(),
       commitUndeploy: vi.fn(),
       prepareDelete: vi.fn()
-        .mockResolvedValueOnce({ deployments: [], dependentProjects: [], operationId: "delete-pdf", skillId: "skill-pdf", skillName: "PDF Reader" })
-        .mockResolvedValueOnce({ deployments: [], dependentProjects: [], operationId: "delete-docx", skillId: "skill-docx", skillName: "DOCX Writer" }),
+        .mockResolvedValueOnce({ deployments: [], dependentProjects: [], operationId: "delete-pdf", skillId: "skill-pdf", skillName: "PDF Reader", declaredDependencies: [], pinnedVersions: [], combinations: [], relatedSkills: [], unknownExternalReferences: [] })
+        .mockResolvedValueOnce({ deployments: [], dependentProjects: [], operationId: "delete-docx", skillId: "skill-docx", skillName: "DOCX Writer", declaredDependencies: [], pinnedVersions: [], combinations: [], relatedSkills: [], unknownExternalReferences: [] }),
       commitDelete: vi.fn()
         .mockResolvedValueOnce({ centralSkillDeleted: true })
         .mockRejectedValueOnce(new Error("locked by another process")),
@@ -137,8 +138,7 @@ describe("SkillLibraryPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Delete selected Skills" }));
     expect(await screen.findByRole("dialog", { name: "Review batch deletion impact" })).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "Continue to force deletion" }));
-    fireEvent.change(screen.getByLabelText('Type "FORCE DELETE" to continue'), { target: { value: "FORCE DELETE" } });
-    fireEvent.click(screen.getByRole("button", { name: "Force delete 2 Skills" }));
+    fireEvent.click(screen.getByRole("button", { name: "Click again to confirm deleting 2 Skills" }));
 
     const summary = await screen.findByTestId("batch-summary");
     expect(summary).toHaveTextContent("1 succeeded");
@@ -153,6 +153,7 @@ describe("SkillLibraryPage", () => {
       commitUndeploy: vi.fn(),
       prepareDelete: vi.fn().mockResolvedValue({
         deployments: [], dependentProjects: [], operationId: "delete-pdf", skillId: "skill-pdf", skillName: "PDF Reader",
+        declaredDependencies: [], pinnedVersions: [], combinations: [], relatedSkills: [], unknownExternalReferences: [],
       }),
       commitDelete: vi.fn(),
     };
@@ -291,6 +292,7 @@ describe("SkillLibraryPage", () => {
       commitUndeploy: vi.fn(),
       prepareDelete: vi.fn().mockResolvedValue({
         deployments: [], dependentProjects: [], operationId: "delete-pdf", skillId: "skill-pdf", skillName: "PDF Reader",
+        declaredDependencies: [], pinnedVersions: [], combinations: [], relatedSkills: [], unknownExternalReferences: [],
       }),
       commitDelete: vi.fn().mockResolvedValue({ centralSkillDeleted: true }),
     };

@@ -46,6 +46,9 @@ export function BatchOperationSummary({ outcomes }: { outcomes: BatchOutcome[] }
       {STATUS_ORDER.map((status) => {
         const bucket = counts.get(status);
         if (!bucket?.length) return null;
+        // QA-001：结果先显示数量；成功项不再逐条铺开，只有未成功
+        // （跳过/冲突/失败）的条目保持展开供用户处理。
+        if (status === "succeeded") return null;
         return (
           <ul className="sh-workflow-list" key={status}>
             {bucket.map((outcome) => (

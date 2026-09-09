@@ -32,6 +32,19 @@ describe("BatchOperationSummary", () => {
     expect(screen.getByText("权限被拒绝")).toBeVisible();
   });
 
+  it("shows succeeded outcomes as counts only and expands the rest", async () => {
+    // QA-001：批量结果先给数量，成功项不再逐条铺开，失败项保持展开。
+    await renderSummary([
+      { id: "a:codex", label: "PDF · Codex CLI", status: "succeeded", message: "已删除" },
+      { id: "b:codex", label: "Docs · Codex CLI", status: "succeeded", message: "已删除" },
+      { id: "d:codex", label: "Notes · Codex CLI", status: "failed", message: "权限被拒绝" },
+    ]);
+
+    expect(await screen.findByRole("status")).toHaveTextContent("成功 2");
+    expect(screen.queryByTestId("batch-outcome-succeeded")).toBeNull();
+    expect(screen.getByTestId("batch-outcome-failed")).toBeVisible();
+  });
+
   it("renders an honest all-clear state when every outcome succeeded", async () => {
     await renderSummary([
       { id: "a:codex", label: "PDF · Codex CLI", status: "succeeded", message: "已部署" },
@@ -39,5 +52,6 @@ describe("BatchOperationSummary", () => {
 
     expect(await screen.findByRole("status")).toHaveTextContent("成功 1");
     expect(screen.queryByText(/冲突/)).not.toBeInTheDocument();
+    expect(screen.queryByTestId("batch-outcome-succeeded")).toBeNull();
   });
 });

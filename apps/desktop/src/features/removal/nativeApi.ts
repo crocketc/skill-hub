@@ -96,7 +96,18 @@ export const nativeRemovalFacade = {
         path: deployment.target_id,
         physicalId: deployment.target_id,
       })),
-      dependentProjects: impact.dependencies,
+      // QA-001：逐字段映射领域影响矩阵，不再把依赖冒充成关联项目。
+      // 绑定因 serde(default) 将新字段标为可选；后端总是发送，
+      // 此处按缺省空集归一以保持桌面契约稳定。
+      dependentProjects: impact.project_configs ?? [],
+      declaredDependencies: impact.dependencies ?? [],
+      pinnedVersions: (impact.pinned_versions ?? []).map((pin) => ({
+        projectId: pin.project_id,
+        versionId: pin.version_id,
+      })),
+      combinations: impact.combinations ?? [],
+      relatedSkills: impact.related_skills ?? [],
+      unknownExternalReferences: impact.unknown_external_references ?? [],
     };
   },
 

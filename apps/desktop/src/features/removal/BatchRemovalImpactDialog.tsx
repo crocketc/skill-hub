@@ -20,41 +20,16 @@ export function BatchRemovalImpactDialog({
 }: BatchRemovalImpactDialogProps) {
   const { t } = useTranslation();
   const [choices, setChoices] = useState<Record<string, Record<string, RemovalChoice>>>({});
-  const [showForceConfirmation, setShowForceConfirmation] = useState(false);
-  const [forceConfirmed, setForceConfirmed] = useState(false);
+  // QA-001：二次点击确认取代 FORCE DELETE 文本输入——第一次点击
+  // 只改变按钮文案要求再次确认，第二次点击才真正提交。
+  const [armed, setArmed] = useState(false);
   const complete = impacts.every((impact) => impact.deployments.every((deployment) => choices[impact.operationId ?? ""]?.[deployment.id]));
   const count = impacts.length;
-
-  if (showForceConfirmation) {
-    return (
-      <section aria-labelledby="batch-force-delete-title" className="sh-workflow-card sh-removal-impact" role="alertdialog">
-        <p className="sh-eyebrow">{t("removal.batch.eyebrow")}</p>
-        <h2 id="batch-force-delete-title">{t("removal.batch.forceTitle")}</h2>
-        <p>{t("removal.batch.forceDescription", { count })}</p>
-        <label className="sh-onboarding__check">
-          {t("removal.batch.forceInputLabel")}
-          <input
-            aria-label={t("removal.batch.forceInputLabel")}
-            onChange={(event) => setForceConfirmed(event.currentTarget.value === "FORCE DELETE")}
-            type="text"
-          />
-        </label>
-        {error ? <p role="alert">{error}</p> : null}
-        <div className="sh-workflow-actions">
-          <Button disabled={submitting} onClick={() => setShowForceConfirmation(false)} variant="secondary">{t("onboarding.back")}</Button>
-          <Button
-            disabled={!forceConfirmed || submitting}
-            onClick={() => void onConfirm(Object.fromEntries(
-              impacts.map((impact) => [impact.operationId ?? "", choices[impact.operationId ?? ""] ?? {}]),
-            ))}
-            variant="danger"
-          >
-            {submitting ? t("removal.submitting") : t("removal.batch.forceConfirm", { count })}
-          </Button>
-        </div>
-      </section>
-    );
-  }
+  const confirmChoices = () => {
+    void onConfirm(Object.fromEntries(
+      impacts.map((impact) => [impact.operationId ?? "", choices[impact.operationId ?? ""] ?? {}]),
+    ));
+  };
 
   return (
     <section aria-labelledby="batch-removal-impact-heading" className="sh-workflow-card sh-removal-impact" role="dialog">
@@ -87,14 +62,51 @@ export function BatchRemovalImpactDialog({
               </select>
             </label>
           ))}
+          {/* QA-001：完整影响矩阵逐项提示；未知外部内容只提示、不修改。 */}
+          {impact.declaredDependencies.length > 0 ? (
+            <p className="sh-notice">
+              {`${t("removal.batch.impact.declaredDependencies")}: ${impact.declaredDependencies.join(", ")}`}
+            </p>
+          ) : null}
+          {impact.combinations.length > 0 ? (
+            <p className="sh-notice">
+              {`${t("removal.batch.impact.combinations")}: ${impact.combinations.join(", ")}`}
+            </p>
+          ) : null}
+          {impact.pinnedVersions.length > 0 ? (
+            <p className="sh-notice">
+              {t("removal.batch.impact.pinnedVersions", { count: impact.pinnedVersions.length })}
+            </p>
+          ) : null}
+          {impact.relatedSkills.length > 0 ? (
+            <p className="sh-notice">
+              {`${t("removal.batch.impact.relatedSkills")}: ${impact.relatedSkills.join(", ")}`}
+            </p>
+          ) : null}
+          {impact.unknownExternalReferences.length > 0 ? (
+            <p className="sh-notice">
+              {`${t("removal.batch.impact.unknownExternalReferences")}: ${impact.unknownExternalReferences.join(", ")}`}
+            </p>
+          ) : null}
         </section>
       ))}
+      {submitting ? <p role="status">{t("removal.batch.busy", { count })}</p> : null}
       {error ? <p role="alert">{error}</p> : null}
       <div className="sh-workflow-actions">
         <Button disabled={submitting} onClick={onCancel} variant="secondary">{t("actions.cancel")}</Button>
-        <Button disabled={!complete || submitting} onClick={() => setShowForceConfirmation(true)} variant="danger">
-          {t("removal.batch.continue")}
-        </Button>
+        {armed ? (
+          <Button
+            disabled={submitting}
+            onClick={confirmChoices}
+            variant="danger"
+          >
+            {t("removal.batch.armConfirm", { count })}
+          </Button>
+        ) : (
+          <Button disabled={!complete || submitting} onClick={() => setArmed(true)} variant="danger">
+            {t("removal.batch.continue")}
+          </Button>
+        )}
       </div>
     </section>
   );

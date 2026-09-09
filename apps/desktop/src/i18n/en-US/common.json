@@ -1386,13 +1386,19 @@
       "description": "{{count}} Skills are selected for deletion. Handle every deployment relationship first.",
       "noDeployments": "No deployments need handling.",
       "continue": "Continue to force deletion",
-      "forceTitle": "Force deletion?",
-      "forceDescription": "This will handle {{count}} Skills and their deployments using the choices above. This cannot be undone.",
-      "forceInputLabel": "Type \"FORCE DELETE\" to continue",
       "forceConfirm": "Force delete {{count}} Skills",
       "loadError": "Could not read the batch deletion impact. Please try again.",
       "commitError": "The batch deletion did not fully complete. Skills not yet deleted remain unchanged; please review and try again.",
-      "missingPreparation": "No prepared deletion record exists for this item; it cannot be committed."
+      "missingPreparation": "No prepared deletion record exists for this item; it cannot be committed.",
+      "armConfirm": "Click again to confirm deleting {{count}} Skills",
+      "busy": "Deleting {{count}} Skills…",
+      "impact": {
+        "declaredDependencies": "Declared dependencies",
+        "combinations": "Combinations",
+        "pinnedVersions": "Pinned versions: {{count}}",
+        "relatedSkills": "Related skills",
+        "unknownExternalReferences": "Unknown external references (reported only, never modified)"
+      }
     }
   },
   "undeploy": {

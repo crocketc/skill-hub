@@ -1386,13 +1386,19 @@
       "description": "已选择删除 {{count}} 个 Skill。请先处理每个部署关系。",
       "noDeployments": "没有部署关系，可以直接删除。",
       "continue": "继续并强制删除",
-      "forceTitle": "确认强制删除？",
-      "forceDescription": "这会按你刚才选择的方式处理 {{count}} 个 Skill 及其部署。此操作无法撤销。",
-      "forceInputLabel": "输入“FORCE DELETE”以继续",
       "forceConfirm": "强制删除 {{count}} 个 Skill",
       "loadError": "无法读取批量删除影响，请稍后重试。",
       "commitError": "批量删除未能全部完成。尚未删除的 Skill 保持不变，请检查后重试。",
-      "missingPreparation": "缺少已准备的删除记录，无法提交该项。"
+      "missingPreparation": "缺少已准备的删除记录，无法提交该项。",
+      "armConfirm": "再次点击确认删除 {{count}} 个 Skill",
+      "busy": "正在删除 {{count}} 个 Skill…",
+      "impact": {
+        "declaredDependencies": "声明依赖",
+        "combinations": "所在组合",
+        "pinnedVersions": "固定版本：{{count}} 项",
+        "relatedSkills": "相关 Skill",
+        "unknownExternalReferences": "未知外部引用（仅提示，不会修改）"
+      }
     }
   },
   "undeploy": {

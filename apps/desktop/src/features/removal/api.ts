@@ -5,12 +5,24 @@ export type RemovalDeployment = {
   path: string;
   physicalId: string;
 };
+/** QA-001：项目对某 Skill 的固定版本（US-051）。 */
+export type RemovalVersionPin = {
+  projectId: string;
+  versionId: string;
+};
 export type RemovalImpact = {
   operationId?: string;
   skillId: string;
   skillName: string;
   deployments: RemovalDeployment[];
+  /** 共享项目配置要求该 Skill 的项目名。 */
   dependentProjects: string[];
+  /** QA-001：删除前重新扫描的其余影响维度（US-051）。 */
+  declaredDependencies: string[];
+  pinnedVersions: RemovalVersionPin[];
+  combinations: string[];
+  relatedSkills: string[];
+  unknownExternalReferences: string[];
 };
 
 export type RemovalResult = {
@@ -44,5 +56,10 @@ export function removalImpactFixture(): RemovalImpact {
       { id: "claude", label: "Claude Code", path: "C:/Users/demo/.claude/skills", physicalId: "claude-skills" },
     ],
     dependentProjects: ["Demo Project"],
+    declaredDependencies: [],
+    pinnedVersions: [],
+    combinations: [],
+    relatedSkills: [],
+    unknownExternalReferences: [],
   };
 }

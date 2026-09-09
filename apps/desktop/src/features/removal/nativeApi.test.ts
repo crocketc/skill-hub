@@ -80,6 +80,37 @@ it("detaches management through the dedicated command", async () => {
   });
 });
 
+it("maps the full deletion impact matrix onto the desktop contract", async () => {
+  const impact = {
+    operation_id: "op-matrix",
+    skill_id: "skill-notes",
+    deployments: [],
+    requires_shared_target_choice: false,
+    dependencies: ["python 3.11 runtime"],
+    project_configs: ["Demo Project"],
+    pinned_versions: [{ project_id: "project-1", version_id: "sha256:vvvv" }],
+    combinations: ["Cleanup combo"],
+    related_skills: ["notes packager"],
+    unknown_external_references: ["/agents/root/notes"],
+  };
+  vi.mocked(executeCommand).mockResolvedValueOnce({ type: "removal_impact", payload: impact });
+
+  // QA-001：桌面契约必须逐字段映射领域影响矩阵，
+  // 不再把依赖冒充成“关联项目”。
+  await expect(nativeRemovalFacade.prepareDelete("skill-notes", "Notes")).resolves.toEqual({
+    operationId: "op-matrix",
+    skillId: "skill-notes",
+    skillName: "Notes",
+    deployments: [],
+    dependentProjects: ["Demo Project"],
+    declaredDependencies: ["python 3.11 runtime"],
+    pinnedVersions: [{ projectId: "project-1", versionId: "sha256:vvvv" }],
+    combinations: ["Cleanup combo"],
+    relatedSkills: ["notes packager"],
+    unknownExternalReferences: ["/agents/root/notes"],
+  });
+});
+
 it("prepares and commits central Skill deletion with explicit mapped choices", async () => {
   const impact = {
     operation_id: "op-delete",
@@ -99,7 +130,12 @@ it("prepares and commits central Skill deletion with explicit mapped choices", a
       },
     ],
     requires_shared_target_choice: false,
-    dependencies: ["project:demo"],
+    dependencies: [],
+    project_configs: [],
+    pinned_versions: [],
+    combinations: [],
+    related_skills: [],
+    unknown_external_references: [],
   };
   const result = {
     operation_id: "op-delete",
