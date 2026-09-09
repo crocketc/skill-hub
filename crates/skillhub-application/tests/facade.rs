@@ -1783,6 +1783,60 @@ async fn named_version_label_takes_priority_over_capture_sequence() {
 }
 
 #[tokio::test]
+async fn read_markdown_file_reports_ownership_from_the_domain_matrix() {
+    let database = Database::open_in_memory().expect("database");
+    let library_root = tempfile::tempdir().expect("library root");
+    CentralLibrary::initialize(library_root.path()).expect("initialize library");
+    let source = tempfile::tempdir().expect("source");
+    std::fs::write(source.path().join("SKILL.md"), "# Notes\n").expect("write skill");
+    let candidate = ImportCandidate::detected(
+        SourceDescriptor::new(SourceKind::Local, SourceLocator::local_path(source.path())),
+        source.path().to_string_lossy(),
+        ".",
+        "SKILL.md",
+        "Notes",
+    );
+    let facade = LocalApplicationFacade::new_with_library(database, library_root.path());
+    let prepared = facade
+        .execute(AppCommand::PrepareImport(PrepareImport {
+            candidate,
+            tree_hash: None,
+        }))
+        .await
+        .expect("prepared import");
+    let AppCommandResult::PreparedImport(prepared) = prepared else {
+        panic!("expected prepared import");
+    };
+    let committed = facade
+        .execute(AppCommand::CommitImport(skillhub_core::CommitImport {
+            prepared_import_id: prepared.id,
+            decision: skillhub_core::ImportDecision::CopyIntoLibrary,
+        }))
+        .await
+        .expect("committed import");
+    let AppCommandResult::ImportSummary(summary) = committed else {
+        panic!("expected import summary");
+    };
+    let skill_id = summary.items[0].skill_id.expect("imported skill id");
+
+    let read = facade
+        .query(RootAppQuery::ReadMarkdownFile(ReadMarkdownFile {
+            skill_id,
+            path: "SKILL.md".to_string(),
+        }))
+        .await
+        .expect("markdown file");
+    let AppQueryResult::MarkdownFile(file) = read else {
+        panic!("expected markdown file");
+    };
+    // QA-013：复制导入的库内内容是用户自有托管副本——允许显式保存
+    // 原文形成新版本，且可编辑性必须来自领域所有权判定，而不是
+    // 无条件 editable: true。
+    assert!(file.editable);
+    assert_eq!(file.read_only_reason, None);
+}
+
+#[tokio::test]
 async fn failed_import_commit_removes_partial_catalog_and_version_state() {
     let database = Database::open_in_memory().expect("database");
     let library_root = tempfile::tempdir().expect("library root");

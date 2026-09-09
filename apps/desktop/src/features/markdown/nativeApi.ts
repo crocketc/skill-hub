@@ -43,6 +43,8 @@ export const nativeMarkdownFacade: MarkdownFacade = {
         editable: result.payload.editable,
         markdown: result.payload.markdown,
         path: result.payload.path,
+        // QA-013：只读原因来自领域所有权矩阵，前端不伪造所有权。
+        readOnlyReason: result.payload.read_only_reason ?? undefined,
       };
     } catch {
       throw unavailableResult();

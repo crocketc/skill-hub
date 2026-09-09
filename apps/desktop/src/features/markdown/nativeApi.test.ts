@@ -33,6 +33,7 @@ describe("nativeMarkdownFacade", () => {
         editable: true,
         markdown: "# Preview",
         path: "SKILL.md",
+        read_only_reason: null,
       },
     });
     await expect(nativeMarkdownFacade.readMarkdownFile("skill-1", "SKILL.md")).resolves.toEqual({
@@ -40,6 +41,28 @@ describe("nativeMarkdownFacade", () => {
       editable: true,
       markdown: "# Preview",
       path: "SKILL.md",
+      // QA-013：托管副本没有只读原因，前端不伪造所有权。
+      readOnlyReason: undefined,
+    });
+  });
+
+  it("maps the domain read-only reason so ownership drives the editor", async () => {
+    vi.mocked(queryApplication).mockResolvedValue({
+      type: "markdown_file",
+      payload: {
+        content_identity: "sha256:def",
+        editable: false,
+        markdown: "# External",
+        path: "SKILL.md",
+        read_only_reason: "external",
+      },
+    });
+    await expect(nativeMarkdownFacade.readMarkdownFile("skill-1", "SKILL.md")).resolves.toEqual({
+      contentIdentity: "sha256:def",
+      editable: false,
+      markdown: "# External",
+      path: "SKILL.md",
+      readOnlyReason: "external",
     });
   });
 

@@ -4741,12 +4741,22 @@ impl LocalApplicationFacade {
                 .with_param("field", "markdown_encoding")
                 .with_action(RecoveryAction::ChooseAnotherName)
         })?;
+        let (editable, read_only_reason) = {
+            // QA-013：可编辑性来自领域所有权矩阵。v0.2.0 里能进入中央库
+            // 版本记录的内容只有复制导入形成的托管副本（用户自有）；
+            // 内置/插件/未接管外部内容没有进入库的通道。
+            let editability = skillhub_core::catalog::markdown_editability(
+                skillhub_core::catalog::ContentProvenance::ManagedCopy,
+            );
+            (editability.editable, editability.read_only_reason)
+        };
         Ok(AppQueryResult::MarkdownFile(
             skillhub_core::api::MarkdownFileContent {
                 content_identity: identity,
-                editable: true,
+                editable,
                 markdown,
                 path: path.to_owned(),
+                read_only_reason,
             },
         ))
     }

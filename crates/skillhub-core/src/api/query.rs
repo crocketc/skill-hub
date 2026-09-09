@@ -188,6 +188,10 @@ pub struct MarkdownFileContent {
     pub editable: bool,
     pub markdown: String,
     pub path: String,
+    /// QA-013：所有权进入查询结果——只读原因来自领域所有权矩阵；
+    /// 托管副本为 None（可显式保存原文形成新版本）。
+    #[serde(default)]
+    pub read_only_reason: Option<crate::catalog::MarkdownReadOnlyReason>,
 }
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 pub struct DiffVersions {

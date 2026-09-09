@@ -954,6 +954,11 @@ export type MarkdownFileContent = {
 	editable: boolean,
 	markdown: string,
 	path: string,
+	/**
+	 *  QA-013：所有权进入查询结果——只读原因来自领域所有权矩阵；
+	 *  托管副本为 None（可显式保存原文形成新版本）。
+	 */
+	read_only_reason?: MarkdownReadOnlyReason | null,
 };
 
 export type MarkdownFileEntry = {
@@ -961,6 +966,9 @@ export type MarkdownFileEntry = {
 	path: string,
 	primary: boolean,
 };
+
+/**  QA-013：Markdown 只读原因，与桌面端 `MarkdownReadOnlyReason` 对齐。 */
+export type MarkdownReadOnlyReason = "builtin" | "external" | "permission" | "plugin";
 
 /**  Ordered evidence used to compare a candidate with an existing Skill. */
 export type MatchBasis = "canonical_tree_hash" | "skill_hub_identity" | "runtime_name" | "source_locator" | "fts_bm25";
