@@ -211,6 +211,10 @@ pub struct SkillResult {
     pub lifecycle: SkillLifecycle,
     pub trial_due: Option<String>,
     pub current_version: Option<VersionId>,
+    /// QA-010：当前版本的可读标签——用户命名优先，其次 vN 捕获序号；
+    /// 内容哈希只是技术身份，不进入展示标签（不可读时为 None）。
+    #[serde(default)]
+    pub current_version_label: Option<String>,
 }
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 pub struct VersionResult {

@@ -28,7 +28,10 @@ function skillPayload() {
       license: "MIT",
       lifecycle: "Normal",
       trial_due: null,
-      current_version: "v3",
+      // QA-010：current_version 是内容哈希（技术身份），current_version_label
+      // 是后端推导的可读标签；抽屉展示标签，检查查询仍用原始版本身份。
+      current_version: "sha256:3f9a2c7d8e1b4a6f90c2d5e8a1b4c7f0d3e6a9b2c5f8e1a4b7d0c3f6a9b2e5c8",
+      current_version_label: "v3",
     },
   };
 }
@@ -79,21 +82,27 @@ it("enriches the quick view with real check states, versions and deployment rela
   });
 
   const view = await nativeSkillLibraryFacade.getSkillQuickView("skill-pdf");
+  // QA-010：当前版本展示后端可读标签，而不是内容哈希。
   expect(view.currentVersion).toBe("v3");
+  expect(view.currentVersion).not.toContain("sha256:");
   expect(view.basicCheck).toBe("passed");
   expect(view.aiCheck).toBe("failed");
   expect(view.agentDeploymentCount).toBe(1);
   expect(view.agentDeployments?.[0]).toMatchObject({ id: "d1", name: "pdf-reader" });
-  // 检查结果必须按当前版本查询
+  // 检查结果必须按原始版本身份（内容哈希）查询，而不是展示标签
   expect(queryApplication).toHaveBeenCalledWith({
     type: "get_basic_check_result",
-    payload: { skill_id: "skill-pdf", version_id: "v3" },
+    payload: {
+      skill_id: "skill-pdf",
+      version_id: "sha256:3f9a2c7d8e1b4a6f90c2d5e8a1b4c7f0d3e6a9b2c5f8e1a4b7d0c3f6a9b2e5c8",
+    },
   });
 });
 
 it("keeps the quick view honest when the skill has no current version", async () => {
   const payload = skillPayload();
   (payload.payload as { current_version: string | null }).current_version = null;
+  (payload.payload as { current_version_label: string | null }).current_version_label = null;
   vi.mocked(queryApplication).mockImplementation(async (query: unknown) => {
     const request = query as { type: string };
     if (request.type === "get_skill") return payload as never;

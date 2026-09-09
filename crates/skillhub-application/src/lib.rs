@@ -3873,6 +3873,11 @@ impl ApplicationFacade for LocalApplicationFacade {
                     .map(|library| library.current(skill_id))
                     .transpose()?
                     .flatten();
+                // QA-010：可读标签在详情查询前计算，哈希不进入展示层。
+                let current_version_label = match current_version.as_ref() {
+                    Some(version_id) => self.readable_current_version_label(skill_id, version_id)?,
+                    None => None,
+                };
                 self.with_database("query.get_skill", move |database| {
                     let skill = database
                         .catalog_repository()?
@@ -3892,6 +3897,7 @@ impl ApplicationFacade for LocalApplicationFacade {
                         lifecycle: skill.lifecycle,
                         trial_due: skill.trial_due,
                         current_version,
+                        current_version_label,
                     }))
                 })
             }
@@ -4495,6 +4501,36 @@ impl LocalApplicationFacade {
         )))
     }
 
+    /// QA-010：当前版本的可读标签——用户命名优先，其次按捕获顺序的
+    /// vN 序号；两者都不可得时返回 None，绝不把内容哈希当展示标签。
+    fn readable_current_version_label(
+        &self,
+        skill_id: skillhub_core::SkillId,
+        version_id: &skillhub_core::VersionId,
+    ) -> AppResult<Option<String>> {
+        let named = self
+            .with_database("query.current_version_label", |database| {
+                database
+                    .bootstrap_repository()
+                    .version_labels(&[version_id.to_string()])
+            })?
+            .into_iter()
+            .next()
+            .map(|(_, label)| label)
+            .filter(|label| !label.trim().is_empty());
+        if named.is_some() {
+            return Ok(named);
+        }
+        let Some(library) = self.library.as_ref() else {
+            return Ok(None);
+        };
+        let records = library.list(skill_id)?;
+        let (sequence_by_id, _) = version_timeline(library, skill_id, &records);
+        Ok(sequence_by_id
+            .get(version_id)
+            .map(|sequence| format!("v{sequence}")))
+    }
+
     fn list_versions(&self, skill_id: skillhub_core::SkillId) -> AppResult<AppQueryResult> {
         let Some(library) = self.library.as_ref() else {
             return Err(unsupported("query.list_versions"));
@@ -4503,23 +4539,7 @@ impl LocalApplicationFacade {
         let records = library.list(skill_id)?;
         // AR-021：以清单文件修改时间推导捕获顺序，生成用户可读的版本序号；
         // 时间不可得的版本诚实标为无序号。
-        let mut timed: Vec<(i64, &skillhub_core::VersionRecord)> = Vec::new();
-        let mut untimed: Vec<&skillhub_core::VersionRecord> = Vec::new();
-        for record in &records {
-            match library.manifest_modified_epoch(skill_id, &record.id) {
-                Some(epoch) => timed.push((epoch, record)),
-                None => untimed.push(record),
-            }
-        }
-        timed.sort_by_key(|(epoch, _)| *epoch);
-        let mut sequence_by_id: HashMap<&skillhub_core::VersionId, u32> = HashMap::new();
-        for (index, (_, record)) in timed.iter().enumerate() {
-            sequence_by_id.insert(&record.id, (index + 1) as u32);
-        }
-        let epoch_by_id: HashMap<skillhub_core::VersionId, String> = timed
-            .into_iter()
-            .map(|(epoch, record)| (record.id.clone(), epoch.to_string()))
-            .collect();
+        let (sequence_by_id, epoch_by_id) = version_timeline(library, skill_id, &records);
         let label_by_id: HashMap<String, String> = {
             let ids: Vec<String> = records.iter().map(|record| record.id.to_string()).collect();
             self.with_database("query.list_version_labels", |database| {
@@ -5148,6 +5168,32 @@ fn unsupported(operation: &'static str) -> AppError {
     AppError::new(ErrorCode::InternalError, Severity::Error)
         .with_param("operation", operation)
         .with_action(RecoveryAction::Retry)
+}
+
+/// AR-021：以清单文件修改时间推导捕获顺序；时间不可得的版本没有序号。
+/// 返回（版本序号表，捕获时间表）。
+fn version_timeline<'a>(
+    library: &VersionStore,
+    skill_id: skillhub_core::SkillId,
+    records: &'a [skillhub_core::VersionRecord],
+) -> (
+    HashMap<&'a skillhub_core::VersionId, u32>,
+    HashMap<skillhub_core::VersionId, String>,
+) {
+    let mut timed: Vec<(i64, &skillhub_core::VersionRecord)> = Vec::new();
+    for record in records {
+        if let Some(epoch) = library.manifest_modified_epoch(skill_id, &record.id) {
+            timed.push((epoch, record));
+        }
+    }
+    timed.sort_by_key(|(epoch, _)| *epoch);
+    let mut sequence_by_id: HashMap<&skillhub_core::VersionId, u32> = HashMap::new();
+    let mut epoch_by_id: HashMap<skillhub_core::VersionId, String> = HashMap::new();
+    for (index, (epoch, record)) in timed.into_iter().enumerate() {
+        sequence_by_id.insert(&record.id, (index + 1) as u32);
+        epoch_by_id.insert(record.id.clone(), epoch.to_string());
+    }
+    (sequence_by_id, epoch_by_id)
 }
 
 /// 从 https://github.com/{owner}/{repo} 形态的 URL 提取 owner/repo。

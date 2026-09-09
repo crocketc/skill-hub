@@ -187,7 +187,9 @@ describe("native skill detail facade", () => {
           license: null,
           lifecycle: "Normal",
           trial_due: null,
+          // QA-010：后端推导的可读标签与原始版本身份（内容哈希）分离。
           current_version: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          current_version_label: "v3",
         },
       })
       .mockResolvedValueOnce({
@@ -220,7 +222,8 @@ describe("native skill detail facade", () => {
     await expect(nativeSkillDetailFacade.getSummary("skill-1")).resolves.toMatchObject({
       basicCheck: "passed",
       aiCheck: "failed",
-      currentVersion: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      // QA-010：概览展示可读标签，不暴露内容哈希。
+      currentVersion: "v3",
     });
     expect(queryApplication).toHaveBeenCalledTimes(3);
   });

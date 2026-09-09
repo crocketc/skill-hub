@@ -248,7 +248,9 @@ export const nativeSkillLibraryFacade: SkillLibraryFacade = {
       const view = asQuickView(result);
       // QA-007：显示别名就是目录里的 display_name，抽屉编辑前需要真实现值。
       // 用真实读模型填充抽屉各模块（FE-05）：身份/版本/检查/部署关系。
-      view.currentVersion = skill.current_version ?? "unknown";
+      // QA-010：当前版本展示后端推导的可读标签；内容哈希只是技术身份，
+      // 仍用于检查查询等需要精确版本身份的场合。
+      view.currentVersion = skill.current_version_label ?? "unknown";
       // QA-008：用途显示用户独立撰写的字段，不用译文或原文冒充。
       view.purpose = skill.user_purpose ?? "";
       view.originalDescription = skill.original_description;

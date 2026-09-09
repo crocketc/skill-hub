@@ -1692,6 +1692,11 @@ export type SkillResult = {
 	lifecycle: SkillLifecycle,
 	trial_due: string | null,
 	current_version: VersionId | null,
+	/**
+	 *  QA-010：当前版本的可读标签——用户命名优先，其次 vN 捕获序号；
+	 *  内容哈希只是技术身份，不进入展示标签（不可读时为 None）。
+	 */
+	current_version_label?: string | null,
 };
 
 export type SkillSortColumn = "name" | "lifecycle" | "agent_deployments" | "project_deployments" | "version" | "updated";

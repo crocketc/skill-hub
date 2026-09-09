@@ -14,7 +14,7 @@ use skillhub_core::{
         PrepareRestore, PrepareUndeploy, PreviewProjectDirectory, ReadMarkdownFile, RecheckBasic,
         RenameSkill, RestoreDecision, RunBasicCheck, RunLlmSafetyCheck, RunRollingBackup,
         SaveMarkdownContent, SaveSkillContent, SetCurrentVersion, SetFindingDisposition,
-        SetLifecycle, SetMetadata, SetTrial, VerifyBackup,
+        SetLifecycle, SetMetadata, SetTrial, SetVersionLabel, VerifyBackup,
     },
     backup::{
         BackupRetentionPolicy, BackupScope, RestoreConflictDecision, SensitiveContentDecision,
@@ -1665,6 +1665,121 @@ async fn commit_import_reads_frontmatter_description_into_the_catalog() {
     };
     // QA-009：导入必须读取 SKILL.md 头部 description 作为原始说明。
     assert_eq!(detail.original_description, "Extracts and organizes PDF tables.");
+}
+
+#[tokio::test]
+async fn get_skill_exposes_capture_sequence_as_current_version_label() {
+    let database = Database::open_in_memory().expect("database");
+    let library_root = tempfile::tempdir().expect("library root");
+    CentralLibrary::initialize(library_root.path()).expect("initialize library");
+    let source = tempfile::tempdir().expect("source");
+    std::fs::write(source.path().join("SKILL.md"), "# Notes\n").expect("write skill");
+    let candidate = ImportCandidate::detected(
+        SourceDescriptor::new(SourceKind::Local, SourceLocator::local_path(source.path())),
+        source.path().to_string_lossy(),
+        ".",
+        "SKILL.md",
+        "Notes",
+    );
+    let facade = LocalApplicationFacade::new_with_library(database, library_root.path());
+    let prepared = facade
+        .execute(AppCommand::PrepareImport(PrepareImport {
+            candidate,
+            tree_hash: None,
+        }))
+        .await
+        .expect("prepared import");
+    let AppCommandResult::PreparedImport(prepared) = prepared else {
+        panic!("expected prepared import");
+    };
+    let committed = facade
+        .execute(AppCommand::CommitImport(skillhub_core::CommitImport {
+            prepared_import_id: prepared.id,
+            decision: skillhub_core::ImportDecision::CopyIntoLibrary,
+        }))
+        .await
+        .expect("committed import");
+    let AppCommandResult::ImportSummary(summary) = committed else {
+        panic!("expected import summary");
+    };
+    let skill_id = summary.items[0].skill_id.expect("imported skill id");
+
+    let detail = facade
+        .query(RootAppQuery::GetSkill(GetSkill { skill_id }))
+        .await
+        .expect("imported skill detail");
+    let AppQueryResult::Skill(detail) = detail else {
+        panic!("expected skill detail");
+    };
+    // QA-010：当前版本必须带可读标签（首个捕获版本为 v1）；
+    // 内容哈希只留在 current_version 里作为技术身份。
+    assert_eq!(detail.current_version_label.as_deref(), Some("v1"));
+    assert!(detail.current_version.as_ref().unwrap().as_str().starts_with("sha256:"));
+}
+
+#[tokio::test]
+async fn named_version_label_takes_priority_over_capture_sequence() {
+    let database = Database::open_in_memory().expect("database");
+    let library_root = tempfile::tempdir().expect("library root");
+    CentralLibrary::initialize(library_root.path()).expect("initialize library");
+    let source = tempfile::tempdir().expect("source");
+    std::fs::write(source.path().join("SKILL.md"), "# Notes\n").expect("write skill");
+    let candidate = ImportCandidate::detected(
+        SourceDescriptor::new(SourceKind::Local, SourceLocator::local_path(source.path())),
+        source.path().to_string_lossy(),
+        ".",
+        "SKILL.md",
+        "Notes",
+    );
+    let facade = LocalApplicationFacade::new_with_library(database, library_root.path());
+    let prepared = facade
+        .execute(AppCommand::PrepareImport(PrepareImport {
+            candidate,
+            tree_hash: None,
+        }))
+        .await
+        .expect("prepared import");
+    let AppCommandResult::PreparedImport(prepared) = prepared else {
+        panic!("expected prepared import");
+    };
+    let committed = facade
+        .execute(AppCommand::CommitImport(skillhub_core::CommitImport {
+            prepared_import_id: prepared.id,
+            decision: skillhub_core::ImportDecision::CopyIntoLibrary,
+        }))
+        .await
+        .expect("committed import");
+    let AppCommandResult::ImportSummary(summary) = committed else {
+        panic!("expected import summary");
+    };
+    let skill_id = summary.items[0].skill_id.expect("imported skill id");
+    let detail = facade
+        .query(RootAppQuery::GetSkill(GetSkill { skill_id }))
+        .await
+        .expect("imported skill detail");
+    let AppQueryResult::Skill(detail) = detail else {
+        panic!("expected skill detail");
+    };
+    let version_id = detail.current_version.expect("current version");
+
+    facade
+        .execute(AppCommand::SetVersionLabel(SetVersionLabel {
+            skill_id,
+            version_id,
+            label: "稳定版".to_string(),
+        }))
+        .await
+        .expect("named version");
+
+    let detail = facade
+        .query(RootAppQuery::GetSkill(GetSkill { skill_id }))
+        .await
+        .expect("renamed skill detail");
+    let AppQueryResult::Skill(detail) = detail else {
+        panic!("expected skill detail");
+    };
+    // QA-010：用户命名的版本标签优先于 vN 捕获序号。
+    assert_eq!(detail.current_version_label.as_deref(), Some("稳定版"));
 }
 
 #[tokio::test]

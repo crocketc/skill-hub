@@ -54,7 +54,8 @@ function summaryOf(skill: SkillResult): SkillDetailSummary {
     agentDeploymentCount: 0,
     aiCheck: "not_run",
     basicCheck: "not_run",
-    currentVersion: skill.current_version ?? "unknown",
+    // QA-010：概览展示后端推导的可读标签，内容哈希不进入展示层。
+    currentVersion: skill.current_version_label ?? "unknown",
     highRiskCount: 0,
     id: skill.skill_id,
     lifecycle: lifecycleOf(skill),
