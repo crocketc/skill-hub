@@ -69,6 +69,30 @@ pub enum ErrorCode {
     LlmEvidenceReferenceInvalid,
     #[serde(rename = "llm.not_configured")]
     LlmNotConfigured,
+    #[serde(rename = "llm.auth_failed")]
+    LlmAuthFailed,
+    #[serde(rename = "llm.model_not_found")]
+    LlmModelNotFound,
+    #[serde(rename = "llm.rate_limited")]
+    LlmRateLimited,
+    #[serde(rename = "llm.request_timeout")]
+    LlmRequestTimeout,
+    #[serde(rename = "llm.cancelled")]
+    LlmCancelled,
+    #[serde(rename = "llm.endpoint_unreachable")]
+    LlmEndpointUnreachable,
+    #[serde(rename = "llm.server_error")]
+    LlmServerError,
+    #[serde(rename = "llm.invalid_json")]
+    LlmInvalidJson,
+    #[serde(rename = "llm.response_interrupted")]
+    LlmResponseInterrupted,
+    #[serde(rename = "llm.protocol_incompatible")]
+    LlmProtocolIncompatible,
+    #[serde(rename = "llm.credential_read_failed")]
+    LlmCredentialReadFailed,
+    #[serde(rename = "llm.capability_disabled")]
+    LlmCapabilityDisabled,
     #[serde(rename = "translation.user_revision_requires_confirmation")]
     TranslationUserRevisionRequiresConfirmation,
     #[serde(rename = "backup.checksum_mismatch")]
@@ -139,6 +163,18 @@ impl ErrorCode {
             Self::LlmInputTooLarge => "llm.input_too_large",
             Self::LlmEvidenceReferenceInvalid => "llm.evidence_reference_invalid",
             Self::LlmNotConfigured => "llm.not_configured",
+            Self::LlmAuthFailed => "llm.auth_failed",
+            Self::LlmModelNotFound => "llm.model_not_found",
+            Self::LlmRateLimited => "llm.rate_limited",
+            Self::LlmRequestTimeout => "llm.request_timeout",
+            Self::LlmCancelled => "llm.cancelled",
+            Self::LlmEndpointUnreachable => "llm.endpoint_unreachable",
+            Self::LlmServerError => "llm.server_error",
+            Self::LlmInvalidJson => "llm.invalid_json",
+            Self::LlmResponseInterrupted => "llm.response_interrupted",
+            Self::LlmProtocolIncompatible => "llm.protocol_incompatible",
+            Self::LlmCredentialReadFailed => "llm.credential_read_failed",
+            Self::LlmCapabilityDisabled => "llm.capability_disabled",
             Self::TranslationUserRevisionRequiresConfirmation => {
                 "translation.user_revision_requires_confirmation"
             }
