@@ -73,7 +73,7 @@ fn open_existing_requires_and_validates_the_library_manifest() {
 fn both_modes_probe_writability_and_report_an_actionable_error() {
     let root = tempfile::tempdir().unwrap();
     let library = CentralLibrary::create(root.path()).expect("create library");
-    assert!(library.paths().management_dir.join(".write-probe").exists() == false);
+    assert!(!library.paths().management_dir.join(".write-probe").exists());
     let reopened = CentralLibrary::open_existing(root.path()).expect("open library");
     assert_eq!(reopened.load_manifest().unwrap().format_version, 1);
 }

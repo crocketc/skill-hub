@@ -5106,25 +5106,25 @@ impl LocalApplicationFacade {
             if let Err(error) = database.catalog_repository()?.insert_sync(&skill) {
                 return Err(cleanup_import_error(
                     error,
-                    cleanup_import_state(database, &central, &store, skill_id, &version),
+                    cleanup_import_state(database, central, store, skill_id, &version),
                 ));
             }
             if let Err(error) = store.set_current(skill_id, &version.id) {
                 return Err(cleanup_import_error(
                     error,
-                    cleanup_import_state(database, &central, &store, skill_id, &version),
+                    cleanup_import_state(database, central, store, skill_id, &version),
                 ));
             }
             if let Err(error) = central.materialize_current_skill(&skill, &version.id) {
                 return Err(cleanup_import_error(
                     error,
-                    cleanup_import_state(database, &central, &store, skill_id, &version),
+                    cleanup_import_state(database, central, store, skill_id, &version),
                 ));
             }
             if let Err(error) = central.save_portable_skill(&skill, Some(&version.id)) {
                 return Err(cleanup_import_error(
                     error,
-                    cleanup_import_state(database, &central, &store, skill_id, &version),
+                    cleanup_import_state(database, central, store, skill_id, &version),
                 ));
             }
             // 仓库导入（带上游坐标）：git 来源即长期 origin——临时下载目录不是
@@ -5139,7 +5139,7 @@ impl LocalApplicationFacade {
             if let Err(error) = database.source_repository().relink(skill_id, origin_source) {
                 return Err(cleanup_import_error(
                     error,
-                    cleanup_import_state(database, &central, &store, skill_id, &version),
+                    cleanup_import_state(database, central, store, skill_id, &version),
                 ));
             }
             if let Some(upstream) = prepared.candidate.upstream.clone() {
@@ -5149,7 +5149,7 @@ impl LocalApplicationFacade {
                 {
                     return Err(cleanup_import_error(
                         error,
-                        cleanup_import_state(database, &central, &store, skill_id, &version),
+                        cleanup_import_state(database, central, store, skill_id, &version),
                     ));
                 }
             }

@@ -561,7 +561,6 @@ async fn startup_failure_rolls_back_once_without_touching_skill_data() {
     std::fs::create_dir_all(&user_skill).unwrap();
     std::fs::write(central_library.join("skills/demo/SKILL.md"), b"central").unwrap();
     std::fs::write(user_skill.join("SKILL.md"), b"user").unwrap();
-    let central_before = snapshot_tree(&central_library);
     let user_before = snapshot_tree(&user_skill);
     let database = Database::open(&database_path).unwrap();
     let skill_id = SkillId::new();
@@ -571,6 +570,7 @@ async fn startup_failure_rolls_back_once_without_touching_skill_data() {
         .insert_sync(&Skill::new(skill_id, "demo"))
         .unwrap();
     let facade = LocalApplicationFacade::new_with_library(database, &central_library);
+    let central_before = snapshot_tree(&central_library);
     prepare_update(&facade).await;
 
     let result = facade.rollback_if_unhealthy().await.unwrap();

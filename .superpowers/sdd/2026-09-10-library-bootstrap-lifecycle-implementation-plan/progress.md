@@ -44,3 +44,7 @@ Task 9: complete（提交范围：新增只读 `RescanWizard`，初始化入口�
 Task 10: complete（提交范围：删除 onboarding 专用 `restart.ts`、测试、Tauri restart IPC handler 与临时重启调度 trait，移除桌面适配器旧 set-library-root seam；更新器重启能力仍保留；测试结果：`cargo test -p skillhub-desktop --lib` 22 passed，`pnpm --dir apps/desktop test --run src/features/bootstrap/api.test.ts src/features/onboarding/OnboardingBranches.test.tsx` 13 passed，`pnpm --dir apps/desktop typecheck` 通过）。
 
 Task 11: complete（提交范围：补充 library lifecycle 稳定错误码的双语映射与错误测试，增加首次初始化无重启文案的 Playwright 回归；测试结果：`pnpm --dir apps/desktop test --run src/i18n/i18n.test.ts src/api/nativeErrors.test.ts` 15 passed，`pnpm test:e2e -- tests/e2e/onboarding.spec.ts` 2 passed，`pnpm --dir apps/desktop check` 通过）。
+
+Task 12: complete（提交范围：更新四份当前开发文档、原子测试目录与人工复测状态，修正全量回归中暴露的快照时序与 clippy 借用问题，补充实现报告；测试结果：`cargo clippy --workspace --all-targets --all-features -- -D warnings` 通过，`cargo test --workspace --all-features` 通过，前端 Vitest 108 文件/773 测试通过，完整 Playwright 56/56 通过，`pnpm --dir apps/desktop check`、`pnpm --dir apps/desktop build`、Specta 绑定生成校验、catalog/i18n/release 检查通过；本地 CI 的 pnpm audit 在官方 registry 发现既有 devDependency 风险，真实设备人工验收仍待执行）。
+
+Ruling: Task 12 将 facade 更新测试的初始快照移动到 facade 构造之后，因为 Task 1 的集中库初始化会按契约物化管理清单；代价是测试不再把预期初始化产物误报为用户数据变更，且保留真正业务数据回滚断言。
