@@ -807,3 +807,25 @@ it("reports a failure instead of silently dropping edits when the facade cannot 
   expect(within(drawer).getByText("reader")).toBeVisible();
   expect(within(drawer).queryByText("Unsaved alias")).not.toBeInTheDocument();
 });
+
+it("replaces glyph-only edit controls with labelled text buttons", async () => {
+  const facade = createMockSkillLibraryFacade();
+  await renderDrawer({ facade });
+
+  const editAlias = await screen.findByRole("button", { name: "Edit alias" });
+  expect(editAlias).not.toHaveTextContent("✎");
+  expect(editAlias).toHaveTextContent("Edit alias");
+
+  const editNote = screen.getByRole("button", { name: "Edit note" });
+  expect(editNote).not.toHaveTextContent("✎");
+  expect(editNote).toHaveTextContent("Edit note");
+});
+
+it("closes with the shared close icon instead of a character glyph", async () => {
+  const facade = createMockSkillLibraryFacade();
+  await renderDrawer({ facade });
+
+  const close = await screen.findByRole("button", { name: "Close" });
+  expect(close).not.toHaveTextContent("×");
+  expect(close.querySelector("svg")).not.toBeNull();
+});

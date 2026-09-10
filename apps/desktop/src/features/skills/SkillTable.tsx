@@ -18,6 +18,7 @@ import {
 } from "./selection";
 import { InvocationBadge } from "./InvocationBadge";
 import { AgentDeploymentIcons } from "./AgentDeploymentIcons";
+import { SkillPagination } from "./SkillPagination";
 
 export interface SkillTableProps {
   onOpenSkill: (skillId: string, rowElement: HTMLElement) => void;
@@ -42,7 +43,6 @@ interface SkillTableMeta {
 }
 
 const LOCKED_COLUMNS: SkillColumnId[] = ["select", "name"];
-const PAGE_SIZES = [10, 25, 50, 100] as const;
 const COLUMN_IDS: SkillColumnId[] = [
   "select", "name", "purpose", "tags", "invocation", "agent_deployments", "project_deployments", "version", "security",
   "source", "ownership", "license", "requirements", "lifecycle",
@@ -231,14 +231,11 @@ function isSelected(selection: SkillSelection, skillId: string) {
 export function SkillTable(props: SkillTableProps) {
   const { t } = useTranslation();
   const regionRef = useRef<HTMLDivElement>(null);
-  const horizontalScrollRef = useRef<HTMLDivElement>(null);
   const restoredKeyRef = useRef<string>();
   const [controlsOpen, setControlsOpen] = useState(false);
   const [draggedColumn, setDraggedColumn] = useState<SkillColumnId>();
   const [dragOverColumn, setDragOverColumn] = useState<SkillColumnId>();
   const suppressToggleClickRef = useRef(false);
-  const [horizontalOverflow, setHorizontalOverflow] = useState(false);
-  const [tableScrollWidth, setTableScrollWidth] = useState(0);
   const sortable = new Set(props.sortableColumns ?? COLUMN_IDS);
   const columnOrder = orderedColumnIds(props.preferences);
   const visibleColumns = new Set([...LOCKED_COLUMNS, ...props.preferences.visibleColumns]);
@@ -285,47 +282,6 @@ export function SkillTable(props: SkillTableProps) {
     region.scrollLeft = position.left;
     region.scrollTop = position.top;
   }, [props.page.items, props.returnPosition]);
-
-  useLayoutEffect(() => {
-    const region = regionRef.current;
-    const horizontalScroll = horizontalScrollRef.current;
-    if (!region || !horizontalScroll) return;
-
-    const measure = () => {
-      const scrollWidth = region.scrollWidth;
-      setTableScrollWidth(scrollWidth);
-      setHorizontalOverflow(scrollWidth > region.clientWidth + 1);
-      if (horizontalScroll.scrollLeft !== region.scrollLeft) {
-        horizontalScroll.scrollLeft = region.scrollLeft;
-      }
-    };
-    measure();
-    const table = region.querySelector("table");
-    const observer = typeof ResizeObserver !== "undefined" ? new ResizeObserver(measure) : undefined;
-    observer?.observe(region);
-    if (table) observer?.observe(table);
-    window.addEventListener("resize", measure);
-    return () => {
-      observer?.disconnect();
-      window.removeEventListener("resize", measure);
-    };
-  }, [props.page.items, props.preferences.columnOrder, props.preferences.visibleColumns]);
-
-  const syncHorizontalScroll = () => {
-    const region = regionRef.current;
-    const horizontalScroll = horizontalScrollRef.current;
-    if (region && horizontalScroll && region.scrollLeft !== horizontalScroll.scrollLeft) {
-      region.scrollLeft = horizontalScroll.scrollLeft;
-    }
-  };
-
-  const syncRegionScroll = () => {
-    const region = regionRef.current;
-    const horizontalScroll = horizontalScrollRef.current;
-    if (region && horizontalScroll && horizontalScroll.scrollLeft !== region.scrollLeft) {
-      horizontalScroll.scrollLeft = region.scrollLeft;
-    }
-  };
 
   const updateQuery = (change: Partial<SkillLibraryQuery>) => props.onQueryChange({ ...props.query, ...change });
   const sortColumn = (column: SkillColumnId) => updateQuery({
@@ -374,8 +330,6 @@ export function SkillTable(props: SkillTableProps) {
     setDraggedColumn(undefined);
     setDragOverColumn(undefined);
   };
-  const start = props.page.total === 0 ? 0 : (props.page.page - 1) * props.page.pageSize + 1;
-  const end = Math.min(props.page.page * props.page.pageSize, props.page.total);
 
   return (
     <section className="sh-skill-table-workspace">
@@ -445,7 +399,7 @@ export function SkillTable(props: SkillTableProps) {
         ) : null}
       </div>
       <div className="sh-skill-table__region-shell">
-        <div aria-label={t("skillLibrary.table.resultsRegion")} className="sh-skill-table__region" onScroll={syncRegionScroll} ref={regionRef} role="region" tabIndex={-1}>
+        <div aria-label={t("skillLibrary.table.resultsRegion")} className="sh-skill-table__region" ref={regionRef} role="region" tabIndex={-1}>
           <table className="sh-skill-table" data-density={props.preferences.density}>
           <thead>
             {table.getHeaderGroups().map((headerGroup) => <tr key={headerGroup.id}>{headerGroup.headers.map((header) => {
@@ -464,24 +418,14 @@ export function SkillTable(props: SkillTableProps) {
           </tbody>
           </table>
         </div>
-        <div
-          aria-label={t("skillLibrary.table.horizontalScroll")}
-          className="sh-skill-table__horizontal-scroll"
-          data-overflowing={horizontalOverflow ? "true" : "false"}
-          onScroll={syncHorizontalScroll}
-          ref={horizontalScrollRef}
-          role="region"
-          tabIndex={0}
-        >
-          <div aria-hidden="true" style={{ width: `${tableScrollWidth}px` }} />
-        </div>
       </div>
-      <footer className="sh-skill-table__pagination">
-        <label>{t("skillLibrary.table.pageSize")}<select aria-label={t("skillLibrary.table.pageSize")} onChange={(event) => updateQuery({ page: 1, pageSize: Number(event.currentTarget.value) as SkillLibraryQuery["pageSize"] })} value={props.query.pageSize}>{PAGE_SIZES.map((size) => <option key={size} value={size}>{size}</option>)}</select></label>
-        <span>{t("skillLibrary.table.pageRange", { end, start, total: props.page.total })}</span>
-        <button className="sh-button sh-button--secondary sh-button--sm" disabled={props.query.page <= 1} onClick={() => updateQuery({ page: props.query.page - 1 })} type="button">{t("skillLibrary.table.previousPage")}</button>
-        <button className="sh-button sh-button--secondary sh-button--sm" disabled={props.query.page >= pageCount} onClick={() => updateQuery({ page: props.query.page + 1 })} type="button">{t("skillLibrary.table.nextPage")}</button>
-      </footer>
+      <SkillPagination
+        className="sh-skill-table__pagination"
+        onPageChange={(page) => updateQuery({ page })}
+        onPageSizeChange={(pageSize) => updateQuery({ page: 1, pageSize })}
+        page={props.page}
+        query={props.query}
+      />
     </section>
   );
 }

@@ -21,10 +21,13 @@ export const test = base.extend<{ app: AppDriver }>({
       },
       async importLocalFixture(fixture) {
         expect(fixture).toBe("safe-pdf");
-        await expect(page.getByText("PDF Reader")).toBeVisible();
+        // T3-B：默认卡片视图下技能名是卡片标题，同时出现在“查看”按钮文案中。
+        await expect(page.getByRole("heading", { name: "PDF Reader" })).toBeVisible();
       },
       async expectBasicCheck(message) {
         expect(message).toBe("检查通过");
+        // T3-B：基础/AI 检查结果按列呈现在专业表格模式；卡片模式聚焦风险与升级状态。
+        await page.getByRole("combobox", { name: "View mode" }).selectOption("table");
         await expect(page.getByRole("row", { name: /PDF Reader/ })).toContainText("Basic: Passed");
       },
       async deployTo(label) {
@@ -42,7 +45,7 @@ export const test = base.extend<{ app: AppDriver }>({
       },
       async expectCentralSkill(skillId) {
         expect(skillId).toBe("safe-pdf");
-        await expect(page.getByText("PDF Reader")).toBeVisible();
+        await expect(page.getByRole("heading", { name: "PDF Reader" })).toBeVisible();
       },
     };
     await use(app);

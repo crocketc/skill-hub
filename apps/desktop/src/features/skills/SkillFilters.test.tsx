@@ -237,45 +237,78 @@ it("uses compact spacing between the library controls and results", () => {
   expect(baseCss).toMatch(/\.sh-skill-library\s*\{[\s\S]*gap:\s*var\(--space-2\)/);
 });
 
-it("places the filter toggle as a short centered rail below the filter card", () => {
-  const toggleStart = baseCss.indexOf(".sh-skill-library__query-toggle {");
-  const toggleEnd = baseCss.indexOf("}", toggleStart);
-  const toggleBlock = baseCss.slice(toggleStart, toggleEnd);
-  expect(toggleBlock).toMatch(/bottom:\s*0/);
-  expect(toggleBlock).toMatch(/left:\s*50%/);
-  expect(toggleBlock).toMatch(/width:\s*4rem/);
-  expect(toggleBlock).toMatch(/height:\s*0\.75rem/);
+it("keeps the search field reachable while secondary filters are collapsed", async () => {
+  await renderSkillFilters();
+
+  fireEvent.click(screen.getByRole("button", { name: /Filters/ }));
+
+  expect(screen.getByRole("searchbox", { name: "Search skills" })).toBeVisible();
+  expect(screen.queryByRole("button", { name: "Basic check" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Tags" })).not.toBeInTheDocument();
 });
 
-it("keeps the filter toggle rail as short as the scrollbar", () => {
-  const toggleStart = baseCss.indexOf(".sh-skill-library__query-toggle {");
-  const toggleEnd = baseCss.indexOf("}", toggleStart);
-  const toggleBlock = baseCss.slice(toggleStart, toggleEnd);
-  expect(toggleBlock).toMatch(/height:\s*0\.75rem/);
+it("keeps secondary filters expandable again after collapsing", async () => {
+  await renderSkillFilters();
+
+  const toggle = screen.getByRole("button", { name: /Filters/ });
+  fireEvent.click(toggle);
+  fireEvent.click(toggle);
+
+  expect(toggle).toHaveAttribute("aria-expanded", "true");
+  expect(screen.getByRole("button", { name: "Basic check" })).toBeVisible();
 });
 
-it("overrides the generic filter button minimum height for the toggle rail", () => {
-  const overrideStart = baseCss.indexOf(".sh-skill-library__query-tools button.sh-skill-library__query-toggle");
-  const overrideEnd = baseCss.indexOf("}", overrideStart);
-  const overrideBlock = baseCss.slice(overrideStart, overrideEnd);
-  expect(overrideBlock).toMatch(/min-height:\s*0/);
+it("announces the number of active conditions on the filter toggle", async () => {
+  await renderSkillFilters({
+    query: {
+      ...DEFAULT_SKILL_QUERY,
+      filters: { ...DEFAULT_SKILL_QUERY.filters, basicCheck: ["failed"] },
+      text: "reader",
+    },
+  });
+
+  expect(screen.getByRole("button", { name: /Filters 2 active/ })).toBeVisible();
+  // 生成条件生效时保留一键清除入口。
+  expect(screen.getByRole("button", { name: "Clear filters" })).toBeVisible();
 });
 
-it("anchors the collapsed filter toggle directly below the preset views", () => {
-  const collapsedStart = baseCss.indexOf(".sh-skill-library__query-tools.is-collapsed {");
-  const collapsedEnd = baseCss.indexOf("}", collapsedStart);
-  const collapsedBlock = baseCss.slice(collapsedStart, collapsedEnd);
-  expect(collapsedBlock).toMatch(/min-height:\s*1\.25rem/);
-  expect(collapsedBlock).toMatch(/margin-top:\s*calc\(-1 \* var\(--space-2\)\)/);
-
-  const toggleStart = baseCss.indexOf(
-    ".sh-skill-library__query-tools.is-collapsed .sh-skill-library__query-toggle",
+it("starts with secondary filters collapsed on narrow windows", async () => {
+  vi.stubGlobal(
+    "matchMedia",
+    vi.fn().mockReturnValue({ matches: true }),
   );
-  const toggleEnd = baseCss.indexOf("}", toggleStart);
-  const toggleBlock = baseCss.slice(toggleStart, toggleEnd);
-  expect(toggleBlock).toMatch(/top:\s*0/);
-  expect(toggleBlock).toMatch(/bottom:\s*auto/);
-  expect(toggleBlock).toMatch(/transform:\s*translate\(-50%,\s*0\)/);
+  try {
+    await renderSkillFilters();
+
+    expect(screen.getByRole("searchbox", { name: "Search skills" })).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Basic check" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Filters/ })).toHaveAttribute("aria-expanded", "false");
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
+
+it("keeps secondary filters expanded on wide windows", async () => {
+  vi.stubGlobal(
+    "matchMedia",
+    vi.fn().mockReturnValue({ matches: false }),
+  );
+  try {
+    await renderSkillFilters();
+
+    expect(screen.getByRole("button", { name: /Filters/ })).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByRole("button", { name: "Basic check" })).toBeVisible();
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
+
+it("replaces the character-glyph view delete with a labelled icon button", async () => {
+  await renderSavedViews({ onDelete: vi.fn() });
+
+  const remove = screen.getByRole("button", { name: "Delete Risk review" });
+  expect(remove).toBeVisible();
+  expect(remove).not.toHaveTextContent("×");
 });
 
 it("disables the upgrade filter while upstream update data has no read model", async () => {

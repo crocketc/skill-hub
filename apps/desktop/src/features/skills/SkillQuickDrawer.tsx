@@ -14,6 +14,7 @@ import { useTranslation } from "react-i18next";
 import { Link, useLocation } from "react-router-dom";
 import { Button } from "../../ui/Button";
 import { Drawer } from "../../ui/Drawer";
+import { Icon } from "../../ui/Icon";
 import type { SkillLibraryReturnState } from "../skill-detail/detailContext";
 import {
   DEFAULT_DRAWER_PREFERENCES,
@@ -373,15 +374,15 @@ function IdentityRegion({
         ) : (
           <span>{view.alias ?? <EmptyValue />}</span>
         )}
-        <button
+        <Button
           aria-label={t("skillLibrary.drawer.editAlias")}
           className="sh-skill-drawer__edit-icon"
           onClick={() => onBeginEdit("alias")}
-          title={t("skillLibrary.drawer.editAlias")}
-          type="button"
+          size="sm"
+          variant="ghost"
         >
-          <span aria-hidden="true">✎</span>
-        </button>
+          {t("skillLibrary.drawer.editAlias")}
+        </Button>
       </div>
       <div className="sh-skill-drawer__field">
         <span className="sh-skill-drawer__field-label">
@@ -429,15 +430,15 @@ function IdentityRegion({
             {view.note ?? <EmptyValue />}
           </span>
         )}
-        <button
+        <Button
           aria-label={t("skillLibrary.drawer.editNote")}
           className="sh-skill-drawer__edit-icon"
           onClick={() => onBeginEdit("note")}
-          title={t("skillLibrary.drawer.editNote")}
-          type="button"
+          size="sm"
+          variant="ghost"
         >
-          <span aria-hidden="true">✎</span>
-        </button>
+          {t("skillLibrary.drawer.editNote")}
+        </Button>
       </div>
     </section>
   );
@@ -988,7 +989,7 @@ export function SkillQuickDrawer({
                 size="sm"
                 variant="ghost"
               >
-                <span aria-hidden="true">×</span>
+                <Icon name="close" size={16} />
               </Button>
             </div>
           </div>

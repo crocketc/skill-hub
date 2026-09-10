@@ -35,7 +35,8 @@ test.describe("core flows in English", () => {
     for (const item of EN_NAV.items) {
       await expect(sidebar.getByRole("link", { name: item, exact: true })).toBeVisible();
     }
-    await expect(page.getByText("PDF Reader")).toBeVisible();
+    // T3-B：默认卡片视图下技能名是卡片标题（heading），同时出现在“查看”按钮文案中。
+    await expect(page.getByRole("heading", { name: "PDF Reader" })).toBeVisible();
   });
 
   test("skill detail renders English workspace labels", async ({ page }) => {
@@ -81,7 +82,8 @@ test.describe("core flows in Simplified Chinese", () => {
     for (const item of ZH_NAV.items) {
       await expect(sidebar.getByRole("link", { name: item, exact: true })).toBeVisible();
     }
-    await expect(page.getByText("PDF Reader")).toBeVisible();
+    // T3-B：默认卡片视图下技能名是卡片标题（heading）。
+    await expect(page.getByRole("heading", { name: "PDF Reader" })).toBeVisible();
   });
 
   test("skill detail renders Simplified Chinese workspace labels", async ({ page }) => {
