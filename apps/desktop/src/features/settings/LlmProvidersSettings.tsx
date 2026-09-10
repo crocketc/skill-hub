@@ -1,6 +1,12 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { describeNativeError } from "../../api/nativeErrors";
+import { Button } from "../../ui/Button";
+import { Drawer } from "../../ui/Drawer";
+import { Field } from "../../ui/Field";
+import { focusFirstInvalidField } from "../../ui/focusFirstInvalidField";
+import { Input } from "../../ui/Input";
+import { Select } from "../../ui/Select";
 import {
   type ConnectionTestResult,
   type LlmAdminFacade,
@@ -9,6 +15,7 @@ import {
   type LlmProviderView,
   unavailableLlmFacade,
 } from "./llmApi";
+import { LlmProviderRow } from "./LlmProviderRow";
 
 const EMPTY_DRAFT: LlmProviderDraft = {
   id: "",
@@ -24,21 +31,25 @@ type ConnectionReport = { providerId: string; result: ConnectionTestResult };
 
 type FieldErrors = { endpoint?: string; id?: string; model?: string };
 
-/** Provider administration card: presets, credential entry, model fetch, the
- * two-level connection test and enable/default/delete. Credential values live
- * only in this form until they are handed to the OS credential store. */
+type EditorState = { mode: "add" } | { mode: "edit"; id: string } | null;
+
+/** Provider administration section: full-width entity rows, an add/edit drawer,
+ * credential entry, model fetch, the two-level connection test and
+ * enable/default/delete. Credential values live only in this form until they
+ * are handed to the OS credential store; edits never echo the stored key. */
 export function LlmProvidersSettings({ facade = unavailableLlmFacade }: { facade?: LlmAdminFacade }) {
   const { t } = useTranslation();
   const [providers, setProviders] = useState<LlmProviderView[]>();
   const [presets, setPresets] = useState<LlmProviderPreset[]>();
   const [draft, setDraft] = useState<LlmProviderDraft>({ ...EMPTY_DRAFT });
-  const [formOpen, setFormOpen] = useState(false);
+  const [editor, setEditor] = useState<EditorState>(null);
   const [models, setModels] = useState<string[]>([]);
   const [reports, setReports] = useState<ConnectionReport[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
   const [modelsUnavailable, setModelsUnavailable] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
+  const returnFocusRef = useRef<HTMLButtonElement | null>(null);
 
   // describeNativeError 以动态键调用翻译；i18next 的强类型键联合在此收窄。
   const describe = (reason: unknown) =>
@@ -71,6 +82,32 @@ export function LlmProvidersSettings({ facade = unavailableLlmFacade }: { facade
       .finally(() => setBusy(false));
   };
 
+  const resetEditorForm = () => {
+    setDraft({ ...EMPTY_DRAFT });
+    setModels([]);
+    setModelsUnavailable(false);
+    setFieldErrors({});
+  };
+
+  const openAdd = (event: React.MouseEvent<HTMLButtonElement>) => {
+    returnFocusRef.current = event.currentTarget;
+    resetEditorForm();
+    setEditor({ mode: "add" });
+  };
+
+  const openEdit = (view: LlmProviderView, event: React.MouseEvent<HTMLButtonElement>) => {
+    returnFocusRef.current = event.currentTarget;
+    resetEditorForm();
+    setDraft(draftOf(view));
+    setEditor({ mode: "edit", id: view.config.id });
+  };
+
+  // 关闭即清空草稿：凭据、端点等输入不残留在 DOM 中。
+  const closeEditor = () => {
+    setEditor(null);
+    resetEditorForm();
+  };
+
   const applyPreset = (presetId: string) => {
     const preset = presets?.find((item) => item.id === presetId);
     if (!preset) return;
@@ -89,14 +126,12 @@ export function LlmProvidersSettings({ facade = unavailableLlmFacade }: { facade
   const saveDraft = () =>
     guard(async () => {
       await facade.saveProvider(draft, draft.credential !== null);
-      setFormOpen(false);
-      setDraft({ ...EMPTY_DRAFT });
-      setModels([]);
-      setModelsUnavailable(false);
+      closeEditor();
     });
 
   // 表单关闭原生校验气泡：WebView 的英文 "fill out this field" 不可本地化，
-  // 必填约束保留（required 语义不变），缺失时改为逐字段展示本地化提示。
+  // 必填约束保留（required 语义不变），缺失时改为逐字段展示本地化提示，
+  // 并把键盘焦点移动到第一个无效字段（设计规格 4.1）。
   const submitDraft = () => {
     const required: Array<{ key: keyof FieldErrors; label: string; value: string }> = [
       { key: "id", label: t("settings.llm.providerId"), value: draft.id },
@@ -116,6 +151,13 @@ export function LlmProvidersSettings({ facade = unavailableLlmFacade }: { facade
     setFieldErrors({});
     saveDraft();
   };
+
+  // 焦点移动必须发生在逐字段错误提交渲染之后，因此放在 effect 中。
+  useEffect(() => {
+    if (Object.keys(fieldErrors).length > 0) {
+      focusFirstInvalidField();
+    }
+  }, [fieldErrors]);
 
   const clearFieldError = (key: keyof FieldErrors) =>
     setFieldErrors((current) => ({ ...current, [key]: undefined }));
@@ -158,12 +200,19 @@ export function LlmProvidersSettings({ facade = unavailableLlmFacade }: { facade
           <h2 id="settings-llm-providers-heading">{t("settings.llm.providersHeading")}</h2>
           <p>{t("settings.llm.providersDescription")}</p>
         </div>
-        <button onClick={() => setFormOpen((open) => !open)} type="button">
-          {formOpen ? t("settings.llm.cancel") : t("settings.llm.addProvider")}
-        </button>
+        <Button onClick={openAdd} variant="primary">
+          {t("settings.llm.addProvider")}
+        </Button>
       </div>
       {error ? <p role="alert">{error}</p> : null}
-      {formOpen ? (
+      <Drawer
+        onOpenChange={(open) => {
+          if (!open) closeEditor();
+        }}
+        open={editor !== null}
+        returnFocusRef={returnFocusRef}
+        title={editor?.mode === "edit" ? t("settings.llm.editHeading") : t("settings.llm.formHeading")}
+      >
         <form
           aria-label={t("settings.llm.formHeading")}
           noValidate
@@ -172,26 +221,31 @@ export function LlmProvidersSettings({ facade = unavailableLlmFacade }: { facade
             submitDraft();
           }}
         >
-          <h3>{t("settings.llm.formHeading")}</h3>
-          <label className="sh-settings-field">
-            <span>{t("settings.llm.preset")}</span>
-            <select
-              aria-label={t("settings.llm.preset")}
-              onChange={(event) => applyPreset(event.target.value)}
-              value=""
-            >
-              <option value="">{t("settings.llm.presetPlaceholder")}</option>
-              {(presets ?? []).map((preset) => (
-                <option key={preset.id} value={preset.id}>
-                  {preset.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="sh-settings-field">
-            <span>{t("settings.llm.providerId")}</span>
-            <input
-              aria-label={t("settings.llm.providerId")}
+          {editor?.mode === "add" ? (
+            <Field label={t("settings.llm.preset")}>
+              <Select
+                name="provider-preset"
+                onChange={(event) => applyPreset(event.target.value)}
+                value=""
+              >
+                <option value="">{t("settings.llm.presetPlaceholder")}</option>
+                {(presets ?? []).map((preset) => (
+                  <option key={preset.id} value={preset.id}>
+                    {preset.label}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+          ) : null}
+          <Field
+            error={fieldErrors.id}
+            label={t("settings.llm.providerId")}
+            required
+          >
+            <Input
+              autoComplete="off"
+              disabled={editor?.mode === "edit"}
+              name="provider-id"
               onChange={(event) => {
                 setDraft({ ...draft, id: event.target.value });
                 clearFieldError("id");
@@ -199,21 +253,24 @@ export function LlmProvidersSettings({ facade = unavailableLlmFacade }: { facade
               required
               value={draft.id}
             />
-            {fieldErrors.id ? <p role="alert">{fieldErrors.id}</p> : null}
-          </label>
-          <label className="sh-settings-field">
-            <span>{t("settings.llm.displayName")}</span>
-            <input
-              aria-label={t("settings.llm.displayName")}
+          </Field>
+          <Field label={t("settings.llm.displayName")}>
+            <Input
+              autoComplete="off"
+              name="provider-label"
               onChange={(event) => setDraft({ ...draft, label: event.target.value })}
               value={draft.label}
             />
-          </label>
-          <label className="sh-settings-field">
-            <span>{t("settings.llm.endpoint")}</span>
-            <input
-              aria-label={t("settings.llm.endpoint")}
+          </Field>
+          <Field
+            error={fieldErrors.endpoint}
+            label={t("settings.llm.endpoint")}
+            required
+          >
+            <Input
+              autoComplete="off"
               inputMode="url"
+              name="provider-endpoint"
               onChange={(event) => {
                 setDraft({ ...draft, endpoint: event.target.value });
                 clearFieldError("endpoint");
@@ -221,13 +278,16 @@ export function LlmProvidersSettings({ facade = unavailableLlmFacade }: { facade
               required
               value={draft.endpoint}
             />
-            {fieldErrors.endpoint ? <p role="alert">{fieldErrors.endpoint}</p> : null}
-          </label>
-          <label className="sh-settings-field">
-            <span>{t("settings.llm.model")}</span>
-            <input
-              aria-label={t("settings.llm.model")}
+          </Field>
+          <Field
+            error={fieldErrors.model}
+            label={t("settings.llm.model")}
+            required
+          >
+            <Input
+              autoComplete="off"
               list="llm-model-options"
+              name="provider-model"
               onChange={(event) => {
                 setDraft({ ...draft, model: event.target.value });
                 clearFieldError("model");
@@ -240,116 +300,58 @@ export function LlmProvidersSettings({ facade = unavailableLlmFacade }: { facade
                 <option key={model} value={model} />
               ))}
             </datalist>
-            {fieldErrors.model ? <p role="alert">{fieldErrors.model}</p> : null}
-            {modelsUnavailable ? (
-              <p className="sh-settings-local-note" role="status">
-                {t("settings.llm.fetchModelsFailedHint")}
-              </p>
-            ) : null}
-          </label>
-          <button disabled={busy} onClick={() => void fetchModels()} type="button">
-            {t("settings.llm.fetchModels")}
-          </button>
-          <label className="sh-settings-field">
-            <span>{t("settings.llm.credential")}</span>
-            <input
-              aria-label={t("settings.llm.credential")}
-              autoComplete="off"
+          </Field>
+          {modelsUnavailable ? (
+            <p className="sh-settings-local-note" role="status">
+              {t("settings.llm.fetchModelsFailedHint")}
+            </p>
+          ) : null}
+          <div className="sh-settings-form-actions">
+            <Button disabled={busy} onClick={() => void fetchModels()} variant="secondary">
+              {t("settings.llm.fetchModels")}
+            </Button>
+            <Button disabled={busy} onClick={() => void testConnection(draft)} variant="secondary">
+              {t("settings.llm.testDraft")}
+            </Button>
+          </div>
+          <Field help={t("settings.llm.credentialNote")} label={t("settings.llm.credential")}>
+            <Input
+              autoComplete="new-password"
+              name="provider-credential"
               onChange={(event) =>
                 setDraft({ ...draft, credential: event.target.value === "" ? null : event.target.value })
               }
               type="password"
               value={draft.credential ?? ""}
             />
-          </label>
-          <p className="sh-settings-local-note">{t("settings.llm.credentialNote")}</p>
-          <button disabled={busy} type="submit">
-            {t("settings.llm.save")}
-          </button>
-          <button disabled={busy} onClick={() => void testConnection(draft)} type="button">
-            {t("settings.llm.testDraft")}
-          </button>
+          </Field>
+          <div className="sh-settings-form-actions">
+            <Button disabled={busy} onClick={closeEditor} variant="ghost">
+              {t("settings.llm.cancel")}
+            </Button>
+            <Button disabled={busy} type="submit">
+              {t("settings.llm.save")}
+            </Button>
+          </div>
         </form>
-      ) : null}
-      <ul className="sh-llm-providers">
+      </Drawer>
+      <ul className="sh-settings-providers">
         {(providers ?? []).map((view) => {
-          const report = reports.find((item) => item.providerId === view.config.id);
+          const report = reports.find((item) => item.providerId === view.config.id)?.result;
           return (
-            <li key={view.config.id}>
-              <div>
-                <strong>{view.config.label ?? view.config.id}</strong>{" "}
-                {view.is_default ? (
-                  <span className="sh-llm-badge">{t("settings.llm.defaultBadge")}</span>
-                ) : null}{" "}
-                <span className="sh-status sh-status--muted">
-                  {view.config.deployment === "local"
-                    ? t("settings.llm.localBadge")
-                    : t("settings.llm.onlineBadge")}
-                </span>
-              </div>
-              <p>{view.config.model}</p>
-              <p>
-                {view.credential_configured
-                  ? t("settings.llm.credentialConfigured")
-                  : t("settings.llm.credentialMissing")}
-              </p>
-              {report ? (
-                <p aria-live="polite">
-                  <span>
-                    {report.result.endpoint.reachable
-                      ? `${t("settings.llm.endpointOk")}${
-                          report.result.endpoint.latency_ms !== null &&
-                          report.result.endpoint.latency_ms !== undefined
-                            ? ` (${report.result.endpoint.latency_ms} ms)`
-                            : ""
-                        }`
-                      : t("settings.llm.endpointFailed")}
-                  </span>
-                  {" · "}
-                  <span>
-                    {report.result.model?.ok === true
-                      ? t("settings.llm.modelOk")
-                      : t("settings.llm.modelFailed", {
-                          code: report.result.model_failure_code ?? "unknown",
-                        })}
-                  </span>
-                </p>
-              ) : null}
-              <div>
-                <button
-                  disabled={busy}
-                  onClick={() => void testConnection(draftOf(view))}
-                  type="button"
-                >
-                  {t("settings.llm.testConnection")}
-                </button>
-                <button
-                  disabled={busy}
-                  onClick={() =>
-                    guard(() => facade.setProviderEnabled(view.config.id, !view.config.enabled))
-                  }
-                  type="button"
-                >
-                  {view.config.enabled ? t("settings.llm.disable") : t("settings.llm.enable")}
-                </button>
-                {!view.is_default ? (
-                  <button
-                    disabled={busy}
-                    onClick={() => guard(() => facade.setDefaultProvider(view.config.id))}
-                    type="button"
-                  >
-                    {t("settings.llm.setDefault")}
-                  </button>
-                ) : null}
-                <button
-                  disabled={busy}
-                  onClick={() => guard(() => facade.deleteProvider(view.config.id))}
-                  type="button"
-                >
-                  {t("settings.llm.delete")}
-                </button>
-              </div>
-            </li>
+            <LlmProviderRow
+              busy={busy}
+              key={view.config.id}
+              onDelete={() => guard(() => facade.deleteProvider(view.config.id))}
+              onEdit={(event) => openEdit(view, event)}
+              onSetDefault={() => guard(() => facade.setDefaultProvider(view.config.id))}
+              onTest={() => void testConnection(draftOf(view))}
+              onToggleEnabled={() =>
+                guard(() => facade.setProviderEnabled(view.config.id, !view.config.enabled))
+              }
+              report={report}
+              view={view}
+            />
           );
         })}
       </ul>

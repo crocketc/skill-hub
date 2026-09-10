@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { resolveLocale } from "../../i18n";
+import { Field } from "../../ui/Field";
+import { Select } from "../../ui/Select";
 import { ThemeChoiceGrid } from "../../styles/ThemeChoiceGrid";
 import { useTheme } from "../../styles/ThemeProvider";
 import type { ThemeName } from "../../styles/theme";
@@ -40,15 +42,16 @@ export function GeneralSettings({ facade, settings }: { facade: SettingsFacade; 
 
   return <section className="sh-settings-card">
     <h2>{t("settings.general.heading")}</h2>
-    <label>
-      {t("settings.general.language")}
-      <select onChange={(event) => selectLanguage(event.target.value as SettingsSnapshot["appearance"]["language"])} value={language}>
+    <Field help={t("settings.general.languageDescription")} label={t("settings.general.language")}>
+      <Select
+        onChange={(event) => selectLanguage(event.target.value as SettingsSnapshot["appearance"]["language"])}
+        value={language}
+      >
         <option value="system">{t("settings.general.languages.system")}</option>
         <option value="zh-CN">{t("settings.general.languages.zhCN")}</option>
         <option value="en-US">{t("settings.general.languages.enUS")}</option>
-      </select>
-    </label>
-    <p>{t("settings.general.languageDescription")}</p>
+      </Select>
+    </Field>
     <dl className="sh-facts"><dt>{t("settings.general.theme")}</dt><dd>{resolvedTheme}</dd></dl>
     <p>{t("settings.general.themeDescription")}</p>
     <ThemeChoiceGrid onChange={selectTheme} value={resolvedTheme} />

@@ -44,16 +44,31 @@ function renderCard(facade: LlmAdminFacade, i18n: Awaited<ReturnType<typeof crea
   );
 }
 
+const CAPABILITY_NAMES = ["AI 安全检查", "AI 语义重复分析", "描述翻译", "联网搜索辅助"] as const;
+
 it("keeps every AI capability off until the user opts in", async () => {
   const i18n = await createSkillHubI18n(["zh-CN"]);
   const { facade } = recordingFacade(ALL_OFF);
   renderCard(facade, i18n);
 
   expect(await screen.findByRole("heading", { name: "AI 能力开关" })).toBeVisible();
-  for (const name of ["AI 安全检查", "AI 语义重复分析", "描述翻译", "联网搜索辅助"]) {
-    expect(screen.getByLabelText(name)).not.toBeChecked();
+  for (const name of CAPABILITY_NAMES) {
+    // 能力开关立即生效：以 Switch 语义暴露给辅助技术。
+    const toggle = screen.getByRole("switch", { name });
+    expect(toggle).not.toBeChecked();
   }
   expect(screen.getByText("默认离线")).toBeVisible();
+});
+
+it("shows each capability's data scope right next to its switch", async () => {
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  const { facade } = recordingFacade(ALL_OFF);
+  renderCard(facade, i18n);
+
+  const safety = await screen.findByRole("switch", { name: "AI 安全检查" });
+  const scope = safety.closest("div")!.querySelector("p");
+  expect(scope).not.toBeNull();
+  expect(scope).toHaveTextContent("发送范围：Skill 文件内容（敏感值遮盖后）");
 });
 
 it("writes the full merged preference set when one capability is enabled", async () => {
@@ -62,7 +77,7 @@ it("writes the full merged preference set when one capability is enabled", async
   const { facade, writes } = recordingFacade(ALL_OFF);
   renderCard(facade, i18n);
 
-  await user.click(await screen.findByLabelText("AI 安全检查"));
+  await user.click(await screen.findByRole("switch", { name: "AI 安全检查" }));
 
   expect(writes).toHaveLength(1);
   expect(writes[0]).toEqual({

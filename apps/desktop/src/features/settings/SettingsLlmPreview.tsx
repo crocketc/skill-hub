@@ -64,7 +64,32 @@ const PREVIEW_PROVIDERS: LlmProviderView[] = [
   },
 ];
 
+/** 长文本夹具：120 字符名称、超长端点/模型与长错误码，用于布局验收。 */
+const LONG_PROVIDER: LlmProviderView = {
+  config: {
+    id: "long-provider",
+    label: "A".repeat(120),
+    protocol: "open_ai_compatible",
+    deployment: "online",
+    endpoint: "https://gateway.internal.example-microsoft-azure-openai-partner-stack-host/enterprise/v2/deployments/very-long-deployment-name/rest",
+    model: "org-team-subscription-enterprise-gateway-model-variant-preview-2026-09-full-context-window",
+    credential_ref: { id: "llm-provider:long-provider" },
+    enabled: true,
+  },
+  credential_configured: true,
+  is_default: false,
+};
+
+/** DEV-only harness knob: ?scenario=long-text 追加长文本供应商。 */
+function wantsLongScenario(): boolean {
+  return new URLSearchParams(window.location.search).get("scenario") === "long-text";
+}
+
 function previewLlmFacade(): LlmAdminFacade {
+  const longScenario = wantsLongScenario();
+  let providers: LlmProviderView[] = longScenario
+    ? [...PREVIEW_PROVIDERS, LONG_PROVIDER]
+    : PREVIEW_PROVIDERS;
   const capabilities: LlmCapabilityState = {
     capabilities: {
       safety_check: true,
@@ -76,22 +101,52 @@ function previewLlmFacade(): LlmAdminFacade {
   };
   return {
     async listProviders() {
-      return PREVIEW_PROVIDERS;
+      return providers;
     },
     async listPresets() {
       return PREVIEW_PRESETS;
     },
-    async saveProvider() {
-      return undefined;
+    async saveProvider(draft: LlmProviderDraft) {
+      const existing = providers.find((provider) => provider.config.id === draft.id);
+      const config = {
+        id: draft.id,
+        label: draft.label === "" ? null : draft.label,
+        protocol: draft.protocol,
+        deployment: draft.deployment,
+        endpoint: draft.endpoint,
+        model: draft.model,
+        credential_ref:
+          existing?.config.credential_ref ??
+          (draft.deployment === "local" ? null : { id: `llm-provider:${draft.id}` }),
+      };
+      providers = existing
+        ? providers.map((provider) =>
+            provider.config.id === draft.id ? { ...provider, config } : provider,
+          )
+        : [
+            ...providers,
+            {
+              config,
+              credential_configured: draft.credential !== null,
+              is_default: providers.length === 0,
+            },
+          ];
     },
-    async deleteProvider() {
-      return undefined;
+    async deleteProvider(id: string) {
+      providers = providers.filter((provider) => provider.config.id !== id);
     },
-    async setProviderEnabled() {
-      return undefined;
+    async setProviderEnabled(id: string, enabled: boolean) {
+      providers = providers.map((provider) =>
+        provider.config.id === id
+          ? { ...provider, config: { ...provider.config, enabled } }
+          : provider,
+      );
     },
-    async setDefaultProvider() {
-      return undefined;
+    async setDefaultProvider(id: string | null) {
+      providers = providers.map((provider) => ({
+        ...provider,
+        is_default: provider.config.id === id,
+      }));
     },
     async fetchModels() {
       return ["deepseek-chat", "deepseek-reasoner"];
@@ -103,6 +158,13 @@ function previewLlmFacade(): LlmAdminFacade {
           endpoint: { reachable: false, latency_ms: null },
           model: null,
           model_failure_code: "llm.endpoint_unreachable",
+        };
+      }
+      if (longScenario && draft.id === "long-provider") {
+        return {
+          endpoint: { reachable: false, latency_ms: null },
+          model: null,
+          model_failure_code: "llm.provider_not_found_or_unauthorized_very_long_code_suffix",
         };
       }
       return {

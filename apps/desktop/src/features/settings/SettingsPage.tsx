@@ -1,6 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
+import { Link } from "react-router-dom";
 import { DataState } from "../../ui/DataState";
+import { PageHeader } from "../../ui/PageHeader";
 import {
   type AppUpdate,
   errorCodeOf,
@@ -19,69 +21,114 @@ import { LibrarySettings } from "./LibrarySettings";
 import { LlmCapabilitiesSettings } from "./LlmCapabilitiesSettings";
 import { LlmProvidersSettings } from "./LlmProvidersSettings";
 import { NetworkStoragePlaceholder } from "./NetworkStoragePlaceholder";
+import {
+  sectionPanelId,
+  SettingsSectionNav,
+  type SettingsSection,
+  type SettingsSectionId,
+} from "./SettingsSectionNav";
 import { ViewSettings } from "./ViewSettings";
 
 export function SettingsPage({ facade = unavailableSettingsFacade, initialSettings }: { facade?: SettingsFacade; initialSettings?: SettingsSnapshot }) {
   const { t } = useTranslation();
   const [settings, setSettings] = useState<SettingsSnapshot | undefined>(initialSettings);
   const [error, setError] = useState<string>();
+  const [activeSection, setActiveSection] = useState<SettingsSectionId>("general");
   useEffect(() => { if (initialSettings || !facade.get) return; void facade.get().then(setSettings).catch((reason: unknown) => setError(reason instanceof Error ? reason.message : String(reason))); }, [facade, initialSettings]);
+
   if (error) return <DataState message={error} state="unavailable" />;
   if (!settings) return <DataState message={t("settings.loading")} state="loading" />;
+
+  const sections: SettingsSection[] = [
+    {
+      description: t("settings.sectionDescriptions.general"),
+      heading: t("settings.sections.general"),
+      id: "general",
+    },
+    {
+      description: t("settings.sectionDescriptions.dataProtection"),
+      heading: t("settings.sections.dataProtection"),
+      id: "dataProtection",
+    },
+    {
+      description: t("settings.sectionDescriptions.networkAi"),
+      heading: t("settings.sections.networkAi"),
+      id: "networkAi",
+    },
+    {
+      description: t("settings.sectionDescriptions.automation"),
+      heading: t("settings.sections.automation"),
+      id: "automation",
+    },
+    {
+      description: t("settings.sectionDescriptions.libraryMaintenance"),
+      heading: t("settings.sections.libraryMaintenance"),
+      id: "libraryMaintenance",
+    },
+    {
+      description: t("settings.sectionDescriptions.appUpdate"),
+      heading: t("settings.sections.appUpdate"),
+      id: "appUpdate",
+    },
+  ];
+
+  const panels: Record<SettingsSectionId, ReactNode> = {
+    appUpdate: (
+      <>
+        <ApplicationUpdateCard facade={facade} settings={settings} />
+        <NetworkStoragePlaceholder />
+      </>
+    ),
+    automation: <AutomationSettings facade={facade} settings={settings} />,
+    dataProtection: <BackupSettings facade={facade.backup} settings={settings} />,
+    general: (
+      <>
+        <GeneralSettings facade={facade} settings={settings} />
+        <ViewSettings facade={facade} settings={settings} />
+      </>
+    ),
+    libraryMaintenance: <LibrarySettings health={facade.libraryHealth} settings={settings} />,
+    networkAi: (
+      <>
+        <AiNetworkSettings facade={facade} settings={settings.network} />
+        {facade.llm ? (
+          <>
+            <LlmProvidersSettings facade={facade.llm} />
+            <LlmCapabilitiesSettings facade={facade.llm} />
+          </>
+        ) : null}
+      </>
+    ),
+  };
+
   return (
     <main className="sh-page sh-settings-page">
-      <header className="sh-page__header">
-        <div>
-          <p className="sh-eyebrow">{t("settings.eyebrow")}</p>
-          <h1>{t("settings.heading")}</h1>
-          <p>{t("settings.description")}</p>
+      <PageHeader
+        actions={
+          <Link className="sh-settings-page__onboarding-link" to="/initialize">
+            {t("settings.reopenOnboarding")}
+          </Link>
+        }
+        description={t("settings.description")}
+        title={t("settings.heading")}
+      />
+      <div className="sh-settings-layout">
+        <SettingsSectionNav activeId={activeSection} onChange={setActiveSection} sections={sections} />
+        <div className="sh-settings-panels">
+          {sections.map((section) => (
+            <section
+              aria-labelledby={`settings-tab-${section.id}`}
+              className="sh-settings-panel"
+              hidden={section.id !== activeSection}
+              id={sectionPanelId(section.id)}
+              key={section.id}
+              role="tabpanel"
+            >
+              <p className="sh-settings-panel__description">{section.description}</p>
+              <div className="sh-settings-panel__cards">{panels[section.id]}</div>
+            </section>
+          ))}
         </div>
-        <a href="/initialize">{t("settings.reopenOnboarding")}</a>
-      </header>
-      <div className="sh-settings-grid">
-        {(
-          [
-            {
-              heading: t("settings.sections.general"),
-              cards: [<GeneralSettings key="general" facade={facade} settings={settings} />, <ViewSettings key="view" facade={facade} settings={settings} />],
-            },
-            {
-              heading: t("settings.sections.dataProtection"),
-              cards: [<BackupSettings key="backup" facade={facade.backup} settings={settings} />],
-            },
-            {
-              heading: t("settings.sections.networkAi"),
-              cards: [
-                <AiNetworkSettings key="ai" facade={facade} settings={settings.network} />,
-                ...(facade.llm
-                  ? [
-                      <LlmProvidersSettings key="llm-providers" facade={facade.llm} />,
-                      <LlmCapabilitiesSettings key="llm-capabilities" facade={facade.llm} />,
-                    ]
-                  : []),
-              ],
-            },
-            {
-              heading: t("settings.sections.automation"),
-              cards: [<AutomationSettings key="auto" facade={facade} settings={settings} />],
-            },
-            {
-              heading: t("settings.sections.libraryMaintenance"),
-              cards: [<LibrarySettings key="library" health={facade.libraryHealth} settings={settings} />],
-            },
-            {
-              heading: t("settings.sections.appUpdate"),
-              cards: [<ApplicationUpdateCard key="update" facade={facade} settings={settings} />, <NetworkStoragePlaceholder key="storage" />],
-            },
-          ] as const
-        ).map((section) => (
-          <section className="sh-settings-section" key={section.heading}>
-            <h3 className="sh-settings-section__title">{section.heading}</h3>
-            <div className="sh-settings-grid">
-              {section.cards}
-            </div>
-          </section>
-        ))}
       </div>
     </main>
   );
