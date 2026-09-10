@@ -685,6 +685,7 @@
     "finishedDescription": "Initialization settings were submitted.",
     "finishedTitle": "Initialization complete",
     "genericError": "The operation failed ({{code}}). Please retry or reopen the page.",
+    "bootstrapUnavailable": "Bootstrap status is unavailable. Initialization and rediscovery are temporarily unavailable.",
     "libraryDescription": "The library keeps managed skill content in one place. An empty directory is created only after confirmation.",
     "libraryHelper": "Confirm the default location to continue, or pick another system directory as the central library.",
     "pickOtherDirectory": "Pick another directory",
@@ -754,6 +755,8 @@
     ,"rescanLibraryLocation": "Current library location"
     ,"rescanConfirmation": "I understand this only discovers and scans read-only"
     ,"rescanStep": "Step {{current}} of 3"
+    ,"rescanCancel": "Cancel and return to Settings"
+    ,"rescanComplete": "Complete rediscovery"
   },
   "theme": {
     "choiceLabel": "Theme colors",

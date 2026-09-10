@@ -1,7 +1,7 @@
 import { QueryClientProvider } from "@tanstack/react-query";
 import { MotionConfig } from "motion/react";
 import { useEffect, useState } from "react";
-import { I18nextProvider } from "react-i18next";
+import { I18nextProvider, useTranslation } from "react-i18next";
 import { createBrowserRouter, RouterProvider, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { OnboardingWizard } from "../features/onboarding/OnboardingWizard";
 import { RescanWizard } from "../features/onboarding/RescanWizard";
@@ -55,8 +55,10 @@ import "../styles/base.css";
 import { ThemeProvider, useTheme } from "../styles/ThemeProvider";
 import { DesktopApp } from "./App";
 import { queryClient } from "./queryClient";
+import { DataState } from "../ui/DataState";
 
 function OnboardingRoute() {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const { resolvedTheme, setAppearance } = useTheme();
   const [snapshot, setSnapshot] = useState<Awaited<ReturnType<typeof desktopBootstrapRuntime.getBootstrapView>>["snapshot"] | null>(null);
@@ -67,12 +69,17 @@ function OnboardingRoute() {
       .catch(() => setSnapshotLoadFailed(true));
   }, []);
   if (!snapshot && !snapshotLoadFailed) {
-    return <main className="sh-startup-loading">Loading…</main>;
+    return <DataState message={t("dataState.loading")} state="loading" />;
+  }
+  if (snapshotLoadFailed) {
+    return <DataState message={t("onboarding.bootstrapUnavailable")} state="unavailable" />;
   }
   if (snapshot?.initialization_state === "initialized") {
     return (
       <RescanWizard
         libraryPath={snapshot.library_path ?? ""}
+        onCancel={() => navigate("/settings")}
+        onComplete={() => navigate("/", { replace: true })}
         onOpenImport={(roots) => navigate("/discovery/local", { state: { initialSources: roots, initialSourceText: roots.length > 1 ? "" : roots[0] ?? "" } })}
       />
     );

@@ -11,6 +11,7 @@ import { resolveRouteTitleKey, resolveSubRouteFallback } from "./AppShell";
 import { queryClient } from "./queryClient";
 import { appRouter, AppRouter } from "./router";
 import { installDomAbortPrimitives } from "../test-setup";
+import { desktopBootstrapRuntime } from "../features/bootstrap/api";
 
 vi.mock("../api/bindings", async (importOriginal) => {
   const original = await importOriginal<typeof import("../api/bindings")>();
@@ -150,6 +151,26 @@ it("surfaces an unavailable state when the native Skill detail result is not con
 
   expect(await screen.findByText("Skill detail data is not connected yet")).toBeVisible();
   expect(screen.queryByText("PDF Reader")).not.toBeInTheDocument();
+});
+
+it("does not expose first-run initialization branches when the bootstrap snapshot is unavailable", async () => {
+  mockBrowserPreferences();
+  await skillHubI18n.changeLanguage("en-US");
+  const getBootstrapView = vi
+    .spyOn(desktopBootstrapRuntime, "getBootstrapView")
+    .mockRejectedValue(new Error("bootstrap unavailable"));
+  try {
+    await appRouter.navigate("/initialize");
+
+    render(<AppRouter />);
+
+    expect(await screen.findByText("Bootstrap status is unavailable. Initialization and rediscovery are temporarily unavailable.")).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Create a new library" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Use an existing library" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Restore from a backup" })).not.toBeInTheDocument();
+  } finally {
+    getBootstrapView.mockRestore();
+  }
 });
 
 it("isolates deterministic Skill detail preview data from production", async () => {

@@ -685,6 +685,7 @@
     "finishedDescription": "初始化设置已提交。",
     "finishedTitle": "初始化已完成",
     "genericError": "操作失败（{{code}}）。请稍后重试或重新打开页面。",
+    "bootstrapUnavailable": "暂时无法读取初始化状态。初始化和重新发现暂不可用。",
     "libraryDescription": "集中库会统一保存受管理的技能内容。选择后才会创建空目录。",
     "libraryHelper": "确认使用默认位置即可直接继续；也可以选择其他系统目录作为集中库。",
     "pickOtherDirectory": "选择其他目录",
@@ -754,6 +755,8 @@
     ,"rescanLibraryLocation": "当前集中库位置"
     ,"rescanConfirmation": "我确认只执行只读发现和扫描"
     ,"rescanStep": "第 {{current}} 步，共 3 步"
+    ,"rescanCancel": "取消并返回设置"
+    ,"rescanComplete": "完成重新扫描"
   },
   "theme": {
     "choiceLabel": "主题颜色",
