@@ -1,6 +1,7 @@
 //! Shared application boundary implementations.
 
 mod external_link;
+pub mod library_runtime;
 mod update_service;
 
 use std::collections::HashMap;

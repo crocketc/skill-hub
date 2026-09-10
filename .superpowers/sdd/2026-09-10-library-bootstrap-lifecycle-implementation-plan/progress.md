@@ -24,3 +24,5 @@ Ruling: the user's explicit request for one subagent overrides the skill's defau
 Ruling: candidate restore targets remain Pending until restore and persistence succeed, resolving the design's retry-versus-one-shot-activation tension — cost if wrong: candidate directories may retain safe retry artifacts, but no active runtime or database path points to them.
 
 Task 1: complete（提交范围：拆分 `CentralLibrary::create` 与 `open_existing`，增加目录边界、清单校验与可写探测测试；测试结果：`cargo test -p skillhub-storage --test library_layout`，11 passed）。
+
+Task 2: complete（提交范围：新增 `LibraryRuntime`/`LibraryContext`，覆盖 Pending、一次性发布、共享快照与并发激活；测试结果：`cargo test -p skillhub-application --test library_runtime`，4 passed）。
