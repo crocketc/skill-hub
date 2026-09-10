@@ -1074,20 +1074,21 @@ async fn onboarding_completion_is_repeatable_and_rejects_an_unconfigured_path() 
 }
 
 #[tokio::test]
-async fn set_library_root_persists_the_chosen_root_before_initialization() {
+async fn activate_library_root_persists_the_chosen_root_before_initialization() {
     let database = Database::open_in_memory().expect("database");
     let chosen_root = tempfile::tempdir().expect("chosen root");
     let chosen_path = chosen_root.path().to_string_lossy().into_owned();
     let facade = LocalApplicationFacade::new(database);
 
     let result = facade
-        .execute(AppCommand::SetLibraryRoot(
-            skillhub_core::api::SetLibraryRoot {
+        .execute(AppCommand::ActivateLibraryRoot(
+            skillhub_core::api::ActivateLibraryRoot {
                 path: chosen_path.clone(),
+                mode: skillhub_core::api::LibraryActivationMode::Create,
             },
         ))
         .await
-        .expect("set library root");
+        .expect("activate library root");
     let AppCommandResult::InitializationStatus(status) = result else {
         panic!("expected initialization status");
     };
@@ -1134,15 +1135,18 @@ async fn set_library_root_persists_the_chosen_root_before_initialization() {
 }
 
 #[tokio::test]
-async fn set_library_root_rejects_empty_paths_and_initialized_libraries() {
+async fn activate_library_root_rejects_empty_paths_and_initialized_libraries() {
     let database = Database::open_in_memory().expect("database");
     let library_root = tempfile::tempdir().expect("library root");
     let chosen_root = tempfile::tempdir().expect("chosen root");
     let facade = LocalApplicationFacade::new_with_library(database, library_root.path());
 
     let empty = facade
-        .execute(AppCommand::SetLibraryRoot(
-            skillhub_core::api::SetLibraryRoot { path: "   ".into() },
+        .execute(AppCommand::ActivateLibraryRoot(
+            skillhub_core::api::ActivateLibraryRoot {
+                path: "   ".into(),
+                mode: skillhub_core::api::LibraryActivationMode::Create,
+            },
         ))
         .await
         .expect_err("empty path must be rejected");
@@ -1159,9 +1163,10 @@ async fn set_library_root_rejects_empty_paths_and_initialized_libraries() {
         .expect("complete onboarding");
 
     let conflict = facade
-        .execute(AppCommand::SetLibraryRoot(
-            skillhub_core::api::SetLibraryRoot {
+        .execute(AppCommand::ActivateLibraryRoot(
+            skillhub_core::api::ActivateLibraryRoot {
                 path: chosen_root.path().to_string_lossy().into_owned(),
+                mode: skillhub_core::api::LibraryActivationMode::Create,
             },
         ))
         .await

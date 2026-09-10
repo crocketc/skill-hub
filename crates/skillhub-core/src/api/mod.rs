@@ -27,10 +27,10 @@ pub use command::{
     RunImportAiChecks, RunInitializationScan, RunLlmSafetyCheck, RunRollingBackup, SaveLlmProvider,
     SaveMarkdownContent, SaveProjectView, SaveSkillContent, SaveUserTranslationRevision,
     SavedSkillContent, ScanTargets, SetCurrentVersion, SetDefaultLlmProvider,
-    SetFindingDisposition, SetLibraryRoot, SetLifecycle, SetLlmProviderEnabled, SetMetadata,
-    SetProfileOverride, SetProjectTags, SetTrial, SetUiPreference, SetVersionLabel,
-    TestLlmConnection, TranslateDescription, TranslateDescriptionsBatch, UpdateCombination,
-    UpdateCustomAgent, UpdateProject, VerifyBackup, WriteSharedProjectConfig,
+    SetFindingDisposition, SetLifecycle, SetLlmProviderEnabled, SetMetadata, SetProfileOverride,
+    SetProjectTags, SetTrial, SetUiPreference, SetVersionLabel, TestLlmConnection,
+    TranslateDescription, TranslateDescriptionsBatch, UpdateCombination, UpdateCustomAgent,
+    UpdateProject, VerifyBackup, WriteSharedProjectConfig,
 };
 pub use event::{AppEvent, FactsChanged};
 pub use query::{

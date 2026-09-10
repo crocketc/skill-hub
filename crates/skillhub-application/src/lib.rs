@@ -694,7 +694,7 @@ impl ReconcileBackend for LocalDeploymentBackend {
 }
 
 impl LocalApplicationFacade {
-    /// Reads the central library root persisted via `set_library_root`, if any.
+    /// Reads the central library root persisted via `activate_library_root`, if any.
     /// Used by the desktop shell before constructing the facade so a restarted
     /// application resumes with the root chosen during onboarding.
     pub fn persisted_library_root(database_path: impl AsRef<Path>) -> Option<PathBuf> {
@@ -709,7 +709,7 @@ impl LocalApplicationFacade {
     }
 
     fn configured_library_path(&self) -> AppResult<PathBuf> {
-        // A root chosen via `set_library_root` persists in the database and
+        // A root chosen via `activate_library_root` persists in the database and
         // wins over the constructor value once present.
         let persisted = self.with_database("bootstrap.library_root", |database| {
             database.bootstrap_repository().load_library_root()
@@ -775,16 +775,6 @@ impl LocalApplicationFacade {
                 }))
         })?;
         Ok(AppCommandResult::InitializationStatus(status))
-    }
-
-    fn set_library_root(
-        &self,
-        request: skillhub_core::api::SetLibraryRoot,
-    ) -> AppResult<AppCommandResult> {
-        self.activate_library_root(skillhub_core::api::ActivateLibraryRoot {
-            path: request.path,
-            mode: skillhub_core::api::LibraryActivationMode::Create,
-        })
     }
 
     fn initial_restore_library(root: &Path) -> AppResult<CentralLibrary> {
@@ -4269,7 +4259,6 @@ impl ApplicationFacade for LocalApplicationFacade {
                 return self.commit_project_assembly(request)
             }
             AppCommand::RunInitializationScan(request) => return self.run_scan(request.scope_ids),
-            AppCommand::SetLibraryRoot(request) => return self.set_library_root(request),
             AppCommand::ActivateLibraryRoot(request) => return self.activate_library_root(request),
             AppCommand::CompleteOnboarding(request) => return self.complete_onboarding(request),
             AppCommand::DiscoverAgentTargets(_) => return self.discover_agent_targets(),
