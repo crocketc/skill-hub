@@ -1514,6 +1514,9 @@
       "low": "低风险"
     },
     "impact": "影响 {{count}} 个部署关系",
+    "item": {
+      "actionsGroup": "处理 {{subject}} 的建议操作"
+    },
     "filters": {
       "kind": "事项类型",
       "all": "全部事项"
@@ -1546,6 +1549,7 @@
       "label": "批量处置",
       "selectAll": "全选",
       "selectItem": "选择 {{subject}}",
+      "selectedCount": "已选 {{count}} 项",
       "defer7": "批量暂缓 7 天",
       "ignore": "批量永久忽略",
       "ignoreConfirmTitle": "永久忽略所选事项？",
@@ -1613,6 +1617,7 @@
       "ariaLabel": "操作记录",
       "sessionTitle": "本会话后台操作",
       "recentTitle": "最近操作记录",
+      "timeline": "操作时间线",
       "empty": "尚未有任何操作记录。执行导入、部署等操作后会在这里显示。",
       "recentEmpty": "暂无持久化操作记录。",
       "loading": "正在读取操作记录…",

@@ -38,6 +38,9 @@ import { DiscoveryCardsPreview } from "../features/discovery/DiscoveryCardsPrevi
 import { UiFoundationsPreview } from "../features/dev-preview/UiFoundationsPreview";
 import { MarkdownWorkspacePreview } from "../features/markdown/MarkdownWorkspacePreview";
 import { OverviewPreviewShell } from "../features/overview/OverviewPreview";
+import { PendingPreview } from "../features/pending/PendingPreview";
+import { OperationsPreview, OperationProgressPreview } from "../features/operations/OperationsPreview";
+import { RecoveryPreview } from "../features/recovery/RecoveryPreview";
 import { DiscoveryRoute } from "./DiscoveryRoute";
 import { OverviewPage } from "../features/overview/OverviewPage";
 import { SkillLibraryPage } from "../features/skills/SkillLibraryPage";
@@ -257,6 +260,10 @@ export const appRouter = createBrowserRouter([
             { path: "agents", element: <AgentsPreview /> },
             { path: "agents/detail", element: <AgentDetailPreview /> },
             { path: "projects", element: <ProjectsPreview /> },
+            { path: "pending", element: <PendingPreview /> },
+            { path: "operations-records", element: <OperationsPreview /> },
+            { path: "operation-progress", element: <OperationProgressPreview /> },
+            { path: "recovery", element: <RecoveryPreview /> },
           ],
         },
         {

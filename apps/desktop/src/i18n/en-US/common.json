@@ -1514,6 +1514,9 @@
       "low": "Low risk"
     },
     "impact": "Affects {{count}} deployments",
+    "item": {
+      "actionsGroup": "Suggested actions for {{subject}}"
+    },
     "filters": {
       "kind": "Item type",
       "all": "All items"
@@ -1546,6 +1549,7 @@
       "label": "Batch disposition",
       "selectAll": "Select all",
       "selectItem": "Select {{subject}}",
+      "selectedCount": "{{count}} selected",
       "defer7": "Defer selected for 7 days",
       "ignore": "Ignore selected permanently",
       "ignoreConfirmTitle": "Permanently ignore the selected items?",
@@ -1613,6 +1617,7 @@
       "ariaLabel": "Operation records",
       "sessionTitle": "Background operations in this session",
       "recentTitle": "Recent operations",
+      "timeline": "Operations timeline",
       "empty": "No operation records yet. Imports, deployments and similar operations will appear here.",
       "recentEmpty": "No persisted operation records.",
       "loading": "Loading operation records…",
