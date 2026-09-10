@@ -1,6 +1,9 @@
 import { useCallback, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "../../ui/Button";
+import { Icon } from "../../ui/Icon";
+import { SkillCard } from "../shared/skill-card/SkillCard";
+import type { SkillCardViewModel } from "../shared/skill-card/SkillCardViewModel";
 import type { AgentsLockEntry, DiscoverableRepoSkill } from "../../api/bindings";
 
 export interface AgentsLockFacade {
@@ -22,7 +25,7 @@ interface LockRow {
 /**
  * Q17：`~/.agents/.skill-lock.json` 发现（只读）。列出其中 GitHub 来源的
  * Skill 条目；"下载并导入"复用既有仓库下载（预算受限）并进入导入向导。
- * lock 文件缺失或为空时如实显示空态。
+ * lock 文件缺失或为空时如实显示空态；条目没有的描述/数量字段如实省略。
  */
 export function AgentsLockDiscovery({ facade, onImportDirectory }: AgentsLockDiscoveryProps) {
   const { t } = useTranslation();
@@ -72,55 +75,71 @@ export function AgentsLockDiscovery({ facade, onImportDirectory }: AgentsLockDis
   );
 
   return (
-    <article aria-label={t("discovery.agentsLock.title")} className="sh-discovery-card">
-      <div className="sh-discovery-card__heading">
+    <section aria-label={t("discovery.agentsLock.title")} className="sh-discovery-module">
+      <header className="sh-discovery-module__heading">
         <div>
-          <p className="sh-discovery-card__eyebrow">{t("discovery.agentsLock.eyebrow")}</p>
+          <p className="sh-discovery-module__eyebrow">{t("discovery.agentsLock.eyebrow")}</p>
           <h2>{t("discovery.agentsLock.title")}</h2>
         </div>
-        <span aria-hidden="true" className="sh-discovery-card__icon">⇣</span>
-      </div>
-      <p>{t("discovery.agentsLock.description")}</p>
-      <div className="sh-discovery-card__search">
-        <Button disabled={scanning} onClick={() => void scan()} variant="secondary">
-          {scanning ? t("discovery.agentsLock.scanning") : t("discovery.agentsLock.scan")}
-        </Button>
-      </div>
-      {error ? <p role="alert">{error}</p> : null}
-      {entries ? (
-        entries.length === 0 ? (
-          <p>{t("discovery.agentsLock.empty")}</p>
-        ) : (
-          <ul className="sh-discovery-card__results">
-            {entries.map((entry) => {
-              const row: LockRow = { entry, skill: toRepoSkill(entry) };
-              return (
-                <li key={`${entry.owner}/${entry.repo}/${entry.name}`}>
-                  <span>{entry.name}</span>
-                  <span>
-                    {t("discovery.agentsLock.source", {
+        <span aria-hidden="true" className="sh-discovery-module__icon">
+          <Icon name="operations" size={24} />
+        </span>
+      </header>
+      <p className="sh-discovery-module__description">{t("discovery.agentsLock.description")}</p>
+      <div className="sh-discovery-module__body">
+        <div className="sh-discovery-module__controls">
+          <Button disabled={scanning} onClick={() => void scan()} variant="secondary">
+            {scanning ? t("discovery.agentsLock.scanning") : t("discovery.agentsLock.scan")}
+          </Button>
+          {error ? <p role="alert">{error}</p> : null}
+        </div>
+        {entries ? (
+          entries.length === 0 ? (
+            <p>{t("discovery.agentsLock.empty")}</p>
+          ) : (
+            <div className="sh-discovery-results-zone">
+              <ul
+                aria-label={t("discovery.agentsLock.results")}
+                className="sh-discovery-results"
+              >
+                {entries.map((entry) => {
+                  const row: LockRow = { entry, skill: toRepoSkill(entry) };
+                  const card: SkillCardViewModel = {
+                    id: `${entry.owner}/${entry.repo}/${entry.name}`,
+                    name: entry.name,
+                    sourceType: "lock",
+                    sourceLabel: t("discovery.agentsLock.source", {
                       repo: `${entry.owner}/${entry.repo}`,
                       branch: entry.branch ?? t("discovery.agentsLock.defaultBranch"),
-                    })}
-                  </span>
-                  {entry.skill_path ? (
-                    <span>{t("discovery.agentsLock.skillPath", { path: entry.skill_path })}</span>
-                  ) : null}
-                  <Button
-                    disabled={downloadingName !== null}
-                    onClick={() => void downloadAndImport(row)}
-                    variant="secondary"
-                  >
-                    {downloadingName === entry.name
-                      ? t("discovery.agentsLock.downloading")
-                      : t("discovery.agentsLock.downloadImport")}
-                  </Button>
-                </li>
-              );
-            })}
-          </ul>
-        )
-      ) : null}
-    </article>
+                    }),
+                    location: entry.skill_path
+                      ? t("discovery.agentsLock.skillPath", { path: entry.skill_path })
+                      : undefined,
+                  };
+                  return (
+                    <li key={`${entry.owner}/${entry.repo}/${entry.name}`}>
+                      <SkillCard
+                        primaryAction={
+                          <Button
+                            disabled={downloadingName !== null}
+                            onClick={() => void downloadAndImport(row)}
+                            variant="secondary"
+                          >
+                            {downloadingName === entry.name
+                              ? t("discovery.agentsLock.downloading")
+                              : t("discovery.agentsLock.downloadImport")}
+                          </Button>
+                        }
+                        skill={card}
+                      />
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          )
+        ) : null}
+      </div>
+    </section>
   );
 }

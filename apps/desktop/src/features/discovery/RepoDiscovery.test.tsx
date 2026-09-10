@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { I18nextProvider } from "react-i18next";
 import { createSkillHubI18n } from "../../i18n";
 import type {
@@ -127,6 +127,34 @@ it("discovers skills across repositories and surfaces per-repo warnings", async 
   ).toBeVisible();
   expect(screen.getByText(/404/)).toBeVisible();
   expect(discoverRepoSkills).toHaveBeenCalled();
+});
+
+it("renders discovered repo skills as shared skill cards", async () => {
+  renderCard(baseFacade());
+
+  await click(await screen.findByRole("button", { name: "扫描仓库" }));
+
+  const title = await screen.findByRole("heading", { name: "PDF" });
+  const card = title.closest("article");
+  expect(card).not.toBeNull();
+  const scope = within(card as HTMLElement);
+  expect(scope.getByText("anthropics/skills@main")).toBeVisible();
+  expect(scope.getByText("Handle PDF files")).toBeVisible();
+  expect(scope.getByRole("link", { name: "README" })).toBeVisible();
+  expect(scope.getByRole("button", { name: "下载并导入" })).toBeVisible();
+});
+
+it("omits the description honestly when a repo skill has none", async () => {
+  const noDescription: DiscoverableRepoSkill = { ...skill, description: "" };
+  renderCard(
+    baseFacade({ discoverRepoSkills: vi.fn(async () => ({ skills: [noDescription], warnings: [] })) }),
+  );
+
+  await click(await screen.findByRole("button", { name: "扫描仓库" }));
+
+  expect(await screen.findByRole("heading", { name: "PDF" })).toBeVisible();
+  // 仓库归档没有提供描述：卡片省略该区域，而不是伪造“暂无描述”类占位文案。
+  expect(screen.queryByText(/暂无描述|暂无说明|No description/)).not.toBeInTheDocument();
 });
 
 it("downloads a discovered skill and hands the local path to the import wizard", async () => {

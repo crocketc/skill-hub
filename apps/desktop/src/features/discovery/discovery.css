@@ -1,4 +1,5 @@
-/* 发现页样式（T0 自 base.css 机械搬移，保持类名与计算样式不变；与 import 向导耦合的选择器仍留在 base.css）。 */
+/* 发现页样式（T2 独占）。T0 自 base.css 机械搬移的入口网格保持类名不变；
+   模块子页与共享 Skill 卡片结果网格按设计规格 5.2 使用语义 token 与容器查询。 */
 
 .sh-discovery-page__grid {
   display: grid;
@@ -6,46 +7,8 @@
   gap: var(--space-4);
 }
 
-.sh-discovery-card__heading {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: var(--space-3);
-}
-.sh-discovery-card__heading h2 {
-  margin: 0;
-  font-size: var(--font-size-lg);
-}
+/* —— 发现主页：四张固定模块入口卡片（AR-012）—— */
 
-.sh-discovery-card__icon {
-  display: grid;
-  width: 2rem;
-  height: 2rem;
-  place-items: center;
-  border-radius: var(--radius-md);
-  background: var(--color-accent-soft);
-  color: var(--color-accent-strong);
-  font-size: var(--font-size-lg);
-}
-
-.sh-discovery-card > p {
-  margin: 0;
-  color: var(--color-text-secondary);
-}
-
-.sh-discovery-card ul {
-  display: grid;
-  gap: var(--space-2);
-  padding-left: var(--space-5);
-  margin: 0;
-  color: var(--color-text-muted);
-}
-
-.sh-discovery-card .sh-button {
-  justify-self: start;
-}
-
-/* AR-012：发现主页的四张固定模块卡片，等宽等高、只承载入口。 */
 .sh-discovery-home__grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -59,9 +22,9 @@
   gap: var(--space-3);
   min-width: 0;
   padding: var(--space-5);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  background: var(--color-surface);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-md);
+  background: var(--ui-surface);
   box-shadow: var(--shadow-sm);
 }
 
@@ -70,10 +33,17 @@
   width: 2rem;
   height: 2rem;
   place-items: center;
-  border-radius: var(--radius-md);
-  background: var(--color-accent-soft);
-  color: var(--color-accent-strong);
-  font-size: var(--font-size-lg);
+  border-radius: var(--radius-xs);
+  background: var(--ui-selected-surface);
+  color: var(--ui-accent);
+}
+
+/* ui/Icon 注册表 SVG 默认无描边（T0 已知缺口）：消费方补等价描边规则。 */
+.sh-discovery-home__icon svg {
+  stroke: currentColor;
+  stroke-width: 1.75;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .sh-discovery-home__title {
@@ -83,12 +53,12 @@
 
 .sh-discovery-home__description {
   margin: 0;
-  color: var(--color-text-secondary);
+  color: var(--ui-ink-muted);
 }
 
 .sh-discovery-home__note {
   margin: 0;
-  color: var(--color-text-muted);
+  color: var(--ui-ink-muted);
   font-size: var(--font-size-xs);
 }
 
@@ -104,27 +74,187 @@
 }
 
 .sh-discovery-home__card--secondary .sh-discovery-home__icon {
-  background: var(--color-surface-raised);
-  color: var(--color-text-muted);
+  background: var(--ui-surface-subtle);
+  color: var(--ui-icon-muted);
 }
 
 .sh-discovery-home__card--secondary .sh-discovery-home__title {
   font-size: var(--font-size-md);
-  color: var(--color-text-secondary);
+  color: var(--ui-ink-muted);
 }
 
 /* AR-013：lock 子页顶部的次级来源说明。 */
 .sh-discovery-subpage__note {
   margin: 0;
   padding: var(--space-3) var(--space-4);
-  border: 1px dashed var(--color-border);
-  border-radius: var(--radius-md);
-  color: var(--color-text-muted);
+  border: 1px dashed var(--ui-border);
+  border-radius: var(--radius-xs);
+  color: var(--ui-ink-muted);
   font-size: var(--font-size-sm);
 }
 
+/* —— 发现模块子页：模块头 + 控制行 + 结果网格（设计规格 5.2）—— */
 
+.sh-discovery-module {
+  display: grid;
+  align-content: start;
+  gap: var(--space-4);
+  min-width: 0;
+}
 
+.sh-discovery-module__heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.sh-discovery-module__heading h2 {
+  margin: 0;
+  font-size: var(--font-size-lg);
+}
+
+.sh-discovery-module__eyebrow {
+  margin: 0 0 var(--space-1);
+  color: var(--ui-accent);
+  font-size: var(--font-size-xs);
+  font-weight: 750;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.sh-discovery-module__icon {
+  display: grid;
+  flex: 0 0 auto;
+  width: 2rem;
+  height: 2rem;
+  place-items: center;
+  border-radius: var(--radius-xs);
+  background: var(--ui-selected-surface);
+  color: var(--ui-accent);
+}
+
+.sh-discovery-module__icon svg {
+  stroke: currentColor;
+  stroke-width: 1.75;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.sh-discovery-module__description {
+  margin: 0;
+  color: var(--ui-ink-muted);
+}
+
+.sh-discovery-module__body {
+  display: grid;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.sh-discovery-module__controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.sh-discovery-module__controls .sh-input {
+  /* 搜索输入在窄窗口保持可用宽度，同时不挤压 AI 辅助开关。 */
+  flex: 1 1 16rem;
+  min-width: 0;
+}
+
+.sh-discovery-module__controls p {
+  flex-basis: 100%;
+  margin: 0;
+}
+
+/* —— 仓库发现的仓库管理与扫描提示（非 Skill 卡片的管理行）—— */
+
+.sh-discovery-repos {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sh-discovery-repos > li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.sh-discovery-repos label {
+  display: inline-flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  cursor: pointer;
+}
+
+.sh-discovery-repos__scanning {
+  color: var(--ui-ink-muted);
+}
+
+.sh-discovery-repos__warnings {
+  display: grid;
+  gap: var(--space-1);
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--ui-warning-border);
+  border-radius: var(--radius-xs);
+  background: var(--ui-warning-background);
+  color: var(--ui-warning-foreground);
+  font-size: var(--font-size-xs);
+  list-style: none;
+}
+
+/* 本机发现子页的事实清单（只读边界说明）。 */
+.sh-discovery-facts {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding-left: var(--space-5);
+  color: var(--ui-ink-muted);
+}
+
+/* —— 共享 Skill 卡片结果网格：容器查询驱动 3/2/1 列（内容宽优先于视口）—— */
+
+/* 容器查询的容器不能是被查询元素自身：外层 zone 承载 container，内层 ul 是网格。 */
+.sh-discovery-results-zone {
+  container-type: inline-size;
+  min-width: 0;
+}
+
+.sh-discovery-results {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--space-4);
+  align-items: stretch;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* 内容宽 760–1179px：两列。 */
+@container (min-width: 760px) {
+  .sh-discovery-results {
+    grid-template-columns: repeat(2, minmax(min(17.5rem, 100%), 1fr));
+  }
+}
+
+/* 内容宽 ≥1180px：三列。 */
+@container (min-width: 1180px) {
+  .sh-discovery-results {
+    grid-template-columns: repeat(3, minmax(min(17.5rem, 100%), 1fr));
+  }
+}
 
 @media (max-width: 48rem) {
   .sh-discovery-page__grid,
