@@ -191,7 +191,7 @@ export const nativeSkillLibraryFacade: SkillLibraryFacade = {
   },
   async loadViewMode() {
     const raw = await readUiPreference("library_view_mode");
-    return raw === "cards" || raw === "matrix" ? raw : "table";
+    return raw === "cards" || raw === "matrix" ? raw : "cards";
   },
   async saveViewMode(mode) {
     await executeCommand({
