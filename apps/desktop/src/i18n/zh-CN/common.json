@@ -770,6 +770,9 @@
     ,"rescanStep": "第 {{current}} 步，共 3 步"
     ,"rescanCancel": "取消并返回设置"
     ,"rescanComplete": "完成重新扫描"
+    ,"stepsLabel": "初始化步骤"
+    ,"rescanStepsLabel": "重新发现步骤"
+    ,"stepComplete": "已完成"
   },
   "theme": {
     "choiceLabel": "主题颜色",

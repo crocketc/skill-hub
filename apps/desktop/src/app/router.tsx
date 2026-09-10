@@ -5,6 +5,7 @@ import { I18nextProvider, useTranslation } from "react-i18next";
 import { createBrowserRouter, RouterProvider, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { OnboardingWizard } from "../features/onboarding/OnboardingWizard";
 import { RescanWizard } from "../features/onboarding/RescanWizard";
+import { OnboardingPreview } from "../features/onboarding/OnboardingPreview";
 import { desktopBootstrapRuntime } from "../features/bootstrap/api";
 import { AgentDetailPage } from "../features/agents/AgentDetailPage";
 import { AgentListPage } from "../features/agents/AgentListPage";
@@ -263,6 +264,7 @@ export const appRouter = createBrowserRouter([
           element: <OverviewPreviewShell />,
           children: [{ index: true, element: <OverviewPage /> }],
         },
+        { path: "__preview/onboarding/:scenario", element: <OnboardingPreview /> },
       ]
     : []),
 ]);

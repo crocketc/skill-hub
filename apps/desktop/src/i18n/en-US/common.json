@@ -770,6 +770,9 @@
     ,"rescanStep": "Step {{current}} of 3"
     ,"rescanCancel": "Cancel and return to Settings"
     ,"rescanComplete": "Complete rediscovery"
+    ,"stepsLabel": "Initialization steps"
+    ,"rescanStepsLabel": "Rediscovery steps"
+    ,"stepComplete": "Completed"
   },
   "theme": {
     "choiceLabel": "Theme colors",
