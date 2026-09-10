@@ -94,7 +94,14 @@ function keyedMessage(
   if (code === "backup.checksum_mismatch") return "errors.backupChecksumMismatch";
   if (code === "import.remote_download_not_wired") return "importWorkflow.errors.remoteNotWired";
   if (code === "import.no_default_action") return "importWorkflow.errors.noDefaultAction";
-  if (code === "input.invalid") return "errors.inputInvalid";
+  if (code === "input.invalid") {
+    // open_existing 用 input.invalid 承载“目录不是已有集中库”的原因；
+    // 只有该 reason 走专属文案，其余 input.invalid 保持通用校验提示。
+    if (reason === "existing_library_manifest_missing") {
+      return "errors.onboarding.existingLibraryManifestMissing";
+    }
+    return "errors.inputInvalid";
+  }
   return null;
 }
 

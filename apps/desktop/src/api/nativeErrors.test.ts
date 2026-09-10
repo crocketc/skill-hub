@@ -76,4 +76,27 @@ describe("nativeErrors", () => {
     );
     expect(message).toBe(key);
   });
+
+  it("maps the input.invalid missing-manifest reason to the specific existing-library copy", () => {
+    const message = describeNativeError(
+      {
+        code: "input.invalid",
+        severity: "error",
+        params: { reason: "existing_library_manifest_missing" },
+        actions: [],
+      },
+      (translationKey) => translationKey,
+      "errors.generic",
+    );
+    expect(message).toBe("errors.onboarding.existingLibraryManifestMissing");
+  });
+
+  it("keeps other input.invalid errors on the generic validation copy", () => {
+    const message = describeNativeError(
+      { code: "input.invalid", severity: "error", params: { field: "decision" }, actions: [] },
+      (translationKey) => translationKey,
+      "errors.generic",
+    );
+    expect(message).toBe("errors.inputInvalid");
+  });
 });
