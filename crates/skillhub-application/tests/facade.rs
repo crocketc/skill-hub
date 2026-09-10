@@ -1259,6 +1259,83 @@ async fn failed_activation_keeps_pending_and_does_not_persist_a_root() {
 }
 
 #[tokio::test]
+async fn initial_restore_uses_the_selected_target_and_activates_only_after_commit() {
+    let facade = LocalApplicationFacade::new(Database::open_in_memory().unwrap());
+    let package_root = tempfile::tempdir().unwrap();
+    let target_parent = tempfile::tempdir().unwrap();
+    let target = target_parent.path().join("restored-library");
+    let backup = skillhub_storage::backup::BackupService::new(package_root.path().to_path_buf());
+    let input = skillhub_core::backup::BackupInput::new(
+        BackupScope::Full,
+        r#"{"deployments":[]}"#,
+        Vec::new(),
+    );
+    let package = backup
+        .create(&input, &backup.prepare(&input).unwrap(), &[])
+        .unwrap();
+
+    let prepared = facade
+        .execute(AppCommand::PrepareInitialRestore(
+            skillhub_core::api::PrepareInitialRestore {
+                backup_path: package.root.to_string_lossy().into_owned(),
+                library_path: target.to_string_lossy().into_owned(),
+            },
+        ))
+        .await
+        .expect("prepare initial restore");
+    assert!(matches!(prepared, AppCommandResult::RestorePlan(_)));
+    assert!(facade.library_runtime().snapshot().is_err());
+
+    facade
+        .execute(AppCommand::CommitInitialRestore(
+            skillhub_core::api::CommitInitialRestore {
+                backup_path: package.root.to_string_lossy().into_owned(),
+                library_path: target.to_string_lossy().into_owned(),
+                decisions: Vec::new(),
+            },
+        ))
+        .await
+        .expect("commit initial restore");
+    assert_eq!(facade.library_runtime().snapshot().unwrap().root, target);
+}
+
+#[tokio::test]
+async fn initial_restore_failure_keeps_pending_and_initialized_facades_reject_it() {
+    let pending = LocalApplicationFacade::new(Database::open_in_memory().unwrap());
+    let target = tempfile::tempdir().unwrap().path().join("restore-target");
+    let error = pending
+        .execute(AppCommand::PrepareInitialRestore(
+            skillhub_core::api::PrepareInitialRestore {
+                backup_path: "missing-backup".into(),
+                library_path: target.to_string_lossy().into_owned(),
+            },
+        ))
+        .await
+        .expect_err("missing backup must fail");
+    assert!(pending.library_runtime().snapshot().is_err());
+    assert_eq!(error.code, ErrorCode::ObjectNotFound);
+
+    let active_root = tempfile::tempdir().unwrap();
+    let active = LocalApplicationFacade::new_with_library(
+        Database::open_in_memory().unwrap(),
+        active_root.path(),
+    );
+    let error = active
+        .execute(AppCommand::PrepareInitialRestore(
+            skillhub_core::api::PrepareInitialRestore {
+                backup_path: "missing-backup".into(),
+                library_path: target.to_string_lossy().into_owned(),
+            },
+        ))
+        .await
+        .expect_err("active facade must reject initial restore");
+    assert_eq!(
+        error.params.get("reason").and_then(|value| value.as_str()),
+        Some("library_root_locked")
+    );
+}
+
+#[tokio::test]
 async fn pending_query_uses_the_same_date_boundary_as_bootstrap() {
     let database = Database::open_in_memory().expect("database");
     let skill = Skill::new(skillhub_core::SkillId::new(), "Trial").with_trial_due(2026, 8, 29);

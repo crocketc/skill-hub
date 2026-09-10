@@ -83,6 +83,26 @@ impl LibraryRuntime {
         *active = Some(prepare()?);
         Ok(())
     }
+
+    pub fn activate_with_result<T, F>(&self, prepare: F) -> AppResult<T>
+    where
+        F: FnOnce() -> AppResult<(Arc<LibraryContext>, T)>,
+    {
+        let _guard = self
+            .activation_lock
+            .lock()
+            .map_err(|_| runtime_internal("library_runtime.activate_with_result.lock"))?;
+        let mut active = self
+            .active
+            .write()
+            .map_err(|_| runtime_internal("library_runtime.activate_with_result"))?;
+        if active.is_some() {
+            return Err(library_root_locked());
+        }
+        let (context, result) = prepare()?;
+        *active = Some(context);
+        Ok(result)
+    }
 }
 
 impl Default for LibraryRuntime {

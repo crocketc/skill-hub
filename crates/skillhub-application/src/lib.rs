@@ -787,6 +787,97 @@ impl LocalApplicationFacade {
         })
     }
 
+    fn initial_restore_library(root: &Path) -> AppResult<CentralLibrary> {
+        let paths = LibraryPaths::from_root(root);
+        if paths.manifest_path.is_file() {
+            CentralLibrary::open_existing(root)
+        } else {
+            CentralLibrary::create(root)
+        }
+    }
+
+    fn ensure_initial_restore_pending(&self) -> AppResult<()> {
+        if self.library_runtime.snapshot().is_ok() {
+            return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                .with_param("reason", "library_root_locked")
+                .with_action(RecoveryAction::Acknowledge));
+        }
+        let initialized = self.with_database("execute.initial_restore.status", |database| {
+            database.bootstrap_repository().load_initialization()
+        })?;
+        if initialized.is_some_and(|status| {
+            matches!(
+                status.state,
+                skillhub_core::InitializationState::Initialized
+            )
+        }) {
+            return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                .with_param("reason", "library_root_locked")
+                .with_action(RecoveryAction::Acknowledge));
+        }
+        Ok(())
+    }
+
+    fn prepare_initial_restore(
+        &self,
+        request: skillhub_core::api::PrepareInitialRestore,
+    ) -> AppResult<AppCommandResult> {
+        self.ensure_initial_restore_pending()?;
+        if request.library_path.trim().is_empty() {
+            return Err(invalid_input("library root path must not be empty"));
+        }
+        let package = Self::backup_package(request.backup_path)?;
+        let root = PathBuf::from(request.library_path.trim());
+        let _candidate = Self::initial_restore_library(&root)?;
+        let plan = RestoreService::new(root).prepare(&package)?;
+        Ok(AppCommandResult::RestorePlan(plan))
+    }
+
+    fn commit_initial_restore(
+        &self,
+        request: skillhub_core::api::CommitInitialRestore,
+    ) -> AppResult<AppCommandResult> {
+        if request.library_path.trim().is_empty() {
+            return Err(invalid_input("library root path must not be empty"));
+        }
+        let package = Self::backup_package(request.backup_path)?;
+        let root = PathBuf::from(request.library_path.trim());
+        let decisions = request
+            .decisions
+            .into_iter()
+            .map(|decision| (decision.skill_id, decision.decision))
+            .collect::<Vec<_>>();
+        self.ensure_initial_restore_pending()?;
+        let result = self.library_runtime.activate_with_result(|| {
+            let initialized = self.with_database("execute.initial_restore.status", |database| {
+                database.bootstrap_repository().load_initialization()
+            })?;
+            if initialized.is_some_and(|status| {
+                matches!(
+                    status.state,
+                    skillhub_core::InitializationState::Initialized
+                )
+            }) {
+                return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                    .with_param("reason", "library_root_locked")
+                    .with_action(RecoveryAction::Acknowledge));
+            }
+            let _candidate = Self::initial_restore_library(&root)?;
+            let service = RestoreService::new(root.clone());
+            let plan = service.prepare(&package)?;
+            let result = service.commit(&package, &plan, &decisions)?;
+            let central = CentralLibrary::initialize(&root)?;
+            let context = Arc::new(library_runtime::LibraryContext::from_library(central));
+            self.with_database("execute.initial_restore.persist", |database| {
+                database
+                    .bootstrap_repository()
+                    .save_library_root(root.to_string_lossy().as_ref())
+            })?;
+            Ok((context, result))
+        })?;
+        Ok(AppCommandResult::RestoreResult(result))
+    }
+
     fn list_skill_repos(&self) -> AppResult<AppQueryResult> {
         let repos = self.with_database("query.list_skill_repos", |database| {
             database.skill_repo_repository().list()
@@ -4262,6 +4353,9 @@ impl ApplicationFacade for LocalApplicationFacade {
                 let plan = RestoreService::new(library.root.clone()).prepare(&package)?;
                 return Ok(AppCommandResult::RestorePlan(plan));
             }
+            AppCommand::PrepareInitialRestore(request) => {
+                return self.prepare_initial_restore(request);
+            }
             AppCommand::CommitRestore(request) => {
                 let package = Self::backup_package(request.path)?;
                 let library = self.library_runtime.snapshot()?;
@@ -4274,6 +4368,9 @@ impl ApplicationFacade for LocalApplicationFacade {
                     .collect::<Vec<_>>();
                 let result = service.commit(&package, &plan, &decisions)?;
                 return Ok(AppCommandResult::RestoreResult(result));
+            }
+            AppCommand::CommitInitialRestore(request) => {
+                return self.commit_initial_restore(request);
             }
             AppCommand::RunRollingBackup(request) => {
                 let input = self.build_backup_input(request.scope)?;

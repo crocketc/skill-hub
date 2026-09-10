@@ -548,6 +548,21 @@ pub struct CommitRestore {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 #[serde(deny_unknown_fields)]
+pub struct PrepareInitialRestore {
+    pub backup_path: String,
+    pub library_path: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct CommitInitialRestore {
+    pub backup_path: String,
+    pub library_path: String,
+    pub decisions: Vec<RestoreDecision>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
 pub struct RunRollingBackup {
     pub scope: BackupScope,
     pub retention: BackupRetentionPolicy,
@@ -851,6 +866,10 @@ pub enum AppCommand {
     PrepareRestore(PrepareRestore),
     #[serde(rename = "commit_restore")]
     CommitRestore(CommitRestore),
+    #[serde(rename = "prepare_initial_restore")]
+    PrepareInitialRestore(PrepareInitialRestore),
+    #[serde(rename = "commit_initial_restore")]
+    CommitInitialRestore(CommitInitialRestore),
     #[serde(rename = "run_rolling_backup")]
     RunRollingBackup(RunRollingBackup),
     #[serde(rename = "prepare_standard_export")]
