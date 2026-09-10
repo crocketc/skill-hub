@@ -4,7 +4,10 @@ import { useSearchParams } from "react-router-dom";
 import { describeNativeError } from "../../api/nativeErrors";
 import { Button } from "../../ui/Button";
 import { DataState } from "../../ui/DataState";
+import { Icon } from "../../ui/Icon";
 import { BatchOperationSummary, type BatchOutcome } from "../../ui/BatchOperationSummary";
+import { ImportShell, type ImportStatus, type ImportStep } from "../import/ImportShell";
+import "./deployment.css";
 import {
   type BatchDeploymentFacade,
   type BatchDeploymentPreview,
@@ -21,6 +24,10 @@ export interface BatchDeploymentPageProps {
   onCommitted?: (results: BatchDeploymentResult[]) => void;
 }
 
+type FlowPhase = "list-error" | "loading" | "empty" | "targets" | "plan" | "committing" | "results";
+
+const STEP_KEYS = ["targets", "preview", "commit", "results"] as const;
+
 function uniqueIds(skillIds: string[]) {
   return [...new Set(skillIds.filter(Boolean))];
 }
@@ -34,7 +41,8 @@ export function BatchDeploymentPage({ facade, skillIds, onCommitted }: BatchDepl
   const [mode, setMode] = useState<DeploymentMode>();
   const [preview, setPreview] = useState<BatchDeploymentPreview>();
   const [results, setResults] = useState<BatchDeploymentResult[]>();
-  const [error, setError] = useState<string>();
+  const [listError, setListError] = useState<string>();
+  const [flowError, setFlowError] = useState<string>();
   const [committing, setCommitting] = useState(false);
   const [searchParams, setSearchParams] = useSearchParams();
   const preselectedTargetId = searchParams.get("target");
@@ -43,7 +51,7 @@ export function BatchDeploymentPage({ facade, skillIds, onCommitted }: BatchDepl
   useEffect(() => {
     let active = true;
     void activeFacade.listTargets().then((value) => active && setTargets(value)).catch((reason: unknown) => {
-      if (active) setError(describeNativeError(reason, (key, options) => String(t(key as never, options as never)), "deployment.errors.generic"));
+      if (active) setListError(describeNativeError(reason, (key, options) => String(t(key as never, options as never)), "deployment.errors.generic"));
     });
     // 关联 Agent 展开是可选能力；facade 未提供时按钮不出现。
     void activeFacade.listProjects?.().then((value) => active && setProjects(value)).catch(() => {
@@ -77,24 +85,24 @@ export function BatchDeploymentPage({ facade, skillIds, onCommitted }: BatchDepl
     ? []
     : selected[0].modes.filter((candidate) => selected.every((target) => target.modes.includes(candidate)));
   const previewBatch = async () => {
-    setError(undefined);
+    setFlowError(undefined);
     try {
       setPreview(await activeFacade.preview(selectedSkillIds, selected, mode));
       setResults(undefined);
     } catch (reason) {
-      setError(describeNativeError(reason, (key, options) => String(t(key as never, options as never)), "deployment.errors.generic"));
+      setFlowError(describeNativeError(reason, (key, options) => String(t(key as never, options as never)), "deployment.errors.generic"));
     }
   };
   const commit = async () => {
     if (!preview?.plans.length || preview.failures.length) return;
     setCommitting(true);
-    setError(undefined);
+    setFlowError(undefined);
     try {
       const committed = await activeFacade.commit(preview.plans);
       setResults(committed);
       onCommitted?.(committed);
     } catch (reason) {
-      setError(describeNativeError(reason, (key, options) => String(t(key as never, options as never)), "deployment.errors.generic"));
+      setFlowError(describeNativeError(reason, (key, options) => String(t(key as never, options as never)), "deployment.errors.generic"));
     } finally {
       setCommitting(false);
     }
@@ -102,91 +110,168 @@ export function BatchDeploymentPage({ facade, skillIds, onCommitted }: BatchDepl
 
   if (selectedSkillIds.length === 0) return <DataState message={t("deployment.states.noSkills")} state="empty" />;
 
-  return <main className="sh-page sh-workflow-page">
-    <header className="sh-page__header">
-      <div>
-        <p className="sh-eyebrow">{t("deployment.eyebrow")}</p>
-        <h1>{t("deployment.batch.heading", { count: selectedSkillIds.length })}</h1>
-        <p>{t("deployment.batch.description")}</p>
+  // 展示层映射：每个阶段归属唯一流程步骤；失败态回到触发它的步骤。
+  const phase: FlowPhase = listError
+    ? "list-error"
+    : targets === undefined
+      ? "loading"
+      : targets.length === 0
+        ? "empty"
+        : committing
+          ? "committing"
+          : results
+            ? "results"
+            : preview
+              ? "plan"
+              : "targets";
+  const stepIndex = phase === "results" ? 3 : phase === "committing" ? 2 : phase === "plan" ? 1 : 0;
+  const steps: ImportStep[] = STEP_KEYS.map((key, index) => ({
+    label: t(`deployment.steps.${key}`),
+    state: index < stepIndex ? "complete" : index === stepIndex ? "current" : "upcoming",
+  }));
+
+  const failedResults = results?.filter((result) => result.status === "failed") ?? [];
+  const previewFailures = preview?.failures ?? [];
+  const status: ImportStatus | null =
+    phase === "list-error"
+      ? { kind: "failure", text: listError ?? "" }
+      : phase === "loading" || phase === "empty"
+        ? // 加载与空态由面板 DataState 呈现；持续播报区保持静默，避免同文案双份朗读。
+          null
+        : phase === "targets"
+          ? { kind: "info", text: t("deployment.status.selecting") }
+          : phase === "plan"
+            ? previewFailures.length > 0
+              ? { kind: "failure", text: t("deployment.status.previewFailed") }
+              : { kind: "info", text: t("deployment.status.previewReady") }
+            : phase === "committing"
+              ? { kind: "info", text: t("deployment.batch.committing") }
+              : {
+                  kind: failedResults.length > 0 ? "warning" : "success",
+                  text: failedResults.length > 0
+                    ? t("deployment.status.resultsWithFailures")
+                    : t("deployment.status.results"),
+                };
+
+  const footer = phase === "targets" || phase === "plan" ? (
+    <>
+      <div className="sh-import-wizard__actions-group sh-deployment-flow__risk-group">
+        {/* 非原子批量风险提示紧邻提交动作；选择阶段与计划阶段都在操作区内可见。 */}
+        <small className="sh-deployment-flow__risk">{t("deployment.batch.nonAtomicNotice")}</small>
+        {phase === "targets" || phase === "plan" ? (
+          <label>
+            <span className="sh-visually-hidden">{t("deployment.mode.label")}</span>
+            <select
+              aria-label={t("deployment.mode.label")}
+              onChange={(event) => {
+                setMode(event.currentTarget.value ? event.currentTarget.value as DeploymentMode : undefined);
+                setPreview(undefined);
+              }}
+              value={mode ?? ""}
+            >
+              <option value="">{t("deployment.mode.automatic")}</option>
+              {availableModes.map((candidate) => <option key={candidate} value={candidate}>{t(`deployment.mode.${candidate}`)}</option>)}
+            </select>
+          </label>
+        ) : null}
       </div>
-    </header>
-    {error ? <DataState message={error} state="unavailable" /> : null}
-    {committing ? <p role="status">{t("deployment.batch.committing")}</p> : null}
-    {!error && targets === undefined ? <DataState message={t("deployment.states.loading")} state="loading" /> : null}
-    {!error && targets?.length === 0 ? <DataState message={t("deployment.states.empty")} state="empty" /> : null}
-    {targets && targets.length > 0 ? <section aria-labelledby="deployment-targets-heading" className="sh-workflow-card">
-      <div className="sh-section-heading">
-        <div>
-          <h2 id="deployment-targets-heading">{t("deployment.targets.heading")}</h2>
-          <p>{t("deployment.targets.description")}</p>
+      <div className="sh-import-wizard__actions-group sh-import-wizard__actions-group--primary">
+        {phase === "targets" ? (
+          <Button disabled={selected.length === 0} onClick={() => void previewBatch()} size="lg">{t("deployment.preview")}</Button>
+        ) : (
+          <Button
+            disabled={committing || previewFailures.length > 0}
+            onClick={() => void commit()}
+            size="lg"
+          >
+            {t("deployment.commit")}
+          </Button>
+        )}
+      </div>
+    </>
+  ) : undefined;
+
+  return (
+    <ImportShell
+      eyebrow={t("deployment.eyebrow")}
+      footer={footer}
+      status={status}
+      steps={steps}
+      stepsLabel={t("deployment.steps.label")}
+      title={t("deployment.batch.heading", { count: selectedSkillIds.length })}
+    >
+      <p className="sh-deployment-flow__description">{t("deployment.batch.description")}</p>
+      {flowError ? <DataState message={flowError} state="error" /> : null}
+      {phase === "list-error" ? <DataState message={listError ?? ""} state="error" /> : null}
+      {phase === "loading" ? <DataState message={t("deployment.states.loading")} state="loading" /> : null}
+      {phase === "empty" ? <DataState message={t("deployment.states.empty")} state="empty" /> : null}
+      {targets && targets.length > 0 ? <section aria-labelledby="deployment-targets-heading" className="sh-deployment-flow__section">
+        <div className="sh-section-heading">
+          <div>
+            <h2 id="deployment-targets-heading">{t("deployment.targets.heading")}</h2>
+            <p>{t("deployment.targets.description")}</p>
+          </div>
+          <span className="sh-count-badge">{selected.length}</span>
         </div>
-        <span className="sh-count-badge">{selected.length}</span>
-      </div>
-      <div className="sh-workflow-targets">
-        {targets.map((target) => <label className="sh-workflow-target" key={target.id}>
-          <input aria-label={target.label} checked={selectedIds.includes(target.id)} disabled={!target.available} onChange={(event) => {
+        <div className="sh-workflow-targets">
+          {targets.map((target) => <label className="sh-workflow-target" key={target.id}>
+            <input aria-label={target.label} checked={selectedIds.includes(target.id)} disabled={!target.available} onChange={(event) => {
+              setMode(undefined);
+              setPreview(undefined);
+              setSelectedIds((current) => event.target.checked ? [...current, target.id] : current.filter((id) => id !== target.id));
+            }} type="checkbox" />
+            <span><strong>{target.label}</strong><small>{target.path}</small></span>
+            {!target.available ? (
+              <span className="sh-status sh-status--warning">
+                <Icon aria-hidden="true" name="warning" size={16} />
+                {t("deployment.targets.unavailable")}
+              </span>
+            ) : null}
+          </label>)}
+        </div>
+        {expandableLinks.length > 0 ? <div className="sh-deployment-flow__expand">
+          <Button onClick={() => {
             setMode(undefined);
             setPreview(undefined);
-            setSelectedIds((current) => event.target.checked ? [...current, target.id] : current.filter((id) => id !== target.id));
-          }} type="checkbox" />
-          <span><strong>{target.label}</strong><small>{target.path}</small></span>
-          {!target.available ? <em>{t("deployment.targets.unavailable")}</em> : null}
-        </label>)}
-      </div>
-      {expandableLinks.length > 0 ? <div className="sh-workflow-actions">
-        <Button onClick={() => {
-          setMode(undefined);
-          setPreview(undefined);
-          setSelectedIds((current) => [...new Set([...current, ...expandableLinks.map((link) => link.agentId)])]);
-        }} variant="secondary">
-          {t("deployment.batch.expandAgents", { count: expandableLinks.length })}
-        </Button>
-        <small>{t("deployment.batch.expandAgentsHint")}</small>
-      </div> : null}
-      <p role="status" className="sh-workflow-actions">
-        <small>{t("deployment.batch.nonAtomicNotice")}</small>
-      </p>
-      <div className="sh-workflow-actions">
-        <label>
-          <span className="sh-visually-hidden">{t("deployment.mode.label")}</span>
-          <select aria-label={t("deployment.mode.label")} onChange={(event) => {
-            setMode(event.currentTarget.value ? event.currentTarget.value as DeploymentMode : undefined);
-            setPreview(undefined);
-          }} value={mode ?? ""}>
-            <option value="">{t("deployment.mode.automatic")}</option>
-            {availableModes.map((candidate) => <option key={candidate} value={candidate}>{t(`deployment.mode.${candidate}`)}</option>)}
-          </select>
-        </label>
-        <Button disabled={selected.length === 0} onClick={() => void previewBatch()}>{t("deployment.preview")}</Button>
-      </div>
-    </section> : null}
-    {preview ? <section aria-labelledby="deployment-plan-heading" className="sh-workflow-card">
-      <div className="sh-section-heading">
-        <div>
-          <h2 id="deployment-plan-heading">{t("deployment.plan.heading")}</h2>
-          <p>{t("deployment.batch.planDescription")}</p>
+            setSelectedIds((current) => [...new Set([...current, ...expandableLinks.map((link) => link.agentId)])]);
+          }} variant="secondary">
+            {t("deployment.batch.expandAgents", { count: expandableLinks.length })}
+          </Button>
+          <small>{t("deployment.batch.expandAgentsHint")}</small>
+        </div> : null}
+      </section> : null}
+      {preview && (phase === "plan" || phase === "committing") ? <section aria-labelledby="deployment-plan-heading" className="sh-deployment-flow__section">
+        <div className="sh-section-heading">
+          <div>
+            <h2 id="deployment-plan-heading">{t("deployment.plan.heading")}</h2>
+            <p>{t("deployment.batch.planDescription")}</p>
+          </div>
         </div>
-        <Button disabled={Boolean(results) || Boolean(preview.failures.length) || committing} loading={committing} onClick={() => void commit()} variant="primary">{t("deployment.commit")}</Button>
-      </div>
-      {preview.failures.length ? <ul className="sh-notice-list" role="alert">{preview.failures.map((failure) => <li key={failure.skillId}>{t("deployment.batch.previewFailed", failure)}</li>)}</ul> : null}
-      {preview.plans.map(({ skillId, plan }) => <section key={skillId}>
-        <h3>{skillId}</h3>
-        {plan.warnings.length > 0 ? <ul className="sh-notice-list">{plan.warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul> : null}
-        <ul className="sh-workflow-list">
-          {plan.targets.map((target) => <li className="sh-workflow-list__item" data-testid="target-plan" key={target.targetId}>
-            <span><strong>{target.label}</strong><small>{t(`deployment.mode.${target.mode}`)}</small></span>
-            {target.warnings.length > 0 ? <span className="sh-status sh-status--warning">{target.warnings.join(" ")}</span> : null}
-          </li>)}
-        </ul>
-      </section>)}
-    </section> : null}
-    {results ? <BatchOperationSummary
-      outcomes={results.map((result): BatchOutcome => ({
-        id: `${result.skillId ?? "single"}:${result.targetId}`,
-        label: result.skillId ? `${result.skillId} · ${result.label}` : result.label,
-        message: result.message,
-        status: result.status,
-      }))}
-    /> : null}
-  </main>;
+        {preview.failures.length ? <ul className="sh-notice-list" role="alert">{preview.failures.map((failure) => <li key={failure.skillId}>{t("deployment.batch.previewFailed", failure)}</li>)}</ul> : null}
+        {preview.plans.map(({ skillId, plan }) => <section key={skillId}>
+          <h3>{skillId}</h3>
+          {plan.warnings.length > 0 ? <ul className="sh-notice-list">{plan.warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul> : null}
+          <ul className="sh-workflow-list">
+            {plan.targets.map((target) => <li className="sh-workflow-list__item" data-testid="target-plan" key={target.targetId}>
+              <span><strong>{target.label}</strong><small>{t(`deployment.mode.${target.mode}`)}</small></span>
+              {target.warnings.length > 0 ? (
+                <span className="sh-status sh-status--warning">
+                  <Icon aria-hidden="true" name="warning" size={16} />
+                  {target.warnings.join(" ")}
+                </span>
+              ) : null}
+            </li>)}
+          </ul>
+        </section>)}
+      </section> : null}
+      {results ? <BatchOperationSummary
+        outcomes={results.map((result): BatchOutcome => ({
+          id: `${result.skillId ?? "single"}:${result.targetId}`,
+          label: result.skillId ? `${result.skillId} · ${result.label}` : result.label,
+          message: result.message,
+          status: result.status,
+        }))}
+      /> : null}
+    </ImportShell>
+  );
 }

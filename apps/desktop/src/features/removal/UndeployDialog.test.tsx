@@ -32,3 +32,26 @@ it("keeps shared files and commits only after an explicit undeploy choice", asyn
 
   expect(onConfirm).toHaveBeenCalledWith("keep_shared_deployment");
 });
+
+it("announces the submitting state through the persistent status region", async () => {
+  const i18n = await createSkillHubI18n(["en-US"]);
+
+  render(
+    <I18nextProvider i18n={i18n}>
+      <UndeployDialog
+        impact={{
+          deploymentId: "deployment-1",
+          label: "Codex CLI",
+          operationId: "op-2",
+          sharedTarget: false,
+        }}
+        onCancel={vi.fn()}
+        onConfirm={vi.fn()}
+        submitting
+      />
+    </I18nextProvider>,
+  );
+
+  expect(screen.getByRole("status")).toHaveTextContent("Undeploying…");
+  expect(screen.getByRole("button", { name: "Undeploying…" })).toBeDisabled();
+});

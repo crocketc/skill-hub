@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { I18nextProvider } from "react-i18next";
 import { expect, it, vi } from "vitest";
 import { createSkillHubI18n } from "../../i18n";
@@ -88,4 +88,15 @@ it("reports an executing state while the batch is submitting", async () => {
   const busy = screen.getByRole("status");
   expect(busy).toHaveTextContent("Deleting 2 Skills…");
   expect(screen.getByRole("button", { name: "Continue to force deletion" })).toBeDisabled();
+});
+
+it("keeps the non-atomic batch risk adjacent to the forced-deletion action", async () => {
+  await renderDialog();
+
+  const risk = screen.getByText(/not atomic/i);
+  const actions = risk.closest("footer");
+  expect(actions).not.toBeNull();
+  expect(
+    within(actions as HTMLElement).getByRole("button", { name: "Continue to force deletion" }),
+  ).toBeInTheDocument();
 });

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "../../ui/Button";
 import type { RemovalChoice, RemovalImpact } from "./api";
+import { RemovalShell } from "./RemovalShell";
 
 interface BatchRemovalImpactDialogProps {
   error?: string;
@@ -32,9 +33,36 @@ export function BatchRemovalImpactDialog({
   };
 
   return (
-    <section aria-labelledby="batch-removal-impact-heading" className="sh-workflow-card sh-removal-impact" role="dialog">
-      <p className="sh-eyebrow">{t("removal.batch.eyebrow")}</p>
-      <h2 id="batch-removal-impact-heading">{t("removal.batch.heading")}</h2>
+    <RemovalShell
+      eyebrow={t("removal.batch.eyebrow")}
+      footer={
+        <>
+          <div className="sh-removal-flow__actions-group">
+            <Button disabled={submitting} onClick={onCancel} variant="secondary">{t("actions.cancel")}</Button>
+          </div>
+          <div className="sh-removal-flow__actions-group sh-removal-flow__actions-group--primary">
+            {/* 非原子批量风险提示紧邻提交动作，与危险主操作同处一行。 */}
+            <small className="sh-removal-flow__risk">{t("removal.batch.nonAtomicNotice")}</small>
+            {armed ? (
+              <Button
+                disabled={submitting}
+                onClick={confirmChoices}
+                size="lg"
+                variant="danger"
+              >
+                {t("removal.batch.armConfirm", { count })}
+              </Button>
+            ) : (
+              <Button disabled={!complete || submitting} onClick={() => setArmed(true)} size="lg" variant="danger">
+                {t("removal.batch.continue")}
+              </Button>
+            )}
+          </div>
+        </>
+      }
+      status={submitting ? { kind: "info", text: t("removal.batch.busy", { count }) } : null}
+      title={t("removal.batch.heading")}
+    >
       <p>{t("removal.batch.description", { count })}</p>
       {impacts.map((impact) => (
         <section className="sh-removal-impact__skill" key={impact.operationId ?? impact.skillId}>
@@ -90,24 +118,7 @@ export function BatchRemovalImpactDialog({
           ) : null}
         </section>
       ))}
-      {submitting ? <p role="status">{t("removal.batch.busy", { count })}</p> : null}
       {error ? <p role="alert">{error}</p> : null}
-      <div className="sh-workflow-actions">
-        <Button disabled={submitting} onClick={onCancel} variant="secondary">{t("actions.cancel")}</Button>
-        {armed ? (
-          <Button
-            disabled={submitting}
-            onClick={confirmChoices}
-            variant="danger"
-          >
-            {t("removal.batch.armConfirm", { count })}
-          </Button>
-        ) : (
-          <Button disabled={!complete || submitting} onClick={() => setArmed(true)} variant="danger">
-            {t("removal.batch.continue")}
-          </Button>
-        )}
-      </div>
-    </section>
+    </RemovalShell>
   );
 }

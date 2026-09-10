@@ -314,11 +314,18 @@ test("deployment target selection exposes unavailable and non-atomic batch bound
   await page.goto("/deploy?skill=pdf-reader&skill=release-notes");
   await expect(page.getByRole("heading", { name: "Deploy 2 Skills" })).toBeVisible();
   await expect(page.getByLabel("Unavailable target")).toBeDisabled();
-  await expect(page.getByText(/not atomic/i)).toBeVisible();
+  // T4-D：非原子批量风险随流程进入 footer 操作区，紧邻提交动作。
+  const footer = page.locator("footer");
+  await expect(footer).toContainText(/not atomic/i);
   await page.getByLabel("Codex CLI").check();
   await expect(page.getByRole("button", { name: "Preview deployment" })).toBeEnabled();
   await page.getByRole("button", { name: "Preview deployment" }).click();
   await expect(page.getByRole("heading", { name: "Deployment plan" })).toBeVisible();
+  // T4-D：提交动作移入同一 footer 操作区，仍与非原子风险相邻。
+  await expect(footer.getByRole("button", { name: "Commit deployment" })).toBeEnabled();
+  await page.getByRole("button", { name: "Commit deployment" }).click();
+  await expect(page.getByTestId("batch-summary")).toBeVisible();
+  await expect(page.getByText("Deployment finished")).toBeVisible();
 });
 
 test("combination manager loads skill names and guards creation", async ({ page }) => {
