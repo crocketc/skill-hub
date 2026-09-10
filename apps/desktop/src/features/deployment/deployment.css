@@ -1,0 +1,87 @@
+/* 部署流程专属样式（T4-D）。只使用语义 token（--ui-*）；流程壳层布局契约
+   由 ImportShell + import.css 提供（固定高度网格、面板唯一滚动所有者、
+   稳定底部操作区）。这里只补充部署面板内部的展示细节。 */
+
+/* 面板内的章节在流程壳层中不再需要工作流卡片的重复描边：
+   ImportShell 的面板本身就是分区容器，章节用分隔线区分层级。 */
+.sh-deployment-flow__section {
+  display: grid;
+  align-content: start;
+  gap: var(--space-3);
+  min-width: 0;
+  padding: var(--space-4);
+  border: 1px solid var(--ui-border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--ui-surface);
+}
+
+.sh-deployment-flow__description {
+  margin: 0;
+  color: var(--ui-ink-muted);
+}
+
+.sh-deployment-flow__section h2 {
+  margin: 0;
+  font-size: var(--font-size-lg);
+}
+
+.sh-deployment-flow__section .sh-section-heading {
+  margin: 0;
+}
+
+/* 长路径在目标与计划列表中换行，不产生根级横向滚动。 */
+.sh-deployment-flow__section .sh-workflow-target span,
+.sh-deployment-flow__section .sh-workflow-list__item span,
+.sh-deployment-flow__section .sh-workflow-list__item div {
+  min-width: 0;
+}
+
+.sh-deployment-flow__section .sh-workflow-target small,
+.sh-deployment-flow__section .sh-workflow-list__item small {
+  overflow-wrap: anywhere;
+}
+
+/* 状态徽标带图标时的对齐；警告文本允许换行。 */
+.sh-deployment-flow__section .sh-status {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  white-space: normal;
+}
+
+/* 模式选择与主操作同行：选择器保持 40px 控件高度。 */
+.sh-import-wizard__actions-group select {
+  min-height: 2.5rem;
+  background: var(--ui-control-background);
+  border: 1px solid var(--ui-control-border);
+  border-radius: var(--radius-sm);
+  color: var(--ui-ink);
+  padding: 0 var(--space-2);
+}
+
+.sh-import-wizard__actions-group select:hover {
+  border-color: var(--ui-control-border-hover);
+}
+
+.sh-import-wizard__actions-group select:focus-visible {
+  outline: 2px solid var(--ui-focus);
+  outline-offset: 2px;
+}
+
+/* 非原子批量风险提示：紧邻提交动作，随流程停留在操作区内。 */
+.sh-deployment-flow__risk {
+  color: var(--ui-warning-foreground);
+  font-size: var(--font-size-xs);
+}
+
+/* 项目展开关联 Agent 的动作行。 */
+.sh-deployment-flow__expand {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.sh-deployment-flow__expand small {
+  color: var(--ui-ink-muted);
+}

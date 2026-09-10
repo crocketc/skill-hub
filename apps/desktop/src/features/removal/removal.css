@@ -1,0 +1,99 @@
+/* 移除影响确认专属样式（T4-D）。只使用语义 token（--ui-*）；与 base.css 中
+   既有的 sh-removal-impact / sh-workflow-card 基础样式叠加。布局契约与导入
+   流程一致：眉题 + 流程标题 + 持续播报状态区（图标+文字）+ 稳定底部操作区
+   （次级居左、危险主操作居右），操作区是普通网格行，构造上不遮挡内容。 */
+
+.sh-removal-flow {
+  display: grid;
+  align-content: start;
+  gap: var(--space-3);
+  border-color: var(--ui-border);
+}
+
+.sh-removal-flow__eyebrow {
+  margin: 0;
+  color: var(--ui-accent);
+  font-size: var(--font-size-xs);
+  font-weight: 750;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.sh-removal-flow__title {
+  margin: 0;
+  font-size: var(--font-size-xl);
+  line-height: 1.25;
+  text-wrap: balance;
+}
+
+.sh-removal-flow__title:focus {
+  outline: 2px solid var(--ui-focus);
+  outline-offset: 4px;
+}
+
+.sh-removal-flow > p,
+.sh-removal-flow .sh-notice {
+  margin: 0;
+}
+
+/* —— 持续播报状态区：图标 + 文字，不靠颜色单独表达状态 —— */
+
+.sh-removal-flow__status {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  min-height: 1.5rem;
+  margin: 0;
+  color: var(--ui-ink-muted);
+  font-size: var(--font-size-xs);
+}
+
+.sh-removal-flow__status svg {
+  flex: 0 0 auto;
+  margin-top: 0.125rem;
+}
+
+/* —— 稳定底部操作区：次级居左，危险主操作居右 —— */
+
+.sh-removal-flow__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-inline: calc(var(--space-5) * -1);
+  margin-bottom: calc(var(--space-5) * -1);
+  padding: var(--space-3) var(--space-5) var(--space-4);
+  border-top: 1px solid var(--ui-border-subtle);
+}
+
+.sh-removal-flow__actions-group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.sh-removal-flow__actions-group--primary {
+  justify-content: flex-end;
+  flex: 1 1 auto;
+}
+
+/* 非原子批量风险提示：紧邻提交动作，位于同一操作行。 */
+.sh-removal-flow__risk {
+  color: var(--ui-warning-foreground);
+  font-size: var(--font-size-xs);
+}
+
+@media (max-width: 48rem) {
+  .sh-removal-flow__actions,
+  .sh-removal-flow__actions-group,
+  .sh-removal-flow__actions-group--primary {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .sh-removal-flow__actions-group :where(.sh-button) {
+    width: 100%;
+  }
+}

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "../../ui/Button";
 import type { UndeployDecision, UndeployImpact } from "./api";
+import { RemovalShell } from "./RemovalShell";
 
 interface UndeployDialogProps {
   error?: string;
@@ -22,9 +23,28 @@ export function UndeployDialog({
   const [decision, setDecision] = useState<UndeployDecision | "">("");
 
   return (
-    <section aria-labelledby="undeploy-heading" className="sh-workflow-card" role="dialog">
-      <p className="sh-eyebrow">{t("undeploy.eyebrow")}</p>
-      <h2 id="undeploy-heading">{t("undeploy.heading", { target: impact.label })}</h2>
+    <RemovalShell
+      eyebrow={t("undeploy.eyebrow")}
+      footer={
+        <>
+          <div className="sh-removal-flow__actions-group">
+            <Button disabled={submitting} onClick={onCancel} variant="secondary">{t("actions.cancel")}</Button>
+          </div>
+          <div className="sh-removal-flow__actions-group sh-removal-flow__actions-group--primary">
+            <Button
+              disabled={!decision || submitting}
+              onClick={() => decision && void onConfirm(decision)}
+              size="lg"
+              variant="danger"
+            >
+              {submitting ? t("undeploy.submitting") : t("undeploy.confirm")}
+            </Button>
+          </div>
+        </>
+      }
+      status={submitting ? { kind: "info", text: t("undeploy.submitting") } : null}
+      title={t("undeploy.heading", { target: impact.label })}
+    >
       <p>{impact.sharedTarget ? t("undeploy.sharedNotice") : t("undeploy.description")}</p>
       <label>
         <span>{t("undeploy.choiceLabel")}</span>
@@ -46,16 +66,6 @@ export function UndeployDialog({
         </select>
       </label>
       {error ? <p role="alert">{error}</p> : null}
-      <div className="sh-workflow-actions">
-        <Button disabled={submitting} onClick={onCancel} variant="secondary">{t("actions.cancel")}</Button>
-        <Button
-          disabled={!decision || submitting}
-          onClick={() => decision && void onConfirm(decision)}
-          variant="danger"
-        >
-          {submitting ? t("undeploy.submitting") : t("undeploy.confirm")}
-        </Button>
-      </div>
-    </section>
+    </RemovalShell>
   );
 }
