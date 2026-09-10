@@ -3,7 +3,7 @@
   min-width: 0;
   gap: var(--space-3);
   padding-top: var(--space-4);
-  border-top: 1px solid var(--color-border);
+  border-top: 1px solid var(--ui-border);
   content-visibility: auto;
   contain-intrinsic-size: auto 36rem;
 }
@@ -39,21 +39,9 @@
 }
 
 .sh-markdown-workspace__header label {
-  color: var(--color-text-muted);
+  color: var(--ui-ink-muted);
   font-size: var(--font-size-xs);
   font-weight: 650;
-}
-
-.sh-markdown-workspace select {
-  min-width: 0;
-  min-height: 2.25rem;
-  padding: var(--space-1) var(--space-2);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  background: var(--color-surface-raised);
-  color: var(--color-text);
-  font: inherit;
-  font-size: var(--font-size-sm);
 }
 
 .sh-markdown-workspace__external-actions,
@@ -68,14 +56,49 @@
 .sh-markdown-blocked-resource,
 .sh-markdown-editor > [role="alert"] {
   padding: var(--space-3);
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--ui-border);
   border-radius: var(--radius-sm);
-  background: var(--color-surface-muted);
+  background: var(--ui-surface-subtle);
+}
+
+/* 状态 = 图标 + 文字；ui/Icon 注册表 SVG 默认 fill:none 且不注入描边，
+   markdown 消费面在专属样式里补齐等价线宽（不改共享组件）。 */
+.sh-markdown-status__icon {
+  flex: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.75;
+}
+
+.sh-markdown-status {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.sh-markdown-editor__save-error {
+  display: flex;
+  margin: 0;
+  align-items: flex-start;
+  gap: var(--space-2);
+  color: var(--ui-danger-foreground);
+}
+
+.sh-markdown-editor__save-error .sh-markdown-status__icon {
+  margin-top: 0.2em;
+}
+
+.sh-markdown-editor__issues-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
 }
 
 .sh-markdown-workspace__draft {
   justify-content: space-between;
-  color: var(--color-text-secondary);
+  color: var(--ui-ink);
   font-size: var(--font-size-sm);
 }
 
@@ -84,7 +107,9 @@
   align-items: center;
   justify-content: space-between;
   gap: var(--space-3);
-  background: var(--color-warning-soft);
+  border-color: var(--ui-warning-border);
+  background: var(--ui-warning-background);
+  color: var(--ui-warning-foreground);
 }
 
 .sh-markdown-workspace__read-only p,
@@ -101,10 +126,10 @@
   max-width: 100%;
   overflow: auto;
   padding: var(--space-4);
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--ui-border);
   border-radius: var(--radius-sm);
-  background: var(--color-surface-muted);
-  color: var(--color-text);
+  background: var(--ui-surface-subtle);
+  color: var(--ui-ink);
   font-size: var(--font-size-sm);
   line-height: 1.55;
   white-space: pre-wrap;
@@ -113,7 +138,7 @@
 
 .sh-markdown-renderer {
   min-width: 0;
-  color: var(--color-text-secondary);
+  color: var(--ui-ink);
   font-size: var(--font-size-sm);
   line-height: 1.65;
   overflow-wrap: anywhere;
@@ -128,22 +153,23 @@
   margin-bottom: 0;
 }
 
-.sh-markdown-renderer h1,
-.sh-markdown-renderer h2,
-.sh-markdown-renderer h3,
-.sh-markdown-renderer h4 {
+/* Markdown 标题统一下移三级（# -> h4，详见 MarkdownRenderer）；
+   视觉层级按原 h1/h2/h3 映射保留。 */
+.sh-markdown-renderer h4,
+.sh-markdown-renderer h5,
+.sh-markdown-renderer h6 {
   margin-block: var(--space-5) var(--space-2);
-  color: var(--color-text);
+  color: var(--ui-ink);
   line-height: 1.3;
   letter-spacing: -0.015em;
 }
 
-.sh-markdown-renderer h1 { font-size: var(--font-size-xl); }
-.sh-markdown-renderer h2 { font-size: var(--font-size-lg); }
-.sh-markdown-renderer h3,
-.sh-markdown-renderer h4 { font-size: var(--font-size-md); }
+.sh-markdown-renderer h4 { font-size: var(--font-size-xl); }
+.sh-markdown-renderer h5 { font-size: var(--font-size-lg); }
+.sh-markdown-renderer h6 { font-size: var(--font-size-md); }
 
 .sh-markdown-renderer a {
+  /* accent-strong / accent-soft 暂无 --ui-* 对应角色，保留兼容别名 */
   color: var(--color-accent-strong);
   text-decoration-thickness: 1px;
   text-underline-offset: 0.18em;
@@ -152,30 +178,61 @@
 .sh-markdown-renderer blockquote {
   margin-inline: 0;
   padding: var(--space-2) var(--space-4);
-  border-left: 3px solid var(--color-accent);
+  border-left: 3px solid var(--ui-accent);
   background: var(--color-accent-soft);
 }
 
-.sh-markdown-renderer table {
+/* 宽表格：横向溢出交给滚动容器；表格按内容自然宽度布局（列不低于
+   其内容的 max-content，单元格上限 24rem），不再就地压缩到容器宽度
+   造成逐字换行。 */
+.sh-markdown-table-scroll {
   display: block;
-  width: 100%;
+  max-width: 100%;
   overflow-x: auto;
+}
+
+.sh-markdown-renderer table {
+  width: max-content;
+  min-width: 100%;
   border-collapse: collapse;
 }
 
 .sh-markdown-renderer th,
 .sh-markdown-renderer td {
+  max-width: 24rem;
+}
+
+.sh-markdown-renderer th,
+.sh-markdown-renderer td {
   padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--ui-border);
   text-align: left;
 }
 
 .sh-markdown-renderer th {
-  background: var(--color-surface-muted);
-  color: var(--color-text);
+  background: var(--ui-surface-subtle);
+  color: var(--ui-ink);
 }
 
-.sh-markdown-renderer img,
+/* 图片：加载完成前保留稳定高度的占位区域（aria-busy），完成后交还
+   自然尺寸；二者都受 max-width 约束，不把横向溢出传给页面。 */
+.sh-markdown-image {
+  display: block;
+  min-width: 0;
+}
+
+.sh-markdown-image[aria-busy="true"] {
+  display: flex;
+  min-height: 10rem;
+  align-items: center;
+  justify-content: center;
+  border: 1px dashed var(--ui-border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--ui-surface-subtle);
+  color: var(--ui-ink-muted);
+}
+
+.sh-markdown-image img,
 .sh-mermaid-block__diagram svg {
   display: block;
   max-width: 100%;
@@ -186,14 +243,14 @@
   display: inline-flex;
   align-items: center;
   gap: var(--space-2);
-  color: var(--color-text-muted);
+  color: var(--ui-ink-muted);
 }
 
 .sh-markdown-code {
   overflow: hidden;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--ui-border);
   border-radius: var(--radius-sm);
-  background: var(--color-surface-muted);
+  background: var(--ui-surface-subtle);
 }
 
 .sh-markdown-code figcaption {
@@ -203,8 +260,8 @@
   justify-content: space-between;
   gap: var(--space-3);
   padding-inline: var(--space-3);
-  border-bottom: 1px solid var(--color-border);
-  color: var(--color-text-muted);
+  border-bottom: 1px solid var(--ui-border);
+  color: var(--ui-ink-muted);
   font-size: var(--font-size-xs);
   font-weight: 650;
 }
@@ -226,9 +283,9 @@
 .sh-mermaid-block__diagram {
   overflow: auto;
   padding: var(--space-3);
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--ui-border);
   border-radius: var(--radius-sm);
-  background: var(--color-surface-raised);
+  background: var(--ui-control-background);
 }
 
 .sh-markdown-editor,
@@ -256,20 +313,20 @@
 }
 
 .sh-markdown-editor__save-hint {
-  color: var(--color-text-muted);
+  color: var(--ui-ink-muted);
   font-size: var(--font-size-sm);
 }
 
 .sh-markdown-editor__copy-note {
   align-items: center;
-  color: var(--color-text-muted);
+  color: var(--ui-ink-muted);
   display: flex;
   font-size: var(--font-size-xs);
   gap: var(--space-2);
 }
 
 .sh-markdown-editor__toolbar > div {
-  color: var(--color-text-muted);
+  color: var(--ui-ink-muted);
   font-size: var(--font-size-xs);
 }
 
@@ -299,24 +356,24 @@
 
 .sh-markdown-editor .cm-editor {
   overflow: hidden;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--ui-border);
   border-radius: var(--radius-sm);
-  background: var(--color-surface-raised);
-  color: var(--color-text);
+  background: var(--ui-control-background);
+  color: var(--ui-ink);
   font-size: var(--font-size-sm);
 }
 
 .sh-markdown-editor .cm-editor.cm-focused {
-  outline: 2px solid var(--color-focus);
+  outline: 2px solid var(--ui-focus);
   outline-offset: 1px;
 }
 
 .sh-markdown-editor .cm-gutters,
 .sh-markdown-editor .cm-activeLine,
 .sh-markdown-editor .cm-activeLineGutter {
-  border-color: var(--color-border);
-  background: var(--color-surface-muted);
-  color: var(--color-text-muted);
+  border-color: var(--ui-border);
+  background: var(--ui-surface-subtle);
+  color: var(--ui-ink-muted);
 }
 
 @media (max-width: 56rem) {
@@ -338,7 +395,7 @@
 }
 
 @media (pointer: coarse) {
-  .sh-markdown-workspace select {
+  .sh-markdown-workspace .sh-select {
     min-height: 2.75rem;
   }
 }

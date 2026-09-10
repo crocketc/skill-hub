@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "../../ui/Button";
+import { MarkdownImage } from "./MarkdownImage";
 
 interface RemoteImageProps {
   alt: string;
@@ -13,7 +14,7 @@ export function RemoteImage({ alt, host, source }: RemoteImageProps) {
   const [allowed, setAllowed] = useState(false);
 
   if (allowed) {
-    return <img alt={alt} loading="lazy" src={source} />;
+    return <MarkdownImage alt={alt} src={source} />;
   }
 
   return (

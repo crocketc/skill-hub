@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { I18nextProvider } from "react-i18next";
 import { describe, expect, it } from "vitest";
 import { createSkillHubI18n } from "../../i18n";
+import { ThemeProvider } from "../../styles/ThemeProvider";
 import { MarkdownEditor } from "./MarkdownEditor";
 import {
   createMockMarkdownFacade,
@@ -21,17 +22,19 @@ async function renderEditor(
     defaultOptions: { mutations: { retry: false }, queries: { retry: false } },
   });
   render(
-    <QueryClientProvider client={client}>
-      <I18nextProvider i18n={i18n}>
-        <MarkdownEditor
-          facade={facade}
-          file={file}
-          onSaved={() => undefined}
-          onExit={props.onExit}
-          skillId="pdf-reader"
-        />
-      </I18nextProvider>
-    </QueryClientProvider>,
+    <ThemeProvider>
+      <QueryClientProvider client={client}>
+        <I18nextProvider i18n={i18n}>
+          <MarkdownEditor
+            facade={facade}
+            file={file}
+            onSaved={() => undefined}
+            onExit={props.onExit}
+            skillId="pdf-reader"
+          />
+        </I18nextProvider>
+      </QueryClientProvider>
+    </ThemeProvider>,
   );
   return facade;
 }
@@ -59,6 +62,22 @@ describe("MarkdownEditor", () => {
     expect(facade.calls.savedVersions[0]?.markdown).toBe("A changed");
   });
 
+  it("announces draft and version state through a polite live region", async () => {
+    await renderEditor();
+    await replaceEditorText("Announced");
+
+    // 保存/校验状态必须在同一个礼貌播报区内动态更新。
+    const draftMessage = await screen.findByText("Draft saved locally");
+    const region = draftMessage.closest("[role='status'][aria-live='polite']");
+    expect(region).not.toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Save and create version" }));
+
+    await waitFor(() => {
+      expect(region).toHaveTextContent("Version v2 created");
+    });
+  });
+
   it("keeps the source and draft when blocking validation prevents save", async () => {
     const facade = await renderEditor({
       validationIssues: [
@@ -70,13 +89,33 @@ describe("MarkdownEditor", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Save and create version" }));
 
-    expect(await screen.findByRole("alert", { name: "Save issues" })).toHaveTextContent(
-      "Missing name",
-    );
+    const alert = await screen.findByRole("alert", { name: "Save issues" });
+    expect(alert).toHaveTextContent("Missing name");
+    // 状态 = 图标 + 文字，不能只靠颜色区分严重性。
+    expect(alert.querySelector("svg[aria-hidden='true']")).not.toBeNull();
     expect(screen.getByRole("textbox", { name: "Markdown source" })).toHaveTextContent(
       "Unsaved work",
     );
     expect(facade.calls.savedVersions).toEqual([]);
+  });
+
+  it("pairs the save failure alert with a decorative icon", async () => {
+    await renderEditor({ failSave: true });
+    await replaceEditorText("Keep this draft");
+    await screen.findByText("Draft saved locally");
+
+    fireEvent.click(screen.getByRole("button", { name: "Save and create version" }));
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(
+      "Could not save; your local draft is still available.",
+    );
+    expect(alert.querySelector("svg[aria-hidden='true']")).not.toBeNull();
+    await waitFor(() => {
+      expect(screen.getByRole("textbox", { name: "Markdown source" })).toHaveTextContent(
+        "Keep this draft",
+      );
+    });
   });
 
   it("requires an explicit continuation before saving validation warnings", async () => {
