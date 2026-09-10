@@ -144,3 +144,37 @@ it("blocks committing when the backup contains invalid portable data", async () 
   expect(screen.getByRole("button", { name: "恢复并继续" })).toBeDisabled();
   expect(commitRestore).not.toHaveBeenCalled();
 });
+
+it("previews and commits first-run restore against the selected target library", async () => {
+  const prepareInitialRestore = vi.fn().mockResolvedValue({
+    format_version: 1,
+    skills: 1,
+    deployments_requiring_rediscovery: 0,
+    conflicts: [],
+  });
+  const commitInitialRestore = vi.fn().mockResolvedValue({
+    skills_restored: 1,
+    skills_skipped: 0,
+    deployments_requiring_rediscovery: 0,
+  });
+  const pickDirectory = vi
+    .fn<() => Promise<string | null>>()
+    .mockResolvedValueOnce("D:\\SkillHub\\target")
+    .mockResolvedValueOnce("C:\\backup.skillhub");
+  const operations = baseOperations({ pickDirectory, prepareInitialRestore, commitInitialRestore });
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+
+  render(
+    <I18nextProvider i18n={i18n}>
+      <RestoreStep operations={operations} libraryPath="C:\\Suggested" onBack={() => undefined} onComplete={() => undefined} />
+    </I18nextProvider>,
+  );
+
+  await click(screen.getByRole("button", { name: "选择其他目标目录" }));
+  await click(screen.getByRole("button", { name: "选择备份目录" }));
+  await screen.findByText("发现 1 个可恢复技能");
+  await click(screen.getByRole("button", { name: "恢复并继续" }));
+
+  expect(prepareInitialRestore).toHaveBeenCalledWith("C:\\backup.skillhub", "D:\\SkillHub\\target");
+  expect(commitInitialRestore).toHaveBeenCalledWith("C:\\backup.skillhub", "D:\\SkillHub\\target", []);
+});

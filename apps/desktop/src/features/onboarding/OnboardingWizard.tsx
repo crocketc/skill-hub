@@ -186,20 +186,18 @@ export function OnboardingWizard({
     }
   };
 
-  // A custom root is persisted through `set_library_root` and applied by
-  // restarting, which rebuilds every library handle against the chosen path.
-  const applyCustomRoot = async () => {
-    if (!customLibraryPath || completionState !== "idle") return;
+  const activateLibrary = async () => {
+    const selectedPath = customLibraryPath ?? nativeLibraryPath;
+    if (!selectedPath || completionState !== "idle") return;
     setCompletionState("pending");
     setMessage(null);
     try {
-      await operations.setLibraryRoot?.(customLibraryPath);
-      // 后端 configured_library_path 以持久化值为准；保存成功后立即回显
-      // 所选目录，即使重启未完成或失败，UI 也如实反映已保存的库根。
-      setNativeLibraryPath(customLibraryPath);
-      await operations.restart?.();
+      if (operations.activateLibraryRoot) {
+        await operations.activateLibraryRoot(selectedPath, branch === "existing" ? "existing" : "create");
+      }
+      setNativeLibraryPath(selectedPath);
       setCompletionState("idle");
-      setMessage(t("onboarding.restartPending"));
+      setStep(1);
     } catch (error) {
       setCompletionState("idle");
       setMessage(describe(error));
@@ -207,11 +205,7 @@ export function OnboardingWizard({
   };
 
   const continueFromLibraryStep = () => {
-    if (customLibraryPath) {
-      void applyCustomRoot();
-    } else {
-      setStep(1);
-    }
+    void activateLibrary();
   };
 
   const selectTarget = (targetId: string, selected: boolean) => {
@@ -341,6 +335,7 @@ export function OnboardingWizard({
           </header>
           <RestoreStep
             operations={operations}
+            libraryPath={nativeLibraryPath}
             onBack={() => setBranch(null)}
             onComplete={() => void complete(false)}
           />
@@ -379,7 +374,11 @@ export function OnboardingWizard({
               disabled={!canContinue || (step === 0 && completionState === "pending")}
               onClick={() => (step === 0 ? continueFromLibraryStep() : setStep((current) => current + 1))}
             >
-              {step === 0 && customLibraryPath ? t("onboarding.applyCustomRoot") : t("onboarding.continue")}
+              {step === 0
+                ? operations.activateLibraryRoot
+                  ? t("onboarding.saveAndContinue")
+                  : t("onboarding.continue")
+                : t("onboarding.continue")}
             </Button>
           ) : (
             <>

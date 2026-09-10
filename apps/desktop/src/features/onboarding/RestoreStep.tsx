@@ -7,11 +7,12 @@ import type { OnboardingOperations } from "../bootstrap/api";
 
 interface RestoreStepProps {
   operations: OnboardingOperations;
+  libraryPath?: string;
   onComplete: () => void;
   onBack: () => void;
 }
 
-export function RestoreStep({ operations, onComplete, onBack }: RestoreStepProps) {
+export function RestoreStep({ operations, libraryPath, onComplete, onBack }: RestoreStepProps) {
   const { t } = useTranslation();
   // describeNativeError 以动态键调用翻译；i18next 的强类型键联合在此收窄。
   const describe = (error: unknown) =>
@@ -21,12 +22,16 @@ export function RestoreStep({ operations, onComplete, onBack }: RestoreStepProps
       "onboarding.genericError",
     );
   const [path, setPath] = useState<string | null>(null);
+  const [targetPath, setTargetPath] = useState<string | null>(libraryPath ?? null);
   const [plan, setPlan] = useState<RestorePlan | null>(null);
   const [isPreparing, setIsPreparing] = useState(false);
   const [isRestoring, setIsRestoring] = useState(false);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [message, setMessage] = useState<string | null>(null);
   const [decisions, setDecisions] = useState<Record<string, RestoreConflictDecision>>({});
+  const usesInitialRestore = Boolean(
+    libraryPath && operations.prepareInitialRestore && operations.commitInitialRestore,
+  );
 
   // Restore currently commits in one native call; keep an honest running
   // status (count + elapsed time) instead of leaving the UI frozen.
@@ -36,6 +41,19 @@ export function RestoreStep({ operations, onComplete, onBack }: RestoreStepProps
     const timer = window.setInterval(() => setElapsedSeconds((seconds) => seconds + 1), 1000);
     return () => window.clearInterval(timer);
   }, [isRestoring]);
+
+  const selectTargetDirectory = async () => {
+    setIsPreparing(true);
+    setMessage(null);
+    try {
+      const picked = await operations.pickDirectory?.();
+      if (picked) setTargetPath(picked);
+    } catch (error) {
+      setMessage(describe(error));
+    } finally {
+      setIsPreparing(false);
+    }
+  };
 
   const selectDirectory = async () => {
     setIsPreparing(true);
@@ -47,7 +65,9 @@ export function RestoreStep({ operations, onComplete, onBack }: RestoreStepProps
       if (!picked) {
         return;
       }
-      const result = await operations.prepareRestore?.(picked);
+      const result = usesInitialRestore
+        ? await operations.prepareInitialRestore?.(picked, targetPath ?? libraryPath!)
+        : await operations.prepareRestore?.(picked);
       setPath(picked);
       setPlan(result ?? null);
     } catch (error) {
@@ -76,7 +96,11 @@ export function RestoreStep({ operations, onComplete, onBack }: RestoreStepProps
         skill_id: conflict.skill_id ?? "",
         decision: decisions[conflict.skill_id!],
       }));
-      await operations.commitRestore?.(path, submitted);
+      if (usesInitialRestore) {
+        await operations.commitInitialRestore?.(path, targetPath ?? libraryPath!, submitted);
+      } else {
+        await operations.commitRestore?.(path, submitted);
+      }
       onComplete();
     } catch (error) {
       setMessage(describe(error));
@@ -90,8 +114,19 @@ export function RestoreStep({ operations, onComplete, onBack }: RestoreStepProps
       <span className="sh-onboarding__ordinal">0</span>
       <h1 id="restore-step-title">{t("onboarding.restoreTitle")}</h1>
       <p>{t("onboarding.restoreDescription")}</p>
+      {usesInitialRestore ? (
+        <>
+          <div className="sh-onboarding__path">
+            <span>{t("onboarding.restoreTargetLocation")}</span>
+            <code>{targetPath ?? libraryPath}</code>
+          </div>
+          <Button disabled={isRestoring} loading={isPreparing} onClick={() => void selectTargetDirectory()}>
+            {t("onboarding.selectRestoreTarget")}
+          </Button>
+        </>
+      ) : null}
       <Button disabled={isRestoring} loading={isPreparing} onClick={() => void selectDirectory()}>
-        {t("onboarding.selectBackupDirectory")}
+        {libraryPath ? t("onboarding.selectBackupDirectory") : t("onboarding.selectBackupDirectory")}
       </Button>
       {plan && plan.skills > 0 ? (
         <p className="sh-onboarding__message" role="status">

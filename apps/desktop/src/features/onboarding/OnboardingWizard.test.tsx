@@ -597,11 +597,10 @@ it("shows the restore branch summary without fabricated agent or scan counts", a
   expect(onComplete).toHaveBeenCalledOnce();
 });
 
-it("allows choosing another custom library path after restart fails", async () => {
+it("allows choosing another custom library path after activation fails", async () => {
   const completeOnboarding = vi.fn(async () => undefined);
-  const setLibraryRoot = vi.fn(async () => undefined);
-  const restart = vi.fn(async () => {
-    throw new Error("restart_failed");
+  const activateLibraryRoot = vi.fn<() => Promise<void>>(async () => {
+    throw new Error("activation_failed");
   });
   const pickDirectory = vi
     .fn<() => Promise<string | null>>()
@@ -617,33 +616,31 @@ it("allows choosing another custom library path after restart fails", async () =
           completeOnboarding,
           discoverAgents: async () => ({ targets: [] }),
           pickDirectory,
-          setLibraryRoot,
-          restart,
+          activateLibraryRoot,
         }}
       />
     </I18nextProvider>,
   );
 
   await click(screen.getByRole("button", { name: "选择其他目录" }));
-  await click(screen.getByRole("button", { name: "保存并重启" }));
+  await click(screen.getByRole("button", { name: "保存并继续" }));
 
-  expect(setLibraryRoot).toHaveBeenCalledWith("D:\\Custom\\Hub");
-  // 重启失败的真实原因必须可见，而不是"尚未连接到本机服务"。
-  expect(await screen.findByText("restart_failed")).toBeVisible();
-  // set_library_root 成功后，库位置必须立即回显所选目录，即使重启未完成。
+  expect(activateLibraryRoot).toHaveBeenCalledWith("D:\\Custom\\Hub", "create");
+  expect(await screen.findByText("activation_failed")).toBeVisible();
   expect(screen.getByText("D:\\Custom\\Hub")).toBeVisible();
   await click(screen.getByRole("button", { name: "选择其他目录" }));
   expect(await screen.findByText("E:\\Recovered\\Hub")).toBeVisible();
   expect(screen.queryByText("D:\\Custom\\Hub")).not.toBeInTheDocument();
 
-  await click(screen.getByRole("button", { name: "保存并重启" }));
-  expect(setLibraryRoot).toHaveBeenLastCalledWith("E:\\Recovered\\Hub");
+  activateLibraryRoot.mockImplementationOnce(async () => undefined);
+  await click(screen.getByRole("button", { name: "保存并继续" }));
+  expect(activateLibraryRoot).toHaveBeenLastCalledWith("E:\\Recovered\\Hub", "create");
   expect(completeOnboarding).not.toHaveBeenCalled();
 });
 
-it("keeps the chosen custom library path visible while the restart never settles", async () => {
-  const setLibraryRoot = vi.fn(async () => undefined);
-  const restart = vi.fn(() => new Promise<void>(() => undefined));
+it("prevents a second activation while the first activation is pending", async () => {
+  let release!: () => void;
+  const activateLibraryRoot = vi.fn(() => new Promise<void>((resolve) => { release = resolve; }));
   const pickDirectory = vi.fn(async () => "D:\\Custom\\Hub");
   const i18n = await createSkillHubI18n(["zh-CN"]);
 
@@ -655,25 +652,23 @@ it("keeps the chosen custom library path visible while the restart never settles
           completeOnboarding: async () => undefined,
           discoverAgents: async () => ({ targets: [] }),
           pickDirectory,
-          setLibraryRoot,
-          restart,
+          activateLibraryRoot,
         }}
       />
     </I18nextProvider>,
   );
 
   await click(screen.getByRole("button", { name: "选择其他目录" }));
-  await click(screen.getByRole("button", { name: "保存并重启" }));
+  await click(screen.getByRole("button", { name: "保存并继续" }));
 
   expect(screen.getByText("D:\\Custom\\Hub")).toBeVisible();
-  expect(screen.queryByText(defaultLibraryPath)).not.toBeInTheDocument();
-  // 重启挂起期间不显示成功提示，也不允许再次提交。
-  expect(screen.queryByText("库根已保存，应用即将重启以应用新路径。")).not.toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "保存并重启" })).toBeDisabled();
+  await click(screen.getByRole("button", { name: "保存并继续" }));
+  expect(activateLibraryRoot).toHaveBeenCalledTimes(1);
+  release();
 });
 
-it("shows the library-root-locked reason when set_library_root reports the conflict", async () => {
-  const setLibraryRoot = vi.fn(async () => {
+it("shows the library-root-locked reason when activation reports the conflict", async () => {
+  const activateLibraryRoot = vi.fn(async () => {
     throw {
       code: "operation.conflict",
       severity: "error",
@@ -692,14 +687,14 @@ it("shows the library-root-locked reason when set_library_root reports the confl
           completeOnboarding: async () => undefined,
           discoverAgents: async () => ({ targets: [] }),
           pickDirectory,
-          setLibraryRoot,
+          activateLibraryRoot,
         }}
       />
     </I18nextProvider>,
   );
 
   await click(screen.getByRole("button", { name: "选择其他目录" }));
-  await click(screen.getByRole("button", { name: "保存并重启" }));
+  await click(screen.getByRole("button", { name: "保存并继续" }));
 
   expect(await screen.findByText(/不能更换库根目录/)).toBeVisible();
   expect(screen.queryByText(/尚未连接到本机服务/)).not.toBeInTheDocument();

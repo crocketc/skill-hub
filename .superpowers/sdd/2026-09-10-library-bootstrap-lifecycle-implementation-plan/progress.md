@@ -36,3 +36,5 @@ Task 5: complete（提交范围：新增 `LibraryActivationMode`/`activate_libra
 Task 6: complete（提交范围：新增首次恢复 prepare/commit 命令，恢复与数据库路径持久化成功后才发布 Active，失败保持 Pending；测试结果：首次恢复目标与延迟激活 1 passed，失败保持 Pending/已初始化拒绝 1 passed，`cargo test -p skillhub-storage --test restore_migration` 2 passed）。
 
 Task 7: complete（提交范围：通过 Specta 重新生成绑定，桌面适配器新增激活与首次恢复命令并保留普通恢复契约，移除 onboarding adapter 的 restart 暴露；测试结果：`cargo test -p skillhub-desktop generate_bindings` 通过，`pnpm --dir apps/desktop test --run src/features/bootstrap/api.test.ts` 6 passed）。
+
+Task 8: complete（提交范围：初始化新建/已有库分支改为保存并继续的原地激活，恢复分支先选择目标库再选择备份，覆盖失败重选、重复点击和冲突决策；测试结果：`pnpm --dir apps/desktop test --run src/features/onboarding/LibraryStep.test.tsx src/features/onboarding/RestoreStep.test.tsx src/features/onboarding/OnboardingBranches.test.tsx src/features/onboarding/OnboardingWizard.test.tsx`，35 passed；`pnpm --dir apps/desktop typecheck` 通过）。

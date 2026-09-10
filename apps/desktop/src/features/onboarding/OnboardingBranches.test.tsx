@@ -80,29 +80,22 @@ it("returns from the library step to the branch selection", async () => {
   expect(screen.getByRole("heading", { name: "选择初始化方式" })).toBeVisible();
 });
 
-it("persists a custom library root and restarts instead of continuing", async () => {
-  const completeOnboarding = vi.fn(async () => undefined);
-  const setLibraryRoot = vi.fn(async () => undefined);
-  const restart = vi.fn(async () => undefined);
+it("activates a selected custom root and continues without restarting", async () => {
+  const activateLibraryRoot = vi.fn(async () => undefined);
   const pickDirectory = vi.fn(async () => "D:\\SkillHub\\custom");
-
   renderWizard({
-    completeOnboarding,
+    completeOnboarding: async () => undefined,
     discoverAgents: async () => ({ targets: [] }),
     pickDirectory,
-    setLibraryRoot,
-    restart,
-  });
+    activateLibraryRoot,
+  } as Operations);
 
   await click(screen.getByRole("button", { name: "新建集中库" }));
   await click(screen.getByRole("button", { name: "选择其他目录" }));
-  expect(await screen.findByText("D:\\SkillHub\\custom")).toBeVisible();
+  await click(screen.getByRole("button", { name: "保存并继续" }));
 
-  await click(screen.getByRole("button", { name: "保存并重启" }));
-
-  expect(setLibraryRoot).toHaveBeenCalledWith("D:\\SkillHub\\custom");
-  expect(restart).toHaveBeenCalled();
-  expect(completeOnboarding).not.toHaveBeenCalled();
+  expect(activateLibraryRoot).toHaveBeenCalledWith("D:\\SkillHub\\custom", "create");
+  expect(screen.getByRole("heading", { name: "识别兼容的 Agent" })).toBeVisible();
 });
 
 it("restores from a backup through prepare and commit before finishing", async () => {
