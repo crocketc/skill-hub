@@ -9,7 +9,10 @@
       "sourceUnavailable": "来源暂不可用，无法完成操作。请确认网络与来源记录后重试。"
     },
     "onboarding": {
-      "libraryRootLocked": "集中库初始化完成后不能更换库根目录。如需移动集中库，请使用数据保护中的备份/迁移流程。"
+      "libraryRootLocked": "集中库初始化完成后不能更换库根目录。如需移动集中库，请使用数据保护中的备份/迁移流程。",
+      "libraryNotReady": "集中库尚未激活，请先完成初始化。",
+      "existingLibraryManifestMissing": "所选已有集中库缺少有效清单，请选择正确的集中库目录。",
+      "libraryNotWritable": "所选集中库目录不可写，请检查权限或选择其他目录。"
     }
   },
   "actions": {

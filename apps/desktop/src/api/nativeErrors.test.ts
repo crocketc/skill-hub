@@ -62,4 +62,18 @@ describe("nativeErrors", () => {
     expect(message).toContain("errors.generic");
     expect(message).toContain("internal.error");
   });
+
+  it.each([
+    ["library_not_ready", "errors.onboarding.libraryNotReady"],
+    ["library_root_locked", "errors.onboarding.libraryRootLocked"],
+    ["existing_library_manifest_missing", "errors.onboarding.existingLibraryManifestMissing"],
+    ["library_not_writable", "errors.onboarding.libraryNotWritable"],
+  ])("maps the stable library lifecycle reason %s", (reason, key) => {
+    const message = describeNativeError(
+      { code: "operation.conflict", severity: "error", params: { reason }, actions: [] },
+      (translationKey) => translationKey,
+      "errors.generic",
+    );
+    expect(message).toBe(key);
+  });
 });

@@ -9,7 +9,10 @@
       "sourceUnavailable": "The source is currently unavailable. Check the network and the source record, then retry."
     },
     "onboarding": {
-      "libraryRootLocked": "The library root cannot change after initialization. To move the library, use the backup/migration flow under data protection."
+      "libraryRootLocked": "The library root cannot change after initialization. To move the library, use the backup/migration flow under data protection.",
+      "libraryNotReady": "The central library is not active yet. Complete initialization first.",
+      "existingLibraryManifestMissing": "The selected existing library has no valid manifest. Choose the central library directory.",
+      "libraryNotWritable": "The selected library directory is not writable. Check permissions or choose another directory."
     }
   },
   "actions": {

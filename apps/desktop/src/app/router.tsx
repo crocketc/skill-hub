@@ -60,13 +60,16 @@ function OnboardingRoute() {
   const navigate = useNavigate();
   const { resolvedTheme, setAppearance } = useTheme();
   const [snapshot, setSnapshot] = useState<Awaited<ReturnType<typeof desktopBootstrapRuntime.getBootstrapView>>["snapshot"] | null>(null);
+  const [snapshotLoadFailed, setSnapshotLoadFailed] = useState(false);
   useEffect(() => {
-    void desktopBootstrapRuntime.getBootstrapView().then((view) => setSnapshot(view.snapshot));
+    void desktopBootstrapRuntime.getBootstrapView()
+      .then((view) => setSnapshot(view.snapshot))
+      .catch(() => setSnapshotLoadFailed(true));
   }, []);
-  if (!snapshot) {
+  if (!snapshot && !snapshotLoadFailed) {
     return <main className="sh-startup-loading">Loading…</main>;
   }
-  if (snapshot.initialization_state === "initialized") {
+  if (snapshot?.initialization_state === "initialized") {
     return (
       <RescanWizard
         libraryPath={snapshot.library_path ?? ""}

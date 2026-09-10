@@ -42,3 +42,5 @@ Task 8: complete（提交范围：初始化新建/已有库分支改为保存并
 Task 9: complete（提交范围：新增只读 `RescanWizard`，初始化入口按快照在首次初始化与重新发现模式间分流，设置入口改名并保持当前集中库只读；测试结果：`pnpm --dir apps/desktop test --run src/features/onboarding/RescanWizard.test.tsx src/features/settings/SettingsPage.test.tsx`，9 passed；`pnpm --dir apps/desktop typecheck` 通过）。
 
 Task 10: complete（提交范围：删除 onboarding 专用 `restart.ts`、测试、Tauri restart IPC handler 与临时重启调度 trait，移除桌面适配器旧 set-library-root seam；更新器重启能力仍保留；测试结果：`cargo test -p skillhub-desktop --lib` 22 passed，`pnpm --dir apps/desktop test --run src/features/bootstrap/api.test.ts src/features/onboarding/OnboardingBranches.test.tsx` 13 passed，`pnpm --dir apps/desktop typecheck` 通过）。
+
+Task 11: complete（提交范围：补充 library lifecycle 稳定错误码的双语映射与错误测试，增加首次初始化无重启文案的 Playwright 回归；测试结果：`pnpm --dir apps/desktop test --run src/i18n/i18n.test.ts src/api/nativeErrors.test.ts` 15 passed，`pnpm test:e2e -- tests/e2e/onboarding.spec.ts` 2 passed，`pnpm --dir apps/desktop check` 通过）。

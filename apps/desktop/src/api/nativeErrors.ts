@@ -84,7 +84,10 @@ function keyedMessage(
   if (code === "operation.conflict") {
     if (reason === "no_upstream_source") return "errors.sourceUpdate.noUpstreamConflict";
     if (reason === "source_unavailable") return "errors.sourceUpdate.sourceUnavailable";
+    if (reason === "library_not_ready") return "errors.onboarding.libraryNotReady";
     if (reason === "library_root_locked") return "errors.onboarding.libraryRootLocked";
+    if (reason === "existing_library_manifest_missing") return "errors.onboarding.existingLibraryManifestMissing";
+    if (reason === "library_not_writable") return "errors.onboarding.libraryNotWritable";
   }
   if (code === "object.not_found") return "errors.objectNotFound";
   if (code === "network.disabled") return "errors.networkDisabled";
