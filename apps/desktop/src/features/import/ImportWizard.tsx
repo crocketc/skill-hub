@@ -189,6 +189,8 @@ export interface ImportWizardProps {
   initialSources?: string[];
   initialSourceText?: string;
   importGuide?: string;
+  /** onboarding：初始化批量导入只读取已选目录候选，不提供手动追加来源按钮。 */
+  variant?: "onboarding" | "standard";
   /** 全局操作跟踪；测试可注入独立实例，默认模块级单例（跨路由存续）。 */
   tracker?: OperationTracker;
   onComplete?: (results: ImportResult[]) => void;
@@ -201,6 +203,7 @@ export function ImportWizard({
   initialSources = [],
   initialSourceText = "",
   importGuide,
+  variant = "standard",
   tracker = operationTracker,
   onComplete,
   onOpenLibrary = () => undefined,
@@ -407,7 +410,7 @@ type: "failed",
         {(["source", "acquiring", "candidate_gate", "cancelled", "failed"] as WizardPhase[]).includes(state.phase) ? (
           <SourceInput
             actionLabel={selectedSources.length > 0 ? t("importWorkflow.source.acquireSelectedSources") : undefined}
-            onAddSource={(source) => void addManualSource(source)}
+            onAddSource={variant === "onboarding" ? undefined : (source) => void addManualSource(source)}
             descriptor={state.descriptor}
             disabled={state.phase === "acquiring"}
             onChange={(value) => {

@@ -80,7 +80,7 @@ function OnboardingRoute() {
         libraryPath={snapshot.library_path ?? ""}
         onCancel={() => navigate("/settings")}
         onComplete={() => navigate("/", { replace: true })}
-        onOpenImport={(roots) => navigate("/discovery/local", { state: { initialSources: roots, initialSourceText: roots.length > 1 ? "" : roots[0] ?? "" } })}
+        onOpenImport={(roots) => navigate("/discovery/local", { state: { initialSources: roots, initialSourceText: roots.length > 1 ? "" : roots[0] ?? "", onboardingImport: true } })}
       />
     );
   }
@@ -98,6 +98,7 @@ function OnboardingRoute() {
           // With multiple scanned sources the checkbox list drives selection;
           // the manual source box stays empty unless the user picks their own.
           initialSourceText: roots.length > 1 ? "" : roots[0] ?? "",
+          onboardingImport: true,
         },
       })}
       theme={resolvedTheme}

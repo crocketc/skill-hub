@@ -116,3 +116,13 @@ it("keeps the descriptor block for non-local sources", async () => {
   expect(screen.getByLabelText("已识别来源")).toBeVisible();
   expect(screen.getByText("owner/repository")).toBeVisible();
 });
+
+it("hides the manual add-source action when the host does not provide it", async () => {
+  // 初始化导入不提供 onAddSource：即使已选来源非空，也不得出现第二个操作按钮。
+  await renderSourceInput({
+    selectedSources: ["C:/codex/skills"],
+    value: "C:/manual/skills",
+  });
+
+  expect(screen.queryByRole("button", { name: "添加到已选来源" })).not.toBeInTheDocument();
+});

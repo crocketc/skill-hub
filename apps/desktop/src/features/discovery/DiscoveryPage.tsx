@@ -32,6 +32,8 @@ export interface DiscoveryPageProps {
   discoveryFacade?: DiscoveryFacade;
   initialSources?: string[];
   initialSourceText?: string;
+  /** 初始化向导/重新扫描交接进入的批量导入：隐藏手动追加来源按钮。 */
+  onboardingImport?: boolean;
   /** 全局操作跟踪；测试可注入独立实例，默认模块级单例（跨路由存续）。 */
   tracker?: OperationTracker;
   onImportComplete?: (results: ImportResult[]) => void;
@@ -109,6 +111,7 @@ export function DiscoveryPage({
   discoveryFacade,
   initialSources = [],
   initialSourceText,
+  onboardingImport = false,
   tracker = operationTracker,
   onImportComplete,
   onOpenLibrary,
@@ -169,6 +172,7 @@ export function DiscoveryPage({
       importedNames={importedNames}
       initialSourceText={initialSourceText}
       onBack={onBack}
+      onboardingImport={onboardingImport}
       onImportComplete={onImportComplete}
       onOpenLibrary={onOpenLibrary}
       tracker={tracker}
@@ -230,6 +234,7 @@ interface DiscoveryModulePageProps {
   wizard: WizardController;
   importFacade: ImportFacade;
   initialSourceText?: string;
+  onboardingImport?: boolean;
   tracker: OperationTracker;
   onImportComplete?: (results: ImportResult[]) => void;
   onOpenLibrary?: () => void;
@@ -248,6 +253,7 @@ function DiscoveryModulePage({
   wizard,
   importFacade,
   initialSourceText,
+  onboardingImport,
   tracker,
   onImportComplete,
   onOpenLibrary,
@@ -268,6 +274,7 @@ function DiscoveryModulePage({
           importGuide={wizard.importGuide}
           initialSources={wizard.wizardInitialSources}
           initialSourceText={initialSourceText}
+          variant={onboardingImport ? "onboarding" : "standard"}
           onComplete={onImportComplete}
           onOpenLibrary={onOpenLibrary}
           tracker={tracker}

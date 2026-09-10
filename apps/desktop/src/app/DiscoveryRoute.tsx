@@ -22,7 +22,9 @@ export function DiscoveryRoute({
   const navigate = useNavigate();
   const location = useLocation();
   const { refreshSnapshot } = useOutletContext<BootstrapOutletContext>();
-  const state = location.state as { initialSources?: string[]; initialSourceText?: string } | null;
+  const state = location.state as
+    | { initialSources?: string[]; initialSourceText?: string; onboardingImport?: boolean }
+    | null;
 
   const handleImportComplete = (results: ImportResult[]) => {
     if (results.some((result) => result.status === "succeeded")) {
@@ -49,6 +51,7 @@ export function DiscoveryRoute({
       importedNames={loadImportedNames}
       initialSources={state?.initialSources}
       initialSourceText={state?.initialSourceText}
+      onboardingImport={state?.onboardingImport}
       onImportComplete={handleImportComplete}
       onOpenLibrary={() => navigate("/library")}
       onNavigate={(module) => navigate(`/discovery/${module}`)}

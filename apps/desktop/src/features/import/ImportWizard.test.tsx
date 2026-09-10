@@ -17,7 +17,7 @@ async function renderWizard(facade = createMockImportFacade({ scenario: "safe-lo
   return facade;
 }
 
-async function renderGuidedWizard(facade = createMockImportFacade({ scenario: "safe-local" })) {
+async function renderGuidedWizard(facade = createMockImportFacade({ scenario: "safe-local" }), variant?: "onboarding" | "standard") {
   const i18n = await createSkillHubI18n(["zh-CN"]);
   render(
     <I18nextProvider i18n={i18n}>
@@ -25,6 +25,7 @@ async function renderGuidedWizard(facade = createMockImportFacade({ scenario: "s
         facade={facade}
         initialSources={["C:/codex/skills", "C:/claude/skills"]}
         initialSourceText="C:/codex/skills"
+        variant={variant}
       />
     </I18nextProvider>,
   );
@@ -128,6 +129,50 @@ it("adds a manual directory alongside scanned sources for mixed import", async (
     "C:/codex/skills",
     "C:/claude/skills",
     "C:/windsurf/skills",
+  ]);
+});
+
+it("keeps the onboarding import to reading the selected directory candidates", async () => {
+  const user = userEvent.setup();
+  const facade = await renderGuidedWizard(undefined, "onboarding");
+
+  // 初始化导入不再提供“添加到已选来源”；手动输入文本不会变成第二个操作。
+  await user.clear(screen.getByLabelText("来源"));
+  await user.type(screen.getByLabelText("来源"), "C:/windsurf/skills");
+  expect(screen.queryByRole("button", { name: "添加到已选来源" })).not.toBeInTheDocument();
+
+  await user.click(screen.getByRole("button", { name: "读取已选目录候选" }));
+  expect(await screen.findByRole("button", { name: "继续选择候选" })).toBeVisible();
+  expect(facade.calls.acquiredSources).toEqual(["C:/codex/skills", "C:/claude/skills"]);
+});
+
+it("adds the picked local directory to the onboarding selection without the manual add action", async () => {
+  const user = userEvent.setup();
+  const picker = { pickDirectory: vi.fn(async () => "C:/picked/skills") };
+  const facade = createMockImportFacade({ scenario: "safe-local" });
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  render(
+    <I18nextProvider i18n={i18n}>
+      <ImportWizard
+        directoryPicker={picker}
+        facade={facade}
+        initialSources={["C:/codex/skills", "C:/claude/skills"]}
+        initialSourceText=""
+        variant="onboarding"
+      />
+    </I18nextProvider>,
+  );
+
+  await user.click(screen.getByRole("button", { name: "选择本地目录" }));
+  expect(screen.queryByRole("button", { name: "添加到已选来源" })).not.toBeInTheDocument();
+
+  // 手动选择的目录自动进入已选来源，主操作直接读取全部已选目录。
+  await user.click(screen.getByRole("button", { name: "读取已选目录候选" }));
+  expect(await screen.findByRole("button", { name: "继续选择候选" })).toBeVisible();
+  expect(facade.calls.acquiredSources).toEqual([
+    "C:/codex/skills",
+    "C:/claude/skills",
+    "C:/picked/skills",
   ]);
 });
 

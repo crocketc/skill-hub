@@ -66,12 +66,17 @@ function allFailedCommit(facade: ImportFacade): void {
     }));
 }
 
-async function renderDiscoveryRoute(facade: ImportFacade) {
+async function renderDiscoveryRoute(
+  facade: ImportFacade,
+  options: { locationState?: { initialSources?: string[]; onboardingImport?: boolean } } = {},
+) {
   const i18n = await createSkillHubI18n(["zh-CN"]);
   const refreshSnapshot = vi.fn(async () => {});
   render(
     <I18nextProvider i18n={i18n}>
-      <MemoryRouter initialEntries={["/discovery/local"]}>
+      <MemoryRouter
+        initialEntries={[{ pathname: "/discovery/local", state: options.locationState }]}
+      >
         <Routes>
           <Route
             element={<Outlet context={{ refreshSnapshot, snapshot } satisfies BootstrapOutletContext} />}
@@ -121,4 +126,24 @@ it("does not refresh the bootstrap snapshot when every import result failed", as
 
   expect(await screen.findByText("失败 1")).toBeVisible();
   expect(refreshSnapshot).not.toHaveBeenCalled();
+});
+
+it("renders the onboarding handoff import without the manual add-source action", async () => {
+  const user = userEvent.setup();
+  const facade = createMockImportFacade({ scenario: "safe-local" });
+  await renderDiscoveryRoute(facade, {
+    locationState: {
+      initialSources: ["C:/codex/skills", "C:/claude/skills"],
+      onboardingImport: true,
+    },
+  });
+
+  // 初始化交接打开向导：已选扫描来源默认选中，无“添加到已选来源”。
+  expect(screen.getByRole("checkbox", { name: "C:/codex/skills" })).toBeChecked();
+  await user.type(screen.getByLabelText("来源"), "C:/manual/skills");
+  expect(screen.queryByRole("button", { name: "添加到已选来源" })).not.toBeInTheDocument();
+
+  await user.click(screen.getByRole("button", { name: "读取已选目录候选" }));
+  expect(await screen.findByRole("button", { name: "继续选择候选" })).toBeVisible();
+  expect(facade.calls.acquiredSources).toEqual(["C:/codex/skills", "C:/claude/skills"]);
 });
