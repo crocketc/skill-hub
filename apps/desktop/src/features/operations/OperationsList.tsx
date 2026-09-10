@@ -1,9 +1,13 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
+import { formatDateTime, resolveLocale, type SupportedLocale } from "../../i18n";
 import { DataState } from "../../ui/DataState";
+import { Icon } from "../../ui/Icon";
 import { useTrackedOperations, type OperationTracker, type TrackedOperation } from "../../platform/operationTracker";
+import { PHASE_PRESENTATION } from "./phasePresentation";
 import { type RecentOperationRow, type RecentOperationsReader } from "./api";
+import "./operations.css";
 
 export interface OperationsListProps {
   /** 持久化的最近操作（BootstrapSnapshot.recent_operations）。 */
@@ -16,10 +20,12 @@ export interface OperationsListProps {
  * FE-14 操作记录列表：合并两类事实并诚实标注来源——
  * 1) 本会话后台操作（tracker，仅当前会话，含进度）；
  * 2) 持久化最近操作（原生快照，跨会话，链接到既有操作详情页）。
+ * T4-A：两类记录都渲染为结构化时间线，时间经 Intl.DateTimeFormat 本地化；
  * 没有数据时显示说明，不伪造历史。
  */
 export function OperationsList({ recent, tracker }: OperationsListProps) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const locale = resolveLocale([i18n.resolvedLanguage ?? i18n.language]);
   const tracked = useTrackedOperations(tracker);
   const [rows, setRows] = useState<RecentOperationRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -40,6 +46,12 @@ export function OperationsList({ recent, tracker }: OperationsListProps) {
     };
   }, [recent]);
 
+  // 每次数据/语言变化只构建一次格式化结果，避免逐行新建 Intl.DateTimeFormat。
+  const formattedTimes = useMemo(
+    () => formatTimes(rows?.map((row) => row.created_at) ?? [], locale),
+    [rows, locale],
+  );
+
   if (error) {
     return <DataState message={t("operations.list.error", { error })} state="error" />;
   }
@@ -54,11 +66,11 @@ export function OperationsList({ recent, tracker }: OperationsListProps) {
       {hasTracked ? (
         <>
           <h3>{t("operations.list.sessionTitle")}</h3>
-          <ul>
+          <ol className="sh-operations-timeline">
             {tracked.map((operation) => (
-              <SessionOperationRow key={operation.id} operation={operation} />
+              <SessionTimelineEntry key={operation.id} locale={locale} operation={operation} />
             ))}
-          </ul>
+          </ol>
         </>
       ) : null}
 
@@ -68,44 +80,86 @@ export function OperationsList({ recent, tracker }: OperationsListProps) {
       ) : rows.length === 0 ? (
         <p>{t("operations.list.recentEmpty")}</p>
       ) : (
-        <ul>
-          {rows.map((row) => (
-            <li key={row.operation_id} className="sh-operations-list__row">
-              <Link to={`/operations/${row.operation_id}`}>{row.kind}</Link>
-              <span>{t("operations.list.state", { state: row.state })}</span>
-              <span>
-                {row.error_code ? t("operations.list.errorCode", { code: row.error_code }) : ""}
+        <ol aria-label={t("operations.list.timeline")} className="sh-operations-timeline">
+          {rows.map((row, index) => (
+            <li className="sh-operations-timeline__entry" key={row.operation_id}>
+              <span aria-hidden="true" className={`sh-operations-timeline__marker sh-operations-timeline__marker--${PHASE_PRESENTATION[row.phase].tone}`}>
+                <Icon name={PHASE_PRESENTATION[row.phase].icon} />
               </span>
-              <time dateTime={row.created_at}>{row.created_at}</time>
+              <div className="sh-operations-timeline__content">
+                <div className="sh-operations-timeline__heading">
+                  <Link to={`/operations/${row.operation_id}`}>{row.kind}</Link>
+                  <span className={`sh-status sh-status--${row.phase}`}>
+                    {t(`operations.phases.${row.phase}` as never)}
+                  </span>
+                </div>
+                {row.error_code ? (
+                  <p className="sh-operations-timeline__error">{t("operations.list.errorCode", { code: row.error_code })}</p>
+                ) : null}
+                <time className="sh-operations-timeline__time" dateTime={row.created_at}>
+                  {formattedTimes[index]}
+                </time>
+              </div>
             </li>
           ))}
-        </ul>
+        </ol>
       )}
     </section>
   );
 }
 
-function SessionOperationRow({ operation }: { operation: TrackedOperation }) {
+function SessionTimelineEntry({ locale, operation }: { locale: SupportedLocale; operation: TrackedOperation }) {
   const { t } = useTranslation();
+  const tone = operation.status === "completed"
+    ? "success"
+    : operation.status === "failed"
+      ? "danger"
+      : operation.status === "cancelled"
+        ? "muted"
+        : "info";
+  const icon = operation.status === "completed"
+    ? "success"
+    : operation.status === "failed"
+      ? "failure"
+      : operation.status === "cancelled"
+        ? "close"
+        : "update";
   return (
-    <li className="sh-operations-list__row">
-      <span>{operation.label}</span>
-      {operation.status === "running" ? (
-        <span>
-          {t("operations.list.sessionRunning", {
-            completed: operation.completed,
-            total: operation.total,
-          })}
-        </span>
-      ) : null}
-      {operation.status === "completed" && operation.resultSummary ? (
-        <span>
-          {t("operations.list.sessionCompleted", { ...operation.resultSummary })}
-        </span>
-      ) : null}
-      {operation.status === "failed" ? (
-        <span role="alert">{operation.error ?? t("operations.list.sessionFailed")}</span>
-      ) : null}
+    <li className="sh-operations-timeline__entry">
+      <span aria-hidden="true" className={`sh-operations-timeline__marker sh-operations-timeline__marker--${tone}`}>
+        <Icon name={icon} />
+      </span>
+      <div className="sh-operations-timeline__content">
+        <div className="sh-operations-timeline__heading">
+          <span>{operation.label}</span>
+          <time className="sh-operations-timeline__time" dateTime={new Date(operation.startedAt).toISOString()}>
+            {formatDateTime(new Date(operation.startedAt), locale)}
+          </time>
+        </div>
+        {operation.status === "running" ? (
+          <p>
+            {t("operations.list.sessionRunning", {
+              completed: operation.completed,
+              total: operation.total,
+            })}
+          </p>
+        ) : null}
+        {operation.status === "completed" && operation.resultSummary ? (
+          <p>
+            {t("operations.list.sessionCompleted", { ...operation.resultSummary })}
+          </p>
+        ) : null}
+        {operation.status === "failed" ? (
+          <p className="sh-operations-timeline__error" role="alert">{operation.error ?? t("operations.list.sessionFailed")}</p>
+        ) : null}
+      </div>
     </li>
   );
+}
+
+function formatTimes(values: string[], locale: SupportedLocale): string[] {
+  return values.map((value) => {
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? value : formatDateTime(date, locale);
+  });
 }
