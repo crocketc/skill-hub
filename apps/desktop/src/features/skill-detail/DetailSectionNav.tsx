@@ -3,29 +3,40 @@ import { useTranslation } from "react-i18next";
 import { Link, useLocation } from "react-router-dom";
 import type { AdjacentSkillContext } from "./api";
 
-export const DETAIL_SECTIONS = [
-  "overview",
-  "metadata",
-  "description",
+/** 详情页五个信息区（设计规格 5.4）：身份、状态、正文、关系、生命周期。 */
+export const DETAIL_ZONES = [
+  "identity",
+  "status",
+  "content",
   "relations",
-  "requirements",
-  "security",
-  "connections",
-  "external",
-  "versions",
+  "lifecycle",
 ] as const;
 
-type DetailSection = (typeof DETAIL_SECTIONS)[number];
+export type DetailZone = (typeof DETAIL_ZONES)[number];
+
+/** 旧九章节锚点保留为分区内的锚点 id；外部分链路（如快速抽屉 #versions）不断链。 */
+const ANCHOR_ZONES: Record<string, DetailZone> = {
+  overview: "status",
+  metadata: "identity",
+  description: "content",
+  relations: "relations",
+  requirements: "relations",
+  security: "status",
+  connections: "relations",
+  external: "lifecycle",
+  versions: "lifecycle",
+};
+
+function zoneFromHash(hash: string): DetailZone | undefined {
+  const id = hash.replace(/^#/, "");
+  if (DETAIL_ZONES.includes(id as DetailZone)) return id as DetailZone;
+  return ANCHOR_ZONES[id];
+}
 
 interface DetailSectionNavProps {
   adjacent?: AdjacentSkillContext;
   backSearch: string;
   detailPathname: string;
-}
-
-function sectionFromHash(hash: string): DetailSection | undefined {
-  const section = hash.replace(/^#/, "") as DetailSection;
-  return DETAIL_SECTIONS.includes(section) ? section : undefined;
 }
 
 export function DetailSectionNav({
@@ -35,13 +46,13 @@ export function DetailSectionNav({
 }: DetailSectionNavProps) {
   const { t } = useTranslation();
   const location = useLocation();
-  const [activeSection, setActiveSection] = useState<DetailSection>(() =>
-    sectionFromHash(location.hash) ?? "overview",
+  const [activeZone, setActiveZone] = useState<DetailZone>(() =>
+    zoneFromHash(location.hash) ?? "identity",
   );
 
   useEffect(() => {
-    const section = sectionFromHash(location.hash);
-    if (section) setActiveSection(section);
+    const zone = zoneFromHash(location.hash);
+    if (zone) setActiveZone(zone);
   }, [location.hash]);
 
   useEffect(() => {
@@ -52,17 +63,16 @@ export function DetailSectionNav({
         const visible = entries
           .filter((entry) => entry.isIntersecting)
           .sort((left, right) => left.boundingClientRect.top - right.boundingClientRect.top);
-        const section = visible[0]?.target.id;
-        if (section) {
-          const next = sectionFromHash(`#${section}`);
-          if (next) setActiveSection(next);
+        const zoneId = visible[0]?.target.id.replace(/^zone-/, "");
+        if (DETAIL_ZONES.includes(zoneId as DetailZone)) {
+          setActiveZone(zoneId as DetailZone);
         }
       },
       { rootMargin: "-12% 0px -68% 0px", threshold: [0, 1] },
     );
 
-    DETAIL_SECTIONS.forEach((section) => {
-      const element = document.getElementById(section);
+    DETAIL_ZONES.forEach((zone) => {
+      const element = document.getElementById(`zone-${zone}`);
       if (element) observer.observe(element);
     });
 
@@ -75,17 +85,17 @@ export function DetailSectionNav({
     <>
       <nav
         aria-label={t("skillDetail.navigation.sectionsLabel")}
-        className="sh-skill-detail__section-nav"
+        className="sh-skill-detail__zone-nav"
       >
-        {DETAIL_SECTIONS.map((section) => (
+        {DETAIL_ZONES.map((zone) => (
           <a
-            aria-current={activeSection === section ? "location" : undefined}
-            className={activeSection === section ? "is-active" : undefined}
-            href={`#${section}`}
-            key={section}
-            onClick={() => setActiveSection(section)}
+            aria-current={activeZone === zone ? "location" : undefined}
+            className={activeZone === zone ? "is-active" : undefined}
+            href={`#zone-${zone}`}
+            key={zone}
+            onClick={() => setActiveZone(zone)}
           >
-            {t(`skillDetail.navigation.sections.${section}`)}
+            {t(`skillDetail.zones.${zone}`)}
           </a>
         ))}
       </nav>

@@ -1,6 +1,7 @@
 import { useTranslation } from "react-i18next";
 import { Button } from "../../ui/Button";
 import { ConfirmDialog } from "../../ui/ConfirmDialog";
+import { StatusBadge } from "../../ui/StatusBadge";
 import type { SecurityFinding } from "./api";
 
 export interface DispositionOptions {
@@ -12,7 +13,7 @@ export function FindingActions({ finding, onDisposition }: {
   onDisposition: (disposition: SecurityFinding["disposition"], options: DispositionOptions) => void;
 }) {
   const { t } = useTranslation();
-  if (finding.disposition !== "actionable") return <span className="sh-status sh-status--muted">{t(`security.disposition.${finding.disposition}`)}</span>;
+  if (finding.disposition !== "actionable") return <StatusBadge>{t(`security.disposition.${finding.disposition}`)}</StatusBadge>;
   if (!finding.highRisk) {
     return (
       <div className="sh-workflow-actions">

@@ -78,6 +78,15 @@ const previewSkillSummaries: Record<string, Partial<SkillDetailSummary>> = {
     name: "Spreadsheet Reader",
     purpose: "Read spreadsheet data",
   },
+  // T3-C：确定性长文本夹具——120+ 字符名称与长路径的布局回归入口。
+  "skill-long": {
+    alias:
+      "超长别名的布局回归夹具，用于验证中文别名、英文别名与很长的附加说明文字在详情身份区不会溢出或被裁切",
+    name:
+      "Long Named Skill For Layout Regression Coverage With Unusual Multi Segment Title Text And Extended Verification Suffix Words",
+    purpose:
+      "Cover long alias, long name and long source path rendering in the detail identity zone without overflow or clipping.",
+  },
 };
 
 const previewSkillMetadata: Record<string, Partial<SkillMetadata>> = {
@@ -92,6 +101,13 @@ const previewSkillMetadata: Record<string, Partial<SkillMetadata>> = {
     originalDescription: "Read spreadsheet data safely.",
     source: "github:example/spreadsheet-reader",
     tags: ["documents", "spreadsheet"],
+  },
+  "skill-long": {
+    invocation: "long-named-skill --input ./very/deeply/nested/directory/structure/with/long/segment-names/input.pdf",
+    originalDescription:
+      "Long fixture description used to verify wrapping behaviour for user-provided metadata in narrow columns.",
+    source: "file:///D:/Very/Long/Library/Roots/example-user/central-skills/long-named-skill",
+    tags: ["layout-regression", "long-text", "identity"],
   },
 };
 

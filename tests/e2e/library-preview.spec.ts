@@ -48,7 +48,8 @@ test("quick drawer opens full detail and the version section", async ({ page }) 
 
   await expect(page).toHaveURL(/\/__preview\/skill-detail\/skill-pdf/);
   await expect(page.getByRole("heading", { name: "PDF Reader" })).toBeVisible();
-  await page.getByRole("link", { name: "Version history" }).click();
-  await expect(page).toHaveURL(/#versions$/);
+  // T3-C：详情页导航已重组为五信息区，版本章节位于"生命周期"分区。
+  await page.getByRole("link", { name: "Lifecycle" }).click();
+  await expect(page).toHaveURL(/#zone-lifecycle$/);
   await expect(page.getByRole("button", { name: /Export this skill/ })).toBeVisible();
 });

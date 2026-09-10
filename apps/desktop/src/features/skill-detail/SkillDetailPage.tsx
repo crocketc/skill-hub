@@ -2,8 +2,9 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { describeNativeError } from "../../api/nativeErrors";
-import { useLocation, useNavigate, useParams } from "react-router-dom";
+import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { DataState } from "../../ui/DataState";
+import { Icon } from "../../ui/Icon";
 import { MarkdownWorkspace } from "../markdown/MarkdownWorkspace";
 import {
   type MarkdownFacade,
@@ -18,7 +19,7 @@ import {
   skillDetailKeys,
 } from "./api";
 import { DetailHeader } from "./DetailHeader";
-import { DETAIL_SECTIONS, DetailSectionNav } from "./DetailSectionNav";
+import { DetailSectionNav } from "./DetailSectionNav";
 import { DetailStatusRail } from "./DetailStatusRail";
 import { detailSearchFromLibrary, readLibraryReturnState } from "./detailContext";
 import { MetadataPanel } from "./MetadataPanel";
@@ -51,6 +52,46 @@ interface SkillDetailPageProps {
   facade: SkillDetailFacade;
   markdownFacade?: MarkdownFacade;
   removalFacade?: RemovalFacade;
+}
+
+/** 关系区唯一强化的视觉线索：来源 → 本地集中库 → 部署目标（图标仅装饰，含义由文字承载）。 */
+function SkillTrajectory({
+  deployments,
+  source,
+  version,
+}: {
+  deployments: number;
+  source?: string;
+  version: string;
+}) {
+  const { t } = useTranslation();
+  return (
+    <div
+      aria-label={t("skillDetail.trajectory.label")}
+      className="sh-skill-detail__trajectory"
+      role="group"
+    >
+      <span className="sh-skill-detail__trajectory-step">
+        <Icon aria-hidden="true" name="open-external" size={16} />
+        <span className="sh-skill-detail__trajectory-label">{t("skillDetail.trajectory.source")}</span>
+        <span className="sh-skill-detail__trajectory-value">{source ?? t("skillDetail.metadata.empty")}</span>
+      </span>
+      <span aria-hidden="true" className="sh-skill-detail__trajectory-link" />
+      <span className="sh-skill-detail__trajectory-step">
+        <Icon aria-hidden="true" name="library" size={16} />
+        <span className="sh-skill-detail__trajectory-label">{t("skillDetail.trajectory.library")}</span>
+        <span className="sh-skill-detail__trajectory-value">{version}</span>
+      </span>
+      <span aria-hidden="true" className="sh-skill-detail__trajectory-link" />
+      <span className="sh-skill-detail__trajectory-step">
+        <Icon aria-hidden="true" name="deploy" size={16} />
+        <span className="sh-skill-detail__trajectory-label">{t("skillDetail.trajectory.deployments")}</span>
+        <span className="sh-skill-detail__trajectory-value">
+          {t("skillDetail.statusRail.deployments", { count: deployments })}
+        </span>
+      </span>
+    </div>
+  );
 }
 
 export function SkillDetailPage({
@@ -195,17 +236,19 @@ export function SkillDetailPage({
     );
   }
 
+  const deploymentCount = summaryQuery.data.agentDeploymentCount + summaryQuery.data.projectDeploymentCount;
+
   return (
     <section className="sh-skill-detail">
       <div className="sh-skill-detail__layout">
         <aside className="sh-skill-detail__rail">
-          <DetailHeader
-            backPathname={backPathname}
-            backSearch={backSearch}
-            libraryReturn={libraryReturn}
-            onDelete={!isPreviewRoute ? () => void startRemoval() : undefined}
-            summary={summaryQuery.data}
-          />
+          <Link
+            className="sh-skill-detail__back"
+            state={libraryReturn ? { libraryReturn } : undefined}
+            to={{ pathname: backPathname, search: backSearch }}
+          >
+            {t("skillDetail.navigation.back")}
+          </Link>
           <DetailSectionNav
             adjacent={adjacentQuery.data}
             backSearch={backSearch}
@@ -213,86 +256,114 @@ export function SkillDetailPage({
           />
         </aside>
         <main className="sh-skill-detail__content">
-          {DETAIL_SECTIONS.map((section) => (
-            <section className={`sh-skill-detail__section sh-skill-detail__section--${section}`} id={section} key={section}>
-              <h2>{t(`skillDetail.navigation.sections.${section}`)}</h2>
-              {section === "overview" ? (
-                <>
-                  <p>{summaryQuery.data.purpose}</p>
-                  <LifecyclePanel summary={summaryQuery.data} />
-                  <DetailStatusRail facade={facade} skillId={skillId} summary={summaryQuery.data} />
-                </>
+          <DetailHeader
+            onDelete={!isPreviewRoute ? () => void startRemoval() : undefined}
+            summary={summaryQuery.data}
+          />
+          <section aria-labelledby="zone-identity-heading" className="sh-skill-detail__zone" id="zone-identity">
+            <h2 id="zone-identity-heading">{t("skillDetail.zones.identity")}</h2>
+            <div className="sh-skill-detail__block" id="metadata">
+              <h3>{t("skillDetail.navigation.sections.metadata")}</h3>
+              {metadataQuery.isPending ? (
+                <p role="status">{t("skillDetail.states.loadingMetadata")}</p>
+              ) : metadataQuery.isError || !metadataQuery.data ? (
+                <p role="alert">{t("skillDetail.states.metadataError")}</p>
+              ) : (
+                <MetadataPanel facade={facade} metadata={metadataQuery.data} skillId={skillId} />
+              )}
+              <SourceRelinkPanel facade={facade} skillId={skillId} />
+            </div>
+          </section>
+          <section aria-labelledby="zone-status-heading" className="sh-skill-detail__zone" id="zone-status">
+            <h2 id="zone-status-heading">{t("skillDetail.zones.status")}</h2>
+            <div className="sh-skill-detail__block" id="overview">
+              <h3>{t("skillDetail.navigation.sections.overview")}</h3>
+              <p>{summaryQuery.data.purpose}</p>
+              <LifecyclePanel summary={summaryQuery.data} />
+              <DetailStatusRail facade={facade} skillId={skillId} summary={summaryQuery.data} />
+            </div>
+            <div className="sh-skill-detail__block" id="security">
+              <h3>{t("skillDetail.navigation.sections.security")}</h3>
+              <SecurityEvidence
+                findings={basicFindingsQuery.data}
+                llmFindings={llmFindingsQuery.data}
+                summary={summaryQuery.data}
+              />
+            </div>
+          </section>
+          <section aria-labelledby="zone-content-heading" className="sh-skill-detail__zone" id="zone-content">
+            <h2 id="zone-content-heading">{t("skillDetail.zones.content")}</h2>
+            <div className="sh-skill-detail__block" id="description">
+              <h3>{t("skillDetail.navigation.sections.description")}</h3>
+              <MarkdownWorkspace facade={markdownFacade} skillId={skillId} />
+            </div>
+          </section>
+          <section aria-labelledby="zone-relations-heading" className="sh-skill-detail__zone" id="zone-relations">
+            <h2 id="zone-relations-heading">{t("skillDetail.zones.relations")}</h2>
+            <SkillTrajectory
+              deployments={deploymentCount}
+              source={metadataQuery.data?.source}
+              version={summaryQuery.data.currentVersion}
+            />
+            <div className="sh-skill-detail__block" id="relations">
+              <h3>{t("skillDetail.navigation.sections.relations")}</h3>
+              {relationsQuery.isError ? (
+                <div aria-label={t("skillDetail.relations.loadErrorLabel")} role="alert">
+                  <p>{t("skillDetail.relations.loadError")}</p>
+                  <Button onClick={() => void relationsQuery.refetch()} size="sm" variant="secondary">
+                    {t("skillDetail.relations.retry")}
+                  </Button>
+                </div>
+              ) : relationsQuery.data ? (
+                <RelationsPanel
+                  onUndeploy={!isPreviewRoute ? (relation) => void startUndeploy(relation) : undefined}
+                  relations={relationsQuery.data}
+                />
               ) : null}
-              {section === "description" ? (
-                <MarkdownWorkspace facade={markdownFacade} skillId={skillId} />
-              ) : null}
-              {section === "metadata" ? (
-                <>
-                  {metadataQuery.isPending ? (
-                    <p role="status">{t("skillDetail.states.loadingMetadata")}</p>
-                  ) : metadataQuery.isError || !metadataQuery.data ? (
-                    <p role="alert">{t("skillDetail.states.metadataError")}</p>
-                  ) : (
-                    <MetadataPanel facade={facade} metadata={metadataQuery.data} skillId={skillId} />
-                  )}
-                  <SourceRelinkPanel facade={facade} skillId={skillId} />
-                </>
-              ) : null}
-              {section === "relations" ? (
-                relationsQuery.isError ? (
-                  <div aria-label={t("skillDetail.relations.loadErrorLabel")} role="alert">
-                    <p>{t("skillDetail.relations.loadError")}</p>
-                    <Button onClick={() => void relationsQuery.refetch()} size="sm" variant="secondary">
-                      {t("skillDetail.relations.retry")}
-                    </Button>
-                  </div>
-                ) : relationsQuery.data ? (
-                  <RelationsPanel
-                    onUndeploy={!isPreviewRoute ? (relation) => void startUndeploy(relation) : undefined}
-                    relations={relationsQuery.data}
-                  />
-                ) : null
-              ) : null}
-              {section === "requirements" && requirementsQuery.data ? (
+            </div>
+            <div className="sh-skill-detail__block" id="requirements">
+              <h3>{t("skillDetail.navigation.sections.requirements")}</h3>
+              {requirementsQuery.data ? (
                 <RequirementsPanel
                   invocation={metadataQuery.data?.invocation}
                   requirements={requirementsQuery.data}
                 />
               ) : null}
-              {section === "security" ? (
-                <SecurityEvidence
-                  findings={basicFindingsQuery.data}
-                  llmFindings={llmFindingsQuery.data}
-                  summary={summaryQuery.data}
-                />
-              ) : null}
-              {section === "connections" && insightsQuery.data ? (
+            </div>
+            <div className="sh-skill-detail__block" id="connections">
+              <h3>{t("skillDetail.navigation.sections.connections")}</h3>
+              {insightsQuery.data ? (
                 <>
                   <ConnectionEvidence insights={insightsQuery.data} />
                   <SemanticDuplicatePanel facade={facade} skillId={skillId} />
                 </>
               ) : null}
-              {section === "external" && insightsQuery.data ? (
+            </div>
+          </section>
+          <section aria-labelledby="zone-lifecycle-heading" className="sh-skill-detail__zone" id="zone-lifecycle">
+            <h2 id="zone-lifecycle-heading">{t("skillDetail.zones.lifecycle")}</h2>
+            <div className="sh-skill-detail__block" id="versions">
+              <h3>{t("skillDetail.navigation.sections.versions")}</h3>
+              <div className="sh-button-row">
+                <Button
+                  onClick={() => navigate("/settings/data-protection", {
+                    state: { exportSkillIds: [skillId] },
+                  })}
+                  variant="secondary"
+                >
+                  {t("skillDetail.versions.exportSkill")}
+                </Button>
+              </div>
+              <SourceUpdatePanel facade={facade} skillId={skillId} />
+              <VersionTimeline facade={facade} skillId={skillId} summary={summaryQuery.data} />
+            </div>
+            <div className="sh-skill-detail__block" id="external">
+              <h3>{t("skillDetail.navigation.sections.external")}</h3>
+              {insightsQuery.data ? (
                 <ExternalHistoryEvidence insights={insightsQuery.data} />
               ) : null}
-              {section === "versions" ? (
-                <>
-                  <div className="sh-button-row">
-                    <Button
-                      onClick={() => navigate("/settings/data-protection", {
-                        state: { exportSkillIds: [skillId] },
-                      })}
-                      variant="secondary"
-                    >
-                      {t("skillDetail.versions.exportSkill")}
-                    </Button>
-                  </div>
-                  <SourceUpdatePanel facade={facade} skillId={skillId} />
-                  <VersionTimeline facade={facade} skillId={skillId} summary={summaryQuery.data} />
-                </>
-              ) : null}
-            </section>
-          ))}
+            </div>
+          </section>
         </main>
       </div>
       {removalLoading ? <p role="status">{t("removal.loading")}</p> : null}

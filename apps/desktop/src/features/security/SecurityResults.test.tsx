@@ -120,6 +120,17 @@ it("renders file and line evidence when present and a no-location empty state ot
   expect(screen.getByRole("heading", { name: "AI 检查发现" })).toBeVisible();
 });
 
+it("labels high-risk findings visibly before any disposition choice", async () => {
+  await renderSecurity({
+    findings: [
+      makeFinding({ id: "f-1", file: "SKILL.md", highRisk: true }),
+      makeFinding({ id: "f-2", file: "scripts/run.py", highRisk: false }),
+    ],
+  });
+
+  expect(await screen.findByText("高风险")).toBeVisible();
+});
+
 it("disposes LLM findings with the llm kind and without high-risk confirmation for low-risk items", async () => {
   const { dispositionCalls } = await renderSecurity({
     findings: [makeFinding({ id: "lf-1", kind: "llm" })],
