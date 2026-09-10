@@ -119,6 +119,25 @@ it("separates configured agent targets from discovered device agents", async () 
   expect(screen.getByText("5 discovered agents")).toBeVisible();
 });
 
+it("promotes a single primary metric and turns the rest into compact stats", async () => {
+  await renderOverview();
+
+  const hero = screen.getByRole("link", { name: "12 skills" });
+  expect(hero).toHaveAttribute("href", "/library");
+  expect(within(hero).getByText("12 skills")).toBeVisible();
+
+  const statsList = screen.getByRole("list", { name: "Key stats" });
+  for (const statName of [
+    "3 configured agents",
+    "5 discovered agents",
+    "2 projects",
+    "18 deployments",
+  ]) {
+    expect(within(statsList).getByRole("link", { name: statName })).toBeVisible();
+  }
+  expect(screen.getAllByRole("link", { name: "12 skills" })).toHaveLength(1);
+});
+
 it("renders proportional agent deployments with a visible text equivalent and drills into its deployment workspace", async () => {
   await renderOverview();
 
@@ -203,6 +222,24 @@ it("explains when the selected deployment dimension has no relationships", async
   expect(screen.getByRole("status")).toHaveTextContent("No deployment relationships by agent yet");
   expect(screen.queryByRole("img", { name: "Deployment count by agent" })).not.toBeInTheDocument();
   expect(screen.getByText("No pending items")).toBeVisible();
+});
+
+it("keeps empty and zero-count states legible in the redesigned overview", async () => {
+  await renderOverview({
+    ...overviewSnapshot,
+    agent_count: 0,
+    deployment_categories: [],
+    discovered_agent_count: 0,
+    pending: { by_kind: {}, total: 0 },
+  });
+
+  const statsList = screen.getByRole("list", { name: "Key stats" });
+  expect(within(statsList).getByRole("link", { name: "0 configured agents" })).toBeVisible();
+  expect(within(statsList).getByRole("link", { name: "0 discovered agents" })).toBeVisible();
+  expect(screen.getByRole("link", { name: "12 skills" })).toBeVisible();
+  expect(screen.getByRole("status")).toHaveTextContent("No deployment relationships by agent yet");
+  expect(screen.getByRole("heading", { name: "No pending items" })).toBeVisible();
+  expect(screen.getByText("All clear")).toBeVisible();
 });
 
 it("keeps the desktop overview grid at smaller window widths instead of switching to one column", () => {

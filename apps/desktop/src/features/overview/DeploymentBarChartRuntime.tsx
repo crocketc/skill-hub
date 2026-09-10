@@ -26,7 +26,6 @@ type DeploymentChartOption = ComposeOption<
 function buildChartOption({
   animation,
   ariaLabel,
-  dimensionLabel,
   items,
   orientation,
   palette,
@@ -49,6 +48,8 @@ function buildChartOption({
     inverse: isHorizontal,
     type: "category" as const,
   };
+  // 数值轴不显示名称：图表的 role="img" aria 标签、明细列表和维度切换
+  // 已经承担同样的语义，轴名称在窄容器里会被 SVG 视口裁切。
   const valueAxis = {
     axisLabel: {
       color: palette.axisLabelColor,
@@ -59,10 +60,6 @@ function buildChartOption({
       },
     },
     min: 0,
-    name: dimensionLabel,
-    nameTextStyle: {
-      color: palette.axisLabelColor,
-    },
     splitLine: {
       lineStyle: {
         color: palette.splitLineColor,
