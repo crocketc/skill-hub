@@ -212,7 +212,9 @@ it("renders handled history and undoes an entry", async () => {
   await screen.findByText("处理历史");
   await screen.findByText("trial_due:skill-a:trial");
   expect(screen.getByText("暂缓 7 天后再提醒")).toBeInTheDocument();
-  expect(screen.getByText(/创建于：2026-09-01T10:00:00\+08:00/)).toBeInTheDocument();
+  // T4-A：历史时间戳必须经 Intl.DateTimeFormat 本地化，不再展示原始 ISO 字符串。
+  expect(screen.queryByText(/2026-09-01T10:00:00/)).not.toBeInTheDocument();
+  expect(screen.getByText(/创建于：2026年9月1日/)).toBeInTheDocument();
   expect(screen.getByText(/暂缓截止：2026-09-08/)).toBeInTheDocument();
 
   fireEvent.click(screen.getByRole("button", { name: "撤销" }));
@@ -254,4 +256,41 @@ it("restores the saved view on mount and persists kind changes", async () => {
   await act(async () => {});
   await waitFor(() => expect(saveSavedView).toHaveBeenCalledWith("all"));
   expect(screen.getByText("skill-a")).toBeInTheDocument();
+});
+
+it("exposes each item's suggested actions as a named group after its risk and impact", async () => {
+  await renderPage(fakeFacade({ list: async () => [findingItem] }));
+  await screen.findByText("skill-b");
+
+  const group = screen.getByRole("group", { name: "处理 skill-b 的建议操作" });
+  expect(within(group).getByRole("button", { name: "重新检查" })).toBeInTheDocument();
+  expect(within(group).getByRole("button", { name: "暂缓" })).toBeInTheDocument();
+  expect(within(group).getByRole("button", { name: "忽略" })).toBeInTheDocument();
+});
+
+it("keeps the list usable and reports one failed action without replacing the page", async () => {
+  const defer = vi.fn(async () => {
+    throw "permission denied";
+  });
+  await renderPage(fakeFacade({ list: async () => [trialItem, findingItem], defer }));
+  await screen.findByText("skill-a");
+
+  const row = screen.getByText("skill-a").closest("li") as HTMLElement;
+  fireEvent.click(within(row).getByRole("button", { name: "暂缓" }));
+
+  expect(await screen.findByRole("alert")).toHaveTextContent("操作失败");
+  expect(screen.getByText("skill-a")).toBeInTheDocument();
+  expect(screen.getByText("skill-b")).toBeInTheDocument();
+  expect(within(row).getByRole("button", { name: "暂缓" })).toBeEnabled();
+});
+
+it("announces how many items are selected in the batch bar", async () => {
+  await renderPage(fakeFacade({ list: async () => [trialItem, findingItem] }));
+  await screen.findByText("skill-a");
+
+  fireEvent.click(screen.getByLabelText("选择 skill-a"));
+  expect(screen.getByText("已选 1 项")).toBeInTheDocument();
+
+  fireEvent.click(screen.getByLabelText("选择 skill-b"));
+  expect(screen.getByText("已选 2 项")).toBeInTheDocument();
 });

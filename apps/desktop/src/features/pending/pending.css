@@ -1,0 +1,172 @@
+/* T4-A 待处理事项专属样式。仅使用 --ui-* 语义 token，不写死主题色。 */
+.sh-pending {
+  display: grid;
+  gap: var(--space-5);
+  min-width: 0;
+}
+
+.sh-pending__card {
+  min-width: 0;
+}
+
+.sh-pending__toolbar {
+  align-items: start;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin-top: var(--space-3);
+}
+
+.sh-pending__toolbar .sh-field {
+  min-width: 12rem;
+}
+
+.sh-pending__action-error {
+  border: 1px solid var(--ui-danger-border);
+  border-radius: var(--radius-sm);
+  color: var(--ui-danger-foreground);
+  margin: var(--space-3) 0 0;
+  padding: var(--space-2) var(--space-3);
+}
+
+/* —— 批量操作区：钉在滚动容器顶部，长列表中始终可用且不遮挡焦点与末项 —— */
+.sh-pending-batch--anchored {
+  background: var(--ui-surface);
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  box-shadow: 0 var(--space-1) var(--space-2) color-mix(in srgb, var(--ui-ink) 8%, transparent);
+  margin: 0 calc(-1 * var(--space-5)) var(--space-3);
+  padding: var(--space-3) var(--space-5);
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
+.sh-pending-batch__count {
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  color: var(--ui-ink-muted);
+}
+
+/* —— 事项行：风险 — 影响 — 建议操作 —— */
+.sh-pending__list {
+  container-type: inline-size;
+  display: grid;
+  gap: var(--space-3);
+  list-style: none;
+  margin: var(--space-4) 0 0;
+  padding: 0;
+}
+
+.sh-pending-item {
+  align-items: start;
+  border: 1px solid var(--ui-border-subtle);
+  border-radius: var(--radius-md);
+  display: grid;
+  gap: var(--space-2) var(--space-3);
+  grid-template-columns: auto minmax(0, 1fr);
+  padding: var(--space-3);
+  /* 顶部钉住的批量区高度余量：聚焦任何条目时都滚动到批量区下方，不被遮挡。 */
+  scroll-margin-top: 11rem;
+}
+
+.sh-pending-item__select {
+  margin-top: var(--space-1);
+}
+
+.sh-pending-item__main {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.sh-pending-item__identity {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.sh-pending-item__subject {
+  overflow-wrap: anywhere;
+}
+
+.sh-pending-item__message {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.sh-pending-item__facts {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
+}
+
+.sh-pending-item__fact {
+  align-items: center;
+  color: var(--ui-ink-muted);
+  display: inline-flex;
+  font-size: var(--font-size-xs);
+  gap: var(--space-1);
+}
+
+.sh-pending-item__fact svg {
+  flex: none;
+}
+
+.sh-pending-item__risk {
+  align-items: center;
+  border-radius: var(--radius-sm);
+  display: inline-flex;
+  flex: none;
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  gap: var(--space-1);
+  min-height: 1.5rem;
+  padding: 0 var(--space-2);
+}
+
+.sh-pending-item__risk svg {
+  flex: none;
+}
+
+.sh-pending-item__risk--high {
+  background: var(--ui-danger-background);
+  color: var(--ui-danger-foreground);
+}
+
+.sh-pending-item__risk--medium {
+  background: var(--ui-warning-background);
+  color: var(--ui-warning-foreground);
+}
+
+.sh-pending-item__risk--low {
+  background: var(--ui-surface-subtle);
+  color: var(--ui-ink-muted);
+}
+
+.sh-pending-item__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  grid-column: 2;
+  justify-content: flex-start;
+}
+
+.sh-pending-item__actions .sh-select {
+  min-width: 6.5rem;
+}
+
+/* 内容容器优先的响应式：行内动作随容器宽度换行到元信息下方。 */
+@container (min-width: 48rem) {
+  .sh-pending-item {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+  }
+
+  .sh-pending-item__actions {
+    grid-column: 3;
+    justify-content: flex-end;
+    max-width: 26rem;
+  }
+}

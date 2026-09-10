@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { I18nextProvider } from "react-i18next";
 import { createSkillHubI18n } from "../../i18n";
@@ -53,6 +53,25 @@ it("lists recent native operations with links to their detail pages", async () =
   const failedDetail = screen.getByRole("link", { name: "deployment" });
   expect(failedDetail.getAttribute("href")).toBe("/operations/op-2");
   expect(screen.getByText(/deployment\.target_conflict/)).toBeVisible();
+});
+
+it("renders a structured timeline whose entries expose phase, error code, and localized time", async () => {
+  await renderList();
+
+  const timeline = await screen.findByRole("list", { name: "操作时间线" });
+  const entries = within(timeline).getAllByRole("listitem");
+  expect(entries.length).toBe(2);
+
+  // 阶段语义：不再展示原始 state 字符串，而是可读的阶段徽标（图标＋文字）。
+  expect(within(entries[0]).getByText("已提交")).toBeInTheDocument();
+  expect(within(entries[1]).getByText("需要恢复")).toBeInTheDocument();
+  expect(within(entries[1]).getByText(/错误码：deployment\.target_conflict/)).toBeInTheDocument();
+
+  // 时间必须经 Intl.DateTimeFormat 本地化，原始 ISO 只保留在 dateTime 属性里。
+  const times = within(timeline).getAllByRole("time");
+  expect(times[0]).toHaveAttribute("dateTime", "2026-09-06T08:00:00Z");
+  expect(times[0]).toHaveTextContent(/2026年9月6日/);
+  expect(screen.queryByText("2026-09-06T08:00:00Z")).not.toBeInTheDocument();
 });
 
 it("shows session-tracked background operations in their own section", async () => {

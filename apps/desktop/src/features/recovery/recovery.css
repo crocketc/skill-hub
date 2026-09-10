@@ -1,0 +1,49 @@
+/* T4-A 恢复页专属样式。仅使用 --ui-* 语义 token，不写死主题色。 */
+.sh-recovery {
+  display: grid;
+  gap: var(--space-5);
+  min-width: 0;
+}
+
+.sh-recovery__tabs {
+  flex-wrap: wrap;
+}
+
+.sh-recovery__tabs .sh-tabs__tab {
+  min-height: 2.5rem;
+}
+
+.sh-recovery__panel {
+  min-width: 0;
+}
+
+.sh-recovery__panel:focus-visible {
+  outline: 2px solid var(--ui-focus);
+  outline-offset: 2px;
+}
+
+.sh-recovery__summary-heading {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.sh-recovery__summary-heading strong {
+  overflow-wrap: anywhere;
+}
+
+.sh-recovery__actions {
+  margin-top: var(--space-4);
+}
+
+/* 阶段徽标内的装饰图标与文字对齐（操作进度页共用）。 */
+.sh-phase-status {
+  align-items: center;
+  display: inline-flex;
+  gap: var(--space-1);
+}
+
+.sh-phase-status svg {
+  flex: none;
+}
