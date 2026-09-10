@@ -112,6 +112,10 @@
     "eyebrow": "安全导入流程",
     "title": "导入 Skill",
     "step": "第 {{current}} 步，共 {{total}} 步",
+    "stepComplete": "已完成",
+    "steps": {
+      "label": "导入步骤"
+    },
     "phases": {
       "source": "选择来源",
       "acquiring": "正在读取候选项",

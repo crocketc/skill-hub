@@ -112,6 +112,10 @@
     "eyebrow": "Safe import workflow",
     "title": "Import Skills",
     "step": "Step {{current}} of {{total}}",
+    "stepComplete": "Done",
+    "steps": {
+      "label": "Import steps"
+    },
     "phases": {
       "source": "Choose a source",
       "acquiring": "Reading candidates",
