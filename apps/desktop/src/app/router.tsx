@@ -33,6 +33,7 @@ import { ImportWizardPreview } from "../features/import/ImportWizardPreview";
 import { OnlineDiscoveryPreview } from "../features/discovery/OnlineDiscoveryPreview";
 import { DiscoveryCardsPreview } from "../features/discovery/DiscoveryCardsPreview";
 import { UiFoundationsPreview } from "../features/dev-preview/UiFoundationsPreview";
+import { MarkdownWorkspacePreview } from "../features/markdown/MarkdownWorkspacePreview";
 import { DiscoveryRoute } from "./DiscoveryRoute";
 import { OverviewPage } from "../features/overview/OverviewPage";
 import { SkillLibraryPage } from "../features/skills/SkillLibraryPage";
@@ -247,6 +248,7 @@ export const appRouter = createBrowserRouter([
             { path: "discovery-cards", element: <DiscoveryCardsPreview /> },
             { path: "import-wizard", element: <ImportWizardPreview /> },
             { path: "ui-foundations", element: <UiFoundationsPreview /> },
+            { path: "markdown-workspace", element: <MarkdownWorkspacePreview /> },
           ],
         },
       ]
