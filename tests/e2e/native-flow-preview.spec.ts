@@ -355,11 +355,14 @@ test("native skill detail exposes metadata, relations, findings, and versions", 
   await installNativePreview(page);
   await page.goto("/library/pdf-reader");
   await expect(page.getByRole("heading", { name: "PDF Reader" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Identity and source" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "PDF Reader" })).toBeVisible();
+  // T3-C：详情页导航已重组为五信息区，身份章节位于"Identity"分区。
+  await expect(page.getByRole("heading", { name: "Identity", exact: true })).toBeVisible();
   await expect(page.getByText("MIT", { exact: true })).toBeVisible();
   await expect(page.getByText("Codex CLI", { exact: true })).toBeVisible();
-  await page.getByRole("link", { name: "Version history" }).click();
-  await expect(page).toHaveURL(/#versions$/);
+  // T3-C：详情页导航已重组为五信息区，版本章节位于"Lifecycle"分区。
+  await page.getByRole("link", { name: "Lifecycle" }).click();
+  await expect(page).toHaveURL(/#zone-lifecycle$/);
   await expect(page.getByRole("heading", { name: "v1", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Check source updates" }).click();
   await expect(page.getByText(/Update available: local v1/)).toBeVisible();
