@@ -34,6 +34,7 @@ import { OnlineDiscoveryPreview } from "../features/discovery/OnlineDiscoveryPre
 import { DiscoveryCardsPreview } from "../features/discovery/DiscoveryCardsPreview";
 import { UiFoundationsPreview } from "../features/dev-preview/UiFoundationsPreview";
 import { MarkdownWorkspacePreview } from "../features/markdown/MarkdownWorkspacePreview";
+import { OverviewPreviewShell } from "../features/overview/OverviewPreview";
 import { DiscoveryRoute } from "./DiscoveryRoute";
 import { OverviewPage } from "../features/overview/OverviewPage";
 import { SkillLibraryPage } from "../features/skills/SkillLibraryPage";
@@ -250,6 +251,11 @@ export const appRouter = createBrowserRouter([
             { path: "ui-foundations", element: <UiFoundationsPreview /> },
             { path: "markdown-workspace", element: <MarkdownWorkspacePreview /> },
           ],
+        },
+        {
+          path: "__preview/overview",
+          element: <OverviewPreviewShell />,
+          children: [{ index: true, element: <OverviewPage /> }],
         },
       ]
     : []),

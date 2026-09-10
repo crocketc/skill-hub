@@ -1946,10 +1946,14 @@
     },
     "metrics": {
       "agents": "{{count}} configured agents",
+      "compactLabel": "Key stats",
         "discoveredAgents": "{{count}} discovered agents",
       "deployments": "{{count}} deployments",
       "projects": "{{count}} projects",
       "skills": "{{count}} skills"
+    },
+    "page": {
+      "description": "How much the library holds, where skills are deployed, and what needs attention."
     },
     "pending": {
       "badge": "{{count}} open",
