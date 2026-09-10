@@ -1710,7 +1710,10 @@
       "disable": "Disable",
       "setDefault": "Set default",
       "delete": "Delete",
-      "emptyProviders": "No LLM provider configured yet."
+      "emptyProviders": "No LLM provider configured yet.",
+      "operationFailed": "The operation failed ({{code}}). Check the configuration and retry.",
+      "fetchModelsFailedHint": "Fetching the model list failed. You can fill in the model name manually and save.",
+      "requiredField": "Please fill in {{field}}."
     },
     "backup": {
       "heading": "Data protection",

@@ -79,6 +79,8 @@ function recordingFacade(options: {
   providers?: LlmProviderView[];
   presets?: LlmProviderPreset[];
   testResult?: ConnectionTestResult;
+  fetchModelsError?: unknown;
+  testConnectionError?: unknown;
 } = {}): Recording {
   const saves: Array<{ draft: LlmProviderDraft; replaceCredential: boolean }> = [];
   const connectionTests: LlmProviderDraft[] = [];
@@ -94,10 +96,12 @@ function recordingFacade(options: {
       saves.push({ draft, replaceCredential });
     },
     async fetchModels() {
+      if (options.fetchModelsError !== undefined) throw options.fetchModelsError;
       return ["deepseek-chat", "deepseek-reasoner"];
     },
     async testConnection(draft) {
       connectionTests.push(draft);
+      if (options.testConnectionError !== undefined) throw options.testConnectionError;
       return (
         options.testResult ?? {
           endpoint: { reachable: true, latency_ms: 42 },
@@ -225,4 +229,106 @@ it("shows model connection available only when the model level passes", async ()
   await user.click(await screen.findByRole("button", { name: "测试连接" }));
 
   expect(await screen.findByText("模型连接可用")).toBeVisible();
+});
+
+const STRUCTURED_NATIVE_ERROR = {
+  code: "network.disabled",
+  severity: "error",
+  params: {},
+  actions: [],
+};
+
+async function openFilledDraftForm(i18n: Awaited<ReturnType<typeof createSkillHubI18n>>, facade: LlmAdminFacade) {
+  const user = userEvent.setup();
+  renderCard(facade, i18n);
+  await user.click(await screen.findByRole("button", { name: "新增供应商" }));
+  await user.type(screen.getByLabelText("供应商 ID"), "deepseek");
+  await user.type(screen.getByLabelText("API 地址（Base URL）"), "https://api.deepseek.com/v1");
+  await user.type(screen.getByLabelText("模型"), "deepseek-chat");
+  await user.type(screen.getByLabelText("API 密钥"), "sk-acceptance-not-real");
+  return user;
+}
+
+it("shows a readable localized error instead of [object Object] when fetching models fails", async () => {
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  const { facade } = recordingFacade({ fetchModelsError: STRUCTURED_NATIVE_ERROR });
+  const user = await openFilledDraftForm(i18n, facade);
+
+  await user.click(screen.getByRole("button", { name: "获取模型列表" }));
+
+  expect(
+    await screen.findByText("网络功能已关闭；需要在设置中开启后才能联网操作。"),
+  ).toBeVisible();
+  expect(screen.queryByText(/object Object/i)).not.toBeInTheDocument();
+});
+
+it("keeps the draft and tells the user to fill the model manually when fetching models fails", async () => {
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  const { facade } = recordingFacade({ fetchModelsError: STRUCTURED_NATIVE_ERROR });
+  const user = await openFilledDraftForm(i18n, facade);
+
+  await user.click(screen.getByRole("button", { name: "获取模型列表" }));
+
+  expect(await screen.findByText(/可手动填写模型/)).toBeVisible();
+  expect(screen.getByLabelText("API 地址（Base URL）")).toHaveValue("https://api.deepseek.com/v1");
+  expect(screen.getByLabelText("模型")).toHaveValue("deepseek-chat");
+  expect(screen.getByLabelText("API 密钥")).toHaveValue("sk-acceptance-not-real");
+});
+
+it("clears the failure hint after a successful retry fetches the model list", async () => {
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  let calls = 0;
+  const { facade } = recordingFacade();
+  facade.fetchModels = Object.assign(async () => {
+    calls += 1;
+    if (calls === 1) throw STRUCTURED_NATIVE_ERROR;
+    return ["deepseek-chat"];
+  }, {});
+  const user = await openFilledDraftForm(i18n, facade);
+
+  await user.click(screen.getByRole("button", { name: "获取模型列表" }));
+  expect(await screen.findByText(/可手动填写模型/)).toBeVisible();
+
+  await user.click(screen.getByRole("button", { name: "获取模型列表" }));
+
+  await waitFor(() =>
+    expect(screen.queryByText(/可手动填写模型/)).not.toBeInTheDocument(),
+  );
+  expect(screen.queryByText(/操作失败/)).not.toBeInTheDocument();
+});
+
+it("reports a readable error instead of [object Object] when the draft connection test fails", async () => {
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  const { facade } = recordingFacade({
+    testConnectionError: {
+      code: "llm.auth_failed",
+      severity: "error",
+      params: {},
+      actions: [],
+    },
+  });
+  const user = await openFilledDraftForm(i18n, facade);
+
+  await user.click(screen.getByRole("button", { name: "测试此配置" }));
+
+  expect(await screen.findByText(/操作失败（llm\.auth_failed）/)).toBeVisible();
+  expect(screen.queryByText(/object Object/i)).not.toBeInTheDocument();
+  expect(screen.getByLabelText("API 地址（Base URL）")).toHaveValue("https://api.deepseek.com/v1");
+  expect(screen.getByLabelText("模型")).toHaveValue("deepseek-chat");
+});
+
+it("reports localized required-field messages instead of the browser validation bubble", async () => {
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  const { facade, saves } = recordingFacade();
+  const user = userEvent.setup();
+  renderCard(facade, i18n);
+
+  await user.click(await screen.findByRole("button", { name: "新增供应商" }));
+  await user.click(screen.getByRole("button", { name: "保存" }));
+
+  expect(await screen.findByText("请填写供应商 ID。")).toBeVisible();
+  expect(screen.getByText("请填写API 地址（Base URL）。")).toBeVisible();
+  expect(screen.getByText("请填写模型。")).toBeVisible();
+  expect(screen.queryByText(/fill out this field/i)).not.toBeInTheDocument();
+  expect(saves).toHaveLength(0);
 });

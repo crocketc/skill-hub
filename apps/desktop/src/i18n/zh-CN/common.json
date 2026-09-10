@@ -1710,7 +1710,10 @@
       "disable": "停用",
       "setDefault": "设为默认",
       "delete": "删除",
-      "emptyProviders": "尚未配置 LLM 供应商。"
+      "emptyProviders": "尚未配置 LLM 供应商。",
+      "operationFailed": "操作失败（{{code}}）。请检查配置后重试。",
+      "fetchModelsFailedHint": "获取模型列表失败，可手动填写模型名称后保存。",
+      "requiredField": "请填写{{field}}。"
     },
     "backup": {
       "heading": "数据保护",

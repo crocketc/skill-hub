@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { describeNativeError } from "../../api/nativeErrors";
 import {
   type ConnectionTestResult,
   type LlmAdminFacade,
@@ -21,6 +22,8 @@ const EMPTY_DRAFT: LlmProviderDraft = {
 
 type ConnectionReport = { providerId: string; result: ConnectionTestResult };
 
+type FieldErrors = { endpoint?: string; id?: string; model?: string };
+
 /** Provider administration card: presets, credential entry, model fetch, the
  * two-level connection test and enable/default/delete. Credential values live
  * only in this form until they are handed to the OS credential store. */
@@ -34,12 +37,22 @@ export function LlmProvidersSettings({ facade = unavailableLlmFacade }: { facade
   const [reports, setReports] = useState<ConnectionReport[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
+  const [modelsUnavailable, setModelsUnavailable] = useState(false);
+  const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
+
+  // describeNativeError 以动态键调用翻译；i18next 的强类型键联合在此收窄。
+  const describe = (reason: unknown) =>
+    describeNativeError(
+      reason,
+      (key, options) => String(t(key as never, options as never)),
+      "settings.llm.operationFailed",
+    );
 
   const refresh = () => {
     facade
       .listProviders()
       .then(setProviders)
-      .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : String(reason)));
+      .catch((reason: unknown) => setError(describe(reason)));
     facade
       .listPresets()
       .then(setPresets)
@@ -54,7 +67,7 @@ export function LlmProvidersSettings({ facade = unavailableLlmFacade }: { facade
     setError(undefined);
     action()
       .then(refresh)
-      .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : String(reason)))
+      .catch((reason: unknown) => setError(describe(reason)))
       .finally(() => setBusy(false));
   };
 
@@ -79,11 +92,44 @@ export function LlmProvidersSettings({ facade = unavailableLlmFacade }: { facade
       setFormOpen(false);
       setDraft({ ...EMPTY_DRAFT });
       setModels([]);
+      setModelsUnavailable(false);
     });
+
+  // 表单关闭原生校验气泡：WebView 的英文 "fill out this field" 不可本地化，
+  // 必填约束保留（required 语义不变），缺失时改为逐字段展示本地化提示。
+  const submitDraft = () => {
+    const required: Array<{ key: keyof FieldErrors; label: string; value: string }> = [
+      { key: "id", label: t("settings.llm.providerId"), value: draft.id },
+      { key: "endpoint", label: t("settings.llm.endpoint"), value: draft.endpoint },
+      { key: "model", label: t("settings.llm.model"), value: draft.model },
+    ];
+    const missing: FieldErrors = {};
+    for (const field of required) {
+      if (!field.value.trim()) {
+        missing[field.key] = t("settings.llm.requiredField", { field: field.label });
+      }
+    }
+    if (Object.keys(missing).length > 0) {
+      setFieldErrors(missing);
+      return;
+    }
+    setFieldErrors({});
+    saveDraft();
+  };
+
+  const clearFieldError = (key: keyof FieldErrors) =>
+    setFieldErrors((current) => ({ ...current, [key]: undefined }));
 
   const fetchModels = () =>
     guard(async () => {
-      setModels(await facade.fetchModels(draft));
+      try {
+        setModels(await facade.fetchModels(draft));
+        setModelsUnavailable(false);
+      } catch (reason) {
+        // 失败时保留草稿并提示可手动填写模型，不阻塞保存流程。
+        setModelsUnavailable(true);
+        throw reason;
+      }
     });
 
   const testConnection = (target: LlmProviderDraft) =>
@@ -120,9 +166,10 @@ export function LlmProvidersSettings({ facade = unavailableLlmFacade }: { facade
       {formOpen ? (
         <form
           aria-label={t("settings.llm.formHeading")}
+          noValidate
           onSubmit={(event) => {
             event.preventDefault();
-            saveDraft();
+            submitDraft();
           }}
         >
           <h3>{t("settings.llm.formHeading")}</h3>
@@ -145,10 +192,14 @@ export function LlmProvidersSettings({ facade = unavailableLlmFacade }: { facade
             <span>{t("settings.llm.providerId")}</span>
             <input
               aria-label={t("settings.llm.providerId")}
-              onChange={(event) => setDraft({ ...draft, id: event.target.value })}
+              onChange={(event) => {
+                setDraft({ ...draft, id: event.target.value });
+                clearFieldError("id");
+              }}
               required
               value={draft.id}
             />
+            {fieldErrors.id ? <p role="alert">{fieldErrors.id}</p> : null}
           </label>
           <label className="sh-settings-field">
             <span>{t("settings.llm.displayName")}</span>
@@ -163,17 +214,24 @@ export function LlmProvidersSettings({ facade = unavailableLlmFacade }: { facade
             <input
               aria-label={t("settings.llm.endpoint")}
               inputMode="url"
-              onChange={(event) => setDraft({ ...draft, endpoint: event.target.value })}
+              onChange={(event) => {
+                setDraft({ ...draft, endpoint: event.target.value });
+                clearFieldError("endpoint");
+              }}
               required
               value={draft.endpoint}
             />
+            {fieldErrors.endpoint ? <p role="alert">{fieldErrors.endpoint}</p> : null}
           </label>
           <label className="sh-settings-field">
             <span>{t("settings.llm.model")}</span>
             <input
               aria-label={t("settings.llm.model")}
               list="llm-model-options"
-              onChange={(event) => setDraft({ ...draft, model: event.target.value })}
+              onChange={(event) => {
+                setDraft({ ...draft, model: event.target.value });
+                clearFieldError("model");
+              }}
               required
               value={draft.model}
             />
@@ -182,6 +240,12 @@ export function LlmProvidersSettings({ facade = unavailableLlmFacade }: { facade
                 <option key={model} value={model} />
               ))}
             </datalist>
+            {fieldErrors.model ? <p role="alert">{fieldErrors.model}</p> : null}
+            {modelsUnavailable ? (
+              <p className="sh-settings-local-note" role="status">
+                {t("settings.llm.fetchModelsFailedHint")}
+              </p>
+            ) : null}
           </label>
           <button disabled={busy} onClick={() => void fetchModels()} type="button">
             {t("settings.llm.fetchModels")}
