@@ -31,6 +31,7 @@ import { nativeSettingsFacade } from "../features/settings/nativeApi";
 import { SettingsLlmPreview } from "../features/settings/SettingsLlmPreview";
 import { ImportWizardPreview } from "../features/import/ImportWizardPreview";
 import { OnlineDiscoveryPreview } from "../features/discovery/OnlineDiscoveryPreview";
+import { DiscoveryCardsPreview } from "../features/discovery/DiscoveryCardsPreview";
 import { UiFoundationsPreview } from "../features/dev-preview/UiFoundationsPreview";
 import { DiscoveryRoute } from "./DiscoveryRoute";
 import { OverviewPage } from "../features/overview/OverviewPage";
@@ -243,6 +244,7 @@ export const appRouter = createBrowserRouter([
             { path: "settings-llm", element: <SettingsLlmPreview /> },
             { path: "security-llm", element: <SecurityLlmPreview /> },
             { path: "discovery-online", element: <OnlineDiscoveryPreview /> },
+            { path: "discovery-cards", element: <DiscoveryCardsPreview /> },
             { path: "import-wizard", element: <ImportWizardPreview /> },
             { path: "ui-foundations", element: <UiFoundationsPreview /> },
           ],

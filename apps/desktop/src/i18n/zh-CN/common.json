@@ -393,7 +393,8 @@
       "assistToggle": "AI 搜索辅助",
       "assistExtended": "AI 扩展查询“{{query}}”新增 {{count}} 条命中；你的原始查询保持不变，扩展命中已标记。",
       "assistFallback": "AI 搜索辅助不可用，已回退普通搜索。",
-      "assistHit": "AI 扩展命中"
+      "assistHit": "AI 扩展命中",
+      "results": "搜索结果"
     },
     "repo": {
       "eyebrow": "仓库来源",
@@ -417,6 +418,7 @@
       "confirmRemoveDescription": "将从发现列表移除 {{repo}}。这只影响发现入口，不会删除已导入的 Skill。",
       "warning": "{{repo}} 扫描失败：{{reason}}",
       "noResults": "已启用仓库中未发现 Skill。",
+      "results": "扫描结果",
       "downloadImport": "下载并导入",
       "downloading": "正在下载…",
       "downloadFailed": "下载失败，请稍后重试。"
@@ -429,12 +431,18 @@
       "scanning": "正在扫描…",
       "failed": "lock 文件读取失败。",
       "empty": "未发现任何 GitHub 来源的 Skill 条目。",
+      "results": "lock 条目",
       "source": "{{repo}}@{{branch}}",
       "defaultBranch": "默认分支",
       "skillPath": "仓库内路径：{{path}}",
       "downloadImport": "下载并导入",
       "downloading": "正在下载…",
       "downloadFailed": "下载失败，请稍后重试。"
+    },
+    "card": {
+      "status": {
+        "notInstallable": "不可安装"
+      }
     }
   },
   "agents": {

@@ -393,7 +393,8 @@
       "assistToggle": "AI search assist",
       "assistExtended": "AI extended query \"{{query}}\" added {{count}} hits; your original query is unchanged and AI-extended hits are marked.",
       "assistFallback": "AI search assist is unavailable; fell back to the plain search.",
-      "assistHit": "AI-extended hit"
+      "assistHit": "AI-extended hit",
+      "results": "Search results"
     },
     "repo": {
       "eyebrow": "Repository sources",
@@ -417,6 +418,7 @@
       "confirmRemoveDescription": "{{repo}} will be removed from the discovery list. Already imported Skills are not deleted.",
       "warning": "{{repo}} failed to scan: {{reason}}",
       "noResults": "No Skills found in the enabled repositories.",
+      "results": "Scan results",
       "downloadImport": "Download & import",
       "downloading": "Downloading…",
       "downloadFailed": "Download failed. Please try again later."
@@ -429,12 +431,18 @@
       "scanning": "Scanning…",
       "failed": "Failed to read the lock file.",
       "empty": "No GitHub-sourced Skill entries found.",
+      "results": "Lock entries",
       "source": "{{repo}}@{{branch}}",
       "defaultBranch": "default branch",
       "skillPath": "Repo path: {{path}}",
       "downloadImport": "Download & import",
       "downloading": "Downloading…",
       "downloadFailed": "Download failed. Please try again later."
+    },
+    "card": {
+      "status": {
+        "notInstallable": "Not installable"
+      }
     }
   },
   "agents": {
