@@ -298,11 +298,14 @@ test("data protection exposes export, restore, retention, and uninstall previews
 test("settings exposes ordered sections and application update boundary", async ({ page }) => {
   await installNativePreview(page);
   await page.goto("/settings");
-  const sections = page.locator(".sh-settings-section__title");
-  await expect(sections).toHaveCount(6);
-  await expect(sections.nth(0)).toHaveText("General");
-  await expect(sections.nth(1)).toHaveText("Data protection");
-  await expect(sections.nth(5)).toHaveText("App update");
+  const tabs = page
+    .getByRole("tablist", { name: "Settings sections" })
+    .getByRole("tab");
+  await expect(tabs).toHaveCount(6);
+  await expect(tabs.nth(0)).toHaveText("General");
+  await expect(tabs.nth(1)).toHaveText("Data protection");
+  await expect(tabs.nth(5)).toHaveText("App update");
+  await tabs.nth(5).click();
   await expect(page.getByText("Shared storage is not connected yet")).toBeVisible();
 });
 

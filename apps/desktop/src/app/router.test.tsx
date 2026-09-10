@@ -403,6 +403,8 @@ it("loads the production settings route from native preferences", async () => {
   render(<AppRouter />);
 
   expect(await screen.findByRole("heading", { name: "Settings" })).toBeVisible();
+  // 分区化后库路径位于“Library maintenance”分区；切换分区确认真实偏好已加载。
+  fireEvent.click(screen.getByRole("tab", { name: "Library maintenance" }));
   expect(await screen.findByText("C:\\Users\\Test\\SkillHub")).toBeVisible();
   expect(screen.queryByText("settings_query is unavailable until the native contract is generated.")).not.toBeInTheDocument();
 });

@@ -47,6 +47,7 @@ test.describe("core flows in English", () => {
 
   test("LLM settings render English capability and scope copy", async ({ page }) => {
     await page.goto("/__preview/settings-llm");
+    await page.getByRole("tab", { name: "Network & AI" }).click();
     await expect(page.getByRole("heading", { name: "LLM providers" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "AI capabilities" })).toBeVisible();
     await expect(page.getByText("AI safety check")).toBeVisible();
@@ -92,6 +93,7 @@ test.describe("core flows in Simplified Chinese", () => {
 
   test("LLM settings render Simplified Chinese capability and scope copy", async ({ page }) => {
     await page.goto("/__preview/settings-llm");
+    await page.getByRole("tab", { name: "网络与 AI" }).click();
     await expect(page.getByRole("heading", { name: "LLM 供应商" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "AI 能力开关" })).toBeVisible();
     await expect(page.getByText("AI 安全检查")).toBeVisible();
