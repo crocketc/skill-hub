@@ -1,5 +1,8 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { Field } from "../../ui/Field";
+import { Select } from "../../ui/Select";
+import { Switch } from "../../ui/Switch";
 import {
   type LlmAdminFacade,
   type LlmCapabilityState,
@@ -49,38 +52,34 @@ export function LlmCapabilitiesSettings({ facade = unavailableLlmFacade }: { fac
       {error ? <p role="alert">{error}</p> : null}
       {!state && !error ? <p>{t("settings.loading")}</p> : null}
       {state ? (
-        <div className="sh-settings-toggles">
+        <div className="sh-settings-capabilities">
           {CAPABILITY_KEYS.map(({ key, scopeKey }) => (
-            <label className="sh-settings-toggle" key={key}>
-              <input
-                aria-label={t(`settings.llm.capability.${key}`)}
+            <div className="sh-settings-capability" key={key}>
+              <Switch
                 checked={Boolean(state.capabilities[key as CapabilityKey])}
+                label={t(`settings.llm.capability.${key}`)}
+                name={`llm-capability-${key}`}
                 onChange={(event) =>
                   update({ capabilities: { ...state.capabilities, [key]: event.target.checked } })
                 }
-                type="checkbox"
               />
-              <span>
-                {t(`settings.llm.capability.${key}`)}
-                <small>{t(`settings.llm.${scopeKey}`)}</small>
-              </span>
-            </label>
+              <p className="sh-settings-capability__scope">{t(`settings.llm.${scopeKey}`)}</p>
+            </div>
           ))}
         </div>
       ) : null}
       {state ? (
-        <label className="sh-settings-field">
-          <span>{t("settings.llm.aiOutputLanguage")}</span>
-          <select
-            aria-label={t("settings.llm.aiOutputLanguage")}
+        <Field label={t("settings.llm.aiOutputLanguage")}>
+          <Select
+            name="ai-output-language"
             onChange={(event) => update({ aiOutputLanguage: event.target.value })}
             value={state.aiOutputLanguage}
           >
             <option value="system">{t("settings.llm.languageSystem")}</option>
             <option value="zh-CN">{t("settings.llm.languageZhCN")}</option>
             <option value="en-US">{t("settings.llm.languageEnUS")}</option>
-          </select>
-        </label>
+          </Select>
+        </Field>
       ) : null}
       <dl className="sh-facts">
         <dt>{t("settings.llm.defaultOffline")}</dt>

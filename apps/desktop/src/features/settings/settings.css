@@ -1,34 +1,115 @@
-/* 设置页样式（T0 自 base.css 机械搬移，保持类名与计算样式不变）。 */
+/* 设置页样式：分区导航 + 单列内容（设计规格 5.1）。只用 --ui-* 语义 token。 */
 
 .sh-settings-page {
   display: grid;
   gap: var(--space-5);
+  min-width: 0;
 }
 
-.sh-settings-section {
-  display: block;
+.sh-settings-page__onboarding-link {
+  justify-self: start;
 }
 
-.sh-settings-section__title {
-  border-bottom: 1px solid var(--color-border);
-  color: var(--color-text-muted);
-  font-size: var(--font-size-md);
-  font-weight: 600;
-  margin: var(--space-2) 0 var(--space-3);
+/* 布局：窄容器默认顶部紧凑分区选择器；容器查询加宽后切换为左侧分区导航。 */
+.sh-settings-layout {
+  display: grid;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.sh-settings-nav {
+  display: flex;
+  gap: var(--space-1);
+  overflow-x: auto;
   padding-bottom: var(--space-1);
 }
 
-.sh-settings-grid {
+.sh-settings-nav__tab {
+  align-items: center;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-xs);
+  color: var(--ui-ink-muted);
+  cursor: pointer;
+  display: inline-flex;
+  flex: 0 0 auto;
+  font: inherit;
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  min-height: 40px;
+  padding: 0 var(--space-3);
+}
+
+.sh-settings-nav__tab:hover {
+  background: var(--ui-hover-surface);
+  color: var(--ui-ink);
+}
+
+.sh-settings-nav__tab[aria-selected="true"] {
+  background: var(--ui-selected-surface);
+  border-color: var(--ui-selected-border);
+  color: var(--ui-ink);
+}
+
+.sh-settings-nav__tab:focus-visible {
+  outline: 2px solid var(--ui-focus);
+  outline-offset: 2px;
+}
+
+/* 右侧内容始终单列：分区说明 + 纵向卡片流，不恢复嵌套两列栅格。 */
+.sh-settings-panels {
+  display: grid;
+  min-width: 0;
+}
+
+.sh-settings-panel {
   display: grid;
   gap: var(--space-4);
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  min-width: 0;
+}
+
+.sh-settings-panel[hidden] {
+  display: none;
+}
+
+.sh-settings-panel__description {
+  border-bottom: 1px solid var(--ui-border-subtle);
+  color: var(--ui-ink-muted);
+  margin: 0;
+  padding-bottom: var(--space-3);
+}
+
+.sh-settings-panel__cards {
+  display: grid;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+@container workspace (min-width: 64rem) {
+  .sh-settings-layout {
+    grid-template-columns: 12rem minmax(0, 1fr);
+  }
+
+  .sh-settings-nav {
+    flex-direction: column;
+    align-items: stretch;
+    overflow: visible;
+    padding-bottom: 0;
+    position: sticky;
+    top: var(--space-5);
+  }
+
+  .sh-settings-nav__tab {
+    justify-content: flex-start;
+  }
 }
 
 .sh-settings-card {
-  background: var(--color-surface-raised);
-  border: 1px solid var(--color-border-subtle);
+  background: var(--ui-surface);
+  border: 1px solid var(--ui-border-subtle);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-sm);
+  min-width: 0;
   padding: var(--space-5);
 }
 
@@ -43,29 +124,155 @@
   margin-top: var(--space-4);
 }
 
+.sh-settings-form-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-4);
+}
+
+/* AI 能力行：立即生效的 Switch + 相邻可见的发送范围说明。 */
+.sh-settings-capabilities {
+  display: grid;
+  gap: var(--space-4);
+  margin-top: var(--space-4);
+}
+
+.sh-settings-capability {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.sh-settings-capability__scope {
+  color: var(--ui-ink-muted);
+  font-size: var(--font-size-sm);
+  margin: 0;
+  padding-left: var(--space-8);
+}
+
+/* 抽屉表单：单列表单行，Field 统一标签/帮助/错误间距。 */
+.sh-drawer__body .sh-field {
+  display: grid;
+  gap: var(--space-1);
+  margin-top: var(--space-4);
+}
+
 .sh-settings-local-note,
 .sh-settings-note {
-  background: var(--color-accent-soft);
-  border-radius: var(--radius-md);
-  color: var(--color-accent-strong);
+  background: var(--ui-info-background);
+  border-radius: var(--radius-xs);
+  color: var(--ui-info-foreground);
   margin: var(--space-4) 0;
   padding: var(--space-3);
 }
 
 .sh-settings-list {
-  color: var(--color-text-secondary);
+  color: var(--ui-ink-muted);
   display: grid;
   gap: var(--space-2);
   list-style: none;
   padding: 0;
 }
 
-.sh-settings-placeholder {
-  border-style: dashed;
+/* 供应商实体行（设计规格 5.1）：完整宽度、单列纵向排布，不恢复嵌套两列。 */
+.sh-settings-providers {
+  display: grid;
+  gap: var(--space-3);
+  list-style: none;
+  margin: var(--space-4) 0 0;
+  min-width: 0;
+  padding: 0;
 }
 
-@media (max-width: 48rem) {
-  .sh-settings-grid {
-    grid-template-columns: 1fr;
-  }
+.sh-settings-provider {
+  border: 1px solid var(--ui-border-subtle);
+  border-radius: var(--radius-md);
+  display: grid;
+  gap: var(--space-3);
+  min-width: 0;
+  padding: var(--space-4);
+}
+
+.sh-settings-provider__head {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.sh-settings-provider__name {
+  font-size: var(--font-size-md);
+  margin-inline-end: auto;
+  overflow-wrap: anywhere;
+}
+
+.sh-settings-provider__facts {
+  display: grid;
+  gap: var(--space-1) var(--space-6);
+  margin: 0;
+}
+
+.sh-settings-provider__fact {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.sh-settings-provider__fact dt {
+  color: var(--ui-ink-muted);
+  flex: 0 0 auto;
+  font-size: var(--font-size-sm);
+}
+
+.sh-settings-provider__fact dd {
+  font-size: var(--font-size-sm);
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.sh-settings-provider__mono {
+  font-family: var(--font-mono);
+}
+
+.sh-settings-provider__report {
+  color: var(--ui-ink-muted);
+  display: grid;
+  font-size: var(--font-size-sm);
+  gap: var(--space-1);
+  list-style: none;
+  margin: 0;
+  min-width: 0;
+  padding: 0;
+}
+
+.sh-settings-provider__level {
+  align-items: center;
+  display: flex;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.sh-settings-provider__level--ok {
+  color: var(--ui-success-foreground);
+}
+
+.sh-settings-provider__level-icon {
+  flex: 0 0 auto;
+  /* T0 Icon 注册表默认 fill=none 且不注入描边：消费侧补齐可见描边。 */
+  stroke: currentColor;
+  stroke-width: 1.75;
+}
+
+.sh-settings-provider__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.sh-settings-placeholder {
+  border-style: dashed;
 }
