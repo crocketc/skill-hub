@@ -125,6 +125,16 @@ const evidenceOverrides = new Map([
     result: "不适用（v0.2.0）",
     evidence: "docs/llm/用户配置与隐私说明-2026-09-10.md",
   }],
+  ["TC-GR-09", {
+    automation: "tests/e2e/bilingual-core-flows.spec.ts：core flows in English/navigation and core pages render English copy 等 12 条（zh-CN 与 en-US 下侧栏导航与核心页面关键文案均正确渲染）；apps/desktop/src/i18n/i18n.test.ts 与 zh/en 键集 parity 测试（双语键完整）；tests/e2e/keyboard-accessibility.spec.ts：keyboard focus and reduced motion remain visible in the preview shell（焦点可见）；组件层状态均以文本标签呈现（如 fixtures.ts expectBasicCheck 断言 \"Basic: Passed\" 文本）。真实系统缩放、减少动效与原生键盘行为的视觉判断留在 TC-GR-09-M01～M05",
+    result: "通过",
+    evidence: "浏览器自动化补齐轮（2026-09-10）",
+  }],
+  ["TC-GR-10", {
+    automation: "tests/e2e/library-scale-300.spec.ts：300-skill catalog reaches the cached home within the GR-10 budget（300 Skill、每页 100 行时 DCL < 2s）+ 第二页可达 + 筛选仍可交互；tests/e2e/startup-performance.spec.ts：cached preview reaches the primary navigation within two seconds（约 80 Skill 缓存首页 < 2s）。边界：浏览器夹具无真实磁盘与数据库迁移，原生 I/O 性能留待桌面人工取证",
+    result: "通过",
+    evidence: "浏览器自动化补齐轮（2026-09-10）",
+  }],
 ]);
 
 const stories = [];
@@ -446,7 +456,7 @@ rows.push(
     action: "查看品牌标签",
     expected: "已有素材的品牌在颜色标签内渲染对应真实 Logo；zcode 复用 zai.svg，claude/anthropic 与 hermes/hermes-agent 按目录映射",
     type: "自动化",
-    automation: "apps/desktop/src/ui/BrandTag.test.tsx：renders the bundled logo asset for known brands；maps zcode to the zai logo asset；maps claude and hermes profile ids to their catalog logo assets",
+    automation: "apps/desktop/src/ui/BrandTag.test.tsx：renders the bundled logo asset for known brands；maps zcode to the zai logo asset；maps claude and hermes profile ids to their catalog logo assets；tests/e2e/brand-assets.spec.ts：the browser decodes every shipped brand logo（真实浏览器经 HTTP 加载并解码全部素材）",
     result: "通过",
     evidence: "QA-014",
   },
@@ -458,7 +468,7 @@ rows.push(
     action: "查看品牌标签与映射完整性校验",
     expected: "未识别品牌保持中性颜色标签与首字母大写名称，不伪造图标；映射与 public/brand/agents/lobehub 下 17 个素材双向一一对应",
     type: "自动化",
-    automation: "apps/desktop/src/ui/BrandTag.test.tsx：keeps unknown brands on the neutral color tag without an invented logo；covers every shipped lobehub asset with a mapping and vice versa",
+    automation: "apps/desktop/src/ui/BrandTag.test.tsx：keeps unknown brands on the neutral color tag without an invented logo；covers every shipped lobehub asset with a mapping and vice versa；tests/e2e/brand-assets.spec.ts：an unknown brand asset is not served as an image（未知素材不被伪装成图片）",
     result: "通过",
     evidence: "QA-014",
   },
@@ -513,17 +523,19 @@ rows.push(
 );
 
 globalRules.forEach((rule) => {
+  const ruleId = `TC-GR-${String(rule.number).padStart(2, "0")}`;
+  const override = evidenceOverrides.get(ruleId);
   rows.push({
-    id: `TC-GR-${String(rule.number).padStart(2, "0")}`,
+    id: ruleId,
     story: `GR-${String(rule.number).padStart(2, "0")} 全局验收规则`,
     version: "v0.2.0",
     precondition: "执行任一受该全局规则约束的功能",
     action: "执行对应成功、失败、取消、重复、恢复或受限分支",
     expected: clean(rule.text),
     type: "自动化",
-    automation: "待反向索引；缺失时先补失败测试",
-    result: "未执行",
-    evidence: "—",
+    automation: override?.automation ?? "待反向索引；缺失时先补失败测试",
+    result: override?.result ?? "未执行",
+    evidence: override?.evidence ?? "—",
   });
 });
 

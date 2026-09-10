@@ -31,9 +31,9 @@
 | cargo-deny | 待重新采集 | `27042e6` 时通过；LLM 系列提交更新了 `Cargo.lock`（新增 LLM/凭据相关依赖），需在当前基线重跑 |
 | Rust Clippy | 通过 | `cargo clippy --workspace --all-targets --all-features -- -D warnings`（2026-09-10 于闭环补齐轮；本轮起固定使用该变体，覆盖 feature-gated 测试） |
 | Rust 测试 | 通过 | `cargo test --workspace --locked`：720 项通过 / 0 失败（2026-09-10 于闭环补齐轮，含 `generate_bindings` 漂移检查） |
-| 前端依赖安装 | 通过 | `pnpm install --frozen-lockfile --ignore-scripts`（`pnpm-lock.yaml` 在 LLM 系列提交中未变化） |
+| 前端依赖安装 | 通过 | `pnpm install --frozen-lockfile --ignore-scripts`；`@types/node@22.20.1` 于 2026-09-10 作为 devDependency 加入（修复 `BrandTag.test.tsx` 的 Node 类型缺失），需重跑审计确认无漏洞 |
 | 前端审计 | 待重新采集 | `27042e6` 时 macOS 官方 registry 复核 0 漏洞；需在当前基线重跑 |
-| 前端 lint/TypeScript | 通过 | `pnpm --dir apps/desktop check`（eslint + tsc，2026-09-10 于闭环补齐轮） |
+| 前端 lint/TypeScript | 通过 | `pnpm --dir apps/desktop check`（eslint + tsc，2026-09-10 于闭环补齐轮；同日浏览器补齐轮发现 tsc 因缺失 `@types/node` 实际失败并已修复，修复后复测通过） |
 | 前端测试 | 通过 | `pnpm test:frontend`：107 文件 764 项通过（2026-09-10 于闭环补齐轮） |
 | 前端生产构建 | 通过 | `pnpm --dir apps/desktop build`（2026-09-10 于闭环补齐轮） |
 | 发布静态预检 | 通过 | `node scripts/verify_release_readiness.mjs`、`node scripts/verify_atomic_test_catalog.mjs`（349 条）、`pnpm test:release`（9/9）、`node scripts/verify_frontend_lifecycle_scripts.mjs` 均通过（2026-09-10 于闭环补齐轮） |
@@ -42,7 +42,7 @@
 | 兼容性契约 | 通过 | `cargo test -p skillhub-adapters --test profile_contract` |
 | 数据保护页面 | 通过（自动化） | `/settings/data-protection` 已接入备份包校验、恢复预检/冲突决策、组合导出；真实桌面文件烟测待执行 |
 | 备份/恢复/导出 native facade | 通过（自动化） | typed preflight/commit 适配器与 Rust facade 测试通过 |
-| 浏览器 E2E | 通过（自动化） | `pnpm test:e2e` 37/37 通过（2026-09-10 于闭环补齐轮，代码同 `90b103a`）：既有用例加 LLM 设置与 5 条 LLM 闭环（`llm-loops.spec.ts`）、Markdown 布局用例；运行 Vite 预览页并注入固定 IPC 返回值，只证明页面/交互和预览边界，不证明 Tauri 原生行为 |
+| 浏览器 E2E | 通过（自动化） | `pnpm test:e2e` 55/55 通过（2026-09-10 于浏览器补齐轮，代码含 `@types/node` 类型修复）：既有用例、LLM 设置与闭环、Markdown 布局，新增双语核心流程 12 条、品牌素材 3 条、300 Skill 规模 3 条；运行 Vite 预览页并注入固定 IPC 返回值，只证明页面/交互和预览边界，不证明 Tauri 原生行为 |
 | Playwright 浏览器依赖 | 已满足（测试环境） | 项目 `@playwright/test 1.55.1` 匹配的 Chromium 已安装到用户级测试缓存；不进入仓库，也不会包含在 Tauri 打包产物中 |
 | 桌面 E2E/真机验收 | 待执行 | 需要 Tauri 运行时、真实文件系统、系统弹窗、真实网络或发布资产的项目按人工验收指南取证 |
 | 迁移/恢复 | 待执行 | 需要在本提交重新采集证据 |

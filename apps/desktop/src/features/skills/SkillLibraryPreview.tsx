@@ -22,8 +22,15 @@ const PREVIEW_BOOTSTRAP_SNAPSHOT: BootstrapSnapshot = {
 };
 
 export function SkillLibraryPreview() {
-  const [facade] = useState(() => createMockSkillLibraryFacade({ total: 80 }));
+  const [facade] = useState(() => createMockSkillLibraryFacade({ total: previewTotal() }));
   return <SkillLibraryPage facade={facade} />;
+}
+
+/** DEV-only harness knob: ?total=N seeds a deterministic N-skill catalog for scale checks. */
+function previewTotal(): number {
+  const raw = new URLSearchParams(window.location.search).get("total");
+  const parsed = raw === null ? Number.NaN : Number(raw);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : 80;
 }
 
 export function SkillLibraryPreviewShell() {
