@@ -111,7 +111,6 @@
     },
     "eyebrow": "Safe import workflow",
     "title": "Import Skills",
-    "step": "Step {{current}} of {{total}}",
     "stepComplete": "Done",
     "steps": {
       "label": "Import steps"
@@ -765,18 +764,18 @@
     "restoreAndContinue": "Restore and continue",
     "restoreRunning": "Restoring {{count}} skill(s)… ({{seconds}}s elapsed, will continue automatically)",
     "restoreBack": "Back",
-    "restoreConflictsHeading": "Restore conflicts"
-    ,"rescanEyebrow": "Rediscovery"
-    ,"rescanTitle": "Rediscover Agents & Skills"
-    ,"rescanDescription": "Rediscovery uses the current library in read-only mode. It never changes the library root or deploys content."
-    ,"rescanLibraryLocation": "Current library location"
-    ,"rescanConfirmation": "I understand this only discovers and scans read-only"
-    ,"rescanStep": "Step {{current}} of 3"
-    ,"rescanCancel": "Cancel and return to Settings"
-    ,"rescanComplete": "Complete rediscovery"
-    ,"stepsLabel": "Initialization steps"
-    ,"rescanStepsLabel": "Rediscovery steps"
-    ,"stepComplete": "Completed"
+    "restoreConflictsHeading": "Restore conflicts",
+    "rescanEyebrow": "Rediscovery",
+    "rescanTitle": "Rediscover Agents & Skills",
+    "rescanDescription": "Rediscovery uses the current library in read-only mode. It never changes the library root or deploys content.",
+    "rescanLibraryLocation": "Current library location",
+    "rescanConfirmation": "I understand this only discovers and scans read-only",
+    "rescanStep": "Step {{current}} of 3",
+    "rescanCancel": "Cancel and return to Settings",
+    "rescanComplete": "Complete rediscovery",
+    "stepsLabel": "Initialization steps",
+    "rescanStepsLabel": "Rediscovery steps",
+    "stepComplete": "Completed"
   },
   "theme": {
     "choiceLabel": "Theme colors",
@@ -867,7 +866,6 @@
       },
       "deployTargetBanner": "Deployment target preselected: {{label}}. Select Skills and choose Unified deploy to target it automatically.",
       "card": {
-        "tags": "Tags",
         "deploymentCount": "Deployed to {{count}} agents",
         "version": "Current version {{version}}",
         "upgradeAvailable": "Upgrade available",
@@ -979,7 +977,6 @@
         "warning": "Warning"
       },
       "clear": "Clear filters",
-      "collapse": "Collapse filters",
       "any": "Any",
       "deployment": "Deployment",
       "deploymentOptions": {
@@ -995,7 +992,6 @@
       },
       "resultCount": "{{count}} results",
       "search": "Search skills",
-      "expand": "Expand filters",
       "selectedCount": "{{count}} selected",
       "tags": "Tags",
       "version": "Version",
@@ -1058,7 +1054,6 @@
       },
       "densityLabel": "Density",
       "highRiskCount": "{{count}} high risk",
-      "horizontalScroll": "Horizontal table scroll",
       "lifecycle": {
         "active": "Active",
         "archived": "Archived",
@@ -1662,15 +1657,15 @@
       "libraryMaintenance": "Library maintenance",
       "appUpdate": "App update"
     },
-      "sectionNavLabel": "Settings sections",
-      "sectionDescriptions": {
-        "general": "Language, theme, and density preferences stored on this device.",
-        "dataProtection": "Central entry for backup, restore, export, and uninstall preparation.",
-        "networkAi": "Network master switch, LLM providers, and AI capabilities.",
-        "automation": "Scope and timing of automatic checks.",
-        "libraryMaintenance": "Library health checks and ignore rules.",
-        "appUpdate": "App update checks and the network storage plan status."
-      },
+    "sectionNavLabel": "Settings sections",
+    "sectionDescriptions": {
+      "general": "Language, theme, and density preferences stored on this device.",
+      "dataProtection": "Central entry for backup, restore, export, and uninstall preparation.",
+      "networkAi": "Network master switch, LLM providers, and AI capabilities.",
+      "automation": "Scope and timing of automatic checks.",
+      "libraryMaintenance": "Library health checks and ignore rules.",
+      "appUpdate": "App update checks and the network storage plan status."
+    },
     "reopenOnboarding": "Rediscover Agents & Skills",
     "eyebrow": "Settings",
     "heading": "Shape SkillHub around your workflow",
@@ -1998,7 +1993,7 @@
     "metrics": {
       "agents": "{{count}} configured agents",
       "compactLabel": "Key stats",
-        "discoveredAgents": "{{count}} discovered agents",
+      "discoveredAgents": "{{count}} discovered agents",
       "deployments": "{{count}} deployments",
       "projects": "{{count}} projects",
       "skills": "{{count}} skills"

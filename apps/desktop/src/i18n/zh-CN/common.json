@@ -111,7 +111,6 @@
     },
     "eyebrow": "安全导入流程",
     "title": "导入 Skill",
-    "step": "第 {{current}} 步，共 {{total}} 步",
     "stepComplete": "已完成",
     "steps": {
       "label": "导入步骤"
@@ -765,18 +764,18 @@
     "restoreAndContinue": "恢复并继续",
     "restoreRunning": "正在恢复 {{count}} 个 Skill…（已用时 {{seconds}} 秒，完成后自动继续）",
     "restoreBack": "返回",
-    "restoreConflictsHeading": "恢复冲突处理"
-    ,"rescanEyebrow": "重新发现"
-    ,"rescanTitle": "重新发现 Agent 与 Skill"
-    ,"rescanDescription": "当前集中库只读重新发现 Agent 和 Skill，不会更换集中库或部署内容。"
-    ,"rescanLibraryLocation": "当前集中库位置"
-    ,"rescanConfirmation": "我确认只执行只读发现和扫描"
-    ,"rescanStep": "第 {{current}} 步，共 3 步"
-    ,"rescanCancel": "取消并返回设置"
-    ,"rescanComplete": "完成重新扫描"
-    ,"stepsLabel": "初始化步骤"
-    ,"rescanStepsLabel": "重新发现步骤"
-    ,"stepComplete": "已完成"
+    "restoreConflictsHeading": "恢复冲突处理",
+    "rescanEyebrow": "重新发现",
+    "rescanTitle": "重新发现 Agent 与 Skill",
+    "rescanDescription": "当前集中库只读重新发现 Agent 和 Skill，不会更换集中库或部署内容。",
+    "rescanLibraryLocation": "当前集中库位置",
+    "rescanConfirmation": "我确认只执行只读发现和扫描",
+    "rescanStep": "第 {{current}} 步，共 3 步",
+    "rescanCancel": "取消并返回设置",
+    "rescanComplete": "完成重新扫描",
+    "stepsLabel": "初始化步骤",
+    "rescanStepsLabel": "重新发现步骤",
+    "stepComplete": "已完成"
   },
   "theme": {
     "choiceLabel": "主题颜色",
@@ -867,7 +866,6 @@
       },
       "deployTargetBanner": "部署目标已预选：{{label}}。勾选 Skill 后点“统一部署”，将自动选中该目标。",
       "card": {
-        "tags": "标签",
         "deploymentCount": "部署 {{count}} 个 Agent",
         "version": "当前版本 {{version}}",
         "upgradeAvailable": "有可升级版本",
@@ -979,7 +977,6 @@
         "warning": "警告"
       },
       "clear": "清除筛选",
-      "collapse": "收起筛选",
       "any": "不限",
       "deployment": "部署状态",
       "deploymentOptions": {
@@ -995,7 +992,6 @@
       },
       "resultCount": "{{count}} 个结果",
       "search": "搜索 Skill",
-      "expand": "展开筛选",
       "selectedCount": "已选 {{count}} 项",
       "tags": "标签",
       "version": "版本",
@@ -1058,7 +1054,6 @@
       },
       "densityLabel": "密度",
       "highRiskCount": "{{count}} 个高风险项",
-      "horizontalScroll": "横向滚动技能列表",
       "lifecycle": {
         "active": "活跃",
         "archived": "已归档",
@@ -1662,15 +1657,15 @@
       "libraryMaintenance": "技能库维护",
       "appUpdate": "应用更新"
     },
-      "sectionNavLabel": "设置分区",
-      "sectionDescriptions": {
-        "general": "语言、主题与信息密度等本机外观偏好。",
-        "dataProtection": "备份、恢复、导出与退出准备的集中入口。",
-        "networkAi": "网络总开关、LLM 供应商与 AI 能力开关。",
-        "automation": "自动检查的范围与触发时机。",
-        "libraryMaintenance": "技能库健康检查与忽略规则。",
-        "appUpdate": "应用更新检查与网络存储规划状态。"
-      },
+    "sectionNavLabel": "设置分区",
+    "sectionDescriptions": {
+      "general": "语言、主题与信息密度等本机外观偏好。",
+      "dataProtection": "备份、恢复、导出与退出准备的集中入口。",
+      "networkAi": "网络总开关、LLM 供应商与 AI 能力开关。",
+      "automation": "自动检查的范围与触发时机。",
+      "libraryMaintenance": "技能库健康检查与忽略规则。",
+      "appUpdate": "应用更新检查与网络存储规划状态。"
+    },
     "reopenOnboarding": "重新发现 Agent 与 Skill",
     "eyebrow": "设置",
     "heading": "让 SkillHub 适应你的工作方式",
@@ -1998,7 +1993,7 @@
     "metrics": {
       "agents": "{{count}} 个已配置 Agent",
       "compactLabel": "关键统计",
-        "discoveredAgents": "{{count}} 个发现到的 Agent",
+      "discoveredAgents": "{{count}} 个发现到的 Agent",
       "deployments": "{{count}} 个部署",
       "projects": "{{count}} 个项目",
       "skills": "{{count}} 项技能"
