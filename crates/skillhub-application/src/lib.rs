@@ -84,6 +84,7 @@ pub use update_service::{
 pub struct LocalApplicationFacade {
     database: Arc<Mutex<Database>>,
     today: (i32, u8, u8),
+    library_runtime: Arc<library_runtime::LibraryRuntime>,
     library: Option<VersionStore>,
     library_root: Option<PathBuf>,
     deployment_targets: Option<RegisteredTargetIndex>,
@@ -122,6 +123,7 @@ struct RunningLlmCheck {
 
 struct LocalDeploymentBackend {
     database: Arc<Mutex<Database>>,
+    library_runtime: Arc<library_runtime::LibraryRuntime>,
     library_root: Option<PathBuf>,
     filesystem: DeploymentFilesystem,
 }
@@ -222,9 +224,14 @@ impl DuplicateCandidateProvider for StaticDuplicateCandidateProvider {
 }
 
 impl LocalDeploymentBackend {
-    fn new(database: Arc<Mutex<Database>>, library_root: Option<PathBuf>) -> Self {
+    fn new(
+        database: Arc<Mutex<Database>>,
+        library_root: Option<PathBuf>,
+        library_runtime: Arc<library_runtime::LibraryRuntime>,
+    ) -> Self {
         Self {
             database,
+            library_runtime,
             library_root,
             filesystem: DeploymentFilesystem::new(),
         }
@@ -1184,11 +1191,16 @@ impl LocalApplicationFacade {
     /// Creates a facade with an explicit date boundary for deterministic tests.
     pub fn new_with_today(database: Database, today: (i32, u8, u8)) -> Self {
         let database = Arc::new(Mutex::new(database));
-        let backend = Arc::new(LocalDeploymentBackend::new(database.clone(), None));
+        let library_runtime = Arc::new(library_runtime::LibraryRuntime::new());
+        let backend = Arc::new(LocalDeploymentBackend::new(
+            database.clone(),
+            None,
+            library_runtime.clone(),
+        ));
         let deployment_service = Arc::new(DeploymentService::new(backend.clone()));
         let removal_service = Arc::new(RemovalService::new(backend));
         let reconcile_service = Arc::new(ReconcileService::new(Arc::new(
-            LocalDeploymentBackend::new(database.clone(), None),
+            LocalDeploymentBackend::new(database.clone(), None, library_runtime.clone()),
         )));
         let health_service = Arc::new(HealthService::new(Arc::new(LocalHealthBackend {
             database: database.clone(),
@@ -1212,6 +1224,7 @@ impl LocalApplicationFacade {
         let facade = Self {
             database,
             today,
+            library_runtime,
             library: None,
             library_root: None,
             deployment_targets: None,
@@ -1248,9 +1261,15 @@ impl LocalApplicationFacade {
     pub fn new_with_library(database: Database, library_root: impl AsRef<Path>) -> Self {
         let library_root = library_root.as_ref().to_path_buf();
         let database = Arc::new(Mutex::new(database));
+        let central = CentralLibrary::initialize(&library_root)
+            .expect("new_with_library requires a valid central library");
+        let library_runtime = Arc::new(library_runtime::LibraryRuntime::from_active(Arc::new(
+            library_runtime::LibraryContext::from_library(central),
+        )));
         let backend = Arc::new(LocalDeploymentBackend::new(
             database.clone(),
             Some(library_root.clone()),
+            library_runtime.clone(),
         ));
         let deployment_service = Arc::new(DeploymentService::new(backend.clone()));
         let removal_service = Arc::new(RemovalService::new(backend.clone()));
@@ -1277,6 +1296,7 @@ impl LocalApplicationFacade {
         let facade = Self {
             database,
             today: current_utc_date(),
+            library_runtime,
             library: Some(VersionStore::new(LibraryPaths::from_root(&library_root))),
             library_root: Some(library_root),
             deployment_targets: None,
@@ -1307,6 +1327,11 @@ impl LocalApplicationFacade {
         };
         facade.sync_network_gate();
         facade
+    }
+
+    #[doc(hidden)]
+    pub fn library_runtime(&self) -> Arc<library_runtime::LibraryRuntime> {
+        self.library_runtime.clone()
     }
 
     /// Creates a facade with explicit online providers. Production uses the

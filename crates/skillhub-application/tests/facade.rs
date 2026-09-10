@@ -4967,3 +4967,18 @@ async fn version_labels_are_user_maintainable_and_surface_in_list_versions() {
     };
     assert_eq!(versions[0].label.as_deref(), Some("1.0"), "重复命名应替换");
 }
+
+#[test]
+fn facade_constructors_share_pending_and_active_library_runtime_states() {
+    let pending = LocalApplicationFacade::new(Database::open_in_memory().unwrap());
+    assert!(pending.library_runtime().snapshot().is_err());
+
+    let root = tempfile::tempdir().unwrap();
+    let active =
+        LocalApplicationFacade::new_with_library(Database::open_in_memory().unwrap(), root.path());
+    let snapshot = active
+        .library_runtime()
+        .snapshot()
+        .expect("active snapshot");
+    assert_eq!(snapshot.root, root.path());
+}
