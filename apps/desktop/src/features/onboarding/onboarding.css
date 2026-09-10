@@ -1,0 +1,132 @@
+/* 初始化与重新发现专属样式（T4-B）。只使用语义 token；与 base.css 中既有的
+   sh-onboarding 基础样式叠加，新增规则通过更高优先级选择器覆盖共享文件。 */
+
+/* 粘性底部操作区不得遮挡被聚焦的控件：仅对向导页面加大滚动留白。 */
+html:has(.sh-onboarding) {
+  scroll-padding-bottom: 6rem;
+}
+
+.sh-onboarding__steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.sh-onboarding__step {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-3);
+  border: 1px solid var(--ui-border-subtle);
+  border-radius: var(--radius-sm);
+  color: var(--ui-ink-muted);
+  font-size: var(--font-size-xs);
+}
+
+.sh-onboarding__step[data-state="current"] {
+  border-color: var(--ui-selected-border);
+  background: var(--ui-selected-surface);
+  color: var(--ui-ink);
+  font-weight: 650;
+}
+
+.sh-onboarding__step[data-state="complete"] {
+  color: var(--ui-ink);
+}
+
+.sh-onboarding__step-marker {
+  display: inline-grid;
+  min-width: 1.25rem;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--ui-surface-subtle);
+  color: var(--ui-ink-muted);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.sh-onboarding__step[data-state="current"] .sh-onboarding__step-marker {
+  background: var(--ui-accent);
+  color: var(--ui-icon-on-accent);
+}
+
+.sh-onboarding__step[data-state="complete"] .sh-onboarding__step-marker {
+  background: var(--ui-success-background);
+  color: var(--ui-success-foreground);
+}
+
+.sh-onboarding__step-state {
+  color: var(--ui-success-foreground);
+  font-weight: 650;
+}
+
+.sh-onboarding__body {
+  display: grid;
+  min-width: 0;
+  gap: var(--space-3);
+}
+
+.sh-onboarding__body > * {
+  min-width: 0;
+}
+
+.sh-onboarding__status {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  min-height: 1.5rem;
+  margin: 0;
+  color: var(--ui-ink-muted);
+  font-size: var(--font-size-xs);
+}
+
+.sh-onboarding__status svg {
+  flex: 0 0 auto;
+  margin-top: 0.125rem;
+}
+
+/* 底部操作区：sticky 且位置稳定；覆盖 base.css 的同名单一选择器。 */
+.sh-onboarding .sh-onboarding__actions {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  justify-content: flex-start;
+  flex-wrap: wrap;
+  margin-top: var(--space-2);
+  padding: var(--space-3) 0 var(--space-4);
+  background: var(--ui-canvas);
+  border-top: 1px solid var(--ui-border-subtle);
+}
+
+.sh-onboarding__actions-group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.sh-onboarding__actions-group--primary {
+  justify-content: flex-end;
+  flex: 1 1 auto;
+}
+
+@media (max-width: 48rem) {
+  .sh-onboarding .sh-onboarding__actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .sh-onboarding__actions-group,
+  .sh-onboarding__actions-group--primary {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .sh-onboarding__actions-group :where(.sh-button) {
+    width: 100%;
+  }
+}

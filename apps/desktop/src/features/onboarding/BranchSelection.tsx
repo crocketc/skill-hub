@@ -12,7 +12,6 @@ export function BranchSelection({ onSelect }: BranchSelectionProps) {
 
   return (
     <section aria-labelledby="branch-selection-title" className="sh-onboarding__card">
-      <span className="sh-onboarding__ordinal">0</span>
       <h1 id="branch-selection-title">{t("onboarding.branchTitle")}</h1>
       <p>{t("onboarding.branchDescription")}</p>
       <div className="sh-onboarding__branches">

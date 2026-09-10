@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { I18nextProvider } from "react-i18next";
 import { createSkillHubI18n } from "../../i18n";
 import type { RestoreDecision, RestorePlan, RestoreResult, ScanResult } from "../../api/bindings";
@@ -67,6 +67,18 @@ it("shows three initialization branches and routes to the create flow", async ()
 
   await click(screen.getByRole("button", { name: "新建集中库" }));
   expect(screen.getByText(defaultLibraryPath)).toBeVisible();
+});
+
+it("previews the upcoming initialization steps before a branch is chosen", async () => {
+  const completeOnboarding = vi.fn(async () => undefined);
+  renderWizard({ completeOnboarding, discoverAgents: async () => ({ targets: [] }) });
+
+  const rail = screen.getByRole("list", { name: "初始化步骤" });
+  const steps = within(rail).getAllByRole("listitem");
+  expect(steps).toHaveLength(3);
+  for (const step of steps) {
+    expect(step).not.toHaveAttribute("aria-current");
+  }
 });
 
 it("returns from the library step to the branch selection", async () => {

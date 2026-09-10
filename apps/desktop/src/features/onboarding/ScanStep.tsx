@@ -23,13 +23,11 @@ export function ScanStep({
 
   return (
     <section aria-labelledby="scan-step-title" className="sh-onboarding__card">
-      <span className="sh-onboarding__ordinal">3</span>
       <h1 id="scan-step-title">{t("onboarding.scanTitle")}</h1>
       <p>{t("onboarding.scanDescription")}</p>
       <Button disabled={scanInBackground} loading={isScanning} onClick={onScan}>
         {t("onboarding.startReadOnlyScan")}
       </Button>
-      {scanInBackground ? <p role="status">{t("onboarding.scanBackground")}</p> : null}
       {isScanning && onContinueInBackground ? (
         <Button onClick={onContinueInBackground} variant="secondary">
           {t("onboarding.scanContinueInBackground")}

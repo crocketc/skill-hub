@@ -1,4 +1,5 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { I18nextProvider } from "react-i18next";
 import { createSkillHubI18n } from "../../i18n";
 import type { RestorePlan, RestoreResult, ScanResult } from "../../api/bindings";
@@ -197,11 +198,46 @@ it("shows discovery targets without deploying and requires selection confirmatio
   await click(screen.getByRole("button", { name: "识别 Agent" }));
 
   expect(await screen.findByLabelText("Codex")).toBeVisible();
-  expect(screen.getByLabelText("Missing Agent")).toBeDisabled();
+  const missing = screen.getByLabelText("Missing Agent");
+  expect(missing).toBeDisabled();
   await click(screen.getByLabelText("Codex"));
   expect(screen.getByRole("button", { name: "继续" })).toBeDisabled();
   await click(screen.getByLabelText("我确认所选目标只用于只读扫描，不会部署技能"));
   expect(screen.getByRole("button", { name: "继续" })).toBeEnabled();
+});
+
+it("describes an unavailable target through the checkbox accessible description", async () => {
+  const discoverAgents = vi.fn(async () => ({
+    targets: [
+      { id: "codex", label: "Codex", kind: "cli", availability: "available" as const },
+      { id: "missing", label: "Missing Agent", availability: "unavailable" as const },
+    ],
+  }));
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+
+  render(
+    <I18nextProvider i18n={i18n}>
+      <OnboardingWizard
+        libraryPath={defaultLibraryPath}
+        operations={{ completeOnboarding: async () => undefined, discoverAgents }}
+      />
+    </I18nextProvider>,
+  );
+
+  await click(screen.getByRole("button", { name: "继续" }));
+  await click(screen.getByLabelText("我确认这里只识别 Agent，不会部署技能"));
+  await click(screen.getByRole("button", { name: "识别 Agent" }));
+
+  const missing = await screen.findByLabelText("Missing Agent");
+  expect(missing).toBeDisabled();
+  const describedBy = missing.getAttribute("aria-describedby");
+  expect(describedBy).toBeTruthy();
+  expect(screen.getByText("不可用")).toHaveAttribute("id", describedBy);
+
+  const codex = screen.getByLabelText("Codex");
+  const codexDescribedBy = codex.getAttribute("aria-describedby");
+  expect(codexDescribedBy).toBeTruthy();
+  expect(screen.getByText("命令行")).toHaveAttribute("id", codexDescribedBy);
 });
 
 it("offers named color themes during initialization and previews the chosen theme", async () => {
@@ -430,6 +466,46 @@ it("offers to continue initialization while a slow scan keeps running", async ()
       vi.advanceTimersByTime(10_000);
     });
     expect(screen.getByRole("button", { name: "转入后台，继续完成初始化" })).toBeVisible();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("admits a handed-off background scan in the summary instead of claiming it was skipped", async () => {
+  vi.useFakeTimers();
+  try {
+    const completeOnboarding = vi.fn(async () => undefined);
+    const i18n = await createSkillHubI18n(["zh-CN"]);
+    const pendingScan = new Promise<never>(() => undefined);
+    render(
+      <I18nextProvider i18n={i18n}>
+        <OnboardingWizard
+          libraryPath={defaultLibraryPath}
+          onComplete={() => undefined}
+          operations={{ completeOnboarding, discoverAgents: async () => ({ targets: [] }) }}
+          runtime={{
+            getBootstrapView: async () => { throw new Error("not used"); },
+            runInitializationScan: async () => pendingScan,
+          }}
+        />
+      </I18nextProvider>,
+    );
+
+    await click(screen.getByRole("button", { name: "继续" }));
+    await click(screen.getByLabelText("我确认这里只识别 Agent，不会部署技能"));
+    await click(screen.getByRole("button", { name: "识别 Agent" }));
+    await click(screen.getByRole("button", { name: "继续" }));
+    await click(screen.getByRole("button", { name: "开始只读扫描" }));
+    await act(async () => {
+      vi.advanceTimersByTime(10_000);
+    });
+    await click(screen.getByRole("button", { name: "转入后台，继续完成初始化" }));
+    await click(screen.getByRole("button", { name: "完成初始化" }));
+
+    expect(completeOnboarding).toHaveBeenCalledWith({ libraryPath: defaultLibraryPath, skipped: false });
+    expect(screen.getByText("初始化已完成")).toBeVisible();
+    expect(screen.getByText("扫描仍在后台进行，完成后可在发现中查看预览。")).toBeVisible();
+    expect(screen.queryByText(/已跳过扫描/)).not.toBeInTheDocument();
   } finally {
     vi.useRealTimers();
   }
@@ -724,4 +800,186 @@ it("surfaces the native error code when agent discovery fails", async () => {
     await screen.findByText("操作失败（discovery.host_unavailable）。请稍后重试或重新打开页面。"),
   ).toBeVisible();
   expect(screen.queryByText(/尚未连接到本机服务/)).not.toBeInTheDocument();
+});
+
+it("exposes the unified step rail with named steps, the current step and completed states", async () => {
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  render(
+    <I18nextProvider i18n={i18n}>
+      <OnboardingWizard
+        libraryPath={defaultLibraryPath}
+        operations={{ completeOnboarding: async () => undefined, discoverAgents: async () => ({ targets: [] }) }}
+      />
+    </I18nextProvider>,
+  );
+
+  const rail = screen.getByRole("list", { name: "初始化步骤" });
+  const steps = within(rail).getAllByRole("listitem");
+  expect(steps).toHaveLength(3);
+  expect(steps[0].textContent).toContain("确认集中库位置");
+  expect(steps[1].textContent).toContain("识别兼容的 Agent");
+  expect(steps[2].textContent).toContain("扫描已有技能");
+  expect(steps[0]).toHaveAttribute("aria-current", "step");
+  expect(steps[1]).not.toHaveAttribute("aria-current");
+  expect(steps[2]).not.toHaveAttribute("aria-current");
+
+  await click(screen.getByRole("button", { name: "继续" }));
+
+  const railAfter = screen.getByRole("list", { name: "初始化步骤" });
+  const stepsAfter = within(railAfter).getAllByRole("listitem");
+  expect(stepsAfter[0].textContent).toContain("已完成");
+  expect(stepsAfter[0]).not.toHaveAttribute("aria-current");
+  expect(stepsAfter[1]).toHaveAttribute("aria-current", "step");
+});
+
+it("shows the restore branch as the single current step of initialization", async () => {
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  render(
+    <I18nextProvider i18n={i18n}>
+      <OnboardingWizard
+        initialBranch="select"
+        libraryPath={defaultLibraryPath}
+        operations={{ completeOnboarding: async () => undefined, discoverAgents: async () => ({ targets: [] }) }}
+      />
+    </I18nextProvider>,
+  );
+
+  await click(screen.getByRole("button", { name: "从备份恢复" }));
+
+  const rail = screen.getByRole("list", { name: "初始化步骤" });
+  const steps = within(rail).getAllByRole("listitem");
+  expect(steps).toHaveLength(1);
+  expect(steps[0].textContent).toContain("从备份恢复集中库");
+  expect(steps[0]).toHaveAttribute("aria-current", "step");
+});
+
+it("reports scan failures in an alert region instead of the progress status", async () => {
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  render(
+    <I18nextProvider i18n={i18n}>
+      <OnboardingWizard
+        libraryPath={defaultLibraryPath}
+        operations={{ completeOnboarding: async () => undefined, discoverAgents: async () => ({ targets: [] }) }}
+        runtime={{
+          getBootstrapView: async () => { throw new Error("not used"); },
+          runInitializationScan: async () => {
+            throw { code: "input.invalid" };
+          },
+        }}
+      />
+    </I18nextProvider>,
+  );
+
+  await click(screen.getByRole("button", { name: "继续" }));
+  await click(screen.getByLabelText("我确认这里只识别 Agent，不会部署技能"));
+  await click(screen.getByRole("button", { name: "识别 Agent" }));
+  await click(screen.getByRole("button", { name: "继续" }));
+  await click(screen.getByRole("button", { name: "开始只读扫描" }));
+
+  expect(
+    screen.getByRole("alert"),
+  ).toHaveTextContent("无法完成扫描。现有技能和目录没有被修改。（错误代码：input.invalid）");
+});
+
+it("reports agent discovery failures in an alert region", async () => {
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  render(
+    <I18nextProvider i18n={i18n}>
+      <OnboardingWizard
+        libraryPath={defaultLibraryPath}
+        operations={{
+          completeOnboarding: async () => undefined,
+          discoverAgents: async () => {
+            throw { code: "discovery.host_unavailable", severity: "error", params: {}, actions: [] };
+          },
+        }}
+      />
+    </I18nextProvider>,
+  );
+
+  await click(screen.getByRole("button", { name: "继续" }));
+  await click(screen.getByLabelText("我确认这里只识别 Agent，不会部署技能"));
+  await click(screen.getByRole("button", { name: "识别 Agent" }));
+
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    "操作失败（discovery.host_unavailable）。请稍后重试或重新打开页面。",
+  );
+});
+
+it("keeps scan progress in the polite status region without alert semantics", async () => {
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  render(
+    <I18nextProvider i18n={i18n}>
+      <OnboardingWizard
+        libraryPath={defaultLibraryPath}
+        operations={{ completeOnboarding: async () => undefined, discoverAgents: async () => ({ targets: [] }) }}
+        runtime={{
+          getBootstrapView: async () => { throw new Error("not used"); },
+          runInitializationScan: async () => ({
+            kind: "in_progress",
+            operationId: "op-1",
+            phase: "applying",
+          }),
+        }}
+      />
+    </I18nextProvider>,
+  );
+
+  await click(screen.getByRole("button", { name: "继续" }));
+  await click(screen.getByLabelText("我确认这里只识别 Agent，不会部署技能"));
+  await click(screen.getByRole("button", { name: "识别 Agent" }));
+  await click(screen.getByRole("button", { name: "继续" }));
+  await click(screen.getByRole("button", { name: "开始只读扫描" }));
+
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  expect(screen.getByRole("status")).toHaveTextContent("扫描已启动，正在执行。");
+});
+
+it("prevents a duplicate completion while the first completion is pending", async () => {
+  let release!: () => void;
+  const completeOnboarding = vi.fn(
+    () => new Promise<void>((resolve) => {
+      release = resolve;
+    }),
+  );
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+
+  render(
+    <I18nextProvider i18n={i18n}>
+      <OnboardingWizard
+        libraryPath={defaultLibraryPath}
+        operations={{ completeOnboarding, discoverAgents: async () => ({ targets: [] }) }}
+      />
+    </I18nextProvider>,
+  );
+
+  await click(screen.getByRole("button", { name: "继续" }));
+  await click(screen.getByLabelText("我确认这里只识别 Agent，不会部署技能"));
+  await click(screen.getByRole("button", { name: "识别 Agent" }));
+  await click(screen.getByRole("button", { name: "继续" }));
+  await click(screen.getByRole("button", { name: "完成初始化" }));
+  await click(screen.getByRole("button", { name: "完成初始化" }));
+
+  expect(completeOnboarding).toHaveBeenCalledTimes(1);
+  release();
+});
+
+it("returns focus to the skip trigger after the confirmation is dismissed", async () => {
+  const user = userEvent.setup();
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  render(
+    <I18nextProvider i18n={i18n}>
+      <OnboardingWizard
+        libraryPath={defaultLibraryPath}
+        operations={{ completeOnboarding: async () => undefined, discoverAgents: async () => ({ targets: [] }) }}
+      />
+    </I18nextProvider>,
+  );
+
+  await user.click(screen.getByRole("button", { name: "跳过初始化" }));
+  expect(screen.getByRole("alertdialog")).toBeVisible();
+
+  await user.keyboard("{Escape}");
+
+  expect(screen.getByRole("button", { name: "跳过初始化" })).toHaveFocus();
 });

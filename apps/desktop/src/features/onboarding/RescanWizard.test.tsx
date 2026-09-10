@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { I18nextProvider } from "react-i18next";
 import { expect, it, vi } from "vitest";
@@ -35,6 +35,36 @@ it("shows the active library as read-only and never exposes activation controls"
   await user.click(screen.getByRole("checkbox"));
   await user.click(screen.getByRole("button", { name: "继续" }));
   expect(activateLibraryRoot).not.toHaveBeenCalled();
+});
+
+it("exposes the rediscovery step rail with named steps and the active step", async () => {
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  const user = userEvent.setup();
+  render(
+    <I18nextProvider i18n={i18n}>
+      <RescanWizard
+        libraryPath="C:\SkillHub"
+        operations={{ completeOnboarding: async () => undefined, discoverAgents: async () => ({ targets: [] }) }}
+        runtime={{ getBootstrapView: async () => { throw new Error("unused"); }, runInitializationScan: async () => { throw new Error("unused"); } }}
+      />
+    </I18nextProvider>,
+  );
+
+  const rail = screen.getByRole("list", { name: "重新发现步骤" });
+  const steps = within(rail).getAllByRole("listitem");
+  expect(steps).toHaveLength(3);
+  expect(steps[0].textContent).toContain("重新发现 Agent 与 Skill");
+  expect(steps[1].textContent).toContain("识别兼容的 Agent");
+  expect(steps[2].textContent).toContain("扫描已有技能");
+  expect(steps[0]).toHaveAttribute("aria-current", "step");
+
+  await user.click(screen.getByRole("checkbox"));
+  await user.click(screen.getByRole("button", { name: "继续" }));
+
+  const railAfter = screen.getByRole("list", { name: "重新发现步骤" });
+  const stepsAfter = within(railAfter).getAllByRole("listitem");
+  expect(stepsAfter[0].textContent).toContain("已完成");
+  expect(stepsAfter[1]).toHaveAttribute("aria-current", "step");
 });
 
 it("supports cancel and complete callbacks without completing onboarding or activating a library", async () => {
