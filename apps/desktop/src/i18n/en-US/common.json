@@ -1170,6 +1170,7 @@
       "basicSecurity": "Basic security check",
       "findings": "Check findings",
       "llmFindings": "LLM check findings",
+      "advisoryNote": "AI check results are model-generated and advisory; the deterministic basic check conclusion is unaffected.",
       "connections": "Dependencies, duplicates, and combinations",
       "externalHistory": "External changes and operation history",
       "invocations_one": "{{count}} recorded invocation",
@@ -1323,6 +1324,19 @@
       "locallyModified": "Locally modified",
       "noCandidates": "No semantic candidates were found by the deterministic preselection.",
       "confirmationNote": "Results are advisory only; merging, deleting or archiving always requires your separate confirmation and is never done automatically."
+    },
+    "zones": {
+      "identity": "Identity",
+      "status": "Status",
+      "content": "Content",
+      "relations": "Relations",
+      "lifecycle": "Lifecycle"
+    },
+    "trajectory": {
+      "label": "Source, library, and deployment targets",
+      "source": "Source",
+      "library": "Central library",
+      "deployments": "Deployment targets"
     }
   },
   "deployment": {
@@ -1414,6 +1428,7 @@
     },
     "findingsBasic": "Basic check findings",
     "findingsLlm": "AI check findings",
+    "highRiskLabel": "High risk",
     "highRiskTitle": "Confirm high-risk finding action",
     "highRiskDescription": "This finding is marked high risk. Explicit confirmation is required before disposing of it, and the disposition is recorded with the check result.",
     "llm": {

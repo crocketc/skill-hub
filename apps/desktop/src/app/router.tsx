@@ -60,6 +60,7 @@ import "../features/markdown/markdown.css";
 import "../styles/base.css";
 import "../features/settings/settings.css";
 import "../features/discovery/discovery.css";
+import "../features/skill-detail/skill-detail.css";
 import { ThemeProvider, useTheme } from "../styles/ThemeProvider";
 import { DesktopApp } from "./App";
 import { queryClient } from "./queryClient";
