@@ -42,8 +42,6 @@ async function renderCandidateSelection(props: Partial<React.ComponentProps<type
         candidates={candidates}
         selectedIds={[]}
         onToggle={vi.fn()}
-        onContinue={vi.fn()}
-        onBack={vi.fn()}
         {...props}
       />
     </I18nextProvider>,
@@ -61,36 +59,8 @@ it("emits an explicit toggle for each candidate", async () => {
   expect(onToggle).toHaveBeenNthCalledWith(2, "browser-helper");
 });
 
-it("requires a selection before continuing", async () => {
-  const onContinue = vi.fn();
-  const i18n = await createSkillHubI18n(["en-US"]);
-  const view = render(
-    <I18nextProvider i18n={i18n}>
-      <CandidateSelection
-        candidates={candidates}
-        selectedIds={[]}
-        onToggle={vi.fn()}
-        onContinue={onContinue}
-        onBack={vi.fn()}
-      />
-    </I18nextProvider>,
-  );
-
-  expect(screen.getByRole("button", { name: "Continue" })).toBeDisabled();
-  fireEvent.click(screen.getByRole("checkbox", { name: "PDF Reader" }));
-  view.rerender(
-    <I18nextProvider i18n={i18n}>
-      <CandidateSelection
-        candidates={candidates}
-        selectedIds={["pdf-reader"]}
-        onToggle={vi.fn()}
-        onContinue={onContinue}
-        onBack={vi.fn()}
-      />
-    </I18nextProvider>,
-  );
-  expect(screen.getByRole("button", { name: "Continue" })).toBeEnabled();
-});
+// “继续前必须先选择候选”的门槛语义已上移到向导底部操作区，
+// 由 ImportWizard.test.tsx 的“requires a candidate selection before analyzing”覆盖。
 
 it("supports selecting every discovered candidate in one explicit step", async () => {
   const onSelectAll = vi.fn();

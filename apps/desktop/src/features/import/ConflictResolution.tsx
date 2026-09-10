@@ -7,12 +7,7 @@ import type { ConflictKind, ImportAction, ImportConflict } from "./api";
 export interface ConflictResolutionProps {
   conflicts: ImportConflict[];
   actions: Record<string, ImportAction>;
-  /** AR-014 导入互斥：为 true 时禁用提交按钮。 */
-  commitDisabled?: boolean;
   onAction: (candidateId: string, action: ImportAction) => void;
-  onContinue: () => void;
-  onBack: () => void;
-  continueLabel?: string;
 }
 
 const actionOrder: ImportAction[] = ["reuse", "copy", "takeover", "independent", "skip"];
@@ -39,14 +34,14 @@ function impactAnchor(candidateId: string, action: ImportAction): string {
   return `conflict-impact-${candidateId.replace(/[^a-zA-Z0-9_-]/g, "_")}-${action}`;
 }
 
+/**
+ * 冲突决策区：筛选、批量与逐项决策语义保持不变；
+ * 返回/提交等流程动作在向导底部操作区。
+ */
 export function ConflictResolution({
   conflicts,
   actions,
-  commitDisabled = false,
   onAction,
-  onContinue,
-  onBack,
-  continueLabel,
 }: ConflictResolutionProps) {
   const { t } = useTranslation();
   // AR-010：先按冲突原因类别筛选，再为该类别批量选择处理方式。
@@ -70,10 +65,6 @@ export function ConflictResolution({
       ? t(`importWorkflow.conflicts.diffKinds.${known}`)
       : t("importWorkflow.conflicts.diffKinds.unknown", { kind: duplicateKind });
   };
-
-  const hasMissingRequiredAction = conflicts.some(
-    (conflict) => conflict.required && !actions[conflict.candidateId],
-  );
 
   const groups = useMemo(() => {
     const byKind = new Map<ConflictKind, ImportConflict[]>();
@@ -113,7 +104,6 @@ export function ConflictResolution({
           <h2 id="import-conflicts-title">{t("importWorkflow.conflicts.title")}</h2>
           <p>{t("importWorkflow.conflicts.description")}</p>
         </div>
-        <span className="sh-import-conflicts__step">{t("importWorkflow.step", { current: 3, total: 4 })}</span>
       </div>
 
       {conflicts.length ? (
@@ -250,11 +240,6 @@ export function ConflictResolution({
           {t("importWorkflow.conflicts.none")}
         </p>
       )}
-
-      <div className="sh-import-conflicts__actions">
-        <Button onClick={onBack} variant="ghost">{t("actions.back")}</Button>
-        <Button disabled={hasMissingRequiredAction || commitDisabled} onClick={onContinue}>{continueLabel ?? t("actions.continue")}</Button>
-      </div>
     </section>
   );
 }

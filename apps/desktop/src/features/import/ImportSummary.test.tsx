@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { I18nextProvider } from "react-i18next";
-import { expect, it, vi } from "vitest";
+import { expect, it } from "vitest";
 import { createSkillHubI18n } from "../../i18n";
 import type { ImportResult } from "./api";
 import { ImportSummary } from "./ImportSummary";
@@ -15,7 +15,7 @@ it("summarizes all outcomes and expands successful details only on request", asy
   const i18n = await createSkillHubI18n(["zh-CN"]);
   render(
     <I18nextProvider i18n={i18n}>
-      <ImportSummary results={results} onRetry={vi.fn()} onOpenLibrary={vi.fn()} />
+      <ImportSummary results={results} />
     </I18nextProvider>,
   );
 
@@ -36,7 +36,7 @@ it("shows the unavailable boundary without fabricating import results", async ()
   const i18n = await createSkillHubI18n(["zh-CN"]);
   render(
     <I18nextProvider i18n={i18n}>
-      <ImportSummary unavailable onRetry={vi.fn()} onOpenLibrary={vi.fn()} results={[]} />
+      <ImportSummary unavailable results={[]} />
     </I18nextProvider>,
   );
 

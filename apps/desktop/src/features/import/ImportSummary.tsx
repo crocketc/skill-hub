@@ -8,15 +8,12 @@ import type { ImportResult } from "./api";
 export interface ImportSummaryProps {
   results: ImportResult[];
   unavailable?: boolean;
-  onRetry: () => void;
-  onOpenLibrary: () => void;
 }
 
+/** 导入结果摘要：统计、逐项结果与明细展开；重试/打开库在向导底部操作区。 */
 export function ImportSummary({
   results,
   unavailable = false,
-  onRetry,
-  onOpenLibrary,
 }: ImportSummaryProps) {
   const { t } = useTranslation();
   const [showCompletedDetails, setShowCompletedDetails] = useState(false);
@@ -26,9 +23,7 @@ export function ImportSummary({
       <section className="sh-import-summary" aria-labelledby="import-summary-title">
         <h2 id="import-summary-title">{t("importWorkflow.summary.title")}</h2>
         <DataState
-          actionLabel={t("actions.retry")}
           message={t("importWorkflow.summary.unavailable")}
-          onAction={onRetry}
           state="unavailable"
         />
       </section>
@@ -51,7 +46,6 @@ export function ImportSummary({
           <h2 id="import-summary-title">{t("importWorkflow.summary.title")}</h2>
           <p>{t(hasFailure ? "importWorkflow.summary.partial" : "importWorkflow.summary.complete")}</p>
         </div>
-        <span className="sh-import-summary__step">{t("importWorkflow.step", { current: 4, total: 4 })}</span>
       </div>
 
       <div className="sh-import-summary__counts">
@@ -75,17 +69,13 @@ export function ImportSummary({
         ))}
       </ul>
 
-      <div className="sh-import-summary__actions">
-        {succeeded + skipped > 0 ? (
-          <Button onClick={() => setShowCompletedDetails((current) => !current)} variant="ghost">
-            {t(showCompletedDetails
-              ? "importWorkflow.summary.hideCompletedDetails"
-              : "importWorkflow.summary.showCompletedDetails")}
-          </Button>
-        ) : null}
-        {hasFailure ? <Button onClick={onRetry} variant="secondary">{t("actions.retry")}</Button> : null}
-        <Button onClick={onOpenLibrary}>{t("importWorkflow.summary.openLibrary")}</Button>
-      </div>
+      {succeeded + skipped > 0 ? (
+        <Button onClick={() => setShowCompletedDetails((current) => !current)} variant="ghost">
+          {t(showCompletedDetails
+            ? "importWorkflow.summary.hideCompletedDetails"
+            : "importWorkflow.summary.showCompletedDetails")}
+        </Button>
+      ) : null}
     </section>
   );
 }

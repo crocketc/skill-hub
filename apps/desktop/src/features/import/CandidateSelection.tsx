@@ -8,9 +8,6 @@ export interface CandidateSelectionProps {
   selectedIds: string[];
   onToggle: (id: string) => void;
   onSelectAll?: () => void;
-  onContinue: () => void;
-  onBack: () => void;
-  continueLabel?: string;
 }
 
 const ownershipTone: Record<CandidateOwnership, "neutral" | "warning" | "info"> = {
@@ -21,14 +18,12 @@ const ownershipTone: Record<CandidateOwnership, "neutral" | "warning" | "info"> 
   unknown: "neutral",
 };
 
+/** 候选审阅列表：批量选择与逐项勾选；返回/继续等流程动作在向导底部操作区。 */
 export function CandidateSelection({
   candidates,
   selectedIds,
   onToggle,
   onSelectAll,
-  onContinue,
-  onBack,
-  continueLabel,
 }: CandidateSelectionProps) {
   const { t } = useTranslation();
 
@@ -40,7 +35,6 @@ export function CandidateSelection({
           <h2 id="import-candidates-title">{t("importWorkflow.candidates.title")}</h2>
           <p>{t("importWorkflow.candidates.description")}</p>
         </div>
-        <span className="sh-import-candidates__step">{t("importWorkflow.step", { current: 2, total: 4 })}</span>
       </div>
 
       {candidates.length ? (
@@ -83,15 +77,6 @@ export function CandidateSelection({
           {t("importWorkflow.candidates.empty")}
         </p>
       )}
-
-      <div className="sh-import-candidates__actions">
-        <Button onClick={onBack} variant="ghost">
-          {t("actions.back")}
-        </Button>
-        <Button disabled={!selectedIds.length} onClick={onContinue}>
-          {continueLabel ?? t("actions.continue")}
-        </Button>
-      </div>
     </section>
   );
 }

@@ -1,4 +1,4 @@
-import { useEffect, useReducer, useRef, useState } from "react";
+import { useEffect, useReducer, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { describeNativeError } from "../../api/nativeErrors";
 import { Button } from "../../ui/Button";
@@ -19,6 +19,7 @@ import {
   type SourceDescriptor,
   unavailableImportFacade,
 } from "./api";
+import { ImportShell, type ImportStatus, type ImportStep } from "./ImportShell";
 import { ImportSummary } from "./ImportSummary";
 import { SourceInput } from "./SourceInput";
 import {
@@ -180,6 +181,28 @@ function reducer(state: WizardState, event: WizardEvent): WizardState {
       };
     default:
       return state;
+  }
+}
+
+/** 展示层映射：每个阶段归属唯一流程步骤；失败态回到触发它的步骤。 */
+function flowStepIndex(phase: WizardPhase, previousPhase?: WizardPhase): number {
+  switch (phase) {
+    case "candidates":
+    case "analyzing":
+      return 1;
+    case "conflicts":
+    case "committing":
+      return 2;
+    case "summary":
+      return 3;
+    case "failed":
+      return previousPhase === "conflicts"
+        ? 2
+        : previousPhase === "candidates" || previousPhase === "analyzing"
+          ? 1
+          : 0;
+    default:
+      return 0;
   }
 }
 
@@ -387,199 +410,334 @@ type: "failed",
     }
   };
 
-  const phaseLabel = t(`importWorkflow.phases.${state.phase}`);
+  const hasFailure = state.results.some((result) => result.status === "failed");
+  const stepIndex = flowStepIndex(state.phase, state.previousPhase);
+  const flowSteps: ImportStep[] = (["source", "candidates", "conflicts", "summary"] as const).map(
+    (key, index) => ({
+      label: t(`importWorkflow.phases.${key}`),
+      state: index < stepIndex ? "complete" : index === stepIndex ? "current" : "upcoming",
+    }),
+  );
+  const statusText = t(`importWorkflow.phases.${state.phase}`);
+  const status: ImportStatus =
+    state.phase === "summary"
+      ? { kind: hasFailure ? "warning" : "success", text: statusText }
+      : state.phase === "failed"
+        ? { kind: "failure", text: statusText }
+        : { kind: "info", text: statusText };
+
+  const missingRequiredAction = (state.plan?.conflicts ?? []).some(
+    (conflict) => conflict.required && !state.actions[conflict.candidateId],
+  );
+  const canParse = state.phase === "source"
+    && (state.sourceText.trim().length > 0 || selectedSources.length > 0);
+
+  let actions: { secondary: ReactNode[]; primary: ReactNode[] };
+  switch (state.phase) {
+    case "source":
+      actions = {
+        primary: [
+          <Button disabled={!canParse} key="parse" onClick={() => void runAcquisition()} size="lg">
+            {selectedSources.length > 0
+              ? t("importWorkflow.source.acquireSelectedSources")
+              : t("importWorkflow.source.parse")}
+          </Button>,
+        ],
+        secondary: variant !== "onboarding" && selectedSources.length > 0
+          ? [
+              <Button
+                disabled={!state.sourceText.trim()}
+                key="add-source"
+                onClick={() => void addManualSource(state.sourceText)}
+                variant="secondary"
+              >
+                {t("importWorkflow.source.addSource")}
+              </Button>,
+            ]
+          : [],
+      };
+      break;
+    case "acquiring":
+      actions = {
+        primary: [
+          <Button key="cancel" onClick={() => void cancelAcquisition()} variant="ghost">
+            {t("importWorkflow.source.cancelAcquiring")}
+          </Button>,
+        ],
+        secondary: [],
+      };
+      break;
+    case "candidate_gate":
+      actions = {
+        primary: [
+          <Button key="gate-continue" onClick={() => dispatch({ type: "show_candidates" })} size="lg">
+            {t("importWorkflow.source.continueCandidates")}
+          </Button>,
+        ],
+        secondary: [],
+      };
+      break;
+    case "candidates":
+      actions = {
+        primary: [
+          <Button
+            disabled={!state.selectedIds.length}
+            key="analyze"
+            onClick={() => void analyze()}
+            size="lg"
+          >
+            {t("importWorkflow.candidates.analyze")}
+          </Button>,
+        ],
+        secondary: [
+          <Button
+            key="back"
+            onClick={() => dispatch({ type: "source_changed", value: state.sourceText })}
+            variant="ghost"
+          >
+            {t("actions.back")}
+          </Button>,
+        ],
+      };
+      break;
+    case "conflicts":
+      actions = {
+        primary: [
+          <Button
+            disabled={missingRequiredAction || commitLockNotice}
+            key="commit"
+            onClick={() => void commit()}
+            size="lg"
+          >
+            {t("importWorkflow.conflicts.commit")}
+          </Button>,
+        ],
+        secondary: [
+          <Button key="back" onClick={() => dispatch({ type: "show_candidates" })} variant="ghost">
+            {t("actions.back")}
+          </Button>,
+        ],
+      };
+      break;
+    case "summary":
+      actions = {
+        primary: [
+          <Button key="open-library" onClick={onOpenLibrary} size="lg">
+            {t("importWorkflow.summary.openLibrary")}
+          </Button>,
+        ],
+        secondary: hasFailure
+          ? [<Button key="retry" onClick={() => dispatch({ type: "retry" })} variant="secondary">{t("actions.retry")}</Button>]
+          : [],
+      };
+      break;
+    case "cancelled":
+      actions = {
+        primary: [
+          <Button key="retry" onClick={() => dispatch({ type: "retry" })} size="lg">
+            {t("importWorkflow.source.retry")}
+          </Button>,
+        ],
+        secondary: [],
+      };
+      break;
+    case "failed":
+      actions = {
+        primary: [
+          <Button key="retry" onClick={() => dispatch({ type: "retry" })} size="lg">
+            {t("actions.retry")}
+          </Button>,
+        ],
+        secondary: [],
+      };
+      break;
+    default:
+      // analyzing / committing：进度态不提供流程动作。
+      actions = { primary: [], secondary: [] };
+  }
 
   return (
-    <section className="sh-import-wizard" aria-labelledby="import-wizard-title">
-      <div className="sh-import-wizard__topline">
-        <div>
-          <p className="sh-import-wizard__eyebrow">{t("importWorkflow.eyebrow")}</p>
-          <h1 id="import-wizard-title">{t("importWorkflow.title")}</h1>
+    <ImportShell
+      eyebrow={t("importWorkflow.eyebrow")}
+      footer={actions.primary.length + actions.secondary.length > 0 ? (
+        <>
+          {actions.secondary.length > 0 ? (
+            <div className="sh-import-wizard__actions-group">{actions.secondary}</div>
+          ) : null}
+          {actions.primary.length > 0 ? (
+            <div className="sh-import-wizard__actions-group sh-import-wizard__actions-group--primary">
+              {actions.primary}
+            </div>
+          ) : null}
+        </>
+      ) : undefined}
+      status={status}
+      steps={flowSteps}
+      stepsLabel={t("importWorkflow.steps.label")}
+      title={t("importWorkflow.title")}
+    >
+      {importGuide ? <p aria-live="polite" className="sh-import-wizard__guide">{importGuide}</p> : null}
+      {pickerError ? <p aria-live="polite" className="sh-import-source__notice">{pickerError}</p> : null}
+      {commitLockNotice && state.phase === "conflicts" ? (
+        <p aria-live="polite" role="alert" className="sh-import-source__notice">
+          {t("importWorkflow.commit.locked")}
+        </p>
+      ) : null}
+      {(["source", "acquiring", "candidate_gate", "cancelled", "failed"] as WizardPhase[]).includes(state.phase) ? (
+        <SourceInput
+          descriptor={state.descriptor}
+          disabled={state.phase === "acquiring"}
+          onChange={(value) => {
+            // AR-006：输入手动来源不再清空已选扫描来源（混合导入）。
+            dispatch({ type: "source_changed", value: normalizeWindowsPath(value) });
+          }}
+          onPickLocalPath={() => void pickLocalDirectory()}
+          onSelectAllSources={() => setSelectedSources((current) => {
+            const allSelected = normalizedInitialSources.every((source) => current.includes(source));
+            if (allSelected) {
+              return current.filter((source) => !normalizedInitialSources.includes(source));
+            }
+            return [...new Set([...current, ...normalizedInitialSources])];
+          })}
+          onToggleSource={(source) => setSelectedSources((current) => current.includes(source) ? current.filter((item) => item !== source) : [...current, source])}
+          selectedSources={selectedSources}
+          suggestedSources={normalizedInitialSources}
+          value={state.sourceText}
+        />
+      ) : null}
+
+      {state.phase === "acquiring" ? (
+        <DataState message={t("importWorkflow.source.acquiring")} state="loading" />
+      ) : null}
+
+      {state.phase === "candidate_gate" ? (
+        <div className="sh-import-wizard__gate" role="status">
+          {state.sourceCounts && state.sourceCounts.length > 0 ? (
+            <>
+              <p>{t("importWorkflow.acquisition.multiSource", { count: state.sourceCounts.length })}</p>
+              <ul>
+                {state.sourceCounts.map(({ source, count }) => (
+                  <li key={source}>
+                    {t("importWorkflow.acquisition.perSource", { source, count })}
+                    <Button
+                      aria-label={t("importWorkflow.acquisition.removeSource", { source })}
+                      disabled={state.phase !== "candidate_gate"}
+                      onClick={() => removeSource(source)}
+                      size="sm"
+                      variant="ghost"
+                    >
+                      {t("importWorkflow.acquisition.remove")}
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+              <Button onClick={clearSources} size="sm" variant="secondary">
+                {t("importWorkflow.acquisition.removeAllSources")}
+              </Button>
+            </>
+          ) : null}
+          <p>{t("importWorkflow.acquisition.complete", { count: state.candidates.length })}</p>
         </div>
-        <p aria-live="polite" className="sh-import-wizard__phase">{phaseLabel}</p>
-      </div>
+      ) : null}
 
-      <div className="sh-import-wizard__panel">
-        {importGuide ? <p aria-live="polite" className="sh-import-wizard__guide">{importGuide}</p> : null}
-        {pickerError ? <p aria-live="polite" className="sh-import-source__notice">{pickerError}</p> : null}
-        {commitLockNotice && state.phase === "conflicts" ? (
-          <p aria-live="polite" role="alert" className="sh-import-source__notice">
-            {t("importWorkflow.commit.locked")}
-          </p>
-        ) : null}
-        {(["source", "acquiring", "candidate_gate", "cancelled", "failed"] as WizardPhase[]).includes(state.phase) ? (
-          <SourceInput
-            actionLabel={selectedSources.length > 0 ? t("importWorkflow.source.acquireSelectedSources") : undefined}
-            onAddSource={variant === "onboarding" ? undefined : (source) => void addManualSource(source)}
-            descriptor={state.descriptor}
-            disabled={state.phase === "acquiring"}
-            onChange={(value) => {
-              // AR-006：输入手动来源不再清空已选扫描来源（混合导入）。
-              dispatch({ type: "source_changed", value: normalizeWindowsPath(value) });
-            }}
-            onParse={() => void runAcquisition()}
-            onPickLocalPath={() => void pickLocalDirectory()}
-            onSelectAllSources={() => setSelectedSources((current) => {
-              const allSelected = normalizedInitialSources.every((source) => current.includes(source));
-              if (allSelected) {
-                return current.filter((source) => !normalizedInitialSources.includes(source));
-              }
-              return [...new Set([...current, ...normalizedInitialSources])];
-            })}
-            onToggleSource={(source) => setSelectedSources((current) => current.includes(source) ? current.filter((item) => item !== source) : [...current, source])}
-            selectedSources={selectedSources}
-            suggestedSources={normalizedInitialSources}
-            value={state.sourceText}
+      {state.phase === "candidates" ? (
+        <CandidateSelection
+          candidates={state.candidates}
+          onSelectAll={() => dispatch({ type: "candidates_selected", ids: state.candidates.map(({ id }) => id) })}
+          onToggle={(id) => dispatch({ type: "candidates_selected", ids: state.selectedIds.includes(id) ? state.selectedIds.filter((selectedId) => selectedId !== id) : [...state.selectedIds, id] })}
+          selectedIds={state.selectedIds}
+        />
+      ) : null}
+
+      {state.phase === "analyzing" ? <DataState message={t("importWorkflow.phases.analyzing")} state="loading" /> : null}
+
+      {state.phase === "conflicts" && state.plan ? (
+        <>
+          <ConflictResolution
+            actions={state.actions}
+            conflicts={state.plan.conflicts}
+            onAction={(candidateId, action) => dispatch({ type: "action_selected", candidateId, action })}
           />
-        ) : null}
-
-        {state.phase === "acquiring" ? (
-          <DataState message={t("importWorkflow.source.acquiring")} state="loading" />
-        ) : null}
-
-        {state.phase === "candidate_gate" ? (
-          <div className="sh-import-wizard__gate" role="status">
-            {state.sourceCounts && state.sourceCounts.length > 0 ? (
-              <>
-                <p>{t("importWorkflow.acquisition.multiSource", { count: state.sourceCounts.length })}</p>
+          <section aria-labelledby="import-ai-precheck-heading" className="sh-import-wizard__gate">
+            <h2 id="import-ai-precheck-heading">{t("importWorkflow.aiPreCheck.heading")}</h2>
+            <p className="sh-settings-local-note">{t("importWorkflow.aiPreCheck.description")}</p>
+            <p>
+              {t("importWorkflow.aiPreCheck.scope", { count: state.plan.candidates.length })}
+            </p>
+            {facade.runAiPreChecks ? (
+              <div className="sh-button-row">
+                <Button
+                  disabled={aiPreCheckRunning}
+                  loading={aiPreCheckRunning}
+                  onClick={() => void runAiPreChecks()}
+                  variant="secondary"
+                >
+                  {aiPreCheckRunning
+                    ? t("importWorkflow.aiPreCheck.running")
+                    : t("importWorkflow.aiPreCheck.run")}
+                </Button>
+                <Button onClick={() => setAiPreCheckSkipped(true)} variant="ghost">
+                  {t("importWorkflow.aiPreCheck.skip")}
+                </Button>
+              </div>
+            ) : (
+              <p>{t("importWorkflow.aiPreCheck.unavailable")}</p>
+            )}
+            {aiPreCheckSkipped ? <p role="status">{t("importWorkflow.aiPreCheck.skippedNote")}</p> : null}
+            {aiPreCheckError ? <p role="alert">{aiPreCheckError}</p> : null}
+            {aiPreCheck && !aiPreCheckSkipped ? (
+              <div>
+                <p>
+                  {t("importWorkflow.aiPreCheck.reportHeader", {
+                    count: aiPreCheck.requested,
+                    model: aiPreCheck.model,
+                    provider: aiPreCheck.provider,
+                  })}
+                </p>
                 <ul>
-                  {state.sourceCounts.map(({ source, count }) => (
-                    <li key={source}>
-                      {t("importWorkflow.acquisition.perSource", { source, count })}
-                      <Button
-                        aria-label={t("importWorkflow.acquisition.removeSource", { source })}
-                        disabled={state.phase !== "candidate_gate"}
-                        onClick={() => removeSource(source)}
-                        size="sm"
-                        variant="ghost"
-                      >
-                        {t("importWorkflow.acquisition.remove")}
-                      </Button>
+                  {aiPreCheck.outcomes.map((outcome) => (
+                    <li key={outcome.candidateId}>
+                      <strong>{outcome.candidateId}</strong>{" "}
+                      <span className="sh-status sh-status--muted">
+                        {t(`importWorkflow.aiPreCheck.states.${outcome.state}`)}
+                      </span>
+                      <span>
+                        {" · "}
+                        {t("importWorkflow.aiPreCheck.findings", { count: outcome.findingCount, files: outcome.fileCount })}
+                      </span>
+                      {outcome.failureCode ? (
+                        <span role="status">
+                          {" · "}
+                          {t("importWorkflow.aiPreCheck.failure", { code: outcome.failureCode })}
+                        </span>
+                      ) : null}
                     </li>
                   ))}
                 </ul>
-                <Button onClick={clearSources} size="sm" variant="secondary">
-                  {t("importWorkflow.acquisition.removeAllSources")}
-                </Button>
-              </>
+                <p className="sh-settings-local-note">{t("importWorkflow.aiPreCheck.gatesNote")}</p>
+              </div>
             ) : null}
-            <p>{t("importWorkflow.acquisition.complete", { count: state.candidates.length })}</p>
-            <Button onClick={() => dispatch({ type: "show_candidates" })}>{t("importWorkflow.source.continueCandidates")}</Button>
-          </div>
-        ) : null}
-
-        {state.phase === "candidates" ? (
-          <CandidateSelection
-            candidates={state.candidates}
-            continueLabel={t("importWorkflow.candidates.analyze")}
-            onBack={() => dispatch({ type: "source_changed", value: state.sourceText })}
-            onSelectAll={() => dispatch({ type: "candidates_selected", ids: state.candidates.map(({ id }) => id) })}
-            onContinue={() => void analyze()}
-            onToggle={(id) => dispatch({ type: "candidates_selected", ids: state.selectedIds.includes(id) ? state.selectedIds.filter((selectedId) => selectedId !== id) : [...state.selectedIds, id] })}
-            selectedIds={state.selectedIds}
-          />
-        ) : null}
-
-        {state.phase === "analyzing" ? <DataState message={t("importWorkflow.phases.analyzing")} state="loading" /> : null}
-
-        {state.phase === "conflicts" && state.plan ? (
-          <>
-            <ConflictResolution
-              actions={state.actions}
-              commitDisabled={commitLockNotice}
-              conflicts={state.plan.conflicts}
-              continueLabel={t("importWorkflow.conflicts.commit")}
-              onAction={(candidateId, action) => dispatch({ type: "action_selected", candidateId, action })}
-              onBack={() => dispatch({ type: "show_candidates" })}
-              onContinue={() => void commit()}
-            />
-            <section aria-labelledby="import-ai-precheck-heading" className="sh-import-wizard__gate">
-              <h2 id="import-ai-precheck-heading">{t("importWorkflow.aiPreCheck.heading")}</h2>
-              <p className="sh-settings-local-note">{t("importWorkflow.aiPreCheck.description")}</p>
-              <p>
-                {t("importWorkflow.aiPreCheck.scope", { count: state.plan.candidates.length })}
-              </p>
-              {facade.runAiPreChecks ? (
-                <div className="sh-button-row">
-                  <Button
-                    disabled={aiPreCheckRunning}
-                    loading={aiPreCheckRunning}
-                    onClick={() => void runAiPreChecks()}
-                    variant="secondary"
-                  >
-                    {aiPreCheckRunning
-                      ? t("importWorkflow.aiPreCheck.running")
-                      : t("importWorkflow.aiPreCheck.run")}
-                  </Button>
-                  <Button onClick={() => setAiPreCheckSkipped(true)} variant="ghost">
-                    {t("importWorkflow.aiPreCheck.skip")}
-                  </Button>
-                </div>
-              ) : (
-                <p>{t("importWorkflow.aiPreCheck.unavailable")}</p>
-              )}
-              {aiPreCheckSkipped ? <p role="status">{t("importWorkflow.aiPreCheck.skippedNote")}</p> : null}
-              {aiPreCheckError ? <p role="alert">{aiPreCheckError}</p> : null}
-              {aiPreCheck && !aiPreCheckSkipped ? (
-                <div>
-                  <p>
-                    {t("importWorkflow.aiPreCheck.reportHeader", {
-                      count: aiPreCheck.requested,
-                      model: aiPreCheck.model,
-                      provider: aiPreCheck.provider,
-                    })}
-                  </p>
-                  <ul>
-                    {aiPreCheck.outcomes.map((outcome) => (
-                      <li key={outcome.candidateId}>
-                        <strong>{outcome.candidateId}</strong>{" "}
-                        <span className="sh-status sh-status--muted">
-                          {t(`importWorkflow.aiPreCheck.states.${outcome.state}`)}
-                        </span>
-                        <span>
-                          {" · "}
-                          {t("importWorkflow.aiPreCheck.findings", { count: outcome.findingCount, files: outcome.fileCount })}
-                        </span>
-                        {outcome.failureCode ? (
-                          <span role="status">
-                            {" · "}
-                            {t("importWorkflow.aiPreCheck.failure", { code: outcome.failureCode })}
-                          </span>
-                        ) : null}
-                      </li>
-                    ))}
-                  </ul>
-                  <p className="sh-settings-local-note">{t("importWorkflow.aiPreCheck.gatesNote")}</p>
-                </div>
-              ) : null}
-            </section>
-          </>
-        ) : null}
-
-        {state.phase === "committing" ? (
-          <DataState
-            message={state.commitProgress ? t("importWorkflow.phases.committingProgress", { ...state.commitProgress }) : t("importWorkflow.phases.committing")}
-            state="loading"
-            hint={t("importWorkflow.phases.committingBackgroundHint")}
-          />
-        ) : null}
-
-        {state.phase === "summary" ? <ImportSummary onOpenLibrary={onOpenLibrary} onRetry={() => dispatch({ type: "retry" })} results={state.results} /> : null}
-
-        {state.phase === "cancelled" ? (
-          <DataState actionLabel={t("importWorkflow.source.retry")} message={t("importWorkflow.cancelled")} onAction={() => dispatch({ type: "retry" })} state="empty" />
-        ) : null}
-
-        {state.phase === "failed" ? (
-          <DataState actionLabel={t("actions.retry")} message={state.error ?? t("importWorkflow.errors.unknown")} onAction={() => dispatch({ type: "retry" })} state="error" />
-        ) : null}
-      </div>
-
-      {state.phase === "acquiring" ? (
-        <div className="sh-import-wizard__actions">
-          <Button onClick={() => void cancelAcquisition()} variant="ghost">{t("importWorkflow.source.cancelAcquiring")}</Button>
-        </div>
+          </section>
+        </>
       ) : null}
-    </section>
+
+      {state.phase === "committing" ? (
+        <DataState
+          message={state.commitProgress ? t("importWorkflow.phases.committingProgress", { ...state.commitProgress }) : t("importWorkflow.phases.committing")}
+          state="loading"
+          hint={t("importWorkflow.phases.committingBackgroundHint")}
+        />
+      ) : null}
+
+      {state.phase === "summary" ? <ImportSummary results={state.results} /> : null}
+
+      {state.phase === "cancelled" ? (
+        <DataState message={t("importWorkflow.cancelled")} state="empty" />
+      ) : null}
+
+      {state.phase === "failed" ? (
+        <DataState message={state.error ?? t("importWorkflow.errors.unknown")} state="error" />
+      ) : null}
+    </ImportShell>
   );
 }

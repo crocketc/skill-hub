@@ -8,19 +8,16 @@ async function renderSourceInput(props: Partial<React.ComponentProps<typeof Sour
   const i18n = await createSkillHubI18n(["zh-CN"]);
   render(
     <I18nextProvider i18n={i18n}>
-      <SourceInput value="" onChange={vi.fn()} onParse={vi.fn()} {...props} />
+      <SourceInput value="" onChange={vi.fn()} {...props} />
     </I18nextProvider>,
   );
 }
 
 it("shows the parse-only boundary for npx references without executing a command", async () => {
-  const onParse = vi.fn();
-  await renderSourceInput({ onParse, value: "npx skills add owner/repository" });
+  await renderSourceInput({ value: "npx skills add owner/repository" });
 
   expect(screen.getByRole("textbox", { name: "来源" })).toHaveValue("npx skills add owner/repository");
   expect(screen.getByText("仅解析来源，不会执行 npx 命令")).toBeVisible();
-  fireEvent.click(screen.getByRole("button", { name: "解析来源" }));
-  expect(onParse).toHaveBeenCalledOnce();
 });
 
 it("emits controlled input changes", async () => {
@@ -64,18 +61,16 @@ it("offers a clear-all action when every scanned source is selected", async () =
   expect(onSelectAllSources).toHaveBeenCalledOnce();
 });
 
-it("labels the batch action as acquiring selected directory candidates", async () => {
-  const onParse = vi.fn();
+it("labels the batch action as acquiring selected directory candidates at the wizard level", async () => {
+  // 解析动作已上移到向导底部操作区；“读取已选目录候选”的标注语义由
+  // ImportWizard.test.tsx 的“keeps the acquire action available…”用例覆盖。
   await renderSourceInput({
-    actionLabel: "读取已选目录候选",
-    onParse,
     selectedSources: ["C:/codex/skills"],
     suggestedSources: ["C:/codex/skills"],
     value: "C:/codex/skills",
   });
 
-  fireEvent.click(screen.getByRole("button", { name: "读取已选目录候选" }));
-  expect(onParse).toHaveBeenCalledOnce();
+  expect(screen.getByRole("checkbox", { name: "C:/codex/skills" })).toBeChecked();
 });
 
 it("offers a native directory picker when the host provides one", async () => {
@@ -115,14 +110,4 @@ it("keeps the descriptor block for non-local sources", async () => {
 
   expect(screen.getByLabelText("已识别来源")).toBeVisible();
   expect(screen.getByText("owner/repository")).toBeVisible();
-});
-
-it("hides the manual add-source action when the host does not provide it", async () => {
-  // 初始化导入不提供 onAddSource：即使已选来源非空，也不得出现第二个操作按钮。
-  await renderSourceInput({
-    selectedSources: ["C:/codex/skills"],
-    value: "C:/manual/skills",
-  });
-
-  expect(screen.queryByRole("button", { name: "添加到已选来源" })).not.toBeInTheDocument();
 });
