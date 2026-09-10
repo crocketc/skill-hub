@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
+import { Icon } from "../ui/Icon";
 import {
   useTrackedOperations,
   type OperationTracker,
@@ -114,7 +115,7 @@ function IndicatorRow({
           onClick={() => dismiss(operation.id)}
           type="button"
         >
-          ×
+          <Icon aria-hidden="true" name="close" size={16} />
         </button>
       ) : null}
     </p>
