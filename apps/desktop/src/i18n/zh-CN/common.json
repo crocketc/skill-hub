@@ -745,6 +745,12 @@
     "restoreRunning": "正在恢复 {{count}} 个 Skill…（已用时 {{seconds}} 秒，完成后自动继续）",
     "restoreBack": "返回",
     "restoreConflictsHeading": "恢复冲突处理"
+    ,"rescanEyebrow": "重新发现"
+    ,"rescanTitle": "重新发现 Agent 与 Skill"
+    ,"rescanDescription": "当前集中库只读重新发现 Agent 和 Skill，不会更换集中库或部署内容。"
+    ,"rescanLibraryLocation": "当前集中库位置"
+    ,"rescanConfirmation": "我确认只执行只读发现和扫描"
+    ,"rescanStep": "第 {{current}} 步，共 3 步"
   },
   "theme": {
     "choiceLabel": "主题颜色",
@@ -1590,7 +1596,7 @@
       "libraryMaintenance": "技能库维护",
       "appUpdate": "应用更新"
     },
-    "reopenOnboarding": "重新运行初始化向导",
+    "reopenOnboarding": "重新发现 Agent 与 Skill",
     "eyebrow": "设置",
     "heading": "让 SkillHub 适应你的工作方式",
     "description": "本地管理保持明确可控，网络与未来存储能力保持边界清晰。",

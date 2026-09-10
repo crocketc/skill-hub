@@ -1,8 +1,11 @@
 import { QueryClientProvider } from "@tanstack/react-query";
 import { MotionConfig } from "motion/react";
+import { useEffect, useState } from "react";
 import { I18nextProvider } from "react-i18next";
 import { createBrowserRouter, RouterProvider, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { OnboardingWizard } from "../features/onboarding/OnboardingWizard";
+import { RescanWizard } from "../features/onboarding/RescanWizard";
+import { desktopBootstrapRuntime } from "../features/bootstrap/api";
 import { AgentDetailPage } from "../features/agents/AgentDetailPage";
 import { AgentListPage } from "../features/agents/AgentListPage";
 import { ProjectDetailPage } from "../features/projects/ProjectDetailPage";
@@ -56,6 +59,21 @@ import { queryClient } from "./queryClient";
 function OnboardingRoute() {
   const navigate = useNavigate();
   const { resolvedTheme, setAppearance } = useTheme();
+  const [snapshot, setSnapshot] = useState<Awaited<ReturnType<typeof desktopBootstrapRuntime.getBootstrapView>>["snapshot"] | null>(null);
+  useEffect(() => {
+    void desktopBootstrapRuntime.getBootstrapView().then((view) => setSnapshot(view.snapshot));
+  }, []);
+  if (!snapshot) {
+    return <main className="sh-startup-loading">Loading…</main>;
+  }
+  if (snapshot.initialization_state === "initialized") {
+    return (
+      <RescanWizard
+        libraryPath={snapshot.library_path ?? ""}
+        onOpenImport={(roots) => navigate("/discovery/local", { state: { initialSources: roots, initialSourceText: roots.length > 1 ? "" : roots[0] ?? "" } })}
+      />
+    );
+  }
   return (
     <OnboardingWizard
       initialBranch="select"

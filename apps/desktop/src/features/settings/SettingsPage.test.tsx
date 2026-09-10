@@ -24,7 +24,7 @@ it("offers an explicit way to rerun initialization", async () => {
     </I18nextProvider>,
   );
 
-  expect(screen.getByRole("link", { name: "重新运行初始化向导" })).toHaveAttribute(
+  expect(screen.getByRole("link", { name: "重新发现 Agent 与 Skill" })).toHaveAttribute(
     "href",
     "/initialize",
   );

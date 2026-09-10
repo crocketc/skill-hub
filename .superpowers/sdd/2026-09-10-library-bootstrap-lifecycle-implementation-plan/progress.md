@@ -38,3 +38,5 @@ Task 6: complete（提交范围：新增首次恢复 prepare/commit 命令，恢
 Task 7: complete（提交范围：通过 Specta 重新生成绑定，桌面适配器新增激活与首次恢复命令并保留普通恢复契约，移除 onboarding adapter 的 restart 暴露；测试结果：`cargo test -p skillhub-desktop generate_bindings` 通过，`pnpm --dir apps/desktop test --run src/features/bootstrap/api.test.ts` 6 passed）。
 
 Task 8: complete（提交范围：初始化新建/已有库分支改为保存并继续的原地激活，恢复分支先选择目标库再选择备份，覆盖失败重选、重复点击和冲突决策；测试结果：`pnpm --dir apps/desktop test --run src/features/onboarding/LibraryStep.test.tsx src/features/onboarding/RestoreStep.test.tsx src/features/onboarding/OnboardingBranches.test.tsx src/features/onboarding/OnboardingWizard.test.tsx`，35 passed；`pnpm --dir apps/desktop typecheck` 通过）。
+
+Task 9: complete（提交范围：新增只读 `RescanWizard`，初始化入口按快照在首次初始化与重新发现模式间分流，设置入口改名并保持当前集中库只读；测试结果：`pnpm --dir apps/desktop test --run src/features/onboarding/RescanWizard.test.tsx src/features/settings/SettingsPage.test.tsx`，9 passed；`pnpm --dir apps/desktop typecheck` 通过）。

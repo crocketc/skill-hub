@@ -745,6 +745,12 @@
     "restoreRunning": "Restoring {{count}} skill(s)… ({{seconds}}s elapsed, will continue automatically)",
     "restoreBack": "Back",
     "restoreConflictsHeading": "Restore conflicts"
+    ,"rescanEyebrow": "Rediscovery"
+    ,"rescanTitle": "Rediscover Agents & Skills"
+    ,"rescanDescription": "Rediscovery uses the current library in read-only mode. It never changes the library root or deploys content."
+    ,"rescanLibraryLocation": "Current library location"
+    ,"rescanConfirmation": "I understand this only discovers and scans read-only"
+    ,"rescanStep": "Step {{current}} of 3"
   },
   "theme": {
     "choiceLabel": "Theme colors",
@@ -1590,7 +1596,7 @@
       "libraryMaintenance": "Library maintenance",
       "appUpdate": "App update"
     },
-    "reopenOnboarding": "Run initialization again",
+    "reopenOnboarding": "Rediscover Agents & Skills",
     "eyebrow": "Settings",
     "heading": "Shape SkillHub around your workflow",
     "description": "Local management stays explicit, while network and future storage features remain bounded.",
