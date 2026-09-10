@@ -1,3 +1,4 @@
+use std::ops::Deref;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, RwLock};
 
@@ -20,6 +21,14 @@ impl LibraryContext {
             store,
             central: Arc::new(library),
         }
+    }
+}
+
+impl Deref for LibraryContext {
+    type Target = VersionStore;
+
+    fn deref(&self) -> &Self::Target {
+        &self.store
     }
 }
 

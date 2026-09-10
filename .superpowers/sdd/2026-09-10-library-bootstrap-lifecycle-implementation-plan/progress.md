@@ -28,3 +28,5 @@ Task 1: complete（提交范围：拆分 `CentralLibrary::create` 与 `open_exis
 Task 2: complete（提交范围：新增 `LibraryRuntime`/`LibraryContext`，覆盖 Pending、一次性发布、共享快照与并发激活；测试结果：`cargo test -p skillhub-application --test library_runtime`，4 passed）。
 
 Task 3: complete（提交范围：facade 构造器与部署后端注入共享 `LibraryRuntime`，新增 Pending/Active 构造测试；测试结果：`cargo test -p skillhub-application --test facade facade_constructors_share_pending`，1 passed）。
+
+Task 4: complete（提交范围：facade、部署/移除/对账、导入/版本/来源/备份/恢复/导出/项目装配等集中库消费者统一取得一次 `LibraryContext` 快照，删除旧字段访问；测试结果：`cargo test -p skillhub-application --tests`，首次迁移回归 71/75 通过，修正 Pending 非集中库业务兼容与活动库 undeploy 回归后目标用例通过；`rg` 旧字段访问为 0）。

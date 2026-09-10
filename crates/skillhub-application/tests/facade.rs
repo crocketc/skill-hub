@@ -773,7 +773,8 @@ async fn uninstall_prepare_returns_selected_impact_without_mutating_relations() 
         .insert(&deployment)
         .await
         .expect("insert deployment");
-    let facade = LocalApplicationFacade::new_with_today(database, (2026, 8, 30));
+    let library_root = tempfile::tempdir().expect("library root");
+    let facade = LocalApplicationFacade::new_with_library(database, library_root.path());
 
     let result = facade
         .execute(AppCommand::PrepareUninstall(
@@ -4053,7 +4054,8 @@ async fn undeploy_preserves_modified_target_and_relation_for_review() {
         )
         .expect("insert deployment");
 
-    let facade = LocalApplicationFacade::new_with_today(database, (2026, 8, 30));
+    let library_root = tempfile::tempdir().expect("library root");
+    let facade = LocalApplicationFacade::new_with_library(database, library_root.path());
     let prepared = facade
         .execute(AppCommand::PrepareUndeploy(PrepareUndeploy {
             deployment_id,

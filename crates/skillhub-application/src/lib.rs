@@ -85,8 +85,6 @@ pub struct LocalApplicationFacade {
     database: Arc<Mutex<Database>>,
     today: (i32, u8, u8),
     library_runtime: Arc<library_runtime::LibraryRuntime>,
-    library: Option<VersionStore>,
-    library_root: Option<PathBuf>,
     deployment_targets: Option<RegisteredTargetIndex>,
     deployment_service: Arc<DeploymentService<LocalDeploymentBackend>>,
     removal_service: Arc<RemovalService<LocalDeploymentBackend>>,
@@ -124,7 +122,6 @@ struct RunningLlmCheck {
 struct LocalDeploymentBackend {
     database: Arc<Mutex<Database>>,
     library_runtime: Arc<library_runtime::LibraryRuntime>,
-    library_root: Option<PathBuf>,
     filesystem: DeploymentFilesystem,
 }
 
@@ -226,13 +223,11 @@ impl DuplicateCandidateProvider for StaticDuplicateCandidateProvider {
 impl LocalDeploymentBackend {
     fn new(
         database: Arc<Mutex<Database>>,
-        library_root: Option<PathBuf>,
         library_runtime: Arc<library_runtime::LibraryRuntime>,
     ) -> Self {
         Self {
             database,
             library_runtime,
-            library_root,
             filesystem: DeploymentFilesystem::new(),
         }
     }
@@ -242,20 +237,16 @@ impl LocalDeploymentBackend {
         if source.is_dir() {
             return Ok(source);
         }
-        let Some(library_root) = &self.library_root else {
-            return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
-                .with_param("detail", "central library source is unavailable")
-                .with_action(RecoveryAction::Retry));
-        };
-        let paths = LibraryPaths::from_root(library_root.clone());
+        let library = self.library_runtime.snapshot()?;
+        let paths = LibraryPaths::from_root(library.root.clone());
         if matches!(
             target.mode,
             DeploymentMode::SymbolicLink | DeploymentMode::DirectoryJunction
         ) {
-            let central = CentralLibrary::initialize(library_root)?;
-            if let Some((record, current)) = central.load_portable_skill(target.skill_id)? {
+            if let Some((record, current)) = library.central.load_portable_skill(target.skill_id)? {
                 if current.as_ref() == Some(&target.version_id) {
-                    let visible = central
+                    let visible = library
+                        .central
                         .visible_skill_path_for_runtime(target.skill_id, &record.runtime_name);
                     if visible.is_dir() {
                         return Ok(visible);
@@ -274,7 +265,9 @@ impl LocalDeploymentBackend {
                     .with_param("io_kind", format!("{:?}", error.kind()))
                     .with_action(RecoveryAction::Retry)
             })?;
-            VersionStore::new(paths).materialize(&target.version_id, &materialized)?;
+            library
+                .store
+                .materialize(&target.version_id, &materialized)?;
         }
         Ok(materialized)
     }
@@ -324,15 +317,12 @@ impl LocalDeploymentBackend {
                 .with_param("detail", "deployment target identity is unavailable")
                 .with_action(RecoveryAction::InspectTarget)
         })?;
-        let source_path = self
-            .library_root
-            .as_ref()
-            .map(|root| {
-                root.join("versions")
-                    .join(deployment.skill_id.to_string())
-                    .join(deployment.version_id.as_str())
-            })
-            .unwrap_or_else(|| destination_path.clone());
+        let library = self.library_runtime.snapshot()?;
+        let source_path = library
+            .root
+            .join("versions")
+            .join(deployment.skill_id.to_string())
+            .join(deployment.version_id.as_str());
         Ok(OwnershipProof {
             mode: deployment.mode,
             destination_path,
@@ -503,9 +493,7 @@ impl RemovalBackend for LocalDeploymentBackend {
     }
 
     async fn delete_skill(&self, skill_id: skillhub_core::SkillId) -> AppResult<()> {
-        let Some(library_root) = self.library_root.as_ref() else {
-            return Err(unsupported("execute.delete_skill.library"));
-        };
+        let library = self.library_runtime.snapshot()?;
         let (skill, current) = {
             let database = self
                 .database
@@ -527,17 +515,14 @@ impl RemovalBackend for LocalDeploymentBackend {
                 .catalog_repository()?
                 .get_sync(skill_id)?
                 .ok_or_else(|| AppError::new(ErrorCode::ObjectNotFound, Severity::Error))?;
-            let store = VersionStore::new(LibraryPaths::from_root(library_root.clone()));
-            (skill, store.current(skill_id)?)
+            (skill, library.current(skill_id)?)
         };
-        let central = CentralLibrary::initialize(library_root)?;
-        let store = VersionStore::from_library(&central);
         self.database
             .lock()
             .map_err(|_| internal("execute.delete_skill.catalog"))?
             .catalog_repository()?
             .remove_sync(skill_id)?;
-        if let Err(error) = central.remove_portable_skill(skill_id) {
+        if let Err(error) = library.central.remove_portable_skill(skill_id) {
             let restore = self
                 .database
                 .lock()
@@ -546,14 +531,18 @@ impl RemovalBackend for LocalDeploymentBackend {
                 .insert_sync(&skill);
             return Err(cleanup_import_error(error, restore));
         }
-        if let Err(error) = store.remove_skill_sync(skill_id) {
+        if let Err(error) = library.remove_skill_sync(skill_id) {
             let restore = self
                 .database
                 .lock()
                 .map_err(|_| internal("execute.delete_skill.rollback"))?
                 .catalog_repository()?
                 .insert_sync(&skill)
-                .and_then(|()| central.save_portable_skill(&skill, current.as_ref()));
+                .and_then(|()| {
+                    library
+                        .central
+                        .save_portable_skill(&skill, current.as_ref())
+                });
             return Err(cleanup_import_error(error, restore));
         }
         Ok(())
@@ -605,12 +594,9 @@ impl ReconcileBackend for LocalDeploymentBackend {
         &self,
         deployment: &DeploymentRecord,
     ) -> AppResult<skillhub_core::VersionId> {
-        let Some(library_root) = self.library_root.as_ref() else {
-            return Err(unsupported("execute.collect_deployment_changes.library"));
-        };
+        let library = self.library_runtime.snapshot()?;
         let destination = self.deployment_destination(deployment)?;
-        let store = VersionStore::new(LibraryPaths::from_root(library_root.clone()));
-        let version = store.capture(deployment.skill_id, &destination)?;
+        let version = library.capture(deployment.skill_id, &destination)?;
         let observed_hash = version.manifest.tree_hash.clone();
         let database = self
             .database
@@ -628,11 +614,10 @@ impl ReconcileBackend for LocalDeploymentBackend {
     }
 
     async fn restore_target(&self, deployment: &DeploymentRecord) -> AppResult<()> {
-        let Some(library_root) = self.library_root.as_ref() else {
-            return Err(unsupported("execute.restore_deployment.library"));
-        };
+        let library = self.library_runtime.snapshot()?;
         let destination = self.deployment_destination(deployment)?;
-        let source = library_root
+        let source = library
+            .root
             .join("versions")
             .join(deployment.skill_id.to_string())
             .join(deployment.version_id.as_str());
@@ -731,9 +716,10 @@ impl LocalApplicationFacade {
         if let Some(path) = persisted {
             return Ok(PathBuf::from(path));
         }
-        self.library_root
-            .clone()
-            .ok_or_else(|| unsupported("bootstrap.library_path"))
+        self.library_runtime
+            .snapshot()
+            .map(|library| library.root.clone())
+            .or_else(|_| Err(unsupported("bootstrap.library_path")))
     }
 
     /// Chooses the central library root before initialization completes. The
@@ -1194,13 +1180,12 @@ impl LocalApplicationFacade {
         let library_runtime = Arc::new(library_runtime::LibraryRuntime::new());
         let backend = Arc::new(LocalDeploymentBackend::new(
             database.clone(),
-            None,
             library_runtime.clone(),
         ));
         let deployment_service = Arc::new(DeploymentService::new(backend.clone()));
         let removal_service = Arc::new(RemovalService::new(backend));
         let reconcile_service = Arc::new(ReconcileService::new(Arc::new(
-            LocalDeploymentBackend::new(database.clone(), None, library_runtime.clone()),
+            LocalDeploymentBackend::new(database.clone(), library_runtime.clone()),
         )));
         let health_service = Arc::new(HealthService::new(Arc::new(LocalHealthBackend {
             database: database.clone(),
@@ -1225,8 +1210,6 @@ impl LocalApplicationFacade {
             database,
             today,
             library_runtime,
-            library: None,
-            library_root: None,
             deployment_targets: None,
             deployment_service,
             removal_service,
@@ -1268,7 +1251,6 @@ impl LocalApplicationFacade {
         )));
         let backend = Arc::new(LocalDeploymentBackend::new(
             database.clone(),
-            Some(library_root.clone()),
             library_runtime.clone(),
         ));
         let deployment_service = Arc::new(DeploymentService::new(backend.clone()));
@@ -1297,8 +1279,6 @@ impl LocalApplicationFacade {
             database,
             today: current_utc_date(),
             library_runtime,
-            library: Some(VersionStore::new(LibraryPaths::from_root(&library_root))),
-            library_root: Some(library_root),
             deployment_targets: None,
             deployment_service,
             removal_service,
@@ -2461,14 +2441,8 @@ impl LocalApplicationFacade {
                 .with_param("scope", "selected_skills_requires_explicit_ids")
                 .with_action(RecoveryAction::ChooseAnotherName));
         }
-        let Some(library) = self.library.as_ref() else {
-            return Err(unsupported("execute.prepare_backup.library"));
-        };
-        let Some(root) = self.library_root.as_ref() else {
-            return Err(unsupported("execute.prepare_backup.library"));
-        };
-        let central = CentralLibrary::initialize(root)?;
-        let portable_metadata = serde_json::to_string(&central.load_manifest()?)
+        let library = self.library_runtime.snapshot()?;
+        let portable_metadata = serde_json::to_string(&library.central.load_manifest()?)
             .map_err(|_| AppError::new(ErrorCode::InternalError, Severity::Error))?;
         let skill_ids = self.with_database("execute.prepare_backup.catalog", |database| {
             database.catalog_repository()?.list_ids_sync()
@@ -2528,9 +2502,7 @@ impl LocalApplicationFacade {
         &self,
         mut input: skillhub_core::ExportInput,
     ) -> AppResult<skillhub_core::ExportInput> {
-        let Some(library) = self.library.as_ref() else {
-            return Err(unsupported("execute.standard_export.library"));
-        };
+        let library = self.library_runtime.snapshot()?;
         if input.skills.is_empty() {
             let skill_ids = match &input.selection {
                 skillhub_core::ExportSelection::Skills(ids) => ids.clone(),
@@ -2612,10 +2584,8 @@ impl LocalApplicationFacade {
     }
 
     fn standard_export_destination(&self) -> AppResult<PathBuf> {
-        let Some(root) = self.library_root.as_ref() else {
-            return Err(unsupported("execute.standard_export.library"));
-        };
-        Ok(LibraryPaths::from_root(root).management_dir.join("exports"))
+        let library = self.library_runtime.snapshot()?;
+        Ok(library.root.join(".skillhub").join("exports"))
     }
 
     /// AR-025：校验用户选择的导出输出目录——必须是已存在的目录，且宿主
@@ -2746,10 +2716,8 @@ impl LocalApplicationFacade {
         let wants_backup = actions.contains(&skillhub_core::UninstallAction::Backup);
         if wants_backup {
             let input = self.build_backup_input(BackupScope::Full)?;
-            let Some(root) = self.library_root.as_ref() else {
-                return Err(unsupported("execute.apply_uninstall_decision.library"));
-            };
-            let service = BackupService::new(LibraryPaths::from_root(root).backups_dir);
+            let library = self.library_runtime.snapshot()?;
+            let service = BackupService::new(library.root.join(".skillhub").join("backups"));
             let plan = service.prepare(&input)?;
             let package = service.create(&input, &plan, &[])?;
             service.verify(&package)?;
@@ -2816,9 +2784,7 @@ impl LocalApplicationFacade {
         skill_id: skillhub_core::SkillId,
         version_id: skillhub_core::VersionId,
     ) -> AppResult<CheckRun> {
-        let Some(library) = self.library.as_ref() else {
-            return Err(unsupported("execute.run_basic_check.library"));
-        };
+        let library = self.library_runtime.snapshot()?;
         let generation = self.with_database("execute.run_basic_check.generation", |database| {
             Ok(database
                 .check_repository()
@@ -2901,9 +2867,7 @@ impl LocalApplicationFacade {
     ) -> AppResult<AppCommandResult> {
         let capabilities = self.llm_capabilities()?;
         self.require_llm_capability(capabilities.safety_check, LlmTaskKind::Safety)?;
-        let Some(library) = self.library.as_ref() else {
-            return Err(unsupported("execute.run_llm_safety_check.library"));
-        };
+        let library = self.library_runtime.snapshot()?;
         let Some(runner) = self.llm_runner.clone() else {
             return Err(AppError::new(ErrorCode::LlmNotConfigured, Severity::Info));
         };
@@ -3105,13 +3069,12 @@ impl LocalApplicationFacade {
     where
         F: FnOnce(&mut Skill) -> AppResult<()>,
     {
-        let current = self
-            .library
+        let library = self.library_runtime.snapshot().ok();
+        let current = library
             .as_ref()
             .map(|library| library.current(skill_id))
             .transpose()?
             .flatten();
-        let library_root = self.library_root.clone();
         self.with_database(operation, |database| {
             let repository = database.catalog_repository()?;
             let old = repository.get_sync(skill_id)?.ok_or_else(|| {
@@ -3123,9 +3086,11 @@ impl LocalApplicationFacade {
             update(&mut updated)?;
             updated.validate()?;
             repository.insert_sync(&updated)?;
-            if let Some(root) = library_root {
-                let central = CentralLibrary::initialize(root)?;
-                if let Err(error) = central.save_portable_skill(&updated, current.as_ref()) {
+            if let Some(library) = library.as_ref() {
+                if let Err(error) = library
+                    .central
+                    .save_portable_skill(&updated, current.as_ref())
+                {
                     return Err(cleanup_import_error(error, repository.insert_sync(&old)));
                 }
             }
@@ -3141,29 +3106,14 @@ impl LocalApplicationFacade {
     }
 
     fn create_skill(&self, request: CreateSkill) -> AppResult<AppCommandResult> {
-        let Some(library) = self.library.as_ref() else {
-            return Err(unsupported("execute.create_skill.library"));
-        };
-        let Some(library_root) = self.library_root.as_ref() else {
-            return Err(unsupported("execute.create_skill.library"));
-        };
+        let library = self.library_runtime.snapshot()?;
         let source = Path::new(&request.source_path);
         validate_skill_source(source)?;
         let skill = Skill::new(skillhub_core::SkillId::new(), request.name);
         skill.validate()?;
         let captured = library.capture_with_status(skill.id(), source)?;
         let version = captured.record;
-        let central = match CentralLibrary::initialize(library_root) {
-            Ok(central) => central,
-            Err(error) => {
-                let cleanup = if captured.created {
-                    library.discard_sync(&version)
-                } else {
-                    Ok(())
-                };
-                return Err(cleanup_import_error(error, cleanup));
-            }
-        };
+        let central = &library.central;
         let result = self.with_database("execute.create_skill", |database| {
             if let Err(error) = database.catalog_repository()?.insert_sync(&skill) {
                 return Err(cleanup_import_error(
@@ -3178,19 +3128,19 @@ impl LocalApplicationFacade {
             if let Err(error) = library.set_current(skill.id(), &version.id) {
                 return Err(cleanup_import_error(
                     error,
-                    cleanup_import_state(database, &central, library, skill.id(), &version),
+                    cleanup_import_state(database, central, &library.store, skill.id(), &version),
                 ));
             }
             if let Err(error) = central.materialize_current_skill(&skill, &version.id) {
                 return Err(cleanup_import_error(
                     error,
-                    cleanup_import_state(database, &central, library, skill.id(), &version),
+                    cleanup_import_state(database, central, &library.store, skill.id(), &version),
                 ));
             }
             if let Err(error) = central.save_portable_skill(&skill, Some(&version.id)) {
                 return Err(cleanup_import_error(
                     error,
-                    cleanup_import_state(database, &central, library, skill.id(), &version),
+                    cleanup_import_state(database, central, &library.store, skill.id(), &version),
                 ));
             }
             let source_descriptor = SourceDescriptor::new(
@@ -3203,7 +3153,7 @@ impl LocalApplicationFacade {
             {
                 return Err(cleanup_import_error(
                     error,
-                    cleanup_import_state(database, &central, library, skill.id(), &version),
+                    cleanup_import_state(database, central, &library.store, skill.id(), &version),
                 ));
             }
             database
@@ -3256,9 +3206,7 @@ impl LocalApplicationFacade {
         &self,
         request: PinProjectSkillVersion,
     ) -> AppResult<AppCommandResult> {
-        let Some(library) = self.library.as_ref() else {
-            return Err(unsupported("execute.pin_project_skill_version.library"));
-        };
+        let library = self.library_runtime.snapshot()?;
         let belongs = library
             .list(request.skill_id)?
             .into_iter()
@@ -3290,9 +3238,7 @@ impl LocalApplicationFacade {
     }
 
     fn relink_source(&self, request: RelinkSource) -> AppResult<AppCommandResult> {
-        let Some(library) = self.library.as_ref() else {
-            return Err(unsupported("execute.relink_source.library"));
-        };
+        let library = self.library_runtime.snapshot()?;
         let source_revision = match &request.source.locator {
             SourceLocator::LocalPath(path) => {
                 validate_skill_source(path)?;
@@ -3448,9 +3394,7 @@ impl LocalApplicationFacade {
         &self,
         skill_id: skillhub_core::SkillId,
     ) -> AppResult<AppCommandResult> {
-        let Some(library) = self.library.as_ref() else {
-            return Err(unsupported("execute.check_source_update.library"));
-        };
+        let library = self.library_runtime.snapshot()?;
         let unavailable = || {
             Ok(AppCommandResult::UpstreamCheckResult(
                 skillhub_core::UpstreamCheckResult::new(skill_id, SourceState::SourceUnavailable),
@@ -3547,12 +3491,7 @@ impl LocalApplicationFacade {
                 )
                 .with_action(RecoveryAction::Acknowledge));
         }
-        let Some(library) = self.library.as_ref() else {
-            return Err(unsupported("execute.apply_source_update.library"));
-        };
-        let Some(root) = self.library_root.as_ref() else {
-            return Err(unsupported("execute.apply_source_update.library"));
-        };
+        let library = self.library_runtime.snapshot()?;
         let source = self.with_database("execute.apply_source_update.source", |database| {
             database.source_repository().for_skill(request.skill_id)
         })?;
@@ -3609,16 +3548,21 @@ impl LocalApplicationFacade {
                         .with_action(RecoveryAction::ChooseAnotherName)
                 })
         })?;
-        let central = CentralLibrary::initialize(root)?;
-        if let Err(error) = central.materialize_current_skill(&skill, &version.id) {
-            let _ = restore_version_pointer(library, request.skill_id, check.local_version);
+        if let Err(error) = library
+            .central
+            .materialize_current_skill(&skill, &version.id)
+        {
+            let _ = restore_version_pointer(&library.store, request.skill_id, check.local_version);
             if captured.created {
                 let _ = library.discard_sync(&version);
             }
             return Err(error);
         }
-        if let Err(error) = central.save_portable_skill(&skill, Some(&version.id)) {
-            let _ = restore_version_pointer(library, request.skill_id, check.local_version);
+        if let Err(error) = library
+            .central
+            .save_portable_skill(&skill, Some(&version.id))
+        {
+            let _ = restore_version_pointer(&library.store, request.skill_id, check.local_version);
             if captured.created {
                 let _ = library.discard_sync(&version);
             }
@@ -3691,12 +3635,7 @@ impl LocalApplicationFacade {
     }
 
     fn set_current_version(&self, request: SetCurrentVersion) -> AppResult<AppCommandResult> {
-        let Some(library) = self.library.as_ref() else {
-            return Err(unsupported("execute.set_current_version.library"));
-        };
-        let Some(library_root) = self.library_root.as_ref() else {
-            return Err(unsupported("execute.set_current_version.library"));
-        };
+        let library = self.library_runtime.snapshot()?;
         let previous = library.current(request.skill_id)?;
         let skill = self.with_database("execute.set_current_version", |database| {
             database
@@ -3709,24 +3648,20 @@ impl LocalApplicationFacade {
                 })
         })?;
         library.set_current(request.skill_id, &request.version_id)?;
-        let central = match CentralLibrary::initialize(library_root) {
-            Ok(central) => central,
-            Err(error) => {
-                let rollback = match previous.clone() {
-                    Some(previous) => library.set_current(request.skill_id, &previous),
-                    None => library.clear_current(request.skill_id),
-                };
-                return Err(cleanup_import_error(error, rollback));
-            }
-        };
-        if let Err(error) = central.materialize_current_skill(&skill, &request.version_id) {
+        if let Err(error) = library
+            .central
+            .materialize_current_skill(&skill, &request.version_id)
+        {
             let rollback = match previous.clone() {
                 Some(previous) => library.set_current(request.skill_id, &previous),
                 None => library.clear_current(request.skill_id),
             };
             return Err(cleanup_import_error(error, rollback));
         }
-        if let Err(error) = central.save_portable_skill(&skill, Some(&request.version_id)) {
+        if let Err(error) = library
+            .central
+            .save_portable_skill(&skill, Some(&request.version_id))
+        {
             let rollback = match previous {
                 Some(previous) => library.set_current(request.skill_id, &previous),
                 None => library.clear_current(request.skill_id),
@@ -3744,12 +3679,7 @@ impl LocalApplicationFacade {
     }
 
     fn save_skill_content(&self, request: SaveSkillContent) -> AppResult<AppCommandResult> {
-        let Some(library) = self.library.as_ref() else {
-            return Err(unsupported("execute.save_skill_content.library"));
-        };
-        let Some(library_root) = self.library_root.as_ref() else {
-            return Err(unsupported("execute.save_skill_content.library"));
-        };
+        let library = self.library_runtime.snapshot()?;
         let source = Path::new(&request.source_path);
         validate_skill_source(source)?;
         let previous = library.current(request.skill_id)?;
@@ -3773,22 +3703,12 @@ impl LocalApplicationFacade {
             };
             return Err(cleanup_import_error(error, cleanup));
         }
-        let central = match CentralLibrary::initialize(library_root) {
-            Ok(central) => central,
-            Err(error) => {
-                let rollback = restore_version_pointer(library, request.skill_id, previous.clone());
-                let cleanup = rollback.and_then(|()| {
-                    if captured.created {
-                        library.discard_sync(&version)
-                    } else {
-                        Ok(())
-                    }
-                });
-                return Err(cleanup_import_error(error, cleanup));
-            }
-        };
-        if let Err(error) = central.materialize_current_skill(&skill, &version.id) {
-            let rollback = restore_version_pointer(library, request.skill_id, previous.clone());
+        if let Err(error) = library
+            .central
+            .materialize_current_skill(&skill, &version.id)
+        {
+            let rollback =
+                restore_version_pointer(&library.store, request.skill_id, previous.clone());
             let cleanup = rollback.and_then(|()| {
                 if captured.created {
                     library.discard_sync(&version)
@@ -3798,8 +3718,11 @@ impl LocalApplicationFacade {
             });
             return Err(cleanup_import_error(error, cleanup));
         }
-        if let Err(error) = central.save_portable_skill(&skill, Some(&version.id)) {
-            let rollback = restore_version_pointer(library, request.skill_id, previous);
+        if let Err(error) = library
+            .central
+            .save_portable_skill(&skill, Some(&version.id))
+        {
+            let rollback = restore_version_pointer(&library.store, request.skill_id, previous);
             let cleanup = rollback.and_then(|()| {
                 if captured.created {
                     library.discard_sync(&version)
@@ -3820,12 +3743,7 @@ impl LocalApplicationFacade {
     }
 
     fn save_markdown_content(&self, request: SaveMarkdownContent) -> AppResult<AppCommandResult> {
-        let Some(library) = self.library.as_ref() else {
-            return Err(unsupported("execute.save_markdown_content.library"));
-        };
-        let Some(library_root) = self.library_root.as_ref() else {
-            return Err(unsupported("execute.save_markdown_content.library"));
-        };
+        let library = self.library_runtime.snapshot()?;
         let relative = validate_markdown_path(&request.path)?;
         if request.markdown.len() > 1_048_576 {
             return Err(AppError::new(ErrorCode::InvalidInput, Severity::Error)
@@ -3871,24 +3789,15 @@ impl LocalApplicationFacade {
                 };
                 return Err(cleanup_import_error(error, cleanup));
             }
-            let central = match CentralLibrary::initialize(library_root) {
-                Ok(central) => central,
-                Err(error) => {
-                    let rollback =
-                        restore_version_pointer(library, request.skill_id, Some(current.clone()));
-                    let cleanup = rollback.and_then(|()| {
-                        if captured.created {
-                            library.discard_sync(&version)
-                        } else {
-                            Ok(())
-                        }
-                    });
-                    return Err(cleanup_import_error(error, cleanup));
-                }
-            };
-            if let Err(error) = central.materialize_current_skill(&skill, &version.id) {
-                let rollback =
-                    restore_version_pointer(library, request.skill_id, Some(current.clone()));
+            if let Err(error) = library
+                .central
+                .materialize_current_skill(&skill, &version.id)
+            {
+                let rollback = restore_version_pointer(
+                    &library.store,
+                    request.skill_id,
+                    Some(current.clone()),
+                );
                 let cleanup = rollback.and_then(|()| {
                     if captured.created {
                         library.discard_sync(&version)
@@ -3898,9 +3807,15 @@ impl LocalApplicationFacade {
                 });
                 return Err(cleanup_import_error(error, cleanup));
             }
-            if let Err(error) = central.save_portable_skill(&skill, Some(&version.id)) {
-                let rollback =
-                    restore_version_pointer(library, request.skill_id, Some(current.clone()));
+            if let Err(error) = library
+                .central
+                .save_portable_skill(&skill, Some(&version.id))
+            {
+                let rollback = restore_version_pointer(
+                    &library.store,
+                    request.skill_id,
+                    Some(current.clone()),
+                );
                 let cleanup = rollback.and_then(|()| {
                     if captured.created {
                         library.discard_sync(&version)
@@ -4262,19 +4177,15 @@ impl ApplicationFacade for LocalApplicationFacade {
             AppCommand::SaveMarkdownContent(request) => return self.save_markdown_content(request),
             AppCommand::PrepareBackup(request) => {
                 let input = self.build_backup_input(request.scope)?;
-                let Some(root) = self.library_root.as_ref() else {
-                    return Err(unsupported("execute.prepare_backup.library"));
-                };
-                let plan = BackupService::new(LibraryPaths::from_root(root).backups_dir)
+                let library = self.library_runtime.snapshot()?;
+                let plan = BackupService::new(library.root.join(".skillhub").join("backups"))
                     .prepare(&input)?;
                 return Ok(AppCommandResult::BackupPlan(plan));
             }
             AppCommand::CreateBackup(request) => {
                 let input = self.build_backup_input(request.scope)?;
-                let Some(root) = self.library_root.as_ref() else {
-                    return Err(unsupported("execute.create_backup.library"));
-                };
-                let service = BackupService::new(LibraryPaths::from_root(root).backups_dir);
+                let library = self.library_runtime.snapshot()?;
+                let service = BackupService::new(library.root.join(".skillhub").join("backups"));
                 let plan = service.prepare(&input)?;
                 let decisions = request
                     .decisions
@@ -4300,18 +4211,14 @@ impl ApplicationFacade for LocalApplicationFacade {
             }
             AppCommand::PrepareRestore(request) => {
                 let package = Self::backup_package(request.path)?;
-                let Some(root) = self.library_root.as_ref() else {
-                    return Err(unsupported("execute.prepare_restore.library"));
-                };
-                let plan = RestoreService::new(root.clone()).prepare(&package)?;
+                let library = self.library_runtime.snapshot()?;
+                let plan = RestoreService::new(library.root.clone()).prepare(&package)?;
                 return Ok(AppCommandResult::RestorePlan(plan));
             }
             AppCommand::CommitRestore(request) => {
                 let package = Self::backup_package(request.path)?;
-                let Some(root) = self.library_root.as_ref() else {
-                    return Err(unsupported("execute.commit_restore.library"));
-                };
-                let service = RestoreService::new(root.clone());
+                let library = self.library_runtime.snapshot()?;
+                let service = RestoreService::new(library.root.clone());
                 let plan = service.prepare(&package)?;
                 let decisions = request
                     .decisions
@@ -4323,11 +4230,8 @@ impl ApplicationFacade for LocalApplicationFacade {
             }
             AppCommand::RunRollingBackup(request) => {
                 let input = self.build_backup_input(request.scope)?;
-                let Some(root) = self.library_root.as_ref() else {
-                    return Err(unsupported("execute.run_rolling_backup.library"));
-                };
-                let paths = LibraryPaths::from_root(root);
-                let backup = BackupService::new(paths.backups_dir.clone());
+                let library = self.library_runtime.snapshot()?;
+                let backup = BackupService::new(library.root.join(".skillhub").join("backups"));
                 let plan = backup.prepare(&input)?;
                 let decisions = request
                     .decisions
@@ -4337,7 +4241,8 @@ impl ApplicationFacade for LocalApplicationFacade {
                 let package = backup.create(&input, &plan, &decisions)?;
                 backup.verify(&package)?;
                 let retention =
-                    RetentionService::new(paths.backups_dir).apply(request.retention)?;
+                    RetentionService::new(library.root.join(".skillhub").join("backups"))
+                        .apply(request.retention)?;
                 return Ok(AppCommandResult::BackupRetentionResult(retention));
             }
             AppCommand::PrepareStandardExport(request) => {
@@ -4578,10 +4483,10 @@ impl ApplicationFacade for LocalApplicationFacade {
             AppQuery::GetSkill(request) => {
                 let skill_id = request.skill_id;
                 let current_version = self
-                    .library
-                    .as_ref()
-                    .map(|library| library.current(skill_id))
-                    .transpose()?
+                    .library_runtime
+                    .snapshot()
+                    .ok()
+                    .and_then(|library| library.current(skill_id).ok())
                     .flatten();
                 // QA-010：可读标签在详情查询前计算，哈希不进入展示层。
                 let current_version_label = match current_version.as_ref() {
@@ -4861,11 +4766,9 @@ impl LocalApplicationFacade {
     }
 
     fn get_deployment_plan(&self, request: DeploymentPlanRequest) -> AppResult<AppQueryResult> {
-        let library_root = self
-            .library_root
-            .as_ref()
-            .ok_or_else(|| unsupported("query.get_deployment_plan"))?;
-        let source_path = library_root
+        let library = self.library_runtime.snapshot()?;
+        let source_path = library
+            .root
             .join("versions")
             .join(request.skill_id.to_string())
             .join(request.version_id.as_str());
@@ -5043,12 +4946,10 @@ impl LocalApplicationFacade {
         ) {
             return Err(unsupported("execute.commit_import.decision"));
         }
-        let Some(library_root) = self.library_root.as_ref() else {
-            return Err(unsupported("execute.commit_import.library"));
-        };
+        let library = self.library_runtime.snapshot()?;
         self.with_database("execute.commit_import", |database| {
-            let central = CentralLibrary::initialize(library_root)?;
-            let store = VersionStore::from_library(&central);
+            let central = &library.central;
+            let store = &library.store;
             let skill_id = skillhub_core::SkillId::new();
             let source = Path::new(&prepared.candidate.absolute_root);
             let version = store.capture(skill_id, source)?;
@@ -5236,25 +5137,21 @@ impl LocalApplicationFacade {
         if named.is_some() {
             return Ok(named);
         }
-        let Some(library) = self.library.as_ref() else {
-            return Ok(None);
-        };
+        let library = self.library_runtime.snapshot()?;
         let records = library.list(skill_id)?;
-        let (sequence_by_id, _) = version_timeline(library, skill_id, &records);
+        let (sequence_by_id, _) = version_timeline(&library, skill_id, &records);
         Ok(sequence_by_id
             .get(version_id)
             .map(|sequence| format!("v{sequence}")))
     }
 
     fn list_versions(&self, skill_id: skillhub_core::SkillId) -> AppResult<AppQueryResult> {
-        let Some(library) = self.library.as_ref() else {
-            return Err(unsupported("query.list_versions"));
-        };
+        let library = self.library_runtime.snapshot()?;
         let current = library.current(skill_id)?;
         let records = library.list(skill_id)?;
         // AR-021：以清单文件修改时间推导捕获顺序，生成用户可读的版本序号；
         // 时间不可得的版本诚实标为无序号。
-        let (sequence_by_id, epoch_by_id) = version_timeline(library, skill_id, &records);
+        let (sequence_by_id, epoch_by_id) = version_timeline(&library, skill_id, &records);
         let label_by_id: HashMap<String, String> = {
             let ids: Vec<String> = records.iter().map(|record| record.id.to_string()).collect();
             self.with_database("query.list_version_labels", |database| {
@@ -5299,9 +5196,7 @@ impl LocalApplicationFacade {
         left: &skillhub_core::VersionId,
         right: &skillhub_core::VersionId,
     ) -> AppResult<AppQueryResult> {
-        let Some(library) = self.library.as_ref() else {
-            return Err(unsupported("query.diff_versions"));
-        };
+        let library = self.library_runtime.snapshot()?;
         let diff = library.diff(left, right)?;
         Ok(AppQueryResult::VersionDiff(
             skillhub_core::api::VersionDiffResult {
@@ -5409,9 +5304,7 @@ impl LocalApplicationFacade {
     }
 
     fn list_markdown_files(&self, skill_id: skillhub_core::SkillId) -> AppResult<AppQueryResult> {
-        let Some(library) = self.library.as_ref() else {
-            return Err(unsupported("query.list_markdown_files"));
-        };
+        let library = self.library_runtime.snapshot()?;
         let Some(version_id) = library.current(skill_id)? else {
             return Ok(AppQueryResult::MarkdownFiles(Vec::new()));
         };
@@ -5433,9 +5326,7 @@ impl LocalApplicationFacade {
         skill_id: skillhub_core::SkillId,
         path: &str,
     ) -> AppResult<AppQueryResult> {
-        let Some(library) = self.library.as_ref() else {
-            return Err(unsupported("query.read_markdown_file"));
-        };
+        let library = self.library_runtime.snapshot()?;
         let extension_is_markdown = Path::new(path)
             .extension()
             .and_then(|value| value.to_str())
@@ -5797,11 +5688,7 @@ impl skillhub_core::SkillResolutionPort for LocalResolution<'_> {
         &self,
         requirement: &skillhub_core::SharedSkillRequirement,
     ) -> AppResult<skillhub_core::SkillResolution> {
-        let Some(library) = self.facade.library.as_ref() else {
-            return Ok(skillhub_core::SkillResolution::Missing {
-                requested_source: requirement.source.as_str().to_owned(),
-            });
-        };
+        let library = self.facade.library_runtime.snapshot()?;
         let version = if let Some(version) = requirement.version_id.clone() {
             Some(version)
         } else {
@@ -5895,9 +5782,7 @@ impl skillhub_core::DeploymentPreparationPort for LocalAssemblyDeployment<'_> {
         let Some(target_id) = requirement.logical_agent_id.as_ref() else {
             return Ok(());
         };
-        let Some(library_root) = self.facade.library_root.as_ref() else {
-            return Err(unsupported("assembly.commit.library"));
-        };
+        let library = self.facade.library_runtime.snapshot()?;
         let (target, source_path) =
             self.facade
                 .with_database("assembly.commit.target", |database| {
@@ -5921,7 +5806,8 @@ impl skillhub_core::DeploymentPreparationPort for LocalAssemblyDeployment<'_> {
                                 .with_action(RecoveryAction::InspectTarget)
                         })?
                         .clone();
-                    let source = library_root
+                    let source = library
+                        .root
                         .join("versions")
                         .join(requirement.skill_id.to_string())
                         .join(version_id.as_str());
