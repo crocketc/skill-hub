@@ -1,10 +1,10 @@
-import { act, screen, render } from "@testing-library/react";
+import { act, screen, render, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { I18nextProvider } from "react-i18next";
 import { describe, expect, it, vi } from "vitest";
 import { createSkillHubI18n } from "../../i18n";
 import { createOperationTracker } from "../../platform/operationTracker";
-import { createMockImportFacade, type ImportPlan } from "./api";
+import { createMockImportFacade, unavailableImportFacade, type ImportPlan, type ImportResult } from "./api";
 import { ImportWizard } from "./ImportWizard";
 
 async function renderWizard(facade = createMockImportFacade({ scenario: "safe-local" }), tracker?: ReturnType<typeof createOperationTracker>) {
@@ -32,6 +32,140 @@ async function renderGuidedWizard(facade = createMockImportFacade({ scenario: "s
   return facade;
 }
 
+it("exposes the unified step rail and keeps the primary action in a stable footer", async () => {
+  const user = userEvent.setup();
+  await renderWizard();
+
+  const rail = screen.getByRole("list", { name: "导入步骤" });
+  const steps = within(rail).getAllByRole("listitem");
+  expect(steps).toHaveLength(4);
+  expect(steps[0]).toHaveAttribute("aria-current", "step");
+  expect(steps[0]).toHaveTextContent("选择来源");
+  expect(steps[3]).toHaveTextContent("导入完成");
+
+  const parse = screen.getByRole("button", { name: "解析来源" });
+  const footerBefore = parse.closest("footer");
+  expect(footerBefore).not.toBeNull();
+
+  await user.type(screen.getByLabelText("来源"), "C:/skills/pdf");
+  await user.click(parse);
+  await user.click(await screen.findByRole("button", { name: "继续选择候选" }));
+
+  const railAfter = screen.getByRole("list", { name: "导入步骤" });
+  const stepsAfter = within(railAfter).getAllByRole("listitem");
+  expect(stepsAfter[0]).toHaveTextContent("已完成");
+  expect(stepsAfter[1]).toHaveAttribute("aria-current", "step");
+
+  // 主操作换成了"分析冲突"，但仍必须挂在同一个 footer 操作区内。
+  const analyze = screen.getByRole("button", { name: "分析冲突" });
+  const footerAfter = analyze.closest("footer");
+  expect(footerAfter).not.toBeNull();
+  expect(footerAfter).toBe(footerBefore);
+});
+
+it("keeps the acquisition failure alert visible and recovers through the footer retry", async () => {
+  const user = userEvent.setup();
+  const facade = createMockImportFacade({ scenario: "safe-local" });
+  facade.acquireCandidates = vi.fn(async () => {
+    throw new Error("simulated acquisition failure");
+  });
+  await renderWizard(facade);
+
+  await user.type(screen.getByLabelText("来源"), "C:/skills/pdf");
+  await user.click(screen.getByRole("button", { name: "解析来源" }));
+
+  // 失败态：告警、来源表单与底部重试并存，不合并成单一提示。
+  expect(await screen.findByRole("alert")).toBeVisible();
+  expect(screen.getByLabelText("来源")).toBeVisible();
+  const retry = screen.getByRole("button", { name: "重试" });
+  expect(retry.closest("footer")).not.toBeNull();
+
+  await user.click(retry);
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  expect(screen.getByLabelText("来源")).toBeVisible();
+});
+
+it("keeps the wizard recoverable when the host facade is unavailable", async () => {
+  const user = userEvent.setup();
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  render(
+    <I18nextProvider i18n={i18n}>
+      <ImportWizard facade={unavailableImportFacade} />
+    </I18nextProvider>,
+  );
+
+  await user.type(screen.getByLabelText("来源"), "C:/skills/pdf");
+  await user.click(screen.getByRole("button", { name: "解析来源" }));
+
+  expect(await screen.findByRole("alert")).toBeVisible();
+  expect(screen.getByRole("button", { name: "重试" })).toBeVisible();
+});
+
+it("offers the cancelled state its own message and footer retry without merging with failures", async () => {
+  const user = userEvent.setup();
+  await renderWizard(createMockImportFacade({ scenario: "cancelled" }));
+
+  await user.type(screen.getByLabelText("来源"), "C:\\Skills\\pdf");
+  await user.click(screen.getByRole("button", { name: "解析来源" }));
+  await user.click(await screen.findByRole("button", { name: "取消获取" }));
+
+  expect(screen.getByText("获取已取消，来源内容仍然保留。")).toBeVisible();
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  const retry = screen.getByRole("button", { name: "重试获取" });
+  expect(retry.closest("footer")).not.toBeNull();
+  expect(screen.getByLabelText("来源")).toHaveValue("C:\\Skills\\pdf");
+});
+
+it("returns a partially failed summary to a fresh run through the footer retry", async () => {
+  const user = userEvent.setup();
+  const facade = createMockImportFacade({ scenario: "safe-local" });
+  facade.commitImport = vi.fn(async (): Promise<ImportResult[]> => [
+    { candidateId: "safe-pdf", action: "copy", status: "succeeded", message: "已导入" },
+    { candidateId: "safe-browser", action: "copy", status: "failed", message: "写入失败" },
+  ]);
+  await renderWizard(facade);
+
+  await user.type(screen.getByLabelText("来源"), "C:/skills/pdf");
+  await user.click(screen.getByRole("button", { name: "解析来源" }));
+  await user.click(await screen.findByRole("button", { name: "继续选择候选" }));
+  await user.click(screen.getByRole("button", { name: "全选可导入候选" }));
+  await user.click(screen.getByRole("button", { name: "分析冲突" }));
+  await user.click(await screen.findByRole("button", { name: "提交导入" }));
+
+  expect(await screen.findByText("写入失败")).toBeVisible();
+  const retry = screen.getByRole("button", { name: "重试" });
+  expect(retry.closest("footer")).not.toBeNull();
+  await user.click(retry);
+
+  // 恢复路径：摘要重试回到来源步骤重新发起，绝不静默重复提交。
+  expect(await screen.findByRole("button", { name: "解析来源" })).toBeVisible();
+  expect(facade.commitImport).toHaveBeenCalledTimes(1);
+});
+
+it("keeps keyboard focus on the flow heading across phase changes", async () => {
+  const user = userEvent.setup();
+  await renderWizard();
+
+  await user.type(screen.getByLabelText("来源"), "C:/skills/pdf");
+  await user.click(screen.getByRole("button", { name: "解析来源" }));
+  // 阶段切换时原主操作卸载；焦点必须落回稳定目标，不能丢失到 body。
+  await screen.findByRole("button", { name: "继续选择候选" });
+  expect(document.activeElement).toBe(document.body);
+
+  await user.click(screen.getByRole("button", { name: "继续选择候选" }));
+  expect(screen.getByRole("heading", { name: "导入 Skill" })).toHaveFocus();
+});
+
+it("announces phase progress through the persistent status region", async () => {
+  const user = userEvent.setup();
+  await renderWizard();
+
+  await user.type(screen.getByLabelText("来源"), "C:/skills/pdf");
+  await user.click(screen.getByRole("button", { name: "解析来源" }));
+
+  expect(await screen.findByText("候选项已准备好")).toBeVisible();
+});
+
 it("parses npx text without executing it and reaches candidate selection", async () => {
   const user = userEvent.setup();
   const facade = await renderWizard();
@@ -55,6 +189,36 @@ it("suggests takeover for Agent-owned candidates and requires explicit selection
 
   expect(await screen.findByRole("radio", { name: "保留当前位置并纳入管理" })).not.toBeChecked();
   expect(screen.getByRole("button", { name: "提交导入" })).toBeDisabled();
+});
+
+it("requires a candidate selection before analyzing", async () => {
+  const user = userEvent.setup();
+  await renderWizard();
+
+  await user.type(screen.getByLabelText("来源"), "C:/skills/pdf");
+  await user.click(screen.getByRole("button", { name: "解析来源" }));
+  await user.click(await screen.findByRole("button", { name: "继续选择候选" }));
+
+  const analyze = screen.getByRole("button", { name: "分析冲突" });
+  expect(analyze).toBeDisabled();
+  await user.click(screen.getByRole("checkbox", { name: /PDF/ }));
+  expect(analyze).toBeEnabled();
+});
+
+it("keeps commit disabled until every required conflict has an explicit decision", async () => {
+  const user = userEvent.setup();
+  await renderWizard(createMockImportFacade({ scenario: "agent-owned-partial" }));
+
+  await user.type(screen.getByLabelText("来源"), "C:/skills/pdf");
+  await user.click(screen.getByRole("button", { name: "解析来源" }));
+  await user.click(await screen.findByRole("button", { name: "继续选择候选" }));
+  await user.click(screen.getByRole("checkbox", { name: /PDF/ }));
+  await user.click(screen.getByRole("button", { name: "分析冲突" }));
+
+  const commit = await screen.findByRole("button", { name: "提交导入" });
+  expect(commit).toBeDisabled();
+  await user.click(screen.getByRole("radio", { name: "保留当前位置并纳入管理" }));
+  expect(commit).toBeEnabled();
 });
 
 it("preserves source text after cancellation", async () => {

@@ -4,38 +4,34 @@ import type { SourceDescriptor } from "./api";
 
 export interface SourceInputProps {
   value: string;
-  actionLabel?: string;
   descriptor?: SourceDescriptor;
   disabled?: boolean;
   suggestedSources?: string[];
   selectedSources?: string[];
   onChange: (value: string) => void;
-  onParse: () => void;
   /** AR-006：把手动输入追加为第 N 个来源（混合导入），不清空已选来源。 */
-  onAddSource?: (source: string) => void;
   onPickLocalPath?: () => void;
   onToggleSource?: (source: string) => void;
   onSelectAllSources?: () => void;
 }
 
+/**
+ * 来源表单区：只承载表单语义（扫描来源、目录选择、来源识别）。
+ * 解析/追加来源等流程动作由向导底部的稳定操作区统一提供。
+ */
 export function SourceInput({
   value,
-  actionLabel,
   descriptor,
   disabled = false,
   suggestedSources = [],
   selectedSources = [],
   onChange,
-  onParse,
-  onAddSource,
   onPickLocalPath,
   onToggleSource,
   onSelectAllSources,
 }: SourceInputProps) {
   const { t } = useTranslation();
   const isNpxReference = /^npx\s+skills\s+add\s+/i.test(value.trim());
-  const allSuggestedSourcesSelected = suggestedSources.length > 0
-    && suggestedSources.every((source) => selectedSources.includes(source));
 
   return (
     <section className="sh-import-source" aria-labelledby="import-source-title">
@@ -45,7 +41,6 @@ export function SourceInput({
           <h2 id="import-source-title">{t("importWorkflow.source.title")}</h2>
           <p>{t("importWorkflow.source.description")}</p>
         </div>
-        <span className="sh-import-source__step">{t("importWorkflow.step", { current: 1, total: 4 })}</span>
       </div>
 
       {suggestedSources.length > 0 ? (
@@ -54,7 +49,7 @@ export function SourceInput({
           <p>{t("importWorkflow.source.scannedSourcesDescription")}</p>
           {onSelectAllSources ? (
             <Button disabled={disabled} onClick={onSelectAllSources} variant="secondary">
-              {t(allSuggestedSourcesSelected
+              {t(selectedSources.length > 0 && suggestedSources.every((source) => selectedSources.includes(source))
                 ? "importWorkflow.source.deselectAllSources"
                 : "importWorkflow.source.selectAllSources")}
             </Button>
@@ -112,17 +107,6 @@ export function SourceInput({
           </div>
         </dl>
       ) : null}
-
-      <div className="sh-import-source__actions">
-        <Button disabled={disabled || (!value.trim() && selectedSources.length === 0)} onClick={onParse}>
-          {actionLabel ?? t("importWorkflow.source.parse")}
-        </Button>
-        {onAddSource && selectedSources.length > 0 ? (
-          <Button disabled={disabled || !value.trim()} onClick={() => onAddSource(value)} variant="secondary">
-            {t("importWorkflow.source.addSource")}
-          </Button>
-        ) : null}
-      </div>
     </section>
   );
 }

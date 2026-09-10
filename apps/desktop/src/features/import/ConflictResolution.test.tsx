@@ -14,25 +14,14 @@ const conflict: ImportConflict = {
   required: true,
 };
 
-it("keeps commit disabled until every required conflict has an action", async () => {
-  const i18n = await createSkillHubI18n(["zh-CN"]);
-  const onAction = vi.fn();
-  render(
-    <I18nextProvider i18n={i18n}>
-      <ConflictResolution conflicts={[conflict]} actions={{}} onAction={onAction} onContinue={vi.fn()} onBack={vi.fn()} />
-    </I18nextProvider>,
-  );
-
-  expect(screen.getByRole("button", { name: "继续" })).toBeDisabled();
-  fireEvent.click(screen.getByRole("radio", { name: "保留当前位置并纳入管理" }));
-  expect(onAction).toHaveBeenCalledWith("agent-pdf", "takeover");
-});
+// “提交前必须为每个必选冲突显式决策”的门槛语义已上移到向导底部操作区，
+// 由 ImportWizard.test.tsx 的“keeps commit disabled until every required conflict has an explicit decision”覆盖。
 
 it("renders only the actions allowed by each conflict", async () => {
   const i18n = await createSkillHubI18n(["zh-CN"]);
   render(
     <I18nextProvider i18n={i18n}>
-      <ConflictResolution conflicts={[conflict]} actions={{ "agent-pdf": "copy" }} onAction={vi.fn()} onContinue={vi.fn()} onBack={vi.fn()} />
+      <ConflictResolution conflicts={[conflict]} actions={{ "agent-pdf": "copy" }} onAction={vi.fn()} />
     </I18nextProvider>,
   );
 
@@ -89,7 +78,7 @@ it("shows a readable reason and candidate identity instead of raw reason codes",
   };
   render(
     <I18nextProvider i18n={i18n}>
-      <ConflictResolution conflicts={[rawCoded]} actions={{}} onAction={vi.fn()} onContinue={vi.fn()} onBack={vi.fn()} />
+      <ConflictResolution conflicts={[rawCoded]} actions={{}} onAction={vi.fn()} />
     </I18nextProvider>,
   );
 
@@ -118,7 +107,7 @@ it("falls back to an honest label when a conflict kind has no mapping", async ()
   };
   render(
     <I18nextProvider i18n={i18n}>
-      <ConflictResolution conflicts={[unknown]} actions={{}} onAction={vi.fn()} onContinue={vi.fn()} onBack={vi.fn()} />
+      <ConflictResolution conflicts={[unknown]} actions={{}} onAction={vi.fn()} />
     </I18nextProvider>,
   );
 
@@ -129,7 +118,7 @@ it("describes the impact of every decision option", async () => {
   const i18n = await createSkillHubI18n(["zh-CN"]);
   render(
     <I18nextProvider i18n={i18n}>
-      <ConflictResolution conflicts={[sameNameA]} actions={{}} onAction={vi.fn()} onContinue={vi.fn()} onBack={vi.fn()} />
+      <ConflictResolution conflicts={[sameNameA]} actions={{}} onAction={vi.fn()} />
     </I18nextProvider>,
   );
 
@@ -144,7 +133,7 @@ it("lists the existing skills and content difference a conflict involves", async
   const i18n = await createSkillHubI18n(["zh-CN"]);
   render(
     <I18nextProvider i18n={i18n}>
-      <ConflictResolution conflicts={[sameNameA]} actions={{}} onAction={vi.fn()} onContinue={vi.fn()} onBack={vi.fn()} />
+      <ConflictResolution conflicts={[sameNameA]} actions={{}} onAction={vi.fn()} />
     </I18nextProvider>,
   );
 
@@ -163,8 +152,6 @@ it("filters conflicts by reason and applies the batch action only to the filtere
         conflicts={[sameNameA, exactDuplicate, sameNameB]}
         actions={{}}
         onAction={onAction}
-        onContinue={vi.fn()}
-        onBack={vi.fn()}
       />
     </I18nextProvider>,
   );
@@ -201,8 +188,6 @@ it("keeps individual choices working while a category filter is active", async (
         conflicts={[sameNameA, exactDuplicate]}
         actions={{}}
         onAction={onAction}
-        onContinue={vi.fn()}
-        onBack={vi.fn()}
       />
     </I18nextProvider>,
   );
@@ -223,8 +208,6 @@ it("applies one chosen action to every conflict of the filtered kind at once", a
         conflicts={[sameNameA, sameNameB]}
         actions={{}}
         onAction={onAction}
-        onContinue={vi.fn()}
-        onBack={vi.fn()}
       />
     </I18nextProvider>,
   );
