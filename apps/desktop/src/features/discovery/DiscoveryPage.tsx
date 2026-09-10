@@ -9,6 +9,7 @@ import {
   type OperationTracker,
 } from "../../platform/operationTracker";
 import { Button } from "../../ui/Button";
+import { Icon, type IconName } from "../../ui/Icon";
 import { LocalDiscovery } from "./LocalDiscovery";
 import { LocalDiscoveryWorkbench } from "./LocalDiscoveryWorkbench";
 import { OnlineDiscovery } from "./OnlineDiscovery";
@@ -67,7 +68,8 @@ type HomeCardTextKey =
 
 interface HomeCardSpec {
   view: DiscoveryModuleView;
-  icon: string;
+  /** ui/Icon 功能注册表名；与品牌 Logo 注册表严格分离。 */
+  icon: IconName;
   titleKey: HomeCardTextKey;
   descriptionKey: HomeCardTextKey;
   noteKey?: HomeCardTextKey;
@@ -77,25 +79,25 @@ interface HomeCardSpec {
 const HOME_CARDS: HomeCardSpec[] = [
   {
     view: "local",
-    icon: "⌂",
+    icon: "overview",
     titleKey: "discovery.home.cards.local.title",
     descriptionKey: "discovery.home.cards.local.description",
   },
   {
     view: "online",
-    icon: "↗",
+    icon: "open-external",
     titleKey: "discovery.home.cards.online.title",
     descriptionKey: "discovery.home.cards.online.description",
   },
   {
     view: "repo",
-    icon: "⭳",
+    icon: "import",
     titleKey: "discovery.home.cards.repo.title",
     descriptionKey: "discovery.home.cards.repo.description",
   },
   {
     view: "lock",
-    icon: "⇣",
+    icon: "operations",
     titleKey: "discovery.home.cards.lock.title",
     descriptionKey: "discovery.home.cards.lock.description",
     noteKey: "discovery.home.cards.lock.note",
@@ -206,7 +208,9 @@ function DiscoveryHome({ onNavigate }: { onNavigate?: (view: DiscoveryModuleView
                   : "sh-discovery-home__card"
               }
             >
-              <span aria-hidden="true" className="sh-discovery-home__icon">{card.icon}</span>
+              <span aria-hidden="true" className="sh-discovery-home__icon">
+                <Icon name={card.icon} size={20} />
+              </span>
               <h2 className="sh-discovery-home__title">{title}</h2>
               <p className="sh-discovery-home__description">{t(card.descriptionKey)}</p>
               {card.noteKey ? (

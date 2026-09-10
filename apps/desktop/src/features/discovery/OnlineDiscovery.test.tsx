@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { I18nextProvider } from "react-i18next";
 import { describe, expect, it, vi } from "vitest";
 import { createSkillHubI18n } from "../../i18n";
@@ -94,6 +94,35 @@ it("renders view and install actions for each online search hit", async () => {
   expect(screen.getByRole("button", { name: "安装导入" })).toBeVisible();
   expect(screen.getByText("来源：skills.sh")).toBeVisible();
   expect(screen.getByText("安装次数：42")).toBeVisible();
+});
+
+it("renders each online hit as a shared skill card with honest metadata", async () => {
+  await renderSearched(baseFacade());
+
+  const title = screen.getByRole("heading", { name: "PDF Reader" });
+  const card = title.closest("article");
+  expect(card).not.toBeNull();
+  const scope = within(card as HTMLElement);
+  expect(scope.getByText("来源：skills.sh")).toBeVisible();
+  expect(scope.getByText("安装次数：42")).toBeVisible();
+  // 标题、链接与操作保持独立语义：链接和按钮在卡片内，但卡片本身不是按钮。
+  expect(scope.getByRole("link", { name: "查看" })).toBeVisible();
+  expect(scope.getByRole("button", { name: "安装导入" })).toBeVisible();
+});
+
+it("marks hits without a usable GitHub source as honestly not installable", async () => {
+  const localHit = {
+    ...hit,
+    source_id: "local/unknown",
+    source: { kind: "local" as const, locator: { local_path: "C:/skills/pdf" } },
+  };
+  const localPage: SourceSearchPage = { ...page, items: [localHit], count: 1 };
+  await renderSearched(
+    baseFacade({ searchOnlineSources: vi.fn(async () => localPage) }),
+  );
+
+  expect(screen.getByText("不可安装")).toBeVisible();
+  expect(screen.getByRole("button", { name: "安装导入" })).toBeDisabled();
 });
 
 it("opens the result page in the platform browser after explicit confirmation", async () => {

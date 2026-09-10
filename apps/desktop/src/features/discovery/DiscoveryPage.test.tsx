@@ -28,6 +28,39 @@ it("renders four fixed discovery module cards on the home page without runtime c
   expect(screen.queryByText(/已授权|可用|验证通过/)).not.toBeInTheDocument();
 });
 
+it("renders home module icons from the icon registry instead of font glyphs", async () => {
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  const { container } = render(
+    <I18nextProvider i18n={i18n}>
+      <DiscoveryPage />
+    </I18nextProvider>,
+  );
+
+  // 字体字符不再充当正式操作的图标；装饰图标由注册表 SVG 承担。
+  expect(screen.queryByText("⌂")).not.toBeInTheDocument();
+  expect(screen.queryByText("↗")).not.toBeInTheDocument();
+  expect(screen.queryByText("⭳")).not.toBeInTheDocument();
+  expect(screen.queryByText("⇣")).not.toBeInTheDocument();
+  const icons = container.querySelectorAll("article svg");
+  expect(icons).toHaveLength(4);
+  for (const icon of icons) {
+    expect(icon).toHaveAttribute("aria-hidden", "true");
+  }
+});
+
+it("keeps the local subpage free of font-glyph icons", async () => {
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  const { container } = render(
+    <I18nextProvider i18n={i18n}>
+      <DiscoveryPage view="local" />
+    </I18nextProvider>,
+  );
+
+  expect(screen.getByRole("heading", { name: "本地发现" })).toBeVisible();
+  expect(screen.queryByText("⌂")).not.toBeInTheDocument();
+  expect(container.querySelector("section svg")).not.toBeNull();
+});
+
 it("navigates from each home card to its module subpage", async () => {
   const i18n = await createSkillHubI18n(["zh-CN"]);
   const onNavigate = vi.fn();

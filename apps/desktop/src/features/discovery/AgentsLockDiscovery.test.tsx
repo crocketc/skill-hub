@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { I18nextProvider } from "react-i18next";
 import { expect, it, vi } from "vitest";
@@ -56,6 +56,23 @@ it("scans the lock file and lists github entries", async () => {
   expect(screen.getByText(/skills\/pdf/)).toBeVisible();
   // 无 skill_path 的整仓条目不显示子目录行
   expect(screen.queryByText(/skillPath/)).not.toBeInTheDocument();
+});
+
+it("renders lock entries as shared skill cards with honest omission", async () => {
+  const user = userEvent.setup();
+  await renderCard(makeFacade());
+
+  await user.click(await screen.findByRole("button", { name: "扫描 lock 文件" }));
+
+  const title = await screen.findByRole("heading", { name: "pdf" });
+  const card = title.closest("article");
+  expect(card).not.toBeNull();
+  const scope = within(card as HTMLElement);
+  expect(scope.getByText("anthropics/skills@v2")).toBeVisible();
+  expect(scope.getByText(/仓库内路径：skills\/pdf/)).toBeVisible();
+  expect(scope.getByRole("button", { name: "下载并导入" })).toBeVisible();
+  // lock 条目没有描述与安装数：卡片如实省略，不伪造元数据。
+  expect(scope.queryByText(/安装次数|暂无描述/)).not.toBeInTheDocument();
 });
 
 it("shows an honest empty state when the lock file is missing or empty", async () => {

@@ -3,7 +3,11 @@ import { useTranslation } from "react-i18next";
 import { describeNativeError } from "../../api/nativeErrors";
 import { Button } from "../../ui/Button";
 import { ConfirmDialog } from "../../ui/ConfirmDialog";
+import { Icon } from "../../ui/Icon";
+import { Input } from "../../ui/Input";
 import { ExternalLink } from "../markdown/ExternalLink";
+import { SkillCard } from "../shared/skill-card/SkillCard";
+import type { SkillCardViewModel } from "../shared/skill-card/SkillCardViewModel";
 import type { DiscoverableRepoSkill, SkillRepo } from "../../api/bindings";
 import type { DiscoveryFacade } from "./api";
 
@@ -167,137 +171,157 @@ export function RepoDiscovery({ facade, onImportDirectory }: RepoDiscoveryProps)
     [facade, onImportDirectory, t],
   );
 
+  // 仓库归档缺少的字段（如空描述）如实省略，不伪造卡片内容。
+  const toCard = (skill: DiscoverableRepoSkill): SkillCardViewModel => ({
+    id: skill.key,
+    name: skill.name,
+    sourceType: "repo",
+    sourceLabel: `${skill.repo_owner}/${skill.repo_name}@${skill.repo_branch}`,
+    description: skill.description || undefined,
+    location: skill.directory || undefined,
+    sourceAddress: skill.readme_url ?? undefined,
+  });
+
   return (
-    <article aria-label={t("discovery.repo.title")} className="sh-discovery-card">
-      <div className="sh-discovery-card__heading">
+    <section aria-label={t("discovery.repo.title")} className="sh-discovery-module">
+      <header className="sh-discovery-module__heading">
         <div>
-          <p className="sh-discovery-card__eyebrow">{t("discovery.repo.eyebrow")}</p>
+          <p className="sh-discovery-module__eyebrow">{t("discovery.repo.eyebrow")}</p>
           <h2>{t("discovery.repo.title")}</h2>
         </div>
-        <span aria-hidden="true" className="sh-discovery-card__icon">⭳</span>
-      </div>
-      <p>{t("discovery.repo.description")}</p>
+        <span aria-hidden="true" className="sh-discovery-module__icon">
+          <Icon name="import" size={24} />
+        </span>
+      </header>
+      <p className="sh-discovery-module__description">{t("discovery.repo.description")}</p>
 
-      <ul className="sh-discovery-card__results">
-        {repos.map((repo) => (
-          <li key={`${repo.owner}/${repo.name}`}>
-            <label>
-              <input
-                checked={repo.enabled}
-                onChange={() => void toggleRepo(repo)}
-                type="checkbox"
-                aria-label={t("discovery.repo.enabled")}
-              />
-              <span>{`${repo.owner}/${repo.name}@${repo.branch}`}</span>
-            </label>
-            <ConfirmDialog
-              cancelLabel={t("actions.cancel")}
-              confirmLabel={t("discovery.repo.confirmRemove")}
-              description={t("discovery.repo.confirmRemoveDescription", {
-                repo: `${repo.owner}/${repo.name}`,
-              })}
-              onConfirm={() => void removeRepo()}
-              title={t("discovery.repo.confirmRemoveTitle")}
-              trigger={
-                <Button
-                  onClick={() => setPendingRemoval(repo)}
-                  variant="ghost"
-                >
-                  {t("discovery.repo.remove")}
-                </Button>
-              }
-              variant="primary"
-            />
-          </li>
-        ))}
-        {reposLoaded && repos.length === 0 ? (
-          <li>{t("discovery.repo.empty")}</li>
-        ) : null}
-      </ul>
-
-      <div className="sh-discovery-card__search">
-        <input
-          aria-label={t("discovery.repo.owner")}
-          onChange={(event) => setOwner(event.target.value)}
-          placeholder={t("discovery.repo.owner")}
-          type="text"
-          value={owner}
-        />
-        <input
-          aria-label={t("discovery.repo.name")}
-          onChange={(event) => setName(event.target.value)}
-          placeholder={t("discovery.repo.name")}
-          type="text"
-          value={name}
-        />
-        <input
-          aria-label={t("discovery.repo.branch")}
-          onChange={(event) => setBranch(event.target.value)}
-          placeholder={t("discovery.repo.branch")}
-          type="text"
-          value={branch}
-        />
-        <Button disabled={!owner.trim() || !name.trim()} onClick={() => void addRepo()} variant="secondary">
-          {t("discovery.repo.add")}
-        </Button>
-        <Button disabled={discovering} onClick={() => void discover()} variant="secondary">
-          {discovering ? t("discovery.repo.scanning") : t("discovery.repo.scan")}
-        </Button>
-      </div>
-
-      {discovering ? (
-        <p aria-live="polite" role="status" className="sh-discovery-card__scanning">
-          {t("discovery.repo.scanningElapsed", { seconds: elapsedSeconds })}
-          {" "}
-          {t("discovery.repo.scanningHint")}
-        </p>
-      ) : null}
-
-      {error ? <p role="alert">{error}</p> : null}
-
-      {report ? (
-        <>
-          {report.warnings.length > 0 ? (
-            <ul>
-              {report.warnings.map((warning) => (
-                <li key={`${warning.owner}/${warning.name}`}>
-                  {t("discovery.repo.warning", {
-                    repo: `${warning.owner}/${warning.name}`,
-                    reason: warning.reason,
-                  })}
-                </li>
-              ))}
-            </ul>
-          ) : null}
-          {report.skills.length === 0 ? <p>{t("discovery.repo.noResults")}</p> : null}
-          <ul className="sh-discovery-card__results">
-            {report.skills.map((skill) => (
-              <li key={skill.key}>
-                <span>{skill.name}</span>
-                <span>{skill.description}</span>
-                <span>{`${skill.repo_owner}/${skill.repo_name}@${skill.repo_branch}`}</span>
-                {skill.readme_url ? (
-                  <ExternalLink
-                    onOpen={() => void facade.openExternalUrl(skill.readme_url as string)}
-                    target={skill.readme_url}
+      <div className="sh-discovery-module__body">
+        <ul className="sh-discovery-repos">
+          {repos.map((repo) => (
+            <li key={`${repo.owner}/${repo.name}`}>
+              <label>
+                <input
+                  checked={repo.enabled}
+                  onChange={() => void toggleRepo(repo)}
+                  type="checkbox"
+                  aria-label={t("discovery.repo.enabled")}
+                />
+                <span>{`${repo.owner}/${repo.name}@${repo.branch}`}</span>
+              </label>
+              <ConfirmDialog
+                cancelLabel={t("actions.cancel")}
+                confirmLabel={t("discovery.repo.confirmRemove")}
+                description={t("discovery.repo.confirmRemoveDescription", {
+                  repo: `${repo.owner}/${repo.name}`,
+                })}
+                onConfirm={() => void removeRepo()}
+                title={t("discovery.repo.confirmRemoveTitle")}
+                trigger={
+                  <Button
+                    onClick={() => setPendingRemoval(repo)}
+                    variant="ghost"
                   >
-                    README
-                  </ExternalLink>
-                ) : null}
-                <Button
-                  disabled={downloadingKey !== null}
-                  onClick={() => void downloadAndImport(skill)}
-                  variant="secondary"
-                >
-                  {downloadingKey === skill.key
-                    ? t("discovery.repo.downloading")
-                    : t("discovery.repo.downloadImport")}
-                </Button>
-              </li>
-            ))}
-          </ul>
-        </>
-      ) : null}
-    </article>
+                    {t("discovery.repo.remove")}
+                  </Button>
+                }
+                variant="primary"
+              />
+            </li>
+          ))}
+          {reposLoaded && repos.length === 0 ? (
+            <li>{t("discovery.repo.empty")}</li>
+          ) : null}
+        </ul>
+
+        <div className="sh-discovery-module__controls">
+          <Input
+            aria-label={t("discovery.repo.owner")}
+            onChange={(event) => setOwner(event.target.value)}
+            placeholder={t("discovery.repo.owner")}
+            type="text"
+            value={owner}
+          />
+          <Input
+            aria-label={t("discovery.repo.name")}
+            onChange={(event) => setName(event.target.value)}
+            placeholder={t("discovery.repo.name")}
+            type="text"
+            value={name}
+          />
+          <Input
+            aria-label={t("discovery.repo.branch")}
+            onChange={(event) => setBranch(event.target.value)}
+            placeholder={t("discovery.repo.branch")}
+            type="text"
+            value={branch}
+          />
+          <Button disabled={!owner.trim() || !name.trim()} onClick={() => void addRepo()} variant="secondary">
+            {t("discovery.repo.add")}
+          </Button>
+          <Button disabled={discovering} onClick={() => void discover()} variant="secondary">
+            {discovering ? t("discovery.repo.scanning") : t("discovery.repo.scan")}
+          </Button>
+          {discovering ? (
+            <p aria-live="polite" role="status" className="sh-discovery-repos__scanning">
+              {t("discovery.repo.scanningElapsed", { seconds: elapsedSeconds })}
+              {" "}
+              {t("discovery.repo.scanningHint")}
+            </p>
+          ) : null}
+          {error ? <p role="alert">{error}</p> : null}
+        </div>
+
+        {report ? (
+          <>
+            {report.warnings.length > 0 ? (
+              <ul className="sh-discovery-repos__warnings">
+                {report.warnings.map((warning) => (
+                  <li key={`${warning.owner}/${warning.name}`}>
+                    {t("discovery.repo.warning", {
+                      repo: `${warning.owner}/${warning.name}`,
+                      reason: warning.reason,
+                    })}
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+            {report.skills.length === 0 ? <p>{t("discovery.repo.noResults")}</p> : null}
+            <div className="sh-discovery-results-zone">
+              <ul
+                aria-label={t("discovery.repo.results")}
+                className="sh-discovery-results"
+              >
+                {report.skills.map((skill) => (
+                  <li key={skill.key}>
+                    <SkillCard
+                      primaryAction={
+                        <Button
+                          disabled={downloadingKey !== null}
+                          onClick={() => void downloadAndImport(skill)}
+                          variant="secondary"
+                        >
+                          {downloadingKey === skill.key
+                            ? t("discovery.repo.downloading")
+                            : t("discovery.repo.downloadImport")}
+                        </Button>
+                      }
+                      secondaryAction={skill.readme_url ? (
+                        <ExternalLink
+                          onOpen={() => void facade.openExternalUrl(skill.readme_url as string)}
+                          target={skill.readme_url}
+                        >
+                          README
+                        </ExternalLink>
+                      ) : undefined}
+                      skill={toCard(skill)}
+                    />
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </>
+        ) : null}
+      </div>
+    </section>
   );
 }

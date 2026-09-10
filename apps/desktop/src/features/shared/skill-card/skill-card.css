@@ -1,0 +1,130 @@
+/* 共享 Skill 卡片（T2 独占创建；任务完成后冻结，T3-B 只消费）。
+   只使用语义 token；实体卡片最多一级浅阴影；不做悬停上浮、渐变或整卡点击。 */
+
+.sh-skill-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+  height: 100%;
+  padding: var(--space-4);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-md);
+  background: var(--ui-surface);
+  box-shadow: var(--shadow-sm);
+}
+
+.sh-skill-card__identity {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.sh-skill-card__source-icon {
+  display: grid;
+  flex: 0 0 auto;
+  width: 2rem;
+  height: 2rem;
+  place-items: center;
+  border-radius: var(--radius-xs);
+  background: var(--ui-selected-surface);
+  color: var(--ui-accent);
+}
+
+/* ui/Icon 注册表 SVG 默认无描边（T0 已知缺口）：消费方补等价描边规则。 */
+.sh-skill-card__source-icon svg {
+  stroke: currentColor;
+  stroke-width: 1.75;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.sh-skill-card__title {
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-size: var(--font-size-md);
+  font-weight: 650;
+  line-height: 1.25;
+}
+
+.sh-skill-card__source {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 var(--space-2);
+  margin: 0;
+  color: var(--ui-ink-muted);
+  font-size: var(--font-size-xs);
+}
+
+.sh-skill-card__source-address {
+  overflow-wrap: anywhere;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+}
+
+/* 设计规格 5.2：说明最多三行；完整文本经 title 提示可达，不靠裁切掩盖错误。 */
+.sh-skill-card__description {
+  display: -webkit-box;
+  margin: 0;
+  overflow: hidden;
+  color: var(--ui-ink);
+  font-size: var(--font-size-sm);
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+
+.sh-skill-card__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sh-skill-card__meta-item {
+  overflow-wrap: anywhere;
+  color: var(--ui-ink-muted);
+  font-size: var(--font-size-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 操作区稳定在底部：卡片等高拉伸后由 margin-top:auto 下压固定。 */
+.sh-skill-card__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  justify-content: flex-start;
+  margin-top: auto;
+  padding-top: var(--space-2);
+}
+
+.sh-skill-card__actions:empty {
+  display: none;
+}
+
+/* 次操作插槽沿用打开前确认的链接触发器（sh-markdown-link 无自带样式）。 */
+.sh-skill-card__actions .sh-markdown-link {
+  display: inline-flex;
+  min-height: 2.25rem;
+  align-items: center;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--ui-control-border);
+  border-radius: var(--radius-xs);
+  background: var(--ui-surface);
+  color: var(--ui-ink);
+  font-size: var(--font-size-sm);
+  font-weight: 650;
+}
+
+.sh-skill-card__actions .sh-markdown-link:hover {
+  background: var(--ui-hover-surface);
+}
+
+.sh-skill-card__actions > * {
+  flex: 0 0 auto;
+}

@@ -2,7 +2,12 @@ import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { describeNativeError } from "../../api/nativeErrors";
 import { Button } from "../../ui/Button";
+import { CheckboxField } from "../../ui/CheckboxField";
+import { Icon } from "../../ui/Icon";
+import { Input } from "../../ui/Input";
 import { ExternalLink } from "../markdown/ExternalLink";
+import { SkillCard } from "../shared/skill-card/SkillCard";
+import type { SkillCardViewModel } from "../shared/skill-card/SkillCardViewModel";
 import type {
   DiscoverableRepoSkill,
   SourceLocator,
@@ -159,93 +164,119 @@ export function OnlineDiscovery({ onStartImport, onImportDirectory, facade, impo
   );
 
   return (
-    <article className="sh-discovery-card">
-      <div className="sh-discovery-card__heading">
+    <section aria-label={t("discovery.online.title")} className="sh-discovery-module">
+      <header className="sh-discovery-module__heading">
         <div>
-          <p className="sh-discovery-card__eyebrow">{t("discovery.online.eyebrow")}</p>
+          <p className="sh-discovery-module__eyebrow">{t("discovery.online.eyebrow")}</p>
           <h2>{t("discovery.online.title")}</h2>
         </div>
-        <span aria-hidden="true" className="sh-discovery-card__icon">↗</span>
-      </div>
-      <p>{t("discovery.online.description")}</p>
+        <span aria-hidden="true" className="sh-discovery-module__icon">
+          <Icon name="open-external" size={24} />
+        </span>
+      </header>
+      <p className="sh-discovery-module__description">{t("discovery.online.description")}</p>
       {onlineFacade ? (
-        <div className="sh-discovery-card__search">
-          <input
-            aria-label={t("discovery.search.label")}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder={t("discovery.search.label")}
-            type="text"
-            value={query}
-          />
-          <Button disabled={searching || !query.trim()} onClick={() => void search()} variant="secondary">
-            {searching ? t("discovery.search.searching") : t("discovery.search.action")}
-          </Button>
-          <label className="sh-settings-toggle">
-            <input
-              aria-label={t("discovery.search.assistToggle")}
+        <div className="sh-discovery-module__body">
+          <div className="sh-discovery-module__controls">
+            <Input
+              aria-label={t("discovery.search.label")}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder={t("discovery.search.label")}
+              type="text"
+              value={query}
+            />
+            <Button disabled={searching || !query.trim()} onClick={() => void search()} variant="secondary">
+              {searching ? t("discovery.search.searching") : t("discovery.search.action")}
+            </Button>
+            <CheckboxField
               checked={assistEnabled}
+              label={t("discovery.search.assistToggle")}
               onChange={(event) => {
                 setAssistEnabled(event.target.checked);
                 setAssistNotice(null);
               }}
-              type="checkbox"
             />
-            <span>{t("discovery.search.assistToggle")}</span>
-          </label>
-          {searchError ? <p role="alert">{searchError}</p> : null}
-          {assistNotice && !searching ? <p role="status">{assistNotice}</p> : null}
-          {searching ? <p role="status">{t("discovery.online.searchingStatus")}</p> : null}
-          {page && !searching && page.items.length === 0 ? (
-            <p>{t("discovery.online.empty")}</p>
-          ) : null}
+            {searchError ? <p role="alert">{searchError}</p> : null}
+            {assistNotice && !searching ? <p role="status">{assistNotice}</p> : null}
+            {searching ? <p role="status">{t("discovery.online.searchingStatus")}</p> : null}
+            {page && !searching && page.items.length === 0 ? (
+              <p>{t("discovery.online.empty")}</p>
+            ) : null}
+          </div>
           {page ? (
-            <ul aria-busy={searching} className="sh-discovery-card__results">
+            <div className="sh-discovery-results-zone">
+              <ul
+                aria-busy={searching}
+                aria-label={t("discovery.search.results")}
+                className="sh-discovery-results"
+              >
               {page.items.map((hit) => {
                 const skill = toRepoSkill(hit);
                 const alreadyImported = libraryNames.has(hit.name.trim().toLowerCase());
+                // 只陈列可证实状态：AI 扩展命中、已在库、不可安装可同时成立。
+                const statuses: SkillCardViewModel["statuses"] = [];
+                if (hit.via === "expanded_query") {
+                  statuses.push({
+                    label: t("discovery.search.assistHit"),
+                    testId: `assist-${hit.source_id}`,
+                    tone: "info",
+                  });
+                }
+                if (alreadyImported) {
+                  statuses.push({
+                    label: t("discovery.online.alreadyImported"),
+                    testId: `imported-${hit.source_id}`,
+                    tone: "success",
+                  });
+                }
+                if (!skill) {
+                  statuses.push({ label: t("discovery.card.status.notInstallable"), tone: "warning" });
+                }
+                const card: SkillCardViewModel = {
+                  id: hit.source_id,
+                  name: hit.name,
+                  sourceType: "online",
+                  sourceLabel: t("discovery.search.source", {
+                    provider: sourceProvider(hit.page_url, page.search_type),
+                  }),
+                  sourceAddress: hit.page_url,
+                  metrics: [t("discovery.search.installs", { count: hit.installs })],
+                  statuses,
+                };
                 return (
                   <li key={hit.source_id}>
-                    <span>{hit.name}</span>
-                    <span>
-                      {t("discovery.search.source", {
-                        provider: sourceProvider(hit.page_url, page.search_type),
-                      })}
-                    </span>
-                    <span>{t("discovery.search.installs", { count: hit.installs })}</span>
-                    {hit.via === "expanded_query" ? (
-                      <span className="sh-status sh-status--muted" data-testid={`assist-${hit.source_id}`}>
-                        {t("discovery.search.assistHit")}
-                      </span>
-                    ) : null}
-                    {alreadyImported ? (
-                      <span className="sh-status sh-status--success" data-testid={`imported-${hit.source_id}`}>
-                        {t("discovery.online.alreadyImported")}
-                      </span>
-                    ) : null}
-                    <ExternalLink
-                      onOpen={() => void onlineFacade.openExternalUrl(hit.page_url)}
-                      target={hit.page_url}
-                    >
-                      {t("discovery.online.viewAction")}
-                    </ExternalLink>
-                    <Button
-                      disabled={!skill || downloadingId !== null || alreadyImported}
-                      onClick={() => void install(hit)}
-                      title={skill
-                        ? alreadyImported
-                          ? t("discovery.online.alreadyImported")
-                          : undefined
-                        : t("discovery.online.installUnavailable")}
-                      variant="secondary"
-                    >
-                      {downloadingId === hit.source_id
-                        ? t("discovery.online.installing")
-                        : t("discovery.online.installAction")}
-                    </Button>
+                    <SkillCard
+                      primaryAction={
+                        <Button
+                          disabled={!skill || downloadingId !== null || alreadyImported}
+                          onClick={() => void install(hit)}
+                          title={skill
+                            ? alreadyImported
+                              ? t("discovery.online.alreadyImported")
+                              : undefined
+                            : t("discovery.online.installUnavailable")}
+                          variant="secondary"
+                        >
+                          {downloadingId === hit.source_id
+                            ? t("discovery.online.installing")
+                            : t("discovery.online.installAction")}
+                        </Button>
+                      }
+                      secondaryAction={
+                        <ExternalLink
+                          onOpen={() => void onlineFacade.openExternalUrl(hit.page_url)}
+                          target={hit.page_url}
+                        >
+                          {t("discovery.online.viewAction")}
+                        </ExternalLink>
+                      }
+                      skill={card}
+                    />
                   </li>
                 );
               })}
-            </ul>
+              </ul>
+            </div>
           ) : null}
           {installError ? <p role="alert">{installError}</p> : null}
         </div>
@@ -256,7 +287,9 @@ export function OnlineDiscovery({ onStartImport, onImportDirectory, facade, impo
           <li>{t("discovery.online.factPreview")}</li>
         </ul>
       ) : null}
-      <Button onClick={onStartImport} variant="secondary">{t("discovery.importSkill")}</Button>
-    </article>
+      <div>
+        <Button onClick={onStartImport} variant="secondary">{t("discovery.importSkill")}</Button>
+      </div>
+    </section>
   );
 }
