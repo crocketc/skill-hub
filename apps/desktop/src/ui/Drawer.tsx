@@ -8,7 +8,7 @@ import {
   useState,
 } from "react";
 import { useTranslation } from "react-i18next";
-import { Button } from "./Button";
+import { IconButton } from "./IconButton";
 
 interface DrawerBaseProps {
   children: ReactNode;
@@ -124,9 +124,7 @@ export function Drawer({
                 </Dialog.Description>
               </div>
               <Dialog.Close asChild>
-                <Button aria-label={resolvedCloseLabel} size="sm" variant="ghost">
-                  <span aria-hidden="true">×</span>
-                </Button>
+                <IconButton icon="close" label={resolvedCloseLabel} />
               </Dialog.Close>
             </header>
           )}

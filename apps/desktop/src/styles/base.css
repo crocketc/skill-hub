@@ -101,6 +101,356 @@ a {
   padding-inline: var(--space-6);
 }
 
+.sh-button__spinner {
+  width: 1rem;
+  height: 1rem;
+  flex: 0 0 auto;
+  animation: sh-button-spin 0.8s linear infinite;
+}
+
+@keyframes sh-button-spin {
+  to {
+    transform: rotate(1turn);
+  }
+}
+
+.sh-field {
+  display: grid;
+  min-width: 0;
+  gap: var(--space-1);
+}
+
+.sh-field__label {
+  color: var(--ui-ink);
+  font-size: var(--font-size-sm);
+  font-weight: 650;
+}
+
+.sh-field__required {
+  margin-left: var(--space-1);
+  color: var(--ui-danger-foreground);
+}
+
+.sh-field__help,
+.sh-field__error {
+  margin: 0;
+  font-size: var(--font-size-xs);
+  line-height: 1.5;
+}
+
+.sh-field__help {
+  color: var(--ui-ink-muted);
+}
+
+.sh-field__error {
+  color: var(--ui-danger-foreground);
+  font-weight: 550;
+}
+
+.sh-input,
+.sh-select {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  min-height: 2.5rem;
+  border: 1px solid var(--ui-control-border);
+  border-radius: var(--radius-xs);
+  padding: 0 var(--space-3);
+  background: var(--ui-control-background);
+  color: var(--ui-ink);
+  font: inherit;
+  transition:
+    border-color var(--motion-fast) var(--ease-standard),
+    box-shadow var(--motion-fast) var(--ease-standard);
+}
+
+.sh-input::placeholder,
+.sh-select::placeholder {
+  color: var(--ui-control-placeholder);
+  opacity: 1;
+}
+
+.sh-input:hover:not(:disabled):not([aria-invalid="true"]),
+.sh-select:hover:not(:disabled):not([aria-invalid="true"]) {
+  border-color: var(--ui-control-border-hover);
+}
+
+.sh-input[aria-invalid="true"],
+.sh-select[aria-invalid="true"] {
+  border-color: var(--ui-danger-foreground);
+}
+
+.sh-input:focus-visible,
+.sh-select:focus-visible {
+  outline: 2px solid var(--ui-focus);
+  outline-offset: 1px;
+}
+
+.sh-input:disabled,
+.sh-select:disabled {
+  border-color: var(--ui-disabled-border);
+  background: var(--ui-disabled-background);
+  color: var(--ui-disabled-text);
+  cursor: not-allowed;
+}
+
+.sh-checkbox-field {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  min-height: 2.5rem;
+  padding-block: var(--space-1);
+  color: var(--ui-ink);
+  cursor: pointer;
+}
+
+.sh-checkbox-field__input {
+  width: 1.125rem;
+  height: 1.125rem;
+  flex: 0 0 auto;
+  margin: 0.1875rem 0 0;
+  accent-color: var(--ui-accent);
+  cursor: inherit;
+}
+
+.sh-checkbox-field__input:focus-visible {
+  outline: 2px solid var(--ui-focus);
+  outline-offset: 2px;
+}
+
+.sh-checkbox-field__input:disabled ~ .sh-checkbox-field__text {
+  color: var(--ui-disabled-text);
+}
+
+.sh-checkbox-field__text {
+  display: grid;
+  min-width: 0;
+  gap: var(--space-1);
+}
+
+.sh-checkbox-field__label {
+  font-weight: 550;
+}
+
+.sh-checkbox-field__description {
+  color: var(--ui-ink-muted);
+  font-size: var(--font-size-xs);
+  line-height: 1.5;
+}
+
+.sh-switch {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 2.5rem;
+  padding-block: var(--space-1);
+  color: var(--ui-ink);
+  cursor: pointer;
+}
+
+.sh-switch__input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  opacity: 0;
+}
+
+.sh-switch__track {
+  display: inline-flex;
+  width: 2.25rem;
+  height: 1.25rem;
+  flex: 0 0 auto;
+  align-items: center;
+  border: 1px solid var(--ui-control-border);
+  border-radius: 999px;
+  padding: 0.125rem;
+  background: var(--ui-control-background);
+  transition: background-color var(--motion-fast) var(--ease-standard);
+}
+
+.sh-switch__thumb {
+  width: 0.875rem;
+  height: 0.875rem;
+  border-radius: 50%;
+  background: var(--ui-icon-muted);
+  transition: transform var(--motion-fast) var(--ease-standard);
+}
+
+.sh-switch__input:checked + .sh-switch__track {
+  border-color: var(--ui-accent);
+  background: var(--ui-accent);
+}
+
+.sh-switch__input:checked + .sh-switch__track .sh-switch__thumb {
+  background: var(--ui-icon-on-accent);
+  transform: translateX(1rem);
+}
+
+.sh-switch__input:focus-visible + .sh-switch__track {
+  outline: 2px solid var(--ui-focus);
+  outline-offset: 2px;
+}
+
+.sh-switch__input:disabled ~ .sh-switch__track,
+.sh-switch__input:disabled ~ .sh-switch__label {
+  opacity: 0.45;
+}
+
+.sh-switch:has(.sh-switch__input:disabled) {
+  cursor: not-allowed;
+}
+
+.sh-switch__label {
+  font-weight: 550;
+}
+
+.sh-icon {
+  display: block;
+  flex: 0 0 auto;
+}
+
+.sh-icon-button {
+  display: inline-grid;
+  min-width: 2.5rem;
+  min-height: 2.5rem;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  color: var(--ui-icon);
+  cursor: pointer;
+  transition:
+    background-color var(--motion-fast) var(--ease-standard),
+    color var(--motion-fast) var(--ease-standard);
+}
+
+.sh-icon-button:hover:not(:disabled) {
+  background: var(--ui-hover-surface);
+  color: var(--ui-accent-strong);
+}
+
+.sh-icon-button:focus-visible {
+  outline: 2px solid var(--ui-focus);
+  outline-offset: 1px;
+}
+
+.sh-icon-button:disabled {
+  color: var(--ui-disabled-text);
+  cursor: not-allowed;
+}
+
+.sh-page-frame {
+  display: grid;
+  max-width: 72ch;
+  gap: var(--space-6);
+  padding: var(--space-5);
+}
+
+.sh-page-frame--wide {
+  max-width: none;
+}
+
+.sh-page-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.sh-page-header__title {
+  margin: 0;
+  font-size: var(--font-size-xl);
+  line-height: 1.25;
+  text-wrap: balance;
+}
+
+.sh-page-header__description {
+  margin: var(--space-1) 0 0;
+  color: var(--ui-ink-muted);
+  line-height: 1.5;
+  text-wrap: pretty;
+}
+
+.sh-preview-board__section {
+  display: grid;
+  gap: var(--space-3);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--ui-border-subtle);
+}
+
+.sh-preview-board__section h2 {
+  margin: 0;
+  font-size: var(--font-size-lg);
+  line-height: 1.25;
+}
+
+.sh-preview-board__section p {
+  margin: 0;
+  color: var(--ui-ink-muted);
+  font-size: var(--font-size-sm);
+}
+
+.sh-preview-board__themes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.sh-preview-board__theme {
+  min-height: 2rem;
+  border: 1px solid var(--ui-control-border);
+  border-radius: 999px;
+  padding: 0 var(--space-3);
+  background: var(--ui-control-background);
+  color: var(--ui-ink);
+  font: inherit;
+  font-size: var(--font-size-xs);
+  cursor: pointer;
+}
+
+.sh-preview-board__theme[aria-pressed="true"] {
+  border-color: var(--ui-accent);
+  background: var(--ui-selected-surface);
+  color: var(--ui-accent-strong);
+  font-weight: 650;
+}
+
+.sh-preview-board__form {
+  display: grid;
+  gap: var(--space-4);
+  max-width: 28rem;
+}
+
+.sh-preview-board__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.sh-preview-board__icons {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  grid-template-columns: repeat(auto-fill, minmax(8.5rem, 1fr));
+  gap: var(--space-2);
+  list-style: none;
+}
+
+.sh-preview-board__icons li {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 2.5rem;
+  border: 1px solid var(--ui-border-subtle);
+  border-radius: var(--radius-sm);
+  padding: var(--space-1) var(--space-2);
+  color: var(--ui-icon);
+  font-size: var(--font-size-xs);
+}
+
 .sh-overlay {
   position: fixed;
   z-index: 40;
@@ -188,6 +538,12 @@ a {
 .sh-dialog__actions {
   justify-content: flex-end;
   margin-top: var(--space-6);
+}
+
+.sh-dialog__close {
+  position: absolute;
+  top: var(--space-3);
+  right: var(--space-3);
 }
 
 .sh-batch-tag-dialog form {
@@ -318,6 +674,38 @@ a {
   min-height: 0;
   grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
   background: var(--color-page);
+  overflow: hidden;
+}
+
+/* Skip Link：只在键盘聚焦时可见，作为壳层第一个可聚焦元素。 */
+.sh-skip-link {
+  position: fixed;
+  z-index: 60;
+  top: var(--space-2);
+  left: var(--space-2);
+  border: 1px solid var(--ui-border-strong);
+  border-radius: var(--radius-xs);
+  padding: var(--space-2) var(--space-4);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-weight: 650;
+  text-decoration: none;
+  transform: translateY(-200%);
+}
+
+.sh-skip-link:focus-visible {
+  transform: none;
+  outline: 2px solid var(--ui-focus);
+  outline-offset: 2px;
+}
+
+.sh-app-shell__workspace {
+  /* 容器查询基础：页面级响应式判断优先基于内容容器宽度。 */
+  container: workspace / inline-size;
+  display: grid;
+  min-height: 0;
+  min-width: 0;
+  grid-template-rows: auto minmax(0, 1fr);
   overflow: hidden;
 }
 
@@ -492,14 +880,6 @@ a {
 .sh-sidebar.is-collapsed .sh-sidebar__pinned .sh-sidebar__list {
   padding-top: 0;
   border-top: 0;
-}
-
-.sh-app-shell__workspace {
-  display: grid;
-  min-height: 0;
-  min-width: 0;
-  grid-template-rows: auto minmax(0, 1fr);
-  overflow: hidden;
 }
 
 .sh-app-shell__workspace.is-detail-route {
@@ -3238,11 +3618,6 @@ a {
   font-variant-numeric: tabular-nums;
 }
 
-.sh-discovery-page__grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--space-4);
-}
 
 .sh-discovery-card,
 .sh-import-source,
@@ -3260,123 +3635,12 @@ a {
   box-shadow: var(--shadow-sm);
 }
 
-.sh-discovery-card__heading {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: var(--space-3);
-}
 
-.sh-discovery-card__heading h2 {
-  margin: 0;
-  font-size: var(--font-size-lg);
-}
 
-.sh-discovery-card__icon {
-  display: grid;
-  width: 2rem;
-  height: 2rem;
-  place-items: center;
-  border-radius: var(--radius-md);
-  background: var(--color-accent-soft);
-  color: var(--color-accent-strong);
-  font-size: var(--font-size-lg);
-}
 
-.sh-discovery-card > p {
-  margin: 0;
-  color: var(--color-text-secondary);
-}
 
-.sh-discovery-card ul {
-  display: grid;
-  gap: var(--space-2);
-  padding-left: var(--space-5);
-  margin: 0;
-  color: var(--color-text-muted);
-}
 
-.sh-discovery-card .sh-button {
-  justify-self: start;
-}
 
-/* AR-012：发现主页的四张固定模块卡片，等宽等高、只承载入口。 */
-.sh-discovery-home__grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--space-4);
-  align-items: stretch;
-}
-
-.sh-discovery-home__card {
-  display: grid;
-  align-content: start;
-  gap: var(--space-3);
-  min-width: 0;
-  padding: var(--space-5);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  background: var(--color-surface);
-  box-shadow: var(--shadow-sm);
-}
-
-.sh-discovery-home__icon {
-  display: grid;
-  width: 2rem;
-  height: 2rem;
-  place-items: center;
-  border-radius: var(--radius-md);
-  background: var(--color-accent-soft);
-  color: var(--color-accent-strong);
-  font-size: var(--font-size-lg);
-}
-
-.sh-discovery-home__title {
-  margin: 0;
-  font-size: var(--font-size-lg);
-}
-
-.sh-discovery-home__description {
-  margin: 0;
-  color: var(--color-text-secondary);
-}
-
-.sh-discovery-home__note {
-  margin: 0;
-  color: var(--color-text-muted);
-  font-size: var(--font-size-xs);
-}
-
-.sh-discovery-home__card .sh-button {
-  justify-self: start;
-  /* 入口按钮统一钉在卡片底部，保证四张卡片视觉等高。 */
-  margin-top: auto;
-}
-
-/* AR-013：~/.agents lock 是次级来源——灰色图标、更小的标题。 */
-.sh-discovery-home__card--secondary {
-  border-style: dashed;
-}
-
-.sh-discovery-home__card--secondary .sh-discovery-home__icon {
-  background: var(--color-surface-raised);
-  color: var(--color-text-muted);
-}
-
-.sh-discovery-home__card--secondary .sh-discovery-home__title {
-  font-size: var(--font-size-md);
-  color: var(--color-text-secondary);
-}
-
-/* AR-013：lock 子页顶部的次级来源说明。 */
-.sh-discovery-subpage__note {
-  margin: 0;
-  padding: var(--space-3) var(--space-4);
-  border: 1px dashed var(--color-border);
-  border-radius: var(--radius-md);
-  color: var(--color-text-muted);
-  font-size: var(--font-size-sm);
-}
 
 .sh-import-wizard {
   height: 100%;
@@ -3710,27 +3974,8 @@ a {
   color: var(--color-text-secondary);
 }
 
-.sh-discovery-page--import {
-  position: relative;
-  height: 100%;
-  min-height: 0;
-  grid-template-rows: auto minmax(0, 1fr);
-}
 
-.sh-discovery-page__backdrop {
-  display: grid;
-  gap: var(--space-3);
-}
 
-.sh-discovery-page__back {
-  justify-self: start;
-  border: 0;
-  padding: 0;
-  background: transparent;
-  color: var(--color-accent-strong);
-  cursor: pointer;
-  font-weight: 650;
-}
 
 .sh-agent-list,
 .sh-agent-detail {
@@ -4391,75 +4636,16 @@ a {
   margin-top: var(--space-4);
 }
 
-.sh-settings-page {
-  display: grid;
-  gap: var(--space-5);
-}
 
-.sh-settings-section {
-  display: block;
-}
 
-.sh-settings-section__title {
-  border-bottom: 1px solid var(--color-border);
-  color: var(--color-text-muted);
-  font-size: var(--font-size-md);
-  font-weight: 600;
-  margin: var(--space-2) 0 var(--space-3);
-  padding-bottom: var(--space-1);
-}
 
-.sh-settings-grid {
-  display: grid;
-  gap: var(--space-4);
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-}
 
-.sh-settings-card {
-  background: var(--color-surface-raised);
-  border: 1px solid var(--color-border-subtle);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-sm);
-  padding: var(--space-5);
-}
 
-.sh-settings-card h2 {
-  margin-top: 0;
-}
 
-.sh-settings-toggle {
-  align-items: center;
-  display: flex;
-  gap: var(--space-2);
-  margin-top: var(--space-4);
-}
 
-.sh-settings-local-note,
-.sh-settings-note {
-  background: var(--color-accent-soft);
-  border-radius: var(--radius-md);
-  color: var(--color-accent-strong);
-  margin: var(--space-4) 0;
-  padding: var(--space-3);
-}
 
-.sh-settings-list {
-  color: var(--color-text-secondary);
-  display: grid;
-  gap: var(--space-2);
-  list-style: none;
-  padding: 0;
-}
 
-.sh-settings-placeholder {
-  border-style: dashed;
-}
 
-@media (max-width: 48rem) {
-  .sh-settings-grid {
-    grid-template-columns: 1fr;
-  }
-}
 
 @media (max-width: 48rem) {
   .sh-workflow-grid {
@@ -4468,8 +4654,6 @@ a {
 }
 
 @media (max-width: 48rem) {
-  .sh-discovery-page__grid,
-  .sh-discovery-home__grid,
   .sh-import-source__descriptor {
     grid-template-columns: 1fr;
   }
@@ -4717,4 +4901,26 @@ a {
   margin-top: var(--space-2);
   color: var(--color-text-secondary);
   font-size: 0.8125rem;
+}
+
+.sh-discovery-page--import {
+  position: relative;
+  height: 100%;
+  min-height: 0;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.sh-discovery-page__backdrop {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.sh-discovery-page__back {
+  justify-self: start;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--color-accent-strong);
+  cursor: pointer;
+  font-weight: 650;
 }

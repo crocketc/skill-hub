@@ -114,6 +114,9 @@ export function AppShell({ refreshSnapshot, snapshot, verification }: AppShellPr
 
   return (
     <div className={`sh-app-shell${sidebarCollapsed ? " is-sidebar-collapsed" : ""}`}>
+      <a className="sh-skip-link" href="#main-content">
+        {t("appShell.skipToContent")}
+      </a>
       <Sidebar
         collapsed={sidebarCollapsed}
         onToggle={() => setSidebarCollapsed((value) => !value)}
@@ -136,7 +139,7 @@ export function AppShell({ refreshSnapshot, snapshot, verification }: AppShellPr
             ) : null}
           </header>
         ) : null}
-        <main className="sh-app-shell__content">
+        <main className="sh-app-shell__content" id="main-content" tabIndex={-1}>
           <Outlet context={{ refreshSnapshot, snapshot } satisfies BootstrapOutletContext} />
         </main>
         <OperationIndicator />

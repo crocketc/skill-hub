@@ -31,6 +31,7 @@ import { nativeSettingsFacade } from "../features/settings/nativeApi";
 import { SettingsLlmPreview } from "../features/settings/SettingsLlmPreview";
 import { ImportWizardPreview } from "../features/import/ImportWizardPreview";
 import { OnlineDiscoveryPreview } from "../features/discovery/OnlineDiscoveryPreview";
+import { UiFoundationsPreview } from "../features/dev-preview/UiFoundationsPreview";
 import { DiscoveryRoute } from "./DiscoveryRoute";
 import { OverviewPage } from "../features/overview/OverviewPage";
 import { SkillLibraryPage } from "../features/skills/SkillLibraryPage";
@@ -52,6 +53,8 @@ import { skillLibraryKeys } from "../features/skills/api";
 import { skillHubI18n } from "../i18n";
 import "../features/markdown/markdown.css";
 import "../styles/base.css";
+import "../features/settings/settings.css";
+import "../features/discovery/discovery.css";
 import { ThemeProvider, useTheme } from "../styles/ThemeProvider";
 import { DesktopApp } from "./App";
 import { queryClient } from "./queryClient";
@@ -241,6 +244,7 @@ export const appRouter = createBrowserRouter([
             { path: "security-llm", element: <SecurityLlmPreview /> },
             { path: "discovery-online", element: <OnlineDiscoveryPreview /> },
             { path: "import-wizard", element: <ImportWizardPreview /> },
+            { path: "ui-foundations", element: <UiFoundationsPreview /> },
           ],
         },
       ]

@@ -645,7 +645,8 @@
     "navigation": "Main navigation",
     "placeholder": "The last known local data is shown. Detailed workspaces will be available in later features.",
     "skillCount": "skills",
-    "verification": "Checking local changes"
+    "verification": "Checking local changes",
+    "skipToContent": "Skip to content"
   },
   "bootstrap": {
     "blockingStartup": "Blocking startup",

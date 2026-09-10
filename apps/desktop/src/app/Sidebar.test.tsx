@@ -45,11 +45,14 @@ describe("Sidebar", () => {
     expect(screen.getByRole("complementary", { name: "Main navigation" })).toHaveClass(
       "is-collapsed",
     );
-    expect(screen.getByRole("link", { name: "Skill library" })).toHaveAttribute(
-      "aria-current",
-      "page",
-    );
-    expect(screen.getByRole("img", { name: "Skill library icon" })).toBeInTheDocument();
+    // 折叠后每个目的地仍只朗读一次：链接的可访问名称保持完整，
+    // 图标为纯装饰（不注册 img 角色、不重复朗读）。
+    const libraryLink = screen.getByRole("link", { name: "Skill library" });
+    expect(libraryLink).toHaveAttribute("aria-current", "page");
+    expect(
+      libraryLink.querySelector("svg[aria-hidden='true']"),
+    ).not.toBeNull();
+    expect(screen.queryByRole("img", { name: "Skill library icon" })).not.toBeInTheDocument();
   });
 
   it("keeps the floating toggle outside the sidebar scroll container", async () => {

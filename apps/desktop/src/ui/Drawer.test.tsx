@@ -168,3 +168,53 @@ it("applies a caller-owned panel class, style, and leading accessory", () => {
   expect(screen.getByTestId("drawer-panel")).toHaveStyle({ width: "42rem" });
   expect(screen.getByTestId("resize-handle")).toBeVisible();
 });
+
+it("places focus inside the drawer when it opens", () => {
+  mockReducedMotion(false);
+  render(
+    <I18nextProvider i18n={skillHubI18n}>
+      <OpenDrawerHarness title="Details">内容</OpenDrawerHarness>
+    </I18nextProvider>,
+  );
+
+  const dialog = screen.getByRole("dialog");
+  expect(dialog).toContainElement(document.activeElement as HTMLElement | null);
+});
+
+it("keeps keyboard focus inside the drawer while tabbing", () => {
+  mockReducedMotion(false);
+  render(
+    <I18nextProvider i18n={skillHubI18n}>
+      <OpenDrawerHarness title="详情">
+        <button type="button">抽屉内动作</button>
+      </OpenDrawerHarness>
+    </I18nextProvider>,
+  );
+
+  fireEvent.keyDown(document.activeElement!, { key: "Tab" });
+  fireEvent.keyDown(document.activeElement!, { key: "Tab" });
+
+  expect(screen.getByRole("dialog")).toContainElement(
+    document.activeElement as HTMLElement | null,
+  );
+});
+
+it("closes on Escape and returns focus to the return target", async () => {
+  mockReducedMotion(false);
+  const i18n = await createSkillHubI18n(["en-US"]);
+  render(
+    <I18nextProvider i18n={i18n}>
+      <ExternallyControlledDrawerHarness />
+    </I18nextProvider>,
+  );
+
+  fireEvent.click(screen.getByRole("button", { name: "Open details" }));
+  expect(screen.getByRole("dialog")).toBeInTheDocument();
+
+  fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
+
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+  expect(screen.getByRole("button", { name: "Open details" })).toHaveFocus();
+});

@@ -236,6 +236,23 @@ it("keeps the Skill library shell title on the library route", async () => {
   expect(await screen.findByRole("heading", { name: "Skill library" })).toBeVisible();
 });
 
+it("mounts the DEV-only UI foundations preview board with theme switching", async () => {
+  mockBrowserPreferences();
+  await skillHubI18n.changeLanguage("zh-CN");
+  await appRouter.navigate("/__preview/ui-foundations");
+
+  render(<AppRouter />);
+
+  expect(
+    await screen.findByRole("heading", { name: "UI foundations" }),
+  ).toBeVisible();
+  expect(screen.getByRole("button", { name: "grok-night" })).toBeVisible();
+
+  fireEvent.click(screen.getByRole("button", { name: "grok-night" }));
+
+  expect(document.documentElement).toHaveAttribute("data-theme", "grok-night");
+});
+
 it("isolates development preview data from the production Skill library route", async () => {
   mockBrowserPreferences();
   await skillHubI18n.changeLanguage("en-US");
