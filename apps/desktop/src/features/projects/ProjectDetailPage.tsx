@@ -11,6 +11,7 @@ import {
   type ProjectManagedDeploymentsOps,
 } from "./ProjectManagedDeployments";
 import { SharedConfigPanel } from "./SharedConfigPanel";
+import "./projects.css";
 
 export interface ProjectDetailPageProps {
   projectId?: string;

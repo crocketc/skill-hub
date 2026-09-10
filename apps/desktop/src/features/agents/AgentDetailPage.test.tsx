@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { I18nextProvider } from "react-i18next";
 import { MemoryRouter } from "react-router-dom";
@@ -83,6 +83,7 @@ it("offers explicit edit and confirmed removal entries for custom agents", async
 
   await user.click(screen.getByRole("button", { name: "关闭" }));
   await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+  await waitFor(() => expect(screen.getByRole("button", { name: "编辑" })).toHaveFocus());
 
   await user.click(screen.getByRole("button", { name: "删除" }));
   expect(await screen.findByText("删除自定义 Agent")).toBeVisible();
@@ -91,6 +92,23 @@ it("offers explicit edit and confirmed removal entries for custom agents", async
   await user.click(screen.getByRole("button", { name: "确认删除" }));
 
   await waitFor(() => expect(facade.removeCustomAgent).toHaveBeenCalledWith("custom-reviewer"));
+});
+
+it("renders each discovered path as its own readable entry", async () => {
+  const multiPath: AgentView = {
+    ...agentFixture(),
+    discoveredPaths: [
+      "C:/Users/demo/AppData/Local/SkillHub/agents/codex/global skills directory",
+      "/Users/demo/Library/Application Support/SkillHub/agents/codex/skills",
+    ],
+  };
+  await renderDetailPage(facadeWith(multiPath));
+
+  const paths = await screen.findByRole("list", { name: "已发现路径" });
+  expect(within(paths).getAllByRole("listitem").map((item) => item.textContent)).toEqual([
+    "C:/Users/demo/AppData/Local/SkillHub/agents/codex/global skills directory",
+    "/Users/demo/Library/Application Support/SkillHub/agents/codex/skills",
+  ]);
 });
 
 it("does not offer custom agent entries for discovered agents", async () => {
