@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import { desktopDirectoryPicker, type DirectoryPicker } from "../../platform/directoryPicker";
@@ -12,6 +12,7 @@ import { type AgentFacade, type AgentStatus, type AgentView, unavailableAgentFac
 import { CustomAgentForm } from "./CustomAgentForm";
 import { RelationsView } from "./RelationsView";
 import { UsageEvidencePanel } from "./UsageEvidencePanel";
+import "./agents.css";
 
 export interface AgentDetailPageProps {
   agentId?: string;
@@ -26,6 +27,7 @@ export function AgentDetailPage({ agentId = "default", facade = unavailableAgent
   const [error, setError] = useState<string>();
   const [editing, setEditing] = useState(false);
   const [revision, setRevision] = useState(0);
+  const editTriggerRef = useRef<HTMLButtonElement | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -68,7 +70,7 @@ export function AgentDetailPage({ agentId = "default", facade = unavailableAgent
           </Button>
           {agent.status === "custom" ? (
             <div className="sh-agent-detail__actions">
-              <Button onClick={() => setEditing(true)} size="sm" variant="secondary">{t("agents.actions.edit")}</Button>
+              <Button onClick={() => setEditing(true)} ref={editTriggerRef} size="sm" variant="secondary">{t("agents.actions.edit")}</Button>
               <ConfirmDialog
                 cancelLabel={t("agents.removeDialog.cancel")}
                 confirmLabel={t("agents.removeDialog.confirm")}
@@ -85,7 +87,14 @@ export function AgentDetailPage({ agentId = "default", facade = unavailableAgent
         <div><dt>{t("agents.detail.brand")}</dt><dd><BrandTag brand={agent.brand} /></dd></div>
         <div><dt>{t("agents.detail.client")}</dt><dd>{agent.client}</dd></div>
         <div><dt>{t("agents.detail.instance")}</dt><dd>{agent.instance}</dd></div>
-        <div><dt>{t("agents.detail.paths")}</dt><dd>{agent.discoveredPaths.join("、")}</dd></div>
+        <div>
+          <dt>{t("agents.detail.paths")}</dt>
+          <dd>
+            <ul aria-label={t("agents.detail.paths")} className="sh-agent-detail__paths">
+              {agent.discoveredPaths.map((path) => <li key={path}><code>{path}</code></li>)}
+            </ul>
+          </dd>
+        </div>
         <div>
           <dt>{t("agents.detail.managedDeployments")}</dt>
           <dd>{t("agents.managedDeploymentSummary", { relations: agent.managedDeploymentRelationCount, skills: agent.managedDeploymentCount })}</dd>
@@ -111,14 +120,14 @@ export function AgentDetailPage({ agentId = "default", facade = unavailableAgent
       <div className="sh-agent-detail__capabilities">
         <StatusBadge tone="neutral">
           <span>{t("agents.runtimeHook")}</span>
-          <span aria-label={t("agents.runtimeHookStatus")}>{t("agents.runtimeHookStatus")}</span>
+          <span>{t("agents.runtimeHookStatus")}</span>
         </StatusBadge>
       </div>
       <UsageEvidencePanel />
       <Drawer
         onOpenChange={(open) => { if (!open) setEditing(false); }}
         open={editing}
-        returnFocusRef={{ current: null }}
+        returnFocusRef={editTriggerRef}
         title={t("agents.customForm.editTitle")}
       >
         {editing ? (

@@ -2,6 +2,8 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { desktopDirectoryPicker, type DirectoryPicker } from "../../platform/directoryPicker";
 import { Button } from "../../ui/Button";
+import { Field } from "../../ui/Field";
+import { Input } from "../../ui/Input";
 import { type AgentFacade, type AgentView, type CustomAgentFormValues } from "./api";
 
 export interface CustomAgentFormProps {
@@ -80,36 +82,42 @@ export function CustomAgentForm({
     >
       <p>{t("agents.customForm.description")}</p>
       {error ? <p role="alert">{error}</p> : null}
-      <label>
-        <span>{t("agents.customForm.displayName")}</span>
-        <input
+      <Field label={t("agents.customForm.displayName")}>
+        <Input
+          autoComplete="off"
+          name="custom-agent-display-name"
           onChange={(event) => setDisplayName(event.target.value)}
           type="text"
           value={displayName}
         />
-      </label>
-      <label>
-        <span>{t("agents.customForm.brand")}</span>
-        <input
+      </Field>
+      <Field label={t("agents.customForm.brand")}>
+        <Input
+          autoComplete="off"
+          name="custom-agent-brand"
           onChange={(event) => setBrand(event.target.value)}
           type="text"
           value={brand}
         />
-      </label>
-      <label>
-        <span>{t("agents.customForm.referenceUrl")}</span>
-        <input
+      </Field>
+      <Field label={t("agents.customForm.referenceUrl")}>
+        <Input
+          autoComplete="off"
+          inputMode="url"
+          name="custom-agent-reference-url"
           onChange={(event) => setReferenceUrl(event.target.value)}
           type="text"
           value={referenceUrl}
         />
-      </label>
-      <label>
-        <span>{t("agents.customForm.directory")}</span>
-        <code data-testid="custom-agent-directory">
+      </Field>
+      <div className="sh-agent-custom-form__directory-field">
+        <span className="sh-agent-custom-form__directory-label" id="custom-agent-directory-label">
+          {t("agents.customForm.directory")}
+        </span>
+        <code aria-labelledby="custom-agent-directory-label" className="sh-agent-custom-form__directory" data-testid="custom-agent-directory">
           {directoryPath || t("agents.customForm.directoryMissing")}
         </code>
-      </label>
+      </div>
       <div className="sh-agent-custom-form__actions">
         <Button onClick={() => void pickDirectory()} variant="secondary">
           {t("agents.actions.pickDirectory")}

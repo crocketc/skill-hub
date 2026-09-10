@@ -193,3 +193,56 @@ it("does not offer custom agent actions for discovered agents", async () => {
   expect(screen.queryByRole("button", { name: "编辑" })).not.toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "删除" })).not.toBeInTheDocument();
 });
+
+it("keeps the rescan entry reachable when the agent facts cannot be read", async () => {
+  const user = userEvent.setup();
+  const facade = facadeWith({
+    list: vi.fn(async () => {
+      throw new Error("agent_list failed");
+    }),
+  });
+
+  renderListPage(facade);
+
+  expect(await screen.findByText("Agent 数据尚未连接到本机服务。")).toBeVisible();
+  await user.click(screen.getByRole("button", { name: "重新扫描" }));
+  await waitFor(() => expect(facade.rescan).toHaveBeenCalledTimes(1));
+});
+
+it("states an explicit empty result instead of a blank page", async () => {
+  renderListPage(facadeWith(), []);
+
+  expect(await screen.findByText("尚未发现任何 Agent。可以重新扫描，或新增自定义 Agent。")).toBeVisible();
+});
+
+it("returns drawer focus to the trigger that opened it", async () => {
+  const user = userEvent.setup();
+  const facade = facadeWith();
+
+  renderListPage(facade);
+  await screen.findByRole("heading", { name: "OpenAI" });
+
+  await user.click(screen.getByRole("button", { name: "新增自定义 Agent" }));
+  expect(await screen.findByRole("dialog")).toBeVisible();
+
+  await user.click(screen.getByRole("button", { name: "关闭" }));
+
+  await waitFor(() => expect(screen.getByRole("button", { name: "新增自定义 Agent" })).toHaveFocus());
+});
+
+it("returns drawer focus to the card edit trigger after editing", async () => {
+  const user = userEvent.setup();
+  const facade = facadeWith();
+
+  renderListPage(facade);
+  await screen.findByRole("heading", { name: "Acme" });
+
+  const customItem = screen.getByText("Reviewer").closest("li");
+  if (!customItem) throw new Error("custom agent item missing");
+  await user.click(within(customItem).getByRole("button", { name: "编辑" }));
+  expect(await screen.findByRole("dialog")).toBeVisible();
+
+  await user.click(screen.getByRole("button", { name: "关闭" }));
+
+  await waitFor(() => expect(within(customItem).getByRole("button", { name: "编辑" })).toHaveFocus());
+});

@@ -1,0 +1,263 @@
+/* 项目工作区（T3-D）：实体卡片、注册抽屉与响应式网格。
+   仅消费主题语义 token（--ui-* 与既有形状/间距/字号 token），
+   响应式基于 AppShell 工作区容器查询而非视口。 */
+
+.sh-projects-page {
+  display: grid;
+  min-width: 0;
+  align-content: start;
+  gap: var(--space-6);
+}
+
+.sh-projects-page .sh-page-header__actions {
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+/* 筛选：窄容器单列，宽容器搜索列 + 标签列。 */
+.sh-projects-page__filters {
+  display: grid;
+  min-width: 0;
+  align-items: end;
+  gap: var(--space-3);
+  grid-template-columns: 1fr;
+}
+
+.sh-projects-page__filters fieldset {
+  min-width: 0;
+  padding: 0;
+  margin: 0;
+  border: 0;
+}
+
+.sh-projects-page__filters legend,
+.sh-projects-page__filters fieldset > div {
+  display: flex;
+  flex-wrap: wrap;
+}
+
+.sh-projects-page__filters legend {
+  margin-bottom: var(--space-2);
+  color: var(--ui-ink-muted);
+  font-size: var(--font-size-xs);
+  font-weight: 650;
+}
+
+.sh-projects-page__filters fieldset > div {
+  gap: var(--space-2) var(--space-4);
+}
+
+@container workspace (min-width: 760px) {
+  .sh-projects-page__filters {
+    grid-template-columns: minmax(12rem, 24rem) minmax(0, 1fr);
+  }
+}
+
+/* 实体卡片网格：容器 ≥1180px 3 列，≥760px 2 列，其余 1 列。 */
+.sh-projects-page__cards {
+  display: grid;
+  padding: 0;
+  margin: 0;
+  gap: var(--space-3);
+  list-style: none;
+  grid-template-columns: 1fr;
+}
+
+@container workspace (min-width: 760px) {
+  .sh-projects-page__cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@container workspace (min-width: 1180px) {
+  .sh-projects-page__cards {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+/* 实体卡片：10px 圆角，最多一级浅阴影；标题是打开快速抽屉的唯一按钮。 */
+.sh-project-card {
+  display: grid;
+  min-width: 0;
+  padding: var(--space-4);
+  gap: var(--space-3);
+  align-content: start;
+  border: 1px solid var(--ui-border);
+  border-radius: 10px;
+  background: var(--ui-surface);
+  box-shadow: var(--shadow-sm);
+}
+
+/* 双类选择器确保盖过共享 Button 变体的基础样式（与加载顺序无关）。 */
+.sh-project-card .sh-project-card__title {
+  justify-content: flex-start;
+  width: 100%;
+  padding-inline: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--ui-ink);
+  font-size: var(--font-size-lg);
+  font-weight: 700;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+  text-align: left;
+}
+
+.sh-project-card .sh-project-card__title:hover {
+  background: transparent;
+  color: var(--color-accent-strong);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.sh-project-card__description {
+  margin: 0;
+  color: var(--ui-ink-muted);
+  font-size: var(--font-size-sm);
+  line-height: 1.5;
+}
+
+.sh-project-card__path {
+  display: block;
+  overflow-wrap: anywhere;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--ui-border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--ui-surface-subtle);
+  color: var(--ui-ink);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+  line-height: 1.5;
+}
+
+.sh-project-card__tags {
+  display: flex;
+  padding: 0;
+  margin: 0;
+  gap: var(--space-2);
+  list-style: none;
+  flex-wrap: wrap;
+}
+
+.sh-project-card__tags li {
+  padding: 2px var(--space-2);
+  border: 1px solid var(--ui-border-subtle);
+  border-radius: 999px;
+  background: var(--ui-surface-subtle);
+  color: var(--ui-ink-muted);
+  font-size: var(--font-size-xs);
+}
+
+/* 注册抽屉内部。 */
+.sh-project-registration {
+  display: grid;
+  min-width: 0;
+  gap: var(--space-4);
+}
+
+.sh-project-registration__path {
+  overflow-wrap: anywhere;
+  padding: var(--space-2) var(--space-3);
+  margin: 0;
+  border: 1px solid var(--ui-border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--ui-surface-subtle);
+  color: var(--ui-ink);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+}
+
+.sh-project-registration__preview {
+  display: grid;
+  min-width: 0;
+  padding: var(--space-3);
+  gap: var(--space-2);
+  border: 1px solid var(--ui-border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--ui-surface-subtle);
+}
+
+.sh-project-registration__preview h3,
+.sh-project-registration__preview h4 {
+  margin: 0;
+  font-size: var(--font-size-sm);
+}
+
+.sh-project-registration__preview p {
+  margin: 0;
+  color: var(--ui-ink-muted);
+  font-size: var(--font-size-xs);
+  line-height: 1.5;
+}
+
+.sh-project-registration__preview ul {
+  display: grid;
+  padding: 0;
+  margin: 0;
+  gap: var(--space-2);
+  list-style: none;
+}
+
+.sh-project-registration__preview li {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.sh-project-registration__preview small {
+  overflow-wrap: anywhere;
+  color: var(--ui-ink-muted);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+}
+
+.sh-project-registration fieldset {
+  min-width: 0;
+  padding: 0;
+  margin: 0;
+  border: 0;
+}
+
+.sh-project-registration fieldset legend {
+  margin-bottom: var(--space-2);
+  padding: 0;
+  color: var(--ui-ink-muted);
+  font-size: var(--font-size-xs);
+  font-weight: 650;
+}
+
+.sh-project-registration fieldset legend + .sh-checkbox-field,
+.sh-project-registration fieldset > .sh-checkbox-field {
+  margin-bottom: var(--space-2);
+}
+
+.sh-project-registration__preview-error {
+  margin: 0;
+  color: var(--ui-danger-foreground);
+}
+
+.sh-project-registration__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
+/* 详情页（保持既有语义，token 统一外观）。 */
+.sh-project-detail {
+  display: grid;
+  min-width: 0;
+  align-content: start;
+  gap: var(--space-6);
+}
+
+.sh-project-detail__header .sh-project-detail__facts dt,
+.sh-project-drawer__facts dt {
+  color: var(--ui-ink-muted);
+}
+
+.sh-project-detail__facts dd,
+.sh-project-drawer__facts dd {
+  overflow-wrap: anywhere;
+}
