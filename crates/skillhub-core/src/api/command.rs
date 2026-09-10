@@ -598,6 +598,20 @@ pub struct SetLibraryRoot {
     pub path: String,
 }
 
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(rename_all = "snake_case")]
+pub enum LibraryActivationMode {
+    Create,
+    Existing,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct ActivateLibraryRoot {
+    pub path: String,
+    pub mode: LibraryActivationMode,
+}
+
 /// Stores a UI preference value (raw JSON) under a non-empty key.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 #[serde(deny_unknown_fields)]
@@ -855,6 +869,8 @@ pub enum AppCommand {
     CompleteOnboarding(CompleteOnboarding),
     #[serde(rename = "set_library_root")]
     SetLibraryRoot(SetLibraryRoot),
+    #[serde(rename = "activate_library_root")]
+    ActivateLibraryRoot(ActivateLibraryRoot),
     #[serde(rename = "set_ui_preference")]
     SetUiPreference(SetUiPreference),
     #[serde(rename = "set_version_label")]

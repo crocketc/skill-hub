@@ -30,3 +30,5 @@ Task 2: complete（提交范围：新增 `LibraryRuntime`/`LibraryContext`，覆
 Task 3: complete（提交范围：facade 构造器与部署后端注入共享 `LibraryRuntime`，新增 Pending/Active 构造测试；测试结果：`cargo test -p skillhub-application --test facade facade_constructors_share_pending`，1 passed）。
 
 Task 4: complete（提交范围：facade、部署/移除/对账、导入/版本/来源/备份/恢复/导出/项目装配等集中库消费者统一取得一次 `LibraryContext` 快照，删除旧字段访问；测试结果：`cargo test -p skillhub-application --tests`，首次迁移回归 71/75 通过，修正 Pending 非集中库业务兼容与活动库 undeploy 回归后目标用例通过；`rg` 旧字段访问为 0）。
+
+Task 5: complete（提交范围：新增 `LibraryActivationMode`/`activate_library_root`，实现候选库校验→数据库持久化→Active 发布的单次事务，增加建议路径启动构造；测试结果：激活 create/existing/失败/锁定 4 个 facade 用例通过，`cargo test -p skillhub-desktop generate_bindings` 通过 Specta 生成校验；未提交生成绑定，留给 Task 7）。

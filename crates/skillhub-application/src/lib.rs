@@ -85,6 +85,7 @@ pub struct LocalApplicationFacade {
     database: Arc<Mutex<Database>>,
     today: (i32, u8, u8),
     library_runtime: Arc<library_runtime::LibraryRuntime>,
+    suggested_library_root: Option<PathBuf>,
     deployment_targets: Option<RegisteredTargetIndex>,
     deployment_service: Arc<DeploymentService<LocalDeploymentBackend>>,
     removal_service: Arc<RemovalService<LocalDeploymentBackend>>,
@@ -719,43 +720,51 @@ impl LocalApplicationFacade {
         self.library_runtime
             .snapshot()
             .map(|library| library.root.clone())
-            .or_else(|_| Err(unsupported("bootstrap.library_path")))
+            .or_else(|_| {
+                self.suggested_library_root
+                    .clone()
+                    .ok_or_else(|| unsupported("bootstrap.library_path"))
+            })
     }
 
-    /// Chooses the central library root before initialization completes. The
-    /// chosen path is materialized immediately and persisted so the next
-    /// application start uses it as the configured root. After initialization
-    /// the root is immutable here; moving an initialized library is a migration.
-    fn set_library_root(
+    fn activate_library_root(
         &self,
-        request: skillhub_core::api::SetLibraryRoot,
+        request: skillhub_core::api::ActivateLibraryRoot,
     ) -> AppResult<AppCommandResult> {
         let path = request.path.trim();
         if path.is_empty() {
             return Err(invalid_input("library root path must not be empty"));
         }
-        let already_initialized = self
-            .with_database("execute.set_library_root.status", |database| {
-                database.bootstrap_repository().load_initialization()
-            })?;
-        if already_initialized.as_ref().is_some_and(|status| {
-            matches!(
-                status.state,
-                skillhub_core::InitializationState::Initialized
-            )
-        }) {
-            return Err(AppError::new(
-                skillhub_core::ErrorCode::OperationConflict,
-                Severity::Error,
-            )
-            .with_param("reason", "library_root_locked")
-            .with_param("detail", "library root cannot change after initialization")
-            .with_action(RecoveryAction::Acknowledge));
-        }
         let root = PathBuf::from(path);
-        CentralLibrary::initialize(&root)?;
-        let status = self.with_database("execute.set_library_root.persist", |database| {
-            database.bootstrap_repository().save_library_root(path)?;
+        let mode = request.mode;
+        self.library_runtime.activate(|| {
+            let already_initialized = self
+                .with_database("execute.activate_library_root.status", |database| {
+                    database.bootstrap_repository().load_initialization()
+                })?;
+            if already_initialized.as_ref().is_some_and(|status| {
+                matches!(
+                    status.state,
+                    skillhub_core::InitializationState::Initialized
+                )
+            }) {
+                return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                    .with_param("reason", "library_root_locked")
+                    .with_action(RecoveryAction::Acknowledge));
+            }
+            let central = match mode {
+                skillhub_core::api::LibraryActivationMode::Create => CentralLibrary::create(&root),
+                skillhub_core::api::LibraryActivationMode::Existing => {
+                    CentralLibrary::open_existing(&root)
+                }
+            }?;
+            let context = Arc::new(library_runtime::LibraryContext::from_library(central));
+            self.with_database("execute.activate_library_root.persist", |database| {
+                database.bootstrap_repository().save_library_root(path)
+            })?;
+            Ok(context)
+        })?;
+        let status = self.with_database("execute.activate_library_root.result", |database| {
             Ok(database
                 .bootstrap_repository()
                 .load_initialization()?
@@ -766,6 +775,16 @@ impl LocalApplicationFacade {
                 }))
         })?;
         Ok(AppCommandResult::InitializationStatus(status))
+    }
+
+    fn set_library_root(
+        &self,
+        request: skillhub_core::api::SetLibraryRoot,
+    ) -> AppResult<AppCommandResult> {
+        self.activate_library_root(skillhub_core::api::ActivateLibraryRoot {
+            path: request.path,
+            mode: skillhub_core::api::LibraryActivationMode::Create,
+        })
     }
 
     fn list_skill_repos(&self) -> AppResult<AppQueryResult> {
@@ -1151,6 +1170,22 @@ impl LocalApplicationFacade {
         Database::open(path).map(Self::new)
     }
 
+    pub fn open_with_suggested_library(
+        path: impl AsRef<Path>,
+        suggested_root: impl AsRef<Path>,
+    ) -> AppResult<Self> {
+        let path = path.as_ref();
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).map_err(|error| {
+                AppError::new(ErrorCode::InternalError, Severity::Error)
+                    .with_param("source", error.to_string())
+                    .with_action(RecoveryAction::Retry)
+            })?;
+        }
+        Database::open(path)
+            .map(|database| Self::new_with_suggested_library(database, suggested_root))
+    }
+
     /// Opens a file-backed facade and connects it to the immutable central library.
     pub fn open_with_library(
         path: impl AsRef<Path>,
@@ -1210,6 +1245,7 @@ impl LocalApplicationFacade {
             database,
             today,
             library_runtime,
+            suggested_library_root: None,
             deployment_targets: None,
             deployment_service,
             removal_service,
@@ -1279,6 +1315,7 @@ impl LocalApplicationFacade {
             database,
             today: current_utc_date(),
             library_runtime,
+            suggested_library_root: None,
             deployment_targets: None,
             deployment_service,
             removal_service,
@@ -1312,6 +1349,15 @@ impl LocalApplicationFacade {
     #[doc(hidden)]
     pub fn library_runtime(&self) -> Arc<library_runtime::LibraryRuntime> {
         self.library_runtime.clone()
+    }
+
+    pub fn new_with_suggested_library(
+        database: Database,
+        suggested_root: impl AsRef<Path>,
+    ) -> Self {
+        let mut facade = Self::new(database);
+        facade.suggested_library_root = Some(suggested_root.as_ref().to_path_buf());
+        facade
     }
 
     /// Creates a facade with explicit online providers. Production uses the
@@ -4133,6 +4179,7 @@ impl ApplicationFacade for LocalApplicationFacade {
             }
             AppCommand::RunInitializationScan(request) => return self.run_scan(request.scope_ids),
             AppCommand::SetLibraryRoot(request) => return self.set_library_root(request),
+            AppCommand::ActivateLibraryRoot(request) => return self.activate_library_root(request),
             AppCommand::CompleteOnboarding(request) => return self.complete_onboarding(request),
             AppCommand::DiscoverAgentTargets(_) => return self.discover_agent_targets(),
             AppCommand::ScanTargets(request) => return self.run_scan(request.scope_ids),

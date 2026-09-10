@@ -1076,10 +1076,9 @@ async fn onboarding_completion_is_repeatable_and_rejects_an_unconfigured_path() 
 #[tokio::test]
 async fn set_library_root_persists_the_chosen_root_before_initialization() {
     let database = Database::open_in_memory().expect("database");
-    let library_root = tempfile::tempdir().expect("library root");
     let chosen_root = tempfile::tempdir().expect("chosen root");
     let chosen_path = chosen_root.path().to_string_lossy().into_owned();
-    let facade = LocalApplicationFacade::new_with_library(database, library_root.path());
+    let facade = LocalApplicationFacade::new(database);
 
     let result = facade
         .execute(AppCommand::SetLibraryRoot(
@@ -1175,6 +1174,87 @@ async fn set_library_root_rejects_empty_paths_and_initialized_libraries() {
             .get("reason")
             .and_then(|value| value.as_str()),
         Some("library_root_locked")
+    );
+}
+
+#[tokio::test]
+async fn activate_library_root_immediately_publishes_the_selected_context() {
+    let facade = LocalApplicationFacade::new(Database::open_in_memory().unwrap());
+    let root = tempfile::tempdir().unwrap().path().join("created-library");
+
+    let result = facade
+        .execute(AppCommand::ActivateLibraryRoot(
+            skillhub_core::api::ActivateLibraryRoot {
+                path: root.to_string_lossy().into_owned(),
+                mode: skillhub_core::api::LibraryActivationMode::Create,
+            },
+        ))
+        .await
+        .expect("activate new library");
+
+    assert!(
+        matches!(result, AppCommandResult::InitializationStatus(status) if status.library_path == root.to_string_lossy())
+    );
+    assert_eq!(facade.library_runtime().snapshot().unwrap().root, root);
+}
+
+#[tokio::test]
+async fn activation_validates_existing_libraries_and_locks_after_success() {
+    let facade = LocalApplicationFacade::new(Database::open_in_memory().unwrap());
+    let existing = tempfile::tempdir().unwrap();
+    CentralLibrary::create(existing.path()).unwrap();
+
+    facade
+        .execute(AppCommand::ActivateLibraryRoot(
+            skillhub_core::api::ActivateLibraryRoot {
+                path: existing.path().to_string_lossy().into_owned(),
+                mode: skillhub_core::api::LibraryActivationMode::Existing,
+            },
+        ))
+        .await
+        .expect("activate existing library");
+    let other = tempfile::tempdir().unwrap().path().join("other");
+    let error = facade
+        .execute(AppCommand::ActivateLibraryRoot(
+            skillhub_core::api::ActivateLibraryRoot {
+                path: other.to_string_lossy().into_owned(),
+                mode: skillhub_core::api::LibraryActivationMode::Create,
+            },
+        ))
+        .await
+        .expect_err("active root must be locked");
+
+    assert_eq!(
+        error.params.get("reason").and_then(|value| value.as_str()),
+        Some("library_root_locked")
+    );
+    assert_eq!(
+        facade.library_runtime().snapshot().unwrap().root,
+        existing.path()
+    );
+}
+
+#[tokio::test]
+async fn failed_activation_keeps_pending_and_does_not_persist_a_root() {
+    let facade = LocalApplicationFacade::new(Database::open_in_memory().unwrap());
+    let ordinary = tempfile::tempdir().unwrap();
+    std::fs::write(ordinary.path().join("user.txt"), "keep").unwrap();
+
+    let error = facade
+        .execute(AppCommand::ActivateLibraryRoot(
+            skillhub_core::api::ActivateLibraryRoot {
+                path: ordinary.path().to_string_lossy().into_owned(),
+                mode: skillhub_core::api::LibraryActivationMode::Create,
+            },
+        ))
+        .await
+        .expect_err("unknown files must reject create activation");
+
+    assert_eq!(error.code, ErrorCode::OperationConflict);
+    assert!(facade.library_runtime().snapshot().is_err());
+    assert!(
+        LocalApplicationFacade::persisted_library_root(ordinary.path().join("missing.db"))
+            .is_none()
     );
 }
 

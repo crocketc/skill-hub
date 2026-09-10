@@ -62,6 +62,13 @@ impl LibraryRuntime {
     }
 
     pub fn publish(&self, context: Arc<LibraryContext>) -> AppResult<()> {
+        self.activate(|| Ok(context))
+    }
+
+    pub fn activate<F>(&self, prepare: F) -> AppResult<()>
+    where
+        F: FnOnce() -> AppResult<Arc<LibraryContext>>,
+    {
         let _guard = self
             .activation_lock
             .lock()
@@ -73,7 +80,7 @@ impl LibraryRuntime {
         if active.is_some() {
             return Err(library_root_locked());
         }
-        *active = Some(context);
+        *active = Some(prepare()?);
         Ok(())
     }
 }

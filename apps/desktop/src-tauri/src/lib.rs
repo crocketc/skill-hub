@@ -228,15 +228,40 @@ fn host_operating_system() -> skillhub_core::agent::OperatingSystem {
     }
 }
 
-/// Restarts the application so a persisted library-root change takes effect.
+trait ApplicationRestarter {
+    fn schedule_restart(&self) -> Result<(), String>;
+}
+
+impl<R: tauri::Runtime> ApplicationRestarter for AppHandle<R> {
+    fn schedule_restart(&self) -> Result<(), String> {
+        let app = self.clone();
+        std::thread::Builder::new()
+            .name("skillhub-restart".into())
+            .spawn(move || {
+                // Let the current invoke finish before the process exits. The
+                // renderer treats restart as terminal and does not wait for
+                // this IPC response.
+                std::thread::sleep(std::time::Duration::from_millis(100));
+                app.restart();
+            })
+            .map(|_| ())
+            .map_err(|error| format!("restart_application.schedule_failed: {error}"))
+    }
+}
+
+fn request_application_restart(app: &impl ApplicationRestarter) -> Result<(), String> {
+    app.schedule_restart()
+}
+
+/// Requests a restart so a persisted library-root change takes effect.
+///
+/// Tauri's restart handles spawning the current binary and exiting the old
+/// process. It is scheduled after the invoke command returns so the renderer
+/// can submit the terminal restart request without being left in the old
+/// process when the command response closes.
 #[tauri::command]
 fn restart_application(app: AppHandle) -> Result<(), String> {
-    let exe = std::env::current_exe().map_err(|error| error.to_string())?;
-    std::process::Command::new(exe)
-        .spawn()
-        .map_err(|error| format!("restart_application.spawn_failed: {error}"))?;
-    app.exit(0);
-    Ok(())
+    request_application_restart(&app)
 }
 
 pub fn emit_app_event<R: tauri::Runtime>(app: &AppHandle<R>, event: AppEvent) -> tauri::Result<()> {
@@ -283,10 +308,15 @@ pub fn run() -> tauri::Result<()> {
     let probe_directory = updater::default_startup_probe_directory();
     let _ = updater::write_starting_probe(&probe_directory, std::time::SystemTime::now());
 
-    let facade = match LocalApplicationFacade::open_with_library(
-        default_database_path(),
-        persisted_or_default_library_root(),
-    ) {
+    let database_path = default_database_path();
+    let facade_result = match LocalApplicationFacade::persisted_library_root(&database_path) {
+        Some(root) => LocalApplicationFacade::open_with_library(&database_path, root),
+        None => LocalApplicationFacade::open_with_suggested_library(
+            &database_path,
+            default_library_root(),
+        ),
+    };
+    let facade = match facade_result {
         Ok(facade) => facade,
         Err(error) => {
             let _ = updater::write_failed_probe(&probe_directory);
@@ -313,20 +343,39 @@ pub fn run() -> tauri::Result<()> {
     run_with_facade(Arc::new(facade))
 }
 
+#[cfg(test)]
+mod restart_application_tests {
+    use super::{request_application_restart, ApplicationRestarter};
+    use std::cell::Cell;
+
+    struct RecordingRestarter {
+        scheduled: Cell<bool>,
+    }
+
+    impl ApplicationRestarter for RecordingRestarter {
+        fn schedule_restart(&self) -> Result<(), String> {
+            self.scheduled.set(true);
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn requesting_restart_returns_success_after_scheduling_restart() {
+        let restarter = RecordingRestarter {
+            scheduled: Cell::new(false),
+        };
+
+        assert!(request_application_restart(&restarter).is_ok());
+        assert!(restarter.scheduled.get());
+    }
+}
+
 #[cfg(windows)]
 fn default_library_root() -> PathBuf {
     std::env::var_os("USERPROFILE")
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("."))
         .join("SkillHub")
-}
-
-/// A library root chosen during onboarding persists in the database and wins
-/// over the platform default. Reading it before the facade is constructed
-/// lets a restarted application resume with the chosen root.
-fn persisted_or_default_library_root() -> PathBuf {
-    LocalApplicationFacade::persisted_library_root(default_database_path())
-        .unwrap_or_else(default_library_root)
 }
 
 #[cfg(target_os = "macos")]
