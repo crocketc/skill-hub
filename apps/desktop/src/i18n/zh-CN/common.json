@@ -451,6 +451,10 @@
     "description": "查看已发现的客户端和 Skill 目录事实。",
     "loading": "正在加载 Agent 事实",
     "unavailable": "Agent 数据尚未连接到本机服务。",
+    "empty": "尚未发现任何 Agent。可以重新扫描，或新增自定义 Agent。",
+    "card": {
+      "directory": "Skill 目录"
+    },
     "actions": {
       "rescan": "重新扫描",
       "addCustom": "新增自定义 Agent",

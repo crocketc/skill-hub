@@ -8,8 +8,10 @@ import { RescanWizard } from "../features/onboarding/RescanWizard";
 import { desktopBootstrapRuntime } from "../features/bootstrap/api";
 import { AgentDetailPage } from "../features/agents/AgentDetailPage";
 import { AgentListPage } from "../features/agents/AgentListPage";
+import { AgentsPreview, AgentDetailPreview } from "../features/agents/AgentsPreview";
 import { ProjectDetailPage } from "../features/projects/ProjectDetailPage";
 import { ProjectListPage } from "../features/projects/ProjectListPage";
+import { ProjectsPreview } from "../features/projects/ProjectsPreview";
 import { nativeAgentFacade } from "../features/agents/nativeApi";
 import { nativeProjectFacade } from "../features/projects/nativeApi";
 import { nativeRemovalFacade } from "../features/removal/nativeApi";
@@ -250,6 +252,9 @@ export const appRouter = createBrowserRouter([
             { path: "import-wizard", element: <ImportWizardPreview /> },
             { path: "ui-foundations", element: <UiFoundationsPreview /> },
             { path: "markdown-workspace", element: <MarkdownWorkspacePreview /> },
+            { path: "agents", element: <AgentsPreview /> },
+            { path: "agents/detail", element: <AgentDetailPreview /> },
+            { path: "projects", element: <ProjectsPreview /> },
           ],
         },
         {

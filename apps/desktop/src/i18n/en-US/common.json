@@ -451,6 +451,10 @@
     "description": "Review discovered client and Skill directory facts.",
     "loading": "Loading Agent facts",
     "unavailable": "Agent data is not connected to the native service yet.",
+    "empty": "No agents discovered yet. Rescan, or add a custom agent.",
+    "card": {
+      "directory": "Skill directory"
+    },
     "actions": {
       "rescan": "Rescan agents",
       "addCustom": "Add custom agent",
