@@ -3,6 +3,8 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "../../ui/Button";
 import { DataState } from "../../ui/DataState";
+import { Icon } from "../../ui/Icon";
+import { Select } from "../../ui/Select";
 import {
   type MarkdownFacade,
   type MarkdownReadOnlyReason,
@@ -83,7 +85,7 @@ export function MarkdownWorkspace({ facade, skillId }: MarkdownWorkspaceProps) {
         <div>
           <h3>{t("markdown.workspace.title")}</h3>
           <label htmlFor="skillhub-markdown-file">{t("markdown.workspace.file")}</label>
-          <select
+          <Select
             id="skillhub-markdown-file"
             onChange={(event) => {
               setSelectedOverride(event.target.value);
@@ -94,7 +96,7 @@ export function MarkdownWorkspace({ facade, skillId }: MarkdownWorkspaceProps) {
             {filesQuery.data.map((entry) => (
               <option key={entry.path} value={entry.path}>{entry.label}</option>
             ))}
-          </select>
+          </Select>
         </div>
         <div className="sh-markdown-workspace__external-actions">
           <Button
@@ -158,15 +160,21 @@ export function MarkdownWorkspace({ facade, skillId }: MarkdownWorkspaceProps) {
           </div>
           {file.draft ? (
             <div className="sh-markdown-workspace__draft" role="status">
-              <span>{t("markdown.workspace.draftRestored")}</span>
+              <span className="sh-markdown-status">
+                <Icon className="sh-markdown-status__icon" name="info" size={16} />
+                <span>{t("markdown.workspace.draftRestored")}</span>
+              </span>
               <Button onClick={() => void discardDraft()} size="sm" variant="ghost">
                 {t("markdown.workspace.discardDraft")}
               </Button>
             </div>
           ) : null}
           {!file.editable && file.readOnlyReason ? (
-            <div className="sh-markdown-workspace__read-only">
-              <p>{t(readOnlyMessageKey[file.readOnlyReason])}</p>
+            <div className="sh-markdown-workspace__read-only" role="status">
+              <p className="sh-markdown-status">
+                <Icon className="sh-markdown-status__icon" name="warning" size={16} />
+                <span>{t(readOnlyMessageKey[file.readOnlyReason])}</span>
+              </p>
               <Button onClick={() => void facade.requestTakeover(skillId)} variant="secondary">
                 {t("markdown.workspace.takeover")}
               </Button>

@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import type { ReactNode } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import { useTranslation } from "react-i18next";
 import remarkFrontmatter from "remark-frontmatter";
@@ -6,6 +7,7 @@ import remarkGfm from "remark-gfm";
 import type { MarkdownFacade } from "./api";
 import { CodeBlock } from "./CodeBlock";
 import { ExternalLink } from "./ExternalLink";
+import { MarkdownImage } from "./MarkdownImage";
 import { MermaidBlock } from "./MermaidBlock";
 import { RemoteImage } from "./RemoteImage";
 import { classifyMarkdownUrl } from "./sanitize";
@@ -33,9 +35,13 @@ function LocalImage({ alt, assetPath, facade, filePath, skillId }: LocalImagePro
   });
 
   if (!assetQuery.data) {
-    return <span role="status">{alt}</span>;
+    return (
+      <span aria-busy="true" className="sh-markdown-image">
+        <span className="sh-markdown-image__pending" role="status">{alt}</span>
+      </span>
+    );
   }
-  return <img alt={alt} loading="lazy" src={assetQuery.data} />;
+  return <MarkdownImage alt={alt} src={assetQuery.data} />;
 }
 
 function splitFrontmatter(markdown: string) {
@@ -45,11 +51,47 @@ function splitFrontmatter(markdown: string) {
     : { body: markdown, frontmatter: null };
 }
 
+/**
+ * Markdown 标题在页面中始终渲染在宿主 outline 之下（详情页 h1 -> 章节
+ * h2 -> 工作区 h3），所以 `#` 从 h4 开始整体下移；更深的标题收敛到 h6。
+ * 视觉层级由 markdown.css 按原映射保留。
+ */
+const markdownHeadingOffset = 3;
+const markdownHeadingMax = 6;
+
+function shiftedHeading(level: number) {
+  const shifted = `h${Math.min(level + markdownHeadingOffset, markdownHeadingMax)}`;
+  return shifted as "h4" | "h5" | "h6";
+}
+
+function Heading({ children, level }: { children?: ReactNode; level: number }) {
+  const Tag = shiftedHeading(level);
+  return <Tag>{children}</Tag>;
+}
+
 export function MarkdownRenderer({ facade, filePath, markdown, skillId }: MarkdownRendererProps) {
   const { t } = useTranslation();
   const { body, frontmatter } = splitFrontmatter(markdown);
 
   const components: Components = {
+    h1({ children }) {
+      return <Heading level={1}>{children}</Heading>;
+    },
+    h2({ children }) {
+      return <Heading level={2}>{children}</Heading>;
+    },
+    h3({ children }) {
+      return <Heading level={3}>{children}</Heading>;
+    },
+    h4({ children }) {
+      return <Heading level={4}>{children}</Heading>;
+    },
+    h5({ children }) {
+      return <Heading level={5}>{children}</Heading>;
+    },
+    h6({ children }) {
+      return <Heading level={6}>{children}</Heading>;
+    },
     a({ children, href }) {
       const target = classifyMarkdownUrl(href ?? "");
       if (target.kind === "external") {
@@ -128,6 +170,15 @@ export function MarkdownRenderer({ facade, filePath, markdown, skillId }: Markdo
         );
       }
       return <li className={className} {...props}>{children}</li>;
+    },
+    table({ children }) {
+      // 宽表格由外层滚动容器接管横向溢出，避免列被逐字压缩换行；
+      // children 是 thead/tbody，这里重建 table 元素以保留表格语义。
+      return (
+        <div className="sh-markdown-table-scroll">
+          <table>{children}</table>
+        </div>
+      );
     },
     pre({ children }) {
       return <>{children}</>;

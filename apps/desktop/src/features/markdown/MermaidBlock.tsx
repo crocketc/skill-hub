@@ -2,6 +2,7 @@ import * as AlertDialog from "@radix-ui/react-alert-dialog";
 import { useEffect, useId, useState, type MouseEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "../../ui/Button";
+import { useTheme } from "../../styles/ThemeProvider";
 import { CodeBlock } from "./CodeBlock";
 import { renderMermaidSvg } from "./mermaidRuntime";
 import { classifyMarkdownUrl } from "./sanitize";
@@ -13,21 +14,31 @@ interface MermaidBlockProps {
 
 export function MermaidBlock({ code, onExternalTarget }: MermaidBlockProps) {
   const { t } = useTranslation();
+  const { resolvedTheme } = useTheme();
   const id = useId().replace(/[^a-zA-Z0-9_-]/g, "");
   const [view, setView] = useState<"diagram" | "source">("diagram");
   const [svg, setSvg] = useState<string>();
+  const [svgTheme, setSvgTheme] = useState<string>();
   const [failed, setFailed] = useState(false);
   const [externalTarget, setExternalTarget] = useState<string>();
 
   useEffect(() => {
-    if (view !== "diagram" || svg || failed) {
+    if (view !== "diagram" || failed) {
+      return;
+    }
+    if (svg && svgTheme === resolvedTheme) {
       return;
     }
     let active = true;
-    void renderMermaidSvg(code, `skillhub-mermaid-${id}`)
+    void renderMermaidSvg(
+      code,
+      `skillhub-mermaid-${id}`,
+      resolvedTheme === "grok-night" ? "dark" : "default",
+    )
       .then((result) => {
         if (active) {
           setSvg(result);
+          setSvgTheme(resolvedTheme);
         }
       })
       .catch(() => {
@@ -39,7 +50,7 @@ export function MermaidBlock({ code, onExternalTarget }: MermaidBlockProps) {
     return () => {
       active = false;
     };
-  }, [code, failed, id, svg, view]);
+  }, [code, failed, id, resolvedTheme, svg, svgTheme, view]);
 
   const inspectSvgTarget = (event: MouseEvent<HTMLDivElement>) => {
     const anchor = (event.target as Element).closest("a");

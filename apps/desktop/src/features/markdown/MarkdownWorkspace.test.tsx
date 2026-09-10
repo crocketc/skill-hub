@@ -3,6 +3,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { I18nextProvider } from "react-i18next";
 import { describe, expect, it } from "vitest";
 import { createSkillHubI18n } from "../../i18n";
+import { ThemeProvider } from "../../styles/ThemeProvider";
 import { MarkdownWorkspace } from "./MarkdownWorkspace";
 import {
   createMockMarkdownFacade,
@@ -21,11 +22,13 @@ async function renderWorkspace(
     defaultOptions: { mutations: { retry: false }, queries: { retry: false } },
   });
   render(
-    <QueryClientProvider client={client}>
-      <I18nextProvider i18n={i18n}>
-        <MarkdownWorkspace facade={facade} skillId="pdf-reader" />
-      </I18nextProvider>
-    </QueryClientProvider>,
+    <ThemeProvider>
+      <QueryClientProvider client={client}>
+        <I18nextProvider i18n={i18n}>
+          <MarkdownWorkspace facade={facade} skillId="pdf-reader" />
+        </I18nextProvider>
+      </QueryClientProvider>
+    </ThemeProvider>,
   );
   return facade;
 }
@@ -70,6 +73,29 @@ describe("MarkdownWorkspace", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Copy into SkillHub" }));
     expect(facade.calls.takeovers).toEqual(["pdf-reader"]);
+  });
+
+  it("pairs the restored draft status with a decorative icon", async () => {
+    await renderWorkspace({}, async (fixture) => {
+      await fixture.saveDraft("pdf-reader", "SKILL.md", "# Recovered draft");
+    });
+    const draftStatus = (
+      await screen.findByText("A local draft was restored.")
+    ).closest('[role="status"]');
+    expect(draftStatus).not.toBeNull();
+    expect(
+      draftStatus?.querySelector("svg[aria-hidden='true']"),
+    ).not.toBeNull();
+  });
+
+  it("announces the read-only notice as a status with a decorative icon", async () => {
+    await renderWorkspace({ editable: false, readOnlyReason: "external" });
+
+    const notice = (
+      await screen.findByText("This file is read-only because it is managed externally.")
+    ).closest('[role="status"]');
+    expect(notice).not.toBeNull();
+    expect(notice?.querySelector("svg[aria-hidden='true']")).not.toBeNull();
   });
 
   it("restores a local draft by default and can discard it explicitly", async () => {

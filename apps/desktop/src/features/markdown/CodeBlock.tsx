@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Highlight, themes, type Language } from "prism-react-renderer";
 import { useTranslation } from "react-i18next";
 import { Button } from "../../ui/Button";
+import { useTheme } from "../../styles/ThemeProvider";
 
 interface CodeBlockProps {
   code: string;
@@ -10,6 +11,7 @@ interface CodeBlockProps {
 
 export function CodeBlock({ code, language }: CodeBlockProps) {
   const { t } = useTranslation();
+  const { resolvedTheme } = useTheme();
   const [copied, setCopied] = useState(false);
   const copy = async () => {
     await navigator.clipboard?.writeText(code);
@@ -27,7 +29,7 @@ export function CodeBlock({ code, language }: CodeBlockProps) {
       <Highlight
         code={code}
         language={(language || "markup") as Language}
-        theme={themes.github}
+        theme={resolvedTheme === "grok-night" ? themes.vsDark : themes.github}
       >
         {({ className, getLineProps, getTokenProps, style, tokens }) => (
           <pre className={className} style={style}>

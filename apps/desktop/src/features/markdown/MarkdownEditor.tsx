@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "../../ui/Button";
 import { ConfirmDialog } from "../../ui/ConfirmDialog";
+import { Icon } from "../../ui/Icon";
 import {
   MarkdownContentConflictError,
   type MarkdownFacade,
@@ -153,7 +154,7 @@ export function MarkdownEditor({ facade, file, onSaved, onExit, skillId }: Markd
             {t("markdown.editor.exit")}
           </Button>
         ) : null}
-        <div aria-live="polite">
+        <div aria-live="polite" className="sh-markdown-editor__save-status" role="status">
           {draftState === "saving" ? t("markdown.editor.draftSaving") : null}
           {draftState === "saved" ? t("markdown.editor.draftSaved") : null}
           {draftState === "error" ? t("markdown.editor.draftError") : null}
@@ -186,7 +187,14 @@ export function MarkdownEditor({ facade, file, onSaved, onExit, skillId }: Markd
           role="alert"
           tabIndex={-1}
         >
-          <h3>{t("markdown.editor.issues")}</h3>
+          <h3 className="sh-markdown-editor__issues-title">
+            <Icon
+              className="sh-markdown-status__icon"
+              name={issues.some((issue) => issue.severity === "error") ? "failure" : "warning"}
+              size={16}
+            />
+            <span>{t("markdown.editor.issues")}</span>
+          </h3>
           <ul>
             {issues.map((issue) => (
               <li key={`${issue.code}-${issue.line ?? 0}-${issue.message}`}>
@@ -201,7 +209,12 @@ export function MarkdownEditor({ facade, file, onSaved, onExit, skillId }: Markd
           ) : null}
         </section>
       ) : null}
-      {saveError ? <p role="alert">{saveError}</p> : null}
+      {saveError ? (
+        <p className="sh-markdown-editor__save-error" role="alert">
+          <Icon className="sh-markdown-status__icon" name="failure" size={16} />
+          <span>{saveError}</span>
+        </p>
+      ) : null}
       <div className="sh-markdown-editor__split">
         <div>
           <h3>{t("markdown.editor.source")}</h3>
