@@ -19,6 +19,8 @@ const EXEMPT = {
     'separateCheckFixture sample finding; consumed only by SecurityResults.test.tsx',
   'features/settings/api.ts':
     'settingsFixture/networkSettings/availableUpdate sample payloads; production uses nativeSettingsFacade',
+  'features/dev-preview/UiFoundationsPreview.tsx':
+    'DEV-only UI foundations board; registered solely under import.meta.env.DEV and eliminated from production builds, so its bilingual sample copy is design-review material rather than production UI text',
 };
 
 function stripComments(text) {
