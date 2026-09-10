@@ -118,6 +118,10 @@ export function Icon({ name, size = 16, ...props }: IconProps) {
       {...props}
       aria-hidden="true"
       fill="none"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth={1.75}
       height={size}
       viewBox="0 0 24 24"
       width={size}

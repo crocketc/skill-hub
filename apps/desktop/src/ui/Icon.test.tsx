@@ -13,6 +13,15 @@ describe("Icon", () => {
     expect(svg?.querySelector("path")).not.toBeNull();
   });
 
+  it("strokes registry paths with currentColor so icons stay visible without consumer CSS", () => {
+    const { container } = render(<Icon name="overview" />);
+
+    const svg = container.querySelector("svg");
+    expect(svg).toHaveAttribute("stroke", "currentColor");
+    expect(svg).toHaveAttribute("stroke-linecap", "round");
+    expect(svg).toHaveAttribute("stroke-linejoin", "round");
+  });
+
   it("scales the icon through the shared size steps", () => {
     const { container } = render(<Icon name="deploy" size={20} />);
 
