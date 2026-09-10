@@ -867,7 +867,9 @@
         "deploymentCount": "部署 {{count}} 个 Agent",
         "version": "当前版本 {{version}}",
         "upgradeAvailable": "有可升级版本",
-        "highRisk": "{{count}} 项高风险发现"
+        "highRisk": "{{count}} 项高风险发现",
+        "open": "查看 {{name}}",
+        "sourceLocal": "本地集中库"
       },
       "sourceUpdates": {
         "title": "来源更新检查结果",
@@ -997,7 +999,9 @@
         "any": "任意版本",
         "upgradeAvailable": "有可用更新"
       },
-      "versionUnavailable": "上游更新检测尚未接入。"
+      "versionUnavailable": "上游更新检测尚未接入。",
+      "advanced": "筛选",
+      "activeCount": "已生效 {{count}} 项"
     },
     "savedViews": {
       "builtIn": {

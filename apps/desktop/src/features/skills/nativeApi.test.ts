@@ -63,7 +63,7 @@ describe("native skill library facade", () => {
       payload: { key: "library_view_mode", value_json: JSON.stringify("compact-list") },
     } as AppQueryResult);
 
-    await expect(nativeSkillLibraryFacade.loadViewMode()).resolves.toBe("cards");
+    await expect(nativeSkillLibraryFacade.loadViewMode?.()).resolves.toBe("cards");
   });
 
   it("maps a typed skill page into the desktop table row contract", async () => {

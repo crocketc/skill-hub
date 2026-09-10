@@ -427,7 +427,7 @@ it("gives every visible column a semantic width contract for narrow overflow", a
   );
 });
 
-it("keeps horizontal table scrolling visible above the vertically scrolling results", async () => {
+it("keeps a single horizontal scroll owner for the results region", async () => {
   await renderTable({
     preferences: {
       ...DEFAULT_TABLE_PREFERENCES,
@@ -435,15 +435,13 @@ it("keeps horizontal table scrolling visible above the vertically scrolling resu
     },
   });
 
-  const horizontalScroll = document.querySelector<HTMLElement>(".sh-skill-table__horizontal-scroll");
-  expect(horizontalScroll).toBeInTheDocument();
-  if (!horizontalScroll) throw new Error("Expected the horizontal table scroll rail");
-  expect(horizontalScroll).toHaveClass("sh-skill-table__horizontal-scroll");
-  expect(horizontalScroll.previousElementSibling).toHaveClass("sh-skill-table__region");
-  expect(baseCss).toMatch(/\.sh-skill-table__horizontal-scroll\s*\{[\s\S]*overflow-x:\s*auto/);
-  expect(baseCss).toMatch(
-    /\.sh-skill-table__region\s*\{[\s\S]*overflow-x:\s*hidden[\s\S]*overflow-y:\s*auto/,
-  );
+  // T3-B：旧版“独立横向滚动 rail + 区域内纵向滚动”的双层滚动已收敕，
+  // 结果区域是唯一的横向滚动所有者，键盘用户经行焦点滚动查看宽表。
+  expect(document.querySelector(".sh-skill-table__horizontal-scroll")).not.toBeInTheDocument();
+  const region = document.querySelector<HTMLElement>(".sh-skill-table__region");
+  if (!region) throw new Error("Expected the results region");
+  expect(region).toHaveAttribute("aria-label", "Skill results");
+  expect(region).toHaveAttribute("role", "region");
 });
 
 it("keeps the configuration panel and results shell constrained to the page width", async () => {

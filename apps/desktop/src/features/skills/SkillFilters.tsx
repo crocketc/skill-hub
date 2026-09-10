@@ -37,6 +37,29 @@ const VERSION_OPTIONS = [
   ["upgrade_available", "skillLibrary.filters.versionOptions.upgradeAvailable"],
 ] as const;
 
+/** 窄窗口阈值：低于该宽度时次要筛选默认折叠（搜索始终可见）。 */
+const NARROW_FILTER_QUERY = "(max-width: 64rem)";
+
+function prefersCollapsedFilters(): boolean {
+  return (
+    typeof window.matchMedia === "function" &&
+    window.matchMedia(NARROW_FILTER_QUERY).matches
+  );
+}
+
+/** 已生效条件数：搜索文本与每个偏离默认值的筛选维度各计 1。 */
+function countActiveConditions(query: SkillLibraryQuery): number {
+  let count = 0;
+  if (query.text.trim().length > 0) count += 1;
+  if (query.filters.basicCheck.length > 0) count += 1;
+  if (query.filters.aiCheck.length > 0) count += 1;
+  if (query.filters.lifecycle.length > 0) count += 1;
+  if (query.filters.tags.length > 0) count += 1;
+  if (query.filters.deployment !== "any") count += 1;
+  if (query.filters.version !== "any") count += 1;
+  return count;
+}
+
 interface MultiSelectMenuProps {
   label: string;
   onChange: (values: string[]) => void;
@@ -74,7 +97,6 @@ function MultiSelectMenu({ label, onChange, options, selected, summary }: MultiS
         type="button"
       >
         <span>{summary}</span>
-        <span aria-hidden="true">⌄</span>
       </button>
       {open ? (
         <div aria-label={label} className="sh-filter-dropdown__menu" role="menu">
@@ -106,6 +128,10 @@ export function SkillFilters({
   versionFilterSupported = true,
 }: SkillFiltersProps) {
   const { t } = useTranslation();
+  // 规格 5.3：搜索与当前生效条件常驻；次要筛选在窄窗口默认折叠。
+  const [advancedOpen, setAdvancedOpen] = useState(() => !prefersCollapsedFilters());
+  const activeCount = countActiveConditions(query);
+  const advancedId = `${id ?? "skill"}-filters-advanced`;
 
   const update = (change: Partial<SkillLibraryQuery>) => {
     onChange({ ...query, ...change, page: 1, savedViewId: undefined });
@@ -116,77 +142,98 @@ export function SkillFilters({
   };
 
   return (
-    <section aria-label={t("skillLibrary.filters.search")} id={id}>
-      <label className="sh-filter-search">
-        {t("skillLibrary.filters.search")}
-        <input
-          name="skill-search"
-          onChange={(event) => update({ text: event.currentTarget.value })}
-          type="search"
-          value={query.text}
-        />
-      </label>
-
-      <MultiSelectMenu
-        label={t("skillLibrary.filters.basicCheck")}
-        onChange={(values) => updateFilters({ basicCheck: values as CheckState[] })}
-        options={CHECK_STATES.map((state) => ({ label: t(CHECK_STATE_LABELS[state]), value: state }))}
-        selected={query.filters.basicCheck}
-        summary={query.filters.basicCheck.length > 0 ? t("skillLibrary.filters.selectedCount", { count: query.filters.basicCheck.length }) : t("skillLibrary.filters.any")}
-      />
-
-      <MultiSelectMenu
-        label={t("skillLibrary.filters.aiCheck")}
-        onChange={(values) => updateFilters({ aiCheck: values as CheckState[] })}
-        options={CHECK_STATES.map((state) => ({ label: t(CHECK_STATE_LABELS[state]), value: state }))}
-        selected={query.filters.aiCheck}
-        summary={query.filters.aiCheck.length > 0 ? t("skillLibrary.filters.selectedCount", { count: query.filters.aiCheck.length }) : t("skillLibrary.filters.any")}
-      />
-
-      <MultiSelectMenu
-        label={t("skillLibrary.filters.lifecycle")}
-        onChange={(values) => updateFilters({ lifecycle: values as SkillLifecycle[] })}
-        options={LIFECYCLES.map((state) => ({ label: t(LIFECYCLE_LABELS[state]), value: state }))}
-        selected={query.filters.lifecycle}
-        summary={query.filters.lifecycle.length > 0 ? t("skillLibrary.filters.selectedCount", { count: query.filters.lifecycle.length }) : t("skillLibrary.filters.any")}
-      />
-
-      <label>
-        {t("skillLibrary.filters.deployment")}
-        <select
-          onChange={(event) => updateFilters({ deployment: event.currentTarget.value as SkillLibraryQuery["filters"]["deployment"] })}
-          value={query.filters.deployment}
+    <section aria-label={t("skillLibrary.filters.search")} className="sh-skill-filters" id={id}>
+      <div className="sh-skill-filters__primary">
+        <label className="sh-filter-search">
+          {t("skillLibrary.filters.search")}
+          <input
+            name="skill-search"
+            onChange={(event) => update({ text: event.currentTarget.value })}
+            type="search"
+            value={query.text}
+          />
+        </label>
+        <button
+          aria-controls={advancedId}
+          aria-expanded={advancedOpen}
+          className="sh-skill-library__filter-toggle"
+          onClick={() => setAdvancedOpen((open) => !open)}
+          type="button"
         >
-          {DEPLOYMENT_OPTIONS.map(([value, label]) => <option key={value} value={value}>{t(label)}</option>)}
-        </select>
-      </label>
+          {t("skillLibrary.filters.advanced")}
+          <span className="sh-skill-library__filter-count" data-active={activeCount > 0}>
+            {t("skillLibrary.filters.activeCount", { count: activeCount })}
+          </span>
+        </button>
+        {activeCount > 0 ? (
+          <button onClick={onClear} type="button">
+            {t("skillLibrary.filters.clear")}
+          </button>
+        ) : null}
+      </div>
 
-      <label>
-        {t("skillLibrary.filters.version")}
-        <select
-          aria-describedby={versionFilterSupported ? undefined : `${id ?? "skill"}-version-filter-hint`}
-          disabled={!versionFilterSupported}
-          onChange={(event) => updateFilters({ version: event.currentTarget.value as SkillLibraryQuery["filters"]["version"] })}
-          value={query.filters.version}
-        >
-          {VERSION_OPTIONS.map(([value, label]) => <option key={value} value={value}>{t(label)}</option>)}
-        </select>
-        {versionFilterSupported ? null : (
-          <p className="sh-filter-dropdown__hint" id={`${id ?? "skill"}-version-filter-hint`}>
-            {t("skillLibrary.filters.versionUnavailable")}
-          </p>
-        )}
-      </label>
+      {advancedOpen ? (
+        <div className="sh-skill-filters__advanced" id={advancedId}>
+          <MultiSelectMenu
+            label={t("skillLibrary.filters.basicCheck")}
+            onChange={(values) => updateFilters({ basicCheck: values as CheckState[] })}
+            options={CHECK_STATES.map((state) => ({ label: t(CHECK_STATE_LABELS[state]), value: state }))}
+            selected={query.filters.basicCheck}
+            summary={query.filters.basicCheck.length > 0 ? t("skillLibrary.filters.selectedCount", { count: query.filters.basicCheck.length }) : t("skillLibrary.filters.any")}
+          />
 
-      <MultiSelectMenu
-        label={t("skillLibrary.filters.tags")}
-        onChange={(values) => updateFilters({ tags: values })}
-        options={availableTags.map((tag) => ({ label: tag, value: tag }))}
-        selected={query.filters.tags}
-        summary={query.filters.tags.length > 0 ? t("skillLibrary.filters.selectedCount", { count: query.filters.tags.length }) : t("skillLibrary.filters.any")}
-      />
+          <MultiSelectMenu
+            label={t("skillLibrary.filters.aiCheck")}
+            onChange={(values) => updateFilters({ aiCheck: values as CheckState[] })}
+            options={CHECK_STATES.map((state) => ({ label: t(CHECK_STATE_LABELS[state]), value: state }))}
+            selected={query.filters.aiCheck}
+            summary={query.filters.aiCheck.length > 0 ? t("skillLibrary.filters.selectedCount", { count: query.filters.aiCheck.length }) : t("skillLibrary.filters.any")}
+          />
 
-      <button onClick={onClear} type="button">{t("skillLibrary.filters.clear")}</button>
+          <MultiSelectMenu
+            label={t("skillLibrary.filters.lifecycle")}
+            onChange={(values) => updateFilters({ lifecycle: values as SkillLifecycle[] })}
+            options={LIFECYCLES.map((state) => ({ label: t(LIFECYCLE_LABELS[state]), value: state }))}
+            selected={query.filters.lifecycle}
+            summary={query.filters.lifecycle.length > 0 ? t("skillLibrary.filters.selectedCount", { count: query.filters.lifecycle.length }) : t("skillLibrary.filters.any")}
+          />
+
+          <label>
+            {t("skillLibrary.filters.deployment")}
+            <select
+              onChange={(event) => updateFilters({ deployment: event.currentTarget.value as SkillLibraryQuery["filters"]["deployment"] })}
+              value={query.filters.deployment}
+            >
+              {DEPLOYMENT_OPTIONS.map(([value, label]) => <option key={value} value={value}>{t(label)}</option>)}
+            </select>
+          </label>
+
+          <label>
+            {t("skillLibrary.filters.version")}
+            <select
+              aria-describedby={versionFilterSupported ? undefined : `${id ?? "skill"}-version-filter-hint`}
+              disabled={!versionFilterSupported}
+              onChange={(event) => updateFilters({ version: event.currentTarget.value as SkillLibraryQuery["filters"]["version"] })}
+              value={query.filters.version}
+            >
+              {VERSION_OPTIONS.map(([value, label]) => <option key={value} value={value}>{t(label)}</option>)}
+            </select>
+            {versionFilterSupported ? null : (
+              <p className="sh-filter-dropdown__hint" id={`${id ?? "skill"}-version-filter-hint`}>
+                {t("skillLibrary.filters.versionUnavailable")}
+              </p>
+            )}
+          </label>
+
+          <MultiSelectMenu
+            label={t("skillLibrary.filters.tags")}
+            onChange={(values) => updateFilters({ tags: values })}
+            options={availableTags.map((tag) => ({ label: tag, value: tag }))}
+            selected={query.filters.tags}
+            summary={query.filters.tags.length > 0 ? t("skillLibrary.filters.selectedCount", { count: query.filters.tags.length }) : t("skillLibrary.filters.any")}
+          />
+        </div>
+      ) : null}
     </section>
   );
 }

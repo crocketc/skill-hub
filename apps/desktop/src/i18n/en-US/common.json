@@ -867,7 +867,9 @@
         "deploymentCount": "Deployed to {{count}} agents",
         "version": "Current version {{version}}",
         "upgradeAvailable": "Upgrade available",
-        "highRisk": "{{count}} high-risk findings"
+        "highRisk": "{{count}} high-risk findings",
+        "open": "View {{name}}",
+        "sourceLocal": "Local library"
       },
       "sourceUpdates": {
         "title": "Source update check results",
@@ -997,7 +999,9 @@
         "any": "Any version",
         "upgradeAvailable": "Upgrade available"
       },
-      "versionUnavailable": "Upgrade detection has not been connected yet."
+      "versionUnavailable": "Upgrade detection has not been connected yet.",
+      "advanced": "Filters",
+      "activeCount": "{{count}} active"
     },
     "savedViews": {
       "builtIn": {

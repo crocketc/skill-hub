@@ -13,12 +13,15 @@ import {
 import { useTranslation } from "react-i18next";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import "./batchBar.css";
+import "./skills.css";
 import { Button } from "../../ui/Button";
 import { DataState } from "../../ui/DataState";
 import {
   detailSearchFromLibrary,
   readLibraryReturnState,
 } from "../skill-detail/detailContext";
+import { SkillCard } from "../shared/skill-card/SkillCard";
+import type { SkillCardViewModel } from "../shared/skill-card/SkillCardViewModel";
 import {
   BUILT_IN_SAVED_VIEWS,
   DEFAULT_DRAWER_PREFERENCES,
@@ -53,12 +56,15 @@ import {
   selectAllFiltered,
   selectionCount,
   selectionToBatchTarget,
+  selectExplicit,
+  excludeFromAllFiltered,
   type SkillSelection,
 } from "./selection";
 import { SkillFilters } from "./SkillFilters";
 import { BatchTagDialog, type BatchTagAction } from "./BatchTagDialog";
 import { SkillQuickDrawer } from "./SkillQuickDrawer";
 import { SkillMatrix } from "./SkillMatrix";
+import { SkillPagination } from "./SkillPagination";
 import { SkillTable } from "./SkillTable";
 import { SourceUpdateCheckSummary } from "./SourceUpdateCheckSummary";
 import { BatchRemovalImpactDialog } from "../removal/BatchRemovalImpactDialog";
@@ -418,7 +424,6 @@ export function SkillLibraryPage({
   const [saveViewError, setSaveViewError] = useState<string>();
   const [saveViewPending, setSaveViewPending] = useState(false);
   const [savedViewDeleteError, setSavedViewDeleteError] = useState<string>();
-  const [filtersCollapsed, setFiltersCollapsed] = useState(false);
   const [batchRemovalImpacts, setBatchRemovalImpacts] = useState<RemovalImpact[] | null>(null);
   const [batchRemovalLoading, setBatchRemovalLoading] = useState(false);
   const [batchRemovalSubmitting, setBatchRemovalSubmitting] = useState(false);
@@ -476,9 +481,10 @@ export function SkillLibraryPage({
   );
   const activeSavedView = savedViews.find((view) => view.id === query.savedViewId);
 
-  // FE-04 卡片视图：视图模式经 ui 偏好持久化；facade 未提供时静默用表格视图。
-  const [viewMode, setViewMode] = useState<LibraryViewMode>("table");
-  const viewModeRef = useRef<LibraryViewMode>("table");
+  // T3-B 卡片视图：普通用户默认增强卡片视图；表格保留为专业模式。
+  // 视图模式经 ui 偏好持久化；facade 未提供读取能力时静默使用默认卡片视图。
+  const [viewMode, setViewMode] = useState<LibraryViewMode>("cards");
+  const viewModeRef = useRef<LibraryViewMode>("cards");
   useEffect(() => {
     let active = true;
     void facade.loadViewMode?.().then((mode) => {
@@ -987,41 +993,77 @@ export function SkillLibraryPage({
   }
 
   const page = pageQuery.data;
-  const renderSkillCard = (item: SkillTableRow) => (
-    <article
-      className="sh-skill-card"
-      data-testid={`skill-card-${item.id}`}
-      key={item.id}
-    >
-      <button className="sh-skill-card__open" onClick={(event) => openSkill(item.id, event.currentTarget)} type="button">
-        <strong>{item.name}</strong>
-      </button>
-      {item.purpose ? <p>{item.purpose}</p> : null}
-      {item.tags.length > 0 ? (
-        <ul aria-label={t("skillLibrary.page.card.tags")} className="sh-skill-card__tags">
-          {item.tags.map((tag) => <li key={tag}>{tag}</li>)}
-        </ul>
-      ) : null}
-      <span className="sh-skill-card__facts">
-        <span className="sh-skill-card__fact">
-          {t("skillLibrary.page.card.version", { version: item.currentVersion })}
-        </span>
-        <span className="sh-skill-card__fact">
-          {t("skillLibrary.page.card.deploymentCount", { count: item.agentDeploymentCount })}
-        </span>
-        {item.upgradeAvailable ? (
-          <span className="sh-status sh-status--warning" data-testid={`skill-card-upgrade-${item.id}`}>
-            {t("skillLibrary.page.card.upgradeAvailable")}
-          </span>
-        ) : null}
-        {item.highRiskCount > 0 ? (
-          <span className="sh-status sh-status--error" data-testid={`skill-card-risk-${item.id}`}>
-            {t("skillLibrary.page.card.highRisk", { count: item.highRiskCount })}
-          </span>
-        ) : null}
-      </span>
-    </article>
-  );
+  const isSkillSelected = (skillId: string) =>
+    selection.kind === "all_filtered"
+      ? !selection.excludedSkillIds.includes(skillId)
+      : selection.kind === "explicit" && selection.skillIds.includes(skillId);
+  const toggleSkillSelected = (skillId: string, selected: boolean) => {
+    setSelectionAnnouncement(undefined);
+    if (selection.kind === "all_filtered") {
+      changeSelection(excludeFromAllFiltered(selection, skillId, !selected));
+      return;
+    }
+    changeSelection(selectExplicit(selection, [skillId], selected));
+  };
+  // T3-B：库内 Skill 的可证实字段映射到共享卡片；来源缺失时如实标注集中库，
+  // 不伪造作者、评分或兼容性。升级/风险状态保持“标记+文字”与既有测试锚点。
+  const renderSkillCard = (item: SkillTableRow) => {
+    const card: SkillCardViewModel = {
+      id: item.id,
+      name: item.name,
+      sourceType: "local",
+      sourceLabel: item.source ?? t("skillLibrary.page.card.sourceLocal"),
+      description:
+        item.purpose || item.translatedDescription || item.originalDescription || undefined,
+      metrics: [
+        t("skillLibrary.page.card.version", { version: item.currentVersion }),
+        t("skillLibrary.page.card.deploymentCount", { count: item.agentDeploymentCount }),
+        t("skillLibrary.table.projectDeployments", { count: item.projectDeploymentCount }),
+      ],
+      statuses: [
+        ...(item.upgradeAvailable
+          ? [{
+              label: t("skillLibrary.page.card.upgradeAvailable"),
+              testId: `skill-card-upgrade-${item.id}`,
+              tone: "warning" as const,
+            }]
+          : []),
+        ...(item.highRiskCount > 0
+          ? [{
+              label: t("skillLibrary.page.card.highRisk", { count: item.highRiskCount }),
+              testId: `skill-card-risk-${item.id}`,
+              tone: "danger" as const,
+            }]
+          : []),
+      ],
+    };
+    return (
+      <SkillCard
+        headingLevel={groupMode === "tags" ? "h4" : "h2"}
+        key={item.id}
+        primaryAction={
+          <Button
+            onClick={(event) => openSkill(item.id, event.currentTarget)}
+            variant="secondary"
+          >
+            {t("skillLibrary.page.card.open", { name: item.name })}
+          </Button>
+        }
+        secondaryAction={
+          <label className="sh-skill-card__select">
+            <input
+              aria-label={t("skillLibrary.table.selectSkill", { name: item.name })}
+              checked={isSkillSelected(item.id)}
+              onChange={(event) => toggleSkillSelected(item.id, event.currentTarget.checked)}
+              type="checkbox"
+            />
+          </label>
+        }
+        skill={card}
+        testId={`skill-card-${item.id}`}
+      />
+    );
+  };
 
   const groupedCards = new Map<string, SkillTableRow[]>();
   for (const item of page.items) {
@@ -1114,7 +1156,7 @@ export function SkillLibraryPage({
       </section>
       <div className="sh-skill-library__view-toggle">
         <label>
-          <span className="sh-visually-hidden">{t("skillLibrary.viewMode.label")}</span>
+          <span>{t("skillLibrary.viewMode.label")}</span>
           <select
             aria-label={t("skillLibrary.viewMode.label")}
             onChange={(event) => changeViewMode(event.currentTarget.value as LibraryViewMode)}
@@ -1126,7 +1168,7 @@ export function SkillLibraryPage({
           </select>
         </label>
         <label>
-          <span className="sh-visually-hidden">{t("skillLibrary.groupMode.label")}</span>
+          <span>{t("skillLibrary.groupMode.label")}</span>
           <select
             aria-label={t("skillLibrary.groupMode.label")}
             onChange={(event) => changeGroupMode(event.currentTarget.value as LibraryGroupMode)}
@@ -1144,38 +1186,28 @@ export function SkillLibraryPage({
         </p>
       ) : null}
 
-      <div className={`sh-skill-library__query-tools${filtersCollapsed ? " is-collapsed" : ""}`}>
-        <button
-          aria-controls="skill-library-filters"
-          aria-expanded={!filtersCollapsed}
-          aria-label={t(filtersCollapsed ? "skillLibrary.filters.expand" : "skillLibrary.filters.collapse")}
-          className="sh-skill-library__query-toggle"
-          onClick={() => setFiltersCollapsed((collapsed) => !collapsed)}
-          type="button"
-        >
-          <span aria-hidden="true">{filtersCollapsed ? "⌄" : "⌃"}</span>
-        </button>
-        {!filtersCollapsed ? (
-          <SkillFilters
-            availableTags={page.facets.tags}
-            id="skill-library-filters"
-            onChange={updateQuery}
-            onClear={clearFilters}
-            query={query}
-            versionFilterSupported={capabilities?.versionFilterSupported ?? true}
-          />
-        ) : null}
+      <div className="sh-skill-library__query-tools">
+        <SkillFilters
+          availableTags={page.facets.tags}
+          id="skill-library-filters"
+          onChange={updateQuery}
+          onClear={clearFilters}
+          query={query}
+          versionFilterSupported={capabilities?.versionFilterSupported ?? true}
+        />
       </div>
 
       {pageRefreshing ? (
         <SkillLibrarySkeleton />
-      ) : viewMode === "matrix" ? (
+      ) : null}
+      {!pageRefreshing && viewMode === "matrix" ? (
           <SkillMatrix
             deploymentRecords={deploymentRecords}
             deploymentTargets={deploymentTargets}
             items={page.items}
           />
-      ) : viewMode === "cards" ? (
+      ) : null}
+      {!pageRefreshing && viewMode === "cards" ? (
         groupMode === "tags" ? (
           [...groupedCards.entries()].map(([tag, groupItems]) => (
             <section key={tag}>
@@ -1190,7 +1222,17 @@ export function SkillLibraryPage({
             {page.items.map((item) => renderSkillCard(item))}
           </div>
         )
-      ) : (
+      ) : null}
+      {viewMode === "cards" ? (
+        <SkillPagination
+          className="sh-skill-cards__pagination"
+          onPageChange={(nextPage) => updateQuery({ ...query, page: nextPage })}
+          onPageSizeChange={(pageSize) => updateQuery({ ...query, page: 1, pageSize })}
+          page={page}
+          query={query}
+        />
+      ) : null}
+      {!pageRefreshing && viewMode === "table" ? (
         <SkillTable
           pageStatus={t("skillLibrary.page.pageStatus", {
             count: page.total,
@@ -1218,7 +1260,7 @@ export function SkillLibraryPage({
           selection={selection}
           sortableColumns={capabilities?.sortableColumns}
         />
-      )}
+      ) : null}
 
       {selectedBatchTarget ? (
         <BatchBar

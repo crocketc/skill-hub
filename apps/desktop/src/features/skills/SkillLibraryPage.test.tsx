@@ -30,6 +30,9 @@ interface RenderLibraryOptions {
   onOpenDiscovery?: () => void;
   queryRetry?: boolean | number;
   removalFacade?: RemovalFacade;
+  /** "table" (default) simulates a persisted table preference; "unset" keeps
+   * the facade without loadViewMode so the page default (cards) applies. */
+  persistedViewMode?: "table" | "unset";
 }
 
 interface RenderedLibrary {
@@ -43,7 +46,13 @@ function renderLibrary({
   onOpenDiscovery,
   queryRetry = false,
   removalFacade,
+  persistedViewMode = "table",
 }: RenderLibraryOptions): RenderedLibrary {
+  // T3-B 起页面默认卡片视图；既有表格语义测试统一模拟“用户已持久化表格视图”，
+  // 默认卡片行为由 persistedViewMode: "unset" 的用例覆盖。
+  if (persistedViewMode === "table") {
+    facade.loadViewMode ??= vi.fn(async () => "table" as const);
+  }
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: queryRetry, retryDelay: 0 } },
   });
@@ -167,20 +176,16 @@ describe("SkillLibraryPage", () => {
     expect(removalFacade.prepareDelete).toHaveBeenCalledWith("skill-pdf", "PDF Reader");
   });
 
-  it("collapses and expands the filters with a compact toggle", async () => {
+  it("keeps search visible while secondary filters collapse in the library", async () => {
     const facade = createMockSkillLibraryFacade();
     renderLibrary({ facade });
 
-    const collapse = await screen.findByRole("button", { name: "Collapse filters" });
-    expect(collapse).toHaveAttribute("aria-expanded", "true");
-    fireEvent.click(collapse);
+    const toggle = await screen.findByRole("button", { name: /Filters/ });
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+    fireEvent.click(toggle);
 
-    expect(screen.queryByRole("searchbox", { name: "Search skills" })).not.toBeInTheDocument();
-    const expand = screen.getByRole("button", { name: "Expand filters" });
-    expect(expand).toHaveAttribute("aria-expanded", "false");
-    fireEvent.click(expand);
-
-    expect(await screen.findByRole("searchbox", { name: "Search skills" })).toBeVisible();
+    expect(screen.getByRole("searchbox", { name: "Search skills" })).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Basic check" })).not.toBeInTheDocument();
   });
 
   it("places the page result status in the results toolbar", async () => {
@@ -1172,24 +1177,64 @@ describe("SkillLibraryPage", () => {
   });
 
 
-  it("toggles to the card view and persists the choice", async () => {
-    const facade = createMockSkillLibraryFacade();
+  it("defaults to the enhanced shared-card view with verifiable facts and stable actions", async () => {
+    const facade = createMockSkillLibraryFacade({ total: 30 });
     facade.saveViewMode = vi.fn(async () => undefined);
-    renderLibrary({ facade });
+    renderLibrary({ facade, persistedViewMode: "unset" });
 
-    // 默认表格视图：表格可见
-    await screen.findByRole("checkbox", { name: "Select PDF Reader" });
-
-    fireEvent.change(screen.getByLabelText("View mode"), {
-      target: { value: "cards" },
-    });
-    expect(facade.saveViewMode).toHaveBeenCalledWith("cards");
-    // 卡片渲染了技能名
-    expect(await screen.findByTestId("skill-card-skill-pdf")).toBeVisible();
+    // 默认即增强卡片视图：无需切换即可见共享 SkillCard 语义。
+    const card = await screen.findByTestId("skill-card-skill-pdf");
+    expect(card).toBeVisible();
+    expect(screen.getByRole("heading", { name: "PDF Reader" })).toBeVisible();
+    expect(screen.getByText("Internal catalog")).toBeVisible();
+    expect(screen.getByText("Read and extract PDFs")).toBeVisible();
     // C1 收口：卡片事实行展示当前版本；PDF mock 有可升级版本与高风险发现
-    expect(screen.getByTestId("skill-card-skill-pdf")).toHaveTextContent(/1\.4\.0/);
+    expect(card).toHaveTextContent(/1\.4\.0/);
     expect(screen.getByTestId("skill-card-upgrade-skill-pdf")).toBeVisible();
     expect(screen.getByTestId("skill-card-risk-skill-pdf")).toBeVisible();
+
+    // 整卡不可点击：打开快速抽屉是操作区里的独立按钮语义。
+    fireEvent.click(screen.getByRole("button", { name: "View PDF Reader" }));
+    expect(await screen.findByTestId("skill-quick-drawer")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+
+    // 选择/批量操作语义在卡片视图内保持。
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select PDF Reader" }));
+    expect(screen.getByRole("complementary", { name: "Batch actions" })).toBeVisible();
+
+    // 卡片视图保留分页能力。
+    expect(screen.getByRole("button", { name: "Next page" })).toBeVisible();
+  });
+
+  it("keeps view-mode choice persistent when switching to the professional table", async () => {
+    const facade = createMockSkillLibraryFacade();
+    facade.saveViewMode = vi.fn(async () => undefined);
+    renderLibrary({ facade, persistedViewMode: "unset" });
+
+    await screen.findByTestId("skill-card-skill-pdf");
+
+    fireEvent.change(screen.getByLabelText("View mode"), {
+      target: { value: "table" },
+    });
+    expect(facade.saveViewMode).toHaveBeenCalledWith("table");
+    expect(await screen.findByRole("table")).toBeVisible();
+  });
+
+  it("keeps the batch selection when switching between card and table views", async () => {
+    const facade = createMockSkillLibraryFacade();
+    renderLibrary({ facade, persistedViewMode: "unset" });
+
+    fireEvent.click(
+      await screen.findByRole("checkbox", { name: "Select PDF Reader" }),
+    );
+    expect(screen.getByRole("complementary", { name: "Batch actions" })).toBeVisible();
+
+    fireEvent.change(screen.getByLabelText("View mode"), {
+      target: { value: "table" },
+    });
+    const table = await screen.findByRole("table");
+    expect(table).toBeVisible();
+    expect(screen.getByRole("checkbox", { name: "Select PDF Reader" })).toBeChecked();
   });
 
   it("shows a filter-scoped summary strip built from existing query fields", async () => {

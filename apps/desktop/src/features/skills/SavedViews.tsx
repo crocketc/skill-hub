@@ -1,4 +1,5 @@
 import { useTranslation } from "react-i18next";
+import { IconButton } from "../../ui/IconButton";
 import type { SavedSkillView } from "./api";
 
 export interface SavedViewsProps {
@@ -22,14 +23,12 @@ function ViewButton({ activeViewId, onApply, onDelete, view }: Pick<SavedViewsPr
         {label}
       </button>
       {!view.builtIn && onDelete ? (
-        <button
-          aria-label={t("skillLibrary.savedViews.delete", { name: label })}
-          className="sh-saved-view__delete"
+        <IconButton
+          className="sh-saved-view__remove"
+          icon="close"
+          label={t("skillLibrary.savedViews.delete", { name: label })}
           onClick={() => onDelete(view)}
-          type="button"
-        >
-          ×
-        </button>
+        />
       ) : null}
     </span>
   );

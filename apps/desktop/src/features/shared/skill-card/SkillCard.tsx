@@ -16,6 +16,11 @@ export interface SkillCardProps {
    * 顶层浏览页（无更高级标题）可显式传 `h2`。
    */
   headingLevel?: "h2" | "h3" | "h4";
+  /**
+   * 可选测试锚点（渲染为 `data-testid`）。T3-B 向后兼容扩展：
+   * 缺省时仍只有 `data-skill-card`，既有消费方不受影响。
+   */
+  testId?: string;
 }
 
 /**
@@ -29,6 +34,7 @@ export function SkillCard({
   primaryAction,
   secondaryAction,
   skill,
+  testId,
 }: SkillCardProps) {
   const hasMeta = Boolean(
     skill.location || (skill.metrics && skill.metrics.length > 0) ||
@@ -36,7 +42,7 @@ export function SkillCard({
   );
 
   return (
-    <article className="sh-skill-card" data-skill-card={skill.id}>
+    <article className="sh-skill-card" data-skill-card={skill.id} data-testid={testId}>
       <div className="sh-skill-card__identity">
         <span aria-hidden="true" className="sh-skill-card__source-icon">
           <Icon name={skillCardSourceIcon(skill.sourceType)} size={20} />
