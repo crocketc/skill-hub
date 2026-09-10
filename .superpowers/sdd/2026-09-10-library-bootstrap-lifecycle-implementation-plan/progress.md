@@ -34,3 +34,5 @@ Task 4: complete（提交范围：facade、部署/移除/对账、导入/版本/
 Task 5: complete（提交范围：新增 `LibraryActivationMode`/`activate_library_root`，实现候选库校验→数据库持久化→Active 发布的单次事务，增加建议路径启动构造；测试结果：激活 create/existing/失败/锁定 4 个 facade 用例通过，`cargo test -p skillhub-desktop generate_bindings` 通过 Specta 生成校验；未提交生成绑定，留给 Task 7）。
 
 Task 6: complete（提交范围：新增首次恢复 prepare/commit 命令，恢复与数据库路径持久化成功后才发布 Active，失败保持 Pending；测试结果：首次恢复目标与延迟激活 1 passed，失败保持 Pending/已初始化拒绝 1 passed，`cargo test -p skillhub-storage --test restore_migration` 2 passed）。
+
+Task 7: complete（提交范围：通过 Specta 重新生成绑定，桌面适配器新增激活与首次恢复命令并保留普通恢复契约，移除 onboarding adapter 的 restart 暴露；测试结果：`cargo test -p skillhub-desktop generate_bindings` 通过，`pnpm --dir apps/desktop test --run src/features/bootstrap/api.test.ts` 6 passed）。

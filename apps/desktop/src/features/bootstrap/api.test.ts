@@ -125,3 +125,51 @@ it("keeps the native scan result for the read-only preview", async () => {
     result: scanResult,
   });
 });
+
+it("activates a selected library through the typed native command", async () => {
+  mocks.executeCommand.mockResolvedValue({
+    type: "initialization_status",
+    payload: { state: "initialized", library_path: "D:\\SkillHub", skipped: false },
+  });
+
+  await desktopOnboardingOperations.activateLibraryRoot("D:\\SkillHub", "create");
+
+  expect(mocks.executeCommand).toHaveBeenCalledWith({
+    type: "activate_library_root",
+    payload: { path: "D:\\SkillHub", mode: "create" },
+  });
+});
+
+it("sends the selected target to first-run restore while preserving ordinary restore", async () => {
+  mocks.executeCommand
+    .mockResolvedValueOnce({ type: "restore_plan", payload: { conflicts: [] } })
+    .mockResolvedValueOnce({ type: "restore_result", payload: { restored: [], skipped: [] } })
+    .mockResolvedValueOnce({ type: "restore_plan", payload: { conflicts: [] } })
+    .mockResolvedValueOnce({ type: "restore_result", payload: { restored: [], skipped: [] } });
+
+  await desktopOnboardingOperations.prepareInitialRestore("C:\\backup.skillhub", "D:\\SkillHub");
+  await desktopOnboardingOperations.commitInitialRestore("C:\\backup.skillhub", "D:\\SkillHub", []);
+  await desktopOnboardingOperations.prepareRestore?.("C:\\backup.skillhub");
+  await desktopOnboardingOperations.commitRestore?.("C:\\backup.skillhub", []);
+
+  expect(mocks.executeCommand).toHaveBeenNthCalledWith(1, {
+    type: "prepare_initial_restore",
+    payload: { backup_path: "C:\\backup.skillhub", library_path: "D:\\SkillHub" },
+  });
+  expect(mocks.executeCommand).toHaveBeenNthCalledWith(2, {
+    type: "commit_initial_restore",
+    payload: { backup_path: "C:\\backup.skillhub", library_path: "D:\\SkillHub", decisions: [] },
+  });
+  expect(mocks.executeCommand).toHaveBeenNthCalledWith(3, {
+    type: "prepare_restore",
+    payload: { path: "C:\\backup.skillhub" },
+  });
+  expect(mocks.executeCommand).toHaveBeenNthCalledWith(4, {
+    type: "commit_restore",
+    payload: { path: "C:\\backup.skillhub", decisions: [] },
+  });
+});
+
+it("does not expose the restart workaround in onboarding operations", () => {
+  expect("restart" in desktopOnboardingOperations).toBe(false);
+});

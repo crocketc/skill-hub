@@ -2,6 +2,7 @@ import {
   executeCommand,
   queryApplication,
   type BootstrapSnapshot,
+  type LibraryActivationMode,
   type OperationPhase,
   type RestoreDecision,
   type RestorePlan,
@@ -9,7 +10,6 @@ import {
   type ScanResult,
 } from "../../api/bindings";
 import { desktopDirectoryPicker } from "../../platform/directoryPicker";
-import { desktopRestarter } from "../../platform/restart";
 
 export type BootstrapVerificationState =
   | { kind: "unavailable" }
@@ -43,11 +43,16 @@ export interface OnboardingOperations {
   discoverAgents: () => Promise<CompatibilityDiscoveryResult>;
   prepareRestore?: (path: string) => Promise<RestorePlan>;
   commitRestore?: (path: string, decisions: RestoreDecision[]) => Promise<RestoreResult>;
+  prepareInitialRestore?: (backupPath: string, libraryPath: string) => Promise<RestorePlan>;
+  commitInitialRestore?: (
+    backupPath: string,
+    libraryPath: string,
+    decisions: RestoreDecision[],
+  ) => Promise<RestoreResult>;
   pickDirectory?: () => Promise<string | null>;
   /** Chooses the central library root before initialization completes. */
   setLibraryRoot?: (path: string) => Promise<void>;
-  /** Restarts the application so the persisted library root takes effect. */
-  restart?: () => Promise<void>;
+  activateLibraryRoot?: (path: string, mode: LibraryActivationMode) => Promise<void>;
 }
 
 export interface CompatibilityTarget {
@@ -144,6 +149,26 @@ export const desktopOnboardingOperations: OnboardingOperations = {
     }
     return result.payload;
   },
+  async prepareInitialRestore(backupPath, libraryPath) {
+    const result = await executeCommand({
+      type: "prepare_initial_restore",
+      payload: { backup_path: backupPath, library_path: libraryPath },
+    });
+    if (result.type !== "restore_plan") {
+      throw new Error("Unexpected initial restore plan response from the native application.");
+    }
+    return result.payload;
+  },
+  async commitInitialRestore(backupPath, libraryPath, decisions) {
+    const result = await executeCommand({
+      type: "commit_initial_restore",
+      payload: { backup_path: backupPath, library_path: libraryPath, decisions },
+    });
+    if (result.type !== "restore_result") {
+      throw new Error("Unexpected initial restore result response from the native application.");
+    }
+    return result.payload;
+  },
   async pickDirectory() {
     return desktopDirectoryPicker.pickDirectory();
   },
@@ -153,8 +178,14 @@ export const desktopOnboardingOperations: OnboardingOperations = {
       throw new Error("Unexpected library root response from the native application.");
     }
   },
-  async restart() {
-    await desktopRestarter.restart();
+  async activateLibraryRoot(path, mode) {
+    const result = await executeCommand({
+      type: "activate_library_root",
+      payload: { path, mode },
+    });
+    if (result.type !== "initialization_status") {
+      throw new Error("Unexpected library activation response from the native application.");
+    }
   },
 };
 
