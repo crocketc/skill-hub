@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { describeNativeError } from "../../api/nativeErrors";
 import { Button } from "../../ui/Button";
 import { ConfirmDialog } from "../../ui/ConfirmDialog";
+import { DataState } from "../../ui/DataState";
 import {
   type CompatibilityTarget,
   desktopBootstrapRuntime,
@@ -16,10 +17,13 @@ import { CompatibilityStep } from "./CompatibilityStep";
 import { LibraryStep } from "./LibraryStep";
 import { RestoreStep } from "./RestoreStep";
 import { ScanStep } from "./ScanStep";
+import { WizardShell, type WizardStep } from "./WizardShell";
 import type { ThemeName } from "../../styles/theme";
 
 interface OnboardingWizardProps {
-  initialBranch?: "create" | "select";
+  /** Display-level knob so previews can reach the slow-scan branch deterministically. */
+  scanSlowAfterMs?: number;
+  initialBranch?: "create" | "select" | "restore";
   libraryPath?: string;
   onComplete?: () => void;
   onOpenImport?: (roots: string[]) => void;
@@ -65,6 +69,7 @@ export function OnboardingWizard({
   onOpenImport,
   operations = desktopOnboardingOperations,
   runtime = desktopBootstrapRuntime,
+  scanSlowAfterMs = 10_000,
   onThemeChange,
   theme = "moss-neutral",
 }: OnboardingWizardProps) {
@@ -77,7 +82,7 @@ export function OnboardingWizard({
       "onboarding.genericError",
     );
   const [branch, setBranch] = useState<InitializationBranch | null>(
-    initialBranch === "select" ? null : "create",
+    initialBranch === "select" ? null : initialBranch === "restore" ? "restore" : "create",
   );
   const [step, setStep] = useState(0);
   const [compatibilityConfirmed, setCompatibilityConfirmed] = useState(false);
@@ -92,6 +97,7 @@ export function OnboardingWizard({
   const [completionState, setCompletionState] = useState<"idle" | "pending" | "complete">("idle");
   const [completionSnapshot, setCompletionSnapshot] = useState<CompletionSnapshot | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [nativeLibraryPath, setNativeLibraryPath] = useState(libraryPath);
   const [customLibraryPath, setCustomLibraryPath] = useState<string | null>(null);
 
@@ -117,13 +123,14 @@ export function OnboardingWizard({
   const discoverAgents = async () => {
     setIsDiscovering(true);
     setMessage(null);
+    setError(null);
     try {
       const result = await operations.discoverAgents();
       setTargets(result.targets);
       setSelectedTargetIds([]);
       setSelectionConfirmed(false);
-    } catch (error) {
-      setMessage(describe(error));
+    } catch (caught) {
+      setError(describe(caught));
     } finally {
       setIsDiscovering(false);
     }
@@ -135,6 +142,7 @@ export function OnboardingWizard({
     setScanInBackground(false);
     setScanState(null);
     setMessage(null);
+    setError(null);
     try {
       const result = await runtime.runInitializationScan(selectedTargetIds);
       setScanState(result);
@@ -143,10 +151,10 @@ export function OnboardingWizard({
           ? t("onboarding.scanComplete")
           : t("onboarding.scanStarted"),
       );
-    } catch (error) {
-      const code = nativeErrorCode(error);
+    } catch (caught) {
+      const code = nativeErrorCode(caught);
       console.error("initialization_scan_failed", code ?? "unknown");
-      setMessage(code ? t("onboarding.scanFailedWithCode", { code }) : t("onboarding.scanFailedWithoutCode"));
+      setError(code ? t("onboarding.scanFailedWithCode", { code }) : t("onboarding.scanFailedWithoutCode"));
     } finally {
       setIsScanning(false);
     }
@@ -154,9 +162,9 @@ export function OnboardingWizard({
 
   useEffect(() => {
     if (!isScanning || scanInBackground) return;
-    const timer = window.setTimeout(() => setScanSlow(true), 10_000);
+    const timer = window.setTimeout(() => setScanSlow(true), scanSlowAfterMs);
     return () => window.clearTimeout(timer);
-  }, [isScanning, scanInBackground]);
+  }, [isScanning, scanInBackground, scanSlowAfterMs]);
 
   // Completion stays on the summary page; the user explicitly enters the app
   // or the import flow from there, so nothing jumps away automatically.
@@ -166,23 +174,25 @@ export function OnboardingWizard({
     }
     setCompletionState("pending");
     setMessage(null);
+    setError(null);
     try {
       await operations.completeOnboarding({ libraryPath: nativeLibraryPath, skipped });
       setCompletionSnapshot({ branch: branch ?? "create", skipped });
       setCompletionState("complete");
-    } catch (error) {
+    } catch (caught) {
       setCompletionState("idle");
-      setMessage(describe(error));
+      setError(describe(caught));
     }
   };
 
   const pickCustomDirectory = async () => {
     setMessage(null);
+    setError(null);
     try {
       const path = await operations.pickDirectory?.();
       if (path) setCustomLibraryPath(path);
-    } catch (error) {
-      setMessage(describe(error));
+    } catch (caught) {
+      setError(describe(caught));
     }
   };
 
@@ -191,6 +201,7 @@ export function OnboardingWizard({
     if (!selectedPath || completionState !== "idle") return;
     setCompletionState("pending");
     setMessage(null);
+    setError(null);
     try {
       if (operations.activateLibraryRoot) {
         await operations.activateLibraryRoot(selectedPath, branch === "existing" ? "existing" : "create");
@@ -198,9 +209,9 @@ export function OnboardingWizard({
       setNativeLibraryPath(selectedPath);
       setCompletionState("idle");
       setStep(1);
-    } catch (error) {
+    } catch (caught) {
       setCompletionState("idle");
-      setMessage(describe(error));
+      setError(describe(caught));
     }
   };
 
@@ -263,6 +274,21 @@ export function OnboardingWizard({
       />
     );
 
+  const initializationSteps = (current: number): WizardStep[] => [
+    {
+      label: t("onboarding.libraryTitle"),
+      state: current > 0 ? "complete" : "current",
+    },
+    {
+      label: t("onboarding.compatibilityTitle"),
+      state: current === 1 ? "current" : current > 1 ? "complete" : "upcoming",
+    },
+    {
+      label: t("onboarding.scanTitle"),
+      state: current === 2 ? "current" : "upcoming",
+    },
+  ];
+
   if (completionState === "complete") {
     const summary = completionSnapshot;
     const restoreSummary = summary?.branch === "restore";
@@ -297,7 +323,7 @@ export function OnboardingWizard({
           ) : null}
           {summary && !restoreSummary && !summary.skipped && !scanResult ? (
             <p className="sh-onboarding__message">
-              {scanState?.kind === "in_progress"
+              {scanState?.kind === "in_progress" || scanInBackground
                 ? t("onboarding.summary.scanInProgress")
                 : t("onboarding.summary.scanSkipped")}
             </p>
@@ -307,7 +333,7 @@ export function OnboardingWizard({
               {t("onboarding.summary.openImport")}
             </Button>
           ) : null}
-          <Button onClick={() => onComplete?.()}>{t("onboarding.summary.enterApp")}</Button>
+          <Button onClick={() => onComplete?.()} size="lg">{t("onboarding.summary.enterApp")}</Button>
         </section>
       </main>
     );
@@ -315,95 +341,102 @@ export function OnboardingWizard({
 
   if (branch === null) {
     return (
-      <main className="sh-onboarding">
-        <div className="sh-onboarding__frame">
-          <header className="sh-onboarding__header">
-            <p>{t("onboarding.eyebrow")}</p>
-          </header>
-          <BranchSelection onSelect={(selected) => { setBranch(selected); setStep(0); }} />
-        </div>
-      </main>
+      <WizardShell
+        eyebrow={t("onboarding.eyebrow")}
+        steps={initializationSteps(0).map((branchStep) => ({ ...branchStep, state: "upcoming" as const }))}
+        stepsLabel={t("onboarding.stepsLabel")}
+      >
+        <BranchSelection onSelect={(selected) => { setBranch(selected); setStep(0); }} />
+      </WizardShell>
     );
   }
 
   if (branch === "restore") {
     return (
-      <main className="sh-onboarding">
-        <div className="sh-onboarding__frame">
-          <header className="sh-onboarding__header">
-            <p>{t("onboarding.eyebrow")}</p>
-          </header>
-          <RestoreStep
-            operations={operations}
-            libraryPath={nativeLibraryPath}
-            onBack={() => setBranch(null)}
-            onComplete={() => void complete(false)}
-          />
-        </div>
-      </main>
+      <WizardShell
+        eyebrow={t("onboarding.eyebrow")}
+        steps={[{ label: t("onboarding.restoreTitle"), state: "current" }]}
+        stepsLabel={t("onboarding.stepsLabel")}
+      >
+        <RestoreStep
+          operations={operations}
+          libraryPath={nativeLibraryPath}
+          onBack={() => setBranch(null)}
+          onComplete={() => void complete(false)}
+        />
+      </WizardShell>
     );
   }
 
-  return (
-    <main className="sh-onboarding">
-      <div className="sh-onboarding__frame">
-        <header className="sh-onboarding__header">
-          <p>{t("onboarding.eyebrow")}</p>
-          <span>{t("onboarding.step", { current: step + 1 })}</span>
-        </header>
-        {activeStep}
-        {message ? <p aria-live="polite" className="sh-onboarding__message">{message}</p> : null}
-        {scanState?.kind === "in_progress" ? (
-          <p className="sh-onboarding__message">
-            <code>{scanState.operationId}</code>
-            {` · ${scanState.phase}`}
-          </p>
+  const footer = (
+    <>
+      <div className="sh-onboarding__actions-group">
+        {step > 0 ? (
+          <Button onClick={() => setStep((current) => current - 1)} variant="secondary">
+            {t("onboarding.back")}
+          </Button>
+        ) : initialBranch === "select" ? (
+          <Button onClick={() => setBranch(null)} variant="secondary">
+            {t("onboarding.back")}
+          </Button>
         ) : null}
-        <footer className="sh-onboarding__actions">
-          {step > 0 ? (
-            <Button onClick={() => setStep((current) => current - 1)} variant="secondary">
-              {t("onboarding.back")}
-            </Button>
-          ) : initialBranch === "select" ? (
-            <Button onClick={() => setBranch(null)} variant="secondary">
-              {t("onboarding.back")}
-            </Button>
-          ) : null}
-          {step < 2 ? (
-            <Button
-              disabled={!canContinue || (step === 0 && completionState === "pending")}
-              onClick={() => (step === 0 ? continueFromLibraryStep() : setStep((current) => current + 1))}
-            >
-              {step === 0
-                ? operations.activateLibraryRoot
-                  ? t("onboarding.saveAndContinue")
-                  : t("onboarding.continue")
-                : t("onboarding.continue")}
-            </Button>
-          ) : (
-            <>
-              <Button
-                disabled={completionState !== "idle" || !nativeLibraryPath}
-                onClick={() => void complete(false)}
-              >
-                {t("onboarding.finish")}
-              </Button>
-              <Button disabled={completionState !== "idle" || !nativeLibraryPath} onClick={() => void complete(false)} variant="secondary">
-                {t("onboarding.skipScan")}
-              </Button>
-            </>
-          )}
-          <ConfirmDialog
-            cancelLabel={t("actions.cancel")}
-            confirmLabel={t("onboarding.confirmSkip")}
-            description={t("onboarding.skipDescription", { path: nativeLibraryPath })}
-            onConfirm={() => void complete(true)}
-            title={t("onboarding.skipTitle")}
-            trigger={<Button disabled={!nativeLibraryPath || completionState !== "idle"} variant="ghost">{t("onboarding.skip")}</Button>}
-            variant="primary"
-          />
-        </footer>
       </div>
-    </main>
+      <div className="sh-onboarding__actions-group sh-onboarding__actions-group--primary">
+        {step < 2 ? (
+          <Button
+            disabled={!canContinue || (step === 0 && completionState === "pending")}
+            onClick={() => (step === 0 ? continueFromLibraryStep() : setStep((current) => current + 1))}
+            size="lg"
+          >
+            {step === 0
+              ? operations.activateLibraryRoot
+                ? t("onboarding.saveAndContinue")
+                : t("onboarding.continue")
+              : t("onboarding.continue")}
+          </Button>
+        ) : (
+          <>
+            <Button
+              disabled={completionState !== "idle" || !nativeLibraryPath}
+              onClick={() => void complete(false)}
+              size="lg"
+            >
+              {t("onboarding.finish")}
+            </Button>
+            <Button disabled={completionState !== "idle" || !nativeLibraryPath} onClick={() => void complete(false)} variant="secondary">
+              {t("onboarding.skipScan")}
+            </Button>
+          </>
+        )}
+        <ConfirmDialog
+          cancelLabel={t("actions.cancel")}
+          confirmLabel={t("onboarding.confirmSkip")}
+          description={t("onboarding.skipDescription", { path: nativeLibraryPath })}
+          onConfirm={() => void complete(true)}
+          title={t("onboarding.skipTitle")}
+          trigger={<Button disabled={!nativeLibraryPath || completionState !== "idle"} variant="ghost">{t("onboarding.skip")}</Button>}
+          variant="primary"
+        />
+      </div>
+    </>
+  );
+
+  return (
+    <WizardShell
+      eyebrow={t("onboarding.eyebrow")}
+      footer={footer}
+      steps={initializationSteps(step)}
+      stepsLabel={t("onboarding.stepsLabel")}
+      status={message ? { kind: "info", text: message } : null}
+    >
+      {activeStep}
+      {scanState?.kind === "in_progress" ? (
+        <p className="sh-onboarding__message">
+          <code>{scanState.operationId}</code>
+          {` · ${scanState.phase}`}
+        </p>
+      ) : null}
+      {error ? <DataState message={error} state="error" /> : null}
+    </WizardShell>
   );
 }

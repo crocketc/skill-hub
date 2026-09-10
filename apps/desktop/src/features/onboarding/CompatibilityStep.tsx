@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "../../ui/Button";
 import { BrandTag } from "../../ui/BrandTag";
+import { CheckboxField } from "../../ui/CheckboxField";
 import type { CompatibilityTarget } from "../bootstrap/api";
 
 interface CompatibilityStepProps {
@@ -46,17 +47,13 @@ export function CompatibilityStep({
 
   return (
     <section aria-labelledby="compatibility-step-title" className="sh-onboarding__card">
-      <span className="sh-onboarding__ordinal">2</span>
       <h1 id="compatibility-step-title">{t("onboarding.compatibilityTitle")}</h1>
       <p>{t("onboarding.compatibilityDescription")}</p>
-      <label className="sh-onboarding__check">
-        <input
-          checked={confirmed}
-          onChange={(event) => onConfirmChange(event.target.checked)}
-          type="checkbox"
-        />
-        {t("onboarding.compatibilityConfirmation")}
-      </label>
+      <CheckboxField
+        checked={confirmed}
+        label={t("onboarding.compatibilityConfirmation")}
+        onChange={(event) => onConfirmChange(event.target.checked)}
+      />
       <Button
         disabled={!confirmed}
         loading={isDiscovering}
@@ -106,14 +103,11 @@ export function CompatibilityStep({
         </fieldset>
       ) : null}
       {selectedTargetIds.length > 0 ? (
-        <label className="sh-onboarding__check">
-          <input
-            checked={selectionConfirmed}
-            onChange={(event) => onSelectionConfirmChange(event.target.checked)}
-            type="checkbox"
-          />
-          {t("onboarding.selectionConfirmation")}
-        </label>
+        <CheckboxField
+          checked={selectionConfirmed}
+          label={t("onboarding.selectionConfirmation")}
+          onChange={(event) => onSelectionConfirmChange(event.target.checked)}
+        />
       ) : null}
     </section>
   );
@@ -132,19 +126,20 @@ function TargetCheckbox({
   const kindKey = target.kind && isClientKind(target.kind)
     ? (`onboarding.clientKind.${target.kind}` as const)
     : null;
+  const description = [
+    kindKey ? t(kindKey) : null,
+    target.availability === "unavailable" ? t("onboarding.unavailable") : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
   return (
-    <label className="sh-onboarding__check">
-      <input
-        aria-label={target.label}
-        checked={selectedTargetIds.includes(target.id)}
-        disabled={target.availability === "unavailable"}
-        onChange={(event) => onTargetSelectionChange(target.id, event.target.checked)}
-        type="checkbox"
-      />
-      {target.label}
-      {kindKey ? <span className="sh-onboarding__kind">{t(kindKey)}</span> : null}
-      {target.availability === "unavailable" ? ` (${t("onboarding.unavailable")})` : null}
-    </label>
+    <CheckboxField
+      checked={selectedTargetIds.includes(target.id)}
+      description={description || undefined}
+      disabled={target.availability === "unavailable"}
+      label={target.label}
+      onChange={(event) => onTargetSelectionChange(target.id, event.target.checked)}
+    />
   );
 }
 

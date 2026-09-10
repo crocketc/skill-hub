@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { Navigate } from "react-router-dom";
 import type { BootstrapSnapshot, StartupRecoveryState } from "../../api/bindings";
 import { AppShell } from "../../app/AppShell";
+import { DataState } from "../../ui/DataState";
 import {
   type BootstrapVerificationState,
   desktopBootstrapRuntime,
@@ -46,17 +47,23 @@ function RecoveryBlocker({ recoveryState }: { recoveryState: StartupRecoveryStat
 
 function LoadingState() {
   const { t } = useTranslation();
-  return <main className="sh-startup-loading">{t("dataState.loading")}</main>;
+  return (
+    <main className="sh-startup-loading">
+      <DataState message={t("dataState.loading")} state="loading" />
+    </main>
+  );
 }
 
 function ErrorState({ retry }: { retry: () => void }) {
   const { t } = useTranslation();
   return (
     <main className="sh-startup-loading">
-      <p>{t("dataState.error")}</p>
-      <button onClick={retry} type="button">
-        {t("actions.retry")}
-      </button>
+      <DataState
+        actionLabel={t("actions.retry")}
+        message={t("dataState.error")}
+        onAction={retry}
+        state="error"
+      />
     </main>
   );
 }

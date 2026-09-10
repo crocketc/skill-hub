@@ -2,6 +2,9 @@ import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { describeNativeError } from "../../api/nativeErrors";
 import { Button } from "../../ui/Button";
+import { DataState } from "../../ui/DataState";
+import { Field } from "../../ui/Field";
+import { Select } from "../../ui/Select";
 import type { RestoreConflictDecision, RestoreDecision, RestorePlan } from "../../api/bindings";
 import type { OnboardingOperations } from "../bootstrap/api";
 
@@ -111,7 +114,6 @@ export function RestoreStep({ operations, libraryPath, onComplete, onBack }: Res
 
   return (
     <section aria-labelledby="restore-step-title" className="sh-onboarding__card">
-      <span className="sh-onboarding__ordinal">0</span>
       <h1 id="restore-step-title">{t("onboarding.restoreTitle")}</h1>
       <p>{t("onboarding.restoreDescription")}</p>
       {usesInitialRestore ? (
@@ -146,23 +148,25 @@ export function RestoreStep({ operations, libraryPath, onComplete, onBack }: Res
         <fieldset aria-label={t("onboarding.restoreConflictsHeading")}>
           <legend>{t("onboarding.restoreConflictsHeading")}</legend>
           {decidableConflicts.map((conflict) => (
-            <label key={conflict.skill_id}>
-              {t("dataProtection.restore.decision", { skillId: conflict.skill_id })}
-              <select
-                value={decisions[conflict.skill_id!] ?? ""}
+            <Field
+              key={conflict.skill_id}
+              label={t("dataProtection.restore.decision", { skillId: conflict.skill_id })}
+            >
+              <Select
                 onChange={(event) =>
                   setDecisions((current) => ({
                     ...current,
                     [conflict.skill_id!]: event.target.value as RestoreConflictDecision,
                   }))
                 }
+                value={decisions[conflict.skill_id!] ?? ""}
               >
                 <option value="">{t("dataProtection.restore.choose")}</option>
                 <option value="overwrite">{t("dataProtection.restore.overwrite")}</option>
                 <option value="keep_both">{t("dataProtection.restore.keepBoth")}</option>
                 <option value="skip">{t("dataProtection.restore.skip")}</option>
-              </select>
-            </label>
+              </Select>
+            </Field>
           ))}
         </fieldset>
       ) : null}
@@ -176,7 +180,7 @@ export function RestoreStep({ operations, libraryPath, onComplete, onBack }: Res
           {t("onboarding.restoreRunning", { count: plan.skills, seconds: elapsedSeconds })}
         </p>
       ) : null}
-      {message ? <p aria-live="polite" className="sh-onboarding__message">{message}</p> : null}
+      {message ? <DataState message={message} state="error" /> : null}
       <Button disabled={isRestoring} onClick={onBack} variant="secondary">
         {t("onboarding.restoreBack")}
       </Button>

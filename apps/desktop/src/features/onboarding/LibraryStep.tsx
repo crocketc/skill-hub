@@ -24,7 +24,6 @@ export function LibraryStep({
   if (!libraryPath) {
     return (
       <section aria-labelledby="library-step-title" className="sh-onboarding__card">
-        <span className="sh-onboarding__ordinal">1</span>
         <h1 id="library-step-title">{t("onboarding.pathUnavailableTitle")}</h1>
         <p>{t("onboarding.pathUnavailableDescription")}</p>
       </section>
@@ -33,7 +32,6 @@ export function LibraryStep({
 
   return (
     <section aria-labelledby="library-step-title" className="sh-onboarding__card">
-      <span className="sh-onboarding__ordinal">1</span>
       <h1 id="library-step-title">{t("onboarding.libraryTitle")}</h1>
       <p>{t("onboarding.libraryDescription")}</p>
       <div className="sh-onboarding__path">
