@@ -4,8 +4,9 @@ import { I18nextProvider } from "react-i18next";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { describe, expect, it } from "vitest";
 import { createSkillHubI18n } from "../../i18n";
+import { SecurityEvidence } from "./InsightPanels";
 import { SkillDetailPage } from "./SkillDetailPage";
-import { createMockSkillDetailFacade } from "./testFixtures";
+import { createMockSkillDetailFacade, detailFixture } from "./testFixtures";
 
 async function renderEvidence(facade = createMockSkillDetailFacade()) {
   const i18n = await createSkillHubI18n(["zh-CN"]);
@@ -36,6 +37,26 @@ describe("Skill detail evidence panels", () => {
     expect(await screen.findByText("检查发现项")).toBeVisible();
     expect(screen.getByText("fixture_rule")).toBeVisible();
     expect(screen.getAllByText(/SKILL\.md/)[0]).toBeVisible();
+  });
+
+  it("marks AI check findings as advisory without weakening the deterministic check", async () => {
+    const i18n = await createSkillHubI18n(["zh-CN"]);
+    const fixture = detailFixture();
+    render(
+      <I18nextProvider i18n={i18n}>
+        <SecurityEvidence
+          findings={[{ code: "fixture_rule", disposition: "actionable", file: "SKILL.md", highRisk: false, id: "f-basic", severity: "warning" }]}
+          llmFindings={[{ code: "llm_rule", disposition: "actionable", file: "SKILL.md", highRisk: false, id: "f-llm", severity: "info" }]}
+          summary={fixture.summary}
+        />
+      </I18nextProvider>,
+    );
+
+    expect(screen.getByText("基础安全检查")).toBeVisible();
+    expect(screen.getByText("LLM 检查发现项")).toBeVisible();
+    expect(
+      screen.getByText("AI 检查结果由模型生成，仅供辅助判断；基础检查结论不受影响。"),
+    ).toBeVisible();
   });
 
   it("keeps successful panels visible when relations fail", async () => {

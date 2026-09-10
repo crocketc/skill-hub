@@ -31,6 +31,7 @@ export function SecurityEvidence({
       {llmFindings.length ? (
         <section>
           <h4>{t("skillDetail.insights.llmFindings")}</h4>
+          <p className="sh-detail-insights__advisory">{t("skillDetail.insights.advisoryNote")}</p>
           <ul aria-label={t("skillDetail.insights.llmFindings")}>
             {llmFindings.map((finding) => (
               <li key={finding.id}>

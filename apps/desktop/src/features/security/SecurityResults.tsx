@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { describeNativeError } from "../../api/nativeErrors";
 import { Button } from "../../ui/Button";
 import { DataState } from "../../ui/DataState";
+import { StatusBadge } from "../../ui/StatusBadge";
 import { FindingActions } from "./FindingActions";
 import { type SecurityCheck, type SecurityFacade, type SecurityFinding, type SecurityPreferences, unavailableSecurityFacade } from "./api";
 
@@ -173,6 +174,7 @@ function FindingGroup({ heading, findings, onDisposition }: {
             <li className="sh-workflow-list__item" key={finding.id}>
               <div>
                 <strong>{finding.code}</strong>
+                {finding.highRisk ? <StatusBadge tone="danger">{t("security.highRiskLabel")}</StatusBadge> : null}
                 <p>{finding.message}</p>
                 <small>{location ?? t("security.locationUnknown")}</small>
               </div>
@@ -185,8 +187,15 @@ function FindingGroup({ heading, findings, onDisposition }: {
   );
 }
 
+const CHECK_TONES: Record<SecurityCheck["state"], "success" | "danger" | "info" | "neutral"> = {
+  failed: "danger",
+  not_checked: "neutral",
+  passed: "success",
+  running: "info",
+};
+
 function CheckSummary({ check, experimental = false }: { check?: SecurityCheck; experimental?: boolean }) {
   const { t } = useTranslation();
   if (!check) return <p>{t("security.notChecked")}</p>;
-  return <div className="sh-check-summary"><span className={`sh-status sh-status--${check.state}`}>{t(`security.states.${check.state}`)}</span><strong>{t("security.findingCount", { count: check.findingCount })}</strong>{experimental ? <small>{t("security.experimental")}</small> : null}</div>;
+  return <div className="sh-check-summary"><StatusBadge tone={CHECK_TONES[check.state]}>{t(`security.states.${check.state}`)}</StatusBadge><strong>{t("security.findingCount", { count: check.findingCount })}</strong>{experimental ? <small>{t("security.experimental")}</small> : null}</div>;
 }

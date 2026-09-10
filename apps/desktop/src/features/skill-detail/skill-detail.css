@@ -1,0 +1,231 @@
+/* Skill 详情五区布局（T3-C）。
+ * 仅使用 --ui-* 语义 token，不写死主题色，不使用 transition: all、渐变、玻璃或悬停上浮。
+ * 滚动所有者（.sh-skill-detail / __layout / __rail / __content）与相邻导航样式仍由 styles/base.css 承载；
+ * 本文件只负责身份、状态、正文、关系、生命周期五个信息区的展示结构。 */
+
+/* —— 分区（zone）：用分隔线代替同形卡片 —— */
+.sh-skill-detail__zone {
+  display: grid;
+  flex: 0 0 auto;
+  gap: var(--space-4);
+  padding-block: var(--space-5);
+  border-top: 1px solid var(--ui-border-subtle);
+  scroll-margin-top: var(--space-5);
+}
+
+.sh-skill-detail__zone:first-of-type {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.sh-skill-detail__zone > h2 {
+  margin: 0;
+  color: var(--ui-ink);
+  font-size: 1.25rem;
+  font-weight: 650;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+}
+
+/* —— 分区内章节块：保留旧锚点 id 与标题层级 —— */
+.sh-skill-detail__block {
+  display: grid;
+  gap: var(--space-3);
+  scroll-margin-top: var(--space-5);
+}
+
+.sh-skill-detail__block > h3 {
+  margin: 0;
+  color: var(--ui-ink-muted);
+  font-size: 0.8125rem;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+}
+
+/* —— 身份区实体头部（内容列顶部） —— */
+.sh-skill-detail__header {
+  display: grid;
+  gap: var(--space-2);
+  padding-bottom: var(--space-4);
+  border-bottom: 1px solid var(--ui-border-subtle);
+}
+
+.sh-skill-detail__title-row {
+  align-items: flex-start;
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.sh-skill-detail__title-row > div:first-child {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.sh-skill-detail__title-row h1,
+.sh-skill-detail__title-row p {
+  margin: 0;
+}
+
+.sh-skill-detail__title-row h1 {
+  overflow-wrap: anywhere;
+  color: var(--ui-ink);
+  font-size: clamp(1.375rem, 2.2vw, 1.75rem);
+  line-height: 1.25;
+  letter-spacing: -0.02em;
+}
+
+.sh-skill-detail__alias {
+  color: var(--ui-ink-muted);
+  font-size: var(--font-size-sm);
+}
+
+.sh-skill-detail__purpose {
+  color: var(--ui-ink-muted);
+  font-size: var(--font-size-sm);
+  line-height: 1.5;
+  max-width: 72ch;
+}
+
+/* —— 分区导航（rail 内纵向；窄窗口退化为横向，见底部媒体查询） —— */
+.sh-skill-detail__zone-nav {
+  display: grid;
+  flex: 0 0 auto;
+  gap: 0.25rem;
+}
+
+.sh-skill-detail__zone-nav a {
+  border-left: 2px solid var(--ui-border);
+  color: var(--ui-ink-muted);
+  font-size: 0.8125rem;
+  padding: 0.375rem var(--space-2);
+  text-decoration: none;
+}
+
+.sh-skill-detail__zone-nav a:hover,
+.sh-skill-detail__zone-nav a:focus-visible,
+.sh-skill-detail__zone-nav a.is-active {
+  border-color: var(--ui-accent);
+  color: var(--ui-ink);
+}
+
+/* —— 关系轨迹：来源 → 本地集中库 → 部署目标 —— */
+.sh-skill-detail__trajectory {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-md);
+  background: var(--ui-surface-subtle);
+}
+
+.sh-skill-detail__trajectory-step {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-2);
+  min-width: 0;
+}
+
+.sh-skill-detail__trajectory-step svg {
+  color: var(--ui-icon-muted);
+  flex: 0 0 auto;
+}
+
+.sh-skill-detail__trajectory-label {
+  color: var(--ui-ink-muted);
+  font-size: 0.75rem;
+}
+
+.sh-skill-detail__trajectory-value {
+  color: var(--ui-ink);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.sh-skill-detail__trajectory-link {
+  align-self: center;
+  background: var(--ui-border-strong);
+  block-size: 1px;
+  flex: 0 1 1.5rem;
+  inline-size: 1.5rem;
+}
+
+/* —— 状态区概览块：状态条用分隔线，不再嵌套卡片 —— */
+.sh-skill-detail__block#overview > p {
+  margin: 0;
+  color: var(--ui-ink-muted);
+  line-height: 1.5;
+  max-width: 72ch;
+}
+
+/* —— AI 检查结果的建议性表述：弱化呈现，不与确定性结论竞争 —— */
+.sh-detail-insights__advisory {
+  margin: 0;
+  color: var(--ui-ink-muted);
+  font-size: var(--font-size-xs);
+  line-height: 1.5;
+}
+
+/* 状态徽标在 grid 分区内保持内容宽度，不被拉伸成横幅。 */
+.sh-detail-insights > .sh-status-badge,
+.sh-detail-insights section > .sh-status-badge {
+  justify-self: start;
+}
+
+/* —— 窄工作台：rail 收为顶部横向导航（可横向滚动、始终可达）。
+ * 判断基于 T0 的 workspace 容器（.sh-app-shell__workspace { container: workspace / inline-size }），
+ * 不只看浏览器视口：800px 应用窗口在展开侧栏后同样进入单列。 —— */
+@container workspace (max-width: 44rem) {
+  .sh-skill-detail__layout {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  .sh-skill-detail__rail {
+    position: static;
+    height: auto;
+    max-height: none;
+    overflow: visible;
+  }
+
+  .sh-skill-detail__zone-nav {
+    display: flex;
+    overflow-x: auto;
+    scrollbar-width: thin;
+  }
+
+  .sh-skill-detail__zone-nav a {
+    border-bottom: 2px solid var(--ui-border);
+    border-left: 0;
+    white-space: nowrap;
+  }
+
+  .sh-skill-detail__zone-nav a:hover,
+  .sh-skill-detail__zone-nav a:focus-visible,
+  .sh-skill-detail__zone-nav a.is-active {
+    border-color: var(--ui-accent);
+  }
+
+  .sh-skill-detail__header {
+    padding-bottom: var(--space-3);
+  }
+
+  .sh-skill-detail__title-row {
+    flex-direction: column;
+  }
+
+  .sh-skill-detail__trajectory {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .sh-skill-detail__trajectory-link {
+    flex-basis: 1px;
+    inline-size: 100%;
+  }
+}

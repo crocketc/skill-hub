@@ -12,6 +12,7 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createSkillHubI18n } from "../../i18n";
 import "../../styles/base.css";
+import "./skill-detail.css";
 import baseCss from "../../styles/base.css?raw";
 import type { SkillDetailFacade } from "./api";
 import type { MarkdownFacade } from "../markdown/api";
@@ -287,16 +288,13 @@ describe("SkillDetailPage shell", () => {
     expect(screen.queryByRole("button", { name: "Retry" })).not.toBeInTheDocument();
   });
 
-  it("merges the status summary into the Overview section", async () => {
+  it("merges the status summary into the overview block of the status zone", async () => {
     await renderDetail();
 
     expect(await screen.findByRole("navigation", { name: "Detail sections" })).toBeVisible();
-    expect(screen.getByRole("link", { name: "Overview" })).toHaveAttribute(
-      "href",
-      "#overview",
-    );
+    expect(document.getElementById("overview")?.closest("section")?.id).toBe("zone-status");
     expect(screen.getByText("Basic check passed")).toBeVisible();
-    expect(screen.getByText("2 deployments")).toBeVisible();
+    expect(screen.getAllByText("2 deployments")).toHaveLength(2);
     expect(screen.getByRole("group", { name: "Skill status" })).toBeVisible();
     expect(screen.queryByRole("complementary", { name: "Skill status" })).not.toBeInTheDocument();
   });
@@ -315,21 +313,68 @@ describe("SkillDetailPage shell", () => {
     });
   });
 
-  it("places identity before the content description in the detail navigation", async () => {
+  it("exposes the five information zones in the detail navigation", async () => {
     await renderDetail();
 
     const navigation = await screen.findByRole("navigation", { name: "Detail sections" });
     expect(await within(navigation).getAllByRole("link").map((link) => link.textContent)).toEqual([
-      "Overview",
-      "Identity and source",
-      "Content description",
+      "Identity",
+      "Status",
+      "Content",
       "Relations",
-      "Requirements",
-      "Security checks",
-      "Related Skills",
-      "External changes",
-      "Version history",
+      "Lifecycle",
     ]);
+  });
+
+  it("keeps every legacy section anchor reachable inside its zone", async () => {
+    await renderDetail();
+    await screen.findByRole("heading", { name: "PDF Reader" });
+
+    const zoneOf = (anchorId: string) =>
+      document.getElementById(anchorId)?.closest("section")?.id;
+    expect(zoneOf("metadata")).toBe("zone-identity");
+    expect(zoneOf("overview")).toBe("zone-status");
+    expect(zoneOf("security")).toBe("zone-status");
+    expect(zoneOf("description")).toBe("zone-content");
+    expect(zoneOf("relations")).toBe("zone-relations");
+    expect(zoneOf("requirements")).toBe("zone-relations");
+    expect(zoneOf("connections")).toBe("zone-relations");
+    expect(zoneOf("versions")).toBe("zone-lifecycle");
+    expect(zoneOf("external")).toBe("zone-lifecycle");
+  });
+
+  it("renders the identity header in the content column ahead of the identity zone", async () => {
+    await renderDetail();
+    await screen.findByRole("heading", { name: "PDF Reader" });
+
+    const header = document.querySelector(".sh-skill-detail__header");
+    const content = document.querySelector(".sh-skill-detail__content");
+    const identityZone = document.getElementById("zone-identity");
+    expect(header?.parentElement).toBe(content);
+    expect(content?.contains(screen.getByRole("button", { name: "Delete Skill" }))).toBe(true);
+    expect(content?.contains(identityZone)).toBe(true);
+  });
+
+  it("activates the containing zone for a legacy section hash", async () => {
+    await renderDetail({ entry: "/library/skill-pdf#versions" });
+
+    await screen.findByRole("navigation", { name: "Detail sections" });
+    expect(screen.getByRole("link", { name: "Lifecycle" })).toHaveAttribute(
+      "aria-current",
+      "location",
+    );
+  });
+
+  it("summarizes the source, library, and deployment trajectory in the relations zone", async () => {
+    await renderDetail();
+    await screen.findByRole("heading", { name: "PDF Reader" });
+
+    const trajectory = screen.getByRole("group", {
+      name: "Source, library, and deployment targets",
+    });
+    expect(trajectory).toBeVisible();
+    expect(within(trajectory).getByText("github:example/pdf-reader")).toBeVisible();
+    expect(within(trajectory).getByText("2 deployments")).toBeVisible();
   });
 
   it("keeps the detail rail fixed while the content column scrolls", async () => {
@@ -340,7 +385,7 @@ describe("SkillDetailPage shell", () => {
     const content = document.querySelector(".sh-skill-detail__content");
     expect(rail).toBeInTheDocument();
     expect(rail).toContainElement(screen.getByRole("navigation", { name: "Detail sections" }));
-    expect(rail?.querySelector(".sh-skill-detail__header")).toBeInTheDocument();
+    expect(content).toContainElement(document.querySelector(".sh-skill-detail__header"));
     expect(content).toBeInTheDocument();
 
     expect(baseCss).toMatch(/\.sh-skill-detail\s*\{[\s\S]*height:\s*100%/);
@@ -356,32 +401,31 @@ describe("SkillDetailPage shell", () => {
     expect(baseCss).toMatch(/\.sh-skill-detail__adjacent\s*\{[\s\S]*margin-top:\s*auto/);
   });
 
-  it("keeps the overview compact and gives the content column the remaining width", async () => {
+  it("gives the content column the remaining width beside the fixed rail", async () => {
     await renderDetail();
     await screen.findByRole("navigation", { name: "Detail sections" });
 
-    expect(document.getElementById("overview")).toHaveClass("sh-skill-detail__section--overview");
-    expect(baseCss).toMatch(/\.sh-skill-detail__section--overview\s*\{[\s\S]*gap:\s*var\(--space-2\)/);
-    expect(baseCss).toMatch(/\.sh-skill-detail__section--overview\s*\{[\s\S]*padding:\s*var\(--space-4\)/);
-    expect(baseCss).toMatch(/\.sh-skill-detail__rail \.sh-skill-detail__title-row h1\s*\{[\s\S]*font-size:/);
+    expect(document.getElementById("overview")?.closest("section")).toHaveClass(
+      "sh-skill-detail__zone",
+    );
     expect(baseCss).toMatch(/grid-template-columns:\s*minmax\(10rem,\s*12rem\)\s+minmax\(0,\s*1fr\)/);
   });
 
-  it("highlights the section selected from the detail navigation", async () => {
+  it("highlights the zone selected from the detail navigation", async () => {
     await renderDetail();
 
     await screen.findByRole("navigation", { name: "Detail sections" });
-    const metadataLink = screen.getByRole("link", { name: "Identity and source" });
-    fireEvent.click(metadataLink);
+    const identityLink = screen.getByRole("link", { name: "Identity" });
+    fireEvent.click(identityLink);
 
-    expect(metadataLink).toHaveAttribute("aria-current", "location");
+    expect(identityLink).toHaveAttribute("aria-current", "location");
   });
 
-  it("restores the active section from a detail hash", async () => {
+  it("restores the active zone from a detail hash", async () => {
     await renderDetail({ entry: "/library/skill-pdf#versions" });
 
     await screen.findByRole("navigation", { name: "Detail sections" });
-    expect(screen.getByRole("link", { name: "Version history" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "Lifecycle" })).toHaveAttribute(
       "aria-current",
       "location",
     );
