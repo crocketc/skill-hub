@@ -1370,6 +1370,21 @@
     "preview": "预览部署",
     "retryFailed": "重试失败目标",
     "commit": "提交部署",
+    "steps": {
+      "label": "部署步骤",
+      "targets": "选择目标",
+      "preview": "预览影响",
+      "commit": "提交",
+      "results": "结果"
+    },
+    "status": {
+      "selecting": "请选择要部署的目标",
+      "previewReady": "部署计划已生成，请确认影响后再提交",
+      "committing": "正在提交部署，请稍候",
+      "results": "部署已完成",
+      "resultsWithFailures": "部署已完成，部分目标失败",
+      "previewFailed": "部分 Skill 无法生成部署预览，已阻止提交"
+    },
     "plan": {
       "heading": "部署计划",
       "description": "计划按物理目标归组；提交前始终保留警告。"
@@ -1481,6 +1496,7 @@
       "missingPreparation": "缺少已准备的删除记录，无法提交该项。",
       "armConfirm": "再次点击确认删除 {{count}} 个 Skill",
       "busy": "正在删除 {{count}} 个 Skill…",
+      "nonAtomicNotice": "批量删除逐项提交，不是原子操作：已删除的部分不会自动恢复。",
       "impact": {
         "declaredDependencies": "声明依赖",
         "combinations": "所在组合",

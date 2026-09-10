@@ -1370,6 +1370,21 @@
     "preview": "Preview deployment",
     "retryFailed": "Retry failed targets",
     "commit": "Commit deployment",
+    "steps": {
+      "label": "Deployment steps",
+      "targets": "Select targets",
+      "preview": "Preview impact",
+      "commit": "Commit",
+      "results": "Results"
+    },
+    "status": {
+      "selecting": "Select the targets to deploy",
+      "previewReady": "Deployment plan is ready; review the impact before committing",
+      "committing": "Committing the deployment, please wait",
+      "results": "Deployment finished",
+      "resultsWithFailures": "Deployment finished with failed targets",
+      "previewFailed": "Some Skills could not be previewed; commit is blocked"
+    },
     "plan": {
       "heading": "Deployment plan",
       "description": "The plan is grouped by physical target; warnings stay visible before commit."
@@ -1481,6 +1496,7 @@
       "missingPreparation": "No prepared deletion record exists for this item; it cannot be committed.",
       "armConfirm": "Click again to confirm deleting {{count}} Skills",
       "busy": "Deleting {{count}} Skills…",
+      "nonAtomicNotice": "Batch deletion commits skill by skill and is not atomic: deleted skills are not restored automatically.",
       "impact": {
         "declaredDependencies": "Declared dependencies",
         "combinations": "Combinations",
