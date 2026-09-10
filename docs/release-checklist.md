@@ -4,10 +4,10 @@
 
 ## 当前候选
 
-- 代码验收基线：`bbc43e0`（2026-09-10 LLM 闭环补齐与产品文档注记完成处；最后代码提交 `90b103a`）
-- 浏览器自动化基线：`90b103a`（`pnpm test:e2e` 37/37）
+- 代码验收基线：`b12f9fe`（当前候选 HEAD；集中库生命周期逻辑修复见 `23a38bd`）
+- 浏览器自动化基线：`b12f9fe`（`pnpm test:e2e` 56/56；onboarding 2/2）
 - 日期：2026-09-10
-- 说明：v0.2.0 全量 LLM 能力接入与四项前端闭环已完成并通过全量自动化回归；双平台真机取证与签名更新取证留待人工（发布门槛第 3/4 条）
+- 说明：v0.2.0 全量 LLM 能力接入、集中库生命周期和四项前端闭环已完成并通过当前自动化回归；双平台真机取证、真实供应商验证与签名更新取证仍待人工（发布门槛第 3/4 条）
 - 发布信任级别：Windows 未签名；macOS ad-hoc、未公证
 - 发布方式：GitHub Draft Release，人工核对后发布
 - 证据时效：证据表中未标注 2026-09-10 的行依赖更早提交的证据；本候选发布前需按发布流程重新采集（尤其 cargo-deny 与依赖审计——LLM 系列提交更新了 `Cargo.lock`）。
@@ -34,7 +34,7 @@
 | 前端依赖安装 | 通过 | `pnpm install --frozen-lockfile --ignore-scripts`；`@types/node@22.20.1` 于 2026-09-10 作为 devDependency 加入（修复 `BrandTag.test.tsx` 的 Node 类型缺失），需重跑审计确认无漏洞 |
 | 前端审计 | 待重新采集 | `27042e6` 时 macOS 官方 registry 复核 0 漏洞；需在当前基线重跑 |
 | 前端 lint/TypeScript | 通过 | `pnpm --dir apps/desktop check`（eslint + tsc，2026-09-10 于闭环补齐轮；同日浏览器补齐轮发现 tsc 因缺失 `@types/node` 实际失败并已修复，修复后复测通过） |
-| 前端测试 | 通过 | `pnpm test:frontend`：107 文件 764 项通过（2026-09-10 于闭环补齐轮） |
+| 前端测试 | 通过 | `pnpm test:frontend`：108 文件 777 项通过（当前候选 `b12f9fe`） |
 | 前端生产构建 | 通过 | `pnpm --dir apps/desktop build`（2026-09-10 于闭环补齐轮） |
 | 发布静态预检 | 通过 | `node scripts/verify_release_readiness.mjs`、`node scripts/verify_atomic_test_catalog.mjs`（349 条）、`pnpm test:release`（9/9）、`node scripts/verify_frontend_lifecycle_scripts.mjs` 均通过（2026-09-10 于闭环补齐轮） |
 | i18n 双语覆盖 | 通过 | `node scripts/i18n-cjk-audit.mjs`：用户可见命中 0；15 行豁免为测试 fixture（豁免理由内置于脚本）；zh/en 键集 parity 测试通过（2026-09-10 于闭环补齐轮） |
@@ -42,7 +42,7 @@
 | 兼容性契约 | 通过 | `cargo test -p skillhub-adapters --test profile_contract` |
 | 数据保护页面 | 通过（自动化） | `/settings/data-protection` 已接入备份包校验、恢复预检/冲突决策、组合导出；真实桌面文件烟测待执行 |
 | 备份/恢复/导出 native facade | 通过（自动化） | typed preflight/commit 适配器与 Rust facade 测试通过 |
-| 浏览器 E2E | 通过（自动化） | `pnpm test:e2e` 55/55 通过（2026-09-10 于浏览器补齐轮，代码含 `@types/node` 类型修复）：既有用例、LLM 设置与闭环、Markdown 布局，新增双语核心流程 12 条、品牌素材 3 条、300 Skill 规模 3 条；运行 Vite 预览页并注入固定 IPC 返回值，只证明页面/交互和预览边界，不证明 Tauri 原生行为 |
+| 浏览器 E2E | 通过（自动化） | `pnpm test:e2e` 56/56 通过（当前候选 `b12f9fe`）：既有用例、LLM 设置与闭环、Markdown 布局、双语核心流程、品牌素材、300 Skill 规模和 bootstrap unavailable 入口；使用固定 5174 端口运行 Vite 预览页并注入固定 IPC 返回值，只证明页面/交互和预览边界，不证明 Tauri 原生行为 |
 | Playwright 浏览器依赖 | 已满足（测试环境） | 项目 `@playwright/test 1.55.1` 匹配的 Chromium 已安装到用户级测试缓存；不进入仓库，也不会包含在 Tauri 打包产物中 |
 | 桌面 E2E/真机验收 | 待执行 | 需要 Tauri 运行时、真实文件系统、系统弹窗、真实网络或发布资产的项目按人工验收指南取证 |
 | 迁移/恢复 | 待执行 | 需要在本提交重新采集证据 |
