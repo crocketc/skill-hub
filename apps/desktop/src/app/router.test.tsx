@@ -1,4 +1,5 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { createElement } from "react";
 import { afterEach, vi } from "vitest";
 import { skillHubI18n } from "../i18n";
 import { nativeSkillLibraryFacade } from "../features/skills/nativeApi";
@@ -65,6 +66,20 @@ vi.mock("../api/bindings", async (importOriginal) => {
   };
 });
 
+/** 记录生产入口 MotionConfig 的配置，锁定“减少动效跟随系统”的契约。 */
+const motionConfigProps: Array<{ reducedMotion?: unknown }> = [];
+vi.mock("motion/react", async (importOriginal) => {
+  const original = await importOriginal<typeof import("motion/react")>();
+  type MotionConfigProps = React.ComponentProps<(typeof original)["MotionConfig"]>;
+  return {
+    ...original,
+    MotionConfig: (props: MotionConfigProps) => {
+      motionConfigProps.push({ reducedMotion: props.reducedMotion });
+      return createElement(original.MotionConfig, props, props.children);
+    },
+  };
+});
+
 function mockBrowserPreferences() {
   vi.stubGlobal(
     "matchMedia",
@@ -126,6 +141,18 @@ it("wires theme, language, data and motion providers at the production entry wit
   await waitFor(() => {
     expect(document.documentElement).toHaveAttribute("lang", "en-US");
   });
+});
+
+it("follows the system reduced-motion preference at the production entry (TC-GR-09-M02)", async () => {
+  // v0.2.0 契约是“跟随系统减少动效”（US-057），不提供应用内开关。
+  mockBrowserPreferences();
+  await skillHubI18n.changeLanguage("en-US");
+  await appRouter.navigate("/");
+
+  render(<AppRouter />);
+
+  expect(await screen.findAllByText("0 skills")).toHaveLength(1);
+  expect(motionConfigProps.some((props) => props.reducedMotion === "user")).toBe(true);
 });
 
 it("surfaces an unavailable state when the native Skill library result is not connected", async () => {
