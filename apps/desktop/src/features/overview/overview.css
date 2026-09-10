@@ -1,0 +1,120 @@
+/* 概览页专属样式（T3-A）。只消费 --ui-* 语义 token，不写死任何主题色；
+   响应式断点基于 AppShell 的 workspace 容器查询（内容容器，而非视口）。
+   覆盖 base.css 同名规则时使用 `.sh-overview` 前缀提高特异性，
+   因为本文件在模块图中先于 base.css 注入。 */
+
+.sh-overview .sh-overview__metrics {
+  display: grid;
+  gap: var(--space-3);
+  grid-template-columns: minmax(0, 1fr);
+}
+
+/* 首要指标：唯一强化的大数字，其余数据一律进入下方紧凑统计。 */
+.sh-overview__hero {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2) var(--space-3);
+  padding: var(--space-4) var(--space-5);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-lg);
+  background: var(--ui-surface);
+  color: var(--ui-ink);
+  text-decoration: none;
+}
+
+.sh-overview__hero strong {
+  font-size: var(--font-size-2xl);
+  line-height: 1.25;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+
+.sh-overview__hero span {
+  color: var(--ui-ink-muted);
+}
+
+.sh-overview__hero:hover {
+  border-color: var(--ui-accent);
+}
+
+/* 紧凑统计：宽 4 列 / 中 2 列 / 窄 1 列（容器查询见文件末尾）。 */
+.sh-overview__stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--space-2);
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.sh-overview__stat {
+  display: flex;
+  min-width: 0;
+  min-height: 2.5rem;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  margin: 0;
+  border: 1px solid var(--ui-border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--ui-surface);
+  color: var(--ui-ink);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+/* T0 Icon 注册表当前不自带描边（fill="none" 且无 stroke 默认值，共享层缺口
+   已上报）；这里按规格 4.2 为本页图标补 1.75px currentColor 线条。 */
+.sh-overview__stat svg {
+  flex: none;
+  color: var(--ui-icon);
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.75;
+}
+
+.sh-overview__stat span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.sh-overview__stat:hover {
+  border-color: var(--ui-control-border-hover);
+  background: var(--ui-hover-surface);
+}
+
+/* 图表画布充满面板高度，避免右栏较高时图表面板下方出现大片空白。 */
+.sh-overview .sh-overview__chart-canvas {
+  height: 100%;
+}
+
+/* 维度切换的输入框视觉上透明（绝对定位 + opacity:0），全局 ：focus-visible
+   的描边会一起被隐藏；键盘聚焦时把可见焦点画到选项胶囊上。 */
+.sh-overview__toggle-option input:focus-visible + span {
+  outline: 2px solid var(--ui-focus);
+  outline-offset: 2px;
+}
+
+/* 容器查询：以 AppShell 的 workspace 内容容器为断点（展开侧栏 13.875rem）。
+   宽容器 4 列统计 + 图表/待处理并排；中容器统计 2 列、内容单列；
+   窄容器统计与内容全部单列，无嵌套不可发现滚动。 */
+@container workspace (max-width: 60rem) {
+  .sh-overview .sh-overview__stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@container workspace (max-width: 56rem) {
+  .sh-overview .sh-overview__content-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@container workspace (max-width: 40rem) {
+  .sh-overview .sh-overview__stats {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
