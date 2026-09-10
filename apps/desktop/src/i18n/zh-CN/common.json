@@ -1920,7 +1920,8 @@
       "scrollableDetails": "可滚动的部署数量明细"
     },
     "metrics": {
-      "agents": "{{count}} 个 Agent",
+      "agents": "{{count}} 个已配置 Agent",
+        "discoveredAgents": "{{count}} 个发现到的 Agent",
       "deployments": "{{count}} 个部署",
       "projects": "{{count}} 个项目",
       "skills": "{{count}} 项技能"

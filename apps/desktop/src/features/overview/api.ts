@@ -57,7 +57,16 @@ export function getOverviewMetrics(
     {
       count: snapshot.agent_count,
       href: "/agents",
+      // 已确认的部署目标数；与“发现到的 Agent”分开命名，避免口径混淆。
       label: t("overview.metrics.agents", { count: snapshot.agent_count }),
+      tone: "neutral",
+    },
+    {
+      count: snapshot.discovered_agent_count,
+      href: "/agents",
+      label: t("overview.metrics.discoveredAgents", {
+        count: snapshot.discovered_agent_count,
+      }),
       tone: "neutral",
     },
     {

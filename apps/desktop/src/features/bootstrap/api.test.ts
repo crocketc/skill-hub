@@ -26,6 +26,7 @@ it("returns the exact configured library path from the native bootstrap snapshot
       skill_count: 0,
       project_count: 0,
       agent_count: 0,
+      discovered_agent_count: 0,
       deployed_count: 0,
       deployment_categories: [],
       tag_categories: [],

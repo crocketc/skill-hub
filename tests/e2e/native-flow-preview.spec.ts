@@ -14,6 +14,7 @@ async function installNativePreview(page: Page) {
       library_path: "C:\\Preview\\SkillHub",
       onboarding_skipped: false,
       agent_count: 2,
+      discovered_agent_count: 2,
       deployed_count: 4,
       deployment_categories: [
         { dimension: "agent", key: "codex", label_code: "Codex CLI", count: 3 },

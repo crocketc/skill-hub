@@ -50,6 +50,7 @@ vi.mock("../api/bindings", async (importOriginal) => {
         library_path: "C:\\Users\\Test\\SkillHub",
         onboarding_skipped: false,
         agent_count: 0,
+        discovered_agent_count: 0,
         deployed_count: 0,
         deployment_categories: [],
         tag_categories: [],

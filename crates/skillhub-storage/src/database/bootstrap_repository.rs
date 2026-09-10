@@ -318,6 +318,14 @@ impl<'a> BootstrapRepository<'a> {
                 row.get::<_, i64>(0)
             })
             .map_err(error)? as u32;
+        // 概览同时展示“已配置”与“发现到”两个口径；发现数来自最近一次
+        // 持久化的设备发现快照，未运行过发现时为 0，不在此处触发扫描。
+        let discovered_agent_count = self
+            .database
+            .agent_repository()
+            .load()?
+            .map(|snapshot| snapshot.instances.len() as u32)
+            .unwrap_or(0);
         let deployed_count =
             self.count("SELECT COUNT(*) FROM deployments WHERE state IN ('deployed','active')")?;
         let mut deployment_categories = self.deployment_chart(DeploymentDimension::Agent)?;
@@ -372,6 +380,7 @@ impl<'a> BootstrapRepository<'a> {
             skill_count,
             project_count,
             agent_count,
+            discovered_agent_count,
             deployed_count,
             deployment_categories,
             tag_categories,

@@ -214,7 +214,10 @@ export type BootstrapSnapshot = {
 	onboarding_skipped: boolean,
 	skill_count: number,
 	project_count: number,
+	/**  已确认的 Agent 部署目标数（targets 表），与发现到的设备 Agent 分开统计。 */
 	agent_count: number,
+	/**  最近一次设备发现快照中识别到的 Agent 实例数；未运行过发现时为 0。 */
+	discovered_agent_count: number,
 	deployed_count: number,
 	deployment_categories: DeploymentChartCategory[],
 	tag_categories: TagChartCategory[],

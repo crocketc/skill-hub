@@ -10,6 +10,7 @@ const PREVIEW_BOOTSTRAP_SNAPSHOT: BootstrapSnapshot = {
   library_path: "C:\\Users\\preview\\SkillHub",
   onboarding_skipped: false,
   agent_count: 2,
+  discovered_agent_count: 2,
   deployed_count: 12,
   deployment_categories: [],
   tag_categories: [],

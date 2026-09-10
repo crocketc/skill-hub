@@ -13,6 +13,7 @@ const overviewSnapshot: BootstrapSnapshot = {
   library_path: "C:\\Users\\Test\\SkillHub",
   onboarding_skipped: false,
   agent_count: 3,
+  discovered_agent_count: 5,
   deployed_count: 18,
   deployment_categories: [
     { count: 12, dimension: "agent", key: "openai.codex-cli", label_code: "Codex" },
@@ -110,6 +111,14 @@ async function renderOverview(snapshot = overviewSnapshot) {
   );
 }
 
+it("separates configured agent targets from discovered device agents", async () => {
+  await renderOverview();
+
+  // agent_count 只统计已确认的部署目标；发现到的 Agent 来自设备发现快照。
+  expect(await screen.findByText("3 configured agents")).toBeVisible();
+  expect(screen.getByText("5 discovered agents")).toBeVisible();
+});
+
 it("renders proportional agent deployments with a visible text equivalent and drills into its deployment workspace", async () => {
   await renderOverview();
 
@@ -173,7 +182,8 @@ it("shows the pending summary without exposing the recent-operation log", async 
   await renderOverview();
 
   expect(screen.getByText("12 skills")).toBeVisible();
-  expect(screen.getByText("3 agents")).toBeVisible();
+  expect(screen.getByText("3 configured agents")).toBeVisible();
+  expect(screen.getByText("5 discovered agents")).toBeVisible();
   expect(screen.getByText("2 projects")).toBeVisible();
   expect(screen.getByText("18 deployments")).toBeVisible();
   expect(screen.getByRole("heading", { name: "4 pending items" })).toBeVisible();

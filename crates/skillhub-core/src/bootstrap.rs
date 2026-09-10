@@ -118,7 +118,10 @@ pub struct BootstrapSnapshot {
     pub onboarding_skipped: bool,
     pub skill_count: u32,
     pub project_count: u32,
+    /// 已确认的 Agent 部署目标数（targets 表），与发现到的设备 Agent 分开统计。
     pub agent_count: u32,
+    /// 最近一次设备发现快照中识别到的 Agent 实例数；未运行过发现时为 0。
+    pub discovered_agent_count: u32,
     pub deployed_count: u32,
     pub deployment_categories: Vec<DeploymentChartCategory>,
     pub tag_categories: Vec<TagChartCategory>,

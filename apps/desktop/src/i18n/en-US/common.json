@@ -1920,7 +1920,8 @@
       "scrollableDetails": "Scrollable deployment details"
     },
     "metrics": {
-      "agents": "{{count}} agents",
+      "agents": "{{count}} configured agents",
+        "discoveredAgents": "{{count}} discovered agents",
       "deployments": "{{count}} deployments",
       "projects": "{{count}} projects",
       "skills": "{{count}} skills"

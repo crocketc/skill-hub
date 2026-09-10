@@ -36,6 +36,7 @@ it("composes the settings page from persisted preferences and native bootstrap f
         library_path: "D:/SkillHub/library",
         onboarding_skipped: false,
         agent_count: 0,
+        discovered_agent_count: 0,
         deployed_count: 0,
         deployment_categories: [],
         tag_categories: [],

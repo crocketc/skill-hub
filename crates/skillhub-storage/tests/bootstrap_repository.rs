@@ -1,8 +1,56 @@
 use skillhub_core::pending::PendingKind;
 use skillhub_core::{
-    BootstrapSnapshot, DeploymentDimension, OperationId, SkillId, StartupRecoveryState,
+    BootstrapSnapshot, DeploymentDimension, DiscoverySnapshot, OperationId, SkillId,
+    StartupRecoveryState,
 };
 use skillhub_storage::Database;
+
+#[test]
+fn snapshot_build_counts_zero_discovered_agents_without_a_persisted_snapshot() {
+    let db = Database::open_in_memory().unwrap();
+    let snapshot = db
+        .bootstrap_repository()
+        .build_snapshot((2026, 8, 23))
+        .unwrap();
+    assert_eq!(snapshot.agent_count, 0);
+    assert_eq!(snapshot.discovered_agent_count, 0);
+}
+
+#[test]
+fn snapshot_build_counts_discovered_agents_from_the_persisted_discovery_snapshot() {
+    let db = Database::open_in_memory().unwrap();
+    let snapshot = DiscoverySnapshot {
+        generation: "1".into(),
+        observed_at: "2026-09-10T00:00:00Z".into(),
+        instances: vec![
+            skillhub_core::ClientInstance {
+                profile_id: "openai.codex-cli".into(),
+                client_id: "codex".into(),
+                kind: skillhub_core::ClientKind::Cli,
+                supported_os: vec![skillhub_core::OperatingSystem::Macos],
+                client_presence: skillhub_core::ClientPresence::Unknown,
+            },
+            skillhub_core::ClientInstance {
+                profile_id: "anthropic.claude-code".into(),
+                client_id: "claude".into(),
+                kind: skillhub_core::ClientKind::Cli,
+                supported_os: vec![skillhub_core::OperatingSystem::Macos],
+                client_presence: skillhub_core::ClientPresence::Unknown,
+            },
+        ],
+        logical_targets: vec![],
+        physical_targets: vec![],
+    };
+    db.agent_repository().replace(&snapshot).unwrap();
+
+    let built = db
+        .bootstrap_repository()
+        .build_snapshot((2026, 8, 23))
+        .unwrap();
+    // 未确认部署目标时 agent_count 仍为 0；发现到的 Agent 单独统计。
+    assert_eq!(built.agent_count, 0);
+    assert_eq!(built.discovered_agent_count, 2);
+}
 
 #[test]
 fn snapshot_round_trips_from_settings_before_filesystem_scan() {

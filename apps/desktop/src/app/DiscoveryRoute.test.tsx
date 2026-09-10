@@ -18,6 +18,7 @@ import type { BootstrapOutletContext } from "./AppShell";
 
 const snapshot: BootstrapSnapshot = {
   agent_count: 3,
+  discovered_agent_count: 3,
   deployed_count: 9,
   deployment_categories: [],
   tag_categories: [],
