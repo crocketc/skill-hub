@@ -24,6 +24,61 @@ fn initialization_creates_visible_skills_and_internal_management_dirs() {
 }
 
 #[test]
+fn create_accepts_missing_or_empty_directories_and_materializes_a_complete_layout() {
+    let missing = tempfile::tempdir().unwrap();
+    let missing_root = missing.path().join("new-library");
+    let created = CentralLibrary::create(&missing_root).expect("create missing root");
+    assert_eq!(created.load_manifest().unwrap(), LibraryManifest::default());
+    assert!(created.paths().skills_dir.is_dir());
+    assert!(created.paths().objects_dir.is_dir());
+
+    let empty = tempfile::tempdir().unwrap();
+    let opened = CentralLibrary::create(empty.path()).expect("create empty root");
+    assert_eq!(opened.load_manifest().unwrap(), LibraryManifest::default());
+}
+
+#[test]
+fn create_rejects_unknown_user_files_without_overwriting_them() {
+    let root = tempfile::tempdir().unwrap();
+    let user_file = root.path().join("keep-me.txt");
+    std::fs::write(&user_file, "user data").unwrap();
+
+    let error = CentralLibrary::create(root.path()).unwrap_err();
+
+    assert_eq!(error.code.as_str(), "operation.conflict");
+    assert_eq!(std::fs::read_to_string(user_file).unwrap(), "user data");
+}
+
+#[test]
+fn open_existing_requires_and_validates_the_library_manifest() {
+    let ordinary = tempfile::tempdir().unwrap();
+    let error = CentralLibrary::open_existing(ordinary.path()).unwrap_err();
+    assert_eq!(error.code.as_str(), "input.invalid");
+
+    let valid = tempfile::tempdir().unwrap();
+    CentralLibrary::create(valid.path()).unwrap();
+    let opened = CentralLibrary::open_existing(valid.path()).expect("open existing library");
+    assert_eq!(opened.load_manifest().unwrap().format_version, 1);
+
+    std::fs::write(
+        valid.path().join(".skillhub/library.json"),
+        br#"{"format_version":99,"skills":[]}"#,
+    )
+    .unwrap();
+    let error = CentralLibrary::open_existing(valid.path()).unwrap_err();
+    assert_eq!(error.code.as_str(), "input.invalid");
+}
+
+#[test]
+fn both_modes_probe_writability_and_report_an_actionable_error() {
+    let root = tempfile::tempdir().unwrap();
+    let library = CentralLibrary::create(root.path()).expect("create library");
+    assert!(library.paths().management_dir.join(".write-probe").exists() == false);
+    let reopened = CentralLibrary::open_existing(root.path()).expect("open library");
+    assert_eq!(reopened.load_manifest().unwrap().format_version, 1);
+}
+
+#[test]
 fn interrupted_manifest_write_keeps_previous_valid_manifest() {
     let ws = TempWorkspace::new().unwrap();
     let armed = Arc::new(Mutex::new(false));

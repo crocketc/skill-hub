@@ -28,6 +28,37 @@ impl std::fmt::Debug for CentralLibrary {
 }
 
 impl CentralLibrary {
+    /// Creates a new central library in a missing or empty directory.
+    /// Existing user files are never overwritten or silently adopted.
+    pub fn create(root: impl AsRef<Path>) -> AppResult<Self> {
+        let root = root.as_ref();
+        if root.exists() {
+            if !root.is_dir() {
+                return Err(library_conflict("library root is not a directory"));
+            }
+            let mut entries = fs::read_dir(root).map_err(io_error)?;
+            if entries.next().transpose().map_err(io_error)?.is_some() {
+                return Err(library_conflict(
+                    "new library root must be missing or empty",
+                ));
+            }
+        }
+        Self::materialize(root, true)
+    }
+
+    /// Opens a previously initialized central library without creating its
+    /// manifest or adopting an ordinary directory as a library.
+    pub fn open_existing(root: impl AsRef<Path>) -> AppResult<Self> {
+        let root = root.as_ref();
+        let paths = LibraryPaths::from_root(root);
+        if !paths.manifest_path.is_file() {
+            return Err(AppError::new(ErrorCode::InvalidInput, Severity::Error)
+                .with_param("reason", "existing_library_manifest_missing")
+                .with_action(RecoveryAction::ChooseAnotherName));
+        }
+        Self::materialize(root, false)
+    }
+
     pub fn initialize(root: impl AsRef<Path>) -> AppResult<Self> {
         Self::initialize_with_fault_handler(root, Arc::new(|_| false))
     }
@@ -36,7 +67,19 @@ impl CentralLibrary {
         root: impl AsRef<Path>,
         fault_handler: ManifestFaultHandler,
     ) -> AppResult<Self> {
-        let paths = LibraryPaths::from_root(root.as_ref());
+        Self::materialize_with_fault_handler(root.as_ref(), true, fault_handler)
+    }
+
+    fn materialize(root: &Path, allow_manifest_creation: bool) -> AppResult<Self> {
+        Self::materialize_with_fault_handler(root, allow_manifest_creation, Arc::new(|_| false))
+    }
+
+    fn materialize_with_fault_handler(
+        root: &Path,
+        allow_manifest_creation: bool,
+        fault_handler: ManifestFaultHandler,
+    ) -> AppResult<Self> {
+        let paths = LibraryPaths::from_root(root);
         for directory in [
             &paths.skills_dir,
             &paths.management_dir,
@@ -50,14 +93,34 @@ impl CentralLibrary {
         }
         let store = PortableManifestStore::new(paths.manifest_path.clone(), fault_handler);
         if !paths.manifest_path.exists() {
+            if !allow_manifest_creation {
+                return Err(AppError::new(ErrorCode::InvalidInput, Severity::Error)
+                    .with_param("reason", "existing_library_manifest_missing")
+                    .with_action(RecoveryAction::ChooseAnotherName));
+            }
             store.write_atomic(&LibraryManifest::default())?;
         } else {
             // Existing files are never overwritten during initialization.
             store.load()?;
         }
         let library = Self { paths, store };
+        library.probe_writable()?;
         library.materialize_missing_visible_skills()?;
         Ok(library)
+    }
+
+    fn probe_writable(&self) -> AppResult<()> {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos();
+        let probe = self
+            .paths
+            .management_dir
+            .join(format!(".write-probe-{nonce}"));
+        fs::write(&probe, b"skillhub write probe")
+            .map_err(|error| library_not_writable(error.to_string()))?;
+        fs::remove_file(probe).map_err(|error| library_not_writable(error.to_string()))
     }
 
     pub fn paths(&self) -> &LibraryPaths {
@@ -241,5 +304,19 @@ impl CentralLibrary {
 fn io_error(error: std::io::Error) -> AppError {
     AppError::new(ErrorCode::InternalError, Severity::Error)
         .with_param("source", error.to_string())
+        .with_action(RecoveryAction::Retry)
+}
+
+fn library_conflict(detail: &str) -> AppError {
+    AppError::new(ErrorCode::OperationConflict, Severity::Error)
+        .with_param("reason", "library_root_not_empty")
+        .with_param("detail", detail)
+        .with_action(RecoveryAction::ChooseAnotherName)
+}
+
+fn library_not_writable(detail: String) -> AppError {
+    AppError::new(ErrorCode::OperationConflict, Severity::Error)
+        .with_param("reason", "library_not_writable")
+        .with_param("detail", detail)
         .with_action(RecoveryAction::Retry)
 }
