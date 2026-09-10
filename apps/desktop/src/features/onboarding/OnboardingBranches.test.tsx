@@ -28,8 +28,7 @@ interface Operations {
   prepareRestore?: (path: string) => Promise<RestorePlan>;
   commitRestore?: (path: string, decisions: RestoreDecision[]) => Promise<RestoreResult>;
   pickDirectory?: () => Promise<string | null>;
-  setLibraryRoot?: (path: string) => Promise<void>;
-  restart?: () => Promise<void>;
+  activateLibraryRoot?: (path: string, mode: "create" | "existing") => Promise<void>;
 }
 
 function renderWizard(operations: Operations, runtime?: unknown) {

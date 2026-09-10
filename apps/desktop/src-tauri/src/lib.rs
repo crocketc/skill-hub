@@ -228,42 +228,6 @@ fn host_operating_system() -> skillhub_core::agent::OperatingSystem {
     }
 }
 
-trait ApplicationRestarter {
-    fn schedule_restart(&self) -> Result<(), String>;
-}
-
-impl<R: tauri::Runtime> ApplicationRestarter for AppHandle<R> {
-    fn schedule_restart(&self) -> Result<(), String> {
-        let app = self.clone();
-        std::thread::Builder::new()
-            .name("skillhub-restart".into())
-            .spawn(move || {
-                // Let the current invoke finish before the process exits. The
-                // renderer treats restart as terminal and does not wait for
-                // this IPC response.
-                std::thread::sleep(std::time::Duration::from_millis(100));
-                app.restart();
-            })
-            .map(|_| ())
-            .map_err(|error| format!("restart_application.schedule_failed: {error}"))
-    }
-}
-
-fn request_application_restart(app: &impl ApplicationRestarter) -> Result<(), String> {
-    app.schedule_restart()
-}
-
-/// Requests a restart so a persisted library-root change takes effect.
-///
-/// Tauri's restart handles spawning the current binary and exiting the old
-/// process. It is scheduled after the invoke command returns so the renderer
-/// can submit the terminal restart request without being left in the old
-/// process when the command response closes.
-#[tauri::command]
-fn restart_application(app: AppHandle) -> Result<(), String> {
-    request_application_restart(&app)
-}
-
 pub fn emit_app_event<R: tauri::Runtime>(app: &AppHandle<R>, event: AppEvent) -> tauri::Result<()> {
     app.emit("app_event", event)
 }
@@ -297,8 +261,7 @@ pub fn run_with_facade(facade: Arc<LocalApplicationFacade>) -> tauri::Result<()>
             execute_command,
             query_application,
             pick_local_directory,
-            open_local_directory,
-            restart_application
+            open_local_directory
         ])
         .run(tauri::generate_context!())
 }
@@ -341,33 +304,6 @@ pub fn run() -> tauri::Result<()> {
         }
     }
     run_with_facade(Arc::new(facade))
-}
-
-#[cfg(test)]
-mod restart_application_tests {
-    use super::{request_application_restart, ApplicationRestarter};
-    use std::cell::Cell;
-
-    struct RecordingRestarter {
-        scheduled: Cell<bool>,
-    }
-
-    impl ApplicationRestarter for RecordingRestarter {
-        fn schedule_restart(&self) -> Result<(), String> {
-            self.scheduled.set(true);
-            Ok(())
-        }
-    }
-
-    #[test]
-    fn requesting_restart_returns_success_after_scheduling_restart() {
-        let restarter = RecordingRestarter {
-            scheduled: Cell::new(false),
-        };
-
-        assert!(request_application_restart(&restarter).is_ok());
-        assert!(restarter.scheduled.get());
-    }
 }
 
 #[cfg(windows)]

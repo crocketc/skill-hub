@@ -50,8 +50,6 @@ export interface OnboardingOperations {
     decisions: RestoreDecision[],
   ) => Promise<RestoreResult>;
   pickDirectory?: () => Promise<string | null>;
-  /** Chooses the central library root before initialization completes. */
-  setLibraryRoot?: (path: string) => Promise<void>;
   activateLibraryRoot?: (path: string, mode: LibraryActivationMode) => Promise<void>;
 }
 
@@ -171,12 +169,6 @@ export const desktopOnboardingOperations: OnboardingOperations = {
   },
   async pickDirectory() {
     return desktopDirectoryPicker.pickDirectory();
-  },
-  async setLibraryRoot(path) {
-    const result = await executeCommand({ type: "set_library_root", payload: { path } });
-    if (result.type !== "initialization_status") {
-      throw new Error("Unexpected library root response from the native application.");
-    }
   },
   async activateLibraryRoot(path, mode) {
     const result = await executeCommand({

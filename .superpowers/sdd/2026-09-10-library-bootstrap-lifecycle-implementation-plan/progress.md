@@ -40,3 +40,5 @@ Task 7: complete（提交范围：通过 Specta 重新生成绑定，桌面适�
 Task 8: complete（提交范围：初始化新建/已有库分支改为保存并继续的原地激活，恢复分支先选择目标库再选择备份，覆盖失败重选、重复点击和冲突决策；测试结果：`pnpm --dir apps/desktop test --run src/features/onboarding/LibraryStep.test.tsx src/features/onboarding/RestoreStep.test.tsx src/features/onboarding/OnboardingBranches.test.tsx src/features/onboarding/OnboardingWizard.test.tsx`，35 passed；`pnpm --dir apps/desktop typecheck` 通过）。
 
 Task 9: complete（提交范围：新增只读 `RescanWizard`，初始化入口按快照在首次初始化与重新发现模式间分流，设置入口改名并保持当前集中库只读；测试结果：`pnpm --dir apps/desktop test --run src/features/onboarding/RescanWizard.test.tsx src/features/settings/SettingsPage.test.tsx`，9 passed；`pnpm --dir apps/desktop typecheck` 通过）。
+
+Task 10: complete（提交范围：删除 onboarding 专用 `restart.ts`、测试、Tauri restart IPC handler 与临时重启调度 trait，移除桌面适配器旧 set-library-root seam；更新器重启能力仍保留；测试结果：`cargo test -p skillhub-desktop --lib` 22 passed，`pnpm --dir apps/desktop test --run src/features/bootstrap/api.test.ts src/features/onboarding/OnboardingBranches.test.tsx` 13 passed，`pnpm --dir apps/desktop typecheck` 通过）。

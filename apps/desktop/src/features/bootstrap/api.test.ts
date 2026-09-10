@@ -132,7 +132,7 @@ it("activates a selected library through the typed native command", async () => 
     payload: { state: "initialized", library_path: "D:\\SkillHub", skipped: false },
   });
 
-  await desktopOnboardingOperations.activateLibraryRoot("D:\\SkillHub", "create");
+  await desktopOnboardingOperations.activateLibraryRoot!("D:\\SkillHub", "create");
 
   expect(mocks.executeCommand).toHaveBeenCalledWith({
     type: "activate_library_root",
@@ -147,8 +147,8 @@ it("sends the selected target to first-run restore while preserving ordinary res
     .mockResolvedValueOnce({ type: "restore_plan", payload: { conflicts: [] } })
     .mockResolvedValueOnce({ type: "restore_result", payload: { restored: [], skipped: [] } });
 
-  await desktopOnboardingOperations.prepareInitialRestore("C:\\backup.skillhub", "D:\\SkillHub");
-  await desktopOnboardingOperations.commitInitialRestore("C:\\backup.skillhub", "D:\\SkillHub", []);
+  await desktopOnboardingOperations.prepareInitialRestore!("C:\\backup.skillhub", "D:\\SkillHub");
+  await desktopOnboardingOperations.commitInitialRestore!("C:\\backup.skillhub", "D:\\SkillHub", []);
   await desktopOnboardingOperations.prepareRestore?.("C:\\backup.skillhub");
   await desktopOnboardingOperations.commitRestore?.("C:\\backup.skillhub", []);
 
