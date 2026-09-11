@@ -141,6 +141,35 @@ export function resolveProjectAccessState(
   return "accessible";
 }
 
+export type ProjectNextStep =
+  | { kind: "check_access" }
+  | { kind: "declare_requirements" }
+  | { kind: "resolve_conflicts"; conflicts: number }
+  | { kind: "open_details" };
+
+/** Card/drawer access fact: the four snapshot states plus "snapshot failed". */
+export type ProjectAccessFact = ProjectAccessState | "unknown";
+
+/**
+ * Front-end only next-step rule for cards and the quick drawer. It derives
+ * guidance from facts that already exist (directory access plus the stored
+ * assembly plan); it never invents health scores or backend abilities.
+ * Access problems win, then a missing plan, then unresolved plan items.
+ * An "unknown" access state keeps its hands off access guidance.
+ */
+export function resolveProjectNextStep(
+  accessState: ProjectAccessFact,
+  plan: ProjectAssemblyPlanView | null,
+): ProjectNextStep {
+  if (accessState === "inaccessible" || accessState === "read_only") return { kind: "check_access" };
+  if (!plan) return { kind: "declare_requirements" };
+  const conflicts = plan.items.filter(
+    (item) => item.status === "conflict_needs_choice" || item.status === "failed",
+  ).length;
+  if (conflicts > 0) return { kind: "resolve_conflicts", conflicts };
+  return { kind: "open_details" };
+}
+
 export interface ProjectAssemblyGroup {
   items: ProjectAssemblyPlanItemView[];
   status: ProjectAssemblyPlanStatus;

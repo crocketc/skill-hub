@@ -615,6 +615,23 @@
       "search": "搜索项目",
       "tags": "标签"
     },
+    "card": {
+      "access": {
+        "accessible": "可访问",
+        "inaccessible": "不可访问",
+        "read_only": "只读",
+        "unknown": "未知",
+        "untracked": "未在本机"
+      },
+      "agentCount": "关联 Agent：{{count}}",
+      "nextStep": {
+        "check_access": "检查目录权限",
+        "declare_requirements": "在项目详情声明共享配置需求",
+        "label": "下一步",
+        "open_details": "查看项目详情",
+        "resolve_conflicts": "处理装配冲突（{{count}} 项）"
+      }
+    },
     "registration": {
       "agents": "关联已发现的 Agent（可选）",
       "confirm": "确认注册",
@@ -637,6 +654,8 @@
       "title": "注册本地项目"
     },
     "drawer": {
+      "access": "访问状态",
+      "agents": "关联 Agent",
       "identity": "项目位置",
       "manage": "管理项目",
       "tags": "标签",

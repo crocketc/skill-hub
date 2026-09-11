@@ -260,3 +260,128 @@ it("registers only once when the confirm button is activated repeatedly", async 
   await vi.waitFor(() => expect(register).toHaveBeenCalledTimes(1));
   expect(register).toHaveBeenCalledTimes(1);
 });
+
+const accessibleTarget = { id: "fs:demo-project", path: "D:/Work/demo", exists: true, readable: true, writable: true };
+
+it("reports the project directory access state from the discovery snapshot on each card", async () => {
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  const project = projectFixture();
+  render(
+    <I18nextProvider i18n={i18n}>
+      <ProjectListPage facade={listFacade(project, {
+        listPhysicalTargets: async () => [
+          { ...accessibleTarget, exists: false, readable: false, writable: false },
+        ],
+      })} />
+    </I18nextProvider>,
+  );
+
+  expect(await screen.findByText("不可访问")).toBeVisible();
+  expect(screen.getByText("Demo Project")).toBeVisible();
+});
+
+it("marks the access state unknown when the discovery snapshot cannot be read", async () => {
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  const project = projectFixture();
+  render(
+    <I18nextProvider i18n={i18n}>
+      <ProjectListPage facade={listFacade(project, {
+        listPhysicalTargets: vi.fn(async () => { throw new Error("snapshot unavailable"); }),
+      })} />
+    </I18nextProvider>,
+  );
+
+  expect(await screen.findByText("未知")).toBeVisible();
+});
+
+it("shows the associated Agent count from the listed project facts", async () => {
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  const project = { ...projectFixture(), agentIds: ["codex-cli", "claude-code"] };
+  render(
+    <I18nextProvider i18n={i18n}>
+      <ProjectListPage facade={listFacade(project)} />
+    </I18nextProvider>,
+  );
+
+  expect(await screen.findByText("关联 Agent：2")).toBeVisible();
+});
+
+it("suggests resolving assembly conflicts and opens the project details from the next step", async () => {
+  const user = userEvent.setup();
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  const project = projectFixture();
+  const onOpenProject = vi.fn();
+  render(
+    <I18nextProvider i18n={i18n}>
+      <ProjectListPage facade={listFacade(project, {
+        getAssemblyPlan: async () => ({
+          items: [
+            { name: "Release Notes", reasons: ["同名冲突"], skillId: "release-notes", status: "conflict_needs_choice" },
+            { name: "PDF Reader", reasons: [], skillId: "pdf-reader", status: "already_satisfied" },
+          ],
+        }),
+        listPhysicalTargets: async () => [accessibleTarget],
+      })} onOpenProject={onOpenProject} />
+    </I18nextProvider>,
+  );
+
+  const resolve = await screen.findByRole("button", { name: "处理装配冲突（1 项）" });
+  await user.click(resolve);
+  expect(onOpenProject).toHaveBeenCalledWith("demo-project");
+  expect(screen.queryByText("检查目录权限")).not.toBeInTheDocument();
+});
+
+it("points projects without an assembly plan at declaring shared requirements", async () => {
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  const project = projectFixture();
+  render(
+    <I18nextProvider i18n={i18n}>
+      <ProjectListPage facade={listFacade(project, {
+        listPhysicalTargets: async () => [accessibleTarget],
+      })} />
+    </I18nextProvider>,
+  );
+
+  expect(await screen.findByText("在项目详情声明共享配置需求")).toBeVisible();
+});
+
+it("asks to check directory access first when the registered path is unreachable", async () => {
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  const project = projectFixture();
+  render(
+    <I18nextProvider i18n={i18n}>
+      <ProjectListPage facade={listFacade(project, {
+        getAssemblyPlan: async () => ({
+          items: [
+            { name: "Release Notes", reasons: ["同名冲突"], skillId: "release-notes", status: "conflict_needs_choice" },
+          ],
+        }),
+        listPhysicalTargets: async () => [
+          { ...accessibleTarget, exists: false, readable: false, writable: false },
+        ],
+      })} />
+    </I18nextProvider>,
+  );
+
+  expect(await screen.findByText("检查目录权限")).toBeVisible();
+  expect(screen.queryByText(/处理装配冲突/)).not.toBeInTheDocument();
+});
+
+it("keeps the quick drawer access and next-step facts on the same source as the card", async () => {
+  const user = userEvent.setup();
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  const project = { ...projectFixture(), agentIds: ["codex-cli"] };
+  render(
+    <I18nextProvider i18n={i18n}>
+      <ProjectListPage facade={listFacade(project, {
+        listPhysicalTargets: async () => [accessibleTarget],
+      })} />
+    </I18nextProvider>,
+  );
+
+  await user.click(await screen.findByRole("button", { name: "Demo Project" }));
+  const dialog = await screen.findByRole("dialog");
+  expect(within(dialog).getByText("可访问")).toBeVisible();
+  expect(within(dialog).getByText("关联 Agent：1")).toBeVisible();
+  expect(within(dialog).getByText("在项目详情声明共享配置需求")).toBeVisible();
+});

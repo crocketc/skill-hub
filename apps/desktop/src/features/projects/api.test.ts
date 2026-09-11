@@ -3,6 +3,7 @@ import {
   groupAssemblyItems,
   projectFixture,
   resolveProjectAccessState,
+  resolveProjectNextStep,
   sortSkillCandidatesByTraceAffinity,
   unavailableProjectFacade,
   type ProjectAgentTrace,
@@ -46,6 +47,37 @@ it("resolves the access state only from the matching physical target", () => {
   expect(resolveProjectAccessState("fs-gone", targets)).toBe("inaccessible");
   expect(resolveProjectAccessState("fs-unreadable", targets)).toBe("inaccessible");
   expect(resolveProjectAccessState("fs-missing", targets)).toBe("untracked");
+});
+
+it("asks to check directory access before assembly guidance when the directory is unreachable", () => {
+  const plan: ProjectAssemblyPlanItemView[] = [
+    { name: "Release Notes", reasons: ["同名冲突"], skillId: "release-notes", status: "conflict_needs_choice" },
+  ];
+  expect(resolveProjectNextStep("inaccessible", { items: plan })).toEqual({ kind: "check_access" });
+  expect(resolveProjectNextStep("read_only", null)).toEqual({ kind: "check_access" });
+});
+
+it("points projects without an assembly plan at declaring shared requirements first", () => {
+  expect(resolveProjectNextStep("accessible", null)).toEqual({ kind: "declare_requirements" });
+  expect(resolveProjectNextStep("untracked", null)).toEqual({ kind: "declare_requirements" });
+  expect(resolveProjectNextStep("unknown", null)).toEqual({ kind: "declare_requirements" });
+});
+
+it("counts unresolved plan items as the conflict next step", () => {
+  const items: ProjectAssemblyPlanItemView[] = [
+    { name: "Release Notes", reasons: ["同名冲突"], skillId: "release-notes", status: "conflict_needs_choice" },
+    { name: "PDF Reader", reasons: [], skillId: "pdf-reader", status: "already_satisfied" },
+    { name: "API Review", reasons: ["读取来源失败"], skillId: "api-review", status: "failed" },
+  ];
+  expect(resolveProjectNextStep("accessible", { items })).toEqual({ conflicts: 2, kind: "resolve_conflicts" });
+});
+
+it("falls back to opening the project details when there is nothing to fix", () => {
+  const items: ProjectAssemblyPlanItemView[] = [
+    { name: "PDF Reader", reasons: [], skillId: "pdf-reader", status: "already_satisfied" },
+  ];
+  expect(resolveProjectNextStep("accessible", { items })).toEqual({ kind: "open_details" });
+  expect(resolveProjectNextStep("accessible", { items: [] })).toEqual({ kind: "open_details" });
 });
 
 it("groups assembly plan items by status in a fixed order and drops empty groups", () => {

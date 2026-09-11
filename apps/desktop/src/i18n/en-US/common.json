@@ -615,6 +615,23 @@
       "search": "Search projects",
       "tags": "Tags"
     },
+    "card": {
+      "access": {
+        "accessible": "Accessible",
+        "inaccessible": "Inaccessible",
+        "read_only": "Read-only",
+        "unknown": "Unknown",
+        "untracked": "Not on this device"
+      },
+      "agentCount": "Associated Agents: {{count}}",
+      "nextStep": {
+        "check_access": "Check directory access",
+        "declare_requirements": "Declare shared config requirements in project details",
+        "label": "Next step",
+        "open_details": "Open project details",
+        "resolve_conflicts": "Resolve assembly conflicts ({{count}})"
+      }
+    },
     "registration": {
       "agents": "Associate discovered Agents (optional)",
       "confirm": "Register project",
@@ -637,6 +654,8 @@
       "title": "Register local project"
     },
     "drawer": {
+      "access": "Access state",
+      "agents": "Associated Agents",
       "identity": "Project location",
       "manage": "Manage project",
       "tags": "Tags",
