@@ -30,11 +30,11 @@ use skillhub_core::api::{
     ApplySourceUpdate, BasicCheckResult, BatchTranslationItemFailure, BatchTranslationOutcome,
     CheckSourceUpdate, CheckSourceUpdates, ClearLlmProviderCredential, CreateCombination,
     CreateSkill, DeleteCombination, DeleteLlmProvider, FetchLlmModels, FetchLlmProvider,
-    PinProjectSkillVersion, RelinkSource, RenameSkill, SaveLlmProvider, SaveMarkdownAsCopy,
-    SaveMarkdownContent, SaveSkillContent, SavedSkillContent, SetCurrentVersion,
-    SetDefaultLlmProvider, SetFindingDisposition, SetLifecycle, SetLlmProviderEnabled, SetMetadata,
-    SetTrial, SourceUpdateCheckOutcome, TestLlmConnection, TranslateDescriptionsBatch,
-    UpdateCombination,
+    PinProjectSkillVersion, RelinkSource, RenameCombination, RenameSkill, SaveLlmProvider,
+    SaveMarkdownAsCopy, SaveMarkdownContent, SaveSkillContent, SavedSkillContent,
+    SetCurrentVersion, SetDefaultLlmProvider, SetFindingDisposition, SetLifecycle,
+    SetLlmProviderEnabled, SetMetadata, SetTrial, SourceUpdateCheckOutcome, TestLlmConnection,
+    TranslateDescriptionsBatch, UpdateCombination,
 };
 use skillhub_core::application::{
     CallPolicyBackend, CallPolicyService, DeploymentBackend, DeploymentService,
@@ -3572,34 +3572,74 @@ impl LocalApplicationFacade {
     }
 
     fn create_combination(&self, request: CreateCombination) -> AppResult<AppCommandResult> {
-        self.with_database("execute.create_combination", |database| {
+        let operation_id = OperationId::new();
+        self.journal_begin(operation_id, "create_combination");
+        let result = self.with_database("execute.create_combination", |database| {
             database
                 .combination_repository()
                 .create(&request.name, &request.members)?;
-            Ok(AppCommandResult::OperationSummary(operation_summary(
-                "catalog.combination_created",
-            )))
-        })
+            Ok(AppCommandResult::OperationSummary(
+                skillhub_core::OperationSummary {
+                    operation_id,
+                    phase: skillhub_core::OperationPhase::Committed,
+                    message_code: "catalog.combination_created".to_owned(),
+                    error_code: None,
+                },
+            ))
+        });
+        self.journal_settle(operation_id, "create_combination", result.as_ref().err());
+        result
     }
 
     fn update_combination(&self, request: UpdateCombination) -> AppResult<AppCommandResult> {
-        self.with_database("execute.update_combination", |database| {
+        let operation_id = OperationId::new();
+        self.journal_begin(operation_id, "update_combination");
+        let result = self.with_database("execute.update_combination", |database| {
             database
                 .combination_repository()
                 .update_members(&request.name, &request.members)?;
-            Ok(AppCommandResult::OperationSummary(operation_summary(
-                "catalog.combination_updated",
-            )))
-        })
+            Ok(AppCommandResult::OperationSummary(
+                skillhub_core::OperationSummary {
+                    operation_id,
+                    phase: skillhub_core::OperationPhase::Committed,
+                    message_code: "catalog.combination_updated".to_owned(),
+                    error_code: None,
+                },
+            ))
+        });
+        self.journal_settle(operation_id, "update_combination", result.as_ref().err());
+        result
+    }
+
+    fn rename_combination(&self, request: RenameCombination) -> AppResult<AppCommandResult> {
+        let operation_id = OperationId::new();
+        self.journal_begin(operation_id, "rename_combination");
+        let result = self.with_database("execute.rename_combination", |database| {
+            database
+                .combination_repository()
+                .rename(&request.from, &request.to)
+                .map(AppCommandResult::Combination)
+        });
+        self.journal_settle(operation_id, "rename_combination", result.as_ref().err());
+        result
     }
 
     fn delete_combination(&self, request: DeleteCombination) -> AppResult<AppCommandResult> {
-        self.with_database("execute.delete_combination", |database| {
+        let operation_id = OperationId::new();
+        self.journal_begin(operation_id, "delete_combination");
+        let result = self.with_database("execute.delete_combination", |database| {
             database.combination_repository().delete(&request.name)?;
-            Ok(AppCommandResult::OperationSummary(operation_summary(
-                "catalog.combination_deleted",
-            )))
-        })
+            Ok(AppCommandResult::OperationSummary(
+                skillhub_core::OperationSummary {
+                    operation_id,
+                    phase: skillhub_core::OperationPhase::Committed,
+                    message_code: "catalog.combination_deleted".to_owned(),
+                    error_code: None,
+                },
+            ))
+        });
+        self.journal_settle(operation_id, "delete_combination", result.as_ref().err());
+        result
     }
 
     fn pin_project_skill_version(
@@ -4705,6 +4745,7 @@ impl ApplicationFacade for LocalApplicationFacade {
             AppCommand::CreateCombination(request) => return self.create_combination(request),
             AppCommand::UpdateCombination(request) => return self.update_combination(request),
             AppCommand::DeleteCombination(request) => return self.delete_combination(request),
+            AppCommand::RenameCombination(request) => return self.rename_combination(request),
             AppCommand::PinProjectSkillVersion(request) => {
                 return self.pin_project_skill_version(request)
             }

@@ -26,7 +26,7 @@ use crate::{
     VersionId,
 };
 
-use super::query::{BasicCheckResult, LlmSafetyCheckResult};
+use super::query::{BasicCheckResult, CombinationResult, LlmSafetyCheckResult};
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 pub struct CreateSkill {
@@ -90,6 +90,11 @@ pub struct UpdateCombination {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 pub struct DeleteCombination {
     pub name: String,
+}
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+pub struct RenameCombination {
+    pub from: String,
+    pub to: String,
 }
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 pub struct SetCurrentVersion {
@@ -780,6 +785,8 @@ pub enum AppCommand {
     UpdateCombination(UpdateCombination),
     #[serde(rename = "delete_combination")]
     DeleteCombination(DeleteCombination),
+    #[serde(rename = "rename_combination")]
+    RenameCombination(RenameCombination),
     #[serde(rename = "set_current_version")]
     SetCurrentVersion(SetCurrentVersion),
     #[serde(rename = "pin_project_skill_version")]
@@ -1063,6 +1070,8 @@ pub enum AppCommandResult {
     DownloadedRepoSkill(crate::source::DownloadedRepoSkill),
     #[serde(rename = "search_candidates")]
     SearchCandidates(Vec<crate::source::SearchCandidateRecord>),
+    #[serde(rename = "combination")]
+    Combination(CombinationResult),
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
