@@ -611,7 +611,7 @@ it("reports localized required-field messages instead of the browser validation 
   renderCard(facade, i18n);
 
   await user.click(await screen.findByRole("button", { name: "新增供应商" }));
-  await user.click(await screen.findByRole("button", { name: "保存" }));
+  await user.click(screen.getByRole("button", { name: "保存" }));
 
   expect(await screen.findByText("请填写供应商 ID。")).toBeVisible();
   expect(screen.getByText("请填写API 地址（Base URL）。")).toBeVisible();
@@ -625,4 +625,170 @@ it("reports localized required-field messages instead of the browser validation 
   expect(providerId).toHaveAttribute("aria-invalid", "true");
   expect(screen.getByRole("textbox", { name: "API 地址（Base URL）" })).toHaveAttribute("aria-invalid", "true");
   expect(screen.getByRole("combobox", { name: "模型" })).toHaveAttribute("aria-invalid", "true");
+});
+
+// P1-03 LLM 表单状态机：先填地址、密钥，才可获取模型/测试此配置；
+// 前置不足时按钮禁用并解释原因；local 部署豁免密钥；编辑沿用已存凭据；
+// 测试结果必须在抽屉内渲染；手填模型路径保持完整。
+
+it("disables the draft actions until the endpoint is filled and explains why", async () => {
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  const { facade } = recordingFacade();
+  const user = userEvent.setup();
+  renderCard(facade, i18n);
+
+  await user.click(await screen.findByRole("button", { name: "新增供应商" }));
+
+  const fetchButton = within(screen.getByRole("dialog")).getByRole("button", { name: "获取模型列表" });
+  const testButton = within(screen.getByRole("dialog")).getByRole("button", { name: "测试此配置" });
+  expect(fetchButton).toBeDisabled();
+  expect(testButton).toBeDisabled();
+
+  // 禁用并解释：解释文本常驻，按钮通过 aria-describedby 指向它。
+  const hint = within(screen.getByRole("dialog")).getByText("先填写 API 地址（Base URL），才能获取模型列表或测试此配置。");
+  expect(hint).toHaveAttribute("id", "llm-draft-prereq-hint");
+  expect(fetchButton).toHaveAttribute("aria-describedby", "llm-draft-prereq-hint");
+  expect(testButton).toHaveAttribute("aria-describedby", "llm-draft-prereq-hint");
+  expect(fetchButton).toHaveAttribute("title", hint.textContent!);
+});
+
+it("keeps the draft actions disabled with a credential explanation until the key is filled", async () => {
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  const { facade } = recordingFacade();
+  const user = userEvent.setup();
+  renderCard(facade, i18n);
+
+  await user.click(await screen.findByRole("button", { name: "新增供应商" }));
+  await user.type(screen.getByRole("textbox", { name: "API 地址（Base URL）" }), "https://api.deepseek.com/v1");
+
+  expect(within(screen.getByRole("dialog")).getByRole("button", { name: "获取模型列表" })).toBeDisabled();
+  expect(
+    within(screen.getByRole("dialog")).getByText(
+      "在线供应商需要先填写 API 密钥（或使用已保存凭据），才能获取模型列表或测试此配置。",
+    ),
+  ).toBeVisible();
+  expect(
+    screen.queryByText("先填写 API 地址（Base URL），才能获取模型列表或测试此配置。"),
+  ).not.toBeInTheDocument();
+
+  await user.type(screen.getByLabelText("API 密钥"), "sk-acceptance-not-real");
+
+  expect(within(screen.getByRole("dialog")).getByRole("button", { name: "获取模型列表" })).toBeEnabled();
+  expect(within(screen.getByRole("dialog")).getByRole("button", { name: "测试此配置" })).toBeEnabled();
+  expect(screen.getByRole("dialog").querySelector("#llm-draft-prereq-hint")).toBeNull();
+});
+
+it("fetches models into the datalist and renders the two-level test result inside the drawer", async () => {
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  const { facade } = recordingFacade({
+    testResult: {
+      endpoint: { reachable: true, latency_ms: 42 },
+      model: { ok: true, latency_ms: 118 },
+      model_failure_code: null,
+    },
+  });
+  const fetchCalls: LlmProviderDraft[] = [];
+  facade.fetchModels = Object.assign(async (draft: LlmProviderDraft) => {
+    fetchCalls.push(draft);
+    return ["deepseek-chat", "deepseek-reasoner"];
+  }, {});
+  const user = userEvent.setup();
+  renderCard(facade, i18n);
+
+  await user.click(await screen.findByRole("button", { name: "新增供应商" }));
+  await user.type(screen.getByRole("textbox", { name: "API 地址（Base URL）" }), "https://api.deepseek.com/v1");
+  await user.type(screen.getByLabelText("API 密钥"), "sk-acceptance-not-real");
+
+  await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "获取模型列表" }));
+  await waitFor(() => expect(fetchCalls).toHaveLength(1));
+  const drawer = screen.getByRole("dialog");
+  expect(drawer.querySelector('#llm-model-options option[value="deepseek-chat"]')).not.toBeNull();
+  expect(drawer.querySelector('#llm-model-options option[value="deepseek-reasoner"]')).not.toBeNull();
+
+  // 测试此配置无需保存：两级结果直接渲染在抽屉内。
+  await user.click(within(drawer).getByRole("button", { name: "测试此配置" }));
+  expect(await within(drawer).findByText("服务可达 (42 ms)")).toBeVisible();
+  expect(within(drawer).getByText("模型连接可用")).toBeVisible();
+});
+
+it("announces the in-progress state while the draft connection test runs", async () => {
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  const { facade } = recordingFacade();
+  let resolveTest: (result: ConnectionTestResult) => void = () => {};
+  facade.testConnection = Object.assign(
+    () =>
+      new Promise<ConnectionTestResult>((resolve) => {
+        resolveTest = resolve;
+      }),
+    {},
+  );
+  const user = userEvent.setup();
+  renderCard(facade, i18n);
+
+  await user.click(await screen.findByRole("button", { name: "新增供应商" }));
+  await user.type(screen.getByRole("textbox", { name: "API 地址（Base URL）" }), "https://api.deepseek.com/v1");
+  await user.type(screen.getByLabelText("API 密钥"), "sk-acceptance-not-real");
+  await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "测试此配置" }));
+
+  expect(await within(screen.getByRole("dialog")).findByText("正在测试此配置…")).toBeVisible();
+
+  resolveTest({
+    endpoint: { reachable: true, latency_ms: 10 },
+    model: { ok: true, latency_ms: 20 },
+    model_failure_code: null,
+  });
+  expect(await within(screen.getByRole("dialog")).findByText("服务可达 (10 ms)")).toBeVisible();
+});
+
+it("enables the draft actions for a local deployment without a credential", async () => {
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  const { facade } = recordingFacade();
+  const user = userEvent.setup();
+  renderCard(facade, i18n);
+
+  await user.click(await screen.findByRole("button", { name: "新增供应商" }));
+  await user.selectOptions(screen.getByLabelText("从预设选择"), "ollama");
+
+  expect(screen.getByRole("textbox", { name: "API 地址（Base URL）" })).toHaveValue("http://127.0.0.1:11434/v1");
+  expect(within(screen.getByRole("dialog")).getByRole("button", { name: "获取模型列表" })).toBeEnabled();
+  expect(within(screen.getByRole("dialog")).getByRole("button", { name: "测试此配置" })).toBeEnabled();
+  expect(screen.getByRole("dialog").querySelector("#llm-draft-prereq-hint")).toBeNull();
+});
+
+it("treats an edit with a stored credential as ready without retyping the key", async () => {
+  mockReducedMotion();
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  const { facade } = recordingFacade({ providers: [PROVIDERS[0]] });
+  const user = userEvent.setup();
+  renderCard(facade, i18n);
+
+  const row = (await screen.findByText("DeepSeek")).closest("li")!;
+  await user.click(within(row).getByRole("button", { name: "编辑" }));
+
+  const drawer = screen.getByRole("dialog");
+  expect(within(drawer).getByLabelText("API 密钥")).toHaveValue("");
+  expect(within(drawer).getByRole("button", { name: "获取模型列表" })).toBeEnabled();
+  expect(within(drawer).getByRole("button", { name: "测试此配置" })).toBeEnabled();
+  expect(within(drawer).queryByText("在线供应商需要先填写 API 密钥（或使用已保存凭据），才能获取模型列表或测试此配置。"))
+    .not.toBeInTheDocument();
+});
+
+it("keeps the manual model path intact after a failed fetch and still saves the draft", async () => {
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  const { facade, saves } = recordingFacade({ fetchModelsError: STRUCTURED_NATIVE_ERROR });
+  const user = await openFilledDraftForm(i18n, facade);
+
+  await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "获取模型列表" }));
+
+  // 失败信息与手填提示都出现在抽屉内，草稿不被清除。
+  expect(await within(screen.getByRole("dialog")).findByText(/网络功能已关闭/)).toBeVisible();
+  expect(await within(screen.getByRole("dialog")).findByText(/可手动填写模型/)).toBeVisible();
+  expect(screen.getByRole("combobox", { name: "模型" })).toHaveValue("deepseek-chat");
+
+  await user.type(screen.getByRole("textbox", { name: "供应商 ID" }), "-prod");
+  await user.click(screen.getByRole("button", { name: "保存" }));
+
+  await waitFor(() => expect(saves).toHaveLength(1));
+  expect(saves[0]!.draft.id).toBe("deepseek-prod");
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
 });

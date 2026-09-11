@@ -93,21 +93,40 @@
 }
 
 @container workspace (min-width: 64rem) {
+  /* P1-01b 双滚动所有者：宽容器下页面外壳不滚——分区导航与内容列各自
+     独立滚动；导航短时不出现滚动条，超过视口高度才有独立滚动条。 */
+  .sh-settings-page {
+    height: 100%;
+    min-height: 0;
+    max-height: 100%;
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
   .sh-settings-layout {
     grid-template-columns: 12rem minmax(0, 1fr);
+    min-height: 0;
   }
 
   .sh-settings-nav {
+    min-height: 0;
+    max-height: 100%;
     flex-direction: column;
     align-items: stretch;
-    overflow: visible;
+    overflow-x: hidden;
+    overflow-y: auto;
     padding-bottom: 0;
-    position: sticky;
-    top: var(--space-5);
   }
 
   .sh-settings-nav__tab {
     justify-content: flex-start;
+  }
+
+  /* 内容列是唯一的内容滚动所有者：PageHeader 与导航不随内容滚动。 */
+  .sh-settings-panels {
+    min-height: 0;
+    overflow-y: auto;
+    padding-right: var(--space-2);
+    scrollbar-gutter: stable;
   }
 }
 
@@ -254,6 +273,13 @@
   margin: 0;
   min-width: 0;
   padding: 0;
+}
+
+/* 抽屉内的草稿测试结果（P1-03）：与行级报告同构的两级列表。 */
+.sh-settings-draft-report__label {
+  color: var(--ui-ink-muted);
+  font-size: var(--font-size-sm);
+  margin: var(--space-4) 0 0;
 }
 
 .sh-settings-provider__level {

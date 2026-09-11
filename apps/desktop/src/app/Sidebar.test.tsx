@@ -66,9 +66,35 @@ describe("Sidebar", () => {
     );
   });
 
-  it("places the compact toggle between the brand row and the first nav item", () => {
-    expect(baseCss).toMatch(/\.sh-sidebar__toggle\s*\{[\s\S]*top:\s*calc\(100% \+ var\(--space-2\)\)/);
-    expect(baseCss).toMatch(/\.sh-sidebar__toggle\s*\{[\s\S]*width:\s*2\.5rem[\s\S]*height:\s*2\.5rem/);
-    expect(baseCss).toMatch(/\.sh-sidebar__toggle\s*\{[\s\S]*right:\s*-1\.5rem/);
+  // P1-01a：折叠按钮固定在侧栏左上角——常规流内的小型方形按钮（40px、
+  // 小圆角），不再是悬浮在侧栏右缘中缝的圆形按钮。
+  it("styles the toggle as a fixed square button in the top-left corner", () => {
+    const toggleRule = baseCss.match(/\.sh-sidebar__toggle\s*\{[^}]*\}/)?.[0] ?? "";
+    expect(toggleRule).not.toBe("");
+    // 40px 点击面积保持不变。
+    expect(toggleRule).toMatch(/width:\s*2\.5rem/);
+    expect(toggleRule).toMatch(/height:\s*2\.5rem/);
+    // 方形小圆角：禁止旧圆形 999px。
+    expect(toggleRule).toMatch(/border-radius:\s*var\(--radius-sm\)/);
+    expect(toggleRule).not.toMatch(/999px/);
+    // 常规流固定在左上：不再悬浮偏移（旧 top/right/translate 全部移除）。
+    expect(toggleRule).toMatch(/position:\s*static/);
+    expect(toggleRule).not.toMatch(/top:\s*calc\(100% \+ var\(--space-2\)\)/);
+    expect(toggleRule).not.toMatch(/right:\s*-1\.5rem/);
+    expect(toggleRule).not.toMatch(/translateY\(-50%\)/);
+    // hover/active 位移效果一并移除（窄顶栏下的 transform: none 重置不受影响）。
+    expect(baseCss).not.toMatch(/\.sh-sidebar__toggle:hover[^{]*\{[^}]*translate/);
+    expect(baseCss).not.toMatch(/\.sh-sidebar__toggle:active[^{]*\{[^}]*translate/);
+  });
+
+  it("places the toggle before the brand link as the header's first element", async () => {
+    await renderSidebar();
+
+    const header = screen
+      .getByRole("complementary", { name: "Main navigation" })
+      .querySelector(".sh-sidebar__header");
+    expect(header).not.toBeNull();
+    expect(header!.firstElementChild).toBe(screen.getByRole("button", { name: "Collapse navigation" }));
+    expect(header!.querySelector(".sh-sidebar__brand")).not.toBeNull();
   });
 });

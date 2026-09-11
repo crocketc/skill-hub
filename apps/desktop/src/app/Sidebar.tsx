@@ -95,9 +95,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
       className={`sh-sidebar${isCollapsed ? " is-collapsed" : ""}`}
     >
       <div className="sh-sidebar__header">
-        <Link aria-label="SkillHub" className="sh-sidebar__brand" to="/">
-          <BrandLogo />
-        </Link>
+        {/* P1-01a：折叠按钮固定在侧栏左上角（头部第一个元素），brand 随后。 */}
         <button
           aria-expanded={!isCollapsed}
           aria-label={t(isCollapsed ? "navigation.expand" : "navigation.collapse")}
@@ -115,6 +113,9 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
             />
           </svg>
         </button>
+        <Link aria-label="SkillHub" className="sh-sidebar__brand" to="/">
+          <BrandLogo />
+        </Link>
       </div>
       <div className="sh-sidebar__scroll">
         <nav>

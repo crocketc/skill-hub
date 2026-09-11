@@ -147,6 +147,56 @@ test.describe("long text and multiple providers", () => {
   });
 });
 
+test.describe("wide-container dual scroll owners", () => {
+  for (const width of [1280, 1440] as const) {
+    test(`section nav stays fixed while only the content column scrolls at ${width}px`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width, height: 900 });
+      const tablist = await openSettings(page);
+      // 切到内容最长的分区，保证内容列溢出。
+      await tablist.getByRole("tab", { name: "Network & AI" }).click();
+      await expect(page.getByRole("heading", { name: "LLM providers" })).toBeVisible();
+
+      const before = await page.evaluate(() => {
+        const panels = document.querySelector<HTMLElement>(".sh-settings-panels");
+        const nav = document.querySelector<HTMLElement>(".sh-settings-nav");
+        if (!panels || !nav) return null;
+        return {
+          panelsScrollable: panels.scrollHeight > panels.clientHeight,
+          navScrollable: nav.scrollHeight > nav.clientHeight,
+          navTop: nav.getBoundingClientRect().top,
+          rootScrollHeight: document.documentElement.scrollHeight,
+          rootClientHeight: document.documentElement.clientHeight,
+        };
+      });
+      expect(before).not.toBeNull();
+      // 宽容器双滚动所有者：内容列自滚；短导航无独立滚动条；页面外壳不滚。
+      expect(before!.panelsScrollable, "content column owns the scrolling").toBe(true);
+      expect(before!.navScrollable, "a short section nav shows no own scrollbar").toBe(false);
+      expect(before!.rootScrollHeight, "page shell has no vertical scroll").toBeLessThanOrEqual(
+        before!.rootClientHeight,
+      );
+
+      // 滚动内容列：分区导航纹丝不动。
+      await page.locator(".sh-settings-panels").evaluate((node) => {
+        node.scrollTop = 120;
+      });
+      await page.waitForFunction(() => {
+        const panels = document.querySelector<HTMLElement>(".sh-settings-panels");
+        return !!panels && panels.scrollTop > 0;
+      });
+      const navTopAfter = await page.evaluate(
+        () => document.querySelector<HTMLElement>(".sh-settings-nav")!.getBoundingClientRect().top,
+      );
+      expect(
+        Math.abs(navTopAfter - before!.navTop),
+        "nav stays fixed while the content column scrolls",
+      ).toBeLessThanOrEqual(1);
+    });
+  }
+});
+
 test.describe("nine themes on the settings page at 1280x900", () => {
   for (const theme of themeNames) {
     test(`${theme} keeps controls, focus and drawer usable`, async ({ page }) => {

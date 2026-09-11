@@ -2,7 +2,8 @@ import { existsSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { render, screen } from "@testing-library/react";
 import { expect, it } from "vitest";
-import { brandIconSrc, BRAND_ICON_FILES, BrandTag } from "./BrandTag";
+import { brandIconSrc, BRAND_DISPLAY_NAMES, BRAND_ICON_FILES, BrandTag } from "./BrandTag";
+import brandCss from "./BrandTag.css?raw";
 
 it("renders known profile ids as their friendly brand names", () => {
   render(<BrandTag brand="openai" />);
@@ -112,5 +113,75 @@ it("covers every shipped lobehub asset with a mapping and vice versa", () => {
   expect(mapped).toEqual(shipped);
   for (const file of mapped) {
     expect(existsSync(path.join(assetDir, file))).toBe(true);
+  }
+});
+
+// P1-01c（QA-014 回归）：品牌芯片文字必须是同色系深色，且与浅色背景的
+// 对比度达到 WCAG AA（≥4.5）。此前前景色误用边框浅色（≈1.2:1），导致
+// 初始化流程中品牌 Logo 文字“都是灰色的，不清晰”。
+
+type ChipTokens = { background?: string; border?: string; foreground?: string };
+
+function relativeLuminance(hex: string) {
+  const channels = hex
+    .slice(1)
+    .match(/.{2}/g)
+    ?.map((channel) => Number.parseInt(channel, 16) / 255);
+  if (!channels || channels.length !== 3) {
+    throw new Error(`Expected a six-digit hex color, received ${hex}`);
+  }
+  const [red, green, blue] = channels.map((channel) =>
+    channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4,
+  );
+  return 0.2126 * red + 0.7152 * green + 0.0722 * blue;
+}
+
+function contrastRatio(foreground: string, background: string) {
+  const lighter = Math.max(relativeLuminance(foreground), relativeLuminance(background));
+  const darker = Math.min(relativeLuminance(foreground), relativeLuminance(background));
+  return (lighter + 0.05) / (darker + 0.05);
+}
+
+/** 解析 BrandTag.css 默认（浅色）块中每个品牌类的三个 chip 变量。 */
+function defaultBrandChipTokens(): Record<string, ChipTokens> {
+  const tokens: Record<string, ChipTokens> = {};
+  for (const match of brandCss.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+    const selector = match[1].trim();
+    if (!selector.startsWith(".sh-brand-tag--")) continue;
+    const body = match[2];
+    const read = (name: string) =>
+      body.match(new RegExp(`--brand-chip-${name}:\\s*(#[0-9a-fA-F]{6})`))?.[1];
+    for (const rawClass of selector.split(",")) {
+      const brand = rawClass.trim().match(/^\.sh-brand-tag--([\w-]+)$/)?.[1];
+      if (!brand) continue;
+      tokens[brand] = {
+        background: read("background") ?? tokens[brand]?.background,
+        border: read("border") ?? tokens[brand]?.border,
+        foreground: read("foreground") ?? tokens[brand]?.foreground,
+      };
+    }
+  }
+  return tokens;
+}
+
+it("keeps every light-theme brand chip text at AA contrast on its own background", () => {
+  const tokens = defaultBrandChipTokens();
+  // 已知品牌目录（含 comate 这类无素材但有颜色标签的品牌）+ neutral。
+  const expectedBrands = [...new Set([...Object.keys(BRAND_DISPLAY_NAMES), "neutral"])].sort();
+  expect(Object.keys(tokens).sort(), "every known brand class defines chip colors").toEqual(
+    expectedBrands,
+  );
+
+  for (const [brand, chip] of Object.entries(tokens)) {
+    expect(chip.foreground, `${brand} defines a hex foreground`).toMatch(/^#/);
+    expect(chip.background, `${brand} defines a hex background`).toMatch(/^#/);
+    // 回归锁：前景不得再退回边框浅色。
+    expect(chip.foreground, `${brand} foreground differs from its border pastel`).not.toBe(
+      chip.border,
+    );
+    expect(
+      contrastRatio(chip.foreground!, chip.background!),
+      `${brand} chip text/background contrast`,
+    ).toBeGreaterThanOrEqual(4.5);
   }
 });

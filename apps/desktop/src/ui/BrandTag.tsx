@@ -4,9 +4,10 @@ import "./BrandTag.css";
  * Known brand profile ids and their catalog spelling. Keys are lowercase
  * profile ids (or accepted display-name spellings) so both "openai" and
  * "OpenAI" resolve to the same tag. Mirrors the adapter profile catalog
- * documented in features/skills/AgentDeploymentIcons.tsx.
+ * documented in features/skills/AgentDeploymentIcons.tsx. Exported so tests
+ * can lock the BrandTag.css color classes to the catalog.
  */
-const BRAND_DISPLAY_NAMES: Record<string, string> = {
+export const BRAND_DISPLAY_NAMES: Record<string, string> = {
   anthropic: "Claude",
   claude: "Claude",
   cline: "Cline",
