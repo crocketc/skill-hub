@@ -47,6 +47,8 @@ describe("UiFoundationsPreview", () => {
     expect(
       screen.getByRole("checkbox", { name: "复选框与文字共享点击区" }),
     ).toBeVisible();
+    expect(screen.getByRole("radio", { name: "标准密度" })).toBeVisible();
+    expect(screen.getByRole("radio", { name: "紧凑密度" })).toBeVisible();
     expect(screen.getByRole("switch", { name: "立即生效的开关" })).toBeVisible();
     expect(screen.getByRole("button", { name: "主操作" })).toBeVisible();
     expect(screen.getByRole("button", { name: "删除技能" })).toBeVisible();

@@ -8,6 +8,7 @@ import { IconButton } from "../../ui/IconButton";
 import { Input } from "../../ui/Input";
 import { PageFrame } from "../../ui/PageFrame";
 import { PageHeader } from "../../ui/PageHeader";
+import { RadioField } from "../../ui/RadioField";
 import { Select } from "../../ui/Select";
 import { StatusBadge } from "../../ui/StatusBadge";
 import { Switch } from "../../ui/Switch";
@@ -90,6 +91,10 @@ export function UiFoundationsPreview() {
             description="点击整行文字即可切换。"
             label="复选框与文字共享点击区"
           />
+          <div aria-label="单选组示例" role="radiogroup" className="sh-preview-board__row">
+            <RadioField defaultChecked label="标准密度" name="preview-density" />
+            <RadioField label="紧凑密度" name="preview-density" />
+          </div>
           <Switch defaultChecked label="立即生效的开关" />
         </div>
       </BoardSection>

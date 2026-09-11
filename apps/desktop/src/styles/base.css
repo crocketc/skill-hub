@@ -238,6 +238,50 @@ a {
   line-height: 1.5;
 }
 
+.sh-radio-field {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  min-height: 2.5rem;
+  padding-block: var(--space-1);
+  color: var(--ui-ink);
+  cursor: pointer;
+}
+
+.sh-radio-field__input {
+  width: 1.125rem;
+  height: 1.125rem;
+  flex: 0 0 auto;
+  margin: 0.1875rem 0 0;
+  accent-color: var(--ui-accent);
+  cursor: inherit;
+}
+
+.sh-radio-field__input:focus-visible {
+  outline: 2px solid var(--ui-focus);
+  outline-offset: 2px;
+}
+
+.sh-radio-field__input:disabled ~ .sh-radio-field__text {
+  color: var(--ui-disabled-text);
+}
+
+.sh-radio-field__text {
+  display: grid;
+  min-width: 0;
+  gap: var(--space-1);
+}
+
+.sh-radio-field__label {
+  font-weight: 550;
+}
+
+.sh-radio-field__description {
+  color: var(--ui-ink-muted);
+  font-size: var(--font-size-xs);
+  line-height: 1.5;
+}
+
 .sh-switch {
   position: relative;
   display: inline-flex;

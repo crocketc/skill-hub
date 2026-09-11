@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
+import { MultiSelectMenu } from "../../ui/MultiSelectMenu";
 import { type CheckState, type SkillLibraryQuery, type SkillLifecycle } from "./api";
 
 export interface SkillFiltersProps {
@@ -58,65 +59,6 @@ function countActiveConditions(query: SkillLibraryQuery): number {
   if (query.filters.deployment !== "any") count += 1;
   if (query.filters.version !== "any") count += 1;
   return count;
-}
-
-interface MultiSelectMenuProps {
-  label: string;
-  onChange: (values: string[]) => void;
-  options: Array<{ label: string; value: string }>;
-  selected: string[];
-  summary: string;
-}
-
-function MultiSelectMenu({ label, onChange, options, selected, summary }: MultiSelectMenuProps) {
-  const [open, setOpen] = useState(false);
-  const dropdownRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!open) return;
-    const closeOnOutsidePointer = (event: PointerEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
-        setOpen(false);
-      }
-    };
-    document.addEventListener("pointerdown", closeOnOutsidePointer);
-    return () => document.removeEventListener("pointerdown", closeOnOutsidePointer);
-  }, [open]);
-  const toggle = (value: string, checked: boolean) => {
-    onChange(checked ? [...selected, value] : selected.filter((item) => item !== value));
-  };
-
-  return (
-    <div className="sh-filter-dropdown" ref={dropdownRef}>
-      <span className="sh-filter-dropdown__label">{label}</span>
-      <button
-        aria-label={label}
-        aria-expanded={open}
-        aria-haspopup="menu"
-        className="sh-filter-dropdown__trigger"
-        onClick={() => setOpen((current) => !current)}
-        type="button"
-      >
-        <span>{summary}</span>
-      </button>
-      {open ? (
-        <div aria-label={label} className="sh-filter-dropdown__menu" role="menu">
-          {options.map((option) => (
-            <label key={option.value}>
-              <input
-                aria-checked={selected.includes(option.value)}
-                aria-label={option.label}
-                checked={selected.includes(option.value)}
-                onChange={(event) => toggle(option.value, event.currentTarget.checked)}
-                role="menuitemcheckbox"
-                type="checkbox"
-              />
-              {option.label}
-            </label>
-          ))}
-        </div>
-      ) : null}
-    </div>
-  );
 }
 
 export function SkillFilters({
