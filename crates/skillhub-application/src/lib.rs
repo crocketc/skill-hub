@@ -1657,6 +1657,89 @@ impl LocalApplicationFacade {
         action(&database)
     }
 
+    // ------------------------------------------------------------------
+    // Persistent operation journal (`operations` table).
+    //
+    // The table is the durable history behind the operations page and the
+    // recovery entry; the in-process prepared maps only carry "fetch at
+    // commit time" state. Journal writes are best-effort on purpose: a user
+    // mutation that already succeeded must never fail because its history
+    // row could not be written. The happy paths are covered by
+    // tests/facade_operation_journal.rs. Rows only ever contain the stable
+    // kind, the phase and a whitelisted error code — never skill content,
+    // credentials or raw error payloads.
+    // ------------------------------------------------------------------
+
+    /// Starts a single-step flow with a `planned` record.
+    fn journal_begin(&self, operation_id: OperationId, kind: &'static str) {
+        self.journal_insert(journal_record(
+            operation_id,
+            kind,
+            skillhub_core::OperationPhase::Planned,
+            None,
+        ));
+    }
+
+    /// Records the prepared, retryable state of a multi-step flow.
+    fn journal_prepared(&self, operation_id: OperationId, kind: &'static str) {
+        self.journal_insert(journal_record(
+            operation_id,
+            kind,
+            skillhub_core::OperationPhase::Prepared,
+            None,
+        ));
+    }
+
+    /// Settles a single-step flow: `committed` on success, `rolled_back`
+    /// with the failing error code on the failure path.
+    fn journal_settle(
+        &self,
+        operation_id: OperationId,
+        kind: &'static str,
+        error: Option<&AppError>,
+    ) {
+        match error {
+            None => self.journal_advance(
+                operation_id,
+                kind,
+                skillhub_core::OperationPhase::Committed,
+                None,
+            ),
+            Some(error) => self.journal_advance(
+                operation_id,
+                kind,
+                skillhub_core::OperationPhase::RolledBack,
+                Some(error.code),
+            ),
+        }
+    }
+
+    /// Advances a flow record to `phase`. When no row exists (the flow failed
+    /// before any record was written) a terminal row is inserted instead, so
+    /// validation failures still surface in the operations history without
+    /// creating recovery entries.
+    fn journal_advance(
+        &self,
+        operation_id: OperationId,
+        kind: &'static str,
+        phase: skillhub_core::OperationPhase,
+        error_code: Option<ErrorCode>,
+    ) {
+        let record = journal_record(operation_id, kind, phase, error_code);
+        let updated = self.with_database("operation_journal.advance", |database| {
+            database.operation_repository().update_sync(&record)
+        });
+        if updated.is_err() {
+            self.journal_insert(record);
+        }
+    }
+
+    fn journal_insert(&self, record: skillhub_core::OperationRecord) {
+        let _ = self.with_database("operation_journal.insert", |database| {
+            database.operation_repository().insert_sync(&record)
+        });
+    }
+
     fn llm_context(
         &self,
         operation: &'static str,
@@ -2839,6 +2922,35 @@ impl LocalApplicationFacade {
         &self,
         actions: Vec<skillhub_core::UninstallAction>,
     ) -> AppResult<AppCommandResult> {
+        let operation_id = OperationId::new();
+        self.journal_begin(operation_id, "uninstall_skill");
+        let result = self.apply_uninstall_decision_flow(actions).await;
+        match result.as_ref() {
+            // The cancel decision answers with a rolled_back summary: the
+            // journal records the same terminal state the caller sees.
+            Ok(AppCommandResult::OperationSummary(summary)) => {
+                self.journal_advance(operation_id, "uninstall_skill", summary.phase, None)
+            }
+            Ok(_) => self.journal_advance(
+                operation_id,
+                "uninstall_skill",
+                skillhub_core::OperationPhase::Committed,
+                None,
+            ),
+            Err(error) => self.journal_advance(
+                operation_id,
+                "uninstall_skill",
+                skillhub_core::OperationPhase::RolledBack,
+                Some(error.code),
+            ),
+        }
+        result
+    }
+
+    async fn apply_uninstall_decision_flow(
+        &self,
+        actions: Vec<skillhub_core::UninstallAction>,
+    ) -> AppResult<AppCommandResult> {
         if actions.is_empty() {
             return Err(AppError::new(ErrorCode::InvalidInput, Severity::Error)
                 .with_param("field", "actions")
@@ -3281,6 +3393,18 @@ impl LocalApplicationFacade {
     }
 
     fn create_skill(&self, request: CreateSkill) -> AppResult<AppCommandResult> {
+        let operation_id = OperationId::new();
+        self.journal_begin(operation_id, "create_skill");
+        let result = self.create_skill_flow(request, operation_id);
+        self.journal_settle(operation_id, "create_skill", result.as_ref().err());
+        result
+    }
+
+    fn create_skill_flow(
+        &self,
+        request: CreateSkill,
+        operation_id: OperationId,
+    ) -> AppResult<AppCommandResult> {
         let library = self.library_runtime.snapshot()?;
         let source = Path::new(&request.source_path);
         validate_skill_source(source)?;
@@ -3340,9 +3464,14 @@ impl LocalApplicationFacade {
                     cleanup_import_state(database, central, &library.store, skill.id(), &version),
                 ));
             }
-            Ok(AppCommandResult::OperationSummary(operation_summary(
-                "catalog.skill_created",
-            )))
+            Ok(AppCommandResult::OperationSummary(
+                skillhub_core::OperationSummary {
+                    operation_id,
+                    phase: skillhub_core::OperationPhase::Committed,
+                    message_code: "catalog.skill_created".to_owned(),
+                    error_code: None,
+                },
+            ))
         });
         if result.is_err() && captured.created {
             // The normal error paths above clean up while the database mutex is held.
@@ -3860,6 +3989,18 @@ impl LocalApplicationFacade {
     }
 
     fn save_skill_content(&self, request: SaveSkillContent) -> AppResult<AppCommandResult> {
+        let operation_id = OperationId::new();
+        self.journal_begin(operation_id, "save_skill_content");
+        let result = self.save_skill_content_flow(request, operation_id);
+        self.journal_settle(operation_id, "save_skill_content", result.as_ref().err());
+        result
+    }
+
+    fn save_skill_content_flow(
+        &self,
+        request: SaveSkillContent,
+        operation_id: OperationId,
+    ) -> AppResult<AppCommandResult> {
         let library = self.library_runtime.snapshot()?;
         let source = Path::new(&request.source_path);
         validate_skill_source(source)?;
@@ -3929,7 +4070,7 @@ impl LocalApplicationFacade {
         }
         Ok(AppCommandResult::OperationSummary(
             skillhub_core::OperationSummary {
-                operation_id: OperationId::new(),
+                operation_id,
                 phase: skillhub_core::OperationPhase::Committed,
                 message_code: "catalog.version_saved".to_owned(),
                 error_code: None,
@@ -3938,6 +4079,17 @@ impl LocalApplicationFacade {
     }
 
     fn save_markdown_content(&self, request: SaveMarkdownContent) -> AppResult<AppCommandResult> {
+        let operation_id = OperationId::new();
+        self.journal_begin(operation_id, "save_markdown_content");
+        let result = self.save_markdown_content_flow(request);
+        self.journal_settle(operation_id, "save_markdown_content", result.as_ref().err());
+        result
+    }
+
+    fn save_markdown_content_flow(
+        &self,
+        request: SaveMarkdownContent,
+    ) -> AppResult<AppCommandResult> {
         let library = self.library_runtime.snapshot()?;
         let relative = validate_markdown_path(&request.path)?;
         if request.markdown.len() > 1_048_576 {
@@ -4052,6 +4204,17 @@ impl LocalApplicationFacade {
     }
 
     fn save_markdown_as_copy(&self, request: SaveMarkdownAsCopy) -> AppResult<AppCommandResult> {
+        let operation_id = OperationId::new();
+        self.journal_begin(operation_id, "save_markdown_as_copy");
+        let result = self.save_markdown_as_copy_flow(request);
+        self.journal_settle(operation_id, "save_markdown_as_copy", result.as_ref().err());
+        result
+    }
+
+    fn save_markdown_as_copy_flow(
+        &self,
+        request: SaveMarkdownAsCopy,
+    ) -> AppResult<AppCommandResult> {
         let library = self.library_runtime.snapshot()?;
         let relative = validate_markdown_path(&request.path)?;
         if request.markdown.len() > 1_048_576 {
@@ -4285,18 +4448,10 @@ impl ApplicationFacade for LocalApplicationFacade {
                 return self.cancel_import(prepared_import_id)
             }
             AppCommand::PrepareUndeploy(request) => {
-                let impact = self
-                    .removal_service
-                    .prepare_undeploy(request.deployment_id)
-                    .await?;
-                return Ok(AppCommandResult::RemovalImpact(impact));
+                return self.prepare_undeploy(request.deployment_id).await;
             }
             AppCommand::PrepareDeleteSkill(request) => {
-                let impact = self
-                    .removal_service
-                    .prepare_delete(request.skill_id)
-                    .await?;
-                return Ok(AppCommandResult::RemovalImpact(impact));
+                return self.prepare_delete_skill(request.skill_id).await;
             }
             AppCommand::CommitDeleteSkill(request) => {
                 let decisions = request
@@ -4304,28 +4459,17 @@ impl ApplicationFacade for LocalApplicationFacade {
                     .into_iter()
                     .map(|choice| (choice.deployment_id, choice.decision))
                     .collect();
-                let result = self
-                    .removal_service
-                    .commit_delete(request.prepared_delete_id, decisions)
-                    .await?;
-                return Ok(AppCommandResult::RemovalResult(result));
+                return self
+                    .commit_delete_skill(request.prepared_delete_id, decisions)
+                    .await;
             }
             AppCommand::CommitUndeploy(request) => {
-                let result = self
-                    .removal_service
+                return self
                     .commit_undeploy(request.prepared_undeploy_id, request.decision)
-                    .await?;
-                return Ok(AppCommandResult::RemovalResult(result));
+                    .await;
             }
             AppCommand::DetachManagement(request) => {
-                let result = self
-                    .removal_service
-                    .undeploy(
-                        request.deployment_id,
-                        skillhub_core::RemovalDecision::DetachManagement,
-                    )
-                    .await?;
-                return Ok(AppCommandResult::RemovalResult(result));
+                return self.detach_management(request.deployment_id).await;
             }
             AppCommand::RunHealthCheck(_) => {
                 return self
@@ -4408,43 +4552,21 @@ impl ApplicationFacade for LocalApplicationFacade {
                     .map(AppCommandResult::IgnoreRule);
             }
             AppCommand::RemoveIgnoreRule(request) => {
-                self.ignore_service.remove(request.rule_id).await?;
-                return Ok(AppCommandResult::OperationSummary(
-                    skillhub_core::OperationSummary {
-                        operation_id: OperationId::new(),
-                        phase: skillhub_core::OperationPhase::Committed,
-                        message_code: "ignore.removed".to_owned(),
-                        error_code: None,
-                    },
-                ));
+                return self.remove_ignore_rule(request.rule_id).await;
             }
             AppCommand::CollectDeploymentChanges(request) => {
-                return self
-                    .reconcile_service
-                    .collect_changes(request.deployment_id)
-                    .await
-                    .map(AppCommandResult::ReconcileResult);
+                return self.reconcile_collect_changes(request.deployment_id).await;
             }
             AppCommand::RestoreDeployment(request) => {
-                return self
-                    .reconcile_service
-                    .restore(request.deployment_id)
-                    .await
-                    .map(AppCommandResult::ReconcileResult);
+                return self.reconcile_restore(request.deployment_id).await;
             }
             AppCommand::KeepIndependentCopy(request) => {
-                return self
-                    .reconcile_service
-                    .keep_independent(request.deployment_id)
-                    .await
-                    .map(AppCommandResult::ReconcileResult);
+                return self.reconcile_keep_independent(request.deployment_id).await;
             }
             AppCommand::IgnoreExternalChange(request) => {
                 return self
-                    .reconcile_service
-                    .ignore_external_change(request.deployment_id)
-                    .await
-                    .map(AppCommandResult::ReconcileResult);
+                    .reconcile_ignore_external_change(request.deployment_id)
+                    .await;
             }
             AppCommand::RunBasicCheck(request) => {
                 return self
@@ -5116,13 +5238,62 @@ impl LocalApplicationFacade {
         &self,
         plan: skillhub_core::DeploymentPlan,
     ) -> AppResult<AppCommandResult> {
-        let prepared = self.deployment_service.prepare(plan).await?;
-        Ok(AppCommandResult::PreparedDeployment(Box::new(prepared)))
+        let result = self.deployment_service.prepare(plan).await;
+        match result.as_ref() {
+            Ok(prepared) => self.journal_prepared(prepared.id, "deploy_skill"),
+            Err(error) => self.journal_advance(
+                OperationId::new(),
+                "deploy_skill",
+                skillhub_core::OperationPhase::RolledBack,
+                Some(error.code),
+            ),
+        }
+        result
+            .map(Box::new)
+            .map(AppCommandResult::PreparedDeployment)
     }
 
     async fn commit_deployment(&self, id: OperationId) -> AppResult<AppCommandResult> {
-        let summary = self.deployment_service.commit(id).await?;
-        Ok(AppCommandResult::DeploymentSummary(Box::new(summary)))
+        let result = self.deployment_service.commit(id).await;
+        match result.as_ref() {
+            Ok(summary) if summary.committed => self.journal_advance(
+                id,
+                "deploy_skill",
+                skillhub_core::OperationPhase::Committed,
+                None,
+            ),
+            Ok(summary) => {
+                // The prepared deployment stays retryable after target-level
+                // failures, so the record lands in the recovery entry.
+                let error_code = summary
+                    .targets
+                    .iter()
+                    .filter_map(|target| target.error.as_ref().map(|error| error.code))
+                    .next()
+                    .unwrap_or(ErrorCode::InternalError);
+                self.journal_advance(
+                    id,
+                    "deploy_skill",
+                    skillhub_core::OperationPhase::NeedsRecovery,
+                    Some(error_code),
+                );
+            }
+            Err(error) if error.code == ErrorCode::ObjectNotFound => self.journal_advance(
+                id,
+                "deploy_skill",
+                skillhub_core::OperationPhase::RolledBack,
+                Some(error.code),
+            ),
+            Err(error) => self.journal_advance(
+                id,
+                "deploy_skill",
+                skillhub_core::OperationPhase::NeedsRecovery,
+                Some(error.code),
+            ),
+        }
+        result
+            .map(Box::new)
+            .map(AppCommandResult::DeploymentSummary)
     }
 
     fn get_deployment_plan(&self, request: DeploymentPlanRequest) -> AppResult<AppQueryResult> {
@@ -5179,14 +5350,15 @@ impl LocalApplicationFacade {
     }
 
     fn prepare_import(&self, request: skillhub_core::PrepareImport) -> AppResult<AppCommandResult> {
+        let operation_id = OperationId::new();
         let candidate = request.candidate;
         let tree_hash = self.candidate_tree_hash(&candidate, request.tree_hash.as_deref());
-        self.with_database("execute.prepare_import", |database| {
+        let result = self.with_database("execute.prepare_import", |database| {
             let analysis = database
                 .import_repository()
                 .analyze(candidate.clone(), tree_hash.as_deref())?;
             let prepared = PreparedImport {
-                id: OperationId::new(),
+                id: operation_id,
                 candidate,
                 analysis,
             };
@@ -5199,7 +5371,17 @@ impl LocalApplicationFacade {
                 })?
                 .insert(prepared.id, prepared.clone());
             Ok(AppCommandResult::PreparedImport(Box::new(prepared)))
-        })
+        });
+        match result.as_ref() {
+            Ok(_) => self.journal_prepared(operation_id, "import_skill"),
+            Err(error) => self.journal_advance(
+                operation_id,
+                "import_skill",
+                skillhub_core::OperationPhase::RolledBack,
+                Some(error.code),
+            ),
+        }
+        result
     }
 
     /// Native import callers currently omit the optional hash. Compute the
@@ -5221,6 +5403,19 @@ impl LocalApplicationFacade {
     }
 
     fn cancel_import(&self, prepared_import_id: OperationId) -> AppResult<AppCommandResult> {
+        let result = self.cancel_import_flow(prepared_import_id);
+        // A cancel always ends the record as rolled_back: updated when the
+        // prepared import existed, inserted as a terminal row otherwise.
+        self.journal_advance(
+            prepared_import_id,
+            "import_skill",
+            skillhub_core::OperationPhase::RolledBack,
+            result.as_ref().err().map(|error| error.code),
+        );
+        result
+    }
+
+    fn cancel_import_flow(&self, prepared_import_id: OperationId) -> AppResult<AppCommandResult> {
         let removed = self
             .prepared_imports
             .lock()
@@ -5246,6 +5441,43 @@ impl LocalApplicationFacade {
     }
 
     fn commit_import(&self, request: skillhub_core::CommitImport) -> AppResult<AppCommandResult> {
+        let operation_id = request.prepared_import_id;
+        // Unknown prepared ids have nothing to retry, so their failure is a
+        // terminal rolled_back record. Everything after a known prepare stays
+        // retryable (the prepared import is kept) and lands in needs_recovery.
+        let prepared_known = self
+            .prepared_imports
+            .lock()
+            .map(|prepared| prepared.contains_key(&operation_id))
+            .unwrap_or(false);
+        let result = self.commit_import_flow(request);
+        match result.as_ref() {
+            Ok(_) => self.journal_advance(
+                operation_id,
+                "import_skill",
+                skillhub_core::OperationPhase::Committed,
+                None,
+            ),
+            Err(error) if prepared_known => self.journal_advance(
+                operation_id,
+                "import_skill",
+                skillhub_core::OperationPhase::NeedsRecovery,
+                Some(error.code),
+            ),
+            Err(error) => self.journal_advance(
+                operation_id,
+                "import_skill",
+                skillhub_core::OperationPhase::RolledBack,
+                Some(error.code),
+            ),
+        }
+        result
+    }
+
+    fn commit_import_flow(
+        &self,
+        request: skillhub_core::CommitImport,
+    ) -> AppResult<AppCommandResult> {
         let prepared = self
             .prepared_imports
             .lock()
@@ -5419,6 +5651,205 @@ impl LocalApplicationFacade {
 }
 
 impl LocalApplicationFacade {
+    async fn prepare_undeploy(
+        &self,
+        deployment_id: skillhub_core::DeploymentId,
+    ) -> AppResult<AppCommandResult> {
+        let result = self.removal_service.prepare_undeploy(deployment_id).await;
+        match result.as_ref() {
+            Ok(impact) => self.journal_prepared(impact.operation_id, "undeploy_skill"),
+            Err(error) => self.journal_advance(
+                OperationId::new(),
+                "undeploy_skill",
+                skillhub_core::OperationPhase::RolledBack,
+                Some(error.code),
+            ),
+        }
+        result.map(AppCommandResult::RemovalImpact)
+    }
+
+    async fn prepare_delete_skill(
+        &self,
+        skill_id: skillhub_core::SkillId,
+    ) -> AppResult<AppCommandResult> {
+        let result = self.removal_service.prepare_delete(skill_id).await;
+        match result.as_ref() {
+            Ok(impact) => self.journal_prepared(impact.operation_id, "delete_skill"),
+            Err(error) => self.journal_advance(
+                OperationId::new(),
+                "delete_skill",
+                skillhub_core::OperationPhase::RolledBack,
+                Some(error.code),
+            ),
+        }
+        result.map(AppCommandResult::RemovalImpact)
+    }
+
+    async fn commit_undeploy(
+        &self,
+        operation_id: OperationId,
+        decision: skillhub_core::RemovalDecision,
+    ) -> AppResult<AppCommandResult> {
+        let result = self
+            .removal_service
+            .commit_undeploy(operation_id, decision)
+            .await;
+        self.journal_removal_outcome(operation_id, "undeploy_skill", result.as_ref().err());
+        result.map(AppCommandResult::RemovalResult)
+    }
+
+    async fn commit_delete_skill(
+        &self,
+        operation_id: OperationId,
+        decisions: Vec<(skillhub_core::DeploymentId, skillhub_core::RemovalDecision)>,
+    ) -> AppResult<AppCommandResult> {
+        let result = self
+            .removal_service
+            .commit_delete(operation_id, decisions)
+            .await;
+        self.journal_removal_outcome(operation_id, "delete_skill", result.as_ref().err());
+        result.map(AppCommandResult::RemovalResult)
+    }
+
+    async fn detach_management(
+        &self,
+        deployment_id: skillhub_core::DeploymentId,
+    ) -> AppResult<AppCommandResult> {
+        let operation_id = OperationId::new();
+        self.journal_begin(operation_id, "detach_management");
+        let result = self
+            .removal_service
+            .undeploy(
+                deployment_id,
+                skillhub_core::RemovalDecision::DetachManagement,
+            )
+            .await;
+        self.journal_settle(operation_id, "detach_management", result.as_ref().err());
+        result.map(AppCommandResult::RemovalResult)
+    }
+
+    async fn remove_ignore_rule(&self, rule_id: String) -> AppResult<AppCommandResult> {
+        let operation_id = OperationId::new();
+        self.journal_begin(operation_id, "remove_ignore_rule");
+        let result = self.ignore_service.remove(rule_id).await;
+        self.journal_settle(operation_id, "remove_ignore_rule", result.as_ref().err());
+        result.map(|()| {
+            AppCommandResult::OperationSummary(skillhub_core::OperationSummary {
+                operation_id,
+                phase: skillhub_core::OperationPhase::Committed,
+                message_code: "ignore.removed".to_owned(),
+                error_code: None,
+            })
+        })
+    }
+
+    async fn reconcile_collect_changes(
+        &self,
+        deployment_id: skillhub_core::DeploymentId,
+    ) -> AppResult<AppCommandResult> {
+        let operation_id = OperationId::new();
+        self.journal_begin(operation_id, "reconcile_collect_changes");
+        let result = self
+            .reconcile_service
+            .collect_changes(deployment_id)
+            .await
+            .map(AppCommandResult::ReconcileResult);
+        self.journal_settle(
+            operation_id,
+            "reconcile_collect_changes",
+            result.as_ref().err(),
+        );
+        result
+    }
+
+    async fn reconcile_restore(
+        &self,
+        deployment_id: skillhub_core::DeploymentId,
+    ) -> AppResult<AppCommandResult> {
+        let operation_id = OperationId::new();
+        self.journal_begin(operation_id, "reconcile_restore_deployment");
+        let result = self
+            .reconcile_service
+            .restore(deployment_id)
+            .await
+            .map(AppCommandResult::ReconcileResult);
+        self.journal_settle(
+            operation_id,
+            "reconcile_restore_deployment",
+            result.as_ref().err(),
+        );
+        result
+    }
+
+    async fn reconcile_keep_independent(
+        &self,
+        deployment_id: skillhub_core::DeploymentId,
+    ) -> AppResult<AppCommandResult> {
+        let operation_id = OperationId::new();
+        self.journal_begin(operation_id, "reconcile_keep_independent");
+        let result = self
+            .reconcile_service
+            .keep_independent(deployment_id)
+            .await
+            .map(AppCommandResult::ReconcileResult);
+        self.journal_settle(
+            operation_id,
+            "reconcile_keep_independent",
+            result.as_ref().err(),
+        );
+        result
+    }
+
+    async fn reconcile_ignore_external_change(
+        &self,
+        deployment_id: skillhub_core::DeploymentId,
+    ) -> AppResult<AppCommandResult> {
+        let operation_id = OperationId::new();
+        self.journal_begin(operation_id, "reconcile_ignore_external_change");
+        let result = self
+            .reconcile_service
+            .ignore_external_change(deployment_id)
+            .await
+            .map(AppCommandResult::ReconcileResult);
+        self.journal_settle(
+            operation_id,
+            "reconcile_ignore_external_change",
+            result.as_ref().err(),
+        );
+        result
+    }
+
+    /// Settles a removal commit. Unknown prepared ids are terminal validation
+    /// failures (`rolled_back`); every other failure keeps the prepared impact
+    /// retryable, so the record stays available through the recovery entry.
+    fn journal_removal_outcome(
+        &self,
+        operation_id: OperationId,
+        kind: &'static str,
+        error: Option<&AppError>,
+    ) {
+        match error {
+            None => self.journal_advance(
+                operation_id,
+                kind,
+                skillhub_core::OperationPhase::Committed,
+                None,
+            ),
+            Some(error) if error.code == ErrorCode::ObjectNotFound => self.journal_advance(
+                operation_id,
+                kind,
+                skillhub_core::OperationPhase::RolledBack,
+                Some(error.code),
+            ),
+            Some(error) => self.journal_advance(
+                operation_id,
+                kind,
+                skillhub_core::OperationPhase::NeedsRecovery,
+                Some(error.code),
+            ),
+        }
+    }
+
     fn list_skill_operations(&self, skill_id: skillhub_core::SkillId) -> AppResult<AppQueryResult> {
         let database = self
             .database
@@ -6302,6 +6733,34 @@ fn operation_summary(message_code: &str) -> skillhub_core::OperationSummary {
         message_code: message_code.to_owned(),
         error_code: None,
     }
+}
+
+/// Builds a journal row for the `operations` table. Rows never carry skill
+/// content, credentials or raw error payloads: only the stable kind, the
+/// phase and a whitelisted error code. The request fingerprint stays empty —
+/// there is no stable per-request digest yet, and unsanitized request
+/// parameters must not reach the durable history.
+fn journal_record(
+    operation_id: OperationId,
+    kind: &str,
+    phase: skillhub_core::OperationPhase,
+    error_code: Option<ErrorCode>,
+) -> skillhub_core::OperationRecord {
+    let phase_name = match phase {
+        skillhub_core::OperationPhase::Planned => "planned",
+        skillhub_core::OperationPhase::Prepared => "prepared",
+        skillhub_core::OperationPhase::Applying => "applying",
+        skillhub_core::OperationPhase::Verifying => "verifying",
+        skillhub_core::OperationPhase::Committed => "committed",
+        skillhub_core::OperationPhase::NeedsRecovery => "needs_recovery",
+        skillhub_core::OperationPhase::RolledBack => "rolled_back",
+    };
+    let mut record = skillhub_core::OperationRecord::planned(operation_id, kind, "");
+    record.phase = phase;
+    record.progress.phase = phase;
+    record.progress.message_code = format!("operation.{kind}.{phase_name}");
+    record.error_code = error_code;
+    record
 }
 
 fn unsupported(operation: &'static str) -> AppError {
