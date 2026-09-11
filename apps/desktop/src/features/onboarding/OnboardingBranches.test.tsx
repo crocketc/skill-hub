@@ -91,7 +91,7 @@ it("returns from the library step to the branch selection", async () => {
   expect(screen.getByRole("heading", { name: "选择初始化方式" })).toBeVisible();
 });
 
-it("activates a selected custom root and continues without restarting", async () => {
+it("keeps a selected custom root while continuing without activation", async () => {
   const activateLibraryRoot = vi.fn(async () => undefined);
   const pickDirectory = vi.fn(async () => "D:\\SkillHub\\custom");
   renderWizard({
@@ -103,10 +103,47 @@ it("activates a selected custom root and continues without restarting", async ()
 
   await click(screen.getByRole("button", { name: "新建集中库" }));
   await click(screen.getByRole("button", { name: "选择其他目录" }));
-  await click(screen.getByRole("button", { name: "保存并继续" }));
+  await click(screen.getByRole("button", { name: "继续" }));
 
-  expect(activateLibraryRoot).toHaveBeenCalledWith("D:\\SkillHub\\custom", "create");
+  expect(activateLibraryRoot).not.toHaveBeenCalled();
   expect(screen.getByRole("heading", { name: "识别兼容的 Agent" })).toBeVisible();
+});
+
+it("defers library activation until initialization is completed", async () => {
+  const activateLibraryRoot = vi.fn(async () => undefined);
+  const completeOnboarding = vi.fn(async () => undefined);
+  const pickDirectory = vi
+    .fn<() => Promise<string | null>>()
+    .mockResolvedValueOnce("D:\\SkillHub\\first")
+    .mockResolvedValueOnce("E:\\SkillHub\\second");
+  renderWizard({
+    completeOnboarding,
+    discoverAgents: async () => ({ targets: [] }),
+    pickDirectory,
+    activateLibraryRoot,
+  } as Operations);
+
+  await click(screen.getByRole("button", { name: "新建集中库" }));
+  await click(screen.getByRole("button", { name: "选择其他目录" }));
+  await click(screen.getByRole("button", { name: "继续" }));
+  expect(activateLibraryRoot).not.toHaveBeenCalled();
+
+  await click(screen.getByRole("button", { name: "上一步" }));
+  await click(screen.getByRole("button", { name: "选择其他目录" }));
+  await click(screen.getByRole("button", { name: "继续" }));
+  expect(activateLibraryRoot).not.toHaveBeenCalled();
+
+  await click(screen.getByLabelText("我确认这里只识别 Agent，不会部署技能"));
+  await click(screen.getByRole("button", { name: "识别 Agent" }));
+  await click(screen.getByRole("button", { name: "继续" }));
+  await click(screen.getByRole("button", { name: "跳过扫描" }));
+
+  expect(activateLibraryRoot).toHaveBeenCalledOnce();
+  expect(activateLibraryRoot).toHaveBeenCalledWith("E:\\SkillHub\\second", "create");
+  expect(completeOnboarding).toHaveBeenCalledWith({
+    libraryPath: "E:\\SkillHub\\second",
+    skipped: false,
+  });
 });
 
 it("restores from a backup through prepare and commit before finishing", async () => {

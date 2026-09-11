@@ -68,7 +68,7 @@ test("exposes the unified step rail and keeps the primary action at 44px with a 
   await expect(rail.getByRole("listitem").nth(1)).toContainText("识别兼容的 Agent");
   await expect(rail.getByRole("listitem").nth(2)).toContainText("扫描已有技能");
 
-  const primary = page.getByRole("button", { name: "保存并继续" });
+  const primary = page.getByRole("button", { name: "继续" });
   const initialBox = (await primary.boundingBox())!;
   expect(initialBox.height).toBeGreaterThanOrEqual(44);
   const footerBox = (await page.locator("main footer").boundingBox())!;
@@ -170,7 +170,7 @@ test("first-run restore requires an explicit conflict decision and then complete
 test("offers the background hand-off while a scan keeps running and finishes honestly", async ({ page }) => {
   await page.goto("/__preview/onboarding/slow-scan");
 
-  await page.getByRole("button", { name: "保存并继续" }).click();
+  await page.getByRole("button", { name: "继续" }).click();
   await confirmCompatibility(page);
   await page.getByRole("checkbox", { name: "Codex", exact: true }).click();
   await page.getByRole("checkbox", { name: "我确认所选目标只用于只读扫描，不会部署技能" }).click();
@@ -241,7 +241,7 @@ test("applies all nine themes on the flow with key controls intact at 1280x900",
 
     // 关键控件与无横溢。
     await expect(page.getByRole("list", { name: "初始化步骤" })).toBeVisible();
-    await expect(page.getByRole("button", { name: "保存并继续" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "继续" })).toBeVisible();
     await expectNoRootHorizontalOverflow(page, `theme ${theme.name}@1280`);
 
     // 焦点在任意主题下保持可见。
@@ -273,7 +273,7 @@ test("keeps the grok-night theme usable across the full width sweep", async ({ p
   for (const width of previewWidths) {
     await page.setViewportSize({ width, height: 900 });
     await expect(page.getByRole("list", { name: "初始化步骤" })).toBeVisible();
-    await expect(page.getByRole("button", { name: "保存并继续" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "继续" })).toBeVisible();
     await expectNoRootHorizontalOverflow(page, `grok-night@${width}`);
   }
 });

@@ -96,6 +96,7 @@ export function OnboardingWizard({
   const [targets, setTargets] = useState<CompatibilityTarget[] | null>(null);
   const [completionState, setCompletionState] = useState<"idle" | "pending" | "complete">("idle");
   const [completionSnapshot, setCompletionSnapshot] = useState<CompletionSnapshot | null>(null);
+  const [libraryActivated, setLibraryActivated] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [nativeLibraryPath, setNativeLibraryPath] = useState(libraryPath);
@@ -176,6 +177,13 @@ export function OnboardingWizard({
     setMessage(null);
     setError(null);
     try {
+      if (branch !== "restore" && operations.activateLibraryRoot && !libraryActivated) {
+        await operations.activateLibraryRoot(
+          nativeLibraryPath,
+          branch === "existing" ? "existing" : "create",
+        );
+        setLibraryActivated(true);
+      }
       await operations.completeOnboarding({ libraryPath: nativeLibraryPath, skipped });
       setCompletionSnapshot({ branch: branch ?? "create", skipped });
       setCompletionState("complete");
@@ -196,27 +204,11 @@ export function OnboardingWizard({
     }
   };
 
-  const activateLibrary = async () => {
+  const continueFromLibraryStep = () => {
     const selectedPath = customLibraryPath ?? nativeLibraryPath;
     if (!selectedPath || completionState !== "idle") return;
-    setCompletionState("pending");
-    setMessage(null);
-    setError(null);
-    try {
-      if (operations.activateLibraryRoot) {
-        await operations.activateLibraryRoot(selectedPath, branch === "existing" ? "existing" : "create");
-      }
-      setNativeLibraryPath(selectedPath);
-      setCompletionState("idle");
-      setStep(1);
-    } catch (caught) {
-      setCompletionState("idle");
-      setError(describe(caught));
-    }
-  };
-
-  const continueFromLibraryStep = () => {
-    void activateLibrary();
+    setNativeLibraryPath(selectedPath);
+    setStep(1);
   };
 
   const selectTarget = (targetId: string, selected: boolean) => {
@@ -388,11 +380,7 @@ export function OnboardingWizard({
             onClick={() => (step === 0 ? continueFromLibraryStep() : setStep((current) => current + 1))}
             size="lg"
           >
-            {step === 0
-              ? operations.activateLibraryRoot
-                ? t("onboarding.saveAndContinue")
-                : t("onboarding.continue")
-              : t("onboarding.continue")}
+            {t("onboarding.continue")}
           </Button>
         ) : (
           <>

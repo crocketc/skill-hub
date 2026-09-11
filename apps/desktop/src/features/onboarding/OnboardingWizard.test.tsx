@@ -673,7 +673,7 @@ it("shows the restore branch summary without fabricated agent or scan counts", a
   expect(onComplete).toHaveBeenCalledOnce();
 });
 
-it("allows choosing another custom library path after activation fails", async () => {
+it("allows choosing another custom library path after final activation fails", async () => {
   const completeOnboarding = vi.fn(async () => undefined);
   const activateLibraryRoot = vi.fn<() => Promise<void>>(async () => {
     throw new Error("activation_failed");
@@ -699,22 +699,35 @@ it("allows choosing another custom library path after activation fails", async (
   );
 
   await click(screen.getByRole("button", { name: "选择其他目录" }));
-  await click(screen.getByRole("button", { name: "保存并继续" }));
+  await click(screen.getByRole("button", { name: "继续" }));
+
+  await click(screen.getByLabelText("我确认这里只识别 Agent，不会部署技能"));
+  await click(screen.getByRole("button", { name: "识别 Agent" }));
+  await click(screen.getByRole("button", { name: "继续" }));
+  await click(screen.getByRole("button", { name: "跳过扫描" }));
 
   expect(activateLibraryRoot).toHaveBeenCalledWith("D:\\Custom\\Hub", "create");
   expect(await screen.findByText("activation_failed")).toBeVisible();
-  expect(screen.getByText("D:\\Custom\\Hub")).toBeVisible();
+  await click(screen.getByRole("button", { name: "上一步" }));
+  await click(screen.getByRole("button", { name: "上一步" }));
   await click(screen.getByRole("button", { name: "选择其他目录" }));
   expect(await screen.findByText("E:\\Recovered\\Hub")).toBeVisible();
   expect(screen.queryByText("D:\\Custom\\Hub")).not.toBeInTheDocument();
 
   activateLibraryRoot.mockImplementationOnce(async () => undefined);
-  await click(screen.getByRole("button", { name: "保存并继续" }));
+  await click(screen.getByRole("button", { name: "继续" }));
+  await click(screen.getByLabelText("我确认这里只识别 Agent，不会部署技能"));
+  await click(screen.getByRole("button", { name: "识别 Agent" }));
+  await click(screen.getByRole("button", { name: "继续" }));
+  await click(screen.getByRole("button", { name: "跳过扫描" }));
   expect(activateLibraryRoot).toHaveBeenLastCalledWith("E:\\Recovered\\Hub", "create");
-  expect(completeOnboarding).not.toHaveBeenCalled();
+  expect(completeOnboarding).toHaveBeenCalledWith({
+    libraryPath: "E:\\Recovered\\Hub",
+    skipped: false,
+  });
 });
 
-it("prevents a second activation while the first activation is pending", async () => {
+it("prevents a second completion while the first activation is pending", async () => {
   let release!: () => void;
   const activateLibraryRoot = vi.fn(() => new Promise<void>((resolve) => { release = resolve; }));
   const pickDirectory = vi.fn(async () => "D:\\Custom\\Hub");
@@ -735,15 +748,18 @@ it("prevents a second activation while the first activation is pending", async (
   );
 
   await click(screen.getByRole("button", { name: "选择其他目录" }));
-  await click(screen.getByRole("button", { name: "保存并继续" }));
+  await click(screen.getByRole("button", { name: "继续" }));
 
-  expect(screen.getByText("D:\\Custom\\Hub")).toBeVisible();
-  await click(screen.getByRole("button", { name: "保存并继续" }));
+  await click(screen.getByLabelText("我确认这里只识别 Agent，不会部署技能"));
+  await click(screen.getByRole("button", { name: "识别 Agent" }));
+  await click(screen.getByRole("button", { name: "继续" }));
+  await click(screen.getByRole("button", { name: "跳过扫描" }));
+  await click(screen.getByRole("button", { name: "跳过扫描" }));
   expect(activateLibraryRoot).toHaveBeenCalledTimes(1);
   release();
 });
 
-it("shows the library-root-locked reason when activation reports the conflict", async () => {
+it("shows the library-root-locked reason when final activation reports the conflict", async () => {
   const activateLibraryRoot = vi.fn(async () => {
     throw {
       code: "operation.conflict",
@@ -770,7 +786,11 @@ it("shows the library-root-locked reason when activation reports the conflict", 
   );
 
   await click(screen.getByRole("button", { name: "选择其他目录" }));
-  await click(screen.getByRole("button", { name: "保存并继续" }));
+  await click(screen.getByRole("button", { name: "继续" }));
+  await click(screen.getByLabelText("我确认这里只识别 Agent，不会部署技能"));
+  await click(screen.getByRole("button", { name: "识别 Agent" }));
+  await click(screen.getByRole("button", { name: "继续" }));
+  await click(screen.getByRole("button", { name: "跳过扫描" }));
 
   expect(await screen.findByText(/不能更换库根目录/)).toBeVisible();
   expect(screen.queryByText(/尚未连接到本机服务/)).not.toBeInTheDocument();
