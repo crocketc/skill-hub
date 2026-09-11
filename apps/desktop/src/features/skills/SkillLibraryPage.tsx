@@ -17,7 +17,9 @@ import "./skills.css";
 import { Button } from "../../ui/Button";
 import { DataState } from "../../ui/DataState";
 import { Input } from "../../ui/Input";
-import { Select } from "../../ui/Select";
+import { describeNativeError } from "../../api/nativeErrors";
+import { NotificationCenter, useNotices } from "../../ui/NotificationCenter";
+import { Icon, type IconName } from "../../ui/Icon";
 import {
   detailSearchFromLibrary,
   readLibraryReturnState,
@@ -30,6 +32,7 @@ import {
   DEFAULT_SKILL_QUERY,
   DEFAULT_TABLE_PREFERENCES,
   isSkillLibraryUnavailable,
+  SkillLibraryUnavailableError,
   skillLibraryKeys,
   type BatchAction,
   type SavedSkillView,
@@ -44,7 +47,6 @@ import {
   type DeploymentTarget,
   type LibraryGroupMode,
   type SkillTableRow,
-  type SourceUpdateCheckReport,
 } from "./api";
 import {
   applySavedView,
@@ -60,6 +62,7 @@ import {
   selectionToBatchTarget,
   selectExplicit,
   excludeFromAllFiltered,
+  setPageSelection,
   type SkillSelection,
 } from "./selection";
 import { SkillFilters } from "./SkillFilters";
@@ -104,7 +107,6 @@ interface PreferenceStatusProps {
 }
 
 interface BatchBarProps {
-  announcement?: string;
   barRef: Ref<HTMLElement>;
   checkUpdatesPending?: boolean;
   onAction: (action: BatchAction) => void;
@@ -126,6 +128,28 @@ const BATCH_ACTION_KEYS = {
   remove_tag: "skillLibrary.page.batch.removeTags",
   security_check: "skillLibrary.page.batch.securityCheck",
 } as const satisfies Record<BatchAction, string>;
+
+// P1-08：视图/分组切换的分段控件选项。视图用图标 + 可访问名，分组用短文本。
+const VIEW_MODE_OPTIONS: ReadonlyArray<{
+  icon: IconName;
+  labelKey:
+    | "skillLibrary.viewMode.table"
+    | "skillLibrary.viewMode.cards"
+    | "skillLibrary.viewMode.matrix";
+  mode: LibraryViewMode;
+}> = [
+  { icon: "operations", labelKey: "skillLibrary.viewMode.table", mode: "table" },
+  { icon: "library", labelKey: "skillLibrary.viewMode.cards", mode: "cards" },
+  { icon: "agents", labelKey: "skillLibrary.viewMode.matrix", mode: "matrix" },
+];
+
+const GROUP_MODE_OPTIONS: ReadonlyArray<{
+  labelKey: "skillLibrary.groupMode.none" | "skillLibrary.groupMode.tags";
+  mode: LibraryGroupMode;
+}> = [
+  { labelKey: "skillLibrary.groupMode.none", mode: "none" },
+  { labelKey: "skillLibrary.groupMode.tags", mode: "tags" },
+];
 
 function hasActiveFilter(query: SkillLibraryQuery): boolean {
   return skillFilterKey(query) !== skillFilterKey(DEFAULT_SKILL_QUERY);
@@ -280,7 +304,6 @@ function PreferenceStatus({
 }
 
 function BatchBar({
-  announcement,
   barRef,
   checkUpdatesPending,
   onAction,
@@ -383,7 +406,6 @@ function BatchBar({
           </Button>
         </div>
       </div>
-      {announcement ? <p aria-live="polite" role="status">{announcement}</p> : null}
     </aside>
   );
 }
@@ -398,6 +420,14 @@ export function SkillLibraryPage({
   const queryClient = useQueryClient();
   const location = useLocation();
   const navigate = useNavigate();
+  // describeNativeError 的 translate 签名与 i18next 的 TFunction 不完全一致，
+  // 经包装收敛（同 SemanticDuplicatePanel 先例），结构化错误码不再 String() 直达界面。
+  const describeError = (reason: unknown, genericKey: string): string =>
+    describeNativeError(
+      reason,
+      (key, options) => String(t(key as never, options as never)),
+      genericKey,
+    );
   const [searchParams, setSearchParams] = useSearchParams();
   const libraryReturnState = readLibraryReturnState(location.state);
   // 反向发起部署：Agent/项目详情携带的目标预选。
@@ -419,26 +449,25 @@ export function SkillLibraryPage({
   const [tableSaveFailure, setTableSaveFailure] = useState<SkillTablePreferences>();
   const [drawerSaveFailure, setDrawerSaveFailure] = useState<SkillDrawerPreferences>();
   const [selectionAnnouncement, setSelectionAnnouncement] = useState<string>();
-  const [batchAnnouncement, setBatchAnnouncement] = useState<string>();
+  // P1-11 通知规范：成功可消退、危险常驻可关闭；批量错误随选择变更撤销。
+  const { dismissNoticesOfKind, dismissNotice, notices, pushNotice } = useNotices();
   const [batchTagAction, setBatchTagAction] = useState<BatchTagAction>();
+  // P1-08：工具栏第二行（已保存视图）可折叠；搜索与模式开关保持在第一行。
+  const [toolbarOpen, setToolbarOpen] = useState(true);
   const [saveViewOpen, setSaveViewOpen] = useState(false);
   const [saveViewName, setSaveViewName] = useState("");
   const [saveViewError, setSaveViewError] = useState<string>();
   const [saveViewPending, setSaveViewPending] = useState(false);
-  const [savedViewDeleteError, setSavedViewDeleteError] = useState<string>();
   const [batchRemovalImpacts, setBatchRemovalImpacts] = useState<RemovalImpact[] | null>(null);
   const [batchRemovalLoading, setBatchRemovalLoading] = useState(false);
   const [batchRemovalSubmitting, setBatchRemovalSubmitting] = useState(false);
   const [batchRemovalError, setBatchRemovalError] = useState<string>();
-  const [batchRemovalSummary, setBatchRemovalSummary] = useState<BatchOutcome[]>();
-  const [sourceUpdateReports, setSourceUpdateReports] = useState<SourceUpdateCheckReport[]>();
   const [sourceUpdatesPending, setSourceUpdatesPending] = useState(false);
   const defaultPageRetry = queryClient.getDefaultOptions().queries?.retry;
 
   const clearBatchAnnouncement = () => {
     batchRequestRef.current += 1;
-    setBatchAnnouncement(undefined);
-    setSourceUpdateReports(undefined);
+    dismissNoticesOfKind("batch");
   };
 
   const changeSelection = (next: SkillSelection) => {
@@ -662,7 +691,7 @@ export function SkillLibraryPage({
   };
 
   const deleteSavedView = (view: SavedSkillView) => {
-    setSavedViewDeleteError(undefined);
+    dismissNoticesOfKind("saved-view-delete");
     void facade.deleteView(view.id).then(
       () => {
         queryClient.setQueryData<SavedSkillView[]>(
@@ -676,7 +705,12 @@ export function SkillLibraryPage({
           queryKey: skillLibraryKeys.savedViews(),
         });
       },
-      () => setSavedViewDeleteError(t("skillLibrary.savedViews.deleteError")),
+      () =>
+        pushNotice({
+          kind: "saved-view-delete",
+          message: t("skillLibrary.savedViews.deleteError"),
+          tone: "danger",
+        }),
     );
   };
 
@@ -703,6 +737,18 @@ export function SkillLibraryPage({
     writeDrawerSkill(nextSkillId);
   };
 
+  // P1-11 主次语义对调：卡区激活开快速抽屉（openSkill），
+  // “查看”按钮跳完整详情页（与抽屉内的完整详情入口同一路由约定）。
+  const openSkillDetail = (nextSkillId: string) => {
+    const base = location.pathname.startsWith("/__preview")
+      ? "/__preview/skill-detail"
+      : "/library";
+    navigate({
+      pathname: `${base}/${nextSkillId}`,
+      search: detailSearchFromLibrary(location.search),
+    });
+  };
+
   const closeDrawer = () => {
     const region = rootRef.current?.querySelector<HTMLElement>(
       ".sh-skill-table__region",
@@ -727,47 +773,97 @@ export function SkillLibraryPage({
           if (deployTarget) search.append("target", deployTarget.id);
           navigate({ pathname: "/deploy", search: `?${search.toString()}` });
         },
-        () => setBatchAnnouncement(t("skillLibrary.page.batch.error")),
+        () =>
+          pushNotice({
+            kind: "batch",
+            message: t("skillLibrary.page.batch.error"),
+            tone: "danger",
+          }),
       );
       return;
     }
     const request = batchRequestRef.current + 1;
     batchRequestRef.current = request;
-    setBatchAnnouncement(undefined);
     const intent = { action, target: selectionToBatchTarget(selection) };
     void facade.emitBatchIntent(intent).catch((error: unknown) => {
       if (request !== batchRequestRef.current) return;
-      setBatchAnnouncement(
-        isSkillLibraryUnavailable(error)
+      pushNotice({
+        kind: "batch",
+        message: isSkillLibraryUnavailable(error)
           ? t("skillLibrary.page.batch.unconnected")
           : t("skillLibrary.page.batch.error"),
-      );
+        tone: "danger",
+      });
     });
   };
 
-  const emitBatchTagAction = (action: BatchTagAction, tags: string[]) => {
+  // P1-10：批量标签写落地——生产 emitBatchIntent 未绑定，这里改为
+  // 对选中集合逐项 get→set（set_metadata 整体覆盖语义），
+  // 单项失败不掩盖其余，产出 BatchOutcome[] 交给常驻结果区。
+  const applyBatchTags = async (action: BatchTagAction, tags: string[]) => {
     if (selection.kind === "none" || selectionCount(selection) <= 0) return;
     const request = batchRequestRef.current + 1;
     batchRequestRef.current = request;
-    setBatchAnnouncement(undefined);
-    void facade.emitBatchIntent({ action, tags, target: selectionToBatchTarget(selection) }).catch((error: unknown) => {
+    try {
+      const selected = await selectedSkillsForRemoval();
+      const save = facade.saveSkillMetadata?.bind(facade);
+      const outcomes: BatchOutcome[] = [];
+      for (const skill of selected) {
+        try {
+          if (!save) throw new SkillLibraryUnavailableError();
+          const view = await facade.getSkillQuickView(skill.id);
+          const nextTags = action === "add_tag"
+            ? [...new Set([...view.tags, ...tags])]
+            : view.tags.filter((current) => !tags.includes(current));
+          const unchanged =
+            nextTags.length === view.tags.length &&
+            nextTags.every((tag, index) => tag === view.tags[index]);
+          if (unchanged) {
+            outcomes.push({ id: skill.id, label: skill.name, status: "skipped" });
+            continue;
+          }
+          await save(skill.id, { tags: nextTags });
+          outcomes.push({ id: skill.id, label: skill.name, status: "succeeded" });
+        } catch (reason: unknown) {
+          outcomes.push({
+            id: skill.id,
+            label: skill.name,
+            message: describeError(reason, "skillLibrary.page.batch.tagOutcomeError"),
+            status: "failed",
+          });
+        }
+      }
       if (request !== batchRequestRef.current) return;
-      setBatchAnnouncement(
-        isSkillLibraryUnavailable(error)
-          ? t("skillLibrary.page.batch.unconnected")
-          : t("skillLibrary.page.batch.error"),
-      );
-    });
+      await queryClient.invalidateQueries({ queryKey: skillLibraryKeys.root });
+      const failedCount = outcomes.filter((outcome) => outcome.status === "failed").length;
+      pushNotice({
+        // 危险批量操作的结果必须常驻，即使全部成功也需显式关闭。
+        detail: <BatchOperationSummary outcomes={outcomes} />,
+        kind: "batch-tags",
+        message: t(
+          failedCount > 0
+            ? "skillLibrary.page.batchTags.partialFailure"
+            : "skillLibrary.page.batchTags.done",
+        ),
+        persistent: true,
+        tone: failedCount > 0 ? "danger" : "success",
+      });
+    } catch {
+      if (request === batchRequestRef.current) {
+        pushNotice({
+          kind: "batch-tags",
+          message: t("skillLibrary.page.batch.error"),
+          tone: "danger",
+        });
+      }
+    }
   };
 
-  // N8 批量来源更新检查：显式选择或全量过滤集逐项检测；单条失败由后端
-  // 诚实降级为 source_unavailable，不在前端伪造结果。
   const startBatchUpdateCheck = () => {
     if (selection.kind === "none" || selectionCount(selection) <= 0) return;
     if (!facade.checkSourceUpdates) return;
     const request = batchRequestRef.current + 1;
     batchRequestRef.current = request;
-    setBatchAnnouncement(undefined);
     setSourceUpdatesPending(true);
     const checkFacade = facade.checkSourceUpdates;
     void selectedSkillsForRemoval()
@@ -775,20 +871,28 @@ export function SkillLibraryPage({
         const entries = await checkFacade(skills.map((skill) => skill.id));
         if (request !== batchRequestRef.current) return;
         const names = new Map(skills.map((skill) => [skill.id, skill.name]));
-        setSourceUpdateReports(
-          entries.map((entry) => ({
-            ...entry,
-            name: names.get(entry.skillId) ?? entry.skillId,
-          })),
-        );
+        const reports = entries.map((entry) => ({
+          ...entry,
+          name: names.get(entry.skillId) ?? entry.skillId,
+        }));
+        // 来源更新检查结果常驻展示（详情面板随通知展开），不再追加在页面流末尾。
+        pushNotice({
+          detail: <SourceUpdateCheckSummary reports={reports} />,
+          kind: "batch",
+          message: t("skillLibrary.page.sourceUpdates.title"),
+          persistent: true,
+          tone: "info",
+        });
       })
       .catch((error: unknown) => {
         if (request !== batchRequestRef.current) return;
-        setBatchAnnouncement(
-          isSkillLibraryUnavailable(error)
+        pushNotice({
+          kind: "batch",
+          message: isSkillLibraryUnavailable(error)
             ? t("skillLibrary.page.batch.unconnected")
             : t("skillLibrary.page.batch.error"),
-        );
+          tone: "danger",
+        });
       })
       .finally(() => {
         if (request === batchRequestRef.current) setSourceUpdatesPending(false);
@@ -804,7 +908,12 @@ export function SkillLibraryPage({
       (skills) => navigate("/settings/data-protection", {
         state: { exportSkillIds: skills.map((skill) => skill.id) },
       }),
-      () => setBatchAnnouncement(t("skillLibrary.page.batch.error")),
+      () =>
+        pushNotice({
+          kind: "batch",
+          message: t("skillLibrary.page.batch.error"),
+          tone: "danger",
+        }),
     );
   };
 
@@ -829,7 +938,7 @@ export function SkillLibraryPage({
   const startBatchRemoval = async (single?: { id: string; name: string }) => {
     setBatchRemovalLoading(true);
     setBatchRemovalError(undefined);
-    setBatchRemovalSummary(undefined);
+    dismissNoticesOfKind("removal-summary");
     try {
       const selected = single ? [single] : await selectedSkillsForRemoval();
       const impacts: RemovalImpact[] = [];
@@ -838,7 +947,10 @@ export function SkillLibraryPage({
       }
       setBatchRemovalImpacts(impacts);
     } catch {
-      setBatchRemovalError(t("removal.batch.loadError"));
+      const message = t("removal.batch.loadError");
+      setBatchRemovalError(message);
+      // 影响读取失败：对话框内与常驻通知双通道可见，不静默。
+      pushNotice({ kind: "removal-summary", message, tone: "danger" });
     } finally {
       setBatchRemovalLoading(false);
     }
@@ -862,16 +974,29 @@ export function SkillLibraryPage({
         if (!result.centralSkillDeleted) throw new Error("central skill was not deleted");
         outcomes.push({ id: outcomeId, label, status: "succeeded" });
       } catch (reason: unknown) {
+        // 结构化 AppError 不允许 String() 直达用户界面（P1-10 错误路径统一）。
         outcomes.push({
           id: outcomeId,
           label,
+          message: describeError(reason, "removal.batch.outcomeError"),
           status: "failed",
-          message: reason instanceof Error ? reason.message : String(reason),
         });
       }
     }
     await queryClient.invalidateQueries({ queryKey: skillLibraryKeys.root });
-    setBatchRemovalSummary(outcomes);
+    // 批量删除结果常驻（危险操作即使全部成功也不自动消失），并离开文档流末尾。
+    const failedCount = outcomes.filter((outcome) => outcome.status === "failed").length;
+    pushNotice({
+      detail: <BatchOperationSummary outcomes={outcomes} />,
+      kind: "removal-summary",
+      message: t(
+        failedCount > 0
+          ? "skillLibrary.page.batchRemovals.partialFailure"
+          : "skillLibrary.page.batchRemovals.done",
+      ),
+      persistent: true,
+      tone: failedCount > 0 ? "danger" : "success",
+    });
     setBatchRemovalImpacts(null);
     changeSelection({ kind: "none" });
     setBatchRemovalSubmitting(false);
@@ -1013,6 +1138,11 @@ export function SkillLibraryPage({
     const card: SkillCardViewModel = {
       id: item.id,
       name: item.name,
+      // P1-10：别名场景下卡片同时展示展示名（标题）与原名（小一号副名）。
+      subtitle:
+        item.originalName && item.originalName !== item.name
+          ? item.originalName
+          : undefined,
       sourceType: "local",
       sourceLabel: item.source ?? t("skillLibrary.page.card.sourceLocal"),
       description:
@@ -1043,16 +1173,24 @@ export function SkillLibraryPage({
       <SkillCard
         headingLevel={groupMode === "tags" ? "h4" : "h2"}
         key={item.id}
+        onCardActivate={(event) => openSkill(item.id, event.currentTarget)}
         primaryAction={
           <Button
-            onClick={(event) => openSkill(item.id, event.currentTarget)}
+            onClick={(event) => {
+              event.stopPropagation();
+              openSkillDetail(item.id);
+            }}
             variant="secondary"
           >
             {t("skillLibrary.page.card.open", { name: item.name })}
           </Button>
         }
         secondaryAction={
-          <label className="sh-skill-card__select">
+          <label
+            className="sh-skill-card__select"
+            onClick={(event) => event.stopPropagation()}
+            onKeyDown={(event) => event.stopPropagation()}
+          >
             <input
               aria-label={t("skillLibrary.table.selectSkill", { name: item.name })}
               checked={isSkillSelected(item.id)}
@@ -1112,19 +1250,103 @@ export function SkillLibraryPage({
       className={`sh-skill-library${selectedBatchTarget ? " sh-skill-library--batch-active" : ""}`}
       ref={rootRef}
     >
-      <div className="sh-skill-library__saved-views">
-        {savedViewDeleteError ? <p role="alert">{savedViewDeleteError}</p> : null}
-        <SavedViews
-          activeViewId={query.savedViewId}
-          dirty={savedViewIsDirty(activeSavedView, query, effectiveTablePreferences)}
-          onApply={applyView}
-          onDelete={deleteSavedView}
-          onSave={() => {
-            setSaveViewError(undefined);
-            setSaveViewOpen(true);
-          }}
-          views={savedViews}
-        />
+      {deployTarget ? (
+        <p aria-live="polite" className="sh-notice" role="status">
+          {t("skillLibrary.page.deployTargetBanner", { label: deployTarget.label })}
+        </p>
+      ) : null}
+      {/* P1-08 工具栏重组：第一行 = 搜索（常驻）+ 视图/分组分段控件 + 组合入口
+          + 汇总 + 折叠开关；第二行（可折叠）= 已保存视图。查询语义不变。 */}
+      <div className="sh-skill-library__toolbar">
+        <div className="sh-skill-library__toolbar-main">
+          <SkillFilters
+            availableTags={page.facets.tags}
+            id="skill-library-filters"
+            onChange={updateQuery}
+            onClear={clearFilters}
+            query={query}
+            versionFilterSupported={capabilities?.versionFilterSupported ?? true}
+          />
+          <div
+            aria-label={t("skillLibrary.viewMode.label")}
+            className="sh-skill-library__mode-switch"
+            role="group"
+          >
+            {VIEW_MODE_OPTIONS.map((option) => (
+              <Button
+                aria-label={t(option.labelKey)}
+                aria-pressed={viewMode === option.mode}
+                key={option.mode}
+                onClick={() => changeViewMode(option.mode)}
+                size="sm"
+                title={t(option.labelKey)}
+                variant={viewMode === option.mode ? "secondary" : "ghost"}
+              >
+                <Icon aria-hidden="true" name={option.icon} size={16} />
+              </Button>
+            ))}
+          </div>
+          <div
+            aria-label={t("skillLibrary.groupMode.label")}
+            className="sh-skill-library__mode-switch"
+            role="group"
+          >
+            {GROUP_MODE_OPTIONS.map((option) => (
+              <Button
+                aria-pressed={groupMode === option.mode}
+                key={option.mode}
+                onClick={() => changeGroupMode(option.mode)}
+                size="sm"
+                variant={groupMode === option.mode ? "secondary" : "ghost"}
+              >
+                {t(option.labelKey)}
+              </Button>
+            ))}
+          </div>
+          {facade.listCombinations ? (
+            <Link className="sh-skill-library__combination-entry" to="/library/combinations">
+              {t("skillLibrary.combinations.managerEntry")}
+            </Link>
+          ) : null}
+          <section aria-label={t("skillLibrary.page.summary.label")} className="sh-skill-library__summary">
+            <span data-testid="library-summary-total">
+              {t("skillLibrary.page.summary.total", { count: page.total })}
+            </span>
+            <span data-testid="library-summary-tags">
+              {t("skillLibrary.page.summary.tags", { count: page.facets.tags.length })}
+            </span>
+          </section>
+          <button
+            aria-controls="sh-skill-library-toolbar-secondary"
+            aria-expanded={toolbarOpen}
+            className="sh-skill-library__toolbar-toggle sh-button sh-button--ghost sh-button--sm"
+            onClick={() => setToolbarOpen((open) => !open)}
+            type="button"
+          >
+            {toolbarOpen
+              ? t("skillLibrary.toolbar.collapse")
+              : t("skillLibrary.toolbar.expand")}
+          </button>
+        </div>
+        <div
+          className="sh-skill-library__toolbar-secondary"
+          hidden={!toolbarOpen}
+          id="sh-skill-library-toolbar-secondary"
+        >
+          <div className="sh-skill-library__saved-views">
+            <SavedViews
+              activeViewId={query.savedViewId}
+              dirty={savedViewIsDirty(activeSavedView, query, effectiveTablePreferences)}
+              onApply={applyView}
+              onDelete={deleteSavedView}
+              onSave={() => {
+                setSaveViewError(undefined);
+                setSaveViewOpen(true);
+              }}
+              views={savedViews}
+            />
+          </div>
+        </div>
       </div>
 
       {saveViewOpen ? (
@@ -1137,68 +1359,12 @@ export function SkillLibraryPage({
           pending={saveViewPending}
         />
       ) : null}
-
-      {facade.listCombinations ? (
-        <p className="sh-skill-library__combination-entry">
-          <Link to="/library/combinations">{t("skillLibrary.combinations.managerEntry")}</Link>
-        </p>
-      ) : null}
-
-      {deployTarget ? (
-        <p aria-live="polite" className="sh-notice" role="status">
-          {t("skillLibrary.page.deployTargetBanner", { label: deployTarget.label })}
-        </p>
-      ) : null}
-      <section aria-label={t("skillLibrary.page.summary.label")} className="sh-skill-library__summary">
-        <span data-testid="library-summary-total">
-          {t("skillLibrary.page.summary.total", { count: page.total })}
-        </span>
-        <span data-testid="library-summary-tags">
-          {t("skillLibrary.page.summary.tags", { count: page.facets.tags.length })}
-        </span>
-      </section>
-      <div className="sh-skill-library__view-toggle">
-        <label>
-          <span>{t("skillLibrary.viewMode.label")}</span>
-          <Select
-            aria-label={t("skillLibrary.viewMode.label")}
-            onChange={(event) => changeViewMode(event.currentTarget.value as LibraryViewMode)}
-            value={viewMode}
-          >
-            <option value="table">{t("skillLibrary.viewMode.table")}</option>
-            <option value="cards">{t("skillLibrary.viewMode.cards")}</option>
-            <option value="matrix">{t("skillLibrary.viewMode.matrix")}</option>
-          </Select>
-        </label>
-        <label>
-          <span>{t("skillLibrary.groupMode.label")}</span>
-          <Select
-            aria-label={t("skillLibrary.groupMode.label")}
-            onChange={(event) => changeGroupMode(event.currentTarget.value as LibraryGroupMode)}
-            value={groupMode}
-          >
-            <option value="none">{t("skillLibrary.groupMode.none")}</option>
-            <option value="tags">{t("skillLibrary.groupMode.tags")}</option>
-          </Select>
-        </label>
-      </div>
       {preferenceStatus}
       {selectionAnnouncement ? (
         <p className="sh-skill-library__announcement" role="status">
           {selectionAnnouncement}
         </p>
       ) : null}
-
-      <div className="sh-skill-library__query-tools">
-        <SkillFilters
-          availableTags={page.facets.tags}
-          id="skill-library-filters"
-          onChange={updateQuery}
-          onClear={clearFilters}
-          query={query}
-          versionFilterSupported={capabilities?.versionFilterSupported ?? true}
-        />
-      </div>
 
       {pageRefreshing ? (
         <SkillLibrarySkeleton />
@@ -1211,20 +1377,42 @@ export function SkillLibraryPage({
           />
       ) : null}
       {!pageRefreshing && viewMode === "cards" ? (
-        groupMode === "tags" ? (
-          [...groupedCards.entries()].map(([tag, groupItems]) => (
-            <section key={tag}>
-              <h3>{tag}</h3>
-              <div className="sh-skill-cards">
-                {groupItems.map((item) => renderSkillCard(item))}
-              </div>
-            </section>
-          ))
-        ) : (
-          <div className="sh-skill-cards" data-testid="skill-cards">
-            {page.items.map((item) => renderSkillCard(item))}
+        <>
+          {/* P1-08：卡片视图补齐与表格对等的“选择当前页”入口（共用选择模型）。 */}
+          <div className="sh-skill-cards__toolbar">
+            <label className="sh-skill-cards__select-page">
+              <input
+                aria-label={t("skillLibrary.table.selectCurrentPage")}
+                checked={page.items.length > 0 && page.items.every((item) => isSkillSelected(item.id))}
+                className="sh-control-checkbox"
+                onChange={(event) =>
+                  changeSelection(
+                    setPageSelection(
+                      selection,
+                      page.items.map((item) => item.id),
+                      event.currentTarget.checked,
+                    ),
+                  )}
+                type="checkbox"
+              />
+              <span>{t("skillLibrary.table.selectCurrentPage")}</span>
+            </label>
           </div>
-        )
+          {groupMode === "tags" ? (
+            [...groupedCards.entries()].map(([tag, groupItems]) => (
+              <section key={tag}>
+                <h3>{tag}</h3>
+                <div className="sh-skill-cards">
+                  {groupItems.map((item) => renderSkillCard(item))}
+                </div>
+              </section>
+            ))
+          ) : (
+            <div className="sh-skill-cards" data-testid="skill-cards">
+              {page.items.map((item) => renderSkillCard(item))}
+            </div>
+          )}
+        </>
       ) : null}
       {viewMode === "cards" ? (
         <SkillPagination
@@ -1267,7 +1455,6 @@ export function SkillLibraryPage({
 
       {selectedBatchTarget ? (
         <BatchBar
-          announcement={batchAnnouncement}
           barRef={setBatchBarElement}
           checkUpdatesPending={sourceUpdatesPending}
           onAction={emitBatchAction}
@@ -1290,7 +1477,6 @@ export function SkillLibraryPage({
           selection={selectedBatchTarget}
         />
       ) : null}
-      {sourceUpdateReports ? <SourceUpdateCheckSummary reports={sourceUpdateReports} /> : null}
 
       {selectedBatchTarget && batchTagAction ? (
         <BatchTagDialog
@@ -1299,7 +1485,7 @@ export function SkillLibraryPage({
           onCancel={() => setBatchTagAction(undefined)}
           onConfirm={(tags) => {
             setBatchTagAction(undefined);
-            emitBatchTagAction(batchTagAction, tags);
+            void applyBatchTags(batchTagAction, tags);
           }}
         />
       ) : null}
@@ -1338,8 +1524,7 @@ export function SkillLibraryPage({
         onConfirm={commitBatchRemoval}
         submitting={batchRemovalSubmitting}
       /> : null}
-      {batchRemovalError && !batchRemovalLoading && !batchRemovalImpacts ? <p role="alert">{batchRemovalError}</p> : null}
-      {batchRemovalSummary ? <BatchOperationSummary outcomes={batchRemovalSummary} /> : null}
+      <NotificationCenter notices={notices} onDismiss={dismissNotice} />
     </section>
   );
 }

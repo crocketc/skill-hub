@@ -69,7 +69,10 @@ describe("SemanticDuplicatePanel", () => {
     // describeNativeError 的文案自带句尾句号；模板不得再叠加"；"造成“。；”标点叠用。
     expect(reasonLine.textContent).not.toContain("。；");
     expect(reasonLine.textContent).not.toContain(".;");
-    expect(reasonLine.textContent).toContain("确定性候选不受影响。");
+    // 分隔安全：reason 必须自成立句，“确定性候选不受影响”是独立元素，
+    // 不依赖“keyed 文案自带句尾标点”的隐式不变量与 reason 拼接。
+    expect(reasonLine.textContent).not.toContain("确定性候选不受影响");
+    expect(screen.getByText("确定性候选不受影响。")).toBeVisible();
     expect(screen.getByText("PDF Text Extractor")).toBeVisible();
   });
 

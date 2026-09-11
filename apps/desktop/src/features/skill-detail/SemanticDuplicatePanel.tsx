@@ -66,16 +66,23 @@ export function SemanticDuplicatePanel({ facade, skillId }: SemanticDuplicatePan
               : t("skillDetail.duplicates.sourceDeterministic")}
           </p>
           {report.failureCode ? (
-            <p role="status">
-              {t("skillDetail.duplicates.failureReason", {
-                reason: describeError({
-                  code: report.failureCode,
-                  severity: "error",
-                  params: {},
-                  actions: [],
-                }),
-              })}
-            </p>
+            <>
+              {/* reason 自成立句、“确定性候选不受影响”独立成句渲染：
+                  分隔不依赖 keyed 文案自带句尾标点的隐式不变量。 */}
+              <p role="status">
+                {t("skillDetail.duplicates.failureReason", {
+                  reason: describeError({
+                    code: report.failureCode,
+                    severity: "error",
+                    params: {},
+                    actions: [],
+                  }),
+                })}
+              </p>
+              <p role="status">
+                {t("skillDetail.duplicates.deterministicUnaffected")}
+              </p>
+            </>
           ) : null}
           {report.candidates.length ? (
             <section>

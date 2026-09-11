@@ -23,6 +23,9 @@
     "continue": "继续",
     "retry": "重试"
   },
+  "notifications": {
+    "regionLabel": "通知"
+  },
   "markdown": {
     "code": {
       "copied": "已复制",
@@ -838,16 +841,25 @@
         "removeTagsDescription": "输入的标签会从所有选中的 Skill 中移除。",
         "removeTagsTitle": "批量移除标签",
         "securityCheck": "运行安全检查",
+      "tagOutcomeError": "标签保存失败（{{code}}）。",
         "tagsHint": "多个标签请用逗号分隔，重复标签会自动合并。",
         "tagsLabel": "标签",
         "tagsPlaceholder": "例如：待复核，客户可见",
-        "unconnected": "此批量流程尚未连接",
-        "startExport": "发起导出",
-        "startExportTitle": "打开导出向导，为所选 Skill 配置并执行导出",
-        "checkUpdates": "检查来源更新",
-        "checkUpdatesPending": "正在检查来源更新…"
-      },
-      "pageStatus": "第 {{page}} 页 · 共 {{count}} 条结果",
+      "unconnected": "此批量流程尚未连接",
+      "startExport": "发起导出",
+      "startExportTitle": "打开导出向导，为所选 Skill 配置并执行导出",
+      "checkUpdates": "检查来源更新",
+      "checkUpdatesPending": "正在检查来源更新…"
+    },
+    "batchTags": {
+      "done": "批量标签更新完成",
+      "partialFailure": "批量标签更新部分失败"
+    },
+    "batchRemovals": {
+      "done": "批量删除完成",
+      "partialFailure": "批量删除部分失败"
+    },
+    "pageStatus": "第 {{page}} 页 · 共 {{count}} 条结果",
       "preferences": {
         "drawerLoadError": "无法加载抽屉偏好，当前使用默认设置。",
         "notSaved": "偏好未保存，临时布局仍然有效。",
@@ -924,9 +936,11 @@
         "error": "无法加载 Skill 详情",
         "loading": "正在加载 Skill 详情"
       },
-      "emptyValue": "暂无可靠数据",
-      "editAlias": "编辑别名",
-      "editNote": "编辑备注",
+    "emptyValue": "暂无可靠数据",
+    "editAlias": "编辑别名",
+    "editNote": "编辑备注",
+    "removeTag": "移除标签 {{tag}}",
+    "tagsFailure": "标签未保存，已恢复为已保存的内容。",
       "fullDetails": "查看编辑完整详情",
       "modules": {
         "dependenciesDuplicates": "依赖与重复项",
@@ -975,11 +989,13 @@
         "lastUsed": "最近使用：{{value}}",
         "license": "许可证",
         "note": "我的备注",
-        "originalDescription": "原始描述",
-        "ownership": "归属",
-        "purpose": "我的用途",
-        "projects": "项目",
-        "source": "来源",
+      "originalDescription": "原始描述",
+      "originalName": "原名",
+      "ownership": "归属",
+      "purpose": "我的用途",
+      "projects": "项目",
+      "source": "来源",
+      "tags": "标签",
         "translatedDescription": "描述译文",
         "upToDate": "已是最新版本",
         "updateAvailable": "有可用更新"
@@ -1035,9 +1051,10 @@
       "save": "保存当前视图",
       "unsaved": "未保存更改"
     },
-    "table": {
-      "agentDeploymentSummary": "Agent 部署：{{count}} 个",
-      "aliasLabel": "别名",
+  "table": {
+    "agentDeploymentSummary": "Agent 部署：{{count}} 个",
+    "aliasLabel": "别名",
+    "originalNameLabel": "原名",
       "aiStatus": "AI：{{state}}",
       "basicStatus": "基础：{{state}}",
       "checkStates": {
@@ -1111,11 +1128,15 @@
       "empty": "尚无部署关系，先部署 Skill 后即可在此查看矩阵。",
       "hint": "矩阵仅显示当前页的 Skill；✓ 表示该 Skill 已部署到对应目标。"
     },
-    "groupMode": {
-      "label": "分组方式",
-      "none": "不分组",
-      "tags": "按标签分组"
-    },
+  "groupMode": {
+    "label": "分组方式",
+    "none": "不分组",
+    "tags": "按标签分组"
+  },
+  "toolbar": {
+    "collapse": "收起视图栏",
+    "expand": "展开视图栏"
+  },
     "combinations": {
       "managerEntry": "组合管理",
       "managerEyebrow": "组合管理",
@@ -1348,7 +1369,8 @@
       "deterministicNote": "AI 分析未执行，确定性重复候选仍然可用；你可以稍后重试，也可以直接继续其他操作。",
       "sourceLlm": "结果来源：确定性候选 + AI 语义分析",
       "sourceDeterministic": "结果来源：仅确定性候选（AI 层未返回结果）",
-      "failureReason": "AI 层失败原因：{{reason}}确定性候选不受影响。",
+      "failureReason": "AI 层失败原因：{{reason}}",
+      "deterministicUnaffected": "确定性候选不受影响。",
       "failureUnknown": "AI 层返回未知失败（{{code}}）。",
       "candidates": "候选对象",
       "locallyModified": "本地已修改",
@@ -1523,6 +1545,7 @@
       "loadError": "无法读取批量删除影响，请稍后重试。",
       "commitError": "批量删除未能全部完成。尚未删除的 Skill 保持不变，请检查后重试。",
       "missingPreparation": "缺少已准备的删除记录，无法提交该项。",
+      "outcomeError": "删除失败（{{code}}）。",
       "armConfirm": "再次点击确认删除 {{count}} 个 Skill",
       "busy": "正在删除 {{count}} 个 Skill…",
       "nonAtomicNotice": "批量删除逐项提交，不是原子操作：已删除的部分不会自动恢复。",

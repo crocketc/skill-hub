@@ -337,17 +337,21 @@ const OPTIONAL_MODULE_RENDERERS: Record<
 interface IdentityRegionProps extends ModuleProps {
   editingField?: "alias" | "note";
   editingValue: string;
+  onAddTags: () => void;
   onBeginEdit: (field: "alias" | "note") => void;
   onChange: (value: string) => void;
   onCommit: () => void;
+  onRemoveTag: (tag: string) => void;
 }
 
 function IdentityRegion({
   editingField,
   editingValue,
+  onAddTags,
   onBeginEdit,
   onChange,
   onCommit,
+  onRemoveTag,
   view,
 }: IdentityRegionProps) {
   const { t } = useTranslation();
@@ -355,6 +359,15 @@ function IdentityRegion({
     <section className="sh-skill-drawer__identity">
       <div className="sh-skill-drawer__identity-heading">
         <h2>{view.name}</h2>
+        {/* P1-10：别名场景下原名与别名同屏；无别名（同名）时不重复展示。 */}
+        {view.originalName && view.originalName !== view.name ? (
+          <span className="sh-skill-drawer__original-name">
+            <span className="sh-skill-drawer__field-label">
+              {t("skillLibrary.drawer.values.originalName")}:
+            </span>{" "}
+            <span>{view.originalName}</span>
+          </span>
+        ) : null}
         <span className="sh-skill-drawer__field-label">
           {t("skillLibrary.drawer.values.alias")}:
         </span>
@@ -388,7 +401,7 @@ function IdentityRegion({
         <span className="sh-skill-drawer__field-label">
           {t("skillLibrary.drawer.values.originalDescription")}:
         </span>
-        <span className="sh-skill-drawer__field-value">
+        <span className="sh-skill-drawer__field-value sh-skill-drawer__field-value--clamped">
           {view.originalDescription ?? <EmptyValue />}
         </span>
       </div>
@@ -397,7 +410,7 @@ function IdentityRegion({
           <span className="sh-skill-drawer__field-label">
             {t("skillLibrary.drawer.values.translatedDescription")}:
           </span>
-          <span className="sh-skill-drawer__field-value sh-skill-drawer__secondary">
+          <span className="sh-skill-drawer__field-value sh-skill-drawer__field-value--clamped sh-skill-drawer__secondary">
             {view.translatedDescription}
           </span>
         </div>
@@ -406,7 +419,7 @@ function IdentityRegion({
         <span className="sh-skill-drawer__field-label">
           {t("skillLibrary.drawer.values.purpose")}:
         </span>
-        <span className="sh-skill-drawer__field-value">{view.purpose}</span>
+        <span className="sh-skill-drawer__field-value sh-skill-drawer__field-value--clamped">{view.purpose}</span>
       </div>
       <div className="sh-skill-drawer__note">
         <span className="sh-skill-drawer__note-label">
@@ -440,6 +453,40 @@ function IdentityRegion({
           {t("skillLibrary.drawer.editNote")}
         </Button>
       </div>
+      {/* P1-10：标签读写。展示当前标签并支持逐个移除与批量添加；
+          保存经 set_metadata 的整体覆盖契约，失败可见不静默。 */}
+      <div className="sh-skill-drawer__tags">
+        <span className="sh-skill-drawer__note-label">
+          {t("skillLibrary.drawer.values.tags")}:
+        </span>
+        {view.tags.length > 0 ? (
+          <ul className="sh-skill-drawer__tag-list">
+            {view.tags.map((tag) => (
+              <li className="sh-skill-drawer__tag" key={tag}>
+                <span>{tag}</span>
+                <Button
+                  aria-label={t("skillLibrary.drawer.removeTag", { tag })}
+                  onClick={() => onRemoveTag(tag)}
+                  size="sm"
+                  variant="ghost"
+                >
+                  <Icon name="close" size={16} />
+                </Button>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <EmptyValue />
+        )}
+        <Button
+          className="sh-skill-drawer__edit-icon"
+          onClick={onAddTags}
+          size="sm"
+          variant="ghost"
+        >
+          {t("skillLibrary.drawer.actions.addTags")}
+        </Button>
+      </div>
     </section>
   );
 }
@@ -447,10 +494,9 @@ function IdentityRegion({
 interface PrimaryActionsProps extends ModuleProps {
   facade: SkillLibraryFacade;
   onDelete?: (skillId: string, skillName: string) => void;
-  onTagAction: (action: BatchTagAction) => void;
 }
 
-function PrimaryActions({ facade, onDelete, onTagAction, view }: PrimaryActionsProps) {
+function PrimaryActions({ facade, onDelete, view }: PrimaryActionsProps) {
   const { t } = useTranslation();
   const emitIntent = (action: BatchAction) => {
     void facade
@@ -464,12 +510,6 @@ function PrimaryActions({ facade, onDelete, onTagAction, view }: PrimaryActionsP
     <section aria-label={t(MODULE_LABEL_KEYS.primary_actions)} className="sh-skill-drawer__actions">
       <Button onClick={() => emitIntent("add_to")} size="sm">
         {t("skillLibrary.drawer.actions.addTo")}
-      </Button>
-      <Button onClick={() => onTagAction("add_tag")} size="sm" variant="secondary">
-        {t("skillLibrary.drawer.actions.addTags")}
-      </Button>
-      <Button onClick={() => onTagAction("remove_tag")} size="sm" variant="secondary">
-        {t("skillLibrary.drawer.actions.removeTags")}
       </Button>
       <Button onClick={() => emitIntent("security_check")} size="sm" variant="secondary">
         {t("skillLibrary.drawer.actions.securityCheck")}
@@ -636,6 +676,7 @@ export function SkillQuickDrawer({
   const [editingValue, setEditingValue] = useState("");
   const [localPreferenceSaveFailed, setLocalPreferenceSaveFailed] = useState(false);
   const [metadataSaveFailed, setMetadataSaveFailed] = useState(false);
+  const [tagsSaveFailed, setTagsSaveFailed] = useState(false);
   const [localView, setLocalView] = useState<SkillQuickView>();
   const [tagAction, setTagAction] = useState<BatchTagAction>();
   const dragSessionRef = useRef<DragSession>();
@@ -916,13 +957,41 @@ export function SkillQuickDrawer({
     if (!tagAction || !view) return;
     const action = tagAction;
     setTagAction(undefined);
-    void facade
-      .emitBatchIntent({
-        action,
-        tags,
-        target: { kind: "skill_ids", skillIds: [view.id] },
-      })
-      .catch(() => undefined);
+    // P1-10：抽屉内标签写经 set_metadata 读改写落地，不走生产未绑定的
+    // emitBatchIntent（该路径此前静默失败）。添加并入现有标签，移除取差集。
+    saveTags(
+      action === "add_tag"
+        ? [...new Set([...view.tags, ...tags])]
+        : view.tags.filter((current) => !tags.includes(current)),
+    );
+  };
+
+  const saveTags = (nextTags: string[]) => {
+    if (!view) return;
+    const persistedView = detailQuery.data;
+    setLocalView({ ...view, tags: nextTags });
+    const save = facade.saveSkillMetadata?.bind(facade);
+    if (!save) {
+      setTagsSaveFailed(true);
+      if (persistedView) setLocalView(persistedView);
+      return;
+    }
+    void save(view.id, { tags: nextTags }).then(
+      () => {
+        setTagsSaveFailed(false);
+        // 失效技能库根键：列表 tags 列与筛选 facets 随之刷新（同别名保存先例）。
+        void queryClient.invalidateQueries({ queryKey: skillLibraryKeys.root });
+      },
+      () => {
+        setTagsSaveFailed(true);
+        if (persistedView) setLocalView(persistedView);
+      },
+    );
+  };
+
+  const removeTag = (tag: string) => {
+    if (!view) return;
+    saveTags(view.tags.filter((current) => current !== tag));
   };
 
   return (
@@ -1004,6 +1073,11 @@ export function SkillQuickDrawer({
               {t("skillLibrary.drawer.metadataFailure")}
             </p>
           ) : null}
+          {tagsSaveFailed ? (
+            <p className="sh-skill-drawer__alert" role="alert">
+              {t("skillLibrary.drawer.tagsFailure")}
+            </p>
+          ) : null}
 
           {!skillId ? (
             <p className="sh-skill-drawer__state" role="status">
@@ -1025,12 +1099,14 @@ export function SkillQuickDrawer({
               <IdentityRegion
                 editingField={editingField}
                 editingValue={editingValue}
+                onAddTags={() => setTagAction("add_tag")}
                 onBeginEdit={beginEdit}
                 onChange={setEditingValue}
                 onCommit={commitEdit}
+                onRemoveTag={removeTag}
                 view={view}
               />
-              <PrimaryActions facade={facade} onDelete={onDelete} onTagAction={setTagAction} view={view} />
+              <PrimaryActions facade={facade} onDelete={onDelete} view={view} />
               <RiskSummary view={view} />
             </div>
           ) : null}

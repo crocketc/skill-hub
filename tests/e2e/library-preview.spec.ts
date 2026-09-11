@@ -22,10 +22,10 @@ test("skill library defaults to card view and switches to tagged card grouping",
   // T3-B：普通用户默认进入增强卡片视图（共享 SkillCard 语义）。
   await expect(page.getByTestId("skill-cards")).toBeVisible();
   await expect(page.getByRole("heading", { name: "PDF Reader" })).toBeVisible();
-  // 整卡不可点击：打开详情是操作区里的独立按钮。
+  // P1-11：“查看”按钮是独立语义插槽，与卡区激活（开抽屉）分离。
   await expect(page.getByRole("button", { name: "View PDF Reader" })).toBeVisible();
 
-  await page.getByRole("combobox", { name: "Group by" }).selectOption("tags");
+  await page.getByRole("button", { name: "Group by tag" }).click();
   await expect(page.getByRole("heading", { name: "documents", exact: true })).toBeVisible();
   await expect(page.getByRole("heading", { name: "pdf", exact: true })).toBeVisible();
 });
@@ -33,7 +33,7 @@ test("skill library defaults to card view and switches to tagged card grouping",
 test("skill library keeps the professional table reachable with selection", async ({ page }) => {
   await page.goto("/__preview/skill-library");
 
-  await page.getByRole("combobox", { name: "View mode" }).selectOption("table");
+  await page.getByRole("button", { name: "Table view" }).click();
   await expect(page.getByRole("row", { name: /PDF Reader/ })).toBeVisible();
   await page.getByRole("checkbox", { name: "Select PDF Reader" }).check();
   const batchBar = page.getByRole("complementary", { name: "Batch actions" });
@@ -56,12 +56,12 @@ test("selected skills expose separated batch actions in the default card view", 
   await expect(batchBar.getByRole("button", { name: "Export", exact: true })).not.toBeVisible();
 });
 
-test("quick drawer opens full detail and the version section", async ({ page }) => {
+test("quick drawer opens from card activation and the version section stays reachable", async ({ page }) => {
   await page.goto("/__preview/skill-library");
 
-  // T3-B：卡片操作区的“查看”按钮沿用打开前确认的抽屉语义。
-  await page.getByRole("button", { name: "View PDF Reader" }).click();
-  await expect(page.getByRole("dialog", { name: "PDF Reader" })).toBeVisible();
+  // P1-11 主次语义对调：卡区激活打开快速抽屉；抽屉内“查看编辑完整详情”进详情页。
+  await page.getByRole("heading", { name: "PDF Reader" }).click();
+  await expect(page.getByTestId("skill-quick-drawer")).toBeVisible();
   await page.getByRole("link", { name: "View and edit full details" }).click();
 
   await expect(page).toHaveURL(/\/__preview\/skill-detail\/skill-pdf/);

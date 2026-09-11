@@ -35,12 +35,12 @@ test("300-skill catalog keeps 100 cards per page and reaches the second page", a
 
 test("300-skill table mode keeps pagination as the professional fallback", async ({ page }) => {
   await page.goto(SCALED_ROUTE);
-  await page.getByRole("combobox", { name: "View mode" }).selectOption("table");
+  await page.getByRole("button", { name: "Table view" }).click();
   await expect(page.getByRole("row", { name: /Local Skill 100/ })).toBeVisible();
   await expect(page.getByRole("row", { name: /Local Skill 101/ })).not.toBeVisible();
 
   await page.goto("/__preview/skill-library?total=300&size=100&page=2");
-  await page.getByRole("combobox", { name: "View mode" }).selectOption("table");
+  await page.getByRole("button", { name: "Table view" }).click();
   await expect(page.getByRole("row", { name: /Local Skill 101/ })).toBeVisible();
   await expect(page.getByRole("row", { name: /PDF Reader/ })).not.toBeVisible();
 });

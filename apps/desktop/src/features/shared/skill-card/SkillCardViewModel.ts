@@ -31,6 +31,11 @@ export interface SkillCardViewModel {
   id: string;
   /** 显示名称（卡片标题语义）。 */
   name: string;
+  /**
+   * 可选副名（P1-10 向后兼容扩展）：标题下方小一号展示，用于别名场景下
+   * 同时呈现目录原名；缺省时省略，渲染与 T2 冻结契约一致。
+   */
+  subtitle?: string;
   /** 来源类型：映射来源装饰图标。 */
   sourceType: SkillCardSourceType;
   /** 来源标签（如 “来源：skills.sh” 或 “owner/repo@main”）。 */

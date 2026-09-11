@@ -6,6 +6,22 @@
 
 /* —— 共享 SkillCard（T2 冻结契约）在库页的容器 —— */
 
+/* P1-11 根因修复，并如实统一滚动归属：本规则特异性 0,2,0，无条件覆盖
+   base.css 的 .sh-skill-library { height:100% }（0,1,0；媒体查询不改变
+   特异性），因此所有宽度（含 >90rem 真宽屏）都不存在“区块定高 + 表格内部
+   纵向滚动”分支：区块随内容生长（min-height 承接外壳行高），纵向滚动统一
+   由 .sh-app-shell__content（overflow-y:auto，全宽度生效）承担，表格区域
+   保持唯一横向滚动所有者（1600×900 E2E 几何断言锁定）。
+   背景：区块此前作为外壳 grid 的拉伸项被行高钳制（行不随内容生长），内容
+   纵向溢出区块盒，导致 --skill-batch-bar-height 预留的 padding-bottom 悬在
+   区块盒底而不是内容之后——固定批量条因此遮挡分页/末行；align-self:start
+   让区块脱离行高钳制，预留空间重新跟随内容底部。 */
+.sh-skill-library.sh-skill-library {
+  height: auto;
+  min-height: 100%;
+  align-self: start;
+}
+
 /* 规格 5.2：卡片最小宽度约 280px；等高拉伸由共享卡片的 height:100% 承担。 */
 .sh-skill-library .sh-skill-cards {
   display: grid;
@@ -52,6 +68,10 @@
 .sh-skill-library .sh-skill-table__region {
   overflow-x: auto;
   overscroll-behavior-x: contain;
+  /* P1-08：滚动条必须可感知——细滚动条 + 主题色滑块，
+     保证 100% 比例下隐藏列能被用户发现并横向到达。 */
+  scrollbar-width: thin;
+  scrollbar-color: var(--ui-accent) var(--ui-surface-subtle);
 }
 
 /* base.css 的表格 min-width:max(84rem,100%) 与 14 列固定像素宽在 1280px 窗口
@@ -188,6 +208,59 @@
 
 /* —— 视图切换：可见标签 + 紧凑控件行（可键盘操作的原生 select） —— */
 
+/* P1-08 工具栏重组：单一工具栏，第一行常驻（搜索 + 模式开关 + 汇总 +
+   折叠开关），第二行（已保存视图）可折叠。查询语义不变。 */
+.sh-skill-library__toolbar {
+  display: grid;
+  min-width: 0;
+  gap: var(--space-2);
+}
+
+.sh-skill-library__toolbar-main {
+  display: flex;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: var(--space-3) var(--space-4);
+}
+
+.sh-skill-library__toolbar-main > .sh-skill-filters {
+  flex: 1 1 24rem;
+  min-width: 0;
+}
+
+.sh-skill-library__mode-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.sh-skill-library__mode-switch .sh-button {
+  min-width: 2rem;
+}
+
+.sh-skill-library__combination-entry {
+  margin: 0;
+  font-size: var(--font-size-sm);
+}
+
+.sh-skill-library__summary {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0 var(--space-3);
+  margin: 0;
+}
+
+.sh-skill-library__summary span {
+  color: var(--ui-ink-muted);
+  font-size: var(--font-size-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.sh-skill-library__toolbar-secondary[hidden] {
+  display: none;
+}
+
 .sh-skill-library__view-toggle {
   display: flex;
   flex-wrap: wrap;
@@ -218,6 +291,28 @@
 
 /* —— 卡片视图分页（与表格分页共用 SkillPagination 语义） —— */
 
+/* P1-08：卡片视图的页级选择工具行。 */
+.sh-skill-cards__toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.sh-skill-cards__select-page {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--ui-ink-muted);
+  font-size: var(--font-size-xs);
+}
+
+.sh-skill-cards__select-page input {
+  inline-size: 1rem;
+  block-size: 1rem;
+  margin: 0;
+  accent-color: var(--ui-accent);
+}
+
 .sh-skill-pagination {
   display: flex;
   flex-wrap: wrap;
@@ -228,6 +323,13 @@
 .sh-skill-cards__pagination {
   justify-content: flex-end;
   padding-top: var(--space-1);
+}
+
+/* P1-11：批量操作条（position:fixed）激活时，分页区域额外预留等高空间，
+   与 --skill-batch-bar-height 双保险，窄窗/内容贴底时分页控件不再被遮挡。 */
+.sh-skill-library--batch-active .sh-skill-cards__pagination,
+.sh-skill-library--batch-active .sh-skill-table__pagination {
+  margin-bottom: calc(var(--skill-batch-bar-height, 0px) + var(--space-4));
 }
 
 .sh-skill-pagination label {

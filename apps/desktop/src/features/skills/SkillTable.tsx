@@ -161,12 +161,13 @@ export function createSkillColumns(t: TFunction): ColumnDef<SkillTableRow>[] {
     {
       accessorKey: "name",
       id: "name",
+      // P1-10：别名场景下同时展示展示名（主）与原名（次）；无别名时仅展示名。
       cell: ({ row }) => (
         <div className="sh-skill-table__inline sh-skill-table__name">
           <strong>{row.original.name}</strong>
-          {row.original.alias ? (
-            <span className="sh-skill-table__alias">
-              <span className="sh-skill-table__alias-label">{t("skillLibrary.table.aliasLabel")}:</span> {row.original.alias}
+          {row.original.originalName && row.original.originalName !== row.original.name ? (
+            <span className="sh-skill-table__alias" title={row.original.originalName}>
+              <span className="sh-skill-table__alias-label">{t("skillLibrary.table.originalNameLabel")}:</span> {row.original.originalName}
             </span>
           ) : null}
         </div>

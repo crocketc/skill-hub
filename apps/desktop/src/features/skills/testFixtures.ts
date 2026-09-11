@@ -60,7 +60,8 @@ export const MOCK_SKILL_PDF: SkillTableRow = {
   aiCheck: "unavailable",
   agentDeploymentCount: 2,
   agentDeployments: [...MOCK_AGENT_DEPLOYMENTS.slice(0, 2)],
-  alias: "reader",
+  // P1-10：别名即 display_name；原名 runtime_name 单独携带供卡片/表格双名展示。
+  alias: "PDF Reader",
   basicCheck: "passed",
   currentVersion: "1.4.0",
   highRiskCount: 1,
@@ -71,6 +72,7 @@ export const MOCK_SKILL_PDF: SkillTableRow = {
   lifecycle: "active",
   name: "PDF Reader",
   originalDescription: "Extracts text and tables from PDF files.",
+  originalName: "pdf-reader",
   ownership: "Platform team",
   pendingCount: 1,
   projectDeploymentCount: 3,
@@ -220,6 +222,7 @@ export function createMockSkillLibraryFacade(
         ...result,
         ...(patch?.alias === null ? { alias: undefined } : patch?.alias ? { alias: patch.alias } : {}),
         ...(patch?.note === null ? { note: undefined } : patch?.note ? { note: patch.note } : {}),
+        ...(patch?.tags ? { tags: patch.tags } : {}),
       });
     },
     async listSavedViews() {
@@ -249,6 +252,7 @@ export function createMockSkillLibraryFacade(
           row.alias,
           row.name,
           row.originalDescription,
+          row.originalName,
           row.purpose,
           row.source,
           ...row.tags,
@@ -305,6 +309,9 @@ export function createMockSkillLibraryFacade(
       if ("note" in patch) {
         if (patch.note === null) delete next.note;
         else next.note = patch.note;
+      }
+      if ("tags" in patch) {
+        next.tags = patch.tags;
       }
       metadata.set(skillId, next);
     },

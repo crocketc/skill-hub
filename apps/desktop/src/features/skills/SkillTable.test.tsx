@@ -34,6 +34,7 @@ const rows: SkillTableRow[] = [
     lifecycle: "active",
     name: "PDF Reader",
     originalDescription: "Extracts text from PDF files.",
+    originalName: "pdf-reader",
     ownership: "Platform team",
     pendingCount: 1,
     projectDeploymentCount: 3,
@@ -110,9 +111,13 @@ it("uses compact density and keeps checkbox clicks separate from row opening", a
   expect(onOpenSkill).not.toHaveBeenCalled();
   const nameCell = screen.getByText("PDF Reader").closest("td");
   if (!nameCell) throw new Error("Expected the PDF Reader name cell");
-  expect(within(nameCell).getByText("Alias:")).toBeVisible();
-  expect(within(nameCell).getByText("reader")).toBeVisible();
+  expect(within(nameCell).getByText("Original name:")).toBeVisible();
+  expect(within(nameCell).getByText("pdf-reader")).toBeVisible();
   expect(within(nameCell).queryByText("Read and extract PDFs")).not.toBeInTheDocument();
+  // 无别名（原名与展示名一致或未提供）时不重复展示原名。
+  const plainNameCell = screen.getByText("Notes Helper").closest("td");
+  if (!plainNameCell) throw new Error("Expected the Notes Helper name cell");
+  expect(within(plainNameCell).queryByText("Original name:")).not.toBeInTheDocument();
   fireEvent.click(nameCell);
   expect(onOpenSkill).toHaveBeenCalledWith("skill-pdf", expect.any(HTMLElement));
 });

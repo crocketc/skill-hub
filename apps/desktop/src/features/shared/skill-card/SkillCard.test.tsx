@@ -68,6 +68,20 @@ it("honestly omits every optional region that the data does not provide", () => 
   expect(screen.getByText("anthropics/skills@v2")).toBeVisible();
   expect(screen.queryByText(/PDF 文件/)).not.toBeInTheDocument();
   expect(container.querySelector("ul")).not.toBeInTheDocument();
+  // T2 冻结契约回归：未提供副名时不渲染副名区域。
+  expect(container.querySelector(".sh-skill-card__subtitle")).not.toBeInTheDocument();
+});
+
+// P1-10：集中库卡片需同时展示别名（标题）与原名（小一号副名）。
+it("renders an optional subtitle under the title for dual-name display", () => {
+  render(<SkillCard skill={{ ...fullCard, subtitle: "pdf-reader" }} />);
+
+  const subtitle = screen.getByText("pdf-reader");
+  expect(subtitle).toHaveClass("sh-skill-card__subtitle");
+  expect(
+    screen.getByRole("heading", { name: "PDF Reader" }).compareDocumentPosition(subtitle) &
+      Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
 });
 
 it("keeps the title, the link, and the actions as independent semantics", () => {
@@ -112,6 +126,48 @@ it("renders a decorative source icon that carries no unlabelled meaning", () => 
   const icon = container.querySelector("svg");
   expect(icon).not.toBeNull();
   expect(icon).toHaveAttribute("aria-hidden", "true");
+});
+
+// P1-11 向后兼容扩展：缺省（无 onCardActivate）时渲染与 T2 冻结契约一致。
+it("stays inert by default: no tab stop and no activation", () => {
+  const onActivate = vi.fn();
+  const { container } = render(<SkillCard skill={fullCard} />);
+
+  const article = container.querySelector("article");
+  if (!(article instanceof HTMLElement)) throw new Error("Expected the card article");
+  expect(article).not.toHaveAttribute("tabindex");
+  fireEvent.click(article);
+  fireEvent.keyDown(article, { key: "Enter" });
+  expect(onActivate).not.toHaveBeenCalled();
+});
+
+it("activates from card-body clicks and Enter/Space when onCardActivate is provided", () => {
+  const onActivate = vi.fn();
+  const { container } = render(
+    <SkillCard skill={fullCard} onCardActivate={onActivate} />,
+  );
+
+  const article = container.querySelector("article");
+  if (!(article instanceof HTMLElement)) throw new Error("Expected the card article");
+  expect(article).toHaveAttribute("tabindex", "0");
+  fireEvent.click(article);
+  fireEvent.keyDown(article, { key: "Enter" });
+  fireEvent.keyDown(article, { key: " " });
+  expect(onActivate).toHaveBeenCalledTimes(3);
+});
+
+it("never activates from clicks inside the action area", () => {
+  const onActivate = vi.fn();
+  render(
+    <SkillCard
+      onCardActivate={onActivate}
+      primaryAction={<button type="button">安装导入</button>}
+      skill={fullCard}
+    />,
+  );
+
+  fireEvent.click(screen.getByRole("button", { name: "安装导入" }));
+  expect(onActivate).not.toHaveBeenCalled();
 });
 
 describe("heading level", () => {

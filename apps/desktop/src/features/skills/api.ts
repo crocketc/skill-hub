@@ -58,6 +58,7 @@ export interface SkillTableRow {
   aiCheck: CheckState;
   agentDeploymentCount: number;
   agentDeployments?: AgentDeployment[];
+  /** 用户设置的显示别名；与原名一致或未设置时省略（P1-10）。 */
   alias?: string;
   basicCheck: CheckState;
   currentVersion: string;
@@ -69,6 +70,8 @@ export interface SkillTableRow {
   lifecycle: SkillLifecycle;
   name: string;
   originalDescription?: string;
+  /** 目录运行时原名（runtime_name）；别名场景下与展示名并列展示（P1-10）。 */
+  originalName?: string;
   ownership?: string;
   pendingCount: number;
   projectDeploymentCount: number;
@@ -100,6 +103,8 @@ export interface SkillQuickView extends SkillTableRow {
 export interface SkillMetadataPatch {
   alias?: string | null;
   note?: string | null;
+  /** 整体覆盖语义：提供时先读当前元数据再合并（P1-10 标签读写）。 */
+  tags?: string[];
 }
 
 export interface SkillTablePreferences {

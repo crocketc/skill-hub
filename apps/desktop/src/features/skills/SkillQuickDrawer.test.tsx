@@ -63,7 +63,7 @@ interface MockOptions {
     preferences: SkillDrawerPreferences,
     index: number,
   ) => Promise<void>;
-  saveSkillMetadata?: (patch: { alias?: string | null; note?: string | null }) => Promise<void>;
+  saveSkillMetadata?: (patch: { alias?: string | null; note?: string | null; tags?: string[] }) => Promise<void>;
   usageEvidence?: SkillQuickView["usageEvidence"];
 }
 
@@ -74,7 +74,7 @@ interface MockFacade extends SkillLibraryFacade {
     getSkillQuickView: string[];
     listSkills: number;
     saveDrawerPreferences: SkillDrawerPreferences[];
-    saveSkillMetadata: Array<{ skillId: string; patch: { alias?: string | null; note?: string | null } }>;
+    saveSkillMetadata: Array<{ skillId: string; patch: { alias?: string | null; note?: string | null; tags?: string[] } }>;
   };
 }
 
@@ -670,9 +670,12 @@ it("offers single-skill tag actions and saves alias and note edits on blur", asy
   const facade = createMockSkillLibraryFacade();
   await renderDrawer({ facade });
 
-  expect(await screen.findByRole("button", { name: "Add tags" })).toBeVisible();
-  expect(screen.getByRole("button", { name: "Remove tags" })).toBeVisible();
+  // 标签字段如实展示当前标签，并提供添加/移除入口。
+  expect(await screen.findByText("documents")).toBeVisible();
+  expect(screen.getByRole("button", { name: "Add tags" })).toBeVisible();
+  expect(screen.getByRole("button", { name: "Remove tag documents" })).toBeVisible();
 
+  // 添加标签：读取现有标签后经 set_metadata 整体覆盖保存，不再走生产未绑定的批量通道。
   fireEvent.click(screen.getByRole("button", { name: "Add tags" }));
   const dialog = await screen.findByRole("dialog", { name: "Add tags" });
   fireEvent.change(within(dialog).getByRole("textbox", { name: "Tags" }), {
@@ -680,12 +683,16 @@ it("offers single-skill tag actions and saves alias and note edits on blur", asy
   });
   fireEvent.click(within(dialog).getByRole("button", { name: "Add tags" }));
   await waitFor(() => {
-    expect(facade.calls.emitBatchIntent).toContainEqual({
-      action: "add_tag",
-      tags: ["review", "urgent"],
-      target: { kind: "skill_ids", skillIds: ["skill-pdf"] },
+    expect(facade.calls.saveSkillMetadata).toContainEqual({
+      skillId: "skill-pdf",
+      patch: { tags: ["documents", "pdf", "review", "urgent"] },
     });
+    // 保存成功后快速视图与技能库列表查询都被失效并重新读取。
+    expect(facade.calls.getSkillQuickView).toHaveLength(2);
   });
+  expect(facade.calls.emitBatchIntent).not.toContainEqual(
+    expect.objectContaining({ action: "add_tag" }),
+  );
 
   fireEvent.click(screen.getByRole("button", { name: "Edit alias" }));
   const aliasInput = screen.getByRole("textbox", { name: "Alias" });
@@ -710,6 +717,93 @@ it("offers single-skill tag actions and saves alias and note edits on blur", asy
     });
   });
   expect(screen.getByText("Use for invoices")).toBeVisible();
+});
+
+it("removes a tag chip and persists the reduced tag set", async () => {
+  const facade = createMockSkillLibraryFacade();
+  await renderDrawer({ facade });
+
+  fireEvent.click(await screen.findByRole("button", { name: "Remove tag documents" }));
+
+  await waitFor(() => {
+    expect(facade.calls.saveSkillMetadata).toContainEqual({
+      skillId: "skill-pdf",
+      patch: { tags: ["pdf"] },
+    });
+    expect(facade.calls.getSkillQuickView).toHaveLength(2);
+  });
+  expect(facade.calls.emitBatchIntent).not.toContainEqual(
+    expect.objectContaining({ action: "remove_tag" }),
+  );
+});
+
+it("shows a visible failure and restores the saved tags when a tag save is rejected", async () => {
+  const facade = createMockSkillLibraryFacade({
+    saveSkillMetadata: async () => {
+      throw new Error("tag write failed");
+    },
+  });
+  await renderDrawer({ facade });
+
+  fireEvent.click(await screen.findByRole("button", { name: "Remove tag documents" }));
+
+  const drawer = await screen.findByTestId("skill-quick-drawer");
+  await waitFor(() => {
+    expect(within(drawer).getByRole("alert")).toHaveTextContent(
+      /tags were not saved/i,
+    );
+  });
+  // 乐观更新被回滚：被移除的标签仍然可见且可再次操作。
+  expect(
+    within(drawer).getByRole("button", { name: "Remove tag documents" }),
+  ).toBeVisible();
+});
+
+it("reports a failure instead of silently dropping tag edits when the facade cannot save metadata", async () => {
+  const facade = createMockSkillLibraryFacade();
+  delete (facade as { saveSkillMetadata?: unknown }).saveSkillMetadata;
+  await renderDrawer({ facade });
+
+  fireEvent.click(await screen.findByRole("button", { name: "Remove tag documents" }));
+
+  const drawer = await screen.findByTestId("skill-quick-drawer");
+  await waitFor(() => {
+    expect(within(drawer).getByRole("alert")).toHaveTextContent(
+      /tags were not saved/i,
+    );
+  });
+});
+
+it("shows the runtime name beside the aliased display name in the identity region", async () => {
+  const facade = createMockSkillLibraryFacade({
+    quickView: { ...QUICK_VIEW, alias: "PDF Reader", originalName: "pdf-reader" },
+  });
+  await renderDrawer({ facade });
+
+  const drawer = await screen.findByTestId("skill-quick-drawer");
+  const identity = drawer.querySelector(".sh-skill-drawer__identity");
+  if (!identity) throw new Error("Expected the drawer identity region");
+  expect(within(identity as HTMLElement).getByText("Original name:")).toBeVisible();
+  expect(within(identity as HTMLElement).getByText("pdf-reader")).toBeVisible();
+});
+
+it("clamps long description fields into scrollable areas instead of stretching the drawer", async () => {
+  const facade = createMockSkillLibraryFacade({
+    quickView: {
+      ...QUICK_VIEW,
+      originalDescription: "很长的原始描述内容。".repeat(120),
+      translatedDescription: "A very long translated description.".repeat(120),
+    },
+  });
+  await renderDrawer({ facade });
+
+  const drawer = await screen.findByTestId("skill-quick-drawer");
+  await waitFor(() => {
+    // 原始描述 + 描述译文 + 用途 = 3 个固定高度可滚动区域。
+    expect(
+      drawer.querySelectorAll(".sh-skill-drawer__field-value--clamped").length,
+    ).toBe(3);
+  });
 });
 
 it("labels drawer identity fields in source-first and user-metadata order", async () => {

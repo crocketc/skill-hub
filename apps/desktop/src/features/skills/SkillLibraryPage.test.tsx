@@ -59,6 +59,8 @@ function renderLibrary({
   const router = createMemoryRouter(
     [
       { path: "/library", element: <SkillLibraryPage facade={facade} onOpenDiscovery={onOpenDiscovery} removalFacade={removalFacade} /> },
+      // P1-11：卡片“查看”按钮跳完整详情页。
+      { path: "/library/:skillId", element: <p>Skill detail page</p> },
       { path: "/deploy", element: <p>Batch deployment</p> },
       { path: "/settings/data-protection", element: <p>Data protection export</p> },
       { path: "/library/combinations", element: <p>Combination manager</p> },
@@ -222,7 +224,7 @@ describe("SkillLibraryPage", () => {
     expect(screen.queryByText("Security check completed")).not.toBeInTheDocument();
   });
 
-  it("previews and confirms batch tag additions for the selected skills", async () => {
+  it("applies batch tag additions through per-skill metadata saves", async () => {
     const facade = createMockSkillLibraryFacade();
     renderLibrary({ facade });
 
@@ -239,12 +241,78 @@ describe("SkillLibraryPage", () => {
     fireEvent.click(within(dialog).getByRole("button", { name: "Add tags" }));
 
     await waitFor(() => {
-      expect(facade.calls.emitBatchIntent).toContainEqual({
-        action: "add_tag",
-        tags: ["review", "urgent"],
-        target: { kind: "skill_ids", skillIds: ["skill-pdf"] },
+      // 标签写经 set_metadata 的读改写落地（生产 emitBatchIntent 未绑定）。
+      expect(facade.calls.saveSkillMetadata).toContainEqual({
+        skillId: "skill-pdf",
+        patch: { tags: ["documents", "pdf", "review", "urgent"] },
       });
     });
+    expect(facade.calls.emitBatchIntent).not.toContainEqual(
+      expect.objectContaining({ action: "add_tag" }),
+    );
+  });
+
+  it("submits the remaining tag set when removing tags in bulk", async () => {
+    const facade = createMockSkillLibraryFacade();
+    renderLibrary({ facade });
+
+    fireEvent.click(
+      await screen.findByRole("checkbox", { name: "Select PDF Reader" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Remove tags" }));
+
+    const dialog = await screen.findByRole("dialog", { name: "Remove tags" });
+    fireEvent.change(within(dialog).getByRole("textbox", { name: "Tags" }), {
+      target: { value: "documents" },
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Remove tags" }));
+
+    await waitFor(() => {
+      expect(facade.calls.saveSkillMetadata).toContainEqual({
+        skillId: "skill-pdf",
+        patch: { tags: ["pdf"] },
+      });
+    });
+  });
+
+  it("reports per-skill tag outcomes instead of failing the whole batch", async () => {
+    const facade = createMockSkillLibraryFacade();
+    const successfulSave = facade.saveSkillMetadata?.bind(facade);
+    facade.saveSkillMetadata = async (skillId, patch) => {
+      if (skillId === "skill-docx") {
+        throw new Error("locked by another process");
+      }
+      await successfulSave?.(skillId, patch);
+    };
+    renderLibrary({ facade });
+
+    fireEvent.click(
+      await screen.findByRole("checkbox", { name: "Select PDF Reader" }),
+    );
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select DOCX Writer" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add tags" }));
+    const dialog = await screen.findByRole("dialog", { name: "Add tags" });
+    fireEvent.change(within(dialog).getByRole("textbox", { name: "Tags" }), {
+      target: { value: "review" },
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Add tags" }));
+
+    const summary = await screen.findByTestId("batch-summary");
+    expect(summary).toHaveTextContent("1 succeeded");
+    expect(summary).toHaveTextContent("1 failed");
+    expect(screen.getAllByTestId("batch-outcome-failed")).toHaveLength(1);
+    expect(screen.getByText("locked by another process")).toBeVisible();
+  });
+
+  it("shows the runtime name beside the aliased display name on cards", async () => {
+    const facade = createMockSkillLibraryFacade();
+    renderLibrary({ facade, persistedViewMode: "unset" });
+
+    const card = await screen.findByTestId("skill-card-skill-pdf");
+    expect(screen.getByRole("heading", { name: "PDF Reader" })).toBeVisible();
+    expect(within(card).getByText("pdf-reader")).toHaveClass(
+      "sh-skill-card__subtitle",
+    );
   });
 
   it("orders batch actions from high-frequency flows to a separated destructive group", async () => {
@@ -392,8 +460,8 @@ describe("SkillLibraryPage", () => {
     facade.listSkills = () => Promise.reject(new Error("offline"));
     fireEvent.click(screen.getByRole("button", { name: "Start export" }));
 
-    const batchBar = screen.getByRole("complementary", { name: "Batch actions" });
-    expect(await within(batchBar).findByRole("status")).toHaveTextContent(
+    // 批量错误经通知中心以危险通知呈现（role=alert、常驻可关闭）。
+    expect(await screen.findByRole("alert")).toHaveTextContent(
       "The batch workflow could not be started",
     );
     expect(screen.queryByText("Data protection export")).not.toBeInTheDocument();
@@ -925,15 +993,86 @@ describe("SkillLibraryPage", () => {
     expect(nextWorkspace).toHaveStyle("--skill-batch-bar-height: 168px");
   });
 
-  it("uses the unified control classes for the save-view form and view selects", async () => {
+  it("uses the unified control classes for the save-view form and the mode switches", async () => {
     const facade = createMockSkillLibraryFacade();
     renderLibrary({ facade, persistedViewMode: "unset" });
 
     expect(await screen.findByTestId("skill-card-skill-pdf")).toBeVisible();
-    expect(screen.getByLabelText("View mode")).toHaveClass("sh-select");
-    expect(screen.getByLabelText(/Group by/)).toHaveClass("sh-select");
+    // P1-08：视图/分组切换是键盘可操作的分段按钮组（aria-pressed），不再是原生 select。
+    const viewSwitch = screen.getByRole("group", { name: "View mode" });
+    expect(within(viewSwitch).getByRole("button", { name: "Table view" })).toHaveAttribute("aria-pressed", "false");
+    expect(within(viewSwitch).getByRole("button", { name: "Card view" })).toHaveAttribute("aria-pressed", "true");
+    expect(within(viewSwitch).getByRole("button", { name: "Relations matrix" })).toHaveAttribute("aria-pressed", "false");
+    const groupSwitch = screen.getByRole("group", { name: /Group by/ });
+    expect(within(groupSwitch).getByRole("button", { name: "No grouping" })).toHaveAttribute("aria-pressed", "true");
     fireEvent.click(screen.getByRole("button", { name: "Save current view" }));
     expect(screen.getByRole("textbox", { name: "View name" })).toHaveClass("sh-input");
+  });
+
+  it("offers a current-page select-all in the card view with the same selection model", async () => {
+    const facade = createMockSkillLibraryFacade({ total: 80 });
+    renderLibrary({ facade, persistedViewMode: "unset" });
+
+    await screen.findByTestId("skill-card-skill-pdf");
+    expect(
+      screen.getByRole("checkbox", { name: "Select current page" }),
+    ).not.toBeChecked();
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select current page" }));
+    expect(screen.getByText("25 items selected on this page")).toBeVisible();
+    expect(screen.getByRole("complementary", { name: "Batch actions" })).toBeVisible();
+
+    // all_filtered/explicit 差集与表格视图共用同一 SkillSelection 模型。
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select PDF Reader" }));
+    expect(screen.getByText("24 items selected")).toBeVisible();
+  });
+
+  it("keeps the saved-views row collapsible while search and mode switches stay visible", async () => {
+    const facade = createMockSkillLibraryFacade();
+    renderLibrary({ facade });
+
+    await screen.findByRole("table");
+    const toggle = screen.getByRole("button", { name: "Collapse view bar" });
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByRole("button", { name: "Document tools" })).toBeVisible();
+
+    fireEvent.click(toggle);
+
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByRole("button", { name: "Document tools" })).not.toBeInTheDocument();
+    expect(screen.getByRole("searchbox", { name: "Search skills" })).toBeVisible();
+    expect(screen.getByRole("group", { name: "View mode" })).toBeVisible();
+  });
+
+  it("marks the workspace batch-active so pagination reserves clearance", async () => {
+    const facade = createMockSkillLibraryFacade({ total: 80 });
+    renderLibrary({ facade, persistedViewMode: "unset" });
+
+    fireEvent.click(
+      await screen.findByRole("checkbox", { name: "Select current page" }),
+    );
+
+    const workspace = document.querySelector(".sh-skill-library");
+    expect(workspace).toHaveClass("sh-skill-library--batch-active");
+    // 卡片分页与表格分页都在批量条激活时获得 margin 预留（几何断言由 E2E 兜底）。
+    expect(document.querySelector(".sh-skill-cards__pagination")).not.toBeNull();
+    expect(getComputedStyle(document.querySelector(".sh-skill-library") as HTMLElement).getPropertyValue("--skill-batch-bar-height")).toBeDefined();
+  });
+
+  it("falls back to default view and group modes without error UI when preference reads fail", async () => {
+    const facade = createMockSkillLibraryFacade();
+    facade.loadViewMode = vi.fn(async () => {
+      throw new Error("view mode read failed");
+    });
+    facade.loadGroupMode = vi.fn(async () => {
+      throw new Error("group mode read failed");
+    });
+    renderLibrary({ facade, persistedViewMode: "unset" });
+
+    // 静默回退是需求允许的路径：默认卡片视图正常渲染，无错误 UI、无崩溃。
+    expect(await screen.findByTestId("skill-card-skill-pdf")).toBeVisible();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.getByRole("group", { name: "View mode" })).toBeVisible();
   });
 
   it("saves only the view scope and current table preferences", async () => {
@@ -1181,7 +1320,7 @@ describe("SkillLibraryPage", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "Submit export job" }));
 
-    expect(await screen.findByRole("status")).toHaveTextContent(
+    expect(await screen.findByRole("alert")).toHaveTextContent(
       "This batch workflow is not connected",
     );
     expect(screen.queryByText("Export completed")).not.toBeInTheDocument();
@@ -1191,7 +1330,7 @@ describe("SkillLibraryPage", () => {
   it("defaults to the enhanced shared-card view with verifiable facts and stable actions", async () => {
     const facade = createMockSkillLibraryFacade({ total: 30 });
     facade.saveViewMode = vi.fn(async () => undefined);
-    renderLibrary({ facade, persistedViewMode: "unset" });
+    const { router } = renderLibrary({ facade, persistedViewMode: "unset" });
 
     // 默认即增强卡片视图：无需切换即可见共享 SkillCard 语义。
     const card = await screen.findByTestId("skill-card-skill-pdf");
@@ -1204,18 +1343,43 @@ describe("SkillLibraryPage", () => {
     expect(screen.getByTestId("skill-card-upgrade-skill-pdf")).toBeVisible();
     expect(screen.getByTestId("skill-card-risk-skill-pdf")).toBeVisible();
 
-    // 整卡不可点击：打开快速抽屉是操作区里的独立按钮语义。
-    fireEvent.click(screen.getByRole("button", { name: "View PDF Reader" }));
+    // P1-11 主次语义对调：卡区激活 → 快速抽屉；“查看”按钮 → 完整详情页。
+    fireEvent.click(screen.getByRole("heading", { name: "PDF Reader" }));
     expect(await screen.findByTestId("skill-quick-drawer")).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    fireEvent.click(screen.getByRole("button", { name: "View PDF Reader" }));
+    expect(await screen.findByText("Skill detail page")).toBeVisible();
+    expect(router.state.location.pathname).toBe("/library/skill-pdf");
+    await act(async () => {
+      await router.navigate("/library");
+    });
 
     // 选择/批量操作语义在卡片视图内保持；选择框套用统一控件尺寸类。
+    fireEvent.click(
+      (await screen.findByTestId("skill-card-skill-pdf")).querySelector(
+        "input[type='checkbox']",
+      ) as HTMLInputElement,
+    );
     expect(screen.getByRole("checkbox", { name: "Select PDF Reader" })).toHaveClass("sh-control-checkbox");
-    fireEvent.click(screen.getByRole("checkbox", { name: "Select PDF Reader" }));
     expect(screen.getByRole("complementary", { name: "Batch actions" })).toBeVisible();
 
     // 卡片视图保留分页能力。
     expect(screen.getByRole("button", { name: "Next page" })).toBeVisible();
+  });
+
+  it("keeps the select control from activating the card body", async () => {
+    const facade = createMockSkillLibraryFacade();
+    renderLibrary({ facade, persistedViewMode: "unset" });
+
+    fireEvent.click(
+      (await screen.findByTestId("skill-card-skill-pdf")).querySelector(
+        "input[type='checkbox']",
+      ) as HTMLInputElement,
+    );
+
+    expect(screen.queryByTestId("skill-quick-drawer")).not.toBeInTheDocument();
+    expect(screen.getByRole("complementary", { name: "Batch actions" })).toBeVisible();
+    expect(screen.getByText("1 item selected")).toBeVisible();
   });
 
   it("keeps view-mode choice persistent when switching to the professional table", async () => {
@@ -1225,9 +1389,7 @@ describe("SkillLibraryPage", () => {
 
     await screen.findByTestId("skill-card-skill-pdf");
 
-    fireEvent.change(screen.getByLabelText("View mode"), {
-      target: { value: "table" },
-    });
+    fireEvent.click(screen.getByRole("button", { name: "Table view" }));
     expect(facade.saveViewMode).toHaveBeenCalledWith("table");
     expect(await screen.findByRole("table")).toBeVisible();
   });
@@ -1241,9 +1403,7 @@ describe("SkillLibraryPage", () => {
     );
     expect(screen.getByRole("complementary", { name: "Batch actions" })).toBeVisible();
 
-    fireEvent.change(screen.getByLabelText("View mode"), {
-      target: { value: "table" },
-    });
+    fireEvent.click(screen.getByRole("button", { name: "Table view" }));
     const table = await screen.findByRole("table");
     expect(table).toBeVisible();
     expect(screen.getByRole("checkbox", { name: "Select PDF Reader" })).toBeChecked();
@@ -1293,8 +1453,8 @@ describe("SkillLibraryPage", () => {
 
     // 等数据加载完成，再切换视图与分组
     await screen.findByRole("checkbox", { name: "Select PDF Reader" });
-    fireEvent.change(screen.getByLabelText(/View mode|视图模式/), { target: { value: "cards" } });
-    fireEvent.change(screen.getByLabelText(/Group by|分组方式/), { target: { value: "tags" } });
+    fireEvent.click(screen.getByRole("button", { name: "Card view" }));
+    fireEvent.click(screen.getByRole("button", { name: "Group by tag" }));
 
     expect(facade.saveGroupMode).toHaveBeenCalledWith("tags");
     const headings = await screen.findAllByRole("heading", { name: "documents" });
@@ -1345,7 +1505,7 @@ describe("SkillLibraryPage", () => {
     expect(params.getAll("skill")).toContain("skill-pdf");
   });
 
-  it("clears a failed batch announcement when the selected scope changes", async () => {
+  it("clears stale batch error notices when the selected scope changes", async () => {
     const facade = createMockSkillLibraryFacade();
     vi.spyOn(facade, "emitBatchIntent").mockRejectedValue(
       new Error("batch preparation failed"),
@@ -1356,17 +1516,17 @@ describe("SkillLibraryPage", () => {
       await screen.findByRole("checkbox", { name: "Select PDF Reader" }),
     );
     fireEvent.click(screen.getByRole("button", { name: "Submit export job" }));
-    const batchBar = screen.getByRole("complementary", { name: "Batch actions" });
-    expect(await within(batchBar).findByRole("status")).toHaveTextContent(
+    expect(await screen.findByRole("alert")).toHaveTextContent(
       "The batch workflow could not be started",
     );
 
     fireEvent.click(screen.getByRole("checkbox", { name: "Select DOCX Writer" }));
 
-    expect(within(batchBar).getByText("2 items selected")).toBeVisible();
-    expect(within(batchBar).queryByRole("status")).not.toBeInTheDocument();
+    // 选择范围变化后，过期批量错误通知随“batch”类撤销，避免误归因到新选择。
+    expect(screen.getByText("2 items selected")).toBeVisible();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     expect(
-      within(batchBar).queryByText("The batch workflow could not be started"),
+      screen.queryByText("The batch workflow could not be started"),
     ).not.toBeInTheDocument();
   });
 
