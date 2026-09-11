@@ -1,5 +1,6 @@
-/* AR-005 品牌化彩色标签：品牌特征倾向色只做浅色调，
-   文字使用同色系深色，保证任意主题下芯片内对比度可读。 */
+/* AR-005 品牌化彩色标签：品牌特征倾向色只做浅色调背景/边框，
+   文字使用同色系深色（对比度 ≥4.5:1，见 BrandTag.test.tsx 锁定），
+   保证任意主题下芯片内对比度可读。P1-01c 修复：此前前景误用边框浅色。 */
 .sh-brand-tag {
   display: inline-flex;
   align-items: center;
@@ -25,101 +26,103 @@
 .sh-brand-tag--neutral {
   --brand-chip-background: #eef1f4;
   --brand-chip-border: #d3dae1;
-  --brand-chip-foreground: #d3dae1;
+  --brand-chip-foreground: #3c4650;
 }
 
 .sh-brand-tag--openai {
   --brand-chip-background: #e2f6ef;
   --brand-chip-border: #b8e6d6;
-  --brand-chip-foreground: #b8e6d6;
+  --brand-chip-foreground: #0d5c44;
 }
 
 .sh-brand-tag--anthropic, .sh-brand-tag--claude {
   --brand-chip-background: #faeae3;
   --brand-chip-border: #f0cdbc;
-  --brand-chip-foreground: #f0cdbc;
+  --brand-chip-foreground: #8a3c1a;
 }
 
 .sh-brand-tag--codex {
   --brand-chip-background: #e2f1ea;
   --brand-chip-border: #bde0d1;
-  --brand-chip-foreground: #bde0d1;
+  --brand-chip-foreground: #14573f;
 }
 
 .sh-brand-tag--github-copilot {
   --brand-chip-background: #e9edf1;
   --brand-chip-border: #ccd5de;
-  --brand-chip-foreground: #ccd5de;
+  --brand-chip-foreground: #333d47;
 }
 
 .sh-brand-tag--google, .sh-brand-tag--gemini {
   --brand-chip-background: #e4edfc;
   --brand-chip-border: #c3d7f6;
-  --brand-chip-foreground: #c3d7f6;
+  --brand-chip-foreground: #1e4fa8;
 }
 
 .sh-brand-tag--zcode {
   --brand-chip-background: #e3f4e6;
   --brand-chip-border: #bce3c7;
-  --brand-chip-foreground: #bce3c7;
+  --brand-chip-foreground: #166534;
 }
 
 .sh-brand-tag--kimi, .sh-brand-tag--trae {
   --brand-chip-background: #e2f2fb;
   --brand-chip-border: #c0e1f5;
-  --brand-chip-foreground: #c0e1f5;
+  --brand-chip-foreground: #0b5f86;
 }
 
 .sh-brand-tag--windsurf, .sh-brand-tag--codebuddy {
   --brand-chip-background: #e4ebfc;
   --brand-chip-border: #c5d3f6;
-  --brand-chip-foreground: #c5d3f6;
+  --brand-chip-foreground: #2b3f9e;
 }
 
 .sh-brand-tag--cline, .sh-brand-tag--qoder {
   --brand-chip-background: #efe9fc;
   --brand-chip-border: #dccdf5;
-  --brand-chip-foreground: #dccdf5;
+  --brand-chip-foreground: #543091;
 }
 
 .sh-brand-tag--comate {
   --brand-chip-background: #dff3f1;
   --brand-chip-border: #bae2dd;
-  --brand-chip-foreground: #bae2dd;
+  --brand-chip-foreground: #0c5f58;
 }
 
 .sh-brand-tag--grok {
   --brand-chip-background: #e8eaee;
   --brand-chip-border: #cfd4dc;
-  --brand-chip-foreground: #cfd4dc;
+  --brand-chip-foreground: #333a44;
 }
 
 .sh-brand-tag--hermes {
   --brand-chip-background: #fbe9de;
   --brand-chip-border: #f2cdb5;
-  --brand-chip-foreground: #f2cdb5;
+  --brand-chip-foreground: #8a3c1a;
 }
 
 .sh-brand-tag--openclaw {
   --brand-chip-background: #fdeadd;
   --brand-chip-border: #f8cdac;
-  --brand-chip-foreground: #f8cdac;
+  --brand-chip-foreground: #8a4a12;
 }
 
 .sh-brand-tag--opencode {
   --brand-chip-background: #e8edf2;
   --brand-chip-border: #cdd7e0;
-  --brand-chip-foreground: #cdd7e0;
+  --brand-chip-foreground: #33475c;
 }
 
 .sh-brand-tag--cursor {
   --brand-chip-background: #e9edf1;
   --brand-chip-border: #d0d8e0;
-  --brand-chip-foreground: #d0d8e0;
+  --brand-chip-foreground: #333d47;
 }
 
 /* 深色主题适配（规格 4.2）：品牌倾向色保留，外围底色和边界改由
-   语义表面色混合派生，避免深色画布上出现整排亮色药丸。 */
+   语义表面色混合派生，避免深色画布上出现整排亮色药丸。前景向近白
+   混合时保留 25% 品牌倾向色：在混合后的深色底上对比度 ≥5（E2E 于
+   九主题下按计算样式复核）。 */
 [data-theme="grok-night"] .sh-brand-tag {
   --brand-chip-border: color-mix(in srgb, var(--brand-chip-border) 38%, transparent);
 }
@@ -145,5 +148,5 @@
 [data-theme="grok-night"] .sh-brand-tag--grok,
 [data-theme="grok-night"] .sh-brand-tag--zcode {
   --brand-chip-background: color-mix(in srgb, var(--brand-chip-background) 22%, var(--color-surface-raised));
-  --brand-chip-foreground: color-mix(in srgb, var(--brand-chip-foreground) 55%, #f2f3ef);
+  --brand-chip-foreground: color-mix(in srgb, var(--brand-chip-foreground) 25%, #f2f3ef);
 }

@@ -265,6 +265,46 @@ test("applies all nine themes on the flow with key controls intact at 1280x900",
   }
 });
 
+test("keeps brand chip text readable across all nine themes", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+
+  for (const theme of themeChoices) {
+    await page.addInitScript((stored) => {
+      window.localStorage.setItem("skillhub.appearance", stored);
+    }, theme.name);
+    await page.goto("/__preview/onboarding/create");
+    await expect(page.locator("html")).toHaveAttribute("data-theme", theme.name);
+
+    // 到达“识别兼容的 Agent”并识别出品牌分组芯片。
+    await page.getByRole("button", { name: "继续" }).click();
+    await confirmCompatibility(page);
+    const chip = page.locator(".sh-brand-tag").first();
+    await expect(chip).toBeVisible();
+
+    // 计算芯片文字/背景的实际对比度（grok-night 走 color-mix 混合路径）。
+    const ratio = await chip.evaluate((node) => {
+      const parse = (value: string) =>
+        (value.match(/\d+(\.\d+)?/g) ?? []).slice(0, 3).map((part) => Number(part));
+      const [fr, fg, fb] = parse(getComputedStyle(node).color);
+      const [br, bg, bb] = parse(getComputedStyle(node).backgroundColor);
+      const luminance = (r: number, g: number, b: number) => {
+        const [lr, lg, lb] = [r, g, b].map((channel) => {
+          const v = channel / 255;
+          return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+        });
+        return 0.2126 * lr! + 0.7152 * lg! + 0.0722 * lb!;
+      };
+      const textLum = luminance(fr!, fg!, fb!);
+      const backgroundLum = luminance(br!, bg!, bb!);
+      return (
+        (Math.max(textLum, backgroundLum) + 0.05) /
+        (Math.min(textLum, backgroundLum) + 0.05)
+      );
+    });
+    expect(ratio, `${theme.name} brand chip text contrast`).toBeGreaterThanOrEqual(4.5);
+  }
+});
+
 test("keeps the grok-night theme usable across the full width sweep", async ({ page }) => {
   await page.goto("/__preview/onboarding/create");
   await page.getByRole("button", { name: "Grok 夜色" }).click();
