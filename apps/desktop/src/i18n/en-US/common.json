@@ -56,6 +56,13 @@
       "exitConfirmConfirm": "Discard changes",
       "saveError": "Could not save; your local draft is still available.",
       "saveWarnings": "Save despite warnings",
+      "replaceConfirmTitle": "Replace the original Skill content?",
+      "replaceConfirmLead": "Saving replaces the current content of {{path}} and creates a new version.",
+      "replaceConfirmRecoverNote": "The previous content stays as a history version; you can roll back to it from the Versions timeline on the detail page.",
+      "replaceConfirmCopyNote": "To leave the original file completely untouched, save a copy instead (recommended).",
+      "replaceConfirmReplaceAction": "Replace and save",
+      "replaceConfirmCopyAction": "Save as copy (recommended)",
+      "syncScrollToggle": "Sync scrolling",
       "source": "Source editor",
       "sourceLabel": "Markdown source",
       "versionCreated": "Version {{version}} created"

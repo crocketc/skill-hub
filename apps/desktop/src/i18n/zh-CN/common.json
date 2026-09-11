@@ -56,6 +56,13 @@
       "exitConfirmConfirm": "放弃修改",
       "saveError": "无法保存，本机草稿仍然保留。",
       "saveWarnings": "忽略警告并保存",
+      "replaceConfirmTitle": "替换原 Skill 内容？",
+      "replaceConfirmLead": "保存将替换 {{path}} 的当前内容，并生成一个新版本。",
+      "replaceConfirmRecoverNote": "原内容会自动保留为历史版本，可在详情页的版本时间线中回滚恢复。",
+      "replaceConfirmCopyNote": "若要完全不动原文件，推荐改为另存副本。",
+      "replaceConfirmReplaceAction": "替换并保存",
+      "replaceConfirmCopyAction": "另存为副本（推荐）",
+      "syncScrollToggle": "同步滚动",
       "source": "源码编辑器",
       "sourceLabel": "Markdown 源码",
       "versionCreated": "已创建版本 {{version}}"

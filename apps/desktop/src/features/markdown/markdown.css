@@ -334,6 +334,31 @@
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+/* P1-14：同步滚动开关行；开关只影响联动，不改变两侧面板的布局约束。 */
+.sh-markdown-editor__split-header {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.sh-markdown-editor__sync-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--ui-ink-muted);
+  cursor: pointer;
+  font-size: var(--font-size-sm);
+}
+
+/* 受控替换确认面板的补充说明（可恢复边界 + 推荐副本）。 */
+.sh-markdown-editor__replace-notes {
+  display: grid;
+  margin: 0 0 var(--space-3);
+  padding-inline-start: 1.25rem;
+  gap: var(--space-1);
+  color: var(--ui-ink-muted);
+  font-size: var(--font-size-sm);
+}
+
 .sh-markdown-editor__split > div {
   align-content: start;
   /* QA-011：无列约束的 grid 隐式 auto 轨道会按 CodeMirror 长行的
