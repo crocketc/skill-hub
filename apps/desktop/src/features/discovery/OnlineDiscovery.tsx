@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { describeNativeError } from "../../api/nativeErrors";
+import { describeNativeError, nativeErrorCode } from "../../api/nativeErrors";
 import { Button } from "../../ui/Button";
 import { CheckboxField } from "../../ui/CheckboxField";
 import { Icon } from "../../ui/Icon";
@@ -35,6 +35,32 @@ function sourceProvider(pageUrl: string, fallback: string | null): string {
   } catch {
     return fallback ?? pageUrl;
   }
+}
+
+/** AI 搜索辅助的四种明确状态（P0-06）：无配置、取消、失败、成功；
+ * 每种状态都必须告诉用户"普通搜索结果仍然可用"。 */
+type AssistStatus =
+  | { kind: "succeeded"; notice: string }
+  | { kind: "unconfigured" }
+  | { kind: "cancelled" }
+  | { kind: "failed"; reason: string };
+
+function classifyAssistFailure(
+  reason: unknown,
+  describe: (reason: unknown) => string,
+): AssistStatus {
+  const code = nativeErrorCode(reason);
+  if (
+    code === "llm.not_configured"
+    || code === "credential.unavailable"
+    || code === "llm.credential_read_failed"
+  ) {
+    return { kind: "unconfigured" };
+  }
+  if (code === "llm.cancelled") {
+    return { kind: "cancelled" };
+  }
+  return { kind: "failed", reason: describe(reason) };
 }
 
 /**
@@ -77,7 +103,7 @@ export function OnlineDiscovery({ onStartImport, onImportDirectory, facade, impo
   const [searchError, setSearchError] = useState<string | null>(null);
   // US-014：AI 搜索辅助默认关闭；开启后只做查询扩展与标记，不替代真实结果。
   const [assistEnabled, setAssistEnabled] = useState(false);
-  const [assistNotice, setAssistNotice] = useState<string | null>(null);
+  const [assistStatus, setAssistStatus] = useState<AssistStatus | null>(null);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [installError, setInstallError] = useState<string | null>(null);
   const [libraryNames, setLibraryNames] = useState<Set<string>>(new Set());
@@ -97,46 +123,60 @@ export function OnlineDiscovery({ onStartImport, onImportDirectory, facade, impo
     };
   }, [importedNames]);
 
-  const describeInstallError = useCallback(
-    (reason: unknown) =>
+  const describeError = useCallback(
+    (reason: unknown, genericKey: string) =>
       describeNativeError(
         reason,
         (key, options) => String(t(key as never, options as never)),
-        "discovery.online.installFailed",
+        genericKey,
       ),
     [t],
+  );
+
+  const describeInstallError = useCallback(
+    (reason: unknown) => describeError(reason, "discovery.online.installFailed"),
+    [describeError],
   );
 
   const search = async () => {
     if (!facade || !query.trim()) return;
     setSearching(true);
     setSearchError(null);
-    setAssistNotice(null);
+    setAssistStatus(null);
     try {
       if (assistEnabled && facade.searchOnlineSourcesAssisted) {
         try {
           const assisted = await facade.searchOnlineSourcesAssisted(query.trim());
           setPage(assisted);
           if (assisted.ai_assisted) {
-            setAssistNotice(
-              t("discovery.search.assistExtended", {
+            setAssistStatus({
+              kind: "succeeded",
+              notice: t("discovery.search.assistExtended", {
                 query: assisted.expanded_query ?? query.trim(),
                 count: assisted.items.filter((item) => item.via === "expanded_query").length,
               }),
-            );
+            });
           }
-        } catch {
-          // 辅助失败回退基础搜索（需求 5.9），并明确告知回退事实。
+        } catch (assistReason) {
+          // 辅助失败按状态分类（无配置/取消/其他失败），回退基础搜索
+          // （需求 5.9）并明确告知"结果仍然可用"。
           const plain = await facade.searchOnlineSources({ query: query.trim(), limit: 20, owner: null });
           setPage(plain);
-          setAssistNotice(t("discovery.search.assistFallback"));
+          setAssistStatus(
+            classifyAssistFailure(assistReason, (reason) =>
+              describeError(reason, "discovery.search.assistUnknownFailure")),
+          );
         }
       } else {
+        if (assistEnabled) {
+          // 需要辅助但当前环境未提供该能力：如实标注无配置状态。
+          setAssistStatus({ kind: "unconfigured" });
+        }
         const result = await facade.searchOnlineSources({ query: query.trim(), limit: 20, owner: null });
         setPage(result);
       }
-    } catch {
-      setSearchError(t("discovery.search.failed"));
+    } catch (reason) {
+      setSearchError(describeError(reason, "discovery.search.failed"));
     } finally {
       setSearching(false);
     }
@@ -193,11 +233,24 @@ export function OnlineDiscovery({ onStartImport, onImportDirectory, facade, impo
               label={t("discovery.search.assistToggle")}
               onChange={(event) => {
                 setAssistEnabled(event.target.checked);
-                setAssistNotice(null);
+                setAssistStatus(null);
               }}
             />
             {searchError ? <p role="alert">{searchError}</p> : null}
-            {assistNotice && !searching ? <p role="status">{assistNotice}</p> : null}
+            {assistStatus && !searching ? (
+              assistStatus.kind === "succeeded" ? (
+                <p role="status">{assistStatus.notice}</p>
+              ) : assistStatus.kind === "unconfigured" ? (
+                <p role="status">{t("discovery.search.assistUnconfigured")}</p>
+              ) : assistStatus.kind === "cancelled" ? (
+                <p role="status">{t("discovery.search.assistCancelled")}</p>
+              ) : (
+                <p role="status">
+                  {t("discovery.search.assistFailedFallback")}{" "}
+                  {t("discovery.search.assistFailureReason", { reason: assistStatus.reason })}
+                </p>
+              )
+            ) : null}
             {searching ? <p role="status">{t("discovery.online.searchingStatus")}</p> : null}
             {!page && !searching ? (
               <p role="status">{t("discovery.online.initialHint")}</p>

@@ -1,5 +1,6 @@
 import { useState, type JSX } from "react";
 import { useTranslation } from "react-i18next";
+import { describeNativeError } from "../../api/nativeErrors";
 import { Button } from "../../ui/Button";
 import { StatusBadge } from "../../ui/StatusBadge";
 import {
@@ -22,6 +23,13 @@ export function SemanticDuplicatePanel({ facade, skillId }: SemanticDuplicatePan
   const [report, setReport] = useState<SemanticDuplicateReport>();
   const [error, setError] = useState<string>();
 
+  const describeError = (reason: unknown) =>
+    describeNativeError(
+      reason,
+      (key, options) => String(t(key as never, options as never)),
+      "skillDetail.duplicates.failureUnknown",
+    );
+
   const run = () => {
     if (running) return;
     setRunning(true);
@@ -29,8 +37,9 @@ export function SemanticDuplicatePanel({ facade, skillId }: SemanticDuplicatePan
     facade
       .analyzeSemanticDuplicates(skillId)
       .then(setReport)
-      .catch((reason: unknown) =>
-        setError(reason instanceof Error ? reason.message : String(reason)))
+      // 结构化 AppError 直接 String() 会变成 "[object Object]"；
+      // 统一走分类文案，并明确确定性候选不受影响。
+      .catch((reason: unknown) => setError(describeError(reason)))
       .finally(() => setRunning(false));
   };
 
@@ -43,7 +52,12 @@ export function SemanticDuplicatePanel({ facade, skillId }: SemanticDuplicatePan
         </Button>
       </div>
       <p className="sh-settings-local-note">{t("skillDetail.duplicates.scopeNote")}</p>
-      {error ? <p role="alert">{t("skillDetail.duplicates.runFailed", { message: error })}</p> : null}
+      {error ? (
+        <>
+          <p role="alert">{t("skillDetail.duplicates.runFailed", { message: error })}</p>
+          <p role="status">{t("skillDetail.duplicates.deterministicNote")}</p>
+        </>
+      ) : null}
       {report ? (
         <>
           <p>
@@ -52,7 +66,16 @@ export function SemanticDuplicatePanel({ facade, skillId }: SemanticDuplicatePan
               : t("skillDetail.duplicates.sourceDeterministic")}
           </p>
           {report.failureCode ? (
-            <p role="status">{t("skillDetail.duplicates.failureCode", { code: report.failureCode })}</p>
+            <p role="status">
+              {t("skillDetail.duplicates.failureReason", {
+                reason: describeError({
+                  code: report.failureCode,
+                  severity: "error",
+                  params: {},
+                  actions: [],
+                }),
+              })}
+            </p>
           ) : null}
           {report.candidates.length ? (
             <section>

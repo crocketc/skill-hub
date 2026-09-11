@@ -42,6 +42,22 @@ it("shows a structured error instead of pretending success", async () => {
   expect(await screen.findByRole("alert")).toHaveTextContent("来源不可用");
 });
 
+it("describes structured native errors in readable copy instead of [object Object]", async () => {
+  const user = userEvent.setup();
+  await renderPanel(makeFacade({
+    relinkSource: async () => {
+      throw { code: "llm.not_configured", severity: "error", params: {}, actions: [] };
+    },
+  }));
+
+  await user.type(screen.getByLabelText("新的来源"), "https://github.com/o/r");
+  await user.click(screen.getByRole("button", { name: "重新关联" }));
+
+  const alert = await screen.findByRole("alert");
+  expect(alert).toHaveTextContent("尚未配置可用的 LLM 供应商，请先添加并启用供应商。");
+  expect(alert.textContent).not.toContain("[object Object]");
+});
+
 it("does not submit an empty source", async () => {
   const user = userEvent.setup();
   const relinkSource = vi.fn(async () => ({ messageCode: "source.relinked" }));

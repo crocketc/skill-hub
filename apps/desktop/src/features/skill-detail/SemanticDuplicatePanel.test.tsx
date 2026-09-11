@@ -63,7 +63,27 @@ describe("SemanticDuplicatePanel", () => {
     expect(
       await screen.findByText("结果来源：仅确定性候选（AI 层未返回结果）"),
     ).toBeVisible();
-    expect(screen.getByText("AI 层失败码：llm.request_timeout")).toBeVisible();
+    expect(
+      screen.getByText(/AI 层失败原因：连接模型服务超时，请检查网络后重试。/),
+    ).toBeVisible();
+    expect(screen.queryByText(/AI 层失败码/)).not.toBeInTheDocument();
     expect(screen.getByText("PDF Text Extractor")).toBeVisible();
+  });
+
+  it("describes a rejected analysis in readable copy and keeps the deterministic promise", async () => {
+    const facade = createMockSkillDetailFacade();
+    facade.analyzeSemanticDuplicates = async () => {
+      throw { code: "llm.not_configured", severity: "error", params: {}, actions: [] };
+    };
+    await renderPanel(facade);
+
+    fireEvent.click(screen.getByRole("button", { name: "运行分析" }));
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("AI 分析未能完成：尚未配置可用的 LLM 供应商，请先添加并启用供应商。");
+    expect(alert.textContent).not.toContain("[object Object]");
+    expect(
+      screen.getByText(/AI 分析未执行，确定性重复候选仍然可用/),
+    ).toBeVisible();
   });
 });

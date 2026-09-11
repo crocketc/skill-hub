@@ -32,6 +32,27 @@ it("summarizes all outcomes and expands successful details only on request", asy
   expect(screen.getAllByRole("listitem")).toHaveLength(3);
 });
 
+it("translates the native loop's structured failure codes into readable copy", async () => {
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  render(
+    <I18nextProvider i18n={i18n}>
+      <ImportSummary
+        results={[
+          {
+            candidateId: "c",
+            action: "copy",
+            status: "failed",
+            message: "import.import_failed",
+          },
+        ]}
+      />
+    </I18nextProvider>,
+  );
+
+  expect(screen.getByText("导入未完成：本机服务在处理该候选项时失败。")).toBeVisible();
+  expect(screen.queryByText("import.import_failed")).not.toBeInTheDocument();
+});
+
 it("shows the unavailable boundary without fabricating import results", async () => {
   const i18n = await createSkillHubI18n(["zh-CN"]);
   render(

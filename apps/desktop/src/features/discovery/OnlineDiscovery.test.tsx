@@ -343,7 +343,7 @@ describe("AI search assist", () => {
     expect(assisted).toHaveBeenCalledWith("pdf");
   });
 
-  it("falls back to the plain search with an explicit notice when the assist fails", async () => {
+  it("falls back to the plain search with a readable reason when the assist fails", async () => {
     const assisted = vi.fn(async () => {
       throw new Error("llm.request_timeout");
     });
@@ -352,8 +352,66 @@ describe("AI search assist", () => {
     await toggleAssist();
     await click(screen.getByRole("button", { name: "搜索" }));
 
-    expect(await screen.findByText("AI 搜索辅助不可用，已回退普通搜索。")).toBeVisible();
-    expect(screen.getByText("PDF Reader")).toBeVisible();
+    await screen.findByText("PDF Reader");
+    const status = screen.getByRole("status");
+    expect(status).toHaveTextContent("AI 搜索失败，已回退普通搜索；以下结果仍然可用。");
+    expect(status).toHaveTextContent("失败原因：连接模型服务超时，请检查网络后重试。");
+    expect(status.textContent).not.toContain("llm.request_timeout");
     expect(facade.searchOnlineSources).toHaveBeenCalledTimes(2);
+  });
+
+  it("explains the unconfigured fallback when the assistant has no usable provider", async () => {
+    const assisted = vi.fn(async () => {
+      throw { code: "llm.not_configured", severity: "error", params: {}, actions: [] };
+    });
+    const facade = baseFacade({ searchOnlineSourcesAssisted: assisted });
+    await renderSearched(facade);
+    await toggleAssist();
+    await click(screen.getByRole("button", { name: "搜索" }));
+
+    expect(await screen.findByText("PDF Reader")).toBeVisible();
+    const status = screen.getByRole("status");
+    expect(status).toHaveTextContent("AI 搜索助手尚未配置或凭据不可用，本次已使用普通搜索；以下结果仍然可用。");
+    expect(facade.searchOnlineSources).toHaveBeenCalledTimes(2);
+  });
+
+  it("announces the cancelled assist separately and keeps the plain results usable", async () => {
+    const assisted = vi.fn(async () => {
+      throw { code: "llm.cancelled", severity: "error", params: {}, actions: [] };
+    });
+    const facade = baseFacade({ searchOnlineSourcesAssisted: assisted });
+    await renderSearched(facade);
+    await toggleAssist();
+    await click(screen.getByRole("button", { name: "搜索" }));
+
+    expect(await screen.findByText("PDF Reader")).toBeVisible();
+    expect(
+      screen.getByText("AI 搜索已取消，已回退普通搜索；以下结果仍然可用。"),
+    ).toBeVisible();
+    expect(facade.searchOnlineSources).toHaveBeenCalledTimes(2);
+  });
+
+  it("classifies plain search failures with the native error copy instead of a generic line", async () => {
+    const facade = baseFacade({
+      searchOnlineSources: vi.fn(async () => {
+        throw { code: "network.disabled", severity: "error", params: {}, actions: [] };
+      }),
+    });
+    render(
+      <I18nextProvider i18n={createSkillHubI18nSync()}>
+        <OnlineDiscovery
+          facade={facade}
+          onImportDirectory={vi.fn()}
+          onStartImport={vi.fn()}
+        />
+      </I18nextProvider>,
+    );
+    fireEvent.change(screen.getByLabelText("搜索 skills.sh"), { target: { value: "pdf" } });
+    await click(screen.getByRole("button", { name: "搜索" }));
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("网络功能已关闭；需要在设置中开启后才能联网操作。");
+    expect(alert.textContent).not.toContain("network.disabled");
+    expect(screen.queryByText("PDF Reader")).not.toBeInTheDocument();
   });
 });

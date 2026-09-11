@@ -684,7 +684,12 @@ type: "failed",
               <p>{t("importWorkflow.aiPreCheck.unavailable")}</p>
             )}
             {aiPreCheckSkipped ? <p role="status">{t("importWorkflow.aiPreCheck.skippedNote")}</p> : null}
-            {aiPreCheckError ? <p role="alert">{aiPreCheckError}</p> : null}
+            {aiPreCheckError ? (
+              <>
+                <p role="alert">{aiPreCheckError}</p>
+                <p role="status">{t("importWorkflow.aiPreCheck.errorNote")}</p>
+              </>
+            ) : null}
             {aiPreCheck && !aiPreCheckSkipped ? (
               <div>
                 <p>
@@ -708,7 +713,13 @@ type: "failed",
                       {outcome.failureCode ? (
                         <span role="status">
                           {" · "}
-                          {t("importWorkflow.aiPreCheck.failure", { code: outcome.failureCode })}
+                          {t("importWorkflow.aiPreCheck.failureReadable", {
+                            reason: describeNativeError(
+                              { code: outcome.failureCode, severity: "error", params: {}, actions: [] },
+                              (key, options) => String(t(key as never, options as never)),
+                              "importWorkflow.aiPreCheck.failureUnknown",
+                            ),
+                          })}
                         </span>
                       ) : null}
                     </li>

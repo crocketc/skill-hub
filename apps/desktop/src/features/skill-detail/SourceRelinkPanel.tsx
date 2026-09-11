@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
+import { describeNativeError } from "../../api/nativeErrors";
 import { Button } from "../../ui/Button";
 
 export interface SourceRelinkFacade {
@@ -32,7 +33,15 @@ export function SourceRelinkPanel({ facade, skillId }: SourceRelinkPanelProps) {
       setDone(true);
       setSourceInput("");
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason));
+      // 结构化 AppError 直接 String() 会变成 "[object Object]"；统一走
+      // 分类文案，让失败原因以中英文可读形式呈现。
+      setError(
+        describeNativeError(
+          reason,
+          (key, options) => String(t(key as never, options as never)),
+          "skillDetail.sourceRelink.failureUnknown",
+        ),
+      );
       setDone(false);
     } finally {
       setPending(false);

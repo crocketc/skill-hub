@@ -604,7 +604,7 @@ describe("AI import pre-check", () => {
     expect(screen.queryByText(/已跳过 AI 预检/)).not.toBeInTheDocument();
   });
 
-  it("reports a failed object with its failure code without losing the rest", async () => {
+  it("reports a failed object with a readable reason without losing the rest", async () => {
     const facade = createMockImportFacade({ scenario: "safe-local" });
     facade.runAiPreChecks = vi.fn(async (plan: ImportPlan) => ({
       model: "test-model",
@@ -625,9 +625,46 @@ describe("AI import pre-check", () => {
     await user.click(screen.getByRole("button", { name: "运行 AI 预检" }));
 
     expect(
-      await screen.findByText(/预检失败（llm.request_timeout）；不影响其他对象/),
+      await screen.findByText(
+        /预检失败，其他对象不受影响：连接模型服务超时，请检查网络后重试。/,
+      ),
     ).toBeVisible();
     expect(screen.getByText("失败")).toBeVisible();
+    // 裸错误码不允许出现在用户界面上。
+    expect(screen.queryByText(/llm\.request_timeout/)).not.toBeInTheDocument();
+  });
+
+  it("explains that the deterministic gates survive a failed AI pre-check", async () => {
+    const facade = createMockImportFacade({ scenario: "safe-local" });
+    facade.runAiPreChecks = vi.fn(async () => {
+      throw { code: "llm.not_configured", severity: "error", params: {}, actions: [] };
+    });
+    const user = await reachConflicts(facade);
+
+    await user.click(screen.getByRole("button", { name: "运行 AI 预检" }));
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("尚未配置可用的 LLM 供应商，请先添加并启用供应商。");
+    expect(
+      screen.getByText("AI 预检未完成：以上确定性检查结果不受影响，可以直接继续导入。"),
+    ).toBeVisible();
+    expect(screen.getByRole("button", { name: "提交导入" })).toBeVisible();
+  });
+
+  it("renders unknown import failures with the generic import copy instead of the key name", async () => {
+    const user = userEvent.setup();
+    const facade = createMockImportFacade({ scenario: "safe-local" });
+    facade.acquireCandidates = vi.fn(async () => {
+      throw { code: "host.weird_failure", severity: "error", params: {}, actions: [] };
+    });
+    await renderWizard(facade);
+
+    await user.type(screen.getByLabelText("来源"), "C:/skills/pdf");
+    await user.click(screen.getByRole("button", { name: "解析来源" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "导入步骤未能完成（host.weird_failure）。",
+    );
   });
 
   it("keeps the wizard importable when the facade cannot run pre-checks", async () => {
