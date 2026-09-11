@@ -6,12 +6,16 @@
 
 /* —— 共享 SkillCard（T2 冻结契约）在库页的容器 —— */
 
-/* P1-11 根因修复：区块作为外壳网格的拉伸项被行高钳制（行不随内容生长），
-   内容纵向溢出区块自身、由外壳滚动，导致 --skill-batch-bar-height 预留的
-   padding-bottom 悬在区块盒底而不是内容之后——固定批量条因此遮挡分页/末行。
-   改为随内容生长（min-height 承接外壳行高），并以 align-self:start 脱离
-   行高钳制，预留空间重新跟随内容底部。宽屏（>90rem）内部滚动布局由
-   base.css 的显式 height:100% 保持，不受本变更影响。 */
+/* P1-11 根因修复，并如实统一滚动归属：本规则特异性 0,2,0，无条件覆盖
+   base.css 的 .sh-skill-library { height:100% }（0,1,0；媒体查询不改变
+   特异性），因此所有宽度（含 >90rem 真宽屏）都不存在“区块定高 + 表格内部
+   纵向滚动”分支：区块随内容生长（min-height 承接外壳行高），纵向滚动统一
+   由 .sh-app-shell__content（overflow-y:auto，全宽度生效）承担，表格区域
+   保持唯一横向滚动所有者（1600×900 E2E 几何断言锁定）。
+   背景：区块此前作为外壳 grid 的拉伸项被行高钳制（行不随内容生长），内容
+   纵向溢出区块盒，导致 --skill-batch-bar-height 预留的 padding-bottom 悬在
+   区块盒底而不是内容之后——固定批量条因此遮挡分页/末行；align-self:start
+   让区块脱离行高钳制，预留空间重新跟随内容底部。 */
 .sh-skill-library.sh-skill-library {
   height: auto;
   min-height: 100%;
