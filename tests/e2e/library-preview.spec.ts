@@ -25,7 +25,7 @@ test("skill library defaults to card view and switches to tagged card grouping",
   // 整卡不可点击：打开详情是操作区里的独立按钮。
   await expect(page.getByRole("button", { name: "View PDF Reader" })).toBeVisible();
 
-  await page.getByRole("combobox", { name: "Group by" }).selectOption("tags");
+  await page.getByRole("button", { name: "Group by tag" }).click();
   await expect(page.getByRole("heading", { name: "documents", exact: true })).toBeVisible();
   await expect(page.getByRole("heading", { name: "pdf", exact: true })).toBeVisible();
 });
@@ -33,7 +33,7 @@ test("skill library defaults to card view and switches to tagged card grouping",
 test("skill library keeps the professional table reachable with selection", async ({ page }) => {
   await page.goto("/__preview/skill-library");
 
-  await page.getByRole("combobox", { name: "View mode" }).selectOption("table");
+  await page.getByRole("button", { name: "Table view" }).click();
   await expect(page.getByRole("row", { name: /PDF Reader/ })).toBeVisible();
   await page.getByRole("checkbox", { name: "Select PDF Reader" }).check();
   const batchBar = page.getByRole("complementary", { name: "Batch actions" });

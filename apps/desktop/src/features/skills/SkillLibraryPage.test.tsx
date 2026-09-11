@@ -991,15 +991,71 @@ describe("SkillLibraryPage", () => {
     expect(nextWorkspace).toHaveStyle("--skill-batch-bar-height: 168px");
   });
 
-  it("uses the unified control classes for the save-view form and view selects", async () => {
+  it("uses the unified control classes for the save-view form and the mode switches", async () => {
     const facade = createMockSkillLibraryFacade();
     renderLibrary({ facade, persistedViewMode: "unset" });
 
     expect(await screen.findByTestId("skill-card-skill-pdf")).toBeVisible();
-    expect(screen.getByLabelText("View mode")).toHaveClass("sh-select");
-    expect(screen.getByLabelText(/Group by/)).toHaveClass("sh-select");
+    // P1-08：视图/分组切换是键盘可操作的分段按钮组（aria-pressed），不再是原生 select。
+    const viewSwitch = screen.getByRole("group", { name: "View mode" });
+    expect(within(viewSwitch).getByRole("button", { name: "Table view" })).toHaveAttribute("aria-pressed", "false");
+    expect(within(viewSwitch).getByRole("button", { name: "Card view" })).toHaveAttribute("aria-pressed", "true");
+    expect(within(viewSwitch).getByRole("button", { name: "Relations matrix" })).toHaveAttribute("aria-pressed", "false");
+    const groupSwitch = screen.getByRole("group", { name: /Group by/ });
+    expect(within(groupSwitch).getByRole("button", { name: "No grouping" })).toHaveAttribute("aria-pressed", "true");
     fireEvent.click(screen.getByRole("button", { name: "Save current view" }));
     expect(screen.getByRole("textbox", { name: "View name" })).toHaveClass("sh-input");
+  });
+
+  it("offers a current-page select-all in the card view with the same selection model", async () => {
+    const facade = createMockSkillLibraryFacade({ total: 80 });
+    renderLibrary({ facade, persistedViewMode: "unset" });
+
+    await screen.findByTestId("skill-card-skill-pdf");
+    expect(
+      screen.getByRole("checkbox", { name: "Select current page" }),
+    ).not.toBeChecked();
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select current page" }));
+    expect(screen.getByText("25 items selected on this page")).toBeVisible();
+    expect(screen.getByRole("complementary", { name: "Batch actions" })).toBeVisible();
+
+    // all_filtered/explicit 差集与表格视图共用同一 SkillSelection 模型。
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select PDF Reader" }));
+    expect(screen.getByText("24 items selected")).toBeVisible();
+  });
+
+  it("keeps the saved-views row collapsible while search and mode switches stay visible", async () => {
+    const facade = createMockSkillLibraryFacade();
+    renderLibrary({ facade });
+
+    await screen.findByRole("table");
+    const toggle = screen.getByRole("button", { name: "Collapse view bar" });
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByRole("button", { name: "Document tools" })).toBeVisible();
+
+    fireEvent.click(toggle);
+
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByRole("button", { name: "Document tools" })).not.toBeInTheDocument();
+    expect(screen.getByRole("searchbox", { name: "Search skills" })).toBeVisible();
+    expect(screen.getByRole("group", { name: "View mode" })).toBeVisible();
+  });
+
+  it("falls back to default view and group modes without error UI when preference reads fail", async () => {
+    const facade = createMockSkillLibraryFacade();
+    facade.loadViewMode = vi.fn(async () => {
+      throw new Error("view mode read failed");
+    });
+    facade.loadGroupMode = vi.fn(async () => {
+      throw new Error("group mode read failed");
+    });
+    renderLibrary({ facade, persistedViewMode: "unset" });
+
+    // 静默回退是需求允许的路径：默认卡片视图正常渲染，无错误 UI、无崩溃。
+    expect(await screen.findByTestId("skill-card-skill-pdf")).toBeVisible();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.getByRole("group", { name: "View mode" })).toBeVisible();
   });
 
   it("saves only the view scope and current table preferences", async () => {
@@ -1291,9 +1347,7 @@ describe("SkillLibraryPage", () => {
 
     await screen.findByTestId("skill-card-skill-pdf");
 
-    fireEvent.change(screen.getByLabelText("View mode"), {
-      target: { value: "table" },
-    });
+    fireEvent.click(screen.getByRole("button", { name: "Table view" }));
     expect(facade.saveViewMode).toHaveBeenCalledWith("table");
     expect(await screen.findByRole("table")).toBeVisible();
   });
@@ -1307,9 +1361,7 @@ describe("SkillLibraryPage", () => {
     );
     expect(screen.getByRole("complementary", { name: "Batch actions" })).toBeVisible();
 
-    fireEvent.change(screen.getByLabelText("View mode"), {
-      target: { value: "table" },
-    });
+    fireEvent.click(screen.getByRole("button", { name: "Table view" }));
     const table = await screen.findByRole("table");
     expect(table).toBeVisible();
     expect(screen.getByRole("checkbox", { name: "Select PDF Reader" })).toBeChecked();
@@ -1359,8 +1411,8 @@ describe("SkillLibraryPage", () => {
 
     // 等数据加载完成，再切换视图与分组
     await screen.findByRole("checkbox", { name: "Select PDF Reader" });
-    fireEvent.change(screen.getByLabelText(/View mode|视图模式/), { target: { value: "cards" } });
-    fireEvent.change(screen.getByLabelText(/Group by|分组方式/), { target: { value: "tags" } });
+    fireEvent.click(screen.getByRole("button", { name: "Card view" }));
+    fireEvent.click(screen.getByRole("button", { name: "Group by tag" }));
 
     expect(facade.saveGroupMode).toHaveBeenCalledWith("tags");
     const headings = await screen.findAllByRole("heading", { name: "documents" });

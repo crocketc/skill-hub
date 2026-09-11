@@ -17,9 +17,9 @@ import "./skills.css";
 import { Button } from "../../ui/Button";
 import { DataState } from "../../ui/DataState";
 import { Input } from "../../ui/Input";
-import { Select } from "../../ui/Select";
 import { describeNativeError } from "../../api/nativeErrors";
 import { NotificationCenter, useNotices } from "../../ui/NotificationCenter";
+import { Icon, type IconName } from "../../ui/Icon";
 import {
   detailSearchFromLibrary,
   readLibraryReturnState,
@@ -62,6 +62,7 @@ import {
   selectionToBatchTarget,
   selectExplicit,
   excludeFromAllFiltered,
+  setPageSelection,
   type SkillSelection,
 } from "./selection";
 import { SkillFilters } from "./SkillFilters";
@@ -127,6 +128,28 @@ const BATCH_ACTION_KEYS = {
   remove_tag: "skillLibrary.page.batch.removeTags",
   security_check: "skillLibrary.page.batch.securityCheck",
 } as const satisfies Record<BatchAction, string>;
+
+// P1-08：视图/分组切换的分段控件选项。视图用图标 + 可访问名，分组用短文本。
+const VIEW_MODE_OPTIONS: ReadonlyArray<{
+  icon: IconName;
+  labelKey:
+    | "skillLibrary.viewMode.table"
+    | "skillLibrary.viewMode.cards"
+    | "skillLibrary.viewMode.matrix";
+  mode: LibraryViewMode;
+}> = [
+  { icon: "operations", labelKey: "skillLibrary.viewMode.table", mode: "table" },
+  { icon: "library", labelKey: "skillLibrary.viewMode.cards", mode: "cards" },
+  { icon: "agents", labelKey: "skillLibrary.viewMode.matrix", mode: "matrix" },
+];
+
+const GROUP_MODE_OPTIONS: ReadonlyArray<{
+  labelKey: "skillLibrary.groupMode.none" | "skillLibrary.groupMode.tags";
+  mode: LibraryGroupMode;
+}> = [
+  { labelKey: "skillLibrary.groupMode.none", mode: "none" },
+  { labelKey: "skillLibrary.groupMode.tags", mode: "tags" },
+];
 
 function hasActiveFilter(query: SkillLibraryQuery): boolean {
   return skillFilterKey(query) !== skillFilterKey(DEFAULT_SKILL_QUERY);
@@ -429,6 +452,8 @@ export function SkillLibraryPage({
   // P1-11 通知规范：成功可消退、危险常驻可关闭；批量错误随选择变更撤销。
   const { dismissNoticesOfKind, dismissNotice, notices, pushNotice } = useNotices();
   const [batchTagAction, setBatchTagAction] = useState<BatchTagAction>();
+  // P1-08：工具栏第二行（已保存视图）可折叠；搜索与模式开关保持在第一行。
+  const [toolbarOpen, setToolbarOpen] = useState(true);
   const [saveViewOpen, setSaveViewOpen] = useState(false);
   const [saveViewName, setSaveViewName] = useState("");
   const [saveViewError, setSaveViewError] = useState<string>();
@@ -1205,18 +1230,103 @@ export function SkillLibraryPage({
       className={`sh-skill-library${selectedBatchTarget ? " sh-skill-library--batch-active" : ""}`}
       ref={rootRef}
     >
-      <div className="sh-skill-library__saved-views">
-        <SavedViews
-          activeViewId={query.savedViewId}
-          dirty={savedViewIsDirty(activeSavedView, query, effectiveTablePreferences)}
-          onApply={applyView}
-          onDelete={deleteSavedView}
-          onSave={() => {
-            setSaveViewError(undefined);
-            setSaveViewOpen(true);
-          }}
-          views={savedViews}
-        />
+      {deployTarget ? (
+        <p aria-live="polite" className="sh-notice" role="status">
+          {t("skillLibrary.page.deployTargetBanner", { label: deployTarget.label })}
+        </p>
+      ) : null}
+      {/* P1-08 工具栏重组：第一行 = 搜索（常驻）+ 视图/分组分段控件 + 组合入口
+          + 汇总 + 折叠开关；第二行（可折叠）= 已保存视图。查询语义不变。 */}
+      <div className="sh-skill-library__toolbar">
+        <div className="sh-skill-library__toolbar-main">
+          <SkillFilters
+            availableTags={page.facets.tags}
+            id="skill-library-filters"
+            onChange={updateQuery}
+            onClear={clearFilters}
+            query={query}
+            versionFilterSupported={capabilities?.versionFilterSupported ?? true}
+          />
+          <div
+            aria-label={t("skillLibrary.viewMode.label")}
+            className="sh-skill-library__mode-switch"
+            role="group"
+          >
+            {VIEW_MODE_OPTIONS.map((option) => (
+              <Button
+                aria-label={t(option.labelKey)}
+                aria-pressed={viewMode === option.mode}
+                key={option.mode}
+                onClick={() => changeViewMode(option.mode)}
+                size="sm"
+                title={t(option.labelKey)}
+                variant={viewMode === option.mode ? "secondary" : "ghost"}
+              >
+                <Icon aria-hidden="true" name={option.icon} size={16} />
+              </Button>
+            ))}
+          </div>
+          <div
+            aria-label={t("skillLibrary.groupMode.label")}
+            className="sh-skill-library__mode-switch"
+            role="group"
+          >
+            {GROUP_MODE_OPTIONS.map((option) => (
+              <Button
+                aria-pressed={groupMode === option.mode}
+                key={option.mode}
+                onClick={() => changeGroupMode(option.mode)}
+                size="sm"
+                variant={groupMode === option.mode ? "secondary" : "ghost"}
+              >
+                {t(option.labelKey)}
+              </Button>
+            ))}
+          </div>
+          {facade.listCombinations ? (
+            <Link className="sh-skill-library__combination-entry" to="/library/combinations">
+              {t("skillLibrary.combinations.managerEntry")}
+            </Link>
+          ) : null}
+          <section aria-label={t("skillLibrary.page.summary.label")} className="sh-skill-library__summary">
+            <span data-testid="library-summary-total">
+              {t("skillLibrary.page.summary.total", { count: page.total })}
+            </span>
+            <span data-testid="library-summary-tags">
+              {t("skillLibrary.page.summary.tags", { count: page.facets.tags.length })}
+            </span>
+          </section>
+          <button
+            aria-controls="sh-skill-library-toolbar-secondary"
+            aria-expanded={toolbarOpen}
+            className="sh-skill-library__toolbar-toggle sh-button sh-button--ghost sh-button--sm"
+            onClick={() => setToolbarOpen((open) => !open)}
+            type="button"
+          >
+            {toolbarOpen
+              ? t("skillLibrary.toolbar.collapse")
+              : t("skillLibrary.toolbar.expand")}
+          </button>
+        </div>
+        <div
+          className="sh-skill-library__toolbar-secondary"
+          hidden={!toolbarOpen}
+          id="sh-skill-library-toolbar-secondary"
+        >
+          <div className="sh-skill-library__saved-views">
+            <SavedViews
+              activeViewId={query.savedViewId}
+              dirty={savedViewIsDirty(activeSavedView, query, effectiveTablePreferences)}
+              onApply={applyView}
+              onDelete={deleteSavedView}
+              onSave={() => {
+                setSaveViewError(undefined);
+                setSaveViewOpen(true);
+              }}
+              views={savedViews}
+            />
+          </div>
+        </div>
       </div>
 
       {saveViewOpen ? (
@@ -1229,68 +1339,12 @@ export function SkillLibraryPage({
           pending={saveViewPending}
         />
       ) : null}
-
-      {facade.listCombinations ? (
-        <p className="sh-skill-library__combination-entry">
-          <Link to="/library/combinations">{t("skillLibrary.combinations.managerEntry")}</Link>
-        </p>
-      ) : null}
-
-      {deployTarget ? (
-        <p aria-live="polite" className="sh-notice" role="status">
-          {t("skillLibrary.page.deployTargetBanner", { label: deployTarget.label })}
-        </p>
-      ) : null}
-      <section aria-label={t("skillLibrary.page.summary.label")} className="sh-skill-library__summary">
-        <span data-testid="library-summary-total">
-          {t("skillLibrary.page.summary.total", { count: page.total })}
-        </span>
-        <span data-testid="library-summary-tags">
-          {t("skillLibrary.page.summary.tags", { count: page.facets.tags.length })}
-        </span>
-      </section>
-      <div className="sh-skill-library__view-toggle">
-        <label>
-          <span>{t("skillLibrary.viewMode.label")}</span>
-          <Select
-            aria-label={t("skillLibrary.viewMode.label")}
-            onChange={(event) => changeViewMode(event.currentTarget.value as LibraryViewMode)}
-            value={viewMode}
-          >
-            <option value="table">{t("skillLibrary.viewMode.table")}</option>
-            <option value="cards">{t("skillLibrary.viewMode.cards")}</option>
-            <option value="matrix">{t("skillLibrary.viewMode.matrix")}</option>
-          </Select>
-        </label>
-        <label>
-          <span>{t("skillLibrary.groupMode.label")}</span>
-          <Select
-            aria-label={t("skillLibrary.groupMode.label")}
-            onChange={(event) => changeGroupMode(event.currentTarget.value as LibraryGroupMode)}
-            value={groupMode}
-          >
-            <option value="none">{t("skillLibrary.groupMode.none")}</option>
-            <option value="tags">{t("skillLibrary.groupMode.tags")}</option>
-          </Select>
-        </label>
-      </div>
       {preferenceStatus}
       {selectionAnnouncement ? (
         <p className="sh-skill-library__announcement" role="status">
           {selectionAnnouncement}
         </p>
       ) : null}
-
-      <div className="sh-skill-library__query-tools">
-        <SkillFilters
-          availableTags={page.facets.tags}
-          id="skill-library-filters"
-          onChange={updateQuery}
-          onClear={clearFilters}
-          query={query}
-          versionFilterSupported={capabilities?.versionFilterSupported ?? true}
-        />
-      </div>
 
       {pageRefreshing ? (
         <SkillLibrarySkeleton />
@@ -1303,20 +1357,42 @@ export function SkillLibraryPage({
           />
       ) : null}
       {!pageRefreshing && viewMode === "cards" ? (
-        groupMode === "tags" ? (
-          [...groupedCards.entries()].map(([tag, groupItems]) => (
-            <section key={tag}>
-              <h3>{tag}</h3>
-              <div className="sh-skill-cards">
-                {groupItems.map((item) => renderSkillCard(item))}
-              </div>
-            </section>
-          ))
-        ) : (
-          <div className="sh-skill-cards" data-testid="skill-cards">
-            {page.items.map((item) => renderSkillCard(item))}
+        <>
+          {/* P1-08：卡片视图补齐与表格对等的“选择当前页”入口（共用选择模型）。 */}
+          <div className="sh-skill-cards__toolbar">
+            <label className="sh-skill-cards__select-page">
+              <input
+                aria-label={t("skillLibrary.table.selectCurrentPage")}
+                checked={page.items.length > 0 && page.items.every((item) => isSkillSelected(item.id))}
+                className="sh-control-checkbox"
+                onChange={(event) =>
+                  changeSelection(
+                    setPageSelection(
+                      selection,
+                      page.items.map((item) => item.id),
+                      event.currentTarget.checked,
+                    ),
+                  )}
+                type="checkbox"
+              />
+              <span>{t("skillLibrary.table.selectCurrentPage")}</span>
+            </label>
           </div>
-        )
+          {groupMode === "tags" ? (
+            [...groupedCards.entries()].map(([tag, groupItems]) => (
+              <section key={tag}>
+                <h3>{tag}</h3>
+                <div className="sh-skill-cards">
+                  {groupItems.map((item) => renderSkillCard(item))}
+                </div>
+              </section>
+            ))
+          ) : (
+            <div className="sh-skill-cards" data-testid="skill-cards">
+              {page.items.map((item) => renderSkillCard(item))}
+            </div>
+          )}
+        </>
       ) : null}
       {viewMode === "cards" ? (
         <SkillPagination

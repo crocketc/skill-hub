@@ -52,6 +52,10 @@
 .sh-skill-library .sh-skill-table__region {
   overflow-x: auto;
   overscroll-behavior-x: contain;
+  /* P1-08：滚动条必须可感知——细滚动条 + 主题色滑块，
+     保证 100% 比例下隐藏列能被用户发现并横向到达。 */
+  scrollbar-width: thin;
+  scrollbar-color: var(--ui-accent) var(--ui-surface-subtle);
 }
 
 /* base.css 的表格 min-width:max(84rem,100%) 与 14 列固定像素宽在 1280px 窗口
@@ -188,6 +192,59 @@
 
 /* —— 视图切换：可见标签 + 紧凑控件行（可键盘操作的原生 select） —— */
 
+/* P1-08 工具栏重组：单一工具栏，第一行常驻（搜索 + 模式开关 + 汇总 +
+   折叠开关），第二行（已保存视图）可折叠。查询语义不变。 */
+.sh-skill-library__toolbar {
+  display: grid;
+  min-width: 0;
+  gap: var(--space-2);
+}
+
+.sh-skill-library__toolbar-main {
+  display: flex;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: var(--space-3) var(--space-4);
+}
+
+.sh-skill-library__toolbar-main > .sh-skill-filters {
+  flex: 1 1 24rem;
+  min-width: 0;
+}
+
+.sh-skill-library__mode-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.sh-skill-library__mode-switch .sh-button {
+  min-width: 2rem;
+}
+
+.sh-skill-library__combination-entry {
+  margin: 0;
+  font-size: var(--font-size-sm);
+}
+
+.sh-skill-library__summary {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0 var(--space-3);
+  margin: 0;
+}
+
+.sh-skill-library__summary span {
+  color: var(--ui-ink-muted);
+  font-size: var(--font-size-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.sh-skill-library__toolbar-secondary[hidden] {
+  display: none;
+}
+
 .sh-skill-library__view-toggle {
   display: flex;
   flex-wrap: wrap;
@@ -217,6 +274,28 @@
 }
 
 /* —— 卡片视图分页（与表格分页共用 SkillPagination 语义） —— */
+
+/* P1-08：卡片视图的页级选择工具行。 */
+.sh-skill-cards__toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.sh-skill-cards__select-page {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--ui-ink-muted);
+  font-size: var(--font-size-xs);
+}
+
+.sh-skill-cards__select-page input {
+  inline-size: 1rem;
+  block-size: 1rem;
+  margin: 0;
+  accent-color: var(--ui-accent);
+}
 
 .sh-skill-pagination {
   display: flex;

@@ -37,16 +37,17 @@ test("view switching is keyboard operable and keeps the batch selection", async 
   const batchBar = page.getByRole("complementary", { name: "Batch actions" });
   await expect(batchBar).toContainText("1 item selected");
 
-  // 原生 select 即键盘路径：聚焦后输入首字母（原生 type-ahead）切换到表格视图。
-  const viewMode = page.getByRole("combobox", { name: "View mode" });
-  await viewMode.focus();
-  await page.keyboard.press("t");
+  // 分段控件即键盘路径：聚焦“Table view”按钮后按 Enter 切换到表格视图。
+  const tableButton = page.getByRole("button", { name: "Table view" });
+  await tableButton.focus();
+  await page.keyboard.press("Enter");
   await expect(page.getByRole("row", { name: /PDF Reader/ })).toBeVisible();
   await expect(page.getByRole("checkbox", { name: "Select PDF Reader" })).toBeChecked();
   await expect(batchBar).toBeVisible();
+  await expect(tableButton).toHaveAttribute("aria-pressed", "true");
 
   // 切回卡片视图，选择与批量栏保持。
-  await viewMode.selectOption("cards");
+  await page.getByRole("button", { name: "Card view" }).click();
   await expect(page.getByTestId("skill-card-skill-pdf")).toBeVisible();
   await expect(page.getByRole("checkbox", { name: "Select PDF Reader" })).toBeChecked();
   await expect(batchBar).toBeVisible();
@@ -117,7 +118,7 @@ test("card pagination stays reachable at the 600px minimum height", async ({ pag
 test("table mode keeps a single horizontal scroll owner and fits the default columns at 1280", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.goto(LIBRARY_ROUTE);
-  await page.getByRole("combobox", { name: "View mode" }).selectOption("table");
+  await page.getByRole("button", { name: "Table view" }).click();
 
   await expect(page.getByRole("row", { name: /PDF Reader/ })).toBeVisible();
   // 默认列集在 1280px 内只有一个横向滚动所有者且无溢出：
@@ -135,6 +136,38 @@ test("table mode keeps a single horizontal scroll owner and fits the default col
     }).length;
   });
   expect(scrollOwners).toBeLessThanOrEqual(1);
+});
+
+test("hidden table columns stay reachable through a visible horizontal scrollbar at 800", async ({ page }) => {
+  await page.setViewportSize({ width: 800, height: 900 });
+  await page.goto(LIBRARY_ROUTE);
+  await page.getByRole("button", { name: "Table view" }).click();
+
+  await expect(page.getByRole("row", { name: /PDF Reader/ })).toBeVisible();
+  const region = page.locator(".sh-skill-table__region");
+  // 滚动条可感知：细滚动条 + 主题色滑块（而非被隐藏样式吃掉）。
+  await expect(region).toHaveCSS("scrollbar-width", "thin");
+  // 800px 下默认列集必然溢出：最后一列经横向滚动进入视口。
+  const scrollable = await region.evaluate(
+    (element) => element.scrollWidth > element.clientWidth + 1,
+  );
+  expect(scrollable).toBe(true);
+  await region.evaluate((element) => {
+    element.scrollLeft = element.scrollWidth;
+  });
+  const securityVisible = await page.evaluate(() => {
+    const column = document.querySelector<HTMLElement>("th[data-column='security']");
+    const owner = document.querySelector<HTMLElement>(".sh-skill-table__region");
+    if (!column || !owner) return false;
+    const columnRect = column.getBoundingClientRect();
+    const ownerRect = owner.getBoundingClientRect();
+    return (
+      columnRect.right > ownerRect.left &&
+      columnRect.left < ownerRect.right &&
+      columnRect.left >= ownerRect.left - 1
+    );
+  });
+  expect(securityVisible).toBe(true);
 });
 
 test("card surfaces follow the theme tokens in the default and dark themes", async ({ page }) => {

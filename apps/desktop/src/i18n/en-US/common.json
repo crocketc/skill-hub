@@ -1128,11 +1128,15 @@
       "empty": "No deployment relations yet. Deploy a Skill to see the matrix.",
       "hint": "The matrix shows Skills on the current page; ✓ means the Skill is deployed to that target."
     },
-    "groupMode": {
-      "label": "Group by",
-      "none": "No grouping",
-      "tags": "Group by tag"
-    },
+  "groupMode": {
+    "label": "Group by",
+    "none": "No grouping",
+    "tags": "Group by tag"
+  },
+  "toolbar": {
+    "collapse": "Collapse view bar",
+    "expand": "Expand view bar"
+  },
     "combinations": {
       "managerEntry": "Combination manager",
       "managerEyebrow": "Combination manager",
