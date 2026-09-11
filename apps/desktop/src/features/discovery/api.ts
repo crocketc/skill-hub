@@ -8,12 +8,16 @@ import {
   type DiscoverySnapshot,
   type DownloadedRepoSkill,
   type LogicalTarget,
+  type OperationSummary,
   type RepoDiscoveryReport,
   type ScanResult,
+  type SearchCandidateRecord,
+  type SearchCandidateStatus,
   type SkillRepo,
   type SourceSearchPage,
   type SourceSearchQuery,
 } from "../../api/bindings";
+import { nativeErrorCode, nativeErrorParams } from "../../api/nativeErrors";
 
 /**
  * Contracts reused verbatim from the Rust ApplicationFacade:
@@ -42,6 +46,19 @@ export interface DiscoveryFacade {
    * 记录，绝不触碰目录中的用户文件；可通过既有忽略规则管理撤销。
    */
   createIgnoreRule: (path: string) => Promise<void>;
+  /**
+   * P1-05：搜索候选确认闭环（四个能力都可选；任一缺失时结果卡如实隐藏
+   * 登记/忽略动作，不渲染无效按钮）。候选确认只登记导入意向，成为来源
+   * 仍然只有导入向导提交这一条路。
+   */
+  /** 列出全部持久化候选（跨会话恢复，用于结果行状态徽标初始化）。 */
+  listSearchCandidates?: () => Promise<SearchCandidateRecord[]>;
+  /** 把一次搜索结果页落为候选；返回后端归并后的全量候选列表。 */
+  saveSearchCandidates?: (page: SourceSearchPage) => Promise<SearchCandidateRecord[]>;
+  /** pending/confirmed → confirmed（幂等）；dismissed → confirmed 被原生层拒绝。 */
+  confirmSearchCandidate?: (candidateId: string) => Promise<OperationSummary>;
+  /** 任意非 dismissed 状态 → dismissed；dismissed → dismissed 幂等成功。 */
+  dismissSearchCandidate?: (candidateId: string) => Promise<OperationSummary>;
 }
 
 export const desktopDiscoveryFacade: DiscoveryFacade = {
@@ -155,11 +172,85 @@ export const desktopDiscoveryFacade: DiscoveryFacade = {
       throw new Error("Unexpected ignore rule response from the native application.");
     }
   },
+  async listSearchCandidates() {
+    const result = await queryApplication({ type: "list_search_candidates", payload: null });
+    if (result.type !== "search_candidates") {
+      throw new Error("Unexpected search candidates response from the native application.");
+    }
+    return result.payload;
+  },
+  async saveSearchCandidates(page) {
+    const result = await executeCommand({
+      type: "save_search_candidates",
+      payload: { page },
+    });
+    if (result.type !== "search_candidates") {
+      throw new Error("Unexpected saved search candidates response from the native application.");
+    }
+    return result.payload;
+  },
+  async confirmSearchCandidate(candidateId) {
+    const result = await executeCommand({
+      type: "confirm_search_candidate",
+      payload: { candidate_id: candidateId },
+    });
+    if (result.type !== "operation_summary") {
+      throw new Error("Unexpected candidate confirmation response from the native application.");
+    }
+    return result.payload;
+  },
+  async dismissSearchCandidate(candidateId) {
+    const result = await executeCommand({
+      type: "dismiss_search_candidate",
+      payload: { candidate_id: candidateId },
+    });
+    if (result.type !== "operation_summary") {
+      throw new Error("Unexpected candidate dismissal response from the native application.");
+    }
+    return result.payload;
+  },
 };
 
 export interface FormatObservedAtOptions {
   locale?: string;
   timeZone?: string;
+}
+
+/**
+ * P1-05：结果行需要追踪的候选切片。candidate id 由后端按
+ * provider+provider_source_id 派生（sha256），前端不重算、只透传；
+ * 归并键用 provider_source_id（即 SourceSearchHit.source_id）。
+ */
+export interface CandidateEntry {
+  id: string;
+  status: SearchCandidateStatus;
+}
+
+/**
+ * 把后端返回的候选记录归并进既有索引（key = provider_source_id），
+ * 总是产生新 Map，不改写入参。save_search_candidates 返回全量列表，
+ * 直接整体合并即可拿到与本页命中对应的最新状态。
+ */
+export function mergeCandidateEntries(
+  prev: Map<string, CandidateEntry>,
+  records: SearchCandidateRecord[],
+): Map<string, CandidateEntry> {
+  const next = new Map(prev);
+  for (const record of records) {
+    next.set(record.provider_source_id, { id: record.id, status: record.status });
+  }
+  return next;
+}
+
+/**
+ * P1-05：识别“已忽略的候选不能再次确认”的原生冲突
+ * （operation.conflict + params.reason=candidate_dismissed）。该冲突在
+ * keyedMessage 中没有专属映射，必须在 describeNativeError 之前拦截，
+ * 否则用户会看到裸错误码。
+ */
+export function isCandidateDismissedConflict(reason: unknown): boolean {
+  return nativeErrorCode(reason) === "operation.conflict"
+    && nativeErrorParams(reason).reason === "candidate_dismissed";
 }
 
 /**

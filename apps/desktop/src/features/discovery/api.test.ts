@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
-import type { DiscoverySnapshot } from "../../api/bindings";
-import { buildAgentGroups, formatObservedAt } from "./api";
+import type { DiscoverySnapshot, SearchCandidateRecord } from "../../api/bindings";
+import {
+  buildAgentGroups,
+  formatObservedAt,
+  isCandidateDismissedConflict,
+  mergeCandidateEntries,
+} from "./api";
 
 /**
  * P1-04：发现快照的 observed_at 有两种历史形态——ISO 字符串与
@@ -164,5 +169,73 @@ describe("buildAgentGroups", () => {
     );
     expect(empty.available).toEqual([]);
     expect(empty.unavailable).toEqual([]);
+  });
+});
+
+/**
+ * P1-05：候选确认闭环的纯函数。candidate id 由后端派生（sha256），
+ * 前端只能按 provider_source_id（即 hit.source_id）归并；
+ * dismissed→confirmed 被原生层拒绝（OperationConflict reason=candidate_dismissed），
+ * UI 必须在调用 describeNativeError 之前识别该冲突并给出专属文案。
+ */
+describe("search candidate helpers", () => {
+  const conflictError = {
+    code: "operation.conflict",
+    severity: "warning",
+    params: { reason: "candidate_dismissed", candidate_id: "candidate:abc" },
+    actions: ["acknowledge"],
+  };
+
+  it("detects the candidate_dismissed conflict across error shapes", () => {
+    expect(isCandidateDismissedConflict(conflictError)).toBe(true);
+    expect(isCandidateDismissedConflict(new Error(JSON.stringify(conflictError)))).toBe(true);
+    expect(isCandidateDismissedConflict(JSON.stringify(conflictError))).toBe(true);
+  });
+
+  it("keeps other conflicts and opaque failures out of the dismissed branch", () => {
+    expect(
+      isCandidateDismissedConflict({
+        code: "operation.conflict",
+        severity: "warning",
+        params: { reason: "no_upstream_source" },
+        actions: [],
+      }),
+    ).toBe(false);
+    expect(
+      isCandidateDismissedConflict({
+        code: "object.not_found",
+        severity: "warning",
+        params: { kind: "search candidate" },
+        actions: [],
+      }),
+    ).toBe(false);
+    expect(isCandidateDismissedConflict("ipc down")).toBe(false);
+    expect(isCandidateDismissedConflict(null)).toBe(false);
+  });
+
+  it("merges candidate records by provider_source_id without mutating the previous map", () => {
+    const record = (sourceId: string, id: string, status: SearchCandidateRecord["status"]): SearchCandidateRecord => ({
+      id,
+      provider: "skills_sh",
+      provider_source_id: sourceId,
+      name: sourceId,
+      source: { kind: "https", locator: { https_url: "https://example.test/repo" } },
+      page_url: "https://example.test",
+      installs: 1,
+      via: "original_query",
+      first_seen_at: "1789114968",
+      status,
+    });
+    const prev = new Map([["a", { id: "c1", status: "confirmed" as const }]]);
+
+    const merged = mergeCandidateEntries(prev, [
+      record("a", "c1", "dismissed"),
+      record("b", "c2", "pending"),
+    ]);
+
+    expect(merged.get("a")).toEqual({ id: "c1", status: "dismissed" });
+    expect(merged.get("b")).toEqual({ id: "c2", status: "pending" });
+    // 旧映射不被改写：合并总是产生新 Map。
+    expect(prev.get("a")).toEqual({ id: "c1", status: "confirmed" });
   });
 });

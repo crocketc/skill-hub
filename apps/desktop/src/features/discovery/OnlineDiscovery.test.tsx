@@ -2,7 +2,12 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import { I18nextProvider } from "react-i18next";
 import { describe, expect, it, vi } from "vitest";
 import { createSkillHubI18n } from "../../i18n";
-import type { DownloadedRepoSkill, SourceSearchPage } from "../../api/bindings";
+import type {
+  DownloadedRepoSkill,
+  OperationSummary,
+  SearchCandidateRecord,
+  SourceSearchPage,
+} from "../../api/bindings";
 import { OnlineDiscovery, parseGitHubRepoTree, toRepoSkill } from "./OnlineDiscovery";
 import type { DiscoveryFacade } from "./api";
 
@@ -477,5 +482,225 @@ describe("AI search assist", () => {
     expect(alert).toHaveTextContent("网络功能已关闭；需要在设置中开启后才能联网操作。");
     expect(alert.textContent).not.toContain("network.disabled");
     expect(screen.queryByText("PDF Reader")).not.toBeInTheDocument();
+  });
+});
+
+describe("search candidate confirmation loop (P1-05)", () => {
+  const candidateTestId = `candidate-${hit.source_id}`;
+  const confirmedSummary: OperationSummary = {
+    operation_id: "op-confirm",
+    phase: "committed",
+    message_code: "source.search_candidate_confirmed",
+    error_code: null,
+  };
+  const dismissedSummary: OperationSummary = {
+    operation_id: "op-dismiss",
+    phase: "committed",
+    message_code: "source.search_candidate_dismissed",
+    error_code: null,
+  };
+  /** 与后端 search_candidates 表行同构：candidate id 由后端派生，前端只透传。 */
+  function candidateRecord(overrides: Partial<SearchCandidateRecord> = {}): SearchCandidateRecord {
+    return {
+      id: "candidate:abc123",
+      provider: "skills_sh",
+      provider_source_id: hit.source_id,
+      name: hit.name,
+      source: hit.source,
+      page_url: hit.page_url,
+      installs: 42,
+      via: "original_query",
+      first_seen_at: "1789114968",
+      status: "pending",
+      ...overrides,
+    };
+  }
+
+  function candidateBaseFacade(overrides: Partial<DiscoveryFacade> = {}): DiscoveryFacade {
+    return baseFacade({
+      listSearchCandidates: vi.fn(async () => [] as SearchCandidateRecord[]),
+      saveSearchCandidates: vi.fn(async () => [] as SearchCandidateRecord[]),
+      confirmSearchCandidate: vi.fn(async () => confirmedSummary),
+      dismissSearchCandidate: vi.fn(async () => dismissedSummary),
+      ...overrides,
+    });
+  }
+
+  it("saves an unsaved hit as a candidate and confirms it in one action", async () => {
+    const saveSearchCandidates = vi.fn(async () => [candidateRecord()]);
+    const confirmSearchCandidate = vi.fn(async () => confirmedSummary);
+    await renderSearched(candidateBaseFacade({ saveSearchCandidates, confirmSearchCandidate }));
+
+    // 尚未保存过：结果行没有候选徽标。
+    expect(screen.queryByText("候选待确认")).not.toBeInTheDocument();
+    await click(screen.getByRole("button", { name: "登记为来源" }));
+
+    expect(saveSearchCandidates).toHaveBeenCalledTimes(1);
+    expect(saveSearchCandidates).toHaveBeenCalledWith(page);
+    expect(confirmSearchCandidate).toHaveBeenCalledTimes(1);
+    expect(confirmSearchCandidate).toHaveBeenCalledWith("candidate:abc123");
+    expect(await screen.findByTestId(candidateTestId)).toHaveTextContent("已登记");
+    const notice = screen.getByRole("status");
+    expect(notice).toHaveTextContent("已登记「PDF Reader」为来源");
+    expect(notice).toHaveTextContent("Skill 详情");
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("re-confirms an already registered candidate without side effects", async () => {
+    const saveSearchCandidates = vi.fn(async () => [candidateRecord()]);
+    const confirmSearchCandidate = vi.fn(async () => confirmedSummary);
+    await renderSearched(candidateBaseFacade({
+      listSearchCandidates: vi.fn(async () => [candidateRecord({ status: "confirmed" })]),
+      saveSearchCandidates,
+      confirmSearchCandidate,
+    }));
+
+    // 加载时即按 confirmed 初始化：徽标与按钮都呈现已登记态。
+    expect(screen.getByTestId(candidateTestId)).toHaveTextContent("已登记");
+    await click(screen.getByRole("button", { name: "已登记" }));
+
+    // 后端幂等：重复确认仍成功，且绝不重复落候选。
+    expect(confirmSearchCandidate).toHaveBeenCalledTimes(1);
+    expect(confirmSearchCandidate).toHaveBeenCalledWith("candidate:abc123");
+    expect(saveSearchCandidates).not.toHaveBeenCalled();
+    expect(screen.getByTestId(candidateTestId)).toHaveTextContent("已登记");
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("initializes candidate badges from list_search_candidates at load", async () => {
+    const dismissedHit = { ...hit, source_id: "skills.sh/acme/docx", name: "Docx Reader" };
+    const twoHitsPage: SourceSearchPage = { ...page, items: [hit, dismissedHit], count: 2 };
+    const listSearchCandidates = vi.fn(async () => [
+      candidateRecord(),
+      candidateRecord({
+        id: "candidate:def456",
+        provider_source_id: dismissedHit.source_id,
+        name: dismissedHit.name,
+        page_url: dismissedHit.page_url,
+        status: "dismissed" as const,
+      }),
+    ]);
+    render(
+      <I18nextProvider i18n={createSkillHubI18nSync()}>
+        <OnlineDiscovery
+          facade={candidateBaseFacade({
+            listSearchCandidates,
+            searchOnlineSources: vi.fn(async () => twoHitsPage),
+          })}
+          onImportDirectory={vi.fn()}
+          onStartImport={vi.fn()}
+        />
+      </I18nextProvider>,
+    );
+
+    // 挂载即加载候选，不等第一次搜索。
+    await waitFor(() => expect(listSearchCandidates).toHaveBeenCalledTimes(1));
+    fireEvent.change(screen.getByLabelText("搜索 skills.sh"), { target: { value: "pdf" } });
+    await click(screen.getByRole("button", { name: "搜索" }));
+    await screen.findByText("PDF Reader");
+
+    expect(screen.getByTestId(candidateTestId)).toHaveTextContent("候选待确认");
+    expect(screen.getByTestId(`candidate-${dismissedHit.source_id}`)).toHaveTextContent("已忽略");
+
+    // 已忽略的行：登记入口被禁用并解释原因，不再提供忽略按钮。
+    const dismissedCard = screen
+      .getByTestId(`candidate-${dismissedHit.source_id}`)
+      .closest("article");
+    expect(dismissedCard).not.toBeNull();
+    const dismissedScope = within(dismissedCard as HTMLElement);
+    const dismissedRegister = dismissedScope.getByRole("button", { name: "登记为来源" });
+    expect(dismissedRegister).toBeDisabled();
+    expect(dismissedRegister).toHaveAttribute(
+      "title",
+      "已忽略的候选不能再登记为来源；如需使用请通过“安装导入”进入导入向导。",
+    );
+    expect(dismissedScope.queryByRole("button", { name: "忽略" })).not.toBeInTheDocument();
+
+    // 待确认的行：登记与忽略都可用。
+    const pendingCard = screen.getByTestId(candidateTestId).closest("article");
+    expect(pendingCard).not.toBeNull();
+    expect(within(pendingCard as HTMLElement).getByRole("button", { name: "登记为来源" })).toBeEnabled();
+    expect(within(pendingCard as HTMLElement).getByRole("button", { name: "忽略" })).toBeEnabled();
+  });
+
+  it("dismisses a pending candidate and keeps the dismissed state across a new search", async () => {
+    const dismissSearchCandidate = vi.fn(async () => dismissedSummary);
+    await renderSearched(candidateBaseFacade({
+      listSearchCandidates: vi.fn(async () => [candidateRecord()]),
+      dismissSearchCandidate,
+    }));
+
+    await click(screen.getByRole("button", { name: "忽略" }));
+
+    expect(dismissSearchCandidate).toHaveBeenCalledTimes(1);
+    expect(dismissSearchCandidate).toHaveBeenCalledWith("candidate:abc123");
+    expect(screen.getByTestId(candidateTestId)).toHaveTextContent("已忽略");
+    const notice = await screen.findByRole("status");
+    expect(notice).toHaveTextContent("已忽略「PDF Reader」");
+    expect(notice).toHaveTextContent("再次搜索不会重置忽略状态");
+    expect(screen.getByRole("button", { name: "登记为来源" })).toBeDisabled();
+
+    // 与后端语义一致：再次搜索不把已忽略的候选重置回待确认。
+    await click(screen.getByRole("button", { name: "搜索" }));
+    await screen.findByText("PDF Reader");
+    expect(screen.getByTestId(candidateTestId)).toHaveTextContent("已忽略");
+  });
+
+  it("explains the candidate_dismissed conflict instead of showing a bare code", async () => {
+    const confirmSearchCandidate = vi.fn(async () => {
+      throw {
+        code: "operation.conflict",
+        severity: "warning",
+        params: { reason: "candidate_dismissed", candidate_id: "candidate:abc123" },
+        actions: ["acknowledge"],
+      };
+    });
+    await renderSearched(candidateBaseFacade({
+      // 本地仍是 pending（例如另一窗口刚刚忽略），确认在原生层被拒。
+      listSearchCandidates: vi.fn(async () => [candidateRecord()]),
+      confirmSearchCandidate,
+    }));
+
+    await click(screen.getByRole("button", { name: "登记为来源" }));
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("已被忽略");
+    expect(alert).toHaveTextContent("不能再次登记为来源");
+    expect(alert.textContent).not.toContain("candidate_dismissed");
+    expect(alert.textContent).not.toContain("operation.conflict");
+    // 行状态同步为已忽略，登记入口随之关闭。
+    expect(screen.getByTestId(candidateTestId)).toHaveTextContent("已忽略");
+    expect(screen.getByRole("button", { name: "登记为来源" })).toBeDisabled();
+  });
+
+  it("does not confirm when saving reveals the candidate was already dismissed", async () => {
+    const saveSearchCandidates = vi.fn(async () => [candidateRecord({ status: "dismissed" as const })]);
+    const confirmSearchCandidate = vi.fn(async () => confirmedSummary);
+    await renderSearched(candidateBaseFacade({ saveSearchCandidates, confirmSearchCandidate }));
+
+    await click(screen.getByRole("button", { name: "登记为来源" }));
+
+    expect(saveSearchCandidates).toHaveBeenCalledWith(page);
+    // 保存返回的全量列表已说明是已忽略态：不再发起注定失败的确认。
+    expect(confirmSearchCandidate).not.toHaveBeenCalled();
+    expect(await screen.findByRole("alert")).toHaveTextContent("已被忽略");
+    expect(screen.getByTestId(candidateTestId)).toHaveTextContent("已忽略");
+  });
+
+  it("surfaces opaque candidate failures through the localized generic message", async () => {
+    const confirmSearchCandidate = vi.fn(async () => {
+      throw "ipc down";
+    });
+    await renderSearched(candidateBaseFacade({
+      listSearchCandidates: vi.fn(async () => [candidateRecord()]),
+      confirmSearchCandidate,
+    }));
+
+    await click(screen.getByRole("button", { name: "登记为来源" }));
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("候选操作失败（unknown），请稍后重试。");
+    // 未知失败不改写本地状态：徽标保持待确认，不臆造状态机。
+    expect(screen.getByTestId(candidateTestId)).toHaveTextContent("候选待确认");
   });
 });

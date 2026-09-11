@@ -376,7 +376,21 @@
       "singleInstallGuide": "Single skill install: only this skill is imported, not other skills from the repository.",
       "searchingStatus": "Searching…",
       "empty": "No matching results.",
-      "initialHint": "Type a keyword to search skills.sh"
+      "initialHint": "Type a keyword to search skills.sh",
+      "candidate": {
+        "registerAction": "Register as source",
+        "registeredAction": "Registered",
+        "registeredHint": "Registered as a source; clicking again has no side effect.",
+        "registerUnavailableHint": "A dismissed candidate cannot be registered as a source again; use \"Install & import\" to go through the import wizard.",
+        "dismissAction": "Dismiss",
+        "badgePending": "Candidate pending",
+        "badgeConfirmed": "Registered",
+        "badgeDismissed": "Dismissed",
+        "registerSucceeded": "Registered \"{{name}}\" as a source: the source record appears in the skill detail once the import completes.",
+        "dismissSucceeded": "Dismissed \"{{name}}\"; searching again will not reset the dismissed state.",
+        "dismissedConflict": "The candidate \"{{name}}\" was dismissed and cannot be registered as a source again; use \"Install & import\" to go through the import wizard.",
+        "failed": "Candidate action failed ({{code}}). Please try again later."
+      }
     },
     "workbench": {
       "title": "Local discovery workbench",

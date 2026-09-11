@@ -376,7 +376,21 @@
       "singleInstallGuide": "单 Skill 安装：仅导入该 Skill 本身，不包含仓库内其他 Skill。",
       "searchingStatus": "正在搜索…",
       "empty": "没有匹配的结果。",
-      "initialHint": "输入关键词后搜索 skills.sh"
+      "initialHint": "输入关键词后搜索 skills.sh",
+      "candidate": {
+        "registerAction": "登记为来源",
+        "registeredAction": "已登记",
+        "registeredHint": "已登记为来源；再次点击不会产生副作用。",
+        "registerUnavailableHint": "已忽略的候选不能再登记为来源；如需使用请通过“安装导入”进入导入向导。",
+        "dismissAction": "忽略",
+        "badgePending": "候选待确认",
+        "badgeConfirmed": "已登记",
+        "badgeDismissed": "已忽略",
+        "registerSucceeded": "已登记「{{name}}」为来源：完成导入后可在 Skill 详情查看来源记录。",
+        "dismissSucceeded": "已忽略「{{name}}」；再次搜索不会重置忽略状态。",
+        "dismissedConflict": "「{{name}}」的候选已被忽略，不能再次登记为来源；如需使用请通过“安装导入”进入导入向导。",
+        "failed": "候选操作失败（{{code}}），请稍后重试。"
+      }
     },
     "workbench": {
       "title": "本机发现工作台",
