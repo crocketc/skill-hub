@@ -214,6 +214,15 @@
   list-style: none;
 }
 
+/* P1-04：逐仓失败行——可读原因 + 独立重试按钮。 */
+.sh-discovery-repos__warnings li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
 /* 本机发现子页的事实清单（只读边界说明）。 */
 .sh-discovery-facts {
   display: grid;

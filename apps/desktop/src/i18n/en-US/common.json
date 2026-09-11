@@ -440,7 +440,15 @@
       "confirmRemoveTitle": "Remove repository",
       "confirmRemove": "Confirm removal",
       "confirmRemoveDescription": "{{repo}} will be removed from the discovery list. Already imported Skills are not deleted.",
-      "warning": "{{repo}} failed to scan: {{reason}}",
+      "warningReason": {
+        "notFound": "The repository or branch does not exist; it may have been deleted, renamed, or the branch is unavailable.",
+        "timeout": "The download timed out. Please try again later.",
+        "network": "The network is disabled or unreachable; enable network in Settings and retry.",
+        "unknown": "Unclassified failure reason: {{reason}}"
+      },
+      "retry": "Retry",
+      "retrying": "Retrying…",
+      "retryAria": "Retry scanning {{repo}}",
       "noResults": "No Skills found in the enabled repositories.",
       "results": "Scan results",
       "downloadImport": "Download & import",

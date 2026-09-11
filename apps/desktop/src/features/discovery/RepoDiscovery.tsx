@@ -18,6 +18,27 @@ export interface RepoDiscoveryProps {
 }
 
 /**
+ * P1-04：把后端逐仓失败原因（原始错误串）映射为可读分类文案；
+ * 已知分类不再展示原始串，未分类原因保留原始串方便诊断，绝不静默。
+ */
+export function describeRepoWarning(
+  reason: string,
+  translate: (key: string, options?: Record<string, unknown>) => string,
+): string {
+  const normalized = reason.toUpperCase();
+  if (normalized.includes("404") || normalized.includes("NOT_FOUND")) {
+    return translate("discovery.repo.warningReason.notFound");
+  }
+  if (normalized.includes("TIMEOUT")) {
+    return translate("discovery.repo.warningReason.timeout");
+  }
+  if (normalized.includes("NETWORK")) {
+    return translate("discovery.repo.warningReason.network");
+  }
+  return translate("discovery.repo.warningReason.unknown", { reason });
+}
+
+/**
  * FE-07 仓库发现：管理 GitHub 仓库列表（CRUD + 启用开关），下载仓库归档
  * 扫描 SKILL.md 生成可导入列表。下载只写入本机临时目录；导入必须经用户
  * 显式进入既有导入向导完成。单仓库失败仅告警，不拖垮整体。
@@ -38,6 +59,8 @@ export function RepoDiscovery({ facade, onImportDirectory }: RepoDiscoveryProps)
   } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pendingRemoval, setPendingRemoval] = useState<SkillRepo | null>(null);
+  // P1-04：逐仓重试进行中的 key（owner/name）。
+  const [retryingKey, setRetryingKey] = useState<string | null>(null);
 
   // describeNativeError 以动态键调用翻译；i18next 的强类型键联合在此收窄。
   const describe = useCallback(
@@ -91,6 +114,44 @@ export function RepoDiscovery({ facade, onImportDirectory }: RepoDiscoveryProps)
       setDiscovering(false);
     }
   }, [describe, facade]);
+
+  // P1-04：逐仓重试——复用整体发现查询（仓库列表小，成本可接受），
+  // 但只替换该仓库的 skills/warnings 行，不影响其他仓库的展示。
+  const retryRepo = useCallback(
+    async (warning: { owner: string; name: string; reason: string }) => {
+      const key = `${warning.owner}/${warning.name}`;
+      setRetryingKey(key);
+      setError(null);
+      try {
+        const result = await facade.discoverRepoSkills();
+        setReport((current) => current
+          ? {
+              skills: [
+                ...current.skills.filter(
+                  (entry) => !(entry.repo_owner === warning.owner && entry.repo_name === warning.name),
+                ),
+                ...result.skills.filter(
+                  (entry) => entry.repo_owner === warning.owner && entry.repo_name === warning.name,
+                ),
+              ],
+              warnings: [
+                ...current.warnings.filter(
+                  (entry) => !(entry.owner === warning.owner && entry.name === warning.name),
+                ),
+                ...result.warnings.filter(
+                  (entry) => entry.owner === warning.owner && entry.name === warning.name,
+                ),
+              ],
+            }
+          : current);
+      } catch (reason) {
+        setError(describe(reason));
+      } finally {
+        setRetryingKey(null);
+      }
+    },
+    [describe, facade],
+  );
 
   const addRepo = useCallback(async () => {
     if (!owner.trim() || !name.trim()) return;
@@ -275,14 +336,29 @@ export function RepoDiscovery({ facade, onImportDirectory }: RepoDiscoveryProps)
           <>
             {report.warnings.length > 0 ? (
               <ul className="sh-discovery-repos__warnings">
-                {report.warnings.map((warning) => (
-                  <li key={`${warning.owner}/${warning.name}`}>
-                    {t("discovery.repo.warning", {
-                      repo: `${warning.owner}/${warning.name}`,
-                      reason: warning.reason,
-                    })}
-                  </li>
-                ))}
+                {report.warnings.map((warning) => {
+                  const repoLabel = `${warning.owner}/${warning.name}`;
+                  return (
+                    <li key={repoLabel}>
+                      <span>
+                        <strong>{repoLabel}</strong>
+                        {" "}
+                        {describeRepoWarning(warning.reason, (key, options) =>
+                          String(t(key as never, options as never)))}
+                      </span>
+                      <Button
+                        aria-label={t("discovery.repo.retryAria", { repo: repoLabel })}
+                        disabled={retryingKey !== null || discovering}
+                        onClick={() => void retryRepo(warning)}
+                        variant="secondary"
+                      >
+                        {retryingKey === repoLabel
+                          ? t("discovery.repo.retrying")
+                          : t("discovery.repo.retry")}
+                      </Button>
+                    </li>
+                  );
+                })}
               </ul>
             ) : null}
             {report.skills.length === 0 ? <p>{t("discovery.repo.noResults")}</p> : null}

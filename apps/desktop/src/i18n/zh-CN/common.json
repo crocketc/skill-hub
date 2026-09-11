@@ -440,7 +440,15 @@
       "confirmRemoveTitle": "移除仓库",
       "confirmRemove": "确认移除",
       "confirmRemoveDescription": "将从发现列表移除 {{repo}}。这只影响发现入口，不会删除已导入的 Skill。",
-      "warning": "{{repo}} 扫描失败：{{reason}}",
+      "warningReason": {
+        "notFound": "仓库或分支不存在，可能已删除、改名或分支不可用。",
+        "timeout": "下载超时，请稍后重试。",
+        "network": "网络未开启或不可达；请在设置中开启网络后重试。",
+        "unknown": "失败原因未分类：{{reason}}"
+      },
+      "retry": "重试",
+      "retrying": "重试中…",
+      "retryAria": "重试扫描 {{repo}}",
       "noResults": "已启用仓库中未发现 Skill。",
       "results": "扫描结果",
       "downloadImport": "下载并导入",
