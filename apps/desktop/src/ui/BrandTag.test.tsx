@@ -66,6 +66,18 @@ it("renders the bundled logo asset for known brands", () => {
   expect(icon).toHaveAttribute("src", "/brand/agents/lobehub/openai.svg");
 });
 
+// P1-06（验收反馈"品牌图标再大一些"）：Logo 从 16px 放大到 20px，
+// CSS 与 img 属性必须同步，避免样式漂移。
+it("renders the brand logo at the enlarged 20px size", () => {
+  const { container } = render(<BrandTag brand="openai" />);
+
+  const icon = container.querySelector(".sh-brand-tag__icon");
+  expect(icon).toHaveAttribute("width", "20");
+  expect(icon).toHaveAttribute("height", "20");
+  const rule = brandCss.match(/\.sh-brand-tag__icon\s*{([^}]*)}/);
+  expect(rule?.[1]).toContain("1.25rem");
+});
+
 it("maps zcode to the zai logo asset", () => {
   const { container } = render(<BrandTag brand="zcode" />);
 

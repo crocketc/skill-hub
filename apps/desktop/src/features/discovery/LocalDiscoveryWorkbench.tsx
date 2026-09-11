@@ -1,11 +1,18 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { describeNativeError } from "../../api/nativeErrors";
 import { Button } from "../../ui/Button";
-import type { DiscoveredSkill } from "../../api/bindings";
+import { ConfirmDialog } from "../../ui/ConfirmDialog";
+import { BrandTag } from "../../ui/BrandTag";
+import { AgentKindBadge } from "../../ui/AgentKindBadge";
+import type { DiscoverySnapshot, DiscoveredSkill } from "../../api/bindings";
 import {
+  buildAgentGroups,
   classifyScan,
   formatObservedAt,
   parseObservedAt,
+  type AgentBrandGroup,
+  type AgentTargetCard,
   type DiscoveryFacade,
   type ScanClassification,
 } from "./api";
@@ -16,33 +23,19 @@ export interface LocalDiscoveryWorkbenchProps {
   onReviewCandidates?: (candidates: DiscoveredSkill[]) => void;
 }
 
-/**
- * P1-04：本地化展示扫描时间。observed_at 可能是 ISO、epoch 秒串或
- * 无法解析的脏数据——前两者渲染为 `<time>`，后者显示明确占位而非
- * 原始串。
- */
-function renderObservedAt(
-  observedAt: string,
-  t: (key: "discovery.workbench.timeUnknown") => string,
-): JSX.Element {
-  const date = parseObservedAt(observedAt);
-  const label = formatObservedAt(observedAt);
-  if (!date || !label) {
-    return <span>{t("discovery.workbench.timeUnknown")}</span>;
-  }
-  return <time dateTime={date.toISOString()}>{label}</time>;
-}
-
 interface SnapshotState {
   observedAt: string;
   clients: number;
   targets: number;
+  raw: DiscoverySnapshot;
 }
 
 /**
  * FE-07: local discovery workbench. Read-only: it only queries the discovery
  * snapshot, triggers scans through the existing `scan_targets` contract, and
  * classifies the results. It never writes records or directories.
+ * P1-06：新增"发现的 Agent 目录"分组区（品牌分组 / 类型徽标 / 不可用置底 /
+ * 同目录合并），以及只通过忽略规则实现的安全排除——绝不删除用户文件。
  */
 export function LocalDiscoveryWorkbench({ facade, onReviewCandidates }: LocalDiscoveryWorkbenchProps) {
   const { t } = useTranslation();
@@ -52,6 +45,20 @@ export function LocalDiscoveryWorkbench({ facade, onReviewCandidates }: LocalDis
   const [candidates, setCandidates] = useState<DiscoveredSkill[]>([]);
   const [scanning, setScanning] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // P1-06：安全排除——成功后从本次结果移除；规则可在设置中撤销。
+  const [excludedPaths, setExcludedPaths] = useState<Set<string>>(new Set());
+  const [excludedNotice, setExcludedNotice] = useState<string | null>(null);
+  const [excludeError, setExcludeError] = useState<string | null>(null);
+
+  const describeError = useCallback(
+    (reason: unknown, genericKey: string) =>
+      describeNativeError(
+        reason,
+        (key, options) => String(t(key as never, options as never)),
+        genericKey,
+      ),
+    [t],
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -63,6 +70,7 @@ export function LocalDiscoveryWorkbench({ facade, onReviewCandidates }: LocalDis
           observedAt: result.observed_at,
           clients: result.instances.length,
           targets: result.physical_targets.length,
+          raw: result,
         });
       })
       .catch(() => {
@@ -83,6 +91,7 @@ export function LocalDiscoveryWorkbench({ facade, onReviewCandidates }: LocalDis
         observedAt: snap.observed_at,
         clients: snap.instances.length,
         targets: snap.physical_targets.length,
+        raw: snap,
       });
       setClassification(classifyScan(snap, result));
       setCandidates(result.discovered);
@@ -92,6 +101,51 @@ export function LocalDiscoveryWorkbench({ facade, onReviewCandidates }: LocalDis
       setScanning(false);
     }
   }, [facade, t]);
+
+  // P1-06：分组派生保持纯函数；排除过的目录从展示中移除。
+  const agentGroups = useMemo(() => {
+    if (!snapshot) return null;
+    const groups = buildAgentGroups(snapshot.raw, { os: detectOs() });
+    const visible = (group: AgentBrandGroup): AgentBrandGroup => ({
+      ...group,
+      cards: group.cards.filter((card) => !excludedPaths.has(card.path)),
+    });
+    const dropEmpty = (list: AgentBrandGroup[]) =>
+      list.map(visible).filter((group) => group.cards.length > 0);
+    return {
+      available: dropEmpty(groups.available),
+      unavailable: dropEmpty(groups.unavailable),
+    };
+  }, [snapshot, excludedPaths]);
+
+  const exclude = useCallback(
+    async (path: string) => {
+      setExcludeError(null);
+      try {
+        await facade.createIgnoreRule(path);
+        setExcludedPaths((current) => new Set(current).add(path));
+        setExcludedNotice(t("discovery.workbench.excludedNotice", { path }));
+      } catch (reason) {
+        setExcludeError(describeError(reason, "discovery.workbench.excludeFailed"));
+      }
+    },
+    [describeError, facade, t],
+  );
+
+  const renderGroup = (group: AgentBrandGroup) => (
+    <li className="sh-discovery-workbench__agent-group" key={group.brand}>
+      <ul className="sh-discovery-workbench__agent-cards">
+        {group.cards.map((card) => (
+          <AgentCard
+            card={card}
+            brand={group.brand}
+            exclude={exclude}
+            key={`${group.brand}:${card.physicalId}`}
+          />
+        ))}
+      </ul>
+    </li>
+  );
 
   return (
     <section aria-label={t("discovery.workbench.title")} aria-busy={scanning} className="sh-discovery-workbench">
@@ -141,6 +195,92 @@ export function LocalDiscoveryWorkbench({ facade, onReviewCandidates }: LocalDis
           </li>
         </ul>
       ) : null}
+      {agentGroups && agentGroups.available.length + agentGroups.unavailable.length > 0 ? (
+        <div className="sh-discovery-workbench__agents" data-testid="agent-groups">
+          <h4>{t("discovery.workbench.agentGroupsTitle")}</h4>
+          <ul aria-label={t("discovery.workbench.agentGroupsTitle")} className="sh-discovery-workbench__agent-groups">
+            {agentGroups.available.map(renderGroup)}
+          </ul>
+          {agentGroups.unavailable.length > 0 ? (
+            <div className="sh-discovery-workbench__agent-unavailable">
+              <p>{t("discovery.workbench.unavailableAgents")}</p>
+              <ul className="sh-discovery-workbench__agent-groups">
+                {agentGroups.unavailable.map(renderGroup)}
+              </ul>
+            </div>
+          ) : null}
+          {excludedNotice ? <p role="status">{excludedNotice}</p> : null}
+          {excludeError ? <p role="alert">{excludeError}</p> : null}
+        </div>
+      ) : null}
     </section>
   );
+}
+
+/**
+ * P1-06：单张聚合卡片——品牌标签、去重类型徽标、目录路径与可用状态；
+ * "排除"只通过忽略规则（可撤销）实现，绝不提供删除用户文件的入口。
+ */
+function AgentCard({
+  brand,
+  card,
+  exclude,
+}: {
+  brand: string;
+  card: AgentTargetCard;
+  exclude: (path: string) => Promise<void>;
+}) {
+  const { t } = useTranslation();
+  return (
+    <li className="sh-discovery-workbench__agent-card" data-testid={`agent-card-${card.physicalId}`}>
+      <div className="sh-discovery-workbench__agent-line">
+        <BrandTag brand={brand} />
+        <AgentKindBadge kinds={card.kinds} />
+        {!card.available ? (
+          <span className="sh-discovery-workbench__agent-unavailable-label">
+            {t("discovery.workbench.agentUnavailable")}
+          </span>
+        ) : null}
+      </div>
+      <code className="sh-discovery-workbench__agent-path">{card.path}</code>
+      <ConfirmDialog
+        cancelLabel={t("actions.cancel")}
+        confirmLabel={t("discovery.workbench.excludeConfirm")}
+        description={t("discovery.workbench.excludeConfirmDescription", { path: card.path })}
+        onConfirm={() => void exclude(card.path)}
+        title={t("discovery.workbench.excludeConfirmTitle")}
+        trigger={
+          <Button size="sm" variant="ghost">
+            {t("discovery.workbench.excludeAction")}
+          </Button>
+        }
+        variant="primary"
+      />
+    </li>
+  );
+}
+
+/**
+ * P1-04：本地化展示扫描时间。observed_at 可能是 ISO、epoch 秒串或
+ * 无法解析的脏数据——前两者渲染为 `<time>`，后者显示明确占位而非
+ * 原始串。
+ */
+function renderObservedAt(
+  observedAt: string,
+  t: (key: "discovery.workbench.timeUnknown") => string,
+): JSX.Element {
+  const date = parseObservedAt(observedAt);
+  const label = formatObservedAt(observedAt);
+  if (!date || !label) {
+    return <span>{t("discovery.workbench.timeUnknown")}</span>;
+  }
+  return <time dateTime={date.toISOString()}>{label}</time>;
+}
+
+/** 快照按当前宿主 OS 过滤 profile 的 supported_os；未知环境回退 windows。 */
+function detectOs(): "windows" | "macos" {
+  if (typeof navigator !== "undefined" && /Mac/i.test(navigator.platform ?? "")) {
+    return "macos";
+  }
+  return "windows";
 }

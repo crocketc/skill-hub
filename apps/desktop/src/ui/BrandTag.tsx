@@ -108,9 +108,9 @@ export function BrandTag({ brand }: BrandTagProps): JSX.Element | null {
           alt=""
           aria-hidden="true"
           className="sh-brand-tag__icon"
-          height={16}
+          height={20}
           src={icon}
-          width={16}
+          width={20}
         />
       ) : null}
       {brandDisplayName(brand)}

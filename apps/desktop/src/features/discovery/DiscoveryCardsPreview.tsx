@@ -1,9 +1,10 @@
-import type { AgentsLockEntry, DiscoverableRepoSkill, DownloadedRepoSkill, SkillRepo, SourceSearchHit, SourceSearchPage } from "../../api/bindings";
+import type { AgentsLockEntry, DiscoverableRepoSkill, DiscoverySnapshot, DownloadedRepoSkill, ScanResult, SkillRepo, SourceSearchHit, SourceSearchPage } from "../../api/bindings";
 import { PageFrame } from "../../ui/PageFrame";
 import { PageHeader } from "../../ui/PageHeader";
 import { useTheme } from "../../styles/ThemeProvider";
 import { themeNames } from "../../styles/theme";
 import { AgentsLockDiscovery } from "../discovery/AgentsLockDiscovery";
+import { LocalDiscoveryWorkbench } from "../discovery/LocalDiscoveryWorkbench";
 import { OnlineDiscovery } from "../discovery/OnlineDiscovery";
 import type { DiscoveryFacade } from "../discovery/api";
 import { RepoDiscovery } from "../discovery/RepoDiscovery";
@@ -134,13 +135,150 @@ const LOCK_ENTRIES: AgentsLockEntry[] = [
   },
 ];
 
+/** P1-06：本机发现工作台的确定性快照夹具（品牌分组 / 类型徽标 / 不可用置底）。 */
+const WORKBENCH_SNAPSHOT: DiscoverySnapshot = {
+  generation: "9",
+  observed_at: "1789114968",
+  instances: [
+    { profile_id: "zcode", client_id: "zcode-desktop", kind: "desktop", supported_os: ["windows", "macos"], client_presence: "Unknown" },
+    { profile_id: "zcode", client_id: "zcode-cli", kind: "cli", supported_os: ["windows", "macos"], client_presence: "Unknown" },
+    { profile_id: "codex", client_id: "codex-cli", kind: "cli", supported_os: ["windows", "macos"], client_presence: "Unknown" },
+    { profile_id: "claudedesktop", client_id: "claude-desktop", kind: "desktop", supported_os: ["windows", "macos"], client_presence: "Unknown" },
+    { profile_id: "brokenbrand", client_id: "broken-cli", kind: "cli", supported_os: ["windows", "macos"], client_presence: "Unknown" },
+  ],
+  logical_targets: [
+    {
+      id: "lt-agents-zcode",
+      profile_id: "zcode",
+      client_id: "zcode-desktop",
+      scope: "global",
+      path: "C:/Users/demo/.agents/skills",
+      marker: "SKILL.md",
+      precedence: "preferred",
+      exists: true,
+      readable: true,
+      writable: true,
+      available: true,
+      physical_id: "phys-agents",
+    },
+    {
+      id: "lt-agents-zcode-cli",
+      profile_id: "zcode",
+      client_id: "zcode-cli",
+      scope: "global",
+      path: "C:/Users/demo/.agents/skills",
+      marker: "SKILL.md",
+      precedence: "preferred",
+      exists: true,
+      readable: true,
+      writable: true,
+      available: true,
+      physical_id: "phys-agents",
+    },
+    {
+      id: "lt-agents-codex",
+      profile_id: "codex",
+      client_id: "codex-cli",
+      scope: "global",
+      path: "C:/Users/demo/.agents/skills",
+      marker: "SKILL.md",
+      precedence: "preferred",
+      exists: true,
+      readable: true,
+      writable: true,
+      available: true,
+      physical_id: "phys-agents",
+    },
+    {
+      id: "lt-claude",
+      profile_id: "claudedesktop",
+      client_id: "claude-desktop",
+      scope: "global",
+      path: "C:/Users/demo/.claude/skills",
+      marker: "SKILL.md",
+      precedence: "preferred",
+      exists: true,
+      readable: true,
+      writable: true,
+      available: true,
+      physical_id: "phys-claude",
+    },
+    {
+      id: "lt-broken",
+      profile_id: "brokenbrand",
+      client_id: "broken-cli",
+      scope: "global",
+      path: "C:/Users/demo/broken/skills",
+      marker: "SKILL.md",
+      precedence: "preferred",
+      exists: false,
+      readable: false,
+      writable: false,
+      available: false,
+      physical_id: "phys-broken",
+    },
+  ],
+  physical_targets: [
+    {
+      id: "phys-agents",
+      path: "C:/Users/demo/.agents/skills",
+      exists: true,
+      readable: true,
+      writable: true,
+      case_behavior: "sensitive",
+      logical_target_ids: ["lt-agents-zcode", "lt-agents-zcode-cli", "lt-agents-codex"],
+    },
+    {
+      id: "phys-claude",
+      path: "C:/Users/demo/.claude/skills",
+      exists: true,
+      readable: true,
+      writable: true,
+      case_behavior: "sensitive",
+      logical_target_ids: ["lt-claude"],
+    },
+    {
+      id: "phys-broken",
+      path: "C:/Users/demo/broken/skills",
+      exists: false,
+      readable: false,
+      writable: false,
+      case_behavior: "sensitive",
+      logical_target_ids: ["lt-broken"],
+    },
+  ],
+};
+
+const WORKBENCH_SCAN: ScanResult = {
+  generation: { generation: 9, observed_at: 1789114968 },
+  roots: ["C:/Users/demo/.agents/skills"],
+  discovered: [
+    {
+      root: "C:/Users/demo/.agents/skills",
+      relative_path: "pdf",
+      path: "C:/Users/demo/.agents/skills/pdf",
+      marker: "SKILL.md",
+      marker_size: 1,
+      marker_modified_at: 1,
+      size: 1,
+      latest_modified_at: 1,
+      fingerprint: "a",
+      metadata_fingerprint: "b",
+    },
+  ],
+  visited_paths: ["C:/Users/demo/.agents/skills/pdf"],
+  reparsed_count: 0,
+  unchanged_count: 0,
+  errors: [],
+};
+
 function previewFacade(): DiscoveryFacade {
   return {
     async getDiscoverySnapshot() {
-      throw new Error("preview keeps to deterministic fixtures");
+      return WORKBENCH_SNAPSHOT;
     },
     async scanTargets() {
-      throw new Error("preview keeps to deterministic fixtures");
+      return WORKBENCH_SCAN;
     },
     async searchOnlineSources() {
       return HIT_PAGE;
@@ -167,6 +305,7 @@ function previewFacade(): DiscoveryFacade {
       };
     },
     async openExternalUrl() {},
+    async createIgnoreRule() {},
   };
 }
 
@@ -205,6 +344,7 @@ export function DiscoveryCardsPreview() {
         onImportDirectory={() => undefined}
         onStartImport={() => undefined}
       />
+      <LocalDiscoveryWorkbench facade={facade} />
       <RepoDiscovery facade={facade} onImportDirectory={() => undefined} />
       <AgentsLockDiscovery facade={facade} onImportDirectory={() => undefined} />
     </PageFrame>

@@ -47,6 +47,7 @@ function baseFacade(overrides: Partial<DiscoveryFacade> = {}): DiscoveryFacade {
       runtime_name: "pdf",
     })),
     openExternalUrl: vi.fn(async () => {}),
+    createIgnoreRule: vi.fn(async () => {}),
     ...overrides,
   };
 }

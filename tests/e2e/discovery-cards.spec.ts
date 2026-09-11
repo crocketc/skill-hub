@@ -177,6 +177,54 @@ test.describe("discovery shared skill cards", () => {
   });
 });
 
+test.describe("local discovery workbench agent groups (P1-06)", () => {
+  test("groups agent directories by brand with merged kinds and unavailable-last", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.goto(PREVIEW);
+
+    await expect(page.getByRole("heading", { name: "Discovered agent directories" })).toBeVisible();
+    // 同目录合并：zcode 的 desktop 与 cli 聚合为一张卡片，类型以 "/" 连接。
+    await expect(page.getByText("Desktop app/CLI")).toBeVisible();
+    // 跨品牌共享同一目录：ZCode 与 Codex 各自成卡（品牌分组）。
+    await expect(page.getByTestId("agent-card-phys-agents")).toHaveCount(2);
+    // 完全不可用的品牌沉底，单独分区说明。
+    await expect(page.getByText("Unavailable now")).toBeVisible();
+    await expect(page.getByText("C:/Users/demo/broken/skills")).toBeVisible();
+    await expect(page.getByTestId("agent-card-phys-broken").getByText("Unavailable")).toBeVisible();
+  });
+
+  test("exclusion runs after confirmation, removes only that card, and never deletes files", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.goto(PREVIEW);
+
+    const claudeCard = page.getByTestId("agent-card-phys-claude");
+    await expect(claudeCard).toBeVisible();
+    await claudeCard.getByRole("button", { name: "Exclude" }).click();
+    await page.getByRole("alertdialog").getByRole("button", { name: "Exclude" }).click();
+
+    await expect(page.getByTestId("agent-card-phys-claude")).toHaveCount(0);
+    await expect(page.getByText("Excluded C:/Users/demo/.claude/skills.")).toBeVisible();
+    // 其余品牌不受影响。
+    await expect(page.getByTestId("agent-card-phys-agents")).toHaveCount(2);
+    // 排除操作只影响发现列表：不提供任何删除文件的入口（无删除按钮）。
+    expect(await page.getByRole("button", { name: /delete/i }).count()).toBe(0);
+  });
+
+  test("brand logos render at the enlarged size inside the workbench", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.goto(PREVIEW);
+
+    const icon = page.locator(".sh-discovery-workbench .sh-brand-tag__icon").first();
+    await expect(icon).toBeVisible();
+    const box = await icon.boundingBox();
+    expect(box).not.toBeNull();
+    // 1.25rem ≈ 20px（验收反馈"品牌图标再大一些"）。
+    expect(box!.width).toBeGreaterThanOrEqual(19);
+    expect(box!.width).toBeLessThanOrEqual(21);
+    await expect.poll(() => rootHorizontalOverflow(page)).toBeLessThanOrEqual(0);
+  });
+});
+
 test.describe("discovery cards across nine themes", () => {
   const themes = [
     "moss-neutral",
@@ -265,5 +313,10 @@ test.describe("discovery cards in Simplified Chinese", () => {
     await page.getByRole("button", { name: "扫描仓库" }).click();
     await expect(page.getByRole("heading", { name: "PDF Processor" })).toBeVisible();
     await expect(page.getByRole("button", { name: "下载并导入" }).first()).toBeVisible();
+
+    // P1-06：本机发现工作台的 Agent 分组区（中文文案）。
+    await expect(page.getByRole("heading", { name: "发现的 Agent 目录" })).toBeVisible();
+    await expect(page.getByText("桌面端/CLI")).toBeVisible();
+    await expect(page.getByText("暂不可用")).toBeVisible();
   });
 });

@@ -401,7 +401,16 @@
       "reviewAction": "Review and import",
       "scanningStatus": "Scanning local directories…",
       "timeUnknown": "Unknown time",
-      "reviewImportGuide": "This scan found {{count}} candidate directories, all selected by default; review the candidates before continuing."
+      "reviewImportGuide": "This scan found {{count}} candidate directories, all selected by default; review the candidates before continuing.",
+      "agentGroupsTitle": "Discovered agent directories",
+      "unavailableAgents": "Unavailable now",
+      "agentUnavailable": "Unavailable",
+      "excludeAction": "Exclude",
+      "excludeConfirmTitle": "Exclude this directory?",
+      "excludeConfirmDescription": "SkillHub discovery and scans will ignore {{path}}. Nothing in the directory is deleted or modified; undo anytime from the ignore rules in Settings.",
+      "excludeConfirm": "Exclude",
+      "excludeFailed": "Failed to exclude ({{code}}); the directory is unchanged.",
+      "excludedNotice": "Excluded {{path}}. Restore it from the ignore rules in Settings."
     },
     "search": {
       "label": "Search skills.sh",
@@ -498,6 +507,18 @@
       "cancel": "Cancel"
     },
     "managedDeploymentCount": "{{count}} managed deployments",
+    "kind": {
+      "cli": "CLI",
+      "desktop": "Desktop app",
+      "ideExtension": "IDE extension",
+      "tui": "Terminal UI",
+      "headless": "Headless",
+      "acp": "ACP",
+      "web": "Web",
+      "mobile": "Mobile",
+      "bot": "Bot",
+      "evidenceTitle": "Kind comes from the adapter evidence declared in the client profile"
+    },
     "status": {
       "accessible": "Accessible",
       "custom": "Custom Agent",

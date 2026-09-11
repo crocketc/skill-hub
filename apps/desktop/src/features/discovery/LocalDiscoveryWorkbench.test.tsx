@@ -18,6 +18,7 @@ const repoDiscoveryStubs = {
   removeSkillRepo: async () => [] as SkillRepo[],
   downloadRepoSkill: async () => ({ local_path: "", runtime_name: "" }),
   openExternalUrl: async () => {},
+  createIgnoreRule: async () => {},
 };
 import { OnlineDiscovery } from "./OnlineDiscovery";
 
@@ -260,4 +261,147 @@ it("announces the scanning state while a scan is running", async () => {
   resolveScan(scanResult);
   // 扫描结束后状态播报消失，待导入横幅（同为 role=status）接管。
   await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("发现 1 个待导入候选"));
+});
+
+// —— P1-06：Agent 目录分组 / 类型徽标 / 不可用置底 / 安全排除 ——
+
+const agentGroupSnapshot: DiscoverySnapshot = {
+  generation: "7",
+  observed_at: "1789114968",
+  instances: [
+    { profile_id: "zcode", client_id: "zcode-desktop", kind: "desktop", supported_os: ["windows", "macos"], client_presence: "Unknown" },
+    { profile_id: "zcode", client_id: "zcode-cli", kind: "cli", supported_os: ["windows", "macos"], client_presence: "Unknown" },
+    { profile_id: "brokenbrand", client_id: "broken-cli", kind: "cli", supported_os: ["windows"], client_presence: "Unknown" },
+  ],
+  logical_targets: [
+    {
+      id: "lt-agents",
+      profile_id: "zcode",
+      client_id: "zcode-desktop",
+      scope: "global",
+      path: "C:/u/.agents/skills",
+      marker: "SKILL.md",
+      precedence: "preferred",
+      exists: true,
+      readable: true,
+      writable: true,
+      available: true,
+      physical_id: "phys-agents",
+    },
+    {
+      id: "lt-agents-cli",
+      profile_id: "zcode",
+      client_id: "zcode-cli",
+      scope: "global",
+      path: "C:/u/.agents/skills",
+      marker: "SKILL.md",
+      precedence: "preferred",
+      exists: true,
+      readable: true,
+      writable: true,
+      available: true,
+      physical_id: "phys-agents",
+    },
+    {
+      id: "lt-broken",
+      profile_id: "brokenbrand",
+      client_id: "broken-cli",
+      scope: "global",
+      path: "C:/u/broken/skills",
+      marker: "SKILL.md",
+      precedence: "preferred",
+      exists: true,
+      readable: false,
+      writable: false,
+      available: false,
+      physical_id: "phys-broken",
+    },
+  ],
+  physical_targets: [
+    {
+      id: "phys-agents",
+      path: "C:/u/.agents/skills",
+      exists: true,
+      readable: true,
+      writable: true,
+      case_behavior: "sensitive",
+      logical_target_ids: ["lt-agents", "lt-agents-cli"],
+    },
+    {
+      id: "phys-broken",
+      path: "C:/u/broken/skills",
+      exists: true,
+      readable: false,
+      writable: false,
+      case_behavior: "sensitive",
+      logical_target_ids: ["lt-broken"],
+    },
+  ],
+};
+
+it("groups discovered agent directories by brand with merged kind badges", async () => {
+  render(
+    <I18nextProvider i18n={createSkillHubI18nSync()}>
+      <LocalDiscoveryWorkbench
+        facade={{ getDiscoverySnapshot: async () => agentGroupSnapshot, scanTargets: async () => scanResult, searchOnlineSources: async () => searchPage([]), ...repoDiscoveryStubs }}
+      />
+    </I18nextProvider>,
+  );
+
+  expect(await screen.findByText("发现的 Agent 目录")).toBeVisible();
+  // 同目录合并：同一品牌下 desktop 与 cli 聚合为一张卡片的类型集合。
+  expect(screen.getByText("桌面端/CLI")).toBeVisible();
+  expect(screen.getByText("C:/u/.agents/skills")).toBeVisible();
+  // 完全不可用的品牌整体置底，单独分区说明。
+  expect(screen.getByText("暂不可用")).toBeVisible();
+  expect(screen.getByText("C:/u/broken/skills")).toBeVisible();
+  // 可用目录不再重复标注不可用徽标。
+  expect(screen.getAllByText("不可用")).toHaveLength(1);
+});
+
+it("excludes a directory only after confirmation via the ignore rule and never deletes files", async () => {
+  const createIgnoreRule = vi.fn(async () => {});
+  render(
+    <I18nextProvider i18n={createSkillHubI18nSync()}>
+      <LocalDiscoveryWorkbench
+        facade={{ getDiscoverySnapshot: async () => agentGroupSnapshot, scanTargets: async () => scanResult, searchOnlineSources: async () => searchPage([]), ...repoDiscoveryStubs, createIgnoreRule }}
+      />
+    </I18nextProvider>,
+  );
+
+  await screen.findByText("发现的 Agent 目录");
+  await click(screen.getAllByRole("button", { name: "排除" })[0]);
+
+  // 先确认再执行；说明只影响发现，不碰用户文件。
+  expect(createIgnoreRule).not.toHaveBeenCalled();
+  await click(await screen.findByRole("button", { name: "确认排除" }));
+
+  expect(createIgnoreRule).toHaveBeenCalledWith("C:/u/.agents/skills");
+  // 成功后卡片从本次结果中移除并说明可撤销。
+  await waitFor(() => expect(screen.queryByText("C:/u/.agents/skills")).not.toBeInTheDocument());
+  expect(screen.getByText(/已排除 C:\/u\/.agents\/skills/)).toBeVisible();
+  // 不可用分区仍在。
+  expect(screen.getByText("C:/u/broken/skills")).toBeVisible();
+});
+
+it("keeps the directory visible with a readable error when the exclusion fails", async () => {
+  const createIgnoreRule = vi.fn(async () => {
+    throw { code: "operation.conflict", severity: "error", params: {}, actions: [] };
+  });
+  render(
+    <I18nextProvider i18n={createSkillHubI18nSync()}>
+      <LocalDiscoveryWorkbench
+        facade={{ getDiscoverySnapshot: async () => agentGroupSnapshot, scanTargets: async () => scanResult, searchOnlineSources: async () => searchPage([]), ...repoDiscoveryStubs, createIgnoreRule }}
+      />
+    </I18nextProvider>,
+  );
+
+  await screen.findByText("发现的 Agent 目录");
+  await click(screen.getAllByRole("button", { name: "排除" })[0]);
+  await click(await screen.findByRole("button", { name: "确认排除" }));
+
+  const alert = await screen.findByRole("alert");
+  expect(alert).toHaveTextContent("排除失败");
+  // 失败不移除卡片，目录仍然可见。
+  expect(screen.getByText("C:/u/.agents/skills")).toBeVisible();
 });

@@ -1,0 +1,14 @@
+/* P1-06：Agent 类型徽标——从 profile kind 证据派生的中性标签。 */
+.sh-agent-kind-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.05rem 0.45rem;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-xs);
+  background: var(--ui-surface-subtle);
+  color: var(--ui-ink-muted);
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  line-height: 1.5;
+  white-space: nowrap;
+}

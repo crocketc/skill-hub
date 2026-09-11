@@ -83,6 +83,7 @@ export function OnlineDiscoveryPreview() {
       return { local_path: `C:/temp/skillhub-repo-skills/preview/${skill.repo_name}`, runtime_name: "pdf" };
     },
     async openExternalUrl() {},
+    async createIgnoreRule() {},
   };
   return (
     <main className="sh-page">

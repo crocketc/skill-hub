@@ -16,10 +16,11 @@
   white-space: nowrap;
 }
 
-/* QA-014：已知品牌在颜色标签内渲染真实 Logo；未知品牌没有图标节点。 */
+/* QA-014：已知品牌在颜色标签内渲染真实 Logo；未知品牌没有图标节点。
+   P1-06：从 1rem 放大到 1.25rem（验收反馈"品牌图标再大一些"）。 */
 .sh-brand-tag__icon {
-  width: 1rem;
-  height: 1rem;
+  width: 1.25rem;
+  height: 1.25rem;
   flex: none;
 }
 

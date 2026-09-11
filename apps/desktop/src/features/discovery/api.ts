@@ -2,9 +2,12 @@ import {
   executeCommand,
   queryApplication,
   type AgentsLockEntry,
+  type ClientInstance,
+  type ClientKind,
   type DiscoverableRepoSkill,
   type DiscoverySnapshot,
   type DownloadedRepoSkill,
+  type LogicalTarget,
   type RepoDiscoveryReport,
   type ScanResult,
   type SkillRepo,
@@ -34,6 +37,11 @@ export interface DiscoveryFacade {
   downloadRepoSkill: (skill: DiscoverableRepoSkill) => Promise<DownloadedRepoSkill>;
   /** Opens a repository README link in the platform browser via the native shell. */
   openExternalUrl: (url: string) => Promise<void>;
+  /**
+   * P1-06：为目录创建忽略规则（安全排除）。只影响 SkillHub 的扫描与发现
+   * 记录，绝不触碰目录中的用户文件；可通过既有忽略规则管理撤销。
+   */
+  createIgnoreRule: (path: string) => Promise<void>;
 }
 
 export const desktopDiscoveryFacade: DiscoveryFacade = {
@@ -134,6 +142,19 @@ export const desktopDiscoveryFacade: DiscoveryFacade = {
       throw new Error("Unexpected external link response from the native application.");
     }
   },
+  async createIgnoreRule(path: string) {
+    const result = await executeCommand({
+      type: "create_ignore_rule",
+      payload: {
+        subject: { type: "exact_path", value: path },
+        reason: "discovery-exclude",
+        defer_until: null,
+      },
+    });
+    if (result.type !== "ignore_rule") {
+      throw new Error("Unexpected ignore rule response from the native application.");
+    }
+  },
 };
 
 export interface FormatObservedAtOptions {
@@ -225,5 +246,95 @@ export function classifyScan(
     conflict,
     suspected,
     unreadable: result.errors.length,
+  };
+}
+
+/** P1-06：一张聚合后的 Agent 目录卡片（同 physical 目录合并展示）。 */
+export interface AgentTargetCard {
+  physicalId: string;
+  /** 该 physical 组内任一 target 的路径（同一 physical 路径等价）。 */
+  path: string;
+  /** 组内去重后的客户端类型（如 desktop+cli → "桌面端/CLI"）。 */
+  kinds: ClientKind[];
+  /** 目录证据：任一 logical target available 即视为可用。 */
+  available: boolean;
+}
+
+/** P1-06：一个品牌（profile）的分组；组内可用卡片在前、不可用置底。 */
+export interface AgentBrandGroup {
+  brand: string;
+  available: boolean;
+  cards: AgentTargetCard[];
+}
+
+export interface AgentGroups {
+  available: AgentBrandGroup[];
+  unavailable: AgentBrandGroup[];
+}
+
+const byBrandName = (a: AgentBrandGroup, b: AgentBrandGroup) =>
+  a.brand.localeCompare(b.brand);
+
+/**
+ * P1-06：从发现快照构建 Agent 分组视图。
+ * - 先按当前 OS 过滤 profile 声明的 supported_os（空列表视为未声明，保留）；
+ * - 按品牌（profile_id）分组，组内按 physical_id 聚合（后端已把同目录
+ *   的不同客户端归并为同一 physical_id）；
+ * - 聚合卡片类型取组内去重后的 kind 集合；
+ * - 可用品牌在前（按品牌名排序），完全不可用的品牌整体置底。
+ */
+export function buildAgentGroups(
+  snapshot: DiscoverySnapshot,
+  options: { os: "windows" | "macos" },
+): AgentGroups {
+  const osInstances = snapshot.instances.filter(
+    (instance: ClientInstance) =>
+      instance.supported_os.length === 0 || instance.supported_os.includes(options.os),
+  );
+  const instanceKindByClient = new Map(
+    osInstances.map((instance) => [instance.client_id, instance.kind]),
+  );
+  const clientIds = new Set(instanceKindByClient.keys());
+
+  interface PhysicalAccumulator {
+    physicalId: string;
+    path: string;
+    kinds: ClientKind[];
+    available: boolean;
+  }
+  const byBrand = new Map<string, Map<string, PhysicalAccumulator>>();
+  for (const target of snapshot.logical_targets as LogicalTarget[]) {
+    if (!clientIds.has(target.client_id)) continue;
+    const kind = instanceKindByClient.get(target.client_id);
+    if (!kind) continue;
+    let brandGroups = byBrand.get(target.profile_id);
+    if (!brandGroups) {
+      brandGroups = new Map();
+      byBrand.set(target.profile_id, brandGroups);
+    }
+    let card = brandGroups.get(target.physical_id);
+    if (!card) {
+      card = { physicalId: target.physical_id, path: target.path, kinds: [], available: false };
+      brandGroups.set(target.physical_id, card);
+    }
+    if (!card.kinds.includes(kind)) card.kinds.push(kind);
+    card.available = card.available || target.available;
+  }
+
+  const groups: AgentBrandGroup[] = [];
+  for (const [brand, cards] of byBrand) {
+    const ordered = [...cards.values()]
+      .map((card) => ({ ...card, kinds: [...card.kinds] }))
+      .sort((a, b) => Number(b.available) - Number(a.available) || a.path.localeCompare(b.path));
+    groups.push({
+      brand,
+      available: ordered.some((card) => card.available),
+      cards: ordered,
+    });
+  }
+  const sorted = [...groups].sort(byBrandName);
+  return {
+    available: sorted.filter((group) => group.available),
+    unavailable: sorted.filter((group) => !group.available),
   };
 }

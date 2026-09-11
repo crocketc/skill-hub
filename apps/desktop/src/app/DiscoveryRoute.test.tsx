@@ -53,6 +53,7 @@ function stubDiscoveryFacade(): DiscoveryFacade {
       throw new Error("not used");
     },
     openExternalUrl: async () => {},
+    createIgnoreRule: async () => {},
   };
 }
 

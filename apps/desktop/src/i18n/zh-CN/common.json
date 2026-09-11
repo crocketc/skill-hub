@@ -401,7 +401,16 @@
       "reviewAction": "审查并导入",
       "scanningStatus": "正在扫描本机目录…",
       "timeUnknown": "时间未知",
-      "reviewImportGuide": "本次扫描发现 {{count}} 个候选目录，已默认全部选中；请审阅候选项后继续。"
+      "reviewImportGuide": "本次扫描发现 {{count}} 个候选目录，已默认全部选中；请审阅候选项后继续。",
+      "agentGroupsTitle": "发现的 Agent 目录",
+      "unavailableAgents": "暂不可用",
+      "agentUnavailable": "不可用",
+      "excludeAction": "排除",
+      "excludeConfirmTitle": "排除该目录？",
+      "excludeConfirmDescription": "将在 SkillHub 的发现与扫描中忽略 {{path}}；不会删除或修改该目录中的任何文件，可随时在设置的忽略规则中撤销。",
+      "excludeConfirm": "确认排除",
+      "excludeFailed": "排除失败（{{code}}），目录保持不变。",
+      "excludedNotice": "已排除 {{path}}。可在设置的忽略规则中恢复。"
     },
     "search": {
       "label": "搜索 skills.sh",
@@ -498,6 +507,18 @@
       "cancel": "取消"
     },
     "managedDeploymentCount": "{{count}} 个受管部署",
+    "kind": {
+      "cli": "CLI",
+      "desktop": "桌面端",
+      "ideExtension": "IDE 插件",
+      "tui": "终端界面",
+      "headless": "无界面",
+      "acp": "ACP",
+      "web": "Web",
+      "mobile": "移动端",
+      "bot": "Bot",
+      "evidenceTitle": "类型来自该客户端配置档案中声明的适配器证据"
+    },
     "status": {
       "accessible": "可访问",
       "custom": "自定义 Agent",
