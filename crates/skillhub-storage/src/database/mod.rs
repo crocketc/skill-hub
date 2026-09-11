@@ -17,6 +17,7 @@ mod operation_repository;
 mod project_repository;
 pub mod recovery_point;
 mod scan_repository;
+mod search_candidate_repository;
 mod search_repository;
 mod skill_repo_repository;
 mod source_repository;
@@ -53,6 +54,7 @@ pub use operation_repository::OperationRepositorySqlite;
 pub use project_repository::{ProjectRepository, VersionPin};
 pub use recovery_point::RecoveryPoint;
 pub use scan_repository::ScanRepository;
+pub use search_candidate_repository::SearchCandidateRepository;
 pub use search_repository::SearchRepository;
 pub use skill_repo_repository::SkillRepoRepository;
 pub use source_repository::SourceRepository;
@@ -138,6 +140,10 @@ impl Database {
 
     pub fn source_search_cache(&self) -> SourceSearchCache<'_> {
         SourceSearchCache::new(self)
+    }
+
+    pub fn search_candidate_repository(&self) -> SearchCandidateRepository<'_> {
+        SearchCandidateRepository::new(self)
     }
 
     pub fn llm_profile_repository(&self) -> LlmProfileRepository<'_> {

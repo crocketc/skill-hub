@@ -1,10 +1,16 @@
 use super::Database;
 use rusqlite::OptionalExtension;
 use sha2::{Digest, Sha256};
-use skillhub_core::source::{SourceDescriptor, SourceKind, SourceLocator};
+use skillhub_core::source::{
+    SourceDescriptor, SourceKind, SourceLocator, SourceRecord, SourceRole,
+};
 use skillhub_core::{AppError, AppResult, ErrorCode, Severity, SkillId};
 
 /// Persistence boundary for a Skill's active source relation.
+///
+/// P1-05 角色语义：本地目录 relink = `local_only`；relink 到远端 URL 与
+/// `record_upstream` 都是用户显式确认（导入向导提交/手动绑定），
+/// 一律落为 `verified_upstream`。搜索候选永远不进入本仓库。
 pub struct SourceRepository<'a> {
     database: &'a Database,
 }
@@ -17,6 +23,7 @@ impl<'a> SourceRepository<'a> {
     pub fn relink(&self, skill_id: SkillId, source: SourceDescriptor) -> AppResult<()> {
         let source_id = source_id(&source)?;
         let (kind, locator) = encode_source(&source)?;
+        let role = role_for_kind(kind).to_string();
         let transaction = self
             .database
             .connection
@@ -24,8 +31,8 @@ impl<'a> SourceRepository<'a> {
             .map_err(error)?;
         transaction
             .execute(
-                "INSERT OR IGNORE INTO sources (id, kind, locator, created_at) VALUES (?1, ?2, ?3, strftime('%s','now'))",
-                rusqlite::params![source_id, kind, locator],
+                "INSERT OR IGNORE INTO sources (id, kind, locator, role, created_at) VALUES (?1, ?2, ?3, ?4, strftime('%s','now'))",
+                rusqlite::params![source_id, kind, locator, role],
             )
             .map_err(error)?;
         transaction
@@ -46,6 +53,7 @@ impl<'a> SourceRepository<'a> {
     /// 将仓库导入的长期上游坐标写入 sources（kind=git，metadata_json 记 branch/directory）
     /// 并挂到 skill_sources（relation=origin）。幂等：重复导入同一来源不会产生重复行，
     /// 已存在的行只补写坐标元数据。与 relink 不同，这里不删除既有来源行。
+    /// 角色固定为 verified_upstream（导入提交 = 用户已确认）。
     pub fn record_upstream(
         &self,
         skill_id: SkillId,
@@ -67,8 +75,9 @@ impl<'a> SourceRepository<'a> {
             .map_err(error)?;
         transaction
             .execute(
-                // 行可能已由 relink 建好（metadata='{}'）：冲突时补写坐标元数据。
-                "INSERT INTO sources (id, kind, locator, metadata_json, created_at) VALUES (?1, 'git', ?2, ?3, strftime('%s','now')) ON CONFLICT(id) DO UPDATE SET metadata_json=excluded.metadata_json",
+                // 行可能已由 relink 建好（metadata='{}'）：冲突时补写坐标元数据，
+                // 并把角色升级为 verified_upstream。
+                "INSERT INTO sources (id, kind, locator, role, metadata_json, created_at) VALUES (?1, 'git', ?2, 'verified_upstream', ?3, strftime('%s','now')) ON CONFLICT(id) DO UPDATE SET metadata_json=excluded.metadata_json, role='verified_upstream'",
                 rusqlite::params![source_id, upstream.url, metadata.to_string()],
             )
             .map_err(error)?;
@@ -82,6 +91,7 @@ impl<'a> SourceRepository<'a> {
     }
 
     /// 读取 Skill 的长期上游坐标；无记录返回 None（本地导入）。
+    /// 只认 verified_upstream 角色：候选/local_only 来源绝不参与更新检测。
     pub fn upstream_for_skill(
         &self,
         skill_id: SkillId,
@@ -90,7 +100,7 @@ impl<'a> SourceRepository<'a> {
             .database
             .connection
             .query_row(
-                "SELECT s.locator, s.metadata_json FROM sources s JOIN skill_sources ss ON ss.source_id=s.id WHERE ss.skill_id=?1 AND s.kind='git' ORDER BY s.id ASC LIMIT 1",
+                "SELECT s.locator, s.metadata_json FROM sources s JOIN skill_sources ss ON ss.source_id=s.id WHERE ss.skill_id=?1 AND s.kind='git' AND s.role='verified_upstream' ORDER BY s.id ASC LIMIT 1",
                 [skill_id.to_string()],
                 |row| Ok((row.get(0)?, row.get(1)?)),
             )
@@ -117,6 +127,65 @@ impl<'a> SourceRepository<'a> {
             url: locator,
             branch,
             directory,
+        }))
+    }
+
+    /// Skill 来源的角色；无来源记录视为 local_only（诚实缺省）。
+    pub fn role_for_skill(&self, skill_id: SkillId) -> AppResult<SourceRole> {
+        let row: Option<String> = self
+            .database
+            .connection
+            .query_row(
+                "SELECT s.role FROM sources s JOIN skill_sources ss ON ss.source_id=s.id WHERE ss.skill_id=?1 ORDER BY s.id ASC LIMIT 1",
+                [skill_id.to_string()],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(error)?;
+        Ok(match row.as_deref() {
+            Some("verified_upstream") => SourceRole::VerifiedUpstream,
+            _ => SourceRole::LocalOnly,
+        })
+    }
+
+    /// 来源投影（描述符 + 角色 + 可选上游坐标）；无来源记录返回 None。
+    pub fn source_record_for_skill(&self, skill_id: SkillId) -> AppResult<Option<SourceRecord>> {
+        let row: Option<(String, String, String, Option<String>)> = self
+            .database
+            .connection
+            .query_row(
+                "SELECT s.kind, s.locator, s.role, CAST(s.created_at AS TEXT) FROM sources s JOIN skill_sources ss ON ss.source_id=s.id WHERE ss.skill_id=?1 ORDER BY s.id ASC LIMIT 1",
+                [skill_id.to_string()],
+                |row| {
+                    Ok((
+                        row.get(0)?,
+                        row.get(1)?,
+                        row.get(2)?,
+                        row.get(3)?,
+                    ))
+                },
+            )
+            .optional()
+            .map_err(error)?;
+        let Some((kind, locator, role, created_at)) = row else {
+            return Ok(None);
+        };
+        let source = decode_source(&kind, &locator)?;
+        let role = match role.as_str() {
+            "verified_upstream" => SourceRole::VerifiedUpstream,
+            _ => SourceRole::LocalOnly,
+        };
+        let upstream = if role == SourceRole::VerifiedUpstream {
+            self.upstream_for_skill(skill_id)?
+        } else {
+            None
+        };
+        Ok(Some(SourceRecord {
+            skill_id,
+            source,
+            role,
+            upstream,
+            created_at: created_at.unwrap_or_default(),
         }))
     }
 
@@ -170,7 +239,17 @@ fn source_id(source: &SourceDescriptor) -> AppResult<String> {
     Ok(format!("source:{:x}", hasher.finalize()))
 }
 
-fn encode_source(source: &SourceDescriptor) -> AppResult<(&'static str, String)> {
+/// P1-05：存储层的来源 kind → 来源角色。本地目录 = local_only；
+/// 远端 https/git = verified_upstream（写入方都是显式确认动作）。
+pub(crate) fn role_for_kind(kind: &str) -> &'static str {
+    if kind == "local" {
+        "local_only"
+    } else {
+        "verified_upstream"
+    }
+}
+
+pub(crate) fn encode_source(source: &SourceDescriptor) -> AppResult<(&'static str, String)> {
     match (&source.kind, &source.locator) {
         (SourceKind::Local, SourceLocator::LocalPath(path)) => {
             Ok(("local", path.to_string_lossy().into_owned()))
@@ -181,7 +260,7 @@ fn encode_source(source: &SourceDescriptor) -> AppResult<(&'static str, String)>
     }
 }
 
-fn decode_source(kind: &str, locator: &str) -> AppResult<SourceDescriptor> {
+pub(crate) fn decode_source(kind: &str, locator: &str) -> AppResult<SourceDescriptor> {
     let (kind, locator) = match kind {
         "local" => (SourceKind::Local, SourceLocator::local_path(locator)),
         "https" => (SourceKind::Https, SourceLocator::https_url(locator)),
