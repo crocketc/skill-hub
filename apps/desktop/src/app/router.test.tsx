@@ -134,7 +134,7 @@ it("wires theme, language, data and motion providers at the production entry wit
 
   render(<AppRouter />);
 
-  expect(await screen.findAllByText("0 skills")).toHaveLength(1);
+  expect(await screen.findAllByRole("link", { name: "0 skills" })).toHaveLength(1);
   expect(screen.queryByText("Cached skill library")).not.toBeInTheDocument();
   expect(screen.getByRole("link", { name: "Overview" })).toHaveAttribute("aria-current", "page");
   expect(document.documentElement).toHaveAttribute("data-theme", "moss-neutral");
@@ -151,7 +151,7 @@ it("follows the system reduced-motion preference at the production entry (TC-GR-
 
   render(<AppRouter />);
 
-  expect(await screen.findAllByText("0 skills")).toHaveLength(1);
+  expect(await screen.findAllByRole("link", { name: "0 skills" })).toHaveLength(1);
   expect(motionConfigProps.some((props) => props.reducedMotion === "user")).toBe(true);
 });
 

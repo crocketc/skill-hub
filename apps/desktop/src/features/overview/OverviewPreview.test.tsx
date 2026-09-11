@@ -52,6 +52,6 @@ it("mounts the deterministic overview preview with deployment, tag, and pending 
   ).toBeVisible();
   expect(screen.getByRole("list", { name: "Skill count by tag" })).toBeVisible();
   expect(screen.getByRole("heading", { name: "4 pending items" })).toBeVisible();
-  expect(screen.getByText("3 configured agents")).toBeVisible();
-  expect(screen.getByText("5 discovered agents")).toBeVisible();
+  expect(screen.getByRole("link", { name: "3 configured agents" })).toBeVisible();
+  expect(screen.getByRole("link", { name: "5 discovered agents" })).toBeVisible();
 });
