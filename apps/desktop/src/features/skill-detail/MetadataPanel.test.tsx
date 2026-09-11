@@ -27,9 +27,12 @@ async function renderMetadata({
 describe("MetadataPanel", () => {
   it("keeps original description, saved translation and user purpose distinct", async () => {
     await renderMetadata();
+    // P1-12：原文与译文收纳为次级展示；用户用途保留编辑契约、不再重复只读展示。
+    fireEvent.click(screen.getByText("原始文本与译文"));
     expect(screen.getByText("Original description")).toBeVisible();
     expect(screen.getByText("模型译文")).toBeVisible();
-    expect(screen.getByLabelText("我的用途说明")).toHaveTextContent("用于 PDF 表格提取");
+    fireEvent.click(screen.getByRole("button", { name: "编辑我的用途说明" }));
+    expect(screen.getByRole("textbox", { name: "我的用途说明" })).toHaveValue("用于 PDF 表格提取");
   });
 
   it("shows source identity facts in the complete detail metadata", async () => {
@@ -69,8 +72,10 @@ describe("MetadataPanel", () => {
       expect(facade.calls.metadataPatches).toEqual([
         { patch: { alias: "PDF 助手" }, skillId: "skill-pdf" },
       ]);
-      expect(screen.getByLabelText("别名")).toHaveTextContent("PDF 助手");
     });
+    // P1-12：保存后回到只读态时不再重复展示别名值（头部是唯一的别名展示位）。
+    expect(screen.queryByLabelText("别名")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "编辑别名" })).toBeVisible();
   });
 
   it("explains comma-separated tags while editing", async () => {
@@ -86,6 +91,7 @@ describe("MetadataPanel", () => {
       facade,
       metadata: detailFixture({ userRevisedTranslation: true }).metadata,
     });
+    fireEvent.click(screen.getByText("原始文本与译文"));
     fireEvent.click(screen.getByRole("button", { name: "重新翻译描述" }));
     expect(screen.getByText(/现有用户修订译文将被替换/)).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "取消" }));
@@ -99,6 +105,7 @@ describe("MetadataPanel", () => {
       facade,
       metadata: detailFixture({ userRevisedTranslation: true }).metadata,
     });
+    fireEvent.click(screen.getByText("原始文本与译文"));
     fireEvent.click(screen.getByRole("button", { name: "重新翻译描述" }));
     fireEvent.click(screen.getByRole("button", { name: "替换译文" }));
     await waitFor(() => {
@@ -115,6 +122,7 @@ describe("MetadataPanel", () => {
 
   it("retranslates immediately when no user revision exists", async () => {
     const { facade } = await renderMetadata();
+    fireEvent.click(screen.getByText("原始文本与译文"));
     fireEvent.click(screen.getByRole("button", { name: "重新翻译描述" }));
     await waitFor(() => {
       expect(facade.calls.intents).toEqual([

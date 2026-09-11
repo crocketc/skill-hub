@@ -81,13 +81,6 @@
   font-size: var(--font-size-sm);
 }
 
-.sh-skill-detail__purpose {
-  color: var(--ui-ink-muted);
-  font-size: var(--font-size-sm);
-  line-height: 1.5;
-  max-width: 72ch;
-}
-
 /* —— 分区导航（rail 内纵向；窄窗口退化为横向，见底部媒体查询） —— */
 .sh-skill-detail__zone-nav {
   display: grid;
@@ -161,6 +154,24 @@
   color: var(--ui-ink-muted);
   line-height: 1.5;
   max-width: 72ch;
+}
+
+/* —— P1-12：原文与译文收纳为次级展示（折叠），不与正文 Markdown 争夺注意力 —— */
+.sh-metadata-panel__secondary {
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-2) var(--space-3);
+}
+
+.sh-metadata-panel__secondary > summary {
+  color: var(--ui-ink-muted);
+  cursor: pointer;
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+}
+
+.sh-metadata-panel__secondary[open] > summary {
+  margin-bottom: var(--space-2);
 }
 
 /* —— AI 检查结果的建议性表述：弱化呈现，不与确定性结论竞争 —— */

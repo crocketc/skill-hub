@@ -7,7 +7,8 @@ interface DetailHeaderProps {
   summary: SkillDetailSummary;
 }
 
-/** 身份区实体头部：别名、名称与用途说明；删除是本页唯一的全局操作。 */
+/** 身份区实体头部：别名与名称的唯一展示位；用途说明只出现在概览块（P1-12），
+ * 删除是本页唯一的全局操作。 */
 export function DetailHeader({ onDelete, summary }: DetailHeaderProps) {
   const { t } = useTranslation();
   return (
@@ -16,7 +17,6 @@ export function DetailHeader({ onDelete, summary }: DetailHeaderProps) {
         <div>
           <p className="sh-skill-detail__alias">{summary.alias ?? summary.id}</p>
           <h1>{summary.name}</h1>
-          <p className="sh-skill-detail__purpose">{summary.purpose}</p>
         </div>
         {onDelete ? (
           <Button onClick={onDelete} size="sm" variant="danger">

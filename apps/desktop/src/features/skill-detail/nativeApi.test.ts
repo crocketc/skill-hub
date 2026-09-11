@@ -61,10 +61,12 @@ describe("native skill detail facade", () => {
       .mockResolvedValueOnce(skillPayload)
       .mockResolvedValueOnce(translationsPayload);
 
+    // P1-12：概览用途唯一口径——用户用途优先（QA-008），缺省回退译文、再回退原文。
+    // 头部不再重复展示用途，概览是全页唯一的用途陈述。
     await expect(nativeSkillDetailFacade.getSummary("skill-1")).resolves.toMatchObject({
       id: "skill-1",
       name: "PDF Reader",
-      purpose: "提取表格",
+      purpose: "用于 PDF 表格提取",
       lifecycle: "trial",
       trialDue: "2026-09-15",
     });
@@ -89,6 +91,32 @@ describe("native skill detail facade", () => {
     expect(queryApplication).toHaveBeenCalledWith({
       type: "list_translations",
       payload: { skill_id: "skill-1" },
+    });
+  });
+
+  it("falls back to the translated description for the overview purpose when no user purpose exists", async () => {
+    vi.clearAllMocks();
+    vi.mocked(queryApplication).mockResolvedValue({
+      type: "skill",
+      payload: {
+        skill_id: "skill-1",
+        display_name: "PDF Reader",
+        runtime_name: "pdf-reader",
+        original_description: "Extract tables",
+        translated_description: "提取表格",
+        user_note: null,
+        user_purpose: null,
+        tags: [],
+        author: null,
+        license: null,
+        lifecycle: "Normal" as const,
+        trial_due: null,
+        current_version: null,
+      },
+    });
+
+    await expect(nativeSkillDetailFacade.getSummary("skill-1")).resolves.toMatchObject({
+      purpose: "提取表格",
     });
   });
 

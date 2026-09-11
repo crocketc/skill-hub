@@ -441,9 +441,36 @@ describe("SkillDetailPage shell", () => {
 
   it("loads the description and editable metadata panel independently", async () => {
     await renderDetail();
-    expect(await screen.findByText("Original description")).toBeVisible();
+    // P1-12：原文与译文收纳为次级展示，展开后才可见。
+    fireEvent.click(await screen.findByText("Original text and translation"));
+    expect(screen.getByText("Original description")).toBeVisible();
     expect(screen.getByText("模型译文")).toBeVisible();
     expect(screen.getByRole("button", { name: "Edit My purpose" })).toBeVisible();
+  });
+
+  it("states the skill purpose exactly once in the overview block and never in the header", async () => {
+    await renderDetail({
+      facade: createMockSkillDetailFacade({
+        // getSummary 口径（译文回退链）与元数据用户用途刻意不同，便于统计出现次数。
+        summary: { purpose: "Summarized purpose from getSummary" },
+      }),
+    });
+
+    const purposes = await screen.findAllByText("Summarized purpose from getSummary");
+    expect(purposes).toHaveLength(1);
+    expect(document.getElementById("overview")?.contains(purposes[0])).toBe(true);
+    const header = document.querySelector(".sh-skill-detail__header");
+    expect(header?.contains(purposes[0])).toBe(false);
+  });
+
+  it("shows the alias once in the header and keeps alias editing in the metadata", async () => {
+    await renderDetail();
+
+    // 别名只在头部展示一次；元数据保留编辑契约但不再重复只读展示同一值。
+    expect(await screen.findAllByText("PDF 表格读取器")).toHaveLength(1);
+    const header = document.querySelector(".sh-skill-detail__header");
+    expect(header?.textContent).toContain("PDF 表格读取器");
+    expect(screen.getByRole("button", { name: "Edit Alias" })).toBeVisible();
   });
 
   it("shows invocation and declared runtime requirements in the detail page", async () => {
@@ -464,7 +491,9 @@ describe("SkillDetailPage shell", () => {
       name: "Markdown workspace",
     });
     const metadataSectionHeading = await screen.findByRole("heading", { name: "Identity and source" });
-    const metadataHeading = await screen.findByRole("heading", { name: "Original source text" });
+    // P1-12：原文文本折叠为次级展示，展开后标题可见。
+    fireEvent.click(screen.getByText("Original text and translation"));
+    const metadataHeading = screen.getByRole("heading", { name: "Original source text" });
 
     expect(
       descriptionHeading.compareDocumentPosition(workspaceHeading) &

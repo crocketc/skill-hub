@@ -64,7 +64,9 @@ function summaryOf(skill: SkillResult): SkillDetailSummary {
     name: skill.display_name,
     pendingCount: 0,
     projectDeploymentCount: 0,
-    purpose: skill.translated_description ?? skill.original_description,
+    // P1-12：概览是全页唯一的用途陈述（头部不再重复）。口径：用户用途优先
+    // （QA-008），缺省回退持久化译文，再回退原文，绝不留空。
+    purpose: skill.user_purpose ?? skill.translated_description ?? skill.original_description,
     trialDue: skill.trial_due ?? undefined,
     upgradeAvailable: false,
   };

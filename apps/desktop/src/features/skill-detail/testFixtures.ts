@@ -141,7 +141,8 @@ export function detailFixture(
       copyright: "Copyright 2026 Example Author",
       invocation: "pdf-reader <file>",
       license: "MIT",
-      note: "用于 PDF 表格提取",
+      // P1-12：备注与用途取不同文案，避免页面级"只出现一次"断言被夹具巧合破坏。
+      note: "备注：部署前先人工复核一次",
       originalDescription: "Original description",
       ownership: "managed",
       purpose: "用于 PDF 表格提取",

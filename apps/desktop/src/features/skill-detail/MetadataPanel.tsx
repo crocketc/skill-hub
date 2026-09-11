@@ -21,6 +21,9 @@ interface EditableTextSectionProps {
   hint?: string;
   label: string;
   multiline?: boolean;
+  /** P1-12：值为 false 时只读态不再重复展示字段值（值已在页面主位置展示一次），
+   *  编辑契约（草稿表单与保存流程）保持不变。 */
+  showReadValue?: boolean;
   onSave: (value: string) => Promise<void>;
   value: string;
 }
@@ -29,6 +32,7 @@ function EditableTextSection({
   hint,
   label,
   multiline = false,
+  showReadValue = true,
   onSave,
   value,
 }: EditableTextSectionProps): JSX.Element {
@@ -74,9 +78,10 @@ function EditableTextSection({
           </Button>
         ) : null}
       </div>
-      {mode === "read" ? (
+      {mode === "read" && showReadValue ? (
         <p aria-label={label}>{savedValue || t("skillDetail.metadata.empty")}</p>
-      ) : (
+      ) : null}
+      {mode !== "read" ? (
         <div className="sh-metadata-panel__form">
           {multiline ? (
             <textarea
@@ -126,7 +131,7 @@ function EditableTextSection({
           </div>
           {error ? <p role="alert">{error}</p> : null}
         </div>
-      )}
+      ) : null}
     </section>
   );
 }
@@ -159,8 +164,8 @@ export function MetadataPanel({ facade, metadata, skillId }: MetadataPanelProps)
 
   return (
     <div className="sh-metadata-panel">
+      {/* P1-12：块标题"身份与来源"已是该区块唯一标题，事实清单由字段名自说明。 */}
       <section className="sh-metadata-panel__facts">
-        <h3>{t("skillDetail.metadata.identityFacts")}</h3>
         <dl>
           <div>
             <dt>{t("skillDetail.metadata.source")}</dt>
@@ -184,70 +189,80 @@ export function MetadataPanel({ facade, metadata, skillId }: MetadataPanelProps)
           </div>
         </dl>
       </section>
-      <section>
-        <h3>{t("skillDetail.metadata.originalDescription")}</h3>
-        <p>{metadata.originalDescription ?? t("skillDetail.metadata.empty")}</p>
-      </section>
-      <section>
-        <div className="sh-metadata-panel__section-heading">
-          <h3>{t("skillDetail.metadata.translation")}</h3>
-          <Button
-            onClick={() => {
-              if (metadata.translation?.userRevised) setTranslationConfirmation(true);
-              else void requestTranslation(false);
-            }}
-            size="sm"
-            variant="ghost"
-          >
-            {t("skillDetail.metadata.retranslate")}
-          </Button>
-        </div>
-        <EditableTextSection
-          key={`translation-${metadata.translation?.text ?? ""}`}
-          label={t("skillDetail.metadata.translationText")}
-          multiline
-          onSave={(translationText) => savePatch({ translationText: translationText || null })}
-          value={metadata.translation?.text ?? ""}
-        />
-        {metadata.translation ? (
-          <div className="sh-metadata-panel__translation-facts">
-            <span>{metadata.translation.locale}</span>
-            <span>{metadata.translation.model}</span>
-            <span>{metadata.translation.sourceVersion}</span>
-            {metadata.translation.stale ? (
-              <StatusBadge tone="warning">{t("skillDetail.metadata.stale")}</StatusBadge>
-            ) : null}
-            {metadata.translation.userRevised ? (
-              <StatusBadge tone="info">{t("skillDetail.metadata.userRevised")}</StatusBadge>
-            ) : null}
-          </div>
-        ) : null}
-        {translationConfirmation ? (
-          <div className="sh-metadata-panel__confirmation" role="alertdialog">
-            <p>
-              {t("skillDetail.metadata.translationOverwrite", {
-                locale: metadata.translation?.locale,
-              })}
-            </p>
-            <Button onClick={() => void requestTranslation(true)} size="sm">
-              {t("skillDetail.metadata.confirmRetranslate")}
-            </Button>
-            <Button onClick={() => setTranslationConfirmation(false)} size="sm" variant="ghost">
-              {t("actions.cancel")}
+      {/* P1-12：原文与译文是翻译契约字段，保留但收纳为次级展示，
+          避免与正文 Markdown、概览用途三层描述性文本连续堆叠。 */}
+      <details className="sh-metadata-panel__secondary">
+        <summary>{t("skillDetail.metadata.sourceTexts")}</summary>
+        <section>
+          <h3>{t("skillDetail.metadata.originalDescription")}</h3>
+          <p>{metadata.originalDescription ?? t("skillDetail.metadata.empty")}</p>
+        </section>
+        <section>
+          <div className="sh-metadata-panel__section-heading">
+            <h3>{t("skillDetail.metadata.translation")}</h3>
+            <Button
+              onClick={() => {
+                if (metadata.translation?.userRevised) setTranslationConfirmation(true);
+                else void requestTranslation(false);
+              }}
+              size="sm"
+              variant="ghost"
+            >
+              {t("skillDetail.metadata.retranslate")}
             </Button>
           </div>
-        ) : null}
-      </section>
+          <EditableTextSection
+            key={`translation-${metadata.translation?.text ?? ""}`}
+            label={t("skillDetail.metadata.translationText")}
+            multiline
+            onSave={(translationText) => savePatch({ translationText: translationText || null })}
+            value={metadata.translation?.text ?? ""}
+          />
+          {metadata.translation ? (
+            <div className="sh-metadata-panel__translation-facts">
+              <span>{metadata.translation.locale}</span>
+              <span>{metadata.translation.model}</span>
+              <span>{metadata.translation.sourceVersion}</span>
+              {metadata.translation.stale ? (
+                <StatusBadge tone="warning">{t("skillDetail.metadata.stale")}</StatusBadge>
+              ) : null}
+              {metadata.translation.userRevised ? (
+                <StatusBadge tone="info">{t("skillDetail.metadata.userRevised")}</StatusBadge>
+              ) : null}
+            </div>
+          ) : null}
+          {translationConfirmation ? (
+            <div className="sh-metadata-panel__confirmation" role="alertdialog">
+              <p>
+                {t("skillDetail.metadata.translationOverwrite", {
+                  locale: metadata.translation?.locale,
+                })}
+              </p>
+              <Button onClick={() => void requestTranslation(true)} size="sm">
+                {t("skillDetail.metadata.confirmRetranslate")}
+              </Button>
+              <Button onClick={() => setTranslationConfirmation(false)} size="sm" variant="ghost">
+                {t("actions.cancel")}
+              </Button>
+            </div>
+          ) : null}
+        </section>
+      </details>
+      {/* 别名的唯一展示位是头部；此处只保留编辑契约。 */}
       <EditableTextSection
         key={`alias-${metadata.alias ?? ""}`}
         label={t("skillDetail.metadata.alias")}
+        showReadValue={false}
         onSave={(alias) => savePatch({ alias: alias || null })}
         value={metadata.alias ?? ""}
       />
+      {/* 用途的唯一展示位是概览块（用户用途优先口径）；此处只保留编辑契约。 */}
       <EditableTextSection
         key={`purpose-${metadata.purpose}`}
         label={t("skillDetail.metadata.purpose")}
+        hint={t("skillDetail.metadata.purposeHint")}
         multiline
+        showReadValue={false}
         onSave={(purpose) => savePatch({ purpose })}
         value={metadata.purpose}
       />

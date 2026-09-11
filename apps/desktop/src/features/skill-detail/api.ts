@@ -19,6 +19,8 @@ export interface SkillDetailSummary {
   name: string;
   pendingCount: number;
   projectDeploymentCount: number;
+  /** P1-12：概览块是全页唯一的用途陈述（头部不再重复）。口径见 nativeApi.summaryOf：
+   * 用户用途优先，回退译文、原文。 */
   purpose: string;
   trialDue?: string;
   upgradeAvailable: boolean;
