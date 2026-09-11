@@ -110,6 +110,12 @@ function createPreviewProjectFacade(initial: ProjectView[]): ProjectFacade {
       projects = projects.map((project) => (project.id === current.id ? updated : project));
       return updated;
     },
+    setTags: async (projectId, tags) => {
+      const current = projects.find((project) => project.id === projectId) ?? projects[0]!;
+      const updated = { ...current, tags };
+      projects = projects.map((project) => (project.id === current.id ? updated : project));
+      return updated;
+    },
     listAgentCandidates: async () => previewCandidates,
     previewDirectory: async () => previewDirectoryPreview,
     getAssemblyPlan: async () => null,

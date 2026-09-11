@@ -256,6 +256,22 @@
   color: var(--ui-danger-foreground);
 }
 
+/* 注册成功态：结果反馈 + 下一步动作（打开详情 / 完成）。 */
+.sh-project-registration__success {
+  display: grid;
+  min-width: 0;
+  gap: var(--space-2);
+}
+
+.sh-project-registration__success p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.sh-project-registration__success .sh-project-registration__actions {
+  margin-top: var(--space-2);
+}
+
 .sh-project-registration__actions {
   display: flex;
   flex-wrap: wrap;

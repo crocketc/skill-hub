@@ -88,6 +88,14 @@ export const nativeProjectFacade: ProjectFacade = {
     if (result.type !== "project") throw new Error("update_project returned an unexpected native result.");
     return projectView(result.payload);
   },
+  async setTags(id, tags) {
+    const result = await executeCommand({
+      type: "set_project_tags",
+      payload: { project_id: id, tags },
+    });
+    if (result.type !== "project") throw new Error("set_project_tags returned an unexpected native result.");
+    return projectView(result.payload);
+  },
   async listAgentCandidates(): Promise<ProjectAgentCandidate[]> {
     const result = await queryApplication({ type: "get_discovery_snapshot", payload: null });
     if (result.type !== "discovery_snapshot") throw new Error("get_discovery_snapshot returned an unexpected native result.");

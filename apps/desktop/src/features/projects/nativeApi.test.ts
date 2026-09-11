@@ -224,6 +224,30 @@ it("updates only a project's Agent associations while preserving its local facts
   });
 });
 
+it("replaces project tags through the existing set_project_tags command", async () => {
+  execute.mockResolvedValue({
+    type: "project",
+    payload: {
+      id: "project-aurora",
+      name: "Aurora",
+      device_path: "D:/Work/Aurora",
+      physical_id: "fs:project-aurora",
+      logical: { identity_hint: null, note: null },
+      tags: [{ name: "Rust" }, { name: "Desktop" }],
+      created_at: "2026-09-05T00:00:00Z",
+      updated_at: "2026-09-05T00:00:00Z",
+    },
+  });
+
+  await expect(nativeProjectFacade.setTags("project-aurora", ["Rust", "Desktop"])).resolves.toEqual(
+    expect.objectContaining({ tags: ["Rust", "Desktop"] }),
+  );
+  expect(execute).toHaveBeenCalledWith({
+    type: "set_project_tags",
+    payload: { project_id: "project-aurora", tags: ["Rust", "Desktop"] },
+  });
+});
+
 it("previews a chosen project directory read-only before registration", async () => {
   query.mockResolvedValueOnce({
     type: "project_directory_preview",

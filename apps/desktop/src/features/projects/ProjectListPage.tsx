@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { desktopDirectoryPicker, normalizeWindowsPath, type DirectoryPicker } from "../../platform/directoryPicker";
+import { describeNativeError } from "../../api/nativeErrors";
 import { Button } from "../../ui/Button";
 import { CheckboxField } from "../../ui/CheckboxField";
 import { DataState } from "../../ui/DataState";
@@ -46,12 +47,18 @@ function newProjectId(): string {
   return globalThis.crypto?.randomUUID?.() ?? `project-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
+/** Registration tags are optional, comma separated, trimmed and deduplicated. */
+export function parseRegistrationTags(input: string): string[] {
+  return [...new Set(input.split(/[,，]/).map((tag) => tag.trim()).filter(Boolean))];
+}
+
 export function ProjectListPage({
   directoryPicker = desktopDirectoryPicker,
   facade = unavailableProjectFacade,
   onOpenProject,
 }: ProjectListPageProps) {
   const { t } = useTranslation();
+  const translate = (key: string, options?: Record<string, unknown>) => String(t(key as never, options as never));
   const [projects, setProjects] = useState<ProjectView[]>();
   const [error, setError] = useState(false);
   const [text, setText] = useState("");
@@ -60,7 +67,10 @@ export function ProjectListPage({
   const [registrationOpen, setRegistrationOpen] = useState(false);
   const [registrationPath, setRegistrationPath] = useState("");
   const [registrationName, setRegistrationName] = useState("");
+  const [registrationTags, setRegistrationTags] = useState("");
   const [registrationError, setRegistrationError] = useState<string>();
+  const [registeredProject, setRegisteredProject] = useState<ProjectView>();
+  const [tagsError, setTagsError] = useState<string>();
   const [registering, setRegistering] = useState(false);
   const [agentCandidates, setAgentCandidates] = useState<ProjectAgentCandidate[]>([]);
   const [selectedAgentIds, setSelectedAgentIds] = useState<string[]>([]);
@@ -113,6 +123,8 @@ export function ProjectListPage({
 
   const closeRegistration = () => {
     setRegistrationOpen(false);
+    setRegisteredProject(undefined);
+    setTagsError(undefined);
     resetPreview();
   };
 
@@ -155,20 +167,33 @@ export function ProjectListPage({
     registeringRef.current = true;
     setRegistering(true);
     setRegistrationError(undefined);
+    setTagsError(undefined);
     try {
-      await facade.register({
+      const registered = await facade.register({
         id: newProjectId(),
         name: registrationName.trim(),
         path: registrationPath,
         tags: [], agentIds: selectedAgentIds,
       });
-      setRegistrationOpen(false);
+      // Tags ride on the existing set_project_tags command after the
+      // registration itself; a tag failure never rolls back the project.
+      const nextTags = parseRegistrationTags(registrationTags);
+      if (nextTags.length) {
+        try {
+          await facade.setTags(registered.id, nextTags);
+        } catch (reason) {
+          setTagsError(describeNativeError(reason, translate, "projects.registration.tagsFailed"));
+        }
+      }
+      setRegisteredProject(registered);
       setRegistrationPath("");
       setRegistrationName("");
+      setRegistrationTags("");
+      setSelectedAgentIds([]);
       resetPreview();
       setRevision((current) => current + 1);
     } catch (reason) {
-      setRegistrationError(reason instanceof Error ? reason.message : t("projects.registration.failed"));
+      setRegistrationError(describeNativeError(reason, translate, "projects.registration.failed"));
     } finally {
       registeringRef.current = false;
       setRegistering(false);
@@ -201,7 +226,7 @@ export function ProjectListPage({
       <PageHeader
         actions={(
           <Button
-            onClick={() => { setRegistrationError(undefined); setRegistrationOpen(true); void facade.listAgentCandidates().then(setAgentCandidates).catch(() => setAgentCandidates([])); }}
+            onClick={() => { setRegistrationError(undefined); setRegisteredProject(undefined); setTagsError(undefined); setRegistrationOpen(true); void facade.listAgentCandidates().then(setAgentCandidates).catch(() => setAgentCandidates([])); }}
             ref={registrationTriggerRef}
             variant="secondary"
           >
@@ -220,7 +245,25 @@ export function ProjectListPage({
         returnFocusRef={registrationTriggerRef}
         title={t("projects.registration.title")}
       >
-        {registrationOpen ? (
+        {registrationOpen && registeredProject ? (
+          <div className="sh-project-registration__success">
+            <p aria-live="polite" role="status"><strong>{t("projects.registration.success.title")}</strong></p>
+            <p>{t("projects.registration.success.detail", { name: registeredProject.name })}</p>
+            {tagsError ? <p className="sh-project-registration__preview-error" role="alert">{tagsError}</p> : null}
+            <div className="sh-project-registration__actions">
+              {onOpenProject ? (
+                <Button
+                  onClick={() => { const projectId = registeredProject.id; closeRegistration(); onOpenProject(projectId); }}
+                  variant="secondary"
+                >
+                  {t("projects.registration.success.openDetail")}
+                </Button>
+              ) : null}
+              <Button onClick={() => closeRegistration()}>{t("projects.registration.success.finish")}</Button>
+            </div>
+          </div>
+        ) : null}
+        {registrationOpen && !registeredProject ? (
           <div className="sh-project-registration">
             <Button disabled={registering} onClick={() => void chooseDirectory()} variant="secondary">{t("projects.registration.pickDirectory")}</Button>
             {registrationPath ? <p className="sh-project-registration__path">{registrationPath}</p> : null}
@@ -251,6 +294,15 @@ export function ProjectListPage({
                 name="project-registration-name"
                 onChange={(event) => setRegistrationName(event.currentTarget.value)}
                 value={registrationName}
+              />
+            </Field>
+            <Field help={t("projects.registration.tagsHint")} label={t("projects.registration.tags")}>
+              <Input
+                autoComplete="off"
+                disabled={registering}
+                name="project-registration-tags"
+                onChange={(event) => setRegistrationTags(event.currentTarget.value)}
+                value={registrationTags}
               />
             </Field>
             {agentCandidates.length ? (
