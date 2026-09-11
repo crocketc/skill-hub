@@ -68,6 +68,20 @@ it("honestly omits every optional region that the data does not provide", () => 
   expect(screen.getByText("anthropics/skills@v2")).toBeVisible();
   expect(screen.queryByText(/PDF 文件/)).not.toBeInTheDocument();
   expect(container.querySelector("ul")).not.toBeInTheDocument();
+  // T2 冻结契约回归：未提供副名时不渲染副名区域。
+  expect(container.querySelector(".sh-skill-card__subtitle")).not.toBeInTheDocument();
+});
+
+// P1-10：集中库卡片需同时展示别名（标题）与原名（小一号副名）。
+it("renders an optional subtitle under the title for dual-name display", () => {
+  render(<SkillCard skill={{ ...fullCard, subtitle: "pdf-reader" }} />);
+
+  const subtitle = screen.getByText("pdf-reader");
+  expect(subtitle).toHaveClass("sh-skill-card__subtitle");
+  expect(
+    screen.getByRole("heading", { name: "PDF Reader" }).compareDocumentPosition(subtitle) &
+      Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
 });
 
 it("keeps the title, the link, and the actions as independent semantics", () => {

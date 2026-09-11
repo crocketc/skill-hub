@@ -3268,6 +3268,48 @@ a {
   text-wrap: pretty;
 }
 
+/* P1-10：长描述区域固定高度 + 内部滚动，避免长文挤压抽屉下方模块。 */
+.sh-skill-drawer__field-value--clamped {
+  max-height: 8rem;
+  overflow-y: auto;
+}
+
+/* P1-10：抽屉标签行——chip 列表 + 逐个移除 + 批量添加入口。 */
+.sh-skill-drawer__tags {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-1);
+}
+
+.sh-skill-drawer__tag-list {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sh-skill-drawer__tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0 var(--space-1);
+  padding: 0 var(--space-1) 0 var(--space-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-muted, var(--color-surface));
+  font-size: var(--font-size-xs);
+}
+
+.sh-skill-drawer__original-name {
+  flex-basis: 100%;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+}
+
 .sh-skill-drawer__identity span,
 .sh-skill-drawer__secondary,
 .sh-skill-drawer__empty,

@@ -222,7 +222,7 @@ describe("SkillLibraryPage", () => {
     expect(screen.queryByText("Security check completed")).not.toBeInTheDocument();
   });
 
-  it("previews and confirms batch tag additions for the selected skills", async () => {
+  it("applies batch tag additions through per-skill metadata saves", async () => {
     const facade = createMockSkillLibraryFacade();
     renderLibrary({ facade });
 
@@ -239,12 +239,78 @@ describe("SkillLibraryPage", () => {
     fireEvent.click(within(dialog).getByRole("button", { name: "Add tags" }));
 
     await waitFor(() => {
-      expect(facade.calls.emitBatchIntent).toContainEqual({
-        action: "add_tag",
-        tags: ["review", "urgent"],
-        target: { kind: "skill_ids", skillIds: ["skill-pdf"] },
+      // 标签写经 set_metadata 的读改写落地（生产 emitBatchIntent 未绑定）。
+      expect(facade.calls.saveSkillMetadata).toContainEqual({
+        skillId: "skill-pdf",
+        patch: { tags: ["documents", "pdf", "review", "urgent"] },
       });
     });
+    expect(facade.calls.emitBatchIntent).not.toContainEqual(
+      expect.objectContaining({ action: "add_tag" }),
+    );
+  });
+
+  it("submits the remaining tag set when removing tags in bulk", async () => {
+    const facade = createMockSkillLibraryFacade();
+    renderLibrary({ facade });
+
+    fireEvent.click(
+      await screen.findByRole("checkbox", { name: "Select PDF Reader" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Remove tags" }));
+
+    const dialog = await screen.findByRole("dialog", { name: "Remove tags" });
+    fireEvent.change(within(dialog).getByRole("textbox", { name: "Tags" }), {
+      target: { value: "documents" },
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Remove tags" }));
+
+    await waitFor(() => {
+      expect(facade.calls.saveSkillMetadata).toContainEqual({
+        skillId: "skill-pdf",
+        patch: { tags: ["pdf"] },
+      });
+    });
+  });
+
+  it("reports per-skill tag outcomes instead of failing the whole batch", async () => {
+    const facade = createMockSkillLibraryFacade();
+    const successfulSave = facade.saveSkillMetadata?.bind(facade);
+    facade.saveSkillMetadata = async (skillId, patch) => {
+      if (skillId === "skill-docx") {
+        throw new Error("locked by another process");
+      }
+      await successfulSave?.(skillId, patch);
+    };
+    renderLibrary({ facade });
+
+    fireEvent.click(
+      await screen.findByRole("checkbox", { name: "Select PDF Reader" }),
+    );
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select DOCX Writer" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add tags" }));
+    const dialog = await screen.findByRole("dialog", { name: "Add tags" });
+    fireEvent.change(within(dialog).getByRole("textbox", { name: "Tags" }), {
+      target: { value: "review" },
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Add tags" }));
+
+    const summary = await screen.findByTestId("batch-summary");
+    expect(summary).toHaveTextContent("1 succeeded");
+    expect(summary).toHaveTextContent("1 failed");
+    expect(screen.getAllByTestId("batch-outcome-failed")).toHaveLength(1);
+    expect(screen.getByText("locked by another process")).toBeVisible();
+  });
+
+  it("shows the runtime name beside the aliased display name on cards", async () => {
+    const facade = createMockSkillLibraryFacade();
+    renderLibrary({ facade, persistedViewMode: "unset" });
+
+    const card = await screen.findByTestId("skill-card-skill-pdf");
+    expect(screen.getByRole("heading", { name: "PDF Reader" })).toBeVisible();
+    expect(within(card).getByText("pdf-reader")).toHaveClass(
+      "sh-skill-card__subtitle",
+    );
   });
 
   it("orders batch actions from high-frequency flows to a separated destructive group", async () => {
@@ -392,8 +458,8 @@ describe("SkillLibraryPage", () => {
     facade.listSkills = () => Promise.reject(new Error("offline"));
     fireEvent.click(screen.getByRole("button", { name: "Start export" }));
 
-    const batchBar = screen.getByRole("complementary", { name: "Batch actions" });
-    expect(await within(batchBar).findByRole("status")).toHaveTextContent(
+    // 批量错误经通知中心以危险通知呈现（role=alert、常驻可关闭）。
+    expect(await screen.findByRole("alert")).toHaveTextContent(
       "The batch workflow could not be started",
     );
     expect(screen.queryByText("Data protection export")).not.toBeInTheDocument();
@@ -1181,7 +1247,7 @@ describe("SkillLibraryPage", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "Submit export job" }));
 
-    expect(await screen.findByRole("status")).toHaveTextContent(
+    expect(await screen.findByRole("alert")).toHaveTextContent(
       "This batch workflow is not connected",
     );
     expect(screen.queryByText("Export completed")).not.toBeInTheDocument();
@@ -1345,7 +1411,7 @@ describe("SkillLibraryPage", () => {
     expect(params.getAll("skill")).toContain("skill-pdf");
   });
 
-  it("clears a failed batch announcement when the selected scope changes", async () => {
+  it("clears stale batch error notices when the selected scope changes", async () => {
     const facade = createMockSkillLibraryFacade();
     vi.spyOn(facade, "emitBatchIntent").mockRejectedValue(
       new Error("batch preparation failed"),
@@ -1356,17 +1422,17 @@ describe("SkillLibraryPage", () => {
       await screen.findByRole("checkbox", { name: "Select PDF Reader" }),
     );
     fireEvent.click(screen.getByRole("button", { name: "Submit export job" }));
-    const batchBar = screen.getByRole("complementary", { name: "Batch actions" });
-    expect(await within(batchBar).findByRole("status")).toHaveTextContent(
+    expect(await screen.findByRole("alert")).toHaveTextContent(
       "The batch workflow could not be started",
     );
 
     fireEvent.click(screen.getByRole("checkbox", { name: "Select DOCX Writer" }));
 
-    expect(within(batchBar).getByText("2 items selected")).toBeVisible();
-    expect(within(batchBar).queryByRole("status")).not.toBeInTheDocument();
+    // 选择范围变化后，过期批量错误通知随“batch”类撤销，避免误归因到新选择。
+    expect(screen.getByText("2 items selected")).toBeVisible();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     expect(
-      within(batchBar).queryByText("The batch workflow could not be started"),
+      screen.queryByText("The batch workflow could not be started"),
     ).not.toBeInTheDocument();
   });
 

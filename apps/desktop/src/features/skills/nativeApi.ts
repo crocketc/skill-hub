@@ -68,10 +68,14 @@ function toTableRow(item: SkillListItem, agentTargets: Map<string, AgentDeployme
   const agentDeployments = item.agent_deployment_target_ids.map(
     (targetId) => agentTargets.get(targetId) ?? { id: targetId, name: targetId },
   );
+  // P1-10：别名只覆盖展示名；原名（runtime_name）始终单独携带，
+  // 展示名与原名一致时不产生冗余别名。
+  const aliased = item.display_name !== item.runtime_name;
   return {
     aiCheck: checkStateOf(item.ai_check),
     agentDeploymentCount: item.agent_deployment_count,
     agentDeployments,
+    alias: aliased ? item.display_name : undefined,
     basicCheck: checkStateOf(item.basic_check),
     currentVersion: item.current_version_label ?? "unknown",
     highRiskCount: item.high_risk_count,
@@ -80,6 +84,7 @@ function toTableRow(item: SkillListItem, agentTargets: Map<string, AgentDeployme
     lifecycle: lifecycleOf(item),
     name: item.display_name,
     originalDescription: item.original_description,
+    originalName: item.runtime_name,
     ownership: item.author ?? undefined,
     pendingCount: 0,
     projectDeploymentCount: item.project_deployment_count,
@@ -114,16 +119,21 @@ function asSkillPage(result: AppQueryResult) {
 
 function asQuickView(result: AppQueryResult): SkillQuickView {
   if (result.type !== "skill") throw unavailableResult();
+  const payload = result.payload;
+  // P1-10：抽屉标题展示别名（display_name），原名（runtime_name）单独展示；
+  // 未设置别名（与原名同值）时如实省略别名。
+  const aliased = payload.display_name !== payload.runtime_name;
   const row: SkillTableRow = {
     aiCheck: "not_run",
     agentDeploymentCount: 0,
-    alias: result.payload.display_name,
+    alias: aliased ? payload.display_name : undefined,
     basicCheck: "not_run",
     currentVersion: "unknown",
     highRiskCount: 0,
-    id: result.payload.skill_id,
+    id: payload.skill_id,
     lifecycle: "active",
-    name: result.payload.display_name,
+    name: payload.display_name,
+    originalName: payload.runtime_name,
     pendingCount: 0,
     projectDeploymentCount: 0,
     purpose: "",
@@ -295,8 +305,10 @@ export const nativeSkillLibraryFacade: SkillLibraryFacade = {
     }
   },
 
-  // QA-007：抽屉别名/备注通过 set_metadata 持久化；该命令是整体覆盖，
-  // 必须先读取当前值合并补丁，避免丢失标签、作者或许可证。
+  // QA-007：抽屉别名/备注/标签通过 set_metadata 持久化；该命令是整体覆盖，
+  // 必须先读取当前值合并补丁，避免丢失作者或许可证。
+  // P1-10 红线：display_name 只取补丁别名或回退 runtime_name，
+  // 原名在任何路径下都不会被该命令修改（改名只能走 rename_skill，此处不使用）。
   async saveSkillMetadata(skillId, patch) {
     const result = await queryApplication({
       type: "get_skill",
@@ -312,7 +324,7 @@ export const nativeSkillLibraryFacade: SkillLibraryFacade = {
           ? skill.display_name
           : patch.alias?.trim() || skill.runtime_name,
         note: patch.note === undefined ? skill.user_note : patch.note || null,
-        tags: skill.tags,
+        tags: patch.tags === undefined ? skill.tags : patch.tags,
         author: skill.author,
         license: skill.license,
         user_purpose: skill.user_purpose,

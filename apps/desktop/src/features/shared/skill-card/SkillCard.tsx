@@ -48,6 +48,9 @@ export function SkillCard({
           <Icon name={skillCardSourceIcon(skill.sourceType)} size={20} />
         </span>
         <Heading className="sh-skill-card__title">{skill.name}</Heading>
+        {skill.subtitle ? (
+          <p className="sh-skill-card__subtitle">{skill.subtitle}</p>
+        ) : null}
       </div>
       <p className="sh-skill-card__source">
         <span className="sh-skill-card__source-label">{skill.sourceLabel}</span>

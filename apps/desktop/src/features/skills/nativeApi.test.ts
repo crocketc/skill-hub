@@ -97,6 +97,51 @@ describe("native skill library facade", () => {
     expect(page.facets.tags).toEqual(["documents"]);
   });
 
+  // P1-10：别名只覆盖展示名；原名（runtime_name）必须在读模型中如实可达。
+  it("maps an aliased display name to the alias plus the untouched runtime name", async () => {
+    vi.mocked(queryApplication).mockResolvedValue(skillPage([nativeItem()]));
+
+    const page = await nativeSkillLibraryFacade.listSkills(DEFAULT_SKILL_QUERY);
+
+    expect(page.items[0].name).toBe("PDF Reader");
+    expect(page.items[0].alias).toBe("PDF Reader");
+    expect(page.items[0].originalName).toBe("pdf-reader");
+  });
+
+  it("omits the alias when the display name equals the runtime name", async () => {
+    vi.mocked(queryApplication).mockResolvedValue(
+      skillPage([nativeItem({ display_name: "pdf-reader" })]),
+    );
+
+    const page = await nativeSkillLibraryFacade.listSkills(DEFAULT_SKILL_QUERY);
+
+    expect(page.items[0].name).toBe("pdf-reader");
+    expect(page.items[0].alias).toBeUndefined();
+    expect(page.items[0].originalName).toBe("pdf-reader");
+  });
+
+  it("fills the quick view with the runtime name and only a user-set alias", async () => {
+    vi.mocked(queryApplication).mockResolvedValue(persistedSkill());
+
+    const view = await nativeSkillLibraryFacade.getSkillQuickView("skill-1");
+
+    expect(view.name).toBe("Renamed Reader");
+    expect(view.alias).toBe("Renamed Reader");
+    expect(view.originalName).toBe("pdf-reader");
+    expect(view.tags).toEqual(["documents"]);
+  });
+
+  it("fills the quick view without an alias when the display name is the runtime name", async () => {
+    vi.mocked(queryApplication).mockResolvedValue(
+      persistedSkill({ display_name: "pdf-reader" }),
+    );
+
+    const view = await nativeSkillLibraryFacade.getSkillQuickView("skill-1");
+
+    expect(view.alias).toBeUndefined();
+    expect(view.originalName).toBe("pdf-reader");
+  });
+
   it("maps the persisted status read model onto the table row", async () => {
     vi.mocked(queryApplication)
       .mockResolvedValueOnce(
@@ -404,5 +449,51 @@ describe("native skill metadata save", () => {
         user_purpose: "用于 PDF 表格提取",
       },
     });
+  });
+
+  // P1-10：标签写沿用 set_metadata 的整体覆盖契约；未提供的字段先读后并，
+  // 别名清空仍回退 runtime_name，全程不允许出现 rename_skill。
+  it("persists a tags patch while keeping the alias and remaining metadata", async () => {
+    vi.mocked(queryApplication).mockResolvedValue(persistedSkill());
+    vi.mocked(executeCommand).mockClear();
+    vi.mocked(executeCommand).mockResolvedValue(savedSummary());
+
+    await nativeSkillLibraryFacade.saveSkillMetadata!("skill-1", {
+      tags: ["documents", "review"],
+    });
+
+    expect(executeCommand).toHaveBeenCalledTimes(1);
+    expect(executeCommand).toHaveBeenCalledWith({
+      type: "set_metadata",
+      payload: {
+        skill_id: "skill-1",
+        display_name: "Renamed Reader",
+        note: "Keep near docs",
+        tags: ["documents", "review"],
+        author: "Platform team",
+        license: "MIT",
+        user_purpose: "用于 PDF 表格提取",
+      },
+    });
+    expect(executeCommand).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: "rename_skill" }),
+    );
+  });
+
+  it("keeps the stored tags when a patch omits them", async () => {
+    vi.mocked(queryApplication).mockResolvedValue(persistedSkill());
+    vi.mocked(executeCommand).mockResolvedValue(savedSummary());
+
+    await nativeSkillLibraryFacade.saveSkillMetadata!("skill-1", { alias: null });
+
+    expect(executeCommand).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "set_metadata",
+        payload: expect.objectContaining({
+          display_name: "pdf-reader",
+          tags: ["documents"],
+        }),
+      }),
+    );
   });
 });
