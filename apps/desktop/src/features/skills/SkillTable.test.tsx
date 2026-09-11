@@ -222,6 +222,7 @@ it("offers all supported page sizes and reports the current page range", async (
   await renderTable();
 
   const pageSize = screen.getByRole("combobox", { name: "Page size" });
+  expect(pageSize).toHaveClass("sh-select");
   expect(within(pageSize).getAllByRole("option").map((option) => option.textContent)).toEqual(["10", "25", "50", "100"]);
   expect(screen.getByText("11–20 of 23")).toBeVisible();
   expect(screen.getByRole("button", { name: "Previous page" })).not.toBeDisabled();
@@ -336,6 +337,8 @@ it("emits controlled visibility and density preference updates", async () => {
     visibleColumns: expect.not.arrayContaining(["purpose"]),
   }));
   expect(screen.getByRole("button", { name: "Version" })).not.toHaveClass("sh-skill-table__reorder-item--visible");
+  // 密度三选一迁移到统一 RadioField 控件。
+  expect(screen.getByRole("radio", { name: "Standard" })).toHaveClass("sh-radio-field__input");
   fireEvent.click(screen.getByRole("radio", { name: "Standard" }));
   expect(onPreferencesChange).toHaveBeenLastCalledWith(expect.objectContaining({ density: "standard" }));
 });
@@ -390,6 +393,9 @@ it("defines coarse-pointer targets for every compact table interaction", async (
   const rowCheckbox = screen.getByRole("checkbox", { name: "Select PDF Reader" });
   expect(headerCheckbox.closest("label")).toHaveClass("sh-skill-table__checkbox-target");
   expect(rowCheckbox.closest("label")).toHaveClass("sh-skill-table__checkbox-target");
+  // 行内选择框套用统一控件尺寸类，aria-label 与事件语义不变。
+  expect(headerCheckbox).toHaveClass("sh-control-checkbox");
+  expect(rowCheckbox).toHaveClass("sh-control-checkbox");
 
   const coarsePointerCss = baseCss.slice(baseCss.lastIndexOf("@media (pointer: coarse)"));
   expect(coarsePointerCss).toMatch(

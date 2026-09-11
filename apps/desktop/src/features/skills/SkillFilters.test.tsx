@@ -98,6 +98,14 @@ it("emits a page-reset query when a filter changes", async () => {
   );
 });
 
+it("uses the unified control classes for search and dropdown filters", async () => {
+  await renderSkillFilters();
+
+  expect(screen.getByRole("searchbox", { name: "Search skills" })).toHaveClass("sh-input");
+  expect(screen.getByRole("combobox", { name: "Deployment" })).toHaveClass("sh-select");
+  expect(screen.getByRole("combobox", { name: /Version/ })).toHaveClass("sh-select");
+});
+
 it("keeps multi-value filters inside a compact dropdown menu", async () => {
   await renderSkillFilters();
   expect(screen.getByText("Basic check", { selector: ".sh-filter-dropdown__label" })).toBeVisible();

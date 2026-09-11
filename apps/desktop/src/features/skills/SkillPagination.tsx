@@ -1,4 +1,5 @@
 import { useTranslation } from "react-i18next";
+import { Select } from "../../ui/Select";
 import type { SkillLibraryQuery, SkillPage } from "./api";
 
 const PAGE_SIZES = [10, 25, 50, 100] as const;
@@ -34,7 +35,7 @@ export function SkillPagination({
     >
       <label>
         {t("skillLibrary.table.pageSize")}
-        <select
+        <Select
           aria-label={t("skillLibrary.table.pageSize")}
           onChange={(event) =>
             onPageSizeChange(Number(event.currentTarget.value) as SkillLibraryQuery["pageSize"])}
@@ -45,7 +46,7 @@ export function SkillPagination({
               {size}
             </option>
           ))}
-        </select>
+        </Select>
       </label>
       <span>{t("skillLibrary.table.pageRange", { end, start, total: page.total })}</span>
       <button

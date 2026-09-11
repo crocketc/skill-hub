@@ -204,6 +204,8 @@
 }
 
 .sh-skill-library__view-toggle select {
+  /* 统一 Select 控件默认 width:100%，工具条内保持自适应宽度。 */
+  width: auto;
   min-height: 2rem;
   padding: 0 var(--space-2);
   border: 1px solid var(--ui-control-border);
@@ -237,6 +239,8 @@
 }
 
 .sh-skill-pagination select {
+  /* 统一 Select 控件默认 width:100%，分页行内保持自适应宽度。 */
+  width: auto;
   min-height: 2rem;
   padding: 0 var(--space-2);
   border: 1px solid var(--ui-control-border);

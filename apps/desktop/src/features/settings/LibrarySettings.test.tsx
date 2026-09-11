@@ -1,9 +1,10 @@
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { I18nextProvider } from "react-i18next";
 import { expect, it, vi } from "vitest";
 import { createSkillHubI18n } from "../../i18n";
 import type { HealthReport, IgnoreRule, RepairPlan } from "../../api/bindings";
 import { settingsFixture, type LibraryHealthOperations } from "./api";
+import settingsCss from "./settings.css?raw";
 import { LibrarySettings } from "./LibrarySettings";
 
 function report(findings: HealthReport["findings"]): HealthReport {
@@ -23,6 +24,14 @@ const skillRule: IgnoreRule = {
   subject: { type: "exact_skill", value: "pdf-helper" },
   reason: "稳定复现问题，先跳过",
   created_at: "2026-09-02T08:00:00Z",
+  defer_until: null,
+};
+
+const pendingRule: IgnoreRule = {
+  id: "rule-3",
+  subject: { type: "exact_pending", value: "pending-7" },
+  reason: "等待上游修复后再检查",
+  created_at: "2026-09-03T08:00:00Z",
   defer_until: null,
 };
 
@@ -127,6 +136,87 @@ it("lists existing ignore rules with subject, reason and creation time", async (
   expect(listIgnoreRules).toHaveBeenCalledWith();
 });
 
+it("renders the ignore form with the unified field controls", async () => {
+  await renderLibrary(healthFacade());
+
+  const subjectSelect = await screen.findByRole("combobox", { name: "主体类型" });
+  expect(subjectSelect).toHaveClass("sh-select");
+  const valueInput = screen.getByRole("textbox", { name: "要忽略的目录路径" });
+  expect(valueInput).toHaveClass("sh-input");
+  const reasonInput = screen.getByRole("textbox", { name: "理由" });
+  expect(reasonInput).toHaveClass("sh-input");
+});
+
+it("blocks an empty subject value with a field error before calling the backend", async () => {
+  const createIgnoreRule = vi.fn(async () => {
+    throw new Error("create_ignore_rule should not run");
+  });
+  await renderLibrary(healthFacade({ createIgnoreRule }));
+  expect(await screen.findByText("暂无忽略规则。")).toBeVisible();
+
+  await click(screen.getByRole("button", { name: "添加规则" }));
+
+  expect(createIgnoreRule).not.toHaveBeenCalled();
+  expect(await screen.findByText("请填写主体值。")).toBeVisible();
+});
+
+it("shows the empty state through DataState without rendering a list", async () => {
+  await renderLibrary(healthFacade());
+
+  const emptyMessage = await screen.findByText("暂无忽略规则。");
+  expect(emptyMessage.closest(".sh-data-state")).not.toBeNull();
+  expect(screen.queryByRole("list")).toBeNull();
+});
+
+it("renders mixed ignore rules as structured rows with type badges", async () => {
+  await renderLibrary(healthFacade({ listIgnoreRules: async () => [pathRule, skillRule, pendingRule] }));
+
+  const rows = await screen.findAllByRole("listitem");
+  expect(rows).toHaveLength(3);
+  expect(rows[0]).toHaveClass("sh-settings-ignore__row");
+  // 徽标文案在每行行首（与主体类型下拉的 option 文案区分，按行内断言）。
+  expect(within(rows[0]).getByText("路径忽略")).toBeVisible();
+  expect(within(rows[1]).getByText("精确 Skill ID")).toBeVisible();
+  expect(within(rows[2]).getByText("精确待处理 ID")).toBeVisible();
+  expect(screen.getByText("pending-7")).toBeVisible();
+  expect(screen.getByText("等待上游修复后再检查")).toBeVisible();
+  expect(screen.getByText("创建于: 2026-09-03T08:00:00Z")).toBeVisible();
+  expect(screen.getAllByRole("button", { name: "移除" })).toHaveLength(3);
+});
+
+it("keeps the rule and reports the failure when removal fails", async () => {
+  const removeIgnoreRule = vi.fn(async () => {
+    throw new Error("remove_ignore_rule failed");
+  });
+  await renderLibrary(healthFacade({ listIgnoreRules: async () => [pathRule], removeIgnoreRule }));
+  expect(await screen.findByText("C:/SkillHub/library/drafts")).toBeVisible();
+
+  await click(screen.getByRole("button", { name: "移除" }));
+  await click(await screen.findByRole("button", { name: "确认移除" }));
+
+  expect(removeIgnoreRule).toHaveBeenCalledWith("rule-1");
+  expect(await screen.findByText("忽略规则移除失败。")).toBeVisible();
+  expect(screen.getByText("C:/SkillHub/library/drafts")).toBeVisible();
+});
+
+it("wraps very long paths without breaking the row", async () => {
+  const longPath = `C:/SkillHub/${"very-long-segment/".repeat(15)}drafts`;
+  await renderLibrary(healthFacade({
+    listIgnoreRules: async () => [
+      { ...pathRule, subject: { type: "exact_path", value: longPath } },
+    ],
+  }));
+
+  const value = await screen.findByText(longPath);
+  expect(value).toHaveClass("sh-settings-ignore__value");
+  expect(value).toHaveAttribute("title", longPath);
+  expect(value.closest("li")).toHaveClass("sh-settings-ignore__row");
+  // 长值依赖 overflow-wrap:anywhere 折行，卡片不产生横向溢出容器。
+  expect(settingsCss).toMatch(
+    /\.sh-settings-ignore__value\s*\{[^}]*overflow-wrap:\s*anywhere/,
+  );
+});
+
 it("adds a directory ignore rule and no longer offers raw skill ids as subjects", async () => {
   const createIgnoreRule = vi.fn(async (draft: Parameters<LibraryHealthOperations["createIgnoreRule"]>[0]) => ({
     id: "rule-new",
@@ -155,6 +245,9 @@ it("adds a directory ignore rule and no longer offers raw skill ids as subjects"
     deferUntil: null,
   });
   expect(await screen.findByText("C:/temp/drafts")).toBeVisible();
+  // 成功后表单清空，可直接继续录入下一条。
+  expect(screen.getByLabelText("要忽略的目录路径")).toHaveValue("");
+  expect(screen.getByLabelText("理由")).toHaveValue("");
 });
 
 it("explains how the ignore, health check and repair workflow fit together", async () => {

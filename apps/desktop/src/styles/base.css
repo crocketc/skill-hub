@@ -282,6 +282,21 @@ a {
   line-height: 1.5;
 }
 
+/* 行内选择框（表格行/卡片/表头选择）：与 .sh-checkbox-field__input 同尺寸、
+   同焦点态；只负责尺寸与可见性，不改消费方的 aria 与事件语义。 */
+.sh-control-checkbox {
+  width: 1.125rem;
+  height: 1.125rem;
+  flex: 0 0 auto;
+  margin: 0;
+  accent-color: var(--ui-accent);
+}
+
+.sh-control-checkbox:focus-visible {
+  outline: 2px solid var(--ui-focus);
+  outline-offset: 2px;
+}
+
 .sh-switch {
   position: relative;
   display: inline-flex;

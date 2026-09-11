@@ -925,6 +925,17 @@ describe("SkillLibraryPage", () => {
     expect(nextWorkspace).toHaveStyle("--skill-batch-bar-height: 168px");
   });
 
+  it("uses the unified control classes for the save-view form and view selects", async () => {
+    const facade = createMockSkillLibraryFacade();
+    renderLibrary({ facade, persistedViewMode: "unset" });
+
+    expect(await screen.findByTestId("skill-card-skill-pdf")).toBeVisible();
+    expect(screen.getByLabelText("View mode")).toHaveClass("sh-select");
+    expect(screen.getByLabelText(/Group by/)).toHaveClass("sh-select");
+    fireEvent.click(screen.getByRole("button", { name: "Save current view" }));
+    expect(screen.getByRole("textbox", { name: "View name" })).toHaveClass("sh-input");
+  });
+
   it("saves only the view scope and current table preferences", async () => {
     const facade = createMockSkillLibraryFacade();
     renderLibrary({ facade, initialEntry: "/library?q=pdf&page=2" });
@@ -1198,7 +1209,8 @@ describe("SkillLibraryPage", () => {
     expect(await screen.findByTestId("skill-quick-drawer")).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "Close" }));
 
-    // 选择/批量操作语义在卡片视图内保持。
+    // 选择/批量操作语义在卡片视图内保持；选择框套用统一控件尺寸类。
+    expect(screen.getByRole("checkbox", { name: "Select PDF Reader" })).toHaveClass("sh-control-checkbox");
     fireEvent.click(screen.getByRole("checkbox", { name: "Select PDF Reader" }));
     expect(screen.getByRole("complementary", { name: "Batch actions" })).toBeVisible();
 

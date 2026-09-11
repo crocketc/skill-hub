@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
+import { Input } from "../../ui/Input";
 import { MultiSelectMenu } from "../../ui/MultiSelectMenu";
+import { Select } from "../../ui/Select";
 import { type CheckState, type SkillLibraryQuery, type SkillLifecycle } from "./api";
 
 export interface SkillFiltersProps {
@@ -88,7 +90,7 @@ export function SkillFilters({
       <div className="sh-skill-filters__primary">
         <label className="sh-filter-search">
           {t("skillLibrary.filters.search")}
-          <input
+          <Input
             name="skill-search"
             onChange={(event) => update({ text: event.currentTarget.value })}
             type="search"
@@ -142,24 +144,24 @@ export function SkillFilters({
 
           <label>
             {t("skillLibrary.filters.deployment")}
-            <select
+            <Select
               onChange={(event) => updateFilters({ deployment: event.currentTarget.value as SkillLibraryQuery["filters"]["deployment"] })}
               value={query.filters.deployment}
             >
               {DEPLOYMENT_OPTIONS.map(([value, label]) => <option key={value} value={value}>{t(label)}</option>)}
-            </select>
+            </Select>
           </label>
 
           <label>
             {t("skillLibrary.filters.version")}
-            <select
+            <Select
               aria-describedby={versionFilterSupported ? undefined : `${id ?? "skill"}-version-filter-hint`}
               disabled={!versionFilterSupported}
               onChange={(event) => updateFilters({ version: event.currentTarget.value as SkillLibraryQuery["filters"]["version"] })}
               value={query.filters.version}
             >
               {VERSION_OPTIONS.map(([value, label]) => <option key={value} value={value}>{t(label)}</option>)}
-            </select>
+            </Select>
             {versionFilterSupported ? null : (
               <p className="sh-filter-dropdown__hint" id={`${id ?? "skill"}-version-filter-hint`}>
                 {t("skillLibrary.filters.versionUnavailable")}

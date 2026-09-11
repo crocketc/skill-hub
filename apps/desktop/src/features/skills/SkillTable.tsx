@@ -18,6 +18,7 @@ import {
 } from "./selection";
 import { InvocationBadge } from "./InvocationBadge";
 import { AgentDeploymentIcons } from "./AgentDeploymentIcons";
+import { RadioField } from "../../ui/RadioField";
 import { SkillPagination } from "./SkillPagination";
 
 export interface SkillTableProps {
@@ -146,6 +147,7 @@ export function createSkillColumns(t: TFunction): ColumnDef<SkillTableRow>[] {
             <input
               aria-label={meta.t("skillLibrary.table.selectSkill", { name: row.original.name })}
               checked={selected}
+              className="sh-control-checkbox"
               onChange={(event) => meta.onRowCheck(row.original.id, event.currentTarget.checked)}
               onClick={stopRowOpen}
               onKeyDown={stopRowOpen}
@@ -393,7 +395,15 @@ export function SkillTable(props: SkillTableProps) {
             </fieldset>
             <fieldset>
               <legend>{t("skillLibrary.table.densityLabel")}</legend>
-               {(["compact", "standard", "comfortable"] as const).map((density) => <label key={density}><input checked={props.preferences.density === density} name="skill-density" onChange={() => props.onPreferencesChange({ ...props.preferences, density })} type="radio" />{t(DENSITY_LABELS[density])}</label>)}
+              {(["compact", "standard", "comfortable"] as const).map((density) => (
+                <RadioField
+                  checked={props.preferences.density === density}
+                  key={density}
+                  label={t(DENSITY_LABELS[density])}
+                  name="skill-density"
+                  onChange={() => props.onPreferencesChange({ ...props.preferences, density })}
+                />
+              ))}
             </fieldset>
           </div>
         ) : null}
@@ -407,7 +417,7 @@ export function SkillTable(props: SkillTableProps) {
               const isSortable = column !== "select" && sortable.has(column);
               const sort = props.query.sort.column === column ? props.query.sort.direction : undefined;
               return <th aria-sort={isSortable ? (sort === "asc" ? "ascending" : sort === "desc" ? "descending" : "none") : undefined} data-column={column} key={header.id} scope="col">
-                {column === "select" ? <CheckboxTarget><input aria-label={t("skillLibrary.table.selectCurrentPage")} checked={allPageSelected} onChange={togglePage} onClick={stopRowOpen} onKeyDown={stopRowOpen} type="checkbox" /></CheckboxTarget> : isSortable ? <button aria-label={t("skillLibrary.table.sortBy", { column: t(COLUMN_LABELS[column]).toLocaleLowerCase() })} className="sh-skill-table__sort" onClick={() => sortColumn(column)} type="button">{flexRender(header.column.columnDef.header, header.getContext())}</button> : flexRender(header.column.columnDef.header, header.getContext())}
+                {column === "select" ? <CheckboxTarget><input aria-label={t("skillLibrary.table.selectCurrentPage")} checked={allPageSelected} className="sh-control-checkbox" onChange={togglePage} onClick={stopRowOpen} onKeyDown={stopRowOpen} type="checkbox" /></CheckboxTarget> : isSortable ? <button aria-label={t("skillLibrary.table.sortBy", { column: t(COLUMN_LABELS[column]).toLocaleLowerCase() })} className="sh-skill-table__sort" onClick={() => sortColumn(column)} type="button">{flexRender(header.column.columnDef.header, header.getContext())}</button> : flexRender(header.column.columnDef.header, header.getContext())}
               </th>;
             })}</tr>)}
           </thead>

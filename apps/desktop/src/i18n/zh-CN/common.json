@@ -1911,6 +1911,7 @@
       "heading": "忽略项",
       "description": "工作流：运行健康检查发现问题 → 对问题做“修复预览”并确认执行；不想再被检查的位置用下方“路径忽略”跳过。精确 Skill / 待处理事项的忽略不再手工输入。",
       "empty": "暂无忽略规则。",
+      "listLabel": "忽略规则列表",
       "subjectLabel": "主体类型",
       "subjectPath": "路径忽略",
       "subjectSkill": "精确 Skill ID",

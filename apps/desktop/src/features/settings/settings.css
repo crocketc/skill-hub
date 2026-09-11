@@ -283,3 +283,75 @@
 .sh-settings-placeholder {
   border-style: dashed;
 }
+
+/* 技能库维护——忽略项：结构化规则行（类型徽标 + 可换行长值 + 理由 +
+   创建时间 + 危险删除入口），替换此前无样式的裸 ul/li。 */
+.sh-settings-card__ignore {
+  display: grid;
+  gap: var(--space-3);
+  margin-top: var(--space-5);
+  min-width: 0;
+}
+
+.sh-settings-ignore__list {
+  display: grid;
+  gap: var(--space-3);
+  list-style: none;
+  margin: 0;
+  min-width: 0;
+  padding: 0;
+}
+
+.sh-settings-ignore__row {
+  border: 1px solid var(--ui-border-subtle);
+  border-radius: var(--radius-md);
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+  padding: var(--space-3);
+}
+
+.sh-settings-ignore__head {
+  align-items: flex-start;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.sh-settings-ignore__value {
+  flex: 1 1 12rem;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-sm);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.sh-settings-ignore__reason {
+  color: var(--ui-ink-muted);
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.sh-settings-ignore__created {
+  color: var(--ui-ink-muted);
+  font-size: var(--font-size-sm);
+}
+
+.sh-settings-ignore__actions {
+  display: flex;
+}
+
+/* 录入表单：Field 统一标签/错误间距，动作靠左，长占位文本不撑破卡片。 */
+.sh-settings-ignore__form {
+  border-top: 1px solid var(--ui-border-subtle);
+  display: grid;
+  gap: var(--space-4);
+  margin-top: var(--space-2);
+  min-width: 0;
+  padding-top: var(--space-4);
+}
+
+.sh-settings-ignore__form .sh-button {
+  justify-self: start;
+}

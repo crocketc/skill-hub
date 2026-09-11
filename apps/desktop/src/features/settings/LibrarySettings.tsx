@@ -9,6 +9,11 @@ import type {
 } from "../../api/bindings";
 import { Button } from "../../ui/Button";
 import { ConfirmDialog } from "../../ui/ConfirmDialog";
+import { DataState } from "../../ui/DataState";
+import { Field } from "../../ui/Field";
+import { Input } from "../../ui/Input";
+import { Select } from "../../ui/Select";
+import { StatusBadge } from "../../ui/StatusBadge";
 import {
   type IgnoreRuleSubject,
   type LibraryHealthOperations,
@@ -70,7 +75,10 @@ export function LibrarySettings({ settings, health }: LibrarySettingsProps) {
   const [subjectValue, setSubjectValue] = useState("");
   const [reason, setReason] = useState("");
   const [addingRule, setAddingRule] = useState(false);
-  const [ruleError, setRuleError] = useState<string | null>(null);
+  const [valueError, setValueError] = useState<string | null>(null);
+  const [reasonError, setReasonError] = useState<string | null>(null);
+  const [addError, setAddError] = useState<string | null>(null);
+  const [removeError, setRemoveError] = useState<string | null>(null);
   const [pendingRuleId, setPendingRuleId] = useState<string | null>(null);
 
   const [plan, setPlan] = useState<RepairPlan | null>(null);
@@ -120,15 +128,15 @@ export function LibrarySettings({ settings, health }: LibrarySettingsProps) {
     const value = subjectValue.trim();
     const reasonText = reason.trim();
     if (!value) {
-      setRuleError(t("settings.ignore.valueRequired"));
+      setValueError(t("settings.ignore.valueRequired"));
       return;
     }
     if (!reasonText) {
-      setRuleError(t("settings.ignore.reasonRequired"));
+      setReasonError(t("settings.ignore.reasonRequired"));
       return;
     }
     setAddingRule(true);
-    setRuleError(null);
+    setAddError(null);
     try {
       const created = await health.createIgnoreRule({
         subject: { type: subjectKind, value },
@@ -139,7 +147,7 @@ export function LibrarySettings({ settings, health }: LibrarySettingsProps) {
       setSubjectValue("");
       setReason("");
     } catch {
-      setRuleError(t("settings.ignore.addFailed"));
+      setAddError(t("settings.ignore.addFailed"));
     } finally {
       setAddingRule(false);
     }
@@ -147,12 +155,12 @@ export function LibrarySettings({ settings, health }: LibrarySettingsProps) {
 
   const removeRule = async () => {
     if (!health || !pendingRuleId) return;
-    setRuleError(null);
+    setRemoveError(null);
     try {
       await health.removeIgnoreRule(pendingRuleId);
       setRules((current) => current.filter((rule) => rule.id !== pendingRuleId));
     } catch {
-      setRuleError(t("settings.ignore.removeFailed"));
+      setRemoveError(t("settings.ignore.removeFailed"));
     } finally {
       setPendingRuleId(null);
     }
@@ -272,45 +280,61 @@ export function LibrarySettings({ settings, health }: LibrarySettingsProps) {
             <h3>{t("settings.ignore.heading")}</h3>
             <p>{t("settings.ignore.description")}</p>
             {rulesError ? <p role="alert">{t("settings.ignore.loadFailed")}</p> : null}
-            {ruleError ? <p role="alert">{ruleError}</p> : null}
-            {rulesLoaded && rules.length === 0 ? <p>{t("settings.ignore.empty")}</p> : null}
-            <ul>
-              {rules.map((rule) => (
-                <li key={rule.id}>
-                  <span>{rule.subject.value}</span>
-                  <span>{String(t(subjectKey(rule.subject.type) as never))}</span>
-                  <span>{rule.reason}</span>
-                  <span>
-                    {t("settings.ignore.created")}
-                    {": "}
-                    {rule.created_at}
-                  </span>
-                  <ConfirmDialog
-                    cancelLabel={t("actions.cancel")}
-                    confirmLabel={t("settings.ignore.confirmRemove")}
-                    description={t("settings.ignore.confirmRemoveDescription", {
-                      subject: rule.subject.value,
-                    })}
-                    onConfirm={() => void removeRule()}
-                    title={t("settings.ignore.confirmRemoveTitle")}
-                    trigger={
-                      <Button
-                        onClick={() => setPendingRuleId(rule.id)}
-                        variant="ghost"
-                      >
-                        {t("settings.ignore.remove")}
-                      </Button>
-                    }
-                    variant="danger"
-                  />
-                </li>
-              ))}
-            </ul>
-            <div>
-              <label>
-                {t("settings.ignore.subjectLabel")}
-                <select
-                  aria-label={t("settings.ignore.subjectLabel")}
+            {removeError ? <p role="alert">{removeError}</p> : null}
+            {rulesLoaded && rules.length === 0 ? (
+              <DataState message={t("settings.ignore.empty")} state="empty" />
+            ) : null}
+            {rules.length > 0 ? (
+              <ul aria-label={t("settings.ignore.listLabel")} className="sh-settings-ignore__list">
+                {rules.map((rule) => (
+                  <li key={rule.id} className="sh-settings-ignore__row">
+                    <div className="sh-settings-ignore__head">
+                      <StatusBadge>{String(t(subjectKey(rule.subject.type) as never))}</StatusBadge>
+                      <span className="sh-settings-ignore__value" title={rule.subject.value}>
+                        {rule.subject.value}
+                      </span>
+                    </div>
+                    {rule.reason ? (
+                      <p className="sh-settings-ignore__reason">{rule.reason}</p>
+                    ) : null}
+                    <span className="sh-settings-ignore__created">
+                      {t("settings.ignore.created")}
+                      {": "}
+                      {rule.created_at}
+                    </span>
+                    <div className="sh-settings-ignore__actions">
+                      <ConfirmDialog
+                        cancelLabel={t("actions.cancel")}
+                        confirmLabel={t("settings.ignore.confirmRemove")}
+                        description={t("settings.ignore.confirmRemoveDescription", {
+                          subject: rule.subject.value,
+                        })}
+                        onConfirm={() => void removeRule()}
+                        title={t("settings.ignore.confirmRemoveTitle")}
+                        trigger={
+                          <Button
+                            onClick={() => setPendingRuleId(rule.id)}
+                            variant="ghost"
+                          >
+                            {t("settings.ignore.remove")}
+                          </Button>
+                        }
+                        variant="danger"
+                      />
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+            <form
+              className="sh-settings-ignore__form"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void addRule();
+              }}
+            >
+              <Field label={t("settings.ignore.subjectLabel")}>
+                <Select
                   onChange={(event) => setSubjectKind(event.target.value as SubjectKind)}
                   value={subjectKind}
                 >
@@ -319,30 +343,33 @@ export function LibrarySettings({ settings, health }: LibrarySettingsProps) {
                       {String(t(subjectKey(kind) as never))}
                     </option>
                   ))}
-                </select>
-              </label>
-              <label>
-                {t("settings.ignore.valueLabel")}
-                <input
-                  aria-label={t("settings.ignore.valueLabel")}
-                  onChange={(event) => setSubjectValue(event.target.value)}
+                </Select>
+              </Field>
+              <Field error={valueError ?? undefined} label={t("settings.ignore.valueLabel")}>
+                <Input
+                  onChange={(event) => {
+                    setSubjectValue(event.target.value);
+                    setValueError(null);
+                  }}
                   placeholder={t("settings.ignore.valuePlaceholder")}
                   value={subjectValue}
                 />
-              </label>
-              <label>
-                {t("settings.ignore.reasonLabel")}
-                <input
-                  aria-label={t("settings.ignore.reasonLabel")}
-                  onChange={(event) => setReason(event.target.value)}
+              </Field>
+              <Field error={reasonError ?? undefined} label={t("settings.ignore.reasonLabel")}>
+                <Input
+                  onChange={(event) => {
+                    setReason(event.target.value);
+                    setReasonError(null);
+                  }}
                   placeholder={t("settings.ignore.reasonPlaceholder")}
                   value={reason}
                 />
-              </label>
-              <Button disabled={addingRule} onClick={() => void addRule()} variant="secondary">
+              </Field>
+              {addError ? <p role="alert">{addError}</p> : null}
+              <Button disabled={addingRule} type="submit" variant="secondary">
                 {addingRule ? t("settings.ignore.adding") : t("settings.ignore.add")}
               </Button>
-            </div>
+            </form>
           </div>
         </>
       ) : null}

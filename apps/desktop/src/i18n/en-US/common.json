@@ -1911,6 +1911,7 @@
       "heading": "Ignored items",
       "description": "Workflow: run the health check to surface findings → review a repair preview and execute it explicitly; use “Path ignore” below to skip locations you never want checked. Raw skill / pending IDs are no longer accepted as manual input.",
       "empty": "No ignore rules yet.",
+      "listLabel": "Ignore rules",
       "subjectLabel": "Subject type",
       "subjectPath": "Path ignore",
       "subjectSkill": "Exact skill ID",

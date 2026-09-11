@@ -16,6 +16,8 @@ import "./batchBar.css";
 import "./skills.css";
 import { Button } from "../../ui/Button";
 import { DataState } from "../../ui/DataState";
+import { Input } from "../../ui/Input";
+import { Select } from "../../ui/Select";
 import {
   detailSearchFromLibrary,
   readLibraryReturnState,
@@ -234,7 +236,7 @@ function SaveViewForm({
     >
       <label>
         {t("skillLibrary.page.saveView.name")}
-        <input
+        <Input
           onChange={(event) => onNameChange(event.currentTarget.value)}
           required
           type="text"
@@ -1054,6 +1056,7 @@ export function SkillLibraryPage({
             <input
               aria-label={t("skillLibrary.table.selectSkill", { name: item.name })}
               checked={isSkillSelected(item.id)}
+              className="sh-control-checkbox"
               onChange={(event) => toggleSkillSelected(item.id, event.currentTarget.checked)}
               type="checkbox"
             />
@@ -1157,7 +1160,7 @@ export function SkillLibraryPage({
       <div className="sh-skill-library__view-toggle">
         <label>
           <span>{t("skillLibrary.viewMode.label")}</span>
-          <select
+          <Select
             aria-label={t("skillLibrary.viewMode.label")}
             onChange={(event) => changeViewMode(event.currentTarget.value as LibraryViewMode)}
             value={viewMode}
@@ -1165,18 +1168,18 @@ export function SkillLibraryPage({
             <option value="table">{t("skillLibrary.viewMode.table")}</option>
             <option value="cards">{t("skillLibrary.viewMode.cards")}</option>
             <option value="matrix">{t("skillLibrary.viewMode.matrix")}</option>
-          </select>
+          </Select>
         </label>
         <label>
           <span>{t("skillLibrary.groupMode.label")}</span>
-          <select
+          <Select
             aria-label={t("skillLibrary.groupMode.label")}
             onChange={(event) => changeGroupMode(event.currentTarget.value as LibraryGroupMode)}
             value={groupMode}
           >
             <option value="none">{t("skillLibrary.groupMode.none")}</option>
             <option value="tags">{t("skillLibrary.groupMode.tags")}</option>
-          </select>
+          </Select>
         </label>
       </div>
       {preferenceStatus}
