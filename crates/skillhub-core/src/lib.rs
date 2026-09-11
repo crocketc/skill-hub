@@ -147,7 +147,8 @@ pub use project::{
 };
 pub use scan::{DiscoveredSkill, ScanGeneration, ScanIssue, ScanRepository, ScanResult, ScanScope};
 pub use source::{
-    AgentsLockEntry, SearchHitOrigin, SourceDescriptor, SourceKind, SourceLocator, SourceSearchHit,
+    AgentsLockEntry, SearchCandidateRecord, SearchCandidateStatus, SearchHitOrigin,
+    SourceDescriptor, SourceKind, SourceLocator, SourceRecord, SourceRole, SourceSearchHit,
     SourceSearchPage, SourceSearchQuery, UpstreamOrigin,
 };
 pub use source::{

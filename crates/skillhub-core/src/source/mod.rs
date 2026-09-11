@@ -2,6 +2,7 @@ mod acquisition;
 pub mod discovery;
 mod model;
 pub mod repo;
+mod role;
 pub mod update;
 
 pub use acquisition::{
@@ -17,6 +18,7 @@ pub use repo::{
     AgentsLockEntry, DiscoverableRepoSkill, DownloadedRepoSkill, RepoDiscoveryReport,
     RepoDiscoveryWarning, SkillRepo, UpstreamOrigin,
 };
+pub use role::{SearchCandidateRecord, SearchCandidateStatus, SourceRecord, SourceRole};
 pub use update::{
     AppliedSourceUpdate, SourceState, SourceUpdateBackend, UpdateDecision, UpstreamCheckResult,
 };

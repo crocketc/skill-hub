@@ -16,8 +16,9 @@ fn fixture_database_with_schema_version(version: u32) -> NamedTempFile {
 fn empty_database_migrates_to_current_schema_and_enables_fts5() {
     let db = Database::open_in_memory().unwrap();
 
-    assert_eq!(db.schema_version().unwrap(), 10);
+    assert_eq!(db.schema_version().unwrap(), 11);
     assert!(db.has_table("skills_fts").unwrap());
+    assert!(db.has_table("search_candidates").unwrap());
 }
 
 #[test]
@@ -38,8 +39,11 @@ fn open_exposes_the_migration_report() {
     let report = db.migration_report();
 
     assert_eq!(report.from_version, 0);
-    assert_eq!(report.to_version, 10);
-    assert_eq!(report.applied_versions, vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+    assert_eq!(report.to_version, 11);
+    assert_eq!(
+        report.applied_versions,
+        vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
+    );
 }
 
 #[test]
@@ -62,10 +66,10 @@ fn v4_database_upgrades_check_run_metadata_in_v5() {
     drop(connection);
 
     let db = Database::open(file.path()).unwrap();
-    assert_eq!(db.schema_version().unwrap(), 10);
+    assert_eq!(db.schema_version().unwrap(), 11);
     assert_eq!(
         db.migration_report().applied_versions,
-        vec![5, 6, 7, 8, 9, 10]
+        vec![5, 6, 7, 8, 9, 10, 11]
     );
     let generation: String = db
         .connection_for_test()
@@ -85,6 +89,108 @@ fn v4_database_upgrades_check_run_metadata_in_v5() {
         .unwrap();
     assert_eq!(generation, "generation");
     assert_eq!(allowed, "allowed_dispositions_json");
+}
+
+/// P1-05 迁移回归：版本 10 的旧库升级到 11 后——
+/// 1) 旧行默认 `local_only`（向后兼容的诚实缺省）；
+/// 2) 旧 git+完整坐标行（导入管线确认过的上游）回填为 `verified_upstream`，
+///    `upstream_for_skill` 继续可读；
+/// 3) `search_candidates` 候选表就位。
+#[test]
+fn v10_database_upgrades_source_roles_and_keeps_legacy_upstreams_readable() {
+    use skillhub_core::source::{SourceDescriptor, SourceKind, SourceLocator};
+
+    let file = NamedTempFile::new().unwrap();
+    let connection = Connection::open(file.path()).unwrap();
+    for sql in [
+        include_str!("../migrations/0001_initial.sql"),
+        include_str!("../migrations/0002_fts.sql"),
+        include_str!("../migrations/0003_catalog_metadata.sql"),
+        include_str!("../migrations/0004_search_tokenizer.sql"),
+        include_str!("../migrations/0005_check_run_metadata.sql"),
+        include_str!("../migrations/0006_llm_profiles.sql"),
+        include_str!("../migrations/0007_ui_preferences.sql"),
+        include_str!("../migrations/0008_version_labels.sql"),
+        include_str!("../migrations/0009_skill_user_purpose.sql"),
+        include_str!("../migrations/0010_llm_providers_translations.sql"),
+    ] {
+        connection.execute_batch(sql).unwrap();
+    }
+    connection
+        .execute_batch(
+            "INSERT INTO skills(id,display_name,runtime_name,created_at,updated_at) VALUES
+                 ('00000000-0000-0000-0000-0000000000a1','Remote','remote',1,1),
+                 ('00000000-0000-0000-0000-0000000000a2','Local','local',1,1);
+             INSERT INTO sources(id,kind,locator,metadata_json,created_at) VALUES
+                 ('source-git','git','https://github.com/anthropics/skills','{\"branch\":\"main\",\"directory\":\"pdf\"}',1),
+                 ('source-local','local','C:/tmp/notes','{}',1);
+             INSERT INTO skill_sources(skill_id,source_id,relation) VALUES
+                 ('00000000-0000-0000-0000-0000000000a1','source-git','origin'),
+                 ('00000000-0000-0000-0000-0000000000a2','source-local','origin');",
+        )
+        .unwrap();
+    connection.pragma_update(None, "user_version", 10).unwrap();
+    drop(connection);
+
+    let db = Database::open(file.path()).unwrap();
+    assert_eq!(db.schema_version().unwrap(), 11);
+
+    let remote_skill: skillhub_core::SkillId =
+        "00000000-0000-0000-0000-0000000000a1".parse().unwrap();
+    let local_skill: skillhub_core::SkillId =
+        "00000000-0000-0000-0000-0000000000a2".parse().unwrap();
+    let upstream = db
+        .source_repository()
+        .upstream_for_skill(remote_skill)
+        .unwrap()
+        .expect("旧 git+完整坐标行升级后必须仍可作为上游读取");
+    assert_eq!(upstream.url, "https://github.com/anthropics/skills");
+    assert_eq!(upstream.branch, "main");
+    assert_eq!(upstream.directory, "pdf");
+
+    let role: String = db
+        .connection_for_test()
+        .query_row(
+            "SELECT role FROM sources WHERE id='source-git'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(role, "verified_upstream");
+    let role: String = db
+        .connection_for_test()
+        .query_row(
+            "SELECT role FROM sources WHERE id='source-local'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(role, "local_only");
+
+    let remote_record = db
+        .source_repository()
+        .source_record_for_skill(remote_skill)
+        .unwrap()
+        .expect("remote source record");
+    assert_eq!(
+        remote_record.role,
+        skillhub_core::SourceRole::VerifiedUpstream
+    );
+    assert_eq!(
+        remote_record.source,
+        SourceDescriptor::new(
+            SourceKind::Git,
+            SourceLocator::git_url("https://github.com/anthropics/skills")
+        )
+    );
+    assert!(remote_record.upstream.is_some());
+    let local_record = db
+        .source_repository()
+        .source_record_for_skill(local_skill)
+        .unwrap()
+        .expect("local source record");
+    assert_eq!(local_record.role, skillhub_core::SourceRole::LocalOnly);
+    assert!(local_record.upstream.is_none());
 }
 
 #[test]

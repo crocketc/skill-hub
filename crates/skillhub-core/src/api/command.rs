@@ -675,6 +675,29 @@ pub struct DownloadRepoSkill {
     pub skill: crate::source::DiscoverableRepoSkill,
 }
 
+/// P1-05：把一次联网搜索结果保存为待确认候选。只写候选表，
+/// 绝不写 sources/skill_sources/catalog（搜索候选绝不自动成为来源）。
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct SaveSearchCandidates {
+    pub page: crate::source::SourceSearchPage,
+}
+
+/// P1-05：确认一条搜索候选。只登记导入意向（status=confirmed）；
+/// 真正的来源记录仍然只能由导入向导提交产生。
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct ConfirmSearchCandidate {
+    pub candidate_id: String,
+}
+
+/// P1-05：拒绝一条搜索候选。不写任何来源，已拒绝的候选不能再次确认。
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct DismissSearchCandidate {
+    pub candidate_id: String,
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 pub struct DiscoverAgentTargets;
 
@@ -909,6 +932,12 @@ pub enum AppCommand {
     RemoveSkillRepo(RemoveSkillRepo),
     #[serde(rename = "download_repo_skill")]
     DownloadRepoSkill(DownloadRepoSkill),
+    #[serde(rename = "save_search_candidates")]
+    SaveSearchCandidates(SaveSearchCandidates),
+    #[serde(rename = "confirm_search_candidate")]
+    ConfirmSearchCandidate(ConfirmSearchCandidate),
+    #[serde(rename = "dismiss_search_candidate")]
+    DismissSearchCandidate(DismissSearchCandidate),
     #[serde(rename = "discover_agent_targets")]
     DiscoverAgentTargets(DiscoverAgentTargets),
     #[serde(rename = "scan_targets")]
@@ -1032,6 +1061,8 @@ pub enum AppCommandResult {
     SkillRepos(Vec<crate::source::SkillRepo>),
     #[serde(rename = "downloaded_repo_skill")]
     DownloadedRepoSkill(crate::source::DownloadedRepoSkill),
+    #[serde(rename = "search_candidates")]
+    SearchCandidates(Vec<crate::source::SearchCandidateRecord>),
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]

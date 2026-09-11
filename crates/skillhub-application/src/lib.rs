@@ -986,17 +986,22 @@ impl LocalApplicationFacade {
             .file_name()
             .map(|name| name.to_string_lossy().to_string())
             .unwrap_or_else(|| skill.name.clone());
-        self.register_upstream_origin(
-            path.to_string_lossy(),
-            skillhub_core::UpstreamOrigin {
-                url: format!(
-                    "https://github.com/{}/{}",
-                    skill.repo_owner, skill.repo_name
-                ),
-                branch: skill.repo_branch.clone(),
-                directory: skill.directory.clone(),
-            },
-        );
+        // P1-05：只有 branch+directory 坐标完整时才登记上游坐标。整仓下载
+        // （哨兵为空）没有可验证的定位坐标，盖章只会产生 branch/directory 为空
+        // 的无效上游（更新检测永远读不出来）——诚实缺省优于盖假坐标。
+        if !skill.repo_branch.trim().is_empty() && !skill.directory.trim().is_empty() {
+            self.register_upstream_origin(
+                path.to_string_lossy(),
+                skillhub_core::UpstreamOrigin {
+                    url: format!(
+                        "https://github.com/{}/{}",
+                        skill.repo_owner, skill.repo_name
+                    ),
+                    branch: skill.repo_branch.clone(),
+                    directory: skill.directory.clone(),
+                },
+            );
+        }
         Ok(AppCommandResult::DownloadedRepoSkill(
             skillhub_core::source::DownloadedRepoSkill {
                 local_path: path.to_string_lossy().to_string(),
@@ -1238,6 +1243,91 @@ impl LocalApplicationFacade {
             Err(AppError::new(ErrorCode::NetworkDisabled, Severity::Warning)
                 .with_action(RecoveryAction::Retry))
         }
+    }
+
+    // ------------------------------------------------------------------
+    // P1-05 来源模型：搜索候选的持久化与来源投影。
+    //
+    // 底线语义：搜索结果本身仍是纯查询（不落任何 skill/source 记录）；
+    // 只有显式 SaveSearchCandidates 才把命中落为待确认候选，且只写
+    // search_candidates 表。确认候选仅登记导入意向，成为来源只有导入
+    // 向导提交这一条路。三个 mutation 全部写持久操作日志。
+    // ------------------------------------------------------------------
+
+    fn save_search_candidates(
+        &self,
+        request: skillhub_core::api::SaveSearchCandidates,
+    ) -> AppResult<AppCommandResult> {
+        let operation_id = OperationId::new();
+        self.journal_begin(operation_id, "save_search_candidates");
+        let result = self.with_database("execute.save_search_candidates", |database| {
+            let saved = database
+                .search_candidate_repository()
+                .save_page(&request.page, now_seconds())?;
+            Ok(AppCommandResult::SearchCandidates(saved))
+        });
+        self.journal_settle(
+            operation_id,
+            "save_search_candidates",
+            result.as_ref().err(),
+        );
+        result
+    }
+
+    fn confirm_search_candidate(
+        &self,
+        request: skillhub_core::api::ConfirmSearchCandidate,
+    ) -> AppResult<AppCommandResult> {
+        let operation_id = OperationId::new();
+        self.journal_begin(operation_id, "confirm_search_candidate");
+        let result = self.with_database("execute.confirm_search_candidate", |database| {
+            database.search_candidate_repository().set_status(
+                &request.candidate_id,
+                skillhub_core::SearchCandidateStatus::Confirmed,
+            )?;
+            Ok(AppCommandResult::OperationSummary(
+                skillhub_core::OperationSummary {
+                    operation_id,
+                    phase: skillhub_core::OperationPhase::Committed,
+                    message_code: "source.search_candidate_confirmed".to_owned(),
+                    error_code: None,
+                },
+            ))
+        });
+        self.journal_settle(
+            operation_id,
+            "confirm_search_candidate",
+            result.as_ref().err(),
+        );
+        result
+    }
+
+    fn dismiss_search_candidate(
+        &self,
+        request: skillhub_core::api::DismissSearchCandidate,
+    ) -> AppResult<AppCommandResult> {
+        let operation_id = OperationId::new();
+        self.journal_begin(operation_id, "dismiss_search_candidate");
+        let result = self.with_database("execute.dismiss_search_candidate", |database| {
+            database.search_candidate_repository().set_status(
+                &request.candidate_id,
+                skillhub_core::SearchCandidateStatus::Dismissed,
+            )?;
+            Ok(AppCommandResult::OperationSummary(
+                skillhub_core::OperationSummary {
+                    operation_id,
+                    phase: skillhub_core::OperationPhase::Committed,
+                    message_code: "source.search_candidate_dismissed".to_owned(),
+                    error_code: None,
+                },
+            ))
+        });
+        self.journal_settle(
+            operation_id,
+            "dismiss_search_candidate",
+            result.as_ref().err(),
+        );
+        result
     }
 
     /// Opens a file-backed facade, creating its parent directory when needed.
@@ -4635,7 +4725,16 @@ impl ApplicationFacade for LocalApplicationFacade {
             AppCommand::AddSkillRepo(request) => return self.add_skill_repo(request),
             AppCommand::RemoveSkillRepo(request) => return self.remove_skill_repo(request),
             AppCommand::DownloadRepoSkill(request) => {
-                return self.download_repo_skill(request).await
+                return self.download_repo_skill(request).await;
+            }
+            AppCommand::SaveSearchCandidates(request) => {
+                return self.save_search_candidates(request);
+            }
+            AppCommand::ConfirmSearchCandidate(request) => {
+                return self.confirm_search_candidate(request);
+            }
+            AppCommand::DismissSearchCandidate(request) => {
+                return self.dismiss_search_candidate(request);
             }
             AppCommand::CheckSourceUpdate(request) => return self.check_source_update(request),
             AppCommand::ApplySourceUpdate(request) => return self.apply_source_update(request),
@@ -4847,6 +4946,30 @@ impl ApplicationFacade for LocalApplicationFacade {
             AppQuery::SearchOnlineSources(request) => self.search_online_sources(request).await,
             AppQuery::SearchOnlineSourcesAssisted(request) => {
                 self.search_online_sources_assisted(request).await
+            }
+            AppQuery::GetSkillSource(request) => {
+                // 未知 Skill 明确报错；已知 Skill 无来源行返回 None（仅本地展示）。
+                self.with_database("query.get_skill_source", |database| {
+                    if database
+                        .catalog_repository()?
+                        .get_sync(request.skill_id)?
+                        .is_none()
+                    {
+                        return Err(AppError::new(ErrorCode::ObjectNotFound, Severity::Error)
+                            .with_param("skill_id", request.skill_id.to_string())
+                            .with_action(RecoveryAction::ChooseAnotherName));
+                    }
+                    let record = database
+                        .source_repository()
+                        .source_record_for_skill(request.skill_id)?;
+                    Ok(AppQueryResult::SkillSource(record))
+                })
+            }
+            AppQuery::ListSearchCandidates(_) => {
+                self.with_database("query.list_search_candidates", |database| {
+                    let candidates = database.search_candidate_repository().list()?;
+                    Ok(AppQueryResult::SearchCandidates(candidates))
+                })
             }
             AppQuery::GetUiPreference(request) => {
                 let value = self.with_database("query.get_ui_preference", |database| {

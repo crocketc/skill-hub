@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use rusqlite::Connection;
 use skillhub_core::{AppError, AppResult, ErrorCode, RecoveryAction, Severity};
 
-pub const CURRENT_SCHEMA_VERSION: u32 = 10;
+pub const CURRENT_SCHEMA_VERSION: u32 = 11;
 
 #[derive(Clone, Copy)]
 struct Migration<'a> {
@@ -51,6 +51,10 @@ const MIGRATIONS: &[Migration] = &[
     Migration {
         version: 10,
         sql: include_str!("../../migrations/0010_llm_providers_translations.sql"),
+    },
+    Migration {
+        version: 11,
+        sql: include_str!("../../migrations/0011_source_roles.sql"),
     },
 ];
 
