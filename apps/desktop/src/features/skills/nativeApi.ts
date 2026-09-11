@@ -345,6 +345,16 @@ export const nativeSkillLibraryFacade: SkillLibraryFacade = {
   async updateCombination(name, members) {
     await executeCommand({ type: "update_combination", payload: { name, members } });
   },
+  // P1-09 组合重命名：RenameCombination 成功返回更新后的组合视图（无 message_code，
+  // 成功提示由面板本地文案承担）；其余结果形状一律视为契约不可用。
+  async renameCombination(fromName, toName) {
+    const result = await executeCommand({
+      type: "rename_combination",
+      payload: { from: fromName, to: toName },
+    });
+    if (result.type !== "combination") throw unavailableResult();
+    return result.payload;
+  },
   async deleteCombination(name) {
     await executeCommand({ type: "delete_combination", payload: { name } });
   },

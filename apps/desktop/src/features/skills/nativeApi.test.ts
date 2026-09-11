@@ -7,7 +7,7 @@ import {
   type SkillListItem,
   type SkillResult,
 } from "../../api/bindings";
-import { DEFAULT_SKILL_QUERY } from "./api";
+import { DEFAULT_SKILL_QUERY, SkillLibraryUnavailableError } from "./api";
 import { nativeSkillLibraryFacade } from "./nativeApi";
 
 vi.mock("../../api/bindings", () => ({
@@ -495,5 +495,39 @@ describe("native skill metadata save", () => {
         }),
       }),
     );
+  });
+});
+
+describe("native combination rename wiring", () => {
+  it("sends rename_combination and returns the updated combination view", async () => {
+    vi.mocked(executeCommand).mockResolvedValue({
+      type: "combination",
+      payload: { name: "Reading stack", members: ["skill-1", "skill-2"] },
+    } as AppCommandResult);
+
+    await expect(
+      nativeSkillLibraryFacade.renameCombination?.("Writing stack", "Reading stack"),
+    ).resolves.toEqual({ name: "Reading stack", members: ["skill-1", "skill-2"] });
+
+    expect(executeCommand).toHaveBeenCalledWith({
+      type: "rename_combination",
+      payload: { from: "Writing stack", to: "Reading stack" },
+    });
+  });
+
+  it("turns an unexpected rename result into the standard unavailable error", async () => {
+    vi.mocked(executeCommand).mockResolvedValue({
+      type: "operation_summary",
+      payload: {
+        operation_id: "op-rename-1",
+        phase: "committed",
+        message_code: "operation.rename_combination.committed",
+        error_code: null,
+      },
+    } as AppCommandResult);
+
+    await expect(
+      nativeSkillLibraryFacade.renameCombination?.("Writing stack", "Reading stack"),
+    ).rejects.toBeInstanceOf(SkillLibraryUnavailableError);
   });
 });

@@ -208,6 +208,11 @@ export interface SkillLibraryFacade {
   createCombination?: (name: string, members: string[]) => Promise<void>;
   updateCombination?: (name: string, members: string[]) => Promise<void>;
   deleteCombination?: (name: string) => Promise<void>;
+  /**
+   * 重命名组合（后端 RenameCombination）：成功返回更新后的组合视图。
+   * 未提供时不渲染重命名入口（诚实缺省，与其余组合方法一致）。
+   */
+  renameCombination?: (fromName: string, toName: string) => Promise<CombinationResult>;
   /** 组合标准导出（文件夹/ZIP 由偏好决定），失败时如实抛错。 */
   exportCombination?: (name: string) => Promise<{ path: string }>;
   /** N8 批量来源更新检查：未提供时页面不渲染入口（预览 facade 诚实缺省）。 */
