@@ -85,6 +85,10 @@ export interface ProjectFacade {
   get(id: string): Promise<ProjectView>;
   register(input: ProjectRegistration): Promise<ProjectView>;
   updateAgentIds(projectId: string, agentIds: string[]): Promise<ProjectView>;
+  /** Replaces the project tags through the existing set_project_tags command. */
+  setTags(projectId: string, tags: string[]): Promise<ProjectView>;
+  /** Renames a project and rewrites its note through the existing update_project command. */
+  updateDetails(projectId: string, details: { name: string; note: string }): Promise<ProjectView>;
   listAgentCandidates(): Promise<ProjectAgentCandidate[]>;
   previewDirectory(path: string): Promise<ProjectDirectoryPreview>;
   getAssemblyPlan(projectId: string): Promise<ProjectAssemblyPlanView | null>;
@@ -100,6 +104,8 @@ export const unavailableProjectFacade: ProjectFacade = {
   list: () => unavailable("project_list"),
   register: () => unavailable("project_register"),
   updateAgentIds: () => unavailable("project_update_agent_ids"),
+  setTags: () => unavailable("project_set_tags"),
+  updateDetails: () => unavailable("project_update_details"),
   listAgentCandidates: () => unavailable("project_agent_candidates"),
   previewDirectory: () => unavailable("project_preview_directory"),
   getAssemblyPlan: () => unavailable("project_assembly_plan"),
@@ -139,6 +145,35 @@ export function resolveProjectAccessState(
   if (!target.exists || !target.readable) return "inaccessible";
   if (!target.writable) return "read_only";
   return "accessible";
+}
+
+export type ProjectNextStep =
+  | { kind: "check_access" }
+  | { kind: "declare_requirements" }
+  | { kind: "resolve_conflicts"; conflicts: number }
+  | { kind: "open_details" };
+
+/** Card/drawer access fact: the four snapshot states plus "snapshot failed". */
+export type ProjectAccessFact = ProjectAccessState | "unknown";
+
+/**
+ * Front-end only next-step rule for cards and the quick drawer. It derives
+ * guidance from facts that already exist (directory access plus the stored
+ * assembly plan); it never invents health scores or backend abilities.
+ * Access problems win, then a missing plan, then unresolved plan items.
+ * An "unknown" access state keeps its hands off access guidance.
+ */
+export function resolveProjectNextStep(
+  accessState: ProjectAccessFact,
+  plan: ProjectAssemblyPlanView | null,
+): ProjectNextStep {
+  if (accessState === "inaccessible" || accessState === "read_only") return { kind: "check_access" };
+  if (!plan) return { kind: "declare_requirements" };
+  const conflicts = plan.items.filter(
+    (item) => item.status === "conflict_needs_choice" || item.status === "failed",
+  ).length;
+  if (conflicts > 0) return { kind: "resolve_conflicts", conflicts };
+  return { kind: "open_details" };
 }
 
 export interface ProjectAssemblyGroup {

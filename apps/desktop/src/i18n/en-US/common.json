@@ -615,14 +615,34 @@
       "search": "Search projects",
       "tags": "Tags"
     },
+    "card": {
+      "access": {
+        "accessible": "Accessible",
+        "inaccessible": "Inaccessible",
+        "read_only": "Read-only",
+        "unknown": "Unknown",
+        "untracked": "Not on this device"
+      },
+      "agentCount": "Associated Agents: {{count}}",
+      "nextStep": {
+        "check_access": "Check directory access",
+        "declare_requirements": "Declare shared config requirements in project details",
+        "label": "Next step",
+        "open_details": "Open project details",
+        "resolve_conflicts": "Resolve assembly conflicts ({{count}})"
+      }
+    },
     "registration": {
       "agents": "Associate discovered Agents (optional)",
       "confirm": "Register project",
       "description": "Choose a project root to create a local management record only. SkillHub will not import Skills or write project files.",
-      "failed": "This project could not be registered.",
+      "failed": "This project could not be registered ({{code}}).",
       "name": "Project name",
       "pickDirectory": "Choose project directory",
       "pickFailed": "The directory picker could not be opened.",
+      "tags": "Tags (optional)",
+      "tagsHint": "Separate multiple tags with commas.",
+      "tagsFailed": "The project was registered, but saving tags failed ({{code}}).",
       "preview": {
         "agents": "Discovered Agent directory traces",
         "agentsEmpty": "No known Agent project directories were found.",
@@ -634,12 +654,26 @@
         "title": "Directory preview (read-only)",
         "skillsSortHint": "Candidates sharing a prefix or root with a discovered Agent directory come first; the rest keep their original order."
       },
+      "success": {
+        "detail": "A local management record was created: {{name}}.",
+        "finish": "Done",
+        "openDetail": "Open project details",
+        "title": "Project registered"
+      },
       "title": "Register local project"
     },
     "drawer": {
+      "access": "Access state",
+      "agents": "Associated Agents",
+      "edit": "Edit",
       "identity": "Project location",
       "manage": "Manage project",
+      "note": "Note",
+      "save": "Save",
+      "saved": "Project details saved.",
+      "saveFailed": "Project details could not be saved ({{code}}).",
       "tags": "Tags",
+      "tagsFailed": "Project details were saved, but saving tags failed ({{code}}).",
       "targets": "Shared targets"
     },
     "readOnly": "Read-only facts",

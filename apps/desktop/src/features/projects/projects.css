@@ -131,6 +131,25 @@
   line-height: 1.5;
 }
 
+/* 卡片事实行：访问状态徽章 + 关联 Agent 数，一行排布、可换行不溢出。 */
+.sh-project-card__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  margin: 0;
+  gap: var(--space-2) var(--space-3);
+}
+
+.sh-project-card__agents {
+  color: var(--ui-ink-muted);
+  font-size: var(--font-size-xs);
+}
+
+/* 下一步引导：卡片内主行动，靠左、不拉伸。 */
+.sh-project-card .sh-project-card__next {
+  justify-self: start;
+}
+
 .sh-project-card__tags {
   display: flex;
   padding: 0;
@@ -237,11 +256,47 @@
   color: var(--ui-danger-foreground);
 }
 
+/* 注册成功态：结果反馈 + 下一步动作（打开详情 / 完成）。 */
+.sh-project-registration__success {
+  display: grid;
+  min-width: 0;
+  gap: var(--space-2);
+}
+
+.sh-project-registration__success p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.sh-project-registration__success .sh-project-registration__actions {
+  margin-top: var(--space-2);
+}
+
 .sh-project-registration__actions {
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-end;
   gap: var(--space-2);
+}
+
+/* 快捷抽屉：事实清单 + 行内编辑表单。 */
+.sh-project-drawer__edit {
+  display: grid;
+  min-width: 0;
+  gap: var(--space-3);
+}
+
+.sh-project-drawer__edit-actions,
+.sh-project-drawer__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
+.sh-project-drawer__actions {
+  justify-content: flex-start;
+  margin-top: var(--space-2);
 }
 
 /* 详情页（保持既有语义，token 统一外观）。 */

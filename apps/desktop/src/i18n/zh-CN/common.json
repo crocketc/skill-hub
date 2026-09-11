@@ -615,14 +615,34 @@
       "search": "搜索项目",
       "tags": "标签"
     },
+    "card": {
+      "access": {
+        "accessible": "可访问",
+        "inaccessible": "不可访问",
+        "read_only": "只读",
+        "unknown": "未知",
+        "untracked": "未在本机"
+      },
+      "agentCount": "关联 Agent：{{count}}",
+      "nextStep": {
+        "check_access": "检查目录权限",
+        "declare_requirements": "在项目详情声明共享配置需求",
+        "label": "下一步",
+        "open_details": "查看项目详情",
+        "resolve_conflicts": "处理装配冲突（{{count}} 项）"
+      }
+    },
     "registration": {
       "agents": "关联已发现的 Agent（可选）",
       "confirm": "确认注册",
       "description": "选择项目根目录后，SkillHub 只建立本机管理记录，不会导入 Skill 或写入项目文件。",
-      "failed": "无法注册此项目。",
+      "failed": "无法注册此项目（{{code}}）。",
       "name": "项目名称",
       "pickDirectory": "选择项目目录",
       "pickFailed": "无法打开目录选择器。",
+      "tags": "标签（可选）",
+      "tagsHint": "多个标签用英文逗号分隔。",
+      "tagsFailed": "项目已注册，但标签保存失败（{{code}}）。",
       "preview": {
         "agents": "发现的 Agent 目录痕迹",
         "agentsEmpty": "未发现已知 Agent 的项目级目录。",
@@ -634,12 +654,26 @@
         "title": "目录预览（只读）",
         "skillsSortHint": "与已发现 Agent 目录同前缀或同根的候选排在前面，其余保持原有顺序。"
       },
+      "success": {
+        "detail": "已建立本机管理记录：{{name}}。",
+        "finish": "完成",
+        "openDetail": "打开项目详情",
+        "title": "项目已注册"
+      },
       "title": "注册本地项目"
     },
     "drawer": {
+      "access": "访问状态",
+      "agents": "关联 Agent",
+      "edit": "编辑",
       "identity": "项目位置",
       "manage": "管理项目",
+      "note": "备注",
+      "save": "保存",
+      "saved": "已保存项目信息。",
+      "saveFailed": "无法保存项目信息（{{code}}）。",
       "tags": "标签",
+      "tagsFailed": "项目信息已保存，但标签保存失败（{{code}}）。",
       "targets": "共享目标"
     },
     "readOnly": "只读事实",

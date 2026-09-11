@@ -1,6 +1,8 @@
 import { useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   type ProjectAgentCandidate,
+  type ProjectAssemblyPlanView,
   type ProjectDirectoryPreview,
   type ProjectFacade,
   type ProjectPhysicalTargetView,
@@ -84,6 +86,16 @@ const previewPhysicalTargets: ProjectPhysicalTargetView[] = [
   { id: "aurora-web-physical", path: "D:/Work/aurora-web", exists: true, readable: true, writable: true },
 ];
 
+/** Stored assembly plans drive the card next-step guidance in the preview. */
+const previewAssemblyPlans: Record<string, ProjectAssemblyPlanView> = {
+  "project-aurora-web": {
+    items: [
+      { name: "pdf-reader", reasons: [], skillId: "pdf-reader", status: "already_satisfied" },
+      { name: "release-notes", reasons: ["同名目录冲突"], skillId: "release-notes", status: "conflict_needs_choice" },
+    ],
+  },
+};
+
 function createPreviewProjectFacade(initial: ProjectView[]): ProjectFacade {
   let projects = [...initial];
   return {
@@ -110,9 +122,21 @@ function createPreviewProjectFacade(initial: ProjectView[]): ProjectFacade {
       projects = projects.map((project) => (project.id === current.id ? updated : project));
       return updated;
     },
+    setTags: async (projectId, tags) => {
+      const current = projects.find((project) => project.id === projectId) ?? projects[0]!;
+      const updated = { ...current, tags };
+      projects = projects.map((project) => (project.id === current.id ? updated : project));
+      return updated;
+    },
+    updateDetails: async (projectId, details) => {
+      const current = projects.find((project) => project.id === projectId) ?? projects[0]!;
+      const updated = { ...current, name: details.name, description: details.note };
+      projects = projects.map((project) => (project.id === current.id ? updated : project));
+      return updated;
+    },
     listAgentCandidates: async () => previewCandidates,
     previewDirectory: async () => previewDirectoryPreview,
-    getAssemblyPlan: async () => null,
+    getAssemblyPlan: async (projectId) => previewAssemblyPlans[projectId] ?? null,
     listPhysicalTargets: async () => previewPhysicalTargets,
   };
 }
@@ -121,8 +145,15 @@ const previewPicker = { pickDirectory: async () => "C:/Preview/Aurora" };
 
 /** DEV-only projects board (/__preview/projects); never wired into production. */
 export function ProjectsPreview() {
+  const navigate = useNavigate();
   const empty = new URLSearchParams(window.location.search).has("empty");
   const initial = useMemo(() => (empty ? [] : previewProjects), [empty]);
   const [facade] = useState(() => createPreviewProjectFacade(initial));
-  return <ProjectListPage directoryPicker={previewPicker} facade={facade} />;
+  return (
+    <ProjectListPage
+      directoryPicker={previewPicker}
+      facade={facade}
+      onOpenProject={(projectId) => navigate(`/projects/${projectId}`)}
+    />
+  );
 }

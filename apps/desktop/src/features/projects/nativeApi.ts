@@ -88,6 +88,32 @@ export const nativeProjectFacade: ProjectFacade = {
     if (result.type !== "project") throw new Error("update_project returned an unexpected native result.");
     return projectView(result.payload);
   },
+  async setTags(id, tags) {
+    const result = await executeCommand({
+      type: "set_project_tags",
+      payload: { project_id: id, tags },
+    });
+    if (result.type !== "project") throw new Error("set_project_tags returned an unexpected native result.");
+    return projectView(result.payload);
+  },
+  async updateDetails(id, { name, note }) {
+    const project = (await listRawProjects()).find((candidate) => candidate.id === id);
+    if (!project) throw new Error(`Project ${id} was not found.`);
+    const trimmedNote = note.trim();
+    const result = await executeCommand({
+      type: "update_project",
+      payload: {
+        project: {
+          ...project,
+          name: name.trim(),
+          logical: { ...project.logical, note: trimmedNote ? trimmedNote : null },
+          updated_at: new Date().toISOString(),
+        },
+      },
+    });
+    if (result.type !== "project") throw new Error("update_project returned an unexpected native result.");
+    return projectView(result.payload);
+  },
   async listAgentCandidates(): Promise<ProjectAgentCandidate[]> {
     const result = await queryApplication({ type: "get_discovery_snapshot", payload: null });
     if (result.type !== "discovery_snapshot") throw new Error("get_discovery_snapshot returned an unexpected native result.");
