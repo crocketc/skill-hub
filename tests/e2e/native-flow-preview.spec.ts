@@ -38,17 +38,20 @@ async function installNativePreview(page: Page) {
     const discovery = {
       generation: "preview-1",
       observed_at: "2026-09-08T08:00:00Z",
+      // T6（dabbc70）起 ClientInstance 契约包含 supported_os 与 client_presence
+      // （Rust 端必填序列化，workbench 的 buildAgentGroups 直接读取），
+      // 预览快照必须与真实 IPC 契约逐字段对齐。
       instances: [
-        { profile_id: "openai", client_id: "codex", kind: "cli" },
-        { profile_id: "anthropic", client_id: "claude", kind: "cli" },
+        { profile_id: "openai", client_id: "codex", kind: "cli", supported_os: ["windows", "macos"], client_presence: "Unknown" },
+        { profile_id: "anthropic", client_id: "claude", kind: "cli", supported_os: ["windows", "macos"], client_presence: "Unknown" },
       ],
       logical_targets: [
         { id: "codex-target", profile_id: "openai", client_id: "codex", scope: "global", path: "C:/Preview/.agents", marker: "SKILL.md", precedence: "preferred", exists: true, readable: true, writable: true, available: true, physical_id: "codex-physical" },
         { id: "claude-target", profile_id: "anthropic", client_id: "claude", scope: "global", path: "C:/Preview/.claude", marker: "SKILL.md", precedence: "fallback", exists: true, readable: true, writable: true, available: true, physical_id: "claude-physical" },
       ],
       physical_targets: [
-        { id: "codex-physical", path: "C:/Preview/.agents", exists: true, readable: true, writable: true },
-        { id: "claude-physical", path: "C:/Preview/.claude", exists: true, readable: true, writable: true },
+        { id: "codex-physical", path: "C:/Preview/.agents", exists: true, readable: true, writable: true, case_behavior: "volume_case_behavior_unknown_preserved_case_fallback", logical_target_ids: ["codex-target"] },
+        { id: "claude-physical", path: "C:/Preview/.claude", exists: true, readable: true, writable: true, case_behavior: "volume_case_behavior_unknown_preserved_case_fallback", logical_target_ids: ["claude-target"] },
       ],
     };
     const repos = [
@@ -71,7 +74,9 @@ async function installNativePreview(page: Page) {
     };
     const repoReport = {
       skills: [{ key: "anthropics/skills:pdf", name: "PDF Reader", description: "Read PDFs", directory: "pdf", readme_url: "https://github.com/anthropics/skills/tree/main/pdf", repo_owner: "anthropics", repo_name: "skills", repo_branch: "main" }],
-      warnings: [{ owner: "cexll", name: "myclaude", reason: "repo.archive_unavailable" }],
+      // T6（830eb1d）起逐仓告警按 describeRepoWarning 分类转译：后端 reason
+      // 是自由错误串（error.to_string()），已知类别隐藏原始串并给出可读文案。
+      warnings: [{ owner: "cexll", name: "myclaude", reason: "DOWNLOAD_FAILED status=404 Not Found" }],
     };
     const lockEntries = [{ name: "PDF Reader", owner: "anthropics", repo: "skills", branch: "main", skill_path: "pdf" }];
     const deploymentTargets = [
@@ -243,7 +248,12 @@ test("online, repository, and lock discovery expose deterministic result states"
   await expect(page.getByText("anthropics/skills@main")).toBeVisible();
   await page.getByRole("button", { name: "Scan repositories" }).click();
   await expect(page.getByText("PDF Reader")).toBeVisible();
-  await expect(page.getByText(/myclaude failed to scan/)).toBeVisible();
+  // T6（830eb1d）：逐仓失败分类转译——404 命中 notFound 文案、原始错误串
+  // 不再直出，且该仓库有独立重试入口。
+  await expect(page.getByText("cexll/myclaude")).toBeVisible();
+  await expect(page.getByText(/The repository or branch does not exist/)).toBeVisible();
+  await expect(page.getByRole("button", { name: "Retry scanning cexll/myclaude" })).toBeVisible();
+  await expect(page.getByText(/DOWNLOAD_FAILED/)).toHaveCount(0);
 
   await page.goto("/discovery/lock");
   await page.getByRole("button", { name: "Scan lock file" }).click();
