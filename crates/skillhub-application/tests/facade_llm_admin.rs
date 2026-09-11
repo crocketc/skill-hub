@@ -25,7 +25,7 @@ fn provider_config_for(id: &str, label: &str, model: &str) -> LlmProviderConfig 
         label,
         LlmProtocolFamily::OpenAiCompatible,
         LlmDeployment::Online,
-        &format!("https://{id}.test/v1"),
+        format!("https://{id}.test/v1"),
         model,
         None,
     )
