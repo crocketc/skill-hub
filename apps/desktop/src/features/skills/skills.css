@@ -252,3 +252,8 @@
   font-size: var(--font-size-xs);
   font-variant-numeric: tabular-nums;
 }
+
+/* 窄窗口：已保存视图行允许换行，删除按钮不被推出视口（审查 C4）。 */
+.sh-skill-library .sh-skill-library__saved-views > section > div {
+  flex-wrap: wrap;
+}
