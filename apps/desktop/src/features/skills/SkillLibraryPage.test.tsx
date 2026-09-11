@@ -59,6 +59,8 @@ function renderLibrary({
   const router = createMemoryRouter(
     [
       { path: "/library", element: <SkillLibraryPage facade={facade} onOpenDiscovery={onOpenDiscovery} removalFacade={removalFacade} /> },
+      // P1-11：卡片“查看”按钮跳完整详情页。
+      { path: "/library/:skillId", element: <p>Skill detail page</p> },
       { path: "/deploy", element: <p>Batch deployment</p> },
       { path: "/settings/data-protection", element: <p>Data protection export</p> },
       { path: "/library/combinations", element: <p>Combination manager</p> },
@@ -1042,6 +1044,21 @@ describe("SkillLibraryPage", () => {
     expect(screen.getByRole("group", { name: "View mode" })).toBeVisible();
   });
 
+  it("marks the workspace batch-active so pagination reserves clearance", async () => {
+    const facade = createMockSkillLibraryFacade({ total: 80 });
+    renderLibrary({ facade, persistedViewMode: "unset" });
+
+    fireEvent.click(
+      await screen.findByRole("checkbox", { name: "Select current page" }),
+    );
+
+    const workspace = document.querySelector(".sh-skill-library");
+    expect(workspace).toHaveClass("sh-skill-library--batch-active");
+    // 卡片分页与表格分页都在批量条激活时获得 margin 预留（几何断言由 E2E 兜底）。
+    expect(document.querySelector(".sh-skill-cards__pagination")).not.toBeNull();
+    expect(getComputedStyle(document.querySelector(".sh-skill-library") as HTMLElement).getPropertyValue("--skill-batch-bar-height")).toBeDefined();
+  });
+
   it("falls back to default view and group modes without error UI when preference reads fail", async () => {
     const facade = createMockSkillLibraryFacade();
     facade.loadViewMode = vi.fn(async () => {
@@ -1313,7 +1330,7 @@ describe("SkillLibraryPage", () => {
   it("defaults to the enhanced shared-card view with verifiable facts and stable actions", async () => {
     const facade = createMockSkillLibraryFacade({ total: 30 });
     facade.saveViewMode = vi.fn(async () => undefined);
-    renderLibrary({ facade, persistedViewMode: "unset" });
+    const { router } = renderLibrary({ facade, persistedViewMode: "unset" });
 
     // 默认即增强卡片视图：无需切换即可见共享 SkillCard 语义。
     const card = await screen.findByTestId("skill-card-skill-pdf");
@@ -1326,18 +1343,43 @@ describe("SkillLibraryPage", () => {
     expect(screen.getByTestId("skill-card-upgrade-skill-pdf")).toBeVisible();
     expect(screen.getByTestId("skill-card-risk-skill-pdf")).toBeVisible();
 
-    // 整卡不可点击：打开快速抽屉是操作区里的独立按钮语义。
-    fireEvent.click(screen.getByRole("button", { name: "View PDF Reader" }));
+    // P1-11 主次语义对调：卡区激活 → 快速抽屉；“查看”按钮 → 完整详情页。
+    fireEvent.click(screen.getByRole("heading", { name: "PDF Reader" }));
     expect(await screen.findByTestId("skill-quick-drawer")).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    fireEvent.click(screen.getByRole("button", { name: "View PDF Reader" }));
+    expect(await screen.findByText("Skill detail page")).toBeVisible();
+    expect(router.state.location.pathname).toBe("/library/skill-pdf");
+    await act(async () => {
+      await router.navigate("/library");
+    });
 
     // 选择/批量操作语义在卡片视图内保持；选择框套用统一控件尺寸类。
+    fireEvent.click(
+      (await screen.findByTestId("skill-card-skill-pdf")).querySelector(
+        "input[type='checkbox']",
+      ) as HTMLInputElement,
+    );
     expect(screen.getByRole("checkbox", { name: "Select PDF Reader" })).toHaveClass("sh-control-checkbox");
-    fireEvent.click(screen.getByRole("checkbox", { name: "Select PDF Reader" }));
     expect(screen.getByRole("complementary", { name: "Batch actions" })).toBeVisible();
 
     // 卡片视图保留分页能力。
     expect(screen.getByRole("button", { name: "Next page" })).toBeVisible();
+  });
+
+  it("keeps the select control from activating the card body", async () => {
+    const facade = createMockSkillLibraryFacade();
+    renderLibrary({ facade, persistedViewMode: "unset" });
+
+    fireEvent.click(
+      (await screen.findByTestId("skill-card-skill-pdf")).querySelector(
+        "input[type='checkbox']",
+      ) as HTMLInputElement,
+    );
+
+    expect(screen.queryByTestId("skill-quick-drawer")).not.toBeInTheDocument();
+    expect(screen.getByRole("complementary", { name: "Batch actions" })).toBeVisible();
+    expect(screen.getByText("1 item selected")).toBeVisible();
   });
 
   it("keeps view-mode choice persistent when switching to the professional table", async () => {

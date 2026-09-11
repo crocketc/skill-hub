@@ -737,6 +737,18 @@ export function SkillLibraryPage({
     writeDrawerSkill(nextSkillId);
   };
 
+  // P1-11 主次语义对调：卡区激活开快速抽屉（openSkill），
+  // “查看”按钮跳完整详情页（与抽屉内的完整详情入口同一路由约定）。
+  const openSkillDetail = (nextSkillId: string) => {
+    const base = location.pathname.startsWith("/__preview")
+      ? "/__preview/skill-detail"
+      : "/library";
+    navigate({
+      pathname: `${base}/${nextSkillId}`,
+      search: detailSearchFromLibrary(location.search),
+    });
+  };
+
   const closeDrawer = () => {
     const region = rootRef.current?.querySelector<HTMLElement>(
       ".sh-skill-table__region",
@@ -1161,16 +1173,24 @@ export function SkillLibraryPage({
       <SkillCard
         headingLevel={groupMode === "tags" ? "h4" : "h2"}
         key={item.id}
+        onCardActivate={(event) => openSkill(item.id, event.currentTarget)}
         primaryAction={
           <Button
-            onClick={(event) => openSkill(item.id, event.currentTarget)}
+            onClick={(event) => {
+              event.stopPropagation();
+              openSkillDetail(item.id);
+            }}
             variant="secondary"
           >
             {t("skillLibrary.page.card.open", { name: item.name })}
           </Button>
         }
         secondaryAction={
-          <label className="sh-skill-card__select">
+          <label
+            className="sh-skill-card__select"
+            onClick={(event) => event.stopPropagation()}
+            onKeyDown={(event) => event.stopPropagation()}
+          >
             <input
               aria-label={t("skillLibrary.table.selectSkill", { name: item.name })}
               checked={isSkillSelected(item.id)}

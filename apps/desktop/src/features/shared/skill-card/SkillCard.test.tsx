@@ -128,6 +128,48 @@ it("renders a decorative source icon that carries no unlabelled meaning", () => 
   expect(icon).toHaveAttribute("aria-hidden", "true");
 });
 
+// P1-11 向后兼容扩展：缺省（无 onCardActivate）时渲染与 T2 冻结契约一致。
+it("stays inert by default: no tab stop and no activation", () => {
+  const onActivate = vi.fn();
+  const { container } = render(<SkillCard skill={fullCard} />);
+
+  const article = container.querySelector("article");
+  if (!(article instanceof HTMLElement)) throw new Error("Expected the card article");
+  expect(article).not.toHaveAttribute("tabindex");
+  fireEvent.click(article);
+  fireEvent.keyDown(article, { key: "Enter" });
+  expect(onActivate).not.toHaveBeenCalled();
+});
+
+it("activates from card-body clicks and Enter/Space when onCardActivate is provided", () => {
+  const onActivate = vi.fn();
+  const { container } = render(
+    <SkillCard skill={fullCard} onCardActivate={onActivate} />,
+  );
+
+  const article = container.querySelector("article");
+  if (!(article instanceof HTMLElement)) throw new Error("Expected the card article");
+  expect(article).toHaveAttribute("tabindex", "0");
+  fireEvent.click(article);
+  fireEvent.keyDown(article, { key: "Enter" });
+  fireEvent.keyDown(article, { key: " " });
+  expect(onActivate).toHaveBeenCalledTimes(3);
+});
+
+it("never activates from clicks inside the action area", () => {
+  const onActivate = vi.fn();
+  render(
+    <SkillCard
+      onCardActivate={onActivate}
+      primaryAction={<button type="button">安装导入</button>}
+      skill={fullCard}
+    />,
+  );
+
+  fireEvent.click(screen.getByRole("button", { name: "安装导入" }));
+  expect(onActivate).not.toHaveBeenCalled();
+});
+
 describe("heading level", () => {
   it("lets consumers raise the card heading to h2", () => {
     render(<SkillCard headingLevel="h2" skill={fullCard} />);

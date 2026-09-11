@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import type { KeyboardEvent, MouseEvent, ReactNode } from "react";
 import { Icon } from "../../../ui/Icon";
 import { StatusBadge } from "../../../ui/StatusBadge";
 import { skillCardSourceIcon, type SkillCardViewModel } from "./SkillCardViewModel";
@@ -11,6 +11,12 @@ export interface SkillCardProps {
   primaryAction?: ReactNode;
   /** 次操作插槽（如“查看”链接）；渲染在操作区首位。 */
   secondaryAction?: ReactNode;
+  /**
+   * 可选整卡激活（P1-11 向后兼容扩展）：提供后卡片区可点击并响应
+   * Enter/Space；动作区与内部控件阻止冒泡，不触发激活。
+   * 缺省时卡片保持 T2 冻结契约的纯展示语义。
+   */
+  onCardActivate?: (event: MouseEvent<HTMLElement> | KeyboardEvent<HTMLElement>) => void;
   /**
    * 卡片标题层级。发现子页的模块标题是 `h2`，结果卡片默认 `h3`；
    * 顶层浏览页（无更高级标题）可显式传 `h2`。
@@ -27,10 +33,12 @@ export interface SkillCardProps {
  * 共享 Skill 卡片（T2 冻结契约）。只负责展示语义：
  * 标题保持 heading、来源是一行事实文本、描述最多三行、
  * 状态是“标记+文字”、操作区稳定在卡片底部。
- * 整卡不可点击；链接与按钮是消费者传入的独立语义插槽。
+ * 缺省整卡不可点击；提供 `onCardActivate` 时激活语义由消费方定义，
+ * 链接与按钮始终是独立语义插槽。
  */
 export function SkillCard({
   headingLevel: Heading = "h3",
+  onCardActivate,
   primaryAction,
   secondaryAction,
   skill,
@@ -42,7 +50,22 @@ export function SkillCard({
   );
 
   return (
-    <article className="sh-skill-card" data-skill-card={skill.id} data-testid={testId}>
+    <article
+      className={`sh-skill-card${onCardActivate ? " sh-skill-card--activable" : ""}`}
+      data-skill-card={skill.id}
+      data-testid={testId}
+      onClick={onCardActivate}
+      onKeyDown={
+        onCardActivate
+          ? (event) => {
+              if (event.key !== "Enter" && event.key !== " ") return;
+              event.preventDefault();
+              onCardActivate(event);
+            }
+          : undefined
+      }
+      tabIndex={onCardActivate ? 0 : undefined}
+    >
       <div className="sh-skill-card__identity">
         <span aria-hidden="true" className="sh-skill-card__source-icon">
           <Icon name={skillCardSourceIcon(skill.sourceType)} size={20} />
@@ -83,7 +106,7 @@ export function SkillCard({
         </ul>
       ) : null}
       {primaryAction || secondaryAction ? (
-        <div className="sh-skill-card__actions">
+        <div className="sh-skill-card__actions" onClick={(event) => event.stopPropagation()}>
           {secondaryAction}
           {primaryAction}
         </div>

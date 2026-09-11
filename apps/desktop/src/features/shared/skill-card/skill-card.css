@@ -57,6 +57,11 @@
   line-height: 1.3;
 }
 
+/* P1-11：整卡激活形态——指针与焦点提示；键盘焦点沿用全局 focus 样式。 */
+.sh-skill-card--activable {
+  cursor: pointer;
+}
+
 .sh-skill-card__source {
   display: flex;
   flex-wrap: wrap;

@@ -27,7 +27,8 @@ export const test = base.extend<{ app: AppDriver }>({
       async expectBasicCheck(message) {
         expect(message).toBe("检查通过");
         // T3-B：基础/AI 检查结果按列呈现在专业表格模式；卡片模式聚焦风险与升级状态。
-        await page.getByRole("combobox", { name: "View mode" }).selectOption("table");
+        // P1-08：视图切换为分段按钮组。
+        await page.getByRole("button", { name: "Table view" }).click();
         await expect(page.getByRole("row", { name: /PDF Reader/ })).toContainText("Basic: Passed");
       },
       async deployTo(label) {
