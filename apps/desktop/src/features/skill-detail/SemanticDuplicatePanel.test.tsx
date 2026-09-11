@@ -63,10 +63,13 @@ describe("SemanticDuplicatePanel", () => {
     expect(
       await screen.findByText("结果来源：仅确定性候选（AI 层未返回结果）"),
     ).toBeVisible();
-    expect(
-      screen.getByText(/AI 层失败原因：连接模型服务超时，请检查网络后重试。/),
-    ).toBeVisible();
+    const reasonLine = screen.getByText(/AI 层失败原因：连接模型服务超时/);
+    expect(reasonLine).toBeVisible();
     expect(screen.queryByText(/AI 层失败码/)).not.toBeInTheDocument();
+    // describeNativeError 的文案自带句尾句号；模板不得再叠加"；"造成“。；”标点叠用。
+    expect(reasonLine.textContent).not.toContain("。；");
+    expect(reasonLine.textContent).not.toContain(".;");
+    expect(reasonLine.textContent).toContain("确定性候选不受影响。");
     expect(screen.getByText("PDF Text Extractor")).toBeVisible();
   });
 
