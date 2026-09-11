@@ -19,6 +19,59 @@ impl<'a> OperationRepositorySqlite<'a> {
     pub(crate) fn new(database: &'a Database) -> Self {
         Self { database }
     }
+
+    /// Synchronous insert for callers that already own the database lock and
+    /// cannot await (the application facade journals through the same
+    /// connection mutex). Keeps the same encoding as [`Self::insert`].
+    pub fn insert_sync(&self, record: &OperationRecord) -> AppResult<()> {
+        let (progress, inverse) = encode_record(record)?;
+        self.database
+            .connection
+            .execute(
+                "INSERT INTO operations(operation_id,kind,state,phase,request_fingerprint,progress_json,inverse_json,error_code,created_at,updated_at) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?9)",
+                params![
+                    record.operation_id.to_string(),
+                    record.kind,
+                    state_code(record.phase),
+                    phase_code(record.phase),
+                    record.request_fingerprint,
+                    progress,
+                    inverse,
+                    record.error_code.map(|value| value.as_str()),
+                    now(),
+                ],
+            )
+            .map_err(error)?;
+        Ok(())
+    }
+
+    /// Synchronous update counterpart of [`Self::insert_sync`]. Reports
+    /// [`ErrorCode::ObjectNotFound`] when no row carries the operation id.
+    pub fn update_sync(&self, record: &OperationRecord) -> AppResult<()> {
+        let (progress, inverse) = encode_record(record)?;
+        let changed = self
+            .database
+            .connection
+            .execute(
+                "UPDATE operations SET state=?2,phase=?3,request_fingerprint=?4,progress_json=?5,inverse_json=?6,error_code=?7,updated_at=?8 WHERE operation_id=?1",
+                params![
+                    record.operation_id.to_string(),
+                    state_code(record.phase),
+                    phase_code(record.phase),
+                    record.request_fingerprint,
+                    progress,
+                    inverse,
+                    record.error_code.map(|value| value.as_str()),
+                    now(),
+                ],
+            )
+            .map_err(error)?;
+        if changed == 0 {
+            return Err(AppError::new(ErrorCode::ObjectNotFound, Severity::Error)
+                .with_param("operation_id", record.operation_id.to_string()));
+        }
+        Ok(())
+    }
 }
 
 #[derive(Serialize)]
@@ -107,51 +160,11 @@ impl OperationRepository for OperationRepositorySqlite<'_> {
     }
 
     async fn insert(&self, record: &OperationRecord) -> AppResult<()> {
-        let (progress, inverse) = encode_record(record)?;
-        self.database
-            .connection
-            .execute(
-                "INSERT INTO operations(operation_id,kind,state,phase,request_fingerprint,progress_json,inverse_json,error_code,created_at,updated_at) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?9)",
-                params![
-                    record.operation_id.to_string(),
-                    record.kind,
-                    state_code(record.phase),
-                    phase_code(record.phase),
-                    record.request_fingerprint,
-                    progress,
-                    inverse,
-                    record.error_code.map(|value| value.as_str()),
-                    now(),
-                ],
-            )
-            .map_err(error)?;
-        Ok(())
+        self.insert_sync(record)
     }
 
     async fn update(&self, record: &OperationRecord) -> AppResult<()> {
-        let (progress, inverse) = encode_record(record)?;
-        let changed = self
-            .database
-            .connection
-            .execute(
-                "UPDATE operations SET state=?2,phase=?3,request_fingerprint=?4,progress_json=?5,inverse_json=?6,error_code=?7,updated_at=?8 WHERE operation_id=?1",
-                params![
-                    record.operation_id.to_string(),
-                    state_code(record.phase),
-                    phase_code(record.phase),
-                    record.request_fingerprint,
-                    progress,
-                    inverse,
-                    record.error_code.map(|value| value.as_str()),
-                    now(),
-                ],
-            )
-            .map_err(error)?;
-        if changed == 0 {
-            return Err(AppError::new(ErrorCode::ObjectNotFound, Severity::Error)
-                .with_param("operation_id", record.operation_id.to_string()));
-        }
-        Ok(())
+        self.update_sync(record)
     }
 
     async fn list(&self) -> AppResult<Vec<OperationRecord>> {
@@ -280,12 +293,18 @@ fn state_code(value: OperationPhase) -> &'static str {
 }
 
 fn parse_error_code(value: &str) -> AppResult<ErrorCode> {
+    // The journal persists any `AppError.code` the application boundary can
+    // produce, so every `ErrorCode` variant must round-trip here.
     let all = [
         ErrorCode::InvalidInput,
         ErrorCode::PathOutsideAllowedRoots,
         ErrorCode::ObjectNotFound,
         ErrorCode::TargetExists,
+        ErrorCode::TargetChanged,
+        ErrorCode::SymlinkNotSupported,
+        ErrorCode::JunctionNotSupported,
         ErrorCode::OwnershipUnknown,
+        ErrorCode::OwnershipMismatch,
         ErrorCode::CheckBlocked,
         ErrorCode::OperationConflict,
         ErrorCode::OperationIdReusedWithDifferentRequest,
@@ -297,6 +316,42 @@ fn parse_error_code(value: &str) -> AppResult<ErrorCode> {
         ErrorCode::CatalogInvalidMetadata,
         ErrorCode::RequirementsInvalidDeclaration,
         ErrorCode::AgentProfileInvalidCapability,
+        ErrorCode::SourceSearchRateLimited,
+        ErrorCode::SourceProviderAuthenticationUnavailable,
+        ErrorCode::SourceSearchUnavailable,
+        ErrorCode::NetworkDisabled,
+        ErrorCode::CallPolicyNotSupported,
+        ErrorCode::IgnoreOnlyExactSubjectsSupported,
+        ErrorCode::LlmInvalidStructuredResponse,
+        ErrorCode::LlmEndpointNotAllowed,
+        ErrorCode::LlmInputTooLarge,
+        ErrorCode::LlmEvidenceReferenceInvalid,
+        ErrorCode::LlmNotConfigured,
+        ErrorCode::LlmAuthFailed,
+        ErrorCode::LlmModelNotFound,
+        ErrorCode::LlmRateLimited,
+        ErrorCode::LlmRequestTimeout,
+        ErrorCode::LlmCancelled,
+        ErrorCode::LlmEndpointUnreachable,
+        ErrorCode::LlmServerError,
+        ErrorCode::LlmInvalidJson,
+        ErrorCode::LlmResponseInterrupted,
+        ErrorCode::LlmProtocolIncompatible,
+        ErrorCode::LlmCredentialReadFailed,
+        ErrorCode::LlmCapabilityDisabled,
+        ErrorCode::TranslationUserRevisionRequiresConfirmation,
+        ErrorCode::BackupChecksumMismatch,
+        ErrorCode::BackupSensitiveDecisionRequired,
+        ErrorCode::BackupRestoreDecisionRequired,
+        ErrorCode::BackupExportDecisionRequired,
+        ErrorCode::ApplicationUpdateUnavailable,
+        ErrorCode::ApplicationUpdateInstallBlocked,
+        ErrorCode::ApplicationUpdateIntegrityFailed,
+        ErrorCode::ApplicationUpdateSignatureMissing,
+        ErrorCode::ApplicationUpdateSignatureInvalid,
+        ErrorCode::ApplicationUpdateInvalidArtifactUrl,
+        ErrorCode::ApplicationUpdateDownloadCancelled,
+        ErrorCode::ExternalLinkOpenerUnavailable,
     ];
     all.into_iter()
         .find(|candidate| candidate.as_str() == value)
@@ -352,6 +407,27 @@ mod tests {
         block_on(repository.insert(&record)).unwrap();
         let loaded = block_on(repository.get(id)).unwrap().unwrap();
         assert_eq!(loaded, record);
+    }
+
+    #[test]
+    fn sync_writes_share_the_encoding_and_report_missing_rows() {
+        let database = Database::open_in_memory().unwrap();
+        let repository = OperationRepositorySqlite::new(&database);
+        let id = OperationId::new();
+        let mut record = OperationRecord::planned(id, "import_skill", "fingerprint-import");
+        repository.insert_sync(&record).unwrap();
+
+        record.phase = OperationPhase::NeedsRecovery;
+        record.progress.phase = OperationPhase::NeedsRecovery;
+        record.error_code = Some(ErrorCode::OwnershipMismatch);
+        repository.update_sync(&record).unwrap();
+
+        let loaded = block_on(repository.get(id)).unwrap().unwrap();
+        assert_eq!(loaded, record);
+
+        let missing = OperationRecord::planned(OperationId::new(), "import_skill", "other");
+        let error = repository.update_sync(&missing).unwrap_err();
+        assert_eq!(error.code, ErrorCode::ObjectNotFound);
     }
 
     fn block_on<F: std::future::Future>(future: F) -> F::Output {
