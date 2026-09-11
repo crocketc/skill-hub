@@ -5025,6 +5025,11 @@ impl ApplicationFacade for LocalApplicationFacade {
                 })
             }
             AppQuery::GetDiscoverySnapshot(_) => {
+                // P1-06 口径：`instances[].kind` 是证据型枚举，只来自 profile 声明
+                // （证据链 = official_references + research_date）；`available` 仅为
+                // 目录存在/可读/可写的文件系统证据，`client_presence` 恒为 Unknown
+                // ——后端不声称、也不伪造运行时可判定性。同物理目录的多个
+                // logical target 已由适配器归并进同一 physical_target。
                 self.with_database("query.discovery_snapshot", |database| {
                     let snapshot = database
                         .agent_repository()
