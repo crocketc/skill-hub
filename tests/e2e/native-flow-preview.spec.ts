@@ -90,6 +90,11 @@ async function installNativePreview(page: Page) {
     const project = { id: "project-aurora", name: "Aurora", device_path: "C:/Preview/Aurora", physical_id: "aurora-physical", logical: { identity_hint: "C:/Preview/Aurora", note: "Preview project" }, tags: [{ name: "demo" }, { name: "Rust" }], agent_ids: ["codex-target"], created_at: "2026-09-08T08:00:00Z", updated_at: "2026-09-08T08:00:00Z" };
     const preferences = { network_enabled: true, llm_provider: "", data_scope: "explicit_selection", language: "en-US", theme: "light", density: "standard", automation_per_skill: false, automation_batch: false, automation_global: false, backup_location: null, backup_retention_days: 30 };
     const operationSummary = { operation_id: "op-preview", phase: "committed", state: "committed", completed: 1, total: 1, error_code: null };
+    // 组合目录用可变状态承载，重命名后的 list_combinations 反映新名称；
+    // 组合命令类型按序记录，供用例断言“真实发出了哪个命令”。
+    const combinationsState = [{ id: "combo-1", name: "Docs bundle", members: ["pdf-reader"] }];
+    const combinationCommands: string[] = [];
+    (window as unknown as { __combinationCommands: string[] }).__combinationCommands = combinationCommands;
 
     const ok = (type: string, payload: unknown) => ({ type, payload });
     const invoke = async (command: string, args: any = {}) => {
@@ -135,12 +140,15 @@ async function installNativePreview(page: Page) {
           case "get_llm_safety_check_result": return ok("llm_safety_check_result", { skill_id: "pdf-reader", version_id: "v1", state: "not_checked", run_id: null, model_id: null, checked_at: null, finding_count: 0, actionable_count: 0 });
           case "list_findings": return ok("findings", query.payload.kind === "basic" ? [{ id: "finding-1", code: "secret-like-string", severity: "error", file: "SKILL.md", line_start: 18, line_end: 18, high_risk: true, disposition: "actionable" }] : []);
           case "list_running_llm_checks": return ok("running_llm_checks", []);
-          case "list_combinations": return ok("combinations", [{ id: "combo-1", name: "Docs bundle", members: ["pdf-reader"] }]);
+          case "list_combinations": return ok("combinations", combinationsState);
           default: return ok("bootstrap_snapshot", bootstrap);
         }
       }
       if (command === "execute_command") {
         const action = args.command;
+        if (action.type === "create_combination" || action.type === "update_combination" || action.type === "delete_combination" || action.type === "rename_combination") {
+          combinationCommands.push(action.type);
+        }
         switch (action.type) {
           case "scan_targets": return ok("scan_result", { discovered: [{ fingerprint: "same" }, { fingerprint: "same" }], errors: [{ path: "C:/Preview/missing", reason: "unreadable" }] });
           case "discover_agent_targets": return ok("discovery_snapshot", discovery);
@@ -175,6 +183,10 @@ async function installNativePreview(page: Page) {
           case "create_combination":
           case "update_combination":
           case "delete_combination": return ok("operation_summary", operationSummary);
+          case "rename_combination": {
+            combinationsState[0].name = action.payload.to;
+            return ok("combination", { name: action.payload.to, members: combinationsState[0].members });
+          }
           case "remove_custom_agent": return ok("operation_summary", operationSummary);
           case "create_custom_agent": return ok("custom_agent", { id: "custom-auditor", display_name: "Auditor", directory: { grant_id: "C:/Preview/auditor" }, profile: { brand: "Acme", official_references: ["https://acme.example/docs"], clients: [{ id: "auditor", kind: "cli" }] } });
           case "prepare_uninstall": return ok("uninstall_impact", { deployments, actions: ["backup", "undeploy_all", "retain_central_library"], preserves_central_library: true });
@@ -328,16 +340,36 @@ test("deployment target selection exposes unavailable and non-atomic batch bound
   await expect(page.getByText("Deployment finished")).toBeVisible();
 });
 
-test("combination manager loads skill names and guards creation", async ({ page }) => {
+test("combination manager maintains members, renames, and guards duplicates", async ({ page }) => {
+  const combinationCommands = () =>
+    page.evaluate(() => (window as unknown as { __combinationCommands: string[] }).__combinationCommands);
   await installNativePreview(page);
   await page.goto("/library/combinations");
   await expect(page.getByRole("heading", { name: "Combination manager" })).toBeVisible();
   await expect(page.getByText("Docs bundle", { exact: true })).toBeVisible();
   await expect(page.getByText("PDF Reader", { exact: true })).toBeVisible();
+
+  // 创建：重名在提交前被本地拦截，不发出 create_combination 命令。
   await page.getByRole("button", { name: "New combination" }).click();
-  await page.getByPlaceholder("e.g. Writing stack").fill("Audit bundle");
-  await page.getByLabel("PDF Reader").check();
-  await expect(page.getByRole("button", { name: "Save combination" })).toBeEnabled();
+  await page.getByRole("checkbox", { name: "PDF Reader" }).check();
+  await page.getByPlaceholder("e.g. Writing stack").fill("Docs bundle");
+  await page.getByRole("button", { name: "Save combination" }).click();
+  await expect(page.getByRole("alert")).toContainText("already exists");
+  await expect.poll(combinationCommands).toEqual([]);
+
+  // 编辑成员：成员经真实查询候选列表勾选，保存发出 update_combination。
+  await page.getByRole("button", { name: "Cancel" }).click();
+  await page.getByRole("button", { name: "Edit members Docs bundle" }).click();
+  await expect(page.getByRole("checkbox", { name: "PDF Reader" })).toBeChecked();
+  await page.getByRole("button", { name: "Save members" }).click();
+  await expect.poll(combinationCommands).toContain("update_combination");
+
+  // 重命名：发出 rename_combination，刷新后的列表以新名称呈现。
+  await page.getByRole("button", { name: "Rename Docs bundle" }).click();
+  await page.getByLabel("New name").fill("Docs bundle v2");
+  await page.getByRole("button", { name: "Save name" }).click();
+  await expect(page.getByText("Docs bundle v2", { exact: true })).toBeVisible();
+  await expect.poll(combinationCommands).toContain("rename_combination");
 });
 
 test("project detail shows access, agent associations, and assembly status", async ({ page }) => {
