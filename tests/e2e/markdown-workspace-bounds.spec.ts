@@ -63,6 +63,10 @@ test.describe("markdown workspace height bounds", () => {
     await page.getByRole("tab", { name: "Edit" }).click();
     await typeLongDocument(page);
     await page.getByRole("button", { name: "Save and create version" }).click();
+    // P1-14：替换保存经过受控确认面板后完成（推荐副本为面板主操作）。
+    const dialog = page.getByRole("alertdialog");
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole("button", { name: "Replace and save" }).click();
     // 保存成功并重建文件查询后编辑器重挂载，脏状态退出按钮变成干净退出。
     await expect(page.getByRole("button", { name: "Back to preview" })).toBeVisible();
     await page.getByRole("button", { name: "Back to preview" }).click();

@@ -79,4 +79,77 @@ test.describe("markdown edit split layout", () => {
     expect(stacked.sourceBottom).toBeLessThanOrEqual(stacked.previewTop + 0.5);
     expect(stacked.cmEditorRight).toBeLessThanOrEqual(singleColumnWidth + 0.5);
   });
+
+  // P1-14：同步滚动开关存在且可切换；切换后两侧面板仍并排不重叠，
+  // 联动开启时预览跟随源码滚动，关闭后保持不动。
+  test("sync scroll toggle drives the preview and keeps the split intact", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.goto("/__preview/skill-detail/skill-pdf#description");
+    await expect(page.getByRole("heading", { name: "Markdown workspace" })).toBeVisible();
+    await page.getByRole("tab", { name: "Edit" }).click();
+    const editor = page.getByRole("textbox", { name: "Markdown source" });
+    await expect(editor).toBeVisible();
+    await editor.click();
+    await page.keyboard.press("ControlOrMeta+End");
+    // 预览实时渲染源码：追加长内容让两侧都有足够的纵向滚动空间。
+    await page.keyboard.insertText(`\n\n${"sync-probe line\n".repeat(80)}`);
+
+    const toggle = page.getByRole("checkbox", { name: "Sync scrolling" });
+    await expect(toggle).toBeChecked();
+
+    await page.evaluate(() => {
+      const scroller = document.querySelector<HTMLElement>(
+        ".sh-markdown-editor__pane--source .cm-scroller",
+      );
+      scroller.scrollTop = Math.floor(scroller.scrollHeight / 4);
+    });
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () =>
+            document.querySelector<HTMLElement>(".sh-markdown-editor__pane--preview")
+              ?.scrollTop ?? 0,
+        ),
+      )
+      .toBeGreaterThan(0);
+
+    // 关闭开关后滚动源码，预览保持原位（无联动、无回弹抖动）。
+    await toggle.click();
+    await expect(toggle).not.toBeChecked();
+    const previewBefore = await page.evaluate(
+      () =>
+        document.querySelector<HTMLElement>(".sh-markdown-editor__pane--preview")
+          ?.scrollTop ?? 0,
+    );
+    await page.evaluate(() => {
+      const scroller = document.querySelector<HTMLElement>(
+        ".sh-markdown-editor__pane--source .cm-scroller",
+      );
+      scroller.scrollTop = 0;
+    });
+    // scroll 事件在下一帧前派发：等两个动画帧确认联动已停止（帧边界，非任意延时）。
+    await page.evaluate(
+      () =>
+        new Promise<void>((resolve) => {
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+        }),
+    );
+    expect(
+      await page.evaluate(
+        () =>
+          document.querySelector<HTMLElement>(".sh-markdown-editor__pane--preview")
+            ?.scrollTop ?? 0,
+      ),
+    ).toBe(previewBefore);
+
+    const layout = await page.locator(".sh-markdown-editor__split").evaluate((container) =>
+      [...container.children].map((pane) => {
+        const rect = pane.getBoundingClientRect();
+        return { left: rect.left, right: rect.right };
+      }),
+    );
+    expect(layout).toHaveLength(2);
+    const [sourcePaneRect, previewPaneRect] = layout;
+    expect(sourcePaneRect.right).toBeLessThanOrEqual(previewPaneRect.left + 0.5);
+  });
 });
