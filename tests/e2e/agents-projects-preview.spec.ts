@@ -52,7 +52,7 @@ test("agent cards expose a clean title link, directory path, and status text", a
   await expect(page.getByRole("button", { name: "Remove" })).toHaveCount(2);
 });
 
-test("project cards expose title, path, and tags without a folder tree", async ({ page }) => {
+test("project cards expose title, path, tags, access, and a next step", async ({ page }) => {
   await page.goto("/__preview/projects");
 
   await expect(page.getByRole("main").getByRole("heading", { name: "Projects", exact: true })).toBeVisible();
@@ -64,9 +64,27 @@ test("project cards expose title, path, and tags without a folder tree", async (
   await expect(auroraCard.getByText("D:/Work/very-long-project-paths/aurora-web/workspace/root")).toBeVisible();
   await expect(auroraCard.getByText("rust", { exact: true })).toBeVisible();
 
+  // Access state comes from the discovery snapshot; the associated Agent
+  // count comes from the listed project facts.
+  await expect(auroraCard.getByText("Accessible")).toBeVisible();
+  await expect(auroraCard.getByText("Associated Agents: 1")).toBeVisible();
+
+  // The stored plan has one unresolved conflict, so the card points there.
+  await expect(auroraCard.getByRole("button", { name: "Resolve assembly conflicts (1)" })).toBeVisible();
+
+  // Projects absent from the snapshot honestly report "not on this device".
+  const docsCard = page.getByRole("listitem").filter({
+    has: page.getByRole("button", { name: "Docs Pipeline" }),
+  });
+  await expect(docsCard.getByText("Not on this device")).toBeVisible();
+  await expect(docsCard.getByRole("button", { name: "Declare shared config requirements in project details" })).toBeVisible();
+
   // The quick drawer keeps working from the card title.
   await page.getByRole("button", { name: "Aurora Web" }).click();
-  await expect(page.getByRole("dialog", { name: "Aurora Web" })).toBeVisible();
+  const drawer = page.getByRole("dialog", { name: "Aurora Web" });
+  await expect(drawer).toBeVisible();
+  await expect(drawer.getByText("Accessible")).toBeVisible();
+  await expect(drawer.getByText("Resolve assembly conflicts (1)")).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(page.getByRole("button", { name: "Aurora Web" })).toBeFocused();
 });
@@ -93,9 +111,19 @@ test("project registration runs in a drawer and returns focus to its trigger", a
   await registration.getByRole("checkbox", { name: "OpenAI · Codex CLI" }).check();
   await registration.getByRole("button", { name: "Register project" }).click();
 
+  // Success keeps the drawer open with explicit next actions instead of
+  // closing silently: open the (host-wired) project details, or just finish.
+  await expect(registration.getByText("Project registered")).toBeVisible();
+  await expect(registration.getByRole("button", { name: "Open project details" })).toBeVisible();
+  await registration.getByRole("button", { name: "Done" }).click();
   await expect(registration).not.toBeVisible();
-  await expect(page.getByRole("main")).toContainText("Aurora");
   await expect(page.getByRole("button", { name: "Register project" })).toBeFocused();
+
+  const registeredCard = page.getByRole("listitem").filter({
+    has: page.getByRole("button", { name: "Aurora", exact: true }),
+  });
+  await expect(registeredCard).toBeVisible();
+  await expect(registeredCard.getByText("Not on this device")).toBeVisible();
 });
 
 test("project registration keeps the read-only preview boundary inside the drawer", async ({ page }) => {
