@@ -11,7 +11,12 @@ export type OverviewDimension = DeploymentDimension;
 export interface OverviewMetric {
   href?: string;
   count: number;
-  label: string;
+  /**
+   * 不带数量的指标名（如 "configured agents"）。紧凑卡渲染成
+   * 数字 + 指标名两行结构；可访问名称由 count 与 name 组合而成
+   * （如 "3 configured agents"）。
+   */
+  name: string;
   tone: "accent" | "neutral";
 }
 
@@ -47,38 +52,43 @@ export function getOverviewMetrics(
   snapshot: BootstrapSnapshot,
   t: TFunction,
 ): OverviewMetric[] {
+  // P1-07 信息架构：每个指标的钻取去向唯一且目的明确——
+  // skills → /library（库维护全部 Skill）；agents → /agents（管理已登记
+  // 部署目标）；discoveredAgents → /discovery/local（处理本机发现快照中
+  // 的 Agent 实例，发现→纳管走 /discovery 流程）；projects → /projects；
+  // deployments → /library?deployment=deployed（过滤处于部署状态的 Skill）。
   return [
     {
       count: snapshot.skill_count,
       href: "/library",
-      label: t("overview.metrics.skills", { count: snapshot.skill_count }),
+      name: t("overview.metrics.names.skills"),
       tone: "accent",
     },
     {
       count: snapshot.agent_count,
       href: "/agents",
-      // 已确认的部署目标数；与“发现到的 Agent”分开命名，避免口径混淆。
-      label: t("overview.metrics.agents", { count: snapshot.agent_count }),
+      // 已确认的部署目标数；与“发现到的 Agent”分开命名、分开去向，避免口径混淆。
+      name: t("overview.metrics.names.agents"),
       tone: "neutral",
     },
     {
       count: snapshot.discovered_agent_count,
-      href: "/agents",
-      label: t("overview.metrics.discoveredAgents", {
-        count: snapshot.discovered_agent_count,
-      }),
+      // 钻取本机发现工作台而非 /agents：发现到的实例尚未成为可管理的
+      // 部署目标，纳管必须经 /discovery 流程确认。
+      href: "/discovery/local",
+      name: t("overview.metrics.names.discoveredAgents"),
       tone: "neutral",
     },
     {
       count: snapshot.project_count,
       href: "/projects",
-      label: t("overview.metrics.projects", { count: snapshot.project_count }),
+      name: t("overview.metrics.names.projects"),
       tone: "neutral",
     },
     {
       count: snapshot.deployed_count,
       href: "/library?deployment=deployed",
-      label: t("overview.metrics.deployments", { count: snapshot.deployed_count }),
+      name: t("overview.metrics.names.deployments"),
       tone: "neutral",
     },
   ];

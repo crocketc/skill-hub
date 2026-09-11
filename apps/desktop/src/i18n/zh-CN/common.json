@@ -2147,12 +2147,14 @@
       "scrollableDetails": "可滚动的部署数量明细"
     },
     "metrics": {
-      "agents": "{{count}} 个已配置 Agent",
       "compactLabel": "关键统计",
-      "discoveredAgents": "{{count}} 个发现到的 Agent",
-      "deployments": "{{count}} 个部署",
-      "projects": "{{count}} 个项目",
-      "skills": "{{count}} 项技能"
+      "names": {
+        "agents": "个已配置 Agent",
+        "deployments": "个部署",
+        "discoveredAgents": "个发现到的 Agent",
+        "projects": "个项目",
+        "skills": "项技能"
+      }
     },
     "page": {
       "description": "集中库规模、部署去向与待处理事项的当前状态。"
