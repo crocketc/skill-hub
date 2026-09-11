@@ -11,4 +11,5 @@
 !/apps/desktop/dist/.gitkeep
 /apps/desktop/src-tauri/icons/
 /apps/desktop/src-tauri/gen/
+/test_key.txt
 .DS_Store
