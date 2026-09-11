@@ -6,6 +6,7 @@ import type { BootstrapSnapshot } from "../../api/bindings";
 import { createSkillHubI18n } from "../../i18n";
 import baseCss from "../../styles/base.css?raw";
 import { ThemeProvider } from "../../styles/ThemeProvider";
+import overviewCss from "./overview.css?raw";
 import { OverviewPage } from "./OverviewPage";
 
 const overviewSnapshot: BootstrapSnapshot = {
@@ -103,6 +104,8 @@ async function renderOverview(snapshot = overviewSnapshot) {
               <Route path="agents/:agentKey" element={<LocationDisplay />} />
               <Route path="projects/:projectKey" element={<LocationDisplay />} />
               <Route path="library" element={<LocationDisplay />} />
+              <Route path="discovery/local" element={<LocationDisplay />} />
+              <Route path="pending" element={<LocationDisplay />} />
             </Route>
           </Routes>
         </MemoryRouter>
@@ -115,8 +118,82 @@ it("separates configured agent targets from discovered device agents", async () 
   await renderOverview();
 
   // agent_count 只统计已确认的部署目标；发现到的 Agent 来自设备发现快照。
-  expect(await screen.findByText("3 configured agents")).toBeVisible();
-  expect(screen.getByText("5 discovered agents")).toBeVisible();
+  expect(await screen.findByRole("link", { name: "3 configured agents" })).toBeVisible();
+  expect(screen.getByRole("link", { name: "5 discovered agents" })).toBeVisible();
+});
+
+it("drills the discovered agents metric into the local discovery workbench instead of /agents", async () => {
+  await renderOverview();
+
+  // P1-07：已配置目标去 /agents 管理，发现到的 Agent 必须去本机发现工作台，
+  // 两个指标不得共用同一钻取去向。
+  expect(screen.getByRole("link", { name: "5 discovered agents" })).toHaveAttribute(
+    "href",
+    "/discovery/local",
+  );
+  expect(screen.getByRole("link", { name: "3 configured agents" })).toHaveAttribute(
+    "href",
+    "/agents",
+  );
+
+  fireEvent.click(screen.getByRole("link", { name: "5 discovered agents" }));
+
+  expect(screen.getByTestId("location")).toHaveTextContent("/discovery/local");
+});
+
+it("links every pending summary item to the pending workbench", async () => {
+  await renderOverview();
+
+  const findingLink = screen.getByRole("link", { name: "2 security findings" });
+  expect(findingLink).toHaveAttribute("href", "/pending");
+  expect(screen.getByRole("link", { name: "1 recovery action" })).toHaveAttribute(
+    "href",
+    "/pending",
+  );
+  expect(screen.getByRole("link", { name: "1 trial due" })).toHaveAttribute("href", "/pending");
+
+  fireEvent.click(findingLink);
+
+  expect(screen.getByTestId("location")).toHaveTextContent("/pending");
+});
+
+it("renders each compact stat as a two-line card with a numeric figure and a metric name", async () => {
+  await renderOverview();
+
+  // 密度结构：数字与指标名是两个可寻址元素，可访问名称仍由二者组成。
+  const statsList = screen.getByRole("list", { name: "Key stats" });
+  const compactStats = [
+    ["3", "configured agents"],
+    ["5", "discovered agents"],
+    ["2", "projects"],
+    ["18", "deployments"],
+  ] as const;
+  for (const [count, name] of compactStats) {
+    const stat = within(statsList).getByRole("link", { name: `${count} ${name}` });
+    expect(within(stat).getByText(count, { exact: true })).toBeVisible();
+    expect(within(stat).getByText(name)).toBeVisible();
+  }
+
+  const hero = screen.getByRole("link", { name: "12 skills" });
+  expect(within(hero).getByText("12", { exact: true })).toBeVisible();
+  expect(within(hero).getByText("skills")).toBeVisible();
+});
+
+it("locks the density ladder and the adaptive metrics band in overview.css", () => {
+  // 比例阶梯：hero ≥ 6rem，紧凑卡 ≥ 4rem（原先 2.5rem 的矮卡是留白根因之一）。
+  const heroRule = overviewCss.match(/\.sh-overview__hero\s*\{([^}]*)\}/)?.[1] ?? "";
+  expect(heroRule).toContain("min-height: 6.5rem");
+  const statRule = overviewCss.match(/\.sh-overview__stat\s*\{([^}]*)\}/)?.[1] ?? "";
+  expect(statRule).toContain("min-height: 4.25rem");
+
+  // 统计列数不再写死 4 列：宽容器下紧凑统计并入 hero + 统计的自适应指标带。
+  expect(overviewCss).toMatch(
+    /@container workspace \(min-width: 60rem\) \{[\s\S]*?\.sh-overview \.sh-overview__metrics \{[\s\S]*?grid-template-columns: minmax\(0, 1\.35fr\) repeat\(4, minmax\(0, 1fr\)\)/,
+  );
+  expect(overviewCss).toMatch(
+    /@container workspace \(min-width: 60rem\) \{[\s\S]*?\.sh-overview \.sh-overview__stats \{[\s\S]*?display: contents/,
+  );
+  expect(overviewCss).not.toMatch(/\.sh-overview__stats\s*\{[^}]*repeat\(4/);
 });
 
 it("promotes a single primary metric and turns the rest into compact stats", async () => {
@@ -124,7 +201,7 @@ it("promotes a single primary metric and turns the rest into compact stats", asy
 
   const hero = screen.getByRole("link", { name: "12 skills" });
   expect(hero).toHaveAttribute("href", "/library");
-  expect(within(hero).getByText("12 skills")).toBeVisible();
+  expect(within(hero).getByText("12", { exact: true })).toBeVisible();
 
   const statsList = screen.getByRole("list", { name: "Key stats" });
   for (const statName of [
@@ -200,11 +277,12 @@ it("moves every deployment detail into the right rail while the project chart re
 it("shows the pending summary without exposing the recent-operation log", async () => {
   await renderOverview();
 
-  expect(screen.getByText("12 skills")).toBeVisible();
-  expect(screen.getByText("3 configured agents")).toBeVisible();
-  expect(screen.getByText("5 discovered agents")).toBeVisible();
-  expect(screen.getByText("2 projects")).toBeVisible();
-  expect(screen.getByText("18 deployments")).toBeVisible();
+  expect(screen.getByRole("link", { name: "12 skills" })).toBeVisible();
+  const statsList = screen.getByRole("list", { name: "Key stats" });
+  expect(within(statsList).getByRole("link", { name: "3 configured agents" })).toBeVisible();
+  expect(within(statsList).getByRole("link", { name: "5 discovered agents" })).toBeVisible();
+  expect(within(statsList).getByRole("link", { name: "2 projects" })).toBeVisible();
+  expect(within(statsList).getByRole("link", { name: "18 deployments" })).toBeVisible();
   expect(screen.getByRole("heading", { name: "4 pending items" })).toBeVisible();
   expect(screen.getByText("2 security findings")).toBeVisible();
   expect(screen.getByText("1 recovery action")).toBeVisible();

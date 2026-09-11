@@ -19,16 +19,15 @@ import "./overview.css";
 
 /**
  * 紧凑统计的装饰图标映射。`getOverviewMetrics` 的口径顺序固定为
- * 已配置 Agent、发现到的 Agent、项目、部署；同指向 /agents 的两项按
- * 出现次序区分（已配置=agents，发现到=discovery）。
+ * 已配置 Agent、发现到的 Agent、项目、部署；图标按同一次序注册，纯装饰。
  */
 const compactStatIcons: IconName[] = ["agents", "discovery", "projects", "deploy"];
 
 function OverviewHeroMetric({ metric }: { metric: OverviewMetric }) {
   const body = (
     <>
-      <strong aria-hidden="true">{metric.count}</strong>
-      <span>{metric.label}</span>
+      <strong>{metric.count}</strong>
+      <span>{metric.name}</span>
     </>
   );
 
@@ -40,6 +39,19 @@ function OverviewHeroMetric({ metric }: { metric: OverviewMetric }) {
     );
   }
   return <article className="sh-overview__hero">{body}</article>;
+}
+
+/** 紧凑统计的两行卡内容：图标 + 数字（第一行）与指标名（第二行）。 */
+function CompactStatBody({ icon, metric }: { icon: IconName; metric: OverviewMetric }) {
+  return (
+    <>
+      <span className="sh-overview__stat-figure">
+        <Icon aria-hidden="true" name={icon} size={16} />
+        <strong>{metric.count}</strong>
+      </span>
+      <span className="sh-overview__stat-name">{metric.name}</span>
+    </>
+  );
 }
 
 function DeploymentDimensionToggle({
@@ -101,24 +113,14 @@ export function OverviewPage() {
             className="sh-overview__stats"
           >
             {compactMetrics.map((metric, index) => (
-              <li key={metric.label}>
+              <li key={metric.name}>
                 {metric.href ? (
                   <Link className="sh-overview__stat" to={metric.href}>
-                    <Icon
-                      aria-hidden="true"
-                      name={compactStatIcons[index] ?? "info"}
-                      size={16}
-                    />
-                    <span>{metric.label}</span>
+                    <CompactStatBody icon={compactStatIcons[index] ?? "info"} metric={metric} />
                   </Link>
                 ) : (
                   <p className="sh-overview__stat">
-                    <Icon
-                      aria-hidden="true"
-                      name={compactStatIcons[index] ?? "info"}
-                      size={16}
-                    />
-                    <span>{metric.label}</span>
+                    <CompactStatBody icon={compactStatIcons[index] ?? "info"} metric={metric} />
                   </p>
                 )}
               </li>

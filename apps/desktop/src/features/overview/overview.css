@@ -1,4 +1,5 @@
-/* 概览页专属样式（T3-A）。只消费 --ui-* 语义 token，不写死任何主题色；
+/* 概览页专属样式（T3-A 建立，P1-07 重排信息密度：hero/紧凑统计比例阶梯、
+   宽容器指标带、待办项链接化）。只消费 --ui-* 语义 token，不写死任何主题色；
    响应式断点基于 AppShell 的 workspace 容器查询（内容容器，而非视口）。
    覆盖 base.css 同名规则时使用 `.sh-overview` 前缀提高特异性，
    因为本文件在模块图中先于 base.css 注入。 */
@@ -9,12 +10,14 @@
   grid-template-columns: minmax(0, 1fr);
 }
 
-/* 首要指标：唯一强化的大数字，其余数据一律进入下方紧凑统计。 */
+/* 首要指标：唯一强化的大数字 + 指标名两行结构；min-height 与紧凑统计
+   构成比例阶梯（P1-07 密度修复，替代原先无高度约束的整行横条）。 */
 .sh-overview__hero {
   display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: var(--space-2) var(--space-3);
+  flex-direction: column;
+  justify-content: center;
+  gap: var(--space-1);
+  min-height: 6.5rem;
   padding: var(--space-4) var(--space-5);
   border: 1px solid var(--ui-border);
   border-radius: var(--radius-lg);
@@ -25,7 +28,7 @@
 
 .sh-overview__hero strong {
   font-size: var(--font-size-2xl);
-  line-height: 1.25;
+  line-height: 1.2;
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.02em;
 }
@@ -38,30 +41,34 @@
   border-color: var(--ui-accent);
 }
 
-/* 紧凑统计：宽 4 列 / 中 2 列 / 窄 1 列（容器查询见文件末尾）。 */
+/* 紧凑统计：窄容器 1 列 / 中容器 2 列（≥40rem）；宽容器（≥60rem）并入
+   hero + 统计的自适应指标带（见文件末尾）。列数不写死 4 列。 */
 .sh-overview__stats {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-2);
   padding: 0;
   margin: 0;
   list-style: none;
 }
 
+.sh-overview__stats li {
+  display: grid;
+}
+
 .sh-overview__stat {
   display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: var(--space-1);
   min-width: 0;
-  min-height: 2.5rem;
-  align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-2) var(--space-3);
+  min-height: 4.25rem;
+  padding: var(--space-3) var(--space-4);
   margin: 0;
   border: 1px solid var(--ui-border-subtle);
   border-radius: var(--radius-md);
   background: var(--ui-surface);
   color: var(--ui-ink);
-  font-size: var(--font-size-sm);
-  font-weight: 600;
   text-decoration: none;
 }
 
@@ -76,12 +83,40 @@
   stroke-width: 1.75;
 }
 
-.sh-overview__stat span {
+.sh-overview__stat-figure {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.sh-overview__stat-figure strong {
+  font-size: var(--font-size-xl);
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+
+.sh-overview__stat-name {
   min-width: 0;
   overflow-wrap: anywhere;
+  color: var(--ui-ink-muted);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
 }
 
 .sh-overview__stat:hover {
+  border-color: var(--ui-control-border-hover);
+  background: var(--ui-hover-surface);
+}
+
+/* 待办项从纯展示升级为通往 /pending 的链接（P1-07）：覆盖链接默认
+   前景/下划线，保持与列表项一致的外观并提供可感知的悬停反馈。 */
+.sh-overview .sh-overview__pending-item {
+  color: var(--ui-ink);
+  text-decoration: none;
+}
+
+.sh-overview .sh-overview__pending-item:hover {
   border-color: var(--ui-control-border-hover);
   background: var(--ui-hover-surface);
 }
@@ -99,22 +134,29 @@
 }
 
 /* 容器查询：以 AppShell 的 workspace 内容容器为断点（展开侧栏 13.875rem）。
-   宽容器 4 列统计 + 图表/待处理并排；中容器统计 2 列、内容单列；
-   窄容器统计与内容全部单列，无嵌套不可发现滚动。 */
-@container workspace (max-width: 60rem) {
+   窄容器统计与内容全部单列，无嵌套不可发现滚动；中容器统计 2 列、内容单列；
+   宽容器 hero 与紧凑统计并入同一条指标带（hero 占 1 列，紧凑统计按指标数
+   依次排满其余列），消除 hero 整行右侧留白（P1-07）。 */
+@container workspace (min-width: 40rem) {
   .sh-overview .sh-overview__stats {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
-@container workspace (max-width: 56rem) {
-  .sh-overview .sh-overview__content-grid {
-    grid-template-columns: minmax(0, 1fr);
+@container workspace (min-width: 60rem) {
+  .sh-overview .sh-overview__metrics {
+    grid-template-columns: minmax(0, 1.35fr) repeat(4, minmax(0, 1fr));
+  }
+
+  /* 列表框退化为 contents，让统计项直接参与指标带网格（DOM 与
+     可访问性角色不变，键盘顺序仍按 DOM）。 */
+  .sh-overview .sh-overview__stats {
+    display: contents;
   }
 }
 
-@container workspace (max-width: 40rem) {
-  .sh-overview .sh-overview__stats {
+@container workspace (max-width: 56rem) {
+  .sh-overview .sh-overview__content-grid {
     grid-template-columns: minmax(0, 1fr);
   }
 }
