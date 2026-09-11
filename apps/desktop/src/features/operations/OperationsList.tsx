@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
 import { formatDateTime, resolveLocale, type SupportedLocale } from "../../i18n";
@@ -46,10 +46,11 @@ export function OperationsList({ recent, tracker }: OperationsListProps) {
     };
   }, [recent]);
 
-  // 每次数据/语言变化只构建一次格式化结果，避免逐行新建 Intl.DateTimeFormat。
-  const formattedTimes = useMemo(
-    () => formatTimes(rows?.map((row) => row.created_at) ?? [], locale),
-    [rows, locale],
+  // 记录列表规模为数十行，直接逐行格式化；无测量证据不做记忆化
+  // （计划第 2 节：性能优化必须有可复现的前后证据）。
+  const formattedTimes = formatTimes(
+    rows?.map((row) => row.created_at) ?? [],
+    locale,
   );
 
   if (error) {

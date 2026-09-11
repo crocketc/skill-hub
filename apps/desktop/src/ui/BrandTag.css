@@ -5,8 +5,10 @@
   align-items: center;
   gap: 0.3rem;
   padding: 0.1rem 0.55rem;
-  border: 1px solid transparent;
+  border: 1px solid var(--brand-chip-border, transparent);
   border-radius: 999px;
+  background: var(--brand-chip-background, transparent);
+  color: var(--brand-chip-foreground, inherit);
   font-size: 0.8125rem;
   font-weight: 600;
   line-height: 1.5;
@@ -21,102 +23,127 @@
 }
 
 .sh-brand-tag--neutral {
-  background: #eef1f4;
-  border-color: #d3dae1;
-  color: #3d4a57;
+  --brand-chip-background: #eef1f4;
+  --brand-chip-border: #d3dae1;
+  --brand-chip-foreground: #d3dae1;
 }
 
 .sh-brand-tag--openai {
-  background: #e2f6ef;
-  border-color: #b8e6d6;
-  color: #0b6b54;
+  --brand-chip-background: #e2f6ef;
+  --brand-chip-border: #b8e6d6;
+  --brand-chip-foreground: #b8e6d6;
 }
 
-.sh-brand-tag--anthropic,
-.sh-brand-tag--claude {
-  background: #faeae3;
-  border-color: #f0cdbc;
-  color: #93431f;
+.sh-brand-tag--anthropic, .sh-brand-tag--claude {
+  --brand-chip-background: #faeae3;
+  --brand-chip-border: #f0cdbc;
+  --brand-chip-foreground: #f0cdbc;
 }
 
 .sh-brand-tag--codex {
-  background: #e2f1ea;
-  border-color: #bde0d1;
-  color: #14503d;
+  --brand-chip-background: #e2f1ea;
+  --brand-chip-border: #bde0d1;
+  --brand-chip-foreground: #bde0d1;
 }
 
 .sh-brand-tag--github-copilot {
-  background: #e9edf1;
-  border-color: #ccd5de;
-  color: #24292f;
+  --brand-chip-background: #e9edf1;
+  --brand-chip-border: #ccd5de;
+  --brand-chip-foreground: #ccd5de;
 }
 
-.sh-brand-tag--google,
-.sh-brand-tag--gemini {
-  background: #e4edfc;
-  border-color: #c3d7f6;
-  color: #1a4fc4;
+.sh-brand-tag--google, .sh-brand-tag--gemini {
+  --brand-chip-background: #e4edfc;
+  --brand-chip-border: #c3d7f6;
+  --brand-chip-foreground: #c3d7f6;
 }
 
 .sh-brand-tag--zcode {
-  background: #e3f4e6;
-  border-color: #bce3c7;
-  color: #166534;
+  --brand-chip-background: #e3f4e6;
+  --brand-chip-border: #bce3c7;
+  --brand-chip-foreground: #bce3c7;
 }
 
-.sh-brand-tag--kimi,
-.sh-brand-tag--trae {
-  background: #e2f2fb;
-  border-color: #c0e1f5;
-  color: #075e85;
+.sh-brand-tag--kimi, .sh-brand-tag--trae {
+  --brand-chip-background: #e2f2fb;
+  --brand-chip-border: #c0e1f5;
+  --brand-chip-foreground: #c0e1f5;
 }
 
-.sh-brand-tag--windsurf,
-.sh-brand-tag--codebuddy {
-  background: #e4ebfc;
-  border-color: #c5d3f6;
-  color: #1d4ed8;
+.sh-brand-tag--windsurf, .sh-brand-tag--codebuddy {
+  --brand-chip-background: #e4ebfc;
+  --brand-chip-border: #c5d3f6;
+  --brand-chip-foreground: #c5d3f6;
 }
 
-.sh-brand-tag--cline,
-.sh-brand-tag--qoder {
-  background: #efe9fc;
-  border-color: #dccdf5;
-  color: #6d28d9;
+.sh-brand-tag--cline, .sh-brand-tag--qoder {
+  --brand-chip-background: #efe9fc;
+  --brand-chip-border: #dccdf5;
+  --brand-chip-foreground: #dccdf5;
 }
 
 .sh-brand-tag--comate {
-  background: #dff3f1;
-  border-color: #bae2dd;
-  color: #115e59;
+  --brand-chip-background: #dff3f1;
+  --brand-chip-border: #bae2dd;
+  --brand-chip-foreground: #bae2dd;
 }
 
 .sh-brand-tag--grok {
-  background: #e8eaee;
-  border-color: #cfd4dc;
-  color: #111827;
+  --brand-chip-background: #e8eaee;
+  --brand-chip-border: #cfd4dc;
+  --brand-chip-foreground: #cfd4dc;
 }
 
 .sh-brand-tag--hermes {
-  background: #fbe9de;
-  border-color: #f2cdb5;
-  color: #8a3a0f;
+  --brand-chip-background: #fbe9de;
+  --brand-chip-border: #f2cdb5;
+  --brand-chip-foreground: #f2cdb5;
 }
 
 .sh-brand-tag--openclaw {
-  background: #fdeadd;
-  border-color: #f8cdac;
-  color: #b54708;
+  --brand-chip-background: #fdeadd;
+  --brand-chip-border: #f8cdac;
+  --brand-chip-foreground: #f8cdac;
 }
 
 .sh-brand-tag--opencode {
-  background: #e8edf2;
-  border-color: #cdd7e0;
-  color: #334155;
+  --brand-chip-background: #e8edf2;
+  --brand-chip-border: #cdd7e0;
+  --brand-chip-foreground: #cdd7e0;
 }
 
 .sh-brand-tag--cursor {
-  background: #e9edf1;
-  border-color: #d0d8e0;
-  color: #3a4a5c;
+  --brand-chip-background: #e9edf1;
+  --brand-chip-border: #d0d8e0;
+  --brand-chip-foreground: #d0d8e0;
+}
+
+/* 深色主题适配（规格 4.2）：品牌倾向色保留，外围底色和边界改由
+   语义表面色混合派生，避免深色画布上出现整排亮色药丸。 */
+[data-theme="grok-night"] .sh-brand-tag {
+  --brand-chip-border: color-mix(in srgb, var(--brand-chip-border) 38%, transparent);
+}
+[data-theme="grok-night"] .sh-brand-tag--neutral,
+[data-theme="grok-night"] .sh-brand-tag--openai,
+[data-theme="grok-night"] .sh-brand-tag--anthropic,
+[data-theme="grok-night"] .sh-brand-tag--claude,
+[data-theme="grok-night"] .sh-brand-tag--codex,
+[data-theme="grok-night"] .sh-brand-tag--github-copilot,
+[data-theme="grok-night"] .sh-brand-tag--cursor,
+[data-theme="grok-night"] .sh-brand-tag--gemini,
+[data-theme="grok-night"] .sh-brand-tag--google,
+[data-theme="grok-night"] .sh-brand-tag--windsurf,
+[data-theme="grok-night"] .sh-brand-tag--cline,
+[data-theme="grok-night"] .sh-brand-tag--opencode,
+[data-theme="grok-night"] .sh-brand-tag--trae,
+[data-theme="grok-night"] .sh-brand-tag--qoder,
+[data-theme="grok-night"] .sh-brand-tag--codebuddy,
+[data-theme="grok-night"] .sh-brand-tag--comate,
+[data-theme="grok-night"] .sh-brand-tag--kimi,
+[data-theme="grok-night"] .sh-brand-tag--openclaw,
+[data-theme="grok-night"] .sh-brand-tag--hermes,
+[data-theme="grok-night"] .sh-brand-tag--grok,
+[data-theme="grok-night"] .sh-brand-tag--zcode {
+  --brand-chip-background: color-mix(in srgb, var(--brand-chip-background) 22%, var(--color-surface-raised));
+  --brand-chip-foreground: color-mix(in srgb, var(--brand-chip-foreground) 55%, #f2f3ef);
 }

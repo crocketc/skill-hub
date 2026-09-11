@@ -8,6 +8,13 @@
 
 .sh-settings-page__onboarding-link {
   justify-self: start;
+  color: var(--ui-accent);
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
+
+.sh-settings-page__onboarding-link:hover {
+  color: var(--ui-accent-strong);
 }
 
 /* 布局：窄容器默认顶部紧凑分区选择器；容器查询加宽后切换为左侧分区导航。 */

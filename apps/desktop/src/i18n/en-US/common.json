@@ -361,7 +361,8 @@
       "installUnavailable": "The GitHub source of this hit could not be recognized; install is disabled.",
       "alreadyImported": "A skill with this name is already in the library",
       "searchingStatus": "Searching…",
-      "empty": "No matching results."
+      "empty": "No matching results.",
+      "initialHint": "Type a keyword to search skills.sh"
     },
     "workbench": {
       "title": "Local discovery workbench",
@@ -502,7 +503,6 @@
       "title": "Observed usage signals",
       "empty": "No usage evidence has been collected."
     },
-    "managedDeploymentSummary": "{{skills}} skills · {{relations}} deployment relations",
     "customForm": {
       "addTitle": "Add custom agent",
       "editTitle": "Edit custom agent",
@@ -530,7 +530,11 @@
       "ignoreUnsupported": "Agent-level ignore needs native contract support and is not available yet.",
       "relocateViaEdit": "Relocate the directory by editing this custom Agent and picking a new one; the new directory is registered as an allowed path."
     },
-    "launchDeployment": "Deploy skills"
+    "launchDeployment": "Deploy skills",
+    "managedSkillsCount_one": "{{count}} managed skill",
+    "managedSkillsCount_other": "{{count}} managed skills",
+    "managedRelationsCount_one": "{{count}} deployment relation",
+    "managedRelationsCount_other": "{{count}} deployment relations"
   },
   "projects": {
     "actions": {
@@ -866,12 +870,13 @@
       },
       "deployTargetBanner": "Deployment target preselected: {{label}}. Select Skills and choose Unified deploy to target it automatically.",
       "card": {
-        "deploymentCount": "Deployed to {{count}} agents",
         "version": "Current version {{version}}",
         "upgradeAvailable": "Upgrade available",
         "highRisk": "{{count}} high-risk findings",
         "open": "View {{name}}",
-        "sourceLocal": "Local library"
+        "sourceLocal": "Local library",
+        "deploymentCount_one": "Deployed to {{count}} agent",
+        "deploymentCount_other": "Deployed to {{count}} agents"
       },
       "sourceUpdates": {
         "title": "Source update check results",
@@ -1017,7 +1022,6 @@
       "unsaved": "Unsaved changes"
     },
     "table": {
-      "agentDeployments": "{{count}} agents",
       "agentDeploymentSummary": "Agent deployments: {{count}}",
       "aliasLabel": "Alias",
       "aiStatus": "AI: {{state}}",
@@ -1070,12 +1074,15 @@
       "pageSize": "Page size",
       "pendingCount": "{{count}} pending",
       "previousPage": "Previous page",
-      "projectDeployments": "{{count}} projects",
       "resultsRegion": "Skill results",
       "selectCurrentPage": "Select current page",
       "selectSkill": "Select {{name}}",
       "sortBy": "Sort by {{column}}",
-      "updateAvailable": "Update available"
+      "updateAvailable": "Update available",
+      "agentDeployments_one": "{{count}} agent",
+      "agentDeployments_other": "{{count}} agents",
+      "projectDeployments_one": "{{count}} project",
+      "projectDeployments_other": "{{count}} projects"
     },
     "viewMode": {
       "label": "View mode",

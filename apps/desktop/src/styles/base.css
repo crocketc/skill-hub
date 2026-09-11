@@ -42,14 +42,14 @@ a {
 
 .sh-button {
   display: inline-flex;
-  min-height: 2.25rem;
+  min-height: 2.5rem;
   align-items: center;
   justify-content: center;
   gap: var(--space-2);
   border: 1px solid transparent;
   border-radius: var(--radius-sm);
   padding: 0 var(--space-4);
-  background: var(--color-accent-fill);
+  background: var(--ui-accent);
   color: var(--color-on-accent);
   box-shadow: var(--shadow-sm);
   font-weight: 650;
@@ -456,7 +456,6 @@ a {
   z-index: 40;
   inset: 0;
   background: var(--color-overlay);
-  backdrop-filter: blur(2px);
   animation: sh-fade-in var(--motion-normal) var(--ease-standard);
 }
 
@@ -753,16 +752,16 @@ a {
   top: calc(100% + var(--space-2));
   right: -1.5rem;
   display: grid;
-  width: 1.55rem;
-  height: 2rem;
+  width: 2.5rem;
+  height: 2.5rem;
   flex: 0 0 auto;
   place-items: center;
-  border: 1px solid color-mix(in srgb, var(--color-border) 90%, var(--color-text));
+  border: 1px solid var(--ui-border-strong);
   border-radius: 999px;
-  background: linear-gradient(145deg, var(--color-surface) 10%, var(--color-surface-raised) 88%);
+  background: var(--ui-surface);
   color: var(--color-text-secondary);
   cursor: pointer;
-  box-shadow: 0.2rem 0.25rem 0 color-mix(in srgb, var(--color-border) 75%, transparent), 0 0.35rem 0.7rem color-mix(in srgb, var(--color-text) 14%, transparent);
+  box-shadow: var(--shadow-sm);
   transform: translateY(-50%);
   transition: color var(--motion-fast), box-shadow var(--motion-fast), transform var(--motion-fast);
 }
@@ -831,6 +830,7 @@ a {
 }
 
 .sh-sidebar__label {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2834,11 +2834,6 @@ a {
   min-width: 0;
 }
 
-.sh-skill-table__agent-deployment:hover,
-.sh-skill-table__agent-deployment:focus-visible {
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--agent-accent) 22%, transparent);
-  transform: translateY(-1px);
-}
 
 .sh-skill-table__agent-deployment-label {
   overflow: hidden;
@@ -2977,7 +2972,6 @@ a {
   background: color-mix(in srgb, var(--color-surface) 94%, transparent);
   color: var(--color-text-secondary);
   box-shadow: var(--shadow-sm);
-  backdrop-filter: blur(8px);
 }
 
 .sh-skill-table__pagination label {
@@ -3704,8 +3698,8 @@ a {
   z-index: 1;
   margin-inline: calc(var(--space-5) * -1);
   padding: var(--space-3) var(--space-5);
-  background: color-mix(in srgb, var(--color-surface) 94%, transparent);
-  backdrop-filter: blur(8px);
+  background: var(--ui-surface);
+  border-top: 1px solid var(--ui-border-subtle);
 }
 
 .sh-import-wizard__gate {

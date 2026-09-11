@@ -97,3 +97,16 @@
     width: 100%;
   }
 }
+
+/* 提交失败：危险语义 + 图标（状态必须图标+文字，不只靠颜色）。 */
+.sh-removal-flow__error {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  padding: var(--space-3);
+  border: 1px solid var(--ui-danger-border);
+  border-radius: var(--radius-sm);
+  background: var(--ui-danger-background);
+  color: var(--ui-danger-foreground);
+}

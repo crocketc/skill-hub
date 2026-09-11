@@ -112,7 +112,7 @@ export function AgentListPage({ facade = unavailableAgentFacade, picker = deskto
                   </ul>
                 </div>
                 <div className="sh-agent-card__meta">
-                  <span>{t("agents.managedDeploymentSummary", { relations: agent.managedDeploymentRelationCount, skills: agent.managedDeploymentCount })}</span>
+                  <span>{[t("agents.managedSkillsCount", { count: agent.managedDeploymentCount }), t("agents.managedRelationsCount", { count: agent.managedDeploymentRelationCount })].join(" · ")}</span>
                 </div>
                 {agent.status === "custom" ? (
                   <div className="sh-agent-card__actions">

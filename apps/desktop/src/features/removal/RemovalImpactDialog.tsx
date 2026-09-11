@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "../../ui/Button";
 import type { RemovalChoice, RemovalImpact } from "./api";
+import { Icon } from "../../ui/Icon";
 import { RemovalShell } from "./RemovalShell";
 
 interface RemovalImpactDialogProps {
@@ -56,7 +57,7 @@ export function RemovalImpactDialog({ error, impact, onCancel, onConfirm, submit
           </label>
         ))}
       </div>
-      {error ? <p role="alert">{error}</p> : null}
+      {error ? <p className="sh-removal-flow__error" role="alert"><Icon aria-hidden="true" name="failure" size={16} />{error}</p> : null}
     </RemovalShell>
   );
 }

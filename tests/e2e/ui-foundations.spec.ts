@@ -92,6 +92,30 @@ test("keeps icon buttons at a 40px click target with visible focus", async ({ pa
   await expect(page.locator(":focus")).toBeVisible();
 });
 
+test("keeps primary buttons on the 40px step with a solid accent in every theme", async ({ page }) => {
+  await page.goto("/__preview/ui-foundations");
+
+  const primary = page.getByRole("button", { name: "主操作" }).first();
+  await expect(primary).toBeVisible();
+  const height = (await primary.boundingBox())!.height;
+  expect(height).toBeGreaterThanOrEqual(40);
+
+  for (const theme of themeNames) {
+    await page.getByRole("button", { name: theme }).click();
+    const computed = await primary.evaluate((element) => {
+      const style = getComputedStyle(element);
+      return { image: style.backgroundImage, color: style.backgroundColor };
+    });
+    expect(
+      computed.image,
+      `${theme} primary button must not use a gradient fill`,
+    ).toBe("none");
+    expect(computed.color, `${theme} primary button uses the accent token`).not.toBe(
+      "rgba(0, 0, 0, 0)",
+    );
+  }
+});
+
 test.describe("foundations board stays free of horizontal overflow", () => {
   for (const width of previewWidths) {
     test(`no root horizontal overflow at ${width}px`, async ({ page }) => {

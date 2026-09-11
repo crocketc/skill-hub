@@ -199,6 +199,9 @@ export function OnlineDiscovery({ onStartImport, onImportDirectory, facade, impo
             {searchError ? <p role="alert">{searchError}</p> : null}
             {assistNotice && !searching ? <p role="status">{assistNotice}</p> : null}
             {searching ? <p role="status">{t("discovery.online.searchingStatus")}</p> : null}
+            {!page && !searching ? (
+              <p role="status">{t("discovery.online.initialHint")}</p>
+            ) : null}
             {page && !searching && page.items.length === 0 ? (
               <p>{t("discovery.online.empty")}</p>
             ) : null}

@@ -262,3 +262,8 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* 正文行宽约束（规格 3.1）：模块说明约 72ch。 */
+.sh-discovery-module__description {
+  max-width: 72ch;
+}

@@ -55,3 +55,21 @@ it("moves focus into the impact dialog on open and restores it to the trigger on
   await user.click(screen.getByRole("button", { name: "取消" }));
   expect(trigger).toHaveFocus();
 });
+
+it("presents the commit failure as an icon-plus-text alert instead of bare prose", async () => {
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+
+  render(
+    <I18nextProvider i18n={i18n}>
+      <RemovalImpactDialog
+        error="删除未完成。集中库未被改动，请检查后重试。"
+        impact={removalImpactFixture()}
+        onConfirm={() => undefined}
+      />
+    </I18nextProvider>,
+  );
+
+  const alert = screen.getByRole("alert");
+  expect(alert).toHaveTextContent("删除未完成。集中库未被改动，请检查后重试。");
+  expect(alert.querySelector("svg")).toHaveAttribute("aria-hidden", "true");
+});

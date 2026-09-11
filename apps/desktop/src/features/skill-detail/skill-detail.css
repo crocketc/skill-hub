@@ -229,3 +229,8 @@
     inline-size: 100%;
   }
 }
+
+/* 正文行宽约束（规格 3.1）：提示与建议性说明约 72ch。 */
+.sh-skill-detail__zone p {
+  max-width: 72ch;
+}

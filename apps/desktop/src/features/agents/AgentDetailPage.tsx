@@ -97,7 +97,7 @@ export function AgentDetailPage({ agentId = "default", facade = unavailableAgent
         </div>
         <div>
           <dt>{t("agents.detail.managedDeployments")}</dt>
-          <dd>{t("agents.managedDeploymentSummary", { relations: agent.managedDeploymentRelationCount, skills: agent.managedDeploymentCount })}</dd>
+          <dd>{[t("agents.managedSkillsCount", { count: agent.managedDeploymentCount }), t("agents.managedRelationsCount", { count: agent.managedDeploymentRelationCount })].join(" · ")}</dd>
         </div>
       </section>
       <RelationsView relations={agent.relations} />

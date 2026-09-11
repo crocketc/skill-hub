@@ -31,7 +31,7 @@ export function SkillLibraryPreview() {
 function previewTotal(): number {
   const raw = new URLSearchParams(window.location.search).get("total");
   const parsed = raw === null ? Number.NaN : Number(raw);
-  return Number.isInteger(parsed) && parsed > 0 ? parsed : 80;
+  return Number.isInteger(parsed) && parsed >= 0 ? parsed : 80;
 }
 
 export function SkillLibraryPreviewShell() {

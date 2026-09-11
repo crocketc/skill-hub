@@ -345,14 +345,22 @@ describe("SkillDetailPage shell", () => {
 
   it("renders the identity header in the content column ahead of the identity zone", async () => {
     await renderDetail();
-    await screen.findByRole("heading", { name: "PDF Reader" });
+    const header = await screen.findByRole("heading", { name: "PDF Reader" });
+    const identityZone = screen
+      .getByRole("heading", { name: "Identity" })
+      .closest("section");
+    expect(identityZone).not.toBeNull();
 
-    const header = document.querySelector(".sh-skill-detail__header");
-    const content = document.querySelector(".sh-skill-detail__content");
-    const identityZone = document.getElementById("zone-identity");
-    expect(header?.parentElement).toBe(content);
-    expect(content?.contains(screen.getByRole("button", { name: "Delete Skill" }))).toBe(true);
-    expect(content?.contains(identityZone)).toBe(true);
+    // 头部与身份分区共享同一内容列容器，且头部位于分区之前。
+    const contentColumn = identityZone?.parentElement;
+    expect(contentColumn?.contains(header)).toBe(true);
+    expect(
+      header.compareDocumentPosition(identityZone as Node) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      contentColumn?.contains(screen.getByRole("button", { name: "Delete Skill" })),
+    ).toBe(true);
   });
 
   it("activates the containing zone for a legacy section hash", async () => {

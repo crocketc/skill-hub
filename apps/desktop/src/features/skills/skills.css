@@ -155,6 +155,8 @@
 
 /* 已保存视图删除：统一关闭图标按钮（40px 目标），悬停转危险语义。 */
 .sh-skill-library .sh-saved-view__remove.sh-icon-button {
+  min-width: 2.5rem;
+  min-height: 2.5rem;
   border: 0;
   border-left: 1px solid var(--ui-border-subtle);
   border-radius: 0 var(--radius-sm) var(--radius-sm) 0;

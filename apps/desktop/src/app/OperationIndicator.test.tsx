@@ -55,7 +55,7 @@ it("renders the close action with the registry icon instead of a text glyph", as
   const okId = tracker.begin({ kind: "import", label: "完成导入", total: 1 });
   tracker.complete(okId, { succeeded: 1, failed: 0, skipped: 0 });
 
-  const { container } = render(
+  render(
     <I18nextProvider i18n={i18n}>
       <MemoryRouter>
         <OperationIndicator tracker={tracker} />
@@ -66,7 +66,6 @@ it("renders the close action with the registry icon instead of a text glyph", as
   const closeButton = screen.getByRole("button", { name: "关闭" });
   expect(closeButton.querySelector("svg")).toHaveAttribute("aria-hidden", "true");
   expect(closeButton).not.toHaveTextContent("×");
-  expect(container.querySelector(".sh-operation-indicator__close svg")).not.toBeNull();
 });
 
 it("offers a close button for finished and failed rows and hides the row on click", async () => {

@@ -80,7 +80,7 @@
 }
 
 .sh-agent-card__title:hover {
-  color: var(--color-accent-strong);
+  color: var(--ui-accent-strong);
   text-decoration: underline;
   text-underline-offset: 3px;
 }

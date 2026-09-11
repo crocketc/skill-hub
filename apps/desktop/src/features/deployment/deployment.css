@@ -85,3 +85,13 @@
 .sh-deployment-flow__expand small {
   color: var(--ui-ink-muted);
 }
+
+/* 批量目标行对齐：复选框与名称/路径相邻，状态徽标靠右，
+   避免居中空洞导致勾选关联弱（审查 F3）。 */
+.sh-deployment-flow__section .sh-workflow-target {
+  justify-content: flex-start;
+}
+
+.sh-deployment-flow__section .sh-workflow-target > span:first-of-type {
+  flex: 1 1 auto;
+}

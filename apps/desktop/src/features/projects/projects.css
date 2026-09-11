@@ -106,7 +106,7 @@
 
 .sh-project-card .sh-project-card__title:hover {
   background: transparent;
-  color: var(--color-accent-strong);
+  color: var(--ui-accent-strong);
   text-decoration: underline;
   text-underline-offset: 3px;
 }

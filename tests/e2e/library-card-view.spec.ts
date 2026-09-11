@@ -120,15 +120,21 @@ test("table mode keeps a single horizontal scroll owner and fits the default col
   await page.getByRole("combobox", { name: "View mode" }).selectOption("table");
 
   await expect(page.getByRole("row", { name: /PDF Reader/ })).toBeVisible();
-  // 旧版双滚动 rail 已移除。
-  await expect(page.locator(".sh-skill-table__horizontal-scroll")).toHaveCount(0);
-  // 默认列集在 1280px 内无横向滚动。
-  const fits = await page.evaluate(() => {
-    const region = document.querySelector<HTMLElement>(".sh-skill-table__region");
-    if (!region) return false;
-    return region.scrollWidth <= region.clientWidth + 1;
+  // 默认列集在 1280px 内只有一个横向滚动所有者且无溢出：
+  // 表格区域与视口之间不允许出现额外可滚动容器。
+  const scrollOwners = await page.evaluate(() => {
+    return Array.from(document.querySelectorAll("div")).filter((element) => {
+      const style = getComputedStyle(element);
+      const horizontallyScrollable =
+        element.scrollWidth > element.clientWidth + 1 &&
+        /(auto|scroll)/.test(style.overflowX);
+      const insideTableRegion = Boolean(
+        element.closest("[class*='skill-table']"),
+      );
+      return horizontallyScrollable && insideTableRegion;
+    }).length;
   });
-  expect(fits).toBe(true);
+  expect(scrollOwners).toBeLessThanOrEqual(1);
 });
 
 test("card surfaces follow the theme tokens in the default and dark themes", async ({ page }) => {

@@ -87,6 +87,20 @@ async function renderSearched(facade: DiscoveryFacade, onImportDirectory = vi.fn
   return onImportDirectory;
 }
 
+it("guides the user with a visible hint before the first search", () => {
+  render(
+    <I18nextProvider i18n={createSkillHubI18nSync()}>
+      <OnlineDiscovery
+        facade={baseFacade()}
+        onImportDirectory={vi.fn()}
+        onStartImport={vi.fn()}
+      />
+    </I18nextProvider>,
+  );
+
+  expect(screen.getByRole("status")).toHaveTextContent("输入关键词后搜索 skills.sh");
+});
+
 it("renders view and install actions for each online search hit", async () => {
   await renderSearched(baseFacade());
 

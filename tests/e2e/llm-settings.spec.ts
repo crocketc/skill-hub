@@ -11,7 +11,7 @@ test("llm provider rows show endpoint, model, enabled state and credential statu
 }) => {
   await openSettingsLlm(page);
 
-  const deepseek = page.locator("li.sh-settings-provider", { hasText: "DeepSeek" });
+  const deepseek = page.locator("li", { hasText: "DeepSeek" });
   await expect(deepseek.getByText("Online")).toBeVisible();
   await expect(deepseek.getByText("https://api.deepseek.com/v1")).toBeVisible();
   await expect(deepseek.getByText("deepseek-chat")).toBeVisible();
@@ -19,7 +19,7 @@ test("llm provider rows show endpoint, model, enabled state and credential statu
   await expect(deepseek.getByText("Credential configured")).toBeVisible();
   await expect(deepseek.getByText("Default")).toBeVisible();
 
-  const ollama = page.locator("li.sh-settings-provider", { hasText: "Ollama" });
+  const ollama = page.locator("li", { hasText: "Ollama" });
   await expect(ollama.getByText("Local")).toBeVisible();
   await expect(ollama.getByText("Disabled")).toBeVisible();
   await expect(ollama.getByText("No credential")).toBeVisible();
@@ -30,11 +30,11 @@ test("the two-level connection test reports endpoint and model levels separately
 }) => {
   await openSettingsLlm(page);
 
-  const deepseek = page.locator("li.sh-settings-provider", { hasText: "DeepSeek" });
+  const deepseek = page.locator("li", { hasText: "DeepSeek" });
   await deepseek.getByRole("button", { name: "Test connection" }).click();
   await expect(deepseek.getByText("Model connection available")).toBeVisible();
 
-  const ollama = page.locator("li.sh-settings-provider", { hasText: "Ollama" });
+  const ollama = page.locator("li", { hasText: "Ollama" });
   await ollama.getByRole("button", { name: "Test connection" }).click();
   await expect(ollama.getByText("Service unreachable")).toBeVisible();
   await expect(ollama.getByText(/Model connection failed/)).toBeVisible();
@@ -60,7 +60,7 @@ test("adding a provider happens in a drawer and the saved row appears at full wi
   await drawer.getByRole("button", { name: "Save" }).click();
 
   await expect(drawer).not.toBeVisible();
-  const mistral = page.locator("li.sh-settings-provider", { hasText: "Mistral" });
+  const mistral = page.locator("li", { hasText: "Mistral" });
   await expect(mistral).toBeVisible();
   await expect(mistral.getByText("https://api.mistral.ai/v1")).toBeVisible();
   await expect(mistral.getByText("Credential configured")).toBeVisible();
@@ -71,7 +71,7 @@ test("editing keeps the stored credential private and cancel returns focus to th
 }) => {
   await openSettingsLlm(page);
 
-  const ollama = page.locator("li.sh-settings-provider", { hasText: "Ollama" });
+  const ollama = page.locator("li", { hasText: "Ollama" });
   const editButton = ollama.getByRole("button", { name: "Edit" });
   await editButton.click();
 
@@ -89,7 +89,7 @@ test("editing keeps the stored credential private and cancel returns focus to th
 test("deleting requires confirmation and cancel keeps the provider", async ({ page }) => {
   await openSettingsLlm(page);
 
-  const ollama = page.locator("li.sh-settings-provider", { hasText: "Ollama" });
+  const ollama = page.locator("li", { hasText: "Ollama" });
   const deleteButton = ollama.getByRole("button", { name: "Delete" });
   await deleteButton.click();
 
@@ -102,7 +102,7 @@ test("deleting requires confirmation and cancel keeps the provider", async ({ pa
 
   await deleteButton.click();
   await dialog.getByRole("button", { name: "Delete" }).click();
-  await expect(page.locator("li.sh-settings-provider", { hasText: "Ollama" })).not.toBeVisible();
+  await expect(page.locator("li", { hasText: "Ollama" })).not.toBeVisible();
 });
 
 test("capability switches render their data scope and persist a toggle", async ({ page }) => {

@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { BatchRemovalImpactDialog } from "./BatchRemovalImpactDialog";
+import { useTranslation } from "react-i18next";
 import { RemovalImpactDialog } from "./RemovalImpactDialog";
 import { UndeployDialog } from "./UndeployDialog";
 import { removalImpactFixture, type RemovalImpact } from "./api";
@@ -53,6 +54,7 @@ function batchImpacts(count: number, withMatrix: boolean): RemovalImpact[] {
  * previews.
  */
 export function RemovalPreview() {
+  const { t } = useTranslation();
   const scenario = useMemo(previewScenario, []);
   const noop = () => undefined;
 
@@ -79,7 +81,7 @@ export function RemovalPreview() {
 
   return (
     <RemovalImpactDialog
-      error={scenario === "impact-error" ? "removal.commitError" : undefined}
+      error={scenario === "impact-error" ? t("removal.commitError") : undefined}
       impact={removalImpactFixture()}
       onCancel={noop}
       onConfirm={noop}

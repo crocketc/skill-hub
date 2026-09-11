@@ -256,3 +256,22 @@ it("keeps the legacy color variables usable as compatibility aliases", () => {
     expect(rootTokens[token], `--${token} is defined`).toBeTruthy();
   }
 });
+
+it("keeps the radius ladder on the 4/6/10/14px design-spec steps", () => {
+  const rootTokens = {
+    ...tokensFor(":root", "first"),
+    ...tokensFor(":root", "last"),
+  };
+  expect(rootTokens["radius-xs"], "--radius-xs (labels)").toBe("0.25rem");
+  expect(rootTokens["radius-sm"], "--radius-sm (inputs and buttons)").toBe("0.375rem");
+  expect(rootTokens["radius-md"], "--radius-md (entity cards)").toBe("0.625rem");
+  expect(rootTokens["radius-lg"], "--radius-lg (drawers and dialogs)").toBe("0.875rem");
+});
+
+it.each(themeNames)(
+  "exposes a stronger accent step for %s so hover states stay themed",
+  (theme) => {
+    const tokens = tokensFor(`[data-theme="${theme}"]`);
+    expect(tokens["ui-accent-strong"], `${theme} defines --ui-accent-strong`).toBeTruthy();
+  },
+);
