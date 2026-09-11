@@ -11,6 +11,39 @@ it("ships identical translation key sets for Simplified Chinese and English", ()
   expect(flattenTranslationKeys(enUS)).toEqual(flattenTranslationKeys(zhCN));
 });
 
+it("ships user-facing copy for every classified error key the UI maps to", () => {
+  // P0-06：这些 key 是 nativeErrors/import 流程错误分类文案的落点，
+  // 任一缺失都会让 i18next 把键名直接显示给用户。
+  const requiredKeys = [
+    "import.import_failed",
+    "importWorkflow.aiPreCheck.errorNote",
+    "importWorkflow.aiPreCheck.failureReadable",
+    "importWorkflow.aiPreCheck.failureUnknown",
+    "importWorkflow.errors.generic",
+    "importWorkflow.errors.noDefaultAction",
+    "importWorkflow.errors.remoteNotWired",
+    "settings.llm.capabilityDisabled",
+    "settings.llm.evidenceReferenceInvalid",
+    "settings.llm.inputTooLarge",
+    "source.providerAuthenticationUnavailable",
+    "source.searchRateLimited",
+    "source.searchUnavailable",
+    "skillDetail.duplicates.deterministicNote",
+    "skillDetail.duplicates.failureUnknown",
+    "skillDetail.sourceRelink.failureUnknown",
+    "discovery.search.assistUnconfigured",
+    "discovery.search.assistCancelled",
+    "discovery.search.assistFailedFallback",
+    "discovery.search.assistUnknownFailure",
+  ];
+  const zhKeys = flattenTranslationKeys(zhCN);
+  const enKeys = flattenTranslationKeys(enUS);
+  for (const key of requiredKeys) {
+    expect(zhKeys).toContain(key);
+    expect(enKeys).toContain(key);
+  }
+});
+
 it("uses Simplified Chinese only when the system preference requests Chinese", () => {
   expect(resolveLocale(["zh-Hans-CN", "en-US"])).toBe("zh-CN");
   expect(resolveLocale(["fr-FR", "en-GB"])).toBe("en-US");

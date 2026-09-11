@@ -77,7 +77,12 @@ export function describeNativeError(
   return translate(genericKey, { code: "unknown" });
 }
 
-function keyedMessage(
+/**
+ * 把错误码映射为 i18n key（不翻译）。供 describeNativeError 使用；
+ * 也导出给无法直接拿到 `t` 的数据层（如 import 提交循环）把结构化
+ * 错误码转成可被 `t()` 解析的 key，避免裸代码直达用户界面。
+ */
+export function keyedMessage(
   code: string | null,
   reason: string | undefined,
 ): string | null {
@@ -106,6 +111,12 @@ function keyedMessage(
   if (code === "llm.response_interrupted") return "settings.llm.responseInterrupted";
   if (code === "llm.cancelled") return "settings.llm.cancelled";
   if (code === "llm.protocol_incompatible") return "settings.llm.protocolIncompatible";
+  if (code === "llm.capability_disabled") return "settings.llm.capabilityDisabled";
+  if (code === "llm.input_too_large") return "settings.llm.inputTooLarge";
+  if (code === "llm.evidence_reference_invalid") return "settings.llm.evidenceReferenceInvalid";
+  if (code === "source.search_rate_limited") return "source.searchRateLimited";
+  if (code === "source.provider_authentication_unavailable") return "source.providerAuthenticationUnavailable";
+  if (code === "source.search_unavailable") return "source.searchUnavailable";
   if (code === "deployment.target_exists") return "deployment.results.failure.targetExists";
   if (code === "deployment.target_changed") return "deployment.results.failure.targetChanged";
   if (code === "deployment.symlink_not_supported") return "deployment.results.failure.symlinkNotSupported";

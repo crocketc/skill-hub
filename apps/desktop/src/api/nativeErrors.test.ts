@@ -101,6 +101,14 @@ describe("nativeErrors", () => {
   });
 
   it.each([
+    ["llm.capability_disabled", "settings.llm.capabilityDisabled"],
+    ["llm.input_too_large", "settings.llm.inputTooLarge"],
+    ["llm.evidence_reference_invalid", "settings.llm.evidenceReferenceInvalid"],
+    ["source.search_rate_limited", "source.searchRateLimited"],
+    ["source.provider_authentication_unavailable", "source.providerAuthenticationUnavailable"],
+    ["source.search_unavailable", "source.searchUnavailable"],
+    ["import.remote_download_not_wired", "importWorkflow.errors.remoteNotWired"],
+    ["import.no_default_action", "importWorkflow.errors.noDefaultAction"],
     ["llm.not_configured", "settings.llm.notConfigured"],
     ["credential.unavailable", "settings.llm.credentialUnavailable"],
     ["llm.credential_read_failed", "settings.llm.credentialReadFailed"],

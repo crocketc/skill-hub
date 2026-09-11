@@ -106,9 +106,15 @@
     "error": "无法读取数据",
     "loading": "正在读取本地数据"
   },
+  "import": {
+    "import_failed": "导入未完成：本机服务在处理该候选项时失败。"
+  },
   "importWorkflow": {
     "errors": {
       "emptySource": "没有可用的导入来源。",
+      "generic": "导入步骤未能完成（{{code}}）。",
+      "noDefaultAction": "该候选项没有可自动选择的导入方式；请为它手动选择一个操作后再导入。",
+      "remoteNotWired": "远程来源下载尚未接入；请先将仓库下载到本地，再用本地目录导入。",
       "unknown": "导入步骤未能完成。"
     },
     "eyebrow": "安全导入流程",
@@ -296,7 +302,9 @@
       "unavailable": "当前环境未提供 AI 预检能力，可直接继续导入。",
       "reportHeader": "服务 {{provider}} · 模型 {{model}} · 预检对象 {{count}} 个",
       "findings": "发现 {{count}} 项（{{files}} 个文件）",
-      "failure": "预检失败（{{code}}）；不影响其他对象",
+      "failureReadable": "预检失败，其他对象不受影响：{{reason}}",
+      "failureUnknown": "AI 返回未知失败（{{code}}）。",
+      "errorNote": "AI 预检未完成：以上确定性检查结果不受影响，可以直接继续导入。",
       "gatesNote": "AI 建议不会自动转换为任何写操作；导入决定仍然由你确认。",
       "states": {
         "not_checked": "未检查",
@@ -393,12 +401,16 @@
       "label": "搜索 skills.sh",
       "action": "搜索",
       "searching": "搜索中…",
-      "failed": "搜索失败，请稍后重试",
+      "failed": "搜索失败（{{code}}），请检查网络后重试。",
       "source": "来源：{{provider}}",
       "installs": "安装次数：{{count}}",
       "assistToggle": "AI 搜索辅助",
       "assistExtended": "AI 扩展查询“{{query}}”新增 {{count}} 条命中；你的原始查询保持不变，扩展命中已标记。",
-      "assistFallback": "AI 搜索辅助不可用，已回退普通搜索。",
+      "assistUnconfigured": "AI 搜索助手尚未配置或凭据不可用，本次已使用普通搜索；以下结果仍然可用。",
+      "assistCancelled": "AI 搜索已取消，已回退普通搜索；以下结果仍然可用。",
+      "assistFailedFallback": "AI 搜索失败，已回退普通搜索；以下结果仍然可用。",
+      "assistFailureReason": "失败原因：{{reason}}",
+      "assistUnknownFailure": "AI 搜索出现未知问题（{{code}}）。",
       "assistHit": "AI 扩展命中",
       "results": "搜索结果"
     },
@@ -1325,16 +1337,19 @@
       "inputPlaceholder": "本地路径 / Git / HTTPS 地址",
       "submit": "重新关联",
       "done": "已重新关联来源。",
-      "failed": "重新关联失败：{{error}}"
+      "failed": "重新关联失败：{{error}}",
+      "failureUnknown": "重新关联未能完成（{{code}}）。"
     },
     "duplicates": {
       "heading": "AI 语义重复分析",
       "run": "运行分析",
       "scopeNote": "发送范围：仅候选 Skill 的名称、描述、触发词、权限与来源等元数据；候选先由本地全文检索确定性筛出。",
-      "runFailed": "分析失败：{{message}}；确定性候选仍然可用",
+      "runFailed": "AI 分析未能完成：{{message}}",
+      "deterministicNote": "AI 分析未执行，确定性重复候选仍然可用；你可以稍后重试，也可以直接继续其他操作。",
       "sourceLlm": "结果来源：确定性候选 + AI 语义分析",
       "sourceDeterministic": "结果来源：仅确定性候选（AI 层未返回结果）",
-      "failureCode": "AI 层失败码：{{code}}",
+      "failureReason": "AI 层失败原因：{{reason}}；确定性候选不受影响。",
+      "failureUnknown": "AI 层返回未知失败（{{code}}）。",
       "candidates": "候选对象",
       "locallyModified": "本地已修改",
       "noCandidates": "本地确定性筛选未发现语义候选。",
@@ -1753,6 +1768,7 @@
         "description_translation": "描述翻译",
         "online_search_assist": "联网搜索辅助"
       },
+      "capabilityDisabled": "此功能对应的 AI 能力未启用；请在设置的 AI 能力开关中开启后重试。",
       "scopeSafety": "发送范围：Skill 文件内容（敏感值遮盖后）",
       "scopeDuplicate": "发送范围：Skill 名称与描述",
       "scopeTranslation": "发送范围：Skill 描述文本",
@@ -1809,12 +1825,14 @@
       "credentialUnavailable": "凭据不可用，可能已被清除；请重新输入 API 密钥。",
       "credentialReadFailed": "无法读取本机凭据，请检查凭据存储权限后重试。",
       "endpointUnreachable": "无法连接到模型服务，请检查 API 地址和网络设置。",
+      "evidenceReferenceInvalid": "模型返回的依据引用无效；本次 AI 结果已被忽略，确定性流程不受影响。",
       "endpointNotAllowed": "该模型服务地址不在允许范围内，请检查 API 地址。",
       "authFailed": "模型服务拒绝了凭据，请重新检查 API 密钥。",
       "modelNotFound": "模型不存在或当前供应商不支持该模型。",
       "rateLimited": "模型服务请求过于频繁，请稍后重试。",
       "requestTimeout": "连接模型服务超时，请检查网络后重试。",
       "serverError": "模型服务返回服务器错误，请稍后重试。",
+      "inputTooLarge": "发送内容超出模型服务的长度限制；请缩减内容后重试。",
       "invalidJson": "模型服务返回了无法识别的数据，请检查供应商协议。",
       "invalidResponse": "模型服务返回了不符合预期的结果，请检查供应商协议。",
       "responseInterrupted": "模型服务响应被中断，请重试。",
@@ -2060,6 +2078,11 @@
       "drilldown": "查看 {{label}} 的 {{count}} 个 Skill",
       "detailCount": "{{count}} 个标签"
     }
+  },
+  "source": {
+    "searchRateLimited": "搜索请求过于频繁，服务暂时限流；请稍后重试。",
+    "providerAuthenticationUnavailable": "搜索服务的认证暂不可用；请稍后重试。",
+    "searchUnavailable": "搜索服务暂不可用；请检查网络后重试。"
   },
   "status": {
     "failed": "失败",

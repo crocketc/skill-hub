@@ -106,9 +106,15 @@
     "error": "Unable to read data",
     "loading": "Reading local data"
   },
+  "import": {
+    "import_failed": "Import did not finish: the native service failed while processing this candidate."
+  },
   "importWorkflow": {
     "errors": {
       "emptySource": "No import source is available.",
+      "generic": "The import step could not be completed ({{code}}).",
+      "noDefaultAction": "This candidate has no automatically selectable import action; pick one manually before importing.",
+      "remoteNotWired": "Remote source download is not wired up yet; download the repository locally first and import it as a local directory.",
       "unknown": "The import step could not be completed."
     },
     "eyebrow": "Safe import workflow",
@@ -296,7 +302,9 @@
       "unavailable": "AI pre-check is unavailable in this context; you can continue importing directly.",
       "reportHeader": "Service {{provider}} · model {{model}} · {{count}} object(s)",
       "findings": "{{count}} finding(s) across {{files}} file(s)",
-      "failure": "Pre-check failed ({{code}}); other objects are unaffected",
+      "failureReadable": "Pre-check failed for this object; others are unaffected: {{reason}}",
+      "failureUnknown": "The AI returned an unknown failure ({{code}}).",
+      "errorNote": "The AI pre-check did not finish: the deterministic checks above are unaffected and you can continue importing.",
       "gatesNote": "AI suggestions are never turned into write operations automatically; import decisions remain yours.",
       "states": {
         "not_checked": "Not checked",
@@ -393,12 +401,16 @@
       "label": "Search skills.sh",
       "action": "Search",
       "searching": "Searching…",
-      "failed": "Search failed. Please try again later.",
+      "failed": "Search failed ({{code}}). Check your network and try again.",
       "source": "Source: {{provider}}",
       "installs": "Installs: {{count}}",
       "assistToggle": "AI search assist",
       "assistExtended": "AI extended query \"{{query}}\" added {{count}} hits; your original query is unchanged and AI-extended hits are marked.",
-      "assistFallback": "AI search assist is unavailable; fell back to the plain search.",
+      "assistUnconfigured": "The AI search assistant is not configured or its credential is unavailable; the plain search ran instead and the results below remain usable.",
+      "assistCancelled": "The AI search was cancelled; fell back to the plain search and the results below remain usable.",
+      "assistFailedFallback": "The AI search failed; fell back to the plain search and the results below remain usable.",
+      "assistFailureReason": "Failure reason: {{reason}}",
+      "assistUnknownFailure": "The AI search ran into an unknown problem ({{code}}).",
       "assistHit": "AI-extended hit",
       "results": "Search results"
     },
@@ -1325,16 +1337,19 @@
       "inputPlaceholder": "Local path / Git / HTTPS URL",
       "submit": "Relink source",
       "done": "Source relinked.",
-      "failed": "Relink failed: {{error}}"
+      "failed": "Relink failed: {{error}}",
+      "failureUnknown": "Relinking could not be completed ({{code}})."
     },
     "duplicates": {
       "heading": "AI semantic duplicate analysis",
       "run": "Run analysis",
       "scopeNote": "Sends: candidate skill names, descriptions, triggers, permissions and sources only; candidates are preselected by local full-text search.",
-      "runFailed": "Analysis failed: {{message}}; the deterministic candidates remain available",
+      "runFailed": "The AI analysis could not finish: {{message}}",
+      "deterministicNote": "The AI analysis did not run; the deterministic duplicate candidates remain available. You can retry later or simply continue.",
       "sourceLlm": "Source: deterministic candidates + AI semantic analysis",
       "sourceDeterministic": "Source: deterministic candidates only (the AI layer returned nothing)",
-      "failureCode": "AI layer failure code: {{code}}",
+      "failureReason": "AI layer failure: {{reason}}; deterministic candidates are unaffected.",
+      "failureUnknown": "The AI layer reported an unknown failure ({{code}}).",
       "candidates": "Candidates",
       "locallyModified": "Locally modified",
       "noCandidates": "No semantic candidates were found by the deterministic preselection.",
@@ -1753,6 +1768,7 @@
         "description_translation": "Description translation",
         "online_search_assist": "Online search assist"
       },
+      "capabilityDisabled": "The AI capability for this feature is disabled; enable it in Settings and try again.",
       "scopeSafety": "Sends: skill file contents (after masking sensitive values)",
       "scopeDuplicate": "Sends: skill names and descriptions",
       "scopeTranslation": "Sends: skill description text",
@@ -1809,12 +1825,14 @@
       "credentialUnavailable": "The credential is unavailable and may have been cleared. Enter the API key again.",
       "credentialReadFailed": "The local credential could not be read. Check credential-store permissions and retry.",
       "endpointUnreachable": "The model service could not be reached. Check the API address and network settings.",
+      "evidenceReferenceInvalid": "The model returned an invalid evidence reference; this AI result was ignored and the deterministic flow is unaffected.",
       "endpointNotAllowed": "This model-service address is not allowed. Check the API address.",
       "authFailed": "The model service rejected the credential. Check the API key and try again.",
       "modelNotFound": "The model was not found or is not supported by this provider.",
       "rateLimited": "The model service is rate-limiting requests. Try again later.",
       "requestTimeout": "The model service request timed out. Check the network and try again.",
       "serverError": "The model service returned a server error. Try again later.",
+      "inputTooLarge": "The payload exceeds the model service's size limit; shorten it and try again.",
       "invalidJson": "The model service returned unreadable data. Check the provider protocol.",
       "invalidResponse": "The model service returned an unexpected result. Check the provider protocol.",
       "responseInterrupted": "The model service response was interrupted. Try again.",
@@ -2060,6 +2078,11 @@
       "drilldown": "View {{count}} skills tagged {{label}}",
       "detailCount": "{{count}} tags"
     }
+  },
+  "source": {
+    "searchRateLimited": "Search requests are being rate limited; try again later.",
+    "providerAuthenticationUnavailable": "Authentication for the search provider is currently unavailable; try again later.",
+    "searchUnavailable": "The search service is currently unavailable; check your network and try again."
   },
   "status": {
     "failed": "Failed",
