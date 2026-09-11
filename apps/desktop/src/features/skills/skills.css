@@ -363,3 +363,81 @@
 .sh-skill-library .sh-skill-library__saved-views > section > div {
   flex-wrap: wrap;
 }
+
+/* —— P1-09 组合管理面板：成员徽章、成员选择器与已选成员 ——
+
+   组合面板位于 sh-workflow-card 内；成员逐项徽章化（替代单行拼接字符串），
+   成员候选来自真实分页查询，筛选行与候选网格沿用语义 token。 */
+
+.sh-combination-panel ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sh-combination-panel__members-heading {
+  margin: var(--space-1) 0 0;
+  color: var(--ui-ink-muted);
+  font-size: var(--font-size-xs);
+}
+
+.sh-combination-panel__members {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  margin-top: var(--space-1);
+}
+
+.sh-combination-panel__members li,
+.sh-combination-panel__selected li {
+  padding: 0 var(--space-2);
+  border: 1px solid var(--ui-border);
+  border-radius: 999px;
+  background: var(--ui-surface-muted, transparent);
+  font-size: var(--font-size-xs);
+}
+
+.sh-combination-panel__selected {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  align-items: center;
+}
+
+.sh-combination-panel__selected li {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.sh-combination-panel__picker {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+.sh-combination-panel__picker-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.sh-combination-panel__picker-filters label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--font-size-sm);
+}
+
+.sh-combination-panel__candidates {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr));
+  gap: var(--space-1) var(--space-3);
+  max-height: 16rem;
+  overflow-y: auto;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-sm, 0.25rem);
+  padding: var(--space-2);
+  font-size: var(--font-size-sm);
+}

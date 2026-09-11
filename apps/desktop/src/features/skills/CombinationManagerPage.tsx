@@ -5,9 +5,35 @@ import { DEFAULT_SKILL_QUERY } from "./api";
 import type { SkillLibraryFacade, SkillTableRow } from "./api";
 import { CombinationPanel } from "./CombinationPanel";
 
+/** 名称映射分页大小与硬上限：逐页取全，超出第一页的成员也能拿到显示名。 */
+const NAME_PAGE_SIZE = 100;
+const NAME_MAX_PAGES = 50;
+
 /**
- * AR-022 组合管理子页：把组合的全部能力（列表、创建、成员维护、删除、
- * 导出）从技能库主页挪到独立路由，避免挤压日常 Skill 明细视图。
+ * P1-09：按页取全技能名称映射（id → 显示名），不再只取第一页 100 条；
+ * 上限防御异常 total，超出上限时诚实按已取到的部分渲染。
+ */
+export async function collectSkillNames(
+  facade: SkillLibraryFacade,
+): Promise<Record<string, string>> {
+  const names: Record<string, string> = {};
+  for (let page = 1; page <= NAME_MAX_PAGES; page += 1) {
+    const result = await facade.listSkills({
+      ...DEFAULT_SKILL_QUERY,
+      page,
+      pageSize: NAME_PAGE_SIZE,
+    });
+    for (const item of result.items as SkillTableRow[]) {
+      names[item.id] = item.name;
+    }
+    if (result.items.length === 0 || Object.keys(names).length >= result.total) break;
+  }
+  return names;
+}
+
+/**
+ * AR-022 组合管理子页：把组合的全部能力（列表、创建、成员维护、重命名、
+ * 删除、导出）从技能库主页挪到独立路由，避免挤压日常 Skill 明细视图。
  * 技能库名称映射来自真实分页查询，用于把成员 ID 呈现为显示名。
  */
 export function CombinationManagerPage({ facade }: { facade: SkillLibraryFacade }) {
@@ -17,15 +43,9 @@ export function CombinationManagerPage({ facade }: { facade: SkillLibraryFacade 
 
   useEffect(() => {
     let cancelled = false;
-    facade
-      .listSkills({ ...DEFAULT_SKILL_QUERY, page: 1, pageSize: 100 })
-      .then((page) => {
-        if (cancelled) return;
-        const names: Record<string, string> = {};
-        for (const item of page.items as SkillTableRow[]) {
-          names[item.id] = item.name;
-        }
-        setSkillNames(names);
+    collectSkillNames(facade)
+      .then((names) => {
+        if (!cancelled) setSkillNames(names);
       })
       .catch(() => {
         if (!cancelled) setNamesUnavailable(true);
