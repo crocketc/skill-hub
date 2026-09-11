@@ -164,6 +164,29 @@ fn link_capabilities_are_true_only_when_officially_documented() {
 }
 
 #[test]
+fn zcode_prefers_the_real_agents_skills_directory() {
+    let catalog = ProfileCatalog::builtin();
+    let client = catalog
+        .profiles
+        .iter()
+        .find(|profile| profile.brand == "ZCode")
+        .expect("zcode profile")
+        .clients
+        .iter()
+        .find(|client| client.id == "zcode.desktop")
+        .expect("zcode.desktop client");
+    let preferred = client.path_candidates.first().expect("path candidate");
+    assert_eq!(
+        preferred.path, "{user_home}/.agents/skills",
+        "真实 ZCode 布局使用 ~/.agents/skills（与 codex-cli 同目录）；首选候选必须指向它"
+    );
+    assert_eq!(
+        preferred.precedence,
+        skillhub_core::agent::DirectoryPrecedence::Preferred
+    );
+}
+
+#[test]
 fn researched_client_boundaries_are_kept_as_separate_profiles() {
     let catalog = ProfileCatalog::builtin();
     let ids = catalog

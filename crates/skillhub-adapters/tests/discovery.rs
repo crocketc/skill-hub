@@ -230,6 +230,36 @@ fn alias_catalog() -> skillhub_core::agent::ProfileCatalog {
 }
 
 #[test]
+fn zcode_desktop_is_available_in_agents_skills_and_shares_one_physical_target_with_codex_cli() {
+    let workspace = tempdir().unwrap();
+    let home = workspace.path().join("home");
+    std::fs::create_dir_all(home.join(".agents/skills")).unwrap();
+
+    let snapshot = DiscoverAgents::builtin()
+        .discover(&DiscoveryRoots::new(OperatingSystem::Windows, &home))
+        .unwrap();
+    let zcode = snapshot
+        .logical_targets
+        .iter()
+        .find(|target| target.profile_id == "zcode" && target.client_id == "zcode.desktop")
+        .expect("zcode.desktop logical target");
+    assert!(
+        zcode.available,
+        "home 只有 ~/.agents/skills 时 zcode.desktop 必须可用"
+    );
+    let codex = snapshot
+        .logical_targets
+        .iter()
+        .find(|target| target.profile_id == "openai" && target.client_id == "openai.codex-cli")
+        .expect("codex-cli logical target");
+    assert!(codex.available);
+    assert_eq!(
+        zcode.physical_id, codex.physical_id,
+        "不同品牌 client 指向同一物理目录时必须合并到同一物理目标"
+    );
+}
+
+#[test]
 fn read_only_directory_is_not_reported_as_writable() {
     let workspace = tempdir().unwrap();
     let home = workspace.path().join("home");
