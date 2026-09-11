@@ -14,6 +14,7 @@ function listFacade(project: ReturnType<typeof projectFixture>, overrides: Parti
     register: async () => project,
     updateAgentIds: async () => project,
     setTags: async () => project,
+    updateDetails: async () => project,
     listAgentCandidates: async () => [],
     previewDirectory: async () => ({ path: "", agentTraces: [], skillCandidates: [] }),
     getAssemblyPlan: async () => null,
@@ -393,6 +394,7 @@ function registrationFacade(overrides: Partial<ProjectFacade>, register = vi.fn(
   return {
     register,
     setTags: vi.fn(async () => registeredProject),
+    updateDetails: async () => registeredProject,
     list: async () => [],
     listAgentCandidates: async () => [],
     previewDirectory: async () => ({ path: "C:/Projects/Aurora", agentTraces: [], skillCandidates: [] }),

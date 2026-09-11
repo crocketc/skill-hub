@@ -248,6 +248,38 @@ it("replaces project tags through the existing set_project_tags command", async 
   });
 });
 
+it("rewrites name and note through update_project while preserving device facts", async () => {
+  const rawProject = {
+    id: "project-aurora",
+    name: "Aurora",
+    device_path: "D:/Work/Aurora",
+    physical_id: "fs:project-aurora",
+    logical: { identity_hint: "github.com/acme/aurora", note: "Old note" },
+    tags: [{ name: "Desktop" }],
+    agent_ids: ["codex-cli"],
+    created_at: "2026-09-02T00:00:00Z",
+    updated_at: "2026-09-02T00:00:00Z",
+  };
+  query.mockResolvedValue({ type: "projects", payload: [rawProject] });
+  execute.mockResolvedValue({ type: "project", payload: { ...rawProject, name: "Aurora Prime", logical: { ...rawProject.logical, note: "New note" } } });
+
+  await expect(nativeProjectFacade.updateDetails("project-aurora", { name: "Aurora Prime", note: "New note" })).resolves.toEqual(
+    expect.objectContaining({ name: "Aurora Prime", description: "New note" }),
+  );
+  expect(execute).toHaveBeenCalledWith({
+    type: "update_project",
+    payload: { project: expect.objectContaining({
+      id: "project-aurora",
+      name: "Aurora Prime",
+      device_path: "D:/Work/Aurora",
+      physical_id: "fs:project-aurora",
+      logical: { identity_hint: "github.com/acme/aurora", note: "New note" },
+      tags: [{ name: "Desktop" }],
+      agent_ids: ["codex-cli"],
+    }) },
+  });
+});
+
 it("previews a chosen project directory read-only before registration", async () => {
   query.mockResolvedValueOnce({
     type: "project_directory_preview",

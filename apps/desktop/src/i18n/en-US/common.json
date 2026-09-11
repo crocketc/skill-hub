@@ -665,9 +665,15 @@
     "drawer": {
       "access": "Access state",
       "agents": "Associated Agents",
+      "edit": "Edit",
       "identity": "Project location",
       "manage": "Manage project",
+      "note": "Note",
+      "save": "Save",
+      "saved": "Project details saved.",
+      "saveFailed": "Project details could not be saved ({{code}}).",
       "tags": "Tags",
+      "tagsFailed": "Project details were saved, but saving tags failed ({{code}}).",
       "targets": "Shared targets"
     },
     "readOnly": "Read-only facts",

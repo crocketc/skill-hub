@@ -15,6 +15,7 @@ function detailFacade(project: ProjectView, overrides: Partial<ProjectFacade> = 
     register: async () => project,
     updateAgentIds: async () => project,
     setTags: async () => project,
+    updateDetails: async () => project,
     listAgentCandidates: async () => [],
     previewDirectory: async () => ({ path: "", agentTraces: [], skillCandidates: [] }),
     getAssemblyPlan: async () => null,

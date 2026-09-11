@@ -87,6 +87,8 @@ export interface ProjectFacade {
   updateAgentIds(projectId: string, agentIds: string[]): Promise<ProjectView>;
   /** Replaces the project tags through the existing set_project_tags command. */
   setTags(projectId: string, tags: string[]): Promise<ProjectView>;
+  /** Renames a project and rewrites its note through the existing update_project command. */
+  updateDetails(projectId: string, details: { name: string; note: string }): Promise<ProjectView>;
   listAgentCandidates(): Promise<ProjectAgentCandidate[]>;
   previewDirectory(path: string): Promise<ProjectDirectoryPreview>;
   getAssemblyPlan(projectId: string): Promise<ProjectAssemblyPlanView | null>;
@@ -103,6 +105,7 @@ export const unavailableProjectFacade: ProjectFacade = {
   register: () => unavailable("project_register"),
   updateAgentIds: () => unavailable("project_update_agent_ids"),
   setTags: () => unavailable("project_set_tags"),
+  updateDetails: () => unavailable("project_update_details"),
   listAgentCandidates: () => unavailable("project_agent_candidates"),
   previewDirectory: () => unavailable("project_preview_directory"),
   getAssemblyPlan: () => unavailable("project_assembly_plan"),

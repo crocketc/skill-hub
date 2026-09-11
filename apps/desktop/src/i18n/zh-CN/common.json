@@ -665,9 +665,15 @@
     "drawer": {
       "access": "访问状态",
       "agents": "关联 Agent",
+      "edit": "编辑",
       "identity": "项目位置",
       "manage": "管理项目",
+      "note": "备注",
+      "save": "保存",
+      "saved": "已保存项目信息。",
+      "saveFailed": "无法保存项目信息（{{code}}）。",
       "tags": "标签",
+      "tagsFailed": "项目信息已保存，但标签保存失败（{{code}}）。",
       "targets": "共享目标"
     },
     "readOnly": "只读事实",

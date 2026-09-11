@@ -362,9 +362,11 @@ export function ProjectListPage({
       {!visibleProjects.length ? <DataState message={t("projects.empty")} state="empty" /> : null}
       <ProjectQuickDrawer
         accessState={selectedProject ? projectFacts(selectedProject).accessState : undefined}
+        facade={facade}
         nextStep={selectedProject ? projectFacts(selectedProject).nextStep : undefined}
         onClose={() => setSelectedProject(undefined)}
         onOpenProject={onOpenProject}
+        onProjectChanged={(updated) => setProjects((current) => current?.map((project) => (project.id === updated.id ? updated : project)))}
         open={Boolean(selectedProject)}
         project={selectedProject}
         returnFocusRef={quickDrawerTriggerRef}

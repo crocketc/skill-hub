@@ -279,6 +279,26 @@
   gap: var(--space-2);
 }
 
+/* 快捷抽屉：事实清单 + 行内编辑表单。 */
+.sh-project-drawer__edit {
+  display: grid;
+  min-width: 0;
+  gap: var(--space-3);
+}
+
+.sh-project-drawer__edit-actions,
+.sh-project-drawer__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
+.sh-project-drawer__actions {
+  justify-content: flex-start;
+  margin-top: var(--space-2);
+}
+
 /* 详情页（保持既有语义，token 统一外观）。 */
 .sh-project-detail {
   display: grid;
