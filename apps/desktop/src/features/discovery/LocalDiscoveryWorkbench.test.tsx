@@ -236,6 +236,10 @@ it("shows a pending-import banner and review entry when unmanaged candidates exi
   expect(banner).toHaveTextContent("发现 1 个待导入候选");
   fireEvent.click(screen.getByRole("button", { name: "审查并导入" }));
   expect(onReviewCandidates).toHaveBeenCalledTimes(1);
+  // P1-04：审查入口必须携带本次扫描候选，不得让用户从零重选。
+  expect(onReviewCandidates).toHaveBeenCalledWith([
+    expect.objectContaining({ path: "C:/codex/skills/alpha" }),
+  ]);
 });
 
 it("announces the scanning state while a scan is running", async () => {

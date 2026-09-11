@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "../../ui/Button";
+import type { DiscoveredSkill } from "../../api/bindings";
 import {
   classifyScan,
   formatObservedAt,
@@ -12,7 +13,7 @@ import {
 export interface LocalDiscoveryWorkbenchProps {
   facade: DiscoveryFacade;
   /** C3 收口：待导入横幅的"审查"入口；未提供时横幅不渲染动作按钮。 */
-  onReviewCandidates?: () => void;
+  onReviewCandidates?: (candidates: DiscoveredSkill[]) => void;
 }
 
 /**
@@ -47,6 +48,8 @@ export function LocalDiscoveryWorkbench({ facade, onReviewCandidates }: LocalDis
   const { t } = useTranslation();
   const [snapshot, setSnapshot] = useState<SnapshotState | null>(null);
   const [classification, setClassification] = useState<ScanClassification | null>(null);
+  // P1-04：保留本次扫描候选，"审查并导入"必须原样带给导入向导。
+  const [candidates, setCandidates] = useState<DiscoveredSkill[]>([]);
   const [scanning, setScanning] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -82,6 +85,7 @@ export function LocalDiscoveryWorkbench({ facade, onReviewCandidates }: LocalDis
         targets: snap.physical_targets.length,
       });
       setClassification(classifyScan(snap, result));
+      setCandidates(result.discovered);
     } catch {
       setError(t("discovery.workbench.scanFailed"));
     } finally {
@@ -112,7 +116,7 @@ export function LocalDiscoveryWorkbench({ facade, onReviewCandidates }: LocalDis
           <strong>{t("discovery.workbench.bannerHeading", { count: classification.unmanaged })}</strong>
           <small>{t("discovery.workbench.bannerHint")}</small>
           {onReviewCandidates ? (
-            <Button onClick={onReviewCandidates} variant="primary">
+            <Button onClick={() => onReviewCandidates(candidates)} variant="primary">
               {t("discovery.workbench.reviewAction")}
             </Button>
           ) : null}

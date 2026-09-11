@@ -4,6 +4,7 @@ import { I18nextProvider } from "react-i18next";
 import { expect, it, vi } from "vitest";
 import { createSkillHubI18n } from "../../i18n";
 import { createMockImportFacade } from "../import/api";
+import type { DiscoverySnapshot, ScanResult } from "../../api/bindings";
 import { createOperationTracker } from "../../platform/operationTracker";
 import type { DiscoveryFacade } from "./api";
 import { DiscoveryPage, type DiscoveryModuleView } from "./DiscoveryPage";
@@ -287,6 +288,30 @@ it("routes an installed online hit into the import wizard on the online subpage"
   );
 });
 
+it("carries the scanned candidates into the import wizard on review", async () => {
+  const user = userEvent.setup();
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  const facade = repoStubFacade();
+  facade.getDiscoverySnapshot = async () => workbenchSnapshot;
+  facade.scanTargets = async () => workbenchScanResult;
+  render(
+    <I18nextProvider i18n={i18n}>
+      <DiscoveryPage view="local" discoveryFacade={facade} />
+    </I18nextProvider>,
+  );
+
+  await user.click(await screen.findByRole("button", { name: "重新扫描" }));
+  await user.click(await screen.findByRole("button", { name: "审查并导入" }));
+
+  // P1-04：审查并导入必须把本次扫描候选目录带进向导（默认全选），
+  // 而不是打开空向导让用户从零重选。
+  expect(await screen.findByRole("heading", { name: "导入 Skill" })).toBeVisible();
+  const candidate = screen.getByRole("checkbox", { name: "C:/codex/skills/alpha" });
+  expect(candidate).toBeChecked();
+  expect(screen.getByText("本次扫描发现 1 个候选目录，已默认全部选中；请审阅候选项后继续。"))
+    .toBeVisible();
+});
+
 function onlinePage() {
   return {
     items: [
@@ -310,6 +335,65 @@ function onlinePage() {
     cache_max_age_seconds: null,
   };
 }
+
+/** 本机发现工作台夹具：epoch 秒串 + 一个已发现候选（审查并导入链路）。 */
+const workbenchSnapshot: DiscoverySnapshot = {
+  generation: "1",
+  observed_at: "1789114968",
+  instances: [
+    { profile_id: "p", client_id: "codex", kind: "cli", supported_os: ["windows"], client_presence: "Unknown" },
+  ],
+  logical_targets: [
+    {
+      id: "lt1",
+      profile_id: "p",
+      client_id: "codex",
+      scope: "global",
+      path: "C:/codex/skills",
+      marker: "SKILL.md",
+      precedence: "preferred",
+      exists: true,
+      readable: true,
+      writable: true,
+      available: true,
+      physical_id: "pt1",
+    },
+  ],
+  physical_targets: [
+    {
+      id: "pt1",
+      path: "C:/codex/skills",
+      exists: true,
+      readable: true,
+      writable: true,
+      case_behavior: "sensitive",
+      logical_target_ids: ["lt1"],
+    },
+  ],
+};
+
+const workbenchScanResult: ScanResult = {
+  generation: { generation: 1, observed_at: 1 },
+  roots: ["C:/codex/skills"],
+  discovered: [
+    {
+      root: "C:/codex/skills",
+      relative_path: "alpha",
+      path: "C:/codex/skills/alpha",
+      marker: "SKILL.md",
+      marker_size: 1,
+      marker_modified_at: 1,
+      size: 1,
+      latest_modified_at: 1,
+      fingerprint: "a",
+      metadata_fingerprint: "b",
+    },
+  ],
+  visited_paths: ["C:/codex/skills/alpha"],
+  reparsed_count: 0,
+  unchanged_count: 0,
+  errors: [],
+};
 
 function repoStubFacade(): DiscoveryFacade {
   return {

@@ -50,6 +50,8 @@ interface WizardController {
   importGuide: string | undefined;
   wizardInitialSources: string[];
   openWizardWithDirectory: (directory: string) => void;
+  /** P1-04：把本次扫描候选目录作为向导来源（审查并导入链路）。 */
+  openWizardWithCandidates: (candidatePaths: string[]) => void;
   openImportWizard: () => void;
   closeWizard: () => void;
 }
@@ -123,13 +125,15 @@ export function DiscoveryPage({
   const [showImport, setShowImport] = useState(Boolean(initialSourceText) || initialSources.length > 0);
   const [wizardSources, setWizardSources] = useState<string[] | null>(null);
   const [importBlocked, setImportBlocked] = useState(false);
+  // P1-04：单 Skill 安装/审查并导入等入口的向导导语覆盖；空向导入口会清除。
+  const [wizardGuideOverride, setWizardGuideOverride] = useState<string | undefined>(undefined);
   // AR-014：后台导入进行中时禁止再次提交导入，统一在打开向导的入口拦截。
   const importRunning = useHasRunningOperation(tracker, "import");
-  const importGuide = initialSources.length > 1
+  const importGuide = wizardGuideOverride ?? (initialSources.length > 1
     ? t("discovery.onboardingImportGuideMultiple", { count: initialSources.length })
     : initialSources.length === 1
       ? t("discovery.onboardingImportGuideSingle")
-      : undefined;
+      : undefined);
 
   // 下载并导入：临时下载目录以本地来源身份进入现有导入向导。
   const openWizardWithDirectory = (directory: string) => {
@@ -139,6 +143,7 @@ export function DiscoveryPage({
     }
     setImportBlocked(false);
     setWizardSources([directory]);
+    setWizardGuideOverride(undefined);
     setShowImport(true);
   };
   const openImportWizard = () => {
@@ -147,12 +152,35 @@ export function DiscoveryPage({
       return;
     }
     setImportBlocked(false);
+    setWizardSources(null);
+    setWizardGuideOverride(undefined);
+    setShowImport(true);
+  };
+  // P1-04：审查并导入——本次扫描发现的候选目录即向导来源，默认全选；
+  // 每个候选以 SKILL.md 所在目录（DiscoveredSkill.path）为单位，绝不
+  // 要求用户从零重新选择目录。
+  const openWizardWithCandidates = (candidatePaths: string[]) => {
+    if (importRunning) {
+      setImportBlocked(true);
+      return;
+    }
+    setImportBlocked(false);
+    const directories = Array.from(new Set(candidatePaths.map((path) => path.trim()).filter(Boolean)));
+    if (directories.length === 0) {
+      openImportWizard();
+      return;
+    }
+    setWizardSources(directories);
+    setWizardGuideOverride(
+      t("discovery.workbench.reviewImportGuide", { count: directories.length }),
+    );
     setShowImport(true);
   };
   const closeWizard = () => {
     setShowImport(false);
     setWizardSources(null);
     setImportBlocked(false);
+    setWizardGuideOverride(undefined);
   };
   const wizard: WizardController = {
     showImport,
@@ -160,6 +188,7 @@ export function DiscoveryPage({
     importGuide,
     wizardInitialSources: wizardSources ?? initialSources,
     openWizardWithDirectory,
+    openWizardWithCandidates,
     openImportWizard,
     closeWizard,
   };
@@ -304,7 +333,14 @@ function DiscoveryModulePage({
       ) : null}
       {view === "local" ? (
         <>
-          {facade ? <LocalDiscoveryWorkbench facade={facade} onReviewCandidates={wizard.openImportWizard} /> : null}
+          {facade ? (
+            <LocalDiscoveryWorkbench
+              facade={facade}
+              // P1-04：审查并导入以候选的 SKILL.md 所在目录为单位带入向导。
+              onReviewCandidates={(candidates) =>
+                wizard.openWizardWithCandidates(candidates.map((candidate) => candidate.path))}
+            />
+          ) : null}
           <LocalDiscovery onStartImport={wizard.openImportWizard} />
         </>
       ) : null}

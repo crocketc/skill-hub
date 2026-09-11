@@ -399,7 +399,8 @@
       "bannerHint": "Candidates enter the existing source selection and conflict flow; nothing is written to the library automatically.",
       "reviewAction": "Review and import",
       "scanningStatus": "Scanning local directories…",
-      "timeUnknown": "Unknown time"
+      "timeUnknown": "Unknown time",
+      "reviewImportGuide": "This scan found {{count}} candidate directories, all selected by default; review the candidates before continuing."
     },
     "search": {
       "label": "Search skills.sh",

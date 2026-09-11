@@ -399,7 +399,8 @@
       "bannerHint": "候选将进入既有的来源选择与冲突处理流程，不会自动写入集中库。",
       "reviewAction": "审查并导入",
       "scanningStatus": "正在扫描本机目录…",
-      "timeUnknown": "时间未知"
+      "timeUnknown": "时间未知",
+      "reviewImportGuide": "本次扫描发现 {{count}} 个候选目录，已默认全部选中；请审阅候选项后继续。"
     },
     "search": {
       "label": "搜索 skills.sh",
