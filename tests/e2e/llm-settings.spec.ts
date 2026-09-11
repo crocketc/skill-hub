@@ -37,7 +37,11 @@ test("the two-level connection test reports endpoint and model levels separately
   const ollama = page.locator("li", { hasText: "Ollama" });
   await ollama.getByRole("button", { name: "Test connection" }).click();
   await expect(ollama.getByText("Service unreachable")).toBeVisible();
-  await expect(ollama.getByText(/Model connection failed/)).toBeVisible();
+  // llm.endpoint_unreachable 命中错误目录的专属文案（nativeErrors.keyedMessage），
+  // 而非带原始错误码的 modelFailed 回退串。
+  await expect(
+    ollama.getByText("The model service could not be reached. Check the API address and network settings."),
+  ).toBeVisible();
   await expect(ollama.getByText("Model connection available")).not.toBeVisible();
 });
 
@@ -103,6 +107,32 @@ test("deleting requires confirmation and cancel keeps the provider", async ({ pa
   await deleteButton.click();
   await dialog.getByRole("button", { name: "Delete" }).click();
   await expect(page.locator("li", { hasText: "Ollama" })).not.toBeVisible();
+});
+
+test("the drawer disables the draft actions with an explanation until prereqs are met", async ({
+  page,
+}) => {
+  await openSettingsLlm(page);
+
+  await page.getByRole("button", { name: "Add provider" }).click();
+  const drawer = page.getByRole("dialog");
+  await expect(drawer).toBeVisible();
+
+  // 未填端点：获取模型列表禁用并解释原因。
+  const fetchButton = drawer.getByRole("button", { name: "Fetch model list" });
+  await expect(fetchButton).toBeDisabled();
+  await expect(drawer.getByText(/Fill in the API address/)).toBeVisible();
+  await expect(fetchButton).toHaveAttribute("aria-describedby", "llm-draft-prereq-hint");
+
+  // 在线部署仍缺密钥：解释切换为需要 API 密钥。
+  await drawer.getByRole("textbox", { name: "API address (Base URL)" }).fill("https://api.mistral.ai/v1");
+  await expect(drawer.getByText(/Online providers need an API key/)).toBeVisible();
+  await expect(fetchButton).toBeDisabled();
+
+  // 填入密钥后按钮可用，解释消失。
+  await drawer.getByRole("textbox", { name: "API key" }).fill("sk-preview-not-a-real-key");
+  await expect(fetchButton).toBeEnabled();
+  await expect(drawer.locator("#llm-draft-prereq-hint")).toHaveCount(0);
 });
 
 test("capability switches render their data scope and persist a toggle", async ({ page }) => {

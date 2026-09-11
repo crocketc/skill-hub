@@ -15,6 +15,7 @@ import {
   type LlmProviderView,
   unavailableLlmFacade,
 } from "./llmApi";
+import { ConnectionReportList } from "./ConnectionReportList";
 import { LlmProviderRow } from "./LlmProviderRow";
 
 const EMPTY_DRAFT: LlmProviderDraft = {
@@ -31,7 +32,23 @@ type ConnectionReport = { providerId: string; result: ConnectionTestResult };
 
 type FieldErrors = { endpoint?: string; id?: string; model?: string };
 
-type EditorState = { mode: "add" } | { mode: "edit"; id: string } | null;
+type EditorState = { mode: "add" } | { mode: "edit"; id: string; credentialConfigured: boolean } | null;
+
+/** P1-03 前置就绪状态：端点 → 密钥 → 动作（获取模型/测试）。与
+ * llmApi.deploymentNeedsNoCredential 同一规则：local 部署豁免密钥。 */
+type DraftPrereq =
+  | { stage: "idle"; missing: "endpoint" }
+  | { stage: "endpoint_ready"; missing: "credential" }
+  | { stage: "ready" };
+
+/** 抽屉内动作的进行中/结果/失败状态：测试结果必须在抽屉内渲染（此前
+ * 只写入已保存供应商行，抽屉里点了“测试此配置”没有任何反馈）。 */
+type DraftActionState =
+  | { kind: "idle" }
+  | { kind: "fetchingModels" }
+  | { kind: "testing" }
+  | { kind: "tested"; report: ConnectionTestResult }
+  | { kind: "actionFailed"; message: string };
 
 /** Provider administration section: full-width entity rows, an add/edit drawer,
  * credential entry, model fetch, the two-level connection test and
@@ -50,6 +67,7 @@ export function LlmProvidersSettings({ facade = unavailableLlmFacade }: { facade
   const [notice, setNotice] = useState<string>();
   const [modelsUnavailable, setModelsUnavailable] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
+  const [draftAction, setDraftAction] = useState<DraftActionState>({ kind: "idle" });
   const returnFocusRef = useRef<HTMLButtonElement | null>(null);
 
   // describeNativeError 以动态键调用翻译；i18next 的强类型键联合在此收窄。
@@ -89,6 +107,7 @@ export function LlmProvidersSettings({ facade = unavailableLlmFacade }: { facade
     setModels([]);
     setModelsUnavailable(false);
     setFieldErrors({});
+    setDraftAction({ kind: "idle" });
   };
 
   const openAdd = (event: React.MouseEvent<HTMLButtonElement>) => {
@@ -101,7 +120,7 @@ export function LlmProvidersSettings({ facade = unavailableLlmFacade }: { facade
     returnFocusRef.current = event.currentTarget;
     resetEditorForm();
     setDraft(draftOf(view));
-    setEditor({ mode: "edit", id: view.config.id });
+    setEditor({ mode: "edit", id: view.config.id, credentialConfigured: view.credential_configured === true });
   };
 
   // 关闭即清空草稿：凭据、端点等输入不残留在 DOM 中。
@@ -113,6 +132,7 @@ export function LlmProvidersSettings({ facade = unavailableLlmFacade }: { facade
   const applyPreset = (presetId: string) => {
     const preset = presets?.find((item) => item.id === presetId);
     if (!preset) return;
+    clearStaleDraftResult();
     setDraft((current) => ({
       ...current,
       id: preset.id,
@@ -179,17 +199,61 @@ export function LlmProvidersSettings({ facade = unavailableLlmFacade }: { facade
   const clearFieldError = (key: keyof FieldErrors) =>
     setFieldErrors((current) => ({ ...current, [key]: undefined }));
 
-  const fetchModels = () =>
+  // 端点/密钥/部署方式变化后，旧的测试结果/失败信息不再可信。
+  const clearStaleDraftResult = () =>
+    setDraftAction((current) =>
+      current.kind === "tested" || current.kind === "actionFailed" ? { kind: "idle" } : current,
+    );
+
+  // P1-03 前置就绪判定（与 llmApi.deploymentNeedsNoCredential 同一规则）：
+  // 缺端点 → idle；在线部署且无任何密钥来源 → endpoint_ready；其余 ready
+  // （local 豁免密钥；编辑留空 = 沿用已存凭据）。
+  const hasCredentialSource =
+    draft.credential !== null ||
+    (editor?.mode === "edit" && editor.credentialConfigured);
+  const draftPrereq: DraftPrereq =
+    draft.endpoint.trim() === ""
+      ? { stage: "idle", missing: "endpoint" }
+      : draft.deployment !== "local" && !hasCredentialSource
+        ? { stage: "endpoint_ready", missing: "credential" }
+        : { stage: "ready" };
+  const draftActionsReady = draftPrereq.stage === "ready";
+  const prereqHint =
+    draftPrereq.stage === "ready"
+      ? undefined
+      : draftPrereq.missing === "endpoint"
+        ? t("settings.llm.prereqEndpointNeeded")
+        : t("settings.llm.prereqCredentialNeeded");
+
+  // 抽屉动作失败时信息渲染在抽屉内（role=alert）；卡片级 error 留给行级操作。
+  const fetchModels = () => {
+    if (busy || !draftActionsReady) return;
+    setDraftAction({ kind: "fetchingModels" });
     guard(async () => {
       try {
         setModels(await facade.fetchModels(draft));
         setModelsUnavailable(false);
+        setDraftAction({ kind: "idle" });
       } catch (reason) {
         // 失败时保留草稿并提示可手动填写模型，不阻塞保存流程。
         setModelsUnavailable(true);
-        throw reason;
+        setDraftAction({ kind: "actionFailed", message: describe(reason) });
       }
     });
+  };
+
+  const testDraft = () => {
+    if (busy || !draftActionsReady) return;
+    setDraftAction({ kind: "testing" });
+    guard(async () => {
+      try {
+        const result = await facade.testConnection(draft);
+        setDraftAction({ kind: "tested", report: result });
+      } catch (reason) {
+        setDraftAction({ kind: "actionFailed", message: describe(reason) });
+      }
+    });
+  };
 
   const testConnection = (target: LlmProviderDraft) =>
     guard(async () => {
@@ -290,11 +354,25 @@ export function LlmProvidersSettings({ facade = unavailableLlmFacade }: { facade
               inputMode="url"
               name="provider-endpoint"
               onChange={(event) => {
+                clearStaleDraftResult();
                 setDraft({ ...draft, endpoint: event.target.value });
                 clearFieldError("endpoint");
               }}
               required
               value={draft.endpoint}
+            />
+          </Field>
+          {/* P1-03：密钥紧跟 API 地址（验收原话“API秘钥输入框放到API地址下面”）。 */}
+          <Field help={t("settings.llm.credentialNote")} label={t("settings.llm.credential")}>
+            <Input
+              autoComplete="new-password"
+              name="provider-credential"
+              onChange={(event) => {
+                clearStaleDraftResult();
+                setDraft({ ...draft, credential: event.target.value === "" ? null : event.target.value });
+              }}
+              type="password"
+              value={draft.credential ?? ""}
             />
           </Field>
           <Field
@@ -324,25 +402,50 @@ export function LlmProvidersSettings({ facade = unavailableLlmFacade }: { facade
               {t("settings.llm.fetchModelsFailedHint")}
             </p>
           ) : null}
+          {/* P1-03 状态机：前置不足时禁用并解释（常驻帮助文本 + title）。 */}
+          {prereqHint ? (
+            <p className="sh-settings-local-note" id="llm-draft-prereq-hint">
+              {prereqHint}
+            </p>
+          ) : null}
           <div className="sh-settings-form-actions">
-            <Button disabled={busy} onClick={() => void fetchModels()} variant="secondary">
+            <Button
+              aria-describedby={prereqHint ? "llm-draft-prereq-hint" : undefined}
+              disabled={busy || !draftActionsReady}
+              onClick={() => void fetchModels()}
+              title={prereqHint}
+              variant="secondary"
+            >
               {t("settings.llm.fetchModels")}
             </Button>
-            <Button disabled={busy} onClick={() => void testConnection(draft)} variant="secondary">
+            <Button
+              aria-describedby={prereqHint ? "llm-draft-prereq-hint" : undefined}
+              disabled={busy || !draftActionsReady}
+              onClick={testDraft}
+              title={prereqHint}
+              variant="secondary"
+            >
               {t("settings.llm.testDraft")}
             </Button>
           </div>
-          <Field help={t("settings.llm.credentialNote")} label={t("settings.llm.credential")}>
-            <Input
-              autoComplete="new-password"
-              name="provider-credential"
-              onChange={(event) =>
-                setDraft({ ...draft, credential: event.target.value === "" ? null : event.target.value })
-              }
-              type="password"
-              value={draft.credential ?? ""}
-            />
-          </Field>
+          {draftAction.kind === "fetchingModels" || draftAction.kind === "testing" ? (
+            <p className="sh-settings-local-note" role="status">
+              {draftAction.kind === "fetchingModels"
+                ? t("settings.llm.fetchingModels")
+                : t("settings.llm.testingDraft")}
+            </p>
+          ) : null}
+          {draftAction.kind === "actionFailed" ? (
+            <p className="sh-settings-local-note" role="alert">
+              {draftAction.message}
+            </p>
+          ) : null}
+          {draftAction.kind === "tested" ? (
+            <div className="sh-settings-draft-report">
+              <p className="sh-settings-draft-report__label">{t("settings.llm.draftReportLabel")}</p>
+              <ConnectionReportList report={draftAction.report} />
+            </div>
+          ) : null}
           <div className="sh-settings-form-actions">
             <Button disabled={busy} onClick={closeEditor} variant="ghost">
               {t("settings.llm.cancel")}

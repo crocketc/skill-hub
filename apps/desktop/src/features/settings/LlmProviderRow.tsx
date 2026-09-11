@@ -1,9 +1,8 @@
 import { useTranslation } from "react-i18next";
-import { describeNativeError } from "../../api/nativeErrors";
 import { Button } from "../../ui/Button";
 import { ConfirmDialog } from "../../ui/ConfirmDialog";
-import { Icon } from "../../ui/Icon";
 import { StatusBadge } from "../../ui/StatusBadge";
+import { ConnectionReportList } from "./ConnectionReportList";
 import type { ConnectionTestResult, LlmProviderView } from "./llmApi";
 
 interface LlmProviderRowProps {
@@ -71,58 +70,7 @@ export function LlmProviderRow({
           </dd>
         </div>
       </dl>
-      {report ? (
-        <ul aria-live="polite" className="sh-settings-provider__report">
-          <li
-            className={`sh-settings-provider__level${
-              report.endpoint.reachable ? " sh-settings-provider__level--ok" : ""
-            }`}
-          >
-            <Icon
-              className="sh-settings-provider__level-icon"
-              name={report.endpoint.reachable ? "success" : "failure"}
-              size={16}
-            />
-            <span>
-              {report.endpoint.reachable
-                ? `${t("settings.llm.endpointOk")}${
-                    report.endpoint.latency_ms !== null &&
-                    report.endpoint.latency_ms !== undefined
-                      ? ` (${report.endpoint.latency_ms} ms)`
-                      : ""
-                  }`
-                : t("settings.llm.endpointFailed")}
-            </span>
-          </li>
-          <li
-            className={`sh-settings-provider__level${
-              report.model?.ok === true ? " sh-settings-provider__level--ok" : ""
-            }`}
-          >
-            <Icon
-              className="sh-settings-provider__level-icon"
-              name={report.model?.ok === true ? "success" : "failure"}
-              size={16}
-            />
-            <span>
-              {report.model?.ok === true
-                ? t("settings.llm.modelOk")
-                : report.model_failure_code
-                  ? describeNativeError(
-                      {
-                        code: report.model_failure_code,
-                        severity: "error",
-                        params: {},
-                        actions: [],
-                      },
-                      (key, options) => String(t(key as never, options as never)),
-                      "settings.llm.modelFailed",
-                    )
-                  : t("settings.llm.modelFailed", { code: "unknown" })}
-            </span>
-          </li>
-        </ul>
-      ) : null}
+      {report ? <ConnectionReportList report={report} /> : null}
       <div className="sh-settings-provider__actions">
         <Button disabled={busy} onClick={onTest} size="sm" variant="secondary">
           {t("settings.llm.testConnection")}
