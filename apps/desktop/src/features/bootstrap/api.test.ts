@@ -141,6 +141,73 @@ it("activates a selected library through the typed native command", async () => 
   });
 });
 
+it("accepts a previously activated matching root after a restart", async () => {
+  mocks.executeCommand.mockRejectedValueOnce({
+    code: "operation.conflict",
+    severity: "error",
+    params: { reason: "library_root_locked" },
+    actions: ["migrate_data"],
+  });
+  mocks.queryApplication.mockResolvedValueOnce({
+    type: "bootstrap_snapshot",
+    payload: {
+      initialization_state: "not_initialized",
+      library_path: "C:\\skillhub-test",
+      onboarding_skipped: false,
+      skill_count: 0,
+      project_count: 0,
+      agent_count: 0,
+      discovered_agent_count: 0,
+      deployed_count: 0,
+      deployment_categories: [],
+      tag_categories: [],
+      recent_operations: [],
+      pending: { total: 0, by_kind: {} },
+      last_scan_at: null,
+      recovery_state: "clean",
+    },
+  });
+
+  await expect(
+    desktopOnboardingOperations.activateLibraryRoot!("C:\\skillhub-test", "existing"),
+  ).resolves.toBeUndefined();
+
+  expect(mocks.queryApplication).toHaveBeenCalledWith({ type: "get_bootstrap_snapshot" });
+});
+
+it("keeps the root-lock error when the persisted root differs", async () => {
+  const lockError = {
+    code: "operation.conflict",
+    severity: "error",
+    params: { reason: "library_root_locked" },
+    actions: ["migrate_data"],
+  };
+  mocks.executeCommand.mockRejectedValueOnce(lockError);
+  mocks.queryApplication.mockResolvedValueOnce({
+    type: "bootstrap_snapshot",
+    payload: {
+      initialization_state: "not_initialized",
+      library_path: "D:\\other-library",
+      onboarding_skipped: false,
+      skill_count: 0,
+      project_count: 0,
+      agent_count: 0,
+      discovered_agent_count: 0,
+      deployed_count: 0,
+      deployment_categories: [],
+      tag_categories: [],
+      recent_operations: [],
+      pending: { total: 0, by_kind: {} },
+      last_scan_at: null,
+      recovery_state: "clean",
+    },
+  });
+
+  await expect(
+    desktopOnboardingOperations.activateLibraryRoot!("C:\\skillhub-test", "existing"),
+  ).rejects.toBe(lockError);
+});
+
 it("sends the selected target to first-run restore while preserving ordinary restore", async () => {
   mocks.executeCommand
     .mockResolvedValueOnce({ type: "restore_plan", payload: { conflicts: [] } })

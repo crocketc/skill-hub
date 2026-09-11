@@ -9,6 +9,7 @@ import {
   type RestoreResult,
   type ScanResult,
 } from "../../api/bindings";
+import { nativeErrorCode, nativeErrorParams } from "../../api/nativeErrors";
 import { desktopDirectoryPicker } from "../../platform/directoryPicker";
 
 export type BootstrapVerificationState =
@@ -171,15 +172,45 @@ export const desktopOnboardingOperations: OnboardingOperations = {
     return desktopDirectoryPicker.pickDirectory();
   },
   async activateLibraryRoot(path, mode) {
-    const result = await executeCommand({
-      type: "activate_library_root",
-      payload: { path, mode },
-    });
-    if (result.type !== "initialization_status") {
-      throw new Error("Unexpected library activation response from the native application.");
+    try {
+      const result = await executeCommand({
+        type: "activate_library_root",
+        payload: { path, mode },
+      });
+      if (result.type !== "initialization_status") {
+        throw new Error("Unexpected library activation response from the native application.");
+      }
+    } catch (error) {
+      const params = nativeErrorParams(error);
+      if (nativeErrorCode(error) !== "operation.conflict" || params.reason !== "library_root_locked") {
+        throw error;
+      }
+
+      let snapshot;
+      try {
+        snapshot = await queryApplication({ type: "get_bootstrap_snapshot" });
+      } catch {
+        throw error;
+      }
+      if (snapshot.type !== "bootstrap_snapshot" || snapshot.payload.initialization_state === "initialized") {
+        throw error;
+      }
+      if (!sameLibraryPath(snapshot.payload.library_path, path)) {
+        throw error;
+      }
     }
   },
 };
+
+function sameLibraryPath(left: string, right: string): boolean {
+  const normalize = (value: string) => value.trim().replace(/[\\/]+$/, "").replaceAll("\\", "/");
+  const normalizedLeft = normalize(left);
+  const normalizedRight = normalize(right);
+  if (navigator.userAgent.toLowerCase().includes("windows")) {
+    return normalizedLeft.toLowerCase() === normalizedRight.toLowerCase();
+  }
+  return normalizedLeft === normalizedRight;
+}
 
 export const desktopBootstrapRuntime: BootstrapRuntime = {
   async getBootstrapView() {
