@@ -171,6 +171,20 @@ test("keeps four stat columns and the side-by-side workspace at 1440px", async (
   }
   expect(distinctRowCount(boxes), "compact stats must sit in a single 4-column row").toBe(1);
 
+  // P1-07 密度阶梯：宽容器下 hero 与紧凑统计并入同一条指标带（同一行），
+  // hero ≥ 6rem（96px）、紧凑卡 ≥ 4rem（64px），替代原先 2.5rem 的矮卡。
+  const heroBox = await boxOf(page.getByRole("link", { name: "27 skills" }));
+  expect(heroBox.height, "the hero metric must reach the 6rem density rung").toBeGreaterThanOrEqual(
+    96,
+  );
+  for (const box of boxes) {
+    expect(box.height, "compact stats must reach the 4rem density rung").toBeGreaterThanOrEqual(64);
+  }
+  expect(
+    Math.abs(heroBox.y - boxes[0].y),
+    "the hero and compact stats must share the metrics band row",
+  ).toBeLessThanOrEqual(4);
+
   const chartBox = await boxOf(page.getByRole("img", { name: "Deployment count by agent" }));
   const pendingBox = await boxOf(page.getByRole("heading", { name: "4 pending items" }));
   expect(
@@ -178,6 +192,23 @@ test("keeps four stat columns and the side-by-side workspace at 1440px", async (
     "the pending rail must stay beside the chart panel on wide containers",
   ).toBeLessThan(chartBox.y + chartBox.height);
   await expectNoRootHorizontalOverflow(page);
+});
+
+test("drills the discovered agents stat into the local discovery workbench", async ({ page }) => {
+  await page.goto("/__preview/overview");
+
+  // P1-07：发现到的 Agent 不再与已配置目标同去 /agents，而是进入本机发现工作台。
+  await page.getByRole("link", { name: "5 discovered agents" }).click();
+
+  await expect(page).toHaveURL(/\/discovery\/local$/);
+});
+
+test("drills pending summary items into the pending workbench", async ({ page }) => {
+  await page.goto("/__preview/overview");
+
+  await page.getByRole("link", { name: "2 security findings" }).click();
+
+  await expect(page).toHaveURL(/\/pending$/);
 });
 
 test("reaches every overview control by keyboard with visible focus", async ({ page }) => {
@@ -219,7 +250,14 @@ test("reaches every overview control by keyboard with visible focus", async ({ p
   await expect(page.getByRole("radio", { name: "Projects" })).toBeFocused();
   await expectFocusedPillOutline();
 
-  // 切到项目维度后，明细列表的下一个可聚焦元素是首条项目明细。
+  // 切到项目维度后，Tab 依次到达：待办摘要的三条待办链接（P1-07：待办项
+  // 可钻取 /pending，成为可聚焦控件），再到达明细列表的首条项目明细。
+  await page.keyboard.press("Tab");
+  await expect(page.getByRole("link", { name: "2 security findings" })).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(page.getByRole("link", { name: "1 recovery action" })).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(page.getByRole("link", { name: "1 trial due" })).toBeFocused();
   await page.keyboard.press("Tab");
   await expect(
     page.getByRole("button", { name: "View Aurora Mobile Workspace's 9 deployments" }),
