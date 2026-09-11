@@ -188,7 +188,26 @@ export function ConflictResolution({
                             {differenceLabel(conflict.duplicateKind)}
                           </p>
                         ) : null}
-                        {conflict.matchedSkillIds && conflict.matchedSkillIds.length ? (
+                        {conflict.matchedSkills && conflict.matchedSkills.length ? (
+                          <div>
+                            <p>
+                              <span>{t("importWorkflow.conflicts.matchedWith")}</span>
+                            </p>
+                            <ul>
+                              {conflict.matchedSkills.map((skill) => (
+                                <li key={skill.id}>
+                                  <strong>{skill.displayName}</strong>
+                                  {skill.runtimeName !== skill.displayName ? (
+                                    <span> ({skill.runtimeName})</span>
+                                  ) : null}
+                                  {skill.source ? (
+                                    <code title={skill.source}> · {skill.source}</code>
+                                  ) : null}
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        ) : conflict.matchedSkillIds && conflict.matchedSkillIds.length ? (
                           <p>
                             <span>{t("importWorkflow.conflicts.matchedWith")}</span>
                             {conflict.matchedSkillIds.map((skillId) => (

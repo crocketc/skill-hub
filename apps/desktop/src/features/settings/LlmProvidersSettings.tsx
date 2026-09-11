@@ -47,6 +47,7 @@ export function LlmProvidersSettings({ facade = unavailableLlmFacade }: { facade
   const [reports, setReports] = useState<ConnectionReport[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
+  const [notice, setNotice] = useState<string>();
   const [modelsUnavailable, setModelsUnavailable] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const returnFocusRef = useRef<HTMLButtonElement | null>(null);
@@ -76,6 +77,7 @@ export function LlmProvidersSettings({ facade = unavailableLlmFacade }: { facade
     if (busy) return;
     setBusy(true);
     setError(undefined);
+    setNotice(undefined);
     action()
       .then(refresh)
       .catch((reason: unknown) => setError(describe(reason)))
@@ -128,6 +130,21 @@ export function LlmProvidersSettings({ facade = unavailableLlmFacade }: { facade
       await facade.saveProvider(draft, draft.credential !== null);
       closeEditor();
     });
+
+  const clearCredential = (id: string) => {
+    if (busy) return;
+    setBusy(true);
+    setError(undefined);
+    setNotice(undefined);
+    facade
+      .clearCredential(id)
+      .then(() => {
+        setNotice(t("settings.llm.credentialCleared"));
+        refresh();
+      })
+      .catch((reason: unknown) => setError(describe(reason)))
+      .finally(() => setBusy(false));
+  };
 
   // 表单关闭原生校验气泡：WebView 的英文 "fill out this field" 不可本地化，
   // 必填约束保留（required 语义不变），缺失时改为逐字段展示本地化提示，
@@ -205,6 +222,7 @@ export function LlmProvidersSettings({ facade = unavailableLlmFacade }: { facade
         </Button>
       </div>
       {error ? <p role="alert">{error}</p> : null}
+      {notice ? <p role="status">{notice}</p> : null}
       <Drawer
         onOpenChange={(open) => {
           if (!open) closeEditor();
@@ -342,6 +360,7 @@ export function LlmProvidersSettings({ facade = unavailableLlmFacade }: { facade
             <LlmProviderRow
               busy={busy}
               key={view.config.id}
+              onClearCredential={() => clearCredential(view.config.id)}
               onDelete={() => guard(() => facade.deleteProvider(view.config.id))}
               onEdit={(event) => openEdit(view, event)}
               onSetDefault={() => guard(() => facade.setDefaultProvider(view.config.id))}

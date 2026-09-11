@@ -71,7 +71,16 @@ describe("native import facade", () => {
           skill_id: "skill-1",
         }],
         duplicate_kind: "same_runtime_name_different_content",
-        matches: [],
+        matches: [{
+          skill_id: "skill-1",
+          display_name: "Existing Notes",
+          runtime_name: "notes",
+          source: { kind: "local", locator: { local_path: "C:/library/notes" } },
+          ownership: "central_library",
+          basis: "runtime_name",
+          duplicate_kind: "same_runtime_name_different_content",
+          matched_fields: [],
+        }],
       },
     });
 
@@ -93,6 +102,12 @@ describe("native import facade", () => {
         candidateName: "notes",
         kind: "same_name",
         required: true,
+        matchedSkills: [{
+          id: "skill-1",
+          displayName: "Existing Notes",
+          runtimeName: "notes",
+          source: "C:/library/notes",
+        }],
       }),
     ]);
   });

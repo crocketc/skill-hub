@@ -46,6 +46,13 @@ pub struct SaveMarkdownContent {
     pub expected_identity: String,
 }
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+pub struct SaveMarkdownAsCopy {
+    pub skill_id: SkillId,
+    pub path: String,
+    pub markdown: String,
+    pub expected_identity: String,
+}
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 pub struct RenameSkill {
     pub skill_id: SkillId,
     pub name: String,
@@ -461,6 +468,12 @@ pub struct DeleteLlmProvider {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 #[serde(deny_unknown_fields)]
+pub struct ClearLlmProviderCredential {
+    pub id: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
 pub struct SetLlmProviderEnabled {
     pub id: String,
     pub enabled: bool,
@@ -728,6 +741,8 @@ pub enum AppCommand {
     SaveSkillContent(SaveSkillContent),
     #[serde(rename = "save_markdown_content")]
     SaveMarkdownContent(SaveMarkdownContent),
+    #[serde(rename = "save_markdown_as_copy")]
+    SaveMarkdownAsCopy(SaveMarkdownAsCopy),
     #[serde(rename = "rename_skill")]
     RenameSkill(RenameSkill),
     #[serde(rename = "set_lifecycle")]
@@ -840,6 +855,8 @@ pub enum AppCommand {
     SaveLlmProvider(SaveLlmProvider),
     #[serde(rename = "delete_llm_provider")]
     DeleteLlmProvider(DeleteLlmProvider),
+    #[serde(rename = "clear_llm_provider_credential")]
+    ClearLlmProviderCredential(ClearLlmProviderCredential),
     #[serde(rename = "set_llm_provider_enabled")]
     SetLlmProviderEnabled(SetLlmProviderEnabled),
     #[serde(rename = "set_default_llm_provider")]

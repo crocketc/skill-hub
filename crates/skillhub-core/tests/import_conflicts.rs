@@ -20,6 +20,7 @@ fn existing(
 ) -> ExistingSkillRecord {
     ExistingSkillRecord {
         skill_id: SkillId::new(),
+        display_name: runtime_name.to_owned(),
         runtime_name: runtime_name.to_owned(),
         tree_hash: Some(tree_hash.to_owned()),
         source: None,

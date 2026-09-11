@@ -81,6 +81,12 @@ it("maps a native plan and commits through prepare then commit", async () => {
         deployment_id: null,
         version_id: "v1",
         error_code: "deployment.target_exists",
+        error: {
+          code: "deployment.target_exists",
+          severity: "error",
+          params: { path: "C:/Agents/pdf" },
+          actions: ["choose_another_name", "inspect_target"],
+        },
       }],
       committed: false,
     } });
@@ -90,7 +96,18 @@ it("maps a native plan and commits through prepare then commit", async () => {
   const plan = await facade.preview([target]);
   expect(plan.targets[0]).toMatchObject({ targetId: "codex-global", label: "Codex CLI", mode: "managed_copy" });
   const result = await facade.commit(plan);
-  expect(result).toEqual([{ targetId: "codex-global", label: "Codex CLI", status: "failed", message: "deployment.target_exists" }]);
+  expect(result).toEqual([{
+    targetId: "codex-global",
+    label: "Codex CLI",
+    status: "failed",
+    message: "deployment.target_exists",
+    error: {
+      code: "deployment.target_exists",
+      severity: "error",
+      params: { path: "C:/Agents/pdf" },
+      actions: ["choose_another_name", "inspect_target"],
+    },
+  }]);
   expect(executeCommand).toHaveBeenNthCalledWith(1, expect.objectContaining({ type: "prepare_deployment" }));
   expect(executeCommand).toHaveBeenNthCalledWith(2, { type: "commit_deployment", payload: { prepared_deployment_id: "op-1" } });
 });
@@ -165,6 +182,6 @@ it("labels commit results with translation codes instead of hardcoded sentences"
   const facade = createNativeDeploymentFacade({ skillId: "s", versionId: "v1" });
   const nativePlan = { skill_id: "s", version_id: "v1", targets: [], warnings: [] };
   const result = await facade.commit({ skillId: "s", versionId: "v1", targets: [], native: nativePlan } as never);
-  expect(result[0].message).toBe("deployment.results.message.succeeded");
+  expect(result[0].message).toBe("deployment.results.status.message.succeeded");
   expect(result[0].message).not.toMatch(/[一-龥]/);
 });

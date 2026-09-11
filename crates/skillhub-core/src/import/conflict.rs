@@ -46,6 +46,7 @@ impl MatchBasis {
 #[serde(deny_unknown_fields)]
 pub struct ExistingSkillRecord {
     pub skill_id: SkillId,
+    pub display_name: String,
     pub runtime_name: String,
     pub tree_hash: Option<String>,
     pub source: Option<SourceDescriptor>,
@@ -58,6 +59,9 @@ pub struct ExistingSkillRecord {
 #[serde(deny_unknown_fields)]
 pub struct ImportMatch {
     pub skill_id: SkillId,
+    pub display_name: String,
+    pub runtime_name: String,
+    pub source: Option<SourceDescriptor>,
     pub ownership: CandidateOwnership,
     pub basis: MatchBasis,
     pub duplicate_kind: DuplicateKind,
@@ -118,6 +122,9 @@ pub fn analyze_import(
             };
             Some(ImportMatch {
                 skill_id: record.skill_id,
+                display_name: record.display_name.clone(),
+                runtime_name: record.runtime_name.clone(),
+                source: record.source.clone(),
                 ownership: record.ownership,
                 basis,
                 duplicate_kind: kind,

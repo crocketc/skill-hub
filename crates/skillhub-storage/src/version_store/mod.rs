@@ -420,6 +420,17 @@ impl VersionStore {
         Ok(manifest::tree_hash(&entries))
     }
 
+    /// Computes the same canonical tree hash as a captured manifest without
+    /// writing objects into the library. Import analysis is read-only and
+    /// must not mutate the object store merely to compare a candidate.
+    pub fn hash_tree_read_only(&self, root: impl AsRef<Path>) -> AppResult<String> {
+        let root = root.as_ref();
+        let mut entries = Vec::new();
+        collect_hash_entries(root, root, &mut entries)?;
+        entries.sort_by(|a, b| a.path.as_bytes().cmp(b.path.as_bytes()));
+        Ok(manifest::tree_hash(&entries))
+    }
+
     fn find_manifest(&self, id: &VersionId) -> AppResult<PathBuf> {
         for skill in fs::read_dir(&self.paths.versions_dir).map_err(io_error)? {
             let dir = skill.map_err(io_error)?.path();
@@ -486,6 +497,38 @@ impl VersionStore {
         }
         Ok(())
     }
+}
+
+fn collect_hash_entries(
+    root: &Path,
+    current: &Path,
+    entries: &mut Vec<FileEntry>,
+) -> AppResult<()> {
+    for item in fs::read_dir(current).map_err(io_error)? {
+        let item = item.map_err(io_error)?;
+        let path = item.path();
+        let metadata = fs::symlink_metadata(&path).map_err(io_error)?;
+        if metadata.file_type().is_symlink() {
+            return Err(invalid("symlink"));
+        }
+        if metadata.is_dir() {
+            collect_hash_entries(root, &path, entries)?;
+            continue;
+        }
+        if !metadata.is_file() {
+            return Err(invalid("unsupported file"));
+        }
+        let relative = path.strip_prefix(root).map_err(|_| invalid("path"))?;
+        let normalized = normalize_relative(relative)?;
+        let bytes = fs::read(&path).map_err(io_error)?;
+        entries.push(FileEntry {
+            path: normalized,
+            object_id: manifest::digest_bytes(&bytes),
+            size: bytes.len() as u64,
+            executable: false,
+        });
+    }
+    Ok(())
 }
 
 #[cfg(not(windows))]

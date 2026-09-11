@@ -169,6 +169,37 @@ it("aggregates mixed batch outcomes into executable, skipped, conflict and faile
   expect(screen.getAllByTestId("batch-outcome-failed")).toHaveLength(1);
 });
 
+it("renders structured native target failures as actionable batch text", async () => {
+  const user = userEvent.setup();
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  const targets = deploymentTargetsFixture().slice(0, 1);
+  const facade = batchFacade({
+    commit: vi.fn<BatchDeploymentFacade["commit"]>(async () => [{
+      skillId: "skill-pdf",
+      targetId: "codex-cli",
+      label: "Codex CLI",
+      status: "failed",
+      message: "deployment.target_exists",
+      error: {
+        code: "deployment.target_exists",
+        severity: "error",
+        params: { path: "C:/Agents/pdf" },
+        actions: ["choose_another_name", "inspect_target"],
+      },
+    }]),
+  });
+
+  render(<I18nextProvider i18n={i18n}><MemoryRouter><BatchDeploymentPage facade={facade} skillIds={["skill-pdf"]} /></MemoryRouter></I18nextProvider>);
+
+  await user.click(await screen.findByLabelText("Codex CLI"));
+  await user.click(screen.getByRole("button", { name: "预览部署" }));
+  await user.click(await screen.findByRole("button", { name: "提交部署" }));
+
+  expect(await screen.findByText("目标目录已存在，请选择其他名称或检查目标后再试。")).toBeVisible();
+  expect(screen.queryByText("deployment.target_exists")).not.toBeInTheDocument();
+  expect(targets).toHaveLength(1);
+});
+
 it("preselects the target passed via the target search parameter", async () => {
   const user = userEvent.setup();
   const i18n = await createSkillHubI18n(["zh-CN"]);

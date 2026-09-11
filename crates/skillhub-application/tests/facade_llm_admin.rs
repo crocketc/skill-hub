@@ -2,8 +2,9 @@ use std::sync::{Arc, Mutex};
 
 use skillhub_application::LocalApplicationFacade;
 use skillhub_core::api::{
-    AppCommand, AppCommandResult, AppQuery, DeleteLlmProvider, FetchLlmModels, FetchLlmProvider,
-    SaveLlmProvider, SetDefaultLlmProvider, SetLlmProviderEnabled, TestLlmConnection,
+    AppCommand, AppCommandResult, AppQuery, ClearLlmProviderCredential, DeleteLlmProvider,
+    FetchLlmModels, FetchLlmProvider, SaveLlmProvider, SetDefaultLlmProvider,
+    SetLlmProviderEnabled, TestLlmConnection,
 };
 use skillhub_core::llm::{
     ConnectionTestResult, CredentialRef, CredentialStore, EndpointCheckResult, LlmAdmin,
@@ -15,13 +16,17 @@ use skillhub_core::{AppResult, ApplicationFacade, SkillId};
 use skillhub_storage::Database;
 
 fn provider_config() -> LlmProviderConfig {
+    provider_config_for("deepseek", "DeepSeek", "deepseek-chat")
+}
+
+fn provider_config_for(id: &str, label: &str, model: &str) -> LlmProviderConfig {
     LlmProviderConfig::new(
-        "deepseek",
-        "DeepSeek",
+        id,
+        label,
         LlmProtocolFamily::OpenAiCompatible,
         LlmDeployment::Online,
-        "https://api.deepseek.test/v1",
-        "deepseek-chat",
+        &format!("https://{id}.test/v1"),
+        model,
         None,
     )
     .expect("valid provider config")
@@ -223,6 +228,71 @@ async fn deleting_a_provider_removes_its_credential_and_clears_the_default() {
         panic!("expected preferences");
     };
     assert_eq!(preferences.default_llm_provider_id, None);
+}
+
+#[tokio::test]
+async fn clearing_a_provider_credential_keeps_configuration_isolates_others_and_is_idempotent() {
+    let store = Arc::new(SharedCredentialStore::default());
+    let facade = facade_with(
+        store.clone(),
+        Arc::new(FakeAdmin::default()),
+        NetworkGate::open(),
+    );
+
+    facade
+        .execute(AppCommand::SaveLlmProvider(SaveLlmProvider {
+            provider: provider_config(),
+            credential: Some("sk-clear-fixture-secret".to_owned()),
+        }))
+        .await
+        .expect("save first provider");
+    facade
+        .execute(AppCommand::SaveLlmProvider(SaveLlmProvider {
+            provider: provider_config_for("openai", "OpenAI", "gpt-test"),
+            credential: Some("sk-other-fixture-secret".to_owned()),
+        }))
+        .await
+        .expect("save second provider");
+
+    let clear = || {
+        facade.execute(AppCommand::ClearLlmProviderCredential(
+            ClearLlmProviderCredential {
+                id: "deepseek".to_owned(),
+            },
+        ))
+    };
+    let result = clear().await.expect("clear first provider credential");
+    let AppCommandResult::LlmProviderView(view) = result else {
+        panic!("expected provider view");
+    };
+    assert_eq!(view.config.id, "deepseek");
+    assert_eq!(view.config.model, "deepseek-chat");
+    assert!(!view.credential_configured);
+    assert!(!store.contains("llm-provider:deepseek"));
+    assert!(store.contains("llm-provider:openai"));
+
+    clear().await.expect("repeated clear is idempotent");
+
+    let listing = facade
+        .query(AppQuery::ListLlmProviders)
+        .await
+        .expect("list providers");
+    let skillhub_core::api::AppQueryResult::LlmProviders(providers) = listing else {
+        panic!("expected providers");
+    };
+    assert_eq!(providers.len(), 2);
+    let first = providers
+        .iter()
+        .find(|item| item.config.id == "deepseek")
+        .unwrap();
+    assert_eq!(first.config.endpoint, "https://deepseek.test/v1");
+    assert!(!first.credential_configured);
+    let other = providers
+        .iter()
+        .find(|item| item.config.id == "openai")
+        .unwrap();
+    assert_eq!(other.config.model, "gpt-test");
+    assert!(other.credential_configured);
 }
 
 #[tokio::test]

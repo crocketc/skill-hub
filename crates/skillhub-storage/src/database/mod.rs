@@ -29,7 +29,9 @@ use std::path::Path;
 use std::sync::Arc;
 
 use rusqlite::Connection;
-use skillhub_core::{AppError, AppResult, ErrorCode, RecoveryAction, Severity};
+use skillhub_core::{
+    AppError, AppResult, ErrorCode, RecoveryAction, Severity, SkillId, VersionRecord,
+};
 use tokio::sync::Mutex;
 
 pub use agent_repository::AgentRepository;
@@ -248,6 +250,57 @@ impl Database {
             )
             .map_err(database_error)
     }
+
+    /// Keeps the SQLite catalog projection aligned with the immutable file
+    /// version store. Conflict analysis reads this projection without
+    /// opening or hashing the library object store.
+    pub fn record_current_version(
+        &self,
+        skill_id: SkillId,
+        version: &VersionRecord,
+    ) -> AppResult<()> {
+        if version.manifest.skill_id != skill_id {
+            return Err(AppError::new(ErrorCode::InvalidInput, Severity::Error)
+                .with_param("field", "version_skill_id")
+                .with_action(RecoveryAction::Retry));
+        }
+        let manifest = serde_json::to_string(&version.manifest).map_err(|error| {
+            AppError::new(ErrorCode::InternalError, Severity::Error)
+                .with_param("source", error.to_string())
+                .with_action(RecoveryAction::Retry)
+        })?;
+        let timestamp = now_epoch_seconds();
+        let transaction = self
+            .connection
+            .unchecked_transaction()
+            .map_err(database_error)?;
+        transaction
+            .execute(
+                "INSERT OR IGNORE INTO versions (id, skill_id, content_hash, manifest_json, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
+                rusqlite::params![
+                    version.id.to_string(),
+                    skill_id.to_string(),
+                    version.manifest.tree_hash,
+                    manifest,
+                    timestamp,
+                ],
+            )
+            .map_err(database_error)?;
+        transaction
+            .execute(
+                "INSERT INTO current_pointers (skill_id, version_id, updated_at) VALUES (?1, ?2, ?3) ON CONFLICT(skill_id) DO UPDATE SET version_id=excluded.version_id, updated_at=excluded.updated_at",
+                rusqlite::params![skill_id.to_string(), version.id.to_string(), timestamp],
+            )
+            .map_err(database_error)?;
+        transaction.commit().map_err(database_error)
+    }
+}
+
+fn now_epoch_seconds() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64
 }
 
 fn enable_foreign_keys(connection: &Connection) -> AppResult<()> {

@@ -75,8 +75,8 @@ pub use application::{
     ImportItemResult, ImportService, ImportSummary, LlmSafetyService, OperationService,
     PreparedDeployment, PreparedImport, ProjectAssemblyService, ReconcileBackend, ReconcileService,
     RecoveryBackend, RecoveryService, RemovalBackend, RemovalService, RuntimeScheduler,
-    SearchQueryService, TargetOperationResult, TargetOperationStatus, TranslationRepository,
-    TranslationService, VersionMaterializer,
+    SearchQueryService, TargetOperationError, TargetOperationResult, TargetOperationStatus,
+    TranslationRepository, TranslationService, VersionMaterializer,
 };
 pub use application::{WatchConfirmation, WatchHint, WatchHintKind, WatchService};
 pub use bootstrap::{

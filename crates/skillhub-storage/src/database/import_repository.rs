@@ -21,7 +21,7 @@ impl<'a> ImportRepository<'a> {
             .database
             .connection
             .prepare(
-                "SELECT s.id, s.runtime_name, v.content_hash, s.ownership \
+                "SELECT s.id, s.display_name, s.runtime_name, v.content_hash, s.ownership \
                  FROM skills s \
                  LEFT JOIN current_pointers p ON p.skill_id=s.id \
                  LEFT JOIN versions v ON v.id=p.version_id \
@@ -33,16 +33,18 @@ impl<'a> ImportRepository<'a> {
                 Ok((
                     row.get::<_, String>(0)?,
                     row.get::<_, String>(1)?,
-                    row.get::<_, Option<String>>(2)?,
-                    row.get::<_, String>(3)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, Option<String>>(3)?,
+                    row.get::<_, String>(4)?,
                 ))
             })
             .map_err(error)?;
         rows.map(|row| {
-            let (id, runtime_name, tree_hash, ownership) = row.map_err(error)?;
+            let (id, display_name, runtime_name, tree_hash, ownership) = row.map_err(error)?;
             let skill_id = id.parse().map_err(|_| invalid_id())?;
             Ok(ExistingSkillRecord {
                 skill_id,
+                display_name,
                 runtime_name,
                 tree_hash,
                 source: self.source_for(skill_id)?,

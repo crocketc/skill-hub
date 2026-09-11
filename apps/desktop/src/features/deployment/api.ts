@@ -1,4 +1,5 @@
 import type { DeploymentPlan as NativeDeploymentPlan } from "../../api/bindings";
+import { describeNativeError, type NativeAppError } from "../../api/nativeErrors";
 
 export type DeploymentMode = "symbolic_link" | "directory_junction" | "managed_copy";
 export type DeploymentTarget = {
@@ -28,7 +29,24 @@ export type DeploymentResult = {
   label: string;
   status: "succeeded" | "failed" | "skipped";
   message: string;
+  error?: NativeAppError;
 };
+
+export type DeploymentTranslator = (key: string, options?: Record<string, unknown>) => string;
+
+/** Render target-level native failures without exposing raw objects or keys. */
+export function describeDeploymentResult(
+  result: DeploymentResult,
+  translate: DeploymentTranslator,
+): string {
+  if (result.error) {
+    return describeNativeError(result.error, translate, "deployment.errors.generic");
+  }
+  if (result.status === "failed") {
+    return describeNativeError(result.message, translate, "deployment.errors.generic");
+  }
+  return translate(result.message, { defaultValue: result.message });
+}
 export interface DeploymentFacade {
   listTargets(): Promise<DeploymentTarget[]>;
   preview(targets: DeploymentTarget[], mode?: DeploymentMode): Promise<DeploymentPlan>;

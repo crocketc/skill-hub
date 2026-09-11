@@ -99,4 +99,29 @@ describe("nativeErrors", () => {
     );
     expect(message).toBe("errors.inputInvalid");
   });
+
+  it.each([
+    ["llm.not_configured", "settings.llm.notConfigured"],
+    ["credential.unavailable", "settings.llm.credentialUnavailable"],
+    ["llm.credential_read_failed", "settings.llm.credentialReadFailed"],
+    ["llm.endpoint_unreachable", "settings.llm.endpointUnreachable"],
+    ["llm.endpoint_not_allowed", "settings.llm.endpointNotAllowed"],
+    ["llm.auth_failed", "settings.llm.authFailed"],
+    ["llm.model_not_found", "settings.llm.modelNotFound"],
+    ["llm.rate_limited", "settings.llm.rateLimited"],
+    ["llm.request_timeout", "settings.llm.requestTimeout"],
+    ["llm.server_error", "settings.llm.serverError"],
+    ["llm.invalid_json", "settings.llm.invalidJson"],
+    ["llm.invalid_structured_response", "settings.llm.invalidResponse"],
+    ["llm.response_interrupted", "settings.llm.responseInterrupted"],
+    ["llm.cancelled", "settings.llm.cancelled"],
+    ["llm.protocol_incompatible", "settings.llm.protocolIncompatible"],
+  ])("maps the LLM settings error %s to a localized copy", (code, key) => {
+    const message = describeNativeError(
+      { code, severity: "error", params: {}, actions: [] },
+      (translationKey) => translationKey,
+      "settings.llm.operationFailed",
+    );
+    expect(message).toBe(key);
+  });
 });

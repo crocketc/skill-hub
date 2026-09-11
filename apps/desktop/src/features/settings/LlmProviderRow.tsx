@@ -1,4 +1,5 @@
 import { useTranslation } from "react-i18next";
+import { describeNativeError } from "../../api/nativeErrors";
 import { Button } from "../../ui/Button";
 import { ConfirmDialog } from "../../ui/ConfirmDialog";
 import { Icon } from "../../ui/Icon";
@@ -7,6 +8,7 @@ import type { ConnectionTestResult, LlmProviderView } from "./llmApi";
 
 interface LlmProviderRowProps {
   busy: boolean;
+  onClearCredential: () => void;
   onDelete: () => void;
   onEdit: (event: React.MouseEvent<HTMLButtonElement>) => void;
   onSetDefault: () => void;
@@ -23,6 +25,7 @@ interface LlmProviderRowProps {
  */
 export function LlmProviderRow({
   busy,
+  onClearCredential,
   onDelete,
   onEdit,
   onSetDefault,
@@ -104,9 +107,18 @@ export function LlmProviderRow({
             <span>
               {report.model?.ok === true
                 ? t("settings.llm.modelOk")
-                : t("settings.llm.modelFailed", {
-                    code: report.model_failure_code ?? "unknown",
-                  })}
+                : report.model_failure_code
+                  ? describeNativeError(
+                      {
+                        code: report.model_failure_code,
+                        severity: "error",
+                        params: {},
+                        actions: [],
+                      },
+                      (key, options) => String(t(key as never, options as never)),
+                      "settings.llm.modelFailed",
+                    )
+                  : t("settings.llm.modelFailed", { code: "unknown" })}
             </span>
           </li>
         </ul>
@@ -126,6 +138,22 @@ export function LlmProviderRow({
         <Button disabled={busy} onClick={onEdit} size="sm" variant="secondary">
           {t("settings.llm.edit")}
         </Button>
+        {view.credential_configured ? (
+          <ConfirmDialog
+            cancelLabel={t("settings.llm.cancel")}
+            confirmLabel={t("settings.llm.clearCredential")}
+            description={t("settings.llm.clearCredentialConfirmDescription", {
+              label: view.config.label ?? view.config.id,
+            })}
+            onConfirm={onClearCredential}
+            title={t("settings.llm.clearCredentialConfirmTitle")}
+            trigger={
+              <Button disabled={busy} size="sm" variant="secondary">
+                {t("settings.llm.clearCredential")}
+              </Button>
+            }
+          />
+        ) : null}
         <ConfirmDialog
           cancelLabel={t("settings.llm.cancel")}
           confirmLabel={t("settings.llm.delete")}

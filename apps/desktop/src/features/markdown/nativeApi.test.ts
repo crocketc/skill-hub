@@ -97,6 +97,34 @@ describe("nativeMarkdownFacade", () => {
     });
   });
 
+  it("saves Markdown as a copy through the native command", async () => {
+    vi.mocked(executeCommand).mockResolvedValue({
+      type: "saved_skill_content",
+      payload: {
+        skill_id: "skill-copy",
+        path: "SKILL.md",
+        version_id: "sha256:copy-version",
+        content_identity: "sha256:copy-content",
+      },
+    });
+
+    await expect(nativeMarkdownFacade.saveMarkdownAsCopy(
+      "skill-1",
+      "SKILL.md",
+      "# Copy",
+      "sha256:content-1",
+    )).resolves.toBeUndefined();
+    expect(executeCommand).toHaveBeenCalledWith({
+      type: "save_markdown_as_copy",
+      payload: {
+        skill_id: "skill-1",
+        path: "SKILL.md",
+        markdown: "# Copy",
+        expected_identity: "sha256:content-1",
+      },
+    });
+  });
+
   it("keeps unexpected production results unavailable", async () => {
     vi.mocked(queryApplication).mockResolvedValue({
       type: "bootstrap_snapshot",

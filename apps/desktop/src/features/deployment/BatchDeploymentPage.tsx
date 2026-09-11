@@ -16,6 +16,7 @@ import {
   type DeploymentMode,
   type DeploymentTarget,
 } from "./api";
+import { describeDeploymentResult } from "./api";
 import { createNativeBatchDeploymentFacade } from "./nativeApi";
 
 export interface BatchDeploymentPageProps {
@@ -268,7 +269,7 @@ export function BatchDeploymentPage({ facade, skillIds, onCommitted }: BatchDepl
         outcomes={results.map((result): BatchOutcome => ({
           id: `${result.skillId ?? "single"}:${result.targetId}`,
           label: result.skillId ? `${result.skillId} · ${result.label}` : result.label,
-          message: result.message,
+          message: describeDeploymentResult(result, (key, options) => String(t(key as never, options as never))),
           status: result.status,
         }))}
       /> : null}

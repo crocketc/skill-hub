@@ -1,9 +1,10 @@
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 
 use crate::deployment::{DeploymentPlan, DeploymentRecord, TargetChange, TargetPlan};
 use crate::{
-    AppError, AppResult, DeploymentId, OperationId, RecoveryAction, Severity, SkillId, VersionId,
+    AppError, AppResult, DeploymentId, ErrorCode, OperationId, RecoveryAction, Severity, SkillId,
+    VersionId,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Deserialize, serde::Serialize, specta::Type)]
@@ -29,6 +30,61 @@ pub struct TargetOperationResult {
     pub deployment_id: Option<DeploymentId>,
     pub version_id: VersionId,
     pub error_code: Option<String>,
+    /// Structured, user-safe details for a target-level failure. `error_code`
+    /// remains for wire compatibility with older clients.
+    pub error: Option<TargetOperationError>,
+}
+
+/// Safe, typed projection of an [`AppError`] for a per-target deployment
+/// result. Target failures are returned inside a successful summary, so this
+/// payload must retain enough context for the UI without forwarding arbitrary
+/// JSON params.
+#[derive(Clone, Debug, Eq, PartialEq, serde::Deserialize, serde::Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct TargetOperationError {
+    pub code: ErrorCode,
+    pub severity: Severity,
+    pub params: BTreeMap<String, String>,
+    pub actions: Vec<RecoveryAction>,
+}
+
+impl From<AppError> for TargetOperationError {
+    fn from(error: AppError) -> Self {
+        const SAFE_KEYS: &[&str] = &[
+            "conflict_count",
+            "detail",
+            "field",
+            "io_kind",
+            "operation",
+            "physical_target_id",
+            "path",
+            "requested_mode",
+            "runtime_name",
+            "target_path",
+        ];
+        let params = error
+            .params
+            .into_iter()
+            .filter(|(key, value)| SAFE_KEYS.contains(&key.as_str()) && is_safe_param_value(value))
+            .map(|(key, value)| {
+                let value = value
+                    .as_str()
+                    .map(ToOwned::to_owned)
+                    .unwrap_or_else(|| value.to_string());
+                (key, value)
+            })
+            .collect();
+        Self {
+            code: error.code,
+            severity: error.severity,
+            params,
+            actions: error.actions,
+        }
+    }
+}
+
+fn is_safe_param_value(value: &serde_json::Value) -> bool {
+    value.is_string() || value.is_number() || value.is_boolean()
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, serde::Deserialize, serde::Serialize, specta::Type)]
@@ -101,19 +157,24 @@ where
                     deployment_id: None,
                     version_id: target.version_id.clone(),
                     error_code: None,
+                    error: None,
                 });
                 continue;
             }
             match self.backend.apply_target(target).await {
                 Ok(record) => targets.push(result_from_record(target, record)),
-                Err(error) => targets.push(TargetOperationResult {
-                    physical_target_id: target.physical_target_id.clone(),
-                    logical_target_ids: target.logical_target_ids.clone(),
-                    status: TargetOperationStatus::Failed,
-                    deployment_id: None,
-                    version_id: target.version_id.clone(),
-                    error_code: Some(error.code.as_str().to_owned()),
-                }),
+                Err(error) => {
+                    let error_code = error.code.as_str().to_owned();
+                    targets.push(TargetOperationResult {
+                        physical_target_id: target.physical_target_id.clone(),
+                        logical_target_ids: target.logical_target_ids.clone(),
+                        status: TargetOperationStatus::Failed,
+                        deployment_id: None,
+                        version_id: target.version_id.clone(),
+                        error_code: Some(error_code),
+                        error: Some(error.into()),
+                    })
+                }
             }
         }
         let committed = targets
@@ -140,5 +201,6 @@ fn result_from_record(target: &TargetPlan, record: DeploymentRecord) -> TargetOp
         deployment_id: Some(record.id),
         version_id: record.version_id,
         error_code: None,
+        error: None,
     }
 }

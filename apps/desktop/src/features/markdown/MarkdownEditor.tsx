@@ -34,6 +34,7 @@ export function MarkdownEditor({ facade, file, onSaved, onExit, skillId }: Markd
   const [draftState, setDraftState] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [issues, setIssues] = useState<MarkdownValidationIssue[]>([]);
   const [saveError, setSaveError] = useState<string>();
+  const [copySaved, setCopySaved] = useState(false);
   const [savedVersion, setSavedVersion] = useState<string>();
   const [saving, setSaving] = useState(false);
   const lastDraft = useRef(initial);
@@ -90,6 +91,25 @@ export function MarkdownEditor({ facade, file, onSaved, onExit, skillId }: Markd
         error instanceof MarkdownContentConflictError
           ? t("markdown.editor.conflict")
           : t("markdown.editor.saveError"),
+      );
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const saveAsCopy = async () => {
+    setSaving(true);
+    setSaveError(undefined);
+    setCopySaved(false);
+    try {
+      await persistCurrentDraft();
+      await facade.saveMarkdownAsCopy(skillId, file.path, source, contentIdentity);
+      setCopySaved(true);
+    } catch (error) {
+      setSaveError(
+        error instanceof MarkdownContentConflictError
+          ? t("markdown.editor.conflict")
+          : t("markdown.editor.copyError"),
       );
     } finally {
       setSaving(false);
@@ -158,6 +178,7 @@ export function MarkdownEditor({ facade, file, onSaved, onExit, skillId }: Markd
           {draftState === "saving" ? t("markdown.editor.draftSaving") : null}
           {draftState === "saved" ? t("markdown.editor.draftSaved") : null}
           {draftState === "error" ? t("markdown.editor.draftError") : null}
+          {copySaved ? t("markdown.editor.copyCreated") : null}
           {savedVersion ? t("markdown.editor.versionCreated", { version: savedVersion }) : null}
         </div>
         <div className="sh-markdown-editor__save-cluster">
@@ -167,13 +188,15 @@ export function MarkdownEditor({ facade, file, onSaved, onExit, skillId }: Markd
           <span className="sh-markdown-editor__copy-note">
             <Button
               aria-label={t("markdown.editor.saveAsCopy")}
-              disabled
+              disabled={saving}
+              loading={saving}
+              onClick={() => void saveAsCopy()}
               size="sm"
               variant="secondary"
             >
               {t("markdown.editor.saveAsCopy")}
             </Button>
-            {t("markdown.editor.copyUnavailable")}
+            {t("markdown.editor.copyHint")}
           </span>
           <Button loading={saving} onClick={() => void validateAndSave()}>
             {t("markdown.editor.save")}

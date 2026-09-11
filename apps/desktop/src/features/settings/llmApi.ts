@@ -43,6 +43,7 @@ export interface LlmAdminFacade {
   listProviders(): Promise<LlmProviderView[]>;
   listPresets(): Promise<LlmProviderPreset[]>;
   saveProvider(draft: LlmProviderDraft, replaceCredential: boolean): Promise<void>;
+  clearCredential(id: string): Promise<void>;
   deleteProvider(id: string): Promise<void>;
   setProviderEnabled(id: string, enabled: boolean): Promise<void>;
   setDefaultProvider(id: string | null): Promise<void>;
@@ -79,6 +80,9 @@ export const unavailableLlmFacade: LlmAdminFacade = {
     throw new Error("LLM administration is unavailable in this context.");
   },
   async saveProvider() {
+    throw new Error("LLM administration is unavailable in this context.");
+  },
+  async clearCredential() {
     throw new Error("LLM administration is unavailable in this context.");
   },
   async deleteProvider() {
@@ -139,6 +143,15 @@ export const nativeLlmFacade: LlmAdminFacade = {
     });
     if (result.type !== "llm_provider_view") {
       throw new Error("save_llm_provider returned an unexpected native result.");
+    }
+  },
+  async clearCredential(id) {
+    const result = await executeCommand({
+      type: "clear_llm_provider_credential",
+      payload: { id },
+    });
+    if (result.type !== "llm_provider_view") {
+      throw new Error("clear_llm_provider_credential returned an unexpected native result.");
     }
   },
   async deleteProvider(id) {

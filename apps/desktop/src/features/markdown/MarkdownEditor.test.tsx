@@ -150,6 +150,35 @@ describe("MarkdownEditor", () => {
     });
   });
 
+  it("saves the edited draft as an independent copy and keeps the original editor open", async () => {
+    const facade = await renderEditor();
+    await replaceEditorText("Independent copy");
+    await screen.findByText("Draft saved locally");
+
+    fireEvent.click(screen.getByRole("button", { name: "Save as copy" }));
+
+    expect(await screen.findByRole("status")).toHaveTextContent("Copy saved as a new Skill");
+    expect(facade.calls.copiedVersions).toHaveLength(1);
+    expect(facade.calls.copiedVersions[0]?.markdown).toBe("Independent copy");
+    expect(screen.getByRole("textbox", { name: "Markdown source" })).toHaveTextContent(
+      "Independent copy",
+    );
+  });
+
+  it("keeps the local draft and gives an actionable error when copy-save fails", async () => {
+    await renderEditor({ failCopy: true });
+    await replaceEditorText("Copy that must remain");
+    await screen.findByText("Draft saved locally");
+
+    fireEvent.click(screen.getByRole("button", { name: "Save as copy" }));
+
+    expect(await screen.findByText(/Could not save the copy\. Check that the library is writable/))
+      .toBeVisible();
+    expect(screen.getByRole("textbox", { name: "Markdown source" })).toHaveTextContent(
+      "Copy that must remain",
+    );
+  });
+
   it("discards the local draft and exits without creating a version", async () => {
     const onExit = vi.fn();
     const facade = await renderEditor({}, { onExit });
@@ -166,12 +195,11 @@ describe("MarkdownEditor", () => {
     expect(facade.calls.savedVersions).toEqual([]);
   });
 
-  it("explains the save decision and marks copy-save as unavailable", async () => {
+  it("explains that normal save creates a new version and exposes copy-save", async () => {
     await renderEditor();
 
     expect(screen.getByText(/Saving creates a new version/)).toBeVisible();
     const copyButton = screen.getByRole("button", { name: "Save as copy" });
-    expect(copyButton).toBeDisabled();
-    expect(screen.getByText(/independent copy needs a native contract/)).toBeVisible();
+    expect(copyButton).toBeEnabled();
   });
 });

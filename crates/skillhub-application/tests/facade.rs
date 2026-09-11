@@ -7,14 +7,15 @@ use skillhub_core::{
     },
     api::{
         AnalyzeImport, AppCommandResult, AppQueryResult, CommitDeployment, CommitRestore,
-        CommitUndeploy, CreateBackup, DiffVersions, DiscoverImportCandidates, GetBasicCheckResult,
-        GetDeploymentPlan, GetDeploymentRelations, GetReconcilePlan, GetRemovalImpact, GetSkill,
-        KeepIndependentCopy, ListDeployments, ListFindings, ListMarkdownFiles, ListProjects,
-        ListSkills, ListVersions, PrepareDeleteSkill, PrepareDeployment, PrepareImport,
-        PrepareRestore, PrepareUndeploy, PreviewProjectDirectory, ReadMarkdownFile, RecheckBasic,
-        RenameSkill, RestoreDecision, RunBasicCheck, RunLlmSafetyCheck, RunRollingBackup,
-        SaveMarkdownContent, SaveSkillContent, SetCurrentVersion, SetFindingDisposition,
-        SetLifecycle, SetMetadata, SetTrial, SetVersionLabel, VerifyBackup,
+        CommitUndeploy, CreateBackup, CreateSkill, DiffVersions, DiscoverImportCandidates,
+        GetBasicCheckResult, GetDeploymentPlan, GetDeploymentRelations, GetReconcilePlan,
+        GetRemovalImpact, GetSkill, KeepIndependentCopy, ListDeployments, ListFindings,
+        ListMarkdownFiles, ListProjects, ListSkills, ListVersions, PrepareDeleteSkill,
+        PrepareDeployment, PrepareImport, PrepareRestore, PrepareUndeploy, PreviewProjectDirectory,
+        ReadMarkdownFile, RecheckBasic, RenameSkill, RestoreDecision, RunBasicCheck,
+        RunLlmSafetyCheck, RunRollingBackup, SaveMarkdownAsCopy, SaveMarkdownContent,
+        SaveSkillContent, SetCurrentVersion, SetFindingDisposition, SetLifecycle, SetMetadata,
+        SetTrial, SetVersionLabel, VerifyBackup,
     },
     backup::{
         BackupRetentionPolicy, BackupScope, RestoreConflictDecision, SensitiveContentDecision,
@@ -1520,6 +1521,161 @@ async fn analyze_import_query_returns_deterministic_conflict_matches() {
         skillhub_core::DuplicateKind::SameRuntimeNameDifferentContent
     );
     assert!(analysis
+        .conflicts
+        .iter()
+        .any(|conflict| conflict.requires_choice));
+}
+
+#[tokio::test]
+async fn analyze_import_computes_a_missing_candidate_hash_for_identical_local_trees() {
+    let database = Database::open_in_memory().expect("database");
+    let library_root = tempfile::tempdir().expect("library root");
+    let existing_source = tempfile::tempdir().expect("existing source");
+    let incoming_source = tempfile::tempdir().expect("incoming source");
+    for root in [existing_source.path(), incoming_source.path()] {
+        std::fs::create_dir_all(root.join("references")).expect("references directory");
+        std::fs::write(root.join("SKILL.md"), "# Same skill\n").expect("skill marker");
+        std::fs::write(root.join("references/notes.md"), "same bytes\n").expect("reference");
+    }
+
+    let existing = Skill::new(skillhub_core::SkillId::new(), "Same Skill");
+    database
+        .catalog_repository()
+        .expect("catalog repository")
+        .insert(&existing)
+        .await
+        .expect("insert skill");
+    let library = CentralLibrary::initialize(library_root.path()).expect("central library");
+    let store = VersionStore::from_library(&library);
+    let captured = store
+        .capture(existing.id(), existing_source.path())
+        .expect("capture existing source");
+    store
+        .set_current(existing.id(), &captured.id)
+        .expect("set current version");
+    database
+        .connection_for_test()
+        .execute(
+            "INSERT INTO versions (id, skill_id, content_hash, manifest_json, created_at) VALUES (?1, ?2, ?3, ?4, 0)",
+            rusqlite::params![
+                captured.id.to_string(),
+                existing.id().to_string(),
+                captured.manifest.tree_hash,
+                serde_json::to_string(&captured.manifest).expect("manifest json"),
+            ],
+        )
+        .expect("persist current version projection");
+    database
+        .connection_for_test()
+        .execute(
+            "INSERT INTO current_pointers (skill_id, version_id, updated_at) VALUES (?1, ?2, 0)",
+            rusqlite::params![existing.id().to_string(), captured.id.to_string()],
+        )
+        .expect("persist current pointer");
+
+    let facade = LocalApplicationFacade::new_with_library(database, library_root.path());
+    let candidate = ImportCandidate::detected(
+        SourceDescriptor::new(
+            SourceKind::Local,
+            SourceLocator::local_path(incoming_source.path()),
+        ),
+        incoming_source.path().to_string_lossy(),
+        ".",
+        "SKILL.md",
+        "Same Skill",
+    );
+    let result = facade
+        .query(RootAppQuery::AnalyzeImport(AnalyzeImport {
+            candidate,
+            tree_hash: None,
+        }))
+        .await
+        .expect("import analysis");
+    let AppQueryResult::ImportAnalysis(analysis) = result else {
+        panic!("expected import analysis");
+    };
+
+    assert_eq!(
+        analysis.duplicate_kind,
+        Some(skillhub_core::DuplicateKind::ExactContent)
+    );
+    assert!(analysis.conflicts.is_empty());
+    assert!(analysis
+        .actions
+        .contains(&skillhub_core::ImportDecision::ReuseExisting));
+}
+
+#[tokio::test]
+async fn create_skill_persists_import_identity_for_identical_content_analysis() {
+    let database = Database::open_in_memory().expect("database");
+    let library_root = tempfile::tempdir().expect("library root");
+    let existing_source = tempfile::tempdir().expect("existing source");
+    let incoming_source = tempfile::tempdir().expect("incoming source");
+    for root in [existing_source.path(), incoming_source.path()] {
+        std::fs::write(root.join("SKILL.md"), "# Same skill\n").expect("skill marker");
+    }
+    let facade = LocalApplicationFacade::new_with_library(database, library_root.path());
+
+    facade
+        .execute(AppCommand::CreateSkill(CreateSkill {
+            name: "Same Skill".into(),
+            source_path: existing_source.path().to_string_lossy().into_owned(),
+        }))
+        .await
+        .expect("create existing skill");
+
+    let result = facade
+        .query(RootAppQuery::AnalyzeImport(AnalyzeImport {
+            candidate: ImportCandidate::detected(
+                SourceDescriptor::new(
+                    SourceKind::Local,
+                    SourceLocator::local_path(incoming_source.path()),
+                ),
+                incoming_source.path().to_string_lossy(),
+                ".",
+                "SKILL.md",
+                "Same Skill",
+            ),
+            tree_hash: None,
+        }))
+        .await
+        .expect("import analysis");
+    let AppQueryResult::ImportAnalysis(analysis) = result else {
+        panic!("expected import analysis");
+    };
+
+    assert_eq!(
+        analysis.duplicate_kind,
+        Some(skillhub_core::DuplicateKind::ExactContent)
+    );
+    assert!(analysis.conflicts.is_empty());
+
+    std::fs::write(incoming_source.path().join("SKILL.md"), "# Changed skill\n")
+        .expect("change incoming skill");
+    let result = facade
+        .query(RootAppQuery::AnalyzeImport(AnalyzeImport {
+            candidate: ImportCandidate::detected(
+                SourceDescriptor::new(
+                    SourceKind::Local,
+                    SourceLocator::local_path(incoming_source.path()),
+                ),
+                incoming_source.path().to_string_lossy(),
+                ".",
+                "SKILL.md",
+                "Same Skill",
+            ),
+            tree_hash: None,
+        }))
+        .await
+        .expect("changed import analysis");
+    let AppQueryResult::ImportAnalysis(changed) = result else {
+        panic!("expected changed import analysis");
+    };
+    assert_eq!(
+        changed.duplicate_kind,
+        Some(skillhub_core::DuplicateKind::SameRuntimeNameDifferentContent)
+    );
+    assert!(changed
         .conflicts
         .iter()
         .any(|conflict| conflict.requires_choice));
@@ -3446,6 +3602,129 @@ async fn save_markdown_content_creates_a_version_and_rejects_stale_identity() {
         .await
         .expect_err("stale identity must be rejected");
     assert_eq!(error.code, ErrorCode::OperationConflict);
+}
+
+#[tokio::test]
+async fn save_markdown_as_copy_creates_a_queryable_skill_without_changing_original() {
+    let database = Database::open_in_memory().expect("database");
+    let skill = Skill::new(skillhub_core::SkillId::new(), "Markdown editor");
+    database
+        .catalog_repository()
+        .expect("catalog repository")
+        .insert(&skill)
+        .await
+        .expect("insert skill");
+    let root = tempfile::tempdir().expect("library root");
+    let library = CentralLibrary::initialize(root.path()).expect("central library");
+    let source = tempfile::tempdir().expect("source");
+    std::fs::write(source.path().join("SKILL.md"), "# Initial\n").expect("write source");
+    let store = VersionStore::from_library(&library);
+    let first = store
+        .capture(skill.id(), source.path())
+        .expect("capture source");
+    store
+        .set_current(skill.id(), &first.id)
+        .expect("set current");
+    let (identity, _) = store
+        .read_file(&first.id, "SKILL.md", 1024)
+        .expect("read identity");
+
+    let facade = LocalApplicationFacade::new_with_library(database, root.path());
+    let result = facade
+        .execute(AppCommand::SaveMarkdownAsCopy(SaveMarkdownAsCopy {
+            skill_id: skill.id(),
+            path: "SKILL.md".into(),
+            markdown: "# Copied\n".into(),
+            expected_identity: identity,
+        }))
+        .await
+        .expect("save markdown as copy");
+    let AppCommandResult::SavedSkillContent(saved) = result else {
+        panic!("expected saved skill content");
+    };
+    assert_ne!(saved.skill_id, skill.id());
+
+    let listed = facade
+        .query(RootAppQuery::ListSkills(skillhub_core::api::ListSkills {
+            text: "Markdown editor (copy)".into(),
+            page: 1,
+            page_size: 10,
+            filters: Default::default(),
+            sort: Default::default(),
+        }))
+        .await
+        .expect("list copied skill");
+    let AppQueryResult::SkillPage(page) = listed else {
+        panic!("expected skill page");
+    };
+    assert_eq!(page.total, 1);
+    assert_eq!(page.items[0].skill_id, saved.skill_id);
+
+    let original = facade
+        .query(RootAppQuery::ReadMarkdownFile(
+            skillhub_core::api::ReadMarkdownFile {
+                skill_id: skill.id(),
+                path: "SKILL.md".into(),
+            },
+        ))
+        .await
+        .expect("read original");
+    let AppQueryResult::MarkdownFile(original) = original else {
+        panic!("expected original markdown");
+    };
+    assert_eq!(original.markdown, "# Initial\n");
+
+    let copied = facade
+        .query(RootAppQuery::ReadMarkdownFile(
+            skillhub_core::api::ReadMarkdownFile {
+                skill_id: saved.skill_id,
+                path: "SKILL.md".into(),
+            },
+        ))
+        .await
+        .expect("read copied markdown");
+    let AppQueryResult::MarkdownFile(copied) = copied else {
+        panic!("expected copied markdown");
+    };
+    assert_eq!(copied.markdown, "# Copied\n");
+}
+
+#[tokio::test]
+async fn save_markdown_as_copy_rejects_invalid_path_without_touching_original() {
+    let database = Database::open_in_memory().expect("database");
+    let skill = Skill::new(skillhub_core::SkillId::new(), "Markdown editor");
+    database
+        .catalog_repository()
+        .expect("catalog repository")
+        .insert(&skill)
+        .await
+        .expect("insert skill");
+    let root = tempfile::tempdir().expect("library root");
+    let library = CentralLibrary::initialize(root.path()).expect("central library");
+    let source = tempfile::tempdir().expect("source");
+    std::fs::write(source.path().join("SKILL.md"), "# Initial\n").expect("write source");
+    let store = VersionStore::from_library(&library);
+    let first = store
+        .capture(skill.id(), source.path())
+        .expect("capture source");
+    store
+        .set_current(skill.id(), &first.id)
+        .expect("set current");
+    let (identity, _) = store
+        .read_file(&first.id, "SKILL.md", 1024)
+        .expect("read identity");
+
+    let facade = LocalApplicationFacade::new_with_library(database, root.path());
+    let error = facade
+        .execute(AppCommand::SaveMarkdownAsCopy(SaveMarkdownAsCopy {
+            skill_id: skill.id(),
+            path: "../outside.md".into(),
+            markdown: "# Copied\n".into(),
+            expected_identity: identity,
+        }))
+        .await
+        .expect_err("path traversal must be rejected");
+    assert_eq!(error.code, ErrorCode::InvalidInput);
 }
 
 #[tokio::test]

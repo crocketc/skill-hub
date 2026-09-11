@@ -16,9 +16,10 @@ use async_trait::async_trait;
 pub use external_link::{ExternalLinkService, ExternalUrlOpener, SystemExternalUrlOpener};
 use skillhub_adapters::agent::discovery::{DiscoverAgents, DiscoveryRoots};
 use skillhub_adapters::app_update::github_releases::GithubReleaseProvider;
-use skillhub_adapters::credentials::SessionCredentialStore;
+use skillhub_adapters::credentials::{OsCredentialStore, SessionCredentialStore};
 use skillhub_adapters::deployment::{DeploymentFilesystem, OwnershipProof};
 use skillhub_adapters::import::SkillDetector;
+use skillhub_adapters::llm::HttpLlmTaskRunner;
 use skillhub_adapters::scanner::ScanService;
 use skillhub_adapters::security::BasicScanner;
 use skillhub_adapters::source::{
@@ -27,12 +28,13 @@ use skillhub_adapters::source::{
 };
 use skillhub_core::api::{
     ApplySourceUpdate, BasicCheckResult, BatchTranslationItemFailure, BatchTranslationOutcome,
-    CheckSourceUpdate, CheckSourceUpdates, CreateCombination, CreateSkill, DeleteCombination,
-    DeleteLlmProvider, FetchLlmModels, FetchLlmProvider, PinProjectSkillVersion, RelinkSource,
-    RenameSkill, SaveLlmProvider, SaveMarkdownContent, SaveSkillContent, SavedSkillContent,
-    SetCurrentVersion, SetDefaultLlmProvider, SetFindingDisposition, SetLifecycle,
-    SetLlmProviderEnabled, SetMetadata, SetTrial, SourceUpdateCheckOutcome, TestLlmConnection,
-    TranslateDescriptionsBatch, UpdateCombination,
+    CheckSourceUpdate, CheckSourceUpdates, ClearLlmProviderCredential, CreateCombination,
+    CreateSkill, DeleteCombination, DeleteLlmProvider, FetchLlmModels, FetchLlmProvider,
+    PinProjectSkillVersion, RelinkSource, RenameSkill, SaveLlmProvider, SaveMarkdownAsCopy,
+    SaveMarkdownContent, SaveSkillContent, SavedSkillContent, SetCurrentVersion,
+    SetDefaultLlmProvider, SetFindingDisposition, SetLifecycle, SetLlmProviderEnabled, SetMetadata,
+    SetTrial, SourceUpdateCheckOutcome, TestLlmConnection, TranslateDescriptionsBatch,
+    UpdateCombination,
 };
 use skillhub_core::application::{
     CallPolicyBackend, CallPolicyService, DeploymentBackend, DeploymentService,
@@ -1592,6 +1594,20 @@ impl LocalApplicationFacade {
         self
     }
 
+    /// Installs the production HTTP runner, OS credential store and
+    /// administration seam. The same network gate is shared by the facade
+    /// and runner so the persisted network preference applies uniformly.
+    pub fn with_production_llm_runtime(mut self) -> Self {
+        let gate = self.network_gate.clone();
+        let credentials = Arc::new(OsCredentialStore::native());
+        let runner =
+            Arc::new(HttpLlmTaskRunner::new(credentials.clone()).with_network_gate(gate.clone()));
+        self.llm_runner = Some(runner.clone());
+        self.llm_credentials = credentials;
+        self.llm_admin = Some(runner);
+        self
+    }
+
     /// Aligns the LLM network gate with the stored preference so a persisted
     /// "disable all networking" choice survives a restart.
     fn sync_network_gate(&self) {
@@ -1775,6 +1791,38 @@ impl LocalApplicationFacade {
             Ok(preferences)
         })?;
         Ok(AppCommandResult::DesktopPreferences(preferences))
+    }
+
+    async fn clear_llm_provider_credential(
+        &self,
+        request: ClearLlmProviderCredential,
+    ) -> AppResult<AppCommandResult> {
+        let config = self
+            .with_database("execute.clear_llm_provider_credential", |database| {
+                database.llm_provider_repository().get(&request.id)
+            })?
+            .ok_or_else(|| AppError::new(ErrorCode::ObjectNotFound, Severity::Error))?;
+        if let Some(reference) = &config.credential_ref {
+            let store = self.llm_credentials.clone();
+            let reference = reference.clone();
+            run_non_send(move || async move { store.delete(&reference).await })?;
+        }
+        let is_default = self.with_database(
+            "execute.clear_llm_provider_credential.default",
+            |database| {
+                Ok(database
+                    .desktop_settings_repository()
+                    .get()?
+                    .default_llm_provider_id
+                    .as_deref()
+                    == Some(config.id.as_str()))
+            },
+        )?;
+        Ok(AppCommandResult::LlmProviderView(LlmProviderView {
+            config,
+            credential_configured: false,
+            is_default,
+        }))
     }
 
     async fn set_llm_provider_enabled(
@@ -3286,6 +3334,12 @@ impl LocalApplicationFacade {
             database
                 .source_repository()
                 .set_revision(skill.id(), Some(&version.manifest.tree_hash))?;
+            if let Err(error) = database.record_current_version(skill.id(), &version) {
+                return Err(cleanup_import_error(
+                    error,
+                    cleanup_import_state(database, central, &library.store, skill.id(), &version),
+                ));
+            }
             Ok(AppCommandResult::OperationSummary(operation_summary(
                 "catalog.skill_created",
             )))
@@ -3859,6 +3913,20 @@ impl LocalApplicationFacade {
             });
             return Err(cleanup_import_error(error, cleanup));
         }
+        if let Err(error) = self.with_database("execute.save_skill_content.persist", |database| {
+            database.record_current_version(request.skill_id, &version)
+        }) {
+            let rollback =
+                restore_version_pointer(&library.store, request.skill_id, previous.clone());
+            let cleanup = rollback.and_then(|()| {
+                if captured.created {
+                    library.discard_sync(&version)
+                } else {
+                    Ok(())
+                }
+            });
+            return Err(cleanup_import_error(error, cleanup));
+        }
         Ok(AppCommandResult::OperationSummary(
             skillhub_core::OperationSummary {
                 operation_id: OperationId::new(),
@@ -3952,6 +4020,25 @@ impl LocalApplicationFacade {
                 });
                 return Err(cleanup_import_error(error, cleanup));
             }
+            if let Err(error) = self
+                .with_database("execute.save_markdown_content.persist", |database| {
+                    database.record_current_version(request.skill_id, &version)
+                })
+            {
+                let rollback = restore_version_pointer(
+                    &library.store,
+                    request.skill_id,
+                    Some(current.clone()),
+                );
+                let cleanup = rollback.and_then(|()| {
+                    if captured.created {
+                        library.discard_sync(&version)
+                    } else {
+                        Ok(())
+                    }
+                });
+                return Err(cleanup_import_error(error, cleanup));
+            }
             let (content_identity, _) = library.read_file(&version.id, &request.path, 1_048_576)?;
             Ok(AppCommandResult::SavedSkillContent(SavedSkillContent {
                 skill_id: request.skill_id,
@@ -3959,6 +4046,140 @@ impl LocalApplicationFacade {
                 version_id: version.id,
                 content_identity,
             }))
+        })();
+        let _ = std::fs::remove_dir_all(&staging);
+        result
+    }
+
+    fn save_markdown_as_copy(&self, request: SaveMarkdownAsCopy) -> AppResult<AppCommandResult> {
+        let library = self.library_runtime.snapshot()?;
+        let relative = validate_markdown_path(&request.path)?;
+        if request.markdown.len() > 1_048_576 {
+            return Err(AppError::new(ErrorCode::InvalidInput, Severity::Error)
+                .with_param("field", "markdown_size")
+                .with_action(RecoveryAction::ChooseAnotherName));
+        }
+        let current = library
+            .current(request.skill_id)?
+            .ok_or_else(|| AppError::new(ErrorCode::ObjectNotFound, Severity::Error))?;
+        let (identity, _) = library.read_file(&current, &request.path, 1_048_576)?;
+        if identity != request.expected_identity {
+            return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                .with_param("path", request.path.clone())
+                .with_action(RecoveryAction::Retry));
+        }
+        let skill = self.with_database("execute.save_markdown_as_copy", |database| {
+            database
+                .catalog_repository()?
+                .get_sync(request.skill_id)?
+                .ok_or_else(|| {
+                    AppError::new(ErrorCode::ObjectNotFound, Severity::Error)
+                        .with_param("skill_id", request.skill_id.to_string())
+                        .with_action(RecoveryAction::Retry)
+                })
+        })?;
+        let copy = Skill::from_parts(
+            skillhub_core::SkillId::new(),
+            format!("{} (copy)", skill.display_name()),
+            format!("{}-copy", skill.runtime_name()),
+            skill.original_description().to_owned(),
+            skill.translated_description().map(str::to_owned),
+            skill.note().map(str::to_owned),
+            skill.user_purpose().map(str::to_owned),
+            skill.tags().clone(),
+            skill.author().map(str::to_owned),
+            skill.license().map(str::to_owned),
+            skill.call_policy(),
+            skill.lifecycle(),
+            skill.requirements().to_vec(),
+            skill.trial_due(),
+        )?;
+        let staging =
+            std::env::temp_dir().join(format!("skillhub-markdown-copy-{}", OperationId::new()));
+        let result = (|| {
+            library.materialize(&current, &staging)?;
+            let target = staging.join(&relative);
+            std::fs::write(&target, request.markdown.as_bytes()).map_err(|error| {
+                AppError::new(ErrorCode::InternalError, Severity::Error)
+                    .with_param("source", error.to_string())
+                    .with_action(RecoveryAction::Retry)
+            })?;
+            let captured = library.capture_with_status(copy.id(), &staging)?;
+            let version = captured.record;
+            self.with_database("execute.save_markdown_as_copy.commit", |database| {
+                if let Err(error) = database.catalog_repository()?.insert_sync(&copy) {
+                    return Err(cleanup_import_error(
+                        error,
+                        if captured.created {
+                            library.discard_sync(&version)
+                        } else {
+                            Ok(())
+                        },
+                    ));
+                }
+                if let Err(error) = library.set_current(copy.id(), &version.id) {
+                    return Err(cleanup_import_error(
+                        error,
+                        cleanup_import_state(
+                            database,
+                            &library.central,
+                            &library.store,
+                            copy.id(),
+                            &version,
+                        ),
+                    ));
+                }
+                if let Err(error) = library
+                    .central
+                    .materialize_current_skill(&copy, &version.id)
+                {
+                    return Err(cleanup_import_error(
+                        error,
+                        cleanup_import_state(
+                            database,
+                            &library.central,
+                            &library.store,
+                            copy.id(),
+                            &version,
+                        ),
+                    ));
+                }
+                if let Err(error) = library
+                    .central
+                    .save_portable_skill(&copy, Some(&version.id))
+                {
+                    return Err(cleanup_import_error(
+                        error,
+                        cleanup_import_state(
+                            database,
+                            &library.central,
+                            &library.store,
+                            copy.id(),
+                            &version,
+                        ),
+                    ));
+                }
+                if let Err(error) = database.record_current_version(copy.id(), &version) {
+                    return Err(cleanup_import_error(
+                        error,
+                        cleanup_import_state(
+                            database,
+                            &library.central,
+                            &library.store,
+                            copy.id(),
+                            &version,
+                        ),
+                    ));
+                }
+                let (content_identity, _) =
+                    library.read_file(&version.id, &request.path, 1_048_576)?;
+                Ok(AppCommandResult::SavedSkillContent(SavedSkillContent {
+                    skill_id: copy.id(),
+                    path: request.path.clone(),
+                    version_id: version.id,
+                    content_identity,
+                }))
+            })
         })();
         let _ = std::fs::remove_dir_all(&staging);
         result
@@ -4302,6 +4523,7 @@ impl ApplicationFacade for LocalApplicationFacade {
             AppCommand::SetCurrentVersion(request) => return self.set_current_version(request),
             AppCommand::SaveSkillContent(request) => return self.save_skill_content(request),
             AppCommand::SaveMarkdownContent(request) => return self.save_markdown_content(request),
+            AppCommand::SaveMarkdownAsCopy(request) => return self.save_markdown_as_copy(request),
             AppCommand::PrepareBackup(request) => {
                 let input = self.build_backup_input(request.scope)?;
                 let library = self.library_runtime.snapshot()?;
@@ -4461,6 +4683,9 @@ impl ApplicationFacade for LocalApplicationFacade {
             }
             AppCommand::DeleteLlmProvider(request) => {
                 return self.delete_llm_provider(request).await;
+            }
+            AppCommand::ClearLlmProviderCredential(request) => {
+                return self.clear_llm_provider_credential(request).await;
             }
             AppCommand::SetLlmProviderEnabled(request) => {
                 return self.set_llm_provider_enabled(request).await;
@@ -4658,10 +4883,12 @@ impl ApplicationFacade for LocalApplicationFacade {
                     .map(AppQueryResult::SearchResults)
             }),
             AppQuery::AnalyzeImport(request) => {
+                let candidate = request.candidate;
+                let tree_hash = self.candidate_tree_hash(&candidate, request.tree_hash.as_deref());
                 self.with_database("query.analyze_import", |database| {
                     database
                         .import_repository()
-                        .analyze(request.candidate, request.tree_hash.as_deref())
+                        .analyze(candidate, tree_hash.as_deref())
                         .map(AppQueryResult::ImportAnalysis)
                 })
             }
@@ -4952,13 +5179,15 @@ impl LocalApplicationFacade {
     }
 
     fn prepare_import(&self, request: skillhub_core::PrepareImport) -> AppResult<AppCommandResult> {
+        let candidate = request.candidate;
+        let tree_hash = self.candidate_tree_hash(&candidate, request.tree_hash.as_deref());
         self.with_database("execute.prepare_import", |database| {
             let analysis = database
                 .import_repository()
-                .analyze(request.candidate.clone(), request.tree_hash.as_deref())?;
+                .analyze(candidate.clone(), tree_hash.as_deref())?;
             let prepared = PreparedImport {
                 id: OperationId::new(),
-                candidate: request.candidate,
+                candidate,
                 analysis,
             };
             self.prepared_imports
@@ -4970,6 +5199,24 @@ impl LocalApplicationFacade {
                 })?
                 .insert(prepared.id, prepared.clone());
             Ok(AppCommandResult::PreparedImport(Box::new(prepared)))
+        })
+    }
+
+    /// Native import callers currently omit the optional hash. Compute the
+    /// canonical manifest-equivalent hash at the application boundary so
+    /// identical trees can be recognized without mutating the library.
+    fn candidate_tree_hash(
+        &self,
+        candidate: &skillhub_core::ImportCandidate,
+        requested: Option<&str>,
+    ) -> Option<String> {
+        requested.map(str::to_owned).or_else(|| {
+            self.library_runtime
+                .snapshot()
+                .ok()?
+                .store
+                .hash_tree_read_only(Path::new(&candidate.absolute_root))
+                .ok()
         })
     }
 
@@ -5141,6 +5388,12 @@ impl LocalApplicationFacade {
                         cleanup_import_state(database, central, store, skill_id, &version),
                     ));
                 }
+            }
+            if let Err(error) = database.record_current_version(skill_id, &version) {
+                return Err(cleanup_import_error(
+                    error,
+                    cleanup_import_state(database, central, store, skill_id, &version),
+                ));
             }
             self.prepared_imports
                 .lock()
@@ -6345,6 +6598,15 @@ mod tests {
             ignored,
             skillhub_core::AppCommandResult::IgnoreRule(_)
         ));
+    }
+
+    #[test]
+    fn production_llm_runtime_installs_runner_credentials_and_admin() {
+        let facade = LocalApplicationFacade::new(Database::open_in_memory().unwrap())
+            .with_production_llm_runtime();
+
+        assert!(facade.llm_runner.is_some());
+        assert!(facade.llm_admin.is_some());
     }
 
     #[tokio::test]

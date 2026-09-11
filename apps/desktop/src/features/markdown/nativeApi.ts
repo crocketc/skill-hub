@@ -66,6 +66,18 @@ export const nativeMarkdownFacade: MarkdownFacade = {
       newVersionId: result.payload.version_id,
     };
   },
+  async saveMarkdownAsCopy(skillId, path, markdown, expectedIdentity) {
+    const result = await executeCommand({
+      type: "save_markdown_as_copy",
+      payload: {
+        skill_id: skillId,
+        path,
+        markdown,
+        expected_identity: expectedIdentity,
+      },
+    });
+    if (result.type !== "saved_skill_content") throw unavailableResult();
+  },
   async openExternalUrl(target: string) {
     try {
       const result = await executeCommand({

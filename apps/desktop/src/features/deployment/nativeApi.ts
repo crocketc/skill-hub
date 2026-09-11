@@ -100,10 +100,10 @@ function toNativeMode(mode: DeploymentMode | undefined): DeploymentMode | null {
 
 function resultMessage(errorCode: string | null, status: "succeeded" | "failed"): string {
   if (errorCode) return errorCode;
-  // i18n 键而非句子：页面负责翻译（deployment.results.message.*）。
+  // i18n 键而非句子：页面负责翻译。
   return status === "succeeded"
-    ? "deployment.results.message.succeeded"
-    : "deployment.results.message.failed";
+    ? "deployment.results.status.message.succeeded"
+    : "deployment.results.status.message.failed";
 }
 
 export function createNativeDeploymentFacade(context: NativeDeploymentContext): DeploymentFacade {
@@ -158,6 +158,7 @@ export function createNativeDeploymentFacade(context: NativeDeploymentContext): 
         label: labelForTarget(target.logical_target_ids, labels, target.physical_target_id),
         status: target.status,
         message: resultMessage(target.error_code, target.status),
+        error: target.error ?? undefined,
       }));
     },
   };

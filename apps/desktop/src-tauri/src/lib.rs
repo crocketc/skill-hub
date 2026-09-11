@@ -303,7 +303,7 @@ pub fn run() -> tauri::Result<()> {
             panic!("failed to initialize SkillHub application facade: {error}");
         }
     }
-    run_with_facade(Arc::new(facade))
+    run_with_facade(Arc::new(facade.with_production_llm_runtime()))
 }
 
 #[cfg(windows)]
@@ -595,6 +595,17 @@ mod external_link_tests {
         assert!(
             source.contains("register_external_url_opener(&facade, Arc::new(SystemExternalUrlOpener::default()))"),
             "the desktop shell must register the system opener during setup"
+        );
+    }
+
+    #[test]
+    fn startup_installs_the_production_llm_runtime() {
+        let source =
+            std::fs::read_to_string(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/lib.rs"))
+                .expect("desktop shell source");
+        assert!(
+            source.contains("facade.with_production_llm_runtime()"),
+            "the desktop shell must install the production LLM runtime before starting Tauri"
         );
     }
 }

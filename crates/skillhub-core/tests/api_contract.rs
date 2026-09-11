@@ -35,6 +35,36 @@ fn application_envelopes_include_foundation_operations() {
 }
 
 #[test]
+fn clear_llm_provider_credential_has_stable_wire_shape() {
+    let command =
+        AppCommand::ClearLlmProviderCredential(skillhub_core::api::ClearLlmProviderCredential {
+            id: "deepseek".to_owned(),
+        });
+    let json = serde_json::to_value(command).unwrap();
+    assert_eq!(
+        json,
+        serde_json::json!({
+            "type": "clear_llm_provider_credential",
+            "payload": { "id": "deepseek" },
+        })
+    );
+}
+
+#[test]
+fn save_markdown_as_copy_has_stable_wire_shape() {
+    let command = AppCommand::SaveMarkdownAsCopy(skillhub_core::api::SaveMarkdownAsCopy {
+        skill_id: skillhub_core::SkillId::new(),
+        path: "SKILL.md".to_owned(),
+        markdown: "# Copy".to_owned(),
+        expected_identity: "sha256:original".to_owned(),
+    });
+    let json = serde_json::to_value(command).unwrap();
+    assert_eq!(json["type"], "save_markdown_as_copy");
+    assert_eq!(json["payload"]["path"], "SKILL.md");
+    assert_eq!(json["payload"]["expected_identity"], "sha256:original");
+}
+
+#[test]
 fn import_prepare_commit_and_cancel_have_stable_wire_shapes() {
     let candidate = ImportCandidate::detected(
         SourceDescriptor::new(

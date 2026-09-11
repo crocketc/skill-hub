@@ -132,6 +132,11 @@ function previewLlmFacade(): LlmAdminFacade {
             },
           ];
     },
+    async clearCredential(id: string) {
+      providers = providers.map((provider) =>
+        provider.config.id === id ? { ...provider, credential_configured: false } : provider,
+      );
+    },
     async deleteProvider(id: string) {
       providers = providers.filter((provider) => provider.config.id !== id);
     },

@@ -14,6 +14,7 @@ import {
   type ImportCandidate,
   type ImportConflict,
   type ImportFacade,
+  type ImportMatchedSkill,
   type ImportResult,
   type SourceDescriptor,
 } from "./api";
@@ -178,6 +179,20 @@ function queryImportAnalysis(result: AppQueryResult): ImportAnalysis {
   return result.payload;
 }
 
+function sourceLabel(source: ImportAnalysis["matches"][number]["source"]): string | undefined {
+  if (!source) return undefined;
+  return source.locator.local_path ?? source.locator.https_url ?? source.locator.git_url;
+}
+
+function matchedSkill(match: ImportAnalysis["matches"][number]): ImportMatchedSkill {
+  return {
+    id: match.skill_id,
+    displayName: match.display_name || match.runtime_name,
+    runtimeName: match.runtime_name,
+    source: sourceLabel(match.source),
+  };
+}
+
 function preparedImport(result: AppCommandResult) {
   if (result.type !== "prepared_import") {
     throw new Error("native import preparation returned an unexpected result");
@@ -257,6 +272,9 @@ export const nativeImportFacade: ImportFacade = {
           duplicateKind: analysis.duplicate_kind,
           kind: conflictKind(conflict.kind),
           matchedSkillIds: analysis.matches.map((match) => match.skill_id),
+          matchedSkills: analysis.matches
+            .filter((match) => match.skill_id === conflict.skill_id)
+            .map(matchedSkill),
           required: true,
           summary: conflict.reason_code,
         });

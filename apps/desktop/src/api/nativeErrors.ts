@@ -66,7 +66,7 @@ export function describeNativeError(
 
   const keyed = keyedMessage(code, reason);
   if (keyed) {
-    return translate(keyed, { code: code ?? "", reason: reason ?? "" });
+    return translate(keyed, { ...params, code: code ?? "", reason: reason ?? "" });
   }
   if (code) {
     return translate(genericKey, { code });
@@ -91,6 +91,29 @@ function keyedMessage(
   }
   if (code === "object.not_found") return "errors.objectNotFound";
   if (code === "network.disabled") return "errors.networkDisabled";
+  if (code === "llm.not_configured") return "settings.llm.notConfigured";
+  if (code === "credential.unavailable") return "settings.llm.credentialUnavailable";
+  if (code === "llm.credential_read_failed") return "settings.llm.credentialReadFailed";
+  if (code === "llm.endpoint_unreachable") return "settings.llm.endpointUnreachable";
+  if (code === "llm.endpoint_not_allowed") return "settings.llm.endpointNotAllowed";
+  if (code === "llm.auth_failed") return "settings.llm.authFailed";
+  if (code === "llm.model_not_found") return "settings.llm.modelNotFound";
+  if (code === "llm.rate_limited") return "settings.llm.rateLimited";
+  if (code === "llm.request_timeout") return "settings.llm.requestTimeout";
+  if (code === "llm.server_error") return "settings.llm.serverError";
+  if (code === "llm.invalid_json") return "settings.llm.invalidJson";
+  if (code === "llm.invalid_structured_response") return "settings.llm.invalidResponse";
+  if (code === "llm.response_interrupted") return "settings.llm.responseInterrupted";
+  if (code === "llm.cancelled") return "settings.llm.cancelled";
+  if (code === "llm.protocol_incompatible") return "settings.llm.protocolIncompatible";
+  if (code === "deployment.target_exists") return "deployment.results.failure.targetExists";
+  if (code === "deployment.target_changed") return "deployment.results.failure.targetChanged";
+  if (code === "deployment.symlink_not_supported") return "deployment.results.failure.symlinkNotSupported";
+  if (code === "deployment.junction_not_supported") return "deployment.results.failure.junctionNotSupported";
+  if (code === "deployment.ownership_mismatch") return "deployment.results.failure.ownershipMismatch";
+  if (code === "deployment.security_check_blocked") return "deployment.results.failure.securityBlocked";
+  if (code === "target.ownership_unknown") return "deployment.results.failure.ownershipUnknown";
+  if (code === "agent_profile.invalid_capability") return "deployment.results.failure.invalidCapability";
   if (code === "backup.checksum_mismatch") return "errors.backupChecksumMismatch";
   if (code === "import.remote_download_not_wired") return "importWorkflow.errors.remoteNotWired";
   if (code === "import.no_default_action") return "importWorkflow.errors.noDefaultAction";

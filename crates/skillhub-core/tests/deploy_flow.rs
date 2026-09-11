@@ -20,7 +20,9 @@ impl DeploymentBackend for RecordingDeploymentBackend {
 
     async fn apply_target(&self, target: &TargetPlan) -> AppResult<DeploymentRecord> {
         if self.fail_target.as_deref() == Some(target.physical_target_id.as_str()) {
-            return Err(AppError::new(ErrorCode::InternalError, Severity::Error));
+            return Err(AppError::new(ErrorCode::InternalError, Severity::Error)
+                .with_param("detail", "target parent is unavailable")
+                .with_action(skillhub_core::RecoveryAction::Retry));
         }
         self.applied
             .lock()
@@ -105,6 +107,16 @@ fn batch_keeps_success_and_reports_failed_target_separately() {
             result.targets[1].status,
             skillhub_core::TargetOperationStatus::Failed
         );
+        assert_eq!(
+            result.targets[1].error_code.as_deref(),
+            Some("internal.error")
+        );
+        let error = result.targets[1]
+            .error
+            .as_ref()
+            .expect("failed target keeps structured error");
+        assert_eq!(error.params["detail"], "target parent is unavailable");
+        assert_eq!(error.actions, vec![skillhub_core::RecoveryAction::Retry]);
         assert_eq!(backend.applied.lock().unwrap().as_slice(), &["codex"]);
     });
 }

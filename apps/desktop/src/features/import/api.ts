@@ -52,6 +52,13 @@ export interface ImportCandidate {
   basicCheck: "not_checked" | "passed" | "failed";
 }
 
+export interface ImportMatchedSkill {
+  id: string;
+  displayName: string;
+  runtimeName: string;
+  source?: string;
+}
+
 export interface ImportConflict {
   candidateId: string;
   /** Display name of the candidate (runtime name or SKILL.md name) for readable conflict rows. */
@@ -64,6 +71,7 @@ export interface ImportConflict {
   candidatePath?: string;
   /** Existing skills the candidate collides with, per the analysis contract. */
   matchedSkillIds?: string[];
+  matchedSkills?: ImportMatchedSkill[];
   duplicateKind?: string | null;
 }
 

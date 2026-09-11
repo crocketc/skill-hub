@@ -25,7 +25,7 @@ pub use catalog_service::{CatalogService, PortableMetadataRepository};
 pub use check_service::{BasicCheckOutput, BasicCheckScanner, CheckService, VersionMaterializer};
 pub use deployment_service::{
     DeploymentBackend, DeploymentService, DeploymentSummary, PreparedDeployment,
-    TargetOperationResult, TargetOperationStatus,
+    TargetOperationError, TargetOperationResult, TargetOperationStatus,
 };
 pub use duplicate_service::{DuplicateCandidateProvider, DuplicateService};
 pub use health_service::{HealthBackend, HealthService};

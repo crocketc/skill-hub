@@ -95,6 +95,36 @@ it("shows a readable reason and candidate identity instead of raw reason codes",
   expect(screen.getByText("运行时名称相同，但内容不同")).toBeVisible();
 });
 
+it("shows matched Skill names and sources instead of UUIDs as the conflict identity", async () => {
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  const conflictWithReadableMatch: ImportConflict = {
+    candidateId: "incoming-pdf",
+    candidateName: "PDF Reader",
+    candidatePath: "C:/incoming/pdf",
+    kind: "same_name",
+    matchedSkillIds: ["8b7f3d5d-9f25-4ed3-a5e1-uuid-only"],
+    matchedSkills: [{
+      id: "8b7f3d5d-9f25-4ed3-a5e1-uuid-only",
+      displayName: "Library PDF Reader",
+      runtimeName: "pdf-reader",
+      source: "C:/library/pdf-reader",
+    }],
+    summary: "import.same_runtime_name_conflict",
+    duplicateKind: "same_runtime_name_different_content",
+    allowedActions: ["independent", "skip"],
+    required: true,
+  };
+  render(
+    <I18nextProvider i18n={i18n}>
+      <ConflictResolution conflicts={[conflictWithReadableMatch]} actions={{}} onAction={vi.fn()} />
+    </I18nextProvider>,
+  );
+
+  expect(screen.getByText("Library PDF Reader", { selector: "strong" })).toBeVisible();
+  expect(screen.getByTitle("C:/library/pdf-reader")).toBeVisible();
+  expect(screen.queryByText("8b7f3d5d-9f25-4ed3-a5e1-uuid-only")).not.toBeInTheDocument();
+});
+
 it("falls back to an honest label when a conflict kind has no mapping", async () => {
   const i18n = await createSkillHubI18n(["zh-CN"]);
   const unknown: ImportConflict = {

@@ -1,6 +1,6 @@
 import { useTranslation } from "react-i18next";
 import { Icon } from "../../ui/Icon";
-import type { DeploymentResult } from "./api";
+import { describeDeploymentResult, type DeploymentResult } from "./api";
 
 const statusIcons = {
   failed: "failure",
@@ -18,7 +18,7 @@ export function DeploymentResults({ results }: { results: DeploymentResult[] }) 
           <li className="sh-workflow-list__item" data-testid="deployment-result" key={`${result.skillId ?? "single"}:${result.targetId}`}>
             <div>
               <strong>{result.skillId ? `${result.skillId} · ${result.label}` : result.label}</strong>
-              <p>{t(result.message, { defaultValue: result.message })}</p>
+              <p>{describeDeploymentResult(result, (key, options) => String(t(key as never, options as never)))}</p>
             </div>
             <span className={`sh-status sh-status--${result.status}`}>
               <Icon aria-hidden="true" name={statusIcons[result.status]} size={16} />

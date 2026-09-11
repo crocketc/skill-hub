@@ -14,6 +14,12 @@ export interface MockMarkdownCalls {
   openedFolders: string[];
   openedUrls: string[];
   savedDrafts: Array<{ markdown: string; path: string; skillId: string }>;
+  copiedVersions: Array<{
+    expectedIdentity: string;
+    markdown: string;
+    path: string;
+    skillId: string;
+  }>;
   savedVersions: Array<{
     expectedIdentity: string;
     markdown: string;
@@ -30,6 +36,7 @@ export interface MockMarkdownFacade extends MarkdownFacade {
 export interface MockMarkdownOptions {
   editable?: boolean;
   failSave?: boolean;
+  failCopy?: boolean;
   missingFile?: boolean;
   readOnlyReason?: MarkdownFileContent["readOnlyReason"];
   validationIssues?: MarkdownValidationIssue[];
@@ -166,6 +173,7 @@ export function createMockMarkdownFacade(
     openedFolders: [],
     openedUrls: [],
     savedDrafts: [],
+    copiedVersions: [],
     savedVersions: [],
     takeovers: [],
   };
@@ -228,6 +236,13 @@ export function createMockMarkdownFacade(
       const file = requireFile(path);
       file.draft = { markdown, savedAt: "2026-08-26T12:00:00Z" };
       calls.savedDrafts.push({ markdown, path, skillId });
+    },
+    async saveMarkdownAsCopy(skillId, path, markdown, expectedIdentity) {
+      requireFile(path);
+      if (options.failCopy) {
+        throw new Error("Fixture copy save failed");
+      }
+      calls.copiedVersions.push({ expectedIdentity, markdown, path, skillId });
     },
     async saveSkillContent(skillId, path, markdown, expectedIdentity) {
       const file = requireFile(path);

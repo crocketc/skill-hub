@@ -321,7 +321,7 @@ it("reports the two connection levels and only claims model availability on mode
 
   expect(await screen.findByText("服务可达 (42 ms)")).toBeVisible();
   expect(
-    screen.getByText("模型连接失败（llm.auth_failed）；仅服务可达不代表模型可用"),
+    screen.getByText("模型服务拒绝了凭据，请重新检查 API 密钥。"),
   ).toBeVisible();
   expect(screen.queryByText("模型连接可用")).not.toBeInTheDocument();
 });
@@ -344,7 +344,7 @@ it("shows the endpoint-unreachable scenario as separate statuses without a succe
   const report = await screen.findByText("服务不可达").then((node) => node.closest("ul"));
   expect(report).not.toBeNull();
   expect(
-    within(report!).getByText("模型连接失败（llm.endpoint_unreachable）；仅服务可达不代表模型可用"),
+    within(report!).getByText("无法连接到模型服务，请检查 API 地址和网络设置。"),
   ).toBeVisible();
   // 两级结果不合并：服务失败时不得出现任何“可达/可用”成功文案。
   expect(screen.queryByText("服务可达")).not.toBeInTheDocument();
@@ -441,6 +441,52 @@ it("keeps the provider row and shows a readable error when deletion fails", asyn
   expect(screen.getByText("Ollama")).toBeVisible();
 });
 
+it("offers a confirmed credential-only clear action and shows success", async () => {
+  mockReducedMotion();
+  const user = userEvent.setup();
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  const { facade } = recordingFacade({ providers: [PROVIDERS[0]] });
+  let clearCalls = 0;
+  const clearable = Object.assign(facade, {
+    async clearCredential() {
+      clearCalls += 1;
+    },
+  });
+  renderCard(clearable, i18n);
+
+  const row = (await screen.findByText("DeepSeek")).closest("li")!;
+  await user.click(within(row).getByRole("button", { name: "清除凭据" }));
+  const dialog = screen.getByRole("alertdialog");
+  expect(within(dialog).getByText("清除已保存的凭据？")).toBeVisible();
+  await user.click(within(dialog).getByRole("button", { name: "清除凭据" }));
+
+  await waitFor(() => expect(clearCalls).toBe(1));
+  expect(await screen.findByRole("status")).toHaveTextContent("凭据已清除");
+  expect(screen.getByText("DeepSeek")).toBeVisible();
+});
+
+it("keeps the provider row and shows a failure when clearing the credential fails", async () => {
+  mockReducedMotion();
+  const user = userEvent.setup();
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  const { facade } = recordingFacade({ providers: [PROVIDERS[0]] });
+  const clearable = Object.assign(facade, {
+    async clearCredential() {
+      throw { code: "llm.credential_delete_failed", severity: "error", params: {}, actions: [] };
+    },
+  });
+  renderCard(clearable, i18n);
+
+  const row = (await screen.findByText("DeepSeek")).closest("li")!;
+  await user.click(within(row).getByRole("button", { name: "清除凭据" }));
+  await user.click(
+    within(screen.getByRole("alertdialog")).getByRole("button", { name: "清除凭据" }),
+  );
+
+  expect(await screen.findByText(/操作失败（llm\.credential_delete_failed）/)).toBeVisible();
+  expect(screen.getByText("DeepSeek")).toBeVisible();
+});
+
 const STRUCTURED_NATIVE_ERROR = {
   code: "network.disabled",
   severity: "error",
@@ -470,6 +516,35 @@ it("shows a readable localized error instead of [object Object] when fetching mo
     await screen.findByText("网络功能已关闭；需要在设置中开启后才能联网操作。"),
   ).toBeVisible();
   expect(screen.queryByText(/object Object/i)).not.toBeInTheDocument();
+});
+
+it("shows a localized unconfigured message when model listing has no LLM runtime", async () => {
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  const { facade } = recordingFacade({
+    fetchModelsError: { code: "llm.not_configured", severity: "info", params: {}, actions: [] },
+  });
+  const user = await openFilledDraftForm(i18n, facade);
+
+  await user.click(screen.getByRole("button", { name: "获取模型列表" }));
+
+  expect(await screen.findByText("尚未配置可用的 LLM 供应商，请先添加并启用供应商。"))
+    .toBeVisible();
+  expect(screen.queryByText(/settings\.llm\./)).not.toBeInTheDocument();
+  expect(screen.queryByText(/object Object/i)).not.toBeInTheDocument();
+});
+
+it("explains that a cleared credential must be entered again when model listing fails", async () => {
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  const { facade } = recordingFacade({
+    fetchModelsError: { code: "credential.unavailable", severity: "error", params: {}, actions: [] },
+  });
+  const user = await openFilledDraftForm(i18n, facade);
+
+  await user.click(screen.getByRole("button", { name: "获取模型列表" }));
+
+  expect(await screen.findByText("凭据不可用，可能已被清除；请重新输入 API 密钥。"))
+    .toBeVisible();
+  expect(screen.queryByText(/settings\.llm\./)).not.toBeInTheDocument();
 });
 
 it("keeps the draft and tells the user to fill the model manually when fetching models fails", async () => {
@@ -521,7 +596,9 @@ it("reports a readable error instead of [object Object] when the draft connectio
 
   await user.click(screen.getByRole("button", { name: "测试此配置" }));
 
-  expect(await screen.findByText(/操作失败（llm\.auth_failed）/)).toBeVisible();
+  expect(await screen.findByText("模型服务拒绝了凭据，请重新检查 API 密钥。"))
+    .toBeVisible();
+  expect(screen.queryByText(/操作失败（llm\.auth_failed）/)).not.toBeInTheDocument();
   expect(screen.queryByText(/object Object/i)).not.toBeInTheDocument();
   expect(screen.getByRole("textbox", { name: "API 地址（Base URL）" })).toHaveValue("https://api.deepseek.com/v1");
   expect(screen.getByRole("combobox", { name: "模型" })).toHaveValue("deepseek-chat");

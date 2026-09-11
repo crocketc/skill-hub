@@ -51,6 +51,12 @@ export interface MarkdownFacade {
     assetPath: string,
   ): Promise<string>;
   saveDraft(skillId: string, path: string, markdown: string): Promise<void>;
+  saveMarkdownAsCopy(
+    skillId: string,
+    path: string,
+    markdown: string,
+    expectedIdentity: string,
+  ): Promise<void>;
   saveSkillContent(
     skillId: string,
     path: string,
@@ -99,6 +105,7 @@ export const unavailableMarkdownFacade: MarkdownFacade = {
   requestTakeover: unavailable,
   resolveLocalAsset: unavailable,
   saveDraft: unavailable,
+  saveMarkdownAsCopy: unavailable,
   saveSkillContent: unavailable,
   validateMarkdown: unavailable,
 };
