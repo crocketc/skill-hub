@@ -373,6 +373,7 @@
       "installFailed": "安装失败（{{code}}），请稍后重试。",
       "installUnavailable": "无法识别该结果的 GitHub 来源，安装已禁用。",
       "alreadyImported": "同名 Skill 已在库中",
+      "singleInstallGuide": "单 Skill 安装：仅导入该 Skill 本身，不包含仓库内其他 Skill。",
       "searchingStatus": "正在搜索…",
       "empty": "没有匹配的结果。",
       "initialHint": "输入关键词后搜索 skills.sh"
@@ -462,11 +463,12 @@
       "downloading": "正在下载…",
       "downloadFailed": "下载失败，请稍后重试。"
     },
-    "card": {
-      "status": {
-        "notInstallable": "不可安装"
-      }
-    }
+ "card": {
+  "status": {
+   "notInstallable": "不可安装",
+   "wholeRepo": "将导入整仓"
+  }
+ }
   },
   "agents": {
     "eyebrow": "Agent 工作区",

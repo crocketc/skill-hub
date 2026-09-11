@@ -373,6 +373,7 @@
       "installFailed": "Install failed ({{code}}). Please try again later.",
       "installUnavailable": "The GitHub source of this hit could not be recognized; install is disabled.",
       "alreadyImported": "A skill with this name is already in the library",
+      "singleInstallGuide": "Single skill install: only this skill is imported, not other skills from the repository.",
       "searchingStatus": "Searching…",
       "empty": "No matching results.",
       "initialHint": "Type a keyword to search skills.sh"
@@ -464,7 +465,8 @@
     },
     "card": {
       "status": {
-        "notInstallable": "Not installable"
+        "notInstallable": "Not installable",
+        "wholeRepo": "Whole repository import"
       }
     }
   },

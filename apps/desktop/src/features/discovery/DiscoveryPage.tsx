@@ -49,7 +49,11 @@ interface WizardController {
   importBlocked: boolean;
   importGuide: string | undefined;
   wizardInitialSources: string[];
+  /** 向导变体：onboarding 语义下隐藏手动追加来源入口。 */
+  variant: "onboarding" | "standard";
   openWizardWithDirectory: (directory: string) => void;
+  /** P1-04：在线单 Skill 专用安装——下载目录为唯一来源的受限向导。 */
+  openWizardWithSingleSkill: (directory: string) => void;
   /** P1-04：把本次扫描候选目录作为向导来源（审查并导入链路）。 */
   openWizardWithCandidates: (candidatePaths: string[]) => void;
   openImportWizard: () => void;
@@ -127,6 +131,8 @@ export function DiscoveryPage({
   const [importBlocked, setImportBlocked] = useState(false);
   // P1-04：单 Skill 安装/审查并导入等入口的向导导语覆盖；空向导入口会清除。
   const [wizardGuideOverride, setWizardGuideOverride] = useState<string | undefined>(undefined);
+  // P1-04：单 Skill 安装以 onboarding 语义打开（隐藏手动追加来源入口）。
+  const [wizardVariantOverride, setWizardVariantOverride] = useState<"onboarding" | "standard" | null>(null);
   // AR-014：后台导入进行中时禁止再次提交导入，统一在打开向导的入口拦截。
   const importRunning = useHasRunningOperation(tracker, "import");
   const importGuide = wizardGuideOverride ?? (initialSources.length > 1
@@ -144,6 +150,20 @@ export function DiscoveryPage({
     setImportBlocked(false);
     setWizardSources([directory]);
     setWizardGuideOverride(undefined);
+    setWizardVariantOverride(null);
+    setShowImport(true);
+  };
+  // P1-04：在线单 Skill 专用安装——下载目录是唯一来源，复用 onboarding
+  // 变体隐藏"手动追加来源"，导语注明单 Skill 安装；不夹带仓库内其他 Skill。
+  const openWizardWithSingleSkill = (directory: string) => {
+    if (importRunning) {
+      setImportBlocked(true);
+      return;
+    }
+    setImportBlocked(false);
+    setWizardSources([directory]);
+    setWizardGuideOverride(t("discovery.online.singleInstallGuide"));
+    setWizardVariantOverride("onboarding");
     setShowImport(true);
   };
   const openImportWizard = () => {
@@ -154,6 +174,7 @@ export function DiscoveryPage({
     setImportBlocked(false);
     setWizardSources(null);
     setWizardGuideOverride(undefined);
+    setWizardVariantOverride(null);
     setShowImport(true);
   };
   // P1-04：审查并导入——本次扫描发现的候选目录即向导来源，默认全选；
@@ -181,13 +202,16 @@ export function DiscoveryPage({
     setWizardSources(null);
     setImportBlocked(false);
     setWizardGuideOverride(undefined);
+    setWizardVariantOverride(null);
   };
   const wizard: WizardController = {
     showImport,
     importBlocked,
     importGuide,
     wizardInitialSources: wizardSources ?? initialSources,
+    variant: wizardVariantOverride ?? (onboardingImport ? "onboarding" : "standard"),
     openWizardWithDirectory,
+    openWizardWithSingleSkill,
     openWizardWithCandidates,
     openImportWizard,
     closeWizard,
@@ -203,7 +227,6 @@ export function DiscoveryPage({
       importedNames={importedNames}
       initialSourceText={initialSourceText}
       onBack={onBack}
-      onboardingImport={onboardingImport}
       onImportComplete={onImportComplete}
       onOpenLibrary={onOpenLibrary}
       tracker={tracker}
@@ -267,7 +290,6 @@ interface DiscoveryModulePageProps {
   wizard: WizardController;
   importFacade: ImportFacade;
   initialSourceText?: string;
-  onboardingImport?: boolean;
   tracker: OperationTracker;
   onImportComplete?: (results: ImportResult[]) => void;
   onOpenLibrary?: () => void;
@@ -286,7 +308,6 @@ function DiscoveryModulePage({
   wizard,
   importFacade,
   initialSourceText,
-  onboardingImport,
   tracker,
   onImportComplete,
   onOpenLibrary,
@@ -307,7 +328,7 @@ function DiscoveryModulePage({
           importGuide={wizard.importGuide}
           initialSources={wizard.wizardInitialSources}
           initialSourceText={initialSourceText}
-          variant={onboardingImport ? "onboarding" : "standard"}
+          variant={wizard.variant}
           onComplete={onImportComplete}
           onOpenLibrary={onOpenLibrary}
           tracker={tracker}
@@ -348,7 +369,8 @@ function DiscoveryModulePage({
         <OnlineDiscovery
           importedNames={importedNames}
           facade={facade}
-          onImportDirectory={wizard.openWizardWithDirectory}
+          // P1-04：在线安装走单 Skill 专用安装入口（下载目录=唯一来源）。
+          onImportDirectory={wizard.openWizardWithSingleSkill}
           onStartImport={wizard.openImportWizard}
         />
       ) : null}

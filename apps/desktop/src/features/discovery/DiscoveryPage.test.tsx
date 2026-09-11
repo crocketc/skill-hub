@@ -286,6 +286,16 @@ it("routes an installed online hit into the import wizard on the online subpage"
   expect(facade.downloadRepoSkill).toHaveBeenCalledWith(
     expect.objectContaining({ repo_owner: "anthropics", repo_name: "skills" }),
   );
+  // P1-04 单 Skill 专用安装：下载目录是唯一来源，隐藏手动追加来源入口，
+  // 并在向导导语中注明单 Skill 安装语义。
+  expect(screen.getByText("单 Skill 安装：仅导入该 Skill 本身，不包含仓库内其他 Skill。"))
+    .toBeVisible();
+  expect(screen.queryByRole("button", { name: "添加来源" })).not.toBeInTheDocument();
+  expect(screen.getByRole("checkbox", { name: "C:/temp/skillhub-repo-skills/1/pdf" }))
+    .toBeChecked();
+  expect(facade.downloadRepoSkill).toHaveBeenCalledWith(
+    expect.objectContaining({ directory: "pdf", repo_branch: "main" }),
+  );
 });
 
 it("carries the scanned candidates into the import wizard on review", async () => {

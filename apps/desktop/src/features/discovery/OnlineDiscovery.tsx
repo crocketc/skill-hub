@@ -78,20 +78,60 @@ export function parseGitHubRepo(locator: SourceLocator): { owner: string; repo: 
   return null;
 }
 
-/** 复用仓库发现管线的下载参数：契约没有仓库内路径字段，空目录=整仓。 */
-function toRepoSkill(hit: SourceSearchHit): DiscoverableRepoSkill | null {
+/** GitHub tree URL 解析出的仓库内定位：分支 + 可选子目录。 */
+export interface GitHubTreeRef {
+  branch: string;
+  directory: string;
+}
+
+/**
+ * P1-04：从 `…/tree/<branch>/<dir…>` 形态解析分支与仓库内目录；
+ * 命中的 locator 常是这种形态（如 `https://github.com/anthropics/skills/tree/main/pdf`）。
+ * 依序尝试候选 URL（locator → install_url → page_url）；解析不出 tree 形态
+ * 返回 null，由调用方保持整仓下载并以可见状态告知，绝不静默或伪造目录。
+ */
+export function parseGitHubRepoTree(
+  candidateUrls: (string | null | undefined)[],
+): GitHubTreeRef | null {
+  for (const url of candidateUrls) {
+    if (!url) continue;
+    const match = url
+      .match(/^https:\/\/github\.com\/[^/]+\/[^/?#]+\/tree\/([^/?#]+)(?:\/([^?#]*))?(?:[?#].*)?$/i);
+    if (!match) continue;
+    const branch = decodeURIComponent(match[1]);
+    const directory = match[2]
+      ? decodeURIComponent(match[2]).replace(/\/+$/, "")
+      : "";
+    return { branch, directory };
+  }
+  return null;
+}
+
+/**
+ * 单 Skill 专用安装的下载参数：从命中 URL 解析 branch+directory，
+ * `download_repo_skill` 只复制该 Skill 子目录；解析不出 tree 时
+ * directory/branch 保持空串（整仓 + 默认分支回退哨兵），由卡片明示。
+ */
+export function toRepoSkill(hit: SourceSearchHit): DiscoverableRepoSkill | null {
   const repo = parseGitHubRepo(hit.source.locator);
   if (!repo) return null;
+  const tree = parseGitHubRepoTree([
+    hit.source.locator.https_url ?? null,
+    hit.install_url,
+    hit.page_url,
+  ]);
+  const directory = tree?.directory ?? "";
+  const branch = tree?.branch ?? "";
   return {
-    key: `${repo.owner}/${repo.repo}:`,
+    key: `${repo.owner}/${repo.repo}:${directory}`,
     name: hit.name,
     description: "",
-    directory: "",
+    directory,
     readme_url: null,
     repo_owner: repo.owner,
     repo_name: repo.repo,
     // 空分支是宿主的“默认分支回退”哨兵。
-    repo_branch: "",
+    repo_branch: branch,
   };
 }
 
@@ -287,6 +327,9 @@ export function OnlineDiscovery({ onStartImport, onImportDirectory, facade, impo
                 }
                 if (!skill) {
                   statuses.push({ label: t("discovery.card.status.notInstallable"), tone: "warning" });
+                } else if (skill.directory === "") {
+                  // P1-04：解析不出仓库内目录时退回整仓下载，但必须明示，不静默。
+                  statuses.push({ label: t("discovery.card.status.wholeRepo"), tone: "warning" });
                 }
                 const card: SkillCardViewModel = {
                   id: hit.source_id,

@@ -23,7 +23,7 @@ export interface LocalDiscoveryWorkbenchProps {
  */
 function renderObservedAt(
   observedAt: string,
-  t: (key: string) => string,
+  t: (key: "discovery.workbench.timeUnknown") => string,
 ): JSX.Element {
   const date = parseObservedAt(observedAt);
   const label = formatObservedAt(observedAt);

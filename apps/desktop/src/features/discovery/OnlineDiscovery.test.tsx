@@ -3,7 +3,7 @@ import { I18nextProvider } from "react-i18next";
 import { describe, expect, it, vi } from "vitest";
 import { createSkillHubI18n } from "../../i18n";
 import type { DownloadedRepoSkill, SourceSearchPage } from "../../api/bindings";
-import { OnlineDiscovery } from "./OnlineDiscovery";
+import { OnlineDiscovery, parseGitHubRepoTree, toRepoSkill } from "./OnlineDiscovery";
 import type { DiscoveryFacade } from "./api";
 
 const hit = {
@@ -295,6 +295,69 @@ it("announces the searching state while the query is in flight", async () => {
   resolveSearch(page);
   await screen.findByText("PDF Reader");
   expect(screen.queryByRole("status")).not.toBeInTheDocument();
+});
+
+describe("single-skill install (P1-04)", () => {
+  it("parses branch and directory from GitHub tree URLs", () => {
+    expect(parseGitHubRepoTree(["https://github.com/anthropics/skills/tree/main/pdf"]))
+      .toEqual({ branch: "main", directory: "pdf" });
+    expect(parseGitHubRepoTree(["https://github.com/anthropics/skills/tree/main/deep/nested/tool"]))
+      .toEqual({ branch: "main", directory: "deep/nested/tool" });
+    // 只有分支没有目录：整仓但钉住分支。
+    expect(parseGitHubRepoTree(["https://github.com/anthropics/skills/tree/main"]))
+      .toEqual({ branch: "main", directory: "" });
+    // 查询串/锚点与尾斜杠不破坏解析。
+    expect(parseGitHubRepoTree(["https://github.com/a/b/tree/main/pdf?tab=readme#x"]))
+      .toEqual({ branch: "main", directory: "pdf" });
+    expect(parseGitHubRepoTree(["https://github.com/a/b/tree/main/pdf/"]))
+      .toEqual({ branch: "main", directory: "pdf" });
+    // 非 tree 形态与缺失输入返回 null。
+    expect(parseGitHubRepoTree(["https://github.com/anthropics/skills"])).toBeNull();
+    expect(parseGitHubRepoTree([null, undefined, ""])).toBeNull();
+    // 依序兜底：locator 缺失时用 install_url/page_url。
+    expect(parseGitHubRepoTree([null, "https://github.com/a/b/tree/dev/x"]))
+      .toEqual({ branch: "dev", directory: "x" });
+  });
+
+  it("stages only the referenced skill directory with its branch for download", () => {
+    const skill = toRepoSkill(hit);
+    expect(skill).not.toBeNull();
+    expect(skill).toMatchObject({
+      key: "anthropics/skills:pdf",
+      directory: "pdf",
+      repo_branch: "main",
+      repo_owner: "anthropics",
+      repo_name: "skills",
+    });
+  });
+
+  it("keeps an unparseable whole-repo install explicit with a visible status", async () => {
+    const wholeHit = {
+      ...hit,
+      source_id: "skills.sh/whole/repo",
+      source: {
+        kind: "https" as const,
+        locator: { https_url: "https://github.com/anthropics/skills" },
+      },
+    };
+    const wholePage: SourceSearchPage = { ...page, items: [wholeHit], count: 1 };
+    const downloadRepoSkill = vi.fn(async (): Promise<DownloadedRepoSkill> => ({
+      local_path: "C:/temp/skillhub-repo-skills/1/whole",
+      runtime_name: "skills",
+    }));
+    await renderSearched(
+      baseFacade({ downloadRepoSkill, searchOnlineSources: vi.fn(async () => wholePage) }),
+    );
+
+    // 不静默：整仓导入必须有可见状态徽标。
+    expect(await screen.findByText("将导入整仓")).toBeVisible();
+    const install = screen.getByRole("button", { name: "安装导入" });
+    expect(install).toBeEnabled();
+    await click(install);
+    expect(downloadRepoSkill).toHaveBeenCalledWith(
+      expect.objectContaining({ directory: "", repo_branch: "" }),
+    );
+  });
 });
 
 describe("AI search assist", () => {
