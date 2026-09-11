@@ -54,6 +54,40 @@ test("organizes the detail page into five information zones", async ({ page }) =
   ).toBeVisible();
 });
 
+test("states each fact once and keeps deterministic candidates ahead of the optional AI layer", async ({ page }) => {
+  await page.goto("/__preview/skill-detail/skill-pdf");
+
+  // P1-12：五区标题唯一，块标题是该块唯一导航标题（面板不再重复）。
+  const zoneHeadings = await page.getByRole("heading", { level: 2 }).allTextContents();
+  expect(new Set(zoneHeadings).size).toBe(zoneHeadings.length);
+  expect(zoneHeadings).toEqual(["Identity", "Status", "Content", "Relations", "Lifecycle"]);
+  await expect(page.getByRole("heading", { name: "Source identity" })).toHaveCount(0);
+  await expect(
+    page.getByRole("heading", { name: "External changes and operation history" }),
+  ).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "External changes", exact: true })).toBeVisible();
+
+  // 用途只出现一次（概览块）；别名只在头部出现一次，编辑契约保留在元数据。
+  await expect(page.getByRole("heading", { level: 1, name: "PDF Reader" })).toBeVisible();
+  await expect(page.getByText("用于 PDF 表格提取")).toHaveCount(1);
+  await expect(page.getByText("PDF 表格读取器")).toHaveCount(1);
+  await expect(page.getByRole("button", { name: "Edit Alias" })).toBeVisible();
+
+  // 确定性重复候选加载即常显；可选 AI 分析未运行时不显示任何结果来源。
+  await expect(
+    page.getByRole("heading", { name: "Deterministic duplicate candidates" }),
+  ).toBeVisible();
+  await expect(
+    page.getByText("Computed from the current version content; always available without AI."),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("list", { name: "Deterministic duplicate candidates" }),
+  ).toContainText("PDF Reader（副本）");
+  await expect(page.getByRole("heading", { name: "Optional AI semantic analysis" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Run analysis" })).toBeVisible();
+  await expect(page.getByText(/Source: deterministic/)).toHaveCount(0);
+});
+
 test("keeps legacy section hashes working for deep links", async ({ page }) => {
   await page.goto("/__preview/skill-detail/skill-pdf#description");
   await expect(page.getByRole("heading", { name: "Markdown workspace" })).toBeVisible();

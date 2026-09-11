@@ -3,6 +3,9 @@ import { expect, test } from "./fixtures";
 test("the saved-translation loop retranslates the description on demand", async ({ page }) => {
   await page.goto("/__preview/skill-detail/skill-pdf#metadata");
 
+  // P1-12：原文与译文收纳为次级展示，展开后可见出处事实与译文。
+  await page.getByText("Original text and translation").click();
+
   // 库内已保存的模型译文与出处事实可见；原文与译文分开展示。
   const translationField = page.locator("section.sh-metadata-panel__editable", {
     has: page.getByRole("heading", { name: "Translation text" }),
@@ -19,7 +22,11 @@ test("the saved-translation loop retranslates the description on demand", async 
 test("the semantic duplicate analysis reports AI candidates as advisory", async ({ page }) => {
   await page.goto("/__preview/skill-detail/skill-pdf#connections");
 
-  await expect(page.getByRole("heading", { name: "AI semantic duplicate analysis" })).toBeVisible();
+  // P1-12：确定性候选常显，AI 分析是可选增强层。
+  await expect(
+    page.getByRole("heading", { name: "Deterministic duplicate candidates" }),
+  ).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Optional AI semantic analysis" })).toBeVisible();
 
   await page.getByRole("button", { name: "Run analysis" }).click();
   await expect(page.getByText("Source: deterministic candidates + AI semantic analysis")).toBeVisible();
