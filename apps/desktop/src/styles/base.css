@@ -789,7 +789,8 @@ a {
 .sh-sidebar__header {
   position: relative;
   display: flex;
-  align-items: center;
+  /* 折叠按钮顶格贴住侧栏左上角（与折叠态同一起点），brand 盒内自行居中。 */
+  align-items: flex-start;
   gap: var(--space-2);
 }
 
@@ -805,37 +806,36 @@ a {
   text-decoration: none;
 }
 
+/* P1-01a：折叠按钮固定在侧栏左上角——常规流内的小型方形按钮（40px 点击
+   面积、小圆角），替换此前悬浮在侧栏右缘中缝的圆形按钮。 */
 .sh-sidebar__toggle {
-  position: absolute;
-  z-index: 2;
-  top: calc(100% + var(--space-2));
-  right: -1.5rem;
+  position: static;
   display: grid;
   width: 2.5rem;
   height: 2.5rem;
   flex: 0 0 auto;
   place-items: center;
   border: 1px solid var(--ui-border-strong);
-  border-radius: 999px;
+  border-radius: var(--radius-sm);
   background: var(--ui-surface);
   color: var(--color-text-secondary);
   cursor: pointer;
   box-shadow: var(--shadow-sm);
-  transform: translateY(-50%);
-  transition: color var(--motion-fast), box-shadow var(--motion-fast), transform var(--motion-fast);
+  transition: color var(--motion-fast), box-shadow var(--motion-fast), background var(--motion-fast);
 }
 
 .sh-sidebar__toggle:hover,
 .sh-sidebar__toggle:focus-visible {
   border-color: var(--color-accent-strong);
+  background: var(--ui-hover-surface);
   color: var(--color-accent-strong);
-  box-shadow: 0.15rem 0.2rem 0 color-mix(in srgb, var(--color-accent) 45%, var(--color-border)), 0 0.45rem 0.85rem color-mix(in srgb, var(--color-accent-strong) 20%, transparent);
-  transform: translateY(-50%) translateX(0.1rem);
+  box-shadow: 0 0.45rem 0.85rem color-mix(in srgb, var(--color-accent-strong) 20%, transparent);
 }
 
 .sh-sidebar__toggle:active {
-  box-shadow: 0.08rem 0.1rem 0 color-mix(in srgb, var(--color-border) 75%, transparent), 0 0.2rem 0.45rem color-mix(in srgb, var(--color-text) 14%, transparent);
-  transform: translateY(calc(-50% + 0.15rem));
+  border-color: var(--color-accent-strong);
+  background: var(--ui-pressed-surface);
+  color: var(--color-accent-strong);
 }
 
 .sh-sidebar__toggle-icon {
@@ -909,6 +909,8 @@ a {
 }
 
 .sh-sidebar.is-collapsed .sh-sidebar__header {
+  /* 折叠窄条内按钮在上、brand 居下，两者水平居中且不重叠。 */
+  align-items: center;
   flex-direction: column;
 }
 
@@ -1471,7 +1473,7 @@ a {
     position: static;
     width: 2rem;
     height: 2rem;
-    border-radius: 999px;
+    border-radius: var(--radius-sm);
     box-shadow: var(--shadow-sm);
     transform: none;
   }
