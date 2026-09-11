@@ -1290,8 +1290,7 @@
       "findings": "检查发现项",
       "llmFindings": "LLM 检查发现项",
       "advisoryNote": "AI 检查结果由模型生成，仅供辅助判断；基础检查结论不受影响。",
-      "connections": "依赖、重复项与组合",
-      "externalHistory": "外部变化与操作历史",
+      "connections": "依赖与组合",
       "invocations_one": "记录到 {{count}} 次调用",
       "invocations_other": "记录到 {{count}} 次调用",
       "none": "暂无已确认的关联",
@@ -1434,7 +1433,9 @@
       "failureUnknown": "重新关联未能完成（{{code}}）。"
     },
     "duplicates": {
-      "heading": "AI 语义重复分析",
+      "deterministicHeading": "确定性重复候选",
+      "deterministicHint": "由当前版本内容计算，不依赖 AI，始终可用。",
+      "heading": "可选 AI 语义分析",
       "run": "运行分析",
       "scopeNote": "发送范围：仅候选 Skill 的名称、描述、触发词、权限与来源等元数据；候选先由本地全文检索确定性筛出。",
       "runFailed": "AI 分析未能完成：{{message}}",

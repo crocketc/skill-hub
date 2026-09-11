@@ -6,21 +6,44 @@ import { createMockSkillDetailFacade } from "./testFixtures";
 import { SemanticDuplicatePanel } from "./SemanticDuplicatePanel";
 import type { SkillDetailFacade } from "./api";
 
-async function renderPanel(facade: SkillDetailFacade) {
+async function renderPanel(
+  facade: SkillDetailFacade,
+  deterministicCandidates: string[] = [],
+) {
   const i18n = await createSkillHubI18n(["zh-CN"]);
   render(
     <I18nextProvider i18n={i18n}>
-      <SemanticDuplicatePanel facade={facade} skillId="skill-pdf" />
+      <SemanticDuplicatePanel
+        deterministicCandidates={deterministicCandidates}
+        facade={facade}
+        skillId="skill-pdf"
+      />
     </I18nextProvider>,
   );
 }
 
 describe("SemanticDuplicatePanel", () => {
-  it("stays idle until the user explicitly runs the analysis", async () => {
+  it("shows deterministic candidates immediately without running the AI layer", async () => {
+    const facade = createMockSkillDetailFacade();
+    await renderPanel(facade, ["PDF Reader（副本）"]);
+
+    // P1-12：确定性候选来自 getInsights，页面加载即可见，不需要点击"运行分析"。
+    expect(screen.getByRole("heading", { name: "确定性重复候选" })).toBeVisible();
+    expect(screen.getByText(/由当前版本内容计算/)).toBeVisible();
+    expect(screen.getByText("PDF Reader（副本）")).toBeVisible();
+    expect(facade.calls.analyzedDuplicateSkills).toEqual([]);
+    // 可选 AI 层保持未运行：没有报告、没有候选报告列表。
+    expect(screen.queryByText(/结果来源/)).not.toBeInTheDocument();
+  });
+
+  it("states the empty deterministic result honestly and keeps the AI layer idle", async () => {
     const facade = createMockSkillDetailFacade();
     await renderPanel(facade);
 
-    expect(screen.getByRole("heading", { name: "AI 语义重复分析" })).toBeVisible();
+    expect(screen.getByRole("heading", { name: "可选 AI 语义分析" })).toBeVisible();
+    expect(
+      screen.getByText("本地确定性筛选未发现语义候选。"),
+    ).toBeVisible();
     expect(screen.queryByText("候选对象")).not.toBeInTheDocument();
     expect(facade.calls.analyzedDuplicateSkills).toEqual([]);
   });
@@ -74,6 +97,8 @@ describe("SemanticDuplicatePanel", () => {
     expect(reasonLine.textContent).not.toContain("确定性候选不受影响");
     expect(screen.getByText("确定性候选不受影响。")).toBeVisible();
     expect(screen.getByText("PDF Text Extractor")).toBeVisible();
+    // 无 LLM 时的诚实表达：确定性候选不因 AI 失败而消失。
+    expect(screen.getByRole("heading", { name: "确定性重复候选" })).toBeVisible();
   });
 
   it("describes a rejected analysis in readable copy and keeps the deterministic promise", async () => {

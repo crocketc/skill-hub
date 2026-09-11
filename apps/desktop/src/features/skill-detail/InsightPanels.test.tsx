@@ -68,7 +68,8 @@ describe("Skill detail evidence panels", () => {
 
   it("omits usage evidence when reliability is not established", async () => {
     await renderEvidence(createMockSkillDetailFacade({ usageEvidence: null }));
-    expect(await screen.findByText("外部变化与操作历史")).toBeVisible();
+    // P1-12：面板内部不再重复块标题，块标题"外部变更"是该区块唯一导航标题。
+    expect(await screen.findByRole("heading", { name: "外部变更" })).toBeVisible();
     expect(screen.queryByText("使用证据")).not.toBeInTheDocument();
   });
 
@@ -76,11 +77,26 @@ describe("Skill detail evidence panels", () => {
     await renderEvidence(
       createMockSkillDetailFacade({ operationHistoryLimitation: "skill_dimension_not_recorded" }),
     );
-    expect(await screen.findByText("外部变化与操作历史")).toBeVisible();
+    expect(await screen.findByRole("heading", { name: "外部变更" })).toBeVisible();
     expect(
       screen.getByText("操作日志暂未记录 Skill 维度，以下为全局日志记录。"),
     ).toBeVisible();
     expect(screen.getByText("Imported")).toBeVisible();
+  });
+
+  it("renders deterministic duplicate candidates as their own always-available section", async () => {
+    await renderEvidence();
+
+    // P1-12：确定性候选常显、独立小节，不再混入"依赖与组合"合并列表。
+    expect(await screen.findByRole("heading", { name: "确定性重复候选" })).toBeVisible();
+    expect(screen.getByText(/由当前版本内容计算/)).toBeVisible();
+    const list = screen.getByRole("list", { name: "确定性重复候选" });
+    expect(list).toBeVisible();
+    expect(list.textContent).toContain("PDF Reader（副本）");
+
+    const mergedHeading = screen.getByRole("heading", { name: "依赖与组合" });
+    expect(mergedHeading).toBeVisible();
+    expect(mergedHeading.parentElement?.textContent).not.toContain("PDF Reader（副本）");
   });
 
   it("retries a failed relation panel without reloading successful panels", async () => {

@@ -11,13 +11,20 @@ import {
 interface SemanticDuplicatePanelProps {
   facade: SkillDetailFacade;
   skillId: string;
+  /** P1-12：来自 getInsights 的确定性重复候选（内容比对产物，与 AI 无关），
+   * 页面加载即常显；可选 AI 分析在其上作为增强层，由用户显式触发。 */
+  deterministicCandidates?: string[];
 }
 
 /** Optional AI layer over the deterministic duplicate candidates (US-018).
  * The panel is user-initiated, shows the deterministic candidates even when
  * the AI layer fails, and never performs any action by itself: merging,
  * deleting or archiving always stays a separate explicit user decision. */
-export function SemanticDuplicatePanel({ facade, skillId }: SemanticDuplicatePanelProps): JSX.Element {
+export function SemanticDuplicatePanel({
+  deterministicCandidates = [],
+  facade,
+  skillId,
+}: SemanticDuplicatePanelProps): JSX.Element {
   const { t } = useTranslation();
   const [running, setRunning] = useState(false);
   const [report, setReport] = useState<SemanticDuplicateReport>();
@@ -44,7 +51,24 @@ export function SemanticDuplicatePanel({ facade, skillId }: SemanticDuplicatePan
   };
 
   return (
-    <section aria-labelledby="semantic-duplicates-heading" className="sh-detail-insights">
+    <section aria-labelledby="deterministic-duplicates-heading" className="sh-detail-insights">
+      {/* 上段：确定性候选常显（数据来自 getInsights，无需点击，也不依赖 LLM）。 */}
+      <div className="sh-metadata-panel__section-heading">
+        <h3 id="deterministic-duplicates-heading">
+          {t("skillDetail.duplicates.deterministicHeading")}
+        </h3>
+      </div>
+      <p className="sh-settings-local-note">{t("skillDetail.duplicates.deterministicHint")}</p>
+      {deterministicCandidates.length ? (
+        <ul aria-label={t("skillDetail.duplicates.deterministicHeading")}>
+          {deterministicCandidates.map((candidate) => (
+            <li key={candidate}>{candidate}</li>
+          ))}
+        </ul>
+      ) : (
+        <p>{t("skillDetail.duplicates.noCandidates")}</p>
+      )}
+      {/* 下段：可选 AI 语义分析（用户显式触发；确定性结果不依赖它）。 */}
       <div className="sh-metadata-panel__section-heading">
         <h3 id="semantic-duplicates-heading">{t("skillDetail.duplicates.heading")}</h3>
         <Button disabled={running} loading={running} onClick={run} size="sm" variant="ghost">

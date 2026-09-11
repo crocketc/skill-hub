@@ -1290,8 +1290,7 @@
       "findings": "Check findings",
       "llmFindings": "LLM check findings",
       "advisoryNote": "AI check results are model-generated and advisory; the deterministic basic check conclusion is unaffected.",
-      "connections": "Dependencies, duplicates, and combinations",
-      "externalHistory": "External changes and operation history",
+      "connections": "Dependencies and combinations",
       "invocations_one": "{{count}} recorded invocation",
       "invocations_other": "{{count}} recorded invocations",
       "none": "No established relationships",
@@ -1434,7 +1433,9 @@
       "failureUnknown": "Relinking could not be completed ({{code}})."
     },
     "duplicates": {
-      "heading": "AI semantic duplicate analysis",
+      "deterministicHeading": "Deterministic duplicate candidates",
+      "deterministicHint": "Computed from the current version content; always available without AI.",
+      "heading": "Optional AI semantic analysis",
       "run": "Run analysis",
       "scopeNote": "Sends: candidate skill names, descriptions, triggers, permissions and sources only; candidates are preselected by local full-text search.",
       "runFailed": "The AI analysis could not finish: {{message}}",

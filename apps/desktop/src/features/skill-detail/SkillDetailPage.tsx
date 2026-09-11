@@ -335,7 +335,11 @@ export function SkillDetailPage({
               {insightsQuery.data ? (
                 <>
                   <ConnectionEvidence insights={insightsQuery.data} />
-                  <SemanticDuplicatePanel facade={facade} skillId={skillId} />
+                  <SemanticDuplicatePanel
+                    deterministicCandidates={insightsQuery.data.deterministicDuplicates}
+                    facade={facade}
+                    skillId={skillId}
+                  />
                 </>
               ) : null}
             </div>

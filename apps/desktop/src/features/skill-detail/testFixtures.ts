@@ -124,7 +124,8 @@ export function detailFixture(
     insights: {
       combinations: ["Document toolkit"],
       dependencies: ["table-normalizer"],
-      deterministicDuplicates: [],
+      // P1-12：确定性候选常显——夹具给出一条，验证独立小节不混入合并列表。
+      deterministicDuplicates: ["PDF Reader（副本）"],
       externalChanges: ["SKILL.md changed outside SkillHub"],
       operationHistory: [
         { at: "2026-08-25T10:24:00Z", id: "operation-import", label: "Imported" },

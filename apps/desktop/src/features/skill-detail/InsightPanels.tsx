@@ -48,7 +48,9 @@ export function SecurityEvidence({
 
 export function ConnectionEvidence({ insights }: { insights: SkillDetailInsights }) {
   const { t } = useTranslation();
-  const values = [...insights.dependencies, ...insights.deterministicDuplicates, ...insights.semanticDuplicates, ...insights.combinations];
+  // P1-12：确定性重复候选不再混入合并列表——它们在语义重复面板的
+  // "确定性重复候选"小节常显（来自 getInsights，无需 AI）。其余证据各归其位。
+  const values = [...insights.dependencies, ...insights.combinations];
   return (
     <div className="sh-detail-insights">
       <h3>{t("skillDetail.insights.connections")}</h3>
@@ -60,9 +62,9 @@ export function ConnectionEvidence({ insights }: { insights: SkillDetailInsights
 export function ExternalHistoryEvidence({ insights }: { insights: SkillDetailInsights }) {
   const { t } = useTranslation();
   const hasEntries = insights.externalChanges.length > 0 || insights.operationHistory.length > 0;
+  // P1-12：块标题"外部变更"是该区块唯一导航标题，面板内部不再重复。
   return (
     <div className="sh-detail-insights">
-      <h3>{t("skillDetail.insights.externalHistory")}</h3>
       {insights.operationHistoryLimitation ? (
         <p>{t("skillDetail.insights.operationHistoryLimitation")}</p>
       ) : null}
