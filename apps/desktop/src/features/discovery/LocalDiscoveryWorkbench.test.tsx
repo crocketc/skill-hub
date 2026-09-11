@@ -23,7 +23,7 @@ import { OnlineDiscovery } from "./OnlineDiscovery";
 
 const snapshot: DiscoverySnapshot = {
   generation: "1",
-  observed_at: "2026-09-05T08:00:00Z",
+  observed_at: "1789114968",
   instances: [
     { profile_id: "p", client_id: "codex", kind: "cli", supported_os: [], client_presence: "Unknown" },
   ],
@@ -113,14 +113,40 @@ beforeAll(async () => {
 
 it("shows the last scan time and scope from the discovery snapshot", async () => {
   const getDiscoverySnapshot = vi.fn(async () => snapshot);
-  render(
+  const { container } = render(
     <I18nextProvider i18n={createSkillHubI18nSync()}>
       <LocalDiscoveryWorkbench facade={{ getDiscoverySnapshot, scanTargets: async () => scanResult, searchOnlineSources: async () => searchPage([]), ...repoDiscoveryStubs }} />
     </I18nextProvider>,
   );
 
-  expect(await screen.findByText("2026-09-05 08:00:00")).toBeVisible();
-  expect(screen.getByText("扫描范围：1 个客户端、1 个物理目标")).toBeVisible();
+  // P1-04：后端 observed_at 是 epoch 秒十进制串，展示必须本地化，
+  // 绝不把原始串直接露给用户。
+  await screen.findByText("扫描范围：1 个客户端、1 个物理目标");
+  const time = container.querySelector("time");
+  expect(time).not.toBeNull();
+  expect(time).toHaveAttribute("dateTime", "2026-09-11T08:22:48.000Z");
+  expect(time!.textContent).toContain("2026");
+  expect(time!.textContent).not.toContain("1789114968");
+  expect(time!.textContent!.length).toBeGreaterThan(0);
+});
+
+it("shows an honest placeholder when the snapshot time cannot be parsed", async () => {
+  const brokenSnapshot = { ...snapshot, observed_at: "not-a-timestamp" };
+  render(
+    <I18nextProvider i18n={createSkillHubI18nSync()}>
+      <LocalDiscoveryWorkbench
+        facade={{
+          getDiscoverySnapshot: async () => brokenSnapshot,
+          scanTargets: async () => scanResult,
+          searchOnlineSources: async () => searchPage([]),
+          ...repoDiscoveryStubs,
+        }}
+      />
+    </I18nextProvider>,
+  );
+
+  expect(await screen.findByText("时间未知")).toBeVisible();
+  expect(screen.queryByText("not-a-timestamp")).not.toBeInTheDocument();
 });
 
 it("re-scans and classifies results into the five categories", async () => {

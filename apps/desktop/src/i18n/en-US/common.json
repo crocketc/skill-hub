@@ -398,7 +398,8 @@
       "bannerHeading": "{{count}} candidates found to import",
       "bannerHint": "Candidates enter the existing source selection and conflict flow; nothing is written to the library automatically.",
       "reviewAction": "Review and import",
-      "scanningStatus": "Scanning local directories…"
+      "scanningStatus": "Scanning local directories…",
+      "timeUnknown": "Unknown time"
     },
     "search": {
       "label": "Search skills.sh",

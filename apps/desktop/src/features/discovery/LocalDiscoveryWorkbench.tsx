@@ -4,6 +4,7 @@ import { Button } from "../../ui/Button";
 import {
   classifyScan,
   formatObservedAt,
+  parseObservedAt,
   type DiscoveryFacade,
   type ScanClassification,
 } from "./api";
@@ -12,6 +13,23 @@ export interface LocalDiscoveryWorkbenchProps {
   facade: DiscoveryFacade;
   /** C3 收口：待导入横幅的"审查"入口；未提供时横幅不渲染动作按钮。 */
   onReviewCandidates?: () => void;
+}
+
+/**
+ * P1-04：本地化展示扫描时间。observed_at 可能是 ISO、epoch 秒串或
+ * 无法解析的脏数据——前两者渲染为 `<time>`，后者显示明确占位而非
+ * 原始串。
+ */
+function renderObservedAt(
+  observedAt: string,
+  t: (key: string) => string,
+): JSX.Element {
+  const date = parseObservedAt(observedAt);
+  const label = formatObservedAt(observedAt);
+  if (!date || !label) {
+    return <span>{t("discovery.workbench.timeUnknown")}</span>;
+  }
+  return <time dateTime={date.toISOString()}>{label}</time>;
 }
 
 interface SnapshotState {
@@ -79,7 +97,7 @@ export function LocalDiscoveryWorkbench({ facade, onReviewCandidates }: LocalDis
         <p>
           {t("discovery.workbench.lastScan")}
           {" "}
-          <time dateTime={snapshot.observedAt}>{formatObservedAt(snapshot.observedAt)}</time>
+          {renderObservedAt(snapshot.observedAt, t)}
         </p>
       ) : null}
       {snapshot ? (

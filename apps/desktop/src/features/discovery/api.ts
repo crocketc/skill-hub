@@ -136,15 +136,54 @@ export const desktopDiscoveryFacade: DiscoveryFacade = {
   },
 };
 
-/** Formats an ISO timestamp as an UTC "YYYY-MM-DD HH:MM:SS" string. */
-export function formatObservedAt(iso: string): string {
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return iso;
-  const pad = (value: number) => String(value).padStart(2, "0");
-  return (
-    `${date.getUTCFullYear()}-${pad(date.getUTCMonth() + 1)}-${pad(date.getUTCDate())}` +
-    ` ${pad(date.getUTCHours())}:${pad(date.getUTCMinutes())}:${pad(date.getUTCSeconds())}`
-  );
+export interface FormatObservedAtOptions {
+  locale?: string;
+  timeZone?: string;
+}
+
+/**
+ * P1-04：解析发现快照的 observed_at。兼容三种历史形态：ISO 字符串、
+ * 后端 `now()` 产出的 epoch 秒十进制字符串（旧库快照）、以及 epoch
+ * 秒/毫秒 number（ScanGeneration.observed_at）。解析失败返回 null，
+ * 由调用方给出明确占位，绝不露出原始串。
+ */
+export function parseObservedAt(input: string | number): Date | null {
+  const trimmed = typeof input === "string" ? input.trim() : input;
+  if (trimmed === "") return null;
+  let date: Date;
+  if (typeof trimmed === "number") {
+    // >= 1e12 视为毫秒，否则视为秒（后端 epoch 秒语义）。
+    date = new Date(Math.abs(trimmed) >= 1e12 ? trimmed : trimmed * 1000);
+  } else if (/^-?\d+$/.test(trimmed)) {
+    const seconds = Number(trimmed);
+    if (!Number.isSafeInteger(seconds)) return null;
+    date = new Date(Math.abs(seconds) >= 1e12 ? seconds : seconds * 1000);
+  } else {
+    date = new Date(trimmed);
+  }
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+/** 把 observed_at 渲染为本地化日期时间；不可解析时返回 null。 */
+export function formatObservedAt(
+  input: string | number,
+  options: FormatObservedAtOptions = {},
+): string | null {
+  const date = parseObservedAt(input);
+  if (!date) return null;
+  try {
+    return new Intl.DateTimeFormat(options.locale || undefined, {
+      dateStyle: "medium",
+      timeStyle: "short",
+      ...(options.timeZone ? { timeZone: options.timeZone } : {}),
+    }).format(date);
+  } catch {
+    // 非法 locale/timeZone 不应让页面崩溃：回退默认环境格式。
+    return new Intl.DateTimeFormat(undefined, {
+      dateStyle: "medium",
+      timeStyle: "short",
+    }).format(date);
+  }
 }
 
 export interface ScanClassification {
