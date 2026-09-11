@@ -84,7 +84,13 @@ test("the import wizard offers an optional AI pre-check with per-object outcomes
   await page.getByRole("button", { name: "Run AI pre-check" }).click();
   await expect(page.getByText("Service preview · model preview-model · 2 object(s)")).toBeVisible();
   await expect(page.getByText("Passed", { exact: true })).toBeVisible();
-  await expect(page.getByText(/Pre-check failed \(llm.request_timeout\)/)).toBeVisible();
+  // P0-06：结构化错误码必须翻译为可读文案，而不是展示裸错误码。
+  await expect(
+    page.getByText(
+      "Pre-check failed for this object; others are unaffected: The model service request timed out. Check the network and try again.",
+    ),
+  ).toBeVisible();
+  await expect(page.getByText(/llm\.request_timeout/)).toHaveCount(0);
   // AI 建议不会自动变成写操作；导入决定仍归用户。
   await expect(page.getByText(/AI suggestions are never turned into write operations automatically/)).toBeVisible();
 });
