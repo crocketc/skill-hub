@@ -86,7 +86,7 @@
 | 待测试确认 | 官方资料缺失、互相矛盾或行为依赖具体客户端和操作系统 | 开发阶段显示“未确认”并允许自选目录兜底 |
 | 不支持 | 官方明确不支持，或实机验证确认不可用 | SkillHub 显示“不支持”，不伪造能力 |
 
-本文已于 2026-09-05 对部分平台执行真机确认。验证环境为 Windows 11，用户目录 `C:\Users\crock`，工作区示例 `C:\Users\crock\WorkBuddy\2026-09-05-11-55-56`。所有“真机确认”结论仅覆盖该 Windows 环境；macOS 一律维持“待测试确认”，不得由 Windows 结果推断。真机确认只证明目录或文件在验证时点的存在状态，不证明同名优先级、刷新行为、链接支持和运行时可用性。
+本文已于 2026-09-05 对部分平台执行真机确认。验证环境为 Windows 11，用户目录 `C:\Users\<本地用户>`，工作区示例 `C:\Users\<本地用户>\WorkBuddy\2026-09-05-11-55-56`。所有“真机确认”结论仅覆盖该 Windows 环境；macOS 一律维持“待测试确认”，不得由 Windows 结果推断。真机确认只证明目录或文件在验证时点的存在状态，不证明同名优先级、刷新行为、链接支持和运行时可用性。
 
 真机确认按强度再分两级，写入来源时必须标明：
 
@@ -210,7 +210,7 @@ SkillHub 在 UI 中统一显示以下四个枚举值：
 
 Codex 同时支持两套本地 Skill 目录：跨平台目录 `.agents/skills` / `$HOME/.agents/skills`，以及 Codex 原生目录 `.codex/skills` / `~/.codex/skills`。OpenAI 官方 Skills 文档按三档作用域列出：Built-in 位于 Codex 安装目录、User 位于 `~/.codex/skills/`、Project 位于 `{cwd}/.codex/skills/`；官方 API 示例与 `skills/config/write` 均以 `~/.codex/skills/<skill>/SKILL.md` 为路径参数。本文此前判断“`~/.codex/skills` 不是官方文档列出的 Codex 本地 Skill 加载目录”，该判断与官方 Skills 文档不符，已于 2026-09-05 按官方资料更正。
 
-- 真机确认（Windows，2026-09-05，目录观察）：`~/.codex/skills/` 存在并含 9 个 Skill；`~/.agents/skills/` 存在并含 26 个 Skill；两个目录并存，且存在同名 Skill 在两处各自独立存放。`C:\Users\crock\Documents\Codex\` 下多个项目根目录同时存在项目级 `.codex` 与 `.agents` 目录（验证时点为空目录），佐证项目级 `.codex/skills` 路径确实生效。
+- 真机确认（Windows，2026-09-05，目录观察）：`~/.codex/skills/` 存在并含 9 个 Skill；`~/.agents/skills/` 存在并含 26 个 Skill；两个目录并存，且存在同名 Skill 在两处各自独立存放。`C:\Users\<本地用户>\Documents\Codex\` 下多个项目根目录同时存在项目级 `.codex` 与 `.agents` 目录（验证时点为空目录），佐证项目级 `.codex/skills` 路径确实生效。
 - 已确认：原生用户级 `~/.codex/skills` 与原生项目级 `{cwd}/.codex/skills`；跨平台用户级 `$HOME/.agents/skills` 与项目链路 `.agents/skills`；机器/容器级 `/etc/codex/skills`；系统内置与插件 Skill；禁用配置 `~/.codex/config.toml`；文件变化通知；符号链接目录。
 - 已确认但需独立建模：standalone skills 可在 ChatGPT desktop app、Codex CLI 和 Codex IDE extension 使用；插件 Skill 可在 ChatGPT 的 Chat/Work 以及 Codex 中分发使用。
 - 未确认：`.codex/skills` 与 `.agents/skills` 处于同一作用域时的同名优先级，官方文档未给出规则。
@@ -295,7 +295,7 @@ Cline 已支持目录型 `SKILL.md`，但当前官方文档仍将 Skills 标记�
 
 OpenCode V2 同时支持目录型 `SKILL.md`、扁平 Markdown、本地额外目录和 HTTP Catalog，扫描与优先级规则较明确。
 
-- 真机确认（Windows，2026-09-05，目录观察）：Windows 下用户级目录为 `~/.config/opencode/skills`（实际路径 `C:\Users\crock\.config\opencode\skills`），存在并含 3 个 Skill。该路径遵循 XDG 约定，Windows 上落在用户目录的 `.config` 之下，扫描时不能只探测 `~/.opencode`。
+- 真机确认（Windows，2026-09-05，目录观察）：Windows 下用户级目录为 `~/.config/opencode/skills`（实际路径 `C:\Users\<本地用户>\.config\opencode\skills`），存在并含 3 个 Skill。该路径遵循 XDG 约定，Windows 上落在用户目录的 `.config` 之下，扫描时不能只探测 `~/.opencode`。
 - 已确认：`~/.config/opencode/skills`、`.opencode/skills`、`.claude/skills`、`.agents/skills`、任意深度发现、显式来源、权限控制和覆盖顺序。
 - 必须验证：本地热刷新、Windows/macOS 链接、HTTP Catalog 缓存、安全边界和机器可读发现列表。
 - 结论：完整适配候选。
@@ -409,7 +409,7 @@ WorkBuddy 已于 2026-09-05 在 Windows 桌面版完成真机目录确认，是�
 - 所有权边界：`~/.workbuddy/skills` 与项目级 `.workbuddy/skills` 可作为部署与解除部署目标；内置插件目录和 `~/.workbuddy/plugins/cache/` 只观察，不写入。
 - 结论：完整适配候选。Windows 用户级、项目级、内置和插件缓存目录已由真机确认，可以建立完整 profile；刷新机制与链接部署先标记“待测试”，失败时使用受管复制；macOS 路径待验证。
 
-主要来源：Windows 真机确认（WorkBuddy 桌面版，2026-09-05，用户数据根 `C:\Users\crock\.workbuddy`，工作区根 `C:\Users\crock\WorkBuddy\2026-09-05-11-55-56`）；[WorkBuddy 技能](https://www.codebuddy.cn/docs/workbuddy/From-Beginner-to-Expert-Guide/Function-Description/Skills-Market)、[WorkBuddy 更新日志](https://www.codebuddy.cn/docs/workbuddy/Changelog)、[WorkBuddy 文档总览](https://www.workbuddy.cn/docs/workbuddy/Overview)。
+主要来源：Windows 真机确认（WorkBuddy 桌面版，2026-09-05，用户数据根 `C:\Users\<本地用户>\.workbuddy`，工作区根 `C:\Users\<本地用户>\WorkBuddy\2026-09-05-11-55-56`）；[WorkBuddy 技能](https://www.codebuddy.cn/docs/workbuddy/From-Beginner-to-Expert-Guide/Function-Description/Skills-Market)、[WorkBuddy 更新日志](https://www.codebuddy.cn/docs/workbuddy/Changelog)、[WorkBuddy 文档总览](https://www.workbuddy.cn/docs/workbuddy/Overview)。
 
 ### 5.18 Kimi Work
 
