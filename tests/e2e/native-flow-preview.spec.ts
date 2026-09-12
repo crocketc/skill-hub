@@ -237,6 +237,39 @@ test("discovery home and local workbench expose separate navigation and scan fac
   await expect(page.getByText(/Unreadable 1/)).toBeVisible();
 });
 
+// M-18（审查跟进）：jsdom 不做真实布局，单测里改写 innerWidth/innerHeight
+// 对结构断言没有效果；"两档视口下首屏无需滚动即可操作"必须在真实浏览器
+// 几何下验证——重扫、审查并导入、导入 Skill 三个入口的包围盒完整落在
+// 800x600 与 1280x900 视口内（spec-only，只增强不放松）。
+for (const [width, height] of [[800, 600], [1280, 900]] as const) {
+  test(`keeps local discovery scan and import actions above the fold at ${width}x${height}`, async ({ page }) => {
+    await installNativePreview(page);
+    await page.setViewportSize({ width, height });
+    await page.goto("/discovery/local");
+    await expect(page.getByRole("heading", { name: "Local discovery", exact: true })).toBeVisible();
+    // 先产生一次扫描结果，让"审查并导入"进入可用状态，再量几何。
+    await page.getByRole("button", { name: "Rescan" }).click();
+    await expect(page.getByText(/Unmanaged 2/)).toBeVisible();
+
+    for (const name of ["Rescan", "Review and import", "Import Skill"]) {
+      const control = page.getByRole("button", { name });
+      await expect(control).toBeVisible();
+      const box = await control.boundingBox();
+      expect(box, `${name} renders in the layout`).not.toBeNull();
+      expect(box!.x, `${name} left edge stays inside the viewport`).toBeGreaterThanOrEqual(0);
+      expect(box!.y, `${name} top edge stays inside the viewport`).toBeGreaterThanOrEqual(0);
+      expect(
+        box!.x + box!.width,
+        `${name} right edge stays inside the viewport`,
+      ).toBeLessThanOrEqual(width);
+      expect(
+        box!.y + box!.height,
+        `${name} is reachable at ${width}x${height} without scrolling`,
+      ).toBeLessThanOrEqual(height);
+    }
+  });
+}
+
 test("online, repository, and lock discovery expose deterministic result states", async ({ page }) => {
   await installNativePreview(page);
   await page.goto("/discovery/online");
