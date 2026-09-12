@@ -167,13 +167,9 @@ export function DataProtectionPage({
   });
   const buildVersions = async (skillIds: string[]): Promise<ExportInput["versions"]> => {
     if (exportVersionScope === "current") return "current";
-    // N10：全部历史版本——逐个 Skill 读取真实版本列表后展开。
-    const ids: string[] = [];
-    for (const skillId of skillIds) {
-      const versions = await facade.listVersions(skillId);
-      for (const version of versions) ids.push(version.version_id);
-    }
-    return { history: ids };
+    // N10：全部历史版本——并行读取各 Skill 的版本列表后展开，避免串行 IPC。
+    const versionLists = await Promise.all(skillIds.map((skillId) => facade.listVersions(skillId)));
+    return { history: versionLists.flat().map((version) => version.version_id) };
   };
   const reviewExport = () => run(async () => {
     if (!exportSkillIds.trim()) return;

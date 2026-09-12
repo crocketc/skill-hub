@@ -17,16 +17,35 @@ export async function collectSkillNames(
   facade: SkillLibraryFacade,
 ): Promise<Record<string, string>> {
   const names: Record<string, string> = {};
-  for (let page = 1; page <= NAME_MAX_PAGES; page += 1) {
-    const result = await facade.listSkills({
-      ...DEFAULT_SKILL_QUERY,
-      page,
-      pageSize: NAME_PAGE_SIZE,
-    });
+  // 第一页拿到 total 与实际每页条数后，其余页并行拉取，避免逐页串行等待。
+  // 页数按首页实际返回条数估算：首页不足一页即说明已取全（total 覆盖）。
+  const first = await facade.listSkills({
+    ...DEFAULT_SKILL_QUERY,
+    page: 1,
+    pageSize: NAME_PAGE_SIZE,
+  });
+  for (const item of first.items as SkillTableRow[]) {
+    names[item.id] = item.name;
+  }
+  if (first.items.length === 0) return names;
+  const effectivePageSize = Math.max(1, first.items.length);
+  const totalPages = Math.min(
+    NAME_MAX_PAGES,
+    Math.ceil(first.total / effectivePageSize),
+  );
+  if (totalPages <= 1) return names;
+  const rest = await Promise.all(
+    Array.from({ length: totalPages - 1 }, (_, index) =>
+      facade.listSkills({
+        ...DEFAULT_SKILL_QUERY,
+        page: index + 2,
+        pageSize: NAME_PAGE_SIZE,
+      })),
+  );
+  for (const result of rest) {
     for (const item of result.items as SkillTableRow[]) {
       names[item.id] = item.name;
     }
-    if (result.items.length === 0 || Object.keys(names).length >= result.total) break;
   }
   return names;
 }

@@ -76,6 +76,8 @@ const DEFAULT_MEMBER_QUERY: SkillLibraryQuery = {
 function MemberPicker({ facade, onCandidates, onToggle, selected }: MemberPickerProps) {
   const { t } = useTranslation();
   const [text, setText] = useState("");
+  // 搜索文本防抖：避免每次按键都发起一次 listSkills IPC。
+  const [debouncedText, setDebouncedText] = useState("");
   const [tag, setTag] = useState("");
   const [items, setItems] = useState<SkillTableRow[]>([]);
   const [tags, setTags] = useState<string[]>([]);
@@ -93,8 +95,13 @@ function MemberPicker({ facade, onCandidates, onToggle, selected }: MemberPicker
     ...DEFAULT_MEMBER_QUERY,
     filters: { ...DEFAULT_MEMBER_QUERY.filters, tags: tag ? [tag] : [] },
     page,
-    text,
+    text: debouncedText,
   });
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedText(text), 250);
+    return () => window.clearTimeout(timer);
+  }, [text]);
 
   useEffect(() => {
     const generation = ++generationRef.current;
@@ -117,9 +124,9 @@ function MemberPicker({ facade, onCandidates, onToggle, selected }: MemberPicker
       .finally(() => {
         if (generationRef.current === generation) setLoading(false);
       });
-    // text/tag 变化即重新查询（与技能库筛选一致，无额外节流语义）；
-    // onCandidates 经 ref 转发，避免把每次合并结果当作重查依赖。
-  }, [facade, text, tag]);
+    // text 经 250ms 防抖后触发重查；onCandidates 经 ref 转发，
+    // 避免把每次合并结果当作重查依赖。
+  }, [facade, debouncedText, tag]);
 
   // 卸载后所有在飞行响应一律失效，不再写任何状态。
   useEffect(

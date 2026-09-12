@@ -79,14 +79,10 @@ export const nativePendingFacade: PendingFacade = {
   },
   async defer(items, days, reason) {
     const deferUntil = localDateDaysFromNow(days);
-    for (const item of items) {
-      await createPendingIgnoreRule(item, reason, deferUntil);
-    }
+    await Promise.all(items.map((item) => createPendingIgnoreRule(item, reason, deferUntil)));
   },
   async ignore(items, reason) {
-    for (const item of items) {
-      await createPendingIgnoreRule(item, reason, null);
-    }
+    await Promise.all(items.map((item) => createPendingIgnoreRule(item, reason, null)));
   },
   async listHandled() {
     const result = await queryApplication({ type: "list_ignore_rules" });

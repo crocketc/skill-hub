@@ -29,7 +29,10 @@ function buildChartOption({
   items,
   orientation,
   palette,
-}: DeploymentBarChartRuntimeProps): DeploymentChartOption {
+}: Pick<
+  DeploymentBarChartRuntimeProps,
+  "animation" | "ariaLabel" | "items" | "orientation" | "palette"
+>): DeploymentChartOption {
   const isHorizontal = orientation === "horizontal";
   const categoryAxis = {
     axisLabel: {
@@ -123,6 +126,10 @@ export default function DeploymentBarChartRuntime(
 ) {
   const chartRef = useRef<HTMLDivElement | null>(null);
   const instanceRef = useRef<EChartsType | null>(null);
+  const latestPropsRef = useRef(props);
+  useEffect(() => {
+    latestPropsRef.current = props;
+  });
 
   useEffect(() => {
     if (!chartRef.current || !canMountRuntimeChart()) {
@@ -131,13 +138,13 @@ export default function DeploymentBarChartRuntime(
 
     const chart = init(chartRef.current, undefined, { renderer: "svg" });
     instanceRef.current = chart;
-    chart.setOption(buildChartOption(props));
+    chart.setOption(buildChartOption(latestPropsRef.current));
     chart.on("click", (params: ECElementEvent) => {
       const { data } = params;
       if (typeof data === "object" && data !== null && "target" in data) {
         const target = data.target;
         if (typeof target === "string") {
-          props.onSelect(target);
+          latestPropsRef.current.onSelect(target);
         }
       }
     });
@@ -153,7 +160,14 @@ export default function DeploymentBarChartRuntime(
       chart.dispose();
       instanceRef.current = null;
     };
-  }, [props]);
+  }, []);
+
+  const { animation, ariaLabel, items, orientation, palette } = props;
+  useEffect(() => {
+    instanceRef.current?.setOption(
+      buildChartOption({ animation, ariaLabel, items, orientation, palette }),
+    );
+  }, [animation, ariaLabel, items, orientation, palette]);
 
   return (
     <div

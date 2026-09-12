@@ -60,7 +60,8 @@ describe("MarkdownWorkspace", () => {
     expect(screen.getByText("name: pdf-reader", { exact: false })).toBeVisible();
 
     fireEvent.click(screen.getByRole("tab", { name: "Edit" }));
-    expect(screen.getByRole("textbox", { name: "Markdown source" })).toBeVisible();
+    // 编辑器是懒加载 chunk，需要等待动态导入完成后再断言。
+    expect(await screen.findByRole("textbox", { name: "Markdown source" })).toBeVisible();
   });
 
   it("never offers in-place edit for a read-only external Skill", async () => {
@@ -105,7 +106,7 @@ describe("MarkdownWorkspace", () => {
 
     expect(await screen.findByText("A local draft was restored.")).toBeVisible();
     fireEvent.click(screen.getByRole("tab", { name: "Edit" }));
-    expect(screen.getByRole("textbox", { name: "Markdown source" })).toHaveTextContent(
+    expect(await screen.findByRole("textbox", { name: "Markdown source" })).toHaveTextContent(
       "# Recovered draft",
     );
 

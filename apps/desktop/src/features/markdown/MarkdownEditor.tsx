@@ -2,7 +2,7 @@ import { markdown } from "@codemirror/lang-markdown";
 import { search } from "@codemirror/search";
 import { useQueryClient } from "@tanstack/react-query";
 import CodeMirror from "@uiw/react-codemirror";
-import { useEffect, useRef, useState } from "react";
+import { useDeferredValue, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "../../ui/Button";
 import { ConfirmDialog } from "../../ui/ConfirmDialog";
@@ -37,6 +37,8 @@ export function MarkdownEditor({ facade, file, onSaved, onExit, skillId }: Markd
   const queryClient = useQueryClient();
   const initial = file.draft?.markdown ?? file.markdown;
   const [source, setSource] = useState(() => initial);
+  // 预览解析成本高，用 deferred 值让输入保持响应；保存/校验仍基于最新 source。
+  const deferredSource = useDeferredValue(source);
   const [contentIdentity, setContentIdentity] = useState(file.contentIdentity);
   const [draftState, setDraftState] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [issues, setIssues] = useState<MarkdownValidationIssue[]>([]);
@@ -352,7 +354,7 @@ export function MarkdownEditor({ facade, file, onSaved, onExit, skillId }: Markd
           <MarkdownRenderer
             facade={facade}
             filePath={file.path}
-            markdown={source}
+            markdown={deferredSource}
             skillId={skillId}
           />
         </div>

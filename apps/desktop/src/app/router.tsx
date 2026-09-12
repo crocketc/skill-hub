@@ -1,37 +1,22 @@
 import { QueryClientProvider } from "@tanstack/react-query";
 import { MotionConfig } from "motion/react";
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState, type ReactNode } from "react";
 import { I18nextProvider, useTranslation } from "react-i18next";
 import { createBrowserRouter, RouterProvider, useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { OnboardingWizard } from "../features/onboarding/OnboardingWizard";
-import { RescanWizard } from "../features/onboarding/RescanWizard";
 import { OnboardingPreview } from "../features/onboarding/OnboardingPreview";
 import { desktopBootstrapRuntime } from "../features/bootstrap/api";
-import { AgentDetailPage } from "../features/agents/AgentDetailPage";
-import { AgentListPage } from "../features/agents/AgentListPage";
 import { AgentsPreview, AgentDetailPreview } from "../features/agents/AgentsPreview";
-import { ProjectDetailPage } from "../features/projects/ProjectDetailPage";
-import { ProjectListPage } from "../features/projects/ProjectListPage";
 import { ProjectsPreview } from "../features/projects/ProjectsPreview";
 import { nativeAgentFacade } from "../features/agents/nativeApi";
 import { nativeProjectFacade } from "../features/projects/nativeApi";
 import { nativeRemovalFacade } from "../features/removal/nativeApi";
-import { DeploymentDialog } from "../features/deployment/DeploymentDialog";
-import { BatchDeploymentPage } from "../features/deployment/BatchDeploymentPage";
-import { SecurityResults } from "../features/security/SecurityResults";
-import { SecurityLlmPreview } from "../features/security/SecurityLlmPreview";
 import { nativeSecurityFacade } from "../features/security/nativeApi";
-import { PendingPage } from "../features/pending/PendingPage";
 import { nativePendingFacade } from "../features/pending/nativeApi";
-import { OperationProgress } from "../features/operations/OperationProgress";
-import { OperationsRecordsPage } from "../features/operations/OperationsRecordsPage";
 import { nativeOperationFacade } from "../features/operations/nativeApi";
-import { RecoveryPage } from "../features/recovery/RecoveryPage";
-import { DataProtectionPage } from "../features/backup/DataProtectionPage";
 import { nativeBackupFacade } from "../features/backup/nativeApi";
-import { SettingsPage } from "../features/settings/SettingsPage";
 import { nativeSettingsFacade } from "../features/settings/nativeApi";
 import { SettingsLlmPreview } from "../features/settings/SettingsLlmPreview";
+import { SecurityLlmPreview } from "../features/security/SecurityLlmPreview";
 import { ImportWizardPreview } from "../features/import/ImportWizardPreview";
 import { DeploymentPreview } from "../features/deployment/DeploymentPreview";
 import { RemovalPreview } from "../features/removal/RemovalPreview";
@@ -44,9 +29,6 @@ import { PendingPreview } from "../features/pending/PendingPreview";
 import { OperationsPreview, OperationProgressPreview } from "../features/operations/OperationsPreview";
 import { RecoveryPreview } from "../features/recovery/RecoveryPreview";
 import { DiscoveryRoute } from "./DiscoveryRoute";
-import { OverviewPage } from "../features/overview/OverviewPage";
-import { SkillLibraryPage } from "../features/skills/SkillLibraryPage";
-import { SkillDetailPage } from "../features/skill-detail/SkillDetailPage";
 import { SkillDetailPreview } from "../features/skill-detail/SkillDetailPreview";
 import { nativeSkillDetailFacade } from "../features/skill-detail/nativeApi";
 import { skillDetailKeys } from "../features/skill-detail/api";
@@ -59,7 +41,6 @@ import {
   NATIVE_VERSION_UPGRADE_FILTER_SUPPORTED,
   nativeSkillLibraryFacade,
 } from "../features/skills/nativeApi";
-import { CombinationManagerPage } from "../features/skills/CombinationManagerPage";
 import { skillLibraryKeys } from "../features/skills/api";
 import { skillHubI18n } from "../i18n";
 import "../features/markdown/markdown.css";
@@ -71,6 +52,51 @@ import { ThemeProvider, useTheme } from "../styles/ThemeProvider";
 import { DesktopApp } from "./App";
 import { queryClient } from "./queryClient";
 import { DataState } from "../ui/DataState";
+
+// 路由级代码分割：每个页面按需加载，开发用 __preview 路由保持静态导入。
+const OnboardingWizard = lazy(() => import("../features/onboarding/OnboardingWizard").then((m) => ({ default: m.OnboardingWizard })));
+const RescanWizard = lazy(() => import("../features/onboarding/RescanWizard").then((m) => ({ default: m.RescanWizard })));
+const AgentDetailPage = lazy(() => import("../features/agents/AgentDetailPage").then((m) => ({ default: m.AgentDetailPage })));
+const AgentListPage = lazy(() => import("../features/agents/AgentListPage").then((m) => ({ default: m.AgentListPage })));
+const ProjectDetailPage = lazy(() => import("../features/projects/ProjectDetailPage").then((m) => ({ default: m.ProjectDetailPage })));
+const ProjectListPage = lazy(() => import("../features/projects/ProjectListPage").then((m) => ({ default: m.ProjectListPage })));
+const DeploymentDialog = lazy(() => import("../features/deployment/DeploymentDialog").then((m) => ({ default: m.DeploymentDialog })));
+const BatchDeploymentPage = lazy(() => import("../features/deployment/BatchDeploymentPage").then((m) => ({ default: m.BatchDeploymentPage })));
+const SecurityResults = lazy(() => import("../features/security/SecurityResults").then((m) => ({ default: m.SecurityResults })));
+const PendingPage = lazy(() => import("../features/pending/PendingPage").then((m) => ({ default: m.PendingPage })));
+const OperationProgress = lazy(() => import("../features/operations/OperationProgress").then((m) => ({ default: m.OperationProgress })));
+const OperationsRecordsPage = lazy(() => import("../features/operations/OperationsRecordsPage").then((m) => ({ default: m.OperationsRecordsPage })));
+const RecoveryPage = lazy(() => import("../features/recovery/RecoveryPage").then((m) => ({ default: m.RecoveryPage })));
+const DataProtectionPage = lazy(() => import("../features/backup/DataProtectionPage").then((m) => ({ default: m.DataProtectionPage })));
+const SettingsPage = lazy(() => import("../features/settings/SettingsPage").then((m) => ({ default: m.SettingsPage })));
+const OverviewPage = lazy(() => import("../features/overview/OverviewPage").then((m) => ({ default: m.OverviewPage })));
+const SkillLibraryPage = lazy(() => import("../features/skills/SkillLibraryPage").then((m) => ({ default: m.SkillLibraryPage })));
+const SkillDetailPage = lazy(() => import("../features/skill-detail/SkillDetailPage").then((m) => ({ default: m.SkillDetailPage })));
+const CombinationManagerPage = lazy(() => import("../features/skills/CombinationManagerPage").then((m) => ({ default: m.CombinationManagerPage })));
+
+function RouteSuspense({ children }: { children: ReactNode }) {
+  const { t } = useTranslation();
+  return (
+    <Suspense fallback={<DataState message={t("dataState.loading")} state="loading" />}>
+      {children}
+    </Suspense>
+  );
+}
+
+// 悬停/聚焦导航时预取对应路由 chunk（bundle-preload），消除首次点击的 Suspense 停顿。
+const routePreloaders: Record<string, () => Promise<unknown>> = {
+  "/": () => import("../features/overview/OverviewPage"),
+  "/agents": () => import("../features/agents/AgentListPage"),
+  "/library": () => import("../features/skills/SkillLibraryPage"),
+  "/operations": () => import("../features/operations/OperationsRecordsPage"),
+  "/pending": () => import("../features/pending/PendingPage"),
+  "/projects": () => import("../features/projects/ProjectListPage"),
+  "/settings": () => import("../features/settings/SettingsPage"),
+};
+
+export function preloadRoute(href: string) {
+  void routePreloaders[href]?.();
+}
 
 function OnboardingRoute() {
   const { t } = useTranslation();
@@ -91,15 +117,18 @@ function OnboardingRoute() {
   }
   if (snapshot?.initialization_state === "initialized") {
     return (
+      <RouteSuspense>
       <RescanWizard
         libraryPath={snapshot.library_path ?? ""}
         onCancel={() => navigate("/settings")}
         onComplete={() => navigate("/", { replace: true })}
         onOpenImport={(roots) => navigate("/discovery/local", { state: { initialSources: roots, initialSourceText: roots.length > 1 ? "" : roots[0] ?? "", onboardingImport: true } })}
       />
+      </RouteSuspense>
     );
   }
   return (
+    <RouteSuspense>
     <OnboardingWizard
       initialBranch="select"
       onThemeChange={(theme) => {
@@ -118,35 +147,37 @@ function OnboardingRoute() {
       })}
       theme={resolvedTheme}
     />
+    </RouteSuspense>
   );
 }
 
 function AgentDetailRoute() {
   const { agentKey } = useParams();
-  return <AgentDetailPage agentId={agentKey} facade={nativeAgentFacade} />;
+  return <RouteSuspense><AgentDetailPage agentId={agentKey} facade={nativeAgentFacade} /></RouteSuspense>;
 }
 
 function ProjectDetailRoute() {
   const { projectKey } = useParams();
-  return <ProjectDetailPage
+  return <RouteSuspense><ProjectDetailPage
     facade={nativeProjectFacade}
     managedDeploymentOps={{
       list: () => nativeSkillLibraryFacade.listDeployments!(),
       detach: (deploymentId) => nativeRemovalFacade.detachManagement(deploymentId),
     }}
     projectId={projectKey}
-  />;
+  /></RouteSuspense>;
 }
 
 function ProjectListRoute() {
   const navigate = useNavigate();
-  return <ProjectListPage facade={nativeProjectFacade} onOpenProject={(projectId) => navigate(`/projects/${projectId}`)} />;
+  return <RouteSuspense><ProjectListPage facade={nativeProjectFacade} onOpenProject={(projectId) => navigate(`/projects/${projectId}`)} /></RouteSuspense>;
 }
 
 function DeploymentRoute() {
   const { skillId } = useParams();
   const effectiveSkillId = skillId ?? "unknown";
   return (
+    <RouteSuspense>
     <DeploymentDialog
       onCommitted={(results) => {
         if (results.some((result) => result.status === "succeeded")) {
@@ -160,25 +191,27 @@ function DeploymentRoute() {
       skillId={effectiveSkillId}
       versionId="current"
     />
+    </RouteSuspense>
   );
 }
 
 function BatchDeploymentRoute() {
   const [searchParams] = useSearchParams();
   const skillIds = [...new Set(searchParams.getAll("skill").filter(Boolean))];
-  return <BatchDeploymentPage
+  return <RouteSuspense><BatchDeploymentPage
     onCommitted={(results) => {
       if (results.some((result) => result.status === "succeeded")) {
         void queryClient.invalidateQueries({ queryKey: skillLibraryKeys.root });
       }
     }}
     skillIds={skillIds}
-  />;
+  /></RouteSuspense>;
 }
 
 function SkillLibraryRoute() {
   const navigate = useNavigate();
   return (
+    <RouteSuspense>
     <SkillLibraryPage
       capabilities={{
         sortableColumns: NATIVE_SORTABLE_COLUMNS,
@@ -187,21 +220,22 @@ function SkillLibraryRoute() {
       facade={nativeSkillLibraryFacade}
       onOpenDiscovery={() => navigate("/discovery")}
     />
+    </RouteSuspense>
   );
 }
 
 function CombinationManagerRoute() {
-  return <CombinationManagerPage facade={nativeSkillLibraryFacade} />;
+  return <RouteSuspense><CombinationManagerPage facade={nativeSkillLibraryFacade} /></RouteSuspense>;
 }
 
 function SecurityRoute() {
   const { skillId } = useParams();
-  return <SecurityResults facade={nativeSecurityFacade} skillId={skillId ?? "unknown"} versionId="current" />;
+  return <RouteSuspense><SecurityResults facade={nativeSecurityFacade} skillId={skillId ?? "unknown"} versionId="current" /></RouteSuspense>;
 }
 
 function OperationRoute() {
   const { operationId } = useParams();
-  return <OperationProgress facade={nativeOperationFacade} operationId={operationId ?? "latest"} />;
+  return <RouteSuspense><OperationProgress facade={nativeOperationFacade} operationId={operationId ?? "latest"} /></RouteSuspense>;
 }
 
 export const appRouter = createBrowserRouter([
@@ -209,7 +243,7 @@ export const appRouter = createBrowserRouter([
     element: <DesktopApp />,
     path: "/",
     children: [
-      { index: true, element: <OverviewPage /> },
+      { index: true, element: <RouteSuspense><OverviewPage /></RouteSuspense> },
       {
         path: "library",
         element: <SkillLibraryRoute />,
@@ -220,7 +254,7 @@ export const appRouter = createBrowserRouter([
       },
       {
         path: "library/:skillId",
-        element: <SkillDetailPage facade={nativeSkillDetailFacade} />,
+        element: <RouteSuspense><SkillDetailPage facade={nativeSkillDetailFacade} /></RouteSuspense>,
       },
       { path: "library/:skillId/deploy", element: <DeploymentRoute /> },
       { path: "deploy", element: <BatchDeploymentRoute /> },
@@ -231,16 +265,16 @@ export const appRouter = createBrowserRouter([
       { path: "discovery/online", element: <DiscoveryRoute view="online" /> },
       { path: "discovery/repo", element: <DiscoveryRoute view="repo" /> },
       { path: "discovery/lock", element: <DiscoveryRoute view="lock" /> },
-      { path: "agents", element: <AgentListPage facade={nativeAgentFacade} /> },
+      { path: "agents", element: <RouteSuspense><AgentListPage facade={nativeAgentFacade} /></RouteSuspense> },
       { path: "agents/:agentKey", element: <AgentDetailRoute /> },
       { path: "projects", element: <ProjectListRoute /> },
       { path: "projects/:projectKey", element: <ProjectDetailRoute /> },
-      { path: "pending", element: <PendingPage facade={nativePendingFacade} /> },
+      { path: "pending", element: <RouteSuspense><PendingPage facade={nativePendingFacade} /></RouteSuspense> },
       { path: "operations/:operationId", element: <OperationRoute /> },
-      { path: "operations", element: <OperationsRecordsPage /> },
-      { path: "recovery", element: <RecoveryPage facade={nativeOperationFacade} /> },
-      { path: "settings", element: <SettingsPage facade={nativeSettingsFacade} /> },
-      { path: "settings/data-protection", element: <DataProtectionPage facade={nativeBackupFacade} /> },
+      { path: "operations", element: <RouteSuspense><OperationsRecordsPage /></RouteSuspense> },
+      { path: "recovery", element: <RouteSuspense><RecoveryPage facade={nativeOperationFacade} /></RouteSuspense> },
+      { path: "settings", element: <RouteSuspense><SettingsPage facade={nativeSettingsFacade} /></RouteSuspense> },
+      { path: "settings/data-protection", element: <RouteSuspense><DataProtectionPage facade={nativeBackupFacade} /></RouteSuspense> },
     ],
   },
   { element: <OnboardingRoute />, path: "/initialize" },

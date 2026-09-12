@@ -259,15 +259,15 @@ export const nativeImportFacade: ImportFacade = {
 
   async analyzeConflicts(candidates) {
     const conflicts: ImportConflict[] = [];
-    for (const candidate of candidates) {
-      const result = await queryApplication({
-        type: "analyze_import",
-        payload: {
-          candidate: nativeCandidateFor(candidate),
-          tree_hash: null,
-        },
-      });
-      const analysis = queryImportAnalysis(result);
+    // 各候选互不依赖，并行分析以避免 N 次串行 IPC 往返。
+    const analyses = await Promise.all(candidates.map((candidate) => queryApplication({
+      type: "analyze_import",
+      payload: {
+        candidate: nativeCandidateFor(candidate),
+        tree_hash: null,
+      },
+    }).then((result) => ({ candidate, analysis: queryImportAnalysis(result) }))));
+    for (const { candidate, analysis } of analyses) {
       for (const conflict of analysis.conflicts) {
         if (!conflict.requires_choice) continue;
         const allowedActions = analysis.actions
@@ -351,16 +351,17 @@ export const nativeImportFacade: ImportFacade = {
     // never change the deterministic gates; commit re-prepares its own ids.
     const preparedIds: string[] = [];
     const candidateIds: string[] = [];
-    for (const candidate of plan.candidates) {
-      const prepared = preparedImport(await executeCommand({
-        type: "prepare_import",
-        payload: {
-          candidate: nativeCandidateFor(candidate),
-          tree_hash: null,
-        },
-      }));
+    // 各候选互不依赖，并行 prepare 以避免 N 次串行 IPC 往返；顺序按原候选顺序保留。
+    const preparedList = await Promise.all(plan.candidates.map((candidate) => executeCommand({
+      type: "prepare_import",
+      payload: {
+        candidate: nativeCandidateFor(candidate),
+        tree_hash: null,
+      },
+    }).then(preparedImport)));
+    for (const [index, prepared] of preparedList.entries()) {
       preparedIds.push(prepared.id);
-      candidateIds.push(candidate.id);
+      candidateIds.push(plan.candidates[index].id);
     }
     const result: AppCommandResult = await executeCommand({
       type: "run_import_ai_checks",

@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { Link, useLocation } from "react-router-dom";
 import { Icon, type IconName } from "../ui/Icon";
 import { BrandLogo } from "../ui/BrandLogo";
+import { preloadRoute } from "./router";
 
 interface NavigationItem {
   href: string;
@@ -65,6 +66,8 @@ function NavigationLinks({ items, collapsed }: { items: NavigationItem[]; collap
               aria-label={label}
               aria-current={isCurrent ? "page" : undefined}
               className={isCurrent ? "sh-sidebar__link sh-sidebar__link--active" : "sh-sidebar__link"}
+              onFocus={() => preloadRoute(item.href)}
+              onMouseEnter={() => preloadRoute(item.href)}
               to={item.href}
               title={collapsed ? label : undefined}
             >

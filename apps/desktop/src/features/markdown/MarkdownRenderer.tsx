@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import type { ReactNode } from "react";
+import { useMemo, type ReactNode } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import { useTranslation } from "react-i18next";
 import remarkFrontmatter from "remark-frontmatter";
@@ -73,7 +73,7 @@ export function MarkdownRenderer({ facade, filePath, markdown, skillId }: Markdo
   const { t } = useTranslation();
   const { body, frontmatter } = splitFrontmatter(markdown);
 
-  const components: Components = {
+  const components = useMemo<Components>(() => ({
     h1({ children }) {
       return <Heading level={1}>{children}</Heading>;
     },
@@ -183,7 +183,7 @@ export function MarkdownRenderer({ facade, filePath, markdown, skillId }: Markdo
     pre({ children }) {
       return <>{children}</>;
     },
-  };
+  }), [facade, filePath, skillId, t]);
 
   return (
     <article className="sh-markdown-renderer">

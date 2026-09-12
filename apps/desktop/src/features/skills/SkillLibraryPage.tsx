@@ -807,8 +807,8 @@ export function SkillLibraryPage({
     try {
       const selected = await selectedSkillsForRemoval();
       const save = facade.saveSkillMetadata?.bind(facade);
-      const outcomes: BatchOutcome[] = [];
-      for (const skill of selected) {
+      // 各选中项互不依赖，并行 get→set；逐项失败语义保持不变。
+      const outcomes: BatchOutcome[] = await Promise.all(selected.map(async (skill) => {
         try {
           if (!save) throw new SkillLibraryUnavailableError();
           const view = await facade.getSkillQuickView(skill.id);
@@ -819,20 +819,19 @@ export function SkillLibraryPage({
             nextTags.length === view.tags.length &&
             nextTags.every((tag, index) => tag === view.tags[index]);
           if (unchanged) {
-            outcomes.push({ id: skill.id, label: skill.name, status: "skipped" });
-            continue;
+            return { id: skill.id, label: skill.name, status: "skipped" } as BatchOutcome;
           }
           await save(skill.id, { tags: nextTags });
-          outcomes.push({ id: skill.id, label: skill.name, status: "succeeded" });
+          return { id: skill.id, label: skill.name, status: "succeeded" } as BatchOutcome;
         } catch (reason: unknown) {
-          outcomes.push({
+          return {
             id: skill.id,
             label: skill.name,
             message: describeError(reason, "skillLibrary.page.batch.tagOutcomeError"),
             status: "failed",
-          });
+          } as BatchOutcome;
         }
-      }
+      }));
       if (request !== batchRequestRef.current) return;
       await queryClient.invalidateQueries({ queryKey: skillLibraryKeys.root });
       const failedCount = outcomes.filter((outcome) => outcome.status === "failed").length;
@@ -941,10 +940,10 @@ export function SkillLibraryPage({
     dismissNoticesOfKind("removal-summary");
     try {
       const selected = single ? [single] : await selectedSkillsForRemoval();
-      const impacts: RemovalImpact[] = [];
-      for (const skill of selected) {
-        impacts.push(await removalFacade.prepareDelete(skill.id, skill.name));
-      }
+      // prepare_delete 是只读准备，各项独立；仍保持首错即停的外层 catch 语义。
+      const impacts: RemovalImpact[] = await Promise.all(
+        selected.map((skill) => removalFacade.prepareDelete(skill.id, skill.name)),
+      );
       setBatchRemovalImpacts(impacts);
     } catch {
       const message = t("removal.batch.loadError");
@@ -1206,6 +1205,8 @@ export function SkillLibraryPage({
     );
   };
 
+  // 注意：此处位于若干早退 return 之后，不能用 useMemo（hooks 顺序约束）。
+  // 仅卡片视图按标签分组时消费，成本为 O(页条目 × 标签数)，可接受。
   const groupedCards = new Map<string, SkillTableRow[]>();
   for (const item of page.items) {
     const tags = item.tags.length > 0 ? item.tags : ["—"];

@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { lazy, Suspense, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "../../ui/Button";
 import { DataState } from "../../ui/DataState";
@@ -11,8 +11,12 @@ import {
   MarkdownUnavailableError,
   markdownKeys,
 } from "./api";
-import { MarkdownEditor } from "./MarkdownEditor";
 import { MarkdownRenderer } from "./MarkdownRenderer";
+
+// CodeMirror 及其语言包体积大，仅在进入编辑模式时加载。
+const MarkdownEditor = lazy(() =>
+  import("./MarkdownEditor").then((m) => ({ default: m.MarkdownEditor })),
+);
 
 interface MarkdownWorkspaceProps {
   facade: MarkdownFacade;
@@ -192,6 +196,11 @@ export function MarkdownWorkspace({ facade, skillId }: MarkdownWorkspaceProps) {
             <pre className="sh-markdown-workspace__source">{file.markdown}</pre>
           ) : null}
           {effectiveMode === "edit" ? (
+            <Suspense
+              fallback={
+                <DataState message={t("markdown.workspace.loadingFile")} state="loading" />
+              }
+            >
             <MarkdownEditor
               facade={facade}
               file={file}
@@ -207,6 +216,7 @@ export function MarkdownWorkspace({ facade, skillId }: MarkdownWorkspaceProps) {
               }}
               skillId={skillId}
             />
+            </Suspense>
           ) : null}
         </>
       )}

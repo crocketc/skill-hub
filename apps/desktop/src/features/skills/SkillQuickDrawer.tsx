@@ -653,7 +653,6 @@ export function SkillQuickDrawer({
   const location = useLocation();
   const queryClient = useQueryClient();
   const [configurationOpen, setConfigurationOpen] = useState(false);
-  const [dragWidthPx, setDragWidthPx] = useState<number>();
   const [editingField, setEditingField] = useState<"alias" | "note">();
   const [editingValue, setEditingValue] = useState("");
   const [localPreferenceSaveFailed, setLocalPreferenceSaveFailed] = useState(false);
@@ -663,6 +662,7 @@ export function SkillQuickDrawer({
   // 抽屉只经对话框批量添加标签；移除走逐个 chip（onRemoveTag → saveTags）。
   const [tagAction, setTagAction] = useState<Extract<BatchTagAction, "add_tag">>();
   const dragSessionRef = useRef<DragSession>();
+  const drawerLayoutRef = useRef<HTMLDivElement | null>(null);
   const preferenceSaveQueueRef = useRef<Promise<void>>(Promise.resolve());
   const preferenceSaveRequestRef = useRef(0);
   const removePointerListenersRef = useRef<() => void>(() => undefined);
@@ -677,9 +677,16 @@ export function SkillQuickDrawer({
     normalizedPreferences.widthPx,
     drawerViewportWidth,
   );
-  const displayedWidth = dragWidthPx ?? effectiveWidth;
+  // 拖拽宽度是瞬态值：直接写 CSS 变量与 aria 属性，不进 state，
+  // 避免 pointermove 频率触发整个抽屉重渲染；结束时才持久化偏好。
+  const applyDragWidth = (widthPx: number) => {
+    const panel = document.querySelector<HTMLElement>('[data-testid="drawer-panel"]');
+    panel?.style.setProperty("--skill-drawer-width", `${widthPx}px`);
+    drawerLayoutRef.current?.style.setProperty("--skill-drawer-width", `${widthPx}px`);
+    dragSessionRef.current?.handle.setAttribute("aria-valuenow", String(widthPx));
+  };
   const panelStyle: DrawerPanelStyle = {
-    "--skill-drawer-width": `${displayedWidth}px`,
+    "--skill-drawer-width": `${effectiveWidth}px`,
   };
   const detailQuery = useQuery({
     enabled: open && Boolean(skillId),
@@ -768,7 +775,8 @@ export function SkillQuickDrawer({
     }
     removePointerListenersRef.current();
     dragSessionRef.current = undefined;
-    setDragWidthPx(undefined);
+    // 恢复为当前偏好的宽度（取消）或等待持久化后的重渲染（确认）。
+    applyDragWidth(effectiveWidth);
     if (
       typeof session.handle.hasPointerCapture === "function" &&
       session.handle.hasPointerCapture(session.pointerId)
@@ -795,9 +803,9 @@ export function SkillQuickDrawer({
     }
     dragSessionRef.current = {
       handle,
-      lastWidth: displayedWidth,
+      lastWidth: effectiveWidth,
       pointerId: event.pointerId,
-      startWidth: displayedWidth,
+      startWidth: effectiveWidth,
       startX: event.clientX,
     };
 
@@ -811,7 +819,7 @@ export function SkillQuickDrawer({
         drawerViewportWidth,
       );
       session.lastWidth = nextWidth;
-      setDragWidthPx(nextWidth);
+      applyDragWidth(nextWidth);
     };
 
     const handlePointerUp = (pointerEvent: PointerEvent) => {
@@ -836,9 +844,9 @@ export function SkillQuickDrawer({
   const resizeWithKeyboard = (event: ReactKeyboardEvent<HTMLDivElement>) => {
     const nextWidth =
       event.key === "ArrowLeft"
-        ? displayedWidth + 16
+        ? effectiveWidth + 16
         : event.key === "ArrowRight"
-          ? displayedWidth - 16
+          ? effectiveWidth - 16
           : event.key === "Home"
             ? 420
             : event.key === "End"
@@ -849,7 +857,7 @@ export function SkillQuickDrawer({
     }
     event.preventDefault();
     const clampedWidth = clampDrawerWidth(nextWidth, drawerViewportWidth);
-    if (clampedWidth !== displayedWidth) {
+    if (clampedWidth !== effectiveWidth) {
       persistPreferences({
         ...normalizedPreferences,
         widthPx: clampedWidth,
@@ -871,7 +879,7 @@ export function SkillQuickDrawer({
       aria-orientation="vertical"
       aria-valuemax={drawerMaximumWidth}
       aria-valuemin={420}
-      aria-valuenow={displayedWidth}
+      aria-valuenow={effectiveWidth}
       className="sh-skill-drawer__resize"
       onKeyDown={resizeWithKeyboard}
       onLostPointerCapture={(event) => completeResize(event.pointerId, false)}
@@ -988,6 +996,7 @@ export function SkillQuickDrawer({
         className="sh-skill-drawer__layout"
         data-preset={normalizedPreferences.preset}
         data-testid="skill-quick-drawer"
+        ref={drawerLayoutRef}
         style={panelStyle}
       >
         <div className="sh-skill-drawer__chrome">

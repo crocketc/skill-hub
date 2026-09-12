@@ -1,4 +1,4 @@
-import { useLayoutEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
+import { useCallback, useLayoutEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
 import { flexRender, getCoreRowModel, useReactTable, type ColumnDef } from "@tanstack/react-table";
 import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
@@ -240,20 +240,32 @@ export function SkillTable(props: SkillTableProps) {
   const [dragOverColumn, setDragOverColumn] = useState<SkillColumnId>();
   const suppressToggleClickRef = useRef(false);
   const sortable = new Set(props.sortableColumns ?? COLUMN_IDS);
-  const columnOrder = orderedColumnIds(props.preferences);
-  const visibleColumns = new Set([...LOCKED_COLUMNS, ...props.preferences.visibleColumns]);
+  const columnOrder = useMemo(() => orderedColumnIds(props.preferences), [props.preferences]);
+  const visibleColumns = useMemo(
+    () => new Set([...LOCKED_COLUMNS, ...props.preferences.visibleColumns]),
+    [props.preferences],
+  );
   const columns = useMemo(() => createSkillColumns(t), [t]);
   const pageCount = Math.ceil(props.page.total / props.query.pageSize);
-  const pageIds = props.page.items.map((row) => row.id);
+  const pageIds = useMemo(() => props.page.items.map((row) => row.id), [props.page.items]);
   const allPageSelected = pageIds.length > 0 && pageIds.every((skillId) => isSelected(props.selection, skillId));
 
-  const onRowCheck = (skillId: string, selected: boolean) => {
+  const onRowCheck = useCallback((skillId: string, selected: boolean) => {
     if (props.selection.kind === "all_filtered") {
       props.onSelectionChange(excludeFromAllFiltered(props.selection, skillId, !selected));
       return;
     }
     props.onSelectionChange(selectExplicit(props.selection, [skillId], selected));
-  };
+  }, [props.onSelectionChange, props.selection]);
+
+  const meta = useMemo(
+    () => ({ onRowCheck, selection: props.selection, t }),
+    [onRowCheck, props.selection, t],
+  );
+  const columnVisibility = useMemo(
+    () => Object.fromEntries(COLUMN_IDS.map((id) => [id, visibleColumns.has(id)])),
+    [visibleColumns],
+  );
 
   const table = useReactTable({
     columns,
@@ -262,11 +274,11 @@ export function SkillTable(props: SkillTableProps) {
     getRowId: (row) => row.id,
     manualPagination: true,
     manualSorting: true,
-    meta: { onRowCheck, selection: props.selection, t },
+    meta,
     pageCount,
     state: {
       columnOrder,
-      columnVisibility: Object.fromEntries(COLUMN_IDS.map((id) => [id, visibleColumns.has(id)])),
+      columnVisibility,
       pagination: { pageIndex: props.query.page - 1, pageSize: props.query.pageSize },
       sorting: [{ desc: props.query.sort.direction === "desc", id: props.query.sort.column }],
     },
