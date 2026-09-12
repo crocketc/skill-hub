@@ -168,7 +168,8 @@
       "perSource": "{{source}}：{{count}} 个候选",
       "remove": "移除",
       "removeSource": "移除来源 {{source}}",
-      "removeAllSources": "移除全部来源"
+      "removeAllSources": "移除全部来源",
+      "perSourceFailed": "{{source}}：{{reason}}"
     },
     "cancelled": "获取已取消，来源内容仍然保留。",
     "source": {
@@ -338,6 +339,22 @@
         "passed": "通过",
         "failed": "失败"
       }
+    },
+    "sources": {
+      "heading": "已选来源",
+      "description": "这些目录将参与导入。扫描后才产生候选；未扫描的来源保持待扫描状态。",
+      "status": {
+        "unscanned": "未扫描",
+        "count": "{{count}} 个候选",
+        "failed": "扫描失败"
+      },
+      "remove": "移除",
+      "removeSource": "移除已选来源 {{source}}",
+      "markForRemoval": "选中来源 {{source}} 以便批量删除",
+      "removeSelected": "删除所选（{{count}}）",
+      "clearAll": "全部清空",
+      "retry": "重试扫描",
+      "retrySource": "重新扫描 {{source}}"
     }
   },
   "discovery": {

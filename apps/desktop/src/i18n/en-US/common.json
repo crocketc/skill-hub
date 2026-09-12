@@ -168,7 +168,8 @@
       "perSource": "{{source}}: {{count}} candidate(s)",
       "remove": "Remove",
       "removeSource": "Remove source {{source}}",
-      "removeAllSources": "Remove all sources"
+      "removeAllSources": "Remove all sources",
+      "perSourceFailed": "{{source}}: {{reason}}"
     },
     "cancelled": "Acquisition was cancelled. Your source is still here.",
     "source": {
@@ -338,6 +339,22 @@
         "passed": "Passed",
         "failed": "Failed"
       }
+    },
+    "sources": {
+      "heading": "Selected sources",
+      "description": "These directories take part in the import. Candidates appear after scanning; unscanned sources stay pending.",
+      "status": {
+        "unscanned": "Not scanned",
+        "count": "{{count}} candidates",
+        "failed": "Scan failed"
+      },
+      "remove": "Remove",
+      "removeSource": "Remove selected source {{source}}",
+      "markForRemoval": "Mark source {{source}} for removal",
+      "removeSelected": "Remove selected ({{count}})",
+      "clearAll": "Clear all",
+      "retry": "Retry scan",
+      "retrySource": "Rescan {{source}}"
     }
   },
   "discovery": {

@@ -1,9 +1,10 @@
 import { act, screen, render, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { I18nextProvider } from "react-i18next";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createSkillHubI18n } from "../../i18n";
 import { createOperationTracker } from "../../platform/operationTracker";
+import { clearSessionSelectedSources } from "./sessionSources";
 import { createMockImportFacade, unavailableImportFacade, type ImportPlan, type ImportResult } from "./api";
 import { ImportWizard } from "./ImportWizard";
 
@@ -31,6 +32,11 @@ async function renderGuidedWizard(facade = createMockImportFacade({ scenario: "s
   );
   return facade;
 }
+
+// M-29：会话内已选来源是模块级单例；每个用例从干净状态开始。
+beforeEach(() => {
+  clearSessionSelectedSources();
+});
 
 it("exposes the unified step rail and keeps the primary action in a stable footer", async () => {
   const user = userEvent.setup();
@@ -63,26 +69,59 @@ it("exposes the unified step rail and keeps the primary action in a stable foote
   expect(footerAfter).toBe(footerBefore);
 });
 
-it("keeps the acquisition failure alert visible and recovers through the footer retry", async () => {
+it("reports a per-source scan failure with its own reason and single-source retry", async () => {
+  const user = userEvent.setup();
+  const facade = createMockImportFacade({ scenario: "safe-local" });
+  const healthyAcquire = facade.acquireCandidates.bind(facade);
+  facade.acquireCandidates = vi.fn(async (source, signal) => {
+    if (source.displayTarget === "C:/broken/skills") {
+      throw new Error("simulated per-source failure");
+    }
+    return healthyAcquire(source, signal);
+  });
+  await renderGuidedWizard(facade);
+
+  // 追加一个必然失败的来源目录。
+  await user.clear(screen.getByLabelText("来源"));
+  await user.type(screen.getByLabelText("来源"), "C:/broken/skills");
+  await user.click(screen.getByRole("button", { name: "添加到已选来源" }));
+  await user.click(screen.getByRole("button", { name: "读取已选目录候选" }));
+
+  // 门槛页：成功来源照常显示候选数；失败来源显示自己的原因，不影响其他目录。
+  expect(await screen.findByText("C:/codex/skills：2 个候选")).toBeVisible();
+  expect(screen.getByText("C:/claude/skills：2 个候选")).toBeVisible();
+  expect(screen.getByText(/C:\/broken\/skills：simulated per-source failure/)).toBeVisible();
+  // 其他目录的候选仍可继续，不被失败目录拖累。
+  expect(screen.getByRole("button", { name: "继续选择候选" })).toBeEnabled();
+
+  // 修复后单独重试：只重新扫描失败的那一个目录。
+  facade.acquireCandidates = healthyAcquire;
+  await user.click(screen.getByRole("button", { name: "重新扫描 C:/broken/skills" }));
+
+  expect(await screen.findByText("C:/broken/skills：2 个候选")).toBeVisible();
+  expect(screen.queryByText(/simulated per-source failure/)).not.toBeInTheDocument();
+  // 初次扫描中失败目录在进入 mock 记录前即抛错；重试恰好补上一次读取。
+  expect(facade.calls.acquiredSources).toEqual([
+    "C:/codex/skills",
+    "C:/claude/skills",
+    "C:/broken/skills",
+  ]);
+});
+
+it("keeps the gate honest when every source fails and offers per-source retry", async () => {
   const user = userEvent.setup();
   const facade = createMockImportFacade({ scenario: "safe-local" });
   facade.acquireCandidates = vi.fn(async () => {
-    throw new Error("simulated acquisition failure");
+    throw new Error("simulated total failure");
   });
   await renderWizard(facade);
 
   await user.type(screen.getByLabelText("来源"), "C:/skills/pdf");
   await user.click(screen.getByRole("button", { name: "解析来源" }));
 
-  // 失败态：告警、来源表单与底部重试并存，不合并成单一提示。
-  expect(await screen.findByRole("alert")).toBeVisible();
-  expect(screen.getByLabelText("来源")).toBeVisible();
-  const retry = screen.getByRole("button", { name: "重试" });
-  expect(retry.closest("footer")).not.toBeNull();
-
-  await user.click(retry);
-  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-  expect(screen.getByLabelText("来源")).toBeVisible();
+  expect(await screen.findByText(/C:\/skills\/pdf：simulated total failure/)).toBeVisible();
+  expect(screen.getByRole("button", { name: "继续选择候选" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "重新扫描 C:/skills/pdf" })).toBeEnabled();
 });
 
 it("keeps the wizard recoverable when the host facade is unavailable", async () => {
@@ -294,6 +333,138 @@ it("adds a manual directory alongside scanned sources for mixed import", async (
     "C:/claude/skills",
     "C:/windsurf/skills",
   ]);
+});
+
+it("shows a manually added directory in the selected list immediately without scanning", async () => {
+  const user = userEvent.setup();
+  const facade = await renderGuidedWizard();
+
+  await user.clear(screen.getByLabelText("来源"));
+  await user.type(screen.getByLabelText("来源"), "C:/windsurf/skills");
+  await user.click(screen.getByRole("button", { name: "添加到已选来源" }));
+
+  // 无需任何扫描动作：已选来源立即出现，并带明确的"未扫描"状态。
+  const list = screen.getByRole("list", { name: "已选来源" });
+  const items = within(list).getAllByRole("listitem");
+  expect(items).toHaveLength(3);
+  expect(within(items[2]).getByText("C:/windsurf/skills")).toBeVisible();
+  expect(within(items[2]).getByText("未扫描")).toBeVisible();
+  // 既有来源保持已选状态（会话内可见），未扫描的来源不会被隐藏。
+  expect(within(items[0]).getByText("C:/codex/skills")).toBeVisible();
+  expect(facade.calls.acquiredSources).toEqual([]);
+});
+
+it("keeps a selected source visible with its scan result after returning to the source step", async () => {
+  const user = userEvent.setup();
+  await renderGuidedWizard();
+
+  await user.click(screen.getByRole("button", { name: "读取已选目录候选" }));
+  await user.click(await screen.findByRole("button", { name: "继续选择候选" }));
+  // 返回上一步：已选来源与每个目录的候选数仍然可见。
+  await user.click(screen.getByRole("button", { name: "上一步" }));
+
+  const list = screen.getByRole("list", { name: "已选来源" });
+  const items = within(list).getAllByRole("listitem");
+  expect(items).toHaveLength(2);
+  expect(within(items[0]).getByText("2 个候选")).toBeVisible();
+  expect(within(items[1]).getByText("2 个候选")).toBeVisible();
+});
+
+it("deduplicates a repeated directory and focuses the existing entry", async () => {
+  const user = userEvent.setup();
+  await renderGuidedWizard();
+
+  await user.clear(screen.getByLabelText("来源"));
+  await user.type(screen.getByLabelText("来源"), "C:/codex/skills");
+  await user.click(screen.getByRole("button", { name: "添加到已选来源" }));
+
+  // 去重：不新增重复条目；高亮/聚焦已有条目。
+  const list = screen.getByRole("list", { name: "已选来源" });
+  expect(within(list).getAllByRole("listitem")).toHaveLength(2);
+  const codexItem = within(list).getByText("C:/codex/skills").closest("li");
+  expect(document.activeElement).toBe(codexItem);
+});
+
+it("removes selected sources individually, in bulk, and all at once from the list", async () => {
+  const user = userEvent.setup();
+  await renderGuidedWizard();
+
+  await user.clear(screen.getByLabelText("来源"));
+  await user.type(screen.getByLabelText("来源"), "C:/windsurf/skills");
+  await user.click(screen.getByRole("button", { name: "添加到已选来源" }));
+
+  // 逐条删除。
+  await user.click(screen.getByRole("button", { name: "移除已选来源 C:/codex/skills" }));
+  const list = screen.getByRole("list", { name: "已选来源" });
+  expect(within(list).getAllByRole("listitem")).toHaveLength(2);
+
+  // 多选删除。
+  await user.click(screen.getByRole("checkbox", { name: "选中来源 C:/claude/skills 以便批量删除" }));
+  await user.click(screen.getByRole("checkbox", { name: "选中来源 C:/windsurf/skills 以便批量删除" }));
+  await user.click(screen.getByRole("button", { name: "删除所选（2）" }));
+  expect(screen.queryByRole("list", { name: "已选来源" })).not.toBeInTheDocument();
+
+  // 清空后重新添加一个来源，再全部清空。
+  await user.type(screen.getByLabelText("来源"), "C:/solo/skills");
+  await user.click(screen.getByRole("button", { name: "添加到已选来源" }));
+  expect(screen.getByRole("list", { name: "已选来源" })).toBeVisible();
+  await user.click(screen.getByRole("button", { name: "全部清空" }));
+  expect(screen.queryByRole("list", { name: "已选来源" })).not.toBeInTheDocument();
+});
+
+it("restores the selected sources when the wizard reopens in the same session", async () => {
+  const user = userEvent.setup();
+  const facade = createMockImportFacade({ scenario: "safe-local" });
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  const { unmount } = render(
+    <I18nextProvider i18n={i18n}>
+      <ImportWizard facade={facade} initialSources={["C:/codex/skills"]} />
+    </I18nextProvider>,
+  );
+  await user.clear(screen.getByLabelText("来源"));
+  await user.type(screen.getByLabelText("来源"), "C:/extra/skills");
+  await user.click(screen.getByRole("button", { name: "添加到已选来源" }));
+  unmount();
+
+  // 取消/关闭向导后再次进入：已选来源保留（会话内）；落库仍只发生在提交。
+  render(
+    <I18nextProvider i18n={i18n}>
+      <ImportWizard facade={facade} />
+    </I18nextProvider>,
+  );
+  const list = screen.getByRole("list", { name: "已选来源" });
+  expect(within(list).getByText("C:/codex/skills")).toBeVisible();
+  expect(within(list).getByText("C:/extra/skills")).toBeVisible();
+  expect(facade.calls.acquiredSources).toEqual([]);
+});
+
+it("keeps onboarding selections local instead of restoring them from the session store", async () => {
+  const user = userEvent.setup();
+  const picker = { pickDirectory: vi.fn(async () => "C:/picked/skills") };
+  const facade = createMockImportFacade({ scenario: "safe-local" });
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  const first = render(
+    <I18nextProvider i18n={i18n}>
+      <ImportWizard
+        directoryPicker={picker}
+        facade={facade}
+        initialSources={["C:/codex/skills"]}
+        variant="onboarding"
+      />
+    </I18nextProvider>,
+  );
+  await user.click(screen.getByRole("button", { name: "选择本地目录" }));
+  first.unmount();
+
+  render(
+    <I18nextProvider i18n={i18n}>
+      <ImportWizard facade={facade} initialSources={["C:/codex/skills"]} variant="onboarding" />
+    </I18nextProvider>,
+  );
+  const list = screen.getByRole("list", { name: "已选来源" });
+  const items = within(list).getAllByRole("listitem");
+  expect(items).toHaveLength(1);
+  expect(within(items[0]).getByText("C:/codex/skills")).toBeVisible();
 });
 
 it("keeps the onboarding import to reading the selected directory candidates", async () => {
@@ -662,9 +833,11 @@ describe("AI import pre-check", () => {
     await user.type(screen.getByLabelText("来源"), "C:/skills/pdf");
     await user.click(screen.getByRole("button", { name: "解析来源" }));
 
-    expect(await screen.findByRole("alert")).toHaveTextContent(
-      "导入步骤未能完成（host.weird_failure）。",
-    );
+    // M-29：未知失败码按目录落到来源行，仍以可读文案呈现，绝不出裸码。
+    expect(
+      await screen.findByText(/C:\/skills\/pdf：导入步骤未能完成（host\.weird_failure）。/),
+    ).toBeVisible();
+    expect(screen.queryByText(/host\.weird_failure：/)).not.toBeInTheDocument();
   });
 
   it("keeps the wizard importable when the facade cannot run pre-checks", async () => {

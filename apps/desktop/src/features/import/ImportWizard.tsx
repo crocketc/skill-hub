@@ -10,6 +10,7 @@ import {
 } from "./CandidateSelection";
 import {
   ImportCancelledError,
+  ImportUnavailableError,
   type ImportAction,
   type ImportAiPreCheckReport,
   type ImportFacade,
@@ -17,11 +18,13 @@ import {
   type ImportProgress,
   type ImportResult,
   type SourceDescriptor,
+  type SourceScanStatus,
   unavailableImportFacade,
 } from "./api";
 import { ImportShell, type ImportStatus, type ImportStep } from "./ImportShell";
 import { ImportSummary } from "./ImportSummary";
 import { SourceInput } from "./SourceInput";
+import { readSessionSelectedSources, writeSessionSelectedSources } from "./sessionSources";
 import {
   desktopDirectoryPicker,
   normalizeWindowsPath,
@@ -46,6 +49,12 @@ type WizardPhase =
   | "failed"
   | "cancelled";
 
+/** M-29：来源扫描结果——按目录记录候选数或失败原因，未扫描的来源不在此列。 */
+interface SourceScanResult {
+  source: string;
+  status: SourceScanStatus;
+}
+
 interface WizardState {
   phase: WizardPhase;
   previousPhase?: WizardPhase;
@@ -59,15 +68,20 @@ interface WizardState {
   actions: Record<string, ImportAction>;
   commitProgress?: ImportProgress;
   results: ImportResult[];
-  sourceCounts?: { source: string; count: number }[];
+  /** M-29：每个已扫描目录的结果（候选数/失败原因）；保持扫描顺序。 */
+  sourceResults: SourceScanResult[];
+  /** M-29：单个失败目录重试中（显示进行中状态）。 */
+  retryingSource?: string;
   error?: string;
 }
 
 type WizardEvent =
   | { type: "source_changed"; value: string }
+  | { type: "back_to_sources" }
   | { type: "parse_started" }
   | { type: "parse_succeeded"; descriptor: SourceDescriptor }
-  | { type: "acquire_succeeded"; candidates: WizardState["candidates"]; sourceCounts: { source: string; count: number }[]; candidatesBySource: WizardState["candidatesBySource"] }
+  | { type: "acquire_succeeded"; candidates: WizardState["candidates"]; sourceResults: SourceScanResult[]; candidatesBySource: WizardState["candidatesBySource"] }
+    | { type: "source_added"; source: string; inputValue: string }
   | { type: "source_removed"; source: string }
   | { type: "sources_cleared" }
   | { type: "show_candidates" }
@@ -78,6 +92,8 @@ type WizardEvent =
   | { type: "commit_started"; total: number }
   | { type: "commit_progress"; progress: ImportProgress }
   | { type: "commit_succeeded"; results: ImportResult[] }
+  | { type: "source_rescan_started"; source: string }
+  | { type: "source_rescan_finished"; source: string; status: SourceScanStatus; candidates: WizardState["candidates"] }
   | { type: "failed"; error: string; previousPhase: WizardPhase }
   | { type: "cancelled" }
   | { type: "retry" };
@@ -89,8 +105,22 @@ const initialState: WizardState = {
   phase: "source",
   results: [],
   selectedIds: [],
+  sourceResults: [],
   sourceText: "",
 };
+
+/** M-29：把重扫结果并入按目录结果列表——已有条目原位替换，新条目追加。 */
+function upsertSourceResult(
+  results: SourceScanResult[],
+  source: string,
+  status: SourceScanStatus,
+): SourceScanResult[] {
+  const existing = results.findIndex((result) => result.source === source);
+  if (existing === -1) return [...results, { source, status }];
+  return results.map((result, index) =>
+    index === existing ? { source, status } : result,
+  );
+}
 
 function reducer(state: WizardState, event: WizardEvent): WizardState {
   switch (event.type) {
@@ -105,11 +135,26 @@ function reducer(state: WizardState, event: WizardEvent): WizardState {
         plan: undefined,
         commitProgress: undefined,
         selectedIds: [],
-        sourceCounts: undefined,
+        sourceResults: [],
+        retryingSource: undefined,
         sourceText: event.value,
       };
+    case "back_to_sources":
+      // M-29：返回来源步骤——已选列表与每个目录的最近扫描结果保留，
+      // 只清空派生的候选选择；再次扫描会刷新这些结果。
+      return {
+        ...state,
+        actions: {},
+        candidates: [],
+        candidatesBySource: [],
+        commitProgress: undefined,
+        error: undefined,
+        phase: "source",
+        plan: undefined,
+        selectedIds: [],
+      };
     case "parse_started":
-      return { ...state, error: undefined, phase: "acquiring" };
+      return { ...state, error: undefined, phase: "acquiring", retryingSource: undefined };
     case "parse_succeeded":
       return { ...state, descriptor: event.descriptor };
     case "acquire_succeeded":
@@ -119,29 +164,38 @@ function reducer(state: WizardState, event: WizardEvent): WizardState {
         candidatesBySource: event.candidatesBySource,
         error: undefined,
         phase: "candidate_gate",
-        sourceCounts: event.sourceCounts,
+        retryingSource: undefined,
+        sourceResults: event.sourceResults,
+      };
+    case "source_added":
+      // M-29：追加来源立即进入已选列表（未扫描），不清空已有扫描结果；
+      // inputValue 决定输入框内容（手动添加清空，本机选取保留路径）。
+      return {
+        ...state,
+        error: undefined,
+        sourceResults: upsertSourceResult(state.sourceResults, event.source, { kind: "unscanned" }),
+        sourceText: event.inputValue,
       };
     case "source_removed": {
-      // AR-006：局部调整来源——仅丢弃被移除来源的候选，其余保留。
+      // AR-006/M-29：局部调整来源——仅丢弃被移除来源的候选与结果，其余保留；
+      // 阶段保持不变（来源页删除停在来源页，门槛页删除停在门槛页）。
       const remaining = state.candidatesBySource.filter(
         (entry) => entry.source !== event.source,
       );
-      const remainingCounts = remaining.map((entry) => ({
-        source: entry.source,
-        count: entry.candidates.length,
-      }));
+      const remainingResults = state.sourceResults.filter(
+        (result) => result.source !== event.source,
+      );
       const remainingCandidates = remaining.flatMap((entry) => entry.candidates);
       const remainingIds = new Set(remainingCandidates.map((candidate) => candidate.id));
-      if (remaining.length === 0) {
+      if (remaining.length === 0 && remainingResults.length === 0) {
         return { ...initialState, sourceText: state.sourceText };
       }
       return {
         ...state,
         candidates: remainingCandidates,
         candidatesBySource: remaining,
-        phase: "candidate_gate",
         selectedIds: state.selectedIds.filter((id) => remainingIds.has(id)),
-        sourceCounts: remainingCounts,
+        sourceResults: remainingResults,
       };
     }
     case "sources_cleared":
@@ -167,10 +221,32 @@ function reducer(state: WizardState, event: WizardEvent): WizardState {
       return { ...state, commitProgress: event.progress };
     case "commit_succeeded":
       return { ...state, commitProgress: undefined, error: undefined, phase: "summary", results: event.results };
+    case "source_rescan_started":
+      // M-29：单个失败目录重试——其余目录的候选与结果保持不动。
+      return { ...state, error: undefined, phase: "acquiring", retryingSource: event.source };
+    case "source_rescan_finished": {
+      const others = state.candidatesBySource.filter(
+        (entry) => entry.source !== event.source,
+      );
+      const candidatesBySource = event.status.kind === "scanned"
+        ? [...others, { source: event.source, candidates: event.candidates }]
+        : others;
+      const candidates = candidatesBySource.flatMap((entry) => entry.candidates);
+      const remainingIds = new Set(candidates.map((candidate) => candidate.id));
+      return {
+        ...state,
+        candidates,
+        candidatesBySource,
+        phase: "candidate_gate",
+        retryingSource: undefined,
+        selectedIds: state.selectedIds.filter((id) => remainingIds.has(id)),
+        sourceResults: upsertSourceResult(state.sourceResults, event.source, event.status),
+      };
+    }
     case "failed":
       return { ...state, error: event.error, phase: "failed", previousPhase: event.previousPhase };
     case "cancelled":
-      return { ...state, error: undefined, phase: "cancelled", previousPhase: "source" };
+      return { ...state, error: undefined, phase: "cancelled", previousPhase: "source", retryingSource: undefined };
     case "retry":
       return {
         ...state,
@@ -235,7 +311,13 @@ export function ImportWizard({
   const normalizedInitialSources = Array.from(new Set(initialSources.map(normalizeWindowsPath)));
   const normalizedInitialSourceText = normalizeWindowsPath(initialSourceText);
   const [state, dispatch] = useReducer(reducer, { ...initialState, sourceText: normalizedInitialSourceText });
-  const [selectedSources, setSelectedSources] = useState(normalizedInitialSources);
+  // M-29：标准变体的已选来源在会话内存续——重开向导后仍保留。
+  const [selectedSources, setSelectedSources] = useState<string[]>(() => {
+    if (variant !== "standard") return normalizedInitialSources;
+    return Array.from(new Set([...readSessionSelectedSources(), ...normalizedInitialSources]));
+  });
+  // M-29：重复添加同一目录时聚焦已有条目（展示层状态）。
+  const [focusedSource, setFocusedSource] = useState<string>();
   const [pickerError, setPickerError] = useState<string | null>(null);
   // AR-014 导入互斥：已有后台导入进行中时禁止第二次提交。
   const importLocked = useHasRunningOperation(tracker, "import");
@@ -249,10 +331,22 @@ export function ImportWizard({
   const [aiPreCheckError, setAiPreCheckError] = useState<string | null>(null);
   const [aiPreCheckSkipped, setAiPreCheckSkipped] = useState(false);
 
+  // M-29：已选来源同步进会话存储（标准变体）；副作用集中在 effect，避免渲染期写入。
+  useEffect(() => {
+    if (variant === "standard") writeSessionSelectedSources(selectedSources);
+  }, [selectedSources, variant]);
+
   // 互斥的 import 结束后自动解除本地锁定提示。
   useEffect(() => {
     if (!importLocked) setCommitBlockedNotice(false);
   }, [importLocked]);
+
+  const statusBySource: Record<string, SourceScanStatus> = {};
+  const selectedSet = new Set(selectedSources);
+  for (const result of state.sourceResults) {
+    // 只向来源列表暴露仍处于已选状态的目录状态；门槛页使用完整扫描结果。
+    if (selectedSet.has(result.source)) statusBySource[result.source] = result.status;
+  }
 
   const runAcquisition = async () => {
     const operation = ++operationRef.current;
@@ -261,28 +355,38 @@ export function ImportWizard({
     dispatch({ type: "parse_started" });
     try {
       const inputs = selectedSources.length > 0 ? selectedSources : [state.sourceText];
-      const descriptors = [];
-      const sourceCounts: { source: string; count: number }[] = [];
+      const sourceResults: SourceScanResult[] = [];
       const candidatesBySource: WizardState["candidatesBySource"] = [];
-      const candidates = [];
+      const candidates: WizardState["candidates"] = [];
+      let firstDescriptor: SourceDescriptor | undefined;
       for (const input of inputs) {
-        const descriptor = await facade.parseSource(input);
-        if (operation !== operationRef.current) return;
-        descriptors.push(descriptor);
+        // M-29：逐目录扫描——单目录失败记录该目录原因并继续，不影响其他目录。
+        try {
+          const descriptor = await facade.parseSource(input);
+          if (operation !== operationRef.current) return;
+          const acquired = await facade.acquireCandidates(descriptor, controller.signal);
+          if (operation !== operationRef.current) return;
+          firstDescriptor = firstDescriptor ?? descriptor;
+          candidates.push(...acquired);
+          candidatesBySource.push({ source: input, candidates: acquired });
+          sourceResults.push({ source: input, status: { kind: "scanned", count: acquired.length } });
+        } catch (error) {
+          if (operation !== operationRef.current) return;
+          // 取消与"宿主未提供导入能力"是流程级事件：前者走取消态，
+          // 后者保持全局失败+重试（单目录重试解决不了环境缺失）。
+          if (error instanceof ImportCancelledError) throw error;
+          if (error instanceof ImportUnavailableError) throw error;
+          sourceResults.push({
+            source: input,
+            status: {
+              kind: "failed",
+              reason: describeNativeError(error, (key, options) => String(t(key as never, options as never)), "importWorkflow.errors.generic"),
+            },
+          });
+        }
       }
-      if (operation !== operationRef.current) return;
-      const descriptor = descriptors[0];
-      if (!descriptor) throw new Error(t("importWorkflow.errors.emptySource"));
-      dispatch({ type: "parse_succeeded", descriptor });
-      for (let index = 0; index < descriptors.length; index += 1) {
-        if (operation !== operationRef.current) return;
-        const acquired = await facade.acquireCandidates(descriptors[index], controller.signal);
-        candidates.push(...acquired);
-        sourceCounts.push({ source: inputs[index], count: acquired.length });
-        candidatesBySource.push({ source: inputs[index], candidates: acquired });
-      }
-      if (operation !== operationRef.current) return;
-      dispatch({ type: "acquire_succeeded", candidates, sourceCounts, candidatesBySource });
+      if (firstDescriptor) dispatch({ type: "parse_succeeded", descriptor: firstDescriptor });
+      dispatch({ type: "acquire_succeeded", candidates, sourceResults, candidatesBySource });
     } catch (error) {
       if (operation !== operationRef.current) return;
       if (error instanceof ImportCancelledError) {
@@ -303,8 +407,11 @@ type: "failed",
       const path = await directoryPicker.pickDirectory();
       if (!path) return;
       const normalized = normalizeWindowsPath(path);
+      // M-29：本机选取的目录直接进入已选来源列表（未扫描），同时保留
+      // 在输入框中，用户可以继续追加或直接读取候选。
       setSelectedSources((current) => [...new Set([...current, normalized])]);
-      dispatch({ type: "source_changed", value: normalized });
+      setFocusedSource(normalized);
+      dispatch({ type: "source_added", inputValue: normalized, source: normalized });
     } catch (error) {
       setPickerError(error instanceof Error ? error.message : t("importWorkflow.source.pickerFailed"));
     }
@@ -317,10 +424,15 @@ type: "failed",
     dispatch({ type: "cancelled" });
   };
 
-  // AR-006：门槛页局部移除来源——同步勾选列表，避免后续重读时又带上。
+  // AR-006：局部移除来源——同步勾选列表，避免后续重读时又带上。
   const removeSource = (source: string) => {
     setSelectedSources((current) => current.filter((item) => item !== source));
     dispatch({ type: "source_removed", source });
+  };
+
+  // M-29：多选删除——逐个来源走同一条移除路径。
+  const removeSources = (sources: string[]) => {
+    for (const source of sources) removeSource(source);
   };
 
   const clearSources = () => {
@@ -328,13 +440,54 @@ type: "failed",
     dispatch({ type: "sources_cleared" });
   };
 
-  // AR-006：混合导入——手动目录追加进已选扫描来源，不再整体清空。
+  // AR-006/M-29：混合导入——手动目录追加进已选来源列表并立即可见（未扫描）；
+  // 重复添加去重并聚焦已有条目。
   const addManualSource = async (source: string) => {
     const normalized = normalizeWindowsPath(source);
-    if (!normalized.trim() || selectedSources.includes(normalized)) return;
+    if (!normalized.trim()) return;
+    if (selectedSources.includes(normalized)) {
+      setFocusedSource(normalized);
+      return;
+    }
     await facade.parseSource(normalized);
     setSelectedSources((current) => [...new Set([...current, normalized])]);
-    dispatch({ type: "source_changed", value: "" });
+    setFocusedSource(normalized);
+    dispatch({ type: "source_added", inputValue: "", source: normalized });
+  };
+
+  // M-29：单个失败目录的重试——只重扫该目录，不惊动其他目录的候选。
+  const rescanSource = async (source: string) => {
+    const operation = ++operationRef.current;
+    const controller = new AbortController();
+    abortRef.current = controller;
+    dispatch({ type: "source_rescan_started", source });
+    try {
+      const descriptor = await facade.parseSource(source);
+      if (operation !== operationRef.current) return;
+      const acquired = await facade.acquireCandidates(descriptor, controller.signal);
+      if (operation !== operationRef.current) return;
+      dispatch({
+        candidates: acquired,
+        source,
+        status: { kind: "scanned", count: acquired.length },
+        type: "source_rescan_finished",
+      });
+    } catch (error) {
+      if (operation !== operationRef.current) return;
+      if (error instanceof ImportCancelledError) {
+        dispatch({ type: "cancelled" });
+        return;
+      }
+      dispatch({
+        source,
+        status: {
+          kind: "failed",
+          reason: describeNativeError(error, (key, options) => String(t(key as never, options as never)), "importWorkflow.errors.generic"),
+        },
+        type: "source_rescan_finished",
+        candidates: [],
+      });
+    }
   };
 
   const analyze = async () => {
@@ -443,7 +596,7 @@ type: "failed",
               : t("importWorkflow.source.parse")}
           </Button>,
         ],
-        secondary: variant !== "onboarding" && selectedSources.length > 0
+        secondary: variant !== "onboarding"
           ? [
               <Button
                 disabled={!state.sourceText.trim()}
@@ -470,7 +623,12 @@ type: "failed",
     case "candidate_gate":
       actions = {
         primary: [
-          <Button key="gate-continue" onClick={() => dispatch({ type: "show_candidates" })} size="lg">
+          <Button
+            disabled={state.candidates.length === 0}
+            key="gate-continue"
+            onClick={() => dispatch({ type: "show_candidates" })}
+            size="lg"
+          >
             {t("importWorkflow.source.continueCandidates")}
           </Button>,
         ],
@@ -492,7 +650,7 @@ type: "failed",
         secondary: [
           <Button
             key="back"
-            onClick={() => dispatch({ type: "source_changed", value: state.sourceText })}
+            onClick={() => dispatch({ type: "back_to_sources" })}
             variant="ghost"
           >
             {t("actions.back")}
@@ -587,11 +745,16 @@ type: "failed",
         <SourceInput
           descriptor={state.descriptor}
           disabled={state.phase === "acquiring"}
+          focusedSource={focusedSource}
           onChange={(value) => {
             // AR-006：输入手动来源不再清空已选扫描来源（混合导入）。
             dispatch({ type: "source_changed", value: normalizeWindowsPath(value) });
           }}
+          onClearSources={clearSources}
+          onFocusedSourceApplied={() => setFocusedSource(undefined)}
           onPickLocalPath={() => void pickLocalDirectory()}
+          onRemoveSource={removeSource}
+          onRemoveSources={removeSources}
           onSelectAllSources={() => setSelectedSources((current) => {
             const allSelected = normalizedInitialSources.every((source) => current.includes(source));
             if (allSelected) {
@@ -601,6 +764,7 @@ type: "failed",
           })}
           onToggleSource={(source) => setSelectedSources((current) => current.includes(source) ? current.filter((item) => item !== source) : [...current, source])}
           selectedSources={selectedSources}
+          sourceStatuses={statusBySource}
           suggestedSources={normalizedInitialSources}
           value={state.sourceText}
         />
@@ -612,13 +776,31 @@ type: "failed",
 
       {state.phase === "candidate_gate" ? (
         <div className="sh-import-wizard__gate" role="status">
-          {state.sourceCounts && state.sourceCounts.length > 0 ? (
+          {state.sourceResults.length > 0 ? (
             <>
-              <p>{t("importWorkflow.acquisition.multiSource", { count: state.sourceCounts.length })}</p>
+              <p>{t("importWorkflow.acquisition.multiSource", { count: state.sourceResults.filter((result) => result.status.kind === "scanned").length })}</p>
               <ul>
-                {state.sourceCounts.map(({ source, count }) => (
+                {state.sourceResults.map(({ source, status: scanStatus }) => (
                   <li key={source}>
-                    {t("importWorkflow.acquisition.perSource", { source, count })}
+                    {scanStatus.kind === "failed" ? (
+                      <>
+                        {t("importWorkflow.acquisition.perSourceFailed", { reason: scanStatus.reason, source })}
+                        <Button
+                          aria-label={t("importWorkflow.sources.retrySource", { source })}
+                          disabled={state.phase !== "candidate_gate"}
+                          loading={state.retryingSource === source}
+                          onClick={() => void rescanSource(source)}
+                          size="sm"
+                          variant="secondary"
+                        >
+                          {t("importWorkflow.sources.retry")}
+                        </Button>
+                      </>
+                    ) : (
+                      <>
+                        {t("importWorkflow.acquisition.perSource", { count: scanStatus.count, source })}
+                      </>
+                    )}
                     <Button
                       aria-label={t("importWorkflow.acquisition.removeSource", { source })}
                       disabled={state.phase !== "candidate_gate"}

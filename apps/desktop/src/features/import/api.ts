@@ -93,6 +93,12 @@ export interface ImportProgress {
   total: number;
 }
 
+/** M-29：来源分层——每个已选目录的扫描状态；未扫描也必须可见。 */
+export type SourceScanStatus =
+  | { kind: "unscanned" }
+  | { kind: "scanned"; count: number }
+  | { kind: "failed"; reason: string };
+
 /** One per-object result of the optional AI import pre-check (US-016). */
 export interface ImportAiPreCheckOutcome {
   candidateId: string;
