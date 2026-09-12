@@ -18,7 +18,6 @@ import { Icon } from "../../ui/Icon";
 import type { SkillLibraryReturnState } from "../skill-detail/detailContext";
 import {
   DEFAULT_DRAWER_PREFERENCES,
-  type BatchAction,
   type CheckState,
   type DrawerModuleId,
   type DrawerPreset,
@@ -492,37 +491,20 @@ function IdentityRegion({
 }
 
 interface PrimaryActionsProps extends ModuleProps {
-  facade: SkillLibraryFacade;
   onDelete?: (skillId: string, skillName: string) => void;
 }
 
-function PrimaryActions({ facade, onDelete, view }: PrimaryActionsProps) {
+function PrimaryActions({ onDelete, view }: PrimaryActionsProps) {
   const { t } = useTranslation();
-  const emitIntent = (action: BatchAction) => {
-    void facade
-      .emitBatchIntent({
-        action,
-        target: { kind: "skill_ids", skillIds: [view.id] },
-      })
-      .catch(() => undefined);
-  };
+  // 加入组合/安全检查/导出/归档依赖的 emitBatchIntent 在生产未绑定后端
+  // 命令（bindings 无 emit_batch_intent），按钮此前只会静默失败。按诚实
+  // 缺省原则移除入口，后端能力落地后再恢复；保留真实的删除动作。
+  if (!onDelete) return null;
   return (
     <section aria-label={t(MODULE_LABEL_KEYS.primary_actions)} className="sh-skill-drawer__actions">
-      <Button onClick={() => emitIntent("add_to")} size="sm">
-        {t("skillLibrary.drawer.actions.addTo")}
-      </Button>
-      <Button onClick={() => emitIntent("security_check")} size="sm" variant="secondary">
-        {t("skillLibrary.drawer.actions.securityCheck")}
-      </Button>
-      <Button onClick={() => emitIntent("export")} size="sm" variant="ghost">
-        {t("skillLibrary.drawer.actions.export")}
-      </Button>
-      <Button onClick={() => emitIntent("archive")} size="sm" variant="ghost">
-        {t("skillLibrary.drawer.actions.archive")}
-      </Button>
-      {onDelete ? <Button onClick={() => onDelete(view.id, view.name)} size="sm" variant="danger">
+      <Button onClick={() => onDelete(view.id, view.name)} size="sm" variant="danger">
         {t("skillLibrary.drawer.actions.delete")}
-      </Button> : null}
+      </Button>
     </section>
   );
 }
@@ -1102,7 +1084,7 @@ export function SkillQuickDrawer({
                 onRemoveTag={removeTag}
                 view={view}
               />
-              <PrimaryActions facade={facade} onDelete={onDelete} view={view} />
+              <PrimaryActions onDelete={onDelete} view={view} />
               <RiskSummary view={view} />
             </div>
           ) : null}

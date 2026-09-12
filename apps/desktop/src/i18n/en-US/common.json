@@ -1014,13 +1014,9 @@
     },
     "drawer": {
       "actions": {
-        "addTo": "Add to",
         "addTags": "Add tags",
-        "archive": "Archive",
         "delete": "Delete from library",
-        "export": "Export",
-        "removeTags": "Remove tags",
-        "securityCheck": "Run security check"
+        "removeTags": "Remove tags"
       },
       "configure": "Configure quick drawer",
       "description": "Skill summary, common actions, and configurable detail modules.",
@@ -1082,13 +1078,13 @@
         "lastUsed": "Last used: {{value}}",
         "license": "License",
         "note": "My note",
-      "originalDescription": "Original description",
-      "originalName": "Original name",
-      "ownership": "Ownership",
-      "purpose": "My purpose",
-      "projects": "Projects",
-      "source": "Source",
-      "tags": "Tags",
+        "originalDescription": "Original description",
+        "originalName": "Original name",
+        "ownership": "Ownership",
+        "purpose": "My purpose",
+        "projects": "Projects",
+        "source": "Source",
+        "tags": "Tags",
         "translatedDescription": "Translation",
         "upToDate": "Up to date",
         "updateAvailable": "Update available"
@@ -1144,10 +1140,10 @@
       "save": "Save current view",
       "unsaved": "Unsaved changes"
     },
-  "table": {
-    "agentDeploymentSummary": "Agent deployments: {{count}}",
-    "aliasLabel": "Alias",
-    "originalNameLabel": "Original name",
+    "table": {
+      "agentDeploymentSummary": "Agent deployments: {{count}}",
+      "aliasLabel": "Alias",
+      "originalNameLabel": "Original name",
       "aiStatus": "AI: {{state}}",
       "basicStatus": "Basic: {{state}}",
       "checkStates": {
@@ -1221,15 +1217,15 @@
       "empty": "No deployment relations yet. Deploy a Skill to see the matrix.",
       "hint": "The matrix shows Skills on the current page; ✓ means the Skill is deployed to that target."
     },
-  "groupMode": {
-    "label": "Group by",
-    "none": "No grouping",
-    "tags": "Group by tag"
-  },
-  "toolbar": {
-    "collapse": "Collapse view bar",
-    "expand": "Expand view bar"
-  },
+    "groupMode": {
+      "label": "Group by",
+      "none": "No grouping",
+      "tags": "Group by tag"
+    },
+    "toolbar": {
+      "collapse": "Collapse view bar",
+      "expand": "Expand view bar"
+    },
     "combinations": {
       "managerEntry": "Combination manager",
       "managerEyebrow": "Combination manager",

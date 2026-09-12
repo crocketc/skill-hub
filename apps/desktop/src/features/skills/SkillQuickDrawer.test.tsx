@@ -646,7 +646,7 @@ it("keeps preview full-detail links inside the development preview routes", asyn
   );
 });
 
-it("inherits reduced motion and emits only a single-skill action intent", async () => {
+it("inherits reduced motion without offering unwired single-skill intents", async () => {
   mockReducedMotion(true);
   const facade = createMockSkillLibraryFacade({ usageEvidence: undefined });
   await renderDrawer({ facade });
@@ -654,14 +654,11 @@ it("inherits reduced motion and emits only a single-skill action intent", async 
     "data-reduced-motion",
     "true",
   );
-  fireEvent.click(screen.getByRole("button", { name: "Add to" }));
-  await waitFor(() => {
-    expect(facade.calls.emitBatchIntent).toContainEqual({
-      action: "add_to",
-      target: { kind: "skill_ids", skillIds: ["skill-pdf"] },
-    });
-  });
-  expect(screen.queryByText(/completed/i)).not.toBeInTheDocument();
+  // 加入组合/安全检查/导出/归档依赖的 emitBatchIntent 生产未绑定，
+  // 按诚实缺省已从抽屉移除——不留静默失败的入口。
+  expect(screen.queryByRole("button", { name: "Add to" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Security check" })).not.toBeInTheDocument();
+  expect(facade.calls.emitBatchIntent).toHaveLength(0);
   expect(screen.getByRole("heading", { name: "Usage evidence" })).toBeVisible();
   expect(screen.queryByText(/0 invocations/i)).not.toBeInTheDocument();
 });
