@@ -1650,7 +1650,7 @@
     "choiceLabel": "Deployment handling",
     "choose": "Choose an action",
     "choices": {
-      "keep": "Keep the deployment relation (shared targets keep working)",
+      "keep": "Keep the deployed files at the target and remove the relation (the library record is deleted too)",
       "remove": "Delete the deployed copy at the target (undeploy)",
       "convert": "Convert to an independent copy (keep files, remove the deployment relation)"
     },

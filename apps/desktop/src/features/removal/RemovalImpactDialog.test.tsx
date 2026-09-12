@@ -39,6 +39,11 @@ it("names the object as deleting the library Skill and states retention and reco
   expect(options).toContain("转为独立副本（保留目标文件，移除部署关系）");
   expect(options).not.toContain("移除部署");
 
+  // “保留”选项必须如实：后端会解除部署关系、仅保留目标文件，
+  // 且库中记录随后删除——不得写成“保留部署关系”。
+  expect(options).toContain("保留目标处的部署文件，解除部署关系（库中记录一并删除）");
+  expect(options).not.toContain("保留部署关系（共享目标继续使用）");
+
   // 固定两行：保留什么 + 恢复方式（如实提示仅备份可恢复）。
   expect(screen.getByText(/保留：SkillHub 之外的原文件不受影响/)).toBeVisible();
   expect(screen.getByText(/恢复：从库中删除无法在应用内撤销/)).toBeVisible();
@@ -79,6 +84,25 @@ it("moves focus into the impact dialog on open and restores it to the trigger on
 
   await user.click(screen.getByRole("button", { name: "取消" }));
   expect(trigger).toHaveFocus();
+});
+
+it("describes every deployment option truthfully in English", async () => {
+  const i18n = await createSkillHubI18n(["en-US"]);
+
+  render(
+    <I18nextProvider i18n={i18n}>
+      <RemovalImpactDialog impact={removalImpactFixture()} onConfirm={() => undefined} />
+    </I18nextProvider>,
+  );
+
+  const options = screen.getAllByRole("option").map((option) => option.textContent);
+  expect(options).toContain("Keep the deployed files at the target and remove the relation (the library record is deleted too)");
+  expect(options).toContain("Delete the deployed copy at the target (undeploy)");
+  expect(options).toContain("Convert to an independent copy (keep files, remove the deployment relation)");
+
+  // The "keep" option must not imply the deployment relation survives:
+  // the backend removes the relation and keeps only the target files.
+  expect(options.some((text) => text?.includes("Keep the deployment relation"))).toBe(false);
 });
 
 it("presents the commit failure as an icon-plus-text alert instead of bare prose", async () => {
