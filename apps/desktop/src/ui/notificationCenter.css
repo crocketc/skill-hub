@@ -1,13 +1,17 @@
-/* P1-11 通知中心：右下角单例容器；底部经 --skill-batch-bar-height
-   （宿主页面设置的 CSS 变量，DOM 继承可得）避让固定批量操作条，
-   z-index 高于批量操作条（20），文档化梯度：通知 30 > 批量条 20。 */
+/* 新增01 + M-21 全局通知中心：
+   - toast 栈固定在顶部工具条下方右侧，固定宽度、高度自适应；
+   - 进入从右滑入；展示 NOTICE_TOAST_DURATION_MS 后在栈位上滑出并移除，
+     下方消息上移补位（DOM 移除驱动）；
+   - z-index 梯度：跳转链接 60 > toast 55 > 抽屉 50 > 遮罩 40 > 批量条 20；
+   - data-reduced-motion="true"（系统或用户偏好）时进入/退出均即时出现、
+     即时消失，信息不依赖动画表达。 */
 .sh-notification-center {
   position: fixed;
-  z-index: 30;
+  z-index: 55;
+  top: calc(var(--topbar-height) + var(--space-3));
   right: var(--space-5);
-  bottom: calc(var(--skill-batch-bar-height, 0px) + var(--space-4));
   display: flex;
-  max-width: min(28rem, calc(100vw - 2 * var(--space-5)));
+  width: min(22rem, calc(100vw - 2 * var(--space-5)));
   flex-direction: column;
   gap: var(--space-2);
   pointer-events: none;
@@ -17,17 +21,34 @@
   display: flex;
   align-items: flex-start;
   gap: var(--space-2);
-  padding: var(--space-3) var(--space-3) var(--space-3) var(--space-4);
   border: 1px solid var(--ui-border);
   border-left: 3px solid var(--ui-accent);
   border-radius: var(--radius-md);
+  padding: var(--space-3) var(--space-3) var(--space-3) var(--space-4);
   background: var(--ui-surface);
   box-shadow: var(--shadow-lg);
   pointer-events: auto;
+  animation: sh-notification-in var(--motion-normal) var(--ease-standard);
+}
+
+.sh-notification[data-state="exiting"] {
+  animation: sh-notification-out var(--motion-fast) var(--ease-standard) forwards;
+}
+
+.sh-notification-center[data-reduced-motion="true"] .sh-notification {
+  animation: none;
 }
 
 .sh-notification--success {
   border-left-color: var(--ui-success-foreground, var(--ui-accent));
+}
+
+.sh-notification--info {
+  border-left-color: var(--ui-info-foreground, var(--ui-accent));
+}
+
+.sh-notification--warning {
+  border-left-color: var(--ui-warning-foreground, var(--ui-accent));
 }
 
 .sh-notification--danger {
@@ -43,12 +64,158 @@
   margin: 0;
   overflow-wrap: anywhere;
   font-size: var(--font-size-sm);
+  font-weight: 550;
 }
 
 .sh-notification__detail {
-  margin-top: var(--space-2);
+  margin: var(--space-1) 0 0;
+  overflow-wrap: anywhere;
+  color: var(--ui-ink-muted);
+  font-size: var(--font-size-sm);
 }
 
+.sh-notification__action {
+  display: inline-block;
+  margin-top: var(--space-1);
+  color: var(--ui-accent-strong);
+  font-size: var(--font-size-sm);
+  font-weight: 650;
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
+
+/* 关闭按钮复用 Button size="sm"（min-height 2rem），但计划约束
+   "全部图标按钮至少 40×40"——在此覆盖出 40px 正方形命中区。 */
 .sh-notification__close {
   flex: 0 0 auto;
+  width: 2.5rem;
+  height: 2.5rem;
+  min-width: 2.5rem;
+  min-height: 2.5rem;
+  padding: 0;
+}
+
+@keyframes sh-notification-in {
+  from {
+    opacity: 0;
+    transform: translateX(1.5rem);
+  }
+}
+
+@keyframes sh-notification-out {
+  to {
+    opacity: 0;
+    transform: translateX(1.5rem);
+  }
+}
+
+/* 顶栏通知按钮与未读角标。 */
+.sh-notification-bell {
+  position: relative;
+  display: inline-flex;
+  flex: 0 0 auto;
+}
+
+.sh-notification-bell__badge {
+  position: absolute;
+  z-index: 1;
+  top: 0.125rem;
+  right: 0.125rem;
+  min-width: 1rem;
+  border-radius: 999px;
+  padding: 0 0.25rem;
+  background: var(--ui-accent);
+  color: var(--ui-icon-on-accent);
+  font-size: 0.625rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 750;
+  line-height: 1rem;
+  text-align: center;
+  pointer-events: none;
+}
+
+/* 会话历史抽屉：筛选/动作行 + 纵向通知列表。 */
+.sh-notification-history {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.sh-notification-history__controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.sh-notification-history__filter,
+.sh-notification-history__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.sh-notification-history__filter .sh-button[aria-pressed="true"] {
+  border-color: var(--ui-selected-border);
+  background: var(--ui-selected-surface);
+  color: var(--ui-accent-strong);
+}
+
+.sh-notification-history__list {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sh-notification-history__item {
+  display: grid;
+  gap: var(--space-1);
+  border: 1px solid var(--ui-border-subtle);
+  border-left: 3px solid var(--ui-accent);
+  border-radius: var(--radius-md);
+  padding: var(--space-3);
+  background: var(--ui-surface);
+}
+
+.sh-notification-history__item--unread {
+  border-left-color: var(--ui-accent-strong);
+  background: var(--ui-hover-surface);
+}
+
+.sh-notification-history__item-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.sh-notification-history__item-title {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-weight: 650;
+}
+
+.sh-notification-history__item-detail {
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--ui-ink-muted);
+  font-size: var(--font-size-sm);
+}
+
+.sh-notification-history__item-action {
+  justify-self: start;
+  color: var(--ui-accent-strong);
+  font-size: var(--font-size-sm);
+  font-weight: 650;
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
+
+.sh-notification-history__empty {
+  margin: 0;
+  padding: var(--space-5) 0;
+  color: var(--ui-ink-muted);
+  text-align: center;
 }

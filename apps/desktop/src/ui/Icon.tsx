@@ -76,6 +76,25 @@ const registry: Record<string, ReactNode> = {
     </>
   ),
   close: <path d="m6 6 12 12M18 6 6 18" />,
+  // —— 壳层工具条（返回/前进/通知中心）——
+  arrowLeft: (
+    <>
+      <path d="M20 12H4" />
+      <path d="m10 6-6 6 6 6" />
+    </>
+  ),
+  arrowRight: (
+    <>
+      <path d="M4 12h16" />
+      <path d="m14 6 6 6-6 6" />
+    </>
+  ),
+  bell: (
+    <>
+      <path d="M6 9.5a6 6 0 0 1 12 0c0 4.4 1.5 5.9 2 6.5H4c.5-.6 2-2.1 2-6.5Z" />
+      <path d="M10 19.5a2.2 2.2 0 0 0 4 0" />
+    </>
+  ),
   // —— 导航映射（与 Sidebar 共用，保持单次朗读）——
   overview: <path d="M4 12 12 4l8 8M6 10v9h12v-9M9 19v-5h6v5" />,
   library: (

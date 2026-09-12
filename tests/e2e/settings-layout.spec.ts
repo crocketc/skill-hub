@@ -4,6 +4,7 @@ import { expect, test, type Page } from "./fixtures";
  * T1 设置页布局与主题验收：几何与行为断言优先，不以像素快照替代。
  * 尺寸矩阵 800/1024/1280/1440 × 900，另测最小高度 600；9 主题在 1280×900
  * 检查关键控件、焦点、状态与无横溢。
+ * M-03：所有支持宽度下分区导航固定在内容左侧，内容列是唯一滚动所有者。
  */
 
 const SECTION_NAV = "Settings sections";
@@ -72,14 +73,10 @@ test.describe("settings section layout across widths", () => {
       );
       expect(pageGap, `unified section gap at ${width}px`).toBe(16);
 
-      // 分区导航位置：1280/1440 左侧，800/1024 顶部紧凑。
-      if (width >= 1280) {
-        expect(metrics.sideBySide, `nav sits left of content at ${width}px`).toBe(true);
-      } else {
-        expect(metrics.stacked, `nav stacks above content at ${width}px`).toBe(true);
-      }
+      // M-03：分区导航在所有支持宽度下都位于内容左侧（双滚动）。
+      expect(metrics.sideBySide, `nav sits left of content at ${width}px`).toBe(true);
 
-      // 顶部紧凑模式同样可以通过键盘/指针使用。
+      // 宽度切换只改变尺寸与间距；键盘/指针路径保持一致。
       await tablist.getByRole("tab", { name: "Automation" }).click();
       await expect(page.getByRole("switch", { name: "Batch checks" })).toBeVisible();
     });

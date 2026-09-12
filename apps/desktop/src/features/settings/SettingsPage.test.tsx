@@ -20,6 +20,50 @@ it("drives the settings page section gap from the shared page-gap token", () => 
   expect(pageBlock).toMatch(/gap:\s*var\(--page-gap\)/);
 });
 
+// M-03：设置页在所有支持宽度下保持"左侧分区导航 + 右侧内容滚动"；
+// 容器查询只允许调整尺寸与间距，不允许把导航换到内容上方。
+it("keeps the section navigation in a left column with dual scrolling at every width", () => {
+  const layoutStart = settingsCss.indexOf(".sh-settings-layout {");
+  const layoutBlock = settingsCss.slice(layoutStart, settingsCss.indexOf("}", layoutStart) + 1);
+  const columns = layoutBlock.match(/grid-template-columns:\s*([^;]+);/);
+  expect(columns, "layout declares two side-by-side columns").not.toBeNull();
+  // 按顶层空格切分轨道（minmax() 内部的空格不算分隔）。
+  const tracks = columns![1].trim().split(/\s+(?![^(]*\))/);
+  expect(tracks.length, "nav column plus content column").toBe(2);
+
+  const navStart = settingsCss.indexOf(".sh-settings-nav {");
+  const navBlock = settingsCss.slice(navStart, settingsCss.indexOf("}", navStart) + 1);
+  expect(navBlock).toMatch(/flex-direction:\s*column/);
+  expect(navBlock).toMatch(/overflow-y:\s*auto/);
+
+  const panelsStart = settingsCss.indexOf(".sh-settings-panels {");
+  const panelsBlock = settingsCss.slice(panelsStart, settingsCss.indexOf("}", panelsStart) + 1);
+  expect(panelsBlock, "content column owns scrolling at every width").toMatch(
+    /overflow-y:\s*auto/,
+  );
+});
+
+it("announces the section navigation as a vertical tablist", async () => {
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  render(
+    <MemoryRouter>
+      <I18nextProvider i18n={i18n}>
+        <ThemeProvider>
+          <SettingsPage
+            facade={{ execute: async () => undefined }}
+            initialSettings={settingsFixture()}
+          />
+        </ThemeProvider>
+      </I18nextProvider>
+    </MemoryRouter>,
+  );
+
+  expect(screen.getByRole("tablist", { name: "设置分区" })).toHaveAttribute(
+    "aria-orientation",
+    "vertical",
+  );
+});
+
 it("offers an explicit way to rerun initialization", async () => {
   const i18n = await createSkillHubI18n(["zh-CN"]);
 

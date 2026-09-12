@@ -6,6 +6,8 @@ import { Select } from "../../ui/Select";
 import { ThemeChoiceGrid } from "../../styles/ThemeChoiceGrid";
 import { useTheme } from "../../styles/ThemeProvider";
 import type { ThemeName } from "../../styles/theme";
+import { setUserReducedMotion, useUserReducedMotion } from "../../ui/reducedMotion";
+import { Switch } from "../../ui/Switch";
 import type { SettingsFacade, SettingsSnapshot } from "./api";
 
 function resolvedLanguage(language: SettingsSnapshot["appearance"]["language"]) {
@@ -18,6 +20,7 @@ export function GeneralSettings({ facade, settings }: { facade: SettingsFacade; 
   const { appearance, resolvedTheme, setAppearance } = useTheme();
   const [language, setLanguage] = useState(settings.appearance.language);
   const [error, setError] = useState<string>();
+  const userReducedMotion = useUserReducedMotion();
   const selectTheme = (theme: ThemeName) => {
     const previous = appearance;
     setAppearance(theme);
@@ -55,6 +58,19 @@ export function GeneralSettings({ facade, settings }: { facade: SettingsFacade; 
     <dl className="sh-facts"><dt>{t("settings.general.theme")}</dt><dd>{resolvedTheme}</dd></dl>
     <p>{t("settings.general.themeDescription")}</p>
     <ThemeChoiceGrid onChange={selectTheme} value={resolvedTheme} />
+    <div className="sh-settings-toggle">
+      <Switch
+        checked={userReducedMotion}
+        describedBy="settings-reduced-motion-help"
+        id="settings-reduced-motion"
+        label={t("settings.general.reducedMotion")}
+        name="reduced-motion"
+        onChange={(event) => setUserReducedMotion(event.target.checked)}
+      />
+    </div>
+    <p className="sh-field__help" id="settings-reduced-motion-help">
+      {t("settings.general.reducedMotionDescription")}
+    </p>
     {error ? <p role="alert">{error}</p> : null}
   </section>;
 }

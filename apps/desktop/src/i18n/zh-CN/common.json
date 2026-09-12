@@ -24,7 +24,22 @@
     "retry": "重试"
   },
   "notifications": {
-    "regionLabel": "通知"
+    "regionLabel": "通知",
+    "buttonLabel": "通知",
+    "buttonWithUnread": "通知，{{count}} 条未读",
+    "drawerTitle": "通知",
+    "filterAll": "全部",
+    "filterUnread": "未读",
+    "markAllRead": "全部标为已读",
+    "clearAll": "清空",
+    "emptyHistory": "暂无通知。",
+    "emptyUnread": "没有未读通知。",
+    "tones": {
+      "success": "成功",
+      "info": "提示",
+      "warning": "警告",
+      "danger": "失败"
+    }
   },
   "markdown": {
     "code": {
@@ -770,7 +785,8 @@
     "placeholder": "已显示上次已知的本地数据。详细工作台将在后续功能中提供。",
     "skillCount": "项技能",
     "verification": "正在核对本地变化",
-    "skipToContent": "跳到主内容"
+    "skipToContent": "跳到主内容",
+    "forward": "前进"
   },
   "bootstrap": {
     "blockingStartup": "阻塞启动",
@@ -1859,7 +1875,9 @@
       },
       "theme": "主题",
       "themeDescription": "选择主题后会立即应用，并保存到本机偏好。",
-      "themeSaveError": "主题未能保存，已恢复为原来的设置。"
+      "themeSaveError": "主题未能保存，已恢复为原来的设置。",
+      "reducedMotion": "始终减少动效",
+      "reducedMotionDescription": "开启后界面过渡与提示动效改为即时出现、即时消失；系统已开启减少动效时无需重复设置。"
     },
     "library": {
       "heading": "技能库",

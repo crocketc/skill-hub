@@ -3,6 +3,8 @@ import { forwardRef, type ChangeEventHandler } from "react";
 export interface SwitchProps {
   checked?: boolean;
   defaultChecked?: boolean;
+  /** 关联帮助/错误说明的元素 id（aria-describedby）。 */
+  describedBy?: string;
   disabled?: boolean;
   id?: string;
   label: string;
@@ -17,7 +19,7 @@ export interface SwitchProps {
  */
 export const Switch = forwardRef<HTMLInputElement, SwitchProps>(
   function Switch(
-    { checked, defaultChecked, disabled, id, label, name, onChange },
+    { checked, defaultChecked, describedBy, disabled, id, label, name, onChange },
     ref,
   ) {
     return (
@@ -25,6 +27,7 @@ export const Switch = forwardRef<HTMLInputElement, SwitchProps>(
         <input
           checked={checked}
           className="sh-switch__input"
+          aria-describedby={describedBy}
           defaultChecked={defaultChecked}
           disabled={disabled}
           id={id}

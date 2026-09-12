@@ -4,11 +4,10 @@ import {
   type RefObject,
   type ReactElement,
   type ReactNode,
-  useEffect,
-  useState,
 } from "react";
 import { useTranslation } from "react-i18next";
 import { IconButton } from "./IconButton";
+import { usePrefersReducedMotion } from "./reducedMotion";
 
 interface DrawerBaseProps {
   children: ReactNode;
@@ -35,29 +34,6 @@ type DrawerFocusTarget =
     };
 
 export type DrawerProps = DrawerBaseProps & DrawerFocusTarget;
-
-function getReducedMotionPreference() {
-  return typeof window !== "undefined" &&
-    typeof window.matchMedia === "function" &&
-    window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-}
-
-function usePrefersReducedMotion() {
-  const [reduced, setReduced] = useState(getReducedMotionPreference);
-
-  useEffect(() => {
-    if (typeof window.matchMedia !== "function") {
-      return undefined;
-    }
-
-    const media = window.matchMedia("(prefers-reduced-motion: reduce)");
-    const update = () => setReduced(media.matches);
-    media.addEventListener("change", update);
-    return () => media.removeEventListener("change", update);
-  }, []);
-
-  return reduced;
-}
 
 export function Drawer({
   children,
