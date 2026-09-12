@@ -8,6 +8,8 @@ import path from 'path';
 // Reviewed 2026-09-09: each exempt file only carries CJK inside fixture or
 // mock-facade payloads consumed by *.test.* files; none of them is wired into
 // the production router (app/router.tsx uses the native facades instead).
+// Reviewed 2026-09-11: ProjectsPreview.tsx joins the DEV-only preview group —
+// its CJK lives in a preview fixture payload, not production UI copy.
 const EXEMPT = {
   'features/import/api.ts':
     'createMockImportFacade fixture messages; consumed only by *.test.* files',
@@ -21,6 +23,8 @@ const EXEMPT = {
     'settingsFixture/networkSettings/availableUpdate sample payloads; production uses nativeSettingsFacade',
   'features/dev-preview/UiFoundationsPreview.tsx':
     'DEV-only UI foundations board; registered solely under import.meta.env.DEV and eliminated from production builds, so its bilingual sample copy is design-review material rather than production UI text',
+  'features/projects/ProjectsPreview.tsx':
+    'DEV-only projects preview fixture (previewAssemblyPlans sample conflict reason); registered solely under import.meta.env.DEV in app/router.tsx and eliminated from production builds, so the fixture copy is design-review material rather than user-visible runtime text',
 };
 
 function stripComments(text) {
