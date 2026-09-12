@@ -3,7 +3,7 @@
     "objectNotFound": "The target does not exist or has been removed ({{code}}).",
     "networkDisabled": "Network features are disabled; enable them in Settings before using online operations.",
     "backupChecksumMismatch": "Backup verification failed: contents do not match the manifest or files are missing.",
-    "inputInvalid": "The input failed validation ({{code}}).",
+    "inputInvalid": "The input failed validation; please review it and try again.",
     "sourceUpdate": {
       "noUpstreamConflict": "This skill has no upstream source to take, so “Take upstream” cannot run ({{code}}).",
       "sourceUnavailable": "The source is currently unavailable. Check the network and the source record, then retry."
@@ -1899,7 +1899,11 @@
       "description": "Network helpers are opt-in and never change local management by themselves.",
       "disableAll": "Turn off all network features",
       "localStillWorks": "Local scan, search, deployment, and backup remain available",
-      "dataScope": "Data scope"
+      "dataScope": "Data scope",
+      "dataScopeExplicitSelection": "Only features you explicitly enabled",
+      "dataScopeGeneric": "Minimal per-feature sending",
+      "dataScopeNote": "When an AI feature is enabled, only the minimal content that feature needs (such as a skill description or search keywords) is sent; your skill library is never uploaded wholesale.",
+      "providerUnconfigured": "Not configured"
     },
     "llm": {
       "capabilitiesHeading": "AI capabilities",
@@ -1973,7 +1977,8 @@
       "endpointOk": "Service reachable",
       "endpointFailed": "Service unreachable",
       "modelOk": "Model connection available",
-      "modelFailed": "Model connection failed ({{code}}); reachability alone does not prove the model works",
+      "modelFailed": "Model connection failed; reachability alone does not prove the model works",
+      "diagnosticSummary": "Diagnostic detail",
       "testConnection": "Test connection",
       "enable": "Enable",
       "disable": "Disable",

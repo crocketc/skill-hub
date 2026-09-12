@@ -3,7 +3,7 @@
     "objectNotFound": "目标不存在或已被移除（{{code}}）。",
     "networkDisabled": "网络功能已关闭；需要在设置中开启后才能联网操作。",
     "backupChecksumMismatch": "备份校验失败：备份内容与清单不一致或文件缺失。",
-    "inputInvalid": "输入未通过校验（{{code}}）。",
+    "inputInvalid": "输入未通过校验，请检查填写内容后重试。",
     "sourceUpdate": {
       "noUpstreamConflict": "此 Skill 没有可采用的 upstream 来源，无法执行“采用上游版本”（{{code}}）。",
       "sourceUnavailable": "来源暂不可用，无法完成操作。请确认网络与来源记录后重试。"
@@ -1899,7 +1899,11 @@
       "description": "网络辅助功能默认需要明确开启，不会自行改变本地管理行为。",
       "disableAll": "关闭所有网络功能",
       "localStillWorks": "本地扫描、搜索、部署和备份仍可使用",
-      "dataScope": "数据范围"
+      "dataScope": "数据范围",
+      "dataScopeExplicitSelection": "仅限你明确开启的功能",
+      "dataScopeGeneric": "按功能最小发送",
+      "dataScopeNote": "开启某项 AI 功能后，只发送该功能所需的最少内容（例如技能描述、搜索关键词）；不会上传整个技能库。",
+      "providerUnconfigured": "未配置"
     },
     "llm": {
       "capabilitiesHeading": "AI 能力开关",
@@ -1973,7 +1977,8 @@
       "endpointOk": "服务可达",
       "endpointFailed": "服务不可达",
       "modelOk": "模型连接可用",
-      "modelFailed": "模型连接失败（{{code}}）；仅服务可达不代表模型可用",
+      "modelFailed": "模型连接失败；仅服务可达不代表模型可用",
+      "diagnosticSummary": "诊断详情",
       "testConnection": "测试连接",
       "enable": "启用",
       "disable": "停用",

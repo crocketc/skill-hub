@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { createSkillHubI18n } from "../i18n";
 import { nativeErrorCode, nativeErrorParams, describeNativeError } from "./nativeErrors";
 
 describe("nativeErrors", () => {
@@ -98,6 +99,19 @@ describe("nativeErrors", () => {
       "errors.generic",
     );
     expect(message).toBe("errors.inputInvalid");
+  });
+
+  // M-05：连接测试等界面不得出现中英混排的裸错误码——input.invalid 的
+  // 通用文案必须是无内嵌代码的本地化句子；诊断详情由界面另行折叠展示。
+  it("renders the generic input.invalid copy without interpolating the raw code", async () => {
+    const i18n = await createSkillHubI18n(["zh-CN"]);
+    const message = describeNativeError(
+      { code: "input.invalid", severity: "error", params: { field: "endpoint" }, actions: [] },
+      (key, options) => String(i18n.t(key as never, options as never)),
+      "errors.generic",
+    );
+    expect(message).not.toContain("input.invalid");
+    expect(message).toContain("校验");
   });
 
   it.each([
