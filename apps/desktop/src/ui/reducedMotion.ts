@@ -21,12 +21,10 @@ function readStoredUserPreference(): boolean {
   }
 }
 
-let userReducedMotion = readStoredUserPreference();
 const userListeners = new Set<() => void>();
 
 /** 用户开关：写入持久化偏好并即时广播（界面同步生效，无需刷新）。 */
 export function setUserReducedMotion(value: boolean): void {
-  userReducedMotion = value;
   try {
     if (value) {
       window.localStorage.setItem(REDUCED_MOTION_STORAGE_KEY, "true");
@@ -49,10 +47,8 @@ function subscribeUserReducedMotion(listener: () => void): () => void {
 }
 
 export function useUserReducedMotion(): boolean {
-  return useSyncExternalStore(
-    subscribeUserReducedMotion,
-    () => userReducedMotion,
-  );
+  // getSnapshot 每次读存储：外部清理（如测试、多窗口）即时反映，无隐藏模块态。
+  return useSyncExternalStore(subscribeUserReducedMotion, readStoredUserPreference);
 }
 
 function systemPrefersReducedMotion(): boolean {
