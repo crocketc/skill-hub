@@ -80,6 +80,22 @@ test.describe("markdown edit split layout", () => {
     expect(stacked.cmEditorRight).toBeLessThanOrEqual(singleColumnWidth + 0.5);
   });
 
+  // F9：堆叠单列下两侧不再并排滚动，联动开关隐藏；回到分屏宽度恢复显示
+  //（持久化状态不受影响）。视口宽度是唯一变量，锁定两个断点态。
+  test("hides the sync scroll toggle where panes stack and shows it side by side", async ({ page }) => {
+    await page.setViewportSize({ width: singleColumnWidth, height: 900 });
+    await page.goto("/__preview/skill-detail/skill-pdf#description");
+    await expect(page.getByRole("heading", { name: "Markdown workspace" })).toBeVisible();
+    await page.getByRole("tab", { name: "Edit" }).click();
+    await expect(page.getByRole("textbox", { name: "Markdown source" })).toBeVisible();
+
+    const toggle = page.getByRole("checkbox", { name: "Sync scrolling" });
+    await expect(toggle).toBeHidden();
+
+    await page.setViewportSize({ width: 900, height: 900 });
+    await expect(toggle).toBeVisible();
+  });
+
   // P1-14：同步滚动开关存在且可切换；切换后两侧面板仍并排不重叠，
   // 联动开启时预览跟随源码滚动，关闭后保持不动。
   test("sync scroll toggle drives the preview and keeps the split intact", async ({ page }) => {

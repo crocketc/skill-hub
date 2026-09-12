@@ -417,6 +417,12 @@
   .sh-markdown-editor__split {
     grid-template-columns: 1fr;
   }
+
+  /* 堆叠单列下两侧面板不再并排滚动，联动开关无从操作也无意义——
+     直接隐藏；持久化状态保留，回到分屏宽度后恢复显示。 */
+  .sh-markdown-editor__split-header {
+    display: none;
+  }
 }
 
 @media (pointer: coarse) {
