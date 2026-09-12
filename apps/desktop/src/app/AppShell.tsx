@@ -6,7 +6,9 @@ import { IconButton } from "../ui/IconButton";
 import {
   AppNotificationsProvider,
   NotificationBell,
+  useAppNotifications,
 } from "../ui/notifications";
+import { BackgroundScanNotifier } from "../features/bootstrap/BackgroundScanNotifier";
 import { Sidebar } from "./Sidebar";
 import { OperationIndicator } from "./OperationIndicator";
 import type { BootstrapVerificationState } from "../features/bootstrap/api";
@@ -129,6 +131,12 @@ export function resolveShellHistoryControls(
   };
 }
 
+/** Bridges the handed-off initialization scan into the shell notification service. */
+function BackgroundScanBridge() {
+  const { notify } = useAppNotifications();
+  return <BackgroundScanNotifier notify={notify} />;
+}
+
 export function AppShell({ refreshSnapshot, snapshot, verification }: AppShellProps) {
   const { t } = useTranslation();
   const { pathname } = useLocation();
@@ -155,6 +163,7 @@ export function AppShell({ refreshSnapshot, snapshot, verification }: AppShellPr
 
   return (
     <AppNotificationsProvider>
+      <BackgroundScanBridge />
       <div className={`sh-app-shell${sidebarCollapsed ? " is-sidebar-collapsed" : ""}`}>
         <a className="sh-skip-link" href="#main-content">
           {t("appShell.skipToContent")}
