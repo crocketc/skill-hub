@@ -814,11 +814,11 @@ type: "failed",
                           {t("importWorkflow.sources.retry")}
                         </Button>
                       </>
-                    ) : (
+                    ) : scanStatus.kind === "scanned" ? (
                       <>
                         {t("importWorkflow.acquisition.perSource", { count: scanStatus.count, source })}
                       </>
-                    )}
+                    ) : null}
                     <Button
                       aria-label={t("importWorkflow.acquisition.removeSource", { source })}
                       disabled={state.phase !== "candidate_gate"}
