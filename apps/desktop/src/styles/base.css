@@ -403,6 +403,9 @@ a {
 .sh-page-frame {
   display: grid;
   max-width: 72ch;
+  /* M-10：align-content:normal 会在满屏高度下把剩余高度摊进行高，
+     页头与正文之间出现整段空白；行必须钉在容器顶部。 */
+  align-content: start;
   /* P2-01：section gap 统一消费 --page-gap；不再自带 padding——AppShell
      内容区已统一提供 --space-5 页面留白，叠加会产生 40px 的双重内缩，
      使概览类页面与设置/发现的留白节奏不一致。 */
@@ -1014,6 +1017,8 @@ a {
 .sh-app-shell__content {
   display: grid;
   min-height: 0;
+  /* M-10：同 .sh-page-frame——内容行钉顶，剩余空间留在底部。 */
+  align-content: start;
   gap: var(--space-4);
   overflow-y: auto;
   padding: var(--space-5);
@@ -3605,6 +3610,8 @@ a {
    导入向导不在三页统一范围内，维持原有 --space-5 节奏。 */
 .sh-discovery-page {
   display: grid;
+  /* M-10：同 .sh-page-frame——页头行钉顶，不摊分剩余高度。 */
+  align-content: start;
   gap: var(--page-gap);
 }
 
