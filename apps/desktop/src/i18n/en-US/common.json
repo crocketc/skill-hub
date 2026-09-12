@@ -448,6 +448,12 @@
       "assistFailureReason": "Failure reason: {{reason}}",
       "assistUnknownFailure": "The AI search ran into an unknown problem ({{code}}).",
       "assistHit": "AI-extended hit",
+      "assistReady": "AI assist is ready: searches will extend the query and mark AI-extended hits.",
+      "assistUnverified": "The AI setup is complete but the connection is unverified; the next search tries it for real and falls back to plain search on failure.",
+      "assistNotConfiguredProvider": "No usable LLM provider is configured for the AI search assistant: the AI path is disabled and searches use the plain search.",
+      "assistNotConfiguredCredential": "The current LLM provider has no API key: the AI path is disabled and searches use the plain search.",
+      "assistCapabilityDisabled": "Online search assist is disabled: the AI path is off and searches use the plain search; enable it under Settings - AI capabilities.",
+      "assistOpenSettings": "Open settings",
       "results": "Search results"
     },
     "repo": {

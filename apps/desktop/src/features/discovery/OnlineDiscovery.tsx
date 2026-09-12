@@ -5,6 +5,12 @@ import { Button } from "../../ui/Button";
 import { CheckboxField } from "../../ui/CheckboxField";
 import { Icon } from "../../ui/Icon";
 import { Input } from "../../ui/Input";
+import {
+  type LlmAdminFacade,
+  type LlmCapabilitySettings,
+  type LlmProviderView,
+  nativeLlmFacade,
+} from "../settings/llmApi";
 import { ExternalLink } from "../markdown/ExternalLink";
 import { SkillCard } from "../shared/skill-card/SkillCard";
 import type { SkillCardViewModel } from "../shared/skill-card/SkillCardViewModel";
@@ -33,6 +39,67 @@ export interface OnlineDiscoveryProps {
    * 用于结果卡的"已在库"标记；按名称保守比对，不声称是同一来源。
    */
   importedNames?: () => Promise<string[]>;
+  /**
+   * M-16：勾选 AI 辅助时读取能力开关/供应商/凭据状态的 facade。默认使用
+   * 原生命令绑定，让状态检查在真实应用中开箱即用；测试注入替身。
+   */
+  llmFacade?: LlmAdminFacade;
+  /** M-16：AI 未就绪时"前往设置"入口；缺省时跳转到应用设置路由。 */
+  onOpenSettings?: () => void;
+}
+
+/** M-16：AI 搜索辅助的可用性四态（需求验收 7）。
+ * - ready：能力开关开启且有可用供应商（连接可能仍未实测）；
+ * - not_configured：没有启用的供应商，或启用的在线供应商缺少凭据；
+ * - capability_disabled：AI 能力开关（online_search_assist）未开启；
+ * - unverified：配置齐备但连接未经实测，或配置状态暂时不可读。 */
+export type AssistReadiness =
+  | { kind: "ready" }
+  | { kind: "not_configured"; detail: "provider" | "credential" }
+  | { kind: "capability_disabled" }
+  | { kind: "unverified" };
+
+/** 纯函数：由能力开关与供应商视图推导 AI 辅助可用性。绝不发起网络请求。 */
+export function evaluateAssistReadiness(
+  capabilities: LlmCapabilitySettings | null,
+  providers: LlmProviderView[] | null,
+): AssistReadiness {
+  if (!capabilities || !providers) return { kind: "unverified" };
+  const enabled = providers.filter((provider) => provider.config.enabled);
+  if (enabled.length === 0) return { kind: "not_configured", detail: "provider" };
+  if (!capabilities.online_search_assist) return { kind: "capability_disabled" };
+  const primary = enabled.find((provider) => provider.is_default) ?? enabled[0]!;
+  if (primary.config.deployment === "online" && !primary.credential_configured) {
+    return { kind: "not_configured", detail: "credential" };
+  }
+  return { kind: "unverified" };
+}
+
+/** 未就绪到必须阻断伪 AI 路径的程度：未配置/被禁用属于确定性不可用；
+ * 连接未知仍允许首次真实搜索去验证（那是真实尝试而非伪 AI）。 */
+function blocksAssistPath(readiness: AssistReadiness | null): boolean {
+  return (
+    readiness?.kind === "not_configured" || readiness?.kind === "capability_disabled"
+  );
+}
+
+/** M-16：四态的用户语言文案（i18n 键集中在此，避免渲染分支内散落）。 */
+function readinessNotice(
+  readiness: AssistReadiness,
+  t: (key: string) => string,
+): string {
+  switch (readiness.kind) {
+    case "ready":
+      return t("discovery.search.assistReady");
+    case "unverified":
+      return t("discovery.search.assistUnverified");
+    case "capability_disabled":
+      return t("discovery.search.assistCapabilityDisabled");
+    case "not_configured":
+      return readiness.detail === "credential"
+        ? t("discovery.search.assistNotConfiguredCredential")
+        : t("discovery.search.assistNotConfiguredProvider");
+  }
 }
 
 function sourceProvider(pageUrl: string, fallback: string | null): string {
@@ -43,11 +110,12 @@ function sourceProvider(pageUrl: string, fallback: string | null): string {
   }
 }
 
-/** AI 搜索辅助的四种明确状态（P0-06）：无配置、取消、失败、成功；
- * 每种状态都必须告诉用户"普通搜索结果仍然可用"。 */
+/** AI 搜索辅助的明确状态（P0-06 + M-16）：无配置、能力被禁用、取消、失败、
+ * 成功；每种状态都必须告诉用户"普通搜索结果仍然可用"。 */
 type AssistStatus =
   | { kind: "succeeded"; notice: string }
   | { kind: "unconfigured" }
+  | { kind: "capability_disabled" }
   | { kind: "cancelled" }
   | { kind: "failed"; reason: string };
 
@@ -62,6 +130,9 @@ function classifyAssistFailure(
     || code === "llm.credential_read_failed"
   ) {
     return { kind: "unconfigured" };
+  }
+  if (code === "llm.capability_disabled") {
+    return { kind: "capability_disabled" };
   }
   if (code === "llm.cancelled") {
     return { kind: "cancelled" };
@@ -141,7 +212,7 @@ export function toRepoSkill(hit: SourceSearchHit): DiscoverableRepoSkill | null 
   };
 }
 
-export function OnlineDiscovery({ onStartImport, onImportDirectory, facade, importedNames }: OnlineDiscoveryProps) {
+export function OnlineDiscovery({ onStartImport, onImportDirectory, facade, importedNames, llmFacade = nativeLlmFacade, onOpenSettings }: OnlineDiscoveryProps) {
   const { t } = useTranslation();
   const [query, setQuery] = useState("");
   const [searching, setSearching] = useState(false);
@@ -150,6 +221,8 @@ export function OnlineDiscovery({ onStartImport, onImportDirectory, facade, impo
   // US-014：AI 搜索辅助默认关闭；开启后只做查询扩展与标记，不替代真实结果。
   const [assistEnabled, setAssistEnabled] = useState(false);
   const [assistStatus, setAssistStatus] = useState<AssistStatus | null>(null);
+  // M-16：勾选即检查的 AI 可用性四态；null = 未勾选。
+  const [assistReadiness, setAssistReadiness] = useState<AssistReadiness | null>(null);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [installError, setInstallError] = useState<string | null>(null);
   const [libraryNames, setLibraryNames] = useState<Set<string>>(new Set());
@@ -218,17 +291,63 @@ export function OnlineDiscovery({ onStartImport, onImportDirectory, facade, impo
     [describeError],
   );
 
+  // M-16：勾选 AI 辅助时立即读取配置/能力开关/凭据状态；读取失败不猜测，
+  // 按"连接未知"处理（搜索时仍会真实验证）。绝不在此发起模型请求。
+  const evaluateAssistAvailability = useCallback(() => {
+    if (!llmFacade) {
+      setAssistReadiness({ kind: "unverified" });
+      return;
+    }
+    let active = true;
+    Promise.all([llmFacade.readCapabilityState(), llmFacade.listProviders()])
+      .then(([capabilityState, providers]) => {
+        if (active) {
+          setAssistReadiness(evaluateAssistReadiness(capabilityState.capabilities, providers));
+        }
+      })
+      .catch(() => {
+        if (active) setAssistReadiness({ kind: "unverified" });
+      });
+    return () => {
+      active = false;
+    };
+  }, [llmFacade]);
+
+  const toggleAssist = (checked: boolean) => {
+    setAssistEnabled(checked);
+    setAssistStatus(null);
+    if (checked) {
+      void evaluateAssistAvailability();
+    } else {
+      // 明确切回普通搜索：可用性提示随之消失。
+      setAssistReadiness(null);
+    }
+  };
+
+  const openSettings = onOpenSettings ?? (() => window.location.assign("/settings"));
+
   const search = async () => {
     if (!facade || !query.trim()) return;
     setSearching(true);
     setSearchError(null);
     setAssistStatus(null);
     try {
-      if (assistEnabled && facade.searchOnlineSourcesAssisted) {
+      if (assistEnabled && facade.searchOnlineSourcesAssisted && blocksAssistPath(assistReadiness)) {
+        // M-16：未就绪（未配置/被禁用）时阻断伪 AI 路径——不发起注定失败的
+        // AI 请求，明确告知只跑普通搜索，并保留"前往设置"入口。
+        const plain = await facade.searchOnlineSources({ query: query.trim(), limit: 20, owner: null });
+        setPage(plain);
+        setAssistStatus(
+          assistReadiness?.kind === "capability_disabled"
+            ? { kind: "capability_disabled" }
+            : { kind: "unconfigured" },
+        );
+      } else if (assistEnabled && facade.searchOnlineSourcesAssisted) {
         try {
           const assisted = await facade.searchOnlineSourcesAssisted(query.trim());
           setPage(assisted);
           if (assisted.ai_assisted) {
+            setAssistReadiness({ kind: "ready" });
             setAssistStatus({
               kind: "succeeded",
               notice: t("discovery.search.assistExtended", {
@@ -238,19 +357,26 @@ export function OnlineDiscovery({ onStartImport, onImportDirectory, facade, impo
             });
           }
         } catch (assistReason) {
-          // 辅助失败按状态分类（无配置/取消/其他失败），回退基础搜索
+          // 辅助失败按状态分类（无配置/禁用/取消/其他失败），回退基础搜索
           // （需求 5.9）并明确告知"结果仍然可用"。
+          const outcome = classifyAssistFailure(assistReason, (reason) =>
+            describeError(reason, "discovery.search.assistUnknownFailure"));
+          setAssistStatus(outcome);
+          setAssistReadiness(
+            outcome.kind === "unconfigured"
+              ? { kind: "not_configured", detail: "provider" }
+              : outcome.kind === "capability_disabled"
+                ? { kind: "capability_disabled" }
+                : { kind: "unverified" },
+          );
           const plain = await facade.searchOnlineSources({ query: query.trim(), limit: 20, owner: null });
           setPage(plain);
-          setAssistStatus(
-            classifyAssistFailure(assistReason, (reason) =>
-              describeError(reason, "discovery.search.assistUnknownFailure")),
-          );
         }
       } else {
         if (assistEnabled) {
           // 需要辅助但当前环境未提供该能力：如实标注无配置状态。
           setAssistStatus({ kind: "unconfigured" });
+          setAssistReadiness((current) => current ?? { kind: "not_configured", detail: "provider" });
         }
         const result = await facade.searchOnlineSources({ query: query.trim(), limit: 20, owner: null });
         setPage(result);
@@ -402,17 +528,28 @@ export function OnlineDiscovery({ onStartImport, onImportDirectory, facade, impo
             <CheckboxField
               checked={assistEnabled}
               label={t("discovery.search.assistToggle")}
-              onChange={(event) => {
-                setAssistEnabled(event.target.checked);
-                setAssistStatus(null);
-              }}
+              onChange={(event) => toggleAssist(event.target.checked)}
             />
+            {assistEnabled && assistReadiness && !searching ? (
+              // M-16：勾选即呈现可用性状态；未就绪时提供"前往设置"入口。
+              // 不用 role=status，避免与搜索结果状态通告互相干扰。
+              <>
+                <p>{readinessNotice(assistReadiness, (key) => t(key as never))}</p>
+                {assistReadiness.kind !== "ready" ? (
+                  <Button onClick={openSettings} size="sm" variant="secondary">
+                    {t("discovery.search.assistOpenSettings")}
+                  </Button>
+                ) : null}
+              </>
+            ) : null}
             {searchError ? <p role="alert">{searchError}</p> : null}
             {assistStatus && !searching ? (
               assistStatus.kind === "succeeded" ? (
                 <p role="status">{assistStatus.notice}</p>
               ) : assistStatus.kind === "unconfigured" ? (
                 <p role="status">{t("discovery.search.assistUnconfigured")}</p>
+              ) : assistStatus.kind === "capability_disabled" ? (
+                <p role="status">{t("discovery.search.assistCapabilityDisabled")}</p>
               ) : assistStatus.kind === "cancelled" ? (
                 <p role="status">{t("discovery.search.assistCancelled")}</p>
               ) : (

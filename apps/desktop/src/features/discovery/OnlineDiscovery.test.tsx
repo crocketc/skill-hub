@@ -2,6 +2,11 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import { I18nextProvider } from "react-i18next";
 import { describe, expect, it, vi } from "vitest";
 import { createSkillHubI18n } from "../../i18n";
+import {
+  type LlmAdminFacade,
+  type LlmProviderView,
+  unavailableLlmFacade,
+} from "../settings/llmApi";
 import type {
   DownloadedRepoSkill,
   OperationSummary,
@@ -702,5 +707,173 @@ describe("search candidate confirmation loop (P1-05)", () => {
     expect(alert).toHaveTextContent("候选操作失败（unknown），请稍后重试。");
     // 未知失败不改写本地状态：徽标保持待确认，不臆造状态机。
     expect(screen.getByTestId(candidateTestId)).toHaveTextContent("候选待确认");
+  });
+});
+
+// M-16：勾选 AI 搜索辅助时立即读取配置/能力开关/凭据状态，呈现
+// 可用/未配置/被禁用/连接未知四态；未就绪时阻断伪 AI 路径并提供设置入口；
+// 普通搜索结果永远不标成 AI 结果。
+describe("AI assist readiness gate (M-16)", () => {
+  const onlineProvider: LlmProviderView = {
+    config: {
+      id: "deepseek",
+      label: "DeepSeek",
+      protocol: "open_ai_compatible",
+      deployment: "online",
+      endpoint: "https://api.deepseek.com/v1",
+      model: "deepseek-chat",
+      credential_ref: { id: "llm-provider:deepseek" },
+      enabled: true,
+    },
+    credential_configured: true,
+    is_default: true,
+  };
+
+  function llmFacadeWith(
+    options: {
+      providers?: LlmProviderView[];
+      onlineSearchAssist?: boolean;
+      readError?: unknown;
+    } = {},
+  ): LlmAdminFacade {
+    return {
+      ...unavailableLlmFacade,
+      async listProviders() {
+        return options.providers ?? [];
+      },
+      async readCapabilityState() {
+        if (options.readError !== undefined) throw options.readError;
+        return {
+          capabilities: {
+            safety_check: false,
+            semantic_duplicate: false,
+            description_translation: false,
+            online_search_assist: options.onlineSearchAssist ?? true,
+          },
+          aiOutputLanguage: "system",
+        };
+      },
+    };
+  }
+
+  async function renderWithAssist(options: {
+    llmFacade: LlmAdminFacade;
+    facade?: DiscoveryFacade;
+    onOpenSettings?: () => void;
+  }) {
+    const facade = options.facade ?? baseFacade();
+    render(
+      <I18nextProvider i18n={createSkillHubI18nSync()}>
+        <OnlineDiscovery
+          facade={facade}
+          llmFacade={options.llmFacade}
+          onImportDirectory={vi.fn()}
+          onOpenSettings={options.onOpenSettings}
+          onStartImport={vi.fn()}
+        />
+      </I18nextProvider>,
+    );
+    fireEvent.change(screen.getByLabelText("搜索 skills.sh"), { target: { value: "pdf" } });
+    await click(screen.getByLabelText("AI 搜索辅助"));
+    return facade;
+  }
+
+  it("shows the not-configured state and blocks the pseudo-AI path when no provider is enabled", async () => {
+    const assisted = vi.fn(async () => page);
+    const facade = await renderWithAssist({
+      llmFacade: llmFacadeWith({ providers: [] }),
+      facade: baseFacade({ searchOnlineSourcesAssisted: assisted }),
+    });
+
+    expect(await screen.findByText(/尚未配置可用的 LLM 供应商/)).toBeVisible();
+    expect(screen.getByRole("button", { name: "前往设置" })).toBeVisible();
+
+    await click(screen.getByRole("button", { name: "搜索" }));
+    await screen.findByText("PDF Reader");
+    // 未就绪时不得发起注定失败的伪 AI 请求；普通搜索照常执行。
+    expect(assisted).not.toHaveBeenCalled();
+    expect(facade.searchOnlineSources).toHaveBeenCalledTimes(1);
+    // 普通搜索结果不得标成 AI 结果。
+    expect(screen.getByRole("status").textContent).not.toContain("AI 扩展");
+  });
+
+  it("shows the disabled state when the online_search_assist capability switch is off", async () => {
+    const assisted = vi.fn(async () => page);
+    const onOpenSettings = vi.fn();
+    await renderWithAssist({
+      llmFacade: llmFacadeWith({ providers: [onlineProvider], onlineSearchAssist: false }),
+      facade: baseFacade({ searchOnlineSourcesAssisted: assisted }),
+      onOpenSettings,
+    });
+
+    expect(await screen.findByText(/联网搜索辅助能力未开启/)).toBeVisible();
+
+    await click(screen.getByRole("button", { name: "前往设置" }));
+    expect(onOpenSettings).toHaveBeenCalledTimes(1);
+
+    await click(screen.getByRole("button", { name: "搜索" }));
+    await screen.findByText("PDF Reader");
+    expect(assisted).not.toHaveBeenCalled();
+  });
+
+  it("shows the credential-missing variant when the enabled provider has no key", async () => {
+    const assisted = vi.fn(async () => page);
+    await renderWithAssist({
+      llmFacade: llmFacadeWith({
+        providers: [{ ...onlineProvider, credential_configured: false }],
+      }),
+      facade: baseFacade({ searchOnlineSourcesAssisted: assisted }),
+    });
+
+    expect(await screen.findByText(/缺少 API 密钥/)).toBeVisible();
+
+    await click(screen.getByRole("button", { name: "搜索" }));
+    await screen.findByText("PDF Reader");
+    expect(assisted).not.toHaveBeenCalled();
+  });
+
+  it("shows connection-unverified while configured and verifies on the first real search", async () => {
+    const assistedPage: SourceSearchPage = {
+      ...page,
+      ai_assisted: true,
+      expanded_query: "pdf extraction",
+    };
+    const assisted = vi.fn(async () => assistedPage);
+    await renderWithAssist({
+      llmFacade: llmFacadeWith({ providers: [onlineProvider], onlineSearchAssist: true }),
+      facade: baseFacade({ searchOnlineSourcesAssisted: assisted }),
+    });
+
+    expect(await screen.findByText(/连接尚未验证/)).toBeVisible();
+
+    await click(screen.getByRole("button", { name: "搜索" }));
+    expect(assisted).toHaveBeenCalledWith("pdf");
+    expect(await screen.findByText(/AI 扩展查询/)).toBeVisible();
+    // 验证成功后状态收敛为可用。
+    expect(await screen.findByText(/AI 辅助可用/)).toBeVisible();
+  });
+
+  it("falls back to the unverified state when the configuration cannot be read and still allows the real attempt", async () => {
+    const assisted = vi.fn(async () => page);
+    await renderWithAssist({
+      llmFacade: llmFacadeWith({ readError: new Error("IPC unavailable") }),
+      facade: baseFacade({ searchOnlineSourcesAssisted: assisted }),
+    });
+
+    expect(await screen.findByText(/连接尚未验证/)).toBeVisible();
+
+    await click(screen.getByRole("button", { name: "搜索" }));
+    await screen.findByText("PDF Reader");
+    expect(assisted).toHaveBeenCalledWith("pdf");
+  });
+
+  it("clears the readiness notice when AI assist is switched off again", async () => {
+    await renderWithAssist({ llmFacade: llmFacadeWith({ providers: [] }) });
+
+    expect(await screen.findByText(/尚未配置可用的 LLM 供应商/)).toBeVisible();
+
+    await click(screen.getByLabelText("AI 搜索辅助"));
+
+    expect(screen.queryByText(/尚未配置可用的 LLM 供应商/)).not.toBeInTheDocument();
   });
 });

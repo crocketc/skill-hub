@@ -448,6 +448,12 @@
       "assistFailureReason": "失败原因：{{reason}}",
       "assistUnknownFailure": "AI 搜索出现未知问题（{{code}}）。",
       "assistHit": "AI 扩展命中",
+      "assistReady": "AI 辅助可用：搜索时会扩展查询并标记 AI 扩展命中。",
+      "assistUnverified": "AI 配置就绪，连接尚未验证；执行搜索时会实际连接，失败会自动回退普通搜索。",
+      "assistNotConfiguredProvider": "AI 搜索助手尚未配置可用的 LLM 供应商：AI 路径已停用，搜索只使用普通搜索。",
+      "assistNotConfiguredCredential": "当前 LLM 供应商缺少 API 密钥：AI 路径已停用，搜索只使用普通搜索。",
+      "assistCapabilityDisabled": "联网搜索辅助能力未开启：AI 路径已停用，搜索只使用普通搜索；可在设置的 AI 能力开关中开启。",
+      "assistOpenSettings": "前往设置",
       "results": "搜索结果"
     },
     "repo": {
