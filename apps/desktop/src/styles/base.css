@@ -640,6 +640,34 @@ a {
   font-size: var(--font-size-sm);
 }
 
+.sh-batch-tag-dialog__tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.sh-batch-tag-dialog__tags li {
+  padding: 0 var(--space-2);
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: var(--color-surface-muted);
+  font-size: var(--font-size-xs);
+}
+
+.sh-batch-tag-dialog__disclaimer {
+  display: grid;
+  gap: var(--space-1);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-xs);
+}
+
+.sh-batch-tag-dialog__disclaimer p {
+  margin: 0;
+}
+
 .sh-status-badge {
   display: inline-flex;
   min-height: 1.5rem;

@@ -53,6 +53,20 @@
   margin-top: 0.125rem;
 }
 
+/* —— 固定说明：保留什么 / 恢复方式（如实，不夸大可恢复性） —— */
+
+.sh-removal-flow__disclaimer {
+  display: grid;
+  gap: var(--space-1);
+  margin: 0;
+  color: var(--ui-ink-muted);
+  font-size: var(--font-size-xs);
+}
+
+.sh-removal-flow__disclaimer p {
+  margin: 0;
+}
+
 /* —— 稳定底部操作区：次级居左，危险主操作居右 —— */
 
 .sh-removal-flow__actions {

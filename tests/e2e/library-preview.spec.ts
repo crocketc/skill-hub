@@ -40,7 +40,7 @@ test("skill library keeps the professional table reachable with selection", asyn
   await expect(batchBar).toBeVisible();
   await expect(batchBar.getByRole("button", { name: "Start export" })).toBeVisible();
   await expect(batchBar.getByRole("button", { name: "Run security check" })).toBeVisible();
-  await expect(batchBar.getByRole("button", { name: "Delete selected Skills" })).toBeVisible();
+  await expect(batchBar.getByRole("button", { name: "Delete selected Skills from library" })).toBeVisible();
   await expect(batchBar.getByRole("button", { name: "Export", exact: true })).not.toBeVisible();
 });
 
@@ -52,7 +52,7 @@ test("selected skills expose separated batch actions in the default card view", 
   await expect(batchBar).toBeVisible();
   await expect(batchBar.getByRole("button", { name: "Start export" })).toBeVisible();
   await expect(batchBar.getByRole("button", { name: "Run security check" })).toBeVisible();
-  await expect(batchBar.getByRole("button", { name: "Delete selected Skills" })).toBeVisible();
+  await expect(batchBar.getByRole("button", { name: "Delete selected Skills from library" })).toBeVisible();
   await expect(batchBar.getByRole("button", { name: "Export", exact: true })).not.toBeVisible();
 });
 

@@ -64,6 +64,12 @@ export function BatchRemovalImpactDialog({
       title={t("removal.batch.heading")}
     >
       <p>{t("removal.batch.description", { count })}</p>
+      {/* P1-15：批量删除同属“删除库中 Skill”对象——提交前固定说明
+         保留什么（库外原文件）与恢复方式（仅事先导出的备份）。 */}
+      <div className="sh-removal-flow__disclaimer">
+        <p>{t("removal.retained")}</p>
+        <p>{t("removal.recovery")}</p>
+      </div>
       {impacts.map((impact) => (
         <section className="sh-removal-impact__skill" key={impact.operationId ?? impact.skillId}>
           <h3>{impact.skillName}</h3>

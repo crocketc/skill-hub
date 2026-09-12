@@ -123,8 +123,8 @@ test.describe("removal confirmations", () => {
     const dialog = page.getByRole("dialog");
     await expect(dialog).toBeVisible();
     // 打开时焦点进入流程标题。
-    await expect(dialog.getByRole("heading", { name: /Remove PDF Reader/ })).toBeFocused();
-    const confirm = page.getByRole("button", { name: "Confirm deletion" });
+    await expect(dialog.getByRole("heading", { name: /Delete PDF Reader from the library/ })).toBeFocused();
+    const confirm = page.getByRole("button", { name: "Confirm deletion from library" });
     await expect(confirm).toBeDisabled();
     await dialog.getByRole("combobox", { name: /Deployment handling：Codex CLI/ }).selectOption("remove_deployment");
     await dialog.getByRole("combobox", { name: /Deployment handling：Claude Code/ }).selectOption("keep_deployed");

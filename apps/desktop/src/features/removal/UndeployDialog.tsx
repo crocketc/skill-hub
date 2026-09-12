@@ -65,6 +65,11 @@ export function UndeployDialog({
           )}
         </select>
       </label>
+      {/* P1-15：固定说明保留什么（库中 Skill 与其他关系）与恢复方式（重新部署）。 */}
+      <div className="sh-removal-flow__disclaimer">
+        <p>{t("undeploy.retained")}</p>
+        <p>{t("undeploy.recovery")}</p>
+      </div>
       {error ? <p role="alert">{error}</p> : null}
     </RemovalShell>
   );

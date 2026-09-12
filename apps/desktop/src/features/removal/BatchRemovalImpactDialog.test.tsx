@@ -47,7 +47,7 @@ async function renderDialog(props: Partial<Parameters<typeof BatchRemovalImpactD
 it("requires impact choices and a second click confirmation without typed phrases", async () => {
   const { onConfirm } = await renderDialog();
 
-  expect(screen.getByText(/2 Skills are selected for deletion\./)).toBeVisible();
+  expect(screen.getByText(/2 Skills are selected for deletion from the library\./)).toBeVisible();
   expect(screen.getByRole("button", { name: "Continue to force deletion" })).toBeDisabled();
 
   fireEvent.change(screen.getByRole("combobox", { name: "Deployment handling: Codex" }), {
@@ -99,4 +99,14 @@ it("keeps the non-atomic batch risk adjacent to the forced-deletion action", asy
   expect(
     within(actions as HTMLElement).getByRole("button", { name: "Continue to force deletion" }),
   ).toBeInTheDocument();
+});
+
+it("states retention and the backup-only recovery path before batch deletion", async () => {
+  await renderDialog();
+
+  // P1-15：批量删除同样是“删除库中 Skill”对象——提交前固定说明
+  // 保留什么（库外原文件）与恢复方式（仅事先导出的备份）。
+  expect(screen.getByText(/Kept: files outside SkillHub are never touched/)).toBeVisible();
+  expect(screen.getByText(/Recovery: deleting from the library cannot be undone/)).toBeVisible();
+  expect(screen.getByText(/export a backup first/)).toBeVisible();
 });

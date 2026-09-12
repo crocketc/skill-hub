@@ -57,6 +57,11 @@ export function RemovalImpactDialog({ error, impact, onCancel, onConfirm, submit
           </label>
         ))}
       </div>
+      {/* P1-15：提交前固定说明保留什么与恢复方式（如实提示仅备份可恢复）。 */}
+      <div className="sh-removal-flow__disclaimer">
+        <p>{t("removal.retained")}</p>
+        <p>{t("removal.recovery")}</p>
+      </div>
       {error ? <p className="sh-removal-flow__error" role="alert"><Icon aria-hidden="true" name="failure" size={16} />{error}</p> : null}
     </RemovalShell>
   );

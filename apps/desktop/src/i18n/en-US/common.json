@@ -688,15 +688,15 @@
       "managedDeployments": {
         "eyebrow": "Managed deployments",
         "title": "Managed skill copies in this project directory",
-        "description": "After detaching, files stay in place and SkillHub no longer tracks external changes of that copy.",
+        "description": "Removing the deployment relation keeps the files in place; SkillHub no longer tracks external changes of that copy.",
         "empty": "This project directory has no managed skill copies.",
         "unavailable": "Unable to read deployment records.",
-        "detach": "Detach management",
-        "confirm": "Confirm detach",
+        "detach": "Remove deployment relation",
+        "confirm": "Confirm relation removal",
         "cancel": "Cancel",
-        "confirmBody": "Detach management of {{skill}} ({{path}})? Files stay in place; future changes are no longer tracked.",
-        "detached": "Management detached: {{skill}}.",
-        "failed": "Failed to detach management ({{code}}). Please retry; if it persists, note the error code."
+        "confirmBody": "Remove the deployment relation of {{skill}} ({{path}})? Files stay in place, future changes are no longer tracked; redeploy or re-import to manage them again.",
+        "detached": "Deployment relation removed: {{skill}}.",
+        "failed": "Failed to remove the deployment relation ({{code}}). Please retry; if it persists, note the error code."
       },
       "eyebrow": "Project detail",
       "agentAssociations": {
@@ -760,7 +760,7 @@
         "skipped": "Skipped",
         "failed": "Failed"
       },
-      "detachNote": "Detaching management applies to a single deployment relation and is handled per deployment in deployment management; this page offers no deployment to detach."
+      "detachNote": "Removing a deployment relation applies to a single relation and is handled per deployment in deployment management; this page offers no deployment to detach."
     }
   },
   "appShell": {
@@ -919,7 +919,7 @@
         "addTagsDescription": "The entered tags will be added to every selected Skill.",
         "addTagsTitle": "Add tags",
         "archive": "Archive",
-        "delete": "Delete selected Skills",
+        "delete": "Delete selected Skills from library",
         "error": "The batch workflow could not be started",
         "export": "Submit export job",
         "exportTitle": "Submit the selected Skills through the native batch export workflow; use Start export to open the export wizard",
@@ -928,6 +928,11 @@
         "removeTags": "Remove tags",
         "removeTagsDescription": "The entered tags will be removed from every selected Skill.",
         "removeTagsTitle": "Remove tags",
+        "removeTagsConfirmTitle": "Confirm tag removal",
+        "removeTagsConfirmDescription": "The following tags will be removed from the selected Skills:",
+        "removeTagsConfirmAction": "Confirm removal",
+        "removeTagsRetained": "Kept: the Skill itself, its content and deployments are untouched.",
+        "removeTagsRecovery": "Recovery: add the same tags back at any time; removals are not kept as history.",
         "securityCheck": "Run security check",
         "tagOutcomeError": "Could not save tags ({{code}}).",
         "tagsHint": "Separate multiple tags with commas. Duplicate tags are ignored.",
@@ -1012,7 +1017,7 @@
         "addTo": "Add to",
         "addTags": "Add tags",
         "archive": "Archive",
-        "delete": "Delete Skill",
+        "delete": "Delete from library",
         "export": "Export",
         "removeTags": "Remove tags",
         "securityCheck": "Run security check"
@@ -1278,7 +1283,7 @@
   },
   "skillDetail": {
     "actions": {
-      "delete": "Delete Skill"
+      "delete": "Delete from library"
     },
     "versions": {
       "exportSkill": "Export this skill (standard export)",
@@ -1633,26 +1638,28 @@
     }
   },
   "removal": {
-    "eyebrow": "Removal impact",
-    "heading": "Remove {{name}} from the managed library?",
-    "description": "Choose what should happen at every deployment target before deleting the central Skill.",
+    "eyebrow": "Delete from library",
+    "heading": "Delete {{name}} from the library?",
+    "description": "This deletes the Skill record, its content and version history from the central library; handle every deployment target below.",
     "loading": "Loading deletion impact…",
     "loadError": "Deletion impact could not be loaded. Try again.",
     "commitError": "Deletion did not complete. The managed library was preserved; review and retry.",
     "dependents": "Dependent projects: {{projects}}",
+    "retained": "Kept: files outside SkillHub are never touched; deployed copies follow the per-target choices above.",
+    "recovery": "Recovery: deleting from the library cannot be undone in the app; export a backup first in Settings → Data protection if you need one.",
     "choiceLabel": "Deployment handling",
     "choose": "Choose an action",
     "choices": {
-      "keep": "Keep files and remove relation",
-      "remove": "Remove deployment",
-      "convert": "Keep as an independent copy"
+      "keep": "Keep the deployment relation (shared targets keep working)",
+      "remove": "Delete the deployed copy at the target (undeploy)",
+      "convert": "Convert to an independent copy (keep files, remove the deployment relation)"
     },
-    "confirm": "Confirm deletion",
-    "submitting": "Deleting…",
+    "confirm": "Confirm deletion from library",
+    "submitting": "Deleting from library…",
     "batch": {
       "eyebrow": "Batch deletion impact",
       "heading": "Review batch deletion impact",
-      "description": "{{count}} Skills are selected for deletion. Handle every deployment relationship first.",
+      "description": "{{count}} Skills are selected for deletion from the library. Handle every deployment relationship first.",
       "noDeployments": "No deployments need handling.",
       "continue": "Continue to force deletion",
       "forceConfirm": "Force delete {{count}} Skills",
@@ -1673,21 +1680,23 @@
     }
   },
   "undeploy": {
-    "eyebrow": "Undeploy impact",
+    "eyebrow": "Undeploy",
     "heading": "Undeploy from {{target}}?",
-    "description": "Choose whether to remove the managed target or keep its files as an independent copy.",
-    "sharedNotice": "This target is shared. Its files will remain available to other relations.",
+    "description": "Undeploying deletes the deployed copy at the target, or converts the files into an independent copy and removes the deployment relation.",
+    "sharedNotice": "This target is shared by several deployment relations: only this relation is removed and the files stay available to the others.",
     "choiceLabel": "Undeploy handling",
     "choose": "Choose an action",
     "choices": {
-      "keepShared": "Remove only this relation and keep shared files",
-      "remove": "Remove the managed deployment",
-      "keepCopy": "Keep files as an independent copy"
+      "keepShared": "Remove only this relation (shared files stay with the others)",
+      "remove": "Delete the deployed copy at the target",
+      "keepCopy": "Convert to an independent copy (keep files, remove the deployment relation)"
     },
     "confirm": "Confirm undeploy",
     "submitting": "Undeploying…",
     "loadError": "Undeploy impact could not be loaded.",
-    "commitError": "Undeploy did not complete. Review the target and retry."
+    "commitError": "Undeploy did not complete. Review the target and retry.",
+    "retained": "Kept: the Skill, its version history and other deployment relations in the library are unaffected.",
+    "recovery": "Recovery: redeploying the same Skill rebuilds the copy at the target."
   },
   "pending": {
     "eyebrow": "Pending work",

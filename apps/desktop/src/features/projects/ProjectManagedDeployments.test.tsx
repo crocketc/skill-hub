@@ -78,14 +78,14 @@ describe("ProjectManagedDeployments", () => {
     });
     await renderSection(ops);
     await screen.findByText(/skill-pdf/);
-    fireEvent.click(screen.getByRole("button", { name: "解除管理" }));
+    fireEvent.click(screen.getByRole("button", { name: "移除部署关系" }));
     expect(ops.detach).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole("button", { name: "确认解除管理" }));
+    fireEvent.click(screen.getByRole("button", { name: "确认移除部署关系" }));
     await waitFor(() => expect(ops.detach).toHaveBeenCalledWith("dep-1"));
-    expect(await screen.findByText(/已解除管理/)).toBeVisible();
+    expect(await screen.findByText(/已移除部署关系/)).toBeVisible();
     // The list reloads; the detached copy no longer appears as managed.
     await waitFor(() =>
-      expect(screen.queryByRole("button", { name: "解除管理" })).not.toBeInTheDocument(),
+      expect(screen.queryByRole("button", { name: "移除部署关系" })).not.toBeInTheDocument(),
     );
     expect(ops.list).toHaveBeenCalledTimes(2);
   });
@@ -96,8 +96,8 @@ describe("ProjectManagedDeployments", () => {
     });
     await renderSection(ops);
     await screen.findByText(/skill-pdf/);
-    fireEvent.click(screen.getByRole("button", { name: "解除管理" }));
-    fireEvent.click(screen.getByRole("button", { name: "确认解除管理" }));
+    fireEvent.click(screen.getByRole("button", { name: "移除部署关系" }));
+    fireEvent.click(screen.getByRole("button", { name: "确认移除部署关系" }));
     expect(await screen.findByRole("alert")).toHaveTextContent(/removal\.detach_management_failed/);
   });
 

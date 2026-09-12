@@ -121,7 +121,7 @@ describe("SkillLibraryPage", () => {
     renderLibrary({ facade, removalFacade });
 
     fireEvent.click(await screen.findByRole("checkbox", { name: "Select PDF Reader" }));
-    fireEvent.click(screen.getByRole("button", { name: "Delete selected Skills" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete selected Skills from library" }));
     expect(await screen.findByRole("dialog", { name: "Review batch deletion impact" })).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "Continue to force deletion" }));
     // QA-001：二次点击确认取代 FORCE DELETE 文本输入。
@@ -146,7 +146,7 @@ describe("SkillLibraryPage", () => {
 
     fireEvent.click(await screen.findByRole("checkbox", { name: "Select PDF Reader" }));
     fireEvent.click(screen.getByRole("checkbox", { name: "Select DOCX Writer" }));
-    fireEvent.click(screen.getByRole("button", { name: "Delete selected Skills" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete selected Skills from library" }));
     expect(await screen.findByRole("dialog", { name: "Review batch deletion impact" })).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "Continue to force deletion" }));
     fireEvent.click(screen.getByRole("button", { name: "Click again to confirm deleting 2 Skills" }));
@@ -172,7 +172,7 @@ describe("SkillLibraryPage", () => {
 
     await screen.findByText("PDF Reader");
     fireEvent.click(skillNameCell("PDF Reader"));
-    fireEvent.click(await screen.findByRole("button", { name: "Delete Skill" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Delete from library" }));
 
     expect(await screen.findByRole("dialog", { name: "Review batch deletion impact" })).toBeVisible();
     expect(removalFacade.prepareDelete).toHaveBeenCalledWith("skill-pdf", "PDF Reader");
@@ -266,6 +266,8 @@ describe("SkillLibraryPage", () => {
       target: { value: "documents" },
     });
     fireEvent.click(within(dialog).getByRole("button", { name: "Remove tags" }));
+    // P1-15：移除标签提交前有轻量预览确认步，确认后才写回元数据。
+    fireEvent.click(within(dialog).getByRole("button", { name: "Confirm removal" }));
 
     await waitFor(() => {
       expect(facade.calls.saveSkillMetadata).toContainEqual({
@@ -341,7 +343,7 @@ describe("SkillLibraryPage", () => {
       "Submit export job",
       "Archive",
       // 破坏性操作单独分组且位于最右侧
-      "Delete selected Skills",
+      "Delete selected Skills from library",
     ]);
     const destructive = (actions as HTMLElement).querySelector(
       ".sh-skill-library__batch-destructive",
@@ -349,7 +351,7 @@ describe("SkillLibraryPage", () => {
     expect(destructive).not.toBeNull();
     expect(
       within(destructive as HTMLElement).getByRole("button", {
-        name: "Delete selected Skills",
+        name: "Delete selected Skills from library",
       }),
     ).toBeInTheDocument();
     // “清除选择”保持轻量操作，与批量动作分离且不占用破坏性分组位置
@@ -377,7 +379,7 @@ describe("SkillLibraryPage", () => {
     const destructive = batchBar.querySelector(".sh-skill-library__batch-destructive");
     expect(destructive).not.toBeNull();
     const deleteButton = within(destructive as HTMLElement).getByRole("button", {
-      name: "Delete selected Skills",
+      name: "Delete selected Skills from library",
     });
     expect(deleteButton).toHaveClass("sh-button--ghost");
     expect(deleteButton).not.toHaveClass("sh-button--danger");

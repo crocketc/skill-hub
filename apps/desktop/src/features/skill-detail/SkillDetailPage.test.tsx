@@ -25,6 +25,7 @@ import { skillLibraryKeys } from "../skills/api";
 interface RenderDetailOptions {
   entry?: InitialEntry;
   facade?: SkillDetailFacade;
+  locale?: "en-US" | "zh-CN";
   markdownFacade?: MarkdownFacade;
   removalFacade?: RemovalFacade;
 }
@@ -32,10 +33,11 @@ interface RenderDetailOptions {
 async function renderDetail({
   entry = "/library/skill-pdf",
   facade = createMockSkillDetailFacade(),
+  locale = "en-US",
   markdownFacade = createMockMarkdownFacade(),
   removalFacade,
 }: RenderDetailOptions = {}) {
-  const i18n = await createSkillHubI18n(["en-US"]);
+  const i18n = await createSkillHubI18n([locale]);
   const client = new QueryClient({
     defaultOptions: { mutations: { retry: false }, queries: { retry: false } },
   });
@@ -100,9 +102,9 @@ describe("SkillDetailPage shell", () => {
     const { client } = await renderDetail({ removalFacade });
     client.setQueryData(skillLibraryKeys.root, { cached: true });
 
-    fireEvent.click(await screen.findByRole("button", { name: "Delete Skill" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Delete from library" }));
     expect(await screen.findByRole("dialog")).toBeVisible();
-    fireEvent.click(screen.getByRole("button", { name: "Confirm deletion" }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm deletion from library" }));
 
     await waitFor(() => expect(removalFacade.commitDelete).toHaveBeenCalledWith("op-delete", {}));
     expect(client.getQueryState(skillLibraryKeys.root)?.isInvalidated).toBe(true);
@@ -124,12 +126,21 @@ describe("SkillDetailPage shell", () => {
     };
     await renderDetail({ removalFacade });
 
-    fireEvent.click(await screen.findByRole("button", { name: "Delete Skill" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Delete from library" }));
     expect(await screen.findByRole("dialog")).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
 
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(removalFacade.commitDelete).not.toHaveBeenCalled();
+  });
+
+  it("names the destructive entries after their own removal objects in Chinese", async () => {
+    await renderDetail({ locale: "zh-CN" });
+
+    // P1-15：入口名与移除对象一一对应——详情页删除按钮指向“删除库中 Skill”，
+    // 关系区逐条入口指向“取消部署”，不复用笼统的“移除”。
+    expect(await screen.findByRole("button", { name: "从库中删除 Skill" })).toBeVisible();
+    expect(await screen.findByRole("button", { name: "从 Codex CLI 取消部署" })).toBeVisible();
   });
 
   it("prepares and commits a shared-target undeploy from the relations section", async () => {
@@ -359,7 +370,7 @@ describe("SkillDetailPage shell", () => {
         Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
     expect(
-      contentColumn?.contains(screen.getByRole("button", { name: "Delete Skill" })),
+      contentColumn?.contains(screen.getByRole("button", { name: "Delete from library" })),
     ).toBe(true);
   });
 
