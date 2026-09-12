@@ -88,10 +88,18 @@ function createPreviewSetup(scenario: PreviewScenario): PreviewSetup {
     };
   }
   if (scenario === "fail-acquire") {
+    // M-29：首次获取按来源失败一次，重试扫描后恢复——预览同时呈现失败行
+    // 与单目录恢复路径（重试仍失败的语义由单元测试与真实 facade 覆盖）。
+    const failedOnce = new Set<string>();
+    const healthyAcquire = mock.acquireCandidates.bind(mock);
     facade = {
       ...mock,
-      async acquireCandidates() {
-        throw new Error("preview.acquire_failed");
+      async acquireCandidates(source, signal) {
+        if (!failedOnce.has(source.displayTarget)) {
+          failedOnce.add(source.displayTarget);
+          throw new Error("preview.acquire_failed");
+        }
+        return healthyAcquire(source, signal);
       },
     };
   }

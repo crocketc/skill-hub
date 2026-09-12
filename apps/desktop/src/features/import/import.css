@@ -187,6 +187,12 @@ section.sh-import-wizard {
   overflow-wrap: anywhere;
 }
 
+/* M-29：门槛页行内操作（重试扫描/移除来源等）与主操作一致保持 44px
+   最小可及目标尺寸，覆盖共享 .sh-button--sm 的 2rem。 */
+.sh-import-wizard .sh-import-wizard__gate .sh-button {
+  min-height: 2.75rem;
+}
+
 /* —— 长路径在冲突列表与摘要中换行，不产生根级横向滚动 —— */
 
 .sh-import-conflicts code,

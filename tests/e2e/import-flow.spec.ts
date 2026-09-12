@@ -212,19 +212,29 @@ test("keeps the onboarding variant to scanned sources with the acquire action in
   await expect(page.getByRole("checkbox", { name: /PDF/ }).first()).toBeVisible();
 });
 
-test("surfaces acquisition failures with an alert and recovers through the footer retry", async ({ page }) => {
+test("surfaces per-source acquisition failures in the scan gate and recovers through the gate retry", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.goto(`${PREVIEW}?scenario=fail-acquire`);
 
   await page.getByRole("textbox", { name: "来源" }).fill("C:/skills/preview");
   await page.getByRole("button", { name: "解析来源" }).click();
 
-  await expect(page.getByRole("alert")).toBeVisible();
-  await expect(page.getByRole("textbox", { name: "来源" })).toBeVisible();
-  const retry = page.getByRole("button", { name: "重试" });
+  // M-29：单目录获取失败进入多来源门槛页——失败原因、按目录重试与移除可见，
+  // 门槛保持诚实（0 个候选不放行），不再呈现全局 alert。
+  await expect(page.getByText("已从 0 个来源目录获取候选")).toBeVisible();
+  await expect(page.getByText(/C:\/skills\/preview：导入步骤未能完成（preview\.acquire_failed）。/)).toBeVisible();
+  const retry = page.getByRole("button", { name: "重新扫描 C:/skills/preview" });
   expect((await retry.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+  const remove = page.getByRole("button", { name: "移除来源 C:/skills/preview" });
+  expect((await remove.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+  await expect(page.getByRole("button", { name: "继续选择候选" })).toBeDisabled();
+
+  // 恢复路径：重试扫描只重读该目录，失败行消失并恢复为候选计数。
   await retry.click();
-  await expect(page.getByRole("alert")).toHaveCount(0);
+  await expect(page.getByText("已从 1 个来源目录获取候选")).toBeVisible();
+  await expect(page.getByText(/C:\/skills\/preview：2 个候选/)).toBeVisible();
+  await expect(page.getByText(/导入步骤未能完成（preview\.acquire_failed）。/)).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "继续选择候选" })).toBeEnabled();
 });
 
 test("returns cancelled acquisitions to a reusable source step", async ({ page }) => {
@@ -295,12 +305,13 @@ test.describe("theme contract", () => {
       await expectNoRootHorizontalOverflow(page, `theme ${theme}@1280`);
       await expectFocusVisible(page, theme);
 
-      // 失败状态（图标 + 文字的告警与主操作）在任意主题下可读且不横溢。
+      // 失败状态（门槛页失败行 + 行内重试/移除操作）在任意主题下可读且不横溢。
       await page.goto(`${PREVIEW}?scenario=fail-acquire`);
       await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
       await page.getByRole("textbox", { name: "来源" }).fill("C:/skills/preview");
       await page.getByRole("button", { name: "解析来源" }).click();
-      await expect(page.getByRole("alert")).toBeVisible();
+      await expect(page.getByText(/C:\/skills\/preview：导入步骤未能完成（preview\.acquire_failed）。/)).toBeVisible();
+      await expect(page.getByRole("button", { name: "重新扫描 C:/skills/preview" })).toBeVisible();
       await expectNoRootHorizontalOverflow(page, `theme ${theme} failure@1280`);
     });
   }
