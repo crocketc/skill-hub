@@ -39,10 +39,10 @@ fn open_exposes_the_migration_report() {
     let report = db.migration_report();
 
     assert_eq!(report.from_version, 0);
-    assert_eq!(report.to_version, 11);
+    assert_eq!(report.to_version, 12);
     assert_eq!(
         report.applied_versions,
-        vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
+        vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
     );
 }
 
@@ -69,7 +69,7 @@ fn v4_database_upgrades_check_run_metadata_in_v5() {
     assert_eq!(db.schema_version().unwrap(), 12);
     assert_eq!(
         db.migration_report().applied_versions,
-        vec![5, 6, 7, 8, 9, 10, 11]
+        vec![5, 6, 7, 8, 9, 10, 11, 12]
     );
     let generation: String = db
         .connection_for_test()

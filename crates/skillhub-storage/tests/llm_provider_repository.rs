@@ -25,8 +25,8 @@ fn migration_0010_creates_provider_config_and_translation_tables() {
     let database = open_database();
     assert_eq!(
         database.schema_version().expect("schema version"),
-        11,
-        "current schema version must be 11"
+        12,
+        "current schema version must match migrations::CURRENT_SCHEMA_VERSION"
     );
     assert!(
         database
