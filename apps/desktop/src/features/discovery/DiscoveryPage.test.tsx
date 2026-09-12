@@ -1,8 +1,10 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { I18nextProvider } from "react-i18next";
+import { MemoryRouter } from "react-router-dom";
 import { expect, it, vi } from "vitest";
 import { createSkillHubI18n } from "../../i18n";
+import { AppNotificationsProvider } from "../../ui/notifications";
 import { createMockImportFacade } from "../import/api";
 import type { DiscoverySnapshot, ScanResult } from "../../api/bindings";
 import { createOperationTracker } from "../../platform/operationTracker";
@@ -15,7 +17,9 @@ it("renders four fixed discovery module cards on the home page without runtime c
   const i18n = await createSkillHubI18n(["zh-CN"]);
   render(
     <I18nextProvider i18n={i18n}>
+      <MemoryRouter><AppNotificationsProvider>
       <DiscoveryPage />
+    </AppNotificationsProvider></MemoryRouter>
     </I18nextProvider>,
   );
 
@@ -33,7 +37,9 @@ it("renders home module icons from the icon registry instead of font glyphs", as
   const i18n = await createSkillHubI18n(["zh-CN"]);
   const { container } = render(
     <I18nextProvider i18n={i18n}>
+      <MemoryRouter><AppNotificationsProvider>
       <DiscoveryPage />
+    </AppNotificationsProvider></MemoryRouter>
     </I18nextProvider>,
   );
 
@@ -53,7 +59,9 @@ it("keeps the local subpage free of font-glyph icons", async () => {
   const i18n = await createSkillHubI18n(["zh-CN"]);
   const { container } = render(
     <I18nextProvider i18n={i18n}>
+      <MemoryRouter><AppNotificationsProvider>
       <DiscoveryPage view="local" />
+    </AppNotificationsProvider></MemoryRouter>
     </I18nextProvider>,
   );
 
@@ -67,7 +75,9 @@ it("navigates from each home card to its module subpage", async () => {
   const onNavigate = vi.fn();
   render(
     <I18nextProvider i18n={i18n}>
+      <MemoryRouter><AppNotificationsProvider>
       <DiscoveryPage onNavigate={onNavigate} />
+    </AppNotificationsProvider></MemoryRouter>
     </I18nextProvider>,
   );
 
@@ -89,8 +99,10 @@ it("returns to the discovery home from each module subpage", async () => {
     const onBack = vi.fn();
     const { unmount } = render(
       <I18nextProvider i18n={i18n}>
+      <MemoryRouter><AppNotificationsProvider>
         <DiscoveryPage view={view} onBack={onBack} />
-      </I18nextProvider>,
+      </AppNotificationsProvider></MemoryRouter>
+    </I18nextProvider>,
     );
 
     fireEvent.click(screen.getByRole("button", { name: "返回发现主页" }));
@@ -103,7 +115,9 @@ it("hosts the original module capabilities on their own subpages", async () => {
   const i18n = await createSkillHubI18n(["zh-CN"]);
   const { unmount } = render(
     <I18nextProvider i18n={i18n}>
+      <MemoryRouter><AppNotificationsProvider>
       <DiscoveryPage view="local" />
+    </AppNotificationsProvider></MemoryRouter>
     </I18nextProvider>,
   );
   expect(screen.getByRole("heading", { name: "本地发现" })).toBeVisible();
@@ -111,7 +125,9 @@ it("hosts the original module capabilities on their own subpages", async () => {
 
   render(
     <I18nextProvider i18n={i18n}>
+      <MemoryRouter><AppNotificationsProvider>
       <DiscoveryPage view="online" />
+    </AppNotificationsProvider></MemoryRouter>
     </I18nextProvider>,
   );
   expect(screen.getByRole("heading", { name: "在线发现" })).toBeVisible();
@@ -119,7 +135,9 @@ it("hosts the original module capabilities on their own subpages", async () => {
 
   render(
     <I18nextProvider i18n={i18n}>
+      <MemoryRouter><AppNotificationsProvider>
       <DiscoveryPage view="repo" discoveryFacade={repoStubFacade()} />
+    </AppNotificationsProvider></MemoryRouter>
     </I18nextProvider>,
   );
   // 等待子页挂载后的发现快照/仓库列表请求落定，避免 act 警告。
@@ -131,7 +149,9 @@ it("hosts the original module capabilities on their own subpages", async () => {
 
   render(
     <I18nextProvider i18n={i18n}>
+      <MemoryRouter><AppNotificationsProvider>
       <DiscoveryPage view="lock" discoveryFacade={repoStubFacade()} />
+    </AppNotificationsProvider></MemoryRouter>
     </I18nextProvider>,
   );
   await act(async () => {
@@ -145,7 +165,9 @@ it("demotes the ~/.agents lock card to the last, visually secondary source", asy
   const i18n = await createSkillHubI18n(["zh-CN"]);
   render(
     <I18nextProvider i18n={i18n}>
+      <MemoryRouter><AppNotificationsProvider>
       <DiscoveryPage />
+    </AppNotificationsProvider></MemoryRouter>
     </I18nextProvider>,
   );
 
@@ -163,7 +185,9 @@ it("explains the secondary lock source at the top of the lock subpage", async ()
   const i18n = await createSkillHubI18n(["zh-CN"]);
   render(
     <I18nextProvider i18n={i18n}>
+      <MemoryRouter><AppNotificationsProvider>
       <DiscoveryPage view="lock" discoveryFacade={repoStubFacade()} />
+    </AppNotificationsProvider></MemoryRouter>
     </I18nextProvider>,
   );
 
@@ -175,7 +199,9 @@ it("opens the production import wizard without showing mock candidates", async (
   const i18n = await createSkillHubI18n(["zh-CN"]);
   render(
     <I18nextProvider i18n={i18n}>
+      <MemoryRouter><AppNotificationsProvider>
       <DiscoveryPage view="local" />
+    </AppNotificationsProvider></MemoryRouter>
     </I18nextProvider>,
   );
 
@@ -191,7 +217,9 @@ it("uses the supplied facade only for the import wizard entry", async () => {
   const importFacade = { cancel: vi.fn() } as never;
   render(
     <I18nextProvider i18n={i18n}>
+      <MemoryRouter><AppNotificationsProvider>
       <DiscoveryPage view="local" importFacade={importFacade} />
+    </AppNotificationsProvider></MemoryRouter>
     </I18nextProvider>,
   );
 
@@ -205,12 +233,14 @@ it("reports committed imports and lets the user open the refreshed library", asy
   const onOpenLibrary = vi.fn();
   render(
     <I18nextProvider i18n={i18n}>
+      <MemoryRouter><AppNotificationsProvider>
       <DiscoveryPage
         view="local"
         importFacade={createMockImportFacade({ scenario: "safe-local" })}
         onImportComplete={onImportComplete}
         onOpenLibrary={onOpenLibrary}
       />
+    </AppNotificationsProvider></MemoryRouter>
     </I18nextProvider>,
   );
 
@@ -235,7 +265,9 @@ it("blocks a second import while a background import is already running", async 
   tracker.begin({ kind: "import", label: "批量导入 Skill", total: 2 });
   render(
     <I18nextProvider i18n={i18n}>
+      <MemoryRouter><AppNotificationsProvider>
       <DiscoveryPage view="local" tracker={tracker} />
+    </AppNotificationsProvider></MemoryRouter>
     </I18nextProvider>,
   );
 
@@ -249,11 +281,13 @@ it("opens the guided import flow with the first scanned source prefilled", async
   const i18n = await createSkillHubI18n(["zh-CN"]);
   render(
     <I18nextProvider i18n={i18n}>
+      <MemoryRouter><AppNotificationsProvider>
       <DiscoveryPage
         view="local"
         initialSources={["C:\\Users\\Test\\.codex\\skills", "C:\\Users\\Test\\.claude\\skills"]}
         initialSourceText={"C:\\Users\\Test\\.codex\\skills"}
       />
+    </AppNotificationsProvider></MemoryRouter>
     </I18nextProvider>,
   );
 
@@ -274,7 +308,9 @@ it("routes an installed online hit into the import wizard on the online subpage"
   }));
   render(
     <I18nextProvider i18n={i18n}>
+      <MemoryRouter><AppNotificationsProvider>
       <DiscoveryPage view="online" discoveryFacade={facade} />
+    </AppNotificationsProvider></MemoryRouter>
     </I18nextProvider>,
   );
 
@@ -306,7 +342,9 @@ it("carries the scanned candidates into the import wizard on review", async () =
   facade.scanTargets = async () => workbenchScanResult;
   render(
     <I18nextProvider i18n={i18n}>
+      <MemoryRouter><AppNotificationsProvider>
       <DiscoveryPage view="local" discoveryFacade={facade} />
+    </AppNotificationsProvider></MemoryRouter>
     </I18nextProvider>,
   );
 
@@ -340,8 +378,10 @@ it("keeps local discovery actions reachable without scrolling at 800x600 and 128
     window.innerHeight = height;
     const { container, unmount } = render(
       <I18nextProvider i18n={i18n}>
+      <MemoryRouter><AppNotificationsProvider>
         <DiscoveryPage view="local" discoveryFacade={facade} />
-      </I18nextProvider>,
+      </AppNotificationsProvider></MemoryRouter>
+    </I18nextProvider>,
     );
 
     // Agent 目录盘点加载后才有滚动所有者。

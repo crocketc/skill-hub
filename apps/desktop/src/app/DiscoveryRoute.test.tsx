@@ -5,6 +5,7 @@ import { MemoryRouter, Outlet, Route, Routes } from "react-router-dom";
 import { expect, it, vi } from "vitest";
 import type { BootstrapSnapshot } from "../api/bindings";
 import { createSkillHubI18n } from "../i18n";
+import { AppNotificationsProvider } from "../ui/notifications";
 import type { DiscoveryFacade } from "../features/discovery/api";
 import {
   createMockImportFacade,
@@ -75,20 +76,20 @@ async function renderDiscoveryRoute(
   const refreshSnapshot = vi.fn(async () => {});
   render(
     <I18nextProvider i18n={i18n}>
-      <MemoryRouter
-        initialEntries={[{ pathname: "/discovery/local", state: options.locationState }]}
-      >
-        <Routes>
-          <Route
-            element={<Outlet context={{ refreshSnapshot, snapshot } satisfies BootstrapOutletContext} />}
-            path="/"
-          >
+      <MemoryRouter initialEntries={[{ pathname: "/discovery/local", state: options.locationState }]}>
+        <AppNotificationsProvider>
+          <Routes>
             <Route
-              element={<DiscoveryRoute discoveryFacade={stubDiscoveryFacade()} importFacade={facade} view="local" />}
-              path="discovery/local"
-            />
-          </Route>
-        </Routes>
+              element={<Outlet context={{ refreshSnapshot, snapshot } satisfies BootstrapOutletContext} />}
+              path="/"
+            >
+              <Route
+                element={<DiscoveryRoute discoveryFacade={stubDiscoveryFacade()} importFacade={facade} view="local" />}
+                path="discovery/local"
+              />
+            </Route>
+          </Routes>
+        </AppNotificationsProvider>
       </MemoryRouter>
     </I18nextProvider>,
   );
