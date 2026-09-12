@@ -111,11 +111,34 @@ test.describe("long text and multiple providers", () => {
     await expect(longRow).toBeVisible();
 
     await longRow.getByRole("button", { name: "Test connection" }).click();
+
+    // M-05 presenter：主文案为本地化可读文本，不内嵌裸码；未映射的失败码
+    // 只出现在折叠的诊断详情里，展开核对时同样不得破坏横向不溢出。
+    const report = longRow.locator("ul.sh-settings-provider__report");
     await expect(
-      longRow.getByText(
-        "Model connection failed (llm.provider_not_found_or_unauthorized_very_long_code_suffix); reachability alone does not prove the model works",
+      report.getByText(
+        "Model connection failed; reachability alone does not prove the model works",
+        { exact: true },
       ),
     ).toBeVisible();
+
+    const diagnostics = report.locator("details");
+    const longCode = "llm.provider_not_found_or_unauthorized_very_long_code_suffix";
+    await expect(diagnostics).toContainText(longCode);
+    // 裸码不允许出现在诊断详情之外（主文案保持无中英混排）。
+    const outsideCode = ((await report.textContent()) ?? "").replace(
+      (await diagnostics.textContent()) ?? "",
+      "",
+    );
+    expect(outsideCode).not.toContain(longCode);
+
+    // 展开诊断详情：长码完整可读（详情框自身不裁切），整页仍无横向溢出。
+    await diagnostics.locator("summary").click();
+    await expect(diagnostics).toBeVisible();
+    const clipped = await diagnostics.evaluate(
+      (element) => element.scrollWidth > element.clientWidth + 1,
+    );
+    expect(clipped).toBe(false);
 
     const metrics = await layoutMetrics(page);
     expect(metrics.rootScrollWidth).toBeLessThanOrEqual(metrics.rootClientWidth);
