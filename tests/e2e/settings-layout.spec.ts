@@ -66,6 +66,12 @@ test.describe("settings section layout across widths", () => {
       expect(metrics.singleColumn, `cards stay single column at ${width}px`).toBe(true);
       expect(metrics.stackedCards, `cards never sit side by side at ${width}px`).toBe(true);
 
+      // P2-01：页头↔正文留白节奏统一消费 --page-gap（= --space-4 = 16px）。
+      const pageGap = await page.evaluate(
+        () => parseFloat(getComputedStyle(document.querySelector<HTMLElement>(".sh-settings-page")!).rowGap),
+      );
+      expect(pageGap, `unified section gap at ${width}px`).toBe(16);
+
       // 分区导航位置：1280/1440 左侧，800/1024 顶部紧凑。
       if (width >= 1280) {
         expect(metrics.sideBySide, `nav sits left of content at ${width}px`).toBe(true);

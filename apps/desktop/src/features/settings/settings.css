@@ -1,8 +1,10 @@
-/* 设置页样式：分区导航 + 单列内容（设计规格 5.1）。只用 --ui-* 语义 token。 */
+/* 设置页样式：分区导航 + 单列内容（设计规格 5.1）。只用 --ui-* 语义 token。
+   P2-01：页头↔正文的 section gap 消费共享 --page-gap token（与概览/发现
+   同一档），不在页面级另写一档间距。 */
 
 .sh-settings-page {
   display: grid;
-  gap: var(--space-5);
+  gap: var(--page-gap);
   min-width: 0;
 }
 

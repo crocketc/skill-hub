@@ -9,7 +9,16 @@ import { AiNetworkSettings } from "./AiNetworkSettings";
 import { ApplicationUpdate } from "./ApplicationUpdate";
 import { NetworkStoragePlaceholder } from "./NetworkStoragePlaceholder";
 import { availableUpdate, networkSettings, settingsFixture, type SettingsFacade } from "./api";
+import settingsCss from "./settings.css?raw";
 import { SettingsPage } from "./SettingsPage";
+
+// P2-01：设置页与概览、发现共用同一档页头↔正文的留白节奏（--page-gap），
+// 不允许页面级另写一档间距。
+it("drives the settings page section gap from the shared page-gap token", () => {
+  const pageStart = settingsCss.indexOf(".sh-settings-page {");
+  const pageBlock = settingsCss.slice(pageStart, settingsCss.indexOf("}", pageStart) + 1);
+  expect(pageBlock).toMatch(/gap:\s*var\(--page-gap\)/);
+});
 
 it("offers an explicit way to rerun initialization", async () => {
   const i18n = await createSkillHubI18n(["zh-CN"]);

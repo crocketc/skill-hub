@@ -61,6 +61,27 @@ test.describe("discovery shared skill cards", () => {
       .first();
     await expect(importedCard.getByRole("button", { name: "Install & import" })).toBeDisabled();
 
+    // P2-01：页头↔正文留白节奏统一消费 --page-gap（= --space-4 = 16px），
+    // PageFrame 不再叠加第二层内边距。
+    const rhythm = await page.evaluate(() => {
+      const frame = document.querySelector<HTMLElement>(".sh-page-frame");
+      if (!frame) return null;
+      const style = getComputedStyle(frame);
+      return {
+        rowGap: parseFloat(style.rowGap),
+        paddingTop: parseFloat(style.paddingTop),
+        headerBottom: frame.querySelector(".sh-page-header")!.getBoundingClientRect().bottom,
+        contentTop: frame.querySelector(".sh-preview-board__themes")!.getBoundingClientRect().top,
+      };
+    });
+    expect(rhythm, "the discovery preview page frame must exist").not.toBeNull();
+    expect(rhythm!.rowGap, "section gap must sit on the unified 16px step").toBe(16);
+    expect(rhythm!.paddingTop, "page frame must not stack a second padding layer").toBe(0);
+    expect(
+      Math.abs((rhythm!.contentTop - rhythm!.headerBottom) - rhythm!.rowGap),
+      "header-to-content distance must equal the section gap",
+    ).toBeLessThanOrEqual(1);
+
     await expect.poll(() => rootHorizontalOverflow(page)).toBeLessThanOrEqual(0);
   });
 

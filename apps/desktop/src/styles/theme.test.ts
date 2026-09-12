@@ -257,6 +257,28 @@ it("keeps the legacy color variables usable as compatibility aliases", () => {
   }
 });
 
+// P2-01：页面级留白节奏 token——页头与正文区块之间的 section gap。概览
+// （PageFrame）、设置、发现三页共用同一档，不允许页面各自内联一档间距。
+const pageRhythmTokens = ["page-gap"] as const;
+
+it.each(pageRhythmTokens)("defines the shared page rhythm token --%s", (token) => {
+  const rootTokens = {
+    ...tokensFor(":root", "first"),
+    ...tokensFor(":root", "last"),
+  };
+  expect(rootTokens[token], `--${token} is defined for every theme`).toBeTruthy();
+});
+
+it("keeps the page rhythm on the unified 1rem section-gap step", () => {
+  const rootTokens = {
+    ...tokensFor(":root", "first"),
+    ...tokensFor(":root", "last"),
+  };
+  expect(rootTokens["page-gap"], "--page-gap must alias the space-4 step").toBe(
+    "var(--space-4)",
+  );
+});
+
 it("keeps the radius ladder on the 4/6/10/14px design-spec steps", () => {
   const rootTokens = {
     ...tokensFor(":root", "first"),

@@ -72,3 +72,28 @@ it("keeps the guided import route scrollable inside the default desktop viewport
   expect(wizardBlock).toMatch(/height:\s*100%/);
   expect(wizardBlock).toMatch(/grid-template-rows:\s*auto minmax\(0, 1fr\)/);
 });
+
+// P2-01：页面级留白节奏统一——PageFrame 不再自带第二层内边距（AppShell
+// 内容区已统一提供 --space-5 留白），页头与正文之间的 section gap 一律
+// 消费 --page-gap token，不得在页面级各写一档。
+describe("unified page whitespace rhythm", () => {
+  it("renders the page frame without a second padding layer", () => {
+    const frameStart = baseCss.indexOf(".sh-page-frame {");
+    const frameBlock = baseCss.slice(frameStart, baseCss.indexOf("}", frameStart) + 1);
+    expect(frameBlock, "page frame must not stack padding on the shell padding").not.toMatch(
+      /padding:/,
+    );
+  });
+
+  it("drives the page frame section gap from the shared page-gap token", () => {
+    const frameStart = baseCss.indexOf(".sh-page-frame {");
+    const frameBlock = baseCss.slice(frameStart, baseCss.indexOf("}", frameStart) + 1);
+    expect(frameBlock).toMatch(/gap:\s*var\(--page-gap\)/);
+  });
+
+  it("drives the discovery page section gap from the shared page-gap token", () => {
+    const pageStart = baseCss.indexOf(".sh-discovery-page {");
+    const pageBlock = baseCss.slice(pageStart, baseCss.indexOf("}", pageStart) + 1);
+    expect(pageBlock).toMatch(/gap:\s*var\(--page-gap\)/);
+  });
+});

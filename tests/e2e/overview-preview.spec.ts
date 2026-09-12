@@ -102,6 +102,35 @@ test.describe("overview stays free of horizontal overflow", () => {
     });
   }
 
+  // P2-01：页头↔正文的留白节奏统一消费 --page-gap（= --space-4 = 16px），
+  // 且 PageFrame 不再叠加第二层内边距（AppShell 内容区已统一提供留白）。
+  for (const width of previewWidths) {
+    test(`keeps the unified page rhythm at ${width}x900`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto("/__preview/overview");
+
+      await expect(page.getByRole("link", { name: "27 skills" })).toBeVisible();
+      const rhythm = await page.evaluate(() => {
+        const frame = document.querySelector<HTMLElement>(".sh-page-frame");
+        if (!frame) return null;
+        const style = getComputedStyle(frame);
+        return {
+          rowGap: parseFloat(style.rowGap),
+          paddingTop: parseFloat(style.paddingTop),
+          headerBottom: frame.querySelector(".sh-page-header")!.getBoundingClientRect().bottom,
+          contentTop: frame.querySelector(".sh-overview")!.getBoundingClientRect().top,
+        };
+      });
+      expect(rhythm, "the overview page frame must exist").not.toBeNull();
+      expect(rhythm!.rowGap, "section gap must sit on the unified 16px step").toBe(16);
+      expect(rhythm!.paddingTop, "page frame must not stack a second padding layer").toBe(0);
+      expect(
+        Math.abs((rhythm!.contentTop - rhythm!.headerBottom) - rhythm!.rowGap),
+        "header-to-content distance must equal the section gap",
+      ).toBeLessThanOrEqual(1);
+    });
+  }
+
   test("no root horizontal overflow at 800x600 minimum height", async ({ page }) => {
     await page.setViewportSize({ width: 800, height: 600 });
     await page.goto("/__preview/overview");

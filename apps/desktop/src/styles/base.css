@@ -403,8 +403,10 @@ a {
 .sh-page-frame {
   display: grid;
   max-width: 72ch;
-  gap: var(--space-6);
-  padding: var(--space-5);
+  /* P2-01：section gap 统一消费 --page-gap；不再自带 padding——AppShell
+     内容区已统一提供 --space-5 页面留白，叠加会产生 40px 的双重内缩，
+     使概览类页面与设置/发现的留白节奏不一致。 */
+  gap: var(--page-gap);
 }
 
 .sh-page-frame--wide {
@@ -3599,7 +3601,13 @@ a {
   text-decoration: none;
 }
 
-.sh-discovery-page,
+/* P2-01：发现页 section gap 统一消费 --page-gap（与概览/设置同一档）；
+   导入向导不在三页统一范围内，维持原有 --space-5 节奏。 */
+.sh-discovery-page {
+  display: grid;
+  gap: var(--page-gap);
+}
+
 .sh-import-wizard {
   display: grid;
   gap: var(--space-5);

@@ -1,11 +1,8 @@
 /* 发现页样式（T2 独占）。T0 自 base.css 机械搬移的入口网格保持类名不变；
    模块子页与共享 Skill 卡片结果网格按设计规格 5.2 使用语义 token 与容器查询。
-   P1-06：整体收紧发现页密度——页头与内容、卡片内边距、模块子页间距。 */
-
-/* 覆盖 base.css 的 --space-5 页面级间距：验收反馈"标题与内容之间空白偏大"。 */
-.sh-discovery-page {
-  gap: var(--space-4);
-}
+   P1-06：整体收紧发现页密度——页头与内容、卡片内边距、模块子页间距。
+   P2-01：页头↔正文的 section gap 改由共享 --page-gap token 统一提供
+   （base.css 的 .sh-discovery-page 规则），本文件不再写页面级 gap 覆盖。 */
 
 .sh-discovery-page__grid {
   display: grid;
