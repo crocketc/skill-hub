@@ -333,7 +333,7 @@ it("exports every historical version when the history scope is chosen", async ()
   await waitFor(() => expect(facade.createExport).toHaveBeenCalledWith(expect.objectContaining({ versions: { history: ["v1", "v2"] } }), [{ skill_id: "skill-2", decision: "include_and_mark" }]));
 
 });
-  
+
 it("shows the library path and opens it through the native opener", async () => {
   const facade = createFacade();
   facade.libraryPath = vi.fn(async () => "C:/Users/demo/SkillHub");

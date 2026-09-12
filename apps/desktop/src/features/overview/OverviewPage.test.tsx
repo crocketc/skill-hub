@@ -180,6 +180,8 @@ it("renders each compact stat as a two-line card with a numeric figure and a met
 });
 
 it("locks the density ladder and the two-row metrics contract in overview.css", () => {
+  // 注意：本用例以正则匹配 CSS 源文本锁定布局契约（团队既有模式）。重排
+  // overview.css / base.css（含 prettier 空格换行差异）时需同步更新这些断言。
   // 比例阶梯：hero ≥ 6rem，紧凑卡 ≥ 4rem（原先 2.5rem 的矮卡是留白根因之一）。
   const heroRule = overviewCss.match(/\.sh-overview__hero\s*\{([^}]*)\}/)?.[1] ?? "";
   expect(heroRule).toContain("min-height: 6.5rem");
