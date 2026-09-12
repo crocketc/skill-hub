@@ -604,6 +604,26 @@ it("reports a readable error instead of [object Object] when the draft connectio
   expect(screen.getByRole("combobox", { name: "模型" })).toHaveValue("deepseek-chat");
 });
 
+it("clears the rendered draft test result when the model field changes", async () => {
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  const { facade } = recordingFacade({
+    testResult: {
+      endpoint: { reachable: true, latency_ms: 42 },
+      model: { ok: true, latency_ms: 88 },
+    },
+  });
+  const user = await openFilledDraftForm(i18n, facade);
+
+  await user.click(screen.getByRole("button", { name: "测试此配置" }));
+  expect(await screen.findByText(/模型连接可用/)).toBeVisible();
+
+  // 模型变了，旧的测试结果不再可信——必须立即清除，不能留着误导保存。
+  await user.type(screen.getByRole("combobox", { name: "模型" }), "-v2");
+
+  expect(screen.queryByText(/模型连接可用/)).not.toBeInTheDocument();
+  expect(screen.queryByText(/服务可达/)).not.toBeInTheDocument();
+});
+
 it("reports localized required-field messages instead of the browser validation bubble", async () => {
   const i18n = await createSkillHubI18n(["zh-CN"]);
   const { facade, saves } = recordingFacade();

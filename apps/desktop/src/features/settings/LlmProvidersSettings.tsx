@@ -385,6 +385,7 @@ export function LlmProvidersSettings({ facade = unavailableLlmFacade }: { facade
               list="llm-model-options"
               name="provider-model"
               onChange={(event) => {
+                clearStaleDraftResult();
                 setDraft({ ...draft, model: event.target.value });
                 clearFieldError("model");
               }}
