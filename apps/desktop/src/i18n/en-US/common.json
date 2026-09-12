@@ -24,7 +24,22 @@
     "retry": "Retry"
   },
   "notifications": {
-    "regionLabel": "Notifications"
+    "regionLabel": "Notifications",
+    "buttonLabel": "Notifications",
+    "buttonWithUnread": "Notifications, {{count}} unread",
+    "drawerTitle": "Notifications",
+    "filterAll": "All",
+    "filterUnread": "Unread",
+    "markAllRead": "Mark all as read",
+    "clearAll": "Clear all",
+    "emptyHistory": "No notifications yet.",
+    "emptyUnread": "No unread notifications.",
+    "tones": {
+      "success": "Success",
+      "info": "Info",
+      "warning": "Warning",
+      "danger": "Failure"
+    }
   },
   "markdown": {
     "code": {
@@ -770,7 +785,8 @@
     "placeholder": "The last known local data is shown. Detailed workspaces will be available in later features.",
     "skillCount": "skills",
     "verification": "Checking local changes",
-    "skipToContent": "Skip to content"
+    "skipToContent": "Skip to content",
+    "forward": "Forward"
   },
   "bootstrap": {
     "blockingStartup": "Blocking startup",

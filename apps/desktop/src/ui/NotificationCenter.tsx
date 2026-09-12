@@ -9,19 +9,23 @@ import {
 import { useTranslation } from "react-i18next";
 import { Button } from "./Button";
 import { Icon } from "./Icon";
+import {
+  type AppNoticeTone,
+  useOptionalAppNotifications,
+} from "./notifications";
 import "./notificationCenter.css";
 
 /**
- * P1-11 全局通知规范：
- * - 成功/中性通知 `role="status"` + `aria-live="polite"`，自动消退（时长常量
- *   NOTICE_AUTO_DISMISS_MS，Promise/timeout 驱动，非“任意延时”）且可手动关闭；
- * - 危险/失败通知 `role="alert"`，常驻不自动消失，必须显式关闭；
- * - 批量删除等危险操作的结果一律 persistent，即使全部成功也保持常驻。
- * 通知容器 fixed 定位；库页等有批量操作条的场景经 CSS 变量
- * `--skill-batch-bar-height` 抬升底部避让（该变量经 DOM 继承可得）。
+ * P1-11 局部通知契约（技能库等既有消费方）→ 新增01 全局通知中心的兼容桥：
+ * - 在 AppNotificationsProvider 内（真实应用壳层），useNotices 的推送/撤销
+ *   全部改走全局服务：toast 由 AppShell 顶部的统一栈展示（2 秒退出），
+ *   本体保留在会话历史；本组件不再重复渲染局部容器（返回 null）。
+ * - 无 Provider 时（独立单测/极端宿主），保留原局部实现：成功/中性 6 秒
+ *   自动消退、危险常驻可关闭。
+ * 新代码请直接消费 ui/notifications 的 useAppNotifications。
  */
 
-export type NoticeTone = "success" | "info" | "danger";
+export type NoticeTone = AppNoticeTone;
 
 export interface NoticeInput {
   tone: NoticeTone;
@@ -36,7 +40,7 @@ export interface NoticeInput {
 
 export interface Notice {
   detail?: ReactNode;
-  id: number;
+  id: number | string;
   kind?: string;
   message: string;
   persistent: boolean;
@@ -45,12 +49,14 @@ export interface Notice {
 
 export const NOTICE_AUTO_DISMISS_MS = 6000;
 
-export function useNotices() {
+/** 原局部实现：无全局 Provider 时的回退路径（行为保持不变）。 */
+function useLocalNotices() {
   const [notices, setNotices] = useState<Notice[]>([]);
   const nextIdRef = useRef(0);
   const timersRef = useRef(new Map<number, ReturnType<typeof setTimeout>>());
 
-  const dismissNotice = useCallback((id: number) => {
+  const dismissNotice = useCallback((id: number | string) => {
+    if (typeof id !== "number") return;
     const timer = timersRef.current.get(id);
     if (timer) {
       clearTimeout(timer);
@@ -90,10 +96,10 @@ export function useNotices() {
     setNotices((current) => {
       for (const notice of current) {
         if (notice.kind === kind) {
-          const timer = timersRef.current.get(notice.id);
+          const timer = timersRef.current.get(notice.id as number);
           if (timer) {
             clearTimeout(timer);
-            timersRef.current.delete(notice.id);
+            timersRef.current.delete(notice.id as number);
           }
         }
       }
@@ -111,17 +117,54 @@ export function useNotices() {
   return { dismissNoticesOfKind, dismissNotice, notices, pushNotice };
 }
 
+export function useNotices() {
+  // 两个 hook 路径都必须无条件调用，保证 hook 顺序稳定；
+  // 桥接分支是纯映射，不额外调用 hook。
+  const app = useOptionalAppNotifications();
+  const local = useLocalNotices();
+  if (!app) {
+    return local;
+  }
+  const { dismissByKind, dismiss, notices, notify } = app;
+  return {
+    dismissNoticesOfKind: dismissByKind,
+    dismissNotice: (id: number | string): void => {
+      dismiss(typeof id === "string" ? id : String(id));
+    },
+    notices: notices.map((notice) => ({
+      detail: notice.detailNode,
+      id: notice.id,
+      kind: notice.kind,
+      message: notice.title,
+      persistent: false,
+      tone: notice.tone,
+    })),
+    pushNotice: (input: NoticeInput): string =>
+      notify({
+        detailNode: input.detail,
+        kind: input.kind,
+        title: input.message,
+        tone: input.tone,
+      }),
+  };
+}
+
 export function NotificationCenter({
   notices,
   onDismiss,
 }: {
   notices: Notice[];
-  onDismiss: (id: number) => void;
+  onDismiss: (id: number | string) => void;
 }): JSX.Element | null {
   const { t } = useTranslation();
+  const bridged = useOptionalAppNotifications() !== null;
   // 键盘用户 Tab 进入通知关闭按钮后关闭通知，按钮随之卸载：
   // 把焦点送回进入通知前的宿主，避免丢焦到 body（对齐 Drawer 回退模式）。
   const focusHostRef = useRef<HTMLElement | null>(null);
+  if (bridged) {
+    // 全局中心（AppShell）已展示同一批通知，这里不再重复渲染局部容器。
+    return null;
+  }
   if (notices.length === 0) return null;
   return (
     <div

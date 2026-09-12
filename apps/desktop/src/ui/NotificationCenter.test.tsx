@@ -7,6 +7,7 @@ import {
   NotificationCenter,
   useNotices,
 } from "./NotificationCenter";
+import { AppNotificationsProvider } from "./notifications";
 
 function NoticeHarness({
   onReady,
@@ -190,5 +191,70 @@ describe("NotificationCenter focus return", () => {
 
     expect(screen.queryByText("Tags failed to save")).not.toBeInTheDocument();
     expect(host).toHaveFocus();
+  });
+});
+
+describe("NotificationCenter bridge to the app shell center", () => {
+  it("routes pushes through the global service and renders no duplicate local region", async () => {
+    vi.useFakeTimers();
+    const i18n = await createSkillHubI18n(["en-US"]);
+    let push: ReturnType<typeof useNotices>["pushNotice"] | undefined;
+    function Harness() {
+      const controls = useNotices();
+      push = controls.pushNotice;
+      return <NotificationCenter notices={controls.notices} onDismiss={controls.dismissNotice} />;
+    }
+    render(
+      <I18nextProvider i18n={i18n}>
+        <AppNotificationsProvider>
+          <Harness />
+        </AppNotificationsProvider>
+      </I18nextProvider>,
+    );
+
+    act(() => {
+      push?.({ message: "Could not save tags", tone: "danger" });
+    });
+
+    // 全局区域展示 toast（danger=alert），局部容器不再重复渲染。
+    const regions = document.querySelectorAll(".sh-notification-center");
+    expect(regions).toHaveLength(1);
+    expect(within(regions[0] as HTMLElement).getByRole("alert")).toHaveTextContent(
+      "Could not save tags",
+    );
+
+    // 桥接后的通知同样走 2 秒退出（新01 契约），错误本体保留在历史。
+    act(() => {
+      vi.advanceTimersByTime(NOTICE_AUTO_DISMISS_MS);
+    });
+    expect(document.querySelectorAll(".sh-notification-center")).toHaveLength(0);
+  });
+
+  it("still revokes notices as a kind group under the global service", async () => {
+    vi.useFakeTimers();
+    const i18n = await createSkillHubI18n(["en-US"]);
+    let controls: ReturnType<typeof useNotices> | undefined;
+    function Harness() {
+      controls = useNotices();
+      return <NotificationCenter notices={controls.notices} onDismiss={controls.dismissNotice} />;
+    }
+    render(
+      <I18nextProvider i18n={i18n}>
+        <AppNotificationsProvider>
+          <Harness />
+        </AppNotificationsProvider>
+      </I18nextProvider>,
+    );
+
+    act(() => {
+      controls?.pushNotice({ kind: "batch", message: "batch failed", tone: "danger" });
+    });
+    expect(document.querySelector(".sh-notification-center")).toHaveTextContent("batch failed");
+
+    act(() => {
+      controls?.dismissNoticesOfKind("batch");
+    });
+    expect(document.querySelector(".sh-notification-center")).toBeNull();
+    expect(controls?.notices).toHaveLength(0);
   });
 });
