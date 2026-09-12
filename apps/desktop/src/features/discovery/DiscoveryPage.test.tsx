@@ -93,20 +93,18 @@ it("navigates from each home card to its module subpage", async () => {
   expect(onNavigate).toHaveBeenNthCalledWith(4, "lock");
 });
 
-it("returns to the discovery home from each module subpage", async () => {
+it("leaves the sub-route return to the shell topbar without an in-page duplicate", async () => {
   const i18n = await createSkillHubI18n(["zh-CN"]);
   for (const view of MODULE_VIEWS) {
-    const onBack = vi.fn();
     const { unmount } = render(
       <I18nextProvider i18n={i18n}>
       <MemoryRouter><AppNotificationsProvider>
-        <DiscoveryPage view={view} onBack={onBack} />
+        <DiscoveryPage view={view} />
       </AppNotificationsProvider></MemoryRouter>
     </I18nextProvider>,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "返回发现主页" }));
-    expect(onBack).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("button", { name: "返回发现主页" })).toBeNull();
     unmount();
   }
 });

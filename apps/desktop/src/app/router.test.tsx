@@ -294,8 +294,12 @@ it("offers a topbar back target for sub-routes and none for main tabs", () => {
   expect(resolveSubRouteFallback("/library/skill-pdf/security")).toBe("/library");
   expect(resolveSubRouteFallback("/operations/op-1")).toBe("/operations");
   expect(resolveSubRouteFallback("/settings/data-protection")).toBe("/settings");
+  expect(resolveSubRouteFallback("/discovery/local")).toBe("/discovery");
+  expect(resolveSubRouteFallback("/discovery/online")).toBe("/discovery");
+  expect(resolveSubRouteFallback("/library/combinations")).toBe("/library");
   expect(resolveSubRouteFallback("/agents")).toBeNull();
   expect(resolveSubRouteFallback("/library")).toBeNull();
+  expect(resolveSubRouteFallback("/discovery")).toBeNull();
   expect(resolveSubRouteFallback("/settings")).toBeNull();
   expect(resolveSubRouteFallback("/")).toBeNull();
   expect(resolveSubRouteFallback("/initialize")).toBeNull();

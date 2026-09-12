@@ -96,6 +96,12 @@ export function resolveSubRouteFallback(pathname: string): string | null {
   if (pathname === "/settings/data-protection") {
     return "/settings";
   }
+  if (pathname.startsWith("/discovery/")) {
+    return "/discovery";
+  }
+  if (pathname === "/library/combinations") {
+    return "/library";
+  }
   return null;
 }
 

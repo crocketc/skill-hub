@@ -26,8 +26,6 @@ export interface DiscoveryPageProps {
   view?: DiscoveryView;
   /** 仅主页使用：进入某个模块子页（路由层映射到 /discovery/<view>）。 */
   onNavigate?: (view: DiscoveryModuleView) => void;
-  /** 仅子页使用：返回发现主页（路由层显式导航到 /discovery）。 */
-  onBack?: () => void;
   importFacade?: ImportFacade;
   /** When provided, the local discovery card renders the FE-07 workbench. */
   discoveryFacade?: DiscoveryFacade;
@@ -116,7 +114,6 @@ const HOME_CARDS: HomeCardSpec[] = [
 export function DiscoveryPage({
   view = "home",
   onNavigate,
-  onBack,
   importFacade = nativeImportFacade,
   discoveryFacade,
   initialSources = [],
@@ -229,7 +226,6 @@ export function DiscoveryPage({
       importFacade={importFacade}
       importedNames={importedNames}
       initialSourceText={initialSourceText}
-      onBack={onBack}
       onImportComplete={onImportComplete}
       onOpenLibrary={onOpenLibrary}
       onOpenSettings={onOpenSettings}
@@ -289,7 +285,6 @@ function DiscoveryHome({ onNavigate }: { onNavigate?: (view: DiscoveryModuleView
 
 interface DiscoveryModulePageProps {
   view: DiscoveryModuleView;
-  onBack?: () => void;
   facade?: DiscoveryFacade;
   wizard: WizardController;
   importFacade: ImportFacade;
@@ -305,11 +300,10 @@ interface DiscoveryModulePageProps {
 
 /**
  * AR-012：每种发现方式的独立子页，承载原有的搜索、配置、结果与导入操作；
- * 顶部提供"返回发现主页"，导入向导保留在子页内切换。
+ * 返回发现主页由壳层顶栏承载（子路由 fallback），导入向导保留在子页内切换。
  */
 function DiscoveryModulePage({
   view,
-  onBack,
   facade,
   wizard,
   importFacade,
@@ -345,13 +339,8 @@ function DiscoveryModulePage({
   }
 
   return (
-    <div className="sh-discovery-page">
-      <div className="sh-discovery-page__backdrop">
-        <button className="sh-discovery-page__back" onClick={onBack} type="button">
-          {t("discovery.subpage.back")}
-        </button>
-      </div>
-      {view === "lock" ? (
+      <div className="sh-discovery-page">
+        {view === "lock" ? (
         <p className="sh-discovery-subpage__note">{t("discovery.lockNote")}</p>
       ) : null}
       {wizard.importBlocked ? (

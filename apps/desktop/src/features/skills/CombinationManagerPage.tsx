@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Link } from "react-router-dom";
 import { DEFAULT_SKILL_QUERY } from "./api";
 import type { SkillLibraryFacade, SkillTableRow } from "./api";
 import { CombinationPanel } from "./CombinationPanel";
@@ -82,9 +81,6 @@ export function CombinationManagerPage({ facade }: { facade: SkillLibraryFacade 
           <h1>{t("skillLibrary.combinations.managerHeading")}</h1>
           <p>{t("skillLibrary.combinations.managerDescription")}</p>
         </div>
-        <Link className="sh-button sh-button--secondary sh-button--md" to="/library">
-          {t("skillLibrary.combinations.managerBack")}
-        </Link>
       </header>
       {namesUnavailable ? (
         <p role="alert">{t("skillLibrary.combinations.memberNamesUnavailable")}</p>

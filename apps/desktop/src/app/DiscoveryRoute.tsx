@@ -55,7 +55,6 @@ export function DiscoveryRoute({
       onImportComplete={handleImportComplete}
       onOpenLibrary={() => navigate("/library")}
       onNavigate={(module) => navigate(`/discovery/${module}`)}
-      onBack={() => navigate("/discovery")}
       onOpenSettings={() => navigate("/settings")}
     />
   );

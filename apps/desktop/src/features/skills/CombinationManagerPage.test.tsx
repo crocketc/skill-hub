@@ -43,7 +43,8 @@ describe("CombinationManagerPage", () => {
     renderManager(facade as unknown as SkillLibraryFacade);
 
     expect(screen.getByRole("heading", { name: "Combination manager" })).toBeVisible();
-    expect(screen.getByRole("link", { name: "Back to library" })).toBeVisible();
+    // 页内返回已由壳层顶栏承载（/library/combinations 的子路由 fallback）。
+    expect(screen.queryByRole("link", { name: "Back to library" })).toBeNull();
     expect(
       await screen.findByRole("button", { name: "New combination" }),
     ).toBeVisible();
