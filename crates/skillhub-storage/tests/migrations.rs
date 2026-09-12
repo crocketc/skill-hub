@@ -308,8 +308,8 @@ fn v11_database_dedupes_combination_names_and_enforces_uniqueness() {
     // 'pdf-2' 既是 c-2 的追加结果又是既有名 c-5：冲突组整体 UUID 兜底。
     let renamed_c2 = name_of("c-2");
     let renamed_c5 = name_of("c-5");
-    assert_eq!(renamed_c2, format!("pdf-2 (c-2)"));
-    assert_eq!(renamed_c5, format!("pdf-2 (c-5)"));
+    assert_eq!(renamed_c2, "pdf-2 (c-2)");
+    assert_eq!(renamed_c5, "pdf-2 (c-5)");
 
     let unique_index: i64 = db
         .connection_for_test()

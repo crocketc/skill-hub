@@ -11,8 +11,7 @@ use std::sync::Arc;
 use skillhub_application::LocalApplicationFacade;
 use skillhub_core::{
     api::{CompleteOnboarding, RunInitializationScan},
-    AppCommand, AppCommandResult, AppQuery, AppQueryResult, ApplicationFacade, Project,
-    ScanResult,
+    AppCommand, AppCommandResult, AppQuery, AppQueryResult, ApplicationFacade, Project, ScanResult,
 };
 use skillhub_storage::{CentralLibrary, Database};
 
@@ -64,7 +63,10 @@ async fn completion_and_bootstrap_queries_stay_responsive_while_the_initializati
     let database = Database::open(workspace.path().join("db.sqlite")).expect("database");
     let library_root = workspace.path().join("library");
     CentralLibrary::initialize(&library_root).expect("initialize library");
-    let facade = Arc::new(LocalApplicationFacade::new_with_library(database, &library_root));
+    let facade = Arc::new(LocalApplicationFacade::new_with_library(
+        database,
+        &library_root,
+    ));
 
     let scan_root = workspace.path().join("sources");
     for index in 0..SKILL_COUNT {
@@ -72,15 +74,17 @@ async fn completion_and_bootstrap_queries_stay_responsive_while_the_initializati
         std::fs::create_dir_all(&skill).expect("skill dir");
         std::fs::write(
             skill.join("SKILL.md"),
-            format!("---\nname: skill-{index:05}\ndescription: fixture\n---\n\n# skill-{index:05}\n"),
+            format!(
+                "---\nname: skill-{index:05}\ndescription: fixture\n---\n\n# skill-{index:05}\n"
+            ),
         )
         .expect("marker");
     }
     let project = Project::new(skillhub_core::ProjectId::new(), "Sources", &scan_root);
     let registered = facade
-        .execute(AppCommand::RegisterProject(skillhub_core::api::RegisterProject {
-            project,
-        }))
+        .execute(AppCommand::RegisterProject(
+            skillhub_core::api::RegisterProject { project },
+        ))
         .await
         .expect("register scan project");
     assert!(matches!(registered, AppCommandResult::Project(_)));

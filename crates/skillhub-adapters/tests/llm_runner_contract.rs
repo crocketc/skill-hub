@@ -712,13 +712,19 @@ async fn connection_probe_sends_a_strict_mode_valid_schema_for_openai_family() {
     .await;
 
     let report = runner.check_connection(&openai_chat(&base)).await;
-    assert!(report.model_ok(), "probe must pass against a conforming server");
+    assert!(
+        report.model_ok(),
+        "probe must pass against a conforming server"
+    );
 
     let probe = server.requests.lock().unwrap()[1].clone();
     let body: serde_json::Value = serde_json::from_str(&probe.body).unwrap();
     let schema = &body["response_format"]["json_schema"]["schema"];
     assert_eq!(body["response_format"]["type"], "json_schema");
-    assert_eq!(body["response_format"]["json_schema"]["strict"], json!(true));
+    assert_eq!(
+        body["response_format"]["json_schema"]["strict"],
+        json!(true)
+    );
     assert_eq!(schema["type"], "object");
     assert_eq!(schema["additionalProperties"], json!(false));
     assert_eq!(schema["required"], json!(["ok"]));

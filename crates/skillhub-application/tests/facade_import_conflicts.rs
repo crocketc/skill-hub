@@ -16,7 +16,11 @@ fn facade_with(workspace: &std::path::Path) -> LocalApplicationFacade {
     LocalApplicationFacade::new_with_library(database, &library_root)
 }
 
-async fn prepare(facade: &LocalApplicationFacade, root: &std::path::Path, name: &str) -> Box<skillhub_core::PreparedImport> {
+async fn prepare(
+    facade: &LocalApplicationFacade,
+    root: &std::path::Path,
+    name: &str,
+) -> Box<skillhub_core::PreparedImport> {
     let candidate = ImportCandidate::detected(
         SourceDescriptor::new(SourceKind::Local, SourceLocator::local_path(root)),
         root.to_string_lossy(),
@@ -48,7 +52,10 @@ async fn commit_copy(facade: &LocalApplicationFacade, prepared_id: skillhub_core
     let AppCommandResult::ImportSummary(summary) = committed else {
         panic!("expected import summary");
     };
-    assert!(summary.items[0].skill_id.is_some(), "skill landed in library");
+    assert!(
+        summary.items[0].skill_id.is_some(),
+        "skill landed in library"
+    );
 }
 
 fn write_skill(root: &std::path::Path, body: &str) {
@@ -123,9 +130,7 @@ async fn same_runtime_name_with_different_content_reports_a_name_conflict() {
         .analysis
         .conflicts
         .iter()
-        .find(|conflict| {
-            conflict.kind == DuplicateKind::SameRuntimeNameDifferentContent
-        })
+        .find(|conflict| conflict.kind == DuplicateKind::SameRuntimeNameDifferentContent)
         .expect("same-name conflict entry");
     assert!(conflict.requires_choice);
     let matched = second

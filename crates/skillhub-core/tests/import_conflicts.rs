@@ -53,8 +53,7 @@ fn exact_content_and_same_name_different_content_are_distinct_results() {
     assert!(exact
         .conflicts
         .iter()
-        .any(|conflict| conflict.kind == DuplicateKind::ExactContent
-            && conflict.requires_choice));
+        .any(|conflict| conflict.kind == DuplicateKind::ExactContent && conflict.requires_choice));
 
     let (candidate, _) = make_candidate("pdf", source);
     let hash = "sha256:changed".to_owned();
