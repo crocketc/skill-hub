@@ -9,6 +9,7 @@ import { I18nextProvider } from "react-i18next";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { skillHubI18n } from "../../i18n";
 import "../../styles/base.css";
+import { AppNotificationsProvider } from "../../ui/notifications";
 import {
   SkillLibraryUnavailableError,
   type SavedSkillView,
@@ -20,6 +21,7 @@ import { SkillLibraryPage } from "./SkillLibraryPage";
 import type { RemovalFacade } from "../removal/api";
 import {
   createMockSkillLibraryFacade,
+  MOCK_SKILL_DOCX,
   MOCK_SKILL_PDF,
   type MockSkillLibraryFacade,
 } from "./testFixtures";
@@ -71,7 +73,10 @@ function renderLibrary({
   render(
     <I18nextProvider i18n={skillHubI18n}>
       <QueryClientProvider client={queryClient}>
-        <RouterProvider router={router} />
+        {/* M-21：页面直接消费全局通知服务，测试宿主挂同一 Provider 契约。 */}
+        <AppNotificationsProvider>
+          <RouterProvider router={router} />
+        </AppNotificationsProvider>
       </QueryClientProvider>
     </I18nextProvider>,
   );
@@ -107,6 +112,117 @@ afterEach(() => {
 });
 
 describe("SkillLibraryPage", () => {
+  it("slides the batch deletion confirmation up from the bottom without moving the list (M-21)", async () => {
+    const facade = createMockSkillLibraryFacade();
+    const removalFacade: RemovalFacade = {
+      prepareUndeploy: vi.fn(),
+      commitUndeploy: vi.fn(),
+      prepareDelete: vi.fn().mockResolvedValue({
+        deployments: [{ id: "dep-1", label: "Codex CLI", path: "C:/codex", physicalId: "codex" }],
+        dependentProjects: [], operationId: "delete-pdf", skillId: "skill-pdf", skillName: "PDF Reader",
+        declaredDependencies: [], pinnedVersions: [], combinations: [], relatedSkills: [], unknownExternalReferences: [],
+      }),
+      commitDelete: vi.fn().mockResolvedValue({ centralSkillDeleted: true }),
+    };
+    renderLibrary({ facade, removalFacade });
+
+    await screen.findByRole("table");
+    // Radix 模态会把抽屉外内容标记 aria-hidden，先持有区域引用再打开抽屉。
+    const region = screen.getByRole("region", { name: "Skill results" });
+    region.scrollTop = 120;
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select PDF Reader" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete selected Skills from library" }));
+
+    const dialog = await screen.findByRole("dialog", { name: "Review batch deletion impact" });
+    // 底部抽屉：portal 面板带底部滑出类，不在页面文档流内（不再跳到页面底部）。
+    const panel = screen.getByTestId("drawer-panel");
+    expect(panel).toHaveClass("sh-skill-library__removal-drawer");
+    expect(region.contains(panel)).toBe(false);
+    // 打开确认不滚动、不跳转原列表。
+    expect(region.scrollTop).toBe(120);
+
+    // 确认/取消语义与既有删除影响预览一致：先处理部署关系，再两步确认。
+    fireEvent.change(
+      within(dialog).getByRole("combobox", { name: "Deployment handling: Codex CLI" }),
+      { target: { value: "keep_deployed" } },
+    );
+    fireEvent.click(within(dialog).getByRole("button", { name: "Continue to force deletion" }));
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Click again to confirm deleting 1 Skills" }),
+    );
+    await waitFor(() =>
+      expect(removalFacade.commitDelete).toHaveBeenCalledWith("delete-pdf", {
+        "dep-1": "keep_deployed",
+      }),
+    );
+  });
+
+  it("keeps the list selection when the batch confirmation drawer is cancelled", async () => {
+    const facade = createMockSkillLibraryFacade();
+    const removalFacade: RemovalFacade = {
+      prepareUndeploy: vi.fn(),
+      commitUndeploy: vi.fn(),
+      prepareDelete: vi.fn().mockResolvedValue({
+        deployments: [], dependentProjects: [], operationId: "delete-pdf", skillId: "skill-pdf", skillName: "PDF Reader",
+        declaredDependencies: [], pinnedVersions: [], combinations: [], relatedSkills: [], unknownExternalReferences: [],
+      }),
+      commitDelete: vi.fn(),
+    };
+    renderLibrary({ facade, removalFacade });
+
+    fireEvent.click(await screen.findByRole("checkbox", { name: "Select PDF Reader" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete selected Skills from library" }));
+    await screen.findByRole("dialog", { name: "Review batch deletion impact" });
+    fireEvent.click(
+      await within(screen.getByTestId("drawer-panel")).getByRole("button", { name: "Cancel" }),
+    );
+
+    await waitFor(() => expect(screen.queryByTestId("drawer-panel")).not.toBeInTheDocument());
+    expect(removalFacade.commitDelete).not.toHaveBeenCalled();
+    expect(screen.getByRole("checkbox", { name: "Select PDF Reader" })).toBeChecked();
+    expect(screen.getByRole("complementary", { name: "Batch actions" })).toBeVisible();
+  });
+
+  it("sends success outcomes to the auto-dismissing global toast instead of a local notice list (M-21)", async () => {
+    vi.useFakeTimers();
+    try {
+      const facade = createMockSkillLibraryFacade();
+      renderLibrary({ facade });
+
+      // 假计时器下用显式推进驱动微任务/查询，不用依赖定时器轮询的 findBy。
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1);
+      });
+      fireEvent.click(screen.getByRole("checkbox", { name: "Select PDF Reader" }));
+      fireEvent.click(screen.getByRole("button", { name: "Add tags" }));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1);
+      });
+      const dialog = screen.getByRole("dialog", { name: "Add tags" });
+      fireEvent.change(within(dialog).getByRole("textbox", { name: "Tags" }), {
+        target: { value: "review" },
+      });
+      fireEvent.click(within(dialog).getByRole("button", { name: "Add tags" }));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1);
+      });
+
+      // 成功结果走全局 toast（success tone），且页面容器内不再有局部通知列表。
+      const toast = screen.getByTestId("notice-success");
+      const workspace = document.querySelector(".sh-skill-library") as HTMLElement;
+      expect(workspace.querySelector(".sh-notification-center")).toBeNull();
+      expect(toast).toHaveTextContent("Batch tag update finished");
+
+      // 全局契约：2 秒后 toast 自动消退（含 160ms 滑出）。
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(2400);
+      });
+      expect(screen.queryByTestId("notice-success")).not.toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  }, 20000);
+
   it("previews selected Skills and requires a forced-delete confirmation before committing", async () => {
     const facade = createMockSkillLibraryFacade();
     const removalFacade: RemovalFacade = {
@@ -1551,6 +1667,88 @@ describe("SkillLibraryPage", () => {
     await waitFor(() => expect(tablePreferences).toHaveBeenCalledTimes(2));
   });
 
+  it("opens silently with default preferences when none were ever stored (M-21)", async () => {
+    // 首次打开：偏好从未存储（读取正常返回空），不得出现
+    // “无法加载表格偏好”错误——默认值静默生效。
+    const facade = createMockSkillLibraryFacade();
+    vi.spyOn(facade, "loadTablePreferences").mockResolvedValue(null);
+    vi.spyOn(facade, "loadDrawerPreferences").mockResolvedValue(null);
+    renderLibrary({ facade });
+
+    expect(await screen.findByRole("table")).toBeVisible();
+    expect(
+      screen.queryByRole("status", { name: "Preference status" }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText(/Table preferences could not be loaded/)).not.toBeInTheDocument();
+    // 默认表格偏好静默生效：默认密度 compact 直接体现在表格上。
+    expect(document.querySelector('table[data-density="compact"]')).not.toBeNull();
+  });
+
+  it("renders the purpose column with the user purpose first and the original description as fallback (M-21)", async () => {
+    const facade = createMockSkillLibraryFacade({
+      pageItems: [
+        {
+          ...MOCK_SKILL_DOCX,
+          id: "skill-user-purpose",
+          name: "User Purpose Skill",
+          userPurpose: "用于合同扫描件归档",
+          purpose: "用于合同扫描件归档",
+          originalDescription: "Creates and updates Word documents.",
+        },
+        {
+          ...MOCK_SKILL_DOCX,
+          id: "skill-fallback-purpose",
+          name: "Fallback Purpose Skill",
+          userPurpose: undefined,
+          purpose: "Creates and updates Word documents.",
+          originalDescription: "Creates and updates Word documents.",
+        },
+      ],
+      total: 2,
+    });
+    renderLibrary({ facade });
+
+    await screen.findByRole("table");
+    expect(screen.getByText("用于合同扫描件归档")).toBeVisible();
+    // 用户未设置用途时，用途列回退 Skill 原始描述。
+    expect(screen.getAllByText("Creates and updates Word documents.").length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("exposes the reorganized IA with reachable roles, names and grouped toolbar levels (M-21)", async () => {
+    const facade = createMockSkillLibraryFacade({ total: 80 });
+    facade.listCombinations = vi.fn().mockResolvedValue([]);
+    renderLibrary({ facade, persistedViewMode: "unset" });
+
+    await screen.findByTestId("skill-card-skill-pdf");
+
+    // 主搜索：searchbox 角色 + 可访问名称 + 键盘可达。
+    const search = screen.getByRole("searchbox", { name: "Search skills" });
+    search.focus();
+    expect(search).toHaveFocus();
+
+    // 结果摘要：工具栏常驻命中统计。
+    expect(screen.getByTestId("library-summary-total")).toBeVisible();
+
+    // 高级筛选：可展开控件带生效条件计数，展开后各筛选控件可达。
+    const advanced = screen.getByRole("button", { name: /Filters/ });
+    expect(advanced).toHaveAttribute("aria-expanded");
+    if (advanced.getAttribute("aria-expanded") === "false") {
+      fireEvent.click(advanced);
+    }
+    expect(screen.getByRole("button", { name: "Basic check" })).toBeVisible();
+
+    // 组合管理入口：独立 link 角色 + 可聚焦（不内嵌面板，M-22 契约保持）。
+    const combination = screen.getByRole("link", { name: "Combination manager" });
+    combination.focus();
+    expect(combination).toHaveFocus();
+    expect(screen.queryByRole("button", { name: "New combination" })).toBeNull();
+
+    // 工具栏层级：动作簇内以分隔符区隔视图切换组与管理入口组。
+    const actions = document.querySelector(".sh-skill-library__toolbar-actions") as HTMLElement;
+    expect(actions.querySelector(".sh-skill-library__toolbar-divider")).not.toBeNull();
+    expect(getComputedStyle(actions.querySelector(".sh-skill-library__toolbar-divider") as HTMLElement).backgroundColor).toBeTruthy();
+  });
+
   it("links to the combination manager instead of embedding the panel", async () => {
     const facade = createMockSkillLibraryFacade();
     facade.listCombinations = vi.fn().mockResolvedValue([]);
@@ -1563,5 +1761,78 @@ describe("SkillLibraryPage", () => {
 
     fireEvent.click(entry);
     await waitFor(() => expect(router.state.location.pathname).toBe("/library/combinations"));
+  });
+
+  it("places the view switch and relation entry at the far right of the page toolbar (M-21)", async () => {
+    const facade = createMockSkillLibraryFacade();
+    facade.listCombinations = vi.fn().mockResolvedValue([]);
+    renderLibrary({ facade, persistedViewMode: "unset" });
+
+    await screen.findByTestId("skill-card-skill-pdf");
+
+    // 结构接缝：动作簇是工具栏主行的最后一个区块，视图切换（含关系矩阵）
+    // 与组合管理入口都收拢在动作簇内。
+    const toolbarMain = document.querySelector(".sh-skill-library__toolbar-main");
+    expect(toolbarMain).not.toBeNull();
+    const actions = toolbarMain!.querySelector(".sh-skill-library__toolbar-actions");
+    expect(actions).not.toBeNull();
+    expect((actions as HTMLElement).nextElementSibling).toBeNull();
+
+    const viewSwitch = within(actions as HTMLElement).getByRole("group", { name: "View mode" });
+    expect(within(viewSwitch).getByRole("button", { name: "Table view" })).toBeTruthy();
+    expect(within(viewSwitch).getByRole("button", { name: "Card view" })).toBeTruthy();
+    expect(within(viewSwitch).getByRole("button", { name: "Relations matrix" })).toBeTruthy();
+    expect(within(actions as HTMLElement).getByRole("link", { name: "Combination manager" })).toBeTruthy();
+
+    // 右置契约：动作簇通过 margin-inline-start:auto 吸附到工具栏行最右
+    // （jsdom 无布局引擎，几何右缘由浏览器/E2E 兑现）。
+    expect(getComputedStyle(actions as HTMLElement).marginInlineStart).toBe("auto");
+
+    // 键盘可达：每个视图按钮可聚焦且有可访问名称。
+    for (const name of ["Table view", "Card view", "Relations matrix"]) {
+      const button = within(viewSwitch).getByRole("button", { name });
+      button.focus();
+      expect(button).toHaveFocus();
+    }
+  });
+
+  it("keeps icon-only view controls at the 40px interactive floor (M-21)", async () => {
+    const facade = createMockSkillLibraryFacade();
+    renderLibrary({ facade });
+
+    await screen.findByRole("table");
+    const viewSwitch = screen.getByRole("group", { name: "View mode" });
+    for (const button of within(viewSwitch).getAllByRole("button")) {
+      const minHeight = getComputedStyle(button).minHeight;
+      // 40px 图标按钮下限：2.5rem（声明值）或 40px（解析值）皆可接受。
+      expect(minHeight === "2.5rem" || minHeight === "40px").toBe(true);
+    }
+  });
+
+  it("renders the table view as the page's own scroll container with pagination below (M-21)", async () => {
+    const facade = createMockSkillLibraryFacade();
+    renderLibrary({ facade });
+
+    await screen.findByRole("table");
+    const workspace = document.querySelector(".sh-skill-library");
+    expect(workspace).toHaveClass("sh-skill-library--table-view");
+
+    // 表格区域自成滚动容器：横向与纵向滚动都发生在结果区域内。
+    const region = screen.getByRole("region", { name: "Skill results" });
+    expect(getComputedStyle(region).overflowX).toBe("auto");
+    expect(getComputedStyle(region).overflowY).toBe("auto");
+
+    // 纵向空间归表格区域：工作区行模板恢复弹性中行，结果区域外壳 min-height:0。
+    const shell = region.closest(".sh-skill-table__region-shell") as HTMLElement;
+    const tableWorkspace = document.querySelector(".sh-skill-table-workspace") as HTMLElement;
+    expect(getComputedStyle(tableWorkspace).gridTemplateRows).toContain("minmax(0");
+    // jsdom 对 0 的解析可能带或不带 px 单位。
+    expect(["0", "0px"]).toContain(getComputedStyle(shell).minHeight);
+
+    // 分页条固定在表格下方、不压叠：分页是外壳的后继兄弟节点，不在滚动容器内。
+    const pagination = document.querySelector(".sh-skill-table__pagination") as HTMLElement;
+    expect(pagination).not.toBeNull();
+    expect(shell.nextElementSibling).toBe(pagination);
+    expect(region.contains(pagination)).toBe(false);
   });
 });

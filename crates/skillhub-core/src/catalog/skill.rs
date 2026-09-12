@@ -211,7 +211,14 @@ impl Skill {
         user_purpose: Option<String>,
     ) -> Result<(), AppError> {
         if let Some(name) = display_name {
-            self.rename(name)?;
+            // M-21 根因修复：display_name 是别名（展示名），别名编辑只覆盖
+            // 展示名；runtime_name 是稳定身份，只能经 rename_skill 的
+            // Self::rename 修改。此前此处调用 rename() 把别名写进了
+            // runtime_name，导致别名编辑改掉原名。
+            if name.trim().is_empty() {
+                return Err(AppError::new(ErrorCode::InvalidInput, Severity::Error));
+            }
+            self.display_name = name;
         }
         self.user_note = note;
         self.tags = tags;

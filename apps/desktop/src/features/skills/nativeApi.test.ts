@@ -352,6 +352,102 @@ it("fills the quick drawer duplicate candidates from the deterministic read mode
   expect(view.duplicateCandidates).toEqual(["Notes B"]);
 });
 
+describe("native preference reads", () => {
+  it("resolves table preferences to null when no preference was ever stored", async () => {
+    // M-21 首次打开误报根因：后端对未存储的键返回空 value_json，
+    // 这是“默认缺失”的正常状态，不得转换为读取失败。
+    vi.mocked(queryApplication).mockResolvedValue({
+      type: "ui_preference",
+      payload: { key: "table_preferences", value_json: null },
+    } as AppQueryResult);
+
+    await expect(nativeSkillLibraryFacade.loadTablePreferences()).resolves.toBeNull();
+  });
+
+  it("resolves drawer preferences to null when no preference was ever stored", async () => {
+    vi.mocked(queryApplication).mockResolvedValue({
+      type: "ui_preference",
+      payload: { key: "drawer_preferences", value_json: null },
+    } as AppQueryResult);
+
+    await expect(nativeSkillLibraryFacade.loadDrawerPreferences()).resolves.toBeNull();
+  });
+
+  it("still parses stored preference payloads into preference objects", async () => {
+    const stored = { columnOrder: ["name" as const], density: "compact" as const, visibleColumns: ["name" as const] };
+    vi.mocked(queryApplication).mockResolvedValue({
+      type: "ui_preference",
+      payload: { key: "table_preferences", value_json: JSON.stringify(stored) },
+    } as AppQueryResult);
+
+    await expect(nativeSkillLibraryFacade.loadTablePreferences()).resolves.toEqual(stored);
+  });
+
+  it("keeps rejecting a genuinely failed preference read as unavailable", async () => {
+    vi.mocked(queryApplication).mockRejectedValue(new Error("ipc channel closed"));
+
+    await expect(nativeSkillLibraryFacade.loadTablePreferences()).rejects.toBeInstanceOf(
+      SkillLibraryUnavailableError,
+    );
+  });
+
+  it("maps the purpose column with the user purpose first and the original description as fallback", async () => {
+    vi.mocked(queryApplication).mockResolvedValue(
+      skillPage([
+        nativeItem({ skill_id: "skill-a", user_purpose: "用于合同归档" }),
+        nativeItem({ skill_id: "skill-b", user_purpose: null }),
+      ]),
+    );
+
+    const page = await nativeSkillLibraryFacade.listSkills(DEFAULT_SKILL_QUERY);
+    const withPurpose = page.items.find((item) => item.id === "skill-a");
+    const withoutPurpose = page.items.find((item) => item.id === "skill-b");
+    // M-21 #6：用户用途优先，空则回退 Skill 原始描述。
+    expect(withPurpose?.purpose).toBe("用于合同归档");
+    expect(withPurpose?.userPurpose).toBe("用于合同归档");
+    expect(withoutPurpose?.purpose).toBe("Extract tables");
+    expect(withoutPurpose?.userPurpose).toBeUndefined();
+  });
+
+  it("saves a purpose patch as user metadata without touching descriptions", async () => {
+    vi.mocked(queryApplication).mockResolvedValue(persistedSkill());
+    vi.mocked(executeCommand).mockResolvedValue(savedSummary());
+
+    await nativeSkillLibraryFacade.saveSkillMetadata!("skill-1", { purpose: "用于合同扫描件归档" });
+
+    // 用途保存不影响别名（display_name 仍为当前别名）与备注原文。
+    expect(executeCommand).toHaveBeenCalledWith({
+      type: "set_metadata",
+      payload: {
+        skill_id: "skill-1",
+        display_name: "Renamed Reader",
+        note: "Keep near docs",
+        tags: ["documents"],
+        author: "Platform team",
+        license: "MIT",
+        user_purpose: "用于合同扫描件归档",
+      },
+    });
+  });
+
+  it("clears the user purpose with an empty purpose patch while keeping other metadata", async () => {
+    vi.mocked(queryApplication).mockResolvedValue(persistedSkill());
+    vi.mocked(executeCommand).mockResolvedValue(savedSummary());
+
+    await nativeSkillLibraryFacade.saveSkillMetadata!("skill-1", { purpose: null });
+
+    expect(executeCommand).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "set_metadata",
+        payload: expect.objectContaining({
+          user_purpose: null,
+          display_name: "Renamed Reader",
+        }),
+      }),
+    );
+  });
+});
+
 function persistedSkill(overrides: Partial<SkillResult> = {}): AppQueryResult {
   return {
     type: "skill",

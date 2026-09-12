@@ -189,6 +189,19 @@
 
 /* —— 快速抽屉内的操作控件 —— */
 
+/* M-21 #6：用途编辑行（标签 + 值/输入 + 编辑按钮）与备注行同一 flex 形态。 */
+.sh-skill-drawer__purpose-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  margin-top: var(--space-2);
+}
+
+.sh-skill-drawer__purpose-row .sh-skill-drawer__field-label {
+  margin-right: var(--space-1);
+}
+
 /* 别名/备注编辑从字符图标（✎）改为文字按钮（共享 ghost 次要形态），
    保持字段行内的紧凑形态，颜色走语义 token。 */
 .sh-skill-drawer .sh-skill-drawer__edit-icon.sh-button {
@@ -216,6 +229,9 @@
   gap: var(--space-2);
 }
 
+/* M-21 IA 重排：主行 = 主搜索（左，弹性伸展）+ 动作簇（右，margin 吸附最右）。
+   动作簇内是页面级动作：视图切换（表格/卡片/关系矩阵）、分组、组合管理入口、
+   已保存视图折叠开关。图标按钮保持 40px 交互下限。 */
 .sh-skill-library__toolbar-main {
   display: flex;
   align-items: flex-end;
@@ -228,14 +244,61 @@
   min-width: 0;
 }
 
+.sh-skill-library__toolbar-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-3);
+  margin-inline-start: auto;
+}
+
+/* M-21 #7：动作簇内的分组层级分隔（视图切换 | 管理入口）。 */
+.sh-skill-library__toolbar-divider {
+  align-self: stretch;
+  width: 1px;
+  margin-block: var(--space-1);
+  background: var(--ui-border);
+}
+
 .sh-skill-library__mode-switch {
   display: inline-flex;
   align-items: center;
   gap: var(--space-1);
 }
 
+/* M-21 #7：图标按钮 40×40 交互下限（size sm 的 32px 高度不满足）。
+   视图切换按钮为纯图标控件，必须达到 2.5rem 高度。 */
 .sh-skill-library__mode-switch .sh-button {
-  min-width: 2rem;
+  min-width: 2.5rem;
+  min-height: 2.5rem;
+  padding-inline: 0;
+}
+
+/* —— M-21 #3：表格视图 = 页面内唯一滚动容器 ——
+   页面区块成为定高 flex 列（外壳内容不再纵向滚动），表格工作区占据剩余高度，
+   纵向+横向滚动都收归 .sh-skill-table__region；分页条固定在表格下方，
+   不参与滚动也不被压叠。批量条激活时由 --skill-batch-bar-height 预留的
+   padding-bottom 保证分页仍可见（1600×900 E2E 几何契约不回退）。 */
+.sh-skill-library.sh-skill-library--table-view {
+  height: calc(100vh - var(--topbar-height) - 2 * var(--space-5));
+  height: calc(100dvh - var(--topbar-height) - 2 * var(--space-5));
+  min-height: 0;
+}
+
+/* ≤90rem 时 base.css 把工作区降级为自然高度三行（页面级滚动模式）；
+   表格视图恢复“工具栏 / 可伸展表格区 / 分页”的弹性行模板。 */
+.sh-skill-library--table-view .sh-skill-table-workspace {
+  flex: 1 1 auto;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+}
+
+.sh-skill-library--table-view .sh-skill-table__region-shell {
+  min-height: 0;
+}
+
+.sh-skill-library--table-view .sh-skill-table__region {
+  overflow: auto;
+  overscroll-behavior: contain;
 }
 
 .sh-skill-library__combination-entry {

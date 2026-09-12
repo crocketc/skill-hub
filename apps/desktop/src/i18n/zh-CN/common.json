@@ -1079,6 +1079,7 @@
       "emptyValue": "暂无可靠数据",
       "editAlias": "编辑别名",
       "editNote": "编辑备注",
+      "editPurpose": "编辑用途",
       "removeTag": "移除标签 {{tag}}",
       "tagsFailure": "标签未保存，已恢复为已保存的内容。",
       "fullDetails": "查看编辑完整详情",

@@ -88,7 +88,9 @@ function toTableRow(item: SkillListItem, agentTargets: Map<string, AgentDeployme
     ownership: item.author ?? undefined,
     pendingCount: 0,
     projectDeploymentCount: item.project_deployment_count,
-    purpose: item.translated_description ?? item.original_description,
+    // M-21 #6：用途列按“用户设置用途优先，空则回退 Skill 原始描述”渲染。
+    purpose: item.user_purpose || item.original_description,
+    userPurpose: item.user_purpose ?? undefined,
     requirements: [],
     source: item.source_locator ?? item.source_kind ?? undefined,
     tags: item.tags,
@@ -151,10 +153,18 @@ function asQuickView(result: AppQueryResult): SkillQuickView {
 
 /** Real IPC-backed read facade. Mutations and preference persistence remain
  * on the unavailable facade until their native contracts are connected. */
-async function readUiPreference(key: string): Promise<string> {
-  const result = await queryApplication({ type: "get_ui_preference", payload: { key } });
+// M-21 根因修复：后端 get_ui_preference 对未存储的键返回空 value_json——
+// 这是“默认缺失”的正常首开状态，必须解析为 null（调用方回退默认值），
+// 不得转换为读取失败；只有 IPC 失败或结果形状不符才是真读取失败。
+async function readUiPreference(key: string): Promise<string | null> {
+  let result: AppQueryResult;
+  try {
+    result = await queryApplication({ type: "get_ui_preference", payload: { key } });
+  } catch {
+    throw unavailableResult();
+  }
   if (result.type !== "ui_preference") throw unavailableResult();
-  if (!result.payload.value_json) throw unavailableResult();
+  if (!result.payload.value_json) return null;
   return result.payload.value_json;
 }
 
@@ -229,8 +239,11 @@ export const nativeSkillLibraryFacade: SkillLibraryFacade = {
       payload: { key: "library_group_mode", value_json: JSON.stringify(mode) },
     });
   },
+  // M-21：未存储（null）时解析为 null，页面静默回退 DEFAULT_TABLE_PREFERENCES；
+  // 仅真实读取失败仍抛 unavailable，由页面显示可读错误。
   async loadTablePreferences() {
-    return JSON.parse(await readUiPreference("table_preferences")) as SkillTablePreferences;
+    const raw = await readUiPreference("table_preferences");
+    return raw === null ? null : JSON.parse(raw) as SkillTablePreferences;
   },
   async saveTablePreferences(preferences) {
     await executeCommand({
@@ -239,7 +252,8 @@ export const nativeSkillLibraryFacade: SkillLibraryFacade = {
     });
   },
   async loadDrawerPreferences() {
-    return JSON.parse(await readUiPreference("drawer_preferences")) as SkillDrawerPreferences;
+    const raw = await readUiPreference("drawer_preferences");
+    return raw === null ? null : JSON.parse(raw) as SkillDrawerPreferences;
   },
   async saveDrawerPreferences(preferences) {
     await executeCommand({
@@ -263,6 +277,7 @@ export const nativeSkillLibraryFacade: SkillLibraryFacade = {
       view.currentVersion = skill.current_version_label ?? "unknown";
       // QA-008：用途显示用户独立撰写的字段，不用译文或原文冒充。
       view.purpose = skill.user_purpose ?? "";
+      view.userPurpose = skill.user_purpose ?? undefined;
       view.originalDescription = skill.original_description;
       view.translatedDescription = skill.translated_description ?? undefined;
       view.tags = skill.tags;
@@ -327,7 +342,8 @@ export const nativeSkillLibraryFacade: SkillLibraryFacade = {
         tags: patch.tags === undefined ? skill.tags : patch.tags,
         author: skill.author,
         license: skill.license,
-        user_purpose: skill.user_purpose,
+        // M-21 #6：用途补丁缺省时保持当前值；空串按清空处理。
+        user_purpose: patch.purpose === undefined ? skill.user_purpose : patch.purpose || null,
       },
     });
     if (commandResult.type !== "operation_summary") throw unavailableResult();
