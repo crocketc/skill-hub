@@ -150,3 +150,45 @@ function withinNotice(region: HTMLElement, text: string): HTMLElement {
   }
   return notice;
 }
+
+describe("NotificationCenter focus return", () => {
+  it("returns focus to the host that preceded the close button after dismissal", async () => {
+    let push: ReturnType<typeof useNotices>["pushNotice"] | undefined;
+    const i18n = await createSkillHubI18n(["en-US"]);
+    function Harness() {
+      const controls = useNotices();
+      push = controls.pushNotice;
+      return (
+        <>
+          <button data-testid="host" type="button">
+            Library filter
+          </button>
+          <NotificationCenter
+            notices={controls.notices}
+            onDismiss={controls.dismissNotice}
+          />
+        </>
+      );
+    }
+    render(
+      <I18nextProvider i18n={i18n}>
+        <Harness />
+      </I18nextProvider>,
+    );
+
+    act(() => {
+      push?.({ tone: "danger", message: "Tags failed to save", persistent: true });
+    });
+    const host = screen.getByTestId("host");
+    host.focus();
+    const closeButton = screen.getByRole("button", { name: "Close" });
+    // 模拟键盘 Tab 进入关闭按钮：焦点真实落在按钮上，且带 prior-host 的
+    // focus 事件（relatedTarget）。关闭卸载按钮后，焦点必须回到宿主而非 body。
+    closeButton.focus();
+    fireEvent.focus(closeButton, { relatedTarget: host });
+    fireEvent.click(closeButton);
+
+    expect(screen.queryByText("Tags failed to save")).not.toBeInTheDocument();
+    expect(host).toHaveFocus();
+  });
+});

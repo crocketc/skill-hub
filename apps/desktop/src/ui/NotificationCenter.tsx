@@ -119,6 +119,9 @@ export function NotificationCenter({
   onDismiss: (id: number) => void;
 }): JSX.Element | null {
   const { t } = useTranslation();
+  // 键盘用户 Tab 进入通知关闭按钮后关闭通知，按钮随之卸载：
+  // 把焦点送回进入通知前的宿主，避免丢焦到 body（对齐 Drawer 回退模式）。
+  const focusHostRef = useRef<HTMLElement | null>(null);
   if (notices.length === 0) return null;
   return (
     <div
@@ -143,7 +146,16 @@ export function NotificationCenter({
           <Button
             aria-label={t("actions.close")}
             className="sh-notification__close"
-            onClick={() => onDismiss(notice.id)}
+            onFocus={(event) => {
+              const related = event.relatedTarget;
+              if (related instanceof HTMLElement) {
+                focusHostRef.current = related;
+              }
+            }}
+            onClick={() => {
+              onDismiss(notice.id);
+              focusHostRef.current?.focus();
+            }}
             size="sm"
             variant="ghost"
           >
