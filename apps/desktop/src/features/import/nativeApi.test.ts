@@ -297,7 +297,7 @@ describe("native import facade", () => {
   });
 
   it("normalizes Windows extended prefixes for display and native requests", async () => {
-    const extendedRoot = "\\\\?\\C:\\Users\\crock\\.agents\\skills";
+    const extendedRoot = "\\\\?\\C:\\Users\\demo\\.agents\\skills";
     vi.mocked(queryApplication).mockResolvedValue({
       type: "import_candidates",
       payload: [{
@@ -315,16 +315,16 @@ describe("native import facade", () => {
     const candidates = await nativeImportFacade.acquireCandidates(await nativeImportFacade.parseSource(extendedRoot));
 
     expect(candidates[0]).toEqual(expect.objectContaining({
-      id: "C:\\Users\\crock\\.agents\\skills\\pptx#pptx",
-      path: "C:\\Users\\crock\\.agents\\skills\\pptx",
+      id: "C:\\Users\\demo\\.agents\\skills\\pptx#pptx",
+      path: "C:\\Users\\demo\\.agents\\skills\\pptx",
       source: expect.objectContaining({
-        displayTarget: "C:\\Users\\crock\\.agents\\skills",
-        input: "C:\\Users\\crock\\.agents\\skills",
+        displayTarget: "C:\\Users\\demo\\.agents\\skills",
+        input: "C:\\Users\\demo\\.agents\\skills",
       }),
     }));
     expect(queryApplication).toHaveBeenCalledWith({
       type: "discover_import_candidates",
-      payload: { source: { kind: "local", locator: { local_path: "C:\\Users\\crock\\.agents\\skills" } } },
+      payload: { source: { kind: "local", locator: { local_path: "C:\\Users\\demo\\.agents\\skills" } } },
     });
   });
 

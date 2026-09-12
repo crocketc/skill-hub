@@ -364,8 +364,8 @@ it("keeps the acquire action available and shows per-source counts when the sour
 it("normalizes every initialization source before displaying and acquiring it", async () => {
   const user = userEvent.setup();
   const facade = createMockImportFacade({ scenario: "safe-local" });
-  const firstSource = "\\\\?\\C:\\Users\\crock\\.claude\\skills";
-  const secondSource = "\\\\?\\C:\\Users\\crock\\.codex\\skills";
+  const firstSource = "\\\\?\\C:\\Users\\demo\\.claude\\skills";
+  const secondSource = "\\\\?\\C:\\Users\\demo\\.codex\\skills";
   const i18n = await createSkillHubI18n(["zh-CN"]);
   render(
     <I18nextProvider i18n={i18n}>
@@ -377,14 +377,14 @@ it("normalizes every initialization source before displaying and acquiring it", 
     </I18nextProvider>,
   );
 
-  expect(screen.getByRole("textbox", { name: "来源" })).toHaveValue("C:\\Users\\crock\\.claude\\skills");
-  expect(screen.getByRole("checkbox", { name: "C:\\Users\\crock\\.claude\\skills" })).toBeChecked();
-  expect(screen.getByRole("checkbox", { name: "C:\\Users\\crock\\.codex\\skills" })).toBeChecked();
+  expect(screen.getByRole("textbox", { name: "来源" })).toHaveValue("C:\\Users\\demo\\.claude\\skills");
+  expect(screen.getByRole("checkbox", { name: "C:\\Users\\demo\\.claude\\skills" })).toBeChecked();
+  expect(screen.getByRole("checkbox", { name: "C:\\Users\\demo\\.codex\\skills" })).toBeChecked();
   await user.click(screen.getByRole("button", { name: "读取已选目录候选" }));
 
   expect(facade.calls.acquiredSources).toEqual([
-    "C:\\Users\\crock\\.claude\\skills",
-    "C:\\Users\\crock\\.codex\\skills",
+    "C:\\Users\\demo\\.claude\\skills",
+    "C:\\Users\\demo\\.codex\\skills",
   ]);
 });
 

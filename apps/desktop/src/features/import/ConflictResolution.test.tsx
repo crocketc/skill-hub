@@ -66,9 +66,9 @@ const exactDuplicate: ImportConflict = {
 it("shows a readable reason and candidate identity instead of raw reason codes", async () => {
   const i18n = await createSkillHubI18n(["zh-CN"]);
   const rawCoded: ImportConflict = {
-    candidateId: "C:\\Users\\crock\\.claude\\skills\\pdf#pdf",
+    candidateId: "C:\\Users\\demo\\.claude\\skills\\pdf#pdf",
     candidateName: "pdf",
-    candidatePath: "C:\\Users\\crock\\.claude\\skills\\pdf",
+    candidatePath: "C:\\Users\\demo\\.claude\\skills\\pdf",
     kind: "same_name",
     matchedSkillIds: ["0f0a2c1e-6b7d-4c1a-9f2e-3d5a7b9c1e2f"],
     summary: "import.same_runtime_name_conflict",
@@ -86,7 +86,7 @@ it("shows a readable reason and candidate identity instead of raw reason codes",
   expect(screen.getByText("运行时名称与已有 Skill 相同")).toBeVisible();
   // 候选显示名与来源路径可读。
   expect(screen.getByText("pdf")).toBeVisible();
-  expect(screen.getByText("C:\\Users\\crock\\.claude\\skills\\pdf")).toBeVisible();
+  expect(screen.getByText("C:\\Users\\demo\\.claude\\skills\\pdf")).toBeVisible();
   // 原始 reason code 仅保留在次要排查文本（code 元素）中，不作为主要文案。
   const raw = screen.getByText("import.same_runtime_name_conflict");
   expect(raw.closest("code")).not.toBeNull();

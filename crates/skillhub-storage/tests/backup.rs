@@ -6,7 +6,7 @@ use tempfile::tempdir;
 #[test]
 fn full_backup_round_trip_contains_portable_data_and_no_secret_or_device_path() {
     let destination = tempdir().unwrap();
-    let device_path = r"C:\Users\crock\skillhub";
+    let device_path = r"C:\Users\demo\skillhub";
     let input = BackupInput::new(
         BackupScope::Full,
         r#"{"skills":[{"id":"portable"}]}"#,
