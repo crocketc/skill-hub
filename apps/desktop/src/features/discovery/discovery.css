@@ -283,7 +283,7 @@
   max-width: 72ch;
 }
 
-/* —— P1-06：本机发现工作台的"发现的 Agent 目录"分组区 —— */
+/* —— P1-06/M-18：本机发现工作台 —— */
 
 .sh-discovery-workbench {
   display: grid;
@@ -291,15 +291,71 @@
   min-width: 0;
 }
 
-.sh-discovery-workbench__agents {
+/* M-18：首屏工作区面板——扫描/摘要/审查并导入固定可见（sticky 钉住，
+   滚动浏览 Agent 盘点时不离开首屏）。 */
+.sh-discovery-workbench__panel {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+  padding: var(--space-3);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-md);
+  background: var(--ui-surface);
+  box-shadow: var(--shadow-sm);
+}
+
+.sh-discovery-workbench__panel h3 {
+  margin: 0;
+  font-size: var(--font-size-md);
+}
+
+.sh-discovery-workbench__panel p {
+  margin: 0;
+}
+
+.sh-discovery-workbench__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* M-18：Agent 目录盘点次级区——标题行 + 可折叠列表；列表自滚动，
+   不把页面拉长（与初始化扫描列表同一档滚动上限）。 */
+.sh-discovery-workbench__inventory {
   display: grid;
   gap: var(--space-2);
   min-width: 0;
 }
 
-.sh-discovery-workbench__agents h4 {
+.sh-discovery-workbench__inventory-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.sh-discovery-workbench__inventory-header h4 {
   margin: 0;
   font-size: var(--font-size-md);
+}
+
+.sh-discovery-workbench__inventory-count {
+  color: var(--ui-ink-muted);
+  font-size: var(--font-size-xs);
+}
+
+.sh-discovery-workbench__inventory-header .sh-button {
+  margin-left: auto;
+}
+
+.sh-discovery-workbench__inventory-scroll {
+  max-height: 18rem;
+  overflow-y: auto;
+  min-width: 0;
 }
 
 .sh-discovery-workbench__agent-groups {

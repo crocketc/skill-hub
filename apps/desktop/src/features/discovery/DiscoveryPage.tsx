@@ -361,6 +361,9 @@ function DiscoveryModulePage({
       ) : null}
       {view === "local" ? (
         <>
+          {/* M-18：本地发现区域（导入 Skill 入口）先于工作台渲染，
+              Agent 目录盘点再多也不把操作推出首屏。 */}
+          <LocalDiscovery onStartImport={wizard.openImportWizard} />
           {facade ? (
             <LocalDiscoveryWorkbench
               facade={facade}
@@ -369,7 +372,6 @@ function DiscoveryModulePage({
                 wizard.openWizardWithCandidates(candidates.map((candidate) => candidate.path))}
             />
           ) : null}
-          <LocalDiscovery onStartImport={wizard.openImportWizard} />
         </>
       ) : null}
       {view === "online" ? (
