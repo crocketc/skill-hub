@@ -350,3 +350,36 @@ describe("provider cleanup", () => {
     expect(screen.queryByRole("region", { name: "Notifications" })).toBeNull();
   });
 });
+
+describe("toast close button hit area", () => {
+  /** 从注入的样式表中取回指定选择器的规则（精确匹配逗号分隔的任一段）。 */
+  function ruleFor(selector: string): CSSStyleRule | undefined {
+    for (const sheet of Array.from(document.styleSheets)) {
+      for (const rule of Array.from(sheet.cssRules)) {
+        if (
+          rule instanceof CSSStyleRule &&
+          rule.selectorText
+            ?.split(",")
+            .map((part) => part.trim())
+            .includes(selector)
+        ) {
+          return rule;
+        }
+      }
+    }
+    return undefined;
+  }
+
+  it("keeps the close control at a 40px square despite the small button variant", () => {
+    // 计划约束"全部图标按钮至少 40×40"：关闭按钮虽然复用 Button size="sm"
+    // （min-height 2rem=32px），但 toast 专属类必须覆盖出 40×40 命中区。
+    const rule = ruleFor(".sh-notification__close");
+    expect(rule, ".sh-notification__close is defined in notificationCenter.css").toBeDefined();
+    expect(rule!.style.getPropertyValue("width")).toBe("2.5rem");
+    expect(rule!.style.getPropertyValue("height")).toBe("2.5rem");
+    expect(rule!.style.getPropertyValue("min-width")).toBe("2.5rem");
+    expect(rule!.style.getPropertyValue("min-height")).toBe("2.5rem");
+    // 抵消 .sh-button--sm 的水平内边距，保证恰好 40×40 的正方形命中区。
+    expect(rule!.style.getPropertyValue("padding")).toBe("0");
+  });
+});

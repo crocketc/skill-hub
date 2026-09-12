@@ -84,8 +84,15 @@
   text-underline-offset: 0.2em;
 }
 
+/* 关闭按钮复用 Button size="sm"（min-height 2rem），但计划约束
+   "全部图标按钮至少 40×40"——在此覆盖出 40px 正方形命中区。 */
 .sh-notification__close {
   flex: 0 0 auto;
+  width: 2.5rem;
+  height: 2.5rem;
+  min-width: 2.5rem;
+  min-height: 2.5rem;
+  padding: 0;
 }
 
 @keyframes sh-notification-in {
