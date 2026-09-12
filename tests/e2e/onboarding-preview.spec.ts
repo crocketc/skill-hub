@@ -302,15 +302,14 @@ test("keeps brand chip text readable across all nine themes", async ({ page }) =
     // 到达“识别兼容的 Agent”并识别出品牌分组芯片。
     await page.getByRole("button", { name: "继续" }).click();
     await confirmCompatibility(page);
-    const chip = page.locator(".sh-brand-tag").first();
-    await expect(chip).toBeVisible();
+    const chips = page.locator(".sh-brand-tag");
+    await expect(chips.first()).toBeVisible();
 
-    // 计算芯片文字/背景的实际对比度（grok-night 走 color-mix 混合路径）。
-    const ratio = await chip.evaluate((node) => {
+    // 采样页面上全部品牌芯片的文字/背景对比度（grok-night 走 color-mix
+    // 混合路径），任一芯片低于 AA 都算失败——不是只测第一个品牌。
+    const ratios = await chips.evaluateAll((nodes) => {
       const parse = (value: string) =>
         (value.match(/\d+(\.\d+)?/g) ?? []).slice(0, 3).map((part) => Number(part));
-      const [fr, fg, fb] = parse(getComputedStyle(node).color);
-      const [br, bg, bb] = parse(getComputedStyle(node).backgroundColor);
       const luminance = (r: number, g: number, b: number) => {
         const [lr, lg, lb] = [r, g, b].map((channel) => {
           const v = channel / 255;
@@ -318,14 +317,21 @@ test("keeps brand chip text readable across all nine themes", async ({ page }) =
         });
         return 0.2126 * lr! + 0.7152 * lg! + 0.0722 * lb!;
       };
-      const textLum = luminance(fr!, fg!, fb!);
-      const backgroundLum = luminance(br!, bg!, bb!);
-      return (
-        (Math.max(textLum, backgroundLum) + 0.05) /
-        (Math.min(textLum, backgroundLum) + 0.05)
-      );
+      return nodes.map((node) => {
+        const [fr, fg, fb] = parse(getComputedStyle(node).color);
+        const [br, bg, bb] = parse(getComputedStyle(node).backgroundColor);
+        const textLum = luminance(fr!, fg!, fb!);
+        const backgroundLum = luminance(br!, bg!, bb!);
+        return (
+          (Math.max(textLum, backgroundLum) + 0.05) /
+          (Math.min(textLum, backgroundLum) + 0.05)
+        );
+      });
     });
-    expect(ratio, `${theme.name} brand chip text contrast`).toBeGreaterThanOrEqual(4.5);
+    expect(ratios.length, `${theme.name} brand chip count`).toBeGreaterThanOrEqual(1);
+    const worst = Math.min(...ratios);
+    expect(worst, `${theme.name} brand chip text contrast (all ${ratios.length} chips)`)
+      .toBeGreaterThanOrEqual(4.5);
   }
 });
 
