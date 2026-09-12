@@ -9,7 +9,6 @@
 /.pnpm-store/
 /apps/desktop/dist/*
 !/apps/desktop/dist/.gitkeep
-/apps/desktop/src-tauri/icons/
 /apps/desktop/src-tauri/gen/
 /test_key.txt
 /test-results/
