@@ -1,10 +1,10 @@
 # SkillHub Agent 平台文件管理接入调研
 
-> 文档状态：官方资料调研完成；2026-09-12 补充 Pi coding agent profile；按资料开发 profile，真机验证延后到开发完成后的测试阶段
+> 文档状态：官方资料调研完成；2026-09-12 补充 Pi coding agent 与 DeepSeek Harness profile，并完成本机目录观察；按资料开发 profile，完整真机验证延后到开发完成后的测试阶段
 >
-> 例外：2026-09-05 已对部分平台执行 Windows 真机确认。逐平台章节中标注为“真机确认”的条目基于实机证据，不受上句延后安排约束；未标注的条目仍基于官方资料。真机确认仅覆盖 Windows 11，macOS 全部维持待测试，不得以 Windows 结果推断 macOS
+> 例外：2026-09-05 已对部分平台执行 Windows 真机确认；2026-09-12 对 Pi 与 DeepSeek Harness 执行本机安装和目录观察。逐平台章节中标注为“真机确认”或“本机目录观察”的条目基于实机证据，不受上句延后安排约束；未标注的条目仍基于官方资料。实机证据仅覆盖 Windows 11，macOS 全部维持待测试，不得以 Windows 结果推断 macOS
 >
-> 调研基准日：2026-08-28；Pi 补充复核日：2026-09-12；真机确认日：2026-09-05
+> 调研基准日：2026-08-28；Pi / DeepSeek Harness 补充复核日：2026-09-12；真机确认日：2026-09-05；本机目录观察日：2026-09-12
 >
 > 适用项目：SkillHub
 >
@@ -37,7 +37,7 @@
 
 ### 1.2 候选平台
 
-本次共调研 22 个平台品牌：
+本次共调研 23 个平台品牌：
 
 1. OpenAI Codex
 2. Claude Code
@@ -61,6 +61,7 @@
 20. Hermes Agent
 21. Grok（Grok Build、Grok consumer、Grok Bot）
 22. Pi coding agent（Pi）
+23. DeepSeek Harness（`dsh`）
 
 同一平台品牌下的客户端形态不额外增加候选平台数量，但会在 profile 层拆分。例如 OpenAI 需要区分 ChatGPT desktop app、Codex CLI 和 Codex IDE extension；Anthropic 需要区分 Claude Code 与 Claude / Claude Desktop 聊天 Skills；Grok 需要区分 Grok Build、Grok Web/iOS/Android 与 Grok Bot。
 
@@ -87,7 +88,7 @@
 
 目录不存在不等于目录规则错误。客户端已安装但未观察到 skill 目录时，只写“客户端已安装，目录按需生成，验证时点未创建”，不据此判定官方文档有误；官方资料与真机事实冲突时，以官方文档为准，真机差异另列为观察项。
 
-真机确认以既定的 22 个候选平台为限。扫描过程中发现的其他客户端目录（如 Continue、Kiro、Qwen Code、Augment、Goose、Crush、Roo Code）按当前产品范围不纳入候选池，不在本文展开。
+真机确认以既定的 23 个候选平台为限。扫描过程中发现的其他客户端目录（如 Continue、Kiro、Qwen Code、Augment、Goose、Crush、Roo Code）按当前产品范围不纳入候选池，不在本文展开。
 
 ### 2.2 候选分类
 
@@ -108,7 +109,7 @@
 
 | 分类 | 平台 |
 |---|---|
-| 完整文件管理接入候选 | OpenAI Codex CLI / Codex IDE extension、Claude Code、Gemini CLI、Cursor、Windsurf、OpenCode、TraeCode、通义灵码（Qoder CN）、CodeBuddy Code、文心快码 Comate、Kimi Code、ZCode、WorkBuddy、OpenClaw、Hermes Agent、Pi coding agent、Grok Build CLI / TUI / ACP |
+| 完整文件管理接入候选 | OpenAI Codex CLI / Codex IDE extension、Claude Code、Gemini CLI、Cursor、Windsurf、OpenCode、TraeCode、通义灵码（Qoder CN）、CodeBuddy Code、文心快码 Comate、Kimi Code、ZCode、WorkBuddy、OpenClaw、Hermes Agent、Pi coding agent、DeepSeek Harness、Grok Build CLI / TUI / ACP |
 | 部分文件管理接入候选 | ChatGPT desktop app 中的 standalone skills、GitHub Copilot、Cline、Google Antigravity |
 | 有限文件接入候选 | Claude / Claude Desktop 聊天 Skills、TraeWork、Kimi Work、Grok Web/iOS/Android Skills、Grok Bot desktop/iOS Skills |
 | 暂不支持 | 当前无；Roo Code 已按产品范围决定移出候选池 |
@@ -128,6 +129,7 @@
 9. 项目级目录并不统一：目录名称、项目根识别、父级或嵌套扫描、同名优先级和可信要求均可能不同。
 10. 同一品牌的 CLI、桌面端、IDE 插件、云端 Agent 和聊天/办公客户端需要分别保存客户端 profile；只有官方资料或真机结果确认共享目录和规则时，才合并为一个实际目标。聊天桌面应用不能仅因品牌相同就套用同品牌 CLI 的本地 Skill 目录。
 11. Pi coding agent 明确读取 `~/.pi/agent/skills`、`~/.agents/skills`、`.pi/skills` 和受项目路径影响的 `.agents/skills`，但原生 Pi 目录允许带 frontmatter 的根级 `.md`，`.agents/skills` 根级 `.md` 则被忽略；项目级资源还受 project trust 控制。因此 Pi 可以进入完整适配候选，但不能套用“所有目录只扫描 `*/SKILL.md`”的统一规则。
+12. DeepSeek Harness（`dsh`）拥有独立的本地 Skill provider 和 host/per-scope 分层：项目 `.dsh/skills`、项目 `.agents/skills`、自定义目录、用户 DSH 目录、用户 `.agents/skills` 和 bundled 目录按官方 rank 合并；它支持目录型 `SKILL.md` 与扁平 `<name>.md`，但不支持嵌套递归 `**/SKILL.md`。因此 DSH 必须作为独立 profile，不能只复用通用 Agent Skills 的目录扫描器。
 
 ### 3.3 调用方式字段与统一取值
 
@@ -149,12 +151,13 @@ SkillHub 在 UI 中统一显示以下四个枚举值：
 | Claude Code、Cursor、Grok Build | `SKILL.md`：`disable-model-invocation` / `disable_model_invocation` / `disableModelInvocation`、`user-invocable` | `disable=true` → `user_only`；`user-invocable=false` → `model_only`；两者同时限制 → `disabled` | `model_and_user` |
 | OpenAI Codex | `agents/openai.yaml`：`policy.allow_implicit_invocation` | `false` → `user_only`（仍可用 `$skill-name` 手动调用）；`true` → `model_and_user` | `model_and_user` |
 | Pi | `SKILL.md`：`disable-model-invocation`；全局/项目 settings：`enableSkillCommands` | `disable-model-invocation=true` → `user_only`（需启用 `/skill:name` 命令）；未设置 → `model_and_user`；`enableSkillCommands=false` 时不注册用户命令 | `model_and_user` |
+| DeepSeek Harness | `SKILL.md`：`disable-model-invocation`、`user-invocable` | 两字段默认均为 `true`；分别控制模型目录/加载与用户命令目录；两者同时为 `false` 时仅可信 `ctx.skills.get()` 调用方可加载 | `model_and_user` |
 | OpenCode V2 | frontmatter `slash`；`metadata.opencode.autoinvoke` | `slash=false` → 不显示用户入口；`autoinvoke=false` → 禁止模型自动调用；两者同时关闭 → `disabled` | `model_and_user` |
 | Kimi Code | `SKILL.md`：`disableModelInvocation`（兼容连字符和下划线写法）；流程 Skill 的 `type: flow` | 禁止模型调用或 flow → `user_only` | `model_and_user` |
 | Windsurf、Cline、Gemini CLI | 官方 Skill 格式未提供稳定的 Skill 级调用字段 | 按“模型+用户”展示，但来源标记 `unknown`；全局禁用状态另作为平台状态处理 | `model_and_user` |
 | 其他通用 Agent | 无平台专属字段 | 不猜测额外策略，采用通用默认 `model_and_user`，来源 `default` | `model_and_user` |
 
-官方依据：[Agent Skills specification](https://agentskills.io/specification)、[Claude Code invocation controls](https://code.claude.com/docs/en/slash-commands#frontmatter-reference)、[OpenAI Codex `openai.yaml`](https://github.com/openai/codex/blob/main/codex-rs/skills/src/assets/samples/skill-creator/references/openai_yaml.md)、[Gemini CLI Agent Skills](https://github.com/google-gemini/gemini-cli/blob/main/docs/cli/using-agent-skills.md)、[Cursor Skills](https://prod.cursor.com/docs/skills)、[Windsurf Skills](https://docs.windsurf.com/zh/windsurf/cascade/skills)、[Cline Skills](https://github.com/cline/cline/blob/main/docs/customization/skills.mdx)、[OpenCode V2 Skills](https://opencode.ai/v2/docs/skills)、[Kimi Code Skills](https://github.com/MoonshotAI/kimi-code/blob/main/docs/en/customization/skills.md)、[Pi Skills](https://pi.dev/docs/latest/skills)、[Pi Settings](https://pi.dev/docs/latest/settings)、[Grok Build Skills](https://github.com/xai-org/grok-build/blob/main/crates/codegen/xai-grok-pager/docs/user-guide/08-skills.md)。
+官方依据：[Agent Skills specification](https://agentskills.io/specification)、[Claude Code invocation controls](https://code.claude.com/docs/en/slash-commands#frontmatter-reference)、[OpenAI Codex `openai.yaml`](https://github.com/openai/codex/blob/main/codex-rs/skills/src/assets/samples/skill-creator/references/openai_yaml.md)、[Gemini CLI Agent Skills](https://github.com/google-gemini/gemini-cli/blob/main/docs/cli/using-agent-skills.md)、[Cursor Skills](https://prod.cursor.com/docs/skills)、[Windsurf Skills](https://docs.windsurf.com/zh/windsurf/cascade/skills)、[Cline Skills](https://github.com/cline/cline/blob/main/docs/customization/skills.mdx)、[OpenCode V2 Skills](https://opencode.ai/v2/docs/skills)、[Kimi Code Skills](https://github.com/MoonshotAI/kimi-code/blob/main/docs/en/customization/skills.md)、[Pi Skills](https://pi.dev/docs/latest/skills)、[Pi Settings](https://pi.dev/docs/latest/settings)、[DeepSeek Harness Skills](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/subsystems/skills.md)、[Grok Build Skills](https://github.com/xai-org/grok-build/blob/main/crates/codegen/xai-grok-pager/docs/user-guide/08-skills.md)。
 
 ---
 
@@ -184,7 +187,8 @@ SkillHub 在 UI 中统一显示以下四个枚举值：
 | Kimi Work | 支持上传本地 Skill，稳定目录未确认 | 未确认 | 未确认 | 可能复用 Kimi Code 内核，但不能据此写目录 | 未确认 | UI/新会话行为待验证 | 未确认 | 有限接入候选 |
 | OpenClaw | `SKILL.md` 目录 | `~/.agents/skills`、`~/.openclaw/skills` | `<workspace>/skills`、`<workspace>/.agents/skills` | Extra dirs、插件 Skill | Workspace > Project Agent > Personal > Managed > Bundled/Extra | 默认 watcher，下一次 Agent turn 生效 | 官方有显式信任与目标约束 | 完整适配候选 |
 | Hermes Agent | `SKILL.md` 目录 | `~/.hermes/skills` | `.hermes/skills`、`.agents/skills`，需要项目信任 | `skills.external_dirs`、插件 Skill | Project > Local > External | 新会话、`--now` 或 reset；完整 watcher 待验证 | 推荐 external dirs；Skill 目录链接待验证 | 完整适配候选 |
-| Pi coding agent | Agent Skills 目录；原生目录还允许带有效 frontmatter 的根级 `.md` | `~/.pi/agent/skills`、`~/.agents/skills` | `.pi/skills`；`.agents/skills` 从 cwd 和祖先目录扫描至 Git 根或文件系统根，项目资源需先通过信任 | `package.json` 的 `pi.skills`、包内 `skills/`、`settings.json` 的 `skills`、CLI `--skill` | 同名冲突告警并保留先发现项；完整顺序及多源精确优先级需真机/源码复核 | 启动扫描；交互模式 `/reload` 可重载 skills；热刷新未确认 | 未确认 | 完整适配候选 |
+| Pi coding agent | Agent Skills 目录；原生目录还允许带有效 frontmatter 的根级 `.md` | `~/.pi/agent/skills`、`~/.agents/skills` | `.pi/skills`；`.agents/skills` 从 cwd 和祖先目录扫描至 Git 根或文件系统根，项目资源需先通过信任 | `package.json` 的 `pi.skills`、包内 `skills/`、`settings.json` 的 `skills`、CLI `--skill` | 同名冲突告警并保留先发现项；完整顺序及多源精确优先级需真机/源码复核 | 启动扫描；交互模式 `/reload` 可重载 skills；热刷新未确认 | Windows 目录联接本机已观察；Agent 跟随行为待测试 | 完整适配候选 |
+| DeepSeek Harness (`dsh`) | 目录型 `SKILL.md` 与扁平 `<name>.md`；不支持嵌套递归 `**/SKILL.md` | `<dshHome>/skills`；`<agentsHome>/skills` | `<projectRoot>/.dsh/skills`、`<projectRoot>/.agents/skills` | `Config.customSkillDirs`、`Config.bundledSkillDir`、包内 provider；本机 `~/.dsh` 存在 `dsh-tui` 与 `web` profile | 官方 rank：project-dsh 100、project-agents 200、custom 300、user-dsh 400、user-agents 500、bundled 600；host/per-scope 最近层优先 | Chokidar 监听现有根与目录入口变更；watcher 变化通过 `skills/change` 触发重新读取 | 未确认 | 完整适配候选 |
 | Grok Build CLI / TUI / ACP | `SKILL.md` 目录 | `$GROK_HOME/skills`，默认 `~/.grok/skills`；`~/.agents/skills`；兼容 Claude/Cursor 用户目录 | 从当前目录到仓库根扫描 `.grok/skills`、`.agents/skills` 及已启用兼容目录 | `[skills].paths`、Bundled Skill、插件 `skills/`、Marketplace 插件 | 当前目录 > 较上层项目目录 > 用户；原生同名按高层级覆盖；Bundled 可被原生覆盖；插件冲突保留限定名 | 文件变化后数秒内自动重载；`grok inspect [--json]` 可查看发现结果 | 未确认 | 完整适配候选 |
 | Grok Web / iOS / Android Skills | 官方确认内置和自定义 Skills，但属于账号同步能力 | 未公开稳定本地扫描目录 | 未公开 | 可通过对话、上传文件或从头创建；内置 Skill 随账号提供 | 官方说明用户自定义版本优先于同名内置版本 | 云端/UI 管理；客户端间账号同步 | 不适用 | 有限接入候选 |
 | Grok Bot desktop / iOS Skills | 官方确认保存 Skill、私有 Skill 和插件所带 Skill，但工作在共享云端计算机 | 未公开稳定本地扫描目录 | 未公开 | Settings > Plugins 安装与启用；Skill 可跨 Bot 使用并按 Bot 启用 | 未公开 | 桌面端/UI 管理；iOS 与桌面连接同一账号和云端计算机 | 不适用 | 有限接入候选 |
@@ -435,6 +439,7 @@ OpenClaw 的本地 Skill 层级、扫描深度、安装更新、启停、链接�
 本文中的 Pi 指基于 `pi-mono` 的 Pi coding agent CLI（官方 npm 包 `@mariozechner/pi-coding-agent`），不是 Pi 的 Slack bot 或 SDK。官方文档确认 Pi 实现 Agent Skills 标准，并提供本地目录、项目目录、包、设置和 CLI 的多种 Skill 来源；它是当前范围内应补入的本地文件管理 profile。
 
 - 已确认：用户级 `~/.pi/agent/skills/` 与 `~/.agents/skills/`；项目级 `.pi/skills/`；`.agents/skills/` 从当前工作目录和祖先目录向上扫描，直到 Git 仓库根或文件系统根。项目级 `.pi` 资源和项目 `.agents/skills` 只在项目通过 trust 后加载；交互模式会询问，非交互模式按 `defaultProjectTrust` 或 `--approve` / `--no-approve` 处理。
+- 本机目录观察（Windows，2026-09-12）：`pi --version` 返回 `0.85.0`；`~/.pi/agent/skills` 存在 3 个目录联接，分别指向 `.agents/skills` 下的 `find-skills`、`skill-creator`、`vercel-react-best-practices`；`.agents/skills` 存在 35 个顶层 Skill 目录和 35 个 `SKILL.md` 入口。该结果证明本机安装和目录关系存在，不证明 Pi 已成功加载或执行这些 Skill。
 - 已确认：Skill 包含 `SKILL.md` 和可选的脚本、引用、资源；目录型 Skill 会递归发现包含 `SKILL.md` 的目录。Pi 原生 `~/.pi/agent/skills/`、`.pi/skills/` 还会发现带有效 frontmatter 与非空 `description` 的根级 `.md`；`~/.agents/skills/` 和项目 `.agents/skills/` 的根级 `.md` 被忽略，但分组目录内带 frontmatter 的 `.md` 可被发现。Skill 名不强制匹配父目录名，这一点与 Agent Skills 标准不同。
 - 已确认：支持 `package.json` 中的 `pi.skills`、包内 `skills/`、全局/项目 settings 的 `skills` 数组，以及可重复的 `--skill <path>`。`--no-skills` 会关闭自动发现，但显式 `--skill` 仍然生效。缺少 `description` 或格式损坏的 `SKILL.md` 不加载并产生诊断；未知 frontmatter 字段被忽略；同名冲突告警并保留先发现项。
 - 已确认：启动时扫描 Skill 并只把名称和描述放入上下文，命中后再按需读取完整 `SKILL.md`；交互模式可使用 `/skill:name`，`/reload` 可重载 skills、extensions、prompts 和 context files。官方没有承诺文件变更自动热加载。
@@ -445,7 +450,21 @@ OpenClaw 的本地 Skill 层级、扫描深度、安装更新、启停、链接�
 
 主要来源：[Pi Skills 官方文档](https://pi.dev/docs/latest/skills)、[Pi Settings 官方文档](https://pi.dev/docs/latest/settings)、[Pi coding-agent 官方 README](https://github.com/badlogic/pi-mono/tree/main/packages/coding-agent)、[Pi coding-agent 官方仓库](https://github.com/badlogic/pi-mono)。资料复核日期：2026-09-12。
 
-### 5.22 Grok
+### 5.22 DeepSeek Harness
+
+本文中的 DeepSeek Harness 指 DeepSeek 官方的 `dsh` Agent Harness 开发者预览，不是单独的 DeepSeek 模型或 API 接入。其能力由插件组合提供，Skill 子系统由本地文件 provider、打包 provider 和 Consumer 共同组成；SkillHub 应把它作为独立的本地文件管理 profile。
+
+- 本机目录观察（Windows，2026-09-12）：`dsh --version` 返回 `0.1.1-rc.2`；`~/.dsh` 存在 `profiles/dsh-tui` 与 `profiles/web` 两套本地 profile；`dsh-tui` 的包内 `skills/` 实际包含 7 个目录型 Skill 和 7 个 `SKILL.md` 入口。`web` 与 `dsh-tui` 是 profile packaging 差异，不应直接推断为两套不同的用户 Skill 根目录。
+- 已确认：官方 local provider 的 rank 顺序为 `project-dsh`（100，`<projectRoot>/.dsh/skills`）、`project-agents`（200，`<projectRoot>/.agents/skills`）、`custom`（300）、`user-dsh`（400，`<dshHome>/skills`）、`user-agents`（500，`<agentsHome>/skills`）、`bundled`（600）。同一层内低 rank 优先；host/per-scope 合并时最近 scope 覆盖重复名称。
+- 已确认：项目根为最近的含 `.git` 的祖先目录；无 Git 根时使用当前工作目录。provider 支持目录型 `<name>/SKILL.md` 和扁平 `<name>.md`，不支持嵌套递归 `**/SKILL.md`。包、embedded、remote provider 也可以贡献 Skill，但其文件生命周期由对应 provider/包管理器负责。
+- 已确认：local provider 使用 Chokidar 监听 Skill 根和直接入口的增加、删除及入口内容变化，并通过 `skills/change` 使 consumer 重新读取；bundle 内的普通资源文件变化不单独产生目录清单变化。Skill 的模型/用户调用策略由 `disable-model-invocation` 与 `user-invocable` 归一化，缺省均可调用。
+- 必须验证：`<dshHome>` 与 `<agentsHome>` 在不同安装方式/profile 下的最终解析路径、`.dsh/skills` 与 `.agents/skills` 的真实扫描结果、重复 Skill 的跨 scope 展示、Windows 符号链接/目录联接和权限错误、web/TUI profile 的 watcher 行为，以及外部修改后 UI 和当前会话的可见时机。
+- 调用证据：官方 runtime 有 `ctx.skills.list()`、`ctx.skills.get()`、模型侧 `skill` tool 和用户侧 Skill catalog，但没有稳定的按 Skill 使用次数接口；SkillHub 不把 session log 中的事件直接等价为完整调用统计。
+- 结论：完整适配候选。预置 profile 应至少覆盖 `<projectRoot>/.dsh/skills`、`<projectRoot>/.agents/skills`、`<dshHome>/skills`、`<agentsHome>/skills` 和自定义目录，并保留 bundled/package 只读边界。当前本机证据为安装和目录观察，尚未通过真实 Skill 创建、刷新、部署/解除部署和链接全量验证。
+
+主要来源：[DeepSeek Harness 官方介绍](https://deepseek.com/harness/en/)、[DeepSeek Harness 官方仓库](https://github.com/deepseek-ai/deepseek-harness)、[DeepSeek Harness Skills 官方文档](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/subsystems/skills.md)。资料复核日期：2026-09-12。
+
+### 5.23 Grok
 
 Grok 品牌下至少需要拆分三个客户端 profile。Grok Build 是 xAI 官方的本地终端编码代理，交互式 TUI、无界面 headless 模式和供第三方应用接入的 ACP 都复用 Grok Build 运行时，不应再虚构一个独立的 xAI IDE Skill 目录。Grok Web/iOS/Android 的消费端 Skills 与 Grok Bot desktop/iOS 的 Skills 则属于账号或云端管理能力，不能套用 Grok Build 的 `.grok/skills`。
 
@@ -596,7 +615,7 @@ Windows 必须分别验证：
 | 顺序 | 平台 | 原因 |
 |---|---|---|
 | 第一批 | OpenAI Codex CLI、Codex IDE extension、ChatGPT desktop app、Claude Code、Claude Desktop、Gemini CLI、Cursor、TraeCode、通义灵码、CodeBuddy Code、文心快码 Comate、Kimi Code | 用户覆盖面高，且 OpenAI/Anthropic 多客户端拆分会直接影响 profile 模型和部署目标 |
-| 第二批 | Windsurf、OpenCode、OpenClaw、Hermes Agent、Pi coding agent、ZCode、WorkBuddy | 本地能力完整，但层级、额外目录、链接安全或刷新机制仍需验证 |
+| 第二批 | Windsurf、OpenCode、OpenClaw、Hermes Agent、Pi coding agent、DeepSeek Harness、ZCode、WorkBuddy | 本地能力完整，但层级、额外目录、链接安全或刷新机制仍需验证 |
 | 第三批 | GitHub Copilot、Cline、Google Antigravity | 关键规则或客户端差异尚未完全公开 |
 | 第四批 | TraeWork、Kimi Work | 需要先确认是否存在稳定、公开、可由外部管理的目录 |
 
@@ -644,6 +663,7 @@ Windows 必须分别验证：
 - OpenAI：ChatGPT desktop app（含 Codex in ChatGPT）、Codex CLI、Codex IDE extension、Codex cloud；其中 Codex cloud 和 ChatGPT Web/Mobile 不因支持插件 Skill 就成为本地文件部署目标。
 - Anthropic：Claude Code CLI/本地会话、Claude Desktop/Cowork/Chat、Claude Web、Microsoft 365 add-ins；Claude Code 有公开本地目录，Claude 聊天 Skills 主要通过上传和账号/组织管理。
 - Pi：Pi coding agent CLI；Skill 目录、项目 trust、包和 settings 入口属于 Pi profile，不能把 Pi 的 SDK、Slack bot 或其他集成形态自动视为同一文件管理目标。
+- DeepSeek：DeepSeek Harness `dsh` CLI/TUI/Web；不同 profile 共享 Harness 的 Skill provider 语义，但 bundled/package Skill 与用户本地目录必须按来源和所有权拆分。
 - GitHub Copilot CLI、VS Code/JetBrains、本地与云端 Agent。
 - Cursor editor 与 Cursor CLI。
 - Cline VS Code/JetBrains 扩展、Cline CLI、SDK/ACP。
@@ -680,9 +700,9 @@ Windows 必须分别验证：
 
 ## 9. 当前结论
 
-22 个候选平台品牌均存在继续调研或文件管理接入价值，但接入深度不同；同品牌多客户端需要在 profile 层继续拆分：
+23 个候选平台品牌均存在继续调研或文件管理接入价值，但接入深度不同；同品牌多客户端需要在 profile 层继续拆分：
 
-- 17 个本地文件管理 profile 可以按现有资料实现完整接入，其中 OpenAI 侧仅指 Codex CLI / Codex IDE extension，Grok 侧仅指 Grok Build CLI / TUI / ACP，Pi 侧仅指 Pi coding agent CLI；ZCode 因官方补全工作区级目录由部分上调为完整。Codex、Claude Code、Cursor、Kimi Code、TraeCode、通义灵码（CLI 侧）、CodeBuddy Code、WorkBuddy 等平台已取得 Windows 真机证据，其余（含 Pi）仍依据官方资料。
+- 18 个本地文件管理 profile 可以按现有资料实现完整接入，其中 OpenAI 侧仅指 Codex CLI / Codex IDE extension，Grok 侧仅指 Grok Build CLI / TUI / ACP，Pi 侧仅指 Pi coding agent CLI，DeepSeek 侧指 `dsh` CLI/TUI/Web；ZCode 因官方补全工作区级目录由部分上调为完整。Codex、Claude Code、Cursor、Kimi Code、TraeCode、通义灵码（CLI 侧）、CodeBuddy Code、WorkBuddy 等平台已取得 Windows 真机证据；Pi 与 DeepSeek Harness 已取得本机安装/目录观察，其余仍依据官方资料。
 - 4 个部分文件管理 profile 可以先实现，未知规则显示“无法判断”并保留自定义目录兜底；新增关注点是 ChatGPT desktop app 的 standalone skills 是否可作为独立文件目标。Google Antigravity 的全局目录按官方资料保留 `~/.gemini/config/skills`，真机上另有 `~/.gemini/antigravity/` 下的两个 Skill 目录，二者关系待验证。
 - 5 个上传、云端或办公型 profile 暂时只展示能力边界、官方帮助链接和通用标准导出；Claude / Claude Desktop 聊天 Skills 不能套用 Claude Code 的 `.claude/skills`，Grok consumer 与 Grok Bot 也不能套用 Grok Build 的 `.grok/skills`。
 - 没有平台能够仅凭官方资料提供可靠的按 Skill 调用次数统计。
