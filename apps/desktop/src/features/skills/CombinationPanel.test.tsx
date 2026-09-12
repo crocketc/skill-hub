@@ -166,6 +166,56 @@ describe("CombinationPanel", () => {
     expect(await screen.findByRole("checkbox", { name: "Candidate 51" })).toBeVisible();
   });
 
+  it("drops an in-flight loadMore response after the filter re-queries the list", async () => {
+    let resolveStalePage2: (() => void) | undefined;
+    const all = Array.from({ length: 60 }, (_, index) => ({
+      id: `candidate-${index + 1}`,
+      name: `Candidate ${index + 1}`,
+    }));
+    const facade = createFacade({
+      listSkills: vi.fn((query: SkillLibraryQuery) => {
+        if (query.page > 1) {
+          return new Promise((resolve) => {
+            resolveStalePage2 = () =>
+              resolve({
+                items: all.slice(50, 60).map((item) => ({ ...item })),
+                facets: { tags: [] },
+                page: query.page,
+                pageSize: 50,
+                total: all.length,
+              });
+          });
+        }
+        const filtered = query.text.trim()
+          ? [{ id: "special", name: "Special match" }]
+          : all.slice(0, 50);
+        return Promise.resolve({
+          items: filtered.map((item) => ({ ...item })),
+          facets: { tags: [] },
+          page: 1,
+          pageSize: 50,
+          total: query.text.trim() ? 1 : all.length,
+        });
+      }),
+    });
+    await renderPanel(facade);
+    await screen.findByText("Writing stack");
+    fireEvent.click(screen.getByRole("button", { name: "新建组合" }));
+    expect(await screen.findByRole("checkbox", { name: "Candidate 50" })).toBeVisible();
+
+    // 第二页还在飞行中时更改筛选：page-1 立即按新条件重查并替换列表，
+    // 迟到的第二页结果不允许拼进新筛选的列表。
+    fireEvent.click(screen.getByRole("button", { name: "加载更多候选 Skill" }));
+    const filter = screen.getByRole("searchbox", { name: "按名称筛选" });
+    fireEvent.change(filter, { target: { value: "probe" } });
+    expect(await screen.findByRole("checkbox", { name: "Special match" })).toBeVisible();
+
+    resolveStalePage2?.();
+    await waitFor(() => expect(facade.listSkills).toHaveBeenCalledTimes(3));
+    expect(screen.queryByRole("checkbox", { name: "Candidate 51" })).toBeNull();
+    expect(screen.getByRole("checkbox", { name: "Special match" })).toBeVisible();
+  });
+
   it("edits members of an existing combination through updateCombination", async () => {
     const facade = createFacade();
     await renderPanel(facade);

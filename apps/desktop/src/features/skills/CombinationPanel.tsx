@@ -85,6 +85,9 @@ function MemberPicker({ facade, onCandidates, onToggle, selected }: MemberPicker
   const [unavailable, setUnavailable] = useState(false);
   const reportCandidates = useRef(onCandidates);
   reportCandidates.current = onCandidates;
+  // 查询代际：筛选变化重查（effect）或卸载都会使旧代际失效，
+  // 在飞行中的 loadMore 响应不得再写状态或拼进新列表。
+  const generationRef = useRef(0);
 
   const queryPage = (page: number): SkillLibraryQuery => ({
     ...DEFAULT_MEMBER_QUERY,
@@ -94,13 +97,13 @@ function MemberPicker({ facade, onCandidates, onToggle, selected }: MemberPicker
   });
 
   useEffect(() => {
-    let cancelled = false;
+    const generation = ++generationRef.current;
     setLoading(true);
     setUnavailable(false);
     facade
       .listSkills(queryPage(1))
       .then((result) => {
-        if (cancelled) return;
+        if (generationRef.current !== generation) return;
         setItems(result.items);
         setTags(result.facets.tags);
         setTotal(result.total);
@@ -108,33 +111,46 @@ function MemberPicker({ facade, onCandidates, onToggle, selected }: MemberPicker
         reportCandidates.current(result.items);
       })
       .catch(() => {
-        if (!cancelled) setUnavailable(true);
+        if (generationRef.current !== generation) return;
+        setUnavailable(true);
       })
       .finally(() => {
-        if (!cancelled) setLoading(false);
+        if (generationRef.current === generation) setLoading(false);
       });
-    return () => {
-      cancelled = true;
-    };
     // text/tag 变化即重新查询（与技能库筛选一致，无额外节流语义）；
     // onCandidates 经 ref 转发，避免把每次合并结果当作重查依赖。
   }, [facade, text, tag]);
 
+  // 卸载后所有在飞行响应一律失效，不再写任何状态。
+  useEffect(
+    () => () => {
+      generationRef.current += 1;
+    },
+    [],
+  );
+
   const loadMore = () => {
     const next = loadedPages + 1;
     if (loading || next > CANDIDATE_MAX_PAGES) return;
+    const generation = generationRef.current;
     setLoading(true);
     setUnavailable(false);
     facade
       .listSkills(queryPage(next))
       .then((result) => {
+        if (generationRef.current !== generation) return;
         setItems((current) => [...current, ...result.items]);
         setTotal(result.total);
         setLoadedPages(next);
         reportCandidates.current(result.items);
       })
-      .catch(() => setUnavailable(true))
-      .finally(() => setLoading(false));
+      .catch(() => {
+        if (generationRef.current !== generation) return;
+        setUnavailable(true);
+      })
+      .finally(() => {
+        if (generationRef.current === generation) setLoading(false);
+      });
   };
 
   return (
