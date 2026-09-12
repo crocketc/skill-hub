@@ -1851,6 +1851,27 @@ impl LocalApplicationFacade {
         });
     }
 
+    /// AI import checks stage temporary prepared imports. They are advisory
+    /// only; the commit loop prepares its own operation, so the staging
+    /// records must be settled before the next startup snapshot is built.
+    fn discard_prepared_imports(&self, operation_ids: &[OperationId]) {
+        for operation_id in operation_ids {
+            let removed = self
+                .prepared_imports
+                .lock()
+                .map(|mut prepared| prepared.remove(operation_id).is_some())
+                .unwrap_or(false);
+            if removed {
+                self.journal_advance(
+                    *operation_id,
+                    "import_skill",
+                    skillhub_core::OperationPhase::RolledBack,
+                    None,
+                );
+            }
+        }
+    }
+
     fn llm_context(
         &self,
         operation: &'static str,
@@ -2311,6 +2332,16 @@ impl LocalApplicationFacade {
     /// prepared import. Findings never change the deterministic import gates;
     /// failures are reported per object and never abort the batch.
     async fn run_import_ai_checks(
+        &self,
+        request: skillhub_core::api::RunImportAiChecks,
+    ) -> AppResult<AppCommandResult> {
+        let operation_ids = request.prepared_import_ids.clone();
+        let result = self.run_import_ai_checks_inner(request).await;
+        self.discard_prepared_imports(&operation_ids);
+        result
+    }
+
+    async fn run_import_ai_checks_inner(
         &self,
         request: skillhub_core::api::RunImportAiChecks,
     ) -> AppResult<AppCommandResult> {

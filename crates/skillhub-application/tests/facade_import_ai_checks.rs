@@ -9,8 +9,9 @@ use async_trait::async_trait;
 use serde_json::json;
 use skillhub_application::LocalApplicationFacade;
 use skillhub_core::{
-    AppCommand, AppCommandResult, ApplicationFacade, ImportCandidate, ImportDecision,
-    PrepareImport, RunImportAiChecks, SourceDescriptor, SourceKind, SourceLocator,
+    AppCommand, AppCommandResult, AppQuery, AppQueryResult, ApplicationFacade, ImportCandidate,
+    ImportDecision, PrepareImport, RunImportAiChecks, SourceDescriptor, SourceKind, SourceLocator,
+    StartupRecoveryState,
 };
 use skillhub_storage::{CentralLibrary, Database};
 
@@ -67,6 +68,17 @@ fn facade_with(workspace: &std::path::Path, runner: OutcomeRunner) -> LocalAppli
         &library_root,
         Arc::new(runner),
     )
+}
+
+async fn recovery_state(facade: &LocalApplicationFacade) -> StartupRecoveryState {
+    let result = facade
+        .query(AppQuery::GetBootstrapSnapshot)
+        .await
+        .expect("bootstrap snapshot");
+    let AppQueryResult::BootstrapSnapshot(snapshot) = result else {
+        panic!("expected bootstrap snapshot");
+    };
+    snapshot.recovery_state
 }
 
 async fn enable_safety_check(facade: &LocalApplicationFacade) {
@@ -137,8 +149,22 @@ async fn import_ai_checks_report_per_object_and_leave_import_gates_intact() {
     assert_eq!(outcome.finding_count, 1);
     assert_eq!(outcome.file_count, 2, "both markdown files were evidence");
     assert_eq!(outcome.failure_code, None);
+    let snapshot = facade
+        .query(skillhub_core::AppQuery::GetBootstrapSnapshot)
+        .await
+        .expect("bootstrap snapshot after import ai checks");
+    let skillhub_core::AppQueryResult::BootstrapSnapshot(snapshot) = snapshot else {
+        panic!("expected bootstrap snapshot");
+    };
+    assert_eq!(
+        snapshot.recovery_state,
+        StartupRecoveryState::Clean,
+        "advisory AI staging must not block the next startup"
+    );
 
-    // The AI layer is advisory: the deterministic import still succeeds.
+    // The AI layer is advisory: the deterministic import still succeeds after
+    // preparing its own commit operation.
+    let id = prepared_import(&facade, source.path()).await;
     let committed = facade
         .execute(AppCommand::CommitImport(skillhub_core::CommitImport {
             prepared_import_id: id,
@@ -202,6 +228,11 @@ async fn import_ai_checks_report_failures_per_object_without_losing_the_rest() {
         .map(|outcome| outcome.prepared_import_id)
         .collect();
     assert_eq!(reported_ids, vec![id_a, missing, id_b]);
+    assert_eq!(
+        recovery_state(&facade).await,
+        StartupRecoveryState::Clean,
+        "per-object AI failures must also settle temporary staging"
+    );
 }
 
 #[tokio::test]
@@ -220,4 +251,9 @@ async fn import_ai_checks_respect_the_capability_switch() {
         .await
         .expect_err("capability disabled");
     assert_eq!(error.code.as_str(), "llm.capability_disabled");
+    assert_eq!(
+        recovery_state(&facade).await,
+        StartupRecoveryState::Clean,
+        "a globally rejected AI check must not leave a startup blocker"
+    );
 }

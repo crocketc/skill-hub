@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Navigate } from "react-router-dom";
+import { Link, Navigate, useLocation } from "react-router-dom";
 import type { BootstrapSnapshot, StartupRecoveryState } from "../../api/bindings";
 import { AppShell } from "../../app/AppShell";
 import { DataState } from "../../ui/DataState";
@@ -39,7 +39,7 @@ function RecoveryBlocker({ recoveryState }: { recoveryState: StartupRecoveryStat
         {isRecovering ? (
           <div aria-label={t("bootstrap.blockingStartup")} role="progressbar" />
         ) : null}
-        <a href="/operations">{t("bootstrap.openRecovery")}</a>
+        <Link to="/recovery">{t("bootstrap.openRecovery")}</Link>
       </section>
     </main>
   );
@@ -70,6 +70,7 @@ function ErrorState({ retry }: { retry: () => void }) {
 
 export function BootstrapGate({ runtime = desktopBootstrapRuntime }: BootstrapGateProps) {
   const [state, setState] = useState<BootstrapLoadState>({ kind: "loading" });
+  const location = useLocation();
 
   const load = useCallback(async (showLoading = true) => {
     if (showLoading) setState({ kind: "loading" });
@@ -95,7 +96,7 @@ export function BootstrapGate({ runtime = desktopBootstrapRuntime }: BootstrapGa
   if (state.kind === "error") {
     return <ErrorState retry={() => void load(true)} />;
   }
-  if (state.snapshot.recovery_state !== "clean") {
+  if (state.snapshot.recovery_state !== "clean" && location.pathname !== "/recovery") {
     return <RecoveryBlocker recoveryState={state.snapshot.recovery_state} />;
   }
   if (state.snapshot.initialization_state === "not_initialized") {

@@ -1,4 +1,4 @@
-import { act, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { I18nextProvider } from "react-i18next";
 import { MemoryRouter, Route, Routes, useOutletContext } from "react-router-dom";
 import { afterEach, vi } from "vitest";
@@ -81,6 +81,7 @@ async function renderBootstrapGate(view: BootstrapView) {
                 path="/"
               >
                 <Route index element={<OverviewPage />} />
+                <Route element={<h1>恢复页面</h1>} path="recovery" />
               </Route>
               <Route element={<h1>初始化向导</h1>} path="/initialize" />
             </Routes>
@@ -148,6 +149,18 @@ it("names an in-progress recovery without pretending it is complete", async () =
 
   expect(await screen.findByText("正在恢复本地数据")).toBeVisible();
   expect(screen.getByRole("progressbar", { name: "阻塞启动" })).toBeVisible();
+});
+
+it("keeps the recovery page reachable from the startup blocker", async () => {
+  await renderBootstrapGate({
+    snapshot: { ...cachedSnapshot, recovery_state: "in_progress" as const },
+    verification: { kind: "unavailable" },
+  });
+
+  const link = await screen.findByRole("link", { name: "打开操作记录与恢复" });
+  expect(link).toHaveAttribute("href", "/recovery");
+  fireEvent.click(link);
+  expect(await screen.findByRole("heading", { name: "恢复页面" })).toBeVisible();
 });
 
 it("refreshes the shared bootstrap snapshot without remounting the shell", async () => {
