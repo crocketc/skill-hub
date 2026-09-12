@@ -1303,6 +1303,8 @@ export function SkillLibraryPage({
                 </Button>
               ))}
             </div>
+            {/* M-21 #7：工具栏分组层级——视图切换与管理入口（分组/组合/已保存视图）之间留分隔。 */}
+            <span aria-hidden="true" className="sh-skill-library__toolbar-divider" />
             <div
               aria-label={t("skillLibrary.groupMode.label")}
               className="sh-skill-library__mode-switch"

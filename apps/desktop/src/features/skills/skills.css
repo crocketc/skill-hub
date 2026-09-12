@@ -252,6 +252,14 @@
   margin-inline-start: auto;
 }
 
+/* M-21 #7：动作簇内的分组层级分隔（视图切换 | 管理入口）。 */
+.sh-skill-library__toolbar-divider {
+  align-self: stretch;
+  width: 1px;
+  margin-block: var(--space-1);
+  background: var(--ui-border);
+}
+
 .sh-skill-library__mode-switch {
   display: inline-flex;
   align-items: center;

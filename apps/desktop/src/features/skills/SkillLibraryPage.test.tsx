@@ -1714,6 +1714,41 @@ describe("SkillLibraryPage", () => {
     expect(screen.getAllByText("Creates and updates Word documents.").length).toBeGreaterThanOrEqual(1);
   });
 
+  it("exposes the reorganized IA with reachable roles, names and grouped toolbar levels (M-21)", async () => {
+    const facade = createMockSkillLibraryFacade({ total: 80 });
+    facade.listCombinations = vi.fn().mockResolvedValue([]);
+    renderLibrary({ facade, persistedViewMode: "unset" });
+
+    await screen.findByTestId("skill-card-skill-pdf");
+
+    // 主搜索：searchbox 角色 + 可访问名称 + 键盘可达。
+    const search = screen.getByRole("searchbox", { name: "Search skills" });
+    search.focus();
+    expect(search).toHaveFocus();
+
+    // 结果摘要：工具栏常驻命中统计。
+    expect(screen.getByTestId("library-summary-total")).toBeVisible();
+
+    // 高级筛选：可展开控件带生效条件计数，展开后各筛选控件可达。
+    const advanced = screen.getByRole("button", { name: /Filters/ });
+    expect(advanced).toHaveAttribute("aria-expanded");
+    if (advanced.getAttribute("aria-expanded") === "false") {
+      fireEvent.click(advanced);
+    }
+    expect(screen.getByRole("button", { name: "Basic check" })).toBeVisible();
+
+    // 组合管理入口：独立 link 角色 + 可聚焦（不内嵌面板，M-22 契约保持）。
+    const combination = screen.getByRole("link", { name: "Combination manager" });
+    combination.focus();
+    expect(combination).toHaveFocus();
+    expect(screen.queryByRole("button", { name: "New combination" })).toBeNull();
+
+    // 工具栏层级：动作簇内以分隔符区隔视图切换组与管理入口组。
+    const actions = document.querySelector(".sh-skill-library__toolbar-actions") as HTMLElement;
+    expect(actions.querySelector(".sh-skill-library__toolbar-divider")).not.toBeNull();
+    expect(getComputedStyle(actions.querySelector(".sh-skill-library__toolbar-divider") as HTMLElement).backgroundColor).toBeTruthy();
+  });
+
   it("links to the combination manager instead of embedding the panel", async () => {
     const facade = createMockSkillLibraryFacade();
     facade.listCombinations = vi.fn().mockResolvedValue([]);
