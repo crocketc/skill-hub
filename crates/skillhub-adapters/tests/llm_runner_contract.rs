@@ -684,6 +684,48 @@ async fn model_list_fetch_tries_candidates_and_returns_sorted_ids() {
     handle.abort();
 }
 
+/// M-13 根因回归：连接探针对 OpenAI 家族携带 `strict: true` 的
+/// `response_format.json_schema`，因此探针 schema 本身必须满足 strict 模式
+/// 的服务端校验（`required` 覆盖全部属性且 `additionalProperties: false`），
+/// 否则真实供应商会以 400 拒绝探针，用户拿着有效密钥也得到"测试失败"。
+#[tokio::test]
+async fn connection_probe_sends_a_strict_mode_valid_schema_for_openai_family() {
+    let runner = stored_runner();
+    let server = Arc::new(MockLlmServer::default());
+    let (base, handle) = start_server(
+        server.clone(),
+        vec![
+            QueuedResponse {
+                status: "200 OK",
+                headers: vec![],
+                body: "{}".into(),
+                delay_ms: 0,
+            },
+            QueuedResponse {
+                status: "200 OK",
+                headers: vec![],
+                body: chat_content("{\"ok\": true}"),
+                delay_ms: 0,
+            },
+        ],
+    )
+    .await;
+
+    let report = runner.check_connection(&openai_chat(&base)).await;
+    assert!(report.model_ok(), "probe must pass against a conforming server");
+
+    let probe = server.requests.lock().unwrap()[1].clone();
+    let body: serde_json::Value = serde_json::from_str(&probe.body).unwrap();
+    let schema = &body["response_format"]["json_schema"]["schema"];
+    assert_eq!(body["response_format"]["type"], "json_schema");
+    assert_eq!(body["response_format"]["json_schema"]["strict"], json!(true));
+    assert_eq!(schema["type"], "object");
+    assert_eq!(schema["additionalProperties"], json!(false));
+    assert_eq!(schema["required"], json!(["ok"]));
+    assert_eq!(schema["properties"]["ok"]["type"], "boolean");
+    handle.abort();
+}
+
 #[tokio::test]
 async fn connection_test_reports_endpoint_and_model_levels_separately() {
     let runner = stored_runner();

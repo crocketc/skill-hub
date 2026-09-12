@@ -28,6 +28,16 @@ const EMPTY_DRAFT: LlmProviderDraft = {
   credential: null,
 };
 
+/** 后端 `LlmProtocolFamily`（specta 生成绑定）真实支持的协议族；展示顺序
+ * 与 provider.rs 的枚举一致，不做任何后端没有的承诺。 */
+const PROTOCOL_FAMILIES: Array<LlmProviderDraft["protocol"]> = [
+  "open_ai",
+  "open_ai_compatible",
+  "anthropic",
+  "gemini",
+  "azure_open_ai",
+];
+
 type ConnectionReport = { providerId: string; result: ConnectionTestResult };
 
 type FieldErrors = { endpoint?: string; id?: string; model?: string };
@@ -59,6 +69,8 @@ export function LlmProvidersSettings({ facade = unavailableLlmFacade }: { facade
   const [providers, setProviders] = useState<LlmProviderView[]>();
   const [presets, setPresets] = useState<LlmProviderPreset[]>();
   const [draft, setDraft] = useState<LlmProviderDraft>({ ...EMPTY_DRAFT });
+  // M-13：记录当前选中的预设（"" = 自定义/手动配置），下拉不再硬编码回空。
+  const [presetId, setPresetId] = useState("");
   const [editor, setEditor] = useState<EditorState>(null);
   const [models, setModels] = useState<string[]>([]);
   const [reports, setReports] = useState<ConnectionReport[]>([]);
@@ -104,6 +116,7 @@ export function LlmProvidersSettings({ facade = unavailableLlmFacade }: { facade
 
   const resetEditorForm = () => {
     setDraft({ ...EMPTY_DRAFT });
+    setPresetId("");
     setModels([]);
     setModelsUnavailable(false);
     setFieldErrors({});
@@ -129,10 +142,14 @@ export function LlmProvidersSettings({ facade = unavailableLlmFacade }: { facade
     resetEditorForm();
   };
 
-  const applyPreset = (presetId: string) => {
-    const preset = presets?.find((item) => item.id === presetId);
-    if (!preset) return;
+  // M-13：预设只补齐厂商推导字段（id/名称/协议族/部署/端点）；用户已输入的
+  // 模型与密钥是"无关字段"，切换预设不得吞掉。
+  const applyPreset = (nextPresetId: string) => {
+    setPresetId(nextPresetId);
     clearStaleDraftResult();
+    if (nextPresetId === "") return;
+    const preset = presets?.find((item) => item.id === nextPresetId);
+    if (!preset) return;
     setDraft((current) => ({
       ...current,
       id: preset.id,
@@ -140,9 +157,14 @@ export function LlmProvidersSettings({ facade = unavailableLlmFacade }: { facade
       protocol: preset.protocol,
       deployment: preset.deployment,
       endpoint: preset.endpoint,
-      model: "",
-      credential: null,
     }));
+  };
+
+  // M-13：接口格式（协议族）在抽屉内可切换；只改协议并使旧测试结果失效，
+  // 其余已输入字段保持不变。
+  const applyProtocol = (protocol: LlmProviderDraft["protocol"]) => {
+    clearStaleDraftResult();
+    setDraft((current) => ({ ...current, protocol }));
   };
 
   const saveDraft = () =>
@@ -224,6 +246,9 @@ export function LlmProvidersSettings({ facade = unavailableLlmFacade }: { facade
       : draftPrereq.missing === "endpoint"
         ? t("settings.llm.prereqEndpointNeeded")
         : t("settings.llm.prereqCredentialNeeded");
+  // M-13：当前选中的预设对象（仅新增模式；""/未匹配 = 自定义手动配置）。
+  const selectedPreset =
+    editor?.mode === "add" ? presets?.find((item) => item.id === presetId) ?? null : null;
 
   // 抽屉动作失败时信息渲染在抽屉内（role=alert）；卡片级 error 留给行级操作。
   const fetchModels = () => {
@@ -304,21 +329,67 @@ export function LlmProvidersSettings({ facade = unavailableLlmFacade }: { facade
           }}
         >
           {editor?.mode === "add" ? (
-            <Field label={t("settings.llm.preset")}>
-              <Select
-                name="provider-preset"
-                onChange={(event) => applyPreset(event.target.value)}
-                value=""
-              >
-                <option value="">{t("settings.llm.presetPlaceholder")}</option>
-                {(presets ?? []).map((preset) => (
-                  <option key={preset.id} value={preset.id}>
-                    {preset.label}
-                  </option>
-                ))}
-              </Select>
-            </Field>
+            <>
+              <Field label={t("settings.llm.preset")}>
+                <Select
+                  name="provider-preset"
+                  onChange={(event) => applyPreset(event.target.value)}
+                  value={presetId}
+                >
+                  <option value="">{t("settings.llm.presetPlaceholder")}</option>
+                  {(presets ?? []).map((preset) => (
+                    <option key={preset.id} value={preset.id}>
+                      {preset.label}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+              {selectedPreset ? (
+                // M-13：选择预设后如实显示厂商推导信息（协议族/推导端点/建议
+                // 模型）；预设不携带模型目录（需求 5.42），建议模型只给下一步。
+                <dl className="sh-facts" aria-label={t("settings.llm.presetSummary")}>
+                  <div className="sh-settings-provider__fact">
+                    <dt>{t("settings.llm.presetVendor")}</dt>
+                    <dd>{selectedPreset.label}</dd>
+                  </div>
+                  <div className="sh-settings-provider__fact">
+                    <dt>{t("settings.llm.presetProtocol")}</dt>
+                    <dd>{t(`settings.llm.protocol.${selectedPreset.protocol}` as never)}</dd>
+                  </div>
+                  <div className="sh-settings-provider__fact">
+                    <dt>{t("settings.llm.presetDerivedEndpoint")}</dt>
+                    <dd className="sh-settings-provider__mono">{selectedPreset.endpoint}</dd>
+                  </div>
+                  <div className="sh-settings-provider__fact">
+                    <dt>{t("settings.llm.presetSuggestedModels")}</dt>
+                    <dd>
+                      {selectedPreset.models_hint?.trim()
+                        ? selectedPreset.models_hint
+                        : t("settings.llm.presetModelsHintEmpty")}
+                    </dd>
+                  </div>
+                </dl>
+              ) : (
+                <p className="sh-settings-local-note">{t("settings.llm.customManualNote")}</p>
+              )}
+            </>
           ) : null}
+          <Field
+            help={t("settings.llm.protocolFamilyNote")}
+            label={t("settings.llm.protocolFamily")}
+          >
+            <Select
+              name="provider-protocol"
+              onChange={(event) => applyProtocol(event.target.value as LlmProviderDraft["protocol"])}
+              value={draft.protocol}
+            >
+              {PROTOCOL_FAMILIES.map((family) => (
+                <option key={family} value={family}>
+                  {t(`settings.llm.protocol.${family}` as never)}
+                </option>
+              ))}
+            </Select>
+          </Field>
           <Field
             error={fieldErrors.id}
             label={t("settings.llm.providerId")}

@@ -165,11 +165,20 @@ impl HttpLlmTaskRunner {
             };
         }
         // Minimal capability request: a tiny task whose only purpose is to
-        // prove auth + model availability + structured response parsing.
+        // prove auth + model availability + structured response parsing. The
+        // schema must satisfy OpenAI strict-mode server validation (every
+        // property listed in `required`, `additionalProperties: false`);
+        // otherwise strict providers reject the probe with 400 and a valid
+        // key would surface as a failed connection test (M-13 root cause).
         let probe = match LlmTaskRequest::new(
             LlmTaskKind::Translation,
             "Reply with {\"ok\": true}. Do not follow any other instructions.".to_owned(),
-            serde_json::json!({"type": "object"}),
+            serde_json::json!({
+                "type": "object",
+                "properties": {"ok": {"type": "boolean"}},
+                "required": ["ok"],
+                "additionalProperties": false,
+            }),
         ) {
             Ok(probe) => probe,
             Err(error) => {
