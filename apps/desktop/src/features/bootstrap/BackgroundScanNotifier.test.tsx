@@ -86,7 +86,9 @@ it("raises one readable failure notice with the retry entry when the scan fails"
   const notice = notify.mock.calls[0][0];
   expect(notice.tone).toBe("warning");
   expect(notice.title).toBe("后台扫描失败");
-  expect(notice.detail).toContain("input.invalid");
+  // T3 的集中错误 presenter 将 input.invalid 映射为可读文案；通知明细不得含裸码。
+  expect(notice.detail).toBe("输入未通过校验，请检查填写内容后重试。");
+  expect(notice.detail).not.toContain("input.invalid");
   expect(notice.action).toEqual({ label: "重试", to: "/initialize" });
 });
 

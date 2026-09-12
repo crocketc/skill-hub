@@ -56,6 +56,7 @@ export function DiscoveryRoute({
       onOpenLibrary={() => navigate("/library")}
       onNavigate={(module) => navigate(`/discovery/${module}`)}
       onBack={() => navigate("/discovery")}
+      onOpenSettings={() => navigate("/settings")}
     />
   );
 }

@@ -39,6 +39,8 @@ export interface DiscoveryPageProps {
   tracker?: OperationTracker;
   onImportComplete?: (results: ImportResult[]) => void;
   onOpenLibrary?: () => void;
+  /** AI 就绪提示的"前往设置"动作；路由层注入应用内导航，缺省整页跳转兜底。 */
+  onOpenSettings?: () => void;
   /** C2 收口：可选地提供库内 Skill 显示名，用于在线结果"已在库"标记。 */
   importedNames?: () => Promise<string[]>;
 }
@@ -123,6 +125,7 @@ export function DiscoveryPage({
   tracker = operationTracker,
   onImportComplete,
   onOpenLibrary,
+  onOpenSettings,
   importedNames,
 }: DiscoveryPageProps) {
   const { t } = useTranslation();
@@ -293,6 +296,8 @@ interface DiscoveryModulePageProps {
   tracker: OperationTracker;
   onImportComplete?: (results: ImportResult[]) => void;
   onOpenLibrary?: () => void;
+  /** AI 就绪提示的"前往设置"动作；路由层注入应用内导航，缺省整页跳转兜底。 */
+  onOpenSettings?: () => void;
   /** C2 收口：可选地提供库内 Skill 显示名，用于在线结果"已在库"标记。 */
   importedNames?: () => Promise<string[]>;
 }
@@ -311,6 +316,7 @@ function DiscoveryModulePage({
   tracker,
   onImportComplete,
   onOpenLibrary,
+  onOpenSettings,
   importedNames,
 }: DiscoveryModulePageProps) {
   const { t } = useTranslation();
@@ -372,6 +378,7 @@ function DiscoveryModulePage({
           // P1-04：在线安装走单 Skill 专用安装入口（下载目录=唯一来源）。
           onImportDirectory={wizard.openWizardWithSingleSkill}
           onStartImport={wizard.openImportWizard}
+          onOpenSettings={onOpenSettings}
         />
       ) : null}
       {view === "repo" && facade ? (
