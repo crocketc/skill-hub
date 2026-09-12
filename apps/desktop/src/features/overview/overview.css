@@ -1,5 +1,5 @@
 /* 概览页专属样式（T3-A 建立，P1-07 重排信息密度：hero/紧凑统计比例阶梯、
-   宽容器指标带、待办项链接化）。只消费 --ui-* 语义 token，不写死任何主题色；
+   M-20 两行指标契约、待办项链接化）。只消费 --ui-* 语义 token，不写死任何主题色；
    响应式断点基于 AppShell 的 workspace 容器查询（内容容器，而非视口）。
    覆盖 base.css 同名规则时使用 `.sh-overview` 前缀提高特异性，
    因为本文件在模块图中先于 base.css 注入。 */
@@ -41,8 +41,8 @@
   border-color: var(--ui-accent);
 }
 
-/* 紧凑统计：窄容器 1 列 / 中容器 2 列（≥40rem）；宽容器（≥60rem）并入
-   hero + 统计的自适应指标带（见文件末尾）。列数不写死 4 列。 */
+/* 紧凑统计：窄容器 1 列 / 中容器 2 列（≥40rem）；宽容器（≥60rem）落到
+   hero 下方第二行的 4 列网格（见文件末尾，M-20 两行指标契约）。 */
 .sh-overview__stats {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
@@ -135,8 +135,8 @@
 
 /* 容器查询：以 AppShell 的 workspace 内容容器为断点（展开侧栏 13.875rem）。
    窄容器统计与内容全部单列，无嵌套不可发现滚动；中容器统计 2 列、内容单列；
-   宽容器 hero 与紧凑统计并入同一条指标带（hero 占 1 列，紧凑统计按指标数
-   依次排满其余列），消除 hero 整行右侧留白（P1-07）。 */
+   宽容器执行 M-20 两行指标契约：hero 独占第一行（跨 4 列），紧凑统计通过
+   display:contents 落到第二行的 4 列网格，宽屏只缩放不改变信息结构。 */
 @container workspace (min-width: 40rem) {
   .sh-overview .sh-overview__stats {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -145,10 +145,14 @@
 
 @container workspace (min-width: 60rem) {
   .sh-overview .sh-overview__metrics {
-    grid-template-columns: minmax(0, 1.35fr) repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 
-  /* 列表框退化为 contents，让统计项直接参与指标带网格（DOM 与
+  .sh-overview .sh-overview__hero {
+    grid-column: 1 / -1;
+  }
+
+  /* 列表框退化为 contents，让统计项直接参与指标区网格（DOM 与
      可访问性角色不变，键盘顺序仍按 DOM）。 */
   .sh-overview .sh-overview__stats {
     display: contents;

@@ -174,7 +174,7 @@ test("keeps two stat columns and a single-column chart area at 1024px", async ({
   await expectNoRootHorizontalOverflow(page);
 });
 
-test("keeps four stat columns and the side-by-side workspace at 1440px", async ({ page }) => {
+test("keeps the two-row metrics contract with four stat columns at 1440px", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/__preview/overview");
 
@@ -184,8 +184,8 @@ test("keeps four stat columns and the side-by-side workspace at 1440px", async (
   }
   expect(distinctRowCount(boxes), "compact stats must sit in a single 4-column row").toBe(1);
 
-  // P1-07 密度阶梯：宽容器下 hero 与紧凑统计并入同一条指标带（同一行），
-  // hero ≥ 6rem（96px）、紧凑卡 ≥ 4rem（64px），替代原先 2.5rem 的矮卡。
+  // M-20 两行指标契约：宽屏只缩放不换结构——hero 独占第一行，四张紧凑统计
+  // 卡在第二行；禁止恢复 hero+统计并入单行的 5 卡横带。
   const heroBox = await boxOf(page.getByRole("link", { name: "27 skills" }));
   expect(heroBox.height, "the hero metric must reach the 6rem density rung").toBeGreaterThanOrEqual(
     96,
@@ -194,9 +194,9 @@ test("keeps four stat columns and the side-by-side workspace at 1440px", async (
     expect(box.height, "compact stats must reach the 4rem density rung").toBeGreaterThanOrEqual(64);
   }
   expect(
-    Math.abs(heroBox.y - boxes[0].y),
-    "the hero and compact stats must share the metrics band row",
-  ).toBeLessThanOrEqual(4);
+    heroBox.y + heroBox.height,
+    "the hero row must sit above the compact stats row",
+  ).toBeLessThanOrEqual(Math.min(...boxes.map((box) => box.y)) + 1);
 
   const chartBox = await boxOf(page.getByRole("img", { name: "Deployment count by agent" }));
   const pendingBox = await boxOf(page.getByRole("heading", { name: "4 pending items" }));

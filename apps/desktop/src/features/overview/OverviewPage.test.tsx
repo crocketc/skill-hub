@@ -179,21 +179,26 @@ it("renders each compact stat as a two-line card with a numeric figure and a met
   expect(within(hero).getByText("skills")).toBeVisible();
 });
 
-it("locks the density ladder and the adaptive metrics band in overview.css", () => {
+it("locks the density ladder and the two-row metrics contract in overview.css", () => {
   // 比例阶梯：hero ≥ 6rem，紧凑卡 ≥ 4rem（原先 2.5rem 的矮卡是留白根因之一）。
   const heroRule = overviewCss.match(/\.sh-overview__hero\s*\{([^}]*)\}/)?.[1] ?? "";
   expect(heroRule).toContain("min-height: 6.5rem");
   const statRule = overviewCss.match(/\.sh-overview__stat\s*\{([^}]*)\}/)?.[1] ?? "";
   expect(statRule).toContain("min-height: 4.25rem");
 
-  // 统计列数不再写死 4 列：宽容器下紧凑统计并入 hero + 统计的自适应指标带。
+  // M-20 两行指标契约：宽容器下 hero 独占第一行（跨全部 4 列），紧凑统计
+  // 通过 display:contents 落到第二行；禁止 hero+统计并入单行 5 卡横带。
   expect(overviewCss).toMatch(
-    /@container workspace \(min-width: 60rem\) \{[\s\S]*?\.sh-overview \.sh-overview__metrics \{[\s\S]*?grid-template-columns: minmax\(0, 1\.35fr\) repeat\(4, minmax\(0, 1fr\)\)/,
+    /@container workspace \(min-width: 60rem\) \{[\s\S]*?\.sh-overview \.sh-overview__metrics \{[\s\S]*?grid-template-columns: repeat\(4, minmax\(0, 1fr\)\)/,
+  );
+  expect(overviewCss).toMatch(
+    /@container workspace \(min-width: 60rem\) \{[\s\S]*?\.sh-overview \.sh-overview__hero \{[\s\S]*?grid-column: 1 \/ -1/,
   );
   expect(overviewCss).toMatch(
     /@container workspace \(min-width: 60rem\) \{[\s\S]*?\.sh-overview \.sh-overview__stats \{[\s\S]*?display: contents/,
   );
   expect(overviewCss).not.toMatch(/\.sh-overview__stats\s*\{[^}]*repeat\(4/);
+  expect(overviewCss).not.toMatch(/grid-template-columns: minmax\(0, 1\.35fr\) repeat\(4/);
 });
 
 it("promotes a single primary metric and turns the rest into compact stats", async () => {
