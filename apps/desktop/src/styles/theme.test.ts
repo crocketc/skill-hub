@@ -1,61 +1,11 @@
-import type { ThemeName } from "./theme";
 import { resolveTheme } from "./theme";
 import { themeNames, themePalettes } from "./theme";
-import themeCss from "./theme.css?raw";
-
-type Tokens = Record<string, string>;
-
-function tokensFor(selector: string, occurrence: "first" | "last" = "first"): Tokens {
-  const themeName = selector.match(/data-theme=["']([^"']+)["']/)?.[1];
-  const needle = themeName ?? selector;
-  const selectorIndex =
-    occurrence === "first"
-      ? themeCss.indexOf(needle)
-      : themeCss.lastIndexOf(needle);
-  const blockStart = themeCss.indexOf("{", selectorIndex);
-  const blockEnd = themeCss.indexOf("}", blockStart);
-  if (selectorIndex < 0 || blockStart < 0 || blockEnd < 0) {
-    throw new Error(`Missing theme block: ${selector}`);
-  }
-
-  const block = themeCss.slice(blockStart + 1, blockEnd);
-
-  return Object.fromEntries(
-    [...block.matchAll(/--([\w-]+):\s*([^;]+);/g)].map((entry) => [
-      entry[1],
-      entry[2].trim(),
-    ]),
-  );
-}
-
-function relativeLuminance(hex: string) {
-  const channels = hex
-    .slice(1)
-    .match(/.{2}/g)
-    ?.map((channel) => Number.parseInt(channel, 16) / 255);
-  if (!channels || channels.length !== 3) {
-    throw new Error(`Expected a six-digit hex color, received ${hex}`);
-  }
-
-  const [red, green, blue] = channels.map((channel) =>
-    channel <= 0.04045
-      ? channel / 12.92
-      : ((channel + 0.055) / 1.055) ** 2.4,
-  );
-  return 0.2126 * red + 0.7152 * green + 0.0722 * blue;
-}
-
-function contrast(foreground: string, background: string) {
-  const lighter = Math.max(
-    relativeLuminance(foreground),
-    relativeLuminance(background),
-  );
-  const darker = Math.min(
-    relativeLuminance(foreground),
-    relativeLuminance(background),
-  );
-  return (lighter + 0.05) / (darker + 0.05);
-}
+import {
+  contrast,
+  resolveTokenValue,
+  tokensFor,
+  tokensForThemeWithRootFallbacks,
+} from "./theme.test-utils";
 
 it("maps system appearance to neutral light and Grok dark", () => {
   expect(resolveTheme("system", false)).toBe("moss-neutral");
@@ -164,31 +114,6 @@ const uiSemanticTokens = [
 ] as const;
 
 const statusRoles = ["success", "warning", "danger", "info"] as const;
-
-function tokensForThemeWithRootFallbacks(theme: ThemeName): Tokens {
-  const tokens = { ...tokensFor(":root", "last") };
-  if (theme === "grok-night") {
-    Object.assign(tokens, tokensFor(`[data-theme="${theme}"]`, "last"));
-  }
-  // 主题自身块最后合并，保证主题内定义优先。
-  return Object.assign(tokens, tokensFor(`[data-theme="${theme}"]`));
-}
-
-function resolveTokenValue(
-  value: string | undefined,
-  tokens: Tokens,
-  depth = 0,
-): string | undefined {
-  if (!value) {
-    return undefined;
-  }
-  const reference = value.match(/^var\(\s*(--[\w-]+)\s*\)$/);
-  if (!reference || depth > 4) {
-    return value;
-  }
-  const next = tokens[reference[1].replace(/^--/, "")];
-  return next ? resolveTokenValue(next, tokens, depth + 1) : undefined;
-}
 
 it("locks the nine preset theme names and their order", () => {
   expect([...themeNames]).toEqual([

@@ -841,6 +841,9 @@ a {
 
 /* P1-01a：折叠按钮固定在侧栏左上角——常规流内的小型方形按钮（40px 点击
    面积、小圆角），替换此前悬浮在侧栏右缘中缝的圆形按钮。 */
+/* 验收反馈：折叠按钮重做为 codex 桌面风格的方形安静控件。
+   五态（安静/悬停/按下/键盘焦点/折叠态）全部消费语义 token，
+   不再使用悬浮阴影类装饰；对比度契约锁定于 styles/base.test.ts。 */
 .sh-sidebar__toggle {
   position: static;
   display: grid;
@@ -848,27 +851,35 @@ a {
   height: 2.5rem;
   flex: 0 0 auto;
   place-items: center;
-  border: 1px solid var(--ui-border-strong);
+  border: 1px solid var(--ui-border);
   border-radius: var(--radius-sm);
-  background: var(--ui-surface);
-  color: var(--color-text-secondary);
+  background: var(--ui-control-background);
+  color: var(--ui-icon-muted);
   cursor: pointer;
-  box-shadow: var(--shadow-sm);
-  transition: color var(--motion-fast), box-shadow var(--motion-fast), background var(--motion-fast);
+  transition: color var(--motion-fast), border-color var(--motion-fast), background var(--motion-fast);
 }
 
-.sh-sidebar__toggle:hover,
-.sh-sidebar__toggle:focus-visible {
-  border-color: var(--color-accent-strong);
+.sh-sidebar__toggle:hover {
+  border-color: var(--ui-control-border-hover);
   background: var(--ui-hover-surface);
-  color: var(--color-accent-strong);
-  box-shadow: 0 0.45rem 0.85rem color-mix(in srgb, var(--color-accent-strong) 20%, transparent);
+  color: var(--ui-ink);
+}
+
+.sh-sidebar__toggle:focus-visible {
+  outline: 2px solid var(--ui-focus);
+  outline-offset: 2px;
 }
 
 .sh-sidebar__toggle:active {
-  border-color: var(--color-accent-strong);
+  border-color: var(--ui-control-border-hover);
   background: var(--ui-pressed-surface);
-  color: var(--color-accent-strong);
+  color: var(--ui-ink);
+}
+
+.sh-sidebar__toggle[aria-expanded="false"] {
+  border-color: var(--ui-border-strong);
+  background: var(--ui-surface-subtle);
+  color: var(--ui-ink);
 }
 
 .sh-sidebar__toggle-icon {
@@ -1504,10 +1515,9 @@ a {
 
   .sh-sidebar__toggle {
     position: static;
-    width: 2rem;
-    height: 2rem;
+    width: 2.5rem;
+    height: 2.5rem;
     border-radius: var(--radius-sm);
-    box-shadow: var(--shadow-sm);
     transform: none;
   }
 
