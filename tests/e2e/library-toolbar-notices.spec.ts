@@ -4,7 +4,7 @@ import { expect, test } from "./fixtures";
  * T8（P1-08/P1-11）库页工具栏与通知规范验收：
  * - 卡区点击开快速抽屉，“查看”按钮跳完整详情页，选择控件不触发卡区激活；
  * - 卡片视图“选择当前页”与批量栏共用选择模型；
- * - 批量标签结果常驻通知：不自动消退、可显式关闭；
+ * - 批量标签结果走壳层通知服务：toast 2s 退出、历史抽屉保留并可显式清空；
  * - 批量操作条激活时分页控件与其无几何重叠（1024 窄窗与 1600 宽屏各锁一条）。
  */
 
@@ -47,7 +47,9 @@ test("card view current-page select-all matches the batch bar", async ({ page })
   await expect(batchBar).toContainText("24 items selected");
 });
 
-test("batch tag results land in a persistent notice with an explicit close", async ({ page }) => {
+test("batch tag results toast leaves after 2s and stays reachable in the history drawer", async ({
+  page,
+}) => {
   await page.goto(LIBRARY_ROUTE);
   await page.getByRole("checkbox", { name: "Select PDF Reader" }).check();
   await page.getByRole("button", { name: "Add tags" }).click();
@@ -56,14 +58,28 @@ test("batch tag results land in a persistent notice with an explicit close", asy
   await dialog.getByRole("textbox", { name: "Tags" }).fill("review");
   await dialog.getByRole("button", { name: "Add tags" }).click();
 
-  // 批量危险操作的结果常驻：超过自动消退时长后仍在（该等待即断言本身）。
-  await expect(page.getByText("Batch tag update finished")).toBeVisible();
+  // 新契约：结果先以 toast 呈现（顶栏右侧，未读角标同步）。
+  const toast = page.getByText("Batch tag update finished");
+  await expect(toast).toBeVisible();
   await expect(page.getByTestId("batch-summary")).toContainText("1 succeeded");
-  await page.waitForTimeout(6600);
-  await expect(page.getByText("Batch tag update finished")).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: /Notifications, 1 unread/ }),
+  ).toBeVisible();
 
-  await page.getByRole("button", { name: "Close" }).click();
-  await expect(page.getByRole("region", { name: "Notifications" })).toHaveCount(0);
+  // 2s 后 toast 自动退出（轮询等待本身即断言），但记录保留在会话历史中。
+  await expect(toast).toBeHidden({ timeout: 4000 });
+
+  const bell = page.getByRole("button", { name: /Notifications/ });
+  await bell.click();
+  const history = page.getByRole("dialog", { name: "Notifications" });
+  await expect(history).toBeVisible();
+  await expect(history.getByText("Batch tag update finished")).toBeVisible();
+
+  // 显式清理路径：清空历史后回到空态。
+  await history.getByRole("button", { name: "Clear all" }).click();
+  await expect(history.getByText("No notifications yet.")).toBeVisible();
+  await history.getByRole("button", { name: "Close" }).click();
+  await expect(page.getByRole("dialog", { name: "Notifications" })).toHaveCount(0);
 });
 
 test("batch bar never covers the card pagination", async ({ page }) => {
