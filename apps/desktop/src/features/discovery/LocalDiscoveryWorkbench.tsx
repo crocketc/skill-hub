@@ -49,6 +49,9 @@ export function LocalDiscoveryWorkbench({ facade, onReviewCandidates }: LocalDis
   const [excludedPaths, setExcludedPaths] = useState<Set<string>>(new Set());
   const [excludedNotice, setExcludedNotice] = useState<string | null>(null);
   const [excludeError, setExcludeError] = useState<string | null>(null);
+  // M-18：Agent 目录盘点是可折叠次级区；默认展开保持既有语义可见，
+  // 折叠只影响展示，不改变分组/置底/排除行为。
+  const [inventoryOpen, setInventoryOpen] = useState(true);
 
   const describeError = useCallback(
     (reason: unknown, genericKey: string) =>
@@ -147,70 +150,103 @@ export function LocalDiscoveryWorkbench({ facade, onReviewCandidates }: LocalDis
     </li>
   );
 
+  // M-18：首屏工作区面板承载扫描/摘要/审查并导入；Agent 目录盘点降级为
+  // 可折叠次级区，长列表在内部滚动所有者中滚动，不把操作推出首屏。
+  const agentGroupTotal = agentGroups
+    ? [...agentGroups.available, ...agentGroups.unavailable]
+      .reduce((total, group) => total + group.cards.length, 0)
+    : 0;
+
   return (
     <section aria-label={t("discovery.workbench.title")} aria-busy={scanning} className="sh-discovery-workbench">
-      <h3>{t("discovery.workbench.title")}</h3>
-      {scanning ? <p role="status">{t("discovery.workbench.scanningStatus")}</p> : null}
-      {snapshot ? (
-        <p>
-          {t("discovery.workbench.lastScan")}
-          {" "}
-          {renderObservedAt(snapshot.observedAt, t)}
-        </p>
-      ) : null}
-      {snapshot ? (
-        <p>{t("discovery.workbench.scope", { clients: snapshot.clients, targets: snapshot.targets })}</p>
-      ) : null}
-      <Button disabled={scanning} onClick={() => void rescan()} variant="secondary">
-        {scanning ? t("discovery.workbench.scanning") : t("discovery.workbench.rescan")}
-      </Button>
-      {error ? <p role="alert">{error}</p> : null}
-      {classification && classification.unmanaged > 0 ? (
-        <div className="sh-discovery-workbench__banner" role="status">
-          <strong>{t("discovery.workbench.bannerHeading", { count: classification.unmanaged })}</strong>
-          <small>{t("discovery.workbench.bannerHint")}</small>
-          {onReviewCandidates ? (
-            <Button onClick={() => onReviewCandidates(candidates)} variant="primary">
-              {t("discovery.workbench.reviewAction")}
-            </Button>
-          ) : null}
+      <div className="sh-discovery-workbench__panel">
+        <h3>{t("discovery.workbench.title")}</h3>
+        {scanning ? <p role="status">{t("discovery.workbench.scanningStatus")}</p> : null}
+        {snapshot ? (
+          <p>
+            {t("discovery.workbench.lastScan")}
+            {" "}
+            {renderObservedAt(snapshot.observedAt, t)}
+          </p>
+        ) : null}
+        {snapshot ? (
+          <p>{t("discovery.workbench.scope", { clients: snapshot.clients, targets: snapshot.targets })}</p>
+        ) : null}
+        <div className="sh-discovery-workbench__actions">
+          <Button disabled={scanning} onClick={() => void rescan()} variant="secondary">
+            {scanning ? t("discovery.workbench.scanning") : t("discovery.workbench.rescan")}
+          </Button>
         </div>
-      ) : null}
-      {classification ? (
-        <ul className="sh-discovery-workbench__categories">
-          <li title={t("discovery.workbench.unmanagedHint")}>
-            {t("discovery.workbench.unmanaged", { count: classification.unmanaged })}
-          </li>
-          <li title={t("discovery.workbench.relatedHint")}>
-            {t("discovery.workbench.related", { count: classification.related })}
-          </li>
-          <li title={t("discovery.workbench.conflictHint")}>
-            {t("discovery.workbench.conflict", { count: classification.conflict })}
-          </li>
-          <li title={t("discovery.workbench.suspectedHint")}>
-            {t("discovery.workbench.suspected", { count: classification.suspected })}
-          </li>
-          <li title={t("discovery.workbench.unreadableHint")}>
-            {t("discovery.workbench.unreadable", { count: classification.unreadable })}
-          </li>
-        </ul>
-      ) : null}
-      {agentGroups && agentGroups.available.length + agentGroups.unavailable.length > 0 ? (
-        <div className="sh-discovery-workbench__agents" data-testid="agent-groups">
-          <h4>{t("discovery.workbench.agentGroupsTitle")}</h4>
-          <ul aria-label={t("discovery.workbench.agentGroupsTitle")} className="sh-discovery-workbench__agent-groups">
-            {agentGroups.available.map(renderGroup)}
+        {error ? <p role="alert">{error}</p> : null}
+        {classification && classification.unmanaged > 0 ? (
+          <div className="sh-discovery-workbench__banner" role="status">
+            <strong>{t("discovery.workbench.bannerHeading", { count: classification.unmanaged })}</strong>
+            <small>{t("discovery.workbench.bannerHint")}</small>
+            {onReviewCandidates ? (
+              <Button onClick={() => onReviewCandidates(candidates)} variant="primary">
+                {t("discovery.workbench.reviewAction")}
+              </Button>
+            ) : null}
+          </div>
+        ) : null}
+        {classification ? (
+          <ul className="sh-discovery-workbench__categories">
+            <li title={t("discovery.workbench.unmanagedHint")}>
+              {t("discovery.workbench.unmanaged", { count: classification.unmanaged })}
+            </li>
+            <li title={t("discovery.workbench.relatedHint")}>
+              {t("discovery.workbench.related", { count: classification.related })}
+            </li>
+            <li title={t("discovery.workbench.conflictHint")}>
+              {t("discovery.workbench.conflict", { count: classification.conflict })}
+            </li>
+            <li title={t("discovery.workbench.suspectedHint")}>
+              {t("discovery.workbench.suspected", { count: classification.suspected })}
+            </li>
+            <li title={t("discovery.workbench.unreadableHint")}>
+              {t("discovery.workbench.unreadable", { count: classification.unreadable })}
+            </li>
           </ul>
-          {agentGroups.unavailable.length > 0 ? (
-            <div className="sh-discovery-workbench__agent-unavailable">
-              <p>{t("discovery.workbench.unavailableAgents")}</p>
-              <ul className="sh-discovery-workbench__agent-groups">
-                {agentGroups.unavailable.map(renderGroup)}
-              </ul>
-            </div>
-          ) : null}
-          {excludedNotice ? <p role="status">{excludedNotice}</p> : null}
-          {excludeError ? <p role="alert">{excludeError}</p> : null}
+        ) : null}
+      </div>
+      {agentGroups && agentGroupTotal > 0 ? (
+        <div className="sh-discovery-workbench__inventory" data-testid="agent-groups">
+          <div className="sh-discovery-workbench__inventory-header">
+            <h4>{t("discovery.workbench.agentGroupsTitle")}</h4>
+            <span className="sh-discovery-workbench__inventory-count">
+              {t("discovery.workbench.agentGroupsCount", { count: agentGroupTotal })}
+            </span>
+            <Button
+              aria-controls="sh-discovery-agent-inventory"
+              aria-expanded={inventoryOpen}
+              onClick={() => setInventoryOpen((open) => !open)}
+              size="sm"
+              variant="ghost"
+            >
+              {inventoryOpen
+                ? t("discovery.workbench.agentGroupsCollapse")
+                : t("discovery.workbench.agentGroupsExpand")}
+            </Button>
+          </div>
+          <div
+            className="sh-discovery-workbench__inventory-scroll"
+            hidden={!inventoryOpen}
+            id="sh-discovery-agent-inventory"
+          >
+            <ul aria-label={t("discovery.workbench.agentGroupsTitle")} className="sh-discovery-workbench__agent-groups">
+              {agentGroups.available.map(renderGroup)}
+            </ul>
+            {agentGroups.unavailable.length > 0 ? (
+              <div className="sh-discovery-workbench__agent-unavailable">
+                <p>{t("discovery.workbench.unavailableAgents")}</p>
+                <ul className="sh-discovery-workbench__agent-groups">
+                  {agentGroups.unavailable.map(renderGroup)}
+                </ul>
+              </div>
+            ) : null}
+            {excludedNotice ? <p role="status">{excludedNotice}</p> : null}
+            {excludeError ? <p role="alert">{excludeError}</p> : null}
+          </div>
         </div>
       ) : null}
     </section>

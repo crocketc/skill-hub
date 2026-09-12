@@ -360,6 +360,57 @@ it("groups discovered agent directories by brand with merged kind badges", async
   expect(screen.getAllByText("不可用")).toHaveLength(1);
 });
 
+// M-18：扫描/摘要/审查并导入固定在首屏工作区面板；Agent 目录盘点降级为
+// 可折叠次级区，列表独占滚动所有者——操作不依赖滚动到底。
+it("pins scan actions and summary in a panel above a collapsible agent inventory", async () => {
+  const { container } = render(
+    <I18nextProvider i18n={createSkillHubI18nSync()}>
+      <LocalDiscoveryWorkbench
+        facade={{ getDiscoverySnapshot: async () => agentGroupSnapshot, scanTargets: async () => scanResult, searchOnlineSources: async () => searchPage([]), ...repoDiscoveryStubs }}
+        onReviewCandidates={vi.fn()}
+      />
+    </I18nextProvider>,
+  );
+
+  await click(await screen.findByRole("button", { name: "重新扫描" }));
+  await waitFor(() => expect(screen.getByText("未纳管 1")).toBeVisible());
+
+  // 滚动所有者只承载 Agent 目录盘点（长列表自滚动，不拉长页面）。
+  const scrollOwner = container.querySelector<HTMLElement>(
+    ".sh-discovery-workbench__inventory-scroll",
+  );
+  expect(scrollOwner).not.toBeNull();
+  expect(
+    scrollOwner!.querySelectorAll("li.sh-discovery-workbench__agent-card").length,
+  ).toBeGreaterThan(0);
+
+  // 首屏工作区：重新扫描、结果摘要、审查并导入都在滚动所有者之外。
+  const rescan = screen.getByRole("button", { name: "重新扫描" });
+  const review = screen.getByRole("button", { name: "审查并导入" });
+  const scopeSummary = screen.getByText(/扫描范围：/);
+  for (const element of [rescan, review, scopeSummary]) {
+    expect(scrollOwner!.contains(element)).toBe(false);
+  }
+
+  // 几何断言：工作台面板承载动作与摘要，且位于滚动所有者之前（文档序）。
+  const panel = container.querySelector(".sh-discovery-workbench__panel");
+  expect(panel).not.toBeNull();
+  expect(panel!.contains(rescan)).toBe(true);
+  expect(panel!.contains(review)).toBe(true);
+  expect(panel!.compareDocumentPosition(scrollOwner!) & Node.DOCUMENT_POSITION_FOLLOWING)
+    .toBeTruthy();
+
+  // 目录盘点是可折叠次级区：默认展开（既有语义不变），可折叠后再展开。
+  const collapse = screen.getByRole("button", { name: "折叠" });
+  expect(collapse).toHaveAttribute("aria-expanded", "true");
+  await click(collapse);
+  expect(scrollOwner).not.toBeVisible();
+  const expand = screen.getByRole("button", { name: "展开" });
+  expect(expand).toHaveAttribute("aria-expanded", "false");
+  await click(expand);
+  expect(scrollOwner).toBeVisible();
+});
+
 it("keeps very long directory paths wrapped and reachable through a title hint (P2-02)", async () => {
   const longPath = `C:/very-long-root/${"segment-".repeat(24)}skills`;
   const longSnapshot: DiscoverySnapshot = {

@@ -322,6 +322,54 @@ it("carries the scanned candidates into the import wizard on review", async () =
     .toBeVisible();
 });
 
+// M-18：本机发现子页在两档视口下操作都不依赖滚动到底——"本地发现"区域
+// （导入 Skill）与工作台面板（扫描/摘要/审查并导入）位于 Agent 目录盘点
+// 的滚动所有者之外且在其之前。jsdom 不做真实排版，几何断言以滚动所有权
+// 与文档序表达；真实视口下的滚动上限由 e2e/真机验收覆盖。
+it("keeps local discovery actions reachable without scrolling at 800x600 and 1280x900", async () => {
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  const facade = repoStubFacade();
+  facade.getDiscoverySnapshot = async () => workbenchSnapshot;
+  facade.scanTargets = async () => workbenchScanResult;
+
+  for (const [width, height] of [
+    [800, 600],
+    [1280, 900],
+  ] as const) {
+    window.innerWidth = width;
+    window.innerHeight = height;
+    const { container, unmount } = render(
+      <I18nextProvider i18n={i18n}>
+        <DiscoveryPage view="local" discoveryFacade={facade} />
+      </I18nextProvider>,
+    );
+
+    // Agent 目录盘点加载后才有滚动所有者。
+    await screen.findByText("发现的 Agent 目录");
+    const scrollOwner = container.querySelector(".sh-discovery-workbench__inventory-scroll");
+    expect(scrollOwner).not.toBeNull();
+
+    // 导入 Skill 按钮在滚动所有者之外，且先于它渲染（不依赖滚到底）。
+    const importButton = screen.getByRole("button", { name: "导入 Skill" });
+    expect(scrollOwner!.contains(importButton)).toBe(false);
+    expect(
+      importButton.compareDocumentPosition(scrollOwner!) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+
+    // 工作台面板（扫描/摘要/审查并导入）同样在滚动所有者之外且位于其前。
+    const rescan = screen.getByRole("button", { name: "重新扫描" });
+    const panel = container.querySelector(".sh-discovery-workbench__panel");
+    expect(panel).not.toBeNull();
+    expect(panel!.contains(rescan)).toBe(true);
+    expect(scrollOwner!.contains(rescan)).toBe(false);
+    expect(
+      panel!.compareDocumentPosition(scrollOwner!) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+
+    unmount();
+  }
+});
+
 function onlinePage() {
   return {
     items: [

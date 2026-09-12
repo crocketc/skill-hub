@@ -54,6 +54,8 @@ export function brandDisplayName(brand: string): string {
  * QA-014：已知品牌对应的内置 Logo 素材（public/brand/agents/lobehub/）。
  * 每个条目都必须指向真实存在的素材文件（BrandTag.test.tsx 做双向完整性
  * 校验）；没有素材的品牌（如 comate）保持颜色标签回退，不伪造图标。
+ * M-30：pi 与 deepseek-harness 的素材来自官方一手来源，逐字节保留原始
+ * 下载件于 assets/branding/（来源与许可证见 SOURCES.md）。
  */
 export const BRAND_ICON_FILES: Record<string, string> = {
   anthropic: "anthropic.svg",
@@ -62,6 +64,7 @@ export const BRAND_ICON_FILES: Record<string, string> = {
   codebuddy: "codebuddy.svg",
   codex: "codex.svg",
   cursor: "cursor.svg",
+  "deepseek-harness": "deepseek-harness.svg",
   gemini: "gemini.svg",
   "github-copilot": "github-copilot.svg",
   google: "gemini.svg",
@@ -71,6 +74,7 @@ export const BRAND_ICON_FILES: Record<string, string> = {
   openai: "openai.svg",
   openclaw: "openclaw.svg",
   opencode: "opencode.svg",
+  pi: "pi.svg",
   qoder: "qoder.svg",
   trae: "trae.svg",
   windsurf: "windsurf.svg",
