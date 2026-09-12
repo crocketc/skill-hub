@@ -98,27 +98,38 @@ export function RescanWizard({
     },
   ];
 
+  const footer = (
+    <>
+      <div className="sh-onboarding__actions-group">
+        {onCancel ? <Button onClick={onCancel} variant="secondary">{t("onboarding.rescanCancel")}</Button> : null}
+        {step > 0 ? <Button onClick={() => setStep((current) => current - 1)} variant="secondary">{t("onboarding.back")}</Button> : null}
+      </div>
+      <div className="sh-onboarding__actions-group sh-onboarding__actions-group--primary">
+        {step < 2 ? (
+          <Button disabled={!canContinue} onClick={() => setStep((current) => current + 1)} size="lg">
+            {t("onboarding.continue")}
+          </Button>
+        ) : null}
+        {step === 2 ? (
+          <Button
+            loading={isScanning}
+            onClick={() => void scan()}
+            variant={scanState ? "secondary" : "primary"}
+          >
+            {scanState ? t("onboarding.rescanScan") : t("onboarding.startReadOnlyScan")}
+          </Button>
+        ) : null}
+        {step === 2 && onComplete ? (
+          <Button onClick={onComplete} size="lg">{t("onboarding.rescanComplete")}</Button>
+        ) : null}
+      </div>
+    </>
+  );
+
   return (
     <WizardShell
       eyebrow={t("onboarding.rescanEyebrow")}
-      footer={(
-        <>
-          <div className="sh-onboarding__actions-group">
-            {onCancel ? <Button onClick={onCancel} variant="secondary">{t("onboarding.rescanCancel")}</Button> : null}
-            {step > 0 ? <Button onClick={() => setStep((current) => current - 1)} variant="secondary">{t("onboarding.back")}</Button> : null}
-          </div>
-          <div className="sh-onboarding__actions-group sh-onboarding__actions-group--primary">
-            {step < 2 ? (
-              <Button disabled={!canContinue} onClick={() => setStep((current) => current + 1)} size="lg">
-                {t("onboarding.continue")}
-              </Button>
-            ) : null}
-            {step === 2 && onComplete ? (
-              <Button onClick={onComplete} size="lg">{t("onboarding.rescanComplete")}</Button>
-            ) : null}
-          </div>
-        </>
-      )}
+      footer={footer}
       steps={rediscoverySteps(step)}
       stepsLabel={t("onboarding.rescanStepsLabel")}
     >
@@ -158,7 +169,6 @@ export function RescanWizard({
       ) : (
         <ScanStep
           isScanning={isScanning}
-          onScan={() => void scan()}
           onOpenImport={onOpenImport}
           scanResult={scanState?.kind === "completed" ? scanState.result : undefined}
         />

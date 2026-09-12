@@ -112,7 +112,7 @@ it("supports cancel and complete callbacks without completing onboarding or acti
   expect(activateLibraryRoot).not.toHaveBeenCalled();
 });
 
-it("keeps the rediscovery completion reachable in the sticky footer while results scroll internally", async () => {
+it("keeps the rediscovery rescan and completion reachable in the sticky footer while results scroll internally", async () => {
   const i18n = await createSkillHubI18n(["zh-CN"]);
   const user = userEvent.setup();
   const root = "C:\\Users\\Test\\.codex\\skills";
@@ -157,15 +157,27 @@ it("keeps the rediscovery completion reachable in the sticky footer while result
   await user.click(screen.getByRole("button", { name: "继续" }));
   await user.click(screen.getByRole("button", { name: "识别 Agent" }));
   await user.click(screen.getByRole("button", { name: "继续" }));
-  await user.click(screen.getByRole("button", { name: "开始只读扫描" }));
-  expect(await screen.findByText("发现 60 个 Skill")).toBeVisible();
 
-  // 完成动作位于 WizardShell 的固定底部操作区，不依赖滚动到结果列表底部。
+  // M-25：扫描动作也在固定底部操作区，不再位于可滚动的扫描列表内部。
   const footer = document.querySelector("footer.sh-onboarding__actions");
   expect(footer).not.toBeNull();
-  expect(within(footer as HTMLElement).getByRole("button", { name: "完成重新扫描" })).toBeVisible();
+  const footerElement = footer as HTMLElement;
+  expect(within(footerElement).getByRole("button", { name: "开始只读扫描" })).toBeVisible();
+  expect(within(footerElement).getByRole("button", { name: "完成重新扫描" })).toBeVisible();
 
-  // 结构性几何契约：footer 是 sticky 的；结果列表有独立滚动上限。
+  await user.click(within(footerElement).getByRole("button", { name: "开始只读扫描" }));
+  expect(await screen.findByText("发现 60 个 Skill")).toBeVisible();
+
+  // 扫描完成后：完成与重新扫描动作都固定在 footer，无需滚动到列表底部。
+  expect(within(footerElement).getByRole("button", { name: "重新扫描" })).toBeVisible();
+  const complete = within(footerElement).getByRole("button", { name: "完成重新扫描" });
+  expect(complete).toBeVisible();
+
+  // 结构性几何契约：完成动作在固定 footer 内、不被列表滚动带走；
+  // footer 是 sticky 的；结果列表有独立滚动上限。
+  const scrollOwner = document.querySelector(".sh-onboarding__scan-scroll");
+  expect(scrollOwner).not.toBeNull();
+  expect(scrollOwner!.contains(complete)).toBe(false);
   expect(onboardingCss).toMatch(/\.sh-onboarding \.sh-onboarding__actions\s*\{[^}]*position:\s*sticky/);
   expect(onboardingCss).toMatch(/\.sh-onboarding \.sh-onboarding__scan-scroll\s*\{[^}]*overflow(?:-y)?:\s*auto/);
   expect(onboardingCss).toMatch(/\.sh-onboarding \.sh-onboarding__scan-scroll\s*\{[^}]*max-height:/);

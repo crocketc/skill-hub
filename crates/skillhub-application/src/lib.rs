@@ -2808,15 +2808,29 @@ impl LocalApplicationFacade {
 
     fn run_scan(&self, requested: Vec<String>) -> AppResult<AppCommandResult> {
         let ids = self.scan_scope_ids(requested)?;
-        self.with_database("execute.scan_targets", |database| {
+        // M-31：文件系统遍历可能持续很久（首次初始化扫描整个用户目录树）。
+        // 数据库句柄是全 facade 共享的单把锁，绝不能跨遍历持有——否则
+        // complete_onboarding、activate_library_root 乃至 GetBootstrapSnapshot
+        // 全部排在扫描后面，"完成初始化"看起来像失效。这里把持久化收敛成
+        // 两个短临界区：遍历前装载上次快照，遍历后落盘新快照；遍历本身只
+        // 独占 scan_service（扫描互斥），不占数据库锁。
+        let previous = self.with_database("execute.scan_targets.load", |database| {
+            database.scan_repository().load()
+        })?;
+        let result = {
             let mut scanner = self
                 .scan_service
                 .lock()
                 .map_err(|_| internal("execute.scan_targets"))?;
-            let result =
-                scanner.scan_registered_with_repository(&ids, &database.scan_repository())?;
-            Ok(AppCommandResult::ScanResult(result))
-        })
+            match previous {
+                Some(previous) => scanner.scan_registered_with_previous(&ids, &previous)?,
+                None => scanner.scan_registered(&ids)?,
+            }
+        };
+        let stored = self.with_database("execute.scan_targets.replace", |database| {
+            database.scan_repository().replace(&result)
+        })?;
+        Ok(AppCommandResult::ScanResult(stored))
     }
 
     fn rescan_skill(

@@ -900,7 +900,11 @@
     "rescanComplete": "完成重新扫描",
     "stepsLabel": "初始化步骤",
     "rescanStepsLabel": "重新发现步骤",
-    "stepComplete": "已完成"
+    "stepComplete": "已完成",
+    "backgroundScanCompleteTitle": "后台扫描完成",
+    "backgroundScanCompleteDetail": "发现 {{count}} 个 Skill。可以立即批量导入，或稍后在发现中查看结果。",
+    "backgroundScanFailedTitle": "后台扫描失败",
+    "rescanScan": "重新扫描"
   },
   "theme": {
     "choiceLabel": "主题颜色",
