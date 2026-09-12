@@ -4,7 +4,11 @@ import type { ScanResult } from "../../api/bindings";
 
 interface ScanStepProps {
   isScanning: boolean;
-  onScan: () => void;
+  /**
+   * Omitted when the host wizard renders the scan trigger in its stable
+   * footer (rediscovery); first-run onboarding keeps the in-body trigger.
+   */
+  onScan?: () => void;
   onContinueInBackground?: () => void;
   onOpenImport?: (roots: string[]) => void;
   scanResult?: ScanResult;
@@ -25,9 +29,11 @@ export function ScanStep({
     <section aria-labelledby="scan-step-title" className="sh-onboarding__card">
       <h1 id="scan-step-title">{t("onboarding.scanTitle")}</h1>
       <p>{t("onboarding.scanDescription")}</p>
-      <Button disabled={scanInBackground} loading={isScanning} onClick={onScan}>
-        {t("onboarding.startReadOnlyScan")}
-      </Button>
+      {onScan ? (
+        <Button disabled={scanInBackground} loading={isScanning} onClick={onScan}>
+          {t("onboarding.startReadOnlyScan")}
+        </Button>
+      ) : null}
       {isScanning && onContinueInBackground ? (
         <Button onClick={onContinueInBackground} variant="secondary">
           {t("onboarding.scanContinueInBackground")}

@@ -887,7 +887,8 @@
     "stepComplete": "Completed",
     "backgroundScanCompleteTitle": "Background scan finished",
     "backgroundScanCompleteDetail": "Discovered {{count}} skills. Batch import now, or review the results later in discovery.",
-    "backgroundScanFailedTitle": "Background scan failed"
+    "backgroundScanFailedTitle": "Background scan failed",
+    "rescanScan": "Rescan"
   },
   "theme": {
     "choiceLabel": "Theme colors",
