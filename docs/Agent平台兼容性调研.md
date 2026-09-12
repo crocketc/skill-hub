@@ -1,6 +1,6 @@
 # SkillHub Agent 平台文件管理接入调研
 
-> 文档状态：官方资料调研完成；2026-09-12 补充 Pi coding agent 与 DeepSeek Harness profile，并完成本机目录观察；按资料开发 profile，完整真机验证延后到开发完成后的测试阶段
+> 文档状态：官方资料调研完成；2026-09-12 补充 Pi coding agent 与 DeepSeek Harness profile，并完成本机目录观察；0.2.0 已实现目录型前后端适配，完整真机验证仍待后续测试阶段
 >
 > 例外：2026-09-05 已对部分平台执行 Windows 真机确认；2026-09-12 对 Pi 与 DeepSeek Harness 执行本机安装和目录观察。逐平台章节中标注为“真机确认”或“本机目录观察”的条目基于实机证据，不受上句延后安排约束；未标注的条目仍基于官方资料。实机证据仅覆盖 Windows 11，macOS 全部维持待测试，不得以 Windows 结果推断 macOS
 >
@@ -11,6 +11,13 @@
 > 支持目标：Windows、macOS；Windows 为首要验证平台
 
 ---
+
+## 0.2.0 适配实现状态
+
+- 后端已内置 `pi.coding-agent`、`deepseek-harness.tui` 和 `deepseek-harness.web` 三个客户端目标，接入统一的发现、扫描、部署、解除部署和所有权保护流程；DeepSeek Harness 的 TUI/Web 仅作为两个客户端 profile，共享其本地 Skill 目录规则。
+- 前端已补充 Pi 与 DeepSeek Harness 的品牌展示、部署图标与颜色映射；本次没有新增 IPC 字段或生成绑定，继续复用现有 profile 快照契约。
+- 0.2.0 当前实现边界是目录型 `SKILL.md`。Pi 原生根级 `.md`、DeepSeek Harness 扁平 `<name>.md`、项目祖先目录搜索、运行时加载/调用、链接行为和 project trust 均保留为明确限制，不能据此宣称 Agent 已加载或执行 Skill。
+- 后端 profile 契约、实际发现路径和前端品牌映射均已有自动化测试；Windows 当前只完成本机命令与目录观察，完整文件接入验收仍按第 7 节执行，macOS 尚未验证。
 
 ## 1. 调研目的
 
@@ -702,12 +709,12 @@ Windows 必须分别验证：
 
 23 个候选平台品牌均存在继续调研或文件管理接入价值，但接入深度不同；同品牌多客户端需要在 profile 层继续拆分：
 
-- 18 个本地文件管理 profile 可以按现有资料实现完整接入，其中 OpenAI 侧仅指 Codex CLI / Codex IDE extension，Grok 侧仅指 Grok Build CLI / TUI / ACP，Pi 侧仅指 Pi coding agent CLI，DeepSeek 侧指 `dsh` CLI/TUI/Web；ZCode 因官方补全工作区级目录由部分上调为完整。Codex、Claude Code、Cursor、Kimi Code、TraeCode、通义灵码（CLI 侧）、CodeBuddy Code、WorkBuddy 等平台已取得 Windows 真机证据；Pi 与 DeepSeek Harness 已取得本机安装/目录观察，其余仍依据官方资料。
+- 19 个本地文件管理 profile 可以按现有资料实现完整接入，其中 OpenAI 侧仅指 Codex CLI / Codex IDE extension，Grok 侧仅指 Grok Build CLI / TUI / ACP，Pi 侧仅指 Pi coding agent CLI，DeepSeek 侧指 `dsh` CLI/TUI/Web；ZCode 因官方补全工作区级目录由部分上调为完整。Codex、Claude Code、Cursor、Kimi Code、TraeCode、通义灵码（CLI 侧）、CodeBuddy Code、WorkBuddy 等平台已取得 Windows 真机证据；Pi 与 DeepSeek Harness 已取得本机安装/目录观察，其余仍依据官方资料。SkillHub 0.2.0 已落地其中的目录型 `SKILL.md` 前后端 profile。
 - 4 个部分文件管理 profile 可以先实现，未知规则显示“无法判断”并保留自定义目录兜底；新增关注点是 ChatGPT desktop app 的 standalone skills 是否可作为独立文件目标。Google Antigravity 的全局目录按官方资料保留 `~/.gemini/config/skills`，真机上另有 `~/.gemini/antigravity/` 下的两个 Skill 目录，二者关系待验证。
 - 5 个上传、云端或办公型 profile 暂时只展示能力边界、官方帮助链接和通用标准导出；Claude / Claude Desktop 聊天 Skills 不能套用 Claude Code 的 `.claude/skills`，Grok consumer 与 Grok Bot 也不能套用 Grok Build 的 `.grok/skills`。
 - 没有平台能够仅凭官方资料提供可靠的按 Skill 调用次数统计。
 - Roo Code 已移出候选范围，不再占用后续调研和开发资源。
 
-下一步进入功能优先级、产品与技术设计，并按本文实现平台 profile。真机测试在功能开发完成后执行，用于修正目录和部署规则；所有未覆盖平台继续使用用户自选 Skill 目录兜底。
+下一步进入功能优先级、产品与技术设计，并按本文实现平台 profile。Pi 与 DeepSeek Harness 的目录型 `SKILL.md` profile 已进入 0.2.0；真机测试仍用于修正目录和部署规则，所有未覆盖平台继续使用用户自选 Skill 目录兜底。
 
 Task11 的当前证据除 profile 文件事实和跨平台占位验收记录外，新增 2026-09-05 的 Windows 真机确认记录，见各章节标注为“真机确认”的条目及 2.1 的证据口径说明。Windows 侧的目录存在性证据已经采集，但同名优先级、刷新行为、链接支持、部署与解除部署结果以及全部 macOS 结论仍未覆盖，不得据此宣称任何 Agent 的文件管理接入已通过验证。Universal DMG 和 Draft Release 产物仍须在后续设备或 CI 环境中补采证据。
