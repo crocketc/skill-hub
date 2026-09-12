@@ -1,6 +1,8 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import type { ScanResult } from "../../api/bindings";
+import type { ThemeName } from "../../styles/theme";
 import { useTheme } from "../../styles/ThemeProvider";
 import type { CompatibilityTarget, OnboardingOperations } from "../bootstrap/api";
 import { OnboardingWizard } from "./OnboardingWizard";
@@ -50,11 +52,58 @@ function previewScanResult(discoveredCount: number, root: string): ScanResult {
 const PREVIEW_UNUSED_RUNTIME_ERROR = "unused in preview";
 
 /**
+ * M-31 preview stub: finishing with a handed-off scan exits the wizard
+ * immediately (the real host navigates to the overview), so the scenario
+ * needs an observable exit instead of the removed in-wizard summary page.
+ */
+function SlowScanPreview({
+  onThemeChange,
+  theme,
+}: {
+  onThemeChange: (theme: ThemeName) => void;
+  theme: ThemeName;
+}) {
+  const { t } = useTranslation();
+  const [exited, setExited] = useState(false);
+  if (exited) {
+    return (
+      <main className="sh-onboarding">
+        <section className="sh-onboarding__card" data-testid="onboarding-exited-to-overview">
+          <p className="sh-onboarding__message">{t("onboarding.summary.scanInProgress")}</p>
+        </section>
+      </main>
+    );
+  }
+  return (
+    <OnboardingWizard
+      initialBranch="create"
+      libraryPath={PREVIEW_LIBRARY_PATH}
+      onComplete={() => setExited(true)}
+      onThemeChange={onThemeChange}
+      operations={{
+        completeOnboarding: async () => undefined,
+        discoverAgents: async () => ({ targets: PREVIEW_TARGETS }),
+        activateLibraryRoot: async () => undefined,
+      }}
+      runtime={{
+        getBootstrapView: async () => {
+          throw new Error(PREVIEW_UNUSED_RUNTIME_ERROR);
+        },
+        runInitializationScan: () => new Promise(() => undefined),
+      }}
+      scanSlowAfterMs={200}
+      theme={theme}
+    />
+  );
+}
+
+/**
  * DEV-only onboarding preview (/__preview/onboarding/:scenario).
  * Deterministic fake seams put every business branch on screen without
  * native, network or disk access: create, restore with a conflict,
  * rediscovery with 60+ discovered entries, failure/retry, slow scan with
- * background hand-off, and the unavailable-path state.
+ * background hand-off (finishing exits the wizard immediately per M-31, so
+ * the scenario swaps to an exit stub), and the unavailable-path state.
  */
 export function OnboardingPreview() {
   const { scenario = "create" } = useParams<{ scenario: string }>();
@@ -153,22 +202,7 @@ export function OnboardingPreview() {
   }
 
   if (scenario === "slow-scan") {
-    return (
-      <OnboardingWizard
-        initialBranch="create"
-        libraryPath={PREVIEW_LIBRARY_PATH}
-        onThemeChange={setAppearance}
-        operations={previewOperations}
-        runtime={{
-          getBootstrapView: async () => {
-            throw new Error(PREVIEW_UNUSED_RUNTIME_ERROR);
-          },
-          runInitializationScan: () => new Promise(() => undefined),
-        }}
-        scanSlowAfterMs={200}
-        theme={resolvedTheme}
-      />
-    );
+    return <SlowScanPreview onThemeChange={setAppearance} theme={resolvedTheme} />;
   }
 
   return (

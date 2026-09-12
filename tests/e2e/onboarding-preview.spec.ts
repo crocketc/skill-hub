@@ -207,8 +207,15 @@ test("offers the background hand-off while a scan keeps running and finishes hon
   await expect(page.getByRole("status")).toContainText("扫描已转入后台");
 
   await page.getByRole("button", { name: "完成初始化" }).click();
-  await expect(page.getByRole("heading", { name: "初始化已完成" })).toBeVisible();
-  await expect(page.getByText("扫描仍在后台进行，完成后可在发现中查看预览。")).toBeVisible();
+
+  // M-31：后台交接后完成初始化必须立即退出向导（真实宿主导航到概览），
+  // 不再出现"初始化已完成"摘要页，也不等待后台扫描结束。
+  await expect(page.getByRole("heading", { name: "初始化已完成" })).toHaveCount(0);
+  const exited = page.getByTestId("onboarding-exited-to-overview");
+  await expect(exited).toBeVisible();
+  // 诚实状态：扫描仍在后台进行，没有伪造的扫描结果计数。
+  await expect(exited).toContainText("扫描仍在后台进行");
+  await expect(page.getByText(/发现 Skill/)).toHaveCount(0);
 });
 
 test("returns focus to the skip trigger after the confirmation dialog is dismissed", async ({ page }) => {
