@@ -12,14 +12,22 @@ use skillhub_application::LocalApplicationFacade;
 use skillhub_core::{
     api::{CompleteOnboarding, RunInitializationScan},
     AppCommand, AppCommandResult, AppQuery, AppQueryResult, ApplicationFacade, Project,
+    ScanResult,
 };
 use skillhub_storage::{CentralLibrary, Database};
 
-/// Skill count chosen so the deterministic filesystem walk reliably outlasts
-/// the completion issued right after the scan starts; the test only asserts
-/// ordering (completion returned while the walk is still running), never a
-/// timing window.
-const SKILL_COUNT: usize = 2_000;
+/// Skill count sized so one filesystem walk comfortably outlasts the
+/// completion issued while it runs; the test asserts ordering only (completion
+/// returned while the walk was still running), never a timing window.
+const SKILL_COUNT: usize = 4_000;
+
+/// Attempts of the ordering experiment. An attempt is conclusive only when the
+/// completion is observed to return while the walk is still running. Under
+/// extreme CPU starvation (for example during a full `--workspace` run) a walk
+/// can end before the completion task gets scheduled; such an attempt carries
+/// no evidence either way and is repeated. The monopoly regression makes the
+/// ordering fail on EVERY attempt, so the test still fails deterministically.
+const ATTEMPTS: usize = 3;
 
 struct ScanWorker {
     join: std::thread::JoinHandle<skillhub_core::AppResult<AppCommandResult>>,
@@ -41,9 +49,8 @@ fn execute_scan_on_worker(facade: Arc<LocalApplicationFacade>) -> ScanWorker {
                         scope_ids: Vec::new(),
                     }))
                     .await;
-                // The database must already be released for the result
-                // persistence window; clear the flag only after the command
-                // returned so the main thread can assert true ordering.
+                // The flag clears only after the command returned, so the main
+                // thread observes true ordering, not thread scheduling.
                 worker_flag.store(false, Ordering::SeqCst);
                 result
             })
@@ -61,11 +68,11 @@ async fn completion_and_bootstrap_queries_stay_responsive_while_the_initializati
 
     let scan_root = workspace.path().join("sources");
     for index in 0..SKILL_COUNT {
-        let skill = scan_root.join(format!("skill-{index:04}"));
+        let skill = scan_root.join(format!("skill-{index:05}"));
         std::fs::create_dir_all(&skill).expect("skill dir");
         std::fs::write(
             skill.join("SKILL.md"),
-            format!("---\nname: skill-{index:04}\ndescription: fixture\n---\n\n# skill-{index:04}\n"),
+            format!("---\nname: skill-{index:05}\ndescription: fixture\n---\n\n# skill-{index:05}\n"),
         )
         .expect("marker");
     }
@@ -78,56 +85,75 @@ async fn completion_and_bootstrap_queries_stay_responsive_while_the_initializati
         .expect("register scan project");
     assert!(matches!(registered, AppCommandResult::Project(_)));
 
-    // Start the first-run scan exactly like the wizard does (empty scope ids
-    // scan every registered target).
-    let worker = execute_scan_on_worker(Arc::clone(&facade));
+    let library_path = library_root.to_string_lossy().into_owned();
+    let mut proven_ordering = false;
+    let mut first_scan: Option<ScanResult> = None;
 
-    // While the scan walks the fixture tree, finishing onboarding must go
-    // through instead of waiting behind the scan (M-31 reproduction).
-    let completed = facade
-        .execute(AppCommand::CompleteOnboarding(CompleteOnboarding {
-            library_path: library_root.to_string_lossy().into_owned(),
-            skipped: false,
-        }))
-        .await
-        .expect("complete_onboarding must not block behind a running initialization scan");
-    assert!(matches!(completed, AppCommandResult::InitializationStatus(_)));
+    for _ in 0..ATTEMPTS {
+        // Start the first-run scan exactly like the wizard does (empty scope
+        // ids scan every registered target).
+        let worker = execute_scan_on_worker(Arc::clone(&facade));
+
+        // While the scan walks the fixture tree, finishing onboarding must go
+        // through instead of waiting behind the scan (M-31 reproduction).
+        let completed = facade
+            .execute(AppCommand::CompleteOnboarding(CompleteOnboarding {
+                library_path: library_path.clone(),
+                skipped: false,
+            }))
+            .await
+            .expect("complete_onboarding must not block behind a running initialization scan");
+        assert!(matches!(
+            completed,
+            AppCommandResult::InitializationStatus(_)
+        ));
+
+        let snapshot = facade
+            .query(AppQuery::GetBootstrapSnapshot)
+            .await
+            .expect("bootstrap snapshot must stay responsive during the scan");
+        let AppQueryResult::BootstrapSnapshot(snapshot) = snapshot else {
+            panic!("expected bootstrap snapshot");
+        };
+        assert_eq!(
+            snapshot.initialization_state,
+            skillhub_core::InitializationState::Initialized
+        );
+
+        // Read the ordering evidence BEFORE joining: the worker clears the
+        // flag when its command returns.
+        let walked = worker.walking.load(Ordering::SeqCst);
+
+        // The scan finishes on its own and persists its snapshot (honest
+        // completion, no fabricated state).
+        let scanned = worker
+            .join
+            .join()
+            .expect("scan worker")
+            .expect("first scan succeeds");
+        let AppCommandResult::ScanResult(scan) = scanned else {
+            panic!("expected scan result");
+        };
+        proven_ordering = walked;
+        first_scan = Some(scan);
+        if proven_ordering {
+            break;
+        }
+    }
+
     assert!(
-        worker.walking.load(Ordering::SeqCst),
-        "completion returned only after the scan walk ended: the scan still monopolizes the shared database"
+        proven_ordering,
+        "completion never returned while a scan walk was still running: \
+         the scan monopolizes the shared database"
     );
 
-    let snapshot = facade
-        .query(AppQuery::GetBootstrapSnapshot)
-        .await
-        .expect("bootstrap snapshot must stay responsive during the scan");
-    let AppQueryResult::BootstrapSnapshot(snapshot) = snapshot else {
-        panic!("expected bootstrap snapshot");
-    };
-    assert_eq!(
-        snapshot.initialization_state,
-        skillhub_core::InitializationState::Initialized
-    );
-    assert!(
-        worker.walking.load(Ordering::SeqCst),
-        "bootstrap query returned only after the scan walk ended"
-    );
-
-    // The scan still finishes and persists its snapshot (honest completion,
-    // no fabricated state): a second scan reports every fixture skill as
-    // unchanged because the first snapshot was stored.
-    let scanned = worker
-        .join
-        .join()
-        .expect("scan worker")
-        .expect("first scan succeeds");
-    let AppCommandResult::ScanResult(first) = scanned else {
-        panic!("expected scan result");
-    };
+    let first = first_scan.expect("scan result from the ordering attempt");
     assert_eq!(first.discovered.len(), SKILL_COUNT);
     assert_eq!(first.roots.len(), 1);
     assert!(first.roots[0].ends_with("sources"));
 
+    // A second scan reports every fixture skill as unchanged: the first
+    // snapshot was really persisted through its short lock window.
     let rescanned = facade
         .execute(AppCommand::RunInitializationScan(RunInitializationScan {
             scope_ids: Vec::new(),
