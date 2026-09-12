@@ -1404,9 +1404,7 @@ a {
 .sh-onboarding__scan-preview {
   display: grid;
   gap: var(--space-3);
-  max-height: 22rem;
   padding: var(--space-3);
-  overflow: auto;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
   background: var(--color-surface-muted);

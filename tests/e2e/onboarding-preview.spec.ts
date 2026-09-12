@@ -124,10 +124,11 @@ test("keeps 60 discovered entries in an internal scroll without page overflow at
 
   await expectNoRootHorizontalOverflow(page, "rescan@800");
 
+  // P1-15：结果列表是唯一的滚动所有者（内部滚动、有滚动上限）。
   const scroll = await page.evaluate(() => {
-    const preview = document.querySelector('[aria-labelledby="scan-preview-title"]');
-    if (!preview) return null;
-    return { scrollHeight: preview.scrollHeight, clientHeight: preview.clientHeight };
+    const list = document.querySelector(".sh-onboarding__scan-scroll");
+    if (!list) return null;
+    return { scrollHeight: list.scrollHeight, clientHeight: list.clientHeight };
   });
   expect(scroll).not.toBeNull();
   expect(scroll!.scrollHeight).toBeGreaterThan(scroll!.clientHeight);
@@ -148,6 +149,29 @@ test("keeps 60 discovered entries in an internal scroll without page overflow at
     return !(hit === focused || focused.contains(hit));
   });
   expect(covered, "the sticky action area must not cover the focused primary action").toBe(false);
+});
+
+test("completes rediscovery without scrolling the results list", async ({ page }) => {
+  await page.setViewportSize({ width: 800, height: 900 });
+  await reachScanStep(page, "rescan");
+
+  // P1-15 验收：不滚动页面/列表即可完成——完成动作与“进入批量导入”
+  // 都位于列表上方的固定操作区内，刷新后立即在视口中可点。
+  const complete = page.getByRole("button", { name: "完成重新扫描" });
+  await expect(complete).toBeInViewport();
+  const openImport = page.getByRole("button", { name: "完成初始化并进入批量导入" });
+  await expect(openImport).toBeInViewport();
+
+  // “进入批量导入”位于结果列表之前（统计行旁），不藏在列表底部。
+  const order = await page.evaluate(() => {
+    const button = [...document.querySelectorAll("button")].find((node) => node.textContent?.includes("进入批量导入"));
+    const list = document.querySelector(".sh-onboarding__scan-scroll");
+    return button && list ? Boolean(button.compareDocumentPosition(list) & Node.DOCUMENT_POSITION_FOLLOWING) : false;
+  });
+  expect(order, "the import action must precede the scrollable result list").toBe(true);
+
+  await complete.click();
+  await expect(complete).toBeInViewport();
 });
 
 test("first-run restore requires an explicit conflict decision and then completes", async ({ page }) => {

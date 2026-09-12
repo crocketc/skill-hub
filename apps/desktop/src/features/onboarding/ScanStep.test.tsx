@@ -1,5 +1,6 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { I18nextProvider } from "react-i18next";
+import { expect, it, vi } from "vitest";
 import type { ScanResult } from "../../api/bindings";
 import { createSkillHubI18n } from "../../i18n";
 import { ScanStep } from "./ScanStep";
@@ -47,6 +48,49 @@ it("renders a read-only scan preview without import actions", async () => {
   fireEvent.click(screen.getByRole("button", { name: "开始只读扫描" }));
   fireEvent.click(screen.getByRole("button", { name: "完成初始化并进入批量导入" }));
   expect(onOpenImport).toHaveBeenCalledWith(result.roots);
+});
+
+it("keeps a long result list in an internal scroll owner with the import action outside it", async () => {
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  const onOpenImport = vi.fn();
+  const root = "C:\\Users\\Test\\.codex\\skills";
+  const result: ScanResult = {
+    generation: { generation: 1, observed_at: 1 },
+    roots: [root],
+    discovered: Array.from({ length: 60 }, (_, index) => ({
+      root,
+      relative_path: `preview-skill-${String(index + 1).padStart(2, "0")}`,
+      path: `${root}\\preview-skill-${String(index + 1).padStart(2, "0")}`,
+      marker: "SKILL.md",
+      marker_size: 12,
+      marker_modified_at: 1,
+      size: 12,
+      latest_modified_at: 1,
+      fingerprint: `f-${index}`,
+      metadata_fingerprint: `m-${index}`,
+    })),
+    visited_paths: [root],
+    reparsed_count: 60,
+    unchanged_count: 0,
+    errors: [],
+  };
+
+  const { container } = render(
+    <I18nextProvider i18n={i18n}>
+      <ScanStep isScanning={false} onOpenImport={onOpenImport} onScan={() => undefined} scanResult={result} />
+    </I18nextProvider>,
+  );
+
+  // 结果列表独占一个滚动上限容器（页面不再被长列表拉长）。
+  const scrollOwner = container.querySelector(".sh-onboarding__scan-scroll");
+  expect(scrollOwner).not.toBeNull();
+  expect(scrollOwner!.querySelector("ul.sh-onboarding__scan-list")).not.toBeNull();
+  expect(scrollOwner!.querySelectorAll("li")).toHaveLength(60);
+
+  // “进入批量导入”不在滚动容器内部，且位于滚动容器之前（统计行旁，不藏列表底）。
+  const openImport = screen.getByRole("button", { name: "完成初始化并进入批量导入" });
+  expect(scrollOwner!.contains(openImport)).toBe(false);
+  expect(openImport.compareDocumentPosition(scrollOwner!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 });
 
 it("offers background continuation while a scan is running", async () => {

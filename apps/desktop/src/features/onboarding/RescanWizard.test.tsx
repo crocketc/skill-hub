@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { I18nextProvider } from "react-i18next";
 import { expect, it, vi } from "vitest";
 import { createSkillHubI18n } from "../../i18n";
+import onboardingCss from "./onboarding.css?raw";
 import { RescanWizard } from "./RescanWizard";
 
 it("shows the active library as read-only and never exposes activation controls", async () => {
@@ -109,6 +110,65 @@ it("supports cancel and complete callbacks without completing onboarding or acti
   expect(onComplete).toHaveBeenCalledOnce();
   expect(completeOnboarding).not.toHaveBeenCalled();
   expect(activateLibraryRoot).not.toHaveBeenCalled();
+});
+
+it("keeps the rediscovery completion reachable in the sticky footer while results scroll internally", async () => {
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  const user = userEvent.setup();
+  const root = "C:\\Users\\Test\\.codex\\skills";
+
+  render(
+    <I18nextProvider i18n={i18n}>
+      <RescanWizard
+        libraryPath="C:\SkillHub"
+        onComplete={() => undefined}
+        operations={{ completeOnboarding: async () => undefined, discoverAgents: async () => ({ targets: [] }) }}
+        runtime={{
+          getBootstrapView: async () => { throw new Error("unused"); },
+          runInitializationScan: async () => ({
+            kind: "completed" as const,
+            result: {
+              generation: { generation: 1, observed_at: 1 },
+              roots: [root],
+              discovered: Array.from({ length: 60 }, (_, index) => ({
+                root,
+                relative_path: `preview-skill-${String(index + 1).padStart(2, "0")}`,
+                path: `${root}\\preview-skill-${String(index + 1).padStart(2, "0")}`,
+                marker: "SKILL.md",
+                marker_size: 12,
+                marker_modified_at: 1,
+                size: 12,
+                latest_modified_at: 1,
+                fingerprint: `f-${index}`,
+                metadata_fingerprint: `m-${index}`,
+              })),
+              visited_paths: [root],
+              reparsed_count: 60,
+              unchanged_count: 0,
+              errors: [],
+            },
+          }),
+        }}
+      />
+    </I18nextProvider>,
+  );
+
+  await user.click(screen.getByRole("checkbox"));
+  await user.click(screen.getByRole("button", { name: "继续" }));
+  await user.click(screen.getByRole("button", { name: "识别 Agent" }));
+  await user.click(screen.getByRole("button", { name: "继续" }));
+  await user.click(screen.getByRole("button", { name: "开始只读扫描" }));
+  expect(await screen.findByText("发现 60 个 Skill")).toBeVisible();
+
+  // 完成动作位于 WizardShell 的固定底部操作区，不依赖滚动到结果列表底部。
+  const footer = document.querySelector("footer.sh-onboarding__actions");
+  expect(footer).not.toBeNull();
+  expect(within(footer as HTMLElement).getByRole("button", { name: "完成重新扫描" })).toBeVisible();
+
+  // 结构性几何契约：footer 是 sticky 的；结果列表有独立滚动上限。
+  expect(onboardingCss).toMatch(/\.sh-onboarding \.sh-onboarding__actions\s*\{[^}]*position:\s*sticky/);
+  expect(onboardingCss).toMatch(/\.sh-onboarding \.sh-onboarding__scan-scroll\s*\{[^}]*overflow(?:-y)?:\s*auto/);
+  expect(onboardingCss).toMatch(/\.sh-onboarding \.sh-onboarding__scan-scroll\s*\{[^}]*max-height:/);
 });
 
 it("shows a discovery error and retries without clearing the current library state", async () => {

@@ -89,6 +89,25 @@ html:has(.sh-onboarding) {
   margin-top: 0.125rem;
 }
 
+/* 结果列表是唯一的滚动所有者：列表自身设滚动上限内部滚动，
+   WizardShell 的 sticky 底部操作区（完成动作）因此始终可达，
+   页面高度不随结果条目数增长。 */
+.sh-onboarding .sh-onboarding__scan-scroll {
+  display: grid;
+  gap: var(--space-3);
+  max-height: 18rem;
+  overflow-y: auto;
+  padding-inline-end: var(--space-2);
+}
+
+/* “进入批量导入”动作与统计行同区（列表之上），不随列表滚动。 */
+.sh-onboarding__scan-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+
 /* 底部操作区：sticky 且位置稳定；覆盖 base.css 的同名单一选择器。 */
 .sh-onboarding .sh-onboarding__actions {
   position: sticky;

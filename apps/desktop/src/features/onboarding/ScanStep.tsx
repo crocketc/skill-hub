@@ -41,36 +41,40 @@ export function ScanStep({
             <span>{t("onboarding.scanVisited", { count: scanResult.visited_paths.length })}</span>
             <span>{t("onboarding.scanIssues", { count: scanResult.errors.length })}</span>
           </div>
-          {scanResult.discovered.length > 0 ? (
-            <ul className="sh-onboarding__scan-list">
-              {scanResult.discovered.map((skill) => (
-                <li key={skill.path}>
-                  <strong>{skill.relative_path || skill.path}</strong>
-                  <code>{skill.path}</code>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p>{t("onboarding.scanNoSkills")}</p>
-          )}
-          {scanResult.errors.length > 0 ? (
-            <details>
-              <summary>{t("onboarding.scanIssueDetails")}</summary>
+          {onOpenImport && scanResult.discovered.length > 0 ? (
+            <div className="sh-onboarding__scan-actions">
+              <Button onClick={() => onOpenImport(scanResult.roots)} variant="secondary">
+                {t("onboarding.scanOpenImport")}
+              </Button>
+            </div>
+          ) : null}
+          <div className="sh-onboarding__scan-scroll">
+            {scanResult.discovered.length > 0 ? (
               <ul className="sh-onboarding__scan-list">
-                {scanResult.errors.map((issue) => (
-                  <li key={`${issue.path}:${issue.code}`}>
-                    <code>{issue.path}</code>
-                    <span>{issue.code}</span>
+                {scanResult.discovered.map((skill) => (
+                  <li key={skill.path}>
+                    <strong>{skill.relative_path || skill.path}</strong>
+                    <code>{skill.path}</code>
                   </li>
                 ))}
               </ul>
-            </details>
-          ) : null}
-          {onOpenImport && scanResult.discovered.length > 0 ? (
-            <Button onClick={() => onOpenImport(scanResult.roots)} variant="secondary">
-              {t("onboarding.scanOpenImport")}
-            </Button>
-          ) : null}
+            ) : (
+              <p>{t("onboarding.scanNoSkills")}</p>
+            )}
+            {scanResult.errors.length > 0 ? (
+              <details>
+                <summary>{t("onboarding.scanIssueDetails")}</summary>
+                <ul className="sh-onboarding__scan-list">
+                  {scanResult.errors.map((issue) => (
+                    <li key={`${issue.path}:${issue.code}`}>
+                      <code>{issue.path}</code>
+                      <span>{issue.code}</span>
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            ) : null}
+          </div>
         </section>
       ) : null}
     </section>
