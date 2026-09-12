@@ -172,6 +172,30 @@ it("lists the existing skills and content difference a conflict involves", async
   expect(screen.getByText("skill-pdf-old")).toBeVisible();
 });
 
+it("folds technical diagnostics behind a details entry on every conflict", async () => {
+  const user = userEvent.setup();
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  render(
+    <I18nextProvider i18n={i18n}>
+      <ConflictResolution conflicts={[exactDuplicate]} actions={{}} onAction={vi.fn()} />
+    </I18nextProvider>,
+  );
+
+  // 详情入口默认折叠；主信息（名称/路径/差异）保持展开可见。
+  const summaries = screen.getAllByText("详情");
+  const details = summaries[0].closest("details");
+  expect(details).not.toBeNull();
+  expect(details).not.toHaveAttribute("open");
+  expect(screen.getByText("dup-skill")).toBeVisible();
+  expect(screen.getByText("C:/library/dup")).toBeVisible();
+
+  // 展开后提供完整技术诊断（reason code、差异类型）。
+  await user.click(summaries[0]);
+  expect(details).toHaveAttribute("open");
+  expect(screen.getByText("import.exact_content_conflict")).toBeVisible();
+  expect(screen.getByText("exact_content")).toBeVisible();
+});
+
 it("filters conflicts by reason and applies the batch action only to the filtered set", async () => {
   const i18n = await createSkillHubI18n(["zh-CN"]);
   const onAction = vi.fn();

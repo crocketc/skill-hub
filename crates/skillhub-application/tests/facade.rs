@@ -1599,7 +1599,10 @@ async fn analyze_import_computes_a_missing_candidate_hash_for_identical_local_tr
         analysis.duplicate_kind,
         Some(skillhub_core::DuplicateKind::ExactContent)
     );
-    assert!(analysis.conflicts.is_empty());
+    // M-14：完全重复必须作为需要处理的冲突呈现，绝不静默返回"无冲突"。
+    assert!(analysis.conflicts.iter().any(|conflict| {
+        conflict.kind == skillhub_core::DuplicateKind::ExactContent && conflict.requires_choice
+    }));
     assert!(analysis
         .actions
         .contains(&skillhub_core::ImportDecision::ReuseExisting));
@@ -1648,7 +1651,10 @@ async fn create_skill_persists_import_identity_for_identical_content_analysis() 
         analysis.duplicate_kind,
         Some(skillhub_core::DuplicateKind::ExactContent)
     );
-    assert!(analysis.conflicts.is_empty());
+    // M-14：identical content 也必须给出需要处理的冲突（回归防线）。
+    assert!(analysis.conflicts.iter().any(|conflict| {
+        conflict.kind == skillhub_core::DuplicateKind::ExactContent && conflict.requires_choice
+    }));
 
     std::fs::write(incoming_source.path().join("SKILL.md"), "# Changed skill\n")
         .expect("change incoming skill");

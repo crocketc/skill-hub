@@ -216,11 +216,16 @@ export function ConflictResolution({
                           </p>
                         ) : null}
                         {conflict.summary ? (
-                          <p className="sh-import-conflicts__diagnostic">
-                            <span>{t("importWorkflow.conflicts.diagnosticsLabel")}</span>
-                            <code>{conflict.summary}</code>
-                            {conflict.duplicateKind ? <code>{conflict.duplicateKind}</code> : null}
-                          </p>
+                          // M-14：详情入口——技术诊断（reason code、差异类型）
+                          // 折叠在 details 中，主信息保持名称/路径/差异可读。
+                          <details className="sh-import-conflicts__details">
+                            <summary>{t("importWorkflow.conflicts.detailsToggle")}</summary>
+                            <p className="sh-import-conflicts__diagnostic">
+                              <span>{t("importWorkflow.conflicts.diagnosticsLabel")}</span>
+                              <code>{conflict.summary}</code>
+                              {conflict.duplicateKind ? <code>{conflict.duplicateKind}</code> : null}
+                            </p>
+                          </details>
                         ) : null}
                       </div>
                       <fieldset>

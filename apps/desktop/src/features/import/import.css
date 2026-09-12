@@ -197,3 +197,24 @@ section.sh-import-wizard {
 .sh-import-conflicts__item > fieldset {
   min-width: 0;
 }
+
+/* —— 冲突详情入口：技术诊断折叠在 details 内，主信息保持展开 —— */
+
+.sh-import-conflicts__details {
+  min-width: 0;
+}
+
+.sh-import-conflicts__details summary {
+  width: fit-content;
+  color: var(--ui-ink-muted);
+  cursor: pointer;
+  font-size: var(--font-size-xs);
+}
+
+.sh-import-conflicts__details summary:hover {
+  color: var(--ui-ink);
+}
+
+.sh-import-conflicts__details .sh-import-conflicts__diagnostic {
+  margin-block: var(--space-2) 0;
+}

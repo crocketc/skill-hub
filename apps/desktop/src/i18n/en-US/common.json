@@ -276,7 +276,8 @@
       "batchApply": "Apply",
       "batchPrompt": "Choose an action",
       "batchScopeCount": "Will apply to {{count}} items",
-      "batchScopeNote": "Only affects conflicts matching the current filter; each item can still be adjusted individually."
+      "batchScopeNote": "Only affects conflicts matching the current filter; each item can still be adjusted individually.",
+      "detailsToggle": "Details"
     },
     "summary": {
       "eyebrow": "Import summary",
