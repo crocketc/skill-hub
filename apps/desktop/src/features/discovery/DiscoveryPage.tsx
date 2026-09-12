@@ -232,6 +232,7 @@ export function DiscoveryPage({
       onBack={onBack}
       onImportComplete={onImportComplete}
       onOpenLibrary={onOpenLibrary}
+      onOpenSettings={onOpenSettings}
       tracker={tracker}
       view={view}
       wizard={wizard}

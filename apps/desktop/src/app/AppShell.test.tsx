@@ -4,12 +4,11 @@ import { I18nextProvider } from "react-i18next";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it } from "vitest";
 import { createSkillHubI18n } from "../i18n";
-import type { BootstrapSnapshot } from "../api/bindings";
+import type { BootstrapSnapshot, ScanResult } from "../api/bindings";
 import type { BootstrapVerificationState } from "../features/bootstrap/api";
 import {
   beginBackgroundScan,
   resetBackgroundScan,
-  type ScanResult,
 } from "../features/bootstrap/backgroundScan";
 import { AppShell } from "./AppShell";
 
