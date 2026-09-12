@@ -14,6 +14,7 @@ const profileIds = [
   "codex",
   "comate",
   "cursor",
+  "deepseek-harness",
   "github-copilot",
   "google",
   "grok",
@@ -22,6 +23,7 @@ const profileIds = [
   "openai",
   "openclaw",
   "opencode",
+  "pi",
   "qoder",
   "trae",
   "windsurf",
@@ -67,6 +69,21 @@ it("renders deployment names as brand-colored text tags without logo glyphs", ()
     "sh-skill-table__agent-deployment-label",
   );
   expect(container.querySelectorAll("svg")).toHaveLength(0);
+});
+
+it("renders Pi and DeepSeek Harness deployment names", () => {
+  render(
+    <AgentDeploymentIcons
+      agents={[
+        { id: "pi", name: "Pi coding agent" },
+        { id: "deepseek-harness", name: "DeepSeek Harness" },
+      ]}
+      ariaLabel="Agent deployments: 2"
+    />,
+  );
+
+  expect(screen.getByText("Pi")).toBeVisible();
+  expect(screen.getByText("DeepSeek Harness")).toBeVisible();
 });
 
 it("uses compact display names and summarizes agents after the seventh tag", () => {

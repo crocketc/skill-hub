@@ -120,6 +120,18 @@
   --brand-chip-foreground: #333d47;
 }
 
+.sh-brand-tag--deepseek-harness {
+  --brand-chip-background: #e7edfc;
+  --brand-chip-border: #c8d5f4;
+  --brand-chip-foreground: #294c9b;
+}
+
+.sh-brand-tag--pi {
+  --brand-chip-background: #eee9fc;
+  --brand-chip-border: #d9cdf4;
+  --brand-chip-foreground: #59329a;
+}
+
 /* 深色主题适配（规格 4.2）：品牌倾向色保留，外围底色和边界改由
    语义表面色混合派生，避免深色画布上出现整排亮色药丸。前景向近白
    混合时保留 25% 品牌倾向色：在混合后的深色底上对比度 ≥5（E2E 于
@@ -147,7 +159,9 @@
 [data-theme="grok-night"] .sh-brand-tag--openclaw,
 [data-theme="grok-night"] .sh-brand-tag--hermes,
 [data-theme="grok-night"] .sh-brand-tag--grok,
-[data-theme="grok-night"] .sh-brand-tag--zcode {
+[data-theme="grok-night"] .sh-brand-tag--zcode,
+[data-theme="grok-night"] .sh-brand-tag--deepseek-harness,
+[data-theme="grok-night"] .sh-brand-tag--pi {
   --brand-chip-background: color-mix(in srgb, var(--brand-chip-background) 22%, var(--color-surface-raised));
   --brand-chip-foreground: color-mix(in srgb, var(--brand-chip-foreground) 25%, #f2f3ef);
 }

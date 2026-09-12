@@ -30,6 +30,18 @@ it("renders compound known ids with their catalog spelling", () => {
   expect(screen.getByText("GitHub Copilot")).toBeVisible();
 });
 
+it("renders Pi and DeepSeek Harness as known platform brands", () => {
+  render(
+    <>
+      <BrandTag brand="pi" />
+      <BrandTag brand="deepseek-harness" />
+    </>,
+  );
+
+  expect(screen.getByText("Pi")).toHaveClass("sh-brand-tag--pi");
+  expect(screen.getByText("DeepSeek Harness")).toHaveClass("sh-brand-tag--deepseek-harness");
+});
+
 it("title-cases unknown brands while preserving the raw value in title", () => {
   render(<BrandTag brand="acme_robotics" />);
 

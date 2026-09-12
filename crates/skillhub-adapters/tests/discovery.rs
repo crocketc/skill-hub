@@ -103,6 +103,56 @@ fn absent_registered_directories_are_unavailable_without_being_created() {
         .any(|instance| instance.client_presence == skillhub_core::agent::ClientPresence::Unknown));
 }
 
+#[test]
+fn discovery_exposes_pi_and_deepseek_harness_native_targets() {
+    let workspace = tempdir().unwrap();
+    let home = workspace.path().join("home");
+    let project = workspace.path().join("project");
+    std::fs::create_dir_all(home.join(".pi/agent/skills")).unwrap();
+    std::fs::create_dir_all(home.join(".dsh/skills")).unwrap();
+    std::fs::create_dir_all(project.join(".pi/skills")).unwrap();
+    std::fs::create_dir_all(project.join(".dsh/skills")).unwrap();
+
+    let snapshot = DiscoverAgents::builtin()
+        .discover(&DiscoveryRoots::new(OperatingSystem::Windows, &home).with_project_root(&project))
+        .unwrap();
+
+    for (profile_id, client_id, expected_paths) in [
+        (
+            "pi",
+            "pi.coding-agent",
+            vec![home.join(".pi/agent/skills"), project.join(".pi/skills")],
+        ),
+        (
+            "deepseek-harness",
+            "deepseek-harness.tui",
+            vec![project.join(".dsh/skills"), home.join(".dsh/skills")],
+        ),
+        (
+            "deepseek-harness",
+            "deepseek-harness.web",
+            vec![project.join(".dsh/skills"), home.join(".dsh/skills")],
+        ),
+    ] {
+        let targets = snapshot
+            .logical_targets
+            .iter()
+            .filter(|target| target.profile_id == profile_id && target.client_id == client_id)
+            .filter(|target| target.exists)
+            .collect::<Vec<_>>();
+        let actual_paths = targets
+            .iter()
+            .map(|target| target.path.clone())
+            .collect::<Vec<_>>();
+        let expected_paths = expected_paths
+            .iter()
+            .map(|path| path.to_string_lossy().into_owned())
+            .collect::<Vec<_>>();
+        assert_eq!(actual_paths, expected_paths, "paths for {client_id}");
+        assert!(targets.iter().all(|target| target.marker == "SKILL.md"));
+    }
+}
+
 #[cfg(unix)]
 #[test]
 fn symlinked_directory_is_merged_by_filesystem_identity() {

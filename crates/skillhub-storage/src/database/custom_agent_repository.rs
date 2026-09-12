@@ -171,6 +171,8 @@ fn builtin_profile_id(id: &str) -> bool {
             | "openclaw"
             | "hermes"
             | "grok"
+            | "pi"
+            | "deepseek-harness"
     )
 }
 

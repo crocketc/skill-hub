@@ -91,6 +91,18 @@
       "{project_root}/.grok/skills",
       "{user_home}/.agents/skills",
       "{user_home}/.grok/skills"
+    ],
+    "pi": [
+      "{project_root}/.agents/skills",
+      "{project_root}/.pi/skills",
+      "{user_home}/.agents/skills",
+      "{user_home}/.pi/agent/skills"
+    ],
+    "deepseek-harness": [
+      "{project_root}/.agents/skills",
+      "{project_root}/.dsh/skills",
+      "{user_home}/.agents/skills",
+      "{user_home}/.dsh/skills"
     ]
   }
 }

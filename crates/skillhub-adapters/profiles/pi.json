@@ -1,0 +1,60 @@
+{
+  "profile_version": 1,
+  "research_date": "2026-09-12",
+  "official_references": [
+    "https://pi.dev/docs/latest/skills",
+    "https://pi.dev/docs/latest/settings",
+    "https://github.com/badlogic/pi-mono/tree/main/packages/coding-agent"
+  ],
+  "brand": "Pi",
+  "clients": [
+    {
+      "id": "pi.coding-agent",
+      "kind": "cli",
+      "supported_os": [
+        "windows",
+        "macos"
+      ],
+      "path_candidates": [
+        {
+          "path": "{user_home}/.pi/agent/skills",
+          "scope": "global",
+          "precedence": "preferred",
+          "marker": "SKILL.md"
+        },
+        {
+          "path": "{user_home}/.agents/skills",
+          "scope": "global",
+          "precedence": "lower_priority_copy",
+          "marker": "SKILL.md"
+        },
+        {
+          "path": "{project_root}/.pi/skills",
+          "scope": "project",
+          "precedence": "preferred",
+          "marker": "SKILL.md"
+        },
+        {
+          "path": "{project_root}/.agents/skills",
+          "scope": "project",
+          "precedence": "lower_priority_copy",
+          "marker": "SKILL.md"
+        }
+      ],
+      "skill_marker": "SKILL.md",
+      "deployment": {
+        "copy": true,
+        "symlink": false,
+        "junction": false,
+        "limitations": [
+          "root_level_markdown_not_scanned",
+          "project_ancestor_search_not_scanned",
+          "runtime_loading_unknown",
+          "symlink_support_unconfirmed",
+          "junction_support_unconfirmed"
+        ]
+      },
+      "call_policy": "unknown"
+    }
+  ]
+}

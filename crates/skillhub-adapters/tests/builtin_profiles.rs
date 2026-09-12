@@ -18,6 +18,8 @@ const PROFILE_FILES: &[&str] = &[
     "openclaw",
     "hermes",
     "grok",
+    "pi",
+    "deepseek-harness",
 ];
 
 #[test]
@@ -41,6 +43,8 @@ fn builtin_catalog_contains_every_researched_brand_and_no_roo_code() {
         "openclaw",
         "hermes",
         "grok",
+        "pi",
+        "deepseek-harness",
     ] {
         assert!(ids.contains(expected), "missing {expected}");
     }
@@ -211,6 +215,9 @@ fn researched_client_boundaries_are_kept_as_separate_profiles() {
         "grok.build-cli",
         "grok.build-tui",
         "grok.build-acp",
+        "pi.coding-agent",
+        "deepseek-harness.tui",
+        "deepseek-harness.web",
     ] {
         assert!(ids.contains(expected), "missing client {expected}");
     }
@@ -233,6 +240,54 @@ fn researched_client_boundaries_are_kept_as_separate_profiles() {
         assert!(
             client.path_candidates.is_empty(),
             "{expected} must not claim a local target"
+        );
+    }
+}
+
+#[test]
+fn pi_and_deepseek_harness_keep_their_native_and_shared_skill_roots() {
+    let catalog = ProfileCatalog::builtin();
+    let pi = catalog
+        .profiles
+        .iter()
+        .find(|profile| profile.brand == "Pi")
+        .expect("pi profile");
+    let pi_paths = pi.clients[0]
+        .path_candidates
+        .iter()
+        .map(|candidate| candidate.path.as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        pi_paths,
+        vec![
+            "{user_home}/.pi/agent/skills",
+            "{user_home}/.agents/skills",
+            "{project_root}/.pi/skills",
+            "{project_root}/.agents/skills",
+        ]
+    );
+
+    let harness = catalog
+        .profiles
+        .iter()
+        .find(|profile| profile.brand == "DeepSeek Harness")
+        .expect("deepseek harness profile");
+    for client in &harness.clients {
+        let paths = client
+            .path_candidates
+            .iter()
+            .map(|candidate| candidate.path.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            paths,
+            vec![
+                "{project_root}/.dsh/skills",
+                "{project_root}/.agents/skills",
+                "{user_home}/.dsh/skills",
+                "{user_home}/.agents/skills",
+            ],
+            "unexpected paths for {}",
+            client.id
         );
     }
 }
