@@ -1,0 +1,118 @@
+/* M-21 #4：批量删除确认底部抽屉。ui/Drawer 默认从右侧滑入；确认抽屉改为
+   自下而上滑出：底部停靠、全宽、高度有上限（内容可滚动），与 9 主题的
+   语义 token 一致，不做主题色硬编码。 */
+
+.sh-skill-library__removal-drawer.sh-drawer {
+  top: auto;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  max-width: none;
+  height: auto;
+  max-height: min(38rem, calc(100vh - var(--topbar-height) - 2 * var(--space-4)));
+  border-top: 1px solid var(--color-border);
+  border-right: 0;
+  border-bottom: 0;
+  border-left: 0;
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  animation: sh-skill-library__removal-drawer-in var(--motion-normal) var(--ease-standard);
+}
+
+@keyframes sh-skill-library__removal-drawer-in {
+  from {
+    opacity: 0;
+    transform: translateY(100%);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* 减少动效：全局 [data-reduced-motion="true"] 已禁用动画，这里只保留终态。 */
+
+.sh-skill-library__removal {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.sh-skill-library__removal p {
+  margin: 0;
+}
+
+.sh-skill-library__removal-eyebrow {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+  letter-spacing: 0.02em;
+}
+
+.sh-skill-library__removal-disclaimer {
+  display: grid;
+  gap: var(--space-1);
+  padding: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-muted);
+}
+
+.sh-skill-library__removal-disclaimer p {
+  font-size: var(--font-size-sm);
+}
+
+.sh-skill-library__removal-skill {
+  display: grid;
+  gap: var(--space-2);
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--color-border);
+}
+
+.sh-skill-library__removal-skill h3 {
+  margin: 0;
+  font-size: var(--font-size-md);
+}
+
+.sh-skill-library__removal-deployment {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.sh-skill-library__removal-deployment > span {
+  display: grid;
+  min-width: 0;
+}
+
+.sh-skill-library__removal-deployment small {
+  overflow: hidden;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sh-skill-library__removal-deployment select {
+  max-width: 14rem;
+}
+
+.sh-skill-library__removal-status {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--color-text-muted);
+}
+
+.sh-skill-library__removal-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--color-border);
+}
+
+.sh-skill-library__removal-actions > small {
+  flex: 1 1 auto;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+}

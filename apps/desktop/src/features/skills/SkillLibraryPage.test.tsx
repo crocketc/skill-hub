@@ -9,6 +9,7 @@ import { I18nextProvider } from "react-i18next";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { skillHubI18n } from "../../i18n";
 import "../../styles/base.css";
+import { AppNotificationsProvider } from "../../ui/notifications";
 import {
   SkillLibraryUnavailableError,
   type SavedSkillView,
@@ -71,7 +72,10 @@ function renderLibrary({
   render(
     <I18nextProvider i18n={skillHubI18n}>
       <QueryClientProvider client={queryClient}>
-        <RouterProvider router={router} />
+        {/* M-21：页面直接消费全局通知服务，测试宿主挂同一 Provider 契约。 */}
+        <AppNotificationsProvider>
+          <RouterProvider router={router} />
+        </AppNotificationsProvider>
       </QueryClientProvider>
     </I18nextProvider>,
   );
@@ -107,6 +111,117 @@ afterEach(() => {
 });
 
 describe("SkillLibraryPage", () => {
+  it("slides the batch deletion confirmation up from the bottom without moving the list (M-21)", async () => {
+    const facade = createMockSkillLibraryFacade();
+    const removalFacade: RemovalFacade = {
+      prepareUndeploy: vi.fn(),
+      commitUndeploy: vi.fn(),
+      prepareDelete: vi.fn().mockResolvedValue({
+        deployments: [{ id: "dep-1", label: "Codex CLI", path: "C:/codex", physicalId: "codex" }],
+        dependentProjects: [], operationId: "delete-pdf", skillId: "skill-pdf", skillName: "PDF Reader",
+        declaredDependencies: [], pinnedVersions: [], combinations: [], relatedSkills: [], unknownExternalReferences: [],
+      }),
+      commitDelete: vi.fn().mockResolvedValue({ centralSkillDeleted: true }),
+    };
+    renderLibrary({ facade, removalFacade });
+
+    await screen.findByRole("table");
+    // Radix 模态会把抽屉外内容标记 aria-hidden，先持有区域引用再打开抽屉。
+    const region = screen.getByRole("region", { name: "Skill results" });
+    region.scrollTop = 120;
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select PDF Reader" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete selected Skills from library" }));
+
+    const dialog = await screen.findByRole("dialog", { name: "Review batch deletion impact" });
+    // 底部抽屉：portal 面板带底部滑出类，不在页面文档流内（不再跳到页面底部）。
+    const panel = screen.getByTestId("drawer-panel");
+    expect(panel).toHaveClass("sh-skill-library__removal-drawer");
+    expect(region.contains(panel)).toBe(false);
+    // 打开确认不滚动、不跳转原列表。
+    expect(region.scrollTop).toBe(120);
+
+    // 确认/取消语义与既有删除影响预览一致：先处理部署关系，再两步确认。
+    fireEvent.change(
+      within(dialog).getByRole("combobox", { name: "Deployment handling: Codex CLI" }),
+      { target: { value: "keep_deployed" } },
+    );
+    fireEvent.click(within(dialog).getByRole("button", { name: "Continue to force deletion" }));
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Click again to confirm deleting 1 Skills" }),
+    );
+    await waitFor(() =>
+      expect(removalFacade.commitDelete).toHaveBeenCalledWith("delete-pdf", {
+        "dep-1": "keep_deployed",
+      }),
+    );
+  });
+
+  it("keeps the list selection when the batch confirmation drawer is cancelled", async () => {
+    const facade = createMockSkillLibraryFacade();
+    const removalFacade: RemovalFacade = {
+      prepareUndeploy: vi.fn(),
+      commitUndeploy: vi.fn(),
+      prepareDelete: vi.fn().mockResolvedValue({
+        deployments: [], dependentProjects: [], operationId: "delete-pdf", skillId: "skill-pdf", skillName: "PDF Reader",
+        declaredDependencies: [], pinnedVersions: [], combinations: [], relatedSkills: [], unknownExternalReferences: [],
+      }),
+      commitDelete: vi.fn(),
+    };
+    renderLibrary({ facade, removalFacade });
+
+    fireEvent.click(await screen.findByRole("checkbox", { name: "Select PDF Reader" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete selected Skills from library" }));
+    await screen.findByRole("dialog", { name: "Review batch deletion impact" });
+    fireEvent.click(
+      await within(screen.getByTestId("drawer-panel")).getByRole("button", { name: "Cancel" }),
+    );
+
+    await waitFor(() => expect(screen.queryByTestId("drawer-panel")).not.toBeInTheDocument());
+    expect(removalFacade.commitDelete).not.toHaveBeenCalled();
+    expect(screen.getByRole("checkbox", { name: "Select PDF Reader" })).toBeChecked();
+    expect(screen.getByRole("complementary", { name: "Batch actions" })).toBeVisible();
+  });
+
+  it("sends success outcomes to the auto-dismissing global toast instead of a local notice list (M-21)", async () => {
+    vi.useFakeTimers();
+    try {
+      const facade = createMockSkillLibraryFacade();
+      renderLibrary({ facade });
+
+      // 假计时器下用显式推进驱动微任务/查询，不用依赖定时器轮询的 findBy。
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1);
+      });
+      fireEvent.click(screen.getByRole("checkbox", { name: "Select PDF Reader" }));
+      fireEvent.click(screen.getByRole("button", { name: "Add tags" }));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1);
+      });
+      const dialog = screen.getByRole("dialog", { name: "Add tags" });
+      fireEvent.change(within(dialog).getByRole("textbox", { name: "Tags" }), {
+        target: { value: "review" },
+      });
+      fireEvent.click(within(dialog).getByRole("button", { name: "Add tags" }));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1);
+      });
+
+      // 成功结果走全局 toast（success tone），且页面容器内不再有局部通知列表。
+      const toast = screen.getByTestId("notice-success");
+      const workspace = document.querySelector(".sh-skill-library") as HTMLElement;
+      expect(workspace.querySelector(".sh-notification-center")).toBeNull();
+      expect(toast).toHaveTextContent("Batch tag update finished");
+
+      // 全局契约：2 秒后 toast 自动消退（含 160ms 滑出）。
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(2400);
+      });
+      expect(screen.queryByTestId("notice-success")).not.toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  }, 20000);
+
   it("previews selected Skills and requires a forced-delete confirmation before committing", async () => {
     const facade = createMockSkillLibraryFacade();
     const removalFacade: RemovalFacade = {

@@ -18,7 +18,9 @@ import { Button } from "../../ui/Button";
 import { DataState } from "../../ui/DataState";
 import { Input } from "../../ui/Input";
 import { describeNativeError } from "../../api/nativeErrors";
-import { NotificationCenter, useNotices } from "../../ui/NotificationCenter";
+// M-21 #5：页面直接消费全局通知中心（AppShell 级单例服务），不再保留
+// 页面内局部通知列表（NotificationCenter/useNotices 兼容桥从本页移除）。
+import { useAppNotifications } from "../../ui/notifications";
 import { Icon, type IconName } from "../../ui/Icon";
 import {
   detailSearchFromLibrary,
@@ -72,7 +74,7 @@ import { SkillMatrix } from "./SkillMatrix";
 import { SkillPagination } from "./SkillPagination";
 import { SkillTable } from "./SkillTable";
 import { SourceUpdateCheckSummary } from "./SourceUpdateCheckSummary";
-import { BatchRemovalImpactDialog } from "../removal/BatchRemovalImpactDialog";
+import { BatchRemovalDrawer } from "./BatchRemovalDrawer";
 import { BatchOperationSummary, type BatchOutcome } from "../../ui/BatchOperationSummary";
 import type { RemovalChoice, RemovalFacade, RemovalImpact } from "../removal/api";
 import { nativeRemovalFacade } from "../removal/nativeApi";
@@ -449,8 +451,9 @@ export function SkillLibraryPage({
   const [tableSaveFailure, setTableSaveFailure] = useState<SkillTablePreferences>();
   const [drawerSaveFailure, setDrawerSaveFailure] = useState<SkillDrawerPreferences>();
   const [selectionAnnouncement, setSelectionAnnouncement] = useState<string>();
-  // P1-11 通知规范：成功可消退、危险常驻可关闭；批量错误随选择变更撤销。
-  const { dismissNoticesOfKind, dismissNotice, notices, pushNotice } = useNotices();
+  // P1-11→M-21 通知规范：成功/中性经全局 toast 自动消退（2 秒，历史保留），
+  // 危险通知走全局 alert 通道；批量错误随选择变更经 dismissByKind 撤销。
+  const { dismissByKind, notify } = useAppNotifications();
   const [batchTagAction, setBatchTagAction] = useState<BatchTagAction>();
   // P1-08：工具栏第二行（已保存视图）可折叠；搜索与模式开关保持在第一行。
   const [toolbarOpen, setToolbarOpen] = useState(true);
@@ -467,7 +470,7 @@ export function SkillLibraryPage({
 
   const clearBatchAnnouncement = () => {
     batchRequestRef.current += 1;
-    dismissNoticesOfKind("batch");
+    dismissByKind("batch");
   };
 
   const changeSelection = (next: SkillSelection) => {
@@ -691,7 +694,7 @@ export function SkillLibraryPage({
   };
 
   const deleteSavedView = (view: SavedSkillView) => {
-    dismissNoticesOfKind("saved-view-delete");
+    dismissByKind("saved-view-delete");
     void facade.deleteView(view.id).then(
       () => {
         queryClient.setQueryData<SavedSkillView[]>(
@@ -706,9 +709,9 @@ export function SkillLibraryPage({
         });
       },
       () =>
-        pushNotice({
+        notify({
           kind: "saved-view-delete",
-          message: t("skillLibrary.savedViews.deleteError"),
+          title: t("skillLibrary.savedViews.deleteError"),
           tone: "danger",
         }),
     );
@@ -774,9 +777,9 @@ export function SkillLibraryPage({
           navigate({ pathname: "/deploy", search: `?${search.toString()}` });
         },
         () =>
-          pushNotice({
+          notify({
             kind: "batch",
-            message: t("skillLibrary.page.batch.error"),
+            title: t("skillLibrary.page.batch.error"),
             tone: "danger",
           }),
       );
@@ -787,9 +790,9 @@ export function SkillLibraryPage({
     const intent = { action, target: selectionToBatchTarget(selection) };
     void facade.emitBatchIntent(intent).catch((error: unknown) => {
       if (request !== batchRequestRef.current) return;
-      pushNotice({
+      notify({
         kind: "batch",
-        message: isSkillLibraryUnavailable(error)
+        title: isSkillLibraryUnavailable(error)
           ? t("skillLibrary.page.batch.unconnected")
           : t("skillLibrary.page.batch.error"),
         tone: "danger",
@@ -835,23 +838,22 @@ export function SkillLibraryPage({
       if (request !== batchRequestRef.current) return;
       await queryClient.invalidateQueries({ queryKey: skillLibraryKeys.root });
       const failedCount = outcomes.filter((outcome) => outcome.status === "failed").length;
-      pushNotice({
-        // 危险批量操作的结果必须常驻，即使全部成功也需显式关闭。
-        detail: <BatchOperationSummary outcomes={outcomes} />,
+      // 全局通知契约：成功 toast 自动消退（本体保留在会话历史）；失败走危险通道。
+      notify({
+        detailNode: <BatchOperationSummary outcomes={outcomes} />,
         kind: "batch-tags",
-        message: t(
+        title: t(
           failedCount > 0
             ? "skillLibrary.page.batchTags.partialFailure"
             : "skillLibrary.page.batchTags.done",
         ),
-        persistent: true,
         tone: failedCount > 0 ? "danger" : "success",
       });
     } catch {
       if (request === batchRequestRef.current) {
-        pushNotice({
+        notify({
           kind: "batch-tags",
-          message: t("skillLibrary.page.batch.error"),
+          title: t("skillLibrary.page.batch.error"),
           tone: "danger",
         });
       }
@@ -874,20 +876,19 @@ export function SkillLibraryPage({
           ...entry,
           name: names.get(entry.skillId) ?? entry.skillId,
         }));
-        // 来源更新检查结果常驻展示（详情面板随通知展开），不再追加在页面流末尾。
-        pushNotice({
-          detail: <SourceUpdateCheckSummary reports={reports} />,
+        // 来源更新检查结果随全局通知展示（详情面板随通知展开，历史保留）。
+        notify({
+          detailNode: <SourceUpdateCheckSummary reports={reports} />,
           kind: "batch",
-          message: t("skillLibrary.page.sourceUpdates.title"),
-          persistent: true,
+          title: t("skillLibrary.page.sourceUpdates.title"),
           tone: "info",
         });
       })
       .catch((error: unknown) => {
         if (request !== batchRequestRef.current) return;
-        pushNotice({
+        notify({
           kind: "batch",
-          message: isSkillLibraryUnavailable(error)
+          title: isSkillLibraryUnavailable(error)
             ? t("skillLibrary.page.batch.unconnected")
             : t("skillLibrary.page.batch.error"),
           tone: "danger",
@@ -908,9 +909,9 @@ export function SkillLibraryPage({
         state: { exportSkillIds: skills.map((skill) => skill.id) },
       }),
       () =>
-        pushNotice({
+        notify({
           kind: "batch",
-          message: t("skillLibrary.page.batch.error"),
+          title: t("skillLibrary.page.batch.error"),
           tone: "danger",
         }),
     );
@@ -937,7 +938,7 @@ export function SkillLibraryPage({
   const startBatchRemoval = async (single?: { id: string; name: string }) => {
     setBatchRemovalLoading(true);
     setBatchRemovalError(undefined);
-    dismissNoticesOfKind("removal-summary");
+    dismissByKind("removal-summary");
     try {
       const selected = single ? [single] : await selectedSkillsForRemoval();
       // prepare_delete 是只读准备，各项独立；仍保持首错即停的外层 catch 语义。
@@ -948,8 +949,8 @@ export function SkillLibraryPage({
     } catch {
       const message = t("removal.batch.loadError");
       setBatchRemovalError(message);
-      // 影响读取失败：对话框内与常驻通知双通道可见，不静默。
-      pushNotice({ kind: "removal-summary", message, tone: "danger" });
+      // 影响读取失败：抽屉内与全局通知双通道可见，不静默。
+      notify({ kind: "removal-summary", title: message, tone: "danger" });
     } finally {
       setBatchRemovalLoading(false);
     }
@@ -983,17 +984,16 @@ export function SkillLibraryPage({
       }
     }
     await queryClient.invalidateQueries({ queryKey: skillLibraryKeys.root });
-    // 批量删除结果常驻（危险操作即使全部成功也不自动消失），并离开文档流末尾。
+    // 全局通知契约：结果 toast 自动消退（本体保留在会话历史），不再常驻文档流末尾。
     const failedCount = outcomes.filter((outcome) => outcome.status === "failed").length;
-    pushNotice({
-      detail: <BatchOperationSummary outcomes={outcomes} />,
+    notify({
+      detailNode: <BatchOperationSummary outcomes={outcomes} />,
       kind: "removal-summary",
-      message: t(
+      title: t(
         failedCount > 0
           ? "skillLibrary.page.batchRemovals.partialFailure"
           : "skillLibrary.page.batchRemovals.done",
       ),
-      persistent: true,
       tone: failedCount > 0 ? "danger" : "success",
     });
     setBatchRemovalImpacts(null);
@@ -1527,14 +1527,13 @@ export function SkillLibraryPage({
         skillId={skillId}
       />
       {batchRemovalLoading ? <p role="status">{t("removal.loading")}</p> : null}
-      {batchRemovalImpacts ? <BatchRemovalImpactDialog
+      {batchRemovalImpacts ? <BatchRemovalDrawer
         error={batchRemovalError}
         impacts={batchRemovalImpacts}
         onCancel={() => setBatchRemovalImpacts(null)}
         onConfirm={commitBatchRemoval}
         submitting={batchRemovalSubmitting}
       /> : null}
-      <NotificationCenter notices={notices} onDismiss={dismissNotice} />
     </section>
   );
 }
