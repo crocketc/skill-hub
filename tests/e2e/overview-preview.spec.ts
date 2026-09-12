@@ -1,4 +1,5 @@
 import { expect, test, type Locator } from "./fixtures";
+import { expectUnifiedPageRhythm } from "./page-rhythm";
 
 /**
  * T3-A 概览预览（/__preview/overview）：确定性夹具上的信息层级、响应式、
@@ -110,24 +111,7 @@ test.describe("overview stays free of horizontal overflow", () => {
       await page.goto("/__preview/overview");
 
       await expect(page.getByRole("link", { name: "27 skills" })).toBeVisible();
-      const rhythm = await page.evaluate(() => {
-        const frame = document.querySelector<HTMLElement>(".sh-page-frame");
-        if (!frame) return null;
-        const style = getComputedStyle(frame);
-        return {
-          rowGap: parseFloat(style.rowGap),
-          paddingTop: parseFloat(style.paddingTop),
-          headerBottom: frame.querySelector(".sh-page-header")!.getBoundingClientRect().bottom,
-          contentTop: frame.querySelector(".sh-overview")!.getBoundingClientRect().top,
-        };
-      });
-      expect(rhythm, "the overview page frame must exist").not.toBeNull();
-      expect(rhythm!.rowGap, "section gap must sit on the unified 16px step").toBe(16);
-      expect(rhythm!.paddingTop, "page frame must not stack a second padding layer").toBe(0);
-      expect(
-        Math.abs((rhythm!.contentTop - rhythm!.headerBottom) - rhythm!.rowGap),
-        "header-to-content distance must equal the section gap",
-      ).toBeLessThanOrEqual(1);
+      await expectUnifiedPageRhythm(page, ".sh-overview", "overview");
     });
   }
 
