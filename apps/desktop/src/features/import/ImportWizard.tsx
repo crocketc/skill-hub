@@ -445,12 +445,16 @@ type: "failed",
   };
 
   // AR-006/M-29：混合导入——手动目录追加进已选来源列表并立即可见（未扫描）；
-  // 重复添加去重并聚焦已有条目。
+  // 重复添加去重并聚焦已有条目。Windows 路径大小写不敏感，去重比较折叠大小写
+  //（列表仍保留首次添加时的原始写法）。
   const addManualSource = async (source: string) => {
     const normalized = normalizeWindowsPath(source);
     if (!normalized.trim()) return;
-    if (selectedSources.includes(normalized)) {
-      setFocusedSource(normalized);
+    const existing = selectedSources.find(
+      (item) => item.toLowerCase() === normalized.toLowerCase(),
+    );
+    if (existing) {
+      setFocusedSource(existing);
       return;
     }
     await facade.parseSource(normalized);

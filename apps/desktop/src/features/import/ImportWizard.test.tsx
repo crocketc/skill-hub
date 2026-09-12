@@ -403,6 +403,24 @@ it("deduplicates a repeated directory and focuses the existing entry", async () 
   expect(document.activeElement).toBe(codexItem);
 });
 
+it("deduplicates case-variant directories to one entry on Windows paths", async () => {
+  const user = userEvent.setup();
+  await renderGuidedWizard();
+
+  await user.clear(screen.getByLabelText("来源"));
+  await user.type(screen.getByLabelText("来源"), "C:/codex/skills");
+  await user.click(screen.getByRole("button", { name: "添加到已选来源" }));
+
+  // Windows 路径大小写不敏感：仅大小写不同的目录必须并成一条。
+  await user.clear(screen.getByLabelText("来源"));
+  await user.type(screen.getByLabelText("来源"), "c:/CODEX/Skills");
+  await user.click(screen.getByRole("button", { name: "添加到已选来源" }));
+
+  const list = screen.getByRole("list", { name: "已选来源" });
+  expect(within(list).getAllByRole("listitem")).toHaveLength(2);
+  expect(within(list).getByText("C:/codex/skills")).toBeVisible();
+});
+
 it("removes selected sources individually, in bulk, and all at once from the list", async () => {
   const user = userEvent.setup();
   await renderGuidedWizard();
