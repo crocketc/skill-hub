@@ -159,6 +159,15 @@ pub fn analyze_import(
                         super::ImportDecision::Skip,
                     ]);
                 }
+                // M-14：完全重复也必须作为冲突呈现——候选与已有 Skill 的
+                // 名称、路径可辨，由用户显式选择复用/复制/跳过，绝不静默
+                // 判成"无需处理"。
+                conflicts.push(ImportConflict {
+                    skill_id: primary.skill_id,
+                    kind: primary.duplicate_kind,
+                    reason_code: "import.exact_duplicate_conflict".to_owned(),
+                    requires_choice: true,
+                });
             }
             DuplicateKind::SameRuntimeNameDifferentContent => {
                 actions.extend([

@@ -49,6 +49,12 @@ fn exact_content_and_same_name_different_content_are_distinct_results() {
     );
     assert_eq!(exact.duplicate_kind, Some(DuplicateKind::ExactContent));
     assert!(exact.actions.contains(&ImportDecision::ReuseExisting));
+    // M-14：完全重复同样产生需要处理的冲突（名称/路径可辨），由用户决策。
+    assert!(exact
+        .conflicts
+        .iter()
+        .any(|conflict| conflict.kind == DuplicateKind::ExactContent
+            && conflict.requires_choice));
 
     let (candidate, _) = make_candidate("pdf", source);
     let hash = "sha256:changed".to_owned();

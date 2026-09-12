@@ -1,4 +1,5 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { I18nextProvider } from "react-i18next";
 import { expect, it, vi } from "vitest";
 import { createSkillHubI18n } from "../../i18n";
@@ -110,4 +111,78 @@ it("keeps the descriptor block for non-local sources", async () => {
 
   expect(screen.getByLabelText("已识别来源")).toBeVisible();
   expect(screen.getByText("owner/repository")).toBeVisible();
+});
+
+// —— M-29：已选来源列表（状态、单删、批量删、清空、聚焦） ——
+
+it("lists every selected source as unscanned before any scan happens", async () => {
+  await renderSourceInput({
+    onClearSources: vi.fn(),
+    onRemoveSource: vi.fn(),
+    onRemoveSources: vi.fn(),
+    selectedSources: ["C:/codex/skills", "C:/manual/skills"],
+    suggestedSources: ["C:/codex/skills"],
+  });
+
+  const list = screen.getByRole("list", { name: "已选来源" });
+  const items = within(list).getAllByRole("listitem");
+  expect(items).toHaveLength(2);
+  expect(within(items[0]).getByText("C:/codex/skills")).toBeVisible();
+  expect(within(items[1]).getByText("C:/manual/skills")).toBeVisible();
+  expect(within(items[0]).getByText("未扫描")).toBeVisible();
+  expect(within(items[1]).getByText("未扫描")).toBeVisible();
+});
+
+it("shows scanned counts and failed reasons per source in the selected list", async () => {
+  await renderSourceInput({
+    onRemoveSource: vi.fn(),
+    selectedSources: ["C:/ok/skills", "C:/broken/skills"],
+    sourceStatuses: {
+      "C:/broken/skills": { kind: "failed", reason: "权限不足" },
+      "C:/ok/skills": { kind: "scanned", count: 3 },
+    },
+  });
+
+  expect(screen.getByText("3 个候选")).toBeVisible();
+  expect(screen.getByText("扫描失败")).toBeVisible();
+  expect(screen.getByText("权限不足")).toBeVisible();
+});
+
+it("supports per-item removal, marked bulk removal, and clear-all", async () => {
+  const onClearSources = vi.fn();
+  const onRemoveSource = vi.fn();
+  const onRemoveSources = vi.fn();
+  const user = userEvent.setup();
+  await renderSourceInput({
+    onClearSources,
+    onRemoveSource,
+    onRemoveSources,
+    selectedSources: ["C:/a/skills", "C:/b/skills"],
+  });
+
+  await user.click(screen.getByRole("button", { name: "移除已选来源 C:/a/skills" }));
+  expect(onRemoveSource).toHaveBeenCalledWith("C:/a/skills");
+  expect(onRemoveSources).not.toHaveBeenCalled();
+
+  fireEvent.click(screen.getByRole("checkbox", { name: "选中来源 C:/b/skills 以便批量删除" }));
+  await user.click(screen.getByRole("button", { name: "删除所选（1）" }));
+  expect(onRemoveSources).toHaveBeenCalledWith(["C:/b/skills"]);
+
+  await user.click(screen.getByRole("button", { name: "全部清空" }));
+  expect(onClearSources).toHaveBeenCalledOnce();
+});
+
+it("focuses the highlighted source entry and reports it as applied", async () => {
+  const onFocusedSourceApplied = vi.fn();
+  await renderSourceInput({
+    focusedSource: "C:/a/skills",
+    onFocusedSourceApplied,
+    onRemoveSource: vi.fn(),
+    selectedSources: ["C:/a/skills", "C:/b/skills"],
+  });
+
+  const item = within(screen.getByRole("list", { name: "已选来源" })
+    .querySelector("li") as HTMLElement);
+  expect(document.activeElement).toBe(item.getByText("C:/a/skills").closest("li"));
+  expect(onFocusedSourceApplied).toHaveBeenCalledOnce();
 });

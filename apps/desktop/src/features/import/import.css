@@ -197,3 +197,98 @@ section.sh-import-wizard {
 .sh-import-conflicts__item > fieldset {
   min-width: 0;
 }
+
+/* —— 冲突详情入口：技术诊断折叠在 details 内，主信息保持展开 —— */
+
+.sh-import-conflicts__details {
+  min-width: 0;
+}
+
+.sh-import-conflicts__details summary {
+  width: fit-content;
+  color: var(--ui-ink-muted);
+  cursor: pointer;
+  font-size: var(--font-size-xs);
+}
+
+.sh-import-conflicts__details summary:hover {
+  color: var(--ui-ink);
+}
+
+.sh-import-conflicts__details .sh-import-conflicts__diagnostic {
+  margin-block: var(--space-2) 0;
+}
+
+/* —— M-29 已选来源列表：分层展示选中目录及其扫描状态 —— */
+
+.sh-import-source__selected {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--ui-border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--ui-surface-subtle);
+}
+
+.sh-import-source__selected > p {
+  margin: 0;
+  color: var(--ui-ink-muted);
+  font-size: var(--font-size-xs);
+}
+
+.sh-import-source__selected-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.sh-import-source__selected-heading h3 {
+  margin: 0;
+  font-size: var(--font-size-sm);
+}
+
+.sh-import-source__list {
+  display: grid;
+  gap: var(--space-2);
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.sh-import-source__item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+}
+
+.sh-import-source__item:focus {
+  outline: 2px solid var(--ui-selected-border);
+  outline-offset: -2px;
+  background: var(--ui-selected-surface);
+}
+
+.sh-import-source__item[data-scan-state="failed"] {
+  background: var(--color-danger-soft);
+}
+
+.sh-import-source__item code {
+  overflow-wrap: anywhere;
+}
+
+.sh-import-source__item-mark {
+  display: inline-flex;
+  align-items: center;
+}
+
+.sh-import-source__item-reason {
+  min-width: 0;
+  color: var(--ui-ink-muted);
+  font-size: var(--font-size-xs);
+  overflow-wrap: anywhere;
+}

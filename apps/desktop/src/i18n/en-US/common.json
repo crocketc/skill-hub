@@ -168,7 +168,8 @@
       "perSource": "{{source}}: {{count}} candidate(s)",
       "remove": "Remove",
       "removeSource": "Remove source {{source}}",
-      "removeAllSources": "Remove all sources"
+      "removeAllSources": "Remove all sources",
+      "perSourceFailed": "{{source}}: {{reason}}"
     },
     "cancelled": "Acquisition was cancelled. Your source is still here.",
     "source": {
@@ -276,7 +277,8 @@
       "batchApply": "Apply",
       "batchPrompt": "Choose an action",
       "batchScopeCount": "Will apply to {{count}} items",
-      "batchScopeNote": "Only affects conflicts matching the current filter; each item can still be adjusted individually."
+      "batchScopeNote": "Only affects conflicts matching the current filter; each item can still be adjusted individually.",
+      "detailsToggle": "Details"
     },
     "summary": {
       "eyebrow": "Import summary",
@@ -337,6 +339,29 @@
         "passed": "Passed",
         "failed": "Failed"
       }
+    },
+    "sources": {
+      "heading": "Selected sources",
+      "description": "These directories take part in the import. Candidates appear after scanning; unscanned sources stay pending.",
+      "status": {
+        "unscanned": "Not scanned",
+        "count": "{{count}} candidates",
+        "failed": "Scan failed"
+      },
+      "remove": "Remove",
+      "removeSource": "Remove selected source {{source}}",
+      "markForRemoval": "Mark source {{source}} for removal",
+      "removeSelected": "Remove selected ({{count}})",
+      "clearAll": "Clear all",
+      "retry": "Retry scan",
+      "retrySource": "Rescan {{source}}"
+    },
+    "notifications": {
+      "succeededTitle": "Import completed",
+      "succeededDetail": "Succeeded {{succeeded}} · Failed {{failed}} · Skipped {{skipped}}",
+      "failedTitle": "Import submission failed",
+      "cancelledTitle": "Import flow cancelled",
+      "openLibrary": "View library skills"
     }
   },
   "discovery": {
