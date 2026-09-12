@@ -1,4 +1,4 @@
-import { existsSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { render, screen } from "@testing-library/react";
 import { expect, it } from "vitest";
@@ -30,7 +30,9 @@ it("renders compound known ids with their catalog spelling", () => {
   expect(screen.getByText("GitHub Copilot")).toBeVisible();
 });
 
-it("renders Pi and DeepSeek Harness as known platform brands", () => {
+// M-30（验收反馈"Pi 与 DeepSeek Harness 缺少品牌 Logo"）：两个品牌现在
+// 都有来自官方一手来源的图标，必须渲染真实素材而不是只有颜色标签。
+it("renders Pi and DeepSeek Harness as known platform brands with official logos", () => {
   render(
     <>
       <BrandTag brand="pi" />
@@ -40,6 +42,11 @@ it("renders Pi and DeepSeek Harness as known platform brands", () => {
 
   expect(screen.getByText("Pi")).toHaveClass("sh-brand-tag--pi");
   expect(screen.getByText("DeepSeek Harness")).toHaveClass("sh-brand-tag--deepseek-harness");
+  const tags = screen.getAllByText(/^(Pi|DeepSeek Harness)$/);
+  expect(tags.map((tag) => tag.firstElementChild?.getAttribute("src"))).toEqual([
+    "/brand/agents/lobehub/pi.svg",
+    "/brand/agents/lobehub/deepseek-harness.svg",
+  ]);
 });
 
 it("title-cases unknown brands while preserving the raw value in title", () => {
@@ -131,12 +138,31 @@ it("covers every shipped lobehub asset with a mapping and vice versa", () => {
   // Vitest 以 apps/desktop 为工作目录，公共资源固定在 public/ 下。
   const assetDir = path.resolve(process.cwd(), "public/brand/agents/lobehub");
   const shipped = readdirSync(assetDir).filter((name) => name.endsWith(".svg")).sort();
-  expect(shipped).toHaveLength(17);
+  // M-30：pi.svg 与 deepseek-harness.svg 来自官方一手来源（SOURCES.md）。
+  expect(shipped).toHaveLength(19);
 
   const mapped = [...new Set(Object.values(BRAND_ICON_FILES))].sort();
   expect(mapped).toEqual(shipped);
   for (const file of mapped) {
     expect(existsSync(path.join(assetDir, file))).toBe(true);
+  }
+});
+
+// M-30：Pi 与 DeepSeek Harness 的图标是官方一手素材的逐字节拷贝；
+// 与 assets/branding/ 下记录的原始下载件比对，防止后续被随机素材
+// 静默替换（来源与许可证记录见 assets/branding/SOURCES.md）。
+it("serves official Pi and DeepSeek Harness artwork byte for byte from the recorded masters", () => {
+  const assetDir = path.resolve(process.cwd(), "public/brand/agents/lobehub");
+  const brandingDir = path.resolve(process.cwd(), "../../assets/branding");
+  const pairs: Array<[string, string]> = [
+    ["pi.svg", "pi/pi-favicon.svg"],
+    ["deepseek-harness.svg", "deepseek-harness/deepseek-harness-favicon.svg"],
+  ];
+  for (const [shippedName, masterName] of pairs) {
+    const shippedPath = path.join(assetDir, shippedName);
+    const masterPath = path.join(brandingDir, masterName);
+    expect(existsSync(masterPath), `${masterName} master must be retained`).toBe(true);
+    expect(readFileSync(shippedPath).equals(readFileSync(masterPath))).toBe(true);
   }
 });
 
