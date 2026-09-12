@@ -12,4 +12,5 @@
 /apps/desktop/src-tauri/icons/
 /apps/desktop/src-tauri/gen/
 /test_key.txt
+/test-results/
 .DS_Store
