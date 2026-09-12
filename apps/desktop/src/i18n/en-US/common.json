@@ -3,7 +3,7 @@
     "objectNotFound": "The target does not exist or has been removed ({{code}}).",
     "networkDisabled": "Network features are disabled; enable them in Settings before using online operations.",
     "backupChecksumMismatch": "Backup verification failed: contents do not match the manifest or files are missing.",
-    "inputInvalid": "The input failed validation ({{code}}).",
+    "inputInvalid": "The input failed validation; please review it and try again.",
     "sourceUpdate": {
       "noUpstreamConflict": "This skill has no upstream source to take, so “Take upstream” cannot run ({{code}}).",
       "sourceUnavailable": "The source is currently unavailable. Check the network and the source record, then retry."
@@ -463,6 +463,12 @@
       "assistFailureReason": "Failure reason: {{reason}}",
       "assistUnknownFailure": "The AI search ran into an unknown problem ({{code}}).",
       "assistHit": "AI-extended hit",
+      "assistReady": "AI assist is ready: searches will extend the query and mark AI-extended hits.",
+      "assistUnverified": "The AI setup is complete but the connection is unverified; the next search tries it for real and falls back to plain search on failure.",
+      "assistNotConfiguredProvider": "No usable LLM provider is configured for the AI search assistant: the AI path is disabled and searches use the plain search.",
+      "assistNotConfiguredCredential": "The current LLM provider has no API key: the AI path is disabled and searches use the plain search.",
+      "assistCapabilityDisabled": "Online search assist is disabled: the AI path is off and searches use the plain search; enable it under Settings - AI capabilities.",
+      "assistOpenSettings": "Open settings",
       "results": "Search results"
     },
     "repo": {
@@ -1921,7 +1927,11 @@
       "description": "Network helpers are opt-in and never change local management by themselves.",
       "disableAll": "Turn off all network features",
       "localStillWorks": "Local scan, search, deployment, and backup remain available",
-      "dataScope": "Data scope"
+      "dataScope": "Data scope",
+      "dataScopeExplicitSelection": "Only features you explicitly enabled",
+      "dataScopeGeneric": "Minimal per-feature sending",
+      "dataScopeNote": "When an AI feature is enabled, only the minimal content that feature needs (such as a skill description or search keywords) is sent; your skill library is never uploaded wholesale.",
+      "providerUnconfigured": "Not configured"
     },
     "llm": {
       "capabilitiesHeading": "AI capabilities",
@@ -1949,7 +1959,23 @@
       "cancel": "Cancel",
       "formHeading": "Provider configuration",
       "preset": "Pick a preset",
-      "presetPlaceholder": "Manual entry",
+      "presetPlaceholder": "Custom (manual setup)",
+      "customManualNote": "Manual setup: choose the protocol and fill in the base URL and model yourself.",
+      "protocolFamily": "Protocol",
+      "protocolFamilyNote": "Switching the protocol only changes the wire format; the filled base URL and model are kept.",
+      "protocol": {
+        "open_ai": "OpenAI Chat Completions",
+        "open_ai_compatible": "OpenAI-compatible (Chat Completions)",
+        "anthropic": "Anthropic Messages",
+        "gemini": "Google Gemini (generateContent)",
+        "azure_open_ai": "Azure OpenAI (deployment)"
+      },
+      "presetSummary": "Preset derivation",
+      "presetVendor": "Vendor",
+      "presetProtocol": "Request protocol",
+      "presetDerivedEndpoint": "Derived endpoint",
+      "presetSuggestedModels": "Suggested models",
+      "presetModelsHintEmpty": "Fetch the model list first, or enter the model id from the provider's docs.",
       "providerId": "Provider ID",
       "displayName": "Display name",
       "endpoint": "API address (Base URL)",
@@ -1979,7 +2005,8 @@
       "endpointOk": "Service reachable",
       "endpointFailed": "Service unreachable",
       "modelOk": "Model connection available",
-      "modelFailed": "Model connection failed ({{code}}); reachability alone does not prove the model works",
+      "modelFailed": "Model connection failed; reachability alone does not prove the model works",
+      "diagnosticSummary": "Diagnostic detail",
       "testConnection": "Test connection",
       "enable": "Enable",
       "disable": "Disable",

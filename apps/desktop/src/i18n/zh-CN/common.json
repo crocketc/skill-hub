@@ -3,7 +3,7 @@
     "objectNotFound": "目标不存在或已被移除（{{code}}）。",
     "networkDisabled": "网络功能已关闭；需要在设置中开启后才能联网操作。",
     "backupChecksumMismatch": "备份校验失败：备份内容与清单不一致或文件缺失。",
-    "inputInvalid": "输入未通过校验（{{code}}）。",
+    "inputInvalid": "输入未通过校验，请检查填写内容后重试。",
     "sourceUpdate": {
       "noUpstreamConflict": "此 Skill 没有可采用的 upstream 来源，无法执行“采用上游版本”（{{code}}）。",
       "sourceUnavailable": "来源暂不可用，无法完成操作。请确认网络与来源记录后重试。"
@@ -463,6 +463,12 @@
       "assistFailureReason": "失败原因：{{reason}}",
       "assistUnknownFailure": "AI 搜索出现未知问题（{{code}}）。",
       "assistHit": "AI 扩展命中",
+      "assistReady": "AI 辅助可用：搜索时会扩展查询并标记 AI 扩展命中。",
+      "assistUnverified": "AI 配置就绪，连接尚未验证；执行搜索时会实际连接，失败会自动回退普通搜索。",
+      "assistNotConfiguredProvider": "AI 搜索助手尚未配置可用的 LLM 供应商：AI 路径已停用，搜索只使用普通搜索。",
+      "assistNotConfiguredCredential": "当前 LLM 供应商缺少 API 密钥：AI 路径已停用，搜索只使用普通搜索。",
+      "assistCapabilityDisabled": "联网搜索辅助能力未开启：AI 路径已停用，搜索只使用普通搜索；可在设置的 AI 能力开关中开启。",
+      "assistOpenSettings": "前往设置",
       "results": "搜索结果"
     },
     "repo": {
@@ -1921,7 +1927,11 @@
       "description": "网络辅助功能默认需要明确开启，不会自行改变本地管理行为。",
       "disableAll": "关闭所有网络功能",
       "localStillWorks": "本地扫描、搜索、部署和备份仍可使用",
-      "dataScope": "数据范围"
+      "dataScope": "数据范围",
+      "dataScopeExplicitSelection": "仅限你明确开启的功能",
+      "dataScopeGeneric": "按功能最小发送",
+      "dataScopeNote": "开启某项 AI 功能后，只发送该功能所需的最少内容（例如技能描述、搜索关键词）；不会上传整个技能库。",
+      "providerUnconfigured": "未配置"
     },
     "llm": {
       "capabilitiesHeading": "AI 能力开关",
@@ -1949,7 +1959,23 @@
       "cancel": "取消",
       "formHeading": "供应商配置",
       "preset": "从预设选择",
-      "presetPlaceholder": "手动填写",
+      "presetPlaceholder": "自定义（手动配置）",
+      "customManualNote": "手动配置：接口格式、API 地址与模型由你自行填写。",
+      "protocolFamily": "接口格式",
+      "protocolFamilyNote": "切换接口格式只改变请求协议，不会修改已填写的地址与模型。",
+      "protocol": {
+        "open_ai": "OpenAI Chat Completions",
+        "open_ai_compatible": "OpenAI 兼容（Chat Completions）",
+        "anthropic": "Anthropic Messages",
+        "gemini": "Google Gemini（generateContent）",
+        "azure_open_ai": "Azure OpenAI（部署）"
+      },
+      "presetSummary": "预设推导信息",
+      "presetVendor": "厂商",
+      "presetProtocol": "请求协议",
+      "presetDerivedEndpoint": "推导端点",
+      "presetSuggestedModels": "建议模型",
+      "presetModelsHintEmpty": "建议先“获取模型列表”，或按供应商文档填写模型 ID。",
       "providerId": "供应商 ID",
       "displayName": "显示名称",
       "endpoint": "API 地址（Base URL）",
@@ -1979,7 +2005,8 @@
       "endpointOk": "服务可达",
       "endpointFailed": "服务不可达",
       "modelOk": "模型连接可用",
-      "modelFailed": "模型连接失败（{{code}}）；仅服务可达不代表模型可用",
+      "modelFailed": "模型连接失败；仅服务可达不代表模型可用",
+      "diagnosticSummary": "诊断详情",
       "testConnection": "测试连接",
       "enable": "启用",
       "disable": "停用",

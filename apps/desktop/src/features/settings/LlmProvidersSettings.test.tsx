@@ -812,3 +812,171 @@ it("keeps the manual model path intact after a failed fetch and still saves the 
   expect(saves[0]!.draft.id).toBe("deepseek-prod");
   expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
 });
+
+// M-13：预设选择必须如实显示所选厂商与推导信息；只有"自定义"才显示手动配置；
+// 接口格式（协议族）在抽屉内可选且仅限后端支持的协议；切换不清空无关字段。
+
+function summaryValue(drawer: HTMLElement, term: string): string | undefined {
+  const termNode = within(drawer).getByText(term);
+  const row = termNode.closest("div") ?? termNode.parentElement;
+  return row?.querySelector("dd")?.textContent ?? undefined;
+}
+
+it("shows the chosen preset with vendor, protocol, derived endpoint and suggested models", async () => {
+  const user = userEvent.setup();
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  const { facade } = recordingFacade();
+  renderCard(facade, i18n);
+
+  await user.click(await screen.findByRole("button", { name: "新增供应商" }));
+  const presetSelect = screen.getByLabelText("从预设选择") as HTMLSelectElement;
+  await user.selectOptions(presetSelect, "deepseek");
+
+  // 下拉不再回到"手动填写"占位：所选厂商保持可见。
+  expect(presetSelect.value).toBe("deepseek");
+
+  const drawer = screen.getByRole("dialog");
+  expect(summaryValue(drawer, "厂商")).toBe("DeepSeek");
+  expect(summaryValue(drawer, "请求协议")).toBe("OpenAI 兼容（Chat Completions）");
+  expect(summaryValue(drawer, "推导端点")).toBe("https://api.deepseek.com/v1");
+  // 预设不携带模型目录（需求 5.42）：建议模型给可执行的下一步而不是编造列表。
+  expect(summaryValue(drawer, "建议模型")).toContain("获取模型列表");
+  expect(within(drawer).queryByText(/手动配置：/)).not.toBeInTheDocument();
+});
+
+it("shows the manual-configuration note only while no preset is selected", async () => {
+  const user = userEvent.setup();
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  const { facade } = recordingFacade();
+  renderCard(facade, i18n);
+
+  await user.click(await screen.findByRole("button", { name: "新增供应商" }));
+
+  const drawer = screen.getByRole("dialog");
+  const presetSelect = screen.getByLabelText("从预设选择") as HTMLSelectElement;
+  expect(presetSelect.value).toBe("");
+  expect(within(drawer).getByText(/手动配置：/)).toBeVisible();
+  expect(within(drawer).queryByText("推导端点")).not.toBeInTheDocument();
+
+  await user.selectOptions(presetSelect, "deepseek");
+  expect(within(drawer).queryByText(/手动配置：/)).not.toBeInTheDocument();
+});
+
+it("offers every backend-supported protocol family in the drawer and keeps typed fields on switch", async () => {
+  const user = userEvent.setup();
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  const { facade, saves } = recordingFacade();
+  renderCard(facade, i18n);
+
+  await user.click(await screen.findByRole("button", { name: "新增供应商" }));
+  await user.type(screen.getByRole("textbox", { name: "供应商 ID" }), "gateway");
+  await user.type(screen.getByRole("textbox", { name: "API 地址（Base URL）" }), "https://gateway.test");
+  await user.type(screen.getByRole("combobox", { name: "模型" }), "gw-chat");
+  await user.type(screen.getByLabelText("API 密钥"), "sk-acceptance-not-real");
+
+  const protocolSelect = screen.getByRole("combobox", { name: "接口格式" }) as HTMLSelectElement;
+  const values = Array.from(protocolSelect.options).map((option) => option.value);
+  expect(values).toEqual(["open_ai", "open_ai_compatible", "anthropic", "gemini", "azure_open_ai"]);
+
+  await user.selectOptions(protocolSelect, "anthropic");
+  await user.click(screen.getByRole("button", { name: "保存" }));
+
+  await waitFor(() => expect(saves).toHaveLength(1));
+  expect(saves[0]!.draft.protocol).toBe("anthropic");
+  // 切换接口格式不清空用户已输入的无关字段。
+  expect(saves[0]!.draft.endpoint).toBe("https://gateway.test");
+  expect(saves[0]!.draft.model).toBe("gw-chat");
+  expect(saves[0]!.draft.credential).toBe("sk-acceptance-not-real");
+});
+
+it("clears a stale draft test result when the protocol family changes", async () => {
+  const user = userEvent.setup();
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  const { facade } = recordingFacade({
+    testResult: {
+      endpoint: { reachable: true, latency_ms: 42 },
+      model: { ok: true, latency_ms: 88 },
+    },
+  });
+  const user2 = await openFilledDraftForm(i18n, facade);
+
+  await user2.click(screen.getByRole("button", { name: "测试此配置" }));
+  expect(await screen.findByText(/模型连接可用/)).toBeVisible();
+
+  await user.selectOptions(screen.getByRole("combobox", { name: "接口格式" }), "anthropic");
+
+  expect(screen.queryByText(/模型连接可用/)).not.toBeInTheDocument();
+  expect(screen.queryByText(/服务可达/)).not.toBeInTheDocument();
+});
+
+it("keeps a typed credential and model when a preset is applied afterwards", async () => {
+  const user = userEvent.setup();
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  const { facade, saves } = recordingFacade();
+  renderCard(facade, i18n);
+
+  await user.click(await screen.findByRole("button", { name: "新增供应商" }));
+  await user.type(screen.getByRole("textbox", { name: "供应商 ID" }), "deepseek");
+  await user.type(screen.getByRole("combobox", { name: "模型" }), "deepseek-chat");
+  await user.type(screen.getByLabelText("API 密钥"), "sk-acceptance-not-real");
+
+  await user.selectOptions(screen.getByLabelText("从预设选择"), "deepseek");
+
+  // 预设补齐端点/协议/部署方式，但不吞掉用户已输入的模型与密钥。
+  expect(screen.getByRole("textbox", { name: "API 地址（Base URL）" })).toHaveValue("https://api.deepseek.com/v1");
+  expect(screen.getByRole("combobox", { name: "模型" })).toHaveValue("deepseek-chat");
+  expect(screen.getByLabelText("API 密钥")).toHaveValue("sk-acceptance-not-real");
+
+  await user.click(screen.getByRole("button", { name: "保存" }));
+  await waitFor(() => expect(saves).toHaveLength(1));
+  expect(saves[0]!.draft).toMatchObject({
+    protocol: "open_ai_compatible",
+    deployment: "online",
+    endpoint: "https://api.deepseek.com/v1",
+    model: "deepseek-chat",
+    credential: "sk-acceptance-not-real",
+  });
+});
+
+it("surfaces a protocol mismatch with the localized protocol copy instead of a raw code", async () => {
+  const user = userEvent.setup();
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  const { facade } = recordingFacade({
+    providers: [PROVIDERS[0]],
+    testResult: {
+      endpoint: { reachable: true, latency_ms: 20 },
+      model: { ok: false, latency_ms: null },
+      model_failure_code: "llm.protocol_incompatible",
+    },
+  });
+  renderCard(facade, i18n);
+
+  await user.click(await screen.findByRole("button", { name: "测试连接" }));
+
+  expect(await screen.findByText("服务可达 (20 ms)")).toBeVisible();
+  expect(screen.getByText("模型服务协议不兼容，请检查供应商配置。")).toBeVisible();
+  expect(screen.queryByText(/llm\.protocol_incompatible/)).not.toBeInTheDocument();
+});
+
+// M-05：无法映射的失败码不进入主文案（避免中英混排），折叠进可选诊断详情。
+it("keeps unkeyed model failure codes out of the message and collapses them into diagnostics", async () => {
+  const user = userEvent.setup();
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  const { facade } = recordingFacade({
+    providers: [PROVIDERS[0]],
+    testResult: {
+      endpoint: { reachable: true, latency_ms: 20 },
+      model: { ok: false, latency_ms: null },
+      model_failure_code: "gateway.model_disabled_vendor_suffix",
+    },
+  });
+  renderCard(facade, i18n);
+
+  await user.click(await screen.findByRole("button", { name: "测试连接" }));
+
+  const message = await screen.findByText(/模型连接失败/);
+  expect(message.textContent).not.toContain("gateway.model_disabled_vendor_suffix");
+  const details = message.parentElement?.querySelector("details");
+  expect(details).not.toBeNull();
+  expect(details!.textContent).toContain("gateway.model_disabled_vendor_suffix");
+});
