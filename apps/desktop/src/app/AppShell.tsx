@@ -200,7 +200,11 @@ export function AppShell({ refreshSnapshot, snapshot, verification }: AppShellPr
                 <NotificationBell />
               </div>
             </header>
-          ) : null}
+          ) : (
+            <div className="sh-app-shell__detail-notifications">
+              <NotificationBell />
+            </div>
+          )}
           <main className="sh-app-shell__content" id="main-content" tabIndex={-1}>
             <Outlet context={{ refreshSnapshot, snapshot } satisfies BootstrapOutletContext} />
           </main>

@@ -96,4 +96,19 @@ test.describe("app shell collapse button placement", () => {
     await expect(page.getByRole("complementary", { name: NAVIGATION })).toBeVisible();
     await expectNoRootHorizontalOverflow(page, "shell@1024x600");
   });
+
+  test("keeps the notification bell reachable on skill detail routes", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.goto("/__preview/skill-detail/skill-pdf");
+
+    // 详情路由隐藏顶栏，但通知中心入口仍以浮动铃铛保持可达（≥40px 命中区域）。
+    const bell = page.getByRole("button", { name: "Notifications" });
+    await expect(bell).toBeVisible();
+    const box = (await bell.boundingBox())!;
+    expect(box.height).toBeGreaterThanOrEqual(40);
+    expect(box.width).toBeGreaterThanOrEqual(40);
+
+    await bell.click();
+    await expect(page.getByRole("dialog", { name: "Notifications" })).toBeVisible();
+  });
 });

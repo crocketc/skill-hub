@@ -793,11 +793,20 @@ a {
 .sh-app-shell__workspace {
   /* 容器查询基础：页面级响应式判断优先基于内容容器宽度。 */
   container: workspace / inline-size;
+  position: relative;
   display: grid;
   min-height: 0;
   min-width: 0;
   grid-template-rows: auto minmax(0, 1fr);
   overflow: hidden;
+}
+
+/* 详情路由隐藏顶栏时，通知中心入口以浮动铃铛保持可达（M-21 交接项）。 */
+.sh-app-shell__detail-notifications {
+  position: absolute;
+  top: var(--space-3);
+  right: var(--space-4);
+  z-index: 20;
 }
 
 .sh-app-shell.is-sidebar-collapsed {

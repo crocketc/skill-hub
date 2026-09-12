@@ -26,10 +26,10 @@ afterEach(() => {
   resetBackgroundScan();
 });
 
-async function renderShell() {
+async function renderShell(initialPath = "/") {
   const i18n = await createSkillHubI18n(["en-US"]);
   render(
-    <MemoryRouter initialEntries={["/"]}>
+    <MemoryRouter initialEntries={[initialPath]}>
       <I18nextProvider i18n={i18n}>
         <AppShell
           refreshSnapshot={async () => undefined}
@@ -78,5 +78,16 @@ describe("AppShell", () => {
     beginBackgroundScan(Promise.resolve({ kind: "completed", result: completedScan }), []);
 
     expect(await screen.findByText("Background scan finished")).toBeVisible();
+  });
+
+  it("keeps the notification center reachable on skill detail routes", async () => {
+    await renderShell("/library/obsidian-git");
+
+    const bell = screen.getByRole("button", { name: "Notifications" });
+    expect(bell).toBeVisible();
+
+    const user = userEvent.setup();
+    await user.click(bell);
+    expect(await screen.findByRole("dialog", { name: "Notifications" })).toBeVisible();
   });
 });
