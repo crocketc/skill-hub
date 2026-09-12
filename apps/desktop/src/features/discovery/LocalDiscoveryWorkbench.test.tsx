@@ -7,6 +7,7 @@ import type {
   SourceSearchHit,
   SourceSearchPage,
 } from "../../api/bindings";
+import discoveryCss from "./discovery.css?raw";
 import { LocalDiscoveryWorkbench } from "./LocalDiscoveryWorkbench";
 import type { SkillRepo } from "../../api/bindings";
 
@@ -357,6 +358,35 @@ it("groups discovered agent directories by brand with merged kind badges", async
   expect(screen.getByText("C:/u/broken/skills")).toBeVisible();
   // 可用目录不再重复标注不可用徽标。
   expect(screen.getAllByText("不可用")).toHaveLength(1);
+});
+
+it("keeps very long directory paths wrapped and reachable through a title hint (P2-02)", async () => {
+  const longPath = `C:/very-long-root/${"segment-".repeat(24)}skills`;
+  const longSnapshot: DiscoverySnapshot = {
+    ...agentGroupSnapshot,
+    logical_targets: agentGroupSnapshot.logical_targets.map((target) =>
+      target.id === "lt-agents" ? { ...target, path: longPath } : target,
+    ),
+    physical_targets: agentGroupSnapshot.physical_targets.map((target) =>
+      target.id === "phys-agents" ? { ...target, path: longPath } : target,
+    ),
+  };
+  render(
+    <I18nextProvider i18n={createSkillHubI18nSync()}>
+      <LocalDiscoveryWorkbench
+        facade={{ getDiscoverySnapshot: async () => longSnapshot, scanTargets: async () => scanResult, searchOnlineSources: async () => searchPage([]), ...repoDiscoveryStubs }}
+      />
+    </I18nextProvider>,
+  );
+
+  const pathCode = await screen.findByText(longPath);
+  expect(pathCode).toHaveClass("sh-discovery-workbench__agent-path");
+  // 完整值经原生 title 提示可达（与忽略项规则值同一策略）。
+  expect(pathCode).toHaveAttribute("title", longPath);
+  // CSS 层锁定换行策略：不靠横向滚动或裁切展示超长路径。
+  expect(discoveryCss).toMatch(
+    /\.sh-discovery-workbench__agent-path\s*\{[^}]*overflow-wrap:\s*anywhere/,
+  );
 });
 
 it("excludes a directory only after confirmation via the ignore rule and never deletes files", async () => {

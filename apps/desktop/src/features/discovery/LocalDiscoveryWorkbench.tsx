@@ -242,7 +242,9 @@ function AgentCard({
           </span>
         ) : null}
       </div>
-      <code className="sh-discovery-workbench__agent-path">{card.path}</code>
+      {/* P2-02：超长路径换行展示（overflow-wrap: anywhere），完整值经原生
+          title 提示可达——与忽略项规则值和卡片描述同一策略。 */}
+      <code className="sh-discovery-workbench__agent-path" title={card.path}>{card.path}</code>
       <ConfirmDialog
         cancelLabel={t("actions.cancel")}
         confirmLabel={t("discovery.workbench.excludeConfirm")}
