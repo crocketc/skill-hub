@@ -1,19 +1,32 @@
 import { act, screen, render, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { I18nextProvider } from "react-i18next";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { MemoryRouter } from "react-router-dom";
+import { beforeEach, describe, expect, it, vi, type ReactNode } from "vitest";
 import { createSkillHubI18n } from "../../i18n";
+import { AppNotificationsProvider } from "../../ui/notifications";
 import { createOperationTracker } from "../../platform/operationTracker";
 import { clearSessionSelectedSources } from "./sessionSources";
 import { createMockImportFacade, unavailableImportFacade, type ImportPlan, type ImportResult } from "./api";
 import { ImportWizard } from "./ImportWizard";
 
+/** 通知接线测试壳：向导消费全局通知服务（AppShell 同款 Provider + Router）。 */
+function TestShell({ children }: { children: ReactNode }) {
+  return (
+    <MemoryRouter>
+      <AppNotificationsProvider>{children}</AppNotificationsProvider>
+    </MemoryRouter>
+  );
+}
+
 async function renderWizard(facade = createMockImportFacade({ scenario: "safe-local" }), tracker?: ReturnType<typeof createOperationTracker>) {
   const i18n = await createSkillHubI18n(["zh-CN"]);
   render(
-    <I18nextProvider i18n={i18n}>
-      <ImportWizard facade={facade} tracker={tracker} />
-    </I18nextProvider>,
+    <TestShell>
+      <I18nextProvider i18n={i18n}>
+        <ImportWizard facade={facade} tracker={tracker} />
+      </I18nextProvider>
+    </TestShell>,
   );
   return facade;
 }
@@ -21,14 +34,16 @@ async function renderWizard(facade = createMockImportFacade({ scenario: "safe-lo
 async function renderGuidedWizard(facade = createMockImportFacade({ scenario: "safe-local" }), variant?: "onboarding" | "standard") {
   const i18n = await createSkillHubI18n(["zh-CN"]);
   render(
-    <I18nextProvider i18n={i18n}>
-      <ImportWizard
-        facade={facade}
-        initialSources={["C:/codex/skills", "C:/claude/skills"]}
-        initialSourceText="C:/codex/skills"
-        variant={variant}
-      />
-    </I18nextProvider>,
+    <TestShell>
+      <I18nextProvider i18n={i18n}>
+        <ImportWizard
+          facade={facade}
+          initialSources={["C:/codex/skills", "C:/claude/skills"]}
+          initialSourceText="C:/codex/skills"
+          variant={variant}
+        />
+      </I18nextProvider>
+    </TestShell>,
   );
   return facade;
 }
@@ -128,9 +143,11 @@ it("keeps the wizard recoverable when the host facade is unavailable", async () 
   const user = userEvent.setup();
   const i18n = await createSkillHubI18n(["zh-CN"]);
   render(
-    <I18nextProvider i18n={i18n}>
+    <TestShell>
+      <I18nextProvider i18n={i18n}>
       <ImportWizard facade={unavailableImportFacade} />
-    </I18nextProvider>,
+    </I18nextProvider>
+    </TestShell>,
   );
 
   await user.type(screen.getByLabelText("来源"), "C:/skills/pdf");
@@ -417,9 +434,11 @@ it("restores the selected sources when the wizard reopens in the same session", 
   const facade = createMockImportFacade({ scenario: "safe-local" });
   const i18n = await createSkillHubI18n(["zh-CN"]);
   const { unmount } = render(
-    <I18nextProvider i18n={i18n}>
+    <TestShell>
+      <I18nextProvider i18n={i18n}>
       <ImportWizard facade={facade} initialSources={["C:/codex/skills"]} />
-    </I18nextProvider>,
+    </I18nextProvider>
+    </TestShell>,
   );
   await user.clear(screen.getByLabelText("来源"));
   await user.type(screen.getByLabelText("来源"), "C:/extra/skills");
@@ -428,9 +447,11 @@ it("restores the selected sources when the wizard reopens in the same session", 
 
   // 取消/关闭向导后再次进入：已选来源保留（会话内）；落库仍只发生在提交。
   render(
-    <I18nextProvider i18n={i18n}>
+    <TestShell>
+      <I18nextProvider i18n={i18n}>
       <ImportWizard facade={facade} />
-    </I18nextProvider>,
+    </I18nextProvider>
+    </TestShell>,
   );
   const list = screen.getByRole("list", { name: "已选来源" });
   expect(within(list).getByText("C:/codex/skills")).toBeVisible();
@@ -444,22 +465,26 @@ it("keeps onboarding selections local instead of restoring them from the session
   const facade = createMockImportFacade({ scenario: "safe-local" });
   const i18n = await createSkillHubI18n(["zh-CN"]);
   const first = render(
-    <I18nextProvider i18n={i18n}>
+    <TestShell>
+      <I18nextProvider i18n={i18n}>
       <ImportWizard
         directoryPicker={picker}
         facade={facade}
         initialSources={["C:/codex/skills"]}
         variant="onboarding"
       />
-    </I18nextProvider>,
+    </I18nextProvider>
+    </TestShell>,
   );
   await user.click(screen.getByRole("button", { name: "选择本地目录" }));
   first.unmount();
 
   render(
-    <I18nextProvider i18n={i18n}>
+    <TestShell>
+      <I18nextProvider i18n={i18n}>
       <ImportWizard facade={facade} initialSources={["C:/codex/skills"]} variant="onboarding" />
-    </I18nextProvider>,
+    </I18nextProvider>
+    </TestShell>,
   );
   const list = screen.getByRole("list", { name: "已选来源" });
   const items = within(list).getAllByRole("listitem");
@@ -487,7 +512,8 @@ it("adds the picked local directory to the onboarding selection without the manu
   const facade = createMockImportFacade({ scenario: "safe-local" });
   const i18n = await createSkillHubI18n(["zh-CN"]);
   render(
-    <I18nextProvider i18n={i18n}>
+    <TestShell>
+      <I18nextProvider i18n={i18n}>
       <ImportWizard
         directoryPicker={picker}
         facade={facade}
@@ -495,7 +521,8 @@ it("adds the picked local directory to the onboarding selection without the manu
         initialSourceText=""
         variant="onboarding"
       />
-    </I18nextProvider>,
+    </I18nextProvider>
+    </TestShell>,
   );
 
   await user.click(screen.getByRole("button", { name: "选择本地目录" }));
@@ -516,9 +543,11 @@ it("keeps the acquire action available and shows per-source counts when the sour
   const facade = createMockImportFacade({ scenario: "safe-local" });
   const i18n = await createSkillHubI18n(["zh-CN"]);
   render(
-    <I18nextProvider i18n={i18n}>
+    <TestShell>
+      <I18nextProvider i18n={i18n}>
       <ImportWizard facade={facade} initialSources={["C:/codex/skills", "C:/claude/skills"]} initialSourceText="" />
-    </I18nextProvider>,
+    </I18nextProvider>
+    </TestShell>,
   );
 
   expect(screen.getByRole("textbox", { name: "来源" })).toHaveValue("");
@@ -539,13 +568,15 @@ it("normalizes every initialization source before displaying and acquiring it", 
   const secondSource = "\\\\?\\C:\\Users\\demo\\.codex\\skills";
   const i18n = await createSkillHubI18n(["zh-CN"]);
   render(
-    <I18nextProvider i18n={i18n}>
+    <TestShell>
+      <I18nextProvider i18n={i18n}>
       <ImportWizard
         facade={facade}
         initialSourceText={firstSource}
         initialSources={[firstSource, secondSource]}
       />
-    </I18nextProvider>,
+    </I18nextProvider>
+    </TestShell>,
   );
 
   expect(screen.getByRole("textbox", { name: "来源" })).toHaveValue("C:\\Users\\demo\\.claude\\skills");
@@ -564,9 +595,11 @@ it("fills the source from the native directory picker", async () => {
   const picker = { pickDirectory: vi.fn(async () => "\\\\?\\C:\\picked\\skills") };
   const i18n = await createSkillHubI18n(["zh-CN"]);
   render(
-    <I18nextProvider i18n={i18n}>
+    <TestShell>
+      <I18nextProvider i18n={i18n}>
       <ImportWizard directoryPicker={picker} />
-    </I18nextProvider>,
+    </I18nextProvider>
+    </TestShell>,
   );
 
   await user.click(screen.getByRole("button", { name: "选择本地目录" }));
@@ -581,13 +614,15 @@ it("adds a directory from the native picker without clearing selected scan sourc
   const facade = createMockImportFacade({ scenario: "safe-local" });
   const i18n = await createSkillHubI18n(["zh-CN"]);
   render(
-    <I18nextProvider i18n={i18n}>
+    <TestShell>
+      <I18nextProvider i18n={i18n}>
       <ImportWizard
         directoryPicker={picker}
         facade={facade}
         initialSources={["C:/codex/skills", "C:/claude/skills"]}
       />
-    </I18nextProvider>,
+    </I18nextProvider>
+    </TestShell>,
   );
 
   await user.click(screen.getByRole("button", { name: "选择本地目录" }));
@@ -625,9 +660,11 @@ it("requires a fresh conflict decision when retrying an import", async () => {
 async function renderWithTracker(facade: ReturnType<typeof createMockImportFacade>, tracker: ReturnType<typeof createOperationTracker>) {
   const i18n = await createSkillHubI18n(["zh-CN"]);
   return render(
-    <I18nextProvider i18n={i18n}>
+    <TestShell>
+      <I18nextProvider i18n={i18n}>
       <ImportWizard facade={facade} tracker={tracker} />
-    </I18nextProvider>,
+    </I18nextProvider>
+    </TestShell>,
   );
 }
 
@@ -676,9 +713,11 @@ it("refuses to commit while another import is still running", async () => {
   facade.commitImport = vi.fn(async () => []);
   const i18n = await createSkillHubI18n(["zh-CN"]);
   render(
-    <I18nextProvider i18n={i18n}>
+    <TestShell>
+      <I18nextProvider i18n={i18n}>
       <ImportWizard facade={facade} tracker={tracker} />
-    </I18nextProvider>,
+    </I18nextProvider>
+    </TestShell>,
   );
 
   await user.type(screen.getByLabelText("来源"), "C:/incoming");
@@ -721,6 +760,75 @@ it("shows candidate progress while commit is in flight", async () => {
   expect(await screen.findByText("正在提交导入（已完成 0/2，当前：safe-pdf）")).toBeVisible();
   await act(async () => {
     release([]);
+  });
+});
+
+describe("global notifications for import outcomes", () => {
+  async function reachCommit(facade: ReturnType<typeof createMockImportFacade>) {
+    const user = userEvent.setup();
+    await renderWizard(facade);
+    await user.type(screen.getByLabelText("来源"), "C:/incoming");
+    await user.click(screen.getByRole("button", { name: "解析来源" }));
+    await user.click(await screen.findByRole("button", { name: "继续选择候选" }));
+    await user.click(screen.getByRole("button", { name: "全选可导入候选" }));
+    await user.click(screen.getByRole("button", { name: "分析冲突" }));
+    await screen.findByRole("button", { name: "提交导入" });
+    return user;
+  }
+
+  it("notifies success with a view-library action when an import commits", async () => {
+    const facade = createMockImportFacade({ scenario: "safe-local" });
+    const user = await reachCommit(facade);
+    await user.click(screen.getByRole("button", { name: "提交导入" }));
+
+    // 全局通知：成功 toast 汇总结果并带"查看库中 Skill"跳转。
+    expect(await screen.findByText("导入已完成")).toBeVisible();
+    const action = screen.getByRole("link", { name: "查看库中 Skill" });
+    expect(action).toHaveAttribute("href", "/library");
+    // 逐对象结果详情仍保留在流程页（摘要），不进通知。
+    expect(screen.getByRole("heading", { name: "导入结果" })).toBeVisible();
+    expect(screen.getByText("成功 2")).toBeVisible();
+  });
+
+  it("marks a finished import with per-object failures as a warning notice", async () => {
+    const facade = createMockImportFacade({ scenario: "safe-local" });
+    facade.commitImport = vi.fn(async (): Promise<ImportResult[]> => [
+      { candidateId: "safe-pdf", action: "copy", status: "succeeded", message: "已导入" },
+      { candidateId: "safe-browser", action: "copy", status: "failed", message: "写入失败" },
+    ]);
+    const user = await reachCommit(facade);
+    await user.click(screen.getByRole("button", { name: "提交导入" }));
+
+    const notice = await screen.findByTestId("notice-warning");
+    expect(within(notice).getByText("导入已完成")).toBeVisible();
+    expect(within(notice).getByText(/失败 1/)).toBeVisible();
+  });
+
+  it("notifies a failed submission while the failure detail stays in the flow page", async () => {
+    const facade = createMockImportFacade({ scenario: "safe-local" });
+    facade.commitImport = vi.fn(async () => {
+      throw new Error("simulated commit failure");
+    });
+    const user = await reachCommit(facade);
+    await user.click(screen.getByRole("button", { name: "提交导入" }));
+
+    const notice = await screen.findByTestId("notice-danger");
+    expect(within(notice).getByText("导入提交失败")).toBeVisible();
+    expect(within(notice).getByText(/simulated commit failure/)).toBeVisible();
+    // 失败详情同时留在流程页（失败态告警）。
+    expect(screen.getAllByRole("alert").length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("notifies when the user cancels the import flow", async () => {
+    const user = userEvent.setup();
+    await renderWizard(createMockImportFacade({ scenario: "cancelled" }));
+
+    await user.type(screen.getByLabelText("来源"), "C:\\Skills\\pdf");
+    await user.click(screen.getByRole("button", { name: "解析来源" }));
+    await user.click(await screen.findByRole("button", { name: "取消获取" }));
+
+    expect(await screen.findByText("导入流程已取消")).toBeVisible();
+    expect(document.querySelector('[data-testid="notice-info"]')).not.toBeNull();
   });
 });
 

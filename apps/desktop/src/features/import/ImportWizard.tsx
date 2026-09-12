@@ -1,6 +1,7 @@
 import { useEffect, useReducer, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { describeNativeError } from "../../api/nativeErrors";
+import { useAppNotifications } from "../../ui/notifications";
 import { Button } from "../../ui/Button";
 import { DataState } from "../../ui/DataState";
 import { ConflictResolution } from "./ConflictResolution";
@@ -308,6 +309,8 @@ export function ImportWizard({
   onOpenLibrary = () => undefined,
 }: ImportWizardProps) {
   const { t } = useTranslation();
+  // 验收反馈：导入提交的成功/失败/取消接入全局通知；错误详情仍留在流程页。
+  const { notify } = useAppNotifications();
   const normalizedInitialSources = Array.from(new Set(initialSources.map(normalizeWindowsPath)));
   const normalizedInitialSourceText = normalizeWindowsPath(initialSourceText);
   const [state, dispatch] = useReducer(reducer, { ...initialState, sourceText: normalizedInitialSourceText });
@@ -421,6 +424,7 @@ type: "failed",
     operationRef.current += 1;
     abortRef.current?.abort();
     await facade.cancel();
+    notify({ tone: "info", title: t("importWorkflow.notifications.cancelledTitle") });
     dispatch({ type: "cancelled" });
   };
 
@@ -534,17 +538,31 @@ type: "failed",
         skipped: results.filter((result) => result.status === "skipped").length,
       };
       tracker.complete(trackedId, summary);
+      // 全局通知不依赖向导仍挂载：用户离开页面后提交完成也要可见。
+      notify({
+        tone: summary.failed > 0 ? "warning" : "success",
+        title: t("importWorkflow.notifications.succeededTitle"),
+        detail: t("importWorkflow.notifications.succeededDetail", {
+          failed: summary.failed,
+          skipped: summary.skipped,
+          succeeded: summary.succeeded,
+        }),
+        action: { label: t("importWorkflow.notifications.openLibrary"), to: "/library" },
+      });
       if (operation === operationRef.current) {
         dispatch({ type: "commit_succeeded", results });
         onComplete?.(results);
       }
     } catch (error) {
-      tracker.fail(
-        trackedId,
-        describeNativeError(error, (key, options) => String(t(key as never, options as never)), "importWorkflow.errors.generic"),
-      );
+      const commitError = describeNativeError(error, (key, options) => String(t(key as never, options as never)), "importWorkflow.errors.generic");
+      tracker.fail(trackedId, commitError);
+      notify({
+        tone: "danger",
+        title: t("importWorkflow.notifications.failedTitle"),
+        detail: commitError,
+      });
       if (operation === operationRef.current) {
-        dispatch({ type: "failed", error: describeNativeError(error, (key, options) => String(t(key as never, options as never)), "importWorkflow.errors.generic"), previousPhase: "conflicts" });
+        dispatch({ type: "failed", error: commitError, previousPhase: "conflicts" });
       }
     }
   };

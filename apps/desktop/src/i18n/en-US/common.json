@@ -355,6 +355,13 @@
       "clearAll": "Clear all",
       "retry": "Retry scan",
       "retrySource": "Rescan {{source}}"
+    },
+    "notifications": {
+      "succeededTitle": "Import completed",
+      "succeededDetail": "Succeeded {{succeeded}} · Failed {{failed}} · Skipped {{skipped}}",
+      "failedTitle": "Import submission failed",
+      "cancelledTitle": "Import flow cancelled",
+      "openLibrary": "View library skills"
     }
   },
   "discovery": {

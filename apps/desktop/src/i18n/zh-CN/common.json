@@ -355,6 +355,13 @@
       "clearAll": "全部清空",
       "retry": "重试扫描",
       "retrySource": "重新扫描 {{source}}"
+    },
+    "notifications": {
+      "succeededTitle": "导入已完成",
+      "succeededDetail": "成功 {{succeeded}} · 失败 {{failed}} · 跳过 {{skipped}}",
+      "failedTitle": "导入提交失败",
+      "cancelledTitle": "导入流程已取消",
+      "openLibrary": "查看库中 Skill"
     }
   },
   "discovery": {
