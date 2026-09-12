@@ -678,7 +678,8 @@ export function SkillQuickDrawer({
   const [metadataSaveFailed, setMetadataSaveFailed] = useState(false);
   const [tagsSaveFailed, setTagsSaveFailed] = useState(false);
   const [localView, setLocalView] = useState<SkillQuickView>();
-  const [tagAction, setTagAction] = useState<BatchTagAction>();
+  // 抽屉只经对话框批量添加标签；移除走逐个 chip（onRemoveTag → saveTags）。
+  const [tagAction, setTagAction] = useState<Extract<BatchTagAction, "add_tag">>();
   const dragSessionRef = useRef<DragSession>();
   const preferenceSaveQueueRef = useRef<Promise<void>>(Promise.resolve());
   const preferenceSaveRequestRef = useRef(0);
@@ -955,15 +956,10 @@ export function SkillQuickDrawer({
 
   const confirmTagAction = (tags: string[]) => {
     if (!tagAction || !view) return;
-    const action = tagAction;
     setTagAction(undefined);
     // P1-10：抽屉内标签写经 set_metadata 读改写落地，不走生产未绑定的
-    // emitBatchIntent（该路径此前静默失败）。添加并入现有标签，移除取差集。
-    saveTags(
-      action === "add_tag"
-        ? [...new Set([...view.tags, ...tags])]
-        : view.tags.filter((current) => !tags.includes(current)),
-    );
+    // emitBatchIntent（该路径此前静默失败）。批量添加并入现有标签。
+    saveTags([...new Set([...view.tags, ...tags])]);
   };
 
   const saveTags = (nextTags: string[]) => {
