@@ -88,7 +88,9 @@ function toTableRow(item: SkillListItem, agentTargets: Map<string, AgentDeployme
     ownership: item.author ?? undefined,
     pendingCount: 0,
     projectDeploymentCount: item.project_deployment_count,
-    purpose: item.translated_description ?? item.original_description,
+    // M-21 #6：用途列按“用户设置用途优先，空则回退 Skill 原始描述”渲染。
+    purpose: item.user_purpose || item.original_description,
+    userPurpose: item.user_purpose ?? undefined,
     requirements: [],
     source: item.source_locator ?? item.source_kind ?? undefined,
     tags: item.tags,
@@ -275,6 +277,7 @@ export const nativeSkillLibraryFacade: SkillLibraryFacade = {
       view.currentVersion = skill.current_version_label ?? "unknown";
       // QA-008：用途显示用户独立撰写的字段，不用译文或原文冒充。
       view.purpose = skill.user_purpose ?? "";
+      view.userPurpose = skill.user_purpose ?? undefined;
       view.originalDescription = skill.original_description;
       view.translatedDescription = skill.translated_description ?? undefined;
       view.tags = skill.tags;
@@ -339,7 +342,8 @@ export const nativeSkillLibraryFacade: SkillLibraryFacade = {
         tags: patch.tags === undefined ? skill.tags : patch.tags,
         author: skill.author,
         license: skill.license,
-        user_purpose: skill.user_purpose,
+        // M-21 #6：用途补丁缺省时保持当前值；空串按清空处理。
+        user_purpose: patch.purpose === undefined ? skill.user_purpose : patch.purpose || null,
       },
     });
     if (commandResult.type !== "operation_summary") throw unavailableResult();

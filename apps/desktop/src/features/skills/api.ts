@@ -76,6 +76,8 @@ export interface SkillTableRow {
   pendingCount: number;
   projectDeploymentCount: number;
   purpose: string;
+  /** 用户独立撰写的“我的用途”；列表用途列按 用户用途→原始描述 回退（M-21）。 */
+  userPurpose?: string;
   requirements: string[];
   source?: string;
   tags: string[];
@@ -103,6 +105,8 @@ export interface SkillQuickView extends SkillTableRow {
 export interface SkillMetadataPatch {
   alias?: string | null;
   note?: string | null;
+  /** “我的用途”（后端 user_purpose）：null 表示清空；缺省保持不变（M-21）。 */
+  purpose?: string | null;
   /** 整体覆盖语义：提供时先读当前元数据再合并（P1-10 标签读写）。 */
   tags?: string[];
 }

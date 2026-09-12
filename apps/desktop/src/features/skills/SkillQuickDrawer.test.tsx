@@ -784,6 +784,54 @@ it("shows the runtime name beside the aliased display name in the identity regio
   expect(within(identity as HTMLElement).getByText("pdf-reader")).toBeVisible();
 });
 
+it("keeps the runtime original name after saving a new alias (alias never renames)", async () => {
+  // M-21 双证据（前端组件侧）：别名编辑只更新别名，原名展示保持不变；
+  // runtime 原名不被改写的后端契约由 skillhub-core catalog_rules 覆盖。
+  const facade = createMockSkillLibraryFacade({
+    quickView: { ...QUICK_VIEW, alias: "PDF Reader", originalName: "pdf-reader" },
+  });
+  await renderDrawer({ facade });
+
+  fireEvent.click(await screen.findByRole("button", { name: "Edit alias" }));
+  const aliasInput = screen.getByRole("textbox", { name: "Alias" });
+  fireEvent.change(aliasInput, { target: { value: "PDF 阅读助手" } });
+  fireEvent.blur(aliasInput);
+
+  await waitFor(() => {
+    expect(facade.calls.saveSkillMetadata).toContainEqual({
+      skillId: "skill-pdf",
+      patch: { alias: "PDF 阅读助手" },
+    });
+  });
+  const drawer = screen.getByTestId("skill-quick-drawer");
+  const identity = drawer.querySelector(".sh-skill-drawer__identity");
+  if (!identity) throw new Error("Expected the drawer identity region");
+  // 别名已更新，原名（runtime_name）在抽屉身份区保持可见且未被改写。
+  expect(within(identity as HTMLElement).getByText("Original name:")).toBeVisible();
+  expect(within(identity as HTMLElement).getByText("pdf-reader")).toBeVisible();
+  expect(within(identity as HTMLElement).getByText("PDF 阅读助手")).toBeVisible();
+});
+
+it("edits my purpose in the drawer and saves it as independent metadata", async () => {
+  // M-21 #6：“我的用途”在抽屉内获得编辑入口（与别名/备注同一编辑形态）。
+  const facade = createMockSkillLibraryFacade();
+  await renderDrawer({ facade });
+
+  expect(await screen.findByText("Read and extract PDFs")).toBeVisible();
+  fireEvent.click(screen.getByRole("button", { name: "Edit purpose" }));
+  const purposeInput = screen.getByRole("textbox", { name: "My purpose" });
+  fireEvent.change(purposeInput, { target: { value: "用于合同扫描件归档" } });
+  fireEvent.blur(purposeInput);
+
+  await waitFor(() => {
+    expect(facade.calls.saveSkillMetadata).toContainEqual({
+      skillId: "skill-pdf",
+      patch: { purpose: "用于合同扫描件归档" },
+    });
+  });
+  expect(screen.getByText("用于合同扫描件归档")).toBeVisible();
+});
+
 it("clamps long description fields into scrollable areas instead of stretching the drawer", async () => {
   const facade = createMockSkillLibraryFacade({
     quickView: {

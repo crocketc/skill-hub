@@ -189,6 +189,19 @@
 
 /* —— 快速抽屉内的操作控件 —— */
 
+/* M-21 #6：用途编辑行（标签 + 值/输入 + 编辑按钮）与备注行同一 flex 形态。 */
+.sh-skill-drawer__purpose-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  margin-top: var(--space-2);
+}
+
+.sh-skill-drawer__purpose-row .sh-skill-drawer__field-label {
+  margin-right: var(--space-1);
+}
+
 /* 别名/备注编辑从字符图标（✎）改为文字按钮（共享 ghost 次要形态），
    保持字段行内的紧凑形态，颜色走语义 token。 */
 .sh-skill-drawer .sh-skill-drawer__edit-icon.sh-button {

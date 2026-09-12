@@ -1054,6 +1054,7 @@
       "emptyValue": "Not available",
       "editAlias": "Edit alias",
       "editNote": "Edit note",
+      "editPurpose": "Edit purpose",
       "removeTag": "Remove tag {{tag}}",
       "tagsFailure": "Tags were not saved; the saved tags were restored.",
       "fullDetails": "View and edit full details",

@@ -334,10 +334,10 @@ const OPTIONAL_MODULE_RENDERERS: Record<
 };
 
 interface IdentityRegionProps extends ModuleProps {
-  editingField?: "alias" | "note";
+  editingField?: "alias" | "note" | "purpose";
   editingValue: string;
   onAddTags: () => void;
-  onBeginEdit: (field: "alias" | "note") => void;
+  onBeginEdit: (field: "alias" | "note" | "purpose") => void;
   onChange: (value: string) => void;
   onCommit: () => void;
   onRemoveTag: (tag: string) => void;
@@ -414,11 +414,39 @@ function IdentityRegion({
           </span>
         </div>
       ) : null}
-      <div className="sh-skill-drawer__field">
+      {/* M-21 #6：“我的用途”在抽屉内提供编辑入口；用途是用户独立撰写的
+          元数据（QA-008），与原始描述/译文分开保存。 */}
+      <div className="sh-skill-drawer__purpose-row">
         <span className="sh-skill-drawer__field-label">
           {t("skillLibrary.drawer.values.purpose")}:
         </span>
-        <span className="sh-skill-drawer__field-value sh-skill-drawer__field-value--clamped">{view.purpose}</span>
+        {editingField === "purpose" ? (
+          <input
+            aria-label={t("skillLibrary.drawer.values.purpose")}
+            autoFocus
+            onBlur={onCommit}
+            onChange={(event) => onChange(event.currentTarget.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") onCommit();
+              if (event.key === "Escape") onCommit();
+            }}
+            type="text"
+            value={editingValue}
+          />
+        ) : (
+          <span className="sh-skill-drawer__field-value sh-skill-drawer__field-value--clamped">
+            {view.purpose || <EmptyValue />}
+          </span>
+        )}
+        <Button
+          aria-label={t("skillLibrary.drawer.editPurpose")}
+          className="sh-skill-drawer__edit-icon"
+          onClick={() => onBeginEdit("purpose")}
+          size="sm"
+          variant="ghost"
+        >
+          {t("skillLibrary.drawer.editPurpose")}
+        </Button>
       </div>
       <div className="sh-skill-drawer__note">
         <span className="sh-skill-drawer__note-label">
@@ -653,7 +681,7 @@ export function SkillQuickDrawer({
   const location = useLocation();
   const queryClient = useQueryClient();
   const [configurationOpen, setConfigurationOpen] = useState(false);
-  const [editingField, setEditingField] = useState<"alias" | "note">();
+  const [editingField, setEditingField] = useState<"alias" | "note" | "purpose">();
   const [editingValue, setEditingValue] = useState("");
   const [localPreferenceSaveFailed, setLocalPreferenceSaveFailed] = useState(false);
   const [metadataSaveFailed, setMetadataSaveFailed] = useState(false);
@@ -904,23 +932,36 @@ export function SkillQuickDrawer({
     : undefined;
   const versionsState = libraryReturn ? { libraryReturn } : undefined;
 
-  const beginEdit = (field: "alias" | "note") => {
+  const beginEdit = (field: "alias" | "note" | "purpose") => {
     if (!view) return;
     setEditingField(field);
-    setEditingValue(field === "alias" ? view.alias ?? "" : view.note ?? "");
+    setEditingValue(
+      field === "alias"
+        ? view.alias ?? ""
+        : field === "purpose"
+          ? view.purpose ?? ""
+          : view.note ?? "",
+    );
   };
 
   const commitEdit = () => {
     if (!editingField || !view) return;
     const value = editingValue.trim();
     const patch: SkillMetadataPatch =
-      editingField === "alias" ? { alias: value || null } : { note: value || null };
+      editingField === "alias"
+        ? { alias: value || null }
+        : editingField === "purpose"
+          ? { purpose: value || null }
+          : { note: value || null };
     const persistedView = detailQuery.data;
     setLocalView({
       ...view,
       ...(editingField === "alias"
         ? { alias: value || undefined }
-        : { note: value || undefined }),
+        : editingField === "purpose"
+          ? // 抽屉用途字段展示用户独立撰写的用途（QA-008），乐观更新同步 userPurpose。
+            { purpose: value, userPurpose: value || undefined }
+          : { note: value || undefined }),
     });
     setEditingField(undefined);
     setEditingValue("");

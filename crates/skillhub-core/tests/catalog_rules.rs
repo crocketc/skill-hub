@@ -90,3 +90,41 @@ fn user_purpose_is_independent_metadata_not_a_description_alias() {
     // 未提供 display_name 时显示名保持不变。
     assert_eq!(skill.display_name(), "PDF helper");
 }
+
+#[test]
+fn set_metadata_alias_updates_display_name_without_touching_runtime_name() {
+    // M-21：抽屉别名编辑走 set_metadata；runtime 原名是稳定身份，
+    // 只能由 rename_skill 修改——别名路径不得覆写原名。
+    let mut skill = Skill::from_parts(
+        SkillId::new(),
+        "PDF Reader".to_owned(),
+        "pdf-reader".to_owned(),
+        "Extract tables".to_owned(),
+        None,
+        None,
+        None,
+        Default::default(),
+        None,
+        None,
+        CallPolicy::AutomaticAndManual,
+        SkillLifecycle::Normal,
+        Vec::new(),
+        None,
+    )
+    .expect("skill builds");
+
+    skill
+        .set_metadata(
+            Some("PDF 助手".to_owned()),
+            None,
+            Default::default(),
+            None,
+            None,
+            None,
+        )
+        .expect("alias update validates");
+
+    assert_eq!(skill.display_name(), "PDF 助手");
+    // 缺陷回归线：set_metadata 不得触碰 runtime_name。
+    assert_eq!(skill.runtime_name(), "pdf-reader");
+}

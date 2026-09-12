@@ -21,6 +21,7 @@ import { SkillLibraryPage } from "./SkillLibraryPage";
 import type { RemovalFacade } from "../removal/api";
 import {
   createMockSkillLibraryFacade,
+  MOCK_SKILL_DOCX,
   MOCK_SKILL_PDF,
   type MockSkillLibraryFacade,
 } from "./testFixtures";
@@ -1681,6 +1682,36 @@ describe("SkillLibraryPage", () => {
     expect(screen.queryByText(/Table preferences could not be loaded/)).not.toBeInTheDocument();
     // 默认表格偏好静默生效：默认密度 compact 直接体现在表格上。
     expect(document.querySelector('table[data-density="compact"]')).not.toBeNull();
+  });
+
+  it("renders the purpose column with the user purpose first and the original description as fallback (M-21)", async () => {
+    const facade = createMockSkillLibraryFacade({
+      pageItems: [
+        {
+          ...MOCK_SKILL_DOCX,
+          id: "skill-user-purpose",
+          name: "User Purpose Skill",
+          userPurpose: "用于合同扫描件归档",
+          purpose: "用于合同扫描件归档",
+          originalDescription: "Creates and updates Word documents.",
+        },
+        {
+          ...MOCK_SKILL_DOCX,
+          id: "skill-fallback-purpose",
+          name: "Fallback Purpose Skill",
+          userPurpose: undefined,
+          purpose: "Creates and updates Word documents.",
+          originalDescription: "Creates and updates Word documents.",
+        },
+      ],
+      total: 2,
+    });
+    renderLibrary({ facade });
+
+    await screen.findByRole("table");
+    expect(screen.getByText("用于合同扫描件归档")).toBeVisible();
+    // 用户未设置用途时，用途列回退 Skill 原始描述。
+    expect(screen.getAllByText("Creates and updates Word documents.").length).toBeGreaterThanOrEqual(1);
   });
 
   it("links to the combination manager instead of embedding the panel", async () => {
