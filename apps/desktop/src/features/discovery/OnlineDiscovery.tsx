@@ -293,31 +293,27 @@ export function OnlineDiscovery({ onStartImport, onImportDirectory, facade, impo
 
   // M-16：勾选 AI 辅助时立即读取配置/能力开关/凭据状态；读取失败不猜测，
   // 按"连接未知"处理（搜索时仍会真实验证）。绝不在此发起模型请求。
+  // 返回的清理函数目前没有调用方（读取是一次性快照，不做卸载取消），
+  // 因此签名不返回函数，避免误导性死代码。
   const evaluateAssistAvailability = useCallback(() => {
     if (!llmFacade) {
       setAssistReadiness({ kind: "unverified" });
       return;
     }
-    let active = true;
-    Promise.all([llmFacade.readCapabilityState(), llmFacade.listProviders()])
+    void Promise.all([llmFacade.readCapabilityState(), llmFacade.listProviders()])
       .then(([capabilityState, providers]) => {
-        if (active) {
-          setAssistReadiness(evaluateAssistReadiness(capabilityState.capabilities, providers));
-        }
+        setAssistReadiness(evaluateAssistReadiness(capabilityState.capabilities, providers));
       })
       .catch(() => {
-        if (active) setAssistReadiness({ kind: "unverified" });
+        setAssistReadiness({ kind: "unverified" });
       });
-    return () => {
-      active = false;
-    };
   }, [llmFacade]);
 
   const toggleAssist = (checked: boolean) => {
     setAssistEnabled(checked);
     setAssistStatus(null);
     if (checked) {
-      void evaluateAssistAvailability();
+      evaluateAssistAvailability();
     } else {
       // 明确切回普通搜索：可用性提示随之消失。
       setAssistReadiness(null);
@@ -549,7 +545,10 @@ export function OnlineDiscovery({ onStartImport, onImportDirectory, facade, impo
               ) : assistStatus.kind === "unconfigured" ? (
                 <p role="status">{t("discovery.search.assistUnconfigured")}</p>
               ) : assistStatus.kind === "capability_disabled" ? (
-                <p role="status">{t("discovery.search.assistCapabilityDisabled")}</p>
+                // 就绪通告已在上方展示同一句"能力未开启"时不再重复渲染。
+                assistReadiness?.kind === "capability_disabled" ? null : (
+                  <p role="status">{t("discovery.search.assistCapabilityDisabled")}</p>
+                )
               ) : assistStatus.kind === "cancelled" ? (
                 <p role="status">{t("discovery.search.assistCancelled")}</p>
               ) : (

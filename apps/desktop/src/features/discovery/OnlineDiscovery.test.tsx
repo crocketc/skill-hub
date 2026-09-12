@@ -814,6 +814,9 @@ describe("AI assist readiness gate (M-16)", () => {
     await click(screen.getByRole("button", { name: "搜索" }));
     await screen.findByText("PDF Reader");
     expect(assisted).not.toHaveBeenCalled();
+
+    // 就绪通告已展示同一句"能力未开启"时，搜索被拒不再相邻重复渲染同一句。
+    expect(screen.getAllByText(/联网搜索辅助能力未开启/)).toHaveLength(1);
   });
 
   it("shows the credential-missing variant when the enabled provider has no key", async () => {
