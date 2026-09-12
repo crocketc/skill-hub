@@ -1581,4 +1581,77 @@ describe("SkillLibraryPage", () => {
     fireEvent.click(entry);
     await waitFor(() => expect(router.state.location.pathname).toBe("/library/combinations"));
   });
+
+  it("places the view switch and relation entry at the far right of the page toolbar (M-21)", async () => {
+    const facade = createMockSkillLibraryFacade();
+    facade.listCombinations = vi.fn().mockResolvedValue([]);
+    renderLibrary({ facade, persistedViewMode: "unset" });
+
+    await screen.findByTestId("skill-card-skill-pdf");
+
+    // 结构接缝：动作簇是工具栏主行的最后一个区块，视图切换（含关系矩阵）
+    // 与组合管理入口都收拢在动作簇内。
+    const toolbarMain = document.querySelector(".sh-skill-library__toolbar-main");
+    expect(toolbarMain).not.toBeNull();
+    const actions = toolbarMain!.querySelector(".sh-skill-library__toolbar-actions");
+    expect(actions).not.toBeNull();
+    expect((actions as HTMLElement).nextElementSibling).toBeNull();
+
+    const viewSwitch = within(actions as HTMLElement).getByRole("group", { name: "View mode" });
+    expect(within(viewSwitch).getByRole("button", { name: "Table view" })).toBeTruthy();
+    expect(within(viewSwitch).getByRole("button", { name: "Card view" })).toBeTruthy();
+    expect(within(viewSwitch).getByRole("button", { name: "Relations matrix" })).toBeTruthy();
+    expect(within(actions as HTMLElement).getByRole("link", { name: "Combination manager" })).toBeTruthy();
+
+    // 右置契约：动作簇通过 margin-inline-start:auto 吸附到工具栏行最右
+    // （jsdom 无布局引擎，几何右缘由浏览器/E2E 兑现）。
+    expect(getComputedStyle(actions as HTMLElement).marginInlineStart).toBe("auto");
+
+    // 键盘可达：每个视图按钮可聚焦且有可访问名称。
+    for (const name of ["Table view", "Card view", "Relations matrix"]) {
+      const button = within(viewSwitch).getByRole("button", { name });
+      button.focus();
+      expect(button).toHaveFocus();
+    }
+  });
+
+  it("keeps icon-only view controls at the 40px interactive floor (M-21)", async () => {
+    const facade = createMockSkillLibraryFacade();
+    renderLibrary({ facade });
+
+    await screen.findByRole("table");
+    const viewSwitch = screen.getByRole("group", { name: "View mode" });
+    for (const button of within(viewSwitch).getAllByRole("button")) {
+      const minHeight = getComputedStyle(button).minHeight;
+      // 40px 图标按钮下限：2.5rem（声明值）或 40px（解析值）皆可接受。
+      expect(minHeight === "2.5rem" || minHeight === "40px").toBe(true);
+    }
+  });
+
+  it("renders the table view as the page's own scroll container with pagination below (M-21)", async () => {
+    const facade = createMockSkillLibraryFacade();
+    renderLibrary({ facade });
+
+    await screen.findByRole("table");
+    const workspace = document.querySelector(".sh-skill-library");
+    expect(workspace).toHaveClass("sh-skill-library--table-view");
+
+    // 表格区域自成滚动容器：横向与纵向滚动都发生在结果区域内。
+    const region = screen.getByRole("region", { name: "Skill results" });
+    expect(getComputedStyle(region).overflowX).toBe("auto");
+    expect(getComputedStyle(region).overflowY).toBe("auto");
+
+    // 纵向空间归表格区域：工作区行模板恢复弹性中行，结果区域外壳 min-height:0。
+    const shell = region.closest(".sh-skill-table__region-shell") as HTMLElement;
+    const tableWorkspace = document.querySelector(".sh-skill-table-workspace") as HTMLElement;
+    expect(getComputedStyle(tableWorkspace).gridTemplateRows).toContain("minmax(0");
+    // jsdom 对 0 的解析可能带或不带 px 单位。
+    expect(["0", "0px"]).toContain(getComputedStyle(shell).minHeight);
+
+    // 分页条固定在表格下方、不压叠：分页是外壳的后继兄弟节点，不在滚动容器内。
+    const pagination = document.querySelector(".sh-skill-table__pagination") as HTMLElement;
+    expect(pagination).not.toBeNull();
+    expect(shell.nextElementSibling).toBe(pagination);
+    expect(region.contains(pagination)).toBe(false);
+  });
 });

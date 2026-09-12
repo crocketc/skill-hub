@@ -1248,7 +1248,14 @@ export function SkillLibraryPage({
 
   return (
     <section
-      className={`sh-skill-library${selectedBatchTarget ? " sh-skill-library--batch-active" : ""}`}
+      className={[
+        "sh-skill-library",
+        // M-21 #3：表格视图时页面成为定高 flex 列，表格区域自成滚动容器。
+        !pageRefreshing && viewMode === "table" ? "sh-skill-library--table-view" : "",
+        selectedBatchTarget ? "sh-skill-library--batch-active" : "",
+      ]
+        .filter(Boolean)
+        .join(" ")}
       ref={rootRef}
     >
       {deployTarget ? (
@@ -1256,8 +1263,9 @@ export function SkillLibraryPage({
           {t("skillLibrary.page.deployTargetBanner", { label: deployTarget.label })}
         </p>
       ) : null}
-      {/* P1-08 工具栏重组：第一行 = 搜索（常驻）+ 视图/分组分段控件 + 组合入口
-          + 汇总 + 折叠开关；第二行（可折叠）= 已保存视图。查询语义不变。 */}
+      {/* M-21 IA 重排：主行 = 主搜索 + 结果摘要（左）与页面动作簇（右，最右）。
+          视图切换（表格/卡片/关系矩阵）与组合管理入口移至动作簇最右；
+          第二行（可折叠）= 已保存视图。查询语义不变。 */}
       <div className="sh-skill-library__toolbar">
         <div className="sh-skill-library__toolbar-main">
           <SkillFilters
@@ -1268,47 +1276,6 @@ export function SkillLibraryPage({
             query={query}
             versionFilterSupported={capabilities?.versionFilterSupported ?? true}
           />
-          <div
-            aria-label={t("skillLibrary.viewMode.label")}
-            className="sh-skill-library__mode-switch"
-            role="group"
-          >
-            {VIEW_MODE_OPTIONS.map((option) => (
-              <Button
-                aria-label={t(option.labelKey)}
-                aria-pressed={viewMode === option.mode}
-                key={option.mode}
-                onClick={() => changeViewMode(option.mode)}
-                size="sm"
-                title={t(option.labelKey)}
-                variant={viewMode === option.mode ? "secondary" : "ghost"}
-              >
-                <Icon aria-hidden="true" name={option.icon} size={16} />
-              </Button>
-            ))}
-          </div>
-          <div
-            aria-label={t("skillLibrary.groupMode.label")}
-            className="sh-skill-library__mode-switch"
-            role="group"
-          >
-            {GROUP_MODE_OPTIONS.map((option) => (
-              <Button
-                aria-pressed={groupMode === option.mode}
-                key={option.mode}
-                onClick={() => changeGroupMode(option.mode)}
-                size="sm"
-                variant={groupMode === option.mode ? "secondary" : "ghost"}
-              >
-                {t(option.labelKey)}
-              </Button>
-            ))}
-          </div>
-          {facade.listCombinations ? (
-            <Link className="sh-skill-library__combination-entry" to="/library/combinations">
-              {t("skillLibrary.combinations.managerEntry")}
-            </Link>
-          ) : null}
           <section aria-label={t("skillLibrary.page.summary.label")} className="sh-skill-library__summary">
             <span data-testid="library-summary-total">
               {t("skillLibrary.page.summary.total", { count: page.total })}
@@ -1317,17 +1284,59 @@ export function SkillLibraryPage({
               {t("skillLibrary.page.summary.tags", { count: page.facets.tags.length })}
             </span>
           </section>
-          <button
-            aria-controls="sh-skill-library-toolbar-secondary"
-            aria-expanded={toolbarOpen}
-            className="sh-skill-library__toolbar-toggle sh-button sh-button--ghost sh-button--sm"
-            onClick={() => setToolbarOpen((open) => !open)}
-            type="button"
-          >
-            {toolbarOpen
-              ? t("skillLibrary.toolbar.collapse")
-              : t("skillLibrary.toolbar.expand")}
-          </button>
+          <div className="sh-skill-library__toolbar-actions">
+            <div
+              aria-label={t("skillLibrary.viewMode.label")}
+              className="sh-skill-library__mode-switch"
+              role="group"
+            >
+              {VIEW_MODE_OPTIONS.map((option) => (
+                <Button
+                  aria-label={t(option.labelKey)}
+                  aria-pressed={viewMode === option.mode}
+                  key={option.mode}
+                  onClick={() => changeViewMode(option.mode)}
+                  title={t(option.labelKey)}
+                  variant={viewMode === option.mode ? "secondary" : "ghost"}
+                >
+                  <Icon aria-hidden="true" name={option.icon} size={16} />
+                </Button>
+              ))}
+            </div>
+            <div
+              aria-label={t("skillLibrary.groupMode.label")}
+              className="sh-skill-library__mode-switch"
+              role="group"
+            >
+              {GROUP_MODE_OPTIONS.map((option) => (
+                <Button
+                  aria-pressed={groupMode === option.mode}
+                  key={option.mode}
+                  onClick={() => changeGroupMode(option.mode)}
+                  size="sm"
+                  variant={groupMode === option.mode ? "secondary" : "ghost"}
+                >
+                  {t(option.labelKey)}
+                </Button>
+              ))}
+            </div>
+            {facade.listCombinations ? (
+              <Link className="sh-skill-library__combination-entry" to="/library/combinations">
+                {t("skillLibrary.combinations.managerEntry")}
+              </Link>
+            ) : null}
+            <button
+              aria-controls="sh-skill-library-toolbar-secondary"
+              aria-expanded={toolbarOpen}
+              className="sh-skill-library__toolbar-toggle sh-button sh-button--ghost sh-button--sm"
+              onClick={() => setToolbarOpen((open) => !open)}
+              type="button"
+            >
+              {toolbarOpen
+                ? t("skillLibrary.toolbar.collapse")
+                : t("skillLibrary.toolbar.expand")}
+            </button>
+          </div>
         </div>
         <div
           className="sh-skill-library__toolbar-secondary"
