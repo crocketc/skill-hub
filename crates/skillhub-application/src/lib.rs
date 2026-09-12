@@ -1617,6 +1617,29 @@ impl LocalApplicationFacade {
         *self.repo_discovery_provider.write().expect("repo provider") = provider;
     }
 
+    /// 仅供测试观测：读取单个 Skill 的来源投影（角色 + 可选上游坐标）。
+    /// `get_skill_source` 已从 IPC 契约退役（前端无调用方）；来源语义的
+    /// 行为测试仍需要无网络副作用的观测点，故保留此诊断入口。
+    /// 未知 Skill 明确报错；已知 Skill 无来源行返回 None（仅本地展示）。
+    #[doc(hidden)]
+    pub fn skill_source_for_tests(
+        &self,
+        skill_id: skillhub_core::SkillId,
+    ) -> AppResult<Option<skillhub_core::source::SourceRecord>> {
+        self.with_database("diagnostic.skill_source_for_tests", |database| {
+            if database
+                .catalog_repository()?
+                .get_sync(skill_id)?
+                .is_none()
+            {
+                return Err(AppError::new(ErrorCode::ObjectNotFound, Severity::Error)
+                    .with_param("skill_id", skill_id.to_string())
+                    .with_action(RecoveryAction::ChooseAnotherName));
+            }
+            database.source_repository().source_record_for_skill(skill_id)
+        })
+    }
+
     pub fn set_external_url_opener(&self, opener: Arc<dyn ExternalUrlOpener>) {
         self.external_link_service.set_opener(opener);
     }
@@ -4987,24 +5010,6 @@ impl ApplicationFacade for LocalApplicationFacade {
             AppQuery::SearchOnlineSources(request) => self.search_online_sources(request).await,
             AppQuery::SearchOnlineSourcesAssisted(request) => {
                 self.search_online_sources_assisted(request).await
-            }
-            AppQuery::GetSkillSource(request) => {
-                // 未知 Skill 明确报错；已知 Skill 无来源行返回 None（仅本地展示）。
-                self.with_database("query.get_skill_source", |database| {
-                    if database
-                        .catalog_repository()?
-                        .get_sync(request.skill_id)?
-                        .is_none()
-                    {
-                        return Err(AppError::new(ErrorCode::ObjectNotFound, Severity::Error)
-                            .with_param("skill_id", request.skill_id.to_string())
-                            .with_action(RecoveryAction::ChooseAnotherName));
-                    }
-                    let record = database
-                        .source_repository()
-                        .source_record_for_skill(request.skill_id)?;
-                    Ok(AppQueryResult::SkillSource(record))
-                })
             }
             AppQuery::ListSearchCandidates(_) => {
                 self.with_database("query.list_search_candidates", |database| {

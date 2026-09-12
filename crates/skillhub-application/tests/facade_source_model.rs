@@ -14,8 +14,8 @@ use std::sync::Arc;
 use skillhub_adapters::source::RepoDiscoveryProvider;
 use skillhub_application::LocalApplicationFacade;
 use skillhub_core::api::{
-    CheckSourceUpdates, ConfirmSearchCandidate, DismissSearchCandidate, GetSkillSource,
-    ListSearchCandidates, SaveSearchCandidates,
+    CheckSourceUpdates, ConfirmSearchCandidate, DismissSearchCandidate, ListSearchCandidates,
+    SaveSearchCandidates,
 };
 use skillhub_core::source::{DiscoverableRepoSkill, SourceSearchHit, SourceSearchPage};
 use skillhub_core::{
@@ -114,18 +114,14 @@ fn search_page(source_ids: &[&str]) -> SourceSearchPage {
     }
 }
 
-async fn get_skill_source(
+fn get_skill_source(
     facade: &LocalApplicationFacade,
     skill_id: skillhub_core::SkillId,
 ) -> Option<skillhub_core::SourceRecord> {
-    let result = facade
-        .query(AppQuery::GetSkillSource(GetSkillSource { skill_id }))
-        .await
-        .expect("get skill source");
-    let AppQueryResult::SkillSource(record) = result else {
-        panic!("expected skill source record");
-    };
-    record
+    // get_skill_source 已从 IPC 契约退役；行为测试改走 facade 诊断入口观测。
+    facade
+        .skill_source_for_tests(skill_id)
+        .expect("get skill source")
 }
 
 async fn list_candidates(
@@ -167,7 +163,6 @@ async fn local_imports_report_local_only_without_upstream() {
     let skill_id = commit_candidate(&facade, local_candidate(source.path())).await;
 
     let record = get_skill_source(&facade, skill_id)
-        .await
         .expect("source record must exist after import");
     assert_eq!(record.role, SourceRole::LocalOnly);
     assert_eq!(record.source.kind, SourceKind::Local);
@@ -192,7 +187,6 @@ async fn confirmed_repo_imports_report_verified_upstream() {
     };
 
     let record = get_skill_source(&facade, skill_id)
-        .await
         .expect("source record must exist after import");
     assert_eq!(record.role, SourceRole::VerifiedUpstream);
     let upstream = record.upstream.expect("upstream coordinates");
@@ -202,17 +196,14 @@ async fn confirmed_repo_imports_report_verified_upstream() {
 }
 
 #[tokio::test]
-async fn get_skill_source_rejects_unknown_skills() {
+async fn skill_source_diagnostic_rejects_unknown_skills() {
     let workspace = tempfile::tempdir().expect("workspace");
     let facade = facade_with_library(
         &workspace.path().join("db.sqlite"),
         &workspace.path().join("library"),
     );
     let error = facade
-        .query(AppQuery::GetSkillSource(GetSkillSource {
-            skill_id: skillhub_core::SkillId::new(),
-        }))
-        .await
+        .skill_source_for_tests(skillhub_core::SkillId::new())
         .expect_err("unknown skill must be rejected");
     assert_eq!(error.code, ErrorCode::ObjectNotFound);
 }

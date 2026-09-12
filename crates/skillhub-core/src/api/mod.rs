@@ -41,7 +41,7 @@ pub use query::{
     DiffVersions, DiscoverAgentsLockSkills, DiscoverImportCandidates, DiscoverRepoSkills,
     FindingResult, GetBasicCheckResult, GetBootstrapSnapshot, GetCallPolicy, GetDeploymentPlan,
     GetDeploymentRelations, GetDiscoverySnapshot, GetLlmSafetyCheckResult, GetProjectAssemblyPlan,
-    GetReconcilePlan, GetRemovalImpact, GetSkill, GetSkillSource, GetUiPreference,
+    GetReconcilePlan, GetRemovalImpact, GetSkill, GetUiPreference,
     GetUiPreferenceResult, ListCombinations, ListCustomAgents, ListDeploymentTargets,
     ListDeployments, ListDeterministicDuplicates, ListFindings, ListMarkdownFiles,
     ListPendingItems, ListProjects, ListSavedProjectViews, ListSearchCandidates,

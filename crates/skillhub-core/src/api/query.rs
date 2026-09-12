@@ -336,14 +336,6 @@ pub struct SearchOnlineSourcesAssisted {
     pub text: String,
 }
 
-/// P1-05：单个 Skill 的来源投影（来源描述符 + 角色 + 可选上游坐标）。
-/// 无来源记录的已知 Skill 返回 null（调用方按仅本地展示）。
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
-#[serde(deny_unknown_fields)]
-pub struct GetSkillSource {
-    pub skill_id: SkillId,
-}
-
 /// P1-05：待确认搜索候选列表（持久化，跨会话可恢复）。
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 pub struct ListSearchCandidates;
@@ -654,8 +646,6 @@ pub enum AppQuery {
     DiscoverImportCandidates(DiscoverImportCandidates),
     #[serde(rename = "search_online_sources")]
     SearchOnlineSources(SearchOnlineSources),
-    #[serde(rename = "get_skill_source")]
-    GetSkillSource(GetSkillSource),
     #[serde(rename = "list_search_candidates")]
     ListSearchCandidates(ListSearchCandidates),
     #[serde(rename = "get_ui_preference")]
@@ -755,8 +745,6 @@ pub enum AppQueryResult {
     ImportCandidates(Vec<ImportCandidate>),
     #[serde(rename = "source_search_page")]
     SourceSearchPage(SourceSearchPage),
-    #[serde(rename = "skill_source")]
-    SkillSource(Option<crate::source::SourceRecord>),
     #[serde(rename = "search_candidates")]
     SearchCandidates(Vec<crate::source::SearchCandidateRecord>),
     #[serde(rename = "ui_preference")]
