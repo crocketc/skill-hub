@@ -1,6 +1,8 @@
 //! Combination repository durability rules: duplicate-name defense on
-//! create/rename and loud conflicts for legacy rows that share one name
-//! (previously resolved silently via `ORDER BY created_at LIMIT 1`).
+//! create/rename. Legacy "ambiguous shared name" conflicts were retired with
+//! migration 0012: the unique index makes duplicate names unconstructible, so
+//! the schema (not the repository) now guards that invariant — see
+//! `migrations.rs::v11_database_dedupes_combination_names_and_enforces_uniqueness`.
 
 use skillhub_core::catalog::{CatalogRepository, Skill};
 use skillhub_core::{ErrorCode, RecoveryAction, SkillId};
@@ -20,20 +22,6 @@ fn insert_skill(database: &Database, name: &str) -> SkillId {
     let repository = database.catalog_repository().expect("catalog repository");
     block_on(repository.insert(&skill)).expect("insert skill");
     skill.id()
-}
-
-/// Seeds two combination rows that share one name, mimicking legacy data
-/// created before the duplicate-name defense existed.
-fn seed_ambiguous_name(database: &Database, name: &str) {
-    for suffix in ["a", "b"] {
-        database
-            .connection_for_test()
-            .execute(
-                "INSERT INTO combinations(id,name,created_at,updated_at) VALUES(?1,?2,1,1)",
-                [format!("combo-{suffix}"), name.to_string()],
-            )
-            .expect("seed legacy combination row");
-    }
 }
 
 fn name_count(database: &Database, name: &str) -> i64 {
@@ -73,66 +61,21 @@ fn create_rejects_duplicate_names_with_target_exists() {
 }
 
 #[test]
-fn update_members_reports_a_conflict_for_ambiguous_names() {
+fn rename_rejects_existing_targets() {
     let database = Database::open_in_memory().expect("database");
     let first = insert_skill(&database, "First");
-    seed_ambiguous_name(&database, "Legacy combo");
     let repository = database.combination_repository();
-
-    let error = repository
-        .update_members("Legacy combo", &[first])
-        .expect_err("an ambiguous name must not be silently narrowed");
-    assert_eq!(error.code, ErrorCode::OperationConflict);
-    assert_eq!(
-        error
-            .params
-            .get("combination")
-            .and_then(|value| value.as_str()),
-        Some("Legacy combo")
-    );
-    assert_eq!(
-        error.params.get("matches").and_then(|value| value.as_i64()),
-        Some(2),
-        "the error must state how many rows collide"
-    );
-    assert_eq!(name_count(&database, "Legacy combo"), 2);
-}
-
-#[test]
-fn delete_reports_a_conflict_for_ambiguous_names() {
-    let database = Database::open_in_memory().expect("database");
-    seed_ambiguous_name(&database, "Legacy combo");
-    let repository = database.combination_repository();
-
-    let error = repository
-        .delete("Legacy combo")
-        .expect_err("an ambiguous delete must not silently remove every row");
-    assert_eq!(error.code, ErrorCode::OperationConflict);
-    assert_eq!(
-        error.params.get("matches").and_then(|value| value.as_i64()),
-        Some(2)
-    );
-    assert_eq!(name_count(&database, "Legacy combo"), 2);
-}
-
-#[test]
-fn rename_rejects_ambiguous_names_and_existing_targets() {
-    let database = Database::open_in_memory().expect("database");
-    let first = insert_skill(&database, "First");
-    seed_ambiguous_name(&database, "Legacy combo");
-    let repository = database.combination_repository();
-
-    let error = repository
-        .rename("Legacy combo", "Whatever")
-        .expect_err("an ambiguous rename must fail loudly");
-    assert_eq!(error.code, ErrorCode::OperationConflict);
-    assert_eq!(name_count(&database, "Legacy combo"), 2);
 
     repository.create("Other stack", &[first]).expect("create");
+    repository
+        .create("Writing stack", &[first])
+        .expect("create");
     let error = repository
-        .rename("Other stack", "Legacy combo")
+        .rename("Other stack", "Writing stack")
         .expect_err("renaming onto an existing name must fail");
     assert_eq!(error.code, ErrorCode::TargetExists);
+    assert_eq!(name_count(&database, "Other stack"), 1);
+    assert_eq!(name_count(&database, "Writing stack"), 1);
 }
 
 #[test]

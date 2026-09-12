@@ -1627,16 +1627,14 @@ impl LocalApplicationFacade {
         skill_id: skillhub_core::SkillId,
     ) -> AppResult<Option<skillhub_core::source::SourceRecord>> {
         self.with_database("diagnostic.skill_source_for_tests", |database| {
-            if database
-                .catalog_repository()?
-                .get_sync(skill_id)?
-                .is_none()
-            {
+            if database.catalog_repository()?.get_sync(skill_id)?.is_none() {
                 return Err(AppError::new(ErrorCode::ObjectNotFound, Severity::Error)
                     .with_param("skill_id", skill_id.to_string())
                     .with_action(RecoveryAction::ChooseAnotherName));
             }
-            database.source_repository().source_record_for_skill(skill_id)
+            database
+                .source_repository()
+                .source_record_for_skill(skill_id)
         })
     }
 

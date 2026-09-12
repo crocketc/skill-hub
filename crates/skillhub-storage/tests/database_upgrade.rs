@@ -41,7 +41,7 @@ fn opening_an_existing_database_migrates_and_leaves_no_recovery_sidecar() {
     let database = Database::open(&path).unwrap();
     // Pins the latest migration (0011_source_roles) so a dropped migration
     // file or a silently skipped step fails this test instead of shipping.
-    assert_eq!(database.schema_version().unwrap(), 11);
+    assert_eq!(database.schema_version().unwrap(), 12);
     assert!(!root.path().read_dir().unwrap().any(|entry| {
         entry
             .unwrap()

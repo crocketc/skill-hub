@@ -16,7 +16,7 @@ fn fixture_database_with_schema_version(version: u32) -> NamedTempFile {
 fn empty_database_migrates_to_current_schema_and_enables_fts5() {
     let db = Database::open_in_memory().unwrap();
 
-    assert_eq!(db.schema_version().unwrap(), 11);
+    assert_eq!(db.schema_version().unwrap(), 12);
     assert!(db.has_table("skills_fts").unwrap());
     assert!(db.has_table("search_candidates").unwrap());
 }
@@ -66,7 +66,7 @@ fn v4_database_upgrades_check_run_metadata_in_v5() {
     drop(connection);
 
     let db = Database::open(file.path()).unwrap();
-    assert_eq!(db.schema_version().unwrap(), 11);
+    assert_eq!(db.schema_version().unwrap(), 12);
     assert_eq!(
         db.migration_report().applied_versions,
         vec![5, 6, 7, 8, 9, 10, 11]
@@ -133,7 +133,7 @@ fn v10_database_upgrades_source_roles_and_keeps_legacy_upstreams_readable() {
     drop(connection);
 
     let db = Database::open(file.path()).unwrap();
-    assert_eq!(db.schema_version().unwrap(), 11);
+    assert_eq!(db.schema_version().unwrap(), 12);
 
     let remote_skill: skillhub_core::SkillId =
         "00000000-0000-0000-0000-0000000000a1".parse().unwrap();
@@ -249,4 +249,89 @@ fn v3_database_upgrade_backfills_original_search_display_names() {
         .into_iter()
         .find(|hit| hit.skill_name == "PDF Extractor");
     assert!(hit.is_some());
+}
+
+/// 0012：combinations.name 唯一约束（终审挂账的防御性加固）。
+///
+/// 1) 正常路径不可能重名（facade 互斥 + TargetExists 前置），同名行属于历史
+///    异常或外部篡改：迁移确定性去重——同名保留最老（created_at,id）一行，
+///    其余按年龄序追加 '-2'、'-3'…；
+/// 2) 追加后若与既有名冲突（例如库中已有 'pdf-2'），冲突组整体改为
+///    'name (id)' 以 UUID 兜底保证唯一；
+/// 3) 迁移后唯一索引生效：直接 INSERT 重复名必须被拒绝。
+#[test]
+fn v11_database_dedupes_combination_names_and_enforces_uniqueness() {
+    let file = NamedTempFile::new().unwrap();
+    let connection = Connection::open(file.path()).unwrap();
+    for sql in [
+        include_str!("../migrations/0001_initial.sql"),
+        include_str!("../migrations/0002_fts.sql"),
+        include_str!("../migrations/0003_catalog_metadata.sql"),
+        include_str!("../migrations/0004_search_tokenizer.sql"),
+        include_str!("../migrations/0005_check_run_metadata.sql"),
+        include_str!("../migrations/0006_llm_profiles.sql"),
+        include_str!("../migrations/0007_ui_preferences.sql"),
+        include_str!("../migrations/0008_version_labels.sql"),
+        include_str!("../migrations/0009_skill_user_purpose.sql"),
+        include_str!("../migrations/0010_llm_providers_translations.sql"),
+        include_str!("../migrations/0011_source_roles.sql"),
+    ] {
+        connection.execute_batch(sql).unwrap();
+    }
+    connection
+        .execute_batch(
+            "INSERT INTO combinations(id,name,created_at,updated_at) VALUES
+                 ('c-1','pdf',100,100),
+                 ('c-2','pdf',200,200),
+                 ('c-3','pdf',300,300),
+                 ('c-4','notes',100,100),
+                 ('c-5','pdf-2',50,50);",
+        )
+        .unwrap();
+    connection.pragma_update(None, "user_version", 11).unwrap();
+    drop(connection);
+
+    let db = Database::open(file.path()).unwrap();
+    assert_eq!(db.schema_version().unwrap(), 12);
+
+    let name_of = |id: &str| -> String {
+        db.connection_for_test()
+            .query_row("SELECT name FROM combinations WHERE id=?1", [id], |row| {
+                row.get(0)
+            })
+            .unwrap()
+    };
+    // 最老同名行保持原名；其余按年龄序加后缀。
+    assert_eq!(name_of("c-1"), "pdf");
+    assert_eq!(name_of("c-3"), "pdf-3");
+    assert_eq!(name_of("c-4"), "notes");
+    // 'pdf-2' 既是 c-2 的追加结果又是既有名 c-5：冲突组整体 UUID 兜底。
+    let renamed_c2 = name_of("c-2");
+    let renamed_c5 = name_of("c-5");
+    assert_eq!(renamed_c2, format!("pdf-2 (c-2)"));
+    assert_eq!(renamed_c5, format!("pdf-2 (c-5)"));
+
+    let unique_index: i64 = db
+        .connection_for_test()
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name='combinations_name_unique'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(unique_index, 1, "唯一索引必须存在");
+
+    let duplicate_insert = db
+        .connection_for_test()
+        .execute(
+            "INSERT INTO combinations(id,name,created_at,updated_at) VALUES('c-x','pdf',1,1)",
+            [],
+        )
+        .unwrap_err();
+    assert!(
+        duplicate_insert
+            .to_string()
+            .contains("UNIQUE constraint failed"),
+        "重复名必须被唯一索引拒绝，实际：{duplicate_insert}"
+    );
 }

@@ -162,8 +162,8 @@ async fn local_imports_report_local_only_without_upstream() {
 
     let skill_id = commit_candidate(&facade, local_candidate(source.path())).await;
 
-    let record = get_skill_source(&facade, skill_id)
-        .expect("source record must exist after import");
+    let record =
+        get_skill_source(&facade, skill_id).expect("source record must exist after import");
     assert_eq!(record.role, SourceRole::LocalOnly);
     assert_eq!(record.source.kind, SourceKind::Local);
     assert!(record.upstream.is_none());
@@ -186,8 +186,8 @@ async fn confirmed_repo_imports_report_verified_upstream() {
         commit_candidate(&facade, candidate).await
     };
 
-    let record = get_skill_source(&facade, skill_id)
-        .expect("source record must exist after import");
+    let record =
+        get_skill_source(&facade, skill_id).expect("source record must exist after import");
     assert_eq!(record.role, SourceRole::VerifiedUpstream);
     let upstream = record.upstream.expect("upstream coordinates");
     assert_eq!(upstream.url, "https://github.com/anthropics/skills");
