@@ -413,7 +413,6 @@ describe("native skill detail facade", () => {
       dependencies: [],
       deterministicDuplicates: ["PDF Reader（副本）"],
       externalChanges: [],
-      semanticDuplicates: [],
       operationHistory: [
         { id: "op-1", label: "deploy_skill · committed" },
         { id: "op-2", label: "remove_skill · rolled_back · operation.conflict" },

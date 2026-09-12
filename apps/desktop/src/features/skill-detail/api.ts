@@ -86,7 +86,6 @@ export interface SkillDetailInsights {
   operationHistory: Array<{ at?: string; id: string; label: string }>;
   /** Stable code explaining why the history is not skill-scoped, if any. */
   operationHistoryLimitation?: string;
-  semanticDuplicates: string[];
   usageEvidence?: { invocationCount: number; lastUsedAt?: string };
 }
 

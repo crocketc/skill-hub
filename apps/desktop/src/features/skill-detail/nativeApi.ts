@@ -426,7 +426,6 @@ export const nativeSkillDetailFacade: SkillDetailFacade = {
       dependencies: [],
       deterministicDuplicates: duplicates.payload.map((entry) => entry.label),
       externalChanges: [],
-      semanticDuplicates: [],
       operationHistory: result.payload.entries.map((entry) => ({
         id: entry.operation_id,
         label: [entry.kind, entry.phase, entry.error_code ?? undefined]

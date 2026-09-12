@@ -130,7 +130,6 @@ export function detailFixture(
       operationHistory: [
         { at: "2026-08-25T10:24:00Z", id: "operation-import", label: "Imported" },
       ],
-      semanticDuplicates: ["pdf-extractor"],
       usageEvidence: {
         invocationCount: 12,
         lastUsedAt: "2026-08-25T09:30:00Z",
