@@ -1551,6 +1551,23 @@ describe("SkillLibraryPage", () => {
     await waitFor(() => expect(tablePreferences).toHaveBeenCalledTimes(2));
   });
 
+  it("opens silently with default preferences when none were ever stored (M-21)", async () => {
+    // 首次打开：偏好从未存储（读取正常返回空），不得出现
+    // “无法加载表格偏好”错误——默认值静默生效。
+    const facade = createMockSkillLibraryFacade();
+    vi.spyOn(facade, "loadTablePreferences").mockResolvedValue(null);
+    vi.spyOn(facade, "loadDrawerPreferences").mockResolvedValue(null);
+    renderLibrary({ facade });
+
+    expect(await screen.findByRole("table")).toBeVisible();
+    expect(
+      screen.queryByRole("status", { name: "Preference status" }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText(/Table preferences could not be loaded/)).not.toBeInTheDocument();
+    // 默认表格偏好静默生效：默认密度 compact 直接体现在表格上。
+    expect(document.querySelector('table[data-density="compact"]')).not.toBeNull();
+  });
+
   it("links to the combination manager instead of embedding the panel", async () => {
     const facade = createMockSkillLibraryFacade();
     facade.listCombinations = vi.fn().mockResolvedValue([]);

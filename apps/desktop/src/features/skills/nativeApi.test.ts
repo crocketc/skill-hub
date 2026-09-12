@@ -352,6 +352,46 @@ it("fills the quick drawer duplicate candidates from the deterministic read mode
   expect(view.duplicateCandidates).toEqual(["Notes B"]);
 });
 
+describe("native preference reads", () => {
+  it("resolves table preferences to null when no preference was ever stored", async () => {
+    // M-21 首次打开误报根因：后端对未存储的键返回空 value_json，
+    // 这是“默认缺失”的正常状态，不得转换为读取失败。
+    vi.mocked(queryApplication).mockResolvedValue({
+      type: "ui_preference",
+      payload: { key: "table_preferences", value_json: null },
+    } as AppQueryResult);
+
+    await expect(nativeSkillLibraryFacade.loadTablePreferences()).resolves.toBeNull();
+  });
+
+  it("resolves drawer preferences to null when no preference was ever stored", async () => {
+    vi.mocked(queryApplication).mockResolvedValue({
+      type: "ui_preference",
+      payload: { key: "drawer_preferences", value_json: null },
+    } as AppQueryResult);
+
+    await expect(nativeSkillLibraryFacade.loadDrawerPreferences()).resolves.toBeNull();
+  });
+
+  it("still parses stored preference payloads into preference objects", async () => {
+    const stored = { columnOrder: ["name" as const], density: "compact" as const, visibleColumns: ["name" as const] };
+    vi.mocked(queryApplication).mockResolvedValue({
+      type: "ui_preference",
+      payload: { key: "table_preferences", value_json: JSON.stringify(stored) },
+    } as AppQueryResult);
+
+    await expect(nativeSkillLibraryFacade.loadTablePreferences()).resolves.toEqual(stored);
+  });
+
+  it("keeps rejecting a genuinely failed preference read as unavailable", async () => {
+    vi.mocked(queryApplication).mockRejectedValue(new Error("ipc channel closed"));
+
+    await expect(nativeSkillLibraryFacade.loadTablePreferences()).rejects.toBeInstanceOf(
+      SkillLibraryUnavailableError,
+    );
+  });
+});
+
 function persistedSkill(overrides: Partial<SkillResult> = {}): AppQueryResult {
   return {
     type: "skill",

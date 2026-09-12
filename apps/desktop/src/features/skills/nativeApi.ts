@@ -151,10 +151,18 @@ function asQuickView(result: AppQueryResult): SkillQuickView {
 
 /** Real IPC-backed read facade. Mutations and preference persistence remain
  * on the unavailable facade until their native contracts are connected. */
-async function readUiPreference(key: string): Promise<string> {
-  const result = await queryApplication({ type: "get_ui_preference", payload: { key } });
+// M-21 根因修复：后端 get_ui_preference 对未存储的键返回空 value_json——
+// 这是“默认缺失”的正常首开状态，必须解析为 null（调用方回退默认值），
+// 不得转换为读取失败；只有 IPC 失败或结果形状不符才是真读取失败。
+async function readUiPreference(key: string): Promise<string | null> {
+  let result: AppQueryResult;
+  try {
+    result = await queryApplication({ type: "get_ui_preference", payload: { key } });
+  } catch {
+    throw unavailableResult();
+  }
   if (result.type !== "ui_preference") throw unavailableResult();
-  if (!result.payload.value_json) throw unavailableResult();
+  if (!result.payload.value_json) return null;
   return result.payload.value_json;
 }
 
@@ -229,8 +237,11 @@ export const nativeSkillLibraryFacade: SkillLibraryFacade = {
       payload: { key: "library_group_mode", value_json: JSON.stringify(mode) },
     });
   },
+  // M-21：未存储（null）时解析为 null，页面静默回退 DEFAULT_TABLE_PREFERENCES；
+  // 仅真实读取失败仍抛 unavailable，由页面显示可读错误。
   async loadTablePreferences() {
-    return JSON.parse(await readUiPreference("table_preferences")) as SkillTablePreferences;
+    const raw = await readUiPreference("table_preferences");
+    return raw === null ? null : JSON.parse(raw) as SkillTablePreferences;
   },
   async saveTablePreferences(preferences) {
     await executeCommand({
@@ -239,7 +250,8 @@ export const nativeSkillLibraryFacade: SkillLibraryFacade = {
     });
   },
   async loadDrawerPreferences() {
-    return JSON.parse(await readUiPreference("drawer_preferences")) as SkillDrawerPreferences;
+    const raw = await readUiPreference("drawer_preferences");
+    return raw === null ? null : JSON.parse(raw) as SkillDrawerPreferences;
   },
   async saveDrawerPreferences(preferences) {
     await executeCommand({

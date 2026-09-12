@@ -185,8 +185,9 @@ export interface SkillLibraryFacade {
   getSkillQuickView(skillId: string): Promise<SkillQuickView>;
   listSavedViews(): Promise<SavedSkillView[]>;
   listSkills(query: SkillLibraryQuery): Promise<SkillPage>;
-  loadDrawerPreferences(): Promise<SkillDrawerPreferences>;
-  loadTablePreferences(): Promise<SkillTablePreferences>;
+  /** 未存储过偏好时解析为 null（M-21：默认缺失不是读取失败，页面静默用默认）。 */
+  loadDrawerPreferences(): Promise<SkillDrawerPreferences | null>;
+  loadTablePreferences(): Promise<SkillTablePreferences | null>;
   /** 库视图模式（表格/卡片/关系矩阵）持久化；未提供时页面默认表格且不持久化。 */
   loadViewMode?: () => Promise<LibraryViewMode>;
   saveViewMode?: (mode: LibraryViewMode) => Promise<void>;
