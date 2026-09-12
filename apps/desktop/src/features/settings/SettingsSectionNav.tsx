@@ -27,9 +27,9 @@ interface SettingsSectionNavProps {
 }
 
 /**
- * 当前分区导航（设计规格 5.1）：宽容器为左侧竖排分区导航，窄容器折叠为
- * 顶部紧凑分区选择器（见 settings.css 的容器查询）。标签页语义 + 方向键
- * 自动激活，键盘与指针共享同一条切换路径。
+ * 当前分区导航（设计规格 5.1，M-03 修订）：所有支持宽度下都是左侧竖排
+ * 分区导航（容器查询只调整列宽与间距）。标签页语义 + 方向键自动激活，
+ * 键盘与指针共享同一条切换路径。
  */
 export function SettingsSectionNav({ sections, activeId, onChange }: SettingsSectionNavProps) {
   const { t } = useTranslation();
@@ -64,6 +64,7 @@ export function SettingsSectionNav({ sections, activeId, onChange }: SettingsSec
   return (
     <div
       aria-label={t("settings.sectionNavLabel")}
+      aria-orientation="vertical"
       className="sh-settings-nav"
       onKeyDown={onKeyDown}
       role="tablist"

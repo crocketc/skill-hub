@@ -4,7 +4,10 @@
 
 .sh-settings-page {
   display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
   gap: var(--page-gap);
+  height: 100%;
+  min-height: 0;
   min-width: 0;
 }
 
@@ -19,22 +22,31 @@
   color: var(--ui-accent-strong);
 }
 
-/* 布局：窄容器默认顶部紧凑分区选择器；容器查询加宽后切换为左侧分区导航。 */
+/* 布局（M-03）：所有支持宽度下保持左侧分区导航 + 右侧内容列；
+   容器查询只调整列宽与间距，不再把导航换到内容上方。 */
 .sh-settings-layout {
   display: grid;
+  grid-template-columns: minmax(9.5rem, 12rem) minmax(0, 1fr);
   gap: var(--space-4);
+  min-height: 0;
   min-width: 0;
 }
 
 .sh-settings-nav {
   display: flex;
+  flex-direction: column;
+  align-items: stretch;
   gap: var(--space-1);
-  overflow-x: auto;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
   padding-bottom: var(--space-1);
+  scrollbar-gutter: stable;
 }
 
 .sh-settings-nav__tab {
   align-items: center;
+  justify-content: flex-start;
   background: transparent;
   border: 1px solid transparent;
   border-radius: var(--radius-xs);
@@ -65,10 +77,16 @@
   outline-offset: 2px;
 }
 
-/* 右侧内容始终单列：分区说明 + 纵向卡片流，不恢复嵌套两列栅格。 */
+/* 右侧内容始终单列：分区说明 + 纵向卡片流，不恢复嵌套两列栅格。
+   内容列在所有宽度下都是唯一的内容滚动所有者（M-03）。 */
 .sh-settings-panels {
   display: grid;
+  align-content: start;
+  min-height: 0;
   min-width: 0;
+  overflow-y: auto;
+  padding-right: var(--space-2);
+  scrollbar-gutter: stable;
 }
 
 .sh-settings-panel {
@@ -95,40 +113,14 @@
 }
 
 @container workspace (min-width: 64rem) {
-  /* P1-01b 双滚动所有者：宽容器下页面外壳不滚——分区导航与内容列各自
-     独立滚动；导航短时不出现滚动条，超过视口高度才有独立滚动条。 */
-  .sh-settings-page {
-    height: 100%;
-    min-height: 0;
-    max-height: 100%;
-    grid-template-rows: auto minmax(0, 1fr);
-  }
-
+  /* M-03：宽容器只放大列宽与列间距，布局结构保持不变。 */
   .sh-settings-layout {
-    grid-template-columns: 12rem minmax(0, 1fr);
-    min-height: 0;
+    grid-template-columns: 13rem minmax(0, 1fr);
+    column-gap: var(--space-5);
   }
 
   .sh-settings-nav {
-    min-height: 0;
-    max-height: 100%;
-    flex-direction: column;
-    align-items: stretch;
-    overflow-x: hidden;
-    overflow-y: auto;
     padding-bottom: 0;
-  }
-
-  .sh-settings-nav__tab {
-    justify-content: flex-start;
-  }
-
-  /* 内容列是唯一的内容滚动所有者：PageHeader 与导航不随内容滚动。 */
-  .sh-settings-panels {
-    min-height: 0;
-    overflow-y: auto;
-    padding-right: var(--space-2);
-    scrollbar-gutter: stable;
   }
 }
 
