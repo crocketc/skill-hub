@@ -246,7 +246,7 @@ describe("native import facade", () => {
     });
   });
 
-  it("preserves native error codes and parameters for failed imports", async () => {
+  it("resolves unknown native error codes to readable copy for failed imports", async () => {
     vi.mocked(executeCommand).mockRejectedValue({
       code: "io_error",
       params: { operation: "capture", path: "C:/incoming/notes" },
@@ -265,8 +265,33 @@ describe("native import facade", () => {
       { [candidate.id]: "copy" },
     );
 
+    // 未知码不允许裸码上屏：统一兜底为可读文案；码本身留档操作记录。
     expect(result).toEqual(expect.objectContaining({
-      message: "io_error",
+      message: "importWorkflow.errors.unknown",
+      status: "failed",
+    }));
+  });
+
+  it("maps known native error codes to their translation keys", async () => {
+    vi.mocked(executeCommand).mockRejectedValue({
+      code: "network.disabled",
+    });
+
+    const candidate = {
+      basicCheck: "passed" as const,
+      id: "C:/incoming/notes#notes",
+      name: "notes",
+      ownership: "unknown" as const,
+      path: "C:/incoming/notes",
+      source: await nativeImportFacade.parseSource("C:/incoming"),
+    };
+    const [result] = await nativeImportFacade.commitImport(
+      { candidates: [candidate], conflicts: [] },
+      { [candidate.id]: "copy" },
+    );
+
+    expect(result).toEqual(expect.objectContaining({
+      message: "errors.networkDisabled",
       status: "failed",
     }));
   });

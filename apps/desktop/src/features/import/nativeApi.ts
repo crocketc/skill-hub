@@ -162,12 +162,13 @@ function importErrorMessage(error: unknown): string {
     const message = typeof record.message === "string" ? record.message : null;
     if (code) {
       // 结构化错误码优先映射为 i18n key，由 ImportSummary 的 t() 渲染成
-      // 可读文案；未知码保持原样（诚实展示，不伪造成功原因）。
+      // 可读文案；未知码兜底为通用可读文案——裸码不允许直达用户界面，
+      // 码本身保留在操作记录（error_code）里供诊断。
       const reason = typeof record.params === "object" && record.params !== null
         && typeof (record.params as { reason?: unknown }).reason === "string"
         ? (record.params as { reason: string }).reason
         : undefined;
-      return keyedMessage(code, reason) ?? code;
+      return keyedMessage(code, reason) ?? "importWorkflow.errors.unknown";
     }
     if (message) return message;
   }
