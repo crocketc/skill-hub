@@ -1,9 +1,13 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { describeNativeError } from "../../api/nativeErrors";
 import { Button } from "../../ui/Button";
 import { ConfirmDialog } from "../../ui/ConfirmDialog";
 import { DataState } from "../../ui/DataState";
+import {
+  beginBackgroundScan,
+  resetBackgroundScan,
+} from "../bootstrap/backgroundScan";
 import {
   type CompatibilityTarget,
   desktopBootstrapRuntime,
@@ -101,6 +105,20 @@ export function OnboardingWizard({
   const [error, setError] = useState<string | null>(null);
   const [nativeLibraryPath, setNativeLibraryPath] = useState(libraryPath);
   const [customLibraryPath, setCustomLibraryPath] = useState<string | null>(null);
+  // M-31：后台扫描的真实句柄。转入后台后向导可能立即退出，promise 由
+  // bootstrap/backgroundScan 的模块级监控器持有并观察其真实结果。
+  const scanHandleRef = useRef<Promise<InitializationScanState> | null>(null);
+  const handedOffRef = useRef(false);
+  const scanSettledRef = useRef(true);
+  const mountedRef = useRef(true);
+  const finishedRef = useRef(false);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     setNativeLibraryPath(libraryPath);
@@ -144,8 +162,23 @@ export function OnboardingWizard({
     setScanState(null);
     setMessage(null);
     setError(null);
+    handedOffRef.current = false;
+    scanSettledRef.current = false;
+    const attempt = runtime.runInitializationScan(selectedTargetIds);
+    scanHandleRef.current = attempt;
     try {
-      const result = await runtime.runInitializationScan(selectedTargetIds);
+      const result = await attempt;
+      scanSettledRef.current = true;
+      if (!mountedRef.current || finishedRef.current) {
+        // 向导已退出或已按后台方式提交初始化：结果由持同一 promise 的
+        // 后台监控器记录并触发全局通知。
+        return;
+      }
+      // 结果回到向导展示：撤销监控器，避免全局通知与页面结果重复。
+      resetBackgroundScan();
+      if (handedOffRef.current) {
+        setScanInBackground(false);
+      }
       setScanState(result);
       setMessage(
         result.kind === "completed"
@@ -153,11 +186,22 @@ export function OnboardingWizard({
           : t("onboarding.scanStarted"),
       );
     } catch (caught) {
+      scanSettledRef.current = true;
       const code = nativeErrorCode(caught);
       console.error("initialization_scan_failed", code ?? "unknown");
+      if (!mountedRef.current || finishedRef.current) {
+        // 失败由后台监控器上报为全局通知（含重试入口），绝不静默。
+        return;
+      }
+      resetBackgroundScan();
+      if (handedOffRef.current) {
+        setScanInBackground(false);
+      }
       setError(code ? t("onboarding.scanFailedWithCode", { code }) : t("onboarding.scanFailedWithoutCode"));
     } finally {
-      setIsScanning(false);
+      if (mountedRef.current) {
+        setIsScanning(false);
+      }
     }
   };
 
@@ -167,8 +211,9 @@ export function OnboardingWizard({
     return () => window.clearTimeout(timer);
   }, [isScanning, scanInBackground, scanSlowAfterMs]);
 
-  // Completion stays on the summary page; the user explicitly enters the app
-  // or the import flow from there, so nothing jumps away automatically.
+  // Completion stays on the summary page unless the scan was handed off: a
+  // handed-off scan keeps running in the native facade after the wizard is
+  // gone, so finishing must admit the user to the app immediately (M-31).
   const complete = async (skipped: boolean) => {
     if (!nativeLibraryPath || completionState !== "idle") {
       return;
@@ -186,6 +231,17 @@ export function OnboardingWizard({
       }
       await operations.completeOnboarding({ libraryPath: nativeLibraryPath, skipped });
       setCompletionSnapshot({ branch: branch ?? "create", skipped });
+      if (scanInBackground) {
+        // 后台扫描仍在真实运行：立即退出向导进入概览（M-31），扫描结果
+        // 由监控器观察并通过全局通知反馈。
+        finishedRef.current = true;
+        onComplete?.();
+        return;
+      }
+      // 前台完成后仍有扫描在跑：交给监控器，退出向导后依旧可观察、不静默。
+      if (scanHandleRef.current && !scanSettledRef.current && !handedOffRef.current) {
+        beginBackgroundScan(scanHandleRef.current, selectedTargetIds);
+      }
       setCompletionState("complete");
     } catch (caught) {
       setCompletionState("idle");
@@ -256,7 +312,14 @@ export function OnboardingWizard({
       <ScanStep
         isScanning={isScanning && !scanInBackground}
         onScan={() => void scan()}
-        onContinueInBackground={scanSlow ? () => {
+        onContinueInBackground={scanSlow && scanHandleRef.current ? () => {
+          const handle = scanHandleRef.current;
+          if (!handle) {
+            return;
+          }
+          handedOffRef.current = true;
+          // 真实 IPC promise 交给模块级监控器：向导退出后扫描结果仍可观察。
+          beginBackgroundScan(handle, selectedTargetIds);
           setScanInBackground(true);
           setIsScanning(false);
           setMessage(t("onboarding.scanBackground"));

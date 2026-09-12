@@ -884,7 +884,10 @@
     "rescanComplete": "Complete rediscovery",
     "stepsLabel": "Initialization steps",
     "rescanStepsLabel": "Rediscovery steps",
-    "stepComplete": "Completed"
+    "stepComplete": "Completed",
+    "backgroundScanCompleteTitle": "Background scan finished",
+    "backgroundScanCompleteDetail": "Discovered {{count}} skills. Batch import now, or review the results later in discovery.",
+    "backgroundScanFailedTitle": "Background scan failed"
   },
   "theme": {
     "choiceLabel": "Theme colors",

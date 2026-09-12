@@ -3,6 +3,8 @@ import userEvent from "@testing-library/user-event";
 import { I18nextProvider } from "react-i18next";
 import { createSkillHubI18n } from "../../i18n";
 import type { RestorePlan, RestoreResult, ScanResult } from "../../api/bindings";
+import { getBackgroundScanState, resetBackgroundScan } from "../bootstrap/backgroundScan";
+import type { InitializationScanState } from "../bootstrap/api";
 import { unavailableOnboardingOperations } from "../bootstrap/api";
 import { OnboardingWizard } from "./OnboardingWizard";
 
@@ -471,17 +473,21 @@ it("offers to continue initialization while a slow scan keeps running", async ()
   }
 });
 
-it("admits a handed-off background scan in the summary instead of claiming it was skipped", async () => {
+it("exits to the overview immediately when finishing with a handed-off background scan", async () => {
   vi.useFakeTimers();
   try {
     const completeOnboarding = vi.fn(async () => undefined);
+    const onComplete = vi.fn();
     const i18n = await createSkillHubI18n(["zh-CN"]);
-    const pendingScan = new Promise<never>(() => undefined);
+    let resolveScan!: (value: InitializationScanState) => void;
+    const pendingScan = new Promise<InitializationScanState>((resolve) => {
+      resolveScan = resolve;
+    });
     render(
       <I18nextProvider i18n={i18n}>
         <OnboardingWizard
           libraryPath={defaultLibraryPath}
-          onComplete={() => undefined}
+          onComplete={onComplete}
           operations={{ completeOnboarding, discoverAgents: async () => ({ targets: [] }) }}
           runtime={{
             getBootstrapView: async () => { throw new Error("not used"); },
@@ -502,12 +508,128 @@ it("admits a handed-off background scan in the summary instead of claiming it wa
     await click(screen.getByRole("button", { name: "转入后台，继续完成初始化" }));
     await click(screen.getByRole("button", { name: "完成初始化" }));
 
+    // M-31：完成初始化必须立即退出向导进入概览，而不是停在摘要页等待扫描。
     expect(completeOnboarding).toHaveBeenCalledWith({ libraryPath: defaultLibraryPath, skipped: false });
-    expect(screen.getByText("初始化已完成")).toBeVisible();
-    expect(screen.getByText("扫描仍在后台进行，完成后可在发现中查看预览。")).toBeVisible();
-    expect(screen.queryByText(/已跳过扫描/)).not.toBeInTheDocument();
+    expect(onComplete).toHaveBeenCalledOnce();
+    expect(screen.queryByText("初始化已完成")).not.toBeInTheDocument();
+
+    // 后台扫描仍在进行是诚实状态：监控器保持 scanning，不伪造完成态。
+    expect(getBackgroundScanState().status).toBe("scanning");
+
+    // 扫描真正完成后，监控器落定到 completed（供全局通知消费）。
+    resolveScan({ kind: "completed", result: emptyScanResult });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(getBackgroundScanState().status).toBe("completed");
   } finally {
     vi.useRealTimers();
+    resetBackgroundScan();
+  }
+});
+
+it("keeps the handed-off failure visible through the monitor after the wizard exited", async () => {
+  vi.useFakeTimers();
+  try {
+    const completeOnboarding = vi.fn(async () => undefined);
+    const onComplete = vi.fn();
+    const i18n = await createSkillHubI18n(["zh-CN"]);
+    let rejectScan!: (error: unknown) => void;
+    const pendingScan = new Promise<InitializationScanState>((_resolve, reject) => {
+      rejectScan = reject;
+    });
+    render(
+      <I18nextProvider i18n={i18n}>
+        <OnboardingWizard
+          libraryPath={defaultLibraryPath}
+          onComplete={onComplete}
+          operations={{ completeOnboarding, discoverAgents: async () => ({ targets: [] }) }}
+          runtime={{
+            getBootstrapView: async () => { throw new Error("not used"); },
+            runInitializationScan: async () => pendingScan,
+          }}
+        />
+      </I18nextProvider>,
+    );
+
+    await click(screen.getByRole("button", { name: "继续" }));
+    await click(screen.getByLabelText("我确认这里只识别 Agent，不会部署技能"));
+    await click(screen.getByRole("button", { name: "识别 Agent" }));
+    await click(screen.getByRole("button", { name: "继续" }));
+    await click(screen.getByRole("button", { name: "开始只读扫描" }));
+    await act(async () => {
+      vi.advanceTimersByTime(10_000);
+    });
+    await click(screen.getByRole("button", { name: "转入后台，继续完成初始化" }));
+    await click(screen.getByRole("button", { name: "完成初始化" }));
+
+    // 扫描失败不能阻塞进入概览，也不允许静默：监控器必须记录失败。
+    expect(onComplete).toHaveBeenCalledOnce();
+    rejectScan({ code: "input.invalid" });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    const state = getBackgroundScanState();
+    expect(state.status).toBe("failed");
+    expect((state.error as { code?: string }).code).toBe("input.invalid");
+  } finally {
+    vi.useRealTimers();
+    resetBackgroundScan();
+  }
+});
+
+it("keeps the handed-off scan in the wizard when the user stays and it completes there", async () => {
+  vi.useFakeTimers();
+  try {
+    const completeOnboarding = vi.fn(async () => undefined);
+    const onComplete = vi.fn();
+    const i18n = await createSkillHubI18n(["zh-CN"]);
+    let resolveScan!: (value: InitializationScanState) => void;
+    const pendingScan = new Promise<InitializationScanState>((resolve) => {
+      resolveScan = resolve;
+    });
+    render(
+      <I18nextProvider i18n={i18n}>
+        <OnboardingWizard
+          libraryPath={defaultLibraryPath}
+          onComplete={onComplete}
+          operations={{ completeOnboarding, discoverAgents: async () => ({ targets: [] }) }}
+          runtime={{
+            getBootstrapView: async () => { throw new Error("not used"); },
+            runInitializationScan: async () => pendingScan,
+          }}
+        />
+      </I18nextProvider>,
+    );
+
+    await click(screen.getByRole("button", { name: "继续" }));
+    await click(screen.getByLabelText("我确认这里只识别 Agent，不会部署技能"));
+    await click(screen.getByRole("button", { name: "识别 Agent" }));
+    await click(screen.getByRole("button", { name: "继续" }));
+    await click(screen.getByRole("button", { name: "开始只读扫描" }));
+    await act(async () => {
+      vi.advanceTimersByTime(10_000);
+    });
+    await click(screen.getByRole("button", { name: "转入后台，继续完成初始化" }));
+
+    // 用户停留在向导页时扫描完成：结果回到向导展示，不触发全局通知。
+    resolveScan({ kind: "completed", result: emptyScanResult });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(getBackgroundScanState().status).toBe("idle");
+    expect(screen.getByRole("heading", { name: "扫描预览" })).toBeVisible();
+
+    await click(screen.getByRole("button", { name: "完成初始化" }));
+    expect(completeOnboarding).toHaveBeenCalledOnce();
+    expect(screen.getByText("初始化已完成")).toBeVisible();
+    expect(onComplete).not.toHaveBeenCalled();
+  } finally {
+    vi.useRealTimers();
+    resetBackgroundScan();
   }
 });
 
