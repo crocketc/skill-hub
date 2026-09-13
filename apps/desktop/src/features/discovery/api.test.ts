@@ -3,8 +3,10 @@ import type { DiscoverySnapshot, SearchCandidateRecord } from "../../api/binding
 import {
   buildAgentGroups,
   formatObservedAt,
+  formatRelativeScanTime,
   isCandidateDismissedConflict,
   mergeCandidateEntries,
+  parseRepoInput,
 } from "./api";
 
 /**
@@ -237,5 +239,77 @@ describe("search candidate helpers", () => {
     expect(merged.get("b")).toEqual({ id: "c2", status: "pending" });
     // 旧映射不被改写：合并总是产生新 Map。
     expect(prev.get("a")).toEqual({ id: "c1", status: "confirmed" });
+  });
+});
+
+/**
+ * D4：仓库管理页的地址解析纯函数。接受四种形态——owner/name、
+ * 完整 GitHub URL、.git 后缀、/tree/branch 子路径——其余一律拒绝，
+ * 由调用方给出行内提示而不是把坏坐标提交给后端。
+ */
+describe("parseRepoInput", () => {
+  it.each([
+    ["anthropics/skills", { owner: "anthropics", name: "skills", branch: "" }],
+    [
+      "https://github.com/anthropics/skills",
+      { owner: "anthropics", name: "skills", branch: "" },
+    ],
+    [
+      "https://github.com/anthropics/skills.git",
+      { owner: "anthropics", name: "skills", branch: "" },
+    ],
+    [
+      "https://github.com/anthropics/skills/tree/feature/new-thing",
+      { owner: "anthropics", name: "skills", branch: "feature/new-thing" },
+    ],
+    // 附带形态：裸 .git 后缀、www 主机、http、末尾斜杠。
+    ["octocat/hello-world.git", { owner: "octocat", name: "hello-world", branch: "" }],
+    [
+      "https://www.github.com/Octocat/Hello-World/",
+      { owner: "Octocat", name: "Hello-World", branch: "" },
+    ],
+  ])("parses %s", (input, expected) => {
+    expect(parseRepoInput(input)).toEqual(expected);
+  });
+
+  it.each([
+    "",
+    "just-a-name",
+    "https://gitlab.com/anthropics/skills",
+    "https://github.com/anthropics",
+    "https://github.com/anthropics/skills/extra",
+    "bad..owner/skills",
+    "anthropics/../skills",
+    "anthropics/skills/tree",
+    "anthropics/skills/tree/.hidden",
+  ])("rejects %s", (input) => {
+    expect(parseRepoInput(input)).toBeNull();
+  });
+});
+
+/**
+ * D4：上次扫描时间的相对展示。近程用 Intl.RelativeTimeFormat，
+ * 更早回退本地化日期；不可解析的时间戳返回 null 绝不露原始串。
+ */
+describe("formatRelativeScanTime", () => {
+  const now = new Date("2026-09-14T12:00:00Z");
+
+  it("formats recent timestamps as relative text in the requested locale", () => {
+    expect(
+      formatRelativeScanTime("2026-09-14T11:58:00Z", { locale: "zh-CN", now }),
+    ).toBe("2分钟前");
+    expect(
+      formatRelativeScanTime("2026-09-14T12:00:00Z", { locale: "en-US", now }),
+    ).toBe("now");
+  });
+
+  it("falls back to a localized date for older scans", () => {
+    expect(
+      formatRelativeScanTime("2026-01-05T00:00:00Z", { locale: "en-US", now, timeZone: "UTC" }),
+    ).toMatch(/^Jan 5, 2026/);
+  });
+
+  it("returns null for unparseable timestamps", () => {
+    expect(formatRelativeScanTime("not-a-date", { now })).toBeNull();
   });
 });

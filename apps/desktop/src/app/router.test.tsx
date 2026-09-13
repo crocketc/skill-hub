@@ -22,6 +22,12 @@ vi.mock("../api/bindings", async (importOriginal) => {
       if (query.type === "get_discovery_snapshot") {
         return { type: "discovery_snapshot" as const, payload: { generation: "g", observed_at: "now", instances: [], logical_targets: [], physical_targets: [] } };
       }
+      if (query.type === "list_skill_repos") {
+        return {
+          type: "skill_repos" as const,
+          payload: [{ repo: { owner: "anthropics", name: "skills", branch: "main", enabled: true }, scan: null }],
+        };
+      }
       if (query.type === "list_custom_agents") return { type: "custom_agents" as const, payload: [] };
       if (query.type === "list_deployments") return { type: "deployments" as const, payload: [] };
       if (query.type === "list_projects") return { type: "projects" as const, payload: [] };
@@ -298,6 +304,7 @@ it("offers a topbar back target for sub-routes and none for main tabs", () => {
   expect(resolveSubRouteFallback("/settings/data-protection")).toBe("/settings");
   expect(resolveSubRouteFallback("/discovery/local")).toBe("/discovery");
   expect(resolveSubRouteFallback("/discovery/online")).toBe("/discovery");
+  expect(resolveSubRouteFallback("/discovery/repositories")).toBe("/discovery");
   expect(resolveSubRouteFallback("/library/combinations")).toBe("/library");
   expect(resolveSubRouteFallback("/agents")).toBeNull();
   expect(resolveSubRouteFallback("/library")).toBeNull();
@@ -413,4 +420,17 @@ it("loads the production settings route from native preferences", async () => {
   fireEvent.click(screen.getByRole("tab", { name: "Library maintenance" }));
   expect(await screen.findByText("C:\\Users\\Test\\SkillHub")).toBeVisible();
   expect(screen.queryByText("settings_query is unavailable until the native contract is generated.")).not.toBeInTheDocument();
+});
+
+it("routes /discovery/repositories to the standalone repository management page", async () => {
+  mockBrowserPreferences();
+  await skillHubI18n.changeLanguage("zh-CN");
+  await appRouter.navigate("/discovery/repositories");
+  render(<AppRouter />);
+
+  expect(await screen.findByRole("heading", { name: "仓库管理" })).toBeVisible();
+  // 列表来自 list_skill_repos 查询（含逐仓视图载荷）。
+  expect(await screen.findByText("anthropics/skills")).toBeVisible();
+  // 发现子路由的壳层顶栏保留返回发现主页的锚点。
+  expect(screen.getByRole("button", { name: "返回" })).toBeVisible();
 });

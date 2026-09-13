@@ -54,9 +54,19 @@ async function installNativePreview(page: Page) {
         { id: "claude-physical", path: "C:/Preview/.claude", exists: true, readable: true, writable: true, case_behavior: "volume_case_behavior_unknown_preserved_case_fallback", logical_target_ids: ["claude-target"] },
       ],
     };
+    // D4（审查 M1 修复，2026-09-14）：list/add/remove_skill_repos 的载荷已
+    // 换成 SkillRepoView[]（{ repo, scan }，scan 为该仓最近一次扫描状态或
+    // null）。mock 必须与 bindings.ts 契约逐字段对齐，否则 /discovery/repo
+    // 读取 view.repo 时直接 TypeError。
     const repos = [
-      { owner: "anthropics", name: "skills", branch: "main", enabled: true },
-      { owner: "ComposioHQ", name: "awesome-claude-skills", branch: "main", enabled: false },
+      {
+        repo: { owner: "anthropics", name: "skills", branch: "main", enabled: true },
+        scan: { scanned_at: "2026-09-13T08:00:00Z", ok: true, candidate_count: 3, error: null },
+      },
+      {
+        repo: { owner: "ComposioHQ", name: "awesome-claude-skills", branch: "main", enabled: false },
+        scan: null,
+      },
     ];
     const onlinePage = {
       items: [{
@@ -206,6 +216,14 @@ async function installNativePreview(page: Page) {
     Object.defineProperty(window, "__TAURI_INTERNALS__", {
       configurable: true,
       value: {
+        // D4（审查跟进，2026-09-14）：标题栏自绘窗口控制（WindowControls →
+        // resolveWindowChrome → getCurrentWindow）在 Tauri 运行时读取
+        // metadata.currentWindow.label；mock 环境声明了 __TAURI_INTERNALS__
+        // 就必须同时补齐该契约，否则壳层在首屏直接崩溃。
+        metadata: {
+          currentWindow: { label: "main" },
+          currentWebview: { windowLabel: "main", label: "main" },
+        },
         transformCallback(callback: (payload: unknown) => void) { const id = ++callbackId; callbacks.set(id, callback); return id; },
         unregisterCallback(id: number) { callbacks.delete(id); },
         invoke,
@@ -287,6 +305,15 @@ test("online, repository, and lock discovery expose deterministic result states"
   await expect(page.getByText(/The repository or branch does not exist/)).toBeVisible();
   await expect(page.getByRole("button", { name: "Retry scanning cexll/myclaude" })).toBeVisible();
   await expect(page.getByText(/DOWNLOAD_FAILED/)).toHaveCount(0);
+
+  // D4（审查 M1 修复，2026-09-14）：仓库管理独立页消费 SkillRepoView 的
+  // scan 载荷——成功仓回显“上次扫描 + 候选数”，从未扫描的仓如实展示。
+  await page.goto("/discovery/repositories");
+  await expect(page.getByRole("heading", { name: "Repository management" })).toBeVisible();
+  await expect(page.getByText("anthropics/skills", { exact: true })).toBeVisible();
+  await expect(page.getByText("Last scan")).toBeVisible();
+  await expect(page.getByText("3 candidate Skills")).toBeVisible();
+  await expect(page.getByText("Never scanned")).toBeVisible();
 
   await page.goto("/discovery/lock");
   await page.getByRole("button", { name: "Scan lock file" }).click();

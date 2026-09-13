@@ -1,18 +1,26 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { I18nextProvider } from "react-i18next";
+import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { createSkillHubI18n } from "../../i18n";
 import type {
   DiscoverableRepoSkill,
   DownloadedRepoSkill,
   RepoDiscoveryReport,
   SkillRepo,
+  SkillRepoView,
 } from "../../api/bindings";
 import { RepoDiscovery, describeRepoWarning } from "./RepoDiscovery";
 import type { DiscoveryFacade } from "./api";
 
-const defaultRepos: SkillRepo[] = [
-  { owner: "anthropics", name: "skills", branch: "main", enabled: true },
-  { owner: "cexll", name: "myclaude", branch: "master", enabled: false },
+const defaultRepos: SkillRepoView[] = [
+  {
+    repo: { owner: "anthropics", name: "skills", branch: "main", enabled: true },
+    scan: null,
+  },
+  {
+    repo: { owner: "cexll", name: "myclaude", branch: "master", enabled: false },
+    scan: null,
+  },
 ];
 
 const skill: DiscoverableRepoSkill = {
@@ -51,7 +59,7 @@ function baseFacade(overrides: Partial<DiscoveryFacade> = {}): DiscoveryFacade {
     listSkillRepos: async () => defaultRepos,
     discoverRepoSkills: async () => report,
     discoverAgentsLockSkills: async () => [],
-    addSkillRepo: async (repo: SkillRepo) => [repo],
+    addSkillRepo: async (repo: SkillRepo) => [{ repo, scan: null }],
     removeSkillRepo: async () => defaultRepos,
     downloadRepoSkill: async (): Promise<DownloadedRepoSkill> => ({
       local_path: "C:/temp/skillhub-repo-skills/1/pdf",
@@ -85,7 +93,16 @@ beforeAll(async () => {
 function renderCard(facade: DiscoveryFacade, onImportDirectory = vi.fn()) {
   render(
     <I18nextProvider i18n={createSkillHubI18nSync()}>
-      <RepoDiscovery facade={facade} onImportDirectory={onImportDirectory} />
+      <MemoryRouter initialEntries={["/discovery/repo"]}>
+        <Routes>
+          <Route
+            element={<RepoDiscovery facade={facade} onImportDirectory={onImportDirectory} />}
+            path="/discovery/repo"
+          />
+          {/* D4：仓库管理入口的导航落点标记。 */}
+          <Route element={<p>repo-manager-marker</p>} path="/discovery/repositories" />
+        </Routes>
+      </MemoryRouter>
     </I18nextProvider>,
   );
   return onImportDirectory;
@@ -327,7 +344,10 @@ it("keeps the raw error code visible for unknown scan failures", async () => {
 });
 
 it("adds a repository through the facade and refreshes the list", async () => {
-  const addSkillRepo = vi.fn(async (repo: SkillRepo) => [...defaultRepos, repo]);
+  const addSkillRepo = vi.fn(async (repo: SkillRepo) => [
+    ...defaultRepos,
+    { repo, scan: null },
+  ]);
   renderCard(baseFacade({ addSkillRepo }));
 
   fireEvent.change(await screen.findByLabelText("所有者"), { target: { value: "octocat" } });
@@ -344,7 +364,7 @@ it("adds a repository through the facade and refreshes the list", async () => {
 });
 
 it("toggles a repository by re-adding it with the flipped enabled flag", async () => {
-  const addSkillRepo = vi.fn(async (repo: SkillRepo) => [repo]);
+  const addSkillRepo = vi.fn(async (repo: SkillRepo) => [{ repo, scan: null }]);
   renderCard(baseFacade({ addSkillRepo }));
 
   const checkboxes = await screen.findAllByRole("checkbox");
@@ -368,4 +388,13 @@ it("removes a repository only after an explicit confirmation", async () => {
 
   await click(await screen.findByRole("button", { name: "确认移除" }));
   expect(removeSkillRepo).toHaveBeenCalledWith("anthropics", "skills");
+});
+
+it("links to the standalone repository management page", async () => {
+  renderCard(baseFacade());
+
+  // D4：仓库管理入口显著可达，导航落点为独立管理页。
+  await click(await screen.findByRole("link", { name: "管理仓库" }));
+
+  expect(await screen.findByText("repo-manager-marker")).toBeVisible();
 });

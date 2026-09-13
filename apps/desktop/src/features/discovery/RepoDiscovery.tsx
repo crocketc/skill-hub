@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { Link } from "react-router-dom";
 import { describeNativeError } from "../../api/nativeErrors";
 import { Button } from "../../ui/Button";
 import { ConfirmDialog } from "../../ui/ConfirmDialog";
@@ -8,7 +9,8 @@ import { Input } from "../../ui/Input";
 import { ExternalLink } from "../markdown/ExternalLink";
 import { SkillCard } from "../shared/skill-card/SkillCard";
 import type { SkillCardViewModel } from "../shared/skill-card/SkillCardViewModel";
-import type { DiscoverableRepoSkill, SkillRepo } from "../../api/bindings";
+import type { DiscoverableRepoSkill, SkillRepoView } from "../../api/bindings";
+import { describeRepoWarning } from "./api";
 import type { DiscoveryFacade } from "./api";
 
 export interface RepoDiscoveryProps {
@@ -17,26 +19,9 @@ export interface RepoDiscoveryProps {
   onImportDirectory: (directory: string) => void;
 }
 
-/**
- * P1-04：把后端逐仓失败原因（原始错误串）映射为可读分类文案；
- * 已知分类不再展示原始串，未分类原因保留原始串方便诊断，绝不静默。
- */
-export function describeRepoWarning(
-  reason: string,
-  translate: (key: string, options?: Record<string, unknown>) => string,
-): string {
-  const normalized = reason.toUpperCase();
-  if (normalized.includes("404") || normalized.includes("NOT_FOUND")) {
-    return translate("discovery.repo.warningReason.notFound");
-  }
-  if (normalized.includes("TIMEOUT")) {
-    return translate("discovery.repo.warningReason.timeout");
-  }
-  if (normalized.includes("NETWORK")) {
-    return translate("discovery.repo.warningReason.network");
-  }
-  return translate("discovery.repo.warningReason.unknown", { reason });
-}
+// 失败原因分类文案已上移至 ./api（与 D4 仓库管理页共用）；此处保留导出，
+// 让既有调用方（含测试）的导入路径保持稳定。
+export { describeRepoWarning };
 
 /**
  * FE-07 仓库发现：管理 GitHub 仓库列表（CRUD + 启用开关），下载仓库归档
@@ -45,7 +30,7 @@ export function describeRepoWarning(
  */
 export function RepoDiscovery({ facade, onImportDirectory }: RepoDiscoveryProps) {
   const { t } = useTranslation();
-  const [repos, setRepos] = useState<SkillRepo[]>([]);
+  const [repos, setRepos] = useState<SkillRepoView[]>([]);
   const [reposLoaded, setReposLoaded] = useState(false);
   const [owner, setOwner] = useState("");
   const [name, setName] = useState("");
@@ -58,7 +43,7 @@ export function RepoDiscovery({ facade, onImportDirectory }: RepoDiscoveryProps)
     warnings: { owner: string; name: string; reason: string }[];
   } | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [pendingRemoval, setPendingRemoval] = useState<SkillRepo | null>(null);
+  const [pendingRemoval, setPendingRemoval] = useState<SkillRepoView | null>(null);
   // P1-04：逐仓重试进行中的 key（owner/name）。
   const [retryingKey, setRetryingKey] = useState<string | null>(null);
 
@@ -173,10 +158,13 @@ export function RepoDiscovery({ facade, onImportDirectory }: RepoDiscoveryProps)
   }, [branch, describe, facade, name, owner]);
 
   const toggleRepo = useCallback(
-    async (repo: SkillRepo) => {
+    async (view: SkillRepoView) => {
       setError(null);
       try {
-        const updated = await facade.addSkillRepo({ ...repo, enabled: !repo.enabled });
+        const updated = await facade.addSkillRepo({
+          ...view.repo,
+          enabled: !view.repo.enabled,
+        });
         setRepos(updated);
       } catch (reason) {
         setError(describe(reason));
@@ -189,21 +177,19 @@ export function RepoDiscovery({ facade, onImportDirectory }: RepoDiscoveryProps)
     if (!pendingRemoval) return;
     setError(null);
     try {
-      const updated = await facade.removeSkillRepo(pendingRemoval.owner, pendingRemoval.name);
+      const removed = pendingRemoval.repo;
+      const updated = await facade.removeSkillRepo(removed.owner, removed.name);
       setRepos(updated);
       setReport((current) =>
         current
           ? {
               skills: current.skills.filter(
                 (skill) =>
-                  !(
-                    skill.repo_owner === pendingRemoval.owner &&
-                    skill.repo_name === pendingRemoval.name
-                  ),
+                  !(skill.repo_owner === removed.owner && skill.repo_name === removed.name),
               ),
               warnings: current.warnings.filter(
                 (warning) =>
-                  !(warning.owner === pendingRemoval.owner && warning.name === pendingRemoval.name),
+                  !(warning.owner === removed.owner && warning.name === removed.name),
               ),
             }
           : current,
@@ -256,39 +242,49 @@ export function RepoDiscovery({ facade, onImportDirectory }: RepoDiscoveryProps)
       </header>
       <p className="sh-discovery-module__description">{t("discovery.repo.description")}</p>
 
+      {/* D4：仓库管理独立页入口；本区保留扫描与结果展示能力不撤。 */}
+      <div className="sh-discovery-module__manage">
+        <Link className="sh-button sh-button--secondary sh-button--sm" to="/discovery/repositories">
+          {t("discovery.repo.manage")}
+        </Link>
+      </div>
+
       <div className="sh-discovery-module__body">
         <ul className="sh-discovery-repos">
-          {repos.map((repo) => (
-            <li key={`${repo.owner}/${repo.name}`}>
-              <label>
-                <input
-                  checked={repo.enabled}
-                  onChange={() => void toggleRepo(repo)}
-                  type="checkbox"
-                  aria-label={t("discovery.repo.enabled")}
+          {repos.map((view) => {
+            const repo = view.repo;
+            return (
+              <li className="sh-discovery-repos__repo" key={`${repo.owner}/${repo.name}`}>
+                <label className="sh-discovery-repos__toggle">
+                  <input
+                    checked={repo.enabled}
+                    onChange={() => void toggleRepo(view)}
+                    type="checkbox"
+                    aria-label={t("discovery.repo.enabled")}
+                  />
+                  <span className="sh-discovery-repos__name">{`${repo.owner}/${repo.name}@${repo.branch}`}</span>
+                </label>
+                <ConfirmDialog
+                  cancelLabel={t("actions.cancel")}
+                  confirmLabel={t("discovery.repo.confirmRemove")}
+                  description={t("discovery.repo.confirmRemoveDescription", {
+                    repo: `${repo.owner}/${repo.name}`,
+                  })}
+                  onConfirm={() => void removeRepo()}
+                  title={t("discovery.repo.confirmRemoveTitle")}
+                  trigger={
+                    <Button
+                      onClick={() => setPendingRemoval(view)}
+                      variant="ghost"
+                    >
+                      {t("discovery.repo.remove")}
+                    </Button>
+                  }
+                  variant="primary"
                 />
-                <span>{`${repo.owner}/${repo.name}@${repo.branch}`}</span>
-              </label>
-              <ConfirmDialog
-                cancelLabel={t("actions.cancel")}
-                confirmLabel={t("discovery.repo.confirmRemove")}
-                description={t("discovery.repo.confirmRemoveDescription", {
-                  repo: `${repo.owner}/${repo.name}`,
-                })}
-                onConfirm={() => void removeRepo()}
-                title={t("discovery.repo.confirmRemoveTitle")}
-                trigger={
-                  <Button
-                    onClick={() => setPendingRemoval(repo)}
-                    variant="ghost"
-                  >
-                    {t("discovery.repo.remove")}
-                  </Button>
-                }
-                variant="primary"
-              />
-            </li>
-          ))}
+              </li>
+            );
+          })}
           {reposLoaded && repos.length === 0 ? (
             <li>{t("discovery.repo.empty")}</li>
           ) : null}

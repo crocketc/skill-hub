@@ -1,4 +1,4 @@
-import type { AgentsLockEntry, DiscoverableRepoSkill, DiscoverySnapshot, DownloadedRepoSkill, ScanResult, SkillRepo, SourceSearchHit, SourceSearchPage } from "../../api/bindings";
+import type { AgentsLockEntry, DiscoverableRepoSkill, DiscoverySnapshot, DownloadedRepoSkill, ScanResult, SkillRepo, SkillRepoView, SourceSearchHit, SourceSearchPage } from "../../api/bindings";
 import { PageFrame } from "../../ui/PageFrame";
 import { PageHeader } from "../../ui/PageHeader";
 import { useTheme } from "../../styles/ThemeProvider";
@@ -89,9 +89,9 @@ const HIT_PAGE: SourceSearchPage = {
   expanded_query: "pdf extraction tables",
 };
 
-const REPOS: SkillRepo[] = [
-  { owner: "anthropics", name: "skills", branch: "main", enabled: true },
-  { owner: "cexll", name: "myclaude", branch: "master", enabled: false },
+const REPOS: SkillRepoView[] = [
+  { repo: { owner: "anthropics", name: "skills", branch: "main", enabled: true }, scan: null },
+  { repo: { owner: "cexll", name: "myclaude", branch: "master", enabled: false }, scan: null },
 ];
 
 const REPO_SKILLS: DiscoverableRepoSkill[] = [
@@ -283,7 +283,7 @@ function previewFacade(): DiscoveryFacade {
     async searchOnlineSources() {
       return HIT_PAGE;
     },
-    async listSkillRepos(): Promise<SkillRepo[]> {
+    async listSkillRepos(): Promise<SkillRepoView[]> {
       return REPOS;
     },
     async discoverRepoSkills() {
@@ -292,10 +292,10 @@ function previewFacade(): DiscoveryFacade {
     async discoverAgentsLockSkills(): Promise<AgentsLockEntry[]> {
       return LOCK_ENTRIES;
     },
-    async addSkillRepo(repo: SkillRepo): Promise<SkillRepo[]> {
-      return [repo];
+    async addSkillRepo(repo: SkillRepo): Promise<SkillRepoView[]> {
+      return [{ repo, scan: null }];
     },
-    async removeSkillRepo(): Promise<SkillRepo[]> {
+    async removeSkillRepo(): Promise<SkillRepoView[]> {
       return REPOS;
     },
     async downloadRepoSkill(skill): Promise<DownloadedRepoSkill> {

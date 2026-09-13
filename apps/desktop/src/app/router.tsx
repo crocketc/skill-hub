@@ -32,6 +32,7 @@ import { DiscoveryRoute } from "./DiscoveryRoute";
 import { SkillDetailPreview } from "../features/skill-detail/SkillDetailPreview";
 import { nativeSkillDetailFacade } from "../features/skill-detail/nativeApi";
 import { skillDetailKeys } from "../features/skill-detail/api";
+import { desktopDiscoveryFacade } from "../features/discovery/api";
 import {
   SkillLibraryPreview,
   SkillLibraryPreviewShell,
@@ -73,6 +74,7 @@ const OverviewPage = lazy(() => import("../features/overview/OverviewPage").then
 const SkillLibraryPage = lazy(() => import("../features/skills/SkillLibraryPage").then((m) => ({ default: m.SkillLibraryPage })));
 const SkillDetailPage = lazy(() => import("../features/skill-detail/SkillDetailPage").then((m) => ({ default: m.SkillDetailPage })));
 const CombinationManagerPage = lazy(() => import("../features/skills/CombinationManagerPage").then((m) => ({ default: m.CombinationManagerPage })));
+const RepoManagerPage = lazy(() => import("../features/discovery/RepoManagerPage").then((m) => ({ default: m.RepoManagerPage })));
 
 function RouteSuspense({ children }: { children: ReactNode }) {
   const { t } = useTranslation();
@@ -228,6 +230,11 @@ function CombinationManagerRoute() {
   return <RouteSuspense><CombinationManagerPage facade={nativeSkillLibraryFacade} /></RouteSuspense>;
 }
 
+// D4：仓库管理独立页（发现子页；壳层返回锚点已由 /discovery/* fallback 覆盖）。
+function RepoManagerRoute() {
+  return <RouteSuspense><RepoManagerPage facade={desktopDiscoveryFacade} /></RouteSuspense>;
+}
+
 function SecurityRoute() {
   const { skillId } = useParams();
   return <RouteSuspense><SecurityResults facade={nativeSecurityFacade} skillId={skillId ?? "unknown"} versionId="current" /></RouteSuspense>;
@@ -264,6 +271,7 @@ export const appRouter = createBrowserRouter([
       { path: "discovery/local", element: <DiscoveryRoute view="local" /> },
       { path: "discovery/online", element: <DiscoveryRoute view="online" /> },
       { path: "discovery/repo", element: <DiscoveryRoute view="repo" /> },
+      { path: "discovery/repositories", element: <RepoManagerRoute /> },
       { path: "discovery/lock", element: <DiscoveryRoute view="lock" /> },
       { path: "agents", element: <RouteSuspense><AgentListPage facade={nativeAgentFacade} /></RouteSuspense> },
       { path: "agents/:agentKey", element: <AgentDetailRoute /> },

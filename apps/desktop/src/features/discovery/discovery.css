@@ -194,13 +194,32 @@
   gap: var(--space-2);
 }
 
-.sh-discovery-repos label {
+/* D4：仓库条目与仓库管理页同观感——每一行是一张安静的卡。 */
+.sh-discovery-repos > li.sh-discovery-repos__repo {
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--ui-border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--ui-surface);
+}
+
+.sh-discovery-repos__toggle {
   display: inline-flex;
   flex: 1 1 auto;
   align-items: center;
   gap: var(--space-2);
   min-width: 0;
   cursor: pointer;
+}
+
+.sh-discovery-repos__name {
+  overflow-wrap: anywhere;
+}
+
+/* D4：仓库管理独立页入口（顶部显著位置，样式沿用既有按钮类）。 */
+.sh-discovery-module__manage {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: calc(var(--space-2) * -1);
 }
 
 .sh-discovery-repos__scanning {

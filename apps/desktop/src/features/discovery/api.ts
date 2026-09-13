@@ -14,6 +14,7 @@ import {
   type SearchCandidateRecord,
   type SearchCandidateStatus,
   type SkillRepo,
+  type SkillRepoView,
   type SourceSearchPage,
   type SourceSearchQuery,
 } from "../../api/bindings";
@@ -33,11 +34,17 @@ export interface DiscoveryFacade {
    * against the real provider; the AI layer only extends and marks hits.
    * Absent keeps the plain search behaviour. */
   searchOnlineSourcesAssisted?: (text: string) => Promise<SourceSearchPage>;
-  listSkillRepos: () => Promise<SkillRepo[]>;
+  /** 仓库列表（含每仓最近一次扫描状态；D4 仓库管理）。 */
+  listSkillRepos: () => Promise<SkillRepoView[]>;
   discoverRepoSkills: () => Promise<RepoDiscoveryReport>;
   discoverAgentsLockSkills: () => Promise<AgentsLockEntry[]>;
-  addSkillRepo: (repo: SkillRepo) => Promise<SkillRepo[]>;
-  removeSkillRepo: (owner: string, name: string) => Promise<SkillRepo[]>;
+  addSkillRepo: (repo: SkillRepo) => Promise<SkillRepoView[]>;
+  removeSkillRepo: (owner: string, name: string) => Promise<SkillRepoView[]>;
+  /**
+   * D4 逐仓刷新（联网）：重扫单个已配置仓库并持久化其最近一次扫描状态；
+   * 返回该仓库自己的发现报告。缺省表示当前环境不支持（如实降级）。
+   */
+  refreshSkillRepo?: (owner: string, name: string) => Promise<RepoDiscoveryReport>;
   downloadRepoSkill: (skill: DiscoverableRepoSkill) => Promise<DownloadedRepoSkill>;
   /** Opens a repository README link in the platform browser via the native shell. */
   openExternalUrl: (url: string) => Promise<void>;
@@ -140,6 +147,16 @@ export const desktopDiscoveryFacade: DiscoveryFacade = {
     }
     return result.payload;
   },
+  async refreshSkillRepo(owner, name) {
+    const result = await executeCommand({
+      type: "refresh_skill_repo",
+      payload: { owner, name },
+    });
+    if (result.type !== "repo_discovery_report") {
+      throw new Error("Unexpected repo refresh response from the native application.");
+    }
+    return result.payload;
+  },
   async downloadRepoSkill(skill) {
     const result = await executeCommand({
       type: "download_repo_skill",
@@ -214,6 +231,28 @@ export const desktopDiscoveryFacade: DiscoveryFacade = {
 export interface FormatObservedAtOptions {
   locale?: string;
   timeZone?: string;
+}
+
+/**
+ * P1-04：把后端逐仓失败原因（原始错误串）映射为可读分类文案；
+ * 已知分类不再展示原始串，未分类原因保留原始串方便诊断，绝不静默。
+ * 仓库发现页与 D4 仓库管理页共用同一映射，失败叙事保持一致。
+ */
+export function describeRepoWarning(
+  reason: string,
+  translate: (key: string, options?: Record<string, unknown>) => string,
+): string {
+  const normalized = reason.toUpperCase();
+  if (normalized.includes("404") || normalized.includes("NOT_FOUND")) {
+    return translate("discovery.repo.warningReason.notFound");
+  }
+  if (normalized.includes("TIMEOUT")) {
+    return translate("discovery.repo.warningReason.timeout");
+  }
+  if (normalized.includes("NETWORK")) {
+    return translate("discovery.repo.warningReason.network");
+  }
+  return translate("discovery.repo.warningReason.unknown", { reason });
 }
 
 /**
@@ -295,6 +334,115 @@ export function formatObservedAt(
       dateStyle: "medium",
       timeStyle: "short",
     }).format(date);
+  }
+}
+
+/** D4：解析后的仓库坐标（branch 为空串 = 走仓库默认分支哨兵）。 */
+export interface ParsedRepoInput {
+  owner: string;
+  name: string;
+  branch: string;
+}
+
+const REPO_OWNER_PATTERN = /^[A-Za-z0-9-]{1,39}$/;
+const REPO_NAME_PATTERN = /^[A-Za-z0-9._-]{1,100}$/;
+const BRANCH_SEGMENT_PATTERN = /^[A-Za-z0-9._-]+$/;
+
+/**
+ * D4：把用户输入解析为仓库坐标。接受四种形态——owner/name、完整
+ * GitHub URL、.git 后缀、/tree/branch 子路径——其余（含非法字符、
+ * 非 GitHub 主机、越权分支段）返回 null，由调用方给出行内提示，
+ * 不把坏坐标提交给后端。规则与后端 repo_ref 校验同口径。
+ */
+export function parseRepoInput(input: string): ParsedRepoInput | null {
+  const trimmed = input.trim();
+  if (trimmed === "") return null;
+
+  let segments: string[];
+  if (/^https?:\/\//i.test(trimmed)) {
+    let url: URL;
+    try {
+      url = new URL(trimmed);
+    } catch {
+      return null;
+    }
+    if (!/^(?:www\.)?github\.com$/i.test(url.hostname)) return null;
+    segments = url.pathname.split("/").filter(Boolean);
+  } else {
+    segments = trimmed.split("/").filter(Boolean);
+  }
+
+  if (segments.length < 2) return null;
+  const [owner, rawName] = segments;
+  const rest = segments.slice(2);
+  let branch = "";
+  if (rest.length > 0) {
+    // /tree/branch 子路径：余下段整体作为分支（保留 feature/x 形态）。
+    if (rest[0].toLowerCase() !== "tree" || rest.length < 2) return null;
+    branch = rest.slice(1).join("/");
+  }
+  const name = rawName.replace(/\.git$/i, "");
+
+  if (!REPO_OWNER_PATTERN.test(owner)) return null;
+  if (!REPO_NAME_PATTERN.test(name) || name === "." || name === "..") return null;
+  if (branch !== "" && !isValidBranchName(branch)) return null;
+  return { owner, name, branch };
+}
+
+/** 与后端 repo_ref.is_valid_git_branch 同规则：段不得为空/./..、
+ * 不得以 '.' 开头、不得以 .lock 结尾；空串与 HEAD 是默认分支哨兵。 */
+function isValidBranchName(branch: string): boolean {
+  if (branch.length > 255) return false;
+  return branch.split("/").every(
+    (segment) =>
+      segment !== ""
+      && segment !== "."
+      && segment !== ".."
+      && !segment.startsWith(".")
+      && !segment.endsWith(".lock")
+      && BRANCH_SEGMENT_PATTERN.test(segment),
+  );
+}
+
+export interface FormatRelativeScanTimeOptions {
+  locale?: string;
+  timeZone?: string;
+  /** 注入当前时刻（测试确定性）；缺省取真实 now。 */
+  now?: Date;
+}
+
+/**
+ * D4：把上次扫描时间渲染为相对时间（近程）或本地化日期（远程）。
+ * 前端只做展示换算，不承担任何边界校验职责；不可解析时返回 null。
+ */
+export function formatRelativeScanTime(
+  scannedAt: string,
+  options: FormatRelativeScanTimeOptions = {},
+): string | null {
+  const date = parseObservedAt(scannedAt);
+  if (!date) return null;
+  const now = options.now ?? new Date();
+  const seconds = Math.round((date.getTime() - now.getTime()) / 1000);
+  try {
+    const relative = new Intl.RelativeTimeFormat(options.locale || undefined, {
+      numeric: "auto",
+    });
+    const minutes = Math.round(seconds / 60);
+    if (Math.abs(minutes) < 1) return relative.format(seconds, "second");
+    const hours = Math.round(minutes / 60);
+    if (Math.abs(hours) < 1) return relative.format(minutes, "minute");
+    const days = Math.round(hours / 24);
+    if (Math.abs(days) < 31) return relative.format(hours, "hour");
+  } catch {
+    // 相对格式化不可用时回退本地化日期，绝不抛错中断页面。
+  }
+  try {
+    return new Intl.DateTimeFormat(options.locale || undefined, {
+      dateStyle: "medium",
+      ...(options.timeZone ? { timeZone: options.timeZone } : {}),
+    }).format(date);
+  } catch {
+    return new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(date);
   }
 }
 

@@ -6,9 +6,11 @@ interface ExternalLinkProps {
   children: ReactNode;
   onOpen: () => void;
   target: string;
+  /** 可访问名；缺省回退到触发按钮的可见内容。 */
+  ariaLabel?: string;
 }
 
-export function ExternalLink({ children, onOpen, target }: ExternalLinkProps) {
+export function ExternalLink({ children, onOpen, target, ariaLabel }: ExternalLinkProps) {
   const { t } = useTranslation();
   return (
     <ConfirmDialog
@@ -18,7 +20,7 @@ export function ExternalLink({ children, onOpen, target }: ExternalLinkProps) {
       onConfirm={onOpen}
       title={t("markdown.external.title")}
       trigger={
-        <button className="sh-markdown-link" role="link" type="button">
+        <button aria-label={ariaLabel} className="sh-markdown-link" role="link" type="button">
           {children}
         </button>
       }

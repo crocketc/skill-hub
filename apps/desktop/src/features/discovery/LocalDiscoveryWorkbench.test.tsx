@@ -9,14 +9,14 @@ import type {
 } from "../../api/bindings";
 import discoveryCss from "./discovery.css?raw";
 import { LocalDiscoveryWorkbench } from "./LocalDiscoveryWorkbench";
-import type { SkillRepo } from "../../api/bindings";
+import type { SkillRepo, SkillRepoView } from "../../api/bindings";
 
 const repoDiscoveryStubs = {
-  listSkillRepos: async () => [] as SkillRepo[],
+  listSkillRepos: async () => [] as SkillRepoView[],
   discoverAgentsLockSkills: async () => [] as never[],
   discoverRepoSkills: async () => ({ skills: [], warnings: [] }) as never,
-  addSkillRepo: async (repo: SkillRepo) => [repo],
-  removeSkillRepo: async () => [] as SkillRepo[],
+  addSkillRepo: async (repo: SkillRepo) => [{ repo, scan: null }] as SkillRepoView[],
+  removeSkillRepo: async () => [] as SkillRepoView[],
   downloadRepoSkill: async () => ({ local_path: "", runtime_name: "" }),
   openExternalUrl: async () => {},
   createIgnoreRule: async () => {},
