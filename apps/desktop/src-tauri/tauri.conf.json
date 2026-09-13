@@ -15,7 +15,10 @@
         "title": "SkillHub",
         "width": 1100,
         "height": 760,
-        "resizable": true
+        "resizable": true,
+        "visible": false,
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true
       }
     ],
     "security": {

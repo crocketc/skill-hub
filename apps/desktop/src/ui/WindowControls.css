@@ -1,0 +1,45 @@
+/*
+ * 自绘窗口控制按钮（一体化标题栏右侧）。视觉规格为拍板决策：
+ * 宽 2.875rem（46px）、高度撑满顶栏（--topbar-height=3.625rem），
+ * 用负 margin-inline-end 抵消顶栏 padding，使按钮贴住窗口右上角。
+ * 颜色全部走主题变量适配深浅主题；关闭按钮 hover 的红色为
+ * Windows caption 约定色（#c42b1c），白图标仅出现在该 hover 态。
+ */
+.sh-window-controls {
+  --sh-window-controls-close-hover-background: #c42b1c;
+  --sh-window-controls-close-hover-foreground: #ffffff;
+
+  display: inline-flex;
+  align-self: stretch;
+  margin-inline-end: calc(-1 * var(--space-5));
+}
+
+.sh-window-controls__button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.875rem;
+  min-height: var(--topbar-height);
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--color-text-muted);
+}
+
+.sh-window-controls__button:hover {
+  background: var(--color-accent-soft);
+}
+
+.sh-window-controls__button:focus-visible {
+  outline: 1px solid currentColor;
+  outline-offset: -3px;
+}
+
+.sh-window-controls__button--close:hover {
+  background: var(--sh-window-controls-close-hover-background);
+  color: var(--sh-window-controls-close-hover-foreground);
+}
+
+.sh-window-controls__icon {
+  display: block;
+}

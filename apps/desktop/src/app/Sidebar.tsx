@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Link, useLocation } from "react-router-dom";
 import { Icon, type IconName } from "../ui/Icon";
@@ -82,42 +81,29 @@ function NavigationLinks({ items, collapsed }: { items: NavigationItem[]; collap
 }
 
 interface SidebarProps {
+  /** 折叠状态由壳层（AppShell 标题栏折叠按钮）持有；头部只保留品牌。 */
   collapsed?: boolean;
-  onToggle?: () => void;
 }
 
-export function Sidebar({ collapsed, onToggle }: SidebarProps) {
+export function Sidebar({ collapsed = false }: SidebarProps) {
   const { t } = useTranslation();
-  const [internalCollapsed, setInternalCollapsed] = useState(false);
-  const isCollapsed = collapsed ?? internalCollapsed;
-  const toggle = onToggle ?? (() => setInternalCollapsed((value) => !value));
 
   return (
     <aside
       aria-label={t("appShell.navigation")}
-      className={`sh-sidebar${isCollapsed ? " is-collapsed" : ""}`}
+      className={`sh-sidebar${collapsed ? " is-collapsed" : ""}`}
     >
       <div className="sh-sidebar__header">
-        {/* P1-01a：折叠按钮固定在侧栏左上角（头部第一个元素），brand 随后。 */}
-        <button
-          aria-expanded={!isCollapsed}
-          aria-label={t(isCollapsed ? "navigation.expand" : "navigation.collapse")}
-          className="sh-sidebar__toggle"
-          onClick={toggle}
-          type="button"
-        >
-          <Icon className="sh-sidebar__toggle-icon" name="panelLeft" size={14} />
-        </button>
         <Link aria-label="SkillHub" className="sh-sidebar__brand" to="/">
           <BrandLogo />
         </Link>
       </div>
       <div className="sh-sidebar__scroll">
         <nav>
-          <NavigationLinks collapsed={isCollapsed} items={primaryNavigation} />
+          <NavigationLinks collapsed={collapsed} items={primaryNavigation} />
         </nav>
         <nav className="sh-sidebar__pinned">
-          <NavigationLinks collapsed={isCollapsed} items={pinnedNavigation} />
+          <NavigationLinks collapsed={collapsed} items={pinnedNavigation} />
         </nav>
       </div>
     </aside>

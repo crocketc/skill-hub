@@ -765,13 +765,23 @@ a {
   transform: none;
 }
 
+/* D5 一体化标题栏：壳层纵向两行——标题栏行 auto + 主体行占满剩余空间。 */
 .sh-app-shell {
   display: grid;
   height: 100dvh;
   min-height: 0;
-  grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   background: var(--color-page);
   overflow: hidden;
+}
+
+/* 主体行：侧栏与 workspace 并排；--sidebar-width 机制（含折叠变体）不变。 */
+.sh-app-shell__body {
+  display: grid;
+  min-height: 0;
+  min-width: 0;
+  grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
 }
 
 /* Skip Link：只在键盘聚焦时可见，作为壳层第一个可聚焦元素。 */
@@ -803,7 +813,7 @@ a {
   display: grid;
   min-height: 0;
   min-width: 0;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr) auto;
   overflow: hidden;
 }
 
@@ -821,14 +831,10 @@ a {
 }
 
 .sh-sidebar {
-  position: sticky;
   z-index: 3;
-  top: 0;
   display: flex;
-  height: 100dvh;
   min-height: 0;
   flex-direction: column;
-  align-self: start;
   overflow: visible;
   padding: var(--space-4);
   border-right: 1px solid var(--color-border);
@@ -850,54 +856,8 @@ a {
   text-decoration: none;
 }
 
-/* P1-01a：折叠按钮固定在侧栏左上角——常规流内的小型方形按钮（40px 点击
-   面积、小圆角），替换此前悬浮在侧栏右缘中缝的圆形按钮。 */
-/* 验收反馈：折叠按钮重做为 codex 桌面风格的方形安静控件。
-   五态（安静/悬停/按下/键盘焦点/折叠态）全部消费语义 token，
-   不再使用悬浮阴影类装饰；对比度契约锁定于 styles/base.test.ts。 */
-.sh-sidebar__toggle {
-  position: absolute;
-  top: var(--space-2);
-  left: 0;
-  display: grid;
-  width: 1.75rem;
-  height: 1.75rem;
-  place-items: center;
-  border: 1px solid var(--ui-border);
-  border-radius: var(--radius-sm);
-  background: var(--ui-control-background);
-  color: var(--ui-icon-muted);
-  cursor: pointer;
-  transition: color var(--motion-fast), border-color var(--motion-fast), background var(--motion-fast);
-}
-
-.sh-sidebar__toggle:hover {
-  border-color: var(--ui-control-border-hover);
-  background: var(--ui-hover-surface);
-  color: var(--ui-ink);
-}
-
-.sh-sidebar__toggle:focus-visible {
-  outline: 2px solid var(--ui-focus);
-  outline-offset: 2px;
-}
-
-.sh-sidebar__toggle:active {
-  border-color: var(--ui-control-border-hover);
-  background: var(--ui-pressed-surface);
-  color: var(--ui-ink);
-}
-
-.sh-sidebar__toggle[aria-expanded="false"] {
-  border-color: var(--ui-border-strong);
-  background: var(--ui-surface-subtle);
-  color: var(--ui-ink);
-}
-
-.sh-sidebar__toggle-icon {
-  width: 1rem;
-  height: 1rem;
-}
+/* P1-01a/D5：折叠按钮原固定在侧栏左上角，现迁入一体化标题栏
+   topbar-start 首位（见下方新的侧栏折叠控件选择器）。 */
 
 .sh-sidebar__scroll {
   display: flex;
@@ -964,9 +924,6 @@ a {
   font-weight: 750;
 }
 
-.sh-sidebar.is-collapsed .sh-sidebar__header {
-}
-
 .sh-sidebar.is-collapsed .sh-sidebar__brand {
   width: 100%;
   justify-content: center;
@@ -1023,6 +980,70 @@ a {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* D5：标题栏中段分区——技能库视图切换的落点（居中于标题与右簇之间）。 */
+.sh-app-shell__topbar-context {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+}
+
+/* D5：折叠按钮迁入标题栏首位。五态视觉契约值自旧侧栏折叠控件选择器
+   原样迁移（M-17-1：28px 方形安静控件，语义 token，无悬浮阴影）。 */
+.sh-app-shell__sidebar-toggle {
+  display: grid;
+  width: 1.75rem;
+  height: 1.75rem;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-sm);
+  background: var(--ui-control-background);
+  color: var(--ui-icon-muted);
+  cursor: pointer;
+  transition: color var(--motion-fast), border-color var(--motion-fast), background var(--motion-fast);
+}
+
+.sh-app-shell__sidebar-toggle:hover {
+  border-color: var(--ui-control-border-hover);
+  background: var(--ui-hover-surface);
+  color: var(--ui-ink);
+}
+
+.sh-app-shell__sidebar-toggle:focus-visible {
+  outline: 2px solid var(--ui-focus);
+  outline-offset: 2px;
+}
+
+.sh-app-shell__sidebar-toggle:active {
+  border-color: var(--ui-control-border-hover);
+  background: var(--ui-pressed-surface);
+  color: var(--ui-ink);
+}
+
+.sh-app-shell__sidebar-toggle[aria-expanded="false"] {
+  border-color: var(--ui-border-strong);
+  background: var(--ui-surface-subtle);
+  color: var(--ui-ink);
+}
+
+.sh-app-shell__sidebar-toggle-icon {
+  width: 0.875rem;
+  height: 0.875rem;
+}
+
+/* macOS 红绿灯按钮悬浮在标题栏之上（titleBarStyle: Overlay），
+   起始分区与侧栏头部让出系统按钮带。 */
+.sh-is-macos .sh-app-shell__topbar-start {
+  padding-left: 5rem;
+}
+
+.sh-is-macos .sh-sidebar__header {
+  padding-left: 5rem;
 }
 
 .sh-app-shell__verification {
@@ -1518,18 +1539,10 @@ a {
     min-height: 2.5rem;
   }
 
-  .sh-sidebar__toggle {
-    position: absolute;
+  .sh-app-shell__sidebar-toggle {
     width: 1.75rem;
     height: 1.75rem;
     border-radius: var(--radius-sm);
-    transform: none;
-  }
-
-  .sh-sidebar__toggle:hover,
-  .sh-sidebar__toggle:focus-visible,
-  .sh-sidebar__toggle:active {
-    transform: none;
   }
 
   .sh-sidebar nav {
@@ -2275,82 +2288,9 @@ a {
   white-space: nowrap;
 }
 
-.sh-skill-library__query-tools {
-  position: sticky;
-  z-index: 4;
-  top: 0;
-  min-width: 0;
-  flex: 0 0 auto;
-  padding-block: var(--space-1);
-  background: var(--color-page);
-}
-
-.sh-skill-library__query-tools > section {
-  display: grid;
-  min-width: 0;
-  grid-template-columns: minmax(15rem, 2fr) repeat(6, minmax(7rem, 1fr)) max-content max-content;
-  align-items: end;
-  gap: var(--space-3);
-  padding: var(--space-3);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  background: var(--color-surface);
-  box-shadow: var(--shadow-sm);
-}
-
-.sh-skill-library__query-toggle {
-  position: absolute;
-  z-index: 1;
-  right: auto;
-  bottom: 0;
-  left: 50%;
-  display: grid;
-  width: 4rem;
-  height: 0.75rem;
-  min-height: 0;
-  place-items: center;
-  padding: 0;
-  border: 1px solid var(--color-border);
-  border-radius: 999px;
-  background: var(--color-surface);
-  color: var(--color-text-secondary);
-  box-shadow: var(--shadow-sm);
-  font-size: var(--font-size-xs);
-  line-height: 1;
-  transform: translate(-50%, 50%);
-  cursor: pointer;
-}
-
-.sh-skill-library__query-toggle:hover {
-  color: var(--color-text);
-  box-shadow: var(--shadow-md);
-}
-
-.sh-skill-library__query-tools.is-collapsed {
-  min-height: 1.25rem;
-  padding-block: 0;
-  margin-top: calc(-1 * var(--space-2));
-}
-
-.sh-skill-library__query-tools.is-collapsed .sh-skill-library__query-toggle {
-  right: auto;
-  top: 0;
-  bottom: auto;
-  left: 50%;
-  transform: translate(-50%, 0);
-}
-
-.sh-skill-library__query-tools label,
-.sh-skill-library__query-tools fieldset {
-  display: grid;
-  min-width: 0;
-  gap: var(--space-1);
-  padding: 0;
-  margin: 0;
-  border: 0;
-  color: var(--color-text-secondary);
-  font-size: var(--font-size-xs);
-}
+/* D5 死代码清理：.sh-skill-library__query-tools* 与 .sh-skill-library__query-toggle
+   已不被 SkillFilters/SkillLibraryPage 渲染（M-21 三 band 工具栏重构后遗留），
+   现行筛选布局契约锁定于 features/skills/skills.css 与 SkillFilters.test.tsx。 */
 
 .sh-filter-dropdown {
   display: grid;
@@ -2580,18 +2520,6 @@ a {
   font-size: var(--font-size-xs);
 }
 
-@media (max-width: 112rem) {
-  .sh-skill-library__query-tools > section {
-    grid-template-columns: minmax(12rem, 2fr) repeat(6, minmax(5.5rem, 1fr)) max-content max-content;
-    gap: var(--space-2);
-    padding: var(--space-2);
-  }
-
-  .sh-skill-library__query-tools > section > .sh-filter-search {
-    grid-column: auto;
-  }
-}
-
 @media (max-width: 90rem) {
   .sh-app-shell__content {
     overflow-y: auto;
@@ -2601,25 +2529,9 @@ a {
     height: auto;
     min-height: 100%;
   }
-
-  .sh-skill-library__query-tools > section {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-  }
-
-  .sh-skill-library__query-tools > section > .sh-filter-search {
-    grid-column: auto;
-  }
 }
 
 @media (max-width: 48rem) {
-  .sh-skill-library__query-tools > section {
-    grid-template-columns: 1fr;
-  }
-
-  .sh-skill-library__query-tools > section > .sh-filter-search {
-    grid-column: auto;
-  }
-
   .sh-skill-library__batch-bar {
     right: var(--space-3);
     bottom: var(--space-3);

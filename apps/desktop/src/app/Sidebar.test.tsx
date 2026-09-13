@@ -1,17 +1,17 @@
 import { I18nextProvider } from "react-i18next";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it } from "vitest";
 import { createSkillHubI18n } from "../i18n";
 import baseCss from "../styles/base.css?raw";
 import { Sidebar } from "./Sidebar";
 
-async function renderSidebar(entry = "/library/skill-pdf") {
+async function renderSidebar(entry = "/library/skill-pdf", collapsed = false) {
   const i18n = await createSkillHubI18n(["en-US"]);
   render(
     <I18nextProvider i18n={i18n}>
       <MemoryRouter initialEntries={[entry]}>
-        <Sidebar />
+        <Sidebar collapsed={collapsed} />
       </MemoryRouter>
     </I18nextProvider>,
   );
@@ -36,17 +36,14 @@ describe("Sidebar", () => {
   });
 
   it("collapses to icon navigation while retaining accessible labels", async () => {
-    await renderSidebar();
+    // D5：折叠状态改由壳层标题栏按钮驱动（见 AppShell.test），侧栏只
+    // 接收 collapsed 状态。折叠后每个目的地仍只朗读一次：链接的可访问
+    // 名称保持完整，图标为纯装饰（不注册 img 角色、不重复朗读）。
+    await renderSidebar("/library/skill-pdf", true);
 
-    const toggle = screen.getByRole("button", { name: "Collapse navigation" });
-    fireEvent.click(toggle);
-
-    expect(toggle).toHaveAttribute("aria-expanded", "false");
     expect(screen.getByRole("complementary", { name: "Main navigation" })).toHaveClass(
       "is-collapsed",
     );
-    // 折叠后每个目的地仍只朗读一次：链接的可访问名称保持完整，
-    // 图标为纯装饰（不注册 img 角色、不重复朗读）。
     const libraryLink = screen.getByRole("link", { name: "Skill library" });
     expect(libraryLink).toHaveAttribute("aria-current", "page");
     expect(
@@ -66,46 +63,42 @@ describe("Sidebar", () => {
     );
   });
 
-  it("keeps the brand centered while the compact toggle is independently anchored", () => {
-    const toggleRule = baseCss.match(/\.sh-sidebar__toggle\s*\{[^}]*\}/)?.[0] ?? "";
+  it("keeps the brand centered while the collapse control moved to the title bar", () => {
+    // D5 契约迁移：折叠控件选择器迁到标题栏（.sh-app-shell__sidebar-toggle），
+    // 28px 方形安静控件的视觉值不变；常规流内布局（不再是侧栏内的绝对定位）。
+    const toggleRule = baseCss.match(/\.sh-app-shell__sidebar-toggle\s*\{[^}]*\}/)?.[0] ?? "";
     expect(toggleRule).not.toBe("");
     expect(toggleRule).toMatch(/width:\s*1\.75rem/);
     expect(toggleRule).toMatch(/height:\s*1\.75rem/);
     // 方形小圆角：禁止旧圆形 999px。
     expect(toggleRule).toMatch(/border-radius:\s*var\(--radius-sm\)/);
     expect(toggleRule).not.toMatch(/999px/);
-    expect(toggleRule).toMatch(/position:\s*absolute/);
-    expect(toggleRule).toMatch(/left:\s*0/);
-    expect(toggleRule).toMatch(/top:\s*var\(--space-2\)/);
+    expect(toggleRule).not.toMatch(/position:\s*absolute/);
     const brandRule = baseCss.match(/\.sh-sidebar__brand\s*\{[^}]*\}/)?.[0] ?? "";
     expect(brandRule).toMatch(/width:\s*100%/);
     expect(brandRule).toMatch(/justify-content:\s*center/);
-    // hover/active 位移效果一并移除（窄顶栏下的 transform: none 重置不受影响）。
-    expect(baseCss).not.toMatch(/\.sh-sidebar__toggle:hover[^{]*\{[^}]*translate/);
-    expect(baseCss).not.toMatch(/\.sh-sidebar__toggle:active[^{]*\{[^}]*translate/);
+    // hover/active 位移效果一并移除（标题栏内无 transform 重置需求）。
+    expect(baseCss).not.toMatch(
+      /\.sh-app-shell__sidebar-toggle:hover[^{]*\{[^}]*translate/,
+    );
+    expect(baseCss).not.toMatch(
+      /\.sh-app-shell__sidebar-toggle:active[^{]*\{[^}]*translate/,
+    );
   });
 
-  it("places the toggle before the brand link as the header's first element", async () => {
+  it("keeps the header brand-only now that the toggle leads the shell title bar", async () => {
     await renderSidebar();
 
+    // D5：侧栏头部只保留品牌；折叠按钮由 AppShell 渲染在标题栏首位
+    // （DOM 位置契约锁定于 AppShell.test.tsx）。
     const header = screen
       .getByRole("complementary", { name: "Main navigation" })
       .querySelector(".sh-sidebar__header");
     expect(header).not.toBeNull();
-    expect(header!.firstElementChild).toBe(screen.getByRole("button", { name: "Collapse navigation" }));
+    expect(header!.firstElementChild).toBe(
+      header!.querySelector(".sh-sidebar__brand"),
+    );
+    expect(screen.queryByRole("button", { name: "Collapse navigation" })).not.toBeInTheDocument();
     expect(header!.querySelector(".sh-sidebar__brand")).not.toBeNull();
-  });
-
-  it("uses the Lucide Panel Left glyph at a compact size", async () => {
-    await renderSidebar();
-
-    const glyph = screen
-      .getByRole("button", { name: "Collapse navigation" })
-      .querySelector(".sh-sidebar__toggle-icon");
-
-    expect(glyph?.querySelector("rect")).not.toBeNull();
-    expect(glyph?.querySelector('path[d="M9 3v18"]')).not.toBeNull();
-    expect(glyph).toHaveAttribute("width", "14");
-    expect(glyph).toHaveAttribute("height", "14");
   });
 });

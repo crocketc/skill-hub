@@ -1,8 +1,8 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { I18nextProvider } from "react-i18next";
 import { MemoryRouter } from "react-router-dom";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createSkillHubI18n } from "../i18n";
 import type { BootstrapSnapshot, ScanResult } from "../api/bindings";
 import type { BootstrapVerificationState } from "../features/bootstrap/api";
@@ -11,6 +11,18 @@ import {
   resetBackgroundScan,
 } from "../features/bootstrap/backgroundScan";
 import { AppShell } from "./AppShell";
+
+// D5 一体化标题栏：平台能力与 macOS 类标记经 mock 注入，既让默认用例
+// 拿到 null chrome（WindowControls 无痕），也能驱动集成断言。
+const windowChromeMocks = vi.hoisted(() => ({
+  chrome: null as unknown,
+  applyPlatformClass: vi.fn(),
+}));
+
+vi.mock("../platform/windowChrome", () => ({
+  resolveWindowChrome: () => windowChromeMocks.chrome,
+  applyWindowChromePlatformClass: windowChromeMocks.applyPlatformClass,
+}));
 
 const completedScan: ScanResult = {
   generation: { generation: 1, observed_at: 1 },
@@ -24,6 +36,8 @@ const completedScan: ScanResult = {
 
 afterEach(() => {
   resetBackgroundScan();
+  windowChromeMocks.chrome = null;
+  windowChromeMocks.applyPlatformClass.mockClear();
 });
 
 async function renderShell(initialPath = "/") {
@@ -42,10 +56,15 @@ async function renderShell(initialPath = "/") {
 }
 
 describe("AppShell", () => {
-  it("exposes exactly one main landmark for the workspace", async () => {
+  it("exposes exactly one main landmark inside the sidebar/workspace body row", async () => {
     await renderShell();
 
     expect(screen.getAllByRole("main")).toHaveLength(1);
+
+    const body = document.querySelector(".sh-app-shell__body");
+    expect(body).not.toBeNull();
+    expect(body!.querySelector(".sh-sidebar")).not.toBeNull();
+    expect(body!.querySelector(".sh-app-shell__workspace")).not.toBeNull();
   });
 
   it("offers a skip link as the first focusable element and targets the main region", async () => {
@@ -61,15 +80,123 @@ describe("AppShell", () => {
     expect(main).toHaveAttribute("tabindex", "-1");
   });
 
-  it("keeps the sidebar navigation after the skip link in tab order", async () => {
+  it("leads the title bar with the sidebar toggle right after the skip link in tab order", async () => {
     const user = userEvent.setup();
     await renderShell();
 
     await user.tab();
     await user.tab();
-    expect(screen.getByRole("complementary", { name: "Main navigation" })).toContainElement(
-      document.activeElement as HTMLElement | null,
+    const toggle = screen.getByRole("button", { name: "Collapse navigation" });
+    expect(toggle).toHaveFocus();
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+  });
+
+  it("collapses the sidebar from the title-bar toggle", async () => {
+    const user = userEvent.setup();
+    await renderShell();
+
+    await user.click(screen.getByRole("button", { name: "Collapse navigation" }));
+
+    const toggle = screen.getByRole("button", { name: "Expand navigation" });
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    expect(screen.getByRole("complementary", { name: "Main navigation" })).toHaveClass("is-collapsed");
+    expect(document.querySelector(".sh-app-shell")).toHaveClass("is-sidebar-collapsed");
+  });
+
+  it("renders the unified title bar with drag regions across its zones", async () => {
+    await renderShell();
+
+    const topbar = document.querySelector(".sh-app-shell__topbar");
+    expect(topbar).toHaveAttribute("data-tauri-drag-region");
+    expect(document.querySelector(".sh-app-shell__topbar-start")).toHaveAttribute(
+      "data-tauri-drag-region",
     );
+    expect(document.querySelector(".sh-app-shell__topbar-context")).toHaveAttribute(
+      "data-tauri-drag-region",
+    );
+    expect(document.querySelector(".sh-app-shell__topbar-end")).toHaveAttribute(
+      "data-tauri-drag-region",
+    );
+    const heading = within(topbar as HTMLElement).getByRole("heading", { level: 1 });
+    expect(heading).toHaveAttribute("data-tauri-drag-region");
+    // 按钮控件不承担拖拽区域。
+    const toggle = document.querySelector(".sh-app-shell__sidebar-toggle");
+    expect(toggle).not.toHaveAttribute("data-tauri-drag-region");
+  });
+
+  it("keeps the sidebar toggle out of the sidebar and first in the title bar", async () => {
+    await renderShell();
+
+    const start = document.querySelector(".sh-app-shell__topbar-start");
+    const toggle = document.querySelector(".sh-app-shell__sidebar-toggle");
+    expect(toggle).not.toBeNull();
+    expect(start!.firstElementChild).toBe(toggle);
+    expect(
+      screen.getByRole("complementary", { name: "Main navigation" }).querySelector(
+        ".sh-app-shell__sidebar-toggle, .sh-sidebar__toggle",
+      ),
+    ).toBeNull();
+  });
+
+  it("uses the Lucide Panel Left glyph at a compact size", async () => {
+    await renderShell();
+
+    const glyph = document
+      .querySelector(".sh-app-shell__sidebar-toggle")!
+      .querySelector(".sh-app-shell__sidebar-toggle-icon");
+
+    expect(glyph?.querySelector("rect")).not.toBeNull();
+    expect(glyph?.querySelector('path[d="M9 3v18"]')).not.toBeNull();
+    expect(glyph).toHaveAttribute("width", "14");
+    expect(glyph).toHaveAttribute("height", "14");
+  });
+
+  it("shows the library view switch inside the title-bar context zone on /library", async () => {
+    await renderShell("/library");
+
+    const context = document.querySelector(".sh-app-shell__topbar-context");
+    expect(context).not.toBeNull();
+    expect(
+      within(context as HTMLElement).getByRole("group", { name: "View mode" }),
+    ).toBeVisible();
+  });
+
+  it("hides the library view switch outside the library tab", async () => {
+    await renderShell("/");
+
+    expect(screen.queryByRole("group", { name: "View mode" })).not.toBeInTheDocument();
+  });
+
+  it("applies the window chrome platform class once on mount", async () => {
+    await renderShell();
+
+    expect(windowChromeMocks.applyPlatformClass).toHaveBeenCalledTimes(1);
+  });
+
+  it("mounts the native window controls after the notification bell", async () => {
+    const unlisten = vi.fn();
+    windowChromeMocks.chrome = {
+      minimize: vi.fn(async () => undefined),
+      toggleMaximize: vi.fn(async () => undefined),
+      close: vi.fn(async () => undefined),
+      isMaximized: vi.fn(async () => false),
+      onMaximizeChange: vi.fn(async () => unlisten),
+    };
+    await renderShell();
+
+    const end = document.querySelector(".sh-app-shell__topbar-end") as HTMLElement;
+    const controls = await waitFor(() => {
+      const element = end.querySelector(".sh-window-controls");
+      expect(element).not.toBeNull();
+      return element as HTMLElement;
+    });
+    const bell = within(end).getByRole("button", { name: "Notifications" });
+    expect(
+      bell.compareDocumentPosition(controls) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(within(controls).getByRole("button", { name: "Minimize" })).toBeVisible();
+    expect(within(controls).getByRole("button", { name: "Maximize" })).toBeVisible();
+    expect(within(controls).getByRole("button", { name: "Close" })).toBeVisible();
   });
 
   it("reports a handed-off background scan through the shell notification service", async () => {
@@ -92,10 +219,11 @@ describe("AppShell", () => {
     expect(await screen.findByRole("dialog", { name: "Notifications" })).toBeVisible();
   });
 
-  it("keeps the shell topbar visible on the combination manager route", async () => {
+  it("keeps the shell topbar visible on the combination manager route without the view switch", async () => {
     await renderShell("/library/combinations");
 
     expect(screen.getByRole("heading", { name: "Skill library" })).toBeVisible();
     expect(screen.getByRole("button", { name: "Back" })).toBeVisible();
+    expect(screen.queryByRole("group", { name: "View mode" })).not.toBeInTheDocument();
   });
 });

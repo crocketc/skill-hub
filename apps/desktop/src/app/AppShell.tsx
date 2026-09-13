@@ -1,8 +1,15 @@
-import type { BootstrapSnapshot } from "../api/bindings";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
+import {
+  isLibraryViewModeRoute,
+  LibraryViewModeProvider,
+  LibraryViewModeSwitch,
+} from "../features/skills/libraryViewContext";
+import { applyWindowChromePlatformClass } from "../platform/windowChrome";
+import { Icon } from "../ui/Icon";
 import { IconButton } from "../ui/IconButton";
+import { WindowControls } from "../ui/WindowControls";
 import {
   AppNotificationsProvider,
   NotificationBell,
@@ -12,6 +19,7 @@ import { BackgroundScanNotifier } from "../features/bootstrap/BackgroundScanNoti
 import { Sidebar } from "./Sidebar";
 import { OperationIndicator } from "./OperationIndicator";
 import type { BootstrapVerificationState } from "../features/bootstrap/api";
+import type { BootstrapSnapshot } from "../api/bindings";
 
 interface AppShellProps {
   snapshot: BootstrapSnapshot;
@@ -157,6 +165,12 @@ export function AppShell({ refreshSnapshot, snapshot, verification }: AppShellPr
   const { pathname } = useLocation();
   const navigate = useNavigate();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+
+  // 自绘窗口控制的平台适配只在挂载时做一次（macOS 红绿灯避让类标记）。
+  useEffect(() => {
+    applyWindowChromePlatformClass();
+  }, []);
+
   const title = t(resolveRouteTitleKey(pathname));
   const backFallback = resolveSubRouteFallback(pathname);
   const historyControls = resolveShellHistoryControls(
@@ -175,49 +189,70 @@ export function AppShell({ refreshSnapshot, snapshot, verification }: AppShellPr
   };
 
   return (
-    <AppNotificationsProvider>
-      <BackgroundScanBridge />
-      <div className={`sh-app-shell${sidebarCollapsed ? " is-sidebar-collapsed" : ""}`}>
-        <a className="sh-skip-link" href="#main-content">
-          {t("appShell.skipToContent")}
-        </a>
-        <Sidebar
-          collapsed={sidebarCollapsed}
-          onToggle={() => setSidebarCollapsed((value) => !value)}
-        />
-        <section className="sh-app-shell__workspace">
-          <header className="sh-app-shell__topbar">
-              <div className="sh-app-shell__topbar-start">
-                {historyControls.showBack ? (
-                  <IconButton
-                    icon="arrowLeft"
-                    label={t("appShell.back")}
-                    onClick={goBack}
-                  />
-                ) : null}
-                <IconButton
-                  icon="arrowRight"
-                  label={t("appShell.forward")}
-                  disabled={!historyControls.canGoForward}
-                  onClick={() => navigate(1)}
+    <LibraryViewModeProvider>
+      <AppNotificationsProvider>
+        <BackgroundScanBridge />
+        <div className={`sh-app-shell${sidebarCollapsed ? " is-sidebar-collapsed" : ""}`}>
+          <a className="sh-skip-link" href="#main-content">
+            {t("appShell.skipToContent")}
+          </a>
+          {/* D5 一体化标题栏：全宽单行。header 与各分区承担拖拽区域，
+              按钮控件除外；分区布局契约见 base.css 与 styles/base.test.ts。 */}
+          <header className="sh-app-shell__topbar" data-tauri-drag-region>
+            <div className="sh-app-shell__topbar-start" data-tauri-drag-region>
+              <button
+                aria-expanded={!sidebarCollapsed}
+                aria-label={t(sidebarCollapsed ? "navigation.expand" : "navigation.collapse")}
+                className="sh-app-shell__sidebar-toggle"
+                onClick={() => setSidebarCollapsed((value) => !value)}
+                type="button"
+              >
+                <Icon
+                  aria-hidden="true"
+                  className="sh-app-shell__sidebar-toggle-icon"
+                  name="panelLeft"
+                  size={14}
                 />
-                <h1>{title}</h1>
-              </div>
-              <div className="sh-app-shell__topbar-end">
-                {verification.kind === "verifying" ? (
-                  <span className="sh-app-shell__verification" role="status">
-                    {t("appShell.verification")}
-                  </span>
-                ) : null}
-                <NotificationBell />
-              </div>
+              </button>
+              {historyControls.showBack ? (
+                <IconButton
+                  icon="arrowLeft"
+                  label={t("appShell.back")}
+                  onClick={goBack}
+                />
+              ) : null}
+              <IconButton
+                icon="arrowRight"
+                label={t("appShell.forward")}
+                disabled={!historyControls.canGoForward}
+                onClick={() => navigate(1)}
+              />
+              <h1 data-tauri-drag-region>{title}</h1>
+            </div>
+            <div className="sh-app-shell__topbar-context" data-tauri-drag-region>
+              {isLibraryViewModeRoute(pathname) ? <LibraryViewModeSwitch /> : null}
+            </div>
+            <div className="sh-app-shell__topbar-end" data-tauri-drag-region>
+              {verification.kind === "verifying" ? (
+                <span className="sh-app-shell__verification" role="status">
+                  {t("appShell.verification")}
+                </span>
+              ) : null}
+              <NotificationBell />
+              <WindowControls />
+            </div>
           </header>
-          <main className="sh-app-shell__content" id="main-content" tabIndex={-1}>
-            <Outlet context={{ refreshSnapshot, snapshot } satisfies BootstrapOutletContext} />
-          </main>
-          <OperationIndicator />
-        </section>
-      </div>
-    </AppNotificationsProvider>
+          <div className="sh-app-shell__body">
+            <Sidebar collapsed={sidebarCollapsed} />
+            <section className="sh-app-shell__workspace">
+              <main className="sh-app-shell__content" id="main-content" tabIndex={-1}>
+                <Outlet context={{ refreshSnapshot, snapshot } satisfies BootstrapOutletContext} />
+              </main>
+              <OperationIndicator />
+            </section>
+          </div>
+        </div>
+      </AppNotificationsProvider>
+    </LibraryViewModeProvider>
   );
 }

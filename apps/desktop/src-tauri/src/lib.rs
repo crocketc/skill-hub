@@ -7,7 +7,7 @@ use skillhub_core::{
 };
 #[cfg(test)]
 use skillhub_core::{DEFAULT_UPDATE_SIGNATURE_PUBLIC_KEY, TAURI_UPDATE_SIGNATURE_PUBLIC_KEY};
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 
 pub mod updater;
 
@@ -242,6 +242,21 @@ fn register_external_url_opener(
     facade.set_external_url_opener(opener);
 }
 
+/// 一体化标题栏的窗口机制：窗口按配置以 `visible: false` 隐藏创建，setup
+/// 里先完成平台专属的去边框，再统一显示，避免 Windows 去边框瞬间原生
+/// 标题栏闪烁。Windows 在运行时去装饰（shadow 保持默认，保留投影与
+/// Win11 圆角）；macOS 依赖配置里的 `titleBarStyle: "Overlay"` 保留红绿灯，
+/// 这里不动 decorations。run_with_facade 与 run 共用同一条 setup 路径。
+fn apply_main_window_chrome(app: &tauri::App) -> tauri::Result<()> {
+    // label 未在配置中显式写出，默认即 "main"。
+    let window = app
+        .get_webview_window("main")
+        .expect("main window is defined in tauri.conf.json");
+    #[cfg(windows)]
+    window.set_decorations(false)?;
+    window.show()
+}
+
 pub fn run_with_facade(facade: Arc<LocalApplicationFacade>) -> tauri::Result<()> {
     re_register_custom_agent_grants(&facade);
     tauri::Builder::default()
@@ -249,6 +264,7 @@ pub fn run_with_facade(facade: Arc<LocalApplicationFacade>) -> tauri::Result<()>
         .setup({
             let facade = facade.clone();
             move |app| {
+                apply_main_window_chrome(app)?;
                 facade.set_application_update_installer(Arc::new(
                     updater::TauriUpdateInstaller::for_app(app.handle().clone()),
                 ));
@@ -491,6 +507,13 @@ fn capabilities_allow_only_typed_ipc_and_event_subscription() {
     assert!(capabilities.contains("allow-execute-command"));
     assert!(capabilities.contains("allow-query-application"));
     assert!(capabilities.contains("updater:default"));
+    // 自绘窗口控制按钮与标题栏拖拽所需的最小窗口权限。
+    assert!(capabilities.contains("core:window:allow-minimize"));
+    assert!(capabilities.contains("core:window:allow-toggle-maximize"));
+    assert!(capabilities.contains("core:window:allow-internal-toggle-maximize"));
+    assert!(capabilities.contains("core:window:allow-is-maximized"));
+    assert!(capabilities.contains("core:window:allow-close"));
+    assert!(capabilities.contains("core:window:allow-start-dragging"));
 }
 
 #[test]
@@ -519,6 +542,27 @@ fn tauri_config_enables_signed_static_updater_artifacts() {
     assert_eq!(
         config["plugins"]["updater"]["windows"]["installMode"],
         "passive"
+    );
+}
+
+#[test]
+fn tauri_config_creates_main_window_hidden_for_frameless_chrome() {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tauri.conf.json");
+    let config = std::fs::read_to_string(path).expect("desktop Tauri config");
+    let config: serde_json::Value = serde_json::from_str(&config).expect("valid Tauri config");
+
+    let window = &config["app"]["windows"][0];
+    // 窗口隐藏创建，setup 里 apply_main_window_chrome 完成平台去边框后再 show，
+    // 避免 Windows 去边框瞬间原生标题栏闪烁。
+    assert_eq!(window["visible"], false);
+    // macOS 专用：红绿灯悬浮在内容上并隐藏原生标题文字（Windows 忽略）。
+    assert_eq!(window["titleBarStyle"], "Overlay");
+    assert_eq!(window["hiddenTitle"], true);
+    // decorations 必须留给 Rust 运行时按平台处理：配置里跨平台去边框会连带
+    // 去掉 macOS 红绿灯。
+    assert!(
+        window.get("decorations").is_none(),
+        "decorations must stay unset in tauri.conf.json; the runtime toggles it per platform"
     );
 }
 
