@@ -488,7 +488,7 @@
       "assistFailureReason": "失败原因：{{reason}}",
       "assistUnknownFailure": "AI 搜索出现未知问题（{{code}}）。",
       "assistHit": "AI 扩展命中",
-      "assistReady": "AI 辅助可用：搜索时会扩展查询并标记 AI 扩展命中。",
+      "assistReady": "AI 辅助连接已验证：搜索时会扩展查询并标记 AI 扩展命中。",
       "assistUnverified": "AI 配置就绪，连接尚未验证；执行搜索时会实际连接，失败会自动回退普通搜索。",
       "assistNotConfiguredProvider": "AI 搜索助手尚未配置可用的 LLM 供应商：AI 路径已停用，搜索只使用普通搜索。",
       "assistNotConfiguredCredential": "当前 LLM 供应商缺少 API 密钥：AI 路径已停用，搜索只使用普通搜索。",
@@ -529,7 +529,27 @@
       "results": "扫描结果",
       "downloadImport": "下载并导入",
       "downloading": "正在下载…",
-      "downloadFailed": "下载失败，请稍后重试。"
+      "downloadFailed": "下载失败，请稍后重试。",
+      "manage": "管理仓库"
+    },
+    "repoManager": {
+      "title": "仓库管理",
+      "description": "维护参与发现的 GitHub 仓库；扫描过的仓库会保留最近一次结果，可逐仓刷新。",
+      "refreshList": "刷新列表",
+      "refreshingList": "正在刷新…",
+      "addLabel": "仓库地址",
+      "addPlaceholder": "owner/name 或 https://github.com/owner/name",
+      "inputInvalid": "无法识别仓库地址：支持 owner/name 或 GitHub 链接（可含 /tree/分支 与 .git 后缀）。",
+      "lastScan": "上次扫描",
+      "neverScanned": "从未扫描",
+      "candidates": "{{candidates}} 个候选 Skill",
+      "refresh": "刷新",
+      "refreshAria": "刷新 {{repo}}",
+      "refreshingRepo": "正在刷新…",
+      "refreshFailed": "刷新失败：",
+      "openOnGithub": "在 GitHub 打开 {{repo}}",
+      "defaultBranch": "默认分支",
+      "unsupportedAction": "当前环境不支持逐仓刷新。"
     },
     "agentsLock": {
       "eyebrow": "外部安装",
@@ -817,7 +837,11 @@
     "skillCount": "项技能",
     "verification": "正在核对本地变化",
     "skipToContent": "跳到主内容",
-    "forward": "前进"
+    "forward": "前进",
+    "minimize": "最小化",
+    "maximize": "最大化",
+    "restore": "还原",
+    "close": "关闭"
   },
   "bootstrap": {
     "blockingStartup": "阻塞启动",
