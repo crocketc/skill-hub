@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Link, useOutletContext } from "react-router-dom";
+import { Link, useNavigate, useOutletContext } from "react-router-dom";
 import type { BootstrapOutletContext } from "../../app/AppShell";
 import { DataState } from "../../ui/DataState";
 import { Icon, type IconName } from "../../ui/Icon";
@@ -8,6 +8,7 @@ import { PageFrame } from "../../ui/PageFrame";
 import { PageHeader } from "../../ui/PageHeader";
 import { DeploymentBarChart, DeploymentDetailList } from "./DeploymentBarChart";
 import { PendingSummary } from "./PendingSummary";
+import { TagDistributionChart } from "./TagDistributionChart";
 import {
   getDeploymentItems,
   getOverviewMetrics,
@@ -88,6 +89,45 @@ function DeploymentDimensionToggle({
   );
 }
 
+function TagDistributionPanel({
+  items,
+}: {
+  items: ReturnType<typeof getTagItems>;
+}) {
+  const { t } = useTranslation();
+  const navigate = useNavigate();
+  const heading = t("overview.tags.heading");
+
+  return (
+    <section aria-label={heading} className="sh-overview__tag-panel">
+      <div className="sh-overview__details-head">
+        <h2>{heading}</h2>
+        <span>{t("overview.tags.detailCount", { count: items.length })}</span>
+      </div>
+      <div className="sh-overview__tag-layout">
+        <TagDistributionChart ariaLabel={t("overview.tags.chartAria")} items={items} />
+        <div className="sh-overview__tag-details-scroll">
+          <ol aria-label={heading} className="sh-overview__chart-list">
+            {items.map((item) => (
+              <li key={item.key}>
+                <button
+                  aria-label={item.buttonLabel}
+                  className="sh-overview__chart-link"
+                  onClick={() => navigate(item.target)}
+                  type="button"
+                >
+                  <span>{item.label}</span>
+                  <strong>{` ${item.count}`}</strong>
+                </button>
+              </li>
+            ))}
+          </ol>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 export function OverviewPage() {
   const { snapshot } = useOutletContext<BootstrapOutletContext>();
   const { t } = useTranslation();
@@ -100,7 +140,7 @@ export function OverviewPage() {
   const tagItems = getTagItems(snapshot, t);
 
   return (
-    <PageFrame width="wide">
+    <PageFrame fill width="wide">
       <PageHeader
         description={t("overview.page.description")}
         title={t("navigation.overview")}
@@ -149,10 +189,6 @@ export function OverviewPage() {
                 state="empty"
               />
             )}
-          </section>
-
-          <div className="sh-overview__rail">
-            <PendingSummary snapshot={snapshot} />
             {deploymentItems.length > 0 ? (
               <DeploymentDetailList
                 detailsLabel={t("overview.chart.detailsLabel")}
@@ -160,14 +196,11 @@ export function OverviewPage() {
                 items={deploymentItems}
               />
             ) : null}
-            {tagItems.length > 0 ? (
-              <DeploymentDetailList
-                countLabel={t("overview.tags.detailCount", { count: tagItems.length })}
-                detailsLabel={t("overview.tags.heading")}
-                dimension={dimension}
-                items={tagItems}
-              />
-            ) : null}
+          </section>
+
+          <div className="sh-overview__rail">
+            {tagItems.length > 0 ? <TagDistributionPanel items={tagItems} /> : null}
+            <PendingSummary snapshot={snapshot} />
           </div>
         </section>
       </section>

@@ -20,7 +20,7 @@ use skillhub_core::{AppError, AppResult, ErrorCode, OperationId, RecoveryAction,
 const MAX_RETRIES: u32 = 2;
 const RETRY_BACKOFF_BASE_MS: u64 = 100;
 const RETRY_BACKOFF_CAP_MS: u64 = 2_000;
-const MODEL_FETCH_TIMEOUT_MS: u64 = 10_000;
+const MODEL_FETCH_TIMEOUT_MS: u64 = 15_000;
 const ENDPOINT_PROBE_TIMEOUT_MS: u64 = 8_000;
 const CANCEL_POLL_MS: u64 = 50;
 /// Reference id used by administration calls on drafts that carry an inline
@@ -99,7 +99,7 @@ impl HttpLlmTaskRunner {
         profile: &LlmProfile,
     ) -> AppResult<Vec<String>> {
         self.ensure_gate(profile)?;
-        profile.validate()?;
+        profile.validate_model_listing()?;
         let adapter = adapter_for(profile.protocol);
         let candidates = adapter.model_list_candidates(profile);
         if candidates.is_empty() {
@@ -132,7 +132,14 @@ impl HttpLlmTaskRunner {
                     let body: Value = response.json().await.map_err(|error| {
                         AppError::llm_invalid_json().with_param("detail", error.to_string())
                     })?;
-                    return adapter.extract_models(&body);
+                    let models = adapter.extract_models(&body)?;
+                    if models.is_empty() {
+                        return Err(AppError::llm_model_not_found("").with_param(
+                            "reason",
+                            "model list returned no model identifiers; enter the model id manually",
+                        ));
+                    }
+                    return Ok(models);
                 }
                 Err(error) => {
                     last_error = Some(classify_transport_error(&error, MODEL_FETCH_TIMEOUT_MS));
@@ -190,10 +197,16 @@ impl HttpLlmTaskRunner {
             }
         };
         let started = std::time::Instant::now();
+        // Local reasoning models can produce their first structured response
+        // just after the normal task deadline. A configuration test is an
+        // explicit diagnostic action, so give it a bounded 60s floor without
+        // slowing ordinary safety/translation tasks.
+        let mut probe_profile = profile.clone();
+        probe_profile.timeout_ms = probe_profile.timeout_ms.max(60_000);
         match self
             .run_with_cancel_in(
                 credentials,
-                profile,
+                &probe_profile,
                 probe,
                 Arc::new(AtomicBool::new(false)),
             )
@@ -544,7 +557,22 @@ fn parse_content(content: &str, kind: LlmTaskKind) -> AppResult<Value> {
     if content.trim().is_empty() {
         return Err(AppError::llm_response_interrupted());
     }
-    let output: Value = serde_json::from_str(content).map_err(|_| {
+    // Some OpenAI-compatible providers (notably GLM) wrap an otherwise valid
+    // JSON response in a Markdown code fence. Accept only a plain JSON body or
+    // one complete fenced block; arbitrary prose still fails deterministically.
+    let candidate = content.trim();
+    let candidate = if candidate.starts_with("```") {
+        let body = candidate.trim_start_matches('`').trim_start();
+        let body = body
+            .strip_prefix("json")
+            .or_else(|| body.strip_prefix("JSON"))
+            .unwrap_or(body)
+            .trim_start();
+        body.strip_suffix("```").unwrap_or(body).trim()
+    } else {
+        candidate
+    };
+    let output: Value = serde_json::from_str(candidate).map_err(|_| {
         AppError::new(ErrorCode::LlmInvalidStructuredResponse, Severity::Error)
             .with_action(RecoveryAction::Retry)
     })?;

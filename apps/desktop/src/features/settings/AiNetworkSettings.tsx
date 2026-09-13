@@ -24,7 +24,9 @@ export function AiNetworkSettings({ settings, facade = unavailableSettingsFacade
   const toggle = async () => { const next = !enabled; setEnabled(next); await facade.execute({ type: "set_network_enabled", payload: { enabled: next } }); };
   const scope = dataScopeView(settings.dataScope, (key) => t(key as never));
   const providerLabel = settings.llmProvider.trim();
-  const hasConfiguredProvider = providerLabel !== "" && providerLabel !== "未配置" && providerLabel !== "Not configured";
+  const hasConfiguredProvider =
+    providerLabel !== "" &&
+    providerLabel !== t("settings.network.providerUnconfiguredLegacy");
   return (
     <section aria-labelledby="settings-network-heading" className="sh-settings-card">
       <div className="sh-section-heading">

@@ -13,6 +13,7 @@ import {
   type AppNotice,
 } from "./notifications";
 import { stubMatchMediaReducedMotion } from "./testMatchMedia";
+import notificationCss from "./notificationCenter.css?raw";
 
 interface HarnessHandles {
   notify: (notice: AppNotice) => string;
@@ -44,11 +45,11 @@ function LocationProbe() {
   return <p>page@{pathname}</p>;
 }
 
-async function renderNotificationShell() {
+async function renderNotificationShell(initialEntries = ["/"]) {
   const i18n = await createSkillHubI18n(["en-US"]);
   render(
     <I18nextProvider i18n={i18n}>
-      <MemoryRouter initialEntries={["/"]}>
+      <MemoryRouter initialEntries={initialEntries}>
         <AppNotificationsProvider>
           <Capture />
           <Routes>
@@ -83,6 +84,17 @@ describe("AppNotificationsProvider toasts", () => {
   afterEach(() => {
     vi.useRealTimers();
     handles.current = null;
+  });
+
+  it("uses the shared toast placement on detail routes with the normal topbar", async () => {
+    await renderNotificationShell(["/library/skill-pdf"]);
+
+    act(() => {
+      handles.current?.notify({ tone: "danger", title: "Delete failed" });
+    });
+
+    expect(toastRegion()).not.toHaveClass("is-detail-route");
+    expect(notificationCss).not.toContain(".sh-notification-center.is-detail-route");
   });
 
   it("shows a toast in a top-right stack region and removes it after the 2s duration", async () => {

@@ -85,6 +85,7 @@ describe("AppShell", () => {
 
     const bell = screen.getByRole("button", { name: "Notifications" });
     expect(bell).toBeVisible();
+    expect(screen.getByRole("heading", { name: "Skill library" })).toBeVisible();
 
     const user = userEvent.setup();
     await user.click(bell);

@@ -95,6 +95,13 @@ const registry: Record<string, ReactNode> = {
       <path d="M10 19.5a2.2 2.2 0 0 0 4 0" />
     </>
   ),
+  // Lucide Panel Left (ISC): https://lucide.dev/icons/panel-left
+  panelLeft: (
+    <>
+      <rect height="18" rx="2" width="18" x="3" y="3" />
+      <path d="M9 3v18" />
+    </>
+  ),
   // —— 导航映射（与 Sidebar 共用，保持单次朗读）——
   overview: <path d="M4 12 12 4l8 8M6 10v9h12v-9M9 19v-5h6v5" />,
   library: (
@@ -120,7 +127,7 @@ export type IconName = keyof typeof registry;
 export const iconNames = Object.keys(registry) as IconName[];
 
 /** 规格 4.2：按钮 16 / 导航 20 / 提示 24 / 实体与品牌 32–40。 */
-export const iconSizes = [16, 20, 24, 32, 40] as const;
+export const iconSizes = [14, 16, 20, 24, 32, 40] as const;
 
 export interface IconProps extends SVGProps<SVGSVGElement> {
   name: IconName;

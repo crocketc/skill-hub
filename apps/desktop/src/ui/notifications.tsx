@@ -10,7 +10,7 @@ import {
   useState,
 } from "react";
 import { useTranslation } from "react-i18next";
-import { Link } from "react-router-dom";
+import { Link, useInRouterContext } from "react-router-dom";
 import { Button } from "./Button";
 import { Drawer } from "./Drawer";
 import { Icon } from "./Icon";
@@ -416,6 +416,45 @@ function ToastRegion({
   notices: ReadonlyArray<AppNoticeRecord>;
   onDismiss: (id: string) => void;
 }) {
+  if (useInRouterContext()) {
+    return <RoutedToastRegion notices={notices} onDismiss={onDismiss} toast={toast} />;
+  }
+  return (
+    <ToastRegionContent
+      notices={notices}
+      onDismiss={onDismiss}
+      toast={toast}
+    />
+  );
+}
+
+function RoutedToastRegion({
+  notices,
+  onDismiss,
+  toast,
+}: {
+  toast: ToastState;
+  notices: ReadonlyArray<AppNoticeRecord>;
+  onDismiss: (id: string) => void;
+}) {
+  return (
+    <ToastRegionContent
+      notices={notices}
+      onDismiss={onDismiss}
+      toast={toast}
+    />
+  );
+}
+
+function ToastRegionContent({
+  notices,
+  onDismiss,
+  toast,
+}: {
+  toast: ToastState;
+  notices: ReadonlyArray<AppNoticeRecord>;
+  onDismiss: (id: string) => void;
+}) {
   const { t } = useTranslation();
   const reducedMotion = usePrefersReducedMotion();
   if (toast.stackIds.length === 0) {
@@ -472,6 +511,7 @@ function ToastRegion({
     </div>
   );
 }
+
 
 function ToastActionLink({
   action,

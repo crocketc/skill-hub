@@ -57,10 +57,15 @@ it("mounts the deterministic overview preview with deployment, tag, and pending 
   expect(screen.getByRole("link", { name: "5 discovered agents" })).toBeVisible();
 });
 
-it("gives the full-screen overview a denser fixed two-row rhythm", () => {
-  expect(overviewCss).toMatch(/\.sh-overview__hero\s*\{[\s\S]*min-height:\s*7rem/);
+it("fills the remaining shell height without a viewport-derived outer scroll range", () => {
+  expect(overviewCss).toMatch(/\.sh-overview__hero\s*\{[\s\S]*min-height:\s*5rem/);
   expect(overviewCss).toMatch(/\.sh-overview__stat\s*\{[\s\S]*min-height:\s*5rem/);
-  expect(overviewCss).toMatch(
-    /\.sh-overview \.sh-overview__content-grid\s*\{[\s\S]*min-height:\s*clamp\(24rem, calc\(100dvh - 25rem\), 34rem\)/,
-  );
+  expect(overviewCss).not.toContain("100dvh - 22rem");
+  expect(overviewCss).toMatch(/\.sh-overview__content-grid\s*\{[\s\S]*min-height:\s*0/);
+});
+
+it("falls back to intrinsic overview height before cards can overlap in a short window", () => {
+  expect(overviewCss).toMatch(/@media \(max-height: 70rem\) \{[\s\S]*?\.sh-page-frame--fill \{[\s\S]*?height:\s*auto/);
+  expect(overviewCss).toMatch(/@media \(max-height: 70rem\) \{[\s\S]*?\.sh-overview \.sh-overview__content-grid \{[\s\S]*?height:\s*auto/);
+  expect(overviewCss).toMatch(/@media \(max-height: 70rem\) \{[\s\S]*?\.sh-overview \.sh-overview__panel \{[\s\S]*?grid-template-rows:\s*auto auto auto/);
 });

@@ -7,18 +7,20 @@ export interface PageFrameProps {
    * `wide` lets entity grids use the full workspace width.
    */
   width?: "standard" | "wide";
+  fill?: boolean;
 }
 
 /**
  * Page-level frame: vertical rhythm, left alignment and the single main
  * scroll area inside AppShell. It renders no heading of its own.
  */
-export function PageFrame({ children, width = "standard" }: PageFrameProps) {
+export function PageFrame({ children, fill = false, width = "standard" }: PageFrameProps) {
   return (
     <div
       className={[
         "sh-page-frame",
         width === "wide" ? "sh-page-frame--wide" : "",
+        fill ? "sh-page-frame--fill" : "",
       ]
         .filter(Boolean)
         .join(" ")}

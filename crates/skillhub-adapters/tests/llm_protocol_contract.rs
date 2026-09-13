@@ -101,6 +101,24 @@ fn local_openai_compatible_base_url_without_version_uses_v1_chat_path() {
 }
 
 #[test]
+fn openai_responses_uses_the_responses_suffix_and_text_format_schema() {
+    let adapter = adapter_for(LlmProtocolFamily::OpenAiResponses);
+    let base = profile(
+        LlmProtocolFamily::OpenAiResponses,
+        "https://gateway.test/v1",
+    );
+
+    let draft = adapter
+        .chat_request(&base, Some("sk-test"), &request())
+        .unwrap();
+
+    assert_eq!(draft.url, "https://gateway.test/v1/responses");
+    assert_eq!(header(&draft, "Authorization"), "Bearer sk-test");
+    assert_eq!(draft.body["text"]["format"]["type"], json!("json_schema"));
+    assert!(draft.body["input"].is_array());
+}
+
+#[test]
 fn anthropic_uses_x_api_key_version_header_and_message_payload() {
     let adapter = adapter_for(LlmProtocolFamily::Anthropic);
     let base = profile(LlmProtocolFamily::Anthropic, "https://api.anthropic.test");
@@ -224,6 +242,14 @@ fn text_and_model_extraction_understands_each_protocol_shape() {
     assert_eq!(openai.extract_text(&body).unwrap(), "{\"ok\": true}");
     let models = json!({"data": [{"id": "m-b"}, {"id": "m-a"}]});
     assert_eq!(openai.extract_models(&models).unwrap(), vec!["m-a", "m-b"]);
+
+    let responses = adapter_for(LlmProtocolFamily::OpenAiResponses);
+    assert_eq!(
+        responses
+            .extract_text(&json!({"output_text": "{\"ok\": true}"}))
+            .unwrap(),
+        "{\"ok\": true}"
+    );
 
     let anthropic = adapter_for(LlmProtocolFamily::Anthropic);
     let body = json!({"content": [{"type": "text", "text": "{\"ok\": 1}"}]});

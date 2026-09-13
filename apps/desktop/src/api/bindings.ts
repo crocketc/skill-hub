@@ -1116,6 +1116,8 @@ export type LlmProtocolFamily =
  *  Moonshot, GLM, MiniMax, Doubao, Grok, LM Studio and custom gateways.
  */
 "open_ai_compatible" |
+/**  OpenAI Responses API (`/responses`), also used by compatible routers. */
+"open_ai_responses" |
 /**  Anthropic Messages protocol (`/v1/messages`, `x-api-key`). */
 "anthropic" |
 /**  Google Generative Language protocol (`:generateContent`). */

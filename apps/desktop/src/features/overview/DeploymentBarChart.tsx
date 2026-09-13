@@ -15,6 +15,7 @@ export interface DeploymentBarChartPalette {
   axisLabelColor: string;
   axisLineColor: string;
   barColor: string;
+  chartColors: string[];
   splitLineColor: string;
   surfaceColor: string;
   textColor: string;
@@ -47,6 +48,7 @@ const defaultPalette: DeploymentBarChartPalette = {
   axisLabelColor: "#5f6d63",
   axisLineColor: "rgb(24 43 29 / 10%)",
   barColor: "#3f7259",
+  chartColors: ["#3f7259", "#4f7e9e", "#b26a43", "#8069a7", "#4f8a76", "#b18a3e"],
   splitLineColor: "rgb(24 43 29 / 10%)",
   surfaceColor: "#f7f9f5",
   textColor: "#1c251f",
@@ -67,7 +69,7 @@ function resolvePaletteValue(
   return styles.getPropertyValue(token).trim() || fallback;
 }
 
-function readDeploymentBarChartPalette(): DeploymentBarChartPalette {
+export function readDeploymentBarChartPalette(): DeploymentBarChartPalette {
   if (typeof document === "undefined") {
     return defaultPalette;
   }
@@ -86,6 +88,7 @@ function readDeploymentBarChartPalette(): DeploymentBarChartPalette {
       defaultPalette.axisLineColor,
     ),
     barColor: resolvePaletteValue(styles, "--color-accent", defaultPalette.barColor),
+    chartColors: defaultPalette.chartColors,
     splitLineColor: resolvePaletteValue(
       styles,
       "--color-border",

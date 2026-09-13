@@ -416,6 +416,12 @@ a {
   max-width: none;
 }
 
+.sh-page-frame--fill {
+  height: 100%;
+  min-height: 0;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
 .sh-page-header {
   display: flex;
   align-items: flex-start;
@@ -831,15 +837,10 @@ a {
 
 .sh-sidebar__header {
   position: relative;
-  display: flex;
-  /* 折叠按钮顶格贴住侧栏左上角（与折叠态同一起点），brand 盒内自行居中。 */
-  align-items: flex-start;
-  gap: var(--space-2);
 }
 
 .sh-sidebar__brand {
   display: inline-flex;
-  flex: 1 1 auto;
   width: 100%;
   min-height: 3.75rem;
   align-items: center;
@@ -855,11 +856,12 @@ a {
    五态（安静/悬停/按下/键盘焦点/折叠态）全部消费语义 token，
    不再使用悬浮阴影类装饰；对比度契约锁定于 styles/base.test.ts。 */
 .sh-sidebar__toggle {
-  position: static;
+  position: absolute;
+  top: var(--space-2);
+  left: 0;
   display: grid;
-  width: 2.5rem;
-  height: 2.5rem;
-  flex: 0 0 auto;
+  width: 1.75rem;
+  height: 1.75rem;
   place-items: center;
   border: 1px solid var(--ui-border);
   border-radius: var(--radius-sm);
@@ -963,13 +965,10 @@ a {
 }
 
 .sh-sidebar.is-collapsed .sh-sidebar__header {
-  /* 折叠窄条内按钮在上、brand 居下，两者水平居中且不重叠。 */
-  align-items: center;
-  flex-direction: column;
 }
 
 .sh-sidebar.is-collapsed .sh-sidebar__brand {
-  width: auto;
+  width: 100%;
   justify-content: center;
 }
 
@@ -995,10 +994,6 @@ a {
 .sh-sidebar.is-collapsed .sh-sidebar__pinned .sh-sidebar__list {
   padding-top: 0;
   border-top: 0;
-}
-
-.sh-app-shell__workspace.is-detail-route {
-  grid-template-rows: minmax(0, 1fr);
 }
 
 .sh-app-shell__topbar {
@@ -1524,9 +1519,9 @@ a {
   }
 
   .sh-sidebar__toggle {
-    position: static;
-    width: 2.5rem;
-    height: 2.5rem;
+    position: absolute;
+    width: 1.75rem;
+    height: 1.75rem;
     border-radius: var(--radius-sm);
     transform: none;
   }

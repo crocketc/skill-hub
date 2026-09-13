@@ -283,12 +283,21 @@ fn builtin_presets_cover_the_confirmed_provider_baseline() {
         "azure-openai",
         "openrouter",
         "deepseek",
+        "deepseek-anthropic",
         "alibaba-dashscope",
         "moonshot-kimi",
+        "kimi-code-openai",
+        "kimi-code-anthropic",
         "zhipu-glm",
+        "zhipu-glm-coding-chat",
+        "zhipu-glm-coding-anthropic",
         "minimax",
         "volcengine-doubao",
         "xai-grok",
+        "groq",
+        "mistral",
+        "baidu-qianfan",
+        "baidu-qianfan-anthropic",
         "ollama",
         "lm-studio",
         "custom-openai-compatible",
@@ -296,8 +305,24 @@ fn builtin_presets_cover_the_confirmed_provider_baseline() {
         assert!(ids.contains(&expected), "missing preset {expected}");
     }
 
+    let glm_coding = presets
+        .iter()
+        .find(|preset| preset.id == "zhipu-glm-coding-chat")
+        .expect("GLM Coding Plan must be a distinct product-line preset");
+    assert_eq!(
+        glm_coding.endpoint,
+        "https://open.bigmodel.cn/api/coding/paas/v4"
+    );
+    assert_eq!(glm_coding.protocol, LlmProtocolFamily::OpenAiCompatible);
+
+    let kimi_code = presets
+        .iter()
+        .find(|preset| preset.id == "kimi-code-openai")
+        .expect("Kimi Code must not reuse the open-platform endpoint");
+    assert_eq!(kimi_code.endpoint, "https://api.kimi.com/coding/v1");
+
     let openai = presets.iter().find(|p| p.id == "openai").unwrap();
-    assert_eq!(openai.protocol, LlmProtocolFamily::OpenAi);
+    assert_eq!(openai.protocol, LlmProtocolFamily::OpenAiCompatible);
     assert_eq!(openai.deployment, LlmDeployment::Online);
     assert!(openai.requires_credential);
     assert!(openai.endpoint.starts_with("https://"));
@@ -317,11 +342,16 @@ fn builtin_presets_cover_the_confirmed_provider_baseline() {
         .unwrap();
     assert_eq!(custom.protocol, LlmProtocolFamily::OpenAiCompatible);
 
-    // Presets never hardcode model ids as the only choice: the model comes
-    // from the model-list fetch or manual input, so the catalog carries none.
+    // Hints are optional guidance only; users still fetch or manually enter
+    // the actual model identifier.
     assert!(
-        presets.iter().all(|p| p.models_hint.is_none()),
-        "presets must not ship model catalogues"
+        presets
+            .iter()
+            .find(|p| p.id == "deepseek")
+            .unwrap()
+            .models_hint
+            .is_some(),
+        "official product lines may provide a non-binding current model hint"
     );
     // Every online preset documents its official API reference for the
     // compatibility matrix and the settings page.

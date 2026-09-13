@@ -16,6 +16,8 @@ pub enum LlmProtocolFamily {
     /// Moonshot, GLM, MiniMax, Doubao, Grok, LM Studio and custom gateways.
     #[default]
     OpenAiCompatible,
+    /// OpenAI Responses API (`/responses`), also used by compatible routers.
+    OpenAiResponses,
     /// Anthropic Messages protocol (`/v1/messages`, `x-api-key`).
     Anthropic,
     /// Google Generative Language protocol (`:generateContent`).
@@ -306,6 +308,26 @@ impl LlmProviderConfig {
             Ok(profile)
         })
     }
+
+    /// Builds the narrower profile used to fetch available models. Unlike a
+    /// task profile, this permits an empty `model` because that is the field
+    /// the model-list request is intended to populate.
+    pub fn to_model_listing_profile(&self) -> AppResult<LlmProfile> {
+        let profile = LlmProfile {
+            id: format!("{}:model-list", self.id),
+            provider: self.id.clone(),
+            endpoint: self.endpoint.clone(),
+            model: self.model.clone(),
+            credential_ref: self.credential_ref.clone(),
+            timeout_ms: self.timeout_ms.into(),
+            max_input_bytes: self.max_input_bytes as usize,
+            protocol: self.protocol,
+            deployment: self.deployment,
+            custom_headers: self.custom_headers.clone(),
+        };
+        profile.validate_model_listing()?;
+        Ok(profile)
+    }
 }
 
 /// A listed provider configuration with UI-facing status fields. The secret
@@ -359,6 +381,9 @@ const GLM_DOCS: &str = "https://docs.bigmodel.cn/cn/guide/start/model-overview";
 const MINIMAX_DOCS: &str = "https://platform.minimaxi.com/en/document/Announcement";
 const ARK_DOCS: &str = "https://www.volcengine.com/docs/82379/1330621";
 const XAI_DOCS: &str = "https://docs.x.ai/docs/api-reference";
+const GROQ_DOCS: &str = "https://console.groq.com/docs/openai";
+const MISTRAL_DOCS: &str = "https://docs.mistral.ai/api";
+const QIANFAN_DOCS: &str = "https://cloud.baidu.com/doc/qianfan";
 const OLLAMA_DOCS: &str = "https://github.com/ollama/ollama/blob/main/docs/openai.md";
 const LMSTUDIO_DOCS: &str = "https://lmstudio.ai/docs/app/api/endpoints/openai";
 
@@ -367,12 +392,14 @@ const LMSTUDIO_DOCS: &str = "https://lmstudio.ai/docs/app/api/endpoints/openai";
 /// promotion (no sponsor ordering is reproduced from reference projects).
 pub fn builtin_provider_presets() -> Vec<LlmProviderPreset> {
     use LlmDeployment::{Local, Online};
-    use LlmProtocolFamily::{Anthropic, AzureOpenAi, Gemini, OpenAi, OpenAiCompatible};
+    use LlmProtocolFamily::{Anthropic, AzureOpenAi, Gemini, OpenAiCompatible};
     vec![
         LlmProviderPreset {
             id: "openai".into(),
             label: "OpenAI".into(),
-            protocol: OpenAi,
+            // The visible settings format follows cc-switch's OpenAI Chat
+            // format; keep the legacy OpenAi variant only for old stored data.
+            protocol: OpenAiCompatible,
             deployment: Online,
             endpoint: "https://api.openai.com/v1".into(),
             requires_credential: true,
@@ -422,12 +449,24 @@ pub fn builtin_provider_presets() -> Vec<LlmProviderPreset> {
         },
         LlmProviderPreset {
             id: "deepseek".into(),
-            label: "DeepSeek".into(),
+            label: "DeepSeek API (OpenAI)".into(),
             protocol: OpenAiCompatible,
             deployment: Online,
-            endpoint: "https://api.deepseek.com/v1".into(),
+            // cc-switch uses the provider root: chat is /chat/completions and
+            // the model catalogue is the separate /models endpoint.
+            endpoint: "https://api.deepseek.com".into(),
             requires_credential: true,
-            models_hint: None,
+            models_hint: Some("deepseek-flash, deepseek-v4-pro".into()),
+            api_docs_url: Some(DEEPSEEK_DOCS.into()),
+        },
+        LlmProviderPreset {
+            id: "deepseek-anthropic".into(),
+            label: "DeepSeek API (Anthropic)".into(),
+            protocol: Anthropic,
+            deployment: Online,
+            endpoint: "https://api.deepseek.com/anthropic".into(),
+            requires_credential: true,
+            models_hint: Some("deepseek-flash, deepseek-v4-pro".into()),
             api_docs_url: Some(DEEPSEEK_DOCS.into()),
         },
         LlmProviderPreset {
@@ -442,20 +481,60 @@ pub fn builtin_provider_presets() -> Vec<LlmProviderPreset> {
         },
         LlmProviderPreset {
             id: "moonshot-kimi".into(),
-            label: "Moonshot Kimi".into(),
+            label: "Kimi Open Platform".into(),
             protocol: OpenAiCompatible,
             deployment: Online,
             endpoint: "https://api.moonshot.cn/v1".into(),
             requires_credential: true,
-            models_hint: None,
+            models_hint: Some("kimi-k3".into()),
+            api_docs_url: Some(MOONSHOT_DOCS.into()),
+        },
+        LlmProviderPreset {
+            id: "kimi-code-openai".into(),
+            label: "Kimi Code (OpenAI)".into(),
+            protocol: OpenAiCompatible,
+            deployment: Online,
+            endpoint: "https://api.kimi.com/coding/v1".into(),
+            requires_credential: true,
+            models_hint: Some("kimi-for-coding, k3, k2.8-preview".into()),
+            api_docs_url: Some(MOONSHOT_DOCS.into()),
+        },
+        LlmProviderPreset {
+            id: "kimi-code-anthropic".into(),
+            label: "Kimi Code (Anthropic)".into(),
+            protocol: Anthropic,
+            deployment: Online,
+            endpoint: "https://api.kimi.com/coding".into(),
+            requires_credential: true,
+            models_hint: Some("kimi-for-coding, k3, k2.8-preview".into()),
             api_docs_url: Some(MOONSHOT_DOCS.into()),
         },
         LlmProviderPreset {
             id: "zhipu-glm".into(),
-            label: "Zhipu GLM".into(),
+            label: "Zhipu GLM API (OpenAI)".into(),
             protocol: OpenAiCompatible,
             deployment: Online,
             endpoint: "https://open.bigmodel.cn/api/paas/v4".into(),
+            requires_credential: true,
+            models_hint: None,
+            api_docs_url: Some(GLM_DOCS.into()),
+        },
+        LlmProviderPreset {
+            id: "zhipu-glm-coding-chat".into(),
+            label: "GLM Coding Plan (OpenAI Chat)".into(),
+            protocol: OpenAiCompatible,
+            deployment: Online,
+            endpoint: "https://open.bigmodel.cn/api/coding/paas/v4".into(),
+            requires_credential: true,
+            models_hint: None,
+            api_docs_url: Some(GLM_DOCS.into()),
+        },
+        LlmProviderPreset {
+            id: "zhipu-glm-coding-anthropic".into(),
+            label: "GLM Coding Plan (Anthropic)".into(),
+            protocol: Anthropic,
+            deployment: Online,
+            endpoint: "https://open.bigmodel.cn/api/anthropic".into(),
             requires_credential: true,
             models_hint: None,
             api_docs_url: Some(GLM_DOCS.into()),
@@ -491,6 +570,46 @@ pub fn builtin_provider_presets() -> Vec<LlmProviderPreset> {
             requires_credential: true,
             models_hint: None,
             api_docs_url: Some(XAI_DOCS.into()),
+        },
+        LlmProviderPreset {
+            id: "groq".into(),
+            label: "Groq".into(),
+            protocol: OpenAiCompatible,
+            deployment: Online,
+            endpoint: "https://api.groq.com/openai/v1".into(),
+            requires_credential: true,
+            models_hint: None,
+            api_docs_url: Some(GROQ_DOCS.into()),
+        },
+        LlmProviderPreset {
+            id: "mistral".into(),
+            label: "Mistral AI".into(),
+            protocol: OpenAiCompatible,
+            deployment: Online,
+            endpoint: "https://api.mistral.ai/v1".into(),
+            requires_credential: true,
+            models_hint: None,
+            api_docs_url: Some(MISTRAL_DOCS.into()),
+        },
+        LlmProviderPreset {
+            id: "baidu-qianfan".into(),
+            label: "Baidu Qianfan (OpenAI)".into(),
+            protocol: OpenAiCompatible,
+            deployment: Online,
+            endpoint: "https://qianfan.baidubce.com/v2".into(),
+            requires_credential: true,
+            models_hint: None,
+            api_docs_url: Some(QIANFAN_DOCS.into()),
+        },
+        LlmProviderPreset {
+            id: "baidu-qianfan-anthropic".into(),
+            label: "Baidu Qianfan (Anthropic)".into(),
+            protocol: Anthropic,
+            deployment: Online,
+            endpoint: "https://qianfan.baidubce.com/anthropic".into(),
+            requires_credential: true,
+            models_hint: None,
+            api_docs_url: Some(QIANFAN_DOCS.into()),
         },
         LlmProviderPreset {
             id: "ollama".into(),

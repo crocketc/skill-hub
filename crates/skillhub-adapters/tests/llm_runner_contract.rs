@@ -235,7 +235,7 @@ async fn run_once(
 async fn openai_happy_path_parses_structured_output_and_masks_the_credential() {
     let runner = stored_runner();
     let server = Arc::new(MockLlmServer::default());
-    let content = chat_content("{\"translation\": \"hola\", \"language\": \"es\"}");
+    let content = chat_content("```json\n{\"translation\": \"hola\", \"language\": \"es\"}\n```");
     let (base, handle) = start_server(
         server.clone(),
         vec![QueuedResponse {
@@ -669,7 +669,7 @@ async fn model_list_fetch_tries_candidates_and_returns_sorted_ids() {
     .await;
     let mut profile = openai_chat(&base);
     // A chat path without a version segment yields two candidates:
-    // {base}/models then {base}/v1/models.
+    // {base}/v1/models then {base}/models, matching OpenAI-compatible gateways.
     profile.endpoint = format!("{base}/chat/completions");
     let models = runner.fetch_models(&profile).await.expect("models");
     assert_eq!(models, vec!["a-model".to_string(), "z-model".to_string()]);
@@ -680,7 +680,57 @@ async fn model_list_fetch_tries_candidates_and_returns_sorted_ids() {
         .iter()
         .map(|request| request.path.clone())
         .collect();
-    assert_eq!(paths, vec!["/models".to_string(), "/v1/models".to_string()]);
+    assert_eq!(paths, vec!["/v1/models".to_string(), "/models".to_string()]);
+    handle.abort();
+}
+
+/// Fetching a model list is the step used to populate an empty model field in
+/// the provider editor, so it must not require a model id before sending its
+/// request.
+#[tokio::test]
+async fn model_list_fetch_allows_an_empty_model_before_selection() {
+    let runner = stored_runner();
+    let server = Arc::new(MockLlmServer::default());
+    let (base, handle) = start_server(
+        server.clone(),
+        vec![QueuedResponse {
+            status: "200 OK",
+            headers: vec![],
+            body: json!({"data": [{"id": "glm-4.5-air"}]}).to_string(),
+            delay_ms: 0,
+        }],
+    )
+    .await;
+
+    let mut profile = openai_chat(&base);
+    profile.endpoint = format!("{base}/v1");
+    profile.model.clear();
+
+    let models = runner.fetch_models(&profile).await.expect("models");
+    assert_eq!(models, vec!["glm-4.5-air".to_string()]);
+    assert_eq!(server.requests.lock().unwrap()[0].path, "/v1/models");
+    handle.abort();
+}
+
+#[tokio::test]
+async fn empty_model_list_is_reported_as_a_user_actionable_failure() {
+    let runner = stored_runner();
+    let server = Arc::new(MockLlmServer::default());
+    let (base, handle) = start_server(
+        server,
+        vec![QueuedResponse {
+            status: "200 OK",
+            headers: vec![],
+            body: json!({"data": []}).to_string(),
+            delay_ms: 0,
+        }],
+    )
+    .await;
+
+    let mut profile = openai_chat(&base);
+    profile.endpoint = format!("{base}/v1");
+    let error = runner.fetch_models(&profile).await.unwrap_err();
+    assert_eq!(error.code, ErrorCode::LlmModelNotFound);
     handle.abort();
 }
 

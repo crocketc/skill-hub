@@ -106,22 +106,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
           onClick={toggle}
           type="button"
         >
-          <svg aria-hidden="true" className="sh-sidebar__toggle-icon" fill="none" viewBox="0 0 24 24">
-            <path
-              d={isCollapsed ? "M19.5 5.5h-7v13h7z" : "M4.5 5.5h7v13h-7z"}
-              stroke="currentColor"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth="1.75"
-            />
-            <path
-              d={isCollapsed ? "m9 8.5 3.5 3.5L9 15.5" : "m15 8.5-3.5 3.5 3.5 3.5"}
-              stroke="currentColor"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth="2.25"
-            />
-          </svg>
+          <Icon className="sh-sidebar__toggle-icon" name="panelLeft" size={14} />
         </button>
         <Link aria-label="SkillHub" className="sh-sidebar__brand" to="/">
           <BrandLogo />

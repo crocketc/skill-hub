@@ -54,6 +54,7 @@ pub fn adapter_for(protocol: LlmProtocolFamily) -> Box<dyn ProtocolAdapter> {
     match protocol {
         LlmProtocolFamily::OpenAi => Box::new(OpenAiAdapter),
         LlmProtocolFamily::OpenAiCompatible => Box::new(OpenAiCompatibleAdapter),
+        LlmProtocolFamily::OpenAiResponses => Box::new(OpenAiResponsesAdapter),
         LlmProtocolFamily::Anthropic => Box::new(AnthropicAdapter),
         LlmProtocolFamily::Gemini => Box::new(GeminiAdapter),
         LlmProtocolFamily::AzureOpenAi => Box::new(AzureOpenAiAdapter),
@@ -62,6 +63,7 @@ pub fn adapter_for(protocol: LlmProtocolFamily) -> Box<dyn ProtocolAdapter> {
 
 pub struct OpenAiAdapter;
 pub struct OpenAiCompatibleAdapter;
+pub struct OpenAiResponsesAdapter;
 pub struct AnthropicAdapter;
 pub struct GeminiAdapter;
 pub struct AzureOpenAiAdapter;
@@ -120,6 +122,50 @@ fn openai_chat_request(
     })
 }
 
+/// OpenAI Responses API request assembly. The endpoint suffix and structured
+/// output field match cc-switch's `openai_responses` format. Compatible
+/// gateways can therefore use the same provider root without a vendor branch.
+fn openai_responses_request(
+    profile: &LlmProfile,
+    credential: Option<&str>,
+    request: &LlmTaskRequest,
+) -> AppResult<ChatRequestDraft> {
+    profile.validate()?;
+    let endpoint = profile.endpoint.trim_end_matches('/');
+    let endpoint = if matches!(profile.deployment, LlmDeployment::Local)
+        && version_suffix(endpoint).is_none()
+    {
+        format!("{endpoint}/v1")
+    } else {
+        endpoint.to_owned()
+    };
+    let url = if endpoint.ends_with("/responses") {
+        endpoint
+    } else {
+        format!("{endpoint}/responses")
+    };
+    Ok(ChatRequestDraft {
+        url,
+        headers: bearer_headers(profile, credential),
+        body: json!({
+            "model": profile.model,
+            "input": [{
+                "role": "user",
+                "content": [{"type": "input_text", "text": request.input}],
+            }],
+            "temperature": 0,
+            "text": {
+                "format": {
+                    "type": "json_schema",
+                    "name": request.kind.schema_name(),
+                    "strict": true,
+                    "schema": request.response_schema,
+                }
+            }
+        }),
+    })
+}
+
 impl ProtocolAdapter for OpenAiAdapter {
     fn chat_request(
         &self,
@@ -167,6 +213,50 @@ impl ProtocolAdapter for OpenAiCompatibleAdapter {
 
     fn extract_text(&self, body: &Value) -> AppResult<String> {
         extract_openai_text(body)
+    }
+
+    fn extract_models(&self, body: &Value) -> AppResult<Vec<String>> {
+        extract_data_models(body)
+    }
+}
+
+impl ProtocolAdapter for OpenAiResponsesAdapter {
+    fn chat_request(
+        &self,
+        profile: &LlmProfile,
+        credential: Option<&str>,
+        request: &LlmTaskRequest,
+    ) -> AppResult<ChatRequestDraft> {
+        openai_responses_request(profile, credential, request)
+    }
+
+    fn request_headers(
+        &self,
+        profile: &LlmProfile,
+        credential: Option<&str>,
+    ) -> AppResult<Headers> {
+        Ok(bearer_headers(profile, credential))
+    }
+
+    fn extract_text(&self, body: &Value) -> AppResult<String> {
+        if let Some(text) = body.get("output_text").and_then(Value::as_str) {
+            return Ok(text.to_owned());
+        }
+        body.get("output")
+            .and_then(Value::as_array)
+            .and_then(|items| {
+                items.iter().find_map(|item| {
+                    item.get("content")
+                        .and_then(Value::as_array)
+                        .and_then(|content| {
+                            content
+                                .iter()
+                                .find_map(|part| part.get("text").and_then(Value::as_str))
+                        })
+                })
+            })
+            .map(str::to_owned)
+            .ok_or_else(protocol_mismatch)
     }
 
     fn extract_models(&self, body: &Value) -> AppResult<Vec<String>> {
@@ -462,18 +552,24 @@ pub fn derive_model_list_candidates(endpoint: &str, override_url: Option<&str>) 
         return vec![format!("{without_chat}/models")];
     }
     let trimmed = without_chat.trim_end_matches('/');
-    let mut candidates = vec![format!("{trimmed}/models"), format!("{trimmed}/v1/models")];
+    // Most OpenAI-compatible gateways expose /v1/models. Preserve this
+    // priority: a lexical sort made /models win for compatible routes.
+    let mut candidates = vec![format!("{trimmed}/v1/models"), format!("{trimmed}/models")];
     for suffix in KNOWN_COMPAT_SUFFIXES {
         if let Some(root) = trimmed.strip_suffix(suffix) {
             let root = root.trim_end_matches('/');
-            candidates.push(format!("{root}/models"));
             candidates.push(format!("{root}/v1/models"));
+            candidates.push(format!("{root}/models"));
             break;
         }
     }
-    candidates.sort();
-    candidates.dedup();
-    candidates
+    let mut unique = Vec::new();
+    for candidate in candidates {
+        if !unique.contains(&candidate) {
+            unique.push(candidate);
+        }
+    }
+    unique
 }
 
 fn version_suffix(url: &str) -> Option<&str> {

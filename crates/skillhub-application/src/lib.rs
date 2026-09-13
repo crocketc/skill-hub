@@ -1953,6 +1953,23 @@ impl LocalApplicationFacade {
         }
     }
 
+    fn resolve_model_list_target(&self, provider: FetchLlmProvider) -> AppResult<LlmProfile> {
+        match provider {
+            FetchLlmProvider::Draft { provider } => provider.to_model_listing_profile(),
+            FetchLlmProvider::Saved { id } => {
+                let config = self
+                    .with_database("llm.resolve_model_list_target", |database| {
+                        database.llm_provider_repository().get(&id)
+                    })?
+                    .ok_or_else(|| AppError::new(ErrorCode::ObjectNotFound, Severity::Error))?;
+                if !config.enabled {
+                    return Err(AppError::new(ErrorCode::ObjectNotFound, Severity::Error));
+                }
+                config.to_model_listing_profile()
+            }
+        }
+    }
+
     async fn save_llm_provider(&self, request: SaveLlmProvider) -> AppResult<AppCommandResult> {
         let mut config = request.provider;
         if let Some(secret) = &request.credential {
@@ -2093,7 +2110,7 @@ impl LocalApplicationFacade {
     }
 
     async fn fetch_llm_models(&self, request: FetchLlmModels) -> AppResult<AppCommandResult> {
-        let profile = self.resolve_admin_target(request.provider)?;
+        let profile = self.resolve_model_list_target(request.provider)?;
         self.ensure_online_allowed(&profile)?;
         let admin = self
             .llm_admin

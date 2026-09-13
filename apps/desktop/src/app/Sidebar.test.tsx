@@ -66,22 +66,20 @@ describe("Sidebar", () => {
     );
   });
 
-  // P1-01a：折叠按钮固定在侧栏左上角——常规流内的小型方形按钮（40px、
-  // 小圆角），不再是悬浮在侧栏右缘中缝的圆形按钮。
-  it("styles the toggle as a fixed square button in the top-left corner", () => {
+  it("keeps the brand centered while the compact toggle is independently anchored", () => {
     const toggleRule = baseCss.match(/\.sh-sidebar__toggle\s*\{[^}]*\}/)?.[0] ?? "";
     expect(toggleRule).not.toBe("");
-    // 40px 点击面积保持不变。
-    expect(toggleRule).toMatch(/width:\s*2\.5rem/);
-    expect(toggleRule).toMatch(/height:\s*2\.5rem/);
+    expect(toggleRule).toMatch(/width:\s*1\.75rem/);
+    expect(toggleRule).toMatch(/height:\s*1\.75rem/);
     // 方形小圆角：禁止旧圆形 999px。
     expect(toggleRule).toMatch(/border-radius:\s*var\(--radius-sm\)/);
     expect(toggleRule).not.toMatch(/999px/);
-    // 常规流固定在左上：不再悬浮偏移（旧 top/right/translate 全部移除）。
-    expect(toggleRule).toMatch(/position:\s*static/);
-    expect(toggleRule).not.toMatch(/top:\s*calc\(100% \+ var\(--space-2\)\)/);
-    expect(toggleRule).not.toMatch(/right:\s*-1\.5rem/);
-    expect(toggleRule).not.toMatch(/translateY\(-50%\)/);
+    expect(toggleRule).toMatch(/position:\s*absolute/);
+    expect(toggleRule).toMatch(/left:\s*0/);
+    expect(toggleRule).toMatch(/top:\s*var\(--space-2\)/);
+    const brandRule = baseCss.match(/\.sh-sidebar__brand\s*\{[^}]*\}/)?.[0] ?? "";
+    expect(brandRule).toMatch(/width:\s*100%/);
+    expect(brandRule).toMatch(/justify-content:\s*center/);
     // hover/active 位移效果一并移除（窄顶栏下的 transform: none 重置不受影响）。
     expect(baseCss).not.toMatch(/\.sh-sidebar__toggle:hover[^{]*\{[^}]*translate/);
     expect(baseCss).not.toMatch(/\.sh-sidebar__toggle:active[^{]*\{[^}]*translate/);
@@ -98,13 +96,16 @@ describe("Sidebar", () => {
     expect(header!.querySelector(".sh-sidebar__brand")).not.toBeNull();
   });
 
-  it("uses the two-part sidebar glyph instead of a bare chevron", async () => {
+  it("uses the Lucide Panel Left glyph at a compact size", async () => {
     await renderSidebar();
 
     const glyph = screen
       .getByRole("button", { name: "Collapse navigation" })
       .querySelector(".sh-sidebar__toggle-icon");
 
-    expect(glyph?.querySelectorAll("path")).toHaveLength(2);
+    expect(glyph?.querySelector("rect")).not.toBeNull();
+    expect(glyph?.querySelector('path[d="M9 3v18"]')).not.toBeNull();
+    expect(glyph).toHaveAttribute("width", "14");
+    expect(glyph).toHaveAttribute("height", "14");
   });
 });

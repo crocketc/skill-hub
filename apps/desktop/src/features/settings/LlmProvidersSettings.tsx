@@ -29,14 +29,13 @@ const EMPTY_DRAFT: LlmProviderDraft = {
   credential: null,
 };
 
-/** 后端 `LlmProtocolFamily`（specta 生成绑定）真实支持的协议族；展示顺序
- * 与 provider.rs 的枚举一致，不做任何后端没有的承诺。 */
+/** 与 cc-switch `apiFormat` 对齐的四类用户可选接口；legacy 变体仍由
+ * 后端兼容读取，但不再污染手动配置下拉。 */
 const PROTOCOL_FAMILIES: Array<LlmProviderDraft["protocol"]> = [
-  "open_ai",
   "open_ai_compatible",
+  "open_ai_responses",
   "anthropic",
   "gemini",
-  "azure_open_ai",
 ];
 
 type ConnectionReport = { providerId: string; result: ConnectionTestResult };
@@ -302,7 +301,10 @@ export function LlmProvidersSettings({
   const draftOf = (view: LlmProviderView): LlmProviderDraft => ({
     id: view.config.id,
     label: view.config.label ?? view.config.id,
-    protocol: view.config.protocol,
+    protocol:
+      view.config.protocol === "open_ai" || view.config.protocol === "azure_open_ai"
+        ? "open_ai_compatible"
+        : view.config.protocol,
     deployment: view.config.deployment,
     endpoint: view.config.endpoint,
     model: view.config.model,

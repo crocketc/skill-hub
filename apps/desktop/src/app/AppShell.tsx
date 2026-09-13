@@ -158,7 +158,6 @@ export function AppShell({ refreshSnapshot, snapshot, verification }: AppShellPr
   const navigate = useNavigate();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const title = t(resolveRouteTitleKey(pathname));
-  const isDetailRoute = isSkillDetailRoute(pathname);
   const backFallback = resolveSubRouteFallback(pathname);
   const historyControls = resolveShellHistoryControls(
     readHistoryPosition(),
@@ -186,9 +185,8 @@ export function AppShell({ refreshSnapshot, snapshot, verification }: AppShellPr
           collapsed={sidebarCollapsed}
           onToggle={() => setSidebarCollapsed((value) => !value)}
         />
-        <section className={`sh-app-shell__workspace${isDetailRoute ? " is-detail-route" : ""}`}>
-          {!isDetailRoute ? (
-            <header className="sh-app-shell__topbar">
+        <section className="sh-app-shell__workspace">
+          <header className="sh-app-shell__topbar">
               <div className="sh-app-shell__topbar-start">
                 {historyControls.showBack ? (
                   <IconButton
@@ -213,12 +211,7 @@ export function AppShell({ refreshSnapshot, snapshot, verification }: AppShellPr
                 ) : null}
                 <NotificationBell />
               </div>
-            </header>
-          ) : (
-            <div className="sh-app-shell__detail-notifications">
-              <NotificationBell />
-            </div>
-          )}
+          </header>
           <main className="sh-app-shell__content" id="main-content" tabIndex={-1}>
             <Outlet context={{ refreshSnapshot, snapshot } satisfies BootstrapOutletContext} />
           </main>

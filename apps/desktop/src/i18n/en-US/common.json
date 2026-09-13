@@ -1957,6 +1957,7 @@
       "dataScopeGeneric": "Minimal per-feature sending",
       "dataScopeNote": "When an AI feature is enabled, only the minimal content that feature needs (such as a skill description or search keywords) is sent; your skill library is never uploaded wholesale.",
       "providerUnconfigured": "No usable LLM provider configured yet",
+      "providerUnconfiguredLegacy": "Not configured",
       "providerConfigured": "Configured: {{provider}}"
     },
     "llm": {
@@ -1990,11 +1991,10 @@
       "protocolFamily": "Protocol",
       "protocolFamilyNote": "Switching the protocol only changes the wire format; the filled base URL and model are kept.",
       "protocol": {
-        "open_ai": "OpenAI Chat Completions",
-        "open_ai_compatible": "OpenAI-compatible (Chat Completions)",
+        "open_ai_compatible": "OpenAI Chat Completions",
+        "open_ai_responses": "OpenAI Responses API",
         "anthropic": "Anthropic Messages",
-        "gemini": "Google Gemini (generateContent)",
-        "azure_open_ai": "Azure OpenAI (deployment)"
+        "gemini": "Gemini Native generateContent"
       },
       "presetSummary": "Preset derivation",
       "presetVendor": "Vendor",
@@ -2300,6 +2300,7 @@
     },
     "tags": {
       "heading": "Skill count by tag",
+      "chartAria": "Skill count by tag chart",
       "drilldown": "View {{count}} skills tagged {{label}}",
       "detailCount": "{{count}} tags"
     }

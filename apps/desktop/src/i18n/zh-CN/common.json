@@ -1957,6 +1957,7 @@
       "dataScopeGeneric": "按功能最小发送",
       "dataScopeNote": "开启某项 AI 功能后，只发送该功能所需的最少内容（例如技能描述、搜索关键词）；不会上传整个技能库。",
       "providerUnconfigured": "尚未配置可用的 LLM 供应商",
+      "providerUnconfiguredLegacy": "未配置",
       "providerConfigured": "已配置：{{provider}}"
     },
     "llm": {
@@ -1990,11 +1991,10 @@
       "protocolFamily": "接口格式",
       "protocolFamilyNote": "切换接口格式只改变请求协议，不会修改已填写的地址与模型。",
       "protocol": {
-        "open_ai": "OpenAI Chat Completions",
-        "open_ai_compatible": "OpenAI 兼容（Chat Completions）",
+        "open_ai_compatible": "OpenAI Chat Completions",
+        "open_ai_responses": "OpenAI Responses API",
         "anthropic": "Anthropic Messages",
-        "gemini": "Google Gemini（generateContent）",
-        "azure_open_ai": "Azure OpenAI（部署）"
+        "gemini": "Gemini Native generateContent"
       },
       "presetSummary": "预设推导信息",
       "presetVendor": "厂商",
@@ -2300,6 +2300,7 @@
     },
     "tags": {
       "heading": "按标签的 Skill 数量",
+      "chartAria": "按标签统计 Skill 数量图表",
       "drilldown": "查看 {{label}} 的 {{count}} 个 Skill",
       "detailCount": "{{count}} 个标签"
     }

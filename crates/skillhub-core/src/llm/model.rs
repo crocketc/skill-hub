@@ -84,6 +84,17 @@ impl LlmProfile {
     }
 
     pub fn validate(&self) -> AppResult<()> {
+        self.validate_model_listing()?;
+        if self.model.trim().is_empty() {
+            return Err(invalid_profile("provider_or_model"));
+        }
+        Ok(())
+    }
+
+    /// Validates the information needed to contact a provider's model-list
+    /// endpoint. This deliberately does not require `model`: the list is what
+    /// lets a user choose that value in the first place.
+    pub fn validate_model_listing(&self) -> AppResult<()> {
         let parsed = Url::parse(&self.endpoint).map_err(|_| invalid_profile("endpoint"))?;
         let host = parsed.host_str().unwrap_or_default();
         // Plain http is only acceptable for local/private/link-local model
@@ -100,7 +111,7 @@ impl LlmProfile {
                 Severity::Error,
             ));
         }
-        if self.provider.trim().is_empty() || self.model.trim().is_empty() {
+        if self.provider.trim().is_empty() {
             return Err(invalid_profile("provider_or_model"));
         }
         if self.timeout_ms == 0 || self.max_input_bytes == 0 {

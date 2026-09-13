@@ -7,6 +7,7 @@
 .sh-overview .sh-overview__metrics {
   display: grid;
   gap: var(--space-3);
+  grid-auto-rows: minmax(5rem, 1fr);
   grid-template-columns: minmax(0, 1fr);
 }
 
@@ -17,7 +18,7 @@
   flex-direction: column;
   justify-content: center;
   gap: var(--space-1);
-  min-height: 7rem;
+  min-height: 5rem;
   padding: var(--space-4) var(--space-5);
   border: 1px solid var(--ui-border);
   border-radius: var(--radius-lg);
@@ -126,10 +127,78 @@
   height: 100%;
 }
 
-/* 宽屏时图表区承担页面剩余高度，避免指标下方出现大块空白；clamp
-   在 100% 全屏保持稳定，同时让最小窗口仍由外层滚动承接。 */
+.sh-overview {
+  display: grid;
+  min-height: 0;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: var(--page-gap);
+}
+
+/* 只消费 AppShell 已分配的剩余高度，禁止用整块视口高度反推，避免 100% 全屏
+   时把顶栏和内边距重复算入而触发外层滚动条。 */
 .sh-overview .sh-overview__content-grid {
-  min-height: clamp(24rem, calc(100dvh - 25rem), 34rem);
+  min-height: 0;
+  height: 100%;
+}
+
+/* 宽屏概览固定四块区域：部署分布为主区，右侧依次为标签饼图与待处理；
+   列表只在自己的卡片内滚动，页面本身不因标签数量变长。 */
+.sh-overview .sh-overview__panel {
+  min-height: 0;
+  grid-template-rows: auto minmax(8rem, 1fr) minmax(6rem, 1fr);
+}
+
+.sh-overview .sh-overview__chart-figure {
+  min-height: 0;
+  height: 100%;
+}
+
+.sh-overview .sh-overview__chart-canvas,
+.sh-overview .sh-overview__chart-canvas--horizontal {
+  min-height: 0;
+}
+
+.sh-overview__tag-panel {
+  display: grid;
+  min-height: 0;
+  gap: var(--space-3);
+  overflow: hidden;
+  padding: var(--space-4);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-lg);
+  background: var(--ui-surface);
+}
+
+.sh-overview .sh-overview__panel > .sh-overview__details {
+  min-height: 0;
+  max-height: none;
+  overflow: hidden;
+  padding: var(--space-3) 0 0;
+}
+
+.sh-overview__tag-layout {
+  display: grid;
+  min-height: 0;
+  grid-template-columns: minmax(8rem, 0.9fr) minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.sh-overview__tag-chart {
+  min-width: 0;
+  height: 10rem;
+}
+
+.sh-overview__tag-chart-canvas {
+  width: 100%;
+  height: 100%;
+}
+
+.sh-overview__tag-details-scroll {
+  min-width: 0;
+  max-height: 10rem;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
 }
 
 /* 维度切换的输入框视觉上透明（绝对定位 + opacity:0），全局 ：focus-visible
@@ -163,10 +232,54 @@
   .sh-overview .sh-overview__stats {
     display: contents;
   }
+
+  .sh-overview .sh-overview__rail {
+    align-content: stretch;
+    grid-template-rows: minmax(0, 1fr) minmax(8rem, 12rem);
+  }
+
+  .sh-overview .sh-overview__pending {
+    min-height: 0;
+    overflow: hidden;
+  }
 }
 
 @container workspace (max-width: 56rem) {
   .sh-overview .sh-overview__content-grid {
     grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* 窗口化且高度紧张时，不能继续把主区锁进一条剩余高度轨道：部署卡和右栏
+   的标签/待办都有各自的可读最小高度，强行压缩会令网格子项越界相叠。
+   改用内容本身高度并交给 AppShell 的唯一外层滚动区；高窗口仍保留上面的
+   满高布局，因此全屏不会因为这条兜底规则额外出现滚动条。 */
+@media (max-height: 70rem) {
+  #main-content .sh-page-frame--fill {
+    height: auto;
+    grid-template-rows: none;
+  }
+
+  .sh-overview {
+    grid-template-rows: none;
+  }
+
+  .sh-overview .sh-overview__content-grid {
+    height: auto;
+    min-height: auto;
+    align-items: start;
+  }
+
+  .sh-overview .sh-overview__panel {
+    grid-template-rows: auto auto auto;
+  }
+
+  .sh-overview .sh-overview__chart-figure {
+    height: clamp(14rem, 34vh, 20rem);
+  }
+
+  .sh-overview .sh-overview__rail {
+    grid-template-rows: auto;
+    align-content: start;
   }
 }

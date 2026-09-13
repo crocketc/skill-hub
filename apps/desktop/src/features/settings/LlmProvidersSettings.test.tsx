@@ -856,7 +856,7 @@ it("shows the chosen preset with vendor, protocol, derived endpoint and suggeste
 
   const drawer = screen.getByRole("dialog");
   expect(summaryValue(drawer, "厂商")).toBe("DeepSeek");
-  expect(summaryValue(drawer, "请求协议")).toBe("OpenAI 兼容（Chat Completions）");
+  expect(summaryValue(drawer, "请求协议")).toBe("OpenAI Chat Completions");
   expect(summaryValue(drawer, "推导端点")).toBe("https://api.deepseek.com/v1");
   // 预设不携带模型目录（需求 5.42）：建议模型给可执行的下一步而不是编造列表。
   expect(summaryValue(drawer, "建议模型")).toContain("获取模型列表");
@@ -895,7 +895,12 @@ it("offers every backend-supported protocol family in the drawer and keeps typed
 
   const protocolSelect = screen.getByRole("combobox", { name: "接口格式" }) as HTMLSelectElement;
   const values = Array.from(protocolSelect.options).map((option) => option.value);
-  expect(values).toEqual(["open_ai", "open_ai_compatible", "anthropic", "gemini", "azure_open_ai"]);
+  expect(values).toEqual([
+    "open_ai_compatible",
+    "open_ai_responses",
+    "anthropic",
+    "gemini",
+  ]);
 
   await user.selectOptions(protocolSelect, "anthropic");
   await user.click(screen.getByRole("button", { name: "保存" }));

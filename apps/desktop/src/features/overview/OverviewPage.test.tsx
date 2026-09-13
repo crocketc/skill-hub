@@ -7,6 +7,7 @@ import { createSkillHubI18n } from "../../i18n";
 import baseCss from "../../styles/base.css?raw";
 import { ThemeProvider } from "../../styles/ThemeProvider";
 import overviewCss from "./overview.css?raw";
+import tagRuntime from "./TagDistributionChartRuntime.tsx?raw";
 import { OverviewPage } from "./OverviewPage";
 
 const overviewSnapshot: BootstrapSnapshot = {
@@ -184,9 +185,10 @@ it("locks the density ladder and the two-row metrics contract in overview.css", 
   // overview.css / base.css（含 prettier 空格换行差异）时需同步更新这些断言。
   // 比例阶梯：hero ≥ 7rem，紧凑卡 ≥ 5rem，图表区承担视口剩余高度。
   const heroRule = overviewCss.match(/\.sh-overview__hero\s*\{([^}]*)\}/)?.[1] ?? "";
-  expect(heroRule).toContain("min-height: 7rem");
+  expect(heroRule).toContain("min-height: 5rem");
   const statRule = overviewCss.match(/\.sh-overview__stat\s*\{([^}]*)\}/)?.[1] ?? "";
   expect(statRule).toContain("min-height: 5rem");
+  expect(overviewCss).toContain("grid-auto-rows: minmax(5rem, 1fr)");
 
   // M-20 两行指标契约：宽容器下 hero 独占第一行（跨全部 4 列），紧凑统计
   // 通过 display:contents 落到第二行；禁止 hero+统计并入单行 5 卡横带。
@@ -201,6 +203,17 @@ it("locks the density ladder and the two-row metrics contract in overview.css", 
   );
   expect(overviewCss).not.toMatch(/\.sh-overview__stats\s*\{[^}]*repeat\(4/);
   expect(overviewCss).not.toMatch(/grid-template-columns: minmax\(0, 1\.35fr\) repeat\(4/);
+});
+
+it("renders the tag distribution in a fixed chart panel with a text equivalent", async () => {
+  await renderOverview();
+
+  expect(screen.getByRole("img", { name: "Skill count by tag chart" })).toBeVisible();
+  expect(screen.getByRole("list", { name: "Skill count by tag" })).toBeVisible();
+});
+
+it("assigns an explicit palette color to every tag slice", () => {
+  expect(tagRuntime).toContain("palette.chartColors[index % palette.chartColors.length]");
 });
 
 it("promotes a single primary metric and turns the rest into compact stats", async () => {
@@ -259,7 +272,7 @@ it("switches to project relationships and drills into the truthful project desti
   );
 });
 
-it("moves every deployment detail into the right rail while the project chart reports its top ten", async () => {
+it("keeps deployment details in the fixed main panel while the rail stays reserved for tags and pending work", async () => {
   await renderOverview({
     ...overviewSnapshot,
     deployment_categories: [
@@ -272,13 +285,13 @@ it("moves every deployment detail into the right rail while the project chart re
   fireEvent.click(screen.getByRole("radio", { name: "Projects" }));
 
   const detailRegion = screen.getByRole("region", { name: "Deployment count details" });
-  expect(detailRegion.parentElement).toHaveClass("sh-overview__rail");
+  expect(detailRegion.parentElement).toHaveClass("sh-overview__panel");
   expect(within(detailRegion).getAllByRole("button", { name: /View Project/ })).toHaveLength(12);
   expect(
     within(detailRegion).getByRole("region", { name: "Scrollable deployment details" }),
   ).toHaveAttribute("tabindex", "0");
   expect(screen.getByText("Showing the top 10 of 12 projects")).toBeVisible();
-  expect(document.querySelector(".sh-overview__panel .sh-overview__chart-list")).toBeNull();
+  expect(document.querySelector(".sh-overview__panel .sh-overview__chart-list")).not.toBeNull();
 });
 
 it("shows the pending summary without exposing the recent-operation log", async () => {
