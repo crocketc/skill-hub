@@ -1,7 +1,7 @@
 use rusqlite::OptionalExtension;
 
 use super::Database;
-use skillhub_core::llm::LlmProviderConfig;
+use skillhub_core::llm::{legacy_profile_for_builtin_id, LlmProviderConfig};
 use skillhub_core::{AppError, AppResult, ErrorCode, RecoveryAction, Severity};
 
 /// Persistence for user-managed LLM provider configurations. Rows carry the
@@ -42,9 +42,7 @@ impl<'a> LlmProviderRepository<'a> {
             )
             .optional()
             .map_err(database_error)?;
-        value
-            .map(|json| serde_json::from_str(&json).map_err(|_| invalid_record()))
-            .transpose()
+        value.map(|json| decode(&json)).transpose()
     }
 
     pub fn list(&self) -> AppResult<Vec<LlmProviderConfig>> {
@@ -58,7 +56,7 @@ impl<'a> LlmProviderRepository<'a> {
             .map_err(database_error)?;
         rows.map(|row| {
             let json = row.map_err(database_error)?;
-            serde_json::from_str(&json).map_err(|_| invalid_record())
+            decode(&json)
         })
         .collect()
     }
@@ -72,6 +70,26 @@ impl<'a> LlmProviderRepository<'a> {
             .map_err(database_error)?;
         Ok(())
     }
+}
+
+/// Decodes a stored configuration, normalising records written before the
+/// compatibility profile existed.
+///
+/// The mapping is keyed strictly on the record's own id, and only for ids this
+/// application generated (the built-in preset catalogue). Everything else —
+/// a user-chosen id, a vendor display name, a URL — becomes `Generic`. The
+/// endpoint is never inspected, and existing fields are untouched, so the
+/// migration is lossless and idempotent: a record re-saved with the explicit
+/// field is decoded verbatim on the next read.
+fn decode(json: &str) -> AppResult<LlmProviderConfig> {
+    let value: serde_json::Value = serde_json::from_str(json).map_err(|_| invalid_record())?;
+    let is_legacy = value.get("compatibility_profile").is_none();
+    let mut config: LlmProviderConfig =
+        serde_json::from_value(value).map_err(|_| invalid_record())?;
+    if is_legacy {
+        config.compatibility_profile = legacy_profile_for_builtin_id(&config.id);
+    }
+    Ok(config)
 }
 
 fn now() -> i64 {

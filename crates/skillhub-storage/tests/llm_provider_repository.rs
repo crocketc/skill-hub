@@ -1,5 +1,6 @@
 use skillhub_core::llm::{
-    CredentialRef, CustomHeader, LlmDeployment, LlmProtocolFamily, LlmProviderConfig,
+    CredentialRef, CustomHeader, LlmCompatibilityProfile, LlmDeployment, LlmProtocolFamily,
+    LlmProviderConfig,
 };
 use skillhub_storage::Database;
 
@@ -120,4 +121,95 @@ fn listing_returns_all_configs_ordered_by_id() {
         .map(|entry| entry.id)
         .collect();
     assert_eq!(ids, vec!["a-first".to_string(), "b-second".to_string()]);
+}
+
+/// 写入一条不含兼容字段的旧记录，模拟升级前保存的数据。
+fn insert_legacy_row(database: &Database, id: &str, json: &str) {
+    database
+        .connection_for_test()
+        .execute(
+            "INSERT INTO llm_provider_configs(id,config_json,created_at,updated_at) VALUES(?1,?2,0,0)",
+            rusqlite::params![id, json],
+        )
+        .expect("insert legacy row");
+}
+
+#[test]
+fn legacy_rows_without_a_compatibility_profile_are_normalised_once() {
+    let database = open_database();
+    let repository = database.llm_provider_repository();
+
+    insert_legacy_row(
+        &database,
+        "zhipu-glm-coding-chat",
+        r#"{"id":"zhipu-glm-coding-chat","label":"GLM Coding Plan (OpenAI Chat)",
+            "protocol":"open_ai_compatible","deployment":"online",
+            "endpoint":"https://open.bigmodel.cn/api/coding/paas/v4","model":"glm-5",
+            "credential_ref":{"id":"llm-provider:zhipu-glm-coding-chat"},
+            "custom_headers":[],"enabled":true,"timeout_ms":30000,"max_input_bytes":262144}"#,
+    );
+    insert_legacy_row(
+        &database,
+        "user-custom-gateway",
+        r#"{"id":"user-custom-gateway","label":"My gateway",
+            "protocol":"open_ai_compatible","deployment":"online",
+            "endpoint":"https://gateway.example/v1","model":"model-a",
+            "custom_headers":[],"enabled":false,"timeout_ms":10000,"max_input_bytes":1024}"#,
+    );
+
+    let glm = repository
+        .get("zhipu-glm-coding-chat")
+        .expect("get")
+        .expect("exists");
+    assert_eq!(
+        glm.compatibility_profile,
+        LlmCompatibilityProfile::GlmCoding
+    );
+    // Migration must not disturb any existing field.
+    assert_eq!(glm.endpoint, "https://open.bigmodel.cn/api/coding/paas/v4");
+    assert_eq!(glm.model, "glm-5");
+    assert!(glm.enabled);
+    assert_eq!(glm.timeout_ms, 30_000);
+    assert_eq!(
+        glm.credential_ref,
+        Some(CredentialRef::new("llm-provider:zhipu-glm-coding-chat"))
+    );
+
+    // An id the application never generated falls back to Generic, and the
+    // URL is never inspected.
+    let custom = repository
+        .get("user-custom-gateway")
+        .expect("get")
+        .expect("exists");
+    assert_eq!(
+        custom.compatibility_profile,
+        LlmCompatibilityProfile::Generic
+    );
+    assert_eq!(custom.enabled, false, "enabled flag must not change");
+    assert_eq!(custom.timeout_ms, 10_000);
+
+    // Migration is idempotent: saving writes the field, reading it back again
+    // yields the same profile.
+    repository.save(&glm).expect("save migrated row");
+    let reread = repository.get("zhipu-glm-coding-chat").unwrap().unwrap();
+    assert_eq!(reread, glm);
+    let raw: String = database
+        .connection_for_test()
+        .query_row(
+            "SELECT config_json FROM llm_provider_configs WHERE id='zhipu-glm-coding-chat'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("row");
+    assert!(
+        raw.contains("\"compatibility_profile\":\"glm_coding\""),
+        "a saved record carries an explicit compatibility profile: {raw}"
+    );
+
+    // The listed view carries the migrated value too.
+    let listed = repository.list().expect("list");
+    assert!(listed
+        .iter()
+        .any(|entry| entry.id == "zhipu-glm-coding-chat"
+            && entry.compatibility_profile == LlmCompatibilityProfile::GlmCoding));
 }
