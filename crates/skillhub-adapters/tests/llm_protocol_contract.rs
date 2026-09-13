@@ -10,8 +10,9 @@ use skillhub_adapters::llm::{
     parse_structured_content, plan_request, LlmRequestPlan, ResponseExpectation,
 };
 use skillhub_core::llm::{
-    CredentialRef, CustomHeader, LlmCompatibilityProfile, LlmDeployment, LlmProfile,
-    LlmProtocolFamily, LlmStructuredOutputStrategy, LlmTaskKind, LlmTaskRequest,
+    CredentialRef, CustomHeader, LlmAuthStrategy, LlmCompatibilityProfile, LlmDeployment,
+    LlmModelListStrategy, LlmProfile, LlmProtocolFamily, LlmStructuredOutputStrategy, LlmTaskKind,
+    LlmTaskRequest,
 };
 use skillhub_core::ErrorCode;
 
@@ -527,5 +528,417 @@ fn http_status_mapping_covers_the_error_taxonomy() {
     assert_eq!(
         adapter.map_status(400, "bad request").code,
         ErrorCode::LlmProtocolIncompatible
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Task 5A: first-party baselines — OpenAI, Azure, Anthropic, Gemini.
+// ---------------------------------------------------------------------------
+
+fn supplier_at(
+    compatibility: LlmCompatibilityProfile,
+    protocol: LlmProtocolFamily,
+    endpoint: &str,
+) -> LlmProfile {
+    let mut profile = profile(protocol, endpoint);
+    profile.compatibility_profile = compatibility;
+    profile
+}
+
+#[test]
+fn first_party_baselines_keep_their_native_mechanics() {
+    // OpenAI Responses: native strict schema on the `text.format` field.
+    let openai_responses = supplier_at(
+        LlmCompatibilityProfile::OpenAi,
+        LlmProtocolFamily::OpenAiResponses,
+        "https://api.openai.com/v1",
+    );
+    let plan = structured_plan(&openai_responses, Some("sk"));
+    assert_eq!(plan.url, "https://api.openai.com/v1/responses");
+    assert_eq!(plan.body["text"]["format"]["type"], "json_schema");
+    assert_eq!(plan.body["text"]["format"]["strict"], json!(true));
+    assert_eq!(
+        plan.policy.structured_output,
+        LlmStructuredOutputStrategy::JsonSchemaStrict
+    );
+
+    // Azure: deployment-scoped URL, `api-key` header, no body model, and no
+    // inference-plane model catalogue at all.
+    let azure = supplier_at(
+        LlmCompatibilityProfile::AzureOpenAi,
+        LlmProtocolFamily::AzureOpenAi,
+        "https://acme.openai.azure.com",
+    );
+    let plan = structured_plan(&azure, Some("az"));
+    assert!(plan
+        .url
+        .contains("/openai/deployments/acme-chat/chat/completions"));
+    assert!(plan.url.contains("api-version="));
+    assert_eq!(header(&plan, "api-key"), "az");
+    assert_eq!(header(&plan, "Authorization"), "");
+    assert!(plan.body["model"].is_null());
+    assert_eq!(plan.policy.auth, LlmAuthStrategy::AzureApiKey);
+    assert_eq!(plan.policy.model_list, LlmModelListStrategy::Unsupported);
+
+    // Anthropic: prompt-carried schema, no OpenAI structured field anywhere.
+    let anthropic = supplier_at(
+        LlmCompatibilityProfile::Anthropic,
+        LlmProtocolFamily::Anthropic,
+        "https://api.anthropic.com",
+    );
+    let plan = structured_plan(&anthropic, Some("sk-ant"));
+    assert_eq!(plan.url, "https://api.anthropic.com/v1/messages");
+    assert_eq!(header(&plan, "x-api-key"), "sk-ant");
+    assert!(!header(&plan, "anthropic-version").is_empty());
+    assert!(plan.body["response_format"].is_null());
+    assert!(plan.body["text"].is_null());
+    assert!(plan.body["system"].as_str().unwrap().contains("\"object\""));
+    assert_eq!(plan.policy.model_list, LlmModelListStrategy::Anthropic);
+
+    // Gemini: native mime type + schema, never OpenAI's response_format.
+    let gemini = supplier_at(
+        LlmCompatibilityProfile::Gemini,
+        LlmProtocolFamily::Gemini,
+        "https://generativelanguage.googleapis.com",
+    );
+    let plan = structured_plan(&gemini, Some("g"));
+    assert_eq!(
+        plan.url,
+        "https://generativelanguage.googleapis.com/v1beta/models/acme-chat:generateContent"
+    );
+    assert_eq!(
+        plan.body["generationConfig"]["responseMimeType"],
+        "application/json"
+    );
+    assert_eq!(
+        plan.body["generationConfig"]["responseSchema"]["type"],
+        "object"
+    );
+    assert!(plan.body["response_format"].is_null());
+    assert_eq!(plan.policy.model_list, LlmModelListStrategy::Gemini);
+}
+
+// ---------------------------------------------------------------------------
+// Task 5B: DeepSeek, GLM, Kimi — the regression this work exists for.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn deepseek_surfaces_use_their_own_endpoints_and_strategies() {
+    // Chat: JSON Object, never a strict schema, thinking switched off.
+    let chat = supplier_at(
+        LlmCompatibilityProfile::DeepSeek,
+        LlmProtocolFamily::OpenAiCompatible,
+        "https://api.deepseek.com",
+    );
+    let plan = structured_plan(&chat, Some("sk"));
+    assert_eq!(plan.url, "https://api.deepseek.com/chat/completions");
+    assert_eq!(plan.body["response_format"]["type"], "json_object");
+    assert!(plan.body["response_format"]["json_schema"].is_null());
+    assert_eq!(plan.body["thinking"], json!({"type": "disabled"}));
+    assert!(plan.body["reasoning"].is_null());
+
+    // Responses: JSON Object plus the normalised effort dial.
+    let responses = supplier_at(
+        LlmCompatibilityProfile::DeepSeek,
+        LlmProtocolFamily::OpenAiResponses,
+        "https://api.deepseek.com",
+    );
+    let plan = structured_plan(&responses, Some("sk"));
+    assert_eq!(plan.url, "https://api.deepseek.com/responses");
+    assert_eq!(plan.body["text"]["format"]["type"], "json_object");
+    assert_eq!(plan.body["reasoning"], json!({"effort": "none"}));
+    assert!(plan.body["thinking"].is_null());
+
+    // Anthropic surface: schema in the system block, its own auth header.
+    let anthropic = supplier_at(
+        LlmCompatibilityProfile::DeepSeek,
+        LlmProtocolFamily::Anthropic,
+        "https://api.deepseek.com/anthropic",
+    );
+    let plan = structured_plan(&anthropic, Some("sk"));
+    assert_eq!(plan.url, "https://api.deepseek.com/anthropic/v1/messages");
+    assert_eq!(header(&plan, "x-api-key"), "sk");
+    assert!(plan.body["response_format"].is_null());
+    assert!(plan.body["system"].as_str().unwrap().contains("Schema"));
+    assert!(plan.body["thinking"].is_null());
+    assert!(plan.body["reasoning"].is_null());
+}
+
+#[test]
+fn deepseek_text_probe_does_not_demand_json() {
+    let chat = supplier_at(
+        LlmCompatibilityProfile::DeepSeek,
+        LlmProtocolFamily::OpenAiCompatible,
+        "https://api.deepseek.com",
+    );
+    let plan = text_plan(&chat, Some("sk"));
+    assert!(plan.body["response_format"].is_null());
+    assert!(plan.body["thinking"].is_null());
+    assert!(!plan.body.to_string().contains("json_object"));
+}
+
+#[test]
+fn glm_product_lines_keep_separate_endpoints_and_never_fabricate_a_responses_path() {
+    // Ordinary GLM API: chat only.
+    let ordinary = supplier_at(
+        LlmCompatibilityProfile::Glm,
+        LlmProtocolFamily::OpenAiCompatible,
+        "https://open.bigmodel.cn/api/paas/v4",
+    );
+    let plan = structured_plan(&ordinary, Some("sk"));
+    assert_eq!(
+        plan.url,
+        "https://open.bigmodel.cn/api/paas/v4/chat/completions"
+    );
+    assert_eq!(plan.body["response_format"]["type"], "json_object");
+
+    // Coding Plan chat: its own base URL, and no `/responses` suffix ever.
+    let coding_chat = supplier_at(
+        LlmCompatibilityProfile::GlmCoding,
+        LlmProtocolFamily::OpenAiCompatible,
+        "https://open.bigmodel.cn/api/coding/paas/v4",
+    );
+    let plan = structured_plan(&coding_chat, Some("sk"));
+    assert_eq!(
+        plan.url,
+        "https://open.bigmodel.cn/api/coding/paas/v4/chat/completions"
+    );
+    assert!(!plan.url.contains("/responses"));
+
+    // Coding Plan Responses: the third, separate official base URL.
+    let coding_responses = supplier_at(
+        LlmCompatibilityProfile::GlmCoding,
+        LlmProtocolFamily::OpenAiResponses,
+        "https://open.bigmodel.cn/api/v1",
+    );
+    let plan = structured_plan(&coding_responses, Some("sk"));
+    assert_eq!(plan.url, "https://open.bigmodel.cn/api/v1/responses");
+    assert!(
+        !plan.url.contains("paas"),
+        "the Coding Plan Responses surface must not reuse the chat base"
+    );
+    assert_eq!(plan.body["text"]["format"]["type"], "json_object");
+
+    // Coding Plan Anthropic: its own base URL too.
+    let coding_anthropic = supplier_at(
+        LlmCompatibilityProfile::GlmCoding,
+        LlmProtocolFamily::Anthropic,
+        "https://open.bigmodel.cn/api/anthropic",
+    );
+    let plan = structured_plan(&coding_anthropic, Some("sk"));
+    assert_eq!(
+        plan.url,
+        "https://open.bigmodel.cn/api/anthropic/v1/messages"
+    );
+    assert!(plan.body["response_format"].is_null());
+}
+
+#[test]
+fn kimi_open_platform_and_coding_plan_are_separate_product_lines() {
+    let open = supplier_at(
+        LlmCompatibilityProfile::Moonshot,
+        LlmProtocolFamily::OpenAiCompatible,
+        "https://api.moonshot.cn/v1",
+    );
+    let plan = structured_plan(&open, Some("sk"));
+    assert_eq!(plan.url, "https://api.moonshot.cn/v1/chat/completions");
+    assert_eq!(plan.body["response_format"]["type"], "json_object");
+    assert!(
+        plan.body["thinking"].is_null(),
+        "Kimi's thinking mode cannot be switched off, so nothing is injected"
+    );
+
+    let coding_chat = supplier_at(
+        LlmCompatibilityProfile::KimiCoding,
+        LlmProtocolFamily::OpenAiCompatible,
+        "https://api.kimi.com/coding/v1",
+    );
+    let plan = structured_plan(&coding_chat, Some("sk"));
+    assert_eq!(plan.url, "https://api.kimi.com/coding/v1/chat/completions");
+    assert_eq!(plan.body["response_format"]["type"], "json_object");
+
+    let coding_anthropic = supplier_at(
+        LlmCompatibilityProfile::KimiCoding,
+        LlmProtocolFamily::Anthropic,
+        "https://api.kimi.com/coding",
+    );
+    let plan = structured_plan(&coding_anthropic, Some("sk"));
+    assert_eq!(plan.url, "https://api.kimi.com/coding/v1/messages");
+    assert!(plan.body["response_format"].is_null());
+    assert!(plan.body["system"].as_str().unwrap().contains("Schema"));
+}
+
+// ---------------------------------------------------------------------------
+// Task 5C: the remaining direct suppliers.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn direct_suppliers_send_the_strategy_their_evidence_supports() {
+    for (name, compatibility, endpoint, expected_url, expected_format) in [
+        (
+            "dashscope",
+            LlmCompatibilityProfile::DashScope,
+            "https://dashscope.aliyuncs.com/compatible-mode/v1",
+            "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions",
+            "json_object",
+        ),
+        (
+            "minimax",
+            LlmCompatibilityProfile::MiniMax,
+            "https://api.minimax.io/v1",
+            "https://api.minimax.io/v1/chat/completions",
+            "json_object",
+        ),
+        (
+            "xai",
+            LlmCompatibilityProfile::Xai,
+            "https://api.x.ai/v1",
+            "https://api.x.ai/v1/chat/completions",
+            "json_schema",
+        ),
+        (
+            "groq",
+            LlmCompatibilityProfile::Groq,
+            "https://api.groq.com/openai/v1",
+            "https://api.groq.com/openai/v1/chat/completions",
+            "json_schema",
+        ),
+        (
+            "mistral",
+            LlmCompatibilityProfile::Mistral,
+            "https://api.mistral.ai/v1",
+            "https://api.mistral.ai/v1/chat/completions",
+            "json_schema",
+        ),
+        (
+            "qianfan",
+            LlmCompatibilityProfile::BaiduQianfan,
+            "https://qianfan.baidubce.com/v2",
+            "https://qianfan.baidubce.com/v2/chat/completions",
+            "json_object",
+        ),
+    ] {
+        let profile = supplier_at(compatibility, LlmProtocolFamily::OpenAiCompatible, endpoint);
+        let plan = structured_plan(&profile, Some("sk"));
+        assert_eq!(plan.url, expected_url, "{name} endpoint");
+        assert_eq!(
+            plan.body["response_format"]["type"], expected_format,
+            "{name} structured strategy"
+        );
+        assert_eq!(header(&plan, "Authorization"), "Bearer sk", "{name} auth");
+    }
+
+    // Ark keeps its chat thinking switch; its Responses surface is left alone.
+    let ark_chat = supplier_at(
+        LlmCompatibilityProfile::VolcengineArk,
+        LlmProtocolFamily::OpenAiCompatible,
+        "https://ark.cn-beijing.volces.com/api/v3",
+    );
+    let plan = structured_plan(&ark_chat, Some("sk"));
+    assert_eq!(plan.body["response_format"]["type"], "json_object");
+    assert_eq!(plan.body["thinking"], json!({"type": "disabled"}));
+
+    let ark_responses = supplier_at(
+        LlmCompatibilityProfile::VolcengineArk,
+        LlmProtocolFamily::OpenAiResponses,
+        "https://ark.cn-beijing.volces.com/api/v3",
+    );
+    let plan = structured_plan(&ark_responses, Some("sk"));
+    assert_eq!(
+        plan.url,
+        "https://ark.cn-beijing.volces.com/api/v3/responses"
+    );
+    assert!(plan.body["reasoning"].is_null());
+    assert!(plan.body["thinking"].is_null());
+}
+
+/// The model *name* never selects a policy: the same GLM or DeepSeek model
+/// reached through an aggregator uses the aggregator's platform profile.
+#[test]
+fn an_aggregator_uses_its_own_profile_not_the_underlying_model_vendor() {
+    let mut through_openrouter = supplier_at(
+        LlmCompatibilityProfile::OpenRouter,
+        LlmProtocolFamily::OpenAiCompatible,
+        "https://openrouter.ai/api/v1",
+    );
+    through_openrouter.model = "z-ai/glm-5".into();
+    let plan = structured_plan(&through_openrouter, Some("sk"));
+    assert_eq!(plan.url, "https://openrouter.ai/api/v1/chat/completions");
+    assert_eq!(
+        plan.body["response_format"]["type"], "json_schema",
+        "OpenRouter normalises the request itself; the model name must not select GLM's json_object"
+    );
+    assert!(plan.body["thinking"].is_null());
+
+    let mut deepseek_via_aggregator = through_openrouter.clone();
+    deepseek_via_aggregator.model = "deepseek/deepseek-v4-pro".into();
+    let other_body = structured_plan(&deepseek_via_aggregator, Some("sk")).body;
+    assert_eq!(
+        other_body["response_format"], plan.body["response_format"],
+        "the platform profile alone decides the structured field"
+    );
+    assert!(other_body["thinking"].is_null());
+    assert!(other_body["reasoning"].is_null());
+}
+
+// ---------------------------------------------------------------------------
+// Task 5D: aggregator, local runtimes and the generic fallback.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn local_runtimes_need_no_credential_and_use_the_documented_defaults() {
+    let ollama = supplier_at(
+        LlmCompatibilityProfile::Ollama,
+        LlmProtocolFamily::OpenAiCompatible,
+        "http://127.0.0.1:11434/v1",
+    );
+    let plan = text_plan(&ollama, None);
+    assert_eq!(plan.url, "http://127.0.0.1:11434/v1/chat/completions");
+    assert_eq!(header(&plan, "Authorization"), "");
+    assert_eq!(plan.policy.auth, LlmAuthStrategy::None);
+
+    // The user's own LM Studio host is an IPv4 link-local address without a
+    // version segment; a local deployment gets the documented `/v1` prefix.
+    let mut lm_studio = supplier_at(
+        LlmCompatibilityProfile::LmStudio,
+        LlmProtocolFamily::OpenAiCompatible,
+        "http://169.254.83.107:1234",
+    );
+    lm_studio.deployment = LlmDeployment::Local;
+    let plan = structured_plan(&lm_studio, None);
+    assert_eq!(plan.url, "http://169.254.83.107:1234/v1/chat/completions");
+    assert_eq!(plan.body["response_format"]["type"], "json_schema");
+    assert_eq!(plan.policy.auth, LlmAuthStrategy::None);
+}
+
+/// Generic never inspects the URL host: identity comes from the user's chosen
+/// format and an explicit override only.
+#[test]
+fn generic_never_infers_a_vendor_from_the_endpoint() {
+    let mut first = supplier_at(
+        LlmCompatibilityProfile::Generic,
+        LlmProtocolFamily::OpenAiCompatible,
+        "https://api.deepseek.com/v1",
+    );
+    first.provider = "My gateway".into();
+    let mut second = first.clone();
+    second.provider = "Totally different name".into();
+
+    let first_plan = structured_plan(&first, Some("sk"));
+    let second_plan = structured_plan(&second, Some("sk"));
+    assert_eq!(first_plan.body, second_plan.body);
+    assert_eq!(
+        first_plan.body["response_format"]["type"], "json_object",
+        "a deepseek-looking host must not select the DeepSeek profile"
+    );
+
+    // An explicit override is honoured for Generic only.
+    let mut overridden = first.clone();
+    overridden.structured_output_override = Some(LlmStructuredOutputStrategy::JsonSchemaStrict);
+    let plan = structured_plan(&overridden, Some("sk"));
+    assert_eq!(plan.body["response_format"]["type"], "json_schema");
+    assert_eq!(
+        plan.body["response_format"]["json_schema"]["strict"],
+        json!(true)
     );
 }

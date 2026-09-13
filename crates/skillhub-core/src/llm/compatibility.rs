@@ -243,9 +243,14 @@ impl LlmCompatibilityProfile {
                 P::Anthropic => R::ProviderDefault,
                 _ => R::DisableForStructured,
             },
-            // Ark documents `thinking: {type: "disabled"}` for structured
-            // output on both the Chat and the Responses surface.
-            Self::VolcengineArk => R::DisableForStructured,
+            // Ark documents `thinking: {type: "disabled"}` on the chat surface.
+            // Its Responses surface uses a different effort enumeration whose
+            // "off" value is not `none`, so nothing is injected there rather
+            // than sending a value the gateway may reject.
+            Self::VolcengineArk => match protocol {
+                P::OpenAiResponses => R::ProviderDefault,
+                _ => R::DisableForStructured,
+            },
             _ => R::ProviderDefault,
         }
     }
@@ -354,7 +359,9 @@ pub fn legacy_profile_for_builtin_id(id: &str) -> LlmCompatibilityProfile {
         "moonshot-kimi" => C::Moonshot,
         "kimi-code-openai" | "kimi-code-anthropic" => C::KimiCoding,
         "zhipu-glm" => C::Glm,
-        "zhipu-glm-coding-chat" | "zhipu-glm-coding-anthropic" => C::GlmCoding,
+        "zhipu-glm-coding-chat" | "zhipu-glm-coding-responses" | "zhipu-glm-coding-anthropic" => {
+            C::GlmCoding
+        }
         "minimax" => C::MiniMax,
         "volcengine-doubao" => C::VolcengineArk,
         "xai-grok" => C::Xai,

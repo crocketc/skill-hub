@@ -292,6 +292,7 @@ fn builtin_presets_cover_the_confirmed_provider_baseline() {
         "kimi-code-anthropic",
         "zhipu-glm",
         "zhipu-glm-coding-chat",
+        "zhipu-glm-coding-responses",
         "zhipu-glm-coding-anthropic",
         "minimax",
         "volcengine-doubao",
@@ -771,14 +772,21 @@ fn builtin_presets_declare_their_capability_profile_and_protocol_set() {
             .unwrap_or_else(|| panic!("missing preset {id}"))
     };
 
-    // GLM 普通 API 与 GLM Coding Plan 必须是两个不同产品线，且普通 API
-    // 不允许被拼上 `/responses`。
+    // GLM 普通 API 与 GLM Coding Plan 必须是两个不同产品线。Coding Plan 自身
+    // 的三个 surface 各自占用官方独立端点（cc-switch codexProviderPresets.ts
+    // :1175-1190 取证 + docs.bigmodel.cn/cn/coding-plan/tool/others），因此
+    // Chat 预设不得声明 Responses，否则会把 `/responses` 拼到 `/paas/v4`。
     let glm = by_id("zhipu-glm");
     let glm_coding_chat = by_id("zhipu-glm-coding-chat");
+    let glm_coding_responses = by_id("zhipu-glm-coding-responses");
     let glm_coding_anthropic = by_id("zhipu-glm-coding-anthropic");
     assert_eq!(glm.compatibility_profile, LlmCompatibilityProfile::Glm);
     assert_eq!(
         glm_coding_chat.compatibility_profile,
+        LlmCompatibilityProfile::GlmCoding
+    );
+    assert_eq!(
+        glm_coding_responses.compatibility_profile,
         LlmCompatibilityProfile::GlmCoding
     );
     assert_eq!(
@@ -791,14 +799,28 @@ fn builtin_presets_declare_their_capability_profile_and_protocol_set() {
     );
     assert_eq!(
         glm_coding_chat.supported_protocols,
-        vec![
-            LlmProtocolFamily::OpenAiCompatible,
-            LlmProtocolFamily::OpenAiResponses
-        ]
+        vec![LlmProtocolFamily::OpenAiCompatible],
+        "the Coding Plan chat base must not offer the Responses format"
+    );
+    assert_eq!(
+        glm_coding_responses.supported_protocols,
+        vec![LlmProtocolFamily::OpenAiResponses]
     );
     assert_eq!(
         glm_coding_anthropic.supported_protocols,
         vec![LlmProtocolFamily::Anthropic]
+    );
+    assert_eq!(
+        glm_coding_chat.endpoint,
+        "https://open.bigmodel.cn/api/coding/paas/v4"
+    );
+    assert_eq!(
+        glm_coding_responses.endpoint, "https://open.bigmodel.cn/api/v1",
+        "the Responses surface has its own official base URL"
+    );
+    assert_eq!(
+        glm_coding_anthropic.endpoint,
+        "https://open.bigmodel.cn/api/anthropic"
     );
     assert_ne!(
         glm.endpoint, glm_coding_chat.endpoint,

@@ -582,7 +582,23 @@ pub fn builtin_provider_presets() -> Vec<LlmProviderPreset> {
             requires_credential: true,
             models_hint: None,
             compatibility_profile: LlmCompatibilityProfile::GlmCoding,
-            supported_protocols: vec![OpenAiCompatible, OpenAiResponses],
+            // The Coding Plan separates its three surfaces onto three base
+            // URLs. The chat base must never receive a `/responses` suffix:
+            // that path is a strict legacy gateway. Responses and Anthropic
+            // have their own presets below.
+            supported_protocols: vec![OpenAiCompatible],
+            api_docs_url: Some(GLM_DOCS.into()),
+        },
+        LlmProviderPreset {
+            id: "zhipu-glm-coding-responses".into(),
+            label: "GLM Coding Plan (OpenAI Responses)".into(),
+            protocol: OpenAiResponses,
+            deployment: Online,
+            endpoint: "https://open.bigmodel.cn/api/v1".into(),
+            requires_credential: true,
+            models_hint: None,
+            compatibility_profile: LlmCompatibilityProfile::GlmCoding,
+            supported_protocols: vec![OpenAiResponses],
             api_docs_url: Some(GLM_DOCS.into()),
         },
         LlmProviderPreset {
