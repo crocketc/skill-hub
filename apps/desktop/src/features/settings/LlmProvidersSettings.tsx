@@ -78,7 +78,7 @@ type DraftActionState =
   | { kind: "actionFailed"; message: string };
 
 /** Provider administration section: full-width entity rows, an add/edit drawer,
- * credential entry, model fetch, the two-level connection test and
+ * credential entry, model fetch, the three-level connection test and
  * enable/default/delete. Credential values live only in this form until they
  * are handed to the OS credential store; edits never echo the stored key. */
 export function LlmProvidersSettings({

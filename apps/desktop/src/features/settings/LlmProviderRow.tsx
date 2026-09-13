@@ -20,7 +20,7 @@ interface LlmProviderRowProps {
 /**
  * Full-width provider entity row (design spec 5.1): identity, type, endpoint,
  * model, enabled state, default marker and credential status stay visible in
- * one row; the two-level connection result renders in its own status area.
+ * one row; the three-level connection result renders in its own status area.
  */
 export function LlmProviderRow({
   busy,

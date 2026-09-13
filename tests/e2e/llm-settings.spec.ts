@@ -12,7 +12,7 @@ test("llm provider rows show endpoint, model, enabled state and credential statu
   await openSettingsLlm(page);
 
   const deepseek = page.locator("li", { hasText: "DeepSeek" });
-  await expect(deepseek.getByText("Online")).toBeVisible();
+  await expect(deepseek.getByText("Cloud")).toBeVisible();
   await expect(deepseek.getByText("https://api.deepseek.com/v1")).toBeVisible();
   await expect(deepseek.getByText("deepseek-chat")).toBeVisible();
   await expect(deepseek.getByText("Enabled")).toBeVisible();
@@ -25,14 +25,16 @@ test("llm provider rows show endpoint, model, enabled state and credential statu
   await expect(ollama.getByText("No credential")).toBeVisible();
 });
 
-test("the two-level connection test reports endpoint and model levels separately", async ({
+test("the three-level connection test reports endpoint, model and structured levels separately", async ({
   page,
 }) => {
   await openSettingsLlm(page);
 
   const deepseek = page.locator("li", { hasText: "DeepSeek" });
   await deepseek.getByRole("button", { name: "Test connection" }).click();
-  await expect(deepseek.getByText("Model connection available")).toBeVisible();
+  await expect(deepseek.getByText("Model callable")).toBeVisible();
+  // 预览夹具未提供结构化级结果：该级必须显示“未验证”，而不是被省略或误判为失败。
+  await expect(deepseek.getByText("Structured output not verified")).toBeVisible();
 
   const ollama = page.locator("li", { hasText: "Ollama" });
   await ollama.getByRole("button", { name: "Test connection" }).click();
@@ -42,7 +44,9 @@ test("the two-level connection test reports endpoint and model levels separately
   await expect(
     ollama.getByText("The model service could not be reached. Check the API address and network settings."),
   ).toBeVisible();
-  await expect(ollama.getByText("Model connection available")).not.toBeVisible();
+  await expect(ollama.getByText("Model callable")).not.toBeVisible();
+  // 模型级未通过时结构化级不下探，仍显示“未验证”，不表述为模型协议不兼容。
+  await expect(ollama.getByText("Structured output not verified")).toBeVisible();
 });
 
 test("adding a provider happens in a drawer and the saved row appears at full width", async ({

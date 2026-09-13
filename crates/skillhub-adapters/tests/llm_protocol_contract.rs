@@ -279,7 +279,7 @@ fn a_text_plan_carries_no_structured_output_and_no_schema() {
         !serialized.contains("\"schema\""),
         "a text probe must not carry a structured instruction: {serialized}"
     );
-    assert_eq!(expectation_is_text(&plan), true);
+    assert!(expectation_is_text(&plan));
 
     // A prompt-only transport likewise sends nothing structured for text.
     let mut anthropic = profile(LlmProtocolFamily::Anthropic, "https://api.anthropic.test");

@@ -269,7 +269,7 @@
   padding: 0;
 }
 
-/* 抽屉内的草稿测试结果（P1-03）：与行级报告同构的两级列表。 */
+/* 抽屉内的草稿测试结果（P1-03）：与行级报告同构的三级列表。 */
 .sh-settings-draft-report__label {
   color: var(--ui-ink-muted);
   font-size: var(--font-size-sm);

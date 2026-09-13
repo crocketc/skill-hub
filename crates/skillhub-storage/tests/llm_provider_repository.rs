@@ -185,7 +185,7 @@ fn legacy_rows_without_a_compatibility_profile_are_normalised_once() {
         custom.compatibility_profile,
         LlmCompatibilityProfile::Generic
     );
-    assert_eq!(custom.enabled, false, "enabled flag must not change");
+    assert!(!custom.enabled, "enabled flag must not change");
     assert_eq!(custom.timeout_ms, 10_000);
 
     // Migration is idempotent: saving writes the field, reading it back again

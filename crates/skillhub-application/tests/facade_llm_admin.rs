@@ -189,8 +189,7 @@ async fn the_compatibility_profile_survives_save_list_and_administration() {
     let admin = Arc::new(FakeAdmin::default());
     let facade = facade_with(store.clone(), admin.clone(), NetworkGate::open());
 
-    let mut config =
-        provider_config_for("zhipu-glm-coding-chat", "GLM Coding Plan", "glm-5");
+    let mut config = provider_config_for("zhipu-glm-coding-chat", "GLM Coding Plan", "glm-5");
     config.compatibility_profile = LlmCompatibilityProfile::GlmCoding;
     config.endpoint = "https://open.bigmodel.cn/api/coding/paas/v4".to_owned();
 

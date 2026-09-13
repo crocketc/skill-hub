@@ -783,7 +783,7 @@ it("keeps the draft actions disabled with a credential explanation until the key
   expect(screen.getByRole("dialog").querySelector("#llm-draft-prereq-hint")).toBeNull();
 });
 
-it("fetches models into the datalist and renders the two-level test result inside the drawer", async () => {
+it("fetches models into the datalist and renders the three-level test result inside the drawer", async () => {
   const i18n = await createSkillHubI18n(["zh-CN"]);
   const { facade } = recordingFacade({
     testResult: {
@@ -810,10 +810,11 @@ it("fetches models into the datalist and renders the two-level test result insid
   expect(drawer.querySelector('#llm-model-options option[value="deepseek-chat"]')).not.toBeNull();
   expect(drawer.querySelector('#llm-model-options option[value="deepseek-reasoner"]')).not.toBeNull();
 
-  // 测试此配置无需保存：两级结果直接渲染在抽屉内。
+  // 测试此配置无需保存：三级结果直接渲染在抽屉内（未执行的结构化级显示“未验证”）。
   await user.click(within(drawer).getByRole("button", { name: "测试此配置" }));
   expect(await within(drawer).findByText("服务可达 (42 ms)")).toBeVisible();
   expect(within(drawer).getByText("模型可调用")).toBeVisible();
+  expect(within(drawer).getByText("结构化输出未验证")).toBeVisible();
 });
 
 it("announces the in-progress state while the draft connection test runs", async () => {
