@@ -35,14 +35,25 @@ const EMPTY_DRAFT: LlmProviderDraft = {
   structuredOutputOverride: null,
 };
 
-/** 与 cc-switch `apiFormat` 对齐的四类用户可选接口；legacy 变体仍由
- * 后端兼容读取，但不再污染手动配置下拉。 */
-const PROTOCOL_FAMILIES: Array<LlmProviderDraft["protocol"]> = [
+/** 完整接口格式目录（与后端协议族一一对应）。实际下拉只展示当前配置档
+ *  `supported_protocols` 列出的子集；手动配置落在 Generic 档，允许全部六种。 */
+const PROTOCOL_CATALOGUE: Array<LlmProviderDraft["protocol"]> = [
+  "open_ai",
   "open_ai_compatible",
   "open_ai_responses",
   "anthropic",
   "gemini",
+  "azure_open_ai",
 ];
+
+/** 结构性输出策略；仅 Generic（手动）配置可显式覆盖。 */
+const STRUCTURED_OUTPUT_STRATEGIES = [
+  "json_schema_strict",
+  "json_schema",
+  "json_object",
+  "prompted_json",
+  "gemini_schema",
+] as const;
 
 type ConnectionReport = { providerId: string; result: ConnectionTestResult };
 
@@ -260,6 +271,26 @@ export function LlmProvidersSettings({
   const selectedPreset =
     editor?.mode === "add" ? presets?.find((item) => item.id === presetId) ?? null : null;
 
+  // 接口格式下拉只显示当前配置档支持的协议：新增时跟随所选预设；编辑时按该
+  // 配置来源的预设（id 由应用生成，不是用户猜测）；其余情况按 Generic 档允许
+  // 全部六种。切换格式只改协议本身，不改写已填写的地址、模型与密钥。
+  const presetForFormats =
+    selectedPreset ??
+    (editor?.mode === "edit" ? presets?.find((item) => item.id === draft.id) ?? null : null);
+  const supportedProtocols = presetForFormats?.supported_protocols;
+  const catalogueProtocols =
+    supportedProtocols && supportedProtocols.length > 0
+      ? PROTOCOL_CATALOGUE.filter((family) => supportedProtocols.includes(family))
+      : PROTOCOL_CATALOGUE;
+  // 已保存配置的协议始终可见：若它与能力档不一致（历史数据），下拉也不留空，
+  // 用户能看到当前值并改回受支持的格式，交由后端校验。
+  const availableProtocols = catalogueProtocols.includes(draft.protocol)
+    ? catalogueProtocols
+    : [...catalogueProtocols, draft.protocol];
+  // Generic（手动）配置可显式选择结构化策略；内置产品线由后端按其兼容档
+  // 决定，隐藏实现细节。
+  const showsStructuredOverride = draft.compatibilityProfile === "generic";
+
   // 抽屉动作失败时信息渲染在抽屉内（role=alert）；卡片级 error 留给行级操作。
   const fetchModels = () => {
     if (busy || !draftActionsReady) return;
@@ -383,13 +414,46 @@ export function LlmProvidersSettings({
               onChange={(event) => applyProtocol(event.target.value as LlmProviderDraft["protocol"])}
               value={draft.protocol}
             >
-              {PROTOCOL_FAMILIES.map((family) => (
+              {availableProtocols.map((family) => (
                 <option key={family} value={family}>
                   {t(`settings.llm.protocol.${family}` as never)}
                 </option>
               ))}
             </Select>
           </Field>
+          {/* Generic 配置可显式选择结构化策略；内置供应商隐藏该实现细节。 */}
+          {showsStructuredOverride ? (
+            <details className="sh-settings-local-note sh-settings-provider__advanced">
+              <summary>{t("settings.llm.advancedSummary")}</summary>
+              <Field
+                help={t("settings.llm.structuredStrategyNote")}
+                label={t("settings.llm.structuredStrategy")}
+              >
+                <Select
+                  name="provider-structured-strategy"
+                  onChange={(event) => {
+                    clearStaleDraftResult();
+                    const value = event.target.value;
+                    setDraft({
+                      ...draft,
+                      structuredOutputOverride:
+                        value === ""
+                          ? null
+                          : (value as NonNullable<LlmProviderDraft["structuredOutputOverride"]>),
+                    });
+                  }}
+                  value={draft.structuredOutputOverride ?? ""}
+                >
+                  <option value="">{t("settings.llm.structuredStrategyInherit")}</option>
+                  {STRUCTURED_OUTPUT_STRATEGIES.map((strategy) => (
+                    <option key={strategy} value={strategy}>
+                      {t(`settings.llm.structuredStrategyOptions.${strategy}` as never)}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+            </details>
+          ) : null}
           <Field
             error={fieldErrors.id}
             label={t("settings.llm.providerId")}

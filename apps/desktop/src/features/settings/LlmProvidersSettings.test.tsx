@@ -56,6 +56,58 @@ const PRESETS: LlmProviderPreset[] = [
     compatibility_profile: "ollama",
     supported_protocols: ["open_ai_compatible"],
   },
+  {
+    // 普通 API 只有 OpenAI 兼容一种已确认的接口格式。
+    id: "zhipu-glm",
+    label: "Zhipu GLM API (OpenAI)",
+    protocol: "open_ai_compatible",
+    deployment: "online",
+    endpoint: "https://open.bigmodel.cn/api/paas/v4",
+    requires_credential: true,
+    models_hint: null,
+    api_docs_url: null,
+    compatibility_profile: "glm",
+    supported_protocols: ["open_ai_compatible"],
+  },
+  {
+    // Coding Plan 是独立产品线：三端点分立，不能与普通 API 混用格式。
+    id: "zhipu-glm-coding-chat",
+    label: "GLM Coding Plan",
+    protocol: "open_ai_compatible",
+    deployment: "online",
+    endpoint: "https://open.bigmodel.cn/api/coding/paas/v4",
+    requires_credential: true,
+    models_hint: null,
+    api_docs_url: null,
+    compatibility_profile: "glm_coding",
+    supported_protocols: ["open_ai_compatible", "open_ai_responses", "anthropic"],
+  },
+  {
+    // 开放平台仅 OpenAI 兼容。
+    id: "moonshot-kimi",
+    label: "Moonshot Kimi",
+    protocol: "open_ai_compatible",
+    deployment: "online",
+    endpoint: "https://api.moonshot.cn/v1",
+    requires_credential: true,
+    models_hint: null,
+    api_docs_url: null,
+    compatibility_profile: "moonshot",
+    supported_protocols: ["open_ai_compatible"],
+  },
+  {
+    // Coding Plan 与开放平台不是同一条产品线。
+    id: "kimi-code-openai",
+    label: "Kimi Coding Plan",
+    protocol: "open_ai_compatible",
+    deployment: "online",
+    endpoint: "https://api.kimi.com/coding/v1",
+    requires_credential: true,
+    models_hint: null,
+    api_docs_url: null,
+    compatibility_profile: "kimi_coding",
+    supported_protocols: ["open_ai_compatible", "anthropic"],
+  },
 ];
 
 const PROVIDERS: LlmProviderView[] = [
@@ -153,7 +205,7 @@ it("lists providers with credential status, deployment badge and default marker"
   renderCard(facade, i18n);
 
   const deepseek = await screen.findByText("DeepSeek");
-  expect(within(deepseek.closest("li")!).getByText("在线")).toBeVisible();
+  expect(within(deepseek.closest("li")!).getByText("云端")).toBeVisible();
   expect(within(deepseek.closest("li")!).getByText("凭据已配置")).toBeVisible();
   expect(within(deepseek.closest("li")!).getByText("默认")).toBeVisible();
 
@@ -193,7 +245,7 @@ it("renders every provider as a full-width entity row with endpoint, model and e
   const deepseek = within(rows[0]!);
   expect(deepseek.getByText("https://api.deepseek.com/v1")).toBeVisible();
   expect(deepseek.getByText("deepseek-chat")).toBeVisible();
-  expect(deepseek.getByText("在线")).toBeVisible();
+  expect(deepseek.getByText("云端")).toBeVisible();
   expect(deepseek.getByText("已启用")).toBeVisible();
   expect(deepseek.getByText("默认")).toBeVisible();
   expect(deepseek.getByText("凭据已配置")).toBeVisible();
@@ -356,7 +408,7 @@ it("reports the two connection levels and only claims model availability on mode
   expect(
     screen.getByText("模型服务拒绝了凭据，请重新检查 API 密钥。"),
   ).toBeVisible();
-  expect(screen.queryByText("模型连接可用")).not.toBeInTheDocument();
+  expect(screen.queryByText("模型可调用")).not.toBeInTheDocument();
 });
 
 it("shows the endpoint-unreachable scenario as separate statuses without a success claim", async () => {
@@ -381,7 +433,7 @@ it("shows the endpoint-unreachable scenario as separate statuses without a succe
   ).toBeVisible();
   // 两级结果不合并：服务失败时不得出现任何“可达/可用”成功文案。
   expect(screen.queryByText("服务可达")).not.toBeInTheDocument();
-  expect(screen.queryByText("模型连接可用")).not.toBeInTheDocument();
+  expect(screen.queryByText("模型可调用")).not.toBeInTheDocument();
   // 状态不只靠颜色：每一级状态带装饰图标。
   expect(report!.querySelectorAll("svg").length).toBeGreaterThanOrEqual(2);
 });
@@ -401,7 +453,7 @@ it("shows model connection available only when the model level passes", async ()
 
   await user.click(await screen.findByRole("button", { name: "测试连接" }));
 
-  expect(await screen.findByText("模型连接可用")).toBeVisible();
+  expect(await screen.findByText("模型可调用")).toBeVisible();
 });
 
 it("requires confirmation before deleting and keeps the provider on cancel", async () => {
@@ -648,12 +700,12 @@ it("clears the rendered draft test result when the model field changes", async (
   const user = await openFilledDraftForm(i18n, facade);
 
   await user.click(screen.getByRole("button", { name: "测试此配置" }));
-  expect(await screen.findByText(/模型连接可用/)).toBeVisible();
+  expect(await screen.findByText(/模型可调用/)).toBeVisible();
 
   // 模型变了，旧的测试结果不再可信——必须立即清除，不能留着误导保存。
   await user.type(screen.getByRole("combobox", { name: "模型" }), "-v2");
 
-  expect(screen.queryByText(/模型连接可用/)).not.toBeInTheDocument();
+  expect(screen.queryByText(/模型可调用/)).not.toBeInTheDocument();
   expect(screen.queryByText(/服务可达/)).not.toBeInTheDocument();
 });
 
@@ -761,7 +813,7 @@ it("fetches models into the datalist and renders the two-level test result insid
   // 测试此配置无需保存：两级结果直接渲染在抽屉内。
   await user.click(within(drawer).getByRole("button", { name: "测试此配置" }));
   expect(await within(drawer).findByText("服务可达 (42 ms)")).toBeVisible();
-  expect(within(drawer).getByText("模型连接可用")).toBeVisible();
+  expect(within(drawer).getByText("模型可调用")).toBeVisible();
 });
 
 it("announces the in-progress state while the draft connection test runs", async () => {
@@ -895,7 +947,7 @@ it("shows the manual-configuration note only while no preset is selected", async
   expect(within(drawer).queryByText(/手动配置：/)).not.toBeInTheDocument();
 });
 
-it("offers every backend-supported protocol family in the drawer and keeps typed fields on switch", async () => {
+it("offers every protocol the Generic profile supports and keeps typed fields on switch", async () => {
   const user = userEvent.setup();
   const i18n = await createSkillHubI18n(["zh-CN"]);
   const { facade, saves } = recordingFacade();
@@ -907,16 +959,20 @@ it("offers every backend-supported protocol family in the drawer and keeps typed
   await user.type(screen.getByRole("combobox", { name: "模型" }), "gw-chat");
   await user.type(screen.getByLabelText("API 密钥"), "sk-acceptance-not-real");
 
-  const protocolSelect = screen.getByRole("combobox", { name: "接口格式" }) as HTMLSelectElement;
-  const values = Array.from(protocolSelect.options).map((option) => option.value);
-  expect(values).toEqual([
+  // 手动配置落在 Generic 档，允许其后端支持的全部六种接口格式。
+  expect(protocolOptionValues()).toEqual([
+    "open_ai",
     "open_ai_compatible",
     "open_ai_responses",
     "anthropic",
     "gemini",
+    "azure_open_ai",
   ]);
 
-  await user.selectOptions(protocolSelect, "anthropic");
+  await user.selectOptions(
+    screen.getByRole("combobox", { name: "接口格式" }) as HTMLSelectElement,
+    "anthropic",
+  );
   await user.click(screen.getByRole("button", { name: "保存" }));
 
   await waitFor(() => expect(saves).toHaveLength(1));
@@ -939,11 +995,11 @@ it("clears a stale draft test result when the protocol family changes", async ()
   const user2 = await openFilledDraftForm(i18n, facade);
 
   await user2.click(screen.getByRole("button", { name: "测试此配置" }));
-  expect(await screen.findByText(/模型连接可用/)).toBeVisible();
+  expect(await screen.findByText(/模型可调用/)).toBeVisible();
 
   await user.selectOptions(screen.getByRole("combobox", { name: "接口格式" }), "anthropic");
 
-  expect(screen.queryByText(/模型连接可用/)).not.toBeInTheDocument();
+  expect(screen.queryByText(/模型可调用/)).not.toBeInTheDocument();
   expect(screen.queryByText(/服务可达/)).not.toBeInTheDocument();
 });
 
@@ -1017,4 +1073,173 @@ it("keeps unkeyed model failure codes out of the message and collapses them into
   const details = message.parentElement?.querySelector("details");
   expect(details).not.toBeNull();
   expect(details!.textContent).toContain("gateway.model_disabled_vendor_suffix");
+});
+
+// Task 8：接口格式与结构化策略必须跟随所选产品线的能力档，不能按厂商名或
+// 端点猜测；三层连接状态、结构化失败语义与清除凭据后的状态组合在此固定。
+
+function protocolOptionValues(): string[] {
+  const select = screen.getByRole("combobox", { name: "接口格式" }) as HTMLSelectElement;
+  return Array.from(select.options).map((option) => option.value);
+}
+
+function selectPreset(user: Awaited<ReturnType<typeof userEvent.setup>>, id: string) {
+  return user.selectOptions(screen.getByLabelText("从预设选择"), id);
+}
+
+it("restricts the interface format to the selected preset's supported protocols", async () => {
+  const user = userEvent.setup();
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  const { facade } = recordingFacade();
+  renderCard(facade, i18n);
+  await user.click(await screen.findByRole("button", { name: "新增供应商" }));
+
+  await selectPreset(user, "deepseek");
+  expect(protocolOptionValues()).toEqual([
+    "open_ai_compatible",
+    "open_ai_responses",
+    "anthropic",
+  ]);
+
+  await selectPreset(user, "zhipu-glm");
+  // 普通 GLM API 只确认了 OpenAI 兼容一种格式，且默认即选中它。
+  expect(protocolOptionValues()).toEqual(["open_ai_compatible"]);
+  expect(screen.getByRole("combobox", { name: "接口格式" })).toHaveValue("open_ai_compatible");
+});
+
+it("keeps the GLM ordinary API and the Coding Plan on separate format options", async () => {
+  const user = userEvent.setup();
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  const { facade } = recordingFacade();
+  renderCard(facade, i18n);
+  await user.click(await screen.findByRole("button", { name: "新增供应商" }));
+
+  await selectPreset(user, "zhipu-glm");
+  const ordinary = protocolOptionValues();
+  expect(ordinary).toEqual(["open_ai_compatible"]);
+  expect(screen.getByRole("dialog").textContent ?? "").toContain("Zhipu GLM API (OpenAI)");
+
+  await selectPreset(user, "zhipu-glm-coding-chat");
+  const coding = protocolOptionValues();
+  expect(coding).toEqual(["open_ai_compatible", "open_ai_responses", "anthropic"]);
+  // 两条产品线的格式选项与说明互不混用。
+  expect(coding).not.toEqual(ordinary);
+  expect(screen.getByRole("dialog").textContent ?? "").toContain("GLM Coding Plan");
+  expect(screen.getByRole("textbox", { name: "API 地址（Base URL）" })).toHaveValue(
+    "https://open.bigmodel.cn/api/coding/paas/v4",
+  );
+});
+
+it("keeps the Kimi open platform and the Coding Plan on separate endpoints and formats", async () => {
+  const user = userEvent.setup();
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  const { facade, saves } = recordingFacade();
+  renderCard(facade, i18n);
+  await user.click(await screen.findByRole("button", { name: "新增供应商" }));
+
+  await selectPreset(user, "moonshot-kimi");
+  expect(protocolOptionValues()).toEqual(["open_ai_compatible"]);
+  expect(screen.getByRole("textbox", { name: "API 地址（Base URL）" })).toHaveValue(
+    "https://api.moonshot.cn/v1",
+  );
+
+  await selectPreset(user, "kimi-code-openai");
+  expect(protocolOptionValues()).toEqual(["open_ai_compatible", "anthropic"]);
+  expect(screen.getByRole("textbox", { name: "API 地址（Base URL）" })).toHaveValue(
+    "https://api.kimi.com/coding/v1",
+  );
+
+  await user.type(screen.getByRole("combobox", { name: "模型" }), "kimi-k2");
+  await user.type(screen.getByLabelText("API 密钥"), "sk-acceptance-not-real");
+  await user.click(screen.getByRole("button", { name: "保存" }));
+  await waitFor(() => expect(saves).toHaveLength(1));
+  expect(saves[0]!.draft.compatibilityProfile).toBe("kimi_coding");
+  expect(saves[0]!.draft.endpoint).toBe("https://api.kimi.com/coding/v1");
+});
+
+it("shows the advanced structured-output strategy only for a generic configuration", async () => {
+  const user = userEvent.setup();
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  const { facade } = recordingFacade();
+  renderCard(facade, i18n);
+  await user.click(await screen.findByRole("button", { name: "新增供应商" }));
+
+  // 手动（Generic）配置可展开显式结构化策略。
+  expect(screen.getByText("高级选项（结构化输出）")).toBeInTheDocument();
+
+  // 选择内置产品线后隐藏实现细节。
+  await selectPreset(user, "deepseek");
+  expect(screen.queryByText("高级选项（结构化输出）")).not.toBeInTheDocument();
+});
+
+it("lets a custom configuration choose an explicit structured-output strategy", async () => {
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  const { facade, saves } = recordingFacade();
+  const user = await openFilledDraftForm(i18n, facade);
+
+  await user.click(screen.getByText("高级选项（结构化输出）"));
+  const strategy = screen.getByRole("combobox", { name: "结构化输出策略" }) as HTMLSelectElement;
+  expect(Array.from(strategy.options).map((option) => option.value)).toEqual([
+    "",
+    "json_schema_strict",
+    "json_schema",
+    "json_object",
+    "prompted_json",
+    "gemini_schema",
+  ]);
+
+  await user.selectOptions(strategy, "prompted_json");
+  await user.click(screen.getByRole("button", { name: "保存" }));
+
+  await waitFor(() => expect(saves).toHaveLength(1));
+  expect(saves[0]!.draft.structuredOutputOverride).toBe("prompted_json");
+  expect(saves[0]!.draft.compatibilityProfile).toBe("generic");
+});
+
+it("renders the three-level report inside the drawer without calling it a model mismatch", async () => {
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  const { facade } = recordingFacade({
+    testResult: {
+      endpoint: { reachable: true, latency_ms: 42 },
+      model: { ok: true, latency_ms: 118 },
+      model_failure_code: null,
+      structured: { ok: false, latency_ms: 90 },
+      structured_failure_code: "llm.protocol_incompatible",
+    },
+  });
+  const user = await openFilledDraftForm(i18n, facade);
+  await user.click(screen.getByRole("button", { name: "测试此配置" }));
+
+  const drawer = screen.getByRole("dialog");
+  expect(await within(drawer).findByText("服务可达 (42 ms)")).toBeVisible();
+  // 模型可用：普通文本调用成功，即使结构化输出失败也不改判。
+  expect(within(drawer).getByText("模型可调用")).toBeVisible();
+  expect(within(drawer).getByText(/结构化输出不可用/)).toBeVisible();
+  expect(within(drawer).queryByText(/模型服务协议不兼容/)).not.toBeInTheDocument();
+});
+
+it("keeps a provider enabled and reports no credential after the secret is cleared", async () => {
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  const { facade } = recordingFacade({
+    providers: [{ ...PROVIDERS[0]!, credential_configured: false }],
+  });
+  renderCard(facade, i18n);
+
+  const row = (await screen.findByText("DeepSeek")).closest("li")!;
+  expect(within(row).getByText("已启用")).toBeVisible();
+  expect(within(row).getByText("未配置凭据")).toBeVisible();
+  // 部署类型标签表达“云端/本地”，不是健康状态。
+  expect(within(row).getByText("云端")).toBeVisible();
+  expect(within(row).queryByText("已停用")).not.toBeInTheDocument();
+});
+
+it("never renders the removed routing-switch copy", async () => {
+  const user = userEvent.setup();
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  const { facade } = recordingFacade({ providers: PROVIDERS });
+  renderCard(facade, i18n);
+  await screen.findByText("DeepSeek");
+  await user.click(screen.getByRole("button", { name: "新增供应商" }));
+
+  expect(document.body.textContent ?? "").not.toContain("路由");
 });

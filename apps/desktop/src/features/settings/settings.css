@@ -287,6 +287,23 @@
   color: var(--ui-success-foreground);
 }
 
+/* 结构化层失败是能力的警告而非模型不可用：用警告色，但仍以图标 + 文字表达
+   状态，绝不单靠颜色。未尝试的层走默认弱化色（info 图标）。 */
+.sh-settings-provider__level--warning {
+  color: var(--ui-warning-foreground);
+}
+
+/* Generic 配置的高级结构化策略（Task 8）：折叠在 details 中，默认收起，
+   键盘可达。 */
+.sh-settings-provider__advanced > summary {
+  cursor: pointer;
+}
+
+.sh-settings-provider__advanced > summary:focus-visible {
+  outline: 2px solid var(--ui-focus);
+  outline-offset: 2px;
+}
+
 .sh-settings-provider__level-icon {
   flex: 0 0 auto;
   /* T0 Icon 注册表默认 fill=none 且不注入描边：消费侧补齐可见描边。 */
