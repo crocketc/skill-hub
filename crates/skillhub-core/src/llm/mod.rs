@@ -1,3 +1,4 @@
+pub mod compatibility;
 pub mod connection;
 mod errors;
 mod model;
@@ -9,6 +10,11 @@ mod task;
 pub mod translation;
 pub use translation::{TranslationOrigin, TranslationRecord, TranslationResult, TranslationView};
 
+pub use compatibility::{
+    compatibility_policy, legacy_profile_for_builtin_id, validate_compatibility_selection,
+    LlmAuthStrategy, LlmCompatibilityPolicy, LlmCompatibilityProfile, LlmEndpointStrategy,
+    LlmModelListStrategy, LlmReasoningPolicy, LlmStructuredOutputStrategy,
+};
 pub use connection::{ConnectionTestResult, EndpointCheckResult, ModelCheckResult};
 pub use model::{CredentialRef, LlmProfile, LlmTaskKind, LlmTaskRequest, LlmTaskResponse};
 pub use network_gate::NetworkGate;

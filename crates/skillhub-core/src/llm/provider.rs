@@ -4,6 +4,9 @@ use url::Url;
 
 use crate::{AppError, AppResult, ErrorCode, Severity};
 
+use super::compatibility::{
+    validate_compatibility_selection, LlmCompatibilityProfile, LlmStructuredOutputStrategy,
+};
 use super::model::{CredentialRef, LlmProfile};
 
 /// Wire protocol spoken by a provider. Vendor differences are confined here.
@@ -128,6 +131,14 @@ pub struct LlmProviderConfig {
     pub timeout_ms: u32,
     #[serde(default = "default_max_input_bytes")]
     pub max_input_bytes: u32,
+    /// Supplier behaviour selector. Older records deserialise to `Generic`;
+    /// the storage layer normalises known built-in ids once on read.
+    #[serde(default)]
+    pub compatibility_profile: LlmCompatibilityProfile,
+    /// Present only for the Generic profile, where the user may choose the
+    /// structured-output mechanism explicitly.
+    #[serde(default)]
+    pub structured_output_override: Option<LlmStructuredOutputStrategy>,
 }
 
 fn default_true() -> bool {
@@ -176,6 +187,8 @@ impl LlmProviderConfig {
             enabled: true,
             timeout_ms: default_timeout_ms(),
             max_input_bytes: default_max_input_bytes(),
+            compatibility_profile: LlmCompatibilityProfile::default(),
+            structured_output_override: None,
         };
         config.validate()?;
         Ok(config)
@@ -236,6 +249,14 @@ impl LlmProviderConfig {
         if self.timeout_ms == 0 || self.max_input_bytes == 0 {
             return Err(invalid_input("limits"));
         }
+        // Persisted configurations carry the same capability contract as the
+        // runtime profile: an impossible (profile, protocol) pair, or an
+        // override on a built-in profile, is refused at save time too.
+        validate_compatibility_selection(
+            self.compatibility_profile,
+            self.protocol,
+            self.structured_output_override,
+        )?;
         Ok(())
     }
 }
@@ -288,25 +309,21 @@ impl LlmProviderConfig {
     /// protocol, deployment and custom headers ride along so the HTTP runner
     /// can dispatch to the right adapter.
     pub fn to_profile(&self) -> AppResult<LlmProfile> {
-        LlmProfile::new(
+        let mut profile = LlmProfile::new(
             self.id.clone(),
             self.endpoint.clone(),
             self.model.clone(),
             self.credential_ref.clone(),
-        )
-        .and_then(|profile| {
-            profile
-                .with_protocol(self.protocol)
-                .and_then(|profile| profile.with_deployment(self.deployment))
-        })
-        .and_then(|profile| {
-            let mut profile = profile;
-            profile.timeout_ms = u64::from(self.timeout_ms);
-            profile.max_input_bytes = self.max_input_bytes as usize;
-            profile.custom_headers = self.custom_headers.clone();
-            profile.validate()?;
-            Ok(profile)
-        })
+        )?;
+        profile.protocol = self.protocol;
+        profile.deployment = self.deployment;
+        profile.compatibility_profile = self.compatibility_profile;
+        profile.structured_output_override = self.structured_output_override;
+        profile.timeout_ms = u64::from(self.timeout_ms);
+        profile.max_input_bytes = self.max_input_bytes as usize;
+        profile.custom_headers = self.custom_headers.clone();
+        profile.validate()?;
+        Ok(profile)
     }
 
     /// Builds the narrower profile used to fetch available models. Unlike a
@@ -324,6 +341,8 @@ impl LlmProviderConfig {
             protocol: self.protocol,
             deployment: self.deployment,
             custom_headers: self.custom_headers.clone(),
+            compatibility_profile: self.compatibility_profile,
+            structured_output_override: self.structured_output_override,
         };
         profile.validate_model_listing()?;
         Ok(profile)
@@ -366,6 +385,15 @@ pub struct LlmProviderPreset {
     pub models_hint: Option<String>,
     #[serde(default)]
     pub api_docs_url: Option<String>,
+    /// The product line's capability profile. Two presets that bill, ship a
+    /// different key or serve a different endpoint must never share one.
+    #[serde(default)]
+    pub compatibility_profile: LlmCompatibilityProfile,
+    /// Interface formats the settings page may offer for this preset. The
+    /// default protocol is always a member; switching format never rewrites
+    /// the user's endpoint, model or credential.
+    #[serde(default)]
+    pub supported_protocols: Vec<LlmProtocolFamily>,
 }
 
 const API_DOCS_TOS: &str = "https://platform.openai.com/docs/api-reference";
@@ -392,7 +420,9 @@ const LMSTUDIO_DOCS: &str = "https://lmstudio.ai/docs/app/api/endpoints/openai";
 /// promotion (no sponsor ordering is reproduced from reference projects).
 pub fn builtin_provider_presets() -> Vec<LlmProviderPreset> {
     use LlmDeployment::{Local, Online};
-    use LlmProtocolFamily::{Anthropic, AzureOpenAi, Gemini, OpenAiCompatible};
+    use LlmProtocolFamily::{
+        Anthropic, AzureOpenAi, Gemini, OpenAi, OpenAiCompatible, OpenAiResponses,
+    };
     vec![
         LlmProviderPreset {
             id: "openai".into(),
@@ -404,6 +434,8 @@ pub fn builtin_provider_presets() -> Vec<LlmProviderPreset> {
             endpoint: "https://api.openai.com/v1".into(),
             requires_credential: true,
             models_hint: None,
+            compatibility_profile: LlmCompatibilityProfile::OpenAi,
+            supported_protocols: vec![OpenAi, OpenAiCompatible, OpenAiResponses],
             api_docs_url: Some(API_DOCS_TOS.into()),
         },
         LlmProviderPreset {
@@ -414,6 +446,8 @@ pub fn builtin_provider_presets() -> Vec<LlmProviderPreset> {
             endpoint: "https://api.anthropic.com".into(),
             requires_credential: true,
             models_hint: None,
+            compatibility_profile: LlmCompatibilityProfile::Anthropic,
+            supported_protocols: vec![Anthropic],
             api_docs_url: Some(ANTHROPIC_DOCS.into()),
         },
         LlmProviderPreset {
@@ -424,6 +458,8 @@ pub fn builtin_provider_presets() -> Vec<LlmProviderPreset> {
             endpoint: "https://generativelanguage.googleapis.com".into(),
             requires_credential: true,
             models_hint: None,
+            compatibility_profile: LlmCompatibilityProfile::Gemini,
+            supported_protocols: vec![Gemini],
             api_docs_url: Some(GEMINI_DOCS.into()),
         },
         LlmProviderPreset {
@@ -435,6 +471,8 @@ pub fn builtin_provider_presets() -> Vec<LlmProviderPreset> {
             endpoint: "https://YOUR-RESOURCE-NAME.openai.azure.com".into(),
             requires_credential: true,
             models_hint: None,
+            compatibility_profile: LlmCompatibilityProfile::AzureOpenAi,
+            supported_protocols: vec![AzureOpenAi],
             api_docs_url: Some(AZURE_DOCS.into()),
         },
         LlmProviderPreset {
@@ -445,6 +483,8 @@ pub fn builtin_provider_presets() -> Vec<LlmProviderPreset> {
             endpoint: "https://openrouter.ai/api/v1".into(),
             requires_credential: true,
             models_hint: None,
+            compatibility_profile: LlmCompatibilityProfile::OpenRouter,
+            supported_protocols: vec![OpenAiCompatible],
             api_docs_url: Some(OPENROUTER_DOCS.into()),
         },
         LlmProviderPreset {
@@ -457,6 +497,8 @@ pub fn builtin_provider_presets() -> Vec<LlmProviderPreset> {
             endpoint: "https://api.deepseek.com".into(),
             requires_credential: true,
             models_hint: Some("deepseek-flash, deepseek-v4-pro".into()),
+            compatibility_profile: LlmCompatibilityProfile::DeepSeek,
+            supported_protocols: vec![OpenAiCompatible, OpenAiResponses],
             api_docs_url: Some(DEEPSEEK_DOCS.into()),
         },
         LlmProviderPreset {
@@ -467,6 +509,8 @@ pub fn builtin_provider_presets() -> Vec<LlmProviderPreset> {
             endpoint: "https://api.deepseek.com/anthropic".into(),
             requires_credential: true,
             models_hint: Some("deepseek-flash, deepseek-v4-pro".into()),
+            compatibility_profile: LlmCompatibilityProfile::DeepSeek,
+            supported_protocols: vec![Anthropic],
             api_docs_url: Some(DEEPSEEK_DOCS.into()),
         },
         LlmProviderPreset {
@@ -477,6 +521,8 @@ pub fn builtin_provider_presets() -> Vec<LlmProviderPreset> {
             endpoint: "https://dashscope.aliyuncs.com/compatible-mode/v1".into(),
             requires_credential: true,
             models_hint: None,
+            compatibility_profile: LlmCompatibilityProfile::DashScope,
+            supported_protocols: vec![OpenAiCompatible],
             api_docs_url: Some(DASHSCOPE_DOCS.into()),
         },
         LlmProviderPreset {
@@ -487,6 +533,8 @@ pub fn builtin_provider_presets() -> Vec<LlmProviderPreset> {
             endpoint: "https://api.moonshot.cn/v1".into(),
             requires_credential: true,
             models_hint: Some("kimi-k3".into()),
+            compatibility_profile: LlmCompatibilityProfile::Moonshot,
+            supported_protocols: vec![OpenAiCompatible],
             api_docs_url: Some(MOONSHOT_DOCS.into()),
         },
         LlmProviderPreset {
@@ -497,6 +545,8 @@ pub fn builtin_provider_presets() -> Vec<LlmProviderPreset> {
             endpoint: "https://api.kimi.com/coding/v1".into(),
             requires_credential: true,
             models_hint: Some("kimi-for-coding, k3, k2.8-preview".into()),
+            compatibility_profile: LlmCompatibilityProfile::KimiCoding,
+            supported_protocols: vec![OpenAiCompatible],
             api_docs_url: Some(MOONSHOT_DOCS.into()),
         },
         LlmProviderPreset {
@@ -507,6 +557,8 @@ pub fn builtin_provider_presets() -> Vec<LlmProviderPreset> {
             endpoint: "https://api.kimi.com/coding".into(),
             requires_credential: true,
             models_hint: Some("kimi-for-coding, k3, k2.8-preview".into()),
+            compatibility_profile: LlmCompatibilityProfile::KimiCoding,
+            supported_protocols: vec![Anthropic],
             api_docs_url: Some(MOONSHOT_DOCS.into()),
         },
         LlmProviderPreset {
@@ -517,6 +569,8 @@ pub fn builtin_provider_presets() -> Vec<LlmProviderPreset> {
             endpoint: "https://open.bigmodel.cn/api/paas/v4".into(),
             requires_credential: true,
             models_hint: None,
+            compatibility_profile: LlmCompatibilityProfile::Glm,
+            supported_protocols: vec![OpenAiCompatible],
             api_docs_url: Some(GLM_DOCS.into()),
         },
         LlmProviderPreset {
@@ -527,6 +581,8 @@ pub fn builtin_provider_presets() -> Vec<LlmProviderPreset> {
             endpoint: "https://open.bigmodel.cn/api/coding/paas/v4".into(),
             requires_credential: true,
             models_hint: None,
+            compatibility_profile: LlmCompatibilityProfile::GlmCoding,
+            supported_protocols: vec![OpenAiCompatible, OpenAiResponses],
             api_docs_url: Some(GLM_DOCS.into()),
         },
         LlmProviderPreset {
@@ -537,6 +593,8 @@ pub fn builtin_provider_presets() -> Vec<LlmProviderPreset> {
             endpoint: "https://open.bigmodel.cn/api/anthropic".into(),
             requires_credential: true,
             models_hint: None,
+            compatibility_profile: LlmCompatibilityProfile::GlmCoding,
+            supported_protocols: vec![Anthropic],
             api_docs_url: Some(GLM_DOCS.into()),
         },
         LlmProviderPreset {
@@ -549,6 +607,8 @@ pub fn builtin_provider_presets() -> Vec<LlmProviderPreset> {
             endpoint: "https://api.minimax.io/v1".into(),
             requires_credential: true,
             models_hint: None,
+            compatibility_profile: LlmCompatibilityProfile::MiniMax,
+            supported_protocols: vec![OpenAiCompatible],
             api_docs_url: Some(MINIMAX_DOCS.into()),
         },
         LlmProviderPreset {
@@ -559,6 +619,8 @@ pub fn builtin_provider_presets() -> Vec<LlmProviderPreset> {
             endpoint: "https://ark.cn-beijing.volces.com/api/v3".into(),
             requires_credential: true,
             models_hint: None,
+            compatibility_profile: LlmCompatibilityProfile::VolcengineArk,
+            supported_protocols: vec![OpenAiCompatible, OpenAiResponses],
             api_docs_url: Some(ARK_DOCS.into()),
         },
         LlmProviderPreset {
@@ -569,6 +631,8 @@ pub fn builtin_provider_presets() -> Vec<LlmProviderPreset> {
             endpoint: "https://api.x.ai/v1".into(),
             requires_credential: true,
             models_hint: None,
+            compatibility_profile: LlmCompatibilityProfile::Xai,
+            supported_protocols: vec![OpenAiCompatible],
             api_docs_url: Some(XAI_DOCS.into()),
         },
         LlmProviderPreset {
@@ -579,6 +643,8 @@ pub fn builtin_provider_presets() -> Vec<LlmProviderPreset> {
             endpoint: "https://api.groq.com/openai/v1".into(),
             requires_credential: true,
             models_hint: None,
+            compatibility_profile: LlmCompatibilityProfile::Groq,
+            supported_protocols: vec![OpenAiCompatible],
             api_docs_url: Some(GROQ_DOCS.into()),
         },
         LlmProviderPreset {
@@ -589,6 +655,8 @@ pub fn builtin_provider_presets() -> Vec<LlmProviderPreset> {
             endpoint: "https://api.mistral.ai/v1".into(),
             requires_credential: true,
             models_hint: None,
+            compatibility_profile: LlmCompatibilityProfile::Mistral,
+            supported_protocols: vec![OpenAiCompatible],
             api_docs_url: Some(MISTRAL_DOCS.into()),
         },
         LlmProviderPreset {
@@ -599,6 +667,8 @@ pub fn builtin_provider_presets() -> Vec<LlmProviderPreset> {
             endpoint: "https://qianfan.baidubce.com/v2".into(),
             requires_credential: true,
             models_hint: None,
+            compatibility_profile: LlmCompatibilityProfile::BaiduQianfan,
+            supported_protocols: vec![OpenAiCompatible],
             api_docs_url: Some(QIANFAN_DOCS.into()),
         },
         LlmProviderPreset {
@@ -609,6 +679,8 @@ pub fn builtin_provider_presets() -> Vec<LlmProviderPreset> {
             endpoint: "https://qianfan.baidubce.com/anthropic".into(),
             requires_credential: true,
             models_hint: None,
+            compatibility_profile: LlmCompatibilityProfile::BaiduQianfan,
+            supported_protocols: vec![Anthropic],
             api_docs_url: Some(QIANFAN_DOCS.into()),
         },
         LlmProviderPreset {
@@ -619,6 +691,8 @@ pub fn builtin_provider_presets() -> Vec<LlmProviderPreset> {
             endpoint: "http://127.0.0.1:11434/v1".into(),
             requires_credential: false,
             models_hint: None,
+            compatibility_profile: LlmCompatibilityProfile::Ollama,
+            supported_protocols: vec![OpenAiCompatible],
             api_docs_url: Some(OLLAMA_DOCS.into()),
         },
         LlmProviderPreset {
@@ -629,6 +703,8 @@ pub fn builtin_provider_presets() -> Vec<LlmProviderPreset> {
             endpoint: "http://127.0.0.1:1234/v1".into(),
             requires_credential: false,
             models_hint: None,
+            compatibility_profile: LlmCompatibilityProfile::LmStudio,
+            supported_protocols: vec![OpenAiCompatible],
             api_docs_url: Some(LMSTUDIO_DOCS.into()),
         },
         LlmProviderPreset {
@@ -639,6 +715,15 @@ pub fn builtin_provider_presets() -> Vec<LlmProviderPreset> {
             endpoint: String::new(),
             requires_credential: true,
             models_hint: None,
+            compatibility_profile: LlmCompatibilityProfile::Generic,
+            supported_protocols: vec![
+                OpenAi,
+                OpenAiCompatible,
+                OpenAiResponses,
+                Anthropic,
+                Gemini,
+                AzureOpenAi,
+            ],
             api_docs_url: None,
         },
     ]

@@ -34,6 +34,15 @@ pub struct LlmProfile {
     pub deployment: crate::llm::provider::LlmDeployment,
     #[serde(default)]
     pub custom_headers: Vec<crate::llm::provider::CustomHeader>,
+    /// Supplier behaviour selector. Defaults to the conservative Generic
+    /// profile so a profile deserialised from older data never invents vendor
+    /// behaviour from its endpoint.
+    #[serde(default)]
+    pub compatibility_profile: crate::llm::compatibility::LlmCompatibilityProfile,
+    /// Only the Generic profile accepts an explicit override; built-in
+    /// profiles own their strategy.
+    #[serde(default)]
+    pub structured_output_override: Option<crate::llm::compatibility::LlmStructuredOutputStrategy>,
 }
 
 impl LlmProfile {
@@ -60,6 +69,8 @@ impl LlmProfile {
             protocol: Default::default(),
             deployment: Default::default(),
             custom_headers: Vec::new(),
+            compatibility_profile: Default::default(),
+            structured_output_override: None,
         };
         profile.validate()?;
         Ok(profile)
@@ -117,7 +128,19 @@ impl LlmProfile {
         if self.timeout_ms == 0 || self.max_input_bytes == 0 {
             return Err(invalid_profile("limits"));
         }
+        // A profile whose compatibility profile cannot speak its protocol is
+        // rejected here, so no incompatible pair can ever reach a request.
+        super::compatibility::validate_compatibility_selection(
+            self.compatibility_profile,
+            self.protocol,
+            self.structured_output_override,
+        )?;
         Ok(())
+    }
+
+    /// Resolved capability policy for this profile's own protocol.
+    pub fn compatibility_policy(&self) -> AppResult<super::compatibility::LlmCompatibilityPolicy> {
+        super::compatibility::compatibility_policy(self, self.protocol)
     }
 
     pub fn with_limits(mut self, timeout_ms: u64, max_input_bytes: usize) -> AppResult<Self> {
