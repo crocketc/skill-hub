@@ -186,9 +186,12 @@ test("keeps the two-row metrics contract with four stat columns at 1440px", asyn
 
   // M-20 两行指标契约：宽屏只缩放不换结构——hero 独占第一行，四张紧凑统计
   // 卡在第二行；禁止恢复 hero+统计并入单行的 5 卡横带。
+  // 契约同步（2026-09-14）：2026-09-13 验收把 hero min-height 从 7rem 调整为
+  // 5rem（overview.css .sh-overview__hero，自然排版下限）；原“6rem=96px 密度
+  // 档”断言随该验收过时，这里锁定现行 5rem=80px 下限，两行结构断言不变。
   const heroBox = await boxOf(page.getByRole("link", { name: "27 skills" }));
-  expect(heroBox.height, "the hero metric must reach the 6rem density rung").toBeGreaterThanOrEqual(
-    96,
+  expect(heroBox.height, "the hero metric must keep the 5rem density floor").toBeGreaterThanOrEqual(
+    80,
   );
   for (const box of boxes) {
     expect(box.height, "compact stats must reach the 4rem density rung").toBeGreaterThanOrEqual(64);
@@ -263,18 +266,37 @@ test("reaches every overview control by keyboard with visible focus", async ({ p
   await expect(page.getByRole("radio", { name: "Projects" })).toBeFocused();
   await expectFocusedPillOutline();
 
-  // 切到项目维度后，Tab 依次到达：待办摘要的三条待办链接（P1-07：待办项
-  // 可钻取 /pending，成为可聚焦控件），再到达明细列表的首条项目明细。
+  // 切到项目维度后，Tab 依次到达：图表钻取按钮（M-20 起可聚焦）→ 标签环图
+  // chart-link → 待办摘要的三条待办链接。契约迁移说明（2026-09-14）：M-20
+  // 标签环图（4569d75，2026-09-13）引入的 chart-link 按钮位于 DOM 中
+  // PendingSummary 之前，键盘顺序随之更新——这是规格侧过时的契约同步，
+  // 不是放松断言；「待办链接可键盘可达」的实质断言保留。
+  await page.keyboard.press("Tab");
+  await expect(
+    page.getByRole("button", { name: "View Aurora Mobile Workspace's 9 deployments" }),
+  ).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(
+    page.getByRole("button", { name: "View Orbital Docs's 6 deployments" }),
+  ).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(
+    page.getByRole("button", { name: "View SkillHub Website's 3 deployments" }),
+  ).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(page.getByRole("button", { name: "View 8 skills tagged writing" })).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(page.getByRole("button", { name: "View 6 skills tagged pdf" })).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(
+    page.getByRole("button", { name: "View 4 skills tagged data-analysis" }),
+  ).toBeFocused();
   await page.keyboard.press("Tab");
   await expect(page.getByRole("link", { name: "2 security findings" })).toBeFocused();
   await page.keyboard.press("Tab");
   await expect(page.getByRole("link", { name: "1 recovery action" })).toBeFocused();
   await page.keyboard.press("Tab");
   await expect(page.getByRole("link", { name: "1 trial due" })).toBeFocused();
-  await page.keyboard.press("Tab");
-  await expect(
-    page.getByRole("button", { name: "View Aurora Mobile Workspace's 9 deployments" }),
-  ).toBeFocused();
 });
 
 test.describe("overview honors the theme contract at 1280x900", () => {
