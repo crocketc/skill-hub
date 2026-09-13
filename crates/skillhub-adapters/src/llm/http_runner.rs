@@ -7,9 +7,8 @@ use reqwest::Client;
 use serde_json::Value;
 
 use crate::credentials::OverlayCredentialStore;
-use crate::llm::protocol::{
-    adapter_for, classify_transport_error, map_status, url_for_log, ChatRequestDraft,
-};
+use crate::llm::protocol::{adapter_for, classify_transport_error, map_status, url_for_log};
+use crate::llm::request_plan::{plan_request, LlmRequestPlan, ResponseExpectation};
 use skillhub_core::llm::{
     ConnectionTestResult, CredentialRef, CredentialStore, EndpointCheckResult, LlmAdmin,
     LlmProfile, LlmTaskKind, LlmTaskRequest, LlmTaskResponse, LlmTaskRunner, ModelCheckResult,
@@ -54,14 +53,20 @@ impl HttpLlmTaskRunner {
         self
     }
 
-    /// Legacy static payload builder kept for existing callers: delegates to
-    /// the protocol adapter for the OpenAI-family payload shape.
+    /// Legacy static payload builder kept for existing callers: plans a
+    /// structured request for the profile's protocol and capability.
     pub fn build_payload(profile: &LlmProfile, request: &LlmTaskRequest) -> AppResult<Value> {
         profile.validate()?;
         validate_input_size(profile, request)?;
-        let adapter = adapter_for(profile.protocol);
-        let draft = adapter.chat_request(profile, Some(""), request)?;
-        Ok(draft.body)
+        let plan = plan_request(
+            profile,
+            Some(""),
+            request,
+            ResponseExpectation::Structured {
+                schema: request.response_schema.clone(),
+            },
+        )?;
+        Ok(plan.body)
     }
 
     /// Legacy static response parser kept for existing callers.
@@ -72,7 +77,7 @@ impl HttpLlmTaskRunner {
     ) -> AppResult<LlmTaskResponse> {
         let adapter = adapter_for(profile.protocol);
         let content = adapter.extract_text(&response)?;
-        parse_content(&content, request.kind).map(|output| LlmTaskResponse {
+        parse_structured_content(&content, request.kind).map(|output| LlmTaskResponse {
             request_id: OperationId::new().to_string(),
             kind: request.kind,
             output,
@@ -405,12 +410,20 @@ impl HttpLlmTaskRunner {
                 request.input = Self::redact_input(&request.input, secret);
             }
 
-            let headers = adapter.request_headers(&resolved, secret.as_deref())?;
-            let mut draft = adapter.chat_request(&resolved, secret.as_deref(), &request)?;
-            draft.headers = headers;
+            // One plan per attempt: URL and authentication from the transport,
+            // structured output and reasoning from the capability policy. The
+            // business path always asks for a structured response.
+            let plan = plan_request(
+                &resolved,
+                secret.as_deref(),
+                &request,
+                ResponseExpectation::Structured {
+                    schema: request.response_schema.clone(),
+                },
+            )?;
 
             let client = self.client(profile.timeout_ms)?;
-            match send_with_cancel(&client, &draft, profile.timeout_ms, &cancel).await {
+            match send_with_cancel(&client, &plan, profile.timeout_ms, &cancel).await {
                 Ok(response) => {
                     let body: Value = match response.json().await {
                         Ok(body) => body,
@@ -420,7 +433,7 @@ impl HttpLlmTaskRunner {
                         }
                     };
                     let content = adapter.extract_text(&body)?;
-                    let output = parse_content(&content, request.kind)?;
+                    let output = parse_structured_content(&content, request.kind)?;
                     return Ok(LlmTaskResponse {
                         request_id: OperationId::new().to_string(),
                         kind: request.kind,
@@ -428,7 +441,7 @@ impl HttpLlmTaskRunner {
                     });
                 }
                 Err((error, retry_after)) => {
-                    let error = with_url(error, &draft.url);
+                    let error = with_url(error, &plan.url);
                     if retryable(&error) && attempt < MAX_RETRIES {
                         attempt += 1;
                         self.wait_before_retry(&cancel, retry_after, attempt)
@@ -471,14 +484,14 @@ impl HttpLlmTaskRunner {
 /// on a mapped HTTP status and `Err(error)` on transport failures or cancel.
 async fn send_with_cancel(
     client: &Client,
-    draft: &ChatRequestDraft,
+    plan: &LlmRequestPlan,
     timeout_ms: u64,
     cancel: &Arc<AtomicBool>,
 ) -> Result<reqwest::Response, (AppError, Option<u64>)> {
     let request = client
-        .post(&draft.url)
-        .headers(to_header_map(draft.headers.clone()))
-        .json(&draft.body)
+        .post(&plan.url)
+        .headers(to_header_map(plan.headers.clone()))
+        .json(&plan.body)
         .build()
         .map_err(|error| {
             (
@@ -553,7 +566,7 @@ fn to_header_map(headers: Vec<(String, String)>) -> reqwest::header::HeaderMap {
 
 /// The runner-level structured parse: valid JSON object required. Task-level
 /// schema validation happens in the per-task core parsers afterwards.
-fn parse_content(content: &str, kind: LlmTaskKind) -> AppResult<Value> {
+pub fn parse_structured_content(content: &str, kind: LlmTaskKind) -> AppResult<Value> {
     if content.trim().is_empty() {
         return Err(AppError::llm_response_interrupted());
     }

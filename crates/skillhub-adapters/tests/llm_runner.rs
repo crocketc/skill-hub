@@ -1,21 +1,25 @@
 use serde_json::json;
 use skillhub_adapters::credentials::SessionCredentialStore;
 use skillhub_adapters::llm::HttpLlmTaskRunner;
-use skillhub_core::llm::{CredentialRef, LlmProfile, LlmTaskKind, LlmTaskRequest};
+use skillhub_core::llm::{
+    CredentialRef, LlmCompatibilityProfile, LlmProfile, LlmTaskKind, LlmTaskRequest,
+};
 use std::sync::Arc;
 
 fn profile() -> LlmProfile {
-    LlmProfile::new(
+    let mut profile = LlmProfile::new(
         "openai",
         "https://api.example.test/v1/chat/completions",
         "gpt-test",
         Some(CredentialRef::new("credential-1")),
     )
-    .unwrap()
+    .unwrap();
+    profile.compatibility_profile = LlmCompatibilityProfile::OpenAi;
+    profile
 }
 
 #[test]
-fn task_request_contains_fixed_schema_and_no_tool_definition() {
+fn task_request_carries_the_supplier_schema_and_no_tool_definition() {
     let request = LlmTaskRequest::new(
         LlmTaskKind::Safety,
         "quoted Skill evidence".into(),
@@ -29,6 +33,23 @@ fn task_request_contains_fixed_schema_and_no_tool_definition() {
     assert!(payload["response_format"]
         .to_string()
         .contains("json_schema"));
+}
+
+/// The same task against a supplier whose endpoint rejects strict schemas must
+/// not be forced into one.
+#[test]
+fn a_conservative_supplier_payload_uses_json_object_instead_of_a_strict_schema() {
+    let request = LlmTaskRequest::new(
+        LlmTaskKind::Safety,
+        "quoted Skill evidence".into(),
+        json!({"type": "object", "properties": {"findings": {"type": "array"}}}),
+    )
+    .unwrap();
+    let mut profile = profile();
+    profile.compatibility_profile = LlmCompatibilityProfile::DeepSeek;
+    let payload = HttpLlmTaskRunner::build_payload(&profile, &request).unwrap();
+    assert_eq!(payload["response_format"]["type"], "json_object");
+    assert!(payload["response_format"]["json_schema"].is_null());
 }
 
 #[test]

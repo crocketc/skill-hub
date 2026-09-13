@@ -1,10 +1,17 @@
-use serde_json::json;
-use skillhub_adapters::llm::protocol::{
-    adapter_for, derive_model_list_candidates, ChatRequestDraft,
+//! Contract tests for the protocol layer and the request planner.
+//!
+//! Everything asserted here is offline: a "plan" is the URL, headers and body
+//! that *would* be sent, so supplier differences are proven without a live
+//! service and without a credential.
+
+use serde_json::{json, Value};
+use skillhub_adapters::llm::protocol::{adapter_for, derive_model_list_candidates};
+use skillhub_adapters::llm::{
+    parse_structured_content, plan_request, LlmRequestPlan, ResponseExpectation,
 };
 use skillhub_core::llm::{
-    CredentialRef, CustomHeader, LlmDeployment, LlmProfile, LlmProtocolFamily, LlmTaskKind,
-    LlmTaskRequest,
+    CredentialRef, CustomHeader, LlmCompatibilityProfile, LlmDeployment, LlmProfile,
+    LlmProtocolFamily, LlmStructuredOutputStrategy, LlmTaskKind, LlmTaskRequest,
 };
 use skillhub_core::ErrorCode;
 
@@ -20,40 +27,68 @@ fn profile(protocol: LlmProtocolFamily, endpoint: &str) -> LlmProfile {
     .unwrap()
 }
 
+fn supplier(compatibility: LlmCompatibilityProfile, endpoint: &str) -> LlmProfile {
+    let mut profile = profile(LlmProtocolFamily::OpenAiCompatible, endpoint);
+    profile.compatibility_profile = compatibility;
+    profile
+}
+
 fn request() -> LlmTaskRequest {
     LlmTaskRequest::new(
         LlmTaskKind::Translation,
         "Translate only the quoted Skill description.".into(),
-        json!({"type": "object"}),
+        json!({"type": "object", "properties": {"translation": {"type": "string"}}}),
     )
     .unwrap()
 }
 
-fn header<'a>(draft: &'a ChatRequestDraft, name: &str) -> &'a str {
-    draft
-        .headers
+fn structured_plan(profile: &LlmProfile, credential: Option<&str>) -> LlmRequestPlan {
+    let request = request();
+    plan_request(
+        profile,
+        credential,
+        &request,
+        ResponseExpectation::Structured {
+            schema: request.response_schema.clone(),
+        },
+    )
+    .unwrap()
+}
+
+fn text_plan(profile: &LlmProfile, credential: Option<&str>) -> LlmRequestPlan {
+    let request = request();
+    plan_request(profile, credential, &request, ResponseExpectation::Text).unwrap()
+}
+
+fn header<'a>(plan: &'a LlmRequestPlan, name: &str) -> &'a str {
+    plan.headers
         .iter()
         .find(|(key, _)| key.eq_ignore_ascii_case(name))
         .map(|(_, value)| value.as_str())
         .unwrap_or("")
 }
 
+// ---------------------------------------------------------------------------
+// Transport shape: URL, authentication and envelope per protocol.
+// ---------------------------------------------------------------------------
+
 #[test]
 fn openai_family_uses_bearer_and_json_schema_response_format() {
-    let adapter = adapter_for(LlmProtocolFamily::OpenAi);
-
-    let full_url = profile(
+    let mut full_url = profile(
         LlmProtocolFamily::OpenAi,
         "https://api.example.test/v1/chat/completions",
     );
-    let draft = adapter
-        .chat_request(&full_url, Some("sk-test"), &request())
-        .unwrap();
-    assert_eq!(draft.url, "https://api.example.test/v1/chat/completions");
-    assert_eq!(header(&draft, "Authorization"), "Bearer sk-test");
-    assert!(draft.body["tools"].is_null());
-    assert_eq!(draft.body["response_format"]["type"], "json_schema");
-    assert_eq!(draft.body["temperature"], json!(0));
+    full_url.compatibility_profile = LlmCompatibilityProfile::OpenAi;
+    let plan = structured_plan(&full_url, Some("sk-test"));
+    assert_eq!(plan.url, "https://api.example.test/v1/chat/completions");
+    assert_eq!(header(&plan, "Authorization"), "Bearer sk-test");
+    assert!(plan.body["tools"].is_null());
+    assert_eq!(plan.body["response_format"]["type"], "json_schema");
+    assert_eq!(
+        plan.body["response_format"]["json_schema"]["strict"],
+        json!(true)
+    );
+    assert_eq!(plan.body["temperature"], json!(0));
 
     // A base URL without the chat path gets it appended so presets can ship
     // base endpoints.
@@ -61,15 +96,12 @@ fn openai_family_uses_bearer_and_json_schema_response_format() {
         LlmProtocolFamily::OpenAiCompatible,
         "https://api.deepseek.test/v1",
     );
-    let draft = adapter
-        .chat_request(&base, Some("sk-test"), &request())
-        .unwrap();
-    assert_eq!(draft.url, "https://api.deepseek.test/v1/chat/completions");
+    let plan = structured_plan(&base, Some("sk-test"));
+    assert_eq!(plan.url, "https://api.deepseek.test/v1/chat/completions");
 }
 
 #[test]
 fn local_profiles_send_no_authorization_header_and_keep_custom_headers() {
-    let adapter = adapter_for(LlmProtocolFamily::OpenAiCompatible);
     // Build with an https loopback endpoint first, then switch the deployment
     // to local, which unlocks plain http on loopback addresses.
     let mut local = profile(
@@ -84,104 +116,290 @@ fn local_profiles_send_no_authorization_header_and_keep_custom_headers() {
         .custom_headers
         .push(CustomHeader::new("X-Tracing", "trace-1", false).expect("header"));
 
-    let draft = adapter.chat_request(&local, None, &request()).unwrap();
-    assert_eq!(header(&draft, "Authorization"), "");
-    assert_eq!(header(&draft, "X-Tracing"), "trace-1");
+    let plan = structured_plan(&local, None);
+    assert_eq!(header(&plan, "Authorization"), "");
+    assert_eq!(header(&plan, "X-Tracing"), "trace-1");
 }
 
 #[test]
 fn local_openai_compatible_base_url_without_version_uses_v1_chat_path() {
-    let adapter = adapter_for(LlmProtocolFamily::OpenAiCompatible);
     let mut local = profile(LlmProtocolFamily::OpenAiCompatible, "http://127.0.0.1:1234");
     local.deployment = LlmDeployment::Local;
 
-    let draft = adapter.chat_request(&local, None, &request()).unwrap();
+    let plan = structured_plan(&local, None);
 
-    assert_eq!(draft.url, "http://127.0.0.1:1234/v1/chat/completions");
+    assert_eq!(plan.url, "http://127.0.0.1:1234/v1/chat/completions");
 }
 
 #[test]
 fn openai_responses_uses_the_responses_suffix_and_text_format_schema() {
-    let adapter = adapter_for(LlmProtocolFamily::OpenAiResponses);
-    let base = profile(
+    let mut base = profile(
         LlmProtocolFamily::OpenAiResponses,
         "https://gateway.test/v1",
     );
+    base.compatibility_profile = LlmCompatibilityProfile::OpenAi;
 
-    let draft = adapter
-        .chat_request(&base, Some("sk-test"), &request())
-        .unwrap();
+    let plan = structured_plan(&base, Some("sk-test"));
 
-    assert_eq!(draft.url, "https://gateway.test/v1/responses");
-    assert_eq!(header(&draft, "Authorization"), "Bearer sk-test");
-    assert_eq!(draft.body["text"]["format"]["type"], json!("json_schema"));
-    assert!(draft.body["input"].is_array());
+    assert_eq!(plan.url, "https://gateway.test/v1/responses");
+    assert_eq!(header(&plan, "Authorization"), "Bearer sk-test");
+    assert_eq!(plan.body["text"]["format"]["type"], json!("json_schema"));
+    assert!(plan.body["input"].is_array());
 }
 
 #[test]
 fn anthropic_uses_x_api_key_version_header_and_message_payload() {
-    let adapter = adapter_for(LlmProtocolFamily::Anthropic);
-    let base = profile(LlmProtocolFamily::Anthropic, "https://api.anthropic.test");
+    let mut base = profile(LlmProtocolFamily::Anthropic, "https://api.anthropic.test");
+    base.compatibility_profile = LlmCompatibilityProfile::Anthropic;
 
-    let draft = adapter
-        .chat_request(&base, Some("sk-ant"), &request())
-        .unwrap();
-    assert_eq!(draft.url, "https://api.anthropic.test/v1/messages");
-    assert_eq!(header(&draft, "x-api-key"), "sk-ant");
-    assert!(!header(&draft, "anthropic-version").is_empty());
-    assert!(draft.body["response_format"].is_null());
-    assert!(draft.body["max_tokens"].is_u64());
-    assert!(draft.body["messages"].is_array());
+    let plan = structured_plan(&base, Some("sk-ant"));
+    assert_eq!(plan.url, "https://api.anthropic.test/v1/messages");
+    assert_eq!(header(&plan, "x-api-key"), "sk-ant");
+    assert!(!header(&plan, "anthropic-version").is_empty());
+    assert!(plan.body["response_format"].is_null());
+    assert!(plan.body["max_tokens"].is_u64());
+    assert!(plan.body["messages"].is_array());
     // The schema travels in the prompt so the reply can be validated locally.
-    assert!(draft.body.to_string().contains("schema"));
+    assert!(plan.body.to_string().contains("schema"));
 
     // An endpoint that already includes /messages is kept verbatim.
-    let explicit = profile(
+    let mut explicit = profile(
         LlmProtocolFamily::Anthropic,
         "https://gateway.test/anthropic/v1/messages",
     );
-    let draft = adapter
-        .chat_request(&explicit, Some("sk-ant"), &request())
-        .unwrap();
-    assert_eq!(draft.url, "https://gateway.test/anthropic/v1/messages");
+    explicit.compatibility_profile = LlmCompatibilityProfile::Anthropic;
+    let plan = structured_plan(&explicit, Some("sk-ant"));
+    assert_eq!(plan.url, "https://gateway.test/anthropic/v1/messages");
 }
 
 #[test]
 fn gemini_uses_api_key_header_and_generate_content_shape() {
-    let adapter = adapter_for(LlmProtocolFamily::Gemini);
-    let base = profile(LlmProtocolFamily::Gemini, "https://generativelanguage.test");
+    let mut base = profile(LlmProtocolFamily::Gemini, "https://generativelanguage.test");
+    base.compatibility_profile = LlmCompatibilityProfile::Gemini;
 
-    let draft = adapter
-        .chat_request(&base, Some("g-key"), &request())
-        .unwrap();
+    let plan = structured_plan(&base, Some("g-key"));
     assert_eq!(
-        draft.url,
+        plan.url,
         "https://generativelanguage.test/v1beta/models/acme-chat:generateContent"
     );
-    assert_eq!(header(&draft, "x-goog-api-key"), "g-key");
+    assert_eq!(header(&plan, "x-goog-api-key"), "g-key");
     assert_eq!(
-        draft.body["generationConfig"]["responseMimeType"],
+        plan.body["generationConfig"]["responseMimeType"],
         json!("application/json")
     );
-    assert!(draft.body["contents"].is_array());
+    assert!(plan.body["contents"].is_array());
 }
 
 #[test]
 fn azure_uses_deployment_path_and_api_key_header() {
-    let adapter = adapter_for(LlmProtocolFamily::AzureOpenAi);
-    let base = profile(
+    let mut base = profile(
         LlmProtocolFamily::AzureOpenAi,
         "https://acme.openai.azure.test",
     );
+    base.compatibility_profile = LlmCompatibilityProfile::AzureOpenAi;
 
-    let draft = adapter
-        .chat_request(&base, Some("az-key"), &request())
-        .unwrap();
-    assert!(draft.url.starts_with(
+    let plan = structured_plan(&base, Some("az-key"));
+    assert!(plan.url.starts_with(
         "https://acme.openai.azure.test/openai/deployments/acme-chat/chat/completions"
     ));
-    assert!(draft.url.contains("api-version="));
-    assert_eq!(header(&draft, "api-key"), "az-key");
+    assert!(plan.url.contains("api-version="));
+    assert_eq!(header(&plan, "api-key"), "az-key");
+    // Azure addresses its deployment through the URL; a body model is invalid.
+    assert!(plan.body["model"].is_null());
+}
+
+// ---------------------------------------------------------------------------
+// The planner: same protocol, different supplier, different request.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn same_protocol_different_suppliers_get_different_request_parameters() {
+    // OpenAI and DeepSeek both speak OpenAI Chat, yet their structured output
+    // and reasoning parameters must not be forced to be identical.
+    let openai = structured_plan(
+        &supplier(
+            LlmCompatibilityProfile::OpenAi,
+            "https://api.openai.test/v1",
+        ),
+        Some("sk-test"),
+    );
+    let deepseek = structured_plan(
+        &supplier(
+            LlmCompatibilityProfile::DeepSeek,
+            "https://api.deepseek.test/v1",
+        ),
+        Some("sk-test"),
+    );
+
+    assert_eq!(openai.body["response_format"]["type"], "json_schema");
+    assert_eq!(
+        openai.body["response_format"]["json_schema"]["strict"],
+        json!(true)
+    );
+    assert!(openai.body["thinking"].is_null());
+    assert!(openai.body["reasoning"].is_null());
+
+    assert_eq!(deepseek.body["response_format"]["type"], "json_object");
+    assert!(
+        deepseek.body["response_format"]["json_schema"].is_null(),
+        "DeepSeek Chat must never receive a strict JSON Schema"
+    );
+    assert_eq!(deepseek.body["thinking"], json!({"type": "disabled"}));
+
+    // The Responses surface of the same supplier uses the effort dial instead.
+    let mut responses = supplier(
+        LlmCompatibilityProfile::DeepSeek,
+        "https://api.deepseek.test/v1",
+    );
+    responses = responses
+        .with_protocol(LlmProtocolFamily::OpenAiResponses)
+        .unwrap();
+    let plan = structured_plan(&responses, Some("sk-test"));
+    assert_eq!(plan.body["text"]["format"]["type"], "json_object");
+    assert_eq!(plan.body["reasoning"], json!({"effort": "none"}));
+    assert!(plan.body["thinking"].is_null());
+}
+
+#[test]
+fn a_text_plan_carries_no_structured_output_and_no_schema() {
+    let plan = text_plan(
+        &supplier(
+            LlmCompatibilityProfile::OpenAi,
+            "https://api.openai.test/v1",
+        ),
+        Some("sk-test"),
+    );
+    assert!(plan.body["response_format"].is_null());
+    assert!(plan.body["text"].is_null());
+    assert!(plan.body["thinking"].is_null());
+    let serialized = plan.body.to_string();
+    assert!(!serialized.contains("json_schema"));
+    assert!(
+        !serialized.contains("\"schema\""),
+        "a text probe must not carry a structured instruction: {serialized}"
+    );
+    assert_eq!(expectation_is_text(&plan), true);
+
+    // A prompt-only transport likewise sends nothing structured for text.
+    let mut anthropic = profile(LlmProtocolFamily::Anthropic, "https://api.anthropic.test");
+    anthropic.compatibility_profile = LlmCompatibilityProfile::Anthropic;
+    let plan = text_plan(&anthropic, Some("sk-ant"));
+    assert!(plan.body["system"].is_null());
+}
+
+fn expectation_is_text(plan: &LlmRequestPlan) -> bool {
+    matches!(plan.expectation, ResponseExpectation::Text)
+}
+
+#[test]
+fn structured_plan_follows_the_capability_strategy_not_the_protocol() {
+    // A conservative default for user-supplied endpoints: JSON object, never a
+    // strict schema the endpoint may reject.
+    let generic = structured_plan(
+        &supplier(LlmCompatibilityProfile::Generic, "https://unknown.test/v1"),
+        Some("sk-test"),
+    );
+    assert_eq!(
+        generic.policy.structured_output,
+        LlmStructuredOutputStrategy::JsonObject
+    );
+    assert_eq!(generic.body["response_format"]["type"], "json_object");
+
+    // Anthropic has no native structured field: prompt + local validation.
+    let mut anthropic = profile(LlmProtocolFamily::Anthropic, "https://api.anthropic.test");
+    anthropic.compatibility_profile = LlmCompatibilityProfile::Anthropic;
+    let plan = structured_plan(&anthropic, Some("sk-ant"));
+    assert_eq!(
+        plan.policy.structured_output,
+        LlmStructuredOutputStrategy::PromptedJson
+    );
+    assert!(plan.body["response_format"].is_null());
+    assert!(plan.body["system"].as_str().unwrap().contains("Schema"));
+
+    // Gemini uses its native mime type + schema.
+    let mut gemini = profile(LlmProtocolFamily::Gemini, "https://generativelanguage.test");
+    gemini.compatibility_profile = LlmCompatibilityProfile::Gemini;
+    let plan = structured_plan(&gemini, Some("g-key"));
+    assert_eq!(
+        plan.policy.structured_output,
+        LlmStructuredOutputStrategy::GeminiSchema
+    );
+    assert_eq!(
+        plan.body["generationConfig"]["responseSchema"]["type"],
+        "object"
+    );
+    assert!(plan.body["response_format"].is_null());
+}
+
+#[test]
+fn a_plan_never_carries_credential_material_in_its_body() {
+    let plan = structured_plan(
+        &supplier(
+            LlmCompatibilityProfile::DeepSeek,
+            "https://api.deepseek.test/v1",
+        ),
+        Some("sk-secret-value"),
+    );
+    assert!(
+        !plan.body.to_string().contains("sk-secret-value"),
+        "credential material belongs in headers, never in the body"
+    );
+    assert_eq!(header(&plan, "Authorization"), "Bearer sk-secret-value");
+}
+
+#[test]
+fn an_impossible_capability_combination_fails_before_any_request() {
+    // Anthropic cannot express OpenAI's native strict schema transport.
+    let mut wrong = profile(LlmProtocolFamily::Gemini, "https://api.anthropic.test");
+    wrong.compatibility_profile = LlmCompatibilityProfile::Anthropic;
+    let request = request();
+    let error = plan_request(
+        &wrong,
+        None,
+        &request,
+        ResponseExpectation::Structured {
+            schema: request.response_schema.clone(),
+        },
+    )
+    .unwrap_err();
+    assert_eq!(error.code, ErrorCode::LlmProtocolIncompatible);
+}
+
+// ---------------------------------------------------------------------------
+// Response handling: extraction and parsing are separate failures.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn an_incompatible_envelope_and_unparseable_text_are_distinct_failures() {
+    let openai = adapter_for(LlmProtocolFamily::OpenAi);
+    assert_eq!(
+        openai
+            .extract_text(&json!({"unexpected": true}))
+            .unwrap_err()
+            .code,
+        ErrorCode::LlmProtocolIncompatible
+    );
+
+    assert_eq!(
+        parse_structured_content("I cannot help with that.", LlmTaskKind::Translation)
+            .unwrap_err()
+            .code,
+        ErrorCode::LlmInvalidStructuredResponse
+    );
+    // A complete fenced block is a valid structured reply.
+    assert_eq!(
+        parse_structured_content("```json\n{\"ok\": true}\n```", LlmTaskKind::Translation)
+            .unwrap()
+            .get("ok"),
+        Some(&Value::Bool(true))
+    );
+    // Empty text is an interrupted response, not invalid JSON.
+    assert_eq!(
+        parse_structured_content("   ", LlmTaskKind::Translation)
+            .unwrap_err()
+            .code,
+        ErrorCode::LlmResponseInterrupted
+    );
 }
 
 #[test]
@@ -250,6 +468,17 @@ fn text_and_model_extraction_understands_each_protocol_shape() {
             .unwrap(),
         "{\"ok\": true}"
     );
+    // A reasoning item precedes the message item in the output array; only the
+    // message text is the answer.
+    assert_eq!(
+        responses
+            .extract_text(&json!({"output": [
+                {"type": "reasoning", "summary": []},
+                {"type": "message", "content": [{"type": "output_text", "text": "{\"ok\": 1}"}]}
+            ]}))
+            .unwrap(),
+        "{\"ok\": 1}"
+    );
 
     let anthropic = adapter_for(LlmProtocolFamily::Anthropic);
     let body = json!({"content": [{"type": "text", "text": "{\"ok\": 1}"}]});
@@ -269,15 +498,6 @@ fn text_and_model_extraction_understands_each_protocol_shape() {
             .extract_models(&json!({"models": [{"name": "models/gemini-x"}]}))
             .unwrap(),
         vec!["gemini-x"]
-    );
-
-    // A body in the wrong shape is a protocol incompatibility, not a crash.
-    assert_eq!(
-        openai
-            .extract_text(&json!({"unexpected": true}))
-            .unwrap_err()
-            .code,
-        ErrorCode::LlmProtocolIncompatible
     );
 }
 

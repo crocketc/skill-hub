@@ -11,8 +11,8 @@ use skillhub_adapters::credentials::{
 };
 use skillhub_adapters::llm::HttpLlmTaskRunner;
 use skillhub_core::llm::{
-    CredentialRef, CustomHeader, LlmDeployment, LlmProfile, LlmProtocolFamily, LlmTaskKind,
-    LlmTaskRequest, NetworkGate,
+    CredentialRef, CustomHeader, LlmCompatibilityProfile, LlmDeployment, LlmProfile,
+    LlmProtocolFamily, LlmTaskKind, LlmTaskRequest, NetworkGate,
 };
 use skillhub_core::ErrorCode;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -162,6 +162,8 @@ fn openai_chat(profile_endpoint_base: &str) -> LlmProfile {
     .unwrap();
     // The mock server answers on loopback http, which is a local deployment.
     profile.deployment = LlmDeployment::Local;
+    // An OpenAI-owned endpoint: native strict JSON Schema is available.
+    profile.compatibility_profile = LlmCompatibilityProfile::OpenAi;
     profile
 }
 
