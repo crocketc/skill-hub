@@ -672,6 +672,15 @@ pub struct RemoveSkillRepo {
     pub name: String,
 }
 
+/// Re-runs discovery for a single configured repository (network required)
+/// and records its most recent scan state for the repository list view.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct RefreshSkillRepo {
+    pub owner: String,
+    pub name: String,
+}
+
 /// Downloads the requested repo skill into an application-managed temporary
 /// directory so it can enter the existing import wizard as a local source.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
@@ -937,6 +946,8 @@ pub enum AppCommand {
     AddSkillRepo(AddSkillRepo),
     #[serde(rename = "remove_skill_repo")]
     RemoveSkillRepo(RemoveSkillRepo),
+    #[serde(rename = "refresh_skill_repo")]
+    RefreshSkillRepo(RefreshSkillRepo),
     #[serde(rename = "download_repo_skill")]
     DownloadRepoSkill(DownloadRepoSkill),
     #[serde(rename = "save_search_candidates")]
@@ -1065,7 +1076,9 @@ pub enum AppCommandResult {
     #[serde(rename = "uninstall_impact")]
     UninstallImpact(UninstallImpact),
     #[serde(rename = "skill_repos")]
-    SkillRepos(Vec<crate::source::SkillRepo>),
+    SkillRepos(Vec<crate::source::SkillRepoView>),
+    #[serde(rename = "repo_discovery_report")]
+    RepoDiscoveryReport(crate::source::RepoDiscoveryReport),
     #[serde(rename = "downloaded_repo_skill")]
     DownloadedRepoSkill(crate::source::DownloadedRepoSkill),
     #[serde(rename = "search_candidates")]

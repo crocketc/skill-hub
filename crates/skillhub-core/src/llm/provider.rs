@@ -349,6 +349,23 @@ impl LlmProviderConfig {
     }
 }
 
+/// 最近一次三级连接测试的持久化摘要。仅当该 provider 存在测试记录、且其
+/// 配置身份指纹（见 [`super::connection::LlmConnectionIdentity`]）与当前
+/// 配置一致时才随 [`LlmProviderView`] 返回，供 UI 区分"连接已验证"与
+/// "连接尚未验证"。它不替代确定性配置检查，也不宣称任务级可用。
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct LastConnectionTestView {
+    /// 第一级：服务端点可达。
+    pub service_ok: bool,
+    /// 第二级：凭据有效且模型可调用。
+    pub model_ok: bool,
+    /// 第三级：结构化输出兼容；未执行到该级时为 `None`。
+    pub structured_ok: Option<bool>,
+    /// 测试时刻（epoch 秒字符串）。
+    pub tested_at: String,
+}
+
 /// A listed provider configuration with UI-facing status fields. The secret
 /// value itself never leaves the OS credential store.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
@@ -358,6 +375,9 @@ pub struct LlmProviderView {
     #[serde(default)]
     pub credential_configured: bool,
     pub is_default: bool,
+    /// 最近一次连接测试结果；无记录或指纹已失效时为 `None`。
+    #[serde(default)]
+    pub last_connection_test: Option<LastConnectionTestView>,
 }
 
 fn endpoint_not_allowed(reason: &'static str) -> AppError {

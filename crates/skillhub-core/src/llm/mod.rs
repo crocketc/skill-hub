@@ -16,12 +16,13 @@ pub use compatibility::{
     LlmModelListStrategy, LlmReasoningPolicy, LlmStructuredOutputStrategy,
 };
 pub use connection::{
-    ConnectionTestResult, EndpointCheckResult, ModelCheckResult, StructuredCheckResult,
+    ConnectionTestResult, EndpointCheckResult, LlmConnectionIdentity, ModelCheckResult,
+    StructuredCheckResult,
 };
 pub use model::{CredentialRef, LlmProfile, LlmTaskKind, LlmTaskRequest, LlmTaskResponse};
 pub use network_gate::NetworkGate;
 pub use provider::{
-    builtin_provider_presets, CustomHeader, LlmDeployment, LlmProtocolFamily, LlmProviderConfig,
-    LlmProviderPreset, LlmProviderView,
+    builtin_provider_presets, CustomHeader, LastConnectionTestView, LlmDeployment,
+    LlmProtocolFamily, LlmProviderConfig, LlmProviderPreset, LlmProviderView,
 };
 pub use task::{CredentialStore, LlmAdmin, LlmTaskRunner};

@@ -123,7 +123,7 @@ impl LlmTaskRunner for NoopRunner {
 
 fn facade_with(
     store: Arc<SharedCredentialStore>,
-    admin: Arc<FakeAdmin>,
+    admin: Arc<dyn LlmAdmin>,
     gate: NetworkGate,
 ) -> LocalApplicationFacade {
     let database = Database::open_in_memory().expect("database");
@@ -133,7 +133,7 @@ fn facade_with(
         root.path(),
         Arc::new(NoopRunner),
     )
-    .with_llm_runtime(gate, store as Arc<dyn CredentialStore>, admin as _)
+    .with_llm_runtime(gate, store as Arc<dyn CredentialStore>, admin)
 }
 
 #[tokio::test]
@@ -607,4 +607,299 @@ async fn closing_all_networking_refuses_online_admin_calls() {
         .await
         .expect_err("online call must be refused");
     assert_eq!(error.code, skillhub_core::ErrorCode::NetworkDisabled);
+}
+
+/// D3：最近一次三级连接测试结果被持久化，并随供应商视图返回。在线发现页
+/// 据此区分"连接已验证"与"连接尚未验证"；配置身份变化自动失效。
+mod last_connection_test {
+    use skillhub_core::api::AppQuery;
+    use skillhub_core::llm::{ConnectionTestResult, EndpointCheckResult, LlmProviderView};
+
+    use super::*;
+
+    async fn list_providers(facade: &LocalApplicationFacade) -> Vec<LlmProviderView> {
+        let listing = facade
+            .query(AppQuery::ListLlmProviders)
+            .await
+            .expect("list providers");
+        let skillhub_core::api::AppQueryResult::LlmProviders(providers) = listing else {
+            panic!("expected providers");
+        };
+        providers
+    }
+
+    async fn save_deepseek(facade: &LocalApplicationFacade) {
+        facade
+            .execute(AppCommand::SaveLlmProvider(SaveLlmProvider {
+                provider: provider_config(),
+                credential: Some("sk-record".to_owned()),
+            }))
+            .await
+            .expect("save");
+    }
+
+    #[tokio::test]
+    async fn a_connection_test_is_recorded_and_listed_until_the_identity_changes() {
+        let store = Arc::new(SharedCredentialStore::default());
+        let facade = facade_with(store, Arc::new(FakeAdmin::default()), NetworkGate::open());
+        save_deepseek(&facade).await;
+
+        // 测试前：视图不带测试摘要。
+        let providers = list_providers(&facade).await;
+        assert_eq!(providers.len(), 1);
+        assert!(
+            providers[0].last_connection_test.is_none(),
+            "no test ran yet"
+        );
+
+        facade
+            .execute(AppCommand::TestLlmConnection(TestLlmConnection {
+                provider: FetchLlmProvider::Saved {
+                    id: "deepseek".to_owned(),
+                },
+                credential: None,
+            }))
+            .await
+            .expect("connection test");
+
+        // 测试后：list 携带新鲜的三级摘要。
+        let providers = list_providers(&facade).await;
+        let recorded = providers[0]
+            .last_connection_test
+            .as_ref()
+            .expect("recorded after the test");
+        assert!(recorded.service_ok, "first level: endpoint reachable");
+        assert!(recorded.model_ok, "second level: model callable");
+        assert_eq!(recorded.structured_ok, Some(true));
+        assert!(!recorded.tested_at.is_empty());
+
+        // enabled 切换不否定连接事实（enabled 不在指纹内）。
+        let toggled = facade
+            .execute(AppCommand::SetLlmProviderEnabled(SetLlmProviderEnabled {
+                id: "deepseek".to_owned(),
+                enabled: false,
+            }))
+            .await
+            .expect("disable");
+        let skillhub_core::api::AppCommandResult::LlmProviderView(view) = toggled else {
+            panic!("expected a provider view");
+        };
+        assert!(
+            view.last_connection_test.is_some(),
+            "the toggle response keeps the recorded result"
+        );
+        let providers = list_providers(&facade).await;
+        assert!(!providers[0].config.enabled);
+        assert!(
+            providers[0].last_connection_test.is_some(),
+            "disabling then re-enabling must not negate the verified connection"
+        );
+
+        // 修改身份字段（endpoint）后失效。
+        let mut changed = provider_config();
+        changed.endpoint = "https://changed.test/v1".to_owned();
+        facade
+            .execute(AppCommand::SaveLlmProvider(SaveLlmProvider {
+                provider: changed,
+                credential: None,
+            }))
+            .await
+            .expect("save changed endpoint");
+        let providers = list_providers(&facade).await;
+        assert!(
+            providers[0].last_connection_test.is_none(),
+            "an endpoint change invalidates the recorded result"
+        );
+    }
+
+    #[tokio::test]
+    async fn clearing_the_credential_invalidates_the_recorded_result_through_the_fingerprint() {
+        let store = Arc::new(SharedCredentialStore::default());
+        let facade = facade_with(store, Arc::new(FakeAdmin::default()), NetworkGate::open());
+        save_deepseek(&facade).await;
+        facade
+            .execute(AppCommand::TestLlmConnection(TestLlmConnection {
+                provider: FetchLlmProvider::Saved {
+                    id: "deepseek".to_owned(),
+                },
+                credential: None,
+            }))
+            .await
+            .expect("connection test");
+
+        let cleared = facade
+            .execute(AppCommand::ClearLlmProviderCredential(
+                ClearLlmProviderCredential {
+                    id: "deepseek".to_owned(),
+                },
+            ))
+            .await
+            .expect("clear credential");
+        let skillhub_core::api::AppCommandResult::LlmProviderView(view) = cleared else {
+            panic!("expected a provider view");
+        };
+        assert!(!view.credential_configured);
+        assert!(
+            view.last_connection_test.is_none(),
+            "without the credential the past test no longer describes this configuration"
+        );
+
+        let providers = list_providers(&facade).await;
+        assert!(providers[0].last_connection_test.is_none());
+    }
+
+    #[tokio::test]
+    async fn deleting_the_provider_removes_the_recorded_result() {
+        let store = Arc::new(SharedCredentialStore::default());
+        let facade = facade_with(store, Arc::new(FakeAdmin::default()), NetworkGate::open());
+        save_deepseek(&facade).await;
+        facade
+            .execute(AppCommand::TestLlmConnection(TestLlmConnection {
+                provider: FetchLlmProvider::Saved {
+                    id: "deepseek".to_owned(),
+                },
+                credential: None,
+            }))
+            .await
+            .expect("connection test");
+        facade
+            .execute(AppCommand::DeleteLlmProvider(DeleteLlmProvider {
+                id: "deepseek".to_owned(),
+            }))
+            .await
+            .expect("delete");
+
+        // 用完全相同的身份重建：若 delete 未移除记录，旧结果会被错误沿用。
+        save_deepseek(&facade).await;
+        let providers = list_providers(&facade).await;
+        assert!(
+            providers[0].last_connection_test.is_none(),
+            "deleting the provider must drop its recorded test result"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_draft_connection_test_is_recorded_and_carries_over_only_for_the_saved_identity() {
+        let store = Arc::new(SharedCredentialStore::default());
+        let facade = facade_with(
+            store.clone(),
+            Arc::new(FakeAdmin::default()),
+            NetworkGate::open(),
+        );
+
+        // 草稿（带 id 与凭据引用）用临时密钥实测：结果按该 id 记录。
+        let mut draft = provider_config();
+        draft.credential_ref = Some(CredentialRef::new("llm-provider:deepseek"));
+        facade
+            .execute(AppCommand::TestLlmConnection(TestLlmConnection {
+                provider: FetchLlmProvider::Draft {
+                    provider: draft.clone(),
+                },
+                credential: Some("sk-draft".to_owned()),
+            }))
+            .await
+            .expect("draft connection test");
+
+        // 保存同身份配置（密钥落库）后沿用。
+        facade
+            .execute(AppCommand::SaveLlmProvider(SaveLlmProvider {
+                provider: draft.clone(),
+                credential: Some("sk-draft".to_owned()),
+            }))
+            .await
+            .expect("save draft");
+        let providers = list_providers(&facade).await;
+        assert!(
+            providers[0].last_connection_test.is_some(),
+            "the draft result carries over for an identical saved configuration"
+        );
+
+        // 对照：临时密钥未保存（凭据不在场）→ 指纹不符 → 不沿用。
+        facade
+            .execute(AppCommand::DeleteLlmProvider(DeleteLlmProvider {
+                id: "deepseek".to_owned(),
+            }))
+            .await
+            .expect("delete");
+        facade
+            .execute(AppCommand::TestLlmConnection(TestLlmConnection {
+                provider: FetchLlmProvider::Draft {
+                    provider: draft.clone(),
+                },
+                credential: Some("sk-draft".to_owned()),
+            }))
+            .await
+            .expect("draft connection test");
+        facade
+            .execute(AppCommand::SaveLlmProvider(SaveLlmProvider {
+                provider: draft,
+                credential: None,
+            }))
+            .await
+            .expect("save draft without the key");
+        let providers = list_providers(&facade).await;
+        assert!(
+            providers[0].last_connection_test.is_none(),
+            "a draft tested with an unsaved key must not read as verified"
+        );
+        assert!(!providers[0].credential_configured);
+    }
+
+    /// 三级全失败的 admin：结果仍要如实落库，绝不伪装成"已验证"。
+    struct FailingConnectionAdmin;
+
+    #[async_trait::async_trait(?Send)]
+    impl LlmAdmin for FailingConnectionAdmin {
+        async fn fetch_models(
+            &self,
+            _profile: &LlmProfile,
+            _credential: Option<String>,
+        ) -> AppResult<Vec<String>> {
+            Ok(vec![])
+        }
+        async fn check_connection(
+            &self,
+            _profile: &LlmProfile,
+            _credential: Option<String>,
+        ) -> ConnectionTestResult {
+            ConnectionTestResult {
+                endpoint: EndpointCheckResult {
+                    reachable: false,
+                    latency_ms: None,
+                },
+                model: None,
+                model_failure_code: None,
+                structured: None,
+                structured_failure_code: None,
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn a_failed_connection_test_is_recorded_faithfully() {
+        let facade = facade_with(
+            Arc::new(SharedCredentialStore::default()),
+            Arc::new(FailingConnectionAdmin),
+            NetworkGate::open(),
+        );
+        save_deepseek(&facade).await;
+        facade
+            .execute(AppCommand::TestLlmConnection(TestLlmConnection {
+                provider: FetchLlmProvider::Saved {
+                    id: "deepseek".to_owned(),
+                },
+                credential: None,
+            }))
+            .await
+            .expect("connection test records failures too");
+
+        let providers = list_providers(&facade).await;
+        let recorded = providers[0]
+            .last_connection_test
+            .as_ref()
+            .expect("the failed test is recorded, not hidden");
+        assert!(!recorded.service_ok);
+        assert!(!recorded.model_ok);
+        assert_eq!(recorded.structured_ok, None, "structured never ran");
+    }
 }

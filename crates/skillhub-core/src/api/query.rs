@@ -750,7 +750,7 @@ pub enum AppQueryResult {
     #[serde(rename = "ui_preference")]
     UiPreference(crate::GetUiPreferenceResult),
     #[serde(rename = "skill_repos")]
-    SkillRepos(Vec<crate::source::SkillRepo>),
+    SkillRepos(Vec<crate::source::SkillRepoView>),
     #[serde(rename = "repo_discovery_report")]
     RepoDiscoveryReport(crate::source::RepoDiscoveryReport),
     #[serde(rename = "agents_lock_entries")]

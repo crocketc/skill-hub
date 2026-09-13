@@ -10,6 +10,7 @@ mod desktop_settings_repository;
 pub mod evidence_repository;
 mod ignore_rule_repository;
 mod import_repository;
+mod llm_connection_test_repository;
 mod llm_profile_repository;
 mod llm_provider_repository;
 mod migrations;
@@ -20,6 +21,7 @@ mod scan_repository;
 mod search_candidate_repository;
 mod search_repository;
 mod skill_repo_repository;
+mod skill_repo_scan_state_repository;
 mod source_repository;
 mod source_search_cache;
 mod translation_repository;
@@ -47,6 +49,7 @@ pub use desktop_settings_repository::DesktopSettingsRepository;
 pub use evidence_repository::UsageEvidenceRepository;
 pub use ignore_rule_repository::IgnoreRuleRepository;
 pub use import_repository::ImportRepository;
+pub use llm_connection_test_repository::{LlmConnectionTestRepository, PersistedConnectionTest};
 pub use llm_profile_repository::LlmProfileRepository;
 pub use llm_provider_repository::LlmProviderRepository;
 pub use migrations::MigrationReport;
@@ -57,6 +60,7 @@ pub use scan_repository::ScanRepository;
 pub use search_candidate_repository::SearchCandidateRepository;
 pub use search_repository::SearchRepository;
 pub use skill_repo_repository::SkillRepoRepository;
+pub use skill_repo_scan_state_repository::SkillRepoScanStateRepository;
 pub use source_repository::SourceRepository;
 pub use source_search_cache::SourceSearchCache;
 pub use translation_repository::{PersistedTranslation, TranslationRecordRepository};
@@ -114,6 +118,10 @@ impl Database {
         SkillRepoRepository::new(self)
     }
 
+    pub fn skill_repo_scan_state_repository(&self) -> SkillRepoScanStateRepository<'_> {
+        SkillRepoScanStateRepository::new(self)
+    }
+
     pub fn ui_preference_repository(&self) -> UiPreferenceRepository<'_> {
         UiPreferenceRepository::new(self)
     }
@@ -152,6 +160,10 @@ impl Database {
 
     pub fn llm_provider_repository(&self) -> LlmProviderRepository<'_> {
         LlmProviderRepository::new(self)
+    }
+
+    pub fn llm_connection_test_repository(&self) -> LlmConnectionTestRepository<'_> {
+        LlmConnectionTestRepository::new(self)
     }
 
     pub fn translation_record_repository(&self) -> TranslationRecordRepository<'_> {

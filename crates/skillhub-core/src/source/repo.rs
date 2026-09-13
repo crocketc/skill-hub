@@ -81,3 +81,91 @@ pub struct AgentsLockEntry {
     /// 仓库内 Skill 子目录；None 表示仓库根整体即 Skill
     pub skill_path: Option<String>,
 }
+
+/// 单个仓库最近一次扫描的持久化状态（settings KV 单行 JSON map 的条目，
+/// 键为 "owner/name"）。缓存性质：只描述“最近那一次”扫描结果。
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct RepoScanState {
+    /// 扫描时刻（RFC3339 UTC 字符串）。
+    pub scanned_at: String,
+    /// 该仓库本次扫描是否成功。
+    pub ok: bool,
+    /// 成功时发现的可导入 Skill 数；失败时为 0。
+    pub candidate_count: u32,
+    /// 失败时的错误摘要；成功时为 `None`。
+    pub error: Option<String>,
+}
+
+/// 仓库列表的逐仓视图：仓库配置 + 最近一次扫描状态（从未扫描过为 `None`）。
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct SkillRepoView {
+    pub repo: SkillRepo,
+    pub scan: Option<RepoScanState>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn repo_scan_state_serde_round_trip() {
+        let ok = RepoScanState {
+            scanned_at: "2026-09-14T08:30:00Z".into(),
+            ok: true,
+            candidate_count: 3,
+            error: None,
+        };
+        let json = serde_json::to_string(&ok).unwrap();
+        assert_eq!(
+            json,
+            r#"{"scanned_at":"2026-09-14T08:30:00Z","ok":true,"candidate_count":3,"error":null}"#
+        );
+        assert_eq!(serde_json::from_str::<RepoScanState>(&json).unwrap(), ok);
+
+        let failed = RepoScanState {
+            scanned_at: "2026-09-14T08:31:00Z".into(),
+            ok: false,
+            candidate_count: 0,
+            error: Some("DOWNLOAD_FAILED status=404".into()),
+        };
+        let json = serde_json::to_string(&failed).unwrap();
+        assert_eq!(
+            serde_json::from_str::<RepoScanState>(&json).unwrap(),
+            failed
+        );
+    }
+
+    #[test]
+    fn skill_repo_view_serde_round_trip_with_and_without_scan() {
+        let repo = SkillRepo {
+            owner: "anthropics".into(),
+            name: "skills".into(),
+            branch: "main".into(),
+            enabled: true,
+        };
+        let scanned = SkillRepoView {
+            repo: repo.clone(),
+            scan: Some(RepoScanState {
+                scanned_at: "2026-09-14T08:30:00Z".into(),
+                ok: true,
+                candidate_count: 2,
+                error: None,
+            }),
+        };
+        let json = serde_json::to_string(&scanned).unwrap();
+        assert_eq!(
+            serde_json::from_str::<SkillRepoView>(&json).unwrap(),
+            scanned
+        );
+
+        let unscanned = SkillRepoView { repo, scan: None };
+        let json = serde_json::to_string(&unscanned).unwrap();
+        assert!(json.contains(r#""scan":null"#));
+        assert_eq!(
+            serde_json::from_str::<SkillRepoView>(&json).unwrap(),
+            unscanned
+        );
+    }
+}

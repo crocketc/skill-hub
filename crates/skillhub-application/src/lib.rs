@@ -60,10 +60,14 @@ use skillhub_core::health::{HealthFinding, RecoveryCandidate, RepairAction};
 use skillhub_core::ignore::IgnoreRule;
 use skillhub_core::llm::translation::TranslationRecord;
 use skillhub_core::llm::{
-    CredentialRef, CredentialStore, LlmAdmin, LlmProfile, LlmProviderConfig, LlmProviderView,
-    LlmTaskKind, LlmTaskRunner, NetworkGate, TranslationResult, TranslationView,
+    ConnectionTestResult, CredentialRef, CredentialStore, LastConnectionTestView, LlmAdmin,
+    LlmConnectionIdentity, LlmProfile, LlmProviderConfig, LlmProviderView, LlmTaskKind,
+    LlmTaskRunner, NetworkGate, TranslationResult, TranslationView,
 };
-use skillhub_core::source::{SourceDescriptor, SourceLocator, SourceState, UpdateDecision};
+use skillhub_core::source::{
+    RepoDiscoveryReport, RepoDiscoveryWarning, RepoScanState, SkillRepo, SourceDescriptor,
+    SourceLocator, SourceState, UpdateDecision,
+};
 use skillhub_core::{
     physical_id_for_path, symlink_physical_id_for_path, AllowedRoot, AppCommand, AppCommandResult,
     AppError, AppQuery, AppQueryResult, AppResult, ApplicationFacade, DeploymentMode, ErrorCode,
@@ -73,8 +77,8 @@ use skillhub_core::{
 use skillhub_storage::backup::{BackupService, RestoreService, RetentionService};
 use skillhub_storage::export::ExportService;
 use skillhub_storage::{
-    CentralLibrary, Database, LibraryPaths, PersistedTranslation, UsageEvidenceRepository,
-    VersionStore,
+    CentralLibrary, Database, LibraryPaths, PersistedConnectionTest, PersistedTranslation,
+    UsageEvidenceRepository, VersionStore,
 };
 pub use update_service::{
     ApplicationUpdateInstaller, RollbackResult, RollbackState, UpdateDownloadPlan, UpdateService,
@@ -201,11 +205,78 @@ impl TranslationRepository for StorageTranslationRepository {
     }
 }
 
+/// 把仓库配置列表与持久化扫描状态合成为逐仓视图（键 "owner/name"）。
+fn skill_repo_views(
+    repos: Vec<SkillRepo>,
+    scans: &std::collections::BTreeMap<String, RepoScanState>,
+) -> Vec<skillhub_core::source::SkillRepoView> {
+    repos
+        .into_iter()
+        .map(|repo| {
+            let scan = scans.get(&format!("{}/{}", repo.owner, repo.name)).cloned();
+            skillhub_core::source::SkillRepoView { repo, scan }
+        })
+        .collect()
+}
+
+/// 把 provider 的 (owner, name, reason) 失败元组映射为告警类型。
+fn warnings_from_failures(failures: Vec<(String, String, String)>) -> Vec<RepoDiscoveryWarning> {
+    failures
+        .into_iter()
+        .map(|(owner, name, reason)| RepoDiscoveryWarning {
+            owner,
+            name,
+            reason,
+        })
+        .collect()
+}
+
 fn now_epoch_seconds() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs() as i64
+}
+
+/// 当前 UTC 时刻的秒精度 RFC3339 字符串（`YYYY-MM-DDTHH:MM:SSZ`）。
+/// 仓库扫描状态等缓存性质记录的落盘时间戳；前端经 `Intl` 解析展示。
+fn now_rfc3339_utc() -> String {
+    format_rfc3339_utc(now_epoch_seconds())
+}
+
+/// epoch 秒 → RFC3339 UTC 字符串；日历换算复用既有 [`civil_date_from_days`]，
+/// 不为应用边界引入时间库依赖。
+fn format_rfc3339_utc(epoch_seconds: i64) -> String {
+    let days = epoch_seconds.div_euclid(86_400);
+    let seconds_of_day = epoch_seconds.rem_euclid(86_400);
+    let (year, month, day) = civil_date_from_days(days);
+    format!(
+        "{year:04}-{month:02}-{day:02}T{hour:02}:{minute:02}:{second:02}Z",
+        hour = seconds_of_day / 3_600,
+        minute = (seconds_of_day % 3_600) / 60,
+        second = seconds_of_day % 60,
+    )
+}
+
+/// D3：把持久化的最近一次连接测试摘要映射为视图字段。只有 provider id 存在
+/// 记录、且配置身份指纹（身份字段 + 凭据在场）与当前配置一致时才返回
+/// `Some`；改过 endpoint/model/协议/兼容档或清除了凭据，旧结果自动失效。
+fn fresh_connection_test(
+    tests: &std::collections::BTreeMap<String, PersistedConnectionTest>,
+    config: &LlmProviderConfig,
+    credential_configured: bool,
+) -> Option<LastConnectionTestView> {
+    let identity = LlmConnectionIdentity::from_provider_config(config, credential_configured);
+    let entry = tests.get(&config.id)?;
+    if entry.fingerprint != identity.fingerprint() {
+        return None;
+    }
+    Some(LastConnectionTestView {
+        service_ok: entry.service_ok,
+        model_ok: entry.model_ok,
+        structured_ok: entry.structured_ok,
+        tested_at: entry.tested_at.clone(),
+    })
 }
 
 #[derive(Clone)]
@@ -871,13 +942,16 @@ impl LocalApplicationFacade {
     }
 
     fn list_skill_repos(&self) -> AppResult<AppQueryResult> {
-        let repos = self.with_database("query.list_skill_repos", |database| {
-            database.skill_repo_repository().list()
+        let views = self.with_database("query.list_skill_repos", |database| {
+            let repos = database.skill_repo_repository().list()?;
+            let scans = database.skill_repo_scan_state_repository().load()?;
+            Ok(skill_repo_views(repos, &scans))
         })?;
-        Ok(AppQueryResult::SkillRepos(repos))
+        Ok(AppQueryResult::SkillRepos(views))
     }
 
     /// 仓库发现（联网）：逐仓库下载扫描；单仓库失败只进 warnings，不拖垮整体。
+    /// 完成后按仓库记录最近一次扫描状态，供仓库管理页展示“上次扫描”。
     async fn discover_repo_skills(&self) -> AppResult<AppQueryResult> {
         self.ensure_network_enabled()?;
         let repos = self.with_database("query.discover_repo_skills.repos", |database| {
@@ -885,23 +959,95 @@ impl LocalApplicationFacade {
         })?;
         // 先克隆 Arc 再 await：RwLockReadGuard 不是 Send，不能跨 await 持有。
         let provider = Arc::clone(&*self.repo_provider());
-        let discovery = provider.discover(repos).await;
+        let discovery = provider.discover(repos.clone()).await;
+        self.record_repo_scan_states(&repos, &discovery.failures, |repo| {
+            discovery
+                .skills
+                .iter()
+                .filter(|skill| skill.repo_owner == repo.owner && skill.repo_name == repo.name)
+                .count() as u32
+        })?;
         Ok(AppQueryResult::RepoDiscoveryReport(
             skillhub_core::source::RepoDiscoveryReport {
                 skills: discovery.skills,
-                warnings: discovery
-                    .failures
-                    .into_iter()
-                    .map(
-                        |(owner, name, reason)| skillhub_core::source::RepoDiscoveryWarning {
-                            owner,
-                            name,
-                            reason,
-                        },
-                    )
-                    .collect(),
+                warnings: warnings_from_failures(discovery.failures),
             },
         ))
+    }
+
+    /// 逐仓刷新（联网）：对单个已配置仓库重跑发现并记录其扫描状态，返回
+    /// 该仓库自己的发现报告。坐标复用持久化配置并重新校验（不信任存量数据），
+    /// 网络开关语义与整体发现一致；显式刷新不受启用开关抑制。
+    async fn refresh_skill_repo(
+        &self,
+        request: skillhub_core::RefreshSkillRepo,
+    ) -> AppResult<AppCommandResult> {
+        let stored = self.with_database("execute.refresh_skill_repo.lookup", |database| {
+            Ok(database
+                .skill_repo_repository()
+                .list()?
+                .into_iter()
+                .find(|repo| repo.owner == request.owner && repo.name == request.name))
+        })?;
+        let Some(mut repo) = stored else {
+            return Err(AppError::new(ErrorCode::ObjectNotFound, Severity::Warning)
+                .with_action(RecoveryAction::Acknowledge));
+        };
+        if let Err(error) = self.repo_provider().validate_repo(&repo) {
+            return Err(AppError::new(ErrorCode::InvalidInput, Severity::Warning)
+                .with_param("reason", error.to_string())
+                .with_action(RecoveryAction::Retry));
+        }
+        self.ensure_network_enabled()?;
+        // 显式刷新不受启停抑制：扫描副本按启用仓处理（记录扫描状态），
+        // 持久化的 enabled 保持用户配置不变。
+        repo.enabled = true;
+        // 先克隆 Arc 再 await：RwLockReadGuard 不是 Send，不能跨 await 持有。
+        let provider = Arc::clone(&*self.repo_provider());
+        let discovery = provider.discover(vec![repo.clone()]).await;
+        self.record_repo_scan_states(&[repo], &discovery.failures, |repo| {
+            discovery
+                .skills
+                .iter()
+                .filter(|skill| skill.repo_owner == repo.owner && skill.repo_name == repo.name)
+                .count() as u32
+        })?;
+        Ok(AppCommandResult::RepoDiscoveryReport(RepoDiscoveryReport {
+            skills: discovery.skills,
+            warnings: warnings_from_failures(discovery.failures),
+        }))
+    }
+
+    /// 把一次（整体或单仓）发现结果按仓库写入最近扫描状态：成功仓记
+    /// ok=true + 候选数；失败仓记 ok=false + 错误摘要。禁用的仓库不参与
+    /// 扫描，因此也不写状态（保留“从未扫描”的诚实空态）。
+    fn record_repo_scan_states(
+        &self,
+        repos: &[SkillRepo],
+        failures: &[(String, String, String)],
+        candidate_count: impl Fn(&SkillRepo) -> u32,
+    ) -> AppResult<()> {
+        self.with_database("repo_scan_state.record", |database| {
+            let scan_repository = database.skill_repo_scan_state_repository();
+            for repo in repos.iter().filter(|repo| repo.enabled) {
+                let error = failures
+                    .iter()
+                    .find(|(owner, name, _)| owner == &repo.owner && name == &repo.name)
+                    .map(|(_, _, reason)| reason.clone());
+                let state = RepoScanState {
+                    scanned_at: now_rfc3339_utc(),
+                    ok: error.is_none(),
+                    candidate_count: if error.is_none() {
+                        candidate_count(repo)
+                    } else {
+                        0
+                    },
+                    error,
+                };
+                scan_repository.put(&repo.owner, &repo.name, &state)?;
+            }
+            Ok(())
+        })
     }
 
     /// 仓库 CRUD：upsert（owner+name 相同则替换）；坐标校验拒绝非法引用。
@@ -927,7 +1073,8 @@ impl LocalApplicationFacade {
             }
             repos.sort_by(|a, b| (&a.owner, &a.name).cmp(&(&b.owner, &b.name)));
             database.skill_repo_repository().save(&repos)?;
-            Ok(repos)
+            let scans = database.skill_repo_scan_state_repository().load()?;
+            Ok(skill_repo_views(repos, &scans))
         })?;
         Ok(AppCommandResult::SkillRepos(repos))
     }
@@ -945,7 +1092,12 @@ impl LocalApplicationFacade {
                     .with_action(RecoveryAction::Acknowledge));
             }
             database.skill_repo_repository().save(&repos)?;
-            Ok(repos)
+            // 同步遗忘该仓库的扫描状态：重新添加同名仓库时不得误读旧结果。
+            database
+                .skill_repo_scan_state_repository()
+                .remove(&request.owner, &request.name)?;
+            let scans = database.skill_repo_scan_state_repository().load()?;
+            Ok(skill_repo_views(repos, &scans))
         })?;
         Ok(AppCommandResult::SkillRepos(repos))
     }
@@ -1926,7 +2078,17 @@ impl LocalApplicationFacade {
     /// store currently holds its credential. The value itself never leaves
     /// the store.
     async fn credential_configured(&self, config: &LlmProviderConfig) -> AppResult<bool> {
-        let Some(reference) = &config.credential_ref else {
+        self.credential_reference_configured(&config.credential_ref)
+            .await
+    }
+
+    /// Same verdict as [`Self::credential_configured`], keyed on the raw
+    /// reference so call sites that only hold a runtime profile can reuse it.
+    async fn credential_reference_configured(
+        &self,
+        reference: &Option<CredentialRef>,
+    ) -> AppResult<bool> {
+        let Some(reference) = reference else {
             return Ok(true);
         };
         let store = self.llm_credentials.clone();
@@ -1995,10 +2157,19 @@ impl LocalApplicationFacade {
                 .as_deref()
                 == Some(config.id.as_str()))
         })?;
+        let last_connection_test =
+            self.with_database("execute.save_llm_provider.last_test", |database| {
+                Ok(fresh_connection_test(
+                    &database.llm_connection_test_repository().load()?,
+                    &config,
+                    credential_configured,
+                ))
+            })?;
         Ok(AppCommandResult::LlmProviderView(LlmProviderView {
             config,
             credential_configured,
             is_default,
+            last_connection_test,
         }))
     }
 
@@ -2015,6 +2186,11 @@ impl LocalApplicationFacade {
         }
         let preferences = self.with_database("execute.delete_llm_provider.row", |database| {
             database.llm_provider_repository().delete(&request.id)?;
+            // D3：供应商已删除，其最近一次连接测试记录一并移除，防止同 id
+            // 重建后旧结果被错误沿用。
+            database
+                .llm_connection_test_repository()
+                .remove(&request.id)?;
             let mut preferences = database.desktop_settings_repository().get()?;
             if preferences.default_llm_provider_id.as_deref() == Some(request.id.as_str()) {
                 preferences.default_llm_provider_id = None;
@@ -2039,6 +2215,9 @@ impl LocalApplicationFacade {
             let reference = reference.clone();
             run_non_send(move || async move { store.delete(&reference).await })?;
         }
+        // D3：清凭据后按凭据库实况重算在场状态；指纹随之失配，最近一次
+        // 连接测试结果自动失效（不再宣称"已验证"）。
+        let credential_configured = self.credential_configured(&config).await?;
         let is_default = self.with_database(
             "execute.clear_llm_provider_credential.default",
             |database| {
@@ -2050,10 +2229,21 @@ impl LocalApplicationFacade {
                     == Some(config.id.as_str()))
             },
         )?;
+        let last_connection_test = self.with_database(
+            "execute.clear_llm_provider_credential.last_test",
+            |database| {
+                Ok(fresh_connection_test(
+                    &database.llm_connection_test_repository().load()?,
+                    &config,
+                    credential_configured,
+                ))
+            },
+        )?;
         Ok(AppCommandResult::LlmProviderView(LlmProviderView {
             config,
-            credential_configured: false,
+            credential_configured,
             is_default,
+            last_connection_test,
         }))
     }
 
@@ -2081,10 +2271,20 @@ impl LocalApplicationFacade {
                     .as_deref()
                     == Some(config.id.as_str()))
             })?;
+        // enabled 不在指纹内：停用/启用不否定连接事实。
+        let last_connection_test =
+            self.with_database("execute.set_llm_provider_enabled.last_test", |database| {
+                Ok(fresh_connection_test(
+                    &database.llm_connection_test_repository().load()?,
+                    &config,
+                    credential_configured,
+                ))
+            })?;
         Ok(AppCommandResult::LlmProviderView(LlmProviderView {
             config,
             credential_configured,
             is_default,
+            last_connection_test,
         }))
     }
 
@@ -2130,16 +2330,62 @@ impl LocalApplicationFacade {
             .clone()
             .ok_or_else(|| AppError::new(ErrorCode::LlmNotConfigured, Severity::Info))?;
         let credential = request.credential;
+        let inline_credential_present = credential.is_some();
+        let profile_for_record = profile.clone();
         let report = run_non_send(move || async move {
             let report = admin.check_connection(&profile, credential).await;
             Ok(report)
         })?;
+        // D3：把最近一次三级测试结果如实落到 settings KV，供在线发现页的
+        // 可用性检查区分"已验证"与"连接尚未验证"。记录是尽力而为：命令的
+        // 首要产出是测试报告，持久化失败不掩盖它。
+        let _ = self
+            .record_connection_test_outcome(&profile_for_record, inline_credential_present, &report)
+            .await;
         Ok(AppCommandResult::ConnectionTest(report))
     }
 
+    /// Records the just-finished connection test for the provider it ran
+    /// against, whatever the per-level verdicts were. Drafts with an empty id
+    /// have no stable identity to attach a result to and are skipped.
+    async fn record_connection_test_outcome(
+        &self,
+        profile: &LlmProfile,
+        inline_credential_present: bool,
+        report: &ConnectionTestResult,
+    ) -> AppResult<()> {
+        // 供应商身份在 profile.provider（to_profile 从 config.id 复制）；
+        // profile.id 是运行时组合键 "{provider}:{model}"，不能当存储键用。
+        let provider_id = profile.provider.as_str();
+        if provider_id.trim().is_empty() {
+            return Ok(());
+        }
+        // 凭据在场 = 请求里带了临时凭据，或 OS 凭据库当前持有该引用的密钥。
+        // 只看 credential_ref 是否存在无法区分"测过但密钥已清除"。
+        let credential_present = inline_credential_present
+            || self
+                .credential_reference_configured(&profile.credential_ref)
+                .await?;
+        let entry = PersistedConnectionTest {
+            service_ok: report.endpoint.reachable,
+            model_ok: report.model_ok(),
+            structured_ok: report.structured.as_ref().map(|structured| structured.ok),
+            tested_at: now_epoch_seconds().to_string(),
+            fingerprint: LlmConnectionIdentity::from_profile(profile, credential_present)
+                .fingerprint(),
+        };
+        self.with_database("execute.test_llm_connection.record", |database| {
+            database
+                .llm_connection_test_repository()
+                .put(provider_id, &entry)
+        })
+    }
+
     async fn list_llm_providers(&self) -> AppResult<AppQueryResult> {
-        let configs = self.with_database("query.list_llm_providers", |database| {
-            database.llm_provider_repository().list()
+        let (configs, tests) = self.with_database("query.list_llm_providers", |database| {
+            let configs = database.llm_provider_repository().list()?;
+            let tests = database.llm_connection_test_repository().load()?;
+            Ok((configs, tests))
         })?;
         let default_id = self.with_database("query.list_llm_providers.default", |database| {
             Ok(database
@@ -2151,10 +2397,14 @@ impl LocalApplicationFacade {
         for config in configs {
             let is_default = default_id.as_deref() == Some(config.id.as_str());
             let credential_configured = self.credential_configured(&config).await?;
+            // D3：最近一次连接测试摘要仅在指纹新鲜时随视图返回。
+            let last_connection_test =
+                fresh_connection_test(&tests, &config, credential_configured);
             providers.push(LlmProviderView {
                 config,
                 credential_configured,
                 is_default,
+                last_connection_test,
             });
         }
         Ok(AppQueryResult::LlmProviders(providers))
@@ -4848,6 +5098,9 @@ impl ApplicationFacade for LocalApplicationFacade {
             }
             AppCommand::AddSkillRepo(request) => return self.add_skill_repo(request),
             AppCommand::RemoveSkillRepo(request) => return self.remove_skill_repo(request),
+            AppCommand::RefreshSkillRepo(request) => {
+                return self.refresh_skill_repo(request).await;
+            }
             AppCommand::DownloadRepoSkill(request) => {
                 return self.download_repo_skill(request).await;
             }
@@ -7224,7 +7477,7 @@ fn civil_date_from_days(days_since_epoch: i64) -> (i32, u8, u8) {
 #[allow(clippy::items_after_test_module)]
 #[cfg(test)]
 mod tests {
-    use super::{civil_date_from_days, LocalApplicationFacade};
+    use super::{civil_date_from_days, format_rfc3339_utc, LocalApplicationFacade};
     use skillhub_core::api::{AppCommand, AppQuery};
     use skillhub_core::catalog::{CallPolicy, Skill};
     use skillhub_core::{
@@ -7236,6 +7489,14 @@ mod tests {
     #[test]
     fn converts_unix_epoch_to_utc_calendar_date() {
         assert_eq!(civil_date_from_days(0), (1970, 1, 1));
+    }
+
+    #[test]
+    fn formats_epoch_seconds_as_rfc3339_utc_including_leap_day() {
+        assert_eq!(format_rfc3339_utc(0), "1970-01-01T00:00:00Z");
+        assert_eq!(format_rfc3339_utc(1_789_000_000), "2026-09-10T00:26:40Z");
+        assert_eq!(format_rfc3339_utc(1_767_225_599), "2025-12-31T23:59:59Z");
+        assert_eq!(format_rfc3339_utc(951_782_400), "2000-02-29T00:00:00Z");
     }
 
     #[tokio::test]

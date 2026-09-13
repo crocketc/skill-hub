@@ -16,7 +16,7 @@ pub use model::{
 };
 pub use repo::{
     AgentsLockEntry, DiscoverableRepoSkill, DownloadedRepoSkill, RepoDiscoveryReport,
-    RepoDiscoveryWarning, SkillRepo, UpstreamOrigin,
+    RepoDiscoveryWarning, RepoScanState, SkillRepo, SkillRepoView, UpstreamOrigin,
 };
 pub use role::{SearchCandidateRecord, SearchCandidateStatus, SourceRecord, SourceRole};
 pub use update::{
