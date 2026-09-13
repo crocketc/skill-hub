@@ -736,12 +736,14 @@ async fn empty_model_list_is_reported_as_a_user_actionable_failure() {
     handle.abort();
 }
 
-/// M-13 根因回归：连接探针对 OpenAI 家族携带 `strict: true` 的
-/// `response_format.json_schema`，因此探针 schema 本身必须满足 strict 模式
-/// 的服务端校验（`required` 覆盖全部属性且 `additionalProperties: false`），
-/// 否则真实供应商会以 400 拒绝探针，用户拿着有效密钥也得到"测试失败"。
+/// The model level is proven by a plain-text request, so a model that only
+/// speaks prose is still reported as callable. The structured level reuses the
+/// profile's own compatibility strategy and its probe schema must satisfy
+/// OpenAI strict-mode server validation (`required` covers every property and
+/// `additionalProperties: false`), otherwise a valid key would surface as a
+/// failed connection test (M-13 root cause).
 #[tokio::test]
-async fn connection_probe_sends_a_strict_mode_valid_schema_for_openai_family() {
+async fn the_model_level_is_a_plain_text_probe_and_the_structured_level_is_strict() {
     let runner = stored_runner();
     let server = Arc::new(MockLlmServer::default());
     let (base, handle) = start_server(
@@ -753,6 +755,14 @@ async fn connection_probe_sends_a_strict_mode_valid_schema_for_openai_family() {
                 body: "{}".into(),
                 delay_ms: 0,
             },
+            // Level two: any non-empty prose counts.
+            QueuedResponse {
+                status: "200 OK",
+                headers: vec![],
+                body: chat_content("ok"),
+                delay_ms: 0,
+            },
+            // Level three: the structured probe.
             QueuedResponse {
                 status: "200 OK",
                 headers: vec![],
@@ -764,31 +774,68 @@ async fn connection_probe_sends_a_strict_mode_valid_schema_for_openai_family() {
     .await;
 
     let report = runner.check_connection(&openai_chat(&base)).await;
+    assert!(report.endpoint.reachable);
+    assert!(report.model_ok(), "a plain-text answer proves the model");
+    assert!(report.structured_ok());
+    assert!(report.task_ready());
+    assert!(report.model.as_ref().unwrap().latency_ms.is_some());
+    assert!(report.structured.as_ref().unwrap().latency_ms.is_some());
+
+    let requests = server.requests.lock().unwrap();
+    assert_eq!(requests.len(), 3, "one request per level, no fallback");
+
+    let text_probe: serde_json::Value = serde_json::from_str(&requests[1].body).unwrap();
     assert!(
-        report.model_ok(),
-        "probe must pass against a conforming server"
+        text_probe["response_format"].is_null(),
+        "the text probe must not carry a structured field"
+    );
+    assert!(
+        !requests[1].body.contains("json_schema"),
+        "the text probe must not carry a schema"
     );
 
-    let probe = server.requests.lock().unwrap()[1].clone();
-    let body: serde_json::Value = serde_json::from_str(&probe.body).unwrap();
-    let schema = &body["response_format"]["json_schema"]["schema"];
-    assert_eq!(body["response_format"]["type"], "json_schema");
+    let structured_probe: serde_json::Value = serde_json::from_str(&requests[2].body).unwrap();
+    let schema = &structured_probe["response_format"]["json_schema"]["schema"];
+    assert_eq!(structured_probe["response_format"]["type"], "json_schema");
     assert_eq!(
-        body["response_format"]["json_schema"]["strict"],
+        structured_probe["response_format"]["json_schema"]["strict"],
         json!(true)
     );
     assert_eq!(schema["type"], "object");
     assert_eq!(schema["additionalProperties"], json!(false));
     assert_eq!(schema["required"], json!(["ok"]));
     assert_eq!(schema["properties"]["ok"]["type"], "boolean");
+    drop(requests);
     handle.abort();
 }
 
 #[tokio::test]
-async fn connection_test_reports_endpoint_and_model_levels_separately() {
-    let runner = stored_runner();
+async fn an_unreachable_endpoint_skips_both_capability_levels() {
+    // Bind and immediately release a port so nothing is listening on it.
+    let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+    let address = listener.local_addr().unwrap();
+    drop(listener);
 
-    // Model check fails with 401 while the endpoint is still reachable.
+    let runner = stored_runner();
+    let mut profile = openai_chat(&format!("http://{address}"));
+    profile.deployment = LlmDeployment::Local;
+
+    let report = runner.check_connection(&profile).await;
+    assert!(!report.endpoint.reachable);
+    assert!(
+        report.model.is_none() && report.structured.is_none(),
+        "no capability level may run against an unreachable endpoint"
+    );
+    assert_eq!(
+        report.model_failure_code.as_deref(),
+        Some("llm.endpoint_unreachable")
+    );
+    assert!(!report.model_ok() && !report.task_ready());
+}
+
+#[tokio::test]
+async fn endpoint_reachable_but_unauthorized_stops_before_the_structured_level() {
+    let runner = stored_runner();
     let server = Arc::new(MockLlmServer::default());
     let (base, handle) = start_server(
         server.clone(),
@@ -808,22 +855,35 @@ async fn connection_test_reports_endpoint_and_model_levels_separately() {
         ],
     )
     .await;
+
     let report = runner.check_connection(&openai_chat(&base)).await;
     assert!(
         report.endpoint.reachable,
         "any HTTP answer counts as reachable"
     );
-    assert!(
-        !report.model_ok(),
-        "model level must gate the usable verdict"
-    );
+    assert!(!report.model_ok(), "model level must gate the verdict");
     assert_eq!(
         report.model_failure_code.as_deref(),
         Some("llm.auth_failed")
     );
+    assert!(
+        report.structured.is_none() && report.structured_failure_code.is_none(),
+        "a failed model level must not attempt the structured level"
+    );
+    assert_eq!(
+        server.requests.lock().unwrap().len(),
+        2,
+        "endpoint probe plus one capability request only"
+    );
     handle.abort();
+}
 
-    // Fully working endpoint and model.
+/// The exact failure this work exists for: the model answers, structured
+/// output does not follow the profile's contract, and the report must say
+/// "callable, structured output unavailable" rather than "model unavailable".
+#[tokio::test]
+async fn a_model_that_answers_text_but_fails_structured_output_stays_callable() {
+    let runner = stored_runner();
     let server = Arc::new(MockLlmServer::default());
     let (base, handle) = start_server(
         server.clone(),
@@ -837,14 +897,90 @@ async fn connection_test_reports_endpoint_and_model_levels_separately() {
             QueuedResponse {
                 status: "200 OK",
                 headers: vec![],
+                body: chat_content("ok"),
+                delay_ms: 0,
+            },
+            // Prose instead of the requested JSON object.
+            QueuedResponse {
+                status: "200 OK",
+                headers: vec![],
+                body: chat_content("Sure! Here is a helpful answer instead."),
+                delay_ms: 0,
+            },
+        ],
+    )
+    .await;
+
+    let report = runner.check_connection(&openai_chat(&base)).await;
+    assert!(report.endpoint.reachable);
+    assert!(report.model_ok(), "the model itself is callable");
+    assert!(!report.structured_ok(), "structured output did not work");
+    assert!(!report.task_ready());
+    assert_eq!(
+        report.structured_failure_code.as_deref(),
+        Some("llm.invalid_structured_response")
+    );
+    assert_eq!(
+        report.model_failure_code, None,
+        "a structured failure must never be reported as a model failure"
+    );
+    assert_eq!(
+        server.requests.lock().unwrap().len(),
+        3,
+        "no strategy fallback: exactly one request per level"
+    );
+    handle.abort();
+}
+
+/// The structured probe must be planned by the same compatibility policy the
+/// real tasks use, so a supplier that cannot take a strict schema is probed
+/// with its own strategy.
+#[tokio::test]
+async fn the_structured_probe_uses_the_profile_capability_strategy() {
+    let runner = stored_runner();
+    let server = Arc::new(MockLlmServer::default());
+    let (base, handle) = start_server(
+        server.clone(),
+        vec![
+            QueuedResponse {
+                status: "200 OK",
+                headers: vec![],
+                body: "{}".into(),
+                delay_ms: 0,
+            },
+            QueuedResponse {
+                status: "200 OK",
+                headers: vec![],
+                body: chat_content("ok"),
+                delay_ms: 0,
+            },
+            QueuedResponse {
+                status: "200 OK",
+                headers: vec![],
                 body: chat_content("{\"ok\": true}"),
                 delay_ms: 0,
             },
         ],
     )
     .await;
-    let report = runner.check_connection(&openai_chat(&base)).await;
-    assert!(report.endpoint.reachable);
-    assert!(report.model_ok(), "model capability check passed");
+
+    let mut profile = openai_chat(&base);
+    profile.compatibility_profile = LlmCompatibilityProfile::DeepSeek;
+
+    let report = runner.check_connection(&profile).await;
+    assert!(report.task_ready());
+
+    let requests = server.requests.lock().unwrap();
+    let structured_probe: serde_json::Value = serde_json::from_str(&requests[2].body).unwrap();
+    assert_eq!(
+        structured_probe["response_format"]["type"], "json_object",
+        "a DeepSeek probe must never send a strict JSON Schema"
+    );
+    assert_eq!(
+        structured_probe["thinking"],
+        json!({"type": "disabled"}),
+        "the probe follows the same reasoning policy as a real task"
+    );
+    drop(requests);
     handle.abort();
 }

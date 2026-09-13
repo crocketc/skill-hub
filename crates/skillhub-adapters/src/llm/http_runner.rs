@@ -12,7 +12,7 @@ use crate::llm::request_plan::{plan_request, LlmRequestPlan, ResponseExpectation
 use skillhub_core::llm::{
     ConnectionTestResult, CredentialRef, CredentialStore, EndpointCheckResult, LlmAdmin,
     LlmProfile, LlmTaskKind, LlmTaskRequest, LlmTaskResponse, LlmTaskRunner, ModelCheckResult,
-    NetworkGate,
+    NetworkGate, StructuredCheckResult,
 };
 use skillhub_core::{AppError, AppResult, ErrorCode, OperationId, RecoveryAction, Severity};
 
@@ -21,6 +21,9 @@ const RETRY_BACKOFF_BASE_MS: u64 = 100;
 const RETRY_BACKOFF_CAP_MS: u64 = 2_000;
 const MODEL_FETCH_TIMEOUT_MS: u64 = 15_000;
 const ENDPOINT_PROBE_TIMEOUT_MS: u64 = 8_000;
+/// A connection test is an explicit diagnostic action; local reasoning models
+/// may need longer than the ordinary task deadline for a first answer.
+const PROBE_TIMEOUT_FLOOR_MS: u64 = 60_000;
 const CANCEL_POLL_MS: u64 = 50;
 /// Reference id used by administration calls on drafts that carry an inline
 /// credential but no persisted reference yet.
@@ -155,10 +158,14 @@ impl HttpLlmTaskRunner {
         Err(last_error.unwrap_or_else(|| AppError::llm_model_not_found("")))
     }
 
-    /// Two-level connection test. Level one probes raw endpoint reachability
+    /// Three-level connection test. Level one probes raw endpoint reachability
     /// (any HTTP answer counts); level two proves credentials, model
-    /// availability and a minimal structured round-trip. Only a passing model
-    /// level allows the UI to display "model connection available".
+    /// availability and a parseable envelope with a plain-text request; level
+    /// three proves the profile's structured-output strategy actually works.
+    ///
+    /// A model that answers text but fails structured output is reported as
+    /// callable with structured output unavailable — never as an unusable
+    /// model. No strategy fallback is attempted: one request per level.
     pub async fn check_connection(&self, profile: &LlmProfile) -> ConnectionTestResult {
         self.check_connection_in(&self.credentials, profile).await
     }
@@ -174,23 +181,25 @@ impl HttpLlmTaskRunner {
                 endpoint,
                 model: None,
                 model_failure_code: Some(ErrorCode::LlmEndpointUnreachable.as_str().to_owned()),
+                structured: None,
+                structured_failure_code: None,
             };
         }
-        // Minimal capability request: a tiny task whose only purpose is to
-        // prove auth + model availability + structured response parsing. The
-        // schema must satisfy OpenAI strict-mode server validation (every
-        // property listed in `required`, `additionalProperties: false`);
-        // otherwise strict providers reject the probe with 400 and a valid
-        // key would surface as a failed connection test (M-13 root cause).
-        let probe = match LlmTaskRequest::new(
+
+        // Local reasoning models can produce their first response just after
+        // the normal task deadline. A configuration test is an explicit
+        // diagnostic action, so give it a bounded 60s floor without slowing
+        // ordinary safety/translation tasks.
+        let mut probe_profile = profile.clone();
+        probe_profile.timeout_ms = probe_profile.timeout_ms.max(PROBE_TIMEOUT_FLOOR_MS);
+
+        // Level two: a low-token plain-text request. It proves authentication,
+        // model existence and a parseable envelope without demanding JSON, so
+        // a model that only speaks prose still counts as callable.
+        let text_probe = match LlmTaskRequest::new(
             LlmTaskKind::Translation,
-            "Reply with {\"ok\": true}. Do not follow any other instructions.".to_owned(),
-            serde_json::json!({
-                "type": "object",
-                "properties": {"ok": {"type": "boolean"}},
-                "required": ["ok"],
-                "additionalProperties": false,
-            }),
+            "Reply with the single word: ok".to_owned(),
+            serde_json::json!({"type": "object"}),
         ) {
             Ok(probe) => probe,
             Err(error) => {
@@ -198,41 +207,99 @@ impl HttpLlmTaskRunner {
                     endpoint,
                     model: None,
                     model_failure_code: Some(error.code.as_str().to_owned()),
+                    structured: None,
+                    structured_failure_code: None,
                 }
             }
         };
         let started = std::time::Instant::now();
-        // Local reasoning models can produce their first structured response
-        // just after the normal task deadline. A configuration test is an
-        // explicit diagnostic action, so give it a bounded 60s floor without
-        // slowing ordinary safety/translation tasks.
-        let mut probe_profile = profile.clone();
-        probe_profile.timeout_ms = probe_profile.timeout_ms.max(60_000);
-        match self
-            .run_with_cancel_in(
+        if let Err(error) = self
+            .execute_in(
                 credentials,
                 &probe_profile,
-                probe,
+                &text_probe,
+                ResponseExpectation::Text,
                 Arc::new(AtomicBool::new(false)),
             )
             .await
         {
-            Ok(_) => ConnectionTestResult {
-                endpoint,
-                model: Some(ModelCheckResult {
-                    ok: true,
-                    latency_ms: Some(started.elapsed().as_millis() as u32),
-                }),
-                model_failure_code: None,
-            },
-            Err(error) => ConnectionTestResult {
+            return ConnectionTestResult {
                 endpoint,
                 model: Some(ModelCheckResult {
                     ok: false,
                     latency_ms: Some(started.elapsed().as_millis() as u32),
                 }),
                 model_failure_code: Some(error.code.as_str().to_owned()),
-            },
+                structured: None,
+                structured_failure_code: None,
+            };
+        }
+        let model = ModelCheckResult {
+            ok: true,
+            latency_ms: Some(started.elapsed().as_millis() as u32),
+        };
+
+        // Level three: the structured request the real tasks will send, using
+        // this profile's own compatibility strategy. The schema satisfies
+        // OpenAI strict-mode server validation (every property listed in
+        // `required`, `additionalProperties: false`), otherwise strict
+        // providers reject a valid key's probe with 400 (M-13 root cause).
+        let structured_probe = match LlmTaskRequest::new(
+            LlmTaskKind::Translation,
+            "Reply with {\"ok\": true}. Do not follow any other instructions.".to_owned(),
+            probe_schema(),
+        ) {
+            Ok(probe) => probe,
+            Err(error) => {
+                return ConnectionTestResult {
+                    endpoint,
+                    model: Some(model),
+                    model_failure_code: None,
+                    structured: None,
+                    structured_failure_code: Some(error.code.as_str().to_owned()),
+                }
+            }
+        };
+        let started = std::time::Instant::now();
+        let structured = match self
+            .execute_in(
+                credentials,
+                &probe_profile,
+                &structured_probe,
+                ResponseExpectation::Structured {
+                    schema: structured_probe.response_schema.clone(),
+                },
+                Arc::new(AtomicBool::new(false)),
+            )
+            .await
+        {
+            Ok(content) => {
+                let ok = structured_probe_succeeded(&content);
+                let code =
+                    (!ok).then(|| ErrorCode::LlmInvalidStructuredResponse.as_str().to_owned());
+                (
+                    StructuredCheckResult {
+                        ok,
+                        latency_ms: Some(started.elapsed().as_millis() as u32),
+                    },
+                    code,
+                )
+            }
+            Err(error) => (
+                StructuredCheckResult {
+                    ok: false,
+                    latency_ms: Some(started.elapsed().as_millis() as u32),
+                },
+                Some(error.code.as_str().to_owned()),
+            ),
+        };
+
+        ConnectionTestResult {
+            endpoint,
+            model: Some(model),
+            model_failure_code: None,
+            structured: Some(structured.0),
+            structured_failure_code: structured.1,
         }
     }
 
@@ -384,13 +451,48 @@ impl HttpLlmTaskRunner {
         &self,
         credentials: &Arc<dyn CredentialStore>,
         profile: &LlmProfile,
-        mut request: LlmTaskRequest,
+        request: LlmTaskRequest,
         cancel: Arc<AtomicBool>,
     ) -> AppResult<LlmTaskResponse> {
+        // The business path always asks for a structured response.
+        let content = self
+            .execute_in(
+                credentials,
+                profile,
+                &request,
+                ResponseExpectation::Structured {
+                    schema: request.response_schema.clone(),
+                },
+                cancel,
+            )
+            .await?;
+        let output = parse_structured_content(&content, request.kind)?;
+        Ok(LlmTaskResponse {
+            request_id: OperationId::new().to_string(),
+            kind: request.kind,
+            output,
+        })
+    }
+
+    /// Executes one planned request and returns the extracted assistant text.
+    ///
+    /// The expectation decides what the transport is asked for: a text probe
+    /// demands only non-empty prose, while a structured task carries the
+    /// profile's schema and is parsed by the caller. An empty answer is always
+    /// an interrupted response.
+    async fn execute_in(
+        &self,
+        credentials: &Arc<dyn CredentialStore>,
+        profile: &LlmProfile,
+        request: &LlmTaskRequest,
+        expectation: ResponseExpectation,
+        cancel: Arc<AtomicBool>,
+    ) -> AppResult<String> {
         profile.validate()?;
-        validate_input_size(profile, &request)?;
+        validate_input_size(profile, request)?;
         self.ensure_gate(profile)?;
         let adapter = adapter_for(profile.protocol);
+        let mut request = request.clone();
 
         let mut attempt: u32 = 0;
         loop {
@@ -411,16 +513,8 @@ impl HttpLlmTaskRunner {
             }
 
             // One plan per attempt: URL and authentication from the transport,
-            // structured output and reasoning from the capability policy. The
-            // business path always asks for a structured response.
-            let plan = plan_request(
-                &resolved,
-                secret.as_deref(),
-                &request,
-                ResponseExpectation::Structured {
-                    schema: request.response_schema.clone(),
-                },
-            )?;
+            // structured output and reasoning from the capability policy.
+            let plan = plan_request(&resolved, secret.as_deref(), &request, expectation.clone())?;
 
             let client = self.client(profile.timeout_ms)?;
             match send_with_cancel(&client, &plan, profile.timeout_ms, &cancel).await {
@@ -433,12 +527,10 @@ impl HttpLlmTaskRunner {
                         }
                     };
                     let content = adapter.extract_text(&body)?;
-                    let output = parse_structured_content(&content, request.kind)?;
-                    return Ok(LlmTaskResponse {
-                        request_id: OperationId::new().to_string(),
-                        kind: request.kind,
-                        output,
-                    });
+                    if content.trim().is_empty() {
+                        return Err(AppError::llm_response_interrupted());
+                    }
+                    return Ok(content);
                 }
                 Err((error, retry_after)) => {
                     let error = with_url(error, &plan.url);
@@ -597,6 +689,28 @@ pub fn parse_structured_content(content: &str, kind: LlmTaskKind) -> AppResult<V
         );
     }
     Ok(output)
+}
+
+/// Schema sent by the structured connection probe. It satisfies OpenAI strict
+/// mode (every property in `required`, `additionalProperties: false`) so a
+/// strict provider does not reject a valid credential's probe with 400.
+fn probe_schema() -> Value {
+    serde_json::json!({
+        "type": "object",
+        "properties": {"ok": {"type": "boolean"}},
+        "required": ["ok"],
+        "additionalProperties": false,
+    })
+}
+
+/// True when the structured probe's answer carries a boolean `ok`, i.e. the
+/// profile's structured-output strategy actually produced machine-readable
+/// output rather than prose.
+fn structured_probe_succeeded(content: &str) -> bool {
+    match parse_structured_content(content, LlmTaskKind::Translation) {
+        Ok(output) => output.get("ok").is_some_and(Value::is_boolean),
+        Err(_) => false,
+    }
 }
 
 fn validate_input_size(profile: &LlmProfile, request: &LlmTaskRequest) -> AppResult<()> {

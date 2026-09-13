@@ -15,7 +15,9 @@ pub use compatibility::{
     LlmAuthStrategy, LlmCompatibilityPolicy, LlmCompatibilityProfile, LlmEndpointStrategy,
     LlmModelListStrategy, LlmReasoningPolicy, LlmStructuredOutputStrategy,
 };
-pub use connection::{ConnectionTestResult, EndpointCheckResult, ModelCheckResult};
+pub use connection::{
+    ConnectionTestResult, EndpointCheckResult, ModelCheckResult, StructuredCheckResult,
+};
 pub use model::{CredentialRef, LlmProfile, LlmTaskKind, LlmTaskRequest, LlmTaskResponse};
 pub use network_gate::NetworkGate;
 pub use provider::{

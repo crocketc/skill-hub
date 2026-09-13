@@ -26,8 +26,9 @@ pub trait LlmTaskRunner: Send + Sync {
 }
 
 /// Administration seam for provider management: model-list fetch and the
-/// two-level connection test. Implemented by the HTTP runner in the adapters
-/// crate and by fakes in tests.
+/// three-level connection test (endpoint reachability, model callable,
+/// structured-output compatibility). Implemented by the HTTP runner in the
+/// adapters crate and by fakes in tests.
 #[async_trait(?Send)]
 pub trait LlmAdmin: Send + Sync {
     async fn fetch_models(

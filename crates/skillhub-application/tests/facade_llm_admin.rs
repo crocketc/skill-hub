@@ -9,7 +9,7 @@ use skillhub_core::api::{
 use skillhub_core::llm::{
     ConnectionTestResult, CredentialRef, CredentialStore, EndpointCheckResult, LlmAdmin,
     LlmDeployment, LlmProfile, LlmProtocolFamily, LlmProviderConfig, LlmTaskRequest,
-    LlmTaskResponse, LlmTaskRunner, ModelCheckResult, NetworkGate,
+    LlmTaskResponse, LlmTaskRunner, ModelCheckResult, NetworkGate, StructuredCheckResult,
 };
 use skillhub_core::settings::{DesktopPreferences, LlmCapabilitySettings};
 use skillhub_core::{AppResult, ApplicationFacade, SkillId};
@@ -95,6 +95,11 @@ impl LlmAdmin for FakeAdmin {
                 latency_ms: Some(30),
             }),
             model_failure_code: None,
+            structured: Some(StructuredCheckResult {
+                ok: true,
+                latency_ms: Some(45),
+            }),
+            structured_failure_code: None,
         }
     }
 }
