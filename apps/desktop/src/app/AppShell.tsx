@@ -105,6 +105,15 @@ export function resolveSubRouteFallback(pathname: string): string | null {
   return null;
 }
 
+/** 只有技能详情及其操作子页使用沉浸式布局；其它 library 子页仍保留壳层。 */
+export function isSkillDetailRoute(pathname: string): boolean {
+  return (
+    (pathname !== "/library/combinations" &&
+      /^\/library\/[^/]+(?:\/(?:deploy|security))?$/.test(pathname)) ||
+    pathname.startsWith("/__preview/skill-detail/")
+  );
+}
+
 /** react-router 写入浏览器历史的位置标记（BrowserRouter 场景）。 */
 export interface ShellHistoryPosition {
   /** 当前条目在会话历史中的序号；无标记（如 MemoryRouter、首次加载）为 null。 */
@@ -149,8 +158,7 @@ export function AppShell({ refreshSnapshot, snapshot, verification }: AppShellPr
   const navigate = useNavigate();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const title = t(resolveRouteTitleKey(pathname));
-  const isSkillDetailRoute =
-    pathname.startsWith("/library/") || pathname.startsWith("/__preview/skill-detail/");
+  const isDetailRoute = isSkillDetailRoute(pathname);
   const backFallback = resolveSubRouteFallback(pathname);
   const historyControls = resolveShellHistoryControls(
     readHistoryPosition(),
@@ -178,8 +186,8 @@ export function AppShell({ refreshSnapshot, snapshot, verification }: AppShellPr
           collapsed={sidebarCollapsed}
           onToggle={() => setSidebarCollapsed((value) => !value)}
         />
-        <section className={`sh-app-shell__workspace${isSkillDetailRoute ? " is-detail-route" : ""}`}>
-          {!isSkillDetailRoute ? (
+        <section className={`sh-app-shell__workspace${isDetailRoute ? " is-detail-route" : ""}`}>
+          {!isDetailRoute ? (
             <header className="sh-app-shell__topbar">
               <div className="sh-app-shell__topbar-start">
                 {historyControls.showBack ? (

@@ -4,6 +4,8 @@ use url::Url;
 
 use crate::{AppError, AppResult, ErrorCode, Severity};
 
+use super::provider::local_http_host_allowed;
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 #[serde(deny_unknown_fields)]
 pub struct CredentialRef {
@@ -84,17 +86,12 @@ impl LlmProfile {
     pub fn validate(&self) -> AppResult<()> {
         let parsed = Url::parse(&self.endpoint).map_err(|_| invalid_profile("endpoint"))?;
         let host = parsed.host_str().unwrap_or_default();
-        let loopback = host.eq_ignore_ascii_case("localhost")
-            || host.ends_with(".localhost")
-            || host == "[::1]"
-            || host.starts_with("127.");
-        // Plain http is only ever acceptable on loopback: those addresses are
-        // local model services no matter how the deployment flag is set. The
-        // user-facing LlmProviderConfig keeps the stricter rule that requires
-        // the explicit Local deployment.
+        // Plain http is only acceptable for local/private/link-local model
+        // services. The user-facing LlmProviderConfig additionally requires
+        // the explicit Local deployment for non-HTTPS endpoints.
         let scheme_ok = match parsed.scheme() {
             "https" => parsed.host_str().is_some(),
-            "http" => loopback,
+            "http" => local_http_host_allowed(host),
             _ => false,
         };
         if !scheme_ok {

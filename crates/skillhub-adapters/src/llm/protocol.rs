@@ -5,7 +5,7 @@
 use serde_json::{json, Value};
 use url::Url;
 
-use skillhub_core::llm::{LlmProfile, LlmProtocolFamily, LlmTaskRequest};
+use skillhub_core::llm::{LlmDeployment, LlmProfile, LlmProtocolFamily, LlmTaskRequest};
 use skillhub_core::{AppError, AppResult};
 
 /// A fully assembled chat request: URL, ordered headers and JSON body.
@@ -88,10 +88,15 @@ fn openai_chat_request(
     let url = if profile.endpoint.contains("/chat/completions") {
         profile.endpoint.clone()
     } else {
-        format!(
-            "{}/chat/completions",
-            profile.endpoint.trim_end_matches('/')
-        )
+        let endpoint = profile.endpoint.trim_end_matches('/');
+        let endpoint = if matches!(profile.deployment, LlmDeployment::Local)
+            && version_suffix(endpoint).is_none()
+        {
+            format!("{endpoint}/v1")
+        } else {
+            endpoint.to_owned()
+        };
+        format!("{}/chat/completions", endpoint)
     };
     Ok(ChatRequestDraft {
         url,

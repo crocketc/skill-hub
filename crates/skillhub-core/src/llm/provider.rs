@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::net::IpAddr;
 use url::Url;
 
 use crate::{AppError, AppResult, ErrorCode, Severity};
@@ -203,7 +204,9 @@ impl LlmProviderConfig {
     }
 
     /// Endpoint rules: online providers must use https; local models may use
-    /// plain http only on loopback addresses so LAN plaintext is rejected.
+    /// plain http only on loopback, private-network, or link-local addresses.
+    /// This keeps local services such as Ollama and LM Studio usable over a
+    /// user's LAN without allowing arbitrary public plaintext endpoints.
     pub fn validate(&self) -> AppResult<()> {
         let parsed =
             Url::parse(&self.endpoint).map_err(|_| endpoint_not_allowed("endpoint_unparsable"))?;
@@ -217,12 +220,8 @@ impl LlmProviderConfig {
                 }
             }
             LlmDeployment::Local => {
-                let loopback = host.eq_ignore_ascii_case("localhost")
-                    || host.ends_with(".localhost")
-                    || host == "[::1]"
-                    || host.starts_with("127.");
-                if parsed.scheme() == "http" && !loopback {
-                    return Err(endpoint_not_allowed("local_http_requires_loopback"));
+                if parsed.scheme() == "http" && !local_http_host_allowed(host) {
+                    return Err(endpoint_not_allowed("local_http_requires_trusted_network"));
                 }
                 if parsed.scheme() != "http" && parsed.scheme() != "https" {
                     return Err(endpoint_not_allowed("endpoint_scheme"));
@@ -237,6 +236,49 @@ impl LlmProviderConfig {
         }
         Ok(())
     }
+}
+
+/// Plain HTTP is allowed for local deployments only when the destination is
+/// unambiguously local to the machine or its private/link-local network.
+/// Public DNS names, public IP addresses, and unspecified addresses remain
+/// disallowed so a Local flag cannot silently turn into an arbitrary HTTP
+/// client.
+pub(crate) fn local_http_host_allowed(host: &str) -> bool {
+    if host.eq_ignore_ascii_case("localhost") || host.ends_with(".localhost") {
+        return true;
+    }
+
+    // `url::Url::host_str()` is normally bracket-free for IPv6, but accepting
+    // the bracketed form here keeps the helper correct for callers that pass
+    // the URL host representation directly.
+    let normalized_host = host
+        .strip_prefix('[')
+        .and_then(|value| value.strip_suffix(']'))
+        .unwrap_or(host);
+
+    match normalized_host.parse::<IpAddr>() {
+        Ok(IpAddr::V4(address)) => {
+            address.is_loopback() || is_private_ipv4(address) || address.is_link_local()
+        }
+        Ok(IpAddr::V6(address)) => {
+            address.is_loopback() || is_unique_local_ipv6(address) || is_link_local_ipv6(address)
+        }
+        Err(_) => false,
+    }
+}
+
+fn is_private_ipv4(address: std::net::Ipv4Addr) -> bool {
+    let [first, second, ..] = address.octets();
+    first == 10 || (first == 172 && (16..=31).contains(&second)) || (first == 192 && second == 168)
+}
+
+fn is_unique_local_ipv6(address: std::net::Ipv6Addr) -> bool {
+    address.octets()[0] & 0xfe == 0xfc
+}
+
+fn is_link_local_ipv6(address: std::net::Ipv6Addr) -> bool {
+    let [first, second, ..] = address.octets();
+    first == 0xfe && (0x80..=0xbf).contains(&second)
 }
 
 impl LlmProviderConfig {

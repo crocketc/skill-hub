@@ -6,6 +6,7 @@ import { createSkillHubI18n } from "../../i18n";
 import { ThemeProvider } from "../../styles/ThemeProvider";
 import { OverviewPage } from "./OverviewPage";
 import { OverviewPreviewShell } from "./OverviewPreview";
+import overviewCss from "./overview.css?raw";
 
 function mockBrowserPreferences() {
   vi.stubGlobal(
@@ -54,4 +55,12 @@ it("mounts the deterministic overview preview with deployment, tag, and pending 
   expect(screen.getByRole("heading", { name: "4 pending items" })).toBeVisible();
   expect(screen.getByRole("link", { name: "3 configured agents" })).toBeVisible();
   expect(screen.getByRole("link", { name: "5 discovered agents" })).toBeVisible();
+});
+
+it("gives the full-screen overview a denser fixed two-row rhythm", () => {
+  expect(overviewCss).toMatch(/\.sh-overview__hero\s*\{[\s\S]*min-height:\s*7rem/);
+  expect(overviewCss).toMatch(/\.sh-overview__stat\s*\{[\s\S]*min-height:\s*5rem/);
+  expect(overviewCss).toMatch(
+    /\.sh-overview \.sh-overview__content-grid\s*\{[\s\S]*min-height:\s*clamp\(24rem, calc\(100dvh - 25rem\), 34rem\)/,
+  );
 });

@@ -23,6 +23,8 @@ export function AiNetworkSettings({ settings, facade = unavailableSettingsFacade
   const [enabled, setEnabled] = useState(settings.networkEnabled);
   const toggle = async () => { const next = !enabled; setEnabled(next); await facade.execute({ type: "set_network_enabled", payload: { enabled: next } }); };
   const scope = dataScopeView(settings.dataScope, (key) => t(key as never));
+  const providerLabel = settings.llmProvider.trim();
+  const hasConfiguredProvider = providerLabel !== "" && providerLabel !== "未配置" && providerLabel !== "Not configured";
   return (
     <section aria-labelledby="settings-network-heading" className="sh-settings-card">
       <div className="sh-section-heading">
@@ -31,7 +33,9 @@ export function AiNetworkSettings({ settings, facade = unavailableSettingsFacade
           <p>{t("settings.network.description")}</p>
         </div>
         <span className="sh-status sh-status--muted">
-          {settings.llmProvider.trim() === "" ? t("settings.network.providerUnconfigured") : settings.llmProvider}
+          {hasConfiguredProvider
+            ? t("settings.network.providerConfigured", { provider: providerLabel })
+            : t("settings.network.providerUnconfigured")}
         </span>
       </div>
       <Switch checked={!enabled} label={t("settings.network.disableAll")} name="network-disable-all" onChange={() => void toggle()} />

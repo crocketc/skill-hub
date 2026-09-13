@@ -13,6 +13,7 @@ import {
   type LlmProviderDraft,
   type LlmProviderPreset,
   type LlmProviderView,
+  usableLlmProviderLabel,
   unavailableLlmFacade,
 } from "./llmApi";
 import { ConnectionReportList } from "./ConnectionReportList";
@@ -64,7 +65,13 @@ type DraftActionState =
  * credential entry, model fetch, the two-level connection test and
  * enable/default/delete. Credential values live only in this form until they
  * are handed to the OS credential store; edits never echo the stored key. */
-export function LlmProvidersSettings({ facade = unavailableLlmFacade }: { facade?: LlmAdminFacade }) {
+export function LlmProvidersSettings({
+  facade = unavailableLlmFacade,
+  onProviderStatusChange,
+}: {
+  facade?: LlmAdminFacade;
+  onProviderStatusChange?: (providerLabel: string) => void;
+}) {
   const { t } = useTranslation();
   const [providers, setProviders] = useState<LlmProviderView[]>();
   const [presets, setPresets] = useState<LlmProviderPreset[]>();
@@ -93,7 +100,10 @@ export function LlmProvidersSettings({ facade = unavailableLlmFacade }: { facade
   const refresh = () => {
     facade
       .listProviders()
-      .then(setProviders)
+      .then((nextProviders) => {
+        setProviders(nextProviders);
+        onProviderStatusChange?.(usableLlmProviderLabel(nextProviders));
+      })
       .catch((reason: unknown) => setError(describe(reason)));
     facade
       .listPresets()
@@ -101,7 +111,7 @@ export function LlmProvidersSettings({ facade = unavailableLlmFacade }: { facade
       .catch(() => setPresets([]));
   };
 
-  useEffect(refresh, [facade]);
+  useEffect(refresh, [facade, onProviderStatusChange]);
 
   const guard = (action: () => Promise<void>) => {
     if (busy) return;

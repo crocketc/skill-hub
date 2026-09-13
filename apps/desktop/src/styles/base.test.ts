@@ -100,3 +100,9 @@ describe("sidebar collapse control contrast across the nine themes", () => {
     },
   );
 });
+
+it("keeps the detail notification bell clear of the content scrollbar", () => {
+  expect(rawBlockFor(".sh-app-shell__detail-notifications")).toContain(
+    "right: calc(var(--space-4) + var(--space-3))",
+  );
+});

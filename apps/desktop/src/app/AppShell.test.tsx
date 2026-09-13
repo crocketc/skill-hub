@@ -90,4 +90,11 @@ describe("AppShell", () => {
     await user.click(bell);
     expect(await screen.findByRole("dialog", { name: "Notifications" })).toBeVisible();
   });
+
+  it("keeps the shell topbar visible on the combination manager route", async () => {
+    await renderShell("/library/combinations");
+
+    expect(screen.getByRole("heading", { name: "Skill library" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Back" })).toBeVisible();
+  });
 });

@@ -805,7 +805,8 @@ a {
 .sh-app-shell__detail-notifications {
   position: absolute;
   top: var(--space-3);
-  right: var(--space-4);
+  /* 与详情内容滚动条留出一个 space-3 的缓冲，避免浮动入口压住轨道。 */
+  right: calc(var(--space-4) + var(--space-3));
   z-index: 20;
 }
 

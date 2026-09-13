@@ -17,7 +17,7 @@
   flex-direction: column;
   justify-content: center;
   gap: var(--space-1);
-  min-height: 6.5rem;
+  min-height: 7rem;
   padding: var(--space-4) var(--space-5);
   border: 1px solid var(--ui-border);
   border-radius: var(--radius-lg);
@@ -62,7 +62,7 @@
   justify-content: center;
   gap: var(--space-1);
   min-width: 0;
-  min-height: 4.25rem;
+  min-height: 5rem;
   padding: var(--space-3) var(--space-4);
   margin: 0;
   border: 1px solid var(--ui-border-subtle);
@@ -124,6 +124,12 @@
 /* 图表画布充满面板高度，避免右栏较高时图表面板下方出现大片空白。 */
 .sh-overview .sh-overview__chart-canvas {
   height: 100%;
+}
+
+/* 宽屏时图表区承担页面剩余高度，避免指标下方出现大块空白；clamp
+   在 100% 全屏保持稳定，同时让最小窗口仍由外层滚动承接。 */
+.sh-overview .sh-overview__content-grid {
+  min-height: clamp(24rem, calc(100dvh - 25rem), 34rem);
 }
 
 /* 维度切换的输入框视觉上透明（绝对定位 + opacity:0），全局 ：focus-visible

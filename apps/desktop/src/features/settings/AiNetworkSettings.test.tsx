@@ -61,7 +61,18 @@ it("shows an honest placeholder instead of an empty badge when no provider is se
     i18n,
   );
 
-  expect(screen.getByText("未配置")).toBeVisible();
+  expect(screen.getByText("尚未配置可用的 LLM 供应商")).toBeVisible();
+});
+
+it("shows the configured provider after the surrounding settings state is updated", async () => {
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  renderCard(
+    { networkEnabled: true, llmProvider: "GLM", dataScope: "explicit_selection" },
+    facadeWith(async () => undefined),
+    i18n,
+  );
+
+  expect(screen.getByText("已配置：GLM")).toBeVisible();
 });
 
 it("keeps toggling the network switch through the facade", async () => {

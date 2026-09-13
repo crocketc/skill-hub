@@ -157,6 +157,25 @@ it("lists providers with credential status, deployment badge and default marker"
   expect(within(ollama.closest("li")!).getByRole("button", { name: "启用" })).toBeVisible();
 });
 
+it("reports the currently usable provider to the surrounding settings surface", async () => {
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  const { facade } = recordingFacade({ providers: PROVIDERS });
+  const onProviderStatusChange = vi.fn();
+
+  render(
+    <I18nextProvider i18n={i18n}>
+      <ThemeProvider>
+        <LlmProvidersSettings
+          facade={facade}
+          onProviderStatusChange={onProviderStatusChange}
+        />
+      </ThemeProvider>
+    </I18nextProvider>,
+  );
+
+  await waitFor(() => expect(onProviderStatusChange).toHaveBeenLastCalledWith("DeepSeek"));
+});
+
 it("renders every provider as a full-width entity row with endpoint, model and enabled state", async () => {
   const i18n = await createSkillHubI18n(["zh-CN"]);
   const { facade } = recordingFacade({ providers: PROVIDERS });

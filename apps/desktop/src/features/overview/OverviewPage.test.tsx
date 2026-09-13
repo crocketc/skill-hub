@@ -182,11 +182,11 @@ it("renders each compact stat as a two-line card with a numeric figure and a met
 it("locks the density ladder and the two-row metrics contract in overview.css", () => {
   // 注意：本用例以正则匹配 CSS 源文本锁定布局契约（团队既有模式）。重排
   // overview.css / base.css（含 prettier 空格换行差异）时需同步更新这些断言。
-  // 比例阶梯：hero ≥ 6rem，紧凑卡 ≥ 4rem（原先 2.5rem 的矮卡是留白根因之一）。
+  // 比例阶梯：hero ≥ 7rem，紧凑卡 ≥ 5rem，图表区承担视口剩余高度。
   const heroRule = overviewCss.match(/\.sh-overview__hero\s*\{([^}]*)\}/)?.[1] ?? "";
-  expect(heroRule).toContain("min-height: 6.5rem");
+  expect(heroRule).toContain("min-height: 7rem");
   const statRule = overviewCss.match(/\.sh-overview__stat\s*\{([^}]*)\}/)?.[1] ?? "";
-  expect(statRule).toContain("min-height: 4.25rem");
+  expect(statRule).toContain("min-height: 5rem");
 
   // M-20 两行指标契约：宽容器下 hero 独占第一行（跨全部 4 列），紧凑统计
   // 通过 display:contents 落到第二行；禁止 hero+统计并入单行 5 卡横带。

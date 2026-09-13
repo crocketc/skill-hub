@@ -90,6 +90,17 @@ fn local_profiles_send_no_authorization_header_and_keep_custom_headers() {
 }
 
 #[test]
+fn local_openai_compatible_base_url_without_version_uses_v1_chat_path() {
+    let adapter = adapter_for(LlmProtocolFamily::OpenAiCompatible);
+    let mut local = profile(LlmProtocolFamily::OpenAiCompatible, "http://127.0.0.1:1234");
+    local.deployment = LlmDeployment::Local;
+
+    let draft = adapter.chat_request(&local, None, &request()).unwrap();
+
+    assert_eq!(draft.url, "http://127.0.0.1:1234/v1/chat/completions");
+}
+
+#[test]
 fn anthropic_uses_x_api_key_version_header_and_message_payload() {
     let adapter = adapter_for(LlmProtocolFamily::Anthropic);
     let base = profile(LlmProtocolFamily::Anthropic, "https://api.anthropic.test");

@@ -1956,7 +1956,8 @@
       "dataScopeExplicitSelection": "Only features you explicitly enabled",
       "dataScopeGeneric": "Minimal per-feature sending",
       "dataScopeNote": "When an AI feature is enabled, only the minimal content that feature needs (such as a skill description or search keywords) is sent; your skill library is never uploaded wholesale.",
-      "providerUnconfigured": "Not configured"
+      "providerUnconfigured": "No usable LLM provider configured yet",
+      "providerConfigured": "Configured: {{provider}}"
     },
     "llm": {
       "capabilitiesHeading": "AI capabilities",

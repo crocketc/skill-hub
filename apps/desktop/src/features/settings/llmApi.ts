@@ -34,6 +34,16 @@ export type LlmProviderDraft = {
   credential: string | null;
 };
 
+/** Returns the first enabled provider that can actually be used by AI features. */
+export function usableLlmProviderLabel(providers: ReadonlyArray<LlmProviderView>): string {
+  const provider = providers.find(
+    ({ config, credential_configured }) =>
+      config.enabled && (config.deployment === "local" || credential_configured),
+  );
+  if (!provider) return "";
+  return provider.config.label?.trim() || provider.config.id;
+}
+
 export type LlmCapabilityState = {
   capabilities: LlmCapabilitySettings;
   aiOutputLanguage: string;

@@ -108,7 +108,14 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
         >
           <svg aria-hidden="true" className="sh-sidebar__toggle-icon" fill="none" viewBox="0 0 24 24">
             <path
-              d={isCollapsed ? "m9 6 6 6-6 6" : "m15 6-6 6 6 6"}
+              d={isCollapsed ? "M19.5 5.5h-7v13h7z" : "M4.5 5.5h7v13h-7z"}
+              stroke="currentColor"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth="1.75"
+            />
+            <path
+              d={isCollapsed ? "m9 8.5 3.5 3.5L9 15.5" : "m15 8.5-3.5 3.5 3.5 3.5"}
               stroke="currentColor"
               strokeLinecap="round"
               strokeLinejoin="round"

@@ -1956,7 +1956,8 @@
       "dataScopeExplicitSelection": "仅限你明确开启的功能",
       "dataScopeGeneric": "按功能最小发送",
       "dataScopeNote": "开启某项 AI 功能后，只发送该功能所需的最少内容（例如技能描述、搜索关键词）；不会上传整个技能库。",
-      "providerUnconfigured": "未配置"
+      "providerUnconfigured": "尚未配置可用的 LLM 供应商",
+      "providerConfigured": "已配置：{{provider}}"
     },
     "llm": {
       "capabilitiesHeading": "AI 能力开关",

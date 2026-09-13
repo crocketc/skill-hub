@@ -82,7 +82,7 @@ fn protocol_family_and_deployment_are_explicit() {
 }
 
 #[test]
-fn online_configs_require_https_and_local_configs_allow_only_loopback_http() {
+fn online_configs_require_https_and_local_configs_allow_trusted_local_http() {
     let http_online = LlmProviderConfig::new(
         "acme",
         "Acme",
@@ -122,8 +122,52 @@ fn online_configs_require_https_and_local_configs_allow_only_loopback_http() {
         "qwen3:8b",
         None,
     )
-    .expect_err("non-loopback http must be rejected even for local models");
-    assert!(endpoint_error(ErrorCode::LlmEndpointNotAllowed, &lan_local));
+    .expect("private LAN http is valid for local models");
+    assert_eq!(lan_local.deployment, LlmDeployment::Local);
+    lan_local
+        .to_profile()
+        .expect("private LAN http also passes runtime profile validation");
+
+    let link_local = LlmProviderConfig::new(
+        "lm-studio-lan",
+        "LM Studio on the LAN",
+        LlmProtocolFamily::OpenAiCompatible,
+        LlmDeployment::Local,
+        "http://169.254.83.107:1234",
+        "qwen3.5-4b",
+        None,
+    )
+    .expect("IPv4 link-local http is valid for local models");
+    assert_eq!(link_local.deployment, LlmDeployment::Local);
+
+    let ipv6_link_local = LlmProviderConfig::new(
+        "ollama-ipv6",
+        "Ollama over IPv6",
+        LlmProtocolFamily::OpenAiCompatible,
+        LlmDeployment::Local,
+        "http://[fe80::1]:11434/v1",
+        "qwen3:8b",
+        None,
+    )
+    .expect("IPv6 link-local http is valid for local models");
+    ipv6_link_local
+        .to_profile()
+        .expect("IPv6 link-local http also passes runtime profile validation");
+
+    let public_local = LlmProviderConfig::new(
+        "public-http",
+        "Public HTTP",
+        LlmProtocolFamily::OpenAiCompatible,
+        LlmDeployment::Local,
+        "http://203.0.113.10:1234/v1",
+        "qwen3:8b",
+        None,
+    )
+    .expect_err("public http must be rejected even for local models");
+    assert!(endpoint_error(
+        ErrorCode::LlmEndpointNotAllowed,
+        &public_local
+    ));
 
     let localhost_alias = LlmProviderConfig::new(
         "lm-studio",

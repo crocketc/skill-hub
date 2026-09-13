@@ -97,4 +97,14 @@ describe("Sidebar", () => {
     expect(header!.firstElementChild).toBe(screen.getByRole("button", { name: "Collapse navigation" }));
     expect(header!.querySelector(".sh-sidebar__brand")).not.toBeNull();
   });
+
+  it("uses the two-part sidebar glyph instead of a bare chevron", async () => {
+    await renderSidebar();
+
+    const glyph = screen
+      .getByRole("button", { name: "Collapse navigation" })
+      .querySelector(".sh-sidebar__toggle-icon");
+
+    expect(glyph?.querySelectorAll("path")).toHaveLength(2);
+  });
 });

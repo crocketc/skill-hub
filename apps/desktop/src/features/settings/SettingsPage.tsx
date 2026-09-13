@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
 import { DataState } from "../../ui/DataState";
@@ -34,6 +34,13 @@ export function SettingsPage({ facade = unavailableSettingsFacade, initialSettin
   const [settings, setSettings] = useState<SettingsSnapshot | undefined>(initialSettings);
   const [error, setError] = useState<string>();
   const [activeSection, setActiveSection] = useState<SettingsSectionId>("general");
+  const updateLlmProvider = useCallback((providerLabel: string) => {
+    setSettings((current) =>
+      current
+        ? { ...current, network: { ...current.network, llmProvider: providerLabel } }
+        : current,
+    );
+  }, []);
   useEffect(() => { if (initialSettings || !facade.get) return; void facade.get().then(setSettings).catch((reason: unknown) => setError(reason instanceof Error ? reason.message : String(reason))); }, [facade, initialSettings]);
 
   if (error) return <DataState message={error} state="unavailable" />;
@@ -93,7 +100,10 @@ export function SettingsPage({ facade = unavailableSettingsFacade, initialSettin
         <AiNetworkSettings facade={facade} settings={settings.network} />
         {facade.llm ? (
           <>
-            <LlmProvidersSettings facade={facade.llm} />
+            <LlmProvidersSettings
+              facade={facade.llm}
+              onProviderStatusChange={updateLlmProvider}
+            />
             <LlmCapabilitiesSettings facade={facade.llm} />
           </>
         ) : null}
