@@ -4,6 +4,7 @@ import { I18nextProvider } from "react-i18next";
 import { vi, expect, it } from "vitest";
 import { createSkillHubI18n } from "../../i18n";
 import baseCss from "../../styles/base.css?raw";
+import skillsCss from "./skills.css?raw";
 import {
   DEFAULT_SKILL_QUERY,
   DEFAULT_TABLE_PREFERENCES,
@@ -106,6 +107,36 @@ it("uses the unified control classes for search and dropdown filters", async () 
   expect(screen.getByRole("combobox", { name: /Version/ })).toHaveClass("sh-select");
 });
 
+// M-21 IA：高级筛选带统一为「标签在上、控件在下」的等高 Field 网格。
+// 裸 label（部署状态/版本）此前缺失 grid 布局类，是版本下拉悬空的根因。
+it("places every advanced filter on the shared field grid with the label above the control", async () => {
+  await renderSkillFilters();
+
+  for (const name of ["Deployment", /Version/]) {
+    const field = screen.getByRole("combobox", { name }).closest("label");
+    expect(field).toHaveClass("sh-skill-filters__field");
+  }
+  // 多值筛选与裸字段共用同一字段网格行（等高、标签在上）。
+  for (const name of ["Basic check", "AI check", "Lifecycle", "Tags"]) {
+    expect(screen.getByText(name, { selector: ".sh-filter-dropdown__label" })).toBeVisible();
+  }
+});
+
+it("themes the multi-select trigger to the shared control box inside the library field grid", () => {
+  // 触发器此前无控件盒（无描边/高度），与 Select 视觉断裂。
+  expect(skillsCss).toMatch(
+    /\.sh-skill-library \.sh-skill-filters__advanced \.sh-filter-dropdown__trigger\s*\{[^}]*min-height:\s*2\.5rem/,
+  );
+  expect(skillsCss).toMatch(
+    /\.sh-skill-library \.sh-skill-filters__advanced \.sh-filter-dropdown__trigger\s*\{[^}]*border:\s*1px solid var\(--ui-control-border\)/,
+  );
+  // 字段网格：等宽下限 11rem，标签在上控件在下。
+  expect(skillsCss).toMatch(
+    /\.sh-skill-library \.sh-skill-filters__advanced\s*\{[^}]*grid-template-columns:\s*repeat\(auto-fit,\s*minmax\(11rem,\s*1fr\)\)/,
+  );
+  expect(skillsCss).toMatch(/\.sh-skill-filters__field\s*\{[^}]*display:\s*grid/);
+});
+
 it("keeps multi-value filters inside a compact dropdown menu", async () => {
   await renderSkillFilters();
   expect(screen.getByText("Basic check", { selector: ".sh-filter-dropdown__label" })).toBeVisible();
@@ -204,29 +235,35 @@ it("places user views after the first four in a labelled details menu", async ()
   expect(moreViews).toHaveAttribute("open");
 });
 
-it("wraps the filter grid before zoomed desktop widths can overflow", () => {
-  expect(baseCss).toMatch(
-    /@media \(max-width: 90rem\)[\s\S]*\.sh-skill-library__query-tools > section\s*\{[\s\S]*grid-template-columns:\s*repeat\(4, minmax\(0, 1fr\)/,
+// —— D5 契约迁移：base.css 的 .sh-skill-library__query-tools* 网格已随
+// M-21 三 band 工具栏成为死代码并删除；下列断言改锁 skills.css 的现行
+// 布局契约（自动换行网格 / 有界搜索字段 / 按簇折行的检索带）。 ——
+
+it("wraps the advanced filter grid before zoomed desktop widths can overflow", () => {
+  // 现行契约：高级筛选带用 auto-fit 网格，窄宽按 11rem 下限折行，不横向溢出。
+  expect(skillsCss).toMatch(
+    /\.sh-skill-library \.sh-skill-filters__advanced\s*\{[\s\S]*?grid-template-columns:\s*repeat\(auto-fit, minmax\(11rem, 1fr\)\)/,
+  );
+  expect(baseCss).not.toContain(".sh-skill-library__query-tools > section");
+});
+
+it("keeps the search field bounded inside the primary filter row", () => {
+  // 现行契约：搜索字段 min-width:0 可收缩，flex-basis 14rem 保持可点宽度。
+  expect(skillsCss).toMatch(
+    /\.sh-skill-filters__primary > \.sh-filter-search\s*\{[\s\S]*?min-width:\s*0[\s\S]*?flex:\s*1 1 14rem/,
   );
 });
 
-it("keeps the search field bounded inside the zoomed filter grid", () => {
-  const zoomedStart = baseCss.indexOf("@media (max-width: 90rem)");
-  const zoomedEnd = baseCss.indexOf("@media (max-width: 48rem)", zoomedStart);
-  const zoomedLayout = baseCss.slice(zoomedStart, zoomedEnd);
-  expect(zoomedLayout).toMatch(
-    /\.sh-skill-library__query-tools > section > \.sh-filter-search\s*\{[\s\S]*grid-column:\s*auto/,
+it("keeps the search band on one compact row that wraps by cluster", () => {
+  // 现行契约：检索带整簇折行（flex-wrap），搜索簇以 24rem 弹性下限参与折行，
+  // 100%/110% 缩放下先整簇换行而非控件散架。
+  const bandStart = skillsCss.indexOf(".sh-skill-library__band--search {");
+  expect(bandStart).toBeGreaterThanOrEqual(0);
+  const bandBlock = skillsCss.slice(bandStart, skillsCss.indexOf("}", bandStart));
+  expect(bandBlock).toContain("flex-wrap: wrap");
+  expect(skillsCss).toMatch(
+    /\.sh-skill-library__band--search > \.sh-skill-filters\s*\{[\s\S]*?flex:\s*1 1 24rem/,
   );
-});
-
-it("keeps 100% and 110% filters on one compact row", () => {
-  const compactStart = baseCss.indexOf("@media (max-width: 112rem)");
-  const compactEnd = baseCss.indexOf("@media (max-width: 90rem)", compactStart);
-  const compactLayout = baseCss.slice(compactStart, compactEnd);
-  expect(compactLayout).toMatch(
-    /grid-template-columns:\s*minmax\(12rem, 2fr\) repeat\(6, minmax\(5\.5rem, 1fr\)\)/,
-  );
-  expect(compactLayout).not.toMatch(/grid-template-columns:\s*repeat\(4,/);
 });
 
 it("keeps the desktop shell fixed while enabling outer scroll only for wrapped zoom", () => {

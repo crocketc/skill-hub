@@ -68,14 +68,15 @@
 .sh-skill-library .sh-skill-table__region {
   overflow-x: auto;
   overscroll-behavior-x: contain;
-  /* P1-08：滚动条必须可感知——细滚动条 + 主题色滑块，
-     保证 100% 比例下隐藏列能被用户发现并横向到达。 */
-  scrollbar-width: thin;
+  /* M-21 取证：thin 级滚动条在 Windows 真机上几乎不可见，被误读为
+     “没有横向滚动条”。改用 auto 级宽度 + 主题色滑块，保证 100% 比例下
+     隐藏列能被用户发现并横向到达。 */
+  scrollbar-width: auto;
   scrollbar-color: var(--ui-accent) var(--ui-surface-subtle);
 }
 
 /* base.css 的表格 min-width:max(84rem,100%) 与 14 列固定像素宽在 1280px 窗口
-   必然产生横向滚动；这里改为比例列宽（table-layout: fixed），默认列集在
+   必然产生横向滚动；这里改为列宽比例（table-layout: fixed），默认列集在
    1280px 内不再溢出，窄窗口以 56rem 为可用下限并由结果区域单向横滚。 */
 .sh-skill-library .sh-skill-table {
   width: 100%;
@@ -83,21 +84,27 @@
   table-layout: fixed;
 }
 
-/* 比例列宽：替换 base.css 的固定像素列宽（含 min-width），总和 100%。 */
-.sh-skill-library .sh-skill-table [data-column="select"] { width: 4%; min-width: 0; }
-.sh-skill-library .sh-skill-table [data-column="name"] { width: 13%; min-width: 0; }
-.sh-skill-library .sh-skill-table [data-column="purpose"] { width: 10%; min-width: 0; }
-.sh-skill-library .sh-skill-table [data-column="tags"] { width: 7%; min-width: 0; }
-.sh-skill-library .sh-skill-table [data-column="lifecycle"] { width: 5%; min-width: 0; }
-.sh-skill-library .sh-skill-table [data-column="agent_deployments"] { width: 11%; min-width: 0; }
-.sh-skill-library .sh-skill-table [data-column="project_deployments"] { width: 7%; min-width: 0; }
-.sh-skill-library .sh-skill-table [data-column="version"] { width: 6%; min-width: 0; }
-.sh-skill-library .sh-skill-table [data-column="security"] { width: 9%; min-width: 0; }
-.sh-skill-library .sh-skill-table [data-column="source"] { width: 7%; min-width: 0; }
-.sh-skill-library .sh-skill-table [data-column="ownership"] { width: 6%; min-width: 0; }
-.sh-skill-library .sh-skill-table [data-column="license"] { width: 5%; min-width: 0; }
-.sh-skill-library .sh-skill-table [data-column="invocation"] { width: 6%; min-width: 0; }
-.sh-skill-library .sh-skill-table [data-column="requirements"] { width: 4%; min-width: 0; }
+/* M-21 横向滚动取证后的列宽契约：每列一个 rem 宽度，同时充当比例与地板。
+   真实行为（Chromium 探针）：fixed 布局对单元格 min-width 与 width:max(%,rem)
+   一律忽略、对纯百分比/纯长度才生效——纯 % 在全列开启的 1280px 视口不会
+   自然溢出，列被均压到 71px、末列表头裁剪且无滚动条（真机反馈的根因）。
+   rem 宽度：剩余空间按列宽比例分配（默认列集 1280px 仍放得下），启用列的
+   总和超过区域宽度时溢出交给结果区域横向滚动兜底，末列经滚动完全可达。
+   min-width:0 继续中和 base.css 的固定像素列 min-width。 */
+.sh-skill-library .sh-skill-table [data-column="select"] { width: 2.5rem; min-width: 0; }
+.sh-skill-library .sh-skill-table [data-column="name"] { width: 10rem; min-width: 0; }
+.sh-skill-library .sh-skill-table [data-column="purpose"] { width: 8rem; min-width: 0; }
+.sh-skill-library .sh-skill-table [data-column="tags"] { width: 6rem; min-width: 0; }
+.sh-skill-library .sh-skill-table [data-column="lifecycle"] { width: 6rem; min-width: 0; }
+.sh-skill-library .sh-skill-table [data-column="agent_deployments"] { width: 9rem; min-width: 0; }
+.sh-skill-library .sh-skill-table [data-column="project_deployments"] { width: 7rem; min-width: 0; }
+.sh-skill-library .sh-skill-table [data-column="version"] { width: 6rem; min-width: 0; }
+.sh-skill-library .sh-skill-table [data-column="security"] { width: 12rem; min-width: 0; }
+.sh-skill-library .sh-skill-table [data-column="source"] { width: 8rem; min-width: 0; }
+.sh-skill-library .sh-skill-table [data-column="ownership"] { width: 7rem; min-width: 0; }
+.sh-skill-library .sh-skill-table [data-column="license"] { width: 6rem; min-width: 0; }
+.sh-skill-library .sh-skill-table [data-column="invocation"] { width: 8rem; min-width: 0; }
+.sh-skill-library .sh-skill-table [data-column="requirements"] { width: 8rem; min-width: 0; }
 
 /* 单元格回到单行省略号（与 base.css 一致），完整文本经 title 提示可达；
    安全检查单元格例外：徽标换行堆叠，不靠固定宽度撑开整表。 */
@@ -122,14 +129,10 @@
   }
 }
 
-/* —— 筛选栏：搜索与当前生效条件常驻，次要筛选可折叠（设计规格 5.3） —— */
-
-/* base.css 将筛选区按 9 列网格布局；重构后搜索行与次要筛选分区两行排布。 */
-.sh-skill-library .sh-skill-library__query-tools > section {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: var(--space-2);
-}
+/* —— 筛选栏：搜索与当前生效条件常驻，次要筛选可折叠（设计规格 5.3） ——
+   （审查 C3，2026-09-14：旧版 query-tools 九列网格布局规则已随 M-21 三
+   band 工具栏成为死代码删除；现行布局契约见下方 .sh-skill-filters__*
+   与 M-21 工具栏 band 规则。） */
 
 .sh-skill-filters__primary {
   display: flex;
@@ -141,7 +144,7 @@
 .sh-skill-filters__primary > .sh-filter-search {
   display: grid;
   min-width: 0;
-  flex: 1 1 16rem;
+  flex: 1 1 14rem;
   gap: var(--space-1);
   color: var(--ui-ink-muted);
   font-size: var(--font-size-xs);
@@ -151,6 +154,20 @@
   display: inline-flex;
   align-items: center;
   gap: var(--space-2);
+  min-height: 2rem;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--ui-control-border);
+  border-radius: var(--radius-xs);
+  background: var(--ui-control-background);
+  color: var(--ui-ink-muted);
+  font: inherit;
+  font-size: var(--font-size-xs);
+  cursor: pointer;
+}
+
+.sh-skill-library__filter-toggle:hover {
+  border-color: var(--ui-control-border-hover);
+  color: var(--ui-ink);
 }
 
 .sh-skill-library__filter-count {
@@ -163,14 +180,42 @@
   font-weight: 650;
 }
 
-.sh-skill-filters__advanced {
+/* M-21 IA：高级筛选带（工具栏第二 band）——六个过滤控件统一为
+   「标签在上、控件在下」的等高 Field 网格。MultiSelectMenu 自带
+   .sh-filter-dropdown（display:grid）参与同一网格；裸 label 补齐
+   .sh-skill-filters__field 布局类，版本/部署下拉不再悬空。 */
+.sh-skill-library .sh-skill-filters__advanced {
   display: grid;
   min-width: 0;
   align-items: end;
-  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
-  gap: var(--space-2);
-  padding-top: var(--space-2);
-  border-top: 1px solid var(--ui-border-subtle);
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+  gap: var(--space-2) var(--space-3);
+}
+
+.sh-skill-filters__field {
+  display: grid;
+  min-width: 0;
+  gap: var(--space-1);
+  margin: 0;
+  color: var(--ui-ink-muted);
+  font-size: var(--font-size-xs);
+}
+
+/* 多选触发器补齐与 .sh-select 相同的控件盒（2.5rem 高、同一描边/圆角/
+   底色），检索带内控件不再有裸按钮的视觉断裂。 */
+.sh-skill-library .sh-skill-filters__advanced .sh-filter-dropdown__trigger {
+  width: 100%;
+  min-height: 2.5rem;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--ui-control-border);
+  border-radius: var(--radius-xs);
+  background: var(--ui-control-background);
+  color: var(--ui-ink);
+  font: inherit;
+}
+
+.sh-skill-library .sh-skill-filters__advanced .sh-filter-dropdown__trigger:hover {
+  border-color: var(--ui-control-border-hover);
 }
 
 /* 已保存视图删除：统一关闭图标按钮（40px 目标），悬停转危险语义。 */
@@ -219,27 +264,25 @@
   color: var(--ui-accent);
 }
 
-/* —— 视图切换：可见标签 + 紧凑控件行（可键盘操作的原生 select） —— */
-
-/* P1-08 工具栏重组：单一工具栏，第一行常驻（搜索 + 模式开关 + 汇总 +
-   折叠开关），第二行（已保存视图）可折叠。查询语义不变。 */
+/* —— M-21 IA 重排：工具栏三 band（单列 grid，band 间距用 token） ——
+   检索带（常驻单行：左簇搜索可伸展 + 筛选开关 + 清除；右簇 = 结果摘要 |
+   分组切换 | 组合管理入口 | 收起视图栏；视图切换已迁壳层标题栏，见
+   libraryViewContext）、高级筛选带（筛选开关开合）、视图带（收起视图栏
+   开合）。窄宽按簇折行，不单控件乱换行。 */
 .sh-skill-library__toolbar {
   display: grid;
   min-width: 0;
   gap: var(--space-2);
 }
 
-/* M-21 IA 重排：主行 = 主搜索（左，弹性伸展）+ 动作簇（右，margin 吸附最右）。
-   动作簇内是页面级动作：视图切换（表格/卡片/关系矩阵）、分组、组合管理入口、
-   已保存视图折叠开关。图标按钮保持 40px 交互下限。 */
-.sh-skill-library__toolbar-main {
+.sh-skill-library__band--search {
   display: flex;
   align-items: flex-end;
   flex-wrap: wrap;
-  gap: var(--space-3) var(--space-4);
+  gap: var(--space-2) var(--space-4);
 }
 
-.sh-skill-library__toolbar-main > .sh-skill-filters {
+.sh-skill-library__band--search > .sh-skill-filters {
   flex: 1 1 24rem;
   min-width: 0;
 }
@@ -252,7 +295,8 @@
   margin-inline-start: auto;
 }
 
-/* M-21 #7：动作簇内的分组层级分隔（视图切换 | 管理入口）。 */
+/* M-21 #7：动作簇内的分组层级分隔（摘要 | 分组切换 | 管理入口；视图切换
+   已迁壳层标题栏）。 */
 .sh-skill-library__toolbar-divider {
   align-self: stretch;
   width: 1px;
@@ -267,22 +311,44 @@
 }
 
 /* M-21 #7：图标按钮 40×40 交互下限（size sm 的 32px 高度不满足）。
-   视图切换按钮为纯图标控件，必须达到 2.5rem 高度。 */
+   本簇内纯图标/紧凑控件（分组切换等）必须达到 2.5rem 高度；
+   顶栏视图切换按钮的形态由 libraryViewContext 自行保证。 */
 .sh-skill-library__mode-switch .sh-button {
   min-width: 2.5rem;
   min-height: 2.5rem;
   padding-inline: 0;
 }
 
-/* —— M-21 #3：表格视图 = 页面内唯一滚动容器 ——
-   页面区块成为定高 flex 列（外壳内容不再纵向滚动），表格工作区占据剩余高度，
-   纵向+横向滚动都收归 .sh-skill-table__region；分页条固定在表格下方，
-   不参与滚动也不被压叠。批量条激活时由 --skill-batch-bar-height 预留的
-   padding-bottom 保证分页仍可见（1600×900 E2E 几何契约不回退）。 */
-.sh-skill-library.sh-skill-library--table-view {
+/* —— M-21 #3：表格/卡片视图 = 「专属滚动区域 + 稳定页脚」模型 ——
+   页面区块成为定高 flex 列（外壳内容不再纵向滚动）：表格/卡片区占据剩余
+   高度，纵向+横向滚动收归各自滚动区域；分页条固定在滚动区下方，不参与
+   滚动也不被压叠。批量条激活时由 --skill-batch-bar-height 预留的
+   padding-bottom 与分页 margin 双保险，保证分页仍可见
+   （1600×900 E2E 几何契约不回退）。矩阵视图不参与该模型。 */
+.sh-skill-library.sh-skill-library--table-view,
+.sh-skill-library.sh-skill-library--cards-view {
   height: calc(100vh - var(--topbar-height) - 2 * var(--space-5));
   height: calc(100dvh - var(--topbar-height) - 2 * var(--space-5));
   min-height: 0;
+}
+
+/* 卡片视图：页级选择工具行钉在滚动区上方，卡网格在 __scroll 内滚动。 */
+.sh-skill-library--cards-view .sh-skill-cards__body {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-height: 0;
+}
+
+.sh-skill-library--cards-view .sh-skill-cards__scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-x: auto;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--ui-accent) var(--ui-surface-subtle);
 }
 
 /* ≤90rem 时 base.css 把工作区降级为自然高度三行（页面级滚动模式）；
@@ -322,34 +388,6 @@
 
 .sh-skill-library__toolbar-secondary[hidden] {
   display: none;
-}
-
-.sh-skill-library__view-toggle {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-3);
-}
-
-.sh-skill-library__view-toggle label {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  color: var(--ui-ink-muted);
-  font-size: var(--font-size-xs);
-}
-
-.sh-skill-library__view-toggle select {
-  /* 统一 Select 控件默认 width:100%，工具条内保持自适应宽度。 */
-  width: auto;
-  min-height: 2rem;
-  padding: 0 var(--space-2);
-  border: 1px solid var(--ui-control-border);
-  border-radius: var(--radius-xs);
-  background: var(--ui-control-background);
-  color: var(--ui-ink);
-  font: inherit;
-  font-size: var(--font-size-xs);
 }
 
 /* —— 卡片视图分页（与表格分页共用 SkillPagination 语义） —— */
@@ -393,6 +431,15 @@
 .sh-skill-library--batch-active .sh-skill-cards__pagination,
 .sh-skill-library--batch-active .sh-skill-table__pagination {
   margin-bottom: calc(var(--skill-batch-bar-height, 0px) + var(--space-4));
+}
+
+/* M-21 pinned 模型（定高表格/卡片视图）：固定批量条的让位由根元素
+   padding-bottom 统一预留，分页不再叠加 margin 让位——双重预留会把
+   专属滚动区域挤压到 0（1280×720 矮窗真机复现）。矩阵等文档流视图
+   仍走上方 margin 让位。 */
+.sh-skill-library--table-view .sh-skill-table__pagination,
+.sh-skill-library--cards-view .sh-skill-cards__pagination {
+  margin-bottom: 0;
 }
 
 .sh-skill-pagination label {

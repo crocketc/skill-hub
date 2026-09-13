@@ -9,9 +9,15 @@ import { I18nextProvider } from "react-i18next";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { skillHubI18n } from "../../i18n";
 import "../../styles/base.css";
+import baseCssRaw from "../../styles/base.css?raw";
 import { AppNotificationsProvider } from "../../ui/notifications";
 import {
+  LibraryViewModeProvider,
+  LibraryViewModeSwitch,
+} from "./libraryViewContext";
+import {
   SkillLibraryUnavailableError,
+  type LibraryViewMode,
   type SavedSkillView,
   type SkillDrawerPreferences,
   type SkillLibraryFacade,
@@ -75,7 +81,13 @@ function renderLibrary({
       <QueryClientProvider client={queryClient}>
         {/* M-21：页面直接消费全局通知服务，测试宿主挂同一 Provider 契约。 */}
         <AppNotificationsProvider>
-          <RouterProvider router={router} />
+          {/* D5：视图切换已上提到壳层标题栏（AppShell topbar-context）。
+              测试宿主按真实壳层契约组合 Provider + 切换 + 页面，
+              使顶栏切换与页面渲染分支的双向同步可在此验证。 */}
+          <LibraryViewModeProvider>
+            <LibraryViewModeSwitch />
+            <RouterProvider router={router} />
+          </LibraryViewModeProvider>
         </AppNotificationsProvider>
       </QueryClientProvider>
     </I18nextProvider>,
@@ -1007,8 +1019,16 @@ describe("SkillLibraryPage", () => {
     await waitFor(() => {
       expect(workspace).toHaveStyle("--skill-batch-bar-height: 72px");
     });
-    expect(getComputedStyle(workspace).paddingBottom).toContain(
-      "--skill-batch-bar-height",
+    // 审查 C1（2026-09-14）：jsdom 不解析 var()，旧的
+    // getComputedStyle(...).paddingBottom 断言只是回显声明串的工件断言。
+    // 改为锁两层真实契约：① 组件写入的内联自定义属性与测量高度一致；
+    // ② base.css 的 batch-active 规则以该变量预留 padding-bottom
+    // （?raw 契约锁，真机由浏览器解析 var() 生效）。
+    expect(workspace.style.getPropertyValue("--skill-batch-bar-height")).toBe(
+      "72px",
+    );
+    expect(baseCssRaw).toMatch(
+      /\.sh-skill-library--batch-active\s*\{[^}]*padding-bottom:\s*calc\(var\(--skill-batch-bar-height, 0px\)/,
     );
 
     batchHeight = 148;
@@ -1016,6 +1036,9 @@ describe("SkillLibraryPage", () => {
       resizeCallback?.([], {} as ResizeObserver);
     });
     expect(workspace).toHaveStyle("--skill-batch-bar-height: 148px");
+    expect(workspace.style.getPropertyValue("--skill-batch-bar-height")).toBe(
+      "148px",
+    );
     expect(getComputedStyle(batchBar).flexWrap).toBe("wrap");
   });
 
@@ -1512,6 +1535,77 @@ describe("SkillLibraryPage", () => {
     expect(await screen.findByRole("table")).toBeVisible();
   });
 
+  it("routes a title-bar switch click into the page view and the pressed state (D5)", async () => {
+    const facade = createMockSkillLibraryFacade();
+    facade.saveViewMode = vi.fn(async () => undefined);
+    renderLibrary({ facade, persistedViewMode: "unset" });
+
+    await screen.findByTestId("skill-card-skill-pdf");
+
+    // 顶栏切换点击 → 页面渲染分支与按压态同步变化，持久化语义不变。
+    fireEvent.click(screen.getByRole("button", { name: "Relations matrix" }));
+    expect(screen.getByRole("button", { name: "Relations matrix" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "Card view" })).toHaveAttribute("aria-pressed", "false");
+
+    fireEvent.click(screen.getByRole("button", { name: "Table view" }));
+    expect(await screen.findByRole("table")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Table view" })).toHaveAttribute("aria-pressed", "true");
+    expect(facade.saveViewMode).toHaveBeenLastCalledWith("table");
+  });
+
+  it("reflects page hydration of the persisted view in the title-bar switch (D5)", async () => {
+    const facade = createMockSkillLibraryFacade();
+    // renderLibrary 默认模拟"用户已持久化表格视图"。
+    renderLibrary({ facade });
+
+    // 页面水合 → 顶栏切换的按压态同步到持久化值。
+    expect(await screen.findByRole("table")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Table view" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "Card view" })).toHaveAttribute("aria-pressed", "false");
+  });
+
+  // 审查 C5（2026-09-14）：挂载水合是把持久化值交接给壳层上下文，
+  // 绝不产生落盘调用（与实现注释“水合交接不落盘”一致）。
+  it("does not persist during the hydration handoff", async () => {
+    const facade = createMockSkillLibraryFacade();
+    facade.saveViewMode = vi.fn(async () => undefined);
+    renderLibrary({ facade });
+
+    // 水合生效：持久化的 table 接管 UI。
+    expect(await screen.findByRole("table")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Table view" })).toHaveAttribute("aria-pressed", "true");
+    expect(facade.saveViewMode).not.toHaveBeenCalled();
+  });
+
+  // 审查 D5b（2026-09-14）：水合竞态——loadViewMode 解析前用户已经顶栏
+  // 切换时，迟到的持久化值必须丢弃：不得覆盖用户选择，也不得再落盘。
+  it("ignores a late persisted view mode when the user already switched", async () => {
+    const facade = createMockSkillLibraryFacade();
+    facade.saveViewMode = vi.fn(async () => undefined);
+    let resolveLoad!: (mode: LibraryViewMode) => void;
+    facade.loadViewMode = vi.fn(
+      () =>
+        new Promise<LibraryViewMode>((resolve) => {
+          resolveLoad = resolve;
+        }),
+    );
+    renderLibrary({ facade });
+
+    // load 未解析：默认卡片视图可见；用户先切换到表格（立即落盘一次）。
+    await screen.findByTestId("skill-card-skill-pdf");
+    fireEvent.click(screen.getByRole("button", { name: "Table view" }));
+    expect(facade.saveViewMode).toHaveBeenLastCalledWith("table");
+    expect(await screen.findByRole("table")).toBeVisible();
+
+    // 迟到的持久化值（cards）解析完成：用户选择保持不变。
+    await act(async () => {
+      resolveLoad("cards");
+    });
+    expect(screen.getByRole("table")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Table view" })).toHaveAttribute("aria-pressed", "true");
+    expect(facade.saveViewMode).toHaveBeenCalledTimes(1);
+  });
+
   it("keeps the batch selection when switching between card and table views", async () => {
     const facade = createMockSkillLibraryFacade();
     renderLibrary({ facade, persistedViewMode: "unset" });
@@ -1763,37 +1857,144 @@ describe("SkillLibraryPage", () => {
     await waitFor(() => expect(router.state.location.pathname).toBe("/library/combinations"));
   });
 
-  it("places the view switch and relation entry at the far right of the page toolbar (M-21)", async () => {
+  it("keeps the relation entry at the far right of the search band while the view switch lives in the title bar (D5)", async () => {
     const facade = createMockSkillLibraryFacade();
     facade.listCombinations = vi.fn().mockResolvedValue([]);
     renderLibrary({ facade, persistedViewMode: "unset" });
 
     await screen.findByTestId("skill-card-skill-pdf");
 
-    // 结构接缝：动作簇是工具栏主行的最后一个区块，视图切换（含关系矩阵）
-    // 与组合管理入口都收拢在动作簇内。
-    const toolbarMain = document.querySelector(".sh-skill-library__toolbar-main");
-    expect(toolbarMain).not.toBeNull();
-    const actions = toolbarMain!.querySelector(".sh-skill-library__toolbar-actions");
+    // 结构接缝：检索带是工具栏第一个 band，动作簇是检索带最后一个区块；
+    // 视图切换已迁入壳层标题栏（AppShell topbar-context），动作簇只留
+    // 结果摘要 / 分组 / 组合管理入口 / 收起视图栏。
+    const searchBand = document.querySelector(".sh-skill-library__band--search");
+    expect(searchBand).not.toBeNull();
+    const actions = searchBand!.querySelector(".sh-skill-library__toolbar-actions");
     expect(actions).not.toBeNull();
     expect((actions as HTMLElement).nextElementSibling).toBeNull();
-
-    const viewSwitch = within(actions as HTMLElement).getByRole("group", { name: "View mode" });
-    expect(within(viewSwitch).getByRole("button", { name: "Table view" })).toBeTruthy();
-    expect(within(viewSwitch).getByRole("button", { name: "Card view" })).toBeTruthy();
-    expect(within(viewSwitch).getByRole("button", { name: "Relations matrix" })).toBeTruthy();
+    expect(
+      within(actions as HTMLElement).queryByRole("group", { name: "View mode" }),
+    ).toBeNull();
     expect(within(actions as HTMLElement).getByRole("link", { name: "Combination manager" })).toBeTruthy();
 
-    // 右置契约：动作簇通过 margin-inline-start:auto 吸附到工具栏行最右
+    // 右置契约：动作簇通过 margin-inline-start:auto 吸附到检索带最右
     // （jsdom 无布局引擎，几何右缘由浏览器/E2E 兑现）。
     expect(getComputedStyle(actions as HTMLElement).marginInlineStart).toBe("auto");
 
-    // 键盘可达：每个视图按钮可聚焦且有可访问名称。
+    // 键盘可达：每个视图按钮可聚焦且有可访问名称（标题栏内的切换实例）。
     for (const name of ["Table view", "Card view", "Relations matrix"]) {
-      const button = within(viewSwitch).getByRole("button", { name });
+      const button = screen.getByRole("button", { name });
       button.focus();
       expect(button).toHaveFocus();
     }
+  });
+
+  it("orders the search band's right cluster as summary, grouping and entries (M-21/D5)", async () => {
+    const facade = createMockSkillLibraryFacade({ total: 80 });
+    facade.listCombinations = vi.fn().mockResolvedValue([]);
+    renderLibrary({ facade, persistedViewMode: "unset" });
+
+    await screen.findByTestId("skill-card-skill-pdf");
+
+    const actions = document.querySelector(
+      ".sh-skill-library__band--search .sh-skill-library__toolbar-actions",
+    ) as HTMLElement;
+    expect(actions).not.toBeNull();
+    // 右簇顺序：结果摘要 | 分隔符 | 分组切换 | 组合管理 | 收起视图栏
+    // （视图切换已迁入壳层标题栏，不再占用动作簇首位）。
+    const position = (node: Element) => Array.prototype.indexOf.call(actions.children, node);
+    const summary = within(actions).getByTestId("library-summary-total").closest("section");
+    const groupSwitch = within(actions).getByRole("group", { name: /Group by/ });
+    const combination = within(actions).getByRole("link", { name: "Combination manager" });
+    const collapse = within(actions).getByRole("button", { name: "Collapse view bar" });
+    const dividers = Array.from(
+      actions.querySelectorAll(".sh-skill-library__toolbar-divider"),
+    );
+    expect(dividers).toHaveLength(1);
+    expect(position(summary!)).toBeLessThan(position(dividers[0]!));
+    expect(position(dividers[0]!)).toBeLessThan(position(groupSwitch));
+    expect(position(groupSwitch)).toBeLessThan(position(combination));
+    expect(position(combination)).toBeLessThan(position(collapse));
+    // 摘要语义不变：总命中与标签 facet 的 testid 保留。
+    expect(summary!.contains(screen.getByTestId("library-summary-tags"))).toBe(true);
+  });
+
+  it("stacks the toolbar into three bands: search, advanced filters and saved views (M-21)", async () => {
+    const facade = createMockSkillLibraryFacade({ total: 80 });
+    renderLibrary({ facade, persistedViewMode: "unset" });
+
+    await screen.findByTestId("skill-card-skill-pdf");
+
+    const toolbar = document.querySelector(".sh-skill-library__toolbar") as HTMLElement;
+    expect(toolbar).not.toBeNull();
+    // 展开态：检索带 → 高级筛选带 → 视图带，单列 grid 的三个 band。
+    const bands = Array.from(toolbar.children) as HTMLElement[];
+    expect(bands).toHaveLength(3);
+    expect(bands[0]).toHaveClass("sh-skill-library__band--search");
+    expect(bands[1]).toHaveClass("sh-skill-filters__advanced");
+    expect(screen.getByRole("button", { name: "Basic check" }).closest(".sh-skill-filters__advanced")).toBe(bands[1]);
+    expect(bands[2]).toHaveClass("sh-skill-library__toolbar-secondary");
+    expect(bands[2]!.querySelector(".sh-skill-library__saved-views")).not.toBeNull();
+
+    // 检索带常驻：搜索、筛选开关、清除入口都在第一 band，不在高级筛选带。
+    const searchBand = bands[0]!;
+    expect(searchBand.querySelector(".sh-filter-search")).not.toBeNull();
+    expect(screen.getByRole("button", { name: /Filters/ }).closest(".sh-skill-library__band--search")).toBe(searchBand);
+
+    // 折叠高级筛选后 band 收敛为两个，视图带仍常驻（toolbarOpen 默认开）。
+    fireEvent.click(screen.getByRole("button", { name: /Filters/ }));
+    expect(Array.from((toolbar.children) as unknown as HTMLElement[])).toHaveLength(2);
+    expect(screen.queryByRole("button", { name: "Basic check" })).not.toBeInTheDocument();
+    expect(document.querySelector(".sh-skill-library__saved-views")).not.toBeNull();
+  });
+
+  it("pins card pagination below a dedicated card scroll region (M-21)", async () => {
+    const facade = createMockSkillLibraryFacade({ total: 80 });
+    renderLibrary({ facade, persistedViewMode: "unset" });
+
+    await screen.findByTestId("skill-card-skill-pdf");
+
+    // 卡片视图与表格视图同一模型：根定高、专属滚动区域、稳定页脚。
+    const workspace = document.querySelector(".sh-skill-library");
+    expect(workspace).toHaveClass("sh-skill-library--cards-view");
+
+    const scroll = document.querySelector(".sh-skill-cards__scroll") as HTMLElement;
+    expect(scroll).not.toBeNull();
+    expect(scroll.querySelector("[data-testid='skill-cards']")).not.toBeNull();
+    expect(getComputedStyle(scroll).overflowY).toBe("auto");
+
+    const pagination = document.querySelector(".sh-skill-cards__pagination") as HTMLElement;
+    expect(pagination).not.toBeNull();
+    expect(scroll.contains(pagination)).toBe(false);
+    // 滚动区域在分页之前（稳定页脚模型）。
+    expect(
+      scroll.compareDocumentPosition(pagination) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+
+    // 标签分组时分组网格同样在滚动区域内，分页仍固定在外。
+    fireEvent.click(screen.getByRole("button", { name: "Group by tag" }));
+    const scrollAfterGrouping = document.querySelector(".sh-skill-cards__scroll") as HTMLElement;
+    expect(scrollAfterGrouping.querySelector("h3")).not.toBeNull();
+    expect(scrollAfterGrouping.contains(document.querySelector(".sh-skill-cards__pagination") as HTMLElement)).toBe(false);
+  });
+
+  it("keeps pinned card pagination clear of the fixed batch bar (M-21)", async () => {
+    const facade = createMockSkillLibraryFacade({ total: 80 });
+    renderLibrary({ facade, persistedViewMode: "unset" });
+
+    await screen.findByTestId("skill-card-skill-pdf");
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: "Select current page" }),
+    );
+
+    const workspace = document.querySelector(".sh-skill-library");
+    expect(workspace).toHaveClass("sh-skill-library--batch-active");
+    // pinned 模型下让位逻辑继续成立：根元素 padding 预留批量条高度，
+    // 分页 margin 让位在定高视图中归零（避免挤压专属滚动区域）。
+    const pagination = document.querySelector(".sh-skill-cards__pagination") as HTMLElement;
+    expect(pagination).not.toBeNull();
+    expect(getComputedStyle(workspace as HTMLElement).paddingBottom).toContain("--skill-batch-bar-height");
+    expect(getComputedStyle(pagination).marginBottom).toBe("0px");
   });
 
   it("keeps icon-only view controls at the 40px interactive floor (M-21)", async () => {
@@ -1821,6 +2022,8 @@ describe("SkillLibraryPage", () => {
     const region = screen.getByRole("region", { name: "Skill results" });
     expect(getComputedStyle(region).overflowX).toBe("auto");
     expect(getComputedStyle(region).overflowY).toBe("auto");
+    // 滚动条必须可感知（M-21 取证）：auto 级宽度 + 主题色滑块。
+    expect(getComputedStyle(region).scrollbarWidth).toBe("auto");
 
     // 纵向空间归表格区域：工作区行模板恢复弹性中行，结果区域外壳 min-height:0。
     const shell = region.closest(".sh-skill-table__region-shell") as HTMLElement;

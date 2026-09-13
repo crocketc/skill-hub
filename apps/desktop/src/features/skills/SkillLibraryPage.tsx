@@ -21,7 +21,7 @@ import { describeNativeError } from "../../api/nativeErrors";
 // M-21 #5：页面直接消费全局通知中心（AppShell 级单例服务），不再保留
 // 页面内局部通知列表（NotificationCenter/useNotices 兼容桥从本页移除）。
 import { useAppNotifications } from "../../ui/notifications";
-import { Icon, type IconName } from "../../ui/Icon";
+import { useLibraryViewMode } from "./libraryViewContext";
 import {
   detailSearchFromLibrary,
   readLibraryReturnState,
@@ -67,7 +67,11 @@ import {
   setPageSelection,
   type SkillSelection,
 } from "./selection";
-import { SkillFilters } from "./SkillFilters";
+import {
+  prefersCollapsedFilters,
+  SkillFilters,
+  SkillFiltersAdvanced,
+} from "./SkillFilters";
 import { BatchTagDialog, type BatchTagAction } from "./BatchTagDialog";
 import { SkillQuickDrawer } from "./SkillQuickDrawer";
 import { SkillMatrix } from "./SkillMatrix";
@@ -131,20 +135,8 @@ const BATCH_ACTION_KEYS = {
   security_check: "skillLibrary.page.batch.securityCheck",
 } as const satisfies Record<BatchAction, string>;
 
-// P1-08：视图/分组切换的分段控件选项。视图用图标 + 可访问名，分组用短文本。
-const VIEW_MODE_OPTIONS: ReadonlyArray<{
-  icon: IconName;
-  labelKey:
-    | "skillLibrary.viewMode.table"
-    | "skillLibrary.viewMode.cards"
-    | "skillLibrary.viewMode.matrix";
-  mode: LibraryViewMode;
-}> = [
-  { icon: "operations", labelKey: "skillLibrary.viewMode.table", mode: "table" },
-  { icon: "library", labelKey: "skillLibrary.viewMode.cards", mode: "cards" },
-  { icon: "agents", labelKey: "skillLibrary.viewMode.matrix", mode: "matrix" },
-];
-
+// P1-08：分组切换的分段控件选项（短文本）。视图切换已迁入壳层标题栏
+// （features/skills/libraryViewContext.tsx 的 LibraryViewModeSwitch）。
 const GROUP_MODE_OPTIONS: ReadonlyArray<{
   labelKey: "skillLibrary.groupMode.none" | "skillLibrary.groupMode.tags";
   mode: LibraryGroupMode;
@@ -457,6 +449,9 @@ export function SkillLibraryPage({
   const [batchTagAction, setBatchTagAction] = useState<BatchTagAction>();
   // P1-08：工具栏第二行（已保存视图）可折叠；搜索与模式开关保持在第一行。
   const [toolbarOpen, setToolbarOpen] = useState(true);
+  // M-21 IA 重排：高级筛选带（工具栏第二 band）开合；窄窗口默认折叠，
+  // 搜索与筛选开关常驻检索带。状态提升到页面以驱动 band 的显隐位置。
+  const [filtersOpen, setFiltersOpen] = useState(() => !prefersCollapsedFilters());
   const [saveViewOpen, setSaveViewOpen] = useState(false);
   const [saveViewName, setSaveViewName] = useState("");
   const [saveViewError, setSaveViewError] = useState<string>();
@@ -516,20 +511,42 @@ export function SkillLibraryPage({
   const activeSavedView = savedViews.find((view) => view.id === query.savedViewId);
 
   // T3-B 卡片视图：普通用户默认增强卡片视图；表格保留为专业模式。
-  // 视图模式经 ui 偏好持久化；facade 未提供读取能力时静默使用默认卡片视图。
-  const [viewMode, setViewMode] = useState<LibraryViewMode>("cards");
+  // D5：视图模式 state 上提到壳层（libraryViewContext），页面只负责
+  // 挂载水合与持久化——水合仅未水合时执行一次，重复导航不重置顶栏选择。
+  const { viewMode, hydrated, hydrateViewMode } = useLibraryViewMode();
   const viewModeRef = useRef<LibraryViewMode>("cards");
+  // 审查 D5b（2026-09-14）：水合竞态防覆盖标记。loadViewMode 解析前用户
+  // 经顶栏切换过视图时置位，迟到的持久化值随即作废，不得覆盖用户选择。
+  const userChangedRef = useRef(false);
   useEffect(() => {
+    if (hydrated) return;
+    const load = facade.loadViewMode;
+    if (!load) {
+      // facade 未提供读取能力时静默使用默认卡片视图，仍视为已水合。
+      hydrateViewMode(viewModeRef.current);
+      return;
+    }
     let active = true;
-    void facade.loadViewMode?.().then((mode) => {
+    void load().then((mode) => {
       if (!active) return;
-      viewModeRef.current = mode;
-      setViewMode(mode);
+      // 用户已接管：以当前值完成水合交接（只同步 ref，不落盘）；
+      // 否则正常水合：交接持久化值。两条路径都不产生 saveViewMode。
+      const effective = userChangedRef.current ? viewModeRef.current : mode;
+      viewModeRef.current = effective;
+      hydrateViewMode(effective);
     }).catch(() => undefined);
     return () => {
       active = false;
     };
-  }, [facade]);
+  }, [hydrated, facade, hydrateViewMode]);
+  useEffect(() => {
+    // 持久化：水合交接同步 ref（不落盘）；此后的每次变更保存一次。
+    if (viewModeRef.current === viewMode) return;
+    viewModeRef.current = viewMode;
+    // 水合完成前的用户切换：用户已接管，迟到的 load 结果不得覆盖。
+    if (!hydrated) userChangedRef.current = true;
+    void facade.saveViewMode?.(viewMode).catch(() => undefined);
+  }, [viewMode, facade, hydrated]);
   const [deploymentRecords, setDeploymentRecords] = useState<DeploymentRecord[]>();
   const [deploymentTargets, setDeploymentTargets] = useState<DeploymentTarget[]>();
   useEffect(() => {
@@ -558,15 +575,6 @@ export function SkillLibraryPage({
     (next: LibraryGroupMode) => {
       setGroupMode(next);
       void facade.saveGroupMode?.(next).catch(() => undefined);
-    },
-    [facade],
-  );
-
-  const changeViewMode = useCallback(
-    (next: LibraryViewMode) => {
-      viewModeRef.current = next;
-      setViewMode(next);
-      void facade.saveViewMode?.(next).catch(() => undefined);
     },
     [facade],
   );
@@ -1250,8 +1258,10 @@ export function SkillLibraryPage({
     <section
       className={[
         "sh-skill-library",
-        // M-21 #3：表格视图时页面成为定高 flex 列，表格区域自成滚动容器。
+        // M-21 #3：表格/卡片视图时页面成为定高 flex 列，各自拥有专属滚动
+        // 区域与稳定页脚；矩阵视图保持文档流自然高度。
         !pageRefreshing && viewMode === "table" ? "sh-skill-library--table-view" : "",
+        !pageRefreshing && viewMode === "cards" ? "sh-skill-library--cards-view" : "",
         selectedBatchTarget ? "sh-skill-library--batch-active" : "",
       ]
         .filter(Boolean)
@@ -1263,47 +1273,36 @@ export function SkillLibraryPage({
           {t("skillLibrary.page.deployTargetBanner", { label: deployTarget.label })}
         </p>
       ) : null}
-      {/* M-21 IA 重排：主行 = 主搜索 + 结果摘要（左）与页面动作簇（右，最右）。
-          视图切换（表格/卡片/关系矩阵）与组合管理入口移至动作簇最右；
-          第二行（可折叠）= 已保存视图。查询语义不变。 */}
+      {/* M-21 IA 重排 + D5：工具栏收敛为三个 band（单列 grid）——
+          1) 检索带：左簇 = 搜索 + 筛选开关 + 清除；右簇 = 结果摘要 |
+             分隔符 | 分组切换 | 组合管理入口 | 收起视图栏
+             （视图切换已迁入壳层标题栏 topbar-context）。
+          2) 高级筛选带：筛选开关开合（沿用既有 state 语义，状态提升到页面）。
+          3) 视图带：已保存视图 chips + 保存当前视图（收起视图栏开合）。
+          查询语义与全部可访问名不变。 */}
       <div className="sh-skill-library__toolbar">
-        <div className="sh-skill-library__toolbar-main">
+        <div className="sh-skill-library__band sh-skill-library__band--search">
           <SkillFilters
+            advancedOpen={filtersOpen}
             availableTags={page.facets.tags}
             id="skill-library-filters"
+            onAdvancedOpenChange={setFiltersOpen}
             onChange={updateQuery}
             onClear={clearFilters}
             query={query}
             versionFilterSupported={capabilities?.versionFilterSupported ?? true}
           />
-          <section aria-label={t("skillLibrary.page.summary.label")} className="sh-skill-library__summary">
-            <span data-testid="library-summary-total">
-              {t("skillLibrary.page.summary.total", { count: page.total })}
-            </span>
-            <span data-testid="library-summary-tags">
-              {t("skillLibrary.page.summary.tags", { count: page.facets.tags.length })}
-            </span>
-          </section>
           <div className="sh-skill-library__toolbar-actions">
-            <div
-              aria-label={t("skillLibrary.viewMode.label")}
-              className="sh-skill-library__mode-switch"
-              role="group"
-            >
-              {VIEW_MODE_OPTIONS.map((option) => (
-                <Button
-                  aria-label={t(option.labelKey)}
-                  aria-pressed={viewMode === option.mode}
-                  key={option.mode}
-                  onClick={() => changeViewMode(option.mode)}
-                  title={t(option.labelKey)}
-                  variant={viewMode === option.mode ? "secondary" : "ghost"}
-                >
-                  <Icon aria-hidden="true" name={option.icon} size={16} />
-                </Button>
-              ))}
-            </div>
-            {/* M-21 #7：工具栏分组层级——视图切换与管理入口（分组/组合/已保存视图）之间留分隔。 */}
+            {/* M-21 #7：右簇以分隔符分层——结果摘要 | 管理入口。
+                （视图切换经 D5 迁入壳层标题栏，见 libraryViewContext。） */}
+            <section aria-label={t("skillLibrary.page.summary.label")} className="sh-skill-library__summary">
+              <span data-testid="library-summary-total">
+                {t("skillLibrary.page.summary.total", { count: page.total })}
+              </span>
+              <span data-testid="library-summary-tags">
+                {t("skillLibrary.page.summary.tags", { count: page.facets.tags.length })}
+              </span>
+            </section>
             <span aria-hidden="true" className="sh-skill-library__toolbar-divider" />
             <div
               aria-label={t("skillLibrary.groupMode.label")}
@@ -1340,6 +1339,15 @@ export function SkillLibraryPage({
             </button>
           </div>
         </div>
+        {filtersOpen ? (
+          <SkillFiltersAdvanced
+            availableTags={page.facets.tags}
+            id="skill-library-filters"
+            onChange={updateQuery}
+            query={query}
+            versionFilterSupported={capabilities?.versionFilterSupported ?? true}
+          />
+        ) : null}
         <div
           className="sh-skill-library__toolbar-secondary"
           hidden={!toolbarOpen}
@@ -1389,8 +1397,10 @@ export function SkillLibraryPage({
           />
       ) : null}
       {!pageRefreshing && viewMode === "cards" ? (
-        <>
-          {/* P1-08：卡片视图补齐与表格对等的“选择当前页”入口（共用选择模型）。 */}
+        // M-21：卡片视图与表格同一「专属滚动区域 + 稳定页脚」模型——
+        // 页级选择工具行钉在滚动区上方，卡网格在 __scroll 内滚动，
+        // 分页（下方兄弟节点）常驻底部可见。
+        <div className="sh-skill-cards__body">
           <div className="sh-skill-cards__toolbar">
             <label className="sh-skill-cards__select-page">
               <input
@@ -1410,21 +1420,23 @@ export function SkillLibraryPage({
               <span>{t("skillLibrary.table.selectCurrentPage")}</span>
             </label>
           </div>
-          {groupMode === "tags" ? (
-            [...groupedCards.entries()].map(([tag, groupItems]) => (
-              <section key={tag}>
-                <h3>{tag}</h3>
-                <div className="sh-skill-cards">
-                  {groupItems.map((item) => renderSkillCard(item))}
-                </div>
-              </section>
-            ))
-          ) : (
-            <div className="sh-skill-cards" data-testid="skill-cards">
-              {page.items.map((item) => renderSkillCard(item))}
-            </div>
-          )}
-        </>
+          <div className="sh-skill-cards__scroll">
+            {groupMode === "tags" ? (
+              [...groupedCards.entries()].map(([tag, groupItems]) => (
+                <section key={tag}>
+                  <h3>{tag}</h3>
+                  <div className="sh-skill-cards">
+                    {groupItems.map((item) => renderSkillCard(item))}
+                  </div>
+                </section>
+              ))
+            ) : (
+              <div className="sh-skill-cards" data-testid="skill-cards">
+                {page.items.map((item) => renderSkillCard(item))}
+              </div>
+            )}
+          </div>
+        </div>
       ) : null}
       {viewMode === "cards" ? (
         <SkillPagination

@@ -136,6 +136,17 @@ test("table mode keeps a single horizontal scroll owner and fits the default col
     }).length;
   });
   expect(scrollOwners).toBeLessThanOrEqual(1);
+
+  // 审查 C2（2026-09-14）：把“默认列集 @1280 无溢出”落成显式几何断言——
+  // 结果区域自身的内容宽不得超出客户区（+1px 容差），而非只统计滚动容器数。
+  const region = page.locator(".sh-skill-table__region");
+  const regionOverflow = await region.evaluate((element) => ({
+    scrollWidth: element.scrollWidth,
+    clientWidth: element.clientWidth,
+  }));
+  expect(regionOverflow.scrollWidth).toBeLessThanOrEqual(
+    regionOverflow.clientWidth + 1,
+  );
 });
 
 test("hidden table columns stay reachable through a visible horizontal scrollbar at 800", async ({ page }) => {
@@ -145,8 +156,8 @@ test("hidden table columns stay reachable through a visible horizontal scrollbar
 
   await expect(page.getByRole("row", { name: /PDF Reader/ })).toBeVisible();
   const region = page.locator(".sh-skill-table__region");
-  // 滚动条可感知：细滚动条 + 主题色滑块（而非被隐藏样式吃掉）。
-  await expect(region).toHaveCSS("scrollbar-width", "thin");
+  // 滚动条可感知：auto 级宽度 + 主题色滑块（而非被隐藏样式吃掉）。
+  await expect(region).toHaveCSS("scrollbar-width", "auto");
   // 800px 下默认列集必然溢出：最后一列经横向滚动进入视口。
   const scrollable = await region.evaluate(
     (element) => element.scrollWidth > element.clientWidth + 1,
@@ -168,6 +179,58 @@ test("hidden table columns stay reachable through a visible horizontal scrollbar
     );
   });
   expect(securityVisible).toBe(true);
+});
+
+test("all enabled columns stay reachable through a real scrollbar at 1280", async ({ page }) => {
+  // M-21 横向滚动取证（真机反馈复现）：全列开启 + 1280px 视口。既有自动化只证了
+  // 800px 默认列集；真机在 1280 宽屏全列时 % 宽度不溢出、末列表头被裁剪且无滚动条。
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto(LIBRARY_ROUTE);
+  await page.getByRole("button", { name: "Table view" }).click();
+  await expect(page.getByRole("row", { name: /PDF Reader/ })).toBeVisible();
+
+  // 开启全部隐藏列。
+  await page.getByRole("button", { name: "Columns and density" }).click();
+  const toggles = page.locator(".sh-skill-table__reorder-item");
+  const toggleCount = await toggles.count();
+  for (let index = 0; index < toggleCount; index += 1) {
+    const item = toggles.nth(index);
+    if ((await item.getAttribute("aria-pressed")) === "false") {
+      await item.click();
+    }
+  }
+  await expect(toggles.first()).toHaveAttribute("aria-pressed", "true");
+  await page.getByRole("button", { name: "Columns and density" }).click();
+
+  await expect(page.locator("th[data-column='requirements']")).toBeAttached();
+  const region = page.locator(".sh-skill-table__region");
+  await expect(region).toHaveCSS("overflow-x", "auto");
+  await expect(region).toHaveCSS("scrollbar-width", "auto");
+
+  // 全列地板宽超过区域宽：必须出现真实可用的横向溢出（而非把列压窄裁剪）。
+  const overflow = await region.evaluate(
+    (element) => element.scrollWidth > element.clientWidth + 1,
+  );
+  expect(overflow).toBe(true);
+
+  // 滚到最右后末列表头几何完全可见（左右边缘都落在区域内容盒内）。
+  await region.evaluate((element) => {
+    element.scrollLeft = element.scrollWidth;
+  });
+  const lastHeaderFullyVisible = await page.evaluate(() => {
+    const owner = document.querySelector<HTMLElement>(".sh-skill-table__region");
+    const headers = document.querySelectorAll<HTMLElement>(".sh-skill-table thead th[data-column]");
+    const last = headers[headers.length - 1];
+    if (!owner || !last) return false;
+    const headerRect = last.getBoundingClientRect();
+    const ownerRect = owner.getBoundingClientRect();
+    return (
+      headerRect.left >= ownerRect.left - 1 &&
+      headerRect.right <= ownerRect.right + 1 &&
+      headerRect.width > 0
+    );
+  });
+  expect(lastHeaderFullyVisible).toBe(true);
 });
 
 test("card surfaces follow the theme tokens in the default and dark themes", async ({ page }) => {

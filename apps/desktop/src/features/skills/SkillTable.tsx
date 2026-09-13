@@ -44,7 +44,9 @@ interface SkillTableMeta {
 }
 
 const LOCKED_COLUMNS: SkillColumnId[] = ["select", "name"];
-const COLUMN_IDS: SkillColumnId[] = [
+// 导出全列集合（审查 C4，2026-09-14）：测试用它做长度/集合断言，
+// 防止新增列时测试夹具静默失守。
+export const COLUMN_IDS: SkillColumnId[] = [
   "select", "name", "purpose", "tags", "invocation", "agent_deployments", "project_deployments", "version", "security",
   "source", "ownership", "license", "requirements", "lifecycle",
 ];

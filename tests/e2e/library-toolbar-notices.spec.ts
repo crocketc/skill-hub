@@ -109,6 +109,42 @@ test("batch bar never covers the card pagination", async ({ page }) => {
   expect(overlap).toBe(false);
 });
 
+test("advanced filters share one equal-height field grid with labels above controls", async ({ page }) => {
+  // M-21 IA：高级筛选带六个控件统一为「标签在上、控件在下」等高 Field 网格；
+  // 版本下拉此前因裸 label 缺 grid 布局类而悬空，这里以真实几何锁定修复。
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto(LIBRARY_ROUTE);
+
+  const advanced = page.locator(".sh-skill-filters__advanced");
+  await expect(advanced).toBeVisible();
+
+  const geometry = await advanced.evaluate((panel) => {
+    const controls = [
+      ...Array.from(panel.querySelectorAll<HTMLElement>(".sh-filter-dropdown__trigger")),
+      ...Array.from(panel.querySelectorAll<HTMLElement>("select")),
+    ];
+    const heights = controls.map((control) => control.getBoundingClientRect().height);
+    const stacked = Array.from(panel.children).map((field) => {
+      const control = field.querySelector<HTMLElement>("button, select");
+      // 多选字段的标签是内部 span；裸 label 字段以字段盒顶部（即标签文本行）为基准。
+      const label = field.querySelector<HTMLElement>("span, label") ?? field;
+      if (!control || !label) return false;
+      const controlTop = control.getBoundingClientRect().top;
+      const labelTop = label.getBoundingClientRect().top;
+      return labelTop < controlTop;
+    });
+    return { heights, stacked };
+  });
+
+  // 六个字段：基础检查/AI 检查/生命周期/标签四个多选 + 部署状态/版本两个原生 select。
+  expect(geometry.heights).toHaveLength(6);
+  const spread = Math.max(...geometry.heights) - Math.min(...geometry.heights);
+  expect(spread).toBeLessThanOrEqual(1);
+  // 每个字段标签都在控件上方，控件不再悬空。
+  expect(geometry.stacked).toHaveLength(6);
+  expect(geometry.stacked.every(Boolean)).toBe(true);
+});
+
 test("wide desktop keeps library content reachable and the batch bar clear of the table", async ({
   page,
 }) => {

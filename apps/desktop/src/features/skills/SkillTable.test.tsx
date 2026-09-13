@@ -4,13 +4,15 @@ import { expect, it, vi } from "vitest";
 import { createSkillHubI18n } from "../../i18n";
 import "../../styles/base.css";
 import baseCss from "../../styles/base.css?raw";
+import skillsCss from "./skills.css?raw";
 import {
   DEFAULT_SKILL_QUERY,
   DEFAULT_TABLE_PREFERENCES,
   type SkillPage,
   type SkillTableRow,
 } from "./api";
-import { SkillTable, type SkillTableProps } from "./SkillTable";
+import { SkillTable, COLUMN_IDS, type SkillTableProps } from "./SkillTable";
+import type { SkillColumnId } from "./api";
 
 const rows: SkillTableRow[] = [
   {
@@ -64,6 +66,9 @@ const rows: SkillTableRow[] = [
 ];
 
 const page: SkillPage = { facets: { tags: ["documents", "notes", "pdf"] }, items: rows, page: 2, pageSize: 10, total: 23 };
+// 审查 C4（2026-09-14）：satisfies 让“列 id 改名/拼错”在编译期暴露；
+// 与生产 COLUMN_IDS 的长度断言（见下方全列用例）让“新增列未同步夹具”
+// 在运行期立即失败，不再静默失守。
 const allColumnIds = [
   "select",
   "name",
@@ -79,7 +84,7 @@ const allColumnIds = [
   "license",
   "requirements",
   "lifecycle",
-] as const;
+] as const satisfies readonly SkillColumnId[];
 
 async function renderTable(props: Partial<SkillTableProps> = {}) {
   const i18n = await createSkillHubI18n(["en-US"]);
@@ -420,6 +425,9 @@ it("gives every visible column a semantic width contract for narrow overflow", a
   });
 
   const headers = screen.getAllByRole("columnheader");
+  // 审查 C4：夹具列集必须与生产列定义同数量、同集合，新增列漏同步即红。
+  expect(allColumnIds).toHaveLength(COLUMN_IDS.length);
+  expect([...allColumnIds].sort()).toEqual([...COLUMN_IDS].sort());
   expect(headers).toHaveLength(allColumnIds.length);
   expect(headers.map((header) => header.getAttribute("data-column"))).toEqual(allColumnIds);
 
@@ -453,6 +461,36 @@ it("keeps a single horizontal scroll owner for the results region", async () => 
   if (!region) throw new Error("Expected the results region");
   expect(region).toHaveAttribute("aria-label", "Skill results");
   expect(region).toHaveAttribute("role", "region");
+});
+
+// M-21 表格横向滚动取证：全列开启时纯 % 宽在 1280px 视口不会自然溢出
+// （Chromium 固定布局把列均压到不可读、表头裁剪且无滚动条——真机反馈的
+// 根因；探针证实 fixed 布局只尊重纯长度/纯百分比列宽）。
+// 库页作用域必须给每个启用的列一个 rem 宽度，同时充当比例与地板：
+// 总和超过区域宽度时溢出交给区域横向滚动兜底。
+it("gives every enabled column a readable width floor before horizontal scroll takes over", () => {
+  for (const column of allColumnIds) {
+    expect(skillsCss).toMatch(
+      new RegExp(
+        `\\.sh-skill-library \\.sh-skill-table \\[data-column="${column}"\\]\\s*\\{\\s*width:\\s*[0-9.]+rem;`,
+      ),
+    );
+  }
+  // 末列地板必须足以放下表头文本，1280px 全列时由溢出滚动兜底而非裁剪。
+  expect(skillsCss).toMatch(
+    /\[data-column="requirements"\]\s*\{\s*width:\s*(?:[6-9]|[1-9][0-9])(?:\.\d+)?rem;/,
+  );
+  // 表格总下限保持 56rem：极小列集时维持可用宽度。
+  expect(skillsCss).toMatch(
+    /\.sh-skill-library \.sh-skill-table\s*\{[^}]*min-width:\s*56rem/,
+  );
+});
+
+it("keeps the results-region scrollbar discoverable instead of hairline-thin", () => {
+  const regionRule = skillsCss.match(/\.sh-skill-library \.sh-skill-table__region\s*\{[^}]*\}/);
+  if (!regionRule) throw new Error("Expected the library-scoped results region rule in skills.css");
+  expect(regionRule[0]).toMatch(/scrollbar-width:\s*auto/);
+  expect(regionRule[0]).toMatch(/scrollbar-color:\s*var\(--ui-accent\)/);
 });
 
 it("keeps the configuration panel and results shell constrained to the page width", async () => {
