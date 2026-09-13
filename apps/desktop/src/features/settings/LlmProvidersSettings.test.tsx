@@ -41,6 +41,8 @@ const PRESETS: LlmProviderPreset[] = [
     requires_credential: true,
     models_hint: null,
     api_docs_url: null,
+    compatibility_profile: "deep_seek",
+    supported_protocols: ["open_ai_compatible", "open_ai_responses", "anthropic"],
   },
   {
     id: "ollama",
@@ -51,6 +53,8 @@ const PRESETS: LlmProviderPreset[] = [
     requires_credential: false,
     models_hint: null,
     api_docs_url: null,
+    compatibility_profile: "ollama",
+    supported_protocols: ["open_ai_compatible"],
   },
 ];
 
@@ -65,6 +69,7 @@ const PROVIDERS: LlmProviderView[] = [
       model: "deepseek-chat",
       credential_ref: { id: "llm-provider:deepseek" },
       enabled: true,
+      compatibility_profile: "deep_seek",
     },
     credential_configured: true,
     is_default: true,
@@ -79,6 +84,7 @@ const PROVIDERS: LlmProviderView[] = [
       model: "qwen2.5:7b",
       credential_ref: null,
       enabled: false,
+      compatibility_profile: "ollama",
     },
     credential_configured: false,
     is_default: false,
@@ -221,6 +227,9 @@ it("saves a draft through the facade and never sends the credential anywhere els
       endpoint: "https://api.deepseek.com/v1",
       model: "deepseek-chat",
       credential: "sk-fixture-not-a-real-key",
+      // 手动配置默认落在保守的 Generic 能力档，不会按厂商名猜测。
+      compatibilityProfile: "generic",
+      structuredOutputOverride: null,
     },
     replaceCredential: true,
   });
@@ -295,6 +304,9 @@ it("keeps the stored credential when saving an edit without typing a new one", a
       endpoint: "http://127.0.0.1:11434/v1",
       model: "qwen2.5:7b-instruct",
       credential: null,
+      // 编辑已保存配置时，厂商能力档必须随草稿一起保留，不能被重置。
+      compatibilityProfile: "ollama",
+      structuredOutputOverride: null,
     },
     replaceCredential: false,
   });
@@ -320,6 +332,8 @@ it("applies a preset to prefill endpoint and protocol but still requires the mod
     endpoint: "https://api.deepseek.com/v1",
     protocol: "open_ai_compatible",
     deployment: "online",
+    // 预设同时把厂商能力档带进草稿，供后端决定结构化策略与推理策略。
+    compatibilityProfile: "deep_seek",
   });
 });
 

@@ -13,6 +13,8 @@ import {
   type LlmProviderDraft,
   type LlmProviderPreset,
   type LlmProviderView,
+  draftFromView,
+  presetDraftFields,
   usableLlmProviderLabel,
   unavailableLlmFacade,
 } from "./llmApi";
@@ -27,6 +29,10 @@ const EMPTY_DRAFT: LlmProviderDraft = {
   endpoint: "",
   model: "",
   credential: null,
+  // A hand-written configuration starts on the conservative profile; picking a
+  // built-in preset replaces it with the product line's own profile.
+  compatibilityProfile: "generic",
+  structuredOutputOverride: null,
 };
 
 /** 与 cc-switch `apiFormat` 对齐的四类用户可选接口；legacy 变体仍由
@@ -141,7 +147,7 @@ export function LlmProvidersSettings({
   const openEdit = (view: LlmProviderView, event: React.MouseEvent<HTMLButtonElement>) => {
     returnFocusRef.current = event.currentTarget;
     resetEditorForm();
-    setDraft(draftOf(view));
+    setDraft(draftFromView(view));
     setEditor({ mode: "edit", id: view.config.id, credentialConfigured: view.credential_configured === true });
   };
 
@@ -159,14 +165,9 @@ export function LlmProvidersSettings({
     if (nextPresetId === "") return;
     const preset = presets?.find((item) => item.id === nextPresetId);
     if (!preset) return;
-    setDraft((current) => ({
-      ...current,
-      id: preset.id,
-      label: preset.label,
-      protocol: preset.protocol,
-      deployment: preset.deployment,
-      endpoint: preset.endpoint,
-    }));
+    // 预设同时补齐厂商能力档（compatibility profile），协议切换与结构化策略
+    // 都由它决定；但用户已输入的模型与密钥依旧保留。
+    setDraft((current) => ({ ...current, ...presetDraftFields(preset) }));
   };
 
   // M-13：接口格式（协议族）在抽屉内可切换；只改协议并使旧测试结果失效，
@@ -297,19 +298,6 @@ export function LlmProvidersSettings({
         { providerId: target.id, result },
       ]);
     });
-
-  const draftOf = (view: LlmProviderView): LlmProviderDraft => ({
-    id: view.config.id,
-    label: view.config.label ?? view.config.id,
-    protocol:
-      view.config.protocol === "open_ai" || view.config.protocol === "azure_open_ai"
-        ? "open_ai_compatible"
-        : view.config.protocol,
-    deployment: view.config.deployment,
-    endpoint: view.config.endpoint,
-    model: view.config.model,
-    credential: null,
-  });
 
   return (
     <section aria-labelledby="settings-llm-providers-heading" className="sh-settings-card">
@@ -551,7 +539,7 @@ export function LlmProvidersSettings({
               onDelete={() => guard(() => facade.deleteProvider(view.config.id))}
               onEdit={(event) => openEdit(view, event)}
               onSetDefault={() => guard(() => facade.setDefaultProvider(view.config.id))}
-              onTest={() => void testConnection(draftOf(view))}
+              onTest={() => void testConnection(draftFromView(view))}
               onToggleEnabled={() =>
                 guard(() => facade.setProviderEnabled(view.config.id, !view.config.enabled))
               }

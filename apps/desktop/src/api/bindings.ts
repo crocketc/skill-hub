@@ -357,15 +357,28 @@ export type ConfirmSearchCandidate = {
 };
 
 /**
- *  Two-level connection test report (requirement 5.42 / goal E): the endpoint
- *  level proves reachability, the model level proves credentials, model
- *  availability and a minimal structured round-trip. Only a passing model
- *  level allows the UI to say "model connection available".
+ *  Three-level connection report.
+ *
+ *  The levels answer three different questions and are deliberately kept
+ *  apart, because a model that answers plain text is *callable* even when the
+ *  profile's structured-output strategy is not usable:
+ *
+ *  1. `endpoint` — the address answered at all (any HTTP status counts).
+ *  2. `model` — authentication, model existence and a parseable envelope,
+ *     proven by one low-token plain-text request.
+ *  3. `structured` — the configured compatibility profile can complete the
+ *     structured request the real tasks will use.
+ *
+ *  Only [`ConnectionTestResult::model_ok`] may be reported as "the model can be
+ *  called"; [`ConnectionTestResult::task_ready`] is the stricter verdict that
+ *  also needs structured output.
  */
 export type ConnectionTestResult = {
 	endpoint: EndpointCheckResult,
 	model?: ModelCheckResult | null,
 	model_failure_code?: string | null,
+	structured?: StructuredCheckResult | null,
+	structured_failure_code?: string | null,
 };
 
 export type CoverageRelation = "a_contains_b" | "b_contains_a" | "overlap" | "independent" | "uncertain";
@@ -1102,6 +1115,43 @@ export type LlmCheckRun = {
 };
 
 /**
+ *  A versioned behaviour identifier for a supplier product line.
+ *
+ *  It is deliberately *not* a user-entered provider name: the settings UI maps
+ *  a built-in preset to one of these values, and a hand-written configuration
+ *  falls back to [`LlmCompatibilityProfile::Generic`].
+ */
+export type LlmCompatibilityProfile =
+/**  OpenAI's own service (`json_schema` strict structured outputs). */
+"open_ai" |
+/**  Anthropic Claude (Messages API has no native structured-output field). */
+"anthropic" |
+/**  Google Gemini (`responseMimeType` + native schema). */
+"gemini" |
+/**  Azure OpenAI: deployment-scoped addressing. */
+"azure_open_ai" |
+/**  OpenRouter: one platform-level policy, never the underlying vendor's. */
+"open_router" |
+/**  DeepSeek official API (Chat / Responses / Anthropic surfaces). */
+"deep_seek" |
+/**  Alibaba Cloud Model Studio (DashScope), OpenAI-compatible mode only. */
+"dash_scope" |
+/**  Moonshot / Kimi open platform. */
+"moonshot" |
+/**  Kimi Coding Plan (a separate product line from the open platform). */
+"kimi_coding" |
+/**  Zhipu GLM ordinary API. */
+"glm" |
+/**  GLM Coding Plan (a separate product line from the ordinary API). */
+"glm_coding" | "minimax" |
+/**  Volcengine Ark (Doubao). */
+"volcengine_ark" | "xai" | "groq" | "mistral" |
+/**  Baidu Qianfan model builder v2. */
+"baidu_qianfan" | "ollama" | "lm_studio" |
+/**  Conservative default for user-supplied OpenAI-compatible endpoints. */
+"generic";
+
+/**
  *  Whether a provider runs in the cloud (network switch and cost hints apply)
  *  or on this machine (offline inference, no credential normally required).
  */
@@ -1143,6 +1193,16 @@ export type LlmProviderConfig = {
 	enabled?: boolean,
 	timeout_ms?: number,
 	max_input_bytes?: number,
+	/**
+	 *  Supplier behaviour selector. Older records deserialise to `Generic`;
+	 *  the storage layer normalises known built-in ids once on read.
+	 */
+	compatibility_profile?: LlmCompatibilityProfile,
+	/**
+	 *  Present only for the Generic profile, where the user may choose the
+	 *  structured-output mechanism explicitly.
+	 */
+	structured_output_override?: LlmStructuredOutputStrategy | null,
 };
 
 /**
@@ -1160,6 +1220,17 @@ export type LlmProviderPreset = {
 	requires_credential: boolean,
 	models_hint?: string | null,
 	api_docs_url?: string | null,
+	/**
+	 *  The product line's capability profile. Two presets that bill, ship a
+	 *  different key or serve a different endpoint must never share one.
+	 */
+	compatibility_profile?: LlmCompatibilityProfile,
+	/**
+	 *  Interface formats the settings page may offer for this preset. The
+	 *  default protocol is always a member; switching format never rewrites
+	 *  the user's endpoint, model or credential.
+	 */
+	supported_protocols?: LlmProtocolFamily[],
 };
 
 /**
@@ -1183,6 +1254,24 @@ export type LlmSafetyCheckResult = {
 	finding_count: number,
 	actionable_count: number,
 };
+
+/**
+ *  How a structured task asks the provider for machine-readable output.
+ *
+ *  Whatever the strategy, the reply is always parsed and validated locally
+ *  against the task schema afterwards: a provider guarantee is never trusted.
+ */
+export type LlmStructuredOutputStrategy =
+/**  Native strict JSON Schema (`response_format.json_schema.strict = true`). */
+"json_schema_strict" |
+/**  Native JSON Schema without the strict flag. */
+"json_schema" |
+/**  Request a JSON object only; the schema travels in the system prompt. */
+"json_object" |
+/**  No provider-side structured field at all; prompt-only, validated locally. */
+"prompted_json" |
+/**  Gemini's native `responseMimeType` + `responseSchema`. */
+"gemini_schema";
 
 export type LogicalTarget = {
 	id: string,
@@ -2133,6 +2222,12 @@ export type SourceUpdateCheckOutcome = {
 };
 
 export type StartupRecoveryState = "clean" | "in_progress" | "needs_recovery";
+
+/**  Structured-output compatibility of the configured compatibility profile. */
+export type StructuredCheckResult = {
+	ok: boolean,
+	latency_ms: number | null,
+};
 
 /**  Per-tag skill counts so the overview can drill down into the library by tag. */
 export type TagChartCategory = {

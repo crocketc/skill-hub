@@ -8,8 +8,9 @@ use skillhub_core::api::{
 };
 use skillhub_core::llm::{
     ConnectionTestResult, CredentialRef, CredentialStore, EndpointCheckResult, LlmAdmin,
-    LlmDeployment, LlmProfile, LlmProtocolFamily, LlmProviderConfig, LlmTaskRequest,
-    LlmTaskResponse, LlmTaskRunner, ModelCheckResult, NetworkGate, StructuredCheckResult,
+    LlmCompatibilityProfile, LlmDeployment, LlmProfile, LlmProtocolFamily, LlmProviderConfig,
+    LlmTaskRequest, LlmTaskResponse, LlmTaskRunner, ModelCheckResult, NetworkGate,
+    StructuredCheckResult,
 };
 use skillhub_core::settings::{DesktopPreferences, LlmCapabilitySettings};
 use skillhub_core::{AppResult, ApplicationFacade, SkillId};
@@ -180,6 +181,143 @@ async fn saving_a_provider_stores_the_credential_and_reports_status() {
         panic!("expected presets");
     };
     assert!(presets.len() >= 15, "the confirmed provider baseline");
+}
+
+#[tokio::test]
+async fn the_compatibility_profile_survives_save_list_and_administration() {
+    let store = Arc::new(SharedCredentialStore::default());
+    let admin = Arc::new(FakeAdmin::default());
+    let facade = facade_with(store.clone(), admin.clone(), NetworkGate::open());
+
+    let mut config =
+        provider_config_for("zhipu-glm-coding-chat", "GLM Coding Plan", "glm-5");
+    config.compatibility_profile = LlmCompatibilityProfile::GlmCoding;
+    config.endpoint = "https://open.bigmodel.cn/api/coding/paas/v4".to_owned();
+
+    let saved = facade
+        .execute(AppCommand::SaveLlmProvider(SaveLlmProvider {
+            provider: config,
+            credential: Some("sk-glm-fixture".to_owned()),
+        }))
+        .await
+        .expect("save");
+    let AppCommandResult::LlmProviderView(view) = saved else {
+        panic!("expected a provider view");
+    };
+    assert_eq!(
+        view.config.compatibility_profile,
+        LlmCompatibilityProfile::GlmCoding
+    );
+    assert!(view.config.enabled);
+    assert!(view.credential_configured);
+
+    // Listing re-reads storage and keeps the profile.
+    let listing = facade
+        .query(AppQuery::ListLlmProviders)
+        .await
+        .expect("list providers");
+    let skillhub_core::api::AppQueryResult::LlmProviders(providers) = listing else {
+        panic!("expected providers");
+    };
+    assert_eq!(
+        providers[0].config.compatibility_profile,
+        LlmCompatibilityProfile::GlmCoding
+    );
+
+    // Administration hands the profile to the runner unchanged.
+    facade
+        .execute(AppCommand::TestLlmConnection(TestLlmConnection {
+            provider: FetchLlmProvider::Saved {
+                id: "zhipu-glm-coding-chat".to_owned(),
+            },
+            credential: None,
+        }))
+        .await
+        .expect("connection test");
+    let seen = admin.seen_profiles.lock().unwrap().last().unwrap().clone();
+    assert_eq!(
+        seen.compatibility_profile,
+        LlmCompatibilityProfile::GlmCoding
+    );
+    assert_eq!(seen.protocol, LlmProtocolFamily::OpenAiCompatible);
+
+    // Clearing the credential changes only the credential status.
+    let cleared = facade
+        .execute(AppCommand::ClearLlmProviderCredential(
+            ClearLlmProviderCredential {
+                id: "zhipu-glm-coding-chat".to_owned(),
+            },
+        ))
+        .await
+        .expect("clear credential");
+    let AppCommandResult::LlmProviderView(view) = cleared else {
+        panic!("expected a provider view");
+    };
+    assert!(
+        view.config.enabled,
+        "clearing a credential must never disable the provider"
+    );
+    assert!(!view.credential_configured);
+    assert_eq!(view.config.model, "glm-5");
+    assert_eq!(
+        view.config.endpoint,
+        "https://open.bigmodel.cn/api/coding/paas/v4"
+    );
+    assert_eq!(
+        view.config.compatibility_profile,
+        LlmCompatibilityProfile::GlmCoding
+    );
+}
+
+/// A record stored before the compatibility field existed is listed through
+/// the facade with its migrated profile, and nothing else about it changes.
+#[tokio::test]
+async fn a_legacy_provider_row_is_listed_with_its_migrated_profile() {
+    let database = Database::open_in_memory().expect("database");
+    database
+        .connection_for_test()
+        .execute(
+            "INSERT INTO llm_provider_configs(id,config_json,created_at,updated_at) VALUES(?1,?2,0,0)",
+            rusqlite::params![
+                "zhipu-glm",
+                r#"{"id":"zhipu-glm","label":"Zhipu GLM API (OpenAI)",
+                    "protocol":"open_ai_compatible","deployment":"online",
+                    "endpoint":"https://open.bigmodel.cn/api/paas/v4","model":"glm-5",
+                    "custom_headers":[],"enabled":true,"timeout_ms":30000,
+                    "max_input_bytes":262144}"#
+            ],
+        )
+        .expect("insert a legacy row");
+
+    let root = tempfile::tempdir().expect("library root");
+    let facade = LocalApplicationFacade::new_with_library_and_llm_runner(
+        database,
+        root.path(),
+        Arc::new(NoopRunner),
+    )
+    .with_llm_runtime(
+        NetworkGate::open(),
+        Arc::new(SharedCredentialStore::default()) as Arc<dyn CredentialStore>,
+        Arc::new(FakeAdmin::default()) as _,
+    );
+
+    let listing = facade
+        .query(AppQuery::ListLlmProviders)
+        .await
+        .expect("list providers");
+    let skillhub_core::api::AppQueryResult::LlmProviders(providers) = listing else {
+        panic!("expected providers");
+    };
+    assert_eq!(providers.len(), 1);
+    let provider = &providers[0].config;
+    assert_eq!(
+        provider.compatibility_profile,
+        LlmCompatibilityProfile::Glm,
+        "a known built-in id migrates to its product line"
+    );
+    assert_eq!(provider.endpoint, "https://open.bigmodel.cn/api/paas/v4");
+    assert_eq!(provider.model, "glm-5");
+    assert!(provider.enabled, "migration must not change enablement");
 }
 
 #[tokio::test]

@@ -20,6 +20,8 @@ const PREVIEW_PRESETS: LlmProviderPreset[] = [
     requires_credential: true,
     models_hint: "deepseek-chat",
     api_docs_url: "https://api-docs.deepseek.com",
+    compatibility_profile: "deep_seek",
+    supported_protocols: ["open_ai_compatible", "open_ai_responses", "anthropic"],
   },
   {
     id: "ollama",
@@ -30,6 +32,8 @@ const PREVIEW_PRESETS: LlmProviderPreset[] = [
     requires_credential: false,
     models_hint: null,
     api_docs_url: null,
+    compatibility_profile: "ollama",
+    supported_protocols: ["open_ai_compatible"],
   },
 ];
 
@@ -44,6 +48,7 @@ const PREVIEW_PROVIDERS: LlmProviderView[] = [
       model: "deepseek-chat",
       credential_ref: { id: "llm-provider:deepseek" },
       enabled: true,
+      compatibility_profile: "deep_seek",
     },
     credential_configured: true,
     is_default: true,
@@ -58,6 +63,7 @@ const PREVIEW_PROVIDERS: LlmProviderView[] = [
       model: "qwen2.5:7b",
       credential_ref: null,
       enabled: false,
+      compatibility_profile: "ollama",
     },
     credential_configured: false,
     is_default: false,
@@ -118,6 +124,8 @@ function previewLlmFacade(): LlmAdminFacade {
         credential_ref:
           existing?.config.credential_ref ??
           (draft.deployment === "local" ? null : { id: `llm-provider:${draft.id}` }),
+        compatibility_profile: draft.compatibilityProfile,
+        structured_output_override: draft.structuredOutputOverride,
       };
       providers = existing
         ? providers.map((provider) =>

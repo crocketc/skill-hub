@@ -4,21 +4,25 @@ import {
   type ConnectionTestResult,
   type DesktopPreferences,
   type LlmCapabilitySettings,
+  type LlmCompatibilityProfile,
   type LlmDeployment,
   type LlmProtocolFamily,
   type LlmProviderConfig,
   type LlmProviderPreset,
   type LlmProviderView,
+  type LlmStructuredOutputStrategy,
 } from "../../api/bindings";
 
 export type {
   ConnectionTestResult,
   LlmCapabilitySettings,
+  LlmCompatibilityProfile,
   LlmDeployment,
   LlmProtocolFamily,
   LlmProviderConfig,
   LlmProviderPreset,
   LlmProviderView,
+  LlmStructuredOutputStrategy,
 };
 
 /** What the settings form collects. The credential value is transported to
@@ -32,6 +36,13 @@ export type LlmProviderDraft = {
   endpoint: string;
   model: string;
   credential: string | null;
+  /** The supplier product line that owns structured-output, reasoning and
+   * interface-format behaviour. It is selected explicitly (preset or manual)
+   * and never inferred from the display name, the id or the endpoint. */
+  compatibilityProfile: LlmCompatibilityProfile;
+  /** Explicit structured-output strategy. Only the Generic profile accepts it;
+   * built-in product lines own their strategy on the Rust side. */
+  structuredOutputOverride: LlmStructuredOutputStrategy | null;
 };
 
 /** Returns the first enabled provider that can actually be used by AI features. */
@@ -73,6 +84,8 @@ function providerConfig(draft: LlmProviderDraft): LlmProviderConfig {
     endpoint: draft.endpoint,
     model: draft.model,
     credential_ref: needsCredential ? { id: `llm-provider:${draft.id}` } : null,
+    compatibility_profile: draft.compatibilityProfile,
+    structured_output_override: draft.structuredOutputOverride,
   };
 }
 
@@ -80,6 +93,40 @@ function deploymentNeedsNoCredential(draft: LlmProviderDraft): boolean {
   // Local runtimes (Ollama, LM Studio) need no secret; only a Local deployment
   // skips the credential reference.
   return draft.deployment === "local" && draft.credential === null;
+}
+
+/** Rebuilds the editable draft of a stored provider. The credential value is
+ * never echoed back — a blank field means "keep the stored secret". When the
+ * profile is absent the record predates the field and falls back to the
+ * conservative `generic` profile; the facade already migrated known legacy
+ * rows, so the id and endpoint are deliberately not inspected here. */
+export function draftFromView(view: LlmProviderView): LlmProviderDraft {
+  const config = view.config;
+  return {
+    id: config.id,
+    label: config.label ?? config.id,
+    protocol: config.protocol,
+    deployment: config.deployment,
+    endpoint: config.endpoint,
+    model: config.model,
+    credential: null,
+    compatibilityProfile: config.compatibility_profile ?? "generic",
+    structuredOutputOverride: config.structured_output_override ?? null,
+  };
+}
+
+/** The fields a built-in preset contributes to the draft. Presets never carry a
+ * model catalogue (requirement 5.42): the model id always comes from the
+ * provider's model list or manual input, so it is not part of this partial. */
+export function presetDraftFields(preset: LlmProviderPreset): Partial<LlmProviderDraft> {
+  return {
+    id: preset.id,
+    label: preset.label,
+    protocol: preset.protocol,
+    deployment: preset.deployment,
+    endpoint: preset.endpoint,
+    compatibilityProfile: preset.compatibility_profile ?? "generic",
+  };
 }
 
 export const unavailableLlmFacade: LlmAdminFacade = {
