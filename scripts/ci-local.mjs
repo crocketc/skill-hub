@@ -33,19 +33,55 @@ if (!existsSync(resolve(projectRoot, "Cargo.toml")) || !existsSync(resolve(proje
 console.log(`SkillHub local CI · ${process.platform} · ${new Date().toLocaleString()}`);
 console.log(`项目目录：${projectRoot}\n`);
 
-for (const [index, step] of steps.entries()) {
-  const startedAt = Date.now();
-  console.log(`[${index + 1}/${steps.length}] ${step.name}`);
-  const result = spawnSync(step.command, step.args, {
+// Windows 上并行 rustc 会间歇性命中 target\debug\deps 下随机文件的写入拒绝
+// （`os error 5`）或 link.exe LNK1104（文件句柄被安全软件/文件监视器瞬时占用）。
+// 该抖动与代码无关且换一次进程即消失，因此仅当失败输出命中该特征时自动重试，
+// 真实失败（断言、编译错误等）不重试、直接失败，避免掩盖问题。
+const windowsFileLockPattern = /os error 5|LNK1104|拒绝访问/;
+const maxRetries = 2;
+
+function runStep(step, { capture = false } = {}) {
+  return spawnSync(step.command, step.args, {
     cwd: projectRoot,
     env: { ...process.env, CI: "1" },
-    stdio: "inherit",
+    stdio: capture ? ["ignore", "pipe", "pipe"] : "inherit",
     // Windows exposes pnpm through a .cmd shim, which Node cannot launch
     // with shell=false. Every command and argument here is repository-owned;
     // enabling the platform shell only fixes shim resolution and does not
     // accept user-provided command text.
     shell: process.platform === "win32",
   });
+}
+
+for (const [index, step] of steps.entries()) {
+  const startedAt = Date.now();
+  console.log(`[${index + 1}/${steps.length}] ${step.name}`);
+  let result = runStep(step);
+
+  if (!result.error && result.status !== 0) {
+    for (let retry = 1; retry <= maxRetries; retry++) {
+      const retryResult = runStep(step, { capture: true });
+      const output = `${retryResult.stdout ?? ""}${retryResult.stderr ?? ""}`;
+      if (output.trim()) process.stderr.write(output);
+      if (retryResult.error) {
+        console.error(`\n${step.name} 无法启动：${retryResult.error.message}`);
+        process.exit(1);
+      }
+      if (retryResult.status === 0) {
+        console.log(`第 ${retry + 1} 次尝试通过（此前失败命中 Windows 文件锁抖动，已自动重试）。`);
+        result = retryResult;
+        break;
+      }
+      if (!windowsFileLockPattern.test(output)) {
+        // 非抖动特征的真实失败：不再重试，立即失败。
+        result = retryResult;
+        break;
+      }
+      console.warn(`重试 ${retry}/${maxRetries}：失败输出命中 Windows 文件锁抖动特征（os error 5 / LNK1104）。`);
+      result = retryResult;
+    }
+  }
+
   if (result.error) {
     console.error(`\n${step.name} 无法启动：${result.error.message}`);
     process.exit(1);

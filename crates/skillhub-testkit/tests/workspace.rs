@@ -62,7 +62,7 @@ fn fixture_copy_rejects_nested_destination_symlink_escape() {
     #[cfg(unix)]
     std::os::unix::fs::symlink(external.path(), destination.join("nested")).unwrap();
     #[cfg(windows)]
-    if std::os::windows::fs::symlink_dir(external.path(), destination.join("nested")).is_err() {
+    if !windows_symlink_dir(&destination.join("nested"), external.path()) {
         return;
     }
 
@@ -84,10 +84,27 @@ fn fixture_copy_rejects_dangling_nested_destination_symlink_escape() {
     #[cfg(unix)]
     std::os::unix::fs::symlink(&external_target, destination.join("nested")).unwrap();
     #[cfg(windows)]
-    if std::os::windows::fs::symlink_dir(&external_target, destination.join("nested")).is_err() {
+    if !windows_symlink_dir(&destination.join("nested"), &external_target) {
         return;
     }
 
     assert!(workspace.copy_fixture(source.path(), &destination).is_err());
     assert!(!external_target.join("fixture.txt").exists());
+}
+
+/// Creates a directory symlink on Windows and verifies it is actually observable.
+///
+/// 某些 Windows 环境（安全软件/沙箱文件层）会让 `symlink_dir` 报告成功、却在创建后
+/// 立即移除该条目——此时无法建立逃逸前提，按"环境不支持符号链接"跳过，与无
+/// `SeCreateSymbolicLinkPrivilege` 时的早退语义一致；能真实持有符号链接的机器
+/// 仍然执行完整断言。
+#[cfg(windows)]
+fn windows_symlink_dir(link: &std::path::Path, target: &std::path::Path) -> bool {
+    if std::os::windows::fs::symlink_dir(target, link).is_err() {
+        return false;
+    }
+    match std::fs::symlink_metadata(link) {
+        Ok(metadata) => metadata.file_type().is_symlink(),
+        Err(_) => false,
+    }
 }

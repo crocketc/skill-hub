@@ -42,8 +42,9 @@ describe("sidebar collapse control states", () => {
   // 去掉悬浮阴影一类的营销式装饰。
   it("styles the quiet state with square semantic control tokens and no drop shadow", () => {
     const declarations = declarationsFor(".sh-sidebar__toggle");
-    expect(declarations["width"]).toBe("2.5rem");
-    expect(declarations["height"]).toBe("2.5rem");
+    // M-17-1 验收反馈要求折叠控件收窄为 28px 方形安静控件。
+    expect(declarations["width"]).toBe("1.75rem");
+    expect(declarations["height"]).toBe("1.75rem");
     expect(declarations["border-radius"]).toBe("var(--radius-sm)");
     expect(declarations["border"]).toBe("1px solid var(--ui-border)");
     expect(declarations["background"]).toBe("var(--ui-control-background)");
@@ -68,14 +69,14 @@ describe("sidebar collapse control states", () => {
     expect(collapsed["color"]).toBe("var(--ui-ink)");
   });
 
-  it("keeps the control at 40px in the compact narrow-sidebar header", () => {
+  it("keeps the control at 28px in the compact narrow-sidebar header", () => {
     const mediaStart = baseCss.indexOf("@media");
     const toggleStart = baseCss.indexOf(".sh-sidebar__toggle", mediaStart);
     const blockEnd = baseCss.indexOf(".sh-sidebar nav", toggleStart);
     expect(toggleStart, "compact header restyles the toggle").toBeGreaterThan(0);
     const compactBlock = baseCss.slice(toggleStart, blockEnd);
-    expect(compactBlock).toContain("width: 2.5rem");
-    expect(compactBlock).toContain("height: 2.5rem");
+    expect(compactBlock).toContain("width: 1.75rem");
+    expect(compactBlock).toContain("height: 1.75rem");
     expect(compactBlock).not.toContain("box-shadow");
   });
 });

@@ -208,7 +208,9 @@ it("isolates deterministic Skill detail preview data from production", async () 
 
   render(<AppRouter />);
   expect(await screen.findByRole("heading", { name: "PDF Reader" })).toBeVisible();
-  expect(screen.queryByRole("heading", { name: "Skill library" })).not.toBeInTheDocument();
+  // 新增01-4 验收修复：详情路由恢复标准顶栏，shell 标题 "Skill library" 应可见
+  //（与下方 resolveRouteTitleKey("/__preview/skill-detail/...") 的单元断言一致）。
+  expect(screen.queryByRole("heading", { name: "Skill library" })).toBeVisible();
   expect(
     await screen.findByRole("heading", { name: "Markdown workspace" }),
   ).toBeVisible();
