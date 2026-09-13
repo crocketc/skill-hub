@@ -49,17 +49,20 @@ export interface OnlineDiscoveryProps {
 }
 
 /** M-16：AI 搜索辅助的可用性四态（需求验收 7）。
- * - ready：能力开关开启且有可用供应商（连接可能仍未实测）；
+ * - ready：确定性配置齐备，且最近一次三级连接测试（指纹新鲜）service+model
+ *   通过，或本次会话中真实搜索已成功走通 AI 路径——"连接已验证"；
  * - not_configured：没有启用的供应商，或启用的在线供应商缺少凭据；
  * - capability_disabled：AI 能力开关（online_search_assist）未开启；
- * - unverified：配置齐备但连接未经实测，或配置状态暂时不可读。 */
+ * - unverified：配置齐备但没有可用的实测结果（未测过、配置已变或测试未通过），
+ *   或配置状态暂时不可读。 */
 export type AssistReadiness =
   | { kind: "ready" }
   | { kind: "not_configured"; detail: "provider" | "credential" }
   | { kind: "capability_disabled" }
   | { kind: "unverified" };
 
-/** 纯函数：由能力开关与供应商视图推导 AI 辅助可用性。绝不发起网络请求。 */
+/** 纯函数：由能力开关与供应商视图推导 AI 辅助可用性。绝不发起网络请求。
+ * 确定性配置检查（未配置/被禁用/无凭据）永远先行且不被 LLM 实测结果替代。 */
 export function evaluateAssistReadiness(
   capabilities: LlmCapabilitySettings | null,
   providers: LlmProviderView[] | null,
@@ -72,6 +75,11 @@ export function evaluateAssistReadiness(
   if (primary.config.deployment === "online" && !primary.credential_configured) {
     return { kind: "not_configured", detail: "credential" };
   }
+  // D3：消费最近一次三级连接测试摘要（配置身份指纹不符时后端不返回它）。
+  // service+model 两级通过即视为"连接已验证"；structured 只是能力警告，
+  // 失败不阻断已验证判定（真实搜索失败会按既有回退路径如实呈现）。
+  const test = primary.last_connection_test;
+  if (test && test.service_ok && test.model_ok) return { kind: "ready" };
   return { kind: "unverified" };
 }
 

@@ -3,6 +3,7 @@ import {
   queryApplication,
   type ConnectionTestResult,
   type DesktopPreferences,
+  type LastConnectionTestView,
   type LlmCapabilitySettings,
   type LlmCompatibilityProfile,
   type LlmDeployment,
@@ -15,6 +16,7 @@ import {
 
 export type {
   ConnectionTestResult,
+  LastConnectionTestView,
   LlmCapabilitySettings,
   LlmCompatibilityProfile,
   LlmDeployment,

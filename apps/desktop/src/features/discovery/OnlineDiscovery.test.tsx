@@ -852,8 +852,95 @@ describe("AI assist readiness gate (M-16)", () => {
     await click(screen.getByRole("button", { name: "搜索" }));
     expect(assisted).toHaveBeenCalledWith("pdf");
     expect(await screen.findByText(/AI 扩展查询/)).toBeVisible();
-    // 验证成功后状态收敛为可用。
-    expect(await screen.findByText(/AI 辅助可用/)).toBeVisible();
+    // 验证成功后状态收敛为可用（已验证语义）。
+    expect(await screen.findByText(/AI 辅助连接已验证/)).toBeVisible();
+  });
+
+  // D3：设置页三级连接测试的结果被持久化并随供应商视图返回；勾选 AI 辅助
+  // 时消费它，"已验证"不再误报"连接尚未验证"。
+  describe("persisted connection test verdict (D3)", () => {
+    const verifiedProvider: LlmProviderView = {
+      ...onlineProvider,
+      last_connection_test: {
+        service_ok: true,
+        model_ok: true,
+        structured_ok: true,
+        tested_at: "1789114968",
+      },
+    };
+
+    it("reads a fresh three-level pass as verified instead of unverified", async () => {
+      const assisted = vi.fn(async () => page);
+      await renderWithAssist({
+        llmFacade: llmFacadeWith({ providers: [verifiedProvider] }),
+        facade: baseFacade({ searchOnlineSourcesAssisted: assisted }),
+      });
+
+      const notice = await screen.findByText(/AI 辅助连接已验证/);
+      expect(notice).toBeVisible();
+      expect(notice.textContent).not.toContain("连接尚未验证");
+      // 已验证状态不是"未就绪"：不提供前往设置入口。
+      expect(screen.queryByRole("button", { name: "前往设置" })).not.toBeInTheDocument();
+
+      // 已验证不阻断真实 AI 路径。
+      await click(screen.getByRole("button", { name: "搜索" }));
+      await screen.findByText("PDF Reader");
+      expect(assisted).toHaveBeenCalledWith("pdf");
+    });
+
+    it("stays verified when only the structured level failed", async () => {
+      await renderWithAssist({
+        llmFacade: llmFacadeWith({
+          providers: [
+            {
+              ...verifiedProvider,
+              last_connection_test: {
+                service_ok: true,
+                model_ok: true,
+                structured_ok: false,
+                tested_at: "1789114968",
+              },
+            },
+          ],
+        }),
+      });
+
+      expect(await screen.findByText(/AI 辅助连接已验证/)).toBeVisible();
+      expect(screen.queryByText(/连接尚未验证/)).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "前往设置" })).not.toBeInTheDocument();
+    });
+
+    it("keeps the unverified copy when no fresh test result exists", async () => {
+      await renderWithAssist({
+        llmFacade: llmFacadeWith({
+          providers: [{ ...onlineProvider, last_connection_test: null }],
+        }),
+      });
+
+      expect(await screen.findByText(/连接尚未验证/)).toBeVisible();
+      expect(screen.queryByText(/AI 辅助连接已验证/)).not.toBeInTheDocument();
+    });
+
+    it("does not treat a failed connection test as verified", async () => {
+      await renderWithAssist({
+        llmFacade: llmFacadeWith({
+          providers: [
+            {
+              ...onlineProvider,
+              last_connection_test: {
+                service_ok: true,
+                model_ok: false,
+                structured_ok: null,
+                tested_at: "1789114968",
+              },
+            },
+          ],
+        }),
+      });
+
+      expect(await screen.findByText(/连接尚未验证/)).toBeVisible();
+      expect(screen.queryByText(/AI 辅助连接已验证/)).not.toBeInTheDocument();
+    });
   });
 
   it("falls back to the unverified state when the configuration cannot be read and still allows the real attempt", async () => {
