@@ -9,6 +9,7 @@ import { AppNotificationsProvider } from "../../ui/notifications";
 import { createOperationTracker } from "../../platform/operationTracker";
 import { clearSessionSelectedSources } from "./sessionSources";
 import { createMockImportFacade, unavailableImportFacade, type ImportPlan, type ImportResult } from "./api";
+import type { DirectoryPicker } from "../../platform/directoryPicker";
 import { ImportWizard } from "./ImportWizard";
 
 /** 通知接线测试壳：向导消费全局通知服务（AppShell 同款 Provider + Router）。 */
@@ -32,13 +33,18 @@ async function renderWizard(facade = createMockImportFacade({ scenario: "safe-lo
   return facade;
 }
 
-async function renderGuidedWizard(facade = createMockImportFacade({ scenario: "safe-local" }), variant?: "onboarding" | "standard") {
+async function renderGuidedWizard(
+  facade = createMockImportFacade({ scenario: "safe-local" }),
+  variant?: "onboarding" | "standard",
+  directoryPicker?: DirectoryPicker,
+) {
   const i18n = await createSkillHubI18n(["zh-CN"]);
   render(
     <TestShell>
       <I18nextProvider i18n={i18n}>
         <ImportWizard
           facade={facade}
+          directoryPicker={directoryPicker}
           initialSources={["C:/codex/skills", "C:/claude/skills"]}
           initialSourceText="C:/codex/skills"
           variant={variant}
@@ -419,6 +425,43 @@ it("deduplicates case-variant directories to one entry on Windows paths", async 
   const list = screen.getByRole("list", { name: "已选来源" });
   expect(within(list).getAllByRole("listitem")).toHaveLength(2);
   expect(within(list).getByText("C:/codex/skills")).toBeVisible();
+});
+
+it("deduplicates a picked directory against a case-variant selected source", async () => {
+  const user = userEvent.setup();
+  await renderGuidedWizard(undefined, undefined, {
+    pickDirectory: async () => "c:/CODEX/Skills",
+  });
+
+  // 与手动添加一致：本机选取仅大小写不同的 Windows 目录时并入已有条目并聚焦，
+  // 不产生重复来源。
+  await user.click(screen.getByRole("button", { name: "选择本地目录" }));
+
+  const list = screen.getByRole("list", { name: "已选来源" });
+  expect(within(list).getAllByRole("listitem")).toHaveLength(2);
+  expect(within(list).getByText("C:/codex/skills")).toBeVisible();
+  expect(document.activeElement).toBe(
+    within(list).getByText("C:/codex/skills").closest("li"),
+  );
+});
+
+it("keeps POSIX case-variant directories as distinct sources", async () => {
+  const user = userEvent.setup();
+  await renderGuidedWizard();
+
+  // macOS 卷可能被格式化为大小写敏感：仅大小写不同的 POSIX 路径是两个
+  // 真实目录，不得折叠合并（宁可在大小写不敏感卷上出现可手动移除的重复）。
+  await user.clear(screen.getByLabelText("来源"));
+  await user.type(screen.getByLabelText("来源"), "/Users/a/Skills");
+  await user.click(screen.getByRole("button", { name: "添加到已选来源" }));
+  await user.clear(screen.getByLabelText("来源"));
+  await user.type(screen.getByLabelText("来源"), "/users/a/skills");
+  await user.click(screen.getByRole("button", { name: "添加到已选来源" }));
+
+  const list = screen.getByRole("list", { name: "已选来源" });
+  expect(within(list).getAllByRole("listitem")).toHaveLength(4);
+  expect(within(list).getByText("/Users/a/Skills")).toBeVisible();
+  expect(within(list).getByText("/users/a/skills")).toBeVisible();
 });
 
 it("removes selected sources individually, in bulk, and all at once from the list", async () => {

@@ -1,4 +1,4 @@
-import { desktopDirectoryPicker, normalizeWindowsPath } from "./directoryPicker";
+import { desktopDirectoryPicker, normalizeWindowsPath, sameSourcePath } from "./directoryPicker";
 
 const { invokeMock } = vi.hoisted(() => ({ invokeMock: vi.fn() }));
 
@@ -39,4 +39,20 @@ it("strips the Windows extended-length prefix from normalized paths", () => {
   expect(normalizeWindowsPath("\\\\?\\C:\\Hub")).toBe("C:\\Hub");
   expect(normalizeWindowsPath("\\\\?\\UNC\\server\\share")).toBe("\\\\server\\share");
   expect(normalizeWindowsPath("C:\\Hub")).toBe("C:\\Hub");
+});
+
+it("folds case only between two Windows-shaped paths", () => {
+  expect(sameSourcePath("C:/codex/skills", "c:/CODEX/Skills")).toBe(true);
+  expect(sameSourcePath("C:\\Hub", "C:\\hub")).toBe(true);
+  expect(sameSourcePath("\\\\Server\\Share", "\\\\server\\share")).toBe(true);
+});
+
+it("keeps case-variant POSIX paths distinct for case-sensitive volumes", () => {
+  expect(sameSourcePath("/Users/a/Skills", "/users/a/skills")).toBe(false);
+  expect(sameSourcePath("/Users/a/Skills", "/Users/a/Skills")).toBe(true);
+});
+
+it("treats mixed-shape paths as distinct instead of guessing the volume", () => {
+  expect(sameSourcePath("C:/codex/skills", "/users/a/skills")).toBe(false);
+  expect(sameSourcePath("relative/skills", "Relative/Skills")).toBe(false);
 });

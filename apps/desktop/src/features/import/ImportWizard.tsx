@@ -29,6 +29,7 @@ import { readSessionSelectedSources, writeSessionSelectedSources } from "./sessi
 import {
   desktopDirectoryPicker,
   normalizeWindowsPath,
+  sameSourcePath,
   type DirectoryPicker,
 } from "../../platform/directoryPicker";
 import {
@@ -410,6 +411,13 @@ type: "failed",
       const path = await directoryPicker.pickDirectory();
       if (!path) return;
       const normalized = normalizeWindowsPath(path);
+      // 与手动添加一致：重复（含仅大小写不同的 Windows 目录）聚焦已有条目，
+      // 不新增来源；已扫描状态保持不变。
+      const existing = selectedSources.find((item) => sameSourcePath(item, normalized));
+      if (existing) {
+        setFocusedSource(existing);
+        return;
+      }
       // M-29：本机选取的目录直接进入已选来源列表（未扫描），同时保留
       // 在输入框中，用户可以继续追加或直接读取候选。
       setSelectedSources((current) => [...new Set([...current, normalized])]);
@@ -445,14 +453,13 @@ type: "failed",
   };
 
   // AR-006/M-29：混合导入——手动目录追加进已选来源列表并立即可见（未扫描）；
-  // 重复添加去重并聚焦已有条目。Windows 路径大小写不敏感，去重比较折叠大小写
-  //（列表仍保留首次添加时的原始写法）。
+  // 重复添加去重并聚焦已有条目。Windows 卷大小写不敏感，Windows 形态路径
+  // 折叠大小写比较（列表保留首次添加的写法）；POSIX 路径按大小写敏感精确
+  // 比较，macOS 大小写敏感卷上仅大小写不同的目录是两个真实目录。
   const addManualSource = async (source: string) => {
     const normalized = normalizeWindowsPath(source);
     if (!normalized.trim()) return;
-    const existing = selectedSources.find(
-      (item) => item.toLowerCase() === normalized.toLowerCase(),
-    );
+    const existing = selectedSources.find((item) => sameSourcePath(item, normalized));
     if (existing) {
       setFocusedSource(existing);
       return;

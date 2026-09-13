@@ -10,6 +10,21 @@ export function normalizeWindowsPath(path: string): string {
   return path;
 }
 
+/**
+ * 来源去重的路径同一性比较。Windows 卷大小写不敏感，Windows 形态路径
+ * （盘符/UNC）折叠大小写；POSIX 路径不折叠——macOS 卷可能被格式化为
+ * 大小写敏感，折叠会把两个真实存在的不同目录并成一个。宁可让大小写
+ * 不敏感卷上出现可手动移除的重复条目，也不误并不同目录。
+ */
+export function sameSourcePath(a: string, b: string): boolean {
+  const windowsShaped = (path: string): boolean =>
+    /^[a-zA-Z]:[\\/]/.test(path) || path.startsWith("\\\\");
+  if (windowsShaped(a) && windowsShaped(b)) {
+    return a.toLowerCase() === b.toLowerCase();
+  }
+  return a === b;
+}
+
 export const desktopDirectoryPicker: DirectoryPicker = {
   async pickDirectory() {
     // 命令返回 JSON 字符串 {path, grant_id}（grant_id 即规范化路径，
