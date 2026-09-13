@@ -38,12 +38,18 @@ console.log(`项目目录：${projectRoot}\n`);
 // 该抖动与代码无关且换一次进程即消失，因此仅当失败输出命中该特征时自动重试，
 // 真实失败（断言、编译错误等）不重试、直接失败，避免掩盖问题。
 const windowsFileLockPattern = /os error 5|LNK1104|拒绝访问/;
-const maxRetries = 2;
+const maxRetries = 3;
 
-function runStep(step, { capture = false } = {}) {
+function runStep(step, { capture = false, serial = false } = {}) {
   return spawnSync(step.command, step.args, {
     cwd: projectRoot,
-    env: { ...process.env, CI: "1" },
+    env: {
+      ...process.env,
+      CI: "1",
+      // 串行复跑经验证可消除并行 rustc 的写入拒绝抖动；仅作用于第 3 次及
+      // 以后的重试，首次与首次重试仍按默认并行度执行，不掩盖正常表现。
+      ...(serial && step.command === "cargo" ? { CARGO_BUILD_JOBS: "1" } : {}),
+    },
     stdio: capture ? ["ignore", "pipe", "pipe"] : "inherit",
     // Windows exposes pnpm through a .cmd shim, which Node cannot launch
     // with shell=false. Every command and argument here is repository-owned;
@@ -60,7 +66,7 @@ for (const [index, step] of steps.entries()) {
 
   if (!result.error && result.status !== 0) {
     for (let retry = 1; retry <= maxRetries; retry++) {
-      const retryResult = runStep(step, { capture: true });
+      const retryResult = runStep(step, { capture: true, serial: retry >= 2 });
       const output = `${retryResult.stdout ?? ""}${retryResult.stderr ?? ""}`;
       if (output.trim()) process.stderr.write(output);
       if (retryResult.error) {

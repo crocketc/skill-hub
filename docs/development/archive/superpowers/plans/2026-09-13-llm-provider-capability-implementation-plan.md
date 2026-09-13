@@ -2,7 +2,7 @@
 
 日期：2026-09-13
 依据：`docs/superpowers/specs/2026-09-13-llm-provider-capability-architecture-design.md`
-状态：计划完成，交由其他 Agent 实施
+状态：已实施完成（2026-09-13，Task 0—10 全部落地并合入 feat/v0.2.0-product-completion，结论见《开发状态-2026-09-13》）
 参考源码：`C:\project\cc-switch`，锁定提交 `5a040348`
 
 ## 1. 实施目标

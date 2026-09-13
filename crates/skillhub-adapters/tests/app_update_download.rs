@@ -35,11 +35,15 @@ async fn serve_once(status: &str, headers: &[(&str, String)], body: &'static [u8
         let mut request = [0_u8; 1024];
         let _ = stream.read(&mut request).await;
         let response = format!(
-            "HTTP/1.1 {status}\r\nContent-Length: {}\r\n{headers}\r\n",
+            "HTTP/1.1 {status}\r\nContent-Length: {}\r\nConnection: close\r\n{headers}\r\n",
             body.len()
         );
         stream.write_all(response.as_bytes()).await.unwrap();
         stream.write_all(body).await.unwrap();
+        // 显式关闭连接：不声明 close 时客户端可能把连接当 keep-alive 复用，
+        // 而本 mock 只 accept 一次，复用会导致下一次请求在半开连接上失败。
+        stream.flush().await.unwrap();
+        stream.shutdown().await.unwrap();
     });
     url
 }
@@ -73,11 +77,14 @@ async fn serve_release_with_sidecar_response(
             let mut request = [0_u8; 1024];
             let _ = stream.read(&mut request).await;
             let response = format!(
-                "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n",
+                "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nConnection: close\r\nContent-Length: {}\r\n\r\n",
                 body.len()
             );
             stream.write_all(response.as_bytes()).await.unwrap();
             stream.write_all(&body).await.unwrap();
+            // 同 serve_once：声明 close 避免 keep-alive 复用到已停止读取的连接。
+            stream.flush().await.unwrap();
+            stream.shutdown().await.unwrap();
         }
     });
     base

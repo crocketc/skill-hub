@@ -133,7 +133,7 @@ async fn start_server(
                 .map(|(name, value)| format!("{name}: {value}\r\n"))
                 .collect::<String>();
             let wire = format!(
-                "HTTP/1.1 {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\n{}\r\n",
+                "HTTP/1.1 {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n{}\r\n",
                 response.status,
                 response.body.len(),
                 response_headers
@@ -143,6 +143,10 @@ async fn start_server(
             }
             stream.write_all(wire.as_bytes()).await.unwrap();
             stream.write_all(response.body.as_bytes()).await.unwrap();
+            // 每个 mock 响应只 accept 一次连接；声明 close 防止客户端把
+            // keep-alive 连接复用到已停止读取的 socket 上。
+            stream.flush().await.unwrap();
+            stream.shutdown().await.unwrap();
         }
     });
     (format!("http://{address}"), handle)
