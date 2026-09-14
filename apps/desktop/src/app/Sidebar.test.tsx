@@ -52,53 +52,45 @@ describe("Sidebar", () => {
     expect(screen.queryByRole("img", { name: "Skill library icon" })).not.toBeInTheDocument();
   });
 
-  it("keeps the floating toggle outside the sidebar scroll container", async () => {
+  it("keeps the sidebar toggle outside the sidebar scroll container", async () => {
     await renderSidebar();
 
     const navigation = screen.getByRole("complementary", { name: "Main navigation" });
     expect(navigation.querySelector(".sh-sidebar__scroll")).toBeInTheDocument();
-    expect(baseCss).toMatch(/\.sh-sidebar\s*\{[^}]*overflow:\s*visible/);
+    expect(baseCss).toMatch(/\.sh-sidebar\s*\{[^}]*overflow:\s*hidden/);
     expect(baseCss).toMatch(
       /\.sh-sidebar__scroll\s*\{[\s\S]*overflow-y:\s*auto[\s\S]*overflow-x:\s*hidden/,
     );
   });
 
-  it("keeps the brand centered while the collapse control moved to the title bar", () => {
-    // D5 契约迁移：折叠控件选择器迁到标题栏（.sh-app-shell__sidebar-toggle），
-    // 28px 方形安静控件的视觉值不变；常规流内布局（不再是侧栏内的绝对定位）。
-    const toggleRule = baseCss.match(/\.sh-app-shell__sidebar-toggle\s*\{[^}]*\}/)?.[0] ?? "";
+  it("keeps the brand centered independently from the sidebar toggle", () => {
+    const toggleRule = baseCss.match(/\.sh-sidebar__toggle\s*\{[^}]*\}/)?.[0] ?? "";
     expect(toggleRule).not.toBe("");
-    expect(toggleRule).toMatch(/width:\s*1\.75rem/);
-    expect(toggleRule).toMatch(/height:\s*1\.75rem/);
-    // 方形小圆角：禁止旧圆形 999px。
-    expect(toggleRule).toMatch(/border-radius:\s*var\(--radius-sm\)/);
-    expect(toggleRule).not.toMatch(/999px/);
-    expect(toggleRule).not.toMatch(/position:\s*absolute/);
+    expect(toggleRule).toMatch(/position:\s*absolute/);
+    expect(toggleRule).toMatch(/inset-inline-start:\s*0/);
+    expect(toggleRule).toMatch(/border:\s*0/);
+    expect(toggleRule).toMatch(/background:\s*transparent/);
     const brandRule = baseCss.match(/\.sh-sidebar__brand\s*\{[^}]*\}/)?.[0] ?? "";
     expect(brandRule).toMatch(/width:\s*100%/);
     expect(brandRule).toMatch(/justify-content:\s*center/);
-    // hover/active 位移效果一并移除（标题栏内无 transform 重置需求）。
-    expect(baseCss).not.toMatch(
-      /\.sh-app-shell__sidebar-toggle:hover[^{]*\{[^}]*translate/,
-    );
-    expect(baseCss).not.toMatch(
-      /\.sh-app-shell__sidebar-toggle:active[^{]*\{[^}]*translate/,
-    );
+    expect(baseCss).toMatch(/\.sh-sidebar__header[^\{]*\{[\s\S]*position:\s*relative/);
   });
 
-  it("keeps the header brand-only now that the toggle leads the shell title bar", async () => {
+  it("renders the toggle in the sidebar header and omits the brand when collapsed", async () => {
     await renderSidebar();
 
-    // D5：侧栏头部只保留品牌；折叠按钮由 AppShell 渲染在标题栏首位
-    // （DOM 位置契约锁定于 AppShell.test.tsx）。
     const header = screen
       .getByRole("complementary", { name: "Main navigation" })
       .querySelector(".sh-sidebar__header");
     expect(header).not.toBeNull();
-    expect(header!.firstElementChild).toBe(
-      header!.querySelector(".sh-sidebar__brand"),
-    );
-    expect(screen.queryByRole("button", { name: "Collapse navigation" })).not.toBeInTheDocument();
+    expect(header!.querySelector(".sh-sidebar__toggle")).not.toBeNull();
     expect(header!.querySelector(".sh-sidebar__brand")).not.toBeNull();
+
+    await renderSidebar("/library/skill-pdf", true);
+    const collapsedHeader = screen
+      .getAllByRole("complementary", { name: "Main navigation" })[1]
+      .querySelector(".sh-sidebar__header");
+    expect(collapsedHeader!.querySelector(".sh-sidebar__toggle")).not.toBeNull();
+    expect(collapsedHeader!.querySelector(".sh-sidebar__brand")).toBeNull();
   });
 });

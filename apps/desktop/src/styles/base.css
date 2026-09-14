@@ -765,23 +765,15 @@ a {
   transform: none;
 }
 
-/* D5 一体化标题栏：壳层纵向两行——标题栏行 auto + 主体行占满剩余空间。 */
+/* M-17-1：壳层为全高侧栏 + 内容工作区，顶栏只属于右侧内容区。 */
 .sh-app-shell {
   display: grid;
   height: 100dvh;
   min-height: 0;
-  grid-template-rows: auto minmax(0, 1fr);
-  grid-template-columns: minmax(0, 1fr);
+  grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
   background: var(--color-page);
   overflow: hidden;
-}
-
-/* 主体行：侧栏与 workspace 并排；--sidebar-width 机制（含折叠变体）不变。 */
-.sh-app-shell__body {
-  display: grid;
-  min-height: 0;
-  min-width: 0;
-  grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
 }
 
 /* Skip Link：只在键盘聚焦时可见，作为壳层第一个可聚焦元素。 */
@@ -813,7 +805,7 @@ a {
   display: grid;
   min-height: 0;
   min-width: 0;
-  grid-template-rows: minmax(0, 1fr) auto;
+  grid-template-rows: auto minmax(0, 1fr) auto;
   overflow: hidden;
 }
 
@@ -835,7 +827,7 @@ a {
   display: flex;
   min-height: 0;
   flex-direction: column;
-  overflow: visible;
+  overflow: hidden;
   padding: var(--space-4);
   border-right: 1px solid var(--color-border);
   background: var(--color-surface-raised);
@@ -843,12 +835,18 @@ a {
 
 .sh-sidebar__header {
   position: relative;
+  display: flex;
+  min-height: var(--topbar-height);
+  align-items: center;
+  justify-content: center;
 }
 
 .sh-sidebar__brand {
+  position: absolute;
+  inset: 0;
   display: inline-flex;
   width: 100%;
-  min-height: 3.75rem;
+  min-height: var(--topbar-height);
   align-items: center;
   justify-content: center;
   margin: 0;
@@ -856,8 +854,28 @@ a {
   text-decoration: none;
 }
 
-/* P1-01a/D5：折叠按钮原固定在侧栏左上角，现迁入一体化标题栏
-   topbar-start 首位（见下方新的侧栏折叠控件选择器）。 */
+.sh-sidebar__toggle {
+  position: absolute;
+  z-index: 1;
+  inset-inline-start: 0;
+  top: 50%;
+  width: 2.5rem;
+  height: 2.5rem;
+  min-width: 2.5rem;
+  min-height: 2.5rem;
+  border: 0;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  transform: translateY(-50%);
+}
+
+.sh-sidebar__toggle:hover:not(:disabled) {
+  background: var(--ui-hover-surface);
+}
+
+.sh-sidebar__toggle:active:not(:disabled) {
+  background: var(--ui-pressed-surface);
+}
 
 .sh-sidebar__scroll {
   display: flex;
@@ -924,16 +942,6 @@ a {
   font-weight: 750;
 }
 
-.sh-sidebar.is-collapsed .sh-sidebar__brand {
-  width: 100%;
-  justify-content: center;
-}
-
-.sh-sidebar.is-collapsed .sh-brand-logo {
-  width: 2.5rem;
-  height: 2.5rem;
-}
-
 .sh-sidebar.is-collapsed .sh-sidebar__label {
   display: none;
 }
@@ -954,26 +962,29 @@ a {
 }
 
 .sh-app-shell__topbar {
-  display: flex;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   min-height: var(--topbar-height);
   align-items: center;
-  justify-content: space-between;
   gap: var(--space-4);
   padding-inline: var(--space-5);
-  border-bottom: 1px solid var(--color-border);
-  background: color-mix(in srgb, var(--color-surface) 92%, transparent);
+  background: var(--color-page);
 }
 
 .sh-app-shell__topbar h1 {
   margin: 0;
+  padding-inline: var(--space-2);
+  border-bottom: 2px solid var(--ui-accent);
+  font-weight: 700;
   font-size: var(--font-size-md);
+  line-height: var(--topbar-height);
 }
 
 .sh-app-shell__topbar-start {
   display: flex;
   min-width: 0;
   align-items: center;
-  gap: var(--space-3);
+  gap: var(--space-1);
 }
 
 .sh-app-shell__topbar-start h1 {
@@ -982,66 +993,67 @@ a {
   white-space: nowrap;
 }
 
-/* D5：标题栏中段分区——技能库视图切换的落点（居中于标题与右簇之间）。 */
+/* 技能库视图切换位于右侧操作簇，紧邻通知中心左侧。 */
 .sh-app-shell__topbar-context {
   display: flex;
   min-width: 0;
   flex: 1 1 auto;
   align-items: center;
-  justify-content: center;
-  gap: var(--space-3);
+  justify-content: flex-end;
+  gap: var(--space-1);
 }
 
-/* D5：折叠按钮迁入标题栏首位。五态视觉契约值自旧侧栏折叠控件选择器
-   原样迁移（M-17-1：28px 方形安静控件，语义 token，无悬浮阴影）。 */
-.sh-app-shell__sidebar-toggle {
-  display: grid;
-  width: 1.75rem;
-  height: 1.75rem;
-  flex: 0 0 auto;
-  place-items: center;
-  border: 1px solid var(--ui-border);
-  border-radius: var(--radius-sm);
-  background: var(--ui-control-background);
-  color: var(--ui-icon-muted);
-  cursor: pointer;
-  transition: color var(--motion-fast), border-color var(--motion-fast), background var(--motion-fast);
+.sh-app-shell__topbar-end {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-1);
 }
 
-.sh-app-shell__sidebar-toggle:hover {
-  border-color: var(--ui-control-border-hover);
+/* 顶栏操作统一使用通知中心同款透明无框样式；可见反馈只在 hover/focus 时出现。 */
+.sh-app-shell__topbar .sh-icon-button,
+.sh-app-shell__topbar-context .sh-button {
+  width: 2.5rem;
+  min-width: 2.5rem;
+  height: 2.5rem;
+  min-height: 2.5rem;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  box-shadow: none;
+}
+
+.sh-app-shell__topbar-context .sh-button--secondary,
+.sh-app-shell__topbar-context .sh-button--ghost {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.sh-app-shell__topbar .sh-icon-button:hover:not(:disabled),
+.sh-app-shell__topbar-context .sh-button:hover:not(:disabled) {
   background: var(--ui-hover-surface);
-  color: var(--ui-ink);
 }
 
-.sh-app-shell__sidebar-toggle:focus-visible {
-  outline: 2px solid var(--ui-focus);
-  outline-offset: 2px;
+.sh-app-shell__compact-brand {
+  display: inline-flex;
+  width: 2.5rem;
+  height: 2.5rem;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-accent-strong);
+  text-decoration: none;
 }
 
-.sh-app-shell__sidebar-toggle:active {
-  border-color: var(--ui-control-border-hover);
-  background: var(--ui-pressed-surface);
-  color: var(--ui-ink);
-}
-
-.sh-app-shell__sidebar-toggle[aria-expanded="false"] {
-  border-color: var(--ui-border-strong);
-  background: var(--ui-surface-subtle);
-  color: var(--ui-ink);
-}
-
-.sh-app-shell__sidebar-toggle-icon {
-  width: 0.875rem;
-  height: 0.875rem;
+.sh-app-shell__compact-brand .sh-brand-logo {
+  height: 1.75rem;
 }
 
 /* macOS 红绿灯按钮悬浮在标题栏之上（titleBarStyle: Overlay），
-   起始分区与侧栏头部让出系统按钮带。 */
-.sh-is-macos .sh-app-shell__topbar-start {
-  padding-left: 5rem;
-}
-
+   侧栏头部让出系统按钮带。 */
 .sh-is-macos .sh-sidebar__header {
   padding-left: 5rem;
 }
@@ -1533,16 +1545,26 @@ a {
     border-bottom: 1px solid var(--color-border);
   }
 
+  .sh-sidebar__header {
+    display: flex;
+    width: auto;
+    min-height: 2.5rem;
+    flex: 0 0 auto;
+    gap: var(--space-1);
+  }
+
   .sh-sidebar__brand {
+    position: static;
     flex: 0 0 auto;
     width: auto;
     min-height: 2.5rem;
   }
 
-  .sh-app-shell__sidebar-toggle {
-    width: 1.75rem;
-    height: 1.75rem;
-    border-radius: var(--radius-sm);
+  .sh-sidebar__toggle {
+    position: static;
+    width: 2.5rem;
+    height: 2.5rem;
+    transform: none;
   }
 
   .sh-sidebar nav {

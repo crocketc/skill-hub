@@ -81,11 +81,12 @@ function NavigationLinks({ items, collapsed }: { items: NavigationItem[]; collap
 }
 
 interface SidebarProps {
-  /** 折叠状态由壳层（AppShell 标题栏折叠按钮）持有；头部只保留品牌。 */
+  /** 折叠状态和按钮动作由壳层持有，头部负责呈现稳定的 Logo/控制布局。 */
   collapsed?: boolean;
+  onToggle?: () => void;
 }
 
-export function Sidebar({ collapsed = false }: SidebarProps) {
+export function Sidebar({ collapsed = false, onToggle = () => undefined }: SidebarProps) {
   const { t } = useTranslation();
 
   return (
@@ -93,10 +94,31 @@ export function Sidebar({ collapsed = false }: SidebarProps) {
       aria-label={t("appShell.navigation")}
       className={`sh-sidebar${collapsed ? " is-collapsed" : ""}`}
     >
-      <div className="sh-sidebar__header">
-        <Link aria-label="SkillHub" className="sh-sidebar__brand" to="/">
-          <BrandLogo />
-        </Link>
+      <div className="sh-sidebar__header" data-tauri-drag-region>
+        <button
+          aria-expanded={!collapsed}
+          aria-label={t(collapsed ? "navigation.expand" : "navigation.collapse")}
+          className="sh-icon-button sh-sidebar__toggle"
+          onClick={onToggle}
+          type="button"
+        >
+          <Icon
+            aria-hidden="true"
+            className="sh-sidebar__toggle-icon"
+            name="panelLeft"
+            size={14}
+          />
+        </button>
+        {!collapsed ? (
+          <Link
+            aria-label="SkillHub"
+            className="sh-sidebar__brand"
+            data-tauri-drag-region
+            to="/"
+          >
+            <BrandLogo />
+          </Link>
+        ) : null}
       </div>
       <div className="sh-sidebar__scroll">
         <nav>

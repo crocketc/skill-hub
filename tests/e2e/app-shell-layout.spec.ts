@@ -1,10 +1,9 @@
 import { expect, test, type Page } from "./fixtures";
 
 /**
- * P1-01a / D5 壳层验收（真实 AppShell + Sidebar，经 /__preview/skill-library）：
- * 一体化标题栏全宽铺顶，折叠按钮迁入标题栏首位（M-17-1 契约：28px 方形、
- * 位置稳定），侧栏与 workspace 排在主体行内；800/1024/1280 与最小高度 600
- * 无水平横溢。
+ * M-17-1 壳层验收（真实 AppShell + Sidebar，经 /__preview/skill-library）：
+ * 全高侧栏与内容区顶栏并排，收起态 Logo 迁入内容区顶栏左侧；800/1024/1280
+ * 与最小高度 600 无水平横溢。
  */
 
 test.use({ locale: "en-US" });
@@ -35,7 +34,7 @@ function boxesIntersect(a: { x: number; y: number; width: number; height: number
 
 test.describe("app shell collapse button placement", () => {
   for (const width of [800, 1024, 1280] as const) {
-    test(`square 28px toggle leads the unified title bar at ${width}px`, async ({ page }) => {
+    test(`keeps the sidebar toggle and brand geometry stable at ${width}px`, async ({ page }) => {
       await page.setViewportSize({ width, height: 900 });
       await page.goto("/__preview/skill-library");
 
@@ -43,20 +42,20 @@ test.describe("app shell collapse button placement", () => {
       await expect(toggle).toBeVisible();
 
       const box = (await toggle.boundingBox())!;
-      // 方形且为 M-17-1 真机确认的 28px（1.75rem）点击面积。
+      // 折叠按钮与顶栏应用控件统一为 40px 方形点击面积。
       expect(Math.abs(box.width - box.height), "toggle must be square").toBeLessThanOrEqual(1);
-      expect(Math.abs(box.width - 28), "toggle stays a 28px target").toBeLessThanOrEqual(2);
+      expect(Math.abs(box.width - 40), "toggle stays a 40px target").toBeLessThanOrEqual(2);
       // 固定在页面左上角（5rem = 80px 内）。
       expect(box.x, "toggle sits in the left edge band").toBeLessThan(80);
       expect(box.y, "toggle sits in the top edge band").toBeLessThan(80);
 
-      // 与侧栏内 brand 和首个导航项无重叠（折叠按钮已不在侧栏内）。
+      // 展开态按钮与实际 Logo 图形不重叠；不是拿占满头部的 Link 外框比较。
       const aside = page.getByRole("complementary", { name: NAVIGATION });
-      const brandBox = (await aside.getByRole("link", { name: "SkillHub" }).boundingBox())!;
+      const brandBox = (await aside.locator(".sh-brand-logo").boundingBox())!;
       const firstLinkBox = (await aside.getByRole("link", { name: "Overview" }).boundingBox())!;
       expect(
         boxesIntersect(box, brandBox),
-        "toggle must not overlap the brand link",
+        "toggle must not overlap the visible brand mark",
       ).toBe(false);
       expect(
         boxesIntersect(box, firstLinkBox),
@@ -72,11 +71,17 @@ test.describe("app shell collapse button placement", () => {
       expect(Math.abs(collapsedBox.y - box.y), "toggle y stays fixed across collapse").toBeLessThanOrEqual(1);
 
       await expect(toggle).toHaveAttribute("aria-label", "Expand navigation");
+      const compactBrand = page.locator(".sh-app-shell__compact-brand .sh-brand-logo");
+      await expect(compactBrand).toBeVisible();
+      const compactBrandBox = (await compactBrand.boundingBox())!;
+      expect(compactBrandBox.x, "collapsed brand follows the toggle visually").toBeGreaterThan(
+        collapsedBox.x + collapsedBox.width,
+      );
       await expectNoRootHorizontalOverflow(page, `shell@${width}`);
     });
   }
 
-  test("lays out the unified title bar above the sidebar and workspace", async ({ page }) => {
+  test("lays out the full-height sidebar beside the content title bar", async ({ page }) => {
     await page.setViewportSize({ width: 1024, height: 900 });
     await page.goto("/__preview/skill-library");
 
@@ -87,19 +92,19 @@ test.describe("app shell collapse button placement", () => {
       };
       return {
         bar: rect(".sh-app-shell__topbar"),
-        body: rect(".sh-app-shell__body"),
         aside: rect(".sh-sidebar"),
+        workspace: rect(".sh-app-shell__workspace"),
       };
     });
 
-    // 标题栏全宽铺顶，侧栏顶部与主体行顶部对齐（内容与标题栏同一水平线起排）。
+    // 侧栏全高；内容顶栏从侧栏右边开始，与侧栏顶部对齐。
     expect(geometry.bar).not.toBeNull();
-    expect(geometry.bar!.x).toBe(0);
-    expect(geometry.bar!.width).toBe(1024);
-    expect(geometry.body).not.toBeNull();
-    expect(geometry.body!.y).toBeGreaterThanOrEqual(geometry.bar!.bottom - 1);
     expect(geometry.aside).not.toBeNull();
-    expect(geometry.aside!.y).toBeCloseTo(geometry.body!.y, 0);
+    expect(geometry.workspace).not.toBeNull();
+    expect(geometry.bar!.x).toBeCloseTo(geometry.aside!.right, 0);
+    expect(geometry.bar!.width).toBeCloseTo(geometry.workspace!.width, 0);
+    expect(geometry.bar!.y).toBeCloseTo(geometry.aside!.y, 0);
+    expect(geometry.aside!.height).toBeCloseTo(900, 0);
 
     // 技能库路由：视图切换渲染在标题栏 context 分区。
     const switchGroup = page.getByRole("group", { name: "View mode" });
@@ -110,12 +115,11 @@ test.describe("app shell collapse button placement", () => {
     );
   });
 
-  test("keyboard focus reaches the toggle first in the title bar", async ({ page }) => {
+  test("keyboard focus reaches the sidebar toggle first after the skip link", async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 900 });
     await page.goto("/__preview/skill-library");
 
-    // Tab 顺序：壳层第一个可聚焦元素是 Skip Link，紧随其后的是标题栏
-    // 首位的折叠按钮。
+    // Tab 顺序：Skip Link 后紧随侧栏头部折叠按钮。
     await page.keyboard.press("Tab");
     await expect(page.getByRole("link", { name: "Skip to content" })).toBeFocused();
     await page.keyboard.press("Tab");
@@ -134,7 +138,7 @@ test.describe("app shell collapse button placement", () => {
     await page.setViewportSize({ width: 1280, height: 900 });
     await page.goto("/__preview/skill-detail/skill-pdf");
 
-    // 详情路由隐藏顶栏，但通知中心入口仍以浮动铃铛保持可达（≥40px 命中区域）。
+    // 通知中心入口保持可达（≥40px 命中区域）。
     const bell = page.getByRole("button", { name: "Notifications" });
     await expect(bell).toBeVisible();
     const box = (await bell.boundingBox())!;

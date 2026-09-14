@@ -56,15 +56,15 @@ async function renderShell(initialPath = "/") {
 }
 
 describe("AppShell", () => {
-  it("exposes exactly one main landmark inside the sidebar/workspace body row", async () => {
+  it("exposes exactly one main landmark inside the sidebar/workspace shell columns", async () => {
     await renderShell();
 
     expect(screen.getAllByRole("main")).toHaveLength(1);
 
-    const body = document.querySelector(".sh-app-shell__body");
-    expect(body).not.toBeNull();
-    expect(body!.querySelector(".sh-sidebar")).not.toBeNull();
-    expect(body!.querySelector(".sh-app-shell__workspace")).not.toBeNull();
+    const shell = document.querySelector(".sh-app-shell");
+    expect(shell).not.toBeNull();
+    expect(shell!.querySelector(".sh-sidebar")).not.toBeNull();
+    expect(shell!.querySelector(".sh-app-shell__workspace")).not.toBeNull();
   });
 
   it("offers a skip link as the first focusable element and targets the main region", async () => {
@@ -80,7 +80,7 @@ describe("AppShell", () => {
     expect(main).toHaveAttribute("tabindex", "-1");
   });
 
-  it("leads the title bar with the sidebar toggle right after the skip link in tab order", async () => {
+  it("leads the shell with the sidebar toggle right after the skip link in tab order", async () => {
     const user = userEvent.setup();
     await renderShell();
 
@@ -103,10 +103,12 @@ describe("AppShell", () => {
     expect(document.querySelector(".sh-app-shell")).toHaveClass("is-sidebar-collapsed");
   });
 
-  it("renders the unified title bar with drag regions across its zones", async () => {
+  it("renders drag regions across the sidebar header and content title bar", async () => {
     await renderShell();
 
+    const sidebarHeader = document.querySelector(".sh-sidebar__header");
     const topbar = document.querySelector(".sh-app-shell__topbar");
+    expect(sidebarHeader).toHaveAttribute("data-tauri-drag-region");
     expect(topbar).toHaveAttribute("data-tauri-drag-region");
     expect(document.querySelector(".sh-app-shell__topbar-start")).toHaveAttribute(
       "data-tauri-drag-region",
@@ -120,30 +122,26 @@ describe("AppShell", () => {
     const heading = within(topbar as HTMLElement).getByRole("heading", { level: 1 });
     expect(heading).toHaveAttribute("data-tauri-drag-region");
     // 按钮控件不承担拖拽区域。
-    const toggle = document.querySelector(".sh-app-shell__sidebar-toggle");
+    const toggle = document.querySelector(".sh-sidebar__toggle");
     expect(toggle).not.toHaveAttribute("data-tauri-drag-region");
   });
 
-  it("keeps the sidebar toggle out of the sidebar and first in the title bar", async () => {
+  it("keeps the sidebar toggle inside the sidebar header", async () => {
     await renderShell();
 
-    const start = document.querySelector(".sh-app-shell__topbar-start");
-    const toggle = document.querySelector(".sh-app-shell__sidebar-toggle");
+    const header = document.querySelector(".sh-sidebar__header");
+    const toggle = document.querySelector(".sh-sidebar__toggle");
     expect(toggle).not.toBeNull();
-    expect(start!.firstElementChild).toBe(toggle);
-    expect(
-      screen.getByRole("complementary", { name: "Main navigation" }).querySelector(
-        ".sh-app-shell__sidebar-toggle, .sh-sidebar__toggle",
-      ),
-    ).toBeNull();
+    expect(header!.querySelector(".sh-sidebar__toggle")).toBe(toggle);
+    expect(document.querySelector(".sh-app-shell__topbar-start .sh-sidebar__toggle")).toBeNull();
   });
 
   it("uses the Lucide Panel Left glyph at a compact size", async () => {
     await renderShell();
 
     const glyph = document
-      .querySelector(".sh-app-shell__sidebar-toggle")!
-      .querySelector(".sh-app-shell__sidebar-toggle-icon");
+      .querySelector(".sh-sidebar__toggle")!
+      .querySelector("svg");
 
     expect(glyph?.querySelector("rect")).not.toBeNull();
     expect(glyph?.querySelector('path[d="M9 3v18"]')).not.toBeNull();
@@ -165,6 +163,26 @@ describe("AppShell", () => {
     await renderShell("/");
 
     expect(screen.queryByRole("group", { name: "View mode" })).not.toBeInTheDocument();
+  });
+
+  it("places the compact brand in the content title bar only when the sidebar is collapsed", async () => {
+    const user = userEvent.setup();
+    await renderShell();
+
+    expect(document.querySelector(".sh-app-shell__compact-brand")).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Collapse navigation" }));
+
+    const compactBrand = document.querySelector(".sh-app-shell__compact-brand");
+    expect(compactBrand).not.toBeNull();
+    expect(document.querySelector(".sh-app-shell__topbar-start")!.firstElementChild).toBe(
+      compactBrand,
+    );
+    expect(compactBrand!.querySelector(".sh-brand-logo")).not.toBeNull();
+    expect(
+      screen.getByRole("complementary", { name: "Main navigation" }).querySelector(
+        ".sh-sidebar__brand",
+      ),
+    ).toBeNull();
   });
 
   it("applies the window chrome platform class once on mount", async () => {

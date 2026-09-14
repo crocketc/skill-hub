@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import baseCss from "./base.css?raw";
+import themeCss from "./theme.css?raw";
 import { themeNames } from "./theme";
 import {
   contrast,
@@ -37,64 +38,40 @@ function rawBlockFor(selector: string): string {
 }
 
 describe("sidebar collapse control states", () => {
-  // 验收反馈：折叠按钮重新设计为 codex 桌面风格的方形安静控件，
-  // 五个状态（安静 / 悬停 / 按下 / 键盘焦点 / 折叠态）语义 token 化，
-  // 去掉悬浮阴影一类的营销式装饰。D5 起控件迁入一体化标题栏
-  // （topbar-start 首位），视觉契约值原样迁移到新选择器。
-  it("styles the quiet state with square semantic control tokens and no drop shadow", () => {
-    const declarations = declarationsFor(".sh-app-shell__sidebar-toggle");
-    // M-17-1 验收反馈要求折叠控件收窄为 28px 方形安静控件。
-    expect(declarations["width"]).toBe("1.75rem");
-    expect(declarations["height"]).toBe("1.75rem");
-    expect(declarations["border-radius"]).toBe("var(--radius-sm)");
-    expect(declarations["border"]).toBe("1px solid var(--ui-border)");
-    expect(declarations["background"]).toBe("var(--ui-control-background)");
-    expect(declarations["color"]).toBe("var(--ui-icon-muted)");
-    expect(rawBlockFor(".sh-app-shell__sidebar-toggle")).not.toContain("box-shadow");
+  it("uses the shared borderless icon-button geometry", () => {
+    const declarations = declarationsFor(".sh-sidebar__toggle");
+    expect(declarations["width"]).toBe("2.5rem");
+    expect(declarations["height"]).toBe("2.5rem");
+    expect(declarations["border"]).toBe("0");
+    expect(declarations["background"]).toBe("transparent");
+    expect(rawBlockFor(".sh-sidebar__toggle")).not.toContain("box-shadow");
   });
 
-  it("gives hover, pressed, focus and collapsed states distinct semantic styling", () => {
-    const hover = declarationsFor(".sh-app-shell__sidebar-toggle:hover");
-    expect(hover["background"]).toBe("var(--ui-hover-surface)");
-    expect(hover["color"]).toBe("var(--ui-ink)");
-
-    const pressed = declarationsFor(".sh-app-shell__sidebar-toggle:active");
-    expect(pressed["background"]).toBe("var(--ui-pressed-surface)");
-
-    expect(rawBlockFor(".sh-app-shell__sidebar-toggle:focus-visible")).toContain(
-      "var(--ui-focus)",
-    );
-
-    const collapsed = declarationsFor(
-      '.sh-app-shell__sidebar-toggle[aria-expanded="false"]',
-    );
-    expect(collapsed["background"]).toBe("var(--ui-surface-subtle)");
-    expect(collapsed["color"]).toBe("var(--ui-ink)");
+  it("keeps the topbar compact at 3rem and centers its controls", () => {
+    const topbar = declarationsFor(".sh-app-shell__topbar");
+    expect(topbar["min-height"]).toBe("var(--topbar-height)");
+    expect(topbar["align-items"]).toBe("center");
+    expect(themeCss).toMatch(/--topbar-height:\s*3rem;/);
   });
 
-  it("keeps the control at 28px in the compact narrow title-bar row", () => {
-    const mediaStart = baseCss.indexOf("@media");
-    const toggleStart = baseCss.indexOf(".sh-app-shell__sidebar-toggle", mediaStart);
-    const blockEnd = baseCss.indexOf(".sh-sidebar nav", toggleStart);
-    expect(toggleStart, "compact row restyles the toggle").toBeGreaterThan(0);
-    const compactBlock = baseCss.slice(toggleStart, blockEnd);
-    expect(compactBlock).toContain("width: 1.75rem");
-    expect(compactBlock).toContain("height: 1.75rem");
-    expect(compactBlock).not.toContain("box-shadow");
+  it("moves the compact brand to the content title bar in collapsed mode", () => {
+    expect(baseCss).toMatch(/\.sh-app-shell__compact-brand\s*\{/);
+    expect(baseCss).toMatch(/\.sh-app-shell__compact-brand[^{]*\.sh-brand-logo/);
+  });
+
+  it("keeps the narrow-screen sidebar header controls in normal flow", () => {
+    const narrowScreen = baseCss.slice(baseCss.indexOf("@media (max-width: 24rem)"));
+    expect(narrowScreen).toMatch(/\.sh-sidebar__header\s*\{[\s\S]*?display:\s*flex;/);
+    expect(narrowScreen).toMatch(/\.sh-sidebar__brand\s*\{[\s\S]*?position:\s*static;/);
+    expect(narrowScreen).toMatch(/\.sh-sidebar__toggle\s*\{[\s\S]*?position:\s*static;/);
   });
 });
 
 describe("unified title bar shell layout", () => {
-  // D5：壳层改为纵向 grid——标题栏行 + 主体行；侧栏与 workspace 排在
-  // 主体行内，沿用 --sidebar-width 变量机制（含折叠变体）。
-  it("arranges a title-bar row over a sidebar/workspace body row", () => {
+  it("arranges a full-height sidebar beside a content title-bar workspace", () => {
     const shell = declarationsFor(".sh-app-shell");
     expect(shell["display"]).toBe("grid");
-    expect(shell["grid-template-rows"]).toBe("auto minmax(0, 1fr)");
-
-    const body = declarationsFor(".sh-app-shell__body");
-    expect(body["display"]).toBe("grid");
-    expect(body["grid-template-columns"]).toBe(
+    expect(shell["grid-template-columns"]).toBe(
       "var(--sidebar-width) minmax(0, 1fr)",
     );
 
@@ -103,7 +80,7 @@ describe("unified title bar shell layout", () => {
 
   it("reserves macOS traffic-light clearance in the title bar and sidebar header", () => {
     expect(
-      declarationsFor(".sh-is-macos .sh-app-shell__topbar-start")["padding-left"],
+      declarationsFor(".sh-is-macos .sh-sidebar__header")["padding-left"],
     ).toBe("5rem");
     expect(declarationsFor(".sh-is-macos .sh-sidebar__header")["padding-left"]).toBe(
       "5rem",
@@ -111,7 +88,6 @@ describe("unified title bar shell layout", () => {
   });
 
   it("drops the retired sidebar-resident toggle and query-tools layout rules", () => {
-    expect(baseCss).not.toContain(".sh-sidebar__toggle");
     // 遗留风险清理（2026-09-14）：query-tools 仅存的元素级残留选择器
     // （input/select/button 与活类并组）也拆分删除，base.css 不再有痕迹。
     expect(baseCss).not.toContain("query-tools");
