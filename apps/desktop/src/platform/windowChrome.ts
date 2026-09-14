@@ -23,8 +23,15 @@ function isTauriRuntime(): boolean {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 }
 
+export function isMacOSPlatform(
+  userAgent = typeof navigator !== "undefined" ? navigator.userAgent : "",
+  platform = typeof navigator !== "undefined" ? navigator.platform : "",
+): boolean {
+  return /Macintosh|Mac OS X/i.test(userAgent) || /^Mac/i.test(platform);
+}
+
 export function resolveWindowChrome(): WindowChrome | null {
-  if (!isTauriRuntime()) {
+  if (!isTauriRuntime() || isMacOSPlatform()) {
     return null;
   }
   const currentWindow = getCurrentWindow();

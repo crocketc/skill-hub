@@ -117,6 +117,14 @@ describe("unified title bar shell layout", () => {
     expect(declarationsFor(".sh-is-macos .sh-sidebar__header")["padding-left"]).toBe(
       "5rem",
     );
+    expect(
+      declarationsFor(".sh-is-macos .sh-sidebar__toggle")["top"],
+    ).toBe("calc(50% - var(--space-4) + var(--space-6))");
+    expect(
+      declarationsFor(".sh-is-macos .sh-app-shell.is-sidebar-collapsed .sh-app-shell__topbar-start")[
+        "padding-inline-start"
+      ],
+    ).toBe("5rem");
   });
 
   it("drops the retired sidebar-resident toggle and query-tools layout rules", () => {

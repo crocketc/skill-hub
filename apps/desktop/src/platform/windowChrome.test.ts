@@ -8,6 +8,7 @@ vi.mock("@tauri-apps/api/window", () => ({
 
 import {
   applyWindowChromePlatformClass,
+  isMacOSPlatform,
   resolveWindowChrome,
 } from "./windowChrome";
 
@@ -71,6 +72,22 @@ describe("resolveWindowChrome", () => {
 
     expect(chrome).toBeNull();
     expect(getCurrentWindow).not.toHaveBeenCalled();
+  });
+
+  it("returns null on macOS so the system traffic lights remain the only window controls", () => {
+    const instance = createWindowInstance();
+    enableTauriRuntime(instance);
+    vi.stubGlobal("navigator", {
+      userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0)",
+      platform: "MacIntel",
+    });
+
+    try {
+      expect(resolveWindowChrome()).toBeNull();
+      expect(getCurrentWindow).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it("maps the action methods onto the current Tauri window", async () => {
@@ -169,5 +186,25 @@ describe("applyWindowChromePlatformClass", () => {
     } finally {
       vi.unstubAllGlobals();
     }
+  });
+});
+
+describe("isMacOSPlatform", () => {
+  it("recognizes the macOS user agent and platform", () => {
+    expect(
+      isMacOSPlatform(
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0)",
+        "MacIntel",
+      ),
+    ).toBe(true);
+  });
+
+  it("does not classify Windows as macOS", () => {
+    expect(
+      isMacOSPlatform(
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+        "Win32",
+      ),
+    ).toBe(false);
   });
 });
