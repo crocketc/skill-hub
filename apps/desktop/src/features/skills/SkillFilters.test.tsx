@@ -244,7 +244,8 @@ it("wraps the advanced filter grid before zoomed desktop widths can overflow", (
   expect(skillsCss).toMatch(
     /\.sh-skill-library \.sh-skill-filters__advanced\s*\{[\s\S]*?grid-template-columns:\s*repeat\(auto-fit, minmax\(11rem, 1fr\)\)/,
   );
-  expect(baseCss).not.toContain(".sh-skill-library__query-tools > section");
+  // 遗留风险清理（2026-09-14）：锁强化——base.css 不再含任何 query-tools 痕迹。
+  expect(baseCss).not.toContain("query-tools");
 });
 
 it("keeps the search field bounded inside the primary filter row", () => {

@@ -2288,8 +2288,9 @@ a {
   white-space: nowrap;
 }
 
-/* D5 死代码清理：.sh-skill-library__query-tools* 与 .sh-skill-library__query-toggle
-   已不被 SkillFilters/SkillLibraryPage 渲染（M-21 三 band 工具栏重构后遗留），
+/* D5 死代码清理：旧检索工具区网格与其 query-toggle 变体已不被
+   SkillFilters/SkillLibraryPage 渲染（M-21 三 band 工具栏重构后遗留，
+   2026-09-14 遗留风险清理将元素级残留一并拆出删除），
    现行筛选布局契约锁定于 features/skills/skills.css 与 SkillFilters.test.tsx。 */
 
 .sh-filter-dropdown {
@@ -2367,8 +2368,8 @@ a {
   accent-color: var(--color-accent-strong);
 }
 
-.sh-skill-library__query-tools input,
-.sh-skill-library__query-tools select,
+/* 遗留风险清理（2026-09-14）：旧检索工具区的死选择器已从各组选择器列表
+   中拆分删除；下方保留的均为活选择器，声明体保持原样。 */
 .sh-skill-library__save-view input {
   width: 100%;
   min-width: 0;
@@ -2381,35 +2382,12 @@ a {
   font: inherit;
 }
 
-.sh-skill-library__query-tools select[multiple] {
-  height: 2.25rem;
-}
-
-.sh-skill-library__query-tools p,
 .sh-skill-library__announcement,
 .sh-skill-library__boundary,
 .sh-skill-library__save-view p {
   margin: 0;
   color: var(--color-text-muted);
   font-size: var(--font-size-xs);
-}
-
-.sh-skill-library__query-tools button {
-  min-height: 2.25rem;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  padding-inline: var(--space-3);
-  background: var(--color-surface-raised);
-  color: var(--color-text-secondary);
-  font: inherit;
-  font-size: var(--font-size-xs);
-  font-weight: 650;
-  cursor: pointer;
-  white-space: nowrap;
-}
-
-.sh-skill-library__query-tools button.sh-skill-library__query-toggle {
-  min-height: 0;
 }
 
 .sh-skill-library__save-view,
@@ -4690,9 +4668,6 @@ a {
   .sh-button,
   .sh-skill-library__saved-views button,
   .sh-skill-library__saved-views summary,
-  .sh-skill-library__query-tools input,
-  .sh-skill-library__query-tools select,
-  .sh-skill-library__query-tools button,
   .sh-skill-library__save-view input,
   .sh-skill-table__toolbar button,
   .sh-skill-table__toolbar select,

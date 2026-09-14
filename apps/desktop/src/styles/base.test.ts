@@ -112,7 +112,9 @@ describe("unified title bar shell layout", () => {
 
   it("drops the retired sidebar-resident toggle and query-tools layout rules", () => {
     expect(baseCss).not.toContain(".sh-sidebar__toggle");
-    expect(baseCss).not.toContain(".sh-skill-library__query-tools > section");
+    // 遗留风险清理（2026-09-14）：query-tools 仅存的元素级残留选择器
+    // （input/select/button 与活类并组）也拆分删除，base.css 不再有痕迹。
+    expect(baseCss).not.toContain("query-tools");
   });
 });
 
