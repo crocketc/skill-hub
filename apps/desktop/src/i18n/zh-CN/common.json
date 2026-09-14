@@ -904,6 +904,11 @@
     "scanNoSkills": "没有发现符合 Skill 标记的目录。",
     "scanOpenImport": "完成初始化并进入批量导入",
     "scanPreviewTitle": "扫描预览",
+    "scanProgressTitle": "扫描进度",
+    "scanPhase": "当前阶段：{{phase}}",
+    "scanPhaseScanning": "扫描中",
+    "scanElapsed": "已用时 {{seconds}} 秒",
+    "scanProgressUnavailable": "正在扫描，暂时无法统计准确进度。",
     "scanStarted": "扫描已启动，正在执行。",
     "scanVisited": "扫描 {{count}} 个路径",
     "scanTitle": "扫描已有技能",
@@ -914,6 +919,7 @@
     "skipTitle": "将创建空集中库",
     "selectionConfirmation": "我确认所选目标只用于只读扫描，不会部署技能",
     "startReadOnlyScan": "开始只读扫描",
+    "scanning": "正在扫描…",
     "step": "第 {{current}} 步，共 3 步",
     "summary": {
       "discovered": "发现 Skill：{{count}} 个",
@@ -1880,6 +1886,17 @@
       "failed": "{{label}} 失败：{{error}}",
       "cancelled": "{{label}} 已取消",
       "viewOperations": "查看操作记录"
+    },
+    "taskStatus": {
+      "scanning": "扫描中",
+      "scanningDescription": "初始化扫描正在后台执行。",
+      "completed": "扫描完成",
+      "completedDescription": "初始化扫描已完成，结果已发送到通知中心。",
+      "failed": "扫描失败",
+      "failedDescription": "初始化扫描失败，详情已发送到通知中心。",
+      "detailsTitle": "任务详情",
+      "initializationScan": "初始化只读扫描",
+      "elapsed": "已用时 {{seconds}} 秒"
     },
     "recordsTitle": "操作记录",
     "completed": "已完成",

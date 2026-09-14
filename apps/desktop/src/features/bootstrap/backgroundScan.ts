@@ -27,6 +27,8 @@ export interface BackgroundScanState {
   /** Monotonic id of the latest begin; lets consumers dedupe reports. */
   token: number;
   scopeIds: string[];
+  /** Wall-clock start captured before the scan begins; handoff must not reset it. */
+  startedAt?: number;
   /** Present once the handed-off scan actually finished with a result. */
   result?: ScanResult;
   error?: unknown;
@@ -66,16 +68,24 @@ export function subscribeBackgroundScan(listener: Listener): () => void {
 export function beginBackgroundScan(
   scan: Promise<InitializationScanState>,
   scopeIds: string[],
+  startedAt = Date.now(),
 ): void {
   const token = state.token + 1;
-  update({ status: "scanning", token, scopeIds, reported: false });
+  update({ status: "scanning", token, scopeIds, startedAt, reported: false });
   void scan.then(
     (outcome) => {
       if (state.token !== token) {
         return; // Superseded by a newer scan or reset by the wizard.
       }
       if (outcome.kind === "completed") {
-        update({ status: "completed", token, scopeIds, result: outcome.result, reported: false });
+        update({
+          status: "completed",
+          token,
+          scopeIds,
+          startedAt,
+          result: outcome.result,
+          reported: false,
+        });
         return;
       }
       // The backend acknowledged an async operation instead of a final
@@ -86,7 +96,7 @@ export function beginBackgroundScan(
       if (state.token !== token) {
         return;
       }
-      update({ status: "failed", token, scopeIds, error, reported: false });
+      update({ status: "failed", token, scopeIds, startedAt, error, reported: false });
     },
   );
 }

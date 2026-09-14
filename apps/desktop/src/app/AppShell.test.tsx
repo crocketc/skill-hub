@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { I18nextProvider } from "react-i18next";
 import { MemoryRouter } from "react-router-dom";
@@ -223,6 +223,35 @@ describe("AppShell", () => {
     beginBackgroundScan(Promise.resolve({ kind: "completed", result: completedScan }), []);
 
     expect(await screen.findByText("Background scan finished")).toBeVisible();
+  });
+
+  it("keeps a running background scan visible in the global topbar before notifications", async () => {
+    await renderShell("/library");
+
+    await act(async () => {
+      beginBackgroundScan(new Promise(() => undefined), [], Date.now());
+      await Promise.resolve();
+    });
+
+    const end = document.querySelector(".sh-app-shell__topbar-end") as HTMLElement;
+    const taskStatus = await waitFor(() => {
+      const element = within(end).getByRole("status", {
+        name: "The initialization scan is running in the background.",
+      });
+      expect(element).toBeVisible();
+      return element;
+    });
+    const viewSwitch = document.querySelector(".sh-app-shell__topbar-context")!;
+    const bell = within(end).getByRole("button", { name: "Notifications" });
+    expect(viewSwitch.compareDocumentPosition(taskStatus) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(taskStatus.compareDocumentPosition(bell) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+    await userEvent.setup().click(
+      within(end).getByRole("button", {
+        name: "The initialization scan is running in the background.",
+      }),
+    );
+    expect(await screen.findByRole("dialog", { name: "Task details" })).toBeVisible();
   });
 
   it("keeps the notification center reachable on skill detail routes", async () => {

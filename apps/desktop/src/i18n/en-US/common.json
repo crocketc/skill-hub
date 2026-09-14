@@ -904,6 +904,11 @@
     "scanNoSkills": "No directories with the Skill marker were found.",
     "scanOpenImport": "Finish initialization and batch import",
     "scanPreviewTitle": "Scan preview",
+    "scanProgressTitle": "Scan progress",
+    "scanPhase": "Current phase: {{phase}}",
+    "scanPhaseScanning": "Scanning",
+    "scanElapsed": "Elapsed {{seconds}}s",
+    "scanProgressUnavailable": "Scanning; exact progress is not available yet.",
     "scanStarted": "The scan has started and is in progress.",
     "scanVisited": "{{count}} paths scanned",
     "scanTitle": "Scan existing skills",
@@ -914,6 +919,7 @@
     "skipTitle": "Create an empty library",
     "selectionConfirmation": "I understand selected targets are only used for a read-only scan and will not deploy skills",
     "startReadOnlyScan": "Start read-only scan",
+    "scanning": "Scanning…",
     "step": "Step {{current}} of 3",
     "summary": {
       "discovered": "Skills discovered: {{count}}",
@@ -1880,6 +1886,17 @@
       "failed": "{{label}} failed: {{error}}",
       "cancelled": "{{label}} cancelled",
       "viewOperations": "View operations"
+    },
+    "taskStatus": {
+      "scanning": "Scanning",
+      "scanningDescription": "The initialization scan is running in the background.",
+      "completed": "Scan complete",
+      "completedDescription": "The initialization scan is complete; results are in Notifications.",
+      "failed": "Scan failed",
+      "failedDescription": "The initialization scan failed; details are in Notifications.",
+      "detailsTitle": "Task details",
+      "initializationScan": "Initialization read-only scan",
+      "elapsed": "Elapsed {{seconds}}s"
     },
     "recordsTitle": "Operation records",
     "completed": "Completed",

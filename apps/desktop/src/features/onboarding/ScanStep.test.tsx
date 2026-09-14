@@ -104,6 +104,24 @@ it("offers background continuation while a scan is running", async () => {
   expect(screen.getByRole("button", { name: "转入后台，继续完成初始化" })).toBeVisible();
 });
 
+it("gives immediate feedback and honest indeterminate progress while scanning", async () => {
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  render(
+    <I18nextProvider i18n={i18n}>
+      <ScanStep
+        isScanning
+        onScan={() => undefined}
+        scanStartedAt={Date.now()}
+      />
+    </I18nextProvider>,
+  );
+
+  expect(screen.getByRole("button", { name: "正在扫描…" })).toBeDisabled();
+  expect(screen.getByText("当前阶段：扫描中")).toBeVisible();
+  expect(screen.getByText("已用时 0 秒")).toBeVisible();
+  expect(screen.getByRole("progressbar", { name: "扫描进度" })).not.toHaveAttribute("aria-valuenow");
+});
+
 it("prevents starting a second scan after handing the first one to the background", async () => {
   const i18n = await createSkillHubI18n(["zh-CN"]);
   render(

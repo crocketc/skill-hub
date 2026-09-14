@@ -18,6 +18,7 @@ import {
 import { BackgroundScanNotifier } from "../features/bootstrap/BackgroundScanNotifier";
 import { Sidebar } from "./Sidebar";
 import { OperationIndicator } from "./OperationIndicator";
+import { TaskStatusIndicator } from "./TaskStatusIndicator";
 import type { BootstrapVerificationState } from "../features/bootstrap/api";
 import type { BootstrapSnapshot } from "../api/bindings";
 
@@ -238,6 +239,7 @@ export function AppShell({ refreshSnapshot, snapshot, verification }: AppShellPr
                     {t("appShell.verification")}
                   </span>
                 ) : null}
+                <TaskStatusIndicator />
                 <NotificationBell />
                 <WindowControls />
               </div>

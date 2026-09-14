@@ -108,6 +108,7 @@ export function OnboardingWizard({
   // M-31：后台扫描的真实句柄。转入后台后向导可能立即退出，promise 由
   // bootstrap/backgroundScan 的模块级监控器持有并观察其真实结果。
   const scanHandleRef = useRef<Promise<InitializationScanState> | null>(null);
+  const scanStartedAtRef = useRef<number | null>(null);
   const handedOffRef = useRef(false);
   const scanSettledRef = useRef(true);
   const mountedRef = useRef(true);
@@ -164,6 +165,7 @@ export function OnboardingWizard({
     setError(null);
     handedOffRef.current = false;
     scanSettledRef.current = false;
+    scanStartedAtRef.current = Date.now();
     const attempt = runtime.runInitializationScan(selectedTargetIds);
     scanHandleRef.current = attempt;
     try {
@@ -240,7 +242,11 @@ export function OnboardingWizard({
       }
       // 前台完成后仍有扫描在跑：交给监控器，退出向导后依旧可观察、不静默。
       if (scanHandleRef.current && !scanSettledRef.current && !handedOffRef.current) {
-        beginBackgroundScan(scanHandleRef.current, selectedTargetIds);
+        beginBackgroundScan(
+          scanHandleRef.current,
+          selectedTargetIds,
+          scanStartedAtRef.current ?? undefined,
+        );
       }
       setCompletionState("complete");
     } catch (caught) {
@@ -319,12 +325,18 @@ export function OnboardingWizard({
           }
           handedOffRef.current = true;
           // 真实 IPC promise 交给模块级监控器：向导退出后扫描结果仍可观察。
-          beginBackgroundScan(handle, selectedTargetIds);
+          beginBackgroundScan(
+            handle,
+            selectedTargetIds,
+            scanStartedAtRef.current ?? undefined,
+          );
           setScanInBackground(true);
           setIsScanning(false);
           setMessage(t("onboarding.scanBackground"));
         } : undefined}
         scanInBackground={scanInBackground}
+        scanStartedAt={scanStartedAtRef.current ?? undefined}
+        scanPhase={isScanning ? t("onboarding.scanPhaseScanning") : undefined}
         scanResult={scanState?.kind === "completed" ? scanState.result : undefined}
       />
     );

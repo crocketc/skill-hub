@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "../../ui/Button";
 import type { ScanResult } from "../../api/bindings";
@@ -13,6 +14,9 @@ interface ScanStepProps {
   onOpenImport?: (roots: string[]) => void;
   scanResult?: ScanResult;
   scanInBackground?: boolean;
+  scanStartedAt?: number;
+  scanPhase?: string;
+  scanProgress?: { completed: number; total: number };
 }
 
 export function ScanStep({
@@ -21,9 +25,23 @@ export function ScanStep({
   onOpenImport,
   onScan,
   scanInBackground = false,
+  scanStartedAt,
+  scanPhase,
+  scanProgress,
   scanResult,
 }: ScanStepProps) {
   const { t } = useTranslation();
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    if (!isScanning) return;
+    setNow(Date.now());
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [isScanning]);
+
+  const elapsedSeconds = Math.max(0, Math.floor((now - (scanStartedAt ?? now)) / 1000));
+  const hasKnownTotal = Boolean(scanProgress && scanProgress.total > 0);
 
   return (
     <section aria-labelledby="scan-step-title" className="sh-onboarding__card">
@@ -31,8 +49,22 @@ export function ScanStep({
       <p>{t("onboarding.scanDescription")}</p>
       {onScan ? (
         <Button disabled={scanInBackground} loading={isScanning} onClick={onScan}>
-          {t("onboarding.startReadOnlyScan")}
+          {isScanning ? t("onboarding.scanning") : t("onboarding.startReadOnlyScan")}
         </Button>
+      ) : null}
+      {isScanning ? (
+        <section aria-label={t("onboarding.scanProgressTitle")} className="sh-onboarding__scan-progress">
+          <div className="sh-onboarding__scan-progress-meta">
+            <span>{t("onboarding.scanPhase", { phase: scanPhase ?? t("onboarding.scanPhaseScanning") })}</span>
+            <span>{t("onboarding.scanElapsed", { seconds: elapsedSeconds })}</span>
+          </div>
+          <progress
+            aria-label={t("onboarding.scanProgressTitle")}
+            max={hasKnownTotal ? scanProgress!.total : undefined}
+            value={hasKnownTotal ? scanProgress!.completed : undefined}
+          />
+          {!hasKnownTotal ? <p>{t("onboarding.scanProgressUnavailable")}</p> : null}
+        </section>
       ) : null}
       {isScanning && onContinueInBackground ? (
         <Button onClick={onContinueInBackground} variant="secondary">

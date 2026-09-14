@@ -37,6 +37,15 @@ it("keeps a handed-off scan observable as scanning until the real promise settle
   expect(getBackgroundScanState().result?.roots).toEqual(scanResult.roots);
 });
 
+it("preserves the scan start time when the handoff becomes global state", () => {
+  resetBackgroundScan();
+  const startedAt = 123_456;
+
+  beginBackgroundScan(new Promise(() => undefined), ["codex"], startedAt);
+
+  expect(getBackgroundScanState().startedAt).toBe(startedAt);
+});
+
 it("records a failed handed-off scan instead of fabricating completion", async () => {
   resetBackgroundScan();
   let reject!: (error: unknown) => void;
