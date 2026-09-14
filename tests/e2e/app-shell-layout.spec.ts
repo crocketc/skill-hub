@@ -61,11 +61,20 @@ test.describe("app shell collapse button placement", () => {
         boxesIntersect(box, firstLinkBox),
         "toggle must not overlap the first navigation link",
       ).toBe(false);
+      expect(Math.abs(brandBox.height - 44), "expanded logo remains prominent").toBeLessThanOrEqual(2);
+
+      const notificationBox = (await page.getByRole("button", { name: "Notifications" }).boundingBox())!;
+      expect(
+        Math.abs(box.y + box.height / 2 - (notificationBox.y + notificationBox.height / 2)),
+        "toggle aligns with topbar controls",
+      ).toBeLessThanOrEqual(1);
 
       // 点击折叠：状态切换且按钮位置保持稳定（标题栏位置不随侧栏宽度变化）。
       await toggle.click();
       await expect(toggle).toHaveAttribute("aria-expanded", "false");
       await expect(aside).toHaveClass(/is-collapsed/);
+      const collapsedAsideBox = (await aside.boundingBox())!;
+      expect(Math.abs(collapsedAsideBox.width - 48), "collapsed sidebar matches 3rem topbar").toBeLessThanOrEqual(1);
       const collapsedBox = (await toggle.boundingBox())!;
       expect(Math.abs(collapsedBox.x - box.x), "toggle x stays fixed across collapse").toBeLessThanOrEqual(2);
       expect(Math.abs(collapsedBox.y - box.y), "toggle y stays fixed across collapse").toBeLessThanOrEqual(1);

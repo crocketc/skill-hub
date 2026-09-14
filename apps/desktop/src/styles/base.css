@@ -819,7 +819,15 @@ a {
 }
 
 .sh-app-shell.is-sidebar-collapsed {
-  --sidebar-width: 4.75rem;
+  --sidebar-width: var(--topbar-height);
+}
+
+.sh-app-shell.is-sidebar-collapsed .sh-sidebar {
+  padding-inline: 0;
+}
+
+.sh-app-shell.is-sidebar-collapsed .sh-sidebar__toggle {
+  inset-inline-start: var(--space-2);
 }
 
 .sh-sidebar {
@@ -857,8 +865,8 @@ a {
 .sh-sidebar__toggle {
   position: absolute;
   z-index: 1;
-  inset-inline-start: 0;
-  top: 50%;
+  inset-inline-start: calc(-1 * var(--space-2));
+  top: calc(50% - var(--space-4));
   width: 2.5rem;
   height: 2.5rem;
   min-width: 2.5rem;
@@ -1046,6 +1054,11 @@ a {
   justify-content: center;
   color: var(--color-accent-strong);
   text-decoration: none;
+  margin-inline-end: var(--space-2);
+}
+
+.sh-sidebar__brand .sh-brand-logo {
+  height: 2.75rem;
 }
 
 .sh-app-shell__compact-brand .sh-brand-logo {

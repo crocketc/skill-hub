@@ -47,6 +47,15 @@ describe("sidebar collapse control states", () => {
     expect(rawBlockFor(".sh-sidebar__toggle")).not.toContain("box-shadow");
   });
 
+  it("keeps the expanded logo prominent and aligns the toggle with the topbar", () => {
+    const logo = declarationsFor(".sh-sidebar__brand .sh-brand-logo");
+    expect(logo["height"]).toBe("2.75rem");
+
+    const toggle = declarationsFor(".sh-sidebar__toggle");
+    expect(toggle["inset-inline-start"]).toBe("calc(-1 * var(--space-2))");
+    expect(toggle["top"]).toBe("calc(50% - var(--space-4))");
+  });
+
   it("keeps the topbar compact at 3rem and centers its controls", () => {
     const topbar = declarationsFor(".sh-app-shell__topbar");
     expect(topbar["min-height"]).toBe("var(--topbar-height)");
@@ -57,6 +66,9 @@ describe("sidebar collapse control states", () => {
   it("moves the compact brand to the content title bar in collapsed mode", () => {
     expect(baseCss).toMatch(/\.sh-app-shell__compact-brand\s*\{/);
     expect(baseCss).toMatch(/\.sh-app-shell__compact-brand[^{]*\.sh-brand-logo/);
+    expect(declarationsFor(".sh-app-shell__compact-brand")["margin-inline-end"]).toBe(
+      "var(--space-2)",
+    );
   });
 
   it("keeps the narrow-screen sidebar header controls in normal flow", () => {
@@ -76,6 +88,20 @@ describe("unified title bar shell layout", () => {
     );
 
     expect(declarationsFor(".sh-app-shell__topbar-context")["display"]).toBe("flex");
+  });
+
+  it("matches the collapsed sidebar width to the compact title-bar height", () => {
+    expect(declarationsFor(".sh-app-shell.is-sidebar-collapsed")["--sidebar-width"]).toBe(
+      "var(--topbar-height)",
+    );
+    expect(
+      declarationsFor(".sh-app-shell.is-sidebar-collapsed .sh-sidebar")["padding-inline"],
+    ).toBe("0");
+    expect(
+      declarationsFor(".sh-app-shell.is-sidebar-collapsed .sh-sidebar__toggle")[
+        "inset-inline-start"
+      ],
+    ).toBe("var(--space-2)");
   });
 
   it("reserves macOS traffic-light clearance in the title bar and sidebar header", () => {

@@ -64,10 +64,10 @@ describe("Sidebar", () => {
   });
 
   it("keeps the brand centered independently from the sidebar toggle", () => {
-    const toggleRule = baseCss.match(/\.sh-sidebar__toggle\s*\{[^}]*\}/)?.[0] ?? "";
+    const toggleRule = baseCss.match(/\n\.sh-sidebar__toggle\s*\{[^}]*\}/)?.[0] ?? "";
     expect(toggleRule).not.toBe("");
     expect(toggleRule).toMatch(/position:\s*absolute/);
-    expect(toggleRule).toMatch(/inset-inline-start:\s*0/);
+    expect(toggleRule).toMatch(/inset-inline-start:\s*calc\(-1 \* var\(--space-2\)\)/);
     expect(toggleRule).toMatch(/border:\s*0/);
     expect(toggleRule).toMatch(/background:\s*transparent/);
     const brandRule = baseCss.match(/\.sh-sidebar__brand\s*\{[^}]*\}/)?.[0] ?? "";
