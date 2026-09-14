@@ -8,6 +8,10 @@ pub struct ClientInstance {
     pub profile_id: String,
     pub client_id: String,
     pub kind: ClientKind,
+    /// Official product name from the profile; empty for snapshots persisted
+    /// before OPT-20260914-07 (consumers fall back to `client_id`).
+    #[serde(default)]
+    pub display_name: String,
     pub supported_os: Vec<OperatingSystem>,
     pub client_presence: ClientPresence,
 }
@@ -26,6 +30,12 @@ pub struct LogicalTarget {
     pub path: String,
     pub marker: String,
     pub precedence: super::DirectoryPrecedence,
+    /// `true` for cross-brand shared references (`.agents/skills`): the
+    /// directory stays usable for the brand, but ownership belongs to the
+    /// generic Agent Skills entry. Defaults to `false` for snapshots persisted
+    /// before OPT-20260914-07.
+    #[serde(default)]
+    pub shared_reference: bool,
     pub exists: bool,
     pub readable: bool,
     pub writable: bool,

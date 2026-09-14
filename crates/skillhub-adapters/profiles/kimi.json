@@ -10,6 +10,7 @@
     {
       "id": "kimi.code",
       "kind": "cli",
+      "display_name": "Kimi Code",
       "supported_os": [
         "windows",
         "macos"
@@ -25,7 +26,8 @@
           "path": "{user_home}/.agents/skills",
           "scope": "global",
           "precedence": "lower_priority_copy",
-          "marker": "SKILL.md"
+          "marker": "SKILL.md",
+          "shared_reference": true
         },
         {
           "path": "{project_root}/.kimi-code/skills",
@@ -37,7 +39,8 @@
           "path": "{project_root}/.agents/skills",
           "scope": "project",
           "precedence": "lower_priority_copy",
-          "marker": "SKILL.md"
+          "marker": "SKILL.md",
+          "shared_reference": true
         }
       ],
       "skill_marker": "SKILL.md",
@@ -56,6 +59,7 @@
     {
       "id": "kimi.work",
       "kind": "desktop",
+      "display_name": "Kimi Work",
       "supported_os": [
         "windows",
         "macos"

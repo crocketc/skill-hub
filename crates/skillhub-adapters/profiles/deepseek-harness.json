@@ -11,6 +11,7 @@
     {
       "id": "deepseek-harness.tui",
       "kind": "tui",
+      "display_name": "DeepSeek Harness TUI",
       "supported_os": [
         "windows",
         "macos"
@@ -26,7 +27,8 @@
           "path": "{project_root}/.agents/skills",
           "scope": "project",
           "precedence": "lower_priority_copy",
-          "marker": "SKILL.md"
+          "marker": "SKILL.md",
+          "shared_reference": true
         },
         {
           "path": "{user_home}/.dsh/skills",
@@ -38,7 +40,8 @@
           "path": "{user_home}/.agents/skills",
           "scope": "global",
           "precedence": "lower_priority_copy",
-          "marker": "SKILL.md"
+          "marker": "SKILL.md",
+          "shared_reference": true
         }
       ],
       "skill_marker": "SKILL.md",
@@ -59,6 +62,7 @@
     {
       "id": "deepseek-harness.web",
       "kind": "web",
+      "display_name": "DeepSeek Harness Web",
       "supported_os": [
         "windows",
         "macos"
@@ -74,7 +78,8 @@
           "path": "{project_root}/.agents/skills",
           "scope": "project",
           "precedence": "lower_priority_copy",
-          "marker": "SKILL.md"
+          "marker": "SKILL.md",
+          "shared_reference": true
         },
         {
           "path": "{user_home}/.dsh/skills",
@@ -86,7 +91,8 @@
           "path": "{user_home}/.agents/skills",
           "scope": "global",
           "precedence": "lower_priority_copy",
-          "marker": "SKILL.md"
+          "marker": "SKILL.md",
+          "shared_reference": true
         }
       ],
       "skill_marker": "SKILL.md",

@@ -10,6 +10,7 @@
     {
       "id": "trae.code",
       "kind": "desktop",
+      "display_name": "TraeCode",
       "supported_os": [
         "windows",
         "macos"
@@ -31,7 +32,8 @@
           "path": "{project_root}/.agents/skills",
           "scope": "project",
           "precedence": "lower_priority_copy",
-          "marker": "SKILL.md"
+          "marker": "SKILL.md",
+          "shared_reference": true
         }
       ],
       "skill_marker": "SKILL.md",
@@ -50,6 +52,7 @@
     {
       "id": "trae.work",
       "kind": "desktop",
+      "display_name": "TraeWork",
       "supported_os": [
         "windows",
         "macos"

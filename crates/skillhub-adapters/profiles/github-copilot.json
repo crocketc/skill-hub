@@ -10,6 +10,7 @@
     {
       "id": "github-copilot.cli",
       "kind": "cli",
+      "display_name": "GitHub Copilot CLI",
       "supported_os": [
         "windows",
         "macos"
@@ -25,7 +26,8 @@
           "path": "{user_home}/.agents/skills",
           "scope": "global",
           "precedence": "lower_priority_copy",
-          "marker": "SKILL.md"
+          "marker": "SKILL.md",
+          "shared_reference": true
         },
         {
           "path": "{project_root}/.github/skills",
@@ -37,7 +39,8 @@
           "path": "{project_root}/.agents/skills",
           "scope": "project",
           "precedence": "lower_priority_copy",
-          "marker": "SKILL.md"
+          "marker": "SKILL.md",
+          "shared_reference": true
         },
         {
           "path": "{project_root}/.claude/skills",
@@ -62,6 +65,7 @@
     {
       "id": "github-copilot.ide",
       "kind": "ide_extension",
+      "display_name": "GitHub Copilot",
       "supported_os": [
         "windows",
         "macos"
@@ -102,6 +106,7 @@
     {
       "id": "github-copilot.cloud",
       "kind": "headless",
+      "display_name": "GitHub Copilot coding agent",
       "supported_os": [
         "windows",
         "macos"

@@ -14,11 +14,13 @@ fn profile(path: &str) -> AgentProfile {
         clients: vec![AgentClient {
             id: "my-agent.cli".into(),
             kind: ClientKind::Cli,
+            display_name: "Fixture".into(),
             supported_os: vec![OperatingSystem::Windows, OperatingSystem::Macos],
             path_candidates: vec![PathCandidate {
                 path: path.into(),
                 scope: TargetScope::Global,
                 precedence: DirectoryPrecedence::Preferred,
+                shared_reference: false,
                 marker: "SKILL.md".into(),
             }],
             skill_marker: "SKILL.md".into(),

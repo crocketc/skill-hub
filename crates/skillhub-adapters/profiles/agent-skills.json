@@ -1,16 +1,16 @@
 {
   "profile_version": 1,
-  "research_date": "2026-08-21",
+  "research_date": "2026-09-15",
   "official_references": [
-    "https://docs.openclaw.ai/skills",
-    "https://github.com/openclaw/openclaw"
+    "https://agentskills.io/client-implementation/adding-skills-support",
+    "https://agentskills.io/specification"
   ],
-  "brand": "OpenClaw",
+  "brand": "Agent Skills",
   "clients": [
     {
-      "id": "openclaw.agent",
-      "kind": "headless",
-      "display_name": "OpenClaw",
+      "id": "agent-skills.shared-directory",
+      "kind": "shared_directory",
+      "display_name": "Agent Skills",
       "supported_os": [
         "windows",
         "macos"
@@ -20,36 +20,23 @@
           "path": "{user_home}/.agents/skills",
           "scope": "global",
           "precedence": "preferred",
-          "marker": "SKILL.md",
-          "shared_reference": true
-        },
-        {
-          "path": "{user_home}/.openclaw/skills",
-          "scope": "global",
-          "precedence": "preferred",
-          "marker": "SKILL.md"
-        },
-        {
-          "path": "{project_root}/skills",
-          "scope": "project",
-          "precedence": "preferred",
           "marker": "SKILL.md"
         },
         {
           "path": "{project_root}/.agents/skills",
           "scope": "project",
           "precedence": "preferred",
-          "marker": "SKILL.md",
-          "shared_reference": true
+          "marker": "SKILL.md"
         }
       ],
       "skill_marker": "SKILL.md",
       "deployment": {
         "copy": true,
-        "symlink": true,
+        "symlink": false,
         "junction": false,
         "limitations": [
           "runtime_loading_unknown",
+          "symlink_support_unconfirmed",
           "junction_support_unconfirmed"
         ]
       },

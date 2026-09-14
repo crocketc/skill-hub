@@ -173,9 +173,11 @@ fn symlinked_directory_is_merged_by_filesystem_identity() {
         scope,
         precedence: DirectoryPrecedence::Preferred,
         marker: "SKILL.md".into(),
+        shared_reference: false,
     };
     let client = |id: &str, path: PathCandidate| AgentClient {
         id: id.into(),
+        display_name: id.into(),
         kind: ClientKind::Cli,
         supported_os: vec![OperatingSystem::Macos],
         path_candidates: vec![path],
@@ -244,6 +246,7 @@ fn alias_catalog() -> skillhub_core::agent::ProfileCatalog {
     };
     let client = |id: &str, path: &str, scope| AgentClient {
         id: id.into(),
+        display_name: id.into(),
         kind: ClientKind::Cli,
         supported_os: vec![OperatingSystem::Windows],
         path_candidates: vec![PathCandidate {
@@ -251,6 +254,7 @@ fn alias_catalog() -> skillhub_core::agent::ProfileCatalog {
             scope,
             precedence: DirectoryPrecedence::Preferred,
             marker: "SKILL.md".into(),
+            shared_reference: false,
         }],
         skill_marker: "SKILL.md".into(),
         deployment: DeploymentCapability {
@@ -330,4 +334,121 @@ fn read_only_directory_is_not_reported_as_writable() {
         .unwrap();
     assert!(target.exists && target.readable);
     assert!(!target.writable);
+}
+
+#[test]
+fn generic_agents_directory_has_exactly_one_ownership_target_per_scope() {
+    let workspace = tempdir().unwrap();
+    let home = workspace.path().join("home");
+    let project = workspace.path().join("project");
+    std::fs::create_dir_all(home.join(".agents/skills")).unwrap();
+    std::fs::create_dir_all(project.join(".agents/skills")).unwrap();
+
+    let snapshot = DiscoverAgents::builtin()
+        .discover(&DiscoveryRoots::new(OperatingSystem::Windows, &home).with_project_root(&project))
+        .unwrap();
+
+    let owners = snapshot
+        .logical_targets
+        .iter()
+        .filter(|target| {
+            (target.path.ends_with(".agents\\skills") || target.path.ends_with(".agents/skills"))
+                && !target.shared_reference
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        owners.len(),
+        2,
+        "每个作用域只能有一个归属条目，实际: {:?}",
+        snapshot
+            .logical_targets
+            .iter()
+            .map(|target| (&target.profile_id, &target.client_id, &target.path))
+            .collect::<Vec<_>>()
+    );
+    assert!(owners
+        .iter()
+        .all(|target| target.profile_id == "agent-skills"
+            && target.client_id == "agent-skills.shared-directory"));
+    assert_eq!(
+        owners
+            .iter()
+            .filter(|target| target.scope == skillhub_core::agent::TargetScope::Global)
+            .count(),
+        1
+    );
+    assert_eq!(
+        owners
+            .iter()
+            .filter(|target| target.scope == skillhub_core::agent::TargetScope::Project)
+            .count(),
+        1
+    );
+    assert!(owners.iter().all(|target| target.available));
+
+    // 品牌侧仍然看到共享目录可用（部署/扫描语义不回归），但全部降级为
+    // shared_reference，不再各自产出归属条目。
+    let references = snapshot
+        .logical_targets
+        .iter()
+        .filter(|target| {
+            (target.path.ends_with(".agents\\skills") || target.path.ends_with(".agents/skills"))
+                && target.shared_reference
+        })
+        .collect::<Vec<_>>();
+    assert!(
+        references.len() >= 10,
+        "品牌共享引用数量不应回退（实际 {}）",
+        references.len()
+    );
+    assert!(references
+        .iter()
+        .all(|target| target.profile_id != "agent-skills"));
+    assert!(
+        references.iter().all(|target| target.available),
+        "品牌共享引用必须保留目录可用性语义"
+    );
+    assert!(references
+        .iter()
+        .any(|target| target.profile_id == "openai" && target.client_id == "openai.codex-cli"));
+    assert!(references
+        .iter()
+        .any(|target| target.profile_id == "zcode" && target.client_id == "zcode.desktop"));
+}
+
+#[test]
+fn generic_ownership_target_resolves_the_user_home_placeholder_per_platform() {
+    let workspace = tempdir().unwrap();
+    let home = workspace.path().join("home");
+    std::fs::create_dir_all(home.join(".agents/skills")).unwrap();
+
+    let snapshot = DiscoverAgents::builtin()
+        .discover(&DiscoveryRoots::new(OperatingSystem::Windows, &home))
+        .unwrap();
+    let target = snapshot
+        .logical_targets
+        .iter()
+        .find(|target| target.profile_id == "agent-skills" && !target.shared_reference)
+        .expect("通用归属条目");
+    // `{user_home}` 占位符经 PathBuf 展开：Windows 形态为
+    // `{user_home}\.agents\skills`（反斜杠由宿主 PathBuf 决定），
+    // POSIX 形态为 `{user_home}/.agents/skills`。这里锁定两种平台下
+    // 展开结果都与 user_home 精确拼接，而不是字符串替换残留。
+    assert_eq!(
+        target.path,
+        home.join(".agents")
+            .join("skills")
+            .to_string_lossy()
+            .into_owned()
+    );
+    let expected_suffix = if cfg!(windows) {
+        ".agents\\skills"
+    } else {
+        ".agents/skills"
+    };
+    assert!(
+        target.path.ends_with(expected_suffix),
+        "Windows/宿主路径形态必须由 PathBuf 决定：{}",
+        target.path
+    );
 }

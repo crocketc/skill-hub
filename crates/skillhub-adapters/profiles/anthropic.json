@@ -10,6 +10,7 @@
     {
       "id": "anthropic.claude-code",
       "kind": "cli",
+      "display_name": "Claude Code",
       "supported_os": [
         "windows",
         "macos"
@@ -43,6 +44,7 @@
     {
       "id": "anthropic.claude-desktop",
       "kind": "desktop",
+      "display_name": "Claude Desktop",
       "supported_os": [
         "windows",
         "macos"
