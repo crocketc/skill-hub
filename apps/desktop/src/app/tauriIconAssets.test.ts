@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
+import { inflateSync } from "node:zlib";
 import { expect, it } from "vitest";
 
 /**
@@ -69,6 +70,105 @@ function expectedPngSize(fileName: string): number {
   return Number(match[1]) * (match[2] ? 2 : 1);
 }
 
+/** 母版几何参数（与 assets/branding/generate-macos-icon.py 的常量一致）。 */
+const MASTER_CANVAS = 1024;
+const MASTER_OUTER_FRACTION_RANGE = [0.86, 0.88] as const;
+const MASTER_MARGIN_FRACTION_RANGE = [0.06, 0.07] as const;
+
+interface DecodedPngRgba {
+  width: number;
+  height: number;
+  /** 返回 (x, y) 处的 alpha（0-255）；坐标越界时返回 0（视作透明）。 */
+  alphaAt(x: number, y: number): number;
+}
+
+/**
+ * 最简 PNG 扫描线解码：仅支持本仓库图标产出的 8bit、colorType 6（RGBA）、
+ * 非隔行图像。只解压 IDAT 并手工反滤波，用于对母版做逐像素 alpha 几何
+ * 断言——不引入任何 npm 依赖。
+ */
+function decodePngRgba(buffer: Buffer): DecodedPngRgba {
+  const header = readPngHeader(buffer);
+  expect(header.bitDepth, "decoder supports 8bit channels only").toBe(8);
+  expect(header.colorType, "decoder supports RGBA (colorType 6) only").toBe(6);
+  expect(buffer[28], "decoder supports non-interlaced PNG only").toBe(0);
+
+  const idat: Buffer[] = [];
+  let offset = 8;
+  while (offset + 8 <= buffer.length) {
+    const length = buffer.readUInt32BE(offset);
+    const type = buffer.toString("ascii", offset + 4, offset + 8);
+    if (type === "IDAT") idat.push(buffer.subarray(offset + 8, offset + 8 + length));
+    if (type === "IEND") break;
+    offset += 12 + length;
+  }
+  expect(idat.length, "PNG must contain IDAT").toBeGreaterThan(0);
+
+  const { width, height } = header;
+  const bpp = 4;
+  const stride = width * bpp;
+  const raw = inflateSync(Buffer.concat(idat));
+  expect(raw.length, "inflated scanlines must match the header dimensions").toBe((stride + 1) * height);
+  const pixels = Buffer.alloc(stride * height);
+
+  const paethPredictor = (left: number, up: number, upperLeft: number): number => {
+    const p = left + up - upperLeft;
+    const pa = Math.abs(p - left);
+    const pb = Math.abs(p - up);
+    const pc = Math.abs(p - upperLeft);
+    if (pa <= pb && pa <= pc) return left;
+    return pb <= pc ? up : upperLeft;
+  };
+
+  for (let y = 0; y < height; y += 1) {
+    const filter = raw[y * (stride + 1)];
+    const rowStart = y * stride;
+    const rawStart = y * (stride + 1) + 1;
+    for (let x = 0; x < stride; x += 1) {
+      const rawByte = raw[rawStart + x];
+      const left = x >= bpp ? pixels[rowStart + x - bpp] : 0;
+      const up = y > 0 ? pixels[rowStart - stride + x] : 0;
+      const upperLeft = y > 0 && x >= bpp ? pixels[rowStart - stride + x - bpp] : 0;
+      let value: number;
+      if (filter === 1) value = rawByte + left;
+      else if (filter === 2) value = rawByte + up;
+      else if (filter === 3) value = rawByte + ((left + up) >> 1);
+      else if (filter === 4) value = rawByte + paethPredictor(left, up, upperLeft);
+      else value = rawByte;
+      pixels[rowStart + x] = value & 0xff;
+    }
+  }
+
+  return {
+    width,
+    height,
+    alphaAt(x: number, y: number): number {
+      if (x < 0 || y < 0 || x >= width || y >= height) return 0;
+      return pixels[(y * width + x) * bpp + 3];
+    },
+  };
+}
+
+/** 不透明（alpha 达到阈值）像素的包围盒与四侧边距。 */
+function opaqueBounds(image: DecodedPngRgba, threshold = 128): { left: number; top: number; right: number; bottom: number } {
+  let left = image.width;
+  let top = image.height;
+  let right = -1;
+  let bottom = -1;
+  for (let y = 0; y < image.height; y += 1) {
+    for (let x = 0; x < image.width; x += 1) {
+      if (image.alphaAt(x, y) >= threshold) {
+        if (x < left) left = x;
+        if (x > right) right = x;
+        if (y < top) top = y;
+        if (y > bottom) bottom = y;
+      }
+    }
+  }
+  expect(right, "master must contain opaque pixels").toBeGreaterThanOrEqual(0);
+  return { left, top, right, bottom };
+}
+
 it("points the bundle, the window and the NSIS installer at a controlled icon set", () => {
   const iconList = tauriConfig.bundle?.icon;
   expect(Array.isArray(iconList)).toBe(true);
@@ -127,12 +227,92 @@ it("matches the controlled master artwork byte for byte", () => {
   expect(existsSync(masterPng), "master artwork stays in assets/branding").toBe(true);
   const master = readPngHeader(readFileSync(masterPng));
   expect(master.width).toBe(master.height);
-  // 母本允许不带透明通道（本仓库母本为 RGB 方图）；接入用 PNG 由图标工具
-  // 生成并自带 alpha。受控副本必须与 assets/branding 母本逐字节一致。
+  // 母本即 macOS 形状源：1024×1024 RGBA（圆角外层 + 透明边距）；接入用 PNG
+  // 由 sips 从母本缩放生成并保留 alpha。受控副本必须与 assets/branding
+  // 母本逐字节一致。
   for (const rel of tauriConfig.bundle?.icon ?? []) {
     const source = path.join(masterSourceRoot, path.basename(rel));
     expect(existsSync(source), `${source} master must exist`).toBe(true);
     const copy = readFileSync(path.join(tauriRoot, rel));
     expect(copy.equals(readFileSync(source)), `${rel} is a byte-identical controlled copy`).toBe(true);
+  }
+});
+
+it("ships the macOS master as a 1024x1024 RGBA canvas with transparent margins", () => {
+  const master = readPngHeader(readFileSync(masterPng));
+  expect(master.width, "macOS master canvas is 1024px wide").toBe(MASTER_CANVAS);
+  expect(master.height, "macOS master canvas is 1024px tall").toBe(MASTER_CANVAS);
+  expect(master.colorType, "macOS master keeps an alpha channel").toBe(6);
+
+  const image = decodePngRgba(readFileSync(masterPng));
+  // 画布四角与四边中点都落在透明边距/圆角外：Dock 中不再出现直角黑底。
+  const corners: Array<[number, number]> = [
+    [0, 0],
+    [MASTER_CANVAS - 1, 0],
+    [0, MASTER_CANVAS - 1],
+    [MASTER_CANVAS - 1, MASTER_CANVAS - 1],
+  ];
+  for (const [x, y] of corners) {
+    expect(image.alphaAt(x, y), `corner (${x},${y}) stays transparent`).toBe(0);
+  }
+  const edgeMidpoints: Array<[number, number]> = [
+    [0, MASTER_CANVAS >> 1],
+    [MASTER_CANVAS - 1, MASTER_CANVAS >> 1],
+    [MASTER_CANVAS >> 1, 0],
+    [MASTER_CANVAS >> 1, MASTER_CANVAS - 1],
+  ];
+  for (const [x, y] of edgeMidpoints) {
+    expect(image.alphaAt(x, y), `edge midpoint (${x},${y}) stays transparent`).toBe(0);
+  }
+  expect(image.alphaAt(MASTER_CANVAS >> 1, MASTER_CANVAS >> 1), "canvas center stays opaque").toBe(255);
+});
+
+it("shapes the macOS master as a rounded tile within the dock size budget", () => {
+  const image = decodePngRgba(readFileSync(masterPng));
+  const bounds = opaqueBounds(image);
+  const side = Math.max(bounds.right - bounds.left + 1, bounds.bottom - bounds.top + 1);
+  const sideFraction = side / MASTER_CANVAS;
+  expect(
+    sideFraction,
+    `rounded outer tile must span 86%-88% of the canvas (got ${(sideFraction * 100).toFixed(2)}%)`,
+  ).toBeGreaterThanOrEqual(MASTER_OUTER_FRACTION_RANGE[0]);
+  expect(sideFraction).toBeLessThanOrEqual(MASTER_OUTER_FRACTION_RANGE[1]);
+
+  // 四周透明边距 6%-7%。
+  const margins = {
+    left: bounds.left,
+    top: bounds.top,
+    right: MASTER_CANVAS - 1 - bounds.right,
+    bottom: MASTER_CANVAS - 1 - bounds.bottom,
+  };
+  for (const [edge, margin] of Object.entries(margins)) {
+    const fraction = margin / MASTER_CANVAS;
+    expect(
+      fraction,
+      `${edge} margin must stay within 6%-7% of the canvas (got ${(fraction * 100).toFixed(2)}%)`,
+    ).toBeGreaterThanOrEqual(MASTER_MARGIN_FRACTION_RANGE[0]);
+    expect(fraction).toBeLessThanOrEqual(MASTER_MARGIN_FRACTION_RANGE[1]);
+  }
+
+  // 圆角几何：包围盒四角（若为直角应不透明）必须透明；沿边向内越过
+  // 圆角切点后必须不透明——锁定“圆角矩形”而非方形切角或整圆。
+  const cornerPoints: Array<[number, number]> = [
+    [bounds.left, bounds.top],
+    [bounds.right, bounds.top],
+    [bounds.left, bounds.bottom],
+    [bounds.right, bounds.bottom],
+  ];
+  for (const [x, y] of cornerPoints) {
+    expect(image.alphaAt(x, y), `outer tile corner (${x},${y}) must be rounded away`).toBeLessThan(128);
+  }
+  const inset = Math.round(side * 0.25);
+  const insideEdgePoints: Array<[number, number]> = [
+    [bounds.left + inset, bounds.top + 1],
+    [bounds.right - inset, bounds.top + 1],
+    [bounds.left + 1, bounds.top + inset],
+    [bounds.left + inset, bounds.bottom - 1],
+  ];
+  for (const [x, y] of insideEdgePoints) {
+    expect(image.alphaAt(x, y), `outer tile edge (${x},${y}) must be opaque past the corner arc`).toBeGreaterThanOrEqual(128);
   }
 });
