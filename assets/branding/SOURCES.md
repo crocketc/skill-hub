@@ -51,6 +51,15 @@
 - `assets/branding/tauri-icons/`：SkillHub 应用自有图标母版（非第三方素材），
   由 `apps/desktop/src-tauri/icons/` 下的受控拷贝引用（逐字节校验见
   `apps/desktop/src/app/tauriIconAssets.test.ts`）。
+- 应用图标母版 `assets/branding/skillhub-app-icon-master.png`：自有品牌图
+  （内嵌六边形 "S" 主标记的方形艺术图），无外部来源。OPT-20260914-06
+  （D5-11）起由旧的 1254×1254 全出血 RGB 方图做纯几何变换加工为
+  1024×1024 RGBA：等比缩放为 896px（画布的 87.5%）圆角外层
+  （圆角半径 180px ≈ 外层边长 20.1%），四周留 64px（6.25%）透明边距，
+  居中合成；不重绘品牌图形。加工脚本
+  `assets/branding/generate-macos-icon.py` 可从 git 历史中的旧母版复现全部
+  产物（icon.icns 与 PNG 家族由 sips/iconutil 从新母版生成；
+  `icon.ico` 不参与该流程，保持逐字节不变）。
 
 ## 既有 lobehub 素材（历史遗留）
 
