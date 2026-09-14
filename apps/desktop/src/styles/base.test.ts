@@ -114,17 +114,23 @@ describe("unified title bar shell layout", () => {
     expect(
       declarationsFor(".sh-is-macos .sh-sidebar__header")["padding-left"],
     ).toBe("5rem");
-    expect(declarationsFor(".sh-is-macos .sh-sidebar__header")["padding-left"]).toBe(
-      "5rem",
-    );
     expect(
       declarationsFor(".sh-is-macos .sh-sidebar__toggle")["top"],
     ).toBe("calc(50% - var(--space-4) + var(--space-6))");
+  });
+
+  it("keeps the macOS collapsed topbar start free of extra compensation", () => {
+    // OPT-20260914-04：macOS 收起态左排不再叠加 5rem 补偿；Logo 起点由
+    // 收起侧栏 3rem + 顶栏自身 1.25rem（--space-5）内边距构成，Windows 布局不受影响。
     expect(
-      declarationsFor(".sh-is-macos .sh-app-shell.is-sidebar-collapsed .sh-app-shell__topbar-start")[
-        "padding-inline-start"
-      ],
-    ).toBe("5rem");
+      baseCss.includes(
+        ".sh-is-macos .sh-app-shell.is-sidebar-collapsed .sh-app-shell__topbar-start",
+      ),
+    ).toBe(false);
+    expect(declarationsFor(".sh-app-shell__topbar")["padding-inline"]).toBe(
+      "var(--space-5)",
+    );
+    expect(themeCss).toMatch(/--space-5:\s*1\.25rem;/);
   });
 
   it("drops the retired sidebar-resident toggle and query-tools layout rules", () => {

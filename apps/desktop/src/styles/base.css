@@ -1130,10 +1130,6 @@ a {
   top: calc(50% - var(--space-4) + var(--space-6));
 }
 
-.sh-is-macos .sh-app-shell.is-sidebar-collapsed .sh-app-shell__topbar-start {
-  padding-inline-start: 5rem;
-}
-
 .sh-app-shell__verification {
   color: var(--color-text-muted);
   font-size: var(--font-size-xs);
