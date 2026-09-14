@@ -21,6 +21,12 @@ export type AddSkillRepo = {
 export type AgentClient = {
 	id: string,
 	kind: ClientKind,
+	/**
+	 *  Official product name of this concrete client form (e.g. "CodeBuddy
+	 *  Code", "Claude Desktop"), verified per client; never guessed from the
+	 *  brand name. Optional on read so persisted profiles keep deserializing.
+	 */
+	display_name?: string,
 	supported_os: OperatingSystem[],
 	path_candidates: PathCandidate[],
 	skill_marker: string,
@@ -282,11 +288,22 @@ export type ClientInstance = {
 	profile_id: string,
 	client_id: string,
 	kind: ClientKind,
+	/**
+	 *  Official product name from the profile; empty for snapshots persisted
+	 *  before OPT-20260914-07 (consumers fall back to `client_id`).
+	 */
+	display_name?: string,
 	supported_os: OperatingSystem[],
 	client_presence: ClientPresence,
 };
 
-export type ClientKind = "cli" | "desktop" | "ide_extension" | "tui" | "headless" | "acp" | "web" | "mobile" | "bot";
+export type ClientKind = "cli" | "desktop" | "ide_extension" | "tui" | "headless" | "acp" | "web" | "mobile" | "bot" |
+/**
+ *  OPT-20260914-07: the brand-agnostic `.agents/skills` convention entry.
+ *  It is a shared directory registry, not an installed client product;
+ *  presence stays `Unknown` and no runtime loading is implied.
+ */
+"shared_directory";
 
 export type ClientPresence = "Unknown";
 
@@ -1300,6 +1317,13 @@ export type LogicalTarget = {
 	path: string,
 	marker: string,
 	precedence: DirectoryPrecedence,
+	/**
+	 *  `true` for cross-brand shared references (`.agents/skills`): the
+	 *  directory stays usable for the brand, but ownership belongs to the
+	 *  generic Agent Skills entry. Defaults to `false` for snapshots persisted
+	 *  before OPT-20260914-07.
+	 */
+	shared_reference?: boolean,
 	exists: boolean,
 	readable: boolean,
 	writable: boolean,
@@ -1375,6 +1399,14 @@ export type PathCandidate = {
 	scope: TargetScope,
 	precedence: DirectoryPrecedence,
 	marker: string,
+	/**
+	 *  OPT-20260914-07: `true` marks a cross-brand shared reference (the
+	 *  `.agents/skills` convention). Shared references keep their deployment
+	 *  and scan semantics, but the ownership card is only produced once by the
+	 *  brand-agnostic Agent Skills profile. Defaults to `false` so existing
+	 *  persisted profiles and custom agents keep loading unchanged.
+	 */
+	shared_reference?: boolean,
 };
 
 /**  Opaque identifier issued by the native file picker. */

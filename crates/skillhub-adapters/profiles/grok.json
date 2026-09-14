@@ -10,6 +10,7 @@
     {
       "id": "grok.build-cli",
       "kind": "cli",
+      "display_name": "Grok Build CLI",
       "supported_os": [
         "windows",
         "macos"
@@ -25,7 +26,8 @@
           "path": "{user_home}/.agents/skills",
           "scope": "global",
           "precedence": "lower_priority_copy",
-          "marker": "SKILL.md"
+          "marker": "SKILL.md",
+          "shared_reference": true
         },
         {
           "path": "{project_root}/.grok/skills",
@@ -37,7 +39,8 @@
           "path": "{project_root}/.agents/skills",
           "scope": "project",
           "precedence": "lower_priority_copy",
-          "marker": "SKILL.md"
+          "marker": "SKILL.md",
+          "shared_reference": true
         }
       ],
       "skill_marker": "SKILL.md",
@@ -56,6 +59,7 @@
     {
       "id": "grok.build-tui",
       "kind": "tui",
+      "display_name": "Grok Build TUI",
       "supported_os": [
         "windows",
         "macos"
@@ -77,13 +81,15 @@
           "path": "{user_home}/.agents/skills",
           "scope": "global",
           "precedence": "lower_priority_copy",
-          "marker": "SKILL.md"
+          "marker": "SKILL.md",
+          "shared_reference": true
         },
         {
           "path": "{project_root}/.agents/skills",
           "scope": "project",
           "precedence": "lower_priority_copy",
-          "marker": "SKILL.md"
+          "marker": "SKILL.md",
+          "shared_reference": true
         }
       ],
       "skill_marker": "SKILL.md",
@@ -102,6 +108,7 @@
     {
       "id": "grok.build-acp",
       "kind": "acp",
+      "display_name": "Grok Build ACP",
       "supported_os": [
         "windows",
         "macos"
@@ -123,13 +130,15 @@
           "path": "{user_home}/.agents/skills",
           "scope": "global",
           "precedence": "lower_priority_copy",
-          "marker": "SKILL.md"
+          "marker": "SKILL.md",
+          "shared_reference": true
         },
         {
           "path": "{project_root}/.agents/skills",
           "scope": "project",
           "precedence": "lower_priority_copy",
-          "marker": "SKILL.md"
+          "marker": "SKILL.md",
+          "shared_reference": true
         }
       ],
       "skill_marker": "SKILL.md",
@@ -148,6 +157,7 @@
     {
       "id": "grok.consumer",
       "kind": "web",
+      "display_name": "Grok",
       "supported_os": [
         "windows",
         "macos"
@@ -167,6 +177,7 @@
     {
       "id": "grok.bot",
       "kind": "bot",
+      "display_name": "Grok Bot",
       "supported_os": [
         "windows",
         "macos"

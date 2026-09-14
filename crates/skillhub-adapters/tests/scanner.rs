@@ -51,6 +51,7 @@ fn discovery_target(scope: &ScanScope) -> LogicalTarget {
         path: scope.root.clone(),
         marker: scope.marker.clone(),
         precedence: DirectoryPrecedence::Preferred,
+        shared_reference: false,
         exists: true,
         readable: true,
         writable: true,

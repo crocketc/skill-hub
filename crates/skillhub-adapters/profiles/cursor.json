@@ -10,6 +10,7 @@
     {
       "id": "cursor.editor",
       "kind": "desktop",
+      "display_name": "Cursor",
       "supported_os": [
         "windows",
         "macos"
@@ -25,7 +26,8 @@
           "path": "{user_home}/.agents/skills",
           "scope": "global",
           "precedence": "lower_priority_copy",
-          "marker": "SKILL.md"
+          "marker": "SKILL.md",
+          "shared_reference": true
         },
         {
           "path": "{project_root}/.cursor/skills",
@@ -37,7 +39,8 @@
           "path": "{project_root}/.agents/skills",
           "scope": "project",
           "precedence": "lower_priority_copy",
-          "marker": "SKILL.md"
+          "marker": "SKILL.md",
+          "shared_reference": true
         },
         {
           "path": "{project_root}/.claude/skills",
@@ -62,6 +65,7 @@
     {
       "id": "cursor.cli",
       "kind": "cli",
+      "display_name": "Cursor CLI",
       "supported_os": [
         "windows",
         "macos"

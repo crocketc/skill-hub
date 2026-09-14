@@ -56,22 +56,26 @@ const agentSnapshot: DiscoverySnapshot = {
   generation: "1",
   observed_at: "1789114968",
   instances: [
-    { profile_id: "zcode", client_id: "zcode-desktop", kind: "desktop", supported_os: ["windows", "macos"], client_presence: "Unknown" },
-    { profile_id: "zcode", client_id: "zcode-cli", kind: "cli", supported_os: ["windows", "macos"], client_presence: "Unknown" },
-    { profile_id: "codex", client_id: "codex-cli", kind: "cli", supported_os: ["windows", "macos"], client_presence: "Unknown" },
+    // OPT-20260914-07：通用 Agent 目录伪客户端（品牌无关的归属入口）。
+    { profile_id: "agent-skills", client_id: "agent-skills.shared-directory", display_name: "Agent Skills", kind: "shared_directory", supported_os: ["windows", "macos"], client_presence: "Unknown" },
+    { profile_id: "zcode", client_id: "zcode-desktop", display_name: "ZCode", kind: "desktop", supported_os: ["windows", "macos"], client_presence: "Unknown" },
+    { profile_id: "zcode", client_id: "zcode-cli", display_name: "ZCode CLI", kind: "cli", supported_os: ["windows", "macos"], client_presence: "Unknown" },
+    { profile_id: "codex", client_id: "codex-cli", display_name: "Codex CLI", kind: "cli", supported_os: ["windows", "macos"], client_presence: "Unknown" },
     // 仅 macOS：在 Windows 上必须被过滤。
-    { profile_id: "claudedesktop", client_id: "claude-desktop", kind: "desktop", supported_os: ["macos"], client_presence: "Unknown" },
+    { profile_id: "claudedesktop", client_id: "claude-desktop", display_name: "Claude Desktop", kind: "desktop", supported_os: ["macos"], client_presence: "Unknown" },
     // 完全不可用的品牌（目标目录缺失）。
-    { profile_id: "brokenbrand", client_id: "broken-cli", kind: "cli", supported_os: ["windows"], client_presence: "Unknown" },
+    { profile_id: "brokenbrand", client_id: "broken-cli", display_name: "Broken CLI", kind: "cli", supported_os: ["windows"], client_presence: "Unknown" },
   ],
   logical_targets: [
-    // zcode desktop 与 codex cli 共享 ~/.agents/skills（同一 physical）。
-    target("lt-zcode-agents", "zcode", "zcode-desktop", "C:/u/.agents/skills", "phys-agents", true),
-    target("lt-codex-agents", "codex", "codex-cli", "C:/u/.agents/skills", "phys-agents", true),
-    // zcode desktop 的 lower_priority_copy 候选（.zcode/skills）：不可用。
+    // 通用归属条目：.agents/skills 的归属卡片只由 agent-skills 产出。
+    sharedTarget("lt-generic-agents", "agent-skills", "agent-skills.shared-directory", "C:/u/.agents/skills", "phys-agents", true, false),
+    // zcode desktop 与 codex cli 以共享引用方式看到同一目录：不再各自产出归属卡片。
+    sharedTarget("lt-zcode-agents", "zcode", "zcode-desktop", "C:/u/.agents/skills", "phys-agents", true, true),
+    sharedTarget("lt-codex-agents", "codex", "codex-cli", "C:/u/.agents/skills", "phys-agents", true, true),
+    // zcode desktop 的原生候选（.zcode/skills）：不可用，仍归属 zcode 自己。
     target("lt-zcode-lower", "zcode", "zcode-desktop", "C:/u/.zcode/skills", "phys-zcode", false),
-    // zcode cli 也指向 ~/.agents/skills：合并后 zcode 卡片类型为 desktop+cli。
-    target("lt-zcode-cli", "zcode", "zcode-cli", "C:/u/.agents/skills", "phys-agents", true),
+    // zcode cli 也以共享引用指向 ~/.agents/skills。
+    sharedTarget("lt-zcode-cli", "zcode", "zcode-cli", "C:/u/.agents/skills", "phys-agents", true, true),
     // 完全不可用的品牌：置底分区。
     target("lt-broken", "brokenbrand", "broken-cli", "C:/u/broken/skills", "phys-broken", false),
   ],
@@ -90,6 +94,18 @@ function target(
   physicalId: string,
   available: boolean,
 ): DiscoverySnapshot["logical_targets"][number] {
+  return sharedTarget(id, profileId, clientId, path, physicalId, available, false);
+}
+
+function sharedTarget(
+  id: string,
+  profileId: string,
+  clientId: string,
+  path: string,
+  physicalId: string,
+  available: boolean,
+  sharedReference: boolean,
+): DiscoverySnapshot["logical_targets"][number] {
   return {
     id,
     profile_id: profileId,
@@ -98,6 +114,7 @@ function target(
     path,
     marker: "SKILL.md",
     precedence: "preferred",
+    shared_reference: sharedReference,
     exists: true,
     readable: available,
     writable: available,
@@ -130,38 +147,114 @@ describe("buildAgentGroups", () => {
   });
 
   it("groups by brand and merges same-directory targets into one card with joined kinds", () => {
-    const zcode = available.find((group) => group.brand === "zcode");
+    // OPT-20260914-07：~/.agents/skills 归属收归 agent-skills 后，zcode 只剩
+    // 原生目录卡片；共享引用保留可用性，但不再产出归属卡片。zcode 的原生
+    // 目录不可用，因此整个分组沉到不可用分区。
+    const zcode = [...available, ...unavailable].find((group) => group.brand === "zcode");
     expect(zcode).toBeDefined();
-    expect(zcode!.cards).toHaveLength(2);
-    const agentsCard = zcode!.cards.find((card) => card.physicalId === "phys-agents");
-    expect(agentsCard).toMatchObject({
-      path: "C:/u/.agents/skills",
-      available: true,
+    expect(zcode!.available).toBe(false);
+    expect(zcode!.cards).toHaveLength(1);
+    expect(zcode!.cards[0]).toMatchObject({
+      path: "C:/u/.zcode/skills",
+      available: false,
     });
-    // 同目录合并：desktop 与 cli 聚合为一张卡片的类型集合。
-    expect(agentsCard!.kinds).toEqual(["desktop", "cli"]);
-    // 不可用的 lower_priority_copy 候选保留为独立卡片（不同目录）。
-    const lowerCard = zcode!.cards.find((card) => card.physicalId === "phys-zcode");
-    expect(lowerCard).toMatchObject({ available: false, path: "C:/u/.zcode/skills" });
   });
 
-  it("keeps cross-brand sharing of one directory as separate brand cards", () => {
-    const codex = available.find((group) => group.brand === "codex");
-    expect(codex!.cards).toHaveLength(1);
-    expect(codex!.cards[0]).toMatchObject({
+  it("produces exactly one brand-agnostic ownership card for the shared agents directory", () => {
+    // OPT-20260914-07：通用目录归属卡片全页只出现一次。
+    const generic = available.find((group) => group.brand === "agent-skills");
+    expect(generic).toBeDefined();
+    expect(generic!.cards).toHaveLength(1);
+    expect(generic!.cards[0]).toMatchObject({
       physicalId: "phys-agents",
       path: "C:/u/.agents/skills",
-      kinds: ["cli"],
+      kinds: ["shared_directory"],
       available: true,
+      sharedClients: 3,
     });
+    // 共享引用的品牌不再重复产出该目录的卡片。
+    expect(available.find((group) => group.brand === "codex")).toBeUndefined();
+    const brandAgentCards = [...available, ...unavailable]
+      .filter((group) => group.brand !== "agent-skills")
+      .flatMap((group) => group.cards)
+      .filter((card) => card.path === "C:/u/.agents/skills");
+    expect(brandAgentCards).toEqual([]);
+  });
+
+  it("carries official client names on cards and shared reference names on the generic card", () => {
+    const generic = available.find((group) => group.brand === "agent-skills")!;
+    expect(generic.cards[0].sharedClientNames).toEqual(
+      expect.arrayContaining(["ZCode", "ZCode CLI", "Codex CLI"]),
+    );
+    // 旧快照没有 display_name 时回退 client_id，不产生 undefined。
+    const legacy = buildAgentGroups(
+      {
+        ...agentSnapshot,
+        instances: [{ profile_id: "p", client_id: "legacy", kind: "cli", supported_os: [], client_presence: "Unknown" }],
+        logical_targets: [{
+          id: "lt-legacy",
+          profile_id: "p",
+          client_id: "legacy",
+          scope: "global",
+          path: "C:/u/legacy/skills",
+          marker: "SKILL.md",
+          precedence: "preferred",
+          exists: true,
+          readable: true,
+          writable: true,
+          available: true,
+          physical_id: "phys-legacy",
+        }],
+        physical_targets: [],
+      },
+      { os: "windows" },
+    );
+    expect(legacy.available[0].cards[0].names).toEqual(["legacy"]);
+  });
+
+  it("merges different product forms sharing one native path into a single card", () => {
+    // B.2：同品牌不同产品形态（桌面端 + 终端 CLI）共用同一路径时，
+    // 合并为一张卡片，形态标签并列、官方产品名并列。
+    const cursorSnapshot: DiscoverySnapshot = {
+      generation: "2",
+      observed_at: "1789114968",
+      instances: [
+        { profile_id: "cursor", client_id: "cursor-editor", display_name: "Cursor", kind: "desktop", supported_os: ["windows", "macos"], client_presence: "Unknown" },
+        { profile_id: "cursor", client_id: "cursor-cli", display_name: "Cursor CLI", kind: "cli", supported_os: ["windows", "macos"], client_presence: "Unknown" },
+      ],
+      logical_targets: [
+        target("lt-editor", "cursor", "cursor-editor", "C:/u/.cursor/skills", "phys-cursor", true),
+        target("lt-cli", "cursor", "cursor-cli", "C:/u/.cursor/skills", "phys-cursor", true),
+      ],
+      physical_targets: [physical("phys-cursor", "C:/u/.cursor/skills")],
+    };
+    const { available: merged } = buildAgentGroups(cursorSnapshot, { os: "windows" });
+    expect(merged).toHaveLength(1);
+    const card = merged[0].cards[0];
+    expect(card.kinds).toEqual(["desktop", "cli"]);
+    expect(card.names).toEqual(["Cursor", "Cursor CLI"]);
+    expect(card.path).toBe("C:/u/.cursor/skills");
+  });
+
+  it("keeps legacy snapshots without shared_reference working as ownership cards", () => {
+    // 向后兼容：旧库快照没有 shared_reference 字段，行为与迁移前一致。
+    const legacyTargets = agentSnapshot.logical_targets.map(
+      ({ shared_reference: _shared, ...rest }) => rest,
+    );
+    const legacy = buildAgentGroups(
+      { ...agentSnapshot, logical_targets: legacyTargets },
+      { os: "windows" },
+    );
+    const zcode = legacy.available.find((group) => group.brand === "zcode");
+    expect(zcode!.cards.map((card) => card.physicalId)).toContain("phys-agents");
   });
 
   it("sorts available brands first and sinks wholly unavailable brands to the bottom", () => {
-    expect(available.map((group) => group.brand)).toEqual(["codex", "zcode"]);
-    expect(unavailable.map((group) => group.brand)).toEqual(["brokenbrand"]);
+    expect(available.map((group) => group.brand)).toEqual(["agent-skills"]);
+    expect(unavailable.map((group) => group.brand)).toEqual(["brokenbrand", "zcode"]);
     // 组内卡片：可用在前，不可用置底。
-    expect(available.find((group) => group.brand === "zcode")!.cards.map((card) => card.available))
-      .toEqual([true, false]);
+    expect(unavailable.find((group) => group.brand === "zcode")!.cards.map((card) => card.available))
+      .toEqual([false]);
   });
 
   it("returns empty sections when nothing is discovered", () => {

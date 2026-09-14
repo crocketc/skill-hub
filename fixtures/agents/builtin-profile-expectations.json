@@ -1,5 +1,9 @@
 {
   "profiles": {
+    "agent-skills": [
+      "{project_root}/.agents/skills",
+      "{user_home}/.agents/skills"
+    ],
     "openai": [
       "{project_root}/.agents/skills",
       "{user_home}/.agents/skills"
@@ -58,7 +62,9 @@
     ],
     "codebuddy": [
       "{project_root}/.codebuddy/skills",
-      "{user_home}/.codebuddy/skills"
+      "{project_root}/.workbuddy/skills",
+      "{user_home}/.codebuddy/skills",
+      "{user_home}/.workbuddy/skills"
     ],
     "comate": [
       "{project_root}/.agents/skills",

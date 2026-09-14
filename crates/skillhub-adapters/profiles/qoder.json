@@ -10,6 +10,7 @@
     {
       "id": "qoder.ide",
       "kind": "ide_extension",
+      "display_name": "Qoder (Lingma)",
       "supported_os": [
         "windows",
         "macos"
@@ -44,6 +45,7 @@
     {
       "id": "qoder.cli",
       "kind": "cli",
+      "display_name": "Qoder CLI",
       "supported_os": [
         "windows",
         "macos"

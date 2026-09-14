@@ -34,9 +34,9 @@ fn rejects_custom_profile_with_command_or_unbounded_scan_root() {
 #[test]
 fn rejects_unknown_fields_in_sensitive_profile_sections() {
     let json = r#"{
-      "profile_version": 1, "research_date": "2026-08-22", "official_references": [],
+      "profile_version": 1, "research_date": "2026-08-22", "official_references": ["https://example.com"],
       "brand": "Example", "clients": [{
-        "id": "example.cli", "kind": "cli", "supported_os": ["windows"],
+        "id": "example.cli", "kind": "cli", "display_name": "Example CLI", "supported_os": ["windows"],
         "path_candidates": [{"path": "%USERPROFILE%/.example/skills", "scope": "global", "precedence": "preferred", "marker": "SKILL.md", "unexpected": true}],
         "skill_marker": "SKILL.md", "deployment": {"copy": true, "symlink": false, "junction": false, "unexpected": true},
         "call_policy": "unknown"
@@ -44,6 +44,82 @@ fn rejects_unknown_fields_in_sensitive_profile_sections() {
     }"#;
     let error = parse_custom_profile(json).unwrap_err();
     assert_eq!(error.code.as_str(), "agent_profile.invalid_capability");
+}
+
+#[test]
+fn accepts_shared_reference_marker_and_official_display_name() {
+    let json = r#"{
+      "profile_version": 1, "research_date": "2026-09-15",
+      "official_references": ["https://agentskills.io/client-implementation/adding-skills-support"],
+      "brand": "Example", "clients": [{
+        "id": "example.cli", "kind": "cli", "display_name": "Example CLI", "supported_os": ["windows", "macos"],
+        "path_candidates": [
+          {"path": "%USERPROFILE%/.example/skills", "scope": "global", "precedence": "preferred", "marker": "SKILL.md"},
+          {"path": "%USERPROFILE%/.agents/skills", "scope": "global", "precedence": "lower_priority_copy", "marker": "SKILL.md", "shared_reference": true}
+        ],
+        "skill_marker": "SKILL.md", "deployment": {"copy": true, "symlink": false, "junction": false},
+        "call_policy": "unknown"
+      }]
+    }"#;
+    let profile = parse_custom_profile(json).unwrap();
+    assert_eq!(profile.clients[0].display_name, "Example CLI");
+    assert!(!profile.clients[0].path_candidates[0].shared_reference);
+    assert!(profile.clients[0].path_candidates[1].shared_reference);
+}
+
+#[test]
+fn shared_reference_defaults_to_false_when_omitted() {
+    let json = profile_with_path("%USERPROFILE%/.example/skills");
+    let profile = parse_custom_profile(&json).unwrap();
+    assert!(!profile.clients[0].path_candidates[0].shared_reference);
+}
+
+#[test]
+fn rejects_missing_or_empty_display_name() {
+    let missing = r#"{
+      "profile_version": 1, "research_date": "2026-09-15",
+      "official_references": ["https://example.com"],
+      "brand": "Example", "clients": [{
+        "id": "example.cli", "kind": "cli", "supported_os": ["windows"],
+        "path_candidates": [{"path": "%USERPROFILE%/.example/skills", "scope": "global", "precedence": "preferred", "marker": "SKILL.md"}],
+        "skill_marker": "SKILL.md", "deployment": {"copy": true, "symlink": false, "junction": false},
+        "call_policy": "unknown"
+      }]
+    }"#;
+    assert!(parse_custom_profile(missing).is_err());
+
+    let empty = missing.replace(
+        r#""kind": "cli", "supported_os""#,
+        r#""kind": "cli", "display_name": " ", "supported_os""#,
+    );
+    assert!(parse_custom_profile(&empty).is_err());
+}
+
+#[test]
+fn rejects_unknown_client_kind_and_non_boolean_shared_reference() {
+    let unknown_kind = r#"{
+      "profile_version": 1, "research_date": "2026-09-15",
+      "official_references": ["https://example.com"],
+      "brand": "Example", "clients": [{
+        "id": "example.cli", "kind": "daemon", "display_name": "Example CLI", "supported_os": ["windows"],
+        "path_candidates": [{"path": "%USERPROFILE%/.example/skills", "scope": "global", "precedence": "preferred", "marker": "SKILL.md"}],
+        "skill_marker": "SKILL.md", "deployment": {"copy": true, "symlink": false, "junction": false},
+        "call_policy": "unknown"
+      }]
+    }"#;
+    assert!(parse_custom_profile(unknown_kind).is_err());
+
+    let bad_flag = r#"{
+      "profile_version": 1, "research_date": "2026-09-15",
+      "official_references": ["https://example.com"],
+      "brand": "Example", "clients": [{
+        "id": "example.cli", "kind": "cli", "display_name": "Example CLI", "supported_os": ["windows"],
+        "path_candidates": [{"path": "%USERPROFILE%/.example/skills", "scope": "global", "precedence": "preferred", "marker": "SKILL.md", "shared_reference": "yes"}],
+        "skill_marker": "SKILL.md", "deployment": {"copy": true, "symlink": false, "junction": false},
+        "call_policy": "unknown"
+      }]
+    }"#;
+    assert!(parse_custom_profile(bad_flag).is_err());
 }
 
 #[test]
@@ -120,7 +196,7 @@ fn validates_date_references_and_non_empty_arrays() {
         ("2026-01-01", "https://example.com", "[]"),
     ] {
         let json = format!(
-            r#"{{"profile_version":1,"research_date":"{date}","official_references":{references},"brand":"Example","clients":[{{"id":"example.cli","kind":"cli","supported_os":["windows"],"path_candidates":[{{"path":"%USERPROFILE%/.example/skills","scope":"global","precedence":"preferred","marker":"SKILL.md"}}],"skill_marker":"SKILL.md","deployment":{{"copy":true,"symlink":false,"junction":false}},"call_policy":"unknown"}}]}}"#
+            r#"{{"profile_version":1,"research_date":"{date}","official_references":{references},"brand":"Example","clients":[{{"id":"example.cli","kind":"cli","display_name":"Example CLI","supported_os":["windows"],"path_candidates":[{{"path":"%USERPROFILE%/.example/skills","scope":"global","precedence":"preferred","marker":"SKILL.md"}}],"skill_marker":"SKILL.md","deployment":{{"copy":true,"symlink":false,"junction":false}},"call_policy":"unknown"}}]}}"#
         );
         let _ = reference;
         assert!(parse_custom_profile(&json).is_err());
@@ -133,7 +209,7 @@ fn validates_date_references_and_non_empty_arrays() {
         "https://[not-an-ipv6]",
     ] {
         let json = format!(
-            r#"{{"profile_version":1,"research_date":"2026-01-01","official_references":["{reference}"],"brand":"Example","clients":[{{"id":"example.cli","kind":"cli","supported_os":["windows"],"path_candidates":[{{"path":"%USERPROFILE%/.example/skills","scope":"global","precedence":"preferred","marker":"SKILL.md"}}],"skill_marker":"SKILL.md","deployment":{{"copy":true,"symlink":false,"junction":false}},"call_policy":"unknown"}}]}}"#
+            r#"{{"profile_version":1,"research_date":"2026-01-01","official_references":["{reference}"],"brand":"Example","clients":[{{"id":"example.cli","kind":"cli","display_name":"Example CLI","supported_os":["windows"],"path_candidates":[{{"path":"%USERPROFILE%/.example/skills","scope":"global","precedence":"preferred","marker":"SKILL.md"}}],"skill_marker":"SKILL.md","deployment":{{"copy":true,"symlink":false,"junction":false}},"call_policy":"unknown"}}]}}"#
         );
         assert!(
             parse_custom_profile(&json).is_err(),
@@ -144,6 +220,6 @@ fn validates_date_references_and_non_empty_arrays() {
 
 fn profile_with_path(path: &str) -> String {
     format!(
-        r#"{{"profile_version":1,"research_date":"2026-01-01","official_references":["https://example.com"],"brand":"Example","clients":[{{"id":"example.cli","kind":"cli","supported_os":["windows","macos"],"path_candidates":[{{"path":{path:?},"scope":"global","precedence":"preferred","marker":"SKILL.md"}}],"skill_marker":"SKILL.md","deployment":{{"copy":true,"symlink":false,"junction":false}},"call_policy":"unknown"}}]}}"#
+        r#"{{"profile_version":1,"research_date":"2026-01-01","official_references":["https://example.com"],"brand":"Example","clients":[{{"id":"example.cli","kind":"cli","display_name":"Example CLI","supported_os":["windows","macos"],"path_candidates":[{{"path":{path:?},"scope":"global","precedence":"preferred","marker":"SKILL.md"}}],"skill_marker":"SKILL.md","deployment":{{"copy":true,"symlink":false,"junction":false}},"call_policy":"unknown"}}]}}"#
     )
 }

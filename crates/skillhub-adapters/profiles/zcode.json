@@ -10,6 +10,7 @@
     {
       "id": "zcode.desktop",
       "kind": "desktop",
+      "display_name": "ZCode",
       "supported_os": [
         "windows",
         "macos"
@@ -19,7 +20,8 @@
           "path": "{user_home}/.agents/skills",
           "scope": "global",
           "precedence": "preferred",
-          "marker": "SKILL.md"
+          "marker": "SKILL.md",
+          "shared_reference": true
         },
         {
           "path": "{user_home}/.zcode/skills",

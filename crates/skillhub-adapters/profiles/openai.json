@@ -10,6 +10,7 @@
     {
       "id": "openai.codex-cli",
       "kind": "cli",
+      "display_name": "Codex CLI",
       "supported_os": [
         "windows",
         "macos"
@@ -19,13 +20,15 @@
           "path": "{user_home}/.agents/skills",
           "scope": "global",
           "precedence": "preferred",
-          "marker": "SKILL.md"
+          "marker": "SKILL.md",
+          "shared_reference": true
         },
         {
           "path": "{project_root}/.agents/skills",
           "scope": "project",
           "precedence": "preferred",
-          "marker": "SKILL.md"
+          "marker": "SKILL.md",
+          "shared_reference": true
         }
       ],
       "skill_marker": "SKILL.md",
@@ -43,6 +46,7 @@
     {
       "id": "openai.codex-ide",
       "kind": "ide_extension",
+      "display_name": "Codex IDE extension",
       "supported_os": [
         "windows",
         "macos"
@@ -52,13 +56,15 @@
           "path": "{user_home}/.agents/skills",
           "scope": "global",
           "precedence": "preferred",
-          "marker": "SKILL.md"
+          "marker": "SKILL.md",
+          "shared_reference": true
         },
         {
           "path": "{project_root}/.agents/skills",
           "scope": "project",
           "precedence": "preferred",
-          "marker": "SKILL.md"
+          "marker": "SKILL.md",
+          "shared_reference": true
         }
       ],
       "skill_marker": "SKILL.md",
@@ -76,6 +82,7 @@
     {
       "id": "openai.chatgpt-desktop",
       "kind": "desktop",
+      "display_name": "ChatGPT Desktop",
       "supported_os": [
         "windows",
         "macos"

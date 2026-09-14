@@ -10,6 +10,7 @@
     {
       "id": "cline.extension",
       "kind": "ide_extension",
+      "display_name": "Cline",
       "supported_os": [
         "windows",
         "macos"
@@ -56,6 +57,7 @@
     {
       "id": "cline.cli",
       "kind": "cli",
+      "display_name": "Cline CLI",
       "supported_os": [
         "windows",
         "macos"
@@ -96,6 +98,7 @@
     {
       "id": "cline.sdk",
       "kind": "headless",
+      "display_name": "Cline SDK",
       "supported_os": [
         "windows",
         "macos"
@@ -136,6 +139,7 @@
     {
       "id": "cline.acp",
       "kind": "acp",
+      "display_name": "Cline ACP",
       "supported_os": [
         "windows",
         "macos"

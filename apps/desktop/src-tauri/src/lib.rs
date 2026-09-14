@@ -675,12 +675,14 @@ mod path_grant_tests {
                     clients: vec![skillhub_core::agent::AgentClient {
                         id: "custom-test-agent-client".into(),
                         kind: skillhub_core::agent::ClientKind::Cli,
+                        display_name: "Test Agent".into(),
                         supported_os: vec![skillhub_core::agent::OperatingSystem::Windows],
                         path_candidates: vec![skillhub_core::PathCandidate {
                             path: candidate_path.into(),
                             scope: skillhub_core::TargetScope::Global,
                             precedence: skillhub_core::DirectoryPrecedence::Preferred,
                             marker: "SKILL.md".into(),
+                            shared_reference: false,
                         }],
                         skill_marker: "SKILL.md".into(),
                         deployment: skillhub_core::DeploymentCapability {

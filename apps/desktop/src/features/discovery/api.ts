@@ -495,8 +495,17 @@ export interface AgentTargetCard {
   path: string;
   /** 组内去重后的客户端类型（如 desktop+cli → "桌面端/CLI"）。 */
   kinds: ClientKind[];
+  /** OPT-07：组内客户端的官方产品名（逐客户端核验，去重、按出现顺序）。 */
+  names: string[];
   /** 目录证据：任一 logical target available 即视为可用。 */
   available: boolean;
+  /**
+   * OPT-07：同一物理目录上共享引用（shared_reference）的已登记客户端数。
+   * 共享引用保留品牌侧可用性，但归属卡片只由通用 Agent 目录产出一次。
+   */
+  sharedClients: number;
+  /** OPT-07：共享引用客户端的官方产品名（提示与诊断用）。 */
+  sharedClientNames: string[];
 }
 
 /** P1-06：一个品牌（profile）的分组；组内可用卡片在前、不可用置底。 */
@@ -519,7 +528,10 @@ const byBrandName = (a: AgentBrandGroup, b: AgentBrandGroup) =>
  * - 先按当前 OS 过滤 profile 声明的 supported_os（空列表视为未声明，保留）；
  * - 按品牌（profile_id）分组，组内按 physical_id 聚合（后端已把同目录
  *   的不同客户端归并为同一 physical_id）；
- * - 聚合卡片类型取组内去重后的 kind 集合；
+ * - 聚合卡片类型取组内去重后的 kind 集合，官方产品名随卡片并列展示；
+ * - OPT-07：shared_reference 目标（`.agents/skills` 跨品牌共享引用）不再
+ *   产出品牌卡片，而是把引用计数与客户端名聚合到同一物理目录的通用
+ *   归属卡片上——归属只出现一次，品牌侧可用性不回退；
  * - 可用品牌在前（按品牌名排序），完全不可用的品牌整体置底。
  */
 export function buildAgentGroups(
@@ -533,19 +545,36 @@ export function buildAgentGroups(
   const instanceKindByClient = new Map(
     osInstances.map((instance) => [instance.client_id, instance.kind]),
   );
+  const instanceNameByClient = new Map(
+    osInstances.map((instance) => [instance.client_id, instance.display_name || instance.client_id]),
+  );
   const clientIds = new Set(instanceKindByClient.keys());
 
   interface PhysicalAccumulator {
     physicalId: string;
     path: string;
     kinds: ClientKind[];
+    names: string[];
     available: boolean;
   }
   const byBrand = new Map<string, Map<string, PhysicalAccumulator>>();
+  const sharedByPhysical = new Map<string, { count: number; names: string[] }>();
   for (const target of snapshot.logical_targets as LogicalTarget[]) {
     if (!clientIds.has(target.client_id)) continue;
     const kind = instanceKindByClient.get(target.client_id);
     if (!kind) continue;
+    const clientName = instanceNameByClient.get(target.client_id) ?? target.client_id;
+    if (target.shared_reference) {
+      // OPT-07：共享引用不产出归属卡片，聚合到通用目录卡片上。
+      let shared = sharedByPhysical.get(target.physical_id);
+      if (!shared) {
+        shared = { count: 0, names: [] };
+        sharedByPhysical.set(target.physical_id, shared);
+      }
+      shared.count += 1;
+      if (!shared.names.includes(clientName)) shared.names.push(clientName);
+      continue;
+    }
     let brandGroups = byBrand.get(target.profile_id);
     if (!brandGroups) {
       brandGroups = new Map();
@@ -553,17 +582,34 @@ export function buildAgentGroups(
     }
     let card = brandGroups.get(target.physical_id);
     if (!card) {
-      card = { physicalId: target.physical_id, path: target.path, kinds: [], available: false };
+      card = {
+        physicalId: target.physical_id,
+        path: target.path,
+        kinds: [],
+        names: [],
+        available: false,
+      };
       brandGroups.set(target.physical_id, card);
     }
     if (!card.kinds.includes(kind)) card.kinds.push(kind);
+    const name = instanceNameByClient.get(target.client_id);
+    if (name && !card.names.includes(name)) card.names.push(name);
     card.available = card.available || target.available;
   }
 
   const groups: AgentBrandGroup[] = [];
   for (const [brand, cards] of byBrand) {
     const ordered = [...cards.values()]
-      .map((card) => ({ ...card, kinds: [...card.kinds] }))
+      .map((card) => {
+        const shared = sharedByPhysical.get(card.physicalId);
+        return {
+          ...card,
+          kinds: [...card.kinds],
+          names: [...card.names],
+          sharedClients: shared?.count ?? 0,
+          sharedClientNames: shared ? [...shared.names] : [],
+        };
+      })
       .sort((a, b) => Number(b.available) - Number(a.available) || a.path.localeCompare(b.path));
     groups.push({
       brand,

@@ -20,6 +20,7 @@ pub fn validate_profile_strict(profile: &AgentProfile) -> Result<(), String> {
         if client.id.trim().is_empty()
             || client.skill_marker.trim().is_empty()
             || client.supported_os.is_empty()
+            || client.display_name.trim().is_empty()
         {
             return Err("incomplete client profile".into());
         }
@@ -117,6 +118,10 @@ pub enum ClientKind {
     Web,
     Mobile,
     Bot,
+    /// OPT-20260914-07: the brand-agnostic `.agents/skills` convention entry.
+    /// It is a shared directory registry, not an installed client product;
+    /// presence stays `Unknown` and no runtime loading is implied.
+    SharedDirectory,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
@@ -158,6 +163,11 @@ pub struct DeploymentCapability {
 pub struct AgentClient {
     pub id: String,
     pub kind: ClientKind,
+    /// Official product name of this concrete client form (e.g. "CodeBuddy
+    /// Code", "Claude Desktop"), verified per client; never guessed from the
+    /// brand name. Optional on read so persisted profiles keep deserializing.
+    #[serde(default)]
+    pub display_name: String,
     pub supported_os: Vec<OperatingSystem>,
     pub path_candidates: Vec<super::PathCandidate>,
     pub skill_marker: String,
@@ -209,6 +219,9 @@ impl ProfileCatalog {
     /// JSON files; this method keeps the stable catalog API on the domain type.
     pub fn builtin() -> Self {
         const PROFILES: &[&str] = &[
+            // OPT-20260914-07: the brand-agnostic `.agents/skills` convention
+            // entry comes first; brand profiles only carry shared references.
+            include_str!("../../../skillhub-adapters/profiles/agent-skills.json"),
             include_str!("../../../skillhub-adapters/profiles/openai.json"),
             include_str!("../../../skillhub-adapters/profiles/anthropic.json"),
             include_str!("../../../skillhub-adapters/profiles/google.json"),

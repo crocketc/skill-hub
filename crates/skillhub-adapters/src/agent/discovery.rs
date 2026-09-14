@@ -76,6 +76,7 @@ impl DiscoverAgents {
                             path: path_string,
                             marker: candidate.marker.clone(),
                             precedence: candidate.precedence.clone(),
+                            shared_reference: candidate.shared_reference,
                             exists,
                             readable,
                             writable,
@@ -88,6 +89,7 @@ impl DiscoverAgents {
                     profile_id: profile_id.clone(),
                     client_id: client.id.clone(),
                     kind: client.kind.clone(),
+                    display_name: client.display_name.clone(),
                     supported_os: client.supported_os.clone(),
                     client_presence: ClientPresence::Unknown,
                 });

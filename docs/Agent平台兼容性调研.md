@@ -166,6 +166,36 @@ SkillHub 在 UI 中统一显示以下四个枚举值：
 
 官方依据：[Agent Skills specification](https://agentskills.io/specification)、[Claude Code invocation controls](https://code.claude.com/docs/en/slash-commands#frontmatter-reference)、[OpenAI Codex `openai.yaml`](https://github.com/openai/codex/blob/main/codex-rs/skills/src/assets/samples/skill-creator/references/openai_yaml.md)、[Gemini CLI Agent Skills](https://github.com/google-gemini/gemini-cli/blob/main/docs/cli/using-agent-skills.md)、[Cursor Skills](https://prod.cursor.com/docs/skills)、[Windsurf Skills](https://docs.windsurf.com/zh/windsurf/cascade/skills)、[Cline Skills](https://github.com/cline/cline/blob/main/docs/customization/skills.mdx)、[OpenCode V2 Skills](https://opencode.ai/v2/docs/skills)、[Kimi Code Skills](https://github.com/MoonshotAI/kimi-code/blob/main/docs/en/customization/skills.md)、[Pi Skills](https://pi.dev/docs/latest/skills)、[Pi Settings](https://pi.dev/docs/latest/settings)、[DeepSeek Harness Skills](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/subsystems/skills.md)、[Grok Build Skills](https://github.com/xai-org/grok-build/blob/main/crates/codegen/xai-grok-pager/docs/user-guide/08-skills.md)。
 
+### 3.4 通用 Agent 目录归属与产品形态（OPT-20260914-07，2026-09-15 核验）
+
+`.agents/skills` 的定位已由官方资料明确：Agent Skills 开放规范本身只定义 `SKILL.md` 格式，不规定目录位置；而官方"给客户端接入 Skills 支持"指南把项目级 `<project>/.agents/skills/` 与用户级 `~/.agents/skills/` 列为**跨客户端互操作（cross-client interoperability）约定目录**，并说明"`.agents/skills/` 路径已成为广泛采用的跨客户端 Skill 共享约定"。因此 SkillHub 把该路径登记为**通用 Agent 目录**（品牌无关的归属入口），而不是某个品牌的所有物。
+
+实现上的归属建模（与 `crates/skillhub-adapters/profiles/` 同步）：
+
+- 新增内置 profile `agent-skills`（品牌"Agent Skills"，伪客户端 `agent-skills.shared-directory`，kind `shared_directory`），承接 `{user_home}/.agents/skills`（global）与 `{project_root}/.agents/skills`（project）两个归属条目；官方依据为 agentskills.io 规范与客户端实现指南。
+- 各品牌 profile 中的 `.agents/skills` 条目（含用户级与项目级）改标 `shared_reference: true`：扫描、可用性与部署语义不变（品牌仍能看到目录可用），但**归属卡片只在通用 Agent 目录下出现一次**。
+- profile schema 同步新增 `display_name`（必填，官方产品名）与 `shared_reference`（可选布尔）字段；`ClientKind` 新增 `shared_directory`。
+- 旧库快照缺省字段时按 `shared_reference: false` 反序列化，行为与迁移前一致，重新扫描后收敛到新归属。
+
+产品形态与目录核验结论（核验日期 2026-09-15，仅采官方文档/官方仓库/已记录真机证据）：
+
+| 产品（官方形态名） | 形态 | 本地 Skill 目录 | `~/.agents/skills` 官方支持 | 证据等级 | 主要来源 |
+|---|---|---|---|---|---|
+| Agent Skills（共享目录约定） | 通用共享目录（非客户端产品） | 用户级 `~/.agents/skills/`；项目级 `.agents/skills/`（跨客户端互操作） | 即约定本身 | 官方明确 | [客户端实现指南](https://agentskills.io/client-implementation/adding-skills-support)、[规范](https://agentskills.io/specification) |
+| CodeBuddy Code | 终端 CLI | `~/.codebuddy/skills/`；`.codebuddy/skills/` | 官方文档未提及 | 官方明确 + 真机确认（Windows，2026-09-05，目录观察） | [CodeBuddy Code Skills](https://www.codebuddy.ai/docs/cli/skills) |
+| WorkBuddy | 桌面端 | `~/.workbuddy/skills/`；`<workspace>/.workbuddy/skills/` | 未发现兼容目录；官方文档仅提"从 `.agents` 等目录复制安装的技能保持原始内容" | 真机确认（Windows，2026-09-05，目录观察，沿用既有记录）；官方未公开路径文本 | [WorkBuddy Skills](https://www.codebuddy.cn/docs/workbuddy/From-Beginner-to-Expert-Guide/Function-Description/Skills-Market) |
+| TraeCode（trae.code） | IDE（桌面端形态） | 中国版 `~/.trae-cn/skills/`（Windows 为 `%userprofile%/.trae-cn/skills`）；项目级 `.trae/skills/`；全球版 `~/.trae/skills/`（真机并存） | 官方明确支持：设置中可启用 `.agents/skills`；同名时 `.trae/skills` 优先 | 官方明确 + 真机确认（Windows，2026-09-05） | [TraeCode 技能](https://docs.trae.cn/ide_skills) |
+| TraeWork（trae.work） | 桌面/Web/移动办公 Agent | 未公开 | 待测试确认 | 官方未公开（有限接入候选，维持） | [TraeWork](https://www.trae.ai/work) |
+| Claude Code | 终端 CLI（官方另提供 IDE/桌面应用/网页入口） | `~/.claude/skills/`；`.claude/skills/`；企业托管目录；插件 `skills/`；`~/.claude/skills/synced/` | 官方文档未提及 | 官方明确 | [Claude Code Skills](https://code.claude.com/docs/en/skills) |
+| Claude Desktop | 桌面聊天应用 | 无公开稳定本地目录（Customize > Skills 上传 ZIP，账号/组织管理） | 官方文档未提及 | 官方明确（无本地目录） | [Claude Desktop](https://support.claude.com/en/articles/10065433-install-claude-desktop)、[Use skills in Claude](https://support.claude.com/en/articles/12512180-use-skills-in-claude) |
+
+补充约束：
+
+- 产品形态按**具体客户端**核验并登记官方产品名（profile `display_name`，如 "CodeBuddy Code"、"WorkBuddy"、"TraeCode"、"TraeWork"、"Claude Code"、"Claude Desktop"），不得按品牌名推断；docs.trae.cn 官方写法为 "TraeCode"/"TraeWork"。
+- 品牌相同、形态不同的客户端各自独立核验：CodeBuddy Code（CLI，`.codebuddy`）与 WorkBuddy（桌面端，`.workbuddy`）目录不同；TraeCode（IDE）与 TraeWork（办公 Agent）不可互相套用；Claude Code 与 Claude Desktop 分属本地目录与账号管理两套体系。
+- 不同产品形态共用同一 Skill 路径时，发现页合并为一张卡片，形态标签并列（如"桌面端/CLI"）并并列展示官方产品名；共享引用计数在通用目录卡片上汇总展示。
+- 目录发现仍不等于 Agent 能加载或执行 Skill；所有客户端 `call_policy` 维持 `unknown`，运行时能力待实测。
+
 ---
 
 ## 4. 平台能力总表
@@ -408,6 +438,7 @@ WorkBuddy 已于 2026-09-05 在 Windows 桌面版完成真机目录确认，是�
 - 与 CodeBuddy Code 的关系：两者同属 CodeBuddy 产品体系，但本地目录不同，不能互相套用。CodeBuddy Code 使用 `~/.codebuddy/skills` 与 `.codebuddy/skills`；WorkBuddy 使用 `~/.workbuddy/skills` 与 `.workbuddy/skills`。插件缓存目录中的 `codebuddy-plugins-official` 只能说明插件来源体系存在交集，不能推导为 Skill 目录共享。
 - 所有权边界：`~/.workbuddy/skills` 与项目级 `.workbuddy/skills` 可作为部署与解除部署目标；内置插件目录和 `~/.workbuddy/plugins/cache/` 只观察，不写入。
 - 结论：完整适配候选。Windows 用户级、项目级、内置和插件缓存目录已由真机确认，可以建立完整 profile；刷新机制与链接部署先标记“待测试”，失败时使用受管复制；macOS 路径待验证。
+- OPT-20260914-07 同步（2026-09-15）：`codebuddy.workbuddy` 客户端不再标注 `no_stable_public_local_skill_directory`，已按上述真机确认登记 `{user_home}/.workbuddy/skills` 与 `{project_root}/.workbuddy/skills`（均 preferred），并保留 `runtime_loading_unknown`、链接能力未确认限制；官方资料核验仅补充“从 `.agents` 等目录复制安装”的表述，不改变目录证据来源。
 
 主要来源：Windows 真机确认（WorkBuddy 桌面版，2026-09-05，用户数据根 `C:\Users\<本地用户>\.workbuddy`，工作区根 `C:\Users\<本地用户>\WorkBuddy\2026-09-05-11-55-56`）；[WorkBuddy 技能](https://www.codebuddy.cn/docs/workbuddy/From-Beginner-to-Expert-Guide/Function-Description/Skills-Market)、[WorkBuddy 更新日志](https://www.codebuddy.cn/docs/workbuddy/Changelog)、[WorkBuddy 文档总览](https://www.workbuddy.cn/docs/workbuddy/Overview)。
 
@@ -544,6 +575,8 @@ SkillHub 应以真实路径、规范化路径、文件身份和内容哈希联�
 - 多个逻辑 Agent 实际指向同一 `.agents/skills` 物理目录时只部署一次，但分别记录逻辑关系。
 - 共享实体仍被其他 Agent 引用时，解除单个 Agent 关系不得直接删除文件。
 - Agent 专用变体内容不一致时不能共用同一份共享部署。
+
+归属展示语义（OPT-20260914-07，2026-09-15 落地）：`.agents/skills` 的**归属**统一登记到通用 Agent 目录（`agent-skills` profile，见 3.4 节），品牌 profile 中同路径条目一律标记 `shared_reference`。品牌仍按各自 precedence 保留目录可用性与部署候选语义，但发现页不再按品牌重复挂归属卡片；通用目录卡片上汇总展示共享引用该目录的已登记客户端。此语义只影响归属展示，不改变本节的部署、解除部署与文件身份判断规则。
 
 ### 6.3 插件 Skill 默认只读
 

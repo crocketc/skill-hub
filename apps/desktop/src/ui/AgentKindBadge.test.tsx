@@ -31,6 +31,13 @@ it("renders a single kind through its catalog label", async () => {
   expect(container.querySelector(".sh-agent-kind-badge")).toHaveTextContent("IDE 插件");
 });
 
+// OPT-20260914-07：通用共享目录伪客户端的形态标签，与品牌无关。
+it("labels the generic shared directory form through its catalog label", async () => {
+  const { container } = await renderBadge(["shared_directory"]);
+
+  expect(container.querySelector(".sh-agent-kind-badge")).toHaveTextContent("共享目录");
+});
+
 it("returns nothing when the directory card has no client kind", async () => {
   const { container } = await renderBadge([]);
 

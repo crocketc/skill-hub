@@ -10,6 +10,7 @@
     {
       "id": "opencode.cli",
       "kind": "cli",
+      "display_name": "OpenCode",
       "supported_os": [
         "windows",
         "macos"
@@ -37,7 +38,8 @@
           "path": "{project_root}/.agents/skills",
           "scope": "project",
           "precedence": "may_coexist",
-          "marker": "SKILL.md"
+          "marker": "SKILL.md",
+          "shared_reference": true
         }
       ],
       "skill_marker": "SKILL.md",

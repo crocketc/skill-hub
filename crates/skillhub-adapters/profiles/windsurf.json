@@ -9,6 +9,7 @@
     {
       "id": "windsurf.cascade",
       "kind": "desktop",
+      "display_name": "Windsurf Cascade",
       "supported_os": [
         "windows",
         "macos"
