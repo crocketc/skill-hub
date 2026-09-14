@@ -98,6 +98,52 @@ test.describe("app shell collapse button placement", () => {
     });
   }
 
+  test("keeps the collapsed macOS topbar start on the structural padding", async ({ page }) => {
+    await page.setViewportSize({ width: 1024, height: 900 });
+    await page.goto("/__preview/skill-library");
+
+    // 真机上 applyWindowChromePlatformClass 会给根元素加 sh-is-macos；
+    // 预览环境直接注入平台类，验证 macOS 收起态左排不再叠加 5rem 补偿。
+    await page.evaluate(() => document.documentElement.classList.add("sh-is-macos"));
+
+    const toggle = page.getByRole("button", { name: TOGGLE_NAME });
+    await toggle.click();
+    await expect(toggle).toHaveAttribute("aria-expanded", "false");
+
+    const geometry = await page.evaluate(() => {
+      const rect = (selector: string) => {
+        const element = document.querySelector(selector);
+        return element ? element.getBoundingClientRect().toJSON() : null;
+      };
+      return {
+        topbar: rect(".sh-app-shell__topbar"),
+        brand: rect(".sh-app-shell__compact-brand"),
+        topbarPaddingLeft: getComputedStyle(
+          document.querySelector(".sh-app-shell__topbar")!,
+        ).paddingLeft,
+      };
+    });
+    expect(geometry.topbar).not.toBeNull();
+    expect(geometry.brand).not.toBeNull();
+
+    // 收起侧栏 3rem（48px）+ 顶栏自身 1.25rem（20px）内边距 = 约 4.25rem（68px）。
+    expect(geometry.topbarPaddingLeft).toBe("20px");
+    expect(
+      geometry.brand!.x - geometry.topbar!.x,
+      "macOS collapsed brand starts at the topbar structural padding only",
+    ).toBeCloseTo(parseFloat(geometry.topbarPaddingLeft), 0);
+    // 1rem = 16px：Logo 左缘落在窗口左侧约 4.25rem（68px）处，无 5rem 额外补偿。
+    expect(geometry.brand!.x, "collapsed brand sits near the window left at ~4.25rem").toBeLessThan(80);
+
+    // Logo 与前进按钮依次排列且无重叠（skill-library 为主导航页，无返回按钮）。
+    const brandBox = geometry.brand!;
+    const forwardBox = (await page.getByRole("button", { name: "Forward" }).boundingBox())!;
+    expect(
+      forwardBox.x,
+      "forward button follows the collapsed brand",
+    ).toBeGreaterThanOrEqual(brandBox.x + brandBox.width - 1);
+  });
+
   test("lays out the full-height sidebar beside the content title bar", async ({ page }) => {
     await page.setViewportSize({ width: 1024, height: 900 });
     await page.goto("/__preview/skill-library");
