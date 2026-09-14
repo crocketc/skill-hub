@@ -315,7 +315,9 @@
         "succeeded": "已导入",
         "skipped": "已跳过",
         "failed": "失败"
-      }
+      },
+      "provenance": "已从 {{path}} 导入（{{agent}}）",
+      "unknownAgent": "来源未识别"
     },
     "commitMessages": {
       "imported": "已导入",
@@ -1444,6 +1446,44 @@
       "retry": "重试关系",
       "undeploy": "取消部署",
       "undeployTarget": "从 {{target}} 取消部署"
+    },
+    "provenance": {
+      "heading": "导入存证与已观察部署",
+      "source": "来源：",
+      "sourceKinds": {
+        "local": "本地目录",
+        "https": "HTTPS 下载",
+        "git": "Git 仓库"
+      },
+      "agent": "Agent 形态：",
+      "unknownAgent": "未识别（无目录证据，不猜测）",
+      "originalPath": "原始路径：",
+      "importedAt": "导入时间（epoch 秒）：",
+      "fingerprint": "内容指纹：",
+      "ownership": "所有权：",
+      "ownerships": {
+        "unclassified": "未分类",
+        "central_library": "集中库",
+        "known_agent_target": "已知 Agent 目录",
+        "registered_project": "已注册项目",
+        "read_only_builtin_or_plugin": "只读内置/插件",
+        "arbitrary_local_directory": "任意本地目录",
+        "downloaded_source": "已下载来源"
+      },
+      "absent": "该 Skill 不是经由带存证的导入链路进入集中库（例如创建/收集），不编造来源。",
+      "noObservedDeployments": "尚未在任何 Agent 目录中观察到已部署的副本。",
+      "matchStates": {
+        "content_verified": "内容一致",
+        "name_only": "仅同名（未验证）",
+        "diverged": "内容已分叉"
+      },
+      "statuses": {
+        "active": "观察中",
+        "released": "已收回"
+      },
+      "loadError": "无法加载导入存证，其他详情仍可使用。",
+      "loadErrorLabel": "存证加载失败",
+      "retry": "重试存证"
     },
     "requirements": {
       "declaredOnly": "仅来自 Skill 声明，SkillHub 未安装或验证",

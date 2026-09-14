@@ -65,6 +65,18 @@ export function ImportSummary({
               {t(`importWorkflow.summary.status.${result.status}`)}
             </StatusBadge>
             <p>{t(result.message, { defaultValue: result.message })}</p>
+            {result.provenance ? (
+              <p
+                className="sh-import-summary__provenance"
+                data-testid="import-provenance"
+              >
+                {t("importWorkflow.summary.provenance", {
+                  agent: result.provenance.agentClientId ??
+                    t("importWorkflow.summary.unknownAgent"),
+                  path: result.provenance.originalPath,
+                })}
+              </p>
+            ) : null}
           </li>
         ))}
       </ul>

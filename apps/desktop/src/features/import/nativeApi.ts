@@ -144,6 +144,13 @@ function resultForSummary(
       ? "importWorkflow.commitMessages.imported"
       : "importWorkflow.commitMessages.noDetail",
     status: result.committed ? "succeeded" : "failed",
+    provenance: item?.provenance
+      ? {
+          agentClientId: item.provenance.agent_client_id,
+          originalPath: item.provenance.original_path,
+          importedAt: item.provenance.imported_at,
+        }
+      : undefined,
   };
 }
 

@@ -64,3 +64,44 @@ it("shows the unavailable boundary without fabricating import results", async ()
   expect(screen.getByRole("status")).toHaveTextContent("导入功能尚未连接到本机服务");
   expect(screen.queryByRole("listitem")).not.toBeInTheDocument();
 });
+
+it("renders the import provenance line only when evidence was recorded", async () => {
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  render(
+    <I18nextProvider i18n={i18n}>
+      <ImportSummary
+        results={[
+          {
+            candidateId: "a",
+            action: "copy",
+            status: "succeeded",
+            message: "已导入",
+            provenance: {
+              agentClientId: "trae.code",
+              originalPath: "/agents/trae/skills/demo",
+              importedAt: "1700000000",
+            },
+          },
+          {
+            candidateId: "b",
+            action: "copy",
+            status: "succeeded",
+            message: "已导入",
+            // 来源不明：Agent 归属显式缺省，界面只标注不猜测。
+            provenance: {
+              agentClientId: null,
+              originalPath: "/downloads/demo",
+              importedAt: "1700000001",
+            },
+          },
+        ]}
+      />
+    </I18nextProvider>,
+  );
+
+  // 成功明细默认折叠：先展开再核验存证行。
+  fireEvent.click(screen.getByRole("button", { name: "查看成功和跳过明细" }));
+  expect(screen.getAllByTestId("import-provenance")).toHaveLength(2);
+  expect(screen.getByText(/已从 \/agents\/trae\/skills\/demo 导入（trae.code）/)).toBeVisible();
+  expect(screen.getByText(/来源未识别/)).toBeVisible();
+});

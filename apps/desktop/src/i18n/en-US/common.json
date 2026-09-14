@@ -315,7 +315,9 @@
         "succeeded": "Succeeded",
         "skipped": "Skipped",
         "failed": "Failed"
-      }
+      },
+      "provenance": "Imported from {{path}} ({{agent}})",
+      "unknownAgent": "source unrecognized"
     },
     "commitMessages": {
       "imported": "Imported",
@@ -1444,6 +1446,44 @@
       "retry": "Retry relations",
       "undeploy": "Undeploy",
       "undeployTarget": "Undeploy {{target}}"
+    },
+    "provenance": {
+      "heading": "Provenance & deployed relations",
+      "source": "Source:",
+      "sourceKinds": {
+        "local": "Local directory",
+        "https": "HTTPS download",
+        "git": "Git repository"
+      },
+      "agent": "Agent form:",
+      "unknownAgent": "Unrecognized (no directory evidence; not guessed)",
+      "originalPath": "Original path:",
+      "importedAt": "Imported at (epoch seconds):",
+      "fingerprint": "Content fingerprint:",
+      "ownership": "Ownership:",
+      "ownerships": {
+        "unclassified": "Unclassified",
+        "central_library": "Central library",
+        "known_agent_target": "Known agent target",
+        "registered_project": "Registered project",
+        "read_only_builtin_or_plugin": "Read-only builtin/plugin",
+        "arbitrary_local_directory": "Arbitrary local directory",
+        "downloaded_source": "Downloaded source"
+      },
+      "absent": "This skill did not enter the library through a provenance-tracked import (for example created or collected); no origin is invented.",
+      "noObservedDeployments": "No deployed copies have been observed in any agent directory yet.",
+      "matchStates": {
+        "content_verified": "Content verified",
+        "name_only": "Name match only (not verified)",
+        "diverged": "Content diverged"
+      },
+      "statuses": {
+        "active": "Active",
+        "released": "Released"
+      },
+      "loadError": "Provenance could not be loaded. Other detail sections remain available.",
+      "loadErrorLabel": "Provenance failed to load",
+      "retry": "Retry provenance"
     },
     "requirements": {
       "declaredOnly": "Declared by the Skill only; SkillHub has not installed or verified it.",

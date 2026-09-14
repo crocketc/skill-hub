@@ -71,6 +71,36 @@ export interface SkillRelation {
   version: string;
 }
 
+/** OPT-20260914-08：导入存证的展示形态（导入那一刻的不可变事实）。 */
+export interface SkillImportProvenance {
+  agentClientId: string | null;
+  originalPath: string;
+  ownership: string;
+  sourceKind: string;
+  sourceLocator: string;
+  contentFingerprint: string;
+  importedAt: string;
+}
+
+/** OPT-20260914-08：已观察部署关系的展示形态。 */
+export interface SkillObservedDeployment {
+  id: string;
+  clientId: string;
+  originalPath: string;
+  contentFingerprint: string;
+  matchState: "content_verified" | "name_only" | "diverged";
+  origin: "scan" | "import";
+  status: "active" | "released";
+  observedAt: string;
+  releasedAt: string | null;
+}
+
+/** 导入存证 + 已观察关系的联合视图；provenance 为 null 表示非导入链路。 */
+export interface SkillProvenance {
+  provenance: SkillImportProvenance | null;
+  observedDeployments: SkillObservedDeployment[];
+}
+
 export interface SkillRequirementFact {
   declaration: string;
   id: string;
@@ -211,6 +241,8 @@ export interface SkillDetailFacade {
   ): Promise<SkillFinding[]>;
   getMetadata(skillId: string): Promise<SkillMetadata>;
   getRelations(skillId: string): Promise<SkillRelation[]>;
+  /** OPT-20260914-08：读取导入存证与已观察部署关系（纯查询）。 */
+  getProvenance(skillId: string): Promise<SkillProvenance>;
   getRequirements(skillId: string): Promise<SkillRequirementFact[]>;
   getRollbackImpact(
     skillId: string,
@@ -243,6 +275,7 @@ export const skillDetailKeys = {
   summary: (skillId: string) => [...skillKey(skillId), "summary"] as const,
   metadata: (skillId: string) => [...skillKey(skillId), "metadata"] as const,
   relations: (skillId: string) => [...skillKey(skillId), "relations"] as const,
+  provenance: (skillId: string) => [...skillKey(skillId), "provenance"] as const,
   requirements: (skillId: string) =>
     [...skillKey(skillId), "requirements"] as const,
   insights: (skillId: string) => [...skillKey(skillId), "insights"] as const,
@@ -285,6 +318,7 @@ export const unavailableSkillDetailFacade: SkillDetailFacade = {
   getFindings: unavailable,
   getMetadata: unavailable,
   getRelations: unavailable,
+  getProvenance: unavailable,
   getRequirements: unavailable,
   getRollbackImpact: unavailable,
   getSummary: unavailable,

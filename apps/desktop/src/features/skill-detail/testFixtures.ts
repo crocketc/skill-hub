@@ -1,5 +1,6 @@
 import type { UpdateDecision, UpstreamCheckResult } from "../../api/bindings";
 import type {
+  SkillProvenance,
   AdjacentSkillContext,
   SkillDetailFacade,
   SkillDetailInsights,
@@ -23,6 +24,7 @@ export interface SkillDetailFixture {
   adjacent: AdjacentSkillContext;
   insights: SkillDetailInsights;
   metadata: SkillMetadata;
+  provenance: SkillProvenance;
   relations: SkillRelation[];
   requirements: SkillRequirementFact[];
   rollbackImpact: SkillRollbackImpact;
@@ -157,6 +159,30 @@ export function detailFixture(
         translatedAt: "2026-08-25T09:00:00Z",
         userRevised: options.userRevisedTranslation ?? false,
       },
+    },
+    provenance: {
+      provenance: {
+        agentClientId: "openai.codex-cli",
+        contentFingerprint: "sha256:fixture-fingerprint",
+        importedAt: "1757808000",
+        originalPath: "C:/Users/demo/.agents/skills/pdf-reader",
+        ownership: "known_agent_target",
+        sourceKind: "local",
+        sourceLocator: "C:/Users/demo/.agents/skills/pdf-reader",
+      },
+      observedDeployments: [
+        {
+          clientId: "openai.codex-cli",
+          contentFingerprint: "sha256:fixture-fingerprint",
+          id: "observed-codex",
+          matchState: "content_verified",
+          observedAt: "1757808100",
+          originalPath: "C:/Users/demo/.agents/skills/pdf-reader",
+          origin: "import",
+          releasedAt: null,
+          status: "active",
+        },
+      ],
     },
     relations: [
       {
@@ -391,6 +417,9 @@ export function createMockSkillDetailFacade(
         ...relation,
         physicalTarget: relation.physicalTarget.replace("pdf-reader", skillId),
       }));
+    },
+    async getProvenance() {
+      return fixture.provenance;
     },
     async getRequirements() {
       return fixture.requirements;

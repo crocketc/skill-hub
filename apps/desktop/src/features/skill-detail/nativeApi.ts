@@ -18,6 +18,9 @@ import {
   type SkillFinding,
   type SkillMetadata,
   type SkillMetadataPatch,
+  type SkillObservedDeployment,
+  type SkillProvenance,
+  type SkillImportProvenance,
   type SkillRelation,
   type SkillRollbackImpact,
   type SemanticDuplicateReport,
@@ -367,6 +370,43 @@ export const nativeSkillDetailFacade: SkillDetailFacade = {
     return metadataOf(skill, translation);
   },
   saveMetadata,
+  async getProvenance(skillId): Promise<SkillProvenance> {
+    // OPT-20260914-08：溯源与已观察关系是纯展示/审计查询，绝不触发
+    // 扫描、导入或任何文件系统写入；非导入链路的 Skill 诚实返回空。
+    const result = await queryApplication({
+      type: "get_skill_provenance",
+      payload: { skill_id: skillId },
+    });
+    if (result.type !== "skill_provenance") throw unavailableResult();
+    const provenance: SkillImportProvenance | null = result.payload.provenance
+      ? {
+          agentClientId: result.payload.provenance.agent_client_id,
+          originalPath: result.payload.provenance.original_path,
+          ownership: result.payload.provenance.ownership,
+          sourceKind: result.payload.provenance.source.kind,
+          sourceLocator:
+            result.payload.provenance.source.locator.local_path ??
+            result.payload.provenance.source.locator.https_url ??
+            result.payload.provenance.source.locator.git_url ??
+            "",
+          contentFingerprint: result.payload.provenance.content_fingerprint,
+          importedAt: result.payload.provenance.imported_at,
+        }
+      : null;
+    const observedDeployments: SkillObservedDeployment[] =
+      result.payload.observed_deployments.map((row) => ({
+        id: row.id,
+        clientId: row.client_id,
+        originalPath: row.original_path,
+        contentFingerprint: row.content_fingerprint,
+        matchState: row.match_state,
+        origin: row.origin,
+        status: row.status,
+        observedAt: row.observed_at,
+        releasedAt: row.released_at,
+      }));
+    return { provenance, observedDeployments };
+  },
   async getRelations(skillId): Promise<SkillRelation[]> {
     const relationsResult = await queryApplication({
       type: "get_deployment_relations",

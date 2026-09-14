@@ -25,6 +25,7 @@ import { detailSearchFromLibrary, readLibraryReturnState } from "./detailContext
 import { MetadataPanel } from "./MetadataPanel";
 import { LifecyclePanel } from "./LifecyclePanel";
 import { RelationsPanel } from "./RelationsPanel";
+import { ProvenancePanel } from "./ProvenancePanel";
 import { RequirementsPanel } from "./RequirementsPanel";
 import {
   ConnectionEvidence,
@@ -129,6 +130,10 @@ export function SkillDetailPage({
   const relationsQuery = useQuery({
     queryFn: () => facade.getRelations(skillId),
     queryKey: skillDetailKeys.relations(skillId),
+  });
+  const provenanceQuery = useQuery({
+    queryFn: () => facade.getProvenance(skillId),
+    queryKey: skillDetailKeys.provenance(skillId),
   });
   const requirementsQuery = useQuery({
     queryFn: () => facade.getRequirements(skillId),
@@ -318,6 +323,22 @@ export function SkillDetailPage({
                 <RelationsPanel
                   onUndeploy={!isPreviewRoute ? (relation) => void startUndeploy(relation) : undefined}
                   relations={relationsQuery.data}
+                />
+              ) : null}
+            </div>
+            <div className="sh-skill-detail__block" id="provenance">
+              <h3>{t("skillDetail.provenance.heading")}</h3>
+              {provenanceQuery.isError ? (
+                <div aria-label={t("skillDetail.provenance.loadErrorLabel")} role="alert">
+                  <p>{t("skillDetail.provenance.loadError")}</p>
+                  <Button onClick={() => void provenanceQuery.refetch()} size="sm" variant="secondary">
+                    {t("skillDetail.provenance.retry")}
+                  </Button>
+                </div>
+              ) : provenanceQuery.data ? (
+                <ProvenancePanel
+                  observedDeployments={provenanceQuery.data.observedDeployments}
+                  provenance={provenanceQuery.data.provenance}
                 />
               ) : null}
             </div>
