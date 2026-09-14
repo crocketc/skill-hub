@@ -1,8 +1,9 @@
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 
 use super::compatibility::{LlmCompatibilityProfile, LlmStructuredOutputStrategy};
 use super::model::LlmProfile;
-use super::provider::{LlmDeployment, LlmProtocolFamily, LlmProviderConfig};
+use super::provider::{CustomHeader, LlmDeployment, LlmProtocolFamily, LlmProviderConfig};
 
 /// Three-level connection report.
 ///
@@ -81,7 +82,9 @@ pub struct StructuredCheckResult {
 /// The configuration identity a connection-test result belongs to.
 ///
 /// 只有身份字段参与指纹：endpoint、protocol、deployment、model、
-/// compatibility_profile、structured_output_override 以及凭据是否在场。
+/// compatibility_profile、structured_output_override、凭据是否在场，以及
+/// 自定义请求头的 SHA-256 摘要（2026-09-14 遗留风险清理：头的取值可能
+/// 影响连通性与认证方式，但摘要形态保证原始值不进入持久化串）。
 /// `enabled`、显示名与超时等运行参数不参与——停用再启用或改名不否定
 /// "当时连接成功"这一事实；凭据被清除则结果自动失效（当前配置已无法
 /// 以测试时的方式完成认证）。指纹是 serde_json 按字段声明顺序的规范
@@ -95,6 +98,16 @@ pub struct LlmConnectionIdentity {
     pub compatibility_profile: LlmCompatibilityProfile,
     pub structured_output_override: Option<LlmStructuredOutputStrategy>,
     pub credential_present: bool,
+    pub custom_headers_digest: String,
+}
+
+/// 自定义头的摘要：对头的规范 JSON（名称/值/凭据引用/sensitive 标记，按
+/// 配置顺序）做 SHA-256。任一字段变化都会改变摘要，而持久化侧只见十六
+/// 进制摘要，不落地任何头的明文。
+fn custom_headers_digest(headers: &[CustomHeader]) -> String {
+    let canonical = serde_json::to_string(headers).unwrap_or_else(|_| "[]".to_owned());
+    let digest = Sha256::digest(canonical.as_bytes());
+    digest.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
 impl LlmConnectionIdentity {
@@ -109,6 +122,7 @@ impl LlmConnectionIdentity {
             compatibility_profile: config.compatibility_profile,
             structured_output_override: config.structured_output_override,
             credential_present,
+            custom_headers_digest: custom_headers_digest(&config.custom_headers),
         }
     }
 
@@ -122,6 +136,7 @@ impl LlmConnectionIdentity {
             compatibility_profile: profile.compatibility_profile,
             structured_output_override: profile.structured_output_override,
             credential_present,
+            custom_headers_digest: custom_headers_digest(&profile.custom_headers),
         }
     }
 
@@ -133,7 +148,7 @@ impl LlmConnectionIdentity {
 #[cfg(test)]
 mod connection_identity_tests {
     use super::LlmConnectionIdentity;
-    use crate::llm::provider::{LlmDeployment, LlmProtocolFamily, LlmProviderConfig};
+    use crate::llm::provider::{CustomHeader, LlmDeployment, LlmProtocolFamily, LlmProviderConfig};
 
     fn config() -> LlmProviderConfig {
         LlmProviderConfig::new(
@@ -203,5 +218,65 @@ mod connection_identity_tests {
             base,
             LlmConnectionIdentity::from_provider_config(&relabelled, true).fingerprint()
         );
+    }
+
+    // —— 遗留风险清理（2026-09-14）：custom_headers 纳入身份指纹。 ——
+
+    fn header(name: &str, value: Option<&str>) -> CustomHeader {
+        CustomHeader {
+            name: name.to_owned(),
+            value: value.map(str::to_owned),
+            credential_ref: None,
+            sensitive: value.is_some(),
+        }
+    }
+
+    #[test]
+    fn custom_header_changes_move_the_fingerprint_without_leaking_values() {
+        let base = LlmConnectionIdentity::from_provider_config(&config(), true).fingerprint();
+
+        let mut with_header = config();
+        with_header.custom_headers = vec![header("x-trace", Some("tenant-v1"))];
+        let with_header = {
+            let fingerprint =
+                LlmConnectionIdentity::from_provider_config(&with_header, true).fingerprint();
+            assert_ne!(base, fingerprint, "新增自定义头改变身份");
+            (with_header, fingerprint)
+        };
+
+        // 同名头的值变化同样失效（值可能影响连通性与认证方式）。
+        let mut changed_value = with_header.0.clone();
+        changed_value.custom_headers[0].value = Some("tenant-v2".to_owned());
+        assert_ne!(
+            with_header.1,
+            LlmConnectionIdentity::from_provider_config(&changed_value, true).fingerprint()
+        );
+
+        // 头名或 sensitive 标记变化也是身份变化。
+        let mut renamed = with_header.0.clone();
+        renamed.custom_headers[0].name = "x-trace-2".to_owned();
+        assert_ne!(
+            with_header.1,
+            LlmConnectionIdentity::from_provider_config(&renamed, true).fingerprint()
+        );
+        let mut flagged = with_header.0.clone();
+        flagged.custom_headers[0].sensitive = false;
+        assert_ne!(
+            with_header.1,
+            LlmConnectionIdentity::from_provider_config(&flagged, true).fingerprint()
+        );
+
+        // 摘要形态：原始头值不得进入持久化指纹串（避免敏感明文入库）。
+        assert!(!with_header.1.contains("tenant-v1"));
+    }
+
+    #[test]
+    fn profile_side_digest_matches_config_side_with_custom_headers() {
+        let mut config = config();
+        config.custom_headers = vec![header("x-a", Some("v1")), header("x-b", None)];
+        let from_config = LlmConnectionIdentity::from_provider_config(&config, true).fingerprint();
+        let profile = config.to_profile().expect("valid profile");
+        let from_profile = LlmConnectionIdentity::from_profile(&profile, true).fingerprint();
+        assert_eq!(from_config, from_profile, "带头的身份两侧仍须同指纹");
     }
 }

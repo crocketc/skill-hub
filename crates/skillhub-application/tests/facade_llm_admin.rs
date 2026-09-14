@@ -749,6 +749,49 @@ mod last_connection_test {
     }
 
     #[tokio::test]
+    async fn editing_custom_headers_invalidates_the_recorded_result() {
+        let store = Arc::new(SharedCredentialStore::default());
+        let facade = facade_with(store, Arc::new(FakeAdmin::default()), NetworkGate::open());
+        save_deepseek(&facade).await;
+        facade
+            .execute(AppCommand::TestLlmConnection(TestLlmConnection {
+                provider: FetchLlmProvider::Saved {
+                    id: "deepseek".to_owned(),
+                },
+                credential: None,
+            }))
+            .await
+            .expect("connection test");
+        let providers = list_providers(&facade).await;
+        assert!(
+            providers[0].last_connection_test.is_some(),
+            "precondition: the first test is recorded"
+        );
+
+        // 遗留风险清理（2026-09-14）：custom_headers 纳入身份指纹——头值
+        // 可能影响连通性与认证方式，增改头与改 endpoint 同等失效。
+        let mut changed = provider_config();
+        changed.custom_headers = vec![skillhub_core::llm::provider::CustomHeader {
+            name: "x-tenant".to_owned(),
+            value: Some("tenant-a".to_owned()),
+            credential_ref: None,
+            sensitive: false,
+        }];
+        facade
+            .execute(AppCommand::SaveLlmProvider(SaveLlmProvider {
+                provider: changed,
+                credential: None,
+            }))
+            .await
+            .expect("save changed headers");
+        let providers = list_providers(&facade).await;
+        assert!(
+            providers[0].last_connection_test.is_none(),
+            "a custom-header change invalidates the recorded result"
+        );
+    }
+
+    #[tokio::test]
     async fn deleting_the_provider_removes_the_recorded_result() {
         let store = Arc::new(SharedCredentialStore::default());
         let facade = facade_with(store, Arc::new(FakeAdmin::default()), NetworkGate::open());
