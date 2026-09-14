@@ -73,6 +73,9 @@
      隐藏列能被用户发现并横向到达。 */
   scrollbar-width: auto;
   scrollbar-color: var(--ui-accent) var(--ui-surface-subtle);
+  /* Windows 非覆盖式纵向滚动条会占用结果区右侧客户区；预留稳定槽位，
+     横向滚到最右时末列内容不再被纵向滚动条压住。 */
+  scrollbar-gutter: stable;
 }
 
 /* base.css 的表格 min-width:max(84rem,100%) 与 14 列固定像素宽在 1280px 窗口
@@ -104,7 +107,7 @@
 .sh-skill-library .sh-skill-table [data-column="ownership"] { width: 7rem; min-width: 0; }
 .sh-skill-library .sh-skill-table [data-column="license"] { width: 6rem; min-width: 0; }
 .sh-skill-library .sh-skill-table [data-column="invocation"] { width: 8rem; min-width: 0; }
-.sh-skill-library .sh-skill-table [data-column="requirements"] { width: 8rem; min-width: 0; }
+.sh-skill-library .sh-skill-table [data-column="requirements"] { width: 16rem; min-width: 16rem; }
 
 /* 单元格回到单行省略号（与 base.css 一致），完整文本经 title 提示可达；
    安全检查单元格例外：徽标换行堆叠，不靠固定宽度撑开整表。 */

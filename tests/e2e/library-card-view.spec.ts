@@ -233,6 +233,56 @@ test("all enabled columns stay reachable through a real scrollbar at 1280", asyn
   expect(lastHeaderFullyVisible).toBe(true);
 });
 
+test("real mouse dragging reorders columns without toggling visibility", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto(LIBRARY_ROUTE);
+  await page.getByRole("button", { name: "Table view" }).click();
+  await page.getByRole("button", { name: "Columns and density" }).click();
+
+  const reorderList = page.getByRole("list", { name: "Reorder columns" });
+  const source = reorderList.getByRole("button", { name: "Tags" });
+  const target = reorderList.getByRole("button", { name: "Purpose" });
+  await source.scrollIntoViewIfNeeded();
+  await target.scrollIntoViewIfNeeded();
+  const sourceBox = await source.boundingBox();
+  const targetBox = await target.boundingBox();
+  expect(sourceBox).not.toBeNull();
+  expect(targetBox).not.toBeNull();
+  await page.mouse.move(sourceBox!.x + sourceBox!.width / 2, sourceBox!.y + sourceBox!.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(targetBox!.x + targetBox!.width / 2, targetBox!.y + targetBox!.height / 2, { steps: 8 });
+  await page.mouse.up();
+
+  const order = await page.locator(".sh-skill-table__reorder-item").evaluateAll((items) =>
+    items.map((item) => item.textContent?.trim()),
+  );
+  expect(order.indexOf("Tags")).toBeLessThan(order.indexOf("Purpose"));
+  await expect(source).toHaveAttribute("aria-pressed", "true");
+});
+
+test("real mouse dragging reorders quick drawer modules on the configuration surface", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto(LIBRARY_ROUTE);
+  await page.getByRole("heading", { name: "PDF Reader" }).click();
+  await page.getByRole("button", { name: "Configure quick drawer" }).click();
+
+  const source = page.getByRole("button", { name: "Versions" });
+  const target = page.getByRole("button", { name: "Relations" });
+  const sourceBox = await source.boundingBox();
+  const targetBox = await target.boundingBox();
+  expect(sourceBox).not.toBeNull();
+  expect(targetBox).not.toBeNull();
+  await page.mouse.move(sourceBox!.x + sourceBox!.width / 2, sourceBox!.y + sourceBox!.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(targetBox!.x + targetBox!.width / 2, targetBox!.y + targetBox!.height / 2, { steps: 8 });
+  await page.mouse.up();
+
+  const order = await page.locator(".sh-skill-drawer__module-toggle").evaluateAll((items) =>
+    items.map((item) => item.textContent?.trim()),
+  );
+  expect(order.indexOf("Versions")).toBeLessThan(order.indexOf("Relations"));
+});
+
 test("card surfaces follow the theme tokens in the default and dark themes", async ({ page }) => {
   const backgrounds: Record<string, string> = {};
   for (const theme of THEMES) {

@@ -206,9 +206,9 @@ it("does not allow the select or name columns to be hidden", async () => {
   expect(screen.getByRole("button", { name: "Name / Alias" })).toHaveAttribute("aria-pressed", "true");
   const versionColumn = screen.getByRole("button", { name: "Version" });
   const deploymentsColumn = screen.getByRole("button", { name: "Agent deployments" });
-  fireEvent.dragStart(versionColumn);
-  fireEvent.dragOver(deploymentsColumn);
-  fireEvent.drop(deploymentsColumn);
+  fireEvent.pointerDown(versionColumn, { clientX: 10, clientY: 10, pointerId: 1 });
+  fireEvent.pointerMove(deploymentsColumn, { clientX: 80, clientY: 10, pointerId: 1 });
+  fireEvent.pointerUp(versionColumn, { clientX: 80, clientY: 10, pointerId: 1 });
   const next = onPreferencesChange.mock.calls.at(-1)?.[0];
   expect(next.columnOrder.indexOf("version")).toBeLessThan(next.columnOrder.indexOf("agent_deployments"));
 });
@@ -220,9 +220,9 @@ it("moves an adjacent column when dragging from left to right", async () => {
   fireEvent.click(screen.getByRole("button", { name: "Columns and density" }));
   const deploymentsColumn = screen.getByRole("button", { name: "Agent deployments" });
   const versionColumn = screen.getByRole("button", { name: "Version" });
-  fireEvent.dragStart(deploymentsColumn);
-  fireEvent.dragOver(versionColumn);
-  fireEvent.drop(versionColumn);
+  fireEvent.pointerDown(deploymentsColumn, { clientX: 10, clientY: 10, pointerId: 1 });
+  fireEvent.pointerMove(versionColumn, { clientX: 80, clientY: 10, pointerId: 1 });
+  fireEvent.pointerUp(deploymentsColumn, { clientX: 80, clientY: 10, pointerId: 1 });
 
   const next = onPreferencesChange.mock.calls.at(-1)?.[0];
   expect(next.columnOrder.indexOf("agent_deployments")).toBeGreaterThan(next.columnOrder.indexOf("version"));
@@ -353,21 +353,39 @@ it("emits controlled visibility and density preference updates", async () => {
   expect(onPreferencesChange).toHaveBeenLastCalledWith(expect.objectContaining({ density: "standard" }));
 });
 
-it("uses the visibility buttons as draggable order controls", async () => {
+it("uses the visibility buttons as pointer-drag order controls", async () => {
   const onPreferencesChange = vi.fn();
   await renderTable({ onPreferencesChange });
 
   fireEvent.click(screen.getByRole("button", { name: "Columns and density" }));
   const version = screen.getByRole("button", { name: "Version" });
   const deployments = screen.getByRole("button", { name: "Agent deployments" });
-  expect(version).toHaveAttribute("draggable", "true");
-  expect(deployments).toHaveAttribute("draggable", "true");
-  fireEvent.dragStart(version);
-  fireEvent.dragOver(deployments);
-  fireEvent.drop(deployments);
+  expect(version).toHaveAttribute("data-reorder-column", "version");
+  expect(deployments).toHaveAttribute("data-reorder-column", "agent_deployments");
+  fireEvent.pointerDown(version, { clientX: 10, clientY: 10, pointerId: 1 });
+  fireEvent.pointerMove(deployments, { clientX: 80, clientY: 10, pointerId: 1 });
+  fireEvent.pointerUp(version, { clientX: 80, clientY: 10, pointerId: 1 });
 
   const next = onPreferencesChange.mock.calls.at(-1)?.[0];
   expect(next.columnOrder.indexOf("version")).toBeLessThan(next.columnOrder.indexOf("agent_deployments"));
+});
+
+it("reorders columns with a pointer gesture without toggling visibility", async () => {
+  const onPreferencesChange = vi.fn();
+  await renderTable({ onPreferencesChange });
+
+  fireEvent.click(screen.getByRole("button", { name: "Columns and density" }));
+  const version = screen.getByRole("button", { name: "Version" });
+  const deployments = screen.getByRole("button", { name: "Agent deployments" });
+  fireEvent.pointerDown(deployments, { clientX: 10, clientY: 10, pointerId: 1 });
+  fireEvent.pointerMove(deployments, { clientX: 30, clientY: 10, pointerId: 1 });
+  fireEvent.pointerMove(version, { clientX: 80, clientY: 10, pointerId: 1 });
+  fireEvent.pointerUp(deployments, { clientX: 80, clientY: 10, pointerId: 1 });
+
+  const next = onPreferencesChange.mock.calls.at(-1)?.[0];
+  expect(next.columnOrder.indexOf("agent_deployments")).toBeGreaterThan(next.columnOrder.indexOf("version"));
+  expect(next.visibleColumns).toEqual(expect.arrayContaining(["purpose", "agent_deployments"]));
+  expect(next.visibleColumns).not.toContain("version");
 });
 
 it("keeps row checkbox keyboard activation isolated from row opening", async () => {
@@ -478,7 +496,7 @@ it("gives every enabled column a readable width floor before horizontal scroll t
   }
   // 末列地板必须足以放下表头文本，1280px 全列时由溢出滚动兜底而非裁剪。
   expect(skillsCss).toMatch(
-    /\[data-column="requirements"\]\s*\{\s*width:\s*(?:[6-9]|[1-9][0-9])(?:\.\d+)?rem;/,
+    /\[data-column="requirements"\]\s*\{\s*width:\s*(?:1[2-9]|[2-9][0-9])(?:\.\d+)?rem;/,
   );
   // 表格总下限保持 56rem：极小列集时维持可用宽度。
   expect(skillsCss).toMatch(
@@ -491,6 +509,7 @@ it("keeps the results-region scrollbar discoverable instead of hairline-thin", (
   if (!regionRule) throw new Error("Expected the library-scoped results region rule in skills.css");
   expect(regionRule[0]).toMatch(/scrollbar-width:\s*auto/);
   expect(regionRule[0]).toMatch(/scrollbar-color:\s*var\(--ui-accent\)/);
+  expect(regionRule[0]).toMatch(/scrollbar-gutter:\s*stable/);
 });
 
 it("keeps the configuration panel and results shell constrained to the page width", async () => {

@@ -1,4 +1,4 @@
-import { useCallback, useLayoutEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
+import { useCallback, useLayoutEffect, useMemo, useRef, useState, type ChangeEvent, type KeyboardEvent, type MouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import { flexRender, getCoreRowModel, useReactTable, type ColumnDef } from "@tanstack/react-table";
 import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
@@ -238,9 +238,16 @@ export function SkillTable(props: SkillTableProps) {
   const regionRef = useRef<HTMLDivElement>(null);
   const restoredKeyRef = useRef<string>();
   const [controlsOpen, setControlsOpen] = useState(false);
-  const [draggedColumn, setDraggedColumn] = useState<SkillColumnId>();
   const [dragOverColumn, setDragOverColumn] = useState<SkillColumnId>();
+  const dragOverColumnRef = useRef<SkillColumnId>();
   const suppressToggleClickRef = useRef(false);
+  const pointerDragRef = useRef<{
+    column: SkillColumnId;
+    pointerId: number;
+    startX: number;
+    startY: number;
+    active: boolean;
+  }>();
   const sortable = new Set(props.sortableColumns ?? COLUMN_IDS);
   const columnOrder = useMemo(() => orderedColumnIds(props.preferences), [props.preferences]);
   const visibleColumns = useMemo(
@@ -336,16 +343,62 @@ export function SkillTable(props: SkillTableProps) {
     const index = columnOrder.indexOf(column);
     moveColumnToIndex(column, index + offset);
   };
-  const handleColumnDragOver = (event: DragEvent<HTMLElement>, column: SkillColumnId) => {
-    if (!draggedColumn || draggedColumn === column || LOCKED_COLUMNS.includes(column)) return;
-    event.preventDefault();
-    setDragOverColumn(column);
+  const columnAtPoint = (clientX: number, clientY: number, fallback?: Element): SkillColumnId | undefined => {
+    const element = document.elementFromPoint?.(clientX, clientY) ?? fallback;
+    const item = element?.closest<HTMLElement>("[data-reorder-column]");
+    const column = item?.dataset.reorderColumn as SkillColumnId | undefined;
+    return column && COLUMN_IDS.includes(column) ? column : undefined;
   };
-  const handleColumnDrop = (event: DragEvent<HTMLElement>, column: SkillColumnId) => {
-    event.preventDefault();
-    if (draggedColumn && draggedColumn !== column) moveColumnBefore(draggedColumn, column);
-    setDraggedColumn(undefined);
+  const releaseColumnPointer = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    if (event.currentTarget.hasPointerCapture?.(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    pointerDragRef.current = undefined;
+    dragOverColumnRef.current = undefined;
     setDragOverColumn(undefined);
+  };
+  const handleColumnPointerDown = (event: ReactPointerEvent<HTMLButtonElement>, column: SkillColumnId) => {
+    if (LOCKED_COLUMNS.includes(column) || (event.button !== undefined && event.button !== 0)) return;
+    pointerDragRef.current = {
+      active: false,
+      column,
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+    };
+  };
+  const handleColumnPointerMove = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    const session = pointerDragRef.current;
+    if (!session || session.pointerId !== event.pointerId) return;
+    if (!session.active && Math.hypot(event.clientX - session.startX, event.clientY - session.startY) < 4) return;
+    if (!session.active) {
+      session.active = true;
+      suppressToggleClickRef.current = true;
+      event.currentTarget.setPointerCapture?.(event.pointerId);
+    }
+    const column = columnAtPoint(event.clientX, event.clientY, event.currentTarget);
+    if (column && session.column !== column && !LOCKED_COLUMNS.includes(column)) {
+      event.preventDefault();
+      dragOverColumnRef.current = column;
+      setDragOverColumn(column);
+    } else {
+      dragOverColumnRef.current = undefined;
+      setDragOverColumn(undefined);
+    }
+  };
+  const handleColumnPointerUp = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    const session = pointerDragRef.current;
+    if (!session || session.pointerId !== event.pointerId) return;
+    const column = dragOverColumnRef.current
+      ?? columnAtPoint(event.clientX, event.clientY, event.currentTarget);
+    if (session.active && column && session.column !== column && !LOCKED_COLUMNS.includes(column)) {
+      moveColumnBefore(session.column, column);
+      suppressToggleClickRef.current = true;
+      window.setTimeout(() => {
+        suppressToggleClickRef.current = false;
+      }, 0);
+    }
+    releaseColumnPointer(event);
   };
 
   return (
@@ -369,9 +422,10 @@ export function SkillTable(props: SkillTableProps) {
                         aria-label={t(COLUMN_LABELS[column])}
                         aria-pressed={visible}
                         aria-roledescription={locked ? undefined : t("skillLibrary.table.dragColumn")}
+                        data-reorder-column={column}
                         className={`sh-skill-table__reorder-item${visible ? " sh-skill-table__reorder-item--visible" : ""}${dragOverColumn === column ? " sh-skill-table__reorder-item--target" : ""}${locked ? " sh-skill-table__reorder-item--locked" : ""}`}
                         disabled={locked}
-                        draggable={!locked}
+                        draggable={false}
                         onClick={() => {
                           if (suppressToggleClickRef.current) {
                             suppressToggleClickRef.current = false;
@@ -379,20 +433,14 @@ export function SkillTable(props: SkillTableProps) {
                           }
                           toggleColumn(column, !visible);
                         }}
-                        onDragEnd={() => {
-                          setDraggedColumn(undefined);
+                        onPointerCancel={() => {
+                          pointerDragRef.current = undefined;
+                          dragOverColumnRef.current = undefined;
                           setDragOverColumn(undefined);
-                          window.setTimeout(() => {
-                            suppressToggleClickRef.current = false;
-                          }, 0);
                         }}
-                        onDragOver={(event) => handleColumnDragOver(event, column)}
-                        onDragStart={(event) => {
-                          suppressToggleClickRef.current = true;
-                          setDraggedColumn(column);
-                          if (event.dataTransfer) event.dataTransfer.effectAllowed = "move";
-                        }}
-                        onDrop={(event) => handleColumnDrop(event, column)}
+                        onPointerDown={(event) => handleColumnPointerDown(event, column)}
+                        onPointerMove={handleColumnPointerMove}
+                        onPointerUp={handleColumnPointerUp}
                         onKeyDown={(event) => {
                           if (locked || (event.key !== "ArrowLeft" && event.key !== "ArrowRight")) return;
                           event.preventDefault();

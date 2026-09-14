@@ -332,20 +332,39 @@ it("keeps required modules visible while toggling and reordering modules", async
   expect(relations).toHaveAttribute("aria-pressed", "false");
 
   const versions = screen.getByRole("button", { name: "Versions" });
-  fireEvent.dragStart(versions);
-  fireEvent.dragOver(relations);
-  fireEvent.drop(relations);
+  fireEvent.pointerDown(versions, { clientX: 10, clientY: 10, pointerId: 1 });
+  fireEvent.pointerMove(relations, { clientX: 80, clientY: 10, pointerId: 1 });
+  fireEvent.pointerUp(versions, { clientX: 80, clientY: 10, pointerId: 1 });
   await waitFor(() => {
     const order = facade.calls.saveDrawerPreferences.at(-1)!.moduleOrder;
     expect(order.indexOf("versions")).toBeLessThan(order.indexOf("relations"));
   });
 
-  fireEvent.dragStart(relations);
-  fireEvent.dragOver(versions);
-  fireEvent.drop(versions);
+  fireEvent.pointerDown(relations, { clientX: 10, clientY: 10, pointerId: 2 });
+  fireEvent.pointerMove(versions, { clientX: 80, clientY: 10, pointerId: 2 });
+  fireEvent.pointerUp(relations, { clientX: 80, clientY: 10, pointerId: 2 });
   await waitFor(() => {
     const order = facade.calls.saveDrawerPreferences.at(-1)!.moduleOrder;
     expect(order.indexOf("relations")).toBeGreaterThan(order.indexOf("versions"));
+  });
+});
+
+it("reorders drawer modules with a pointer gesture without toggling visibility", async () => {
+  const facade = createMockSkillLibraryFacade();
+  await renderDrawer({ facade });
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Configure quick drawer" }),
+  );
+  const versions = screen.getByRole("button", { name: "Versions" });
+  const relations = screen.getByRole("button", { name: "Relations" });
+  fireEvent.pointerDown(versions, { clientX: 10, clientY: 10, pointerId: 1 });
+  fireEvent.pointerMove(versions, { clientX: 30, clientY: 10, pointerId: 1 });
+  fireEvent.pointerMove(relations, { clientX: 80, clientY: 10, pointerId: 1 });
+  fireEvent.pointerUp(versions, { clientX: 80, clientY: 10, pointerId: 1 });
+
+  await waitFor(() => {
+    const order = facade.calls.saveDrawerPreferences.at(-1)!.moduleOrder;
+    expect(order.indexOf("versions")).toBeLessThan(order.indexOf("relations"));
   });
 });
 

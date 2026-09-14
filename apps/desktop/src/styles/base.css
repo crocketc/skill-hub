@@ -2739,6 +2739,7 @@ a {
   cursor: grab;
   font: inherit;
   user-select: none;
+  touch-action: none;
   white-space: nowrap;
   font-size: var(--font-size-xs);
 }
@@ -3608,6 +3609,8 @@ a {
   font: inherit;
   text-align: left;
   cursor: grab;
+  touch-action: none;
+  user-select: none;
   transition: background-color 140ms ease, border-color 140ms ease, color 140ms ease;
 }
 

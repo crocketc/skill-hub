@@ -1,4 +1,4 @@
-import { useEffect, useReducer, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useReducer, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { describeNativeError } from "../../api/nativeErrors";
 import { useAppNotifications } from "../../ui/notifications";
@@ -57,6 +57,13 @@ interface SourceScanResult {
   status: SourceScanStatus;
 }
 
+interface SourcePreview {
+  source: string;
+  descriptor?: SourceDescriptor;
+  candidates: CandidateSelectionProps["candidates"];
+  status: SourceScanStatus;
+}
+
 interface WizardState {
   phase: WizardPhase;
   previousPhase?: WizardPhase;
@@ -94,6 +101,8 @@ type WizardEvent =
   | { type: "commit_started"; total: number }
   | { type: "commit_progress"; progress: ImportProgress }
   | { type: "commit_succeeded"; results: ImportResult[] }
+  | { type: "source_preview_started"; source: string }
+  | { type: "source_preview_finished"; source: string; status: SourceScanStatus }
   | { type: "source_rescan_started"; source: string }
   | { type: "source_rescan_finished"; source: string; status: SourceScanStatus; candidates: WizardState["candidates"] }
   | { type: "failed"; error: string; previousPhase: WizardPhase }
@@ -177,6 +186,16 @@ function reducer(state: WizardState, event: WizardEvent): WizardState {
         error: undefined,
         sourceResults: upsertSourceResult(state.sourceResults, event.source, { kind: "unscanned" }),
         sourceText: event.inputValue,
+      };
+    case "source_preview_started":
+      return {
+        ...state,
+        sourceResults: upsertSourceResult(state.sourceResults, event.source, { kind: "scanning" }),
+      };
+    case "source_preview_finished":
+      return {
+        ...state,
+        sourceResults: upsertSourceResult(state.sourceResults, event.source, event.status),
       };
     case "source_removed": {
       // AR-006/M-29：局部调整来源——仅丢弃被移除来源的候选与结果，其余保留；
@@ -322,7 +341,15 @@ export function ImportWizard({
   });
   // M-29：重复添加同一目录时聚焦已有条目（展示层状态）。
   const [focusedSource, setFocusedSource] = useState<string>();
+  const previewRequestsRef = useRef(new Map<string, number>());
+  const previewCandidatesRef = useRef(new Map<string, CandidateSelectionProps["candidates"]>());
+  const previewStatusesRef = useRef(new Map<string, SourceScanStatus>());
+  const previewDescriptorsRef = useRef(new Map<string, SourceDescriptor>());
+  const previewPendingRef = useRef(new Set<string>());
+  const selectedSourcesRef = useRef(selectedSources);
+  selectedSourcesRef.current = selectedSources;
   const [pickerError, setPickerError] = useState<string | null>(null);
+  const onboardingPreviewKeyRef = useRef<string>();
   // AR-014 导入互斥：已有后台导入进行中时禁止第二次提交。
   const importLocked = useHasRunningOperation(tracker, "import");
   const [commitBlockedNotice, setCommitBlockedNotice] = useState(false);
@@ -346,10 +373,10 @@ export function ImportWizard({
   }, [importLocked]);
 
   const statusBySource: Record<string, SourceScanStatus> = {};
-  const selectedSet = new Set(selectedSources);
   for (const result of state.sourceResults) {
-    // 只向来源列表暴露仍处于已选状态的目录状态；门槛页使用完整扫描结果。
-    if (selectedSet.has(result.source)) statusBySource[result.source] = result.status;
+    // M-29：来源确认列表同时承载手动解析来源与已选目录的最近结果，
+    // 因而失败原因不能只在候选阶段短暂出现后消失。
+    statusBySource[result.source] = result.status;
   }
 
   const runAcquisition = async () => {
@@ -368,7 +395,8 @@ export function ImportWizard({
         try {
           const descriptor = await facade.parseSource(input);
           if (operation !== operationRef.current) return;
-          const acquired = await facade.acquireCandidates(descriptor, controller.signal);
+          const acquired = previewCandidatesRef.current.get(input)
+            ?? await facade.acquireCandidates(descriptor, controller.signal);
           if (operation !== operationRef.current) return;
           firstDescriptor = firstDescriptor ?? descriptor;
           candidates.push(...acquired);
@@ -405,6 +433,69 @@ type: "failed",
     }
   };
 
+  const finalizeOnboardingPreviews = useCallback(() => {
+    if (variant !== "onboarding") return;
+    const selected = selectedSourcesRef.current;
+    if (selected.length === 0 || selected.some((source) => previewPendingRef.current.has(source))) return;
+    if (selected.some((source) => !previewStatusesRef.current.has(source))) return;
+    const sourceResults = selected.map((source) => ({
+      source,
+      status: previewStatusesRef.current.get(source)!,
+    }));
+    const candidatesBySource = selected
+      .filter((source) => previewStatusesRef.current.get(source)?.kind === "scanned")
+      .map((source) => ({ source, candidates: previewCandidatesRef.current.get(source) ?? [] }));
+    const candidates = candidatesBySource.flatMap(({ candidates: sourceCandidates }) => sourceCandidates);
+    const descriptor = selected
+      .map((source) => previewDescriptorsRef.current.get(source))
+      .find((item): item is SourceDescriptor => item !== undefined);
+    if (descriptor) dispatch({ descriptor, type: "parse_succeeded" });
+    dispatch({ candidates, candidatesBySource, sourceResults, type: "acquire_succeeded" });
+  }, [variant]);
+
+  const previewSource = useCallback(async (source: string): Promise<SourcePreview | undefined> => {
+    const request = (previewRequestsRef.current.get(source) ?? 0) + 1;
+    previewRequestsRef.current.set(source, request);
+    previewPendingRef.current.add(source);
+    previewStatusesRef.current.delete(source);
+    dispatch({ type: "source_preview_started", source });
+    try {
+      const descriptor = await facade.parseSource(source);
+      const candidates = await facade.acquireCandidates(descriptor, new AbortController().signal);
+      if (previewRequestsRef.current.get(source) !== request) return;
+      previewCandidatesRef.current.set(source, candidates);
+      previewDescriptorsRef.current.set(source, descriptor);
+      const status = { kind: "scanned", count: candidates.length } as const;
+      previewStatusesRef.current.set(source, status);
+      previewPendingRef.current.delete(source);
+      dispatch({ type: "source_preview_finished", source, status });
+      finalizeOnboardingPreviews();
+      return { candidates, descriptor, source, status };
+    } catch (error) {
+      if (previewRequestsRef.current.get(source) !== request) return;
+      const reason = describeNativeError(error, (key, options) => String(t(key as never, options as never)), "importWorkflow.errors.generic");
+      const status = { kind: "failed", reason } as const;
+      previewStatusesRef.current.set(source, status);
+      previewPendingRef.current.delete(source);
+      dispatch({
+        source,
+        status,
+        type: "source_preview_finished",
+      });
+      finalizeOnboardingPreviews();
+      return { candidates: [], source, status };
+    }
+  }, [facade, finalizeOnboardingPreviews, t]);
+
+  useEffect(() => {
+    if (variant !== "onboarding" || normalizedInitialSources.length === 0) return;
+    const key = normalizedInitialSources.join("\u0000");
+    if (onboardingPreviewKeyRef.current === key) return;
+    onboardingPreviewKeyRef.current = key;
+    const onboardingSources = key.split("\u0000");
+    for (const source of onboardingSources) void previewSource(source);
+  }, [normalizedInitialSources.join("\u0000"), previewSource, variant]);
+
   const pickLocalDirectory = async () => {
     setPickerError(null);
     try {
@@ -418,11 +509,13 @@ type: "failed",
         setFocusedSource(existing);
         return;
       }
-      // M-29：本机选取的目录直接进入已选来源列表（未扫描），同时保留
-      // 在输入框中，用户可以继续追加或直接读取候选。
-      setSelectedSources((current) => [...new Set([...current, normalized])]);
+      // M-29：本机选取的目录直接进入统一来源确认列表，并静默预览候选数量。
+      const nextSources = [...new Set([...selectedSourcesRef.current, normalized])];
+      selectedSourcesRef.current = nextSources;
+      setSelectedSources(nextSources);
       setFocusedSource(normalized);
       dispatch({ type: "source_added", inputValue: normalized, source: normalized });
+      void previewSource(normalized);
     } catch (error) {
       setPickerError(error instanceof Error ? error.message : t("importWorkflow.source.pickerFailed"));
     }
@@ -438,6 +531,12 @@ type: "failed",
 
   // AR-006：局部移除来源——同步勾选列表，避免后续重读时又带上。
   const removeSource = (source: string) => {
+    previewRequestsRef.current.delete(source);
+    previewCandidatesRef.current.delete(source);
+    previewStatusesRef.current.delete(source);
+    previewDescriptorsRef.current.delete(source);
+    previewPendingRef.current.delete(source);
+    selectedSourcesRef.current = selectedSourcesRef.current.filter((item) => item !== source);
     setSelectedSources((current) => current.filter((item) => item !== source));
     dispatch({ type: "source_removed", source });
   };
@@ -448,6 +547,12 @@ type: "failed",
   };
 
   const clearSources = () => {
+    previewRequestsRef.current.clear();
+    previewCandidatesRef.current.clear();
+    previewStatusesRef.current.clear();
+    previewDescriptorsRef.current.clear();
+    previewPendingRef.current.clear();
+    selectedSourcesRef.current = [];
     setSelectedSources([]);
     dispatch({ type: "sources_cleared" });
   };
@@ -464,10 +569,12 @@ type: "failed",
       setFocusedSource(existing);
       return;
     }
-    await facade.parseSource(normalized);
-    setSelectedSources((current) => [...new Set([...current, normalized])]);
+    const nextSources = [...new Set([...selectedSourcesRef.current, normalized])];
+    selectedSourcesRef.current = nextSources;
+    setSelectedSources(nextSources);
     setFocusedSource(normalized);
     dispatch({ type: "source_added", inputValue: "", source: normalized });
+    void previewSource(normalized);
   };
 
   // M-29：单个失败目录的重试——只重扫该目录，不惊动其他目录的候选。
@@ -613,14 +720,21 @@ type: "failed",
   );
   const canParse = state.phase === "source"
     && (state.sourceText.trim().length > 0 || selectedSources.length > 0);
+  const onboardingPreviewRunning = variant === "onboarding"
+    && normalizedInitialSources.some((source) => {
+      const kind = statusBySource[source]?.kind;
+      return kind === undefined || kind === "unscanned" || kind === "scanning";
+    });
 
   let actions: { secondary: ReactNode[]; primary: ReactNode[] };
   switch (state.phase) {
     case "source":
       actions = {
         primary: [
-          <Button disabled={!canParse} key="parse" onClick={() => void runAcquisition()} size="lg">
-            {selectedSources.length > 0
+          <Button disabled={!canParse || onboardingPreviewRunning} key="parse" onClick={() => void runAcquisition()} size="lg">
+            {onboardingPreviewRunning
+              ? t("importWorkflow.source.previewing")
+              : selectedSources.length > 0
               ? t("importWorkflow.source.acquireSelectedSources")
               : t("importWorkflow.source.parse")}
           </Button>,
@@ -784,71 +898,42 @@ type: "failed",
           onPickLocalPath={() => void pickLocalDirectory()}
           onRemoveSource={removeSource}
           onRemoveSources={removeSources}
-          onSelectAllSources={() => setSelectedSources((current) => {
-            const allSelected = normalizedInitialSources.every((source) => current.includes(source));
+          onRetrySource={(source) => void (state.phase === "candidate_gate" ? rescanSource(source) : previewSource(source))}
+          onSelectAllSources={() => {
+            const allSelected = normalizedInitialSources.every((source) => selectedSources.includes(source));
             if (allSelected) {
-              return current.filter((source) => !normalizedInitialSources.includes(source));
+              for (const source of normalizedInitialSources) {
+                if (selectedSources.includes(source)) removeSource(source);
+              }
+              return;
             }
-            return [...new Set([...current, ...normalizedInitialSources])];
-          })}
-          onToggleSource={(source) => setSelectedSources((current) => current.includes(source) ? current.filter((item) => item !== source) : [...current, source])}
+            for (const source of normalizedInitialSources) {
+              if (!selectedSources.includes(source)) {
+                setSelectedSources((current) => [...new Set([...current, source])]);
+                dispatch({ type: "source_added", inputValue: state.sourceText, source });
+                void previewSource(source);
+              }
+            }
+          }}
+          onToggleSource={(source) => {
+            const selected = selectedSources.includes(source);
+            if (selected) {
+              removeSource(source);
+              return;
+            }
+            setSelectedSources((current) => [...new Set([...current, source])]);
+            dispatch({ type: "source_added", inputValue: state.sourceText, source });
+            void previewSource(source);
+          }}
           selectedSources={selectedSources}
           sourceStatuses={statusBySource}
-          suggestedSources={normalizedInitialSources}
+          suggestedSources={[...normalizedInitialSources, ...Object.keys(statusBySource)]}
           value={state.sourceText}
         />
       ) : null}
 
       {state.phase === "acquiring" ? (
         <DataState message={t("importWorkflow.source.acquiring")} state="loading" />
-      ) : null}
-
-      {state.phase === "candidate_gate" ? (
-        <div className="sh-import-wizard__gate" role="status">
-          {state.sourceResults.length > 0 ? (
-            <>
-              <p>{t("importWorkflow.acquisition.multiSource", { count: state.sourceResults.filter((result) => result.status.kind === "scanned").length })}</p>
-              <ul>
-                {state.sourceResults.map(({ source, status: scanStatus }) => (
-                  <li key={source}>
-                    {scanStatus.kind === "failed" ? (
-                      <>
-                        {t("importWorkflow.acquisition.perSourceFailed", { reason: scanStatus.reason, source })}
-                        <Button
-                          aria-label={t("importWorkflow.sources.retrySource", { source })}
-                          disabled={state.phase !== "candidate_gate"}
-                          loading={state.retryingSource === source}
-                          onClick={() => void rescanSource(source)}
-                          size="sm"
-                          variant="secondary"
-                        >
-                          {t("importWorkflow.sources.retry")}
-                        </Button>
-                      </>
-                    ) : scanStatus.kind === "scanned" ? (
-                      <>
-                        {t("importWorkflow.acquisition.perSource", { count: scanStatus.count, source })}
-                      </>
-                    ) : null}
-                    <Button
-                      aria-label={t("importWorkflow.acquisition.removeSource", { source })}
-                      disabled={state.phase !== "candidate_gate"}
-                      onClick={() => removeSource(source)}
-                      size="sm"
-                      variant="ghost"
-                    >
-                      {t("importWorkflow.acquisition.remove")}
-                    </Button>
-                  </li>
-                ))}
-              </ul>
-              <Button onClick={clearSources} size="sm" variant="secondary">
-                {t("importWorkflow.acquisition.removeAllSources")}
-              </Button>
-            </>
-          ) : null}
-          <p>{t("importWorkflow.acquisition.complete", { count: state.candidates.length })}</p>
-        </div>
       ) : null}
 
       {state.phase === "candidates" ? (

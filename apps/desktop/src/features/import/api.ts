@@ -96,6 +96,7 @@ export interface ImportProgress {
 /** M-29：来源分层——每个已选目录的扫描状态；未扫描也必须可见。 */
 export type SourceScanStatus =
   | { kind: "unscanned" }
+  | { kind: "scanning" }
   | { kind: "scanned"; count: number }
   | { kind: "failed"; reason: string };
 

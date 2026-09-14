@@ -565,13 +565,81 @@ function DrawerConfiguration({
 }: DrawerConfigurationProps) {
   const { t } = useTranslation();
   const visible = new Set(preferences.visibleModules);
-  const [draggedModule, setDraggedModule] = useState<DrawerModuleId | null>(null);
   const [dragOverModule, setDragOverModule] = useState<DrawerModuleId | null>(null);
+  const dragOverModuleRef = useRef<DrawerModuleId>();
   const suppressToggleClick = useRef(false);
+  const pointerDragRef = useRef<{
+    moduleId: DrawerModuleId;
+    pointerId: number;
+    startX: number;
+    startY: number;
+    active: boolean;
+  }>();
 
   const clearDragState = () => {
-    setDraggedModule(null);
     setDragOverModule(null);
+  };
+  const moduleAtPoint = (clientX: number, clientY: number, fallback?: Element): DrawerModuleId | undefined => {
+    const element = document.elementFromPoint?.(clientX, clientY) ?? fallback;
+    const item = element?.closest<HTMLElement>("[data-reorder-module]");
+    return item?.dataset.reorderModule as DrawerModuleId | undefined;
+  };
+  const releaseModulePointer = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    if (event.currentTarget.hasPointerCapture?.(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    pointerDragRef.current = undefined;
+    dragOverModuleRef.current = undefined;
+    clearDragState();
+  };
+  const handlePointerDown = (event: ReactPointerEvent<HTMLButtonElement>, moduleId: DrawerModuleId) => {
+    if (isRequiredDrawerModule(moduleId) || (event.button !== undefined && event.button !== 0)) return;
+    pointerDragRef.current = {
+      active: false,
+      moduleId,
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+    };
+  };
+  const handlePointerMove = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    const session = pointerDragRef.current;
+    if (!session || session.pointerId !== event.pointerId) return;
+    if (!session.active && Math.hypot(event.clientX - session.startX, event.clientY - session.startY) < 4) return;
+    if (!session.active) {
+      session.active = true;
+      suppressToggleClick.current = true;
+      event.currentTarget.setPointerCapture?.(event.pointerId);
+    }
+    const moduleId = moduleAtPoint(event.clientX, event.clientY, event.currentTarget);
+    if (moduleId && session.moduleId !== moduleId && !isRequiredDrawerModule(moduleId)) {
+      event.preventDefault();
+      dragOverModuleRef.current = moduleId;
+      setDragOverModule(moduleId);
+    } else {
+      dragOverModuleRef.current = undefined;
+      setDragOverModule(null);
+    }
+  };
+  const handlePointerUp = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    const session = pointerDragRef.current;
+    if (!session || session.pointerId !== event.pointerId) return;
+    const moduleId = dragOverModuleRef.current
+      ?? moduleAtPoint(event.clientX, event.clientY, event.currentTarget);
+    if (session.active && moduleId && session.moduleId !== moduleId && !isRequiredDrawerModule(moduleId)) {
+      const draggedIndex = preferences.moduleOrder.indexOf(session.moduleId);
+      const targetIndex = preferences.moduleOrder.indexOf(moduleId);
+      if (draggedIndex < targetIndex) {
+        onMoveAfter(session.moduleId, moduleId);
+      } else {
+        onMoveBefore(session.moduleId, moduleId);
+      }
+      suppressToggleClick.current = true;
+      window.setTimeout(() => {
+        suppressToggleClick.current = false;
+      }, 0);
+    }
+    releaseModulePointer(event);
   };
 
   return (
@@ -584,6 +652,7 @@ function DrawerConfiguration({
         {preferences.moduleOrder.map((moduleId) => (
           <button
             aria-pressed={visible.has(moduleId)}
+            data-reorder-module={moduleId}
             className={`sh-skill-drawer__module-toggle${
               visible.has(moduleId) ? " sh-skill-drawer__module-toggle--visible" : ""
             }${
@@ -592,7 +661,7 @@ function DrawerConfiguration({
                 : ""
             }${dragOverModule === moduleId ? " sh-skill-drawer__module-toggle--target" : ""}`}
             disabled={isRequiredDrawerModule(moduleId)}
-            draggable={!isRequiredDrawerModule(moduleId)}
+            draggable={false}
             key={moduleId}
             onClick={() => {
               if (suppressToggleClick.current) {
@@ -601,40 +670,14 @@ function DrawerConfiguration({
               }
               onToggle(moduleId, !visible.has(moduleId));
             }}
-            onDragEnd={() => {
-              clearDragState();
-              window.setTimeout(() => {
-                suppressToggleClick.current = false;
-              }, 0);
-            }}
-            onDragOver={(event) => {
-              if (draggedModule && draggedModule !== moduleId) {
-                event.preventDefault();
-                setDragOverModule(moduleId);
-              }
-            }}
-            onDragStart={() => {
-              suppressToggleClick.current = true;
-              setDraggedModule(moduleId);
-              setDragOverModule(null);
-            }}
-            onDrop={(event) => {
-              event.preventDefault();
-              if (draggedModule && draggedModule !== moduleId) {
-                const draggedIndex = preferences.moduleOrder.indexOf(draggedModule);
-                const targetIndex = preferences.moduleOrder.indexOf(moduleId);
-                if (draggedIndex < targetIndex) {
-                  onMoveAfter(draggedModule, moduleId);
-                } else {
-                  onMoveBefore(draggedModule, moduleId);
-                }
-                suppressToggleClick.current = true;
-                window.setTimeout(() => {
-                  suppressToggleClick.current = false;
-                }, 0);
-              }
+            onPointerCancel={() => {
+              pointerDragRef.current = undefined;
+              dragOverModuleRef.current = undefined;
               clearDragState();
             }}
+            onPointerDown={(event) => handlePointerDown(event, moduleId)}
+            onPointerMove={handlePointerMove}
+            onPointerUp={handlePointerUp}
             type="button"
           >
             {t(MODULE_LABEL_KEYS[moduleId])}

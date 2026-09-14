@@ -4,6 +4,7 @@ import { I18nextProvider } from "react-i18next";
 import { expect, it, vi } from "vitest";
 import { createSkillHubI18n } from "../../i18n";
 import { SourceInput } from "./SourceInput";
+import importCss from "./import.css?raw";
 
 async function renderSourceInput(props: Partial<React.ComponentProps<typeof SourceInput>> = {}) {
   const i18n = await createSkillHubI18n(["zh-CN"]);
@@ -32,7 +33,7 @@ it("emits controlled input changes", async () => {
   expect(onChange).toHaveBeenCalledWith("C:/skills");
 });
 
-it("lists scanned sources with explicit bulk selection controls", async () => {
+it("shows suggested and selected sources in one confirmation list", async () => {
   const onToggleSource = vi.fn();
   const onSelectAllSources = vi.fn();
   await renderSourceInput({
@@ -42,12 +43,26 @@ it("lists scanned sources with explicit bulk selection controls", async () => {
     suggestedSources: ["C:/codex/skills", "C:/claude/skills"],
   });
 
-  expect(screen.getByText("初始化扫描来源")).toBeVisible();
+  expect(screen.getByText("来源确认")).toBeVisible();
+  expect(screen.queryByText("初始化扫描来源")).not.toBeInTheDocument();
+  expect(screen.getByRole("list", { name: "已选来源" })).toBeVisible();
   expect(screen.getByRole("checkbox", { name: "C:/codex/skills" })).toBeChecked();
   fireEvent.click(screen.getByRole("checkbox", { name: "C:/claude/skills" }));
   fireEvent.click(screen.getByRole("button", { name: "全选扫描来源" }));
   expect(onToggleSource).toHaveBeenCalledWith("C:/claude/skills");
   expect(onSelectAllSources).toHaveBeenCalledOnce();
+});
+
+it("keeps the confirmation legend inside the framed source block", () => {
+  expect(importCss).toMatch(
+    /\.sh-import-source__selected\s*\{[^}]*position:\s*relative;[^}]*border:\s*0;/s,
+  );
+  expect(importCss).toMatch(
+    /\.sh-import-source__selected::before\s*\{[^}]*border:\s*1px solid var\(--ui-border-subtle\);/s,
+  );
+  expect(importCss).toMatch(
+    /\.sh-import-source__selected\s*>\s*legend\s*\{[^}]*display:\s*block;[^}]*margin:\s*0;/s,
+  );
 });
 
 it("offers a clear-all action when every scanned source is selected", async () => {

@@ -228,12 +228,39 @@ section.sh-import-wizard {
 /* —— M-29 已选来源列表：分层展示选中目录及其扫描状态 —— */
 
 .sh-import-source__selected {
+  position: relative;
   display: grid;
   gap: var(--space-2);
-  padding: var(--space-3);
+  min-width: 0;
+  padding: var(--space-4);
+  border: 0;
+  background: transparent;
+}
+
+.sh-import-source__selected::before {
+  position: absolute;
+  z-index: 0;
+  inset: 0;
+  content: "";
   border: 1px solid var(--ui-border-subtle);
   border-radius: var(--radius-md);
   background: var(--ui-surface-subtle);
+  pointer-events: none;
+}
+
+.sh-import-source__selected > * {
+  position: relative;
+  z-index: 1;
+}
+
+.sh-import-source__selected > legend {
+  display: block;
+  width: 100%;
+  padding: 0;
+  margin: 0;
+  color: var(--ui-ink);
+  font-size: var(--font-size-sm);
+  font-weight: 700;
 }
 
 .sh-import-source__selected > p {

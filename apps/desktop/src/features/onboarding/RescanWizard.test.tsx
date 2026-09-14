@@ -116,12 +116,14 @@ it("keeps the rediscovery rescan and completion reachable in the sticky footer w
   const i18n = await createSkillHubI18n(["zh-CN"]);
   const user = userEvent.setup();
   const root = "C:\\Users\\Test\\.codex\\skills";
+  const onOpenImport = vi.fn();
 
   render(
     <I18nextProvider i18n={i18n}>
       <RescanWizard
         libraryPath="C:\SkillHub"
         onComplete={() => undefined}
+        onOpenImport={onOpenImport}
         operations={{ completeOnboarding: async () => undefined, discoverAgents: async () => ({ targets: [] }) }}
         runtime={{
           getBootstrapView: async () => { throw new Error("unused"); },
@@ -172,12 +174,17 @@ it("keeps the rediscovery rescan and completion reachable in the sticky footer w
   expect(within(footerElement).getByRole("button", { name: "重新扫描" })).toBeVisible();
   const complete = within(footerElement).getByRole("button", { name: "完成重新扫描" });
   expect(complete).toBeVisible();
+  const openImport = within(footerElement).getByRole("button", { name: "完成初始化并进入批量导入" });
+  expect(openImport).toBeVisible();
 
   // 结构性几何契约：完成动作在固定 footer 内、不被列表滚动带走；
   // footer 是 sticky 的；结果列表有独立滚动上限。
   const scrollOwner = document.querySelector(".sh-onboarding__scan-scroll");
   expect(scrollOwner).not.toBeNull();
   expect(scrollOwner!.contains(complete)).toBe(false);
+  expect(scrollOwner!.contains(openImport)).toBe(false);
+  await user.click(openImport);
+  expect(onOpenImport).toHaveBeenCalledWith([root]);
   expect(onboardingCss).toMatch(/\.sh-onboarding \.sh-onboarding__actions\s*\{[^}]*position:\s*sticky/);
   expect(onboardingCss).toMatch(/\.sh-onboarding \.sh-onboarding__scan-scroll\s*\{[^}]*overflow(?:-y)?:\s*auto/);
   expect(onboardingCss).toMatch(/\.sh-onboarding \.sh-onboarding__scan-scroll\s*\{[^}]*max-height:/);

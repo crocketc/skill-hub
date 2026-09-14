@@ -105,6 +105,11 @@ export function RescanWizard({
         {step > 0 ? <Button onClick={() => setStep((current) => current - 1)} variant="secondary">{t("onboarding.back")}</Button> : null}
       </div>
       <div className="sh-onboarding__actions-group sh-onboarding__actions-group--primary">
+        {step === 2 && onOpenImport && scanState?.kind === "completed" && scanState.result.discovered.length > 0 ? (
+          <Button onClick={() => onOpenImport(scanState.result.roots)} variant="secondary">
+            {t("onboarding.scanOpenImport")}
+          </Button>
+        ) : null}
         {step < 2 ? (
           <Button disabled={!canContinue} onClick={() => setStep((current) => current + 1)} size="lg">
             {t("onboarding.continue")}
@@ -169,7 +174,6 @@ export function RescanWizard({
       ) : (
         <ScanStep
           isScanning={isScanning}
-          onOpenImport={onOpenImport}
           scanResult={scanState?.kind === "completed" ? scanState.result : undefined}
         />
       )}

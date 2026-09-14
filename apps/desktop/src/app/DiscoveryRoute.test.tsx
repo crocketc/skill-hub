@@ -131,7 +131,6 @@ it("does not refresh the bootstrap snapshot when every import result failed", as
 });
 
 it("renders the onboarding handoff import without the manual add-source action", async () => {
-  const user = userEvent.setup();
   const facade = createMockImportFacade({ scenario: "safe-local" });
   await renderDiscoveryRoute(facade, {
     locationState: {
@@ -142,10 +141,8 @@ it("renders the onboarding handoff import without the manual add-source action",
 
   // 初始化交接打开向导：已选扫描来源默认选中，无“添加到已选来源”。
   expect(screen.getByRole("checkbox", { name: "C:/codex/skills" })).toBeChecked();
-  await user.type(screen.getByLabelText("来源"), "C:/manual/skills");
   expect(screen.queryByRole("button", { name: "添加到已选来源" })).not.toBeInTheDocument();
 
-  await user.click(screen.getByRole("button", { name: "读取已选目录候选" }));
   expect(await screen.findByRole("button", { name: "继续选择候选" })).toBeVisible();
   expect(facade.calls.acquiredSources).toEqual(["C:/codex/skills", "C:/claude/skills"]);
 });

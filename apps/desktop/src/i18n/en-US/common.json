@@ -188,6 +188,7 @@
       "placeholder": "C:/skills or https://github.com/owner/repository",
       "parse": "Parse source",
       "acquireSelectedSources": "Read selected directory candidates",
+      "previewing": "Resolving sources…",
       "continueCandidates": "Continue to candidate selection",
       "acquiring": "Reading candidates from the source",
       "cancelAcquiring": "Cancel acquisition",
@@ -342,9 +343,11 @@
     },
     "sources": {
       "heading": "Selected sources",
-      "description": "These directories take part in the import. Candidates appear after scanning; unscanned sources stay pending.",
+      "confirmation": "Source confirmation",
+      "description": "Checked directories will be imported; Skill counts are resolved in the background.",
       "status": {
         "unscanned": "Not scanned",
+        "scanning": "Resolving",
         "count": "{{count}} candidates",
         "failed": "Scan failed"
       },

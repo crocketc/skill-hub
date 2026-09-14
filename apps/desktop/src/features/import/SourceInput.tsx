@@ -26,6 +26,8 @@ export interface SourceInputProps {
   onRemoveSources?: (sources: string[]) => void;
   /** M-29：清空全部已选来源。 */
   onClearSources?: () => void;
+  /** M-29：失败来源在统一确认列表内重试。 */
+  onRetrySource?: (source: string) => void;
 }
 
 /**
@@ -48,12 +50,14 @@ export function SourceInput({
   onRemoveSource,
   onRemoveSources,
   onClearSources,
+  onRetrySource,
 }: SourceInputProps) {
   const { t } = useTranslation();
   const isNpxReference = /^npx\s+skills\s+add\s+/i.test(value.trim());
   // M-29：多选删除的勾选标记是纯列表 UI 状态；删除后立即清空。
   const [markedSources, setMarkedSources] = useState<string[]>([]);
   const marked = markedSources.filter((source) => selectedSources.includes(source));
+  const sourceEntries = Array.from(new Set([...suggestedSources, ...selectedSources]));
   const itemRefs = useRef(new Map<string, HTMLLIElement>());
 
   useEffect(() => {
@@ -67,6 +71,8 @@ export function SourceInput({
 
   const statusLabel = (status: SourceScanStatus): string => {
     switch (status.kind) {
+      case "scanning":
+        return t("importWorkflow.sources.status.scanning");
       case "scanned":
         return t("importWorkflow.sources.status.count", { count: status.count });
       case "failed":
@@ -111,49 +117,25 @@ export function SourceInput({
         </div>
       </div>
 
-      {suggestedSources.length > 0 ? (
-        <fieldset className="sh-import-source__suggestions">
-          <legend>{t("importWorkflow.source.scannedSources")}</legend>
-          <p>{t("importWorkflow.source.scannedSourcesDescription")}</p>
-          {onSelectAllSources ? (
+      {sourceEntries.length > 0 ? (
+        <fieldset className="sh-import-source__selected">
+          <legend>{t("importWorkflow.sources.confirmation")}</legend>
+          <p>{t("importWorkflow.sources.description")}</p>
+          {onSelectAllSources && suggestedSources.length > 0 ? (
             <Button disabled={disabled} onClick={onSelectAllSources} variant="secondary">
               {t(selectedSources.length > 0 && suggestedSources.every((source) => selectedSources.includes(source))
                 ? "importWorkflow.source.deselectAllSources"
                 : "importWorkflow.source.selectAllSources")}
             </Button>
           ) : null}
-          {suggestedSources.map((source) => (
-            <label key={source}>
-              <input
-                checked={selectedSources.includes(source)}
-                disabled={disabled}
-                onChange={() => onToggleSource?.(source)}
-                type="checkbox"
-              />
-              <code>{source}</code>
-            </label>
-          ))}
-        </fieldset>
-      ) : null}
-
-      {selectedSources.length > 0 ? (
-        <div className="sh-import-source__selected">
-          <div className="sh-import-source__selected-heading">
-            <h3>{t("importWorkflow.sources.heading")}</h3>
-            {onClearSources ? (
-              <Button disabled={disabled} onClick={onClearSources} size="sm" variant="ghost">
-                {t("importWorkflow.sources.clearAll")}
-              </Button>
-            ) : null}
-          </div>
-          <p>{t("importWorkflow.sources.description")}</p>
           <ul aria-label={t("importWorkflow.sources.heading")} className="sh-import-source__list">
-            {selectedSources.map((source) => {
+            {sourceEntries.map((source) => {
+              const selected = selectedSources.includes(source);
               const status = sourceStatuses[source] ?? { kind: "unscanned" as const };
               return (
                 <li
                   className="sh-import-source__item"
-                  data-scan-state={status.kind}
+                  data-scan-state={selected ? status.kind : "unselected"}
                   key={source}
                   ref={(node) => {
                     if (node) itemRefs.current.set(source, node);
@@ -172,12 +154,32 @@ export function SourceInput({
                       />
                     </label>
                   ) : null}
+                  <label className="sh-import-source__item-select">
+                    <input
+                      aria-label={source}
+                      checked={selected}
+                      disabled={disabled}
+                      onChange={() => onToggleSource?.(source)}
+                      type="checkbox"
+                    />
+                  </label>
                   <code title={source}>{source}</code>
-                  <StatusBadge tone={statusTone(status)}>{statusLabel(status)}</StatusBadge>
-                  {status.kind === "failed" ? (
+                  {selected || sourceStatuses[source] ? <StatusBadge tone={statusTone(status)}>{statusLabel(status)}</StatusBadge> : null}
+                  {(selected || sourceStatuses[source]) && status.kind === "failed" ? (
                     <span className="sh-import-source__item-reason" role="status">{status.reason}</span>
                   ) : null}
-                  {onRemoveSource ? (
+                  {(selected || sourceStatuses[source]) && status.kind === "failed" && onRetrySource ? (
+                    <Button
+                      aria-label={t("importWorkflow.sources.retrySource", { source })}
+                      disabled={disabled}
+                      onClick={() => onRetrySource(source)}
+                      size="sm"
+                      variant="secondary"
+                    >
+                      {t("importWorkflow.sources.retry")}
+                    </Button>
+                  ) : null}
+                  {selected && onRemoveSource ? (
                     <Button
                       aria-label={t("importWorkflow.sources.removeSource", { source })}
                       disabled={disabled}
@@ -192,6 +194,11 @@ export function SourceInput({
               );
             })}
           </ul>
+          {onClearSources ? (
+            <Button disabled={disabled} onClick={onClearSources} size="sm" variant="ghost">
+              {t("importWorkflow.sources.clearAll")}
+            </Button>
+          ) : null}
           {onRemoveSources ? (
             <Button
               disabled={disabled || marked.length === 0}
@@ -202,7 +209,7 @@ export function SourceInput({
               {t("importWorkflow.sources.removeSelected", { count: marked.length })}
             </Button>
           ) : null}
-        </div>
+        </fieldset>
       ) : null}
 
       {onPickLocalPath ? (
