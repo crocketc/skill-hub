@@ -134,6 +134,33 @@ describe("unified title bar shell layout", () => {
   });
 });
 
+describe("macOS expanded sidebar vertical rhythm", () => {
+  it("lowers the expanded logo and primary navigation by one extra space step on macOS", () => {
+    // macOS 展开态反馈：大 Logo 与导航页签整体偏上。在既有全平台 8px Logo 位移
+    // 基础上再下移一个 --space-2（Logo 合计 translateY(calc(var(--space-2) * 2))），
+    // 主导航区用 padding-block-start 同步下移；不动折叠按钮与红绿灯避让。
+    expect(
+      declarationsFor(".sh-is-macos .sh-sidebar__brand .sh-brand-logo")["transform"],
+    ).toBe("translateY(calc(var(--space-2) * 2))");
+    expect(
+      declarationsFor(".sh-is-macos .sh-sidebar:not(.is-collapsed) .sh-sidebar__scroll")[
+        "padding-block-start"
+      ],
+    ).toBe("var(--space-2)");
+  });
+
+  it("keeps the Windows rhythm and the collapsed sidebar free of the macOS shift", () => {
+    // Windows（无 .sh-is-macos 作用域）保持既有声明；导航区位移只允许出现在
+    // 带 .sh-is-macos 且排除收起态（:not(.is-collapsed)）的选择器上。
+    expect(declarationsFor(".sh-sidebar__brand .sh-brand-logo")["transform"]).toBe(
+      "translateY(var(--space-2))",
+    );
+    expect(declarationsFor(".sh-sidebar__scroll")["padding-block-start"]).toBeUndefined();
+    expect(baseCss).not.toMatch(/\.sh-is-macos \.sh-sidebar__scroll/);
+    expect(baseCss).not.toMatch(/\.sh-is-macos \.sh-sidebar \.sh-sidebar__scroll/);
+  });
+});
+
 describe("sidebar collapse control contrast across the nine themes", () => {
   // 图形控件按 WCAG 1.4.11 非文本对比度要求 3:1；焦点环保留同样的下限。
   it.each(themeNames)(

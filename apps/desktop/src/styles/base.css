@@ -1134,6 +1134,17 @@ a {
   padding-inline-start: 5rem;
 }
 
+/* macOS 展开态节奏微调：大 Logo 与主导航整体再下移一个 --space-2（8px），
+   Logo 在既有全平台 translateY(var(--space-2)) 基础上叠加，水平居中不受影响；
+   主导航经滚动区顶部内边距同步下移。仅作用域展开态，收起态与 Windows 不变。 */
+.sh-is-macos .sh-sidebar__brand .sh-brand-logo {
+  transform: translateY(calc(var(--space-2) * 2));
+}
+
+.sh-is-macos .sh-sidebar:not(.is-collapsed) .sh-sidebar__scroll {
+  padding-block-start: var(--space-2);
+}
+
 .sh-app-shell__verification {
   color: var(--color-text-muted);
   font-size: var(--font-size-xs);
