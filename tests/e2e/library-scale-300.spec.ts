@@ -11,6 +11,12 @@ const SUMMARY = "library-summary-total";
 const SCALED_ROUTE = "/__preview/skill-library?total=300&size=100";
 
 test("300-skill catalog reaches the cached home within the GR-10 budget", async ({ page }) => {
+  // 遗留风险去噪（2026-09-14）：预算的度量对象是"缓存后的首页可达性"，
+  // 但多 worker 并行冷启动时首次加载会承担模块转换/导入冷成本，DCL 偶发
+  // 抖过预算。先做一次预热导航再计时，预算阈值保持 2000ms 不变。
+  await page.goto(SCALED_ROUTE);
+  await expect(page.getByTestId(SUMMARY)).toContainText("300");
+
   await page.goto(SCALED_ROUTE);
   await expect(page.getByTestId(SUMMARY)).toContainText("300");
   await expect(page.getByTestId("skill-card-skill-pdf")).toBeVisible();
