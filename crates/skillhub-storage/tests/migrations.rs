@@ -16,7 +16,7 @@ fn fixture_database_with_schema_version(version: u32) -> NamedTempFile {
 fn empty_database_migrates_to_current_schema_and_enables_fts5() {
     let db = Database::open_in_memory().unwrap();
 
-    assert_eq!(db.schema_version().unwrap(), 12);
+    assert_eq!(db.schema_version().unwrap(), 13);
     assert!(db.has_table("skills_fts").unwrap());
     assert!(db.has_table("search_candidates").unwrap());
 }
@@ -39,10 +39,10 @@ fn open_exposes_the_migration_report() {
     let report = db.migration_report();
 
     assert_eq!(report.from_version, 0);
-    assert_eq!(report.to_version, 12);
+    assert_eq!(report.to_version, 13);
     assert_eq!(
         report.applied_versions,
-        vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+        vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]
     );
 }
 
@@ -66,10 +66,10 @@ fn v4_database_upgrades_check_run_metadata_in_v5() {
     drop(connection);
 
     let db = Database::open(file.path()).unwrap();
-    assert_eq!(db.schema_version().unwrap(), 12);
+    assert_eq!(db.schema_version().unwrap(), 13);
     assert_eq!(
         db.migration_report().applied_versions,
-        vec![5, 6, 7, 8, 9, 10, 11, 12]
+        vec![5, 6, 7, 8, 9, 10, 11, 12, 13]
     );
     let generation: String = db
         .connection_for_test()
@@ -133,7 +133,7 @@ fn v10_database_upgrades_source_roles_and_keeps_legacy_upstreams_readable() {
     drop(connection);
 
     let db = Database::open(file.path()).unwrap();
-    assert_eq!(db.schema_version().unwrap(), 12);
+    assert_eq!(db.schema_version().unwrap(), 13);
 
     let remote_skill: skillhub_core::SkillId =
         "00000000-0000-0000-0000-0000000000a1".parse().unwrap();
@@ -292,7 +292,7 @@ fn v11_database_dedupes_combination_names_and_enforces_uniqueness() {
     drop(connection);
 
     let db = Database::open(file.path()).unwrap();
-    assert_eq!(db.schema_version().unwrap(), 12);
+    assert_eq!(db.schema_version().unwrap(), 13);
 
     let name_of = |id: &str| -> String {
         db.connection_for_test()

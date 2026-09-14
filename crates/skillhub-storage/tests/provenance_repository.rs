@@ -11,6 +11,17 @@ use skillhub_core::source::{SourceDescriptor, SourceKind, SourceLocator};
 use skillhub_core::{OperationId, SkillId};
 use skillhub_storage::Database;
 
+/// observed_deployments 等表对 skills(id) 有外键约束，先落父行。
+fn insert_skill(database: &Database, skill_id: SkillId) {
+    database
+        .connection_for_test()
+        .execute(
+            "INSERT INTO skills (id, display_name, runtime_name, ownership, created_at, updated_at) VALUES (?1, 'Demo', 'demo', 'user_created', 0, 0)",
+            [skill_id.to_string()],
+        )
+        .unwrap();
+}
+
 fn provenance(skill_id: SkillId, path: &str, client: Option<&str>) -> ImportProvenance {
     let provenance = ImportProvenance::new(
         skill_id,
@@ -36,6 +47,7 @@ fn schema_pins_migration_0013() {
 fn provenance_round_trips_with_and_without_agent_attribution() {
     let database = Database::open_in_memory().unwrap();
     let skill = SkillId::new();
+    insert_skill(&database, skill);
     database
         .provenance_repository()
         .upsert_provenance(&provenance(
@@ -55,6 +67,7 @@ fn provenance_round_trips_with_and_without_agent_attribution() {
 
     // 来源不明：client 缺省持久化为 NULL，读回仍为 None（不猜）。
     let unattributed = SkillId::new();
+    insert_skill(&database, unattributed);
     database
         .provenance_repository()
         .upsert_provenance(&provenance(unattributed, "/tmp/downloads/demo", None))
@@ -92,6 +105,7 @@ fn provenance_round_trips_with_and_without_agent_attribution() {
 fn observed_relation_lifecycle_establish_release_and_reactivate() {
     let database = Database::open_in_memory().unwrap();
     let skill = SkillId::new();
+    insert_skill(&database, skill);
     let repository = database.provenance_repository();
     let path = "/tmp/trae/skills/demo";
     let observation = ObservedPathObservation {
@@ -147,6 +161,7 @@ fn observed_relation_lifecycle_establish_release_and_reactivate() {
 fn observed_relation_marks_divergence_without_duplicating_rows() {
     let database = Database::open_in_memory().unwrap();
     let skill = SkillId::new();
+    insert_skill(&database, skill);
     let repository = database.provenance_repository();
     let path = "/tmp/trae/skills/demo";
     let verified = ObservedPathObservation {
@@ -194,6 +209,7 @@ fn observed_relation_marks_divergence_without_duplicating_rows() {
 fn original_migration_records_support_rollback_audit() {
     let database = Database::open_in_memory().unwrap();
     let skill = SkillId::new();
+    insert_skill(&database, skill);
     let migration_id = OperationId::new();
     let result = OriginalMigrationResult {
         migration_id,
