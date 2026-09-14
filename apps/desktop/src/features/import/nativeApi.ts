@@ -257,16 +257,23 @@ export const nativeImportFacade: ImportFacade = {
     return nativeCandidates.map(toCandidate);
   },
 
-  async analyzeConflicts(candidates) {
+  async analyzeConflicts(candidates, onProgress) {
     const conflicts: ImportConflict[] = [];
-    // 各候选互不依赖，并行分析以避免 N 次串行 IPC 往返。
+    let completed = 0;
+    // 各候选互不依赖，并行分析以避免 N 次串行 IPC 往返。候选数组长度即真实
+    // 总数，每个候选查询 resolve 即累计一次真实已完成数；进度只反映已完成的
+    // IPC 查询，不做任何估算（OPT-20260914-01）。
     const analyses = await Promise.all(candidates.map((candidate) => queryApplication({
       type: "analyze_import",
       payload: {
         candidate: nativeCandidateFor(candidate),
         tree_hash: null,
       },
-    }).then((result) => ({ candidate, analysis: queryImportAnalysis(result) }))));
+    }).then((result) => {
+      completed += 1;
+      onProgress?.({ candidateId: candidate.id, completed, total: candidates.length });
+      return { candidate, analysis: queryImportAnalysis(result) };
+    })));
     for (const { candidate, analysis } of analyses) {
       for (const conflict of analysis.conflicts) {
         if (!conflict.requires_choice) continue;

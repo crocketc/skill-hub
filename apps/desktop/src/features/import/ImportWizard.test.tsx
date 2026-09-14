@@ -936,6 +936,183 @@ describe("global notifications for import outcomes", () => {
   });
 });
 
+describe("conflict analysis progress", () => {
+  function deferredPlan() {
+    let resolve!: (plan: ImportPlan) => void;
+    let reject!: (reason?: unknown) => void;
+    const promise = new Promise<ImportPlan>((res, rej) => {
+      resolve = res;
+      reject = rej;
+    });
+    return { promise, reject, resolve };
+  }
+
+  async function reachCandidateSelection(
+    user: ReturnType<typeof userEvent.setup>,
+    facade: ReturnType<typeof createMockImportFacade>,
+  ) {
+    await renderWizard(facade);
+    await user.type(screen.getByLabelText("来源"), "C:/incoming");
+    await user.click(screen.getByRole("button", { name: "解析来源" }));
+    await user.click(await screen.findByRole("button", { name: "继续选择候选" }));
+    await user.click(screen.getByRole("button", { name: "全选可导入候选" }));
+  }
+
+  it("shows the real phase, total and elapsed time as soon as analysis starts", async () => {
+    const user = userEvent.setup();
+    const facade = createMockImportFacade({ scenario: "safe-local" });
+    const gate = deferredPlan();
+    facade.analyzeConflicts = vi.fn(() => gate.promise);
+    await reachCandidateSelection(user, facade);
+
+    await user.click(screen.getByRole("button", { name: "分析冲突" }));
+
+    // 分析开始即有真实反馈：阶段名（状态区同时播报）、送入分析的总数与已用时间。
+    const progress = await screen.findByRole("region", { name: "冲突分析进度" });
+    expect(within(progress).getByText("正在分析冲突")).toBeVisible();
+    expect(within(progress).getByText("正在分析 2 个候选")).toBeVisible();
+    expect(within(progress).getByText("已用时 0 秒")).toBeVisible();
+    // 持久状态区与进度区同时播报真实阶段名称。
+    expect(screen.getAllByText("正在分析冲突").length).toBeGreaterThanOrEqual(2);
+
+    await act(async () => {
+      gate.resolve({ candidates: facade.fixtures.candidates, conflicts: [] });
+    });
+  });
+
+  it("advances the real completed count and percentage as each candidate completes", async () => {
+    const user = userEvent.setup();
+    const facade = createMockImportFacade({ scenario: "safe-local" });
+    const gate = deferredPlan();
+    facade.analyzeConflicts = vi.fn((_candidates, onProgress) => {
+      onProgress?.({ candidateId: "safe-pdf", completed: 1, total: 2 });
+      return gate.promise;
+    });
+    await reachCandidateSelection(user, facade);
+    await user.click(screen.getByRole("button", { name: "分析冲突" }));
+
+    const progress = await screen.findByRole("region", { name: "冲突分析进度" });
+    expect(within(progress).getByText("已完成 1/2（50%）")).toBeVisible();
+    const bar = within(progress).getByRole("progressbar");
+    expect(bar).toHaveAttribute("value", "1");
+    expect(bar).toHaveAttribute("max", "2");
+    // 长时间分析：未结束时进度持续可见，不消失也不报错。
+    expect(progress).toBeVisible();
+
+    await act(async () => {
+      gate.resolve({ candidates: facade.fixtures.candidates, conflicts: [] });
+    });
+    expect(await screen.findByRole("button", { name: "提交导入" })).toBeVisible();
+  });
+
+  it("shows an indeterminate progress without a fabricated percentage when no per-candidate progress is reported", async () => {
+    const user = userEvent.setup();
+    const facade = createMockImportFacade({ scenario: "safe-local" });
+    const gate = deferredPlan();
+    // facade 不支持进度回调（旧契约）：只允许不确定进度，绝不伪造百分比。
+    facade.analyzeConflicts = vi.fn(() => gate.promise);
+    await reachCandidateSelection(user, facade);
+    await user.click(screen.getByRole("button", { name: "分析冲突" }));
+
+    const progress = await screen.findByRole("region", { name: "冲突分析进度" });
+    const bar = within(progress).getByRole("progressbar");
+    expect(bar).not.toHaveAttribute("value");
+    expect(within(progress).queryByText(/%/)).not.toBeInTheDocument();
+    expect(
+      within(progress).getByText("当前环境未提供逐项分析进度；完成前不显示百分比。"),
+    ).toBeVisible();
+
+    await act(async () => {
+      gate.resolve({ candidates: facade.fixtures.candidates, conflicts: [] });
+    });
+  });
+
+  it("surfaces an analysis failure and offers a retry back to the candidates phase", async () => {
+    const user = userEvent.setup();
+    const facade = createMockImportFacade({ scenario: "safe-local" });
+    facade.analyzeConflicts = vi.fn(async () => {
+      throw new Error("simulated analysis failure");
+    });
+    await reachCandidateSelection(user, facade);
+    await user.click(screen.getByRole("button", { name: "分析冲突" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(/simulated analysis failure/);
+    await user.click(screen.getByRole("button", { name: "重试" }));
+
+    // previousPhase 回退：失败重试直接回到候选阶段，已选候选保留，可再次分析。
+    const analyze = await screen.findByRole("button", { name: "分析冲突" });
+    expect(analyze).toBeEnabled();
+    expect(facade.analyzeConflicts).toHaveBeenCalledTimes(1);
+  });
+
+  it("returns to candidates and drops the in-flight analysis when the user cancels", async () => {
+    const user = userEvent.setup();
+    const facade = createMockImportFacade({ scenario: "safe-local" });
+    const gate = deferredPlan();
+    facade.analyzeConflicts = vi.fn(() => gate.promise);
+    facade.cancel = vi.fn(() => Promise.resolve());
+    await reachCandidateSelection(user, facade);
+    await user.click(screen.getByRole("button", { name: "分析冲突" }));
+    expect(await screen.findByRole("region", { name: "冲突分析进度" })).toBeVisible();
+
+    await user.click(screen.getByRole("button", { name: "取消分析" }));
+
+    // 取消后回到候选阶段，进度区消失；迟到的分析结果被丢弃，不进入冲突阶段。
+    expect(await screen.findByRole("button", { name: "分析冲突" })).toBeVisible();
+    expect(screen.queryByRole("region", { name: "冲突分析进度" })).not.toBeInTheDocument();
+    expect(facade.cancel).toHaveBeenCalled();
+    expect(document.querySelector('[data-testid="notice-info"]')).not.toBeNull();
+    await act(async () => {
+      gate.resolve({ candidates: facade.fixtures.candidates, conflicts: [] });
+    });
+    expect(screen.queryByRole("button", { name: "提交导入" })).not.toBeInTheDocument();
+  });
+
+  it("does not start a concurrent analysis when the analyze action repeats", async () => {
+    const user = userEvent.setup();
+    const facade = createMockImportFacade({ scenario: "safe-local" });
+    const gate = deferredPlan();
+    facade.analyzeConflicts = vi.fn(() => gate.promise);
+    await reachCandidateSelection(user, facade);
+
+    await user.click(screen.getByRole("button", { name: "分析冲突" }));
+
+    // 分析进行中不再渲染分析入口：重复点击无从发起并发分析。
+    expect(screen.queryByRole("button", { name: "分析冲突" })).not.toBeInTheDocument();
+    expect(facade.analyzeConflicts).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      gate.resolve({ candidates: facade.fixtures.candidates, conflicts: [] });
+    });
+    expect(await screen.findByRole("button", { name: "提交导入" })).toBeVisible();
+    expect(facade.analyzeConflicts).toHaveBeenCalledTimes(1);
+  });
+
+  it("restarts progress from the new candidate total after a rollback to candidates", async () => {
+    const user = userEvent.setup();
+    const facade = createMockImportFacade({ scenario: "safe-local" });
+    facade.analyzeConflicts = vi.fn(async () => {
+      throw new Error("boom");
+    });
+    await reachCandidateSelection(user, facade);
+    await user.click(screen.getByRole("button", { name: "分析冲突" }));
+    await user.click(await screen.findByRole("button", { name: "重试" }));
+
+    // 候选变化后重新返回：缩小选择集再分析，进度总数必须是新的真实总数。
+    await user.click(screen.getByRole("checkbox", { name: /PDF/ }));
+    const gate = deferredPlan();
+    facade.analyzeConflicts = vi.fn(() => gate.promise);
+    await user.click(screen.getByRole("button", { name: "分析冲突" }));
+
+    const progress = await screen.findByRole("region", { name: "冲突分析进度" });
+    expect(within(progress).getByText("正在分析 1 个候选")).toBeVisible();
+
+    await act(async () => {
+      gate.resolve({ candidates: facade.fixtures.candidates, conflicts: [] });
+    });
+  });
+});
+
 describe("AI import pre-check", () => {
   async function reachConflicts(facade: ReturnType<typeof createMockImportFacade>) {
     const user = userEvent.setup();
