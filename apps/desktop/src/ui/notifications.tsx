@@ -67,6 +67,9 @@ export interface AppNotifications {
   notify: (notice: AppNoticeInput) => string;
   /** 关闭 toast 并把该通知标记为已读（历史保留）。 */
   dismiss: (id: string) => void;
+  /** 只把该条通知标记为已读（历史保留；不影响仍在展示的 toast）。
+   *  幂等：对已读或不存在 id 重复调用是空操作。 */
+  markRead: (id: string) => void;
   /** 本次会话的全部通知（最新在前）。 */
   notices: ReadonlyArray<AppNoticeRecord>;
   /** 未读数量（驱动顶栏角标）。 */
@@ -152,6 +155,17 @@ export function AppNotificationsProvider({ children }: { children: ReactNode }) 
     [clearTimers, removeFromToast],
   );
 
+  // 历史抽屉的“已读”入口：只改 read 标记，不清计时器、不移除 toast
+  // （toast 有自己的 2 秒生命周期，抽屉交互不应挪动它）；未命中的 id
+  // 与已读条目保持原对象引用，重复调用可安全短路。
+  const markRead = useCallback((id: string) => {
+    setNotices((current) =>
+      current.map((notice) =>
+        notice.id === id && !notice.read ? { ...notice, read: true } : notice,
+      ),
+    );
+  }, []);
+
   const notify = useCallback(
     (notice: AppNoticeInput): string => {
       nextIdRef.current += 1;
@@ -223,13 +237,14 @@ export function AppNotificationsProvider({ children }: { children: ReactNode }) 
     return {
       notify,
       dismiss,
+      markRead,
       notices,
       unreadCount,
       markAllRead,
       clear,
       dismissByKind,
     };
-  }, [clear, dismiss, dismissByKind, markAllRead, notices, notify]);
+  }, [clear, dismiss, dismissByKind, markAllRead, markRead, notices, notify]);
 
   return (
     <AppNotificationsContext.Provider value={value}>
@@ -307,10 +322,16 @@ export function NotificationHistoryDrawer({
   returnFocusRef: RefObject<HTMLButtonElement | null>;
 }) {
   const { t } = useTranslation();
-  const { clear, markAllRead, notices, unreadCount } = useAppNotifications();
+  const { clear, markAllRead, markRead, notices, unreadCount } = useAppNotifications();
   const [filter, setFilter] = useState<"all" | "unread">("all");
   const visible =
     filter === "unread" ? notices.filter((notice) => !notice.read) : notices;
+  // 历史项激活（点击消息本体或 action 链接）：先把该条标记为已读，再关闭
+  // 抽屉或交给 Link 默认导航；markRead 幂等，重复激活不报错。
+  const readAndClose = (id: string) => {
+    markRead(id);
+    onOpenChange(false);
+  };
 
   return (
     <Drawer
@@ -377,22 +398,34 @@ export function NotificationHistoryDrawer({
                   .join(" ")}
                 key={notice.id}
               >
-                <div className="sh-notification-history__item-head">
-                  <StatusBadge tone={notice.tone}>
-                    {t(toneI18nKey[notice.tone])}
-                  </StatusBadge>
-                  <span className="sh-notification-history__item-title">
-                    {notice.title}
+                {/* 消息本体是可聚焦按钮（点击/回车先标已读再关抽屉）；
+                    action 链接是交互元素不能嵌进按钮，保持为兄弟节点；
+                    detailNode 含 section/h2 等流内容，同样留在按钮外。 */}
+                <button
+                  aria-label={t("notifications.markOneRead", { title: notice.title })}
+                  className="sh-notification-history__item-body"
+                  onClick={() => readAndClose(notice.id)}
+                  type="button"
+                >
+                  <span className="sh-notification-history__item-head">
+                    <StatusBadge tone={notice.tone}>
+                      {t(toneI18nKey[notice.tone])}
+                    </StatusBadge>
+                    <span className="sh-notification-history__item-title">
+                      {notice.title}
+                    </span>
                   </span>
-                </div>
-                {notice.detail ? (
-                  <p className="sh-notification-history__item-detail">{notice.detail}</p>
-                ) : null}
+                  {notice.detail ? (
+                    <span className="sh-notification-history__item-detail">
+                      {notice.detail}
+                    </span>
+                  ) : null}
+                </button>
                 {notice.detailNode}
                 {notice.action ? (
                   <Link
                     className="sh-notification-history__item-action"
-                    onClick={() => onOpenChange(false)}
+                    onClick={() => readAndClose(notice.id)}
                     to={notice.action.to}
                   >
                     {notice.action.label}

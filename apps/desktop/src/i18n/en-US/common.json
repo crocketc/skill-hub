@@ -31,6 +31,7 @@
     "filterAll": "All",
     "filterUnread": "Unread",
     "markAllRead": "Mark all as read",
+    "markOneRead": "Mark \"{{title}}\" as read",
     "clearAll": "Clear all",
     "emptyHistory": "No notifications yet.",
     "emptyUnread": "No unread notifications.",

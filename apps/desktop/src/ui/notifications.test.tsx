@@ -337,6 +337,144 @@ describe("NotificationBell and history drawer", () => {
   });
 });
 
+describe("history drawer marks an entry read on activation", () => {
+  it("marks the entry read and closes the drawer when the message body is clicked", async () => {
+    const user = userEvent.setup();
+    await renderNotificationShell();
+
+    act(() => {
+      handles.current?.notify({
+        tone: "danger",
+        title: "deployment failed",
+        detail: "agent write protected",
+      });
+    });
+    expect(
+      screen.getByRole("button", { name: "Notifications, 1 unread" }),
+    ).toBeVisible();
+
+    const drawer = await openHistoryDrawer();
+    await user.click(
+      within(drawer).getByRole("button", {
+        name: 'Mark "deployment failed" as read',
+      }),
+    );
+
+    expect(screen.queryByRole("dialog", { name: "Notifications" })).toBeNull();
+    // 角标随已读同步清零；历史保留，记录只标已读不删除。
+    expect(screen.getByRole("button", { name: "Notifications" })).toBeVisible();
+    expect(handles.current?.unreadCount()).toBe(0);
+    expect(handles.current?.noticeCount()).toBe(1);
+  });
+
+  it("marks the entry read before navigating through its action link", async () => {
+    const user = userEvent.setup();
+    await renderNotificationShell();
+
+    act(() => {
+      handles.current?.notify({
+        tone: "info",
+        title: "deployment finished",
+        action: { label: "View operation", to: "/library" },
+      });
+    });
+
+    const drawer = await openHistoryDrawer();
+    await user.click(within(drawer).getByRole("link", { name: "View operation" }));
+
+    expect(screen.getByText("page@/library")).toBeVisible();
+    expect(screen.queryByRole("dialog", { name: "Notifications" })).toBeNull();
+    expect(handles.current?.unreadCount()).toBe(0);
+    expect(handles.current?.noticeCount()).toBe(1);
+  });
+
+  it("activates the message body with Enter from keyboard focus", async () => {
+    const user = userEvent.setup();
+    await renderNotificationShell();
+
+    act(() => {
+      handles.current?.notify({ tone: "success", title: "tags were saved" });
+    });
+
+    const drawer = await openHistoryDrawer();
+    const body = within(drawer).getByRole("button", {
+      name: 'Mark "tags were saved" as read',
+    });
+    body.focus();
+    await user.keyboard("{Enter}");
+
+    expect(screen.queryByRole("dialog", { name: "Notifications" })).toBeNull();
+    expect(handles.current?.unreadCount()).toBe(0);
+    expect(handles.current?.noticeCount()).toBe(1);
+  });
+
+  it("keeps repeated activation of the same entry read without errors", async () => {
+    const user = userEvent.setup();
+    await renderNotificationShell();
+
+    act(() => {
+      handles.current?.notify({
+        tone: "info",
+        title: "import finished",
+        action: { label: "View operation", to: "/library" },
+      });
+    });
+
+    // 第一次：本体点击标记已读并关闭抽屉。
+    const drawer = await openHistoryDrawer();
+    await user.click(
+      within(drawer).getByRole("button", { name: 'Mark "import finished" as read' }),
+    );
+    expect(screen.queryByRole("dialog", { name: "Notifications" })).toBeNull();
+
+    // 第二次：本体重复激活不报错，状态保持已读。
+    const reopened = await openHistoryDrawer();
+    await user.click(
+      within(reopened).getByRole("button", { name: 'Mark "import finished" as read' }),
+    );
+    expect(screen.queryByRole("dialog", { name: "Notifications" })).toBeNull();
+
+    // 第三次：action 链接重复触发同样幂等。
+    const again = await openHistoryDrawer();
+    await user.click(within(again).getByRole("link", { name: "View operation" }));
+    expect(handles.current?.unreadCount()).toBe(0);
+    expect(handles.current?.noticeCount()).toBe(1);
+  });
+
+  it("drops the entry from the unread filter and decrements the badge after its body is clicked", async () => {
+    const user = userEvent.setup();
+    await renderNotificationShell();
+
+    act(() => {
+      handles.current?.notify({ tone: "success", title: "older entry" });
+    });
+    const drawer = await openHistoryDrawer();
+    await user.click(within(drawer).getByRole("button", { name: "Mark all as read" }));
+    act(() => {
+      handles.current?.notify({ tone: "success", title: "unread entry" });
+    });
+    await user.click(within(drawer).getByRole("button", { name: "Unread" }));
+    expect(within(drawer).getByText("unread entry")).toBeVisible();
+
+    // 未读筛选下点击本体：先标记已读再关闭抽屉。
+    await user.click(
+      within(drawer).getByRole("button", { name: 'Mark "unread entry" as read' }),
+    );
+    expect(screen.queryByRole("dialog", { name: "Notifications" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Notifications" })).toBeVisible();
+
+    // 重新打开（筛选保持“未读”）：该条从未读列表消失，仅剩空态提示。
+    const reopened = await openHistoryDrawer();
+    expect(within(reopened).getByText("No unread notifications.")).toBeVisible();
+    // 切回“全部”：两条历史都保留且均已读。
+    await user.click(within(reopened).getByRole("button", { name: "All" }));
+    expect(within(reopened).getByText("older entry")).toBeVisible();
+    expect(within(reopened).getByText("unread entry")).toBeVisible();
+    expect(handles.current?.unreadCount()).toBe(0);
+    expect(handles.current?.noticeCount()).toBe(2);
+  });
+});
+
 describe("provider cleanup", () => {
   it("stops toasting after the provider unmounts even if timers were pending", async () => {
     vi.useFakeTimers();

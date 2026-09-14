@@ -184,6 +184,21 @@
   background: var(--ui-hover-surface);
 }
 
+/* 历史项消息本体是按钮：整块可点击（先标记已读再关闭抽屉），键盘可达；
+   重置按钮默认外观贴合卡片内容，焦点环沿用 base.css 的全局 :focus-visible。 */
+.sh-notification-history__item-body {
+  display: grid;
+  gap: var(--space-1);
+  width: 100%;
+  border: none;
+  padding: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
 .sh-notification-history__item-head {
   display: flex;
   align-items: center;
