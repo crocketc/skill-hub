@@ -162,6 +162,14 @@
       "cancelled": "导入已取消",
       "committingBackgroundHint": "可以离开此页面；导入会在后台继续。请通过顶栏任务状态查看进度，完成后到通知中心查看结果。"
     },
+    "analysis": {
+      "progressTitle": "冲突分析进度",
+      "elapsed": "已用时 {{seconds}} 秒",
+      "scope": "正在分析 {{total}} 个候选",
+      "count": "已完成 {{completed}}/{{total}}（{{percent}}%）",
+      "progressUnavailable": "当前环境未提供逐项分析进度；完成前不显示百分比。",
+      "cancel": "取消分析"
+    },
     "acquisition": {
       "complete": "找到 {{count}} 个候选项，请先审阅列表。",
       "multiSource": "已从 {{count}} 个来源目录获取候选",

@@ -149,6 +149,38 @@ section.sh-import-wizard {
   }
 }
 
+/* —— OPT-20260914-01 冲突分析进度：阶段名 + 已用时间 + 真实/不确定进度。
+   逐项进度未到达时进度条保持不确定形态，绝不伪造百分比 —— */
+
+.sh-import-wizard__analysis {
+  display: grid;
+  align-content: start;
+  gap: var(--space-2);
+  padding: var(--space-4);
+  border: 1px dashed var(--ui-border);
+  border-radius: var(--radius-md);
+  background: var(--ui-control-background);
+}
+
+.sh-import-wizard__analysis-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+  font-weight: 650;
+}
+
+.sh-import-wizard__analysis p {
+  margin: 0;
+  color: var(--ui-ink-muted);
+  font-size: var(--font-size-xs);
+}
+
+.sh-import-wizard__analysis progress {
+  width: 100%;
+}
+
 /* —— 门槛页与 AI 预检共用的状态分区：改为纵向网格，不再逐元素挤压成一行 —— */
 
 .sh-import-wizard .sh-import-wizard__gate {

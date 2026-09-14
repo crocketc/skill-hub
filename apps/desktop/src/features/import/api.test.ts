@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   createMockImportFacade,
   parseSourceInput,
@@ -47,5 +47,26 @@ describe("ImportFacade contract", () => {
       "succeeded",
       "skipped",
     ]);
+  });
+
+  it("reports per-candidate analysis progress while staying backward compatible", async () => {
+    const facade = createMockImportFacade({ scenario: "safe-local" });
+    const source = await facade.parseSource("C:\\Skills\\pdf");
+    const candidates = await facade.acquireCandidates(source);
+    const onProgress = vi.fn();
+
+    const plan = await facade.analyzeConflicts(candidates, onProgress);
+
+    // 进度契约与提交一致：{ candidateId, completed, total }，总数即候选数。
+    expect(onProgress).toHaveBeenLastCalledWith({
+      candidateId: candidates[1].id,
+      completed: 2,
+      total: 2,
+    });
+    expect(plan.candidates).toHaveLength(2);
+    // 旧调用方式（无回调）保持可用。
+    await expect(facade.analyzeConflicts(candidates)).resolves.toEqual(
+      expect.objectContaining({ candidates }),
+    );
   });
 });

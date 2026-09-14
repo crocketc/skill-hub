@@ -122,7 +122,16 @@ export interface ImportFacade {
     source: SourceDescriptor,
     signal?: AbortSignal,
   ): Promise<ImportCandidate[]>;
-  analyzeConflicts(candidates: ImportCandidate[]): Promise<ImportPlan>;
+  /**
+   * OPT-20260914-01：可选逐候选进度回调，契约与 commitImport 的
+   * ImportProgress 一致（{ candidateId, completed, total }，总数即候选数）。
+   * 回调是可选能力：不支持回调的实现照旧只接收 candidates，向导据实降级为
+   * 不确定进度，绝不伪造百分比。
+   */
+  analyzeConflicts(
+    candidates: ImportCandidate[],
+    onProgress?: (progress: ImportProgress) => void,
+  ): Promise<ImportPlan>;
   commitImport(
     plan: ImportPlan,
     actions: Record<string, ImportAction>,
@@ -332,9 +341,13 @@ export function createMockImportFacade(
       facade.fixtures.candidates = clone(lastCandidates);
       return clone(lastCandidates);
     },
-    async analyzeConflicts(candidates) {
+    async analyzeConflicts(candidates, onProgress) {
       calls.analyzedCandidates.push(candidates.map(({ id }) => id));
       const selected = clone(candidates);
+      // 进度契约与真实 facade 一致：逐候选回调，总数即候选数。
+      for (const [index, candidate] of selected.entries()) {
+        onProgress?.({ candidateId: candidate.id, completed: index + 1, total: selected.length });
+      }
       const plan = {
         candidates: selected,
         conflicts: fixtureConflicts(options.scenario, selected),

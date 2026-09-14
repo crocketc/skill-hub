@@ -82,6 +82,13 @@ interface WizardState {
   /** M-29：单个失败目录重试中（显示进行中状态）。 */
   retryingSource?: string;
   error?: string;
+  /**
+   * OPT-20260914-01：冲突分析进度。总数在开始时即真实已知（送入分析的候选数）；
+   * 逐项进度只在 facade 回调后存在，未回调前展示不确定进度，绝不伪造百分比。
+   */
+  analysisStartedAt?: number;
+  analysisTotal?: number;
+  analysisProgress?: ImportProgress;
 }
 
 type WizardEvent =
@@ -95,8 +102,10 @@ type WizardEvent =
   | { type: "sources_cleared" }
   | { type: "show_candidates" }
   | { type: "candidates_selected"; ids: string[] }
-  | { type: "analysis_started" }
+  | { type: "analysis_started"; startedAt: number; total: number }
+  | { type: "analysis_progress"; progress: ImportProgress }
   | { type: "analysis_succeeded"; plan: ImportPlan }
+  | { type: "analysis_cancelled" }
   | { type: "action_selected"; candidateId: string; action: ImportAction }
   | { type: "commit_started"; total: number }
   | { type: "commit_progress"; progress: ImportProgress }
@@ -226,9 +235,37 @@ function reducer(state: WizardState, event: WizardEvent): WizardState {
     case "candidates_selected":
       return { ...state, selectedIds: event.ids };
     case "analysis_started":
-      return { ...state, error: undefined, phase: "analyzing" };
+      return {
+        ...state,
+        analysisProgress: undefined,
+        analysisStartedAt: event.startedAt,
+        analysisTotal: event.total,
+        error: undefined,
+        phase: "analyzing",
+      };
+    case "analysis_progress":
+      return { ...state, analysisProgress: event.progress };
     case "analysis_succeeded":
-      return { ...state, error: undefined, phase: "conflicts", plan: event.plan };
+      // 离开分析阶段即丢弃进度快照：避免下一次分析开始前残留旧数据。
+      return {
+        ...state,
+        analysisProgress: undefined,
+        analysisStartedAt: undefined,
+        analysisTotal: undefined,
+        error: undefined,
+        phase: "conflicts",
+        plan: event.plan,
+      };
+    case "analysis_cancelled":
+      // 分析阶段的取消：回到候选阶段，已选候选保留，在途结果由 operation
+      // 序号守卫丢弃（不进入冲突阶段）。
+      return {
+        ...state,
+        analysisProgress: undefined,
+        analysisStartedAt: undefined,
+        analysisTotal: undefined,
+        phase: "candidates",
+      };
     case "action_selected":
       return { ...state, actions: { ...state.actions, [event.candidateId]: event.action } };
     case "commit_started":
@@ -265,13 +302,24 @@ function reducer(state: WizardState, event: WizardEvent): WizardState {
       };
     }
     case "failed":
-      return { ...state, error: event.error, phase: "failed", previousPhase: event.previousPhase };
+      return {
+        ...state,
+        analysisProgress: undefined,
+        analysisStartedAt: undefined,
+        analysisTotal: undefined,
+        error: event.error,
+        phase: "failed",
+        previousPhase: event.previousPhase,
+      };
     case "cancelled":
       return { ...state, error: undefined, phase: "cancelled", previousPhase: "source", retryingSource: undefined };
     case "retry":
       return {
         ...state,
         actions: state.previousPhase === "conflicts" ? {} : state.actions,
+        analysisProgress: undefined,
+        analysisStartedAt: undefined,
+        analysisTotal: undefined,
         commitProgress: undefined,
         error: undefined,
         phase: state.previousPhase ?? "source",
@@ -612,19 +660,46 @@ type: "failed",
     }
   };
 
+  // OPT-20260914-01：分析已用时间——进入分析阶段启动秒级计时，离开即停。
+  // 参照 ScanStep 的既有做法，只做时间戳差值，不引入任何估算延时。
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (state.phase !== "analyzing") return;
+    setNow(Date.now());
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [state.phase]);
+  const analysisElapsedSeconds = Math.max(
+    0,
+    Math.floor((now - (state.analysisStartedAt ?? now)) / 1000),
+  );
+
   const analyze = async () => {
     const operation = ++operationRef.current;
-    dispatch({ type: "analysis_started" });
+    const selectedCandidates = state.selectedIds.map(
+      (id) => state.candidates.find((candidate) => candidate.id === id),
+    ).filter((candidate): candidate is CandidateSelectionProps["candidates"][number] => Boolean(candidate));
+    // 总数在开始时即真实已知；逐项进度只在 facade 回调后派发，
+    // 过期操作（已被取消或重开）的回调直接丢弃。
+    dispatch({ startedAt: Date.now(), total: selectedCandidates.length, type: "analysis_started" });
     try {
-      const plan = await facade.analyzeConflicts(state.selectedIds.map(
-        (id) => state.candidates.find((candidate) => candidate.id === id),
-      ).filter((candidate): candidate is CandidateSelectionProps["candidates"][number] => Boolean(candidate)));
+      const plan = await facade.analyzeConflicts(selectedCandidates, (progress) => {
+        if (operation === operationRef.current) dispatch({ progress, type: "analysis_progress" });
+      });
       if (operation === operationRef.current) dispatch({ type: "analysis_succeeded", plan });
     } catch (error) {
       if (operation === operationRef.current) {
         dispatch({ type: "failed", error: describeNativeError(error, (key, options) => String(t(key as never, options as never)), "importWorkflow.errors.generic"), previousPhase: "candidates" });
       }
     }
+  };
+
+  const cancelAnalysis = async () => {
+    // 先作废当前操作序号：在途分析的结果（成功/失败/进度）全部被守卫丢弃。
+    operationRef.current += 1;
+    await facade.cancel();
+    notify({ tone: "info", title: t("importWorkflow.notifications.cancelledTitle") });
+    dispatch({ type: "analysis_cancelled" });
   };
 
   const commit = async () => {
@@ -725,6 +800,10 @@ type: "failed",
       const kind = statusBySource[source]?.kind;
       return kind === undefined || kind === "unscanned" || kind === "scanning";
     });
+  // OPT-20260914-01：逐项分析进度是否已真实到达（到达前只展示不确定进度）。
+  const analysisLive = Boolean(
+    state.analysisProgress && state.analysisProgress.total > 0,
+  );
 
   let actions: { secondary: ReactNode[]; primary: ReactNode[] };
   switch (state.phase) {
@@ -801,6 +880,17 @@ type: "failed",
         ],
       };
       break;
+    case "analyzing":
+      // OPT-20260914-01：分析阶段提供取消入口；提交阶段保持后台语义不设动作。
+      actions = {
+        primary: [],
+        secondary: [
+          <Button key="cancel-analysis" onClick={() => void cancelAnalysis()} variant="ghost">
+            {t("importWorkflow.analysis.cancel")}
+          </Button>,
+        ],
+      };
+      break;
     case "conflicts":
       actions = {
         primary: [
@@ -853,7 +943,7 @@ type: "failed",
       };
       break;
     default:
-      // analyzing / committing：进度态不提供流程动作。
+      // committing：后台提交不提供流程动作（进度在全局任务状态可见）。
       actions = { primary: [], secondary: [] };
   }
 
@@ -945,7 +1035,31 @@ type: "failed",
         />
       ) : null}
 
-      {state.phase === "analyzing" ? <DataState message={t("importWorkflow.phases.analyzing")} state="loading" /> : null}
+      {state.phase === "analyzing" ? (
+        <section aria-label={t("importWorkflow.analysis.progressTitle")} className="sh-import-wizard__analysis">
+          <div className="sh-import-wizard__analysis-meta">
+            <span>{t("importWorkflow.phases.analyzing")}</span>
+            <span>{t("importWorkflow.analysis.elapsed", { seconds: analysisElapsedSeconds })}</span>
+          </div>
+          <progress
+            aria-label={t("importWorkflow.analysis.progressTitle")}
+            max={analysisLive ? state.analysisProgress!.total : undefined}
+            value={analysisLive ? state.analysisProgress!.completed : undefined}
+          />
+          <p>{t("importWorkflow.analysis.scope", { total: state.analysisTotal ?? 0 })}</p>
+          {analysisLive ? (
+            <p>
+              {t("importWorkflow.analysis.count", {
+                completed: state.analysisProgress!.completed,
+                percent: Math.round((state.analysisProgress!.completed / state.analysisProgress!.total) * 100),
+                total: state.analysisProgress!.total,
+              })}
+            </p>
+          ) : (
+            <p>{t("importWorkflow.analysis.progressUnavailable")}</p>
+          )}
+        </section>
+      ) : null}
 
       {state.phase === "conflicts" && state.plan ? (
         <>

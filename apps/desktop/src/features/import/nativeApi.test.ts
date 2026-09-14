@@ -112,6 +112,36 @@ describe("native import facade", () => {
     ]);
   });
 
+  it("reports live per-candidate progress as native analyses resolve", async () => {
+    const progress = vi.fn();
+    vi.mocked(queryApplication).mockResolvedValue({
+      type: "import_analysis",
+      payload: {
+        actions: ["skip"],
+        candidate: {} as never,
+        conflicts: [],
+        duplicate_kind: null,
+        matches: [],
+      },
+    });
+    const makeCandidate = async (name: string) => ({
+      basicCheck: "not_checked" as const,
+      id: `C:/incoming/${name}#${name}`,
+      name,
+      ownership: "unknown" as const,
+      path: `C:/incoming/${name}`,
+      source: await nativeImportFacade.parseSource("C:/incoming"),
+    });
+    const first = await makeCandidate("alpha");
+    const second = await makeCandidate("beta");
+
+    await nativeImportFacade.analyzeConflicts([first, second], progress);
+
+    // 候选数组长度即真实总数；每个候选查询 resolve 即真实已完成数。
+    expect(progress).toHaveBeenNthCalledWith(1, { candidateId: first.id, completed: 1, total: 2 });
+    expect(progress).toHaveBeenNthCalledWith(2, { candidateId: second.id, completed: 2, total: 2 });
+  });
+
   it("prepares and commits a selected local candidate", async () => {
     const progress = vi.fn();
     vi.mocked(executeCommand)

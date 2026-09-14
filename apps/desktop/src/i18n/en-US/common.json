@@ -162,6 +162,14 @@
       "cancelled": "Import cancelled",
       "committingBackgroundHint": "You can leave this page; the import keeps running in the background. Follow progress in the top-bar task status and view the result in Notifications when it finishes."
     },
+    "analysis": {
+      "progressTitle": "Conflict analysis progress",
+      "elapsed": "Elapsed {{seconds}} s",
+      "scope": "Analyzing {{total}} candidates",
+      "count": "{{completed}}/{{total}} complete ({{percent}}%)",
+      "progressUnavailable": "Per-candidate analysis progress is unavailable in this environment; no percentage is shown until it finishes.",
+      "cancel": "Cancel analysis"
+    },
     "acquisition": {
       "complete": "Found {{count}} candidate(s). Review the list before continuing.",
       "multiSource": "Acquired candidates from {{count}} source directories",
