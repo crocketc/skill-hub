@@ -212,3 +212,94 @@ test.describe("app shell collapse button placement", () => {
     await expect(page.getByRole("dialog", { name: "Notifications" })).toBeVisible();
   });
 });
+
+test.describe("macOS expanded sidebar vertical rhythm", () => {
+  // OPT-20260914-05：macOS 展开态大 Logo 与主导航整体下移一个 --space-2。
+  // 自动化只提供渲染层几何证据，观感复验仍需 macOS 真机人工确认。
+  test("lowers the expanded logo and first navigation tab by 8px-16px on macOS", async ({ page }) => {
+    await page.setViewportSize({ width: 1024, height: 900 });
+    await page.goto("/__preview/skill-library");
+
+    const readGeometry = () =>
+      page.evaluate(() => {
+        const rect = (selector: string) => {
+          const element = document.querySelector(selector);
+          return element ? element.getBoundingClientRect().toJSON() : null;
+        };
+        const sidebar = rect(".sh-sidebar")!;
+        const logo = rect(".sh-sidebar__brand .sh-brand-logo")!;
+        const firstLink = rect('.sh-sidebar__list a[href="/"]')!;
+        const nextLink = rect('.sh-sidebar__list a[href="/library"]')!;
+        const toggle = rect(".sh-sidebar__toggle")!;
+        return {
+          logoY: logo.y,
+          logoCenterX: logo.x + logo.width / 2,
+          sidebarCenterX: sidebar.x + sidebar.width / 2,
+          sidebarWidth: sidebar.width,
+          linkY: firstLink.y,
+          linkWidth: firstLink.width,
+          linkHeight: firstLink.height,
+          tabGapY: nextLink.y - firstLink.y,
+          toggleY: toggle.y,
+        };
+      });
+
+    // 基线：未注入 macOS 平台类的展开态几何。
+    const baseline = await readGeometry();
+
+    // 真实环境由 applyWindowChromePlatformClass 在挂载时写入该类，这里注入模拟。
+    await page.evaluate(() => document.documentElement.classList.add("sh-is-macos"));
+    const macos = await readGeometry();
+
+    // 大 Logo 与首个导航页签整体下移 8px-16px。
+    const logoDelta = macos.logoY - baseline.logoY;
+    const linkDelta = macos.linkY - baseline.linkY;
+    expect(logoDelta, "expanded logo shifts down 8px-16px").toBeGreaterThanOrEqual(8);
+    expect(logoDelta, "expanded logo shift stays within 16px").toBeLessThanOrEqual(16);
+    expect(linkDelta, "first navigation tab shifts down 8px-16px").toBeGreaterThanOrEqual(8);
+    expect(linkDelta, "first navigation tab shift stays within 16px").toBeLessThanOrEqual(16);
+
+    // 大 Logo 水平居中保持：Logo 中心 x 与侧栏中心 x 差 ≤1px。
+    expect(
+      Math.abs(macos.logoCenterX - macos.sidebarCenterX),
+      "expanded logo stays horizontally centered",
+    ).toBeLessThanOrEqual(1);
+
+    // 导航宽度、页签间距与点击区域不变。
+    expect(macos.sidebarWidth, "sidebar width unchanged").toBeCloseTo(baseline.sidebarWidth, 0);
+    expect(macos.linkWidth, "navigation tab width unchanged").toBeCloseTo(baseline.linkWidth, 0);
+    expect(macos.linkHeight, "navigation tab click target unchanged").toBeCloseTo(baseline.linkHeight, 0);
+    expect(macos.tabGapY, "navigation tab spacing unchanged").toBeCloseTo(baseline.tabGapY, 0);
+    // 折叠按钮只有既有红绿灯避让的 --space-6（24px）下移；垂直节奏规则不叠加位移。
+    expect(macos.toggleY, "collapse button keeps only the pre-existing traffic-light offset").toBeCloseTo(
+      baseline.toggleY + 24,
+      0,
+    );
+
+    // 收起态不受影响：移除平台类前后收起态几何一致。
+    const toggle = page.getByRole("button", { name: TOGGLE_NAME });
+    await toggle.click();
+    await expect(page.getByRole("complementary", { name: NAVIGATION })).toHaveClass(/is-collapsed/);
+    const readCollapsedGeometry = () =>
+      page.evaluate(() => {
+        const rect = (selector: string) => {
+          const element = document.querySelector(selector);
+          return element ? element.getBoundingClientRect().toJSON() : null;
+        };
+        const link = rect(".sh-sidebar__list a")!;
+        const toggleRect = rect(".sh-sidebar__toggle")!;
+        return { linkY: link.y, linkX: link.x, toggleY: toggleRect.y };
+      });
+    const collapsedMacos = await readCollapsedGeometry();
+    await page.evaluate(() => document.documentElement.classList.remove("sh-is-macos"));
+    const collapsedPlain = await readCollapsedGeometry();
+    // 收起态导航几何与 macOS 类完全无关（展开态专属作用域的直接证据）。
+    expect(collapsedPlain.linkY, "collapsed navigation y independent of macOS class").toBeCloseTo(collapsedMacos.linkY, 0);
+    expect(collapsedPlain.linkX, "collapsed navigation x independent of macOS class").toBeCloseTo(collapsedMacos.linkX, 0);
+    // 收起态折叠按钮只保留既有红绿灯避让的 --space-6（24px）下移，节奏规则不叠加。
+    expect(
+      collapsedMacos.toggleY - collapsedPlain.toggleY,
+      "collapsed toggle keeps only the pre-existing traffic-light offset",
+    ).toBeCloseTo(24, 0);
+  });
+});
