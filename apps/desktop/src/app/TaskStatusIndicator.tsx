@@ -1,16 +1,20 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useTranslation } from "react-i18next";
 import { getBackgroundScanState, subscribeBackgroundScan } from "../features/bootstrap/backgroundScan";
-import { useTrackedOperations } from "../platform/operationTracker";
+import {
+  operationTracker,
+  useTrackedOperations,
+  type OperationTracker,
+} from "../platform/operationTracker";
 import { Drawer } from "../ui/Drawer";
 import { Icon } from "../ui/Icon";
 
 const TERMINAL_DISPLAY_MS = 2_000;
 
-export function TaskStatusIndicator() {
+export function TaskStatusIndicator({ tracker = operationTracker }: { tracker?: OperationTracker } = {}) {
   const { t } = useTranslation();
   const state = useSyncExternalStore(subscribeBackgroundScan, getBackgroundScanState);
-  const trackedOperations = useTrackedOperations();
+  const trackedOperations = useTrackedOperations(tracker);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [hiddenToken, setHiddenToken] = useState<number | null>(null);

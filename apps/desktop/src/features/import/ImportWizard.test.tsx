@@ -820,6 +820,7 @@ it("shows candidate progress while commit is in flight", async () => {
   await user.click(await screen.findByRole("button", { name: "提交导入" }));
 
   expect(await screen.findByText("正在提交导入（已完成 0/2，当前：safe-pdf）")).toBeVisible();
+  expect(screen.getByText("可以离开此页面；导入会在后台继续。请通过顶栏任务状态查看进度，完成后到通知中心查看结果。")).toBeVisible();
   await act(async () => {
     release([]);
   });

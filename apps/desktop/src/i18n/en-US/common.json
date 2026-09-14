@@ -160,7 +160,7 @@
       "summary": "Import complete",
       "failed": "Import needs attention",
       "cancelled": "Import cancelled",
-      "committingBackgroundHint": "You can leave this page; the import keeps running in the background. Progress and results appear in the indicator at the top of every page."
+      "committingBackgroundHint": "You can leave this page; the import keeps running in the background. Follow progress in the top-bar task status and view the result in Notifications when it finishes."
     },
     "acquisition": {
       "complete": "Found {{count}} candidate(s). Review the list before continuing.",

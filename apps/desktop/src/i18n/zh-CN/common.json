@@ -160,7 +160,7 @@
       "summary": "导入完成",
       "failed": "导入需要处理",
       "cancelled": "导入已取消",
-      "committingBackgroundHint": "可以离开此页面，导入将在后台继续；进度与结果可在任意页面的顶部指示器查看。"
+      "committingBackgroundHint": "可以离开此页面；导入会在后台继续。请通过顶栏任务状态查看进度，完成后到通知中心查看结果。"
     },
     "acquisition": {
       "complete": "找到 {{count}} 个候选项，请先审阅列表。",
