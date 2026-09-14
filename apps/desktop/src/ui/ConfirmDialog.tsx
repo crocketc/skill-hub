@@ -10,6 +10,11 @@ export interface ConfirmDialogProps {
    * dialog header. It cancels without running the operation.
    */
   closeLabel?: string;
+  /**
+   * Disables the confirm action while the caller's operation is still in
+   * flight, so a double click cannot run it twice.
+   */
+  confirmDisabled?: boolean;
   confirmLabel: string;
   description: string;
   onConfirm: () => void;
@@ -21,6 +26,7 @@ export interface ConfirmDialogProps {
 export function ConfirmDialog({
   cancelLabel,
   closeLabel,
+  confirmDisabled = false,
   confirmLabel,
   description,
   onConfirm,
@@ -55,7 +61,7 @@ export function ConfirmDialog({
               <Button variant="secondary">{cancelLabel}</Button>
             </AlertDialog.Cancel>
             <AlertDialog.Action asChild>
-              <Button onClick={onConfirm} variant={variant}>
+              <Button disabled={confirmDisabled} onClick={onConfirm} variant={variant}>
                 {confirmLabel}
               </Button>
             </AlertDialog.Action>

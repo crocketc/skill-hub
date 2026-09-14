@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { describeNativeError } from "../../api/nativeErrors";
 import { Button } from "../../ui/Button";
@@ -37,6 +37,12 @@ export function RepoManagerPage({ facade }: RepoManagerPageProps) {
   const [listRefreshing, setListRefreshing] = useState(false);
   const [refreshingKey, setRefreshingKey] = useState<string | null>(null);
   const [pendingRemoval, setPendingRemoval] = useState<SkillRepoView | null>(null);
+  // 遗留风险清理（2026-09-14）：启停/移除补防抖——ref 守卫挡住任何路径的
+  // 重入，state 驱动控件禁用给出可视反馈（与 refresh 的 busy 模式一致）。
+  const [togglingKey, setTogglingKey] = useState<string | null>(null);
+  const toggleBusyRef = useRef(false);
+  const [removing, setRemoving] = useState(false);
+  const removingRef = useRef(false);
 
   const describe = useCallback(
     (reason: unknown) =>
@@ -86,6 +92,9 @@ export function RepoManagerPage({ facade }: RepoManagerPageProps) {
 
   const toggleRepo = useCallback(
     async (view: SkillRepoView) => {
+      if (toggleBusyRef.current) return;
+      toggleBusyRef.current = true;
+      setTogglingKey(repoKey(view.repo));
       setError(null);
       try {
         setViews(
@@ -93,6 +102,9 @@ export function RepoManagerPage({ facade }: RepoManagerPageProps) {
         );
       } catch (reason) {
         setError(describe(reason));
+      } finally {
+        toggleBusyRef.current = false;
+        setTogglingKey(null);
       }
     },
     [describe, facade],
@@ -123,7 +135,9 @@ export function RepoManagerPage({ facade }: RepoManagerPageProps) {
   );
 
   const removeRepo = useCallback(async () => {
-    if (!pendingRemoval) return;
+    if (!pendingRemoval || removingRef.current) return;
+    removingRef.current = true;
+    setRemoving(true);
     setError(null);
     try {
       setViews(
@@ -132,6 +146,8 @@ export function RepoManagerPage({ facade }: RepoManagerPageProps) {
     } catch (reason) {
       setError(describe(reason));
     } finally {
+      removingRef.current = false;
+      setRemoving(false);
       setPendingRemoval(null);
     }
   }, [describe, facade, pendingRemoval]);
@@ -250,6 +266,7 @@ export function RepoManagerPage({ facade }: RepoManagerPageProps) {
                 <div className="sh-repo-manager__actions">
                   <Switch
                     checked={view.repo.enabled}
+                    disabled={togglingKey !== null}
                     label={t("discovery.repo.enabled")}
                     onChange={() => void toggleRepo(view)}
                   />
@@ -269,6 +286,7 @@ export function RepoManagerPage({ facade }: RepoManagerPageProps) {
                   </Button>
                   <ConfirmDialog
                     cancelLabel={t("actions.cancel")}
+                    confirmDisabled={removing}
                     confirmLabel={t("discovery.repo.confirmRemove")}
                     description={t("discovery.repo.confirmRemoveDescription", {
                       repo: key,

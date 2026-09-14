@@ -2,11 +2,15 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { vi } from "vitest";
 import { ConfirmDialog } from "./ConfirmDialog";
 
-function renderDialog(onConfirm: () => void, props: { closeLabel?: string } = {}) {
+function renderDialog(
+  onConfirm: () => void,
+  props: { closeLabel?: string; confirmDisabled?: boolean } = {},
+) {
   render(
     <ConfirmDialog
       cancelLabel="取消"
       closeLabel={props.closeLabel}
+      confirmDisabled={props.confirmDisabled}
       confirmLabel="移除"
       description="集中库中的技能会保留。"
       onConfirm={onConfirm}
@@ -83,4 +87,16 @@ it("keeps the dialog untouched by keyboard when no close label is provided", () 
 
   expect(screen.queryByRole("button", { name: "关闭" })).not.toBeInTheDocument();
   expect(screen.getByRole("alertdialog")).toBeInTheDocument();
+});
+
+it("disables the confirm action while the operation is busy but keeps cancel available", () => {
+  const onConfirm = vi.fn();
+  renderDialog(onConfirm, { confirmDisabled: true });
+
+  const confirm = screen.getByRole("button", { name: "移除" });
+  expect(confirm).toBeDisabled();
+  expect(screen.getByRole("button", { name: "取消" })).toBeEnabled();
+
+  fireEvent.click(confirm);
+  expect(onConfirm).not.toHaveBeenCalled();
 });

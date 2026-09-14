@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { I18nextProvider } from "react-i18next";
 import { createSkillHubI18n } from "../../i18n";
 import type { RepoDiscoveryReport, SkillRepoView } from "../../api/bindings";
@@ -240,4 +240,61 @@ it("reloads the list from the backend via the page-level refresh button", async 
   await click(screen.getByRole("button", { name: "刷新列表" }));
 
   await waitFor(() => expect(listSkillRepos).toHaveBeenCalledTimes(2));
+});
+
+// —— 遗留风险清理（2026-09-14）：启停/移除补防抖——在途请求未落定前控件
+// 禁用、处理器忽略重入，双击只产生一次调用。 ——
+
+it("keeps the enable switch busy and ignores re-entry while a toggle is in flight", async () => {
+  let resolveToggle: (views: SkillRepoView[]) => void = () => {};
+  const addSkillRepo = vi.fn(
+    () =>
+      new Promise<SkillRepoView[]>((resolve) => {
+        resolveToggle = resolve;
+      }),
+  );
+  renderPage(baseFacade({ addSkillRepo }));
+
+  const row = (await screen.findByText("anthropics/skills")).closest("li");
+  expect(row).not.toBeNull();
+  const sw = within(row as HTMLElement).getByRole("switch");
+
+  await click(sw);
+  expect(addSkillRepo).toHaveBeenCalledTimes(1);
+  expect(sw).toBeDisabled();
+
+  // 在途期间再次点击（disabled 输入不派发事件；处理器层面也须忽略重入）。
+  await click(sw);
+  expect(addSkillRepo).toHaveBeenCalledTimes(1);
+
+  await act(async () => resolveToggle(defaultViews));
+  await waitFor(() => expect(sw).toBeEnabled());
+});
+
+it("runs a removal only once even when the confirm action is retried in flight", async () => {
+  let resolveRemove: (views: SkillRepoView[]) => void = () => {};
+  const removeSkillRepo = vi.fn(
+    () =>
+      new Promise<SkillRepoView[]>((resolve) => {
+        resolveRemove = resolve;
+      }),
+  );
+  renderPage(baseFacade({ removeSkillRepo }));
+
+  // 第一次确认：进入在途（对话框随 Radix Action 关闭）。
+  let row = (await screen.findByText("anthropics/skills")).closest("li") as HTMLElement;
+  await click(within(row).getByRole("button", { name: "移除" }));
+  await click(screen.getByRole("button", { name: "确认移除" }));
+  expect(removeSkillRepo).toHaveBeenCalledTimes(1);
+
+  // 在途期间重新打开确认框再确认：守卫忽略重入，确认钮保持禁用。
+  row = (screen.getByText("anthropics/skills")).closest("li") as HTMLElement;
+  await click(within(row).getByRole("button", { name: "移除" }));
+  const confirm = screen.getByRole("button", { name: "确认移除" });
+  expect(confirm).toBeDisabled();
+  await click(confirm);
+  expect(removeSkillRepo).toHaveBeenCalledTimes(1);
+
+  await act(async () => resolveRemove(defaultViews));
+  await waitFor(() => expect(removeSkillRepo).toHaveBeenCalledTimes(1));
 });
