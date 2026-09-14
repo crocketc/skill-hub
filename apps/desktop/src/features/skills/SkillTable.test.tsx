@@ -504,12 +504,39 @@ it("gives every enabled column a readable width floor before horizontal scroll t
   );
 });
 
-it("keeps the results-region scrollbar discoverable instead of hairline-thin", () => {
+it("keeps the results-region scrollbar discoverable and never reserves a phantom gutter", () => {
+  // 断言前剥离注释：注释中的取证文字会字面提及被禁止的声明。
+  const stripComments = (css: string) => css.replace(/\/\*[\s\S]*?\*\//g, "");
   const regionRule = skillsCss.match(/\.sh-skill-library \.sh-skill-table__region\s*\{[^}]*\}/);
   if (!regionRule) throw new Error("Expected the library-scoped results region rule in skills.css");
-  expect(regionRule[0]).toMatch(/scrollbar-width:\s*auto/);
-  expect(regionRule[0]).toMatch(/scrollbar-color:\s*var\(--ui-accent\)/);
-  expect(regionRule[0]).toMatch(/scrollbar-gutter:\s*stable/);
+  const regionDeclarations = stripComments(regionRule[0]);
+  expect(regionDeclarations).toMatch(/scrollbar-width:\s*auto/);
+  expect(regionDeclarations).toMatch(/scrollbar-color:\s*var\(--ui-accent\)/);
+  // OPT-20260914-03 取证（Playwright Chromium 1280×800 真实几何）：scrollbar-gutter:
+  // stable 使 Chromium 把横向钳制收短一个槽宽（scrollLeft 钳在 scrollWidth −
+  // borderBox 宽），末列尾部永久压在纵向滚动条槽位下无法滚出，默认列集溢出量
+  // 小于一个槽宽时 scrollLeft 钳 0、security 徽标被盖住（2026-09-14 真机复验
+  // 未通过的根因）。契约反转：区域不得再预留 gutter，几何由
+  // tests/e2e/library-security-scrollbar.spec.ts 锁定。
+  expect(regionDeclarations).not.toMatch(/scrollbar-gutter/);
+  // base.css 窄窗媒体查询中的同款预留槽位一并禁止（同一根因）。
+  const narrowRegionRule = baseCss.match(/@media \(max-width: 56rem\)\s*\{[^@]*\.sh-skill-table__region\s*\{[^}]*\}/);
+  if (narrowRegionRule) {
+    expect(stripComments(narrowRegionRule[0])).not.toMatch(/scrollbar-gutter/);
+  }
+});
+
+it("lets security badges wrap-stack instead of forcing single-line max-content", () => {
+  // OPT-20260914-03 取证：旧表模型遗留的 min-width: max-content 使 security
+  // 内容单行排开（1280 视口实测 359px > 12rem 列宽），溢出部分被 td 裁剪并
+  // 压进纵向滚动条槽位，skills.css 的 flex-wrap: wrap 设计失效。
+  const baseDeclarations = baseCss.replace(/\/\*[\s\S]*?\*\//g, "");
+  expect(baseDeclarations).not.toMatch(/\.sh-skill-table__security\s*\{[^}]*min-width/);
+  // skills.css 侧的换行堆叠契约保持不变。
+  expect(skillsCss).toMatch(/td\[data-column="security"\]\s*\{[^}]*white-space:\s*normal/);
+  expect(skillsCss).toMatch(
+    /td\[data-column="security"\] \.sh-skill-table__inline\s*\{[^}]*flex-wrap:\s*wrap/,
+  );
 });
 
 it("keeps the configuration panel and results shell constrained to the page width", async () => {

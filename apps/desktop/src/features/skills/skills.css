@@ -73,9 +73,16 @@
      隐藏列能被用户发现并横向到达。 */
   scrollbar-width: auto;
   scrollbar-color: var(--ui-accent) var(--ui-surface-subtle);
-  /* Windows 非覆盖式纵向滚动条会占用结果区右侧客户区；预留稳定槽位，
-     横向滚到最右时末列内容不再被纵向滚动条压住。 */
-  scrollbar-gutter: stable;
+  /* OPT-20260914-03 取证（Playwright Chromium 1280×800 真实几何）：这里曾按
+     2026-09-14 的尝试加 `scrollbar-gutter: stable`，但 Chromium 对带预留槽位
+     的滚动容器把 scrollLeft 钳制在 `scrollWidth − borderBox 宽`（标准应为
+     `scrollWidth − clientWidth`），横向可滚范围恰好差一个槽宽——溢出内容的
+     末 (槽宽) px 永久停在纵向滚动条槽位之下无法滚出；默认列集下溢出量小于
+     一个槽宽时 scrollLeft 直接钳在 0，security 徽标被永久盖住（2026-09-14
+     真机复验未通过的根因）。预留槽位同时把客户区压掉 15px，使“默认列集
+     1280 内不溢出”契约失守。故移除：Windows 非覆盖式滚动条占位于客户区
+     之外，标准钳制保证末列经滚动完全可达；overlay 平台本就不占位。几何
+     不变量由 tests/e2e/library-security-scrollbar.spec.ts 锁定。 */
 }
 
 /* base.css 的表格 min-width:max(84rem,100%) 与 14 列固定像素宽在 1280px 窗口
