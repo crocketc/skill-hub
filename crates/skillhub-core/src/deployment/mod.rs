@@ -1,4 +1,5 @@
 mod model;
+mod observed;
 mod planner;
 pub mod reconcile;
 pub mod removal;
@@ -9,6 +10,10 @@ pub use model::{
     ExistingDeployment, ExistingOwnership, PlannerInput, RegisteredTargetIndex, TargetCapabilities,
     TargetChange, TargetConflict, TargetConflictReason, TargetFact, TargetFactSource, TargetPlan,
     VerifiedTarget,
+};
+pub use observed::{
+    observed_path_key, path_lives_under, reconcile_observed_row, ObservedDeployment,
+    ObservedMatchState, ObservedOrigin, ObservedPathObservation, ObservedRowAction, ObservedStatus,
 };
 pub use planner::DeploymentPlanner;
 pub use reconcile::{

@@ -16,6 +16,7 @@ mod llm_provider_repository;
 mod migrations;
 mod operation_repository;
 mod project_repository;
+mod provenance_repository;
 pub mod recovery_point;
 mod scan_repository;
 mod search_candidate_repository;
@@ -55,6 +56,7 @@ pub use llm_provider_repository::LlmProviderRepository;
 pub use migrations::MigrationReport;
 pub use operation_repository::OperationRepositorySqlite;
 pub use project_repository::{ProjectRepository, VersionPin};
+pub use provenance_repository::ProvenanceRepository;
 pub use recovery_point::RecoveryPoint;
 pub use scan_repository::ScanRepository;
 pub use search_candidate_repository::SearchCandidateRepository;
@@ -172,6 +174,11 @@ impl Database {
 
     pub fn scan_repository(&self) -> ScanRepository<'_> {
         ScanRepository::new(self)
+    }
+
+    /// OPT-20260914-08：导入存证、已观察部署关系与原始迁移审计。
+    pub fn provenance_repository(&self) -> ProvenanceRepository<'_> {
+        ProvenanceRepository::new(self)
     }
 
     pub fn operation_repository(&self) -> OperationRepositorySqlite<'_> {

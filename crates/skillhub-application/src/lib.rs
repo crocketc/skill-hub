@@ -51,8 +51,8 @@ use skillhub_core::catalog::CallPolicy;
 use skillhub_core::catalog::{CatalogRepository, Skill};
 use skillhub_core::check::{CheckKind, CheckRun, CheckRunPhase, FindingDisposition};
 use skillhub_core::deployment::{
-    DeploymentPlanRequest, DeploymentRecord, DeploymentState, RegisteredTargetIndex, TargetFact,
-    TargetPlan,
+    observed_path_key, path_lives_under, reconcile_observed_row, DeploymentPlanRequest,
+    DeploymentRecord, DeploymentState, RegisteredTargetIndex, TargetFact, TargetPlan,
 };
 use skillhub_core::duplicate::DuplicateCandidate;
 use skillhub_core::evidence::UsageEvidenceAnalyzer;
@@ -68,6 +68,7 @@ use skillhub_core::source::{
     RepoDiscoveryReport, RepoDiscoveryWarning, RepoScanState, SkillRepo, SourceDescriptor,
     SourceLocator, SourceState, UpdateDecision,
 };
+use skillhub_core::{ensure_original_deletion_authorized, plan_original_migration};
 use skillhub_core::{
     physical_id_for_path, symlink_physical_id_for_path, AllowedRoot, AppCommand, AppCommandResult,
     AppError, AppQuery, AppQueryResult, AppResult, ApplicationFacade, DeploymentMode, ErrorCode,
@@ -110,6 +111,9 @@ pub struct LocalApplicationFacade {
     source_search_provider: Arc<SkillsShProvider>,
     repo_discovery_provider: RwLock<Arc<RepoDiscoveryProvider>>,
     prepared_imports: Mutex<HashMap<OperationId, PreparedImport>>,
+    /// OPT-20260914-08：已准备的原始文件迁移计划。准备只读；提交必须
+    /// 携带用户明确确认，且任何失败都保留现场。
+    prepared_migrations: Mutex<HashMap<OperationId, skillhub_core::OriginalMigrationPlan>>,
     prepared_uninstall: Mutex<Option<skillhub_core::UninstallImpact>>,
     scan_service: Mutex<ScanService>,
     path_grants: Mutex<HashMap<String, ResolvedPathGrant>>,
@@ -1586,6 +1590,7 @@ impl LocalApplicationFacade {
             source_search_provider: Arc::new(SkillsShProvider::new("https://skills.sh")),
             repo_discovery_provider: RwLock::new(Arc::new(RepoDiscoveryProvider::new())),
             prepared_imports: Mutex::new(HashMap::new()),
+            prepared_migrations: Mutex::new(HashMap::new()),
             prepared_uninstall: Mutex::new(None),
             scan_service: Mutex::new(ScanService::new()),
             path_grants: Mutex::new(HashMap::new()),
@@ -1656,6 +1661,7 @@ impl LocalApplicationFacade {
             source_search_provider: Arc::new(SkillsShProvider::new("https://skills.sh")),
             repo_discovery_provider: RwLock::new(Arc::new(RepoDiscoveryProvider::new())),
             prepared_imports: Mutex::new(HashMap::new()),
+            prepared_migrations: Mutex::new(HashMap::new()),
             prepared_uninstall: Mutex::new(None),
             scan_service: Mutex::new(ScanService::new()),
             path_grants: Mutex::new(HashMap::new()),
@@ -3097,6 +3103,9 @@ impl LocalApplicationFacade {
         let stored = self.with_database("execute.scan_targets.replace", |database| {
             database.scan_repository().replace(&result)
         })?;
+        // OPT-20260914-08：扫描落盘后与集中库比对，产出/更新已观察部署
+        // 关系。比对只写关系表，绝不触碰用户文件。
+        self.reconcile_observed_deployments(&stored)?;
         Ok(AppCommandResult::ScanResult(stored))
     }
 
@@ -3105,15 +3114,16 @@ impl LocalApplicationFacade {
         request: skillhub_core::api::RescanSkill,
     ) -> AppResult<AppCommandResult> {
         self.scan_scope_ids(vec![request.scope_id.clone()])?;
-        self.with_database("execute.rescan_skill", |database| {
+        let stored = self.with_database("execute.rescan_skill", |database| {
             let mut scanner = self
                 .scan_service
                 .lock()
                 .map_err(|_| internal("execute.rescan_skill"))?;
             let result = scanner.rescan_registered_skill(&request.scope_id, request.path)?;
-            let result = database.scan_repository().replace(&result)?;
-            Ok(AppCommandResult::ScanResult(result))
-        })
+            database.scan_repository().replace(&result)
+        })?;
+        self.reconcile_observed_deployments(&stored)?;
+        Ok(AppCommandResult::ScanResult(stored))
     }
 
     fn build_backup_input(&self, scope: BackupScope) -> AppResult<BackupInput> {
@@ -4907,6 +4917,15 @@ impl ApplicationFacade for LocalApplicationFacade {
             }
             AppCommand::PrepareImport(request) => return self.prepare_import(request),
             AppCommand::CommitImport(request) => return self.commit_import(request),
+            AppCommand::PrepareOriginalMigration(request) => {
+                return self.prepare_original_migration(request)
+            }
+            AppCommand::CommitOriginalMigration(request) => {
+                return self.commit_original_migration(request)
+            }
+            AppCommand::RollbackOriginalMigration(request) => {
+                return self.rollback_original_migration(request)
+            }
             AppCommand::CancelImport { prepared_import_id } => {
                 return self.cancel_import(prepared_import_id)
             }
@@ -5544,6 +5563,9 @@ impl ApplicationFacade for LocalApplicationFacade {
             AppQuery::GetDeploymentRelations(request) => {
                 self.list_deployment_relations(request.skill_id)
             }
+            AppQuery::GetSkillProvenance(request) => self
+                .skill_provenance(request.skill_id)
+                .map(AppQueryResult::SkillProvenance),
             AppQuery::GetRemovalImpact(request) => self
                 .removal_service
                 .prepare_delete(request.skill_id)
@@ -6001,6 +6023,7 @@ impl LocalApplicationFacade {
                         skill_id: None,
                         decision: request.decision,
                         original_preserved: true,
+                        provenance: None,
                     }],
                     committed: true,
                 },
@@ -6017,6 +6040,22 @@ impl LocalApplicationFacade {
                         .with_param("field", "existing_skill")
                         .with_action(RecoveryAction::ChooseAnotherName)
                 })?;
+            // OPT-20260914-08：复用同样是一次导入确认。只在被复用 Skill
+            // 尚无存证时补记本次事实，绝不覆盖已有存证历史；已观察关系
+            // 仅在指纹仍然一致（身份可靠）且归属明确时建立。
+            let fingerprint = self.candidate_tree_hash(&prepared.candidate, None);
+            if let Some(fingerprint) = fingerprint.as_deref() {
+                self.with_database("execute.commit_import.reuse_evidence", |database| {
+                    self.record_import_evidence(
+                        database,
+                        skill_id,
+                        &prepared.candidate,
+                        fingerprint,
+                        false,
+                    )
+                    .map(|_| ())
+                })?;
+            }
             self.prepared_imports
                 .lock()
                 .map_err(|_| {
@@ -6032,6 +6071,7 @@ impl LocalApplicationFacade {
                         skill_id: Some(skill_id),
                         decision: request.decision,
                         original_preserved: true,
+                        provenance: None,
                     }],
                     committed: true,
                 },
@@ -6114,6 +6154,26 @@ impl LocalApplicationFacade {
                     cleanup_import_state(database, central, store, skill_id, &version),
                 ));
             }
+            // OPT-20260914-08：导入即存证。写溯源（来源/Agent 形态/原始
+            // 路径/导入时间/内容指纹/所有权状态），身份可靠且归属明确时
+            // 自动建立已观察部署关系。存证失败视为导入失败并回滚库内
+            // 状态——"无存证的导入"不是完成的导入。
+            let evidence = self.record_import_evidence(
+                database,
+                skill_id,
+                &prepared.candidate,
+                &version.manifest.tree_hash,
+                true,
+            );
+            let provenance = match evidence {
+                Ok(provenance) => provenance,
+                Err(error) => {
+                    return Err(cleanup_import_error(
+                        error,
+                        cleanup_import_state(database, central, store, skill_id, &version),
+                    ));
+                }
+            };
             self.prepared_imports
                 .lock()
                 .map_err(|_| {
@@ -6129,11 +6189,621 @@ impl LocalApplicationFacade {
                         skill_id: Some(skill_id),
                         decision: request.decision,
                         original_preserved: true,
+                        provenance,
                     }],
                     committed: true,
                 },
             )))
         })
+    }
+
+    // ===== OPT-20260914-08：已部署 Skill 识别、导入存证与原始文件迁移 =====
+
+    /// 已知 Agent 目录清单（logical target 路径 → client_id）。归属判定按
+    /// 最长前缀取胜：原生目录（如 ~/.trae-cn/skills）比共享目录
+    /// （.agents/skills）更具体。没有目录证据的路径不归属。
+    ///
+    /// 接收调用方已持有的 `&Database`：所有调用点都在 `with_database`
+    /// 临界区内，这里绝不能再锁数据库（`Mutex` 不可重入，重入即死锁）。
+    fn discovery_client_dirs(database: &Database) -> AppResult<Vec<(String, String)>> {
+        let Some(snapshot) = database.agent_repository().load()? else {
+            return Ok(Vec::new());
+        };
+        Ok(snapshot
+            .logical_targets
+            .into_iter()
+            .filter(|target| target.available && target.exists)
+            .map(|target| (target.path, target.client_id))
+            .collect())
+    }
+
+    /// 把候选路径归属到已知 Agent 形态；无证据返回 None（来源不明，不猜）。
+    ///
+    /// 归属与关系比对都在"文件系统同一性"上进行：scanner 产出的是
+    /// canonicalize 后的路径（macOS 上 /var → /private/var 等），而导入候
+    /// 选/注册 target 常带未解析的符号链接前缀。两边必须先折叠到同一形
+    /// 态再比较，否则归属与关系会静默失配。
+    fn resolve_agent_client_id(database: &Database, path: &str) -> AppResult<Option<String>> {
+        let candidate = Self::canonical_path_string(path);
+        let dirs = Self::discovery_client_dirs(database)?
+            .into_iter()
+            .map(|(root, client)| (Self::canonical_path_string(&root), client))
+            .collect::<Vec<_>>();
+        Ok(dirs
+            .into_iter()
+            .filter(|(root, _)| path_lives_under(&candidate, root))
+            .max_by_key(|(root, _)| root.chars().count())
+            .map(|(_, client_id)| client_id))
+    }
+
+    /// 库内每个 Skill 当前版本的 (skill_id, content_hash)。
+    fn library_content_hashes(
+        database: &Database,
+    ) -> AppResult<Vec<(skillhub_core::SkillId, String)>> {
+        let mut statement = database
+            .connection_for_test()
+            .prepare(
+                "SELECT p.skill_id, v.content_hash FROM current_pointers p \
+                 JOIN versions v ON v.id=p.version_id",
+            )
+            .map_err(|error| {
+                AppError::new(ErrorCode::InternalError, Severity::Error)
+                    .with_param("source", error.to_string())
+            })?;
+        let rows = statement
+            .query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })
+            .map_err(|error| {
+                AppError::new(ErrorCode::InternalError, Severity::Error)
+                    .with_param("source", error.to_string())
+            })?;
+        rows.map(|row| {
+            let (skill, hash) = row.map_err(|error| {
+                AppError::new(ErrorCode::InternalError, Severity::Error)
+                    .with_param("source", error.to_string())
+            })?;
+            let skill_id = skill.parse().map_err(|_| {
+                AppError::new(ErrorCode::InternalError, Severity::Error)
+                    .with_param("reason", "skill_id_corrupt")
+            })?;
+            Ok((skill_id, hash))
+        })
+        .collect()
+    }
+
+    /// 扫描指纹与库内 content_hash 是两种算法：关系比对必须使用与版本
+    /// 清单一致的 canonical tree hash（复用 hash_tree_read_only），而不是
+    /// scanner 的传输校验指纹。单个路径哈希失败只意味着"本次无法核验"，
+    /// 该路径跳过判定，绝不据此释放或改写既有关系。
+    fn scan_observations(
+        &self,
+        scan: &skillhub_core::ScanResult,
+        library: &Arc<library_runtime::LibraryContext>,
+    ) -> Vec<skillhub_core::ObservedPathObservation> {
+        let mut observations = Vec::with_capacity(scan.discovered.len());
+        for discovered in &scan.discovered {
+            let Ok(fingerprint) = library.store.hash_tree_read_only(&discovered.path) else {
+                continue;
+            };
+            observations.push(skillhub_core::ObservedPathObservation {
+                path: discovered.path.clone(),
+                fingerprint,
+            });
+        }
+        observations
+    }
+
+    /// 扫描落盘后的比对产出（M-08 设计取舍：由 facade 比对而非扩展
+    /// scanner——adapters 不依赖 storage/catalog，且指纹可比性要求使用
+    /// VersionStore 的 canonical hash；ScanResult 持久化契约保持不变）。
+    /// 身份可靠（指纹一致）自动建立/维持关系；不可靠标注分叉；路径消失
+    /// 收回关系。全程只写 SkillHub 自己的表，绝不触碰用户文件。
+    fn reconcile_observed_deployments(&self, scan: &skillhub_core::ScanResult) -> AppResult<()> {
+        // 未激活集中库时没有任何可比对象：诚实缺省为"无关系"，不报错。
+        let Ok(library) = self.library_runtime.snapshot() else {
+            return Ok(());
+        };
+        let observations = self.scan_observations(scan, &library);
+        let observed_at = now_epoch_seconds();
+        self.with_database("observed.reconcile", |database| {
+            let hashes = Self::library_content_hashes(database)?;
+            let repository = database.provenance_repository();
+            let existing = repository.list_observed()?;
+            let scanned_roots = scan
+                .roots
+                .iter()
+                .map(|root| Self::canonical_path_string(root))
+                .collect::<Vec<_>>();
+            for row in &existing {
+                // 只裁决本次扫描覆盖的根之下的关系；未扫描范围不动。行里
+                // 存的路径可能来自导入候选（未解析符号链接前缀），先折叠
+                // 到 canonical 形态再比较。
+                let row_path = Self::canonical_path_string(&row.original_path);
+                if !scanned_roots
+                    .iter()
+                    .any(|root| path_lives_under(&row_path, root))
+                {
+                    continue;
+                }
+                let observation = observations
+                    .iter()
+                    .find(|item| observed_path_key(&item.path) == observed_path_key(&row_path));
+                let matched = observation.as_ref().and_then(|item| {
+                    hashes
+                        .iter()
+                        .find(|(_, hash)| hash == &item.fingerprint)
+                        .map(|(skill_id, _)| *skill_id)
+                });
+                let action = reconcile_observed_row(Some(row), observation, matched);
+                // 既有行始终用它自己存储的路径寻址：upsert/状态迁移都按
+                // path_key 命中，改传观察路径可能错过历史行。
+                repository.apply_observed_row_action(
+                    &row.client_id,
+                    &row.original_path,
+                    &action,
+                    row.origin,
+                    observed_at,
+                )?;
+            }
+            // 新观察：只有在已知 Agent 目录之下且指纹与库内某 Skill 一致
+            // 时才建档；不一致（不猜）或归属不明（不猜）一律不建档。
+            for observation in &observations {
+                let already_rowed = existing.iter().any(|row| {
+                    observed_path_key(&Self::canonical_path_string(&row.original_path))
+                        == observed_path_key(&observation.path)
+                });
+                if already_rowed {
+                    continue;
+                }
+                let Some(client_id) = Self::resolve_agent_client_id(database, &observation.path)?
+                else {
+                    continue;
+                };
+                let matched = hashes
+                    .iter()
+                    .find(|(_, hash)| hash == &observation.fingerprint)
+                    .map(|(skill_id, _)| *skill_id);
+                let action = reconcile_observed_row(None, Some(observation), matched);
+                repository.apply_observed_row_action(
+                    &client_id,
+                    &observation.path,
+                    &action,
+                    skillhub_core::ObservedOrigin::Scan,
+                    observed_at,
+                )?;
+            }
+            Ok(())
+        })
+    }
+
+    /// Skill 详情/导入摘要消费的溯源 + 已观察关系视图。纯读取。
+    fn skill_provenance(
+        &self,
+        skill_id: skillhub_core::SkillId,
+    ) -> AppResult<skillhub_core::api::SkillProvenanceResult> {
+        self.with_database("query.get_skill_provenance", |database| {
+            let repository = database.provenance_repository();
+            Ok(skillhub_core::api::SkillProvenanceResult {
+                skill_id,
+                provenance: repository.provenance_for_skill(skill_id)?,
+                observed_deployments: repository.list_observed_for_skill(skill_id)?,
+            })
+        })
+    }
+
+    /// 导入提交即存证：写溯源、并在身份可靠（指纹一致）且归属明确时
+    /// 自动建立已观察部署关系。复用已有 Skill 时不覆盖其既有存证历史。
+    fn record_import_evidence(
+        &self,
+        database: &Database,
+        skill_id: skillhub_core::SkillId,
+        candidate: &skillhub_core::ImportCandidate,
+        fingerprint: &str,
+        overwrite_existing_provenance: bool,
+    ) -> AppResult<Option<skillhub_core::ImportProvenance>> {
+        let repository = database.provenance_repository();
+        if !overwrite_existing_provenance && repository.provenance_for_skill(skill_id)?.is_some() {
+            return Ok(None);
+        }
+        let client_id = Self::resolve_agent_client_id(database, &candidate.absolute_root)?;
+        let mut provenance = skillhub_core::ImportProvenance::new(
+            skill_id,
+            &candidate.absolute_root,
+            candidate.source.clone(),
+            candidate.ownership,
+            fingerprint,
+            now_epoch_seconds(),
+        );
+        if let Some(client) = client_id.as_ref() {
+            provenance = provenance.with_agent_client_id(client.clone());
+        }
+        repository.upsert_provenance(&provenance)?;
+        // 关系只在"内容指纹一致 + 归属已知"时建立；其余一律不建（不猜）。
+        // 关系行存"观察到的路径"（导入=用户原始输入；扫描=scanner 的
+        // canonical 形态），比较时统一折叠（见 canonical_path_string），
+        // 保证同一目录不会因符号链接前缀形态不同而重复建档。
+        if let Some(client) = client_id.as_ref() {
+            if Self::fingerprint_matches_current_version(database, skill_id, fingerprint)? {
+                let observation = skillhub_core::ObservedPathObservation {
+                    path: candidate.absolute_root.clone(),
+                    fingerprint: fingerprint.to_owned(),
+                };
+                let action = reconcile_observed_row(None, Some(&observation), Some(skill_id));
+                repository.apply_observed_row_action(
+                    client,
+                    &observation.path,
+                    &action,
+                    skillhub_core::ObservedOrigin::Import,
+                    now_epoch_seconds(),
+                )?;
+            }
+        }
+        Ok(Some(provenance))
+    }
+
+    fn fingerprint_matches_current_version(
+        database: &Database,
+        skill_id: skillhub_core::SkillId,
+        fingerprint: &str,
+    ) -> AppResult<bool> {
+        Ok(Self::library_content_hashes(database)?
+            .into_iter()
+            .any(|(candidate, hash)| candidate == skill_id && hash == fingerprint))
+    }
+
+    /// 比较用的路径同一性形态：能 canonicalize 就解析符号链接前缀
+    /// （macOS 的 /var → /private/var、/tmp → /private/tmp 等），不能
+    /// （路径不存在等）就保留原样。只用于比较，绝不落库——存储侧保留
+    /// 各链路"观察到的形态"，同一目录不会因前缀形态不同而重复建档或
+    /// 漏判归属。
+    fn canonical_path_string(path: &str) -> String {
+        std::fs::canonicalize(path)
+            .map(|resolved| resolved.to_string_lossy().into_owned())
+            .unwrap_or_else(|_| path.to_owned())
+    }
+
+    // ----- 原始文件迁移（独立、明确、可回滚；与扫描/导入完全解耦） -----
+
+    /// 采集迁移准备所需的文件系统与库事实。只读，绝不修改。
+    fn collect_migration_facts(
+        &self,
+        database: &Database,
+        skill_id: skillhub_core::SkillId,
+        original_path: &Path,
+    ) -> AppResult<skillhub_core::OriginalMigrationFacts> {
+        let provenance = database
+            .provenance_repository()
+            .provenance_for_skill(skill_id)?;
+        let metadata = std::fs::symlink_metadata(original_path).ok();
+        let current_fingerprint = self
+            .library_runtime
+            .snapshot()
+            .ok()
+            .and_then(|library| library.store.hash_tree_read_only(original_path).ok());
+        Ok(skillhub_core::OriginalMigrationFacts {
+            provenance,
+            path_exists: metadata.is_some(),
+            is_symlink_or_junction: metadata
+                .as_ref()
+                .is_some_and(|metadata| metadata.file_type().is_symlink()),
+            is_directory: metadata.as_ref().is_some_and(|metadata| metadata.is_dir()),
+            current_fingerprint,
+            has_managed_deployment_at_path: Self::has_managed_deployment_at_path(
+                database,
+                original_path,
+            )?,
+        })
+    }
+
+    /// 该路径当前是否是某个 SkillHub 活跃部署的目的地。是则必须先解除
+    /// 部署——迁移绝不与部署所有权纠缠。
+    fn has_managed_deployment_at_path(
+        database: &Database,
+        original_path: &Path,
+    ) -> AppResult<bool> {
+        let mut statement = database
+            .connection_for_test()
+            .prepare(
+                "SELECT t.path, d.runtime_name FROM deployments d \
+                 JOIN targets t ON t.id=d.target_id WHERE d.state='deployed'",
+            )
+            .map_err(|error| {
+                AppError::new(ErrorCode::InternalError, Severity::Error)
+                    .with_param("source", error.to_string())
+            })?;
+        let rows = statement
+            .query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })
+            .map_err(|error| {
+                AppError::new(ErrorCode::InternalError, Severity::Error)
+                    .with_param("source", error.to_string())
+            })?;
+        for row in rows {
+            let (target, runtime_name) = row.map_err(|error| {
+                AppError::new(ErrorCode::InternalError, Severity::Error)
+                    .with_param("source", error.to_string())
+            })?;
+            // 两边都折叠到 canonical 形态：注册 target 与导入存证的路径
+            // 可能带不同的符号链接前缀，但指向同一个目录。
+            let deployed_path = Self::canonical_path_string(
+                &PathBuf::from(&target).join(&runtime_name).to_string_lossy(),
+            );
+            let provenance_path = Self::canonical_path_string(&original_path.to_string_lossy());
+            if observed_path_key(&deployed_path) == observed_path_key(&provenance_path) {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+
+    fn prepare_original_migration(
+        &self,
+        request: skillhub_core::api::PrepareOriginalMigration,
+    ) -> AppResult<AppCommandResult> {
+        let operation_id = OperationId::new();
+        let plan = self.with_database("execute.prepare_original_migration", |database| {
+            // 迁移路径来自导入存证本身：没有存证时无从谈起，其余冲突
+            // 交由领域规则逐项列出。
+            let provenance = database
+                .provenance_repository()
+                .provenance_for_skill(request.skill_id)?;
+            let facts = match provenance.as_ref() {
+                Some(provenance) => self.collect_migration_facts(
+                    database,
+                    request.skill_id,
+                    &PathBuf::from(&provenance.original_path),
+                )?,
+                None => skillhub_core::OriginalMigrationFacts::default(),
+            };
+            Ok(plan_original_migration(
+                operation_id,
+                request.skill_id,
+                &facts,
+            ))
+        });
+        match plan.as_ref() {
+            Ok(plan) => {
+                self.prepared_migrations
+                    .lock()
+                    .map_err(|_| internal("execute.prepare_original_migration"))?
+                    .insert(plan.operation_id, plan.clone());
+                self.journal_prepared(plan.operation_id, "migrate_original");
+            }
+            Err(error) => self.journal_advance(
+                operation_id,
+                "migrate_original",
+                skillhub_core::OperationPhase::RolledBack,
+                Some(error.code),
+            ),
+        }
+        plan.map(AppCommandResult::OriginalMigrationPlan)
+    }
+
+    fn commit_original_migration(
+        &self,
+        request: skillhub_core::api::CommitOriginalMigration,
+    ) -> AppResult<AppCommandResult> {
+        let plan = self
+            .prepared_migrations
+            .lock()
+            .map_err(|_| internal("execute.commit_original_migration"))?
+            .get(&request.prepared_migration_id)
+            .cloned()
+            .ok_or_else(|| {
+                AppError::new(ErrorCode::ObjectNotFound, Severity::Error)
+                    .with_param(
+                        "prepared_migration_id",
+                        request.prepared_migration_id.to_string(),
+                    )
+                    .with_action(RecoveryAction::ChooseAnotherName)
+            })?;
+        // 硬边界（领域规则）：未确认或仍有冲突 → 拒绝，不触碰任何文件。
+        ensure_original_deletion_authorized(&plan, request.ownership_confirmed)?;
+        let result = self.commit_original_migration_flow(&plan);
+        match result.as_ref() {
+            Ok(_) => self.journal_advance(
+                plan.operation_id,
+                "migrate_original",
+                skillhub_core::OperationPhase::Committed,
+                None,
+            ),
+            Err(error) => self.journal_advance(
+                plan.operation_id,
+                "migrate_original",
+                skillhub_core::OperationPhase::NeedsRecovery,
+                Some(error.code),
+            ),
+        }
+        if result.is_ok() {
+            self.prepared_migrations
+                .lock()
+                .map_err(|_| internal("execute.commit_original_migration.cleanup"))?
+                .remove(&request.prepared_migration_id);
+        }
+        result.map(AppCommandResult::OriginalMigrationResult)
+    }
+
+    /// 迁移执行：备份 → 记录 → 删除；任一步失败立即中止并保留现场。
+    /// 记录先于删除写入，删除失败时用补偿删除收回记录，保证审计与
+    /// 文件系统一致；备份目录保留（用户数据绝不因失败而丢失）。
+    fn commit_original_migration_flow(
+        &self,
+        plan: &skillhub_core::OriginalMigrationPlan,
+    ) -> AppResult<skillhub_core::OriginalMigrationResult> {
+        let library = self.library_runtime.snapshot()?;
+        let original = PathBuf::from(&plan.original_path);
+        // 提交前用最新事实复核一遍准备结论（准备与提交之间现场可能变化）。
+        self.with_database("execute.commit_original_migration.verify", |database| {
+            let facts = self.collect_migration_facts(database, plan.skill_id, &original)?;
+            let fresh = plan_original_migration(plan.operation_id, plan.skill_id, &facts);
+            ensure_original_deletion_authorized(&fresh, true)
+        })?;
+        let backup_root = library
+            .root
+            .join(".skillhub")
+            .join("original-migrations")
+            .join(plan.skill_id.to_string());
+        std::fs::create_dir_all(&backup_root).map_err(|error| {
+            AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                .with_param("io_kind", format!("{:?}", error.kind()))
+                .with_action(RecoveryAction::Retry)
+        })?;
+        let backup = backup_root.join(plan.operation_id.to_string());
+        copy_directory_tree(&original, &backup)?;
+        let result = skillhub_core::OriginalMigrationResult {
+            migration_id: plan.operation_id,
+            skill_id: plan.skill_id,
+            original_path: plan.original_path.clone(),
+            backup_path: backup.to_string_lossy().into_owned(),
+            content_fingerprint: plan.content_fingerprint.clone(),
+            state: skillhub_core::OriginalMigrationState::Migrated,
+            confirmed_at: now_epoch_seconds(),
+            rolled_back_at: None,
+        };
+        self.with_database("execute.commit_original_migration.record", |database| {
+            database
+                .provenance_repository()
+                .insert_original_migration(&result)
+        })?;
+        // 删除前的最后防线：必须是真实目录（绝不跟随链接）。
+        let metadata = std::fs::symlink_metadata(&original).map_err(|error| {
+            AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                .with_param("path", plan.original_path.clone())
+                .with_param("io_kind", format!("{:?}", error.kind()))
+                .with_action(RecoveryAction::InspectTarget)
+        })?;
+        if metadata.file_type().is_symlink() || !metadata.is_dir() {
+            return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                .with_param("path", plan.original_path.clone())
+                .with_param("detail", "original path is not a real directory")
+                .with_action(RecoveryAction::InspectTarget));
+        }
+        if let Err(error) = std::fs::remove_dir_all(&original) {
+            // 中止并保留现场：原文件仍在，补偿收回审计行；备份保留。
+            let compensation =
+                self.with_database("execute.commit_original_migration.compensate", |database| {
+                    database
+                        .provenance_repository()
+                        .remove_original_migration(plan.operation_id)
+                });
+            if let Err(compensation_error) = compensation {
+                return Err(AppError::new(ErrorCode::InternalError, Severity::Error)
+                    .with_param("detail", "migration delete failed and audit cleanup failed")
+                    .with_param("source", compensation_error.to_string())
+                    .with_action(RecoveryAction::InspectTarget));
+            }
+            return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                .with_param("path", plan.original_path.clone())
+                .with_param(
+                    "detail",
+                    "original directory deletion failed; scene preserved",
+                )
+                .with_param("source", error.to_string())
+                .with_action(RecoveryAction::Retry));
+        }
+        Ok(result)
+    }
+
+    /// 回滚：用备份恢复原目录。原路径已存在时拒绝（绝不覆盖用户文件）；
+    /// 备份目录保留，审计行翻转为 RolledBack。
+    fn rollback_original_migration(
+        &self,
+        request: skillhub_core::api::RollbackOriginalMigration,
+    ) -> AppResult<AppCommandResult> {
+        let record =
+            self.with_database("execute.rollback_original_migration.load", |database| {
+                database
+                    .provenance_repository()
+                    .original_migration(request.migration_id)?
+                    .ok_or_else(|| {
+                        AppError::new(ErrorCode::ObjectNotFound, Severity::Error)
+                            .with_param("migration_id", request.migration_id.to_string())
+                            .with_action(RecoveryAction::ChooseAnotherName)
+                    })
+            })?;
+        if record.state != skillhub_core::OriginalMigrationState::Migrated {
+            return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                .with_param("detail", "migration is not in a migrated state")
+                .with_action(RecoveryAction::Acknowledge));
+        }
+        let original = PathBuf::from(&record.original_path);
+        if original.exists() {
+            return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                .with_param("path", record.original_path.clone())
+                .with_param(
+                    "detail",
+                    "original path already exists; rollback would overwrite",
+                )
+                .with_action(RecoveryAction::Acknowledge));
+        }
+        let backup = PathBuf::from(&record.backup_path);
+        copy_directory_tree(&backup, &original)?;
+        let mut rolled_back = record.clone();
+        rolled_back.state = skillhub_core::OriginalMigrationState::RolledBack;
+        rolled_back.rolled_back_at = Some(now_epoch_seconds());
+        self.with_database("execute.rollback_original_migration.record", |database| {
+            database
+                .provenance_repository()
+                .mark_original_migration_rolled_back(
+                    request.migration_id,
+                    rolled_back.rolled_back_at.expect("just set"),
+                )
+        })?;
+        Ok(AppCommandResult::OriginalMigrationResult(rolled_back))
+    }
+}
+
+/// 备份/恢复用的保守目录复制：遇到符号链接立即失败（不跟随、不复制
+/// 链接本身），保证备份要么完整、要么不存在。
+fn copy_directory_tree(source: &Path, destination: &Path) -> AppResult<()> {
+    let metadata = std::fs::symlink_metadata(source).map_err(|error| {
+        AppError::new(ErrorCode::OperationConflict, Severity::Error)
+            .with_param("path", source.to_string_lossy().into_owned())
+            .with_param("source", error.to_string())
+            .with_action(RecoveryAction::InspectTarget)
+    })?;
+    if metadata.file_type().is_symlink() {
+        return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
+            .with_param("path", source.to_string_lossy().into_owned())
+            .with_param("detail", "refusing to copy through a symbolic link")
+            .with_action(RecoveryAction::InspectTarget));
+    }
+    if !metadata.is_dir() {
+        return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
+            .with_param("path", source.to_string_lossy().into_owned())
+            .with_param("detail", "expected a directory")
+            .with_action(RecoveryAction::InspectTarget));
+    }
+    std::fs::create_dir_all(destination).map_err(io_conflict(source))?;
+    for entry in std::fs::read_dir(source).map_err(io_conflict(source))? {
+        let entry = entry.map_err(io_conflict(source))?;
+        let entry_path = entry.path();
+        let entry_metadata =
+            std::fs::symlink_metadata(&entry_path).map_err(io_conflict(&entry_path))?;
+        if entry_metadata.file_type().is_symlink() {
+            return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                .with_param("path", entry_path.to_string_lossy().into_owned())
+                .with_param("detail", "refusing to copy a symbolic link entry")
+                .with_action(RecoveryAction::InspectTarget));
+        }
+        if entry_metadata.is_dir() {
+            copy_directory_tree(&entry_path, &destination.join(entry.file_name()))?;
+        } else {
+            let entry_destination = destination.join(entry.file_name());
+            std::fs::copy(&entry_path, &entry_destination).map_err(io_conflict(&entry_path))?;
+        }
+    }
+    Ok(())
+}
+
+fn io_conflict(path: &Path) -> impl Fn(std::io::Error) -> AppError + '_ {
+    move |error| {
+        AppError::new(ErrorCode::OperationConflict, Severity::Error)
+            .with_param("path", path.to_string_lossy().into_owned())
+            .with_param("source", error.to_string())
+            .with_action(RecoveryAction::Retry)
     }
 }
 

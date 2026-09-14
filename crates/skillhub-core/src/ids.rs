@@ -43,6 +43,7 @@ uuid_id!(ProjectId);
 uuid_id!(LogicalTargetId);
 uuid_id!(PhysicalTargetId);
 uuid_id!(DeploymentId);
+uuid_id!(ObservedDeploymentId);
 uuid_id!(OperationId);
 uuid_id!(CombinationId);
 

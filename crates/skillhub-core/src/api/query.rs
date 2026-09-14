@@ -540,6 +540,25 @@ pub struct GetDeploymentRelations {
     pub skill_id: SkillId,
 }
 
+/// OPT-20260914-08：读取一个 Skill 的导入存证与已观察部署关系。
+/// 溯源与关系是展示/审计数据：查询绝不触发扫描、导入或文件系统写入。
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct GetSkillProvenance {
+    pub skill_id: SkillId,
+}
+
+/// 导入存证 + 已观察部署关系的联合视图。`provenance` 为 None 表示该
+/// Skill 不是经由带存证的导入链路进入集中库的（例如创建/收集），诚实
+/// 缺省而不是编造来源。
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct SkillProvenanceResult {
+    pub skill_id: SkillId,
+    pub provenance: Option<crate::import::ImportProvenance>,
+    pub observed_deployments: Vec<crate::deployment::ObservedDeployment>,
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 #[serde(deny_unknown_fields)]
 pub struct GetReconcilePlan {
@@ -666,6 +685,8 @@ pub enum AppQuery {
     ListDeployments(ListDeployments),
     #[serde(rename = "get_deployment_relations")]
     GetDeploymentRelations(GetDeploymentRelations),
+    #[serde(rename = "get_skill_provenance")]
+    GetSkillProvenance(GetSkillProvenance),
     #[serde(rename = "get_reconcile_plan")]
     GetReconcilePlan(GetReconcilePlan),
     #[serde(rename = "get_removal_impact")]
@@ -763,6 +784,8 @@ pub enum AppQueryResult {
     Deployments(Vec<crate::DeploymentRecord>),
     #[serde(rename = "deployment_relations")]
     DeploymentRelations(Vec<crate::DeploymentRecord>),
+    #[serde(rename = "skill_provenance")]
+    SkillProvenance(SkillProvenanceResult),
     #[serde(rename = "reconcile_plan")]
     ReconcilePlan(crate::ReconcilePlan),
     #[serde(rename = "removal_impact")]

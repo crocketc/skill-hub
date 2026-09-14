@@ -211,6 +211,30 @@ pub struct CommitImport {
     pub decision: ImportDecision,
 }
 
+/// OPT-20260914-08：原始文件迁移的准备请求。准备只读地核验存证、路径
+/// 与冲突，绝不触碰用户文件；与扫描/导入完全解耦。
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct PrepareOriginalMigration {
+    pub skill_id: SkillId,
+}
+
+/// OPT-20260914-08：原始文件迁移的提交请求。`ownership_confirmed` 是
+/// 硬门槛：必须由用户在界面上显式确认，缺省/未确认一律拒绝执行。
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct CommitOriginalMigration {
+    pub prepared_migration_id: OperationId,
+    pub ownership_confirmed: bool,
+}
+
+/// OPT-20260914-08：用备份恢复已迁移的原始目录。记录本身保留审计痕迹。
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct RollbackOriginalMigration {
+    pub migration_id: OperationId,
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 #[serde(deny_unknown_fields)]
 pub struct RelinkSource {
@@ -830,6 +854,12 @@ pub enum AppCommand {
     PrepareImport(PrepareImport),
     #[serde(rename = "commit_import")]
     CommitImport(CommitImport),
+    #[serde(rename = "prepare_original_migration")]
+    PrepareOriginalMigration(PrepareOriginalMigration),
+    #[serde(rename = "commit_original_migration")]
+    CommitOriginalMigration(CommitOriginalMigration),
+    #[serde(rename = "rollback_original_migration")]
+    RollbackOriginalMigration(RollbackOriginalMigration),
     #[serde(rename = "relink_source")]
     RelinkSource(RelinkSource),
     #[serde(rename = "check_source_update")]
@@ -1017,6 +1047,10 @@ pub enum AppCommandResult {
     PreparedImport(Box<crate::application::PreparedImport>),
     #[serde(rename = "import_summary")]
     ImportSummary(Box<crate::application::ImportSummary>),
+    #[serde(rename = "original_migration_plan")]
+    OriginalMigrationPlan(crate::import::OriginalMigrationPlan),
+    #[serde(rename = "original_migration_result")]
+    OriginalMigrationResult(crate::import::OriginalMigrationResult),
     #[serde(rename = "upstream_check_result")]
     UpstreamCheckResult(crate::source::UpstreamCheckResult),
     #[serde(rename = "applied_source_update")]
