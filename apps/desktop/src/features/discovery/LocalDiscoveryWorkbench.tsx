@@ -254,7 +254,8 @@ export function LocalDiscoveryWorkbench({ facade, onReviewCandidates }: LocalDis
 }
 
 /**
- * P1-06：单张聚合卡片——品牌标签、去重类型徽标、目录路径与可用状态；
+ * P1-06：单张聚合卡片——品牌标签、官方产品名、去重类型徽标、目录路径与
+ * 可用状态；OPT-07：共享引用来源以计数+提示呈现，归属只在通用目录卡片。
  * "排除"只通过忽略规则（可撤销）实现，绝不提供删除用户文件的入口。
  */
 function AgentCard({
@@ -271,6 +272,11 @@ function AgentCard({
     <li className="sh-discovery-workbench__agent-card" data-testid={`agent-card-${card.physicalId}`}>
       <div className="sh-discovery-workbench__agent-line">
         <BrandTag brand={brand} />
+        {card.names.length > 0 ? (
+          <span className="sh-discovery-workbench__agent-names" title={card.names.join(" / ")}>
+            {card.names.join(" / ")}
+          </span>
+        ) : null}
         <AgentKindBadge kinds={card.kinds} />
         {!card.available ? (
           <span className="sh-discovery-workbench__agent-unavailable-label">
@@ -278,6 +284,12 @@ function AgentCard({
           </span>
         ) : null}
       </div>
+      {/* OPT-07：共享引用只改归属展示，不改变目录可用性语义。 */}
+      {card.sharedClients > 0 ? (
+        <p className="sh-discovery-workbench__agent-shared" title={card.sharedClientNames.join(" / ")}>
+          {t("discovery.workbench.sharedClients", { count: card.sharedClients })}
+        </p>
+      ) : null}
       {/* P2-02：超长路径换行展示（overflow-wrap: anywhere），完整值经原生
           title 提示可达——与忽略项规则值和卡片描述同一策略。 */}
       <code className="sh-discovery-workbench__agent-path" title={card.path}>{card.path}</code>

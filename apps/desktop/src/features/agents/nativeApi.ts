@@ -120,6 +120,8 @@ function customAgentDraft(id: string, values: CustomAgentFormValues): CustomAgen
   const client: AgentClient = {
     id: `${id}-client`,
     kind: "cli",
+    // OPT-07：官方产品名逐客户端核验；自定义 Agent 的产品名即用户填写的品牌名。
+    display_name: values.brand,
     supported_os: [currentOperatingSystem()],
     path_candidates: [{
       path: values.directoryPath,

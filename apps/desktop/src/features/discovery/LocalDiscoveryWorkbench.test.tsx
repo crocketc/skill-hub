@@ -266,23 +266,44 @@ it("announces the scanning state while a scan is running", async () => {
 
 // —— P1-06：Agent 目录分组 / 类型徽标 / 不可用置底 / 安全排除 ——
 
+// OPT-20260914-07：`.agents/skills` 归属收归 agent-skills 通用分组；
+// 品牌侧条目是 shared_reference，保留可用性但不再重复产出归属卡片。
 const agentGroupSnapshot: DiscoverySnapshot = {
   generation: "7",
   observed_at: "1789114968",
   instances: [
-    { profile_id: "zcode", client_id: "zcode-desktop", kind: "desktop", supported_os: ["windows", "macos"], client_presence: "Unknown" },
-    { profile_id: "zcode", client_id: "zcode-cli", kind: "cli", supported_os: ["windows", "macos"], client_presence: "Unknown" },
-    { profile_id: "brokenbrand", client_id: "broken-cli", kind: "cli", supported_os: ["windows"], client_presence: "Unknown" },
+    { profile_id: "agent-skills", client_id: "agent-skills.shared-directory", display_name: "Agent Skills", kind: "shared_directory", supported_os: ["windows", "macos"], client_presence: "Unknown" },
+    { profile_id: "zcode", client_id: "zcode-desktop", display_name: "ZCode", kind: "desktop", supported_os: ["windows", "macos"], client_presence: "Unknown" },
+    { profile_id: "zcode", client_id: "zcode-cli", display_name: "ZCode CLI", kind: "cli", supported_os: ["windows", "macos"], client_presence: "Unknown" },
+    { profile_id: "cursor", client_id: "cursor-editor", display_name: "Cursor", kind: "desktop", supported_os: ["windows", "macos"], client_presence: "Unknown" },
+    { profile_id: "cursor", client_id: "cursor-cli", display_name: "Cursor CLI", kind: "cli", supported_os: ["windows", "macos"], client_presence: "Unknown" },
+    { profile_id: "brokenbrand", client_id: "broken-cli", display_name: "Broken CLI", kind: "cli", supported_os: ["windows"], client_presence: "Unknown" },
   ],
   logical_targets: [
     {
       id: "lt-agents",
+      profile_id: "agent-skills",
+      client_id: "agent-skills.shared-directory",
+      scope: "global",
+      path: "C:/u/.agents/skills",
+      marker: "SKILL.md",
+      precedence: "preferred",
+      shared_reference: false,
+      exists: true,
+      readable: true,
+      writable: true,
+      available: true,
+      physical_id: "phys-agents",
+    },
+    {
+      id: "lt-agents-desktop",
       profile_id: "zcode",
       client_id: "zcode-desktop",
       scope: "global",
       path: "C:/u/.agents/skills",
       marker: "SKILL.md",
       precedence: "preferred",
+      shared_reference: true,
       exists: true,
       readable: true,
       writable: true,
@@ -297,11 +318,42 @@ const agentGroupSnapshot: DiscoverySnapshot = {
       path: "C:/u/.agents/skills",
       marker: "SKILL.md",
       precedence: "preferred",
+      shared_reference: true,
       exists: true,
       readable: true,
       writable: true,
       available: true,
       physical_id: "phys-agents",
+    },
+    {
+      id: "lt-cursor",
+      profile_id: "cursor",
+      client_id: "cursor-editor",
+      scope: "global",
+      path: "C:/u/.cursor/skills",
+      marker: "SKILL.md",
+      precedence: "preferred",
+      shared_reference: false,
+      exists: true,
+      readable: true,
+      writable: true,
+      available: true,
+      physical_id: "phys-cursor",
+    },
+    {
+      id: "lt-cursor-cli",
+      profile_id: "cursor",
+      client_id: "cursor-cli",
+      scope: "global",
+      path: "C:/u/.cursor/skills",
+      marker: "SKILL.md",
+      precedence: "preferred",
+      shared_reference: false,
+      exists: true,
+      readable: true,
+      writable: true,
+      available: true,
+      physical_id: "phys-cursor",
     },
     {
       id: "lt-broken",
@@ -311,6 +363,7 @@ const agentGroupSnapshot: DiscoverySnapshot = {
       path: "C:/u/broken/skills",
       marker: "SKILL.md",
       precedence: "preferred",
+      shared_reference: false,
       exists: true,
       readable: false,
       writable: false,
@@ -326,7 +379,16 @@ const agentGroupSnapshot: DiscoverySnapshot = {
       readable: true,
       writable: true,
       case_behavior: "sensitive",
-      logical_target_ids: ["lt-agents", "lt-agents-cli"],
+      logical_target_ids: ["lt-agents", "lt-agents-desktop", "lt-agents-cli"],
+    },
+    {
+      id: "phys-cursor",
+      path: "C:/u/.cursor/skills",
+      exists: true,
+      readable: true,
+      writable: true,
+      case_behavior: "sensitive",
+      logical_target_ids: ["lt-cursor", "lt-cursor-cli"],
     },
     {
       id: "phys-broken",
@@ -350,14 +412,36 @@ it("groups discovered agent directories by brand with merged kind badges", async
   );
 
   expect(await screen.findByText("发现的 Agent 目录")).toBeVisible();
-  // 同目录合并：同一品牌下 desktop 与 cli 聚合为一张卡片的类型集合。
+  // 同目录合并：同一品牌下 desktop 与 cli 聚合为一张卡片的类型集合，
+  // 并列展示官方产品名（不按品牌名猜测）。
   expect(screen.getByText("桌面端/CLI")).toBeVisible();
-  expect(screen.getByText("C:/u/.agents/skills")).toBeVisible();
+  expect(screen.getByText("Cursor / Cursor CLI")).toBeVisible();
+  expect(screen.getByText("C:/u/.cursor/skills")).toBeVisible();
   // 完全不可用的品牌整体置底，单独分区说明。
   expect(screen.getByText("暂不可用")).toBeVisible();
   expect(screen.getByText("C:/u/broken/skills")).toBeVisible();
   // 可用目录不再重复标注不可用徽标。
   expect(screen.getAllByText("不可用")).toHaveLength(1);
+});
+
+it("shows exactly one generic ownership card for the shared agents directory", async () => {
+  render(
+    <I18nextProvider i18n={createSkillHubI18nSync()}>
+      <LocalDiscoveryWorkbench
+        facade={{ getDiscoverySnapshot: async () => agentGroupSnapshot, scanTargets: async () => scanResult, searchOnlineSources: async () => searchPage([]), ...repoDiscoveryStubs }}
+      />
+    </I18nextProvider>,
+  );
+
+  // 通用目录卡片只出现一次：路径全页唯一。
+  await screen.findByText("发现的 Agent 目录");
+  expect(screen.getAllByText("C:/u/.agents/skills")).toHaveLength(1);
+  // 卡片标注共享引用来源：品牌仍能看到目录可用，但归属只在通用卡片上。
+  expect(screen.getByText("被 2 个已登记客户端共享")).toBeVisible();
+  expect(screen.getByText("被 2 个已登记客户端共享").getAttribute("title"))
+    .toContain("ZCode");
+  // 形态徽标使用共享目录的专属文案，而不是客户端产品形态。
+  expect(screen.getByText("共享目录")).toBeVisible();
 });
 
 // M-18：扫描/摘要/审查并导入固定在首屏工作区面板；Agent 目录盘点降级为

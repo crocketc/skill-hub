@@ -17,6 +17,8 @@ const KIND_KEYS: Record<ClientKind, string> = {
   web: "agents.kind.web",
   mobile: "agents.kind.mobile",
   bot: "agents.kind.bot",
+  // OPT-07：通用共享目录伪客户端（`.agents/skills` 归属入口）。
+  shared_directory: "agents.kind.sharedDirectory",
 };
 
 /**

@@ -429,6 +429,20 @@
   font-weight: 600;
 }
 
+/* OPT-07：官方产品名与共享引用说明行；两者都是次级证据文本。 */
+.sh-discovery-workbench__agent-names {
+  color: var(--ui-ink);
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.sh-discovery-workbench__agent-shared {
+  margin: 0;
+  color: var(--ui-ink-muted);
+  font-size: var(--font-size-xs);
+}
+
 /* 不可用品牌置底分区：次级外观与说明行。 */
 .sh-discovery-workbench__agent-unavailable {
   display: grid;

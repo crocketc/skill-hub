@@ -478,6 +478,7 @@
       "agentGroupsExpand": "展开",
       "unavailableAgents": "暂不可用",
       "agentUnavailable": "不可用",
+      "sharedClients": "被 {{count}} 个已登记客户端共享",
       "excludeAction": "排除",
       "excludeConfirmTitle": "排除该目录？",
       "excludeConfirmDescription": "将在 SkillHub 的发现与扫描中忽略 {{path}}；不会删除或修改该目录中的任何文件，可随时在设置的忽略规则中撤销。",
@@ -616,6 +617,7 @@
       "web": "Web",
       "mobile": "移动端",
       "bot": "Bot",
+      "sharedDirectory": "共享目录",
       "evidenceTitle": "类型来自该客户端配置档案中声明的适配器证据"
     },
     "status": {
