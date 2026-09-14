@@ -2889,7 +2889,9 @@ a {
 @media (max-width: 56rem) {
   .sh-skill-table__region {
     overscroll-behavior-inline: contain;
-    scrollbar-gutter: stable;
+    /* OPT-20260914-03：不预留 scrollbar-gutter——Chromium 对带预留槽位的
+       滚动容器把横向钳制收短一个槽宽，窄窗口下末列尾部会永久压在槽位下
+       （取证见 features/skills/skills.css 的区域规则注释）。 */
   }
 
   .sh-skill-table {
@@ -3090,9 +3092,12 @@ a {
   flex: 1 1 auto;
 }
 
-.sh-skill-table__security {
-  min-width: max-content;
-}
+/* OPT-20260914-03：移除旧表模型（width:max-content 时代）遗留的
+   `.sh-skill-table__security { min-width: max-content }`。M-21 后 security
+   列为 12rem 固定列宽、单元格 overflow:hidden，该规则迫使徽标单行排开
+   （1280 视口实测 359px），既让 skills.css 的“徽标换行堆叠”设计失效，
+   又把内容右缘顶到区域边缘被 td 裁剪、压进纵向滚动条槽位。移除后徽标
+   按 flex-wrap: wrap 在列宽内堆叠，行高随内容生长。 */
 
 .sh-skill-table__security > span:not(.sh-status-badge),
 .sh-skill-table__counts,
