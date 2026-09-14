@@ -28,6 +28,45 @@ pub mod settings;
 pub mod source;
 pub mod versioning;
 
+/// OPT-20260914-08：跨 IPC 的 64 位整数序列化约定（字符串承载）。Specta
+/// 禁止把 i64/u64 等 BigInt 类型导出为 TS number（精度丢失），与
+/// `app_update::u64_string` 采用同一裁决：边界上是字符串，域内保持 i64。
+pub mod i64_string {
+    use serde::{Deserialize, Deserializer, Serializer};
+
+    pub fn serialize<S: Serializer>(value: &i64, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(&value.to_string())
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(deserializer: D) -> Result<i64, D::Error> {
+        String::deserialize(deserializer)?
+            .parse()
+            .map_err(serde::de::Error::custom)
+    }
+}
+
+/// [`i64_string`] 的可缺省版本：`Option<i64>` 字段在 TS 侧是
+/// `string | null`。
+pub mod i64_option_string {
+    use serde::{Deserialize, Deserializer, Serializer};
+
+    pub fn serialize<S: Serializer>(value: &Option<i64>, serializer: S) -> Result<S::Ok, S::Error> {
+        match value {
+            Some(value) => serializer.serialize_some(&value.to_string()),
+            None => serializer.serialize_none(),
+        }
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<Option<i64>, D::Error> {
+        let value = Option::<String>::deserialize(deserializer)?;
+        value
+            .map(|text| text.parse().map_err(serde::de::Error::custom))
+            .transpose()
+    }
+}
+
 pub use agent::{
     AgentClient, AgentProfile, AgentRepository, CallPolicy, ClientInstance, ClientKind,
     ClientPresence, CustomAgent, CustomAgentDraft, CustomAgentOverride, CustomAgentValidationError,
@@ -117,21 +156,26 @@ pub use deployment::removal::{
     RemovalResult,
 };
 pub use deployment::{
-    DeploymentCapabilities, DeploymentMode, DeploymentPlan, DeploymentPlanInput,
-    DeploymentPlanRequest, DeploymentPlanner, DeploymentRecord, DeploymentRepository,
-    DeploymentRequest, DeploymentState, ExistingDeployment, ExistingOwnership,
-    RegisteredTargetIndex, RegisteredTargetResolver, TargetCapabilities, TargetChange,
-    TargetConflict, TargetConflictReason, TargetFact, TargetFactSource, TargetPlan, VerifiedTarget,
+    path_lives_under, reconcile_observed_row, DeploymentCapabilities, DeploymentMode,
+    DeploymentPlan, DeploymentPlanInput, DeploymentPlanRequest, DeploymentPlanner,
+    DeploymentRecord, DeploymentRepository, DeploymentRequest, DeploymentState, ExistingDeployment,
+    ExistingOwnership, ObservedDeployment, ObservedMatchState, ObservedOrigin,
+    ObservedPathObservation, ObservedRowAction, ObservedStatus, RegisteredTargetIndex,
+    RegisteredTargetResolver, TargetCapabilities, TargetChange, TargetConflict,
+    TargetConflictReason, TargetFact, TargetFactSource, TargetPlan, VerifiedTarget,
 };
 pub use health::{HealthFinding, HealthReport, RecoveryCandidate, RepairAction, RepairPlan};
 pub use ids::{
-    AgentProfileId, ClientInstanceId, CombinationId, DeploymentId, LogicalTargetId, OperationId,
-    PhysicalTargetId, ProjectId, SkillId, VersionId,
+    AgentProfileId, ClientInstanceId, CombinationId, DeploymentId, LogicalTargetId,
+    ObservedDeploymentId, OperationId, PhysicalTargetId, ProjectId, SkillId, VersionId,
 };
 pub use ignore::{IgnoreRule, IgnoreSubject};
 pub use import::{
-    analyze_import, CandidateOwnership, DuplicateKind, ExistingSkillRecord, ImportAction,
-    ImportAnalysis, ImportCandidate, ImportConflict, ImportDecision, ImportMatch, MatchBasis,
+    analyze_import, ensure_original_deletion_authorized, plan_original_migration,
+    CandidateOwnership, DuplicateKind, ExistingSkillRecord, ImportAction, ImportAnalysis,
+    ImportCandidate, ImportConflict, ImportDecision, ImportMatch, ImportProvenance, MatchBasis,
+    OriginalMigrationConflict, OriginalMigrationConflictReason, OriginalMigrationFacts,
+    OriginalMigrationPlan, OriginalMigrationResult, OriginalMigrationState,
 };
 pub use llm::{search_query, translation};
 pub use llm::{

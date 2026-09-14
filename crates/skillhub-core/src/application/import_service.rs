@@ -37,6 +37,11 @@ pub struct ImportItemResult {
     pub skill_id: Option<SkillId>,
     pub decision: ImportDecision,
     pub original_preserved: bool,
+    /// OPT-20260914-08：导入即存证。提交成功时携带本次导入落库的溯源
+    /// 记录（来源/Agent 形态/原始路径/导入时间/内容指纹/所有权状态），
+    /// 供导入摘要展示；复用/跳过等未新建存证的分支为 None。
+    #[serde(default)]
+    pub provenance: Option<crate::import::ImportProvenance>,
 }
 
 #[derive(Clone, Debug, serde::Deserialize, Eq, PartialEq, serde::Serialize, specta::Type)]
@@ -143,6 +148,7 @@ where
                 skill_id,
                 decision,
                 original_preserved,
+                provenance: None,
             }],
             committed: true,
         })

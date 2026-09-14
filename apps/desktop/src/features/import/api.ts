@@ -80,11 +80,20 @@ export interface ImportPlan {
   conflicts: ImportConflict[];
 }
 
+/** OPT-20260914-08：导入成功时随结果返回的存证摘要（导入那一刻的事实）。 */
+export interface ImportProvenanceSummary {
+  agentClientId: string | null;
+  originalPath: string;
+  importedAt: string;
+}
+
 export interface ImportResult {
   candidateId: string;
   action: ImportAction;
   status: "succeeded" | "skipped" | "failed";
   message: string;
+  /** 导入即存证：提交成功且落库时携带；复用/跳过等分支诚实缺省。 */
+  provenance?: ImportProvenanceSummary;
 }
 
 export interface ImportProgress {
