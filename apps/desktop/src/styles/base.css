@@ -827,7 +827,11 @@ a {
 }
 
 .sh-app-shell.is-sidebar-collapsed .sh-sidebar__toggle {
-  inset-inline-start: var(--space-2);
+  inset-inline-start: calc(var(--space-2) - var(--space-1));
+}
+
+.sh-app-shell.is-sidebar-collapsed .sh-sidebar__scroll {
+  scrollbar-gutter: auto;
 }
 
 .sh-sidebar {
@@ -1059,6 +1063,7 @@ a {
 
 .sh-sidebar__brand .sh-brand-logo {
   height: 2.75rem;
+  transform: translateY(var(--space-2));
 }
 
 .sh-app-shell__compact-brand .sh-brand-logo {

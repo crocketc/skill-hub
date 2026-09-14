@@ -50,6 +50,7 @@ describe("sidebar collapse control states", () => {
   it("keeps the expanded logo prominent and aligns the toggle with the topbar", () => {
     const logo = declarationsFor(".sh-sidebar__brand .sh-brand-logo");
     expect(logo["height"]).toBe("2.75rem");
+    expect(logo["transform"]).toBe("translateY(var(--space-2))");
 
     const toggle = declarationsFor(".sh-sidebar__toggle");
     expect(toggle["inset-inline-start"]).toBe("calc(-1 * var(--space-2))");
@@ -101,7 +102,12 @@ describe("unified title bar shell layout", () => {
       declarationsFor(".sh-app-shell.is-sidebar-collapsed .sh-sidebar__toggle")[
         "inset-inline-start"
       ],
-    ).toBe("var(--space-2)");
+    ).toBe("calc(var(--space-2) - var(--space-1))");
+    expect(
+      declarationsFor(".sh-app-shell.is-sidebar-collapsed .sh-sidebar__scroll")[
+        "scrollbar-gutter"
+      ],
+    ).toBe("auto");
   });
 
   it("reserves macOS traffic-light clearance in the title bar and sidebar header", () => {

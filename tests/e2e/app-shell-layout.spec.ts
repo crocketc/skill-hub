@@ -52,6 +52,7 @@ test.describe("app shell collapse button placement", () => {
       // 展开态按钮与实际 Logo 图形不重叠；不是拿占满头部的 Link 外框比较。
       const aside = page.getByRole("complementary", { name: NAVIGATION });
       const brandBox = (await aside.locator(".sh-brand-logo").boundingBox())!;
+      const headerBox = (await aside.locator(".sh-sidebar__header").boundingBox())!;
       const firstLinkBox = (await aside.getByRole("link", { name: "Overview" }).boundingBox())!;
       expect(
         boxesIntersect(box, brandBox),
@@ -62,6 +63,7 @@ test.describe("app shell collapse button placement", () => {
         "toggle must not overlap the first navigation link",
       ).toBe(false);
       expect(Math.abs(brandBox.height - 44), "expanded logo remains prominent").toBeLessThanOrEqual(2);
+      expect(brandBox.y - headerBox.y, "expanded logo leaves breathing room above").toBeGreaterThanOrEqual(8);
 
       const notificationBox = (await page.getByRole("button", { name: "Notifications" }).boundingBox())!;
       expect(
@@ -69,14 +71,20 @@ test.describe("app shell collapse button placement", () => {
         "toggle aligns with topbar controls",
       ).toBeLessThanOrEqual(1);
 
-      // 点击折叠：状态切换且按钮位置保持稳定（标题栏位置不随侧栏宽度变化）。
+      // 点击折叠：状态切换且按钮垂直位置保持稳定。
       await toggle.click();
       await expect(toggle).toHaveAttribute("aria-expanded", "false");
       await expect(aside).toHaveClass(/is-collapsed/);
       const collapsedAsideBox = (await aside.boundingBox())!;
       expect(Math.abs(collapsedAsideBox.width - 48), "collapsed sidebar matches 3rem topbar").toBeLessThanOrEqual(1);
       const collapsedBox = (await toggle.boundingBox())!;
-      expect(Math.abs(collapsedBox.x - box.x), "toggle x stays fixed across collapse").toBeLessThanOrEqual(2);
+      const overviewIconBox = (await aside.getByRole("link", { name: "Overview" }).locator("svg").boundingBox())!;
+      expect(
+        Math.abs(
+          collapsedBox.x + collapsedBox.width / 2 - (overviewIconBox.x + overviewIconBox.width / 2),
+        ),
+        "collapsed toggle and navigation icons share a vertical centerline",
+      ).toBeLessThanOrEqual(1);
       expect(Math.abs(collapsedBox.y - box.y), "toggle y stays fixed across collapse").toBeLessThanOrEqual(1);
 
       await expect(toggle).toHaveAttribute("aria-label", "Expand navigation");
