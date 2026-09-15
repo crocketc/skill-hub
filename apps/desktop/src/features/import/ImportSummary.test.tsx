@@ -105,3 +105,34 @@ it("renders the import provenance line only when evidence was recorded", async (
   expect(screen.getByText(/已从 \/agents\/trae\/skills\/demo 导入（trae.code）/)).toBeVisible();
   expect(screen.getByText(/来源未识别/)).toBeVisible();
 });
+
+it("keeps the original copy and exposes the relationship-governance todo after a partial import", async () => {
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  render(
+    <I18nextProvider i18n={i18n}>
+      <ImportSummary
+        results={[
+          {
+            candidateId: "shared-pdf",
+            action: "copy",
+            status: "succeeded",
+            message: "已导入",
+            governanceTodo: "确认共享目录影响",
+            originalPreserved: true,
+          },
+          {
+            candidateId: "readonly-notes",
+            action: "copy",
+            status: "failed",
+            message: "写入失败",
+            governanceTodo: "检查权限后重试",
+            originalPreserved: true,
+          },
+        ]}
+      />
+    </I18nextProvider>,
+  );
+
+  expect(screen.getByText("原始副本保持不变；如需清理，请在关系治理中单独确认并保留回退路径。")).toBeVisible();
+  expect(screen.getByRole("link", { name: "查看 2 个关系治理待办" })).toBeVisible();
+});

@@ -78,6 +78,8 @@ export interface ImportConflict {
 export interface ImportPlan {
   candidates: ImportCandidate[];
   conflicts: ImportConflict[];
+  /** prepare_import 的确定性关系分类；前端只负责确认，不重新判断。 */
+  governanceGroups?: import("../relationshipGovernance/relationshipGovernance").ImportGovernanceGroup[];
 }
 
 /** OPT-20260914-08：导入成功时随结果返回的存证摘要（导入那一刻的事实）。 */
@@ -94,6 +96,10 @@ export interface ImportResult {
   message: string;
   /** 导入即存证：提交成功且落库时携带；复用/跳过等分支诚实缺省。 */
   provenance?: ImportProvenanceSummary;
+  /** 关系治理是导入后的独立、可回退操作；导入不会清理原始副本。 */
+  originalPreserved?: boolean;
+  /** 后端确定性分类产生的后续治理入口，AI 建议不会写入此字段。 */
+  governanceTodo?: string;
 }
 
 export interface ImportProgress {

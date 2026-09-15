@@ -37,6 +37,8 @@ export function ImportSummary({
   const visibleResults = showCompletedDetails
     ? results
     : results.filter((result) => result.status === "failed");
+  const governanceTodos = results.filter((result) => result.governanceTodo).length;
+  const originalsPreserved = results.some((result) => result.originalPreserved);
 
   return (
     <section className="sh-import-summary" aria-labelledby="import-summary-title">
@@ -53,6 +55,18 @@ export function ImportSummary({
         <span>{t("importWorkflow.summary.counts.skipped", { count: skipped })}</span>
         <span>{t("importWorkflow.summary.counts.failed", { count: failed })}</span>
       </div>
+
+      {originalsPreserved ? (
+        <p className="sh-import-summary__preservation">
+          原始副本保持不变；如需清理，请在关系治理中单独确认并保留回退路径。
+        </p>
+      ) : null}
+
+      {governanceTodos > 0 ? (
+        <a href="#relationship-governance">
+          查看 {governanceTodos} 个关系治理待办
+        </a>
+      ) : null}
 
       <ul className="sh-import-summary__list">
         {visibleResults.map((result) => (

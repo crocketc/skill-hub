@@ -24,6 +24,8 @@ import {
 } from "./api";
 import { ImportShell, type ImportStatus, type ImportStep } from "./ImportShell";
 import { ImportSummary } from "./ImportSummary";
+import { RelationshipGovernancePanel } from "../relationshipGovernance/RelationshipGovernancePanel";
+import type { ImportGovernanceDecision } from "../relationshipGovernance/relationshipGovernance";
 import { SourceInput } from "./SourceInput";
 import { readSessionSelectedSources, writeSessionSelectedSources } from "./sessionSources";
 import {
@@ -45,6 +47,7 @@ type WizardPhase =
   | "candidate_gate"
   | "candidates"
   | "analyzing"
+  | "governance"
   | "conflicts"
   | "committing"
   | "summary"
@@ -75,6 +78,7 @@ interface WizardState {
   selectedIds: string[];
   plan?: ImportPlan;
   actions: Record<string, ImportAction>;
+  governanceDecision: ImportGovernanceDecision;
   commitProgress?: ImportProgress;
   results: ImportResult[];
   /** M-29：每个已扫描目录的结果（候选数/失败原因）；保持扫描顺序。 */
@@ -105,6 +109,8 @@ type WizardEvent =
   | { type: "analysis_started"; startedAt: number; total: number }
   | { type: "analysis_progress"; progress: ImportProgress }
   | { type: "analysis_succeeded"; plan: ImportPlan }
+  | { type: "governance_decision"; decision: ImportGovernanceDecision }
+  | { type: "governance_confirmed" }
   | { type: "analysis_cancelled" }
   | { type: "action_selected"; candidateId: string; action: ImportAction }
   | { type: "commit_started"; total: number }
@@ -120,6 +126,7 @@ type WizardEvent =
 
 const initialState: WizardState = {
   actions: {},
+  governanceDecision: { groupActions: {}, itemOverrides: {} },
   candidates: [],
   candidatesBySource: [],
   phase: "source",
@@ -253,9 +260,13 @@ function reducer(state: WizardState, event: WizardEvent): WizardState {
         analysisStartedAt: undefined,
         analysisTotal: undefined,
         error: undefined,
-        phase: "conflicts",
+        phase: event.plan.governanceGroups?.length ? "governance" : "conflicts",
         plan: event.plan,
       };
+    case "governance_decision":
+      return { ...state, governanceDecision: event.decision };
+    case "governance_confirmed":
+      return { ...state, phase: "conflicts" };
     case "analysis_cancelled":
       // 分析阶段的取消：回到候选阶段，已选候选保留，在途结果由 operation
       // 序号守卫丢弃（不进入冲突阶段）。
@@ -337,12 +348,16 @@ function flowStepIndex(phase: WizardPhase, previousPhase?: WizardPhase): number 
       return 1;
     case "conflicts":
     case "committing":
+      return 3;
+    case "governance":
       return 2;
     case "summary":
-      return 3;
+      return 4;
     case "failed":
       return previousPhase === "conflicts"
-        ? 2
+        ? 3
+        : previousPhase === "governance"
+          ? 2
         : previousPhase === "candidates" || previousPhase === "analyzing"
           ? 1
           : 0;
@@ -775,14 +790,22 @@ type: "failed",
   };
 
   const hasFailure = state.results.some((result) => result.status === "failed");
-  const stepIndex = flowStepIndex(state.phase, state.previousPhase);
-  const flowSteps: ImportStep[] = (["source", "candidates", "conflicts", "summary"] as const).map(
+  const hasGovernanceGroups = Boolean(state.plan?.governanceGroups?.length);
+  const stepIndex = hasGovernanceGroups
+    ? flowStepIndex(state.phase, state.previousPhase)
+    : state.phase === "summary" ? 3 : state.phase === "conflicts" || state.phase === "committing" ? 2 : state.phase === "candidates" || state.phase === "analyzing" ? 1 : 0;
+  const flowSteps: ImportStep[] = (hasGovernanceGroups
+    ? ["source", "candidates", "governance", "conflicts", "summary"]
+    : ["source", "candidates", "conflicts", "summary"]
+  ).map(
     (key, index) => ({
-      label: t(`importWorkflow.phases.${key}`),
+      label: key === "governance" ? "关系治理" : String(t(`importWorkflow.phases.${key}` as never)),
       state: index < stepIndex ? "complete" : index === stepIndex ? "current" : "upcoming",
     }),
   );
-  const statusText = t(`importWorkflow.phases.${state.phase}`);
+  const statusText = state.phase === "governance"
+    ? "关系治理"
+    : String(t(`importWorkflow.phases.${state.phase}` as never));
   const status: ImportStatus =
     state.phase === "summary"
       ? { kind: hasFailure ? "warning" : "success", text: statusText }
@@ -901,6 +924,20 @@ type: "failed",
             size="lg"
           >
             {t("importWorkflow.conflicts.commit")}
+          </Button>,
+        ],
+        secondary: [
+          <Button key="back" onClick={() => dispatch({ type: "show_candidates" })} variant="ghost">
+            {t("actions.back")}
+          </Button>,
+        ],
+      };
+      break;
+    case "governance":
+      actions = {
+        primary: [
+          <Button key="confirm-governance" onClick={() => dispatch({ type: "governance_confirmed" })} size="lg">
+            确认关系处理
           </Button>,
         ],
         secondary: [
@@ -1059,6 +1096,14 @@ type: "failed",
             <p>{t("importWorkflow.analysis.progressUnavailable")}</p>
           )}
         </section>
+      ) : null}
+
+      {state.phase === "governance" && state.plan ? (
+        <RelationshipGovernancePanel
+          decision={state.governanceDecision}
+          groups={state.plan.governanceGroups ?? []}
+          onDecision={(decision) => dispatch({ type: "governance_decision", decision })}
+        />
       ) : null}
 
       {state.phase === "conflicts" && state.plan ? (
