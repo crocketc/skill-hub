@@ -162,7 +162,7 @@ FROM observed_deployments;
 
 -- Existing SkillHub-created deployments remain readable through deployments;
 -- also project their stable relation facts for unified relationship queries.
-INSERT OR IGNORE INTO deployment_relations (
+INSERT INTO deployment_relations (
     relation_id, skill_id, agent_client_id, path, path_key, directory_node_id,
     relationship, file_representation, ownership, link_target_path,
     link_target_path_key, link_target_directory_id, content_fingerprint, origin,
@@ -198,4 +198,17 @@ SELECT
     d.updated_at,
     CASE WHEN d.state IN ('deployed', 'active') THEN NULL ELSE d.updated_at END
 FROM deployments d
-JOIN targets t ON t.id = d.target_id;
+JOIN targets t ON t.id = d.target_id
+ON CONFLICT(agent_client_id, path_key) DO UPDATE SET
+    relation_id=excluded.relation_id,
+    skill_id=excluded.skill_id,
+    path=excluded.path,
+    relationship=excluded.relationship,
+    file_representation=excluded.file_representation,
+    ownership=excluded.ownership,
+    content_fingerprint=excluded.content_fingerprint,
+    origin=excluded.origin,
+    match_state=excluded.match_state,
+    active=excluded.active,
+    observed_at=excluded.observed_at,
+    released_at=excluded.released_at;

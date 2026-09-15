@@ -357,15 +357,54 @@ impl<'a> RelationshipRepository<'a> {
     }
 }
 
-fn deployment_entry_path(target_path: &str, runtime_name: &str) -> String {
+pub(crate) fn deployment_entry_path(target_path: &str, runtime_name: &str) -> String {
     if runtime_name.is_empty() {
         target_path.to_owned()
     } else {
-        std::path::Path::new(target_path)
-            .join(runtime_name)
-            .to_string_lossy()
-            .into_owned()
+        let separator = if cfg!(windows) || target_path.contains('\\') {
+            '\\'
+        } else {
+            '/'
+        };
+        format!(
+            "{}{}{}",
+            target_path.trim_end_matches(['/', '\\']),
+            separator,
+            runtime_name.trim_start_matches(['/', '\\'])
+        )
     }
+}
+
+fn directory_node_id_for_path_tx(
+    transaction: &Transaction<'_>,
+    path: &str,
+) -> AppResult<Option<String>> {
+    let candidate = comparable_path(path);
+    let mut statement = transaction
+        .prepare("SELECT node_id, path FROM directory_nodes")
+        .map_err(database_error)?;
+    let rows = statement
+        .query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })
+        .map_err(database_error)?;
+    let mut best: Option<(usize, String)> = None;
+    for row in rows {
+        let (node_id, node_path) = row.map_err(database_error)?;
+        let root = comparable_path(&node_path);
+        let is_match = candidate == root
+            || candidate
+                .strip_prefix(root.trim_end_matches('/'))
+                .is_some_and(|rest| rest.starts_with('/'));
+        if is_match && best.as_ref().is_none_or(|current| root.len() > current.0) {
+            best = Some((root.len(), node_id));
+        }
+    }
+    Ok(best.map(|(_, node_id)| node_id))
+}
+
+fn comparable_path(path: &str) -> String {
+    observed_path_key(&path.replace('\\', "/"))
 }
 
 pub(crate) fn upsert_deployment_relation_tx(
@@ -374,6 +413,7 @@ pub(crate) fn upsert_deployment_relation_tx(
 ) -> AppResult<()> {
     let path_key = observed_path_key(&relation.path);
     let link_target_path_key = relation.link_target_path.as_deref().map(observed_path_key);
+    let directory_node_id = directory_node_id_for_path_tx(transaction, &relation.path)?;
     transaction
         .execute(
             "INSERT INTO deployment_relations
@@ -390,14 +430,16 @@ pub(crate) fn upsert_deployment_relation_tx(
              link_target_directory_id=excluded.link_target_directory_id,
              content_fingerprint=excluded.content_fingerprint, origin=excluded.origin,
              match_state=excluded.match_state, active=excluded.active,
-             observed_at=excluded.observed_at, released_at=excluded.released_at",
+             observed_at=excluded.observed_at, released_at=excluded.released_at
+             WHERE excluded.ownership='skillhub_managed'
+                OR deployment_relations.ownership<>'skillhub_managed'",
             params![
                 relation.relation_id,
                 relation.skill_id.map(|id| id.to_string()),
                 relation.agent_client_id,
                 relation.path,
                 path_key,
-                relation.directory_node_id,
+                directory_node_id,
                 relationship_code(relation.relationship),
                 representation_code(relation.file_representation),
                 ownership_code(relation.ownership),
@@ -411,6 +453,35 @@ pub(crate) fn upsert_deployment_relation_tx(
                 relation.observed_at,
                 relation.released_at,
             ],
+    )
+        .map(|_| ())
+        .map_err(database_error)
+}
+
+pub(crate) fn sync_reconciled_deployment_tx(
+    transaction: &Transaction<'_>,
+    id: &str,
+    expected_hash: &str,
+    observed_hash: Option<&str>,
+    observed_at: i64,
+) -> AppResult<()> {
+    let (content_fingerprint, match_state) = match observed_hash {
+        Some(hash) if hash != expected_hash => (hash, "diverged"),
+        Some(hash) => (hash, "content_verified"),
+        None => (expected_hash, "content_verified"),
+    };
+    transaction
+        .execute(
+            "UPDATE deployment_relations
+             SET content_fingerprint=?1, match_state=?2, active=1,
+                 observed_at=?3, released_at=NULL
+             WHERE relation_id=?4 AND ownership='skillhub_managed'",
+            params![
+                content_fingerprint,
+                match_state,
+                observed_at,
+                format!("managed:{id}")
+            ],
         )
         .map(|_| ())
         .map_err(database_error)
@@ -421,6 +492,7 @@ pub(crate) fn upsert_source_relation_tx(
     relation: &SourceRelationFact,
 ) -> AppResult<()> {
     let source_path_key = observed_path_key(&relation.source_path);
+    let directory_node_id = directory_node_id_for_path_tx(transaction, &relation.source_path)?;
     transaction
         .execute(
             "INSERT INTO source_relations
@@ -439,7 +511,7 @@ pub(crate) fn upsert_source_relation_tx(
             params![
                 relation.provenance_id,
                 relation.skill_id.to_string(),
-                relation.directory_node_id,
+                directory_node_id,
                 relation.agent_client_id,
                 relation.source_path,
                 source_path_key,

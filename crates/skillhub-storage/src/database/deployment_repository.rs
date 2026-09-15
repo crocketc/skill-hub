@@ -151,15 +151,20 @@ impl<'a> DeploymentRepositorySqlite<'a> {
         expected_hash: &str,
         observed_hash: Option<&str>,
     ) -> AppResult<()> {
-        self.database
+        let transaction = self
+            .database
             .connection
+            .unchecked_transaction()
+            .map_err(database_error)?;
+        let observed_at = now();
+        transaction
             .execute(
                 "UPDATE deployments SET version_id=?1, expected_hash=?2, observed_hash=?3, updated_at=?4 WHERE id=?5 AND state IN ('deployed','active')",
                 params![
                     version_id.to_string(),
                     expected_hash,
                     observed_hash,
-                    now(),
+                    observed_at,
                     id.to_string(),
                 ],
             )
@@ -172,7 +177,15 @@ impl<'a> DeploymentRepositorySqlite<'a> {
                         .with_param("field", "deployment")
                         .with_action(RecoveryAction::Retry))
                 }
-            })
+            })?;
+        super::relationship_repository::sync_reconciled_deployment_tx(
+            &transaction,
+            &id.to_string(),
+            expected_hash,
+            observed_hash,
+            observed_at,
+        )?;
+        transaction.commit().map_err(database_error)
     }
 }
 

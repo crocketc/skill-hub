@@ -4,6 +4,7 @@ use skillhub_core::agent::{
 };
 use skillhub_core::deployment::{
     DeploymentMode, DeploymentRecord, DeploymentState, ObservedMatchState, ObservedOrigin,
+    ObservedRowAction,
 };
 use skillhub_core::import::{CandidateOwnership, ImportProvenance};
 use skillhub_core::relationship::{
@@ -273,12 +274,303 @@ fn managed_deployments_keep_distinct_runtime_entry_paths_under_one_target() {
         .join("beta")
         .to_string_lossy()
         .into_owned();
-    assert!(relations
-        .iter()
-        .any(|relation| relation.path == expected_alpha));
-    assert!(relations
-        .iter()
-        .any(|relation| relation.path == expected_beta));
+    assert!(
+        relations
+            .iter()
+            .any(|relation| relation.path == expected_alpha),
+        "actual={relations:?}, expected={expected_alpha}"
+    );
+    assert!(
+        relations
+            .iter()
+            .any(|relation| relation.path == expected_beta),
+        "actual={relations:?}, expected={expected_beta}"
+    );
+}
+
+#[test]
+fn managed_relation_remains_authoritative_when_observed_reuses_its_path() {
+    let database = Database::open_in_memory().unwrap();
+    let managed_skill = SkillId::new();
+    let observed_skill = SkillId::new();
+    insert_skill_for_relationship_test(&database, managed_skill);
+    insert_skill_for_relationship_test(&database, observed_skill);
+    let version =
+        VersionId::parse("sha256:0000000000000000000000000000000000000000000000000000000000000004")
+            .unwrap();
+    database
+        .connection_for_test()
+        .execute(
+            "INSERT INTO versions (id, skill_id, content_hash, manifest_json, created_at) VALUES (?1, ?2, 'sha256:managed', '{}', 0)",
+            rusqlite::params![version.to_string(), managed_skill.to_string()],
+        )
+        .unwrap();
+    database
+        .connection_for_test()
+        .execute(
+            "INSERT INTO targets (id, agent_id, scope, path, created_at) VALUES ('managed-target', 'agent', 'global', 'C:\\agents\\skills', 0)",
+            [],
+        )
+        .unwrap();
+    let deployment = DeploymentRecord {
+        id: DeploymentId::new(),
+        skill_id: managed_skill,
+        version_id: version,
+        target_id: "managed-target".into(),
+        state: DeploymentState::Deployed,
+        mode: DeploymentMode::ManagedCopy,
+        managed: true,
+        runtime_name: "demo".into(),
+        expected_hash: "sha256:managed".into(),
+        observed_hash: None,
+    };
+    database
+        .deployment_repository()
+        .insert_sync(&deployment)
+        .unwrap();
+
+    let path = r"C:\agents\skills\demo";
+    database
+        .provenance_repository()
+        .apply_observed_row_action(
+            "agent",
+            path,
+            &ObservedRowAction::EstablishVerified {
+                skill_id: observed_skill,
+                fingerprint: "sha256:observed".into(),
+            },
+            ObservedOrigin::Scan,
+            200,
+        )
+        .unwrap();
+
+    let relations = database.relationship_repository().list_relations().unwrap();
+    assert_eq!(relations.len(), 1);
+    assert_eq!(
+        relations[0].relation_id,
+        format!("managed:{}", deployment.id)
+    );
+    assert_eq!(relations[0].skill_id, Some(managed_skill));
+    assert_eq!(relations[0].ownership, OwnershipState::SkillhubManaged);
+    assert_eq!(relations[0].relationship, RelationshipType::ManagedCopy);
+
+    for action in [
+        ObservedRowAction::MarkUnreliable {
+            match_state: ObservedMatchState::Diverged,
+            fingerprint: "sha256:changed".into(),
+        },
+        ObservedRowAction::Release,
+    ] {
+        database
+            .provenance_repository()
+            .apply_observed_row_action("agent", path, &action, ObservedOrigin::Scan, 201)
+            .unwrap();
+    }
+    let relation = &database.relationship_repository().list_relations().unwrap()[0];
+    assert_eq!(relation.relation_id, format!("managed:{}", deployment.id));
+    assert_eq!(relation.skill_id, Some(managed_skill));
+    assert_eq!(relation.ownership, OwnershipState::SkillhubManaged);
+    assert_eq!(relation.relationship, RelationshipType::ManagedCopy);
+    assert!(relation.active);
+
+    database
+        .deployment_repository()
+        .mark_removed_sync(deployment.id)
+        .unwrap();
+    let relation = &database.relationship_repository().list_relations().unwrap()[0];
+    assert_eq!(relation.relation_id, format!("managed:{}", deployment.id));
+    assert!(!relation.active);
+}
+
+#[test]
+fn reconcile_updates_normalized_hash_state_and_timestamp() {
+    let database = Database::open_in_memory().unwrap();
+    let skill = SkillId::new();
+    insert_skill_for_relationship_test(&database, skill);
+    let version =
+        VersionId::parse("sha256:0000000000000000000000000000000000000000000000000000000000000005")
+            .unwrap();
+    database
+        .connection_for_test()
+        .execute(
+            "INSERT INTO versions (id, skill_id, content_hash, manifest_json, created_at) VALUES (?1, ?2, 'sha256:before', '{}', 0)",
+            rusqlite::params![version.to_string(), skill.to_string()],
+        )
+        .unwrap();
+    database
+        .connection_for_test()
+        .execute(
+            "INSERT INTO targets (id, agent_id, scope, path, created_at) VALUES ('reconcile-target', 'agent', 'global', '/agents/skills', 0)",
+            [],
+        )
+        .unwrap();
+    let deployment = DeploymentRecord {
+        id: DeploymentId::new(),
+        skill_id: skill,
+        version_id: version.clone(),
+        target_id: "reconcile-target".into(),
+        state: DeploymentState::Deployed,
+        mode: DeploymentMode::ManagedCopy,
+        managed: true,
+        runtime_name: "demo".into(),
+        expected_hash: "sha256:before".into(),
+        observed_hash: None,
+    };
+    database
+        .deployment_repository()
+        .insert_sync(&deployment)
+        .unwrap();
+
+    database
+        .deployment_repository()
+        .update_reconcile_facts_sync(
+            deployment.id,
+            &version,
+            "sha256:before",
+            Some("sha256:external"),
+        )
+        .unwrap();
+    let updated = database.deployment_repository().list_all().unwrap();
+    let relation = &database.relationship_repository().list_relations().unwrap()[0];
+    let updated_at: i64 = database
+        .connection_for_test()
+        .query_row(
+            "SELECT updated_at FROM deployments WHERE id=?1",
+            [deployment.id.to_string()],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(updated[0].observed_hash.as_deref(), Some("sha256:external"));
+    assert_eq!(relation.content_fingerprint, "sha256:external");
+    assert_eq!(relation.match_state, ObservedMatchState::Diverged);
+    assert_eq!(relation.observed_at, updated_at);
+    assert!(relation.active);
+
+    database
+        .deployment_repository()
+        .update_reconcile_facts_sync(
+            deployment.id,
+            &version,
+            "sha256:collected",
+            Some("sha256:collected"),
+        )
+        .unwrap();
+    let relation = &database.relationship_repository().list_relations().unwrap()[0];
+    assert_eq!(relation.content_fingerprint, "sha256:collected");
+    assert_eq!(relation.match_state, ObservedMatchState::ContentVerified);
+}
+
+#[test]
+fn normalized_source_and_observed_relations_choose_the_longest_directory_parent() {
+    let database = Database::open_in_memory().unwrap();
+    let skill = SkillId::new();
+    insert_skill_for_relationship_test(&database, skill);
+    for (node_id, path) in [
+        ("root-node", "/agents/skills"),
+        ("nested-node", "/agents/skills/team"),
+    ] {
+        database
+            .directory_repository()
+            .upsert_node(&DirectoryNodeFact {
+                node_id: node_id.into(),
+                path: path.into(),
+                path_key: String::new(),
+                role: DirectoryRole::AgentNative,
+                profile_id: None,
+                agent_client_id: Some("agent".into()),
+                exists: true,
+                observed_at: 1,
+                scan_source: Some("test".into()),
+            })
+            .unwrap();
+    }
+    let path = "/agents/skills/team/demo";
+    database
+        .relationship_repository()
+        .upsert_source_relation(&skillhub_core::relationship::SourceRelationFact {
+            provenance_id: "source-longest-parent".into(),
+            skill_id: skill,
+            directory_node_id: None,
+            agent_client_id: Some("agent".into()),
+            source_path: path.into(),
+            source_path_key: String::new(),
+            relationship: RelationshipType::ImportCopy,
+            file_representation: FileRepresentation::Directory,
+            ownership: OwnershipState::ObservedUnmanaged,
+            link_target_path: None,
+            link_target_directory_id: None,
+            content_fingerprint: "sha256:source".into(),
+            source: SourceDescriptor::new(SourceKind::Local, SourceLocator::local_path(path)),
+            imported_at: 1,
+        })
+        .unwrap();
+    database
+        .provenance_repository()
+        .apply_observed_row_action(
+            "agent",
+            path,
+            &ObservedRowAction::EstablishVerified {
+                skill_id: skill,
+                fingerprint: "sha256:observed".into(),
+            },
+            ObservedOrigin::Scan,
+            2,
+        )
+        .unwrap();
+
+    let source = &database
+        .relationship_repository()
+        .list_source_relations()
+        .unwrap()[0];
+    assert_eq!(source.directory_node_id.as_deref(), Some("nested-node"));
+    let observed = &database.relationship_repository().list_relations().unwrap()[0];
+    assert_eq!(observed.directory_node_id.as_deref(), Some("nested-node"));
+}
+
+#[test]
+fn managed_runtime_entry_path_preserves_windows_separator_style() {
+    let database = Database::open_in_memory().unwrap();
+    let skill = SkillId::new();
+    insert_skill_for_relationship_test(&database, skill);
+    let version =
+        VersionId::parse("sha256:0000000000000000000000000000000000000000000000000000000000000006")
+            .unwrap();
+    database
+        .connection_for_test()
+        .execute(
+            "INSERT INTO versions (id, skill_id, content_hash, manifest_json, created_at) VALUES (?1, ?2, 'sha256:windows', '{}', 0)",
+            rusqlite::params![version.to_string(), skill.to_string()],
+        )
+        .unwrap();
+    database
+        .connection_for_test()
+        .execute(
+            "INSERT INTO targets (id, agent_id, scope, path, created_at) VALUES ('windows-target', 'agent', 'global', 'C:\\Users\\demo\\.agents\\skills', 0)",
+            [],
+        )
+        .unwrap();
+    database
+        .deployment_repository()
+        .insert_sync(&DeploymentRecord {
+            id: DeploymentId::new(),
+            skill_id: skill,
+            version_id: version,
+            target_id: "windows-target".into(),
+            state: DeploymentState::Deployed,
+            mode: DeploymentMode::ManagedCopy,
+            managed: true,
+            runtime_name: "demo".into(),
+            expected_hash: "sha256:windows".into(),
+            observed_hash: None,
+        })
+        .unwrap();
+
+    let relation = &database.relationship_repository().list_relations().unwrap()[0];
+    assert_eq!(relation.path, r"C:\Users\demo\.agents\skills\demo");
+    assert_eq!(
+        relation.path_key,
+        skillhub_core::deployment::observed_path_key(&relation.path)
+    );
 }
 
 #[test]
@@ -372,7 +664,7 @@ fn deployment_relation_upsert_replaces_relation_id_and_removal_hits_the_new_id()
         .mark_removed_sync(deployment.id)
         .unwrap();
     let relation = database.relationship_repository().list_relations().unwrap();
-    assert!(!relation[0].active);
+    assert!(!relation[0].active, "relations={relation:?}");
     assert!(relation[0].released_at.is_some());
 }
 

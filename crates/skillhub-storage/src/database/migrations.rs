@@ -4,6 +4,8 @@ use rusqlite::{params, Connection, Transaction};
 use skillhub_core::deployment::observed_path_key;
 use skillhub_core::{AppError, AppResult, ErrorCode, RecoveryAction, Severity};
 
+use super::relationship_repository::deployment_entry_path;
+
 pub const CURRENT_SCHEMA_VERSION: u32 = 14;
 
 #[derive(Clone, Copy)]
@@ -107,7 +109,7 @@ fn run_with_migrations(
             .execute_batch(migration.sql)
             .map_err(database_error)?;
         if migration.version == 14 {
-            repair_relationship_path_keys(&transaction)?;
+            repair_relationship_paths(&transaction)?;
         }
         transaction
             .pragma_update(None, "user_version", migration.version)
@@ -124,7 +126,68 @@ fn run_with_migrations(
     })
 }
 
-fn repair_relationship_path_keys(transaction: &Transaction<'_>) -> AppResult<()> {
+fn repair_relationship_paths(transaction: &Transaction<'_>) -> AppResult<()> {
+    let managed_paths = {
+        let mut statement = transaction
+            .prepare(
+                "SELECT dr.relation_id, t.agent_id, t.path, d.runtime_name
+                 FROM deployment_relations dr
+                 JOIN deployments d ON dr.relation_id='legacy-managed:' || d.id
+                 JOIN targets t ON t.id=d.target_id",
+            )
+            .map_err(database_error)?;
+        let rows = statement
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, String>(3)?,
+                ))
+            })
+            .map_err(database_error)?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(database_error)?;
+        rows
+    };
+    for (managed_relation_id, agent_client_id, target_path, runtime_name) in managed_paths {
+        let path = deployment_entry_path(&target_path, &runtime_name);
+        let identity_key = relationship_path_identity_key(&path);
+        let conflicting_rows = {
+            let mut statement = transaction
+                .prepare(
+                    "SELECT rowid, relation_id, path FROM deployment_relations
+                     WHERE agent_client_id=?1 AND relation_id<>?2",
+                )
+                .map_err(database_error)?;
+            let rows = statement
+                .query_map(params![agent_client_id, managed_relation_id], |row| {
+                    Ok((
+                        row.get::<_, i64>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, String>(2)?,
+                    ))
+                })
+                .map_err(database_error)?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(database_error)?;
+            rows
+        };
+        for (rowid, _relation_id, conflicting_path) in conflicting_rows {
+            if relationship_path_identity_key(&conflicting_path) == identity_key {
+                transaction
+                    .execute("DELETE FROM deployment_relations WHERE rowid=?1", [rowid])
+                    .map_err(database_error)?;
+            }
+        }
+        transaction
+            .execute(
+                "UPDATE deployment_relations SET path=?1, path_key=?2 WHERE relation_id=?3",
+                params![path, observed_path_key(&path), managed_relation_id],
+            )
+            .map_err(database_error)?;
+    }
+
     let deployment_paths = {
         let mut statement = transaction
             .prepare("SELECT rowid, path, link_target_path FROM deployment_relations")
@@ -177,6 +240,10 @@ fn repair_relationship_path_keys(transaction: &Transaction<'_>) -> AppResult<()>
             .map_err(database_error)?;
     }
     Ok(())
+}
+
+fn relationship_path_identity_key(path: &str) -> String {
+    observed_path_key(&path.replace('\\', "/"))
 }
 
 fn read_schema_version(connection: &Connection) -> AppResult<u32> {

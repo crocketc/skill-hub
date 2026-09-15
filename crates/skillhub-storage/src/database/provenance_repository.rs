@@ -255,8 +255,8 @@ impl<'a> ProvenanceRepository<'a> {
                     )
                     .map_err(database_error)?;
                 transaction
-                    .execute(
-                        "UPDATE deployment_relations SET skill_id=NULL, content_fingerprint=?1, match_state=?2, active=1, observed_at=?3, released_at=NULL WHERE agent_client_id=?4 AND path_key=?5",
+                        .execute(
+                        "UPDATE deployment_relations SET skill_id=NULL, content_fingerprint=?1, match_state=?2, active=1, observed_at=?3, released_at=NULL WHERE agent_client_id=?4 AND path_key=?5 AND ownership<>'skillhub_managed'",
                         params![
                             fingerprint,
                             match_state_code(*match_state),
@@ -282,8 +282,8 @@ impl<'a> ProvenanceRepository<'a> {
                     )
                     .map_err(database_error)?;
                 transaction
-                    .execute(
-                        "UPDATE deployment_relations SET active=0, released_at=?1 WHERE agent_client_id=?2 AND path_key=?3 AND active=1",
+                        .execute(
+                        "UPDATE deployment_relations SET active=0, released_at=?1 WHERE agent_client_id=?2 AND path_key=?3 AND active=1 AND ownership<>'skillhub_managed'",
                         params![observed_at, client_id, observed_path_key(original_path)],
                     )
                     .map_err(database_error)?;

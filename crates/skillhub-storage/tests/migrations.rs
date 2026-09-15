@@ -103,7 +103,11 @@ fn v13_database_upgrades_relationships_without_losing_legacy_facts() {
             |row| row.get(0),
         )
         .unwrap();
-    assert_eq!(migrated_path, "C:/legacy/skills/legacy");
+    let expected_migrated_path = std::path::Path::new("C:/legacy/skills")
+        .join("legacy")
+        .to_string_lossy()
+        .into_owned();
+    assert_eq!(migrated_path, expected_migrated_path);
     let migrated_path_key: String = database
         .connection_for_test()
         .query_row(
@@ -125,6 +129,62 @@ fn v13_database_upgrades_relationships_without_losing_legacy_facts() {
         )
         .unwrap();
     assert_eq!(pending_count, 1);
+}
+
+#[test]
+fn v13_backfill_keeps_managed_relation_when_observed_row_has_the_same_path() {
+    let file = NamedTempFile::new().unwrap();
+    let connection = Connection::open(file.path()).unwrap();
+    for sql in [
+        include_str!("../migrations/0001_initial.sql"),
+        include_str!("../migrations/0002_fts.sql"),
+        include_str!("../migrations/0003_catalog_metadata.sql"),
+        include_str!("../migrations/0004_search_tokenizer.sql"),
+        include_str!("../migrations/0005_check_run_metadata.sql"),
+        include_str!("../migrations/0006_llm_profiles.sql"),
+        include_str!("../migrations/0007_ui_preferences.sql"),
+        include_str!("../migrations/0008_version_labels.sql"),
+        include_str!("../migrations/0009_skill_user_purpose.sql"),
+        include_str!("../migrations/0010_llm_providers_translations.sql"),
+        include_str!("../migrations/0011_source_roles.sql"),
+        include_str!("../migrations/0012_combination_name_unique.sql"),
+        include_str!("../migrations/0013_observed_deployments.sql"),
+    ] {
+        connection.execute_batch(sql).unwrap();
+    }
+    connection
+        .execute_batch(
+            "INSERT INTO skills(id, display_name, runtime_name, created_at, updated_at)
+                 VALUES ('00000000-0000-0000-0000-0000000000c1', 'Legacy', 'legacy', 1, 1);
+             INSERT INTO versions(id, skill_id, content_hash, manifest_json, created_at)
+                 VALUES ('sha256:0000000000000000000000000000000000000000000000000000000000000007', '00000000-0000-0000-0000-0000000000c1', 'sha256:legacy', '{}', 1);
+             INSERT INTO observed_deployments(id, skill_id, client_id, original_path, path_key, content_fingerprint, match_state, origin, status, observed_at)
+                 VALUES ('00000000-0000-0000-0000-0000000000c2', '00000000-0000-0000-0000-0000000000c1', 'legacy.agent', 'C:\\legacy\\skills\\legacy', 'C:\\legacy\\skills\\legacy', 'sha256:observed', 'content_verified', 'scan', 'active', 11);
+             INSERT INTO targets(id, agent_id, scope, path, created_at)
+                 VALUES ('target-legacy-windows', 'legacy.agent', 'global', 'C:\\legacy\\skills', 1);
+             INSERT INTO deployments(id, skill_id, version_id, target_id, state, method, managed, runtime_name, expected_hash, created_at, updated_at)
+                 VALUES ('00000000-0000-0000-0000-0000000000c3', '00000000-0000-0000-0000-0000000000c1', 'sha256:0000000000000000000000000000000000000000000000000000000000000007', 'target-legacy-windows', 'deployed', 'managed_copy', 1, 'legacy', 'sha256:legacy', 12, 12);",
+        )
+        .unwrap();
+    connection.pragma_update(None, "user_version", 13).unwrap();
+    drop(connection);
+
+    let database = Database::open(file.path()).unwrap();
+    let relations = database.relationship_repository().list_relations().unwrap();
+    assert_eq!(relations.len(), 1);
+    assert_eq!(
+        relations[0].relation_id,
+        "legacy-managed:00000000-0000-0000-0000-0000000000c3"
+    );
+    assert_eq!(
+        relations[0].ownership,
+        skillhub_core::OwnershipState::SkillhubManaged
+    );
+    assert_eq!(
+        relations[0].relationship,
+        skillhub_core::RelationshipType::ManagedCopy
+    );
+    assert_eq!(relations[0].path, r"C:\legacy\skills\legacy");
 }
 
 #[test]
