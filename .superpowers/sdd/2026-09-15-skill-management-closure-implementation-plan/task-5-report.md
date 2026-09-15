@@ -102,3 +102,26 @@
 
 - 本轮仍未进行真实 Windows/macOS 桌面人工验收；生产路由和 nativeApi（原生接口）异常路径由 mock IPC（进程间通信）测试覆盖，真实桌面服务返回异常仍需人工验收确认。
 - 原件删除/迁移仍是独立高风险流程，本轮未扩大其范围。
+
+## 第三轮复审收尾修复（2026-09-15）
+
+### 修复内容
+
+- 定向治理待办导航的关系概览查询显式使用 `staleTime: 0`，不再受全局 30 秒缓存新鲜期影响；同时失效关系概览缓存，确保导入后再次进入待办列表读取最新 `governanceTaskId` 对应的真实事实。
+- DiscoveryRoute 的导入完成刷新条件扩展为 `succeeded` 或 `todo`；纯待办和成功/待办混合结果都会刷新 Skill 库查询、关系概览查询和全局 bootstrap snapshot（启动快照）。
+- RelationshipGovernancePanel、ImportSummary 的新增用户文案全部接入 `importWorkflow.governance` / `importWorkflow.summary` 双语键；分类、动作、成员覆盖、原件保留说明和治理待办入口均由当前 locale 渲染，zh-CN/en-US 键集合保持一致。
+
+### 本轮 TDD 与验证
+
+- 先加入第三轮回归测试；首轮红测为 5 项失败（缓存复用、纯 todo/混合结果刷新和两项英文 locale 文案），实现后定向 3 文件 19/19 通过。
+- `pnpm --dir apps/desktop exec vitest run src/app/DiscoveryRoute.test.tsx src/features/import/ImportWizard.test.tsx src/features/import/ConflictResolution.test.tsx src/features/import/ImportSummary.test.tsx src/features/import/nativeApi.test.ts src/features/relationshipGovernance/RelationshipGovernancePanel.test.tsx`：6 个测试文件、100/100 通过。
+- `pnpm --dir apps/desktop test -- --run`：147 个测试文件、1488/1488 通过。
+- `pnpm --dir apps/desktop typecheck`、`pnpm --dir apps/desktop lint`、`pnpm --dir apps/desktop build`：通过。
+- `cargo test -p skillhub-application --test facade_relationship_governance`：33/33 通过；`cargo test -p skillhub-application --test facade_observed_deployments`：7/7 通过；`cargo test -p skillhub-core --test import_conflicts`：4/4 通过。
+- `SKILLHUB_WRITE_BINDINGS=1 cargo test -p skillhub-desktop generate_bindings`：1/1 通过；本轮未修改 Rust/TypeScript 契约，生成绑定无漂移。
+- `cargo fmt --all -- --check`、`cargo clippy --locked --workspace --all-targets --all-features -- -D warnings`、`git diff --check`：通过；`src/i18n/i18n.test.ts`：6/6 通过。
+
+### 剩余真实风险
+
+- 本轮仍未进行真实 Windows/macOS 桌面人工验收；生产路由查询、纯 todo/混合刷新和 locale 渲染由 mock IPC/组件测试覆盖，真实桌面服务异常呈现与跨平台观感仍需人工验收。
+- 原件删除/迁移仍是独立高风险流程，本轮未扩大其范围。

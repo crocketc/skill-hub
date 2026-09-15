@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Button } from "../../ui/Button";
 import {
   actionForMember,
@@ -14,9 +15,15 @@ export interface RelationshipGovernancePanelProps {
   onDecision: (decision: ImportGovernanceDecision) => void;
 }
 
-const actionLabels: Record<ImportGovernanceAction, string> = {
-  preserve_original: "原件保留",
-  create_todo: "创建待办",
+const actionKeys: Record<ImportGovernanceAction, string> = {
+  preserve_original: "importWorkflow.governance.actions.preserveOriginal",
+  create_todo: "importWorkflow.governance.actions.createTodo",
+};
+
+const classificationKeys: Record<ImportGovernanceGroup["classification"], string> = {
+  source_preservation: "importWorkflow.governance.classification.sourcePreservation",
+  agent_managed_source: "importWorkflow.governance.classification.agentManagedSource",
+  conflict_follow_up: "importWorkflow.governance.classification.conflictFollowUp",
 };
 
 /**
@@ -29,6 +36,7 @@ export function RelationshipGovernancePanel({
   groups,
   onDecision,
 }: RelationshipGovernancePanelProps) {
+  const { t } = useTranslation();
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
 
   const selectGroup = (group: ImportGovernanceGroup, action: ImportGovernanceAction) => {
@@ -47,17 +55,17 @@ export function RelationshipGovernancePanel({
   return (
     <section aria-labelledby="relationship-governance-title" className="sh-relationship-governance" id="relationship-governance">
       <header>
-        <p>关系治理</p>
-        <h2 id="relationship-governance-title">确认导入后的关系处理</h2>
-        <p>导入集中库与处理原始副本是独立操作；所有更改都需要确认、影响说明和回退路径。</p>
+        <p>{t("importWorkflow.governance.eyebrow")}</p>
+        <h2 id="relationship-governance-title">{t("importWorkflow.governance.title")}</h2>
+        <p>{t("importWorkflow.governance.description")}</p>
       </header>
-      {!aiAvailable ? <p role="status">AI 建议未配置；已保留确定性关系判断。</p> : null}
+      {!aiAvailable ? <p role="status">{t("importWorkflow.governance.aiUnavailable")}</p> : null}
       {groups.map((group) => (
         <article key={group.group_id}>
-          <h3>{group.classification.replaceAll("_", " ")}</h3>
+          <h3>{t(classificationKeys[group.classification] as never)}</h3>
           <p>{group.impact_summary}</p>
           <fieldset>
-            <legend>分组默认动作</legend>
+            <legend>{t("importWorkflow.governance.groupActionLegend")}</legend>
             {group.available_actions.map((action) => (
               <label key={action}>
                 <input
@@ -66,7 +74,7 @@ export function RelationshipGovernancePanel({
                   onChange={() => selectGroup(group, action)}
                   type="radio"
                 />
-                {actionLabels[action]}
+                {t(actionKeys[action] as never)}
               </label>
             ))}
           </fieldset>
@@ -75,7 +83,9 @@ export function RelationshipGovernancePanel({
             onClick={() => setExpanded((current) => ({ ...current, [group.group_id]: !current[group.group_id] }))}
             variant="ghost"
           >
-            {expanded[group.group_id] ? "收起项目" : `展开 ${group.members.length} 个项目`}
+            {expanded[group.group_id]
+              ? t("importWorkflow.governance.collapseMembers")
+              : t("importWorkflow.governance.expandMembers", { count: group.members.length })}
           </Button>
           {expanded[group.group_id] ? (
             <ul>
@@ -83,7 +93,7 @@ export function RelationshipGovernancePanel({
                 <li key={member.member_id}>
                   <strong>{member.display_name}</strong>
                   <fieldset>
-                    <legend>{member.display_name} 的单项覆盖</legend>
+                    <legend>{t("importWorkflow.governance.memberOverrideLegend", { name: member.display_name })}</legend>
                     {group.available_actions.map((action) => (
                       <label key={action}>
                         <input
@@ -92,7 +102,10 @@ export function RelationshipGovernancePanel({
                           onChange={() => selectMember(member.member_id, action)}
                           type="radio"
                         />
-                        {member.display_name}：{actionLabels[action]}
+                        {t("importWorkflow.governance.memberActionLabel", {
+                          action: t(actionKeys[action] as never),
+                          name: member.display_name,
+                        })}
                       </label>
                     ))}
                   </fieldset>

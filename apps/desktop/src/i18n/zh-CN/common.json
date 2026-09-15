@@ -302,6 +302,9 @@
       "openLibrary": "打开 Skill 库",
       "showCompletedDetails": "查看成功和跳过明细",
       "hideCompletedDetails": "收起成功和跳过明细",
+      "originalsPreserved": "原始副本保持不变；如需清理，请在关系治理中单独确认并保留回退路径。",
+      "governanceTasksLabel": "关系治理待办",
+      "openGovernanceTask": "查看治理待办 {{taskId}}",
       "counts": {
         "succeeded": "成功 {{count}}",
         "skipped": "跳过 {{count}}",
@@ -323,6 +326,26 @@
       },
       "provenance": "已从 {{path}} 导入（{{agent}}）",
       "unknownAgent": "来源未识别"
+    },
+    "governance": {
+      "eyebrow": "关系治理",
+      "title": "确认导入后的关系处理",
+      "description": "导入集中库与处理原始副本是独立操作；所有更改都需要确认、影响说明和回退路径。",
+      "aiUnavailable": "AI 建议未配置；已保留确定性关系判断。",
+      "groupActionLegend": "分组默认动作",
+      "memberOverrideLegend": "{{name}} 的单项覆盖",
+      "memberActionLabel": "{{name}}：{{action}}",
+      "expandMembers": "展开 {{count}} 个项目",
+      "collapseMembers": "收起项目",
+      "actions": {
+        "preserveOriginal": "原件保留",
+        "createTodo": "创建待办"
+      },
+      "classification": {
+        "sourcePreservation": "保留来源",
+        "agentManagedSource": "Agent 管理的来源",
+        "conflictFollowUp": "冲突后续处理"
+      }
     },
     "commitMessages": {
       "imported": "已导入",

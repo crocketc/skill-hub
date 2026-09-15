@@ -10,6 +10,8 @@ import { nativeSkillLibraryFacade } from "../features/skills/nativeApi";
 import type { BootstrapOutletContext } from "./AppShell";
 import { queryClient } from "./queryClient";
 
+const relationshipOverviewQueryKey = ["relationship-overview", "all"] as const;
+
 interface DiscoveryRouteProps {
   view?: DiscoveryModuleView;
   discoveryFacade?: typeof desktopDiscoveryFacade;
@@ -40,7 +42,9 @@ export function DiscoveryRoute({
     let active = true;
     setGovernanceTasksLoading(true);
     void queryClient.fetchQuery({
-      queryKey: ["relationship-overview", "all"],
+      queryKey: relationshipOverviewQueryKey,
+      // 定向待办导航必须拿到提交后真实落库的事实，不能沿用全局 30 秒 staleTime。
+      staleTime: 0,
       queryFn: async () => {
         const result = await queryApplication({
           type: "get_relationship_overview",
@@ -64,8 +68,12 @@ export function DiscoveryRoute({
   }, [governanceTaskId]);
 
   const handleImportComplete = (results: ImportResult[]) => {
-    if (results.some((result) => result.status === "succeeded")) {
+    const hasImportedData = results.some(
+      (result) => result.status === "succeeded" || result.status === "todo",
+    );
+    if (hasImportedData) {
       void queryClient.invalidateQueries({ queryKey: skillLibraryKeys.root });
+      void queryClient.invalidateQueries({ queryKey: relationshipOverviewQueryKey });
       void refreshSnapshot();
     }
   };

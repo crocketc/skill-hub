@@ -62,15 +62,15 @@ export function ImportSummary({
 
       {originalsPreserved ? (
         <p className="sh-import-summary__preservation">
-          原始副本保持不变；如需清理，请在关系治理中单独确认并保留回退路径。
+          {t("importWorkflow.summary.originalsPreserved")}
         </p>
       ) : null}
 
       {governanceTasks.length > 0 && onOpenGovernanceTask ? (
-        <div aria-label="关系治理待办">
+        <div aria-label={t("importWorkflow.summary.governanceTasksLabel")}>
           {governanceTasks.map((task) => (
             <Button key={task.task_id} onClick={() => onOpenGovernanceTask(task)} variant="ghost">
-              查看治理待办 {task.task_id}
+              {t("importWorkflow.summary.openGovernanceTask", { taskId: task.task_id })}
             </Button>
           ))}
         </div>

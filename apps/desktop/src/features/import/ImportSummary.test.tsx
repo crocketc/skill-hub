@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { I18nextProvider } from "react-i18next";
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
 import { createSkillHubI18n } from "../../i18n";
 import type { ImportResult } from "./api";
 import { ImportSummary } from "./ImportSummary";
@@ -195,4 +195,34 @@ it("keeps the original copy and exposes the relationship-governance todo after a
 
   expect(screen.getByText("原始副本保持不变；如需清理，请在关系治理中单独确认并保留回退路径。")).toBeVisible();
   expect(screen.queryByRole("link", { name: /关系治理待办/ })).not.toBeInTheDocument();
+});
+
+it("renders the added import summary copy in the active English locale", async () => {
+  const i18n = await createSkillHubI18n(["en-US"]);
+  render(
+    <I18nextProvider i18n={i18n}>
+      <ImportSummary
+        results={[{
+          candidateId: "shared-pdf",
+          action: "copy",
+          status: "succeeded",
+          message: "importWorkflow.commitMessages.imported",
+          originalPreserved: true,
+          governanceTasks: [{
+            task_id: "governance-task-1",
+            kind: "confirm_shared_directory_impact",
+            subject_id: "shared-pdf",
+            detail: "Shared directory impact requires review",
+            resolved: false,
+            created_at: "1",
+            resolved_at: null,
+          }],
+        }]}
+        onOpenGovernanceTask={vi.fn()}
+      />
+    </I18nextProvider>,
+  );
+
+  expect(screen.getByText("Original copies remain unchanged; cleanup is a separate confirmed action with a recovery path.")).toBeVisible();
+  expect(screen.getByRole("button", { name: "View governance task governance-task-1" })).toBeVisible();
 });
