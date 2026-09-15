@@ -118,6 +118,10 @@ pub struct LocalApplicationFacade {
     prepared_relation_migrations:
         Mutex<HashMap<OperationId, skillhub_core::PreparedRelationMigration>>,
     relation_migration_results: Mutex<HashMap<OperationId, skillhub_core::RelationMigrationResult>>,
+    /// Serializes relationship mutations and the source-fact snapshot through
+    /// the filesystem phase of a relation migration.  This closes the
+    /// in-process source_relations TOCTOU window.
+    relation_migration_lock: Mutex<()>,
     prepared_uninstall: Mutex<Option<skillhub_core::UninstallImpact>>,
     scan_service: Mutex<ScanService>,
     path_grants: Mutex<HashMap<String, ResolvedPathGrant>>,
@@ -1597,6 +1601,7 @@ impl LocalApplicationFacade {
             prepared_migrations: Mutex::new(HashMap::new()),
             prepared_relation_migrations: Mutex::new(HashMap::new()),
             relation_migration_results: Mutex::new(HashMap::new()),
+            relation_migration_lock: Mutex::new(()),
             prepared_uninstall: Mutex::new(None),
             scan_service: Mutex::new(ScanService::new()),
             path_grants: Mutex::new(HashMap::new()),
@@ -1670,6 +1675,7 @@ impl LocalApplicationFacade {
             prepared_migrations: Mutex::new(HashMap::new()),
             prepared_relation_migrations: Mutex::new(HashMap::new()),
             relation_migration_results: Mutex::new(HashMap::new()),
+            relation_migration_lock: Mutex::new(()),
             prepared_uninstall: Mutex::new(None),
             scan_service: Mutex::new(ScanService::new()),
             path_grants: Mutex::new(HashMap::new()),
@@ -1939,6 +1945,17 @@ impl LocalApplicationFacade {
                 .with_action(RecoveryAction::Retry)
         })?;
         action(&database)
+    }
+
+    fn lock_relation_migration(
+        &self,
+        operation: &'static str,
+    ) -> AppResult<std::sync::MutexGuard<'_, ()>> {
+        self.relation_migration_lock.lock().map_err(|_| {
+            AppError::new(ErrorCode::InternalError, Severity::Error)
+                .with_param("operation", operation)
+                .with_action(RecoveryAction::Retry)
+        })
     }
 
     // ------------------------------------------------------------------
@@ -5979,6 +5996,7 @@ impl LocalApplicationFacade {
     }
 
     fn commit_import(&self, request: skillhub_core::CommitImport) -> AppResult<AppCommandResult> {
+        let _relation_migration_guard = self.lock_relation_migration("execute.commit_import")?;
         let operation_id = request.prepared_import_id;
         // Unknown prepared ids have nothing to retry, so their failure is a
         // terminal rolled_back record. Everything after a known prepare stays
@@ -6329,6 +6347,7 @@ impl LocalApplicationFacade {
     /// 身份可靠（指纹一致）自动建立/维持关系；不可靠标注分叉；路径消失
     /// 收回关系。全程只写 SkillHub 自己的表，绝不触碰用户文件。
     fn reconcile_observed_deployments(&self, scan: &skillhub_core::ScanResult) -> AppResult<()> {
+        let _relation_migration_guard = self.lock_relation_migration("observed.reconcile")?;
         // 未激活集中库时没有任何可比对象：诚实缺省为"无关系"，不报错。
         let Ok(library) = self.library_runtime.snapshot() else {
             return Ok(());

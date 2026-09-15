@@ -155,10 +155,15 @@ impl RelationBackupMetadata {
             .get("original_active")
             .and_then(|value| value.as_bool())
             .ok_or_else(|| invalid_relation_migration("relationship backup metadata is corrupt"))?;
-        let original_link_target = object
-            .get("original_link_target")
-            .and_then(|value| value.as_str())
-            .map(str::to_owned);
+        let original_link_target = match object.get("original_link_target") {
+            Some(serde_json::Value::Null) => None,
+            Some(serde_json::Value::String(value)) => Some(value.to_owned()),
+            _ => {
+                return Err(invalid_relation_migration(
+                    "relationship backup metadata is corrupt",
+                ))
+            }
+        };
         let original_entity_identity = string("original_entity_identity")?;
         Ok(Self {
             operation_id,
@@ -469,6 +474,8 @@ impl LocalApplicationFacade {
         &self,
         request: skillhub_core::api::CommitRelationMigration,
     ) -> AppResult<AppCommandResult> {
+        let _relation_migration_guard =
+            self.lock_relation_migration("execute.commit_relation_migration")?;
         let (journal, existing_result, _) =
             self.load_relation_migration_journal(request.prepared_relation_migration_id)?;
         let prepared = journal.prepared.clone();
@@ -584,6 +591,11 @@ impl LocalApplicationFacade {
             None,
             None,
         )?;
+        if let Err(error) = self
+            .validate_source_relations_snapshot(&prepared.relation_id, &applying.source_relations)
+        {
+            return self.failed_relation_result(&applying, error);
+        }
 
         let backup_path = PathBuf::from(&prepared.backup_path);
         if let Err(error) = validate_backup_path(&applying, &library_root) {
@@ -613,6 +625,11 @@ impl LocalApplicationFacade {
         .and_then(|_| {
             validate_relation_safety_snapshot(&applying, &relation, &target_path, &library_root)
         }) {
+            return self.failed_relation_result(&applying, error);
+        }
+        if let Err(error) = self
+            .validate_source_relations_snapshot(&prepared.relation_id, &applying.source_relations)
+        {
             return self.failed_relation_result(&applying, error);
         }
         if let Err(error) = remove_relation_entry(Path::new(&relation.path)) {
@@ -752,6 +769,8 @@ impl LocalApplicationFacade {
         &self,
         request: skillhub_core::api::RollbackRelationMigration,
     ) -> AppResult<AppCommandResult> {
+        let _relation_migration_guard =
+            self.lock_relation_migration("execute.rollback_relation_migration")?;
         let (journal, existing_result, journal_phase) =
             self.load_relation_migration_journal(request.operation_id)?;
         let prepared = journal.prepared.clone();
@@ -872,7 +891,7 @@ impl LocalApplicationFacade {
             self.with_database("execute.rollback_relation_migration.record", |database| {
                 database
                     .relationship_repository()
-                    .upsert_deployment_relation(&prepared.relation)
+                    .restore_deployment_relation(&prepared.relation)
             })
         {
             return self.failed_relation_result(&applying, error);
@@ -1009,7 +1028,7 @@ impl LocalApplicationFacade {
                 self.with_database("execute.relation_migration.recover_record", |database| {
                     database
                         .relationship_repository()
-                        .upsert_deployment_relation(&restored.prepared.relation)
+                        .restore_deployment_relation(&restored.prepared.relation)
                 })
             {
                 let combined = recovery_failure_error(&journal_error, &writeback_error);
@@ -1053,6 +1072,22 @@ impl LocalApplicationFacade {
         })
     }
 
+    fn validate_source_relations_snapshot(
+        &self,
+        relation_id: &str,
+        expected: &[SourceRelationFact],
+    ) -> AppResult<()> {
+        let current = self.with_database("relationship.commit_source_snapshot", |database| {
+            database
+                .relationship_repository()
+                .list_relation_impact(relation_id)
+        })?;
+        if current.source_relations != expected {
+            return Err(target_changed(relation_id));
+        }
+        Ok(())
+    }
+
     fn load_relation_migration_journal(
         &self,
         operation_id: OperationId,
@@ -1076,14 +1111,12 @@ impl LocalApplicationFacade {
                 .recovery_data
                 .get("journal")
                 .cloned()
-                .or_else(|| record.recovery_data.get("prepared").cloned())
                 .ok_or_else(|| {
                     invalid_relation_migration("relationship journal facts are missing")
                 })?;
-            let prepared_value = journal_value
-                .get("prepared")
-                .cloned()
-                .unwrap_or_else(|| journal_value.clone());
+            let prepared_value = journal_value.get("prepared").cloned().ok_or_else(|| {
+                invalid_relation_migration("relationship journal prepared facts are missing")
+            })?;
             let prepared: skillhub_core::PreparedRelationMigration =
                 serde_json::from_value(prepared_value).map_err(|_| {
                     invalid_relation_migration("relationship journal facts are corrupt")
@@ -1092,7 +1125,10 @@ impl LocalApplicationFacade {
                 .get("expected_target_fingerprint")
                 .and_then(|value| value.as_str())
                 .map(str::to_owned)
-                .unwrap_or(DeploymentFilesystem::hash_tree(&prepared.target_path)?);
+                .filter(|value| !value.trim().is_empty())
+                .ok_or_else(|| {
+                    invalid_relation_migration("relationship journal target fingerprint is missing")
+                })?;
             let expected_link_representation = journal_value
                 .get("expected_link_representation")
                 .cloned()
@@ -1162,7 +1198,12 @@ impl LocalApplicationFacade {
             );
             let result = record
                 .result
-                .and_then(|value| serde_json::from_value(value).ok());
+                .map(|value| {
+                    serde_json::from_value(value).map_err(|_| {
+                        invalid_relation_migration("relationship journal result is corrupt")
+                    })
+                })
+                .transpose()?;
             return Ok((journal, result, record.phase));
         }
 
@@ -1497,15 +1538,20 @@ fn validate_relation_entity_binding(
 fn capture_path_chain(path: &Path) -> AppResult<PathChainSnapshot> {
     let mut nodes = Vec::new();
     for ancestor in path.ancestors() {
+        // macOS commonly exposes `/var` and `/tmp` as symlinked system
+        // prefixes. Resolve only the already-existing parent chain so those
+        // harmless aliases are accepted while a replaced parent still gets a
+        // different canonical path/physical identity.
+        let canonical = fs::canonicalize(ancestor).map_err(|error| io_conflict(ancestor, error))?;
         let metadata =
-            fs::symlink_metadata(ancestor).map_err(|error| io_conflict(ancestor, error))?;
-        if metadata.file_type().is_symlink() || !metadata.is_dir() {
-            return Err(ownership_mismatch(ancestor));
+            fs::symlink_metadata(&canonical).map_err(|error| io_conflict(&canonical, error))?;
+        if !metadata.is_dir() {
+            return Err(ownership_mismatch(&canonical));
         }
-        let physical_id = skillhub_core::physical_id_for_path(ancestor)
+        let physical_id = skillhub_core::physical_id_for_path(&canonical)
             .ok_or_else(|| ownership_mismatch(ancestor))?;
         nodes.push(PathNodeSnapshot {
-            path: ancestor.to_string_lossy().into_owned(),
+            path: canonical.to_string_lossy().into_owned(),
             physical_id,
         });
     }
@@ -1853,7 +1899,10 @@ fn filesystem_is_restored(journal: &RelationMigrationJournal) -> bool {
 }
 
 fn relation_path_is_inaccessible(path: &str) -> bool {
-    let metadata = match fs::symlink_metadata(path) {
+    // Access checks must follow a directory link: symlink_metadata reports
+    // the link itself as non-directory even when its target is readable.
+    // Dangling links and unreadable targets still fail closed.
+    let metadata = match fs::metadata(path) {
         Ok(metadata) => metadata,
         Err(_) => return true,
     };

@@ -101,6 +101,20 @@ impl<'a> RelationshipRepository<'a> {
         transaction.commit().map_err(database_error)
     }
 
+    /// Restores a previously prepared relationship fact during rollback.
+    ///
+    /// Normal observation writes must not downgrade a SkillHub-managed fact,
+    /// while rollback must restore the exact prepared snapshot.
+    pub fn restore_deployment_relation(&self, relation: &DeploymentRelationFact) -> AppResult<()> {
+        let transaction = self
+            .database
+            .connection
+            .unchecked_transaction()
+            .map_err(database_error)?;
+        upsert_deployment_relation_tx_with_policy(&transaction, relation, true)?;
+        transaction.commit().map_err(database_error)
+    }
+
     fn list_deployment_relations(&self) -> AppResult<Vec<DeploymentRelationFact>> {
         let mut statement = self
             .database
@@ -411,12 +425,27 @@ pub(crate) fn upsert_deployment_relation_tx(
     transaction: &Transaction<'_>,
     relation: &DeploymentRelationFact,
 ) -> AppResult<()> {
+    upsert_deployment_relation_tx_with_policy(transaction, relation, false)
+}
+
+pub(crate) fn upsert_deployment_relation_tx_with_policy(
+    transaction: &Transaction<'_>,
+    relation: &DeploymentRelationFact,
+    allow_managed_downgrade: bool,
+) -> AppResult<()> {
     let path_key = observed_path_key(&relation.path);
     let link_target_path_key = relation.link_target_path.as_deref().map(observed_path_key);
     let directory_node_id = directory_node_id_for_path_tx(transaction, &relation.path)?;
+    let ownership_guard = if allow_managed_downgrade {
+        ""
+    } else {
+        " WHERE excluded.ownership='skillhub_managed'
+                OR deployment_relations.ownership<>'skillhub_managed'"
+    };
     transaction
         .execute(
-            "INSERT INTO deployment_relations
+            &format!(
+                "INSERT INTO deployment_relations
              (relation_id, skill_id, agent_client_id, path, path_key, directory_node_id,
               relationship, file_representation, ownership, link_target_path,
               link_target_path_key, link_target_directory_id, content_fingerprint,
@@ -430,9 +459,8 @@ pub(crate) fn upsert_deployment_relation_tx(
              link_target_directory_id=excluded.link_target_directory_id,
              content_fingerprint=excluded.content_fingerprint, origin=excluded.origin,
              match_state=excluded.match_state, active=excluded.active,
-             observed_at=excluded.observed_at, released_at=excluded.released_at
-             WHERE excluded.ownership='skillhub_managed'
-                OR deployment_relations.ownership<>'skillhub_managed'",
+             observed_at=excluded.observed_at, released_at=excluded.released_at{ownership_guard}"
+            ),
             params![
                 relation.relation_id,
                 relation.skill_id.map(|id| id.to_string()),

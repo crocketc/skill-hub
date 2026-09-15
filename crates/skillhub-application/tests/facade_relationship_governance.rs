@@ -859,11 +859,13 @@ async fn commit_failure_removes_new_link_before_restoring_and_preserves_central_
         .lock()
         .expect("database lock")
         .connection_for_test()
-        .execute(
-            "ALTER TABLE operations RENAME TO operations_unavailable",
-            [],
+        .execute_batch(
+            "CREATE TRIGGER fail_relation_commit_checkpoint
+             BEFORE UPDATE OF phase ON operations
+             WHEN NEW.phase = 'committed'
+             BEGIN SELECT RAISE(ABORT, 'checkpoint unavailable'); END;",
         )
-        .expect("break only the journal table");
+        .expect("break only the journal checkpoint");
 
     let error = fixture
         .facade
@@ -951,6 +953,7 @@ async fn rollback_retries_relation_writeback_after_filesystem_restore_failure() 
         panic!("expected failed result");
     };
     assert_eq!(first.state, RelationMigrationState::Failed);
+    assert_eq!(first.error_code, Some(ErrorCode::InternalError));
     assert!(fixture.source.is_dir());
 
     let record = fixture
@@ -1772,4 +1775,278 @@ async fn relationship_journal_keeps_prepared_facts_and_recovery_phase() {
     assert_eq!(backup["original_relationship"], "observed_copy");
     assert_eq!(backup["original_ownership"], "observed_unmanaged");
     assert!(record.inverse.is_some());
+}
+
+#[tokio::test]
+async fn commit_rechecks_source_relations_after_the_applying_checkpoint() {
+    let fixture = fixture().await;
+    let prepared = fixture
+        .facade
+        .execute(AppCommand::PrepareRelationMigration(
+            PrepareRelationMigration {
+                relation_id: fixture.relation_id.clone(),
+                target_mode: RelationMigrationTargetMode::ManagedLink,
+                backup_policy: RelationshipMigrationBackupPolicy::Required,
+                confirmation_token: Some("confirmed".into()),
+            },
+        ))
+        .await
+        .expect("prepare");
+    let AppCommandResult::PreparedRelationMigration(prepared) = prepared else {
+        panic!("expected prepared");
+    };
+
+    // The trigger is a deterministic stand-in for another writer committing
+    // after the initial source snapshot but before filesystem mutation.
+    fixture
+        .database
+        .lock()
+        .expect("database lock")
+        .connection_for_test()
+        .execute_batch(
+            "CREATE TRIGGER add_source_relation_after_applying
+             AFTER UPDATE OF phase ON operations
+             WHEN NEW.phase = 'applying'
+             BEGIN
+                 INSERT INTO source_relations (
+                     provenance_id, skill_id, directory_node_id, agent_client_id,
+                     source_path, source_path_key, relationship, file_representation,
+                     ownership, link_target_path, link_target_directory_id,
+                     content_fingerprint, source_kind, source_locator, imported_at
+                 )
+                 SELECT 'provenance:concurrent', skill_id, NULL, agent_client_id,
+                        path, path, 'import_copy', 'directory', 'observed_unmanaged',
+                        NULL, NULL, content_fingerprint, 'local', path, 2
+                 FROM deployment_relations
+                 WHERE relation_id = 'observed:agent.demo:notes';
+             END;",
+        )
+        .expect("install source relation race trigger");
+
+    let result = fixture
+        .facade
+        .execute(AppCommand::CommitRelationMigration(
+            skillhub_core::api::CommitRelationMigration {
+                prepared_relation_migration_id: prepared.operation_id,
+            },
+        ))
+        .await
+        .expect("source relation race is reported as a result");
+    let AppCommandResult::RelationMigrationResult(result) = result else {
+        panic!("expected migration result");
+    };
+    assert_eq!(result.state, RelationMigrationState::Failed);
+    assert_eq!(result.error_code, Some(ErrorCode::TargetChanged));
+    assert!(fixture.source.is_dir());
+    assert!(!std::path::Path::new(&prepared.backup_path).exists());
+}
+
+#[tokio::test]
+async fn commit_rejects_a_missing_required_journal_field_without_recomputing_it() {
+    let fixture = fixture().await;
+    let prepared = fixture
+        .facade
+        .execute(AppCommand::PrepareRelationMigration(
+            PrepareRelationMigration {
+                relation_id: fixture.relation_id.clone(),
+                target_mode: RelationMigrationTargetMode::ManagedLink,
+                backup_policy: RelationshipMigrationBackupPolicy::Required,
+                confirmation_token: Some("confirmed".into()),
+            },
+        ))
+        .await
+        .expect("prepare");
+    let AppCommandResult::PreparedRelationMigration(prepared) = prepared else {
+        panic!("expected prepared");
+    };
+    mutate_relation_journal_record(&fixture, prepared.operation_id, |journal| {
+        journal
+            .as_object_mut()
+            .expect("journal object")
+            .remove("expected_target_fingerprint");
+    });
+
+    let error = fixture
+        .facade
+        .execute(AppCommand::CommitRelationMigration(
+            skillhub_core::api::CommitRelationMigration {
+                prepared_relation_migration_id: prepared.operation_id,
+            },
+        ))
+        .await
+        .expect_err("missing journal field must fail closed");
+    assert_eq!(error.code, ErrorCode::OperationConflict);
+    assert_eq!(
+        error.params.get("detail").and_then(|value| value.as_str()),
+        Some("relationship journal target fingerprint is missing")
+    );
+    assert!(fixture.source.is_dir());
+}
+
+#[tokio::test]
+async fn commit_rejects_a_corrupt_journal_result_and_optional_field() {
+    let fixture_first = fixture().await;
+    let prepared = fixture_first
+        .facade
+        .execute(AppCommand::PrepareRelationMigration(
+            PrepareRelationMigration {
+                relation_id: fixture_first.relation_id.clone(),
+                target_mode: RelationMigrationTargetMode::ManagedLink,
+                backup_policy: RelationshipMigrationBackupPolicy::Required,
+                confirmation_token: Some("confirmed".into()),
+            },
+        ))
+        .await
+        .expect("prepare");
+    let AppCommandResult::PreparedRelationMigration(prepared) = prepared else {
+        panic!("expected prepared");
+    };
+    mutate_relation_journal_record(&fixture_first, prepared.operation_id, |journal| {
+        journal["backup"]["original_link_target"] = Value::Bool(true);
+    });
+    let error = fixture_first
+        .facade
+        .execute(AppCommand::CommitRelationMigration(
+            skillhub_core::api::CommitRelationMigration {
+                prepared_relation_migration_id: prepared.operation_id,
+            },
+        ))
+        .await
+        .expect_err("corrupt optional field must fail closed");
+    assert_eq!(error.code, ErrorCode::OperationConflict);
+    assert_eq!(
+        error.params.get("detail").and_then(|value| value.as_str()),
+        Some("relationship backup metadata is corrupt")
+    );
+    assert!(fixture_first.source.is_dir());
+
+    // A malformed persisted result must be rejected too, rather than being
+    // treated as an absent result and allowing a retry to fabricate state.
+    let fixture2 = fixture().await;
+    let prepared = fixture2
+        .facade
+        .execute(AppCommand::PrepareRelationMigration(
+            PrepareRelationMigration {
+                relation_id: fixture2.relation_id.clone(),
+                target_mode: RelationMigrationTargetMode::ManagedLink,
+                backup_policy: RelationshipMigrationBackupPolicy::Required,
+                confirmation_token: Some("confirmed".into()),
+            },
+        ))
+        .await
+        .expect("prepare");
+    let AppCommandResult::PreparedRelationMigration(prepared) = prepared else {
+        panic!("expected prepared");
+    };
+    let raw: String = {
+        let database = fixture2.database.lock().expect("database lock");
+        database
+            .connection_for_test()
+            .query_row(
+                "SELECT progress_json FROM operations WHERE operation_id=?1",
+                [prepared.operation_id.to_string()],
+                |row| row.get(0),
+            )
+            .expect("journal progress")
+    };
+    let mut progress: Value = serde_json::from_str(&raw).expect("journal json");
+    progress["result"] = Value::String("not-a-relation-result".into());
+    let encoded = serde_json::to_string(&progress).expect("journal json encoding");
+    {
+        let database = fixture2.database.lock().expect("database lock");
+        database
+            .connection_for_test()
+            .execute(
+                "UPDATE operations SET progress_json=?2 WHERE operation_id=?1",
+                rusqlite::params![prepared.operation_id.to_string(), encoded],
+            )
+            .expect("tamper result");
+    }
+
+    let error = fixture2
+        .facade
+        .execute(AppCommand::CommitRelationMigration(
+            skillhub_core::api::CommitRelationMigration {
+                prepared_relation_migration_id: prepared.operation_id,
+            },
+        ))
+        .await
+        .expect_err("corrupt result must fail closed");
+    assert_eq!(error.code, ErrorCode::OperationConflict);
+    assert_eq!(
+        error.params.get("detail").and_then(|value| value.as_str()),
+        Some("relationship journal result is corrupt")
+    );
+    assert!(fixture2.source.is_dir());
+}
+
+#[tokio::test]
+async fn concurrent_commits_of_one_prepared_relation_are_serialized() {
+    let fixture = fixture().await;
+    if !skillhub_adapters::deployment::DeploymentFilesystem::new()
+        .available_capabilities()
+        .symlink
+    {
+        return;
+    }
+    let prepared = fixture
+        .facade
+        .execute(AppCommand::PrepareRelationMigration(
+            PrepareRelationMigration {
+                relation_id: fixture.relation_id.clone(),
+                target_mode: RelationMigrationTargetMode::ManagedLink,
+                backup_policy: RelationshipMigrationBackupPolicy::Required,
+                confirmation_token: Some("confirmed".into()),
+            },
+        ))
+        .await
+        .expect("prepare");
+    let AppCommandResult::PreparedRelationMigration(prepared) = prepared else {
+        panic!("expected prepared");
+    };
+    let operation_id = prepared.operation_id;
+    let facade = &fixture.facade;
+    let (first, second) = std::thread::scope(|scope| {
+        let first = scope.spawn(|| {
+            let runtime = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .expect("first runtime");
+            runtime.block_on(facade.execute(AppCommand::CommitRelationMigration(
+                skillhub_core::api::CommitRelationMigration {
+                    prepared_relation_migration_id: operation_id,
+                },
+            )))
+        });
+        let second = scope.spawn(|| {
+            let runtime = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .expect("second runtime");
+            runtime.block_on(facade.execute(AppCommand::CommitRelationMigration(
+                skillhub_core::api::CommitRelationMigration {
+                    prepared_relation_migration_id: operation_id,
+                },
+            )))
+        });
+        (
+            first.join().expect("first commit thread"),
+            second.join().expect("second commit thread"),
+        )
+    });
+    let first = first.expect("first commit");
+    let second = second.expect("second commit");
+    let AppCommandResult::RelationMigrationResult(first) = first else {
+        panic!("expected first migration result");
+    };
+    let AppCommandResult::RelationMigrationResult(second) = second else {
+        panic!("expected second migration result");
+    };
+    assert_eq!(first.state, RelationMigrationState::Committed);
+    assert_eq!(second.state, RelationMigrationState::Committed);
+    assert_eq!(first.operation_id, second.operation_id);
+    assert!(std::fs::symlink_metadata(&fixture.source)
+        .expect("managed relation")
+        .file_type()
+        .is_symlink());
 }
