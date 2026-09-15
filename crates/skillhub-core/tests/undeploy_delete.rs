@@ -448,6 +448,69 @@ fn removal_impact_sorts_related_paths_and_only_counts_active_shared_relations() 
 }
 
 #[test]
+fn removal_impact_governs_inactive_or_released_relations_and_excludes_released_paths() {
+    let skill_id = SkillId::new();
+    let mut inactive = RelationTargetFact::directory(
+        "inactive",
+        "/home/ada/.codex/skills",
+        "codex",
+        DirectoryRole::AgentNative,
+    )
+    .with_relation("inactive", RelationshipType::ManagedCopy)
+    .with_file_representation(FileRepresentation::Copy)
+    .with_ownership(skillhub_core::OwnershipState::SkillhubManaged)
+    .with_skill(skill_id, "sha256:inactive")
+    .to_deployment_relation_fact();
+    inactive.active = false;
+
+    let mut released = RelationTargetFact::directory(
+        "released",
+        "/home/ada/.claude/skills",
+        "claude",
+        DirectoryRole::AgentNative,
+    )
+    .with_relation("released", RelationshipType::ObservedCopy)
+    .with_file_representation(FileRepresentation::Copy)
+    .with_skill(skill_id, "sha256:released")
+    .to_deployment_relation_fact();
+    released.released_at = Some(88);
+
+    let active = RelationTargetFact::directory(
+        "active",
+        "/home/ada/.agents/skills",
+        "codex",
+        DirectoryRole::SharedDirectory,
+    )
+    .with_relation("active", RelationshipType::ObservedCopy)
+    .with_file_representation(FileRepresentation::Copy)
+    .with_skill(skill_id, "sha256:active")
+    .to_deployment_relation_fact();
+
+    let facts = RemovalFacts::new(vec![inactive, released, active], vec![]);
+    let inactive_impact = calculate_removal_impact("inactive", &facts);
+    assert_eq!(
+        inactive_impact.minimal_action,
+        MinimalImpactAction::CreateGovernanceTask
+    );
+    assert!(!inactive_impact.governance_tasks.is_empty());
+    assert_eq!(
+        inactive_impact
+            .other_skill_paths
+            .iter()
+            .map(|path| path.relation_id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["active"]
+    );
+
+    let released_impact = calculate_removal_impact("released", &facts);
+    assert_eq!(
+        released_impact.minimal_action,
+        MinimalImpactAction::CreateGovernanceTask
+    );
+    assert!(!released_impact.governance_tasks.is_empty());
+}
+
+#[test]
 fn permission_and_missing_relation_use_operation_failure_governance() {
     let facts = RemovalFacts::default().with_permission_limited(true);
     let permission = calculate_removal_impact("missing", &facts);

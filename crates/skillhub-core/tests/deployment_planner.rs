@@ -1,5 +1,6 @@
 use std::path::Path;
 
+use skillhub_core::agent::profile::path_matches_candidate;
 use skillhub_core::agent::{
     AgentClient, AgentProfile, CallPolicy, ClientKind, DeploymentCapability, DirectoryPrecedence,
     OperatingSystem, PathCandidate, ProfileCatalog, TargetScope,
@@ -8,8 +9,8 @@ use skillhub_core::deployment::observed_path_key;
 use skillhub_core::deployment::reconcile::path_lives_under_platform;
 use skillhub_core::deployment::{
     DeploymentMode, DeploymentPlanInput, DeploymentPlanRequest, DeploymentPlanner,
-    ExistingDeployment, ExistingOwnership, RegisteredTargetIndex, TargetFact, TargetFactSource,
-    VerifiedTarget,
+    ExistingDeployment, ExistingOwnership, ObservedMatchState, ObservedOrigin,
+    RegisteredTargetIndex, TargetFact, TargetFactSource, VerifiedTarget,
 };
 use skillhub_core::relationship::classifier::{
     classify_directory_capability, classify_observed_relation,
@@ -399,6 +400,82 @@ fn shared_directory_unknown_or_unsupported_capability_never_becomes_a_shared_rel
 }
 
 #[test]
+fn shared_capability_downgrade_preserves_target_facts_and_creates_governance() {
+    let skill_id = SkillId::new();
+    let mut alias = RelationTargetFact::directory(
+        "native",
+        "/home/ada/.codex/skills",
+        "codex",
+        DirectoryRole::AgentNative,
+    )
+    .with_relation("shared-alias", RelationshipType::ManagedCopy)
+    .with_ownership(skillhub_core::OwnershipState::SkillhubManaged)
+    .with_file_representation(FileRepresentation::SymbolicLink)
+    .with_link_target("/home/ada/.agents/skills/demo", Some("shared".into()))
+    .with_skill(skill_id, "sha256:preserve")
+    .with_match_state(ObservedMatchState::ContentVerified);
+    alias.origin = ObservedOrigin::Import;
+    alias.active = false;
+    alias.released_at = Some(77);
+
+    let shared = RelationTargetFact::directory(
+        "shared",
+        "/home/ada/.agents/skills",
+        "codex",
+        DirectoryRole::SharedDirectory,
+    );
+    let capability = AgentDirectoryCapabilityFact {
+        agent_client_id: "codex".into(),
+        directory_node_id: "shared".into(),
+        recognition: DirectoryRecognition::Unsupported,
+        precedence: DirectoryPrecedence::Preferred,
+        evidence_reference: None,
+        researched_at: None,
+        applicable_platforms: vec![],
+    };
+
+    let classification = classify_observed_relation_with_reason(
+        "/home/ada/.codex/skills/demo",
+        &[alias, shared],
+        &[capability],
+    );
+    let fact = classification.fact;
+
+    assert_eq!(fact.relation_id, "shared-alias");
+    assert_eq!(fact.relationship, RelationshipType::Unknown);
+    assert_eq!(fact.skill_id, Some(skill_id));
+    assert_eq!(fact.agent_client_id, "codex");
+    assert_eq!(fact.directory_node_id.as_deref(), Some("native"));
+    assert_eq!(
+        fact.ownership,
+        skillhub_core::OwnershipState::SkillhubManaged
+    );
+    assert_eq!(fact.file_representation, FileRepresentation::SymbolicLink);
+    assert_eq!(
+        fact.link_target_path.as_deref(),
+        Some("/home/ada/.agents/skills/demo")
+    );
+    assert_eq!(
+        fact.link_target_path_key.as_deref(),
+        Some(observed_path_key("/home/ada/.agents/skills/demo")).as_deref()
+    );
+    assert_eq!(fact.link_target_directory_id.as_deref(), Some("shared"));
+    assert_eq!(fact.content_fingerprint, "sha256:preserve");
+    assert_eq!(fact.origin, ObservedOrigin::Import);
+    assert_eq!(fact.match_state, ObservedMatchState::ContentVerified);
+    assert!(!fact.active);
+    assert_eq!(fact.released_at, Some(77));
+    assert!(classification.reason.is_some());
+    assert_eq!(
+        classification
+            .governance_task
+            .as_ref()
+            .map(|task| task.kind),
+        Some(GovernanceTaskKind::UnknownDirectoryRecognition)
+    );
+}
+
+#[test]
 fn unknown_relation_keeps_reason_and_governance_in_with_reason_result() {
     let classification =
         classify_observed_relation_with_reason("/home/ada/.unregistered/skills/demo", &[], &[]);
@@ -761,42 +838,54 @@ fn shared_directory_read_requires_directory_representation_and_supported_capabil
             "direct-read",
             skillhub_core::OwnershipState::ObservedUnmanaged,
             FileRepresentation::Directory,
+            RelationshipType::ObservedCopy,
             RelationshipType::SharedDirectoryRead,
         ),
         (
             "shared-copy",
             skillhub_core::OwnershipState::ObservedUnmanaged,
             FileRepresentation::Copy,
+            RelationshipType::SharedDirectoryRead,
             RelationshipType::ObservedCopy,
         ),
         (
             "shared-link",
             skillhub_core::OwnershipState::ObservedUnmanaged,
             FileRepresentation::SymbolicLink,
+            RelationshipType::SharedDirectoryRead,
             RelationshipType::ObservedLink,
         ),
         (
             "managed-shared-copy",
             skillhub_core::OwnershipState::SkillhubManaged,
             FileRepresentation::Copy,
+            RelationshipType::SharedDirectoryRead,
             RelationshipType::ManagedCopy,
         ),
         (
             "managed-shared-link",
             skillhub_core::OwnershipState::SkillhubManaged,
             FileRepresentation::SymbolicLink,
+            RelationshipType::SharedDirectoryRead,
             RelationshipType::ManagedLink,
+        ),
+        (
+            "managed-old-direct-read",
+            skillhub_core::OwnershipState::ObservedUnmanaged,
+            FileRepresentation::Directory,
+            RelationshipType::ManagedCopy,
+            RelationshipType::SharedDirectoryRead,
         ),
     ];
 
-    for (relation_id, ownership, representation, expected) in cases {
+    for (relation_id, ownership, representation, old_relationship, expected) in cases {
         let target = RelationTargetFact::directory(
             "shared",
             "/home/ada/.agents/skills",
             "codex",
             DirectoryRole::SharedDirectory,
         )
-        .with_relation(relation_id, RelationshipType::SharedDirectoryRead)
+        .with_relation(relation_id, old_relationship)
         .with_ownership(ownership)
         .with_file_representation(representation);
 
@@ -808,6 +897,39 @@ fn shared_directory_read_requires_directory_representation_and_supported_capabil
 
         assert_eq!(classified.relationship, expected, "{relation_id}");
     }
+}
+
+#[test]
+fn profile_path_matching_is_posix_case_sensitive_and_trims_trailing_separators() {
+    let posix = PathCandidate {
+        path: "/home/ada/.codex/skills".into(),
+        scope: TargetScope::Global,
+        precedence: DirectoryPrecedence::Preferred,
+        marker: "SKILL.md".into(),
+        shared_reference: false,
+    };
+    assert!(path_matches_candidate(&posix, "/home/ada/.codex/skills/"));
+    assert!(!path_matches_candidate(&posix, "/home/Ada/.codex/skills/"));
+    assert!(!path_matches_candidate(
+        &posix,
+        "/home/ada/.codex/skills-demo/demo"
+    ));
+
+    let windows = PathCandidate {
+        path: r"C:\Users\Ada\.codex\skills".into(),
+        scope: TargetScope::Global,
+        precedence: DirectoryPrecedence::Preferred,
+        marker: "SKILL.md".into(),
+        shared_reference: false,
+    };
+    assert!(path_matches_candidate(
+        &windows,
+        r"c:\users\ada\.CODEX\SKILLS\\"
+    ));
+    assert!(!path_matches_candidate(
+        &windows,
+        r"C:\Users\Ada\.codex\skills-demo\demo"
+    ));
 }
 
 #[test]

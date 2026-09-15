@@ -98,6 +98,20 @@ pub fn calculate_removal_impact(relation_id: &str, facts: &RemovalFacts) -> Remo
     let mut other_consumers = Vec::new();
 
     if let Some(relation) = &relation {
+        if !relation.active || relation.released_at.is_some() {
+            add_governance_task(
+                &mut governance_tasks,
+                relation_id,
+                GovernanceTaskKind::OperationFailureRecovery,
+                if relation.released_at.is_some() {
+                    "relationship has been released and cannot be removed as a current target"
+                        .into()
+                } else {
+                    "relationship is inactive and cannot be removed as a current target".into()
+                },
+            );
+        }
+
         if let Some(directory_node_id) = shared_node_id.as_deref() {
             let current_recognition =
                 capability_recognition(facts, &relation.agent_client_id, directory_node_id);
@@ -116,6 +130,7 @@ pub fn calculate_removal_impact(relation_id: &str, facts: &RemovalFacts) -> Remo
             for candidate in facts.relations.iter().filter(|candidate| {
                 candidate.relation_id != relation.relation_id
                     && candidate.active
+                    && candidate.released_at.is_none()
                     && candidate.agent_client_id != relation.agent_client_id
                     && shared_directory_node_id(candidate).as_deref() == Some(directory_node_id)
             }) {
@@ -176,6 +191,7 @@ pub fn calculate_removal_impact(relation_id: &str, facts: &RemovalFacts) -> Remo
                 .filter(|candidate| {
                     candidate.relation_id != selected.relation_id
                         && candidate.active
+                        && candidate.released_at.is_none()
                         && candidate.skill_id.is_some()
                         && candidate.skill_id == selected.skill_id
                 })

@@ -97,7 +97,7 @@ pub fn classify_observed_relation_with_reason(
             }
             DirectoryRecognition::Supported => unreachable!(),
         };
-        return unknown_classification(path, &reason).with_target_context(target);
+        return downgraded_classification(path, target, &reason);
     }
 
     let mut fact = target.to_deployment_relation_fact();
@@ -112,11 +112,7 @@ pub fn classify_observed_relation_with_reason(
     let derived_relationship = relationship_for_target(target);
     let direct_shared_read = target.directory_role == DirectoryRole::SharedDirectory
         && target.file_representation == FileRepresentation::Directory
-        && target.ownership == OwnershipState::ObservedUnmanaged
-        && matches!(
-            target.relationship,
-            RelationshipType::Unknown | RelationshipType::SharedDirectoryRead
-        );
+        && target.ownership == OwnershipState::ObservedUnmanaged;
     let shared_reference = shared_target.is_some()
         && matches!(
             target.file_representation,
@@ -220,6 +216,30 @@ fn unknown_classification(path: &str, reason: &str) -> RelationClassification {
             observed_at: 0,
             released_at: None,
         },
+        reason: Some(reason.to_owned()),
+        governance_task: Some(governance_task(path, reason)),
+    }
+}
+
+fn downgraded_classification(
+    path: &str,
+    target: &RelationTargetFact,
+    reason: &str,
+) -> RelationClassification {
+    let mut fact = target.to_deployment_relation_fact();
+    fact.path = path.to_owned();
+    fact.path_key = observed_path_key(path);
+    if target.relation_id.is_none() {
+        fact.relation_id = format!("observed:{}", fact.path_key);
+    }
+    fact.directory_node_id = Some(target.directory_node_id.clone());
+    fact.link_target_path_key = fact.link_target_path.as_deref().map(observed_path_key);
+    fact.relationship = RelationshipType::Unknown;
+    if target.match_state != crate::deployment::ObservedMatchState::ContentVerified {
+        fact.skill_id = None;
+    }
+    RelationClassification {
+        fact,
         reason: Some(reason.to_owned()),
         governance_task: Some(governance_task(path, reason)),
     }

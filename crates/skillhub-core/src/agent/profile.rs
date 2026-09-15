@@ -293,11 +293,22 @@ pub fn path_matches_candidate(candidate: &super::PathCandidate, path: &str) -> b
         .map(|(_, suffix)| suffix)
         .unwrap_or(candidate.as_str())
         .trim_matches('/');
+    let candidate = candidate.trim_end_matches('/');
     let path = path.trim_end_matches('/');
     if suffix.is_empty() {
         return path.is_empty();
     }
-    let path = path.to_ascii_lowercase();
-    let suffix = suffix.to_ascii_lowercase();
-    path == suffix || path.ends_with(&format!("/{suffix}"))
+    let windows = looks_like_windows_path(candidate) || looks_like_windows_path(path);
+    if windows {
+        let path = path.to_ascii_lowercase();
+        let candidate = candidate.to_ascii_lowercase();
+        let suffix = suffix.to_ascii_lowercase();
+        candidate == path || path == suffix || path.ends_with(&format!("/{suffix}"))
+    } else {
+        candidate == path || path == suffix || path.ends_with(&format!("/{suffix}"))
+    }
+}
+
+fn looks_like_windows_path(path: &str) -> bool {
+    path.as_bytes().get(1) == Some(&b':') || path.contains('\\')
 }
