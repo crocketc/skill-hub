@@ -1,10 +1,11 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { I18nextProvider } from "react-i18next";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createSkillHubI18n } from "../../i18n";
 import { createMockSkillDetailFacade } from "./testFixtures";
 import { SemanticDuplicatePanel } from "./SemanticDuplicatePanel";
 import type { SkillDetailFacade } from "./api";
+import type { ConflictAnalysis } from "../../api/bindings";
 
 async function renderPanel(
   facade: SkillDetailFacade,
@@ -116,5 +117,116 @@ describe("SemanticDuplicatePanel", () => {
     expect(
       screen.getByText(/AI 分析未执行，确定性重复候选仍然可用/),
     ).toBeVisible();
+  });
+
+  // --- Task 8：AI 可用性真实信号 + Skill 维度冲突分析入口 ---
+
+  const conflictResult: ConflictAnalysis = {
+    scope: { type: "skill", value: { skill_id: "skill-pdf" } },
+    input_fingerprint: "sha256:input",
+    skipped_decided_cases: 1,
+    total_case_count: 0,
+    source: "llm",
+    failure_code: null,
+    cases: [
+      {
+        conflict_id: "conflict:notes",
+        baseline_classification: "uncertain",
+        summary: "成员指纹不同，无法确认是否同一 Skill。",
+        recommended_action: "keep_uncertain",
+        recommended_keep_member: "/lib/notes",
+        key_evidence: ["成员指纹不同"],
+        uncertainties: ["版本字段缺失"],
+        confidence: 40,
+      },
+    ],
+  };
+
+  it("disables AI actions with an honest note when no provider is configured", async () => {
+    const facade = createMockSkillDetailFacade();
+    facade.isAiAvailable = async () => false;
+    await renderPanel(facade, ["PDF Reader（副本）"]);
+
+    expect(await screen.findByRole("button", { name: "运行分析" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "分析相关冲突" })).toBeDisabled();
+    expect(
+      screen.getByText(
+        "尚未配置可用的 LLM 供应商；AI 分析按钮已停用，确定性候选照常展示。",
+      ),
+    ).toBeVisible();
+    // 不可用就不发起分析：绝不伪造结果。
+    expect(facade.calls.analyzedDuplicateSkills).toEqual([]);
+    expect(facade.calls.analyzedConflictScopes).toEqual([]);
+  });
+
+  it("runs the skill-scoped conflict analysis with the baseline before the AI opinion", async () => {
+    const facade = createMockSkillDetailFacade();
+    facade.analyzeConflicts = vi.fn(async (scope) => {
+      expect(scope).toEqual({ type: "skill", value: { skill_id: "skill-pdf" } });
+      return conflictResult;
+    });
+    await renderPanel(facade);
+
+    fireEvent.click(screen.getByRole("button", { name: "分析相关冲突" }));
+
+    expect(
+      await screen.findByText("冲突组 conflict:notes"),
+    ).toBeVisible();
+    // 确定性基线先于 AI 短结论展示。
+    const section = screen.getByTestId("conflict-analysis-result");
+    const text = section.textContent ?? "";
+    expect(text.indexOf("确定性基线")).toBeLessThan(
+      text.indexOf("成员指纹不同，无法确认是否同一 Skill。"),
+    );
+    expect(screen.getByText(/建议动作/)).toBeVisible();
+    expect(screen.getByText(/建议保留：\/lib\/notes/)).toBeVisible();
+    expect(screen.getByText("置信度：40%")).toBeVisible();
+    // 已裁决的冲突组不送 AI，且计数如实显示。
+    expect(screen.getByText("已有用户裁决的冲突组：1 个（不送 AI）。")).toBeVisible();
+    expect(
+      screen.getByText("AI 结果仅供参考，不会自动合并、删除或改变你的裁决。"),
+    ).toBeVisible();
+    expect(facade.analyzeConflicts).toHaveBeenCalledTimes(1);
+    expect(facade.analyzeConflicts).toHaveBeenCalledWith({
+      type: "skill",
+      value: { skill_id: "skill-pdf" },
+    });
+  });
+
+  it("reports an empty conflict result honestly", async () => {
+    const facade = createMockSkillDetailFacade();
+    facade.analyzeConflicts = vi.fn(async () => ({
+      ...conflictResult,
+      skipped_decided_cases: 0,
+      total_case_count: 0,
+      cases: [],
+    }));
+    await renderPanel(facade);
+
+    fireEvent.click(screen.getByRole("button", { name: "分析相关冲突" }));
+
+    expect(
+      await screen.findByText("该 Skill 当前没有关联的冲突组。"),
+    ).toBeVisible();
+  });
+
+  it("surfaces a failed conflict analysis with a readable reason and keeps determinism", async () => {
+    const facade = createMockSkillDetailFacade();
+    facade.analyzeConflicts = vi.fn(async () => ({
+      ...conflictResult,
+      source: "deterministic_only" as const,
+      failure_code: "llm.request_timeout",
+      cases: [],
+    }));
+    await renderPanel(facade);
+
+    fireEvent.click(screen.getByRole("button", { name: "分析相关冲突" }));
+
+    expect(
+      await screen.findByText(/冲突分析未能完成：连接模型服务超时/),
+    ).toBeVisible();
+    expect(screen.getByText("确定性冲突分组不受影响。")).toBeVisible();
+    // 确定性重复候选不受冲突分析失败影响。
+    expect(screen.getByRole("heading", { name: "确定性重复候选" })).toBeVisible();
   });
 });

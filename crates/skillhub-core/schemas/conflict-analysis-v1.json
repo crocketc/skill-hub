@@ -1,0 +1,24 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["cases"],
+  "properties": {
+    "cases": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["conflict_id", "summary", "recommended_action", "recommended_keep_member", "key_evidence", "uncertainties", "confidence"],
+        "properties": {
+          "conflict_id": {"type": "string"},
+          "summary": {"type": "string"},
+          "recommended_action": {"type": "string", "enum": ["same_skill_version", "distinct_skill", "keep_uncertain"]},
+          "recommended_keep_member": {"type": ["string", "null"]},
+          "key_evidence": {"type": "array", "items": {"type": "string"}},
+          "uncertainties": {"type": "array", "items": {"type": "string"}},
+          "confidence": {"type": "integer", "minimum": 0, "maximum": 100}
+        }
+      }
+    }
+  }
+}

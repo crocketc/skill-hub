@@ -62,8 +62,8 @@ pub use project_repository::{ProjectRepository, VersionPin};
 pub use provenance_repository::ProvenanceRepository;
 pub use recovery_point::RecoveryPoint;
 pub use relationship_repository::{
-    ConflictRepository, GovernanceTaskRepository, RelationshipImpactSnapshot,
-    RelationshipRepository,
+    ConflictAnalysisRepository, ConflictRepository, GovernanceTaskRepository,
+    RelationshipImpactSnapshot, RelationshipRepository,
 };
 pub use scan_repository::ScanRepository;
 pub use search_candidate_repository::SearchCandidateRepository;
@@ -198,6 +198,11 @@ impl Database {
 
     pub fn conflict_repository(&self) -> ConflictRepository<'_> {
         ConflictRepository::new(self)
+    }
+
+    /// Task 8：可选 AI 冲突分析记录（advisory，不影响用户裁决）。
+    pub fn conflict_analysis_repository(&self) -> ConflictAnalysisRepository<'_> {
+        ConflictAnalysisRepository::new(self)
     }
 
     pub fn governance_task_repository(&self) -> GovernanceTaskRepository<'_> {

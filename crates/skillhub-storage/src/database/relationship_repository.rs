@@ -5,6 +5,9 @@ use skillhub_core::deployment::{
     observed_path_key, DeploymentMode, DeploymentRecord, DeploymentState, ObservedMatchState,
     ObservedOrigin,
 };
+use skillhub_core::duplicate::{
+    AnalyzeConflictScope, ConflictAnalysisRecord, ConflictCaseAnalysis, DuplicateAnalysisSource,
+};
 use skillhub_core::relationship::{
     AgentDirectoryCapabilityFact, ConflictCaseFact, ConflictClassification, ConflictEvidence,
     ConflictKind, ConflictMemberFact, DeploymentRelationFact, DirectoryRecognition,
@@ -20,8 +23,8 @@ pub struct RelationshipRepository<'a> {
 }
 
 /// Complete relationship impact for a skill, directory, Agent, path, or
-/// relationship identifier.  AI analysis records are intentionally deferred
-/// to Task 8; this snapshot contains only deterministic storage facts.
+/// relationship identifier.  Advisory AI analysis records live in
+/// `ConflictAnalysisRepository` (migration 0015); this snapshot contains only deterministic storage facts.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct RelationshipImpactSnapshot {
     pub deployments: Vec<DeploymentRelationFact>,
@@ -714,6 +717,190 @@ impl<'a> ConflictRepository<'a> {
             decided_at: row.6,
         })
     }
+}
+
+/// Advisory AI analysis records (design §3.4). They trace what the optional
+/// analysis said about a conflict case; adoption is tracked here and never
+/// bleeds into `conflict_cases.user_decision`.
+pub struct ConflictAnalysisRepository<'a> {
+    database: &'a Database,
+}
+
+impl<'a> ConflictAnalysisRepository<'a> {
+    pub(crate) fn new(database: &'a Database) -> Self {
+        Self { database }
+    }
+
+    pub fn insert_record(&self, record: &ConflictAnalysisRecord) -> AppResult<()> {
+        let (scope, scope_subject) = analysis_scope_columns(&record.scope);
+        let conclusion = record
+            .conclusion
+            .as_ref()
+            .map(serde_json::to_string)
+            .transpose()
+            .map_err(|error| serialization_error(error.to_string()))?;
+        self.database
+            .connection
+            .execute(
+                "INSERT INTO conflict_analysis_records
+                 (record_id, conflict_id, scope, scope_subject, input_fingerprint,
+                  baseline_classification, conclusion_json, source, analyzed_at, failure_code, adopted)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+                params![
+                    record.record_id,
+                    record.conflict_id,
+                    scope,
+                    scope_subject,
+                    record.input_fingerprint,
+                    conflict_classification_code(record.baseline_classification),
+                    conclusion,
+                    analysis_source_code(record.source),
+                    record.analyzed_at,
+                    record.failure_code,
+                    i64::from(record.adopted_by_user),
+                ],
+            )
+            .map(|_| ())
+            .map_err(database_error)
+    }
+
+    /// `conflict_id=None` lists every record; otherwise only that case's
+    /// records, oldest first.
+    pub fn list_records(
+        &self,
+        conflict_id: Option<&str>,
+    ) -> AppResult<Vec<ConflictAnalysisRecord>> {
+        let mut statement = self
+            .database
+            .connection
+            .prepare(
+                "SELECT record_id, conflict_id, scope, scope_subject, input_fingerprint,
+                        baseline_classification, conclusion_json, source, analyzed_at, failure_code, adopted
+                 FROM conflict_analysis_records
+                 WHERE (?1 IS NULL OR conflict_id=?1)
+                 ORDER BY analyzed_at, record_id",
+            )
+            .map_err(database_error)?;
+        let rows = statement
+            .query_map([conflict_id], |row| {
+                Ok(StoredAnalysisRecord {
+                    record_id: row.get(0)?,
+                    conflict_id: row.get(1)?,
+                    scope: row.get(2)?,
+                    scope_subject: row.get(3)?,
+                    input_fingerprint: row.get(4)?,
+                    baseline: row.get(5)?,
+                    conclusion_json: row.get(6)?,
+                    source: row.get(7)?,
+                    analyzed_at: row.get(8)?,
+                    failure_code: row.get(9)?,
+                    adopted: row.get::<_, i64>(10)? != 0,
+                })
+            })
+            .map_err(database_error)?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(database_error)?;
+        rows.iter().cloned().map(decode_analysis_record).collect()
+    }
+
+    /// Marks a record adopted by the user. The conflict case's own decision
+    /// fields are deliberately untouched.
+    pub fn mark_adopted(&self, record_id: &str) -> AppResult<()> {
+        let changed = self
+            .database
+            .connection
+            .execute(
+                "UPDATE conflict_analysis_records SET adopted=1 WHERE record_id=?1",
+                [record_id],
+            )
+            .map_err(database_error)?;
+        if changed == 0 {
+            return Err(not_found("conflict_analysis_record"));
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone)]
+struct StoredAnalysisRecord {
+    record_id: String,
+    conflict_id: String,
+    scope: String,
+    scope_subject: Option<String>,
+    input_fingerprint: String,
+    baseline: String,
+    conclusion_json: Option<String>,
+    source: String,
+    analyzed_at: i64,
+    failure_code: Option<String>,
+    adopted: bool,
+}
+
+fn analysis_scope_columns(scope: &AnalyzeConflictScope) -> (&'static str, Option<String>) {
+    match scope {
+        AnalyzeConflictScope::All => ("all", None),
+        AnalyzeConflictScope::Category { classification } => (
+            "category",
+            Some(conflict_classification_code(*classification).to_owned()),
+        ),
+        AnalyzeConflictScope::Case { conflict_id } => ("case", Some(conflict_id.clone())),
+        AnalyzeConflictScope::Skill { skill_id } => ("skill", Some(skill_id.to_string())),
+    }
+}
+
+fn analysis_source_code(source: DuplicateAnalysisSource) -> &'static str {
+    match source {
+        DuplicateAnalysisSource::DeterministicOnly => "deterministic_only",
+        DuplicateAnalysisSource::Llm => "llm",
+    }
+}
+
+fn parse_analysis_scope(scope: &str, subject: Option<String>) -> Option<AnalyzeConflictScope> {
+    match scope {
+        "all" => Some(AnalyzeConflictScope::All),
+        "category" => Some(AnalyzeConflictScope::Category {
+            classification: parse_conflict_classification(subject.as_deref()?)?,
+        }),
+        "case" => Some(AnalyzeConflictScope::Case {
+            conflict_id: subject?,
+        }),
+        "skill" => Some(AnalyzeConflictScope::Skill {
+            skill_id: subject?.parse().ok()?,
+        }),
+        _ => None,
+    }
+}
+
+fn parse_analysis_source(source: &str) -> Option<DuplicateAnalysisSource> {
+    match source {
+        "deterministic_only" => Some(DuplicateAnalysisSource::DeterministicOnly),
+        "llm" => Some(DuplicateAnalysisSource::Llm),
+        _ => None,
+    }
+}
+
+fn decode_analysis_record(row: StoredAnalysisRecord) -> AppResult<ConflictAnalysisRecord> {
+    let scope = parse_analysis_scope(&row.scope, row.scope_subject).ok_or_else(invalid_record)?;
+    let source = parse_analysis_source(&row.source).ok_or_else(invalid_record)?;
+    let baseline = parse_conflict_classification(&row.baseline).ok_or_else(invalid_record)?;
+    let conclusion = row
+        .conclusion_json
+        .as_deref()
+        .map(serde_json::from_str::<ConflictCaseAnalysis>)
+        .transpose()
+        .map_err(|_| invalid_record())?;
+    Ok(ConflictAnalysisRecord {
+        record_id: row.record_id,
+        conflict_id: row.conflict_id,
+        scope,
+        input_fingerprint: row.input_fingerprint,
+        baseline_classification: baseline,
+        conclusion,
+        source,
+        analyzed_at: row.analyzed_at,
+        failure_code: row.failure_code,
+        adopted_by_user: row.adopted,
+    })
 }
 
 pub struct GovernanceTaskRepository<'a> {

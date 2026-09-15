@@ -5,6 +5,7 @@ import { expect, it, vi } from "vitest";
 import { createSkillHubI18n } from "../../i18n";
 import { RelationshipGovernancePanel } from "./RelationshipGovernancePanel";
 import type { ImportGovernanceGroup } from "./relationshipGovernance";
+import type { ConflictAnalysis, ConflictCaseFact } from "../../api/bindings";
 
 const groups: ImportGovernanceGroup[] = [
   {
@@ -136,4 +137,196 @@ it("renders relationship governance copy in the active English locale", async ()
   ).toBeVisible();
   expect(screen.getByText("AI suggestions are not configured; deterministic relationship checks remain in force.")).toBeVisible();
   expect(screen.getByRole("button", { name: "Expand 2 items" })).toBeVisible();
+});
+
+// --- Task 8: 冲突组区可选 AI 分析 ---
+
+const conflictCases: ConflictCaseFact[] = [
+  {
+    conflict_id: "conflict:notes",
+    kind: "same_name_different_content",
+    classification: "uncertain",
+    member_skill_ids: [],
+    members: [
+      {
+        skill_id: null,
+        version_id: null,
+        provenance_id: null,
+        directory_node_id: null,
+        path: "/lib/notes",
+        fingerprint: "sha256:a",
+      },
+      {
+        skill_id: null,
+        version_id: null,
+        provenance_id: null,
+        directory_node_id: null,
+        path: "/agent/notes",
+        fingerprint: "sha256:b",
+      },
+    ],
+    evidence: {
+      fingerprints_match: false,
+      names_match: true,
+      identity_direction: null,
+      sufficient_identity_evidence: false,
+    },
+    user_decision: null,
+    decided_at: null,
+  },
+];
+
+const conflictAnalysisResult: ConflictAnalysis = {
+  scope: { type: "case", value: { conflict_id: "conflict:notes" } },
+  input_fingerprint: "sha256:input",
+  skipped_decided_cases: 0,
+  total_case_count: 1,
+  source: "llm",
+  failure_code: null,
+  cases: [
+    {
+      conflict_id: "conflict:notes",
+      baseline_classification: "uncertain",
+      summary: "成员指纹不同，无法确认是否同一 Skill。",
+      recommended_action: "keep_uncertain",
+      recommended_keep_member: null,
+      key_evidence: ["成员指纹不同"],
+      uncertainties: ["版本字段缺失"],
+      confidence: 40,
+    },
+  ],
+};
+
+it("lists deterministic conflict cases first and offers all category and case scopes", async () => {
+  const onAnalyze = vi.fn();
+  await renderPanel({
+    aiAvailable: true,
+    conflictAnalysis: { cases: conflictCases, onAnalyze, running: false },
+    groups,
+    onDecision: vi.fn(),
+  });
+
+  // 确定性事实先于任何 AI 结论展示：冲突组 ID、成员路径与基线分类常显。
+  expect(screen.getByText("conflict:notes")).toBeVisible();
+  expect(screen.getByText("/lib/notes")).toBeVisible();
+  expect(screen.getAllByText(/确定性基线/).length).toBeGreaterThan(0);
+
+  fireEvent.click(screen.getByRole("button", { name: "AI 分析" }));
+  expect(onAnalyze).toHaveBeenLastCalledWith({
+    type: "case",
+    value: { conflict_id: "conflict:notes" },
+  });
+
+  fireEvent.click(screen.getByRole("button", { name: "按分类分析：证据不足（待办）" }));
+  expect(onAnalyze).toHaveBeenLastCalledWith({
+    type: "category",
+    value: { classification: "uncertain" },
+  });
+
+  fireEvent.click(screen.getByRole("button", { name: "分析全部未决冲突" }));
+  expect(onAnalyze).toHaveBeenLastCalledWith({ type: "all" });
+});
+
+it("renders the returned short conclusion with its baseline and the advisory note", async () => {
+  await renderPanel({
+    aiAvailable: true,
+    conflictAnalysis: {
+      cases: conflictCases,
+      onAnalyze: vi.fn(),
+      result: conflictAnalysisResult,
+      running: false,
+    },
+    groups,
+    onDecision: vi.fn(),
+  });
+
+  expect(screen.getByText("成员指纹不同，无法确认是否同一 Skill。")).toBeVisible();
+  expect(screen.getByText(/建议动作/)).toBeVisible();
+  expect(screen.getByText("置信度：40%")).toBeVisible();
+  expect(screen.getByText("版本字段缺失")).toBeVisible();
+  // 建议只是建议：不改变用户裁决的说明必须出现。
+  expect(
+    screen.getByText("AI 结果仅供参考，不会自动合并、删除或改变你的裁决。"),
+  ).toBeVisible();
+  // 基线先于 AI 结论出现。
+  const section = screen.getByTestId("conflict-analysis-section");
+  const sectionText = section.textContent ?? "";
+  expect(sectionText.indexOf("确定性基线")).toBeLessThan(
+    sectionText.indexOf("成员指纹不同，无法确认是否同一 Skill。"),
+  );
+});
+
+it("reports a failed conflict analysis through a readable reason and keeps the baselines", async () => {
+  await renderPanel({
+    aiAvailable: true,
+    conflictAnalysis: {
+      cases: conflictCases,
+      onAnalyze: vi.fn(),
+      result: {
+        ...conflictAnalysisResult,
+        source: "deterministic_only",
+        failure_code: "llm.request_timeout",
+        cases: [],
+      },
+      running: false,
+    },
+    groups,
+    onDecision: vi.fn(),
+  });
+
+  expect(screen.getByText(/冲突分析未能完成：连接模型服务超时/)).toBeVisible();
+  expect(screen.getByText("确定性冲突分组不受影响。")).toBeVisible();
+  expect(screen.getByText("conflict:notes")).toBeVisible();
+});
+
+it("hides conflict analysis actions when AI is unavailable without hiding the facts", async () => {
+  const onAnalyze = vi.fn();
+  await renderPanel({
+    aiAvailable: false,
+    conflictAnalysis: { cases: conflictCases, onAnalyze, running: false },
+    groups,
+    onDecision: vi.fn(),
+  });
+
+  expect(screen.queryByRole("button", { name: "AI 分析" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "分析全部未决冲突" })).not.toBeInTheDocument();
+  // 事实仍在：确定性基线不因 AI 缺席而消失。
+  expect(screen.getByText("conflict:notes")).toBeVisible();
+  expect(
+    screen.getByText("AI 建议未配置；已保留确定性关系判断。"),
+  ).toBeVisible();
+});
+
+it("disables conflict analysis actions while a run is in progress", async () => {
+  const onAnalyze = vi.fn();
+  await renderPanel({
+    aiAvailable: true,
+    conflictAnalysis: { cases: conflictCases, onAnalyze, running: true },
+    groups,
+    onDecision: vi.fn(),
+  });
+
+  expect(screen.getByRole("button", { name: "AI 分析" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "分析全部未决冲突" })).toBeDisabled();
+});
+
+it("states partial coverage honestly when the scope exceeds one request", async () => {
+  const onAnalyze = vi.fn();
+  await renderPanel({
+    aiAvailable: true,
+    conflictAnalysis: {
+      cases: conflictCases,
+      onAnalyze,
+      running: false,
+      result: {
+        ...conflictAnalysisResult,
+        total_case_count: 20,
+        cases: conflictAnalysisResult.cases,
+      },
+    },
+    groups,
+    onDecision: vi.fn(),
+  });
+
+  expect(screen.getByText("本次已分析 1 组（范围内共 20 组）")).toBeVisible();
 });

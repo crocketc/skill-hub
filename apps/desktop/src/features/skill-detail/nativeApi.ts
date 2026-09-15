@@ -1,14 +1,17 @@
 import {
   executeCommand,
   queryApplication,
+  type AnalyzeConflictScope,
   type AppCommandResult,
   type AppQueryResult,
+  type ConflictAnalysis,
   type DeploymentTarget,
   type FindingDisposition,
   type SkillResult,
   type UpdateDecision,
   type UpstreamCheckResult,
 } from "../../api/bindings";
+import { usableLlmProviderLabel } from "../settings/llmApi";
 import {
   SkillDetailUnavailableError,
   unavailableSkillDetailFacade,
@@ -312,6 +315,8 @@ export const nativeSkillDetailFacade: SkillDetailFacade = {
   applySourceUpdate,
   relinkSource,
   analyzeSemanticDuplicates: analyzeNativeSemanticDuplicates,
+  isAiAvailable: isNativeAiAvailable,
+  analyzeConflicts: analyzeNativeConflicts,
   async emitIntent(intent) {
     if (intent.type === "translate_description") {
       const result: AppCommandResult = await executeCommand({
@@ -548,6 +553,26 @@ export async function analyzeNativeSemanticDuplicates(
     failureCode: analysis.failure_code ?? null,
     source: analysis.source ?? "deterministic_only",
   };
+}
+
+/** Task 8：AI 可用性真实信号——与设置页同一供应商列表；是否可用由
+ * usableLlmProviderLabel 判定（已启用 + 本地或凭据已配置）。 */
+export async function isNativeAiAvailable(): Promise<boolean> {
+  const result = await queryApplication({ type: "list_llm_providers" });
+  if (result.type !== "llm_providers") throw unavailableResult();
+  return usableLlmProviderLabel(result.payload) !== "";
+}
+
+/** Task 8：Skill 维度的可选冲突分析。结果是建议性短结论，绝不改变用户裁决。 */
+export async function analyzeNativeConflicts(
+  scope: AnalyzeConflictScope,
+): Promise<ConflictAnalysis> {
+  const result: AppCommandResult = await executeCommand({
+    type: "analyze_conflict",
+    payload: { scope },
+  });
+  if (result.type !== "conflict_analysis") throw unavailableResult();
+  return result.payload;
 }
 
 /** Switches the catalog pointer to an existing version after native validation. */

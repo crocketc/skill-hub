@@ -439,6 +439,14 @@ pub struct AnalyzeSemanticDuplicates {
     pub skill_id: SkillId,
 }
 
+/// Task 8: optional, user-initiated AI conflict analysis over deterministic
+/// conflict groups. The result is advisory; it never writes a user decision.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct AnalyzeConflict {
+    pub scope: crate::duplicate::AnalyzeConflictScope,
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 #[serde(deny_unknown_fields)]
 pub struct TranslateDescription {
@@ -958,6 +966,8 @@ pub enum AppCommand {
     RecheckLlmSafety(RecheckLlmSafety),
     #[serde(rename = "analyze_semantic_duplicates")]
     AnalyzeSemanticDuplicates(AnalyzeSemanticDuplicates),
+    #[serde(rename = "analyze_conflict")]
+    AnalyzeConflict(AnalyzeConflict),
     #[serde(rename = "translate_description")]
     TranslateDescription(TranslateDescription),
     #[serde(rename = "translate_descriptions_batch")]
@@ -1127,6 +1137,8 @@ pub enum AppCommandResult {
     LlmSafetyCheckResult(LlmSafetyCheckResult),
     #[serde(rename = "duplicate_analysis")]
     DuplicateAnalysis(crate::duplicate::DuplicateAnalysis),
+    #[serde(rename = "conflict_analysis")]
+    ConflictAnalysis(crate::duplicate::ConflictAnalysis),
     #[serde(rename = "translation_result")]
     TranslationResult(TranslationResult),
     #[serde(rename = "batch_translation_result")]
