@@ -206,6 +206,132 @@ fn shared_directory_supports_multiple_capabilities_and_relationship_queries() {
 }
 
 #[test]
+fn shared_reference_impact_includes_the_link_target_directory_scope() {
+    let database = Database::open_in_memory().unwrap();
+    let skill = SkillId::new();
+    database
+        .connection_for_test()
+        .execute(
+            "INSERT INTO skills (id, display_name, runtime_name, ownership, created_at, updated_at) VALUES (?1, 'Shared', 'shared', 'user_created', 0, 0)",
+            [skill.to_string()],
+        )
+        .unwrap();
+    // The agent's own directory holds the alias; the shared directory body
+    // is a separate node referenced through link_target_directory_id.
+    for node in [
+        (
+            "directory-agent",
+            "C:/Users/demo/.codex/skills",
+            "codex.code",
+            DirectoryRole::AgentNative,
+        ),
+        (
+            "directory-shared",
+            "C:/Users/demo/.agents/skills",
+            "",
+            DirectoryRole::SharedDirectory,
+        ),
+    ] {
+        database
+            .directory_repository()
+            .upsert_node(&DirectoryNodeFact {
+                node_id: node.0.into(),
+                path: node.1.into(),
+                path_key: String::new(),
+                role: node.3,
+                profile_id: None,
+                agent_client_id: (!node.2.is_empty()).then(|| node.2.to_owned()),
+                exists: true,
+                observed_at: 1,
+                scan_source: Some("test".into()),
+            })
+            .unwrap();
+    }
+    for agent in ["codex.code", "claude.code"] {
+        database
+            .relationship_repository()
+            .upsert_capability(&AgentDirectoryCapabilityFact {
+                agent_client_id: agent.into(),
+                directory_node_id: "directory-shared".into(),
+                recognition: skillhub_core::relationship::DirectoryRecognition::Supported,
+                precedence: skillhub_core::DirectoryPrecedence::MayCoexist,
+                evidence_reference: Some("test".into()),
+                researched_at: Some("2026-09-15".into()),
+                applicable_platforms: vec!["windows".into(), "macos".into()],
+            })
+            .unwrap();
+    }
+    // Another agent reads the shared body directly: a second consumer whose
+    // recognition must stay visible when scoping the alias relation.
+    database
+        .relationship_repository()
+        .upsert_deployment_relation(&DeploymentRelationFact {
+            relation_id: "relation-shared-read".into(),
+            skill_id: Some(skill),
+            agent_client_id: "claude.code".into(),
+            path: "C:/Users/demo/.agents/skills/shared".into(),
+            path_key: "c:/users/demo/.agents/skills/shared".into(),
+            directory_node_id: Some("directory-shared".into()),
+            relationship: RelationshipType::SharedDirectoryRead,
+            file_representation: FileRepresentation::Directory,
+            ownership: OwnershipState::ObservedUnmanaged,
+            link_target_path: None,
+            link_target_path_key: None,
+            link_target_directory_id: None,
+            content_fingerprint: "sha256:shared".into(),
+            origin: ObservedOrigin::Scan,
+            match_state: ObservedMatchState::ContentVerified,
+            active: true,
+            observed_at: 1,
+            released_at: None,
+        })
+        .unwrap();
+    database
+        .relationship_repository()
+        .upsert_deployment_relation(&DeploymentRelationFact {
+            relation_id: "relation-shared-ref".into(),
+            skill_id: Some(skill),
+            agent_client_id: "codex.code".into(),
+            path: "C:/Users/demo/.codex/skills/shared".into(),
+            path_key: "c:/users/demo/.codex/skills/shared".into(),
+            directory_node_id: Some("directory-agent".into()),
+            relationship: RelationshipType::SharedDirectoryReference,
+            file_representation: FileRepresentation::SymbolicLink,
+            ownership: OwnershipState::ObservedUnmanaged,
+            link_target_path: Some("C:/Users/demo/.agents/skills/shared".into()),
+            link_target_path_key: Some("c:/users/demo/.agents/skills/shared".into()),
+            link_target_directory_id: Some("directory-shared".into()),
+            content_fingerprint: "sha256:shared".into(),
+            origin: ObservedOrigin::Scan,
+            match_state: ObservedMatchState::ContentVerified,
+            active: true,
+            observed_at: 1,
+            released_at: None,
+        })
+        .unwrap();
+
+    let impact = database
+        .relationship_repository()
+        .list_relation_impact("relation-shared-ref")
+        .unwrap();
+    // Both relations of the same skill stay visible for consumer counting.
+    assert_eq!(impact.deployments.len(), 2);
+    // The shared node reached through link_target_directory_id and its
+    // capabilities (including the other agent's) are part of the scope.
+    assert!(impact
+        .directory_nodes
+        .iter()
+        .any(|node| node.node_id == "directory-shared"));
+    assert!(
+        impact.directory_capabilities.iter().any(|capability| {
+            capability.agent_client_id == "claude.code"
+                && capability.directory_node_id == "directory-shared"
+        }),
+        "the other consumer's shared-directory capability must stay in scope"
+    );
+}
+
+#[test]
 fn managed_deployments_keep_distinct_runtime_entry_paths_under_one_target() {
     let database = Database::open_in_memory().unwrap();
     let first_version =

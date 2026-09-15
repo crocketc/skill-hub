@@ -30,6 +30,68 @@ pub fn symlink_physical_id_for_path(path: impl AsRef<Path>) -> Option<String> {
     Some(identity)
 }
 
+/// Volume identity of an existing path.  Used to detect same-volume
+/// constraints for link kinds that cannot span volumes (Windows directory
+/// junctions); a path with no resolvable volume identity reports `None`.
+#[cfg(unix)]
+pub fn volume_serial_for_path(path: impl AsRef<Path>) -> Option<u64> {
+    use std::os::unix::fs::MetadataExt;
+    std::fs::metadata(path.as_ref())
+        .ok()
+        .map(|metadata| metadata.dev())
+}
+
+#[cfg(windows)]
+pub fn volume_serial_for_path(path: impl AsRef<Path>) -> Option<u64> {
+    use std::iter::once;
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::Foundation::{CloseHandle, INVALID_HANDLE_VALUE};
+    use windows_sys::Win32::Storage::FileSystem::{
+        CreateFileW, GetFileInformationByHandle, BY_HANDLE_FILE_INFORMATION,
+        FILE_FLAG_BACKUP_SEMANTICS, FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE,
+        OPEN_EXISTING,
+    };
+    let path = path.as_ref();
+    let wide = path
+        .as_os_str()
+        .encode_wide()
+        .chain(once(0))
+        .collect::<Vec<_>>();
+    let handle = unsafe {
+        CreateFileW(
+            wide.as_ptr(),
+            0,
+            FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+            std::ptr::null(),
+            OPEN_EXISTING,
+            FILE_FLAG_BACKUP_SEMANTICS,
+            std::ptr::null_mut(),
+        )
+    };
+    if handle == INVALID_HANDLE_VALUE {
+        return None;
+    }
+    let mut info = unsafe { std::mem::zeroed::<BY_HANDLE_FILE_INFORMATION>() };
+    let result = unsafe { GetFileInformationByHandle(handle, &mut info) };
+    unsafe { CloseHandle(handle) };
+    (result != 0).then(|| u64::from(info.dwVolumeSerialNumber))
+}
+
+#[cfg(not(any(unix, windows)))]
+pub fn volume_serial_for_path(_: impl AsRef<Path>) -> Option<u64> {
+    None
+}
+
+/// Whether two existing paths live on the same volume.  Unavailable volume
+/// identities are never treated as a same-volume claim, so link kinds that
+/// cannot span volumes fail closed.
+pub fn paths_share_volume(a: impl AsRef<Path>, b: impl AsRef<Path>) -> bool {
+    match (volume_serial_for_path(a), volume_serial_for_path(b)) {
+        (Some(left), Some(right)) => left == right,
+        _ => false,
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, specta::Type)]
 #[serde(transparent)]
 pub struct AllowedRootId(uuid::Uuid);

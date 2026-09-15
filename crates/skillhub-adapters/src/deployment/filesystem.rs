@@ -78,6 +78,63 @@ impl DeploymentFilesystem {
         tree_hash(root.as_ref())
     }
 
+    /// Probes directory-link creation at the exact location where a relation
+    /// conversion would create the replacement entry.  The global
+    /// [`Self::available_capabilities`] probe cannot answer per-volume
+    /// questions: a filtered, read-only, or cross-privilege volume must make
+    /// the conversion fail instead of silently degrading to a copy.
+    ///
+    /// The probe creates a uniquely named directory link inside `parent`
+    /// pointing at `target`, verifies it materialized, and removes it again.
+    /// Copy stays reported as available: refusing the copy fallback is a
+    /// conversion policy, not a filesystem capability fact.
+    pub fn probe_link_capabilities(&self, parent: &Path, target: &Path) -> DeploymentCapability {
+        let probe_destination = parent.join(format!(
+            ".skillhub-link-probe-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map(|elapsed| elapsed.as_nanos())
+                .unwrap_or_default(),
+        ));
+        // An existing probe entry cannot be verified as ours; refuse instead
+        // of replacing or deleting a foreign path.
+        if fs::symlink_metadata(&probe_destination).is_ok() {
+            return DeploymentCapability::new(false, false, true);
+        }
+        let symlink = self.probe_symlink(target, &probe_destination);
+        let junction = self.probe_junction(target, &probe_destination);
+        DeploymentCapability::new(symlink, junction, true)
+    }
+
+    fn probe_symlink(&self, target: &Path, destination: &Path) -> bool {
+        let created = symlink::create_dir_link(target, destination).is_ok()
+            && fs::symlink_metadata(destination)
+                .map(|metadata| metadata.file_type().is_symlink())
+                .unwrap_or(false);
+        // The probe entry must never survive, even when it did not
+        // materialize as a link.
+        if fs::symlink_metadata(destination).is_ok()
+            && symlink::remove_dir_link(destination).is_err()
+        {
+            return false;
+        }
+        created
+    }
+
+    #[cfg(windows)]
+    fn probe_junction(&self, _target: &Path, _destination: &Path) -> bool {
+        // The executor cannot remove junctions yet, so a probe could not
+        // clean up after itself; report unavailable instead of leaving an
+        // entry behind in the user's directory.
+        false
+    }
+
+    #[cfg(not(windows))]
+    fn probe_junction(&self, _: &Path, _: &Path) -> bool {
+        false
+    }
+
     pub fn prepare(&self, target: &TargetPlan) -> AppResult<PreparedTarget> {
         let source_path = PathBuf::from(&target.source_path);
         let destination_path = PathBuf::from(&target.destination_path);

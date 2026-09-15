@@ -364,15 +364,6 @@ impl LocalApplicationFacade {
             }
 
             let permission_limited = relation_path_is_inaccessible(&relation.path);
-            let mut governance_tasks = calculate_removal_impact(
-                &request.relation_id,
-                &RemovalFacts::new(
-                    snapshot.deployments.clone(),
-                    snapshot.directory_capabilities.clone(),
-                )
-                .with_permission_limited(permission_limited),
-            )
-            .governance_tasks;
             let impact = calculate_removal_impact(
                 &request.relation_id,
                 &RemovalFacts::new(
@@ -381,10 +372,45 @@ impl LocalApplicationFacade {
                 )
                 .with_permission_limited(permission_limited),
             );
-            let shared_impact = matches!(
-                relation.relationship,
-                RelationshipType::SharedDirectoryRead | RelationshipType::SharedDirectoryReference
-            ) || !impact.other_consumers.is_empty();
+            // The technical link form is decided by platform capability at
+            // the exact volume that must host the replacement entry.  A
+            // conversion whose link cannot be created there fails up front
+            // and keeps the original entry; it never degrades to a copy.
+            let relation_parent = Path::new(&relation.path)
+                .parent()
+                .ok_or_else(|| ownership_mismatch(&relation.path))?;
+            let conversion_plan =
+                skillhub_core::deployment::plan_relation_conversion(
+                    &skillhub_core::deployment::RelationConversionFacts {
+                        relationship: relation.relationship,
+                        link_capabilities: DeploymentFilesystem::new()
+                            .probe_link_capabilities(relation_parent, &target_path),
+                        link_target_same_volume: skillhub_core::paths_share_volume(
+                            relation_parent,
+                            &target_path,
+                        ),
+                        other_shared_consumers: impact.other_consumers.len(),
+                    },
+                );
+            let conversion_plan = match conversion_plan {
+                Ok(plan) => plan,
+                Err(error) => {
+                    database
+                        .governance_task_repository()
+                        .create(&governance_task(
+                            &request.relation_id,
+                            conversion_todo_kind(relation.relationship),
+                            format!(
+                                "relationship conversion is unavailable: {}",
+                                error.code.as_str()
+                            ),
+                        ))?;
+                    return Err(error);
+                }
+            };
+            let mut governance_tasks = impact.governance_tasks;
+            let shared_impact = conversion_plan.requires_shared_impact_confirmation
+                || !impact.other_consumers.is_empty();
             if shared_impact
                 && request
                     .confirmation_token
@@ -423,7 +449,7 @@ impl LocalApplicationFacade {
                 relation,
                 current_content_fingerprint: current_fingerprint,
                 target_path: target_path.to_string_lossy().into_owned(),
-                target_mode: DeploymentMode::SymbolicLink,
+                target_mode: conversion_plan.mode,
                 backup_path: backup_path.to_string_lossy().into_owned(),
                 affected_paths: vec![relation_path, target_path.to_string_lossy().into_owned()],
                 rollback_available: true,
@@ -556,7 +582,14 @@ impl LocalApplicationFacade {
             return self.failed_relation_result(&journal, error);
         }
 
-        let capabilities = DeploymentFilesystem::new().available_capabilities();
+        // Re-probe at the relation volume: capability facts are only valid
+        // where the replacement entry will be created.
+        let relation_parent = Path::new(&relation.path)
+            .parent()
+            .ok_or_else(|| ownership_mismatch(&relation.path))?
+            .to_path_buf();
+        let capabilities =
+            DeploymentFilesystem::new().probe_link_capabilities(&relation_parent, &target_path);
         let mode = prepared.target_mode;
         if !mode.is_supported_by(&capabilities) {
             let code = match mode {
@@ -632,10 +665,20 @@ impl LocalApplicationFacade {
         {
             return self.failed_relation_result(&applying, error);
         }
-        if let Err(error) = remove_relation_entry(Path::new(&relation.path)) {
-            return self.failed_relation_result(&applying, error);
-        }
 
+        // Fixed conversion order (design §2.2): create the new link and
+        // verify it BEFORE the original entry is removed, so a creation or
+        // verification failure keeps the original entry in place instead of
+        // restoring a copy.  The link is therefore staged beside the original
+        // entry and moved into place after verification.
+        let relation_parent = Path::new(&relation.path)
+            .parent()
+            .ok_or_else(|| ownership_mismatch(&relation.path))?
+            .to_path_buf();
+        let staging_path = relation_parent.join(format!(
+            ".skillhub-relation-link-{}",
+            applying.prepared.operation_id
+        ));
         if let Err(error) = validate_relation_parent_and_target_snapshot(
             &applying,
             Path::new(&relation.path),
@@ -643,18 +686,29 @@ impl LocalApplicationFacade {
         ) {
             return self.failed_relation_result(&applying, error);
         }
-        let applied = DeploymentFilesystem::new()
+        match fs::symlink_metadata(&staging_path) {
+            Ok(metadata) if metadata.file_type().is_symlink() => {
+                // A leftover staging link from an interrupted attempt of this
+                // operation may be reclaimed while it still points at the
+                // prepared target.
+                if let Err(error) = remove_staged_relation_link(&staging_path, &target_path) {
+                    return self.failed_relation_result(&applying, error);
+                }
+            }
+            Ok(_) => {
+                // The staging location is ours to create, never to clobber.
+                return self.failed_relation_result(&applying, ownership_mismatch(&staging_path));
+            }
+            Err(_) => {}
+        }
+        let staged = DeploymentFilesystem::new()
             .prepare(&TargetPlan {
                 physical_target_id: relation.agent_client_id.clone(),
                 logical_target_ids: Vec::new(),
-                target_path: Path::new(&relation.path)
-                    .parent()
-                    .unwrap_or_else(|| Path::new("."))
-                    .to_string_lossy()
-                    .into_owned(),
-                destination_path: relation.path.clone(),
+                target_path: relation_parent.to_string_lossy().into_owned(),
+                destination_path: staging_path.to_string_lossy().into_owned(),
                 source_path: target_path.to_string_lossy().into_owned(),
-                runtime_name: Path::new(&relation.path)
+                runtime_name: staging_path
                     .file_name()
                     .and_then(|name| name.to_str())
                     .unwrap_or_default()
@@ -673,27 +727,59 @@ impl LocalApplicationFacade {
                 DeploymentFilesystem::new().verify(&applied)?;
                 Ok(applied)
             });
-        let applied = match applied {
+        let staged = match staged {
             Ok(applied) => applied,
             Err(error) => {
-                let error = self
-                    .library_root()
-                    .and_then(|library_root| recover_relation_entry(&applying, &library_root))
-                    .err()
-                    .unwrap_or(error);
+                // The original entry was never touched; only the staging
+                // location may need cleanup.
+                let _ = remove_staged_relation_link(&staging_path, &target_path);
                 return self.failed_relation_result(&applying, error);
             }
         };
-        if applied.ownership.mode != prepared.target_mode {
+        if staged.ownership.mode != prepared.target_mode {
             let error =
                 invalid_relation_migration("actual link representation differs from prepared mode");
-            let error = self
-                .library_root()
-                .and_then(|library_root| recover_relation_entry(&applying, &library_root))
-                .err()
-                .unwrap_or(error);
+            let _ = remove_staged_relation_link(&staging_path, &target_path);
             return self.failed_relation_result(&applying, error);
         }
+
+        // Swap: remove the original entry, then move the verified staged
+        // link into place.  From here on a failure must restore the original
+        // entry from the recovery point.
+        if let Err(error) = remove_relation_entry(Path::new(&relation.path)) {
+            let _ = remove_staged_relation_link(&staging_path, &target_path);
+            return self.failed_relation_result(&applying, error);
+        }
+        if let Err(error) = fs::rename(&staging_path, Path::new(&relation.path)) {
+            let error = io_conflict(Path::new(&relation.path), error);
+            let recovery = self
+                .library_root()
+                .and_then(|library_root| recover_relation_entry(&applying, &library_root))
+                .and_then(|_| remove_staged_relation_link(&staging_path, &target_path));
+            let error = recovery.err().unwrap_or(error);
+            return self.failed_relation_result(&applying, error);
+        }
+        let swapped = validate_relation_parent_and_target_snapshot(
+            &applying,
+            Path::new(&relation.path),
+            &target_path,
+        )
+        .and_then(|()| -> AppResult<()> {
+            let fingerprint = DeploymentFilesystem::hash_tree(Path::new(&relation.path))?;
+            if fingerprint == staged.observed_tree_hash {
+                Ok(())
+            } else {
+                Err(target_changed(Path::new(&relation.path)))
+            }
+        });
+        if let Err(error) = swapped {
+            let recovery = self
+                .library_root()
+                .and_then(|library_root| recover_relation_entry(&applying, &library_root));
+            let error = recovery.err().unwrap_or(error);
+            return self.failed_relation_result(&applying, error);
+        }
+        let applied = staged;
         let verifying = applying.clone();
         if let Err(error) = self.persist_relation_operation(
             verifying.prepared.operation_id,
@@ -1677,7 +1763,22 @@ fn validate_backup_path(
         .map_err(|_| path_boundary(&journal.backup.path))?;
     let mut policy = skillhub_core::PathPolicy::new();
     policy.register_root(root)?;
-    policy.resolve_for_create(root_id, relative)?;
+    match fs::symlink_metadata(&backup) {
+        // A materialized backup link intentionally resolves to the original
+        // entry outside the library root, so it must be validated by its own
+        // location (the parent chain inside the library) instead of through
+        // its target.  Its link target and content are checked separately by
+        // `validate_backup_entity` and the backup fingerprint.
+        Ok(metadata) if metadata.file_type().is_symlink() => {
+            let parent = backup
+                .parent()
+                .ok_or_else(|| path_boundary(&journal.backup.path))?;
+            policy.authorize_existing(parent)?;
+        }
+        _ => {
+            policy.resolve_for_create(root_id, relative)?;
+        }
+    }
     Ok(backup)
 }
 
@@ -1813,6 +1914,24 @@ fn remove_created_relation_entry(journal: &RelationMigrationJournal) -> AppResul
         Ok(_) => Err(ownership_mismatch(path)),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
         Err(error) => Err(io_conflict(path, error)),
+    }
+}
+
+/// Removes the staged conversion link created by this operation, refusing to
+/// touch anything that is not exactly a link pointing at the prepared target.
+fn remove_staged_relation_link(staging: &Path, target: &Path) -> AppResult<()> {
+    match fs::symlink_metadata(staging) {
+        Ok(metadata) if metadata.file_type().is_symlink() => {
+            let link_target =
+                fs::read_link(staging).map_err(|error| io_conflict(staging, error))?;
+            if link_target.as_path() != target {
+                return Err(ownership_mismatch(staging));
+            }
+            remove_relation_entry(staging)
+        }
+        Ok(_) => Err(ownership_mismatch(staging)),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(io_conflict(staging, error)),
     }
 }
 
@@ -2001,6 +2120,19 @@ fn task_kind_code(kind: GovernanceTaskKind) -> &'static str {
         GovernanceTaskKind::ConvertSharedReferenceToManagedLink => "shared_to_link",
         GovernanceTaskKind::UnknownDirectoryRecognition => "unknown_directory",
         GovernanceTaskKind::OperationFailureRecovery => "recovery",
+    }
+}
+
+/// Governance todo kind matching the relation family a refused conversion
+/// belongs to, so the pending item names the decision the user actually has.
+fn conversion_todo_kind(relationship: RelationshipType) -> GovernanceTaskKind {
+    if matches!(
+        relationship,
+        RelationshipType::SharedDirectoryRead | RelationshipType::SharedDirectoryReference
+    ) {
+        GovernanceTaskKind::ConvertSharedReferenceToManagedLink
+    } else {
+        GovernanceTaskKind::ConvertCopyToManagedLink
     }
 }
 

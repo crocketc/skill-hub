@@ -166,6 +166,12 @@ impl<'a> RelationshipRepository<'a> {
             if let Some(directory_id) = &relation.directory_node_id {
                 directories.insert(directory_id.clone());
             }
+            // A shared-directory reference points at a foreign directory
+            // body; its consumers and capabilities are part of the impact
+            // scope of this relation.
+            if let Some(directory_id) = &relation.link_target_directory_id {
+                directories.insert(directory_id.clone());
+            }
         }
         for relation in direct_sources {
             skills.insert(relation.skill_id.to_string());
