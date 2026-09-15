@@ -219,8 +219,18 @@ fn shared_reference_impact_includes_the_link_target_directory_scope() {
     // The agent's own directory holds the alias; the shared directory body
     // is a separate node referenced through link_target_directory_id.
     for node in [
-        ("directory-agent", "C:/Users/demo/.codex/skills", "codex.code", DirectoryRole::AgentNative),
-        ("directory-shared", "C:/Users/demo/.agents/skills", "", DirectoryRole::SharedDirectory),
+        (
+            "directory-agent",
+            "C:/Users/demo/.codex/skills",
+            "codex.code",
+            DirectoryRole::AgentNative,
+        ),
+        (
+            "directory-shared",
+            "C:/Users/demo/.agents/skills",
+            "",
+            DirectoryRole::SharedDirectory,
+        ),
     ] {
         database
             .directory_repository()

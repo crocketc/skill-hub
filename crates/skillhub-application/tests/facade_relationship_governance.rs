@@ -1152,7 +1152,10 @@ async fn managed_copy_conversion_replaces_the_copy_and_rollback_restores_the_man
     let AppCommandResult::PreparedRelationMigration(prepared) = prepared else {
         panic!("expected prepared");
     };
-    assert_eq!(prepared.relation.relationship, RelationshipType::ManagedCopy);
+    assert_eq!(
+        prepared.relation.relationship,
+        RelationshipType::ManagedCopy
+    );
 
     let committed = fixture
         .facade
@@ -1202,11 +1205,11 @@ async fn managed_copy_conversion_replaces_the_copy_and_rollback_restores_the_man
         .expect("relation record");
     assert_eq!(record.relationship, RelationshipType::ManagedLink);
     assert_eq!(record.ownership, OwnershipState::SkillhubManaged);
+    assert_eq!(record.file_representation, FileRepresentation::SymbolicLink);
     assert_eq!(
-        record.file_representation,
-        FileRepresentation::SymbolicLink
+        record.link_target_path.as_deref(),
+        Some(fixture.central.to_string_lossy().as_ref())
     );
-    assert_eq!(record.link_target_path.as_deref(), Some(fixture.central.to_string_lossy().as_ref()));
 
     // The recovery point keeps the original copy content.
     let backup = fixture
@@ -1357,9 +1360,10 @@ async fn shared_reference_conversion_repoints_one_alias_and_keeps_the_shared_bod
     let AppCommandResult::PreparedRelationMigration(unconfirmed) = unconfirmed else {
         panic!("expected prepared");
     };
-    assert!(unconfirmed.governance_tasks.iter().any(|task| {
-        task.kind == GovernanceTaskKind::ConfirmSharedDirectoryImpact
-    }));
+    assert!(unconfirmed
+        .governance_tasks
+        .iter()
+        .any(|task| { task.kind == GovernanceTaskKind::ConfirmSharedDirectoryImpact }));
     let refused = fixture
         .facade
         .execute(AppCommand::CommitRelationMigration(
@@ -1515,7 +1519,10 @@ async fn shared_reference_conversion_repoints_one_alias_and_keeps_the_shared_bod
         .into_iter()
         .find(|relation| relation.relation_id == fixture.relation_id)
         .expect("restored relation");
-    assert_eq!(restored.relationship, RelationshipType::SharedDirectoryReference);
+    assert_eq!(
+        restored.relationship,
+        RelationshipType::SharedDirectoryReference
+    );
     assert_eq!(
         restored.link_target_path.as_deref(),
         Some(shared_body.to_string_lossy().as_ref())
@@ -1635,6 +1642,53 @@ async fn prepare_rejects_directory_junction_and_records_governance_task() {
             task.subject_id == fixture.relation_id
                 && task.kind == GovernanceTaskKind::OperationFailureRecovery
         }));
+}
+
+#[tokio::test]
+async fn prepare_rejects_externally_modified_targets_before_any_conversion() {
+    // A centrally modified target must be refused before any conversion.
+    let central_fixture = fixture().await;
+    std::fs::write(
+        central_fixture.central.join("SKILL.md"),
+        "externally changed",
+    )
+    .expect("mutate central target");
+    let error = central_fixture
+        .facade
+        .execute(AppCommand::PrepareRelationMigration(
+            PrepareRelationMigration {
+                relation_id: central_fixture.relation_id,
+                target_mode: RelationMigrationTargetMode::ManagedLink,
+                backup_policy: RelationshipMigrationBackupPolicy::Required,
+                confirmation_token: Some("confirmed".into()),
+            },
+        ))
+        .await
+        .expect_err("prepare must refuse a modified central target");
+    assert_eq!(error.code, ErrorCode::TargetChanged);
+
+    // A locally edited copy entry is refused the same way, and stays intact.
+    let copy_fixture = fixture().await;
+    std::fs::write(copy_fixture.source.join("SKILL.md"), "locally edited")
+        .expect("mutate copy entry");
+    let error = copy_fixture
+        .facade
+        .execute(AppCommand::PrepareRelationMigration(
+            PrepareRelationMigration {
+                relation_id: copy_fixture.relation_id,
+                target_mode: RelationMigrationTargetMode::ManagedLink,
+                backup_policy: RelationshipMigrationBackupPolicy::Required,
+                confirmation_token: Some("confirmed".into()),
+            },
+        ))
+        .await
+        .expect_err("prepare must refuse a modified copy entry");
+    assert_eq!(error.code, ErrorCode::TargetChanged);
+    assert!(copy_fixture.source.is_dir());
+    assert_eq!(
+        std::fs::read_to_string(copy_fixture.source.join("SKILL.md")).expect("entry body"),
+        "locally edited"
+    );
 }
 
 #[tokio::test]
