@@ -50,6 +50,7 @@ impl ObservedDeployment {
             ownership: crate::relationship::OwnershipState::ObservedUnmanaged,
             link_target_path: None,
             link_target_path_key: None,
+            link_target_directory_id: None,
             content_fingerprint: self.content_fingerprint.clone(),
             origin: self.origin,
             match_state: self.match_state,

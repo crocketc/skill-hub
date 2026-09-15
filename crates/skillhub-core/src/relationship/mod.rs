@@ -77,11 +77,12 @@ pub enum IdentityDirection {
 )]
 #[serde(rename_all = "snake_case")]
 pub enum ConflictKind {
+    #[default]
+    Unknown,
     DuplicateSameContent,
     SameNameDifferentContent,
     SameSourceFork,
     SharedDirectoryDuplicate,
-    #[default]
     UnknownDirectoryRecognition,
 }
 
@@ -170,6 +171,7 @@ pub struct DeploymentRelationFact {
     pub ownership: OwnershipState,
     pub link_target_path: Option<String>,
     pub link_target_path_key: Option<String>,
+    pub link_target_directory_id: Option<String>,
     pub content_fingerprint: String,
     pub origin: ObservedOrigin,
     pub match_state: ObservedMatchState,
@@ -231,20 +233,21 @@ pub struct GovernanceTaskFact {
 pub fn classify_conflict_evidence(evidence: &ConflictEvidence) -> ConflictClassification {
     if evidence.fingerprints_match == Some(true) {
         ConflictClassification::SameSkillVersion
-    } else {
-        match (
+    } else if matches!(
+        (
             evidence.fingerprints_match,
             evidence.names_match,
             evidence.identity_direction,
-        ) {
-            (Some(false), Some(true), Some(IdentityDirection::DifferentSkill)) => {
-                ConflictClassification::DistinctSkill
-            }
-            (Some(false), Some(true), Some(IdentityDirection::SameSkill)) => {
-                ConflictClassification::SameSkillVersion
-            }
-            _ => ConflictClassification::Uncertain,
-        }
+        ),
+        (
+            Some(false),
+            Some(true),
+            Some(IdentityDirection::DifferentSkill)
+        )
+    ) {
+        ConflictClassification::DistinctSkill
+    } else {
+        ConflictClassification::Uncertain
     }
 }
 
@@ -409,6 +412,7 @@ mod tests {
         }
 
         let kind_values = [
+            (ConflictKind::Unknown, "unknown"),
             (ConflictKind::DuplicateSameContent, "duplicate_same_content"),
             (
                 ConflictKind::SameNameDifferentContent,
@@ -472,6 +476,21 @@ mod tests {
     }
 
     #[test]
+    fn identical_fingerprints_win_over_conflicting_identity_evidence() {
+        let evidence = ConflictEvidence {
+            fingerprints_match: Some(true),
+            names_match: Some(true),
+            identity_direction: Some(IdentityDirection::DifferentSkill),
+            sufficient_identity_evidence: false,
+        };
+
+        assert_eq!(
+            classify_conflict_evidence(&evidence),
+            ConflictClassification::SameSkillVersion
+        );
+    }
+
+    #[test]
     fn classifies_same_name_with_different_content_only_with_explicit_different_skill_evidence() {
         let evidence = ConflictEvidence {
             fingerprints_match: Some(false),
@@ -502,7 +521,7 @@ mod tests {
     }
 
     #[test]
-    fn explicit_same_skill_evidence_classifies_different_version() {
+    fn different_fingerprints_with_same_skill_evidence_are_uncertain() {
         let evidence = ConflictEvidence {
             fingerprints_match: Some(false),
             names_match: Some(true),
@@ -512,7 +531,22 @@ mod tests {
 
         assert_eq!(
             classify_conflict_evidence(&evidence),
-            ConflictClassification::SameSkillVersion
+            ConflictClassification::Uncertain
+        );
+    }
+
+    #[test]
+    fn different_fingerprints_with_unknown_identity_evidence_are_uncertain() {
+        let evidence = ConflictEvidence {
+            fingerprints_match: Some(false),
+            names_match: Some(true),
+            identity_direction: Some(IdentityDirection::Unknown),
+            sufficient_identity_evidence: true,
+        };
+
+        assert_eq!(
+            classify_conflict_evidence(&evidence),
+            ConflictClassification::Uncertain
         );
     }
 
@@ -579,6 +613,7 @@ mod tests {
         assert_eq!(fact.origin, ObservedOrigin::Scan);
         assert_eq!(fact.match_state, ObservedMatchState::ContentVerified);
         assert_eq!(fact.skill_id, Some(observed.skill_id));
+        assert_eq!(fact.link_target_directory_id, None);
     }
 
     #[test]
@@ -636,5 +671,24 @@ mod tests {
         assert_eq!(conflict_json["classification"], "uncertain");
         assert_eq!(task_json["kind"], "operation_failure_recovery");
         assert_eq!(task_json["created_at"], "1700000000");
+    }
+
+    #[test]
+    fn missing_conflict_kind_defaults_to_generic_unknown() {
+        let value = serde_json::json!({
+            "conflict_id": "conflict-legacy",
+            "classification": "uncertain",
+            "member_skill_ids": [],
+            "evidence": {
+                "fingerprints_match": null,
+                "names_match": null,
+                "identity_direction": "unknown",
+                "sufficient_identity_evidence": false
+            }
+        });
+
+        let conflict: ConflictCaseFact = serde_json::from_value(value).unwrap();
+
+        assert_eq!(conflict.kind, ConflictKind::Unknown);
     }
 }
