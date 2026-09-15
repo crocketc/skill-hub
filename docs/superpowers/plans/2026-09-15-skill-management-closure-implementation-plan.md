@@ -62,7 +62,7 @@ observed_link
 unknown
 ```
 
-文件系统表示另存为：`directory`、`symbolic_link`、`directory_junction`、`unknown`。`managed_link` 的用户标签为“链接部署”，`managed_copy` 的用户标签为“复制部署”。
+文件系统表示另存为：`directory`、`symbolic_link`、`directory_junction`、`copy`、`unknown`。`managed_link` 的用户标签为“链接部署”，`managed_copy` 的用户标签为“复制部署”。
 
 ### 2.2 安全转换顺序
 
@@ -165,6 +165,7 @@ unknown
 - [ ] 写失败测试：覆盖七种关系类型序列化、通用目录识别状态、符号链接/目录联结用户标签、指纹一致/名称不同内容/证据不足三类冲突证据。
 - [ ] 运行 `cargo test -p skillhub-core relationship observed`，确认新类型尚未实现导致失败。
 - [ ] 实现最小领域类型，并让旧 `ImportProvenance`、`ObservedDeployment` 能通过兼容转换生成事实关系。
+- [ ] 兼容转换不得把 `NameOnly`/`Diverged` 观察误标为已确认 Skill；来源事实保留独立 provenance ID、链接目标目录 ID，冲突组保留成员、冲突类型和用户裁决字段。
 - [ ] 运行定向测试和 `cargo fmt --all -- --check`。
 - [ ] 提交 `feat: add normalized skill relationship domain`。
 
