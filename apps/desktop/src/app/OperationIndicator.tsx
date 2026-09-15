@@ -95,6 +95,7 @@ function IndicatorRow({
           succeeded: summary.succeeded,
           failed: summary.failed,
           skipped: summary.skipped,
+          todo: summary.todo ?? 0,
         })
       : t("operations.tracker.completedPlain", { label: operation.label });
   }

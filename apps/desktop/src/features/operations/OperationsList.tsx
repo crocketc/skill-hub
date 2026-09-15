@@ -147,7 +147,7 @@ function SessionTimelineEntry({ locale, operation }: { locale: SupportedLocale; 
         ) : null}
         {operation.status === "completed" && operation.resultSummary ? (
           <p>
-            {t("operations.list.sessionCompleted", { ...operation.resultSummary })}
+            {t("operations.list.sessionCompleted", { ...operation.resultSummary, todo: operation.resultSummary.todo ?? 0 })}
           </p>
         ) : null}
         {operation.status === "failed" ? (

@@ -377,7 +377,8 @@
     },
     "notifications": {
       "succeededTitle": "Import completed",
-      "succeededDetail": "Succeeded {{succeeded}} · Failed {{failed}} · Skipped {{skipped}}",
+      "succeededDetail": "Succeeded {{succeeded}} · Failed {{failed}} · Skipped {{skipped}} · Needs attention {{todo}}",
+      "attentionTitle": "Import needs attention",
       "failedTitle": "Import submission failed",
       "cancelledTitle": "Import flow cancelled",
       "openLibrary": "View library skills"
@@ -393,6 +394,14 @@
     "onboardingImportGuideMultiple": "The initialization scan found {{count}} source directories. All are selected by default and will be imported in one flow.",
     "importUnavailable": "Import capability is not connected to the native service yet. No files or commands were changed.",
     "importRunning": "A batch import is already running; a new import can start only after it finishes. Check progress in the global indicator.",
+    "governanceTasks": {
+      "eyebrow": "Relationship governance",
+      "title": "Governance tasks",
+      "loading": "Loading relationship governance tasks…",
+      "empty": "That governance task was not found; it may already be resolved.",
+      "unresolved": "Needs attention",
+      "resolved": "Resolved"
+    },
     "home": {
       "enter": "Open",
       "enterAria": "Open {{module}}",
@@ -1940,7 +1949,7 @@
     "tracker": {
       "ariaLabel": "Background operations",
       "running": "{{label}}: running ({{completed}}/{{total}})",
-      "completed": "{{label}} completed: {{succeeded}} succeeded, {{failed}} failed, {{skipped}} skipped",
+      "completed": "{{label}} completed: {{succeeded}} succeeded, {{failed}} failed, {{skipped}} skipped, {{todo}} need attention",
       "completedPlain": "{{label}} completed",
       "failed": "{{label}} failed: {{error}}",
       "cancelled": "{{label}} cancelled",
@@ -1971,7 +1980,7 @@
       "state": "State: {{state}}",
       "errorCode": "Error code: {{code}}",
       "sessionRunning": "running ({{completed}}/{{total}})",
-      "sessionCompleted": "{{succeeded}} succeeded, {{failed}} failed, {{skipped}} skipped",
+      "sessionCompleted": "{{succeeded}} succeeded, {{failed}} failed, {{skipped}} skipped, {{todo}} need attention",
       "sessionFailed": "failed"
     }
   },

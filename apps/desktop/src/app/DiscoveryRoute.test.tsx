@@ -209,5 +209,11 @@ it("opens governance work from the production discovery route through the relati
     type: "get_relationship_overview",
     payload: { scope: { type: "all" } },
   }));
+  expect(await screen.findByRole("heading", { name: "关系治理待办" })).toBeVisible();
+  expect(screen.getByTestId("governance-task-governance-task-1")).toHaveAttribute(
+    "aria-current",
+    "true",
+  );
+  expect(screen.getByText(task.detail)).toBeVisible();
   query.mockRestore();
 });

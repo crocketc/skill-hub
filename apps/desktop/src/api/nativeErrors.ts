@@ -92,6 +92,7 @@ export function keyedMessage(
   if (code === "import.takeover_verification_mismatch") return "importWorkflow.errors.takeoverVerificationMismatch";
   if (code === "import.unknown_failure") return "importWorkflow.errors.unknown";
   if (code === "operation.conflict") {
+    if (reason === "takeover_verification_mismatch") return "importWorkflow.errors.takeoverVerificationMismatch";
     if (reason === "no_upstream_source") return "errors.sourceUpdate.noUpstreamConflict";
     if (reason === "source_unavailable") return "errors.sourceUpdate.sourceUnavailable";
     if (reason === "library_not_ready") return "errors.onboarding.libraryNotReady";

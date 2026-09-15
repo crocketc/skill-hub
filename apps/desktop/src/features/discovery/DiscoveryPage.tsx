@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
+import type { GovernanceTaskFact } from "../../api/bindings";
 import { ImportWizard } from "../import/ImportWizard";
 import { type ImportFacade, type ImportResult } from "../import/api";
 import { nativeImportFacade } from "../import/nativeApi";
@@ -36,6 +37,10 @@ export interface DiscoveryPageProps {
   /** 全局操作跟踪；测试可注入独立实例，默认模块级单例（跨路由存续）。 */
   tracker?: OperationTracker;
   onImportComplete?: (results: ImportResult[]) => void;
+  /** 从生产路由带入的稳定治理待办 ID；目标页必须选中并展开该事实。 */
+  governanceTaskId?: string;
+  governanceTasks?: GovernanceTaskFact[];
+  governanceTasksLoading?: boolean;
   onOpenLibrary?: () => void;
   /** 生产路由提供：打开治理待办时刷新真实关系概览并回到本地发现入口。 */
   onOpenGovernanceTask?: (task: NonNullable<ImportResult["governanceTasks"]>[number]) => void;
@@ -123,6 +128,9 @@ export function DiscoveryPage({
   onboardingImport = false,
   tracker = operationTracker,
   onImportComplete,
+  governanceTaskId,
+  governanceTasks = [],
+  governanceTasksLoading = false,
   onOpenLibrary,
   onOpenGovernanceTask,
   onOpenSettings,
@@ -230,6 +238,9 @@ export function DiscoveryPage({
       importedNames={importedNames}
       initialSourceText={initialSourceText}
       onImportComplete={onImportComplete}
+      governanceTaskId={governanceTaskId}
+      governanceTasks={governanceTasks}
+      governanceTasksLoading={governanceTasksLoading}
       onOpenLibrary={onOpenLibrary}
       onOpenGovernanceTask={onOpenGovernanceTask}
       onOpenSettings={onOpenSettings}
@@ -295,6 +306,9 @@ interface DiscoveryModulePageProps {
   initialSourceText?: string;
   tracker: OperationTracker;
   onImportComplete?: (results: ImportResult[]) => void;
+  governanceTaskId?: string;
+  governanceTasks: GovernanceTaskFact[];
+  governanceTasksLoading: boolean;
   onOpenLibrary?: () => void;
   onOpenGovernanceTask?: (task: NonNullable<ImportResult["governanceTasks"]>[number]) => void;
   /** AI 就绪提示的"前往设置"动作；路由层注入应用内导航，缺省整页跳转兜底。 */
@@ -315,6 +329,9 @@ function DiscoveryModulePage({
   initialSourceText,
   tracker,
   onImportComplete,
+  governanceTaskId,
+  governanceTasks,
+  governanceTasksLoading,
   onOpenLibrary,
   onOpenGovernanceTask,
   onOpenSettings,
@@ -347,6 +364,13 @@ function DiscoveryModulePage({
 
   return (
       <div className="sh-discovery-page">
+        {view === "local" && governanceTaskId ? (
+          <GovernanceTaskList
+            loading={governanceTasksLoading}
+            selectedTaskId={governanceTaskId}
+            tasks={governanceTasks}
+          />
+        ) : null}
         {view === "lock" ? (
         <p className="sh-discovery-subpage__note">{t("discovery.lockNote")}</p>
       ) : null}
@@ -387,5 +411,45 @@ function DiscoveryModulePage({
         <AgentsLockDiscovery facade={facade} onImportDirectory={wizard.openWizardWithDirectory} />
       ) : null}
     </div>
+  );
+}
+
+function GovernanceTaskList({
+  loading,
+  selectedTaskId,
+  tasks,
+}: {
+  loading: boolean;
+  selectedTaskId: string;
+  tasks: GovernanceTaskFact[];
+}) {
+  const { t } = useTranslation();
+  return (
+    <section aria-labelledby="governance-task-list-title" className="sh-discovery-governance-tasks">
+      <p className="sh-discovery-subpage__eyebrow">{t("discovery.governanceTasks.eyebrow")}</p>
+      <h2 id="governance-task-list-title">{t("discovery.governanceTasks.title")}</h2>
+      {loading ? <p role="status">{t("discovery.governanceTasks.loading")}</p> : null}
+      {!loading && tasks.length === 0 ? <p>{t("discovery.governanceTasks.empty")}</p> : null}
+      {!loading ? (
+        <ul aria-label={t("discovery.governanceTasks.title")}>
+          {tasks.map((task) => {
+            const selected = task.task_id === selectedTaskId;
+            return (
+              <li
+                aria-current={selected ? "true" : undefined}
+                data-testid={`governance-task-${task.task_id}`}
+                key={task.task_id}
+              >
+                <details open={selected}>
+                  <summary>{task.task_id}</summary>
+                  <p>{task.detail}</p>
+                  <span>{task.resolved ? t("discovery.governanceTasks.resolved") : t("discovery.governanceTasks.unresolved")}</span>
+                </details>
+              </li>
+            );
+          })}
+        </ul>
+      ) : null}
+    </section>
   );
 }

@@ -377,7 +377,8 @@
     },
     "notifications": {
       "succeededTitle": "导入已完成",
-      "succeededDetail": "成功 {{succeeded}} · 失败 {{failed}} · 跳过 {{skipped}}",
+      "succeededDetail": "成功 {{succeeded}} · 失败 {{failed}} · 跳过 {{skipped}} · 待处理 {{todo}}",
+      "attentionTitle": "导入需要处理",
       "failedTitle": "导入提交失败",
       "cancelledTitle": "导入流程已取消",
       "openLibrary": "查看库中 Skill"
@@ -393,6 +394,14 @@
     "onboardingImportGuideMultiple": "初始化扫描发现 {{count}} 个来源目录，已默认全部选中，将在同一流程中批量导入。",
     "importUnavailable": "导入能力尚未连接到本机服务，未修改任何文件，也未执行命令。",
     "importRunning": "有一个批量导入正在进行，完成后才能开始新的导入。可在全局指示器查看进度。",
+    "governanceTasks": {
+      "eyebrow": "关系治理",
+      "title": "关系治理待办",
+      "loading": "正在加载关系治理待办…",
+      "empty": "未找到该治理待办，可能已被处理。",
+      "unresolved": "待处理",
+      "resolved": "已处理"
+    },
     "home": {
       "enter": "进入",
       "enterAria": "进入{{module}}",
@@ -1940,7 +1949,7 @@
     "tracker": {
       "ariaLabel": "后台操作",
       "running": "{{label}}：进行中（{{completed}}/{{total}}）",
-      "completed": "{{label}} 已完成：成功 {{succeeded}}、失败 {{failed}}、跳过 {{skipped}}",
+      "completed": "{{label}} 已完成：成功 {{succeeded}}、失败 {{failed}}、跳过 {{skipped}}、待处理 {{todo}}",
       "completedPlain": "{{label}} 已完成",
       "failed": "{{label}} 失败：{{error}}",
       "cancelled": "{{label}} 已取消",
@@ -1971,7 +1980,7 @@
       "state": "状态：{{state}}",
       "errorCode": "错误码：{{code}}",
       "sessionRunning": "进行中（{{completed}}/{{total}}）",
-      "sessionCompleted": "成功 {{succeeded}}、失败 {{failed}}、跳过 {{skipped}}",
+      "sessionCompleted": "成功 {{succeeded}}、失败 {{failed}}、跳过 {{skipped}}、待处理 {{todo}}",
       "sessionFailed": "失败"
     }
   },

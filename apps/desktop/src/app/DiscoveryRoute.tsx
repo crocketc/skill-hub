@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { useLocation, useNavigate, useOutletContext } from "react-router-dom";
 import { queryApplication, type GovernanceTaskFact } from "../api/bindings";
 import { DiscoveryPage, type DiscoveryModuleView } from "../features/discovery/DiscoveryPage";
@@ -24,20 +25,20 @@ export function DiscoveryRoute({
   const location = useLocation();
   const { refreshSnapshot } = useOutletContext<BootstrapOutletContext>();
   const state = location.state as
-    | { initialSources?: string[]; initialSourceText?: string; onboardingImport?: boolean }
+    | { initialSources?: string[]; initialSourceText?: string; onboardingImport?: boolean; governanceTaskId?: string }
     | null;
+  const governanceTaskId = state?.governanceTaskId;
+  const [governanceTasks, setGovernanceTasks] = useState<GovernanceTaskFact[]>([]);
+  const [governanceTasksLoading, setGovernanceTasksLoading] = useState(false);
 
-  const handleImportComplete = (results: ImportResult[]) => {
-    if (results.some((result) => result.status === "succeeded")) {
-      void queryClient.invalidateQueries({ queryKey: skillLibraryKeys.root });
-      void refreshSnapshot();
+  useEffect(() => {
+    if (!governanceTaskId) {
+      setGovernanceTasks([]);
+      setGovernanceTasksLoading(false);
+      return;
     }
-  };
-
-  const handleOpenGovernanceTask = (task: GovernanceTaskFact) => {
-    // ImportSummary is reached from the production route with a real handler:
-    // refresh the existing relationship overview query before navigating back
-    // to the local discovery entry, where governance work is surfaced.
+    let active = true;
+    setGovernanceTasksLoading(true);
     void queryClient.fetchQuery({
       queryKey: ["relationship-overview", "all"],
       queryFn: async () => {
@@ -50,7 +51,27 @@ export function DiscoveryRoute({
         }
         return result.payload;
       },
+    }).then((overview) => {
+      if (active) setGovernanceTasks(overview.pending_governance_tasks);
+    }).catch(() => {
+      if (active) setGovernanceTasks([]);
+    }).finally(() => {
+      if (active) setGovernanceTasksLoading(false);
     });
+    return () => {
+      active = false;
+    };
+  }, [governanceTaskId]);
+
+  const handleImportComplete = (results: ImportResult[]) => {
+    if (results.some((result) => result.status === "succeeded")) {
+      void queryClient.invalidateQueries({ queryKey: skillLibraryKeys.root });
+      void refreshSnapshot();
+    }
+  };
+
+  const handleOpenGovernanceTask = (task: GovernanceTaskFact) => {
+    // 目标页会消费该稳定 task_id，查询真实关系概览并展开对应待办。
     navigate("/discovery/local", { state: { governanceTaskId: task.task_id } });
   };
 
@@ -66,6 +87,7 @@ export function DiscoveryRoute({
 
   return (
     <DiscoveryPage
+      key={governanceTaskId ?? "discovery"}
       view={view}
       discoveryFacade={discoveryFacade}
       importFacade={importFacade}
@@ -74,6 +96,9 @@ export function DiscoveryRoute({
       initialSourceText={state?.initialSourceText}
       onboardingImport={state?.onboardingImport}
       onImportComplete={handleImportComplete}
+      governanceTaskId={governanceTaskId}
+      governanceTasks={governanceTasks}
+      governanceTasksLoading={governanceTasksLoading}
       onOpenLibrary={() => navigate("/library")}
       onOpenGovernanceTask={handleOpenGovernanceTask}
       onNavigate={(module) => navigate(`/discovery/${module}`)}

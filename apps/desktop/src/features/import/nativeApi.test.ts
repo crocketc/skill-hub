@@ -339,6 +339,41 @@ describe("native import facade", () => {
     }));
   });
 
+  it("maps takeover verification conflicts by their structured reason", async () => {
+    vi.mocked(executeCommand)
+      .mockResolvedValueOnce({
+        type: "prepared_import",
+        payload: {
+          id: "operation-takeover-mismatch",
+          candidate: {} as never,
+          analysis: { actions: ["take_over_after_verify", "skip"] } as never,
+        },
+      })
+      .mockRejectedValueOnce({
+        code: "operation.conflict",
+        params: { reason: "takeover_verification_mismatch" },
+      });
+
+    const candidate = {
+      basicCheck: "passed" as const,
+      id: "C:/incoming/notes#notes",
+      name: "notes",
+      ownership: "agent_builtin" as const,
+      path: "C:/incoming/notes",
+      source: await nativeImportFacade.parseSource("C:/incoming"),
+    };
+    const [result] = await nativeImportFacade.commitImport(
+      { candidates: [candidate], conflicts: [] },
+      { [candidate.id]: "takeover" },
+    );
+
+    expect(result).toEqual(expect.objectContaining({
+      message: "importWorkflow.errors.takeoverVerificationMismatch",
+      reasonCode: "operation.conflict",
+      status: "failed",
+    }));
+  });
+
   it("normalizes Windows extended prefixes for display and native requests", async () => {
     const extendedRoot = "\\\\?\\C:\\Users\\demo\\.agents\\skills";
     vi.mocked(queryApplication).mockResolvedValue({

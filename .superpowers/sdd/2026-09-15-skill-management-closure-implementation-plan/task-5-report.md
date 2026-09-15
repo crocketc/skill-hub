@@ -78,3 +78,27 @@
 
 - 本轮未进行真实 Windows/macOS 桌面人工验收；生产路由查询以 mock IPC（进程间通信）验证，真实服务端返回异常仍需在桌面验收中确认其错误呈现。
 - 原件删除/迁移仍是独立高风险流程，本轮仅确认接管不会越界删除；未扩大到 Task 6 及后续任务。
+
+## 第二轮复审收尾修复（2026-09-15）
+
+### 修复内容
+
+- 生产 DiscoveryRoute（发现路由）现在把 `governanceTaskId` 带入目标页；目标页查询真实 `pending_governance_tasks`，渲染可见治理任务列表，并按该 ID 设置选中、展开和详情展示。新增生产路由回归测试证明 ID 被实际消费，不再只是触发查询后丢弃。
+- `operation.conflict` 携带 `reason=takeover_verification_mismatch` 时，nativeApi（原生接口）通过现有 `keyedMessage`（键化消息）映射到 `importWorkflow.errors.takeoverVerificationMismatch`；新增 nativeApi 回归测试，保留原有核验保护。
+- ImportWizard（导入向导）的 `todo` 结果现在计入全局操作摘要、状态徽标、通知语气/标题/详情和完成统计；仅待办结果不会再显示为成功。
+- 重新分析、返回候选、来源新增/变更/移除、来源重扫和分析取消等路径都会清空 `governanceDecision`（治理决策），同一 group ID 也必须重新显式确认。新增回归测试覆盖返回候选并重新分析场景。
+
+### 本轮 TDD 与验证
+
+- 先加入 4 项复审回归测试，首轮前端红测恰为 4 项失败；实现最小修复后转绿。
+- `pnpm --dir apps/desktop exec vitest run src/app/DiscoveryRoute.test.tsx src/features/import/nativeApi.test.ts src/features/import/ImportWizard.test.tsx`：3 个测试文件、75/75 通过。
+- `pnpm --dir apps/desktop test -- --run`：147 个测试文件、1483/1483 通过。
+- `pnpm --dir apps/desktop typecheck`、`pnpm --dir apps/desktop lint`、`pnpm --dir apps/desktop build`：通过。
+- `cargo test -p skillhub-application --test facade_relationship_governance`：33/33 通过；`cargo test -p skillhub-core --test import_conflicts`：4/4 通过。
+- `SKILLHUB_WRITE_BINDINGS=1 cargo test -p skillhub-desktop generate_bindings`：通过，生成后 `bindings.ts` 无漂移；本轮未变更 Rust/TypeScript 契约。
+- `cargo fmt --all -- --check`、`cargo clippy --workspace --all-targets --all-features -- -D warnings`、`git diff --check`：通过。
+
+### 剩余真实风险
+
+- 本轮仍未进行真实 Windows/macOS 桌面人工验收；生产路由和 nativeApi（原生接口）异常路径由 mock IPC（进程间通信）测试覆盖，真实桌面服务返回异常仍需人工验收确认。
+- 原件删除/迁移仍是独立高风险流程，本轮未扩大其范围。
