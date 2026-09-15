@@ -11,7 +11,6 @@ vi.mock("../../api/bindings", () => ({
   executeCommand: vi.fn(),
   queryApplication: vi.fn(),
 }));
-
 const query = vi.mocked(queryApplication);
 const command = vi.mocked(executeCommand);
 
@@ -319,4 +318,68 @@ it("reruns agent discovery through the native command", async () => {
 it("surfaces rescan failures instead of pretending the scan ran", async () => {
   command.mockRejectedValue(new Error("scan failed"));
   await expect(nativeAgentFacade.rescan()).rejects.toThrow("scan failed");
+});
+
+it("loads the relationship overview scoped to the agent client", async () => {
+  const overview = {
+    scope: { type: "agent", value: { agent_client_id: "codex-cli" } },
+    directory_nodes: [],
+    agent_directory_capabilities: [],
+    source_relations: [],
+    deployment_relations: [],
+    conflict_cases: [],
+    pending_governance_tasks: [],
+    agent_execution_confirmed: false,
+  };
+  query.mockResolvedValue({ type: "relationship_overview", payload: overview });
+
+  await expect(nativeAgentFacade.getRelationshipOverview("codex-cli")).resolves.toBe(overview);
+  expect(query).toHaveBeenCalledWith({
+    type: "get_relationship_overview",
+    payload: { scope: { type: "agent", value: { agent_client_id: "codex-cli" } } },
+  });
+});
+
+it("surfaces relationship overview failures instead of showing an empty matrix", async () => {
+  query.mockRejectedValue(new Error("relationship_overview failed"));
+
+  await expect(nativeAgentFacade.getRelationshipOverview("codex-cli")).rejects.toThrow(
+    "relationship_overview failed",
+  );
+});
+
+it("rejects unexpected results from the relationship overview query", async () => {
+  query.mockResolvedValue({ type: "discovery_snapshot", payload: emptySnapshot });
+
+  await expect(nativeAgentFacade.getRelationshipOverview("codex-cli")).rejects.toThrow(
+    "get_relationship_overview returned an unexpected native result.",
+  );
+});
+
+it("loads the governed removal impact for one relation", async () => {
+  const impact = {
+    relation_id: "rel-1",
+    relation: null,
+    ownership: "skillhub_managed",
+    current_agent_reads_shared_directory: false,
+    other_consumers: [],
+    other_skill_paths: [],
+    minimal_action: "create_governance_task",
+    backup: { required: false, rollback_available: false, backup_location: null, detail: "" },
+    governance_tasks: [],
+    permission_limited: false,
+  } as never;
+  query.mockResolvedValue({ type: "relationship_removal_impact", payload: impact });
+
+  await expect(nativeAgentFacade.getRelationshipRemovalImpact("rel-1")).resolves.toBe(impact);
+  expect(query).toHaveBeenCalledWith({
+    type: "get_relationship_removal_impact",
+    payload: { relation_id: "rel-1" },
+  });
+});
+
+it("surfaces removal impact failures instead of pretending the impact is empty", async () => {
+  query.mockRejectedValue(new Error("impact failed"));
+
+  await expect(nativeAgentFacade.getRelationshipRemovalImpact("rel-1")).rejects.toThrow("impact failed");
 });

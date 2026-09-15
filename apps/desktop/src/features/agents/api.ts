@@ -1,3 +1,7 @@
+import type { RelationshipOverview, RemovalImpactFact } from "../api/bindings";
+
+export type { RelationshipOverview, RemovalImpactFact };
+
 export interface AgentRelation {
   logicalLabel: string;
   logicalTargetId: string;
@@ -38,6 +42,10 @@ export interface AgentFacade {
   createCustomAgent(values: CustomAgentFormValues): Promise<void>;
   updateCustomAgent(id: string, values: CustomAgentFormValues): Promise<void>;
   removeCustomAgent(id: string): Promise<void>;
+  /** Task 7：目录矩阵的确定性事实来源（typed facade，只读查询）。 */
+  getRelationshipOverview(agentClientId: string): Promise<RelationshipOverview>;
+  /** Task 7：按关系读取移除影响（读取既有 RemovalImpact 契约）。 */
+  getRelationshipRemovalImpact(relationId: string): Promise<RemovalImpactFact>;
 }
 
 function unavailable(operation: string): Promise<never> {
@@ -51,6 +59,8 @@ export const unavailableAgentFacade: AgentFacade = {
   createCustomAgent: () => unavailable("create_custom_agent"),
   updateCustomAgent: () => unavailable("update_custom_agent"),
   removeCustomAgent: () => unavailable("remove_custom_agent"),
+  getRelationshipOverview: () => unavailable("get_relationship_overview"),
+  getRelationshipRemovalImpact: () => unavailable("get_relationship_removal_impact"),
 };
 
 export function sharedTargetFixture(): AgentView {

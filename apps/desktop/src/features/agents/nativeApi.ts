@@ -160,6 +160,23 @@ export const nativeAgentFacade: AgentFacade = {
     if (!agent) throw new Error(`Agent ${id} was not found.`);
     return agent;
   },
+  async getRelationshipOverview(agentClientId) {
+    // Task 7：目录矩阵只消费统一关系 DTO；识别能力缺失时由事实本身诚实降级。
+    const result = await queryApplication({
+      type: "get_relationship_overview",
+      payload: { scope: { type: "agent", value: { agent_client_id: agentClientId } } },
+    });
+    if (result.type !== "relationship_overview") throw unexpectedResult("get_relationship_overview");
+    return result.payload;
+  },
+  async getRelationshipRemovalImpact(relationId) {
+    const result = await queryApplication({
+      type: "get_relationship_removal_impact",
+      payload: { relation_id: relationId },
+    });
+    if (result.type !== "relationship_removal_impact") throw unexpectedResult("get_relationship_removal_impact");
+    return result.payload;
+  },
   async rescan() {
     const result = await executeCommand({ type: "discover_agent_targets", payload: null });
     if (result.type !== "discovery_snapshot") throw unexpectedResult("discover_agent_targets");
