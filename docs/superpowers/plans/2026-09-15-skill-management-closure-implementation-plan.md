@@ -20,6 +20,8 @@
 - AI 只提供短的决策建议、关键证据和不确定点，不自动合并、删除、替换或选择权威版本。
 - 未知关系、共享影响、权限失败和未决冲突必须进入待处理事项，不能静默跳过或报告为成功。
 - 保持现有原文件保护、确定性检查优先、网络默认关闭、生成绑定只能由生成器更新和跨平台路径策略。
+- 每个实现 Task 必须在开始前读取本 Task 列出的 Skill；没有对应 Skill 的纯后端任务使用仓库既有模式，不引入额外框架。
+- 每个行为 Task 必须先把对应用户故事验收标准转成失败测试；前端 Task 必须同时遵守对应交互章节，不得只完成 IPC 而省略用户确认、影响说明、回退和待办入口。
 
 ---
 
@@ -85,9 +87,65 @@ unknown
 
 用户决定“不同 Skill”时建立不同集中库身份；决定“同一 Skill 不同版本”时进入同一 Skill 版本历史。AI 分析只改变建议记录，不直接改变用户决定。
 
-## 3. 实施任务
+## 3. 需求追溯与任务技能约束
+
+当前计划的 Task 不是脱离产品文档的技术任务，而是以下追溯链的一部分：
+
+| Task | 用户故事 | 需求章节 | 交互章节 | 设计/架构章节 | 执行 Skill |
+|---|---|---|---|---|---|
+| 1 | US-063、US-068 | 5.22、5.23、5.33、5.36 | 8.2、10.4、14 | 关系闭环设计 2～3、架构 6.5 | `tdd` |
+| 2 | US-016、US-017、US-063、US-068 | 5.9、5.22、5.33 | 7.5～7.8、15.3 | 关系闭环设计 3.1～3.4 | `tdd` |
+| 3 | US-012、US-018、US-033、US-034、US-063、US-067 | 5.6、5.15、5.23、5.36 | 7.2、10.2～10.4、14 | 关系闭环设计 2.3、4.4 | `tdd` |
+| 4 | US-016、US-017、US-034、US-066～068 | 5.9、5.22、5.33、5.35～5.36 | 7.5～7.8、10.4、15.3 | 关系闭环设计 3.4、4.4、6 | `tdd` |
+| 5 | US-016、US-017、US-018、US-064、US-065、US-068 | 5.9、5.15、5.33 | 7.5～7.8、14 | 关系闭环设计 4.1～4.2、5 | `frontend-design` + `vercel-react-best-practices` + `tdd` |
+| 6 | US-031～034、US-066～067 | 5.22、5.23、5.36 | 10.1～10.5、15.3 | 关系闭环设计 2.3、4.3～4.4、6 | `tdd` |
+| 7 | US-025、US-033、US-034、US-063、US-066～068 | 5.23、5.33、5.35～5.36 | 8.2、10.2～10.5、14 | 关系闭环设计 5、架构 6.5、9.2 | `frontend-design` + `vercel-react-best-practices` + `tdd` |
+| 8 | US-018、US-065、US-068 | 5.15、5.33 | 7.7、13.3、14 | 关系闭环设计 3.4、6 | `tdd` |
+| 9 | 全部 US-063～068 及既有导入/部署故事 | 5.9、5.15、5.22、5.23、5.33、5.36 | 7.5～7.8、8.2、10、14、15 | 关系闭环设计 7 | `tdd` + `superpowers:subagent-driven-development` |
+
+执行规则：
+
+- Task 1～4 的 Rust 测试必须覆盖对应用户故事的事实和状态，不允许只测结构体能序列化。
+- Task 5、7 的 UI 设计先由 `frontend-design` 产出组件层级、信息优先级、确认/回退/待办状态，再由 React 实现；不使用 `finesse-ui` 重做整套视觉风格。
+- 前端实现使用 `vercel-react-best-practices` 检查查询并发、状态更新、列表 key、懒加载和渲染边界；它不能替代产品交互验收。
+- Task 8 的 AI 结果必须先通过确定性冲突分组测试，再测试可选 AI；AI 测试不能替代冲突分类测试。
+- 任一任务遇到失败或既有回归时，暂停该任务并使用 `systematic-debugging`，先定位原因再修改，不把修复混入无关重构。
+
+### 3.1 执行切片
+
+上面的 9 个 Task 是审查边界；实际执行不能一次性把一个 Task 做完。每个切片都先写失败测试、实现最小行为、运行定向检查并单独提交：
+
+| 切片 | 交付物 | 先行失败测试 | 必用 Skill |
+|---|---|---|---|
+| 1A | 关系枚举、目录角色、识别状态和兼容序列化 | `relationship` 领域单测 | `tdd` |
+| 1B | 冲突分类、来源关系和治理待办事实类型 | `import_conflicts` 与关系单测 | `tdd` |
+| 2A | 0014 schema、版本注册和旧库升级 | `migrations.rs` | `tdd` |
+| 2B | 目录、关系、冲突、待办仓储读写 | storage repository tests | `tdd` |
+| 3A | Agent 目录 capability 解析和 `.agents/skills` 角色判断 | profile/discovery tests | `tdd` |
+| 3B | 观察关系分类和 RemovalImpact | `deployment_planner`、`undeploy_delete` | `tdd` |
+| 4A | 统一关系查询 DTO 和 facade query | facade relationship query tests | `tdd` |
+| 4B | 关系迁移 prepare/commit/rollback | conversion transaction tests | `tdd` |
+| 5A | 导入后关系分组和批量决策输入 | `facade_relationship_governance` | `tdd` |
+| 5B | 关系治理面板的信息层级、状态和确认交互 | `RelationshipGovernancePanel.test.tsx` | `frontend-design` + `tdd` |
+| 5C | 导入向导接入分组确认、单项覆盖和待办跳转 | import component tests | `vercel-react-best-practices` + `tdd` |
+| 6A | 复制副本/共享引用转换计划 | core conversion tests | `tdd` |
+| 6B | 文件替换事务、备份、失败回退和审计 | application conversion tests | `tdd` |
+| 7A | Agent 页面目录矩阵和关系标签 | Agent component tests | `frontend-design` + `tdd` |
+| 7B | Skill 详情来源/关系/移除影响入口 | Skill detail tests | `vercel-react-best-practices` + `tdd` |
+| 8A | 冲突分析范围、持久化结果和 facade | AI facade tests | `tdd` |
+| 8B | 全部/分类/冲突组/单 Skill AI 操作入口 | governance/duplicate panel tests | `frontend-design` + `tdd` |
+| 9A | 全链路自动化回归和绑定漂移检查 | core/application/frontend suites | `tdd` |
+| 9B | 当前开发状态、测试说明、验收清单和矩阵 | `git diff --check` 与文档交叉检查 | `superpowers:subagent-driven-development` |
+
+这样既保留 Task 的审查边界，又避免一个子任务同时修改数据库、Rust facade 和多个页面，便于回退和定位回归。
+
+## 4. 实施任务
 
 ### Task 1: 建立关系领域类型与兼容转换
+
+**Traceability:** US-063、US-068；需求 5.22～5.23、5.33、5.36；交互 8.2、10.4、14；关系闭环设计 2～3。
+
+**Required skills:** `tdd`。
 
 **Files:**
 
@@ -111,6 +169,10 @@ unknown
 - [ ] 提交 `feat: add normalized skill relationship domain`。
 
 ### Task 2: 增加 0014 关系存储和多来源存证
+
+**Traceability:** US-016、US-017、US-063、US-068；需求 5.9、5.22、5.33；交互 7.5～7.8、15.3；关系闭环设计 3.1～3.4。
+
+**Required skills:** `tdd`。
 
 **Files:**
 
@@ -141,6 +203,10 @@ unknown
 
 ### Task 3: 实现确定性目录识别、关系聚合和移除影响
 
+**Traceability:** US-012、US-018、US-033、US-034、US-063、US-067；需求 5.6、5.15、5.23、5.36；交互 7.2、10.2～10.4；关系闭环设计 2.3、4.4。
+
+**Required skills:** `tdd`。
+
 **Files:**
 
 - Create: `crates/skillhub-core/src/relationship/classifier.rs`
@@ -167,6 +233,10 @@ unknown
 - [ ] 提交 `feat: classify skill relationships and removal impact`。
 
 ### Task 4: 接入应用层关系查询和 prepare/commit/rollback
+
+**Traceability:** US-016、US-017、US-034、US-066～068；需求 5.9、5.22、5.33、5.35～5.36；交互 7.5～7.8、10.4、15.3；关系闭环设计 3.4、4.4、6。
+
+**Required skills:** `tdd`。
 
 **Files:**
 
@@ -195,6 +265,10 @@ unknown
 - [ ] 提交 `feat: expose relationship governance operations`。
 
 ### Task 5: 扩展单个和批量导入的分类确认
+
+**Traceability:** US-016、US-017、US-018、US-064、US-065、US-068；需求 5.9、5.15、5.33；交互 7.5～7.8、14；关系闭环设计 4.1～4.2、5。
+
+**Required skills:** `frontend-design`、`vercel-react-best-practices`、`tdd`。
 
 **Files:**
 
@@ -229,6 +303,10 @@ unknown
 
 ### Task 6: 接入复制副本、共享引用和管理链接转换
 
+**Traceability:** US-031～034、US-066～067；需求 5.22、5.23、5.36；交互 10.1～10.5、15.3；关系闭环设计 2.3、4.3～4.4、6。
+
+**Required skills:** `tdd`。
+
 **Files:**
 
 - Modify: `crates/skillhub-core/src/deployment/planner.rs`
@@ -252,6 +330,10 @@ unknown
 - [ ] 提交 `feat: migrate observed copies to managed links safely`。
 
 ### Task 7: 扩展 Agent 页、Skill 详情页和共享治理组件
+
+**Traceability:** US-025、US-033、US-034、US-063、US-066～068；需求 5.23、5.33、5.35～5.36；交互 8.2、10.2～10.5、14；关系闭环设计 5。
+
+**Required skills:** `frontend-design`、`vercel-react-best-practices`、`tdd`。
 
 **Files:**
 
@@ -286,6 +368,10 @@ unknown
 
 ### Task 8: 接入可选 AI 冲突分析
 
+**Traceability:** US-018、US-065、US-068；需求 5.15、5.33；交互 7.7、13.3、14；关系闭环设计 3.4、6。
+
+**Required skills:** `tdd`。
+
 **Files:**
 
 - Modify: `crates/skillhub-core/src/duplicate/model.rs`
@@ -312,6 +398,10 @@ unknown
 
 ### Task 9: 完成契约、回归、文档和人工验收入口
 
+**Traceability:** US-063～068 及既有导入/部署用户故事；需求 5.9、5.15、5.22、5.23、5.33、5.36；交互 7.5～7.8、8.2、10、14、15；关系闭环设计 7。
+
+**Required skills:** `tdd`、`superpowers:subagent-driven-development`。
+
 **Files:**
 
 - Modify: `docs/development/开发状态-2026-09-13.md`
@@ -332,7 +422,7 @@ unknown
 - [ ] README 只在行为已经实现并验证后更新；当前不提前宣称闭环完成。
 - [ ] 提交 `docs: record relationship closure verification`。
 
-## 4. 任务依赖与执行顺序
+## 5. 任务依赖与执行顺序
 
 ```text
 Task 1 → Task 2 → Task 3 → Task 4
@@ -344,7 +434,7 @@ Task 4 + Task 5 + Task 6 + Task 7 + Task 8 → Task 9
 
 Task 1～4 必须串行完成，因为它们冻结领域类型、数据库事实和 IPC 契约。Task 5、Task 6、Task 7 可以在 Task 4 完成后拆为独立 worktree 并行，但每个任务只能消费统一关系 DTO，不在前端或应用服务中复制关系判断。Task 8 必须在确定性冲突分组可用后进行。Task 9 最后执行。
 
-## 5. 验收矩阵
+## 6. 验收矩阵
 
 | 场景 | 确定性结果 | 用户动作 | 预期结果 |
 |---|---|---|---|
@@ -357,7 +447,7 @@ Task 1～4 必须串行完成，因为它们冻结领域类型、数据库事实
 | 同名不同内容判定为不同版本 | `same_skill_version` | 纳入版本历史 | 同一 Skill 下形成新版本，不误建第二对象 |
 | 链接权限不足或目标变化 | `operation blocked` | 重试/保留/回退 | 原入口保留，记录失败，不报告为成功 |
 
-## 6. 计划自检结论
+## 7. 计划自检结论
 
 - 已覆盖设计稿中的目录角色、关系类型、多来源存证、冲突组、AI 分析、待办、单个/批量导入、部署迁移、移除影响和前端入口。
 - 已明确复用现有 `ImportProvenance`、`ObservedDeployment`、`DeploymentRecord`、`RemovalImpact`、操作日志、任务追踪和 Agent RelationsView，而不是重新建设平行系统。
