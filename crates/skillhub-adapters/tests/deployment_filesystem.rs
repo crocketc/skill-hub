@@ -130,6 +130,68 @@ fn junction_fallback_does_not_require_elevated_test_process() {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Task 6: volume-accurate link capability probing for relation conversions.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn link_probe_reports_materialized_capability_and_cleans_up_after_itself() {
+    let fixture = DeploymentFixture::new();
+    let capabilities =
+        DeploymentFilesystem::new().probe_link_capabilities(&fixture.target_root, &fixture.source);
+
+    assert!(capabilities.copy);
+    // Whatever the platform answers, the probe must not leave an entry in the
+    // user's directory.
+    let leftovers = fs::read_dir(&fixture.target_root).unwrap().count();
+    assert_eq!(leftovers, 0, "probe must clean up its temporary entry");
+
+    if capabilities.symlink {
+        // A reported capability must be reproducible at the same location.
+        let destination = fixture
+            .target_root
+            .join(".skillhub-link-probe-reproduction");
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&fixture.source, &destination).unwrap();
+        #[cfg(windows)]
+        std::os::windows::fs::symlink_dir(&fixture.source, &destination).unwrap();
+        assert!(fs::symlink_metadata(&destination)
+            .unwrap()
+            .file_type()
+            .is_symlink());
+        fs::remove_file(&destination).unwrap();
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn link_probe_refuses_an_unwritable_relation_parent_instead_of_guessing() {
+    let fixture = DeploymentFixture::new();
+    let mut permissions = fs::metadata(&fixture.target_root).unwrap().permissions();
+    permissions.set_readonly(true);
+    fs::set_permissions(&fixture.target_root, permissions.clone()).unwrap();
+
+    // Fail the test honestly when the platform ignores the read-only bit
+    // (for example a root test process) instead of reporting a fake pass.
+    let control = fixture.target_root.join(".skillhub-link-probe-control");
+    let readonly_enforced = std::os::unix::fs::symlink(&fixture.source, &control).is_err();
+    let _ = std::fs::remove_file(&control);
+    if !readonly_enforced {
+        permissions.set_readonly(false);
+        fs::set_permissions(&fixture.target_root, permissions).unwrap();
+        eprintln!("skipping: this process can write read-only directories (root?)");
+        return;
+    }
+
+    let capabilities =
+        DeploymentFilesystem::new().probe_link_capabilities(&fixture.target_root, &fixture.source);
+    assert!(!capabilities.symlink);
+    assert!(!capabilities.junction);
+
+    permissions.set_readonly(false);
+    fs::set_permissions(&fixture.target_root, permissions).unwrap();
+}
+
 struct DeploymentFixture {
     _tempdir: tempfile::TempDir,
     source: PathBuf,

@@ -253,3 +253,20 @@ fn relation_conversion_facts_for(relationship: RelationshipType) -> RelationConv
         other_shared_consumers: 0,
     }
 }
+
+#[test]
+fn same_volume_fact_is_derived_from_real_filesystem_identities() {
+    let workspace = tempfile::tempdir().unwrap();
+    let inside = workspace.path().join("nested");
+    std::fs::create_dir_all(&inside).unwrap();
+    assert!(skillhub_core::paths_share_volume(workspace.path(), &inside));
+    assert!(skillhub_core::paths_share_volume(
+        workspace.path(),
+        workspace.path()
+    ));
+    // A missing path has no volume identity and must not fabricate a claim.
+    assert!(!skillhub_core::paths_share_volume(
+        workspace.path(),
+        workspace.path().join("missing")
+    ));
+}
