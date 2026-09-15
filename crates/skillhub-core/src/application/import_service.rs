@@ -39,6 +39,7 @@ pub enum ImportItemStatus {
     Succeeded,
     Skipped,
     Failed,
+    Todo,
 }
 
 #[derive(Clone, Debug, serde::Deserialize, Eq, PartialEq, serde::Serialize, specta::Type)]

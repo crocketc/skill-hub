@@ -1,4 +1,5 @@
 import { useLocation, useNavigate, useOutletContext } from "react-router-dom";
+import { queryApplication, type GovernanceTaskFact } from "../api/bindings";
 import { DiscoveryPage, type DiscoveryModuleView } from "../features/discovery/DiscoveryPage";
 import { desktopDiscoveryFacade } from "../features/discovery/api";
 import { type ImportFacade, type ImportResult } from "../features/import/api";
@@ -33,6 +34,26 @@ export function DiscoveryRoute({
     }
   };
 
+  const handleOpenGovernanceTask = (task: GovernanceTaskFact) => {
+    // ImportSummary is reached from the production route with a real handler:
+    // refresh the existing relationship overview query before navigating back
+    // to the local discovery entry, where governance work is surfaced.
+    void queryClient.fetchQuery({
+      queryKey: ["relationship-overview", "all"],
+      queryFn: async () => {
+        const result = await queryApplication({
+          type: "get_relationship_overview",
+          payload: { scope: { type: "all" } },
+        });
+        if (result.type !== "relationship_overview") {
+          throw new Error("relationship overview query returned an unexpected result");
+        }
+        return result.payload;
+      },
+    });
+    navigate("/discovery/local", { state: { governanceTaskId: task.task_id } });
+  };
+
   // C2 收口：复用既有 listSkills 查询提供库内显示名，驱动在线结果"已在库"标记。
   const loadImportedNames = async () => {
     const page = await nativeSkillLibraryFacade.listSkills({
@@ -54,6 +75,7 @@ export function DiscoveryRoute({
       onboardingImport={state?.onboardingImport}
       onImportComplete={handleImportComplete}
       onOpenLibrary={() => navigate("/library")}
+      onOpenGovernanceTask={handleOpenGovernanceTask}
       onNavigate={(module) => navigate(`/discovery/${module}`)}
       onOpenSettings={() => navigate("/settings")}
     />

@@ -1190,7 +1190,7 @@ export type ImportItemResult = {
 	provenance?: ImportProvenance | null,
 };
 
-export type ImportItemStatus = "succeeded" | "skipped" | "failed";
+export type ImportItemStatus = "succeeded" | "skipped" | "failed" | "todo";
 
 export type ImportMatch = {
 	skill_id: SkillId,

@@ -361,7 +361,7 @@ async fn import_item_override_creates_a_queryable_governance_task_without_removi
         panic!("expected import summary");
     };
     let item = summary.items.first().expect("item result");
-    assert_eq!(item.status, skillhub_core::ImportItemStatus::Succeeded);
+    assert_eq!(format!("{:?}", item.status), "Todo");
     let task = item
         .governance_tasks
         .first()
@@ -383,6 +383,73 @@ async fn import_item_override_creates_a_queryable_governance_task_without_removi
         .pending_governance_tasks
         .iter()
         .any(|pending| pending.task_id == task.task_id));
+}
+
+#[tokio::test]
+async fn takeover_after_verify_copies_and_verifies_without_deleting_original() {
+    let database = Database::open_in_memory().expect("database");
+    let library_root = tempfile::tempdir().expect("library root");
+    CentralLibrary::initialize(library_root.path()).expect("library");
+    let source = tempfile::tempdir().expect("source");
+    write_skill(source.path());
+    let facade = LocalApplicationFacade::new_with_library(database, library_root.path());
+    let candidate = ImportCandidate::detected(
+        SourceDescriptor::new(SourceKind::Local, SourceLocator::local_path(source.path())),
+        source.path().to_string_lossy(),
+        ".",
+        "SKILL.md",
+        "Notes",
+    )
+    .with_ownership(
+        skillhub_core::import::CandidateOwnership::KnownAgentTarget,
+        skillhub_core::ImportAction::Review,
+        Some("agent.demo".into()),
+    );
+    let prepared = facade
+        .execute(AppCommand::PrepareImport(PrepareImport {
+            candidate,
+            tree_hash: None,
+        }))
+        .await
+        .expect("prepared import");
+    let AppCommandResult::PreparedImport(prepared) = prepared else {
+        panic!("expected prepared import");
+    };
+    assert!(prepared
+        .analysis
+        .actions
+        .contains(&ImportDecision::TakeOverAfterVerify));
+    let group = prepared.analysis.governance_groups.first().expect("group");
+
+    let committed = facade
+        .execute(AppCommand::CommitImport(skillhub_core::CommitImport {
+            prepared_import_id: prepared.id,
+            decision: ImportDecision::TakeOverAfterVerify,
+            governance_decision: ImportGovernanceDecision {
+                group_actions: BTreeMap::from([(
+                    group.group_id.clone(),
+                    ImportGovernanceAction::PreserveOriginal,
+                )]),
+                item_overrides: BTreeMap::new(),
+            },
+        }))
+        .await
+        .expect("takeover committed");
+    let AppCommandResult::ImportSummary(summary) = committed else {
+        panic!("expected import summary");
+    };
+    assert_eq!(
+        summary.items[0].status,
+        skillhub_core::ImportItemStatus::Succeeded
+    );
+    assert!(summary.items[0].original_preserved);
+    assert!(source.path().join("SKILL.md").is_file());
+    assert_eq!(
+        std::fs::read_dir(library_root.path().join("skills"))
+            .expect("central skill directory")
+            .count(),
+        1
+    );
 }
 
 #[tokio::test]

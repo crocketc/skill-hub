@@ -53,6 +53,50 @@ it("translates the native loop's structured failure codes into readable copy", a
   expect(screen.queryByText("import.import_failed")).not.toBeInTheDocument();
 });
 
+it("keeps the structured reason in data without rendering it as user copy", async () => {
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  render(
+    <I18nextProvider i18n={i18n}>
+      <ImportSummary
+        results={[{
+          candidateId: "c",
+          action: "copy",
+          status: "failed",
+          message: "importWorkflow.errors.unknown",
+          reasonCode: "import.same_runtime_name_conflict",
+          originalPreserved: true,
+          governanceTasks: [],
+        }]}
+      />
+    </I18nextProvider>,
+  );
+
+  expect(screen.getByText("导入步骤未能完成。")) .toBeVisible();
+  expect(screen.queryByText("import.same_runtime_name_conflict")).not.toBeInTheDocument();
+});
+
+it("shows todo outcomes as actionable results instead of hiding them as success", async () => {
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  const todo = {
+    candidateId: "c",
+    action: "copy",
+    status: "todo",
+    message: "importWorkflow.commitMessages.imported",
+    originalPreserved: true,
+    reasonCode: "import.governance_todo_created",
+    governanceTasks: [],
+  } as unknown as ImportResult;
+  render(
+    <I18nextProvider i18n={i18n}>
+      <ImportSummary results={[todo]} />
+    </I18nextProvider>,
+  );
+
+  expect(screen.getByText("待处理 1")).toBeVisible();
+  expect(screen.getByText("待处理")).toBeVisible();
+  expect(screen.getByRole("listitem")).toBeVisible();
+});
+
 it("shows the unavailable boundary without fabricating import results", async () => {
   const i18n = await createSkillHubI18n(["zh-CN"]);
   render(

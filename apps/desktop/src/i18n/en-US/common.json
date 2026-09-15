@@ -141,7 +141,10 @@
       "generic": "The import step could not be completed ({{code}}).",
       "noDefaultAction": "This candidate has no automatically selectable import action; pick one manually before importing.",
       "remoteNotWired": "Remote source download is not wired up yet; download the repository locally first and import it as a local directory.",
-      "unknown": "The import step could not be completed."
+      "unknown": "The import step could not be completed.",
+      "sameRuntimeNameConflict": "The runtime name conflicts with an existing Skill; choose another import action.",
+      "exactDuplicateConflict": "The candidate duplicates an existing Skill; existing content was not overwritten.",
+      "takeoverVerificationMismatch": "Verification failed after takeover; the original source was preserved."
     },
     "eyebrow": "Safe import workflow",
     "title": "Import Skills",
@@ -302,7 +305,8 @@
       "counts": {
         "succeeded": "Succeeded {{count}}",
         "skipped": "Skipped {{count}}",
-        "failed": "Failed {{count}}"
+        "failed": "Failed {{count}}",
+        "todo": "Needs attention {{count}}"
       },
       "actions": {
         "reuse": "Reuse",
@@ -314,7 +318,8 @@
       "status": {
         "succeeded": "Succeeded",
         "skipped": "Skipped",
-        "failed": "Failed"
+        "failed": "Failed",
+        "todo": "Needs attention"
       },
       "provenance": "Imported from {{path}} ({{agent}})",
       "unknownAgent": "source unrecognized"

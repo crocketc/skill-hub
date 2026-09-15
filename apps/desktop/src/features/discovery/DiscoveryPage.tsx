@@ -37,6 +37,8 @@ export interface DiscoveryPageProps {
   tracker?: OperationTracker;
   onImportComplete?: (results: ImportResult[]) => void;
   onOpenLibrary?: () => void;
+  /** 生产路由提供：打开治理待办时刷新真实关系概览并回到本地发现入口。 */
+  onOpenGovernanceTask?: (task: NonNullable<ImportResult["governanceTasks"]>[number]) => void;
   /** AI 就绪提示的"前往设置"动作；路由层注入应用内导航，缺省整页跳转兜底。 */
   onOpenSettings?: () => void;
   /** C2 收口：可选地提供库内 Skill 显示名，用于在线结果"已在库"标记。 */
@@ -122,6 +124,7 @@ export function DiscoveryPage({
   tracker = operationTracker,
   onImportComplete,
   onOpenLibrary,
+  onOpenGovernanceTask,
   onOpenSettings,
   importedNames,
 }: DiscoveryPageProps) {
@@ -228,6 +231,7 @@ export function DiscoveryPage({
       initialSourceText={initialSourceText}
       onImportComplete={onImportComplete}
       onOpenLibrary={onOpenLibrary}
+      onOpenGovernanceTask={onOpenGovernanceTask}
       onOpenSettings={onOpenSettings}
       tracker={tracker}
       view={view}
@@ -292,6 +296,7 @@ interface DiscoveryModulePageProps {
   tracker: OperationTracker;
   onImportComplete?: (results: ImportResult[]) => void;
   onOpenLibrary?: () => void;
+  onOpenGovernanceTask?: (task: NonNullable<ImportResult["governanceTasks"]>[number]) => void;
   /** AI 就绪提示的"前往设置"动作；路由层注入应用内导航，缺省整页跳转兜底。 */
   onOpenSettings?: () => void;
   /** C2 收口：可选地提供库内 Skill 显示名，用于在线结果"已在库"标记。 */
@@ -311,6 +316,7 @@ function DiscoveryModulePage({
   tracker,
   onImportComplete,
   onOpenLibrary,
+  onOpenGovernanceTask,
   onOpenSettings,
   importedNames,
 }: DiscoveryModulePageProps) {
@@ -332,6 +338,7 @@ function DiscoveryModulePage({
           variant={wizard.variant}
           onComplete={onImportComplete}
           onOpenLibrary={onOpenLibrary}
+          onOpenGovernanceTask={onOpenGovernanceTask}
           tracker={tracker}
         />
       </div>

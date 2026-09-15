@@ -1,9 +1,10 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { I18nextProvider } from "react-i18next";
 import { MemoryRouter, Outlet, Route, Routes } from "react-router-dom";
 import { expect, it, vi } from "vitest";
 import type { BootstrapSnapshot } from "../api/bindings";
+import * as bindings from "../api/bindings";
 import { createSkillHubI18n } from "../i18n";
 import { AppNotificationsProvider } from "../ui/notifications";
 import type { DiscoveryFacade } from "../features/discovery/api";
@@ -145,4 +146,68 @@ it("renders the onboarding handoff import without the manual add-source action",
 
   expect(await screen.findByRole("button", { name: "继续选择候选" })).toBeVisible();
   expect(facade.calls.acquiredSources).toEqual(["C:/codex/skills", "C:/claude/skills"]);
+});
+
+it("opens governance work from the production discovery route through the relationship overview query", async () => {
+  const user = userEvent.setup();
+  const task = {
+    task_id: "governance-task-1",
+    kind: "confirm_shared_directory_impact" as const,
+    subject_id: "safe-pdf",
+    detail: "该目录由 Agent 共用；导入不会删除原件。",
+    resolved: false,
+    created_at: "2026-09-15T00:00:00Z",
+    resolved_at: null,
+  };
+  const query = vi.spyOn(bindings, "queryApplication").mockResolvedValue({
+    type: "relationship_overview",
+    payload: {
+      agent_directory_capabilities: [],
+      agent_execution_confirmed: false,
+      conflict_cases: [],
+      deployment_relations: [],
+      pending_governance_tasks: [task],
+      source_relations: [],
+    },
+  } as unknown as Awaited<ReturnType<typeof bindings.queryApplication>>);
+  const facade = createMockImportFacade({ scenario: "safe-local" });
+  const originalAnalyze = facade.analyzeConflicts.bind(facade);
+  facade.analyzeConflicts = async (candidates, onProgress) => ({
+    ...(await originalAnalyze(candidates, onProgress)),
+    governanceGroups: [{
+      group_id: "agent-managed-source",
+      classification: "agent_managed_source",
+      impact_summary: "该目录由 Agent 共用；导入不会删除原件。",
+      default_action: "preserve_original",
+      available_actions: ["preserve_original", "create_todo"],
+      members: [{ member_id: "safe-pdf", display_name: "PDF" }],
+    }],
+  });
+  facade.commitImport = async () => [{
+    action: "copy",
+    candidateId: "safe-pdf",
+    message: "importWorkflow.commitMessages.imported",
+    originalPreserved: true,
+    governanceTasks: [task],
+    status: "todo",
+  }];
+  await renderDiscoveryRoute(facade);
+
+  await user.click(screen.getAllByRole("button", { name: "导入 Skill" })[0]);
+  await user.type(screen.getByLabelText("来源"), "C:/Skills");
+  await user.click(screen.getByRole("button", { name: "解析来源" }));
+  await user.click(await screen.findByRole("button", { name: "继续选择候选" }));
+  await user.click(screen.getByRole("checkbox", { name: /PDF/ }));
+  await user.click(screen.getByRole("button", { name: "分析冲突" }));
+  await screen.findByRole("heading", { name: "确认导入后的关系处理" });
+  await user.click(screen.getByRole("radio", { name: "创建待办" }));
+  await user.click(screen.getByRole("button", { name: "确认关系处理" }));
+  await user.click(await screen.findByRole("button", { name: "提交导入" }));
+  await user.click(screen.getByRole("button", { name: /查看治理待办/ }));
+
+  await waitFor(() => expect(query).toHaveBeenCalledWith({
+    type: "get_relationship_overview",
+    payload: { scope: { type: "all" } },
+  }));
+  query.mockRestore();
 });

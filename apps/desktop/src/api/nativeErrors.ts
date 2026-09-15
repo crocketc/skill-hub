@@ -86,6 +86,11 @@ export function keyedMessage(
   code: string | null,
   reason: string | undefined,
 ): string | null {
+  if (code === "import.skipped_by_user") return "importWorkflow.commitMessages.skipped";
+  if (code === "import.same_runtime_name_conflict") return "importWorkflow.errors.sameRuntimeNameConflict";
+  if (code === "import.exact_duplicate_conflict") return "importWorkflow.errors.exactDuplicateConflict";
+  if (code === "import.takeover_verification_mismatch") return "importWorkflow.errors.takeoverVerificationMismatch";
+  if (code === "import.unknown_failure") return "importWorkflow.errors.unknown";
   if (code === "operation.conflict") {
     if (reason === "no_upstream_source") return "errors.sourceUpdate.noUpstreamConflict";
     if (reason === "source_unavailable") return "errors.sourceUpdate.sourceUnavailable";

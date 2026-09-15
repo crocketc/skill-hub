@@ -8,7 +8,9 @@ import { createSkillHubI18n } from "../../i18n";
 import { AppNotificationsProvider } from "../../ui/notifications";
 import { createOperationTracker } from "../../platform/operationTracker";
 import { clearSessionSelectedSources } from "./sessionSources";
-import { createMockImportFacade, unavailableImportFacade, type ImportCandidate, type ImportPlan, type ImportResult, type SourceDescriptor } from "./api";
+import { createMockImportFacade, unavailableImportFacade, type ImportAction, type ImportCandidate, type ImportPlan, type ImportProgress, type ImportResult, type SourceDescriptor } from "./api";
+import type { ImportGovernanceDecision } from "../relationshipGovernance/relationshipGovernance";
+import type { ImportGovernanceGroup } from "../../api/bindings";
 import type { DirectoryPicker } from "../../platform/directoryPicker";
 import { ImportWizard } from "./ImportWizard";
 
@@ -758,6 +760,64 @@ it("requires a fresh conflict decision when retrying an import", async () => {
   expect(screen.getByRole("button", { name: "提交导入" })).toBeDisabled();
   await user.click(screen.getByRole("radio", { name: "跳过此候选项" }));
   expect(screen.getByRole("button", { name: "提交导入" })).toBeEnabled();
+});
+
+it("renders governance before conflicts and sends group plus member override to commit", async () => {
+  const user = userEvent.setup();
+  const facade = createMockImportFacade({ scenario: "safe-local" });
+  const originalAnalyze = facade.analyzeConflicts.bind(facade);
+  const commitImport = vi.fn(async (
+    plan: ImportPlan,
+    actions: Record<string, ImportAction>,
+    _onProgress?: (progress: ImportProgress) => void,
+    governanceDecision?: ImportGovernanceDecision,
+  ): Promise<ImportResult[]> => {
+    expect(plan.governanceGroups).toHaveLength(1);
+    expect(actions).toEqual({});
+    expect(governanceDecision).toEqual({
+      group_actions: { "agent-managed-source": "create_todo" },
+      item_overrides: { "safe-pdf": "preserve_original" },
+    });
+    return [{
+      action: "copy",
+      candidateId: "safe-pdf",
+      message: "importWorkflow.commitMessages.imported",
+      originalPreserved: true,
+      status: "todo",
+    }];
+  });
+  facade.analyzeConflicts = vi.fn(async (candidates, onProgress) => {
+    const plan = await originalAnalyze(candidates, onProgress);
+    return {
+      ...plan,
+      governanceGroups: [{
+        group_id: "agent-managed-source",
+        classification: "agent_managed_source",
+        impact_summary: "该目录由 Agent 共用；导入不会删除原件。",
+        default_action: "preserve_original",
+        available_actions: ["preserve_original", "create_todo"],
+        members: [{ member_id: "safe-pdf", display_name: "PDF" }],
+      } satisfies ImportGovernanceGroup],
+    };
+  });
+  facade.commitImport = commitImport;
+  await renderWizard(facade);
+
+  await user.type(screen.getByLabelText("来源"), "C:/skills");
+  await user.click(screen.getByRole("button", { name: "解析来源" }));
+  await user.click(await screen.findByRole("button", { name: "继续选择候选" }));
+  await user.click(screen.getByRole("checkbox", { name: /PDF/ }));
+  await user.click(screen.getByRole("button", { name: "分析冲突" }));
+
+  expect(await screen.findByRole("heading", { name: "确认导入后的关系处理" })).toBeVisible();
+  await user.click(screen.getByRole("radio", { name: "创建待办" }));
+  await user.click(screen.getByRole("button", { name: "展开 1 个项目" }));
+  await user.click(screen.getByRole("radio", { name: "PDF：原件保留" }));
+  await user.click(screen.getByRole("button", { name: "确认关系处理" }));
+  await user.click(await screen.findByRole("button", { name: "提交导入" }));
+
+  expect(commitImport).toHaveBeenCalledTimes(1);
+  expect(await screen.findByText("待处理")).toBeVisible();
 });
 
 async function renderWithTracker(facade: ReturnType<typeof createMockImportFacade>, tracker: ReturnType<typeof createOperationTracker>) {

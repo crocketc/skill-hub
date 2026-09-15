@@ -92,7 +92,7 @@ export interface ImportProvenanceSummary {
 export interface ImportResult {
   candidateId: string;
   action: ImportAction;
-  status: "succeeded" | "skipped" | "failed";
+  status: "succeeded" | "skipped" | "failed" | "todo";
   message: string;
   /** 导入即存证：提交成功且落库时携带；复用/跳过等分支诚实缺省。 */
   provenance?: ImportProvenanceSummary;

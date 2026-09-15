@@ -307,8 +307,11 @@ describe("native import facade", () => {
 
     // 未知码不允许裸码上屏：统一兜底为可读文案；码本身留档操作记录。
     expect(result).toEqual(expect.objectContaining({
-      message: "importWorkflow.errors.unknown",
-      status: "failed",
+        message: "importWorkflow.errors.unknown",
+        reasonCode: "io_error",
+        originalPreserved: true,
+        governanceTasks: [],
+        status: "failed",
     }));
   });
 

@@ -6120,7 +6120,11 @@ impl LocalApplicationFacade {
                     items: vec![skillhub_core::ImportItemResult {
                         skill_id: None,
                         decision: request.decision,
-                        status: skillhub_core::ImportItemStatus::Skipped,
+                        status: if governance_tasks.is_empty() {
+                            skillhub_core::ImportItemStatus::Skipped
+                        } else {
+                            skillhub_core::ImportItemStatus::Todo
+                        },
                         original_preserved: true,
                         reason_code: Some("import.skipped_by_user".into()),
                         governance_tasks,
@@ -6174,7 +6178,11 @@ impl LocalApplicationFacade {
                     items: vec![skillhub_core::ImportItemResult {
                         skill_id: Some(skill_id),
                         decision: request.decision,
-                        status: skillhub_core::ImportItemStatus::Succeeded,
+                        status: if governance_tasks.is_empty() {
+                            skillhub_core::ImportItemStatus::Succeeded
+                        } else {
+                            skillhub_core::ImportItemStatus::Todo
+                        },
                         original_preserved: true,
                         reason_code: None,
                         governance_tasks,
@@ -6189,6 +6197,7 @@ impl LocalApplicationFacade {
             skillhub_core::ImportDecision::CopyIntoLibrary
                 | skillhub_core::ImportDecision::KeepIndependent
                 | skillhub_core::ImportDecision::CopyAsIndependentManagedSkill
+                | skillhub_core::ImportDecision::TakeOverAfterVerify
         ) {
             return Err(unsupported("execute.commit_import.decision"));
         }
@@ -6281,6 +6290,32 @@ impl LocalApplicationFacade {
                     ));
                 }
             };
+            if request.decision == skillhub_core::ImportDecision::TakeOverAfterVerify {
+                // Takeover keeps the original source.  The separate original
+                // migration flow owns deletion and its explicit backup/rollback
+                // confirmation; this step only verifies the managed copy.
+                if let Err(error) =
+                    store
+                        .hash_tree_read_only(central.visible_skill_path_for_runtime(
+                            skill_id,
+                            &prepared.candidate.runtime_name,
+                        ))
+                        .and_then(|hash| {
+                            if hash == version.manifest.tree_hash {
+                                Ok(hash)
+                            } else {
+                                Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                                    .with_param("reason", "takeover_verification_mismatch")
+                                    .with_action(RecoveryAction::RollbackOperation))
+                            }
+                        })
+                {
+                    return Err(cleanup_import_error(
+                        error,
+                        cleanup_import_state(database, central, store, skill_id, &version),
+                    ));
+                }
+            }
             if let Err(error) = Self::persist_import_governance_tasks(database, &governance_tasks) {
                 return Err(cleanup_import_error(
                     error,
@@ -6301,7 +6336,11 @@ impl LocalApplicationFacade {
                     items: vec![skillhub_core::ImportItemResult {
                         skill_id: Some(skill_id),
                         decision: request.decision,
-                        status: skillhub_core::ImportItemStatus::Succeeded,
+                        status: if governance_tasks.is_empty() {
+                            skillhub_core::ImportItemStatus::Succeeded
+                        } else {
+                            skillhub_core::ImportItemStatus::Todo
+                        },
                         original_preserved: true,
                         reason_code: None,
                         governance_tasks,

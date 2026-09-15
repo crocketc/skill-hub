@@ -141,7 +141,10 @@
       "generic": "导入步骤未能完成（{{code}}）。",
       "noDefaultAction": "该候选项没有可自动选择的导入方式；请为它手动选择一个操作后再导入。",
       "remoteNotWired": "远程来源下载尚未接入；请先将仓库下载到本地，再用本地目录导入。",
-      "unknown": "导入步骤未能完成。"
+      "unknown": "导入步骤未能完成。",
+      "sameRuntimeNameConflict": "运行时名称与已有 Skill 冲突，需要重新选择导入方式。",
+      "exactDuplicateConflict": "候选内容与已有 Skill 重复，未自动覆盖原内容。",
+      "takeoverVerificationMismatch": "纳入管理后的内容核验未通过，原始来源已保留。"
     },
     "eyebrow": "安全导入流程",
     "title": "导入 Skill",
@@ -302,7 +305,8 @@
       "counts": {
         "succeeded": "成功 {{count}}",
         "skipped": "跳过 {{count}}",
-        "failed": "失败 {{count}}"
+        "failed": "失败 {{count}}",
+        "todo": "待处理 {{count}}"
       },
       "actions": {
         "reuse": "复用",
@@ -314,7 +318,8 @@
       "status": {
         "succeeded": "已导入",
         "skipped": "已跳过",
-        "failed": "失败"
+        "failed": "失败",
+        "todo": "待处理"
       },
       "provenance": "已从 {{path}} 导入（{{agent}}）",
       "unknownAgent": "来源未识别"

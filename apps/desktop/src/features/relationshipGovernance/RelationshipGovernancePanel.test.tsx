@@ -36,3 +36,17 @@ it("makes AI absence advisory without inventing a todo link", () => {
   expect(screen.getByText("AI 建议未配置；已保留确定性关系判断。")).toBeVisible();
   expect(screen.queryByRole("link", { name: /治理待办/ })).not.toBeInTheDocument();
 });
+
+it("uses the deterministic group default until a group action is explicitly selected", () => {
+  const onDecision = vi.fn();
+  render(<RelationshipGovernancePanel groups={groups} onDecision={onDecision} />);
+
+  fireEvent.click(screen.getByRole("button", { name: "展开 2 个项目" }));
+  expect(screen.getByRole("radio", { name: "PDF：原件保留" })).toBeChecked();
+  fireEvent.click(screen.getByRole("radio", { name: "创建待办" }));
+
+  expect(onDecision).toHaveBeenLastCalledWith({
+    group_actions: { "agent-managed-source": "create_todo" },
+    item_overrides: {},
+  });
+});
