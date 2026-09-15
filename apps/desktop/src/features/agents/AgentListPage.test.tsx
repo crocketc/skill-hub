@@ -47,6 +47,12 @@ function facadeWith(overrides: Partial<AgentFacade> = {}): AgentFacade {
     createCustomAgent: vi.fn(async () => undefined),
     updateCustomAgent: vi.fn(async () => undefined),
     removeCustomAgent: vi.fn(async () => undefined),
+    getRelationshipOverview: vi.fn(async () => {
+      throw new Error("not used by the list page");
+    }),
+    getRelationshipRemovalImpact: vi.fn(async () => {
+      throw new Error("not used by the list page");
+    }),
     ...overrides,
   };
 }

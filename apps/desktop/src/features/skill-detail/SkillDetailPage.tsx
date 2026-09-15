@@ -1,10 +1,11 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { describeNativeError } from "../../api/nativeErrors";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { DataState } from "../../ui/DataState";
 import { Icon } from "../../ui/Icon";
+import { buildSkillRelationshipViews } from "../relationshipGovernance/relationshipGovernance";
 import { MarkdownWorkspace } from "../markdown/MarkdownWorkspace";
 import {
   type MarkdownFacade,
@@ -135,6 +136,10 @@ export function SkillDetailPage({
     queryFn: () => facade.getProvenance(skillId),
     queryKey: skillDetailKeys.provenance(skillId),
   });
+  const relationshipQuery = useQuery({
+    queryFn: () => facade.getRelationshipOverview(skillId),
+    queryKey: skillDetailKeys.relationship(skillId),
+  });
   const requirementsQuery = useQuery({
     queryFn: () => facade.getRequirements(skillId),
     queryKey: skillDetailKeys.requirements(skillId),
@@ -162,6 +167,15 @@ export function SkillDetailPage({
   const [undeployImpact, setUndeployImpact] = useState<UndeployImpact | null>(null);
   const [undeploySubmitting, setUndeploySubmitting] = useState(false);
   const [undeployError, setUndeployError] = useState<string>();
+
+  // Task 7：关系概览是只读事实查询；失败只降级关系明细区，不影响其他面板。
+  const relationshipViews = relationshipQuery.data
+    ? buildSkillRelationshipViews(relationshipQuery.data)
+    : undefined;
+  const loadRelationshipRemovalImpact = useCallback(
+    (relationId: string) => facade.getRelationshipRemovalImpact(relationId),
+    [facade],
+  );
 
   const startRemoval = async () => {
     setRemovalLoading(true);
@@ -319,9 +333,15 @@ export function SkillDetailPage({
                     {t("skillDetail.relations.retry")}
                   </Button>
                 </div>
-              ) : relationsQuery.data ? (
+              ) : null}
+              {relationshipQuery.isError ? (
+                <p role="note">{t("skillDetail.relations.governed.loadError")}</p>
+              ) : null}
+              {relationsQuery.data ? (
                 <RelationsPanel
+                  onLoadRemovalImpact={loadRelationshipRemovalImpact}
                   onUndeploy={!isPreviewRoute ? (relation) => void startUndeploy(relation) : undefined}
+                  relationship={relationshipViews}
                   relations={relationsQuery.data}
                 />
               ) : null}
@@ -339,6 +359,13 @@ export function SkillDetailPage({
                 <ProvenancePanel
                   observedDeployments={provenanceQuery.data.observedDeployments}
                   provenance={provenanceQuery.data.provenance}
+                  relationship={relationshipViews
+                    ? {
+                        conflicts: relationshipViews.conflicts,
+                        pendingTasks: relationshipViews.pendingTasks,
+                        sources: relationshipViews.sources,
+                      }
+                    : undefined}
                 />
               ) : null}
             </div>

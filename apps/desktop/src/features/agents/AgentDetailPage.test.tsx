@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { I18nextProvider } from "react-i18next";
 import { MemoryRouter } from "react-router-dom";
 import { expect, it, vi } from "vitest";
+import type { RelationshipOverview } from "../../api/bindings";
 import { createSkillHubI18n } from "../../i18n";
 import type { DirectoryPicker } from "../../platform/directoryPicker";
 import { type AgentFacade, type AgentView, agentFixture, customAgentFixture } from "./api";
@@ -13,6 +14,17 @@ const pickingPicker: DirectoryPicker = {
   pickDirectory: vi.fn(async () => "D:/Agents/auditor"),
 };
 
+const emptyOverview: RelationshipOverview = {
+  scope: { type: "agent", value: { agent_client_id: "codex-cli" } },
+  directory_nodes: [],
+  agent_directory_capabilities: [],
+  source_relations: [],
+  deployment_relations: [],
+  conflict_cases: [],
+  pending_governance_tasks: [],
+  agent_execution_confirmed: false,
+};
+
 function facadeWith(agent: AgentView, overrides: Partial<AgentFacade> = {}): AgentFacade {
   return {
     get: vi.fn(async () => agent),
@@ -21,6 +33,10 @@ function facadeWith(agent: AgentView, overrides: Partial<AgentFacade> = {}): Age
     createCustomAgent: vi.fn(async () => undefined),
     updateCustomAgent: vi.fn(async () => undefined),
     removeCustomAgent: vi.fn(async () => undefined),
+    getRelationshipOverview: vi.fn(async () => emptyOverview),
+    getRelationshipRemovalImpact: vi.fn(async () => {
+      throw new Error("not used in this test");
+    }),
     ...overrides,
   };
 }
@@ -143,4 +159,54 @@ it("renders two logical clients connected to one physical directory", async () =
 
   expect(screen.getAllByTestId("logical-target")).toHaveLength(2);
   expect(screen.getAllByTestId("physical-target")).toHaveLength(1);
+});
+
+it("renders the directory matrix beside the physical relations view", async () => {
+  const overview: RelationshipOverview = {
+    ...emptyOverview,
+    directory_nodes: [{
+      node_id: "node-shared",
+      path: "C:/Users/demo/.agents/skills",
+      path_key: "pk-shared",
+      role: "shared_directory",
+      profile_id: null,
+      agent_client_id: null,
+      exists: true,
+      observed_at: "2026-09-15T00:00:00Z",
+      scan_source: "profile",
+    }],
+    agent_directory_capabilities: [{
+      agent_client_id: "Codex family",
+      directory_node_id: "node-shared",
+      recognition: "supported",
+      precedence: "preferred",
+      evidence_reference: "https://developers.openai.com/codex/skills",
+      researched_at: "2026-09-01",
+      applicable_platforms: ["windows"],
+    }],
+  };
+  await renderDetailPage(facadeWith(agentFixture(), {
+    getRelationshipOverview: vi.fn(async () => overview),
+  }));
+
+  expect(await screen.findByText("目录与关系")).toBeVisible();
+  expect(screen.getAllByTestId("directory-card")).toHaveLength(1);
+  // 路径同时出现在目录矩阵卡片和既有物理目录合并视图中。
+  expect(screen.getAllByText("C:/Users/demo/.agents/skills").length).toBeGreaterThanOrEqual(1);
+  // 物理目录合并展示（既有 RelationsView）保持不变，仍然出现。
+  expect(screen.getAllByTestId("physical-target").length).toBeGreaterThan(0);
+  // 目录识别不声明运行时加载事实。
+  expect(screen.getByTestId("directory-matrix-execution-note")).toBeVisible();
+});
+
+it("keeps the rest of the detail page usable when relationship facts are unavailable", async () => {
+  await renderDetailPage(facadeWith(agentFixture(), {
+    getRelationshipOverview: vi.fn(async () => {
+      throw new Error("relationship overview unavailable");
+    }),
+  }));
+
+  expect(await screen.findByText("目录关系事实暂不可用。")).toBeVisible();
+  // 其余页面区块不受影响。
+  expect(screen.getByText("Agent 级忽略需要原生契约支持，暂未提供。")).toBeVisible();
 });

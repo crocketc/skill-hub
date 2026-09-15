@@ -431,6 +431,23 @@ export const nativeSkillDetailFacade: SkillDetailFacade = {
       };
     });
   },
+  async getRelationshipOverview(skillId) {
+    // Task 7：Skill 维度的关系事实只来自统一关系 DTO（typed facade，只读）。
+    const result = await queryApplication({
+      type: "get_relationship_overview",
+      payload: { scope: { type: "skill", value: { skill_id: skillId } } },
+    });
+    if (result.type !== "relationship_overview") throw unavailableResult();
+    return result.payload;
+  },
+  async getRelationshipRemovalImpact(relationId) {
+    const result = await queryApplication({
+      type: "get_relationship_removal_impact",
+      payload: { relation_id: relationId },
+    });
+    if (result.type !== "relationship_removal_impact") throw unavailableResult();
+    return result.payload;
+  },
   async getFindings(skillId, versionId, kind): Promise<SkillFinding[]> {
     const result = await queryApplication({
       type: "list_findings",

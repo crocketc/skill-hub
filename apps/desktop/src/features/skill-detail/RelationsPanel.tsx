@@ -1,14 +1,31 @@
 import { useTranslation } from "react-i18next";
+import type { RemovalImpactFact } from "../../api/bindings";
 import { Button } from "../../ui/Button";
+import { StatusBadge } from "../../ui/StatusBadge";
+import { RelationshipRemovalImpactView } from "../relationshipGovernance/RelationshipRemovalImpactView";
+import {
+  fingerprintLabelKey,
+  ownershipLabelKey,
+  relationshipLabelKey,
+  type SkillRelationshipViews,
+} from "../relationshipGovernance/relationshipGovernance";
 import type { SkillRelation } from "./api";
 
-export function RelationsPanel({
-  relations,
-  onUndeploy,
-}: {
+export interface RelationsPanelProps {
   relations: SkillRelation[];
   onUndeploy?: (relation: SkillRelation) => void;
-}) {
+  /** Task 7：统一关系概览中的部署关系事实；提供时补充关系类型与移除影响入口。 */
+  relationship?: SkillRelationshipViews;
+  /** 只读加载移除影响；变更仍由用户在既有部署/移除流程中确认执行。 */
+  onLoadRemovalImpact?: (relationId: string) => Promise<RemovalImpactFact>;
+}
+
+export function RelationsPanel({
+  onLoadRemovalImpact,
+  onUndeploy,
+  relations,
+  relationship,
+}: RelationsPanelProps) {
   const { t } = useTranslation();
   const groups = new Map<string, SkillRelation[]>();
   for (const relation of relations) {
@@ -43,6 +60,40 @@ export function RelationsPanel({
           </ul>
         </section>
       ))}
+      {relationship ? (
+        <section data-testid="governed-relations">
+          <p><strong>{t("skillDetail.relations.governed.heading")}</strong></p>
+          <p>{t("skillDetail.relations.governed.description")}</p>
+          {relationship.deployments.length === 0 ? (
+            <p>{t("skillDetail.relations.governed.empty")}</p>
+          ) : (
+            <ul>
+              {relationship.deployments.map((row) => (
+                <li data-testid="governed-relation" key={row.relationId}>
+                  <strong>{row.skillId ?? t("relationshipGovernance.matrix.unknownSkill")}</strong>
+                  <StatusBadge tone="info">
+                    {t(relationshipLabelKey(row.relationship) as never)}
+                  </StatusBadge>
+                  <span>{t(ownershipLabelKey(row.ownership) as never)}</span>
+                  <span>{t(fingerprintLabelKey(row.fingerprintState) as never)}</span>
+                  <span>
+                    {t("skillDetail.relations.governed.sharedAgent", { agent: row.targetAgentClientId })}
+                  </span>
+                  {!row.active ? (
+                    <StatusBadge tone="neutral">{t("relationshipGovernance.matrix.inactive")}</StatusBadge>
+                  ) : null}
+                  {row.actions.includes("view_removal_impact") && onLoadRemovalImpact ? (
+                    <RelationshipRemovalImpactView
+                      loadImpact={() => onLoadRemovalImpact(row.relationId)}
+                      triggerLabel={t("relationshipGovernance.matrix.viewRemovalImpact")}
+                    />
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      ) : null}
     </div>
   );
 }

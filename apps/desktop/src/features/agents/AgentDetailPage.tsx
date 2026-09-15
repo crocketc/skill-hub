@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import { desktopDirectoryPicker, type DirectoryPicker } from "../../platform/directoryPicker";
+import type { RelationshipOverview } from "../../api/bindings";
 import { Button } from "../../ui/Button";
 import { BrandTag } from "../../ui/BrandTag";
 import { ConfirmDialog } from "../../ui/ConfirmDialog";
@@ -9,6 +10,7 @@ import { DataState } from "../../ui/DataState";
 import { Drawer } from "../../ui/Drawer";
 import { StatusBadge } from "../../ui/StatusBadge";
 import { type AgentFacade, type AgentStatus, type AgentView, unavailableAgentFacade } from "./api";
+import { DirectoryMatrix } from "./DirectoryMatrix";
 import { CustomAgentForm } from "./CustomAgentForm";
 import { RelationsView } from "./RelationsView";
 import { UsageEvidencePanel } from "./UsageEvidencePanel";
@@ -28,6 +30,9 @@ export function AgentDetailPage({ agentId = "default", facade = unavailableAgent
   const [editing, setEditing] = useState(false);
   const [revision, setRevision] = useState(0);
   const editTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const [relationshipOverview, setRelationshipOverview] = useState<RelationshipOverview>();
+  const [relationshipUnavailable, setRelationshipUnavailable] = useState(false);
+  const agentClientId = agent?.client;
 
   useEffect(() => {
     let active = true;
@@ -38,6 +43,24 @@ export function AgentDetailPage({ agentId = "default", facade = unavailableAgent
     });
     return () => { active = false; };
   }, [agentId, facade, revision, t]);
+
+  useEffect(() => {
+    // 目录矩阵是独立于 Agent 事实的只读查询；失败只降级矩阵本身，不拖垮详情页。
+    if (!agentClientId) return;
+    let active = true;
+    setRelationshipUnavailable(false);
+    facade.getRelationshipOverview(agentClientId).then((value) => {
+      if (active) setRelationshipOverview(value);
+    }).catch(() => {
+      if (active) setRelationshipUnavailable(true);
+    });
+    return () => { active = false; };
+  }, [agentClientId, facade, revision]);
+
+  const loadRemovalImpact = useCallback(
+    (relationId: string) => facade.getRelationshipRemovalImpact(relationId),
+    [facade],
+  );
 
   const removeAgent = async (id: string) => {
     setError(undefined);
@@ -100,6 +123,17 @@ export function AgentDetailPage({ agentId = "default", facade = unavailableAgent
           <dd>{[t("agents.managedSkillsCount", { count: agent.managedDeploymentCount }), t("agents.managedRelationsCount", { count: agent.managedDeploymentRelationCount })].join(" · ")}</dd>
         </div>
       </section>
+      {relationshipUnavailable ? (
+        <DataState message={t("relationshipGovernance.matrix.loadError")} state="unavailable" />
+      ) : relationshipOverview && agent ? (
+        <DirectoryMatrix
+          currentAgentClientId={agent.client}
+          onLoadRemovalImpact={loadRemovalImpact}
+          overview={relationshipOverview}
+        />
+      ) : (
+        <p role="status">{t("relationshipGovernance.matrix.loading")}</p>
+      )}
       <RelationsView relations={agent.relations} />
       <section className="sh-agent-limits" aria-labelledby="agent-limits-title">
         <div className="sh-agent-section-heading">
