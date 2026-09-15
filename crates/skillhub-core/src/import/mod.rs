@@ -7,7 +7,7 @@ mod provenance;
 pub use conflict::{
     analyze_import, DuplicateKind, ExistingSkillRecord, ImportAnalysis, ImportConflict,
     ImportGovernanceAction, ImportGovernanceClassification, ImportGovernanceGroup,
-    ImportGovernanceMember, ImportMatch, MatchBasis,
+    ImportGovernanceMember, ImportMatch, ImportSourceFacts, MatchBasis,
 };
 pub use decision::{import_governance_task_id, ImportDecision, ImportGovernanceDecision};
 pub use migration::{

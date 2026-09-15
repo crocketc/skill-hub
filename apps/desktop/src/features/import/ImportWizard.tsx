@@ -363,22 +363,28 @@ function reducer(state: WizardState, event: WizardEvent): WizardState {
   }
 }
 
-/** 展示层映射：每个阶段归属唯一流程步骤；失败态回到触发它的步骤。 */
-function flowStepIndex(phase: WizardPhase, previousPhase?: WizardPhase): number {
+/** 展示层映射：每个阶段归属唯一流程步骤；失败态回到触发它的步骤。
+ * hasGovernance：分析产出治理分组时流程插入治理步骤，后续步骤顺延。 */
+function flowStepIndex(
+  phase: WizardPhase,
+  previousPhase: WizardPhase | undefined,
+  hasGovernance: boolean,
+): number {
+  const conflictsStep = hasGovernance ? 3 : 2;
   switch (phase) {
     case "candidates":
     case "analyzing":
       return 1;
-    case "conflicts":
-    case "committing":
-      return 3;
     case "governance":
       return 2;
+    case "conflicts":
+    case "committing":
+      return conflictsStep;
     case "summary":
-      return 4;
+      return conflictsStep + 1;
     case "failed":
-      return previousPhase === "conflicts"
-        ? 3
+      return previousPhase === "conflicts" || previousPhase === "committing"
+        ? conflictsStep
         : previousPhase === "governance"
           ? 2
         : previousPhase === "candidates" || previousPhase === "analyzing"
@@ -822,24 +828,23 @@ type: "failed",
   const hasTodo = state.results.some((result) => result.status === "todo");
   const hasAttention = hasFailure || hasTodo;
   const hasGovernanceGroups = Boolean(state.plan?.governanceGroups?.length);
-  const stepIndex = hasGovernanceGroups
-    ? flowStepIndex(state.phase, state.previousPhase)
-    : state.phase === "summary" ? 3 : state.phase === "conflicts" || state.phase === "committing" ? 2 : state.phase === "candidates" || state.phase === "analyzing" ? 1 : 0;
+  const stepIndex = flowStepIndex(state.phase, state.previousPhase, hasGovernanceGroups);
   const flowSteps: ImportStep[] = (hasGovernanceGroups
     ? ["source", "candidates", "governance", "conflicts", "summary"]
     : ["source", "candidates", "conflicts", "summary"]
   ).map(
     (key, index) => ({
-      label: key === "governance" ? "关系治理" : String(t(`importWorkflow.phases.${key}` as never)),
+      label: String(t(`importWorkflow.phases.${key}` as never)),
       state: index < stepIndex ? "complete" : index === stepIndex ? "current" : "upcoming",
     }),
   );
-  const statusText = state.phase === "governance"
-    ? "关系治理"
-    : String(t(`importWorkflow.phases.${state.phase}` as never));
+  const statusText = String(t(`importWorkflow.phases.${state.phase}` as never));
   const status: ImportStatus =
     state.phase === "summary"
-      ? { kind: hasAttention ? "warning" : "success", text: hasTodo ? String(t("importWorkflow.phases.failed")) : statusText }
+      ? {
+          kind: hasAttention ? "warning" : "success",
+          text: hasTodo ? String(t("importWorkflow.phases.attention")) : statusText,
+        }
       : state.phase === "failed"
         ? { kind: "failure", text: statusText }
         : { kind: "info", text: statusText };
@@ -971,7 +976,7 @@ type: "failed",
       actions = {
         primary: [
           <Button disabled={!governanceConfirmed} key="confirm-governance" onClick={() => dispatch({ type: "governance_confirmed" })} size="lg">
-            确认关系处理
+            {t("importWorkflow.governance.confirmAction")}
           </Button>,
         ],
         secondary: [

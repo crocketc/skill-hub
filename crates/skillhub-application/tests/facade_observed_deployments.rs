@@ -124,21 +124,23 @@ async fn prepare(
 
 async fn commit_copy(
     facade: &LocalApplicationFacade,
-    prepared_id: skillhub_core::OperationId,
+    prepared: Box<skillhub_core::PreparedImport>,
 ) -> Box<skillhub_core::ImportSummary> {
+    // 分组按分析结果跟随：关系明确的来源无分组，无需治理确认。
+    let governance_decision = skillhub_core::ImportGovernanceDecision {
+        group_actions: prepared
+            .analysis
+            .governance_groups
+            .iter()
+            .map(|group| (group.group_id.clone(), group.default_action))
+            .collect(),
+        item_overrides: Default::default(),
+    };
     let committed = facade
         .execute(AppCommand::CommitImport(CommitImport {
-            prepared_import_id: prepared_id,
+            prepared_import_id: prepared.id,
             decision: ImportDecision::CopyIntoLibrary,
-            governance_decision: skillhub_core::ImportGovernanceDecision {
-                group_actions: [(
-                    "agent-managed-source".into(),
-                    skillhub_core::ImportGovernanceAction::PreserveOriginal,
-                )]
-                .into_iter()
-                .collect(),
-                item_overrides: Default::default(),
-            },
+            governance_decision,
         }))
         .await
         .expect("commit import");
@@ -210,7 +212,7 @@ async fn import_records_complete_provenance_and_establishes_the_observed_deploym
     let facade = facade_with_agent(workspace.path(), &agent_root);
 
     let prepared = prepare(&facade, &source, "Notes").await;
-    let summary = commit_copy(&facade, prepared.id).await;
+    let summary = commit_copy(&facade, prepared).await;
     let skill_id = summary.items[0].skill_id.expect("skill in library");
 
     // 导入即存证：摘要携带完整溯源字段。
@@ -260,7 +262,7 @@ async fn import_outside_known_agent_directories_stays_unattributed_and_builds_no
     let facade = facade_with_agent(workspace.path(), &agent_root);
 
     let prepared = prepare(&facade, &source, "Notes").await;
-    let summary = commit_copy(&facade, prepared.id).await;
+    let summary = commit_copy(&facade, prepared).await;
     let skill_id = summary.items[0].skill_id.expect("skill in library");
 
     // 来源不明：归属显式缺省（不猜），且不建立任何已观察关系。
@@ -300,7 +302,7 @@ async fn scan_establishes_maintains_releases_and_reactivates_observed_relations(
 
     // 集中库先有这个 Skill（从 agent 目录之外导入，不产生关系）。
     let prepared = prepare(&facade, &library_source, "Notes").await;
-    let summary = commit_copy(&facade, prepared.id).await;
+    let summary = commit_copy(&facade, prepared).await;
     let skill_id = summary.items[0].skill_id.expect("skill in library");
     assert!(provenance_of(&facade, skill_id)
         .await
@@ -377,7 +379,7 @@ async fn repeated_import_is_an_explicit_conflict_and_keeps_provenance_history() 
     let facade = facade_with_agent(workspace.path(), &agent_root);
 
     let prepared = prepare(&facade, &first, "Notes").await;
-    let summary = commit_copy(&facade, prepared.id).await;
+    let summary = commit_copy(&facade, prepared).await;
     let skill_id = summary.items[0].skill_id.expect("skill in library");
 
     // 相同内容的第二个目录：明确冲突，绝不静默处理。
@@ -454,7 +456,7 @@ async fn original_migration_requires_explicit_confirmation_and_never_touches_fil
     let facade = facade_with_agent(workspace.path(), &agent_root);
 
     let prepared = prepare(&facade, &source, "Notes").await;
-    let summary = commit_copy(&facade, prepared.id).await;
+    let summary = commit_copy(&facade, prepared).await;
     let skill_id = summary.items[0].skill_id.expect("skill in library");
 
     // 准备只读：给出冲突清单与确认要求，绝不删除。
@@ -547,7 +549,7 @@ async fn original_migration_aborts_on_conflicts_and_preserves_the_scene() {
 
     // 场景一：导入后内容分叉 → ContentDiverged 冲突，确认也拒绝，现场保留。
     let prepared = prepare(&facade, &source, "Notes").await;
-    let summary = commit_copy(&facade, prepared.id).await;
+    let summary = commit_copy(&facade, prepared).await;
     let skill_id = summary.items[0].skill_id.expect("skill in library");
     write_skill(&source, BODY_V2);
 
@@ -630,7 +632,7 @@ async fn original_migration_restores_the_original_directory_from_the_backup_on_r
     let facade = facade_with_agent(workspace.path(), &agent_root);
 
     let prepared = prepare(&facade, &source, "Notes").await;
-    let summary = commit_copy(&facade, prepared.id).await;
+    let summary = commit_copy(&facade, prepared).await;
     let skill_id = summary.items[0].skill_id.expect("skill in library");
 
     let planned = facade

@@ -78,6 +78,7 @@ fn local_copy_keeps_original_and_creates_one_managed_item() {
                 ),
                 None,
                 &[],
+                &Default::default(),
             )
             .await
             .unwrap();
@@ -110,6 +111,7 @@ fn takeover_does_not_remove_original_until_managed_copy_is_verified() {
                 ),
                 Some("sha256:incoming"),
                 &[],
+                &Default::default(),
             )
             .await
             .unwrap();
@@ -141,6 +143,7 @@ fn failed_commit_keeps_prepared_session_for_retry_and_cancel_is_explicit() {
                 ),
                 None,
                 &[],
+                &Default::default(),
             )
             .await
             .unwrap();

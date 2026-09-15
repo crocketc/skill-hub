@@ -180,9 +180,9 @@ pub use import::{
     plan_original_migration, CandidateOwnership, DuplicateKind, ExistingSkillRecord, ImportAction,
     ImportAnalysis, ImportCandidate, ImportConflict, ImportDecision, ImportGovernanceAction,
     ImportGovernanceClassification, ImportGovernanceDecision, ImportGovernanceGroup,
-    ImportGovernanceMember, ImportMatch, ImportProvenance, MatchBasis, OriginalMigrationConflict,
-    OriginalMigrationConflictReason, OriginalMigrationFacts, OriginalMigrationPlan,
-    OriginalMigrationResult, OriginalMigrationState,
+    ImportGovernanceMember, ImportMatch, ImportProvenance, ImportSourceFacts, MatchBasis,
+    OriginalMigrationConflict, OriginalMigrationConflictReason, OriginalMigrationFacts,
+    OriginalMigrationPlan, OriginalMigrationResult, OriginalMigrationState,
 };
 pub use llm::{search_query, translation};
 pub use llm::{

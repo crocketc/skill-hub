@@ -419,17 +419,15 @@ async fn takeover_after_verify_copies_and_verifies_without_deleting_original() {
         .analysis
         .actions
         .contains(&ImportDecision::TakeOverAfterVerify));
-    let group = prepared.analysis.governance_groups.first().expect("group");
+    // 已知 Agent 目录来源关系明确：不生成治理组，接管无需治理确认。
+    assert!(prepared.analysis.governance_groups.is_empty());
 
     let committed = facade
         .execute(AppCommand::CommitImport(skillhub_core::CommitImport {
             prepared_import_id: prepared.id,
             decision: ImportDecision::TakeOverAfterVerify,
             governance_decision: ImportGovernanceDecision {
-                group_actions: BTreeMap::from([(
-                    group.group_id.clone(),
-                    ImportGovernanceAction::PreserveOriginal,
-                )]),
+                group_actions: BTreeMap::new(),
                 item_overrides: BTreeMap::new(),
             },
         }))
@@ -2234,4 +2232,358 @@ async fn concurrent_commits_of_one_prepared_relation_are_serialized() {
         .expect("managed relation")
         .file_type()
         .is_symlink());
+}
+
+#[tokio::test]
+async fn import_from_shared_directory_groups_members_with_affected_agents() {
+    let database = Database::open_in_memory().expect("database");
+    let workspace = tempfile::tempdir().expect("workspace");
+    let shared = workspace.path().join("shared-skills");
+    std::fs::create_dir_all(&shared).expect("shared dir");
+    let source = shared.join("notes");
+    write_skill(&source);
+    let library_root = workspace.path().join("library");
+    CentralLibrary::initialize(&library_root).expect("library");
+    let facade = LocalApplicationFacade::new_with_library(database, &library_root);
+    {
+        let handle = facade.database_for_tests();
+        let database = handle.lock().expect("database lock");
+        database
+            .directory_repository()
+            .upsert_node(&DirectoryNodeFact {
+                node_id: "directory:shared".into(),
+                path: shared.to_string_lossy().into_owned(),
+                path_key: String::new(),
+                role: DirectoryRole::SharedDirectory,
+                profile_id: Some("agent-skills".into()),
+                agent_client_id: None,
+                exists: true,
+                observed_at: 1,
+                scan_source: Some("test".into()),
+            })
+            .expect("directory node");
+        for client in ["zcode.shared", "trae.code"] {
+            database
+                .relationship_repository()
+                .upsert_capability(&AgentDirectoryCapabilityFact {
+                    agent_client_id: client.into(),
+                    directory_node_id: "directory:shared".into(),
+                    recognition: DirectoryRecognition::Supported,
+                    precedence: DirectoryPrecedence::Preferred,
+                    evidence_reference: None,
+                    researched_at: None,
+                    applicable_platforms: vec![],
+                })
+                .expect("capability");
+        }
+    }
+
+    let prepared = facade
+        .execute(AppCommand::PrepareImport(PrepareImport {
+            candidate: ImportCandidate::detected(
+                SourceDescriptor::new(SourceKind::Local, SourceLocator::local_path(&source)),
+                source.to_string_lossy(),
+                ".",
+                "SKILL.md",
+                "Notes",
+            ),
+            tree_hash: None,
+        }))
+        .await
+        .expect("prepared import");
+    let AppCommandResult::PreparedImport(prepared) = prepared else {
+        panic!("expected prepared import");
+    };
+    assert_eq!(prepared.analysis.governance_groups.len(), 1);
+    let group = prepared
+        .analysis
+        .governance_groups
+        .first()
+        .expect("governance group");
+    assert_eq!(
+        group.classification,
+        skillhub_core::ImportGovernanceClassification::SharedDirectoryRead
+    );
+    let member = group.members.first().expect("member");
+    assert!(member.source_path.ends_with("shared-skills/notes"));
+    // 受影响 Agent 来自已登记目录能力，排序去重后供界面展示。
+    assert_eq!(member.affected_agents, ["trae.code", "zcode.shared"]);
+
+    let committed = facade
+        .execute(AppCommand::CommitImport(skillhub_core::CommitImport {
+            prepared_import_id: prepared.id,
+            decision: ImportDecision::CopyIntoLibrary,
+            governance_decision: ImportGovernanceDecision {
+                group_actions: BTreeMap::from([(
+                    group.group_id.clone(),
+                    ImportGovernanceAction::CreateTodo,
+                )]),
+                item_overrides: BTreeMap::new(),
+            },
+        }))
+        .await
+        .expect("committed import");
+    let AppCommandResult::ImportSummary(summary) = committed else {
+        panic!("expected import summary");
+    };
+    let task = summary
+        .items
+        .first()
+        .expect("item")
+        .governance_tasks
+        .first()
+        .expect("task")
+        .clone();
+    assert_eq!(task.kind, GovernanceTaskKind::ConfirmSharedDirectoryImpact);
+    // detail 是稳定键，不是散文；客户端负责翻译。
+    assert_eq!(
+        task.detail,
+        "import.governance.task.confirm_shared_directory_impact"
+    );
+    assert!(source.join("SKILL.md").is_file());
+}
+
+#[tokio::test]
+async fn same_name_conflict_todo_maps_to_classify_same_name_skill() {
+    let database = Database::open_in_memory().expect("database");
+    let workspace = tempfile::tempdir().expect("workspace");
+    let library_root = workspace.path().join("library");
+    CentralLibrary::initialize(&library_root).expect("library");
+    let existing_source = workspace.path().join("existing/notes");
+    std::fs::create_dir_all(&existing_source).expect("existing dir");
+    std::fs::write(existing_source.join("SKILL.md"), "# Notes A").expect("existing skill");
+    let facade = LocalApplicationFacade::new_with_library(database, &library_root);
+    facade
+        .execute(AppCommand::CreateSkill(CreateSkill {
+            name: "Notes".into(),
+            source_path: existing_source.to_string_lossy().into_owned(),
+        }))
+        .await
+        .expect("create skill");
+
+    let incoming = workspace.path().join("incoming/notes");
+    std::fs::create_dir_all(&incoming).expect("incoming dir");
+    std::fs::write(incoming.join("SKILL.md"), "# Notes B").expect("incoming skill");
+    let prepared = facade
+        .execute(AppCommand::PrepareImport(PrepareImport {
+            candidate: ImportCandidate::detected(
+                SourceDescriptor::new(SourceKind::Local, SourceLocator::local_path(&incoming)),
+                incoming.to_string_lossy(),
+                ".",
+                "SKILL.md",
+                "Notes",
+            ),
+            tree_hash: None,
+        }))
+        .await
+        .expect("prepared import");
+    let AppCommandResult::PreparedImport(prepared) = prepared else {
+        panic!("expected prepared import");
+    };
+    let group = prepared
+        .analysis
+        .governance_groups
+        .first()
+        .expect("governance group");
+    assert_eq!(
+        group.classification,
+        skillhub_core::ImportGovernanceClassification::SameNameDifferentContent
+    );
+    assert_eq!(
+        group.default_action,
+        ImportGovernanceAction::CreateTodo,
+        "同名不同内容默认进入待判断待办"
+    );
+
+    let committed = facade
+        .execute(AppCommand::CommitImport(skillhub_core::CommitImport {
+            prepared_import_id: prepared.id,
+            decision: ImportDecision::KeepIndependent,
+            governance_decision: ImportGovernanceDecision {
+                group_actions: BTreeMap::from([(
+                    group.group_id.clone(),
+                    ImportGovernanceAction::CreateTodo,
+                )]),
+                item_overrides: BTreeMap::new(),
+            },
+        }))
+        .await
+        .expect("committed import");
+    let AppCommandResult::ImportSummary(summary) = committed else {
+        panic!("expected import summary");
+    };
+    let task = summary
+        .items
+        .first()
+        .expect("item")
+        .governance_tasks
+        .first()
+        .expect("task");
+    assert_eq!(task.kind, GovernanceTaskKind::ClassifySameNameSkill);
+    assert_eq!(
+        task.detail,
+        "import.governance.task.classify_same_name_skill"
+    );
+    assert!(incoming.join("SKILL.md").is_file());
+}
+
+#[tokio::test]
+async fn exact_duplicate_todo_maps_to_select_authoritative_version() {
+    let database = Database::open_in_memory().expect("database");
+    let workspace = tempfile::tempdir().expect("workspace");
+    let library_root = workspace.path().join("library");
+    CentralLibrary::initialize(&library_root).expect("library");
+    let source = workspace.path().join("source/notes");
+    write_skill(&source);
+    let facade = LocalApplicationFacade::new_with_library(database, &library_root);
+    facade
+        .execute(AppCommand::CreateSkill(CreateSkill {
+            name: "Notes".into(),
+            source_path: source.to_string_lossy().into_owned(),
+        }))
+        .await
+        .expect("create skill");
+
+    let prepared = facade
+        .execute(AppCommand::PrepareImport(PrepareImport {
+            candidate: ImportCandidate::detected(
+                SourceDescriptor::new(SourceKind::Local, SourceLocator::local_path(&source)),
+                source.to_string_lossy(),
+                ".",
+                "SKILL.md",
+                "Notes",
+            ),
+            tree_hash: None,
+        }))
+        .await
+        .expect("prepared import");
+    let AppCommandResult::PreparedImport(prepared) = prepared else {
+        panic!("expected prepared import");
+    };
+    let group = prepared
+        .analysis
+        .governance_groups
+        .first()
+        .expect("governance group");
+    assert_eq!(
+        group.classification,
+        skillhub_core::ImportGovernanceClassification::ExactDuplicate
+    );
+
+    let committed = facade
+        .execute(AppCommand::CommitImport(skillhub_core::CommitImport {
+            prepared_import_id: prepared.id,
+            decision: ImportDecision::CopyIntoLibrary,
+            governance_decision: ImportGovernanceDecision {
+                group_actions: BTreeMap::from([(
+                    group.group_id.clone(),
+                    ImportGovernanceAction::CreateTodo,
+                )]),
+                item_overrides: BTreeMap::new(),
+            },
+        }))
+        .await
+        .expect("committed import");
+    let AppCommandResult::ImportSummary(summary) = committed else {
+        panic!("expected import summary");
+    };
+    let task = summary
+        .items
+        .first()
+        .expect("item")
+        .governance_tasks
+        .first()
+        .expect("task");
+    assert_eq!(task.kind, GovernanceTaskKind::SelectAuthoritativeVersion);
+    assert_eq!(
+        task.detail,
+        "import.governance.task.select_authoritative_version"
+    );
+}
+
+#[tokio::test]
+async fn verified_observed_copy_import_is_grouped_as_content_identical_copy() {
+    let database = Database::open_in_memory().expect("database");
+    let workspace = tempfile::tempdir().expect("workspace");
+    let library_root = workspace.path().join("library");
+    CentralLibrary::initialize(&library_root).expect("library");
+    let managed_source = workspace.path().join("origin/notes");
+    write_skill(&managed_source);
+    let facade = LocalApplicationFacade::new_with_library(database, &library_root);
+    facade
+        .execute(AppCommand::CreateSkill(CreateSkill {
+            name: "Notes".into(),
+            source_path: managed_source.to_string_lossy().into_owned(),
+        }))
+        .await
+        .expect("create skill");
+    let AppQueryResult::SkillPage(page) = facade
+        .query(AppQuery::ListSkills(ListSkills {
+            text: "Notes".into(),
+            page: 1,
+            page_size: 10,
+            filters: Default::default(),
+            sort: Default::default(),
+        }))
+        .await
+        .expect("list skills")
+    else {
+        panic!("expected skill page");
+    };
+    let skill_id = page.items[0].skill_id;
+
+    // 同一内容的第二个目录：扫描建立"内容已验证"的观察副本事实。
+    let copy = workspace.path().join("elsewhere/notes");
+    write_skill(&copy);
+    let fingerprint = skillhub_adapters::deployment::DeploymentFilesystem::hash_tree(&copy)
+        .expect("copy fingerprint");
+    {
+        let handle = facade.database_for_tests();
+        let database = handle.lock().expect("database lock");
+        database
+            .provenance_repository()
+            .apply_observed_row_action(
+                "trae.code",
+                &copy.to_string_lossy(),
+                &skillhub_core::deployment::ObservedRowAction::EstablishVerified {
+                    skill_id,
+                    fingerprint,
+                },
+                skillhub_core::deployment::ObservedOrigin::Scan,
+                1,
+            )
+            .expect("observed copy");
+    }
+
+    let prepared = facade
+        .execute(AppCommand::PrepareImport(PrepareImport {
+            candidate: ImportCandidate::detected(
+                SourceDescriptor::new(SourceKind::Local, SourceLocator::local_path(&copy)),
+                copy.to_string_lossy(),
+                ".",
+                "SKILL.md",
+                "Notes",
+            ),
+            tree_hash: None,
+        }))
+        .await
+        .expect("prepared import");
+    let AppCommandResult::PreparedImport(prepared) = prepared else {
+        panic!("expected prepared import");
+    };
+    let group = prepared
+        .analysis
+        .governance_groups
+        .first()
+        .expect("governance group");
+    assert_eq!(
+        group.classification,
+        skillhub_core::ImportGovernanceClassification::ContentIdenticalCopy
+    );
+    let member = group.members.first().expect("member");
+    assert_eq!(
+        member.affected_agents,
+        ["trae.code"],
+        "观察副本的归属 Agent 进入影响事实"
+    );
 }

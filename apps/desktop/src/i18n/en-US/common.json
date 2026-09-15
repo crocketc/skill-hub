@@ -164,7 +164,9 @@
       "summary": "Import complete",
       "failed": "Import needs attention",
       "cancelled": "Import cancelled",
-      "committingBackgroundHint": "You can leave this page; the import keeps running in the background. Follow progress in the top-bar task status and view the result in Notifications when it finishes."
+      "committingBackgroundHint": "You can leave this page; the import keeps running in the background. Follow progress in the top-bar task status and view the result in Notifications when it finishes.",
+      "governance": "Relationship governance",
+      "attention": "Import finished with pending items"
     },
     "analysis": {
       "progressTitle": "Conflict analysis progress",
@@ -342,9 +344,35 @@
         "createTodo": "Create task"
       },
       "classification": {
-        "sourcePreservation": "Source preservation",
-        "agentManagedSource": "Agent-managed source",
-        "conflictFollowUp": "Conflict follow-up"
+        "exactDuplicate": "Exact duplicates",
+        "contentIdenticalCopy": "Content-identical copies",
+        "sameNameDifferentContent": "Same name, different content",
+        "sharedDirectoryRead": "Shared directory reads",
+        "sharedDirectoryReference": "Shared directory references",
+        "unrecognizedSource": "Unrecognized or unconfirmed"
+      },
+      "confirmAction": "Confirm relationship handling",
+      "impact": {
+        "summary": "{{count}} skills will be imported into the central library. Affected agents: {{agents}}.",
+        "noKnownAgent": "no registered agents",
+        "sourcePathLabel": "Source path: {{path}}",
+        "agentSeparator": ", "
+      },
+      "rollback": {
+        "exact_duplicate": "Recovery: the original source is kept; remove the library copy to re-import later.",
+        "content_identical_copy": "Recovery: the source copy is kept; it can be converted to a managed link later.",
+        "same_name_different_content": "Recovery: the original source is kept; the same-name decision can be revisited.",
+        "shared_directory_read": "Recovery: the shared directory itself is not modified by this action.",
+        "shared_directory_reference": "Recovery: the shared directory and other agent references stay untouched.",
+        "unrecognized_source": "Recovery: the original source is kept; the recognition task can be revisited."
+      },
+      "taskDetail": {
+        "select_authoritative_version": "Authoritative version pending",
+        "convert_copy_to_managed_link": "Convert copy to managed link pending",
+        "classify_same_name_skill": "Same-name skill classification pending",
+        "confirm_shared_directory_impact": "Shared directory impact pending",
+        "convert_shared_reference_to_managed_link": "Shared reference conversion pending",
+        "unknown_directory_recognition": "Directory recognition pending"
       }
     },
     "commitMessages": {

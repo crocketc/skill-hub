@@ -104,10 +104,16 @@ where
         candidate: ImportCandidate,
         candidate_tree_hash: Option<&str>,
         existing: &[ExistingSkillRecord],
+        source_facts: &crate::import::ImportSourceFacts,
     ) -> AppResult<PreparedImport> {
         let prepared = PreparedImport {
             id: OperationId::new(),
-            analysis: analyze_import(candidate.clone(), candidate_tree_hash, existing),
+            analysis: analyze_import(
+                candidate.clone(),
+                candidate_tree_hash,
+                existing,
+                source_facts,
+            ),
             candidate,
         };
         self.prepared

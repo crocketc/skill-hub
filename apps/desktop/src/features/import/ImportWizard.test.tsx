@@ -775,7 +775,7 @@ it("renders governance before conflicts and sends group plus member override to 
     expect(plan.governanceGroups).toHaveLength(1);
     expect(actions).toEqual({});
     expect(governanceDecision).toEqual({
-      group_actions: { "agent-managed-source": "create_todo" },
+      group_actions: { "unrecognized-source": "create_todo" },
       item_overrides: { "safe-pdf": "preserve_original" },
     });
     return [{
@@ -791,12 +791,16 @@ it("renders governance before conflicts and sends group plus member override to 
     return {
       ...plan,
       governanceGroups: [{
-        group_id: "agent-managed-source",
-        classification: "agent_managed_source",
-        impact_summary: "该目录由 Agent 共用；导入不会删除原件。",
-        default_action: "preserve_original",
+        group_id: "unrecognized-source",
+        classification: "unrecognized_source",
+        default_action: "create_todo",
         available_actions: ["preserve_original", "create_todo"],
-        members: [{ member_id: "safe-pdf", display_name: "PDF" }],
+        members: [{
+          member_id: "safe-pdf",
+          display_name: "PDF",
+          source_path: "C:/skills/safe-pdf",
+          affected_agents: [],
+        }],
       } satisfies ImportGovernanceGroup],
     };
   });
@@ -828,11 +832,15 @@ it("requires a new governance confirmation after returning to candidates and rea
     ...(await originalAnalyze(candidates, onProgress)),
     governanceGroups: [{
       group_id: "same-group",
-      classification: "agent_managed_source",
-      impact_summary: "需要重新确认",
-      default_action: "preserve_original",
+      classification: "unrecognized_source",
+      default_action: "create_todo",
       available_actions: ["preserve_original", "create_todo"],
-      members: [{ member_id: "safe-pdf", display_name: "PDF" }],
+      members: [{
+        member_id: "safe-pdf",
+        display_name: "PDF",
+        source_path: "C:/skills/safe-pdf",
+        affected_agents: [],
+      }],
     } satisfies ImportGovernanceGroup],
   }));
   await renderWizard(facade);
@@ -873,9 +881,10 @@ it("counts todo results as attention in the status, notification, and tracked su
   await user.click(await screen.findByRole("button", { name: "提交导入" }));
 
   const notice = await screen.findByTestId("notice-warning");
+  // todo 结果属于"需要关注"而非失败：通知标题与状态区都不再借用失败文案。
   expect(within(notice).getByText("导入需要处理")).toBeVisible();
   expect(within(notice).getByText(/待处理 1/)).toBeVisible();
-  expect(screen.getByText("导入需要处理", { selector: ".sh-import-wizard__status" })).toBeVisible();
+  expect(screen.getByText("导入完成，有待处理事项", { selector: ".sh-import-wizard__status" })).toBeVisible();
   expect(tracker.getSnapshot()[0].resultSummary).toEqual({
     succeeded: 0,
     failed: 0,

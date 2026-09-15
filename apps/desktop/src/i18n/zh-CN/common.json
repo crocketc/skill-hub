@@ -164,7 +164,9 @@
       "summary": "导入完成",
       "failed": "导入需要处理",
       "cancelled": "导入已取消",
-      "committingBackgroundHint": "可以离开此页面；导入会在后台继续。请通过顶栏任务状态查看进度，完成后到通知中心查看结果。"
+      "committingBackgroundHint": "可以离开此页面；导入会在后台继续。请通过顶栏任务状态查看进度，完成后到通知中心查看结果。",
+      "governance": "关系治理",
+      "attention": "导入完成，有待处理事项"
     },
     "analysis": {
       "progressTitle": "冲突分析进度",
@@ -342,9 +344,35 @@
         "createTodo": "创建待办"
       },
       "classification": {
-        "sourcePreservation": "保留来源",
-        "agentManagedSource": "Agent 管理的来源",
-        "conflictFollowUp": "冲突后续处理"
+        "exactDuplicate": "完全重复",
+        "contentIdenticalCopy": "内容一致的复制副本",
+        "sameNameDifferentContent": "同名不同内容",
+        "sharedDirectoryRead": "通用目录直接读取",
+        "sharedDirectoryReference": "通用目录链接引用",
+        "unrecognizedSource": "识别未知或待确认"
+      },
+      "confirmAction": "确认关系处理",
+      "impact": {
+        "summary": "{{count}} 个 Skill 将导入集中库。受影响 Agent：{{agents}}。",
+        "noKnownAgent": "无已登记 Agent",
+        "sourcePathLabel": "来源路径：{{path}}",
+        "agentSeparator": "、"
+      },
+      "rollback": {
+        "exact_duplicate": "回退方式：保留来源原件；库内副本删除后可重新导入。",
+        "content_identical_copy": "回退方式：保留来源副本；后续可确认转为管理链接。",
+        "same_name_different_content": "回退方式：保留来源原件；同名裁决可重新处理。",
+        "shared_directory_read": "回退方式：共享目录原件不会被本操作修改。",
+        "shared_directory_reference": "回退方式：共享目录本体与其他 Agent 引用保持不变。",
+        "unrecognized_source": "回退方式：保留来源原件；识别待办可重新处理。"
+      },
+      "taskDetail": {
+        "select_authoritative_version": "待选择权威版本",
+        "convert_copy_to_managed_link": "待将复制副本转为管理链接",
+        "classify_same_name_skill": "待判断同名 Skill 是否为不同 Skill",
+        "confirm_shared_directory_impact": "待确认通用目录影响范围",
+        "convert_shared_reference_to_managed_link": "待将通用目录引用转为管理链接",
+        "unknown_directory_recognition": "待确认目录识别能力"
       }
     },
     "commitMessages": {

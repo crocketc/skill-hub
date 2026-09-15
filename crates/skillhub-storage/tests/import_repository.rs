@@ -71,7 +71,7 @@ fn projects_existing_skill_identity_version_source_and_builtin_ownership() {
     );
     let analysis = database
         .import_repository()
-        .analyze(candidate, Some("sha256:tree"))
+        .analyze(candidate, Some("sha256:tree"), &Default::default())
         .unwrap();
     assert!(analysis
         .actions

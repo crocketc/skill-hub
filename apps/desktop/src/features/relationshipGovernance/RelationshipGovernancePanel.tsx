@@ -21,10 +21,31 @@ const actionKeys: Record<ImportGovernanceAction, string> = {
 };
 
 const classificationKeys: Record<ImportGovernanceGroup["classification"], string> = {
-  source_preservation: "importWorkflow.governance.classification.sourcePreservation",
-  agent_managed_source: "importWorkflow.governance.classification.agentManagedSource",
-  conflict_follow_up: "importWorkflow.governance.classification.conflictFollowUp",
+  exact_duplicate: "importWorkflow.governance.classification.exactDuplicate",
+  content_identical_copy: "importWorkflow.governance.classification.contentIdenticalCopy",
+  same_name_different_content:
+    "importWorkflow.governance.classification.sameNameDifferentContent",
+  shared_directory_read: "importWorkflow.governance.classification.sharedDirectoryRead",
+  shared_directory_reference:
+    "importWorkflow.governance.classification.sharedDirectoryReference",
+  unrecognized_source: "importWorkflow.governance.classification.unrecognizedSource",
 };
+
+const rollbackKeys: Record<ImportGovernanceGroup["classification"], string> = {
+  exact_duplicate: "importWorkflow.governance.rollback.exact_duplicate",
+  content_identical_copy: "importWorkflow.governance.rollback.content_identical_copy",
+  same_name_different_content:
+    "importWorkflow.governance.rollback.same_name_different_content",
+  shared_directory_read: "importWorkflow.governance.rollback.shared_directory_read",
+  shared_directory_reference:
+    "importWorkflow.governance.rollback.shared_directory_reference",
+  unrecognized_source: "importWorkflow.governance.rollback.unrecognized_source",
+};
+
+/** 组级影响事实全部由成员聚合而来；后端不产出界面散文。 */
+function affectedAgentsOfGroup(group: ImportGovernanceGroup): string[] {
+  return [...new Set(group.members.flatMap((member) => member.affected_agents))];
+}
 
 /**
  * 可复用的关系治理确认面板。它只消费后端给出的确定性分类与影响摘要，
@@ -60,10 +81,21 @@ export function RelationshipGovernancePanel({
         <p>{t("importWorkflow.governance.description")}</p>
       </header>
       {!aiAvailable ? <p role="status">{t("importWorkflow.governance.aiUnavailable")}</p> : null}
-      {groups.map((group) => (
+      {groups.map((group) => {
+        const agents = affectedAgentsOfGroup(group);
+        const agentSummary = agents.length > 0
+          ? agents.join(t("importWorkflow.governance.impact.agentSeparator") as never)
+          : String(t("importWorkflow.governance.impact.noKnownAgent") as never);
+        return (
         <article key={group.group_id}>
           <h3>{t(classificationKeys[group.classification] as never)}</h3>
-          <p>{group.impact_summary}</p>
+          <p>
+            {t("importWorkflow.governance.impact.summary", {
+              agents: agentSummary,
+              count: group.members.length,
+            })}
+          </p>
+          <p>{t(rollbackKeys[group.classification] as never)}</p>
           <fieldset>
             <legend>{t("importWorkflow.governance.groupActionLegend")}</legend>
             {group.available_actions.map((action) => (
@@ -92,6 +124,7 @@ export function RelationshipGovernancePanel({
               {group.members.map((member) => (
                 <li key={member.member_id}>
                   <strong>{member.display_name}</strong>
+                  <span>{t("importWorkflow.governance.impact.sourcePathLabel", { path: member.source_path })}</span>
                   <fieldset>
                     <legend>{t("importWorkflow.governance.memberOverrideLegend", { name: member.display_name })}</legend>
                     {group.available_actions.map((action) => (
@@ -114,7 +147,8 @@ export function RelationshipGovernancePanel({
             </ul>
           ) : null}
         </article>
-      ))}
+        );
+      })}
     </section>
   );
 }

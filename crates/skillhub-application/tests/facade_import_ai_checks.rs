@@ -99,7 +99,7 @@ async fn enable_safety_check(facade: &LocalApplicationFacade) {
 async fn prepared_import(
     facade: &LocalApplicationFacade,
     root: &std::path::Path,
-) -> skillhub_core::OperationId {
+) -> (skillhub_core::OperationId, Option<String>) {
     let candidate = ImportCandidate::detected(
         SourceDescriptor::new(SourceKind::Local, SourceLocator::local_path(root)),
         root.to_string_lossy(),
@@ -117,7 +117,28 @@ async fn prepared_import(
     let AppCommandResult::PreparedImport(prepared) = prepared else {
         panic!("expected prepared import");
     };
-    prepared.id
+    let group_id = prepared
+        .analysis
+        .governance_groups
+        .first()
+        .map(|group| group.group_id.clone());
+    (prepared.id, group_id)
+}
+
+/// 用分析返回的真实分组 ID 构造治理确认；无分组时不需要确认。
+fn governance_confirm(group_id: &Option<String>) -> skillhub_core::ImportGovernanceDecision {
+    skillhub_core::ImportGovernanceDecision {
+        group_actions: group_id
+            .iter()
+            .map(|id| {
+                (
+                    id.clone(),
+                    skillhub_core::ImportGovernanceAction::PreserveOriginal,
+                )
+            })
+            .collect(),
+        item_overrides: Default::default(),
+    }
 }
 
 #[tokio::test]
@@ -128,7 +149,7 @@ async fn import_ai_checks_report_per_object_and_leave_import_gates_intact() {
     let source = tempfile::tempdir().expect("source");
     std::fs::write(source.path().join("SKILL.md"), "# Notes\n").expect("write SKILL.md");
     std::fs::write(source.path().join("USAGE.md"), "how to use\n").expect("write USAGE.md");
-    let id = prepared_import(&facade, source.path()).await;
+    let (id, _group_id) = prepared_import(&facade, source.path()).await;
 
     let report = facade
         .execute(AppCommand::RunImportAiChecks(RunImportAiChecks {
@@ -164,20 +185,12 @@ async fn import_ai_checks_report_per_object_and_leave_import_gates_intact() {
 
     // The AI layer is advisory: the deterministic import still succeeds after
     // preparing its own commit operation.
-    let id = prepared_import(&facade, source.path()).await;
+    let (id, group_id) = prepared_import(&facade, source.path()).await;
     let committed = facade
         .execute(AppCommand::CommitImport(skillhub_core::CommitImport {
             prepared_import_id: id,
             decision: ImportDecision::CopyIntoLibrary,
-            governance_decision: skillhub_core::ImportGovernanceDecision {
-                group_actions: [(
-                    "source-preservation".into(),
-                    skillhub_core::ImportGovernanceAction::PreserveOriginal,
-                )]
-                .into_iter()
-                .collect(),
-                item_overrides: Default::default(),
-            },
+            governance_decision: governance_confirm(&group_id),
         }))
         .await
         .expect("commit import after ai findings");
@@ -196,8 +209,8 @@ async fn import_ai_checks_report_failures_per_object_without_losing_the_rest() {
     std::fs::write(first.path().join("SKILL.md"), "# A\n").expect("write");
     let second = tempfile::tempdir().expect("second source");
     std::fs::write(second.path().join("SKILL.md"), "# B\n").expect("write");
-    let id_a = prepared_import(&facade, first.path()).await;
-    let id_b = prepared_import(&facade, second.path()).await;
+    let (id_a, _groups_a) = prepared_import(&facade, first.path()).await;
+    let (id_b, _groups_b) = prepared_import(&facade, second.path()).await;
     let missing = skillhub_core::OperationId::new();
 
     let report = facade
@@ -251,7 +264,7 @@ async fn import_ai_checks_respect_the_capability_switch() {
     // Capability stays off (privacy-first default).
     let source = tempfile::tempdir().expect("source");
     std::fs::write(source.path().join("SKILL.md"), "# Notes\n").expect("write");
-    let id = prepared_import(&facade, source.path()).await;
+    let (id, _group_id) = prepared_import(&facade, source.path()).await;
 
     let error = facade
         .execute(AppCommand::RunImportAiChecks(RunImportAiChecks {

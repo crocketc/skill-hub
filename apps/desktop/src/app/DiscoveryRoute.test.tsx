@@ -249,13 +249,17 @@ it("opens governance work from the production discovery route through the relati
   const originalAnalyze = facade.analyzeConflicts.bind(facade);
   facade.analyzeConflicts = async (candidates, onProgress) => ({
     ...(await originalAnalyze(candidates, onProgress)),
-    governanceGroups: [{
-      group_id: "agent-managed-source",
-      classification: "agent_managed_source",
-      impact_summary: "该目录由 Agent 共用；导入不会删除原件。",
-      default_action: "preserve_original",
+governanceGroups: [{
+      group_id: "unrecognized-source",
+      classification: "unrecognized_source",
+      default_action: "create_todo",
       available_actions: ["preserve_original", "create_todo"],
-      members: [{ member_id: "safe-pdf", display_name: "PDF" }],
+      members: [{
+        member_id: "safe-pdf",
+        display_name: "PDF",
+        source_path: "C:/skills/safe-pdf",
+        affected_agents: [],
+      }],
     }],
   });
   facade.commitImport = async () => [{
