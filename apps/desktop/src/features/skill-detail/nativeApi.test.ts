@@ -684,3 +684,69 @@ describe("native translation loop", () => {
     });
   });
 });
+
+describe("native relationship governance queries", () => {
+  it("loads the relationship overview scoped to the skill", async () => {
+    const overview = {
+      scope: { type: "skill", value: { skill_id: "skill-1" } },
+      directory_nodes: [],
+      agent_directory_capabilities: [],
+      source_relations: [],
+      deployment_relations: [],
+      conflict_cases: [],
+      pending_governance_tasks: [],
+      agent_execution_confirmed: false,
+    };
+    vi.mocked(queryApplication).mockResolvedValueOnce({
+      type: "relationship_overview",
+      payload: overview,
+    });
+
+    await expect(nativeSkillDetailFacade.getRelationshipOverview("skill-1")).resolves.toBe(overview);
+    expect(queryApplication).toHaveBeenCalledWith({
+      type: "get_relationship_overview",
+      payload: { scope: { type: "skill", value: { skill_id: "skill-1" } } },
+    });
+  });
+
+  it("surfaces relationship overview failures instead of an empty view", async () => {
+    vi.mocked(queryApplication).mockRejectedValueOnce(new Error("overview failed"));
+
+    await expect(nativeSkillDetailFacade.getRelationshipOverview("skill-1")).rejects.toThrow(
+      "overview failed",
+    );
+  });
+
+  it("loads the governed removal impact for one relation", async () => {
+    const impact = {
+      relation_id: "rel-1",
+      relation: null,
+      ownership: "skillhub_managed",
+      current_agent_reads_shared_directory: false,
+      other_consumers: [],
+      other_skill_paths: [],
+      minimal_action: "create_governance_task",
+      backup: { required: false, rollback_available: false, backup_location: null, detail: "" },
+      governance_tasks: [],
+      permission_limited: false,
+    } as never;
+    vi.mocked(queryApplication).mockResolvedValueOnce({
+      type: "relationship_removal_impact",
+      payload: impact,
+    });
+
+    await expect(nativeSkillDetailFacade.getRelationshipRemovalImpact("rel-1")).resolves.toBe(impact);
+    expect(queryApplication).toHaveBeenCalledWith({
+      type: "get_relationship_removal_impact",
+      payload: { relation_id: "rel-1" },
+    });
+  });
+
+  it("surfaces removal impact failures instead of an empty impact", async () => {
+    vi.mocked(queryApplication).mockRejectedValueOnce(new Error("impact failed"));
+
+    await expect(nativeSkillDetailFacade.getRelationshipRemovalImpact("rel-1")).rejects.toThrow(
+      "impact failed",
+    );
+  });
+});

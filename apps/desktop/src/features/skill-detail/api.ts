@@ -1,4 +1,4 @@
-import type { AppliedSourceUpdate, UpdateDecision, UpstreamCheckResult } from "../../api/bindings";
+import type { AppliedSourceUpdate, RelationshipOverview, RemovalImpactFact, UpdateDecision, UpstreamCheckResult } from "../../api/bindings";
 import type {
   BatchAction,
   CheckState,
@@ -243,6 +243,10 @@ export interface SkillDetailFacade {
   getRelations(skillId: string): Promise<SkillRelation[]>;
   /** OPT-20260914-08：读取导入存证与已观察部署关系（纯查询）。 */
   getProvenance(skillId: string): Promise<SkillProvenance>;
+  /** Task 7：Skill 维度的统一关系概览（多来源、冲突、待办）。 */
+  getRelationshipOverview(skillId: string): Promise<RelationshipOverview>;
+  /** Task 7：按关系读取移除影响（既有 RemovalImpact 契约，只读）。 */
+  getRelationshipRemovalImpact(relationId: string): Promise<RemovalImpactFact>;
   getRequirements(skillId: string): Promise<SkillRequirementFact[]>;
   getRollbackImpact(
     skillId: string,
@@ -319,6 +323,8 @@ export const unavailableSkillDetailFacade: SkillDetailFacade = {
   getMetadata: unavailable,
   getRelations: unavailable,
   getProvenance: unavailable,
+  getRelationshipOverview: unavailable,
+  getRelationshipRemovalImpact: unavailable,
   getRequirements: unavailable,
   getRollbackImpact: unavailable,
   getSummary: unavailable,

@@ -27,6 +27,13 @@ describe("Skill detail contracts", () => {
     await expect(
       unavailableSkillDetailFacade.getVersions("skill-pdf"),
     ).rejects.toBeInstanceOf(SkillDetailUnavailableError);
+    // Task 7：关系概览与移除影响在无原生契约时同样诚实不可用。
+    await expect(
+      unavailableSkillDetailFacade.getRelationshipOverview("skill-pdf"),
+    ).rejects.toBeInstanceOf(SkillDetailUnavailableError);
+    await expect(
+      unavailableSkillDetailFacade.getRelationshipRemovalImpact("rel-1"),
+    ).rejects.toBeInstanceOf(SkillDetailUnavailableError);
   });
 
   it("keeps missing objects distinct from an unavailable production contract", () => {

@@ -1,4 +1,9 @@
-import type { UpdateDecision, UpstreamCheckResult } from "../../api/bindings";
+import type {
+  RelationshipOverview,
+  RemovalImpactFact,
+  UpdateDecision,
+  UpstreamCheckResult,
+} from "../../api/bindings";
 import type {
   SkillProvenance,
   AdjacentSkillContext,
@@ -57,6 +62,9 @@ export interface MockSkillDetailOptions {
   failTrialSave?: boolean;
   missingSkill?: boolean;
   operationHistoryLimitation?: string;
+  /** Task 7：注入 Skill 维度关系概览；缺省为空概览（诚实空态）。 */
+  relationshipOverview?: RelationshipOverview;
+  removalImpactFact?: RemovalImpactFact;
   sharedPhysicalTarget?: boolean;
   summary?: Partial<SkillDetailSummary>;
   usageEvidence?: SkillDetailInsights["usageEvidence"] | null;
@@ -420,6 +428,24 @@ export function createMockSkillDetailFacade(
     },
     async getProvenance() {
       return fixture.provenance;
+    },
+    async getRelationshipOverview(skillId) {
+      // Task 7：页面级测试可用 options.relationshipOverview 注入关系事实；
+      // 缺省给出空概览（诚实空态），绝不错标为"已确认"。
+      return options.relationshipOverview ?? {
+        scope: { type: "skill" as const, value: { skill_id: skillId } },
+        directory_nodes: [],
+        agent_directory_capabilities: [],
+        source_relations: [],
+        deployment_relations: [],
+        conflict_cases: [],
+        pending_governance_tasks: [],
+        agent_execution_confirmed: false as const,
+      };
+    },
+    async getRelationshipRemovalImpact(relationId) {
+      if (options.removalImpactFact) return options.removalImpactFact;
+      throw new Error(`removal impact ${relationId} is not part of this fixture`);
     },
     async getRequirements() {
       return fixture.requirements;
