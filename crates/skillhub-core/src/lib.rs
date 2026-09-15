@@ -176,9 +176,10 @@ pub use ids::{
 };
 pub use ignore::{IgnoreRule, IgnoreSubject};
 pub use import::{
-    analyze_import, ensure_original_deletion_authorized, import_governance_task_id,
-    plan_original_migration, CandidateOwnership, DuplicateKind, ExistingSkillRecord, ImportAction,
-    ImportAnalysis, ImportCandidate, ImportConflict, ImportDecision, ImportGovernanceAction,
+    analyze_import, ensure_original_deletion_authorized, import_conflict_case_id,
+    import_governance_task_id, plan_import_conflict_case, plan_original_migration,
+    CandidateOwnership, DuplicateKind, ExistingSkillRecord, ImportAction, ImportAnalysis,
+    ImportCandidate, ImportCaseOutcome, ImportConflict, ImportDecision, ImportGovernanceAction,
     ImportGovernanceClassification, ImportGovernanceDecision, ImportGovernanceGroup,
     ImportGovernanceMember, ImportMatch, ImportProvenance, ImportSourceFacts, MatchBasis,
     OriginalMigrationConflict, OriginalMigrationConflictReason, OriginalMigrationFacts,

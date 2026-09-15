@@ -1,13 +1,13 @@
 use skillhub_core::deployment::reconcile::RelationTargetFact;
 use skillhub_core::import::{
-    analyze_import, CandidateOwnership, DuplicateKind, ExistingSkillRecord, ImportCandidate,
-    ImportDecision, ImportGovernanceAction, ImportGovernanceClassification, ImportSourceFacts,
-    MatchBasis,
+    analyze_import, plan_import_conflict_case, CandidateOwnership, DuplicateKind,
+    ExistingSkillRecord, ImportCandidate, ImportCaseOutcome, ImportDecision,
+    ImportGovernanceAction, ImportGovernanceClassification, ImportSourceFacts, MatchBasis,
 };
 use skillhub_core::relationship::classifier::classify_observed_relation;
 use skillhub_core::relationship::{
-    AgentDirectoryCapabilityFact, DirectoryRecognition, DirectoryRole, FileRepresentation,
-    RelationshipType,
+    AgentDirectoryCapabilityFact, ConflictClassification, ConflictKind, DirectoryRecognition,
+    DirectoryRole, FileRepresentation, RelationshipType,
 };
 use skillhub_core::search::SearchField;
 use skillhub_core::source::{SourceDescriptor, SourceKind, SourceLocator};
@@ -368,4 +368,240 @@ fn governance_members_carry_structured_impact_facts() {
     assert_eq!(member.display_name, "pdf");
     assert_eq!(member.source_path, "C:/incoming/pdf");
     assert_eq!(member.affected_agents, ["trae.code", "agent-skills"]);
+}
+
+// ===== Task 10：冲突组生产写入链路（core 纯函数映射） =====
+
+fn candidate_at(root: &str, runtime_name: &str) -> (ImportCandidate, String) {
+    (
+        ImportCandidate::detected(
+            SourceDescriptor::new(SourceKind::Local, SourceLocator::local_path(root)),
+            root,
+            ".",
+            "SKILL.md",
+            runtime_name,
+        ),
+        "sha256:incoming".to_owned(),
+    )
+}
+
+fn same_name_analysis(root: &str) -> (skillhub_core::ImportAnalysis, skillhub_core::SkillId) {
+    let (candidate, hash) = candidate_at(root, "Notes");
+    let existing = existing(
+        "Notes",
+        "sha256:original",
+        CandidateOwnership::CentralLibrary,
+    );
+    let skill_id = existing.skill_id;
+    let analysis = analyze_import(candidate, Some(&hash), &[existing], &plain_facts(None));
+    (analysis, skill_id)
+}
+
+fn keep_independent_outcome(
+    imported: skillhub_core::SkillId,
+    existing: skillhub_core::SkillId,
+) -> ImportCaseOutcome {
+    ImportCaseOutcome {
+        skill_id: imported,
+        candidate_fingerprint: Some("sha256:changed".to_owned()),
+        library_path: Some(format!("/library/{existing}/Notes")),
+        library_fingerprint: Some("sha256:original".to_owned()),
+    }
+}
+
+#[test]
+fn keep_independent_plans_a_same_name_case_with_distinct_skill_decision() {
+    let (analysis, existing_id) = same_name_analysis("/incoming/notes-a");
+    let imported = SkillId::new();
+    let fact = plan_import_conflict_case(
+        &analysis,
+        ImportDecision::KeepIndependent,
+        &keep_independent_outcome(imported, existing_id),
+    )
+    .expect("requires_choice conflict plans a case");
+
+    assert_eq!(
+        fact.conflict_id,
+        "import-conflict:same_name_different_content:notes"
+    );
+    assert_eq!(fact.kind, ConflictKind::SameNameDifferentContent);
+    assert_eq!(fact.classification, ConflictClassification::Uncertain);
+    assert_eq!(
+        fact.user_decision,
+        Some(ConflictClassification::DistinctSkill)
+    );
+    // 纯函数不产时间；decided_at 由 facade 合并规则注入。
+    assert_eq!(fact.decided_at, None);
+    assert_eq!(
+        fact.member_skill_ids,
+        vec![existing_id, imported],
+        "both sides of the conflict are members"
+    );
+    assert_eq!(fact.members.len(), 2);
+    let library = &fact.members[0];
+    assert_eq!(library.skill_id, Some(existing_id));
+    assert_eq!(
+        library.path.as_deref(),
+        Some(format!("/library/{existing_id}/Notes").as_str())
+    );
+    assert_eq!(library.fingerprint.as_deref(), Some("sha256:original"));
+    let importer = &fact.members[1];
+    assert_eq!(importer.skill_id, Some(imported));
+    assert_eq!(importer.path.as_deref(), Some("/incoming/notes-a"));
+    assert_eq!(importer.fingerprint.as_deref(), Some("sha256:changed"));
+    assert_eq!(fact.evidence.fingerprints_match, Some(false));
+    assert_eq!(fact.evidence.names_match, Some(true));
+    assert!(!fact.evidence.sufficient_identity_evidence);
+    // 证据本身不足以判 distinct_skill：裁决来自用户的显式决定。
+    assert_eq!(
+        skillhub_core::classify_conflict_evidence(&fact.evidence),
+        ConflictClassification::Uncertain
+    );
+}
+
+#[test]
+fn exact_content_plans_a_duplicate_case_without_user_decision() {
+    let source = SourceDescriptor::new(
+        SourceKind::Local,
+        SourceLocator::local_path("/incoming/notes-a"),
+    );
+    let (candidate, hash) = make_candidate("Notes", source);
+    let existing = existing(
+        "Notes",
+        "sha256:incoming",
+        CandidateOwnership::CentralLibrary,
+    );
+    let existing_id = existing.skill_id;
+    let analysis = analyze_import(candidate, Some(&hash), &[existing], &plain_facts(None));
+    let imported = SkillId::new();
+    let outcome = ImportCaseOutcome {
+        skill_id: imported,
+        candidate_fingerprint: Some("sha256:incoming".to_owned()),
+        library_path: Some(format!("/library/{existing_id}/Notes")),
+        library_fingerprint: Some("sha256:incoming".to_owned()),
+    };
+
+    // 完全重复：即使提交动作带显式映射，内容一致性本身无需用户裁决身份。
+    let fact = plan_import_conflict_case(&analysis, ImportDecision::ReuseExisting, &outcome)
+        .expect("exact content conflict plans a case");
+
+    assert_eq!(
+        fact.conflict_id,
+        "import-conflict:duplicate_same_content:notes"
+    );
+    assert_eq!(fact.kind, ConflictKind::DuplicateSameContent);
+    assert_eq!(
+        fact.classification,
+        ConflictClassification::SameSkillVersion
+    );
+    assert_eq!(fact.user_decision, None);
+    assert_eq!(fact.decided_at, None);
+    assert_eq!(fact.evidence.fingerprints_match, Some(true));
+    assert_eq!(fact.evidence.names_match, Some(true));
+    assert!(fact.evidence.sufficient_identity_evidence);
+    assert_eq!(
+        skillhub_core::classify_conflict_evidence(&fact.evidence),
+        ConflictClassification::SameSkillVersion
+    );
+}
+
+#[test]
+fn same_name_user_decision_follows_the_import_decision_deterministically() {
+    let explicit_same_skill = [
+        ImportDecision::ReuseExisting,
+        ImportDecision::EstablishManagedRelation,
+        ImportDecision::TakeOverAfterVerify,
+    ];
+    let undecided = [
+        ImportDecision::CopyIntoLibrary,
+        ImportDecision::CopyAsIndependentManagedSkill,
+        ImportDecision::Skip,
+    ];
+
+    for decision in explicit_same_skill {
+        let (analysis, existing_id) = same_name_analysis("/incoming/notes-a");
+        let fact = plan_import_conflict_case(
+            &analysis,
+            decision,
+            &keep_independent_outcome(SkillId::new(), existing_id),
+        )
+        .expect("case");
+        assert_eq!(
+            fact.user_decision,
+            Some(ConflictClassification::SameSkillVersion),
+            "{decision:?} reuses the existing identity"
+        );
+    }
+    for decision in undecided {
+        let (analysis, existing_id) = same_name_analysis("/incoming/notes-a");
+        let fact = plan_import_conflict_case(
+            &analysis,
+            decision,
+            &keep_independent_outcome(SkillId::new(), existing_id),
+        )
+        .expect("case");
+        assert_eq!(
+            fact.user_decision, None,
+            "{decision:?} leaves the copy identity unadjudicated"
+        );
+    }
+}
+
+#[test]
+fn conflict_case_ids_are_stable_across_source_directories() {
+    let (first, existing_id) = same_name_analysis("/incoming/from-agent-a");
+    let (second, _) = same_name_analysis("/incoming/from-agent-b");
+    let fact_a = plan_import_conflict_case(
+        &first,
+        ImportDecision::KeepIndependent,
+        &keep_independent_outcome(SkillId::new(), existing_id),
+    )
+    .expect("case a");
+    let fact_b = plan_import_conflict_case(
+        &second,
+        ImportDecision::KeepIndependent,
+        &keep_independent_outcome(SkillId::new(), existing_id),
+    )
+    .expect("case b");
+    assert_eq!(fact_a.conflict_id, fact_b.conflict_id);
+    // runtime 名大小写与首尾空白不影响稳定性。
+    let source = SourceDescriptor::new(
+        SourceKind::Local,
+        SourceLocator::local_path("/incoming/from-agent-c"),
+    );
+    let (candidate, hash) = make_candidate("  Notes  ", source);
+    let existing = existing(
+        "notes",
+        "sha256:original",
+        CandidateOwnership::CentralLibrary,
+    );
+    let analysis = analyze_import(candidate, Some(&hash), &[existing], &plain_facts(None));
+    let fact_c = plan_import_conflict_case(
+        &analysis,
+        ImportDecision::KeepIndependent,
+        &keep_independent_outcome(SkillId::new(), existing_id),
+    )
+    .expect("case c");
+    assert_eq!(fact_c.conflict_id, fact_a.conflict_id);
+}
+
+#[test]
+fn imports_without_required_choice_conflicts_plan_no_case() {
+    let source = SourceDescriptor::new(
+        SourceKind::Local,
+        SourceLocator::local_path("/incoming/notes-a"),
+    );
+    let (candidate, hash) = make_candidate("Notes", source);
+    let analysis = analyze_import(candidate, Some(&hash), &[], &plain_facts(None));
+    let outcome = ImportCaseOutcome {
+        skill_id: SkillId::new(),
+        candidate_fingerprint: Some("sha256:new".to_owned()),
+        library_path: None,
+        library_fingerprint: None,
+    };
+    assert_eq!(
+        plan_import_conflict_case(&analysis, ImportDecision::CopyIntoLibrary, &outcome),
+        None,
+        "conflict-free imports create no conflict group"
+    );
 }
