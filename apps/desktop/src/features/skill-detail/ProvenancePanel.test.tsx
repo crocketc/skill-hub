@@ -187,6 +187,36 @@ it("shows conflict cases and governance todos without resolving them silently", 
   expect(screen.getByText("两个同名副本需要选择权威版本")).toBeVisible();
 });
 
+it("localizes the conflict member path separator instead of hardcoding punctuation", async () => {
+  const i18n = await createSkillHubI18n(["en-US"]);
+  render(
+    <I18nextProvider i18n={i18n}>
+      <ProvenancePanel
+        observedDeployments={[]}
+        provenance={null}
+        relationship={{
+          conflicts: [{
+            conflict_id: "conflict-paths",
+            kind: "same_name_different_content",
+            classification: "uncertain",
+            member_skill_ids: ["skill-demo"],
+            members: [
+              { skill_id: "skill-demo", version_id: null, provenance_id: null, directory_node_id: null, path: "/agents/skills/demo", fingerprint: null },
+              { skill_id: null, version_id: null, provenance_id: null, directory_node_id: null, path: "/.codex/skills/demo", fingerprint: null },
+            ],
+            evidence: { fingerprints_match: false, names_match: true, sufficient_identity_evidence: false },
+          }],
+          pendingTasks: [],
+          sources: [],
+        }}
+      />
+    </I18nextProvider>,
+  );
+
+  expect(screen.getByText("Involved paths: /agents/skills/demo, /.codex/skills/demo")).toBeVisible();
+  expect(screen.queryByText(/、/)).not.toBeInTheDocument();
+});
+
 it("keeps honest empty states when no sources or conflicts are registered", async () => {
   await renderPanelWithRelationship([], [], []);
 

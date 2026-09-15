@@ -73,6 +73,33 @@ const overview: RelationshipOverview = {
       researched_at: null,
       applicable_platforms: [],
     },
+    {
+      agent_client_id: "zcode.shared",
+      directory_node_id: "node-shared",
+      recognition: "supported",
+      precedence: "preferred",
+      evidence_reference: "fixture",
+      researched_at: "2026-09-15",
+      applicable_platforms: ["macos"],
+    },
+    {
+      agent_client_id: "gpt.bird",
+      directory_node_id: "node-shared",
+      recognition: "unknown",
+      precedence: "unknown",
+      evidence_reference: null,
+      researched_at: null,
+      applicable_platforms: [],
+    },
+    {
+      agent_client_id: "legacy.agent",
+      directory_node_id: "node-shared",
+      recognition: "unsupported",
+      precedence: "unknown",
+      evidence_reference: "fixture",
+      researched_at: "2026-09-15",
+      applicable_platforms: [],
+    },
   ],
   source_relations: [],
   deployment_relations: [
@@ -117,6 +144,26 @@ const overview: RelationshipOverview = {
       released_at: null,
     },
     {
+      relation_id: "rel-foreign",
+      skill_id: null,
+      agent_client_id: "trae.code",
+      path: "/home/demo/.agents/skills/legacy",
+      path_key: "pk-legacy",
+      directory_node_id: "node-shared",
+      relationship: "observed_copy",
+      file_representation: "copy",
+      ownership: "observed_unmanaged",
+      link_target_path: null,
+      link_target_path_key: null,
+      link_target_directory_id: null,
+      content_fingerprint: "sha256:dd",
+      origin: "scan",
+      match_state: "name_only",
+      active: true,
+      observed_at: now,
+      released_at: null,
+    },
+    {
       relation_id: "rel-copy",
       skill_id: "skill-review",
       agent_client_id: "codex-cli",
@@ -138,7 +185,17 @@ const overview: RelationshipOverview = {
     },
   ],
   conflict_cases: [],
-  pending_governance_tasks: [],
+  pending_governance_tasks: [
+    {
+      task_id: "task-rel-read",
+      kind: "confirm_shared_directory_impact",
+      subject_id: "rel-read",
+      detail: "import.governance.task.confirm_shared_directory_impact",
+      resolved: false,
+      created_at: now,
+      resolved_at: null,
+    },
+  ],
   agent_execution_confirmed: false,
 };
 
@@ -166,8 +223,29 @@ it("renders the generic shared directory card first with the agent recognition s
   // 识别状态来自登记的能力事实：当前 Agent 对通用目录是"已确认支持"。
   expect(shared.getByText("已确认支持")).toBeVisible();
   expect(shared.getByText("已确认支持")).toHaveClass("sh-status-badge--success");
-  // 共享消费者：识别该目录的其他 Agent；当前 Agent 自身不出现。
-  expect(shared.getByText("共享消费者：trae.code")).toBeVisible();
+  // 共享消费者 = 已确认支持的能力 + 有活动关系的 Agent（观察事实）；
+  // unknown（识别未确认）与 unsupported（已确认不支持）不得从目录存在推断。
+  expect(shared.getByText("共享消费者：trae.code、zcode.shared")).toBeVisible();
+  expect(shared.queryByText(/gpt\.bird/)).not.toBeInTheDocument();
+  expect(shared.queryByText(/legacy\.agent/)).not.toBeInTheDocument();
+});
+
+it("annotates relations owned by other agents and links pending tasks to their relation", async () => {
+  await renderMatrix();
+
+  const cards = screen.getAllByTestId("directory-card");
+  const shared = within(cards[0]);
+  const rows = shared.getAllByTestId("directory-relation");
+  const foreignRow = rows.find((row) => within(row).queryByText("识别到的复制副本") !== null);
+  expect(foreignRow).toBeDefined();
+  // 其他 Agent 的关系必须显式标注归属，不得混入当前 Agent 的矩阵语义。
+  expect(within(foreignRow!).getByText("归属 Agent：trae.code")).toBeVisible();
+  // 当前 Agent 自己的关系行不重复标注归属。
+  const ownRow = rows.find((row) => within(row).queryByText("skill-pdf") !== null);
+  expect(ownRow).toBeDefined();
+  expect(within(ownRow!).queryByText(/归属 Agent/)).not.toBeInTheDocument();
+  // 未决治理待办按关系展示条目数，可追踪不静默。
+  expect(within(ownRow!).getByText("关联待办 1 项")).toBeVisible();
 });
 
 it("labels relations with user semantics and keeps link types in technical details", async () => {

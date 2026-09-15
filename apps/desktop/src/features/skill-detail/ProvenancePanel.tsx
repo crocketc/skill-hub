@@ -150,7 +150,9 @@ export function ProvenancePanel({
                       {memberPaths.length > 0 ? (
                         <span>
                           {t("skillDetail.provenance.conflicts.memberPaths", {
-                            paths: memberPaths.join("、"),
+                            paths: memberPaths.join(
+                              t("importWorkflow.governance.impact.agentSeparator") as never,
+                            ),
                           })}
                         </span>
                       ) : null}

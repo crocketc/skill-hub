@@ -2086,7 +2086,9 @@
       "researchedLabel": "Researched at: {{date}}",
       "platformsLabel": "Applicable platforms: {{platforms}}",
       "linkTarget": "Link target: {{path}}",
-      "inactive": "Released"
+      "inactive": "Released",
+      "ownerAgent": "Owner agent: {{agent}}",
+      "pendingTaskCount": "{{count}} linked task(s)"
     },
     "removalImpact": {
       "heading": "Removal impact preview",

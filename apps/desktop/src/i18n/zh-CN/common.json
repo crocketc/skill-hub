@@ -2086,7 +2086,9 @@
       "researchedLabel": "核验时间：{{date}}",
       "platformsLabel": "适用平台：{{platforms}}",
       "linkTarget": "链接目标：{{path}}",
-      "inactive": "已收回"
+      "inactive": "已收回",
+      "ownerAgent": "归属 Agent：{{agent}}",
+      "pendingTaskCount": "关联待办 {{count}} 项"
     },
     "removalImpact": {
       "heading": "移除影响预览",

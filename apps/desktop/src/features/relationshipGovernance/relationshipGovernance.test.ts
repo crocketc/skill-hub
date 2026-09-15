@@ -156,9 +156,44 @@ it("counts unique active skills per directory and lists shared consumers", () =>
   const shared = views[0];
   // 同一 Skill 的两条关系只计一次；非活动关系不计入 Skill 数。
   expect(shared.skillCount).toBe(2);
-  // 当前 Agent 自己不算共享消费者；识别该目录的其他 Agent 会出现。
-  expect(shared.sharedConsumers).toEqual(["trae.code"]);
+  // 当前 Agent 自己不算共享消费者；识别未确认（unknown）的能力
+  // 不得推断为消费者——设计 §2.1"目录存在 ≠ Agent 会读取"。
+  expect(shared.sharedConsumers).toEqual([]);
   expect(views[1].sharedConsumers).toEqual([]);
+
+  // 只有"已确认支持"的登记能力进入共享消费者。
+  const confirmed = buildAgentDirectoryViews(overviewWith({
+    agent_directory_capabilities: [
+      {
+        agent_client_id: "codex-cli",
+        directory_node_id: "node-shared",
+        recognition: "supported",
+        precedence: "preferred",
+        evidence_reference: null,
+        researched_at: null,
+        applicable_platforms: [],
+      },
+      {
+        agent_client_id: "trae.code",
+        directory_node_id: "node-shared",
+        recognition: "supported",
+        precedence: "preferred",
+        evidence_reference: null,
+        researched_at: null,
+        applicable_platforms: [],
+      },
+      {
+        agent_client_id: "legacy.agent",
+        directory_node_id: "node-shared",
+        recognition: "unsupported",
+        precedence: "unknown",
+        evidence_reference: null,
+        researched_at: null,
+        applicable_platforms: [],
+      },
+    ],
+  }), { currentAgentClientId: "codex-cli" });
+  expect(confirmed[0].sharedConsumers).toEqual(["trae.code"]);
 });
 
 it("keeps directories without a registered capability as unconfirmed instead of guessing", () => {

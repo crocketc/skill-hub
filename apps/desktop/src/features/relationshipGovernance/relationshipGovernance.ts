@@ -166,8 +166,12 @@ export function buildAgentDirectoryViews(
       .filter((relation) => relation.directory_node_id === node.node_id)
       .map((relation) => toRelationshipView(relation, tasks));
     const consumers = new Set<string>();
+    // 设计 §2.1：unknown 是"尚未确认"，unsupported 是"已有证据不支持"。
+    // 都不得从目录存在推断为消费者；只有 supported 的登记能力计入。
     for (const row of overview.agent_directory_capabilities) {
-      if (row.directory_node_id === node.node_id) consumers.add(row.agent_client_id);
+      if (row.directory_node_id === node.node_id && row.recognition === "supported") {
+        consumers.add(row.agent_client_id);
+      }
     }
     for (const relation of overview.deployment_relations) {
       if (relation.directory_node_id === node.node_id && relation.active) {

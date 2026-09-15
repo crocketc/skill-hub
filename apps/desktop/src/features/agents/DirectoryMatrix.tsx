@@ -29,9 +29,11 @@ function recognitionTone(recognition: AgentDirectoryView["recognition"]): "neutr
 }
 
 function DirectoryCard({
+  currentAgentClientId,
   directory,
   onLoadRemovalImpact,
 }: {
+  currentAgentClientId?: string;
   directory: AgentDirectoryView;
   onLoadRemovalImpact?: DirectoryMatrixProps["onLoadRemovalImpact"];
 }) {
@@ -71,6 +73,7 @@ function DirectoryCard({
         <ul className="sh-agent-directory-card__relations">
           {directory.relations.map((relation) => (
             <RelationRow
+              currentAgentClientId={currentAgentClientId}
               key={relation.relationId}
               onLoadRemovalImpact={onLoadRemovalImpact}
               relation={relation}
@@ -83,9 +86,11 @@ function DirectoryCard({
 }
 
 function RelationRow({
+  currentAgentClientId,
   onLoadRemovalImpact,
   relation,
 }: {
+  currentAgentClientId?: string;
   onLoadRemovalImpact?: DirectoryMatrixProps["onLoadRemovalImpact"];
   relation: RelationshipView;
 }) {
@@ -96,6 +101,17 @@ function RelationRow({
       <StatusBadge tone={relation.active ? "neutral" : "info"}>
         {t(relationshipLabelKey(relation.relationship) as never)}
       </StatusBadge>
+      {/* 其他 Agent 的关系必须显式标注归属，不混入当前 Agent 的矩阵语义。 */}
+      {relation.targetAgentClientId !== currentAgentClientId ? (
+        <span>
+          {t("relationshipGovernance.matrix.ownerAgent", { agent: relation.targetAgentClientId })}
+        </span>
+      ) : null}
+      {relation.pendingTaskIds.length > 0 ? (
+        <span>
+          {t("relationshipGovernance.matrix.pendingTaskCount", { count: relation.pendingTaskIds.length })}
+        </span>
+      ) : null}
       {!relation.active ? <span>{t("relationshipGovernance.matrix.inactive")}</span> : null}
       {relation.actions.includes("view_removal_impact") && onLoadRemovalImpact ? (
         <RelationshipRemovalImpactView
@@ -154,6 +170,7 @@ export function DirectoryMatrix({
       ) : (
         directories.map((directory) => (
           <DirectoryCard
+            currentAgentClientId={currentAgentClientId}
             directory={directory}
             key={directory.directoryNodeId}
             onLoadRemovalImpact={onLoadRemovalImpact}
