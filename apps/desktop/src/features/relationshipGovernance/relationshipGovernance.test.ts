@@ -180,6 +180,8 @@ it("maps every deployment relation to a relationship view with user-facing label
     relationship: "managed_link",
     file_representation: "directory_junction",
     match_state: "name_only",
+    link_target_path: "/home/demo/.agents/skills/review",
+    link_target_directory_id: "node-shared",
   }), []);
 
   expect(view.relationship).toBe("managed_link");
@@ -188,6 +190,9 @@ it("maps every deployment relation to a relationship view with user-facing label
   expect(fileRepresentationLabelKey(view.fileRepresentation)).toBe("relationshipGovernance.fileRepresentation.directory_junction");
   expect(fingerprintLabelKey(view.fingerprintState)).toBe("relationshipGovernance.fingerprint.name_only");
   expect(ownershipLabelKey(view.ownership)).toBe("relationshipGovernance.ownership.skillhub_managed");
+  // 链接目标是指向共享目录的确定性事实，供技术详情展示。
+  expect(view.linkTargetPath).toBe("/home/demo/.agents/skills/review");
+  expect(view.linkTargetDirectoryId).toBe("node-shared");
   // 活动关系至少提供移除影响入口；不虚构"转换已执行"。
   expect(view.actions).toContain("view_removal_impact");
   expect(view.pendingTaskIds).toEqual([]);

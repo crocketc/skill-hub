@@ -94,6 +94,19 @@ function createPreviewAgentFacade(empty: boolean): AgentFacade {
     createCustomAgent: async () => undefined,
     updateCustomAgent: async () => undefined,
     removeCustomAgent: async () => undefined,
+    getRelationshipOverview: async () => ({
+      scope: { type: "agent", value: { agent_client_id: "preview" } },
+      directory_nodes: [],
+      agent_directory_capabilities: [],
+      source_relations: [],
+      deployment_relations: [],
+      conflict_cases: [],
+      pending_governance_tasks: [],
+      agent_execution_confirmed: false,
+    }),
+    getRelationshipRemovalImpact: async () => {
+      throw new Error("removal impact is not part of the preview board");
+    },
   };
 }
 

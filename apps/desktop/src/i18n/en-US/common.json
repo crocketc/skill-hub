@@ -1981,6 +1981,115 @@
       "backupRestoreHint": "The full backup/restore flow lives in Data protection; confirmations for recovery appear here."
     }
   },
+  "relationshipGovernance": {
+    "relationship": {
+      "import_copy": "Import copy",
+      "shared_directory_read": "Shared directory direct read",
+      "shared_directory_reference": "Shared directory link reference",
+      "managed_copy": "Copy deployment",
+      "managed_link": "Link deployment",
+      "observed_copy": "Observed copy",
+      "observed_link": "Observed link",
+      "unknown": "Relationship unconfirmed"
+    },
+    "fileRepresentation": {
+      "directory": "Directory",
+      "symbolic_link": "Symbolic link",
+      "directory_junction": "Directory junction",
+      "copy": "Copy",
+      "unknown": "Unknown"
+    },
+    "ownership": {
+      "skillhub_managed": "SkillHub managed",
+      "observed_unmanaged": "Observed unmanaged",
+      "shared_reference": "Shared reference"
+    },
+    "recognition": {
+      "supported": "Recognition confirmed",
+      "unknown": "Recognition unconfirmed",
+      "unsupported": "Confirmed unsupported",
+      "unregistered": "No registered recognition"
+    },
+    "directoryRole": {
+      "central_library": "Central library",
+      "agent_native": "Agent native directory",
+      "shared_directory": "Shared directory",
+      "project": "Project directory"
+    },
+    "precedence": {
+      "preferred": "Preferred",
+      "lower_priority_copy": "Lower-priority copy",
+      "may_coexist": "May coexist",
+      "unknown": "Precedence unregistered"
+    },
+    "fingerprint": {
+      "content_verified": "Content verified",
+      "name_only": "Name only (unverified)",
+      "diverged": "Content diverged"
+    },
+    "minimalAction": {
+      "remove_current_agent_target": "Recommended: remove only this agent's target",
+      "remove_current_relation_keep_shared_files": "Recommended: remove only this relation, keep shared files",
+      "remove_current_shared_alias": "Recommended: remove only this alias; the shared directory and other references stay",
+      "convert_copy_to_managed_link": "Recommended: convert to a managed link after backup and verification",
+      "create_governance_task": "Recommended: create a governance todo first"
+    },
+    "governanceTaskKind": {
+      "select_authoritative_version": "Select the authoritative version",
+      "classify_same_name_skill": "Classify the same-name skill",
+      "confirm_shared_directory_impact": "Confirm shared directory impact",
+      "convert_copy_to_managed_link": "Convert the copy to a managed link",
+      "convert_shared_reference_to_managed_link": "Convert the shared reference to a managed link",
+      "unknown_directory_recognition": "Confirm directory recognition",
+      "operation_failure_recovery": "Recover from the failed operation"
+    },
+    "conflictClassification": {
+      "same_skill_version": "Likely a new version of the same skill",
+      "distinct_skill": "Likely a different skill",
+      "uncertain": "Insufficient evidence (todo)"
+    },
+    "matrix": {
+      "eyebrow": "Directory matrix",
+      "title": "Directories and relationships",
+      "description": "Directory cards come from deterministic relationship facts; recognition states only record registered recognition ability.",
+      "executionNote": "Directory recognition does not mean the agent has loaded or will definitely invoke these skills.",
+      "loading": "Loading directory relationship facts",
+      "loadError": "Directory relationship facts are unavailable.",
+      "empty": "No directory relationship facts are registered yet.",
+      "skillCount_one": "{{count}} skill",
+      "skillCount_other": "{{count}} skills",
+      "sharedConsumers": "Shared consumers: {{agents}}",
+      "noSharedConsumers": "No other registered shared consumers",
+      "technicalSummary": "Technical details",
+      "skillLabel": "Skill: {{id}}",
+      "unknownSkill": "Skill identity unconfirmed",
+      "viewRemovalImpact": "View removal impact",
+      "directoryMissing": "Directory currently missing",
+      "evidenceLabel": "Precedence evidence: {{evidence}}",
+      "researchedLabel": "Researched at: {{date}}",
+      "platformsLabel": "Applicable platforms: {{platforms}}",
+      "linkTarget": "Link target: {{path}}",
+      "inactive": "Released"
+    },
+    "removalImpact": {
+      "heading": "Removal impact preview",
+      "description": "File changes run only after you confirm the scope; the shared directory itself is never deleted by a single operation.",
+      "minimalAction": "Minimal-impact action",
+      "currentAgentReadsShared": "The current agent directly reads this shared directory.",
+      "otherConsumers": "Other agents recognizing this directory: {{agents}}",
+      "noOtherConsumers": "No other agents recognize this directory",
+      "otherSkillPaths": "Other paths of the same skill: {{paths}}",
+      "noOtherSkillPaths": "No other paths of the same skill",
+      "rollbackAvailable": "Rollback available; backup location: {{path}}",
+      "rollbackUnavailable": "No rollback backup is available for this operation.",
+      "permissionLimited": "Permission limited: some impacts may not be handleable under current permissions.",
+      "governanceTasks_one": "{{count}} related todo",
+      "governanceTasks_other": "{{count}} related todos",
+      "loadError": "Unable to load the removal impact.",
+      "hide": "Hide removal impact",
+      "consumerRecognition": "Recognition: {{recognition}}"
+    }
+  },
   "operations": {
     "eyebrow": "Operation progress",
     "progressHeading": "Operation status",

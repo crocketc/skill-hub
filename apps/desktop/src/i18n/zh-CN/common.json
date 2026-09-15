@@ -1981,6 +1981,115 @@
       "backupRestoreHint": "备份与恢复的完整流程在“数据保护”页；此处承接需要确认的恢复事项。"
     }
   },
+  "relationshipGovernance": {
+    "relationship": {
+      "import_copy": "导入副本",
+      "shared_directory_read": "共享目录直接读取",
+      "shared_directory_reference": "共享目录链接引用",
+      "managed_copy": "复制部署",
+      "managed_link": "链接部署",
+      "observed_copy": "识别到的复制副本",
+      "observed_link": "识别到的链接",
+      "unknown": "关系待确认"
+    },
+    "fileRepresentation": {
+      "directory": "目录",
+      "symbolic_link": "符号链接",
+      "directory_junction": "目录联接",
+      "copy": "副本",
+      "unknown": "未知"
+    },
+    "ownership": {
+      "skillhub_managed": "SkillHub 管理",
+      "observed_unmanaged": "观察到未纳管",
+      "shared_reference": "共享引用"
+    },
+    "recognition": {
+      "supported": "已确认支持",
+      "unknown": "识别能力未确认",
+      "unsupported": "已确认不支持",
+      "unregistered": "未登记识别能力"
+    },
+    "directoryRole": {
+      "central_library": "集中库",
+      "agent_native": "Agent 自有目录",
+      "shared_directory": "通用共享目录",
+      "project": "项目目录"
+    },
+    "precedence": {
+      "preferred": "优先目录",
+      "lower_priority_copy": "低优先级副本",
+      "may_coexist": "可共存",
+      "unknown": "优先级未登记"
+    },
+    "fingerprint": {
+      "content_verified": "内容一致",
+      "name_only": "仅同名（未验证）",
+      "diverged": "内容已分叉"
+    },
+    "minimalAction": {
+      "remove_current_agent_target": "建议只移除当前 Agent 的目标",
+      "remove_current_relation_keep_shared_files": "建议只移除该关系，保留共享文件",
+      "remove_current_shared_alias": "建议只移除当前别名，共享目录本体与其他引用保持不变",
+      "convert_copy_to_managed_link": "建议备份校验后转换为管理链接",
+      "create_governance_task": "建议先创建待办再处理"
+    },
+    "governanceTaskKind": {
+      "select_authoritative_version": "选择权威版本",
+      "classify_same_name_skill": "判定同名 Skill 的身份",
+      "confirm_shared_directory_impact": "确认共享目录影响",
+      "convert_copy_to_managed_link": "把复制副本转换为管理链接",
+      "convert_shared_reference_to_managed_link": "把共享引用转换为管理链接",
+      "unknown_directory_recognition": "确认目录识别能力",
+      "operation_failure_recovery": "处理操作失败与回退"
+    },
+    "conflictClassification": {
+      "same_skill_version": "疑似同一 Skill 的新版本",
+      "distinct_skill": "疑似不同 Skill",
+      "uncertain": "证据不足（待办）"
+    },
+    "matrix": {
+      "eyebrow": "目录矩阵",
+      "title": "目录与关系",
+      "description": "目录卡片来自确定性关系事实；识别状态只表示已登记的识别能力。",
+      "executionNote": "目录识别不代表该 Agent 已加载或一定会调用这些 Skill。",
+      "loading": "正在加载目录关系事实",
+      "loadError": "目录关系事实暂不可用。",
+      "empty": "尚未登记任何目录关系事实。",
+      "skillCount_one": "{{count}} 个 Skill",
+      "skillCount_other": "{{count}} 个 Skill",
+      "sharedConsumers": "共享消费者：{{agents}}",
+      "noSharedConsumers": "没有其他已登记的共享消费者",
+      "technicalSummary": "技术详情",
+      "skillLabel": "Skill：{{id}}",
+      "unknownSkill": "未确认 Skill 身份",
+      "viewRemovalImpact": "查看移除影响",
+      "directoryMissing": "目录当前不存在",
+      "evidenceLabel": "优先级证据：{{evidence}}",
+      "researchedLabel": "核验时间：{{date}}",
+      "platformsLabel": "适用平台：{{platforms}}",
+      "linkTarget": "链接目标：{{path}}",
+      "inactive": "已收回"
+    },
+    "removalImpact": {
+      "heading": "移除影响预览",
+      "description": "确认影响范围后才执行文件变更；共享目录本体不会因单个操作被自动删除。",
+      "minimalAction": "最小影响动作",
+      "currentAgentReadsShared": "当前 Agent 直接读取该通用共享目录。",
+      "otherConsumers": "其他识别该目录的 Agent：{{agents}}",
+      "noOtherConsumers": "没有其他识别该目录的 Agent",
+      "otherSkillPaths": "同一 Skill 的其他路径：{{paths}}",
+      "noOtherSkillPaths": "没有同一 Skill 的其他路径",
+      "rollbackAvailable": "可回退；备份位置：{{path}}",
+      "rollbackUnavailable": "该操作当前没有可回退的备份。",
+      "permissionLimited": "权限受限：部分影响可能无法在当前权限下处理。",
+      "governanceTasks_one": "关联待办：{{count}} 项",
+      "governanceTasks_other": "关联待办：{{count}} 项",
+      "loadError": "无法加载移除影响。",
+      "hide": "收起移除影响",
+      "consumerRecognition": "识别状态：{{recognition}}"
+    }
+  },
   "operations": {
     "eyebrow": "操作进度",
     "progressHeading": "操作状态",

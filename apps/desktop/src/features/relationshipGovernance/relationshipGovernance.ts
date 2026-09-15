@@ -44,6 +44,9 @@ export interface RelationshipView {
   fileRepresentation: FileRepresentation;
   ownership: OwnershipState;
   fingerprintState: ObservedMatchState;
+  /** 链接目标（如通用共享目录中的本体路径）；非链接关系为 null。 */
+  linkTargetPath: string | null;
+  linkTargetDirectoryId: string | null;
   active: boolean;
   actions: RelationshipViewAction[];
   pendingTaskIds: string[];
@@ -130,6 +133,8 @@ export function toRelationshipView(
     fileRepresentation: relation.file_representation,
     ownership: relation.ownership,
     fingerprintState: relation.match_state,
+    linkTargetPath: relation.link_target_path,
+    linkTargetDirectoryId: relation.link_target_directory_id,
     active: relation.active,
     // 活动关系至少有移除影响入口；非活动（已收回）关系不提供动作。
     actions: relation.active ? ["view_removal_impact"] : [],
