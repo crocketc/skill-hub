@@ -158,6 +158,7 @@ impl LlmProfile {
 pub enum LlmTaskKind {
     Safety,
     DuplicateAnalysis,
+    ConflictAnalysis,
     Translation,
     SearchQuery,
     UsageEvidence,
@@ -168,6 +169,7 @@ impl LlmTaskKind {
         match self {
             Self::Safety => "skill_safety_v1",
             Self::DuplicateAnalysis => "skill_duplicate_analysis_v1",
+            Self::ConflictAnalysis => "skill_conflict_analysis_v1",
             Self::Translation => "skill_translation_v1",
             Self::SearchQuery => "skill_search_query_v1",
             Self::UsageEvidence => "skill_usage_evidence_v1",
