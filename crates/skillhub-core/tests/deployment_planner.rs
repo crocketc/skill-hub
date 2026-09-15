@@ -5,6 +5,7 @@ use skillhub_core::agent::{
     OperatingSystem, PathCandidate, ProfileCatalog, TargetScope,
 };
 use skillhub_core::deployment::observed_path_key;
+use skillhub_core::deployment::reconcile::path_lives_under_platform;
 use skillhub_core::deployment::{
     DeploymentMode, DeploymentPlanInput, DeploymentPlanRequest, DeploymentPlanner,
     ExistingDeployment, ExistingOwnership, RegisteredTargetIndex, TargetFact, TargetFactSource,
@@ -518,6 +519,115 @@ fn relation_classifier_distinguishes_native_managed_links_and_shared_aliases() {
 }
 
 #[test]
+fn relation_classifier_keeps_managed_link_when_target_is_in_central_library() {
+    let managed_link = RelationTargetFact::directory(
+        "native",
+        "/home/ada/.codex/skills",
+        "codex",
+        DirectoryRole::AgentNative,
+    )
+    .with_ownership(skillhub_core::OwnershipState::SkillhubManaged)
+    .with_file_representation(FileRepresentation::SymbolicLink)
+    .with_link_target("/home/ada/skillhub/library/demo", Some("library".into()));
+    let library = RelationTargetFact::directory(
+        "library",
+        "/home/ada/skillhub/library",
+        "skillhub",
+        DirectoryRole::CentralLibrary,
+    );
+
+    let classification = classify_observed_relation_with_reason(
+        "/home/ada/.codex/skills/demo",
+        &[managed_link, library],
+        &[],
+    );
+
+    assert_eq!(
+        classification.fact.relationship,
+        RelationshipType::ManagedLink
+    );
+    assert_eq!(classification.reason, None);
+    assert_eq!(classification.governance_task, None);
+}
+
+#[test]
+fn relation_classifier_keeps_observed_link_when_target_is_in_known_non_shared_directory() {
+    let observed_link = RelationTargetFact::directory(
+        "native",
+        "/home/ada/.codex/skills",
+        "codex",
+        DirectoryRole::AgentNative,
+    )
+    .with_ownership(skillhub_core::OwnershipState::ObservedUnmanaged)
+    .with_file_representation(FileRepresentation::DirectoryJunction)
+    .with_link_target("/home/ada/projects/skills/demo", Some("project".into()));
+    let project = RelationTargetFact::directory(
+        "project",
+        "/home/ada/projects/skills",
+        "codex",
+        DirectoryRole::Project,
+    );
+
+    let classification = classify_observed_relation_with_reason(
+        "/home/ada/.codex/skills/demo",
+        &[observed_link, project],
+        &[],
+    );
+
+    assert_eq!(
+        classification.fact.relationship,
+        RelationshipType::ObservedLink
+    );
+    assert_eq!(classification.reason, None);
+    assert_eq!(classification.governance_task, None);
+}
+
+#[test]
+fn relation_classifier_keeps_link_relation_but_governs_unknown_target() {
+    let cases = [
+        (
+            skillhub_core::OwnershipState::SkillhubManaged,
+            RelationshipType::ManagedLink,
+        ),
+        (
+            skillhub_core::OwnershipState::ObservedUnmanaged,
+            RelationshipType::ObservedLink,
+        ),
+    ];
+
+    for (ownership, expected_relationship) in cases {
+        let link = RelationTargetFact::directory(
+            "native",
+            "/home/ada/.codex/skills",
+            "codex",
+            DirectoryRole::AgentNative,
+        )
+        .with_ownership(ownership)
+        .with_file_representation(FileRepresentation::SymbolicLink)
+        .with_link_target("/home/ada/unregistered/skills/demo", None);
+
+        let classification = classify_observed_relation_with_reason(
+            "/home/ada/.codex/skills/demo",
+            std::slice::from_ref(&link),
+            &[],
+        );
+
+        assert_eq!(classification.fact.relationship, expected_relationship);
+        assert_eq!(
+            classification.reason.as_deref(),
+            Some("link target directory was not found among registered directories")
+        );
+        assert_eq!(
+            classification
+                .governance_task
+                .as_ref()
+                .map(|task| task.kind),
+            Some(GovernanceTaskKind::UnknownDirectoryRecognition)
+        );
+    }
+}
+
+#[test]
 fn shared_reference_is_not_retained_without_a_supported_shared_target() {
     let target = RelationTargetFact::directory(
         "native",
@@ -761,6 +871,46 @@ fn shared_alias_requires_current_agent_capability_for_link_target_node() {
 }
 
 #[test]
+fn shared_alias_with_unknown_or_unsupported_capability_stays_in_governance() {
+    let shared = RelationTargetFact::directory(
+        "shared",
+        "/home/ada/.agents/skills",
+        "codex",
+        DirectoryRole::SharedDirectory,
+    );
+
+    for recognition in [
+        DirectoryRecognition::Unknown,
+        DirectoryRecognition::Unsupported,
+    ] {
+        let capability = AgentDirectoryCapabilityFact {
+            agent_client_id: "codex".into(),
+            directory_node_id: "shared".into(),
+            recognition,
+            precedence: DirectoryPrecedence::Preferred,
+            evidence_reference: None,
+            researched_at: None,
+            applicable_platforms: vec![],
+        };
+        let classification = classify_observed_relation_with_reason(
+            "/home/ada/.codex/skills/demo",
+            &[alias_target_for_shared_reference(), shared.clone()],
+            std::slice::from_ref(&capability),
+        );
+
+        assert_eq!(classification.fact.relationship, RelationshipType::Unknown);
+        assert_eq!(
+            classification
+                .governance_task
+                .as_ref()
+                .map(|task| task.kind),
+            Some(GovernanceTaskKind::UnknownDirectoryRecognition)
+        );
+        assert!(classification.reason.is_some());
+    }
+}
+
+#[test]
 fn relation_target_ties_are_resolved_by_stable_directory_identity() {
     let copy = RelationTargetFact::directory(
         "z-node",
@@ -826,6 +976,30 @@ fn relation_classifier_folds_windows_case_but_preserves_posix_case_and_boundarie
         std::slice::from_ref(&supported),
     );
     assert_eq!(boundary.relationship, RelationshipType::Unknown);
+}
+
+#[test]
+fn path_lives_under_platform_trims_trailing_separators_on_both_paths() {
+    assert!(!path_lives_under_platform(
+        "/tmp/trae/skills",
+        "/tmp/trae/skills/",
+        false
+    ));
+    assert!(!path_lives_under_platform(
+        "/tmp/trae/skills/",
+        "/tmp/trae/skills",
+        false
+    ));
+    assert!(path_lives_under_platform(
+        "/tmp/trae/skills/demo/",
+        "/tmp/trae/skills///",
+        false
+    ));
+    assert!(!path_lives_under_platform(
+        r"C:\Users\Ada\Skills\",
+        r"C:\Users\Ada\Skills",
+        true
+    ));
 }
 
 #[cfg(unix)]

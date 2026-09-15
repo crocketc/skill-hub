@@ -65,6 +65,15 @@ pub fn classify_observed_relation_with_reason(
     } else {
         shared_target
     };
+    let known_non_shared_link_target = target.link_target_path.as_deref().is_some_and(|path| {
+        target_facts.iter().any(|candidate| {
+            candidate.directory_role != DirectoryRole::SharedDirectory
+                && path_lives_under_platform(path, &candidate.directory_path, windows)
+        })
+    });
+    let unknown_link_target = target.link_target_path.is_some()
+        && shared_capability_target.is_none()
+        && !known_non_shared_link_target;
     let recognition = shared_capability_target
         .map(|shared_target| {
             directory_capabilities
@@ -77,11 +86,6 @@ pub fn classify_observed_relation_with_reason(
                 .unwrap_or(DirectoryRecognition::Unknown)
         })
         .unwrap_or(DirectoryRecognition::Supported);
-
-    if target.link_target_path.is_some() && shared_capability_target.is_none() {
-        return unknown_classification(path, "shared link target directory was not found")
-            .with_target_context(target);
-    }
 
     if shared_capability_target.is_some() && recognition != DirectoryRecognition::Supported {
         let reason = match recognition {
@@ -151,6 +155,14 @@ pub fn classify_observed_relation_with_reason(
         classification.fact = fact;
         return classification;
     }
+    if unknown_link_target {
+        let reason = "link target directory was not found among registered directories";
+        return RelationClassification {
+            fact,
+            reason: Some(reason.to_owned()),
+            governance_task: Some(governance_task(path, reason)),
+        };
+    }
     RelationClassification {
         fact,
         reason: None,
@@ -187,15 +199,6 @@ fn relationship_for_target(target: &RelationTargetFact) -> RelationshipType {
 
 fn unknown_classification(path: &str, reason: &str) -> RelationClassification {
     let path_key = observed_path_key(path);
-    let task = GovernanceTaskFact {
-        task_id: format!("relationship:{path_key}:classification"),
-        kind: GovernanceTaskKind::UnknownDirectoryRecognition,
-        subject_id: path_key.clone(),
-        detail: reason.to_owned(),
-        resolved: false,
-        created_at: 0,
-        resolved_at: None,
-    };
     RelationClassification {
         fact: DeploymentRelationFact {
             relation_id: format!("observed:{path_key}"),
@@ -218,7 +221,20 @@ fn unknown_classification(path: &str, reason: &str) -> RelationClassification {
             released_at: None,
         },
         reason: Some(reason.to_owned()),
-        governance_task: Some(task),
+        governance_task: Some(governance_task(path, reason)),
+    }
+}
+
+fn governance_task(path: &str, detail: &str) -> GovernanceTaskFact {
+    let path_key = observed_path_key(path);
+    GovernanceTaskFact {
+        task_id: format!("relationship:{path_key}:classification"),
+        kind: GovernanceTaskKind::UnknownDirectoryRecognition,
+        subject_id: path_key,
+        detail: detail.to_owned(),
+        resolved: false,
+        created_at: 0,
+        resolved_at: None,
     }
 }
 

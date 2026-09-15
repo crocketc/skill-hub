@@ -185,6 +185,7 @@ pub fn normalized_path_key(path: &str, windows: bool) -> String {
 
 pub fn path_lives_under_platform(candidate: &str, root: &str, windows: bool) -> bool {
     let candidate = normalized_path_key(candidate, windows);
+    let candidate = candidate.trim_end_matches('/');
     let root = normalized_path_key(root, windows);
     let root = root.trim_end_matches('/');
     candidate != root
