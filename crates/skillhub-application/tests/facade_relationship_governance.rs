@@ -1106,6 +1106,78 @@ async fn prepare_rejects_directory_junction_and_records_governance_task() {
 }
 
 #[tokio::test]
+async fn commit_creates_and_verifies_the_staged_link_before_removing_the_original_entry() {
+    let fixture = fixture().await;
+    if !skillhub_adapters::deployment::DeploymentFilesystem::new()
+        .available_capabilities()
+        .symlink
+    {
+        return;
+    }
+    let prepared = fixture
+        .facade
+        .execute(AppCommand::PrepareRelationMigration(
+            PrepareRelationMigration {
+                relation_id: fixture.relation_id.clone(),
+                target_mode: RelationMigrationTargetMode::ManagedLink,
+                backup_policy: RelationshipMigrationBackupPolicy::Required,
+                confirmation_token: Some("confirmed".into()),
+            },
+        ))
+        .await
+        .expect("prepare");
+    let AppCommandResult::PreparedRelationMigration(prepared) = prepared else {
+        panic!("expected prepared");
+    };
+
+    // A foreign entry exactly at the migration's staging location makes
+    // creating the staged managed link impossible.  The conversion order is
+    // "create new link -> verify -> remove original entry", so the original
+    // copy must survive untouched.
+    let staging = fixture
+        .source
+        .parent()
+        .expect("relation parent")
+        .join(format!(".skillhub-relation-link-{}", prepared.operation_id));
+    std::fs::create_dir(&staging).expect("plant foreign staging entry");
+    let original_identity_before =
+        skillhub_core::physical_id_for_path(&fixture.source).expect("original identity");
+
+    let result = fixture
+        .facade
+        .execute(AppCommand::CommitRelationMigration(
+            skillhub_core::api::CommitRelationMigration {
+                prepared_relation_migration_id: prepared.operation_id,
+            },
+        ))
+        .await
+        .expect("failed commit is reported as a result");
+    let AppCommandResult::RelationMigrationResult(result) = result else {
+        panic!("expected migration result");
+    };
+    assert_eq!(result.state, RelationMigrationState::Failed);
+    assert_eq!(result.error_code, Some(ErrorCode::OwnershipMismatch));
+
+    // The original entry was never removed: same physical identity, same
+    // body, still a plain directory.
+    assert_eq!(
+        skillhub_core::physical_id_for_path(&fixture.source),
+        Some(original_identity_before)
+    );
+    assert!(fixture.source.is_dir());
+    assert!(!std::fs::symlink_metadata(&fixture.source)
+        .expect("source metadata")
+        .file_type()
+        .is_symlink());
+    assert_eq!(
+        std::fs::read_to_string(fixture.source.join("SKILL.md")).expect("body"),
+        BODY
+    );
+    // The foreign staging entry is not ours to delete either.
+    assert!(staging.is_dir());
+}
+
+#[tokio::test]
 async fn commit_failure_removes_new_link_before_restoring_and_preserves_central_fingerprint() {
     let fixture = fixture().await;
     if !skillhub_adapters::deployment::DeploymentFilesystem::new()
