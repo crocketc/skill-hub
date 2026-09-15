@@ -166,10 +166,21 @@ fn link_probe_reports_materialized_capability_and_cleans_up_after_itself() {
 #[cfg(unix)]
 #[test]
 fn link_probe_refuses_an_unwritable_relation_parent_instead_of_guessing() {
+    use std::os::unix::fs::PermissionsExt;
+
     let fixture = DeploymentFixture::new();
+    let original_mode = fs::metadata(&fixture.target_root)
+        .unwrap()
+        .permissions()
+        .mode();
+    let restore_permissions = |root: &std::path::Path| {
+        let mut restore = fs::metadata(root).unwrap().permissions();
+        restore.set_mode(original_mode);
+        fs::set_permissions(root, restore).unwrap();
+    };
     let mut permissions = fs::metadata(&fixture.target_root).unwrap().permissions();
     permissions.set_readonly(true);
-    fs::set_permissions(&fixture.target_root, permissions.clone()).unwrap();
+    fs::set_permissions(&fixture.target_root, permissions).unwrap();
 
     // Fail the test honestly when the platform ignores the read-only bit
     // (for example a root test process) instead of reporting a fake pass.
@@ -177,8 +188,7 @@ fn link_probe_refuses_an_unwritable_relation_parent_instead_of_guessing() {
     let readonly_enforced = std::os::unix::fs::symlink(&fixture.source, &control).is_err();
     let _ = std::fs::remove_file(&control);
     if !readonly_enforced {
-        permissions.set_readonly(false);
-        fs::set_permissions(&fixture.target_root, permissions).unwrap();
+        restore_permissions(&fixture.target_root);
         eprintln!("skipping: this process can write read-only directories (root?)");
         return;
     }
@@ -188,8 +198,7 @@ fn link_probe_refuses_an_unwritable_relation_parent_instead_of_guessing() {
     assert!(!capabilities.symlink);
     assert!(!capabilities.junction);
 
-    permissions.set_readonly(false);
-    fs::set_permissions(&fixture.target_root, permissions).unwrap();
+    restore_permissions(&fixture.target_root);
 }
 
 struct DeploymentFixture {
