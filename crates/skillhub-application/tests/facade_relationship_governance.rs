@@ -42,6 +42,10 @@ struct Fixture {
     library_root: std::path::PathBuf,
     db_path: std::path::PathBuf,
     database: std::sync::Arc<std::sync::Mutex<Database>>,
+    /// Shared directory body when the seeded relation is a shared reference.
+    shared_body: Option<std::path::PathBuf>,
+    /// Second consumer's alias when the shared reference has other consumers.
+    other_alias: Option<std::path::PathBuf>,
 }
 
 fn write_skill(path: &std::path::Path) {
@@ -108,20 +112,47 @@ fn create_dir_link_for_test(source: &std::path::Path, destination: &std::path::P
     std::os::windows::fs::symlink_dir(source, destination).expect("recreate managed link");
 }
 
+/// Which deployment relation the fixture should seed.  The default
+/// `ObservedCopyEntry` shape is what the Task 4 tests rely on; the Task 6
+/// conversion scenarios need managed copies and shared references.
+enum RelationKind {
+    ObservedCopyEntry,
+    ManagedCopyEntry,
+    SharedReference { other_consumers: usize },
+}
+
 async fn fixture() -> Fixture {
+    fixture_with(RelationKind::ObservedCopyEntry).await
+}
+
+async fn fixture_with(kind: RelationKind) -> Fixture {
     let workspace = tempfile::tempdir().expect("workspace");
-    let source = workspace.path().join("agent/skills/notes");
-    write_skill(&source);
     let library_root = workspace.path().join("library");
     CentralLibrary::initialize(&library_root).expect("library");
     let db_path = workspace.path().join("db.sqlite");
     let database = Database::open(&db_path).expect("database");
     let facade = LocalApplicationFacade::new_with_library(database, &library_root);
 
+    // The relationship entry lives in the agent's own directory.  Copy
+    // entries are real directories; a shared reference is a link to the
+    // shared directory body.
+    let shared_body = workspace.path().join("shared/skills/notes");
+    let source = workspace.path().join("agent/skills/notes");
+    let import_source = match &kind {
+        RelationKind::SharedReference { .. } => {
+            write_skill(&shared_body);
+            shared_body.clone()
+        }
+        _ => {
+            write_skill(&source);
+            source.clone()
+        }
+    };
+
     facade
         .execute(AppCommand::CreateSkill(CreateSkill {
             name: "Notes".into(),
-            source_path: source.to_string_lossy().into_owned(),
+            source_path: import_source.to_string_lossy().into_owned(),
         }))
         .await
         .expect("create skill");
@@ -146,6 +177,17 @@ async fn fixture() -> Fixture {
     let central = library
         .central
         .visible_skill_path_for_runtime(skill_id, "Notes");
+
+    let mut shared_reference_fields: Option<(String, std::path::PathBuf)> = None;
+    if matches!(kind, RelationKind::SharedReference { .. }) {
+        std::fs::create_dir_all(source.parent().expect("alias parent")).expect("agent directory");
+        create_dir_link_for_test(&shared_body, &source);
+        shared_reference_fields = Some((
+            skillhub_adapters::deployment::DeploymentFilesystem::hash_tree(&shared_body)
+                .expect("shared body fingerprint"),
+            shared_body.clone(),
+        ));
+    }
     let fingerprint = skillhub_adapters::deployment::DeploymentFilesystem::hash_tree(&source)
         .expect("source fingerprint");
 
@@ -178,6 +220,96 @@ async fn fixture() -> Fixture {
             applicable_platforms: vec!["windows".into(), "macos".into()],
         })
         .expect("directory capability");
+
+    let other_alias = if let RelationKind::SharedReference { other_consumers } = &kind {
+        // The shared directory body is its own node with a second consumer.
+        let shared_directory = workspace.path().join("shared/skills");
+        database
+            .directory_repository()
+            .upsert_node(&DirectoryNodeFact {
+                node_id: "directory:shared-skills".into(),
+                path: shared_directory.to_string_lossy().into_owned(),
+                path_key: String::new(),
+                role: DirectoryRole::SharedDirectory,
+                profile_id: None,
+                agent_client_id: None,
+                exists: true,
+                observed_at: 1,
+                scan_source: Some("test".into()),
+            })
+            .expect("shared directory node");
+        for agent in ["agent.demo", "agent.other"] {
+            database
+                .relationship_repository()
+                .upsert_capability(&AgentDirectoryCapabilityFact {
+                    agent_client_id: agent.into(),
+                    directory_node_id: "directory:shared-skills".into(),
+                    recognition: DirectoryRecognition::Supported,
+                    precedence: DirectoryPrecedence::MayCoexist,
+                    evidence_reference: Some("fixture".into()),
+                    researched_at: Some("2026-09-15".into()),
+                    applicable_platforms: vec!["windows".into(), "macos".into()],
+                })
+                .expect("shared directory capability");
+        }
+        let other_alias = workspace.path().join("agent2/skills/notes");
+        if *other_consumers > 0 {
+            std::fs::create_dir_all(other_alias.parent().expect("other alias parent"))
+                .expect("agent2 directory");
+            create_dir_link_for_test(&shared_body, &other_alias);
+            database
+                .relationship_repository()
+                .upsert_deployment_relation(&DeploymentRelationFact {
+                    relation_id: "observed:agent.other:notes".into(),
+                    skill_id: Some(skill_id),
+                    agent_client_id: "agent.other".into(),
+                    path: shared_body.to_string_lossy().into_owned(),
+                    path_key: String::new(),
+                    directory_node_id: Some("directory:shared-skills".into()),
+                    relationship: RelationshipType::SharedDirectoryRead,
+                    file_representation: FileRepresentation::Directory,
+                    ownership: OwnershipState::ObservedUnmanaged,
+                    link_target_path: None,
+                    link_target_path_key: None,
+                    link_target_directory_id: None,
+                    content_fingerprint: fingerprint.clone(),
+                    origin: ObservedOrigin::Scan,
+                    match_state: ObservedMatchState::ContentVerified,
+                    active: true,
+                    observed_at: 1,
+                    released_at: None,
+                })
+                .expect("other consumer relation");
+        }
+        Some(other_alias)
+    } else {
+        None
+    };
+
+    let (relationship, representation, ownership, link_target, link_target_directory_id) =
+        match (&kind, &shared_reference_fields) {
+            (RelationKind::SharedReference { .. }, Some((_, shared_body))) => (
+                RelationshipType::SharedDirectoryReference,
+                FileRepresentation::SymbolicLink,
+                OwnershipState::ObservedUnmanaged,
+                Some(shared_body.to_string_lossy().into_owned()),
+                Some("directory:shared-skills".into()),
+            ),
+            (RelationKind::ManagedCopyEntry, _) => (
+                RelationshipType::ManagedCopy,
+                FileRepresentation::Copy,
+                OwnershipState::SkillhubManaged,
+                None,
+                None,
+            ),
+            _ => (
+                RelationshipType::ObservedCopy,
+                FileRepresentation::Copy,
+                OwnershipState::ObservedUnmanaged,
+                None,
+                None,
+            ),
+        };
     let relation_id = "observed:agent.demo:notes".to_owned();
     database
         .relationship_repository()
@@ -188,12 +320,12 @@ async fn fixture() -> Fixture {
             path: source.to_string_lossy().into_owned(),
             path_key: String::new(),
             directory_node_id: Some("directory:agent-skills".into()),
-            relationship: RelationshipType::ObservedCopy,
-            file_representation: FileRepresentation::Copy,
-            ownership: OwnershipState::ObservedUnmanaged,
-            link_target_path: None,
+            relationship,
+            file_representation: representation,
+            ownership,
+            link_target_path: link_target,
             link_target_path_key: None,
-            link_target_directory_id: None,
+            link_target_directory_id,
             content_fingerprint: fingerprint,
             origin: ObservedOrigin::Scan,
             match_state: ObservedMatchState::ContentVerified,
@@ -244,6 +376,8 @@ async fn fixture() -> Fixture {
         library_root,
         db_path,
         database: database_handle,
+        shared_body: shared_reference_fields.map(|(_, body)| body),
+        other_alias,
     }
 }
 
@@ -991,6 +1125,404 @@ async fn committed_relation_is_rollbackable_when_link_capability_exists() {
     assert_eq!(
         std::fs::read_to_string(fixture.source.join("SKILL.md")).expect("restored body"),
         BODY
+    );
+}
+
+#[tokio::test]
+async fn managed_copy_conversion_replaces_the_copy_and_rollback_restores_the_managed_copy() {
+    let fixture = fixture_with(RelationKind::ManagedCopyEntry).await;
+    if !skillhub_adapters::deployment::DeploymentFilesystem::new()
+        .available_capabilities()
+        .symlink
+    {
+        return;
+    }
+    let prepared = fixture
+        .facade
+        .execute(AppCommand::PrepareRelationMigration(
+            PrepareRelationMigration {
+                relation_id: fixture.relation_id.clone(),
+                target_mode: RelationMigrationTargetMode::ManagedLink,
+                backup_policy: RelationshipMigrationBackupPolicy::Required,
+                confirmation_token: Some("confirmed".into()),
+            },
+        ))
+        .await
+        .expect("prepare");
+    let AppCommandResult::PreparedRelationMigration(prepared) = prepared else {
+        panic!("expected prepared");
+    };
+    assert_eq!(prepared.relation.relationship, RelationshipType::ManagedCopy);
+
+    let committed = fixture
+        .facade
+        .execute(AppCommand::CommitRelationMigration(
+            skillhub_core::api::CommitRelationMigration {
+                prepared_relation_migration_id: prepared.operation_id,
+            },
+        ))
+        .await
+        .expect("commit");
+    let AppCommandResult::RelationMigrationResult(committed) = committed else {
+        panic!("expected commit result");
+    };
+    assert_eq!(committed.state, RelationMigrationState::Committed);
+
+    // The copy entry was replaced in place by exactly one link entry; no
+    // double entry and no staging leftovers remain in the agent directory.
+    assert!(std::fs::symlink_metadata(&fixture.source)
+        .expect("link metadata")
+        .file_type()
+        .is_symlink());
+    assert_eq!(
+        std::fs::read_to_string(fixture.source.join("SKILL.md")).expect("body through link"),
+        BODY
+    );
+    let parent = fixture.source.parent().expect("relation parent");
+    let leftovers = std::fs::read_dir(parent)
+        .expect("parent listing")
+        .filter(|entry| {
+            entry
+                .as_ref()
+                .map(|entry| entry.file_name().to_string_lossy().starts_with('.'))
+                .unwrap_or(false)
+        })
+        .count();
+    assert_eq!(leftovers, 0, "conversion must not leave staging entries");
+
+    let record = fixture
+        .database
+        .lock()
+        .expect("database lock")
+        .relationship_repository()
+        .list_relations()
+        .expect("relations")
+        .into_iter()
+        .find(|relation| relation.relation_id == fixture.relation_id)
+        .expect("relation record");
+    assert_eq!(record.relationship, RelationshipType::ManagedLink);
+    assert_eq!(record.ownership, OwnershipState::SkillhubManaged);
+    assert_eq!(
+        record.file_representation,
+        FileRepresentation::SymbolicLink
+    );
+    assert_eq!(record.link_target_path.as_deref(), Some(fixture.central.to_string_lossy().as_ref()));
+
+    // The recovery point keeps the original copy content.
+    let backup = fixture
+        .library_root
+        .join(".skillhub")
+        .join("relationship-migrations")
+        .join(prepared.operation_id.to_string())
+        .join("previous");
+    assert_eq!(
+        std::fs::read_to_string(backup.join("SKILL.md")).expect("backup body"),
+        BODY
+    );
+
+    // Rolling back restores the managed copy, not a bare directory lookalike.
+    let rolled_back = fixture
+        .facade
+        .execute(AppCommand::RollbackRelationMigration(
+            skillhub_core::api::RollbackRelationMigration {
+                operation_id: prepared.operation_id,
+            },
+        ))
+        .await
+        .expect("rollback");
+    let AppCommandResult::RelationMigrationResult(rolled_back) = rolled_back else {
+        panic!("expected rollback result");
+    };
+    assert_eq!(rolled_back.state, RelationMigrationState::RolledBack);
+    assert!(!std::fs::symlink_metadata(&fixture.source)
+        .expect("restored entry")
+        .file_type()
+        .is_symlink());
+    assert_eq!(
+        std::fs::read_to_string(fixture.source.join("SKILL.md")).expect("restored body"),
+        BODY
+    );
+    let record = fixture
+        .database
+        .lock()
+        .expect("database lock")
+        .relationship_repository()
+        .list_relations()
+        .expect("relations")
+        .into_iter()
+        .find(|relation| relation.relation_id == fixture.relation_id)
+        .expect("relation record");
+    assert_eq!(record.relationship, RelationshipType::ManagedCopy);
+    assert_eq!(record.ownership, OwnershipState::SkillhubManaged);
+    assert_eq!(record.file_representation, FileRepresentation::Copy);
+    assert!(record.link_target_path.is_none());
+}
+
+#[tokio::test]
+async fn cancelling_a_conversion_keeps_the_copy_entry_and_its_recorded_relationship() {
+    let fixture = fixture_with(RelationKind::ManagedCopyEntry).await;
+    let prepared = fixture
+        .facade
+        .execute(AppCommand::PrepareRelationMigration(
+            PrepareRelationMigration {
+                relation_id: fixture.relation_id.clone(),
+                target_mode: RelationMigrationTargetMode::ManagedLink,
+                backup_policy: RelationshipMigrationBackupPolicy::Required,
+                confirmation_token: Some("confirmed".into()),
+            },
+        ))
+        .await
+        .expect("prepare");
+    let AppCommandResult::PreparedRelationMigration(prepared) = prepared else {
+        panic!("expected prepared");
+    };
+
+    // Keeping the copy is the explicit cancel path: nothing on disk or in
+    // the relationship record may change.
+    let cancelled = fixture
+        .facade
+        .execute(AppCommand::RollbackRelationMigration(
+            skillhub_core::api::RollbackRelationMigration {
+                operation_id: prepared.operation_id,
+            },
+        ))
+        .await
+        .expect("cancel");
+    let AppCommandResult::RelationMigrationResult(cancelled) = cancelled else {
+        panic!("expected cancel result");
+    };
+    assert_eq!(cancelled.state, RelationMigrationState::Cancelled);
+
+    assert!(fixture.source.is_dir());
+    assert!(!std::fs::symlink_metadata(&fixture.source)
+        .expect("entry metadata")
+        .file_type()
+        .is_symlink());
+    assert_eq!(
+        std::fs::read_to_string(fixture.source.join("SKILL.md")).expect("body"),
+        BODY
+    );
+    let record = fixture
+        .database
+        .lock()
+        .expect("database lock")
+        .relationship_repository()
+        .list_relations()
+        .expect("relations")
+        .into_iter()
+        .find(|relation| relation.relation_id == fixture.relation_id)
+        .expect("relation record");
+    assert_eq!(record.relationship, RelationshipType::ManagedCopy);
+    assert_eq!(record.ownership, OwnershipState::SkillhubManaged);
+    assert_eq!(record.file_representation, FileRepresentation::Copy);
+    assert!(!fixture
+        .library_root
+        .join(".skillhub")
+        .join("relationship-migrations")
+        .exists());
+}
+
+#[tokio::test]
+async fn shared_reference_conversion_repoints_one_alias_and_keeps_the_shared_body() {
+    let fixture = fixture_with(RelationKind::SharedReference { other_consumers: 1 }).await;
+    if !skillhub_adapters::deployment::DeploymentFilesystem::new()
+        .available_capabilities()
+        .symlink
+    {
+        return;
+    }
+    let shared_body = fixture
+        .shared_body
+        .clone()
+        .expect("shared body fixture path");
+    let other_alias = fixture.other_alias.clone().expect("other consumer alias");
+    let shared_fingerprint_before =
+        skillhub_adapters::deployment::DeploymentFilesystem::hash_tree(&shared_body)
+            .expect("shared body fingerprint");
+
+    // Without the explicit shared-impact confirmation the conversion stops
+    // before any filesystem change.
+    let unconfirmed = fixture
+        .facade
+        .execute(AppCommand::PrepareRelationMigration(
+            PrepareRelationMigration {
+                relation_id: fixture.relation_id.clone(),
+                target_mode: RelationMigrationTargetMode::ManagedLink,
+                backup_policy: RelationshipMigrationBackupPolicy::Required,
+                confirmation_token: None,
+            },
+        ))
+        .await
+        .expect("unconfirmed prepare is recorded");
+    let AppCommandResult::PreparedRelationMigration(unconfirmed) = unconfirmed else {
+        panic!("expected prepared");
+    };
+    assert!(unconfirmed.governance_tasks.iter().any(|task| {
+        task.kind == GovernanceTaskKind::ConfirmSharedDirectoryImpact
+    }));
+    let refused = fixture
+        .facade
+        .execute(AppCommand::CommitRelationMigration(
+            skillhub_core::api::CommitRelationMigration {
+                prepared_relation_migration_id: unconfirmed.operation_id,
+            },
+        ))
+        .await
+        .expect("refused commit is reported");
+    let AppCommandResult::RelationMigrationResult(refused) = refused else {
+        panic!("expected refused result");
+    };
+    assert_eq!(refused.state, RelationMigrationState::Failed);
+    assert!(std::fs::symlink_metadata(&fixture.source)
+        .expect("alias metadata")
+        .file_type()
+        .is_symlink());
+
+    // The confirmed conversion replaces the shared-directory alias with a
+    // managed link to the central library.
+    let prepared = fixture
+        .facade
+        .execute(AppCommand::PrepareRelationMigration(
+            PrepareRelationMigration {
+                relation_id: fixture.relation_id.clone(),
+                target_mode: RelationMigrationTargetMode::ManagedLink,
+                backup_policy: RelationshipMigrationBackupPolicy::Required,
+                confirmation_token: Some("confirmed".into()),
+            },
+        ))
+        .await
+        .expect("prepare");
+    let AppCommandResult::PreparedRelationMigration(prepared) = prepared else {
+        panic!("expected prepared");
+    };
+    assert!(
+        prepared.governance_tasks.is_empty(),
+        "unexpected tasks: {:?}",
+        prepared.governance_tasks
+    );
+
+    let committed = fixture
+        .facade
+        .execute(AppCommand::CommitRelationMigration(
+            skillhub_core::api::CommitRelationMigration {
+                prepared_relation_migration_id: prepared.operation_id,
+            },
+        ))
+        .await
+        .expect("commit");
+    let AppCommandResult::RelationMigrationResult(committed) = committed else {
+        panic!("expected commit result");
+    };
+    assert_eq!(
+        committed.state,
+        RelationMigrationState::Committed,
+        "unexpected: {:?}",
+        committed
+    );
+
+    // The agent's own alias now points at the central library only.
+    assert_eq!(
+        std::fs::read_link(&fixture.source).expect("alias target"),
+        fixture.central
+    );
+    assert_eq!(
+        std::fs::read_to_string(fixture.source.join("SKILL.md")).expect("body through new link"),
+        BODY
+    );
+
+    // The shared body itself is untouched and still serves the other consumer.
+    assert!(std::fs::symlink_metadata(&shared_body)
+        .expect("shared body metadata")
+        .is_dir());
+    assert_eq!(
+        skillhub_adapters::deployment::DeploymentFilesystem::hash_tree(&shared_body)
+            .expect("shared body fingerprint after conversion"),
+        shared_fingerprint_before
+    );
+    assert_eq!(
+        std::fs::read_to_string(shared_body.join("SKILL.md")).expect("shared body content"),
+        BODY
+    );
+    assert!(std::fs::symlink_metadata(&other_alias)
+        .expect("other alias")
+        .file_type()
+        .is_symlink());
+    assert_eq!(
+        std::fs::read_link(&other_alias).expect("other alias target"),
+        shared_body
+    );
+    assert_eq!(
+        std::fs::read_to_string(other_alias.join("SKILL.md")).expect("other consumer body"),
+        BODY
+    );
+
+    let relations = fixture
+        .database
+        .lock()
+        .expect("database lock")
+        .relationship_repository()
+        .list_relations()
+        .expect("relations");
+    let converted = relations
+        .iter()
+        .find(|relation| relation.relation_id == fixture.relation_id)
+        .expect("converted relation");
+    assert_eq!(converted.relationship, RelationshipType::ManagedLink);
+    assert_eq!(converted.ownership, OwnershipState::SkillhubManaged);
+    let other = relations
+        .iter()
+        .find(|relation| relation.relation_id == "observed:agent.other:notes")
+        .expect("other consumer relation");
+    assert_eq!(other.relationship, RelationshipType::SharedDirectoryRead);
+    assert!(other.active);
+    let shared_node = fixture
+        .database
+        .lock()
+        .expect("database lock")
+        .directory_repository()
+        .list_nodes()
+        .expect("directory nodes")
+        .into_iter()
+        .any(|node| node.node_id == "directory:shared-skills" && node.exists);
+    assert!(shared_node, "shared directory node must survive");
+
+    // Rolling back removes the managed link and restores the alias that
+    // points at the shared body.
+    let rolled_back = fixture
+        .facade
+        .execute(AppCommand::RollbackRelationMigration(
+            skillhub_core::api::RollbackRelationMigration {
+                operation_id: prepared.operation_id,
+            },
+        ))
+        .await
+        .expect("rollback");
+    let AppCommandResult::RelationMigrationResult(rolled_back) = rolled_back else {
+        panic!("expected rollback result");
+    };
+    assert_eq!(rolled_back.state, RelationMigrationState::RolledBack);
+    assert_eq!(
+        std::fs::read_link(&fixture.source).expect("restored alias target"),
+        shared_body
+    );
+    let restored = fixture
+        .database
+        .lock()
+        .expect("database lock")
+        .relationship_repository()
+        .list_relations()
+        .expect("relations")
+        .into_iter()
+        .find(|relation| relation.relation_id == fixture.relation_id)
+        .expect("restored relation");
+    assert_eq!(restored.relationship, RelationshipType::SharedDirectoryReference);
+    assert_eq!(
+        restored.link_target_path.as_deref(),
+        Some(shared_body.to_string_lossy().as_ref())
+    );
+    assert_eq!(
+        std::fs::read_link(&other_alias).expect("other alias target after rollback"),
+        shared_body
     );
 }
 

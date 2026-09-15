@@ -1763,7 +1763,22 @@ fn validate_backup_path(
         .map_err(|_| path_boundary(&journal.backup.path))?;
     let mut policy = skillhub_core::PathPolicy::new();
     policy.register_root(root)?;
-    policy.resolve_for_create(root_id, relative)?;
+    match fs::symlink_metadata(&backup) {
+        // A materialized backup link intentionally resolves to the original
+        // entry outside the library root, so it must be validated by its own
+        // location (the parent chain inside the library) instead of through
+        // its target.  Its link target and content are checked separately by
+        // `validate_backup_entity` and the backup fingerprint.
+        Ok(metadata) if metadata.file_type().is_symlink() => {
+            let parent = backup
+                .parent()
+                .ok_or_else(|| path_boundary(&journal.backup.path))?;
+            policy.authorize_existing(parent)?;
+        }
+        _ => {
+            policy.resolve_for_create(root_id, relative)?;
+        }
+    }
     Ok(backup)
 }
 
