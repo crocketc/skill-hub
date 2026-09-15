@@ -69,14 +69,18 @@ pub struct DeploymentRemovalResult {
 }
 
 impl RemovalDecision {
-    pub fn from_minimal_impact(action: crate::relationship::impact::MinimalImpactAction) -> Self {
+    pub fn from_minimal_impact(
+        action: crate::relationship::impact::MinimalImpactAction,
+    ) -> Option<Self> {
         use crate::relationship::impact::MinimalImpactAction;
         match action {
-            MinimalImpactAction::RemoveCurrentAgentTarget => Self::RemoveOwnedTarget,
-            MinimalImpactAction::RemoveCurrentRelationKeepSharedFiles => Self::KeepSharedDeployment,
-            MinimalImpactAction::RemoveCurrentSharedAlias => Self::RemoveRelationOnly,
-            MinimalImpactAction::ConvertCopyToManagedLink => Self::DetachManagement,
-            MinimalImpactAction::CreateGovernanceTask => Self::Cancel,
+            MinimalImpactAction::RemoveCurrentAgentTarget => Some(Self::RemoveOwnedTarget),
+            MinimalImpactAction::RemoveCurrentRelationKeepSharedFiles => {
+                Some(Self::KeepSharedDeployment)
+            }
+            MinimalImpactAction::RemoveCurrentSharedAlias => Some(Self::RemoveRelationOnly),
+            MinimalImpactAction::ConvertCopyToManagedLink => None,
+            MinimalImpactAction::CreateGovernanceTask => Some(Self::Cancel),
         }
     }
 }

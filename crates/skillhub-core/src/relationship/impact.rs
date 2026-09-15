@@ -93,66 +93,84 @@ pub fn calculate_removal_impact(relation_id: &str, facts: &RemovalFacts) -> Remo
         .as_ref()
         .is_some_and(|relation| relation.relationship == RelationshipType::SharedDirectoryRead);
 
+    let mut governance_tasks = Vec::new();
+    let shared_node_id = relation.as_ref().and_then(shared_directory_node_id);
     let mut other_consumers = Vec::new();
+
     if let Some(relation) = &relation {
-        for capability in &facts.directory_capabilities {
-            if capability.agent_client_id == relation.agent_client_id
-                || Some(&capability.directory_node_id) != relation.directory_node_id.as_ref()
-                || capability.recognition != DirectoryRecognition::Supported
-            {
-                continue;
+        if let Some(directory_node_id) = shared_node_id.as_deref() {
+            let current_recognition =
+                capability_recognition(facts, &relation.agent_client_id, directory_node_id);
+            if current_recognition != DirectoryRecognition::Supported {
+                add_governance_task(
+                    &mut governance_tasks,
+                    relation_id,
+                    GovernanceTaskKind::UnknownDirectoryRecognition,
+                    format!(
+                        "shared directory capability is {:?} for {}",
+                        current_recognition, relation.agent_client_id
+                    ),
+                );
             }
-            if !other_consumers
-                .iter()
-                .any(|consumer: &SharedDirectoryConsumer| {
-                    consumer.agent_client_id == capability.agent_client_id
-                })
-            {
-                other_consumers.push(SharedDirectoryConsumer {
-                    agent_client_id: capability.agent_client_id.clone(),
-                    relation_id: facts
-                        .relations
-                        .iter()
-                        .find(|candidate| {
-                            candidate.agent_client_id == capability.agent_client_id
-                                && candidate.directory_node_id == relation.directory_node_id
-                        })
-                        .map(|candidate| candidate.relation_id.clone()),
-                    directory_node_id: relation.directory_node_id.clone(),
-                    recognition: capability.recognition,
-                });
-            }
-        }
-    }
-    if let Some(relation) = &relation {
-        for candidate in &facts.relations {
-            if candidate.relation_id == relation.relation_id
-                || !candidate.active
-                || candidate.directory_node_id != relation.directory_node_id
-                || candidate.relationship != RelationshipType::SharedDirectoryRead
-                || candidate.agent_client_id == relation.agent_client_id
-            {
-                continue;
-            }
-            if !other_consumers
-                .iter()
-                .any(|consumer| consumer.agent_client_id == candidate.agent_client_id)
-            {
+
+            for candidate in facts.relations.iter().filter(|candidate| {
+                candidate.relation_id != relation.relation_id
+                    && candidate.active
+                    && candidate.agent_client_id != relation.agent_client_id
+                    && shared_directory_node_id(candidate).as_deref() == Some(directory_node_id)
+            }) {
+                let recognition =
+                    capability_recognition(facts, &candidate.agent_client_id, directory_node_id);
                 other_consumers.push(SharedDirectoryConsumer {
                     agent_client_id: candidate.agent_client_id.clone(),
                     relation_id: Some(candidate.relation_id.clone()),
-                    directory_node_id: candidate.directory_node_id.clone(),
-                    recognition: DirectoryRecognition::Supported,
+                    directory_node_id: Some(directory_node_id.to_owned()),
+                    recognition,
                 });
+                if recognition != DirectoryRecognition::Supported {
+                    add_governance_task(
+                        &mut governance_tasks,
+                        relation_id,
+                        GovernanceTaskKind::UnknownDirectoryRecognition,
+                        format!(
+                            "shared directory capability is {:?} for {}",
+                            recognition, candidate.agent_client_id
+                        ),
+                    );
+                }
+            }
+
+            for capability in facts.directory_capabilities.iter().filter(|capability| {
+                capability.directory_node_id == directory_node_id
+                    && capability.agent_client_id != relation.agent_client_id
+                    && !other_consumers
+                        .iter()
+                        .any(|consumer| consumer.agent_client_id == capability.agent_client_id)
+                    && capability.recognition != DirectoryRecognition::Supported
+            }) {
+                add_governance_task(
+                    &mut governance_tasks,
+                    relation_id,
+                    GovernanceTaskKind::UnknownDirectoryRecognition,
+                    format!(
+                        "shared directory capability is {:?} for {}",
+                        capability.recognition, capability.agent_client_id
+                    ),
+                );
             }
         }
     }
-    other_consumers.sort_by(|left, right| left.agent_client_id.cmp(&right.agent_client_id));
+    other_consumers.sort_by(|left, right| {
+        left.agent_client_id
+            .cmp(&right.agent_client_id)
+            .then_with(|| left.relation_id.cmp(&right.relation_id))
+            .then_with(|| left.directory_node_id.cmp(&right.directory_node_id))
+    });
 
     let other_skill_paths = relation
         .as_ref()
         .map(|selected| {
-            facts
+            let mut paths = facts
                 .relations
                 .iter()
                 .filter(|candidate| {
@@ -167,30 +185,39 @@ pub fn calculate_removal_impact(relation_id: &str, facts: &RemovalFacts) -> Remo
                     relationship: candidate.relationship,
                     file_representation: candidate.file_representation,
                 })
-                .collect()
+                .collect::<Vec<_>>();
+            paths.sort_by(|left, right| {
+                left.relation_id
+                    .cmp(&right.relation_id)
+                    .then_with(|| left.path.cmp(&right.path))
+            });
+            paths
         })
         .unwrap_or_default();
 
-    let mut governance_tasks = Vec::new();
     if relation.is_none() || facts.permission_limited {
-        governance_tasks.push(governance_task(
+        add_governance_task(
+            &mut governance_tasks,
             relation_id,
+            GovernanceTaskKind::OperationFailureRecovery,
             if facts.permission_limited {
-                "permission is restricted; rescan and confirm before removal"
+                "permission is restricted; rescan and confirm before removal".into()
             } else {
-                "relationship was not found in the current fact snapshot"
+                "relationship was not found in the current fact snapshot".into()
             },
-        ));
+        );
     }
     if let Some(relation) = &relation {
         if relation.relationship == RelationshipType::Unknown
             || relation.file_representation == crate::relationship::FileRepresentation::Unknown
             || relation.match_state != ObservedMatchState::ContentVerified
         {
-            governance_tasks.push(governance_task(
+            add_governance_task(
+                &mut governance_tasks,
                 relation_id,
-                "relationship or Skill identity is not deterministically confirmed",
-            ));
+                GovernanceTaskKind::UnknownDirectoryRecognition,
+                "relationship or Skill identity is not deterministically confirmed".into(),
+            );
         }
     }
 
@@ -251,12 +278,58 @@ fn backup_info(relation: Option<&DeploymentRelationFact>) -> BackupRecoveryInfo 
     }
 }
 
-fn governance_task(subject_id: &str, detail: &str) -> GovernanceTaskFact {
+fn shared_directory_node_id(relation: &DeploymentRelationFact) -> Option<String> {
+    match relation.relationship {
+        RelationshipType::SharedDirectoryRead => relation.directory_node_id.clone(),
+        RelationshipType::SharedDirectoryReference => relation
+            .link_target_directory_id
+            .clone()
+            .or_else(|| relation.directory_node_id.clone()),
+        _ => None,
+    }
+}
+
+fn capability_recognition(
+    facts: &RemovalFacts,
+    agent_client_id: &str,
+    directory_node_id: &str,
+) -> DirectoryRecognition {
+    facts
+        .directory_capabilities
+        .iter()
+        .find(|capability| {
+            capability.agent_client_id == agent_client_id
+                && capability.directory_node_id == directory_node_id
+        })
+        .map(|capability| capability.recognition)
+        .unwrap_or(DirectoryRecognition::Unknown)
+}
+
+fn add_governance_task(
+    tasks: &mut Vec<GovernanceTaskFact>,
+    subject_id: &str,
+    kind: GovernanceTaskKind,
+    detail: String,
+) {
+    if tasks
+        .iter()
+        .any(|task| task.kind == kind && task.subject_id == subject_id)
+    {
+        return;
+    }
+    tasks.push(governance_task(subject_id, kind, detail));
+}
+
+fn governance_task(
+    subject_id: &str,
+    kind: GovernanceTaskKind,
+    detail: String,
+) -> GovernanceTaskFact {
     GovernanceTaskFact {
         task_id: format!("removal:{subject_id}:governance"),
-        kind: GovernanceTaskKind::ConfirmSharedDirectoryImpact,
+        kind,
         subject_id: subject_id.into(),
-        detail: detail.into(),
+        detail,
         resolved: false,
         created_at: 0,
         resolved_at: None,

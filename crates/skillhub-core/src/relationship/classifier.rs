@@ -1,4 +1,5 @@
 use crate::agent::AgentProfile;
+use crate::deployment::observed_path_key;
 pub use crate::deployment::reconcile::RelationTargetFact;
 use crate::deployment::reconcile::{normalized_path_key, path_lives_under_platform};
 use crate::relationship::{
@@ -37,34 +38,52 @@ pub fn classify_observed_relation_with_reason(
     let selected = target_facts
         .iter()
         .filter(|fact| path_lives_under_platform(path, &fact.directory_path, windows))
-        .max_by_key(|fact| normalized_path_key(&fact.directory_path, windows).len());
+        .min_by_key(|fact| target_sort_key(fact, windows));
 
     let Some(target) = selected else {
         return unknown_classification(path, "no registered directory contains the observed path");
     };
 
-    let capability = directory_capabilities.iter().find(|capability| {
-        capability.agent_client_id == target.agent_client_id
-            && capability.directory_node_id == target.directory_node_id
-    });
-    let recognition = match target.directory_role {
-        DirectoryRole::SharedDirectory => capability
-            .map(|value| value.recognition)
-            .unwrap_or(DirectoryRecognition::Unknown),
-        _ => DirectoryRecognition::Supported,
-    };
-
     let shared_target = target.link_target_path.as_deref().and_then(|link_target| {
-        target_facts
+        let mut candidates = target_facts
             .iter()
             .filter(|candidate| candidate.directory_role == DirectoryRole::SharedDirectory)
             .filter(|candidate| {
                 path_lives_under_platform(link_target, &candidate.directory_path, windows)
             })
-            .max_by_key(|candidate| normalized_path_key(&candidate.directory_path, windows).len())
+            .collect::<Vec<_>>();
+        if let Some(directory_node_id) = target.link_target_directory_id.as_deref() {
+            candidates.retain(|candidate| candidate.directory_node_id == directory_node_id);
+        }
+        candidates
+            .into_iter()
+            .min_by_key(|candidate| target_sort_key(candidate, windows))
     });
 
-    if recognition != DirectoryRecognition::Supported {
+    let shared_capability_target = if target.directory_role == DirectoryRole::SharedDirectory {
+        Some(target)
+    } else {
+        shared_target
+    };
+    let recognition = shared_capability_target
+        .map(|shared_target| {
+            directory_capabilities
+                .iter()
+                .find(|capability| {
+                    capability.agent_client_id == target.agent_client_id
+                        && capability.directory_node_id == shared_target.directory_node_id
+                })
+                .map(|capability| capability.recognition)
+                .unwrap_or(DirectoryRecognition::Unknown)
+        })
+        .unwrap_or(DirectoryRecognition::Supported);
+
+    if target.link_target_path.is_some() && shared_capability_target.is_none() {
+        return unknown_classification(path, "shared link target directory was not found")
+            .with_target_context(target);
+    }
+
+    if shared_capability_target.is_some() && recognition != DirectoryRecognition::Supported {
         let reason = match recognition {
             DirectoryRecognition::Unknown => {
                 "shared directory capability is not confirmed for this Agent".to_owned()
@@ -79,15 +98,12 @@ pub fn classify_observed_relation_with_reason(
 
     let mut fact = target.to_deployment_relation_fact();
     fact.path = path.to_owned();
-    fact.path_key = normalized_path_key(path, windows);
+    fact.path_key = observed_path_key(path);
     if target.relation_id.is_none() {
         fact.relation_id = format!("observed:{}", fact.path_key);
     }
     fact.directory_node_id = Some(target.directory_node_id.clone());
-    fact.link_target_path_key = fact
-        .link_target_path
-        .as_deref()
-        .map(|value| normalized_path_key(value, windows));
+    fact.link_target_path_key = fact.link_target_path.as_deref().map(observed_path_key);
 
     let relationship = if target.directory_role == DirectoryRole::SharedDirectory {
         RelationshipType::SharedDirectoryRead
@@ -109,6 +125,15 @@ pub fn classify_observed_relation_with_reason(
     };
     if target.match_state != crate::deployment::ObservedMatchState::ContentVerified {
         fact.skill_id = None;
+    }
+    if relationship == RelationshipType::Unknown {
+        let mut classification = unknown_classification(
+            path,
+            "ownership and file representation do not define a known relationship",
+        )
+        .with_target_context(target);
+        classification.fact = fact;
+        return classification;
     }
     RelationClassification {
         fact,
@@ -153,7 +178,7 @@ fn relationship_for_target(target: &RelationTargetFact) -> RelationshipType {
         ) | (
             RelationshipType::ObservedLink,
             OwnershipState::ObservedUnmanaged
-        ) | (RelationshipType::ImportCopy, _)
+        )
     );
     if compatible {
         target.relationship
@@ -163,8 +188,7 @@ fn relationship_for_target(target: &RelationTargetFact) -> RelationshipType {
 }
 
 fn unknown_classification(path: &str, reason: &str) -> RelationClassification {
-    let windows = looks_like_windows_path(path);
-    let path_key = normalized_path_key(path, windows);
+    let path_key = observed_path_key(path);
     let task = GovernanceTaskFact {
         task_id: format!("relationship:{path_key}:classification"),
         kind: GovernanceTaskKind::UnknownDirectoryRecognition,
@@ -210,4 +234,17 @@ impl RelationClassification {
 
 fn looks_like_windows_path(path: &str) -> bool {
     path.as_bytes().get(1) == Some(&b':') || path.contains('\\')
+}
+
+fn target_sort_key(
+    target: &RelationTargetFact,
+    windows: bool,
+) -> (std::cmp::Reverse<usize>, String, String, String, String) {
+    (
+        std::cmp::Reverse(normalized_path_key(&target.directory_path, windows).len()),
+        normalized_path_key(&target.directory_path, windows),
+        target.directory_node_id.clone(),
+        target.agent_client_id.clone(),
+        target.relation_id.clone().unwrap_or_default(),
+    )
 }

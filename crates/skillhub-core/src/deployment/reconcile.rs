@@ -194,10 +194,7 @@ pub fn path_lives_under_platform(candidate: &str, root: &str, windows: bool) -> 
 }
 
 fn relation_path_key(path: &str) -> String {
-    normalized_path_key(
-        path,
-        path.as_bytes().get(1) == Some(&b':') || path.contains('\\'),
-    )
+    crate::deployment::observed_path_key(path)
 }
 
 impl ReconcilePlan {

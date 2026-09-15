@@ -4,17 +4,19 @@ use skillhub_core::agent::{
     AgentClient, AgentProfile, CallPolicy, ClientKind, DeploymentCapability, DirectoryPrecedence,
     OperatingSystem, PathCandidate, TargetScope,
 };
+use skillhub_core::deployment::observed_path_key;
 use skillhub_core::deployment::{
     DeploymentMode, DeploymentPlanInput, DeploymentPlanRequest, DeploymentPlanner,
     ExistingDeployment, ExistingOwnership, RegisteredTargetIndex, TargetFact, TargetFactSource,
     VerifiedTarget,
 };
 use skillhub_core::relationship::classifier::{
-    classify_directory_capability, classify_observed_relation, RelationTargetFact,
+    classify_directory_capability, classify_observed_relation,
+    classify_observed_relation_with_reason, RelationTargetFact,
 };
 use skillhub_core::relationship::{
     AgentDirectoryCapabilityFact, DirectoryRecognition, DirectoryRole, FileRepresentation,
-    RelationshipType,
+    GovernanceTaskKind, RelationshipType,
 };
 use skillhub_core::{physical_id_for_path, AllowedRoot, PathPolicy, SkillId, VersionId};
 use tempfile::{tempdir, TempDir};
@@ -276,11 +278,123 @@ fn directory_capability_is_deterministic_and_does_not_use_directory_existence() 
 
     assert_eq!(
         classify_directory_capability(&profile, r"C:\Users\Ada\.agents\skills"),
-        DirectoryRecognition::Supported
+        DirectoryRecognition::Unknown
     );
     assert_eq!(
         classify_directory_capability(&profile, r"C:\Users\Ada\.agents\skills-demo"),
         DirectoryRecognition::Unknown
+    );
+}
+
+#[test]
+fn native_profile_candidate_is_supported_but_shared_candidate_is_only_unknown() {
+    let profile = AgentProfile {
+        profile_version: 1,
+        research_date: "2026-09-15".into(),
+        official_references: vec!["https://example.test/profile".into()],
+        brand: "Example".into(),
+        clients: vec![
+            AgentClient {
+                id: "example.cli".into(),
+                kind: ClientKind::Cli,
+                display_name: "Example CLI".into(),
+                supported_os: vec![OperatingSystem::Windows, OperatingSystem::Macos],
+                path_candidates: vec![PathCandidate {
+                    path: "{user_home}/.example/skills".into(),
+                    scope: TargetScope::Global,
+                    precedence: DirectoryPrecedence::Preferred,
+                    marker: "SKILL.md".into(),
+                    shared_reference: false,
+                }],
+                skill_marker: "SKILL.md".into(),
+                deployment: DeploymentCapability::new(true, false, true),
+                call_policy: CallPolicy::Unknown,
+            },
+            AgentClient {
+                id: "example.shared".into(),
+                kind: ClientKind::SharedDirectory,
+                display_name: "Agent Skills directory".into(),
+                supported_os: vec![OperatingSystem::Windows, OperatingSystem::Macos],
+                path_candidates: vec![PathCandidate {
+                    path: "{user_home}/.agents/skills".into(),
+                    scope: TargetScope::Global,
+                    precedence: DirectoryPrecedence::Preferred,
+                    marker: "SKILL.md".into(),
+                    shared_reference: true,
+                }],
+                skill_marker: "SKILL.md".into(),
+                deployment: DeploymentCapability::new(true, false, true),
+                call_policy: CallPolicy::Unknown,
+            },
+        ],
+    };
+
+    assert_eq!(
+        classify_directory_capability(&profile, r"C:\Users\Ada\.example\skills"),
+        DirectoryRecognition::Supported
+    );
+    assert_eq!(
+        classify_directory_capability(&profile, r"C:\Users\Ada\.agents\skills"),
+        DirectoryRecognition::Unknown
+    );
+}
+
+#[test]
+fn shared_directory_unknown_or_unsupported_capability_never_becomes_a_shared_relation() {
+    let shared = RelationTargetFact::directory(
+        "shared",
+        "/home/ada/.agents/skills",
+        "codex",
+        DirectoryRole::SharedDirectory,
+    );
+
+    for recognition in [
+        DirectoryRecognition::Unknown,
+        DirectoryRecognition::Unsupported,
+    ] {
+        let capability = AgentDirectoryCapabilityFact {
+            agent_client_id: "codex".into(),
+            directory_node_id: "shared".into(),
+            recognition,
+            precedence: DirectoryPrecedence::Preferred,
+            evidence_reference: None,
+            researched_at: None,
+            applicable_platforms: vec![],
+        };
+        let classification = classify_observed_relation_with_reason(
+            "/home/ada/.agents/skills/demo",
+            std::slice::from_ref(&shared),
+            std::slice::from_ref(&capability),
+        );
+
+        assert_eq!(classification.fact.relationship, RelationshipType::Unknown);
+        assert_eq!(
+            classification
+                .governance_task
+                .as_ref()
+                .map(|task| task.kind),
+            Some(GovernanceTaskKind::UnknownDirectoryRecognition)
+        );
+        assert!(classification.reason.is_some());
+    }
+}
+
+#[test]
+fn unknown_relation_keeps_reason_and_governance_in_with_reason_result() {
+    let classification =
+        classify_observed_relation_with_reason("/home/ada/.unregistered/skills/demo", &[], &[]);
+
+    assert_eq!(classification.fact.relationship, RelationshipType::Unknown);
+    assert_eq!(
+        classification
+            .governance_task
+            .as_ref()
+            .map(|task| task.kind),
+        Some(GovernanceTaskKind::UnknownDirectoryRecognition)
+    );
+    assert_eq!(
+        classification.reason.as_deref(),
+        Some("no registered directory contains the observed path")
     );
 }
 
@@ -351,7 +465,20 @@ fn relation_classifier_distinguishes_native_managed_links_and_shared_aliases() {
         .with_relation("shared-alias", RelationshipType::Unknown)
         .with_ownership(skillhub_core::OwnershipState::ObservedUnmanaged)
         .with_link_target("/home/ada/.agents/skills/demo", Some("shared".into()));
-    let alias = classify_observed_relation("/home/ada/.codex/skills/demo", &[alias, shared], &[]);
+    let shared_capability = AgentDirectoryCapabilityFact {
+        agent_client_id: "codex".into(),
+        directory_node_id: "shared".into(),
+        recognition: DirectoryRecognition::Supported,
+        precedence: DirectoryPrecedence::Preferred,
+        evidence_reference: None,
+        researched_at: None,
+        applicable_platforms: vec![],
+    };
+    let alias = classify_observed_relation(
+        "/home/ada/.codex/skills/demo",
+        &[alias, shared],
+        std::slice::from_ref(&shared_capability),
+    );
     assert_eq!(
         alias.relationship,
         RelationshipType::SharedDirectoryReference
@@ -360,6 +487,124 @@ fn relation_classifier_distinguishes_native_managed_links_and_shared_aliases() {
         alias.ownership,
         skillhub_core::OwnershipState::SharedReference
     );
+}
+
+#[test]
+fn relation_classifier_does_not_preserve_import_copy_when_observed_facts_disagree() {
+    let imported = RelationTargetFact::directory(
+        "native",
+        "/home/ada/.codex/skills",
+        "codex",
+        DirectoryRole::AgentNative,
+    )
+    .with_relation("import", RelationshipType::ImportCopy)
+    .with_ownership(skillhub_core::OwnershipState::ObservedUnmanaged)
+    .with_file_representation(FileRepresentation::Directory);
+
+    let relation = classify_observed_relation(
+        "/home/ada/.codex/skills/demo",
+        std::slice::from_ref(&imported),
+        &[],
+    );
+
+    assert_eq!(relation.relationship, RelationshipType::ObservedCopy);
+    assert_eq!(
+        relation.ownership,
+        skillhub_core::OwnershipState::ObservedUnmanaged
+    );
+    assert_eq!(relation.file_representation, FileRepresentation::Directory);
+}
+
+#[test]
+fn unknown_ownership_representation_pair_keeps_governance_reason() {
+    let unknown = RelationTargetFact::directory(
+        "native",
+        "/home/ada/.codex/skills",
+        "codex",
+        DirectoryRole::AgentNative,
+    )
+    .with_file_representation(FileRepresentation::Unknown);
+
+    let classification = classify_observed_relation_with_reason(
+        "/home/ada/.codex/skills/demo",
+        std::slice::from_ref(&unknown),
+        &[],
+    );
+
+    assert_eq!(classification.fact.relationship, RelationshipType::Unknown);
+    assert!(classification.reason.is_some());
+    assert_eq!(
+        classification
+            .governance_task
+            .as_ref()
+            .map(|task| task.kind),
+        Some(GovernanceTaskKind::UnknownDirectoryRecognition)
+    );
+}
+
+#[test]
+fn shared_alias_requires_current_agent_capability_for_link_target_node() {
+    let alias = RelationTargetFact::directory(
+        "native",
+        "/home/ada/.codex/skills",
+        "codex",
+        DirectoryRole::AgentNative,
+    )
+    .with_link_target("/home/ada/.agents/skills/demo", Some("shared".into()))
+    .with_file_representation(FileRepresentation::SymbolicLink);
+    let shared = RelationTargetFact::directory(
+        "shared",
+        "/home/ada/.agents/skills",
+        "codex",
+        DirectoryRole::SharedDirectory,
+    );
+    let classification = classify_observed_relation_with_reason(
+        "/home/ada/.codex/skills/demo",
+        &[alias, shared],
+        &[],
+    );
+
+    assert_eq!(classification.fact.relationship, RelationshipType::Unknown);
+    assert!(classification.reason.is_some());
+    assert_eq!(
+        classification
+            .governance_task
+            .as_ref()
+            .map(|task| task.kind),
+        Some(GovernanceTaskKind::UnknownDirectoryRecognition)
+    );
+}
+
+#[test]
+fn relation_target_ties_are_resolved_by_stable_directory_identity() {
+    let copy = RelationTargetFact::directory(
+        "z-node",
+        "/home/ada/.codex/skills",
+        "codex",
+        DirectoryRole::AgentNative,
+    )
+    .with_relation("copy", RelationshipType::ManagedCopy)
+    .with_ownership(skillhub_core::OwnershipState::SkillhubManaged)
+    .with_file_representation(FileRepresentation::Copy);
+    let link = RelationTargetFact::directory(
+        "a-node",
+        "/home/ada/.codex/skills",
+        "codex",
+        DirectoryRole::AgentNative,
+    )
+    .with_relation("link", RelationshipType::ManagedLink)
+    .with_ownership(skillhub_core::OwnershipState::SkillhubManaged)
+    .with_file_representation(FileRepresentation::SymbolicLink);
+
+    let forward = classify_observed_relation(
+        "/home/ada/.codex/skills/demo",
+        &[copy.clone(), link.clone()],
+        &[],
+    );
+    let reverse = classify_observed_relation("/home/ada/.codex/skills/demo", &[link, copy], &[]);
+
+    assert_eq!(forward.directory_node_id, Some("a-node".into()));
+    assert_eq!(forward, reverse);
 }
 
 #[test]
@@ -385,7 +630,10 @@ fn relation_classifier_folds_windows_case_but_preserves_posix_case_and_boundarie
         std::slice::from_ref(&supported),
     );
     assert_eq!(relation.relationship, RelationshipType::SharedDirectoryRead);
-    assert_eq!(relation.path_key, r"c:/users/ada/.agents/skills/demo");
+    assert_eq!(
+        relation.path_key,
+        observed_path_key(r"c:\users\ada\.AGENTS\SKILLS\demo")
+    );
 
     let boundary = classify_observed_relation(
         r"C:\Users\Ada\.agents\skills-demo\demo",

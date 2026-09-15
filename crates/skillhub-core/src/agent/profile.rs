@@ -263,13 +263,13 @@ impl AgentProfile {
                     continue;
                 }
                 if candidate.shared_reference {
-                    if matches!(client.kind, ClientKind::SharedDirectory) {
-                        continue;
-                    }
+                    // A shared candidate identifies a possible directory only;
+                    // it does not prove that this Agent consumes it. That
+                    // fact must come from AgentDirectoryCapabilityFact.
+                    continue;
                 } else {
                     return crate::relationship::DirectoryRecognition::Supported;
                 }
-                return crate::relationship::DirectoryRecognition::Supported;
             }
         }
         crate::relationship::DirectoryRecognition::Unknown

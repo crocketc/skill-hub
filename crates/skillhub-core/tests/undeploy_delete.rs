@@ -6,7 +6,8 @@ use skillhub_core::relationship::impact::{
     calculate_removal_impact, recommend_removal_action, MinimalImpactAction, RemovalFacts,
 };
 use skillhub_core::relationship::{
-    AgentDirectoryCapabilityFact, DirectoryRecognition, DirectoryRole, RelationshipType,
+    AgentDirectoryCapabilityFact, DirectoryRecognition, DirectoryRole, FileRepresentation,
+    GovernanceTaskKind, RelationshipType,
 };
 use skillhub_core::{
     AppError, AppResult, DeploymentId, ErrorCode, OperationId, RemovalDecision, RemovalImpact,
@@ -267,6 +268,207 @@ fn removal_impact_for_unknown_capability_is_a_governance_todo() {
         MinimalImpactAction::CreateGovernanceTask
     );
     assert!(!impact.governance_tasks.is_empty());
+    assert_eq!(
+        impact.governance_tasks[0].kind,
+        GovernanceTaskKind::UnknownDirectoryRecognition
+    );
+}
+
+#[test]
+fn removal_impact_keeps_unknown_and_unsupported_shared_consumers_visible() {
+    let current = RelationTargetFact::directory(
+        "shared",
+        "/home/ada/.agents/skills",
+        "codex",
+        DirectoryRole::SharedDirectory,
+    )
+    .with_relation("current", RelationshipType::SharedDirectoryRead);
+    let unknown = RelationTargetFact::directory(
+        "shared",
+        "/home/ada/.agents/skills",
+        "claude",
+        DirectoryRole::SharedDirectory,
+    )
+    .with_relation("unknown", RelationshipType::SharedDirectoryRead);
+    let unsupported = RelationTargetFact::directory(
+        "shared",
+        "/home/ada/.agents/skills",
+        "cursor",
+        DirectoryRole::SharedDirectory,
+    )
+    .with_relation("unsupported", RelationshipType::SharedDirectoryReference);
+    let mut inactive = RelationTargetFact::directory(
+        "shared",
+        "/home/ada/.agents/skills",
+        "inactive",
+        DirectoryRole::SharedDirectory,
+    )
+    .with_relation("inactive", RelationshipType::SharedDirectoryRead)
+    .to_deployment_relation_fact();
+    inactive.active = false;
+    let ignored_copy = RelationTargetFact::directory(
+        "shared",
+        "/home/ada/.agents/skills",
+        "copy",
+        DirectoryRole::SharedDirectory,
+    )
+    .with_relation("copy", RelationshipType::ObservedCopy);
+
+    let facts = RemovalFacts::new(
+        vec![
+            current.to_deployment_relation_fact(),
+            unknown.to_deployment_relation_fact(),
+            unsupported.to_deployment_relation_fact(),
+            inactive,
+            ignored_copy.to_deployment_relation_fact(),
+        ],
+        vec![
+            AgentDirectoryCapabilityFact {
+                agent_client_id: "codex".into(),
+                directory_node_id: "shared".into(),
+                recognition: DirectoryRecognition::Supported,
+                precedence: skillhub_core::DirectoryPrecedence::Preferred,
+                evidence_reference: None,
+                researched_at: None,
+                applicable_platforms: vec![],
+            },
+            AgentDirectoryCapabilityFact {
+                agent_client_id: "claude".into(),
+                directory_node_id: "shared".into(),
+                recognition: DirectoryRecognition::Unknown,
+                precedence: skillhub_core::DirectoryPrecedence::Preferred,
+                evidence_reference: None,
+                researched_at: None,
+                applicable_platforms: vec![],
+            },
+            AgentDirectoryCapabilityFact {
+                agent_client_id: "cursor".into(),
+                directory_node_id: "shared".into(),
+                recognition: DirectoryRecognition::Unsupported,
+                precedence: skillhub_core::DirectoryPrecedence::Preferred,
+                evidence_reference: None,
+                researched_at: None,
+                applicable_platforms: vec![],
+            },
+        ],
+    );
+
+    let impact = calculate_removal_impact("current", &facts);
+
+    assert_eq!(
+        impact
+            .other_consumers
+            .iter()
+            .map(|consumer| consumer.agent_client_id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["claude", "cursor"]
+    );
+    assert_eq!(
+        impact
+            .other_consumers
+            .iter()
+            .map(|consumer| consumer.recognition)
+            .collect::<Vec<_>>(),
+        vec![
+            DirectoryRecognition::Unknown,
+            DirectoryRecognition::Unsupported
+        ]
+    );
+    assert!(impact
+        .governance_tasks
+        .iter()
+        .all(|task| task.kind == GovernanceTaskKind::UnknownDirectoryRecognition));
+    assert_eq!(
+        impact.minimal_action,
+        MinimalImpactAction::CreateGovernanceTask
+    );
+}
+
+#[test]
+fn removal_impact_sorts_related_paths_and_only_counts_active_shared_relations() {
+    let skill_id = SkillId::new();
+    let current = RelationTargetFact::directory(
+        "shared",
+        "/home/ada/.agents/skills",
+        "codex",
+        DirectoryRole::SharedDirectory,
+    )
+    .with_relation("current", RelationshipType::SharedDirectoryRead)
+    .with_skill(skill_id, "sha256:current");
+    let path_b = RelationTargetFact::directory(
+        "native-b",
+        "/home/ada/.codex/skills",
+        "codex",
+        DirectoryRole::AgentNative,
+    )
+    .with_relation("b", RelationshipType::ObservedCopy)
+    .with_file_representation(FileRepresentation::Copy)
+    .with_skill(skill_id, "sha256:b");
+    let path_a = RelationTargetFact::directory(
+        "native-a",
+        "/home/ada/.claude/skills",
+        "claude",
+        DirectoryRole::AgentNative,
+    )
+    .with_relation("a", RelationshipType::ObservedLink)
+    .with_file_representation(FileRepresentation::SymbolicLink)
+    .with_skill(skill_id, "sha256:a");
+    let mut inactive_shared = RelationTargetFact::directory(
+        "shared",
+        "/home/ada/.agents/skills",
+        "gemini",
+        DirectoryRole::SharedDirectory,
+    )
+    .with_relation("inactive-shared", RelationshipType::SharedDirectoryRead)
+    .to_deployment_relation_fact();
+    inactive_shared.active = false;
+
+    let impact = calculate_removal_impact(
+        "current",
+        &RemovalFacts::new(
+            vec![
+                current.to_deployment_relation_fact(),
+                path_b.to_deployment_relation_fact(),
+                path_a.to_deployment_relation_fact(),
+                inactive_shared,
+            ],
+            vec![],
+        ),
+    );
+
+    assert!(impact.other_consumers.is_empty());
+    assert_eq!(
+        impact
+            .other_skill_paths
+            .iter()
+            .map(|path| path.relation_id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["a", "b"]
+    );
+}
+
+#[test]
+fn permission_and_missing_relation_use_operation_failure_governance() {
+    let facts = RemovalFacts::default().with_permission_limited(true);
+    let permission = calculate_removal_impact("missing", &facts);
+    assert_eq!(
+        permission.governance_tasks[0].kind,
+        GovernanceTaskKind::OperationFailureRecovery
+    );
+
+    let missing = calculate_removal_impact("missing", &RemovalFacts::default());
+    assert_eq!(
+        missing.governance_tasks[0].kind,
+        GovernanceTaskKind::OperationFailureRecovery
+    );
+}
+
+#[test]
+fn copy_conversion_is_not_mapped_to_legacy_detach_management() {
+    assert_eq!(
+        RemovalDecision::from_minimal_impact(MinimalImpactAction::ConvertCopyToManagedLink),
+        None
+    );
 }
 
 #[test]
@@ -316,8 +518,20 @@ fn removal_impact_removes_only_a_shared_alias_and_is_pure_across_retries() {
         "codex",
         DirectoryRole::AgentNative,
     )
-    .with_relation("alias", RelationshipType::SharedDirectoryReference);
-    let facts = RemovalFacts::new(vec![alias.to_deployment_relation_fact()], vec![]);
+    .with_relation("alias", RelationshipType::SharedDirectoryReference)
+    .with_link_target("/home/ada/.agents/skills/demo", Some("shared".into()));
+    let facts = RemovalFacts::new(
+        vec![alias.to_deployment_relation_fact()],
+        vec![AgentDirectoryCapabilityFact {
+            agent_client_id: "codex".into(),
+            directory_node_id: "shared".into(),
+            recognition: DirectoryRecognition::Supported,
+            precedence: skillhub_core::DirectoryPrecedence::Preferred,
+            evidence_reference: None,
+            researched_at: None,
+            applicable_platforms: vec![],
+        }],
+    );
     let first = calculate_removal_impact("alias", &facts);
     let second = calculate_removal_impact("alias", &facts);
 
