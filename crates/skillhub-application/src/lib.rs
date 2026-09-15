@@ -55,7 +55,10 @@ use skillhub_core::deployment::{
     observed_path_key, path_lives_under, reconcile_observed_row, DeploymentPlanRequest,
     DeploymentRecord, DeploymentState, RegisteredTargetIndex, TargetFact, TargetPlan,
 };
-use skillhub_core::duplicate::DuplicateCandidate;
+use skillhub_core::duplicate::{
+    build_conflict_analysis_input, parse_conflict_analysis_response, AnalyzeConflictScope,
+    ConflictAnalysisRecord, ConflictCaseAnalysis, DuplicateCandidate,
+};
 use skillhub_core::evidence::UsageEvidenceAnalyzer;
 use skillhub_core::health::{HealthFinding, RecoveryCandidate, RepairAction};
 use skillhub_core::ignore::IgnoreRule;
@@ -248,6 +251,26 @@ fn now_epoch_seconds() -> i64 {
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs() as i64
+}
+
+/// Which persisted conflict cases an analysis scope selects. Category matches
+/// the deterministic classification; skill matches membership facts only.
+fn conflict_case_matches_scope(
+    case: &skillhub_core::relationship::ConflictCaseFact,
+    scope: &AnalyzeConflictScope,
+) -> bool {
+    match scope {
+        AnalyzeConflictScope::All => true,
+        AnalyzeConflictScope::Category { classification } => case.classification == *classification,
+        AnalyzeConflictScope::Case { conflict_id } => case.conflict_id == *conflict_id,
+        AnalyzeConflictScope::Skill { skill_id } => {
+            case.member_skill_ids.contains(skill_id)
+                || case
+                    .members
+                    .iter()
+                    .any(|member| member.skill_id.as_ref() == Some(skill_id))
+        }
+    }
 }
 
 /// 当前 UTC 时刻的秒精度 RFC3339 字符串（`YYYY-MM-DDTHH:MM:SSZ`）。
@@ -2512,6 +2535,158 @@ impl LocalApplicationFacade {
         let result =
             run_non_send(move || async move { service.analyze(skill_id, &profile).await })?;
         Ok(AppCommandResult::DuplicateAnalysis(result))
+    }
+
+    /// Task 8: optional AI conflict analysis over deterministic conflict
+    /// groups. Deterministic baselines always come back untouched: without a
+    /// configured LLM (or with the capability off) the run answers with a
+    /// baseline-only result plus an honest failure code, and a failed LLM call
+    /// leaves trackable per-case records. Nothing here ever writes
+    /// `ConflictCase.user_decision`.
+    async fn analyze_conflict(&self, scope: AnalyzeConflictScope) -> AppResult<AppCommandResult> {
+        let cases = self.with_database("execute.analyze_conflict.cases", |database| {
+            let all = database.conflict_repository().list_cases()?;
+            Ok(all
+                .into_iter()
+                .filter(|case| conflict_case_matches_scope(case, &scope))
+                .collect::<Vec<_>>())
+        })?;
+        let skipped_decided_cases = u32::try_from(
+            cases
+                .iter()
+                .filter(|case| case.user_decision.is_some())
+                .count(),
+        )
+        .unwrap_or(u32::MAX);
+        // 已有用户裁决的冲突组不再送分析：AI 意见不得追随或覆盖裁决。
+        let undecided: Vec<_> = cases
+            .iter()
+            .filter(|case| case.user_decision.is_none())
+            .cloned()
+            .collect();
+
+        let without_llm = |failure_code: Option<String>| {
+            AppCommandResult::ConflictAnalysis(skillhub_core::duplicate::ConflictAnalysis {
+                scope: scope.clone(),
+                input_fingerprint: String::new(),
+                cases: Vec::new(),
+                skipped_decided_cases,
+                source: skillhub_core::duplicate::DuplicateAnalysisSource::DeterministicOnly,
+                failure_code,
+            })
+        };
+
+        let capabilities = self.llm_capabilities()?;
+        if !capabilities.semantic_duplicate {
+            return Ok(without_llm(Some(
+                ErrorCode::LlmCapabilityDisabled.as_str().to_owned(),
+            )));
+        }
+        let (runner, profile) = match self.llm_context("execute.analyze_conflict.profile") {
+            Ok(context) => context,
+            Err(error) => return Ok(without_llm(Some(error.code.as_str().to_owned()))),
+        };
+        if undecided.is_empty() {
+            return Ok(without_llm(None));
+        }
+        let input = build_conflict_analysis_input(&scope, &undecided)?;
+
+        let run = run_non_send(move || async move {
+            (runner as Arc<dyn LlmTaskRunner>)
+                .run(&profile, input.request)
+                .await
+        });
+        let response = match run {
+            Ok(response) => response,
+            Err(error) => {
+                self.persist_conflict_analysis_records(
+                    &scope,
+                    &input.fingerprint,
+                    &undecided,
+                    &[],
+                    Some(&error.code),
+                )?;
+                return Ok(without_llm(Some(error.code.as_str().to_owned())));
+            }
+        };
+        match parse_conflict_analysis_response(
+            &scope,
+            &input.fingerprint,
+            skipped_decided_cases,
+            &undecided,
+            response.output,
+        ) {
+            Ok(analysis) => {
+                self.persist_conflict_analysis_records(
+                    &scope,
+                    &input.fingerprint,
+                    &undecided,
+                    &analysis.cases,
+                    None,
+                )?;
+                Ok(AppCommandResult::ConflictAnalysis(analysis))
+            }
+            Err(error) => {
+                self.persist_conflict_analysis_records(
+                    &scope,
+                    &input.fingerprint,
+                    &undecided,
+                    &[],
+                    Some(&error.code),
+                )?;
+                Ok(without_llm(Some(error.code.as_str().to_owned())))
+            }
+        }
+    }
+
+    /// Writes one analysis record per analyzed case: an AI conclusion when the
+    /// run produced one, otherwise a traceable failure record. Records are
+    /// advisory; the conflict case's decision fields are never touched here.
+    fn persist_conflict_analysis_records(
+        &self,
+        scope: &AnalyzeConflictScope,
+        fingerprint: &str,
+        cases: &[skillhub_core::relationship::ConflictCaseFact],
+        conclusions: &[ConflictCaseAnalysis],
+        failure_code: Option<&ErrorCode>,
+    ) -> AppResult<()> {
+        let analyzed_at = now_epoch_seconds();
+        // 纳秒精度保证同一运行内 record_id 唯一，重复分析不互相覆盖。
+        let record_nonce = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|duration| duration.subsec_nanos())
+            .unwrap_or_default();
+        let failure_text = failure_code.map(|code| code.as_str().to_owned());
+        let run_failed = failure_code.is_some();
+        self.with_database("execute.analyze_conflict.persist", |database| {
+            let repository = database.conflict_analysis_repository();
+            for case in cases {
+                let conclusion = conclusions
+                    .iter()
+                    .find(|conclusion| conclusion.conflict_id == case.conflict_id);
+                repository.insert_record(&ConflictAnalysisRecord {
+                    record_id: format!(
+                        "analysis:{conflict_id}:{nonce}",
+                        conflict_id = case.conflict_id,
+                        nonce = record_nonce
+                    ),
+                    conflict_id: case.conflict_id.clone(),
+                    scope: scope.clone(),
+                    input_fingerprint: fingerprint.to_owned(),
+                    baseline_classification: case.classification,
+                    conclusion: conclusion.cloned(),
+                    source: if conclusion.is_some() && !run_failed {
+                        skillhub_core::duplicate::DuplicateAnalysisSource::Llm
+                    } else {
+                        skillhub_core::duplicate::DuplicateAnalysisSource::DeterministicOnly
+                    },
+                    analyzed_at,
+                    failure_code: failure_text.clone(),
+                    adopted_by_user: false,
+                })?;
+            }
+            Ok(())
+        })
     }
 
     async fn translate_description(
@@ -5322,6 +5497,9 @@ impl ApplicationFacade for LocalApplicationFacade {
             }
             AppCommand::AnalyzeSemanticDuplicates(request) => {
                 return self.analyze_semantic_duplicates(request.skill_id).await;
+            }
+            AppCommand::AnalyzeConflict(request) => {
+                return self.analyze_conflict(request.scope).await;
             }
             AppCommand::TranslateDescription(request) => {
                 return self.translate_description(request).await;

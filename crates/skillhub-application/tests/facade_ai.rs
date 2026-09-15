@@ -406,3 +406,459 @@ async fn duplicate_analysis_surfaces_deterministic_results_when_llm_fails() {
         duplicate.candidate_count as usize
     );
 }
+
+// --- Task 8: optional AI conflict analysis (design §3.4) ---
+
+use skillhub_core::api::AnalyzeConflict;
+use skillhub_core::duplicate::AnalyzeConflictScope;
+use skillhub_core::relationship::{
+    ConflictCaseFact, ConflictClassification, ConflictEvidence, ConflictKind,
+};
+
+/// Echoes one short conclusion per conflict case found in the request input.
+/// It counts calls so tests can prove the LLM was (or was not) invoked.
+struct ConflictEchoLlmRunner {
+    calls: std::sync::Mutex<u32>,
+}
+
+impl ConflictEchoLlmRunner {
+    fn new() -> std::sync::Arc<Self> {
+        std::sync::Arc::new(Self {
+            calls: std::sync::Mutex::new(0),
+        })
+    }
+
+    fn calls(&self) -> u32 {
+        *self.calls.lock().expect("call counter")
+    }
+}
+
+#[async_trait(?Send)]
+impl skillhub_core::LlmTaskRunner for ConflictEchoLlmRunner {
+    async fn run(
+        &self,
+        _profile: &skillhub_core::LlmProfile,
+        request: skillhub_core::LlmTaskRequest,
+    ) -> skillhub_core::AppResult<skillhub_core::LlmTaskResponse> {
+        if request.kind != skillhub_core::LlmTaskKind::ConflictAnalysis {
+            return Err(skillhub_core::AppError::new(
+                ErrorCode::LlmInvalidStructuredResponse,
+                Severity::Error,
+            ));
+        }
+        *self.calls.lock().expect("call counter") += 1;
+        // Extract the seeded conflict ids straight from the fact payload so
+        // every input case gets exactly one advisory conclusion.
+        let mut cases = Vec::new();
+        let rest = request.input.as_str();
+        let mut cursor = 0;
+        while let Some(found) = rest[cursor..].find("\"conflict_id\":\"") {
+            let start = cursor + found + "\"conflict_id\":\"".len();
+            let end = start + rest[start..].find('"').expect("terminated id");
+            let conflict_id = &rest[start..end];
+            cursor = end;
+            if cases
+                .iter()
+                .any(|case: &serde_json::Value| case["conflict_id"] == *conflict_id)
+            {
+                continue;
+            }
+            cases.push(json!({
+                "conflict_id": conflict_id,
+                "summary": "成员指纹不同，无法确认是否同一 Skill。".to_owned(),
+                "recommended_action": "keep_uncertain",
+                "recommended_keep_member": serde_json::Value::Null,
+                "key_evidence": ["fingerprints differ"],
+                "uncertainties": ["版本字段缺失"],
+                "confidence": 40
+            }));
+        }
+        Ok(skillhub_core::LlmTaskResponse {
+            request_id: "conflict-echo".to_owned(),
+            kind: request.kind,
+            output: json!({ "cases": cases }),
+        })
+    }
+}
+
+fn conflict_case(
+    conflict_id: &str,
+    classification: ConflictClassification,
+    member_skill_id: Option<skillhub_core::SkillId>,
+    user_decision: Option<ConflictClassification>,
+) -> ConflictCaseFact {
+    ConflictCaseFact {
+        conflict_id: conflict_id.to_owned(),
+        kind: ConflictKind::SameNameDifferentContent,
+        classification,
+        member_skill_ids: member_skill_id.into_iter().collect(),
+        members: member_skill_id
+            .map(|skill_id| {
+                vec![skillhub_core::relationship::ConflictMemberFact {
+                    skill_id: Some(skill_id),
+                    version_id: None,
+                    provenance_id: None,
+                    directory_node_id: None,
+                    path: Some(format!("/lib/{conflict_id}")),
+                    fingerprint: Some("sha256:member".to_owned()),
+                }]
+            })
+            .unwrap_or_default(),
+        evidence: ConflictEvidence {
+            fingerprints_match: Some(false),
+            names_match: Some(true),
+            identity_direction: None,
+            sufficient_identity_evidence: false,
+        },
+        user_decision,
+        decided_at: user_decision.map(|_| 1_000),
+    }
+}
+
+async fn conflict_fixture(
+    runner: std::sync::Arc<ConflictEchoLlmRunner>,
+) -> (LocalApplicationFacade, skillhub_core::SkillId) {
+    let database = Database::open_in_memory().expect("database");
+    let skill_id = "00000000-0000-0000-0000-00000000000a"
+        .parse()
+        .expect("skill id");
+    // The member row carries a real skill identity (FK to skills).
+    database
+        .catalog_repository()
+        .expect("catalog repository")
+        .insert(&skillhub_core::catalog::Skill::new(skill_id, "Notes"))
+        .await
+        .expect("seed skill");
+    {
+        let repository = database.conflict_repository();
+        repository
+            .create_case(&conflict_case(
+                "conflict:notes",
+                ConflictClassification::Uncertain,
+                Some(skill_id),
+                None,
+            ))
+            .expect("case a");
+        repository
+            .create_case(&conflict_case(
+                "conflict:reader",
+                ConflictClassification::DistinctSkill,
+                None,
+                None,
+            ))
+            .expect("case b");
+        repository
+            .create_case(&conflict_case(
+                "conflict:decided",
+                ConflictClassification::Uncertain,
+                None,
+                Some(ConflictClassification::DistinctSkill),
+            ))
+            .expect("decided case");
+    }
+    let profile = skillhub_core::LlmProfile::new(
+        "test",
+        "https://llm.example.test/v1/chat/completions",
+        "test-model",
+        None,
+    )
+    .expect("profile");
+    database
+        .llm_profile_repository()
+        .save(&profile)
+        .expect("save profile");
+    let root = tempfile::tempdir().expect("library");
+    let facade = LocalApplicationFacade::new_with_library_and_llm_runner(
+        database,
+        root.path(),
+        runner as std::sync::Arc<dyn skillhub_core::LlmTaskRunner>,
+    );
+    enable_all_llm_capabilities(&facade).await;
+    (facade, skill_id)
+}
+
+async fn analysis_of(
+    facade: &LocalApplicationFacade,
+    scope: AnalyzeConflictScope,
+) -> skillhub_core::duplicate::ConflictAnalysis {
+    let result = facade
+        .execute(AppCommand::AnalyzeConflict(AnalyzeConflict { scope }))
+        .await
+        .expect("conflict analysis is a result, never a fake conclusion");
+    let AppCommandResult::ConflictAnalysis(analysis) = result else {
+        panic!("expected conflict analysis");
+    };
+    analysis
+}
+
+#[tokio::test]
+async fn conflict_analysis_without_llm_reports_baseline_and_failure_code_without_faking() {
+    let database = Database::open_in_memory().expect("database");
+    database
+        .conflict_repository()
+        .create_case(&conflict_case(
+            "conflict:notes",
+            ConflictClassification::Uncertain,
+            None,
+            None,
+        ))
+        .expect("case");
+    let facade = LocalApplicationFacade::new(database);
+    enable_all_llm_capabilities(&facade).await;
+
+    let analysis = analysis_of(&facade, AnalyzeConflictScope::All).await;
+    // No provider: the honest failure code, no invented AI conclusions.
+    assert_eq!(
+        analysis.source,
+        skillhub_core::duplicate::DuplicateAnalysisSource::DeterministicOnly
+    );
+    assert_eq!(analysis.failure_code.as_deref(), Some("llm.not_configured"));
+    assert!(analysis.cases.is_empty());
+
+    // 确定性优先：AI 不可用时确定性冲突分组照常返回。
+    let overview = facade
+        .query(RootAppQuery::GetRelationshipOverview(
+            skillhub_core::api::GetRelationshipOverview {
+                scope: skillhub_core::api::RelationshipOverviewScope::All,
+            },
+        ))
+        .await
+        .expect("relationship overview");
+    let AppQueryResult::RelationshipOverview(overview) = overview else {
+        panic!("expected overview");
+    };
+    assert_eq!(overview.conflict_cases.len(), 1);
+    assert_eq!(overview.conflict_cases[0].user_decision, None);
+
+    // Without an analysis run there is nothing to persist.
+    let records = facade
+        .database_for_tests()
+        .lock()
+        .expect("database lock")
+        .conflict_analysis_repository()
+        .list_records(None)
+        .expect("records");
+    assert!(records.is_empty());
+}
+
+#[tokio::test]
+async fn conflict_analysis_respects_the_capability_switch_and_never_calls_the_llm() {
+    let database = Database::open_in_memory().expect("database");
+    database
+        .conflict_repository()
+        .create_case(&conflict_case(
+            "conflict:notes",
+            ConflictClassification::Uncertain,
+            None,
+            None,
+        ))
+        .expect("case");
+    let profile = skillhub_core::LlmProfile::new(
+        "test",
+        "https://llm.example.test/v1/chat/completions",
+        "test-model",
+        None,
+    )
+    .expect("profile");
+    database
+        .llm_profile_repository()
+        .save(&profile)
+        .expect("save profile");
+    let runner = ConflictEchoLlmRunner::new();
+    let root = tempfile::tempdir().expect("library");
+    let facade = LocalApplicationFacade::new_with_library_and_llm_runner(
+        database,
+        root.path(),
+        runner.clone() as std::sync::Arc<dyn skillhub_core::LlmTaskRunner>,
+    );
+
+    let analysis = analysis_of(&facade, AnalyzeConflictScope::All).await;
+    assert_eq!(
+        analysis.failure_code.as_deref(),
+        Some("llm.capability_disabled")
+    );
+    assert!(analysis.cases.is_empty());
+    assert_eq!(
+        runner.calls(),
+        0,
+        "a disabled capability must not call the LLM"
+    );
+    assert!(facade
+        .database_for_tests()
+        .lock()
+        .expect("database lock")
+        .conflict_analysis_repository()
+        .list_records(None)
+        .expect("records")
+        .is_empty());
+}
+
+#[tokio::test]
+async fn configured_conflict_analysis_keeps_conclusions_short_and_user_decisions_separate() {
+    let runner = ConflictEchoLlmRunner::new();
+    let (facade, _skill_id) = conflict_fixture(runner.clone()).await;
+
+    let analysis = analysis_of(&facade, AnalyzeConflictScope::All).await;
+    assert_eq!(analysis.scope, AnalyzeConflictScope::All);
+    assert!(analysis.input_fingerprint.starts_with("sha256:"));
+    // 已裁决的冲突组不送 AI：结果与记录都不会出现。
+    assert_eq!(analysis.skipped_decided_cases, 1);
+    assert_eq!(analysis.cases.len(), 2);
+    assert!(analysis
+        .cases
+        .iter()
+        .all(|case| case.summary.chars().count() <= 200));
+    assert!(analysis.cases.iter().all(|case| case.confidence <= 100));
+    assert!(analysis
+        .cases
+        .iter()
+        .all(
+            |case| case.baseline_classification == ConflictClassification::Uncertain
+                || case.baseline_classification == ConflictClassification::DistinctSkill
+        ));
+    assert_eq!(runner.calls(), 1);
+
+    // 分析记录持久化：含来源、指纹、基线与失败码（成功为空）。
+    let database = facade.database_for_tests();
+    let records = database
+        .lock()
+        .expect("database lock")
+        .conflict_analysis_repository()
+        .list_records(None)
+        .expect("records");
+    assert_eq!(records.len(), 2);
+    assert!(records.iter().all(|record| !record.adopted_by_user));
+    assert!(records.iter().all(|record| record.source
+        == skillhub_core::duplicate::DuplicateAnalysisSource::Llm
+        && record.failure_code.is_none()
+        && record.conclusion.is_some()));
+
+    // AI 记录绝不改变 ConflictCase.user_decision。
+    let cases = database
+        .lock()
+        .expect("database lock")
+        .conflict_repository()
+        .list_cases()
+        .expect("cases");
+    let decided = cases
+        .iter()
+        .find(|case| case.conflict_id == "conflict:decided")
+        .expect("decided case");
+    assert_eq!(
+        decided.user_decision,
+        Some(ConflictClassification::DistinctSkill)
+    );
+    assert!(cases
+        .iter()
+        .filter(|case| case.conflict_id != "conflict:decided")
+        .all(|case| case.user_decision.is_none()));
+}
+
+#[tokio::test]
+async fn conflict_analysis_failure_leaves_trackable_records_and_a_working_deterministic_layer() {
+    let database = Database::open_in_memory().expect("database");
+    database
+        .conflict_repository()
+        .create_case(&conflict_case(
+            "conflict:notes",
+            ConflictClassification::Uncertain,
+            None,
+            None,
+        ))
+        .expect("case");
+    let profile = skillhub_core::LlmProfile::new(
+        "test",
+        "https://llm.example.test/v1/chat/completions",
+        "test-model",
+        None,
+    )
+    .expect("profile");
+    database
+        .llm_profile_repository()
+        .save(&profile)
+        .expect("save profile");
+    let root = tempfile::tempdir().expect("library");
+    let facade = LocalApplicationFacade::new_with_library_and_llm_runner(
+        database,
+        root.path(),
+        std::sync::Arc::new(FailingLlmRunner),
+    );
+    enable_all_llm_capabilities(&facade).await;
+
+    let analysis = analysis_of(&facade, AnalyzeConflictScope::All).await;
+    assert_eq!(
+        analysis.source,
+        skillhub_core::duplicate::DuplicateAnalysisSource::DeterministicOnly
+    );
+    assert_eq!(
+        analysis.failure_code.as_deref(),
+        Some("llm.request_timeout")
+    );
+    assert!(analysis.cases.is_empty());
+
+    // 失败码可追踪：每个冲突组留下带失败码的分析记录。
+    let records = facade
+        .database_for_tests()
+        .lock()
+        .expect("database lock")
+        .conflict_analysis_repository()
+        .list_records(Some("conflict:notes"))
+        .expect("records");
+    assert_eq!(records.len(), 1);
+    assert_eq!(
+        records[0].failure_code.as_deref(),
+        Some("llm.request_timeout")
+    );
+    assert_eq!(records[0].conclusion, None);
+    assert_eq!(
+        records[0].baseline_classification,
+        ConflictClassification::Uncertain
+    );
+}
+
+#[tokio::test]
+async fn conflict_analysis_filters_cases_for_all_category_case_and_skill_scopes() {
+    let runner = ConflictEchoLlmRunner::new();
+    let (facade, skill_id) = conflict_fixture(runner.clone()).await;
+
+    let case_scope = analysis_of(
+        &facade,
+        AnalyzeConflictScope::Case {
+            conflict_id: "conflict:notes".to_owned(),
+        },
+    )
+    .await;
+    assert_eq!(case_scope.cases.len(), 1);
+    assert_eq!(case_scope.cases[0].conflict_id, "conflict:notes");
+
+    let uncertain = analysis_of(
+        &facade,
+        AnalyzeConflictScope::Category {
+            classification: ConflictClassification::Uncertain,
+        },
+    )
+    .await;
+    let mut uncertain_ids: Vec<_> = uncertain
+        .cases
+        .iter()
+        .map(|case| case.conflict_id.as_str())
+        .collect();
+    uncertain_ids.sort_unstable();
+    assert_eq!(uncertain_ids, vec!["conflict:notes"]);
+
+    let distinct = analysis_of(
+        &facade,
+        AnalyzeConflictScope::Category {
+            classification: ConflictClassification::DistinctSkill,
+        },
+    )
+    .await;
+    assert_eq!(distinct.cases.len(), 1);
+    assert_eq!(distinct.cases[0].conflict_id, "conflict:reader");
+
+    let skill_scope = analysis_of(&facade, AnalyzeConflictScope::Skill { skill_id }).await;
+    assert_eq!(skill_scope.cases.len(), 1);
+    assert_eq!(skill_scope.cases[0].conflict_id, "conflict:notes");
+
+    assert_eq!(runner.calls(), 4);
+}
