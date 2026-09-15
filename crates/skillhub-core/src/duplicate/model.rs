@@ -213,6 +213,9 @@ pub struct ConflictAnalysis {
     pub cases: Vec<ConflictCaseAnalysis>,
     /// 已有用户裁决、因此不再送 AI 的冲突组数量。
     pub skipped_decided_cases: u32,
+    /// 范围内冲突组总数。`cases` 因单次请求上限可能只含前
+    /// [`CONFLICT_ANALYSIS_MAX_CASES`] 组，调用方据此如实标注覆盖范围。
+    pub total_case_count: u32,
     pub source: DuplicateAnalysisSource,
     pub failure_code: Option<String>,
 }
@@ -421,6 +424,7 @@ pub fn parse_conflict_analysis_response(
         input_fingerprint: fingerprint.to_owned(),
         cases: conclusions,
         skipped_decided_cases,
+        total_case_count: u32::try_from(cases.len()).unwrap_or(u32::MAX),
         source: DuplicateAnalysisSource::Llm,
         failure_code: None,
     })

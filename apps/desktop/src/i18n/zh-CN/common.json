@@ -2145,7 +2145,8 @@
         "keep_uncertain": "保持待定并留在待办"
       },
       "skippedDecided_one": "已有用户裁决的冲突组：{{count}} 个（不送 AI）。",
-      "skippedDecided_other": "已有用户裁决的冲突组：{{count}} 个（不送 AI）。"
+      "skippedDecided_other": "已有用户裁决的冲突组：{{count}} 个（不送 AI）。",
+      "partialCoverage": "本次已分析 {{analyzed}} 组（范围内共 {{total}} 组）"
     }
   },
   "operations": {

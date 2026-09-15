@@ -256,3 +256,32 @@ fn malformed_conflict_analysis_responses_fail_with_a_trackable_code() {
         skillhub_core::ErrorCode::LlmInvalidStructuredResponse
     );
 }
+
+#[test]
+fn analysis_result_reports_the_total_scope_size_even_when_capped() {
+    let cases = two_cases();
+    let scope = AnalyzeConflictScope::All;
+    let input = build_conflict_analysis_input(&scope, &cases).expect("analysis input");
+    let response = json!({
+        "cases": [
+            {
+                "conflict_id": "conflict:notes",
+                "summary": "成员指纹不同，无法确认是否同一 Skill。",
+                "recommended_action": "same_skill_version",
+                "recommended_keep_member": null,
+                "key_evidence": [],
+                "uncertainties": [],
+                "confidence": 40
+            }
+        ]
+    });
+
+    let analysis =
+        parse_conflict_analysis_response(&input.scope, &input.fingerprint, 0, &cases, response)
+            .expect("parsed analysis");
+
+    // 范围内共 2 组、本次仅回 1 条结论：总数必须如实上报，
+    // 前端据此标注"已分析 1 / 共 2"，不得假装已覆盖全部。
+    assert_eq!(analysis.total_case_count, 2);
+    assert_eq!(analysis.cases.len(), 1);
+}

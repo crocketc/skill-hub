@@ -862,3 +862,31 @@ async fn conflict_analysis_filters_cases_for_all_category_case_and_skill_scopes(
 
     assert_eq!(runner.calls(), 4);
 }
+
+#[tokio::test]
+async fn analyze_all_reports_total_scope_size_beyond_the_request_cap() {
+    let runner = ConflictEchoLlmRunner::new();
+    let (facade, _skill_id) = conflict_fixture(runner).await;
+    enable_all_llm_capabilities(&facade).await;
+    {
+        let handle = facade.database_for_tests();
+        let database = handle.lock().expect("database lock");
+        for index in 0..18 {
+            database
+                .conflict_repository()
+                .create_case(&conflict_case(
+                    &format!("conflict:bulk-{index:02}"),
+                    ConflictClassification::Uncertain,
+                    None,
+                    None,
+                ))
+                .expect("seed case");
+        }
+    }
+
+    let analysis = analysis_of(&facade, AnalyzeConflictScope::All).await;
+    // 夹具自带 2 个未决组 + 本测试 18 个 = 20 个未决组；单次请求上限
+    // 截断结论，但范围内总数必须如实上报。
+    assert_eq!(analysis.total_case_count, 20);
+    assert_eq!(analysis.cases.len(), 16);
+}

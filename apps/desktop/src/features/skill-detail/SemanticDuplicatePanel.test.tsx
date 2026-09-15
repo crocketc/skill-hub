@@ -125,6 +125,7 @@ describe("SemanticDuplicatePanel", () => {
     scope: { type: "skill", value: { skill_id: "skill-pdf" } },
     input_fingerprint: "sha256:input",
     skipped_decided_cases: 1,
+    total_case_count: 0,
     source: "llm",
     failure_code: null,
     cases: [
@@ -197,6 +198,7 @@ describe("SemanticDuplicatePanel", () => {
     facade.analyzeConflicts = vi.fn(async () => ({
       ...conflictResult,
       skipped_decided_cases: 0,
+      total_case_count: 0,
       cases: [],
     }));
     await renderPanel(facade);

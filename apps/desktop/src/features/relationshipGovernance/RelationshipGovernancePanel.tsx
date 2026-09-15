@@ -189,6 +189,14 @@ function ConflictAnalysisSection({
               })}
             </p>
           ) : null}
+          {result.total_case_count > result.cases.length ? (
+            <p role="status">
+              {t("relationshipGovernance.conflictAnalysis.partialCoverage", {
+                analyzed: result.cases.length,
+                total: result.total_case_count,
+              })}
+            </p>
+          ) : null}
           {result.cases.length === 0 && !failureReason ? (
             <p>{t("relationshipGovernance.conflictAnalysis.empty")}</p>
           ) : null}

@@ -180,6 +180,7 @@ const conflictAnalysisResult: ConflictAnalysis = {
   scope: { type: "case", value: { conflict_id: "conflict:notes" } },
   input_fingerprint: "sha256:input",
   skipped_decided_cases: 0,
+  total_case_count: 1,
   source: "llm",
   failure_code: null,
   cases: [
@@ -307,4 +308,25 @@ it("disables conflict analysis actions while a run is in progress", async () => 
 
   expect(screen.getByRole("button", { name: "AI 分析" })).toBeDisabled();
   expect(screen.getByRole("button", { name: "分析全部未决冲突" })).toBeDisabled();
+});
+
+it("states partial coverage honestly when the scope exceeds one request", async () => {
+  const onAnalyze = vi.fn();
+  await renderPanel({
+    aiAvailable: true,
+    conflictAnalysis: {
+      cases: conflictCases,
+      onAnalyze,
+      running: false,
+      result: {
+        ...conflictAnalysisResult,
+        total_case_count: 20,
+        cases: conflictAnalysisResult.cases,
+      },
+    },
+    groups,
+    onDecision: vi.fn(),
+  });
+
+  expect(screen.getByText("本次已分析 1 组（范围内共 20 组）")).toBeVisible();
 });

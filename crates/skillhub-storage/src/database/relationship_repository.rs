@@ -23,8 +23,8 @@ pub struct RelationshipRepository<'a> {
 }
 
 /// Complete relationship impact for a skill, directory, Agent, path, or
-/// relationship identifier.  AI analysis records are intentionally deferred
-/// to Task 8; this snapshot contains only deterministic storage facts.
+/// relationship identifier.  Advisory AI analysis records live in
+/// `ConflictAnalysisRepository` (migration 0015); this snapshot contains only deterministic storage facts.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct RelationshipImpactSnapshot {
     pub deployments: Vec<DeploymentRelationFact>,

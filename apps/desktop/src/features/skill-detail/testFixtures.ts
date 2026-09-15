@@ -548,6 +548,7 @@ export function createMockSkillDetailFacade(
         scope,
         input_fingerprint: "sha256:mock",
         skipped_decided_cases: 0,
+        total_case_count: 0,
         source: "llm",
         failure_code: null,
         cases: [],

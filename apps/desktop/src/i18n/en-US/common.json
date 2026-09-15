@@ -2145,7 +2145,8 @@
         "keep_uncertain": "keep undecided and tracked as a todo"
       },
       "skippedDecided_one": "{{count}} conflict case already has a user decision and was not analyzed.",
-      "skippedDecided_other": "{{count}} conflict cases already have a user decision and were not analyzed."
+      "skippedDecided_other": "{{count}} conflict cases already have a user decision and were not analyzed.",
+      "partialCoverage": "Analyzed {{analyzed}} of {{total}} case groups in this scope"
     }
   },
   "operations": {

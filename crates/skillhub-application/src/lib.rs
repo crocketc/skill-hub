@@ -2565,12 +2565,16 @@ impl LocalApplicationFacade {
             .cloned()
             .collect();
 
+        // 基线兜底结果同样上报范围内总数：cases 为空表示本次没有任何
+        // 结论可展示，失败码负责说明原因。
+        let total_case_count = u32::try_from(undecided.len()).unwrap_or(u32::MAX);
         let without_llm = |failure_code: Option<String>| {
             AppCommandResult::ConflictAnalysis(skillhub_core::duplicate::ConflictAnalysis {
                 scope: scope.clone(),
                 input_fingerprint: String::new(),
                 cases: Vec::new(),
                 skipped_decided_cases,
+                total_case_count,
                 source: skillhub_core::duplicate::DuplicateAnalysisSource::DeterministicOnly,
                 failure_code,
             })
@@ -2651,7 +2655,8 @@ impl LocalApplicationFacade {
         failure_code: Option<&ErrorCode>,
     ) -> AppResult<()> {
         let analyzed_at = now_epoch_seconds();
-        // 纳秒精度保证同一运行内 record_id 唯一，重复分析不互相覆盖。
+        // 亚秒 nonce 拼接 conflict_id，保证同一次运行内 record_id 唯一，
+        // 重复分析不互相覆盖。
         let record_nonce = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map(|duration| duration.subsec_nanos())

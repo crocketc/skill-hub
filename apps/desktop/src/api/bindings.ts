@@ -433,6 +433,11 @@ export type ConflictAnalysis = {
 	cases: ConflictCaseAnalysis[],
 	/**  已有用户裁决、因此不再送 AI 的冲突组数量。 */
 	skipped_decided_cases: number,
+	/**
+	 *  范围内冲突组总数。`cases` 因单次请求上限可能只含前
+	 *  [`CONFLICT_ANALYSIS_MAX_CASES`] 组，调用方据此如实标注覆盖范围。
+	 */
+	total_case_count: number,
 	source: DuplicateAnalysisSource,
 	failure_code: string | null,
 };
