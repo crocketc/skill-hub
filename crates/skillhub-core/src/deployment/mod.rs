@@ -4,6 +4,7 @@ mod planner;
 pub mod reconcile;
 pub mod removal;
 
+pub use crate::relationship::DeploymentRelationFact;
 pub use model::{
     DeploymentCapabilities, DeploymentMode, DeploymentPlan, DeploymentPlanInput,
     DeploymentPlanRequest, DeploymentRecord, DeploymentRequest, DeploymentState,

@@ -22,6 +22,7 @@ mod operation;
 mod path_policy;
 pub mod pending;
 pub mod project;
+pub mod relationship;
 pub mod scan;
 pub mod search;
 pub mod settings;
@@ -188,6 +189,13 @@ pub use project::{
     PortableSource, Project, ProjectMetadata, ProjectRepository, ProjectTag, SavedProjectView,
     SharedProjectConfig, SharedSkillRequirement, SkillResolution, SkillResolutionPort,
     SourcePreparation, SourcePreparationPort,
+};
+pub use relationship::{
+    classify_conflict_evidence, file_representation_display_label, relation_display_label,
+    AgentDirectoryCapabilityFact, ConflictCaseFact, ConflictClassification, ConflictEvidence,
+    DeploymentRelationFact, DirectoryNodeFact, DirectoryRecognition, DirectoryRole,
+    FileRepresentation, GovernanceTaskFact, GovernanceTaskKind, OwnershipState, RelationshipType,
+    SourceRelationFact,
 };
 pub use scan::{DiscoveredSkill, ScanGeneration, ScanIssue, ScanRepository, ScanResult, ScanScope};
 pub use source::{

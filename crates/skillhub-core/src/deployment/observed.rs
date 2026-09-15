@@ -33,6 +33,38 @@ pub struct ObservedDeployment {
     pub released_at: Option<i64>,
 }
 
+impl ObservedDeployment {
+    /// Expose the legacy observation as a normalized relationship without
+    /// guessing whether the observed path is a copy or a link.
+    pub fn to_deployment_relation_fact(&self) -> crate::relationship::DeploymentRelationFact {
+        crate::relationship::DeploymentRelationFact {
+            relation_id: self.id.to_string(),
+            skill_id: self.skill_id,
+            agent_client_id: self.client_id.clone(),
+            path: self.original_path.clone(),
+            path_key: observed_path_key(&self.original_path),
+            directory_node_id: None,
+            relationship: crate::relationship::RelationshipType::Unknown,
+            file_representation: crate::relationship::FileRepresentation::Unknown,
+            ownership: crate::relationship::OwnershipState::ObservedUnmanaged,
+            link_target_path: None,
+            link_target_path_key: None,
+            content_fingerprint: self.content_fingerprint.clone(),
+            origin: serde_json::to_string(&self.origin)
+                .expect("ObservedOrigin is always serializable")
+                .trim_matches('"')
+                .to_owned(),
+            match_state: serde_json::to_string(&self.match_state)
+                .expect("ObservedMatchState is always serializable")
+                .trim_matches('"')
+                .to_owned(),
+            active: self.status == ObservedStatus::Active,
+            observed_at: self.observed_at,
+            released_at: self.released_at,
+        }
+    }
+}
+
 /// 身份可靠性标注。只有 ContentVerified 才是"身份可靠匹配"；其余两种是
 /// 明确的"不可靠"标注，绝不冒充已验证关系。
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]

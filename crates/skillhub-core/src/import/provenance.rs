@@ -59,6 +59,39 @@ impl ImportProvenance {
         self.agent_client_id = Some(client_id.into());
         self
     }
+
+    /// Expose the legacy provenance row as a normalized source relationship.
+    /// This is a pure compatibility view and does not change persistence.
+    pub fn to_source_relation_fact(&self) -> crate::relationship::SourceRelationFact {
+        use crate::relationship::{
+            FileRepresentation, OwnershipState, RelationshipType, SourceRelationFact,
+        };
+
+        let ownership = match self.ownership {
+            CandidateOwnership::CentralLibrary => OwnershipState::SkillhubManaged,
+            CandidateOwnership::KnownAgentTarget
+            | CandidateOwnership::RegisteredProject
+            | CandidateOwnership::ReadOnlyBuiltinOrPlugin
+            | CandidateOwnership::ArbitraryLocalDirectory
+            | CandidateOwnership::DownloadedSource
+            | CandidateOwnership::Unclassified => OwnershipState::ObservedUnmanaged,
+        };
+
+        SourceRelationFact {
+            skill_id: self.skill_id,
+            directory_node_id: None,
+            agent_client_id: self.agent_client_id.clone(),
+            source_path: self.original_path.clone(),
+            source_path_key: crate::deployment::observed_path_key(&self.original_path),
+            relationship: RelationshipType::ImportCopy,
+            file_representation: FileRepresentation::Directory,
+            ownership,
+            link_target_path: None,
+            content_fingerprint: self.content_fingerprint.clone(),
+            source: self.source.clone(),
+            imported_at: self.imported_at,
+        }
+    }
 }
 
 #[cfg(test)]
