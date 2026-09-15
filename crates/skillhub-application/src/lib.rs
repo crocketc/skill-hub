@@ -6351,6 +6351,15 @@ impl LocalApplicationFacade {
             self.with_database("execute.commit_import.governance_task", |database| {
                 Self::persist_import_governance_tasks(database, &governance_tasks)
             })?;
+            self.with_database("execute.commit_import.conflict_case", |database| {
+                self.record_import_conflict_case(
+                    database,
+                    &prepared,
+                    request.decision,
+                    skill_id,
+                    fingerprint,
+                )
+            })?;
             self.prepared_imports
                 .lock()
                 .map_err(|_| {
@@ -6509,6 +6518,20 @@ impl LocalApplicationFacade {
                     cleanup_import_state(database, central, store, skill_id, &version),
                 ));
             }
+            // Task 10：导入提交即落冲突组。失败视为导入失败并回滚库内
+            // 状态——"无冲突组的冲突导入"不是完成的导入。
+            if let Err(error) = self.record_import_conflict_case(
+                database,
+                &prepared,
+                request.decision,
+                skill_id,
+                Some(version.manifest.tree_hash.clone()),
+            ) {
+                return Err(cleanup_import_error(
+                    error,
+                    cleanup_import_state(database, central, store, skill_id, &version),
+                ));
+            }
             self.prepared_imports
                 .lock()
                 .map_err(|_| {
@@ -6625,6 +6648,111 @@ impl LocalApplicationFacade {
             database.governance_task_repository().create(task)?;
         }
         Ok(())
+    }
+
+    // ===== Task 10：导入冲突组生产写入（设计 §3.4 冲突组） =====
+
+    /// 导入成功提交后的冲突组落库入口。仅当分析存在 `requires_choice`
+    /// 冲突时写库；事实映射全部在 core 纯函数内，这里只收集提交时才能
+    /// 取到的其余事实（产物 Skill、候选指纹、库内可见路径/指纹）。
+    fn record_import_conflict_case(
+        &self,
+        database: &Database,
+        prepared: &skillhub_core::PreparedImport,
+        decision: skillhub_core::ImportDecision,
+        outcome_skill_id: skillhub_core::SkillId,
+        candidate_fingerprint: Option<String>,
+    ) -> AppResult<()> {
+        let Some(conflict) = prepared
+            .analysis
+            .conflicts
+            .iter()
+            .find(|conflict| conflict.requires_choice)
+        else {
+            return Ok(());
+        };
+        let matched_runtime_name = prepared
+            .analysis
+            .matches
+            .iter()
+            .find(|item| item.skill_id == conflict.skill_id)
+            .map(|item| item.runtime_name.clone());
+        let outcome = skillhub_core::ImportCaseOutcome {
+            skill_id: outcome_skill_id,
+            candidate_fingerprint,
+            library_path: self
+                .library_visible_path(conflict.skill_id, matched_runtime_name.as_deref()),
+            library_fingerprint: Self::library_content_fingerprint(database, conflict.skill_id)?,
+        };
+        let Some(fact) =
+            skillhub_core::plan_import_conflict_case(&prepared.analysis, decision, &outcome)
+        else {
+            return Ok(());
+        };
+        let existing = database
+            .conflict_repository()
+            .list_cases()?
+            .into_iter()
+            .find(|case| case.conflict_id == fact.conflict_id);
+        let merged =
+            Self::merge_import_conflict_decision(fact, existing.as_ref(), now_epoch_seconds());
+        database.conflict_repository().create_case(&merged)
+    }
+
+    /// 库内既有 Skill 的集中库可见路径；不可得（无运行时上下文或可见树
+    /// 尚不存在）时如实返回 None，不猜。
+    fn library_visible_path(
+        &self,
+        skill_id: skillhub_core::SkillId,
+        runtime_name: Option<&str>,
+    ) -> Option<String> {
+        runtime_name
+            .and_then(|runtime_name| {
+                self.library_runtime.snapshot().ok().map(|library| {
+                    library
+                        .central
+                        .visible_skill_path_for_runtime(skill_id, runtime_name)
+                })
+            })
+            .filter(|path| path.exists())
+            .map(|path| path.to_string_lossy().into_owned())
+    }
+
+    /// 库内既有 Skill 当前版本的内容指纹；无版本记录时为 None。
+    fn library_content_fingerprint(
+        database: &Database,
+        skill_id: skillhub_core::SkillId,
+    ) -> AppResult<Option<String>> {
+        Ok(database
+            .import_repository()
+            .list_existing()?
+            .into_iter()
+            .find(|record| record.skill_id == skill_id)
+            .and_then(|record| record.tree_hash))
+    }
+
+    /// user_decision 合并规则（纯逻辑，`now` 可注入以便测试）：
+    /// - 本次有显式裁决：以其更新并刷新 decided_at；
+    /// - 本次推导为 None 且既有裁决非 None：保留既有裁决与 decided_at，
+    ///   绝不拿 NULL 覆盖用户已有裁决；
+    /// - 两者皆无：维持未裁决状态。
+    fn merge_import_conflict_decision(
+        mut fact: skillhub_core::ConflictCaseFact,
+        existing: Option<&skillhub_core::ConflictCaseFact>,
+        now: i64,
+    ) -> skillhub_core::ConflictCaseFact {
+        match fact.user_decision {
+            Some(_) => fact.decided_at = Some(now),
+            None => {
+                if let Some(existing) = existing {
+                    if existing.user_decision.is_some() {
+                        fact.user_decision = existing.user_decision;
+                        fact.decided_at = existing.decided_at;
+                    }
+                }
+            }
+        }
+        fact
     }
 
     // ===== OPT-20260914-08：已部署 Skill 识别、导入存证与原始文件迁移 =====
@@ -8688,6 +8816,50 @@ mod tests {
         assert_eq!(format_rfc3339_utc(1_789_000_000), "2026-09-10T00:26:40Z");
         assert_eq!(format_rfc3339_utc(1_767_225_599), "2025-12-31T23:59:59Z");
         assert_eq!(format_rfc3339_utc(951_782_400), "2000-02-29T00:00:00Z");
+    }
+
+    #[test]
+    fn import_conflict_decision_merge_follows_the_user_ruling() {
+        use skillhub_core::relationship::{ConflictClassification, ConflictEvidence, ConflictKind};
+        let fact = skillhub_core::ConflictCaseFact {
+            conflict_id: "import-conflict:same_name_different_content:notes".into(),
+            kind: ConflictKind::SameNameDifferentContent,
+            classification: ConflictClassification::Uncertain,
+            member_skill_ids: Vec::new(),
+            members: Vec::new(),
+            evidence: ConflictEvidence::default(),
+            user_decision: None,
+            decided_at: None,
+        };
+
+        // 两者皆无裁决：维持未裁决状态。
+        let merged =
+            LocalApplicationFacade::merge_import_conflict_decision(fact.clone(), None, 1_000);
+        assert_eq!(merged.user_decision, None);
+        assert_eq!(merged.decided_at, None);
+
+        // 本次有显式裁决：以其更新并刷新 decided_at。
+        let mut explicit = fact.clone();
+        explicit.user_decision = Some(ConflictClassification::DistinctSkill);
+        let merged = LocalApplicationFacade::merge_import_conflict_decision(explicit, None, 1_000);
+        assert_eq!(
+            merged.user_decision,
+            Some(ConflictClassification::DistinctSkill)
+        );
+        assert_eq!(merged.decided_at, Some(1_000));
+
+        // 本次推导为 None 且既有裁决非 None：保留既有裁决与 decided_at，
+        // 绝不拿 NULL 覆盖用户已有裁决。
+        let mut existing = fact.clone();
+        existing.user_decision = Some(ConflictClassification::SameSkillVersion);
+        existing.decided_at = Some(42);
+        let merged =
+            LocalApplicationFacade::merge_import_conflict_decision(fact, Some(&existing), 1_000);
+        assert_eq!(
+            merged.user_decision,
+            Some(ConflictClassification::SameSkillVersion)
+        );
+        assert_eq!(merged.decided_at, Some(42));
     }
 
     #[tokio::test]
