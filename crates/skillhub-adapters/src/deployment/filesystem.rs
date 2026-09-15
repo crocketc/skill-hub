@@ -114,10 +114,10 @@ impl DeploymentFilesystem {
                 .unwrap_or(false);
         // The probe entry must never survive, even when it did not
         // materialize as a link.
-        if fs::symlink_metadata(destination).is_ok() {
-            if symlink::remove_dir_link(destination).is_err() {
-                return false;
-            }
+        if fs::symlink_metadata(destination).is_ok()
+            && symlink::remove_dir_link(destination).is_err()
+        {
+            return false;
         }
         created
     }

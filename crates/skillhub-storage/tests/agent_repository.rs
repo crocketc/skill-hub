@@ -240,7 +240,7 @@ fn shared_reference_impact_includes_the_link_target_directory_scope() {
                 path_key: String::new(),
                 role: node.3,
                 profile_id: None,
-                agent_client_id: (node.2 != "").then(|| node.2.to_owned()),
+                agent_client_id: (!node.2.is_empty()).then(|| node.2.to_owned()),
                 exists: true,
                 observed_at: 1,
                 scan_source: Some("test".into()),
