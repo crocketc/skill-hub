@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 
-use rusqlite::Connection;
+use rusqlite::{params, Connection, Transaction};
+use skillhub_core::deployment::observed_path_key;
 use skillhub_core::{AppError, AppResult, ErrorCode, RecoveryAction, Severity};
 
 pub const CURRENT_SCHEMA_VERSION: u32 = 14;
@@ -105,6 +106,9 @@ fn run_with_migrations(
         transaction
             .execute_batch(migration.sql)
             .map_err(database_error)?;
+        if migration.version == 14 {
+            repair_relationship_path_keys(&transaction)?;
+        }
         transaction
             .pragma_update(None, "user_version", migration.version)
             .map_err(database_error)?;
@@ -118,6 +122,61 @@ fn run_with_migrations(
         to_version,
         applied_versions,
     })
+}
+
+fn repair_relationship_path_keys(transaction: &Transaction<'_>) -> AppResult<()> {
+    let deployment_paths = {
+        let mut statement = transaction
+            .prepare("SELECT rowid, path, link_target_path FROM deployment_relations")
+            .map_err(database_error)?;
+        let rows = statement
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, Option<String>>(2)?,
+                ))
+            })
+            .map_err(database_error)?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(database_error)?;
+        rows
+    };
+    for (rowid, path, link_target_path) in deployment_paths {
+        transaction
+            .execute(
+                "UPDATE deployment_relations SET path_key=?1, link_target_path_key=?2 WHERE rowid=?3",
+                params![
+                    observed_path_key(&path),
+                    link_target_path.as_deref().map(observed_path_key),
+                    rowid,
+                ],
+            )
+            .map_err(database_error)?;
+    }
+
+    let source_paths = {
+        let mut statement = transaction
+            .prepare("SELECT rowid, source_path FROM source_relations")
+            .map_err(database_error)?;
+        let rows = statement
+            .query_map([], |row| {
+                Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+            })
+            .map_err(database_error)?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(database_error)?;
+        rows
+    };
+    for (rowid, path) in source_paths {
+        transaction
+            .execute(
+                "UPDATE source_relations SET source_path_key=?1 WHERE rowid=?2",
+                params![observed_path_key(&path), rowid],
+            )
+            .map_err(database_error)?;
+    }
+    Ok(())
 }
 
 fn read_schema_version(connection: &Connection) -> AppResult<u32> {

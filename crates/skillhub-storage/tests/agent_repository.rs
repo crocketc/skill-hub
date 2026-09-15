@@ -2,13 +2,18 @@ use skillhub_core::agent::{
     ClientInstance, ClientKind, DiscoverySnapshot, LogicalTarget, OperatingSystem, PhysicalTarget,
     TargetScope,
 };
-use skillhub_core::deployment::{ObservedMatchState, ObservedOrigin};
+use skillhub_core::deployment::{
+    DeploymentMode, DeploymentRecord, DeploymentState, ObservedMatchState, ObservedOrigin,
+};
+use skillhub_core::import::{CandidateOwnership, ImportProvenance};
 use skillhub_core::relationship::{
     AgentDirectoryCapabilityFact, ConflictCaseFact, ConflictClassification, ConflictEvidence,
     ConflictKind, ConflictMemberFact, DeploymentRelationFact, DirectoryNodeFact, DirectoryRole,
     FileRepresentation, GovernanceTaskFact, GovernanceTaskKind, OwnershipState, RelationshipType,
 };
+use skillhub_core::source::{SourceDescriptor, SourceKind, SourceLocator};
 use skillhub_core::SkillId;
+use skillhub_core::{DeploymentId, VersionId};
 use skillhub_storage::Database;
 
 fn snapshot(generation: u64, available: bool) -> DiscoverySnapshot {
@@ -189,14 +194,410 @@ fn shared_directory_supports_multiple_capabilities_and_relationship_queries() {
             .len(),
         1
     );
+    let impact = database
+        .relationship_repository()
+        .list_relation_impact(&skill.to_string())
+        .unwrap();
+    assert_eq!(impact.deployments.len(), 1);
+    assert_eq!(impact.source_relations.len(), 0);
+    assert_eq!(impact.directory_nodes.len(), 1);
+    assert_eq!(impact.directory_capabilities.len(), 2);
+}
+
+#[test]
+fn managed_deployments_keep_distinct_runtime_entry_paths_under_one_target() {
+    let database = Database::open_in_memory().unwrap();
+    let first_version =
+        VersionId::parse("sha256:0000000000000000000000000000000000000000000000000000000000000001")
+            .unwrap();
+    let second_version =
+        VersionId::parse("sha256:0000000000000000000000000000000000000000000000000000000000000002")
+            .unwrap();
+    let first_skill = SkillId::new();
+    let second_skill = SkillId::new();
+    for (skill, version) in [
+        (first_skill, &first_version),
+        (second_skill, &second_version),
+    ] {
+        database
+            .connection_for_test()
+            .execute(
+                "INSERT INTO skills (id, display_name, runtime_name, ownership, created_at, updated_at) VALUES (?1, 'Skill', 'skill', 'user_created', 0, 0)",
+                [skill.to_string()],
+            )
+            .unwrap();
+        database
+            .connection_for_test()
+            .execute(
+                "INSERT INTO versions (id, skill_id, content_hash, manifest_json, created_at) VALUES (?1, ?2, ?3, '{}', 0)",
+                rusqlite::params![version.to_string(), skill.to_string(), format!("sha256:{skill}")],
+            )
+            .unwrap();
+    }
+    database
+        .connection_for_test()
+        .execute(
+            "INSERT INTO targets (id, agent_id, scope, path, created_at) VALUES ('shared-target', 'shared.agent', 'global', 'C:/agents/skills', 0)",
+            [],
+        )
+        .unwrap();
+
+    for (skill, version_id, runtime_name) in [
+        (first_skill, &first_version, "alpha"),
+        (second_skill, &second_version, "beta"),
+    ] {
+        database
+            .deployment_repository()
+            .insert_sync(&DeploymentRecord {
+                id: DeploymentId::new(),
+                skill_id: skill,
+                version_id: version_id.clone(),
+                target_id: "shared-target".into(),
+                state: DeploymentState::Deployed,
+                mode: DeploymentMode::ManagedCopy,
+                managed: true,
+                runtime_name: runtime_name.into(),
+                expected_hash: format!("sha256:{runtime_name}"),
+                observed_hash: None,
+            })
+            .unwrap();
+    }
+
+    let relations = database.relationship_repository().list_relations().unwrap();
+    assert_eq!(relations.len(), 2);
+    let expected_alpha = std::path::Path::new("C:/agents/skills")
+        .join("alpha")
+        .to_string_lossy()
+        .into_owned();
+    let expected_beta = std::path::Path::new("C:/agents/skills")
+        .join("beta")
+        .to_string_lossy()
+        .into_owned();
+    assert!(relations
+        .iter()
+        .any(|relation| relation.path == expected_alpha));
+    assert!(relations
+        .iter()
+        .any(|relation| relation.path == expected_beta));
+}
+
+#[test]
+fn deployment_relation_upsert_replaces_relation_id_and_removal_hits_the_new_id() {
+    let database = Database::open_in_memory().unwrap();
+    let skill = SkillId::new();
+    let version =
+        VersionId::parse("sha256:0000000000000000000000000000000000000000000000000000000000000002")
+            .unwrap();
+    database
+        .connection_for_test()
+        .execute(
+            "INSERT INTO skills (id, display_name, runtime_name, ownership, created_at, updated_at) VALUES (?1, 'Skill', 'skill', 'user_created', 0, 0)",
+            [skill.to_string()],
+        )
+        .unwrap();
+    database
+        .connection_for_test()
+        .execute(
+            "INSERT INTO versions (id, skill_id, content_hash, manifest_json, created_at) VALUES (?1, ?2, 'sha256:content', '{}', 0)",
+            rusqlite::params![version.to_string(), skill.to_string()],
+        )
+        .unwrap();
+    database
+        .connection_for_test()
+        .execute(
+            "INSERT INTO targets (id, agent_id, scope, path, created_at) VALUES ('target', 'agent', 'global', '/agents/skills', 0)",
+            [],
+        )
+        .unwrap();
+
+    let deployment = DeploymentRecord {
+        id: DeploymentId::new(),
+        skill_id: skill,
+        version_id: version,
+        target_id: "target".into(),
+        state: DeploymentState::Deployed,
+        mode: DeploymentMode::ManagedCopy,
+        managed: true,
+        runtime_name: "skill".into(),
+        expected_hash: "sha256:content".into(),
+        observed_hash: None,
+    };
+    database
+        .relationship_repository()
+        .upsert_deployment_relation(&DeploymentRelationFact {
+            relation_id: "old-relation".into(),
+            skill_id: Some(skill),
+            agent_client_id: "agent".into(),
+            path: std::path::Path::new("/agents/skills")
+                .join("skill")
+                .to_string_lossy()
+                .into_owned(),
+            path_key: "caller-supplied-wrong-key".into(),
+            directory_node_id: None,
+            relationship: RelationshipType::ManagedCopy,
+            file_representation: FileRepresentation::Copy,
+            ownership: OwnershipState::SkillhubManaged,
+            link_target_path: None,
+            link_target_path_key: None,
+            link_target_directory_id: None,
+            content_fingerprint: "sha256:content".into(),
+            origin: ObservedOrigin::Import,
+            match_state: ObservedMatchState::ContentVerified,
+            active: true,
+            observed_at: 1,
+            released_at: None,
+        })
+        .unwrap();
+    let mut replacement = deployment_relation_for_test(&deployment, "replacement-relation");
+    replacement.path_key = "still-wrong-key".into();
+    database
+        .relationship_repository()
+        .upsert_deployment_relation(&replacement)
+        .unwrap();
+
+    let relations = database.relationship_repository().list_relations().unwrap();
+    assert_eq!(relations.len(), 1);
+    assert_eq!(relations[0].relation_id, "replacement-relation");
     assert_eq!(
+        relations[0].path_key,
+        skillhub_core::deployment::observed_path_key(&replacement.path)
+    );
+
+    database
+        .deployment_repository()
+        .insert_sync(&deployment)
+        .unwrap();
+    database
+        .deployment_repository()
+        .mark_removed_sync(deployment.id)
+        .unwrap();
+    let relation = database.relationship_repository().list_relations().unwrap();
+    assert!(!relation[0].active);
+    assert!(relation[0].released_at.is_some());
+}
+
+#[test]
+fn managed_deployment_projection_rolls_back_with_legacy_deployment_on_relation_failure() {
+    let database = Database::open_in_memory().unwrap();
+    let skill = SkillId::new();
+    let version =
+        VersionId::parse("sha256:0000000000000000000000000000000000000000000000000000000000000003")
+            .unwrap();
+    database
+        .connection_for_test()
+        .execute(
+            "INSERT INTO skills (id, display_name, runtime_name, ownership, created_at, updated_at) VALUES (?1, 'Skill', 'skill', 'user_created', 0, 0)",
+            [skill.to_string()],
+        )
+        .unwrap();
+    database
+        .connection_for_test()
+        .execute(
+            "INSERT INTO versions (id, skill_id, content_hash, manifest_json, created_at) VALUES (?1, ?2, 'sha256:content', '{}', 0)",
+            rusqlite::params![version.to_string(), skill.to_string()],
+        )
+        .unwrap();
+    database
+        .connection_for_test()
+        .execute(
+            "INSERT INTO targets (id, agent_id, scope, path, created_at) VALUES ('target', 'agent', 'global', '/agents/skills', 0)",
+            [],
+        )
+        .unwrap();
+    database
+        .connection_for_test()
+        .execute_batch(
+            "CREATE TRIGGER fail_managed_relation BEFORE INSERT ON deployment_relations
+             BEGIN SELECT RAISE(ABORT, 'injected'); END;",
+        )
+        .unwrap();
+
+    let deployment = DeploymentRecord {
+        id: DeploymentId::new(),
+        skill_id: skill,
+        version_id: version,
+        target_id: "target".into(),
+        state: DeploymentState::Deployed,
+        mode: DeploymentMode::ManagedCopy,
+        managed: true,
+        runtime_name: "skill".into(),
+        expected_hash: "sha256:content".into(),
+        observed_hash: None,
+    };
+    assert!(database
+        .deployment_repository()
+        .insert_sync(&deployment)
+        .is_err());
+    let legacy_count: i64 = database
+        .connection_for_test()
+        .query_row("SELECT COUNT(*) FROM deployments", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(legacy_count, 0);
+
+    database
+        .connection_for_test()
+        .execute_batch("DROP TRIGGER fail_managed_relation;")
+        .unwrap();
+    database
+        .deployment_repository()
+        .insert_sync(&deployment)
+        .unwrap();
+    database
+        .connection_for_test()
+        .execute_batch(
+            "CREATE TRIGGER fail_relation_release BEFORE UPDATE OF active ON deployment_relations
+             BEGIN SELECT RAISE(ABORT, 'injected release'); END;",
+        )
+        .unwrap();
+    assert!(database
+        .deployment_repository()
+        .mark_removed_sync(deployment.id)
+        .is_err());
+    let state: String = database
+        .connection_for_test()
+        .query_row("SELECT state FROM deployments", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(state, "deployed");
+    database
+        .connection_for_test()
+        .execute_batch("DROP TRIGGER fail_relation_release;")
+        .unwrap();
+    database
+        .connection_for_test()
+        .execute_batch(
+            "CREATE TRIGGER fail_relation_detach BEFORE UPDATE OF ownership ON deployment_relations
+             BEGIN SELECT RAISE(ABORT, 'injected detach'); END;",
+        )
+        .unwrap();
+    assert!(database
+        .deployment_repository()
+        .detach_management_sync(deployment.id)
+        .is_err());
+    let managed: i64 = database
+        .connection_for_test()
+        .query_row("SELECT managed FROM deployments", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(managed, 1);
+}
+
+#[test]
+fn provenance_and_relationship_impact_include_shared_consumers_and_sources() {
+    let database = Database::open_in_memory().unwrap();
+    let skill = SkillId::new();
+    insert_skill_for_relationship_test(&database, skill);
+    let node = DirectoryNodeFact {
+        node_id: "shared-node".into(),
+        path: "/shared/skills".into(),
+        path_key: "wrong-key".into(),
+        role: DirectoryRole::SharedDirectory,
+        profile_id: None,
+        agent_client_id: None,
+        exists: true,
+        observed_at: 1,
+        scan_source: None,
+    };
+    database.directory_repository().upsert_node(&node).unwrap();
+    for agent in ["agent.one", "agent.two"] {
         database
             .relationship_repository()
-            .list_relation_impact(&skill.to_string())
-            .unwrap()
-            .len(),
-        1
-    );
+            .upsert_capability(&AgentDirectoryCapabilityFact {
+                agent_client_id: agent.into(),
+                directory_node_id: node.node_id.clone(),
+                recognition: skillhub_core::relationship::DirectoryRecognition::Supported,
+                precedence: skillhub_core::DirectoryPrecedence::Preferred,
+                evidence_reference: None,
+                researched_at: None,
+                applicable_platforms: vec![],
+            })
+            .unwrap();
+    }
+    let source = ImportProvenance::new(
+        skill,
+        "/shared/skills/demo",
+        SourceDescriptor::new(
+            SourceKind::Local,
+            SourceLocator::local_path("/shared/skills/demo"),
+        ),
+        CandidateOwnership::KnownAgentTarget,
+        "sha256:source",
+        2,
+    )
+    .with_agent_client_id("agent.one");
+    database
+        .provenance_repository()
+        .upsert_provenance(&source)
+        .unwrap();
+    database
+        .relationship_repository()
+        .upsert_deployment_relation(&DeploymentRelationFact {
+            relation_id: "shared-consumer".into(),
+            skill_id: Some(skill),
+            agent_client_id: "agent.two".into(),
+            path: "/shared/skills/demo".into(),
+            path_key: "wrong-key".into(),
+            directory_node_id: Some(node.node_id),
+            relationship: RelationshipType::SharedDirectoryRead,
+            file_representation: FileRepresentation::Directory,
+            ownership: OwnershipState::SharedReference,
+            link_target_path: None,
+            link_target_path_key: None,
+            link_target_directory_id: None,
+            content_fingerprint: "sha256:source".into(),
+            origin: ObservedOrigin::Scan,
+            match_state: ObservedMatchState::ContentVerified,
+            active: true,
+            observed_at: 3,
+            released_at: None,
+        })
+        .unwrap();
+
+    let impact = database
+        .relationship_repository()
+        .list_relation_impact(&skill.to_string())
+        .unwrap();
+    assert_eq!(impact.deployments.len(), 1);
+    assert_eq!(impact.source_relations.len(), 1);
+    assert_eq!(impact.directory_capabilities.len(), 2);
+    assert_eq!(impact.directory_nodes.len(), 1);
+}
+
+fn insert_skill_for_relationship_test(database: &Database, skill: SkillId) {
+    database
+        .connection_for_test()
+        .execute(
+            "INSERT INTO skills (id, display_name, runtime_name, ownership, created_at, updated_at) VALUES (?1, 'Demo', 'demo', 'user_created', 0, 0)",
+            [skill.to_string()],
+        )
+        .unwrap();
+}
+
+fn deployment_relation_for_test(
+    deployment: &DeploymentRecord,
+    relation_id: &str,
+) -> DeploymentRelationFact {
+    DeploymentRelationFact {
+        relation_id: relation_id.into(),
+        skill_id: Some(deployment.skill_id),
+        agent_client_id: "agent".into(),
+        path: std::path::Path::new("/agents/skills")
+            .join("skill")
+            .to_string_lossy()
+            .into_owned(),
+        path_key: "wrong-key".into(),
+        directory_node_id: None,
+        relationship: RelationshipType::ManagedCopy,
+        file_representation: FileRepresentation::Copy,
+        ownership: OwnershipState::SkillhubManaged,
+        link_target_path: None,
+        link_target_path_key: None,
+        link_target_directory_id: None,
+        content_fingerprint: deployment.expected_hash.clone(),
+        origin: ObservedOrigin::Import,
+        match_state: ObservedMatchState::ContentVerified,
+        active: true,
+        observed_at: 1,
+        released_at: None,
+    }
 }
 
 #[test]

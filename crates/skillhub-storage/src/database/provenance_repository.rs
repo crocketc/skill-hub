@@ -7,7 +7,10 @@ use skillhub_core::deployment::{
 use skillhub_core::import::{
     CandidateOwnership, ImportProvenance, OriginalMigrationResult, OriginalMigrationState,
 };
-use skillhub_core::relationship::SourceRelationFact;
+use skillhub_core::relationship::{
+    DeploymentRelationFact, FileRepresentation, OwnershipState, RelationshipType,
+    SourceRelationFact,
+};
 use skillhub_core::source::{SourceDescriptor, SourceKind, SourceLocator};
 use skillhub_core::{
     AppError, AppResult, ErrorCode, ObservedDeploymentId, OperationId, RecoveryAction, Severity,
@@ -30,11 +33,13 @@ impl<'a> ProvenanceRepository<'a> {
     /// 旧 import_provenance 表只继续承担最新兼容投影，确保既有调用不破坏。
     pub fn upsert_provenance(&self, provenance: &ImportProvenance) -> AppResult<()> {
         let relation = provenance.to_source_relation_fact();
-        self.database
-            .relationship_repository()
-            .upsert_source_relation(&relation)?;
-        self.database
+        let transaction = self
+            .database
             .connection
+            .unchecked_transaction()
+            .map_err(database_error)?;
+        super::relationship_repository::upsert_source_relation_tx(&transaction, &relation)?;
+        transaction
             .execute(
                 "INSERT INTO import_provenance \
                  (skill_id, agent_client_id, original_path, source_kind, source_locator, ownership, content_fingerprint, imported_at) \
@@ -55,8 +60,8 @@ impl<'a> ProvenanceRepository<'a> {
                     provenance.imported_at,
                 ],
             )
-            .map(|_| ())
-            .map_err(database_error)
+            .map_err(database_error)?;
+        transaction.commit().map_err(database_error)
     }
 
     pub fn provenance_for_skill(&self, skill_id: SkillId) -> AppResult<Option<ImportProvenance>> {
@@ -159,7 +164,6 @@ impl<'a> ProvenanceRepository<'a> {
         origin: ObservedOrigin,
         observed_at: i64,
     ) -> AppResult<()> {
-        let connection = &self.database.connection;
         let origin_code = match origin {
             ObservedOrigin::Scan => "scan",
             ObservedOrigin::Import => "import",
@@ -171,7 +175,12 @@ impl<'a> ProvenanceRepository<'a> {
                 fingerprint,
             } => {
                 let id = ObservedDeploymentId::new().to_string();
-                connection
+                let transaction = self
+                    .database
+                    .connection
+                    .unchecked_transaction()
+                    .map_err(database_error)?;
+                transaction
                     .execute(
                         "INSERT INTO observed_deployments \
                          (id, skill_id, client_id, original_path, path_key, content_fingerprint, match_state, origin, status, observed_at, released_at) \
@@ -181,7 +190,7 @@ impl<'a> ProvenanceRepository<'a> {
                          content_fingerprint=excluded.content_fingerprint, match_state='content_verified', \
                          status='active', observed_at=excluded.observed_at, released_at=NULL",
                         params![
-                            id,
+                            id.clone(),
                             skill_id.to_string(),
                             client_id,
                             original_path,
@@ -191,14 +200,50 @@ impl<'a> ProvenanceRepository<'a> {
                             observed_at,
                         ],
                     )
-                    .map(|_| ())
-                    .map_err(database_error)
+                    .map_err(database_error)?;
+                let relation_id: String = transaction
+                    .query_row(
+                        "SELECT id FROM observed_deployments WHERE path_key=?1",
+                        [observed_path_key(original_path)],
+                        |row| row.get(0),
+                    )
+                    .map_err(database_error)?;
+                super::relationship_repository::upsert_deployment_relation_tx(
+                    &transaction,
+                    &DeploymentRelationFact {
+                        relation_id,
+                        skill_id: Some(*skill_id),
+                        agent_client_id: client_id.to_owned(),
+                        path: original_path.to_owned(),
+                        path_key: String::new(),
+                        directory_node_id: None,
+                        relationship: RelationshipType::Unknown,
+                        file_representation: FileRepresentation::Unknown,
+                        ownership: OwnershipState::ObservedUnmanaged,
+                        link_target_path: None,
+                        link_target_path_key: None,
+                        link_target_directory_id: None,
+                        content_fingerprint: fingerprint.clone(),
+                        origin,
+                        match_state: ObservedMatchState::ContentVerified,
+                        active: true,
+                        observed_at,
+                        released_at: None,
+                    },
+                )?;
+                transaction.commit().map_err(database_error)
             }
             ObservedRowAction::MarkUnreliable {
                 match_state,
                 fingerprint,
-            } => connection
-                .execute(
+            } => {
+                let transaction = self
+                    .database
+                    .connection
+                    .unchecked_transaction()
+                    .map_err(database_error)?;
+                transaction
+                    .execute(
                     "UPDATE observed_deployments SET match_state=?1, content_fingerprint=?2, observed_at=?3 \
                      WHERE path_key=?4 AND status='active'",
                     params![
@@ -207,17 +252,43 @@ impl<'a> ProvenanceRepository<'a> {
                         observed_at,
                         observed_path_key(original_path),
                     ],
-                )
-                .map(|_| ())
-                .map_err(database_error),
-            ObservedRowAction::Release => connection
-                .execute(
-                    "UPDATE observed_deployments SET status='released', released_at=?1 \
+                    )
+                    .map_err(database_error)?;
+                transaction
+                    .execute(
+                        "UPDATE deployment_relations SET skill_id=NULL, content_fingerprint=?1, match_state=?2, active=1, observed_at=?3, released_at=NULL WHERE agent_client_id=?4 AND path_key=?5",
+                        params![
+                            fingerprint,
+                            match_state_code(*match_state),
+                            observed_at,
+                            client_id,
+                            observed_path_key(original_path),
+                        ],
+                    )
+                    .map_err(database_error)?;
+                transaction.commit().map_err(database_error)
+            }
+            ObservedRowAction::Release => {
+                let transaction = self
+                    .database
+                    .connection
+                    .unchecked_transaction()
+                    .map_err(database_error)?;
+                transaction
+                    .execute(
+                        "UPDATE observed_deployments SET status='released', released_at=?1 \
                      WHERE path_key=?2 AND status='active'",
-                    params![observed_at, observed_path_key(original_path)],
-                )
-                .map(|_| ())
-                .map_err(database_error),
+                        params![observed_at, observed_path_key(original_path)],
+                    )
+                    .map_err(database_error)?;
+                transaction
+                    .execute(
+                        "UPDATE deployment_relations SET active=0, released_at=?1 WHERE agent_client_id=?2 AND path_key=?3 AND active=1",
+                        params![observed_at, client_id, observed_path_key(original_path)],
+                    )
+                    .map_err(database_error)?;
+                transaction.commit().map_err(database_error)
+            }
         }
     }
 

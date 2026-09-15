@@ -61,8 +61,12 @@ impl<'a> DeploymentRepositorySqlite<'a> {
     /// Synchronous write used by filesystem-backed application operations.
     /// The caller already serializes access to the open database connection.
     pub fn insert_sync(&self, deployment: &DeploymentRecord) -> AppResult<()> {
-        self.database
+        let transaction = self
+            .database
             .connection
+            .unchecked_transaction()
+            .map_err(database_error)?;
+        transaction
             .execute(
                 "INSERT INTO deployments (id,skill_id,version_id,target_id,state,method,managed,runtime_name,expected_hash,observed_hash,created_at,updated_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?11)",
                 params![
@@ -79,16 +83,20 @@ impl<'a> DeploymentRepositorySqlite<'a> {
                     now(),
                 ],
             )
-            .map(|_| ())
             .map_err(database_error)?;
         self.database
             .relationship_repository()
-            .sync_managed_deployment(deployment)
+            .sync_managed_deployment_tx(&transaction, deployment)?;
+        transaction.commit().map_err(database_error)
     }
 
     pub fn mark_removed_sync(&self, id: DeploymentId) -> AppResult<()> {
-        self.database
+        let transaction = self
+            .database
             .connection
+            .unchecked_transaction()
+            .map_err(database_error)?;
+        transaction
             .execute(
                 "UPDATE deployments SET state='removed', updated_at=?1 WHERE id=?2 AND state IN ('deployed','active')",
                 params![now(), id.to_string()],
@@ -105,12 +113,17 @@ impl<'a> DeploymentRepositorySqlite<'a> {
             })?;
         self.database
             .relationship_repository()
-            .mark_managed_deployment_removed(&id.to_string(), now())
+            .mark_managed_deployment_removed_tx(&transaction, &id.to_string(), now())?;
+        transaction.commit().map_err(database_error)
     }
 
     pub fn detach_management_sync(&self, id: DeploymentId) -> AppResult<()> {
-        self.database
+        let transaction = self
+            .database
             .connection
+            .unchecked_transaction()
+            .map_err(database_error)?;
+        transaction
             .execute(
                 "UPDATE deployments SET managed=0, updated_at=?1 WHERE id=?2 AND state IN ('deployed','active')",
                 params![now(), id.to_string()],
@@ -127,7 +140,8 @@ impl<'a> DeploymentRepositorySqlite<'a> {
             })?;
         self.database
             .relationship_repository()
-            .detach_managed_deployment(&id.to_string())
+            .detach_managed_deployment_tx(&transaction, &id.to_string())?;
+        transaction.commit().map_err(database_error)
     }
 
     pub fn update_reconcile_facts_sync(

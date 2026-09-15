@@ -95,6 +95,27 @@ fn v13_database_upgrades_relationships_without_losing_legacy_facts() {
         database.deployment_repository().list_all().unwrap().len(),
         1
     );
+    let migrated_path: String = database
+        .connection_for_test()
+        .query_row(
+            "SELECT path FROM deployment_relations WHERE relation_id='legacy-managed:00000000-0000-0000-0000-0000000000b2'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(migrated_path, "C:/legacy/skills/legacy");
+    let migrated_path_key: String = database
+        .connection_for_test()
+        .query_row(
+            "SELECT path_key FROM deployment_relations WHERE relation_id='legacy-managed:00000000-0000-0000-0000-0000000000b2'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(
+        migrated_path_key,
+        skillhub_core::deployment::observed_path_key(&migrated_path)
+    );
     let pending_count: i64 = database
         .connection_for_test()
         .query_row(

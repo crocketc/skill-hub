@@ -1,5 +1,5 @@
 use super::Database;
-use rusqlite::{params, OptionalExtension};
+use rusqlite::{params, OptionalExtension, Transaction};
 use skillhub_core::agent::DirectoryPrecedence;
 use skillhub_core::deployment::{
     observed_path_key, DeploymentMode, DeploymentRecord, DeploymentState, ObservedMatchState,
@@ -13,9 +13,21 @@ use skillhub_core::relationship::{
 };
 use skillhub_core::source::{SourceDescriptor, SourceKind, SourceLocator};
 use skillhub_core::{AppError, AppResult, ErrorCode, RecoveryAction, Severity, SkillId};
+use std::collections::BTreeSet;
 
 pub struct RelationshipRepository<'a> {
     pub(crate) database: &'a Database,
+}
+
+/// Complete relationship impact for a skill, directory, Agent, path, or
+/// relationship identifier.  AI analysis records are intentionally deferred
+/// to Task 8; this snapshot contains only deterministic storage facts.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct RelationshipImpactSnapshot {
+    pub deployments: Vec<DeploymentRelationFact>,
+    pub source_relations: Vec<SourceRelationFact>,
+    pub directory_capabilities: Vec<AgentDirectoryCapabilityFact>,
+    pub directory_nodes: Vec<skillhub_core::relationship::DirectoryNodeFact>,
 }
 
 impl<'a> RelationshipRepository<'a> {
@@ -80,49 +92,16 @@ impl<'a> RelationshipRepository<'a> {
     }
 
     pub fn upsert_deployment_relation(&self, relation: &DeploymentRelationFact) -> AppResult<()> {
-        self.database
+        let transaction = self
+            .database
             .connection
-            .execute(
-                "INSERT INTO deployment_relations
-                 (relation_id, skill_id, agent_client_id, path, path_key, directory_node_id,
-                  relationship, file_representation, ownership, link_target_path,
-                  link_target_path_key, link_target_directory_id, content_fingerprint,
-                  origin, match_state, active, observed_at, released_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)
-                 ON CONFLICT(agent_client_id, path_key) DO UPDATE SET
-                 skill_id=excluded.skill_id, path=excluded.path, directory_node_id=excluded.directory_node_id,
-                 relationship=excluded.relationship, file_representation=excluded.file_representation,
-                 ownership=excluded.ownership, link_target_path=excluded.link_target_path,
-                 link_target_path_key=excluded.link_target_path_key, link_target_directory_id=excluded.link_target_directory_id,
-                 content_fingerprint=excluded.content_fingerprint, origin=excluded.origin,
-                 match_state=excluded.match_state, active=excluded.active,
-                 observed_at=excluded.observed_at, released_at=excluded.released_at",
-                params![
-                    relation.relation_id,
-                    relation.skill_id.map(|id| id.to_string()),
-                    relation.agent_client_id,
-                    relation.path,
-                    relation.path_key,
-                    relation.directory_node_id,
-                    relationship_code(relation.relationship),
-                    representation_code(relation.file_representation),
-                    ownership_code(relation.ownership),
-                    relation.link_target_path,
-                    relation.link_target_path_key,
-                    relation.link_target_directory_id,
-                    relation.content_fingerprint,
-                    origin_code(relation.origin),
-                    match_state_code(relation.match_state),
-                    i64::from(relation.active),
-                    relation.observed_at,
-                    relation.released_at,
-                ],
-            )
-            .map(|_| ())
-            .map_err(database_error)
+            .unchecked_transaction()
+            .map_err(database_error)?;
+        upsert_deployment_relation_tx(&transaction, relation)?;
+        transaction.commit().map_err(database_error)
     }
 
-    pub fn list_relations(&self) -> AppResult<Vec<DeploymentRelationFact>> {
+    fn list_deployment_relations(&self) -> AppResult<Vec<DeploymentRelationFact>> {
         let mut statement = self
             .database
             .connection
@@ -135,88 +114,166 @@ impl<'a> RelationshipRepository<'a> {
             .collect()
     }
 
-    /// Returns all relation instances touching a skill, directory, agent, path,
-    /// or relation identifier.  This intentionally keeps the impact query
-    /// useful to the application layer without duplicating a domain impact type.
-    pub fn list_relation_impact(&self, subject_id: &str) -> AppResult<Vec<DeploymentRelationFact>> {
-        let mut statement = self
-            .database
-            .connection
-            .prepare(&format!(
-                "{DEPLOYMENT_SELECT} WHERE skill_id=?1 OR directory_node_id=?1 OR agent_client_id=?1 OR relation_id=?1 OR path_key=?1"
-            ))
-            .map_err(database_error)?;
-        let rows = statement
-            .query_map([subject_id], deployment_row)
-            .map_err(database_error)?;
-        rows.map(|row| decode_deployment(row.map_err(database_error)?).ok_or_else(invalid_record))
-            .collect()
+    pub fn list_relations(&self) -> AppResult<Vec<DeploymentRelationFact>> {
+        self.list_deployment_relations()
+    }
+
+    /// Returns all deterministic facts that can be affected by a relationship
+    /// subject, including shared-directory consumers and their source facts.
+    pub fn list_relation_impact(&self, subject_id: &str) -> AppResult<RelationshipImpactSnapshot> {
+        let all_deployments = self.list_deployment_relations()?;
+        let all_sources = self.list_source_relations()?;
+        let all_capabilities = self.list_capabilities()?;
+        let all_nodes = self.database.directory_repository().list_nodes()?;
+
+        let direct_deployments = all_deployments.iter().filter(|relation| {
+            relation.skill_id.map(|id| id.to_string()).as_deref() == Some(subject_id)
+                || relation.directory_node_id.as_deref() == Some(subject_id)
+                || relation.agent_client_id == subject_id
+                || relation.relation_id == subject_id
+                || relation.path_key == subject_id
+        });
+        let direct_sources = all_sources.iter().filter(|relation| {
+            relation.skill_id.to_string() == subject_id
+                || relation.directory_node_id.as_deref() == Some(subject_id)
+                || relation.agent_client_id.as_deref() == Some(subject_id)
+                || relation.provenance_id == subject_id
+                || relation.source_path_key == subject_id
+        });
+
+        let mut skills = BTreeSet::new();
+        let mut agents = BTreeSet::new();
+        let mut directories = BTreeSet::new();
+        for relation in direct_deployments {
+            if let Some(skill_id) = relation.skill_id {
+                skills.insert(skill_id.to_string());
+            }
+            agents.insert(relation.agent_client_id.clone());
+            if let Some(directory_id) = &relation.directory_node_id {
+                directories.insert(directory_id.clone());
+            }
+        }
+        for relation in direct_sources {
+            skills.insert(relation.skill_id.to_string());
+            if let Some(agent) = &relation.agent_client_id {
+                agents.insert(agent.clone());
+            }
+            if let Some(directory_id) = &relation.directory_node_id {
+                directories.insert(directory_id.clone());
+            }
+        }
+        if all_capabilities
+            .iter()
+            .any(|capability| capability.agent_client_id == subject_id)
+        {
+            agents.insert(subject_id.to_owned());
+        }
+        if all_nodes.iter().any(|node| node.node_id == subject_id) {
+            directories.insert(subject_id.to_owned());
+        }
+
+        let deployments = all_deployments
+            .into_iter()
+            .filter(|relation| {
+                relation
+                    .skill_id
+                    .map(|id| skills.contains(&id.to_string()))
+                    .unwrap_or(false)
+                    || agents.contains(&relation.agent_client_id)
+                    || relation
+                        .directory_node_id
+                        .as_ref()
+                        .map(|id| directories.contains(id))
+                        .unwrap_or(false)
+                    || relation.relation_id == subject_id
+                    || relation.path_key == subject_id
+            })
+            .collect();
+        let source_relations = all_sources
+            .into_iter()
+            .filter(|relation| {
+                skills.contains(&relation.skill_id.to_string())
+                    || relation
+                        .agent_client_id
+                        .as_ref()
+                        .map(|agent| agents.contains(agent))
+                        .unwrap_or(false)
+                    || relation
+                        .directory_node_id
+                        .as_ref()
+                        .map(|id| directories.contains(id))
+                        .unwrap_or(false)
+                    || relation.provenance_id == subject_id
+                    || relation.source_path_key == subject_id
+            })
+            .collect();
+        let directory_capabilities = all_capabilities
+            .into_iter()
+            .filter(|capability| {
+                agents.contains(&capability.agent_client_id)
+                    || directories.contains(&capability.directory_node_id)
+            })
+            .collect::<Vec<_>>();
+        let capability_directory_ids = directory_capabilities
+            .iter()
+            .map(|capability| capability.directory_node_id.as_str())
+            .collect::<BTreeSet<_>>();
+        let directory_nodes = all_nodes
+            .into_iter()
+            .filter(|node| {
+                directories.contains(&node.node_id)
+                    || capability_directory_ids.contains(node.node_id.as_str())
+            })
+            .collect();
+
+        Ok(RelationshipImpactSnapshot {
+            deployments,
+            source_relations,
+            directory_capabilities,
+            directory_nodes,
+        })
     }
 
     pub fn upsert_source_relation(&self, relation: &SourceRelationFact) -> AppResult<()> {
-        self.database
+        let transaction = self
+            .database
             .connection
-            .execute(
-                "INSERT INTO source_relations
-                 (provenance_id, skill_id, directory_node_id, agent_client_id, source_path,
-                  source_path_key, relationship, file_representation, ownership, link_target_path,
-                  link_target_directory_id, content_fingerprint, source_kind, source_locator, imported_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)
-                 ON CONFLICT(provenance_id) DO UPDATE SET
-                 skill_id=excluded.skill_id, directory_node_id=excluded.directory_node_id,
-                 agent_client_id=excluded.agent_client_id, source_path=excluded.source_path,
-                 source_path_key=excluded.source_path_key, relationship=excluded.relationship,
-                 file_representation=excluded.file_representation, ownership=excluded.ownership,
-                 link_target_path=excluded.link_target_path, link_target_directory_id=excluded.link_target_directory_id,
-                 content_fingerprint=excluded.content_fingerprint, source_kind=excluded.source_kind,
-                 source_locator=excluded.source_locator, imported_at=excluded.imported_at",
-                params![
-                    relation.provenance_id,
-                    relation.skill_id.to_string(),
-                    relation.directory_node_id,
-                    relation.agent_client_id,
-                    relation.source_path,
-                    relation.source_path_key,
-                    relationship_code(relation.relationship),
-                    representation_code(relation.file_representation),
-                    ownership_code(relation.ownership),
-                    relation.link_target_path,
-                    relation.link_target_directory_id,
-                    relation.content_fingerprint,
-                    source_kind_code(&relation.source.kind),
-                    source_locator_text(&relation.source.locator),
-                    relation.imported_at,
-                ],
-            )
-            .map(|_| ())
-            .map_err(database_error)
+            .unchecked_transaction()
+            .map_err(database_error)?;
+        upsert_source_relation_tx(&transaction, relation)?;
+        transaction.commit().map_err(database_error)
+    }
+
+    pub fn list_source_relations(&self) -> AppResult<Vec<SourceRelationFact>> {
+        let mut statement = self
+            .database
+            .connection
+            .prepare(SOURCE_SELECT)
+            .map_err(database_error)?;
+        let rows = statement
+            .query_map([], source_row)
+            .map_err(database_error)?;
+        rows.map(|row| decode_source(row.map_err(database_error)?).ok_or_else(invalid_record))
+            .collect()
     }
 
     pub fn list_source_relations_for_skill(
         &self,
         skill_id: SkillId,
     ) -> AppResult<Vec<SourceRelationFact>> {
-        let mut statement = self
-            .database
-            .connection
-            .prepare(
-                "SELECT provenance_id, skill_id, directory_node_id, agent_client_id, source_path,
-                 source_path_key, relationship, file_representation, ownership, link_target_path,
-                 link_target_directory_id, content_fingerprint, source_kind, source_locator, imported_at
-                 FROM source_relations WHERE skill_id=?1 ORDER BY imported_at, provenance_id",
-            )
-            .map_err(database_error)?;
-        let rows = statement
-            .query_map([skill_id.to_string()], source_row)
-            .map_err(database_error)?;
-        rows.map(|row| decode_source(row.map_err(database_error)?).ok_or_else(invalid_record))
-            .collect()
+        Ok(self
+            .list_source_relations()?
+            .into_iter()
+            .filter(|relation| relation.skill_id == skill_id)
+            .collect())
     }
 
-    pub(crate) fn sync_managed_deployment(&self, deployment: &DeploymentRecord) -> AppResult<()> {
-        let target = self
-            .database
-            .connection
+    pub(crate) fn sync_managed_deployment_tx(
+        &self,
+        transaction: &Transaction<'_>,
+        deployment: &DeploymentRecord,
+    ) -> AppResult<()> {
+        let target = transaction
             .query_row(
                 "SELECT agent_id, path FROM targets WHERE id=?1",
                 [deployment.target_id.as_str()],
@@ -224,7 +281,7 @@ impl<'a> RelationshipRepository<'a> {
             )
             .optional()
             .map_err(database_error)?;
-        let Some((agent_client_id, path)) = target else {
+        let Some((agent_client_id, target_path)) = target else {
             return Ok(());
         };
         let (relationship, representation) = match deployment.mode {
@@ -240,35 +297,43 @@ impl<'a> RelationshipRepository<'a> {
                 (RelationshipType::ManagedCopy, FileRepresentation::Copy)
             }
         };
-        self.upsert_deployment_relation(&DeploymentRelationFact {
-            relation_id: format!("managed:{}", deployment.id),
-            skill_id: Some(deployment.skill_id),
-            agent_client_id,
-            path: path.clone(),
-            path_key: observed_path_key(&path),
-            directory_node_id: None,
-            relationship,
-            file_representation: representation,
-            ownership: if deployment.managed {
-                OwnershipState::SkillhubManaged
-            } else {
-                OwnershipState::ObservedUnmanaged
+        let path = deployment_entry_path(&target_path, &deployment.runtime_name);
+        upsert_deployment_relation_tx(
+            transaction,
+            &DeploymentRelationFact {
+                relation_id: format!("managed:{}", deployment.id),
+                skill_id: Some(deployment.skill_id),
+                agent_client_id,
+                path,
+                path_key: String::new(),
+                directory_node_id: None,
+                relationship,
+                file_representation: representation,
+                ownership: if deployment.managed {
+                    OwnershipState::SkillhubManaged
+                } else {
+                    OwnershipState::ObservedUnmanaged
+                },
+                link_target_path: None,
+                link_target_path_key: None,
+                link_target_directory_id: None,
+                content_fingerprint: deployment.expected_hash.clone(),
+                origin: ObservedOrigin::Import,
+                match_state: ObservedMatchState::ContentVerified,
+                active: matches!(deployment.state, DeploymentState::Deployed),
+                observed_at: now(),
+                released_at: None,
             },
-            link_target_path: None,
-            link_target_path_key: None,
-            link_target_directory_id: None,
-            content_fingerprint: deployment.expected_hash.clone(),
-            origin: ObservedOrigin::Import,
-            match_state: ObservedMatchState::ContentVerified,
-            active: matches!(deployment.state, DeploymentState::Deployed),
-            observed_at: now(),
-            released_at: None,
-        })
+        )
     }
 
-    pub(crate) fn mark_managed_deployment_removed(&self, id: &str, at: i64) -> AppResult<()> {
-        self.database
-            .connection
+    pub(crate) fn mark_managed_deployment_removed_tx(
+        &self,
+        transaction: &Transaction<'_>,
+        id: &str,
+        at: i64,
+    ) -> AppResult<()> {
+        transaction
             .execute(
                 "UPDATE deployment_relations SET active=0, released_at=?1 WHERE relation_id=?2",
                 params![at, format!("managed:{id}")],
@@ -277,9 +342,12 @@ impl<'a> RelationshipRepository<'a> {
             .map_err(database_error)
     }
 
-    pub(crate) fn detach_managed_deployment(&self, id: &str) -> AppResult<()> {
-        self.database
-            .connection
+    pub(crate) fn detach_managed_deployment_tx(
+        &self,
+        transaction: &Transaction<'_>,
+        id: &str,
+    ) -> AppResult<()> {
+        transaction
             .execute(
                 "UPDATE deployment_relations SET ownership='observed_unmanaged' WHERE relation_id=?1",
                 [format!("managed:{id}")],
@@ -287,6 +355,107 @@ impl<'a> RelationshipRepository<'a> {
             .map(|_| ())
             .map_err(database_error)
     }
+}
+
+fn deployment_entry_path(target_path: &str, runtime_name: &str) -> String {
+    if runtime_name.is_empty() {
+        target_path.to_owned()
+    } else {
+        std::path::Path::new(target_path)
+            .join(runtime_name)
+            .to_string_lossy()
+            .into_owned()
+    }
+}
+
+pub(crate) fn upsert_deployment_relation_tx(
+    transaction: &Transaction<'_>,
+    relation: &DeploymentRelationFact,
+) -> AppResult<()> {
+    let path_key = observed_path_key(&relation.path);
+    let link_target_path_key = relation.link_target_path.as_deref().map(observed_path_key);
+    transaction
+        .execute(
+            "INSERT INTO deployment_relations
+             (relation_id, skill_id, agent_client_id, path, path_key, directory_node_id,
+              relationship, file_representation, ownership, link_target_path,
+              link_target_path_key, link_target_directory_id, content_fingerprint,
+              origin, match_state, active, observed_at, released_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)
+             ON CONFLICT(agent_client_id, path_key) DO UPDATE SET
+             relation_id=excluded.relation_id, skill_id=excluded.skill_id, path=excluded.path,
+             directory_node_id=excluded.directory_node_id, relationship=excluded.relationship,
+             file_representation=excluded.file_representation, ownership=excluded.ownership,
+             link_target_path=excluded.link_target_path, link_target_path_key=excluded.link_target_path_key,
+             link_target_directory_id=excluded.link_target_directory_id,
+             content_fingerprint=excluded.content_fingerprint, origin=excluded.origin,
+             match_state=excluded.match_state, active=excluded.active,
+             observed_at=excluded.observed_at, released_at=excluded.released_at",
+            params![
+                relation.relation_id,
+                relation.skill_id.map(|id| id.to_string()),
+                relation.agent_client_id,
+                relation.path,
+                path_key,
+                relation.directory_node_id,
+                relationship_code(relation.relationship),
+                representation_code(relation.file_representation),
+                ownership_code(relation.ownership),
+                relation.link_target_path,
+                link_target_path_key,
+                relation.link_target_directory_id,
+                relation.content_fingerprint,
+                origin_code(relation.origin),
+                match_state_code(relation.match_state),
+                i64::from(relation.active),
+                relation.observed_at,
+                relation.released_at,
+            ],
+        )
+        .map(|_| ())
+        .map_err(database_error)
+}
+
+pub(crate) fn upsert_source_relation_tx(
+    transaction: &Transaction<'_>,
+    relation: &SourceRelationFact,
+) -> AppResult<()> {
+    let source_path_key = observed_path_key(&relation.source_path);
+    transaction
+        .execute(
+            "INSERT INTO source_relations
+             (provenance_id, skill_id, directory_node_id, agent_client_id, source_path,
+              source_path_key, relationship, file_representation, ownership, link_target_path,
+              link_target_directory_id, content_fingerprint, source_kind, source_locator, imported_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)
+             ON CONFLICT(provenance_id) DO UPDATE SET
+             skill_id=excluded.skill_id, directory_node_id=excluded.directory_node_id,
+             agent_client_id=excluded.agent_client_id, source_path=excluded.source_path,
+             source_path_key=excluded.source_path_key, relationship=excluded.relationship,
+             file_representation=excluded.file_representation, ownership=excluded.ownership,
+             link_target_path=excluded.link_target_path, link_target_directory_id=excluded.link_target_directory_id,
+             content_fingerprint=excluded.content_fingerprint, source_kind=excluded.source_kind,
+             source_locator=excluded.source_locator, imported_at=excluded.imported_at",
+            params![
+                relation.provenance_id,
+                relation.skill_id.to_string(),
+                relation.directory_node_id,
+                relation.agent_client_id,
+                relation.source_path,
+                source_path_key,
+                relationship_code(relation.relationship),
+                representation_code(relation.file_representation),
+                ownership_code(relation.ownership),
+                relation.link_target_path,
+                relation.link_target_directory_id,
+                relation.content_fingerprint,
+                source_kind_code(&relation.source.kind),
+                source_locator_text(&relation.source.locator),
+                relation.imported_at,
+            ],
+        )
+        .map(|_| ())
+        .map_err(database_error)
 }
 
 pub struct ConflictRepository<'a> {
@@ -520,6 +689,12 @@ const DEPLOYMENT_SELECT: &str =
      relationship, file_representation, ownership, link_target_path, link_target_path_key,
      link_target_directory_id, content_fingerprint, origin, match_state, active, observed_at, released_at
      FROM deployment_relations";
+
+const SOURCE_SELECT: &str =
+    "SELECT provenance_id, skill_id, directory_node_id, agent_client_id, source_path,
+     source_path_key, relationship, file_representation, ownership, link_target_path,
+     link_target_directory_id, content_fingerprint, source_kind, source_locator, imported_at
+     FROM source_relations ORDER BY imported_at, provenance_id";
 
 type StoredCapability = (
     String,

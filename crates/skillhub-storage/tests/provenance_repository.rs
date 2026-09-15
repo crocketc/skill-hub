@@ -126,6 +126,15 @@ fn observed_relation_lifecycle_establish_release_and_reactivate() {
         rows[0].match_state,
         skillhub_core::ObservedMatchState::ContentVerified
     );
+    let normalized = database.relationship_repository().list_relations().unwrap();
+    assert_eq!(normalized.len(), 1);
+    assert_eq!(normalized[0].skill_id, Some(skill));
+    assert!(normalized[0].active);
+    assert_eq!(
+        normalized[0].match_state,
+        skillhub_core::ObservedMatchState::ContentVerified
+    );
+    assert_eq!(normalized[0].content_fingerprint, "sha256:aa11");
 
     // 幂等：同一观察再次应用不产生重复行。
     repository
@@ -146,6 +155,9 @@ fn observed_relation_lifecycle_establish_release_and_reactivate() {
     let rows = repository.list_observed_for_skill(skill).unwrap();
     assert_eq!(rows[0].status, skillhub_core::ObservedStatus::Released);
     assert_eq!(rows[0].released_at, Some(200));
+    let normalized = database.relationship_repository().list_relations().unwrap();
+    assert!(!normalized[0].active);
+    assert_eq!(normalized[0].released_at, Some(200));
 
     // 关系更新：重新观察到一致内容 → 重新激活。
     repository
@@ -155,6 +167,8 @@ fn observed_relation_lifecycle_establish_release_and_reactivate() {
     assert_eq!(rows[0].status, skillhub_core::ObservedStatus::Active);
     assert_eq!(rows[0].released_at, None);
     assert_eq!(rows[0].observed_at, 300);
+    let normalized = database.relationship_repository().list_relations().unwrap();
+    assert_eq!(normalized[0].relation_id, rows[0].id.to_string());
 }
 
 #[test]
@@ -203,6 +217,93 @@ fn observed_relation_marks_divergence_without_duplicating_rows() {
         skillhub_core::ObservedMatchState::Diverged
     );
     assert_eq!(rows[0].content_fingerprint, "sha256:ff22");
+    let normalized = database.relationship_repository().list_relations().unwrap();
+    assert_eq!(normalized.len(), 1);
+    assert_eq!(normalized[0].skill_id, None);
+    assert_eq!(
+        normalized[0].match_state,
+        skillhub_core::ObservedMatchState::Diverged
+    );
+    assert_eq!(normalized[0].content_fingerprint, "sha256:ff22");
+}
+
+#[test]
+fn observed_name_only_action_clears_normalized_skill_identity() {
+    let database = Database::open_in_memory().unwrap();
+    let skill = SkillId::new();
+    insert_skill(&database, skill);
+    let repository = database.provenance_repository();
+    let path = "/tmp/trae/skills/name-only";
+    repository
+        .apply_observed_row_action(
+            "trae.code",
+            path,
+            &reconcile_observed_row(
+                None,
+                Some(&ObservedPathObservation {
+                    path: path.into(),
+                    fingerprint: "sha256:aa11".into(),
+                }),
+                Some(skill),
+            ),
+            ObservedOrigin::Scan,
+            100,
+        )
+        .unwrap();
+    repository
+        .apply_observed_row_action(
+            "trae.code",
+            path,
+            &ObservedRowAction::MarkUnreliable {
+                match_state: skillhub_core::ObservedMatchState::NameOnly,
+                fingerprint: "sha256:name-only".into(),
+            },
+            ObservedOrigin::Scan,
+            110,
+        )
+        .unwrap();
+
+    let normalized = database.relationship_repository().list_relations().unwrap();
+    assert_eq!(normalized.len(), 1);
+    assert_eq!(normalized[0].skill_id, None);
+    assert_eq!(
+        normalized[0].match_state,
+        skillhub_core::ObservedMatchState::NameOnly
+    );
+    assert_eq!(normalized[0].content_fingerprint, "sha256:name-only");
+}
+
+#[test]
+fn provenance_projection_rolls_back_when_legacy_projection_fails() {
+    let database = Database::open_in_memory().unwrap();
+    let skill = SkillId::new();
+    insert_skill(&database, skill);
+    database
+        .connection_for_test()
+        .execute_batch(
+            "CREATE TRIGGER fail_legacy_provenance BEFORE INSERT ON import_provenance
+             BEGIN SELECT RAISE(ABORT, 'injected'); END;",
+        )
+        .unwrap();
+
+    assert!(database
+        .provenance_repository()
+        .upsert_provenance(&provenance(skill, "/tmp/source", Some("agent")))
+        .is_err());
+    let source_count: i64 = database
+        .connection_for_test()
+        .query_row("SELECT COUNT(*) FROM source_relations", [], |row| {
+            row.get(0)
+        })
+        .unwrap();
+    let legacy_count: i64 = database
+        .connection_for_test()
+        .query_row("SELECT COUNT(*) FROM import_provenance", [], |row| {
+            row.get(0)
+        })
+        .unwrap();
+    assert_eq!(source_count, 0);
+    assert_eq!(legacy_count, 0);
 }
 
 #[test]

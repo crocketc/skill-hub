@@ -1,5 +1,6 @@
 use super::Database;
 use rusqlite::params;
+use skillhub_core::deployment::observed_path_key;
 use skillhub_core::relationship::{DirectoryNodeFact, DirectoryRole};
 use skillhub_core::{AppError, AppResult, ErrorCode, RecoveryAction, Severity};
 
@@ -13,6 +14,7 @@ impl<'a> DirectoryRepository<'a> {
     }
 
     pub fn upsert_node(&self, node: &DirectoryNodeFact) -> AppResult<()> {
+        let path_key = observed_path_key(&node.path);
         self.database
             .connection
             .execute(
@@ -27,7 +29,7 @@ impl<'a> DirectoryRepository<'a> {
                 params![
                     node.node_id,
                     node.path,
-                    node.path_key,
+                    path_key,
                     role_code(node.role),
                     node.profile_id,
                     node.agent_client_id,

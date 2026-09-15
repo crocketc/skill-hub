@@ -172,8 +172,10 @@ SELECT
     'legacy-managed:' || d.id,
     d.skill_id,
     t.agent_id,
-    t.path,
-    t.path,
+    CASE WHEN d.runtime_name = '' THEN t.path
+         ELSE rtrim(t.path, '/\\') || '/' || d.runtime_name END,
+    CASE WHEN d.runtime_name = '' THEN t.path
+         ELSE rtrim(t.path, '/\\') || '/' || d.runtime_name END,
     NULL,
     CASE d.method
         WHEN 'symbolic_link' THEN 'managed_link'

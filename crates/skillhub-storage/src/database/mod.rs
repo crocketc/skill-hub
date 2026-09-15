@@ -62,7 +62,8 @@ pub use project_repository::{ProjectRepository, VersionPin};
 pub use provenance_repository::ProvenanceRepository;
 pub use recovery_point::RecoveryPoint;
 pub use relationship_repository::{
-    ConflictRepository, GovernanceTaskRepository, RelationshipRepository,
+    ConflictRepository, GovernanceTaskRepository, RelationshipImpactSnapshot,
+    RelationshipRepository,
 };
 pub use scan_repository::ScanRepository;
 pub use search_candidate_repository::SearchCandidateRepository;
