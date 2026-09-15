@@ -426,13 +426,13 @@ unknown
 
 ```text
 Task 1 → Task 2 → Task 3 → Task 4
-                         ├→ Task 5 → Task 6
-                         └→ Task 7
-Task 5 + Task 6 + Task 7 → Task 8
-Task 4 + Task 5 + Task 6 + Task 7 + Task 8 → Task 9
+                         ├→ Task 5 → Task 7
+                         └→ Task 6
+Task 5 + Task 7 → Task 8
+Task 6 + Task 7 + Task 8 → Task 9
 ```
 
-Task 1～4 必须串行完成，因为它们冻结领域类型、数据库事实和 IPC 契约。Task 5、Task 6、Task 7 可以在 Task 4 完成后拆为独立 worktree 并行，但每个任务只能消费统一关系 DTO，不在前端或应用服务中复制关系判断。Task 8 必须在确定性冲突分组可用后进行。Task 9 最后执行。
+Task 1～4 必须串行完成，因为它们冻结领域类型、数据库事实和 IPC 契约。Task 5 和 Task 6 可以在 Task 4 完成后拆为独立 worktree 并行；Task 7 必须在 Task 5 的共享治理面板基础完成后执行，因为两者共同修改该组件。每个任务只能消费统一关系 DTO，不在前端或应用服务中复制关系判断。Task 8 必须在确定性冲突分组和 Agent/Skill 页面入口可用后进行。Task 9 最后执行。
 
 ## 6. 验收矩阵
 
