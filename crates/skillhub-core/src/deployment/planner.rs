@@ -2,6 +2,7 @@ use std::borrow::Borrow;
 use std::collections::BTreeMap;
 use std::path::Path;
 
+use crate::relationship::RelationshipType;
 use crate::{AppError, AppResult, DeploymentCapability, ErrorCode, RecoveryAction, Severity};
 
 use super::model::{
@@ -330,6 +331,124 @@ fn invalid_input(detail: impl Into<String>) -> AppError {
     AppError::new(ErrorCode::InvalidInput, Severity::Error)
         .with_param("detail", detail.into())
         .with_action(RecoveryAction::Acknowledge)
+}
+
+// ---------------------------------------------------------------------------
+// Task 6: deterministic copy / shared-reference -> managed-link conversion.
+// The plan is pure and decides only facts: which technical link form the
+// platform supports, whether shared impact needs explicit confirmation, and
+// when a conversion must be refused instead of silently degrading to a copy.
+// ---------------------------------------------------------------------------
+
+/// Deterministic input facts for planning one relation conversion.  The
+/// caller supplies the probed platform capabilities and shared-consumer
+/// counts; this planner never touches the filesystem.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RelationConversionFacts {
+    pub relationship: RelationshipType,
+    /// Link capabilities probed where the replacement entry will be created.
+    pub link_capabilities: DeploymentCapability,
+    /// `false` when the relation entry and the central-library target live on
+    /// volumes the selected link kind cannot span.
+    pub link_target_same_volume: bool,
+    /// Other active relations that still consume the shared body this entry
+    /// points at.
+    pub other_shared_consumers: usize,
+}
+
+/// The deterministic part of a conversion decision.  Filesystem effects,
+/// backups and journaling stay in the application layer.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RelationConversionPlan {
+    /// Technical link form chosen from the probed capabilities via
+    /// `DeploymentMode::select`.  It is never `ManagedCopy`: a conversion that
+    /// cannot link must fail and keep the original entry instead of replacing
+    /// it with a copy.
+    pub mode: DeploymentMode,
+    /// The shared directory body is never cleaned by a conversion, no matter
+    /// how many consumers remain.
+    pub keeps_shared_body: bool,
+    /// Shared impact requires an explicit user confirmation before commit.
+    pub requires_shared_impact_confirmation: bool,
+    pub warnings: Vec<String>,
+}
+
+/// Plans one observed-copy or shared-reference conversion into a SkillHub
+/// managed link.
+pub fn plan_relation_conversion(
+    facts: &RelationConversionFacts,
+) -> AppResult<RelationConversionPlan> {
+    if !matches!(
+        facts.relationship,
+        RelationshipType::ObservedCopy
+            | RelationshipType::ManagedCopy
+            | RelationshipType::ObservedLink
+            | RelationshipType::ManagedLink
+            | RelationshipType::SharedDirectoryReference
+    ) {
+        // A direct shared-directory read has no per-agent entry to replace,
+        // and everything else is not a deployment entry at all.  Converting
+        // it would have to rewrite the shared body, which only an explicit
+        // governance decision may ever do.
+        return Err(conversion_not_convertible(facts.relationship));
+    }
+
+    // DeploymentMode::select owns the platform decision; a conversion only
+    // refuses the copy fallback instead of accepting it.
+    let mode = match DeploymentMode::select(&facts.link_capabilities) {
+        Some(DeploymentMode::ManagedCopy) | None => {
+            return Err(link_unavailable());
+        }
+        Some(mode) => mode,
+    };
+    if mode == DeploymentMode::DirectoryJunction && !facts.link_target_same_volume {
+        return Err(junction_cannot_span_volumes());
+    }
+
+    let shared = matches!(
+        facts.relationship,
+        RelationshipType::SharedDirectoryReference
+    );
+    let mut warnings = Vec::new();
+    if shared {
+        warnings.push("relationship.conversion.shared_body_kept".to_owned());
+    }
+    Ok(RelationConversionPlan {
+        mode,
+        keeps_shared_body: true,
+        requires_shared_impact_confirmation: shared && facts.other_shared_consumers > 0,
+        warnings,
+    })
+}
+
+fn conversion_not_convertible(relationship: RelationshipType) -> AppError {
+    AppError::new(ErrorCode::OperationConflict, Severity::Warning)
+        .with_param(
+            "detail",
+            format!(
+                "relationship type {:?} has no convertible entry; record a governance task instead",
+                relationship
+            ),
+        )
+        .with_action(RecoveryAction::Acknowledge)
+}
+
+fn link_unavailable() -> AppError {
+    AppError::new(ErrorCode::SymlinkNotSupported, Severity::Warning)
+        .with_param(
+            "detail",
+            "link creation is unavailable at the relation location; conversion keeps the original entry instead of replacing it with a copy",
+        )
+        .with_action(RecoveryAction::OpenReadOnly)
+}
+
+fn junction_cannot_span_volumes() -> AppError {
+    AppError::new(ErrorCode::JunctionNotSupported, Severity::Warning)
+        .with_param(
+            "detail",
+            "the selected directory-junction link form cannot span the two volumes; conversion keeps the original entry instead of replacing it with a copy",
+        )
+        .with_action(RecoveryAction::OpenReadOnly)
 }
 
 fn mode_code(mode: DeploymentMode) -> &'static str {

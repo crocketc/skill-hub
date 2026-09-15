@@ -1,9 +1,14 @@
 use async_trait::async_trait;
 use skillhub_core::application::{DeploymentBackend, DeploymentService};
 use skillhub_core::deployment::{
-    DeploymentMode, DeploymentPlan, DeploymentRecord, DeploymentState, TargetChange, TargetPlan,
+    plan_relation_conversion, DeploymentMode, DeploymentPlan, DeploymentRecord, DeploymentState,
+    RelationConversionFacts, TargetChange, TargetPlan,
 };
-use skillhub_core::{AppError, AppResult, DeploymentId, ErrorCode, Severity, SkillId, VersionId};
+use skillhub_core::relationship::RelationshipType;
+use skillhub_core::{
+    AppError, AppResult, DeploymentCapability, DeploymentId, ErrorCode, Severity, SkillId,
+    VersionId,
+};
 use std::sync::{Arc, Mutex};
 
 #[derive(Default)]
@@ -127,4 +132,124 @@ fn block_on<F: std::future::Future>(future: F) -> F::Output {
         .build()
         .unwrap()
         .block_on(future)
+}
+
+// ---------------------------------------------------------------------------
+// Task 6: observed copy / shared reference -> managed-link conversion plan.
+// The conversion plan is pure: platform capability decides the technical link
+// form, and an unavailable link must never silently degrade to a copy.
+// ---------------------------------------------------------------------------
+
+fn link_capabilities(symlink: bool, junction: bool) -> DeploymentCapability {
+    // Copy is always available; only the link forms vary per probe.
+    DeploymentCapability::new(symlink, junction, true)
+}
+
+#[test]
+fn conversion_plan_selects_the_platform_link_mode_for_a_managed_copy() {
+    let plan = plan_relation_conversion(&RelationConversionFacts {
+        relationship: RelationshipType::ManagedCopy,
+        link_capabilities: link_capabilities(true, false),
+        link_target_same_volume: true,
+        other_shared_consumers: 0,
+    })
+    .expect("managed copy converts to a managed link");
+    assert_eq!(plan.mode, DeploymentMode::SymbolicLink);
+    assert!(!plan.requires_shared_impact_confirmation);
+    assert!(plan.keeps_shared_body);
+}
+
+#[test]
+fn conversion_plan_never_degrades_to_a_copy_when_links_are_unavailable() {
+    let error = plan_relation_conversion(&RelationConversionFacts {
+        relationship: RelationshipType::ObservedCopy,
+        link_capabilities: link_capabilities(false, false),
+        link_target_same_volume: true,
+        other_shared_consumers: 0,
+    })
+    .expect_err("link-unavailable conversion must fail instead of copying");
+    assert_eq!(error.code, ErrorCode::SymlinkNotSupported);
+}
+
+#[test]
+fn conversion_plan_rejects_a_cross_volume_junction_instead_of_copying() {
+    let cross_volume = RelationConversionFacts {
+        relationship: RelationshipType::ObservedCopy,
+        link_capabilities: link_capabilities(false, true),
+        link_target_same_volume: false,
+        other_shared_consumers: 0,
+    };
+    let error = plan_relation_conversion(&cross_volume)
+        .expect_err("a junction cannot span volumes; must fail instead of copying");
+    assert_eq!(error.code, ErrorCode::JunctionNotSupported);
+
+    let same_volume = RelationConversionFacts {
+        link_target_same_volume: true,
+        ..cross_volume
+    };
+    let plan = plan_relation_conversion(&same_volume).expect("same-volume junction is usable");
+    assert_eq!(plan.mode, DeploymentMode::DirectoryJunction);
+}
+
+#[test]
+fn conversion_plan_requires_confirmation_and_keeps_the_shared_body() {
+    let with_other_consumers = RelationConversionFacts {
+        other_shared_consumers: 2,
+        ..relation_conversion_facts_for(RelationshipType::SharedDirectoryReference)
+    };
+    let plan = plan_relation_conversion(&with_other_consumers)
+        .expect("shared reference conversion is plannable");
+    assert!(plan.requires_shared_impact_confirmation);
+    assert!(plan.keeps_shared_body);
+
+    let solo = RelationConversionFacts {
+        other_shared_consumers: 0,
+        ..relation_conversion_facts_for(RelationshipType::SharedDirectoryReference)
+    };
+    let plan = plan_relation_conversion(&solo).expect("solo shared reference still plans");
+    assert!(!plan.requires_shared_impact_confirmation);
+    assert!(plan.keeps_shared_body);
+}
+
+#[test]
+fn conversion_plan_rejects_a_shared_direct_read_as_a_governance_todo() {
+    // A direct shared-directory read has no per-agent entry to replace.
+    // Converting it would have to rewrite the shared body itself, which is
+    // forbidden, so the deterministic plan must refuse it.
+    let error = plan_relation_conversion(&RelationConversionFacts {
+        relationship: RelationshipType::SharedDirectoryRead,
+        link_capabilities: link_capabilities(true, false),
+        link_target_same_volume: true,
+        other_shared_consumers: 0,
+    })
+    .expect_err("shared direct read needs a governance decision, not a conversion");
+    assert_eq!(error.code, ErrorCode::OperationConflict);
+}
+
+#[test]
+fn conversion_plan_rejects_relations_without_a_convertible_entry() {
+    let error = plan_relation_conversion(&RelationConversionFacts {
+        relationship: RelationshipType::ImportCopy,
+        link_capabilities: link_capabilities(true, false),
+        link_target_same_volume: true,
+        other_shared_consumers: 0,
+    })
+    .expect_err("import copies are not deployment entries");
+    assert_eq!(error.code, ErrorCode::OperationConflict);
+
+    let error = plan_relation_conversion(&RelationConversionFacts {
+        relationship: RelationshipType::Unknown,
+        ..relation_conversion_facts_for(RelationshipType::ImportCopy)
+    })
+    .expect_err("unknown relations carry no convertible fact");
+    assert_eq!(error.code, ErrorCode::OperationConflict);
+}
+
+fn relation_conversion_facts_for(relationship: RelationshipType) -> RelationConversionFacts {
+    RelationConversionFacts {
+        relationship,
+        link_capabilities: link_capabilities(true, false),
+        link_target_same_volume: true,
+        other_shared_consumers: 0,
+    }
 }

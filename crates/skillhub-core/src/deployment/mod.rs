@@ -16,7 +16,9 @@ pub use observed::{
     observed_path_key, path_lives_under, reconcile_observed_row, ObservedDeployment,
     ObservedMatchState, ObservedOrigin, ObservedPathObservation, ObservedRowAction, ObservedStatus,
 };
-pub use planner::DeploymentPlanner;
+pub use planner::{
+    plan_relation_conversion, DeploymentPlanner, RelationConversionFacts, RelationConversionPlan,
+};
 pub use reconcile::{
     ExternalChangeObservation, ExternalChangeState, ReconcileAction, ReconcilePlan, ReconcileResult,
 };
