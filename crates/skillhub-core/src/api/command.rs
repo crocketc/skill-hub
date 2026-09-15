@@ -235,6 +235,44 @@ pub struct RollbackOriginalMigration {
     pub migration_id: OperationId,
 }
 
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(rename_all = "snake_case")]
+pub enum RelationMigrationTargetMode {
+    ManagedLink,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(rename_all = "snake_case")]
+pub enum RelationshipMigrationBackupPolicy {
+    Required,
+}
+
+/// Relationship conversion is intentionally a separate command family from
+/// `original_migration`: it never authorizes deleting the user's original
+/// source directory.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct PrepareRelationMigration {
+    pub relation_id: String,
+    pub target_mode: RelationMigrationTargetMode,
+    pub backup_policy: RelationshipMigrationBackupPolicy,
+    pub confirmation_token: Option<String>,
+}
+
+pub type RelationMigrationInput = PrepareRelationMigration;
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct CommitRelationMigration {
+    pub prepared_relation_migration_id: OperationId,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct RollbackRelationMigration {
+    pub operation_id: OperationId,
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 #[serde(deny_unknown_fields)]
 pub struct RelinkSource {
@@ -860,6 +898,12 @@ pub enum AppCommand {
     CommitOriginalMigration(CommitOriginalMigration),
     #[serde(rename = "rollback_original_migration")]
     RollbackOriginalMigration(RollbackOriginalMigration),
+    #[serde(rename = "prepare_relation_migration")]
+    PrepareRelationMigration(PrepareRelationMigration),
+    #[serde(rename = "commit_relation_migration")]
+    CommitRelationMigration(CommitRelationMigration),
+    #[serde(rename = "rollback_relation_migration")]
+    RollbackRelationMigration(RollbackRelationMigration),
     #[serde(rename = "relink_source")]
     RelinkSource(RelinkSource),
     #[serde(rename = "check_source_update")]
@@ -1051,6 +1095,10 @@ pub enum AppCommandResult {
     OriginalMigrationPlan(crate::import::OriginalMigrationPlan),
     #[serde(rename = "original_migration_result")]
     OriginalMigrationResult(crate::import::OriginalMigrationResult),
+    #[serde(rename = "prepared_relation_migration")]
+    PreparedRelationMigration(crate::PreparedRelationMigration),
+    #[serde(rename = "relation_migration_result")]
+    RelationMigrationResult(crate::RelationMigrationResult),
     #[serde(rename = "upstream_check_result")]
     UpstreamCheckResult(crate::source::UpstreamCheckResult),
     #[serde(rename = "applied_source_update")]

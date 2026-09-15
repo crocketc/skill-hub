@@ -2,6 +2,7 @@
 
 mod external_link;
 pub mod library_runtime;
+mod relationship_governance_service;
 mod update_service;
 
 use std::collections::HashMap;
@@ -114,6 +115,9 @@ pub struct LocalApplicationFacade {
     /// OPT-20260914-08：已准备的原始文件迁移计划。准备只读；提交必须
     /// 携带用户明确确认，且任何失败都保留现场。
     prepared_migrations: Mutex<HashMap<OperationId, skillhub_core::OriginalMigrationPlan>>,
+    prepared_relation_migrations:
+        Mutex<HashMap<OperationId, skillhub_core::PreparedRelationMigration>>,
+    relation_migration_results: Mutex<HashMap<OperationId, skillhub_core::RelationMigrationResult>>,
     prepared_uninstall: Mutex<Option<skillhub_core::UninstallImpact>>,
     scan_service: Mutex<ScanService>,
     path_grants: Mutex<HashMap<String, ResolvedPathGrant>>,
@@ -1591,6 +1595,8 @@ impl LocalApplicationFacade {
             repo_discovery_provider: RwLock::new(Arc::new(RepoDiscoveryProvider::new())),
             prepared_imports: Mutex::new(HashMap::new()),
             prepared_migrations: Mutex::new(HashMap::new()),
+            prepared_relation_migrations: Mutex::new(HashMap::new()),
+            relation_migration_results: Mutex::new(HashMap::new()),
             prepared_uninstall: Mutex::new(None),
             scan_service: Mutex::new(ScanService::new()),
             path_grants: Mutex::new(HashMap::new()),
@@ -1662,6 +1668,8 @@ impl LocalApplicationFacade {
             repo_discovery_provider: RwLock::new(Arc::new(RepoDiscoveryProvider::new())),
             prepared_imports: Mutex::new(HashMap::new()),
             prepared_migrations: Mutex::new(HashMap::new()),
+            prepared_relation_migrations: Mutex::new(HashMap::new()),
+            relation_migration_results: Mutex::new(HashMap::new()),
             prepared_uninstall: Mutex::new(None),
             scan_service: Mutex::new(ScanService::new()),
             path_grants: Mutex::new(HashMap::new()),
@@ -1680,6 +1688,13 @@ impl LocalApplicationFacade {
     #[doc(hidden)]
     pub fn library_runtime(&self) -> Arc<library_runtime::LibraryRuntime> {
         self.library_runtime.clone()
+    }
+
+    /// Test-only database handle used by relationship facade fixtures to seed
+    /// deterministic normalized facts without introducing a second adapter.
+    #[doc(hidden)]
+    pub fn database_for_tests(&self) -> Arc<Mutex<Database>> {
+        self.database.clone()
     }
 
     pub fn new_with_suggested_library(
@@ -4926,6 +4941,15 @@ impl ApplicationFacade for LocalApplicationFacade {
             AppCommand::RollbackOriginalMigration(request) => {
                 return self.rollback_original_migration(request)
             }
+            AppCommand::PrepareRelationMigration(request) => {
+                return self.prepare_relation_migration(request)
+            }
+            AppCommand::CommitRelationMigration(request) => {
+                return self.commit_relation_migration(request)
+            }
+            AppCommand::RollbackRelationMigration(request) => {
+                return self.rollback_relation_migration(request)
+            }
             AppCommand::CancelImport { prepared_import_id } => {
                 return self.cancel_import(prepared_import_id)
             }
@@ -5571,6 +5595,12 @@ impl ApplicationFacade for LocalApplicationFacade {
                 .prepare_delete(request.skill_id)
                 .await
                 .map(AppQueryResult::RemovalImpact),
+            AppQuery::GetRelationshipOverview(request) => {
+                self.get_relationship_overview(request.scope)
+            }
+            AppQuery::GetRelationshipRemovalImpact(request) => {
+                self.get_relationship_removal_impact(&request.relation_id)
+            }
             AppQuery::ListRecoveryCandidates => self
                 .recovery_service
                 .list()

@@ -13,6 +13,11 @@ use crate::source::{SourceDescriptor, SourceSearchPage, SourceSearchQuery};
 use crate::{
     BootstrapSnapshot, DeploymentPlan, DeploymentPlanRequest, Severity, SkillId, VersionId,
 };
+
+use crate::relationship::{
+    AgentDirectoryCapabilityFact, ConflictCaseFact, DeploymentRelationFact, DirectoryNodeFact,
+    GovernanceTaskFact, SourceRelationFact,
+};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
@@ -571,6 +576,50 @@ pub struct GetRemovalImpact {
     pub skill_id: SkillId,
 }
 
+/// Scope for the normalized relationship view.  This is a fact query only:
+/// it deliberately has no field claiming that an Agent has loaded or can
+/// execute a file merely because the file was found in a recognized path.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(rename_all = "snake_case", tag = "type", content = "value")]
+pub enum RelationshipOverviewScope {
+    All,
+    Skill { skill_id: SkillId },
+    Agent { agent_client_id: String },
+    Directory { directory_node_id: String },
+    Relation { relation_id: String },
+    Path { path_key: String },
+}
+
+pub type RelationshipScope = RelationshipOverviewScope;
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct GetRelationshipOverview {
+    pub scope: RelationshipOverviewScope,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct GetRelationshipRemovalImpact {
+    pub relation_id: String,
+}
+
+/// One deterministic relationship snapshot shared by import, Agent and Skill
+/// views.  `agent_execution_confirmed` is intentionally always false: path
+/// discovery/recognition is not runtime loading evidence.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct RelationshipOverview {
+    pub scope: RelationshipOverviewScope,
+    pub directory_nodes: Vec<DirectoryNodeFact>,
+    pub agent_directory_capabilities: Vec<AgentDirectoryCapabilityFact>,
+    pub source_relations: Vec<SourceRelationFact>,
+    pub deployment_relations: Vec<DeploymentRelationFact>,
+    pub conflict_cases: Vec<ConflictCaseFact>,
+    pub pending_governance_tasks: Vec<GovernanceTaskFact>,
+    pub agent_execution_confirmed: bool,
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 #[serde(deny_unknown_fields)]
 pub struct GetCallPolicy {
@@ -691,6 +740,10 @@ pub enum AppQuery {
     GetReconcilePlan(GetReconcilePlan),
     #[serde(rename = "get_removal_impact")]
     GetRemovalImpact(GetRemovalImpact),
+    #[serde(rename = "get_relationship_overview")]
+    GetRelationshipOverview(GetRelationshipOverview),
+    #[serde(rename = "get_relationship_removal_impact")]
+    GetRelationshipRemovalImpact(GetRelationshipRemovalImpact),
     #[serde(rename = "list_recovery_candidates")]
     ListRecoveryCandidates,
     #[serde(rename = "get_call_policy")]
@@ -790,6 +843,10 @@ pub enum AppQueryResult {
     ReconcilePlan(crate::ReconcilePlan),
     #[serde(rename = "removal_impact")]
     RemovalImpact(crate::RemovalImpact),
+    #[serde(rename = "relationship_overview")]
+    RelationshipOverview(RelationshipOverview),
+    #[serde(rename = "relationship_removal_impact")]
+    RelationshipRemovalImpact(crate::relationship::RemovalImpactFact),
     #[serde(rename = "recovery_candidates")]
     RecoveryCandidates(Vec<crate::RecoveryCandidate>),
     #[serde(rename = "skill_operations")]
