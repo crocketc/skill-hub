@@ -1946,12 +1946,11 @@ impl LocalApplicationFacade {
     //
     // The table is the durable history behind the operations page and the
     // recovery entry; the in-process prepared maps only carry "fetch at
-    // commit time" state. Journal writes are best-effort on purpose: a user
-    // mutation that already succeeded must never fail because its history
-    // row could not be written. The happy paths are covered by
-    // tests/facade_operation_journal.rs. Rows only ever contain the stable
-    // kind, the phase and a whitelisted error code — never skill content,
-    // credentials or raw error payloads.
+    // commit time" state. Legacy single-step journal helpers remain
+    // best-effort, but relationship migrations use persist_relation_operation
+    // and treat a post-filesystem checkpoint failure as a recovery event. Rows
+    // only ever contain the stable kind, the phase and a whitelisted error
+    // code — never skill content, credentials or raw error payloads.
     // ------------------------------------------------------------------
 
     /// Starts a single-step flow with a `planned` record.
