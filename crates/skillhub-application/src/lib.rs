@@ -4945,10 +4945,10 @@ impl ApplicationFacade for LocalApplicationFacade {
                 return self.prepare_relation_migration(request)
             }
             AppCommand::CommitRelationMigration(request) => {
-                return self.commit_relation_migration(request)
+                return self.commit_relation_migration(request).await
             }
             AppCommand::RollbackRelationMigration(request) => {
-                return self.rollback_relation_migration(request)
+                return self.rollback_relation_migration(request).await
             }
             AppCommand::CancelImport { prepared_import_id } => {
                 return self.cancel_import(prepared_import_id)

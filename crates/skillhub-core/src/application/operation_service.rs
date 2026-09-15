@@ -405,6 +405,10 @@ mod tests {
             Ok(())
         }
 
+        fn get_sync(&self, id: OperationId) -> AppResult<Option<OperationRecord>> {
+            Ok(self.records.lock().unwrap().get(&id.to_string()).cloned())
+        }
+
         async fn get(&self, id: OperationId) -> AppResult<Option<OperationRecord>> {
             Ok(self.records.lock().unwrap().get(&id.to_string()).cloned())
         }

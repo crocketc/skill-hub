@@ -72,6 +72,42 @@ impl<'a> OperationRepositorySqlite<'a> {
         }
         Ok(())
     }
+
+    pub fn get_sync(&self, operation_id: OperationId) -> AppResult<Option<OperationRecord>> {
+        let row = self
+            .database
+            .connection
+            .query_row(
+                "SELECT kind, phase, request_fingerprint, progress_json, inverse_json, error_code FROM operations WHERE operation_id=?1",
+                [operation_id.to_string()],
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, String>(2)?,
+                        row.get::<_, String>(3)?,
+                        row.get::<_, String>(4)?,
+                        row.get::<_, Option<String>>(5)?,
+                    ))
+                },
+            )
+            .optional()
+            .map_err(error)?;
+        row.map(
+            |(kind, phase, fingerprint, progress_json, inverse_json, error_code)| {
+                decode_record(
+                    operation_id,
+                    &kind,
+                    &phase,
+                    &fingerprint,
+                    &progress_json,
+                    &inverse_json,
+                    error_code.as_deref(),
+                )
+            },
+        )
+        .transpose()
+    }
 }
 
 #[derive(Serialize)]
@@ -123,40 +159,12 @@ impl OperationRepository for OperationRepositorySqlite<'_> {
         Ok(())
     }
 
+    fn get_sync(&self, operation_id: OperationId) -> AppResult<Option<OperationRecord>> {
+        self.get_sync(operation_id)
+    }
+
     async fn get(&self, operation_id: OperationId) -> AppResult<Option<OperationRecord>> {
-        let row = self
-            .database
-            .connection
-            .query_row(
-                "SELECT kind, phase, request_fingerprint, progress_json, inverse_json, error_code FROM operations WHERE operation_id=?1",
-                [operation_id.to_string()],
-                |row| {
-                    Ok((
-                        row.get::<_, String>(0)?,
-                        row.get::<_, String>(1)?,
-                        row.get::<_, String>(2)?,
-                        row.get::<_, String>(3)?,
-                        row.get::<_, String>(4)?,
-                        row.get::<_, Option<String>>(5)?,
-                    ))
-                },
-            )
-            .optional()
-            .map_err(error)?;
-        row.map(
-            |(kind, phase, fingerprint, progress_json, inverse_json, error_code)| {
-                decode_record(
-                    operation_id,
-                    &kind,
-                    &phase,
-                    &fingerprint,
-                    &progress_json,
-                    &inverse_json,
-                    error_code.as_deref(),
-                )
-            },
-        )
-        .transpose()
+        self.get_sync(operation_id)
     }
 
     async fn insert(&self, record: &OperationRecord) -> AppResult<()> {

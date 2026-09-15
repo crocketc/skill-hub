@@ -121,6 +121,7 @@ impl OperationRecord {
 pub trait OperationRepository {
     fn writer(&self) -> Arc<Mutex<()>>;
     fn checkpoint(&self, record: &OperationRecord) -> AppResult<()>;
+    fn get_sync(&self, operation_id: OperationId) -> AppResult<Option<OperationRecord>>;
     async fn get(&self, operation_id: OperationId) -> AppResult<Option<OperationRecord>>;
     async fn insert(&self, record: &OperationRecord) -> AppResult<()>;
     async fn update(&self, record: &OperationRecord) -> AppResult<()>;
