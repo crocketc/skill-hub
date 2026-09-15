@@ -508,6 +508,105 @@ async fn prepare_relation_migration_does_not_write_the_relationship_path() {
             .file_type(),
         metadata_before.file_type()
     );
+    // The volume probe must not leave a temporary entry in the user's
+    // directory either.
+    let parent = fixture.source.parent().expect("relation parent");
+    let leftovers = std::fs::read_dir(parent)
+        .expect("parent listing")
+        .filter(|entry| {
+            entry
+                .as_ref()
+                .map(|entry| entry.file_name().to_string_lossy().starts_with('.'))
+                .unwrap_or(false)
+        })
+        .count();
+    assert_eq!(leftovers, 0, "prepare must not leave probe entries behind");
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn prepare_refuses_conversion_when_the_relation_volume_cannot_host_links() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let fixture = fixture().await;
+    let parent = fixture
+        .source
+        .parent()
+        .expect("relation parent")
+        .to_path_buf();
+    let mut permissions = std::fs::metadata(&parent)
+        .expect("parent metadata")
+        .permissions();
+    permissions.set_mode(0o555);
+    std::fs::set_permissions(&parent, permissions.clone()).expect("read-only relation parent");
+
+    // Fail honestly when the platform ignores the read-only bit (for example
+    // a root test process) instead of reporting a fake pass.
+    let control = parent.join(".skillhub-link-probe-control");
+    let readonly_enforced = std::os::unix::fs::symlink(&fixture.central, &control).is_err();
+    let _ = std::fs::remove_file(&control);
+    if !readonly_enforced {
+        let mut restore = std::fs::metadata(&parent)
+            .expect("parent metadata")
+            .permissions();
+        restore.set_mode(0o755);
+        std::fs::set_permissions(&parent, restore).expect("restore relation parent");
+        eprintln!("skipping: this process can write read-only directories (root?)");
+        return;
+    }
+
+    let error = fixture
+        .facade
+        .execute(AppCommand::PrepareRelationMigration(
+            PrepareRelationMigration {
+                relation_id: fixture.relation_id.clone(),
+                target_mode: RelationMigrationTargetMode::ManagedLink,
+                backup_policy: RelationshipMigrationBackupPolicy::Required,
+                confirmation_token: Some("confirmed".into()),
+            },
+        ))
+        .await
+        .expect_err("prepare must refuse when no link kind can be created");
+    assert_eq!(error.code, ErrorCode::SymlinkNotSupported);
+
+    // The original copy entry is untouched and no backup exists yet.
+    assert!(fixture.source.is_dir());
+    assert!(!std::fs::symlink_metadata(&fixture.source)
+        .expect("source metadata")
+        .file_type()
+        .is_symlink());
+    assert_eq!(
+        std::fs::read_to_string(fixture.source.join("SKILL.md")).expect("body"),
+        BODY
+    );
+    assert!(!fixture
+        .library_root
+        .join(".skillhub")
+        .join("relationship-migrations")
+        .exists());
+
+    // The refusal is recorded as a conversion governance todo, not silently
+    // swallowed and not downgraded to a copy deployment.
+    let tasks = fixture
+        .database
+        .lock()
+        .expect("database lock")
+        .governance_task_repository()
+        .list_pending()
+        .expect("pending tasks");
+    assert!(
+        tasks.iter().any(
+            |task| task.kind == GovernanceTaskKind::ConvertCopyToManagedLink
+                && task.subject_id == fixture.relation_id
+        ),
+        "expected a copy-to-link governance todo, got {tasks:?}"
+    );
+
+    let mut restore = std::fs::metadata(&parent)
+        .expect("parent metadata")
+        .permissions();
+    restore.set_mode(0o755);
+    std::fs::set_permissions(&parent, restore).expect("restore relation parent");
 }
 
 #[tokio::test]

@@ -364,15 +364,6 @@ impl LocalApplicationFacade {
             }
 
             let permission_limited = relation_path_is_inaccessible(&relation.path);
-            let mut governance_tasks = calculate_removal_impact(
-                &request.relation_id,
-                &RemovalFacts::new(
-                    snapshot.deployments.clone(),
-                    snapshot.directory_capabilities.clone(),
-                )
-                .with_permission_limited(permission_limited),
-            )
-            .governance_tasks;
             let impact = calculate_removal_impact(
                 &request.relation_id,
                 &RemovalFacts::new(
@@ -381,10 +372,45 @@ impl LocalApplicationFacade {
                 )
                 .with_permission_limited(permission_limited),
             );
-            let shared_impact = matches!(
-                relation.relationship,
-                RelationshipType::SharedDirectoryRead | RelationshipType::SharedDirectoryReference
-            ) || !impact.other_consumers.is_empty();
+            // The technical link form is decided by platform capability at
+            // the exact volume that must host the replacement entry.  A
+            // conversion whose link cannot be created there fails up front
+            // and keeps the original entry; it never degrades to a copy.
+            let relation_parent = Path::new(&relation.path)
+                .parent()
+                .ok_or_else(|| ownership_mismatch(&relation.path))?;
+            let conversion_plan =
+                skillhub_core::deployment::plan_relation_conversion(
+                    &skillhub_core::deployment::RelationConversionFacts {
+                        relationship: relation.relationship,
+                        link_capabilities: DeploymentFilesystem::new()
+                            .probe_link_capabilities(relation_parent, &target_path),
+                        link_target_same_volume: skillhub_core::paths_share_volume(
+                            relation_parent,
+                            &target_path,
+                        ),
+                        other_shared_consumers: impact.other_consumers.len(),
+                    },
+                );
+            let conversion_plan = match conversion_plan {
+                Ok(plan) => plan,
+                Err(error) => {
+                    database
+                        .governance_task_repository()
+                        .create(&governance_task(
+                            &request.relation_id,
+                            conversion_todo_kind(relation.relationship),
+                            format!(
+                                "relationship conversion is unavailable: {}",
+                                error.code.as_str()
+                            ),
+                        ))?;
+                    return Err(error);
+                }
+            };
+            let mut governance_tasks = impact.governance_tasks;
+            let shared_impact = conversion_plan.requires_shared_impact_confirmation
+                || !impact.other_consumers.is_empty();
             if shared_impact
                 && request
                     .confirmation_token
@@ -423,7 +449,7 @@ impl LocalApplicationFacade {
                 relation,
                 current_content_fingerprint: current_fingerprint,
                 target_path: target_path.to_string_lossy().into_owned(),
-                target_mode: DeploymentMode::SymbolicLink,
+                target_mode: conversion_plan.mode,
                 backup_path: backup_path.to_string_lossy().into_owned(),
                 affected_paths: vec![relation_path, target_path.to_string_lossy().into_owned()],
                 rollback_available: true,
@@ -556,7 +582,14 @@ impl LocalApplicationFacade {
             return self.failed_relation_result(&journal, error);
         }
 
-        let capabilities = DeploymentFilesystem::new().available_capabilities();
+        // Re-probe at the relation volume: capability facts are only valid
+        // where the replacement entry will be created.
+        let relation_parent = Path::new(&relation.path)
+            .parent()
+            .ok_or_else(|| ownership_mismatch(&relation.path))?
+            .to_path_buf();
+        let capabilities =
+            DeploymentFilesystem::new().probe_link_capabilities(&relation_parent, &target_path);
         let mode = prepared.target_mode;
         if !mode.is_supported_by(&capabilities) {
             let code = match mode {
@@ -2001,6 +2034,19 @@ fn task_kind_code(kind: GovernanceTaskKind) -> &'static str {
         GovernanceTaskKind::ConvertSharedReferenceToManagedLink => "shared_to_link",
         GovernanceTaskKind::UnknownDirectoryRecognition => "unknown_directory",
         GovernanceTaskKind::OperationFailureRecovery => "recovery",
+    }
+}
+
+/// Governance todo kind matching the relation family a refused conversion
+/// belongs to, so the pending item names the decision the user actually has.
+fn conversion_todo_kind(relationship: RelationshipType) -> GovernanceTaskKind {
+    if matches!(
+        relationship,
+        RelationshipType::SharedDirectoryRead | RelationshipType::SharedDirectoryReference
+    ) {
+        GovernanceTaskKind::ConvertSharedReferenceToManagedLink
+    } else {
+        GovernanceTaskKind::ConvertCopyToManagedLink
     }
 }
 
