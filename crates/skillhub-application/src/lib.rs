@@ -6551,8 +6551,9 @@ impl LocalApplicationFacade {
             observed.match_state == skillhub_core::ObservedMatchState::ContentVerified
         });
         if affected_agents.is_empty() {
-            // 未登记目录节点时，归属证据来自观察行的 Agent 形态；仍无
-            // 证据则保持为空，不猜测。
+            // 目录能力未给出任何 Agent 时（未登记节点或节点无能力
+            // 记录），归属证据回退到观察行的 Agent 形态；仍无证据则
+            // 保持为空，不猜测。
             affected_agents = observed_rows
                 .iter()
                 .map(|observed| observed.client_id.clone())
