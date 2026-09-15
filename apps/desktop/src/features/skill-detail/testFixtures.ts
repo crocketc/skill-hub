@@ -1,4 +1,6 @@
 import type {
+  AnalyzeConflictScope,
+  ConflictAnalysis,
   RelationshipOverview,
   RemovalImpactFact,
   UpdateDecision,
@@ -48,10 +50,14 @@ export interface MockSkillDetailCalls {
   metadataPatches: Array<{ patch: SkillMetadataPatch; skillId: string }>;
   trials: Array<{ due: string | null; skillId: string }>;
   analyzedDuplicateSkills: string[];
+  /** Task 8：Skill 维度冲突分析调用记录（含 scope）。 */
+  analyzedConflictScopes: AnalyzeConflictScope[];
 }
 
 export interface MockSkillDetailOptions {
   adjacent?: AdjacentSkillContext | null;
+  /** Task 8：AI 可用性（缺省 true，与导入向导 mock 行为一致）。 */
+  aiAvailable?: boolean;
   sourceUpdateResult?: UpstreamCheckResult;
   deferredRollbackImpact?: boolean;
   failMetadataSave?: boolean;
@@ -326,6 +332,7 @@ export function createMockSkillDetailFacade(
     metadataPatches: [],
     trials: [],
     analyzedDuplicateSkills: [],
+    analyzedConflictScopes: [],
   };
   let metadata = fixture.metadata;
   let summary = fixture.summary;
@@ -529,6 +536,21 @@ export function createMockSkillDetailFacade(
         ],
         failureCode: null,
         source: "llm",
+      };
+    },
+    // Task 8：默认 mock 供应商已配置（与导入向导 mock 的历史行为一致）。
+    async isAiAvailable() {
+      return options.aiAvailable ?? true;
+    },
+    async analyzeConflicts(scope): Promise<ConflictAnalysis> {
+      calls.analyzedConflictScopes.push(scope);
+      return {
+        scope,
+        input_fingerprint: "sha256:mock",
+        skipped_decided_cases: 0,
+        source: "llm",
+        failure_code: null,
+        cases: [],
       };
     },
   };

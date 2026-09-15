@@ -1708,7 +1708,8 @@
       "candidates": "Candidates",
       "locallyModified": "Locally modified",
       "noCandidates": "No semantic candidates were found by the deterministic preselection.",
-      "confirmationNote": "Results are advisory only; merging, deleting or archiving always requires your separate confirmation and is never done automatically."
+      "confirmationNote": "Results are advisory only; merging, deleting or archiving always requires your separate confirmation and is never done automatically.",
+      "aiUnavailable": "No usable LLM provider is configured; AI actions are disabled and deterministic candidates remain available."
     },
     "zones": {
       "identity": "Identity",
@@ -1722,6 +1723,16 @@
       "source": "Source",
       "library": "Central library",
       "deployments": "Deployment targets"
+    },
+    "conflicts": {
+      "heading": "Related conflicts (optional AI analysis)",
+      "run": "Analyze related conflicts",
+      "scopeNote": "Scope: conflict cases related to this skill.",
+      "aiUnavailable": "No usable LLM provider is configured; AI actions are disabled and deterministic conflict grouping remains available.",
+      "empty": "This skill has no related conflict cases.",
+      "caseHeading": "Conflict case {{id}}",
+      "failureReason": "Conflict analysis failed: {{reason}}",
+      "deterministicNote": "Deterministic conflict grouping is unaffected."
     }
   },
   "deployment": {
@@ -2108,6 +2119,33 @@
       "loadError": "Unable to load the removal impact.",
       "hide": "Hide removal impact",
       "consumerRecognition": "Recognition: {{recognition}}"
+    },
+    "conflictAnalysis": {
+      "heading": "Conflict case AI analysis (optional)",
+      "description": "The AI only provides short conclusions and suggestions; the deterministic baseline always comes first.",
+      "baselineLabel": "Deterministic baseline:",
+      "runAll": "Analyze all undecided conflicts",
+      "runCategory": "Analyze by category: {{classification}}",
+      "runCase": "AI analysis",
+      "recommendedAction": "Suggested action: {{action}}",
+      "recommendedKeep": "Suggested keep: {{member}}",
+      "keyEvidence": "Key evidence",
+      "uncertainties": "Uncertainties",
+      "confidence": "Confidence: {{value}}%",
+      "advisoryNote": "AI output is advisory only; nothing is merged, deleted or decided for you.",
+      "sourceLlm": "Source: AI short conclusions (with deterministic baseline)",
+      "sourceDeterministic": "Source: deterministic baseline only (the AI layer returned nothing)",
+      "failureReason": "Conflict analysis failed: {{reason}}",
+      "deterministicNote": "Deterministic conflict grouping is unaffected.",
+      "failureUnknown": "Unknown AI failure ({{code}}).",
+      "empty": "No conflict cases match this scope.",
+      "action": {
+        "same_skill_version": "treat as versions of the same skill",
+        "distinct_skill": "treat as distinct skills",
+        "keep_uncertain": "keep undecided and tracked as a todo"
+      },
+      "skippedDecided_one": "{{count}} conflict case already has a user decision and was not analyzed.",
+      "skippedDecided_other": "{{count}} conflict cases already have a user decision and were not analyzed."
     }
   },
   "operations": {

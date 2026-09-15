@@ -1,4 +1,4 @@
-import type { AppliedSourceUpdate, RelationshipOverview, RemovalImpactFact, UpdateDecision, UpstreamCheckResult } from "../../api/bindings";
+import type { AppliedSourceUpdate, AnalyzeConflictScope, ConflictAnalysis, RelationshipOverview, RemovalImpactFact, UpdateDecision, UpstreamCheckResult } from "../../api/bindings";
 import type {
   BatchAction,
   CheckState,
@@ -269,6 +269,10 @@ export interface SkillDetailFacade {
   relinkSource(skillId: string, sourceInput: string): Promise<{ messageCode: string }>;
   /** Optional AI layer over deterministic duplicate candidates (US-018). */
   analyzeSemanticDuplicates(skillId: string): Promise<SemanticDuplicateReport>;
+  /** Task 8：AI 可用性真实信号——已配置并启用的供应商存在即为 true。 */
+  isAiAvailable(): Promise<boolean>;
+  /** Task 8：Skill 维度的可选冲突分析（advisory，不改变用户裁决）。 */
+  analyzeConflicts(scope: AnalyzeConflictScope): Promise<ConflictAnalysis>;
 }
 
 const skillKey = (skillId: string) => ["skill-detail", skillId] as const;
@@ -336,6 +340,8 @@ export const unavailableSkillDetailFacade: SkillDetailFacade = {
   applySourceUpdate: unavailable,
   relinkSource: unavailable,
   analyzeSemanticDuplicates: unavailable,
+  isAiAvailable: async () => false,
+  analyzeConflicts: unavailable,
   saveMetadata: unavailable,
   setTrial: unavailable,
 };
