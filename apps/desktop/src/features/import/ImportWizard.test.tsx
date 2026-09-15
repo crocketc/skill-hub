@@ -1371,4 +1371,95 @@ describe("AI import pre-check", () => {
       screen.getByText("当前环境未提供 AI 预检能力，可直接继续导入。"),
     ).toBeVisible();
   });
+
+  it("wires the governance AI notice to the real provider state", async () => {
+    const user = userEvent.setup();
+    const facade = createMockImportFacade({ scenario: "safe-local" });
+    const originalAnalyze = facade.analyzeConflicts.bind(facade);
+    facade.runAiPreChecks = vi.fn();
+    // Task 8 遗留修复：面板 aiAvailable 接真实供应商状态，而不是
+    // Boolean(facade.runAiPreChecks)。未配置供应商 → 不可用提示必须可达。
+    facade.listLlmProviders = vi.fn(async () => []);
+    facade.analyzeConflicts = vi.fn(async (candidates, onProgress) => ({
+      ...(await originalAnalyze(candidates, onProgress)),
+      governanceGroups: [{
+        group_id: "same-group",
+        classification: "unrecognized_source",
+        default_action: "create_todo",
+        available_actions: ["preserve_original", "create_todo"],
+        members: [{
+          member_id: "safe-pdf",
+          display_name: "PDF",
+          source_path: "C:/skills/safe-pdf",
+          affected_agents: [],
+        }],
+      } satisfies ImportGovernanceGroup],
+    }));
+    await renderWizard(facade);
+
+    await user.type(screen.getByLabelText("来源"), "C:/skills");
+    await user.click(screen.getByRole("button", { name: "解析来源" }));
+    await user.click(await screen.findByRole("button", { name: "继续选择候选" }));
+    await user.click(screen.getByRole("checkbox", { name: /PDF/ }));
+    await user.click(screen.getByRole("button", { name: "分析冲突" }));
+    expect(await screen.findByRole("heading", { name: "确认导入后的关系处理" })).toBeVisible();
+
+    expect(
+      screen.getByText("AI 建议未配置；已保留确定性关系判断。"),
+    ).toBeVisible();
+    expect(facade.listLlmProviders).toHaveBeenCalled();
+
+    await user.click(screen.getByRole("radio", { name: "创建待办" }));
+    await user.click(screen.getByRole("button", { name: "确认关系处理" }));
+    expect(await screen.findByRole("button", { name: "提交导入" })).toBeVisible();
+    // 预检入口同样诚实：无供应商时不出现运行按钮，并给出原因说明。
+    expect(screen.queryByRole("button", { name: "运行 AI 预检" })).not.toBeInTheDocument();
+    expect(
+      screen.getByText("尚未配置可用的 LLM 供应商，无法运行 AI 预检；可直接继续导入。"),
+    ).toBeVisible();
+  });
+
+  it("keeps the AI entries available when a usable provider is configured", async () => {
+    const user = userEvent.setup();
+    const facade = createMockImportFacade({ scenario: "safe-local" });
+    const originalAnalyze = facade.analyzeConflicts.bind(facade);
+    facade.runAiPreChecks = vi.fn();
+    facade.analyzeConflicts = vi.fn(async (candidates, onProgress) => ({
+      ...(await originalAnalyze(candidates, onProgress)),
+      governanceGroups: [{
+        group_id: "same-group",
+        classification: "unrecognized_source",
+        default_action: "create_todo",
+        available_actions: ["preserve_original", "create_todo"],
+        members: [{
+          member_id: "safe-pdf",
+          display_name: "PDF",
+          source_path: "C:/skills/safe-pdf",
+          affected_agents: [],
+        }],
+      } satisfies ImportGovernanceGroup],
+    }));
+    await renderWizard(facade);
+
+    await user.type(screen.getByLabelText("来源"), "C:/skills");
+    await user.click(screen.getByRole("button", { name: "解析来源" }));
+    await user.click(await screen.findByRole("button", { name: "继续选择候选" }));
+    await user.click(screen.getByRole("checkbox", { name: /PDF/ }));
+    await user.click(screen.getByRole("button", { name: "分析冲突" }));
+    expect(await screen.findByRole("heading", { name: "确认导入后的关系处理" })).toBeVisible();
+
+    // 默认 mock 供应商已配置并启用：治理区不再显示不可用提示。
+    expect(
+      screen.queryByText("AI 建议未配置；已保留确定性关系判断。"),
+    ).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("radio", { name: "创建待办" }));
+    await user.click(screen.getByRole("button", { name: "确认关系处理" }));
+    expect(
+      await screen.findByRole("button", { name: "运行 AI 预检" }),
+    ).toBeVisible();
+    expect(
+      screen.queryByText("尚未配置可用的 LLM 供应商，无法运行 AI 预检；可直接继续导入。"),
+    ).not.toBeInTheDocument();
+  });
 });

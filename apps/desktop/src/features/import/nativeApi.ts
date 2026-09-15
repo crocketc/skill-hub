@@ -438,4 +438,14 @@ export const nativeImportFacade: ImportFacade = {
       })),
     };
   },
+
+  async listLlmProviders() {
+    // Task 8：AI 可用性真实信号。与设置页共用同一查询；是否“可用”
+    // 由 usableLlmProviderLabel 判定（已启用 + 本地或凭据已配置）。
+    const result = await queryApplication({ type: "list_llm_providers" });
+    if (result.type !== "llm_providers") {
+      throw new Error("list_llm_providers returned an unexpected native result.");
+    }
+    return result.payload;
+  },
 };

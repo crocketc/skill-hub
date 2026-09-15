@@ -4,6 +4,7 @@ import { describeNativeError } from "../../api/nativeErrors";
 import { useAppNotifications } from "../../ui/notifications";
 import { Button } from "../../ui/Button";
 import { DataState } from "../../ui/DataState";
+import { usableLlmProviderLabel } from "../settings/llmApi";
 import { ConflictResolution } from "./ConflictResolution";
 import {
   CandidateSelection,
@@ -455,6 +456,23 @@ export function ImportWizard({
   const [aiPreCheckRunning, setAiPreCheckRunning] = useState(false);
   const [aiPreCheckError, setAiPreCheckError] = useState<string | null>(null);
   const [aiPreCheckSkipped, setAiPreCheckSkipped] = useState(false);
+  // Task 8：AI 可用性接真实信号——已配置并启用的供应商存在即可用。
+  // null 表示查询尚未返回（此时不显示按钮，也不伪造不可用提示）。
+  const [aiAvailable, setAiAvailable] = useState<boolean | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    facade
+      .listLlmProviders()
+      .then((providers) => {
+        if (!cancelled) setAiAvailable(usableLlmProviderLabel(providers) !== "");
+      })
+      .catch(() => {
+        if (!cancelled) setAiAvailable(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [facade]);
 
   // M-29：已选来源同步进会话存储（标准变体）；副作用集中在 effect，避免渲染期写入。
   useEffect(() => {
@@ -1139,7 +1157,7 @@ type: "failed",
 
       {state.phase === "governance" && state.plan ? (
         <RelationshipGovernancePanel
-          aiAvailable={Boolean(facade.runAiPreChecks)}
+          aiAvailable={aiAvailable === true}
           decision={state.governanceDecision}
           groups={state.plan.governanceGroups ?? []}
           onDecision={(decision) => dispatch({ type: "governance_decision", decision })}
@@ -1159,7 +1177,7 @@ type: "failed",
             <p>
               {t("importWorkflow.aiPreCheck.scope", { count: state.plan.candidates.length })}
             </p>
-            {facade.runAiPreChecks ? (
+            {facade.runAiPreChecks && aiAvailable ? (
               <div className="sh-button-row">
                 <Button
                   disabled={aiPreCheckRunning}
@@ -1176,7 +1194,11 @@ type: "failed",
                 </Button>
               </div>
             ) : (
-              <p>{t("importWorkflow.aiPreCheck.unavailable")}</p>
+              <p>
+                {aiAvailable
+                  ? t("importWorkflow.aiPreCheck.unavailable")
+                  : t("importWorkflow.aiPreCheck.providerMissing")}
+              </p>
             )}
             {aiPreCheckSkipped ? <p role="status">{t("importWorkflow.aiPreCheck.skippedNote")}</p> : null}
             {aiPreCheckError ? (

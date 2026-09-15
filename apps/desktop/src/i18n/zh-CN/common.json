@@ -406,7 +406,8 @@
         "running": "检查中",
         "passed": "通过",
         "failed": "失败"
-      }
+      },
+      "providerMissing": "尚未配置可用的 LLM 供应商，无法运行 AI 预检；可直接继续导入。"
     },
     "sources": {
       "heading": "已选来源",

@@ -406,7 +406,8 @@
         "running": "Checking",
         "passed": "Passed",
         "failed": "Failed"
-      }
+      },
+      "providerMissing": "No usable LLM provider is configured, so the AI pre-check cannot run; you can continue importing."
     },
     "sources": {
       "heading": "Selected sources",

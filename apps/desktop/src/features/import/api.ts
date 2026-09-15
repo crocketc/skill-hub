@@ -160,6 +160,11 @@ export interface ImportFacade {
    * the deterministic import gates; failures are per object. Absent keeps
    * the wizard importable without the AI step entirely. */
   runAiPreChecks?(plan: ImportPlan): Promise<ImportAiPreCheckReport>;
+  /** Task 8：AI 可用性的真实信号——已配置并启用的供应商存在即可用。
+   * 面板的 aiAvailable 由此派生，不再用能力函数存在性冒充。 */
+  listLlmProviders(): Promise<
+    import("../../api/bindings").LlmProviderView[]
+  >;
 }
 
 export class ImportUnavailableError extends Error {
@@ -223,8 +228,29 @@ export const unavailableImportFacade: ImportFacade = {
   analyzeConflicts: unavailable,
   cancel: () => Promise.resolve(),
   commitImport: unavailable,
+  listLlmProviders: unavailable,
   parseSource: parseSourceInput,
 };
+
+/** Task 8：默认 mock 环境带一个已启用、凭据已配置的供应商视图，
+ * 与“能力函数在场即可用”的历史行为保持一致；测试可覆写。 */
+export function usableProviderViewFixture(): import("../../api/bindings").LlmProviderView {
+  return {
+    config: {
+      id: "mock-provider",
+      label: "Mock Provider",
+      protocol: "open_ai_compatible",
+      deployment: "local",
+      endpoint: "http://127.0.0.1:11434/v1",
+      model: "mock-model",
+      credential_ref: null,
+      enabled: true,
+    },
+    credential_configured: true,
+    is_default: true,
+    last_connection_test: null,
+  };
+}
 
 export type MockImportScenario =
   | "safe-local"
@@ -401,6 +427,9 @@ export function createMockImportFacade(
       cancelReject = undefined;
       calls.cancelled += 1;
       return Promise.resolve();
+    },
+    async listLlmProviders() {
+      return [usableProviderViewFixture()];
     },
     parseSource(input) {
       calls.parsedInputs.push(input);
