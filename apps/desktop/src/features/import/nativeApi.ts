@@ -6,8 +6,10 @@ import {
   type ImportAnalysis,
   type ImportCandidate as NativeImportCandidate,
   type ImportDecision,
+  type ImportGovernanceDecision,
+  type ImportGovernanceGroup,
 } from "../../api/bindings";
-import { keyedMessage } from "../../api/nativeErrors";
+import { keyedMessage, nativeErrorCode, nativeErrorParams } from "../../api/nativeErrors";
 import {
   ImportCancelledError,
   parseSourceInput,
@@ -134,16 +136,18 @@ function resultForSummary(
   result: Extract<AppCommandResult, { type: "import_summary" }>["payload"],
 ): ImportResult {
   const item = result.items[0];
-  if (action === "skip") {
-    return { action, candidateId: candidate.id, message: "importWorkflow.commitMessages.skipped", status: "skipped" };
-  }
+  const reasonCode = item?.reason_code ?? undefined;
   return {
     action,
     candidateId: candidate.id,
-    message: item?.skill_id
-      ? "importWorkflow.commitMessages.imported"
-      : "importWorkflow.commitMessages.noDetail",
-    status: result.committed ? "succeeded" : "failed",
+    message: keyedMessage(reasonCode ?? null, undefined)
+      ?? (item?.skill_id
+        ? "importWorkflow.commitMessages.imported"
+        : "importWorkflow.commitMessages.noDetail"),
+    status: item?.status ?? (result.committed ? "succeeded" : "failed"),
+    reasonCode,
+    originalPreserved: item?.original_preserved ?? true,
+    governanceTasks: item?.governance_tasks,
     provenance: item?.provenance
       ? {
           agentClientId: item.provenance.agent_client_id,
@@ -154,8 +158,42 @@ function resultForSummary(
   };
 }
 
+function mergeGovernanceGroups(groups: ImportGovernanceGroup[]): ImportGovernanceGroup[] {
+  const merged = new Map<string, ImportGovernanceGroup>();
+  for (const group of groups) {
+    const current = merged.get(group.group_id);
+    if (current) {
+      current.members.push(...group.members);
+    } else {
+      merged.set(group.group_id, { ...group, members: [...group.members] });
+    }
+  }
+  return [...merged.values()];
+}
+
+function decisionForPrepared(
+  decision: ImportGovernanceDecision,
+  groups: ImportGovernanceGroup[],
+): ImportGovernanceDecision {
+  const memberIds = new Set(groups.flatMap((group) => group.members.map((member) => member.member_id)));
+  return {
+    group_actions: Object.fromEntries(groups.flatMap((group) => {
+      const action = decision.group_actions[group.group_id];
+      return action ? [[group.group_id, action]] : [];
+    })),
+    item_overrides: Object.fromEntries(Object.entries(decision.item_overrides)
+      .filter(([memberId]) => memberIds.has(memberId))),
+  };
+}
+
 function importErrorMessage(error: unknown): string {
-  if (error instanceof Error) return error.message || "import.import_failed";
+  const code = nativeErrorCode(error);
+  const params = nativeErrorParams(error);
+  const reason = typeof params.reason === "string" ? params.reason : undefined;
+  const keyed = keyedMessage(code, reason);
+  if (keyed) return keyed;
+  if (code) return "importWorkflow.errors.unknown";
+  if (error instanceof Error) return error.message || "importWorkflow.errors.unknown";
   if (typeof error === "string") {
     try {
       return importErrorMessage(JSON.parse(error) as unknown);
@@ -165,21 +203,10 @@ function importErrorMessage(error: unknown): string {
   }
   if (typeof error === "object" && error !== null) {
     const record = error as { code?: unknown; message?: unknown; params?: unknown };
-    const code = typeof record.code === "string" ? record.code : null;
     const message = typeof record.message === "string" ? record.message : null;
-    if (code) {
-      // 结构化错误码优先映射为 i18n key，由 ImportSummary 的 t() 渲染成
-      // 可读文案；未知码兜底为通用可读文案——裸码不允许直达用户界面，
-      // 码本身保留在操作记录（error_code）里供诊断。
-      const reason = typeof record.params === "object" && record.params !== null
-        && typeof (record.params as { reason?: unknown }).reason === "string"
-        ? (record.params as { reason: string }).reason
-        : undefined;
-      return keyedMessage(code, reason) ?? "importWorkflow.errors.unknown";
-    }
     if (message) return message;
   }
-  return "import.import_failed";
+  return "importWorkflow.errors.unknown";
 }
 
 function queryImportCandidates(result: AppQueryResult): NativeImportCandidate[] {
@@ -304,10 +331,16 @@ export const nativeImportFacade: ImportFacade = {
         });
       }
     }
-    return { candidates, conflicts };
+    return {
+      candidates,
+      conflicts,
+      governanceGroups: mergeGovernanceGroups(
+        analyses.flatMap(({ analysis }) => analysis.governance_groups ?? []),
+      ),
+    };
   },
 
-  async commitImport(plan, actions, onProgress) {
+  async commitImport(plan, actions, onProgress, governanceDecision = { group_actions: {}, item_overrides: {} }) {
     const results: ImportResult[] = [];
     for (const [index, candidate] of plan.candidates.entries()) {
       onProgress?.({
@@ -333,16 +366,23 @@ export const nativeImportFacade: ImportFacade = {
           type: "commit_import",
           payload: {
             decision,
+            governance_decision: decisionForPrepared(governanceDecision, prepared.analysis.governance_groups ?? []),
             prepared_import_id: prepared.id,
           },
         }));
         results.push(resultForSummary(candidate, action, summary));
       } catch (error) {
+        const reasonCode = nativeErrorCode(error) ?? "import.unknown_failure";
         results.push({
           action,
           candidateId: candidate.id,
           message: importErrorMessage(error),
           status: "failed",
+          reasonCode,
+          // prepare/commit failures never delete the source.  A failed
+          // transaction also cleans up the managed copy before returning.
+          originalPreserved: true,
+          governanceTasks: [],
         });
       }
       onProgress?.({

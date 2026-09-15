@@ -6,6 +6,7 @@ use tokio::sync::Mutex;
 use crate::import::{
     analyze_import, ExistingSkillRecord, ImportAnalysis, ImportCandidate, ImportDecision,
 };
+use crate::relationship::GovernanceTaskFact;
 use crate::{AppError, AppResult, ErrorCode, OperationId, RecoveryAction, Severity, SkillId};
 
 /// Side effects required by a committed import. The native adapter owns the
@@ -33,10 +34,30 @@ pub struct PreparedImport {
 
 #[derive(Clone, Debug, serde::Deserialize, Eq, PartialEq, serde::Serialize, specta::Type)]
 #[serde(deny_unknown_fields)]
+#[serde(rename_all = "snake_case")]
+pub enum ImportItemStatus {
+    Succeeded,
+    Skipped,
+    Failed,
+    Todo,
+}
+
+#[derive(Clone, Debug, serde::Deserialize, Eq, PartialEq, serde::Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
 pub struct ImportItemResult {
     pub skill_id: Option<SkillId>,
     pub decision: ImportDecision,
+    pub status: ImportItemStatus,
     pub original_preserved: bool,
+    /// Stable machine-readable reason for a skipped or failed item.  Display
+    /// copy belongs to the client; callers must not parse a prose message.
+    #[serde(default)]
+    pub reason_code: Option<String>,
+    /// Persisted relationship-governance work created by this import item.
+    /// Each fact has a stable `task_id` and is queryable through the existing
+    /// relationship overview API.
+    #[serde(default)]
+    pub governance_tasks: Vec<GovernanceTaskFact>,
     /// OPT-20260914-08：导入即存证。提交成功时携带本次导入落库的溯源
     /// 记录（来源/Agent 形态/原始路径/导入时间/内容指纹/所有权状态），
     /// 供导入摘要展示；复用/跳过等未新建存证的分支为 None。
@@ -83,10 +104,16 @@ where
         candidate: ImportCandidate,
         candidate_tree_hash: Option<&str>,
         existing: &[ExistingSkillRecord],
+        source_facts: &crate::import::ImportSourceFacts,
     ) -> AppResult<PreparedImport> {
         let prepared = PreparedImport {
             id: OperationId::new(),
-            analysis: analyze_import(candidate.clone(), candidate_tree_hash, existing),
+            analysis: analyze_import(
+                candidate.clone(),
+                candidate_tree_hash,
+                existing,
+                source_facts,
+            ),
             candidate,
         };
         self.prepared
@@ -135,8 +162,9 @@ where
             ImportDecision::TakeOverAfterVerify => {
                 let skill_id = self.backend.copy_into_library(&prepared.candidate).await?;
                 self.backend.verify_managed_copy(skill_id).await?;
-                self.backend.remove_original(&prepared.candidate).await?;
-                (Some(skill_id), false)
+                // Import only creates a managed copy.  Original-source removal
+                // is a separate, explicitly prepared governance operation.
+                (Some(skill_id), true)
             }
             ImportDecision::Skip => (None, true),
         };
@@ -147,7 +175,14 @@ where
             items: vec![ImportItemResult {
                 skill_id,
                 decision,
+                status: if decision == ImportDecision::Skip {
+                    ImportItemStatus::Skipped
+                } else {
+                    ImportItemStatus::Succeeded
+                },
                 original_preserved,
+                reason_code: None,
+                governance_tasks: Vec::new(),
                 provenance: None,
             }],
             committed: true,

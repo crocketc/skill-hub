@@ -8,12 +8,14 @@ import type { ImportResult } from "./api";
 export interface ImportSummaryProps {
   results: ImportResult[];
   unavailable?: boolean;
+  onOpenGovernanceTask?: (task: NonNullable<ImportResult["governanceTasks"]>[number]) => void;
 }
 
 /** 导入结果摘要：统计、逐项结果与明细展开；重试/打开库在向导底部操作区。 */
 export function ImportSummary({
   results,
   unavailable = false,
+  onOpenGovernanceTask,
 }: ImportSummaryProps) {
   const { t } = useTranslation();
   const [showCompletedDetails, setShowCompletedDetails] = useState(false);
@@ -30,13 +32,16 @@ export function ImportSummary({
     );
   }
 
-  const hasFailure = results.some((result) => result.status === "failed");
+  const hasAttention = results.some((result) => result.status === "failed" || result.status === "todo");
   const succeeded = results.filter((result) => result.status === "succeeded").length;
   const skipped = results.filter((result) => result.status === "skipped").length;
   const failed = results.filter((result) => result.status === "failed").length;
+  const todo = results.filter((result) => result.status === "todo").length;
   const visibleResults = showCompletedDetails
     ? results
-    : results.filter((result) => result.status === "failed");
+    : results.filter((result) => result.status === "failed" || result.status === "todo");
+  const governanceTasks = results.flatMap((result) => result.governanceTasks ?? []);
+  const originalsPreserved = results.some((result) => result.originalPreserved);
 
   return (
     <section className="sh-import-summary" aria-labelledby="import-summary-title">
@@ -44,7 +49,7 @@ export function ImportSummary({
         <div>
           <p className="sh-import-summary__eyebrow">{t("importWorkflow.summary.eyebrow")}</p>
           <h2 id="import-summary-title">{t("importWorkflow.summary.title")}</h2>
-          <p>{t(hasFailure ? "importWorkflow.summary.partial" : "importWorkflow.summary.complete")}</p>
+          <p>{t(hasAttention ? "importWorkflow.summary.partial" : "importWorkflow.summary.complete")}</p>
         </div>
       </div>
 
@@ -52,7 +57,24 @@ export function ImportSummary({
         <span>{t("importWorkflow.summary.counts.succeeded", { count: succeeded })}</span>
         <span>{t("importWorkflow.summary.counts.skipped", { count: skipped })}</span>
         <span>{t("importWorkflow.summary.counts.failed", { count: failed })}</span>
+        <span>{t("importWorkflow.summary.counts.todo", { count: todo })}</span>
       </div>
+
+      {originalsPreserved ? (
+        <p className="sh-import-summary__preservation">
+          {t("importWorkflow.summary.originalsPreserved")}
+        </p>
+      ) : null}
+
+      {governanceTasks.length > 0 && onOpenGovernanceTask ? (
+        <div aria-label={t("importWorkflow.summary.governanceTasksLabel")}>
+          {governanceTasks.map((task) => (
+            <Button key={task.task_id} onClick={() => onOpenGovernanceTask(task)} variant="ghost">
+              {t("importWorkflow.summary.openGovernanceTask", { taskId: task.task_id })}
+            </Button>
+          ))}
+        </div>
+      ) : null}
 
       <ul className="sh-import-summary__list">
         {visibleResults.map((result) => (
@@ -61,7 +83,7 @@ export function ImportSummary({
               <strong>{result.candidateId}</strong>
               <span>{t(`importWorkflow.summary.actions.${result.action}`)}</span>
             </div>
-            <StatusBadge tone={result.status === "succeeded" ? "success" : result.status === "skipped" ? "neutral" : "danger"}>
+            <StatusBadge tone={result.status === "succeeded" ? "success" : result.status === "skipped" ? "neutral" : result.status === "todo" ? "warning" : "danger"}>
               {t(`importWorkflow.summary.status.${result.status}`)}
             </StatusBadge>
             <p>{t(result.message, { defaultValue: result.message })}</p>

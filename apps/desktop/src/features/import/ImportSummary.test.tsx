@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { I18nextProvider } from "react-i18next";
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
 import { createSkillHubI18n } from "../../i18n";
 import type { ImportResult } from "./api";
 import { ImportSummary } from "./ImportSummary";
@@ -51,6 +51,50 @@ it("translates the native loop's structured failure codes into readable copy", a
 
   expect(screen.getByText("导入未完成：本机服务在处理该候选项时失败。")).toBeVisible();
   expect(screen.queryByText("import.import_failed")).not.toBeInTheDocument();
+});
+
+it("keeps the structured reason in data without rendering it as user copy", async () => {
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  render(
+    <I18nextProvider i18n={i18n}>
+      <ImportSummary
+        results={[{
+          candidateId: "c",
+          action: "copy",
+          status: "failed",
+          message: "importWorkflow.errors.unknown",
+          reasonCode: "import.same_runtime_name_conflict",
+          originalPreserved: true,
+          governanceTasks: [],
+        }]}
+      />
+    </I18nextProvider>,
+  );
+
+  expect(screen.getByText("导入步骤未能完成。")) .toBeVisible();
+  expect(screen.queryByText("import.same_runtime_name_conflict")).not.toBeInTheDocument();
+});
+
+it("shows todo outcomes as actionable results instead of hiding them as success", async () => {
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  const todo = {
+    candidateId: "c",
+    action: "copy",
+    status: "todo",
+    message: "importWorkflow.commitMessages.imported",
+    originalPreserved: true,
+    reasonCode: "import.governance_todo_created",
+    governanceTasks: [],
+  } as unknown as ImportResult;
+  render(
+    <I18nextProvider i18n={i18n}>
+      <ImportSummary results={[todo]} />
+    </I18nextProvider>,
+  );
+
+  expect(screen.getByText("待处理 1")).toBeVisible();
+  expect(screen.getByText("待处理")).toBeVisible();
+  expect(screen.getByRole("listitem")).toBeVisible();
 });
 
 it("shows the unavailable boundary without fabricating import results", async () => {
@@ -104,4 +148,81 @@ it("renders the import provenance line only when evidence was recorded", async (
   expect(screen.getAllByTestId("import-provenance")).toHaveLength(2);
   expect(screen.getByText(/已从 \/agents\/trae\/skills\/demo 导入（trae.code）/)).toBeVisible();
   expect(screen.getByText(/来源未识别/)).toBeVisible();
+});
+
+it("keeps the original copy and exposes the relationship-governance todo after a partial import", async () => {
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  render(
+    <I18nextProvider i18n={i18n}>
+      <ImportSummary
+        results={[
+          {
+            candidateId: "shared-pdf",
+            action: "copy",
+            status: "succeeded",
+            message: "已导入",
+            governanceTasks: [{
+              task_id: "import-governance:shared-pdf",
+              kind: "confirm_shared_directory_impact",
+              subject_id: "shared-pdf",
+              detail: "确认共享目录影响",
+              resolved: false,
+              created_at: "1",
+              resolved_at: null,
+            }],
+            originalPreserved: true,
+          },
+          {
+            candidateId: "readonly-notes",
+            action: "copy",
+            status: "failed",
+            message: "写入失败",
+            governanceTasks: [{
+              task_id: "import-governance:readonly-notes",
+              kind: "unknown_directory_recognition",
+              subject_id: "readonly-notes",
+              detail: "检查权限后重试",
+              resolved: false,
+              created_at: "1",
+              resolved_at: null,
+            }],
+            originalPreserved: true,
+          },
+        ]}
+      />
+    </I18nextProvider>,
+  );
+
+  expect(screen.getByText("原始副本保持不变；如需清理，请在关系治理中单独确认并保留回退路径。")).toBeVisible();
+  expect(screen.queryByRole("link", { name: /关系治理待办/ })).not.toBeInTheDocument();
+});
+
+it("renders the added import summary copy in the active English locale", async () => {
+  const i18n = await createSkillHubI18n(["en-US"]);
+  render(
+    <I18nextProvider i18n={i18n}>
+      <ImportSummary
+        results={[{
+          candidateId: "shared-pdf",
+          action: "copy",
+          status: "succeeded",
+          message: "importWorkflow.commitMessages.imported",
+          originalPreserved: true,
+          governanceTasks: [{
+            task_id: "governance-task-1",
+            kind: "confirm_shared_directory_impact",
+            subject_id: "shared-pdf",
+            detail: "Shared directory impact requires review",
+            resolved: false,
+            created_at: "1",
+            resolved_at: null,
+          }],
+        }]}
+        onOpenGovernanceTask={vi.fn()}
+      />
+    </I18nextProvider>,
+  );
+
+  expect(screen.getByText("Original copies remain unchanged; cleanup is a separate confirmed action with a recovery path.")).toBeVisible();
+  expect(screen.getByRole("button", { name: "View governance task governance-task-1" })).toBeVisible();
 });

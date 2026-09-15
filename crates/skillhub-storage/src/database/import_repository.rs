@@ -62,9 +62,15 @@ impl<'a> ImportRepository<'a> {
         &self,
         candidate: ImportCandidate,
         candidate_tree_hash: Option<&str>,
+        source_facts: &skillhub_core::import::ImportSourceFacts,
     ) -> AppResult<ImportAnalysis> {
         let existing = self.list_existing()?;
-        Ok(analyze_import(candidate, candidate_tree_hash, &existing))
+        Ok(analyze_import(
+            candidate,
+            candidate_tree_hash,
+            &existing,
+            source_facts,
+        ))
     }
 
     fn source_for(&self, skill_id: SkillId) -> AppResult<Option<SourceDescriptor>> {

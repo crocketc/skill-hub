@@ -351,6 +351,7 @@ export type CommitDeployment = {
 export type CommitImport = {
 	prepared_import_id: OperationId,
 	decision: ImportDecision,
+	governance_decision?: ImportGovernanceDecision,
 };
 
 export type CommitInitialRestore = {
@@ -1112,6 +1113,7 @@ export type ImportAnalysis = {
 	matches: ImportMatch[],
 	conflicts: ImportConflict[],
 	actions: ImportDecision[],
+	governance_groups?: ImportGovernanceGroup[],
 };
 
 export type ImportCandidate = {
@@ -1141,10 +1143,64 @@ export type ImportConflict = {
  */
 export type ImportDecision = "reuse_existing" | "establish_managed_relation" | "copy_into_library" | "take_over_after_verify" | "keep_independent" | "copy_as_independent_managed_skill" | "skip";
 
+export type ImportGovernanceAction = "preserve_original" | "create_todo";
+
+/**
+ *  设计 §4.1：导入结果按关系类别分组。用户层标签与回退说明由客户端
+ *  按 `classification` 渲染；core 不产出任何界面散文。
+ */
+export type ImportGovernanceClassification =
+/**  完全重复：与库内现有 Skill 内容一致，需用户裁决。 */
+"exact_duplicate" |
+/**  内容一致的复制副本：来源路径本身是已验证的（观察）副本。 */
+"content_identical_copy" |
+/**  同名不同内容：需判断是不同 Skill 还是同一 Skill 的不同版本。 */
+"same_name_different_content" |
+/**  通用目录直接读取：来源位于共享目录内且自身不是链接。 */
+"shared_directory_read" |
+/**  通用目录链接引用：来源路径自身是符号链接/目录联结。 */
+"shared_directory_reference" |
+/**  识别未知或共享影响未确认：目录未登记且所有权不明。 */
+"unrecognized_source";
+
+export type ImportGovernanceDecision = {
+	group_actions: { [key in string]: ImportGovernanceAction },
+	item_overrides: { [key in string]: ImportGovernanceAction },
+};
+
+export type ImportGovernanceGroup = {
+	group_id: string,
+	classification: ImportGovernanceClassification,
+	members: ImportGovernanceMember[],
+	default_action: ImportGovernanceAction,
+	available_actions: ImportGovernanceAction[],
+};
+
+export type ImportGovernanceMember = {
+	member_id: string,
+	display_name: string,
+	/**  来源候选根路径（绝对形态）。目标始终是集中库，由客户端静态标注。 */
+	source_path: string,
+	/**  受该关系影响的 Agent 形态（来自已登记目录能力或归属证据）。 */
+	affected_agents: string[],
+};
+
 export type ImportItemResult = {
 	skill_id: SkillId | null,
 	decision: ImportDecision,
+	status: ImportItemStatus,
 	original_preserved: boolean,
+	/**
+	 *  Stable machine-readable reason for a skipped or failed item.  Display
+	 *  copy belongs to the client; callers must not parse a prose message.
+	 */
+	reason_code?: string | null,
+	/**
+	 *  Persisted relationship-governance work created by this import item.
+	 *  Each fact has a stable `task_id` and is queryable through the existing
+	 *  relationship overview API.
+	 */
+	governance_tasks?: GovernanceTaskFact[],
 	/**
 	 *  OPT-20260914-08：导入即存证。提交成功时携带本次导入落库的溯源
 	 *  记录（来源/Agent 形态/原始路径/导入时间/内容指纹/所有权状态），
@@ -1152,6 +1208,8 @@ export type ImportItemResult = {
 	 */
 	provenance?: ImportProvenance | null,
 };
+
+export type ImportItemStatus = "succeeded" | "skipped" | "failed" | "todo";
 
 export type ImportMatch = {
 	skill_id: SkillId,

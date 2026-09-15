@@ -155,7 +155,7 @@ describe("native import facade", () => {
       })
       .mockResolvedValueOnce({
         type: "import_summary",
-        payload: { committed: true, items: [{ decision: "copy_into_library", original_preserved: true, skill_id: "skill-1" }], operation_id: "operation-1" },
+        payload: { committed: true, items: [{ decision: "copy_into_library", governance_tasks: [], original_preserved: true, provenance: null, reason_code: null, skill_id: "skill-1", status: "succeeded" }], operation_id: "operation-1" },
       });
 
     const source = await nativeImportFacade.parseSource("C:/incoming");
@@ -176,9 +176,18 @@ describe("native import facade", () => {
     expect(executeCommand).toHaveBeenNthCalledWith(1, expect.objectContaining({ type: "prepare_import" }));
     expect(executeCommand).toHaveBeenNthCalledWith(2, {
       type: "commit_import",
-      payload: { decision: "copy_into_library", prepared_import_id: "operation-1" },
+      payload: { decision: "copy_into_library", governance_decision: { group_actions: {}, item_overrides: {} }, prepared_import_id: "operation-1" },
     });
-    expect(results).toEqual([{ action: "copy", candidateId: candidate.id, message: "importWorkflow.commitMessages.imported", status: "succeeded" }]);
+    expect(results).toEqual([{
+      action: "copy",
+      candidateId: candidate.id,
+      governanceTasks: [],
+      message: "importWorkflow.commitMessages.imported",
+      originalPreserved: true,
+      provenance: undefined,
+      reasonCode: undefined,
+      status: "succeeded",
+    }]);
     expect(progress).toHaveBeenLastCalledWith({ candidateId: candidate.id, completed: 1, total: 1 });
   });
 
@@ -196,7 +205,7 @@ describe("native import facade", () => {
         type: "import_summary",
         payload: {
           committed: true,
-          items: [{ decision: "copy_as_independent_managed_skill", original_preserved: true, skill_id: "skill-default" }],
+          items: [{ decision: "copy_as_independent_managed_skill", governance_tasks: [], original_preserved: true, provenance: null, reason_code: null, skill_id: "skill-default", status: "succeeded" }],
           operation_id: "operation-default",
         },
       });
@@ -218,6 +227,7 @@ describe("native import facade", () => {
       type: "commit_import",
       payload: {
         decision: "copy_as_independent_managed_skill",
+        governance_decision: { group_actions: {}, item_overrides: {} },
         prepared_import_id: "operation-default",
       },
     });
@@ -258,7 +268,7 @@ describe("native import facade", () => {
       })
       .mockResolvedValueOnce({
         type: "import_summary",
-        payload: { committed: true, items: [{ decision: "copy_into_library", original_preserved: true, skill_id: "skill-2" }], operation_id: "operation-2" },
+        payload: { committed: true, items: [{ decision: "copy_into_library", governance_tasks: [], original_preserved: true, provenance: null, reason_code: null, skill_id: "skill-2", status: "succeeded" }], operation_id: "operation-2" },
       });
 
     const source = await nativeImportFacade.parseSource("C:/workspace");
@@ -297,8 +307,11 @@ describe("native import facade", () => {
 
     // 未知码不允许裸码上屏：统一兜底为可读文案；码本身留档操作记录。
     expect(result).toEqual(expect.objectContaining({
-      message: "importWorkflow.errors.unknown",
-      status: "failed",
+        message: "importWorkflow.errors.unknown",
+        reasonCode: "io_error",
+        originalPreserved: true,
+        governanceTasks: [],
+        status: "failed",
     }));
   });
 
@@ -322,6 +335,41 @@ describe("native import facade", () => {
 
     expect(result).toEqual(expect.objectContaining({
       message: "errors.networkDisabled",
+      status: "failed",
+    }));
+  });
+
+  it("maps takeover verification conflicts by their structured reason", async () => {
+    vi.mocked(executeCommand)
+      .mockResolvedValueOnce({
+        type: "prepared_import",
+        payload: {
+          id: "operation-takeover-mismatch",
+          candidate: {} as never,
+          analysis: { actions: ["take_over_after_verify", "skip"] } as never,
+        },
+      })
+      .mockRejectedValueOnce({
+        code: "operation.conflict",
+        params: { reason: "takeover_verification_mismatch" },
+      });
+
+    const candidate = {
+      basicCheck: "passed" as const,
+      id: "C:/incoming/notes#notes",
+      name: "notes",
+      ownership: "agent_builtin" as const,
+      path: "C:/incoming/notes",
+      source: await nativeImportFacade.parseSource("C:/incoming"),
+    };
+    const [result] = await nativeImportFacade.commitImport(
+      { candidates: [candidate], conflicts: [] },
+      { [candidate.id]: "takeover" },
+    );
+
+    expect(result).toEqual(expect.objectContaining({
+      message: "importWorkflow.errors.takeoverVerificationMismatch",
+      reasonCode: "operation.conflict",
       status: "failed",
     }));
   });
@@ -395,13 +443,13 @@ describe("native import facade", () => {
           analysis: { actions: ["copy_as_independent_managed_skill", "skip"] } as never,
         },
       })
-      .mockResolvedValueOnce({ type: "import_summary", payload: { committed: true, items: [{ decision: "copy_as_independent_managed_skill", original_preserved: true, skill_id: "skill-3" }], operation_id: "operation-3" } });
+      .mockResolvedValueOnce({ type: "import_summary", payload: { committed: true, items: [{ decision: "copy_as_independent_managed_skill", governance_tasks: [], original_preserved: true, provenance: null, reason_code: null, skill_id: "skill-3", status: "succeeded" }], operation_id: "operation-3" } });
 
     await nativeImportFacade.commitImport({ candidates: [candidate], conflicts: [] }, { [candidate.id]: "independent" });
 
     expect(executeCommand).toHaveBeenLastCalledWith({
       type: "commit_import",
-      payload: { decision: "copy_as_independent_managed_skill", prepared_import_id: "operation-3" },
+      payload: { decision: "copy_as_independent_managed_skill", governance_decision: { group_actions: {}, item_overrides: {} }, prepared_import_id: "operation-3" },
     });
   });
 });

@@ -78,6 +78,8 @@ export interface ImportConflict {
 export interface ImportPlan {
   candidates: ImportCandidate[];
   conflicts: ImportConflict[];
+  /** prepare_import 的确定性关系分类；前端只负责确认，不重新判断。 */
+  governanceGroups?: import("../relationshipGovernance/relationshipGovernance").ImportGovernanceGroup[];
 }
 
 /** OPT-20260914-08：导入成功时随结果返回的存证摘要（导入那一刻的事实）。 */
@@ -90,10 +92,16 @@ export interface ImportProvenanceSummary {
 export interface ImportResult {
   candidateId: string;
   action: ImportAction;
-  status: "succeeded" | "skipped" | "failed";
+  status: "succeeded" | "skipped" | "failed" | "todo";
   message: string;
   /** 导入即存证：提交成功且落库时携带；复用/跳过等分支诚实缺省。 */
   provenance?: ImportProvenanceSummary;
+  /** 关系治理是导入后的独立、可回退操作；导入不会清理原始副本。 */
+  originalPreserved?: boolean;
+  /** 已持久化并可由关系概览查询读取的真实治理待办。 */
+  governanceTasks?: import("../../api/bindings").GovernanceTaskFact[];
+  /** 结构化原因码，界面不得反向解析展示文案。 */
+  reasonCode?: string;
 }
 
 export interface ImportProgress {
@@ -145,6 +153,7 @@ export interface ImportFacade {
     plan: ImportPlan,
     actions: Record<string, ImportAction>,
     onProgress?: (progress: ImportProgress) => void,
+    governanceDecision?: import("../relationshipGovernance/relationshipGovernance").ImportGovernanceDecision,
   ): Promise<ImportResult[]>;
   cancel(): Promise<void>;
   /** Optional advisory AI safety pre-check (step 5). Findings never change

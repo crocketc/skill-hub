@@ -19,6 +19,7 @@ export interface TrackedResultSummary {
   succeeded: number;
   failed: number;
   skipped: number;
+  todo?: number;
 }
 
 export interface BeginTrackedOperation {

@@ -89,6 +89,7 @@ fn import_prepare_commit_and_cancel_have_stable_wire_shapes() {
     let commit = AppCommand::CommitImport(skillhub_core::CommitImport {
         prepared_import_id: prepared,
         decision: ImportDecision::CopyIntoLibrary,
+        governance_decision: skillhub_core::ImportGovernanceDecision::default(),
     });
     let cancel = AppCommand::CancelImport {
         prepared_import_id: prepared,

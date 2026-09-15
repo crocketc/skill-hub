@@ -8,7 +8,9 @@ import { createSkillHubI18n } from "../../i18n";
 import { AppNotificationsProvider } from "../../ui/notifications";
 import { createOperationTracker } from "../../platform/operationTracker";
 import { clearSessionSelectedSources } from "./sessionSources";
-import { createMockImportFacade, unavailableImportFacade, type ImportCandidate, type ImportPlan, type ImportResult, type SourceDescriptor } from "./api";
+import { createMockImportFacade, unavailableImportFacade, type ImportAction, type ImportCandidate, type ImportPlan, type ImportProgress, type ImportResult, type SourceDescriptor } from "./api";
+import type { ImportGovernanceDecision } from "../relationshipGovernance/relationshipGovernance";
+import type { ImportGovernanceGroup } from "../../api/bindings";
 import type { DirectoryPicker } from "../../platform/directoryPicker";
 import { ImportWizard } from "./ImportWizard";
 
@@ -760,6 +762,137 @@ it("requires a fresh conflict decision when retrying an import", async () => {
   expect(screen.getByRole("button", { name: "提交导入" })).toBeEnabled();
 });
 
+it("renders governance before conflicts and sends group plus member override to commit", async () => {
+  const user = userEvent.setup();
+  const facade = createMockImportFacade({ scenario: "safe-local" });
+  const originalAnalyze = facade.analyzeConflicts.bind(facade);
+  const commitImport = vi.fn(async (
+    plan: ImportPlan,
+    actions: Record<string, ImportAction>,
+    _onProgress?: (progress: ImportProgress) => void,
+    governanceDecision?: ImportGovernanceDecision,
+  ): Promise<ImportResult[]> => {
+    expect(plan.governanceGroups).toHaveLength(1);
+    expect(actions).toEqual({});
+    expect(governanceDecision).toEqual({
+      group_actions: { "unrecognized-source": "create_todo" },
+      item_overrides: { "safe-pdf": "preserve_original" },
+    });
+    return [{
+      action: "copy",
+      candidateId: "safe-pdf",
+      message: "importWorkflow.commitMessages.imported",
+      originalPreserved: true,
+      status: "todo",
+    }];
+  });
+  facade.analyzeConflicts = vi.fn(async (candidates, onProgress) => {
+    const plan = await originalAnalyze(candidates, onProgress);
+    return {
+      ...plan,
+      governanceGroups: [{
+        group_id: "unrecognized-source",
+        classification: "unrecognized_source",
+        default_action: "create_todo",
+        available_actions: ["preserve_original", "create_todo"],
+        members: [{
+          member_id: "safe-pdf",
+          display_name: "PDF",
+          source_path: "C:/skills/safe-pdf",
+          affected_agents: [],
+        }],
+      } satisfies ImportGovernanceGroup],
+    };
+  });
+  facade.commitImport = commitImport;
+  await renderWizard(facade);
+
+  await user.type(screen.getByLabelText("来源"), "C:/skills");
+  await user.click(screen.getByRole("button", { name: "解析来源" }));
+  await user.click(await screen.findByRole("button", { name: "继续选择候选" }));
+  await user.click(screen.getByRole("checkbox", { name: /PDF/ }));
+  await user.click(screen.getByRole("button", { name: "分析冲突" }));
+
+  expect(await screen.findByRole("heading", { name: "确认导入后的关系处理" })).toBeVisible();
+  await user.click(screen.getByRole("radio", { name: "创建待办" }));
+  await user.click(screen.getByRole("button", { name: "展开 1 个项目" }));
+  await user.click(screen.getByRole("radio", { name: "PDF：原件保留" }));
+  await user.click(screen.getByRole("button", { name: "确认关系处理" }));
+  await user.click(await screen.findByRole("button", { name: "提交导入" }));
+
+  expect(commitImport).toHaveBeenCalledTimes(1);
+  expect(await screen.findByText("待处理")).toBeVisible();
+});
+
+it("requires a new governance confirmation after returning to candidates and reanalyzing", async () => {
+  const user = userEvent.setup();
+  const facade = createMockImportFacade({ scenario: "safe-local" });
+  const originalAnalyze = facade.analyzeConflicts.bind(facade);
+  facade.analyzeConflicts = vi.fn(async (candidates, onProgress) => ({
+    ...(await originalAnalyze(candidates, onProgress)),
+    governanceGroups: [{
+      group_id: "same-group",
+      classification: "unrecognized_source",
+      default_action: "create_todo",
+      available_actions: ["preserve_original", "create_todo"],
+      members: [{
+        member_id: "safe-pdf",
+        display_name: "PDF",
+        source_path: "C:/skills/safe-pdf",
+        affected_agents: [],
+      }],
+    } satisfies ImportGovernanceGroup],
+  }));
+  await renderWizard(facade);
+
+  await user.type(screen.getByLabelText("来源"), "C:/skills");
+  await user.click(screen.getByRole("button", { name: "解析来源" }));
+  await user.click(await screen.findByRole("button", { name: "继续选择候选" }));
+  await user.click(screen.getByRole("checkbox", { name: /PDF/ }));
+  await user.click(screen.getByRole("button", { name: "分析冲突" }));
+  await screen.findByRole("heading", { name: "确认导入后的关系处理" });
+  await user.click(screen.getByRole("radio", { name: "创建待办" }));
+
+  await user.click(screen.getByRole("button", { name: "上一步" }));
+  await user.click(screen.getByRole("button", { name: "分析冲突" }));
+
+  await screen.findByRole("heading", { name: "确认导入后的关系处理" });
+  expect(screen.getByRole("button", { name: "确认关系处理" })).toBeDisabled();
+});
+
+it("counts todo results as attention in the status, notification, and tracked summary", async () => {
+  const user = userEvent.setup();
+  const tracker = createOperationTracker();
+  const facade = createMockImportFacade({ scenario: "safe-local" });
+  facade.commitImport = vi.fn(async (): Promise<ImportResult[]> => [{
+    action: "copy",
+    candidateId: "safe-pdf",
+    message: "importWorkflow.commitMessages.imported",
+    originalPreserved: true,
+    status: "todo",
+  }]);
+  await renderWithTracker(facade, tracker);
+
+  await user.type(screen.getByLabelText("来源"), "C:/skills");
+  await user.click(screen.getByRole("button", { name: "解析来源" }));
+  await user.click(await screen.findByRole("button", { name: "继续选择候选" }));
+  await user.click(screen.getByRole("checkbox", { name: /PDF/ }));
+  await user.click(screen.getByRole("button", { name: "分析冲突" }));
+  await user.click(await screen.findByRole("button", { name: "提交导入" }));
+
+  const notice = await screen.findByTestId("notice-warning");
+  // todo 结果属于"需要关注"而非失败：通知标题与状态区都不再借用失败文案。
+  expect(within(notice).getByText("导入需要处理")).toBeVisible();
+  expect(within(notice).getByText(/待处理 1/)).toBeVisible();
+  expect(screen.getByText("导入完成，有待处理事项", { selector: ".sh-import-wizard__status" })).toBeVisible();
+  expect(tracker.getSnapshot()[0].resultSummary).toEqual({
+    succeeded: 0,
+    failed: 0,
+    skipped: 0,
+    todo: 1,
+  });
+});
+
 async function renderWithTracker(facade: ReturnType<typeof createMockImportFacade>, tracker: ReturnType<typeof createOperationTracker>) {
   const i18n = await createSkillHubI18n(["zh-CN"]);
   return render(
@@ -805,7 +938,7 @@ it("keeps the commit running in the global tracker after the wizard unmounts", a
   expect(operation.kind).toBe("import");
   expect(operation.status).toBe("completed");
   expect(operation.completed).toBe(operation.total);
-  expect(operation.resultSummary).toEqual({ succeeded: 1, failed: 0, skipped: 1 });
+  expect(operation.resultSummary).toEqual({ succeeded: 1, failed: 0, skipped: 1, todo: 0 });
 });
 
 it("refuses to commit while another import is still running", async () => {

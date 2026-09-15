@@ -141,7 +141,10 @@
       "generic": "The import step could not be completed ({{code}}).",
       "noDefaultAction": "This candidate has no automatically selectable import action; pick one manually before importing.",
       "remoteNotWired": "Remote source download is not wired up yet; download the repository locally first and import it as a local directory.",
-      "unknown": "The import step could not be completed."
+      "unknown": "The import step could not be completed.",
+      "sameRuntimeNameConflict": "The runtime name conflicts with an existing Skill; choose another import action.",
+      "exactDuplicateConflict": "The candidate duplicates an existing Skill; existing content was not overwritten.",
+      "takeoverVerificationMismatch": "Verification failed after takeover; the original source was preserved."
     },
     "eyebrow": "Safe import workflow",
     "title": "Import Skills",
@@ -161,7 +164,9 @@
       "summary": "Import complete",
       "failed": "Import needs attention",
       "cancelled": "Import cancelled",
-      "committingBackgroundHint": "You can leave this page; the import keeps running in the background. Follow progress in the top-bar task status and view the result in Notifications when it finishes."
+      "committingBackgroundHint": "You can leave this page; the import keeps running in the background. Follow progress in the top-bar task status and view the result in Notifications when it finishes.",
+      "governance": "Relationship governance",
+      "attention": "Import finished with pending items"
     },
     "analysis": {
       "progressTitle": "Conflict analysis progress",
@@ -299,10 +304,14 @@
       "openLibrary": "Open Skill library",
       "showCompletedDetails": "Show successful and skipped details",
       "hideCompletedDetails": "Hide successful and skipped details",
+      "originalsPreserved": "Original copies remain unchanged; cleanup is a separate confirmed action with a recovery path.",
+      "governanceTasksLabel": "Relationship governance tasks",
+      "openGovernanceTask": "View governance task {{taskId}}",
       "counts": {
         "succeeded": "Succeeded {{count}}",
         "skipped": "Skipped {{count}}",
-        "failed": "Failed {{count}}"
+        "failed": "Failed {{count}}",
+        "todo": "Needs attention {{count}}"
       },
       "actions": {
         "reuse": "Reuse",
@@ -314,10 +323,57 @@
       "status": {
         "succeeded": "Succeeded",
         "skipped": "Skipped",
-        "failed": "Failed"
+        "failed": "Failed",
+        "todo": "Needs attention"
       },
       "provenance": "Imported from {{path}} ({{agent}})",
       "unknownAgent": "source unrecognized"
+    },
+    "governance": {
+      "eyebrow": "Relationship governance",
+      "title": "Review relationship handling after import",
+      "description": "Importing into the central library and handling original copies are separate actions; every change needs confirmation, impact details, and a recovery path.",
+      "aiUnavailable": "AI suggestions are not configured; deterministic relationship checks remain in force.",
+      "groupActionLegend": "Default group action",
+      "memberOverrideLegend": "Override for {{name}}",
+      "memberActionLabel": "{{name}}: {{action}}",
+      "expandMembers": "Expand {{count}} items",
+      "collapseMembers": "Collapse items",
+      "actions": {
+        "preserveOriginal": "Keep original",
+        "createTodo": "Create task"
+      },
+      "classification": {
+        "exactDuplicate": "Exact duplicates",
+        "contentIdenticalCopy": "Content-identical copies",
+        "sameNameDifferentContent": "Same name, different content",
+        "sharedDirectoryRead": "Shared directory reads",
+        "sharedDirectoryReference": "Shared directory references",
+        "unrecognizedSource": "Unrecognized or unconfirmed"
+      },
+      "confirmAction": "Confirm relationship handling",
+      "impact": {
+        "summary": "{{count}} skills will be imported into the central library. Affected agents: {{agents}}.",
+        "noKnownAgent": "no registered agents",
+        "sourcePathLabel": "Source path: {{path}}",
+        "agentSeparator": ", "
+      },
+      "rollback": {
+        "exact_duplicate": "Recovery: the original source is kept; remove the library copy to re-import later.",
+        "content_identical_copy": "Recovery: the source copy is kept; it can be converted to a managed link later.",
+        "same_name_different_content": "Recovery: the original source is kept; the same-name decision can be revisited.",
+        "shared_directory_read": "Recovery: the shared directory itself is not modified by this action.",
+        "shared_directory_reference": "Recovery: the shared directory and other agent references stay untouched.",
+        "unrecognized_source": "Recovery: the original source is kept; the recognition task can be revisited."
+      },
+      "taskDetail": {
+        "select_authoritative_version": "Authoritative version pending",
+        "convert_copy_to_managed_link": "Convert copy to managed link pending",
+        "classify_same_name_skill": "Same-name skill classification pending",
+        "confirm_shared_directory_impact": "Shared directory impact pending",
+        "convert_shared_reference_to_managed_link": "Shared reference conversion pending",
+        "unknown_directory_recognition": "Directory recognition pending"
+      }
     },
     "commitMessages": {
       "imported": "Imported",
@@ -372,7 +428,8 @@
     },
     "notifications": {
       "succeededTitle": "Import completed",
-      "succeededDetail": "Succeeded {{succeeded}} · Failed {{failed}} · Skipped {{skipped}}",
+      "succeededDetail": "Succeeded {{succeeded}} · Failed {{failed}} · Skipped {{skipped}} · Needs attention {{todo}}",
+      "attentionTitle": "Import needs attention",
       "failedTitle": "Import submission failed",
       "cancelledTitle": "Import flow cancelled",
       "openLibrary": "View library skills"
@@ -388,6 +445,14 @@
     "onboardingImportGuideMultiple": "The initialization scan found {{count}} source directories. All are selected by default and will be imported in one flow.",
     "importUnavailable": "Import capability is not connected to the native service yet. No files or commands were changed.",
     "importRunning": "A batch import is already running; a new import can start only after it finishes. Check progress in the global indicator.",
+    "governanceTasks": {
+      "eyebrow": "Relationship governance",
+      "title": "Governance tasks",
+      "loading": "Loading relationship governance tasks…",
+      "empty": "That governance task was not found; it may already be resolved.",
+      "unresolved": "Needs attention",
+      "resolved": "Resolved"
+    },
     "home": {
       "enter": "Open",
       "enterAria": "Open {{module}}",
@@ -1935,7 +2000,7 @@
     "tracker": {
       "ariaLabel": "Background operations",
       "running": "{{label}}: running ({{completed}}/{{total}})",
-      "completed": "{{label}} completed: {{succeeded}} succeeded, {{failed}} failed, {{skipped}} skipped",
+      "completed": "{{label}} completed: {{succeeded}} succeeded, {{failed}} failed, {{skipped}} skipped, {{todo}} need attention",
       "completedPlain": "{{label}} completed",
       "failed": "{{label}} failed: {{error}}",
       "cancelled": "{{label}} cancelled",
@@ -1966,7 +2031,7 @@
       "state": "State: {{state}}",
       "errorCode": "Error code: {{code}}",
       "sessionRunning": "running ({{completed}}/{{total}})",
-      "sessionCompleted": "{{succeeded}} succeeded, {{failed}} failed, {{skipped}} skipped",
+      "sessionCompleted": "{{succeeded}} succeeded, {{failed}} failed, {{skipped}} skipped, {{todo}} need attention",
       "sessionFailed": "failed"
     }
   },

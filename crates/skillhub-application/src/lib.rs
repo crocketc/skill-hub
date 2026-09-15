@@ -5554,9 +5554,10 @@ impl ApplicationFacade for LocalApplicationFacade {
                 let candidate = request.candidate;
                 let tree_hash = self.candidate_tree_hash(&candidate, request.tree_hash.as_deref());
                 self.with_database("query.analyze_import", |database| {
+                    let facts = Self::import_source_facts(database, &candidate)?;
                     database
                         .import_repository()
-                        .analyze(candidate, tree_hash.as_deref())
+                        .analyze(candidate, tree_hash.as_deref(), &facts)
                         .map(AppQueryResult::ImportAnalysis)
                 })
             }
@@ -5909,9 +5910,12 @@ impl LocalApplicationFacade {
         let candidate = request.candidate;
         let tree_hash = self.candidate_tree_hash(&candidate, request.tree_hash.as_deref());
         let result = self.with_database("execute.prepare_import", |database| {
-            let analysis = database
-                .import_repository()
-                .analyze(candidate.clone(), tree_hash.as_deref())?;
+            let facts = Self::import_source_facts(database, &candidate)?;
+            let analysis = database.import_repository().analyze(
+                candidate.clone(),
+                tree_hash.as_deref(),
+                &facts,
+            )?;
             let prepared = PreparedImport {
                 id: operation_id,
                 candidate,
@@ -6054,7 +6058,58 @@ impl LocalApplicationFacade {
                 .with_param("field", "decision")
                 .with_action(RecoveryAction::ChooseAnotherName));
         }
+        for (group_id, action) in &request.governance_decision.group_actions {
+            let Some(group) = prepared
+                .analysis
+                .governance_groups
+                .iter()
+                .find(|group| &group.group_id == group_id)
+            else {
+                return Err(AppError::new(ErrorCode::InvalidInput, Severity::Error)
+                    .with_param("field", "governance_decision.group_actions"));
+            };
+            if !group.available_actions.contains(action) {
+                return Err(AppError::new(ErrorCode::InvalidInput, Severity::Error)
+                    .with_param("field", "governance_decision.group_actions"));
+            }
+        }
+        for (member_id, action) in &request.governance_decision.item_overrides {
+            let member_group = prepared.analysis.governance_groups.iter().find(|group| {
+                group
+                    .members
+                    .iter()
+                    .any(|member| member.member_id == *member_id)
+            });
+            if !member_group.is_some_and(|group| group.available_actions.contains(action)) {
+                return Err(AppError::new(ErrorCode::InvalidInput, Severity::Error)
+                    .with_param("field", "governance_decision.item_overrides"));
+            }
+        }
+        // `default_action` is a recommendation only.  A caller must explicitly
+        // confirm each group, or explicitly decide every member in that group;
+        // otherwise an import would silently apply relationship governance.
+        for group in &prepared.analysis.governance_groups {
+            let group_confirmed = request
+                .governance_decision
+                .group_actions
+                .contains_key(&group.group_id);
+            let all_members_confirmed = group.members.iter().all(|member| {
+                request
+                    .governance_decision
+                    .item_overrides
+                    .contains_key(&member.member_id)
+            });
+            if !group_confirmed && !all_members_confirmed {
+                return Err(AppError::new(ErrorCode::InvalidInput, Severity::Error)
+                    .with_param("field", "governance_decision.confirmation"));
+            }
+        }
+        let governance_tasks =
+            Self::import_governance_tasks(&prepared.analysis, &request.governance_decision);
         if request.decision == skillhub_core::ImportDecision::Skip {
+            self.with_database("execute.commit_import.governance_task", |database| {
+                Self::persist_import_governance_tasks(database, &governance_tasks)
+            })?;
             self.prepared_imports
                 .lock()
                 .map_err(|_| {
@@ -6069,7 +6124,14 @@ impl LocalApplicationFacade {
                     items: vec![skillhub_core::ImportItemResult {
                         skill_id: None,
                         decision: request.decision,
+                        status: if governance_tasks.is_empty() {
+                            skillhub_core::ImportItemStatus::Skipped
+                        } else {
+                            skillhub_core::ImportItemStatus::Todo
+                        },
                         original_preserved: true,
+                        reason_code: Some("import.skipped_by_user".into()),
+                        governance_tasks,
                         provenance: None,
                     }],
                     committed: true,
@@ -6103,6 +6165,9 @@ impl LocalApplicationFacade {
                     .map(|_| ())
                 })?;
             }
+            self.with_database("execute.commit_import.governance_task", |database| {
+                Self::persist_import_governance_tasks(database, &governance_tasks)
+            })?;
             self.prepared_imports
                 .lock()
                 .map_err(|_| {
@@ -6117,7 +6182,14 @@ impl LocalApplicationFacade {
                     items: vec![skillhub_core::ImportItemResult {
                         skill_id: Some(skill_id),
                         decision: request.decision,
+                        status: if governance_tasks.is_empty() {
+                            skillhub_core::ImportItemStatus::Succeeded
+                        } else {
+                            skillhub_core::ImportItemStatus::Todo
+                        },
                         original_preserved: true,
+                        reason_code: None,
+                        governance_tasks,
                         provenance: None,
                     }],
                     committed: true,
@@ -6129,6 +6201,7 @@ impl LocalApplicationFacade {
             skillhub_core::ImportDecision::CopyIntoLibrary
                 | skillhub_core::ImportDecision::KeepIndependent
                 | skillhub_core::ImportDecision::CopyAsIndependentManagedSkill
+                | skillhub_core::ImportDecision::TakeOverAfterVerify
         ) {
             return Err(unsupported("execute.commit_import.decision"));
         }
@@ -6221,6 +6294,38 @@ impl LocalApplicationFacade {
                     ));
                 }
             };
+            if request.decision == skillhub_core::ImportDecision::TakeOverAfterVerify {
+                // Takeover keeps the original source.  The separate original
+                // migration flow owns deletion and its explicit backup/rollback
+                // confirmation; this step only verifies the managed copy.
+                if let Err(error) =
+                    store
+                        .hash_tree_read_only(central.visible_skill_path_for_runtime(
+                            skill_id,
+                            &prepared.candidate.runtime_name,
+                        ))
+                        .and_then(|hash| {
+                            if hash == version.manifest.tree_hash {
+                                Ok(hash)
+                            } else {
+                                Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                                    .with_param("reason", "takeover_verification_mismatch")
+                                    .with_action(RecoveryAction::RollbackOperation))
+                            }
+                        })
+                {
+                    return Err(cleanup_import_error(
+                        error,
+                        cleanup_import_state(database, central, store, skill_id, &version),
+                    ));
+                }
+            }
+            if let Err(error) = Self::persist_import_governance_tasks(database, &governance_tasks) {
+                return Err(cleanup_import_error(
+                    error,
+                    cleanup_import_state(database, central, store, skill_id, &version),
+                ));
+            }
             self.prepared_imports
                 .lock()
                 .map_err(|_| {
@@ -6235,13 +6340,108 @@ impl LocalApplicationFacade {
                     items: vec![skillhub_core::ImportItemResult {
                         skill_id: Some(skill_id),
                         decision: request.decision,
+                        status: if governance_tasks.is_empty() {
+                            skillhub_core::ImportItemStatus::Succeeded
+                        } else {
+                            skillhub_core::ImportItemStatus::Todo
+                        },
                         original_preserved: true,
+                        reason_code: None,
+                        governance_tasks,
                         provenance,
                     }],
                     committed: true,
                 },
             )))
         })
+    }
+
+    /// 治理待办 detail 持久化稳定键；客户端按 i18n 键渲染，不入散文。
+    fn import_governance_task_detail_key(
+        classification: skillhub_core::ImportGovernanceClassification,
+    ) -> String {
+        let slug = match classification {
+            skillhub_core::ImportGovernanceClassification::ExactDuplicate => {
+                "select_authoritative_version"
+            }
+            skillhub_core::ImportGovernanceClassification::ContentIdenticalCopy => {
+                "convert_copy_to_managed_link"
+            }
+            skillhub_core::ImportGovernanceClassification::SameNameDifferentContent => {
+                "classify_same_name_skill"
+            }
+            skillhub_core::ImportGovernanceClassification::SharedDirectoryRead => {
+                "confirm_shared_directory_impact"
+            }
+            skillhub_core::ImportGovernanceClassification::SharedDirectoryReference => {
+                "convert_shared_reference_to_managed_link"
+            }
+            skillhub_core::ImportGovernanceClassification::UnrecognizedSource => {
+                "unknown_directory_recognition"
+            }
+        };
+        format!("import.governance.task.{slug}")
+    }
+
+    fn import_governance_tasks(
+        analysis: &skillhub_core::ImportAnalysis,
+        decision: &skillhub_core::import::ImportGovernanceDecision,
+    ) -> Vec<skillhub_core::GovernanceTaskFact> {
+        analysis
+            .governance_groups
+            .iter()
+            .flat_map(|group| {
+                group
+                    .members
+                    .iter()
+                    .filter(|member| {
+                        decision.action_for_member(group, &member.member_id)
+                            == Some(skillhub_core::ImportGovernanceAction::CreateTodo)
+                    })
+                    .map(|member| skillhub_core::GovernanceTaskFact {
+                        task_id: skillhub_core::import_governance_task_id(
+                            &group.group_id,
+                            &member.member_id,
+                        ),
+                        kind: match group.classification {
+                            skillhub_core::ImportGovernanceClassification::ExactDuplicate => {
+                                skillhub_core::GovernanceTaskKind::SelectAuthoritativeVersion
+                            }
+                            skillhub_core::ImportGovernanceClassification::ContentIdenticalCopy => {
+                                skillhub_core::GovernanceTaskKind::ConvertCopyToManagedLink
+                            }
+                            skillhub_core::ImportGovernanceClassification::SameNameDifferentContent => {
+                                skillhub_core::GovernanceTaskKind::ClassifySameNameSkill
+                            }
+                            skillhub_core::ImportGovernanceClassification::SharedDirectoryRead => {
+                                skillhub_core::GovernanceTaskKind::ConfirmSharedDirectoryImpact
+                            }
+                            skillhub_core::ImportGovernanceClassification::SharedDirectoryReference => {
+                                skillhub_core::GovernanceTaskKind::ConvertSharedReferenceToManagedLink
+                            }
+                            skillhub_core::ImportGovernanceClassification::UnrecognizedSource => {
+                                skillhub_core::GovernanceTaskKind::UnknownDirectoryRecognition
+                            }
+                        },
+                        subject_id: member.member_id.clone(),
+                        // 持久化稳定键而非界面散文；展示文案由客户端翻译。
+                        detail: Self::import_governance_task_detail_key(group.classification),
+                        resolved: false,
+                        created_at: now_epoch_seconds(),
+                        resolved_at: None,
+                    })
+            })
+            .collect()
+    }
+
+    fn persist_import_governance_tasks(
+        database: &Database,
+        tasks: &[skillhub_core::GovernanceTaskFact],
+    ) -> AppResult<()> {
+        for task in tasks {
+            database.governance_task_repository().create(task)?;
+        }
+        Ok(())
     }
 
     // ===== OPT-20260914-08：已部署 Skill 识别、导入存证与原始文件迁移 =====
@@ -6281,6 +6481,96 @@ impl LocalApplicationFacade {
             .filter(|(root, _)| path_lives_under(&candidate, root))
             .max_by_key(|(root, _)| root.chars().count())
             .map(|(_, client_id)| client_id))
+    }
+
+    /// 解析导入候选的确定性来源事实（设计 §4.1 关系分组输入）。只读：
+    /// 目录节点、目录能力、观察部署与链接形态判定，不写任何表。
+    ///
+    /// 比较统一在 `canonical_path_string` 同一性上进行（与
+    /// `resolve_agent_client_id` 相同的理由）：scanner/注册 target 与候选
+    /// 常带不同的符号链接前缀形态。候选根是符号链接时，canonical 形态
+    /// 已解析到链接目标，因此节点匹配天然落在目标目录上，
+    /// `source_is_link` 再把"引用"与"直接读取"区分开。Windows 目录联结
+    /// 被 std 视作目录（is_symlink 为 false），此处按直接读取归类；
+    /// 转换层（关系迁移）对 junction 另有 fail-closed 判定。
+    fn import_source_facts(
+        database: &Database,
+        candidate: &skillhub_core::ImportCandidate,
+    ) -> AppResult<skillhub_core::ImportSourceFacts> {
+        let source_is_link = std::fs::symlink_metadata(&candidate.absolute_root)
+            .map(|meta| meta.file_type().is_symlink())
+            .unwrap_or(false);
+        let canonical_root = Self::canonical_path_string(&candidate.absolute_root);
+        let directory_node = database
+            .directory_repository()
+            .list_nodes()?
+            .into_iter()
+            .filter(|node| node.exists)
+            .map(|node| {
+                let canonical_node = Self::canonical_path_string(&node.path);
+                (node, canonical_node)
+            })
+            .filter(|(node, canonical_node)| {
+                path_lives_under(&canonical_root, canonical_node)
+                    || observed_path_key(&candidate.absolute_root) == observed_path_key(&node.path)
+            })
+            .max_by_key(|(node, _)| node.path.chars().count());
+        let mut affected_agents = match &directory_node {
+            Some((node, _)) => {
+                let mut agents = database
+                    .relationship_repository()
+                    .list_capabilities()?
+                    .into_iter()
+                    .filter(|capability| {
+                        capability.directory_node_id == node.node_id
+                            && capability.recognition
+                                == skillhub_core::DirectoryRecognition::Supported
+                    })
+                    .map(|capability| capability.agent_client_id)
+                    .collect::<Vec<_>>();
+                agents.sort();
+                agents.dedup();
+                agents
+            }
+            None => Self::resolve_agent_client_id(database, &candidate.absolute_root)?
+                .into_iter()
+                .collect(),
+        };
+        let observed_rows: Vec<skillhub_core::ObservedDeployment> = database
+            .provenance_repository()
+            .list_observed()?
+            .into_iter()
+            .filter(|observed| {
+                observed.status == skillhub_core::ObservedStatus::Active
+                    && observed.released_at.is_none()
+                    && observed_path_key(&observed.original_path)
+                        == observed_path_key(&candidate.absolute_root)
+            })
+            .collect();
+        let observed_copy_verified = observed_rows.iter().any(|observed| {
+            observed.match_state == skillhub_core::ObservedMatchState::ContentVerified
+        });
+        if affected_agents.is_empty() {
+            // 目录能力未给出任何 Agent 时（未登记节点或节点无能力
+            // 记录），归属证据回退到观察行的 Agent 形态；仍无证据则
+            // 保持为空，不猜测。
+            affected_agents = observed_rows
+                .iter()
+                .map(|observed| observed.client_id.clone())
+                .chain(Self::resolve_agent_client_id(
+                    database,
+                    &candidate.absolute_root,
+                )?)
+                .collect::<Vec<_>>();
+            affected_agents.sort();
+            affected_agents.dedup();
+        }
+        Ok(skillhub_core::ImportSourceFacts {
+            directory_role: directory_node.as_ref().map(|(node, _)| node.role),
+            source_is_link,
+            observed_copy_verified,
+            affected_agents,
+        })
     }
 
     /// 库内每个 Skill 当前版本的 (skill_id, content_hash)。

@@ -24,6 +24,11 @@ import {
 } from "./api";
 import { ImportShell, type ImportStatus, type ImportStep } from "./ImportShell";
 import { ImportSummary } from "./ImportSummary";
+import { RelationshipGovernancePanel } from "../relationshipGovernance/RelationshipGovernancePanel";
+import {
+  hasExplicitGovernanceConfirmation,
+  type ImportGovernanceDecision,
+} from "../relationshipGovernance/relationshipGovernance";
 import { SourceInput } from "./SourceInput";
 import { readSessionSelectedSources, writeSessionSelectedSources } from "./sessionSources";
 import {
@@ -45,6 +50,7 @@ type WizardPhase =
   | "candidate_gate"
   | "candidates"
   | "analyzing"
+  | "governance"
   | "conflicts"
   | "committing"
   | "summary"
@@ -75,6 +81,7 @@ interface WizardState {
   selectedIds: string[];
   plan?: ImportPlan;
   actions: Record<string, ImportAction>;
+  governanceDecision: ImportGovernanceDecision;
   commitProgress?: ImportProgress;
   results: ImportResult[];
   /** M-29：每个已扫描目录的结果（候选数/失败原因）；保持扫描顺序。 */
@@ -105,6 +112,8 @@ type WizardEvent =
   | { type: "analysis_started"; startedAt: number; total: number }
   | { type: "analysis_progress"; progress: ImportProgress }
   | { type: "analysis_succeeded"; plan: ImportPlan }
+  | { type: "governance_decision"; decision: ImportGovernanceDecision }
+  | { type: "governance_confirmed" }
   | { type: "analysis_cancelled" }
   | { type: "action_selected"; candidateId: string; action: ImportAction }
   | { type: "commit_started"; total: number }
@@ -120,6 +129,7 @@ type WizardEvent =
 
 const initialState: WizardState = {
   actions: {},
+  governanceDecision: { group_actions: {}, item_overrides: {} },
   candidates: [],
   candidatesBySource: [],
   phase: "source",
@@ -128,6 +138,11 @@ const initialState: WizardState = {
   sourceResults: [],
   sourceText: "",
 };
+
+const emptyGovernanceDecision = (): ImportGovernanceDecision => ({
+  group_actions: {},
+  item_overrides: {},
+});
 
 /** M-29：把重扫结果并入按目录结果列表——已有条目原位替换，新条目追加。 */
 function upsertSourceResult(
@@ -158,6 +173,7 @@ function reducer(state: WizardState, event: WizardEvent): WizardState {
         sourceResults: [],
         retryingSource: undefined,
         sourceText: event.value,
+        governanceDecision: emptyGovernanceDecision(),
       };
     case "back_to_sources":
       // M-29：返回来源步骤——已选列表与每个目录的最近扫描结果保留，
@@ -172,6 +188,7 @@ function reducer(state: WizardState, event: WizardEvent): WizardState {
         phase: "source",
         plan: undefined,
         selectedIds: [],
+        governanceDecision: emptyGovernanceDecision(),
       };
     case "parse_started":
       return { ...state, error: undefined, phase: "acquiring", retryingSource: undefined };
@@ -186,6 +203,7 @@ function reducer(state: WizardState, event: WizardEvent): WizardState {
         phase: "candidate_gate",
         retryingSource: undefined,
         sourceResults: event.sourceResults,
+        governanceDecision: emptyGovernanceDecision(),
       };
     case "source_added":
       // M-29：追加来源立即进入已选列表（未扫描），不清空已有扫描结果；
@@ -195,6 +213,7 @@ function reducer(state: WizardState, event: WizardEvent): WizardState {
         error: undefined,
         sourceResults: upsertSourceResult(state.sourceResults, event.source, { kind: "unscanned" }),
         sourceText: event.inputValue,
+        governanceDecision: emptyGovernanceDecision(),
       };
     case "source_preview_started":
       return {
@@ -224,6 +243,7 @@ function reducer(state: WizardState, event: WizardEvent): WizardState {
         ...state,
         candidates: remainingCandidates,
         candidatesBySource: remaining,
+        governanceDecision: emptyGovernanceDecision(),
         selectedIds: state.selectedIds.filter((id) => remainingIds.has(id)),
         sourceResults: remainingResults,
       };
@@ -231,7 +251,7 @@ function reducer(state: WizardState, event: WizardEvent): WizardState {
     case "sources_cleared":
       return { ...initialState, sourceText: state.sourceText };
     case "show_candidates":
-      return { ...state, phase: "candidates" };
+      return { ...state, governanceDecision: emptyGovernanceDecision(), phase: "candidates" };
     case "candidates_selected":
       return { ...state, selectedIds: event.ids };
     case "analysis_started":
@@ -242,6 +262,7 @@ function reducer(state: WizardState, event: WizardEvent): WizardState {
         analysisTotal: event.total,
         error: undefined,
         phase: "analyzing",
+        governanceDecision: emptyGovernanceDecision(),
       };
     case "analysis_progress":
       return { ...state, analysisProgress: event.progress };
@@ -253,9 +274,14 @@ function reducer(state: WizardState, event: WizardEvent): WizardState {
         analysisStartedAt: undefined,
         analysisTotal: undefined,
         error: undefined,
-        phase: "conflicts",
+        phase: event.plan.governanceGroups?.length ? "governance" : "conflicts",
         plan: event.plan,
+        governanceDecision: emptyGovernanceDecision(),
       };
+    case "governance_decision":
+      return { ...state, governanceDecision: event.decision };
+    case "governance_confirmed":
+      return { ...state, phase: "conflicts" };
     case "analysis_cancelled":
       // 分析阶段的取消：回到候选阶段，已选候选保留，在途结果由 operation
       // 序号守卫丢弃（不进入冲突阶段）。
@@ -265,6 +291,7 @@ function reducer(state: WizardState, event: WizardEvent): WizardState {
         analysisStartedAt: undefined,
         analysisTotal: undefined,
         phase: "candidates",
+        governanceDecision: emptyGovernanceDecision(),
       };
     case "action_selected":
       return { ...state, actions: { ...state.actions, [event.candidateId]: event.action } };
@@ -281,7 +308,13 @@ function reducer(state: WizardState, event: WizardEvent): WizardState {
       return { ...state, commitProgress: undefined, error: undefined, phase: "summary", results: event.results };
     case "source_rescan_started":
       // M-29：单个失败目录重试——其余目录的候选与结果保持不动。
-      return { ...state, error: undefined, phase: "acquiring", retryingSource: event.source };
+      return {
+        ...state,
+        error: undefined,
+        governanceDecision: emptyGovernanceDecision(),
+        phase: "acquiring",
+        retryingSource: event.source,
+      };
     case "source_rescan_finished": {
       const others = state.candidatesBySource.filter(
         (entry) => entry.source !== event.source,
@@ -323,26 +356,37 @@ function reducer(state: WizardState, event: WizardEvent): WizardState {
         commitProgress: undefined,
         error: undefined,
         phase: state.previousPhase ?? "source",
+        governanceDecision: emptyGovernanceDecision(),
       };
     default:
       return state;
   }
 }
 
-/** 展示层映射：每个阶段归属唯一流程步骤；失败态回到触发它的步骤。 */
-function flowStepIndex(phase: WizardPhase, previousPhase?: WizardPhase): number {
+/** 展示层映射：每个阶段归属唯一流程步骤；失败态回到触发它的步骤。
+ * hasGovernance：分析产出治理分组时流程插入治理步骤，后续步骤顺延。 */
+function flowStepIndex(
+  phase: WizardPhase,
+  previousPhase: WizardPhase | undefined,
+  hasGovernance: boolean,
+): number {
+  const conflictsStep = hasGovernance ? 3 : 2;
   switch (phase) {
     case "candidates":
     case "analyzing":
       return 1;
+    case "governance":
+      return 2;
     case "conflicts":
     case "committing":
-      return 2;
+      return conflictsStep;
     case "summary":
-      return 3;
+      return conflictsStep + 1;
     case "failed":
-      return previousPhase === "conflicts"
-        ? 2
+      return previousPhase === "conflicts" || previousPhase === "committing"
+        ? conflictsStep
+        : previousPhase === "governance"
+          ? 2
         : previousPhase === "candidates" || previousPhase === "analyzing"
           ? 1
           : 0;
@@ -362,6 +406,7 @@ export interface ImportWizardProps {
   /** 全局操作跟踪；测试可注入独立实例，默认模块级单例（跨路由存续）。 */
   tracker?: OperationTracker;
   onComplete?: (results: ImportResult[]) => void;
+  onOpenGovernanceTask?: (task: NonNullable<ImportResult["governanceTasks"]>[number]) => void;
   onOpenLibrary?: () => void;
 }
 
@@ -374,6 +419,7 @@ export function ImportWizard({
   variant = "standard",
   tracker = operationTracker,
   onComplete,
+  onOpenGovernanceTask,
   onOpenLibrary = () => undefined,
 }: ImportWizardProps) {
   const { t } = useTranslation();
@@ -724,21 +770,25 @@ type: "failed",
       const results = await facade.commitImport(state.plan, state.actions, (progress) => {
         tracker.progress(trackedId, progress.completed, progress.total);
         if (operation === operationRef.current) dispatch({ type: "commit_progress", progress });
-      });
+      }, state.governanceDecision);
       const summary: TrackedResultSummary = {
         succeeded: results.filter((result) => result.status === "succeeded").length,
         failed: results.filter((result) => result.status === "failed").length,
         skipped: results.filter((result) => result.status === "skipped").length,
+        todo: results.filter((result) => result.status === "todo").length,
       };
       tracker.complete(trackedId, summary);
       // 全局通知不依赖向导仍挂载：用户离开页面后提交完成也要可见。
       notify({
-        tone: summary.failed > 0 ? "warning" : "success",
-        title: t("importWorkflow.notifications.succeededTitle"),
+        tone: summary.failed > 0 || (summary.todo ?? 0) > 0 ? "warning" : "success",
+        title: (summary.todo ?? 0) > 0
+          ? t("importWorkflow.notifications.attentionTitle")
+          : t("importWorkflow.notifications.succeededTitle"),
         detail: t("importWorkflow.notifications.succeededDetail", {
           failed: summary.failed,
           skipped: summary.skipped,
           succeeded: summary.succeeded,
+          todo: summary.todo ?? 0,
         }),
         action: { label: t("importWorkflow.notifications.openLibrary"), to: "/library" },
       });
@@ -775,17 +825,26 @@ type: "failed",
   };
 
   const hasFailure = state.results.some((result) => result.status === "failed");
-  const stepIndex = flowStepIndex(state.phase, state.previousPhase);
-  const flowSteps: ImportStep[] = (["source", "candidates", "conflicts", "summary"] as const).map(
+  const hasTodo = state.results.some((result) => result.status === "todo");
+  const hasAttention = hasFailure || hasTodo;
+  const hasGovernanceGroups = Boolean(state.plan?.governanceGroups?.length);
+  const stepIndex = flowStepIndex(state.phase, state.previousPhase, hasGovernanceGroups);
+  const flowSteps: ImportStep[] = (hasGovernanceGroups
+    ? ["source", "candidates", "governance", "conflicts", "summary"]
+    : ["source", "candidates", "conflicts", "summary"]
+  ).map(
     (key, index) => ({
-      label: t(`importWorkflow.phases.${key}`),
+      label: String(t(`importWorkflow.phases.${key}` as never)),
       state: index < stepIndex ? "complete" : index === stepIndex ? "current" : "upcoming",
     }),
   );
-  const statusText = t(`importWorkflow.phases.${state.phase}`);
+  const statusText = String(t(`importWorkflow.phases.${state.phase}` as never));
   const status: ImportStatus =
     state.phase === "summary"
-      ? { kind: hasFailure ? "warning" : "success", text: statusText }
+      ? {
+          kind: hasAttention ? "warning" : "success",
+          text: hasTodo ? String(t("importWorkflow.phases.attention")) : statusText,
+        }
       : state.phase === "failed"
         ? { kind: "failure", text: statusText }
         : { kind: "info", text: statusText };
@@ -793,6 +852,9 @@ type: "failed",
   const missingRequiredAction = (state.plan?.conflicts ?? []).some(
     (conflict) => conflict.required && !state.actions[conflict.candidateId],
   );
+  const governanceConfirmed = state.plan
+    ? hasExplicitGovernanceConfirmation(state.plan.governanceGroups ?? [], state.governanceDecision)
+    : false;
   const canParse = state.phase === "source"
     && (state.sourceText.trim().length > 0 || selectedSources.length > 0);
   const onboardingPreviewRunning = variant === "onboarding"
@@ -901,6 +963,20 @@ type: "failed",
             size="lg"
           >
             {t("importWorkflow.conflicts.commit")}
+          </Button>,
+        ],
+        secondary: [
+          <Button key="back" onClick={() => dispatch({ type: "show_candidates" })} variant="ghost">
+            {t("actions.back")}
+          </Button>,
+        ],
+      };
+      break;
+    case "governance":
+      actions = {
+        primary: [
+          <Button disabled={!governanceConfirmed} key="confirm-governance" onClick={() => dispatch({ type: "governance_confirmed" })} size="lg">
+            {t("importWorkflow.governance.confirmAction")}
           </Button>,
         ],
         secondary: [
@@ -1061,6 +1137,15 @@ type: "failed",
         </section>
       ) : null}
 
+      {state.phase === "governance" && state.plan ? (
+        <RelationshipGovernancePanel
+          aiAvailable={Boolean(facade.runAiPreChecks)}
+          decision={state.governanceDecision}
+          groups={state.plan.governanceGroups ?? []}
+          onDecision={(decision) => dispatch({ type: "governance_decision", decision })}
+        />
+      ) : null}
+
       {state.phase === "conflicts" && state.plan ? (
         <>
           <ConflictResolution
@@ -1150,7 +1235,7 @@ type: "failed",
         />
       ) : null}
 
-      {state.phase === "summary" ? <ImportSummary results={state.results} /> : null}
+      {state.phase === "summary" ? <ImportSummary onOpenGovernanceTask={onOpenGovernanceTask} results={state.results} /> : null}
 
       {state.phase === "cancelled" ? (
         <DataState message={t("importWorkflow.cancelled")} state="empty" />

@@ -209,6 +209,8 @@ pub struct PrepareImport {
 pub struct CommitImport {
     pub prepared_import_id: OperationId,
     pub decision: ImportDecision,
+    #[serde(default)]
+    pub governance_decision: crate::import::ImportGovernanceDecision,
 }
 
 /// OPT-20260914-08：原始文件迁移的准备请求。准备只读地核验存证、路径
