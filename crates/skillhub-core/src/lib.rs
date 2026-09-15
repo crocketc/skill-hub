@@ -116,11 +116,11 @@ pub use application::{
     BasicCheckOutput, BasicCheckScanner, CallPolicyBackend, CallPolicyService, CheckService,
     DeploymentBackend, DeploymentService, DeploymentSummary, DuplicateCandidateProvider,
     DuplicateService, HealthBackend, HealthService, IgnoreBackend, IgnoreService, ImportBackend,
-    ImportItemResult, ImportService, ImportSummary, LlmSafetyService, OperationService,
-    PreparedDeployment, PreparedImport, ProjectAssemblyService, ReconcileBackend, ReconcileService,
-    RecoveryBackend, RecoveryService, RemovalBackend, RemovalService, RuntimeScheduler,
-    SearchQueryService, TargetOperationError, TargetOperationResult, TargetOperationStatus,
-    TranslationRepository, TranslationService, VersionMaterializer,
+    ImportItemResult, ImportItemStatus, ImportService, ImportSummary, LlmSafetyService,
+    OperationService, PreparedDeployment, PreparedImport, ProjectAssemblyService, ReconcileBackend,
+    ReconcileService, RecoveryBackend, RecoveryService, RemovalBackend, RemovalService,
+    RuntimeScheduler, SearchQueryService, TargetOperationError, TargetOperationResult,
+    TargetOperationStatus, TranslationRepository, TranslationService, VersionMaterializer,
 };
 pub use application::{WatchConfirmation, WatchHint, WatchHintKind, WatchService};
 pub use bootstrap::{
@@ -176,11 +176,13 @@ pub use ids::{
 };
 pub use ignore::{IgnoreRule, IgnoreSubject};
 pub use import::{
-    analyze_import, ensure_original_deletion_authorized, plan_original_migration,
-    CandidateOwnership, DuplicateKind, ExistingSkillRecord, ImportAction, ImportAnalysis,
-    ImportCandidate, ImportConflict, ImportDecision, ImportMatch, ImportProvenance, MatchBasis,
-    OriginalMigrationConflict, OriginalMigrationConflictReason, OriginalMigrationFacts,
-    OriginalMigrationPlan, OriginalMigrationResult, OriginalMigrationState,
+    analyze_import, ensure_original_deletion_authorized, import_governance_task_id,
+    plan_original_migration, CandidateOwnership, DuplicateKind, ExistingSkillRecord, ImportAction,
+    ImportAnalysis, ImportCandidate, ImportConflict, ImportDecision, ImportGovernanceAction,
+    ImportGovernanceClassification, ImportGovernanceDecision, ImportGovernanceGroup,
+    ImportGovernanceMember, ImportMatch, ImportProvenance, MatchBasis, OriginalMigrationConflict,
+    OriginalMigrationConflictReason, OriginalMigrationFacts, OriginalMigrationPlan,
+    OriginalMigrationResult, OriginalMigrationState,
 };
 pub use llm::{search_query, translation};
 pub use llm::{

@@ -176,6 +176,15 @@ async fn import_skill_with_upstream(
         .execute(AppCommand::CommitImport(skillhub_core::CommitImport {
             prepared_import_id: prepared.id,
             decision: ImportDecision::CopyIntoLibrary,
+            governance_decision: skillhub_core::ImportGovernanceDecision {
+                group_actions: prepared
+                    .analysis
+                    .governance_groups
+                    .iter()
+                    .map(|group| (group.group_id.clone(), group.default_action))
+                    .collect(),
+                item_overrides: Default::default(),
+            },
         }))
         .await
         .expect("committed import");

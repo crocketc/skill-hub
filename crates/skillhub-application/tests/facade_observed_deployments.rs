@@ -130,6 +130,15 @@ async fn commit_copy(
         .execute(AppCommand::CommitImport(CommitImport {
             prepared_import_id: prepared_id,
             decision: ImportDecision::CopyIntoLibrary,
+            governance_decision: skillhub_core::ImportGovernanceDecision {
+                group_actions: [(
+                    "agent-managed-source".into(),
+                    skillhub_core::ImportGovernanceAction::PreserveOriginal,
+                )]
+                .into_iter()
+                .collect(),
+                item_overrides: Default::default(),
+            },
         }))
         .await
         .expect("commit import");
@@ -383,6 +392,15 @@ async fn repeated_import_is_an_explicit_conflict_and_keeps_provenance_history() 
         .execute(AppCommand::CommitImport(CommitImport {
             prepared_import_id: reimport.id,
             decision: ImportDecision::ReuseExisting,
+            governance_decision: skillhub_core::ImportGovernanceDecision {
+                group_actions: reimport
+                    .analysis
+                    .governance_groups
+                    .iter()
+                    .map(|group| (group.group_id.clone(), group.default_action))
+                    .collect(),
+                item_overrides: Default::default(),
+            },
         }))
         .await
         .expect("reuse commit");

@@ -1,41 +1,29 @@
-export type ImportGovernanceClassification =
-  | "shared_directory"
-  | "managed_relation"
-  | "source_preservation";
+import type {
+  ImportGovernanceAction,
+  ImportGovernanceDecision,
+  ImportGovernanceGroup,
+} from "../../api/bindings";
 
-export type ImportGovernanceAction =
-  | "keep_original"
-  | "create_todo"
-  | "convert_to_managed_link";
-
-export interface ImportGovernanceMember {
-  candidateId: string;
-  name: string;
-  detail: string;
-}
-
-/** 后端确定性关系分析的前端投影；AI 只能附加建议，不能改变这里的动作。 */
-export interface ImportGovernanceGroup {
-  id: string;
-  classification: ImportGovernanceClassification;
-  members: ImportGovernanceMember[];
-  impactSummary: string;
-  defaultAction: ImportGovernanceAction;
-  availableActions: ImportGovernanceAction[];
-}
-
-/** 分组动作与逐项覆盖一起提交；逐项覆盖优先。 */
-export interface ImportGovernanceDecision {
-  groupActions: Record<string, ImportGovernanceAction>;
-  itemOverrides: Record<string, ImportGovernanceAction>;
-}
+export type {
+  ImportGovernanceAction,
+  ImportGovernanceDecision,
+  ImportGovernanceGroup,
+};
 
 export function actionForMember(
   group: ImportGovernanceGroup,
   decision: ImportGovernanceDecision,
   memberId: string,
 ): ImportGovernanceAction {
-  return decision.itemOverrides[memberId]
-    ?? decision.groupActions[group.id]
-    ?? group.defaultAction;
+  return decision.item_overrides[memberId]
+    ?? decision.group_actions[group.group_id]
+    ?? group.default_action;
+}
+
+export function hasExplicitGovernanceConfirmation(
+  groups: readonly ImportGovernanceGroup[],
+  decision: ImportGovernanceDecision,
+): boolean {
+  return groups.every((group) => Boolean(decision.group_actions[group.group_id])
+    || group.members.every((member) => Boolean(decision.item_overrides[member.member_id])));
 }

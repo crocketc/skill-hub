@@ -1912,6 +1912,15 @@ async fn commit_import_copies_skill_into_the_central_library() {
         .execute(AppCommand::CommitImport(skillhub_core::CommitImport {
             prepared_import_id: prepared.id,
             decision: skillhub_core::ImportDecision::CopyIntoLibrary,
+            governance_decision: skillhub_core::ImportGovernanceDecision {
+                group_actions: prepared
+                    .analysis
+                    .governance_groups
+                    .iter()
+                    .map(|group| (group.group_id.clone(), group.default_action))
+                    .collect(),
+                item_overrides: Default::default(),
+            },
         }))
         .await
         .expect("committed import");
@@ -1981,6 +1990,15 @@ async fn commit_import_reads_frontmatter_description_into_the_catalog() {
         .execute(AppCommand::CommitImport(skillhub_core::CommitImport {
             prepared_import_id: prepared.id,
             decision: skillhub_core::ImportDecision::CopyIntoLibrary,
+            governance_decision: skillhub_core::ImportGovernanceDecision {
+                group_actions: prepared
+                    .analysis
+                    .governance_groups
+                    .iter()
+                    .map(|group| (group.group_id.clone(), group.default_action))
+                    .collect(),
+                item_overrides: Default::default(),
+            },
         }))
         .await
         .expect("committed import");
@@ -2032,6 +2050,15 @@ async fn get_skill_exposes_capture_sequence_as_current_version_label() {
         .execute(AppCommand::CommitImport(skillhub_core::CommitImport {
             prepared_import_id: prepared.id,
             decision: skillhub_core::ImportDecision::CopyIntoLibrary,
+            governance_decision: skillhub_core::ImportGovernanceDecision {
+                group_actions: prepared
+                    .analysis
+                    .governance_groups
+                    .iter()
+                    .map(|group| (group.group_id.clone(), group.default_action))
+                    .collect(),
+                item_overrides: Default::default(),
+            },
         }))
         .await
         .expect("committed import");
@@ -2087,6 +2114,15 @@ async fn named_version_label_takes_priority_over_capture_sequence() {
         .execute(AppCommand::CommitImport(skillhub_core::CommitImport {
             prepared_import_id: prepared.id,
             decision: skillhub_core::ImportDecision::CopyIntoLibrary,
+            governance_decision: skillhub_core::ImportGovernanceDecision {
+                group_actions: prepared
+                    .analysis
+                    .governance_groups
+                    .iter()
+                    .map(|group| (group.group_id.clone(), group.default_action))
+                    .collect(),
+                item_overrides: Default::default(),
+            },
         }))
         .await
         .expect("committed import");
@@ -2152,6 +2188,15 @@ async fn read_markdown_file_reports_ownership_from_the_domain_matrix() {
         .execute(AppCommand::CommitImport(skillhub_core::CommitImport {
             prepared_import_id: prepared.id,
             decision: skillhub_core::ImportDecision::CopyIntoLibrary,
+            governance_decision: skillhub_core::ImportGovernanceDecision {
+                group_actions: prepared
+                    .analysis
+                    .governance_groups
+                    .iter()
+                    .map(|group| (group.group_id.clone(), group.default_action))
+                    .collect(),
+                item_overrides: Default::default(),
+            },
         }))
         .await
         .expect("committed import");
@@ -2350,6 +2395,15 @@ async fn failed_import_commit_removes_partial_catalog_and_version_state() {
         .execute(AppCommand::CommitImport(skillhub_core::CommitImport {
             prepared_import_id: prepared.id,
             decision: skillhub_core::ImportDecision::CopyIntoLibrary,
+            governance_decision: skillhub_core::ImportGovernanceDecision {
+                group_actions: prepared
+                    .analysis
+                    .governance_groups
+                    .iter()
+                    .map(|group| (group.group_id.clone(), group.default_action))
+                    .collect(),
+                item_overrides: Default::default(),
+            },
         }))
         .await
         .expect_err("malformed source descriptor should fail");

@@ -25,7 +25,10 @@ import {
 import { ImportShell, type ImportStatus, type ImportStep } from "./ImportShell";
 import { ImportSummary } from "./ImportSummary";
 import { RelationshipGovernancePanel } from "../relationshipGovernance/RelationshipGovernancePanel";
-import type { ImportGovernanceDecision } from "../relationshipGovernance/relationshipGovernance";
+import {
+  hasExplicitGovernanceConfirmation,
+  type ImportGovernanceDecision,
+} from "../relationshipGovernance/relationshipGovernance";
 import { SourceInput } from "./SourceInput";
 import { readSessionSelectedSources, writeSessionSelectedSources } from "./sessionSources";
 import {
@@ -126,7 +129,7 @@ type WizardEvent =
 
 const initialState: WizardState = {
   actions: {},
-  governanceDecision: { groupActions: {}, itemOverrides: {} },
+  governanceDecision: { group_actions: {}, item_overrides: {} },
   candidates: [],
   candidatesBySource: [],
   phase: "source",
@@ -377,6 +380,7 @@ export interface ImportWizardProps {
   /** 全局操作跟踪；测试可注入独立实例，默认模块级单例（跨路由存续）。 */
   tracker?: OperationTracker;
   onComplete?: (results: ImportResult[]) => void;
+  onOpenGovernanceTask?: (task: NonNullable<ImportResult["governanceTasks"]>[number]) => void;
   onOpenLibrary?: () => void;
 }
 
@@ -389,6 +393,7 @@ export function ImportWizard({
   variant = "standard",
   tracker = operationTracker,
   onComplete,
+  onOpenGovernanceTask,
   onOpenLibrary = () => undefined,
 }: ImportWizardProps) {
   const { t } = useTranslation();
@@ -739,7 +744,7 @@ type: "failed",
       const results = await facade.commitImport(state.plan, state.actions, (progress) => {
         tracker.progress(trackedId, progress.completed, progress.total);
         if (operation === operationRef.current) dispatch({ type: "commit_progress", progress });
-      });
+      }, state.governanceDecision);
       const summary: TrackedResultSummary = {
         succeeded: results.filter((result) => result.status === "succeeded").length,
         failed: results.filter((result) => result.status === "failed").length,
@@ -816,6 +821,9 @@ type: "failed",
   const missingRequiredAction = (state.plan?.conflicts ?? []).some(
     (conflict) => conflict.required && !state.actions[conflict.candidateId],
   );
+  const governanceConfirmed = state.plan
+    ? hasExplicitGovernanceConfirmation(state.plan.governanceGroups ?? [], state.governanceDecision)
+    : false;
   const canParse = state.phase === "source"
     && (state.sourceText.trim().length > 0 || selectedSources.length > 0);
   const onboardingPreviewRunning = variant === "onboarding"
@@ -936,7 +944,7 @@ type: "failed",
     case "governance":
       actions = {
         primary: [
-          <Button key="confirm-governance" onClick={() => dispatch({ type: "governance_confirmed" })} size="lg">
+          <Button disabled={!governanceConfirmed} key="confirm-governance" onClick={() => dispatch({ type: "governance_confirmed" })} size="lg">
             确认关系处理
           </Button>,
         ],
@@ -1100,6 +1108,7 @@ type: "failed",
 
       {state.phase === "governance" && state.plan ? (
         <RelationshipGovernancePanel
+          aiAvailable={Boolean(facade.runAiPreChecks)}
           decision={state.governanceDecision}
           groups={state.plan.governanceGroups ?? []}
           onDecision={(decision) => dispatch({ type: "governance_decision", decision })}
@@ -1195,7 +1204,7 @@ type: "failed",
         />
       ) : null}
 
-      {state.phase === "summary" ? <ImportSummary results={state.results} /> : null}
+      {state.phase === "summary" ? <ImportSummary onOpenGovernanceTask={onOpenGovernanceTask} results={state.results} /> : null}
 
       {state.phase === "cancelled" ? (
         <DataState message={t("importWorkflow.cancelled")} state="empty" />

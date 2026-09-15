@@ -200,6 +200,15 @@ async fn import_prepare_commit_and_cancel_write_the_full_lifecycle() {
         .execute(AppCommand::CommitImport(CommitImport {
             prepared_import_id: prepared.id,
             decision: ImportDecision::CopyIntoLibrary,
+            governance_decision: skillhub_core::ImportGovernanceDecision {
+                group_actions: prepared
+                    .analysis
+                    .governance_groups
+                    .iter()
+                    .map(|group| (group.group_id.clone(), group.default_action))
+                    .collect(),
+                item_overrides: Default::default(),
+            },
         }))
         .await
         .expect("commit import");

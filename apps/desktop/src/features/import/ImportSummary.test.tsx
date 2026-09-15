@@ -117,7 +117,15 @@ it("keeps the original copy and exposes the relationship-governance todo after a
             action: "copy",
             status: "succeeded",
             message: "已导入",
-            governanceTodo: "确认共享目录影响",
+            governanceTasks: [{
+              task_id: "import-governance:shared-pdf",
+              kind: "confirm_shared_directory_impact",
+              subject_id: "shared-pdf",
+              detail: "确认共享目录影响",
+              resolved: false,
+              created_at: "1",
+              resolved_at: null,
+            }],
             originalPreserved: true,
           },
           {
@@ -125,7 +133,15 @@ it("keeps the original copy and exposes the relationship-governance todo after a
             action: "copy",
             status: "failed",
             message: "写入失败",
-            governanceTodo: "检查权限后重试",
+            governanceTasks: [{
+              task_id: "import-governance:readonly-notes",
+              kind: "unknown_directory_recognition",
+              subject_id: "readonly-notes",
+              detail: "检查权限后重试",
+              resolved: false,
+              created_at: "1",
+              resolved_at: null,
+            }],
             originalPreserved: true,
           },
         ]}
@@ -134,5 +150,5 @@ it("keeps the original copy and exposes the relationship-governance todo after a
   );
 
   expect(screen.getByText("原始副本保持不变；如需清理，请在关系治理中单独确认并保留回退路径。")).toBeVisible();
-  expect(screen.getByRole("link", { name: "查看 2 个关系治理待办" })).toBeVisible();
+  expect(screen.queryByRole("link", { name: /关系治理待办/ })).not.toBeInTheDocument();
 });

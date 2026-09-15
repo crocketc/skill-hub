@@ -6054,7 +6054,58 @@ impl LocalApplicationFacade {
                 .with_param("field", "decision")
                 .with_action(RecoveryAction::ChooseAnotherName));
         }
+        for (group_id, action) in &request.governance_decision.group_actions {
+            let Some(group) = prepared
+                .analysis
+                .governance_groups
+                .iter()
+                .find(|group| &group.group_id == group_id)
+            else {
+                return Err(AppError::new(ErrorCode::InvalidInput, Severity::Error)
+                    .with_param("field", "governance_decision.group_actions"));
+            };
+            if !group.available_actions.contains(action) {
+                return Err(AppError::new(ErrorCode::InvalidInput, Severity::Error)
+                    .with_param("field", "governance_decision.group_actions"));
+            }
+        }
+        for (member_id, action) in &request.governance_decision.item_overrides {
+            let member_group = prepared.analysis.governance_groups.iter().find(|group| {
+                group
+                    .members
+                    .iter()
+                    .any(|member| member.member_id == *member_id)
+            });
+            if !member_group.is_some_and(|group| group.available_actions.contains(action)) {
+                return Err(AppError::new(ErrorCode::InvalidInput, Severity::Error)
+                    .with_param("field", "governance_decision.item_overrides"));
+            }
+        }
+        // `default_action` is a recommendation only.  A caller must explicitly
+        // confirm each group, or explicitly decide every member in that group;
+        // otherwise an import would silently apply relationship governance.
+        for group in &prepared.analysis.governance_groups {
+            let group_confirmed = request
+                .governance_decision
+                .group_actions
+                .contains_key(&group.group_id);
+            let all_members_confirmed = group.members.iter().all(|member| {
+                request
+                    .governance_decision
+                    .item_overrides
+                    .contains_key(&member.member_id)
+            });
+            if !group_confirmed && !all_members_confirmed {
+                return Err(AppError::new(ErrorCode::InvalidInput, Severity::Error)
+                    .with_param("field", "governance_decision.confirmation"));
+            }
+        }
+        let governance_tasks =
+            Self::import_governance_tasks(&prepared.analysis, &request.governance_decision);
         if request.decision == skillhub_core::ImportDecision::Skip {
+            self.with_database("execute.commit_import.governance_task", |database| {
+                Self::persist_import_governance_tasks(database, &governance_tasks)
+            })?;
             self.prepared_imports
                 .lock()
                 .map_err(|_| {
@@ -6069,7 +6120,10 @@ impl LocalApplicationFacade {
                     items: vec![skillhub_core::ImportItemResult {
                         skill_id: None,
                         decision: request.decision,
+                        status: skillhub_core::ImportItemStatus::Skipped,
                         original_preserved: true,
+                        reason_code: Some("import.skipped_by_user".into()),
+                        governance_tasks,
                         provenance: None,
                     }],
                     committed: true,
@@ -6103,6 +6157,9 @@ impl LocalApplicationFacade {
                     .map(|_| ())
                 })?;
             }
+            self.with_database("execute.commit_import.governance_task", |database| {
+                Self::persist_import_governance_tasks(database, &governance_tasks)
+            })?;
             self.prepared_imports
                 .lock()
                 .map_err(|_| {
@@ -6117,7 +6174,10 @@ impl LocalApplicationFacade {
                     items: vec![skillhub_core::ImportItemResult {
                         skill_id: Some(skill_id),
                         decision: request.decision,
+                        status: skillhub_core::ImportItemStatus::Succeeded,
                         original_preserved: true,
+                        reason_code: None,
+                        governance_tasks,
                         provenance: None,
                     }],
                     committed: true,
@@ -6221,6 +6281,12 @@ impl LocalApplicationFacade {
                     ));
                 }
             };
+            if let Err(error) = Self::persist_import_governance_tasks(database, &governance_tasks) {
+                return Err(cleanup_import_error(
+                    error,
+                    cleanup_import_state(database, central, store, skill_id, &version),
+                ));
+            }
             self.prepared_imports
                 .lock()
                 .map_err(|_| {
@@ -6235,13 +6301,67 @@ impl LocalApplicationFacade {
                     items: vec![skillhub_core::ImportItemResult {
                         skill_id: Some(skill_id),
                         decision: request.decision,
+                        status: skillhub_core::ImportItemStatus::Succeeded,
                         original_preserved: true,
+                        reason_code: None,
+                        governance_tasks,
                         provenance,
                     }],
                     committed: true,
                 },
             )))
         })
+    }
+
+    fn import_governance_tasks(
+        analysis: &skillhub_core::ImportAnalysis,
+        decision: &skillhub_core::import::ImportGovernanceDecision,
+    ) -> Vec<skillhub_core::GovernanceTaskFact> {
+        analysis
+            .governance_groups
+            .iter()
+            .flat_map(|group| {
+                group
+                    .members
+                    .iter()
+                    .filter(|member| {
+                        decision.action_for_member(group, &member.member_id)
+                            == Some(skillhub_core::ImportGovernanceAction::CreateTodo)
+                    })
+                    .map(|member| skillhub_core::GovernanceTaskFact {
+                        task_id: skillhub_core::import_governance_task_id(
+                            &group.group_id,
+                            &member.member_id,
+                        ),
+                        kind: match group.classification {
+                            skillhub_core::ImportGovernanceClassification::SourcePreservation => {
+                                skillhub_core::GovernanceTaskKind::UnknownDirectoryRecognition
+                            }
+                            skillhub_core::ImportGovernanceClassification::AgentManagedSource => {
+                                skillhub_core::GovernanceTaskKind::ConfirmSharedDirectoryImpact
+                            }
+                            skillhub_core::ImportGovernanceClassification::ConflictFollowUp => {
+                                skillhub_core::GovernanceTaskKind::ClassifySameNameSkill
+                            }
+                        },
+                        subject_id: member.member_id.clone(),
+                        detail: group.impact_summary.clone(),
+                        resolved: false,
+                        created_at: now_epoch_seconds(),
+                        resolved_at: None,
+                    })
+            })
+            .collect()
+    }
+
+    fn persist_import_governance_tasks(
+        database: &Database,
+        tasks: &[skillhub_core::GovernanceTaskFact],
+    ) -> AppResult<()> {
+        for task in tasks {
+            database.governance_task_repository().create(task)?;
+        }
+        Ok(())
     }
 
     // ===== OPT-20260914-08：已部署 Skill 识别、导入存证与原始文件迁移 =====

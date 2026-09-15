@@ -6,6 +6,8 @@ import {
   type ImportAnalysis,
   type ImportCandidate as NativeImportCandidate,
   type ImportDecision,
+  type ImportGovernanceDecision,
+  type ImportGovernanceGroup,
 } from "../../api/bindings";
 import { keyedMessage } from "../../api/nativeErrors";
 import {
@@ -134,16 +136,17 @@ function resultForSummary(
   result: Extract<AppCommandResult, { type: "import_summary" }>["payload"],
 ): ImportResult {
   const item = result.items[0];
-  if (action === "skip") {
-    return { action, candidateId: candidate.id, message: "importWorkflow.commitMessages.skipped", status: "skipped" };
-  }
   return {
     action,
     candidateId: candidate.id,
-    message: item?.skill_id
+    message: item?.reason_code
+      ?? (item?.skill_id
       ? "importWorkflow.commitMessages.imported"
-      : "importWorkflow.commitMessages.noDetail",
-    status: result.committed ? "succeeded" : "failed",
+      : "importWorkflow.commitMessages.noDetail"),
+    status: item?.status ?? (result.committed ? "succeeded" : "failed"),
+    reasonCode: item?.reason_code ?? undefined,
+    originalPreserved: item?.original_preserved ?? true,
+    governanceTasks: item?.governance_tasks,
     provenance: item?.provenance
       ? {
           agentClientId: item.provenance.agent_client_id,
@@ -151,6 +154,34 @@ function resultForSummary(
           importedAt: item.provenance.imported_at,
         }
       : undefined,
+  };
+}
+
+function mergeGovernanceGroups(groups: ImportGovernanceGroup[]): ImportGovernanceGroup[] {
+  const merged = new Map<string, ImportGovernanceGroup>();
+  for (const group of groups) {
+    const current = merged.get(group.group_id);
+    if (current) {
+      current.members.push(...group.members);
+    } else {
+      merged.set(group.group_id, { ...group, members: [...group.members] });
+    }
+  }
+  return [...merged.values()];
+}
+
+function decisionForPrepared(
+  decision: ImportGovernanceDecision,
+  groups: ImportGovernanceGroup[],
+): ImportGovernanceDecision {
+  const memberIds = new Set(groups.flatMap((group) => group.members.map((member) => member.member_id)));
+  return {
+    group_actions: Object.fromEntries(groups.flatMap((group) => {
+      const action = decision.group_actions[group.group_id];
+      return action ? [[group.group_id, action]] : [];
+    })),
+    item_overrides: Object.fromEntries(Object.entries(decision.item_overrides)
+      .filter(([memberId]) => memberIds.has(memberId))),
   };
 }
 
@@ -304,10 +335,16 @@ export const nativeImportFacade: ImportFacade = {
         });
       }
     }
-    return { candidates, conflicts };
+    return {
+      candidates,
+      conflicts,
+      governanceGroups: mergeGovernanceGroups(
+        analyses.flatMap(({ analysis }) => analysis.governance_groups ?? []),
+      ),
+    };
   },
 
-  async commitImport(plan, actions, onProgress) {
+  async commitImport(plan, actions, onProgress, governanceDecision = { group_actions: {}, item_overrides: {} }) {
     const results: ImportResult[] = [];
     for (const [index, candidate] of plan.candidates.entries()) {
       onProgress?.({
@@ -333,6 +370,7 @@ export const nativeImportFacade: ImportFacade = {
           type: "commit_import",
           payload: {
             decision,
+            governance_decision: decisionForPrepared(governanceDecision, prepared.analysis.governance_groups ?? []),
             prepared_import_id: prepared.id,
           },
         }));

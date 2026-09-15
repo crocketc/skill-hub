@@ -6,9 +6,10 @@ mod provenance;
 
 pub use conflict::{
     analyze_import, DuplicateKind, ExistingSkillRecord, ImportAnalysis, ImportConflict,
-    ImportMatch, MatchBasis,
+    ImportGovernanceAction, ImportGovernanceClassification, ImportGovernanceGroup,
+    ImportGovernanceMember, ImportMatch, MatchBasis,
 };
-pub use decision::ImportDecision;
+pub use decision::{import_governance_task_id, ImportDecision, ImportGovernanceDecision};
 pub use migration::{
     ensure_original_deletion_authorized, plan_original_migration, OriginalMigrationConflict,
     OriginalMigrationConflictReason, OriginalMigrationFacts, OriginalMigrationPlan,

@@ -77,6 +77,39 @@ pub struct ImportConflict {
     pub requires_choice: bool,
 }
 
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(rename_all = "snake_case")]
+pub enum ImportGovernanceClassification {
+    SourcePreservation,
+    AgentManagedSource,
+    ConflictFollowUp,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(rename_all = "snake_case")]
+pub enum ImportGovernanceAction {
+    PreserveOriginal,
+    CreateTodo,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct ImportGovernanceMember {
+    pub member_id: String,
+    pub display_name: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct ImportGovernanceGroup {
+    pub group_id: String,
+    pub classification: ImportGovernanceClassification,
+    pub members: Vec<ImportGovernanceMember>,
+    pub impact_summary: String,
+    pub default_action: ImportGovernanceAction,
+    pub available_actions: Vec<ImportGovernanceAction>,
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 #[serde(deny_unknown_fields)]
 pub struct ImportAnalysis {
@@ -85,6 +118,9 @@ pub struct ImportAnalysis {
     pub matches: Vec<ImportMatch>,
     pub conflicts: Vec<ImportConflict>,
     pub actions: Vec<super::ImportDecision>,
+    #[serde(default)]
+    #[specta(optional)]
+    pub governance_groups: Vec<ImportGovernanceGroup>,
 }
 
 pub fn analyze_import(
@@ -219,12 +255,51 @@ pub fn analyze_import(
             .unwrap_or(usize::MAX)
     });
     actions.dedup();
+    let classification = if conflicts.iter().any(|conflict| conflict.requires_choice) {
+        ImportGovernanceClassification::ConflictFollowUp
+    } else if matches!(candidate.ownership, CandidateOwnership::KnownAgentTarget) {
+        ImportGovernanceClassification::AgentManagedSource
+    } else {
+        ImportGovernanceClassification::SourcePreservation
+    };
+    let (group_id, impact_summary, default_action) = match classification {
+        ImportGovernanceClassification::SourcePreservation => (
+            "source-preservation",
+            "Importing into the central library preserves the original source.",
+            ImportGovernanceAction::PreserveOriginal,
+        ),
+        ImportGovernanceClassification::AgentManagedSource => (
+            "agent-managed-source",
+            "This source belongs to a recognized Agent directory and remains unchanged by import.",
+            ImportGovernanceAction::PreserveOriginal,
+        ),
+        ImportGovernanceClassification::ConflictFollowUp => (
+            "conflict-follow-up",
+            "This import has a deterministic conflict that needs a tracked follow-up after confirmation.",
+            ImportGovernanceAction::CreateTodo,
+        ),
+    };
+    let governance_groups = vec![ImportGovernanceGroup {
+        group_id: group_id.into(),
+        classification,
+        members: vec![ImportGovernanceMember {
+            member_id: format!("{}:{}", candidate.absolute_root, candidate.relative_root),
+            display_name: candidate.runtime_name.clone(),
+        }],
+        impact_summary: impact_summary.into(),
+        default_action,
+        available_actions: vec![
+            ImportGovernanceAction::PreserveOriginal,
+            ImportGovernanceAction::CreateTodo,
+        ],
+    }];
     ImportAnalysis {
         candidate,
         duplicate_kind,
         matches,
         conflicts,
         actions,
+        governance_groups,
     }
 }
 

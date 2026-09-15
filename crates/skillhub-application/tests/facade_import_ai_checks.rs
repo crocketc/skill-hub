@@ -169,6 +169,15 @@ async fn import_ai_checks_report_per_object_and_leave_import_gates_intact() {
         .execute(AppCommand::CommitImport(skillhub_core::CommitImport {
             prepared_import_id: id,
             decision: ImportDecision::CopyIntoLibrary,
+            governance_decision: skillhub_core::ImportGovernanceDecision {
+                group_actions: [(
+                    "source-preservation".into(),
+                    skillhub_core::ImportGovernanceAction::PreserveOriginal,
+                )]
+                .into_iter()
+                .collect(),
+                item_overrides: Default::default(),
+            },
         }))
         .await
         .expect("commit import after ai findings");

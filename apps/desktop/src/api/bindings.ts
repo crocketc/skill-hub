@@ -351,6 +351,7 @@ export type CommitDeployment = {
 export type CommitImport = {
 	prepared_import_id: OperationId,
 	decision: ImportDecision,
+	governance_decision?: ImportGovernanceDecision,
 };
 
 export type CommitInitialRestore = {
@@ -1112,6 +1113,7 @@ export type ImportAnalysis = {
 	matches: ImportMatch[],
 	conflicts: ImportConflict[],
 	actions: ImportDecision[],
+	governance_groups?: ImportGovernanceGroup[],
 };
 
 export type ImportCandidate = {
@@ -1141,10 +1143,45 @@ export type ImportConflict = {
  */
 export type ImportDecision = "reuse_existing" | "establish_managed_relation" | "copy_into_library" | "take_over_after_verify" | "keep_independent" | "copy_as_independent_managed_skill" | "skip";
 
+export type ImportGovernanceAction = "preserve_original" | "create_todo";
+
+export type ImportGovernanceClassification = "source_preservation" | "agent_managed_source" | "conflict_follow_up";
+
+export type ImportGovernanceDecision = {
+	group_actions: { [key in string]: ImportGovernanceAction },
+	item_overrides: { [key in string]: ImportGovernanceAction },
+};
+
+export type ImportGovernanceGroup = {
+	group_id: string,
+	classification: ImportGovernanceClassification,
+	members: ImportGovernanceMember[],
+	impact_summary: string,
+	default_action: ImportGovernanceAction,
+	available_actions: ImportGovernanceAction[],
+};
+
+export type ImportGovernanceMember = {
+	member_id: string,
+	display_name: string,
+};
+
 export type ImportItemResult = {
 	skill_id: SkillId | null,
 	decision: ImportDecision,
+	status: ImportItemStatus,
 	original_preserved: boolean,
+	/**
+	 *  Stable machine-readable reason for a skipped or failed item.  Display
+	 *  copy belongs to the client; callers must not parse a prose message.
+	 */
+	reason_code?: string | null,
+	/**
+	 *  Persisted relationship-governance work created by this import item.
+	 *  Each fact has a stable `task_id` and is queryable through the existing
+	 *  relationship overview API.
+	 */
+	governance_tasks?: GovernanceTaskFact[],
 	/**
 	 *  OPT-20260914-08：导入即存证。提交成功时携带本次导入落库的溯源
 	 *  记录（来源/Agent 形态/原始路径/导入时间/内容指纹/所有权状态），
@@ -1152,6 +1189,8 @@ export type ImportItemResult = {
 	 */
 	provenance?: ImportProvenance | null,
 };
+
+export type ImportItemStatus = "succeeded" | "skipped" | "failed";
 
 export type ImportMatch = {
 	skill_id: SkillId,

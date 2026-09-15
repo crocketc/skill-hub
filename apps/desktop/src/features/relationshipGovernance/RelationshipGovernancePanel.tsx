@@ -15,9 +15,8 @@ export interface RelationshipGovernancePanelProps {
 }
 
 const actionLabels: Record<ImportGovernanceAction, string> = {
-  keep_original: "原件保留",
+  preserve_original: "原件保留",
   create_todo: "创建待办",
-  convert_to_managed_link: "建立受管链接",
 };
 
 /**
@@ -26,7 +25,7 @@ const actionLabels: Record<ImportGovernanceAction, string> = {
  */
 export function RelationshipGovernancePanel({
   aiAvailable = true,
-  decision = { groupActions: {}, itemOverrides: {} },
+  decision = { group_actions: {}, item_overrides: {} },
   groups,
   onDecision,
 }: RelationshipGovernancePanelProps) {
@@ -34,14 +33,14 @@ export function RelationshipGovernancePanel({
 
   const selectGroup = (group: ImportGovernanceGroup, action: ImportGovernanceAction) => {
     onDecision({
-      groupActions: { ...decision.groupActions, [group.id]: action },
-      itemOverrides: decision.itemOverrides,
+      group_actions: { ...decision.group_actions, [group.group_id]: action },
+      item_overrides: decision.item_overrides,
     });
   };
   const selectMember = (memberId: string, action: ImportGovernanceAction) => {
     onDecision({
-      groupActions: decision.groupActions,
-      itemOverrides: { ...decision.itemOverrides, [memberId]: action },
+      group_actions: decision.group_actions,
+      item_overrides: { ...decision.item_overrides, [memberId]: action },
     });
   };
 
@@ -54,16 +53,16 @@ export function RelationshipGovernancePanel({
       </header>
       {!aiAvailable ? <p role="status">AI 建议未配置；已保留确定性关系判断。</p> : null}
       {groups.map((group) => (
-        <article key={group.id}>
+        <article key={group.group_id}>
           <h3>{group.classification.replaceAll("_", " ")}</h3>
-          <p>{group.impactSummary}</p>
+          <p>{group.impact_summary}</p>
           <fieldset>
             <legend>分组默认动作</legend>
-            {group.availableActions.map((action) => (
+            {group.available_actions.map((action) => (
               <label key={action}>
                 <input
-                  checked={(decision.groupActions[group.id] ?? group.defaultAction) === action}
-                  name={`group-${group.id}`}
+                  checked={decision.group_actions[group.group_id] === action}
+                  name={`group-${group.group_id}`}
                   onChange={() => selectGroup(group, action)}
                   type="radio"
                 />
@@ -72,29 +71,28 @@ export function RelationshipGovernancePanel({
             ))}
           </fieldset>
           <Button
-            aria-expanded={Boolean(expanded[group.id])}
-            onClick={() => setExpanded((current) => ({ ...current, [group.id]: !current[group.id] }))}
+            aria-expanded={Boolean(expanded[group.group_id])}
+            onClick={() => setExpanded((current) => ({ ...current, [group.group_id]: !current[group.group_id] }))}
             variant="ghost"
           >
-            {expanded[group.id] ? "收起项目" : `展开 ${group.members.length} 个项目`}
+            {expanded[group.group_id] ? "收起项目" : `展开 ${group.members.length} 个项目`}
           </Button>
-          {expanded[group.id] ? (
+          {expanded[group.group_id] ? (
             <ul>
               {group.members.map((member) => (
-                <li key={member.candidateId}>
-                  <strong>{member.name}</strong>
-                  <p>{member.detail}</p>
+                <li key={member.member_id}>
+                  <strong>{member.display_name}</strong>
                   <fieldset>
-                    <legend>{member.name} 的单项覆盖</legend>
-                    {group.availableActions.map((action) => (
+                    <legend>{member.display_name} 的单项覆盖</legend>
+                    {group.available_actions.map((action) => (
                       <label key={action}>
                         <input
-                          checked={actionForMember(group, decision, member.candidateId) === action}
-                          name={`member-${member.candidateId}`}
-                          onChange={() => selectMember(member.candidateId, action)}
+                          checked={actionForMember(group, decision, member.member_id) === action}
+                          name={`member-${member.member_id}`}
+                          onChange={() => selectMember(member.member_id, action)}
                           type="radio"
                         />
-                        {member.name}：{actionLabels[action]}
+                        {member.display_name}：{actionLabels[action]}
                       </label>
                     ))}
                   </fieldset>
@@ -104,7 +102,6 @@ export function RelationshipGovernancePanel({
           ) : null}
         </article>
       ))}
-      <a href="#relationship-governance">前往关系治理待办</a>
     </section>
   );
 }

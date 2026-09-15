@@ -98,8 +98,10 @@ export interface ImportResult {
   provenance?: ImportProvenanceSummary;
   /** 关系治理是导入后的独立、可回退操作；导入不会清理原始副本。 */
   originalPreserved?: boolean;
-  /** 后端确定性分类产生的后续治理入口，AI 建议不会写入此字段。 */
-  governanceTodo?: string;
+  /** 已持久化并可由关系概览查询读取的真实治理待办。 */
+  governanceTasks?: import("../../api/bindings").GovernanceTaskFact[];
+  /** 结构化原因码，界面不得反向解析展示文案。 */
+  reasonCode?: string;
 }
 
 export interface ImportProgress {
@@ -151,6 +153,7 @@ export interface ImportFacade {
     plan: ImportPlan,
     actions: Record<string, ImportAction>,
     onProgress?: (progress: ImportProgress) => void,
+    governanceDecision?: import("../relationshipGovernance/relationshipGovernance").ImportGovernanceDecision,
   ): Promise<ImportResult[]>;
   cancel(): Promise<void>;
   /** Optional advisory AI safety pre-check (step 5). Findings never change

@@ -5,14 +5,17 @@
 //! legacy original-file migration flow and that a prepare operation is
 //! observationally read-only for the user's relationship path.
 
+use std::collections::BTreeMap;
+
 use serde_json::Value;
 use skillhub_application::LocalApplicationFacade;
 use skillhub_core::agent::DirectoryPrecedence;
 use skillhub_core::api::{
-    CreateSkill, GetRelationshipOverview, GetRelationshipRemovalImpact, ListSkills,
+    CreateSkill, GetRelationshipOverview, GetRelationshipRemovalImpact, ListSkills, PrepareImport,
     PrepareRelationMigration, RelationshipMigrationBackupPolicy, RelationshipOverviewScope,
 };
 use skillhub_core::deployment::{ObservedMatchState, ObservedOrigin};
+use skillhub_core::import::{ImportGovernanceAction, ImportGovernanceDecision};
 use skillhub_core::relationship::{
     AgentDirectoryCapabilityFact, ConflictCaseFact, ConflictClassification, ConflictEvidence,
     ConflictKind, DeploymentRelationFact, DirectoryNodeFact, DirectoryRecognition, DirectoryRole,
@@ -22,7 +25,8 @@ use skillhub_core::relationship::{
 use skillhub_core::source::{SourceDescriptor, SourceKind, SourceLocator};
 use skillhub_core::{
     AppCommand, AppCommandResult, AppQuery, AppQueryResult, ApplicationFacade, ErrorCode,
-    OperationPhase, RelationMigrationState, RelationMigrationTargetMode, SkillId,
+    ImportCandidate, ImportDecision, OperationPhase, RelationMigrationState,
+    RelationMigrationTargetMode, SkillId,
 };
 use skillhub_storage::{CentralLibrary, Database};
 
@@ -265,6 +269,120 @@ async fn relationship_overview_combines_facts_without_claiming_agent_execution()
     assert_eq!(overview.conflict_cases.len(), 1);
     assert_eq!(overview.pending_governance_tasks.len(), 1);
     assert!(!overview.agent_execution_confirmed);
+}
+
+#[tokio::test]
+async fn import_requires_an_explicit_governance_confirmation_before_copying() {
+    let database = Database::open_in_memory().expect("database");
+    let library_root = tempfile::tempdir().expect("library root");
+    CentralLibrary::initialize(library_root.path()).expect("library");
+    let source = tempfile::tempdir().expect("source");
+    write_skill(source.path());
+    let facade = LocalApplicationFacade::new_with_library(database, library_root.path());
+    let prepared = facade
+        .execute(AppCommand::PrepareImport(PrepareImport {
+            candidate: ImportCandidate::detected(
+                SourceDescriptor::new(SourceKind::Local, SourceLocator::local_path(source.path())),
+                source.path().to_string_lossy(),
+                ".",
+                "SKILL.md",
+                "Notes",
+            ),
+            tree_hash: None,
+        }))
+        .await
+        .expect("prepared import");
+    let AppCommandResult::PreparedImport(prepared) = prepared else {
+        panic!("expected prepared import");
+    };
+    assert_eq!(prepared.analysis.governance_groups.len(), 1);
+
+    let error = facade
+        .execute(AppCommand::CommitImport(skillhub_core::CommitImport {
+            prepared_import_id: prepared.id,
+            decision: ImportDecision::CopyIntoLibrary,
+            governance_decision: ImportGovernanceDecision {
+                group_actions: BTreeMap::new(),
+                item_overrides: BTreeMap::new(),
+            },
+        }))
+        .await
+        .expect_err("the suggested default is not a user confirmation");
+
+    assert_eq!(error.code, ErrorCode::InvalidInput);
+    assert!(source.path().join("SKILL.md").is_file());
+}
+
+#[tokio::test]
+async fn import_item_override_creates_a_queryable_governance_task_without_removing_source() {
+    let database = Database::open_in_memory().expect("database");
+    let library_root = tempfile::tempdir().expect("library root");
+    CentralLibrary::initialize(library_root.path()).expect("library");
+    let source = tempfile::tempdir().expect("source");
+    write_skill(source.path());
+    let facade = LocalApplicationFacade::new_with_library(database, library_root.path());
+    let prepared = facade
+        .execute(AppCommand::PrepareImport(PrepareImport {
+            candidate: ImportCandidate::detected(
+                SourceDescriptor::new(SourceKind::Local, SourceLocator::local_path(source.path())),
+                source.path().to_string_lossy(),
+                ".",
+                "SKILL.md",
+                "Notes",
+            ),
+            tree_hash: None,
+        }))
+        .await
+        .expect("prepared import");
+    let AppCommandResult::PreparedImport(prepared) = prepared else {
+        panic!("expected prepared import");
+    };
+    let group = prepared.analysis.governance_groups.first().expect("group");
+    let member = group.members.first().expect("member");
+
+    let committed = facade
+        .execute(AppCommand::CommitImport(skillhub_core::CommitImport {
+            prepared_import_id: prepared.id,
+            decision: ImportDecision::CopyIntoLibrary,
+            governance_decision: ImportGovernanceDecision {
+                group_actions: BTreeMap::from([(
+                    group.group_id.clone(),
+                    ImportGovernanceAction::PreserveOriginal,
+                )]),
+                item_overrides: BTreeMap::from([(
+                    member.member_id.clone(),
+                    ImportGovernanceAction::CreateTodo,
+                )]),
+            },
+        }))
+        .await
+        .expect("committed import");
+    let AppCommandResult::ImportSummary(summary) = committed else {
+        panic!("expected import summary");
+    };
+    let item = summary.items.first().expect("item result");
+    assert_eq!(item.status, skillhub_core::ImportItemStatus::Succeeded);
+    let task = item
+        .governance_tasks
+        .first()
+        .expect("created governance task");
+    assert_eq!(task.kind, GovernanceTaskKind::UnknownDirectoryRecognition);
+    assert!(!task.task_id.contains('#'));
+    assert!(source.path().join("SKILL.md").is_file());
+
+    let overview = facade
+        .query(AppQuery::GetRelationshipOverview(GetRelationshipOverview {
+            scope: RelationshipOverviewScope::All,
+        }))
+        .await
+        .expect("relationship overview");
+    let AppQueryResult::RelationshipOverview(overview) = overview else {
+        panic!("expected relationship overview");
+    };
+    assert!(overview
+        .pending_governance_tasks
+        .iter()
+        .any(|pending| pending.task_id == task.task_id));
 }
 
 #[tokio::test]

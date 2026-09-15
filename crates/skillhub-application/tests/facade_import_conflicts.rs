@@ -41,11 +41,20 @@ async fn prepare(
     prepared
 }
 
-async fn commit_copy(facade: &LocalApplicationFacade, prepared_id: skillhub_core::OperationId) {
+async fn commit_copy(facade: &LocalApplicationFacade, prepared: &skillhub_core::PreparedImport) {
     let committed = facade
         .execute(AppCommand::CommitImport(skillhub_core::CommitImport {
-            prepared_import_id: prepared_id,
+            prepared_import_id: prepared.id,
             decision: ImportDecision::CopyIntoLibrary,
+            governance_decision: skillhub_core::ImportGovernanceDecision {
+                group_actions: prepared
+                    .analysis
+                    .governance_groups
+                    .iter()
+                    .map(|group| (group.group_id.clone(), group.default_action))
+                    .collect(),
+                item_overrides: Default::default(),
+            },
         }))
         .await
         .expect("commit import");
@@ -72,7 +81,7 @@ async fn reimporting_the_same_directory_reports_an_exact_duplicate_conflict() {
 
     // First import lands the skill in the library.
     let first = prepare(&facade, source.path(), "Notes").await;
-    commit_copy(&facade, first.id).await;
+    commit_copy(&facade, &first).await;
 
     // Re-import the SAME directory: this must surface a conflict, never
     // "nothing to handle".
@@ -117,7 +126,7 @@ async fn same_runtime_name_with_different_content_reports_a_name_conflict() {
     let source = tempfile::tempdir().expect("source");
     write_skill(source.path(), "# Notes\n");
     let first = prepare(&facade, source.path(), "Notes").await;
-    commit_copy(&facade, first.id).await;
+    commit_copy(&facade, &first).await;
 
     // Same directory, changed content: the runtime name still collides.
     write_skill(source.path(), "# Notes rewritten\n");

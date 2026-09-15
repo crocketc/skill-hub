@@ -8,12 +8,14 @@ import type { ImportResult } from "./api";
 export interface ImportSummaryProps {
   results: ImportResult[];
   unavailable?: boolean;
+  onOpenGovernanceTask?: (task: NonNullable<ImportResult["governanceTasks"]>[number]) => void;
 }
 
 /** 导入结果摘要：统计、逐项结果与明细展开；重试/打开库在向导底部操作区。 */
 export function ImportSummary({
   results,
   unavailable = false,
+  onOpenGovernanceTask,
 }: ImportSummaryProps) {
   const { t } = useTranslation();
   const [showCompletedDetails, setShowCompletedDetails] = useState(false);
@@ -37,7 +39,7 @@ export function ImportSummary({
   const visibleResults = showCompletedDetails
     ? results
     : results.filter((result) => result.status === "failed");
-  const governanceTodos = results.filter((result) => result.governanceTodo).length;
+  const governanceTasks = results.flatMap((result) => result.governanceTasks ?? []);
   const originalsPreserved = results.some((result) => result.originalPreserved);
 
   return (
@@ -62,10 +64,14 @@ export function ImportSummary({
         </p>
       ) : null}
 
-      {governanceTodos > 0 ? (
-        <a href="#relationship-governance">
-          查看 {governanceTodos} 个关系治理待办
-        </a>
+      {governanceTasks.length > 0 && onOpenGovernanceTask ? (
+        <div aria-label="关系治理待办">
+          {governanceTasks.map((task) => (
+            <Button key={task.task_id} onClick={() => onOpenGovernanceTask(task)} variant="ghost">
+              查看治理待办 {task.task_id}
+            </Button>
+          ))}
+        </div>
       ) : null}
 
       <ul className="sh-import-summary__list">
@@ -79,6 +85,7 @@ export function ImportSummary({
               {t(`importWorkflow.summary.status.${result.status}`)}
             </StatusBadge>
             <p>{t(result.message, { defaultValue: result.message })}</p>
+            {result.reasonCode ? <p data-testid="import-reason-code">{result.reasonCode}</p> : null}
             {result.provenance ? (
               <p
                 className="sh-import-summary__provenance"
