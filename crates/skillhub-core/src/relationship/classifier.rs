@@ -105,17 +105,33 @@ pub fn classify_observed_relation_with_reason(
     fact.directory_node_id = Some(target.directory_node_id.clone());
     fact.link_target_path_key = fact.link_target_path.as_deref().map(observed_path_key);
 
-    let relationship = if target.directory_role == DirectoryRole::SharedDirectory {
-        RelationshipType::SharedDirectoryRead
-    } else if shared_target.is_some()
+    let derived_relationship = relationship_for_target(target);
+    let direct_shared_read = target.directory_role == DirectoryRole::SharedDirectory
+        && target.file_representation == FileRepresentation::Directory
+        && target.ownership == OwnershipState::ObservedUnmanaged
+        && matches!(
+            target.relationship,
+            RelationshipType::Unknown | RelationshipType::SharedDirectoryRead
+        );
+    let shared_reference = shared_target.is_some()
         && matches!(
             target.file_representation,
             FileRepresentation::SymbolicLink | FileRepresentation::DirectoryJunction
         )
-    {
+        && matches!(
+            target.ownership,
+            OwnershipState::ObservedUnmanaged | OwnershipState::SharedReference
+        )
+        && matches!(
+            derived_relationship,
+            RelationshipType::ObservedLink | RelationshipType::Unknown
+        );
+    let relationship = if direct_shared_read {
+        RelationshipType::SharedDirectoryRead
+    } else if shared_reference {
         RelationshipType::SharedDirectoryReference
     } else {
-        relationship_for_target(target)
+        derived_relationship
     };
     fact.relationship = relationship;
     fact.ownership = if relationship == RelationshipType::SharedDirectoryReference {
@@ -146,45 +162,27 @@ fn relationship_for_ownership(
     ownership: OwnershipState,
     representation: FileRepresentation,
 ) -> RelationshipType {
-    if representation == FileRepresentation::Unknown {
-        return RelationshipType::Unknown;
-    }
     let link = matches!(
         representation,
         FileRepresentation::SymbolicLink | FileRepresentation::DirectoryJunction
     );
-    match (ownership, link) {
-        (OwnershipState::SkillhubManaged, true) => RelationshipType::ManagedLink,
-        (OwnershipState::SkillhubManaged, false) => RelationshipType::ManagedCopy,
-        (OwnershipState::ObservedUnmanaged, true) => RelationshipType::ObservedLink,
-        (OwnershipState::ObservedUnmanaged, false) => RelationshipType::ObservedCopy,
-        (OwnershipState::SharedReference, true) => RelationshipType::SharedDirectoryReference,
+    let copy = matches!(
+        representation,
+        FileRepresentation::Directory | FileRepresentation::Copy
+    );
+    match (ownership, link, copy) {
+        (OwnershipState::SkillhubManaged, true, false) => RelationshipType::ManagedLink,
+        (OwnershipState::SkillhubManaged, false, true) => RelationshipType::ManagedCopy,
+        (OwnershipState::ObservedUnmanaged, true, false) => RelationshipType::ObservedLink,
+        (OwnershipState::ObservedUnmanaged, false, true) => RelationshipType::ObservedCopy,
         _ => RelationshipType::Unknown,
     }
 }
 
 fn relationship_for_target(target: &RelationTargetFact) -> RelationshipType {
-    let compatible = matches!(
-        (target.relationship, target.ownership),
-        (
-            RelationshipType::ManagedCopy,
-            OwnershipState::SkillhubManaged
-        ) | (
-            RelationshipType::ManagedLink,
-            OwnershipState::SkillhubManaged
-        ) | (
-            RelationshipType::ObservedCopy,
-            OwnershipState::ObservedUnmanaged
-        ) | (
-            RelationshipType::ObservedLink,
-            OwnershipState::ObservedUnmanaged
-        )
-    );
-    if compatible {
-        target.relationship
-    } else {
-        relationship_for_ownership(target.ownership, target.file_representation)
-    }
+    // The persisted relationship is a hint from an earlier observation. The
+    // current ownership and filesystem representation are authoritative.
+    relationship_for_ownership(target.ownership, target.file_representation)
 }
 
 fn unknown_classification(path: &str, reason: &str) -> RelationClassification {

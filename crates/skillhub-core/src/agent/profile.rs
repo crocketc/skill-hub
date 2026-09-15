@@ -262,6 +262,12 @@ impl AgentProfile {
                 if !path_matches_candidate(candidate, path) {
                     continue;
                 }
+                if matches!(client.kind, ClientKind::SharedDirectory) {
+                    // A shared-directory profile identifies a possible
+                    // location only.  Runtime support must come from an
+                    // explicit AgentDirectoryCapabilityFact.
+                    continue;
+                }
                 if candidate.shared_reference {
                     // A shared candidate identifies a possible directory only;
                     // it does not prove that this Agent consumes it. That
