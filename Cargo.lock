@@ -4873,6 +4873,7 @@ dependencies = [
  "base64 0.21.7",
  "open",
  "rusqlite",
+ "serde",
  "serde_json",
  "skillhub-adapters",
  "skillhub-core",
