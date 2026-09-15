@@ -142,21 +142,6 @@ impl RelationBackupMetadata {
     }
 }
 
-fn invalid_backup_metadata(
-    prepared: &skillhub_core::PreparedRelationMigration,
-) -> RelationBackupMetadata {
-    RelationBackupMetadata {
-        operation_id: OperationId::new(),
-        path: prepared.backup_path.clone(),
-        original_path: prepared.relation.path.clone(),
-        original_fingerprint: prepared.relation.content_fingerprint.clone(),
-        original_relationship: prepared.relation.relationship,
-        original_representation: prepared.relation.file_representation,
-        original_ownership: prepared.relation.ownership,
-        original_active: prepared.relation.active,
-    }
-}
-
 impl LocalApplicationFacade {
     pub(crate) fn get_relationship_overview(
         &self,
@@ -413,6 +398,9 @@ impl LocalApplicationFacade {
         if !relation.active || relation.path != prepared.relation.path {
             return self.failed_relation_result(&journal, target_changed(&relation.path));
         }
+        if !relation_facts_match(&relation, &prepared.relation) {
+            return self.failed_relation_result(&journal, target_changed(&relation.path));
+        }
         let current_fingerprint = match DeploymentFilesystem::hash_tree(&relation.path) {
             Ok(value) => value,
             Err(error) => return self.failed_relation_result(&journal, error),
@@ -485,10 +473,17 @@ impl LocalApplicationFacade {
         )?;
 
         let backup_path = PathBuf::from(&prepared.backup_path);
-        if let Err(error) = validate_backup_binding(&journal) {
+        let library_root = match self.library_root() {
+            Ok(root) => root,
+            Err(error) => return self.failed_relation_result(&journal, error),
+        };
+        if let Err(error) = validate_backup_path(&journal, &library_root) {
             return self.failed_relation_result(&journal, error);
         }
         if let Err(error) = backup_relation_entry(&relation, &backup_path) {
+            return self.failed_relation_result(&journal, error);
+        }
+        if let Err(error) = validate_backup_fingerprint(&journal, &library_root) {
             return self.failed_relation_result(&journal, error);
         }
         if let Err(error) = remove_relation_entry(Path::new(&relation.path)) {
@@ -528,14 +523,22 @@ impl LocalApplicationFacade {
         let applied = match applied {
             Ok(applied) => applied,
             Err(error) => {
-                let error = recover_relation_entry(&journal).err().unwrap_or(error);
+                let error = self
+                    .library_root()
+                    .and_then(|library_root| recover_relation_entry(&journal, &library_root))
+                    .err()
+                    .unwrap_or(error);
                 return self.failed_relation_result(&journal, error);
             }
         };
         if applied.ownership.mode != prepared.target_mode {
             let error =
                 invalid_relation_migration("actual link representation differs from prepared mode");
-            let error = recover_relation_entry(&journal).err().unwrap_or(error);
+            let error = self
+                .library_root()
+                .and_then(|library_root| recover_relation_entry(&journal, &library_root))
+                .err()
+                .unwrap_or(error);
             return self.failed_relation_result(&journal, error);
         }
         let verifying = journal.clone();
@@ -660,7 +663,11 @@ impl LocalApplicationFacade {
             Ok(current) => current,
             Err(error) => return self.failed_relation_result(&journal, error),
         };
-        if let Err(error) = validate_backup_fingerprint(&journal) {
+        let library_root = match self.library_root() {
+            Ok(root) => root,
+            Err(error) => return self.failed_relation_result(&journal, error),
+        };
+        if let Err(error) = validate_backup_fingerprint(&journal, &library_root) {
             return self.failed_relation_result(&journal, error);
         }
         let already_restored = relation_is_restored(&current, &journal);
@@ -678,7 +685,7 @@ impl LocalApplicationFacade {
             None,
         )?;
         if !already_restored {
-            if let Err(error) = recover_relation_entry(&journal) {
+            if let Err(error) = recover_relation_entry(&journal, &library_root) {
                 return self.failed_relation_result(&journal, error);
             }
         }
@@ -708,14 +715,16 @@ impl LocalApplicationFacade {
             None,
             Vec::new(),
         );
-        self.persist_relation_operation(
+        if let Err(error) = self.persist_relation_operation(
             result.operation_id,
             OperationPhase::RolledBack,
             RelationMigrationState::RolledBack,
             &journal,
             Some(&result),
             None,
-        )?;
+        ) {
+            return Err(journal_failure_audit_error(&prepared.operation_id, &error));
+        }
         self.relation_migration_results
             .lock()
             .map_err(|_| internal("execute.rollback_relation_migration"))?
@@ -786,16 +795,19 @@ impl LocalApplicationFacade {
         journal_error: AppError,
         restore_relation_record: bool,
     ) -> AppResult<AppCommandResult> {
-        let recovery = recover_relation_entry(journal).and_then(|_| {
-            if restore_relation_record {
-                self.with_database("execute.relation_migration.recover_record", |database| {
-                    database
-                        .relationship_repository()
-                        .upsert_deployment_relation(&journal.prepared.relation)
-                })?;
-            }
-            Ok(())
-        });
+        let recovery = self
+            .library_root()
+            .and_then(|library_root| recover_relation_entry(journal, &library_root))
+            .and_then(|_| {
+                if restore_relation_record {
+                    self.with_database("execute.relation_migration.recover_record", |database| {
+                        database
+                            .relationship_repository()
+                            .upsert_deployment_relation(&journal.prepared.relation)
+                    })?;
+                }
+                Ok(())
+            });
         match recovery {
             Ok(()) => Err(journal_failure_audit_error(
                 &journal.prepared.operation_id,
@@ -880,8 +892,10 @@ impl LocalApplicationFacade {
             let backup = journal_value
                 .get("backup")
                 .cloned()
-                .and_then(|value| RelationBackupMetadata::from_json(value).ok())
-                .unwrap_or_else(|| invalid_backup_metadata(&prepared));
+                .ok_or_else(|| {
+                    invalid_relation_migration("relationship backup metadata is corrupt")
+                })
+                .and_then(RelationBackupMetadata::from_json)?;
             let journal = RelationMigrationJournal::from_persisted(
                 prepared,
                 expected_target_fingerprint,
@@ -1109,6 +1123,15 @@ fn validate_relation_for_prepare(relation: &DeploymentRelationFact) -> AppResult
     Ok(())
 }
 
+fn relation_facts_match(
+    current: &DeploymentRelationFact,
+    prepared: &DeploymentRelationFact,
+) -> bool {
+    let mut expected = prepared.clone();
+    expected.content_fingerprint = current.content_fingerprint.clone();
+    current == &expected
+}
+
 fn authorize_paths(
     relation_path: &str,
     target_path: &Path,
@@ -1154,14 +1177,77 @@ fn validate_backup_binding(journal: &RelationMigrationJournal) -> AppResult<()> 
     Ok(())
 }
 
-fn validate_backup_fingerprint(journal: &RelationMigrationJournal) -> AppResult<PathBuf> {
+fn validate_backup_path(
+    journal: &RelationMigrationJournal,
+    library_root: &Path,
+) -> AppResult<PathBuf> {
     validate_backup_binding(journal)?;
     let backup = PathBuf::from(&journal.backup.path);
+    let expected = library_root
+        .join(".skillhub")
+        .join("relationship-migrations")
+        .join(journal.prepared.operation_id.to_string())
+        .join("previous");
+    if backup != expected {
+        return Err(path_boundary(&journal.backup.path));
+    }
+    let root = skillhub_core::AllowedRoot::new(library_root)?;
+    let root_id = root.id();
+    let relative = backup
+        .strip_prefix(library_root)
+        .map_err(|_| path_boundary(&journal.backup.path))?;
+    let mut policy = skillhub_core::PathPolicy::new();
+    policy.register_root(root)?;
+    policy.resolve_for_create(root_id, relative)?;
+    Ok(backup)
+}
+
+fn validate_backup_entity(relation: &DeploymentRelationFact, backup: &Path) -> AppResult<()> {
+    let metadata = fs::symlink_metadata(backup).map_err(|error| io_conflict(backup, error))?;
+    match relation.file_representation {
+        FileRepresentation::SymbolicLink => {
+            let expected_target = relation.link_target_path.as_deref().ok_or_else(|| {
+                invalid_relation_migration("original symbolic-link target is missing")
+            })?;
+            let actual_target =
+                fs::read_link(backup).map_err(|error| io_conflict(backup, error))?;
+            if !metadata.file_type().is_symlink()
+                || actual_target.as_path() != Path::new(expected_target)
+            {
+                return Err(invalid_relation_migration(
+                    "relationship backup symbolic-link target differs from the original target",
+                ));
+            }
+        }
+        FileRepresentation::Directory
+        | FileRepresentation::DirectoryJunction
+        | FileRepresentation::Copy => {
+            if metadata.file_type().is_symlink() || !metadata.is_dir() {
+                return Err(invalid_relation_migration(
+                    "relationship backup representation differs from the original relationship",
+                ));
+            }
+        }
+        FileRepresentation::Unknown => {
+            return Err(invalid_relation_migration(
+                "relationship backup representation is unknown",
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn validate_backup_fingerprint(
+    journal: &RelationMigrationJournal,
+    library_root: &Path,
+) -> AppResult<PathBuf> {
+    let backup = validate_backup_path(journal, library_root)?;
     if fs::symlink_metadata(&backup).is_err() {
         return Err(invalid_relation_migration(
             "relationship backup is unavailable",
         ));
     }
+    validate_backup_entity(&journal.prepared.relation, &backup)?;
     let fingerprint = DeploymentFilesystem::hash_tree(&backup)?;
     if fingerprint != journal.backup.original_fingerprint {
         return Err(invalid_relation_migration(
@@ -1173,6 +1259,7 @@ fn validate_backup_fingerprint(journal: &RelationMigrationJournal) -> AppResult<
 
 fn backup_relation_entry(relation: &DeploymentRelationFact, backup: &Path) -> AppResult<()> {
     if fs::symlink_metadata(backup).is_ok() {
+        validate_backup_entity(relation, backup)?;
         let fingerprint = DeploymentFilesystem::hash_tree(backup)?;
         if fingerprint == relation.content_fingerprint {
             return Ok(());
@@ -1194,6 +1281,7 @@ fn backup_relation_entry(relation: &DeploymentRelationFact, backup: &Path) -> Ap
         super::copy_directory_tree(Path::new(&relation.path), backup)
     };
     copied?;
+    validate_backup_entity(relation, backup)?;
     let fingerprint = DeploymentFilesystem::hash_tree(backup)?;
     if fingerprint != relation.content_fingerprint {
         return Err(invalid_relation_migration(
@@ -1203,19 +1291,13 @@ fn backup_relation_entry(relation: &DeploymentRelationFact, backup: &Path) -> Ap
     Ok(())
 }
 
-fn restore_relation_entry(original_path: &str, backup: &Path) -> AppResult<()> {
-    if backup.is_dir() || fs::symlink_metadata(backup).is_ok() {
-        let metadata = fs::symlink_metadata(backup).map_err(|error| io_conflict(backup, error))?;
-        if metadata.file_type().is_symlink() {
-            let target = fs::read_link(backup).map_err(|error| io_conflict(backup, error))?;
-            create_dir_link(&target, Path::new(original_path))
-        } else {
-            super::copy_directory_tree(backup, Path::new(original_path))
-        }
+fn restore_relation_entry(journal: &RelationMigrationJournal, backup: &Path) -> AppResult<()> {
+    validate_backup_entity(&journal.prepared.relation, backup)?;
+    if journal.prepared.relation.file_representation == FileRepresentation::SymbolicLink {
+        let target = fs::read_link(backup).map_err(|error| io_conflict(backup, error))?;
+        create_dir_link(&target, Path::new(&journal.backup.original_path))
     } else {
-        Err(invalid_relation_migration(
-            "relationship backup is unavailable",
-        ))
+        super::copy_directory_tree(backup, Path::new(&journal.backup.original_path))
     }
 }
 
@@ -1246,10 +1328,13 @@ fn remove_created_relation_entry(journal: &RelationMigrationJournal) -> AppResul
     }
 }
 
-fn recover_relation_entry(journal: &RelationMigrationJournal) -> AppResult<()> {
-    let backup = validate_backup_fingerprint(journal)?;
+fn recover_relation_entry(
+    journal: &RelationMigrationJournal,
+    library_root: &Path,
+) -> AppResult<()> {
+    let backup = validate_backup_fingerprint(journal, library_root)?;
     remove_created_relation_entry(journal)?;
-    restore_relation_entry(&journal.backup.original_path, &backup)
+    restore_relation_entry(journal, &backup)
 }
 
 fn validate_relation_for_rollback(
@@ -1300,12 +1385,28 @@ fn relation_is_restored(
     let Ok(metadata) = fs::symlink_metadata(path) else {
         return false;
     };
-    if metadata.file_type().is_symlink() {
-        return false;
+    match journal.prepared.relation.file_representation {
+        FileRepresentation::SymbolicLink => {
+            let Some(expected_target) = journal.prepared.relation.link_target_path.as_deref()
+            else {
+                return false;
+            };
+            metadata.file_type().is_symlink()
+                && fs::read_link(path)
+                    .map(|target| target.as_path() == Path::new(expected_target))
+                    .unwrap_or(false)
+        }
+        FileRepresentation::Directory
+        | FileRepresentation::DirectoryJunction
+        | FileRepresentation::Copy => {
+            !metadata.file_type().is_symlink()
+                && metadata.is_dir()
+                && DeploymentFilesystem::hash_tree(path)
+                    .map(|fingerprint| fingerprint == journal.backup.original_fingerprint)
+                    .unwrap_or(false)
+        }
+        FileRepresentation::Unknown => false,
     }
-    DeploymentFilesystem::hash_tree(path)
-        .map(|fingerprint| fingerprint == journal.backup.original_fingerprint)
-        .unwrap_or(false)
 }
 
 fn relation_path_is_inaccessible(path: &str) -> bool {
