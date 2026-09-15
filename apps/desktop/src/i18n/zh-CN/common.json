@@ -1510,7 +1510,14 @@
       "pinned": "已固定版本",
       "retry": "重试关系",
       "undeploy": "取消部署",
-      "undeployTarget": "从 {{target}} 取消部署"
+      "undeployTarget": "从 {{target}} 取消部署",
+      "governed": {
+        "heading": "关系类型与移除影响",
+        "description": "关系类型由确定性事实给出；移除影响先预览，确认后才执行变更。",
+        "empty": "尚未登记部署关系事实。",
+        "sharedAgent": "目标 Agent：{{agent}}",
+        "loadError": "关系事实暂不可用；部署与来源信息可能不完整。"
+      }
     },
     "provenance": {
       "heading": "导入存证与已观察部署",
@@ -1548,7 +1555,17 @@
       },
       "loadError": "无法加载导入存证，其他详情仍可使用。",
       "loadErrorLabel": "存证加载失败",
-      "retry": "重试存证"
+      "retry": "重试存证",
+      "sources": {
+        "heading": "多来源存证",
+        "empty": "除当前集中库副本外，没有登记其他来源关系。",
+        "importedAt": "导入时间（epoch 秒）：{{at}}"
+      },
+      "conflicts": {
+        "heading": "冲突与待办",
+        "empty": "没有待处理的冲突或治理待办。",
+        "memberPaths": "涉及路径：{{paths}}"
+      }
     },
     "requirements": {
       "declaredOnly": "仅来自 Skill 声明，SkillHub 未安装或验证",

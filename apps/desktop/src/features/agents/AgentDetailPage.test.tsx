@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { I18nextProvider } from "react-i18next";
 import { MemoryRouter } from "react-router-dom";
 import { expect, it, vi } from "vitest";
-import type { RelationshipOverview } from "../api/bindings";
+import type { RelationshipOverview } from "../../api/bindings";
 import { createSkillHubI18n } from "../../i18n";
 import type { DirectoryPicker } from "../../platform/directoryPicker";
 import { type AgentFacade, type AgentView, agentFixture, customAgentFixture } from "./api";

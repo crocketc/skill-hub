@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import { desktopDirectoryPicker, type DirectoryPicker } from "../../platform/directoryPicker";
-import type { RelationshipOverview } from "../api/bindings";
+import type { RelationshipOverview } from "../../api/bindings";
 import { Button } from "../../ui/Button";
 import { BrandTag } from "../../ui/BrandTag";
 import { ConfirmDialog } from "../../ui/ConfirmDialog";

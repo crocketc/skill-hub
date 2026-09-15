@@ -279,6 +279,8 @@ export const skillDetailKeys = {
   summary: (skillId: string) => [...skillKey(skillId), "summary"] as const,
   metadata: (skillId: string) => [...skillKey(skillId), "metadata"] as const,
   relations: (skillId: string) => [...skillKey(skillId), "relations"] as const,
+  /** Task 7：统一关系概览（多来源、部署关系、冲突、待办）。 */
+  relationship: (skillId: string) => [...skillKey(skillId), "relationship"] as const,
   provenance: (skillId: string) => [...skillKey(skillId), "provenance"] as const,
   requirements: (skillId: string) =>
     [...skillKey(skillId), "requirements"] as const,

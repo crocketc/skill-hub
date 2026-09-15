@@ -532,3 +532,86 @@ it("exports the skill from the versions section with the skill id carried over",
   await user.click(exportBtn);
   expect(await screen.findByText("export probe: skill-pdf")).toBeVisible();
 });
+
+describe("Task 7: governed relationship sections", () => {
+  const overview = {
+    scope: { type: "skill" as const, value: { skill_id: "skill-pdf" } },
+    directory_nodes: [],
+    agent_directory_capabilities: [],
+    source_relations: [
+      {
+        provenance_id: "prov-1",
+        skill_id: "skill-pdf",
+        directory_node_id: "node-native",
+        agent_client_id: "codex-cli",
+        source_path: "C:/Users/demo/.codex/skills/pdf-reader",
+        source_path_key: "pk-pdf",
+        relationship: "import_copy" as const,
+        file_representation: "directory" as const,
+        ownership: "observed_unmanaged" as const,
+        link_target_path: null,
+        link_target_directory_id: null,
+        content_fingerprint: "sha256:aa",
+        source: { kind: "local" as const, locator: { local_path: "C:/Users/demo/.codex/skills/pdf-reader" } },
+        imported_at: "2026-09-15T00:00:00Z",
+      },
+    ],
+    deployment_relations: [
+      {
+        relation_id: "rel-copy",
+        skill_id: "skill-pdf",
+        agent_client_id: "codex-cli",
+        path: "C:/Users/demo/.codex/skills/pdf-reader",
+        path_key: "pk-pdf",
+        directory_node_id: "node-native",
+        relationship: "managed_copy" as const,
+        file_representation: "copy" as const,
+        ownership: "skillhub_managed" as const,
+        link_target_path: null,
+        link_target_path_key: null,
+        link_target_directory_id: null,
+        content_fingerprint: "sha256:aa",
+        origin: "import" as const,
+        match_state: "content_verified" as const,
+        active: true,
+        observed_at: "2026-09-15T00:00:00Z",
+        released_at: null,
+      },
+    ],
+    conflict_cases: [],
+    pending_governance_tasks: [],
+    agent_execution_confirmed: false,
+  };
+
+  it("renders multi-source provenance and governed deployment relations on the page", async () => {
+    await renderDetail({
+      facade: createMockSkillDetailFacade({ relationshipOverview: overview }),
+      locale: "zh-CN",
+    });
+
+    expect(await screen.findByText("多来源存证")).toBeVisible();
+    expect(screen.getByText("C:/Users/demo/.codex/skills/pdf-reader")).toBeVisible();
+    expect(screen.getByText("关系类型与移除影响")).toBeVisible();
+    expect(screen.getByTestId("governed-relation")).toBeVisible();
+    expect(screen.getByText("复制部署")).toBeVisible();
+    // 每个活动关系都有移除影响入口（本页不执行变更）。
+    expect(screen.getAllByRole("button", { name: "查看移除影响" }).length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("degrades honestly when the relationship overview is unavailable", async () => {
+    await renderDetail({
+      facade: {
+        ...createMockSkillDetailFacade(),
+        getRelationshipOverview: async () => {
+          throw new Error("overview unavailable");
+        },
+      },
+      locale: "zh-CN",
+    });
+
+    expect(await screen.findByText("关系事实暂不可用；部署与来源信息可能不完整。")).toBeVisible();
+    // 既有部署关系行与取消部署入口不受影响，页面没有虚假的空事实声明。
+    expect(screen.getAllByTestId("physical-target").length).toBeGreaterThan(0);
+    expect(screen.queryByTestId("governed-relations")).not.toBeInTheDocument();
+  });
+});

@@ -2,6 +2,7 @@ import { render, screen } from "@testing-library/react";
 import { I18nextProvider } from "react-i18next";
 import { expect, it } from "vitest";
 import { createSkillHubI18n } from "../../i18n";
+import type { ConflictCaseFact, GovernanceTaskFact, SourceRelationFact } from "../../api/bindings";
 import type { SkillObservedDeployment, SkillProvenance } from "./api";
 import { ProvenancePanel } from "./ProvenancePanel";
 
@@ -85,4 +86,110 @@ it("shows the honest absent state for skills imported without provenance", async
     screen.getByText(/不是经由带存证的导入链路进入集中库/),
   ).toBeVisible();
   expect(screen.queryByTestId("import-provenance")).not.toBeInTheDocument();
+});
+
+const now = "2026-09-15T00:00:00Z";
+
+function source(overrides: Partial<SourceRelationFact>): SourceRelationFact {
+  return {
+    provenance_id: "prov-1",
+    skill_id: "skill-demo",
+    directory_node_id: "node-native",
+    agent_client_id: "trae.code",
+    source_path: "/agents/trae/skills/demo",
+    source_path_key: "pk-demo",
+    relationship: "import_copy",
+    file_representation: "directory",
+    ownership: "observed_unmanaged",
+    link_target_path: null,
+    link_target_directory_id: null,
+    content_fingerprint: "sha256:aa11",
+    source: { kind: "local", locator: { local_path: "/agents/trae/skills/demo" } },
+    imported_at: now,
+    ...overrides,
+  };
+}
+
+const task: GovernanceTaskFact = {
+  task_id: "task-1",
+  kind: "select_authoritative_version",
+  subject_id: "conflict-1",
+  detail: "两个同名副本需要选择权威版本",
+  resolved: false,
+  created_at: now,
+  resolved_at: null,
+};
+
+async function renderPanelWithRelationship(
+  sources: SourceRelationFact[],
+  conflicts: ConflictCaseFact[],
+  pendingTasks: GovernanceTaskFact[] = [task],
+) {
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  return render(
+    <I18nextProvider i18n={i18n}>
+      <ProvenancePanel
+        observedDeployments={[]}
+        provenance={null}
+        relationship={{
+          conflicts,
+          pendingTasks,
+          sources,
+        }}
+      />
+    </I18nextProvider>,
+  );
+}
+
+it("lists multiple provenance sources with relationship and ownership labels", async () => {
+  await renderPanelWithRelationship(
+    [
+      source({}),
+      source({
+        provenance_id: "prov-2",
+        source_path: "/home/demo/.agents/skills/demo",
+        source_path_key: "pk-shared-demo",
+        directory_node_id: "node-shared",
+        relationship: "shared_directory_read",
+      }),
+    ],
+    [],
+  );
+
+  expect(screen.getByTestId("provenance-sources")).toBeVisible();
+  expect(screen.getAllByTestId("provenance-source")).toHaveLength(2);
+  expect(screen.getByText("/agents/trae/skills/demo")).toBeVisible();
+  expect(screen.getByText("/home/demo/.agents/skills/demo")).toBeVisible();
+  // 关系标签用用户语义；来源关系同样不会出现"外部链接"。
+  expect(screen.getByText("导入副本")).toBeVisible();
+  expect(screen.getByText("共享目录直接读取")).toBeVisible();
+  expect(screen.getAllByText("观察到未纳管").length).toBe(2);
+  expect(screen.queryByText(/外部链接/)).not.toBeInTheDocument();
+});
+
+it("shows conflict cases and governance todos without resolving them silently", async () => {
+  await renderPanelWithRelationship(
+    [source({})],
+    [{
+      conflict_id: "conflict-1",
+      kind: "same_name_different_content",
+      classification: "uncertain",
+      member_skill_ids: ["skill-demo"],
+      evidence: { fingerprints_match: false, names_match: true, sufficient_identity_evidence: false },
+    }],
+  );
+
+  expect(screen.getByTestId("provenance-conflicts")).toBeVisible();
+  expect(screen.getByTestId("provenance-conflict")).toBeVisible();
+  expect(screen.getByText("证据不足（待办）")).toBeVisible();
+  expect(screen.getByTestId("provenance-task")).toBeVisible();
+  expect(screen.getByText("选择权威版本")).toBeVisible();
+  expect(screen.getByText("两个同名副本需要选择权威版本")).toBeVisible();
+});
+
+it("keeps honest empty states when no sources or conflicts are registered", async () => {
+  await renderPanelWithRelationship([], [], []);
+
+  expect(screen.getByText("除当前集中库副本外，没有登记其他来源关系。")).toBeVisible();
+  expect(screen.getByText("没有待处理的冲突或治理待办。")).toBeVisible();
 });

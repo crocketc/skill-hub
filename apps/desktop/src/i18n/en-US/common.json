@@ -1510,7 +1510,14 @@
       "pinned": "Pinned",
       "retry": "Retry relations",
       "undeploy": "Undeploy",
-      "undeployTarget": "Undeploy {{target}}"
+      "undeployTarget": "Undeploy {{target}}",
+      "governed": {
+        "heading": "Relationship types and removal impact",
+        "description": "Relationship types come from deterministic facts; removal impact is previewed before any confirmed change.",
+        "empty": "No deployment relationship facts are registered yet.",
+        "sharedAgent": "Target agent: {{agent}}",
+        "loadError": "Relationship facts are unavailable; deployment and source details may be incomplete."
+      }
     },
     "provenance": {
       "heading": "Provenance & deployed relations",
@@ -1548,7 +1555,17 @@
       },
       "loadError": "Provenance could not be loaded. Other detail sections remain available.",
       "loadErrorLabel": "Provenance failed to load",
-      "retry": "Retry provenance"
+      "retry": "Retry provenance",
+      "sources": {
+        "heading": "Provenance sources",
+        "empty": "No source relations besides the current central copy are registered.",
+        "importedAt": "Imported at (epoch seconds): {{at}}"
+      },
+      "conflicts": {
+        "heading": "Conflicts & todos",
+        "empty": "No unresolved conflicts or governance todos.",
+        "memberPaths": "Involved paths: {{paths}}"
+      }
     },
     "requirements": {
       "declaredOnly": "Declared by the Skill only; SkillHub has not installed or verified it.",

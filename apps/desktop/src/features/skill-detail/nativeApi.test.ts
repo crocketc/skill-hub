@@ -1,5 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
-import { executeCommand, queryApplication } from "../../api/bindings";
+import {
+  executeCommand,
+  queryApplication,
+  type RelationshipOverview,
+} from "../../api/bindings";
 import {
   nativeSkillDetailFacade,
   setNativeCurrentVersion,
@@ -687,7 +691,7 @@ describe("native translation loop", () => {
 
 describe("native relationship governance queries", () => {
   it("loads the relationship overview scoped to the skill", async () => {
-    const overview = {
+    const overview: RelationshipOverview = {
       scope: { type: "skill", value: { skill_id: "skill-1" } },
       directory_nodes: [],
       agent_directory_capabilities: [],

@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { I18nextProvider } from "react-i18next";
 import { expect, it, vi } from "vitest";
 import { createSkillHubI18n } from "../../i18n";
-import type { RelationshipOverview } from "../api/bindings";
+import type { RelationshipOverview } from "../../api/bindings";
 import { DirectoryMatrix } from "./DirectoryMatrix";
 
 const now = "2026-09-15T00:00:00Z";

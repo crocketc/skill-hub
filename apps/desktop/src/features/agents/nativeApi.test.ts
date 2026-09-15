@@ -4,6 +4,7 @@ import {
   queryApplication,
   type DeploymentRecord,
   type DiscoverySnapshot,
+  type RelationshipOverview,
 } from "../../api/bindings";
 import { nativeAgentFacade } from "./nativeApi";
 
@@ -321,7 +322,7 @@ it("surfaces rescan failures instead of pretending the scan ran", async () => {
 });
 
 it("loads the relationship overview scoped to the agent client", async () => {
-  const overview = {
+  const overview: RelationshipOverview = {
     scope: { type: "agent", value: { agent_client_id: "codex-cli" } },
     directory_nodes: [],
     agent_directory_capabilities: [],

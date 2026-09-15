@@ -1,4 +1,4 @@
-import type { RelationshipOverview, RemovalImpactFact } from "../api/bindings";
+import type { RelationshipOverview, RemovalImpactFact } from "../../api/bindings";
 
 export type { RelationshipOverview, RemovalImpactFact };
 
