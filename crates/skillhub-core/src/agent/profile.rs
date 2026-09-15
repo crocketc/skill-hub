@@ -250,3 +250,48 @@ impl ProfileCatalog {
         }
     }
 }
+
+impl AgentProfile {
+    /// Return the deterministic directory-recognition fact for a concrete
+    /// path.  A profile path is evidence about file discovery only; the
+    /// generic Agent Skills profile intentionally remains unknown about a
+    /// runtime consumer.
+    pub fn directory_recognition(&self, path: &str) -> crate::relationship::DirectoryRecognition {
+        for client in &self.clients {
+            for candidate in &client.path_candidates {
+                if !path_matches_candidate(candidate, path) {
+                    continue;
+                }
+                if candidate.shared_reference {
+                    if matches!(client.kind, ClientKind::SharedDirectory) {
+                        continue;
+                    }
+                } else {
+                    return crate::relationship::DirectoryRecognition::Supported;
+                }
+                return crate::relationship::DirectoryRecognition::Supported;
+            }
+        }
+        crate::relationship::DirectoryRecognition::Unknown
+    }
+}
+
+/// Match a concrete directory against a profile candidate without treating a
+/// prefix such as `.agents/skills-demo` as `.agents/skills`.
+pub fn path_matches_candidate(candidate: &super::PathCandidate, path: &str) -> bool {
+    let candidate = candidate.path.replace('\\', "/");
+    let path = path.replace('\\', "/");
+    let suffix = candidate
+        .split_once("{user_home}")
+        .or_else(|| candidate.split_once("{project_root}"))
+        .map(|(_, suffix)| suffix)
+        .unwrap_or(candidate.as_str())
+        .trim_matches('/');
+    let path = path.trim_end_matches('/');
+    if suffix.is_empty() {
+        return path.is_empty();
+    }
+    let path = path.to_ascii_lowercase();
+    let suffix = suffix.to_ascii_lowercase();
+    path == suffix || path.ends_with(&format!("/{suffix}"))
+}

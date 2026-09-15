@@ -1,3 +1,15 @@
+pub mod classifier;
+pub mod impact;
+
+pub use classifier::{
+    classify_directory_capability, classify_observed_relation,
+    classify_observed_relation_with_reason, RelationClassification, RelationTargetFact,
+};
+pub use impact::{
+    calculate_removal_impact, recommend_removal_action, BackupRecoveryInfo, MinimalImpactAction,
+    RelatedSkillPath, RemovalFacts, RemovalImpactFact, SharedDirectoryConsumer,
+};
+
 use serde::{Deserialize, Serialize};
 
 use crate::agent::DirectoryPrecedence;

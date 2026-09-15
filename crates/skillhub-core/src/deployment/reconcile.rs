@@ -1,4 +1,6 @@
-use crate::{DeploymentId, DeploymentRecord, VersionId};
+use crate::deployment::{ObservedMatchState, ObservedOrigin};
+use crate::relationship::{DirectoryRole, FileRepresentation, OwnershipState, RelationshipType};
+use crate::{DeploymentId, DeploymentRecord, SkillId, VersionId};
 use serde::{Deserialize, Serialize};
 
 /// Deterministic comparison result for a managed deployment target.
@@ -49,6 +51,153 @@ pub struct ReconcileResult {
     pub action: ReconcileAction,
     pub version_id: Option<VersionId>,
     pub management_retained: bool,
+}
+
+/// Pure input fact used when a scanned path is classified against registered
+/// directory nodes.  It deliberately contains no filesystem handle.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RelationTargetFact {
+    pub relation_id: Option<String>,
+    pub skill_id: Option<SkillId>,
+    pub agent_client_id: String,
+    pub directory_node_id: String,
+    pub directory_path: String,
+    pub directory_role: DirectoryRole,
+    pub relationship: RelationshipType,
+    pub file_representation: FileRepresentation,
+    pub ownership: OwnershipState,
+    pub link_target_path: Option<String>,
+    pub link_target_directory_id: Option<String>,
+    pub content_fingerprint: String,
+    pub origin: ObservedOrigin,
+    pub match_state: ObservedMatchState,
+    pub active: bool,
+    pub observed_at: i64,
+    pub released_at: Option<i64>,
+}
+
+impl RelationTargetFact {
+    pub fn directory(
+        directory_node_id: impl Into<String>,
+        directory_path: impl Into<String>,
+        agent_client_id: impl Into<String>,
+        directory_role: DirectoryRole,
+    ) -> Self {
+        Self {
+            relation_id: None,
+            skill_id: None,
+            agent_client_id: agent_client_id.into(),
+            directory_node_id: directory_node_id.into(),
+            directory_path: directory_path.into(),
+            directory_role,
+            relationship: RelationshipType::Unknown,
+            file_representation: FileRepresentation::Directory,
+            ownership: OwnershipState::ObservedUnmanaged,
+            link_target_path: None,
+            link_target_directory_id: None,
+            content_fingerprint: String::new(),
+            origin: ObservedOrigin::Scan,
+            match_state: ObservedMatchState::ContentVerified,
+            active: true,
+            observed_at: 0,
+            released_at: None,
+        }
+    }
+
+    pub fn with_relation(
+        mut self,
+        relation_id: impl Into<String>,
+        relationship: RelationshipType,
+    ) -> Self {
+        self.relation_id = Some(relation_id.into());
+        self.relationship = relationship;
+        self
+    }
+
+    pub fn with_file_representation(mut self, value: FileRepresentation) -> Self {
+        self.file_representation = value;
+        self
+    }
+
+    pub fn with_ownership(mut self, value: OwnershipState) -> Self {
+        self.ownership = value;
+        self
+    }
+
+    pub fn with_match_state(mut self, value: ObservedMatchState) -> Self {
+        self.match_state = value;
+        self
+    }
+
+    pub fn with_skill(mut self, skill_id: SkillId, fingerprint: impl Into<String>) -> Self {
+        self.skill_id = Some(skill_id);
+        self.content_fingerprint = fingerprint.into();
+        self
+    }
+
+    pub fn with_link_target(
+        mut self,
+        path: impl Into<String>,
+        directory_node_id: Option<String>,
+    ) -> Self {
+        self.link_target_path = Some(path.into());
+        self.link_target_directory_id = directory_node_id;
+        self
+    }
+
+    pub fn to_deployment_relation_fact(&self) -> crate::relationship::DeploymentRelationFact {
+        crate::relationship::DeploymentRelationFact {
+            relation_id: self
+                .relation_id
+                .clone()
+                .unwrap_or_else(|| format!("observed:{}", relation_path_key(&self.directory_path))),
+            skill_id: (self.match_state == ObservedMatchState::ContentVerified)
+                .then_some(self.skill_id)
+                .flatten(),
+            agent_client_id: self.agent_client_id.clone(),
+            path: self.directory_path.clone(),
+            path_key: relation_path_key(&self.directory_path),
+            directory_node_id: Some(self.directory_node_id.clone()),
+            relationship: self.relationship,
+            file_representation: self.file_representation,
+            ownership: self.ownership,
+            link_target_path: self.link_target_path.clone(),
+            link_target_path_key: self.link_target_path.as_deref().map(relation_path_key),
+            link_target_directory_id: self.link_target_directory_id.clone(),
+            content_fingerprint: self.content_fingerprint.clone(),
+            origin: self.origin,
+            match_state: self.match_state,
+            active: self.active,
+            observed_at: self.observed_at,
+            released_at: self.released_at,
+        }
+    }
+}
+
+pub fn normalized_path_key(path: &str, windows: bool) -> String {
+    let path = path.replace('\\', "/");
+    if windows {
+        path.to_ascii_lowercase()
+    } else {
+        path
+    }
+}
+
+pub fn path_lives_under_platform(candidate: &str, root: &str, windows: bool) -> bool {
+    let candidate = normalized_path_key(candidate, windows);
+    let root = normalized_path_key(root, windows);
+    let root = root.trim_end_matches('/');
+    candidate != root
+        && candidate
+            .strip_prefix(root)
+            .is_some_and(|rest| rest.starts_with('/'))
+}
+
+fn relation_path_key(path: &str) -> String {
+    normalized_path_key(
+        path,
+        path.as_bytes().get(1) == Some(&b':') || path.contains('\\'),
+    )
 }
 
 impl ReconcilePlan {

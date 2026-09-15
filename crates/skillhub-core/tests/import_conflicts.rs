@@ -1,6 +1,12 @@
+use skillhub_core::deployment::reconcile::RelationTargetFact;
 use skillhub_core::import::{
     analyze_import, CandidateOwnership, DuplicateKind, ExistingSkillRecord, ImportCandidate,
     ImportDecision, MatchBasis,
+};
+use skillhub_core::relationship::classifier::classify_observed_relation;
+use skillhub_core::relationship::{
+    AgentDirectoryCapabilityFact, DirectoryRecognition, DirectoryRole, FileRepresentation,
+    RelationshipType,
 };
 use skillhub_core::search::SearchField;
 use skillhub_core::source::{SourceDescriptor, SourceKind, SourceLocator};
@@ -119,4 +125,33 @@ fn source_and_search_matches_are_ordered_after_identity_and_name() {
     let analysis = analyze_import(candidate, Some(&hash), &[search_match, source_match]);
     assert_eq!(analysis.matches[0].basis, MatchBasis::SourceLocator);
     assert_eq!(analysis.matches[1].basis, MatchBasis::FtsBm25);
+}
+
+#[test]
+fn unknown_or_diverged_identity_never_becomes_a_confirmed_skill_relation() {
+    let fact = RelationTargetFact::directory(
+        "native",
+        "/tmp/agent/skills",
+        "agent",
+        DirectoryRole::AgentNative,
+    )
+    .with_match_state(skillhub_core::ObservedMatchState::Diverged)
+    .with_file_representation(FileRepresentation::Copy);
+
+    let relation = classify_observed_relation(
+        "/tmp/agent/skills/demo",
+        &[fact],
+        &[AgentDirectoryCapabilityFact {
+            agent_client_id: "agent".into(),
+            directory_node_id: "native".into(),
+            recognition: DirectoryRecognition::Supported,
+            precedence: skillhub_core::DirectoryPrecedence::Preferred,
+            evidence_reference: None,
+            researched_at: None,
+            applicable_platforms: vec![],
+        }],
+    );
+
+    assert_eq!(relation.relationship, RelationshipType::ObservedCopy);
+    assert_eq!(relation.skill_id, None);
 }

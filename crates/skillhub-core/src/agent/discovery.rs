@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use super::{ClientKind, OperatingSystem, TargetScope};
+use super::{AgentProfile, ClientKind, OperatingSystem, TargetScope};
 use crate::AppResult;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
@@ -41,6 +41,25 @@ pub struct LogicalTarget {
     pub writable: bool,
     pub available: bool,
     pub physical_id: String,
+}
+
+impl LogicalTarget {
+    pub fn directory_role(&self) -> crate::relationship::DirectoryRole {
+        if self.shared_reference {
+            crate::relationship::DirectoryRole::SharedDirectory
+        } else if matches!(self.scope, TargetScope::Project) {
+            crate::relationship::DirectoryRole::Project
+        } else {
+            crate::relationship::DirectoryRole::AgentNative
+        }
+    }
+
+    pub fn directory_recognition(
+        &self,
+        profile: &AgentProfile,
+    ) -> crate::relationship::DirectoryRecognition {
+        profile.directory_recognition(&self.path)
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]

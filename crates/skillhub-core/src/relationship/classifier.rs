@@ -1,0 +1,213 @@
+use crate::agent::AgentProfile;
+pub use crate::deployment::reconcile::RelationTargetFact;
+use crate::deployment::reconcile::{normalized_path_key, path_lives_under_platform};
+use crate::relationship::{
+    AgentDirectoryCapabilityFact, DeploymentRelationFact, DirectoryRecognition, DirectoryRole,
+    FileRepresentation, GovernanceTaskFact, GovernanceTaskKind, OwnershipState, RelationshipType,
+};
+
+pub fn classify_directory_capability(profile: &AgentProfile, path: &str) -> DirectoryRecognition {
+    profile.directory_recognition(path)
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RelationClassification {
+    pub fact: DeploymentRelationFact,
+    pub reason: Option<String>,
+    pub governance_task: Option<GovernanceTaskFact>,
+}
+
+pub fn classify_observed_relation(
+    path: &str,
+    target_facts: &[RelationTargetFact],
+    directory_capabilities: &[AgentDirectoryCapabilityFact],
+) -> DeploymentRelationFact {
+    classify_observed_relation_with_reason(path, target_facts, directory_capabilities).fact
+}
+
+pub fn classify_observed_relation_with_reason(
+    path: &str,
+    target_facts: &[RelationTargetFact],
+    directory_capabilities: &[AgentDirectoryCapabilityFact],
+) -> RelationClassification {
+    let windows = looks_like_windows_path(path)
+        || target_facts
+            .iter()
+            .any(|fact| looks_like_windows_path(&fact.directory_path));
+    let selected = target_facts
+        .iter()
+        .filter(|fact| path_lives_under_platform(path, &fact.directory_path, windows))
+        .max_by_key(|fact| normalized_path_key(&fact.directory_path, windows).len());
+
+    let Some(target) = selected else {
+        return unknown_classification(path, "no registered directory contains the observed path");
+    };
+
+    let capability = directory_capabilities.iter().find(|capability| {
+        capability.agent_client_id == target.agent_client_id
+            && capability.directory_node_id == target.directory_node_id
+    });
+    let recognition = match target.directory_role {
+        DirectoryRole::SharedDirectory => capability
+            .map(|value| value.recognition)
+            .unwrap_or(DirectoryRecognition::Unknown),
+        _ => DirectoryRecognition::Supported,
+    };
+
+    let shared_target = target.link_target_path.as_deref().and_then(|link_target| {
+        target_facts
+            .iter()
+            .filter(|candidate| candidate.directory_role == DirectoryRole::SharedDirectory)
+            .filter(|candidate| {
+                path_lives_under_platform(link_target, &candidate.directory_path, windows)
+            })
+            .max_by_key(|candidate| normalized_path_key(&candidate.directory_path, windows).len())
+    });
+
+    if recognition != DirectoryRecognition::Supported {
+        let reason = match recognition {
+            DirectoryRecognition::Unknown => {
+                "shared directory capability is not confirmed for this Agent".to_owned()
+            }
+            DirectoryRecognition::Unsupported => {
+                "Agent facts explicitly do not support this shared directory".to_owned()
+            }
+            DirectoryRecognition::Supported => unreachable!(),
+        };
+        return unknown_classification(path, &reason).with_target_context(target);
+    }
+
+    let mut fact = target.to_deployment_relation_fact();
+    fact.path = path.to_owned();
+    fact.path_key = normalized_path_key(path, windows);
+    if target.relation_id.is_none() {
+        fact.relation_id = format!("observed:{}", fact.path_key);
+    }
+    fact.directory_node_id = Some(target.directory_node_id.clone());
+    fact.link_target_path_key = fact
+        .link_target_path
+        .as_deref()
+        .map(|value| normalized_path_key(value, windows));
+
+    let relationship = if target.directory_role == DirectoryRole::SharedDirectory {
+        RelationshipType::SharedDirectoryRead
+    } else if shared_target.is_some()
+        && matches!(
+            target.file_representation,
+            FileRepresentation::SymbolicLink | FileRepresentation::DirectoryJunction
+        )
+    {
+        RelationshipType::SharedDirectoryReference
+    } else {
+        relationship_for_target(target)
+    };
+    fact.relationship = relationship;
+    fact.ownership = if relationship == RelationshipType::SharedDirectoryReference {
+        OwnershipState::SharedReference
+    } else {
+        target.ownership
+    };
+    if target.match_state != crate::deployment::ObservedMatchState::ContentVerified {
+        fact.skill_id = None;
+    }
+    RelationClassification {
+        fact,
+        reason: None,
+        governance_task: None,
+    }
+}
+
+fn relationship_for_ownership(
+    ownership: OwnershipState,
+    representation: FileRepresentation,
+) -> RelationshipType {
+    if representation == FileRepresentation::Unknown {
+        return RelationshipType::Unknown;
+    }
+    let link = matches!(
+        representation,
+        FileRepresentation::SymbolicLink | FileRepresentation::DirectoryJunction
+    );
+    match (ownership, link) {
+        (OwnershipState::SkillhubManaged, true) => RelationshipType::ManagedLink,
+        (OwnershipState::SkillhubManaged, false) => RelationshipType::ManagedCopy,
+        (OwnershipState::ObservedUnmanaged, true) => RelationshipType::ObservedLink,
+        (OwnershipState::ObservedUnmanaged, false) => RelationshipType::ObservedCopy,
+        (OwnershipState::SharedReference, true) => RelationshipType::SharedDirectoryReference,
+        _ => RelationshipType::Unknown,
+    }
+}
+
+fn relationship_for_target(target: &RelationTargetFact) -> RelationshipType {
+    let compatible = matches!(
+        (target.relationship, target.ownership),
+        (
+            RelationshipType::ManagedCopy,
+            OwnershipState::SkillhubManaged
+        ) | (
+            RelationshipType::ManagedLink,
+            OwnershipState::SkillhubManaged
+        ) | (
+            RelationshipType::ObservedCopy,
+            OwnershipState::ObservedUnmanaged
+        ) | (
+            RelationshipType::ObservedLink,
+            OwnershipState::ObservedUnmanaged
+        ) | (RelationshipType::ImportCopy, _)
+    );
+    if compatible {
+        target.relationship
+    } else {
+        relationship_for_ownership(target.ownership, target.file_representation)
+    }
+}
+
+fn unknown_classification(path: &str, reason: &str) -> RelationClassification {
+    let windows = looks_like_windows_path(path);
+    let path_key = normalized_path_key(path, windows);
+    let task = GovernanceTaskFact {
+        task_id: format!("relationship:{path_key}:classification"),
+        kind: GovernanceTaskKind::UnknownDirectoryRecognition,
+        subject_id: path_key.clone(),
+        detail: reason.to_owned(),
+        resolved: false,
+        created_at: 0,
+        resolved_at: None,
+    };
+    RelationClassification {
+        fact: DeploymentRelationFact {
+            relation_id: format!("observed:{path_key}"),
+            skill_id: None,
+            agent_client_id: "unknown".into(),
+            path: path.into(),
+            path_key,
+            directory_node_id: None,
+            relationship: RelationshipType::Unknown,
+            file_representation: FileRepresentation::Unknown,
+            ownership: OwnershipState::ObservedUnmanaged,
+            link_target_path: None,
+            link_target_path_key: None,
+            link_target_directory_id: None,
+            content_fingerprint: String::new(),
+            origin: crate::deployment::ObservedOrigin::Scan,
+            match_state: crate::deployment::ObservedMatchState::NameOnly,
+            active: true,
+            observed_at: 0,
+            released_at: None,
+        },
+        reason: Some(reason.to_owned()),
+        governance_task: Some(task),
+    }
+}
+
+impl RelationClassification {
+    fn with_target_context(mut self, target: &RelationTargetFact) -> Self {
+        self.fact.agent_client_id = target.agent_client_id.clone();
+        self.fact.directory_node_id = Some(target.directory_node_id.clone());
+        self
+    }
+}
+
+fn looks_like_windows_path(path: &str) -> bool {
+    path.as_bytes().get(1) == Some(&b':') || path.contains('\\')
+}

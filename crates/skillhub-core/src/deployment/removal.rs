@@ -67,3 +67,16 @@ pub struct DeploymentRemovalResult {
     pub relation_removed: bool,
     pub management_detached: bool,
 }
+
+impl RemovalDecision {
+    pub fn from_minimal_impact(action: crate::relationship::impact::MinimalImpactAction) -> Self {
+        use crate::relationship::impact::MinimalImpactAction;
+        match action {
+            MinimalImpactAction::RemoveCurrentAgentTarget => Self::RemoveOwnedTarget,
+            MinimalImpactAction::RemoveCurrentRelationKeepSharedFiles => Self::KeepSharedDeployment,
+            MinimalImpactAction::RemoveCurrentSharedAlias => Self::RemoveRelationOnly,
+            MinimalImpactAction::ConvertCopyToManagedLink => Self::DetachManagement,
+            MinimalImpactAction::CreateGovernanceTask => Self::Cancel,
+        }
+    }
+}
