@@ -62,7 +62,9 @@ impl ImportProvenance {
     }
 
     /// Expose the legacy provenance row as a normalized source relationship.
-    /// This is a pure compatibility view and does not change persistence.
+    /// This is a pure legacy compatibility view and does not change persistence.
+    /// Its deterministic ID is not the import-event primary key for the future
+    /// 0014 relation table.
     pub fn to_source_relation_fact(&self) -> crate::relationship::SourceRelationFact {
         use crate::relationship::{
             FileRepresentation, OwnershipState, RelationshipType, SourceRelationFact,
@@ -96,6 +98,9 @@ impl ImportProvenance {
         }
     }
 
+    /// Deterministic identifier for the legacy compatibility view only. It is
+    /// deliberately not an import-event primary key for the future 0014
+    /// relation table; that fact must get its own storage identity.
     fn stable_provenance_id(&self) -> String {
         let identity = (
             self.skill_id.to_string(),
@@ -104,6 +109,7 @@ impl ImportProvenance {
             &self.source,
             self.ownership,
             &self.content_fingerprint,
+            self.imported_at,
         );
         let digest = Sha256::digest(
             serde_json::to_vec(&identity).expect("provenance identity is serializable"),
@@ -173,7 +179,7 @@ mod tests {
     }
 
     #[test]
-    fn normalized_source_relation_uses_a_stable_non_empty_provenance_id() {
+    fn normalized_source_relation_id_is_stable_per_import_event() {
         let skill_id = SkillId::new();
         let provenance = ImportProvenance::new(
             skill_id,
@@ -193,7 +199,7 @@ mod tests {
 
         let mut reimported = provenance;
         reimported.imported_at = 43;
-        assert_eq!(
+        assert_ne!(
             first.provenance_id,
             reimported.to_source_relation_fact().provenance_id
         );
