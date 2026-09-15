@@ -39,7 +39,8 @@ impl ObservedDeployment {
     pub fn to_deployment_relation_fact(&self) -> crate::relationship::DeploymentRelationFact {
         crate::relationship::DeploymentRelationFact {
             relation_id: self.id.to_string(),
-            skill_id: self.skill_id,
+            skill_id: (self.match_state == ObservedMatchState::ContentVerified)
+                .then_some(self.skill_id),
             agent_client_id: self.client_id.clone(),
             path: self.original_path.clone(),
             path_key: observed_path_key(&self.original_path),
@@ -50,14 +51,8 @@ impl ObservedDeployment {
             link_target_path: None,
             link_target_path_key: None,
             content_fingerprint: self.content_fingerprint.clone(),
-            origin: serde_json::to_string(&self.origin)
-                .expect("ObservedOrigin is always serializable")
-                .trim_matches('"')
-                .to_owned(),
-            match_state: serde_json::to_string(&self.match_state)
-                .expect("ObservedMatchState is always serializable")
-                .trim_matches('"')
-                .to_owned(),
+            origin: self.origin,
+            match_state: self.match_state,
             active: self.status == ObservedStatus::Active,
             observed_at: self.observed_at,
             released_at: self.released_at,
@@ -328,6 +323,23 @@ mod tests {
                 fingerprint: FP_B.into(),
             }
         );
+    }
+
+    #[test]
+    fn normalized_fact_keeps_skill_id_only_for_content_verified_observations() {
+        let skill = SkillId::new();
+        for match_state in [ObservedMatchState::NameOnly, ObservedMatchState::Diverged] {
+            let observed = row(skill, FP_A, match_state, ObservedStatus::Active);
+            assert_eq!(observed.to_deployment_relation_fact().skill_id, None);
+        }
+
+        let observed = row(
+            skill,
+            FP_A,
+            ObservedMatchState::ContentVerified,
+            ObservedStatus::Active,
+        );
+        assert_eq!(observed.to_deployment_relation_fact().skill_id, Some(skill));
     }
 
     // 关系重新指向：路径内容现在与另一个库内 Skill 一致。

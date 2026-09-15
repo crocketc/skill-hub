@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 
 use super::CandidateOwnership;
 use crate::source::SourceDescriptor;
@@ -78,6 +79,7 @@ impl ImportProvenance {
         };
 
         SourceRelationFact {
+            provenance_id: self.stable_provenance_id(),
             skill_id: self.skill_id,
             directory_node_id: None,
             agent_client_id: self.agent_client_id.clone(),
@@ -87,10 +89,26 @@ impl ImportProvenance {
             file_representation: FileRepresentation::Directory,
             ownership,
             link_target_path: None,
+            link_target_directory_id: None,
             content_fingerprint: self.content_fingerprint.clone(),
             source: self.source.clone(),
             imported_at: self.imported_at,
         }
+    }
+
+    fn stable_provenance_id(&self) -> String {
+        let identity = (
+            self.skill_id.to_string(),
+            self.agent_client_id.as_deref(),
+            crate::deployment::observed_path_key(&self.original_path),
+            &self.source,
+            self.ownership,
+            &self.content_fingerprint,
+        );
+        let digest = Sha256::digest(
+            serde_json::to_vec(&identity).expect("provenance identity is serializable"),
+        );
+        format!("provenance:sha256:{digest:x}")
     }
 }
 
@@ -152,5 +170,32 @@ mod tests {
         let mut changed = base.clone();
         changed.imported_at = 43;
         assert_ne!(base, changed);
+    }
+
+    #[test]
+    fn normalized_source_relation_uses_a_stable_non_empty_provenance_id() {
+        let skill_id = SkillId::new();
+        let provenance = ImportProvenance::new(
+            skill_id,
+            "/tmp/demo",
+            descriptor(),
+            CandidateOwnership::CentralLibrary,
+            "sha256:bb",
+            42,
+        );
+
+        let first = provenance.to_source_relation_fact();
+        let second = provenance.to_source_relation_fact();
+
+        assert!(!first.provenance_id.is_empty());
+        assert_eq!(first.provenance_id, second.provenance_id);
+        assert_eq!(first.link_target_directory_id, None);
+
+        let mut reimported = provenance;
+        reimported.imported_at = 43;
+        assert_eq!(
+            first.provenance_id,
+            reimported.to_source_relation_fact().provenance_id
+        );
     }
 }

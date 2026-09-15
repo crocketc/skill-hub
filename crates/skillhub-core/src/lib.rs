@@ -193,9 +193,9 @@ pub use project::{
 pub use relationship::{
     classify_conflict_evidence, file_representation_display_label, relation_display_label,
     AgentDirectoryCapabilityFact, ConflictCaseFact, ConflictClassification, ConflictEvidence,
-    DeploymentRelationFact, DirectoryNodeFact, DirectoryRecognition, DirectoryRole,
-    FileRepresentation, GovernanceTaskFact, GovernanceTaskKind, OwnershipState, RelationshipType,
-    SourceRelationFact,
+    ConflictKind, ConflictMemberFact, DeploymentRelationFact, DirectoryNodeFact,
+    DirectoryRecognition, DirectoryRole, FileRepresentation, GovernanceTaskFact,
+    GovernanceTaskKind, IdentityDirection, OwnershipState, RelationshipType, SourceRelationFact,
 };
 pub use scan::{DiscoveredSkill, ScanGeneration, ScanIssue, ScanRepository, ScanResult, ScanScope};
 pub use source::{
