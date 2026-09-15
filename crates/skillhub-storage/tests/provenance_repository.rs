@@ -40,7 +40,7 @@ fn provenance(skill_id: SkillId, path: &str, client: Option<&str>) -> ImportProv
 #[test]
 fn schema_pins_migration_0013() {
     let database = Database::open_in_memory().unwrap();
-    assert_eq!(database.schema_version().unwrap(), 14);
+    assert_eq!(database.schema_version().unwrap(), 15);
 }
 
 #[test]

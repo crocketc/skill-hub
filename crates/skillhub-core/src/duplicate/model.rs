@@ -217,6 +217,28 @@ pub struct ConflictAnalysis {
     pub failure_code: Option<String>,
 }
 
+/// Persisted analysis record (design §3.4): scope, input content fingerprint,
+/// deterministic baseline, AI conclusion, source, time, failure code and
+/// whether the user adopted it. Advisory only — adopting a record never
+/// writes `ConflictCase.user_decision`.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct ConflictAnalysisRecord {
+    pub record_id: String,
+    pub conflict_id: String,
+    pub scope: AnalyzeConflictScope,
+    pub input_fingerprint: String,
+    pub baseline_classification: crate::relationship::ConflictClassification,
+    /// AI 结论；失败运行没有结论，仅保留失败码。
+    pub conclusion: Option<ConflictCaseAnalysis>,
+    pub source: DuplicateAnalysisSource,
+    #[serde(with = "crate::i64_string")]
+    #[specta(type = String)]
+    pub analyzed_at: i64,
+    pub failure_code: Option<String>,
+    pub adopted_by_user: bool,
+}
+
 /// The minimal fact slice of a conflict case that is sent to the LLM.
 /// Derived from `ConflictCaseFact`; no prose and no filesystem access.
 #[derive(Clone, Debug, Serialize)]
