@@ -80,7 +80,10 @@ impl<'a> DeploymentRepositorySqlite<'a> {
                 ],
             )
             .map(|_| ())
-            .map_err(database_error)
+            .map_err(database_error)?;
+        self.database
+            .relationship_repository()
+            .sync_managed_deployment(deployment)
     }
 
     pub fn mark_removed_sync(&self, id: DeploymentId) -> AppResult<()> {
@@ -99,7 +102,10 @@ impl<'a> DeploymentRepositorySqlite<'a> {
                         .with_param("field", "deployment")
                         .with_action(RecoveryAction::Retry))
                 }
-            })
+            })?;
+        self.database
+            .relationship_repository()
+            .mark_managed_deployment_removed(&id.to_string(), now())
     }
 
     pub fn detach_management_sync(&self, id: DeploymentId) -> AppResult<()> {
@@ -118,7 +124,10 @@ impl<'a> DeploymentRepositorySqlite<'a> {
                         .with_param("field", "deployment")
                         .with_action(RecoveryAction::Retry))
                 }
-            })
+            })?;
+        self.database
+            .relationship_repository()
+            .detach_managed_deployment(&id.to_string())
     }
 
     pub fn update_reconcile_facts_sync(

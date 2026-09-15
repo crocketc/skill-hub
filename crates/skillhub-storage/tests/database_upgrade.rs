@@ -42,7 +42,7 @@ fn opening_an_existing_database_migrates_and_leaves_no_recovery_sidecar() {
     // Pins the latest migration (0013_observed_deployments) so a dropped
     // migration file or a silently skipped step fails this test instead of
     // shipping.
-    assert_eq!(database.schema_version().unwrap(), 13);
+    assert_eq!(database.schema_version().unwrap(), 14);
     assert!(database.has_table("import_provenance").unwrap());
     assert!(database.has_table("observed_deployments").unwrap());
     assert!(database.has_table("original_migrations").unwrap());

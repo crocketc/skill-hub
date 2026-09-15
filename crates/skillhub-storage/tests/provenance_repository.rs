@@ -40,7 +40,7 @@ fn provenance(skill_id: SkillId, path: &str, client: Option<&str>) -> ImportProv
 #[test]
 fn schema_pins_migration_0013() {
     let database = Database::open_in_memory().unwrap();
-    assert_eq!(database.schema_version().unwrap(), 13);
+    assert_eq!(database.schema_version().unwrap(), 14);
 }
 
 #[test]
@@ -246,4 +246,69 @@ fn original_migration_records_support_rollback_audit() {
     assert_eq!(stored.state, OriginalMigrationState::RolledBack);
     assert_eq!(stored.rolled_back_at, Some(600));
     assert_eq!(stored.backup_path, result.backup_path);
+}
+
+#[test]
+fn provenance_history_keeps_multiple_sources_and_duplicate_import_facts() {
+    let database = Database::open_in_memory().unwrap();
+    let skill = SkillId::new();
+    insert_skill(&database, skill);
+
+    database
+        .provenance_repository()
+        .upsert_provenance(&provenance(
+            skill,
+            "/tmp/shared/skills/demo",
+            Some("shared.directory"),
+        ))
+        .unwrap();
+    database
+        .provenance_repository()
+        .upsert_provenance(&provenance(
+            skill,
+            "/tmp/trae/skills/demo",
+            Some("trae.code"),
+        ))
+        .unwrap();
+    let mut reimported = provenance(skill, "/tmp/shared/skills/demo", Some("shared.directory"));
+    reimported.imported_at = 2_000;
+    database
+        .provenance_repository()
+        .upsert_provenance(&reimported)
+        .unwrap();
+
+    let history = database
+        .provenance_repository()
+        .list_provenance_for_skill(skill)
+        .unwrap();
+    assert_eq!(history.len(), 3);
+    assert_eq!(
+        history
+            .iter()
+            .filter(|item| item.imported_at == 1_000)
+            .count(),
+        2
+    );
+    assert_eq!(
+        history
+            .iter()
+            .filter(|item| item.imported_at == 2_000)
+            .count(),
+        1
+    );
+    assert!(history
+        .iter()
+        .any(|item| item.original_path == "/tmp/trae/skills/demo"));
+    assert!(history
+        .iter()
+        .any(|item| item.original_path == "/tmp/shared/skills/demo"));
+    assert_eq!(
+        database
+            .provenance_repository()
+            .provenance_for_skill(skill)
+            .unwrap()
+            .unwrap()
+            .imported_at,
+        2_000
+    );
 }

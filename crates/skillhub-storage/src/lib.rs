@@ -7,11 +7,12 @@ mod version_store;
 pub use database::VersionPin;
 pub use database::{
     ApplicationUpdateRepository, CatalogRepositorySqlite, CheckRepositorySqlite,
-    CustomAgentRepository, Database, DeploymentRepository, DeploymentRepositorySqlite,
-    ImportRepository, LlmConnectionTestRepository, LlmProfileRepository, MigrationReport,
-    OperationRepositorySqlite, PendingApplicationUpdate, PersistedConnectionTest,
-    PersistedTranslation, ProjectRepository, RecoveryPoint, ScanRepository,
-    SearchCandidateRepository, SearchRepository, UsageEvidenceRepository,
+    ConflictRepository, CustomAgentRepository, Database, DeploymentRepository,
+    DeploymentRepositorySqlite, DirectoryRepository, GovernanceTaskRepository, ImportRepository,
+    LlmConnectionTestRepository, LlmProfileRepository, MigrationReport, OperationRepositorySqlite,
+    PendingApplicationUpdate, PersistedConnectionTest, PersistedTranslation, ProjectRepository,
+    RecoveryPoint, RelationshipRepository, ScanRepository, SearchCandidateRepository,
+    SearchRepository, UsageEvidenceRepository,
 };
 pub use library::{CentralLibrary, ManifestFaultHandler, PortableManifestStore};
 pub use skillhub_core::{LibraryManifest, LibraryPaths, PortableSkillRecord};

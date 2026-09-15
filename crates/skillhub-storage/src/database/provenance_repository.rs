@@ -7,6 +7,7 @@ use skillhub_core::deployment::{
 use skillhub_core::import::{
     CandidateOwnership, ImportProvenance, OriginalMigrationResult, OriginalMigrationState,
 };
+use skillhub_core::relationship::SourceRelationFact;
 use skillhub_core::source::{SourceDescriptor, SourceKind, SourceLocator};
 use skillhub_core::{
     AppError, AppResult, ErrorCode, ObservedDeploymentId, OperationId, RecoveryAction, Severity,
@@ -25,9 +26,13 @@ impl<'a> ProvenanceRepository<'a> {
         Self { database }
     }
 
-    /// 导入即存证。同一 Skill 重复提交（幂等重试）覆盖为最新一次确认的
-    /// 存证；不同 Skill 互不影响。
+    /// 导入即存证。0014 规范化关系表以独立 provenance ID 保存每次事实；
+    /// 旧 import_provenance 表只继续承担最新兼容投影，确保既有调用不破坏。
     pub fn upsert_provenance(&self, provenance: &ImportProvenance) -> AppResult<()> {
+        let relation = provenance.to_source_relation_fact();
+        self.database
+            .relationship_repository()
+            .upsert_source_relation(&relation)?;
         self.database
             .connection
             .execute(
@@ -77,8 +82,30 @@ impl<'a> ProvenanceRepository<'a> {
             )
             .optional()
             .map_err(database_error)?;
-        row.map(|value| decode_provenance(value).ok_or_else(invalid_record))
-            .transpose()
+        if let Some(value) = row {
+            return decode_provenance(value)
+                .ok_or_else(invalid_record)
+                .map(Some);
+        }
+        Ok(self
+            .database
+            .relationship_repository()
+            .list_source_relations_for_skill(skill_id)?
+            .into_iter()
+            .last()
+            .map(provenance_from_relation))
+    }
+
+    /// Returns immutable provenance facts in chronological order.  Re-imports
+    /// with a different imported_at or source path remain separate rows.
+    pub fn list_provenance_for_skill(&self, skill_id: SkillId) -> AppResult<Vec<ImportProvenance>> {
+        Ok(self
+            .database
+            .relationship_repository()
+            .list_source_relations_for_skill(skill_id)?
+            .into_iter()
+            .map(provenance_from_relation)
+            .collect())
     }
 
     pub fn list_observed(&self) -> AppResult<Vec<ObservedDeployment>> {
@@ -316,6 +343,26 @@ fn decode_provenance(value: ProvenanceRow) -> Option<ImportProvenance> {
         content_fingerprint: value.6,
         imported_at: value.7,
     })
+}
+
+fn provenance_from_relation(relation: SourceRelationFact) -> ImportProvenance {
+    ImportProvenance {
+        skill_id: relation.skill_id,
+        agent_client_id: relation.agent_client_id,
+        original_path: relation.source_path,
+        source: relation.source,
+        ownership: match relation.ownership {
+            skillhub_core::relationship::OwnershipState::SkillhubManaged => {
+                CandidateOwnership::CentralLibrary
+            }
+            skillhub_core::relationship::OwnershipState::ObservedUnmanaged
+            | skillhub_core::relationship::OwnershipState::SharedReference => {
+                CandidateOwnership::KnownAgentTarget
+            }
+        },
+        content_fingerprint: relation.content_fingerprint,
+        imported_at: relation.imported_at,
+    }
 }
 
 fn parse_ownership(value: &str) -> Option<CandidateOwnership> {

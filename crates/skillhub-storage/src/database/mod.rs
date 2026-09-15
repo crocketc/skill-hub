@@ -7,6 +7,7 @@ mod combination_repository;
 mod custom_agent_repository;
 mod deployment_repository;
 mod desktop_settings_repository;
+mod directory_repository;
 pub mod evidence_repository;
 mod ignore_rule_repository;
 mod import_repository;
@@ -18,6 +19,7 @@ mod operation_repository;
 mod project_repository;
 mod provenance_repository;
 pub mod recovery_point;
+mod relationship_repository;
 mod scan_repository;
 mod search_candidate_repository;
 mod search_repository;
@@ -47,6 +49,7 @@ pub use combination_repository::CombinationRepository;
 pub use custom_agent_repository::CustomAgentRepository;
 pub use deployment_repository::{DeploymentRepository, DeploymentRepositorySqlite};
 pub use desktop_settings_repository::DesktopSettingsRepository;
+pub use directory_repository::DirectoryRepository;
 pub use evidence_repository::UsageEvidenceRepository;
 pub use ignore_rule_repository::IgnoreRuleRepository;
 pub use import_repository::ImportRepository;
@@ -58,6 +61,9 @@ pub use operation_repository::OperationRepositorySqlite;
 pub use project_repository::{ProjectRepository, VersionPin};
 pub use provenance_repository::ProvenanceRepository;
 pub use recovery_point::RecoveryPoint;
+pub use relationship_repository::{
+    ConflictRepository, GovernanceTaskRepository, RelationshipRepository,
+};
 pub use scan_repository::ScanRepository;
 pub use search_candidate_repository::SearchCandidateRepository;
 pub use search_repository::SearchRepository;
@@ -106,6 +112,10 @@ impl Database {
 
     pub fn agent_repository(&self) -> AgentRepository<'_> {
         AgentRepository::new(self)
+    }
+
+    pub fn directory_repository(&self) -> DirectoryRepository<'_> {
+        DirectoryRepository::new(self)
     }
 
     pub fn application_update_repository(&self) -> ApplicationUpdateRepository<'_> {
@@ -179,6 +189,18 @@ impl Database {
     /// OPT-20260914-08：导入存证、已观察部署关系与原始迁移审计。
     pub fn provenance_repository(&self) -> ProvenanceRepository<'_> {
         ProvenanceRepository::new(self)
+    }
+
+    pub fn relationship_repository(&self) -> RelationshipRepository<'_> {
+        RelationshipRepository::new(self)
+    }
+
+    pub fn conflict_repository(&self) -> ConflictRepository<'_> {
+        ConflictRepository::new(self)
+    }
+
+    pub fn governance_task_repository(&self) -> GovernanceTaskRepository<'_> {
+        GovernanceTaskRepository::new(self)
     }
 
     pub fn operation_repository(&self) -> OperationRepositorySqlite<'_> {

@@ -16,9 +16,94 @@ fn fixture_database_with_schema_version(version: u32) -> NamedTempFile {
 fn empty_database_migrates_to_current_schema_and_enables_fts5() {
     let db = Database::open_in_memory().unwrap();
 
-    assert_eq!(db.schema_version().unwrap(), 13);
+    assert_eq!(db.schema_version().unwrap(), 14);
     assert!(db.has_table("skills_fts").unwrap());
     assert!(db.has_table("search_candidates").unwrap());
+}
+
+#[test]
+fn v13_database_upgrades_relationships_without_losing_legacy_facts() {
+    let file = NamedTempFile::new().unwrap();
+    let connection = Connection::open(file.path()).unwrap();
+    for sql in [
+        include_str!("../migrations/0001_initial.sql"),
+        include_str!("../migrations/0002_fts.sql"),
+        include_str!("../migrations/0003_catalog_metadata.sql"),
+        include_str!("../migrations/0004_search_tokenizer.sql"),
+        include_str!("../migrations/0005_check_run_metadata.sql"),
+        include_str!("../migrations/0006_llm_profiles.sql"),
+        include_str!("../migrations/0007_ui_preferences.sql"),
+        include_str!("../migrations/0008_version_labels.sql"),
+        include_str!("../migrations/0009_skill_user_purpose.sql"),
+        include_str!("../migrations/0010_llm_providers_translations.sql"),
+        include_str!("../migrations/0011_source_roles.sql"),
+        include_str!("../migrations/0012_combination_name_unique.sql"),
+        include_str!("../migrations/0013_observed_deployments.sql"),
+    ] {
+        connection.execute_batch(sql).unwrap();
+    }
+    connection
+        .execute_batch(
+            "INSERT INTO skills(id, display_name, runtime_name, created_at, updated_at)
+                 VALUES ('00000000-0000-0000-0000-0000000000a1', 'Legacy', 'legacy', 1, 1);
+             INSERT INTO versions(id, skill_id, content_hash, manifest_json, created_at)
+                 VALUES ('sha256:0000000000000000000000000000000000000000000000000000000000000001', '00000000-0000-0000-0000-0000000000a1', 'sha256:legacy', '{}', 1);
+             INSERT INTO import_provenance(skill_id, agent_client_id, original_path, source_kind, source_locator, ownership, content_fingerprint, imported_at)
+                 VALUES ('00000000-0000-0000-0000-0000000000a1', 'legacy.agent', 'C:/legacy/skills/demo', 'local', 'C:/legacy/skills/demo', 'known_agent_target', 'sha256:legacy', 10);
+             INSERT INTO observed_deployments(id, skill_id, client_id, original_path, path_key, content_fingerprint, match_state, origin, status, observed_at)
+                 VALUES ('00000000-0000-0000-0000-0000000000b1', '00000000-0000-0000-0000-0000000000a1', 'legacy.agent', 'C:/legacy/skills/demo', 'c:/legacy/skills/demo', 'sha256:legacy', 'name_only', 'scan', 'active', 11);
+             INSERT INTO targets(id, agent_id, scope, path, created_at)
+                 VALUES ('target-legacy', 'legacy.agent', 'global', 'C:/legacy/skills', 1);
+             INSERT INTO deployments(id, skill_id, version_id, target_id, state, method, managed, runtime_name, expected_hash, created_at, updated_at)
+                 VALUES ('00000000-0000-0000-0000-0000000000b2', '00000000-0000-0000-0000-0000000000a1', 'sha256:0000000000000000000000000000000000000000000000000000000000000001', 'target-legacy', 'deployed', 'symbolic_link', 1, 'legacy', 'sha256:legacy', 12, 12);
+             INSERT INTO pending_dismissals(id, scope_type, scope_id, reason_code, created_at)
+                 VALUES ('todo-legacy', 'skill', '00000000-0000-0000-0000-0000000000a1', 'review', 13);",
+        )
+        .unwrap();
+    connection.pragma_update(None, "user_version", 13).unwrap();
+    drop(connection);
+
+    let database = Database::open(file.path()).unwrap();
+    assert_eq!(database.schema_version().unwrap(), 14);
+    assert_eq!(
+        database
+            .provenance_repository()
+            .list_provenance_for_skill("00000000-0000-0000-0000-0000000000a1".parse().unwrap())
+            .unwrap()
+            .len(),
+        1
+    );
+    let legacy_provenance_id: String = database.connection_for_test().query_row(
+        "SELECT provenance_id FROM source_relations WHERE skill_id='00000000-0000-0000-0000-0000000000a1'",
+        [],
+        |row| row.get(0),
+    ).unwrap();
+    assert_eq!(
+        legacy_provenance_id,
+        "legacy-provenance:00000000-0000-0000-0000-0000000000a1"
+    );
+    assert_ne!(legacy_provenance_id, "00000000-0000-0000-0000-0000000000a1");
+    let observed_count: i64 = database.connection_for_test().query_row(
+        "SELECT COUNT(*) FROM observed_deployments WHERE id='00000000-0000-0000-0000-0000000000b1'", [], |row| row.get(0)
+    ).unwrap();
+    assert_eq!(observed_count, 1);
+    let normalized_unreliable_skill: Option<String> = database.connection_for_test().query_row(
+        "SELECT skill_id FROM deployment_relations WHERE relation_id='legacy-observed:00000000-0000-0000-0000-0000000000b1'", [], |row| row.get(0)
+    ).unwrap();
+    assert_eq!(normalized_unreliable_skill, None);
+    assert_eq!(
+        database.deployment_repository().list_all().unwrap().len(),
+        1
+    );
+    let pending_count: i64 = database
+        .connection_for_test()
+        .query_row(
+            "SELECT COUNT(*) FROM pending_dismissals WHERE id='todo-legacy'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(pending_count, 1);
 }
 
 #[test]
@@ -39,10 +124,10 @@ fn open_exposes_the_migration_report() {
     let report = db.migration_report();
 
     assert_eq!(report.from_version, 0);
-    assert_eq!(report.to_version, 13);
+    assert_eq!(report.to_version, 14);
     assert_eq!(
         report.applied_versions,
-        vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]
+        vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]
     );
 }
 
@@ -66,10 +151,10 @@ fn v4_database_upgrades_check_run_metadata_in_v5() {
     drop(connection);
 
     let db = Database::open(file.path()).unwrap();
-    assert_eq!(db.schema_version().unwrap(), 13);
+    assert_eq!(db.schema_version().unwrap(), 14);
     assert_eq!(
         db.migration_report().applied_versions,
-        vec![5, 6, 7, 8, 9, 10, 11, 12, 13]
+        vec![5, 6, 7, 8, 9, 10, 11, 12, 13, 14]
     );
     let generation: String = db
         .connection_for_test()
@@ -133,7 +218,7 @@ fn v10_database_upgrades_source_roles_and_keeps_legacy_upstreams_readable() {
     drop(connection);
 
     let db = Database::open(file.path()).unwrap();
-    assert_eq!(db.schema_version().unwrap(), 13);
+    assert_eq!(db.schema_version().unwrap(), 14);
 
     let remote_skill: skillhub_core::SkillId =
         "00000000-0000-0000-0000-0000000000a1".parse().unwrap();
@@ -292,7 +377,7 @@ fn v11_database_dedupes_combination_names_and_enforces_uniqueness() {
     drop(connection);
 
     let db = Database::open(file.path()).unwrap();
-    assert_eq!(db.schema_version().unwrap(), 13);
+    assert_eq!(db.schema_version().unwrap(), 14);
 
     let name_of = |id: &str| -> String {
         db.connection_for_test()
