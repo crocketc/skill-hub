@@ -30,6 +30,7 @@ type PreviewScenario =
   | "default"
   | "bulk"
   | "conflict"
+  | "governance"
   | "fail-acquire"
   | "cancel"
   | "onboarding"
@@ -39,6 +40,7 @@ const scenarios: readonly PreviewScenario[] = [
   "default",
   "bulk",
   "conflict",
+  "governance",
   "fail-acquire",
   "cancel",
   "onboarding",
@@ -59,6 +61,15 @@ interface PreviewSetup {
 function createPreviewSetup(scenario: PreviewScenario): PreviewSetup {
   if (scenario === "unavailable") {
     return { facade: unavailableImportFacade, initialSources: [], variant: "standard" };
+  }
+  if (scenario === "governance") {
+    // 关系治理阶段预览：分析计划携带确定性分组；预览环境无已配置
+    // 供应商，面板按真实信号诚实显示 AI 不可用。
+    return {
+      facade: createMockImportFacade({ governance: true, scenario: "safe-local" }),
+      initialSources: [],
+      variant: "standard",
+    };
   }
   if (scenario === "cancel") {
     return {
@@ -139,6 +150,7 @@ export function ImportWizardPreview() {
     <ImportWizard
       facade={setup.facade}
       initialSources={setup.initialSources}
+      onOpenGovernanceTask={() => undefined}
       variant={setup.variant}
     />
   );

@@ -278,10 +278,53 @@ export interface MockImportFacade extends ImportFacade {
 
 interface MockImportOptions {
   scenario: MockImportScenario;
+  /** true 时分析计划携带确定性关系分组，走治理确认阶段（预览/E2E 用）。 */
+  governance?: boolean;
 }
 
 function clone<T>(value: T): T {
   return structuredClone(value);
+}
+
+/** 治理预览分组：跨候选按类别聚合成组，成员携带来源路径与受影响 Agent。 */
+function fixtureGovernanceGroups(
+  candidates: ImportCandidate[],
+): ImportPlan["governanceGroups"] {
+  const [first, second] = candidates;
+  if (!first) return [];
+  const groups: NonNullable<ImportPlan["governanceGroups"]> = [
+    {
+      available_actions: ["preserve_original", "create_todo"],
+      classification: "shared_directory_read",
+      default_action: "preserve_original",
+      group_id: "shared-directory-read",
+      members: [
+        {
+          affected_agents: ["trae.code"],
+          display_name: first.name,
+          member_id: first.id,
+          source_path: first.path,
+        },
+      ],
+    },
+  ];
+  if (second) {
+    groups.push({
+      available_actions: ["preserve_original", "create_todo"],
+      classification: "same_name_different_content",
+      default_action: "create_todo",
+      group_id: "same-name-different-content",
+      members: [
+        {
+          affected_agents: [],
+          display_name: second.name,
+          member_id: second.id,
+          source_path: second.path,
+        },
+      ],
+    });
+  }
+  return groups;
 }
 
 function fixtureCandidates(
@@ -395,13 +438,18 @@ export function createMockImportFacade(
       const plan = {
         candidates: selected,
         conflicts: fixtureConflicts(options.scenario, selected),
+        ...(options.governance
+          ? {
+              governanceGroups: fixtureGovernanceGroups(selected),
+            }
+          : {}),
       };
       facade.fixtures.plan = clone(plan);
       return clone(plan);
     },
     async commitImport(plan, actions) {
       calls.committedActions.push(clone(actions));
-      const results = plan.candidates.map<ImportResult>((candidate) => {
+      const results = plan.candidates.map<ImportResult>((candidate, index) => {
         const action = actions[candidate.id] ?? "copy";
         if (action === "skip") {
           return {
@@ -409,6 +457,27 @@ export function createMockImportFacade(
             candidateId: candidate.id,
             message: "已跳过",
             status: "skipped",
+          };
+        }
+        if (options.governance && index === 0) {
+          // 治理确认的"创建待办"路径：结果携带已持久化的治理待办事实。
+          return {
+            action,
+            candidateId: candidate.id,
+            message: "importWorkflow.commitMessages.imported",
+            originalPreserved: true,
+            status: "todo",
+            governanceTasks: [
+              {
+                created_at: "0",
+                detail: "import.governance.task.confirm_shared_directory_impact",
+                kind: "confirm_shared_directory_impact",
+                resolved: false,
+                resolved_at: null,
+                subject_id: candidate.id,
+                task_id: "task:preview-governance",
+              },
+            ],
           };
         }
         return {
@@ -429,7 +498,7 @@ export function createMockImportFacade(
       return Promise.resolve();
     },
     async listLlmProviders() {
-      return [usableProviderViewFixture()];
+      return options.governance ? [] : [usableProviderViewFixture()];
     },
     parseSource(input) {
       calls.parsedInputs.push(input);
