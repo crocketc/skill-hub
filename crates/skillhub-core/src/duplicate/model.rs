@@ -172,6 +172,29 @@ pub enum AnalyzeConflictScope {
     },
 }
 
+/// Which persisted conflict cases an analysis scope selects. Category matches
+/// the deterministic classification, `Case` one conflict id and `Skill` every
+/// case whose members reference that Skill. Kept in core next to
+/// [`build_conflict_analysis_input`] so a run and its later staleness check
+/// always select the same cases.
+pub fn conflict_case_matches_scope(
+    case: &crate::relationship::ConflictCaseFact,
+    scope: &AnalyzeConflictScope,
+) -> bool {
+    match scope {
+        AnalyzeConflictScope::All => true,
+        AnalyzeConflictScope::Category { classification } => case.classification == *classification,
+        AnalyzeConflictScope::Case { conflict_id } => case.conflict_id == *conflict_id,
+        AnalyzeConflictScope::Skill { skill_id } => {
+            case.member_skill_ids.contains(skill_id)
+                || case
+                    .members
+                    .iter()
+                    .any(|member| member.skill_id == Some(*skill_id))
+        }
+    }
+}
+
 /// Advisory action suggested by the AI layer. It mirrors the deterministic
 /// classification vocabulary, never executes anything and never writes
 /// `ConflictCase.user_decision`.

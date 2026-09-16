@@ -447,6 +447,19 @@ pub struct AnalyzeConflict {
     pub scope: crate::duplicate::AnalyzeConflictScope,
 }
 
+/// One explicit user decision on a pending `uncertain` conflict. Only a
+/// conclusion-writing decision closes the conflict; 「纳入集中库管理」 answers
+/// with a governance preview intent and never touches a file here.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct ResolveConflictCase {
+    pub conflict_id: String,
+    pub decision: crate::relationship::ConflictDecision,
+    /// Relationship fact revision the workspace was read from. A decision taken
+    /// on stale facts is refused instead of silently applied.
+    pub expected_relationship_revision: String,
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 #[serde(deny_unknown_fields)]
 pub struct TranslateDescription {
@@ -968,6 +981,8 @@ pub enum AppCommand {
     AnalyzeSemanticDuplicates(AnalyzeSemanticDuplicates),
     #[serde(rename = "analyze_conflict")]
     AnalyzeConflict(AnalyzeConflict),
+    #[serde(rename = "resolve_conflict_case")]
+    ResolveConflictCase(ResolveConflictCase),
     #[serde(rename = "translate_description")]
     TranslateDescription(TranslateDescription),
     #[serde(rename = "translate_descriptions_batch")]
@@ -1139,6 +1154,8 @@ pub enum AppCommandResult {
     DuplicateAnalysis(crate::duplicate::DuplicateAnalysis),
     #[serde(rename = "conflict_analysis")]
     ConflictAnalysis(crate::duplicate::ConflictAnalysis),
+    #[serde(rename = "conflict_resolved")]
+    ConflictResolved(crate::relationship::ConflictResolutionOutcome),
     #[serde(rename = "translation_result")]
     TranslationResult(TranslationResult),
     #[serde(rename = "batch_translation_result")]

@@ -1,6 +1,7 @@
 pub mod classifier;
 pub mod graph;
 pub mod impact;
+pub mod resolution;
 
 pub use classifier::{
     classify_directory_capability, classify_observed_relation,
@@ -14,6 +15,12 @@ pub use graph::{
 pub use impact::{
     calculate_removal_impact, recommend_removal_action, BackupRecoveryInfo, MinimalImpactAction,
     RelatedSkillPath, RemovalFacts, RemovalImpactFact, SharedDirectoryConsumer,
+};
+pub use resolution::{
+    build_conflict_workspace, conflict_analysis_is_stale, decision_for_analysis_action,
+    plan_conflict_decision, plan_conflict_governance_handoff, ConflictDecision,
+    ConflictGovernanceHandoff, ConflictGovernanceIntent, ConflictResolutionOutcome,
+    ConflictResolutionRecord, ConflictWorkspace, ConflictWorkspaceCase, PlannedConflictResolution,
 };
 
 use serde::{Deserialize, Serialize};

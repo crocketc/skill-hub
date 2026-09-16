@@ -15,8 +15,8 @@ use crate::{
 };
 
 use crate::relationship::{
-    AgentDirectoryCapabilityFact, ConflictCaseFact, DeploymentRelationFact, DirectoryNodeFact,
-    GovernanceTaskFact, RelationshipGraphFactCounts, RelationshipGraphFilters,
+    AgentDirectoryCapabilityFact, ConflictCaseFact, ConflictWorkspace, DeploymentRelationFact,
+    DirectoryNodeFact, GovernanceTaskFact, RelationshipGraphFactCounts, RelationshipGraphFilters,
     SkillRelationshipEdge, SkillRelationshipGraph, SkillRelationshipNode, SourceRelationFact,
 };
 use serde::{Deserialize, Serialize};
@@ -605,6 +605,14 @@ pub struct GetRelationshipRemovalImpact {
     pub relation_id: String,
 }
 
+/// Reads the conflict-resolution workspace: the pending `uncertain` queue, each
+/// case's latest analysis (and whether the input fingerprint moved on), the
+/// cumulative handled count and the handled history. Read-only: it never
+/// scans, calls AI or writes a fact.
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct GetConflictWorkspace;
+
 /// Reads one bounded, fact-backed relationship graph. This query is read-only:
 /// it never scans files, calls AI, or refreshes relationship facts.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
@@ -824,6 +832,8 @@ pub enum AppQuery {
     GetSkillRelationshipGraph(GetSkillRelationshipGraph),
     #[serde(rename = "list_skill_relationship_candidates")]
     ListSkillRelationshipCandidates(ListSkillRelationshipCandidates),
+    #[serde(rename = "get_conflict_workspace")]
+    GetConflictWorkspace(GetConflictWorkspace),
     #[serde(rename = "list_recovery_candidates")]
     ListRecoveryCandidates,
     #[serde(rename = "get_call_policy")]
@@ -931,6 +941,8 @@ pub enum AppQueryResult {
     SkillRelationshipGraph(SkillRelationshipGraphResult),
     #[serde(rename = "skill_relationship_candidates")]
     SkillRelationshipCandidates(Vec<SkillRelationshipCandidate>),
+    #[serde(rename = "conflict_workspace")]
+    ConflictWorkspace(ConflictWorkspace),
     #[serde(rename = "recovery_candidates")]
     RecoveryCandidates(Vec<crate::RecoveryCandidate>),
     #[serde(rename = "skill_operations")]
