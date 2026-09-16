@@ -1733,6 +1733,12 @@
       "caseHeading": "Conflict case {{id}}",
       "failureReason": "Conflict analysis failed: {{reason}}",
       "deterministicNote": "Deterministic conflict grouping is unaffected."
+    },
+    "tracker": {
+      "aiAnalysisLabel": "AI semantic analysis",
+      "conflictPhaseLabel": "AI conflict analysis",
+      "duplicatesPhase": "Analyzing semantic duplicate candidates",
+      "conflictPhase": "Analyzing related conflicts"
     }
   },
   "deployment": {
@@ -1814,11 +1820,11 @@
       }
     },
     "tracker": {
-      "label": "Add to Agent"
+      "label": "Add to Agent/Project"
     },
     "notices": {
-      "addedTitle": "Added to Agent",
-      "addedPartialTitle": "Added to Agent, some targets failed"
+      "addedTitle": "Added to Agent/Project",
+      "addedPartialTitle": "Added to Agent/Project, some targets failed"
     }
   },
   "security": {
@@ -1867,6 +1873,9 @@
       "scopeExplicitSelection": "Only explicitly selected Skill content is sent.",
       "scopeOther": "Current data scope: {{scope}}",
       "runFailed": "AI check failed: {{message}}"
+    },
+    "tracker": {
+      "aiCheckLabel": "AI check"
     }
   },
   "removal": {
@@ -1909,6 +1918,9 @@
         "relatedSkills": "Related skills",
         "unknownExternalReferences": "Unknown external references (reported only, never modified)"
       }
+    },
+    "tracker": {
+      "batchLabel": "Remove from library"
     }
   },
   "undeploy": {
@@ -2570,7 +2582,10 @@
       "commit": "Create export",
       "result": "Export created at {{path}}"
     },
-    "working": "Working, please wait…"
+    "working": "Working, please wait…",
+    "tracker": {
+      "restoreLabel": "Restore backup"
+    }
   },
   "navigation": {
     "agents": "Agents",

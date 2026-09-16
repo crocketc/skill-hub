@@ -7,7 +7,7 @@ import type { AppNoticeInput, AppNotifications } from "../ui/notifications";
 function stubNotifications(): AppNotifications & { notify: ReturnType<typeof vi.fn> } {
   let nextId = 0;
   return {
-    notify: vi.fn((notice: AppNoticeInput) => {
+    notify: vi.fn((_notice: AppNoticeInput) => {
       nextId += 1;
       return `notice-${nextId}`;
     }),
@@ -229,6 +229,30 @@ describe("runTrackedOperation", () => {
 
     release();
     await run;
+  });
+
+  it("finalizes as cancelled (not failed) when the user cancellation was confirmed via markCancelled", async () => {
+    const tracker = createOperationTracker();
+    const notifications = stubNotifications();
+    const cancellation = new Error("operation cancelled");
+
+    const run = runTrackedOperation({
+      tracker,
+      notifications,
+      kind: "ai_check",
+      label: "AI 检查",
+      canCancel: true,
+      errorNotice: () => null,
+      run: async (handle) => {
+        // 后端确认取消后命令以异常收场：终态必须是 cancelled。
+        handle.markCancelled();
+        throw cancellation;
+      },
+    });
+
+    await expect(run).rejects.toBe(cancellation);
+    expect(tracker.getSnapshot()[0].status).toBe("cancelled");
+    expect(notifications.notify).not.toHaveBeenCalled();
   });
 
   it("does not flash the topbar for instant commands: no tracker entry and only a result notice", async () => {

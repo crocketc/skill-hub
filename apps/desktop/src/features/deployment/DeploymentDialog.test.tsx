@@ -319,7 +319,7 @@ describe("DeploymentDialog 与统一执行桥", () => {
     const [inFlight] = tracker.getSnapshot();
     expect(inFlight.status).toBe("running");
     expect(inFlight.kind).toBe("deploy");
-    expect(inFlight.label).toBe("添加到 Agent");
+    expect(inFlight.label).toBe("添加到 Agent/项目");
     expect(inFlight.total).toBe(2);
 
     resolveCommit([

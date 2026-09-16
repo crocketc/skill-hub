@@ -211,7 +211,7 @@ export function createNativeBatchDeploymentFacade(): BatchDeploymentFacade {
       return { plans, failures };
     },
 
-    async commit(plans: BatchDeploymentPlan[]): Promise<BatchDeploymentResult[]> {
+    async commit(plans: BatchDeploymentPlan[], onProgress?: (completedSkills: number) => void): Promise<BatchDeploymentResult[]> {
       const results: BatchDeploymentResult[] = [];
       for (const { skillId, plan } of plans) {
         try {
@@ -226,6 +226,8 @@ export function createNativeBatchDeploymentFacade(): BatchDeploymentFacade {
             message: messageOf(reason),
           })));
         }
+        // 批次非原子：每个 Skill 落定即推进一次真实进度（不做估算）。
+        onProgress?.(results.length ? new Set(results.map((result) => result.skillId)).size : 0);
       }
       return results;
     },

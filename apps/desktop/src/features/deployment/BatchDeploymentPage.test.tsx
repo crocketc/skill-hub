@@ -1,9 +1,10 @@
 import userEvent from "@testing-library/user-event";
 import { I18nextProvider } from "react-i18next";
 import { MemoryRouter } from "react-router-dom";
-import { expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import { createSkillHubI18n } from "../../i18n";
+import { createOperationTracker } from "../../platform/operationTracker";
 import { BatchDeploymentPage } from "./BatchDeploymentPage";
 import { deploymentTargetsFixture, type BatchDeploymentFacade, type BatchDeploymentResult, type DeploymentTarget } from "./api";
 
@@ -80,7 +81,7 @@ it("previews every selected Skill before explicitly committing a batch", async (
   expect(commit).toHaveBeenCalledWith(expect.arrayContaining([
     expect.objectContaining({ skillId: "skill-pdf" }),
     expect.objectContaining({ skillId: "skill-docx" }),
-  ]));
+  ]), expect.anything());
 });
 
 
@@ -313,4 +314,79 @@ it("hides the batch footer during committing and announces the non-atomic progre
 
   resolveCommit([{ skillId: "skill-pdf", targetId: "codex-cli", label: "Codex CLI", status: "succeeded" as const, message: "已部署" }]);
   expect(await screen.findByTestId("batch-summary")).toHaveTextContent("成功 1");
+});
+
+describe("BatchDeploymentPage 与统一执行桥", () => {
+  it("reports the batch commit to the unified tracker with per-skill progress and a partial finish", async () => {
+    const user = userEvent.setup();
+    const tracker = createOperationTracker();
+    let resolveCommit!: (value: BatchDeploymentResult[]) => void;
+    const facade = batchFacade({
+      commit: vi.fn<BatchDeploymentFacade["commit"]>((plans, onProgress) => new Promise((resolve) => {
+        resolveCommit = (value) => {
+          onProgress?.(plans.length);
+          resolve(value);
+        };
+      })),
+    });
+    const i18n = await createSkillHubI18n(["zh-CN"]);
+    render(
+      <I18nextProvider i18n={i18n}>
+        <MemoryRouter initialEntries={["/deploy"]}>
+          <BatchDeploymentPage facade={facade} skillIds={["skill-pdf", "skill-docx"]} tracker={tracker} />
+        </MemoryRouter>
+      </I18nextProvider>,
+    );
+
+    await user.click(await screen.findByLabelText("Codex CLI"));
+    await user.click(screen.getByRole("button", { name: "预览部署" }));
+    await user.click(await screen.findByRole("button", { name: "提交部署" }));
+
+    // 批次在途：一个批次任务（不是每个 Skill 一条），进度按已完成 Skill 推进。
+    const [inFlight] = tracker.getSnapshot();
+    expect(inFlight.status).toBe("running");
+    expect(inFlight.kind).toBe("deploy");
+    expect(inFlight.label).toBe("添加到 Agent/项目");
+    expect(inFlight.total).toBe(2);
+    expect(inFlight.completed).toBe(0);
+
+    resolveCommit([
+      { skillId: "skill-pdf", targetId: "codex-cli", label: "Codex CLI", status: "succeeded", message: "deployment.results.status.message.succeeded", operationId: "op-batch-1" },
+      { skillId: "skill-docx", targetId: "codex-cli", label: "Codex CLI", status: "failed", message: "目标目录不可写", operationId: "op-batch-1" },
+    ]);
+    expect(await screen.findByTestId("batch-summary")).toBeVisible();
+
+    const [finished] = tracker.getSnapshot();
+    expect(finished.status).toBe("partial");
+    expect(finished.completed).toBe(2);
+    expect(finished.operationId).toBe("op-batch-1");
+    expect(finished.targetHref).toBe("/operations/op-batch-1");
+  });
+
+  it("records a rejected batch on the tracker as failed and keeps the page alert", async () => {
+    const user = userEvent.setup();
+    const tracker = createOperationTracker();
+    const facade = batchFacade({
+      commit: vi.fn<BatchDeploymentFacade["commit"]>(async () => {
+        throw new Error("deployment.plan_stale");
+      }),
+    });
+    const i18n = await createSkillHubI18n(["zh-CN"]);
+    render(
+      <I18nextProvider i18n={i18n}>
+        <MemoryRouter initialEntries={["/deploy"]}>
+          <BatchDeploymentPage facade={facade} skillIds={["skill-pdf"]} tracker={tracker} />
+        </MemoryRouter>
+      </I18nextProvider>,
+    );
+
+    await user.click(await screen.findByLabelText("Codex CLI"));
+    await user.click(screen.getByRole("button", { name: "预览部署" }));
+    await user.click(await screen.findByRole("button", { name: "提交部署" }));
+
+    expect(await screen.findByRole("alert")).toBeVisible();
+    const [failed] = tracker.getSnapshot();
+    expect(failed.status).toBe("failed");
+    expect(failed.error).toBe("deployment.plan_stale");
+  });
 });

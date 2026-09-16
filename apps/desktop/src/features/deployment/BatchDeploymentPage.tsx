@@ -2,6 +2,9 @@ import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useSearchParams } from "react-router-dom";
 import { describeNativeError } from "../../api/nativeErrors";
+import type { OperationTracker } from "../../platform/operationTracker";
+import { runTrackedOperation } from "../../platform/runTrackedOperation";
+import { useOptionalAppNotifications } from "../../ui/notifications";
 import { Button } from "../../ui/Button";
 import { DataState } from "../../ui/DataState";
 import { Icon } from "../../ui/Icon";
@@ -22,6 +25,8 @@ import { createNativeBatchDeploymentFacade } from "./nativeApi";
 export interface BatchDeploymentPageProps {
   facade?: BatchDeploymentFacade;
   skillIds: string[];
+  /** 统一执行桥的在途投影；测试可注入独立实例，默认模块级单例。 */
+  tracker?: OperationTracker;
   onCommitted?: (results: BatchDeploymentResult[]) => void;
 }
 
@@ -33,8 +38,10 @@ function uniqueIds(skillIds: string[]) {
   return [...new Set(skillIds.filter(Boolean))];
 }
 
-export function BatchDeploymentPage({ facade, skillIds, onCommitted }: BatchDeploymentPageProps) {
+export function BatchDeploymentPage({ facade, skillIds, tracker, onCommitted }: BatchDeploymentPageProps) {
   const { t } = useTranslation();
+  // Provider 缺席（预览/测试挂载）时通知为 null：桥不发通知，行为不降级。
+  const notifications = useOptionalAppNotifications();
   const activeFacade = useMemo(() => facade ?? createNativeBatchDeploymentFacade(), [facade]);
   const selectedSkillIds = useMemo(() => uniqueIds(skillIds), [skillIds]);
   const [targets, setTargets] = useState<DeploymentTarget[]>();
@@ -99,7 +106,34 @@ export function BatchDeploymentPage({ facade, skillIds, onCommitted }: BatchDepl
     setCommitting(true);
     setFlowError(undefined);
     try {
-      const committed = await activeFacade.commit(preview.plans);
+      // 统一执行桥（任务 4）：批次进 tracker 在途投影，按已完成 Skill 推进，
+      // 结果通知深链 /operations/:id，异常 rethrow 由页面告警承接，不吞掉。
+      const committed = await runTrackedOperation<BatchDeploymentResult[]>({
+        tracker,
+        notifications,
+        kind: "deploy",
+        label: t("deployment.tracker.label"),
+        total: preview.plans.length,
+        translate: (key, options) => String(t(key as never, options as never)),
+        errorNotice: () => null,
+        successNotice: (_result, summary) => ({
+          tone: summary && summary.failed > 0 ? "warning" : "success",
+          title: summary && summary.failed > 0
+            ? t("deployment.notices.addedPartialTitle")
+            : t("deployment.notices.addedTitle"),
+        }),
+        summarize: (results: BatchDeploymentResult[]) => ({
+          succeeded: new Set(results.filter((result) => result.status === "succeeded").map((result) => result.skillId)).size,
+          failed: new Set(results.filter((result) => result.status === "failed").map((result) => result.skillId)).size,
+          skipped: new Set(results.filter((result) => result.status === "skipped").map((result) => result.skillId)).size,
+        }),
+        run: async (handle) => {
+          const results = await activeFacade.commit(preview.plans, (completed) => handle.progress(completed, preview.plans.length));
+          const operationId = results.find((result) => result.operationId)?.operationId;
+          if (operationId) handle.correlate(operationId);
+          return results;
+        },
+      });
       setResults(committed);
       onCommitted?.(committed);
     } catch (reason) {

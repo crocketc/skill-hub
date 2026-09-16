@@ -85,7 +85,7 @@ export function DeploymentDialog({
     try {
       // 统一执行桥（任务 4）：提交进 tracker 在途投影，结果通知深链
       // /operations/:id，异常原样 rethrow 由页面告警承接，不吞掉。
-      const committed = await runTrackedOperation({
+      const committed = await runTrackedOperation<DeploymentResult[]>({
         tracker,
         notifications,
         kind: "deploy",
@@ -99,7 +99,7 @@ export function DeploymentDialog({
             ? t("deployment.notices.addedPartialTitle")
             : t("deployment.notices.addedTitle"),
         }),
-        summarize: (results) => ({
+        summarize: (results: DeploymentResult[]) => ({
           succeeded: results.filter((result) => result.status === "succeeded").length,
           failed: results.filter((result) => result.status === "failed").length,
           skipped: results.filter((result) => result.status === "skipped").length,

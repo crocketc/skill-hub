@@ -5,6 +5,8 @@ import type {
   ConflictAnalysis,
 } from "../../api/bindings";
 import { describeNativeError } from "../../api/nativeErrors";
+import { operationTracker, type OperationTracker } from "../../platform/operationTracker";
+import { runTrackedOperation } from "../../platform/runTrackedOperation";
 import { Button } from "../../ui/Button";
 import { StatusBadge } from "../../ui/StatusBadge";
 import {
@@ -27,6 +29,8 @@ interface SemanticDuplicatePanelProps {
   /** P1-12：来自 getInsights 的确定性重复候选（内容比对产物，与 AI 无关），
    * 页面加载即常显；可选 AI 分析在其上作为增强层，由用户显式触发。 */
   deterministicCandidates?: string[];
+  /** 统一执行桥的在途投影；测试可注入独立实例，默认模块级单例。 */
+  tracker?: OperationTracker;
 }
 
 /** Optional AI layer over the deterministic duplicate candidates (US-018).
@@ -38,6 +42,7 @@ export function SemanticDuplicatePanel({
   deterministicCandidates = [],
   facade,
   skillId,
+  tracker = operationTracker,
 }: SemanticDuplicatePanelProps): JSX.Element {
   const { t } = useTranslation();
   const [running, setRunning] = useState(false);
@@ -75,8 +80,21 @@ export function SemanticDuplicatePanel({
     if (running) return;
     setRunning(true);
     setError(undefined);
-    facade
-      .analyzeSemanticDuplicates(skillId)
+    // 统一执行桥（任务 4）：AI 分析进 tracker 在途投影；结果与失败反馈
+    // 保留在本面板内（notifications: null），异常 rethrow 不吞掉。
+    runTrackedOperation({
+      tracker,
+      notifications: null,
+      kind: "ai_analysis",
+      label: t("skillDetail.tracker.aiAnalysisLabel"),
+      translate: (key, options) => String(t(key as never, options as never)),
+      successNotice: () => null,
+      errorNotice: () => null,
+      run: (handle) => {
+        handle.phase(t("skillDetail.tracker.duplicatesPhase"));
+        return facade.analyzeSemanticDuplicates(skillId);
+      },
+    })
       .then(setReport)
       // 结构化 AppError 直接 String() 会变成 "[object Object]"；
       // 统一走分类文案，并明确确定性候选不受影响。
@@ -88,8 +106,19 @@ export function SemanticDuplicatePanel({
     if (conflictRunning) return;
     setConflictRunning(true);
     setConflictError(undefined);
-    facade
-      .analyzeConflicts(scope)
+    runTrackedOperation({
+      tracker,
+      notifications: null,
+      kind: "ai_analysis",
+      label: t("skillDetail.tracker.conflictPhaseLabel"),
+      translate: (key, options) => String(t(key as never, options as never)),
+      successNotice: () => null,
+      errorNotice: () => null,
+      run: (handle) => {
+        handle.phase(t("skillDetail.tracker.conflictPhase"));
+        return facade.analyzeConflicts(scope);
+      },
+    })
       .then(setConflictAnalysis)
       .catch((reason: unknown) => setConflictError(describeError(reason)))
       .finally(() => setConflictRunning(false));

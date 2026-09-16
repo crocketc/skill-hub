@@ -2,6 +2,7 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { I18nextProvider } from "react-i18next";
 import { describe, expect, it, vi } from "vitest";
 import { createSkillHubI18n } from "../../i18n";
+import { createOperationTracker } from "../../platform/operationTracker";
 import { createMockSkillDetailFacade } from "./testFixtures";
 import { SemanticDuplicatePanel } from "./SemanticDuplicatePanel";
 import type { SkillDetailFacade } from "./api";
@@ -10,6 +11,7 @@ import type { ConflictAnalysis } from "../../api/bindings";
 async function renderPanel(
   facade: SkillDetailFacade,
   deterministicCandidates: string[] = [],
+  tracker = createOperationTracker(),
 ) {
   const i18n = await createSkillHubI18n(["zh-CN"]);
   render(
@@ -18,9 +20,11 @@ async function renderPanel(
         deterministicCandidates={deterministicCandidates}
         facade={facade}
         skillId="skill-pdf"
+        tracker={tracker}
       />
     </I18nextProvider>,
   );
+  return tracker;
 }
 
 describe("SemanticDuplicatePanel", () => {
@@ -228,5 +232,72 @@ describe("SemanticDuplicatePanel", () => {
     expect(screen.getByText("确定性冲突分组不受影响。")).toBeVisible();
     // 确定性重复候选不受冲突分析失败影响。
     expect(screen.getByRole("heading", { name: "确定性重复候选" })).toBeVisible();
+  });
+});
+
+describe("SemanticDuplicatePanel 与统一执行桥", () => {
+  it("reports the AI duplicate analysis to the unified tracker from start to finish", async () => {
+    const facade = createMockSkillDetailFacade();
+    const tracker = await renderPanel(facade);
+
+    fireEvent.click(screen.getByRole("button", { name: "运行分析" }));
+    await screen.findByText("结果来源：确定性候选 + AI 语义分析");
+
+    const [operation] = tracker.getSnapshot();
+    expect(operation.kind).toBe("ai_analysis");
+    expect(operation.status).toBe("success");
+  });
+
+  it("keeps the in-flight analysis visible in the tracker while waiting for the facade", async () => {
+    const facade = createMockSkillDetailFacade();
+    let resolveAnalyze!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      resolveAnalyze = resolve;
+    });
+    facade.analyzeSemanticDuplicates = async () => {
+      await gate;
+      return {
+        candidates: [],
+        failureCode: null,
+        source: "llm" as const,
+      };
+    };
+    const tracker = await renderPanel(facade);
+
+    fireEvent.click(screen.getByRole("button", { name: "运行分析" }));
+    // 命令未返回：任务保持在途，不得提前落终态。
+    expect(tracker.getSnapshot()[0]?.status).toBe("running");
+
+    resolveAnalyze();
+    await screen.findByText("结果来源：确定性候选 + AI 语义分析");
+    expect(tracker.getSnapshot()[0].status).toBe("success");
+  });
+
+  it("records a failed AI analysis on the tracker and keeps the inline alert", async () => {
+    const facade = createMockSkillDetailFacade();
+    facade.analyzeSemanticDuplicates = async () => {
+      throw new Error("提供商未就绪");
+    };
+    const tracker = await renderPanel(facade);
+
+    fireEvent.click(screen.getByRole("button", { name: "运行分析" }));
+    expect(await screen.findByRole("alert")).toBeVisible();
+
+    const [operation] = tracker.getSnapshot();
+    expect(operation.status).toBe("failed");
+    expect(operation.error).toBe("提供商未就绪");
+  });
+
+  it("reports the conflict analysis to the same unified tracker", async () => {
+    const facade = createMockSkillDetailFacade();
+    const tracker = await renderPanel(facade);
+
+    fireEvent.click(screen.getByRole("button", { name: "分析相关冲突" }));
+    await screen.findByTestId("conflict-analysis-result");
+
+    const operations = tracker.getSnapshot();
+    expect(operations).toHaveLength(1);
+    expect(operations[0].kind).toBe("ai_analysis");
+    expect(operations[0].status).toBe("success");
   });
 });

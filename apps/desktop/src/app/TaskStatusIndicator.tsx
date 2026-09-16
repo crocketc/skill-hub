@@ -95,7 +95,7 @@ export function TaskStatusIndicator({ tracker = operationTracker }: { tracker?: 
   // 初始化扫描的标签本身就是状态描述（“初始化只读扫描”），不套运行中文案。
   const description = current.kind === "initialization_scan"
     ? current.label
-    : describeOperation(current, t);
+    : describeOperation(current, (key, options) => String(t(key as never, options as never)));
 
   return (
     <div className="sh-task-summary" ref={rootRef}>

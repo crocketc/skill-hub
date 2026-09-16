@@ -1733,6 +1733,12 @@
       "caseHeading": "冲突组 {{id}}",
       "failureReason": "冲突分析未能完成：{{reason}}",
       "deterministicNote": "确定性冲突分组不受影响。"
+    },
+    "tracker": {
+      "aiAnalysisLabel": "AI 语义分析",
+      "conflictPhaseLabel": "AI 冲突分析",
+      "duplicatesPhase": "分析语义重复候选",
+      "conflictPhase": "分析相关冲突"
     }
   },
   "deployment": {
@@ -1814,11 +1820,11 @@
       }
     },
     "tracker": {
-      "label": "添加到 Agent"
+      "label": "添加到 Agent/项目"
     },
     "notices": {
-      "addedTitle": "已添加到 Agent",
-      "addedPartialTitle": "已添加到 Agent，部分目标失败"
+      "addedTitle": "已添加到 Agent/项目",
+      "addedPartialTitle": "已添加到 Agent/项目，部分目标失败"
     }
   },
   "security": {
@@ -1867,6 +1873,9 @@
       "scopeExplicitSelection": "仅发送显式选择的 Skill 内容",
       "scopeOther": "当前发送范围：{{scope}}",
       "runFailed": "AI 检查运行失败：{{message}}"
+    },
+    "tracker": {
+      "aiCheckLabel": "AI 检查"
     }
   },
   "removal": {
@@ -1909,6 +1918,9 @@
         "relatedSkills": "相关 Skill",
         "unknownExternalReferences": "未知外部引用（仅提示，不会修改）"
       }
+    },
+    "tracker": {
+      "batchLabel": "移出技能库"
     }
   },
   "undeploy": {
@@ -2570,7 +2582,10 @@
       "commit": "创建导出",
       "result": "导出已创建：{{path}}"
     },
-    "working": "正在执行，请稍候…"
+    "working": "正在执行，请稍候…",
+    "tracker": {
+      "restoreLabel": "恢复备份"
+    }
   },
   "navigation": {
     "agents": "Agent",

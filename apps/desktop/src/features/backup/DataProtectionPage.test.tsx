@@ -4,6 +4,7 @@ import { I18nextProvider } from "react-i18next";
 import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
 import { skillHubI18n } from "../../i18n";
+import { createOperationTracker } from "../../platform/operationTracker";
 import type { DeploymentRecord, VersionResult } from "../../api/bindings";
 import type { BackupFacade } from "./api";
 import { DataProtectionPage } from "./DataProtectionPage";
@@ -33,11 +34,11 @@ interface RenderPageOptions {
   opener?: { openDirectory: (path: string) => Promise<void> };
 }
 
-function renderPage(facade: BackupFacade, options: RenderPageOptions = {}) {
+function renderPage(facade: BackupFacade, options: RenderPageOptions = {}, tracker = createOperationTracker()) {
   return render(
     <I18nextProvider i18n={skillHubI18n}>
       <MemoryRouter initialEntries={[{ pathname: "/settings/data-protection", state: options.state }]}>
-        <DataProtectionPage facade={facade} directoryPicker={options.picker} directoryOpener={options.opener} />
+        <DataProtectionPage facade={facade} directoryOpener={options.opener} directoryPicker={options.picker} tracker={tracker} />
       </MemoryRouter>
     </I18nextProvider>,
   );
@@ -77,6 +78,25 @@ describe("DataProtectionPage", () => {
     fireEvent.click(commit);
     await waitFor(() => expect(facade.commitRestore).toHaveBeenCalledWith("C:/backup.skillhub", [{ skill_id: "skill-1", decision: "overwrite" }]));
     expect(await screen.findByText(/Restored 1 skills/)).toBeVisible();
+  });
+
+  it("reports the restore commit to the unified tracker with progress and an honest summary", async () => {
+    const facade = createFacade();
+    const tracker = createOperationTracker();
+    renderPage(facade, {}, tracker);
+    fireEvent.change(screen.getByLabelText("Backup package path"), { target: { value: "C:/backup.skillhub" } });
+    fireEvent.click(screen.getByRole("button", { name: "Review restore" }));
+    expect(await screen.findByText("Already exists")).toBeVisible();
+    fireEvent.change(screen.getByLabelText("Decision for skill-1"), { target: { value: "overwrite" } });
+    fireEvent.click(screen.getByRole("button", { name: "Restore backup" }));
+
+    expect(await screen.findByText(/Restored 1 skills/)).toBeVisible();
+    const [operation] = tracker.getSnapshot();
+    expect(operation.kind).toBe("restore");
+    expect(operation.status).toBe("success");
+    // 汇总来自 RestoreResult 的真实计数：恢复/跳过分开统计，不伪造失败。
+    expect(operation.resultSummary).toEqual({ succeeded: 1, failed: 0, skipped: 1 });
+    expect(operation.hasKnownTotal).toBe(true);
   });
 
   it("preflights and creates a selected-skill export after sensitive-content decisions", async () => {

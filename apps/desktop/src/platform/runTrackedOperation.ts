@@ -34,6 +34,8 @@ export interface TrackedOperationHandle {
   needsUser: (phase?: string) => void;
   /** 记录用户取消请求；真实取消由调用方经后端命令确认。 */
   requestCancel: () => void;
+  /** 后端确认取消后调用：终态落 cancelled，后续异常按取消处理，不再记失败。 */
+  markCancelled: () => void;
 }
 
 export interface RunTrackedOperationOptions<T> {
@@ -139,6 +141,8 @@ export async function runTrackedOperation<T>(
 
   let correlatedHref: string | null = initialHref
     ?? (operationId ? `/operations/${operationId}` : null);
+  // 用户取消经后端确认后置位：run 以异常收场时终态保持 cancelled，不记失败。
+  let cancelled = false;
 
   const handle: TrackedOperationHandle = {
     trackedId,
@@ -157,9 +161,9 @@ export async function runTrackedOperation<T>(
     needsUser(phase) {
       if (mode === "phased") tracker.needsUser(trackedId, phase);
       if (notifications) {
-        const notice = needsUserNotice
+        const notice: AppNoticeInput | null = needsUserNotice
           ? needsUserNotice(phase ?? null)
-          : ({ tone: "info", title: label, detail: phase } as const);
+          : { tone: "info", title: label, detail: phase ?? undefined };
         // 阻塞在用户动作上时立即通知，不等命令结束。
         if (notice) {
           notifications.notify(withDeepLink(notice, correlatedHref, translate));
@@ -168,6 +172,10 @@ export async function runTrackedOperation<T>(
     },
     requestCancel() {
       if (mode === "phased") tracker.requestCancel(trackedId);
+    },
+    markCancelled() {
+      cancelled = true;
+      if (mode === "phased") tracker.cancel(trackedId);
     },
   };
 
@@ -178,10 +186,10 @@ export async function runTrackedOperation<T>(
       tracker.complete(trackedId, summary ?? defaultSummary(total));
     }
     if (notifications) {
-      const notice = successNotice
+      const notice: AppNoticeInput | null = successNotice
         ? successNotice(result, summary)
         : {
-            tone: (summary && summary.failed > 0 ? "warning" : "success") as const,
+            tone: summary && summary.failed > 0 ? "warning" : "success",
             title: label,
           };
       if (notice) {
@@ -196,13 +204,13 @@ export async function runTrackedOperation<T>(
     return result;
   } catch (error) {
     const message = describeError(error);
-    if (mode === "phased") {
+    if (mode === "phased" && !cancelled) {
       tracker.fail(trackedId, message);
     }
     if (notifications) {
-      const notice = errorNotice
+      const notice: AppNoticeInput | null = errorNotice
         ? errorNotice(error, message)
-        : ({ tone: "danger", title: label, detail: message } as const);
+        : { tone: "danger", title: label, detail: message };
       if (notice) {
         notifications.notify(withDeepLink(notice, correlatedHref, translate));
       }

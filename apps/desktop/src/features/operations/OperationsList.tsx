@@ -111,20 +111,22 @@ export function OperationsList({ recent, tracker }: OperationsListProps) {
 
 function SessionTimelineEntry({ locale, operation }: { locale: SupportedLocale; operation: TrackedOperation }) {
   const { t } = useTranslation();
-  const tone = operation.status === "completed"
-    ? "success"
+  const tone = operation.status === "success" || operation.status === "partial"
+    ? operation.status === "partial" ? "warning" : "success"
     : operation.status === "failed"
       ? "danger"
       : operation.status === "cancelled"
         ? "muted"
         : "info";
-  const icon = operation.status === "completed"
+  const icon = operation.status === "success"
     ? "success"
-    : operation.status === "failed"
-      ? "failure"
-      : operation.status === "cancelled"
-        ? "close"
-        : "update";
+    : operation.status === "partial"
+      ? "warning"
+      : operation.status === "failed"
+        ? "failure"
+        : operation.status === "cancelled"
+          ? "close"
+          : "update";
   return (
     <li className="sh-operations-timeline__entry">
       <span aria-hidden="true" className={`sh-operations-timeline__marker sh-operations-timeline__marker--${tone}`}>
@@ -145,7 +147,7 @@ function SessionTimelineEntry({ locale, operation }: { locale: SupportedLocale; 
             })}
           </p>
         ) : null}
-        {operation.status === "completed" && operation.resultSummary ? (
+        {operation.status === "success" && operation.resultSummary ? (
           <p>
             {t("operations.list.sessionCompleted", { ...operation.resultSummary, todo: operation.resultSummary.todo ?? 0 })}
           </p>
