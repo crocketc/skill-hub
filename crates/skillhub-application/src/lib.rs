@@ -5801,6 +5801,12 @@ impl ApplicationFacade for LocalApplicationFacade {
             AppQuery::GetRelationshipRemovalImpact(request) => {
                 self.get_relationship_removal_impact(&request.relation_id)
             }
+            AppQuery::GetSkillRelationshipGraph(request) => {
+                self.get_skill_relationship_graph(request)
+            }
+            AppQuery::ListSkillRelationshipCandidates(request) => {
+                self.list_skill_relationship_candidates(request)
+            }
             AppQuery::ListRecoveryCandidates => self
                 .recovery_service
                 .list()

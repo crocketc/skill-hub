@@ -99,6 +99,26 @@ async fn query_application(
     bridge.query(query).await
 }
 
+/// Explicit graph entry point for relationship screens. It still delegates to
+/// the typed facade query, so it cannot scan, analyze, or mutate facts.
+#[tauri::command]
+async fn get_skill_relationship_graph(
+    bridge: State<'_, CommandBridge>,
+    request: skillhub_core::api::GetSkillRelationshipGraph,
+) -> AppResult<skillhub_core::api::SkillRelationshipGraphResult> {
+    match bridge
+        .query(AppQuery::GetSkillRelationshipGraph(request))
+        .await?
+    {
+        AppQueryResult::SkillRelationshipGraph(graph) => Ok(graph),
+        _ => Err(skillhub_core::AppError::new(
+            skillhub_core::ErrorCode::InternalError,
+            skillhub_core::Severity::Error,
+        )
+        .with_param("reason", "skill_relationship_graph_query_result_mismatch")),
+    }
+}
+
 /// 规范化用户选取的目录并校验其为目录；路径本身的问题必须让选择器报错。
 fn canonicalize_picked_directory(path: &std::path::Path) -> Result<std::path::PathBuf, String> {
     let canonical = std::fs::canonicalize(path)
@@ -276,6 +296,7 @@ pub fn run_with_facade(facade: Arc<LocalApplicationFacade>) -> tauri::Result<()>
         .invoke_handler(tauri::generate_handler![
             execute_command,
             query_application,
+            get_skill_relationship_graph,
             pick_local_directory,
             open_local_directory
         ])
@@ -412,6 +433,10 @@ export function executeCommand(command: AppCommand): Promise<AppCommandResult> {
 
 export function queryApplication(query: AppQuery): Promise<AppQueryResult> {{
   return invoke<AppQueryResult>("query_application", {{ query }});
+}}
+
+export function getSkillRelationshipGraph(request: GetSkillRelationshipGraph): Promise<SkillRelationshipGraphResult> {{
+  return invoke<SkillRelationshipGraphResult>("get_skill_relationship_graph", {{ request }});
 }}
 
 export function onAppEvent(handler: (event: AppEvent) => void): Promise<UnlistenFn> {{

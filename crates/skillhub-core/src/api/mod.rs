@@ -6,6 +6,7 @@ pub use crate::app_update::{
     CheckApplicationUpdate, OpenOfficialRelease, SetApplicationUpdatePolicy,
 };
 pub use crate::deployment::DeploymentPlanRequest;
+pub use crate::relationship::RelationshipGraphFilters;
 pub use command::{
     ActivateLibraryRoot, AddSkillRepo, AnalyzeConflict, AnalyzeSemanticDuplicates, AppCommand,
     AppCommandResult, ApplySourceUpdate, ApplyUninstallDecision, BackupDecision,
@@ -46,15 +47,17 @@ pub use query::{
     FindingResult, GetBasicCheckResult, GetBootstrapSnapshot, GetCallPolicy, GetDeploymentPlan,
     GetDeploymentRelations, GetDiscoverySnapshot, GetLlmSafetyCheckResult, GetProjectAssemblyPlan,
     GetReconcilePlan, GetRelationshipOverview, GetRelationshipRemovalImpact, GetRemovalImpact,
-    GetSkill, GetSkillProvenance, GetUiPreference, GetUiPreferenceResult, ListCombinations,
-    ListCustomAgents, ListDeploymentTargets, ListDeployments, ListDeterministicDuplicates,
-    ListFindings, ListMarkdownFiles, ListPendingItems, ListProjects, ListSavedProjectViews,
-    ListSearchCandidates, ListSkillOperations, ListSkillRepos, ListSkills, ListTranslations,
-    ListVersions, LlmCheckRun, LlmSafetyCheckResult, MarkdownFileContent, MarkdownFileEntry,
-    PreviewProjectDirectory, ProjectDirectoryPreview, ReadMarkdownFile, RelationshipOverview,
-    RelationshipOverviewScope, RelationshipScope, SearchOnlineSources, SearchOnlineSourcesAssisted,
-    SkillDeploymentFilter, SkillLifecycleFilter, SkillListFilters, SkillListItem, SkillListPage,
-    SkillListSort, SkillOperationEntry, SkillOperationsResult, SkillProvenanceResult, SkillResult,
+    GetSkill, GetSkillProvenance, GetSkillRelationshipGraph, GetUiPreference,
+    GetUiPreferenceResult, ListCombinations, ListCustomAgents, ListDeploymentTargets,
+    ListDeployments, ListDeterministicDuplicates, ListFindings, ListMarkdownFiles,
+    ListPendingItems, ListProjects, ListSavedProjectViews, ListSearchCandidates,
+    ListSkillOperations, ListSkillRelationshipCandidates, ListSkillRepos, ListSkills,
+    ListTranslations, ListVersions, LlmCheckRun, LlmSafetyCheckResult, MarkdownFileContent,
+    MarkdownFileEntry, PreviewProjectDirectory, ProjectDirectoryPreview, ReadMarkdownFile,
+    RelationshipOverview, RelationshipOverviewScope, RelationshipScope, SearchOnlineSources,
+    SearchOnlineSourcesAssisted, SkillDeploymentFilter, SkillLifecycleFilter, SkillListFilters,
+    SkillListItem, SkillListPage, SkillListSort, SkillOperationEntry, SkillOperationsResult,
+    SkillProvenanceResult, SkillRelationshipCandidate, SkillRelationshipGraphResult, SkillResult,
     SkillSortColumn, SkillSortDirection, SourceUpdateCheckOutcome, VersionDiffResult,
     VersionResult,
 };

@@ -16,7 +16,8 @@ use crate::{
 
 use crate::relationship::{
     AgentDirectoryCapabilityFact, ConflictCaseFact, DeploymentRelationFact, DirectoryNodeFact,
-    GovernanceTaskFact, SourceRelationFact,
+    GovernanceTaskFact, RelationshipGraphFactCounts, RelationshipGraphFilters,
+    SkillRelationshipEdge, SkillRelationshipGraph, SkillRelationshipNode, SourceRelationFact,
 };
 use serde::{Deserialize, Serialize};
 
@@ -604,6 +605,81 @@ pub struct GetRelationshipRemovalImpact {
     pub relation_id: String,
 }
 
+/// Reads one bounded, fact-backed relationship graph. This query is read-only:
+/// it never scans files, calls AI, or refreshes relationship facts.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct GetSkillRelationshipGraph {
+    pub skill_id: SkillId,
+    #[serde(default)]
+    pub filters: RelationshipGraphFilters,
+}
+
+/// Searches Skills that have a displayable relationship fact or an unresolved
+/// conflict. `runtime_name` is the stable compatibility alias exposed by the
+/// catalog, so matching it reports `matched_alias`.
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct ListSkillRelationshipCandidates {
+    #[serde(default)]
+    pub text: String,
+    #[serde(default)]
+    pub tags: Vec<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct SkillRelationshipCandidate {
+    pub skill_id: SkillId,
+    pub display_name: String,
+    pub runtime_name: String,
+    pub tags: Vec<String>,
+    pub matched_alias: Option<String>,
+    pub relationship_count: u32,
+    pub relationship_revision: String,
+    #[serde(with = "crate::i64_option_string")]
+    #[specta(type = Option<String>)]
+    pub last_verified_at: Option<i64>,
+}
+
+/// UI graph result. The graph remains a pure relationship projection; the
+/// persisted revision identifies the fact snapshot used to construct it.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct SkillRelationshipGraphResult {
+    pub center_skill_id: SkillId,
+    pub nodes: Vec<SkillRelationshipNode>,
+    pub edges: Vec<SkillRelationshipEdge>,
+    pub fact_counts: RelationshipGraphFactCounts,
+    pub collapsed_count: u32,
+    pub relationship_revision: String,
+    #[serde(with = "crate::i64_option_string")]
+    #[specta(type = Option<String>)]
+    pub last_verified_at: Option<i64>,
+}
+
+impl SkillRelationshipGraphResult {
+    pub fn from_projection(
+        projection: SkillRelationshipGraph,
+        relationship_revision: i64,
+        last_verified_at: Option<i64>,
+    ) -> Self {
+        Self {
+            center_skill_id: projection.center_skill_id,
+            nodes: projection.nodes,
+            edges: projection.edges,
+            fact_counts: projection.fact_counts,
+            collapsed_count: projection.collapsed_count,
+            relationship_revision: relationship_revision.to_string(),
+            last_verified_at: projection.last_verified_at.or(last_verified_at),
+        }
+    }
+
+    pub fn has_node(&self, node_id: &str) -> bool {
+        self.nodes.iter().any(|node| node.node_id == node_id)
+    }
+}
+
 /// One deterministic relationship snapshot shared by import, Agent and Skill
 /// views.  `agent_execution_confirmed` is intentionally always false: path
 /// discovery/recognition is not runtime loading evidence.
@@ -744,6 +820,10 @@ pub enum AppQuery {
     GetRelationshipOverview(GetRelationshipOverview),
     #[serde(rename = "get_relationship_removal_impact")]
     GetRelationshipRemovalImpact(GetRelationshipRemovalImpact),
+    #[serde(rename = "get_skill_relationship_graph")]
+    GetSkillRelationshipGraph(GetSkillRelationshipGraph),
+    #[serde(rename = "list_skill_relationship_candidates")]
+    ListSkillRelationshipCandidates(ListSkillRelationshipCandidates),
     #[serde(rename = "list_recovery_candidates")]
     ListRecoveryCandidates,
     #[serde(rename = "get_call_policy")]
@@ -847,6 +927,10 @@ pub enum AppQueryResult {
     RelationshipOverview(RelationshipOverview),
     #[serde(rename = "relationship_removal_impact")]
     RelationshipRemovalImpact(crate::relationship::RemovalImpactFact),
+    #[serde(rename = "skill_relationship_graph")]
+    SkillRelationshipGraph(SkillRelationshipGraphResult),
+    #[serde(rename = "skill_relationship_candidates")]
+    SkillRelationshipCandidates(Vec<SkillRelationshipCandidate>),
     #[serde(rename = "recovery_candidates")]
     RecoveryCandidates(Vec<crate::RecoveryCandidate>),
     #[serde(rename = "skill_operations")]

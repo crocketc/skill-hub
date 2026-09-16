@@ -107,9 +107,9 @@ export type AppCommandResult = { type: "desktop_preferences"; payload: DesktopPr
 
 export type AppEvent = { type: "operation_progress"; payload: OperationProgress } | { type: "operation_finished"; payload: OperationSummary } | { type: "facts_changed"; payload: FactsChanged };
 
-export type AppQuery = { type: "check_application_update"; payload: CheckApplicationUpdate } | { type: "get_application_update_policy" } | { type: "get_skill"; payload: GetSkill } | { type: "list_skills"; payload: ListSkills } | { type: "list_versions"; payload: ListVersions } | { type: "list_skill_operations"; payload: ListSkillOperations } | { type: "list_running_llm_checks" } | { type: "list_llm_providers" } | { type: "list_translations"; payload: ListTranslations } | { type: "list_llm_provider_presets" } | { type: "check_source_updates"; payload: CheckSourceUpdates } | { type: "list_markdown_files"; payload: ListMarkdownFiles } | { type: "read_markdown_file"; payload: ReadMarkdownFile } | { type: "diff_versions"; payload: DiffVersions } | { type: "list_combinations"; payload: ListCombinations } | { type: "search"; payload: SearchQuery } | { type: "search_online_sources_assisted"; payload: SearchOnlineSourcesAssisted } | { type: "get_bootstrap_snapshot" } | { type: "get_desktop_preferences" } | { type: "list_pending_items"; payload: ListPendingItems } | { type: "list_deterministic_duplicates"; payload: ListDeterministicDuplicates } | { type: "get_discovery_snapshot"; payload: GetDiscoverySnapshot } | { type: "list_custom_agents"; payload: ListCustomAgents } | { type: "list_projects"; payload: ListProjects } | { type: "preview_project_directory"; payload: PreviewProjectDirectory } | { type: "list_saved_project_views"; payload: ListSavedProjectViews } | { type: "analyze_import"; payload: AnalyzeImport } | { type: "discover_import_candidates"; payload: DiscoverImportCandidates } | { type: "search_online_sources"; payload: SearchOnlineSources } | { type: "list_search_candidates"; payload: ListSearchCandidates } | { type: "get_ui_preference"; payload: GetUiPreference } | { type: "list_skill_repos"; payload: ListSkillRepos } | { type: "discover_repo_skills"; payload: DiscoverRepoSkills } | { type: "discover_agents_lock_skills"; payload: DiscoverAgentsLockSkills } | { type: "analyze_global_skill_evidence"; payload: AnalyzeGlobalSkillEvidence } | { type: "get_deployment_plan"; payload: GetDeploymentPlan } | { type: "list_deployment_targets"; payload: ListDeploymentTargets } | { type: "list_deployments"; payload: ListDeployments } | { type: "get_deployment_relations"; payload: GetDeploymentRelations } | { type: "get_skill_provenance"; payload: GetSkillProvenance } | { type: "get_reconcile_plan"; payload: GetReconcilePlan } | { type: "get_removal_impact"; payload: GetRemovalImpact } | { type: "get_relationship_overview"; payload: GetRelationshipOverview } | { type: "get_relationship_removal_impact"; payload: GetRelationshipRemovalImpact } | { type: "list_recovery_candidates" } | { type: "get_call_policy"; payload: GetCallPolicy } | { type: "get_llm_safety_check_result"; payload: GetLlmSafetyCheckResult } | { type: "list_ignore_rules" } | { type: "get_basic_check_result"; payload: GetBasicCheckResult } | { type: "list_findings"; payload: ListFindings } | { type: "get_project_assembly_plan"; payload: GetProjectAssemblyPlan };
+export type AppQuery = { type: "check_application_update"; payload: CheckApplicationUpdate } | { type: "get_application_update_policy" } | { type: "get_skill"; payload: GetSkill } | { type: "list_skills"; payload: ListSkills } | { type: "list_versions"; payload: ListVersions } | { type: "list_skill_operations"; payload: ListSkillOperations } | { type: "list_running_llm_checks" } | { type: "list_llm_providers" } | { type: "list_translations"; payload: ListTranslations } | { type: "list_llm_provider_presets" } | { type: "check_source_updates"; payload: CheckSourceUpdates } | { type: "list_markdown_files"; payload: ListMarkdownFiles } | { type: "read_markdown_file"; payload: ReadMarkdownFile } | { type: "diff_versions"; payload: DiffVersions } | { type: "list_combinations"; payload: ListCombinations } | { type: "search"; payload: SearchQuery } | { type: "search_online_sources_assisted"; payload: SearchOnlineSourcesAssisted } | { type: "get_bootstrap_snapshot" } | { type: "get_desktop_preferences" } | { type: "list_pending_items"; payload: ListPendingItems } | { type: "list_deterministic_duplicates"; payload: ListDeterministicDuplicates } | { type: "get_discovery_snapshot"; payload: GetDiscoverySnapshot } | { type: "list_custom_agents"; payload: ListCustomAgents } | { type: "list_projects"; payload: ListProjects } | { type: "preview_project_directory"; payload: PreviewProjectDirectory } | { type: "list_saved_project_views"; payload: ListSavedProjectViews } | { type: "analyze_import"; payload: AnalyzeImport } | { type: "discover_import_candidates"; payload: DiscoverImportCandidates } | { type: "search_online_sources"; payload: SearchOnlineSources } | { type: "list_search_candidates"; payload: ListSearchCandidates } | { type: "get_ui_preference"; payload: GetUiPreference } | { type: "list_skill_repos"; payload: ListSkillRepos } | { type: "discover_repo_skills"; payload: DiscoverRepoSkills } | { type: "discover_agents_lock_skills"; payload: DiscoverAgentsLockSkills } | { type: "analyze_global_skill_evidence"; payload: AnalyzeGlobalSkillEvidence } | { type: "get_deployment_plan"; payload: GetDeploymentPlan } | { type: "list_deployment_targets"; payload: ListDeploymentTargets } | { type: "list_deployments"; payload: ListDeployments } | { type: "get_deployment_relations"; payload: GetDeploymentRelations } | { type: "get_skill_provenance"; payload: GetSkillProvenance } | { type: "get_reconcile_plan"; payload: GetReconcilePlan } | { type: "get_removal_impact"; payload: GetRemovalImpact } | { type: "get_relationship_overview"; payload: GetRelationshipOverview } | { type: "get_relationship_removal_impact"; payload: GetRelationshipRemovalImpact } | { type: "get_skill_relationship_graph"; payload: GetSkillRelationshipGraph } | { type: "list_skill_relationship_candidates"; payload: ListSkillRelationshipCandidates } | { type: "list_recovery_candidates" } | { type: "get_call_policy"; payload: GetCallPolicy } | { type: "get_llm_safety_check_result"; payload: GetLlmSafetyCheckResult } | { type: "list_ignore_rules" } | { type: "get_basic_check_result"; payload: GetBasicCheckResult } | { type: "list_findings"; payload: ListFindings } | { type: "get_project_assembly_plan"; payload: GetProjectAssemblyPlan };
 
-export type AppQueryResult = { type: "application_update"; payload: ApplicationUpdate } | { type: "application_update_state"; payload: UpdateState } | { type: "application_update_policy"; payload: ApplicationUpdatePolicy } | { type: "skill"; payload: SkillResult } | { type: "skill_page"; payload: SkillListPage } | { type: "versions"; payload: VersionResult[] } | { type: "markdown_files"; payload: MarkdownFileEntry[] } | { type: "markdown_file"; payload: MarkdownFileContent } | { type: "version_diff"; payload: VersionDiffResult } | { type: "combinations"; payload: CombinationResult[] } | { type: "search_results"; payload: SearchHit[] } | { type: "global_skill_evidence"; payload: UsageEvidenceAnalysis } | { type: "bootstrap_snapshot"; payload: BootstrapSnapshot } | { type: "desktop_preferences"; payload: DesktopPreferences } | { type: "pending_items"; payload: PendingItem[] } | { type: "deterministic_duplicates"; payload: DeterministicDuplicateEntry[] } | { type: "discovery_snapshot"; payload: DiscoverySnapshot } | { type: "custom_agents"; payload: CustomAgent[] } | { type: "projects"; payload: Project[] } | { type: "project_directory_preview"; payload: ProjectDirectoryPreview } | { type: "saved_project_views"; payload: SavedProjectView[] } | { type: "import_analysis"; payload: ImportAnalysis } | { type: "import_candidates"; payload: ImportCandidate[] } | { type: "source_search_page"; payload: SourceSearchPage } | { type: "search_candidates"; payload: SearchCandidateRecord[] } | { type: "ui_preference"; payload: GetUiPreferenceResult } | { type: "skill_repos"; payload: SkillRepoView[] } | { type: "repo_discovery_report"; payload: RepoDiscoveryReport } | { type: "agents_lock_entries"; payload: AgentsLockEntry[] } | { type: "deployment_plan"; payload: DeploymentPlan } | { type: "deployment_targets"; payload: DeploymentTarget[] } | { type: "deployments"; payload: DeploymentRecord[] } | { type: "deployment_relations"; payload: DeploymentRecord[] } | { type: "skill_provenance"; payload: SkillProvenanceResult } | { type: "reconcile_plan"; payload: ReconcilePlan } | { type: "removal_impact"; payload: RemovalImpact } | { type: "relationship_overview"; payload: RelationshipOverview } | { type: "relationship_removal_impact"; payload: RemovalImpactFact } | { type: "recovery_candidates"; payload: RecoveryCandidate[] } | { type: "skill_operations"; payload: SkillOperationsResult } | { type: "running_llm_checks"; payload: LlmCheckRun[] } | { type: "llm_providers"; payload: LlmProviderView[] } | { type: "translations"; payload: TranslationView[] } | { type: "llm_provider_presets"; payload: LlmProviderPreset[] } | { type: "source_update_checks"; payload: SourceUpdateCheckOutcome[] } | { type: "call_policy"; payload: CallPolicyResult } | { type: "llm_safety_check_result"; payload: LlmSafetyCheckResult } | { type: "ignore_rules"; payload: IgnoreRule[] } | { type: "basic_check_result"; payload: BasicCheckResult } | { type: "findings"; payload: FindingResult[] } | { type: "assembly_plan"; payload: AssemblyPlan };
+export type AppQueryResult = { type: "application_update"; payload: ApplicationUpdate } | { type: "application_update_state"; payload: UpdateState } | { type: "application_update_policy"; payload: ApplicationUpdatePolicy } | { type: "skill"; payload: SkillResult } | { type: "skill_page"; payload: SkillListPage } | { type: "versions"; payload: VersionResult[] } | { type: "markdown_files"; payload: MarkdownFileEntry[] } | { type: "markdown_file"; payload: MarkdownFileContent } | { type: "version_diff"; payload: VersionDiffResult } | { type: "combinations"; payload: CombinationResult[] } | { type: "search_results"; payload: SearchHit[] } | { type: "global_skill_evidence"; payload: UsageEvidenceAnalysis } | { type: "bootstrap_snapshot"; payload: BootstrapSnapshot } | { type: "desktop_preferences"; payload: DesktopPreferences } | { type: "pending_items"; payload: PendingItem[] } | { type: "deterministic_duplicates"; payload: DeterministicDuplicateEntry[] } | { type: "discovery_snapshot"; payload: DiscoverySnapshot } | { type: "custom_agents"; payload: CustomAgent[] } | { type: "projects"; payload: Project[] } | { type: "project_directory_preview"; payload: ProjectDirectoryPreview } | { type: "saved_project_views"; payload: SavedProjectView[] } | { type: "import_analysis"; payload: ImportAnalysis } | { type: "import_candidates"; payload: ImportCandidate[] } | { type: "source_search_page"; payload: SourceSearchPage } | { type: "search_candidates"; payload: SearchCandidateRecord[] } | { type: "ui_preference"; payload: GetUiPreferenceResult } | { type: "skill_repos"; payload: SkillRepoView[] } | { type: "repo_discovery_report"; payload: RepoDiscoveryReport } | { type: "agents_lock_entries"; payload: AgentsLockEntry[] } | { type: "deployment_plan"; payload: DeploymentPlan } | { type: "deployment_targets"; payload: DeploymentTarget[] } | { type: "deployments"; payload: DeploymentRecord[] } | { type: "deployment_relations"; payload: DeploymentRecord[] } | { type: "skill_provenance"; payload: SkillProvenanceResult } | { type: "reconcile_plan"; payload: ReconcilePlan } | { type: "removal_impact"; payload: RemovalImpact } | { type: "relationship_overview"; payload: RelationshipOverview } | { type: "relationship_removal_impact"; payload: RemovalImpactFact } | { type: "skill_relationship_graph"; payload: SkillRelationshipGraphResult } | { type: "skill_relationship_candidates"; payload: SkillRelationshipCandidate[] } | { type: "recovery_candidates"; payload: RecoveryCandidate[] } | { type: "skill_operations"; payload: SkillOperationsResult } | { type: "running_llm_checks"; payload: LlmCheckRun[] } | { type: "llm_providers"; payload: LlmProviderView[] } | { type: "translations"; payload: TranslationView[] } | { type: "llm_provider_presets"; payload: LlmProviderPreset[] } | { type: "source_update_checks"; payload: SourceUpdateCheckOutcome[] } | { type: "call_policy"; payload: CallPolicyResult } | { type: "llm_safety_check_result"; payload: LlmSafetyCheckResult } | { type: "ignore_rules"; payload: IgnoreRule[] } | { type: "basic_check_result"; payload: BasicCheckResult } | { type: "findings"; payload: FindingResult[] } | { type: "assembly_plan"; payload: AssemblyPlan };
 
 export type ApplicationUpdate = {
 	available: boolean,
@@ -1085,6 +1085,15 @@ export type GetSkillProvenance = {
 	skill_id: SkillId,
 };
 
+/**
+ *  Reads one bounded, fact-backed relationship graph. This query is read-only:
+ *  it never scans files, calls AI, or refreshes relationship facts.
+ */
+export type GetSkillRelationshipGraph = {
+	skill_id: SkillId,
+	filters?: RelationshipGraphFilters,
+};
+
 /**  Reads a UI preference value (raw JSON) by key; absent keys return null. */
 export type GetUiPreference = {
 	key: string,
@@ -1393,6 +1402,16 @@ export type ListSearchCandidates = null;
 
 export type ListSkillOperations = {
 	skill_id: SkillId,
+};
+
+/**
+ *  Searches Skills that have a displayable relationship fact or an unresolved
+ *  conflict. `runtime_name` is the stable compatibility alias exposed by the
+ *  catalog, so matching it reports `matched_alias`.
+ */
+export type ListSkillRelationshipCandidates = {
+	text?: string,
+	tags?: string[],
 };
 
 export type ListSkillRepos = null;
@@ -2109,6 +2128,23 @@ export type RelationMigrationState = "prepared" | "committed" | "rolled_back" | 
 
 export type RelationMigrationTargetMode = "managed_link";
 
+export type RelationshipGraphEdgeKind = "related_skill" | "source" | "deployment" | "located_in" | "shared" | "conflict";
+
+export type RelationshipGraphFactCounts = {
+	deployment_relations: number,
+	source_relations: number,
+	conflict_cases: number,
+};
+
+export type RelationshipGraphFilters = {
+	relationship_types?: RelationshipType[],
+	statuses?: RelationshipGraphStatus[],
+};
+
+export type RelationshipGraphNodeKind = "skill" | "source" | "agent" | "project" | "directory" | "conflict" | "collapsed";
+
+export type RelationshipGraphStatus = "active" | "released" | "content_verified" | "name_only" | "diverged";
+
 export type RelationshipMigrationBackupPolicy = "required";
 
 /**
@@ -2729,6 +2765,74 @@ export type SkillProvenanceResult = {
 	observed_deployments: ObservedDeployment[],
 };
 
+export type SkillRelationshipCandidate = {
+	skill_id: SkillId,
+	display_name: string,
+	runtime_name: string,
+	tags: string[],
+	matched_alias: string | null,
+	relationship_count: number,
+	relationship_revision: string,
+	last_verified_at: string | null,
+};
+
+export type SkillRelationshipEdge = {
+	edge_id: string,
+	from_node_id: string,
+	to_node_id: string,
+	kind: RelationshipGraphEdgeKind,
+	/**
+	 *  RelatedSkill and Conflict edges are structural connections, so they
+	 *  have no relationship/status fact and are never removed by fact filters.
+	 */
+	relationship: RelationshipType | null,
+	relation_id: string | null,
+	provenance_id: string | null,
+	conflict_id: string | null,
+	match_state: ObservedMatchState | null,
+	active: boolean | null,
+	last_verified_at: string | null,
+};
+
+/**
+ *  UI graph result. The graph remains a pure relationship projection; the
+ *  persisted revision identifies the fact snapshot used to construct it.
+ */
+export type SkillRelationshipGraphResult = {
+	center_skill_id: SkillId,
+	nodes: SkillRelationshipNode[],
+	edges: SkillRelationshipEdge[],
+	fact_counts: RelationshipGraphFactCounts,
+	collapsed_count: number,
+	relationship_revision: string,
+	last_verified_at: string | null,
+};
+
+export type SkillRelationshipNode = {
+	node_id: string,
+	kind: RelationshipGraphNodeKind,
+	skill_id: SkillId | null,
+	relation_id: string | null,
+	provenance_id: string | null,
+	conflict_id: string | null,
+	agent_client_id: string | null,
+	directory_node_id: string | null,
+	path: string | null,
+	role: DirectoryRole | null,
+	profile_id: string | null,
+	collapsed_kind: RelationshipGraphNodeKind | null,
+	/**
+	 *  Relationship, state, and verification fields are intentionally empty on
+	 *  shared context nodes; those facts belong to the edge that observed them.
+	 */
+	relationship: RelationshipType | null,
+	match_state: ObservedMatchState | null,
+	active: boolean | null,
+	source: SourceDescriptor | null,
+	collapsed_count: number,
+	last_verified_at: string | null,
+};
+
 /**  GitHub 仓库配置（发现模块规格 §2；空串或 "HEAD" 为"默认分支"哨兵）。 */
 export type SkillRepo = {
 	owner: string,
@@ -3099,6 +3203,10 @@ export function executeCommand(command: AppCommand): Promise<AppCommandResult> {
 
 export function queryApplication(query: AppQuery): Promise<AppQueryResult> {
   return invoke<AppQueryResult>("query_application", { query });
+}
+
+export function getSkillRelationshipGraph(request: GetSkillRelationshipGraph): Promise<SkillRelationshipGraphResult> {
+  return invoke<SkillRelationshipGraphResult>("get_skill_relationship_graph", { request });
 }
 
 export function onAppEvent(handler: (event: AppEvent) => void): Promise<UnlistenFn> {

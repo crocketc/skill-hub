@@ -11,8 +11,9 @@ use serde_json::Value;
 use skillhub_application::LocalApplicationFacade;
 use skillhub_core::agent::DirectoryPrecedence;
 use skillhub_core::api::{
-    CreateSkill, GetRelationshipOverview, GetRelationshipRemovalImpact, ListSkills, PrepareImport,
-    PrepareRelationMigration, RelationshipMigrationBackupPolicy, RelationshipOverviewScope,
+    CreateSkill, GetRelationshipOverview, GetRelationshipRemovalImpact, GetSkillRelationshipGraph,
+    ListSkillRelationshipCandidates, ListSkills, PrepareImport, PrepareRelationMigration,
+    RelationshipGraphFilters, RelationshipMigrationBackupPolicy, RelationshipOverviewScope,
 };
 use skillhub_core::deployment::{ObservedMatchState, ObservedOrigin};
 use skillhub_core::import::{ImportGovernanceAction, ImportGovernanceDecision};
@@ -31,6 +32,154 @@ use skillhub_core::{
 use skillhub_storage::{CentralLibrary, Database};
 
 const BODY: &str = "# Notes\n\nrelationship governance\n";
+
+#[tokio::test]
+async fn relationship_graph_and_candidates_use_only_queryable_relationship_facts() {
+    let database = Database::open_in_memory().expect("database");
+    let workspace = tempfile::tempdir().expect("workspace");
+    let library_root = workspace.path().join("library");
+    CentralLibrary::initialize(&library_root).expect("library");
+    let facade = LocalApplicationFacade::new_with_library(database, &library_root);
+    let center: SkillId = "00000000-0000-0000-0000-0000000000a1".parse().unwrap();
+    let empty: SkillId = "00000000-0000-0000-0000-0000000000a2".parse().unwrap();
+    {
+        let database = facade.database_for_tests();
+        let database = database.lock().expect("database");
+        database
+            .connection_for_test()
+            .execute_batch(&format!(
+                "INSERT INTO skills(id,display_name,runtime_name,created_at,updated_at) VALUES
+                 ('{center}','Display Alias','main-name',1,1),
+                 ('{empty}','No Relation','no-relation',1,1);
+                 INSERT INTO tags(id,name) VALUES ('tag:graph','graph');
+                 INSERT INTO skill_tags(skill_id,tag_id) VALUES ('{center}','tag:graph');"
+            ))
+            .expect("skills");
+        database
+            .relationship_repository()
+            .upsert_source_relation(&SourceRelationFact {
+                provenance_id: "provenance:graph".into(),
+                skill_id: center,
+                directory_node_id: None,
+                agent_client_id: None,
+                source_path: "C:/incoming/graph".into(),
+                source_path_key: String::new(),
+                relationship: RelationshipType::ImportCopy,
+                file_representation: FileRepresentation::Directory,
+                ownership: OwnershipState::ObservedUnmanaged,
+                link_target_path: None,
+                link_target_directory_id: None,
+                content_fingerprint: "sha256:graph".into(),
+                source: SourceDescriptor::new(
+                    SourceKind::Local,
+                    SourceLocator::local_path("C:/incoming/graph"),
+                ),
+                imported_at: 9,
+            })
+            .expect("source relation");
+    }
+
+    let candidates = facade
+        .query(AppQuery::ListSkillRelationshipCandidates(
+            ListSkillRelationshipCandidates {
+                text: "main".into(),
+                tags: vec!["graph".into()],
+            },
+        ))
+        .await
+        .expect("relationship candidates");
+    let AppQueryResult::SkillRelationshipCandidates(candidates) = candidates else {
+        panic!("expected relationship candidates");
+    };
+    assert_eq!(candidates.len(), 1);
+    assert_eq!(candidates[0].skill_id, center);
+    assert_eq!(candidates[0].relationship_count, 1);
+    assert!(candidates[0].matched_alias.is_some());
+    assert!(!candidates[0].relationship_revision.is_empty());
+
+    // 主名称命中不是别名命中：别名只在主名称不匹配时上报。
+    let by_display_name = facade
+        .query(AppQuery::ListSkillRelationshipCandidates(
+            ListSkillRelationshipCandidates {
+                text: "display".into(),
+                tags: Vec::new(),
+            },
+        ))
+        .await
+        .expect("relationship candidates by display name");
+    let AppQueryResult::SkillRelationshipCandidates(by_display_name) = by_display_name else {
+        panic!("expected relationship candidates");
+    };
+    assert_eq!(by_display_name.len(), 1);
+    assert_eq!(by_display_name[0].skill_id, center);
+    assert_eq!(by_display_name[0].matched_alias, None);
+
+    // 没有可展示关系事实的 Skill 不会因为搜索命中而变成候选节点。
+    let relationless = facade
+        .query(AppQuery::ListSkillRelationshipCandidates(
+            ListSkillRelationshipCandidates {
+                text: "no-relation".into(),
+                tags: Vec::new(),
+            },
+        ))
+        .await
+        .expect("relationship candidates without relations");
+    let AppQueryResult::SkillRelationshipCandidates(relationless) = relationless else {
+        panic!("expected relationship candidates");
+    };
+    assert!(
+        relationless.is_empty(),
+        "a Skill without displayable relationship facts must not be fabricated as a candidate"
+    );
+
+    let graph = facade
+        .query(AppQuery::GetSkillRelationshipGraph(
+            GetSkillRelationshipGraph {
+                skill_id: center,
+                filters: RelationshipGraphFilters::default(),
+            },
+        ))
+        .await
+        .expect("relationship graph");
+    let AppQueryResult::SkillRelationshipGraph(graph) = graph else {
+        panic!("expected relationship graph");
+    };
+    assert_eq!(graph.center_skill_id, center);
+    assert!(graph.has_node("source:provenance:graph"));
+    assert_eq!(
+        graph.relationship_revision,
+        candidates[0].relationship_revision
+    );
+    assert!(graph.last_verified_at.is_some());
+
+    let filtered = facade
+        .query(AppQuery::GetSkillRelationshipGraph(
+            GetSkillRelationshipGraph {
+                skill_id: center,
+                filters: RelationshipGraphFilters {
+                    relationship_types: vec![RelationshipType::ManagedCopy],
+                    statuses: Vec::new(),
+                },
+            },
+        ))
+        .await
+        .expect("filtered relationship graph");
+    let AppQueryResult::SkillRelationshipGraph(filtered) = filtered else {
+        panic!("expected filtered relationship graph");
+    };
+    assert!(!filtered.has_node("source:provenance:graph"));
+    let database = facade.database_for_tests();
+    let database = database.lock().expect("database");
+    assert_eq!(
+        database
+            .relationship_repository()
+            .relationship_revision()
+            .unwrap()
+            .to_string(),
+        graph.relationship_revision,
+        "read-only graph queries do not mutate relationship facts"
+    );
+}
 
 struct Fixture {
     _workspace: tempfile::TempDir,

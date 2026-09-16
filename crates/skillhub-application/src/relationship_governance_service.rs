@@ -2,6 +2,7 @@
 //! conversion.  This module owns orchestration only; relationship
 //! classification and removal-impact rules remain in `skillhub-core`.
 
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -9,14 +10,16 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use skillhub_adapters::deployment::DeploymentFilesystem;
 use skillhub_core::api::{
-    AppCommandResult, AppQueryResult, PrepareRelationMigration, RelationMigrationTargetMode,
-    RelationshipMigrationBackupPolicy, RelationshipOverviewScope,
+    AppCommandResult, AppQueryResult, GetSkillRelationshipGraph, ListSkillRelationshipCandidates,
+    PrepareRelationMigration, RelationMigrationTargetMode, RelationshipMigrationBackupPolicy,
+    RelationshipOverviewScope, SkillRelationshipCandidate, SkillRelationshipGraphResult,
 };
 use skillhub_core::deployment::{DeploymentMode, TargetChange, TargetPlan};
 use skillhub_core::relationship::{
-    calculate_removal_impact, ConflictCaseFact, DeploymentRelationFact, DirectoryNodeFact,
-    FileRepresentation, GovernanceTaskFact, GovernanceTaskKind, OwnershipState, RelationshipType,
-    RemovalFacts, SourceRelationFact,
+    calculate_removal_impact, project_skill_relationship_graph, ConflictCaseFact,
+    ConflictClassification, DeploymentRelationFact, DirectoryNodeFact, FileRepresentation,
+    GovernanceTaskFact, GovernanceTaskKind, OwnershipState, RelationshipType, RemovalFacts,
+    SourceRelationFact,
 };
 use skillhub_core::{
     AppError, AppResult, ErrorCode, InverseOperation, OperationId, OperationObjectResult,
@@ -204,6 +207,112 @@ impl RelationBackupMetadata {
 }
 
 impl LocalApplicationFacade {
+    pub(crate) fn get_skill_relationship_graph(
+        &self,
+        request: GetSkillRelationshipGraph,
+    ) -> AppResult<AppQueryResult> {
+        let graph = self.with_database("query.skill_relationship_graph", |database| {
+            let relationship_repository = database.relationship_repository();
+            let revision = relationship_repository.relationship_revision()?;
+            let last_verified_at = relationship_repository.last_verified_at()?;
+            let projection = project_skill_relationship_graph(
+                request.skill_id,
+                &relationship_repository.list_relations()?,
+                &relationship_repository.list_source_relations()?,
+                &database.directory_repository().list_nodes()?,
+                &relationship_repository.list_capabilities()?,
+                &database.conflict_repository().list_cases()?,
+                &request.filters,
+            );
+            Ok(SkillRelationshipGraphResult::from_projection(
+                projection,
+                revision,
+                last_verified_at,
+            ))
+        })?;
+        Ok(AppQueryResult::SkillRelationshipGraph(graph))
+    }
+
+    pub(crate) fn list_skill_relationship_candidates(
+        &self,
+        request: ListSkillRelationshipCandidates,
+    ) -> AppResult<AppQueryResult> {
+        let candidates = self.with_database("query.skill_relationship_candidates", |database| {
+            let relationship_repository = database.relationship_repository();
+            let revision = relationship_repository.relationship_revision()?;
+            let last_verified_at = relationship_repository.last_verified_at()?;
+            let mut counts = HashMap::<skillhub_core::SkillId, u32>::new();
+            for relation in relationship_repository.list_relations()? {
+                if let Some(skill_id) = relation.skill_id {
+                    increment_relationship_count(&mut counts, skill_id);
+                }
+            }
+            for relation in relationship_repository.list_source_relations()? {
+                increment_relationship_count(&mut counts, relation.skill_id);
+            }
+            for case in database.conflict_repository().list_cases()? {
+                if case.classification != ConflictClassification::Uncertain
+                    || case.user_decision.is_some()
+                {
+                    continue;
+                }
+                let member_ids = case
+                    .member_skill_ids
+                    .into_iter()
+                    .chain(
+                        case.members
+                            .into_iter()
+                            .filter_map(|member| member.skill_id),
+                    )
+                    .collect::<HashSet<_>>();
+                for skill_id in member_ids {
+                    increment_relationship_count(&mut counts, skill_id);
+                }
+            }
+
+            let catalog = database.catalog_repository()?;
+            let text = request.text.trim().to_lowercase();
+            let mut candidates = Vec::new();
+            for skill_id in catalog.list_ids_sync()? {
+                let Some(relationship_count) = counts.get(&skill_id).copied() else {
+                    continue;
+                };
+                let Some(detail) = catalog.get_detail(skill_id)? else {
+                    continue;
+                };
+                if !request.tags.is_empty()
+                    && !detail
+                        .tags
+                        .iter()
+                        .any(|tag| request.tags.iter().any(|requested| requested == tag))
+                {
+                    continue;
+                }
+                let display_matches =
+                    text.is_empty() || detail.display_name.to_lowercase().contains(text.as_str());
+                let runtime_matches =
+                    text.is_empty() || detail.runtime_name.to_lowercase().contains(text.as_str());
+                if !display_matches && !runtime_matches {
+                    continue;
+                }
+                candidates.push(SkillRelationshipCandidate {
+                    skill_id,
+                    display_name: detail.display_name,
+                    runtime_name: detail.runtime_name.clone(),
+                    tags: detail.tags,
+                    matched_alias: (!text.is_empty() && runtime_matches && !display_matches)
+                        .then_some(detail.runtime_name),
+                    relationship_count,
+                    relationship_revision: revision.to_string(),
+                    last_verified_at,
+                });
+            }
+            candidates.sort_by_key(|candidate| candidate.skill_id.to_string());
+            Ok(candidates)
+        })?;
+        Ok(AppQueryResult::SkillRelationshipCandidates(candidates))
+    }
+
     pub(crate) fn get_relationship_overview(
         &self,
         scope: RelationshipOverviewScope,
@@ -1432,6 +1541,14 @@ impl LocalApplicationFacade {
                 .or_else(|_| database.operation_repository().insert_sync(&record))
         })
     }
+}
+
+fn increment_relationship_count(
+    counts: &mut HashMap<skillhub_core::SkillId, u32>,
+    skill_id: skillhub_core::SkillId,
+) {
+    let count = counts.entry(skill_id).or_default();
+    *count = count.saturating_add(1);
 }
 
 fn relationship_snapshot_for_scope(
