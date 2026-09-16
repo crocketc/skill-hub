@@ -3,14 +3,21 @@ import userEvent from "@testing-library/user-event";
 import { I18nextProvider } from "react-i18next";
 import { expect, it, vi } from "vitest";
 import { createSkillHubI18n } from "../../i18n";
+import { createOperationTracker } from "../../platform/operationTracker";
 import { deploymentTargetsFixture, type DeploymentFacade, type DeploymentResult } from "./api";
 import { DeploymentDialog } from "./DeploymentDialog";
 
-async function renderDialog(facade: DeploymentFacade, onCommitted?: (results: Awaited<ReturnType<DeploymentFacade["commit"]>>) => void) {
+async function renderDialog(facade: DeploymentFacade, onCommitted?: (results: Awaited<ReturnType<DeploymentFacade["commit"]>>) => void, tracker?: ReturnType<typeof createOperationTracker>) {
   const i18n = await createSkillHubI18n(["zh-CN"]);
   render(
     <I18nextProvider i18n={i18n}>
-      <DeploymentDialog facade={facade} onCommitted={onCommitted} skillId="skill-pdf" versionId="v1" />
+      <DeploymentDialog
+        facade={facade}
+        onCommitted={onCommitted}
+        skillId="skill-pdf"
+        tracker={tracker}
+        versionId="v1"
+      />
     </I18nextProvider>,
   );
   return i18n;
@@ -283,4 +290,78 @@ it("returns keyboard focus to the deploy flow heading across phase changes", asy
   // 阶段切换时原主操作卸载；焦点必须落回流程标题，不能丢失到 body。
   await screen.findByRole("button", { name: "提交部署" });
   expect(screen.getByRole("heading", { name: "先预览，再修改 Agent 目标" })).toHaveFocus();
+});
+
+describe("DeploymentDialog 与统一执行桥", () => {
+  it("reports the commit to the unified tracker: running in flight, partial finish, operation record correlation", async () => {
+    const user = userEvent.setup();
+    const tracker = createOperationTracker();
+    let resolveCommit!: (value: DeploymentResult[]) => void;
+    const facade = planFacade(async (selected) => ({
+      skillId: "skill-pdf",
+      versionId: "v1",
+      targets: selected.map((target) => ({
+        targetId: target.id,
+        label: target.label,
+        mode: "symbolic_link" as const,
+        warnings: [],
+      })),
+      warnings: [],
+    }), () => new Promise((resolve) => { resolveCommit = resolve; }));
+    await renderDialog(facade, undefined, tracker);
+
+    await user.click(await screen.findByLabelText("Codex CLI"));
+    await user.click(screen.getByLabelText("Claude Code"));
+    await user.click(screen.getByRole("button", { name: "预览部署" }));
+    await user.click(await screen.findByRole("button", { name: "提交部署" }));
+
+    // 提交在途：统一 tracker 出现 running 任务（顶栏同源投影）。
+    const [inFlight] = tracker.getSnapshot();
+    expect(inFlight.status).toBe("running");
+    expect(inFlight.kind).toBe("deploy");
+    expect(inFlight.label).toBe("添加到 Agent");
+    expect(inFlight.total).toBe(2);
+
+    resolveCommit([
+      { targetId: "codex-cli", label: "Codex CLI", status: "succeeded", message: "deployment.results.status.message.succeeded", operationId: "op-deploy-1" },
+      { targetId: "claude-code", label: "Claude Code", status: "failed", message: "目标目录不可写", operationId: "op-deploy-1" },
+    ]);
+    expect(await screen.findAllByTestId("deployment-result")).toHaveLength(2);
+
+    const [finished] = tracker.getSnapshot();
+    expect(finished.status).toBe("partial");
+    expect(finished.resultSummary).toEqual({ succeeded: 1, failed: 1, skipped: 0 });
+    // 三端同一 operation id：前端投影关联持久化记录并派生深链。
+    expect(finished.operationId).toBe("op-deploy-1");
+    expect(finished.targetHref).toBe("/operations/op-deploy-1");
+  });
+
+  it("records commit failures on the tracker and keeps the page error without swallowing the exception", async () => {
+    const user = userEvent.setup();
+    const tracker = createOperationTracker();
+    const facade = planFacade(async (selected) => ({
+      skillId: "skill-pdf",
+      versionId: "v1",
+      targets: selected.map((target) => ({
+        targetId: target.id,
+        label: target.label,
+        mode: "symbolic_link" as const,
+        warnings: [],
+      })),
+      warnings: [],
+    }), async () => {
+      throw new Error("deployment.plan_stale");
+    });
+    await renderDialog(facade, undefined, tracker);
+
+    await user.click(await screen.findByLabelText("Codex CLI"));
+    await user.click(screen.getByRole("button", { name: "预览部署" }));
+    await user.click(await screen.findByRole("button", { name: "提交部署" }));
+
+    // 页面错误不吞掉：告警照常渲染，tracker 同步落 failed 终态。
+    expect(await screen.findByRole("alert")).toBeVisible();
+    const [failed] = tracker.getSnapshot();
+    expect(failed.status).toBe("failed");
+    expect(failed.error).toBe("deployment.plan_stale");
+  });
 });

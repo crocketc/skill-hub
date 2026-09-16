@@ -30,6 +30,8 @@ export type DeploymentResult = {
   status: "succeeded" | "failed" | "skipped";
   message: string;
   error?: NativeAppError;
+  /** 后端持久化操作记录 id（任务 4）：顶栏/通知/操作记录三端同一 id。 */
+  operationId?: string;
 };
 
 export type DeploymentTranslator = (key: string, options?: Record<string, unknown>) => string;

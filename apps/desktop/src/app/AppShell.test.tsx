@@ -236,7 +236,7 @@ describe("AppShell", () => {
     const end = document.querySelector(".sh-app-shell__topbar-end") as HTMLElement;
     const taskStatus = await waitFor(() => {
       const element = within(end).getByRole("status", {
-        name: "The initialization scan is running in the background.",
+        name: "Initialization read-only scan",
       });
       expect(element).toBeVisible();
       return element;
@@ -246,12 +246,11 @@ describe("AppShell", () => {
     expect(viewSwitch.compareDocumentPosition(taskStatus) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(taskStatus.compareDocumentPosition(bell) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 
+    // 顶栏摘要打开的是小浮层（后台任务），不再是全屏任务抽屉。
     await userEvent.setup().click(
-      within(end).getByRole("button", {
-        name: "The initialization scan is running in the background.",
-      }),
+      within(end).getByRole("button", { name: "Initialization read-only scan" }),
     );
-    expect(await screen.findByRole("dialog", { name: "Task details" })).toBeVisible();
+    expect(await screen.findByRole("dialog", { name: "Background tasks" })).toBeVisible();
   });
 
   it("keeps the notification center reachable on skill detail routes", async () => {

@@ -1812,6 +1812,13 @@
         "securityBlocked": "A security check blocked deployment. Review the findings before retrying.",
         "invalidCapability": "The target does not support the selected deployment mode. Choose another mode or target."
       }
+    },
+    "tracker": {
+      "label": "Add to Agent"
+    },
+    "notices": {
+      "addedTitle": "Added to Agent",
+      "addedPartialTitle": "Added to Agent, some targets failed"
     }
   },
   "security": {
@@ -2715,6 +2722,32 @@
       "skipped": "{{count}} skipped",
       "conflict": "{{count}} conflicts",
       "failed": "{{count}} failed"
+    }
+  },
+  "tasks": {
+    "summary": {
+      "triggerAriaMultiple": "{{description}} (item {{index}} of {{count}})"
+    },
+    "status": {
+      "queued": "Queued",
+      "running": "Running",
+      "needs_user": "Needs your attention"
+    },
+    "statusDescription": {
+      "queued": "{{label}}: queued",
+      "progressUnknown": "{{label}}: running (progress unavailable)",
+      "needsUser": "{{label}}: needs your attention"
+    },
+    "popover": {
+      "title": "Background tasks",
+      "previous": "Previous task",
+      "next": "Next task",
+      "position": "Item {{index}} of {{count}}",
+      "progressUnknown": "Progress unavailable",
+      "viewRecord": "View operation record"
+    },
+    "notices": {
+      "viewRecord": "View operation record"
     }
   }
 }

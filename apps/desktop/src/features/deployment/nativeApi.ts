@@ -159,6 +159,8 @@ export function createNativeDeploymentFacade(context: NativeDeploymentContext): 
         status: target.status,
         message: resultMessage(target.error_code, target.status),
         error: target.error ?? undefined,
+        // 持久化操作记录 id：桌面端经同一 id 深链 /operations/:id（任务 4）。
+        operationId: summary.operation_id,
       }));
     },
   };

@@ -1812,6 +1812,13 @@
         "securityBlocked": "安全检查阻止了部署，请查看检查结果后再试。",
         "invalidCapability": "目标不支持所选部署方式，请改用其他方式或目标。"
       }
+    },
+    "tracker": {
+      "label": "添加到 Agent"
+    },
+    "notices": {
+      "addedTitle": "已添加到 Agent",
+      "addedPartialTitle": "已添加到 Agent，部分目标失败"
     }
   },
   "security": {
@@ -2715,6 +2722,32 @@
       "skipped": "跳过 {{count}}",
       "conflict": "冲突 {{count}}",
       "failed": "失败 {{count}}"
+    }
+  },
+  "tasks": {
+    "summary": {
+      "triggerAriaMultiple": "{{description}}（第 {{index}} 项，共 {{count}} 项）"
+    },
+    "status": {
+      "queued": "排队中",
+      "running": "进行中",
+      "needs_user": "需人工确认"
+    },
+    "statusDescription": {
+      "queued": "{{label}}：排队中",
+      "progressUnknown": "{{label}}：进行中（进度未知）",
+      "needsUser": "{{label}}：需人工确认"
+    },
+    "popover": {
+      "title": "后台任务",
+      "previous": "上一项",
+      "next": "下一项",
+      "position": "第 {{index}} 项，共 {{count}} 项",
+      "progressUnknown": "进度未知",
+      "viewRecord": "查看操作记录"
+    },
+    "notices": {
+      "viewRecord": "查看操作记录"
     }
   }
 }
