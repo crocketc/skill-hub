@@ -312,8 +312,8 @@ describe("DeploymentDialog 与统一执行桥", () => {
 
     await user.click(await screen.findByLabelText("Codex CLI"));
     await user.click(screen.getByLabelText("Claude Code"));
-    await user.click(screen.getByRole("button", { name: "预览部署" }));
-    await user.click(await screen.findByRole("button", { name: "提交部署" }));
+    await user.click(screen.getByRole("button", { name: "预览" }));
+    await user.click(await screen.findByRole("button", { name: "确认添加" }));
 
     // 提交在途：统一 tracker 出现 running 任务（顶栏同源投影）。
     const [inFlight] = tracker.getSnapshot();
@@ -355,8 +355,8 @@ describe("DeploymentDialog 与统一执行桥", () => {
     await renderDialog(facade, undefined, tracker);
 
     await user.click(await screen.findByLabelText("Codex CLI"));
-    await user.click(screen.getByRole("button", { name: "预览部署" }));
-    await user.click(await screen.findByRole("button", { name: "提交部署" }));
+    await user.click(screen.getByRole("button", { name: "预览" }));
+    await user.click(await screen.findByRole("button", { name: "确认添加" }));
 
     // 页面错误不吞掉：告警照常渲染，tracker 同步落 failed 终态。
     expect(await screen.findByRole("alert")).toBeVisible();

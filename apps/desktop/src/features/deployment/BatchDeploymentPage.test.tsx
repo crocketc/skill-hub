@@ -339,8 +339,8 @@ describe("BatchDeploymentPage 与统一执行桥", () => {
     );
 
     await user.click(await screen.findByLabelText("Codex CLI"));
-    await user.click(screen.getByRole("button", { name: "预览部署" }));
-    await user.click(await screen.findByRole("button", { name: "提交部署" }));
+    await user.click(screen.getByRole("button", { name: "预览" }));
+    await user.click(await screen.findByRole("button", { name: "确认添加" }));
 
     // 批次在途：一个批次任务（不是每个 Skill 一条），进度按已完成 Skill 推进。
     const [inFlight] = tracker.getSnapshot();
@@ -385,8 +385,8 @@ describe("BatchDeploymentPage 与统一执行桥", () => {
     );
 
     await user.click(await screen.findByLabelText("Codex CLI"));
-    await user.click(screen.getByRole("button", { name: "预览部署" }));
-    await user.click(await screen.findByRole("button", { name: "提交部署" }));
+    await user.click(screen.getByRole("button", { name: "预览" }));
+    await user.click(await screen.findByRole("button", { name: "确认添加" }));
     expect(await screen.findByTestId("batch-summary")).toBeVisible();
 
     // 单 Skill 批次只有一个持久化记录：现有 correlate 行为保持。
@@ -413,8 +413,8 @@ describe("BatchDeploymentPage 与统一执行桥", () => {
     );
 
     await user.click(await screen.findByLabelText("Codex CLI"));
-    await user.click(screen.getByRole("button", { name: "预览部署" }));
-    await user.click(await screen.findByRole("button", { name: "提交部署" }));
+    await user.click(screen.getByRole("button", { name: "预览" }));
+    await user.click(await screen.findByRole("button", { name: "确认添加" }));
 
     expect(await screen.findByRole("alert")).toBeVisible();
     const [failed] = tracker.getSnapshot();
