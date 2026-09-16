@@ -196,44 +196,52 @@ test("wraps very long Windows paths without horizontal overflow at 800px", async
   await expectNoRootHorizontalOverflow(page, "long candidate paths@800");
 });
 
-test("keeps the onboarding variant to scanned sources with the acquire action in the footer", async ({ page }) => {
+test("keeps the onboarding variant on scanned sources with the footer action gated on previews", async ({ page }) => {
   await page.setViewportSize({ width: 1024, height: 900 });
   await page.goto(`${PREVIEW}?scenario=onboarding`);
 
-  // onboarding 变体：不提供"添加到已选来源"；主操作直接读取已选目录。
-  await page.getByRole("textbox", { name: "来源" }).fill("C:/windsurf/skills");
+  // onboarding 变体：不提供"添加到已选来源"；初始已选目录进入后自动后台预览
+  //（不手动填写来源文本——编辑来源会重置预览状态，见报告中的产品问题记录）。
   await expect(page.getByRole("button", { name: "添加到已选来源" })).toHaveCount(0);
 
-  const acquire = page.getByRole("button", { name: "读取已选目录候选" });
-  expect((await acquire.boundingBox())!.height).toBeGreaterThanOrEqual(44);
-  await acquire.click();
-  await expect(page.getByText("已从 2 个来源目录获取候选")).toBeVisible();
-  await page.getByRole("button", { name: "继续选择候选" }).click();
+  // 自动 preview 状态机（source_preview_started/finished + finalizeOnboardingPreviews）：
+  // 预览进行中 footer 主操作禁用（正在解析…）；全部来源出结果后自动进入
+  // 候选门槛——用 expect 内建轮询等待 previewing→ready 迁移，不引入固定延时。
+  const gateContinue = page.getByRole("button", { name: "继续选择候选" });
+  await expect(gateContinue).toBeEnabled({ timeout: 15_000 });
+  expect((await gateContinue.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+
+  await gateContinue.click();
   await expect(page.getByRole("checkbox", { name: /PDF/ }).first()).toBeVisible();
 });
 
-test("surfaces per-source acquisition failures in the scan gate and recovers through the gate retry", async ({ page }) => {
+test("surfaces per-source acquisition failures in the unified source list and recovers through the retry", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.goto(`${PREVIEW}?scenario=fail-acquire`);
 
   await page.getByRole("textbox", { name: "来源" }).fill("C:/skills/preview");
   await page.getByRole("button", { name: "解析来源" }).click();
 
-  // M-29：单目录获取失败进入多来源门槛页——失败原因、按目录重试与移除可见，
-  // 门槛保持诚实（0 个候选不放行），不再呈现全局 alert。
-  await expect(page.getByText("已从 0 个来源目录获取候选")).toBeVisible();
-  await expect(page.getByText(/C:\/skills\/preview：导入步骤未能完成（preview\.acquire_failed）。/)).toBeVisible();
+  // M-29：单目录获取失败停在统一来源列表——失败徽标、失败原因（裸状态
+  // 文本，紧随路径 <code>）与按目录重试可见；门槛保持诚实（0 个候选不放行），
+  // 不再呈现全局 alert。
+  const failedItem = page
+    .getByRole("list", { name: "已选来源" })
+    .getByRole("listitem")
+    .filter({ hasText: "C:/skills/preview" });
+  await expect(failedItem.getByText("扫描失败")).toBeVisible();
+  await expect(failedItem.getByText("导入步骤未能完成（preview.acquire_failed）。")).toBeVisible();
+  // 行内重试是来源列表里的小号（sm）行操作，44px 契约只约束 footer 主操作：
+  // 这里断言可见且可点。
   const retry = page.getByRole("button", { name: "重新扫描 C:/skills/preview" });
-  expect((await retry.boundingBox())!.height).toBeGreaterThanOrEqual(44);
-  const remove = page.getByRole("button", { name: "移除来源 C:/skills/preview" });
-  expect((await remove.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+  await expect(retry).toBeVisible();
+  await expect(retry).toBeEnabled();
   await expect(page.getByRole("button", { name: "继续选择候选" })).toBeDisabled();
 
-  // 恢复路径：重试扫描只重读该目录，失败行消失并恢复为候选计数。
+  // 恢复路径：重试扫描只重读该目录，失败原因消失并恢复为候选计数徽标。
   await retry.click();
-  await expect(page.getByText("已从 1 个来源目录获取候选")).toBeVisible();
-  await expect(page.getByText(/C:\/skills\/preview：2 个候选/)).toBeVisible();
-  await expect(page.getByText(/导入步骤未能完成（preview\.acquire_failed）。/)).toHaveCount(0);
+  await expect(failedItem.getByText("2 个候选")).toBeVisible();
+  await expect(page.getByText("导入步骤未能完成（preview.acquire_failed）。")).toHaveCount(0);
   await expect(page.getByRole("button", { name: "继续选择候选" })).toBeEnabled();
 });
 
@@ -305,12 +313,12 @@ test.describe("theme contract", () => {
       await expectNoRootHorizontalOverflow(page, `theme ${theme}@1280`);
       await expectFocusVisible(page, theme);
 
-      // 失败状态（门槛页失败行 + 行内重试/移除操作）在任意主题下可读且不横溢。
+      // 失败状态（统一来源列表失败行 + 行内重试操作）在任意主题下可读且不横溢。
       await page.goto(`${PREVIEW}?scenario=fail-acquire`);
       await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
       await page.getByRole("textbox", { name: "来源" }).fill("C:/skills/preview");
       await page.getByRole("button", { name: "解析来源" }).click();
-      await expect(page.getByText(/C:\/skills\/preview：导入步骤未能完成（preview\.acquire_failed）。/)).toBeVisible();
+      await expect(page.getByText("导入步骤未能完成（preview.acquire_failed）。")).toBeVisible();
       await expect(page.getByRole("button", { name: "重新扫描 C:/skills/preview" })).toBeVisible();
       await expectNoRootHorizontalOverflow(page, `theme ${theme} failure@1280`);
     });

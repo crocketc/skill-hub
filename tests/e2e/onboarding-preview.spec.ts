@@ -155,20 +155,22 @@ test("completes rediscovery without scrolling the results list", async ({ page }
   await page.setViewportSize({ width: 800, height: 900 });
   await reachScanStep(page, "rescan");
 
-  // P1-15 验收：不滚动页面/列表即可完成——完成动作与“进入批量导入”
-  // 都位于列表上方的固定操作区内，刷新后立即在视口中可点。
+  // P1-15 验收：不滚动页面/列表即可完成——“完成重新扫描”与“进入批量导入”
+  // 都在 footer 操作区内立即完整可见（4f8e9ad4 把“进入批量导入”移入
+  // RescanWizard footer 主操作组，位于结果列表之后）。
   const complete = page.getByRole("button", { name: "完成重新扫描" });
   await expect(complete).toBeInViewport();
   const openImport = page.getByRole("button", { name: "完成初始化并进入批量导入" });
   await expect(openImport).toBeInViewport();
 
-  // “进入批量导入”位于结果列表之前（统计行旁），不藏在列表底部。
-  const order = await page.evaluate(() => {
-    const button = [...document.querySelectorAll("button")].find((node) => node.textContent?.includes("进入批量导入"));
-    const list = document.querySelector(".sh-onboarding__scan-scroll");
-    return button && list ? Boolean(button.compareDocumentPosition(list) & Node.DOCUMENT_POSITION_FOLLOWING) : false;
-  });
-  expect(order, "the import action must precede the scrollable result list").toBe(true);
+  // “进入批量导入”落在 footer 盒内且可点：不被裁剪、不被遮挡。
+  const footerBox = await page.locator("main footer").boundingBox();
+  const buttonBox = await openImport.boundingBox();
+  expect(footerBox).not.toBeNull();
+  expect(buttonBox).not.toBeNull();
+  expect(buttonBox!.y).toBeGreaterThanOrEqual(footerBox!.y - 1);
+  expect(buttonBox!.y + buttonBox!.height).toBeLessThanOrEqual(footerBox!.y + footerBox!.height + 1);
+  await openImport.click({ trial: true });
 
   await complete.click();
   await expect(complete).toBeInViewport();

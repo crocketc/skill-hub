@@ -194,15 +194,20 @@ test.describe("discovery shared skill cards", () => {
 });
 
 test.describe("local discovery workbench agent groups (P1-06)", () => {
-  test("groups agent directories by brand with merged kinds and unavailable-last", async ({ page }) => {
+  test("renders one generic card for shared-reference targets with unavailable-last", async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 900 });
     await page.goto(PREVIEW);
 
     await expect(page.getByRole("heading", { name: "Discovered agent directories" })).toBeVisible();
-    // 同目录合并：zcode 的 desktop 与 cli 聚合为一张卡片，类型以 "/" 连接。
-    await expect(page.getByText("Desktop app/CLI")).toBeVisible();
-    // 跨品牌共享同一目录：ZCode 与 Codex 各自成卡（品牌分组）。
-    await expect(page.getByTestId("agent-card-phys-agents")).toHaveCount(2);
+    // OPT-07：`.agents/skills` 的跨品牌 shared_reference 引用聚合为一张通用
+    // 归属卡（Agent Skills / Shared directory），不产出 ZCode 品牌卡。
+    const sharedCard = page.getByTestId("agent-card-phys-agents");
+    await expect(sharedCard).toHaveCount(1);
+    await expect(sharedCard.getByText("Shared directory")).toBeVisible();
+    await expect(sharedCard.getByText("Shared by 2 registered clients")).toBeVisible();
+    await expect(sharedCard.getByText("C:/Users/demo/.agents/skills")).toBeVisible();
+    // 旧的 ZCode 品牌（desktop/cli 合并类型徽标）卡片不再出现。
+    await expect(page.getByText("Desktop app/CLI")).toHaveCount(0);
     // 完全不可用的品牌沉底，单独分区说明。
     await expect(page.getByText("Unavailable now")).toBeVisible();
     await expect(page.getByText("C:/Users/demo/broken/skills")).toBeVisible();
@@ -220,8 +225,8 @@ test.describe("local discovery workbench agent groups (P1-06)", () => {
 
     await expect(page.getByTestId("agent-card-phys-claude")).toHaveCount(0);
     await expect(page.getByText("Excluded C:/Users/demo/.claude/skills.")).toBeVisible();
-    // 其余品牌不受影响。
-    await expect(page.getByTestId("agent-card-phys-agents")).toHaveCount(2);
+    // 其余卡片（含 `.agents/skills` 的通用共享归属卡）不受影响。
+    await expect(page.getByTestId("agent-card-phys-agents")).toHaveCount(1);
     // 排除操作只影响发现列表：不提供任何删除文件的入口（无删除按钮）。
     expect(await page.getByRole("button", { name: /delete/i }).count()).toBe(0);
   });
@@ -332,7 +337,11 @@ test.describe("discovery cards in Simplified Chinese", () => {
 
     // P1-06：本机发现工作台的 Agent 分组区（中文文案）。
     await expect(page.getByRole("heading", { name: "发现的 Agent 目录" })).toBeVisible();
-    await expect(page.getByText("桌面端/CLI")).toBeVisible();
+    // OPT-07：`.agents/skills` 只有一张通用共享归属卡（共享目录 + 共享计数）。
+    const sharedCard = page.getByTestId("agent-card-phys-agents");
+    await expect(sharedCard).toHaveCount(1);
+    await expect(sharedCard.getByText("共享目录")).toBeVisible();
+    await expect(sharedCard.getByText("被 2 个已登记客户端共享")).toBeVisible();
     await expect(page.getByText("暂不可用")).toBeVisible();
   });
 });
