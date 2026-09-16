@@ -4,6 +4,8 @@
 
 **Goal:** 在不重写现有导入、部署和 Agent 适配能力的前提下，补齐 SkillHub 当前版本的关系识别、冲突治理、部署迁移、移除部署、回退和前端操作闭环。
 
+> 本计划是 Task 5—10 的历史实施计划。2026-09-16 确认的后续产品设计已单独记录在 [技能关系模块与统一执行体验设计](../specs/2026-09-16-skill-relationship-module-and-execution-experience-design.md)；本文件的已完成任务、测试和安全证据保留不改写。以下关于 v0.3.0 图谱、不支持图谱画布和旧待办/通知边界的表述，均不再作为后续产品入口。
+
 **Architecture:** 以统一的目录节点、Agent 目录识别能力、来源关系和部署关系作为事实层；扩展现有 `ImportProvenance`、`ObservedDeployment` 和 `DeploymentRecord`，通过应用层关系治理服务统一输出关系视图。导入、Agent 详情、Skill 详情和部署操作复用同一个关系治理 DTO 与 prepare/commit/rollback 事务，不新增第二套页面状态模型。
 
 **Tech Stack:** Rust workspace、SQLite migrations、Serde/Specta IPC bindings、React/TypeScript、Vitest、Rust integration tests、现有 operation journal 和 operation tracker。
@@ -12,11 +14,11 @@
 
 ## Global Constraints
 
-- 当前版本包含导入、关系识别、冲突治理、部署、移除部署、复制副本/通用目录关系迁移、回退和待处理事项；不包含 v0.3.0 图谱画布。
+- 本计划完成导入、关系识别、冲突治理、部署、移除部署、复制副本/通用目录关系迁移、回退和既有待处理事项；技能图谱、冲突处理工作台、关系治理关系清单及统一通知体验属于后续实施范围，目标版本为 v0.2.0。
 - `.agents/skills` 是独立通用共享目录节点；每个 Agent 单独记录 `supported / unknown / unsupported`，不能从目录存在推断 Agent 一定会读取或执行。
 - 集中库是主副本；从 `.agents/skills` 导入默认复制，不能因导入自动替换或删除共享原件。
 - 用户层只显示“链接部署”和“复制部署”；符号链接与 Windows Directory Junction 只在技术详情中显示。
-- 复制副本或通用目录引用转换为 SkillHub 管理链接时，必须移除原入口，不得留下两个同名入口，并保留备份/回退证据。
+- 复制副本或通用目录引用纳入集中库管理时，必须移除原入口，不得留下两个同名入口，并保留备份/回退证据。
 - AI 只提供短的决策建议、关键证据和不确定点，不自动合并、删除、替换或选择权威版本。
 - 未知关系、共享影响、权限失败和未决冲突必须进入待处理事项，不能静默跳过或报告为成功。
 - 保持现有原文件保护、确定性检查优先、网络默认关闭、生成绑定只能由生成器更新和跨平台路径策略。
@@ -39,11 +41,11 @@
 | `apps/desktop/src/features/import/*` | 增量扩展 | 保留现有来源、候选、分析进度和导入结果状态；新增关系分类和批量决策阶段 | 现有 import 测试 + 新治理组件测试 |
 | `apps/desktop/src/features/agents/*` | 增量扩展 | 保留 Agent 列表和 RelationsView；增加目录识别、关系类型、影响范围和迁移入口 | Agent 页面和 native API 测试 |
 | `apps/desktop/src/features/skill-detail/*` | 增量扩展 | 扩展现有 ProvenancePanel/RelationsPanel，不重做详情页 | Skill detail、ProvenancePanel 测试 |
-| `apps/desktop/src/platform/operationTracker.ts` | 复用 | 导入、冲突分析、关系迁移继续进入现有任务抽屉 | operation tracker 测试 |
+| `apps/desktop/src/platform/operationTracker.ts` | 复用并扩展 | 导入、冲突分析、关系迁移继续进入统一执行状态；后续改为顶栏居中摘要 + 小型逐项任务窗口，并关联通知中心 | operation tracker 测试 |
 | `apps/desktop/src/api/bindings.ts` | 生成 | 不手工编辑；由 `cargo test -p skillhub-desktop generate_bindings` 更新 | bindings 漂移测试 |
-| v0.3.0 图谱画布 | 不改 | 只保证关系查询结果能提供稳定节点和边字段 | 当前版本只做契约测试 |
+| 技能图谱（v0.2.0） | 本计划不实施 | 后续读取关系查询结果，提供单 Skill 中心、有限深度节点/边和上下文叶子节点 | 新设计实施计划与契约测试 |
 
-明确不做：重新设计 Agent 适配器、增加新的 Agent 品牌、实现图谱画布、自动清理通用目录本体、用 AI 替代路径/哈希/所有权判断、重写现有导入向导状态机。
+明确不做：重新设计 Agent 适配器、增加新的 Agent 品牌、自动清理通用目录本体、用 AI 替代路径/哈希/所有权判断、重写现有导入向导状态机。本计划不包含新技能关系模块与统一执行反馈的实现；其实施范围见新设计稿。
 
 ## 2. 固定实现决策
 
@@ -66,7 +68,7 @@ unknown
 
 ### 2.2 安全转换顺序
 
-复制副本或共享目录关系转为管理链接时固定执行：
+复制副本或共享目录关系纳入集中库管理时固定执行：
 
 ```text
 重新扫描 → 比较内容指纹 → 创建恢复点/备份
@@ -361,7 +363,7 @@ unknown
 - `RelationshipGovernancePanel` 只消费 `RelationshipOverview` 和 typed facade，不直接访问 bindings 或文件系统。
 
 - [ ] 先写 Agent 详情测试：通用 Agent 卡片、Agent 自有目录、通用目录直接读取、通用目录链接引用、未确认目录和共享消费者。
-- [ ] 写 Skill 详情测试：多来源存证、复制副本、管理链接、冲突待办和移除影响入口。
+- [ ] 写 Skill 详情测试：多来源存证、复制副本、管理链接、冲突处理记录和移除影响入口。
 - [ ] 复用现有 RelationsView 的物理目录合并展示，不改变已有 Agent/项目导航和部署入口。
 - [ ] 加入简短中文/英文关系标签和影响说明；不出现“外部链接”作为关系名称，不出现“已加载/一定会调用”。
 - [ ] 运行 Agent、Skill detail 和 relationshipGovernance 定向测试及 i18n parity。
@@ -416,7 +418,7 @@ unknown
 - Test: `apps/desktop/src/features/import/ImportWizard.test.tsx`
 - Test: `apps/desktop/src/features/agents/AgentDetailPage.test.tsx`
 
-- [ ] 增加端到端回归：单个导入、批量导入、同名冲突分类、共享目录影响、复制转管理链接、移除部署、取消、部分失败、权限受限、回退。
+- [ ] 增加端到端回归：单个导入、批量导入、同名冲突分类、共享目录影响、复制副本纳入集中库管理、移除部署、取消、部分失败、权限受限、回退。
 - [ ] 重新生成 bindings 并执行 `git diff --exit-code -- apps/desktop/src/api/bindings.ts`。
 - [ ] 执行 `cargo fmt --all -- --check`、`cargo test --workspace --all-features`、`pnpm check:frontend`、`pnpm test:frontend`、`pnpm build:frontend` 和 `git diff --check`。
 - [ ] 只有真实桌面验收完成后，才把 Windows/macOS 状态写成通过；自动化结果不得替代真机证据。
@@ -442,15 +444,15 @@ Task 1～4 必须串行完成，因为它们冻结领域类型、数据库事实
 | `.agents/skills` 导入集中库 | `import_copy` | 纳入集中库 | 通用目录原件保留，来源和指纹入库 |
 | Agent 直接读取通用目录 | `shared_directory_read` | 移除当前 Agent | 展示所有识别该目录的 Agent，不删除共享本体 |
 | Agent 自有目录链接到通用目录 | `shared_directory_reference` | 迁移当前 Agent | 建立集中库→Agent 管理链接，移除旧入口，其他引用不变 |
-| 集中库已部署复制副本 | `managed_copy` 或 `observed_copy` | 转为链接 | 备份、验证、建立链接、移除旧副本、可回退 |
-| 同名不同内容且证据不足 | `uncertain` | 暂缓/AI 分析 | 生成冲突待办，不合并、不删除、不覆盖 |
+| 集中库已部署复制副本 | `managed_copy` 或 `observed_copy` | 纳入集中库管理 | 备份、验证、建立指向集中库主副本的管理链接、移除旧副本、可回退 |
+| 同名不同内容且证据不足 | `uncertain` | 冲突处理/AI 分析 | 保留在冲突处理工作台，不进入通用待处理；不合并、不删除、不覆盖 |
 | 同名不同内容判定为不同 Skill | `distinct_skill` | 保留两者 | 建立两个集中库身份和独立关系 |
 | 同名不同内容判定为不同版本 | `same_skill_version` | 纳入版本历史 | 同一 Skill 下形成新版本，不误建第二对象 |
 | 链接权限不足或目标变化 | `operation blocked` | 重试/保留/回退 | 原入口保留，记录失败，不报告为成功 |
 
 ## 7. 计划自检结论
 
-- 已覆盖设计稿中的目录角色、关系类型、多来源存证、冲突组、AI 分析、待办、单个/批量导入、部署迁移、移除影响和前端入口。
+- 已覆盖本历史设计稿中的目录角色、关系类型、多来源存证、冲突组、AI 分析、待办、单个/批量导入、部署迁移、移除影响和前端入口。
 - 已明确复用现有 `ImportProvenance`、`ObservedDeployment`、`DeploymentRecord`、`RemovalImpact`、操作日志、任务追踪和 Agent RelationsView，而不是重新建设平行系统。
-- 未把图谱画布、Agent 适配器重写、自动清理共享目录和自动 AI 决策混入当前计划。
+- 新的 v0.2.0 图谱、冲突处理工作台、关系治理清单、批量关系操作和统一异步通知不回填为本历史计划任务，须使用独立实施计划；Agent 适配器重写、自动清理共享目录和自动 AI 决策仍不在范围内。
 - 计划中的关系 DTO、命令名、枚举和迁移版本在任务之间保持一致，前端 bindings 只由生成测试更新。
