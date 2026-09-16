@@ -129,8 +129,14 @@ export function BatchDeploymentPage({ facade, skillIds, tracker, onCommitted }: 
         }),
         run: async (handle) => {
           const results = await activeFacade.commit(preview.plans, (completed) => handle.progress(completed, preview.plans.length));
-          const operationId = results.find((result) => result.operationId)?.operationId;
-          if (operationId) handle.correlate(operationId);
+          // 后端为每个 prepare 单独铸造 operation id：批次逐 Skill prepare/commit
+          // 后各 id 互不相同。仅当结果集恰好指向一条持久化记录（单 Skill 批次）
+          // 时才 correlate；多 id 批次镜像 removal 批量的既有决定——不伪关联
+          // Skill #1 的记录，通知/深链退化为不带 action 的批量结果反馈。
+          const correlatedIds = [...new Set(results
+            .map((result) => result.operationId)
+            .filter((operationId): operationId is string => Boolean(operationId)))];
+          if (correlatedIds.length === 1) handle.correlate(correlatedIds[0]);
           return results;
         },
       });

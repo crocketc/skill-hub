@@ -350,17 +350,49 @@ describe("BatchDeploymentPage 与统一执行桥", () => {
     expect(inFlight.total).toBe(2);
     expect(inFlight.completed).toBe(0);
 
+    // 后端事实：批次逐 Skill prepare/commit，每个 Skill 的持久化 operation id
+    // 互不相同（DeploymentService.prepare 每次 OperationId::new()）。
     resolveCommit([
       { skillId: "skill-pdf", targetId: "codex-cli", label: "Codex CLI", status: "succeeded", message: "deployment.results.status.message.succeeded", operationId: "op-batch-1" },
-      { skillId: "skill-docx", targetId: "codex-cli", label: "Codex CLI", status: "failed", message: "目标目录不可写", operationId: "op-batch-1" },
+      { skillId: "skill-docx", targetId: "codex-cli", label: "Codex CLI", status: "failed", message: "目标目录不可写", operationId: "op-batch-2" },
     ]);
     expect(await screen.findByTestId("batch-summary")).toBeVisible();
 
     const [finished] = tracker.getSnapshot();
     expect(finished.status).toBe("partial");
     expect(finished.completed).toBe(2);
-    expect(finished.operationId).toBe("op-batch-1");
-    expect(finished.targetHref).toBe("/operations/op-batch-1");
+    // 多 id 批次不得伪关联到 Skill #1 的单条记录（镜像 removal 批量的既有
+    // 决定）：无单 id correlate，深链退化为不带 action 的批量结果反馈。
+    expect(finished.operationId).toBeNull();
+    expect(finished.targetHref).toBeNull();
+  });
+
+  it("keeps the single-id correlation when a one-Skill batch yields exactly one operation record", async () => {
+    const user = userEvent.setup();
+    const tracker = createOperationTracker();
+    const facade = batchFacade({
+      commit: vi.fn<BatchDeploymentFacade["commit"]>(async () => [
+        { skillId: "skill-pdf", targetId: "codex-cli", label: "Codex CLI", status: "succeeded", message: "deployment.results.status.message.succeeded", operationId: "op-single-1" },
+      ]),
+    });
+    const i18n = await createSkillHubI18n(["zh-CN"]);
+    render(
+      <I18nextProvider i18n={i18n}>
+        <MemoryRouter initialEntries={["/deploy"]}>
+          <BatchDeploymentPage facade={facade} skillIds={["skill-pdf"]} tracker={tracker} />
+        </MemoryRouter>
+      </I18nextProvider>,
+    );
+
+    await user.click(await screen.findByLabelText("Codex CLI"));
+    await user.click(screen.getByRole("button", { name: "预览部署" }));
+    await user.click(await screen.findByRole("button", { name: "提交部署" }));
+    expect(await screen.findByTestId("batch-summary")).toBeVisible();
+
+    // 单 Skill 批次只有一个持久化记录：现有 correlate 行为保持。
+    const [finished] = tracker.getSnapshot();
+    expect(finished.operationId).toBe("op-single-1");
+    expect(finished.targetHref).toBe("/operations/op-single-1");
   });
 
   it("records a rejected batch on the tracker as failed and keeps the page alert", async () => {
