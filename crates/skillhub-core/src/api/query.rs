@@ -16,8 +16,9 @@ use crate::{
 
 use crate::relationship::{
     AgentDirectoryCapabilityFact, ConflictCaseFact, ConflictWorkspace, DeploymentRelationFact,
-    DirectoryNodeFact, GovernanceTaskFact, RelationshipGraphFactCounts, RelationshipGraphFilters,
-    SkillRelationshipEdge, SkillRelationshipGraph, SkillRelationshipNode, SourceRelationFact,
+    DirectoryNodeFact, GovernanceTaskFact, RelationGovernanceFilters, RelationGovernanceLedger,
+    RelationshipGraphFactCounts, RelationshipGraphFilters, SkillRelationshipEdge,
+    SkillRelationshipGraph, SkillRelationshipNode, SourceRelationFact,
 };
 use serde::{Deserialize, Serialize};
 
@@ -635,6 +636,16 @@ pub struct ListSkillRelationshipCandidates {
     pub tags: Vec<String>,
 }
 
+/// Reads the relationship-governance ledger: one row per established
+/// relationship edge, plus the four quick-filter counts.  Read-only: it never
+/// scans files, calls AI, probes link capability or writes a fact.
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct ListRelationGovernance {
+    #[serde(default)]
+    pub filters: RelationGovernanceFilters,
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 #[serde(deny_unknown_fields)]
 pub struct SkillRelationshipCandidate {
@@ -834,6 +845,8 @@ pub enum AppQuery {
     ListSkillRelationshipCandidates(ListSkillRelationshipCandidates),
     #[serde(rename = "get_conflict_workspace")]
     GetConflictWorkspace(GetConflictWorkspace),
+    #[serde(rename = "list_relation_governance")]
+    ListRelationGovernance(ListRelationGovernance),
     #[serde(rename = "list_recovery_candidates")]
     ListRecoveryCandidates,
     #[serde(rename = "get_call_policy")]
@@ -943,6 +956,8 @@ pub enum AppQueryResult {
     SkillRelationshipCandidates(Vec<SkillRelationshipCandidate>),
     #[serde(rename = "conflict_workspace")]
     ConflictWorkspace(ConflictWorkspace),
+    #[serde(rename = "relation_governance_ledger")]
+    RelationGovernanceLedger(RelationGovernanceLedger),
     #[serde(rename = "recovery_candidates")]
     RecoveryCandidates(Vec<crate::RecoveryCandidate>),
     #[serde(rename = "skill_operations")]

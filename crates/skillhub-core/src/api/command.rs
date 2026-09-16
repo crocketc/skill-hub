@@ -22,8 +22,8 @@ use crate::project::{AssemblyPlan, Project, SavedProjectView, SharedProjectConfi
 use crate::scan::ScanResult;
 use crate::source::{SourceDescriptor, UpdateDecision};
 use crate::{
-    DeploymentId, InitializationStatus, OperationId, OperationSummary, ProjectId, SkillId,
-    VersionId,
+    DeploymentId, ErrorCode, InitializationStatus, OperationId, OperationSummary, ProjectId,
+    SkillId, VersionId,
 };
 
 use super::query::{BasicCheckResult, CombinationResult, LlmSafetyCheckResult};
@@ -273,6 +273,103 @@ pub struct CommitRelationMigration {
 #[serde(deny_unknown_fields)]
 pub struct RollbackRelationMigration {
     pub operation_id: OperationId,
+}
+
+/// Which governance change a batch applies to every selected relationship
+/// edge.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(rename_all = "snake_case")]
+pub enum RelationGovernanceBatchAction {
+    /// 用户术语「纳入集中库管理」：复用 required-backup ManagedLink 的
+    /// prepare/commit/rollback 四段安全链路。
+    CentralizeManagement,
+}
+
+/// 批次准备：每条关系边各自 prepare、备份、校验与确认。
+///
+/// `confirmations` 逐项携带共享影响确认令牌；缺失即视为未确认，该行会被
+/// 如实报为受阻，而不是替用户默认同意。
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct PrepareRelationGovernanceBatch {
+    pub action: RelationGovernanceBatchAction,
+    pub relation_ids: Vec<String>,
+    #[serde(default)]
+    pub confirmations: std::collections::BTreeMap<String, String>,
+}
+
+/// 批次提交：`relation_ids` 是用户在预览后仍保留的行。批次内已准备但未列出
+/// 的行按「取消」处理，不改动任何文件，也不影响其余行。
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct CommitRelationGovernanceBatch {
+    pub batch_id: OperationId,
+    pub relation_ids: Vec<String>,
+}
+
+/// 批次回退：逐项回退已提交的子项，失败项保留其余成功项。
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct RollbackRelationGovernanceBatch {
+    pub batch_id: OperationId,
+    pub relation_ids: Vec<String>,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(rename_all = "snake_case")]
+pub enum RelationGovernanceBatchItemState {
+    Prepared,
+    Committed,
+    RolledBack,
+    Failed,
+    /// 准备阶段就按事实判定为不可执行，未触碰文件系统。
+    Blocked,
+    /// 用户在预览后取消该行；其余行不受影响。
+    Cancelled,
+}
+
+/// One child item of a governance batch.  `operation_id` is the child
+/// operation, so the parent operation log can be followed to each item.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct RelationGovernanceBatchItem {
+    pub relation_id: String,
+    pub operation_id: Option<OperationId>,
+    pub state: RelationGovernanceBatchItemState,
+    pub error_code: Option<ErrorCode>,
+    pub detail: Option<String>,
+    /// 用户可对该行单独重试。
+    pub retryable: bool,
+    pub rollback_available: bool,
+    pub backup_path: Option<String>,
+    pub affected_paths: Vec<String>,
+    pub blockers: Vec<crate::relationship::RelationGovernanceBlocker>,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(rename_all = "snake_case")]
+pub enum RelationGovernanceBatchState {
+    Prepared,
+    Committed,
+    /// 部分成功：成功项保留，失败项逐项可重试或回退。
+    PartiallyCommitted,
+    Failed,
+    Cancelled,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct RelationGovernanceBatchOutcome {
+    pub batch_id: OperationId,
+    pub action: RelationGovernanceBatchAction,
+    pub state: RelationGovernanceBatchState,
+    pub items: Vec<RelationGovernanceBatchItem>,
+    pub prepared_count: u32,
+    pub committed_count: u32,
+    pub failed_count: u32,
+    pub blocked_count: u32,
+    pub cancelled_count: u32,
+    pub relationship_revision: String,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
@@ -927,6 +1024,12 @@ pub enum AppCommand {
     CommitRelationMigration(CommitRelationMigration),
     #[serde(rename = "rollback_relation_migration")]
     RollbackRelationMigration(RollbackRelationMigration),
+    #[serde(rename = "prepare_relation_governance_batch")]
+    PrepareRelationGovernanceBatch(PrepareRelationGovernanceBatch),
+    #[serde(rename = "commit_relation_governance_batch")]
+    CommitRelationGovernanceBatch(CommitRelationGovernanceBatch),
+    #[serde(rename = "rollback_relation_governance_batch")]
+    RollbackRelationGovernanceBatch(RollbackRelationGovernanceBatch),
     #[serde(rename = "relink_source")]
     RelinkSource(RelinkSource),
     #[serde(rename = "check_source_update")]
@@ -1126,6 +1229,8 @@ pub enum AppCommandResult {
     PreparedRelationMigration(crate::PreparedRelationMigration),
     #[serde(rename = "relation_migration_result")]
     RelationMigrationResult(crate::RelationMigrationResult),
+    #[serde(rename = "relation_governance_batch")]
+    RelationGovernanceBatch(RelationGovernanceBatchOutcome),
     #[serde(rename = "upstream_check_result")]
     UpstreamCheckResult(crate::source::UpstreamCheckResult),
     #[serde(rename = "applied_source_update")]

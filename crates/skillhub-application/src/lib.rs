@@ -2,6 +2,7 @@
 
 mod external_link;
 pub mod library_runtime;
+mod relationship_governance_batch;
 mod relationship_governance_service;
 mod update_service;
 
@@ -5126,6 +5127,15 @@ impl ApplicationFacade for LocalApplicationFacade {
             AppCommand::RollbackRelationMigration(request) => {
                 return self.rollback_relation_migration(request).await
             }
+            AppCommand::PrepareRelationGovernanceBatch(request) => {
+                return self.prepare_relation_governance_batch(request)
+            }
+            AppCommand::CommitRelationGovernanceBatch(request) => {
+                return self.commit_relation_governance_batch(request).await
+            }
+            AppCommand::RollbackRelationGovernanceBatch(request) => {
+                return self.rollback_relation_governance_batch(request).await
+            }
             AppCommand::CancelImport { prepared_import_id } => {
                 return self.cancel_import(prepared_import_id)
             }
@@ -5791,6 +5801,7 @@ impl ApplicationFacade for LocalApplicationFacade {
                 self.list_skill_relationship_candidates(request)
             }
             AppQuery::GetConflictWorkspace(_) => self.get_conflict_workspace(),
+            AppQuery::ListRelationGovernance(request) => self.list_relation_governance(request),
             AppQuery::ListRecoveryCandidates => self
                 .recovery_service
                 .list()
