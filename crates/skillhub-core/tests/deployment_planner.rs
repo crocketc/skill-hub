@@ -10,7 +10,8 @@ use skillhub_core::deployment::reconcile::path_lives_under_platform;
 use skillhub_core::deployment::{
     DeploymentMode, DeploymentPlanInput, DeploymentPlanRequest, DeploymentPlanner,
     ExistingDeployment, ExistingOwnership, ObservedMatchState, ObservedOrigin,
-    RegisteredTargetIndex, TargetFact, TargetFactSource, VerifiedTarget,
+    RegisteredTargetIndex, RelationConversionFacts, TargetFact, TargetFactSource, VerifiedTarget,
+    plan_relation_conversion,
 };
 use skillhub_core::relationship::classifier::{
     classify_directory_capability, classify_observed_relation,
@@ -1189,4 +1190,43 @@ fn api_request_resolves_registered_ids_and_rejects_unregistered_ids() {
         .resolve(&index, "/SkillHub/library/pdf--abc")
         .unwrap_err();
     assert_eq!(error.code.as_str(), "object.not_found");
+}
+
+// ---------------------------------------------------------------------------
+// Task 12: pure-function anchors for the shared-impact confirmation rule.
+// `plan_relation_conversion` decides the confirmation from relationship facts
+// alone (`SharedDirectoryReference` plus other shared consumers), with no IO.
+// Pinning both sides here keeps the orchestration-layer fixture in
+// `facade_relationship_governance` (a shared-reference fact staged without a
+// real alias link) from carrying that semantics by itself, and keeps the rule
+// provable on every host including ones without link privileges.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn shared_reference_with_other_consumers_requires_shared_impact_confirmation() {
+    // Junction-only capabilities mirror the RC-15 host shape (an account
+    // without symlink privilege): the conversion still plans there, through a
+    // directory junction, and the confirmation rule is unchanged.
+    let plan = plan_relation_conversion(&RelationConversionFacts {
+        relationship: RelationshipType::SharedDirectoryReference,
+        link_capabilities: capabilities(false, true, true),
+        link_target_same_volume: true,
+        other_shared_consumers: 1,
+    })
+    .expect("a shared reference with a usable link form is plannable");
+    assert_eq!(plan.mode, DeploymentMode::DirectoryJunction);
+    assert!(plan.requires_shared_impact_confirmation);
+}
+
+#[test]
+fn shared_reference_without_other_consumers_needs_no_confirmation() {
+    let plan = plan_relation_conversion(&RelationConversionFacts {
+        relationship: RelationshipType::SharedDirectoryReference,
+        link_capabilities: capabilities(true, true, true),
+        link_target_same_volume: true,
+        other_shared_consumers: 0,
+    })
+    .expect("a solo shared reference is plannable");
+    assert_eq!(plan.mode, DeploymentMode::SymbolicLink);
+    assert!(!plan.requires_shared_impact_confirmation);
 }
