@@ -2,7 +2,7 @@
 
 ## 状态、依据与边界
 
-- 状态：**后端主线 Task 1、Task 2、Task 3 已完成代码与自动化闭环（2026-09-16）**；Task 4—11 尚未开始（Task 11 为用户可见动作词收敛，2026-09-16 登记）。本计划落实《技能关系模块与统一执行体验设计（2026-09-16）》，不替代其中的产品决策。逐任务进展与提交见「实施进展」。
+- 状态：**后端主线 Task 1、Task 2、Task 3 已完成代码与自动化闭环（2026-09-16）**；Task 4—10 尚未开始。Task 11（用户可见动作词收敛）与 Task 12（关系测试夹具去链接依赖）是 2026-09-16 用户裁决后追加的非主线任务，均尚未实施。本计划落实《技能关系模块与统一执行体验设计（2026-09-16）》，不替代其中的产品决策。逐任务进展与提交见「实施进展」。
 - 基线：`feat/v0.2.0-product-completion`；现有 Task 5—10 的关系事实、`0014/0015` 存储、关系迁移 prepare/commit/rollback、冲突 AI 分析和操作日志均已可复用。
 - 实施方式：每个任务先补失败测试，再做最小实现，最后重构；Rust 契约变更后只能通过 `SKILLHUB_WRITE_BINDINGS=1 cargo test -p skillhub-desktop generate_bindings` 生成 `apps/desktop/src/api/bindings.ts`，不得手改绑定文件。
 - 不在本轮做的事：常驻目录监控、可无限展开的系统图谱、图谱画布中的文件修改、AI 自动执行文件变更、图谱专用键盘拖拽/缩放。
@@ -88,6 +88,7 @@ Task 1 不作为一个大提交实施，固定拆为三个独立的红→绿切�
 并行线 B（执行基础）       Task 4 → Task 5
 页面并行                    Task 6 | Task 7 | Task 8 | Task 9
 文案线 C（规则先冻结）      Task 11（可任意时候分片实施，但规则须早于 Task 5—9 的文案）
+测试夹具线 D（去环境依赖）  Task 12（可与任意线并行，只动 Rust 测试）
 全局收口                    Task 10
 ```
 
@@ -104,6 +105,7 @@ Task 1 不作为一个大提交实施，固定拆为三个独立的红→绿切�
 | 9 | Task 1、5 已合入 | 可与 6/7/8 并行 | 只改 bootstrap 汇总、概览 feature 与局部样式；关系入口指向已冻结的三条路由 |
 | 10 | Task 1—9 已合入 | 否 | 统一异步入口清单、双语键合并、端到端回归和文档必须面对完整集成态 |
 | 11 | 无（但规则冻结须早于 Task 5—9 的文案落地） | 可与任意线并行 | 纯前端文案层，不改契约、不触碰绑定；修改 `common.json` 与断言中文文案的前端测试文件（163 处，分散在 `DeploymentDialog`、`OnboardingWizard`、`BatchDeploymentPage` 等），不得与并行页面任务同时改同一批键 |
+| 12 | Task 3 与 junction 执行器已合入 | 可与任意线并行 | 只动 `skillhub-core` 纯函数用例与 `facade_relationship_governance`，不触碰 `common.json`、绑定与产品代码；与 Task 11 的文件集合不重叠，二者可同时进行 |
 
 子代理不在同一时间修改相同公共文件。页面并行期对 `common.json` 使用各自命名空间；由 Task 10 统一排序、去重和完整性审计。发现契约需要变化时，停止受影响页面分支，先在后端主线裁定并更新 facade/brief，再继续页面实现。
 
@@ -437,6 +439,75 @@ pnpm build:frontend
 - 与 Task 10 的异步入口接入有交集：Task 10 新增的顶栏与通知文案必须直接采用新词，不得沿用旧文案。
 - 前置依赖：无（纯前端文案层，可与后端主线并行）；但它修改 `common.json` 与断言中文文案的前端测试文件（`apps/desktop/src/features/**` 下 163 处字面量断言），**不得与并行页面任务同时改同一批键**，合并顺序按「实施并行与合并顺序」的公共文件规则处理。此处**不涉及** Rust 侧测试：`facade_relationship_governance` 的共享引用夹具是另一件独立待办（见《开发状态-2026-09-16》「仍需」），与本任务无依赖关系。
 
+## 任务 12：让关系测试夹具不再依赖真实符号链接能力
+
+**目标**：消除 `facade_relationship_governance` 中「共享引用」场景构造对宿主符号链接能力的隐式依赖，使该文件在缺少链接权限的 Windows 账号上不再因搭场景失败而报错，且**不降低任何断言**。
+
+**背景：三类根因必须分开记账**
+
+复核 Windows 侧登记的 17 项失败时拆出三类互不相同的根因：
+
+| 根因 | 数量 | 性质 | 处置 |
+|---|---|---|---|
+| 共享目录断言硬编码 `/` | 1 | 真测试缺陷 | 已修（`a6f63327`） |
+| 按卷链接能力探针报不可用 | 15 | 实现缺口 | 已补 Windows 目录联接执行器（`349e81f5`/`4d254711`，待真机取证） |
+| 夹具自建目录符号链接被系统拒绝（`OS 1314`） | 1 → 2 | **测试夹具缺陷（本任务）** | 未处置 |
+
+第三类不能与第二类混为一谈：产品路径在补齐 junction 后不再需要符号链接特权，但**测试夹具是自己伸手建符号链接**（`create_dir_link_for_test`），不经过产品的能力探测与回退，因此在无权限宿主上依旧失败。Task 3 新增的批量确认用例复用了同一夹具，使该机器上的净增由 1 项变为 2 项。
+
+**为什么不能把夹具退化成"只写关系事实"**
+
+`prepare_relation_migration` 读磁盘有四处硬校验，纯数据库夹具无法通过：
+
+- `hash_tree(&relation.path)` 必须等于 `content_fingerprint`，否则 `target_changed`（`relationship_governance_service.rs:558`）。
+- `validate_relation_entity` 按 `file_representation` 核对磁盘实体（`:562`）：`SymbolicLink` 要求 `read_link` 等于 `link_target_path`；`Copy`/`Directory` 要求真实的非符号链接目录；`DirectoryJunction` 直接拒绝迁移（`:1813`）。
+- `validate_non_symlink_directory(&target_path)` 与 `hash_tree(&target_path)` 要求中央目标与源同哈希（`:588`/`:589`）。
+- `probe_link_capabilities(relation_parent, &target_path)` 决定转换模式（`:617`），`ManagedCopy`/`None` 一律 `link_unavailable`——这条才是那 15 项的产品侧机制。
+
+同时确认「共享影响确认」的触发**完全来自数据库**：`requires_shared_impact_confirmation = (relationship == SharedDirectoryReference) && other_shared_consumers > 0`（`planner.rs:419`），而 `other_consumers` 由活跃关系事实按 `agent_client_id` 去重推导（`impact.rs:98`—`:134`），与磁盘无关。这为第 2 步的改造留出空间。
+
+**实测范围**
+
+夹具建链接只有两处：`:343`（主别名 `agent/skills/notes` 指向共享主体）与 `:418`（第二消费者别名 `agent2/skills/notes`）。受影响的用例只有两个：
+
+- `shared_reference_conversion_repoints_one_alias_and_keeps_the_shared_body`（`:1488`，用到 `other_alias`）；
+- `governance_batch_requires_the_shared_impact_confirmation_per_row`（夹具调用在 `:4567`）。
+
+`RelationKind::ManagedCopyEntry`（`:1292`/`:1425`）不建链接，不受影响；`create_dir_link_for_test` 的其余调用点（`:1740`/`:2252`/`:2337`/`:2388`/`:2542`）属于各自用例的主题，不在本任务范围。
+
+**方案：按用例的真实需求分层，不搞一刀切**
+
+1. **转换用例保留链接依赖，但把前提显式化**。该用例的主题就是"重指真实别名链接并保留共享主体"，删除链接等于取消用例。改用本文件既有的能力守卫写法（见 `:1226`）标注前提，并在用例内注明这是环境前提而非缺陷。
+2. **批量用例改为不落链接的编排层构造**。该用例验证的是"批量不会绕过共享影响确认"，只需 `relationship = SharedDirectoryReference` 与数据库中 `other_consumers > 0`，不需要磁盘上真有链接。给夹具增加一个不落链接的共享引用形态（别名位置为真实目录、`file_representation = Copy`、`link_target_path` 仍指共享主体），使该用例在任意宿主可跑。
+3. **把「共享影响确认」的语义锚点下沉到 core 纯函数测试**。在 `skillhub-core` 增加 `plan_relation_conversion` 的纯函数用例，锁定「`SharedDirectoryReference` + `other_shared_consumers > 0` ⇒ 需要确认」与「共享引用 + 无其它消费者 ⇒ 不需要确认」两侧，无 IO、全平台可跑。这样第 2 步的编排层构造不必独自承担语义举证。
+
+**明确不做**
+
+- 不降低既有断言、不删除用例、不用静默 `return` 掩盖与环境无关的失败。第 1 步的守卫是显式环境前提（该用例本就需要符号链接）；第 2 步是消除**不必要的**依赖，而不是放弃覆盖。
+- 不改产品代码。产品在无链接权限宿主的正确行为是 fail-closed（`validate_relation_entity` 拒绝并保持原条目），本任务只让测试夹具与产品能力解耦。
+- 不把「`SharedDirectoryReference` + `Copy`」这一构造描述为产品场景：第 2 步的构造是**编排层输入**，注释必须写明，避免后来者误当产品行为依据。
+
+**先写失败测试**
+
+1. 先加 core 纯函数用例（第 3 步）：现状下应直接通过，它锁定既有语义、作为回归锚点。
+2. 改夹具并调整第 2 步用例，确认在**无链接能力**条件下该用例可跑通。本机具备链接能力，无法直接验证这一条件，需在 Windows 无权限宿主复跑取证。
+3. 第 1 步用例加守卫后，确认在具备链接能力的环境仍**完整执行**，不得因加守卫而失去覆盖。
+
+**验收与命令**
+
+```bash
+cargo test -p skillhub-core --test deployment_planner
+cargo test -p skillhub-application --test facade_relationship_governance
+cargo fmt --all -- --check
+cargo clippy -p skillhub-core -p skillhub-application --all-targets --all-features -- -D warnings
+```
+
+**前置与顺序**
+
+- 依赖 Task 3（批量夹具由它引入）与已补齐的 junction 执行器：否则无权限宿主上产品路径本身不可用，第 2 步的改造没有验证意义。
+- 不阻塞任何页面任务，可与 Task 4—11 并行；但它与 Task 11 都触碰 `facade_relationship_governance` 之外的公共文件集合不重叠（本任务只动 Rust 测试），二者可同时进行。
+- 真机取证：在缺少链接权限的 Windows 账号上复跑该文件，期望 `facade_relationship_governance` **零失败**（第 1 步用例按守卫跳过并输出原因，第 2 步用例正常通过），并在《人工验收清单-2026-09-16》回填 RC-15。
+
 ## 交付核对表
 
 标注口径：`[x]` 表示该项已完整达成；`[ ]` 后写明「已完成」与「仍需」两部分，不写含糊的“部分完成”。
@@ -449,3 +520,4 @@ pnpm build:frontend
 - [ ] 概览保留既有图表和通用待办，新增关系内容不重复统计也不产生页面滚动条。**仍需**：概览关系缩略入口与冻结指标口径未开始（Task 9）。
 - [ ] 全部 Rust/TypeScript 契约绑定由生成器生成；全量自动化通过；Windows/macOS 人工验收记录已回填。**已完成**：绑定生成器不动点已复核（Task 3 后 SHA 前后一致），工作区自动化 142 套件 / 1094 通过 / 0 失败，前端 150 文件 / 1542 通过。**仍需**：Windows/macOS 真机人工验收记录回填，当前发布阻塞项为《人工验收清单-2026-09-16》A—I 节与 RC-13/RC-14。
 - [ ] 用户可见动作词统一为“添加到 Agent/项目”“从 Agent/项目移除”，「部署」只作为名词短语（链接部署/复制部署/部署关系）与技术详情术语出现。**仍需**：Task 11 未开始。
+- [ ] 关系测试夹具不依赖宿主符号链接能力：`facade_relationship_governance` 在缺少链接权限的账号上零失败。**仍需**：Task 12 未实施；该文件的共享引用夹具目前仍自建符号链接，在无权限宿主上会与同类既有用例一起失败（Task 3 后净增为 2 项），并需 Windows 真机复跑取证（RC-15）。
