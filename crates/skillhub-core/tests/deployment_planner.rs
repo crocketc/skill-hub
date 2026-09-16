@@ -8,10 +8,9 @@ use skillhub_core::agent::{
 use skillhub_core::deployment::observed_path_key;
 use skillhub_core::deployment::reconcile::path_lives_under_platform;
 use skillhub_core::deployment::{
-    DeploymentMode, DeploymentPlanInput, DeploymentPlanRequest, DeploymentPlanner,
-    ExistingDeployment, ExistingOwnership, ObservedMatchState, ObservedOrigin,
+    plan_relation_conversion, DeploymentMode, DeploymentPlanInput, DeploymentPlanRequest,
+    DeploymentPlanner, ExistingDeployment, ExistingOwnership, ObservedMatchState, ObservedOrigin,
     RegisteredTargetIndex, RelationConversionFacts, TargetFact, TargetFactSource, VerifiedTarget,
-    plan_relation_conversion,
 };
 use skillhub_core::relationship::classifier::{
     classify_directory_capability, classify_observed_relation,
