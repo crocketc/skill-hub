@@ -75,7 +75,7 @@ describe("CombinationPanel", () => {
     const dialog = screen.getByRole("alertdialog", { name: "删除组合 Writing stack" });
     // 删除前如实展示影响：成员数量 + 只删组合记录、不动 Skill/部署/文件。
     expect(within(dialog).getByText(/包含 2 个成员/)).toBeVisible();
-    expect(within(dialog).getByText(/不影响库中的 Skill、部署与文件/)).toBeVisible();
+    expect(within(dialog).getByText(/不影响库中的 Skill、部署关系与文件/)).toBeVisible();
     fireEvent.click(within(dialog).getByRole("button", { name: "确认删除" }));
     await waitFor(() => expect(facade.deleteCombination).toHaveBeenCalledWith("Writing stack"));
     await waitFor(() => expect(facade.listCombinations).toHaveBeenCalledTimes(2));

@@ -88,7 +88,7 @@ test("mounts the overview preview with one primary metric and compact stats", as
   for (const name of statNames) {
     await expect(stats.getByRole("link", { name })).toBeVisible();
   }
-  await expect(page.getByRole("img", { name: "Deployment count by agent" })).toBeVisible();
+  await expect(page.getByRole("img", { name: "Deployment relation count by agent" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "4 pending items" })).toBeVisible();
 });
 
@@ -132,7 +132,7 @@ test("stacks chart and pending into one column with single-column stats at 800px
   await page.goto("/__preview/overview");
 
   // 窄容器：图表面板与待处理区域纵向堆叠，不再并排。
-  const chartBox = await boxOf(page.getByRole("img", { name: "Deployment count by agent" }));
+  const chartBox = await boxOf(page.getByRole("img", { name: "Deployment relation count by agent" }));
   const pendingBox = await boxOf(page.getByRole("heading", { name: "4 pending items" }));
   expect(
     chartBox.y + chartBox.height,
@@ -165,7 +165,7 @@ test("keeps two stat columns and a single-column chart area at 1024px", async ({
   }
   expect(distinctRowCount(boxes), "compact stats must form a 2x2 grid").toBe(2);
 
-  const chartBox = await boxOf(page.getByRole("img", { name: "Deployment count by agent" }));
+  const chartBox = await boxOf(page.getByRole("img", { name: "Deployment relation count by agent" }));
   const pendingBox = await boxOf(page.getByRole("heading", { name: "4 pending items" }));
   expect(
     chartBox.y + chartBox.height,
@@ -201,7 +201,7 @@ test("keeps the two-row metrics contract with four stat columns at 1440px", asyn
     "the hero row must sit above the compact stats row",
   ).toBeLessThanOrEqual(Math.min(...boxes.map((box) => box.y)) + 1);
 
-  const chartBox = await boxOf(page.getByRole("img", { name: "Deployment count by agent" }));
+  const chartBox = await boxOf(page.getByRole("img", { name: "Deployment relation count by agent" }));
   const pendingBox = await boxOf(page.getByRole("heading", { name: "4 pending items" }));
   expect(
     pendingBox.y,
@@ -311,7 +311,7 @@ test.describe("overview honors the theme contract at 1280x900", () => {
       await page.goto("/__preview/overview");
 
       await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
-      await expect(page.getByRole("img", { name: "Deployment count by agent" })).toBeVisible();
+      await expect(page.getByRole("img", { name: "Deployment relation count by agent" })).toBeVisible();
       await page
         .waitForFunction(() => document.querySelectorAll("main svg [fill]").length > 0)
         .catch(() => {
@@ -351,7 +351,7 @@ test("renders without continuous motion when the system prefers reduced motion",
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/__preview/overview");
 
-  await expect(page.getByRole("img", { name: "Deployment count by agent" })).toBeVisible();
+  await expect(page.getByRole("img", { name: "Deployment relation count by agent" })).toBeVisible();
   // base.css 的全局减少动效守卫把时长钳制到 0.01ms；这里断言概览没有任何
   // 超过感知阈值的过渡或动画（图表动画本就关闭）。
   const freeOfMotion = await page.waitForFunction(() => {

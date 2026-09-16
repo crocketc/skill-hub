@@ -104,6 +104,6 @@ describe("ProjectManagedDeployments", () => {
   it("shows an unavailable state when records cannot be read", async () => {
     const ops = createOps({ list: vi.fn().mockRejectedValue(new Error("boom")) });
     await renderSection(ops);
-    expect(await screen.findByText("无法读取部署记录。")).toBeVisible();
+    expect(await screen.findByText("无法读取受管副本记录。")).toBeVisible();
   });
 });

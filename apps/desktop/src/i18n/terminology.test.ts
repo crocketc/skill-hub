@@ -20,17 +20,20 @@ function lookup(tree: Translations, key: string): string {
   return node;
 }
 
+// i18next 占位符（如 {{deployments_requiring_rediscovery}}）是后端契约字段名，不属于用户可见文案。
+const I18NEXT_PLACEHOLDER = /\{\{[^}]*\}\}/g;
+
 function zhActionViolations(keys: string[]): string[] {
   return keys.flatMap((key) => {
-    const value = lookup(zhCN, key);
-    return value.includes("部署") ? [`zh ${key} = ${value}`] : [];
+    const value = lookup(zhCN, key).replace(I18NEXT_PLACEHOLDER, "");
+    return value.includes("部署") ? [`zh ${key} = ${lookup(zhCN, key)}`] : [];
   });
 }
 
 function enActionViolations(keys: string[]): string[] {
   return keys.flatMap((key) => {
-    const value = lookup(enUS, key);
-    return /deploy/i.test(value) ? [`en ${key} = ${value}`] : [];
+    const value = lookup(enUS, key).replace(I18NEXT_PLACEHOLDER, "");
+    return /deploy/i.test(value) ? [`en ${key} = ${lookup(enUS, key)}`] : [];
   });
 }
 
@@ -40,14 +43,14 @@ const FROZEN_EN_NOUN_PHRASES = /deployment relations?|link deployment|copy deplo
 
 function zhNounViolations(keys: string[]): string[] {
   return keys.flatMap((key) => {
-    const residual = lookup(zhCN, key).replace(FROZEN_ZH_NOUN_PHRASES, "");
+    const residual = lookup(zhCN, key).replace(I18NEXT_PLACEHOLDER, "").replace(FROZEN_ZH_NOUN_PHRASES, "");
     return residual.includes("部署") ? [`zh ${key} 残留: ${residual}`] : [];
   });
 }
 
 function enNounViolations(keys: string[]): string[] {
   return keys.flatMap((key) => {
-    const residual = lookup(enUS, key).replace(FROZEN_EN_NOUN_PHRASES, "");
+    const residual = lookup(enUS, key).replace(I18NEXT_PLACEHOLDER, "").replace(FROZEN_EN_NOUN_PHRASES, "");
     return /deploy/i.test(residual) ? [`en ${key} 残留: ${residual}`] : [];
   });
 }

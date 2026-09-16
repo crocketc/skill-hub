@@ -199,15 +199,15 @@ describe("DataProtectionPage", () => {
     expect(preview).toBeDisabled();
     expect(screen.getByRole("button", { name: "Apply selected actions" })).toBeDisabled();
 
-    fireEvent.click(await screen.findByLabelText("Select deployment dep-1"));
-    fireEvent.click(screen.getByLabelText("Select deployment dep-2"));
+    fireEvent.click(await screen.findByLabelText("Select deployment relation dep-1"));
+    fireEvent.click(screen.getByLabelText("Select deployment relation dep-2"));
     expect(preview).toBeEnabled();
     fireEvent.click(preview);
 
-    expect(await screen.findByText("2 deployments are affected.")).toBeVisible();
+    expect(await screen.findByText("2 deployment relations are affected.")).toBeVisible();
     expect(screen.getByText("The central Skill library will not be preserved.")).toBeVisible();
 
-    const undeployAll = screen.getByLabelText("Undeploy all selected deployments");
+    const undeployAll = screen.getByLabelText("Remove all selected copies from their targets");
     const retainLibrary = screen.getByLabelText("Retain the central Skill library");
     expect(undeployAll).not.toBeChecked();
     expect(retainLibrary).not.toBeChecked();
@@ -239,11 +239,11 @@ describe("DataProtectionPage", () => {
     });
     renderPage(facade);
 
-    fireEvent.click(await screen.findByLabelText("Select deployment dep-1"));
+    fireEvent.click(await screen.findByLabelText("Select deployment relation dep-1"));
     fireEvent.click(screen.getByRole("button", { name: "Preview impact" }));
     const backup = await screen.findByLabelText("Back up selected data");
     fireEvent.click(backup);
-    fireEvent.click(screen.getByLabelText("Undeploy all selected deployments"));
+    fireEvent.click(screen.getByLabelText("Remove all selected copies from their targets"));
     fireEvent.click(screen.getByRole("button", { name: "Apply selected actions" }));
 
     await waitFor(() =>
@@ -257,11 +257,11 @@ describe("DataProtectionPage", () => {
     facade.prepareUninstall = vi.fn().mockRejectedValue(new Error("uninstall preflight failed"));
     renderPage(facade);
 
-    fireEvent.click(await screen.findByLabelText("Select deployment dep-1"));
+    fireEvent.click(await screen.findByLabelText("Select deployment relation dep-1"));
     fireEvent.click(screen.getByRole("button", { name: "Preview impact" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent("uninstall preflight failed");
-    expect(screen.queryByText("1 deployments are affected.")).not.toBeInTheDocument();
+    expect(screen.queryByText("1 deployment relations are affected.")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Apply selected actions" })).toBeDisabled();
   });
 
@@ -271,7 +271,7 @@ describe("DataProtectionPage", () => {
     renderPage(facade);
 
     expect(await screen.findByRole("alert")).toHaveTextContent("deployments unavailable");
-    expect(screen.queryByLabelText("Select deployment dep-1")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Select deployment relation dep-1")).not.toBeInTheDocument();
   });
 });
 

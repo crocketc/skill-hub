@@ -60,7 +60,7 @@
       "issues": "保存问题",
       "preview": "实时预览",
       "save": "保存并创建版本",
-      "saveHint": "保存会创建一个新版本并设为当前版本；已有部署需重新同步才会更新。",
+      "saveHint": "保存会创建一个新版本并设为当前版本；已添加到目标的副本需重新同步才会更新。",
       "saveAsCopy": "另存为副本",
       "copyHint": "创建独立 Skill，当前 Skill 保持不变。",
       "copyCreated": "已保存为新的 Skill 副本",
@@ -281,7 +281,7 @@
       "diagnosticsLabel": "排查信息",
       "impacts": {
         "reuse": "复用：不导入新内容，直接以库内已有 Skill 为准",
-        "copy": "复制到 SkillHub：将候选内容复制入库，已有 Skill 与其部署不会被覆盖",
+        "copy": "复制到 SkillHub：将候选内容复制入库，已有 Skill 及其目标副本不会被覆盖",
         "takeover": "保留原位置并纳入管理：候选目录留在原处，内容核对后由 SkillHub 管理",
         "independent": "独立导入：以新身份存入库中，不覆盖已有 Skill",
         "skip": "跳过：不导入该候选"
@@ -674,7 +674,7 @@
       "save": "保存",
       "cancel": "取消"
     },
-    "managedDeploymentCount": "{{count}} 个受管部署",
+    "managedDeploymentCount": "{{count}} 个受管副本",
     "kind": {
       "cli": "CLI",
       "desktop": "桌面端",
@@ -705,7 +705,7 @@
       "discoveredFact": "已发现客户端和 Skill 目录",
       "observed": "已观测",
       "identity": "Agent 身份",
-      "managedDeployments": "受管部署",
+      "managedDeployments": "受管副本",
       "brand": "品牌",
       "client": "客户端",
       "instance": "实例",
@@ -834,15 +834,15 @@
     "readOnly": "只读事实",
     "detail": {
       "managedDeployments": {
-        "eyebrow": "受管部署",
+        "eyebrow": "受管副本",
         "title": "本项目目录中的受管 Skill 副本",
         "description": "移除部署关系后文件保留在原位，SkillHub 不再跟踪该副本的外部变化。",
         "empty": "本项目目录没有受管的 Skill 副本。",
-        "unavailable": "无法读取部署记录。",
+        "unavailable": "无法读取受管副本记录。",
         "detach": "移除部署关系",
         "confirm": "确认移除部署关系",
         "cancel": "取消",
-        "confirmBody": "确认移除 {{skill}}（{{path}}）的部署关系？文件保留在原位，此后变化不再被跟踪；重新部署或重新导入即可重新接管。",
+        "confirmBody": "确认移除 {{skill}}（{{path}}）的部署关系？文件保留在原位，此后变化不再被跟踪；重新添加或重新导入即可重新接管。",
         "detached": "已移除部署关系：{{skill}}。",
         "failed": "移除部署关系失败（{{code}}）。请重试；若持续出现请记录该错误码。"
       },
@@ -908,7 +908,7 @@
         "skipped": "已跳过",
         "failed": "失败"
       },
-      "detachNote": "移除部署关系针对单条部署记录，需在部署管理中逐条处理；项目详情没有可移除的部署入口。"
+      "detachNote": "移除部署关系针对单条关系记录，需在受管副本列表中逐条处理；项目详情没有对应的移除入口。"
     }
   },
   "appShell": {
@@ -1094,7 +1094,7 @@
         "removeTagsConfirmTitle": "确认移除这些标签？",
         "removeTagsConfirmDescription": "将从所选 Skill 移除以下标签：",
         "removeTagsConfirmAction": "确认移除标签",
-        "removeTagsRetained": "保留：Skill 本体、内容与部署完全不变。",
+        "removeTagsRetained": "保留：Skill 本体、内容与部署关系完全不变。",
         "removeTagsRecovery": "恢复：重新添加同名标签即可；移除操作不会自动记录历史。",
         "securityCheck": "运行安全检查",
         "tagOutcomeError": "标签保存失败（{{code}}）。",
@@ -1157,8 +1157,8 @@
         "highRisk": "{{count}} 项高风险发现",
         "open": "查看 {{name}}",
         "sourceLocal": "本地集中库",
-        "deploymentCount_one": "部署 {{count}} 个 Agent",
-        "deploymentCount_other": "部署 {{count}} 个 Agent"
+        "deploymentCount_one": "已添加到 {{count}} 个 Agent",
+        "deploymentCount_other": "已添加到 {{count}} 个 Agent"
       },
       "sourceUpdates": {
         "title": "来源更新检查结果",
@@ -1266,11 +1266,11 @@
       },
       "clear": "清除筛选",
       "any": "不限",
-      "deployment": "部署状态",
+      "deployment": "添加状态",
       "deploymentOptions": {
-        "any": "任意部署状态",
-        "deployed": "已部署",
-        "notDeployed": "未部署"
+        "any": "任意添加状态",
+        "deployed": "已添加",
+        "notDeployed": "未添加"
       },
       "lifecycle": "生命周期",
       "lifecycleOptions": {
@@ -1305,7 +1305,7 @@
       "unsaved": "未保存更改"
     },
     "table": {
-      "agentDeploymentSummary": "Agent 部署：{{count}} 个",
+      "agentDeploymentSummary": "已添加到 Agent：{{count}} 个",
       "aliasLabel": "别名",
       "originalNameLabel": "原名",
       "aiStatus": "AI：{{state}}",
@@ -1318,13 +1318,13 @@
         "warning": "警告"
       },
       "columns": {
-        "agentDeployments": "Agent 部署",
+        "agentDeployments": "已添加到 Agent",
         "invocation": "调用方式",
         "license": "许可证",
         "lifecycle": "生命周期",
         "name": "名称/别名",
         "ownership": "归属",
-        "projectDeployments": "项目部署",
+        "projectDeployments": "已添加到项目",
         "purpose": "用途",
         "requirements": "要求",
         "security": "安全检查",
@@ -1423,7 +1423,7 @@
       "cancel": "取消",
       "delete": "删除组合 {{name}}",
       "deleteTitle": "删除组合 {{name}}",
-      "deleteBody": "组合「{{name}}」包含 {{count}} 个成员。删除只移除该组合记录本身，不影响库中的 Skill、部署与文件；此操作不可撤销。",
+      "deleteBody": "组合「{{name}}」包含 {{count}} 个成员。删除只移除该组合记录本身，不影响库中的 Skill、部署关系与文件；此操作不可撤销。",
       "confirmDelete": "确认删除",
       "export": "导出组合 {{name}}",
       "exported": "导出已创建：{{path}}",
@@ -1642,9 +1642,9 @@
     "statusRail": {
       "basicOther": "基础检查：{{state}}",
       "basicPassed": "基础检查已通过",
-      "deploymentLabel": "部署",
-      "deployments_one": "{{count}} 个部署",
-      "deployments_other": "{{count}} 个部署",
+      "deploymentLabel": "部署关系",
+      "deployments_one": "{{count}} 条",
+      "deployments_other": "{{count}} 条",
       "label": "Skill 状态",
       "versionLabel": "当前版本"
     },
@@ -1677,7 +1677,7 @@
       "keptLocal": "已保留本地版本。",
       "appliedBranch": "已创建独立分支 {{version}}。",
       "appliedGeneric": "已应用所选决策。",
-      "reconcile": "存在需要重新同步的部署，请在部署页处理。",
+      "reconcile": "存在需要重新同步的部署关系，请在批量添加页处理。",
       "failed": "来源更新操作失败：{{error}}",
       "failedGeneric": "操作失败（{{code}}）。请稍后重试；若持续出现请记录该错误码。",
       "noUpstream": "此 Skill 没有可检查更新的上游来源（本地创建或仅登记了本地目录）。本地文件变化请在健康检查与外部变化中查看。",
@@ -2192,7 +2192,7 @@
       "sessionTitle": "本会话后台操作",
       "recentTitle": "最近操作记录",
       "timeline": "操作时间线",
-      "empty": "尚未有任何操作记录。执行导入、部署等操作后会在这里显示。",
+      "empty": "尚未有任何操作记录。执行导入、添加等操作后会在这里显示。",
       "recentEmpty": "暂无持久化操作记录。",
       "loading": "正在读取操作记录…",
       "error": "操作记录读取失败：{{error}}",
@@ -2247,7 +2247,7 @@
       "path": "技能库路径",
       "migrationAvailable": "连接本机服务后可使用技能库迁移入口。",
       "runHealthCheck": "运行健康检查",
-      "healthScope": "健康检查只检查未完成的应用操作（如被中断的导入、部署），并给出恢复/修复路径；不包含重名或重复内容检测（重复分析在导入时进行）、内容校验或部署一致性检查。",
+      "healthScope": "健康检查只检查未完成的应用操作（如被中断的导入、添加），并给出恢复/修复路径；不包含重名或重复内容检测（重复分析在导入时进行）、内容校验或部署一致性检查。",
       "checking": "检查中…",
       "checkFailed": "健康检查失败，请稍后重试",
       "allClear": "未发现问题",
@@ -2279,7 +2279,7 @@
       "heading": "AI 与网络",
       "description": "网络辅助功能默认需要明确开启，不会自行改变本地管理行为。",
       "disableAll": "关闭所有网络功能",
-      "localStillWorks": "本地扫描、搜索、部署和备份仍可使用",
+      "localStillWorks": "本地扫描、搜索、添加和备份仍可使用",
       "dataScope": "数据范围",
       "dataScopeExplicitSelection": "仅限你明确开启的功能",
       "dataScopeGeneric": "按功能最小发送",
@@ -2532,7 +2532,7 @@
       "verified": "备份包校验通过。",
       "review": "检查恢复影响",
       "commit": "恢复备份",
-      "summary": "发现 {{skills}} 个 Skill；{{deployments_requiring_rediscovery}} 个部署需要重新发现。",
+      "summary": "发现 {{skills}} 个 Skill；{{deployments_requiring_rediscovery}} 条部署关系需要重新发现。",
       "decision": "{{skillId}} 的处理方式",
       "choose": "选择处理方式",
       "overwrite": "覆盖现有 Skill",
@@ -2580,14 +2580,14 @@
   "overview": {
     "chart": {
       "aria": {
-        "agent": "各 Agent 部署数量",
-        "project": "各项目部署数量"
+        "agent": "各 Agent 部署关系数量",
+        "project": "各项目部署关系数量"
       },
       "axis": {
-        "agent": "Agent 部署",
-        "project": "项目部署"
+        "agent": "Agent 部署关系",
+        "project": "项目部署关系"
       },
-      "detailsLabel": "部署数量明细",
+      "detailsLabel": "部署关系数量明细",
       "detailCount": {
         "agent_one": "{{count}} 个 Agent",
         "agent_other": "{{count}} 个 Agent",
@@ -2600,31 +2600,31 @@
         "project": "项目"
       },
       "drilldown": {
-        "agent": "查看 {{label}} 的 {{count}} 个部署",
-        "project": "查看 {{label}} 的 {{count}} 个部署"
+        "agent": "查看 {{label}} 的 {{count}} 条部署关系",
+        "project": "查看 {{label}} 的 {{count}} 条部署关系"
       },
       "empty": {
         "agent": "暂时没有按 Agent 统计的部署关系",
         "project": "暂时没有按项目统计的部署关系"
       },
-      "eyebrow": "部署分布",
-      "heading": "受管理技能的部署去向",
-      "loading": "正在加载部署图表",
-      "projectLimit": "显示部署最多的 {{shown}} / 共 {{total}} 个项目",
-      "scrollableDetails": "可滚动的部署数量明细"
+      "eyebrow": "部署关系分布",
+      "heading": "受管理技能的部署关系去向",
+      "loading": "正在加载部署关系图表",
+      "projectLimit": "显示部署关系最多的 {{shown}} / 共 {{total}} 个项目",
+      "scrollableDetails": "可滚动的部署关系数量明细"
     },
     "metrics": {
       "compactLabel": "关键统计",
       "names": {
         "agents": "个已配置 Agent",
-        "deployments": "个部署",
+        "deployments": "条部署关系",
         "discoveredAgents": "个发现到的 Agent",
         "projects": "个项目",
         "skills": "项技能"
       }
     },
     "page": {
-      "description": "集中库规模、部署去向与待处理事项的当前状态。"
+      "description": "集中库规模、部署关系去向与待处理事项的当前状态。"
     },
     "pending": {
       "badge": "{{count}} 项待处理",

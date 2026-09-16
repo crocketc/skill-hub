@@ -152,7 +152,7 @@ it("describes the impact of every decision option", async () => {
     </I18nextProvider>,
   );
 
-  expect(screen.getByText("复制到 SkillHub：将候选内容复制入库，已有 Skill 与其部署不会被覆盖")).toBeVisible();
+  expect(screen.getByText("复制到 SkillHub：将候选内容复制入库，已有 Skill 及其目标副本不会被覆盖")).toBeVisible();
   expect(screen.getByText("独立导入：以新身份存入库中，不覆盖已有 Skill")).toBeVisible();
   expect(screen.getByText("跳过：不导入该候选")).toBeVisible();
   // 影响说明不改变选项的可访问名称，决策仍由用户显式选择。

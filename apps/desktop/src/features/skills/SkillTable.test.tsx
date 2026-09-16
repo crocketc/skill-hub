@@ -155,12 +155,12 @@ it("splits deployments into project count and compact agent tags", async () => {
     page: { ...page, items: [{ ...rows[0], agentDeploymentCount: manyAgents.length, agentDeployments: manyAgents }] },
   });
 
-  expect(screen.getByRole("columnheader", { name: "Agent deployments" })).toBeVisible();
-  expect(screen.getByRole("columnheader", { name: "Project deployments" })).toBeVisible();
+  expect(screen.getByRole("columnheader", { name: "Added to Agents" })).toBeVisible();
+  expect(screen.getByRole("columnheader", { name: "Added to projects" })).toBeVisible();
   expect(screen.queryByRole("columnheader", { name: "Original description" })).not.toBeInTheDocument();
   expect(screen.queryByRole("columnheader", { name: "Translated description" })).not.toBeInTheDocument();
 
-  const agentCell = screen.getByLabelText("Agent deployments: 12");
+  const agentCell = screen.getByLabelText("Added to Agents: 12");
   expect(agentCell.querySelectorAll("[data-agent-id]")).toHaveLength(7);
   expect(agentCell.querySelectorAll("[data-agent-row]")).toHaveLength(2);
   expect(screen.getByText("+5")).toBeVisible();
@@ -173,7 +173,7 @@ it("keeps four agent tags on one row and wraps the fifth", async () => {
     page: { ...page, items: [{ ...rows[0], agentDeploymentCount: agents.length, agentDeployments: agents }] },
   });
 
-  const agentCell = screen.getByLabelText("Agent deployments: 5");
+  const agentCell = screen.getByLabelText("Added to Agents: 5");
   expect(agentCell.querySelectorAll("[data-agent-id]")).toHaveLength(5);
   expect(agentCell.querySelectorAll("[data-agent-row]")).toHaveLength(2);
   expect(agentCell.querySelector('[data-agent-row="0"]')?.querySelectorAll("[data-agent-id]")).toHaveLength(4);
@@ -205,7 +205,7 @@ it("does not allow the select or name columns to be hidden", async () => {
   expect(screen.getByRole("button", { name: "Selection" })).toHaveAttribute("aria-pressed", "true");
   expect(screen.getByRole("button", { name: "Name / Alias" })).toHaveAttribute("aria-pressed", "true");
   const versionColumn = screen.getByRole("button", { name: "Version" });
-  const deploymentsColumn = screen.getByRole("button", { name: "Agent deployments" });
+  const deploymentsColumn = screen.getByRole("button", { name: "Added to Agents" });
   fireEvent.pointerDown(versionColumn, { clientX: 10, clientY: 10, pointerId: 1 });
   fireEvent.pointerMove(deploymentsColumn, { clientX: 80, clientY: 10, pointerId: 1 });
   fireEvent.pointerUp(versionColumn, { clientX: 80, clientY: 10, pointerId: 1 });
@@ -218,7 +218,7 @@ it("moves an adjacent column when dragging from left to right", async () => {
   await renderTable({ onPreferencesChange });
 
   fireEvent.click(screen.getByRole("button", { name: "Columns and density" }));
-  const deploymentsColumn = screen.getByRole("button", { name: "Agent deployments" });
+  const deploymentsColumn = screen.getByRole("button", { name: "Added to Agents" });
   const versionColumn = screen.getByRole("button", { name: "Version" });
   fireEvent.pointerDown(deploymentsColumn, { clientX: 10, clientY: 10, pointerId: 1 });
   fireEvent.pointerMove(versionColumn, { clientX: 80, clientY: 10, pointerId: 1 });
@@ -359,7 +359,7 @@ it("uses the visibility buttons as pointer-drag order controls", async () => {
 
   fireEvent.click(screen.getByRole("button", { name: "Columns and density" }));
   const version = screen.getByRole("button", { name: "Version" });
-  const deployments = screen.getByRole("button", { name: "Agent deployments" });
+  const deployments = screen.getByRole("button", { name: "Added to Agents" });
   expect(version).toHaveAttribute("data-reorder-column", "version");
   expect(deployments).toHaveAttribute("data-reorder-column", "agent_deployments");
   fireEvent.pointerDown(version, { clientX: 10, clientY: 10, pointerId: 1 });
@@ -376,7 +376,7 @@ it("reorders columns with a pointer gesture without toggling visibility", async 
 
   fireEvent.click(screen.getByRole("button", { name: "Columns and density" }));
   const version = screen.getByRole("button", { name: "Version" });
-  const deployments = screen.getByRole("button", { name: "Agent deployments" });
+  const deployments = screen.getByRole("button", { name: "Added to Agents" });
   fireEvent.pointerDown(deployments, { clientX: 10, clientY: 10, pointerId: 1 });
   fireEvent.pointerMove(deployments, { clientX: 30, clientY: 10, pointerId: 1 });
   fireEvent.pointerMove(version, { clientX: 80, clientY: 10, pointerId: 1 });

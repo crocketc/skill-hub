@@ -27,7 +27,7 @@ it("removes tags only after a preview step naming the tags and the affected skil
   expect(screen.getByText("待复核")).toBeVisible();
   expect(screen.getByText("客户可见")).toBeVisible();
   expect(screen.getByText("将影响 3 个 Skill")).toBeVisible();
-  expect(screen.getByText(/保留：Skill 本体、内容与部署完全不变。/)).toBeVisible();
+  expect(screen.getByText(/保留：Skill 本体、内容与部署关系完全不变。/)).toBeVisible();
   expect(screen.getByText(/恢复：重新添加同名标签即可/)).toBeVisible();
   expect(onConfirm).not.toHaveBeenCalled();
 

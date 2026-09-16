@@ -305,7 +305,7 @@ describe("SkillDetailPage shell", () => {
     expect(await screen.findByRole("navigation", { name: "Detail sections" })).toBeVisible();
     expect(document.getElementById("overview")?.closest("section")?.id).toBe("zone-status");
     expect(screen.getByText("Basic check passed")).toBeVisible();
-    expect(screen.getAllByText("2 deployments")).toHaveLength(2);
+    expect(screen.getAllByText("2")).toHaveLength(2);
     expect(screen.getByRole("group", { name: "Skill status" })).toBeVisible();
     expect(screen.queryByRole("complementary", { name: "Skill status" })).not.toBeInTheDocument();
   });
@@ -393,7 +393,7 @@ describe("SkillDetailPage shell", () => {
     });
     expect(trajectory).toBeVisible();
     expect(within(trajectory).getByText("github:example/pdf-reader")).toBeVisible();
-    expect(within(trajectory).getByText("2 deployments")).toBeVisible();
+    expect(within(trajectory).getByText("2")).toBeVisible();
   });
 
   it("keeps the detail rail fixed while the content column scrolls", async () => {
