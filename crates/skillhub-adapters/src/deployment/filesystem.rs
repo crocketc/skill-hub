@@ -5,8 +5,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use sha2::{Digest, Sha256};
 use skillhub_core::{
-    physical_id_for_path, symlink_physical_id_for_path, AppError, AppResult, DeploymentCapability,
-    DeploymentMode, ErrorCode, RecoveryAction, Severity, SkillId, TargetPlan, VersionId,
+    physical_id_for_path, reparse_physical_id_for_path, symlink_physical_id_for_path, AppError,
+    AppResult, DeploymentCapability, DeploymentMode, ErrorCode, RecoveryAction, Severity, SkillId,
+    TargetPlan, VersionId,
 };
 
 use super::{junction_windows, managed_copy, symlink};
@@ -55,23 +56,25 @@ impl DeploymentFilesystem {
     /// available even if the platform rejects links. A creation that reports
     /// success without actually materializing a link (observed on filtered or
     /// virtualized volumes) is treated as "unsupported".
+    ///
+    /// Both link kinds are probed: a Windows account that cannot create a
+    /// symbolic link can still create a junction, and reporting that honestly
+    /// is what lets target modes and the deployment planner stay accurate.
     pub fn available_capabilities(&self) -> DeploymentCapability {
-        let symlink = tempfile::tempdir().ok().is_some_and(|workspace| {
-            let source = workspace.path().join("source");
-            let destination = workspace.path().join("destination");
-            if fs::create_dir(&source).is_err() {
-                return false;
-            }
-            let materialized = symlink::create_dir_link(&source, &destination).is_ok()
-                && fs::symlink_metadata(&destination)
-                    .map(|metadata| metadata.file_type().is_symlink())
-                    .unwrap_or(false);
-            if materialized {
-                let _ = symlink::remove_dir_link(&destination);
-            }
-            materialized
-        });
-        DeploymentCapability::new(symlink, false, true)
+        let (symlink, junction) = tempfile::tempdir()
+            .ok()
+            .map(|workspace| {
+                let source = workspace.path().join("source");
+                let destination = workspace.path().join("destination");
+                if fs::create_dir(&source).is_err() {
+                    return (false, false);
+                }
+                let symlink = self.probe_symlink(&source, &destination);
+                let junction = self.probe_junction(&source, &destination);
+                (symlink, junction)
+            })
+            .unwrap_or((false, false));
+        DeploymentCapability::new(symlink, junction, true)
     }
 
     pub fn hash_tree(root: impl AsRef<Path>) -> AppResult<String> {
@@ -123,11 +126,19 @@ impl DeploymentFilesystem {
     }
 
     #[cfg(windows)]
-    fn probe_junction(&self, _target: &Path, _destination: &Path) -> bool {
-        // The executor cannot remove junctions yet, so a probe could not
-        // clean up after itself; report unavailable instead of leaving an
-        // entry behind in the user's directory.
-        false
+    fn probe_junction(&self, target: &Path, destination: &Path) -> bool {
+        // A junction needs no privilege, so this is the probe that keeps a
+        // relation conversion available to an account that cannot create
+        // symbolic links.  It must clean up after itself: a surviving probe
+        // entry would sit in the user's own directory.
+        let materialized = junction_windows::create_junction(target, destination).is_ok()
+            && junction_windows::is_reparse_point(destination);
+        if fs::symlink_metadata(destination).is_ok()
+            && junction_windows::remove_junction(destination).is_err()
+        {
+            return false;
+        }
+        materialized
     }
 
     #[cfg(not(windows))]
@@ -205,6 +216,12 @@ impl DeploymentFilesystem {
                     &prepared.destination_path,
                 )
                 .map_err(|_| unsupported_junction())?;
+                // Both link kinds can report success without materializing.
+                // Verify before treating the deployment as applied so the
+                // failure stays honest instead of leaving an empty directory.
+                if !junction_windows::is_reparse_point(&prepared.destination_path) {
+                    return Err(unsupported_junction());
+                }
             }
         }
         let observed_tree_hash = tree_hash(&prepared.destination_path)?;
@@ -252,15 +269,15 @@ impl DeploymentFilesystem {
     }
 }
 
-/// Physical identity used in ownership proofs. Symbolic-link deployments pin
-/// the link itself (a trailing symlink is never followed) so removing the link
+/// Physical identity used in ownership proofs. Link deployments pin the link
+/// itself (a trailing reparse point is never followed) so removing the link
 /// keeps working after the central library replaces the source directory;
 /// every other mode keeps following to the real directory.
 fn ownership_identity(mode: DeploymentMode, path: &Path) -> AppResult<String> {
-    let lookup = if mode == DeploymentMode::SymbolicLink {
-        symlink_physical_id_for_path(path)
-    } else {
-        physical_id_for_path(path)
+    let lookup = match mode {
+        DeploymentMode::SymbolicLink => symlink_physical_id_for_path(path),
+        DeploymentMode::DirectoryJunction => reparse_physical_id_for_path(path),
+        DeploymentMode::ManagedCopy => physical_id_for_path(path),
     };
     lookup.ok_or_else(|| operation_conflict("target filesystem identity is unavailable"))
 }
@@ -274,7 +291,7 @@ fn remove_target(proof: &OwnershipProof) -> AppResult<()> {
             symlink::remove_dir_link(&proof.destination_path).map_err(io_error)?;
         }
         DeploymentMode::DirectoryJunction => {
-            fs::remove_dir(&proof.destination_path).map_err(io_error)?;
+            junction_windows::remove_junction(&proof.destination_path).map_err(io_error)?;
         }
     }
     Ok(())
@@ -286,10 +303,10 @@ fn verify_owned(proof: &OwnershipProof) -> AppResult<()> {
         return Err(ownership_mismatch(destination));
     }
     verify_identity(proof)?;
-    if proof.mode == DeploymentMode::SymbolicLink {
-        // The deployment owns the link, not the central content it points at:
-        // source updates legitimately replace that directory wholesale, so a
-        // stale content hash must not block removing the link we created.
+    if proof.mode.is_directory_link() {
+        // The deployment owns the link, not the content it resolves to: source
+        // updates legitimately replace that directory wholesale, so a stale
+        // content hash must not block removing the link we created.
         return Ok(());
     }
     let current_hash = tree_hash(destination)?;

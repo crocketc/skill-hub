@@ -130,6 +130,56 @@ fn junction_fallback_does_not_require_elevated_test_process() {
     }
 }
 
+#[cfg(windows)]
+#[test]
+fn managed_junction_can_be_removed_after_its_central_source_updates() {
+    // The deployment owns the junction, not the directory it resolves to.  A
+    // source update replaces that directory wholesale, and that must not
+    // invalidate the removal proof - otherwise a Windows account without
+    // symlink privilege could centralise a Skill but never release it again.
+    let fixture = DeploymentFixture::new();
+    let applied = fixture
+        .deploy(DeploymentMode::DirectoryJunction)
+        .expect("a junction must not need an elevated test process");
+
+    let replacement = fixture.source.with_file_name("updated-source");
+    let previous = fixture.source.with_file_name("previous-source");
+    fs::create_dir(&replacement).unwrap();
+    fs::write(replacement.join("SKILL.md"), "# Updated PDF\n").unwrap();
+    fs::rename(&fixture.source, &previous).unwrap();
+    fs::rename(&replacement, &fixture.source).unwrap();
+
+    DeploymentFilesystem::new()
+        .remove_owned(&applied.ownership)
+        .expect("the managed junction should still be removable after a source update");
+    assert!(!applied.destination_path.exists());
+}
+
+#[cfg(windows)]
+#[test]
+fn junction_probe_cleans_up_and_needs_no_privilege() {
+    // The per-volume probe decides whether a relation conversion may proceed.
+    // On Windows a junction is the only link kind an unelevated account can
+    // create, so the probe has to report it - and it must never leave its own
+    // test entry behind in the user's directory.
+    let fixture = DeploymentFixture::new();
+    let capabilities =
+        DeploymentFilesystem::new().probe_link_capabilities(&fixture.target_root, &fixture.source);
+
+    assert!(capabilities.junction);
+    let leftovers = fs::read_dir(&fixture.target_root)
+        .unwrap()
+        .filter_map(Result::ok)
+        .filter(|entry| {
+            entry
+                .file_name()
+                .to_string_lossy()
+                .starts_with(".skillhub-link-probe-")
+        })
+        .count();
+    assert_eq!(leftovers, 0, "the probe must remove its own entry");
+}
+
 // ---------------------------------------------------------------------------
 // Task 6: volume-accurate link capability probing for relation conversions.
 // ---------------------------------------------------------------------------

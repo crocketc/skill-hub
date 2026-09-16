@@ -4261,11 +4261,14 @@ async fn deployment_target_query_includes_discovery_and_registered_project_targe
     assert_eq!(targets[0].id, "codex-global");
     // The advertised modes mirror the running environment's link support, so
     // derive the expectation from the same probe instead of hard-coding it.
-    let symlink_supported = skillhub_adapters::deployment::DeploymentFilesystem::new()
-        .available_capabilities()
-        .symlink;
+    // The order is the planner's preference: link, then junction, then copy.
+    let capabilities =
+        skillhub_adapters::deployment::DeploymentFilesystem::new().available_capabilities();
     let mut expected_modes = vec![DeploymentMode::ManagedCopy];
-    if symlink_supported {
+    if capabilities.junction {
+        expected_modes.insert(0, DeploymentMode::DirectoryJunction);
+    }
+    if capabilities.symlink {
         expected_modes.insert(0, DeploymentMode::SymbolicLink);
     }
     assert_eq!(targets[0].modes, expected_modes);
