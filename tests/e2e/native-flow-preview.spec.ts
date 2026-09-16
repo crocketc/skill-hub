@@ -372,7 +372,7 @@ test("data protection exposes export, restore, retention, and uninstall previews
 
   await page.getByRole("button", { name: "Run rolling backup" }).click();
   await expect(page.getByText(/Rolling backup finished: 3 kept/)).toBeVisible();
-  await page.getByLabel(/Select deployment dep-1/).check();
+  await page.getByLabel(/Select deployment relation dep-1/).check();
   await page.getByRole("button", { name: "Preview impact" }).click();
   await expect(page.getByText(/affected/)).toBeVisible();
 });
@@ -400,12 +400,12 @@ test("deployment target selection exposes unavailable and non-atomic batch bound
   const footer = page.locator("footer");
   await expect(footer).toContainText(/not atomic/i);
   await page.getByLabel("Codex CLI").check();
-  await expect(page.getByRole("button", { name: "Preview deployment" })).toBeEnabled();
-  await page.getByRole("button", { name: "Preview deployment" }).click();
+  await expect(page.getByRole("button", { name: "Preview" })).toBeEnabled();
+  await page.getByRole("button", { name: "Preview" }).click();
   await expect(page.getByRole("heading", { name: "Planned additions" })).toBeVisible();
   // T4-D：提交动作移入同一 footer 操作区，仍与非原子风险相邻。
-  await expect(footer.getByRole("button", { name: "Commit deployment" })).toBeEnabled();
-  await page.getByRole("button", { name: "Commit deployment" }).click();
+  await expect(footer.getByRole("button", { name: "Confirm and add" })).toBeEnabled();
+  await page.getByRole("button", { name: "Confirm and add" }).click();
   await expect(page.getByTestId("batch-summary")).toBeVisible();
   await expect(page.getByText("Adding finished")).toBeVisible();
 });

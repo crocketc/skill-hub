@@ -37,17 +37,17 @@ test.describe("deployment flow shell", () => {
     // 流程全程只有一个 footer 操作区；主操作随阶段变化但位置稳定。
     const footer = page.locator("footer");
     await expect(footer).toHaveCount(1);
-    const previewButton = page.getByRole("button", { name: "Preview deployment" });
+    const previewButton = page.getByRole("button", { name: "Preview" });
     await expect(previewButton).toBeDisabled();
     await page.getByLabel("Preview Agent 1").check();
     await expect(previewButton).toBeEnabled();
-    await expect(footer.getByRole("button", { name: "Preview deployment" })).toBeVisible();
+    await expect(footer.getByRole("button", { name: "Preview" })).toBeVisible();
     // 选择阶段：状态区播报当前阶段。
-    await expect(page.getByRole("status")).toContainText("Select the targets to deploy");
+    await expect(page.getByRole("status")).toContainText("Select the targets to add");
 
     await previewButton.click();
-    const commitButton = page.getByRole("button", { name: "Commit deployment" });
-    await expect(footer.getByRole("button", { name: "Commit deployment" })).toBeVisible();
+    const commitButton = page.getByRole("button", { name: "Confirm and add" });
+    await expect(footer.getByRole("button", { name: "Confirm and add" })).toBeVisible();
     await expect(steps.nth(1)).toHaveAttribute("aria-current", "step");
 
     await commitButton.click();
@@ -61,8 +61,8 @@ test.describe("deployment flow shell", () => {
     await page.goto("/__preview/deployment?scenario=partial");
 
     await page.getByLabel("Preview Agent 1").check();
-    await page.getByRole("button", { name: "Preview deployment" }).click();
-    await page.getByRole("button", { name: "Commit deployment" }).click();
+    await page.getByRole("button", { name: "Preview" }).click();
+    await page.getByRole("button", { name: "Confirm and add" }).click();
 
     await expect(page.getByText("Adding finished with failed targets")).toBeVisible();
     const retry = page.getByRole("button", { name: "Retry failed targets" });
@@ -93,12 +93,12 @@ test.describe("batch deployment flow", () => {
     await expect(footer).toContainText(/not atomic/i);
 
     await page.getByLabel("Preview Agent 1").check();
-    await page.getByRole("button", { name: "Preview deployment" }).click();
-    const commitButton = page.getByRole("button", { name: "Commit deployment" });
+    await page.getByRole("button", { name: "Preview" }).click();
+    const commitButton = page.getByRole("button", { name: "Confirm and add" });
     await expect(commitButton).toBeEnabled();
     // 提交动作与非原子风险提示必须同处一个 footer 操作区（相邻）。
     await expect(footer).toContainText(/not atomic/i);
-    await expect(footer.getByRole("button", { name: "Commit deployment" })).toBeVisible();
+    await expect(footer.getByRole("button", { name: "Confirm and add" })).toBeVisible();
     await expect(page.getByText("preview-skill-8")).toBeVisible();
   });
 
@@ -107,10 +107,10 @@ test.describe("batch deployment flow", () => {
     await page.goto("/__preview/deployment?scenario=batch-preview-fail");
 
     await page.getByLabel("Preview Agent 1").check();
-    await page.getByRole("button", { name: "Preview deployment" }).click();
+    await page.getByRole("button", { name: "Preview" }).click();
 
     await expect(page.getByRole("alert")).toContainText("preview-skill-2");
-    await expect(page.getByRole("button", { name: "Commit deployment" })).toBeDisabled();
+    await expect(page.getByRole("button", { name: "Confirm and add" })).toBeDisabled();
     await expect(page.getByRole("status")).toContainText("commit is blocked");
   });
 });
@@ -156,7 +156,7 @@ test.describe("removal confirmations", () => {
 
     const dialog = page.getByRole("dialog");
     await expect(dialog).toContainText("This target is shared");
-    await expect(page.getByRole("button", { name: "Confirm undeploy" })).toBeDisabled();
+    await expect(page.getByRole("button", { name: "Confirm removal from target" })).toBeDisabled();
   });
 });
 
@@ -172,8 +172,8 @@ test.describe("deployment width matrix", () => {
       await page.setViewportSize({ width, height: 900 });
       await page.goto("/__preview/deployment?scenario=partial");
       await page.getByLabel("Preview Agent 1").check();
-      await page.getByRole("button", { name: "Preview deployment" }).click();
-      await page.getByRole("button", { name: "Commit deployment" }).click();
+      await page.getByRole("button", { name: "Preview" }).click();
+      await page.getByRole("button", { name: "Confirm and add" }).click();
       await expect(page.getByText("Adding finished with failed targets")).toBeVisible();
       await expectNoRootHorizontalOverflow(page);
     });
@@ -204,10 +204,10 @@ test.describe("deployment width matrix", () => {
     await page.setViewportSize({ width: 800, height: 600 });
     await page.goto("/__preview/deployment?scenario=batch-bulk");
     await page.getByLabel("Preview Agent 1").check();
-    await page.getByRole("button", { name: "Preview deployment" }).click();
+    await page.getByRole("button", { name: "Preview" }).click();
     await expect(page.getByRole("heading", { name: "Planned additions" })).toBeVisible();
     // 面板是唯一滚动所有者：footer 操作区保持可见且不遮挡焦点。
-    await expect(page.getByRole("button", { name: "Commit deployment" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Confirm and add" })).toBeVisible();
     await expectNoRootHorizontalOverflow(page);
   });
 });
@@ -225,8 +225,8 @@ test.describe("deployment 9-theme matrix at 1280x900", () => {
       await expect(page.getByRole("list", { name: "Addition steps" })).toBeVisible();
 
       await page.getByLabel("Preview Agent 1").check();
-      await page.getByRole("button", { name: "Preview deployment" }).click();
-      const commitButton = page.getByRole("button", { name: "Commit deployment" });
+      await page.getByRole("button", { name: "Preview" }).click();
+      const commitButton = page.getByRole("button", { name: "Confirm and add" });
       await expect(commitButton).toBeVisible();
       await commitButton.focus();
       const focused = await page.evaluate(() => document.activeElement?.tagName ?? "");
