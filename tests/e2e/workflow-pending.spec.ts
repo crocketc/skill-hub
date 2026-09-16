@@ -33,7 +33,7 @@ test("exposes risk, impact, and suggested actions per item", async ({ page }) =>
 
   const finding = page.locator("li").filter({ hasText: "pdf-reader" }).first();
   await expect(finding.getByText("High risk")).toBeVisible();
-  await expect(finding.getByText("Affects 3 deployments")).toBeVisible();
+  await expect(finding.getByText("Affects 3 deployment relations")).toBeVisible();
 
   const group = page.getByRole("group", { name: "Suggested actions for pdf-reader" });
   await expect(group.getByRole("button", { name: "Recheck" })).toBeVisible();
