@@ -9,7 +9,10 @@ pub use conflict::{
     ImportGovernanceAction, ImportGovernanceClassification, ImportGovernanceGroup,
     ImportGovernanceMember, ImportMatch, ImportSourceFacts, MatchBasis,
 };
-pub use decision::{import_governance_task_id, ImportDecision, ImportGovernanceDecision};
+pub use decision::{
+    import_conflict_case_id, import_governance_task_id, plan_import_conflict_case,
+    ImportCaseOutcome, ImportDecision, ImportGovernanceDecision,
+};
 pub use migration::{
     ensure_original_deletion_authorized, plan_original_migration, OriginalMigrationConflict,
     OriginalMigrationConflictReason, OriginalMigrationFacts, OriginalMigrationPlan,

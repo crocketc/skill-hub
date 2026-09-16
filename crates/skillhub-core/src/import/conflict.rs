@@ -390,7 +390,7 @@ fn governance_group(
     }
 }
 
-fn normalize_runtime_name(value: &str) -> String {
+pub(crate) fn normalize_runtime_name(value: &str) -> String {
     value.trim().to_lowercase()
 }
 
