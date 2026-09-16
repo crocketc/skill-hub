@@ -30,6 +30,80 @@ pub fn symlink_physical_id_for_path(path: impl AsRef<Path>) -> Option<String> {
     Some(identity)
 }
 
+/// Physical identity of a directory reparse point itself, never resolved to
+/// whatever it points at.
+///
+/// A deployed link is owned as a link: a source update legitimately replaces
+/// the directory it resolves to, so an identity that resolved through the link
+/// would change with it and block the removal of a deployment we created.
+///
+/// On Windows both link kinds are reparse points, but this opens the entry with
+/// `FILE_FLAG_OPEN_REPARSE_POINT` so the identity comes from the reparse point's
+/// own file record.  [`symlink_physical_id_for_path`] is deliberately left as it
+/// is: it resolves the entry before reading the identity, so the proofs already
+/// recorded for symbolic-link deployments describe the target, and changing
+/// that would invalidate them without an explicit migration decision.
+pub fn reparse_physical_id_for_path(path: impl AsRef<Path>) -> Option<String> {
+    let path = path.as_ref();
+    let metadata = std::fs::symlink_metadata(path).ok()?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        Some(format!(
+            "link-dev-{}-ino-{}",
+            metadata.dev(),
+            metadata.ino()
+        ))
+    }
+    #[cfg(windows)]
+    {
+        let _ = metadata;
+        use std::iter::once;
+        use std::os::windows::ffi::OsStrExt;
+        use windows_sys::Win32::Foundation::{CloseHandle, INVALID_HANDLE_VALUE};
+        use windows_sys::Win32::Storage::FileSystem::{
+            CreateFileW, GetFileInformationByHandle, BY_HANDLE_FILE_INFORMATION,
+            FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT, FILE_SHARE_DELETE,
+            FILE_SHARE_READ, FILE_SHARE_WRITE, OPEN_EXISTING,
+        };
+        let wide = path
+            .as_os_str()
+            .encode_wide()
+            .chain(once(0))
+            .collect::<Vec<_>>();
+        let handle = unsafe {
+            CreateFileW(
+                wide.as_ptr(),
+                0,
+                FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                std::ptr::null(),
+                OPEN_EXISTING,
+                FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT,
+                std::ptr::null_mut(),
+            )
+        };
+        if handle == INVALID_HANDLE_VALUE {
+            return None;
+        }
+        let mut info = unsafe { std::mem::zeroed::<BY_HANDLE_FILE_INFORMATION>() };
+        let result = unsafe { GetFileInformationByHandle(handle, &mut info) };
+        unsafe { CloseHandle(handle) };
+        if result == 0 {
+            return None;
+        }
+        let index = (u64::from(info.nFileIndexHigh) << 32) | u64::from(info.nFileIndexLow);
+        Some(format!(
+            "reparse-vol-{}-index-{index}",
+            u64::from(info.dwVolumeSerialNumber)
+        ))
+    }
+    #[cfg(not(any(unix, windows)))]
+    {
+        let _ = metadata;
+        None
+    }
+}
+
 /// Volume identity of an existing path.  Used to detect same-volume
 /// constraints for link kinds that cannot span volumes (Windows directory
 /// junctions); a path with no resolvable volume identity reports `None`.

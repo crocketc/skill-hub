@@ -60,6 +60,17 @@ fn input(capability: DeploymentCapability) -> (TempDir, DeploymentPlanInput) {
 }
 
 #[test]
+fn directory_link_modes_share_one_predicate_apart_from_managed_copies() {
+    // Ownership proofs and removal treat the two link kinds the same way: the
+    // deployment owns the reparse point, not the directory it resolves to, so
+    // the library may repoint it during a source update.  A managed copy owns
+    // its own content and must keep the stricter treatment.
+    assert!(DeploymentMode::SymbolicLink.is_directory_link());
+    assert!(DeploymentMode::DirectoryJunction.is_directory_link());
+    assert!(!DeploymentMode::ManagedCopy.is_directory_link());
+}
+
+#[test]
 fn planner_prefers_link_then_junction_then_managed_copy() {
     assert_eq!(
         DeploymentPlanner

@@ -146,8 +146,9 @@ pub use operation::{
     PreparedRelationMigration, RelationMigrationResult, RelationMigrationState, UndoPlan,
 };
 pub use path_policy::{
-    paths_share_volume, physical_id_for_path, symlink_physical_id_for_path, volume_serial_for_path,
-    AllowedRoot, AllowedRootId, PathPolicy, SafePath,
+    paths_share_volume, physical_id_for_path, reparse_physical_id_for_path,
+    symlink_physical_id_for_path, volume_serial_for_path, AllowedRoot, AllowedRootId, PathPolicy,
+    SafePath,
 };
 pub use settings::DesktopPreferences;
 

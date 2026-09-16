@@ -43,6 +43,20 @@ impl DeploymentMode {
             Self::ManagedCopy => capabilities.copy,
         }
     }
+
+    /// Whether the deployment is a directory reparse point rather than a real
+    /// copy of the content.
+    ///
+    /// Both link kinds behave the same for ownership: the deployment owns the
+    /// link, not the directory it resolves to, so a source update may replace
+    /// that directory wholesale.  A managed copy owns its own content and must
+    /// keep the stricter content-hash treatment.
+    pub fn is_directory_link(self) -> bool {
+        match self {
+            Self::SymbolicLink | Self::DirectoryJunction => true,
+            Self::ManagedCopy => false,
+        }
+    }
 }
 
 impl DeploymentCapability {
