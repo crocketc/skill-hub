@@ -26,7 +26,7 @@ test.describe("deployment flow shell", () => {
     await page.setViewportSize({ width: 1280, height: 900 });
     await page.goto("/__preview/deployment");
 
-    const rail = page.getByRole("list", { name: "Deployment steps" });
+    const rail = page.getByRole("list", { name: "Addition steps" });
     await expect(rail).toBeVisible();
     const steps = rail.getByRole("listitem");
     await expect(steps).toHaveCount(4);
@@ -53,7 +53,7 @@ test.describe("deployment flow shell", () => {
     await commitButton.click();
     await expect(page.getByTestId("deployment-result")).toHaveCount(1);
     await expect(steps.nth(3)).toHaveAttribute("aria-current", "step");
-    await expect(page.getByRole("status")).toContainText("Deployment finished");
+    await expect(page.getByRole("status")).toContainText("Adding finished");
   });
 
   test("reports partial failure with its own status and keeps the retry in the footer", async ({ page }) => {
@@ -64,7 +64,7 @@ test.describe("deployment flow shell", () => {
     await page.getByRole("button", { name: "Preview deployment" }).click();
     await page.getByRole("button", { name: "Commit deployment" }).click();
 
-    await expect(page.getByText("Deployment finished with failed targets")).toBeVisible();
+    await expect(page.getByText("Adding finished with failed targets")).toBeVisible();
     const retry = page.getByRole("button", { name: "Retry failed targets" });
     await expect(retry).toBeVisible();
     await expect(page.locator("footer").getByRole("button", { name: "Retry failed targets" })).toBeVisible();
@@ -84,7 +84,7 @@ test.describe("batch deployment flow", () => {
     await page.setViewportSize({ width: 1280, height: 900 });
     await page.goto("/__preview/deployment?scenario=batch");
 
-    await expect(page.getByRole("heading", { name: "Deploy 8 Skills" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Add 8 Skills" })).toBeVisible();
     await expect(page.getByLabel("Unavailable target")).toBeDisabled();
 
     const footer = page.locator("footer");
@@ -126,8 +126,8 @@ test.describe("removal confirmations", () => {
     await expect(dialog.getByRole("heading", { name: /Delete PDF Reader from the library/ })).toBeFocused();
     const confirm = page.getByRole("button", { name: "Confirm deletion from library" });
     await expect(confirm).toBeDisabled();
-    await dialog.getByRole("combobox", { name: /Deployment handling：Codex CLI/ }).selectOption("remove_deployment");
-    await dialog.getByRole("combobox", { name: /Deployment handling：Claude Code/ }).selectOption("keep_deployed");
+    await dialog.getByRole("combobox", { name: /Target copy handling：Codex CLI/ }).selectOption("remove_deployment");
+    await dialog.getByRole("combobox", { name: /Target copy handling：Claude Code/ }).selectOption("keep_deployed");
     await expect(confirm).toBeEnabled();
   });
 
@@ -138,7 +138,7 @@ test.describe("removal confirmations", () => {
     const dialog = page.getByRole("dialog");
     const proceed = page.getByRole("button", { name: "Continue to force deletion" });
     await expect(proceed).toBeDisabled();
-    await dialog.getByRole("combobox", { name: /Deployment handling: Codex CLI/ }).selectOption("remove_deployment");
+    await dialog.getByRole("combobox", { name: /Target copy handling: Codex CLI/ }).selectOption("remove_deployment");
     await expect(proceed).toBeEnabled();
 
     // 非原子批量风险与强制删除动作相邻（同一 footer 操作区）。
@@ -174,7 +174,7 @@ test.describe("deployment width matrix", () => {
       await page.getByLabel("Preview Agent 1").check();
       await page.getByRole("button", { name: "Preview deployment" }).click();
       await page.getByRole("button", { name: "Commit deployment" }).click();
-      await expect(page.getByText("Deployment finished with failed targets")).toBeVisible();
+      await expect(page.getByText("Adding finished with failed targets")).toBeVisible();
       await expectNoRootHorizontalOverflow(page);
     });
 
@@ -187,7 +187,7 @@ test.describe("deployment width matrix", () => {
         }
         await page.setViewportSize({ width, height: 900 });
         await page.goto("/__preview/deployment?scenario=batch-bulk");
-        await expect(page.getByRole("heading", { name: "Deploy 60 Skills" })).toBeVisible();
+        await expect(page.getByRole("heading", { name: "Add 60 Skills" })).toBeVisible();
         await expectNoRootHorizontalOverflow(page);
       });
     }
@@ -205,7 +205,7 @@ test.describe("deployment width matrix", () => {
     await page.goto("/__preview/deployment?scenario=batch-bulk");
     await page.getByLabel("Preview Agent 1").check();
     await page.getByRole("button", { name: "Preview deployment" }).click();
-    await expect(page.getByRole("heading", { name: "Deployment plan" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Planned additions" })).toBeVisible();
     // 面板是唯一滚动所有者：footer 操作区保持可见且不遮挡焦点。
     await expect(page.getByRole("button", { name: "Commit deployment" })).toBeVisible();
     await expectNoRootHorizontalOverflow(page);
@@ -222,7 +222,7 @@ test.describe("deployment 9-theme matrix at 1280x900", () => {
       await page.goto("/__preview/deployment");
 
       await expectNoRootHorizontalOverflow(page);
-      await expect(page.getByRole("list", { name: "Deployment steps" })).toBeVisible();
+      await expect(page.getByRole("list", { name: "Addition steps" })).toBeVisible();
 
       await page.getByLabel("Preview Agent 1").check();
       await page.getByRole("button", { name: "Preview deployment" }).click();

@@ -40,5 +40,5 @@ it("resolves the native success result key through the existing translation tree
     </I18nextProvider>,
   );
 
-  expect(await screen.findByText("部署成功")).toBeVisible();
+  expect(await screen.findByText("添加成功")).toBeVisible();
 });

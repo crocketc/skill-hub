@@ -1736,53 +1736,53 @@
     }
   },
   "deployment": {
-    "eyebrow": "安全部署",
+    "eyebrow": "安全添加",
     "errors": {
-      "generic": "部署操作失败（{{code}}）。请重试；若持续出现请记录该错误码。"
+      "generic": "添加操作失败（{{code}}）。请重试；若持续出现请记录该错误码。"
     },
     "heading": "先预览，再修改 Agent 目标",
     "description": "选择一个或多个目标，检查物理计划后再显式提交。",
     "states": {
-      "loading": "正在加载部署目标",
-      "empty": "未发现可部署的 Agent 目标",
-      "noSkills": "没有选择要部署的 Skill"
+      "loading": "正在加载目标",
+      "empty": "未发现可写入的 Agent 目标",
+      "noSkills": "没有选择要添加的 Skill"
     },
     "targets": {
       "heading": "Agent 目标",
       "description": "只有已发现且可写的目标可以选择。",
       "unavailable": "不可用"
     },
-    "preview": "预览部署",
+    "preview": "预览",
     "retryFailed": "重试失败目标",
-    "commit": "提交部署",
+    "commit": "确认添加",
     "steps": {
-      "label": "部署步骤",
+      "label": "添加步骤",
       "targets": "选择目标",
       "preview": "预览影响",
       "commit": "提交",
       "results": "结果"
     },
     "status": {
-      "selecting": "请选择要部署的目标",
-      "previewReady": "部署计划已生成，请确认影响后再提交",
-      "committing": "正在提交部署，请稍候",
-      "results": "部署已完成",
-      "resultsWithFailures": "部署已完成，部分目标失败",
-      "previewFailed": "部分 Skill 无法生成部署预览，已阻止提交"
+      "selecting": "请选择要添加的目标",
+      "previewReady": "添加计划已生成，请确认影响后再提交",
+      "committing": "正在添加，请稍候",
+      "results": "添加已完成",
+      "resultsWithFailures": "添加已完成，部分目标失败",
+      "previewFailed": "部分 Skill 无法生成预览，已阻止提交"
     },
     "plan": {
-      "heading": "部署计划",
+      "heading": "添加计划",
       "description": "计划按物理目标归组；提交前始终保留警告。"
     },
     "batch": {
-      "heading": "部署 {{count}} 个 Skill",
+      "heading": "添加 {{count}} 个 Skill",
       "description": "每个 Skill 都会先单独预览；只有全部预览成功后才可提交。",
       "planDescription": "以下计划按 Skill 展示，保留每个目标的警告与冲突。",
-      "previewFailed": "{{skillId}} 无法生成部署预览：{{message}}",
+      "previewFailed": "{{skillId}} 无法生成预览：{{message}}",
       "expandAgents": "展开关联 Agent（{{count}} 个）",
-      "expandAgentsHint": "把所选项目已关联的 Agent 目标一并加入部署选择。",
+      "expandAgentsHint": "把所选项目已关联的 Agent 目标一并加入选择。",
       "nonAtomicNotice": "批次将逐个 Skill、逐个目标提交，不是原子操作：部分成功不会自动回滚已成功的部分。",
-      "committing": "正在部署，请稍候；批次非原子，逐项结果将在完成后展示。"
+      "committing": "正在添加，请稍候；批次非原子，逐项结果将在完成后展示。"
     },
     "mode": {
       "label": "部署方式",
@@ -1792,24 +1792,24 @@
       "managed_copy": "托管复制"
     },
     "results": {
-      "heading": "部署结果",
+      "heading": "添加结果",
       "status": {
         "succeeded": "已成功",
         "failed": "失败",
         "message": {
-          "succeeded": "部署成功",
-          "failed": "部署失败"
+          "succeeded": "添加成功",
+          "failed": "添加失败"
         },
         "skipped": "已跳过"
       },
       "failure": {
         "targetExists": "目标目录已存在，请选择其他名称或检查目标后再试。",
-        "targetChanged": "目标在部署过程中发生变化，请检查目标后再试。",
+        "targetChanged": "目标在添加过程中发生变化，请检查目标后再试。",
         "symlinkNotSupported": "目标不支持符号链接，请改用托管复制。",
         "junctionNotSupported": "目标不支持目录联接，请改用托管复制。",
         "ownershipMismatch": "目标内容或所有权已变化，请检查目标后再试。",
         "ownershipUnknown": "无法确认目标所有权，请检查目标后再试。",
-        "securityBlocked": "安全检查阻止了部署，请查看检查结果后再试。",
+        "securityBlocked": "安全检查阻止了添加，请查看检查结果后再试。",
         "invalidCapability": "目标不支持所选部署方式，请改用其他方式或目标。"
       }
     }
@@ -1819,7 +1819,7 @@
     "errors": {
       "generic": "安全操作失败（{{code}}）。请重试；若持续出现请记录该错误码。"
     },
-    "heading": "部署前处理安全问题",
+    "heading": "添加前处理安全问题",
     "description": "基础检查与可选的 LLM 检查是彼此独立的事实，可以分别处理。",
     "states": {
       "loading": "正在加载安全检查",
@@ -1865,18 +1865,18 @@
   "removal": {
     "eyebrow": "从库中删除",
     "heading": "从库中删除 {{name}} 吗？",
-    "description": "将从集中库删除该 Skill 的记录、内容与版本历史；每个部署目标按下方选择处理。",
+    "description": "将从集中库删除该 Skill 的记录、内容与版本历史；每个目标中的副本按下方选择处理。",
     "loading": "正在读取删除影响…",
     "loadError": "无法读取删除影响，请稍后重试。",
     "commitError": "删除未完成，集中库保持不变，请检查后重试。",
     "dependents": "依赖项目：{{projects}}",
-    "retained": "保留：SkillHub 之外的原文件不受影响；部署副本按上方选择逐条处理。",
+    "retained": "保留：SkillHub 之外的原文件不受影响；目标副本按上方选择逐条处理。",
     "recovery": "恢复：从库中删除无法在应用内撤销；建议先在「设置 → 数据保护」导出备份。",
-    "choiceLabel": "部署处理方式",
+    "choiceLabel": "目标副本处理方式",
     "choose": "选择处理方式",
     "choices": {
-      "keep": "保留目标处的部署文件，解除部署关系（库中记录一并删除）",
-      "remove": "删除目标目录中的部署副本（取消部署）",
+      "keep": "保留目标处的文件，解除部署关系（库中记录一并删除）",
+      "remove": "删除目标目录中的副本（从目标移除）",
       "convert": "转为独立副本（保留目标文件，移除部署关系）"
     },
     "confirm": "确认从库中删除",
@@ -1905,23 +1905,23 @@
     }
   },
   "undeploy": {
-    "eyebrow": "取消部署",
-    "heading": "要从 {{target}} 取消部署吗？",
-    "description": "取消部署会删除目标目录中的部署副本；也可以把文件转为独立副本并移除部署关系。",
+    "eyebrow": "从 Agent/项目移除",
+    "heading": "要从 {{target}} 移除吗？",
+    "description": "从目标移除会删除目标目录中的副本；也可以把文件转为独立副本并移除部署关系。",
     "sharedNotice": "此目标由多个部署关系共享：仅移除当前部署关系，文件保留给其他关系继续使用。",
-    "choiceLabel": "取消部署处理方式",
+    "choiceLabel": "移除处理方式",
     "choose": "选择处理方式",
     "choices": {
       "keepShared": "仅移除此部署关系（共享文件保留给其他关系）",
-      "remove": "删除目标目录中的部署副本",
+      "remove": "删除目标目录中的副本",
       "keepCopy": "转为独立副本（保留目标文件，移除部署关系）"
     },
-    "confirm": "确认取消部署",
-    "submitting": "正在取消部署…",
-    "loadError": "无法读取取消部署影响。",
-    "commitError": "取消部署未完成，请检查目标后重试。",
+    "confirm": "确认从目标移除",
+    "submitting": "正在从目标移除…",
+    "loadError": "无法读取移除影响。",
+    "commitError": "从目标移除未完成，请检查目标后重试。",
     "retained": "保留：库中的 Skill、版本历史与其他部署关系不受影响。",
-    "recovery": "恢复：重新部署同一 Skill 即可在目标处重建副本。"
+    "recovery": "恢复：重新添加同一 Skill 即可在目标处重建副本。"
   },
   "pending": {
     "eyebrow": "待处理事项",
@@ -2689,7 +2689,7 @@
       "actions": {
         "backup": "备份所选数据",
         "standard_export": "创建标准导出",
-        "undeploy_all": "取消全部所选部署",
+        "undeploy_all": "从目标移除全部所选副本",
         "leave_targets_independent": "将目标保留为独立副本",
         "remove_device_data": "删除设备本地数据",
         "retain_central_library": "保留中央 Skill 库",

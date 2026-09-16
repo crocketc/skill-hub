@@ -155,7 +155,7 @@ describe("SkillLibraryPage", () => {
 
     // 确认/取消语义与既有删除影响预览一致：先处理部署关系，再两步确认。
     fireEvent.change(
-      within(dialog).getByRole("combobox", { name: "Deployment handling: Codex CLI" }),
+      within(dialog).getByRole("combobox", { name: "Target copy handling: Codex CLI" }),
       { target: { value: "keep_deployed" } },
     );
     fireEvent.click(within(dialog).getByRole("button", { name: "Continue to force deletion" }));

@@ -16,7 +16,7 @@ it("requires a choice for each deployment before deleting the central Skill", as
     </I18nextProvider>,
   );
 
-  expect(screen.getAllByRole("combobox", { name: /部署处理方式/ })).toHaveLength(2);
+  expect(screen.getAllByRole("combobox", { name: /目标副本处理方式/ })).toHaveLength(2);
   expect(screen.getByRole("button", { name: "确认从库中删除" })).toBeDisabled();
 });
 
@@ -33,15 +33,15 @@ it("names the object as deleting the library Skill and states retention and reco
   expect(screen.getByRole("heading", { name: "从库中删除 PDF Reader 吗？" })).toBeVisible();
   expect(screen.queryByText(/要从托管库移除/)).not.toBeInTheDocument();
 
-  // 部署决策名与对象一一对应，不复用裸词“移除部署”。
+  // 目标副本决策名与对象一一对应，不复用裸词“移除部署”。
   const options = screen.getAllByRole("option").map((option) => option.textContent);
-  expect(options).toContain("删除目标目录中的部署副本（取消部署）");
+  expect(options).toContain("删除目标目录中的副本（从目标移除）");
   expect(options).toContain("转为独立副本（保留目标文件，移除部署关系）");
   expect(options).not.toContain("移除部署");
 
   // “保留”选项必须如实：后端会解除部署关系、仅保留目标文件，
   // 且库中记录随后删除——不得写成“保留部署关系”。
-  expect(options).toContain("保留目标处的部署文件，解除部署关系（库中记录一并删除）");
+  expect(options).toContain("保留目标处的文件，解除部署关系（库中记录一并删除）");
   expect(options).not.toContain("保留部署关系（共享目标继续使用）");
 
   // 固定两行：保留什么 + 恢复方式（如实提示仅备份可恢复）。
@@ -96,8 +96,8 @@ it("describes every deployment option truthfully in English", async () => {
   );
 
   const options = screen.getAllByRole("option").map((option) => option.textContent);
-  expect(options).toContain("Keep the deployed files at the target and remove the relation (the library record is deleted too)");
-  expect(options).toContain("Delete the deployed copy at the target (undeploy)");
+  expect(options).toContain("Keep the files at the target and remove the relation (the library record is deleted too)");
+  expect(options).toContain("Delete the copy at the target (remove from target)");
   expect(options).toContain("Convert to an independent copy (keep files, remove the deployment relation)");
 
   // The "keep" option must not imply the deployment relation survives:

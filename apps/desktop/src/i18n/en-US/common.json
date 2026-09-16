@@ -1736,53 +1736,53 @@
     }
   },
   "deployment": {
-    "eyebrow": "Safe deployment",
+    "eyebrow": "Safe addition",
     "errors": {
-      "generic": "The deployment operation failed ({{code}}). Please retry; note the error code if it persists."
+      "generic": "The add operation failed ({{code}}). Please retry; note the error code if it persists."
     },
     "heading": "Preview before changing Agent targets",
     "description": "Select one or more targets, inspect the physical plan, then commit explicitly.",
     "states": {
-      "loading": "Loading deployment targets",
-      "empty": "No deployable Agent targets found",
-      "noSkills": "No Skills were selected for deployment"
+      "loading": "Loading targets",
+      "empty": "No writable Agent targets found",
+      "noSkills": "No Skills were selected to add"
     },
     "targets": {
       "heading": "Agent targets",
       "description": "Only discovered writable targets can be selected.",
       "unavailable": "Unavailable"
     },
-    "preview": "Preview deployment",
+    "preview": "Preview",
     "retryFailed": "Retry failed targets",
-    "commit": "Commit deployment",
+    "commit": "Confirm and add",
     "steps": {
-      "label": "Deployment steps",
+      "label": "Addition steps",
       "targets": "Select targets",
       "preview": "Preview impact",
       "commit": "Commit",
       "results": "Results"
     },
     "status": {
-      "selecting": "Select the targets to deploy",
-      "previewReady": "Deployment plan is ready; review the impact before committing",
-      "committing": "Committing the deployment, please wait",
-      "results": "Deployment finished",
-      "resultsWithFailures": "Deployment finished with failed targets",
+      "selecting": "Select the targets to add",
+      "previewReady": "The addition plan is ready; review the impact before committing",
+      "committing": "Adding, please wait",
+      "results": "Adding finished",
+      "resultsWithFailures": "Adding finished with failed targets",
       "previewFailed": "Some Skills could not be previewed; commit is blocked"
     },
     "plan": {
-      "heading": "Deployment plan",
+      "heading": "Planned additions",
       "description": "The plan is grouped by physical target; warnings stay visible before commit."
     },
     "batch": {
-      "heading": "Deploy {{count}} Skills",
+      "heading": "Add {{count}} Skills",
       "description": "Each Skill is previewed independently; committing is enabled only when every preview succeeds.",
       "planDescription": "Plans are shown per Skill, preserving target warnings and conflicts.",
-      "previewFailed": "A deployment preview could not be prepared for {{skillId}}: {{message}}",
+      "previewFailed": "A preview could not be prepared for {{skillId}}: {{message}}",
       "expandAgents": "Expand linked agents ({{count}})",
-      "expandAgentsHint": "Adds the agents associated with the selected projects to the deployment selection.",
+      "expandAgentsHint": "Adds the agents associated with the selected projects to the target selection.",
       "nonAtomicNotice": "The batch commits per skill and per target and is not atomic: partial success does not roll back completed parts.",
-      "committing": "Deploying, please wait; the batch is not atomic, per-target results appear once finished."
+      "committing": "Adding, please wait; the batch is not atomic, per-target results appear once finished."
     },
     "mode": {
       "label": "Deployment mode",
@@ -1792,24 +1792,24 @@
       "managed_copy": "Managed copy"
     },
     "results": {
-      "heading": "Deployment results",
+      "heading": "Addition results",
       "status": {
         "succeeded": "Succeeded",
         "failed": "Failed",
         "message": {
-          "succeeded": "Deployment succeeded",
-          "failed": "Deployment failed"
+          "succeeded": "Add succeeded",
+          "failed": "Add failed"
         },
         "skipped": "Skipped"
       },
       "failure": {
         "targetExists": "The target directory already exists. Choose another name or inspect the target before retrying.",
-        "targetChanged": "The target changed during deployment. Inspect the target before retrying.",
+        "targetChanged": "The target changed while being added. Inspect the target before retrying.",
         "symlinkNotSupported": "The target does not support symbolic links. Try managed copy instead.",
         "junctionNotSupported": "The target does not support directory junctions. Try managed copy instead.",
         "ownershipMismatch": "The target content or ownership changed. Inspect the target before retrying.",
         "ownershipUnknown": "The target ownership could not be verified. Inspect the target before retrying.",
-        "securityBlocked": "A security check blocked deployment. Review the findings before retrying.",
+        "securityBlocked": "A security check blocked the addition. Review the findings before retrying.",
         "invalidCapability": "The target does not support the selected deployment mode. Choose another mode or target."
       }
     }
@@ -1819,7 +1819,7 @@
     "errors": {
       "generic": "The security operation failed ({{code}}). Please retry; note the error code if it persists."
     },
-    "heading": "Review findings before deployment",
+    "heading": "Review findings before adding",
     "description": "Basic checks and optional LLM checks are separate facts and can be handled independently.",
     "states": {
       "loading": "Loading security checks",
@@ -1865,18 +1865,18 @@
   "removal": {
     "eyebrow": "Delete from library",
     "heading": "Delete {{name}} from the library?",
-    "description": "This deletes the Skill record, its content and version history from the central library; handle every deployment target below.",
+    "description": "This deletes the Skill record, its content and version history from the central library; handle the copy at each target below.",
     "loading": "Loading deletion impact…",
     "loadError": "Deletion impact could not be loaded. Try again.",
     "commitError": "Deletion did not complete. The managed library was preserved; review and retry.",
     "dependents": "Dependent projects: {{projects}}",
-    "retained": "Kept: files outside SkillHub are never touched; deployed copies follow the per-target choices above.",
+    "retained": "Kept: files outside SkillHub are never touched; target copies follow the per-target choices above.",
     "recovery": "Recovery: deleting from the library cannot be undone in the app; export a backup first in Settings → Data protection if you need one.",
-    "choiceLabel": "Deployment handling",
+    "choiceLabel": "Target copy handling",
     "choose": "Choose an action",
     "choices": {
-      "keep": "Keep the deployed files at the target and remove the relation (the library record is deleted too)",
-      "remove": "Delete the deployed copy at the target (undeploy)",
+      "keep": "Keep the files at the target and remove the relation (the library record is deleted too)",
+      "remove": "Delete the copy at the target (remove from target)",
       "convert": "Convert to an independent copy (keep files, remove the deployment relation)"
     },
     "confirm": "Confirm deletion from library",
@@ -1885,7 +1885,7 @@
       "eyebrow": "Batch deletion impact",
       "heading": "Review batch deletion impact",
       "description": "{{count}} Skills are selected for deletion from the library. Handle every deployment relationship first.",
-      "noDeployments": "No deployments need handling.",
+      "noDeployments": "No deployment relations need handling.",
       "continue": "Continue to force deletion",
       "forceConfirm": "Force delete {{count}} Skills",
       "loadError": "Could not read the batch deletion impact. Please try again.",
@@ -1905,23 +1905,23 @@
     }
   },
   "undeploy": {
-    "eyebrow": "Undeploy",
-    "heading": "Undeploy from {{target}}?",
-    "description": "Undeploying deletes the deployed copy at the target, or converts the files into an independent copy and removes the deployment relation.",
+    "eyebrow": "Remove from Agent/Project",
+    "heading": "Remove from {{target}}?",
+    "description": "Removing from the target deletes the copy at the target, or converts the files into an independent copy and removes the deployment relation.",
     "sharedNotice": "This target is shared by several deployment relations: only this relation is removed and the files stay available to the others.",
-    "choiceLabel": "Undeploy handling",
+    "choiceLabel": "Removal handling",
     "choose": "Choose an action",
     "choices": {
       "keepShared": "Remove only this relation (shared files stay with the others)",
-      "remove": "Delete the deployed copy at the target",
+      "remove": "Delete the copy at the target",
       "keepCopy": "Convert to an independent copy (keep files, remove the deployment relation)"
     },
-    "confirm": "Confirm undeploy",
-    "submitting": "Undeploying…",
-    "loadError": "Undeploy impact could not be loaded.",
-    "commitError": "Undeploy did not complete. Review the target and retry.",
+    "confirm": "Confirm removal from target",
+    "submitting": "Removing from target…",
+    "loadError": "Removal impact could not be loaded.",
+    "commitError": "Removing from the target did not complete. Review the target and retry.",
     "retained": "Kept: the Skill, its version history and other deployment relations in the library are unaffected.",
-    "recovery": "Recovery: redeploying the same Skill rebuilds the copy at the target."
+    "recovery": "Recovery: adding the same Skill again rebuilds the copy at the target."
   },
   "pending": {
     "eyebrow": "Pending work",
@@ -2689,7 +2689,7 @@
       "actions": {
         "backup": "Back up selected data",
         "standard_export": "Create a standard export",
-        "undeploy_all": "Undeploy all selected deployments",
+        "undeploy_all": "Remove all selected copies from their targets",
         "leave_targets_independent": "Leave targets as independent copies",
         "remove_device_data": "Remove device-local data",
         "retain_central_library": "Retain the central Skill library",
