@@ -54,7 +54,7 @@ it("shows shared configuration as read-only project facts", async () => {
 
   expect(await screen.findByText("C:/Projects/demo")).toBeVisible();
   expect(screen.getByText("Project Skill assembly")).toBeVisible();
-  expect(screen.getByText("No assembly plan exists yet; project requirements are not deployed from here.")).toBeVisible();
+  expect(screen.getByText("No assembly plan exists yet; project requirements are not added to Agents/projects from here.")).toBeVisible();
   expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
 });
 
@@ -175,7 +175,7 @@ it("shows an honest empty state when no assembly plan exists", async () => {
     </I18nextProvider>,
   );
 
-  expect(await screen.findByText("尚未生成装配计划，项目要求不会在这里自动部署。")).toBeVisible();
+  expect(await screen.findByText("尚未生成装配计划，项目要求不会在这里自动添加到 Agent/项目。")).toBeVisible();
 });
 
 it("reports an assembly plan load failure instead of showing fake groups", async () => {

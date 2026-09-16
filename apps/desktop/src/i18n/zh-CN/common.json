@@ -483,7 +483,7 @@
       "title": "本地发现",
       "description": "检查你选择的路径，在导入前先审阅候选项。",
       "factPath": "只读取选定路径",
-      "factReadOnly": "发现不会移动或部署文件"
+      "factReadOnly": "发现不会移动文件，也不会把 Skill 添加到 Agent/项目"
     },
     "online": {
       "eyebrow": "远程来源",
@@ -749,7 +749,7 @@
       "ignoreUnsupported": "Agent 级忽略需要原生契约支持，暂未提供。",
       "relocateViaEdit": "重新定位目录：编辑该自定义 Agent 并重新选择目录即可；新目录会注册为授权路径。"
     },
-    "launchDeployment": "发起部署",
+    "launchDeployment": "添加到 Agent/项目",
     "managedSkillsCount_one": "{{count}} 个 Skill",
     "managedSkillsCount_other": "{{count}} 个 Skill",
     "managedRelationsCount_one": "{{count}} 条部署关系",
@@ -872,7 +872,7 @@
         "untrackedNote": "未在发现快照中找到对应物理目标，无法判断访问状态。",
         "snapshotFailed": "无法读取发现快照，暂时无法判断访问状态。"
       },
-      "launchDeployment": "发起部署"
+      "launchDeployment": "添加到 Agent/项目"
     },
     "sharedConfig": {
       "eyebrow": "共享配置",
@@ -896,7 +896,7 @@
     "assemblyPlan": {
       "eyebrow": "装配计划",
       "title": "项目 Skill 装配",
-      "empty": "尚未生成装配计划，项目要求不会在这里自动部署。",
+      "empty": "尚未生成装配计划，项目要求不会在这里自动添加到 Agent/项目。",
       "emptyItems": "装配计划中没有条目。",
       "unavailable": "无法读取装配计划。",
       "groupCount": "{{count}} 项",
@@ -935,14 +935,14 @@
   },
   "onboarding": {
     "back": "上一步",
-    "compatibilityConfirmation": "我确认这里只识别 Agent，不会部署技能",
-    "compatibilityDescription": "识别只会生成兼容性信息。部署需要在后续单独预览和确认。",
+    "compatibilityConfirmation": "我确认这里只识别 Agent，不会把技能添加到 Agent/项目",
+    "compatibilityDescription": "识别只会生成兼容性信息。添加到 Agent/项目需要在后续单独预览和确认。",
     "compatibilityTitle": "识别兼容的 Agent",
     "compatibilityTargets": "可选择的兼容性目标",
     "complete": "初始化设置已提交。",
     "confirmSkip": "确认并跳过",
     "continue": "继续",
-    "contractUnavailable": "此操作尚未连接到本机服务。不会创建目录、部署或导入任何技能。",
+    "contractUnavailable": "此操作尚未连接到本机服务。不会创建目录、添加到 Agent/项目或导入任何技能。",
     "defaultLocation": "默认集中库位置",
     "discoverAgents": "识别 Agent",
     "selectAllAvailable": "全选可用目标",
@@ -976,7 +976,7 @@
     "scanComplete": "已完成只读扫描预览。",
     "scanBackground": "扫描已转入后台，仍会继续执行。你可以先完成初始化。",
     "scanContinueInBackground": "转入后台，继续完成初始化",
-    "scanDescription": "扫描只生成预览，不会移动、导入或部署技能。",
+    "scanDescription": "扫描只生成预览，不会移动、导入技能，也不会把技能添加到 Agent/项目。",
     "scanDiscovered": "发现 {{count}} 个 Skill",
     "scanFailed": "无法完成扫描。现有技能和目录没有被修改。",
     "scanFailedWithCode": "无法完成扫描。现有技能和目录没有被修改。（错误代码：{{code}}）",
@@ -997,9 +997,9 @@
     "selectedLocation": "已选择的集中库位置",
     "skip": "跳过初始化",
     "skipScan": "跳过扫描",
-    "skipDescription": "将创建空集中库：{{path}}。不会识别 Agent、扫描、导入或部署技能。",
+    "skipDescription": "将创建空集中库：{{path}}。不会识别 Agent、扫描或导入技能，也不会把技能添加到 Agent/项目。",
     "skipTitle": "将创建空集中库",
-    "selectionConfirmation": "我确认所选目标只用于只读扫描，不会部署技能",
+    "selectionConfirmation": "我确认所选目标只用于只读扫描，不会把技能添加到 Agent/项目",
     "startReadOnlyScan": "开始只读扫描",
     "scanning": "正在扫描…",
     "step": "第 {{current}} 步，共 3 步",
@@ -1035,7 +1035,7 @@
     "restoreConflictsHeading": "恢复冲突处理",
     "rescanEyebrow": "重新发现",
     "rescanTitle": "重新发现 Agent 与 Skill",
-    "rescanDescription": "当前集中库只读重新发现 Agent 和 Skill，不会更换集中库或部署内容。",
+    "rescanDescription": "当前集中库只读重新发现 Agent 和 Skill，不会更换集中库或把内容添加到 Agent/项目。",
     "rescanLibraryLocation": "当前集中库位置",
     "rescanConfirmation": "我确认只执行只读发现和扫描",
     "rescanStep": "第 {{current}} 步，共 3 步",
@@ -1076,8 +1076,8 @@
     "fullDetailsBoundary": "完整 Skill 详情将在下一任务中提供",
     "page": {
       "batch": {
-        "addTo": "部署…",
-        "addToTitle": "打开批量部署流程，将所选 Skill 添加到 Agent",
+        "addTo": "添加到…",
+        "addToTitle": "打开批量添加流程，将所选 Skill 添加到 Agent/项目",
         "addTags": "添加标签",
         "addTagsDescription": "输入的标签会添加到所有选中的 Skill。",
         "addTagsTitle": "批量添加标签",
@@ -1150,7 +1150,7 @@
         "noResults": "没有符合当前筛选条件的技能",
         "unavailable": "技能目录数据尚未连接"
       },
-      "deployTargetBanner": "部署目标已预选：{{label}}。勾选 Skill 后点“统一部署”，将自动选中该目标。",
+      "deployTargetBanner": "目标已预选：{{label}}。勾选 Skill 后点“添加到…”，将自动选中该目标。",
       "card": {
         "version": "当前版本 {{version}}",
         "upgradeAvailable": "有可升级版本",
@@ -1427,8 +1427,8 @@
       "confirmDelete": "确认删除",
       "export": "导出组合 {{name}}",
       "exported": "导出已创建：{{path}}",
-      "deploy": "部署组合 {{name}}",
-      "deployHint": "成员将预选进入批量部署页；仍需逐目标预检并确认后才会写入。",
+      "deploy": "添加组合 {{name}}",
+      "deployHint": "成员将预选进入批量添加页；仍需逐目标预检并确认后才会写入。",
       "empty": "暂无组合。新建组合可把常用 Skill 打包导出。",
       "noMembers": "无成员",
       "loading": "正在读取组合…",

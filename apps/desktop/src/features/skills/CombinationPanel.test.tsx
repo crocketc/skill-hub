@@ -315,7 +315,7 @@ describe("CombinationPanel", () => {
     const facade = createFacade();
     const { getLocation } = await renderPanel(facade);
     await screen.findByText("Writing stack");
-    fireEvent.click(screen.getByRole("button", { name: "部署组合 Writing stack" }));
+    fireEvent.click(screen.getByRole("button", { name: "添加组合 Writing stack" }));
     await waitFor(() => expect(getLocation()?.pathname).toBe("/deploy"));
     const params = new URLSearchParams(getLocation()?.search);
     expect(params.getAll("skill")).toEqual(["skill-1", "skill-2"]);

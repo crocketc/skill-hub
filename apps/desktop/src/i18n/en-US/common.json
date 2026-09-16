@@ -483,7 +483,7 @@
       "title": "Local discovery",
       "description": "Inspect a path you choose and review its candidates before import.",
       "factPath": "Reads only the selected path",
-      "factReadOnly": "Discovery does not move or deploy files"
+      "factReadOnly": "Discovery does not move files or add Skills to Agents/projects"
     },
     "online": {
       "eyebrow": "Remote sources",
@@ -749,7 +749,7 @@
       "ignoreUnsupported": "Agent-level ignore needs native contract support and is not available yet.",
       "relocateViaEdit": "Relocate the directory by editing this custom Agent and picking a new one; the new directory is registered as an allowed path."
     },
-    "launchDeployment": "Deploy skills",
+    "launchDeployment": "Add to Agent/Project",
     "managedSkillsCount_one": "{{count}} managed skill",
     "managedSkillsCount_other": "{{count}} managed skills",
     "managedRelationsCount_one": "{{count}} deployment relation",
@@ -872,7 +872,7 @@
         "untrackedNote": "The discovery snapshot has no matching physical target, so the access state is unknown.",
         "snapshotFailed": "The discovery snapshot could not be read, so the access state is unknown for now."
       },
-      "launchDeployment": "Deploy skills"
+      "launchDeployment": "Add to Agent/Project"
     },
     "sharedConfig": {
       "eyebrow": "Shared configuration",
@@ -896,7 +896,7 @@
     "assemblyPlan": {
       "eyebrow": "Assembly plan",
       "title": "Project Skill assembly",
-      "empty": "No assembly plan exists yet; project requirements are not deployed from here.",
+      "empty": "No assembly plan exists yet; project requirements are not added to Agents/projects from here.",
       "emptyItems": "The assembly plan has no items.",
       "unavailable": "The assembly plan could not be read.",
       "groupCount": "{{count}} items",
@@ -935,14 +935,14 @@
   },
   "onboarding": {
     "back": "Back",
-    "compatibilityConfirmation": "I understand this only discovers Agents and will not deploy skills",
-    "compatibilityDescription": "Discovery only creates compatibility information. Deployment requires a separate preview and confirmation later.",
+    "compatibilityConfirmation": "I understand this only discovers Agents and will not add skills to Agents/projects",
+    "compatibilityDescription": "Discovery only creates compatibility information. Adding to Agents/projects requires a separate preview and confirmation later.",
     "compatibilityTitle": "Discover compatible agents",
     "compatibilityTargets": "Compatible targets available for selection",
     "complete": "Initialization settings were submitted.",
     "confirmSkip": "Confirm and skip",
     "continue": "Continue",
-    "contractUnavailable": "This action is not yet connected to the native service. No directory, deployment, or import was made.",
+    "contractUnavailable": "This action is not yet connected to the native service. No directory was created, nothing was added to Agents/projects, and nothing was imported.",
     "defaultLocation": "Default library location",
     "discoverAgents": "Discover agents",
     "selectAllAvailable": "Select all available targets",
@@ -976,7 +976,7 @@
     "scanComplete": "Read-only scan preview completed.",
     "scanBackground": "The scan is continuing in the background. You can finish initialization now.",
     "scanContinueInBackground": "Continue initialization in the background",
-    "scanDescription": "The scan only creates a preview. It will not move, import, or deploy skills.",
+    "scanDescription": "The scan only creates a preview. It will not move or import skills, or add them to Agents/projects.",
     "scanDiscovered": "{{count}} Skills discovered",
     "scanFailed": "The scan could not be completed. Existing skills and directories were not changed.",
     "scanFailedWithCode": "The scan could not be completed. Existing skills and directories were not changed. (Error code: {{code}})",
@@ -997,9 +997,9 @@
     "selectedLocation": "Selected library location",
     "skip": "Skip initialization",
     "skipScan": "Skip scan",
-    "skipDescription": "An empty library will be created at {{path}}. No agents will be discovered and no skills will be scanned, imported, or deployed.",
+    "skipDescription": "An empty library will be created at {{path}}. No agents will be discovered and no skills will be scanned, imported, or added to Agents/projects.",
     "skipTitle": "Create an empty library",
-    "selectionConfirmation": "I understand selected targets are only used for a read-only scan and will not deploy skills",
+    "selectionConfirmation": "I understand selected targets are only used for a read-only scan and will not add skills to Agents/projects",
     "startReadOnlyScan": "Start read-only scan",
     "scanning": "Scanning…",
     "step": "Step {{current}} of 3",
@@ -1035,7 +1035,7 @@
     "restoreConflictsHeading": "Restore conflicts",
     "rescanEyebrow": "Rediscovery",
     "rescanTitle": "Rediscover Agents & Skills",
-    "rescanDescription": "Rediscovery uses the current library in read-only mode. It never changes the library root or deploys content.",
+    "rescanDescription": "Rediscovery uses the current library in read-only mode. It never changes the library root or adds content to Agents/projects.",
     "rescanLibraryLocation": "Current library location",
     "rescanConfirmation": "I understand this only discovers and scans read-only",
     "rescanStep": "Step {{current}} of 3",
@@ -1076,8 +1076,8 @@
     "fullDetailsBoundary": "Full Skill details are delivered in the next task",
     "page": {
       "batch": {
-        "addTo": "Deploy…",
-        "addToTitle": "Open the batch deployment flow to add the selected Skills to agents",
+        "addTo": "Add to…",
+        "addToTitle": "Open the batch add flow to add the selected Skills to Agents/projects",
         "addTags": "Add tags",
         "addTagsDescription": "The entered tags will be added to every selected Skill.",
         "addTagsTitle": "Add tags",
@@ -1150,7 +1150,7 @@
         "noResults": "No skills match the current filters",
         "unavailable": "Skill catalog data is not connected yet"
       },
-      "deployTargetBanner": "Deployment target preselected: {{label}}. Select Skills and choose Unified deploy to target it automatically.",
+      "deployTargetBanner": "Target preselected: {{label}}. Select Skills and choose “Add to…” to target it automatically.",
       "card": {
         "version": "Current version {{version}}",
         "upgradeAvailable": "Upgrade available",
@@ -1427,8 +1427,8 @@
       "confirmDelete": "Confirm deletion",
       "export": "Export combination {{name}}",
       "exported": "Export created: {{path}}",
-      "deploy": "Deploy combination {{name}}",
-      "deployHint": "Members are preselected in the batch deployment page; writes still require per-target preflight and confirmation.",
+      "deploy": "Add combination {{name}}",
+      "deployHint": "Members are preselected in the batch add page; writes still require per-target preflight and confirmation.",
       "empty": "No combinations yet. Create one to bundle frequently used skills for export.",
       "noMembers": "No members",
       "loading": "Loading combinations…",
