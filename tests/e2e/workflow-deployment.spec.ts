@@ -21,6 +21,18 @@ async function expectNoRootHorizontalOverflow(page: Page) {
   expect(overflow).toBeLessThanOrEqual(0);
 }
 
+// 单目标流程壳（ImportShell section[aria-labelledby]）的可访问名。
+const SINGLE_FLOW_REGION = "Preview before changing Agent targets";
+
+/**
+ * 流程自己的持久状态区（ImportShell 内 role=status 的段落）。
+ * Task 4 起全局通知（notice-*）也是 role=status 的 live region，
+ * 状态断言必须收窄到流程壳内，避免严格模式解析到多个 live region。
+ */
+function flowStatus(page: Page, regionName: string) {
+  return page.getByRole("region", { name: regionName }).getByRole("status");
+}
+
 test.describe("deployment flow shell", () => {
   test("exposes the unified step rail and a stable footer for the single flow", async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 900 });
@@ -43,7 +55,7 @@ test.describe("deployment flow shell", () => {
     await expect(previewButton).toBeEnabled();
     await expect(footer.getByRole("button", { name: "Preview" })).toBeVisible();
     // 选择阶段：状态区播报当前阶段。
-    await expect(page.getByRole("status")).toContainText("Select the targets to add");
+    await expect(flowStatus(page, SINGLE_FLOW_REGION)).toContainText("Select the targets to add");
 
     await previewButton.click();
     const commitButton = page.getByRole("button", { name: "Confirm and add" });
@@ -53,7 +65,9 @@ test.describe("deployment flow shell", () => {
     await commitButton.click();
     await expect(page.getByTestId("deployment-result")).toHaveCount(1);
     await expect(steps.nth(3)).toHaveAttribute("aria-current", "step");
-    await expect(page.getByRole("status")).toContainText("Adding finished");
+    // 结果状态断言收窄到流程壳自己的状态区：提交成功还会触发全局
+    // notice-success（role=status）toast，页面级 getByRole("status") 有歧义。
+    await expect(flowStatus(page, SINGLE_FLOW_REGION)).toContainText("Adding finished");
   });
 
   test("reports partial failure with its own status and keeps the retry in the footer", async ({ page }) => {
@@ -75,7 +89,7 @@ test.describe("deployment flow shell", () => {
     await page.goto("/__preview/deployment?scenario=unavailable");
 
     await expect(page.getByRole("alert")).toContainText(/failed/i);
-    await expect(page.getByRole("status")).toContainText(/failed/i);
+    await expect(flowStatus(page, SINGLE_FLOW_REGION)).toContainText(/failed/i);
   });
 });
 
@@ -111,7 +125,8 @@ test.describe("batch deployment flow", () => {
 
     await expect(page.getByRole("alert")).toContainText("preview-skill-2");
     await expect(page.getByRole("button", { name: "Confirm and add" })).toBeDisabled();
-    await expect(page.getByRole("status")).toContainText("commit is blocked");
+    // 批量流程壳（标题含数量）自己的状态区。
+    await expect(flowStatus(page, "Add 8 Skills")).toContainText("commit is blocked");
   });
 });
 
@@ -231,7 +246,7 @@ test.describe("deployment 9-theme matrix at 1280x900", () => {
       await commitButton.focus();
       const focused = await page.evaluate(() => document.activeElement?.tagName ?? "");
       expect(focused).toBe("BUTTON");
-      await expect(page.getByRole("status")).toBeVisible();
+      await expect(flowStatus(page, SINGLE_FLOW_REGION)).toBeVisible();
 
       await page.goto("/__preview/removal?scenario=batch");
       await expectNoRootHorizontalOverflow(page);
