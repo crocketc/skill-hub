@@ -2642,6 +2642,20 @@
       "none": "没有待处理事项",
       "title": "{{count}} 项待处理"
     },
+    "summary": {
+      "entries": {
+        "conflicts": "冲突处理",
+        "graph": "关系图谱",
+        "governance": "关系治理"
+      },
+      "metrics": {
+        "agentsCombined": "Agent（已配置 {{configured}} 个 · 已发现 {{discovered}} 个）",
+        "deploymentRelations": "Skill 部署关系（部署到 Agent {{agentCount}} 条 · 项目 {{projectCount}} 条）",
+        "projectsManage": "管理项目",
+        "skillsTotal": "技能总数",
+        "unconfirmedConflicts": "待确认的关系冲突"
+      }
+    },
     "tags": {
       "heading": "按标签的 Skill 数量",
       "chartAria": "按标签统计 Skill 数量图表",

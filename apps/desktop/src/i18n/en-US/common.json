@@ -2642,6 +2642,20 @@
       "none": "No pending items",
       "title": "{{count}} pending items"
     },
+    "summary": {
+      "entries": {
+        "conflicts": "Conflict workspace",
+        "graph": "Relationship graph",
+        "governance": "Relationship governance"
+      },
+      "metrics": {
+        "agentsCombined": "Agents ({{configured}} configured · {{discovered}} discovered)",
+        "deploymentRelations": "Skill deployment relations ({{agentCount}} to agents · {{projectCount}} to projects)",
+        "projectsManage": "Manage projects",
+        "skillsTotal": "Total skills",
+        "unconfirmedConflicts": "Unconfirmed relationship conflicts"
+      }
+    },
     "tags": {
       "heading": "Skill count by tag",
       "chartAria": "Skill count by tag chart",

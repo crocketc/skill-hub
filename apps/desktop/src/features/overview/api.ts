@@ -1,8 +1,11 @@
 import type {
   BootstrapSnapshot,
+  ConflictWorkspace,
   DeploymentChartCategory,
   DeploymentDimension,
   PendingKind,
+  RelationGovernanceLedger,
+  SkillRelationshipCandidate,
 } from "../../api/bindings";
 import type { TFunction } from "i18next";
 
@@ -157,4 +160,130 @@ export function getPendingSummaryItems(
       },
     ];
   });
+}
+
+/** 关系缩略区域深链目标。路由由页面切片接线，数据层只提供稳定 key。 */
+export type OverviewRelationEntryKey = "conflicts" | "graph" | "governance";
+
+export interface OverviewRelationEntry {
+  count: number;
+  key: OverviewRelationEntryKey;
+  label: string;
+}
+
+/**
+ * 任务 1/2 冻结查询的聚合结果。三个来源都可以缺省（查询失败、事实尚未
+ * 生成或旧快照）：缺省按 0 计，概览已有内容不受影响。
+ */
+export interface OverviewRelationSummarySource {
+  /** 任务 2 冲突工作台投影；`cases` 即未确认（uncertain 且无决定）冲突全集。 */
+  conflictWorkspace?: ConflictWorkspace | null;
+  /** 关系治理台账；`total` 为已建立的关系边总数。 */
+  governanceLedger?: RelationGovernanceLedger | null;
+  /** 任务 1 候选列表（不过滤查询的全量结果）：有可展示关系事实的 Skill。 */
+  relationshipCandidates?: SkillRelationshipCandidate[] | null;
+}
+
+/**
+ * 按部署维度汇总部署关系条数。与部署柱状图同源（bootstrap 快照的
+ * `deployment_categories`），保证指标主数与括号拆分、柱状图三者一致；
+ * 未纳管部署与发现快照一样不计入该口径。
+ */
+function deploymentRelationTotals(snapshot: BootstrapSnapshot): {
+  agentRelations: number;
+  projectRelations: number;
+} {
+  let agentRelations = 0;
+  let projectRelations = 0;
+  for (const category of snapshot.deployment_categories) {
+    if (category.dimension === "agent") {
+      agentRelations += category.count;
+    } else {
+      projectRelations += category.count;
+    }
+  }
+  return { agentRelations, projectRelations };
+}
+
+/**
+ * 概览融合后的五个指标，显示名称与口径为冻结契约：
+ * 技能总数、Agent（已配置/已发现合并口径）、管理项目、
+ * Skill 部署关系（按 Agent/项目拆分）、待确认的关系冲突。
+ * 冲突数直接复用任务 2 工作台投影的 `cases`（已实现待确认筛选），
+ * 本模块不重新实现另一套筛选规则；`conflictWorkspace` 缺省按 0 计。
+ */
+export function getOverviewSummaryMetrics(
+  snapshot: BootstrapSnapshot,
+  conflictWorkspace: ConflictWorkspace | null,
+  t: TFunction,
+): OverviewMetric[] {
+  const { agentRelations, projectRelations } = deploymentRelationTotals(snapshot);
+  return [
+    {
+      count: snapshot.skill_count,
+      href: "/library",
+      name: t("overview.summary.metrics.skillsTotal"),
+      tone: "accent",
+    },
+    {
+      count: snapshot.agent_count,
+      href: "/agents",
+      // “已发现”继续指发现快照口径（discovered_agent_count），
+      // 与“已配置”的部署目标口径在同一条指标内并列展示、互不混用。
+      name: t("overview.summary.metrics.agentsCombined", {
+        configured: snapshot.agent_count,
+        discovered: snapshot.discovered_agent_count,
+      }),
+      tone: "neutral",
+    },
+    {
+      count: snapshot.project_count,
+      href: "/projects",
+      name: t("overview.summary.metrics.projectsManage"),
+      tone: "neutral",
+    },
+    {
+      count: agentRelations + projectRelations,
+      href: "/library?deployment=deployed",
+      name: t("overview.summary.metrics.deploymentRelations", {
+        agentCount: agentRelations,
+        projectCount: projectRelations,
+      }),
+      tone: "neutral",
+    },
+    {
+      // 冲突子页路由随页面切片接入后补充 href；数据层不做深链假设。
+      count: conflictWorkspace?.cases.length ?? 0,
+      name: t("overview.summary.metrics.unconfirmedConflicts"),
+      tone: "neutral",
+    },
+  ];
+}
+
+/**
+ * 关系缩略区域的三个入口计数：图谱（有关系事实的 Skill 数，任务 1）、
+ * 冲突处理（待确认冲突数，任务 2 投影）、治理（已建立关系边数，治理台账）。
+ * 输入缺省时返回 0 计数的完整条目，页面仍可渲染占位。
+ */
+export function getOverviewRelationEntries(
+  source: OverviewRelationSummarySource,
+  t: TFunction,
+): OverviewRelationEntry[] {
+  return [
+    {
+      count: source.relationshipCandidates?.length ?? 0,
+      key: "graph",
+      label: t("overview.summary.entries.graph"),
+    },
+    {
+      count: source.conflictWorkspace?.cases.length ?? 0,
+      key: "conflicts",
+      label: t("overview.summary.entries.conflicts"),
+    },
+    {
+      count: source.governanceLedger?.total ?? 0,
+      key: "governance",
+      label: t("overview.summary.entries.governance"),
+    },
+  ];
 }
