@@ -1,7 +1,9 @@
+use skillhub_core::agent::DirectoryPrecedence;
 use skillhub_core::deployment::{ObservedMatchState, ObservedOrigin};
 use skillhub_core::relationship::{
-    project_skill_relationship_graph, ConflictCaseFact, ConflictClassification, ConflictEvidence,
-    ConflictKind, DeploymentRelationFact, DirectoryNodeFact, DirectoryRole, FileRepresentation,
+    project_skill_relationship_graph, AgentDirectoryCapabilityFact, ConflictCaseFact,
+    ConflictClassification, ConflictEvidence, ConflictKind, DeploymentRelationFact,
+    DirectoryNodeFact, DirectoryRecognition, DirectoryRole, FileRepresentation,
     RelationshipGraphEdgeKind, RelationshipGraphFilters, RelationshipGraphNodeKind,
     RelationshipGraphStatus, RelationshipType, SourceRelationFact,
 };
@@ -370,6 +372,47 @@ fn source_facts_do_not_claim_verification_from_import_time() {
 }
 
 #[test]
+fn source_relationship_filter_applies_but_unknown_status_does_not_hide_source() {
+    let center = SkillId::new();
+    let source_fact = source("provenance:filter", center, "source-filter");
+    let status_filtered = project_skill_relationship_graph(
+        center,
+        &[],
+        &[source_fact.clone()],
+        &[],
+        &[],
+        &[],
+        &RelationshipGraphFilters {
+            relationship_types: Vec::new(),
+            statuses: vec![RelationshipGraphStatus::Diverged],
+        },
+    );
+    assert!(status_filtered.has_node("source:provenance:filter"));
+    assert!(status_filtered
+        .edges
+        .iter()
+        .any(|edge| edge.kind == RelationshipGraphEdgeKind::Source));
+
+    let relationship_filtered = project_skill_relationship_graph(
+        center,
+        &[],
+        &[source_fact],
+        &[],
+        &[],
+        &[],
+        &RelationshipGraphFilters {
+            relationship_types: vec![RelationshipType::ObservedCopy],
+            statuses: Vec::new(),
+        },
+    );
+    assert!(!relationship_filtered.has_node("source:provenance:filter"));
+    assert!(!relationship_filtered
+        .edges
+        .iter()
+        .any(|edge| edge.kind == RelationshipGraphEdgeKind::Source));
+}
+
+#[test]
 fn fact_filters_keep_structural_skill_and_conflict_edges() {
     let center = SkillId::new();
     let related = SkillId::new();
@@ -401,6 +444,11 @@ fn fact_filters_keep_structural_skill_and_conflict_edges() {
         .edges
         .iter()
         .any(|edge| edge.kind == RelationshipGraphEdgeKind::Conflict));
+    assert!(graph
+        .edges
+        .iter()
+        .filter(|edge| edge.kind == RelationshipGraphEdgeKind::Conflict)
+        .all(|edge| edge.conflict_id.as_deref() == Some("conflict:uncertain")));
     assert!(!graph
         .edges
         .iter()
@@ -417,4 +465,187 @@ fn fact_filters_keep_structural_skill_and_conflict_edges() {
         .all(|edge| edge.relationship.is_none()
             && edge.match_state.is_none()
             && edge.active.is_none()));
+}
+
+#[test]
+fn every_context_kind_collapses_without_dangling_edges() {
+    let center = SkillId::new();
+
+    let sources = (0..9)
+        .map(|index| {
+            source(
+                &format!("provenance:{index}"),
+                center,
+                &format!("source:{index}"),
+            )
+        })
+        .collect::<Vec<_>>();
+    let source_graph = project_skill_relationship_graph(
+        center,
+        &[],
+        &sources,
+        &[],
+        &[],
+        &[],
+        &RelationshipGraphFilters::default(),
+    );
+
+    let project_relations = (0..9)
+        .map(|index| {
+            let mut relation = deployment(
+                &format!("project:{index}"),
+                Some(center),
+                "agent.project",
+                &format!("project-entry:{index}"),
+                RelationshipType::ObservedCopy,
+            );
+            relation.directory_node_id = Some(format!("project:{index}"));
+            relation
+        })
+        .collect::<Vec<_>>();
+    let project_facts = (0..9)
+        .map(|index| directory(&format!("project:{index}"), DirectoryRole::Project))
+        .collect::<Vec<_>>();
+    let project_graph = project_skill_relationship_graph(
+        center,
+        &project_relations,
+        &[],
+        &project_facts,
+        &[],
+        &[],
+        &RelationshipGraphFilters::default(),
+    );
+
+    let directory_relations = (0..9)
+        .map(|index| {
+            let mut relation = deployment(
+                &format!("directory:{index}"),
+                Some(center),
+                "agent.directory",
+                &format!("directory-entry:{index}"),
+                RelationshipType::ObservedCopy,
+            );
+            relation.directory_node_id = Some(format!("directory:{index}"));
+            relation
+        })
+        .collect::<Vec<_>>();
+    let directory_facts = (0..9)
+        .map(|index| directory(&format!("directory:{index}"), DirectoryRole::AgentNative))
+        .collect::<Vec<_>>();
+    let directory_graph = project_skill_relationship_graph(
+        center,
+        &directory_relations,
+        &[],
+        &directory_facts,
+        &[],
+        &[],
+        &RelationshipGraphFilters::default(),
+    );
+
+    let conflicts = (0..9)
+        .map(|index| {
+            let related = SkillId::new();
+            let mut case = uncertain_case(center, related);
+            case.conflict_id = format!("conflict:{index}");
+            case
+        })
+        .collect::<Vec<_>>();
+    let conflict_graph = project_skill_relationship_graph(
+        center,
+        &[],
+        &[],
+        &[],
+        &[],
+        &conflicts,
+        &RelationshipGraphFilters::default(),
+    );
+
+    for (graph, kind) in [
+        (source_graph, RelationshipGraphNodeKind::Source),
+        (project_graph, RelationshipGraphNodeKind::Project),
+        (directory_graph, RelationshipGraphNodeKind::Directory),
+        (conflict_graph, RelationshipGraphNodeKind::Conflict),
+    ] {
+        assert!(graph.nodes.iter().any(|node| {
+            node.kind == RelationshipGraphNodeKind::Collapsed && node.collapsed_kind == Some(kind)
+        }));
+        assert!(graph
+            .edges
+            .iter()
+            .all(|edge| graph.has_node(&edge.from_node_id) && graph.has_node(&edge.to_node_id)));
+    }
+}
+
+#[test]
+fn project_and_capability_contexts_do_not_reverse_expand_skills() {
+    let center = SkillId::new();
+    let unrelated = SkillId::new();
+    let mut relation = deployment(
+        "project:center",
+        Some(center),
+        "agent.project",
+        "project-entry",
+        RelationshipType::ObservedCopy,
+    );
+    relation.directory_node_id = Some("directory:project".into());
+    let capability = AgentDirectoryCapabilityFact {
+        agent_client_id: "agent.project".into(),
+        directory_node_id: "directory:project".into(),
+        recognition: DirectoryRecognition::Supported,
+        precedence: DirectoryPrecedence::Preferred,
+        evidence_reference: Some(unrelated.to_string()),
+        researched_at: None,
+        applicable_platforms: vec!["windows".into()],
+    };
+    let graph = project_skill_relationship_graph(
+        center,
+        &[relation],
+        &[],
+        &[directory("directory:project", DirectoryRole::Project)],
+        &[capability],
+        &[],
+        &RelationshipGraphFilters::default(),
+    );
+    assert!(graph.has_skill_node(&center));
+    assert!(!graph.has_skill_node(&unrelated));
+}
+
+#[test]
+fn reversed_source_and_conflict_inputs_have_stable_output_order() {
+    let center = SkillId::new();
+    let related_a = SkillId::new();
+    let related_b = SkillId::new();
+    let mut sources = vec![
+        source("provenance:b", center, "source-b"),
+        source("provenance:a", center, "source-a"),
+    ];
+    let mut conflicts = vec![
+        uncertain_case(center, related_b),
+        uncertain_case(center, related_a),
+    ];
+    conflicts[0].conflict_id = "conflict:b".into();
+    conflicts[1].conflict_id = "conflict:a".into();
+
+    let first = project_skill_relationship_graph(
+        center,
+        &[],
+        &sources,
+        &[],
+        &[],
+        &conflicts,
+        &RelationshipGraphFilters::default(),
+    );
+    sources.reverse();
+    conflicts.reverse();
+    let second = project_skill_relationship_graph(
+        center,
+        &[],
+        &sources,
+        &[],
+        &[],
+        &conflicts,
+        &RelationshipGraphFilters::default(),
+    );
+    assert_eq!(first.nodes, second.nodes);
+    assert_eq!(first.edges, second.edges);
 }

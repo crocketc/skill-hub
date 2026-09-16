@@ -393,11 +393,12 @@ pub fn project_skill_relationship_graph(
         );
         for skill_id in conflict_skill_ids(case) {
             if skill_id_set.contains(&skill_id) {
-                graph.edges.push(structural_edge(
+                graph.edges.push(structural_conflict_edge(
                     format!("conflict:{}:{skill_id}", case.conflict_id),
                     skill_id.to_string(),
                     conflict_node_id.clone(),
                     RelationshipGraphEdgeKind::Conflict,
+                    case.conflict_id.clone(),
                 ));
             }
         }
@@ -744,6 +745,28 @@ fn structural_fact_edge(
     )
 }
 
+fn structural_conflict_edge(
+    edge_id: String,
+    from_node_id: String,
+    to_node_id: String,
+    kind: RelationshipGraphEdgeKind,
+    conflict_id: String,
+) -> SkillRelationshipEdge {
+    fact_edge(
+        edge_id,
+        from_node_id,
+        to_node_id,
+        kind,
+        None,
+        None,
+        None,
+        Some(conflict_id),
+        None,
+        None,
+        None,
+    )
+}
+
 fn fact_visible(
     relationship: RelationshipType,
     match_state: Option<ObservedMatchState>,
@@ -766,6 +789,5 @@ fn fact_visible(
 }
 
 fn source_visible(relationship: RelationshipType, filters: &RelationshipGraphFilters) -> bool {
-    (filters.relationship_types.is_empty() || filters.relationship_types.contains(&relationship))
-        && filters.statuses.is_empty()
+    filters.relationship_types.is_empty() || filters.relationship_types.contains(&relationship)
 }
