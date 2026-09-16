@@ -12,19 +12,24 @@ use skillhub_adapters::deployment::DeploymentFilesystem;
 use skillhub_core::api::{
     AppCommandResult, AppQueryResult, GetSkillRelationshipGraph, ListSkillRelationshipCandidates,
     PrepareRelationMigration, RelationMigrationTargetMode, RelationshipMigrationBackupPolicy,
-    RelationshipOverviewScope, SkillRelationshipCandidate, SkillRelationshipGraphResult,
+    RelationshipOverviewScope, ResolveConflictCase, SkillRelationshipCandidate,
+    SkillRelationshipGraphResult,
 };
+use skillhub_core::deployment::reconcile::normalized_path_key;
 use skillhub_core::deployment::{DeploymentMode, TargetChange, TargetPlan};
 use skillhub_core::relationship::{
-    calculate_removal_impact, project_skill_relationship_graph, ConflictCaseFact,
-    ConflictClassification, DeploymentRelationFact, DirectoryNodeFact, FileRepresentation,
-    GovernanceTaskFact, GovernanceTaskKind, OwnershipState, RelationshipType, RemovalFacts,
-    SourceRelationFact,
+    build_conflict_workspace, calculate_removal_impact, plan_conflict_decision,
+    plan_conflict_governance_handoff, project_skill_relationship_graph, ConflictCaseFact,
+    ConflictClassification, ConflictResolutionOutcome, DeploymentRelationFact, DirectoryNodeFact,
+    FileRepresentation, GovernanceTaskFact, GovernanceTaskKind, OwnershipState, RelationshipType,
+    RemovalFacts, SourceRelationFact,
 };
 use skillhub_core::{
     AppError, AppResult, ErrorCode, InverseOperation, OperationId, OperationObjectResult,
     OperationPhase, RecoveryAction, RelationMigrationResult, RelationMigrationState, Severity,
+    SkillId,
 };
+use skillhub_storage::Database;
 
 use crate::LocalApplicationFacade;
 
@@ -311,6 +316,123 @@ impl LocalApplicationFacade {
             Ok(candidates)
         })?;
         Ok(AppQueryResult::SkillRelationshipCandidates(candidates))
+    }
+
+    /// 冲突处理工作台：默认只含待确认的 `uncertain` 冲突，各自附带最近一次
+    /// 分析、指纹是否已过期、累计已处理数与已处理历史。只读查询：不扫描、
+    /// 不调用 AI、不写任何事实。
+    pub(crate) fn get_conflict_workspace(&self) -> AppResult<AppQueryResult> {
+        let workspace = self.with_database("query.conflict_workspace", |database| {
+            let relationship_repository = database.relationship_repository();
+            let revision = relationship_repository.relationship_revision()?;
+            let last_verified_at = relationship_repository.last_verified_at()?;
+            build_conflict_workspace(
+                &database.conflict_repository().list_cases()?,
+                &database.conflict_analysis_repository().list_records(None)?,
+                revision,
+                last_verified_at,
+            )
+        })?;
+        Ok(AppQueryResult::ConflictWorkspace(workspace))
+    }
+
+    /// 用户对一组待确认冲突的明确决定。写结论的决定立即完成并关闭该冲突；
+    /// 「纳入集中库管理」只返回治理预览意图，在这里绝不提交迁移或改写文件。
+    pub(crate) fn resolve_conflict_case(
+        &self,
+        request: ResolveConflictCase,
+    ) -> AppResult<AppCommandResult> {
+        let operation_id = OperationId::new();
+        self.journal_begin(operation_id, "conflict_resolution");
+        let result = self.resolve_conflict_case_flow(request);
+        self.journal_settle(operation_id, "conflict_resolution", result.as_ref().err());
+        result
+    }
+
+    fn resolve_conflict_case_flow(
+        &self,
+        request: ResolveConflictCase,
+    ) -> AppResult<AppCommandResult> {
+        let outcome = self.with_database("execute.resolve_conflict_case", |database| {
+            let case = database
+                .conflict_repository()
+                .list_cases()?
+                .into_iter()
+                .find(|case| case.conflict_id == request.conflict_id)
+                .ok_or_else(|| conflict_case_not_found(&request.conflict_id))?;
+            let current_revision = || -> AppResult<String> {
+                Ok(database
+                    .relationship_repository()
+                    .relationship_revision()?
+                    .to_string())
+            };
+
+            if !request.decision.writes_conclusion() {
+                // 文件类决定只产出治理预览意图：解析需要治理的关系边，
+                // 但绝不在这里提交迁移，也不写冲突结论。
+                let relation_id = conflict_relation_id(database, &case)?;
+                let handoff = plan_conflict_governance_handoff(&case, relation_id)?;
+                return Ok(ConflictResolutionOutcome {
+                    conflict_id: case.conflict_id.clone(),
+                    decision: request.decision,
+                    decided_at: None,
+                    conclusion: None,
+                    governance: Some(handoff),
+                    relationship_revision: current_revision()?,
+                });
+            }
+
+            let decided_at = super::now_epoch_seconds();
+            let Some(plan) = plan_conflict_decision(&case, request.decision, decided_at)? else {
+                // 幂等重放：同一决定已经写入过，不重复写事实、也不改版本。
+                return Ok(ConflictResolutionOutcome {
+                    conflict_id: case.conflict_id.clone(),
+                    decision: request.decision,
+                    decided_at: case.decided_at,
+                    conclusion: case.user_decision,
+                    governance: None,
+                    relationship_revision: current_revision()?,
+                });
+            };
+            // 版本校验只挡真正的写入：在过期事实上下决定必须被拒绝，
+            // 而幂等重放不能被自己的第一次写入挡回去。
+            let observed = current_revision()?;
+            if request.expected_relationship_revision != observed {
+                return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                    .with_param("reason", "stale_relationship_facts"));
+            }
+            database.conflict_repository().record_decision(
+                &plan.record.conflict_id,
+                plan.record.conclusion,
+                decided_at,
+            )?;
+            // 具体动作完成后才把该组的分析记录标为已采纳：这是审计关联，
+            // 不是可以单独点击的采纳状态。
+            let latest_record = database
+                .conflict_analysis_repository()
+                .list_records(Some(&plan.record.conflict_id))?
+                .into_iter()
+                .filter(|record| !record.adopted_by_user)
+                .max_by(|left, right| {
+                    left.analyzed_at
+                        .cmp(&right.analyzed_at)
+                        .then_with(|| left.record_id.cmp(&right.record_id))
+                });
+            if let Some(record) = latest_record {
+                database
+                    .conflict_analysis_repository()
+                    .mark_adopted(&record.record_id)?;
+            }
+            Ok(ConflictResolutionOutcome {
+                conflict_id: plan.record.conflict_id.clone(),
+                decision: plan.record.decision,
+                decided_at: Some(decided_at),
+                conclusion: Some(plan.record.conclusion),
+                governance: None,
+                relationship_revision: current_revision()?,
+            })
+        })?;
+        Ok(AppCommandResult::ConflictResolved(outcome))
     }
 
     pub(crate) fn get_relationship_overview(
@@ -2257,6 +2379,46 @@ fn relation_not_found(id: &str) -> AppError {
     AppError::new(ErrorCode::ObjectNotFound, Severity::Error)
         .with_param("relation_id", id.to_owned())
         .with_action(RecoveryAction::ChooseAnotherName)
+}
+
+fn conflict_case_not_found(conflict_id: &str) -> AppError {
+    AppError::new(ErrorCode::ObjectNotFound, Severity::Error)
+        .with_param("conflict_id", conflict_id.to_owned())
+        .with_action(RecoveryAction::ChooseAnotherName)
+}
+
+/// 「纳入集中库管理」需要一个具体的关系边。优先按冲突成员的路径匹配活跃
+/// 部署关系，匹配不到再退回冲突成员引用的 Skill。没有可治理关系边时如实
+/// 返回 `None`：界面不得伪造一个关系 id。
+fn conflict_relation_id(database: &Database, case: &ConflictCaseFact) -> AppResult<Option<String>> {
+    let relations = database.relationship_repository().list_relations()?;
+    let windows = cfg!(windows);
+    let member_paths: HashSet<String> = case
+        .members
+        .iter()
+        .filter_map(|member| member.path.as_deref())
+        .map(|path| normalized_path_key(path, windows))
+        .collect();
+    if let Some(relation) = relations.iter().find(|relation| {
+        relation.active && member_paths.contains(&normalized_path_key(&relation.path, windows))
+    }) {
+        return Ok(Some(relation.relation_id.clone()));
+    }
+    let member_skills: HashSet<SkillId> = case
+        .member_skill_ids
+        .iter()
+        .copied()
+        .chain(case.members.iter().filter_map(|member| member.skill_id))
+        .collect();
+    Ok(relations
+        .iter()
+        .find(|relation| {
+            relation.active
+                && relation
+                    .skill_id
+                    .is_some_and(|skill_id| member_skills.contains(&skill_id))
+        })
+        .map(|relation| relation.relation_id.clone()))
 }
 
 fn relation_operation_not_found(id: OperationId) -> AppError {

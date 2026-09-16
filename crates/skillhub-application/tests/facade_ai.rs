@@ -2,8 +2,9 @@ use async_trait::async_trait;
 use serde_json::json;
 use skillhub_application::LocalApplicationFacade;
 use skillhub_core::{
-    api::AppCommandResult,
+    api::{AppCommandResult, GetConflictWorkspace, ResolveConflictCase},
     catalog::{CatalogRepository, Skill},
+    relationship::ConflictDecision,
     AppCommand, AppQuery as RootAppQuery, AppQueryResult, ApplicationFacade, ErrorCode, Severity,
 };
 use skillhub_storage::Database;
@@ -752,6 +753,83 @@ async fn configured_conflict_analysis_keeps_conclusions_short_and_user_decisions
         .iter()
         .filter(|case| case.conflict_id != "conflict:decided")
         .all(|case| case.user_decision.is_none()));
+}
+
+/// 冲突处理的 AI 层始终只是建议：没有模型也能人工决定，决定之后分析不再
+/// 反转或覆盖它，工作台也不会把已裁决项送回分析。
+#[tokio::test]
+async fn conflict_analysis_never_replaces_a_manual_decision() {
+    let database = Database::open_in_memory().expect("database");
+    let skill_id = "00000000-0000-0000-0000-00000000000a"
+        .parse()
+        .expect("skill id");
+    database
+        .catalog_repository()
+        .expect("catalog repository")
+        .insert(&Skill::new(skill_id, "Notes"))
+        .await
+        .expect("seed skill");
+    database
+        .conflict_repository()
+        .create_case(&conflict_case(
+            "conflict:notes",
+            ConflictClassification::Uncertain,
+            Some(skill_id),
+            None,
+        ))
+        .expect("case");
+    // 没有 LLM runner，也没有模型配置：人工处理必须照常可用。
+    let facade = LocalApplicationFacade::new(database);
+    enable_all_llm_capabilities(&facade).await;
+
+    let analysis = analysis_of(&facade, AnalyzeConflictScope::All).await;
+    assert_eq!(analysis.failure_code.as_deref(), Some("llm.not_configured"));
+    assert!(analysis.cases.is_empty());
+
+    let workspace = match facade
+        .query(RootAppQuery::GetConflictWorkspace(GetConflictWorkspace))
+        .await
+        .expect("conflict workspace")
+    {
+        AppQueryResult::ConflictWorkspace(workspace) => workspace,
+        other => panic!("expected conflict workspace, got {other:?}"),
+    };
+    assert_eq!(workspace.cases.len(), 1);
+    assert!(workspace.cases[0].latest_analysis.is_none());
+    let resolved = facade
+        .execute(AppCommand::ResolveConflictCase(ResolveConflictCase {
+            conflict_id: "conflict:notes".to_owned(),
+            decision: ConflictDecision::KeepDistinct,
+            expected_relationship_revision: workspace.relationship_revision.clone(),
+        }))
+        .await
+        .expect("manual decision without any LLM");
+    let AppCommandResult::ConflictResolved(outcome) = resolved else {
+        panic!("expected conflict resolution outcome");
+    };
+    assert_eq!(
+        outcome.conclusion,
+        Some(ConflictClassification::DistinctSkill)
+    );
+    assert!(outcome.governance.is_none());
+
+    // 已裁决的冲突不再送 AI，也不会被后续分析反转。
+    let after = analysis_of(&facade, AnalyzeConflictScope::All).await;
+    assert_eq!(after.skipped_decided_cases, 1);
+    assert_eq!(after.total_case_count, 0);
+    assert!(after.cases.is_empty());
+    let cases = facade
+        .database_for_tests()
+        .lock()
+        .expect("database lock")
+        .conflict_repository()
+        .list_cases()
+        .expect("cases");
+    assert_eq!(
+        cases[0].user_decision,
+        Some(ConflictClassification::DistinctSkill)
+    );
+    assert_eq!(cases[0].decided_at, outcome.decided_at);
 }
 
 #[tokio::test]

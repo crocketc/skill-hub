@@ -56,8 +56,8 @@ use skillhub_core::deployment::{
     DeploymentRecord, DeploymentState, RegisteredTargetIndex, TargetFact, TargetPlan,
 };
 use skillhub_core::duplicate::{
-    build_conflict_analysis_input, parse_conflict_analysis_response, AnalyzeConflictScope,
-    ConflictAnalysisRecord, ConflictCaseAnalysis, DuplicateCandidate,
+    build_conflict_analysis_input, conflict_case_matches_scope, parse_conflict_analysis_response,
+    AnalyzeConflictScope, ConflictAnalysisRecord, ConflictCaseAnalysis, DuplicateCandidate,
 };
 use skillhub_core::evidence::UsageEvidenceAnalyzer;
 use skillhub_core::health::{HealthFinding, RecoveryCandidate, RepairAction};
@@ -251,26 +251,6 @@ fn now_epoch_seconds() -> i64 {
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs() as i64
-}
-
-/// Which persisted conflict cases an analysis scope selects. Category matches
-/// the deterministic classification; skill matches membership facts only.
-fn conflict_case_matches_scope(
-    case: &skillhub_core::relationship::ConflictCaseFact,
-    scope: &AnalyzeConflictScope,
-) -> bool {
-    match scope {
-        AnalyzeConflictScope::All => true,
-        AnalyzeConflictScope::Category { classification } => case.classification == *classification,
-        AnalyzeConflictScope::Case { conflict_id } => case.conflict_id == *conflict_id,
-        AnalyzeConflictScope::Skill { skill_id } => {
-            case.member_skill_ids.contains(skill_id)
-                || case
-                    .members
-                    .iter()
-                    .any(|member| member.skill_id.as_ref() == Some(skill_id))
-        }
-    }
 }
 
 /// 当前 UTC 时刻的秒精度 RFC3339 字符串（`YYYY-MM-DDTHH:MM:SSZ`）。
@@ -5506,6 +5486,9 @@ impl ApplicationFacade for LocalApplicationFacade {
             AppCommand::AnalyzeConflict(request) => {
                 return self.analyze_conflict(request.scope).await;
             }
+            AppCommand::ResolveConflictCase(request) => {
+                return self.resolve_conflict_case(request);
+            }
             AppCommand::TranslateDescription(request) => {
                 return self.translate_description(request).await;
             }
@@ -5807,6 +5790,7 @@ impl ApplicationFacade for LocalApplicationFacade {
             AppQuery::ListSkillRelationshipCandidates(request) => {
                 self.list_skill_relationship_candidates(request)
             }
+            AppQuery::GetConflictWorkspace(_) => self.get_conflict_workspace(),
             AppQuery::ListRecoveryCandidates => self
                 .recovery_service
                 .list()

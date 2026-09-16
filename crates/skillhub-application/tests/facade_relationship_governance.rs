@@ -11,17 +11,23 @@ use serde_json::Value;
 use skillhub_application::LocalApplicationFacade;
 use skillhub_core::agent::DirectoryPrecedence;
 use skillhub_core::api::{
-    CreateSkill, GetRelationshipOverview, GetRelationshipRemovalImpact, GetSkillRelationshipGraph,
-    ListSkillRelationshipCandidates, ListSkills, PrepareImport, PrepareRelationMigration,
-    RelationshipGraphFilters, RelationshipMigrationBackupPolicy, RelationshipOverviewScope,
+    CreateSkill, GetConflictWorkspace, GetRelationshipOverview, GetRelationshipRemovalImpact,
+    GetSkillRelationshipGraph, ListSkillRelationshipCandidates, ListSkills, PrepareImport,
+    PrepareRelationMigration, RelationshipGraphFilters, RelationshipMigrationBackupPolicy,
+    RelationshipOverviewScope, ResolveConflictCase,
 };
 use skillhub_core::deployment::{ObservedMatchState, ObservedOrigin};
+use skillhub_core::duplicate::{
+    build_conflict_analysis_input, AnalyzeConflictScope, ConflictAnalysisAction,
+    ConflictAnalysisRecord, ConflictCaseAnalysis, DuplicateAnalysisSource,
+};
 use skillhub_core::import::{ImportGovernanceAction, ImportGovernanceDecision};
 use skillhub_core::relationship::{
-    AgentDirectoryCapabilityFact, ConflictCaseFact, ConflictClassification, ConflictEvidence,
-    ConflictKind, DeploymentRelationFact, DirectoryNodeFact, DirectoryRecognition, DirectoryRole,
-    FileRepresentation, GovernanceTaskFact, GovernanceTaskKind, IdentityDirection, OwnershipState,
-    RelationshipType, SourceRelationFact,
+    AgentDirectoryCapabilityFact, ConflictCaseFact, ConflictClassification, ConflictDecision,
+    ConflictEvidence, ConflictGovernanceIntent, ConflictKind, ConflictMemberFact,
+    ConflictWorkspace, DeploymentRelationFact, DirectoryNodeFact, DirectoryRecognition,
+    DirectoryRole, FileRepresentation, GovernanceTaskFact, GovernanceTaskKind, IdentityDirection,
+    OwnershipState, RelationshipType, SourceRelationFact,
 };
 use skillhub_core::source::{SourceDescriptor, SourceKind, SourceLocator};
 use skillhub_core::{
@@ -3491,5 +3497,588 @@ async fn verified_observed_copy_import_is_grouped_as_content_identical_copy() {
         member.affected_agents,
         ["trae.code"],
         "观察副本的归属 Agent 进入影响事实"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Task 2 conflict resolution: workspace, explicit decisions, governance
+// handoff and the operation journal behind each ending.
+// ---------------------------------------------------------------------------
+
+fn conflict_member(path: &str, fingerprint: &str) -> ConflictMemberFact {
+    ConflictMemberFact {
+        skill_id: None,
+        version_id: None,
+        provenance_id: None,
+        directory_node_id: None,
+        path: Some(path.to_owned()),
+        fingerprint: Some(fingerprint.to_owned()),
+    }
+}
+
+fn conflict_case(
+    conflict_id: &str,
+    classification: ConflictClassification,
+    fingerprint: &str,
+) -> ConflictCaseFact {
+    ConflictCaseFact {
+        conflict_id: conflict_id.to_owned(),
+        kind: ConflictKind::SameNameDifferentContent,
+        classification,
+        member_skill_ids: Vec::new(),
+        members: vec![
+            conflict_member(&format!("/library/{conflict_id}"), fingerprint),
+            conflict_member(
+                &format!("/agents/{conflict_id}"),
+                &format!("{fingerprint}-other"),
+            ),
+        ],
+        evidence: ConflictEvidence {
+            fingerprints_match: Some(false),
+            names_match: Some(true),
+            identity_direction: Some(IdentityDirection::Unknown),
+            sufficient_identity_evidence: false,
+        },
+        user_decision: None,
+        decided_at: None,
+    }
+}
+
+fn analysis_record(
+    conflict_id: &str,
+    fingerprint: &str,
+    action: ConflictAnalysisAction,
+    analyzed_at: i64,
+) -> ConflictAnalysisRecord {
+    ConflictAnalysisRecord {
+        record_id: format!("analysis:{conflict_id}:{analyzed_at}"),
+        conflict_id: conflict_id.to_owned(),
+        scope: AnalyzeConflictScope::Case {
+            conflict_id: conflict_id.to_owned(),
+        },
+        input_fingerprint: fingerprint.to_owned(),
+        baseline_classification: ConflictClassification::Uncertain,
+        conclusion: Some(ConflictCaseAnalysis {
+            conflict_id: conflict_id.to_owned(),
+            baseline_classification: ConflictClassification::Uncertain,
+            summary: "成员指纹不同，无法确认同一 Skill。".to_owned(),
+            recommended_action: action,
+            recommended_keep_member: None,
+            key_evidence: vec!["fingerprints differ".to_owned()],
+            uncertainties: Vec::new(),
+            confidence: 30,
+        }),
+        source: DuplicateAnalysisSource::Llm,
+        analyzed_at,
+        failure_code: None,
+        adopted_by_user: false,
+    }
+}
+
+async fn conflict_workspace_of(facade: &LocalApplicationFacade) -> ConflictWorkspace {
+    match facade
+        .query(AppQuery::GetConflictWorkspace(GetConflictWorkspace))
+        .await
+        .expect("conflict workspace")
+    {
+        AppQueryResult::ConflictWorkspace(workspace) => workspace,
+        other => panic!("expected conflict workspace, got {other:?}"),
+    }
+}
+
+fn open_conflict_facade() -> (LocalApplicationFacade, tempfile::TempDir) {
+    let database = Database::open_in_memory().expect("database");
+    let workspace = tempfile::tempdir().expect("workspace");
+    let library_root = workspace.path().join("library");
+    CentralLibrary::initialize(&library_root).expect("library");
+    (
+        LocalApplicationFacade::new_with_library(database, &library_root),
+        workspace,
+    )
+}
+
+fn relationship_revision(facade: &LocalApplicationFacade) -> i64 {
+    facade
+        .database_for_tests()
+        .lock()
+        .expect("database lock")
+        .relationship_repository()
+        .relationship_revision()
+        .expect("relationship revision")
+}
+
+/// Raw journal rows for one operation kind: `(phase, error_code)`.
+fn conflict_resolution_journal(facade: &LocalApplicationFacade) -> Vec<(String, Option<String>)> {
+    let handle = facade.database_for_tests();
+    let database = handle.lock().expect("database lock");
+    let mut statement = database
+        .connection_for_test()
+        .prepare(
+            "SELECT phase, error_code FROM operations WHERE kind='conflict_resolution'
+             ORDER BY created_at, operation_id",
+        )
+        .expect("prepare journal query");
+    let rows = statement
+        .query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?))
+        })
+        .expect("journal rows");
+    rows.map(|row| row.expect("journal row")).collect()
+}
+
+#[tokio::test]
+async fn conflict_workspace_lists_only_pending_cases_and_marks_stale_analysis() {
+    let (facade, _workspace) = open_conflict_facade();
+    let pending = conflict_case(
+        "conflict:pending",
+        ConflictClassification::Uncertain,
+        "fp-a",
+    );
+    let scope = AnalyzeConflictScope::Case {
+        conflict_id: "conflict:pending".to_owned(),
+    };
+    let fingerprint = build_conflict_analysis_input(&scope, std::slice::from_ref(&pending))
+        .expect("analysis input")
+        .fingerprint;
+    {
+        let handle = facade.database_for_tests();
+        let database = handle.lock().expect("database lock");
+        database
+            .conflict_repository()
+            .create_case(&pending)
+            .expect("pending case");
+        let mut handled = conflict_case(
+            "conflict:handled",
+            ConflictClassification::Uncertain,
+            "fp-h",
+        );
+        handled.user_decision = Some(ConflictClassification::DistinctSkill);
+        handled.decided_at = Some(30);
+        database
+            .conflict_repository()
+            .create_case(&handled)
+            .expect("handled case");
+        database
+            .conflict_repository()
+            .create_case(&conflict_case(
+                "conflict:deterministic",
+                ConflictClassification::DistinctSkill,
+                "fp-d",
+            ))
+            .expect("deterministic case");
+        database
+            .conflict_analysis_repository()
+            .insert_record(&analysis_record(
+                "conflict:pending",
+                &fingerprint,
+                ConflictAnalysisAction::DistinctSkill,
+                100,
+            ))
+            .expect("analysis record");
+    }
+
+    let revision_before = relationship_revision(&facade);
+    let workspace = conflict_workspace_of(&facade).await;
+    // 只读查询：不推进关系版本。
+    assert_eq!(relationship_revision(&facade), revision_before);
+
+    assert_eq!(workspace.cases.len(), 1);
+    assert_eq!(workspace.cases[0].case.conflict_id, "conflict:pending");
+    assert!(!workspace.cases[0].analysis_stale);
+    assert_eq!(
+        workspace.cases[0].recommended_decision,
+        Some(ConflictDecision::KeepDistinct),
+        "指纹未变时 AI 建议映射成明确动作"
+    );
+    assert_eq!(workspace.handled_count, 1);
+    assert_eq!(workspace.handled[0].conflict_id, "conflict:handled");
+    assert_eq!(
+        workspace.handled[0].decision,
+        ConflictDecision::KeepDistinct
+    );
+    assert_eq!(workspace.relationship_revision, revision_before.to_string());
+
+    // 关系事实变化后，旧分析因输入指纹改变而过期。
+    {
+        let handle = facade.database_for_tests();
+        let database = handle.lock().expect("database lock");
+        database
+            .conflict_repository()
+            .create_case(&conflict_case(
+                "conflict:pending",
+                ConflictClassification::Uncertain,
+                "fp-moved",
+            ))
+            .expect("updated pending case");
+    }
+    let stale = conflict_workspace_of(&facade).await;
+    assert!(stale.cases[0].analysis_stale);
+    assert_eq!(stale.cases[0].recommended_decision, None);
+    assert!(stale.cases[0].latest_analysis.is_some());
+}
+
+#[tokio::test]
+async fn manual_conflict_decision_needs_no_llm_and_is_auditable() {
+    // 未配置 LLM / 未开启任何 LLM 能力：人工决定仍然可用。
+    let (facade, _workspace) = open_conflict_facade();
+    {
+        let handle = facade.database_for_tests();
+        let database = handle.lock().expect("database lock");
+        database
+            .conflict_repository()
+            .create_case(&conflict_case(
+                "conflict:pending",
+                ConflictClassification::Uncertain,
+                "fp-a",
+            ))
+            .expect("pending case");
+        database
+            .conflict_analysis_repository()
+            .insert_record(&analysis_record(
+                "conflict:pending",
+                "sha256:whatever",
+                ConflictAnalysisAction::DistinctSkill,
+                100,
+            ))
+            .expect("analysis record");
+    }
+
+    let workspace = conflict_workspace_of(&facade).await;
+    let revision_before = relationship_revision(&facade);
+    let resolved = facade
+        .execute(AppCommand::ResolveConflictCase(ResolveConflictCase {
+            conflict_id: "conflict:pending".to_owned(),
+            decision: ConflictDecision::KeepDistinct,
+            expected_relationship_revision: workspace.relationship_revision.clone(),
+        }))
+        .await
+        .expect("manual decision");
+    let AppCommandResult::ConflictResolved(outcome) = resolved else {
+        panic!("expected a conflict resolution outcome");
+    };
+    assert_eq!(outcome.conflict_id, "conflict:pending");
+    assert_eq!(outcome.decision, ConflictDecision::KeepDistinct);
+    assert_eq!(
+        outcome.conclusion,
+        Some(ConflictClassification::DistinctSkill)
+    );
+    assert!(outcome.decided_at.is_some());
+    assert!(outcome.governance.is_none());
+    assert!(outcome.relationship_revision.parse::<i64>().unwrap() > revision_before);
+
+    {
+        let handle = facade.database_for_tests();
+        let database = handle.lock().expect("database lock");
+        let cases = database.conflict_repository().list_cases().expect("cases");
+        assert_eq!(
+            cases[0].user_decision,
+            Some(ConflictClassification::DistinctSkill)
+        );
+        assert_eq!(cases[0].decided_at, outcome.decided_at);
+        // 具体动作完成后才把分析记录标为已采纳：审计关联，而不是独立采纳状态。
+        let records = database
+            .conflict_analysis_repository()
+            .list_records(Some("conflict:pending"))
+            .expect("records");
+        assert!(records.iter().all(|record| record.adopted_by_user));
+    }
+
+    // 决定后：待确认队列清空，冲突进入已处理历史。
+    let after = conflict_workspace_of(&facade).await;
+    assert!(after.cases.is_empty());
+    assert_eq!(after.handled_count, 1);
+    assert_eq!(after.handled[0].conflict_id, "conflict:pending");
+
+    // 决定是一次可追溯的操作记录。
+    assert_eq!(
+        conflict_resolution_journal(&facade),
+        vec![("committed".to_owned(), None)],
+        "a completed decision is journaled as committed"
+    );
+}
+
+#[tokio::test]
+async fn a_decision_taken_on_stale_facts_is_refused_with_a_journaled_failure() {
+    let (facade, _workspace) = open_conflict_facade();
+    {
+        let handle = facade.database_for_tests();
+        let database = handle.lock().expect("database lock");
+        database
+            .conflict_repository()
+            .create_case(&conflict_case(
+                "conflict:pending",
+                ConflictClassification::Uncertain,
+                "fp-a",
+            ))
+            .expect("pending case");
+    }
+    let stale_revision = conflict_workspace_of(&facade)
+        .await
+        .relationship_revision
+        .clone();
+
+    // 关系事实在用户阅读工作台之后发生了变化。
+    {
+        let handle = facade.database_for_tests();
+        let database = handle.lock().expect("database lock");
+        database
+            .conflict_repository()
+            .create_case(&conflict_case(
+                "conflict:other",
+                ConflictClassification::Uncertain,
+                "fp-b",
+            ))
+            .expect("another case moves the revision");
+    }
+
+    let error = facade
+        .execute(AppCommand::ResolveConflictCase(ResolveConflictCase {
+            conflict_id: "conflict:pending".to_owned(),
+            decision: ConflictDecision::ConfirmSameSkill,
+            expected_relationship_revision: stale_revision,
+        }))
+        .await
+        .expect_err("a stale workspace revision must refuse the decision");
+    assert_eq!(error.code, ErrorCode::OperationConflict);
+
+    {
+        let handle = facade.database_for_tests();
+        let database = handle.lock().expect("database lock");
+        let cases = database.conflict_repository().list_cases().expect("cases");
+        assert!(
+            cases.iter().all(|case| case.user_decision.is_none()),
+            "过期事实上的决定不写任何裁决"
+        );
+    }
+    assert_eq!(
+        conflict_resolution_journal(&facade),
+        vec![(
+            "rolled_back".to_owned(),
+            Some("operation.conflict".to_owned())
+        )],
+        "a refused decision still leaves a traceable failure record"
+    );
+
+    // 重新读取工作台后即可在最新事实上决定。
+    let fresh = conflict_workspace_of(&facade).await;
+    let resolved = facade
+        .execute(AppCommand::ResolveConflictCase(ResolveConflictCase {
+            conflict_id: "conflict:pending".to_owned(),
+            decision: ConflictDecision::ConfirmSameSkill,
+            expected_relationship_revision: fresh.relationship_revision.clone(),
+        }))
+        .await
+        .expect("decision on fresh facts");
+    let AppCommandResult::ConflictResolved(outcome) = resolved else {
+        panic!("expected a conflict resolution outcome");
+    };
+    assert_eq!(
+        outcome.conclusion,
+        Some(ConflictClassification::SameSkillVersion)
+    );
+}
+
+#[tokio::test]
+async fn repeating_the_same_decision_is_idempotent_and_a_conflicting_one_is_refused() {
+    let (facade, _workspace) = open_conflict_facade();
+    {
+        let handle = facade.database_for_tests();
+        let database = handle.lock().expect("database lock");
+        database
+            .conflict_repository()
+            .create_case(&conflict_case(
+                "conflict:pending",
+                ConflictClassification::Uncertain,
+                "fp-a",
+            ))
+            .expect("pending case");
+    }
+    let revision = conflict_workspace_of(&facade)
+        .await
+        .relationship_revision
+        .clone();
+    let request = |decision: ConflictDecision| {
+        AppCommand::ResolveConflictCase(ResolveConflictCase {
+            conflict_id: "conflict:pending".to_owned(),
+            decision,
+            expected_relationship_revision: revision.clone(),
+        })
+    };
+
+    let first = facade
+        .execute(request(ConflictDecision::KeepDistinct))
+        .await;
+    let AppCommandResult::ConflictResolved(first) = first.expect("first decision") else {
+        panic!("expected a conflict resolution outcome");
+    };
+    let revision_after_first = relationship_revision(&facade);
+
+    // 同一决定的并发/重复提交按幂等处理：不写第二条事实，也不推进版本。
+    let replay = facade
+        .execute(request(ConflictDecision::KeepDistinct))
+        .await
+        .expect("idempotent replay");
+    let AppCommandResult::ConflictResolved(replay) = replay else {
+        panic!("expected a conflict resolution outcome");
+    };
+    assert_eq!(replay.decided_at, first.decided_at);
+    assert_eq!(replay.conclusion, first.conclusion);
+    assert_eq!(
+        relationship_revision(&facade),
+        revision_after_first,
+        "an idempotent replay writes no new relationship fact"
+    );
+
+    // 用另一个决定覆盖已有裁决被拒绝。
+    let error = facade
+        .execute(request(ConflictDecision::ConfirmSameSkill))
+        .await
+        .expect_err("a conflicting decision must be refused");
+    assert_eq!(error.code, ErrorCode::OperationConflict);
+    // 三次提交各自留下记录：两次完成、一次被拒绝（同一秒内顺序不保证）。
+    let mut phases: Vec<String> = conflict_resolution_journal(&facade)
+        .into_iter()
+        .map(|(phase, _)| phase)
+        .collect();
+    phases.sort();
+    assert_eq!(
+        phases,
+        vec![
+            "committed".to_owned(),
+            "committed".to_owned(),
+            "rolled_back".to_owned()
+        ]
+    );
+}
+
+#[tokio::test]
+async fn centralize_management_hands_the_relation_to_governance_without_touching_a_file() {
+    let (facade, _workspace) = open_conflict_facade();
+    let relation_path = "/agents/conflict:pending";
+    {
+        let handle = facade.database_for_tests();
+        let database = handle.lock().expect("database lock");
+        database
+            .conflict_repository()
+            .create_case(&conflict_case(
+                "conflict:pending",
+                ConflictClassification::Uncertain,
+                "fp-a",
+            ))
+            .expect("pending case");
+        database
+            .relationship_repository()
+            .upsert_deployment_relation(&DeploymentRelationFact {
+                relation_id: "relation:managed-copy".to_owned(),
+                skill_id: None,
+                agent_client_id: "trae.code".to_owned(),
+                path: relation_path.to_owned(),
+                path_key: String::new(),
+                directory_node_id: None,
+                relationship: RelationshipType::ManagedCopy,
+                file_representation: FileRepresentation::Copy,
+                ownership: OwnershipState::SkillhubManaged,
+                link_target_path: None,
+                link_target_path_key: None,
+                link_target_directory_id: None,
+                content_fingerprint: "sha256:copy".to_owned(),
+                origin: ObservedOrigin::Scan,
+                match_state: ObservedMatchState::ContentVerified,
+                active: true,
+                observed_at: 5,
+                released_at: None,
+            })
+            .expect("deployment relation");
+    }
+
+    let workspace = conflict_workspace_of(&facade).await;
+    let revision_before = relationship_revision(&facade);
+    let resolved = facade
+        .execute(AppCommand::ResolveConflictCase(ResolveConflictCase {
+            conflict_id: "conflict:pending".to_owned(),
+            decision: ConflictDecision::CentralizeManagement,
+            expected_relationship_revision: workspace.relationship_revision.clone(),
+        }))
+        .await
+        .expect("governance handoff");
+    let AppCommandResult::ConflictResolved(outcome) = resolved else {
+        panic!("expected a conflict resolution outcome");
+    };
+
+    let handoff = outcome.governance.expect("governance handoff");
+    assert_eq!(handoff.conflict_id, "conflict:pending");
+    assert_eq!(
+        handoff.relation_id.as_deref(),
+        Some("relation:managed-copy")
+    );
+    assert_eq!(
+        handoff.intent,
+        ConflictGovernanceIntent::CentralizeManagement
+    );
+    // 只写结论的动作才写结论：文件类动作不写裁决、不动关系事实。
+    assert_eq!(outcome.conclusion, None);
+    assert_eq!(outcome.decided_at, None);
+    assert!(!std::path::Path::new(relation_path).exists());
+    assert_eq!(relationship_revision(&facade), revision_before);
+
+    let after = conflict_workspace_of(&facade).await;
+    assert_eq!(after.cases.len(), 1, "冲突在治理执行前仍然待确认");
+    assert!(after.handled.is_empty());
+    assert_eq!(after.handled_count, 0, "纳入集中库管理不计入累计处理数");
+    assert_eq!(
+        conflict_resolution_journal(&facade),
+        vec![("committed".to_owned(), None)]
+    );
+}
+
+#[tokio::test]
+async fn centralize_management_reports_no_relation_instead_of_inventing_one() {
+    let (facade, _workspace) = open_conflict_facade();
+    {
+        let handle = facade.database_for_tests();
+        let database = handle.lock().expect("database lock");
+        database
+            .conflict_repository()
+            .create_case(&conflict_case(
+                "conflict:pending",
+                ConflictClassification::Uncertain,
+                "fp-a",
+            ))
+            .expect("pending case");
+    }
+    let workspace = conflict_workspace_of(&facade).await;
+    let resolved = facade
+        .execute(AppCommand::ResolveConflictCase(ResolveConflictCase {
+            conflict_id: "conflict:pending".to_owned(),
+            decision: ConflictDecision::CentralizeManagement,
+            expected_relationship_revision: workspace.relationship_revision.clone(),
+        }))
+        .await
+        .expect("governance handoff");
+    let AppCommandResult::ConflictResolved(outcome) = resolved else {
+        panic!("expected a conflict resolution outcome");
+    };
+    let handoff = outcome.governance.expect("governance handoff");
+    assert_eq!(handoff.relation_id, None);
+}
+
+#[tokio::test]
+async fn deciding_an_unknown_conflict_fails_with_a_journaled_failure() {
+    let (facade, _workspace) = open_conflict_facade();
+    let error = facade
+        .execute(AppCommand::ResolveConflictCase(ResolveConflictCase {
+            conflict_id: "conflict:missing".to_owned(),
+            decision: ConflictDecision::KeepDistinct,
+            expected_relationship_revision: "0".to_owned(),
+        }))
+        .await
+        .expect_err("an unknown conflict cannot be decided");
+    assert_eq!(error.code, ErrorCode::ObjectNotFound);
+    assert_eq!(
+        conflict_resolution_journal(&facade),
+        vec![(
+            "rolled_back".to_owned(),
+            Some("object.not_found".to_owned())
+        )]
     );
 }
