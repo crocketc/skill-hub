@@ -18,6 +18,8 @@ import type {
 } from "../../api/bindings";
 import { desktopDirectoryPicker } from "../../platform/directoryPicker";
 import { desktopDirectoryOpener } from "../../platform/directoryOpener";
+import { operationTracker, type OperationTracker } from "../../platform/operationTracker";
+import { runTrackedOperation } from "../../platform/runTrackedOperation";
 import { Button } from "../../ui/Button";
 import type { BackupFacade } from "./api";
 
@@ -48,10 +50,13 @@ export function DataProtectionPage({
   facade,
   directoryPicker = desktopDirectoryPicker,
   directoryOpener = desktopDirectoryOpener,
+  tracker = operationTracker,
 }: {
   facade: BackupFacade;
   directoryPicker?: OutputDirectoryPicker;
   directoryOpener?: { openDirectory: (path: string) => Promise<void> };
+  /** 统一执行桥的在途投影；测试可注入独立实例。 */
+  tracker?: OperationTracker;
 }) {
   const { t } = useTranslation();
   const location = useLocation();
@@ -163,7 +168,25 @@ export function DataProtectionPage({
   const commitRestore = () => run(async () => {
     if (!restorePlan) return;
     const decisions = restorePlan.conflicts.filter((conflict) => conflict.skill_id).map((conflict) => ({ skill_id: conflict.skill_id!, decision: restoreDecisions[conflict.skill_id!] })) as RestoreDecision[];
-    setRestoreResult(await facade.commitRestore(path.trim(), decisions));
+    // 统一执行桥（任务 4）：恢复提交进 tracker 在途投影；结果反馈保留在
+    // 页面内（notifications: null），异常 rethrow 由页面 run() 承接，不吞掉。
+    const result = await runTrackedOperation({
+      tracker,
+      notifications: null,
+      kind: "restore",
+      label: t("dataProtection.tracker.restoreLabel"),
+      total: restorePlan.skills,
+      translate: (key, options) => String(t(key as never, options as never)),
+      successNotice: () => null,
+      errorNotice: () => null,
+      summarize: (settled) => ({
+        succeeded: settled.skills_restored,
+        failed: 0,
+        skipped: settled.skills_skipped,
+      }),
+      run: () => facade.commitRestore(path.trim(), decisions),
+    });
+    setRestoreResult(result);
   });
   const buildVersions = async (skillIds: string[]): Promise<ExportInput["versions"]> => {
     if (exportVersionScope === "current") return "current";

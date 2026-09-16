@@ -893,6 +893,42 @@ it("counts todo results as attention in the status, notification, and tracked su
   });
 });
 
+it("drives the unified tracker through queued, running and failed when the commit command throws", async () => {
+  const user = userEvent.setup();
+  const tracker = createOperationTracker();
+  const transitions: Array<string | undefined> = [];
+  let previous = "";
+  tracker.subscribe(() => {
+    const status = tracker.getSnapshot()[0]?.status;
+    if (status !== previous) {
+      transitions.push(status);
+      previous = status ?? "";
+    }
+  });
+  const facade = createMockImportFacade({ scenario: "safe-local" });
+  facade.commitImport = vi.fn(async (_plan, _actions, onProgress) => {
+    onProgress?.({ candidateId: "safe-pdf", completed: 1, total: 1 });
+    // 命令中途抛错：tracker 必须落 failed，异常原样上抛由向导告警承接。
+    throw new Error("native commit exploded");
+  });
+  await renderWithTracker(facade, tracker);
+
+  await user.type(screen.getByLabelText("来源"), "C:/skills");
+  await user.click(screen.getByRole("button", { name: "解析来源" }));
+  await user.click(await screen.findByRole("button", { name: "继续选择候选" }));
+  await user.click(screen.getByRole("checkbox", { name: /PDF/ }));
+  await user.click(screen.getByRole("button", { name: "分析冲突" }));
+  await user.click(await screen.findByRole("button", { name: "提交导入" }));
+
+  // 异常不吞掉：向导失败态可见（状态区展示失败文案，danger 通知照发）。
+  expect(await screen.findByTestId("notice-danger")).toBeVisible();
+  expect(screen.getByText("导入需要处理", { selector: ".sh-import-wizard__status" })).toBeVisible();
+  expect(transitions).toEqual(["queued", "running", "failed"]);
+  const [operation] = tracker.getSnapshot();
+  expect(operation.status).toBe("failed");
+  expect(operation.error).toBe("native commit exploded");
+});
+
 async function renderWithTracker(facade: ReturnType<typeof createMockImportFacade>, tracker: ReturnType<typeof createOperationTracker>) {
   const i18n = await createSkillHubI18n(["zh-CN"]);
   return render(
@@ -936,7 +972,8 @@ it("keeps the commit running in the global tracker after the wizard unmounts", a
 
   const [operation] = tracker.getSnapshot();
   expect(operation.kind).toBe("import");
-  expect(operation.status).toBe("completed");
+  // 统一生命周期（任务 4）：全部成功落 success，不再有笼统 completed。
+  expect(operation.status).toBe("success");
   expect(operation.completed).toBe(operation.total);
   expect(operation.resultSummary).toEqual({ succeeded: 1, failed: 0, skipped: 1, todo: 0 });
 });
@@ -970,7 +1007,8 @@ it("refuses to commit while another import is still running", async () => {
 
   expect(facade.commitImport).not.toHaveBeenCalled();
   expect(tracker.getSnapshot()).toHaveLength(1);
-  expect(tracker.getSnapshot()[0].status).toBe("running");
+  // begin 即在途（queued）：互斥同样阻塞尚未 start 的后续导入。
+  expect(["queued", "running"]).toContain(tracker.getSnapshot()[0].status);
 });
 
 it("shows candidate progress while commit is in flight", async () => {

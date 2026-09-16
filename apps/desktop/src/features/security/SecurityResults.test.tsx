@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import { I18nextProvider } from "react-i18next";
 import { expect, it, vi } from "vitest";
 import { createSkillHubI18n } from "../../i18n";
+import { createOperationTracker, type OperationTracker } from "../../platform/operationTracker";
 import {
   separateCheckFixture,
   type SecurityCheck,
@@ -40,9 +41,10 @@ interface FacadeOverrides {
   cancelLlmCheck?: (operationId: string) => Promise<void>;
   listRunningLlmChecks?: () => Promise<Array<{ skillId: string; versionId: string; operationId: string }>>;
   onDisposition?: (call: DispositionCall) => void;
+  tracker?: OperationTracker;
 }
 
-async function renderSecurity({ checks, findings, preferences, runLlmCheck, cancelLlmCheck, listRunningLlmChecks, onDisposition }: FacadeOverrides) {
+async function renderSecurity({ checks, findings, preferences, runLlmCheck, cancelLlmCheck, listRunningLlmChecks, onDisposition, tracker }: FacadeOverrides) {
   const dispositionCalls: DispositionCall[] = [];
   const fixture = separateCheckFixture();
   const listFindings = vi.fn(async () => findings ?? fixture.findings);
@@ -71,7 +73,7 @@ async function renderSecurity({ checks, findings, preferences, runLlmCheck, canc
   const i18n = await createSkillHubI18n(["zh-CN"]);
   const view = render(
     <I18nextProvider i18n={i18n}>
-      <SecurityResults facade={facade} skillId="skill-pdf" versionId="v1" />
+      <SecurityResults facade={facade} skillId="skill-pdf" tracker={tracker} versionId="v1" />
     </I18nextProvider>,
   );
   const cancelSpy = facade.cancelLlmCheck ?? vi.fn();
@@ -263,4 +265,93 @@ it("shows the raw data scope next to the AI check when it is not the explicit-se
   });
 
   expect(await screen.findByText("当前发送范围：aggregate_usage")).toBeVisible();
+});
+
+describe("SecurityResults 与统一执行桥", () => {
+  it("reports the AI check to the unified tracker while running and finishes with success", async () => {
+    let resolveRun: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      resolveRun = resolve;
+    });
+    const tracker = createOperationTracker();
+    const { rerender } = await renderSecurity({
+      preferences: { llmProvider: "local-model", dataScope: "explicit_selection" },
+      runLlmCheck: async () => {
+        await gate;
+      },
+      listRunningLlmChecks: async () => [
+        { skillId: "skill-pdf", versionId: "v1", operationId: "op-live" },
+      ],
+      tracker,
+    });
+
+    fireEvent.click(await screen.findByRole("button", { name: "运行 AI 检查" }));
+    expect(await screen.findByText("AI 检查进行中，结果将在完成后展示。")).toBeVisible();
+
+    const [inFlight] = tracker.getSnapshot();
+    expect(inFlight.status).toBe("running");
+    expect(inFlight.kind).toBe("ai_check");
+    expect(inFlight.canCancel).toBe(true);
+    // 运行中被发现的持久化 operation id 随时关联到同一投影。
+    expect(inFlight.operationId).toBe("op-live");
+    expect(inFlight.targetHref).toBe("/operations/op-live");
+
+    resolveRun();
+    await waitFor(() => {
+      expect(screen.queryByText("AI 检查进行中，结果将在完成后展示。")).not.toBeInTheDocument();
+    });
+    rerender(<div />);
+    const [finished] = tracker.getSnapshot();
+    expect(finished.status).toBe("success");
+  });
+
+  it("finishes a user-cancelled AI check as cancelled (not failed) in the tracker", async () => {
+    let resolveRun: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      resolveRun = resolve;
+    });
+    const tracker = createOperationTracker();
+    await renderSecurity({
+      preferences: { llmProvider: "local-model", dataScope: "explicit_selection" },
+      runLlmCheck: async () => {
+        await gate;
+        throw new Error("operation cancelled");
+      },
+      listRunningLlmChecks: async () => [
+        { skillId: "skill-pdf", versionId: "v1", operationId: "op-live" },
+      ],
+      cancelLlmCheck: async () => {
+        resolveRun();
+      },
+      tracker,
+    });
+
+    fireEvent.click(await screen.findByRole("button", { name: "运行 AI 检查" }));
+    const cancel = await screen.findByRole("button", { name: "取消检查" });
+    fireEvent.click(cancel);
+
+    await waitFor(() => {
+      const [operation] = tracker.getSnapshot();
+      expect(operation.status).toBe("cancelled");
+    });
+  });
+
+  it("records run failures on the tracker and keeps the inline error without swallowing", async () => {
+    const tracker = createOperationTracker();
+    await renderSecurity({
+      preferences: { llmProvider: "local-model", dataScope: "explicit_selection" },
+      findings: [makeFinding({ id: "lf-1", kind: "llm" })],
+      runLlmCheck: async () => {
+        throw new Error("提供商未就绪");
+      },
+      tracker,
+    });
+
+    fireEvent.click(await screen.findByRole("button", { name: "运行 AI 检查" }));
+    expect(await screen.findByText("AI 检查运行失败：提供商未就绪")).toBeVisible();
+
+    const [failed] = tracker.getSnapshot();
+    expect(failed.status).toBe("failed");
+    expect(failed.error).toBe("提供商未就绪");
+  });
 });

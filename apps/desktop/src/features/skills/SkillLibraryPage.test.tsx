@@ -8,6 +8,7 @@ import {
 import { I18nextProvider } from "react-i18next";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { skillHubI18n } from "../../i18n";
+import { createOperationTracker, type OperationTracker } from "../../platform/operationTracker";
 import "../../styles/base.css";
 import baseCssRaw from "../../styles/base.css?raw";
 import { AppNotificationsProvider } from "../../ui/notifications";
@@ -38,6 +39,8 @@ interface RenderLibraryOptions {
   onOpenDiscovery?: () => void;
   queryRetry?: boolean | number;
   removalFacade?: RemovalFacade;
+  /** 统一执行桥的在途投影（任务 4）；测试注入独立实例。 */
+  tracker?: OperationTracker;
   /** "table" (default) simulates a persisted table preference; "unset" keeps
    * the facade without loadViewMode so the page default (cards) applies. */
   persistedViewMode?: "table" | "unset";
@@ -54,6 +57,7 @@ function renderLibrary({
   onOpenDiscovery,
   queryRetry = false,
   removalFacade,
+  tracker,
   persistedViewMode = "table",
 }: RenderLibraryOptions): RenderedLibrary {
   // T3-B 起页面默认卡片视图；既有表格语义测试统一模拟“用户已持久化表格视图”，
@@ -66,7 +70,7 @@ function renderLibrary({
   });
   const router = createMemoryRouter(
     [
-      { path: "/library", element: <SkillLibraryPage facade={facade} onOpenDiscovery={onOpenDiscovery} removalFacade={removalFacade} /> },
+      { path: "/library", element: <SkillLibraryPage facade={facade} onOpenDiscovery={onOpenDiscovery} removalFacade={removalFacade} tracker={tracker} /> },
       // P1-11：卡片“查看”按钮跳完整详情页。
       { path: "/library/:skillId", element: <p>Skill detail page</p> },
       { path: "/deploy", element: <p>Batch deployment</p> },
@@ -256,6 +260,46 @@ describe("SkillLibraryPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Click again to confirm deleting 1 Skills" }));
 
     await waitFor(() => expect(removalFacade.commitDelete).toHaveBeenCalledWith("delete-pdf", {}));
+  });
+
+  it("reports batch deletion to the unified tracker: in-flight progress, partial finish, failures kept", async () => {
+    const facade = createMockSkillLibraryFacade();
+    const tracker = createOperationTracker();
+    const removalFacade: RemovalFacade = {
+      prepareUndeploy: vi.fn(),
+      commitUndeploy: vi.fn(),
+      prepareDelete: vi.fn()
+        .mockResolvedValueOnce({ deployments: [], dependentProjects: [], operationId: "delete-pdf", skillId: "skill-pdf", skillName: "PDF Reader", declaredDependencies: [], pinnedVersions: [], combinations: [], relatedSkills: [], unknownExternalReferences: [] })
+        .mockResolvedValueOnce({ deployments: [], dependentProjects: [], operationId: "delete-docx", skillId: "skill-docx", skillName: "DOCX Writer", declaredDependencies: [], pinnedVersions: [], combinations: [], relatedSkills: [], unknownExternalReferences: [] }),
+      commitDelete: vi.fn()
+        .mockResolvedValueOnce({ centralSkillDeleted: true })
+        .mockRejectedValueOnce(new Error("locked by another process")),
+    };
+    renderLibrary({ facade, removalFacade, tracker });
+
+    fireEvent.click(await screen.findByRole("checkbox", { name: "Select PDF Reader" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select DOCX Writer" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete selected Skills from library" }));
+    expect(await screen.findByRole("dialog", { name: "Review batch deletion impact" })).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Continue to force deletion" }));
+
+    // 提交在途：确认后、结果前，tracker 已出现 running 批量移除任务。
+    const confirmButton = screen.getByRole("button", { name: "Click again to confirm deleting 2 Skills" });
+    fireEvent.click(confirmButton);
+
+    await waitFor(() => {
+      const [operation] = tracker.getSnapshot();
+      expect(operation?.status === "running" || operation?.status === "partial").toBe(true);
+    });
+    const [finished] = tracker.getSnapshot();
+    expect(finished.kind).toBe("remove");
+    expect(finished.total).toBe(2);
+    expect(finished.status).toBe("partial");
+    expect(finished.completed).toBe(2);
+    expect(finished.resultSummary).toEqual({ succeeded: 1, failed: 1, skipped: 0 });
+    // 单个 Skill 的失败不吞掉：摘要中仍有失败组。
+    const summary = await screen.findByTestId("batch-summary");
+    expect(summary).toHaveTextContent("1 failed");
   });
 
   it("reports per-skill batch deletion outcomes instead of failing the whole batch", async () => {

@@ -159,6 +159,8 @@ export function createNativeDeploymentFacade(context: NativeDeploymentContext): 
         status: target.status,
         message: resultMessage(target.error_code, target.status),
         error: target.error ?? undefined,
+        // 持久化操作记录 id：桌面端经同一 id 深链 /operations/:id（任务 4）。
+        operationId: summary.operation_id,
       }));
     },
   };
@@ -209,7 +211,7 @@ export function createNativeBatchDeploymentFacade(): BatchDeploymentFacade {
       return { plans, failures };
     },
 
-    async commit(plans: BatchDeploymentPlan[]): Promise<BatchDeploymentResult[]> {
+    async commit(plans: BatchDeploymentPlan[], onProgress?: (completedSkills: number) => void): Promise<BatchDeploymentResult[]> {
       const results: BatchDeploymentResult[] = [];
       for (const { skillId, plan } of plans) {
         try {
@@ -224,6 +226,8 @@ export function createNativeBatchDeploymentFacade(): BatchDeploymentFacade {
             message: messageOf(reason),
           })));
         }
+        // 批次非原子：每个 Skill 落定即推进一次真实进度（不做估算）。
+        onProgress?.(results.length ? new Set(results.map((result) => result.skillId)).size : 0);
       }
       return results;
     },

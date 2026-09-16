@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { describeNativeError } from "../../api/nativeErrors";
+import { operationTracker, type OperationTracker } from "../../platform/operationTracker";
+import { runTrackedOperation, type TrackedOperationHandle } from "../../platform/runTrackedOperation";
 import { Button } from "../../ui/Button";
 import { DataState } from "../../ui/DataState";
 import { StatusBadge } from "../../ui/StatusBadge";
@@ -11,9 +13,11 @@ export interface SecurityResultsProps {
   facade?: SecurityFacade;
   skillId: string;
   versionId: string;
+  /** 统一执行桥的在途投影；测试可注入独立实例，默认模块级单例。 */
+  tracker?: OperationTracker;
 }
 
-export function SecurityResults({ facade = unavailableSecurityFacade, skillId, versionId }: SecurityResultsProps) {
+export function SecurityResults({ facade = unavailableSecurityFacade, skillId, tracker = operationTracker, versionId }: SecurityResultsProps) {
   const { t } = useTranslation();
   const [checks, setChecks] = useState<SecurityCheck[]>([]);
   const [findings, setFindings] = useState<SecurityFinding[]>([]);
@@ -48,13 +52,31 @@ export function SecurityResults({ facade = unavailableSecurityFacade, skillId, v
   const [runningOperation, setRunningOperation] = useState<string | undefined>(undefined);
   const [cancelRequested, setCancelRequested] = useState(false);
   const cancelledRef = useRef(false);
+  // 统一执行桥（任务 4）：在途句柄挂在 ref 上，供取消路径与运行中的
+  // operation id 发现逻辑随时关联/落终态。
+  const handleRef = useRef<TrackedOperationHandle | null>(null);
   const handleRun = async () => {
     if (!facade.runLlmCheck || !llmConfigured) return;
+    // 守卫后捕获可选方法：闭包内 TS 不会保留 facade.runLlmCheck 的收窄。
+    const runCheck = facade.runLlmCheck;
     setRunning(true);
     setRunError(undefined);
     cancelledRef.current = false;
     try {
-      await facade.runLlmCheck(skillId, versionId);
+      await runTrackedOperation({
+        tracker,
+        notifications: null,
+        kind: "ai_check",
+        label: t("security.tracker.aiCheckLabel"),
+        canCancel: true,
+        translate: (key, options) => String(t(key as never, options as never)),
+        successNotice: () => null,
+        errorNotice: () => null,
+        run: async (handle) => {
+          handleRef.current = handle;
+          await runCheck(skillId, versionId);
+        },
+      });
       setReloadKey((key) => key + 1);
     } catch (reason: unknown) {
       // A run the user cancelled must not surface as a failure.
@@ -64,6 +86,7 @@ export function SecurityResults({ facade = unavailableSecurityFacade, skillId, v
     } finally {
       setRunning(false);
       setRunningOperation(undefined);
+      handleRef.current = null;
     }
   };
   // While a run is in flight, discover its operation id so the cancel entry
@@ -79,7 +102,11 @@ export function SecurityResults({ facade = unavailableSecurityFacade, skillId, v
           if (!active) return;
           const match = runs.find((run) => run.skillId === skillId && run.versionId === versionId);
           setRunningOperation(match?.operationId);
-          if (match) return;
+          // 运行中拿到持久化 operation id 即关联同一投影（三端同一 id）。
+          if (match) {
+            handleRef.current?.correlate(match.operationId);
+            return;
+          }
         } catch {
           // Progress discovery is best-effort; the run continues regardless.
         }
@@ -97,6 +124,8 @@ export function SecurityResults({ facade = unavailableSecurityFacade, skillId, v
     try {
       await facade.cancelLlmCheck(runningOperation);
       cancelledRef.current = true;
+      // 后端已确认取消：终态落 cancelled，后续命令异常不再记失败。
+      handleRef.current?.markCancelled();
     } finally {
       setCancelRequested(false);
     }

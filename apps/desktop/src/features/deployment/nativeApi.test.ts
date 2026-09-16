@@ -101,6 +101,8 @@ it("maps a native plan and commits through prepare then commit", async () => {
     label: "Codex CLI",
     status: "failed",
     message: "deployment.target_exists",
+    // 持久化操作记录 id 随结果透出：前端三端关联同一 operation id（任务 4）。
+    operationId: "op-1",
     error: {
       code: "deployment.target_exists",
       severity: "error",

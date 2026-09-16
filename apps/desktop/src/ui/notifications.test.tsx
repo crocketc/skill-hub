@@ -1,11 +1,15 @@
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { I18nextProvider } from "react-i18next";
-import { Link, MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
+import { Link, MemoryRouter, Route, Routes, useLocation, useParams } from "react-router-dom";
 import { createSkillHubI18n } from "../i18n";
+import { createOperationTracker } from "../platform/operationTracker";
+import { runTrackedOperation } from "../platform/runTrackedOperation";
+import { OperationsList } from "../features/operations/OperationsList";
 import {
   AppNotificationsProvider,
+  type AppNotifications,
   NOTICE_TOAST_DURATION_MS,
   NOTICE_TOAST_EXIT_MS,
   NotificationBell,
@@ -20,6 +24,7 @@ interface HarnessHandles {
   dismiss: (id: string) => void;
   noticeCount: () => number;
   unreadCount: () => number;
+  service: AppNotifications;
 }
 
 const handles: { current: HarnessHandles | null } = { current: null };
@@ -31,6 +36,7 @@ function Capture() {
     dismiss: controls.dismiss,
     noticeCount: () => controls.notices.length,
     unreadCount: () => controls.unreadCount,
+    service: controls,
   };
   return (
     <nav>
@@ -45,7 +51,29 @@ function LocationProbe() {
   return <p>page@{pathname}</p>;
 }
 
-async function renderNotificationShell(initialEntries = ["/"]) {
+/** 持久化操作记录探针：数据只来自 RecentOperationsReader（后端事实），
+ * 与会话通知 store 完全无关——“清除通知”不得影响这里。 */
+function OperationRecordProbe({ operationId }: { operationId: string }) {
+  return (
+    <OperationsList
+      recent={{
+        listRecentOperations: async () => [
+          {
+            operation_id: operationId,
+            kind: "commit_deployment",
+            state: "committed",
+            phase: "committed" as const,
+            error_code: null,
+            created_at: "2026-09-16T00:00:00Z",
+          },
+        ],
+      }}
+      tracker={createOperationTracker()}
+    />
+  );
+}
+
+async function renderNotificationShell(initialEntries = ["/"], withRecordRoute = false) {
   const i18n = await createSkillHubI18n(["en-US"]);
   render(
     <I18nextProvider i18n={i18n}>
@@ -57,10 +85,23 @@ async function renderNotificationShell(initialEntries = ["/"]) {
               <Route path="/" element={<p>overview body</p>} />
               <Route path="/library" element={<p>library body</p>} />
             </Route>
+            {withRecordRoute ? (
+              <Route path="/operations/:operationId" element={<RecordRoute />} />
+            ) : null}
           </Routes>
         </AppNotificationsProvider>
       </MemoryRouter>
     </I18nextProvider>,
+  );
+}
+
+function RecordRoute() {
+  const { operationId } = useParams();
+  return (
+    <>
+      <p>page@/operations/{operationId}</p>
+      <OperationRecordProbe operationId={operationId ?? "unknown"} />
+    </>
   );
 }
 
@@ -531,5 +572,104 @@ describe("toast close button hit area", () => {
     expect(rule!.style.getPropertyValue("min-height")).toBe("2.5rem");
     // 抵消 .sh-button--sm 的水平内边距，保证恰好 40×40 的正方形命中区。
     expect(rule!.style.getPropertyValue("padding")).toBe("0");
+  });
+});
+
+/** 统一执行桥在通知壳内的真实产物：成功/部分失败/失败/需人工确认四类
+ *  通知都必须深链到同一 operation id 的操作记录页。 */
+async function runBridged(noticeKind: "success" | "partial" | "failed" | "needs_user", operationId: string) {
+  const pending = runTrackedOperation({
+    notifications: handles.current?.service ?? null,
+    kind: "deploy",
+    label: "Added to Agent",
+    translate: (key) => key,
+    successNotice: (result) => {
+      const outcome = result as { outcome: "success" | "partial" };
+      return outcome.outcome === "partial"
+        ? { tone: "warning", title: "Added to Agent, some targets failed" }
+        : { tone: "success", title: "Added to Agent" };
+    },
+    run: async (handle) => {
+      handle.correlate(operationId);
+      if (noticeKind === "needs_user") {
+        handle.needsUser("recovery.confirmRequired");
+        // 阻塞在用户动作上：只有 needs_user 通知，没有后续结果通知。
+        await new Promise<void>(() => undefined);
+      }
+      if (noticeKind === "failed") {
+        throw new Error("agent write protected");
+      }
+      return { outcome: noticeKind };
+    },
+    summarize: (result) => {
+      const outcome = (result as { outcome: "success" | "partial" }).outcome;
+      return outcome === "partial"
+        ? { succeeded: 1, failed: 1, skipped: 0 }
+        : { succeeded: 1, failed: 0, skipped: 0 };
+    },
+  }).catch(() => undefined);
+  if (noticeKind === "needs_user") {
+    // 阻塞型运行不等待结束：needs_user 通知在阻塞时即已发出。
+    await Promise.resolve();
+    await Promise.resolve();
+    return;
+  }
+  await pending;
+}
+
+describe("operation notices deep link to the operation record", () => {
+  // 前面的 provider cleanup 用例装了 fake timers 未恢复；本组全部是
+  // 真实时钟的异步交互，进来先恢复，避免微任务被假时钟卡死。
+  beforeEach(() => {
+    vi.useRealTimers();
+  });
+
+  afterEach(() => {
+    handles.current = null;
+  });
+
+  it.each([
+    { kind: "success" as const, operationId: "op-101", tone: "success" },
+    { kind: "partial" as const, operationId: "op-102", tone: "warning" },
+    { kind: "failed" as const, operationId: "op-103", tone: "danger" },
+    { kind: "needs_user" as const, operationId: "op-104", tone: "info" },
+  ])("deep links the $kind notice to /operations and clears the toast", async ({ kind, operationId, tone }) => {
+    const user = userEvent.setup();
+    await renderNotificationShell(["/"], true);
+
+    // 桥在 React 事件外跑：通知写入需在 act 内落盘。
+    await act(async () => {
+      await runBridged(kind, operationId);
+    });
+
+    const region = screen.getByRole("region", { name: "Notifications" });
+    const toast = within(region).getByTestId(`notice-${tone}`);
+    await user.click(within(toast).getByRole("link", { name: "tasks.notices.viewRecord" }));
+
+    // 深链落在该 operation id 的操作记录页（持久化事实，非会话通知）。
+    expect(screen.getByRole("link", { name: "commit_deployment" })).toBeVisible();
+    expect(screen.getByText(`page@/operations/${operationId}`)).toBeVisible();
+    expect(screen.queryByRole("region", { name: "Notifications" })).toBeNull();
+  });
+
+  it("keeps the backend operation record reachable after the session notices are cleared", async () => {
+    const user = userEvent.setup();
+    // 直接落在操作记录页：记录内容来自 RecentOperationsReader（后端事实）。
+    await renderNotificationShell(["/operations/op-105"], true);
+    expect(await screen.findByRole("link", { name: "commit_deployment" })).toBeVisible();
+
+    await act(async () => {
+      await runBridged("success", "op-105");
+    });
+    expect(handles.current?.noticeCount()).toBe(1);
+
+    // 清空会话通知后，后端操作记录仍然在场——清除不是删除。
+    await user.click(screen.getByRole("button", { name: /Notifications/ }));
+    const drawer = screen.getByRole("dialog", { name: "Notifications" });
+    await user.click(within(drawer).getByRole("button", { name: "Clear all" }));
+    expect(handles.current?.noticeCount()).toBe(0);
+    // 抽屉是模态的，先关闭再回看背后的操作记录页。
+    await user.keyboard("{Escape}");
+    expect(await screen.findByRole("link", { name: "commit_deployment" })).toBeVisible();
   });
 });

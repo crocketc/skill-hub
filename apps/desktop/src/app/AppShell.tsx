@@ -17,7 +17,6 @@ import {
 } from "../ui/notifications";
 import { BackgroundScanNotifier } from "../features/bootstrap/BackgroundScanNotifier";
 import { Sidebar } from "./Sidebar";
-import { OperationIndicator } from "./OperationIndicator";
 import { TaskStatusIndicator } from "./TaskStatusIndicator";
 import type { BootstrapVerificationState } from "../features/bootstrap/api";
 import type { BootstrapSnapshot } from "../api/bindings";
@@ -247,7 +246,6 @@ export function AppShell({ refreshSnapshot, snapshot, verification }: AppShellPr
             <main className="sh-app-shell__content" id="main-content" tabIndex={-1}>
               <Outlet context={{ refreshSnapshot, snapshot } satisfies BootstrapOutletContext} />
             </main>
-            <OperationIndicator />
           </section>
         </div>
       </AppNotificationsProvider>

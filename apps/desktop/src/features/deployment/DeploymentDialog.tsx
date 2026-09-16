@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { describeNativeError } from "../../api/nativeErrors";
+import type { OperationTracker } from "../../platform/operationTracker";
+import { runTrackedOperation } from "../../platform/runTrackedOperation";
+import { useOptionalAppNotifications } from "../../ui/notifications";
 import { Button } from "../../ui/Button";
 import { DataState } from "../../ui/DataState";
 import { Icon } from "../../ui/Icon";
@@ -21,6 +24,8 @@ export interface DeploymentDialogProps {
   skillId: string;
   versionId: string;
   runtimeName?: string;
+  /** 统一执行桥的在途投影；测试可注入独立实例，默认模块级单例。 */
+  tracker?: OperationTracker;
   onCommitted?: (results: DeploymentResult[]) => void;
 }
 
@@ -33,9 +38,12 @@ export function DeploymentDialog({
   skillId,
   versionId,
   runtimeName,
+  tracker,
   onCommitted,
 }: DeploymentDialogProps) {
   const { t } = useTranslation();
+  // Provider 缺席（预览/测试挂载）时通知为 null：桥不发通知，行为不降级。
+  const notifications = useOptionalAppNotifications();
   const activeFacade = useMemo(
     () => facade ?? createNativeDeploymentFacade({ skillId, versionId, runtimeName }),
     [facade, runtimeName, skillId, versionId],
@@ -75,7 +83,34 @@ export function DeploymentDialog({
     setFlowError(undefined);
     setCommitting(true);
     try {
-      const committed = await activeFacade.commit(plan);
+      // 统一执行桥（任务 4）：提交进 tracker 在途投影，结果通知深链
+      // /operations/:id，异常原样 rethrow 由页面告警承接，不吞掉。
+      const committed = await runTrackedOperation<DeploymentResult[]>({
+        tracker,
+        notifications,
+        kind: "deploy",
+        label: t("deployment.tracker.label"),
+        total: plan.targets.length,
+        translate: (key, options) => String(t(key as never, options as never)),
+        errorNotice: () => null,
+        successNotice: (_result, summary) => ({
+          tone: summary && summary.failed > 0 ? "warning" : "success",
+          title: summary && summary.failed > 0
+            ? t("deployment.notices.addedPartialTitle")
+            : t("deployment.notices.addedTitle"),
+        }),
+        summarize: (results: DeploymentResult[]) => ({
+          succeeded: results.filter((result) => result.status === "succeeded").length,
+          failed: results.filter((result) => result.status === "failed").length,
+          skipped: results.filter((result) => result.status === "skipped").length,
+        }),
+        run: async (handle) => {
+          const results = await activeFacade.commit(plan);
+          const operationId = results.find((result) => result.operationId)?.operationId;
+          if (operationId) handle.correlate(operationId);
+          return results;
+        },
+      });
       setResults(committed);
       onCommitted?.(committed);
     } catch (reason) {

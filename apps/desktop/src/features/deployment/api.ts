@@ -30,6 +30,8 @@ export type DeploymentResult = {
   status: "succeeded" | "failed" | "skipped";
   message: string;
   error?: NativeAppError;
+  /** 后端持久化操作记录 id（任务 4）：顶栏/通知/操作记录三端同一 id。 */
+  operationId?: string;
 };
 
 export type DeploymentTranslator = (key: string, options?: Record<string, unknown>) => string;
@@ -70,7 +72,8 @@ export type BatchProjectInfo = { id: string; agentIds: string[] };
 export interface BatchDeploymentFacade {
   listTargets(): Promise<DeploymentTarget[]>;
   preview(skillIds: string[], targets: DeploymentTarget[], mode?: DeploymentMode): Promise<BatchDeploymentPreview>;
-  commit(plans: BatchDeploymentPlan[]): Promise<BatchDeploymentResult[]>;
+  /** onProgress（可选）：每完成一个 Skill 回调一次，值=已完成的 Skill 数。 */
+  commit(plans: BatchDeploymentPlan[], onProgress?: (completedSkills: number) => void): Promise<BatchDeploymentResult[]>;
   /** 项目关联 Agent（可选）：用于"项目目标展开为关联 Agent 目标"。 */
   listProjects?(): Promise<BatchProjectInfo[]>;
 }

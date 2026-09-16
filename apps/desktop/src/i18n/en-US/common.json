@@ -1733,6 +1733,12 @@
       "caseHeading": "Conflict case {{id}}",
       "failureReason": "Conflict analysis failed: {{reason}}",
       "deterministicNote": "Deterministic conflict grouping is unaffected."
+    },
+    "tracker": {
+      "aiAnalysisLabel": "AI semantic analysis",
+      "conflictPhaseLabel": "AI conflict analysis",
+      "duplicatesPhase": "Analyzing semantic duplicate candidates",
+      "conflictPhase": "Analyzing related conflicts"
     }
   },
   "deployment": {
@@ -1812,6 +1818,13 @@
         "securityBlocked": "A security check blocked the addition. Review the findings before retrying.",
         "invalidCapability": "The target does not support the selected deployment mode. Choose another mode or target."
       }
+    },
+    "tracker": {
+      "label": "Add to Agent/Project"
+    },
+    "notices": {
+      "addedTitle": "Added to Agent/Project",
+      "addedPartialTitle": "Added to Agent/Project, some targets failed"
     }
   },
   "security": {
@@ -1860,6 +1873,9 @@
       "scopeExplicitSelection": "Only explicitly selected Skill content is sent.",
       "scopeOther": "Current data scope: {{scope}}",
       "runFailed": "AI check failed: {{message}}"
+    },
+    "tracker": {
+      "aiCheckLabel": "AI check"
     }
   },
   "removal": {
@@ -1902,6 +1918,9 @@
         "relatedSkills": "Related skills",
         "unknownExternalReferences": "Unknown external references (reported only, never modified)"
       }
+    },
+    "tracker": {
+      "batchLabel": "Remove from library"
     }
   },
   "undeploy": {
@@ -2563,7 +2582,10 @@
       "commit": "Create export",
       "result": "Export created at {{path}}"
     },
-    "working": "Working, please wait…"
+    "working": "Working, please wait…",
+    "tracker": {
+      "restoreLabel": "Restore backup"
+    }
   },
   "navigation": {
     "agents": "Agents",
@@ -2729,6 +2751,32 @@
       "skipped": "{{count}} skipped",
       "conflict": "{{count}} conflicts",
       "failed": "{{count}} failed"
+    }
+  },
+  "tasks": {
+    "summary": {
+      "triggerAriaMultiple": "{{description}} (item {{index}} of {{count}})"
+    },
+    "status": {
+      "queued": "Queued",
+      "running": "Running",
+      "needs_user": "Needs your attention"
+    },
+    "statusDescription": {
+      "queued": "{{label}}: queued",
+      "progressUnknown": "{{label}}: running (progress unavailable)",
+      "needsUser": "{{label}}: needs your attention"
+    },
+    "popover": {
+      "title": "Background tasks",
+      "previous": "Previous task",
+      "next": "Next task",
+      "position": "Item {{index}} of {{count}}",
+      "progressUnknown": "Progress unavailable",
+      "viewRecord": "View operation record"
+    },
+    "notices": {
+      "viewRecord": "View operation record"
     }
   }
 }

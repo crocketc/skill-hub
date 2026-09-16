@@ -21,6 +21,8 @@ import { describeNativeError } from "../../api/nativeErrors";
 // M-21 #5：页面直接消费全局通知中心（AppShell 级单例服务），不再保留
 // 页面内局部通知列表（NotificationCenter/useNotices 兼容桥从本页移除）。
 import { useAppNotifications } from "../../ui/notifications";
+import { operationTracker, type OperationTracker } from "../../platform/operationTracker";
+import { runTrackedOperation } from "../../platform/runTrackedOperation";
 import { useLibraryViewMode } from "./libraryViewContext";
 import {
   detailSearchFromLibrary,
@@ -95,6 +97,8 @@ export interface SkillLibraryPageProps {
   facade: SkillLibraryFacade;
   onOpenDiscovery?: () => void;
   removalFacade?: RemovalFacade;
+  /** 统一执行桥的在途投影；测试可注入独立实例，默认模块级单例。 */
+  tracker?: OperationTracker;
 }
 
 interface SaveViewFormProps {
@@ -409,6 +413,7 @@ export function SkillLibraryPage({
   facade,
   onOpenDiscovery,
   removalFacade = nativeRemovalFacade,
+  tracker = operationTracker,
 }: SkillLibraryPageProps): JSX.Element {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
@@ -968,29 +973,52 @@ export function SkillLibraryPage({
     if (!batchRemovalImpacts) return;
     setBatchRemovalSubmitting(true);
     setBatchRemovalError(undefined);
-    const outcomes: BatchOutcome[] = [];
-    // 批量删除刻意逐项推进并汇总，而不是首错即停：单个 Skill 失败不掩盖其余结果。
-    for (const impact of batchRemovalImpacts) {
-      const label = impact.skillName ?? impact.skillId ?? "unknown";
-      const outcomeId = impact.operationId ?? label;
-      if (!impact.operationId) {
-        outcomes.push({ id: outcomeId, label, status: "failed", message: t("removal.batch.missingPreparation") });
-        continue;
-      }
-      try {
-        const result = await removalFacade.commitDelete(impact.operationId, choices[impact.operationId] ?? {});
-        if (!result.centralSkillDeleted) throw new Error("central skill was not deleted");
-        outcomes.push({ id: outcomeId, label, status: "succeeded" });
-      } catch (reason: unknown) {
-        // 结构化 AppError 不允许 String() 直达用户界面（P1-10 错误路径统一）。
-        outcomes.push({
-          id: outcomeId,
-          label,
-          message: describeError(reason, "removal.batch.outcomeError"),
-          status: "failed",
-        });
-      }
-    }
+    const impacts = batchRemovalImpacts;
+    // 统一执行桥（任务 4）：批量移除进 tracker 在途投影，按已完成 Skill
+    // 推进；逐项失败继续汇总，不首错即停，异常不吞掉（结果页仍可见）。
+    const outcomes: BatchOutcome[] = await runTrackedOperation({
+      tracker,
+      // 结果反馈仍由页面原有的 removal-summary 通知（含明细节点）承接。
+      notifications: null,
+      kind: "remove",
+      label: t("removal.tracker.batchLabel"),
+      total: impacts.length,
+      translate: (key, options) => String(t(key as never, options as never)),
+      successNotice: () => null,
+      errorNotice: () => null,
+      summarize: (settled) => ({
+        succeeded: settled.filter((outcome) => outcome.status === "succeeded").length,
+        failed: settled.filter((outcome) => outcome.status === "failed").length,
+        skipped: 0,
+      }),
+      run: async (handle) => {
+        const settled: BatchOutcome[] = [];
+        for (const [index, impact] of impacts.entries()) {
+          const label = impact.skillName ?? impact.skillId ?? "unknown";
+          const outcomeId = impact.operationId ?? label;
+          if (!impact.operationId) {
+            settled.push({ id: outcomeId, label, status: "failed", message: t("removal.batch.missingPreparation") });
+            handle.progress(index + 1, impacts.length);
+            continue;
+          }
+          try {
+            const result = await removalFacade.commitDelete(impact.operationId, choices[impact.operationId] ?? {});
+            if (!result.centralSkillDeleted) throw new Error("central skill was not deleted");
+            settled.push({ id: outcomeId, label, status: "succeeded" });
+          } catch (reason: unknown) {
+            // 结构化 AppError 不允许 String() 直达用户界面（P1-10 错误路径统一）。
+            settled.push({
+              id: outcomeId,
+              label,
+              message: describeError(reason, "removal.batch.outcomeError"),
+              status: "failed",
+            });
+          }
+          handle.progress(index + 1, impacts.length);
+        }
+        return settled;
+      },
+    });
     await queryClient.invalidateQueries({ queryKey: skillLibraryKeys.root });
     // 全局通知契约：结果 toast 自动消退（本体保留在会话历史），不再常驻文档流末尾。
     const failedCount = outcomes.filter((outcome) => outcome.status === "failed").length;
