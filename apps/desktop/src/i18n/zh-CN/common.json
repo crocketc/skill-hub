@@ -1378,8 +1378,8 @@
       "ariaLabel": "Skill 部署关系矩阵",
       "skillColumn": "Skill",
       "loading": "正在读取部署关系…",
-      "empty": "尚无部署关系，先部署 Skill 后即可在此查看矩阵。",
-      "hint": "矩阵仅显示当前页的 Skill；✓ 表示该 Skill 已部署到对应目标。"
+      "empty": "尚无部署关系，先把 Skill 添加到 Agent/项目后即可在此查看矩阵。",
+      "hint": "矩阵仅显示当前页的 Skill；✓ 表示该 Skill 已添加到对应目标。"
     },
     "groupMode": {
       "label": "分组方式",
@@ -1510,8 +1510,8 @@
       "physicalTarget": "物理目标：",
       "pinned": "已固定版本",
       "retry": "重试关系",
-      "undeploy": "取消部署",
-      "undeployTarget": "从 {{target}} 取消部署",
+      "undeploy": "从目标移除",
+      "undeployTarget": "从 {{target}} 移除",
       "governed": {
         "heading": "关系类型与移除影响",
         "description": "关系类型由确定性事实给出；移除影响先预览，确认后才执行变更。",
@@ -1521,7 +1521,7 @@
       }
     },
     "provenance": {
-      "heading": "导入存证与已观察部署",
+      "heading": "导入存证与已观察的目标副本",
       "source": "来源：",
       "sourceKinds": {
         "local": "本地目录",
@@ -1544,7 +1544,7 @@
         "downloaded_source": "已下载来源"
       },
       "absent": "该 Skill 不是经由带存证的导入链路进入集中库（例如创建/收集），不编造来源。",
-      "noObservedDeployments": "尚未在任何 Agent 目录中观察到已部署的副本。",
+      "noObservedDeployments": "尚未在任何 Agent 目录中观察到已添加的副本。",
       "matchStates": {
         "content_verified": "内容一致",
         "name_only": "仅同名（未验证）",
@@ -1719,10 +1719,10 @@
       "lifecycle": "生命周期"
     },
     "trajectory": {
-      "label": "来源、本地库与部署目标",
+      "label": "来源、本地库与添加目标",
       "source": "来源",
       "library": "本地集中库",
-      "deployments": "部署目标"
+      "deployments": "添加目标"
     },
     "conflicts": {
       "heading": "相关冲突（可选 AI 分析）",

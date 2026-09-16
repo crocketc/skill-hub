@@ -123,7 +123,7 @@ it("keeps the existing deployment rows and undeploy entries unchanged", async ()
   await renderPanel({ onUndeploy });
 
   expect(screen.getAllByTestId("physical-target")).toHaveLength(1);
-  expect(screen.getByRole("button", { name: "从 Codex CLI 取消部署" })).toBeVisible();
+  expect(screen.getByRole("button", { name: "从 Codex CLI 移除" })).toBeVisible();
 });
 
 it("opens the deterministic removal impact preview per governed relation", async () => {

@@ -1378,8 +1378,8 @@
       "ariaLabel": "Skill deployment relations matrix",
       "skillColumn": "Skill",
       "loading": "Loading deployment relations…",
-      "empty": "No deployment relations yet. Deploy a Skill to see the matrix.",
-      "hint": "The matrix shows Skills on the current page; ✓ means the Skill is deployed to that target."
+      "empty": "No deployment relations yet. Add a Skill to Agents/projects to see the matrix.",
+      "hint": "The matrix shows Skills on the current page; ✓ means the Skill is added to that target."
     },
     "groupMode": {
       "label": "Group by",
@@ -1510,8 +1510,8 @@
       "physicalTarget": "Physical target:",
       "pinned": "Pinned",
       "retry": "Retry relations",
-      "undeploy": "Undeploy",
-      "undeployTarget": "Undeploy {{target}}",
+      "undeploy": "Remove from target",
+      "undeployTarget": "Remove from {{target}}",
       "governed": {
         "heading": "Relationship types and removal impact",
         "description": "Relationship types come from deterministic facts; removal impact is previewed before any confirmed change.",
@@ -1521,7 +1521,7 @@
       }
     },
     "provenance": {
-      "heading": "Provenance & deployed relations",
+      "heading": "Provenance & observed target copies",
       "source": "Source:",
       "sourceKinds": {
         "local": "Local directory",
@@ -1544,7 +1544,7 @@
         "downloaded_source": "Downloaded source"
       },
       "absent": "This skill did not enter the library through a provenance-tracked import (for example created or collected); no origin is invented.",
-      "noObservedDeployments": "No deployed copies have been observed in any agent directory yet.",
+      "noObservedDeployments": "No added copies have been observed in any agent directory yet.",
       "matchStates": {
         "content_verified": "Content verified",
         "name_only": "Name match only (not verified)",
@@ -1719,10 +1719,10 @@
       "lifecycle": "Lifecycle"
     },
     "trajectory": {
-      "label": "Source, library, and deployment targets",
+      "label": "Source, library, and addition targets",
       "source": "Source",
       "library": "Central library",
-      "deployments": "Deployment targets"
+      "deployments": "Addition targets"
     },
     "conflicts": {
       "heading": "Related conflicts (optional AI analysis)",

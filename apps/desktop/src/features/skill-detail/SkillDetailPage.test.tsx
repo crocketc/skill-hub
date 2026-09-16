@@ -138,9 +138,9 @@ describe("SkillDetailPage shell", () => {
     await renderDetail({ locale: "zh-CN" });
 
     // P1-15：入口名与移除对象一一对应——详情页删除按钮指向“删除库中 Skill”，
-    // 关系区逐条入口指向“取消部署”，不复用笼统的“移除”。
+    // 关系区逐条入口指向“从目标移除”，不复用笼统的“移除”。
     expect(await screen.findByRole("button", { name: "从库中删除 Skill" })).toBeVisible();
-    expect(await screen.findByRole("button", { name: "从 Codex CLI 取消部署" })).toBeVisible();
+    expect(await screen.findByRole("button", { name: "从 Codex CLI 移除" })).toBeVisible();
   });
 
   it("prepares and commits a shared-target undeploy from the relations section", async () => {
@@ -157,18 +157,18 @@ describe("SkillDetailPage shell", () => {
     };
     await renderDetail({ removalFacade });
 
-    fireEvent.click(await screen.findByRole("button", { name: "Undeploy Codex CLI" }));
-    expect(await screen.findByRole("dialog", { name: "Undeploy from Codex CLI?" })).toBeVisible();
-    fireEvent.change(screen.getByRole("combobox", { name: "Undeploy handling" }), {
+    fireEvent.click(await screen.findByRole("button", { name: "Remove from Codex CLI" }));
+    expect(await screen.findByRole("dialog", { name: "Remove from Codex CLI?" })).toBeVisible();
+    fireEvent.change(screen.getByRole("combobox", { name: "Removal handling" }), {
       target: { value: "keep_shared_deployment" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Confirm undeploy" }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm removal from target" }));
 
     await waitFor(() => expect(removalFacade.commitUndeploy).toHaveBeenCalledWith(
       "op-undeploy",
       "keep_shared_deployment",
     ));
-    expect(screen.queryByRole("dialog", { name: "Undeploy from Codex CLI?" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("dialog", { name: "Remove from Codex CLI?" })).not.toBeInTheDocument();
   });
 
   it("returns to the filtered Skill library with its scroll and focus context", async () => {
@@ -389,7 +389,7 @@ describe("SkillDetailPage shell", () => {
     await screen.findByRole("heading", { name: "PDF Reader" });
 
     const trajectory = screen.getByRole("group", {
-      name: "Source, library, and deployment targets",
+      name: "Source, library, and addition targets",
     });
     expect(trajectory).toBeVisible();
     expect(within(trajectory).getByText("github:example/pdf-reader")).toBeVisible();
@@ -610,7 +610,7 @@ describe("Task 7: governed relationship sections", () => {
     });
 
     expect(await screen.findByText("关系事实暂不可用；部署与来源信息可能不完整。")).toBeVisible();
-    // 既有部署关系行与取消部署入口不受影响，页面没有虚假的空事实声明。
+    // 既有部署关系行与从目标移除入口不受影响，页面没有虚假的空事实声明。
     expect(screen.getAllByTestId("physical-target").length).toBeGreaterThan(0);
     expect(screen.queryByTestId("governed-relations")).not.toBeInTheDocument();
   });
