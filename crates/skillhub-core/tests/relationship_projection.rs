@@ -267,6 +267,68 @@ fn folded_contexts_use_collapsed_nodes_and_never_leave_dangling_edges() {
 }
 
 #[test]
+fn repeated_overflow_context_counts_one_hidden_node_and_keeps_all_edges() {
+    let center = SkillId::new();
+    let mut deployments = (0..8)
+        .map(|index| {
+            let mut relation = deployment(
+                &format!("deployment:{index}"),
+                Some(center),
+                &format!("agent.{index}"),
+                &format!("entry:{index}"),
+                RelationshipType::ObservedCopy,
+            );
+            relation.directory_node_id = None;
+            relation
+        })
+        .collect::<Vec<_>>();
+    for relation_id in ["deployment:overflow:first", "deployment:overflow:repeat"] {
+        let mut relation = deployment(
+            relation_id,
+            Some(center),
+            "agent.overflow",
+            "overflow-entry",
+            RelationshipType::ObservedCopy,
+        );
+        relation.directory_node_id = None;
+        deployments.push(relation);
+    }
+
+    let graph = project_skill_relationship_graph(
+        center,
+        &deployments,
+        &[],
+        &[],
+        &[],
+        &[],
+        &RelationshipGraphFilters::default(),
+    );
+
+    let collapsed = graph
+        .nodes
+        .iter()
+        .find(|node| {
+            node.kind == RelationshipGraphNodeKind::Collapsed
+                && node.collapsed_kind == Some(RelationshipGraphNodeKind::Agent)
+        })
+        .expect("agent overflow is collapsed");
+    assert_eq!(collapsed.collapsed_count, 1);
+    assert_eq!(graph.collapsed_count, 1);
+    assert_eq!(
+        graph
+            .edges
+            .iter()
+            .filter(|edge| edge.to_node_id == collapsed.node_id)
+            .count(),
+        2
+    );
+    assert!(graph
+        .edges
+        .iter()
+        .all(|edge| graph.has_node(&edge.from_node_id) && graph.has_node(&edge.to_node_id)));
+}
+
+#[test]
 fn projection_order_is_stable_when_fact_inputs_are_reversed() {
     let center = SkillId::new();
     let mut deployments = vec![
@@ -378,7 +440,7 @@ fn source_relationship_filter_applies_but_unknown_status_does_not_hide_source() 
     let status_filtered = project_skill_relationship_graph(
         center,
         &[],
-        &[source_fact.clone()],
+        std::slice::from_ref(&source_fact),
         &[],
         &[],
         &[],

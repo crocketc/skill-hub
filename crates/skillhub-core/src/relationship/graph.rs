@@ -203,6 +203,7 @@ pub fn project_skill_relationship_graph(
         collapsed_count: 0,
         last_verified_at,
     };
+    let mut collapsed_context_node_ids = HashSet::new();
 
     for skill_id in skill_ids
         .iter()
@@ -241,58 +242,67 @@ pub fn project_skill_relationship_graph(
         let skill_node_id = skill_id.to_string();
         let agent_node_id = ensure_context_node(
             &mut graph,
+            &mut collapsed_context_node_ids,
             RelationshipGraphNodeKind::Agent,
             format!("agent:{}", relation.agent_client_id),
             ContextData::Agent {
                 agent_client_id: relation.agent_client_id.clone(),
             },
         );
-        graph.edges.push(fact_edge(
-            format!("deployment:{}", relation.relation_id),
-            skill_node_id.clone(),
-            agent_node_id,
-            RelationshipGraphEdgeKind::Deployment,
-            Some(relation.relationship),
-            Some(relation.relation_id.clone()),
-            None,
-            None,
-            Some(relation.match_state),
-            Some(relation.active),
-            Some(relation.observed_at),
-        ));
+        graph.edges.push(fact_edge(FactEdgeInput {
+            edge_id: format!("deployment:{}", relation.relation_id),
+            from_node_id: skill_node_id.clone(),
+            to_node_id: agent_node_id,
+            kind: RelationshipGraphEdgeKind::Deployment,
+            relationship: Some(relation.relationship),
+            relation_id: Some(relation.relation_id.clone()),
+            provenance_id: None,
+            conflict_id: None,
+            match_state: Some(relation.match_state),
+            active: Some(relation.active),
+            last_verified_at: Some(relation.observed_at),
+        }));
         if let Some(directory_id) = &relation.directory_node_id {
-            let directory_node_id =
-                ensure_directory_node(&mut graph, directory_id, &directory_facts);
-            graph.edges.push(fact_edge(
-                format!("located:{}", relation.relation_id),
-                skill_node_id.clone(),
-                directory_node_id,
-                RelationshipGraphEdgeKind::LocatedIn,
-                Some(relation.relationship),
-                Some(relation.relation_id.clone()),
-                None,
-                None,
-                Some(relation.match_state),
-                Some(relation.active),
-                Some(relation.observed_at),
-            ));
+            let directory_node_id = ensure_directory_node(
+                &mut graph,
+                &mut collapsed_context_node_ids,
+                directory_id,
+                &directory_facts,
+            );
+            graph.edges.push(fact_edge(FactEdgeInput {
+                edge_id: format!("located:{}", relation.relation_id),
+                from_node_id: skill_node_id.clone(),
+                to_node_id: directory_node_id,
+                kind: RelationshipGraphEdgeKind::LocatedIn,
+                relationship: Some(relation.relationship),
+                relation_id: Some(relation.relation_id.clone()),
+                provenance_id: None,
+                conflict_id: None,
+                match_state: Some(relation.match_state),
+                active: Some(relation.active),
+                last_verified_at: Some(relation.observed_at),
+            }));
         }
         if let Some(directory_id) = &relation.link_target_directory_id {
-            let directory_node_id =
-                ensure_directory_node(&mut graph, directory_id, &directory_facts);
-            graph.edges.push(fact_edge(
-                format!("shared:{}", relation.relation_id),
-                skill_node_id,
-                directory_node_id,
-                RelationshipGraphEdgeKind::Shared,
-                Some(relation.relationship),
-                Some(relation.relation_id.clone()),
-                None,
-                None,
-                Some(relation.match_state),
-                Some(relation.active),
-                Some(relation.observed_at),
-            ));
+            let directory_node_id = ensure_directory_node(
+                &mut graph,
+                &mut collapsed_context_node_ids,
+                directory_id,
+                &directory_facts,
+            );
+            graph.edges.push(fact_edge(FactEdgeInput {
+                edge_id: format!("shared:{}", relation.relation_id),
+                from_node_id: skill_node_id,
+                to_node_id: directory_node_id,
+                kind: RelationshipGraphEdgeKind::Shared,
+                relationship: Some(relation.relationship),
+                relation_id: Some(relation.relation_id.clone()),
+                provenance_id: None,
+                conflict_id: None,
+                match_state: Some(relation.match_state),
+                active: Some(relation.active),
+                last_verified_at: Some(relation.observed_at),
+            }));
         }
     }
 
@@ -308,6 +318,7 @@ pub fn project_skill_relationship_graph(
         let skill_node_id = relation.skill_id.to_string();
         let source_node_id = ensure_context_node(
             &mut graph,
+            &mut collapsed_context_node_ids,
             RelationshipGraphNodeKind::Source,
             format!("source:{}", relation.provenance_id),
             ContextData::Source {
@@ -316,22 +327,23 @@ pub fn project_skill_relationship_graph(
                 path: relation.source_path.clone(),
             },
         );
-        graph.edges.push(fact_edge(
-            format!("source:{}:{}", relation.skill_id, relation.provenance_id),
-            skill_node_id.clone(),
-            source_node_id.clone(),
-            RelationshipGraphEdgeKind::Source,
-            Some(relation.relationship),
-            None,
-            Some(relation.provenance_id.clone()),
-            None,
-            None,
-            None,
-            None,
-        ));
+        graph.edges.push(fact_edge(FactEdgeInput {
+            edge_id: format!("source:{}:{}", relation.skill_id, relation.provenance_id),
+            from_node_id: skill_node_id.clone(),
+            to_node_id: source_node_id.clone(),
+            kind: RelationshipGraphEdgeKind::Source,
+            relationship: Some(relation.relationship),
+            relation_id: None,
+            provenance_id: Some(relation.provenance_id.clone()),
+            conflict_id: None,
+            match_state: None,
+            active: None,
+            last_verified_at: None,
+        }));
         if let Some(agent_client_id) = &relation.agent_client_id {
             let agent_node_id = ensure_context_node(
                 &mut graph,
+                &mut collapsed_context_node_ids,
                 RelationshipGraphNodeKind::Agent,
                 format!("agent:{agent_client_id}"),
                 ContextData::Agent {
@@ -351,8 +363,12 @@ pub fn project_skill_relationship_graph(
             ));
         }
         if let Some(directory_id) = &relation.directory_node_id {
-            let directory_node_id =
-                ensure_directory_node(&mut graph, directory_id, &directory_facts);
+            let directory_node_id = ensure_directory_node(
+                &mut graph,
+                &mut collapsed_context_node_ids,
+                directory_id,
+                &directory_facts,
+            );
             graph.edges.push(structural_fact_edge(
                 format!(
                     "source-directory:{}:{}",
@@ -366,8 +382,12 @@ pub fn project_skill_relationship_graph(
             ));
         }
         if let Some(directory_id) = &relation.link_target_directory_id {
-            let directory_node_id =
-                ensure_directory_node(&mut graph, directory_id, &directory_facts);
+            let directory_node_id = ensure_directory_node(
+                &mut graph,
+                &mut collapsed_context_node_ids,
+                directory_id,
+                &directory_facts,
+            );
             graph.edges.push(structural_fact_edge(
                 format!(
                     "source-shared:{}:{}",
@@ -385,6 +405,7 @@ pub fn project_skill_relationship_graph(
     for case in relevant_conflicts {
         let conflict_node_id = ensure_context_node(
             &mut graph,
+            &mut collapsed_context_node_ids,
             RelationshipGraphNodeKind::Conflict,
             format!("conflict:{}", case.conflict_id),
             ContextData::Conflict {
@@ -512,6 +533,7 @@ enum ContextData {
 
 fn ensure_directory_node(
     graph: &mut SkillRelationshipGraph,
+    collapsed_context_node_ids: &mut HashSet<(RelationshipGraphNodeKind, String)>,
     directory_id: &str,
     directory_facts: &BTreeMap<&str, &DirectoryNodeFact>,
 ) -> String {
@@ -529,6 +551,7 @@ fn ensure_directory_node(
     };
     ensure_context_node(
         graph,
+        collapsed_context_node_ids,
         kind,
         node_id,
         fact.map_or(
@@ -550,6 +573,7 @@ fn ensure_directory_node(
 
 fn ensure_context_node(
     graph: &mut SkillRelationshipGraph,
+    collapsed_context_node_ids: &mut HashSet<(RelationshipGraphNodeKind, String)>,
     kind: RelationshipGraphNodeKind,
     node_id: String,
     data: ContextData,
@@ -560,21 +584,23 @@ fn ensure_context_node(
     let kind_count = graph.nodes.iter().filter(|node| node.kind == kind).count();
     if kind_count >= MAX_CONTEXT_NODES_PER_KIND {
         let collapsed_id = format!("collapsed:{}", node_kind_key(kind));
-        if let Some(node) = graph
-            .nodes
-            .iter_mut()
-            .find(|node| node.node_id == collapsed_id)
-        {
-            node.collapsed_count = node.collapsed_count.saturating_add(1);
-        } else {
-            graph.nodes.push(context_node(
-                collapsed_id.clone(),
-                ContextData::Collapsed {
-                    collapsed_kind: kind,
-                },
-            ));
+        if collapsed_context_node_ids.insert((kind, node_id)) {
+            if let Some(node) = graph
+                .nodes
+                .iter_mut()
+                .find(|node| node.node_id == collapsed_id)
+            {
+                node.collapsed_count = node.collapsed_count.saturating_add(1);
+            } else {
+                graph.nodes.push(context_node(
+                    collapsed_id.clone(),
+                    ContextData::Collapsed {
+                        collapsed_kind: kind,
+                    },
+                ));
+            }
+            graph.collapsed_count = graph.collapsed_count.saturating_add(1);
         }
-        graph.collapsed_count = graph.collapsed_count.saturating_add(1);
         return collapsed_id;
     }
     let mut node = context_node(node_id.clone(), data);
@@ -673,7 +699,7 @@ fn node_sort_key(node: &SkillRelationshipNode, center_skill_id: SkillId) -> (u8,
     )
 }
 
-fn fact_edge(
+struct FactEdgeInput {
     edge_id: String,
     from_node_id: String,
     to_node_id: String,
@@ -685,19 +711,21 @@ fn fact_edge(
     match_state: Option<ObservedMatchState>,
     active: Option<bool>,
     last_verified_at: Option<i64>,
-) -> SkillRelationshipEdge {
+}
+
+fn fact_edge(input: FactEdgeInput) -> SkillRelationshipEdge {
     SkillRelationshipEdge {
-        edge_id,
-        from_node_id,
-        to_node_id,
-        kind,
-        relationship,
-        relation_id,
-        provenance_id,
-        conflict_id,
-        match_state,
-        active,
-        last_verified_at,
+        edge_id: input.edge_id,
+        from_node_id: input.from_node_id,
+        to_node_id: input.to_node_id,
+        kind: input.kind,
+        relationship: input.relationship,
+        relation_id: input.relation_id,
+        provenance_id: input.provenance_id,
+        conflict_id: input.conflict_id,
+        match_state: input.match_state,
+        active: input.active,
+        last_verified_at: input.last_verified_at,
     }
 }
 
@@ -707,19 +735,19 @@ fn structural_edge(
     to_node_id: String,
     kind: RelationshipGraphEdgeKind,
 ) -> SkillRelationshipEdge {
-    fact_edge(
+    fact_edge(FactEdgeInput {
         edge_id,
         from_node_id,
         to_node_id,
         kind,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-    )
+        relationship: None,
+        relation_id: None,
+        provenance_id: None,
+        conflict_id: None,
+        match_state: None,
+        active: None,
+        last_verified_at: None,
+    })
 }
 
 fn structural_fact_edge(
@@ -730,19 +758,19 @@ fn structural_fact_edge(
     relationship: Option<RelationshipType>,
     provenance_id: Option<String>,
 ) -> SkillRelationshipEdge {
-    fact_edge(
+    fact_edge(FactEdgeInput {
         edge_id,
         from_node_id,
         to_node_id,
         kind,
         relationship,
-        None,
+        relation_id: None,
         provenance_id,
-        None,
-        None,
-        None,
-        None,
-    )
+        conflict_id: None,
+        match_state: None,
+        active: None,
+        last_verified_at: None,
+    })
 }
 
 fn structural_conflict_edge(
@@ -752,19 +780,19 @@ fn structural_conflict_edge(
     kind: RelationshipGraphEdgeKind,
     conflict_id: String,
 ) -> SkillRelationshipEdge {
-    fact_edge(
+    fact_edge(FactEdgeInput {
         edge_id,
         from_node_id,
         to_node_id,
         kind,
-        None,
-        None,
-        None,
-        Some(conflict_id),
-        None,
-        None,
-        None,
-    )
+        relationship: None,
+        relation_id: None,
+        provenance_id: None,
+        conflict_id: Some(conflict_id),
+        match_state: None,
+        active: None,
+        last_verified_at: None,
+    })
 }
 
 fn fact_visible(
