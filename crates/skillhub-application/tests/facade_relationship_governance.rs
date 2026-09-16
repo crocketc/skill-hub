@@ -11,10 +11,13 @@ use serde_json::Value;
 use skillhub_application::LocalApplicationFacade;
 use skillhub_core::agent::DirectoryPrecedence;
 use skillhub_core::api::{
-    CreateSkill, GetConflictWorkspace, GetRelationshipOverview, GetRelationshipRemovalImpact,
-    GetSkillRelationshipGraph, ListSkillRelationshipCandidates, ListSkills, PrepareImport,
-    PrepareRelationMigration, RelationshipGraphFilters, RelationshipMigrationBackupPolicy,
-    RelationshipOverviewScope, ResolveConflictCase,
+    CommitRelationGovernanceBatch, CreateSkill, GetConflictWorkspace, GetRelationshipOverview,
+    GetRelationshipRemovalImpact, GetSkillRelationshipGraph, ListRelationGovernance,
+    ListSkillRelationshipCandidates, ListSkills, PrepareImport, PrepareRelationGovernanceBatch,
+    PrepareRelationMigration, RelationGovernanceBatchAction, RelationGovernanceBatchItemState,
+    RelationGovernanceBatchOutcome, RelationGovernanceBatchState, RelationshipGraphFilters,
+    RelationshipMigrationBackupPolicy, RelationshipOverviewScope, ResolveConflictCase,
+    RollbackRelationGovernanceBatch,
 };
 use skillhub_core::deployment::{ObservedMatchState, ObservedOrigin};
 use skillhub_core::duplicate::{
@@ -27,7 +30,8 @@ use skillhub_core::relationship::{
     ConflictEvidence, ConflictGovernanceIntent, ConflictKind, ConflictMemberFact,
     ConflictWorkspace, DeploymentRelationFact, DirectoryNodeFact, DirectoryRecognition,
     DirectoryRole, FileRepresentation, GovernanceTaskFact, GovernanceTaskKind, IdentityDirection,
-    OwnershipState, RelationshipType, SourceRelationFact,
+    OwnershipState, RelationGovernanceBlocker, RelationGovernanceBucket, RelationGovernanceFilters,
+    RelationGovernanceReadiness, RelationshipType, SourceRelationFact,
 };
 use skillhub_core::source::{SourceDescriptor, SourceKind, SourceLocator};
 use skillhub_core::{
@@ -4081,4 +4085,638 @@ async fn deciding_an_unknown_conflict_fails_with_a_journaled_failure() {
             Some("object.not_found".to_owned())
         )]
     );
+}
+
+// ---------------------------------------------------------------------------
+// Task 3: relationship governance ledger + batch orchestration
+// ---------------------------------------------------------------------------
+
+struct BatchFixture {
+    _workspace: tempfile::TempDir,
+    facade: LocalApplicationFacade,
+    /// `(relation_id, agent entry path)`, in insertion order.
+    entries: Vec<(String, std::path::PathBuf)>,
+}
+
+/// Several agents each holding their own content-verified copy of one Skill.
+/// Every copy matches the central-library body, so each edge is independently
+/// convertible.
+async fn batch_fixture(agents: &[&str]) -> BatchFixture {
+    let workspace = tempfile::tempdir().expect("workspace");
+    let library_root = workspace.path().join("library");
+    CentralLibrary::initialize(&library_root).expect("library");
+    let database = Database::open(workspace.path().join("db.sqlite")).expect("database");
+    let facade = LocalApplicationFacade::new_with_library(database, &library_root);
+
+    let first_entry = workspace.path().join(format!("{}/skills/notes", agents[0]));
+    write_skill(&first_entry);
+    facade
+        .execute(AppCommand::CreateSkill(CreateSkill {
+            name: "Notes".into(),
+            source_path: first_entry.to_string_lossy().into_owned(),
+        }))
+        .await
+        .expect("create skill");
+    let AppQueryResult::SkillPage(page) = facade
+        .query(AppQuery::ListSkills(ListSkills {
+            text: "Notes".into(),
+            page: 1,
+            page_size: 10,
+            filters: Default::default(),
+            sort: Default::default(),
+        }))
+        .await
+        .expect("list skill")
+    else {
+        panic!("expected skill page");
+    };
+    let skill_id = page.items[0].skill_id;
+
+    let database_handle = facade.database_for_tests();
+    let mut entries = Vec::new();
+    for agent in agents {
+        let directory = workspace.path().join(format!("{agent}/skills"));
+        let entry = directory.join("notes");
+        if !entry.exists() {
+            write_skill(&entry);
+        }
+        let fingerprint = skillhub_adapters::deployment::DeploymentFilesystem::hash_tree(&entry)
+            .expect("entry fingerprint");
+        let database = database_handle.lock().expect("database lock");
+        database
+            .directory_repository()
+            .upsert_node(&DirectoryNodeFact {
+                node_id: format!("directory:{agent}"),
+                path: directory.to_string_lossy().into_owned(),
+                path_key: String::new(),
+                role: DirectoryRole::AgentNative,
+                profile_id: None,
+                agent_client_id: Some((*agent).to_owned()),
+                exists: true,
+                observed_at: 1,
+                scan_source: Some("test".into()),
+            })
+            .expect("directory node");
+        database
+            .relationship_repository()
+            .upsert_capability(&AgentDirectoryCapabilityFact {
+                agent_client_id: (*agent).to_owned(),
+                directory_node_id: format!("directory:{agent}"),
+                recognition: DirectoryRecognition::Supported,
+                precedence: DirectoryPrecedence::Preferred,
+                evidence_reference: Some("fixture".into()),
+                researched_at: Some("2026-09-16".into()),
+                applicable_platforms: vec!["windows".into(), "macos".into()],
+            })
+            .expect("directory capability");
+        let relation_id = format!("observed:{agent}:notes");
+        database
+            .relationship_repository()
+            .upsert_deployment_relation(&DeploymentRelationFact {
+                relation_id: relation_id.clone(),
+                skill_id: Some(skill_id),
+                agent_client_id: (*agent).to_owned(),
+                path: entry.to_string_lossy().into_owned(),
+                path_key: String::new(),
+                directory_node_id: Some(format!("directory:{agent}")),
+                relationship: RelationshipType::ManagedCopy,
+                file_representation: FileRepresentation::Copy,
+                ownership: OwnershipState::SkillhubManaged,
+                link_target_path: None,
+                link_target_path_key: None,
+                link_target_directory_id: None,
+                content_fingerprint: fingerprint,
+                origin: ObservedOrigin::Scan,
+                match_state: ObservedMatchState::ContentVerified,
+                active: true,
+                observed_at: 1,
+                released_at: None,
+            })
+            .expect("relationship");
+        drop(database);
+        entries.push((relation_id, entry));
+    }
+
+    BatchFixture {
+        _workspace: workspace,
+        facade,
+        entries,
+    }
+}
+
+impl BatchFixture {
+    fn relation_id(&self, index: usize) -> String {
+        self.entries[index].0.clone()
+    }
+
+    fn entry(&self, index: usize) -> &std::path::Path {
+        &self.entries[index].1
+    }
+
+    fn set_match_state(&self, relation_id: &str, state: ObservedMatchState) {
+        let handle = self.facade.database_for_tests();
+        let database = handle.lock().expect("database lock");
+        let repository = database.relationship_repository();
+        let mut relation = repository
+            .list_relations()
+            .expect("relations")
+            .into_iter()
+            .find(|relation| relation.relation_id == relation_id)
+            .expect("seeded relation");
+        relation.match_state = state;
+        repository
+            .upsert_deployment_relation(&relation)
+            .expect("update relation");
+    }
+
+    fn entry_is_symlink(&self, index: usize) -> bool {
+        std::fs::symlink_metadata(self.entry(index))
+            .expect("agent entry")
+            .file_type()
+            .is_symlink()
+    }
+}
+
+async fn governance_ledger(
+    facade: &LocalApplicationFacade,
+    filters: RelationGovernanceFilters,
+) -> skillhub_core::relationship::RelationGovernanceLedger {
+    let result = facade
+        .query(AppQuery::ListRelationGovernance(ListRelationGovernance {
+            filters,
+        }))
+        .await
+        .expect("governance ledger");
+    let AppQueryResult::RelationGovernanceLedger(ledger) = result else {
+        panic!("expected governance ledger");
+    };
+    ledger
+}
+
+fn batch_outcome(result: AppCommandResult) -> RelationGovernanceBatchOutcome {
+    let AppCommandResult::RelationGovernanceBatch(outcome) = result else {
+        panic!("expected a governance batch outcome");
+    };
+    outcome
+}
+
+fn batch_item<'a>(
+    outcome: &'a RelationGovernanceBatchOutcome,
+    relation_id: &str,
+) -> &'a skillhub_core::api::RelationGovernanceBatchItem {
+    outcome
+        .items
+        .iter()
+        .find(|item| item.relation_id == relation_id)
+        .unwrap_or_else(|| panic!("batch item for {relation_id}"))
+}
+
+/// Reads the durable parent operation row: `(kind, phase, progress json)`.
+fn governance_batch_operation_row(
+    facade: &LocalApplicationFacade,
+    batch_id: skillhub_core::OperationId,
+) -> (String, String, Value) {
+    let handle = facade.database_for_tests();
+    let database = handle.lock().expect("database lock");
+    let (kind, phase, progress): (String, String, String) = database
+        .connection_for_test()
+        .query_row(
+            "SELECT kind, phase, progress_json FROM operations WHERE operation_id=?1",
+            [batch_id.to_string()],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .expect("governance batch operation row");
+    (
+        kind,
+        phase,
+        serde_json::from_str(&progress).expect("batch progress json"),
+    )
+}
+
+fn operation_kind(
+    facade: &LocalApplicationFacade,
+    operation_id: skillhub_core::OperationId,
+) -> Option<String> {
+    let handle = facade.database_for_tests();
+    let database = handle.lock().expect("database lock");
+    database
+        .connection_for_test()
+        .query_row(
+            "SELECT kind FROM operations WHERE operation_id=?1",
+            [operation_id.to_string()],
+            |row| row.get::<_, String>(0),
+        )
+        .ok()
+}
+
+async fn prepare_batch(
+    facade: &LocalApplicationFacade,
+    relation_ids: Vec<String>,
+    confirmations: Vec<(String, String)>,
+) -> RelationGovernanceBatchOutcome {
+    batch_outcome(
+        facade
+            .execute(AppCommand::PrepareRelationGovernanceBatch(
+                PrepareRelationGovernanceBatch {
+                    action: RelationGovernanceBatchAction::CentralizeManagement,
+                    relation_ids,
+                    confirmations: confirmations.into_iter().collect(),
+                },
+            ))
+            .await
+            .expect("prepare governance batch"),
+    )
+}
+
+#[tokio::test]
+async fn governance_ledger_query_is_read_only_and_groups_edges_by_relationship() {
+    let fixture = batch_fixture(&["agent.demo", "agent.other"]).await;
+    let revision_before = relationship_revision(&fixture.facade);
+
+    let all = governance_ledger(&fixture.facade, RelationGovernanceFilters::default()).await;
+    assert_eq!(all.rows.len(), 2, "one row per relationship edge");
+    assert_eq!(all.counts.all, 2);
+    assert_eq!(all.counts.eligible_to_centralize, 2);
+    assert_eq!(all.counts.blocked, 0);
+    assert!(all
+        .rows
+        .iter()
+        .all(|row| row.readiness == RelationGovernanceReadiness::EligibleToCentralize));
+    assert!(all.rows.iter().all(|row| row.blockers.is_empty()));
+    assert_eq!(all.rows[0].skill_display_name.as_deref(), Some("Notes"));
+    assert_eq!(
+        all.rows[0].relation.path,
+        fixture.entry(0).to_string_lossy()
+    );
+    assert_eq!(
+        all.rows[0].relation.relationship,
+        RelationshipType::ManagedCopy
+    );
+
+    // 四个筛选是同一份清单的快捷筛选：计数始终描述整份清单。
+    let blocked = governance_ledger(
+        &fixture.facade,
+        RelationGovernanceFilters {
+            bucket: RelationGovernanceBucket::Blocked,
+            ..Default::default()
+        },
+    )
+    .await;
+    assert!(blocked.rows.is_empty());
+    assert_eq!(blocked.counts.all, 2);
+
+    // 按关系边筛选，而不是复制一份 Skill 列表。
+    let by_agent = governance_ledger(
+        &fixture.facade,
+        RelationGovernanceFilters {
+            agent_client_id: Some("agent.other".into()),
+            ..Default::default()
+        },
+    )
+    .await;
+    assert_eq!(by_agent.rows.len(), 1);
+    assert_eq!(
+        by_agent.rows[0].relation.relation_id,
+        fixture.relation_id(1)
+    );
+
+    assert_eq!(
+        relationship_revision(&fixture.facade),
+        revision_before,
+        "reading the governance ledger never writes a relationship fact"
+    );
+}
+
+#[tokio::test]
+async fn governance_batch_blocks_unverified_rows_and_keeps_the_executable_ones() {
+    let fixture = batch_fixture(&["agent.demo", "agent.other"]).await;
+    let stale = fixture.relation_id(1);
+    fixture.set_match_state(&stale, ObservedMatchState::NameOnly);
+
+    let outcome = prepare_batch(
+        &fixture.facade,
+        vec![fixture.relation_id(0), stale.clone()],
+        Vec::new(),
+    )
+    .await;
+
+    assert_eq!(outcome.state, RelationGovernanceBatchState::Prepared);
+    assert_eq!(outcome.prepared_count, 1);
+    assert_eq!(outcome.blocked_count, 1);
+    assert_eq!(
+        batch_item(&outcome, &fixture.relation_id(0)).state,
+        RelationGovernanceBatchItemState::Prepared
+    );
+    let blocked = batch_item(&outcome, &stale);
+    assert_eq!(blocked.state, RelationGovernanceBatchItemState::Blocked);
+    assert_eq!(
+        blocked.blockers,
+        vec![RelationGovernanceBlocker::VerificationNotCurrent]
+    );
+    assert_eq!(blocked.error_code, Some(ErrorCode::OperationConflict));
+    assert!(
+        !blocked.retryable,
+        "a fact-level block is not retryable as-is"
+    );
+    assert_eq!(blocked.operation_id, None);
+    assert!(
+        !fixture.entry_is_symlink(1),
+        "a blocked row never touches the filesystem"
+    );
+}
+
+#[tokio::test]
+async fn governance_batch_cancelling_one_row_leaves_the_others_untouched() {
+    if !skillhub_adapters::deployment::DeploymentFilesystem::new()
+        .available_capabilities()
+        .symlink
+    {
+        return;
+    }
+    let fixture = batch_fixture(&["agent.demo", "agent.other"]).await;
+    let kept = fixture.relation_id(0);
+    let cancelled = fixture.relation_id(1);
+    let prepared = prepare_batch(
+        &fixture.facade,
+        vec![kept.clone(), cancelled.clone()],
+        Vec::new(),
+    )
+    .await;
+    assert_eq!(prepared.prepared_count, 2);
+
+    let committed = batch_outcome(
+        fixture
+            .facade
+            .execute(AppCommand::CommitRelationGovernanceBatch(
+                CommitRelationGovernanceBatch {
+                    batch_id: prepared.batch_id,
+                    relation_ids: vec![kept.clone()],
+                },
+            ))
+            .await
+            .expect("commit governance batch"),
+    );
+
+    assert_eq!(committed.state, RelationGovernanceBatchState::Committed);
+    assert_eq!(committed.committed_count, 1);
+    assert_eq!(committed.cancelled_count, 1);
+    assert_eq!(
+        batch_item(&committed, &kept).state,
+        RelationGovernanceBatchItemState::Committed
+    );
+    assert_eq!(
+        batch_item(&committed, &cancelled).state,
+        RelationGovernanceBatchItemState::Cancelled
+    );
+    assert!(fixture.entry_is_symlink(0), "the kept row was centralized");
+    assert!(
+        !fixture.entry_is_symlink(1),
+        "cancelling a row does not convert it"
+    );
+}
+
+#[tokio::test]
+async fn governance_batch_partial_failure_keeps_successes_with_per_item_retry_info() {
+    if !skillhub_adapters::deployment::DeploymentFilesystem::new()
+        .available_capabilities()
+        .symlink
+    {
+        return;
+    }
+    let fixture = batch_fixture(&["agent.demo", "agent.other"]).await;
+    let kept = fixture.relation_id(0);
+    let drifting = fixture.relation_id(1);
+    let prepared = prepare_batch(
+        &fixture.facade,
+        vec![kept.clone(), drifting.clone()],
+        Vec::new(),
+    )
+    .await;
+    assert_eq!(prepared.prepared_count, 2);
+
+    // The second edge's content moves after the plan was made.  The batch must
+    // re-check it per row instead of trusting the earlier plan.
+    std::fs::write(fixture.entry(1).join("SKILL.md"), "# Notes\n\nchanged\n").expect("drift");
+
+    let committed = batch_outcome(
+        fixture
+            .facade
+            .execute(AppCommand::CommitRelationGovernanceBatch(
+                CommitRelationGovernanceBatch {
+                    batch_id: prepared.batch_id,
+                    relation_ids: vec![kept.clone(), drifting.clone()],
+                },
+            ))
+            .await
+            .expect("commit governance batch"),
+    );
+
+    assert_eq!(
+        committed.state,
+        RelationGovernanceBatchState::PartiallyCommitted,
+        "a partial failure is never summarised as success"
+    );
+    assert_eq!(committed.committed_count, 1);
+    assert_eq!(committed.failed_count, 1);
+    assert_eq!(
+        batch_item(&committed, &kept).state,
+        RelationGovernanceBatchItemState::Committed
+    );
+    assert!(fixture.entry_is_symlink(0), "the successful row is kept");
+
+    let failed = batch_item(&committed, &drifting);
+    assert_eq!(failed.state, RelationGovernanceBatchItemState::Failed);
+    assert_eq!(failed.error_code, Some(ErrorCode::TargetChanged));
+    assert!(
+        failed.retryable,
+        "the failing row can be retried on its own"
+    );
+    assert!(
+        !fixture.entry_is_symlink(1),
+        "the drifting row keeps its original entry"
+    );
+
+    // 逐项回退信息：成功项仍可单独回退。
+    let rolled_back = batch_outcome(
+        fixture
+            .facade
+            .execute(AppCommand::RollbackRelationGovernanceBatch(
+                RollbackRelationGovernanceBatch {
+                    batch_id: prepared.batch_id,
+                    relation_ids: vec![kept.clone()],
+                },
+            ))
+            .await
+            .expect("rollback governance batch"),
+    );
+    assert_eq!(
+        batch_item(&rolled_back, &kept).state,
+        RelationGovernanceBatchItemState::RolledBack
+    );
+    assert!(
+        !fixture.entry_is_symlink(0),
+        "the rolled-back row is restored to its original entry"
+    );
+}
+
+#[tokio::test]
+async fn governance_batch_requires_the_shared_impact_confirmation_per_row() {
+    let fixture = fixture_with(RelationKind::SharedReference { other_consumers: 1 }).await;
+    let relation_id = fixture.relation_id.clone();
+
+    let unconfirmed = prepare_batch(&fixture.facade, vec![relation_id.clone()], Vec::new()).await;
+    assert_eq!(unconfirmed.prepared_count, 0);
+    assert_eq!(unconfirmed.blocked_count, 1);
+    let blocked = batch_item(&unconfirmed, &relation_id);
+    assert_eq!(blocked.state, RelationGovernanceBatchItemState::Blocked);
+    assert_eq!(
+        blocked.blockers,
+        vec![RelationGovernanceBlocker::SharedImpactConfirmationRequired]
+    );
+
+    // 提供该行的确认令牌后才可执行；批次不替用户默认同意。
+    let confirmed = prepare_batch(
+        &fixture.facade,
+        vec![relation_id.clone()],
+        vec![(relation_id.clone(), "confirmed".into())],
+    )
+    .await;
+    assert_eq!(confirmed.prepared_count, 1);
+    assert_eq!(
+        batch_item(&confirmed, &relation_id).state,
+        RelationGovernanceBatchItemState::Prepared
+    );
+}
+
+#[tokio::test]
+async fn governance_batch_log_links_the_parent_to_each_child_operation() {
+    let fixture = batch_fixture(&["agent.demo", "agent.other"]).await;
+    let first = fixture.relation_id(0);
+    let second = fixture.relation_id(1);
+    let prepared = prepare_batch(
+        &fixture.facade,
+        vec![first.clone(), second.clone()],
+        Vec::new(),
+    )
+    .await;
+
+    let (kind, phase, progress) =
+        governance_batch_operation_row(&fixture.facade, prepared.batch_id);
+    assert_eq!(kind, "relation_governance_batch");
+    assert_eq!(phase, "prepared");
+
+    let children = progress["recovery_data"]["children"]
+        .as_array()
+        .expect("recovery children");
+    assert_eq!(children.len(), 2);
+    let mut child_operation_ids = Vec::new();
+    for relation_id in [&first, &second] {
+        let child = children
+            .iter()
+            .find(|child| child["relation_id"] == Value::String(relation_id.clone()))
+            .unwrap_or_else(|| panic!("child for {relation_id}"));
+        let operation_id: skillhub_core::OperationId = child["operation_id"]
+            .as_str()
+            .expect("child operation id")
+            .parse()
+            .expect("operation id");
+        child_operation_ids.push(operation_id);
+    }
+
+    let object_results = progress["object_results"]
+        .as_array()
+        .expect("object results");
+    assert_eq!(object_results.len(), 2);
+    for relation_id in [&first, &second] {
+        assert!(
+            object_results
+                .iter()
+                .any(|result| result["object_id"] == Value::String(relation_id.clone())),
+            "the batch log names every item it orchestrates"
+        );
+    }
+    for operation_id in child_operation_ids {
+        assert_eq!(
+            operation_kind(&fixture.facade, operation_id).as_deref(),
+            Some("migrate_relation"),
+            "each child is the same single-relation operation the page uses"
+        );
+    }
+}
+
+#[tokio::test]
+async fn concurrent_governance_batch_commits_do_not_bypass_the_relation_lock() {
+    if !skillhub_adapters::deployment::DeploymentFilesystem::new()
+        .available_capabilities()
+        .symlink
+    {
+        return;
+    }
+    let fixture = batch_fixture(&["agent.demo"]).await;
+    let relation_id = fixture.relation_id(0);
+    let prepared = prepare_batch(&fixture.facade, vec![relation_id.clone()], Vec::new()).await;
+    let batch_id = prepared.batch_id;
+    let facade = &fixture.facade;
+    let (first, second) = std::thread::scope(|scope| {
+        let first = scope.spawn(|| {
+            let runtime = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .expect("first runtime");
+            runtime.block_on(facade.execute(AppCommand::CommitRelationGovernanceBatch(
+                CommitRelationGovernanceBatch {
+                    batch_id,
+                    relation_ids: vec![relation_id.clone()],
+                },
+            )))
+        });
+        let second = scope.spawn(|| {
+            let runtime = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .expect("second runtime");
+            runtime.block_on(facade.execute(AppCommand::CommitRelationGovernanceBatch(
+                CommitRelationGovernanceBatch {
+                    batch_id,
+                    relation_ids: vec![relation_id.clone()],
+                },
+            )))
+        });
+        (
+            first.join().expect("first batch thread"),
+            second.join().expect("second batch thread"),
+        )
+    });
+
+    let first = batch_outcome(first.expect("first batch commit"));
+    let second = batch_outcome(second.expect("second batch commit"));
+    assert_eq!(first.committed_count, 1);
+    assert_eq!(second.committed_count, 1);
+    assert_eq!(
+        batch_item(&first, &relation_id).operation_id,
+        batch_item(&second, &relation_id).operation_id,
+        "the same child operation is serialized, not executed twice"
+    );
+    assert!(fixture.entry_is_symlink(0));
+    assert_eq!(
+        std::fs::read_to_string(fixture.entry(0).join("SKILL.md")).expect("centralized body"),
+        BODY
+    );
+}
+
+#[tokio::test]
+async fn governance_batch_rejects_an_empty_selection() {
+    let fixture = batch_fixture(&["agent.demo"]).await;
+    let error = fixture
+        .facade
+        .execute(AppCommand::PrepareRelationGovernanceBatch(
+            PrepareRelationGovernanceBatch {
+                action: RelationGovernanceBatchAction::CentralizeManagement,
+                relation_ids: Vec::new(),
+                confirmations: Default::default(),
+            },
+        ))
+        .await
+        .expect_err("a batch needs at least one relationship edge");
+    assert_eq!(error.code, ErrorCode::InvalidInput);
 }
