@@ -50,7 +50,7 @@ test("organizes the detail page into five information zones", async ({ page }) =
   }
 
   await expect(
-    page.getByRole("group", { name: "Source, library, and deployment targets" }),
+    page.getByRole("group", { name: "Source, library, and addition targets" }),
   ).toBeVisible();
 });
 
@@ -211,7 +211,7 @@ test.describe("theme contract", () => {
       await expect(page.getByRole("group", { name: "Skill status" })).toBeVisible();
       await expect(page.getByText("Basic check passed")).toBeVisible();
       await expect(
-        page.getByRole("group", { name: "Source, library, and deployment targets" }),
+        page.getByRole("group", { name: "Source, library, and addition targets" }),
       ).toBeVisible();
 
       // 键盘焦点可见：Tab 走到分区导航链接后必须出现 focus 描边。

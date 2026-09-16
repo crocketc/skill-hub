@@ -38,7 +38,7 @@ const statNames = [
   "3 configured agents",
   "5 discovered agents",
   "3 projects",
-  "27 deployments",
+  "27 deployment relations",
 ] as const;
 
 test.use({ locale: "en-US" });
@@ -149,7 +149,7 @@ test("stacks chart and pending into one column with single-column stats at 800px
   // 长项目名在窄容器中保持可读且不产生根级横向溢出。
   await page.getByRole("radio", { name: "Projects" }).click();
   const longLabel = page.getByRole("button", {
-    name: "View Aurora Mobile Workspace's 9 deployments",
+    name: "View Aurora Mobile Workspace's 9 deployment relations",
   });
   await expect(longLabel).toBeVisible();
   await expectNoRootHorizontalOverflow(page);
@@ -238,7 +238,7 @@ test("reaches every overview control by keyboard with visible focus", async ({ p
   await page.keyboard.press("Tab");
   await expect(page.getByRole("link", { name: "3 projects" })).toBeFocused();
   await page.keyboard.press("Tab");
-  await expect(page.getByRole("link", { name: "27 deployments" })).toBeFocused();
+  await expect(page.getByRole("link", { name: "27 deployment relations" })).toBeFocused();
   await page.keyboard.press("Tab");
   await expect(page.getByRole("radio", { name: "Agents" })).toBeFocused();
 
@@ -273,15 +273,15 @@ test("reaches every overview control by keyboard with visible focus", async ({ p
   // 不是放松断言；「待办链接可键盘可达」的实质断言保留。
   await page.keyboard.press("Tab");
   await expect(
-    page.getByRole("button", { name: "View Aurora Mobile Workspace's 9 deployments" }),
+    page.getByRole("button", { name: "View Aurora Mobile Workspace's 9 deployment relations" }),
   ).toBeFocused();
   await page.keyboard.press("Tab");
   await expect(
-    page.getByRole("button", { name: "View Orbital Docs's 6 deployments" }),
+    page.getByRole("button", { name: "View Orbital Docs's 6 deployment relations" }),
   ).toBeFocused();
   await page.keyboard.press("Tab");
   await expect(
-    page.getByRole("button", { name: "View SkillHub Website's 3 deployments" }),
+    page.getByRole("button", { name: "View SkillHub Website's 3 deployment relations" }),
   ).toBeFocused();
   await page.keyboard.press("Tab");
   await expect(page.getByRole("button", { name: "View 8 skills tagged writing" })).toBeFocused();
