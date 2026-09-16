@@ -1,4 +1,5 @@
 pub mod classifier;
+pub mod graph;
 pub mod impact;
 
 pub use classifier::{
@@ -8,6 +9,11 @@ pub use classifier::{
 pub use impact::{
     calculate_removal_impact, recommend_removal_action, BackupRecoveryInfo, MinimalImpactAction,
     RelatedSkillPath, RemovalFacts, RemovalImpactFact, SharedDirectoryConsumer,
+};
+pub use graph::{
+    project_skill_relationship_graph, RelationshipGraphEdgeKind, RelationshipGraphFactCounts,
+    RelationshipGraphFilters, RelationshipGraphNodeKind, RelationshipGraphStatus,
+    SkillRelationshipEdge, SkillRelationshipGraph, SkillRelationshipNode,
 };
 
 use serde::{Deserialize, Serialize};
