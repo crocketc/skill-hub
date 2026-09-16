@@ -1,4 +1,5 @@
 pub mod classifier;
+pub mod governance;
 pub mod graph;
 pub mod impact;
 pub mod resolution;
@@ -6,6 +7,13 @@ pub mod resolution;
 pub use classifier::{
     classify_directory_capability, classify_observed_relation,
     classify_observed_relation_with_reason, RelationClassification, RelationTargetFact,
+};
+pub use governance::{
+    project_relation_governance_ledger, project_relation_governance_ledger_with_names,
+    RelationGovernanceAction, RelationGovernanceBlocker, RelationGovernanceBucket,
+    RelationGovernanceCounts, RelationGovernanceFilters, RelationGovernanceImpact,
+    RelationGovernanceLedger, RelationGovernanceNames, RelationGovernanceReadiness,
+    RelationGovernanceRow,
 };
 pub use graph::{
     project_skill_relationship_graph, RelationshipGraphEdgeKind, RelationshipGraphFactCounts,
