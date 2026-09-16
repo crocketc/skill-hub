@@ -94,6 +94,8 @@ flowchart LR
 进行中（代码与自动化已完成，真实设备验收待做）：
 
 - 导入关系分组确认、复制副本/共享引用转管理链接、Agent 目录矩阵与 Skill 详情关系视图、可选 AI 冲突分析（进度与证据见 [开发状态](docs/development/开发状态-2026-09-16.md) 与 [自动化测试说明](docs/development/自动化测试说明-2026-09-16.md)）
+- 技能关系一级模块：后端契约已完成、页面未开始。已完成关系投影与图谱/候选查询、冲突显式决定与工作台契约、关系治理只读清单与安全批处理编排（含逐行确认、部分失败保留成功项、取消隔离）；技能图谱、冲突处理、关系治理三个页面与统一异步执行反馈仍在实施中。实施进度见 [实施计划](docs/superpowers/plans/2026-09-16-skill-relationship-module-and-unified-execution-implementation-plan.md)
+- Windows 目录联接（junction）执行器已实现（未开启开发者模式的账号也能完成“纳入集中库管理”），但只在 macOS 上跑过自动化、在 Windows 上仅做过类型检查，真实 Windows 运行证据待人工验收（RC-13/RC-14）
 
 实验能力（仅供参考）：
 
