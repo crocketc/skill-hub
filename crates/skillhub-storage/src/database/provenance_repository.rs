@@ -38,7 +38,8 @@ impl<'a> ProvenanceRepository<'a> {
             .connection
             .unchecked_transaction()
             .map_err(database_error)?;
-        super::relationship_repository::upsert_source_relation_tx(&transaction, &relation)?;
+        let relationship_changed =
+            super::relationship_repository::upsert_source_relation_tx(&transaction, &relation)?;
         transaction
             .execute(
                 "INSERT INTO import_provenance \
@@ -61,6 +62,9 @@ impl<'a> ProvenanceRepository<'a> {
                 ],
             )
             .map_err(database_error)?;
+        if relationship_changed {
+            super::relationship_repository::bump_relationship_revision_tx(&transaction)?;
+        }
         transaction.commit().map_err(database_error)
     }
 
@@ -208,29 +212,33 @@ impl<'a> ProvenanceRepository<'a> {
                         |row| row.get(0),
                     )
                     .map_err(database_error)?;
-                super::relationship_repository::upsert_deployment_relation_tx(
-                    &transaction,
-                    &DeploymentRelationFact {
-                        relation_id,
-                        skill_id: Some(*skill_id),
-                        agent_client_id: client_id.to_owned(),
-                        path: original_path.to_owned(),
-                        path_key: String::new(),
-                        directory_node_id: None,
-                        relationship: RelationshipType::Unknown,
-                        file_representation: FileRepresentation::Unknown,
-                        ownership: OwnershipState::ObservedUnmanaged,
-                        link_target_path: None,
-                        link_target_path_key: None,
-                        link_target_directory_id: None,
-                        content_fingerprint: fingerprint.clone(),
-                        origin,
-                        match_state: ObservedMatchState::ContentVerified,
-                        active: true,
-                        observed_at,
-                        released_at: None,
-                    },
-                )?;
+                let relationship_changed =
+                    super::relationship_repository::upsert_deployment_relation_tx(
+                        &transaction,
+                        &DeploymentRelationFact {
+                            relation_id,
+                            skill_id: Some(*skill_id),
+                            agent_client_id: client_id.to_owned(),
+                            path: original_path.to_owned(),
+                            path_key: String::new(),
+                            directory_node_id: None,
+                            relationship: RelationshipType::Unknown,
+                            file_representation: FileRepresentation::Unknown,
+                            ownership: OwnershipState::ObservedUnmanaged,
+                            link_target_path: None,
+                            link_target_path_key: None,
+                            link_target_directory_id: None,
+                            content_fingerprint: fingerprint.clone(),
+                            origin,
+                            match_state: ObservedMatchState::ContentVerified,
+                            active: true,
+                            observed_at,
+                            released_at: None,
+                        },
+                    )?;
+                if relationship_changed {
+                    super::relationship_repository::bump_relationship_revision_tx(&transaction)?;
+                }
                 transaction.commit().map_err(database_error)
             }
             ObservedRowAction::MarkUnreliable {
@@ -254,7 +262,7 @@ impl<'a> ProvenanceRepository<'a> {
                     ],
                     )
                     .map_err(database_error)?;
-                transaction
+                let relationship_changed = transaction
                         .execute(
                         "UPDATE deployment_relations SET skill_id=NULL, content_fingerprint=?1, match_state=?2, active=1, observed_at=?3, released_at=NULL WHERE agent_client_id=?4 AND path_key=?5 AND ownership<>'skillhub_managed'",
                         params![
@@ -265,7 +273,11 @@ impl<'a> ProvenanceRepository<'a> {
                             observed_path_key(original_path),
                         ],
                     )
-                    .map_err(database_error)?;
+                    .map_err(database_error)?
+                    != 0;
+                if relationship_changed {
+                    super::relationship_repository::bump_relationship_revision_tx(&transaction)?;
+                }
                 transaction.commit().map_err(database_error)
             }
             ObservedRowAction::Release => {
@@ -281,12 +293,16 @@ impl<'a> ProvenanceRepository<'a> {
                         params![observed_at, observed_path_key(original_path)],
                     )
                     .map_err(database_error)?;
-                transaction
+                let relationship_changed = transaction
                         .execute(
                         "UPDATE deployment_relations SET active=0, released_at=?1 WHERE agent_client_id=?2 AND path_key=?3 AND active=1 AND ownership<>'skillhub_managed'",
                         params![observed_at, client_id, observed_path_key(original_path)],
                     )
-                    .map_err(database_error)?;
+                    .map_err(database_error)?
+                    != 0;
+                if relationship_changed {
+                    super::relationship_repository::bump_relationship_revision_tx(&transaction)?;
+                }
                 transaction.commit().map_err(database_error)
             }
         }

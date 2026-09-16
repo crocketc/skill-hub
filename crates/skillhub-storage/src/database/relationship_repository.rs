@@ -38,11 +38,37 @@ impl<'a> RelationshipRepository<'a> {
         Self { database }
     }
 
+    pub fn relationship_revision(&self) -> AppResult<i64> {
+        self.database
+            .connection
+            .query_row(
+                "SELECT revision FROM relationship_projection_state WHERE id=1",
+                [],
+                |row| row.get(0),
+            )
+            .map_err(database_error)
+    }
+
+    pub fn last_verified_at(&self) -> AppResult<Option<i64>> {
+        self.database
+            .connection
+            .query_row(
+                "SELECT last_verified_at FROM relationship_projection_state WHERE id=1",
+                [],
+                |row| row.get(0),
+            )
+            .map_err(database_error)
+    }
+
     pub fn upsert_capability(&self, capability: &AgentDirectoryCapabilityFact) -> AppResult<()> {
         let platforms = serde_json::to_string(&capability.applicable_platforms)
             .map_err(|error| serialization_error(error.to_string()))?;
-        self.database
+        let transaction = self
+            .database
             .connection
+            .unchecked_transaction()
+            .map_err(database_error)?;
+        let changed = transaction
             .execute(
                 "INSERT INTO agent_directory_capabilities
                  (agent_client_id, directory_node_id, recognition, precedence, evidence_reference, researched_at, applicable_platforms_json)
@@ -50,7 +76,12 @@ impl<'a> RelationshipRepository<'a> {
                  ON CONFLICT(agent_client_id, directory_node_id) DO UPDATE SET
                  recognition=excluded.recognition, precedence=excluded.precedence,
                  evidence_reference=excluded.evidence_reference, researched_at=excluded.researched_at,
-                 applicable_platforms_json=excluded.applicable_platforms_json",
+                 applicable_platforms_json=excluded.applicable_platforms_json
+                 WHERE agent_directory_capabilities.recognition IS NOT excluded.recognition
+                    OR agent_directory_capabilities.precedence IS NOT excluded.precedence
+                    OR agent_directory_capabilities.evidence_reference IS NOT excluded.evidence_reference
+                    OR agent_directory_capabilities.researched_at IS NOT excluded.researched_at
+                    OR agent_directory_capabilities.applicable_platforms_json IS NOT excluded.applicable_platforms_json",
                 params![
                     capability.agent_client_id,
                     capability.directory_node_id,
@@ -61,8 +92,11 @@ impl<'a> RelationshipRepository<'a> {
                     platforms,
                 ],
             )
-            .map(|_| ())
-            .map_err(database_error)
+            .map_err(database_error)?;
+        if changed != 0 {
+            bump_relationship_revision_tx(&transaction)?;
+        }
+        transaction.commit().map_err(database_error)
     }
 
     pub fn list_capabilities(&self) -> AppResult<Vec<AgentDirectoryCapabilityFact>> {
@@ -100,7 +134,9 @@ impl<'a> RelationshipRepository<'a> {
             .connection
             .unchecked_transaction()
             .map_err(database_error)?;
-        upsert_deployment_relation_tx(&transaction, relation)?;
+        if upsert_deployment_relation_tx(&transaction, relation)? {
+            bump_relationship_revision_tx(&transaction)?;
+        }
         transaction.commit().map_err(database_error)
     }
 
@@ -114,7 +150,9 @@ impl<'a> RelationshipRepository<'a> {
             .connection
             .unchecked_transaction()
             .map_err(database_error)?;
-        upsert_deployment_relation_tx_with_policy(&transaction, relation, true)?;
+        if upsert_deployment_relation_tx_with_policy(&transaction, relation, true)? {
+            bump_relationship_revision_tx(&transaction)?;
+        }
         transaction.commit().map_err(database_error)
     }
 
@@ -263,7 +301,9 @@ impl<'a> RelationshipRepository<'a> {
             .connection
             .unchecked_transaction()
             .map_err(database_error)?;
-        upsert_source_relation_tx(&transaction, relation)?;
+        if upsert_source_relation_tx(&transaction, relation)? {
+            bump_relationship_revision_tx(&transaction)?;
+        }
         transaction.commit().map_err(database_error)
     }
 
@@ -295,7 +335,7 @@ impl<'a> RelationshipRepository<'a> {
         &self,
         transaction: &Transaction<'_>,
         deployment: &DeploymentRecord,
-    ) -> AppResult<()> {
+    ) -> AppResult<bool> {
         let target = transaction
             .query_row(
                 "SELECT agent_id, path FROM targets WHERE id=?1",
@@ -305,7 +345,7 @@ impl<'a> RelationshipRepository<'a> {
             .optional()
             .map_err(database_error)?;
         let Some((agent_client_id, target_path)) = target else {
-            return Ok(());
+            return Ok(false);
         };
         let (relationship, representation) = match deployment.mode {
             DeploymentMode::SymbolicLink => (
@@ -355,13 +395,13 @@ impl<'a> RelationshipRepository<'a> {
         transaction: &Transaction<'_>,
         id: &str,
         at: i64,
-    ) -> AppResult<()> {
+    ) -> AppResult<bool> {
         transaction
             .execute(
-                "UPDATE deployment_relations SET active=0, released_at=?1 WHERE relation_id=?2",
+                "UPDATE deployment_relations SET active=0, released_at=?1 WHERE relation_id=?2 AND active=1",
                 params![at, format!("managed:{id}")],
             )
-            .map(|_| ())
+            .map(|changed| changed != 0)
             .map_err(database_error)
     }
 
@@ -369,13 +409,13 @@ impl<'a> RelationshipRepository<'a> {
         &self,
         transaction: &Transaction<'_>,
         id: &str,
-    ) -> AppResult<()> {
+    ) -> AppResult<bool> {
         transaction
             .execute(
-                "UPDATE deployment_relations SET ownership='observed_unmanaged' WHERE relation_id=?1",
+                "UPDATE deployment_relations SET ownership='observed_unmanaged' WHERE relation_id=?1 AND ownership<>'observed_unmanaged'",
                 [format!("managed:{id}")],
             )
-            .map(|_| ())
+            .map(|changed| changed != 0)
             .map_err(database_error)
     }
 }
@@ -433,7 +473,7 @@ fn comparable_path(path: &str) -> String {
 pub(crate) fn upsert_deployment_relation_tx(
     transaction: &Transaction<'_>,
     relation: &DeploymentRelationFact,
-) -> AppResult<()> {
+) -> AppResult<bool> {
     upsert_deployment_relation_tx_with_policy(transaction, relation, false)
 }
 
@@ -441,14 +481,14 @@ pub(crate) fn upsert_deployment_relation_tx_with_policy(
     transaction: &Transaction<'_>,
     relation: &DeploymentRelationFact,
     allow_managed_downgrade: bool,
-) -> AppResult<()> {
+) -> AppResult<bool> {
     let path_key = observed_path_key(&relation.path);
     let link_target_path_key = relation.link_target_path.as_deref().map(observed_path_key);
     let directory_node_id = directory_node_id_for_path_tx(transaction, &relation.path)?;
     let ownership_guard = if allow_managed_downgrade {
-        ""
+        "1=1"
     } else {
-        " WHERE excluded.ownership='skillhub_managed'
+        "excluded.ownership='skillhub_managed'
                 OR deployment_relations.ownership<>'skillhub_managed'"
     };
     transaction
@@ -468,7 +508,25 @@ pub(crate) fn upsert_deployment_relation_tx_with_policy(
              link_target_directory_id=excluded.link_target_directory_id,
              content_fingerprint=excluded.content_fingerprint, origin=excluded.origin,
              match_state=excluded.match_state, active=excluded.active,
-             observed_at=excluded.observed_at, released_at=excluded.released_at{ownership_guard}"
+             observed_at=excluded.observed_at, released_at=excluded.released_at
+             WHERE ({ownership_guard}) AND (
+                 deployment_relations.relation_id IS NOT excluded.relation_id
+                 OR deployment_relations.skill_id IS NOT excluded.skill_id
+                 OR deployment_relations.path IS NOT excluded.path
+                 OR deployment_relations.directory_node_id IS NOT excluded.directory_node_id
+                 OR deployment_relations.relationship IS NOT excluded.relationship
+                 OR deployment_relations.file_representation IS NOT excluded.file_representation
+                 OR deployment_relations.ownership IS NOT excluded.ownership
+                 OR deployment_relations.link_target_path IS NOT excluded.link_target_path
+                 OR deployment_relations.link_target_path_key IS NOT excluded.link_target_path_key
+                 OR deployment_relations.link_target_directory_id IS NOT excluded.link_target_directory_id
+                 OR deployment_relations.content_fingerprint IS NOT excluded.content_fingerprint
+                 OR deployment_relations.origin IS NOT excluded.origin
+                 OR deployment_relations.match_state IS NOT excluded.match_state
+                 OR deployment_relations.active IS NOT excluded.active
+                 OR deployment_relations.observed_at IS NOT excluded.observed_at
+                 OR deployment_relations.released_at IS NOT excluded.released_at
+             )"
             ),
             params![
                 relation.relation_id,
@@ -491,8 +549,29 @@ pub(crate) fn upsert_deployment_relation_tx_with_policy(
                 relation.released_at,
             ],
     )
-        .map(|_| ())
+        .map(|changed| changed != 0)
         .map_err(database_error)
+}
+
+pub(crate) fn bump_relationship_revision_tx(transaction: &Transaction<'_>) -> AppResult<()> {
+    transaction
+        .execute(
+            "UPDATE relationship_projection_state
+             SET revision=revision+1,
+                 last_verified_at=CAST(strftime('%s','now') AS INTEGER)
+             WHERE id=1",
+            [],
+        )
+        .map_err(database_error)
+        .and_then(|changed| {
+            if changed == 1 {
+                Ok(())
+            } else {
+                Err(AppError::new(ErrorCode::InternalError, Severity::Error)
+                    .with_param("reason", "relationship_projection_state_missing")
+                    .with_action(RecoveryAction::Retry))
+            }
+        })
 }
 
 pub(crate) fn sync_reconciled_deployment_tx(
@@ -501,7 +580,7 @@ pub(crate) fn sync_reconciled_deployment_tx(
     expected_hash: &str,
     observed_hash: Option<&str>,
     observed_at: i64,
-) -> AppResult<()> {
+) -> AppResult<bool> {
     let (content_fingerprint, match_state) = match observed_hash {
         Some(hash) if hash != expected_hash => (hash, "diverged"),
         Some(hash) => (hash, "content_verified"),
@@ -512,7 +591,13 @@ pub(crate) fn sync_reconciled_deployment_tx(
             "UPDATE deployment_relations
              SET content_fingerprint=?1, match_state=?2, active=1,
                  observed_at=?3, released_at=NULL
-             WHERE relation_id=?4 AND ownership='skillhub_managed'",
+             WHERE relation_id=?4 AND ownership='skillhub_managed' AND (
+                 content_fingerprint IS NOT ?1
+                 OR match_state IS NOT ?2
+                 OR active<>1
+                 OR observed_at IS NOT ?3
+                 OR released_at IS NOT NULL
+             )",
             params![
                 content_fingerprint,
                 match_state,
@@ -520,14 +605,14 @@ pub(crate) fn sync_reconciled_deployment_tx(
                 format!("managed:{id}")
             ],
         )
-        .map(|_| ())
+        .map(|changed| changed != 0)
         .map_err(database_error)
 }
 
 pub(crate) fn upsert_source_relation_tx(
     transaction: &Transaction<'_>,
     relation: &SourceRelationFact,
-) -> AppResult<()> {
+) -> AppResult<bool> {
     let source_path_key = observed_path_key(&relation.source_path);
     let directory_node_id = directory_node_id_for_path_tx(transaction, &relation.source_path)?;
     transaction
@@ -544,7 +629,21 @@ pub(crate) fn upsert_source_relation_tx(
              file_representation=excluded.file_representation, ownership=excluded.ownership,
              link_target_path=excluded.link_target_path, link_target_directory_id=excluded.link_target_directory_id,
              content_fingerprint=excluded.content_fingerprint, source_kind=excluded.source_kind,
-             source_locator=excluded.source_locator, imported_at=excluded.imported_at",
+             source_locator=excluded.source_locator, imported_at=excluded.imported_at
+             WHERE source_relations.skill_id IS NOT excluded.skill_id
+                OR source_relations.directory_node_id IS NOT excluded.directory_node_id
+                OR source_relations.agent_client_id IS NOT excluded.agent_client_id
+                OR source_relations.source_path IS NOT excluded.source_path
+                OR source_relations.source_path_key IS NOT excluded.source_path_key
+                OR source_relations.relationship IS NOT excluded.relationship
+                OR source_relations.file_representation IS NOT excluded.file_representation
+                OR source_relations.ownership IS NOT excluded.ownership
+                OR source_relations.link_target_path IS NOT excluded.link_target_path
+                OR source_relations.link_target_directory_id IS NOT excluded.link_target_directory_id
+                OR source_relations.content_fingerprint IS NOT excluded.content_fingerprint
+                OR source_relations.source_kind IS NOT excluded.source_kind
+                OR source_relations.source_locator IS NOT excluded.source_locator
+                OR source_relations.imported_at IS NOT excluded.imported_at",
             params![
                 relation.provenance_id,
                 relation.skill_id.to_string(),
@@ -563,7 +662,7 @@ pub(crate) fn upsert_source_relation_tx(
                 relation.imported_at,
             ],
         )
-        .map(|_| ())
+        .map(|changed| changed != 0)
         .map_err(database_error)
 }
 
@@ -577,6 +676,9 @@ impl<'a> ConflictRepository<'a> {
     }
 
     pub fn create_case(&self, case: &ConflictCaseFact) -> AppResult<()> {
+        if self.list_cases()?.iter().any(|existing| existing == case) {
+            return Ok(());
+        }
         let member_skill_ids = serde_json::to_string(&case.member_skill_ids)
             .map_err(|error| serialization_error(error.to_string()))?;
         let evidence = serde_json::to_string(&case.evidence)
@@ -623,6 +725,7 @@ impl<'a> ConflictRepository<'a> {
                 ],
             ).map_err(database_error)?;
         }
+        bump_relationship_revision_tx(&tx)?;
         tx.commit().map_err(database_error)
     }
 
@@ -661,18 +764,41 @@ impl<'a> ConflictRepository<'a> {
         decision: ConflictClassification,
         decided_at: i64,
     ) -> AppResult<()> {
-        let changed = self
+        let tx = self
             .database
             .connection
+            .unchecked_transaction()
+            .map_err(database_error)?;
+        let changed = tx
             .execute(
-                "UPDATE conflict_cases SET classification=?1, user_decision=?1, decided_at=?2 WHERE conflict_id=?3",
-                params![conflict_classification_code(decision), decided_at, conflict_id],
+                "UPDATE conflict_cases SET classification=?1, user_decision=?1, decided_at=?2
+                 WHERE conflict_id=?3 AND (
+                    classification IS NOT ?1 OR user_decision IS NOT ?1 OR decided_at IS NOT ?2
+                 )",
+                params![
+                    conflict_classification_code(decision),
+                    decided_at,
+                    conflict_id
+                ],
             )
             .map_err(database_error)?;
         if changed == 0 {
-            return Err(not_found("conflict_case"));
+            let exists = tx
+                .query_row(
+                    "SELECT 1 FROM conflict_cases WHERE conflict_id=?1",
+                    [conflict_id],
+                    |_| Ok(()),
+                )
+                .optional()
+                .map_err(database_error)?
+                .is_some();
+            if !exists {
+                return Err(not_found("conflict_case"));
+            }
+            return tx.commit().map_err(database_error);
         }
-        Ok(())
+        bump_relationship_revision_tx(&tx)?;
+        tx.commit().map_err(database_error)
     }
 
     fn decode_case(&self, row: StoredCase) -> AppResult<ConflictCaseFact> {

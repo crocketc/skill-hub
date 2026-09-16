@@ -16,9 +16,46 @@ fn fixture_database_with_schema_version(version: u32) -> NamedTempFile {
 fn empty_database_migrates_to_current_schema_and_enables_fts5() {
     let db = Database::open_in_memory().unwrap();
 
-    assert_eq!(db.schema_version().unwrap(), 15);
+    assert_eq!(db.schema_version().unwrap(), 16);
     assert!(db.has_table("skills_fts").unwrap());
     assert!(db.has_table("search_candidates").unwrap());
+}
+
+#[test]
+fn v15_upgrade_initializes_one_safe_relationship_projection_state() {
+    let file = NamedTempFile::new().unwrap();
+    drop(Database::open(file.path()).unwrap());
+    let connection = Connection::open(file.path()).unwrap();
+    connection
+        .execute_batch("DROP TABLE relationship_projection_state; PRAGMA user_version=15;")
+        .unwrap();
+    connection.close().unwrap();
+
+    let database = Database::open(file.path()).unwrap();
+    assert_eq!(database.schema_version().unwrap(), 16);
+    assert_eq!(
+        database
+            .relationship_repository()
+            .relationship_revision()
+            .unwrap(),
+        0
+    );
+    assert_eq!(
+        database
+            .relationship_repository()
+            .last_verified_at()
+            .unwrap(),
+        None
+    );
+    let state_rows: i64 = database
+        .connection_for_test()
+        .query_row(
+            "SELECT COUNT(*) FROM relationship_projection_state",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(state_rows, 1);
 }
 
 #[test]
@@ -64,7 +101,7 @@ fn v13_database_upgrades_relationships_without_losing_legacy_facts() {
     drop(connection);
 
     let database = Database::open(file.path()).unwrap();
-    assert_eq!(database.schema_version().unwrap(), 15);
+    assert_eq!(database.schema_version().unwrap(), 16);
     assert_eq!(
         database
             .provenance_repository()
@@ -205,10 +242,10 @@ fn open_exposes_the_migration_report() {
     let report = db.migration_report();
 
     assert_eq!(report.from_version, 0);
-    assert_eq!(report.to_version, 15);
+    assert_eq!(report.to_version, 16);
     assert_eq!(
         report.applied_versions,
-        vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+        vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
     );
 }
 
@@ -232,10 +269,10 @@ fn v4_database_upgrades_check_run_metadata_in_v5() {
     drop(connection);
 
     let db = Database::open(file.path()).unwrap();
-    assert_eq!(db.schema_version().unwrap(), 15);
+    assert_eq!(db.schema_version().unwrap(), 16);
     assert_eq!(
         db.migration_report().applied_versions,
-        vec![5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+        vec![5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
     );
     let generation: String = db
         .connection_for_test()
@@ -299,7 +336,7 @@ fn v10_database_upgrades_source_roles_and_keeps_legacy_upstreams_readable() {
     drop(connection);
 
     let db = Database::open(file.path()).unwrap();
-    assert_eq!(db.schema_version().unwrap(), 15);
+    assert_eq!(db.schema_version().unwrap(), 16);
 
     let remote_skill: skillhub_core::SkillId =
         "00000000-0000-0000-0000-0000000000a1".parse().unwrap();
@@ -458,7 +495,7 @@ fn v11_database_dedupes_combination_names_and_enforces_uniqueness() {
     drop(connection);
 
     let db = Database::open(file.path()).unwrap();
-    assert_eq!(db.schema_version().unwrap(), 15);
+    assert_eq!(db.schema_version().unwrap(), 16);
 
     let name_of = |id: &str| -> String {
         db.connection_for_test()

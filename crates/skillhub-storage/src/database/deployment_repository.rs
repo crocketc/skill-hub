@@ -84,9 +84,13 @@ impl<'a> DeploymentRepositorySqlite<'a> {
                 ],
             )
             .map_err(database_error)?;
-        self.database
+        let relationship_changed = self
+            .database
             .relationship_repository()
             .sync_managed_deployment_tx(&transaction, deployment)?;
+        if relationship_changed {
+            super::relationship_repository::bump_relationship_revision_tx(&transaction)?;
+        }
         transaction.commit().map_err(database_error)
     }
 
@@ -111,9 +115,13 @@ impl<'a> DeploymentRepositorySqlite<'a> {
                         .with_action(RecoveryAction::Retry))
                 }
             })?;
-        self.database
+        let relationship_changed = self
+            .database
             .relationship_repository()
             .mark_managed_deployment_removed_tx(&transaction, &id.to_string(), now())?;
+        if relationship_changed {
+            super::relationship_repository::bump_relationship_revision_tx(&transaction)?;
+        }
         transaction.commit().map_err(database_error)
     }
 
@@ -138,9 +146,13 @@ impl<'a> DeploymentRepositorySqlite<'a> {
                         .with_action(RecoveryAction::Retry))
                 }
             })?;
-        self.database
+        let relationship_changed = self
+            .database
             .relationship_repository()
             .detach_managed_deployment_tx(&transaction, &id.to_string())?;
+        if relationship_changed {
+            super::relationship_repository::bump_relationship_revision_tx(&transaction)?;
+        }
         transaction.commit().map_err(database_error)
     }
 
@@ -178,13 +190,16 @@ impl<'a> DeploymentRepositorySqlite<'a> {
                         .with_action(RecoveryAction::Retry))
                 }
             })?;
-        super::relationship_repository::sync_reconciled_deployment_tx(
+        let relationship_changed = super::relationship_repository::sync_reconciled_deployment_tx(
             &transaction,
             &id.to_string(),
             expected_hash,
             observed_hash,
             observed_at,
         )?;
+        if relationship_changed {
+            super::relationship_repository::bump_relationship_revision_tx(&transaction)?;
+        }
         transaction.commit().map_err(database_error)
     }
 }
