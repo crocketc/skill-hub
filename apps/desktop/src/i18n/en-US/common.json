@@ -60,7 +60,7 @@
       "issues": "Save issues",
       "preview": "Live preview",
       "save": "Save and create version",
-      "saveHint": "Saving creates a new version and makes it current; existing deployments need reconciliation to pick it up.",
+      "saveHint": "Saving creates a new version and makes it current; copies already added to targets need reconciliation to pick it up.",
       "saveAsCopy": "Save as copy",
       "copyHint": "Creates a separate Skill and leaves this one unchanged.",
       "copyCreated": "Copy saved as a new Skill",
@@ -281,7 +281,7 @@
       "diagnosticsLabel": "Diagnostics",
       "impacts": {
         "reuse": "Reuse: nothing new is imported; the existing managed Skill is used as-is",
-        "copy": "Copy into SkillHub: the candidate content is copied into the library; existing Skills and their deployments are not overwritten",
+        "copy": "Copy into SkillHub: the candidate content is copied into the library; existing Skills and their target copies are not overwritten",
         "takeover": "Keep location: the candidate stays where it is and comes under SkillHub management after content verification",
         "independent": "Import independently: stored in the library as a new identity; existing Skills are not overwritten",
         "skip": "Skip: this candidate is not imported"
@@ -483,7 +483,7 @@
       "title": "Local discovery",
       "description": "Inspect a path you choose and review its candidates before import.",
       "factPath": "Reads only the selected path",
-      "factReadOnly": "Discovery does not move or deploy files"
+      "factReadOnly": "Discovery does not move files or add Skills to Agents/projects"
     },
     "online": {
       "eyebrow": "Remote sources",
@@ -674,7 +674,7 @@
       "save": "Save",
       "cancel": "Cancel"
     },
-    "managedDeploymentCount": "{{count}} managed deployments",
+    "managedDeploymentCount": "{{count}} managed copies",
     "kind": {
       "cli": "CLI",
       "desktop": "Desktop app",
@@ -705,7 +705,7 @@
       "discoveredFact": "Discovered client and Skill directory facts",
       "observed": "Observed",
       "identity": "Agent identity",
-      "managedDeployments": "Managed deployments",
+      "managedDeployments": "Managed copies",
       "brand": "Brand",
       "client": "Client",
       "instance": "Instance",
@@ -749,7 +749,7 @@
       "ignoreUnsupported": "Agent-level ignore needs native contract support and is not available yet.",
       "relocateViaEdit": "Relocate the directory by editing this custom Agent and picking a new one; the new directory is registered as an allowed path."
     },
-    "launchDeployment": "Deploy skills",
+    "launchDeployment": "Add to Agent/Project",
     "managedSkillsCount_one": "{{count}} managed skill",
     "managedSkillsCount_other": "{{count}} managed skills",
     "managedRelationsCount_one": "{{count}} deployment relation",
@@ -834,15 +834,15 @@
     "readOnly": "Read-only facts",
     "detail": {
       "managedDeployments": {
-        "eyebrow": "Managed deployments",
+        "eyebrow": "Managed copies",
         "title": "Managed skill copies in this project directory",
         "description": "Removing the deployment relation keeps the files in place; SkillHub no longer tracks external changes of that copy.",
         "empty": "This project directory has no managed skill copies.",
-        "unavailable": "Unable to read deployment records.",
+        "unavailable": "Unable to read managed copy records.",
         "detach": "Remove deployment relation",
         "confirm": "Confirm relation removal",
         "cancel": "Cancel",
-        "confirmBody": "Remove the deployment relation of {{skill}} ({{path}})? Files stay in place, future changes are no longer tracked; redeploy or re-import to manage them again.",
+        "confirmBody": "Remove the deployment relation of {{skill}} ({{path}})? Files stay in place, future changes are no longer tracked; add it again or re-import to manage it.",
         "detached": "Deployment relation removed: {{skill}}.",
         "failed": "Failed to remove the deployment relation ({{code}}). Please retry; if it persists, note the error code."
       },
@@ -872,7 +872,7 @@
         "untrackedNote": "The discovery snapshot has no matching physical target, so the access state is unknown.",
         "snapshotFailed": "The discovery snapshot could not be read, so the access state is unknown for now."
       },
-      "launchDeployment": "Deploy skills"
+      "launchDeployment": "Add to Agent/Project"
     },
     "sharedConfig": {
       "eyebrow": "Shared configuration",
@@ -896,7 +896,7 @@
     "assemblyPlan": {
       "eyebrow": "Assembly plan",
       "title": "Project Skill assembly",
-      "empty": "No assembly plan exists yet; project requirements are not deployed from here.",
+      "empty": "No assembly plan exists yet; project requirements are not added to Agents/projects from here.",
       "emptyItems": "The assembly plan has no items.",
       "unavailable": "The assembly plan could not be read.",
       "groupCount": "{{count}} items",
@@ -908,7 +908,7 @@
         "skipped": "Skipped",
         "failed": "Failed"
       },
-      "detachNote": "Removing a deployment relation applies to a single relation and is handled per deployment in deployment management; this page offers no deployment to detach."
+      "detachNote": "Removing a deployment relation applies to a single relation record and is handled one by one in the managed copies list; the project detail page offers no detach entry."
     }
   },
   "appShell": {
@@ -935,14 +935,14 @@
   },
   "onboarding": {
     "back": "Back",
-    "compatibilityConfirmation": "I understand this only discovers Agents and will not deploy skills",
-    "compatibilityDescription": "Discovery only creates compatibility information. Deployment requires a separate preview and confirmation later.",
+    "compatibilityConfirmation": "I understand this only discovers Agents and will not add skills to Agents/projects",
+    "compatibilityDescription": "Discovery only creates compatibility information. Adding to Agents/projects requires a separate preview and confirmation later.",
     "compatibilityTitle": "Discover compatible agents",
     "compatibilityTargets": "Compatible targets available for selection",
     "complete": "Initialization settings were submitted.",
     "confirmSkip": "Confirm and skip",
     "continue": "Continue",
-    "contractUnavailable": "This action is not yet connected to the native service. No directory, deployment, or import was made.",
+    "contractUnavailable": "This action is not yet connected to the native service. No directory was created, nothing was added to Agents/projects, and nothing was imported.",
     "defaultLocation": "Default library location",
     "discoverAgents": "Discover agents",
     "selectAllAvailable": "Select all available targets",
@@ -976,7 +976,7 @@
     "scanComplete": "Read-only scan preview completed.",
     "scanBackground": "The scan is continuing in the background. You can finish initialization now.",
     "scanContinueInBackground": "Continue initialization in the background",
-    "scanDescription": "The scan only creates a preview. It will not move, import, or deploy skills.",
+    "scanDescription": "The scan only creates a preview. It will not move or import skills, or add them to Agents/projects.",
     "scanDiscovered": "{{count}} Skills discovered",
     "scanFailed": "The scan could not be completed. Existing skills and directories were not changed.",
     "scanFailedWithCode": "The scan could not be completed. Existing skills and directories were not changed. (Error code: {{code}})",
@@ -997,9 +997,9 @@
     "selectedLocation": "Selected library location",
     "skip": "Skip initialization",
     "skipScan": "Skip scan",
-    "skipDescription": "An empty library will be created at {{path}}. No agents will be discovered and no skills will be scanned, imported, or deployed.",
+    "skipDescription": "An empty library will be created at {{path}}. No agents will be discovered and no skills will be scanned, imported, or added to Agents/projects.",
     "skipTitle": "Create an empty library",
-    "selectionConfirmation": "I understand selected targets are only used for a read-only scan and will not deploy skills",
+    "selectionConfirmation": "I understand selected targets are only used for a read-only scan and will not add skills to Agents/projects",
     "startReadOnlyScan": "Start read-only scan",
     "scanning": "Scanning…",
     "step": "Step {{current}} of 3",
@@ -1035,7 +1035,7 @@
     "restoreConflictsHeading": "Restore conflicts",
     "rescanEyebrow": "Rediscovery",
     "rescanTitle": "Rediscover Agents & Skills",
-    "rescanDescription": "Rediscovery uses the current library in read-only mode. It never changes the library root or deploys content.",
+    "rescanDescription": "Rediscovery uses the current library in read-only mode. It never changes the library root or adds content to Agents/projects.",
     "rescanLibraryLocation": "Current library location",
     "rescanConfirmation": "I understand this only discovers and scans read-only",
     "rescanStep": "Step {{current}} of 3",
@@ -1076,8 +1076,8 @@
     "fullDetailsBoundary": "Full Skill details are delivered in the next task",
     "page": {
       "batch": {
-        "addTo": "Deploy…",
-        "addToTitle": "Open the batch deployment flow to add the selected Skills to agents",
+        "addTo": "Add to…",
+        "addToTitle": "Open the batch add flow to add the selected Skills to Agents/projects",
         "addTags": "Add tags",
         "addTagsDescription": "The entered tags will be added to every selected Skill.",
         "addTagsTitle": "Add tags",
@@ -1094,7 +1094,7 @@
         "removeTagsConfirmTitle": "Confirm tag removal",
         "removeTagsConfirmDescription": "The following tags will be removed from the selected Skills:",
         "removeTagsConfirmAction": "Confirm removal",
-        "removeTagsRetained": "Kept: the Skill itself, its content and deployments are untouched.",
+        "removeTagsRetained": "Kept: the Skill itself, its content and deployment relations are untouched.",
         "removeTagsRecovery": "Recovery: add the same tags back at any time; removals are not kept as history.",
         "securityCheck": "Run security check",
         "tagOutcomeError": "Could not save tags ({{code}}).",
@@ -1150,15 +1150,15 @@
         "noResults": "No skills match the current filters",
         "unavailable": "Skill catalog data is not connected yet"
       },
-      "deployTargetBanner": "Deployment target preselected: {{label}}. Select Skills and choose Unified deploy to target it automatically.",
+      "deployTargetBanner": "Target preselected: {{label}}. Select Skills and choose “Add to…” to target it automatically.",
       "card": {
         "version": "Current version {{version}}",
         "upgradeAvailable": "Upgrade available",
         "highRisk": "{{count}} high-risk findings",
         "open": "View {{name}}",
         "sourceLocal": "Local library",
-        "deploymentCount_one": "Deployed to {{count}} agent",
-        "deploymentCount_other": "Deployed to {{count}} agents"
+        "deploymentCount_one": "Added to {{count}} agent",
+        "deploymentCount_other": "Added to {{count}} agents"
       },
       "sourceUpdates": {
         "title": "Source update check results",
@@ -1266,11 +1266,11 @@
       },
       "clear": "Clear filters",
       "any": "Any",
-      "deployment": "Deployment",
+      "deployment": "Added to targets",
       "deploymentOptions": {
-        "any": "Any deployment",
-        "deployed": "Deployed",
-        "notDeployed": "Not deployed"
+        "any": "Any",
+        "deployed": "Added",
+        "notDeployed": "Not added"
       },
       "lifecycle": "Lifecycle",
       "lifecycleOptions": {
@@ -1305,7 +1305,7 @@
       "unsaved": "Unsaved changes"
     },
     "table": {
-      "agentDeploymentSummary": "Agent deployments: {{count}}",
+      "agentDeploymentSummary": "Added to Agents: {{count}}",
       "aliasLabel": "Alias",
       "originalNameLabel": "Original name",
       "aiStatus": "AI: {{state}}",
@@ -1318,13 +1318,13 @@
         "warning": "Warning"
       },
       "columns": {
-        "agentDeployments": "Agent deployments",
+        "agentDeployments": "Added to Agents",
         "invocation": "Invocation",
         "license": "License",
         "lifecycle": "Lifecycle",
         "name": "Name / Alias",
         "ownership": "Ownership",
-        "projectDeployments": "Project deployments",
+        "projectDeployments": "Added to projects",
         "purpose": "Purpose",
         "requirements": "Requirements",
         "security": "Security",
@@ -1378,8 +1378,8 @@
       "ariaLabel": "Skill deployment relations matrix",
       "skillColumn": "Skill",
       "loading": "Loading deployment relations…",
-      "empty": "No deployment relations yet. Deploy a Skill to see the matrix.",
-      "hint": "The matrix shows Skills on the current page; ✓ means the Skill is deployed to that target."
+      "empty": "No deployment relations yet. Add a Skill to Agents/projects to see the matrix.",
+      "hint": "The matrix shows Skills on the current page; ✓ means the Skill is added to that target."
     },
     "groupMode": {
       "label": "Group by",
@@ -1423,12 +1423,12 @@
       "cancel": "Cancel",
       "delete": "Delete combination {{name}}",
       "deleteTitle": "Delete combination {{name}}",
-      "deleteBody": "Combination \"{{name}}\" has {{count}} members. Deleting removes only this combination record; the skills, deployments and files in the library are untouched. This cannot be undone.",
+      "deleteBody": "Combination \"{{name}}\" has {{count}} members. Deleting removes only this combination record; the skills, deployment relations and files in the library are untouched. This cannot be undone.",
       "confirmDelete": "Confirm deletion",
       "export": "Export combination {{name}}",
       "exported": "Export created: {{path}}",
-      "deploy": "Deploy combination {{name}}",
-      "deployHint": "Members are preselected in the batch deployment page; writes still require per-target preflight and confirmation.",
+      "deploy": "Add combination {{name}}",
+      "deployHint": "Members are preselected in the batch add page; writes still require per-target preflight and confirmation.",
       "empty": "No combinations yet. Create one to bundle frequently used skills for export.",
       "noMembers": "No members",
       "loading": "Loading combinations…",
@@ -1510,8 +1510,8 @@
       "physicalTarget": "Physical target:",
       "pinned": "Pinned",
       "retry": "Retry relations",
-      "undeploy": "Undeploy",
-      "undeployTarget": "Undeploy {{target}}",
+      "undeploy": "Remove from target",
+      "undeployTarget": "Remove from {{target}}",
       "governed": {
         "heading": "Relationship types and removal impact",
         "description": "Relationship types come from deterministic facts; removal impact is previewed before any confirmed change.",
@@ -1521,7 +1521,7 @@
       }
     },
     "provenance": {
-      "heading": "Provenance & deployed relations",
+      "heading": "Provenance & observed target copies",
       "source": "Source:",
       "sourceKinds": {
         "local": "Local directory",
@@ -1544,7 +1544,7 @@
         "downloaded_source": "Downloaded source"
       },
       "absent": "This skill did not enter the library through a provenance-tracked import (for example created or collected); no origin is invented.",
-      "noObservedDeployments": "No deployed copies have been observed in any agent directory yet.",
+      "noObservedDeployments": "No added copies have been observed in any agent directory yet.",
       "matchStates": {
         "content_verified": "Content verified",
         "name_only": "Name match only (not verified)",
@@ -1642,9 +1642,9 @@
     "statusRail": {
       "basicOther": "Basic check: {{state}}",
       "basicPassed": "Basic check passed",
-      "deploymentLabel": "Deployment",
-      "deployments_one": "{{count}} deployment",
-      "deployments_other": "{{count}} deployments",
+      "deploymentLabel": "Deployment relations",
+      "deployments_one": "{{count}}",
+      "deployments_other": "{{count}}",
       "label": "Skill status",
       "versionLabel": "Current version"
     },
@@ -1677,7 +1677,7 @@
       "keptLocal": "Kept the local version.",
       "appliedBranch": "Created independent branch {{version}}.",
       "appliedGeneric": "Applied the selected decision.",
-      "reconcile": "Some deployments need reconciliation; handle them on the deployment page.",
+      "reconcile": "Some deployment relations need reconciliation; handle them on the batch add page.",
       "failed": "Source update failed: {{error}}",
       "failedGeneric": "The operation failed ({{code}}). Please retry; if it persists, note the error code.",
       "noUpstream": "This skill has no upstream source to check for updates (created locally or only a local directory is registered). Local file changes appear under health checks and external changes.",
@@ -1719,10 +1719,10 @@
       "lifecycle": "Lifecycle"
     },
     "trajectory": {
-      "label": "Source, library, and deployment targets",
+      "label": "Source, library, and addition targets",
       "source": "Source",
       "library": "Central library",
-      "deployments": "Deployment targets"
+      "deployments": "Addition targets"
     },
     "conflicts": {
       "heading": "Related conflicts (optional AI analysis)",
@@ -1736,53 +1736,53 @@
     }
   },
   "deployment": {
-    "eyebrow": "Safe deployment",
+    "eyebrow": "Safe addition",
     "errors": {
-      "generic": "The deployment operation failed ({{code}}). Please retry; note the error code if it persists."
+      "generic": "The add operation failed ({{code}}). Please retry; note the error code if it persists."
     },
     "heading": "Preview before changing Agent targets",
     "description": "Select one or more targets, inspect the physical plan, then commit explicitly.",
     "states": {
-      "loading": "Loading deployment targets",
-      "empty": "No deployable Agent targets found",
-      "noSkills": "No Skills were selected for deployment"
+      "loading": "Loading targets",
+      "empty": "No writable Agent targets found",
+      "noSkills": "No Skills were selected to add"
     },
     "targets": {
       "heading": "Agent targets",
       "description": "Only discovered writable targets can be selected.",
       "unavailable": "Unavailable"
     },
-    "preview": "Preview deployment",
+    "preview": "Preview",
     "retryFailed": "Retry failed targets",
-    "commit": "Commit deployment",
+    "commit": "Confirm and add",
     "steps": {
-      "label": "Deployment steps",
+      "label": "Addition steps",
       "targets": "Select targets",
       "preview": "Preview impact",
       "commit": "Commit",
       "results": "Results"
     },
     "status": {
-      "selecting": "Select the targets to deploy",
-      "previewReady": "Deployment plan is ready; review the impact before committing",
-      "committing": "Committing the deployment, please wait",
-      "results": "Deployment finished",
-      "resultsWithFailures": "Deployment finished with failed targets",
+      "selecting": "Select the targets to add",
+      "previewReady": "The addition plan is ready; review the impact before committing",
+      "committing": "Adding, please wait",
+      "results": "Adding finished",
+      "resultsWithFailures": "Adding finished with failed targets",
       "previewFailed": "Some Skills could not be previewed; commit is blocked"
     },
     "plan": {
-      "heading": "Deployment plan",
+      "heading": "Planned additions",
       "description": "The plan is grouped by physical target; warnings stay visible before commit."
     },
     "batch": {
-      "heading": "Deploy {{count}} Skills",
+      "heading": "Add {{count}} Skills",
       "description": "Each Skill is previewed independently; committing is enabled only when every preview succeeds.",
       "planDescription": "Plans are shown per Skill, preserving target warnings and conflicts.",
-      "previewFailed": "A deployment preview could not be prepared for {{skillId}}: {{message}}",
+      "previewFailed": "A preview could not be prepared for {{skillId}}: {{message}}",
       "expandAgents": "Expand linked agents ({{count}})",
-      "expandAgentsHint": "Adds the agents associated with the selected projects to the deployment selection.",
+      "expandAgentsHint": "Adds the agents associated with the selected projects to the target selection.",
       "nonAtomicNotice": "The batch commits per skill and per target and is not atomic: partial success does not roll back completed parts.",
-      "committing": "Deploying, please wait; the batch is not atomic, per-target results appear once finished."
+      "committing": "Adding, please wait; the batch is not atomic, per-target results appear once finished."
     },
     "mode": {
       "label": "Deployment mode",
@@ -1792,24 +1792,24 @@
       "managed_copy": "Managed copy"
     },
     "results": {
-      "heading": "Deployment results",
+      "heading": "Addition results",
       "status": {
         "succeeded": "Succeeded",
         "failed": "Failed",
         "message": {
-          "succeeded": "Deployment succeeded",
-          "failed": "Deployment failed"
+          "succeeded": "Add succeeded",
+          "failed": "Add failed"
         },
         "skipped": "Skipped"
       },
       "failure": {
         "targetExists": "The target directory already exists. Choose another name or inspect the target before retrying.",
-        "targetChanged": "The target changed during deployment. Inspect the target before retrying.",
+        "targetChanged": "The target changed while being added. Inspect the target before retrying.",
         "symlinkNotSupported": "The target does not support symbolic links. Try managed copy instead.",
         "junctionNotSupported": "The target does not support directory junctions. Try managed copy instead.",
         "ownershipMismatch": "The target content or ownership changed. Inspect the target before retrying.",
         "ownershipUnknown": "The target ownership could not be verified. Inspect the target before retrying.",
-        "securityBlocked": "A security check blocked deployment. Review the findings before retrying.",
+        "securityBlocked": "A security check blocked the addition. Review the findings before retrying.",
         "invalidCapability": "The target does not support the selected deployment mode. Choose another mode or target."
       }
     }
@@ -1819,7 +1819,7 @@
     "errors": {
       "generic": "The security operation failed ({{code}}). Please retry; note the error code if it persists."
     },
-    "heading": "Review findings before deployment",
+    "heading": "Review findings before adding",
     "description": "Basic checks and optional LLM checks are separate facts and can be handled independently.",
     "states": {
       "loading": "Loading security checks",
@@ -1865,18 +1865,18 @@
   "removal": {
     "eyebrow": "Delete from library",
     "heading": "Delete {{name}} from the library?",
-    "description": "This deletes the Skill record, its content and version history from the central library; handle every deployment target below.",
+    "description": "This deletes the Skill record, its content and version history from the central library; handle the copy at each target below.",
     "loading": "Loading deletion impact…",
     "loadError": "Deletion impact could not be loaded. Try again.",
     "commitError": "Deletion did not complete. The managed library was preserved; review and retry.",
     "dependents": "Dependent projects: {{projects}}",
-    "retained": "Kept: files outside SkillHub are never touched; deployed copies follow the per-target choices above.",
+    "retained": "Kept: files outside SkillHub are never touched; target copies follow the per-target choices above.",
     "recovery": "Recovery: deleting from the library cannot be undone in the app; export a backup first in Settings → Data protection if you need one.",
-    "choiceLabel": "Deployment handling",
+    "choiceLabel": "Target copy handling",
     "choose": "Choose an action",
     "choices": {
-      "keep": "Keep the deployed files at the target and remove the relation (the library record is deleted too)",
-      "remove": "Delete the deployed copy at the target (undeploy)",
+      "keep": "Keep the files at the target and remove the relation (the library record is deleted too)",
+      "remove": "Delete the copy at the target (remove from target)",
       "convert": "Convert to an independent copy (keep files, remove the deployment relation)"
     },
     "confirm": "Confirm deletion from library",
@@ -1885,7 +1885,7 @@
       "eyebrow": "Batch deletion impact",
       "heading": "Review batch deletion impact",
       "description": "{{count}} Skills are selected for deletion from the library. Handle every deployment relationship first.",
-      "noDeployments": "No deployments need handling.",
+      "noDeployments": "No deployment relations need handling.",
       "continue": "Continue to force deletion",
       "forceConfirm": "Force delete {{count}} Skills",
       "loadError": "Could not read the batch deletion impact. Please try again.",
@@ -1905,23 +1905,23 @@
     }
   },
   "undeploy": {
-    "eyebrow": "Undeploy",
-    "heading": "Undeploy from {{target}}?",
-    "description": "Undeploying deletes the deployed copy at the target, or converts the files into an independent copy and removes the deployment relation.",
+    "eyebrow": "Remove from Agent/Project",
+    "heading": "Remove from {{target}}?",
+    "description": "Removing from the target deletes the copy at the target, or converts the files into an independent copy and removes the deployment relation.",
     "sharedNotice": "This target is shared by several deployment relations: only this relation is removed and the files stay available to the others.",
-    "choiceLabel": "Undeploy handling",
+    "choiceLabel": "Removal handling",
     "choose": "Choose an action",
     "choices": {
       "keepShared": "Remove only this relation (shared files stay with the others)",
-      "remove": "Delete the deployed copy at the target",
+      "remove": "Delete the copy at the target",
       "keepCopy": "Convert to an independent copy (keep files, remove the deployment relation)"
     },
-    "confirm": "Confirm undeploy",
-    "submitting": "Undeploying…",
-    "loadError": "Undeploy impact could not be loaded.",
-    "commitError": "Undeploy did not complete. Review the target and retry.",
+    "confirm": "Confirm removal from target",
+    "submitting": "Removing from target…",
+    "loadError": "Removal impact could not be loaded.",
+    "commitError": "Removing from the target did not complete. Review the target and retry.",
     "retained": "Kept: the Skill, its version history and other deployment relations in the library are unaffected.",
-    "recovery": "Recovery: redeploying the same Skill rebuilds the copy at the target."
+    "recovery": "Recovery: adding the same Skill again rebuilds the copy at the target."
   },
   "pending": {
     "eyebrow": "Pending work",
@@ -1937,7 +1937,7 @@
       "medium": "Medium risk",
       "low": "Low risk"
     },
-    "impact": "Affects {{count}} deployments",
+    "impact": "Affects {{count}} deployment relations",
     "item": {
       "actionsGroup": "Suggested actions for {{subject}}"
     },
@@ -2192,7 +2192,7 @@
       "sessionTitle": "Background operations in this session",
       "recentTitle": "Recent operations",
       "timeline": "Operations timeline",
-      "empty": "No operation records yet. Imports, deployments and similar operations will appear here.",
+      "empty": "No operation records yet. Imports, additions and similar operations will appear here.",
       "recentEmpty": "No persisted operation records.",
       "loading": "Loading operation records…",
       "error": "Failed to read operation records: {{error}}",
@@ -2247,7 +2247,7 @@
       "path": "Library path",
       "migrationAvailable": "A library migration entry is available when the native service is connected.",
       "runHealthCheck": "Run health check",
-      "healthScope": "The health check only looks for unfinished application operations (such as interrupted imports or deployments) and offers recovery/repair paths. It does not include duplicate or same-name detection (duplicate analysis runs during import), content validation, or deployment consistency checks.",
+      "healthScope": "The health check only looks for unfinished application operations (such as interrupted imports or additions) and offers recovery/repair paths. It does not include duplicate or same-name detection (duplicate analysis runs during import), content validation, or deployment consistency checks.",
       "checking": "Checking…",
       "checkFailed": "Health check failed. Please try again later.",
       "allClear": "No issues found",
@@ -2279,7 +2279,7 @@
       "heading": "AI and network",
       "description": "Network helpers are opt-in and never change local management by themselves.",
       "disableAll": "Turn off all network features",
-      "localStillWorks": "Local scan, search, deployment, and backup remain available",
+      "localStillWorks": "Local scan, search, adding, and backup remain available",
       "dataScope": "Data scope",
       "dataScopeExplicitSelection": "Only features you explicitly enabled",
       "dataScopeGeneric": "Minimal per-feature sending",
@@ -2532,7 +2532,7 @@
       "verified": "Backup package verified.",
       "review": "Review restore",
       "commit": "Restore backup",
-      "summary": "{{skills}} skills found; {{deployments_requiring_rediscovery}} deployments will need rediscovery.",
+      "summary": "{{skills}} skills found; {{deployments_requiring_rediscovery}} deployment relations will need rediscovery.",
       "decision": "Decision for {{skillId}}",
       "choose": "Choose a decision",
       "overwrite": "Overwrite existing",
@@ -2580,14 +2580,14 @@
   "overview": {
     "chart": {
       "aria": {
-        "agent": "Deployment count by agent",
-        "project": "Deployment count by project"
+        "agent": "Deployment relation count by agent",
+        "project": "Deployment relation count by project"
       },
       "axis": {
-        "agent": "Agent deployments",
-        "project": "Project deployments"
+        "agent": "Agent deployment relations",
+        "project": "Project deployment relations"
       },
-      "detailsLabel": "Deployment count details",
+      "detailsLabel": "Deployment relation count details",
       "detailCount": {
         "agent_one": "{{count}} agent",
         "agent_other": "{{count}} agents",
@@ -2600,31 +2600,31 @@
         "project": "Projects"
       },
       "drilldown": {
-        "agent": "View {{label}}'s {{count}} deployments",
-        "project": "View {{label}}'s {{count}} deployments"
+        "agent": "View {{label}}'s {{count}} deployment relations",
+        "project": "View {{label}}'s {{count}} deployment relations"
       },
       "empty": {
         "agent": "No deployment relationships by agent yet",
         "project": "No deployment relationships by project yet"
       },
-      "eyebrow": "Deployment distribution",
-      "heading": "Where managed skills are deployed",
-      "loading": "Loading deployment chart",
+      "eyebrow": "Deployment relation distribution",
+      "heading": "Where managed skills have deployment relations",
+      "loading": "Loading deployment relations chart",
       "projectLimit": "Showing the top {{shown}} of {{total}} projects",
-      "scrollableDetails": "Scrollable deployment details"
+      "scrollableDetails": "Scrollable deployment relation details"
     },
     "metrics": {
       "compactLabel": "Key stats",
       "names": {
         "agents": "configured agents",
-        "deployments": "deployments",
+        "deployments": "deployment relations",
         "discoveredAgents": "discovered agents",
         "projects": "projects",
         "skills": "skills"
       }
     },
     "page": {
-      "description": "How much the library holds, where skills are deployed, and what needs attention."
+      "description": "How much the library holds, where skills have deployment relations, and what needs attention."
     },
     "pending": {
       "badge": "{{count}} open",
@@ -2687,15 +2687,15 @@
     },
     "uninstall": {
       "heading": "Uninstall preparation",
-      "description": "Select deployments, preview the impact, then tick each action you want to run. Unticked actions never run.",
+      "description": "Select deployment relations, preview the impact, then tick each action you want to run. Unticked actions never run.",
       "scenario": "When to use this: when you no longer want SkillHub to manage a Skill that is deployed to Agents/projects. You can optionally back up first, undeploy everything, leave target folders as independent copies, and clear local data or credentials; the central library is preserved by default and your Agent's own files are never deleted. With no deployments there is nothing to manage here.",
-      "loadingDeployments": "Loading deployments…",
-      "noDeployments": "No deployments are registered.",
-      "selectDeployment": "Select deployment {{id}}",
+      "loadingDeployments": "Loading deployment relations…",
+      "noDeployments": "No deployment relations are registered.",
+      "selectDeployment": "Select deployment relation {{id}}",
       "deploymentLabel": "{{id}}: {{skill_id}} → {{target_id}} ({{state}})",
       "preview": "Preview impact",
       "apply": "Apply selected actions",
-      "impactSummary": "{{count}} deployments are affected.",
+      "impactSummary": "{{count}} deployment relations are affected.",
       "preservesYes": "The central Skill library will be preserved.",
       "preservesNo": "The central Skill library will not be preserved.",
       "actionsHeading": "Available actions (nothing is selected by default)",
@@ -2703,7 +2703,7 @@
       "actions": {
         "backup": "Back up selected data",
         "standard_export": "Create a standard export",
-        "undeploy_all": "Undeploy all selected deployments",
+        "undeploy_all": "Remove all selected copies from their targets",
         "leave_targets_independent": "Leave targets as independent copies",
         "remove_device_data": "Remove device-local data",
         "retain_central_library": "Retain the central Skill library",

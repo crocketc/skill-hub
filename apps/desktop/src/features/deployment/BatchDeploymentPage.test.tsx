@@ -68,13 +68,13 @@ it("previews every selected Skill before explicitly committing a batch", async (
   render(<I18nextProvider i18n={i18n}><MemoryRouter><BatchDeploymentPage facade={facade} skillIds={["skill-pdf", "skill-docx"]} /></MemoryRouter></I18nextProvider>);
 
   await user.click(await screen.findByLabelText("Codex CLI"));
-  await user.click(screen.getByRole("button", { name: "预览部署" }));
+  await user.click(screen.getByRole("button", { name: "预览" }));
 
   expect(await screen.findByText("skill-pdf")).toBeVisible();
   expect(screen.getByText("skill-docx")).toBeVisible();
   expect(preview).toHaveBeenCalledWith(["skill-pdf", "skill-docx"], [targets[0]], undefined);
 
-  await user.click(screen.getByRole("button", { name: "提交部署" }));
+  await user.click(screen.getByRole("button", { name: "确认添加" }));
   const summary = await screen.findByTestId("batch-summary");
   expect(summary).toHaveTextContent("成功 2");
   expect(commit).toHaveBeenCalledWith(expect.arrayContaining([
@@ -112,8 +112,8 @@ it("expands a selected project into its linked agent targets", async () => {
   await user.click(screen.getByRole("button", { name: /展开关联 Agent/ }));
   expect(screen.getByLabelText("Codex CLI")).toBeChecked();
 
-  await user.click(screen.getByRole("button", { name: "预览部署" }));
-  await user.click(screen.getByRole("button", { name: "提交部署" }));
+  await user.click(screen.getByRole("button", { name: "预览" }));
+  await user.click(screen.getByRole("button", { name: "确认添加" }));
   await waitFor(() => expect(preview).toHaveBeenLastCalledWith(
     ["skill-pdf"],
     expect.arrayContaining([project, agent]),
@@ -159,8 +159,8 @@ it("aggregates mixed batch outcomes into executable, skipped, conflict and faile
   render(<I18nextProvider i18n={i18n}><MemoryRouter><BatchDeploymentPage facade={facade} skillIds={["skill-a", "skill-b", "skill-c"]} /></MemoryRouter></I18nextProvider>);
 
   await user.click(await screen.findByLabelText("Codex CLI"));
-  await user.click(screen.getByRole("button", { name: "预览部署" }));
-  await user.click(await screen.findByRole("button", { name: "提交部署" }));
+  await user.click(screen.getByRole("button", { name: "预览" }));
+  await user.click(await screen.findByRole("button", { name: "确认添加" }));
 
   const summary = await screen.findByTestId("batch-summary");
   expect(summary).toHaveTextContent("成功 1");
@@ -192,8 +192,8 @@ it("renders structured native target failures as actionable batch text", async (
   render(<I18nextProvider i18n={i18n}><MemoryRouter><BatchDeploymentPage facade={facade} skillIds={["skill-pdf"]} /></MemoryRouter></I18nextProvider>);
 
   await user.click(await screen.findByLabelText("Codex CLI"));
-  await user.click(screen.getByRole("button", { name: "预览部署" }));
-  await user.click(await screen.findByRole("button", { name: "提交部署" }));
+  await user.click(screen.getByRole("button", { name: "预览" }));
+  await user.click(await screen.findByRole("button", { name: "确认添加" }));
 
   expect(await screen.findByText("目标目录已存在，请选择其他名称或检查目标后再试。")).toBeVisible();
   expect(screen.queryByText("deployment.target_exists")).not.toBeInTheDocument();
@@ -224,7 +224,7 @@ it("preselects the target passed via the target search parameter", async () => {
   await waitFor(() => expect(screen.getByLabelText("Claude Code")).toBeChecked());
   expect(screen.getByLabelText("Codex CLI")).not.toBeChecked();
 
-  await user.click(screen.getByRole("button", { name: "预览部署" }));
+  await user.click(screen.getByRole("button", { name: "预览" }));
   await waitFor(() => expect(preview).toHaveBeenCalledWith(["skill-pdf"], [targets[1]], undefined));
 });
 
@@ -233,7 +233,7 @@ it("exposes the batch step rail and keeps the non-atomic risk adjacent to the co
   const facade = batchFacade();
   await renderBatchPage(facade, ["skill-pdf", "skill-docx"]);
 
-  const rail = screen.getByRole("list", { name: "部署步骤" });
+  const rail = screen.getByRole("list", { name: "添加步骤" });
   const steps = within(rail).getAllByRole("listitem");
   expect(steps).toHaveLength(4);
   expect(steps[0]).toHaveAttribute("aria-current", "step");
@@ -244,18 +244,18 @@ it("exposes the batch step rail and keeps the non-atomic risk adjacent to the co
   const risk = screen.getByText(/不是原子操作/);
   expect(risk.closest("footer")).not.toBeNull();
 
-  const previewButton = screen.getByRole("button", { name: "预览部署" });
+  const previewButton = screen.getByRole("button", { name: "预览" });
   const footerBefore = previewButton.closest("footer");
   expect(footerBefore).not.toBeNull();
 
   await user.click(await screen.findByLabelText("Codex CLI"));
   await user.click(previewButton);
 
-  const commit = await screen.findByRole("button", { name: "提交部署" });
+  const commit = await screen.findByRole("button", { name: "确认添加" });
   expect(commit.closest("footer")).toBe(footerBefore);
   // 提交动作与非原子风险提示必须相邻（同一个 footer 操作区内）。
   expect(within(commit.closest("footer") as HTMLElement).getByText(/不是原子操作/)).toBeVisible();
-  expect(within(screen.getByRole("list", { name: "部署步骤" })).getAllByRole("listitem")[1]).toHaveAttribute("aria-current", "step");
+  expect(within(screen.getByRole("list", { name: "添加步骤" })).getAllByRole("listitem")[1]).toHaveAttribute("aria-current", "step");
 
   await user.click(commit);
   expect(await screen.findByTestId("batch-summary")).toHaveTextContent("成功 2");
@@ -267,10 +267,10 @@ it("returns keyboard focus to the batch flow heading across phase changes", asyn
   await renderBatchPage(batchFacade(), ["skill-pdf", "skill-docx"]);
 
   await user.click(await screen.findByLabelText("Codex CLI"));
-  await user.click(screen.getByRole("button", { name: "预览部署" }));
+  await user.click(screen.getByRole("button", { name: "预览" }));
 
-  await screen.findByRole("button", { name: "提交部署" });
-  expect(screen.getByRole("heading", { name: "部署 2 个 Skill" })).toHaveFocus();
+  await screen.findByRole("button", { name: "确认添加" });
+  expect(screen.getByRole("heading", { name: "添加 2 个 Skill" })).toHaveFocus();
 });
 
 it("blocks the batch commit and announces the failure when a skill preview fails", async () => {
@@ -287,12 +287,12 @@ it("blocks the batch commit and announces the failure when a skill preview fails
   await renderBatchPage(facade, ["skill-pdf", "skill-docx"]);
 
   await user.click(await screen.findByLabelText("Codex CLI"));
-  await user.click(screen.getByRole("button", { name: "预览部署" }));
+  await user.click(screen.getByRole("button", { name: "预览" }));
 
   // 失败列表保持独立告警；提交被阻止并有明确的失败播报。
   expect(await screen.findByRole("alert")).toHaveTextContent("skill-docx");
-  expect(screen.getByRole("button", { name: "提交部署" })).toBeDisabled();
-  expect(screen.getByText("部分 Skill 无法生成部署预览，已阻止提交")).toBeVisible();
+  expect(screen.getByRole("button", { name: "确认添加" })).toBeDisabled();
+  expect(screen.getByText("部分 Skill 无法生成预览，已阻止提交")).toBeVisible();
   expect(facade.commit).not.toHaveBeenCalled();
 });
 
@@ -305,11 +305,11 @@ it("hides the batch footer during committing and announces the non-atomic progre
   await renderBatchPage(facade, ["skill-pdf"]);
 
   await user.click(await screen.findByLabelText("Codex CLI"));
-  await user.click(screen.getByRole("button", { name: "预览部署" }));
-  await user.click(await screen.findByRole("button", { name: "提交部署" }));
+  await user.click(screen.getByRole("button", { name: "预览" }));
+  await user.click(await screen.findByRole("button", { name: "确认添加" }));
 
-  expect(screen.queryByRole("button", { name: "提交部署" })).not.toBeInTheDocument();
-  expect(await screen.findByText(/正在部署，请稍候；批次非原子/)).toBeVisible();
+  expect(screen.queryByRole("button", { name: "确认添加" })).not.toBeInTheDocument();
+  expect(await screen.findByText(/正在添加，请稍候；批次非原子/)).toBeVisible();
 
   resolveCommit([{ skillId: "skill-pdf", targetId: "codex-cli", label: "Codex CLI", status: "succeeded" as const, message: "已部署" }]);
   expect(await screen.findByTestId("batch-summary")).toHaveTextContent("成功 1");

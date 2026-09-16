@@ -38,7 +38,7 @@ async function expectNoRootHorizontalOverflow(page: import("@playwright/test").P
 
 async function confirmCompatibility(page: import("@playwright/test").Page) {
   await page
-    .getByRole("checkbox", { name: "我确认这里只识别 Agent，不会部署技能" })
+    .getByRole("checkbox", { name: "我确认这里只识别 Agent，不会把技能添加到 Agent/项目" })
     .click();
   await page.getByRole("button", { name: "识别 Agent" }).click();
 }
@@ -52,7 +52,7 @@ async function reachScanStep(page: import("@playwright/test").Page, scenario: st
   // 确认框已经是勾选状态，直接识别 Agent。
   await page.getByRole("button", { name: "识别 Agent" }).click();
   await page.getByRole("checkbox", { name: "Codex", exact: true }).click();
-  await page.getByRole("checkbox", { name: "我确认所选目标只用于只读扫描，不会部署技能" }).click();
+  await page.getByRole("checkbox", { name: "我确认所选目标只用于只读扫描，不会把技能添加到 Agent/项目" }).click();
   await page.getByRole("button", { name: "继续" }).click();
   await page.getByRole("button", { name: "开始只读扫描" }).click();
   await expect(page.getByRole("heading", { name: "扫描预览" })).toBeVisible();
@@ -81,7 +81,7 @@ test("exposes the unified step rail and keeps the primary action at 44px with a 
   // 到达最后一步后，底部操作区整体边缘保持稳定（主操作区内、不跳动）。
   await confirmCompatibility(page);
   await page.getByRole("checkbox", { name: "Codex", exact: true }).click();
-  await page.getByRole("checkbox", { name: "我确认所选目标只用于只读扫描，不会部署技能" }).click();
+  await page.getByRole("checkbox", { name: "我确认所选目标只用于只读扫描，不会把技能添加到 Agent/项目" }).click();
   await page.getByRole("button", { name: "继续" }).click();
   const finish = page.getByRole("button", { name: "完成初始化" });
   await expect(finish).toBeVisible();
@@ -108,7 +108,7 @@ test("rediscovery retries discovery and scan failures without losing library sta
   await expect(page.getByRole("alert")).toHaveCount(0);
 
   await page.getByRole("checkbox", { name: "Codex", exact: true }).click();
-  await page.getByRole("checkbox", { name: "我确认所选目标只用于只读扫描，不会部署技能" }).click();
+  await page.getByRole("checkbox", { name: "我确认所选目标只用于只读扫描，不会把技能添加到 Agent/项目" }).click();
   await page.getByRole("button", { name: "继续" }).click();
   await page.getByRole("button", { name: "开始只读扫描" }).click();
 
@@ -197,7 +197,7 @@ test("offers the background hand-off while a scan keeps running and finishes hon
   await page.getByRole("button", { name: "继续" }).click();
   await confirmCompatibility(page);
   await page.getByRole("checkbox", { name: "Codex", exact: true }).click();
-  await page.getByRole("checkbox", { name: "我确认所选目标只用于只读扫描，不会部署技能" }).click();
+  await page.getByRole("checkbox", { name: "我确认所选目标只用于只读扫描，不会把技能添加到 Agent/项目" }).click();
   await page.getByRole("button", { name: "继续" }).click();
   await page.getByRole("button", { name: "开始只读扫描" }).click();
 

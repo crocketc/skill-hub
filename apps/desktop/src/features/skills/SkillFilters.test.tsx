@@ -103,7 +103,7 @@ it("uses the unified control classes for search and dropdown filters", async () 
   await renderSkillFilters();
 
   expect(screen.getByRole("searchbox", { name: "Search skills" })).toHaveClass("sh-input");
-  expect(screen.getByRole("combobox", { name: "Deployment" })).toHaveClass("sh-select");
+  expect(screen.getByRole("combobox", { name: "Added to targets" })).toHaveClass("sh-select");
   expect(screen.getByRole("combobox", { name: /Version/ })).toHaveClass("sh-select");
 });
 
@@ -112,7 +112,7 @@ it("uses the unified control classes for search and dropdown filters", async () 
 it("places every advanced filter on the shared field grid with the label above the control", async () => {
   await renderSkillFilters();
 
-  for (const name of ["Deployment", /Version/]) {
+  for (const name of ["Added to targets", /Version/]) {
     const field = screen.getByRole("combobox", { name }).closest("label");
     expect(field).toHaveClass("sh-skill-filters__field");
   }
@@ -365,5 +365,5 @@ it("disables the upgrade filter while upstream update data has no read model", a
   expect(versionSelect).toHaveAccessibleDescription(
     "Upgrade detection has not been connected yet.",
   );
-  expect(screen.getByRole("combobox", { name: "Deployment" })).toBeEnabled();
+  expect(screen.getByRole("combobox", { name: "Added to targets" })).toBeEnabled();
 });

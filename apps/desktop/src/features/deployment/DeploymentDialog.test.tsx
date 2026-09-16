@@ -56,13 +56,13 @@ it("supports one or many Agent targets and reports each result", async () => {
 
   await user.click(await screen.findByLabelText("Codex CLI"));
   await user.click(screen.getByLabelText("Claude Code"));
-  await user.click(screen.getByRole("button", { name: "预览部署" }));
+  await user.click(screen.getByRole("button", { name: "预览" }));
 
   expect(await screen.findAllByTestId("target-plan")).toHaveLength(2);
   expect(screen.getAllByText("Codex CLI")).toHaveLength(2);
   expect(screen.getAllByText("Claude Code")).toHaveLength(2);
 
-  await user.click(screen.getByRole("button", { name: "提交部署" }));
+  await user.click(screen.getByRole("button", { name: "确认添加" }));
   expect(await screen.findAllByTestId("deployment-result")).toHaveLength(2);
   expect(onCommitted).toHaveBeenCalledWith([
     expect.objectContaining({ targetId: "codex-cli", status: "succeeded" }),
@@ -72,7 +72,7 @@ it("supports one or many Agent targets and reports each result", async () => {
   await user.click(screen.getByRole("button", { name: "重试失败目标" }));
   expect(screen.getByLabelText("Codex CLI")).not.toBeChecked();
   expect(screen.getByLabelText("Claude Code")).toBeChecked();
-  await user.click(screen.getByRole("button", { name: "预览部署" }));
+  await user.click(screen.getByRole("button", { name: "预览" }));
   expect(preview).toHaveBeenLastCalledWith([targets[1]], undefined);
 });
 
@@ -90,8 +90,8 @@ it("shows an empty state after target discovery completes", async () => {
     </I18nextProvider>,
   );
 
-  expect(await screen.findByText("未发现可部署的 Agent 目标")).toBeInTheDocument();
-  expect(screen.queryByText("正在加载部署目标")).not.toBeInTheDocument();
+  expect(await screen.findByText("未发现可写入的 Agent 目标")).toBeInTheDocument();
+  expect(screen.queryByText("正在加载目标")).not.toBeInTheDocument();
 });
 
 it("lets the user override the target default with a managed copy or a link", async () => {
@@ -114,7 +114,7 @@ it("lets the user override the target default with a managed copy or a link", as
 
   await user.click(await screen.findByLabelText("Codex CLI"));
   await user.selectOptions(screen.getByLabelText("部署方式"), "managed_copy");
-  await user.click(screen.getByRole("button", { name: "预览部署" }));
+  await user.click(screen.getByRole("button", { name: "预览" }));
 
   expect(preview).toHaveBeenCalledWith([targets[0]], "managed_copy");
 });
@@ -144,7 +144,7 @@ it("exposes the unified deploy step rail and keeps every action in a stable foot
   })));
   await renderDialog(facade);
 
-  const rail = screen.getByRole("list", { name: "部署步骤" });
+  const rail = screen.getByRole("list", { name: "添加步骤" });
   const steps = within(rail).getAllByRole("listitem");
   expect(steps).toHaveLength(4);
   expect(steps[0]).toHaveAttribute("aria-current", "step");
@@ -155,24 +155,24 @@ it("exposes the unified deploy step rail and keeps every action in a stable foot
 
   await screen.findByLabelText("Codex CLI");
   // 选择阶段的状态区持续播报当前阶段（图标+文字由 shell 提供）。
-  expect(screen.getByRole("status")).toHaveTextContent("请选择要部署的目标");
+  expect(screen.getByRole("status")).toHaveTextContent("请选择要添加的目标");
 
-  const previewButton = screen.getByRole("button", { name: "预览部署" });
+  const previewButton = screen.getByRole("button", { name: "预览" });
   const footerBefore = previewButton.closest("footer");
   expect(footerBefore).not.toBeNull();
 
   await user.click(await screen.findByLabelText("Codex CLI"));
   await user.click(previewButton);
 
-  // 主操作换成"提交部署"，但必须仍挂在同一个 footer 操作区。
-  const commit = await screen.findByRole("button", { name: "提交部署" });
+  // 主操作换成"确认添加"，但必须仍挂在同一个 footer 操作区。
+  const commit = await screen.findByRole("button", { name: "确认添加" });
   expect(commit.closest("footer")).toBe(footerBefore);
-  const stepsAfterPreview = within(screen.getByRole("list", { name: "部署步骤" })).getAllByRole("listitem");
+  const stepsAfterPreview = within(screen.getByRole("list", { name: "添加步骤" })).getAllByRole("listitem");
   expect(stepsAfterPreview[1]).toHaveAttribute("aria-current", "step");
 
   await user.click(commit);
   expect(await screen.findAllByTestId("deployment-result")).toHaveLength(1);
-  const stepsAfterCommit = within(screen.getByRole("list", { name: "部署步骤" })).getAllByRole("listitem");
+  const stepsAfterCommit = within(screen.getByRole("list", { name: "添加步骤" })).getAllByRole("listitem");
   expect(stepsAfterCommit[0]).toHaveTextContent("已完成");
   expect(stepsAfterCommit[1]).toHaveTextContent("已完成");
   expect(stepsAfterCommit[2]).toHaveTextContent("已完成");
@@ -196,12 +196,12 @@ it("hides the footer during the pure committing progress and announces it via th
   await renderDialog(facade);
 
   await user.click(await screen.findByLabelText("Codex CLI"));
-  await user.click(screen.getByRole("button", { name: "预览部署" }));
-  await user.click(await screen.findByRole("button", { name: "提交部署" }));
+  await user.click(screen.getByRole("button", { name: "预览" }));
+  await user.click(await screen.findByRole("button", { name: "确认添加" }));
 
   // 纯进度阶段不渲染 footer，提交动作不可重复触发。
-  expect(screen.queryByRole("button", { name: "提交部署" })).not.toBeInTheDocument();
-  expect(await screen.findByText("正在提交部署，请稍候")).toBeVisible();
+  expect(screen.queryByRole("button", { name: "确认添加" })).not.toBeInTheDocument();
+  expect(await screen.findByText("正在添加，请稍候")).toBeVisible();
 
   resolveCommit([{ targetId: "codex-cli", label: "Codex CLI", status: "succeeded", message: "部署成功" }]);
   expect(await screen.findByTestId("deployment-result")).toBeInTheDocument();
@@ -217,7 +217,7 @@ it("keeps the preview failure alert visible and the selection recoverable", asyn
   await renderDialog(planFacade(preview));
 
   await user.click(await screen.findByLabelText("Codex CLI"));
-  await user.click(screen.getByRole("button", { name: "预览部署" }));
+  await user.click(screen.getByRole("button", { name: "预览" }));
 
   // 失败态：告警与目标选择并存，用户可以直接调整选择后重试预览。
   expect(await screen.findByRole("alert")).toBeVisible();
@@ -226,9 +226,9 @@ it("keeps the preview failure alert visible and the selection recoverable", asyn
 
   failPreview = false;
   await user.click(screen.getByLabelText("Claude Code"));
-  await user.click(screen.getByRole("button", { name: "预览部署" }));
+  await user.click(screen.getByRole("button", { name: "预览" }));
 
-  expect(await screen.findByRole("button", { name: "提交部署" })).toBeEnabled();
+  expect(await screen.findByRole("button", { name: "确认添加" })).toBeEnabled();
   expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   expect(preview).toHaveBeenCalledTimes(2);
 });
@@ -253,11 +253,11 @@ it("reports partial failure with its own status and keeps the retry in the foote
 
   await user.click(await screen.findByLabelText("Codex CLI"));
   await user.click(screen.getByLabelText("Claude Code"));
-  await user.click(screen.getByRole("button", { name: "预览部署" }));
-  await user.click(await screen.findByRole("button", { name: "提交部署" }));
+  await user.click(screen.getByRole("button", { name: "预览" }));
+  await user.click(await screen.findByRole("button", { name: "确认添加" }));
 
   // 部分成功是独立的警告状态，不与完全成功混同。
-  expect(await screen.findByText("部署已完成，部分目标失败")).toBeVisible();
+  expect(await screen.findByText("添加已完成，部分目标失败")).toBeVisible();
   const retry = screen.getByRole("button", { name: "重试失败目标" });
   expect(retry.closest("footer")).not.toBeNull();
 });
@@ -278,9 +278,9 @@ it("returns keyboard focus to the deploy flow heading across phase changes", asy
   await renderDialog(facade);
 
   await user.click(await screen.findByLabelText("Codex CLI"));
-  await user.click(screen.getByRole("button", { name: "预览部署" }));
+  await user.click(screen.getByRole("button", { name: "预览" }));
 
   // 阶段切换时原主操作卸载；焦点必须落回流程标题，不能丢失到 body。
-  await screen.findByRole("button", { name: "提交部署" });
+  await screen.findByRole("button", { name: "确认添加" });
   expect(screen.getByRole("heading", { name: "先预览，再修改 Agent 目标" })).toHaveFocus();
 });

@@ -155,7 +155,7 @@ describe("SkillLibraryPage", () => {
 
     // 确认/取消语义与既有删除影响预览一致：先处理部署关系，再两步确认。
     fireEvent.change(
-      within(dialog).getByRole("combobox", { name: "Deployment handling: Codex CLI" }),
+      within(dialog).getByRole("combobox", { name: "Target copy handling: Codex CLI" }),
       { target: { value: "keep_deployed" } },
     );
     fireEvent.click(within(dialog).getByRole("button", { name: "Continue to force deletion" }));
@@ -461,8 +461,8 @@ describe("SkillLibraryPage", () => {
         .getAllByRole("button")
         .map((button) => button.textContent?.trim()),
     ).toEqual([
-      // 高频：部署、标签、导出、检查更新
-      "Deploy…",
+      // 高频：添加到目标、标签、导出、检查更新
+      "Add to…",
       "Add tags",
       "Remove tags",
       "Start export",
@@ -1687,7 +1687,7 @@ describe("SkillLibraryPage", () => {
 
     fireEvent.click(await screen.findByRole("checkbox", { name: "Select PDF Reader" }));
     fireEvent.click(screen.getByRole("checkbox", { name: "Select DOCX Writer" }));
-    fireEvent.click(screen.getByRole("button", { name: "Deploy…" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add to…" }));
 
     await screen.findByText("Batch deployment");
     expect(view.router.state.location.pathname).toBe("/deploy");
@@ -1709,7 +1709,7 @@ describe("SkillLibraryPage", () => {
     expect(await screen.findByText(/Codex CLI/)).toBeVisible();
 
     fireEvent.click(await screen.findByRole("checkbox", { name: "Select PDF Reader" }));
-    fireEvent.click(screen.getByRole("button", { name: "Deploy…" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add to…" }));
 
     await screen.findByText("Batch deployment");
     const params = new URLSearchParams(view.router.state.location.search);

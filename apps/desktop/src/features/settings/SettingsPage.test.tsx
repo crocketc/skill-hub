@@ -167,7 +167,7 @@ it("turns off online helpers while leaving local management enabled", async () =
   expect(screen.getByRole("switch", { name: "关闭所有网络功能" })).not.toBeChecked();
   await user.click(screen.getByRole("switch", { name: "关闭所有网络功能" }));
   expect(commands).toContainEqual({ type: "set_network_enabled", payload: { enabled: false } });
-  expect(screen.getByText("本地扫描、搜索、部署和备份仍可使用")).toBeVisible();
+  expect(screen.getByText("本地扫描、搜索、添加和备份仍可使用")).toBeVisible();
   expect(screen.queryByRole("button", { name: "测试提供商" })).not.toBeInTheDocument();
 });
 

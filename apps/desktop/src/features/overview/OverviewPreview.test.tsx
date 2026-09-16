@@ -49,7 +49,7 @@ it("mounts the deterministic overview preview with deployment, tag, and pending 
   );
 
   expect(
-    await screen.findByRole("img", { name: "Deployment count by agent" }),
+    await screen.findByRole("img", { name: "Deployment relation count by agent" }),
   ).toBeVisible();
   expect(screen.getByRole("list", { name: "Skill count by tag" })).toBeVisible();
   expect(screen.getByRole("heading", { name: "4 pending items" })).toBeVisible();

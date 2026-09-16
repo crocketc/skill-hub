@@ -167,7 +167,7 @@ it("renders each compact stat as a two-line card with a numeric figure and a met
     ["3", "configured agents"],
     ["5", "discovered agents"],
     ["2", "projects"],
-    ["18", "deployments"],
+    ["18", "deployment relations"],
   ] as const;
   for (const [count, name] of compactStats) {
     const stat = within(statsList).getByRole("link", { name: `${count} ${name}` });
@@ -228,7 +228,7 @@ it("promotes a single primary metric and turns the rest into compact stats", asy
     "3 configured agents",
     "5 discovered agents",
     "2 projects",
-    "18 deployments",
+    "18 deployment relations",
   ]) {
     expect(within(statsList).getByRole("link", { name: statName })).toBeVisible();
   }
@@ -238,18 +238,18 @@ it("promotes a single primary metric and turns the rest into compact stats", asy
 it("renders proportional agent deployments with a visible text equivalent and drills into its deployment workspace", async () => {
   await renderOverview();
 
-  expect(await screen.findByRole("img", { name: "Deployment count by agent" })).toBeVisible();
+  expect(await screen.findByRole("img", { name: "Deployment relation count by agent" })).toBeVisible();
   expect(
-    screen.getByRole("button", { name: "View Codex's 12 deployments" }),
+    screen.getByRole("button", { name: "View Codex's 12 deployment relations" }),
   ).toHaveTextContent("Codex 12");
   expect(
-    screen.getByRole("button", { name: "View Claude Code's 3 deployments" }),
+    screen.getByRole("button", { name: "View Claude Code's 3 deployment relations" }),
   ).toHaveTextContent("Claude Code 3");
-  expect(screen.getByRole("list", { name: "Deployment count details" })).toHaveTextContent(
+  expect(screen.getByRole("list", { name: "Deployment relation count details" })).toHaveTextContent(
     "Codex 12Claude Code 3",
   );
 
-  fireEvent.click(screen.getByRole("button", { name: "View Codex's 12 deployments" }));
+  fireEvent.click(screen.getByRole("button", { name: "View Codex's 12 deployment relations" }));
 
   expect(screen.getByTestId("location")).toHaveTextContent(
     "/agents/openai.codex-cli?view=deployments",
@@ -261,11 +261,11 @@ it("switches to project relationships and drills into the truthful project desti
 
   fireEvent.click(screen.getByRole("radio", { name: "Projects" }));
 
-  expect(await screen.findByRole("img", { name: "Deployment count by project" })).toBeVisible();
+  expect(await screen.findByRole("img", { name: "Deployment relation count by project" })).toBeVisible();
   expect(
-    screen.getByRole("button", { name: "View Aurora's 3 deployments" }),
+    screen.getByRole("button", { name: "View Aurora's 3 deployment relations" }),
   ).toHaveTextContent("Aurora 3");
-  fireEvent.click(screen.getByRole("button", { name: "View Aurora's 3 deployments" }));
+  fireEvent.click(screen.getByRole("button", { name: "View Aurora's 3 deployment relations" }));
 
   expect(screen.getByTestId("location")).toHaveTextContent(
     "/projects/project-aurora?view=deployments",
@@ -284,11 +284,11 @@ it("keeps deployment details in the fixed main panel while the rail stays reserv
 
   fireEvent.click(screen.getByRole("radio", { name: "Projects" }));
 
-  const detailRegion = screen.getByRole("region", { name: "Deployment count details" });
+  const detailRegion = screen.getByRole("region", { name: "Deployment relation count details" });
   expect(detailRegion.parentElement).toHaveClass("sh-overview__panel");
   expect(within(detailRegion).getAllByRole("button", { name: /View Project/ })).toHaveLength(12);
   expect(
-    within(detailRegion).getByRole("region", { name: "Scrollable deployment details" }),
+    within(detailRegion).getByRole("region", { name: "Scrollable deployment relation details" }),
   ).toHaveAttribute("tabindex", "0");
   expect(screen.getByText("Showing the top 10 of 12 projects")).toBeVisible();
   expect(document.querySelector(".sh-overview__panel .sh-overview__chart-list")).not.toBeNull();
@@ -302,7 +302,7 @@ it("shows the pending summary without exposing the recent-operation log", async 
   expect(within(statsList).getByRole("link", { name: "3 configured agents" })).toBeVisible();
   expect(within(statsList).getByRole("link", { name: "5 discovered agents" })).toBeVisible();
   expect(within(statsList).getByRole("link", { name: "2 projects" })).toBeVisible();
-  expect(within(statsList).getByRole("link", { name: "18 deployments" })).toBeVisible();
+  expect(within(statsList).getByRole("link", { name: "18 deployment relations" })).toBeVisible();
   expect(screen.getByRole("heading", { name: "4 pending items" })).toBeVisible();
   expect(screen.getByText("2 security findings")).toBeVisible();
   expect(screen.getByText("1 recovery action")).toBeVisible();
@@ -318,7 +318,7 @@ it("explains when the selected deployment dimension has no relationships", async
   });
 
   expect(screen.getByRole("status")).toHaveTextContent("No deployment relationships by agent yet");
-  expect(screen.queryByRole("img", { name: "Deployment count by agent" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("img", { name: "Deployment relation count by agent" })).not.toBeInTheDocument();
   expect(screen.getByText("No pending items")).toBeVisible();
 });
 

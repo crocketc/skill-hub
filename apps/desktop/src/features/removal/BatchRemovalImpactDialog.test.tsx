@@ -50,7 +50,7 @@ it("requires impact choices and a second click confirmation without typed phrase
   expect(screen.getByText(/2 Skills are selected for deletion from the library\./)).toBeVisible();
   expect(screen.getByRole("button", { name: "Continue to force deletion" })).toBeDisabled();
 
-  fireEvent.change(screen.getByRole("combobox", { name: "Deployment handling: Codex" }), {
+  fireEvent.change(screen.getByRole("combobox", { name: "Target copy handling: Codex" }), {
     target: { value: "remove_deployment" },
   });
 

@@ -60,7 +60,7 @@
       "issues": "保存问题",
       "preview": "实时预览",
       "save": "保存并创建版本",
-      "saveHint": "保存会创建一个新版本并设为当前版本；已有部署需重新同步才会更新。",
+      "saveHint": "保存会创建一个新版本并设为当前版本；已添加到目标的副本需重新同步才会更新。",
       "saveAsCopy": "另存为副本",
       "copyHint": "创建独立 Skill，当前 Skill 保持不变。",
       "copyCreated": "已保存为新的 Skill 副本",
@@ -281,7 +281,7 @@
       "diagnosticsLabel": "排查信息",
       "impacts": {
         "reuse": "复用：不导入新内容，直接以库内已有 Skill 为准",
-        "copy": "复制到 SkillHub：将候选内容复制入库，已有 Skill 与其部署不会被覆盖",
+        "copy": "复制到 SkillHub：将候选内容复制入库，已有 Skill 及其目标副本不会被覆盖",
         "takeover": "保留原位置并纳入管理：候选目录留在原处，内容核对后由 SkillHub 管理",
         "independent": "独立导入：以新身份存入库中，不覆盖已有 Skill",
         "skip": "跳过：不导入该候选"
@@ -483,7 +483,7 @@
       "title": "本地发现",
       "description": "检查你选择的路径，在导入前先审阅候选项。",
       "factPath": "只读取选定路径",
-      "factReadOnly": "发现不会移动或部署文件"
+      "factReadOnly": "发现不会移动文件，也不会把 Skill 添加到 Agent/项目"
     },
     "online": {
       "eyebrow": "远程来源",
@@ -674,7 +674,7 @@
       "save": "保存",
       "cancel": "取消"
     },
-    "managedDeploymentCount": "{{count}} 个受管部署",
+    "managedDeploymentCount": "{{count}} 个受管副本",
     "kind": {
       "cli": "CLI",
       "desktop": "桌面端",
@@ -705,7 +705,7 @@
       "discoveredFact": "已发现客户端和 Skill 目录",
       "observed": "已观测",
       "identity": "Agent 身份",
-      "managedDeployments": "受管部署",
+      "managedDeployments": "受管副本",
       "brand": "品牌",
       "client": "客户端",
       "instance": "实例",
@@ -749,7 +749,7 @@
       "ignoreUnsupported": "Agent 级忽略需要原生契约支持，暂未提供。",
       "relocateViaEdit": "重新定位目录：编辑该自定义 Agent 并重新选择目录即可；新目录会注册为授权路径。"
     },
-    "launchDeployment": "发起部署",
+    "launchDeployment": "添加到 Agent/项目",
     "managedSkillsCount_one": "{{count}} 个 Skill",
     "managedSkillsCount_other": "{{count}} 个 Skill",
     "managedRelationsCount_one": "{{count}} 条部署关系",
@@ -834,15 +834,15 @@
     "readOnly": "只读事实",
     "detail": {
       "managedDeployments": {
-        "eyebrow": "受管部署",
+        "eyebrow": "受管副本",
         "title": "本项目目录中的受管 Skill 副本",
         "description": "移除部署关系后文件保留在原位，SkillHub 不再跟踪该副本的外部变化。",
         "empty": "本项目目录没有受管的 Skill 副本。",
-        "unavailable": "无法读取部署记录。",
+        "unavailable": "无法读取受管副本记录。",
         "detach": "移除部署关系",
         "confirm": "确认移除部署关系",
         "cancel": "取消",
-        "confirmBody": "确认移除 {{skill}}（{{path}}）的部署关系？文件保留在原位，此后变化不再被跟踪；重新部署或重新导入即可重新接管。",
+        "confirmBody": "确认移除 {{skill}}（{{path}}）的部署关系？文件保留在原位，此后变化不再被跟踪；重新添加或重新导入即可重新接管。",
         "detached": "已移除部署关系：{{skill}}。",
         "failed": "移除部署关系失败（{{code}}）。请重试；若持续出现请记录该错误码。"
       },
@@ -872,7 +872,7 @@
         "untrackedNote": "未在发现快照中找到对应物理目标，无法判断访问状态。",
         "snapshotFailed": "无法读取发现快照，暂时无法判断访问状态。"
       },
-      "launchDeployment": "发起部署"
+      "launchDeployment": "添加到 Agent/项目"
     },
     "sharedConfig": {
       "eyebrow": "共享配置",
@@ -896,7 +896,7 @@
     "assemblyPlan": {
       "eyebrow": "装配计划",
       "title": "项目 Skill 装配",
-      "empty": "尚未生成装配计划，项目要求不会在这里自动部署。",
+      "empty": "尚未生成装配计划，项目要求不会在这里自动添加到 Agent/项目。",
       "emptyItems": "装配计划中没有条目。",
       "unavailable": "无法读取装配计划。",
       "groupCount": "{{count}} 项",
@@ -908,7 +908,7 @@
         "skipped": "已跳过",
         "failed": "失败"
       },
-      "detachNote": "移除部署关系针对单条部署记录，需在部署管理中逐条处理；项目详情没有可移除的部署入口。"
+      "detachNote": "移除部署关系针对单条关系记录，需在受管副本列表中逐条处理；项目详情没有对应的移除入口。"
     }
   },
   "appShell": {
@@ -935,14 +935,14 @@
   },
   "onboarding": {
     "back": "上一步",
-    "compatibilityConfirmation": "我确认这里只识别 Agent，不会部署技能",
-    "compatibilityDescription": "识别只会生成兼容性信息。部署需要在后续单独预览和确认。",
+    "compatibilityConfirmation": "我确认这里只识别 Agent，不会把技能添加到 Agent/项目",
+    "compatibilityDescription": "识别只会生成兼容性信息。添加到 Agent/项目需要在后续单独预览和确认。",
     "compatibilityTitle": "识别兼容的 Agent",
     "compatibilityTargets": "可选择的兼容性目标",
     "complete": "初始化设置已提交。",
     "confirmSkip": "确认并跳过",
     "continue": "继续",
-    "contractUnavailable": "此操作尚未连接到本机服务。不会创建目录、部署或导入任何技能。",
+    "contractUnavailable": "此操作尚未连接到本机服务。不会创建目录、添加到 Agent/项目或导入任何技能。",
     "defaultLocation": "默认集中库位置",
     "discoverAgents": "识别 Agent",
     "selectAllAvailable": "全选可用目标",
@@ -976,7 +976,7 @@
     "scanComplete": "已完成只读扫描预览。",
     "scanBackground": "扫描已转入后台，仍会继续执行。你可以先完成初始化。",
     "scanContinueInBackground": "转入后台，继续完成初始化",
-    "scanDescription": "扫描只生成预览，不会移动、导入或部署技能。",
+    "scanDescription": "扫描只生成预览，不会移动、导入技能，也不会把技能添加到 Agent/项目。",
     "scanDiscovered": "发现 {{count}} 个 Skill",
     "scanFailed": "无法完成扫描。现有技能和目录没有被修改。",
     "scanFailedWithCode": "无法完成扫描。现有技能和目录没有被修改。（错误代码：{{code}}）",
@@ -997,9 +997,9 @@
     "selectedLocation": "已选择的集中库位置",
     "skip": "跳过初始化",
     "skipScan": "跳过扫描",
-    "skipDescription": "将创建空集中库：{{path}}。不会识别 Agent、扫描、导入或部署技能。",
+    "skipDescription": "将创建空集中库：{{path}}。不会识别 Agent、扫描或导入技能，也不会把技能添加到 Agent/项目。",
     "skipTitle": "将创建空集中库",
-    "selectionConfirmation": "我确认所选目标只用于只读扫描，不会部署技能",
+    "selectionConfirmation": "我确认所选目标只用于只读扫描，不会把技能添加到 Agent/项目",
     "startReadOnlyScan": "开始只读扫描",
     "scanning": "正在扫描…",
     "step": "第 {{current}} 步，共 3 步",
@@ -1035,7 +1035,7 @@
     "restoreConflictsHeading": "恢复冲突处理",
     "rescanEyebrow": "重新发现",
     "rescanTitle": "重新发现 Agent 与 Skill",
-    "rescanDescription": "当前集中库只读重新发现 Agent 和 Skill，不会更换集中库或部署内容。",
+    "rescanDescription": "当前集中库只读重新发现 Agent 和 Skill，不会更换集中库或把内容添加到 Agent/项目。",
     "rescanLibraryLocation": "当前集中库位置",
     "rescanConfirmation": "我确认只执行只读发现和扫描",
     "rescanStep": "第 {{current}} 步，共 3 步",
@@ -1076,8 +1076,8 @@
     "fullDetailsBoundary": "完整 Skill 详情将在下一任务中提供",
     "page": {
       "batch": {
-        "addTo": "部署…",
-        "addToTitle": "打开批量部署流程，将所选 Skill 添加到 Agent",
+        "addTo": "添加到…",
+        "addToTitle": "打开批量添加流程，将所选 Skill 添加到 Agent/项目",
         "addTags": "添加标签",
         "addTagsDescription": "输入的标签会添加到所有选中的 Skill。",
         "addTagsTitle": "批量添加标签",
@@ -1094,7 +1094,7 @@
         "removeTagsConfirmTitle": "确认移除这些标签？",
         "removeTagsConfirmDescription": "将从所选 Skill 移除以下标签：",
         "removeTagsConfirmAction": "确认移除标签",
-        "removeTagsRetained": "保留：Skill 本体、内容与部署完全不变。",
+        "removeTagsRetained": "保留：Skill 本体、内容与部署关系完全不变。",
         "removeTagsRecovery": "恢复：重新添加同名标签即可；移除操作不会自动记录历史。",
         "securityCheck": "运行安全检查",
         "tagOutcomeError": "标签保存失败（{{code}}）。",
@@ -1150,15 +1150,15 @@
         "noResults": "没有符合当前筛选条件的技能",
         "unavailable": "技能目录数据尚未连接"
       },
-      "deployTargetBanner": "部署目标已预选：{{label}}。勾选 Skill 后点“统一部署”，将自动选中该目标。",
+      "deployTargetBanner": "目标已预选：{{label}}。勾选 Skill 后点“添加到…”，将自动选中该目标。",
       "card": {
         "version": "当前版本 {{version}}",
         "upgradeAvailable": "有可升级版本",
         "highRisk": "{{count}} 项高风险发现",
         "open": "查看 {{name}}",
         "sourceLocal": "本地集中库",
-        "deploymentCount_one": "部署 {{count}} 个 Agent",
-        "deploymentCount_other": "部署 {{count}} 个 Agent"
+        "deploymentCount_one": "已添加到 {{count}} 个 Agent",
+        "deploymentCount_other": "已添加到 {{count}} 个 Agent"
       },
       "sourceUpdates": {
         "title": "来源更新检查结果",
@@ -1266,11 +1266,11 @@
       },
       "clear": "清除筛选",
       "any": "不限",
-      "deployment": "部署状态",
+      "deployment": "添加状态",
       "deploymentOptions": {
-        "any": "任意部署状态",
-        "deployed": "已部署",
-        "notDeployed": "未部署"
+        "any": "任意添加状态",
+        "deployed": "已添加",
+        "notDeployed": "未添加"
       },
       "lifecycle": "生命周期",
       "lifecycleOptions": {
@@ -1305,7 +1305,7 @@
       "unsaved": "未保存更改"
     },
     "table": {
-      "agentDeploymentSummary": "Agent 部署：{{count}} 个",
+      "agentDeploymentSummary": "已添加到 Agent：{{count}} 个",
       "aliasLabel": "别名",
       "originalNameLabel": "原名",
       "aiStatus": "AI：{{state}}",
@@ -1318,13 +1318,13 @@
         "warning": "警告"
       },
       "columns": {
-        "agentDeployments": "Agent 部署",
+        "agentDeployments": "已添加到 Agent",
         "invocation": "调用方式",
         "license": "许可证",
         "lifecycle": "生命周期",
         "name": "名称/别名",
         "ownership": "归属",
-        "projectDeployments": "项目部署",
+        "projectDeployments": "已添加到项目",
         "purpose": "用途",
         "requirements": "要求",
         "security": "安全检查",
@@ -1378,8 +1378,8 @@
       "ariaLabel": "Skill 部署关系矩阵",
       "skillColumn": "Skill",
       "loading": "正在读取部署关系…",
-      "empty": "尚无部署关系，先部署 Skill 后即可在此查看矩阵。",
-      "hint": "矩阵仅显示当前页的 Skill；✓ 表示该 Skill 已部署到对应目标。"
+      "empty": "尚无部署关系，先把 Skill 添加到 Agent/项目后即可在此查看矩阵。",
+      "hint": "矩阵仅显示当前页的 Skill；✓ 表示该 Skill 已添加到对应目标。"
     },
     "groupMode": {
       "label": "分组方式",
@@ -1423,12 +1423,12 @@
       "cancel": "取消",
       "delete": "删除组合 {{name}}",
       "deleteTitle": "删除组合 {{name}}",
-      "deleteBody": "组合「{{name}}」包含 {{count}} 个成员。删除只移除该组合记录本身，不影响库中的 Skill、部署与文件；此操作不可撤销。",
+      "deleteBody": "组合「{{name}}」包含 {{count}} 个成员。删除只移除该组合记录本身，不影响库中的 Skill、部署关系与文件；此操作不可撤销。",
       "confirmDelete": "确认删除",
       "export": "导出组合 {{name}}",
       "exported": "导出已创建：{{path}}",
-      "deploy": "部署组合 {{name}}",
-      "deployHint": "成员将预选进入批量部署页；仍需逐目标预检并确认后才会写入。",
+      "deploy": "添加组合 {{name}}",
+      "deployHint": "成员将预选进入批量添加页；仍需逐目标预检并确认后才会写入。",
       "empty": "暂无组合。新建组合可把常用 Skill 打包导出。",
       "noMembers": "无成员",
       "loading": "正在读取组合…",
@@ -1510,8 +1510,8 @@
       "physicalTarget": "物理目标：",
       "pinned": "已固定版本",
       "retry": "重试关系",
-      "undeploy": "取消部署",
-      "undeployTarget": "从 {{target}} 取消部署",
+      "undeploy": "从目标移除",
+      "undeployTarget": "从 {{target}} 移除",
       "governed": {
         "heading": "关系类型与移除影响",
         "description": "关系类型由确定性事实给出；移除影响先预览，确认后才执行变更。",
@@ -1521,7 +1521,7 @@
       }
     },
     "provenance": {
-      "heading": "导入存证与已观察部署",
+      "heading": "导入存证与已观察的目标副本",
       "source": "来源：",
       "sourceKinds": {
         "local": "本地目录",
@@ -1544,7 +1544,7 @@
         "downloaded_source": "已下载来源"
       },
       "absent": "该 Skill 不是经由带存证的导入链路进入集中库（例如创建/收集），不编造来源。",
-      "noObservedDeployments": "尚未在任何 Agent 目录中观察到已部署的副本。",
+      "noObservedDeployments": "尚未在任何 Agent 目录中观察到已添加的副本。",
       "matchStates": {
         "content_verified": "内容一致",
         "name_only": "仅同名（未验证）",
@@ -1642,9 +1642,9 @@
     "statusRail": {
       "basicOther": "基础检查：{{state}}",
       "basicPassed": "基础检查已通过",
-      "deploymentLabel": "部署",
-      "deployments_one": "{{count}} 个部署",
-      "deployments_other": "{{count}} 个部署",
+      "deploymentLabel": "部署关系",
+      "deployments_one": "{{count}} 条",
+      "deployments_other": "{{count}} 条",
       "label": "Skill 状态",
       "versionLabel": "当前版本"
     },
@@ -1677,7 +1677,7 @@
       "keptLocal": "已保留本地版本。",
       "appliedBranch": "已创建独立分支 {{version}}。",
       "appliedGeneric": "已应用所选决策。",
-      "reconcile": "存在需要重新同步的部署，请在部署页处理。",
+      "reconcile": "存在需要重新同步的部署关系，请在批量添加页处理。",
       "failed": "来源更新操作失败：{{error}}",
       "failedGeneric": "操作失败（{{code}}）。请稍后重试；若持续出现请记录该错误码。",
       "noUpstream": "此 Skill 没有可检查更新的上游来源（本地创建或仅登记了本地目录）。本地文件变化请在健康检查与外部变化中查看。",
@@ -1719,10 +1719,10 @@
       "lifecycle": "生命周期"
     },
     "trajectory": {
-      "label": "来源、本地库与部署目标",
+      "label": "来源、本地库与添加目标",
       "source": "来源",
       "library": "本地集中库",
-      "deployments": "部署目标"
+      "deployments": "添加目标"
     },
     "conflicts": {
       "heading": "相关冲突（可选 AI 分析）",
@@ -1736,53 +1736,53 @@
     }
   },
   "deployment": {
-    "eyebrow": "安全部署",
+    "eyebrow": "安全添加",
     "errors": {
-      "generic": "部署操作失败（{{code}}）。请重试；若持续出现请记录该错误码。"
+      "generic": "添加操作失败（{{code}}）。请重试；若持续出现请记录该错误码。"
     },
     "heading": "先预览，再修改 Agent 目标",
     "description": "选择一个或多个目标，检查物理计划后再显式提交。",
     "states": {
-      "loading": "正在加载部署目标",
-      "empty": "未发现可部署的 Agent 目标",
-      "noSkills": "没有选择要部署的 Skill"
+      "loading": "正在加载目标",
+      "empty": "未发现可写入的 Agent 目标",
+      "noSkills": "没有选择要添加的 Skill"
     },
     "targets": {
       "heading": "Agent 目标",
       "description": "只有已发现且可写的目标可以选择。",
       "unavailable": "不可用"
     },
-    "preview": "预览部署",
+    "preview": "预览",
     "retryFailed": "重试失败目标",
-    "commit": "提交部署",
+    "commit": "确认添加",
     "steps": {
-      "label": "部署步骤",
+      "label": "添加步骤",
       "targets": "选择目标",
       "preview": "预览影响",
       "commit": "提交",
       "results": "结果"
     },
     "status": {
-      "selecting": "请选择要部署的目标",
-      "previewReady": "部署计划已生成，请确认影响后再提交",
-      "committing": "正在提交部署，请稍候",
-      "results": "部署已完成",
-      "resultsWithFailures": "部署已完成，部分目标失败",
-      "previewFailed": "部分 Skill 无法生成部署预览，已阻止提交"
+      "selecting": "请选择要添加的目标",
+      "previewReady": "添加计划已生成，请确认影响后再提交",
+      "committing": "正在添加，请稍候",
+      "results": "添加已完成",
+      "resultsWithFailures": "添加已完成，部分目标失败",
+      "previewFailed": "部分 Skill 无法生成预览，已阻止提交"
     },
     "plan": {
-      "heading": "部署计划",
+      "heading": "添加计划",
       "description": "计划按物理目标归组；提交前始终保留警告。"
     },
     "batch": {
-      "heading": "部署 {{count}} 个 Skill",
+      "heading": "添加 {{count}} 个 Skill",
       "description": "每个 Skill 都会先单独预览；只有全部预览成功后才可提交。",
       "planDescription": "以下计划按 Skill 展示，保留每个目标的警告与冲突。",
-      "previewFailed": "{{skillId}} 无法生成部署预览：{{message}}",
+      "previewFailed": "{{skillId}} 无法生成预览：{{message}}",
       "expandAgents": "展开关联 Agent（{{count}} 个）",
-      "expandAgentsHint": "把所选项目已关联的 Agent 目标一并加入部署选择。",
+      "expandAgentsHint": "把所选项目已关联的 Agent 目标一并加入选择。",
       "nonAtomicNotice": "批次将逐个 Skill、逐个目标提交，不是原子操作：部分成功不会自动回滚已成功的部分。",
-      "committing": "正在部署，请稍候；批次非原子，逐项结果将在完成后展示。"
+      "committing": "正在添加，请稍候；批次非原子，逐项结果将在完成后展示。"
     },
     "mode": {
       "label": "部署方式",
@@ -1792,24 +1792,24 @@
       "managed_copy": "托管复制"
     },
     "results": {
-      "heading": "部署结果",
+      "heading": "添加结果",
       "status": {
         "succeeded": "已成功",
         "failed": "失败",
         "message": {
-          "succeeded": "部署成功",
-          "failed": "部署失败"
+          "succeeded": "添加成功",
+          "failed": "添加失败"
         },
         "skipped": "已跳过"
       },
       "failure": {
         "targetExists": "目标目录已存在，请选择其他名称或检查目标后再试。",
-        "targetChanged": "目标在部署过程中发生变化，请检查目标后再试。",
+        "targetChanged": "目标在添加过程中发生变化，请检查目标后再试。",
         "symlinkNotSupported": "目标不支持符号链接，请改用托管复制。",
         "junctionNotSupported": "目标不支持目录联接，请改用托管复制。",
         "ownershipMismatch": "目标内容或所有权已变化，请检查目标后再试。",
         "ownershipUnknown": "无法确认目标所有权，请检查目标后再试。",
-        "securityBlocked": "安全检查阻止了部署，请查看检查结果后再试。",
+        "securityBlocked": "安全检查阻止了添加，请查看检查结果后再试。",
         "invalidCapability": "目标不支持所选部署方式，请改用其他方式或目标。"
       }
     }
@@ -1819,7 +1819,7 @@
     "errors": {
       "generic": "安全操作失败（{{code}}）。请重试；若持续出现请记录该错误码。"
     },
-    "heading": "部署前处理安全问题",
+    "heading": "添加前处理安全问题",
     "description": "基础检查与可选的 LLM 检查是彼此独立的事实，可以分别处理。",
     "states": {
       "loading": "正在加载安全检查",
@@ -1865,18 +1865,18 @@
   "removal": {
     "eyebrow": "从库中删除",
     "heading": "从库中删除 {{name}} 吗？",
-    "description": "将从集中库删除该 Skill 的记录、内容与版本历史；每个部署目标按下方选择处理。",
+    "description": "将从集中库删除该 Skill 的记录、内容与版本历史；每个目标中的副本按下方选择处理。",
     "loading": "正在读取删除影响…",
     "loadError": "无法读取删除影响，请稍后重试。",
     "commitError": "删除未完成，集中库保持不变，请检查后重试。",
     "dependents": "依赖项目：{{projects}}",
-    "retained": "保留：SkillHub 之外的原文件不受影响；部署副本按上方选择逐条处理。",
+    "retained": "保留：SkillHub 之外的原文件不受影响；目标副本按上方选择逐条处理。",
     "recovery": "恢复：从库中删除无法在应用内撤销；建议先在「设置 → 数据保护」导出备份。",
-    "choiceLabel": "部署处理方式",
+    "choiceLabel": "目标副本处理方式",
     "choose": "选择处理方式",
     "choices": {
-      "keep": "保留目标处的部署文件，解除部署关系（库中记录一并删除）",
-      "remove": "删除目标目录中的部署副本（取消部署）",
+      "keep": "保留目标处的文件，解除部署关系（库中记录一并删除）",
+      "remove": "删除目标目录中的副本（从目标移除）",
       "convert": "转为独立副本（保留目标文件，移除部署关系）"
     },
     "confirm": "确认从库中删除",
@@ -1905,23 +1905,23 @@
     }
   },
   "undeploy": {
-    "eyebrow": "取消部署",
-    "heading": "要从 {{target}} 取消部署吗？",
-    "description": "取消部署会删除目标目录中的部署副本；也可以把文件转为独立副本并移除部署关系。",
+    "eyebrow": "从 Agent/项目移除",
+    "heading": "要从 {{target}} 移除吗？",
+    "description": "从目标移除会删除目标目录中的副本；也可以把文件转为独立副本并移除部署关系。",
     "sharedNotice": "此目标由多个部署关系共享：仅移除当前部署关系，文件保留给其他关系继续使用。",
-    "choiceLabel": "取消部署处理方式",
+    "choiceLabel": "移除处理方式",
     "choose": "选择处理方式",
     "choices": {
       "keepShared": "仅移除此部署关系（共享文件保留给其他关系）",
-      "remove": "删除目标目录中的部署副本",
+      "remove": "删除目标目录中的副本",
       "keepCopy": "转为独立副本（保留目标文件，移除部署关系）"
     },
-    "confirm": "确认取消部署",
-    "submitting": "正在取消部署…",
-    "loadError": "无法读取取消部署影响。",
-    "commitError": "取消部署未完成，请检查目标后重试。",
+    "confirm": "确认从目标移除",
+    "submitting": "正在从目标移除…",
+    "loadError": "无法读取移除影响。",
+    "commitError": "从目标移除未完成，请检查目标后重试。",
     "retained": "保留：库中的 Skill、版本历史与其他部署关系不受影响。",
-    "recovery": "恢复：重新部署同一 Skill 即可在目标处重建副本。"
+    "recovery": "恢复：重新添加同一 Skill 即可在目标处重建副本。"
   },
   "pending": {
     "eyebrow": "待处理事项",
@@ -2192,7 +2192,7 @@
       "sessionTitle": "本会话后台操作",
       "recentTitle": "最近操作记录",
       "timeline": "操作时间线",
-      "empty": "尚未有任何操作记录。执行导入、部署等操作后会在这里显示。",
+      "empty": "尚未有任何操作记录。执行导入、添加等操作后会在这里显示。",
       "recentEmpty": "暂无持久化操作记录。",
       "loading": "正在读取操作记录…",
       "error": "操作记录读取失败：{{error}}",
@@ -2247,7 +2247,7 @@
       "path": "技能库路径",
       "migrationAvailable": "连接本机服务后可使用技能库迁移入口。",
       "runHealthCheck": "运行健康检查",
-      "healthScope": "健康检查只检查未完成的应用操作（如被中断的导入、部署），并给出恢复/修复路径；不包含重名或重复内容检测（重复分析在导入时进行）、内容校验或部署一致性检查。",
+      "healthScope": "健康检查只检查未完成的应用操作（如被中断的导入、添加），并给出恢复/修复路径；不包含重名或重复内容检测（重复分析在导入时进行）、内容校验或部署一致性检查。",
       "checking": "检查中…",
       "checkFailed": "健康检查失败，请稍后重试",
       "allClear": "未发现问题",
@@ -2279,7 +2279,7 @@
       "heading": "AI 与网络",
       "description": "网络辅助功能默认需要明确开启，不会自行改变本地管理行为。",
       "disableAll": "关闭所有网络功能",
-      "localStillWorks": "本地扫描、搜索、部署和备份仍可使用",
+      "localStillWorks": "本地扫描、搜索、添加和备份仍可使用",
       "dataScope": "数据范围",
       "dataScopeExplicitSelection": "仅限你明确开启的功能",
       "dataScopeGeneric": "按功能最小发送",
@@ -2532,7 +2532,7 @@
       "verified": "备份包校验通过。",
       "review": "检查恢复影响",
       "commit": "恢复备份",
-      "summary": "发现 {{skills}} 个 Skill；{{deployments_requiring_rediscovery}} 个部署需要重新发现。",
+      "summary": "发现 {{skills}} 个 Skill；{{deployments_requiring_rediscovery}} 条部署关系需要重新发现。",
       "decision": "{{skillId}} 的处理方式",
       "choose": "选择处理方式",
       "overwrite": "覆盖现有 Skill",
@@ -2580,14 +2580,14 @@
   "overview": {
     "chart": {
       "aria": {
-        "agent": "各 Agent 部署数量",
-        "project": "各项目部署数量"
+        "agent": "各 Agent 部署关系数量",
+        "project": "各项目部署关系数量"
       },
       "axis": {
-        "agent": "Agent 部署",
-        "project": "项目部署"
+        "agent": "Agent 部署关系",
+        "project": "项目部署关系"
       },
-      "detailsLabel": "部署数量明细",
+      "detailsLabel": "部署关系数量明细",
       "detailCount": {
         "agent_one": "{{count}} 个 Agent",
         "agent_other": "{{count}} 个 Agent",
@@ -2600,31 +2600,31 @@
         "project": "项目"
       },
       "drilldown": {
-        "agent": "查看 {{label}} 的 {{count}} 个部署",
-        "project": "查看 {{label}} 的 {{count}} 个部署"
+        "agent": "查看 {{label}} 的 {{count}} 条部署关系",
+        "project": "查看 {{label}} 的 {{count}} 条部署关系"
       },
       "empty": {
         "agent": "暂时没有按 Agent 统计的部署关系",
         "project": "暂时没有按项目统计的部署关系"
       },
-      "eyebrow": "部署分布",
-      "heading": "受管理技能的部署去向",
-      "loading": "正在加载部署图表",
-      "projectLimit": "显示部署最多的 {{shown}} / 共 {{total}} 个项目",
-      "scrollableDetails": "可滚动的部署数量明细"
+      "eyebrow": "部署关系分布",
+      "heading": "受管理技能的部署关系去向",
+      "loading": "正在加载部署关系图表",
+      "projectLimit": "显示部署关系最多的 {{shown}} / 共 {{total}} 个项目",
+      "scrollableDetails": "可滚动的部署关系数量明细"
     },
     "metrics": {
       "compactLabel": "关键统计",
       "names": {
         "agents": "个已配置 Agent",
-        "deployments": "个部署",
+        "deployments": "条部署关系",
         "discoveredAgents": "个发现到的 Agent",
         "projects": "个项目",
         "skills": "项技能"
       }
     },
     "page": {
-      "description": "集中库规模、部署去向与待处理事项的当前状态。"
+      "description": "集中库规模、部署关系去向与待处理事项的当前状态。"
     },
     "pending": {
       "badge": "{{count}} 项待处理",
@@ -2703,7 +2703,7 @@
       "actions": {
         "backup": "备份所选数据",
         "standard_export": "创建标准导出",
-        "undeploy_all": "取消全部所选部署",
+        "undeploy_all": "从目标移除全部所选副本",
         "leave_targets_independent": "将目标保留为独立副本",
         "remove_device_data": "删除设备本地数据",
         "retain_central_library": "保留中央 Skill 库",

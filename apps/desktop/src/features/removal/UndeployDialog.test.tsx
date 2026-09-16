@@ -26,9 +26,9 @@ it("keeps shared files and commits only after an explicit undeploy choice", asyn
   );
 
   expect(screen.getByText(/This target is shared by several deployment relations/)).toBeVisible();
-  expect(screen.getByRole("button", { name: "Confirm undeploy" })).toBeDisabled();
-  await user.selectOptions(screen.getByRole("combobox", { name: "Undeploy handling" }), "keep_shared_deployment");
-  await user.click(screen.getByRole("button", { name: "Confirm undeploy" }));
+  expect(screen.getByRole("button", { name: "Confirm removal from target" })).toBeDisabled();
+  await user.selectOptions(screen.getByRole("combobox", { name: "Removal handling" }), "keep_shared_deployment");
+  await user.click(screen.getByRole("button", { name: "Confirm removal from target" }));
 
   expect(onConfirm).toHaveBeenCalledWith("keep_shared_deployment");
 });
@@ -53,19 +53,19 @@ it("names the object as undeploying and states retention and recovery in Chinese
     </I18nextProvider>,
   );
 
-  // 对象 2 唯一名称“取消部署”：标题、决策名不复用“移除托管部署”。
-  expect(screen.getByRole("heading", { name: "要从 Codex CLI 取消部署吗？" })).toBeVisible();
+  // 对象 2 唯一名称“从目标移除”：标题、决策名不复用“移除托管部署”。
+  expect(screen.getByRole("heading", { name: "要从 Codex CLI 移除吗？" })).toBeVisible();
   const options = [...screen.getAllByRole("option")].map((option) => option.textContent);
-  expect(options).toContain("删除目标目录中的部署副本");
+  expect(options).toContain("删除目标目录中的副本");
   expect(options).toContain("转为独立副本（保留目标文件，移除部署关系）");
   expect(options).not.toContain("移除托管部署");
 
   // 固定两行：保留什么 + 恢复方式。
   expect(screen.getByText(/保留：库中的 Skill、版本历史与其他部署关系不受影响/)).toBeVisible();
-  expect(screen.getByText(/恢复：重新部署同一 Skill/)).toBeVisible();
+  expect(screen.getByText(/恢复：重新添加同一 Skill/)).toBeVisible();
 
-  await user.selectOptions(screen.getByRole("combobox", { name: "取消部署处理方式" }), "remove_owned_target");
-  await user.click(screen.getByRole("button", { name: "确认取消部署" }));
+  await user.selectOptions(screen.getByRole("combobox", { name: "移除处理方式" }), "remove_owned_target");
+  await user.click(screen.getByRole("button", { name: "确认从目标移除" }));
   expect(onConfirm).toHaveBeenCalledWith("remove_owned_target");
 });
 
@@ -88,6 +88,6 @@ it("announces the submitting state through the persistent status region", async 
     </I18nextProvider>,
   );
 
-  expect(screen.getByRole("status")).toHaveTextContent("Undeploying…");
-  expect(screen.getByRole("button", { name: "Undeploying…" })).toBeDisabled();
+  expect(screen.getByRole("status")).toHaveTextContent("Removing from target…");
+  expect(screen.getByRole("button", { name: "Removing from target…" })).toBeDisabled();
 });

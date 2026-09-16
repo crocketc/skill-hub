@@ -54,7 +54,7 @@ it("shows shared configuration as read-only project facts", async () => {
 
   expect(await screen.findByText("C:/Projects/demo")).toBeVisible();
   expect(screen.getByText("Project Skill assembly")).toBeVisible();
-  expect(screen.getByText("No assembly plan exists yet; project requirements are not deployed from here.")).toBeVisible();
+  expect(screen.getByText("No assembly plan exists yet; project requirements are not added to Agents/projects from here.")).toBeVisible();
   expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
 });
 
@@ -175,7 +175,7 @@ it("shows an honest empty state when no assembly plan exists", async () => {
     </I18nextProvider>,
   );
 
-  expect(await screen.findByText("尚未生成装配计划，项目要求不会在这里自动部署。")).toBeVisible();
+  expect(await screen.findByText("尚未生成装配计划，项目要求不会在这里自动添加到 Agent/项目。")).toBeVisible();
 });
 
 it("reports an assembly plan load failure instead of showing fake groups", async () => {
@@ -201,5 +201,5 @@ it("explains that detaching management is a per-deployment action without faking
     </I18nextProvider>,
   );
 
-  expect(await screen.findByText("移除部署关系针对单条部署记录，需在部署管理中逐条处理；项目详情没有可移除的部署入口。")).toBeVisible();
+  expect(await screen.findByText("移除部署关系针对单条关系记录，需在受管副本列表中逐条处理；项目详情没有对应的移除入口。")).toBeVisible();
 });

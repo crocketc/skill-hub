@@ -240,7 +240,7 @@ test("overview metrics, chart dimensions, and tag drilldown remain navigable", a
   await expect(page.getByRole("link", { name: /4 skills/ })).toHaveAttribute("href", "/library");
   await expect(page.getByText("documents")).toBeVisible();
   await page.getByRole("radio", { name: "Projects" }).check();
-  await expect(page.getByRole("img", { name: "Deployment count by project" })).toBeVisible();
+  await expect(page.getByRole("img", { name: "Deployment relation count by project" })).toBeVisible();
 });
 
 test("discovery home and local workbench expose separate navigation and scan facts", async ({ page }) => {
@@ -372,7 +372,7 @@ test("data protection exposes export, restore, retention, and uninstall previews
 
   await page.getByRole("button", { name: "Run rolling backup" }).click();
   await expect(page.getByText(/Rolling backup finished: 3 kept/)).toBeVisible();
-  await page.getByLabel(/Select deployment dep-1/).check();
+  await page.getByLabel(/Select deployment relation dep-1/).check();
   await page.getByRole("button", { name: "Preview impact" }).click();
   await expect(page.getByText(/affected/)).toBeVisible();
 });
@@ -394,20 +394,20 @@ test("settings exposes ordered sections and application update boundary", async 
 test("deployment target selection exposes unavailable and non-atomic batch boundaries", async ({ page }) => {
   await installNativePreview(page);
   await page.goto("/deploy?skill=pdf-reader&skill=release-notes");
-  await expect(page.getByRole("heading", { name: "Deploy 2 Skills" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Add 2 Skills" })).toBeVisible();
   await expect(page.getByLabel("Unavailable target")).toBeDisabled();
   // T4-D：非原子批量风险随流程进入 footer 操作区，紧邻提交动作。
   const footer = page.locator("footer");
   await expect(footer).toContainText(/not atomic/i);
   await page.getByLabel("Codex CLI").check();
-  await expect(page.getByRole("button", { name: "Preview deployment" })).toBeEnabled();
-  await page.getByRole("button", { name: "Preview deployment" }).click();
-  await expect(page.getByRole("heading", { name: "Deployment plan" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Preview" })).toBeEnabled();
+  await page.getByRole("button", { name: "Preview" }).click();
+  await expect(page.getByRole("heading", { name: "Planned additions" })).toBeVisible();
   // T4-D：提交动作移入同一 footer 操作区，仍与非原子风险相邻。
-  await expect(footer.getByRole("button", { name: "Commit deployment" })).toBeEnabled();
-  await page.getByRole("button", { name: "Commit deployment" }).click();
+  await expect(footer.getByRole("button", { name: "Confirm and add" })).toBeEnabled();
+  await page.getByRole("button", { name: "Confirm and add" }).click();
   await expect(page.getByTestId("batch-summary")).toBeVisible();
-  await expect(page.getByText("Deployment finished")).toBeVisible();
+  await expect(page.getByText("Adding finished")).toBeVisible();
 });
 
 test("combination manager maintains members, renames, and guards duplicates", async ({ page }) => {

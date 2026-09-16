@@ -133,7 +133,7 @@ it("defers library activation until initialization is completed", async () => {
   await click(screen.getByRole("button", { name: "继续" }));
   expect(activateLibraryRoot).not.toHaveBeenCalled();
 
-  await click(screen.getByLabelText("我确认这里只识别 Agent，不会部署技能"));
+  await click(screen.getByLabelText("我确认这里只识别 Agent，不会把技能添加到 Agent/项目"));
   await click(screen.getByRole("button", { name: "识别 Agent" }));
   await click(screen.getByRole("button", { name: "继续" }));
   await click(screen.getByRole("button", { name: "跳过扫描" }));
@@ -220,7 +220,7 @@ it("routes the existing-library branch through a read-only compatibility scan", 
   await click(screen.getByRole("button", { name: "使用已有集中库" }));
   expect(screen.getByRole("heading", { name: "确认集中库位置" })).toBeVisible();
   await click(screen.getByRole("button", { name: "继续" }));
-  await click(screen.getByLabelText("我确认这里只识别 Agent，不会部署技能"));
+  await click(screen.getByLabelText("我确认这里只识别 Agent，不会把技能添加到 Agent/项目"));
   await click(screen.getByRole("button", { name: "识别 Agent" }));
   await click(screen.getByRole("button", { name: "继续" }));
   await click(screen.getByRole("button", { name: "开始只读扫描" }));
