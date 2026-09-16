@@ -3221,7 +3221,10 @@ async fn import_from_shared_directory_groups_members_with_affected_agents() {
         skillhub_core::ImportGovernanceClassification::SharedDirectoryRead
     );
     let member = group.members.first().expect("member");
-    assert!(member.source_path.ends_with("shared-skills/notes"));
+    // Compare path components instead of a literal string: a hardcoded "/"
+    // would make this assertion a platform test rather than a contract test.
+    assert!(std::path::Path::new(&member.source_path)
+        .ends_with(std::path::Path::new("shared-skills").join("notes")));
     // 受影响 Agent 来自已登记目录能力，排序去重后供界面展示。
     assert_eq!(member.affected_agents, ["trae.code", "zcode.shared"]);
 
