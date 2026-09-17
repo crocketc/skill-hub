@@ -2598,6 +2598,7 @@
         "comfortable": "Comfortable"
       },
       "saveFailed": "The information density setting could not be saved."
+      ,"saved": "Information density setting saved"
     },
     "automation": {
       "heading": "Automation",
@@ -2605,6 +2606,7 @@
       "batch": "Batch checks",
       "global": "Global auto-checks",
       "saveFailed": "The automation settings could not be saved."
+      ,"saved": "Automation settings saved"
     },
     "network": {
       "heading": "AI and network",

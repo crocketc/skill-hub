@@ -2598,6 +2598,7 @@
         "comfortable": "宽松"
       },
       "saveFailed": "无法保存信息密度设置。"
+      ,"saved": "已保存信息密度设置"
     },
     "automation": {
       "heading": "自动化",
@@ -2605,6 +2606,7 @@
       "batch": "批量检查",
       "global": "全局自动检查",
       "saveFailed": "无法保存自动化设置。"
+      ,"saved": "已保存自动化设置"
     },
     "network": {
       "heading": "AI 与网络",
