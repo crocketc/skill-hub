@@ -14,6 +14,7 @@ import type {
 } from "../../../api/bindings";
 import { createOperationTracker, type OperationTracker } from "../../../platform/operationTracker";
 import { createSkillHubI18n } from "../../../i18n";
+import { AppNotificationsProvider } from "../../../ui/notifications";
 import { RelationshipsGovernancePage } from "../RelationshipsPages";
 import {
   RelationshipGovernancePage,
@@ -253,6 +254,8 @@ interface RenderOptions {
   initialIndex?: number;
   facade?: RelationGovernanceFacade;
   tracker?: OperationTracker;
+  /** 包上 AppNotificationsProvider：桥接失败通知只有在真实通知服务下才会发出。 */
+  notifications?: boolean;
 }
 
 interface RenderedContext {
@@ -269,26 +272,36 @@ async function renderGovernanceApp(options: RenderOptions = {}): Promise<Rendere
     initialIndex = 0,
     facade = createFacade(),
     tracker = createOperationTracker(),
+    notifications = false,
   } = options;
+  const routes = (
+    <>
+      <Routes>
+        <Route
+          element={<RelationshipGovernancePage facade={facade} tracker={tracker} />}
+          path="/relationships/governance"
+        />
+        <Route element={<p>OPERATION_PAGE</p>} path="/operations/:operationId" />
+        <Route element={<p>AGENT_ORIGIN</p>} path="/agents/:agentKey" />
+        <Route element={<p>LIBRARY_ORIGIN</p>} path="/library" />
+        <Route element={<p>PROJECT_ORIGIN</p>} path="/projects/:projectKey" />
+        <Route element={<p>GRAPH_ORIGIN</p>} path="/relationships" />
+        <Route element={<p>DECISIONS_ORIGIN</p>} path="/relationships/decisions" />
+        <Route element={<p>DEPLOY_PAGE</p>} path="/deploy" />
+      </Routes>
+      <HistoryProbe />
+    </>
+  );
+  // 通知 provider 必须在 Router 内：操作深链 toast 里的 <Link> 依赖路由上下文。
+  const tree = (
+    <MemoryRouter initialEntries={entries} initialIndex={initialIndex}>
+      {notifications ? <AppNotificationsProvider>{routes}</AppNotificationsProvider> : routes}
+    </MemoryRouter>
+  );
   const rendered = render(
     <I18nextProvider i18n={i18n}>
       <QueryClientProvider client={queryClient}>
-        <MemoryRouter initialEntries={entries} initialIndex={initialIndex}>
-          <Routes>
-            <Route
-              element={<RelationshipGovernancePage facade={facade} tracker={tracker} />}
-              path="/relationships/governance"
-            />
-            <Route element={<p>OPERATION_PAGE</p>} path="/operations/:operationId" />
-            <Route element={<p>AGENT_ORIGIN</p>} path="/agents/:agentKey" />
-            <Route element={<p>LIBRARY_ORIGIN</p>} path="/library" />
-            <Route element={<p>PROJECT_ORIGIN</p>} path="/projects/:projectKey" />
-            <Route element={<p>GRAPH_ORIGIN</p>} path="/relationships" />
-            <Route element={<p>DECISIONS_ORIGIN</p>} path="/relationships/decisions" />
-            <Route element={<p>DEPLOY_PAGE</p>} path="/deploy" />
-          </Routes>
-          <HistoryProbe />
-        </MemoryRouter>
+        {tree}
       </QueryClientProvider>
     </I18nextProvider>,
   );
@@ -447,6 +460,49 @@ describe("RelationshipGovernancePage 单条治理", () => {
     await waitFor(() => expect(facade.listGovernance).toHaveBeenCalledTimes(2));
     const undeployOp = tracker.getSnapshot().find((operation) => operation.kind === "undeploy");
     expect(undeployOp?.operationId).toBe("op-undeploy-1");
+  });
+
+  it("reports a single undeploy failure in the notification center with the inline description", async () => {
+    // 用户裁决「写入失败也留痕」：单条解除部署关系失败必须同时进通知中心；
+    // 通知详情与页面行内提示是同一份可读描述（带原始错误码，绝不 [object Object]）。
+    const facade = createFacade(FULL_LEDGER, {
+      commitRelationUndeploy: vi.fn().mockRejectedValue({ code: "io.denied" }),
+    });
+    const { tracker } = await renderGovernanceApp({ facade, notifications: true });
+    await waitRows();
+
+    fireEvent.click(rowAction("managed:dep-undeploy"));
+    await screen.findByRole("dialog", { name: "从 Agent/项目移除预览" });
+    fireEvent.click(screen.getByRole("button", { name: "确认执行" }));
+
+    const readable = "操作未能完成（io.denied）。若持续出现请记录该错误码。";
+    // 桥先发通知、rethrow 后行内才 setState：等两个通道都出现同一份描述。
+    await waitFor(() => expect(screen.getAllByText(readable).length).toBeGreaterThanOrEqual(2));
+    const toast = await screen.findByTestId("notice-danger");
+    expect(toast).toHaveTextContent(readable);
+    expect(toast).not.toHaveTextContent("[object Object]");
+    const failed = tracker.getSnapshot().find((operation) => operation.kind === "undeploy");
+    expect(failed?.status).toBe("failed");
+    expect(failed?.error).toBe(readable);
+  });
+
+  it("reports a rejected governance batch in the notification center while keeping the preview", async () => {
+    const facade = createFacade(FULL_LEDGER, {
+      prepareGovernanceBatch: vi.fn().mockRejectedValue({ code: "io.denied" }),
+    });
+    await renderGovernanceApp({ facade, notifications: true });
+    await waitRows();
+
+    fireEvent.click(rowAction("managed:dep-eligible"));
+    await screen.findByRole("dialog", { name: "纳入集中库管理预览" });
+    fireEvent.click(screen.getByRole("button", { name: "确认执行" }));
+
+    const readable = "操作未能完成（io.denied）。若持续出现请记录该错误码。";
+    const toast = await screen.findByTestId("notice-danger");
+    expect(toast).toHaveTextContent(readable);
+    // 既有行内契约不变：预览保持打开、错误可见、不翻成成功。
+    expect(screen.getByText(/预览保持不变/)).toBeVisible();
+    expect(facade.commitGovernanceBatch).not.toHaveBeenCalled();
   });
 
   it("locks only the busy relation and keeps other rows operable", async () => {

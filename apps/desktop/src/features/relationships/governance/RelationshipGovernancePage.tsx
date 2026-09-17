@@ -251,7 +251,9 @@ export function RelationshipGovernancePage({
     (reason: unknown) => describeNativeError(
       reason,
       (key, options) => String(t(key as never, options as never)),
-      "relationships.governance.loadError",
+      // 动作失败的通用回退必须带出原始错误码；清单加载失败走模板里的
+      // loadError 键直接渲染，不经这里。
+      "tasks.notices.failureUnknown",
     ),
     [t],
   );
@@ -276,7 +278,7 @@ export function RelationshipGovernancePage({
   ) => {
     void runTrackedOperation<RelationGovernanceBatchOutcome>({
       canCancel: false,
-      errorNotice: () => null,
+      describeError,
       invalidateQueryKeys: [[relationshipsKeys.root]],
       kind: "relation_governance_batch",
       label: t("relationships.governance.batch.trackerLabel"),
@@ -425,7 +427,7 @@ export function RelationshipGovernancePage({
     setSingle((current) => current ? { ...current, busy: true, error: null } : current);
     void runTrackedOperation<RelationGovernanceBatchOutcome>({
       canCancel: false,
-      errorNotice: () => null,
+      describeError,
       invalidateQueryKeys: [[relationshipsKeys.root]],
       kind: "relation_governance_batch",
       label: t("relationships.governance.batch.trackerLabel"),
@@ -463,7 +465,7 @@ export function RelationshipGovernancePage({
     setSingle((current) => current ? { ...current, busy: true, error: null } : current);
     void runTrackedOperation({
       canCancel: false,
-      errorNotice: () => null,
+      describeError,
       invalidateQueryKeys: [[relationshipsKeys.root]],
       kind: "undeploy",
       label: t("relationships.governance.actions.undeploy"),
@@ -534,7 +536,7 @@ export function RelationshipGovernancePage({
     setBatchFlow((current) => ({ ...current, running: true, error: null }));
     void runTrackedOperation<RelationGovernanceBatchOutcome>({
       canCancel: false,
-      errorNotice: () => null,
+      describeError,
       invalidateQueryKeys: [[relationshipsKeys.root]],
       kind: "relation_governance_batch",
       label: t("relationships.governance.batch.trackerLabel"),
