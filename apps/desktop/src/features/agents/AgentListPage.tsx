@@ -11,6 +11,7 @@ import { DataState } from "../../ui/DataState";
 import { Drawer } from "../../ui/Drawer";
 import { PageHeader } from "../../ui/PageHeader";
 import { StatusBadge } from "../../ui/StatusBadge";
+import { useOptionalAppNotifications } from "../../ui/notifications";
 import { type AgentFacade, type AgentView, unavailableAgentFacade } from "./api";
 import { CustomAgentForm } from "./CustomAgentForm";
 import "./agents.css";
@@ -30,6 +31,7 @@ export function AgentListPage({
   tracker = operationTracker,
 }: AgentListPageProps) {
   const { t } = useTranslation();
+  const notifications = useOptionalAppNotifications();
   const [agents, setAgents] = useState<AgentView[]>();
   const [error, setError] = useState<string>();
   const [refreshing, setRefreshing] = useState(false);
@@ -60,14 +62,14 @@ export function AgentListPage({
     setError(undefined);
     try {
       await runTrackedOperation({
-        errorNotice: () => null,
+        errorNotice: (_error, message) => ({ tone: "danger", title: t("agents.actions.rescan"), detail: message }),
         kind: "agent_rescan",
         label: t("agents.actions.rescan"),
-        notifications: null,
+        notifications,
         run: async () => {
           await facade.rescan();
         },
-        successNotice: () => null,
+        successNotice: () => ({ tone: "success", title: t("agents.actions.rescan") }),
         total: 1,
         tracker,
       });
@@ -82,7 +84,16 @@ export function AgentListPage({
   const removeAgent = async (id: string) => {
     setError(undefined);
     try {
-      await facade.removeCustomAgent(id);
+      await runTrackedOperation({
+        kind: "agent_remove",
+        label: t("agents.actions.remove"),
+        mode: "instant",
+        notifications,
+        translate: (key, options) => String(t(key as never, options as never)),
+        successNotice: () => ({ tone: "success", title: t("agents.actions.remove") }),
+        errorNotice: (_error, message) => ({ tone: "danger", title: t("agents.actions.remove"), detail: message }),
+        run: () => facade.removeCustomAgent(id),
+      });
       setRevision((current) => current + 1);
     } catch (reason: unknown) {
       setError(reason instanceof Error ? reason.message : t("agents.errors.unknown"));
