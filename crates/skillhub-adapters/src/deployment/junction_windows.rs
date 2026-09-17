@@ -50,10 +50,30 @@ pub fn is_reparse_point(path: &std::path::Path) -> bool {
         .unwrap_or(false)
 }
 
-/// The four `USHORT` name fields plus the `ULONG` flags that precede the path
-/// buffer in a mount-point reparse record.
+#[cfg(all(test, windows))]
+mod tests {
+    use super::{create_junction, is_reparse_point, remove_junction};
+
+    #[test]
+    fn creates_a_mount_point_with_the_raw_windows_api() {
+        let workspace = tempfile::tempdir().expect("workspace");
+        let source = workspace.path().join("source");
+        let destination = workspace.path().join("destination");
+        std::fs::create_dir(&source).expect("source");
+
+        create_junction(&source, &destination)
+            .unwrap_or_else(|error| panic!("FSCTL_SET_REPARSE_POINT failed: {error}"));
+        assert!(is_reparse_point(&destination));
+        remove_junction(&destination).expect("remove junction");
+        assert!(!destination.exists());
+    }
+}
+
+/// The four `USHORT` name fields that precede the path buffer in a mount-point
+/// reparse record.  Unlike a symbolic-link reparse record, a mount point has
+/// no `ULONG Flags` field.
 #[cfg(windows)]
-const MOUNT_POINT_FIXED_LENGTH: usize = 12;
+const MOUNT_POINT_FIXED_LENGTH: usize = 8;
 /// The tag, data length and reserved fields that precede the union.
 #[cfg(windows)]
 const REPARSE_HEADER_LENGTH: usize = 8;
@@ -118,7 +138,11 @@ fn write_mount_point(
 
     let substitute_bytes = substitute.len() * 2;
     let print_bytes = print.len() * 2;
-    let data_length = MOUNT_POINT_FIXED_LENGTH + substitute_bytes + print_bytes;
+    // Mount-point paths are stored as two NUL-terminated UTF-16 strings.
+    // Their length fields exclude the terminators, while the path buffer and
+    // therefore ReparseDataLength include both terminators.
+    let path_buffer_length = substitute_bytes + 2 + print_bytes + 2;
+    let data_length = MOUNT_POINT_FIXED_LENGTH + path_buffer_length;
     if data_length > MAXIMUM_REPARSE_DATA_LENGTH || data_length > u16::MAX as usize {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
@@ -133,11 +157,16 @@ fn write_mount_point(
     // neither needs a NUL terminator.
     buffer[8..10].copy_from_slice(&0u16.to_le_bytes());
     buffer[10..12].copy_from_slice(&(substitute_bytes as u16).to_le_bytes());
-    buffer[12..14].copy_from_slice(&(substitute_bytes as u16).to_le_bytes());
+    buffer[12..14].copy_from_slice(&((substitute_bytes + 2) as u16).to_le_bytes());
     buffer[14..16].copy_from_slice(&(print_bytes as u16).to_le_bytes());
-    buffer[16..20].copy_from_slice(&0u32.to_le_bytes());
     let paths = REPARSE_HEADER_LENGTH + MOUNT_POINT_FIXED_LENGTH;
-    for (index, unit) in substitute.iter().chain(print.iter()).enumerate() {
+    for (index, unit) in substitute
+        .iter()
+        .chain(std::iter::once(&0))
+        .chain(print.iter())
+        .chain(std::iter::once(&0))
+        .enumerate()
+    {
         let offset = paths + index * 2;
         buffer[offset..offset + 2].copy_from_slice(&unit.to_le_bytes());
     }
