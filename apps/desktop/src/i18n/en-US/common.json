@@ -844,6 +844,8 @@
         "cancel": "Cancel",
         "confirmBody": "Remove the deployment relation of {{skill}} ({{path}})? Files stay in place, future changes are no longer tracked; add it again or re-import to manage it.",
         "detached": "Deployment relation removed: {{skill}}.",
+        "detachNoticeTitle": "Deployment relation removed",
+        "detachFailedTitle": "Failed to remove the deployment relation",
         "failed": "Failed to remove the deployment relation ({{code}}). Please retry; if it persists, note the error code."
       },
       "eyebrow": "Project detail",
@@ -1863,6 +1865,9 @@
       "runFailed": "AI check failed: {{message}}"
     },
     "tracker": {
+      "dispositionLabel": "Dispose of finding",
+      "dispositionSaved": "Disposition recorded: {{disposition}}",
+      "dispositionFailed": "Failed to save the disposition",
       "aiCheckLabel": "AI check"
     }
   },

@@ -844,6 +844,8 @@
         "cancel": "取消",
         "confirmBody": "确认移除 {{skill}}（{{path}}）的部署关系？文件保留在原位，此后变化不再被跟踪；重新添加或重新导入即可重新接管。",
         "detached": "已移除部署关系：{{skill}}。",
+        "detachNoticeTitle": "已移除部署关系",
+        "detachFailedTitle": "移除部署关系失败",
         "failed": "移除部署关系失败（{{code}}）。请重试；若持续出现请记录该错误码。"
       },
       "eyebrow": "项目详情",
@@ -1863,6 +1865,9 @@
       "runFailed": "AI 检查运行失败：{{message}}"
     },
     "tracker": {
+      "dispositionLabel": "处置发现项",
+      "dispositionSaved": "已记录处置结果：{{disposition}}",
+      "dispositionFailed": "处置未能保存",
       "aiCheckLabel": "AI 检查"
     }
   },

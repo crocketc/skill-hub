@@ -3,6 +3,7 @@ import { I18nextProvider } from "react-i18next";
 import { expect, it, vi } from "vitest";
 import { createSkillHubI18n } from "../../i18n";
 import { createOperationTracker, type OperationTracker } from "../../platform/operationTracker";
+import { AppNotificationsProvider } from "../../ui/notifications";
 import {
   separateCheckFixture,
   type SecurityCheck,
@@ -42,9 +43,13 @@ interface FacadeOverrides {
   listRunningLlmChecks?: () => Promise<Array<{ skillId: string; versionId: string; operationId: string }>>;
   onDisposition?: (call: DispositionCall) => void;
   tracker?: OperationTracker;
+  /** 非空时处置命令按该原因失败，用于验证失败反馈。 */
+  dispositionRejection?: unknown;
+  /** 挂载全局通知中心，用于断言统一反馈的可见结果。 */
+  withNotices?: boolean;
 }
 
-async function renderSecurity({ checks, findings, preferences, runLlmCheck, cancelLlmCheck, listRunningLlmChecks, onDisposition, tracker }: FacadeOverrides) {
+async function renderSecurity({ checks, findings, preferences, runLlmCheck, cancelLlmCheck, listRunningLlmChecks, onDisposition, tracker, dispositionRejection, withNotices }: FacadeOverrides) {
   const dispositionCalls: DispositionCall[] = [];
   const fixture = separateCheckFixture();
   const listFindings = vi.fn(async () => findings ?? fixture.findings);
@@ -63,6 +68,7 @@ async function renderSecurity({ checks, findings, preferences, runLlmCheck, canc
       };
       dispositionCalls.push(call);
       onDisposition?.(call);
+      if (dispositionRejection !== undefined) throw dispositionRejection;
     },
     ...(preferences === undefined ? {} : { getPreferences: async () => preferences }),
     runLlmCheck: runSpy,
@@ -71,10 +77,15 @@ async function renderSecurity({ checks, findings, preferences, runLlmCheck, canc
   };
 
   const i18n = await createSkillHubI18n(["zh-CN"]);
-  const view = render(
+  const tree = (
     <I18nextProvider i18n={i18n}>
       <SecurityResults facade={facade} skillId="skill-pdf" tracker={tracker} versionId="v1" />
-    </I18nextProvider>,
+    </I18nextProvider>
+  );
+  const view = render(
+    withNotices
+      ? <AppNotificationsProvider>{tree}</AppNotificationsProvider>
+      : tree,
   );
   const cancelSpy = facade.cancelLlmCheck ?? vi.fn();
   return { dispositionCalls, listFindings, runSpy, cancelSpy, ...view };
@@ -353,5 +364,87 @@ describe("SecurityResults 与统一执行桥", () => {
     const [failed] = tracker.getSnapshot();
     expect(failed.status).toBe("failed");
     expect(failed.error).toBe("提供商未就绪");
+  });
+});
+
+describe("发现项处置与统一执行反馈", () => {
+  it("reports a saved disposition as one notice and keeps it out of the in-flight top bar", async () => {
+    const tracker = createOperationTracker();
+    const { dispositionCalls } = await renderSecurity({
+      dispositionRejection: undefined,
+      findings: [makeFinding({ id: "lr-1" })],
+      tracker,
+      withNotices: true,
+    });
+
+    fireEvent.click(await screen.findByRole("button", { name: "确认已知晓" }));
+
+    await waitFor(() => expect(dispositionCalls).toHaveLength(1));
+    expect(dispositionCalls[0]).toMatchObject({ disposition: "acknowledged", highRiskConfirmed: false });
+    // 单次同步写入：只要结果反馈，不占用在途顶栏。
+    expect(tracker.getSnapshot()).toEqual([]);
+    const notice = await screen.findByTestId("notice-success");
+    expect(notice).toHaveTextContent("已记录处置结果：已知晓");
+  });
+
+  it("surfaces a rejected disposition as a danger notice plus an inline alert, keeping the old disposition", async () => {
+    const tracker = createOperationTracker();
+    const { dispositionCalls } = await renderSecurity({
+      dispositionRejection: { code: "security.disposition_save_failed" },
+      findings: [makeFinding({ id: "lr-1" })],
+      tracker,
+      withNotices: true,
+    });
+
+    fireEvent.click(await screen.findByRole("button", { name: "确认已知晓" }));
+
+    await waitFor(() => expect(dispositionCalls).toHaveLength(1));
+    const notice = await screen.findByTestId("notice-danger");
+    expect(notice).toHaveTextContent("处置未能保存");
+    // 处置未被记入列表：操作入口仍在，说明保存失败没有被当成成功。
+    expect(await screen.findByRole("button", { name: "确认已知晓" })).toBeVisible();
+    expect(tracker.getSnapshot()).toEqual([]);
+  });
+
+  it("records the cancel request on the tracked operation before the backend confirms", async () => {
+    let releaseCancel: () => void = () => {};
+    const cancelGate = new Promise<void>((resolve) => {
+      releaseCancel = resolve;
+    });
+    let releaseRun: () => void = () => {};
+    const runGate = new Promise<void>((resolve) => {
+      releaseRun = resolve;
+    });
+    const tracker = createOperationTracker();
+    await renderSecurity({
+      preferences: { llmProvider: "local-model", dataScope: "explicit_selection" },
+      runLlmCheck: async () => {
+        await runGate;
+      },
+      listRunningLlmChecks: async () => [
+        { skillId: "skill-pdf", versionId: "v1", operationId: "op-live" },
+      ],
+      cancelLlmCheck: async () => {
+        await cancelGate;
+      },
+      tracker,
+    });
+
+    fireEvent.click(await screen.findByRole("button", { name: "运行 AI 检查" }));
+    fireEvent.click(await screen.findByRole("button", { name: "取消检查" }));
+
+    // 用户动作先记账，后端确认前顶栏即可看到「已请求取消」。
+    await waitFor(() => {
+      const [operation] = tracker.getSnapshot();
+      expect(operation.cancelRequested).toBe(true);
+    });
+    expect(tracker.getSnapshot()[0].status).toBe("running");
+
+    releaseCancel();
+    releaseRun();
+    await waitFor(() => {
+      const [operation] = tracker.getSnapshot();
+      expect(operation.status).toBe("cancelled");
+    });
   });
 });

@@ -3,8 +3,11 @@ import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
 import type { DeploymentRecord } from "../../api/bindings";
 import { describeNativeError } from "../../api/nativeErrors";
+import { operationTracker, type OperationTracker } from "../../platform/operationTracker";
+import { runTrackedOperation } from "../../platform/runTrackedOperation";
 import { Button } from "../../ui/Button";
 import { DataState } from "../../ui/DataState";
+import { useOptionalAppNotifications } from "../../ui/notifications";
 
 export interface ProjectManagedDeploymentsOps {
   list: () => Promise<DeploymentRecord[]>;
@@ -16,14 +19,21 @@ interface ProjectManagedDeploymentsProps {
   projectId: string;
   /** 提供时每条受管副本都有「管理关系」深链，指向治理页并携带来源与 skillId。 */
   governanceHref?: (record: DeploymentRecord) => string;
+  /** 统一执行桥的在途投影；测试可注入独立实例，默认模块级单例。 */
+  tracker?: OperationTracker;
 }
 
 /**
  * 项目详情"解除管理"落点：列出本项目目录下受管（managed=1）的 Skill 副本，
  * 经确认后调用既有 `detach_management` 契约。文件保留在原位，仅停止跟踪。
+ *
+ * 统一执行反馈（任务 4）：`detach_management` 是用户可触发的单次写入，因此
+ * 经 `runTrackedOperation` 的 `instant` 模式接线——成功与失败都留下同一条
+ * 通知，失败不再只活在页面局部文案里。
  */
-export function ProjectManagedDeployments({ governanceHref, ops, projectId }: ProjectManagedDeploymentsProps): JSX.Element {
+export function ProjectManagedDeployments({ governanceHref, ops, projectId, tracker = operationTracker }: ProjectManagedDeploymentsProps): JSX.Element {
   const { t } = useTranslation();
+  const notifications = useOptionalAppNotifications();
   const [records, setRecords] = useState<DeploymentRecord[]>();
   const [failed, setFailed] = useState(false);
   const [confirmingFor, setConfirmingFor] = useState<DeploymentRecord>();
@@ -55,7 +65,25 @@ export function ProjectManagedDeployments({ governanceHref, ops, projectId }: Pr
   const detach = (record: DeploymentRecord) => {
     setError(undefined);
     setDetached(undefined);
-    ops.detach(record.id)
+    void runTrackedOperation({
+      kind: "detach_relation",
+      label: t("projects.detail.managedDeployments.detach"),
+      mode: "instant",
+      notifications,
+      tracker,
+      translate: (key, options) => String(t(key as never, options as never)),
+      successNotice: () => ({
+        tone: "success",
+        title: t("projects.detail.managedDeployments.detachNoticeTitle"),
+        detail: t("projects.detail.managedDeployments.detached", { skill: record.skill_id }),
+      }),
+      errorNotice: (_error, message) => ({
+        tone: "danger",
+        title: t("projects.detail.managedDeployments.detachFailedTitle"),
+        detail: message,
+      }),
+      run: () => ops.detach(record.id),
+    })
       .then(() => {
         setDetached(record.skill_id);
         setConfirmingFor(undefined);

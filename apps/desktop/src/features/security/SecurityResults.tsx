@@ -46,9 +46,46 @@ export function SecurityResults({ facade = unavailableSecurityFacade, skillId, t
   }, [facade, skillId, versionId, reloadKey]);
 
   const checkByKind = (kind: SecurityCheck["kind"]) => checks.find((check) => check.kind === kind);
+  // 统一执行反馈（任务 4）：处置是用户可触发的单次写入，失败必须可见——
+  // 之前 `void handleDisposition(...)` 会把拒绝吞掉，页面既不更新也不报错。
+  const [dispositionError, setDispositionError] = useState<string>();
   const handleDisposition = async (finding: SecurityFinding, disposition: SecurityFinding["disposition"], options: { highRiskConfirmed: boolean }) => {
-    await facade.setFindingDisposition(finding, disposition, skillId, versionId, options.highRiskConfirmed);
-    setFindings((current) => current.map((item) => item.id === finding.id ? { ...item, disposition } : item));
+    setDispositionError(undefined);
+    try {
+      await runTrackedOperation({
+        kind: "finding_disposition",
+        label: t("security.tracker.dispositionLabel"),
+        mode: "instant",
+        notifications,
+        tracker,
+        translate: (key, options_) => String(t(key as never, options_ as never)),
+        successNotice: () => ({
+          tone: "success",
+          title: t("security.tracker.dispositionSaved", {
+            disposition: t(`security.disposition.${disposition}`),
+          }),
+        }),
+        errorNotice: (_error, message) => ({
+          tone: "danger",
+          title: t("security.tracker.dispositionFailed"),
+          detail: message,
+        }),
+        run: () =>
+          facade.setFindingDisposition(
+            finding,
+            disposition,
+            skillId,
+            versionId,
+            options.highRiskConfirmed,
+          ),
+      });
+      setFindings((current) => current.map((item) => item.id === finding.id ? { ...item, disposition } : item));
+    } catch (reason: unknown) {
+      // 处置未保存：列表保持原状态，并把原因留在页面上（通知只是补充）。
+      setDispositionError(
+        describeNativeError(reason, (key, options_) => String(t(key as never, options_ as never)), "security.errors.generic"),
+      );
+    }
   };
   const llmConfigured = preferences ? preferences.llmProvider.trim().length > 0 : true;
   const [runningOperation, setRunningOperation] = useState<string | undefined>(undefined);
@@ -123,6 +160,8 @@ export function SecurityResults({ facade = unavailableSecurityFacade, skillId, t
   const handleCancel = async () => {
     if (!runningOperation || !facade.cancelLlmCheck) return;
     setCancelRequested(true);
+    // 先记账再等后端确认：取消请求本身是用户动作，顶栏要能看到它。
+    handleRef.current?.requestCancel();
     try {
       await facade.cancelLlmCheck(runningOperation);
       cancelledRef.current = true;
@@ -171,6 +210,7 @@ export function SecurityResults({ facade = unavailableSecurityFacade, skillId, t
       </div>
       <section aria-labelledby="security-findings-heading" className="sh-workflow-card">
         <div className="sh-section-heading"><h2 id="security-findings-heading">{t("security.findingsHeading")}</h2><span className="sh-count-badge">{findings.length}</span></div>
+        {dispositionError ? <p role="alert">{dispositionError}</p> : null}
         {findings.length === 0 ? <p>{t("security.noFindings")}</p> : (
           <>
             <FindingGroup heading={t("security.findingsBasic")} findings={basicFindings} onDisposition={(finding, disposition, options) => void handleDisposition(finding, disposition, options)} />
