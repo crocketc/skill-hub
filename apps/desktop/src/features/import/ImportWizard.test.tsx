@@ -116,6 +116,121 @@ it("disables the onboarding continuation while default sources are resolving", a
   expect(await screen.findByRole("button", { name: "正在解析…" })).toBeDisabled();
 });
 
+it("returns the onboarding footer to an actionable idle state when the source text is edited after the auto-preview", async () => {
+  const user = userEvent.setup();
+  const facade = createMockImportFacade({ scenario: "safe-local" });
+  await renderGuidedWizard(facade, "onboarding");
+
+  // 自动预览完成：门槛继续可用。
+  expect(await screen.findByRole("button", { name: "继续选择候选" })).toBeEnabled();
+
+  // 编辑来源输入框：陈旧预览状态作废，页脚必须回到可操作的空闲态，
+  // 绝不永久停留在"正在解析…"（E2E 发现的页脚卡死）。
+  await user.type(screen.getByLabelText("来源"), "-edited");
+  const acquire = screen.getByRole("button", { name: "读取已选目录候选" });
+  expect(acquire).toBeEnabled();
+
+  // 显式重新获取后流程照常前进（0 候选不放行的门不受影响）。
+  await user.click(acquire);
+  expect(await screen.findByRole("button", { name: "继续选择候选" })).toBeEnabled();
+});
+
+it("discards in-flight onboarding previews when the source text is edited and stays actionable", async () => {
+  const user = userEvent.setup();
+  const facade = createMockImportFacade({ scenario: "safe-local" });
+  const healthyAcquire = facade.acquireCandidates.bind(facade);
+  const resolvers: Array<(candidates: ImportCandidate[]) => void> = [];
+  facade.acquireCandidates = vi.fn(
+    () => new Promise<ImportCandidate[]>((resolve) => {
+      resolvers.push(resolve);
+    }),
+  );
+  await renderGuidedWizard(facade, "onboarding");
+
+  // 预览在途：页脚如实显示解析中并禁用。
+  expect(await screen.findByRole("button", { name: "正在解析…" })).toBeDisabled();
+
+  // 在途时编辑来源：预览会话作废，页脚回到可操作的空闲态。
+  await user.type(screen.getByLabelText("来源"), "-edited");
+  const acquire = screen.getByRole("button", { name: "读取已选目录候选" });
+  expect(acquire).toBeEnabled();
+
+  // 迟到的预览完成被请求序号守卫丢弃：不得借陈旧终结把流程拖回门槛页。
+  await act(async () => {
+    for (const resolve of resolvers.splice(0)) resolve([]);
+  });
+  expect(screen.getByRole("button", { name: "读取已选目录候选" })).toBeEnabled();
+
+  // 用户显式重新获取后流程前进。
+  facade.acquireCandidates = healthyAcquire;
+  await user.click(acquire);
+  expect(await screen.findByRole("button", { name: "继续选择候选" })).toBeEnabled();
+});
+
+it("keeps the onboarding footer actionable after repeated quick edits of the source text", async () => {
+  const user = userEvent.setup();
+  const facade = createMockImportFacade({ scenario: "safe-local" });
+  await renderGuidedWizard(facade, "onboarding");
+
+  expect(await screen.findByRole("button", { name: "继续选择候选" })).toBeEnabled();
+
+  // 连续两次快速编辑：状态转移确定，页脚保持可操作空闲态。
+  await user.type(screen.getByLabelText("来源"), "-a");
+  await user.type(screen.getByLabelText("来源"), "-b");
+  const acquire = screen.getByRole("button", { name: "读取已选目录候选" });
+  expect(acquire).toBeEnabled();
+
+  await user.click(acquire);
+  expect(await screen.findByRole("button", { name: "继续选择候选" })).toBeEnabled();
+});
+
+it("keeps the onboarding footer actionable when every auto-previewed source is deselected mid-preview", async () => {
+  const user = userEvent.setup();
+  const facade = createMockImportFacade({ scenario: "safe-local" });
+  facade.acquireCandidates = vi.fn(() => new Promise<ImportCandidate[]>(() => undefined));
+  await renderGuidedWizard(facade, "onboarding");
+
+  // 预览在途。
+  expect(await screen.findByRole("button", { name: "正在解析…" })).toBeDisabled();
+
+  // 在途时取消勾选全部初始化来源：预览会话作废，页脚不得永久停在"正在解析…"。
+  await user.click(screen.getByRole("checkbox", { name: "C:/codex/skills" }));
+  await user.click(screen.getByRole("checkbox", { name: "C:/claude/skills" }));
+  expect(screen.getByRole("button", { name: "解析来源" })).toBeEnabled();
+});
+
+it("drops the stale preview completion when a toggled source restarts its preview mid-flight", async () => {
+  const user = userEvent.setup();
+  const facade = createMockImportFacade({ scenario: "safe-local" });
+  const resolvers: Array<(candidates: ImportCandidate[]) => void> = [];
+  facade.acquireCandidates = vi.fn(
+    () => new Promise<ImportCandidate[]>((resolve) => {
+      resolvers.push(resolve);
+    }),
+  );
+  await renderGuidedWizard(facade, "onboarding");
+
+  // 两个初始来源的预览都在途（前两个 resolver）。
+  expect(await screen.findByRole("button", { name: "正在解析…" })).toBeDisabled();
+
+  // 取消再勾选 C:/codex/skills：旧预览被取代，新的在途预览接管该来源。
+  await user.click(screen.getByRole("checkbox", { name: "C:/codex/skills" }));
+  await user.click(screen.getByRole("checkbox", { name: "C:/codex/skills" }));
+  expect(resolvers.length).toBe(3);
+
+  // 旧预览迟到完成：不得借旧请求序号清除在途标记或触发终结。
+  await act(async () => {
+    resolvers.splice(0, 2).forEach((resolve) => resolve([]));
+  });
+  expect(screen.queryByRole("button", { name: "继续选择候选" })).not.toBeInTheDocument();
+
+  // 新预览完成后按真实结果终结。
+  await act(async () => {
+    resolvers.splice(0).forEach((resolve) => resolve([]));
+  });
+  expect(await screen.findByRole("button", { name: "继续选择候选" })).toBeVisible();
+});
+
 it("reports a per-source scan failure with its own reason and single-source retry", async () => {
   const user = userEvent.setup();
   const facade = createMockImportFacade({ scenario: "safe-local" });
