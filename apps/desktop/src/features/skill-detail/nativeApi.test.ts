@@ -513,6 +513,33 @@ describe("native skill detail facade", () => {
     expect(versions[0].current).toBe(true);
   });
 
+  it("prefers the user-named version label the native list returns", async () => {
+    vi.mocked(queryApplication).mockResolvedValue({
+      type: "versions",
+      payload: [
+        { version_id: "sha256:aaaa", skill_id: "skill-1", current: true, file_count: 2, added: 0, changed: 0, removed: 0, created_at_epoch: "1700000000", sequence: 3, label: "1.0 正式版" },
+      ],
+    });
+    const versions = await nativeSkillDetailFacade.getVersions("skill-1");
+    // 契约声明的优先级是「用户命名 → vN 序号 → 短哈希」；丢弃用户命名会让
+    // 命名版本在界面上完全没有效果。
+    expect(versions[0].label).toBe("1.0 正式版");
+    expect(versions[0].userLabel).toBe("1.0 正式版");
+    expect(versions[0].sequence).toBe(3);
+  });
+
+  it("falls back to the sequence label when the native version list has no user name", async () => {
+    vi.mocked(queryApplication).mockResolvedValue({
+      type: "versions",
+      payload: [
+        { version_id: "sha256:aaaa", skill_id: "skill-1", current: true, file_count: 2, added: 0, changed: 0, removed: 0, created_at_epoch: "1700000000", sequence: 3, label: "   " },
+      ],
+    });
+    const versions = await nativeSkillDetailFacade.getVersions("skill-1");
+    expect(versions[0].label).toBe("v3");
+    expect(versions[0].userLabel).toBeUndefined();
+  });
+
   it("maps the native version diff", async () => {
     vi.mocked(queryApplication).mockResolvedValue({
       type: "version_diff",
@@ -541,6 +568,32 @@ describe("native skill detail facade", () => {
       ],
       rerunsBasicCheck: true,
       targetVersionId: "sha256:old",
+    });
+  });
+
+  it("wires the trial review date to the native set_trial command", async () => {
+    vi.clearAllMocks();
+    vi.mocked(executeCommand).mockResolvedValue({
+      type: "operation_summary",
+      payload: { operation_id: "op-1", phase: "committed", message_code: "ok", error_code: null },
+    });
+    await nativeSkillDetailFacade.setTrial("skill-1", "2026-10-01");
+    expect(executeCommand).toHaveBeenCalledWith({
+      type: "set_trial",
+      payload: { skill_id: "skill-1", due: [2026, 10, 1] },
+    });
+  });
+
+  it("clears the trial review date through the same contract when the caller passes null", async () => {
+    vi.clearAllMocks();
+    vi.mocked(executeCommand).mockResolvedValue({
+      type: "operation_summary",
+      payload: { operation_id: "op-1", phase: "committed", message_code: "ok", error_code: null },
+    });
+    await nativeSkillDetailFacade.setTrial("skill-1", null);
+    expect(executeCommand).toHaveBeenCalledWith({
+      type: "set_trial",
+      payload: { skill_id: "skill-1", due: null },
     });
   });
 

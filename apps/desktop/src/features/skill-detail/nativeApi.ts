@@ -208,6 +208,11 @@ async function getVersions(skillId: string): Promise<SkillVersionEntry[]> {
   return result.payload.map((version) => {
     const epoch = version.created_at_epoch ?? null;
     const sequence = version.sequence ?? null;
+    // AR-021：原生契约的 label 就是用户显式命名的版本名。此前这里只按序号
+    // 生成展示标签、且从不填 userLabel，导致"命名版本"命令虽然写库成功，
+    // 界面上却永远看不到名字。展示标签的优先级按契约执行：
+    // 用户命名 → vN 序号 → 短哈希。
+    const named = version.label?.trim() ? version.label.trim() : undefined;
     return {
       changes: {
         added: version.added,
@@ -220,8 +225,9 @@ async function getVersions(skillId: string): Promise<SkillVersionEntry[]> {
       createdAtEpoch: epoch,
       current: version.current,
       id: version.version_id,
-      label: sequence !== null ? `v${sequence}` : shortHash(version.version_id),
+      label: named ?? (sequence !== null ? `v${sequence}` : shortHash(version.version_id)),
       sequence,
+      userLabel: named,
     };
   });
 }
@@ -344,6 +350,7 @@ export const nativeSkillDetailFacade: SkillDetailFacade = {
   getVersions,
   getVersionDiff,
   getRollbackImpact,
+  setTrial: setNativeTrial,
   async commitRollback(skillId, versionId) {
     await setNativeCurrentVersion(skillId, versionId);
     // set_current_version 切换目录指针；"新当前版本"即被切换到的版本。
@@ -583,6 +590,32 @@ export async function setNativeCurrentVersion(
   const result: AppCommandResult = await executeCommand({
     type: "set_current_version",
     payload: { skill_id: skillId, version_id: versionId },
+  });
+  if (result.type !== "operation_summary") throw unavailableResult();
+}
+
+/** 原生契约用 `[年, 月, 日]` 元组表达复核日期；`null` 表示清除试用。 */
+function trialDueTuple(due: string | null): [number, number, number] | null {
+  if (due === null || due.trim() === "") return null;
+  const parts = due.split("-").map((part) => Number(part));
+  if (parts.length !== 3 || parts.some((part) => !Number.isInteger(part))) {
+    throw unavailableResult();
+  }
+  return [parts[0], parts[1], parts[2]];
+}
+
+/**
+ * 设置或清除试用复核日期。
+ *
+ * 这是详情页试用区唯一的写入入口：很长一段时间里它只有 `unavailable` 兜底
+ * （生产装配从未提供 `setTrial`），用户在真实应用里点保存必然失败，而
+ * 命令级审计看不到它——审计统计的是 `executeCommand` 调用点，而这里当时
+ * 根本没有调用点。
+ */
+export async function setNativeTrial(skillId: string, due: string | null): Promise<void> {
+  const result: AppCommandResult = await executeCommand({
+    type: "set_trial",
+    payload: { skill_id: skillId, due: trialDueTuple(due) },
   });
   if (result.type !== "operation_summary") throw unavailableResult();
 }
