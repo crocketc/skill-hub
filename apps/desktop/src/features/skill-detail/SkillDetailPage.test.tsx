@@ -21,6 +21,7 @@ import { SkillDetailPage } from "./SkillDetailPage";
 import { createMockSkillDetailFacade } from "./testFixtures";
 import type { RemovalFacade } from "../removal/api";
 import { skillLibraryKeys } from "../skills/api";
+import { createOperationTracker, type OperationTracker } from "../../platform/operationTracker";
 
 interface RenderDetailOptions {
   entry?: InitialEntry;
@@ -28,6 +29,7 @@ interface RenderDetailOptions {
   locale?: "en-US" | "zh-CN";
   markdownFacade?: MarkdownFacade;
   removalFacade?: RemovalFacade;
+  tracker?: OperationTracker;
 }
 
 async function renderDetail({
@@ -36,6 +38,7 @@ async function renderDetail({
   locale = "en-US",
   markdownFacade = createMockMarkdownFacade(),
   removalFacade,
+  tracker,
 }: RenderDetailOptions = {}) {
   const i18n = await createSkillHubI18n([locale]);
   const client = new QueryClient({
@@ -47,11 +50,11 @@ async function renderDetail({
         <MemoryRouter initialEntries={[entry]}>
           <Routes>
             <Route
-              element={<SkillDetailPage facade={facade} markdownFacade={markdownFacade} removalFacade={removalFacade} />}
+              element={<SkillDetailPage facade={facade} markdownFacade={markdownFacade} removalFacade={removalFacade} tracker={tracker} />}
               path="/library/:skillId"
             />
             <Route
-              element={<SkillDetailPage facade={facade} markdownFacade={markdownFacade} removalFacade={removalFacade} />}
+              element={<SkillDetailPage facade={facade} markdownFacade={markdownFacade} removalFacade={removalFacade} tracker={tracker} />}
               path="/__preview/skill-detail/:skillId"
             />
             <Route element={<p>Library route</p>} path="/library" />
@@ -87,6 +90,7 @@ describe("SkillDetailPage shell", () => {
   });
 
   it("loads deletion impact and returns to the library after confirmation", async () => {
+    const tracker = createOperationTracker();
     const removalFacade: RemovalFacade = {
       prepareUndeploy: vi.fn(),
       commitUndeploy: vi.fn(),
@@ -99,7 +103,7 @@ describe("SkillDetailPage shell", () => {
       }),
       commitDelete: vi.fn().mockResolvedValue({ centralSkillDeleted: true }),
     };
-    const { client } = await renderDetail({ removalFacade });
+    const { client } = await renderDetail({ removalFacade, tracker });
     client.setQueryData(skillLibraryKeys.root, { cached: true });
 
     fireEvent.click(await screen.findByRole("button", { name: "Delete from library" }));
@@ -107,6 +111,9 @@ describe("SkillDetailPage shell", () => {
     fireEvent.click(screen.getByRole("button", { name: "Confirm deletion from library" }));
 
     await waitFor(() => expect(removalFacade.commitDelete).toHaveBeenCalledWith("op-delete", {}));
+    expect(tracker.getSnapshot()).toEqual([
+      expect.objectContaining({ operationId: "op-delete", status: "success" }),
+    ]);
     expect(client.getQueryState(skillLibraryKeys.root)?.isInvalidated).toBe(true);
     expect(await screen.findByText("Library route")).toBeVisible();
   });
@@ -144,6 +151,7 @@ describe("SkillDetailPage shell", () => {
   });
 
   it("prepares and commits a shared-target undeploy from the relations section", async () => {
+    const tracker = createOperationTracker();
     const removalFacade: RemovalFacade = {
       prepareUndeploy: vi.fn().mockResolvedValue({
         deploymentId: "relation-codex",
@@ -155,7 +163,7 @@ describe("SkillDetailPage shell", () => {
       prepareDelete: vi.fn(),
       commitDelete: vi.fn(),
     };
-    await renderDetail({ removalFacade });
+    await renderDetail({ removalFacade, tracker });
 
     fireEvent.click(await screen.findByRole("button", { name: "Remove from Codex CLI" }));
     expect(await screen.findByRole("dialog", { name: "Remove from Codex CLI?" })).toBeVisible();
@@ -168,6 +176,9 @@ describe("SkillDetailPage shell", () => {
       "op-undeploy",
       "keep_shared_deployment",
     ));
+    expect(tracker.getSnapshot()).toEqual([
+      expect.objectContaining({ operationId: "op-undeploy", status: "success" }),
+    ]);
     expect(screen.queryByRole("dialog", { name: "Remove from Codex CLI?" })).not.toBeInTheDocument();
   });
 

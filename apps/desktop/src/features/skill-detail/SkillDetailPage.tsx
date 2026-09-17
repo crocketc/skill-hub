@@ -34,6 +34,9 @@ import {
   SecurityEvidence,
 } from "./InsightPanels";
 import { Button } from "../../ui/Button";
+import { useOptionalAppNotifications } from "../../ui/notifications";
+import { operationTracker, type OperationTracker } from "../../platform/operationTracker";
+import { runTrackedOperation } from "../../platform/runTrackedOperation";
 import { VersionTimeline } from "./VersionTimeline";
 import { SourceUpdatePanel } from "./SourceUpdatePanel";
 import { SourceRelinkPanel } from "./SourceRelinkPanel";
@@ -54,6 +57,7 @@ interface SkillDetailPageProps {
   facade: SkillDetailFacade;
   markdownFacade?: MarkdownFacade;
   removalFacade?: RemovalFacade;
+  tracker?: OperationTracker;
 }
 
 /** 关系区唯一强化的视觉线索：来源 → 本地集中库 → 部署目标（图标仅装饰，含义由文字承载）。 */
@@ -100,11 +104,13 @@ export function SkillDetailPage({
   facade,
   markdownFacade = nativeMarkdownFacade,
   removalFacade,
+  tracker = operationTracker,
 }: SkillDetailPageProps) {
   const { t } = useTranslation();
   const location = useLocation();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const notifications = useOptionalAppNotifications();
   const { skillId = "" } = useParams();
   const isPreviewRoute = location.pathname.startsWith("/__preview/");
   const effectiveRemovalFacade = removalFacade ?? (isPreviewRoute ? unavailableRemovalFacade : nativeRemovalFacade);
@@ -190,15 +196,28 @@ export function SkillDetailPage({
   };
 
   const commitRemoval = async (choices: Record<string, RemovalChoice>) => {
-    if (!removalImpact?.operationId) return;
+    const operationId = removalImpact?.operationId;
+    if (!operationId) return;
     setRemovalSubmitting(true);
     setRemovalError(undefined);
     try {
-      const result = await effectiveRemovalFacade.commitDelete(removalImpact.operationId, choices);
+      const result = await runTrackedOperation({
+        tracker,
+        notifications,
+        kind: "remove",
+        label: t("removal.tracker.batchLabel"),
+        operationId,
+        translate: (key, options) => String(t(key as never, options as never)),
+        queryClient,
+        invalidateQueryKeys: [skillLibraryKeys.root],
+        run: async (handle) => {
+          handle.correlate(operationId);
+          return effectiveRemovalFacade.commitDelete(operationId, choices);
+        },
+      });
       if (!result.centralSkillDeleted) {
         throw new Error("central skill was not deleted");
       }
-      await queryClient.invalidateQueries({ queryKey: skillLibraryKeys.root });
       navigate({ pathname: backPathname, search: backSearch }, { replace: true, state: libraryReturn ? { libraryReturn } : undefined });
     } catch (reason) {
       setRemovalError(describeNativeError(reason, (key, options) => String(t(key as never, options as never)), "removal.commitError"));
@@ -217,16 +236,29 @@ export function SkillDetailPage({
   };
 
   const commitUndeploy = async (decision: UndeployDecision) => {
-    if (!undeployImpact) return;
+    const operationId = undeployImpact?.operationId;
+    if (!operationId) return;
     setUndeploySubmitting(true);
     setUndeployError(undefined);
     try {
-      await effectiveRemovalFacade.commitUndeploy(undeployImpact.operationId, decision);
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: skillDetailKeys.relations(skillId) }),
-        queryClient.invalidateQueries({ queryKey: skillDetailKeys.summary(skillId) }),
-        queryClient.invalidateQueries({ queryKey: skillLibraryKeys.root }),
-      ]);
+      await runTrackedOperation({
+        tracker,
+        notifications,
+        kind: "remove",
+        label: t("undeploy.eyebrow"),
+        operationId,
+        translate: (key, options) => String(t(key as never, options as never)),
+        queryClient,
+        invalidateQueryKeys: [
+          skillDetailKeys.relations(skillId),
+          skillDetailKeys.summary(skillId),
+          skillLibraryKeys.root,
+        ],
+        run: async (handle) => {
+          handle.correlate(operationId);
+          await effectiveRemovalFacade.commitUndeploy(operationId, decision);
+        },
+      });
       setUndeployImpact(null);
     } catch {
       setUndeployError(t("undeploy.commitError"));
