@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
 import { I18nextProvider } from "react-i18next";
 import { createSkillHubI18n } from "../../i18n";
@@ -106,4 +107,27 @@ describe("ProjectManagedDeployments", () => {
     await renderSection(ops);
     expect(await screen.findByText("无法读取受管副本记录。")).toBeVisible();
   });
+});
+
+it("offers a governance deep link per managed copy when a builder is provided", async () => {
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  render(
+    <MemoryRouter>
+      <I18nextProvider i18n={i18n}>
+        <ProjectManagedDeployments
+          governanceHref={(record) =>
+            `/relationships/governance?from=project&project=demo-project&skillId=${record.skill_id}`}
+          ops={createOps()}
+          projectId="demo-project"
+        />
+      </I18nextProvider>
+    </MemoryRouter>,
+  );
+
+  await screen.findByText(/skill-pdf/);
+  const link = screen.getByTestId("governance-link");
+  expect(link.textContent).toBe("管理关系");
+  expect(link.getAttribute("href")).toBe(
+    "/relationships/governance?from=project&project=demo-project&skillId=skill-pdf",
+  );
 });

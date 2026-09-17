@@ -56,6 +56,17 @@ vi.mock("../api/bindings", async (importOriginal) => {
         type: "application_update_policy" as const,
         payload: { enabled: true, check_on_startup: true },
       };
+      if (query.type === "list_relation_governance") return {
+        type: "relation_governance_ledger" as const,
+        payload: {
+          rows: [],
+          counts: { all: 0, eligible_to_centralize: 0, needs_validation: 0, blocked: 0 },
+          bucket: "all" as const,
+          total: 0,
+          relationship_revision: "test-rev",
+          last_verified_at: null,
+        },
+      };
       return { type: "bootstrap_snapshot" as const, payload: {
         initialization_state: "initialized" as const,
         library_path: "C:\\Users\\Test\\SkillHub",
@@ -488,11 +499,19 @@ it("renders the three relationships routes with honest placeholders and module t
   expect(
     await screen.findByRole("heading", { name: "Relationship governance" }),
   ).toBeVisible();
+  // 任务 8：治理插槽已换成真实工作台——普通添加入口与治理清单的诚实空态，
+  // 不再渲染"尚未提供"占位。
+  expect(await screen.findByTestId("governance-deploy-entry")).toBeVisible();
   expect(
     await screen.findByText(
-      "The relationship governance workbench is not available yet; the governance panel on Skill details remains available.",
+      "Relationships are in good shape; there is no relationship change to handle.",
     ),
   ).toBeVisible();
+  expect(
+    screen.queryByText(
+      "The relationship governance workbench is not available yet; the governance panel on Skill details remains available.",
+    ),
+  ).not.toBeInTheDocument();
 });
 
 it("preloads the relationships chunk and maps module titles with nested fallbacks", async () => {

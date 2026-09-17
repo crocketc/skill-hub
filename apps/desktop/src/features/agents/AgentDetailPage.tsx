@@ -128,6 +128,8 @@ export function AgentDetailPage({ agentId = "default", facade = unavailableAgent
       ) : relationshipOverview && agent ? (
         <DirectoryMatrix
           currentAgentClientId={agent.client}
+          governanceHref={(relation) =>
+            `/relationships/governance?from=agent&agent=${encodeURIComponent(agent.client)}&relationId=${encodeURIComponent(relation.relationId)}`}
           onLoadRemovalImpact={loadRemovalImpact}
           overview={relationshipOverview}
         />

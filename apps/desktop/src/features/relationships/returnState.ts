@@ -16,6 +16,8 @@ export interface RelationshipsReturnState {
   scrollY?: number;
   /** 选中的行/边 ID；仅治理 scope 使用。 */
   selectedId?: string;
+  /** 批量勾选的关系边 ID（任务 8）；仅治理 scope 使用。 */
+  selectedIds?: string[];
 }
 
 const STORAGE_PREFIX = "skillhub:relationships:return-state";

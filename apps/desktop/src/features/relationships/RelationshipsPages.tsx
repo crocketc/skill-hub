@@ -1,10 +1,14 @@
 import { RelationshipsLayout } from "./RelationshipsLayout";
 import { SkillGraphPage } from "./graph/SkillGraphPage";
 import { ConflictDecisionPage } from "./decisions/ConflictDecisionPage";
+import { RelationshipGovernancePage } from "./governance/RelationshipGovernancePage";
 
 /**
- * 任务 5 的三条懒加载路由入口。图谱画布（任务 6）已接入 graph 槽位；
- * 冲突处理与关系治理画布由任务 7/8 分别替换 children；路由与导航契约保持不变。
+ * 任务 5 的三条懒加载路由入口。业务画布已分别由任务 6（图谱）、任务 7（冲突处理）、
+ * 任务 8（关系治理）接入；路由与导航契约保持不变。
+ * 模式说明：图谱与冲突处理由本文件包裹 RelationshipsLayout；治理工作台
+ * （任务 8）因需把自身 props 线程化进布局而在组件内部自持 RelationshipsLayout
+ * （scope 契约一致，二者等价）。
  */
 export function RelationshipsGraphPage() {
   return (
@@ -23,5 +27,5 @@ export function RelationshipsDecisionsPage() {
 }
 
 export function RelationshipsGovernancePage() {
-  return <RelationshipsLayout scope="governance" />;
+  return <RelationshipGovernancePage />;
 }

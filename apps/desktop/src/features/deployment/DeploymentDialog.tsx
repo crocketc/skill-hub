@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { Link, useInRouterContext } from "react-router-dom";
 import { describeNativeError } from "../../api/nativeErrors";
 import type { OperationTracker } from "../../platform/operationTracker";
 import { runTrackedOperation } from "../../platform/runTrackedOperation";
@@ -26,6 +27,8 @@ export interface DeploymentDialogProps {
   runtimeName?: string;
   /** 统一执行桥的在途投影；测试可注入独立实例，默认模块级单例。 */
   tracker?: OperationTracker;
+  /** 提供时展示「管理关系」深链，指向治理页（携带来源与 skillId）。 */
+  manageRelationsHref?: string;
   onCommitted?: (results: DeploymentResult[]) => void;
 }
 
@@ -35,6 +38,7 @@ const STEP_KEYS = ["targets", "preview", "commit", "results"] as const;
 
 export function DeploymentDialog({
   facade,
+  manageRelationsHref,
   skillId,
   versionId,
   runtimeName,
@@ -44,6 +48,11 @@ export function DeploymentDialog({
   const { t } = useTranslation();
   // Provider 缺席（预览/测试挂载）时通知为 null：桥不发通知，行为不降级。
   const notifications = useOptionalAppNotifications();
+  // 「管理关系」深链（任务 8）：默认在路由上下文内由 skillId 自行推导；
+  // 显式传入的 href 优先。脱离路由的挂载（独立测试）不渲染链接。
+  const inRouter = useInRouterContext();
+  const manageRelationsLink = manageRelationsHref
+    ?? (inRouter ? `/relationships/governance?from=library&skillId=${encodeURIComponent(skillId)}` : null);
   const activeFacade = useMemo(
     () => facade ?? createNativeDeploymentFacade({ skillId, versionId, runtimeName }),
     [facade, runtimeName, skillId, versionId],
@@ -218,6 +227,17 @@ export function DeploymentDialog({
       title={t("deployment.heading")}
     >
       <p className="sh-deployment-flow__description">{t("deployment.description")}</p>
+      {manageRelationsLink ? (
+        <p>
+          <Link
+            className="sh-governance__row-link"
+            data-testid="manage-relations-link"
+            to={manageRelationsLink}
+          >
+            {t("relationships.governance.manageRelations")}
+          </Link>
+        </p>
+      ) : null}
       {flowError ? <DataState message={flowError} state="error" /> : null}
       {phase === "list-error" ? <DataState message={listError ?? ""} state="error" /> : null}
       {phase === "loading" ? <DataState message={t("deployment.states.loading")} state="loading" /> : null}

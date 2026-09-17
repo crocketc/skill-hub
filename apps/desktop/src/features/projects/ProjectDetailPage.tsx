@@ -85,7 +85,12 @@ export function ProjectDetailPage({ projectId = "default", facade = unavailableP
       </section>
       <SharedConfigPanel config={project.sharedConfig} />
       <ProjectAssemblyPlanGroups failed={assemblyPlanFailed} plan={assemblyPlan} />
-      {managedDeploymentOps ? <ProjectManagedDeployments ops={managedDeploymentOps} projectId={project.id} /> : null}
+      {managedDeploymentOps ? <ProjectManagedDeployments
+        governanceHref={(record) =>
+          `/relationships/governance?from=project&project=${encodeURIComponent(project.id)}&skillId=${encodeURIComponent(record.skill_id)}`}
+        ops={managedDeploymentOps}
+        projectId={project.id}
+      /> : null}
     </div>
   );
 }

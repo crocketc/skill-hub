@@ -339,6 +339,8 @@ export function SkillDetailPage({
               ) : null}
               {relationsQuery.data ? (
                 <RelationsPanel
+                  governanceHref={(relation) =>
+                    `/relationships/governance?from=library&skillId=${encodeURIComponent(skillId)}&relationId=${encodeURIComponent(relation.relationId)}`}
                   onLoadRemovalImpact={loadRelationshipRemovalImpact}
                   onUndeploy={!isPreviewRoute ? (relation) => void startUndeploy(relation) : undefined}
                   relationship={relationshipViews}

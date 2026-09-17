@@ -2347,7 +2347,137 @@
     },
     "governance": {
       "title": "关系治理",
-      "placeholder": "关系治理工作台尚未提供；Skill 详情中的关系治理面板仍然可用。"
+      "placeholder": "关系治理工作台尚未提供；Skill 详情中的关系治理面板仍然可用。",
+      "description": "逐条查看已建立的关系边，先预览影响，再确认纳入集中库管理或从 Agent/项目移除。",
+      "loading": "正在加载关系治理清单…",
+      "loadError": "关系治理清单暂不可用。",
+      "retryLoad": "重新加载",
+      "back": {
+        "library": "返回技能库",
+        "graph": "返回技能图谱",
+        "conflict": "返回冲突处理",
+        "agent": "返回 Agent 详情",
+        "project": "返回项目详情"
+      },
+      "deployEntry": {
+        "eyebrow": "普通添加入口",
+        "title": "添加到 Agent/项目",
+        "description": "把新的 Skill 放到 Agent/项目走普通添加流程，与下方治理操作相互独立；这份清单只处理已建立的关系边。",
+        "action": "添加到 Agent/项目"
+      },
+      "filters": {
+        "label": "快捷筛选",
+        "all": "全部",
+        "eligible_to_centralize": "可纳入集中库管理",
+        "needs_validation": "待校验",
+        "blocked": "受阻",
+        "withCount": "{{label}}（{{count}}）"
+      },
+      "search": {
+        "label": "搜索 Skill、目标或路径",
+        "apply": "搜索"
+      },
+      "table": {
+        "relation": "关系",
+        "source": "来源",
+        "target": "目标",
+        "impact": "影响",
+        "verification": "校验",
+        "action": "操作",
+        "selectAll": "全选本页关系",
+        "selectRow": "选择关系 {{id}}",
+        "listLabel": "关系治理清单"
+      },
+      "source": {
+        "scan": "扫描发现",
+        "import": "导入登记"
+      },
+      "readiness": {
+        "eligible_to_centralize": "可纳入集中库管理",
+        "needs_validation": "待校验",
+        "blocked": "受阻",
+        "already_centralized": "已由集中库管理"
+      },
+      "blockers": {
+        "unverifiable_representation": "目录联接或未知表示无法被安全校验，已阻止转换。",
+        "relationship_not_convertible": "该关系类型没有可转换的入口。",
+        "shared_body_protected": "该条目是共享目录本体的读取入口，转换会改写共享内容，已阻止。",
+        "directory_not_registered": "目标不在任何已登记目录节点下。",
+        "directory_recognition_unknown": "目标目录的识别状态未知，需要先复核。",
+        "directory_recognition_unsupported": "目标目录已确认不被支持，已阻止操作。",
+        "verification_not_current": "存证不是最新验证状态，请先重新检查。",
+        "shared_impact_confirmation_required": "其他 Agent 也在读取同一共享目录，需要显式确认共享影响。",
+        "skill_identity_unconfirmed": "缺少确定的 Skill 身份或内容指纹。"
+      },
+      "impact": {
+        "noOtherConsumers": "没有其他共享消费者",
+        "otherConsumers_one": "共享消费者：{{count}} 个（{{agents}}）",
+        "otherConsumers_other": "共享消费者：{{count}} 个（{{agents}}）",
+        "rollbackAvailable": "可回退",
+        "rollbackUnavailable": "不可回退"
+      },
+      "actions": {
+        "centralize_management": "纳入集中库管理",
+        "undeploy": "从 Agent/项目移除",
+        "revalidate": "重新检查",
+        "none": "受阻"
+      },
+      "selection": {
+        "selectedCount": "已选 {{count}} 条",
+        "openBatch": "批量纳入集中库管理"
+      },
+      "batchSummary": {
+        "executable": "可执行 {{count}}",
+        "blocked": "受阻 {{count}}"
+      },
+      "centralize": {
+        "explain": "纳入集中库管理会保留当前位置的可用入口，改为使用集中库中的统一版本。",
+        "done": "已纳入集中库管理：{{skill}}"
+      },
+      "undeployResult": {
+        "done": "已从目标移除：{{path}}"
+      },
+      "preview": {
+        "centralizeTitle": "纳入集中库管理预览",
+        "undeployTitle": "从 Agent/项目移除预览",
+        "targetLabel": "目标路径",
+        "relationLabel": "关系类型",
+        "verificationLabel": "校验状态",
+        "confirm": "确认执行",
+        "sharedImpactConfirm": "我已确认共享目录影响",
+        "rejectedNote": "后端拒绝了这次请求，预览保持不变，未更新任何成功状态。"
+      },
+      "batch": {
+        "title": "批量纳入集中库管理",
+        "hint": "受阻项默认不选中；可以逐项取消，其余行不受影响。",
+        "itemExecutable": "可执行",
+        "itemBlocked": "受阻",
+        "itemCheck": "执行 {{id}}",
+        "sharedImpactConfirm": "我已确认共享目录影响（{{id}}）",
+        "confirmCount": "确认执行 {{count}} 条",
+        "running": "正在逐条执行并验证…",
+        "resultTitle": "批量结果",
+        "resultPartial": "部分成功：{{committed}} 条成功，{{failed}} 条失败",
+        "resultAll": "已全部纳入集中库管理（{{count}} 条）",
+        "resultNone": "本次没有成功，请逐条查看失败原因",
+        "resultCancelled": "已取消 {{count}} 条",
+        "itemCommitted": "成功",
+        "itemFailed": "失败",
+        "itemCancelled": "已取消",
+        "itemRolledBack": "已回退",
+        "retry": "重试 {{id}}",
+        "rollback": "回退 {{id}}",
+        "rollbackAvailable": "可回退",
+        "childOperation": "操作记录",
+        "trackerLabel": "纳入集中库管理批次",
+        "itemTrackerLabel": "纳入集中库管理：{{id}}",
+        "close": "关闭"
+      },
+      "empty": {
+        "all": "当前关系状态良好，没有需要处理的关系变更。",
+        "filtered": "该筛选下没有关系。"
+      },
+      "manageRelations": "管理关系"
     }
   },
   "operations": {

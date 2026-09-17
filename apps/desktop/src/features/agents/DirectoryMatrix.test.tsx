@@ -1,6 +1,7 @@
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { I18nextProvider } from "react-i18next";
+import { MemoryRouter } from "react-router-dom";
 import { expect, it, vi } from "vitest";
 import { createSkillHubI18n } from "../../i18n";
 import type { RelationshipOverview } from "../../api/bindings";
@@ -370,6 +371,34 @@ it("keeps an honest empty state when no relationship facts exist", async () => {
   );
 
   expect(screen.getByTestId("directory-matrix-empty")).toBeVisible();
+});
+
+it("offers a governance deep link per relation row when a builder is provided", async () => {
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  render(
+    <MemoryRouter>
+      <I18nextProvider i18n={i18n}>
+        <DirectoryMatrix
+          currentAgentClientId="codex-cli"
+          governanceHref={(relation) =>
+            `/relationships/governance?from=agent&agent=codex-cli&relationId=${relation.relationId}`}
+          overview={overview}
+        />
+      </I18nextProvider>
+    </MemoryRouter>,
+  );
+
+  // 每条活动关系行都带「管理关系」深链，指向治理页并携带来源与关系 ID。
+  const rows = screen.getAllByTestId("directory-relation");
+  const links = rows
+    .map((row) => within(row).queryByTestId("governance-link"))
+    .filter((link): link is HTMLElement => link !== null);
+  expect(links).toHaveLength(rows.length);
+  for (const link of links) {
+    expect(link.textContent).toBe("管理关系");
+    expect(link.getAttribute("href")).toContain("/relationships/governance?from=agent");
+    expect(link.getAttribute("href")).toContain("relationId=");
+  }
 });
 
 it("renders English copy with the same structure", async () => {
