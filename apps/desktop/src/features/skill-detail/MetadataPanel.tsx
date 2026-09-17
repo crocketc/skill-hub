@@ -1,8 +1,12 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useRef, useState, type JSX } from "react";
 import { useTranslation } from "react-i18next";
+import { describeNativeError } from "../../api/nativeErrors";
+import { operationTracker, type OperationTracker } from "../../platform/operationTracker";
+import { runTrackedOperation } from "../../platform/runTrackedOperation";
 import { Button } from "../../ui/Button";
 import { StatusBadge } from "../../ui/StatusBadge";
+import { useOptionalAppNotifications } from "../../ui/notifications";
 import { skillLibraryKeys } from "../skills/api";
 import type {
   SkillDetailFacade,
@@ -15,6 +19,8 @@ interface MetadataPanelProps {
   facade: SkillDetailFacade;
   metadata: SkillMetadata;
   skillId: string;
+  /** 统一执行桥的在途投影；测试可注入独立实例，默认模块级单例。 */
+  tracker?: OperationTracker;
 }
 
 interface EditableTextSectionProps {
@@ -136,30 +142,79 @@ function EditableTextSection({
   );
 }
 
-export function MetadataPanel({ facade, metadata, skillId }: MetadataPanelProps) {
+export function MetadataPanel({ facade, metadata, skillId, tracker = operationTracker }: MetadataPanelProps) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
+  const notifications = useOptionalAppNotifications();
   const [translationConfirmation, setTranslationConfirmation] = useState(false);
+  const [translationError, setTranslationError] = useState<string>();
+  // 结构化失败必须可读：原生命令以 AppError 对象拒绝，默认 String() 会得到
+  // "[object Object]"。通知的补充说明与页面局部提示共用同一段描述。
+  const describeFailure = (error: unknown) =>
+    describeNativeError(
+      error,
+      (key, describeOptions) => String(t(key as never, describeOptions as never)),
+      "skillDetail.tracker.failureUnknown",
+    );
 
+  // 统一执行反馈（任务 4）：保存是可触发的单次写入，走 instant 模式；成功才
+  // 失效缓存，失败原因由桥留下通知，字段自身仍保留草稿并给出局部提示。
   const savePatch = async (patch: SkillMetadataPatch) => {
-    await facade.saveMetadata(skillId, patch);
+    await runTrackedOperation({
+      kind: "skill_metadata",
+      label: t("skillDetail.tracker.metadataLabel"),
+      mode: "instant",
+      notifications,
+      translate: (key, options) => String(t(key as never, options as never)),
+      successNotice: () => ({ tone: "success", title: t("skillDetail.tracker.metadataSaved") }),
+      errorNotice: (_error, message) => ({
+        tone: "danger",
+        title: t("skillDetail.tracker.metadataFailed"),
+        detail: message,
+      }),
+      describeError: describeFailure,
+      run: () => facade.saveMetadata(skillId, patch),
+    });
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: skillDetailKeys.metadata(skillId) }),
       queryClient.invalidateQueries({ queryKey: skillDetailKeys.summary(skillId) }),
       queryClient.invalidateQueries({ queryKey: skillLibraryKeys.root }),
     ]);
   };
+  // 重新翻译是 AI 长流程，占用在途顶栏（不可取消：后端没有该操作的取消契约）。
   const requestTranslation = async (overwriteUserRevision: boolean) => {
-    await facade.emitIntent({
-      locale: metadata.translation?.locale ?? "zh-CN",
-      overwriteUserRevision,
-      skillId,
-      type: "translate_description",
-    });
-    setTranslationConfirmation(false);
-    await queryClient.invalidateQueries({
-      queryKey: skillDetailKeys.metadata(skillId),
-    });
+    setTranslationError(undefined);
+    try {
+      await runTrackedOperation({
+        kind: "translate_description",
+        label: t("skillDetail.tracker.translateLabel"),
+        notifications,
+        tracker,
+        translate: (key, options) => String(t(key as never, options as never)),
+        errorNotice: (_error, message) => ({
+          tone: "danger",
+          title: t("skillDetail.tracker.translateFailed"),
+          detail: message,
+        }),
+        describeError: describeFailure,
+        run: () =>
+          facade.emitIntent({
+            locale: metadata.translation?.locale ?? "zh-CN",
+            overwriteUserRevision,
+            skillId,
+            type: "translate_description",
+          }),
+      });
+      setTranslationConfirmation(false);
+      await queryClient.invalidateQueries({
+        queryKey: skillDetailKeys.metadata(skillId),
+      });
+    } catch (reason) {
+      // 用户触发的失败必须可见：之前 `void requestTranslation(...)` 会把拒绝吞掉。
+      // 局部提示与通知的补充说明取自同一段描述，两处不会互相矛盾。
+      setTranslationConfirmation(false);
+      setTranslationError(describeFailure(reason));
+    }
   };
 
   return (
@@ -246,6 +301,7 @@ export function MetadataPanel({ facade, metadata, skillId }: MetadataPanelProps)
               </Button>
             </div>
           ) : null}
+          {translationError ? <p role="alert">{translationError}</p> : null}
         </section>
       </details>
       {/* 别名的唯一展示位是头部；此处只保留编辑契约。 */}

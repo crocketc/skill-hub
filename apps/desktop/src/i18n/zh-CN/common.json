@@ -1727,6 +1727,24 @@
       "deployments": "添加目标"
     },
     "tracker": {
+      "metadataLabel": "保存 Skill 信息",
+      "metadataSaved": "Skill 信息已保存",
+      "metadataFailed": "Skill 信息未能保存",
+      "translateLabel": "重新翻译描述",
+      "translateFailed": "翻译未能完成",
+      "abandonTrialLabel": "放弃试用",
+      "abandonTrialFailed": "放弃试用未能完成",
+      "renameVersionLabel": "命名版本",
+      "renameVersionSaved": "版本命名已保存",
+      "renameVersionFailed": "版本命名未能保存",
+      "rollbackLabel": "回滚版本",
+      "rollbackSaved": "已回滚到 {{version}}",
+      "rollbackFailed": "回滚未能完成",
+      "relinkLabel": "重新关联来源",
+      "relinkFailed": "重新关联未能完成",
+      "applyUpdateLabel": "应用来源更新",
+      "applyUpdateFailed": "来源更新未能应用",
+      "failureUnknown": "操作未能完成（{{code}}）。若持续出现请记录该错误码。",
       "aiAnalysisLabel": "AI 语义分析",
       "duplicatesPhase": "分析语义重复候选"
     }

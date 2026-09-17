@@ -2,7 +2,10 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { AppliedSourceUpdate, UpdateDecision, UpstreamCheckResult } from "../../api/bindings";
 import { describeNativeError } from "../../api/nativeErrors";
+import { operationTracker, type OperationTracker } from "../../platform/operationTracker";
+import { runTrackedOperation } from "../../platform/runTrackedOperation";
 import { Button } from "../../ui/Button";
+import { useOptionalAppNotifications } from "../../ui/notifications";
 
 export interface SourceUpdateFacade {
   checkSourceUpdate: (skillId: string) => Promise<UpstreamCheckResult>;
@@ -12,6 +15,8 @@ export interface SourceUpdateFacade {
 interface SourceUpdatePanelProps {
   facade: SourceUpdateFacade;
   skillId: string;
+  /** 统一执行桥的在途投影；测试可注入独立实例，默认模块级单例。 */
+  tracker?: OperationTracker;
 }
 
 type PanelState =
@@ -25,8 +30,9 @@ type PanelState =
  * FE-11 来源更新：检查上游版本并按显式决策应用（采用/保留本地/独立分支）。
  * 只在用户点击后联网；每个状态都如实呈现，不把"无法检查"伪装成"已最新"。
  */
-export function SourceUpdatePanel({ facade, skillId }: SourceUpdatePanelProps) {
+export function SourceUpdatePanel({ facade, skillId, tracker = operationTracker }: SourceUpdatePanelProps) {
   const { t } = useTranslation();
+  const notifications = useOptionalAppNotifications();
   const [state, setState] = useState<PanelState>({ phase: "idle" });
   // describeNativeError 以动态键调用翻译；i18next 的强类型键联合在此收窄。
   const describe = (error: unknown) =>
@@ -53,7 +59,22 @@ export function SourceUpdatePanel({ facade, skillId }: SourceUpdatePanelProps) {
     }
     setState({ phase: "checking" });
     try {
-      const applied = await facade.applySourceUpdate(skillId, decision);
+      // 统一执行反馈（任务 4）：应用上游更新是长流程（可能重写受管副本），
+      // 因此占用在途顶栏而不是走 instant。
+      const applied = await runTrackedOperation({
+        kind: "apply_source_update",
+        label: t("skillDetail.tracker.applyUpdateLabel"),
+        notifications,
+        tracker,
+        translate: (key, options) => String(t(key as never, options as never)),
+        errorNotice: (_error, message) => ({
+          tone: "danger",
+          title: t("skillDetail.tracker.applyUpdateFailed"),
+          detail: message,
+        }),
+        describeError: describe,
+        run: () => facade.applySourceUpdate(skillId, decision),
+      });
       setState({ phase: "applied", applied });
     } catch (error) {
       setState({ phase: "error", message: describe(error) });

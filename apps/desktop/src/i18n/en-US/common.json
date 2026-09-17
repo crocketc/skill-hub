@@ -1727,6 +1727,24 @@
       "deployments": "Addition targets"
     },
     "tracker": {
+      "metadataLabel": "Save skill information",
+      "metadataSaved": "Skill information saved",
+      "metadataFailed": "Failed to save the skill information",
+      "translateLabel": "Re-translate the description",
+      "translateFailed": "The translation did not complete",
+      "abandonTrialLabel": "Abandon the trial",
+      "abandonTrialFailed": "The trial could not be abandoned",
+      "renameVersionLabel": "Name the version",
+      "renameVersionSaved": "Version name saved",
+      "renameVersionFailed": "The version name was not saved",
+      "rollbackLabel": "Roll back the version",
+      "rollbackSaved": "Rolled back to {{version}}",
+      "rollbackFailed": "The rollback did not complete",
+      "relinkLabel": "Re-link the source",
+      "relinkFailed": "The source could not be re-linked",
+      "applyUpdateLabel": "Apply the source update",
+      "applyUpdateFailed": "The source update could not be applied",
+      "failureUnknown": "The operation did not complete ({{code}}). Record the code if it keeps happening.",
       "aiAnalysisLabel": "AI semantic analysis",
       "duplicatesPhase": "Analyzing semantic duplicate candidates"
     }

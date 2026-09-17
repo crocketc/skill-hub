@@ -1,7 +1,9 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { describeNativeError } from "../../api/nativeErrors";
+import { runTrackedOperation } from "../../platform/runTrackedOperation";
 import { Button } from "../../ui/Button";
+import { useOptionalAppNotifications } from "../../ui/notifications";
 
 export interface SourceRelinkFacade {
   /** 解析输入并调用 relink_source；由 native 层组合 parse + relink 两个契约。 */
@@ -19,17 +21,38 @@ interface SourceRelinkPanelProps {
  */
 export function SourceRelinkPanel({ facade, skillId }: SourceRelinkPanelProps) {
   const { t } = useTranslation();
+  const notifications = useOptionalAppNotifications();
   const [sourceInput, setSourceInput] = useState("");
   const [pending, setPending] = useState(false);
   const [done, setDone] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // 统一执行反馈（任务 4）：重新关联是一次写入命令，走 instant 模式。
   const submit = async () => {
     if (!sourceInput.trim()) return;
     setPending(true);
     setError(null);
     try {
-      await facade.relinkSource(skillId, sourceInput.trim());
+      await runTrackedOperation({
+        kind: "source_relink",
+        label: t("skillDetail.tracker.relinkLabel"),
+        mode: "instant",
+        notifications,
+        translate: (key, options) => String(t(key as never, options as never)),
+        successNotice: () => ({ tone: "success", title: t("skillDetail.sourceRelink.done") }),
+        errorNotice: (_error, message) => ({
+          tone: "danger",
+          title: t("skillDetail.tracker.relinkFailed"),
+          detail: message,
+        }),
+        describeError: (error: unknown) =>
+          describeNativeError(
+            error,
+            (key, describeOptions) => String(t(key as never, describeOptions as never)),
+            "skillDetail.sourceRelink.failureUnknown",
+          ),
+        run: () => facade.relinkSource(skillId, sourceInput.trim()),
+      });
       setDone(true);
       setSourceInput("");
     } catch (reason) {

@@ -3,6 +3,8 @@ import userEvent from "@testing-library/user-event";
 import { I18nextProvider } from "react-i18next";
 import { createSkillHubI18n } from "../../i18n";
 import type { UpstreamCheckResult } from "../../api/bindings";
+import { createOperationTracker, type OperationTracker } from "../../platform/operationTracker";
+import { AppNotificationsProvider } from "../../ui/notifications";
 import { SourceUpdatePanel, type SourceUpdateFacade } from "./SourceUpdatePanel";
 
 const result: UpstreamCheckResult = {
@@ -32,6 +34,21 @@ async function renderPanel(facade: SourceUpdateFacade) {
       <SourceUpdatePanel facade={facade} skillId="s1" />
     </I18nextProvider>,
   );
+}
+
+async function renderPanelWithBridge(
+  facade: SourceUpdateFacade,
+  tracker: OperationTracker = createOperationTracker(),
+) {
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  const view = render(
+    <I18nextProvider i18n={i18n}>
+      <AppNotificationsProvider>
+        <SourceUpdatePanel facade={facade} skillId="s1" tracker={tracker} />
+      </AppNotificationsProvider>
+    </I18nextProvider>,
+  );
+  return { ...view, tracker };
 }
 
 it("reports an up-to-date source honestly", async () => {
@@ -125,4 +142,65 @@ it("surfaces the reconciliation note when deployments need it", async () => {
   await user.click(screen.getByRole("button", { name: "检查来源更新" }));
   await user.click(await screen.findByRole("button", { name: "采用上游版本" }));
   expect(await screen.findByText(/重新同步/)).toBeVisible();
+});
+
+it("keeps applying an update in the tracked task list until it finishes", async () => {
+  const user = userEvent.setup();
+  let release: () => void = () => {};
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const { tracker } = await renderPanelWithBridge(makeFacade({
+    applySourceUpdate: async () => {
+      await gate;
+      return {
+        skill_id: "s1",
+        decision: "take_upstream",
+        new_version: "v4",
+        deployments_need_reconciliation: false,
+      };
+    },
+  }));
+
+  await user.click(screen.getByRole("button", { name: "检查来源更新" }));
+  await user.click(await screen.findByRole("button", { name: "采用上游版本" }));
+
+  // 应用上游更新会重写受管副本：属于长流程，必须占用在途顶栏。
+  await waitFor(() => expect(tracker.getSnapshot()).toHaveLength(1));
+  expect(tracker.getSnapshot()[0]).toMatchObject({
+    kind: "apply_source_update",
+    label: "应用来源更新",
+    status: "running",
+  });
+
+  release();
+  await waitFor(() => expect(tracker.getSnapshot()[0].status).toBe("success"));
+  expect(await screen.findByText(/已采用上游版本/)).toBeVisible();
+});
+
+it("reports an apply failure with the same readable reason as the page", async () => {
+  const user = userEvent.setup();
+  await renderPanelWithBridge(makeFacade({
+    applySourceUpdate: async () => {
+      throw {
+        code: "operation.conflict",
+        severity: "error",
+        params: { reason: "no_upstream_source" },
+        actions: [],
+      };
+    },
+  }));
+
+  await user.click(screen.getByRole("button", { name: "检查来源更新" }));
+  await user.click(await screen.findByRole("button", { name: "采用上游版本" }));
+
+  const notice = await screen.findByTestId("notice-danger");
+  expect(notice).toHaveTextContent("来源更新未能应用");
+  const detail = notice.querySelector(".sh-notification__detail");
+  expect(detail?.textContent).not.toContain("[object Object]");
+  expect(detail?.textContent).toContain("没有可采用的 upstream 来源");
+  const inlineAlert = (await screen.findAllByRole("alert")).find(
+    (node) => node.tagName === "P",
+  );
+  expect(inlineAlert?.textContent).toContain("没有可采用的 upstream 来源");
 });

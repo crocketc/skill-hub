@@ -3,6 +3,9 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { I18nextProvider } from "react-i18next";
 import { describe, expect, it } from "vitest";
 import { createSkillHubI18n } from "../../i18n";
+import { createOperationTracker, type OperationTracker } from "../../platform/operationTracker";
+import { AppNotificationsProvider } from "../../ui/notifications";
+import type { SkillMetadata } from "./api";
 import { MetadataPanel } from "./MetadataPanel";
 import { createMockSkillDetailFacade, detailFixture } from "./testFixtures";
 
@@ -22,6 +25,44 @@ async function renderMetadata({
     </QueryClientProvider>,
   );
   return { client, facade };
+}
+
+async function renderMetadataWithBridge({
+  facade = createMockSkillDetailFacade(),
+  metadata = detailFixture().metadata,
+  tracker = createOperationTracker(),
+}: {
+  facade?: ReturnType<typeof createMockSkillDetailFacade>;
+  metadata?: SkillMetadata;
+  tracker?: OperationTracker;
+} = {}) {
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  const client = new QueryClient({
+    defaultOptions: { mutations: { retry: false }, queries: { retry: false } },
+  });
+  render(
+    <QueryClientProvider client={client}>
+      <I18nextProvider i18n={i18n}>
+        <AppNotificationsProvider>
+          <MetadataPanel
+            facade={facade}
+            metadata={metadata}
+            skillId="skill-pdf"
+            tracker={tracker}
+          />
+        </AppNotificationsProvider>
+      </I18nextProvider>
+    </QueryClientProvider>,
+  );
+  return { client, facade, tracker };
+}
+
+async function saveAlias(value: string) {
+  fireEvent.click(screen.getByRole("button", { name: "编辑别名" }));
+  fireEvent.change(screen.getByRole("textbox", { name: "别名" }), {
+    target: { value },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "保存别名" }));
 }
 
 describe("MetadataPanel", () => {
@@ -134,5 +175,91 @@ describe("MetadataPanel", () => {
         },
       ]);
     });
+  });
+});
+
+describe("MetadataPanel 与统一执行桥", () => {
+  it("reports a saved skill information section without opening a tracked task", async () => {
+    const { facade, tracker } = await renderMetadataWithBridge();
+
+    await saveAlias("PDF 助手");
+
+    await waitFor(() => expect(facade.calls.metadataPatches).toHaveLength(1));
+    // 保存是单次同步写入：只给结果反馈，不占用在途顶栏。
+    expect(tracker.getSnapshot()).toEqual([]);
+    const notice = await screen.findByTestId("notice-success");
+    expect(notice).toHaveTextContent("Skill 信息已保存");
+  });
+
+  it("reports a failed save as a danger notice while the draft stays editable", async () => {
+    const facade = createMockSkillDetailFacade({ failMetadataSave: true });
+    const { tracker } = await renderMetadataWithBridge({ facade });
+
+    fireEvent.click(screen.getByRole("button", { name: "编辑我的用途说明" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "我的用途说明" }), {
+      target: { value: "新的本地用途" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "保存我的用途说明" }));
+
+    const notice = await screen.findByTestId("notice-danger");
+    expect(notice).toHaveTextContent("Skill 信息未能保存");
+    expect(notice).toHaveTextContent("metadata save failed");
+    expect(tracker.getSnapshot()).toEqual([]);
+    // 失败后草稿不被清空：用户不必重敲一遍。
+    expect(screen.getByRole("textbox", { name: "我的用途说明" })).toHaveValue("新的本地用途");
+  });
+
+  it("keeps a re-translation in the tracked task list until it finishes", async () => {
+    const facade = createMockSkillDetailFacade();
+    const translateDescription = facade.emitIntent.bind(facade);
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    facade.emitIntent = async (intent) => {
+      await gate;
+      return translateDescription(intent);
+    };
+    const tracker = createOperationTracker();
+    await renderMetadataWithBridge({ facade, tracker });
+
+    fireEvent.click(screen.getByText("原始文本与译文"));
+    fireEvent.click(screen.getByRole("button", { name: "重新翻译描述" }));
+
+    // 重新翻译是 AI 长流程：这里必须占用在途顶栏，而不是静默地后台运行。
+    await waitFor(() => expect(tracker.getSnapshot()).toHaveLength(1));
+    expect(tracker.getSnapshot()[0]).toMatchObject({
+      kind: "translate_description",
+      label: "重新翻译描述",
+      status: "running",
+    });
+
+    release();
+    await waitFor(() => expect(tracker.getSnapshot()[0].status).toBe("success"));
+    expect(tracker.getSnapshot()[0].finishedAt).not.toBeNull();
+  });
+
+  it("reports a structured translation failure readably instead of [object Object]", async () => {
+    const facade = createMockSkillDetailFacade();
+    facade.emitIntent = async () => {
+      throw { code: "llm.not_configured", severity: "error", params: {}, actions: [] };
+    };
+    const tracker = createOperationTracker();
+    await renderMetadataWithBridge({ facade, tracker });
+
+    fireEvent.click(screen.getByText("原始文本与译文"));
+    fireEvent.click(screen.getByRole("button", { name: "重新翻译描述" }));
+
+    const notice = await screen.findByTestId("notice-danger");
+    expect(notice).toHaveTextContent("翻译未能完成");
+    const detail = notice.querySelector(".sh-notification__detail");
+    expect(detail?.textContent).not.toContain("[object Object]");
+    expect(detail?.textContent).toContain("尚未配置可用的 LLM 供应商");
+    // 页面局部提示与通知的补充说明取自同一段描述，两处不互相矛盾。
+    const inlineAlert = (await screen.findAllByRole("alert")).find(
+      (node) => node.tagName === "P",
+    );
+    expect(inlineAlert?.textContent).toContain("尚未配置可用的 LLM 供应商");
+    await waitFor(() => expect(tracker.getSnapshot()[0].status).toBe("failed"));
   });
 });

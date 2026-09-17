@@ -2,8 +2,10 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { describeNativeError } from "../../api/nativeErrors";
+import { runTrackedOperation } from "../../platform/runTrackedOperation";
 import { Button } from "../../ui/Button";
 import { StatusBadge } from "../../ui/StatusBadge";
+import { useOptionalAppNotifications } from "../../ui/notifications";
 import { skillLibraryKeys } from "../skills/api";
 import type { SkillDetailFacade, SkillDetailSummary } from "./api";
 import { skillDetailKeys } from "./api";
@@ -23,6 +25,7 @@ function toggleComparedVersion(selected: string[], versionId: string): string[] 
 export function VersionTimeline({ facade, skillId, summary }: VersionTimelineProps) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
+  const notifications = useOptionalAppNotifications();
   const [selected, setSelected] = useState<string[]>([]);
   const [compareRequested, setCompareRequested] = useState(false);
   const [rollbackTarget, setRollbackTarget] = useState<string>();
@@ -62,7 +65,31 @@ export function VersionTimeline({ facade, skillId, summary }: VersionTimelinePro
   const saveLabel = async (versionId: string) => {
     setRenameError(undefined);
     try {
-      await facade.setVersionLabel(skillId, versionId, labelDraft.trim());
+      // 统一执行反馈（任务 4）：命名是单次写入，走 instant 模式给结果反馈。
+      await runTrackedOperation({
+        kind: "version_rename",
+        label: t("skillDetail.tracker.renameVersionLabel"),
+        mode: "instant",
+        notifications,
+        translate: (key, options) => String(t(key as never, options as never)),
+        successNotice: () => ({
+          tone: "success",
+          title: t("skillDetail.tracker.renameVersionSaved"),
+          detail: labelDraft.trim(),
+        }),
+        errorNotice: (_error, message) => ({
+          tone: "danger",
+          title: t("skillDetail.tracker.renameVersionFailed"),
+          detail: message,
+        }),
+        describeError: (error: unknown) =>
+          describeNativeError(
+            error,
+            (key, describeOptions) => String(t(key as never, describeOptions as never)),
+            "skillDetail.versions.renameFailed",
+          ),
+        run: () => facade.setVersionLabel(skillId, versionId, labelDraft.trim()),
+      });
       await queryClient.invalidateQueries({ queryKey: skillDetailKeys.versions(skillId) });
       setRenamingId(undefined);
       setLabelDraft("");
@@ -75,7 +102,36 @@ export function VersionTimeline({ facade, skillId, summary }: VersionTimelinePro
     commitGuardRef.current = true;
     setCommitPending(true);
     setCommitError(undefined);
-    void facade.commitRollback(skillId, rollbackTarget).then(
+    // 回滚切换当前版本指针，是用户可触发的单次写入：instant 模式只给结果
+    // 反馈，不伪造可取消的后台阶段。
+    // 结果用用户看得到的版本名表达，不是内部版本 id：优先取列表里的展示
+    // 标签（用户命名 → vN 序号），查不到时才回退到该 id。
+    const rollbackDisplay =
+      versionsQuery.data?.find((version) => version.id === rollbackTarget)?.label
+      ?? rollbackTarget;
+    void runTrackedOperation({
+      kind: "version_rollback",
+      label: t("skillDetail.tracker.rollbackLabel"),
+      mode: "instant",
+      notifications,
+      translate: (key, options) => String(t(key as never, options as never)),
+      successNotice: () => ({
+        tone: "success",
+        title: t("skillDetail.tracker.rollbackSaved", { version: rollbackDisplay }),
+      }),
+      errorNotice: (_error, message) => ({
+        tone: "danger",
+        title: t("skillDetail.tracker.rollbackFailed"),
+        detail: message,
+      }),
+      describeError: (error: unknown) =>
+        describeNativeError(
+          error,
+          (key, describeOptions) => String(t(key as never, describeOptions as never)),
+          "skillDetail.tracker.failureUnknown",
+        ),
+      run: () => facade.commitRollback(skillId, rollbackTarget),
+    }).then(
       async () => {
         await Promise.all([
           queryClient.invalidateQueries({ queryKey: skillDetailKeys.versions(skillId) }),

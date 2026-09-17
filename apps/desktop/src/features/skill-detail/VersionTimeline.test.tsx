@@ -4,8 +4,10 @@ import userEvent from "@testing-library/user-event";
 import { I18nextProvider } from "react-i18next";
 import { describe, expect, it } from "vitest";
 import { createSkillHubI18n } from "../../i18n";
+import { operationTracker } from "../../platform/operationTracker";
+import { AppNotificationsProvider } from "../../ui/notifications";
 import type { SkillDetailSummary } from "./api";
-import { createMockSkillDetailFacade } from "./testFixtures";
+import { createMockSkillDetailFacade, detailFixture } from "./testFixtures";
 import { VersionTimeline } from "./VersionTimeline";
 
 async function renderTimeline(
@@ -18,6 +20,24 @@ async function renderTimeline(
     <QueryClientProvider client={client}>
       <I18nextProvider i18n={i18n}>
         <VersionTimeline facade={facade} skillId="skill-pdf" summary={summary} />
+      </I18nextProvider>
+    </QueryClientProvider>,
+  );
+  return facade;
+}
+
+async function renderTimelineWithBridge(
+  facade = createMockSkillDetailFacade(),
+  summary?: SkillDetailSummary,
+) {
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(
+    <QueryClientProvider client={client}>
+      <I18nextProvider i18n={i18n}>
+        <AppNotificationsProvider>
+          <VersionTimeline facade={facade} skillId="skill-pdf" summary={summary} />
+        </AppNotificationsProvider>
       </I18nextProvider>
     </QueryClientProvider>,
   );
@@ -97,4 +117,66 @@ describe("VersionTimeline", () => {
     });
   });
 
+});
+
+describe("VersionTimeline 与统一执行桥", () => {
+  it("prefers the user-named version name over the sequence label", async () => {
+    const facade = createMockSkillDetailFacade();
+    facade.getVersions = async () => [
+      {
+        ...detailFixture().versions[0],
+        label: "1.0 正式版",
+        userLabel: "1.0 正式版",
+      },
+    ];
+
+    await renderTimelineWithBridge(facade);
+
+    // 用户命名是展示标签的首选来源；命名后重取版本列表必须看到它。
+    expect(await screen.findByRole("heading", { name: "1.0 正式版" })).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "命名版本 1.0 正式版" }));
+    expect(screen.getByLabelText("版本名称")).toHaveValue("1.0 正式版");
+  });
+
+  it("reports a saved version name as one success notice without a tracked task", async () => {
+    const user = userEvent.setup();
+    await renderTimelineWithBridge();
+
+    await user.click(await screen.findByRole("button", { name: "命名版本 v2.4.1" }));
+    const input = screen.getByLabelText("版本名称");
+    await user.clear(input);
+    await user.type(input, "1.0 正式版");
+    await user.click(screen.getByRole("button", { name: "保存名称" }));
+
+    // 改名是单次同步写入：不占用在途顶栏。
+    expect(operationTracker.getSnapshot()).toEqual([]);
+    const notice = await screen.findByTestId("notice-success");
+    expect(notice).toHaveTextContent("版本命名已保存");
+    expect(notice).toHaveTextContent("1.0 正式版");
+  });
+
+  it("names the rolled-back version by its readable label, not by the internal id", async () => {
+    const facade = await renderTimelineWithBridge();
+
+    fireEvent.click(await screen.findByRole("button", { name: "回滚到 v2.4.0" }));
+    fireEvent.click(await screen.findByRole("button", { name: "确认创建回滚版本" }));
+
+    await waitFor(() => expect(facade.calls.committedRollbacks).toHaveLength(1));
+    const notice = await screen.findByTestId("notice-success");
+    expect(notice).toHaveTextContent("已回滚到 v2.4.0");
+    expect(notice.textContent).not.toContain("version-240");
+  });
+
+  it("reports a failed rollback as a danger notice and keeps the impact preview", async () => {
+    const facade = createMockSkillDetailFacade({ failRollbackCommit: true });
+    await renderTimelineWithBridge(facade);
+
+    fireEvent.click(await screen.findByRole("button", { name: "回滚到 v2.4.0" }));
+    fireEvent.click(await screen.findByRole("button", { name: "确认创建回滚版本" }));
+
+    const notice = await screen.findByTestId("notice-danger");
+    expect(notice).toHaveTextContent("回滚未能完成");
+    expect(notice).toHaveTextContent("rollback failed");
+    expect(screen.getByText("Demo Project 固定版本不受影响")).toBeVisible();
+  });
 });
