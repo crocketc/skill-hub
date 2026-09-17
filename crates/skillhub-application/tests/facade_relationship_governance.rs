@@ -1540,7 +1540,6 @@ async fn shared_reference_conversion_repoints_one_alias_and_keeps_the_shared_bod
     // 不经过产品的能力探测与回退。守卫下方显式声明这一前提：在无链接权限的
     // 宿主上按守卫跳过并输出原因（取证记入 RC-15），不影响其他用例；真实的
     // 共享引用产品路径仍由本用例在具备链接能力的主机上完整执行。
-    let fixture = fixture_with(RelationKind::SharedReference { other_consumers: 1 }).await;
     if !skillhub_adapters::deployment::DeploymentFilesystem::new()
         .available_capabilities()
         .symlink
@@ -1551,6 +1550,7 @@ async fn shared_reference_conversion_repoints_one_alias_and_keeps_the_shared_bod
         );
         return;
     }
+    let fixture = fixture_with(RelationKind::SharedReference { other_consumers: 1 }).await;
     let shared_body = fixture
         .shared_body
         .clone()
@@ -4663,17 +4663,21 @@ async fn governance_batch_requires_the_shared_impact_confirmation_per_row() {
         vec![RelationGovernanceBlocker::SharedImpactConfirmationRequired]
     );
 
-    // 提供该行的确认令牌后才可执行；批次不替用户默认同意。
+    // 提供该行的确认令牌后，确认阻塞必须消失。真实链接可用时该行会
+    // Prepared；无链接权限的宿主则会诚实报告能力失败，不能把它误判成
+    // 仍在等待用户确认。
     let confirmed = prepare_batch(
         &fixture.facade,
         vec![relation_id.clone()],
         vec![(relation_id.clone(), "confirmed".into())],
     )
     .await;
-    assert_eq!(confirmed.prepared_count, 1);
-    assert_eq!(
-        batch_item(&confirmed, &relation_id).state,
-        RelationGovernanceBatchItemState::Prepared
+    assert_eq!(confirmed.blocked_count, 0);
+    assert!(
+        !batch_item(&confirmed, &relation_id)
+            .blockers
+            .contains(&RelationGovernanceBlocker::SharedImpactConfirmationRequired),
+        "a supplied confirmation token must remove the confirmation blocker"
     );
 }
 
