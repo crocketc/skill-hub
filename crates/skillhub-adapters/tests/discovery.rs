@@ -121,17 +121,26 @@ fn discovery_exposes_pi_and_deepseek_harness_native_targets() {
         (
             "pi",
             "pi.coding-agent",
-            vec![home.join(".pi/agent/skills"), project.join(".pi/skills")],
+            vec![
+                home.join(".pi").join("agent").join("skills"),
+                project.join(".pi").join("skills"),
+            ],
         ),
         (
             "deepseek-harness",
             "deepseek-harness.tui",
-            vec![project.join(".dsh/skills"), home.join(".dsh/skills")],
+            vec![
+                project.join(".dsh").join("skills"),
+                home.join(".dsh").join("skills"),
+            ],
         ),
         (
             "deepseek-harness",
             "deepseek-harness.web",
-            vec![project.join(".dsh/skills"), home.join(".dsh/skills")],
+            vec![
+                project.join(".dsh").join("skills"),
+                home.join(".dsh").join("skills"),
+            ],
         ),
     ] {
         let targets = snapshot

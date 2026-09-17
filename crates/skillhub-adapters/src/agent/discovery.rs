@@ -133,20 +133,21 @@ fn expand_candidate(
 ) -> Vec<PathBuf> {
     let raw = candidate.path.as_str();
     if raw.contains("{user_home}") {
-        return vec![roots
-            .user_home
-            .join(trim_suffix(raw.replace("{user_home}", "")))];
+        return vec![join_relative(
+            &roots.user_home,
+            &trim_suffix(raw.replace("{user_home}", "")),
+        )];
     }
     if raw.contains("%USERPROFILE%") || raw.contains("$HOME") {
         let replaced = raw.replace("%USERPROFILE%", "").replace("$HOME", "");
-        return vec![roots.user_home.join(trim_suffix(replaced))];
+        return vec![join_relative(&roots.user_home, &trim_suffix(replaced))];
     }
     if raw.contains("{project_root}") {
         let suffix = trim_suffix(raw.replace("{project_root}", ""));
         return roots
             .project_roots
             .iter()
-            .map(|root| root.join(&suffix))
+            .map(|root| join_relative(root, &suffix))
             .collect();
     }
     Vec::new()
@@ -154,6 +155,16 @@ fn expand_candidate(
 
 fn trim_suffix(value: String) -> String {
     value.trim_start_matches(['/', '\\']).to_owned()
+}
+
+/// Candidate profiles are stored with portable separators.  Splitting before
+/// joining keeps the expanded display path in the native form of the host
+/// rather than preserving a foreign separator inside one path component.
+fn join_relative(root: &Path, suffix: &str) -> PathBuf {
+    suffix
+        .split(['/', '\\'])
+        .filter(|segment| !segment.is_empty())
+        .fold(root.to_path_buf(), |path, segment| path.join(segment))
 }
 
 fn directory_access(path: &Path, exists: bool) -> (bool, bool) {
