@@ -246,7 +246,12 @@ test("overview metrics, chart dimensions, and tag drilldown remain navigable", a
 test("discovery home and local workbench expose separate navigation and scan facts", async ({ page }) => {
   await installNativePreview(page);
   await page.goto("/discovery");
-  await expect(page.getByRole("heading", { name: "Discover", exact: true })).toBeVisible();
+  // 2026-09-17 顶栏标题降级为非 heading（基线回归 §5.4）：模块名经顶栏标题
+  // 断言；页面自身 h1 为发现首页标语。
+  await expect(page.locator(".sh-app-shell__title")).toHaveText("Discover");
+  await expect(
+    page.getByRole("heading", { name: "Find Skills from trusted sources", exact: true }),
+  ).toBeVisible();
   await page.locator("article").filter({ has: page.getByRole("heading", { name: "Local discovery" }) }).getByRole("button", { name: "Open" }).click();
   await expect(page).toHaveURL(/\/discovery\/local$/);
   await expect(page.getByRole("heading", { name: "Local discovery", exact: true })).toBeVisible();
@@ -349,7 +354,11 @@ test("pending, recovery, and security routes expose state boundaries", async ({ 
   await expect(page.getByRole("status")).toContainText("No pending items match this filter");
 
   await page.goto("/recovery");
-  await expect(page.getByRole("heading", { name: "Recovery" })).toBeVisible();
+  // 2026-09-17 顶栏标题降级为非 heading（基线回归 §5.4）：恢复页经页面自身
+  // 标题（recovery.heading）断言，不再依赖顶栏 h1 的子串匹配。
+  await expect(
+    page.getByRole("heading", { name: "Finish the interrupted operation" }),
+  ).toBeVisible();
   await page.getByRole("tab", { name: "Backup & restore" }).click();
   await expect(page.getByText(/full backup\/restore flow/i)).toBeVisible();
 

@@ -40,7 +40,9 @@ export type RouteTitleKey =
   | "navigation.operations"
   | "navigation.pending"
   | "navigation.projects"
-  | "navigation.settings";
+  | "navigation.settings"
+  // 任务 5：技能关系模块标题键落在 relationships.* 命名空间（冻结词汇边界）。
+  | "relationships.nav";
 
 export function resolveRouteTitleKey(pathname: string): RouteTitleKey {
   if (pathname === "/") {
@@ -58,6 +60,9 @@ export function resolveRouteTitleKey(pathname: string): RouteTitleKey {
     pathname.startsWith("/__preview/skill-detail/")
   ) {
     return "navigation.library";
+  }
+  if (pathname.startsWith("/relationships")) {
+    return "relationships.nav";
   }
   if (pathname.startsWith("/operations")) {
     return "navigation.operations";
@@ -106,6 +111,10 @@ export function resolveSubRouteFallback(pathname: string): string | null {
   }
   if (pathname.startsWith("/discovery/")) {
     return "/discovery";
+  }
+  // 任务 5：关系子页（冲突处理/关系治理）回退到模块主页。
+  if (pathname.startsWith("/relationships/")) {
+    return "/relationships";
   }
   if (pathname === "/library/combinations") {
     return "/library";
@@ -227,10 +236,16 @@ export function AppShell({ refreshSnapshot, snapshot, verification }: AppShellPr
                   disabled={!historyControls.canGoForward}
                   onClick={() => navigate(1)}
                 />
-                <h1 data-tauri-drag-region>{title}</h1>
+                {/* 回归修复（基线 E2E §5.4）：顶栏标题自 2026-09-17 起降级为
+                    非 heading，route-level h1 由页面内容自持，保证“每路由唯一
+                    h1”（T3-C 契约）；样式类保持原 h1 的视觉规格。 */}
+                <p className="sh-app-shell__title" data-tauri-drag-region>{title}</p>
               </div>
               <div className="sh-app-shell__topbar-context" data-tauri-drag-region>
+                {/* 任务 5 fix 1：在途任务摘要居中（计划口径“顶栏居中 360px 摘要”），
+                    与库路由视图切换器并存（切换器在前）；非库路由仅摘要居中。 */}
                 {isLibraryViewModeRoute(pathname) ? <LibraryViewModeSwitch /> : null}
+                <TaskStatusIndicator />
               </div>
               <div className="sh-app-shell__topbar-end" data-tauri-drag-region>
                 {verification.kind === "verifying" ? (
@@ -238,7 +253,6 @@ export function AppShell({ refreshSnapshot, snapshot, verification }: AppShellPr
                     {t("appShell.verification")}
                   </span>
                 ) : null}
-                <TaskStatusIndicator />
                 <NotificationBell />
                 <WindowControls />
               </div>

@@ -983,7 +983,9 @@ a {
   background: var(--color-page);
 }
 
-.sh-app-shell__topbar h1 {
+/* 顶栏标题原为 h1；2026-09-17 起降级为非 heading（.sh-app-shell__title），
+ * route-level h1 由页面自持，视觉规格保持不变。 */
+.sh-app-shell__topbar .sh-app-shell__title {
   margin: 0;
   padding-inline: var(--space-2);
   border-bottom: 2px solid var(--ui-accent);
@@ -999,19 +1001,20 @@ a {
   gap: var(--space-1);
 }
 
-.sh-app-shell__topbar-start h1 {
+.sh-app-shell__topbar-start .sh-app-shell__title {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-/* 技能库视图切换位于右侧操作簇，紧邻通知中心左侧。 */
+/* 任务 5 fix 1：context 区为顶栏居中列，承载库视图切换器与在途任务摘要；
+   非库路由仅摘要居中（360px 固定宽，见 .sh-task-summary）。 */
 .sh-app-shell__topbar-context {
   display: flex;
   min-width: 0;
   flex: 1 1 auto;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: center;
   gap: var(--space-1);
 }
 

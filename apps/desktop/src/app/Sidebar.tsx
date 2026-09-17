@@ -6,32 +6,38 @@ import { preloadRoute } from "./router";
 
 interface NavigationItem {
   href: string;
+  /**
+   * 完整 i18n 键：既有条目沿用 navigation.*；任务 5 起新键只允许落在
+   * relationships.* 命名空间（冻结词汇边界），故不再按前缀拼接。
+   */
   translationKey:
-    | "overview"
-    | "library"
-    | "discovery"
-    | "agents"
-    | "projects"
-    | "pending"
-    | "operations"
-    | "settings";
+    | "navigation.overview"
+    | "navigation.library"
+    | "relationships.nav"
+    | "navigation.discovery"
+    | "navigation.agents"
+    | "navigation.projects"
+    | "navigation.pending"
+    | "navigation.operations"
+    | "navigation.settings";
   icon: IconName;
 }
 
 type NavigationIconName = IconName;
 
 const primaryNavigation: NavigationItem[] = [
-  { href: "/", translationKey: "overview", icon: "overview" },
-  { href: "/library", translationKey: "library", icon: "library" },
-  { href: "/discovery", translationKey: "discovery", icon: "discovery" },
-  { href: "/agents", translationKey: "agents", icon: "agents" },
-  { href: "/projects", translationKey: "projects", icon: "projects" },
-  { href: "/pending", translationKey: "pending", icon: "pending" },
+  { href: "/", translationKey: "navigation.overview", icon: "overview" },
+  { href: "/library", translationKey: "navigation.library", icon: "library" },
+  { href: "/relationships", translationKey: "relationships.nav", icon: "relationships" },
+  { href: "/discovery", translationKey: "navigation.discovery", icon: "discovery" },
+  { href: "/agents", translationKey: "navigation.agents", icon: "agents" },
+  { href: "/projects", translationKey: "navigation.projects", icon: "projects" },
+  { href: "/pending", translationKey: "navigation.pending", icon: "pending" },
 ];
 
 const pinnedNavigation: NavigationItem[] = [
-  { href: "/operations", translationKey: "operations", icon: "operations" },
-  { href: "/settings", translationKey: "settings", icon: "settings" },
+  { href: "/operations", translationKey: "navigation.operations", icon: "operations" },
+  { href: "/settings", translationKey: "navigation.settings", icon: "settings" },
 ];
 
 export function sidebarNavigationEnd(href: string) {
@@ -58,7 +64,7 @@ function NavigationLinks({ items, collapsed }: { items: NavigationItem[]; collap
           (item.href === "/"
             ? pathname === "/"
             : pathname === item.href || pathname.startsWith(`${item.href}/`));
-        const label = t(`navigation.${item.translationKey}`);
+        const label = t(item.translationKey);
         return (
           <li key={item.href}>
             <Link
