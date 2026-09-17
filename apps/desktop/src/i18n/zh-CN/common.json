@@ -2024,6 +2024,9 @@
       "loadFailed": "视图偏好未能恢复，本次会话使用默认筛选。",
       "saveFailed": "视图偏好未能保存，本次会话内筛选仍然有效。"
     },
+    "notices": {
+      "batchDone": "已处理 {{count}} 项"
+    },
     "errors": {
       "generic": "操作失败（{{code}}）。请稍后重试。"
     }

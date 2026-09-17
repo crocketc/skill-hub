@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { describeNativeError } from "../../api/nativeErrors";
 import { formatDateTime, resolveLocale } from "../../i18n";
+import { operationTracker, type OperationTracker } from "../../platform/operationTracker";
+import { runTrackedOperation } from "../../platform/runTrackedOperation";
 import { Button } from "../../ui/Button";
 import { ConfirmDialog } from "../../ui/ConfirmDialog";
 import { DataState } from "../../ui/DataState";
@@ -10,6 +12,7 @@ import { Icon, type IconName } from "../../ui/Icon";
 import { PageFrame } from "../../ui/PageFrame";
 import { PageHeader } from "../../ui/PageHeader";
 import { Select } from "../../ui/Select";
+import { useOptionalAppNotifications } from "../../ui/notifications";
 import { type HandledEntry, type PendingFacade, type PendingItem, type PendingKind, type PendingRisk, unavailablePendingFacade } from "./api";
 import "./pending.css";
 
@@ -23,9 +26,13 @@ const RISK_ICONS: Record<PendingRisk, IconName> = {
   low: "info",
 };
 
-export function PendingPage({ facade = unavailablePendingFacade }: { facade?: PendingFacade }) {
+export function PendingPage({
+  facade = unavailablePendingFacade,
+  tracker = operationTracker,
+}: { facade?: PendingFacade; tracker?: OperationTracker }) {
   const { t, i18n } = useTranslation();
   const locale = resolveLocale([i18n.resolvedLanguage ?? i18n.language]);
+  const notifications = useOptionalAppNotifications();
   // 历史 createdAt 是任意来源的即时时间字符串；非法值原样回显，不伪造格式化结果。
   const formatTimestamp = (value: string) => {
     const date = new Date(value);
@@ -48,6 +55,8 @@ export function PendingPage({ facade = unavailablePendingFacade }: { facade?: Pe
   // describeNativeError 以动态键调用翻译；i18next 的强类型键联合在此收窄。
   const describe = (reason: unknown) =>
     describeNativeError(reason, (key, options) => String(t(key as never, options as never)), "pending.errors.generic");
+  // 桥的 translate/describeError 复用页面同一份描述：通知详情与页面局部提示逐字同源。
+  const translate = (key: string, options?: Record<string, unknown>) => String(t(key as never, options as never));
   const deferReason = (days: number) => t("pending.actions.deferReason", { days });
   const ignoreReason = () => t("pending.actions.ignoreReason");
   const reload = () => void facade.list().then(setItems).catch((reason: unknown) => setError(describe(reason)));
@@ -85,52 +94,87 @@ export function PendingPage({ facade = unavailablePendingFacade }: { facade?: Pe
   const toggleAll = () => setSelectedIds(allVisibleSelected
     ? []
     : [...new Set([...selectedIds, ...visibleItems.map((item) => item.id)])]);
-  const runOne = async (item: PendingItem, perform: (target: PendingItem) => Promise<void>) => {
+  // 统一执行桥（任务 4）：单条处置是单次同步写入，走 instant——不占在途顶栏，
+  // 但成功/失败都留下通知；失败描述与页面局部提示同源。
+  const runOne = (item: PendingItem, action: { kind: string; label: string; perform: (target: PendingItem) => Promise<void> }) => {
     if (busy) return;
     setActionError(undefined);
     setProcessingItemId(item.id);
-    try {
-      await perform(item);
-      reload();
-    } catch (reason) {
-      setActionError(describe(reason));
-    } finally {
-      setProcessingItemId(undefined);
-    }
+    void runTrackedOperation({
+      kind: action.kind,
+      label: action.label,
+      mode: "instant",
+      tracker,
+      notifications,
+      translate,
+      describeError: describe,
+      run: () => action.perform(item),
+    }).then(
+      () => reload(),
+      (reason: unknown) => setActionError(describe(reason)),
+    ).finally(() => setProcessingItemId(undefined));
   };
-  const runBatch = async (action: "defer" | "ignore") => {
+  // 批量暂缓/忽略进 phased 在途投影：逐项推进进度，顶栏可见；首错即停，
+  // 已完成项经刷新反映到列表（部分成功保留成功项），失败描述三端同源。
+  const runBatch = (action: "defer" | "ignore") => {
     if (busy || !items.length) return;
     const selected = items.filter((item) => selectedIds.includes(item.id));
     if (!selected.length) return;
     setActionError(undefined);
     setBatchProgress({ completed: 0, total: selected.length });
-    try {
-      let completed = 0;
-      for (const item of selected) {
-        if (action === "defer") await facade.defer([item], BATCH_DEFER_DAYS, deferReason(BATCH_DEFER_DAYS));
-        else await facade.ignore([item], ignoreReason());
-        completed += 1;
-        setBatchProgress({ completed, total: selected.length });
-      }
-      setSelectedIds([]);
-      setBatchProgress(undefined);
-      reload();
-    } catch (reason) {
-      setBatchProgress(undefined);
-      setActionError(describe(reason));
-    }
+    const label = action === "defer" ? t("pending.batch.defer7") : t("pending.batch.ignore");
+    void runTrackedOperation<number>({
+      kind: action === "defer" ? "pending_defer" : "pending_ignore",
+      label,
+      total: selected.length,
+      tracker,
+      notifications,
+      translate,
+      describeError: describe,
+      summarize: (completed) => ({ succeeded: completed, failed: 0, skipped: 0 }),
+      successNotice: (_completed, summary) => ({
+        tone: "success",
+        title: label,
+        detail: t("pending.notices.batchDone", { count: summary?.succeeded ?? selected.length }),
+      }),
+      run: async (handle) => {
+        let completed = 0;
+        for (const item of selected) {
+          if (action === "defer") await facade.defer([item], BATCH_DEFER_DAYS, deferReason(BATCH_DEFER_DAYS));
+          else await facade.ignore([item], ignoreReason());
+          completed += 1;
+          setBatchProgress({ completed, total: selected.length });
+          handle.progress(completed, selected.length);
+        }
+        return completed;
+      },
+    }).then(
+      () => {
+        setSelectedIds([]);
+        reload();
+      },
+      (reason: unknown) => {
+        setActionError(describe(reason));
+        reload();
+      },
+    ).finally(() => setBatchProgress(undefined));
   };
-  const undo = async (entry: HandledEntry) => {
+  const undo = (entry: HandledEntry) => {
     if (undoingId) return;
     setUndoingId(entry.id);
-    try {
-      await facade.unignore(entry.id);
-      reloadHandled();
-    } catch (reason) {
-      setHandledError(describe(reason));
-    } finally {
-      setUndoingId(undefined);
-    }
+    void runTrackedOperation({
+      kind: "pending_unignore",
+      label: t("pending.history.undo"),
+      mode: "instant",
+      tracker,
+      notifications,
+      translate,
+      describeError: describe,
+      run: () => facade.unignore(entry.id),
+    }).then(
+      () => reloadHandled(),
+      (reason: unknown) => setHandledError(describe(reason)),
+    ).finally(() => setUndoingId(undefined));
   };
   return <PageFrame width="wide"><div className="sh-workflow-page sh-pending">
     <PageHeader description={t("pending.description")} headingLevel="h1" title={t("pending.heading")} />
@@ -183,10 +227,10 @@ export function PendingPage({ facade = unavailablePendingFacade }: { facade?: Pe
           {visibleItems.map((item) => {
             // 每类事项的“建议操作”：试用到期→转为常规、安全发现→重新检查、恢复事项→确认恢复。
             const suggested = item.kind === "trial_due"
-              ? { label: t("pending.actions.convert"), perform: (target: PendingItem) => facade.convert(target) }
+              ? { kind: "pending_convert", label: t("pending.actions.convert"), perform: (target: PendingItem) => facade.convert(target) }
               : item.kind === "security_finding"
-                ? { label: t("pending.actions.recheck"), perform: (target: PendingItem) => facade.recheck(target) }
-                : { label: t("pending.actions.recover"), perform: (target: PendingItem) => facade.recover(target) };
+                ? { kind: "pending_recheck", label: t("pending.actions.recheck"), perform: (target: PendingItem) => facade.recheck(target) }
+                : { kind: "pending_recover", label: t("pending.actions.recover"), perform: (target: PendingItem) => facade.recover(target) };
             return <li className="sh-pending-item" key={item.id}>
               <input
                 aria-label={t("pending.batch.selectItem", { subject: item.subject })}
@@ -226,7 +270,7 @@ export function PendingPage({ facade = unavailablePendingFacade }: { facade?: Pe
                 <Button
                   disabled={busy}
                   loading={processingItemId === item.id}
-                  onClick={() => void runOne(item, suggested.perform)}
+                  onClick={() => void runOne(item, suggested)}
                   size="sm"
                 >
                   {suggested.label}
@@ -244,7 +288,7 @@ export function PendingPage({ facade = unavailablePendingFacade }: { facade?: Pe
                 <Button
                   disabled={busy}
                   loading={processingItemId === item.id}
-                  onClick={() => void runOne(item, (target) => facade.defer([target], deferDays, deferReason(deferDays)))}
+                  onClick={() => void runOne(item, { kind: "pending_defer", label: t("pending.actions.defer"), perform: (target) => facade.defer([target], deferDays, deferReason(deferDays)) })}
                   size="sm"
                   variant="secondary"
                 >
@@ -254,7 +298,7 @@ export function PendingPage({ facade = unavailablePendingFacade }: { facade?: Pe
                   cancelLabel={t("actions.cancel")}
                   confirmLabel={t("pending.ignoreConfirm.confirm")}
                   description={t("pending.ignoreConfirm.description")}
-                  onConfirm={() => void runOne(item, (target) => facade.ignore([target], ignoreReason()))}
+                  onConfirm={() => void runOne(item, { kind: "pending_ignore", label: t("pending.actions.ignore"), perform: (target) => facade.ignore([target], ignoreReason()) })}
                   title={t("pending.ignoreConfirm.title")}
                   trigger={<Button disabled={busy} size="sm" variant="secondary">{t("pending.actions.ignore")}</Button>}
                   variant="danger"

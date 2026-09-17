@@ -2024,6 +2024,9 @@
       "loadFailed": "The saved view could not be restored; the default filter is used for this session.",
       "saveFailed": "The view preference could not be saved; the filter still applies for this session."
     },
+    "notices": {
+      "batchDone": "Processed {{count}} item(s)"
+    },
     "errors": {
       "generic": "The operation failed ({{code}}). Please try again later."
     }

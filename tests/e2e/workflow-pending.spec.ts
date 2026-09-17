@@ -91,7 +91,11 @@ test("reports a failed action inline and keeps the list usable", async ({ page }
   const firstItem = page.locator(".sh-pending-item").first();
   await firstItem.getByRole("button", { name: "Defer" }).first().click();
 
-  await expect(page.getByRole("alert")).toContainText("The operation failed");
+  // 统一执行反馈：失败同时进通知中心（danger toast）与页面行内提示，两者同源；
+  // 因此 alert 有两处，行内提示用专用类名定位，toast 用通知的 testid 定位。
+  await expect(page.locator(".sh-pending__action-error")).toContainText("The operation failed");
+  await expect(page.getByTestId("notice-danger")).toContainText("The operation failed");
+  await expect(page.getByTestId("notice-danger")).not.toContainText("[object Object]");
   await expect(page.getByText("pdf-reader")).toBeVisible();
   await expect(page.getByText("release-notes")).toBeVisible();
   // 失败不锁死工作台：仍可选择事项并继续批量操作。

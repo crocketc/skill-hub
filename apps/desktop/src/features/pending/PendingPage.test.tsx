@@ -2,6 +2,8 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import { I18nextProvider } from "react-i18next";
 import { expect, it, vi } from "vitest";
 import { createSkillHubI18n } from "../../i18n";
+import { createOperationTracker, type OperationTracker } from "../../platform/operationTracker";
+import { AppNotificationsProvider } from "../../ui/notifications";
 import type { HandledEntry, PendingFacade, PendingItem } from "./api";
 import { PendingPage } from "./PendingPage";
 
@@ -301,4 +303,132 @@ it("announces how many items are selected in the batch bar", async () => {
 
   fireEvent.click(screen.getByLabelText("选择 skill-b"));
   expect(screen.getByText("已选 2 项")).toBeInTheDocument();
+});
+
+// 统一执行桥（任务 4 最后一个未收口入口）：处置写入（单条/批量/撤销）进
+// runTrackedOperation——单条即时写入不占在途顶栏，批量进 phased 在途投影；
+// 通知详情与页面局部提示同源，结构化 AppError 不允许 [object Object]。
+async function renderBridgedPage(facade: PendingFacade, tracker: OperationTracker = createOperationTracker()) {
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  render(
+    <I18nextProvider i18n={i18n}>
+      <AppNotificationsProvider>
+        <PendingPage facade={facade} tracker={tracker} />
+      </AppNotificationsProvider>
+    </I18nextProvider>,
+  );
+  await act(async () => {});
+  return tracker;
+}
+
+it("notifies a successful single disposition through the unified bridge", async () => {
+  let calls = 0;
+  const list = vi.fn(async () => {
+    calls += 1;
+    return calls === 1 ? [trialItem] : [];
+  });
+  const defer = vi.fn(async () => undefined);
+  await renderBridgedPage(fakeFacade({ list, defer }));
+  await screen.findByText("skill-a");
+
+  const row = screen.getByText("skill-a").closest("li") as HTMLElement;
+  fireEvent.click(within(row).getByRole("button", { name: "暂缓" }));
+
+  const toast = await screen.findByTestId("notice-success");
+  expect(toast).toHaveTextContent("暂缓");
+  await waitFor(() => expect(list).toHaveBeenCalledTimes(2));
+});
+
+it("renders a structured single-write failure readably and identically in notice and page", async () => {
+  const defer = vi.fn(async () => {
+    throw { code: "io.denied" };
+  });
+  await renderBridgedPage(fakeFacade({ list: async () => [trialItem], defer }));
+  await screen.findByText("skill-a");
+
+  const row = screen.getByText("skill-a").closest("li") as HTMLElement;
+  fireEvent.click(within(row).getByRole("button", { name: "暂缓" }));
+
+  const readable = "操作失败（io.denied）。请稍后重试。";
+  const toast = await screen.findByTestId("notice-danger");
+  expect(toast).toHaveTextContent(readable);
+  expect(toast).not.toHaveTextContent("[object Object]");
+  await waitFor(() => {
+    const pageAlert = screen.getAllByRole("alert").find((el) => el.getAttribute("data-testid") === null);
+    expect(pageAlert).toHaveTextContent(readable);
+  });
+});
+
+it("projects the batch onto the tracker and reports a counted success notice", async () => {
+  const gates: Array<() => void> = [];
+  const defer = vi.fn((_items: PendingItem[], _days: number, _reason: string) => new Promise<void>((resolve) => { gates.push(resolve); }));
+  const tracker = await renderBridgedPage(fakeFacade({ list: async () => [trialItem, findingItem], defer }));
+  await screen.findByText("skill-a");
+
+  fireEvent.click(screen.getByLabelText("选择 skill-a"));
+  fireEvent.click(screen.getByLabelText("选择 skill-b"));
+  fireEvent.click(screen.getByRole("button", { name: "批量暂缓 7 天" }));
+
+  await waitFor(() => {
+    const inFlight = tracker.getSnapshot().filter((op) => op.status === "queued" || op.status === "running");
+    expect(inFlight).toHaveLength(1);
+    expect(inFlight[0]?.label).toBe("批量暂缓 7 天");
+  });
+  expect(screen.getByText("正在处理 0/2")).toBeInTheDocument();
+
+  await act(async () => { gates[0]?.(); });
+  await act(async () => { gates[1]?.(); });
+
+  const toast = await screen.findByTestId("notice-success");
+  expect(toast).toHaveTextContent("批量暂缓 7 天");
+  expect(toast).toHaveTextContent("已处理 2 项");
+  await waitFor(() => {
+    const ops = tracker.getSnapshot();
+    expect(ops).toHaveLength(1);
+    expect(ops[0]?.status).toBe("success");
+    expect(ops[0]?.resultSummary).toEqual({ succeeded: 2, failed: 0, skipped: 0 });
+  });
+});
+
+it("reports a mid-batch failure readably in notice, page and tracker terminal state", async () => {
+  const defer = vi.fn(async (_items: PendingItem[], _days: number, _reason: string) => {
+    if (defer.mock.calls.length === 2) throw { code: "io.denied" };
+  });
+  const list = vi.fn(async () => [trialItem, findingItem]);
+  const tracker = await renderBridgedPage(fakeFacade({ list, defer }));
+  await screen.findByText("skill-a");
+
+  fireEvent.click(screen.getByLabelText("选择 skill-a"));
+  fireEvent.click(screen.getByLabelText("选择 skill-b"));
+  fireEvent.click(screen.getByRole("button", { name: "批量暂缓 7 天" }));
+
+  const readable = "操作失败（io.denied）。请稍后重试。";
+  const toast = await screen.findByTestId("notice-danger");
+  expect(toast).toHaveTextContent(readable);
+  expect(toast).not.toHaveTextContent("[object Object]");
+  expect(screen.getAllByRole("alert").map((el) => el.textContent)).toContain(readable);
+  await waitFor(() => {
+    const ops = tracker.getSnapshot();
+    expect(ops).toHaveLength(1);
+    expect(ops[0]?.status).toBe("failed");
+    expect(ops[0]?.error).toBe(readable);
+  });
+  // 首错即停：第二项失败后不再继续，但已完成的第一项保留（刷新反映真实进度）。
+  expect(defer).toHaveBeenCalledTimes(2);
+  await waitFor(() => expect(list).toHaveBeenCalledTimes(2));
+});
+
+it("notifies a successful handled-entry undo through the bridge", async () => {
+  const listHandled = vi.fn(async () => [
+    { id: "rule-1", pendingId: "trial_due:skill-a:trial", reason: "暂缓 7 天后再提醒", createdAt: "2026-09-01T10:00:00+08:00", deferUntil: "2026-09-08" },
+  ]);
+  const unignore = vi.fn(async () => undefined);
+  await renderBridgedPage(fakeFacade({ listHandled, unignore }));
+  await screen.findByText("trial_due:skill-a:trial");
+
+  fireEvent.click(screen.getByRole("button", { name: "撤销" }));
+
+  const toast = await screen.findByTestId("notice-success");
+  expect(toast).toHaveTextContent("撤销");
+  await waitFor(() => expect(listHandled).toHaveBeenCalledTimes(2));
 });
