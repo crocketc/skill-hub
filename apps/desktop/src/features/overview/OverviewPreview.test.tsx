@@ -1,11 +1,12 @@
 import { render, screen } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { I18nextProvider } from "react-i18next";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, vi } from "vitest";
 import { createSkillHubI18n } from "../../i18n";
 import { ThemeProvider } from "../../styles/ThemeProvider";
 import { OverviewPage } from "./OverviewPage";
-import { OverviewPreviewShell } from "./OverviewPreview";
+import { OverviewPreviewShell, overviewPreviewRelationshipsFacade } from "./OverviewPreview";
 import overviewCss from "./overview.css?raw";
 
 function mockBrowserPreferences() {
@@ -33,17 +34,25 @@ afterEach(() => {
 it("mounts the deterministic overview preview with deployment, tag, and pending fixture data", async () => {
   const i18n = await createSkillHubI18n(["en-US"]);
   mockBrowserPreferences();
+  // 任务 10：预览桩注入确定性关系事实（任务 9 §7.4 桩需求），e2e 几何与
+  // 深链断言在真实渲染路径（router QueryClientProvider + facade）下运行。
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 
   render(
     <I18nextProvider i18n={i18n}>
       <ThemeProvider>
-        <MemoryRouter initialEntries={["/__preview/overview"]}>
-          <Routes>
-            <Route element={<OverviewPreviewShell />} path="__preview/overview">
-              <Route index element={<OverviewPage />} />
-            </Route>
-          </Routes>
-        </MemoryRouter>
+        <QueryClientProvider client={queryClient}>
+          <MemoryRouter initialEntries={["/__preview/overview"]}>
+            <Routes>
+              <Route element={<OverviewPreviewShell />} path="__preview/overview">
+                <Route
+                  index
+                  element={<OverviewPage relationshipsFacade={overviewPreviewRelationshipsFacade} />}
+                />
+              </Route>
+            </Routes>
+          </MemoryRouter>
+        </QueryClientProvider>
       </ThemeProvider>
     </I18nextProvider>,
   );
@@ -57,11 +66,21 @@ it("mounts the deterministic overview preview with deployment, tag, and pending 
   expect(
     screen.getByRole("link", { name: "3 Agents (3 configured · 5 discovered)" }),
   ).toBeVisible();
-  // 预览夹具没有 QueryClientProvider：关系摘要按占位降级（任务 10 的预览桩
-  // 会注入确定性事实），但绝不吞没图表/待办或崩溃页面。
-  expect(screen.getByRole("region", { name: "Skill relationships" })).toBeVisible();
-  expect(screen.getAllByText("–")).toHaveLength(4);
-  expect(screen.queryByRole("link", { name: /unconfirmed conflicts/i })).not.toBeInTheDocument();
+  // 确定性关系事实落地后：冲突指标给出真实计数与钻取（不再是占位符）。
+  expect(
+    await screen.findByRole("link", { name: "2 Unconfirmed relationship conflicts" }),
+  ).toBeVisible();
+  // 三个关系缩略入口按确定性计数渲染为深链。
+  expect(
+    await screen.findByRole("link", { name: "Open relationship graph (4 skills with displayable relations)" }),
+  ).toBeVisible();
+  expect(
+    screen.getByRole("link", { name: "Open conflict workspace (2 unconfirmed conflicts)" }),
+  ).toBeVisible();
+  expect(
+    screen.getByRole("link", { name: "Open relationship governance (9 relation edges)" }),
+  ).toBeVisible();
+  expect(screen.queryByText("–")).not.toBeInTheDocument();
 });
 
 it("fills the remaining shell height without a viewport-derived outer scroll range", () => {

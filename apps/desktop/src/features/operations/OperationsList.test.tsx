@@ -1,9 +1,10 @@
 import { render, screen, within } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { I18nextProvider } from "react-i18next";
 import { createSkillHubI18n } from "../../i18n";
 import { createOperationTracker } from "../../platform/operationTracker";
 import { OperationsList } from "./OperationsList";
+import { OperationsRecordsPage } from "./OperationsRecordsPage";
 import type { RecentOperationsReader } from "./api";
 
 const recent: RecentOperationsReader = {
@@ -42,6 +43,23 @@ async function renderList(
     </I18nextProvider>,
   );
 }
+
+// T3-C「每路由唯一 h1」（任务 10 h1 sweep）：操作记录页自持 route-level h1。
+it("keeps a single page-level h1 for the operations records outline", async () => {
+  const i18n = await createSkillHubI18n(["en-US"]);
+  render(
+    <I18nextProvider i18n={i18n}>
+      <MemoryRouter initialEntries={["/operations"]}>
+        <Routes>
+          <Route path="/operations" element={<OperationsRecordsPage recent={recent} />} />
+        </Routes>
+      </MemoryRouter>
+    </I18nextProvider>,
+  );
+
+  expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
+  expect(screen.getByRole("heading", { level: 1, name: "Operation records" })).toBeVisible();
+});
 
 it("lists recent native operations with links to their detail pages", async () => {
   await renderList();

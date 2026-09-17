@@ -5,6 +5,7 @@ import { MemoryRouter } from "react-router-dom";
 import { expect, it, vi } from "vitest";
 import { createSkillHubI18n } from "../../i18n";
 import type { DirectoryPicker } from "../../platform/directoryPicker";
+import { createOperationTracker } from "../../platform/operationTracker";
 import { type AgentFacade, type AgentView } from "./api";
 import { AgentListPage } from "./AgentListPage";
 
@@ -87,6 +88,26 @@ it("groups agents by brand and refreshes the real discovery facts", async () => 
 
   await waitFor(() => expect(facade.rescan).toHaveBeenCalledTimes(1));
   await waitFor(() => expect(facade.list).toHaveBeenCalledTimes(2));
+});
+
+it("records agent rescans in the unified operation tracker", async () => {
+  const user = userEvent.setup();
+  const facade = facadeWith();
+  const tracker = createOperationTracker();
+
+  render(
+    <MemoryRouter>
+      <I18nextProvider i18n={await createSkillHubI18n(["zh-CN"])}>
+        <AgentListPage facade={facade} picker={pickingPicker} tracker={tracker} />
+      </I18nextProvider>
+    </MemoryRouter>,
+  );
+
+  await screen.findByRole("heading", { name: "OpenAI" });
+  await user.click(screen.getByRole("button", { name: "重新扫描" }));
+
+  await waitFor(() => expect(tracker.getSnapshot()[0]?.status).toBe("success"));
+  expect(tracker.getSnapshot()[0]).toMatchObject({ kind: "agent_rescan", total: 1 });
 });
 
 it("renders brand group headings as branded color tags", async () => {

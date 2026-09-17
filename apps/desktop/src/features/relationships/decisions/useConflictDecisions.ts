@@ -59,7 +59,7 @@ export interface ConflictAiAvailability {
 
 export function useConflictAiAvailability(facade: ConflictDecisionsFacade): ConflictAiAvailability {
   const query = useQuery({
-    queryKey: [...relationshipsKeys.root, "decisions", "ai-available"] as const,
+    queryKey: [relationshipsKeys.root, "decisions", "ai-available"] as const,
     queryFn: () => facade.isAiAvailable(),
     retry: false,
     staleTime: 60_000,

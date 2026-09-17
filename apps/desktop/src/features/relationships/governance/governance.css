@@ -37,6 +37,8 @@
 
 .sh-governance__list {
   max-height: 60vh;
+  max-width: 100%;
+  overflow-x: auto;
   overflow-y: auto;
 }
 

@@ -171,6 +171,7 @@ export function OverviewPage({ relationshipsFacade }: OverviewPageProps) {
     <PageFrame fill width="wide">
       <PageHeader
         description={t("overview.page.description")}
+        headingLevel="h1"
         title={t("navigation.overview")}
       />
       <section className="sh-overview">

@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { I18nextProvider } from "react-i18next";
 import { createSkillHubI18n } from "../../i18n";
+import { createOperationTracker } from "../../platform/operationTracker";
 import type {
   DiscoverySnapshot,
   ScanResult,
@@ -167,6 +168,24 @@ it("re-scans and classifies results into the five categories", async () => {
   expect(screen.getByText("冲突 1")).toBeVisible();
   expect(screen.getByText("疑似重复 0")).toBeVisible();
   expect(screen.getByText("无法读取 1")).toBeVisible();
+});
+
+it("records a completed discovery rescan in the operation tracker", async () => {
+  const tracker = createOperationTracker();
+  const scanTargets = vi.fn(async () => scanResult);
+  render(
+    <I18nextProvider i18n={createSkillHubI18nSync()}>
+      <LocalDiscoveryWorkbench
+        facade={{ getDiscoverySnapshot: async () => snapshot, scanTargets, searchOnlineSources: async () => searchPage([]), ...repoDiscoveryStubs }}
+        tracker={tracker}
+      />
+    </I18nextProvider>,
+  );
+
+  await click(await screen.findByRole("button", { name: "重新扫描" }));
+
+  await waitFor(() => expect(tracker.getSnapshot()[0]?.status).toBe("success"));
+  expect(tracker.getSnapshot()[0]).toMatchObject({ kind: "discovery_scan", total: 1 });
 });
 
 it("explains each category through tooltips", async () => {

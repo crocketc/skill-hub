@@ -128,6 +128,16 @@ afterEach(() => {
 });
 
 describe("SkillLibraryPage", () => {
+  // T3-C「每路由唯一 h1」（任务 10 h1 sweep）：技能库页面自持 route-level h1
+  // （视觉上隐藏，不改变工具栏布局契约）。
+  it("keeps a single page-level h1 for the skill library outline", async () => {
+    const facade = createMockSkillLibraryFacade();
+    renderLibrary({ facade });
+
+    expect(await screen.findByRole("heading", { level: 1, name: "Skill library" })).toBeVisible();
+    expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
+  });
+
   it("slides the batch deletion confirmation up from the bottom without moving the list (M-21)", async () => {
     const facade = createMockSkillLibraryFacade();
     const removalFacade: RemovalFacade = {

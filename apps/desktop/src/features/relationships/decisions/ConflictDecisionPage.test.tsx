@@ -359,6 +359,54 @@ describe("ConflictDecisionPage", () => {
     });
   });
 
+  // 任务 7 review minor（任务 10 sweep）：决定写入失败必须给出 danger 通知、
+  // 不产生 unhandled rejection（void resolve 的 .catch 一致性），且即时写入
+  // 不占用在途顶栏（tracker 保持空）。
+  it("surfaces a failed decision as a danger notice without an unhandled rejection", async () => {
+    const facade = createFacade(workspaceFixture());
+    facade.resolveConflictCase = vi.fn(async () => {
+      throw new Error("conflict.revision_conflict");
+    });
+    const { notifications, tracker } = await renderPage(facade);
+    await screen.findByText("冲突组 conflict:a");
+
+    fireEvent.click(screen.getByRole("button", { name: "保留为独立 Skill" }));
+
+    await waitFor(() => {
+      expect(notifications.notify).toHaveBeenCalledWith(
+        expect.objectContaining({ tone: "danger", title: "未能写入冲突结论" }),
+      );
+    });
+    // 即时写入命令（单次同步响应）不进在途投影、不让顶栏闪烁。
+    expect(tracker.getSnapshot()).toHaveLength(0);
+    // 写入失败时该组留在队列：焦点不推进、不产生伪成功。
+    await waitFor(() => {
+      expect(screen.getByText("冲突组 conflict:a")).toBeVisible();
+    });
+    expect(new URLSearchParams(lastLocation?.search).get("conflictId")).not.toBe("conflict:b");
+  });
+
+  it("keeps an AI analysis failure inline with a failed tracker record and no global notice", async () => {
+    const facade = createFacade(workspaceFixture());
+    facade.analyzeConflict = vi.fn(async () => {
+      throw new Error("llm.unavailable");
+    });
+    const { notifications, tracker } = await renderPage(facade);
+    await screen.findByText("冲突组 conflict:a");
+
+    fireEvent.click(screen.getByRole("button", { name: "分析此冲突" }));
+
+    // AI 分析走 phased 桥：失败落 failed 终态；工作台内联展示失败原因。
+    await waitFor(() => {
+      expect(tracker.getSnapshot()).toEqual([
+        expect.objectContaining({ kind: "ai_analysis", status: "failed" }),
+      ]);
+    });
+    expect(await screen.findByText(/AI 返回未知失败/)).toBeVisible();
+    // 文档化的 inline-only 决策：AI 分析结果不额外发全局通知。
+    expect(notifications.notify).not.toHaveBeenCalled();
+  });
+
   it("executes the concrete human decision via 按建议 instead of an adopted-only write", async () => {
     const facade = createFacade(workspaceFixture());
     const { notifications } = await renderPage(facade);

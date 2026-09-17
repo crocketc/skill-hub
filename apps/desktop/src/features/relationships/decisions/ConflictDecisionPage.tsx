@@ -213,20 +213,23 @@ export function ConflictDecisionPage({
             onFollowSuggestion={() => {
               if (selectedEntry.recommended_decision === "confirm_same_skill"
                 || selectedEntry.recommended_decision === "keep_distinct") {
-                void resolve({
+                // 失败已由统一执行桥转成 danger 通知后原样 rethrow（任务 7 review
+                // minor：void resolve 的 .catch 一致性）——这里标记 promise 已
+                // 处理，避免 unhandled rejection，不吞错误、不产生伪成功。
+                resolve({
                   caseFact: selectedEntry.case,
                   decision: selectedEntry.recommended_decision,
                   expectedRelationshipRevision: workspace.relationship_revision,
-                });
+                }).catch(() => undefined);
               }
             }}
             onNotNow={notNow}
             onResolve={(decision) => {
-              void resolve({
+              resolve({
                 caseFact: selectedEntry.case,
                 decision,
                 expectedRelationshipRevision: workspace.relationship_revision,
-              });
+              }).catch(() => undefined);
             }}
             resolving={resolving}
           />

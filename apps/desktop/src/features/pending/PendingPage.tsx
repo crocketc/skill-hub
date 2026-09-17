@@ -133,7 +133,7 @@ export function PendingPage({ facade = unavailablePendingFacade }: { facade?: Pe
     }
   };
   return <PageFrame width="wide"><div className="sh-workflow-page sh-pending">
-    <PageHeader description={t("pending.description")} title={t("pending.heading")} />
+    <PageHeader description={t("pending.description")} headingLevel="h1" title={t("pending.heading")} />
     <section aria-labelledby="pending-list-heading" className="sh-workflow-card sh-pending__card">
       <h2 id="pending-list-heading">{t("pending.listHeading")}</h2>
       {items.length ? <>

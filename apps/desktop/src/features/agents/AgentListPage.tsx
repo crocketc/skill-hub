@@ -2,6 +2,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
 import { desktopDirectoryPicker, type DirectoryPicker } from "../../platform/directoryPicker";
+import { operationTracker, type OperationTracker } from "../../platform/operationTracker";
+import { runTrackedOperation } from "../../platform/runTrackedOperation";
 import { Button } from "../../ui/Button";
 import { BrandTag } from "../../ui/BrandTag";
 import { ConfirmDialog } from "../../ui/ConfirmDialog";
@@ -16,11 +18,17 @@ import "./agents.css";
 export interface AgentListPageProps {
   facade?: AgentFacade;
   picker?: DirectoryPicker;
+  /** 统一执行桥的在途投影；测试可注入独立 tracker。 */
+  tracker?: OperationTracker;
 }
 
 type CustomAgentFormState = { mode: "create" } | { agent: AgentView; mode: "edit" };
 
-export function AgentListPage({ facade = unavailableAgentFacade, picker = desktopDirectoryPicker }: AgentListPageProps) {
+export function AgentListPage({
+  facade = unavailableAgentFacade,
+  picker = desktopDirectoryPicker,
+  tracker = operationTracker,
+}: AgentListPageProps) {
   const { t } = useTranslation();
   const [agents, setAgents] = useState<AgentView[]>();
   const [error, setError] = useState<string>();
@@ -51,7 +59,18 @@ export function AgentListPage({ facade = unavailableAgentFacade, picker = deskto
     setRefreshing(true);
     setError(undefined);
     try {
-      await facade.rescan();
+      await runTrackedOperation({
+        errorNotice: () => null,
+        kind: "agent_rescan",
+        label: t("agents.actions.rescan"),
+        notifications: null,
+        run: async () => {
+          await facade.rescan();
+        },
+        successNotice: () => null,
+        total: 1,
+        tracker,
+      });
       setRevision((current) => current + 1);
     } catch (reason: unknown) {
       setError(reason instanceof Error ? reason.message : t("agents.errors.unknown"));

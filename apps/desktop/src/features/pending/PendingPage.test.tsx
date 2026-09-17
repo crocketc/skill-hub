@@ -50,6 +50,14 @@ async function renderPage(facade: PendingFacade) {
   await act(async () => {});
 }
 
+// T3-C「每路由唯一 h1」（任务 10 h1 sweep）：待处理页自持 route-level h1。
+it("keeps a single page-level h1 for the pending heading outline", async () => {
+  await renderPage(fakeFacade());
+
+  expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
+  expect(screen.getByRole("heading", { level: 1, name: "完成待处理事项" })).toBeVisible();
+});
+
 it("does not offer a generic delete action for pending work", async () => {
   await renderPage(fakeFacade({
     list: async () => [{ id: "trial", subject: "skill-a", kind: "trial_due", code: "trial", message: "trial" }],

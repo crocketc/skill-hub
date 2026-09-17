@@ -1,5 +1,11 @@
-import type { BootstrapSnapshot } from "../../api/bindings";
+import type {
+  BootstrapSnapshot,
+  ConflictWorkspace,
+  RelationGovernanceLedger,
+  SkillRelationshipCandidate,
+} from "../../api/bindings";
 import { AppShell } from "../../app/AppShell";
+import type { RelationshipsFacade } from "../relationships/api";
 
 /**
  * Deterministic DEV-only fixture for /__preview/overview. It exercises the
@@ -39,6 +45,99 @@ const OVERVIEW_PREVIEW_SNAPSHOT: BootstrapSnapshot = {
   recent_operations: [],
   recovery_state: "clean",
   skill_count: 27,
+};
+
+/**
+ * 任务 9 §7.4 桩需求（任务 10 接线）：确定性关系摘要事实。三个冻结计数
+ * （图谱=candidates 数、冲突=workspace cases 数、治理=ledger total）让 e2e
+ * 的指标带与缩略带断言在真实渲染路径下可复现；纯内存、无盘/无网络。
+ */
+const previewCandidates: SkillRelationshipCandidate[] = [
+  {
+    display_name: "PDF Reader",
+    last_verified_at: "2026-09-10T08:00:00Z",
+    matched_alias: null,
+    relationship_count: 3,
+    relationship_revision: "preview-rel-1",
+    runtime_name: "pdf-reader",
+    skill_id: "pdf-reader",
+    tags: ["documents"],
+  },
+  {
+    display_name: "DOCX Writer",
+    last_verified_at: "2026-09-10T08:00:00Z",
+    matched_alias: null,
+    relationship_count: 2,
+    relationship_revision: "preview-rel-1",
+    runtime_name: "docx-writer",
+    skill_id: "docx-writer",
+    tags: ["documents"],
+  },
+  {
+    display_name: "Web Clipper",
+    last_verified_at: "2026-09-10T08:00:00Z",
+    matched_alias: null,
+    relationship_count: 1,
+    relationship_revision: "preview-rel-1",
+    runtime_name: "web-clipper",
+    skill_id: "web-clipper",
+    tags: ["automation"],
+  },
+  {
+    display_name: "Release Notes",
+    last_verified_at: "2026-09-10T08:00:00Z",
+    matched_alias: null,
+    relationship_count: 2,
+    relationship_revision: "preview-rel-1",
+    runtime_name: "release-notes",
+    skill_id: "release-notes",
+    tags: ["automation"],
+  },
+];
+
+function previewConflictCase(conflictId: string): ConflictWorkspace["cases"][number] {
+  return {
+    case: {
+      classification: "uncertain" as const,
+      conflict_id: conflictId,
+      evidence: { fingerprints_match: null, names_match: true, sufficient_identity_evidence: false },
+      member_skill_ids: [],
+    },
+    latest_analysis: null,
+    analysis_stale: false,
+    recommended_decision: null,
+  };
+}
+
+const previewConflictWorkspace: ConflictWorkspace = {
+  cases: [previewConflictCase("conflict-preview-1"), previewConflictCase("conflict-preview-2")],
+  handled: [],
+  handled_count: 1,
+  last_verified_at: "2026-09-10T08:00:00Z",
+  relationship_revision: "preview-rel-1",
+};
+
+const previewGovernanceLedger: RelationGovernanceLedger = {
+  bucket: "all",
+  counts: { all: 9, blocked: 2, eligible_to_centralize: 4, needs_validation: 3 },
+  last_verified_at: "2026-09-10T08:00:00Z",
+  relationship_revision: "preview-rel-1",
+  rows: [],
+  total: 9,
+};
+
+/**
+ * DEV-only deterministic relationship facade for /__preview/overview. The
+ * graph query is not part of the overview surface, so the stub refuses it
+ * loudly instead of pretending to serve data.
+ */
+export const overviewPreviewRelationshipsFacade: RelationshipsFacade = {
+  getConflictWorkspace: async () => previewConflictWorkspace,
+  async getGraph() {
+    throw new Error("the overview preview does not consume the relationship graph query");
+  },
+  listCandidates: async () => previewCandidates,
+  listGovernance: async () => previewGovernanceLedger,
 };
 
 /**

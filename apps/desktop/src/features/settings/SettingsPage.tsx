@@ -120,6 +120,7 @@ export function SettingsPage({ facade = unavailableSettingsFacade, initialSettin
           </Link>
         }
         description={t("settings.description")}
+        headingLevel="h1"
         title={t("settings.heading")}
       />
       <div className="sh-settings-layout">

@@ -34,11 +34,22 @@ const expectedAccents: Record<(typeof themeNames)[number], string> = {
   "grok-night": "#f2f3ef",
 };
 
+// 任务 9 冻结五指标（api.ts getOverviewSummaryMetrics 口径，api.test.ts 锁定）：
+// hero = 技能总数；紧凑带 = 合并 Agent、管理项目、部署关系（按 Agent/项目拆分）、
+// 待确认冲突。预览桩（OverviewPreview overviewPreviewRelationshipsFacade）提供
+// 确定性关系事实：2 个待确认冲突、4 个图谱候选、9 条治理关系边。
+const heroMetricName = "27 Total skills";
 const statNames = [
-  "3 configured agents",
-  "5 discovered agents",
-  "3 projects",
-  "27 deployment relations",
+  "3 Agents (3 configured · 5 discovered)",
+  "3 Manage projects",
+  "45 Skill deployment relations (27 to agents · 18 to projects)",
+  "2 Unconfirmed relationship conflicts",
+] as const;
+
+const relationEntryNames = [
+  "Open relationship graph (4 skills with displayable relations)",
+  "Open conflict workspace (2 unconfirmed conflicts)",
+  "Open relationship governance (9 relation edges)",
 ] as const;
 
 test.use({ locale: "en-US" });
@@ -81,12 +92,14 @@ test("mounts the overview preview with one primary metric and compact stats", as
 }) => {
   await page.goto("/__preview/overview");
 
-  // 2026-09-17 顶栏标题降级为非 heading（基线回归 §5.4）：route-level h1 由
-  // 页面自持，概览页标题为 h2，顶栏标题保持可见但不再进入 heading outline。
+  // T3-C「每路由唯一 h1」回归（任务 10 h1 sweep）：顶栏标题降级为非 heading
+  // 后，route-level h1 由页面自持。此处把任务 5 临时锁定的 `h1 count 0`
+  // 断言翻回 `h1 count === 1`（Task 5 review 请求的 flip-back 注记），
+  // 顶栏标题保持可见但不再进入 heading outline。
   await expect(page.locator(".sh-app-shell__title")).toHaveText("Overview");
-  await expect(page.getByRole("heading", { level: 2, name: "Overview" })).toBeVisible();
-  await expect(page.getByRole("heading", { level: 1 })).toHaveCount(0);
-  await expect(page.getByRole("link", { name: "27 skills" })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1, name: "Overview" })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1 })).toHaveCount(1);
+  await expect(page.getByRole("link", { name: heroMetricName })).toBeVisible();
   const stats = page.getByRole("list", { name: "Key stats" });
   for (const name of statNames) {
     await expect(stats.getByRole("link", { name })).toBeVisible();
@@ -95,13 +108,49 @@ test("mounts the overview preview with one primary metric and compact stats", as
   await expect(page.getByRole("heading", { name: "4 pending items" })).toBeVisible();
 });
 
+test("exposes the three relationship thumbnail entries with frozen deep links", async ({
+  page,
+}) => {
+  await page.goto("/__preview/overview");
+
+  // 任务 9 冻结契约：缩略带三入口深链 /relationships、/relationships/decisions、
+  // /relationships/governance；计数来自预览桩的确定性关系事实。
+  const graphEntry = page.getByRole("link", { name: relationEntryNames[0] });
+  await expect(graphEntry).toBeVisible();
+  await expect(graphEntry).toHaveAttribute("href", "/relationships");
+  const conflictsEntry = page.getByRole("link", { name: relationEntryNames[1] });
+  await expect(conflictsEntry).toHaveAttribute("href", "/relationships/decisions");
+  const governanceEntry = page.getByRole("link", { name: relationEntryNames[2] });
+  await expect(governanceEntry).toHaveAttribute("href", "/relationships/governance");
+
+  // 深链真实可达：点击冲突入口导航到冲突处理页。
+  await conflictsEntry.click();
+  await expect(page).toHaveURL(/\/relationships\/decisions$/);
+});
+
+test("drills the conflict metric into the decisions workbench (P1-07 flip)", async ({
+  page,
+}) => {
+  await page.goto("/__preview/overview");
+
+  // P1-07 裁决（冻结指标契约后果）：发现到的 Agent 不再单独成卡，也不再有
+  // 概览→发现工作台的直链；发现保持经侧栏与图谱零候选 CTA 一等入口。
+  // 合并后的 Agent 指标钻取 /agents；冲突指标钻取冲突处理页。
+  await page.getByRole("link", { name: statNames[0] }).click();
+  await expect(page).toHaveURL(/\/agents$/);
+
+  await page.goBack();
+  await page.getByRole("link", { name: "2 Unconfirmed relationship conflicts" }).click();
+  await expect(page).toHaveURL(/\/relationships\/decisions$/);
+});
+
 test.describe("overview stays free of horizontal overflow", () => {
   for (const width of previewWidths) {
     test(`no root horizontal overflow at ${width}x900`, async ({ page }) => {
       await page.setViewportSize({ width, height: 900 });
       await page.goto("/__preview/overview");
 
-      await expect(page.getByRole("link", { name: "27 skills" })).toBeVisible();
+      await expect(page.getByRole("link", { name: heroMetricName })).toBeVisible();
       await expectNoRootHorizontalOverflow(page);
     });
   }
@@ -113,7 +162,7 @@ test.describe("overview stays free of horizontal overflow", () => {
       await page.setViewportSize({ width, height: 900 });
       await page.goto("/__preview/overview");
 
-      await expect(page.getByRole("link", { name: "27 skills" })).toBeVisible();
+      await expect(page.getByRole("link", { name: heroMetricName })).toBeVisible();
       await expectUnifiedPageRhythm(page, ".sh-overview", "overview");
     });
   }
@@ -122,9 +171,35 @@ test.describe("overview stays free of horizontal overflow", () => {
     await page.setViewportSize({ width: 800, height: 600 });
     await page.goto("/__preview/overview");
 
-    await expect(page.getByRole("link", { name: "27 skills" })).toBeVisible();
+    await expect(page.getByRole("link", { name: heroMetricName })).toBeVisible();
     await expectNoRootHorizontalOverflow(page);
     await expect(page.getByRole("heading", { name: "4 pending items" })).toBeVisible();
+  });
+
+  test("keeps the compact overview panels non-overlapping at 800x600", async ({ page }) => {
+    await page.setViewportSize({ width: 800, height: 600 });
+    await page.goto("/__preview/overview");
+
+    await expect(page.getByRole("link", { name: relationEntryNames[2] })).toBeVisible();
+    const panels = await page.locator(
+      ".sh-overview__metrics, .sh-overview__content-grid, .sh-overview__relations",
+    ).evaluateAll((elements) => elements.map((element) => {
+      const rect = element.getBoundingClientRect();
+      return { bottom: rect.bottom, height: rect.height, top: rect.top };
+    }));
+
+    expect(panels).toHaveLength(3);
+    for (let index = 1; index < panels.length; index += 1) {
+      expect(
+        panels[index]!.top,
+        `overview panel ${index} must start after the previous panel ends`,
+      ).toBeGreaterThanOrEqual(panels[index - 1]!.bottom - 1);
+      expect(panels[index]!.height, `overview panel ${index} must remain measurable`).toBeGreaterThan(0);
+    }
+
+    const tagDetails = page.locator(".sh-overview__tag-details-scroll");
+    await expect(tagDetails).toHaveCSS("overflow-y", "auto");
+    await expectNoRootHorizontalOverflow(page);
   });
 });
 
@@ -133,6 +208,10 @@ test("stacks chart and pending into one column with single-column stats at 800px
 }) => {
   await page.setViewportSize({ width: 800, height: 900 });
   await page.goto("/__preview/overview");
+
+  // 冲突指标在关系投影落地后才成为可钻取链接（预览桩确定性）。几何测量
+  // 前先等它就位，避免占位状态引入的测量竞态。
+  await expect(page.getByRole("link", { name: statNames[3] })).toBeVisible();
 
   // 窄容器：图表面板与待处理区域纵向堆叠，不再并排。
   const chartBox = await boxOf(page.getByRole("img", { name: "Deployment relation count by agent" }));
@@ -162,6 +241,9 @@ test("keeps two stat columns and a single-column chart area at 1024px", async ({
   await page.setViewportSize({ width: 1024, height: 900 });
   await page.goto("/__preview/overview");
 
+  // 见 800px 用例：等冲突指标就位后再测量。
+  await expect(page.getByRole("link", { name: statNames[3] })).toBeVisible();
+
   const boxes = [];
   for (const link of await statLinks(page)) {
     boxes.push(await boxOf(link));
@@ -181,6 +263,9 @@ test("keeps the two-row metrics contract with four stat columns at 1440px", asyn
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/__preview/overview");
 
+  // 见 800px 用例：等冲突指标就位后再测量。
+  await expect(page.getByRole("link", { name: statNames[3] })).toBeVisible();
+
   const boxes = [];
   for (const link of await statLinks(page)) {
     boxes.push(await boxOf(link));
@@ -192,7 +277,7 @@ test("keeps the two-row metrics contract with four stat columns at 1440px", asyn
   // 契约同步（2026-09-14）：2026-09-13 验收把 hero min-height 从 7rem 调整为
   // 5rem（overview.css .sh-overview__hero，自然排版下限）；原“6rem=96px 密度
   // 档”断言随该验收过时，这里锁定现行 5rem=80px 下限，两行结构断言不变。
-  const heroBox = await boxOf(page.getByRole("link", { name: "27 skills" }));
+  const heroBox = await boxOf(page.getByRole("link", { name: heroMetricName }));
   expect(heroBox.height, "the hero metric must keep the 5rem density floor").toBeGreaterThanOrEqual(
     80,
   );
@@ -213,15 +298,6 @@ test("keeps the two-row metrics contract with four stat columns at 1440px", asyn
   await expectNoRootHorizontalOverflow(page);
 });
 
-test("drills the discovered agents stat into the local discovery workbench", async ({ page }) => {
-  await page.goto("/__preview/overview");
-
-  // P1-07：发现到的 Agent 不再与已配置目标同去 /agents，而是进入本机发现工作台。
-  await page.getByRole("link", { name: "5 discovered agents" }).click();
-
-  await expect(page).toHaveURL(/\/discovery\/local$/);
-});
-
 test("drills pending summary items into the pending workbench", async ({ page }) => {
   await page.goto("/__preview/overview");
 
@@ -233,15 +309,20 @@ test("drills pending summary items into the pending workbench", async ({ page })
 test("reaches every overview control by keyboard with visible focus", async ({ page }) => {
   await page.goto("/__preview/overview");
 
-  await page.getByRole("link", { name: "27 skills" }).focus();
+  // 键盘遍历跨越指标带与缩略带：先等关系投影落地（冲突指标与三个入口
+  // 就位），占位符不可聚焦，否则遍历会在半途失配。
+  await expect(page.getByRole("link", { name: relationEntryNames[2] })).toBeVisible();
+
+  await page.getByRole("link", { name: heroMetricName }).focus();
   await page.keyboard.press("Tab");
-  await expect(page.getByRole("link", { name: "3 configured agents" })).toBeFocused();
+  // 任务 9 冻结指标顺序：hero → 合并 Agent → 管理项目 → 部署关系 → 待确认冲突。
+  await expect(page.getByRole("link", { name: statNames[0] })).toBeFocused();
   await page.keyboard.press("Tab");
-  await expect(page.getByRole("link", { name: "5 discovered agents" })).toBeFocused();
+  await expect(page.getByRole("link", { name: statNames[1] })).toBeFocused();
   await page.keyboard.press("Tab");
-  await expect(page.getByRole("link", { name: "3 projects" })).toBeFocused();
+  await expect(page.getByRole("link", { name: statNames[2] })).toBeFocused();
   await page.keyboard.press("Tab");
-  await expect(page.getByRole("link", { name: "27 deployment relations" })).toBeFocused();
+  await expect(page.getByRole("link", { name: statNames[3] })).toBeFocused();
   await page.keyboard.press("Tab");
   await expect(page.getByRole("radio", { name: "Agents" })).toBeFocused();
 
@@ -300,6 +381,13 @@ test("reaches every overview control by keyboard with visible focus", async ({ p
   await expect(page.getByRole("link", { name: "1 recovery action" })).toBeFocused();
   await page.keyboard.press("Tab");
   await expect(page.getByRole("link", { name: "1 trial due" })).toBeFocused();
+  // 任务 9 冻结契约（任务 10 接线）：待办摘要之后是三个关系缩略入口深链。
+  await page.keyboard.press("Tab");
+  await expect(page.getByRole("link", { name: relationEntryNames[0] })).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(page.getByRole("link", { name: relationEntryNames[1] })).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(page.getByRole("link", { name: relationEntryNames[2] })).toBeFocused();
 });
 
 test.describe("overview honors the theme contract at 1280x900", () => {
@@ -338,7 +426,7 @@ test.describe("overview honors the theme contract at 1280x900", () => {
       ).toBe(true);
 
       // 关键控件与状态在该主题下可见，且不产生根级横向溢出。
-      await expect(page.getByRole("link", { name: "27 skills" })).toBeVisible();
+      await expect(page.getByRole("link", { name: heroMetricName })).toBeVisible();
       await expect(page.getByText("4 open")).toBeVisible();
       await expectNoRootHorizontalOverflow(page);
 
