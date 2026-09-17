@@ -183,4 +183,31 @@ describe("ProjectManagedDeployments 与统一执行桥", () => {
     );
     expect(inlineAlert).toHaveTextContent(/removal\.detach_management_failed/);
   });
+
+  it("keeps the notice and the inline failure text identical for a structured error", async () => {
+    const ops = createOps({
+      detach: vi.fn().mockRejectedValue({
+        actions: [],
+        code: "relation.some_new_failure",
+        params: {},
+        severity: "error",
+      }),
+    });
+    await renderWithBridge(ops);
+    await confirmDetach();
+
+    const notice = await screen.findByTestId("notice-danger");
+    const inlineAlert = (await screen.findAllByRole("alert")).find(
+      (node) => node.tagName === "P",
+    );
+    // 结构化 AppError 必须渲染成可读文案，而不是 [object Object]。
+    expect(notice).not.toHaveTextContent("[object Object]");
+    expect(notice).toHaveTextContent(
+      "移除部署关系失败（relation.some_new_failure）。请重试；若持续出现请记录该错误码。",
+    );
+    // 通知详情与页面内联提示同源：同一份描述、同一个错误码。
+    expect(inlineAlert?.textContent?.trim()).toBe(
+      "移除部署关系失败（relation.some_new_failure）。请重试；若持续出现请记录该错误码。",
+    );
+  });
 });

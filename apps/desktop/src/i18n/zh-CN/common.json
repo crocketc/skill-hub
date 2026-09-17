@@ -3127,7 +3127,8 @@
       "viewRecord": "查看操作记录"
     },
     "notices": {
-      "viewRecord": "查看操作记录"
+      "viewRecord": "查看操作记录",
+      "failureUnknown": "操作未能完成（{{code}}）。若持续出现请记录该错误码。"
     }
   }
 }

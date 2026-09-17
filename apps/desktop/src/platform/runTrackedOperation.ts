@@ -1,4 +1,5 @@
 import type { QueryClient } from "@tanstack/react-query";
+import { describeNativeError, isStructuredNativeError } from "../api/nativeErrors";
 import { skillHubI18n } from "../i18n";
 import type { AppNoticeInput, AppNotifications } from "../ui/notifications";
 import {
@@ -65,14 +66,31 @@ export interface RunTrackedOperationOptions<T> {
   needsUserNotice?: (phase: string | null) => AppNoticeInput | null;
   /** 结果 → 批量摘要（partial/failed 终态与顶栏摘要依据）。 */
   summarize?: (result: T) => TrackedResultSummary | null;
-  /** 结构化 AppError → 可读文本；缺省取 Error.message。 */
+  /**
+   * 结构化 AppError → 可读文本。缺省走 `describeNativeError`：已知错误码用专属
+   * 文案，其余回退到 `tasks.notices.failureUnknown` 并带上错误码。**不要**改成
+   * `String(error)`——Rust 侧的 `{code, params}` 会退化成 `[object Object]`。
+   */
   describeError?: (error: unknown) => string;
   queryClient?: QueryClient;
   invalidateQueryKeys?: ReadonlyArray<readonly unknown[]>;
   run: (handle: TrackedOperationHandle) => Promise<T>;
 }
 
-function defaultErrorMessage(error: unknown): string {
+/** 缺省的可读失败描述：结构化 AppError 走错误码文案，绝不 `[object Object]`。 */
+const DEFAULT_FAILURE_KEY = "tasks.notices.failureUnknown";
+
+/**
+ * 缺省描述：只有真正来自 IPC 的结构化 AppError 才翻译错误码；普通 `Error`
+ * 或自由文本原样透出——它们本身就是用户可读的，嗅探改写反而更差。
+ */
+function defaultDescribeError(
+  error: unknown,
+  translate: (key: string, options?: Record<string, unknown>) => string,
+): string {
+  if (isStructuredNativeError(error)) {
+    return describeNativeError(error, translate, DEFAULT_FAILURE_KEY);
+  }
   if (error instanceof Error) return error.message || String(error);
   return String(error);
 }
@@ -118,11 +136,14 @@ export async function runTrackedOperation<T>(
     errorNotice,
     needsUserNotice,
     summarize,
-    describeError = defaultErrorMessage,
     queryClient,
     invalidateQueryKeys,
     run,
   } = options;
+
+  // 缺省描述在这里派生（而不是解构默认值），因为要复用同一个 `translate`。
+  const describeError = options.describeError
+    ?? ((error: unknown) => defaultDescribeError(error, translate));
 
   const trackedId = mode === "phased"
     ? tracker.begin({

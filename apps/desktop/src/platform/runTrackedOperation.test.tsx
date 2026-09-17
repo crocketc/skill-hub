@@ -130,6 +130,112 @@ describe("runTrackedOperation", () => {
     expect(notice.detail).toBe("agent write protected");
   });
 
+  it("describes a structured native failure readably by default instead of [object Object]", async () => {
+    const tracker = createOperationTracker();
+    const notifications = stubNotifications();
+    // Rust 侧的 AppError 是结构化对象：没有默认描述时会被 String() 成 [object Object]。
+    const structured = { code: "object.not_found", severity: "error", params: {}, actions: [] };
+
+    const run = runTrackedOperation({
+      tracker,
+      notifications,
+      kind: "remove",
+      label: "从 Agent 移除",
+      translate: (key) => `t:${key}`,
+      run: async () => {
+        throw structured;
+      },
+    });
+
+    await expect(run).rejects.toBe(structured);
+
+    const [operation] = tracker.getSnapshot();
+    const notice = notifications.notify.mock.calls[0][0] as AppNoticeInput;
+    // 已知错误码走专属文案；顶栏失败原因与通知详情同源。
+    expect(operation.error).toBe("t:errors.objectNotFound");
+    expect(notice.tone).toBe("danger");
+    expect(notice.detail).toBe("t:errors.objectNotFound");
+    expect(notice.detail).not.toContain("[object Object]");
+  });
+
+  it("falls back to the shared generic text but still carries the error code", async () => {
+    const tracker = createOperationTracker();
+    const notifications = stubNotifications();
+    const seen: Array<{ key: string; options?: Record<string, unknown> }> = [];
+
+    const run = runTrackedOperation({
+      tracker,
+      notifications,
+      kind: "detach_relation",
+      label: "从项目移除",
+      translate: (key, options) => {
+        seen.push({ key, options });
+        return `t:${key}`;
+      },
+      run: async () => {
+        throw { code: "relation.some_new_failure", severity: "error", params: {}, actions: [] };
+      },
+    });
+
+    await expect(run).rejects.toThrow();
+
+    const detailCall = seen.find((call) => call.key === "tasks.notices.failureUnknown");
+    // 未映射的错误码必须仍然把代码带给用户，而不是退化成无信息的通用句。
+    expect(detailCall?.options?.code).toBe("relation.some_new_failure");
+    const notice = notifications.notify.mock.calls[0][0] as AppNoticeInput;
+    expect(notice.detail).toBe("t:tasks.notices.failureUnknown");
+    expect(notice.detail).not.toContain("[object Object]");
+  });
+
+  it("passes a plain Error message through instead of code-sniffing it", async () => {
+    const tracker = createOperationTracker();
+    const notifications = stubNotifications();
+
+    const run = runTrackedOperation({
+      tracker,
+      notifications,
+      kind: "deploy",
+      label: "添加到 Agent",
+      translate: (key) => `t:${key}`,
+      run: async () => {
+        // 自由文本里的点号不是错误码：改写它会丢掉用户唯一能读的信息。
+        throw new Error("cannot write skill.md");
+      },
+    });
+
+    await expect(run).rejects.toThrow("cannot write skill.md");
+
+    const [operation] = tracker.getSnapshot();
+    expect(operation.error).toBe("cannot write skill.md");
+    const notice = notifications.notify.mock.calls[0][0] as AppNoticeInput;
+    expect(notice.detail).toBe("cannot write skill.md");
+  });
+
+  it("keeps the caller's own description when a page passes describeError", async () => {
+    const tracker = createOperationTracker();
+    const notifications = stubNotifications();
+
+    const run = runTrackedOperation({
+      tracker,
+      notifications,
+      kind: "detach_relation",
+      label: "从项目移除",
+      translate: (key) => `t:${key}`,
+      describeError: () => "该目录正在被其他程序占用",
+      errorNotice: (_error, message) => ({ tone: "danger", title: "移除失败", detail: message }),
+      run: async () => {
+        throw { code: "relation.some_new_failure", severity: "error", params: {}, actions: [] };
+      },
+    });
+
+    await expect(run).rejects.toThrow();
+
+    const [operation] = tracker.getSnapshot();
+    expect(operation.error).toBe("该目录正在被其他程序占用");
+    const notice = notifications.notify.mock.calls[0][0] as AppNoticeInput;
+    expect(notice.detail).toBe("该目录正在被其他程序占用");
+  });
+
   it("invalidates the given react-query keys after a successful run", async () => {
     const tracker = createOperationTracker();
     const queryClient = new QueryClient();

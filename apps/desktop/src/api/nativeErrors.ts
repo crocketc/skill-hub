@@ -12,6 +12,23 @@ export interface NativeAppError {
   actions: string[];
 }
 
+/**
+ * 判断失败值是否**真的**是 IPC 传回的结构化 AppError（对象本身，或承载它的
+ * JSON 字符串）。**不要**用 `nativeErrorCode` 代替它做形状判断：那个函数还会
+ * 从自由文本里嗅探点号形态的“错误码”，把 `cannot write skill.md` 误判成
+ * `skill.md`，从而把用户唯一能读的信息改写成通用句。
+ */
+export function isStructuredNativeError(error: unknown): boolean {
+  if (typeof error === "object" && error !== null && !(error instanceof Error)) {
+    return typeof (error as { code?: unknown }).code === "string";
+  }
+  if (typeof error === "string") {
+    const parsed = tryParseJson(error);
+    return parsed !== null && isStructuredNativeError(parsed);
+  }
+  return false;
+}
+
 export function nativeErrorCode(error: unknown): string | null {
   if (typeof error === "string") {
     const parsed = tryParseJson(error);

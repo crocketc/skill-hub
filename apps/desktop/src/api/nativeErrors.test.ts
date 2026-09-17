@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createSkillHubI18n } from "../i18n";
-import { nativeErrorCode, nativeErrorParams, describeNativeError } from "./nativeErrors";
+import { nativeErrorCode, nativeErrorParams, describeNativeError, isStructuredNativeError } from "./nativeErrors";
 
 describe("nativeErrors", () => {
   it("parses a serialized AppError object from the Tauri IPC rejection", () => {
@@ -145,5 +145,29 @@ describe("nativeErrors", () => {
       "settings.llm.operationFailed",
     );
     expect(message).toBe(key);
+  });
+});
+
+describe("isStructuredNativeError", () => {
+  it("accepts a structured AppError object and the JSON string that carries it", () => {
+    const structured = { actions: [], code: "deployment.plan_stale", params: {}, severity: "error" };
+    expect(isStructuredNativeError(structured)).toBe(true);
+    expect(isStructuredNativeError(JSON.stringify(structured))).toBe(true);
+  });
+
+  it("rejects a plain Error whose message merely contains a dot", () => {
+    // 复现真实误判：nativeErrorCode 会从 "cannot write skill.md" 里嗅探出 "skill.md"，
+    // 于是把用户唯一可读的句子改写成通用句。形状判断必须拦住它。
+    expect(isStructuredNativeError(new Error("cannot write skill.md"))).toBe(false);
+    expect(isStructuredNativeError("cannot write skill.md")).toBe(false);
+  });
+
+  it("rejects values that cannot carry an error code at all", () => {
+    expect(isStructuredNativeError(null)).toBe(false);
+    expect(isStructuredNativeError(undefined)).toBe(false);
+    expect(isStructuredNativeError(42)).toBe(false);
+    expect(isStructuredNativeError({ severity: "error" })).toBe(false);
+    expect(isStructuredNativeError({ code: 7 })).toBe(false);
+    expect(isStructuredNativeError("{ not json")).toBe(false);
   });
 });

@@ -3127,7 +3127,8 @@
       "viewRecord": "View operation record"
     },
     "notices": {
-      "viewRecord": "View operation record"
+      "viewRecord": "View operation record",
+      "failureUnknown": "The operation did not complete ({{code}}). Record the code if it keeps happening."
     }
   }
 }

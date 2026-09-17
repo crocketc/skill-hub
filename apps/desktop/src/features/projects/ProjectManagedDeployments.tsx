@@ -62,6 +62,14 @@ export function ProjectManagedDeployments({ governanceHref, ops, projectId, trac
     (record) => record.managed && record.target_id === projectId && record.state !== "removed",
   );
 
+  // 通知详情与页面内联提示必须同源：同一份描述，用户不会在通知里看到 [object Object]。
+  const describeFailure = (reason: unknown) =>
+    describeNativeError(
+      reason,
+      (key, options) => String(t(key as never, options as never)),
+      "projects.detail.managedDeployments.failed",
+    );
+
   const detach = (record: DeploymentRecord) => {
     setError(undefined);
     setDetached(undefined);
@@ -72,6 +80,7 @@ export function ProjectManagedDeployments({ governanceHref, ops, projectId, trac
       notifications,
       tracker,
       translate: (key, options) => String(t(key as never, options as never)),
+      describeError: describeFailure,
       successNotice: () => ({
         tone: "success",
         title: t("projects.detail.managedDeployments.detachNoticeTitle"),
@@ -91,11 +100,7 @@ export function ProjectManagedDeployments({ governanceHref, ops, projectId, trac
       })
       .catch((reason: unknown) => {
         setConfirmingFor(undefined);
-        setError(describeNativeError(
-          reason,
-          (key, options) => String(t(key as never, options as never)),
-          "projects.detail.managedDeployments.failed",
-        ));
+        setError(describeFailure(reason));
       });
   };
 
