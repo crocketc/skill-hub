@@ -207,6 +207,83 @@ struct Fixture {
     other_alias: Option<std::path::PathBuf>,
 }
 
+/// Records a capability-guarded skip and tells the caller to give up.
+///
+/// `available` is the probed fact and `requirement` names what the scenario
+/// needed, so a skip always says which capability was missing instead of just
+/// disappearing.  See [`missing_symlink_capability`] for the rationale.
+fn skip_or_continue_for_missing_capability(
+    available: bool,
+    requirement: &str,
+    location: &std::panic::Location<'_>,
+) -> bool {
+    if available {
+        return false;
+    }
+    assert!(
+        std::env::var("SKILLHUB_REQUIRE_SYMLINK_CAPABILITY").as_deref() != Ok("1"),
+        "{}:{}: this host was required to provide {requirement} capability, but the guarded \
+         scenario would be skipped instead of executed (RC-15)",
+        location.file(),
+        location.line()
+    );
+    // Deliberately not `eprintln!`: libtest captures that for passing tests,
+    // and an invisible skip is the defect this helper exists to remove.
+    let _ = std::io::Write::write_all(
+        &mut std::io::stderr(),
+        format!(
+            "SKILLHUB-TEST-SKIP; {}:{}; this host cannot create {requirement}, so the guarded \
+             scenario is skipped and its assertions never run (RC-15)\n",
+            location.file(),
+            location.line()
+        )
+        .as_bytes(),
+    );
+    true
+}
+
+/// Whether the negative control asked this run to behave like a host without
+/// directory-link capability.
+fn link_capability_forced_off() -> bool {
+    std::env::var("SKILLHUB_TEST_FORCE_NO_LINK_CAPABILITY").is_ok_and(|value| value.trim() == "1")
+}
+
+/// Whether a scenario whose fixture itself creates a **symbolic link** has to
+/// give up on this host.
+///
+/// libtest has no runtime skip and reports a guarded early `return` as a pass,
+/// and it also captures the Rust-level stdout/stderr of a passing test.  Those
+/// two behaviours together are exactly how a host-dependent skip can end up
+/// invisible *and* counted as evidence (RC-15), so no guard returns silently
+/// any more: every skip is written straight to the process' stderr file
+/// descriptor, which bypasses the per-test capture, and can then be counted in
+/// any plain `cargo test` log with
+///
+/// ```text
+/// grep -c '^SKILLHUB-TEST-SKIP;' <cargo-test-log>
+/// ```
+///
+/// Two environment switches make the accounting checkable instead of trusted:
+///
+/// - `SKILLHUB_REQUIRE_SYMLINK_CAPABILITY=1` turns any skip into a hard
+///   failure.  A green run under that switch proves the guarded scenarios
+///   really executed, which is what makes `passed` / `ignored` self-consistent;
+/// - `SKILLHUB_TEST_FORCE_NO_LINK_CAPABILITY=1` is the negative control that
+///   forces the skipped path, so the wiring stays verifiable on a link-capable
+///   host without editing code.
+#[track_caller]
+fn missing_symlink_capability() -> bool {
+    let available = !link_capability_forced_off()
+        && skillhub_adapters::deployment::DeploymentFilesystem::new()
+            .available_capabilities()
+            .symlink;
+    skip_or_continue_for_missing_capability(
+        available,
+        "a symbolic link",
+        std::panic::Location::caller(),
+    )
+}
+
 fn write_skill(path: &std::path::Path) {
     std::fs::create_dir_all(path).expect("skill directory");
     std::fs::write(path.join("SKILL.md"), BODY).expect("skill body");
@@ -1274,10 +1351,7 @@ async fn prepared_relation_can_be_cancelled_without_touching_original_migration(
 #[tokio::test]
 async fn committed_relation_is_rollbackable_when_link_capability_exists() {
     let fixture = fixture().await;
-    if !skillhub_adapters::deployment::DeploymentFilesystem::new()
-        .available_capabilities()
-        .symlink
-    {
+    if missing_symlink_capability() {
         return;
     }
     let prepared = fixture
@@ -1339,10 +1413,7 @@ async fn committed_relation_is_rollbackable_when_link_capability_exists() {
 #[tokio::test]
 async fn managed_copy_conversion_replaces_the_copy_and_rollback_restores_the_managed_copy() {
     let fixture = fixture_with(RelationKind::ManagedCopyEntry).await;
-    if !skillhub_adapters::deployment::DeploymentFilesystem::new()
-        .available_capabilities()
-        .symlink
-    {
+    if missing_symlink_capability() {
         return;
     }
     let prepared = fixture
@@ -1540,14 +1611,7 @@ async fn shared_reference_conversion_repoints_one_alias_and_keeps_the_shared_bod
     // 不经过产品的能力探测与回退。守卫下方显式声明这一前提：在无链接权限的
     // 宿主上按守卫跳过并输出原因（取证记入 RC-15），不影响其他用例；真实的
     // 共享引用产品路径仍由本用例在具备链接能力的主机上完整执行。
-    if !skillhub_adapters::deployment::DeploymentFilesystem::new()
-        .available_capabilities()
-        .symlink
-    {
-        eprintln!(
-            "skipping: the scenario itself must create an alias symlink and this host cannot; \
-             environmental premise, not a product failure (see RC-15)"
-        );
+    if missing_symlink_capability() {
         return;
     }
     let fixture = fixture_with(RelationKind::SharedReference { other_consumers: 1 }).await;
@@ -1753,10 +1817,7 @@ async fn shared_reference_conversion_repoints_one_alias_and_keeps_the_shared_bod
 #[tokio::test]
 async fn rollback_rejects_a_replaced_relation_parent_before_removing_the_managed_link() {
     let fixture = fixture().await;
-    if !skillhub_adapters::deployment::DeploymentFilesystem::new()
-        .available_capabilities()
-        .symlink
-    {
+    if missing_symlink_capability() {
         return;
     }
     let prepared = fixture
@@ -1911,10 +1972,7 @@ async fn prepare_rejects_externally_modified_targets_before_any_conversion() {
 #[tokio::test]
 async fn commit_creates_and_verifies_the_staged_link_before_removing_the_original_entry() {
     let fixture = fixture().await;
-    if !skillhub_adapters::deployment::DeploymentFilesystem::new()
-        .available_capabilities()
-        .symlink
-    {
+    if missing_symlink_capability() {
         return;
     }
     let prepared = fixture
@@ -1983,10 +2041,7 @@ async fn commit_creates_and_verifies_the_staged_link_before_removing_the_origina
 #[tokio::test]
 async fn commit_failure_removes_new_link_before_restoring_and_preserves_central_fingerprint() {
     let fixture = fixture().await;
-    if !skillhub_adapters::deployment::DeploymentFilesystem::new()
-        .available_capabilities()
-        .symlink
-    {
+    if missing_symlink_capability() {
         return;
     }
     let prepared = fixture
@@ -2059,10 +2114,7 @@ async fn commit_failure_removes_new_link_before_restoring_and_preserves_central_
 #[tokio::test]
 async fn rollback_retries_relation_writeback_after_filesystem_restore_failure() {
     let fixture = fixture().await;
-    if !skillhub_adapters::deployment::DeploymentFilesystem::new()
-        .available_capabilities()
-        .symlink
-    {
+    if missing_symlink_capability() {
         return;
     }
     let prepared = fixture
@@ -2155,10 +2207,7 @@ async fn rollback_retries_relation_writeback_after_filesystem_restore_failure() 
 #[tokio::test]
 async fn rollback_rejects_backup_metadata_tampering_without_restoring_or_writing_old_relation() {
     let fixture = fixture().await;
-    if !skillhub_adapters::deployment::DeploymentFilesystem::new()
-        .available_capabilities()
-        .symlink
-    {
+    if missing_symlink_capability() {
         return;
     }
     let prepared = fixture
@@ -2271,10 +2320,7 @@ async fn rollback_rejects_a_corrupt_backup_metadata_record_without_fabricating_m
 #[tokio::test]
 async fn rollback_rejects_a_backup_directory_replaced_by_a_symlink() {
     let fixture = fixture().await;
-    if !skillhub_adapters::deployment::DeploymentFilesystem::new()
-        .available_capabilities()
-        .symlink
-    {
+    if missing_symlink_capability() {
         return;
     }
     let prepared = fixture
@@ -2385,10 +2431,7 @@ async fn rollback_rejects_backup_metadata_rebound_outside_the_library_root() {
 #[tokio::test]
 async fn rollback_rejects_an_original_symlink_backup_with_a_changed_target() {
     let fixture = fixture().await;
-    if !skillhub_adapters::deployment::DeploymentFilesystem::new()
-        .available_capabilities()
-        .symlink
-    {
+    if missing_symlink_capability() {
         return;
     }
     std::fs::remove_dir_all(&fixture.source).expect("remove original copy");
@@ -2541,10 +2584,7 @@ async fn rollback_wraps_final_checkpoint_failure_and_can_retry_after_filesystem_
 #[tokio::test]
 async fn rollback_refuses_to_remove_a_path_that_no_longer_matches_the_prepared_link() {
     let fixture = fixture().await;
-    if !skillhub_adapters::deployment::DeploymentFilesystem::new()
-        .available_capabilities()
-        .symlink
-    {
+    if missing_symlink_capability() {
         return;
     }
     let prepared = fixture
@@ -2620,10 +2660,7 @@ async fn rollback_refuses_to_remove_a_path_that_no_longer_matches_the_prepared_l
 #[tokio::test]
 async fn relation_migration_can_resume_from_a_new_facade_using_the_durable_journal() {
     let fixture = fixture().await;
-    if !skillhub_adapters::deployment::DeploymentFilesystem::new()
-        .available_capabilities()
-        .symlink
-    {
+    if missing_symlink_capability() {
         return;
     }
     let prepared = fixture
@@ -2684,10 +2721,7 @@ async fn relation_migration_can_resume_from_a_new_facade_using_the_durable_journ
 #[tokio::test]
 async fn failed_relation_commit_re_reads_facts_on_retry_instead_of_returning_stale_failure() {
     let fixture = fixture().await;
-    if !skillhub_adapters::deployment::DeploymentFilesystem::new()
-        .available_capabilities()
-        .symlink
-    {
+    if missing_symlink_capability() {
         return;
     }
     let prepared = fixture
@@ -3140,10 +3174,7 @@ async fn commit_rejects_a_corrupt_journal_result_and_optional_field() {
 #[tokio::test]
 async fn concurrent_commits_of_one_prepared_relation_are_serialized() {
     let fixture = fixture().await;
-    if !skillhub_adapters::deployment::DeploymentFilesystem::new()
-        .available_capabilities()
-        .symlink
-    {
+    if missing_symlink_capability() {
         return;
     }
     let prepared = fixture
@@ -4488,10 +4519,7 @@ async fn governance_batch_blocks_unverified_rows_and_keeps_the_executable_ones()
 
 #[tokio::test]
 async fn governance_batch_cancelling_one_row_leaves_the_others_untouched() {
-    if !skillhub_adapters::deployment::DeploymentFilesystem::new()
-        .available_capabilities()
-        .symlink
-    {
+    if missing_symlink_capability() {
         return;
     }
     let fixture = batch_fixture(&["agent.demo", "agent.other"]).await;
@@ -4538,10 +4566,7 @@ async fn governance_batch_cancelling_one_row_leaves_the_others_untouched() {
 
 #[tokio::test]
 async fn governance_batch_partial_failure_keeps_successes_with_per_item_retry_info() {
-    if !skillhub_adapters::deployment::DeploymentFilesystem::new()
-        .available_capabilities()
-        .symlink
-    {
+    if missing_symlink_capability() {
         return;
     }
     let fixture = batch_fixture(&["agent.demo", "agent.other"]).await;
@@ -4739,10 +4764,7 @@ async fn governance_batch_log_links_the_parent_to_each_child_operation() {
 
 #[tokio::test]
 async fn concurrent_governance_batch_commits_do_not_bypass_the_relation_lock() {
-    if !skillhub_adapters::deployment::DeploymentFilesystem::new()
-        .available_capabilities()
-        .symlink
-    {
+    if missing_symlink_capability() {
         return;
     }
     let fixture = batch_fixture(&["agent.demo"]).await;
