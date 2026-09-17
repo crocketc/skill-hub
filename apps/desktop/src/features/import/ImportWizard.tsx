@@ -428,7 +428,15 @@ export function ImportWizard({
   const { notify } = useAppNotifications();
   const normalizedInitialSources = Array.from(new Set(initialSources.map(normalizeWindowsPath)));
   const normalizedInitialSourceText = normalizeWindowsPath(initialSourceText);
-  const [state, dispatch] = useReducer(reducer, { ...initialState, sourceText: normalizedInitialSourceText });
+  const [state, dispatch] = useReducer(reducer, {
+    ...initialState,
+    // onboarding 自动预览从挂载第一帧起就是流程的一部分：初始来源以"未扫描"
+    // 进入状态机，页脚据此禁用；条目缺失从此只表示"预览会话已被编辑作废"。
+    sourceResults: variant === "onboarding"
+      ? normalizedInitialSources.map((source) => ({ source, status: { kind: "unscanned" as const } }))
+      : initialState.sourceResults,
+    sourceText: normalizedInitialSourceText,
+  });
   // M-29：标准变体的已选来源在会话内存续——重开向导后仍保留。
   const [selectedSources, setSelectedSources] = useState<string[]>(() => {
     if (variant !== "standard") return normalizedInitialSources;
@@ -437,6 +445,9 @@ export function ImportWizard({
   // M-29：重复添加同一目录时聚焦已有条目（展示层状态）。
   const [focusedSource, setFocusedSource] = useState<string>();
   const previewRequestsRef = useRef(new Map<string, number>());
+  // 预览请求单调序号：来源被移除/作废后重新预览时，新请求的序号不可能与
+  // 旧请求相同，迟到的旧完成一定被序号守卫丢弃（不会复活陈旧终结）。
+  const previewRequestSeqRef = useRef(0);
   const previewCandidatesRef = useRef(new Map<string, CandidateSelectionProps["candidates"]>());
   const previewStatusesRef = useRef(new Map<string, SourceScanStatus>());
   const previewDescriptorsRef = useRef(new Map<string, SourceDescriptor>());
@@ -566,7 +577,7 @@ type: "failed",
   }, [variant]);
 
   const previewSource = useCallback(async (source: string): Promise<SourcePreview | undefined> => {
-    const request = (previewRequestsRef.current.get(source) ?? 0) + 1;
+    const request = ++previewRequestSeqRef.current;
     previewRequestsRef.current.set(source, request);
     previewPendingRef.current.add(source);
     previewStatusesRef.current.delete(source);
@@ -607,6 +618,16 @@ type: "failed",
     const onboardingSources = key.split("\u0000");
     for (const source of onboardingSources) void previewSource(source);
   }, [normalizedInitialSources.join("\u0000"), previewSource, variant]);
+
+  // 作废当前预览会话：清空请求序号表与预览缓存。在途预览的迟到完成因
+  // 序号不再匹配被守卫丢弃，不会再写回状态或触发 onboarding 终结。
+  const discardPreviews = () => {
+    previewRequestsRef.current.clear();
+    previewCandidatesRef.current.clear();
+    previewStatusesRef.current.clear();
+    previewDescriptorsRef.current.clear();
+    previewPendingRef.current.clear();
+  };
 
   const pickLocalDirectory = async () => {
     setPickerError(null);
@@ -659,11 +680,7 @@ type: "failed",
   };
 
   const clearSources = () => {
-    previewRequestsRef.current.clear();
-    previewCandidatesRef.current.clear();
-    previewStatusesRef.current.clear();
-    previewDescriptorsRef.current.clear();
-    previewPendingRef.current.clear();
+    discardPreviews();
     selectedSourcesRef.current = [];
     setSelectedSources([]);
     dispatch({ type: "sources_cleared" });
@@ -875,10 +892,13 @@ type: "failed",
     : false;
   const canParse = state.phase === "source"
     && (state.sourceText.trim().length > 0 || selectedSources.length > 0);
+  // onboarding 页脚禁用判定只信任真实条目状态（未扫描/解析中）。
+  // 条目缺失不再视为"运行中"：那是来源被编辑、预览会话被作废后的状态，
+  // 页脚必须回到可操作的空闲态，而不是永久停留在"正在解析…"。
   const onboardingPreviewRunning = variant === "onboarding"
     && normalizedInitialSources.some((source) => {
       const kind = statusBySource[source]?.kind;
-      return kind === undefined || kind === "unscanned" || kind === "scanning";
+      return kind === "unscanned" || kind === "scanning";
     });
   // OPT-20260914-01：逐项分析进度是否已真实到达（到达前只展示不确定进度）。
   const analysisLive = Boolean(
@@ -1075,6 +1095,10 @@ type: "failed",
           focusedSource={focusedSource}
           onChange={(value) => {
             // AR-006：输入手动来源不再清空已选扫描来源（混合导入）。
+            // 编辑即作废预览会话：source_changed 清空结果条目，预览缓存与
+            // 在途请求一并废弃，页脚回到空闲态由用户决定何时重新获取；
+            // 迟到的预览完成被请求序号守卫丢弃，不会复活陈旧终结。
+            discardPreviews();
             dispatch({ type: "source_changed", value: normalizeWindowsPath(value) });
           }}
           onClearSources={clearSources}
