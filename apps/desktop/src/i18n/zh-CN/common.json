@@ -1724,21 +1724,9 @@
       "library": "本地集中库",
       "deployments": "添加目标"
     },
-    "conflicts": {
-      "heading": "相关冲突（可选 AI 分析）",
-      "run": "分析相关冲突",
-      "scopeNote": "分析范围：与该 Skill 相关的冲突组。",
-      "aiUnavailable": "尚未配置可用的 LLM 供应商；AI 分析按钮已停用，确定性冲突分组照常展示。",
-      "empty": "该 Skill 当前没有关联的冲突组。",
-      "caseHeading": "冲突组 {{id}}",
-      "failureReason": "冲突分析未能完成：{{reason}}",
-      "deterministicNote": "确定性冲突分组不受影响。"
-    },
     "tracker": {
       "aiAnalysisLabel": "AI 语义分析",
-      "conflictPhaseLabel": "AI 冲突分析",
-      "duplicatesPhase": "分析语义重复候选",
-      "conflictPhase": "分析相关冲突"
+      "duplicatesPhase": "分析语义重复候选"
     }
   },
   "deployment": {
@@ -2138,34 +2126,6 @@
       "loadError": "无法加载移除影响。",
       "hide": "收起移除影响",
       "consumerRecognition": "识别状态：{{recognition}}"
-    },
-    "conflictAnalysis": {
-      "heading": "冲突组 AI 分析（可选）",
-      "description": "AI 只给出短结论与建议；确定性基线始终先于 AI 结论展示。",
-      "baselineLabel": "确定性基线",
-      "runAll": "分析全部未决冲突",
-      "runCategory": "按分类分析：{{classification}}",
-      "runCase": "AI 分析",
-      "recommendedAction": "建议动作：{{action}}",
-      "recommendedKeep": "建议保留：{{member}}",
-      "keyEvidence": "关键证据",
-      "uncertainties": "不确定点",
-      "confidence": "置信度：{{value}}%",
-      "advisoryNote": "AI 结果仅供参考，不会自动合并、删除或改变你的裁决。",
-      "sourceLlm": "结果来源：AI 短结论（附确定性基线）",
-      "sourceDeterministic": "结果来源：仅确定性基线（AI 层未返回结果）",
-      "failureReason": "冲突分析未能完成：{{reason}}",
-      "deterministicNote": "确定性冲突分组不受影响。",
-      "failureUnknown": "AI 返回未知失败（{{code}}）。",
-      "empty": "没有符合条件的冲突组。",
-      "action": {
-        "same_skill_version": "归为同一 Skill 的不同版本",
-        "distinct_skill": "视为不同 Skill",
-        "keep_uncertain": "保持待定并留在待办"
-      },
-      "skippedDecided_one": "已有用户裁决的冲突组：{{count}} 个（不送 AI）。",
-      "skippedDecided_other": "已有用户裁决的冲突组：{{count}} 个（不送 AI）。",
-      "partialCoverage": "本次已分析 {{analyzed}} 组（范围内共 {{total}} 组）"
     }
   },
   "relationships": {

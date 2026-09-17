@@ -1,27 +1,16 @@
 import { useEffect, useState, type JSX } from "react";
 import { useTranslation } from "react-i18next";
-import type {
-  AnalyzeConflictScope,
-  ConflictAnalysis,
-} from "../../api/bindings";
+import { Link } from "react-router-dom";
 import { describeNativeError } from "../../api/nativeErrors";
 import { operationTracker, type OperationTracker } from "../../platform/operationTracker";
 import { runTrackedOperation } from "../../platform/runTrackedOperation";
 import { Button } from "../../ui/Button";
 import { StatusBadge } from "../../ui/StatusBadge";
-import {
-  conflictClassificationLabelKey,
-} from "../relationshipGovernance/relationshipGovernance";
+import { conflictWorkspaceHref } from "../relationships/decisions/conflictDecisions";
 import {
   type SemanticDuplicateReport,
   type SkillDetailFacade,
 } from "./api";
-
-const recommendedActionKeys: Record<ConflictAnalysis["cases"][number]["recommended_action"], string> = {
-  same_skill_version: "relationshipGovernance.conflictAnalysis.action.same_skill_version",
-  distinct_skill: "relationshipGovernance.conflictAnalysis.action.distinct_skill",
-  keep_uncertain: "relationshipGovernance.conflictAnalysis.action.keep_uncertain",
-};
 
 interface SemanticDuplicatePanelProps {
   facade: SkillDetailFacade;
@@ -37,7 +26,8 @@ interface SemanticDuplicatePanelProps {
  * The panel is user-initiated, shows the deterministic candidates even when
  * the AI layer fails, and never performs any action by itself: merging,
  * deleting or archiving always stays a separate explicit user decision.
- * Task 8：AI 可用性接真实供应商信号；并新增 Skill 维度冲突分析入口。 */
+ * 任务 7 清理：此处不再自带 Skill 维度冲突分析入口；冲突组的 AI 分析与
+ * 裁决集中在冲突处理工作台，面板只保留确定性候选与工作台深链。 */
 export function SemanticDuplicatePanel({
   deterministicCandidates = [],
   facade,
@@ -50,9 +40,6 @@ export function SemanticDuplicatePanel({
   const [error, setError] = useState<string>();
   // null 表示可用性查询尚未返回：按钮暂不可点，但不显示不可用文案。
   const [aiAvailable, setAiAvailable] = useState<boolean | null>(null);
-  const [conflictRunning, setConflictRunning] = useState(false);
-  const [conflictAnalysis, setConflictAnalysis] = useState<ConflictAnalysis>();
-  const [conflictError, setConflictError] = useState<string>();
 
   useEffect(() => {
     let cancelled = false;
@@ -100,28 +87,6 @@ export function SemanticDuplicatePanel({
       // 统一走分类文案，并明确确定性候选不受影响。
       .catch((reason: unknown) => setError(describeError(reason)))
       .finally(() => setRunning(false));
-  };
-
-  const runConflictAnalysis = (scope: AnalyzeConflictScope) => {
-    if (conflictRunning) return;
-    setConflictRunning(true);
-    setConflictError(undefined);
-    runTrackedOperation({
-      tracker,
-      notifications: null,
-      kind: "ai_analysis",
-      label: t("skillDetail.tracker.conflictPhaseLabel"),
-      translate: (key, options) => String(t(key as never, options as never)),
-      successNotice: () => null,
-      errorNotice: () => null,
-      run: (handle) => {
-        handle.phase(t("skillDetail.tracker.conflictPhase"));
-        return facade.analyzeConflicts(scope);
-      },
-    })
-      .then(setConflictAnalysis)
-      .catch((reason: unknown) => setConflictError(describeError(reason)))
-      .finally(() => setConflictRunning(false));
   };
 
   const aiUnavailableCopy = aiAvailable === false;
@@ -214,116 +179,15 @@ export function SemanticDuplicatePanel({
           <p className="sh-settings-local-note">{t("skillDetail.duplicates.confirmationNote")}</p>
         </>
       ) : null}
-      {/* 下段：Skill 维度可选冲突分析（Task 8）。确定性冲突分组先于 AI 结论。 */}
+      {/* 任务 7 清理：冲突组的 AI 分析与裁决集中在冲突处理工作台，
+          这里只保留确定性候选与深链，不再自带 Skill 维度冲突分析入口。 */}
       <div className="sh-metadata-panel__section-heading">
-        <h3 id="skill-conflicts-heading">{t("skillDetail.conflicts.heading")}</h3>
-        <Button
-          disabled={conflictRunning || aiUnavailableCopy}
-          loading={conflictRunning}
-          onClick={() =>
-            runConflictAnalysis({ type: "skill", value: { skill_id: skillId } })
-          }
-          size="sm"
-          variant="ghost"
-        >
-          {t("skillDetail.conflicts.run")}
-        </Button>
+        <h3>{t("relationships.decisions.panelHeading")}</h3>
       </div>
-      <p className="sh-settings-local-note">{t("skillDetail.conflicts.scopeNote")}</p>
-      {aiUnavailableCopy ? (
-        <p role="status">{t("skillDetail.conflicts.aiUnavailable")}</p>
-      ) : null}
-      {conflictError ? (
-        <>
-          <p role="alert">
-            {t("skillDetail.conflicts.failureReason", { reason: conflictError })}
-          </p>
-          <p role="status">{t("skillDetail.conflicts.deterministicNote")}</p>
-        </>
-      ) : null}
-      {conflictAnalysis ? (
-        <div data-testid="conflict-analysis-result">
-          <p>
-            {conflictAnalysis.source === "llm"
-              ? t("relationshipGovernance.conflictAnalysis.sourceLlm")
-              : t("relationshipGovernance.conflictAnalysis.sourceDeterministic")}
-          </p>
-          {conflictAnalysis.failure_code ? (
-            <>
-              <p role="alert">
-                {t("skillDetail.conflicts.failureReason", {
-                  reason: describeError({
-                    code: conflictAnalysis.failure_code,
-                    severity: "error",
-                    params: {},
-                    actions: [],
-                  }),
-                })}
-              </p>
-              <p role="status">{t("skillDetail.conflicts.deterministicNote")}</p>
-            </>
-          ) : null}
-          {conflictAnalysis.skipped_decided_cases > 0 ? (
-            <p role="status">
-              {t("relationshipGovernance.conflictAnalysis.skippedDecided", {
-                count: conflictAnalysis.skipped_decided_cases,
-              })}
-            </p>
-          ) : null}
-          {conflictAnalysis.cases.length === 0 && !conflictAnalysis.failure_code ? (
-            <p>{t("skillDetail.conflicts.empty")}</p>
-          ) : (
-            <ul>
-              {conflictAnalysis.cases.map((conclusion) => (
-                <li key={conclusion.conflict_id}>
-                  <strong>
-                    {t("skillDetail.conflicts.caseHeading", {
-                      id: conclusion.conflict_id,
-                    })}
-                  </strong>
-                  <span>
-                    {" "}
-                    {t("relationshipGovernance.conflictAnalysis.baselineLabel")}{" "}
-                    {t(conflictClassificationLabelKey(conclusion.baseline_classification) as never)}
-                  </span>
-                  <p>{conclusion.summary}</p>
-                  <p>
-                    {t("relationshipGovernance.conflictAnalysis.recommendedAction", {
-                      action: t(
-                        recommendedActionKeys[conclusion.recommended_action] as never,
-                      ),
-                    })}
-                  </p>
-                  {conclusion.recommended_keep_member ? (
-                    <p>
-                      {t("relationshipGovernance.conflictAnalysis.recommendedKeep", {
-                        member: conclusion.recommended_keep_member,
-                      })}
-                    </p>
-                  ) : null}
-                  {conclusion.key_evidence.length ? (
-                    <p>{conclusion.key_evidence.join("；")}</p>
-                  ) : null}
-                  {conclusion.uncertainties.length ? (
-                    <p>
-                      {t("relationshipGovernance.conflictAnalysis.uncertainties")}：
-                      {conclusion.uncertainties.join("；")}
-                    </p>
-                  ) : null}
-                  <p>
-                    {t("relationshipGovernance.conflictAnalysis.confidence", {
-                      value: conclusion.confidence,
-                    })}
-                  </p>
-                </li>
-              ))}
-            </ul>
-          )}
-          <p className="sh-settings-local-note">
-            {t("relationshipGovernance.conflictAnalysis.advisoryNote")}
-          </p>
-        </div>
-      ) : null}
+      <p>
+        <Link to={conflictWorkspaceHref()}>{t("relationships.decisions.deepLink.label")}</Link>
+      </p>
+      <p className="sh-settings-local-note">{t("relationships.decisions.deepLink.hint")}</p>
     </section>
   );
 }
