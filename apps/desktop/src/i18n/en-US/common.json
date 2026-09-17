@@ -2979,8 +2979,11 @@
     "summary": {
       "entries": {
         "conflicts": "Conflict workspace",
+        "conflictsAria": "Open conflict workspace ({{count}} unconfirmed conflicts)",
         "graph": "Relationship graph",
-        "governance": "Relationship governance"
+        "graphAria": "Open relationship graph ({{count}} skills with displayable relations)",
+        "governance": "Relationship governance",
+        "governanceAria": "Open relationship governance ({{count}} relation edges)"
       },
       "metrics": {
         "agentsCombined": "Agents ({{configured}} configured · {{discovered}} discovered)",
@@ -2988,6 +2991,12 @@
         "projectsManage": "Manage projects",
         "skillsTotal": "Total skills",
         "unconfirmedConflicts": "Unconfirmed relationship conflicts"
+      },
+      "network": {
+        "emptyHint": "No relationship facts to display yet.",
+        "eyebrow": "Relationship overview",
+        "heading": "Skill relationships",
+        "unavailable": "Relationship overview is temporarily unavailable."
       }
     },
     "tags": {
