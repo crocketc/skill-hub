@@ -2180,7 +2180,137 @@
     },
     "governance": {
       "title": "Relationship governance",
-      "placeholder": "The relationship governance workbench is not available yet; the governance panel on Skill details remains available."
+      "placeholder": "The relationship governance workbench is not available yet; the governance panel on Skill details remains available.",
+      "description": "Review each established relationship edge, preview the impact first, then confirm bringing it under central library management or removing it from the Agent/Project.",
+      "loading": "Loading the relationship governance ledger…",
+      "loadError": "The relationship governance ledger is unavailable.",
+      "retryLoad": "Reload",
+      "back": {
+        "library": "Back to Skill library",
+        "graph": "Back to Skill graph",
+        "conflict": "Back to conflict decisions",
+        "agent": "Back to Agent details",
+        "project": "Back to project details"
+      },
+      "deployEntry": {
+        "eyebrow": "Regular add entry",
+        "title": "Add to Agent/Project",
+        "description": "Putting a new Skill into an Agent/Project uses the regular add flow and stays separate from the governance actions below; this ledger only handles established relationship edges.",
+        "action": "Add to Agent/Project"
+      },
+      "filters": {
+        "label": "Quick filters",
+        "all": "All",
+        "eligible_to_centralize": "Ready to centralize",
+        "needs_validation": "Needs validation",
+        "blocked": "Blocked",
+        "withCount": "{{label}} ({{count}})"
+      },
+      "search": {
+        "label": "Search skills, targets or paths",
+        "apply": "Search"
+      },
+      "table": {
+        "relation": "Relationship",
+        "source": "Source",
+        "target": "Target",
+        "impact": "Impact",
+        "verification": "Verification",
+        "action": "Action",
+        "selectAll": "Select all rows",
+        "selectRow": "Select relationship {{id}}",
+        "listLabel": "Relationship governance ledger"
+      },
+      "source": {
+        "scan": "Found by scan",
+        "import": "Registered by import"
+      },
+      "readiness": {
+        "eligible_to_centralize": "Ready to centralize",
+        "needs_validation": "Needs validation",
+        "blocked": "Blocked",
+        "already_centralized": "Already centrally managed"
+      },
+      "blockers": {
+        "unverifiable_representation": "Directory junctions or unknown representations cannot be verified safely; conversion is blocked.",
+        "relationship_not_convertible": "This relationship type has no convertible entry.",
+        "shared_body_protected": "This entry reads the shared directory body itself; conversion would rewrite shared content and is blocked.",
+        "directory_not_registered": "The target is not under any registered directory node.",
+        "directory_recognition_unknown": "Recognition of the target directory is unknown and must be confirmed first.",
+        "directory_recognition_unsupported": "The target directory is confirmed unsupported; the action is blocked.",
+        "verification_not_current": "The evidence is not in the latest verified state; re-check first.",
+        "shared_impact_confirmation_required": "Other Agents read the same shared directory; the shared impact needs explicit confirmation.",
+        "skill_identity_unconfirmed": "A deterministic Skill identity or content fingerprint is missing."
+      },
+      "impact": {
+        "noOtherConsumers": "No other shared consumers",
+        "otherConsumers_one": "Shared consumers: {{count}} ({{agents}})",
+        "otherConsumers_other": "Shared consumers: {{count}} ({{agents}})",
+        "rollbackAvailable": "Rollback available",
+        "rollbackUnavailable": "No rollback available"
+      },
+      "actions": {
+        "centralize_management": "Bring under central library management",
+        "undeploy": "Remove from Agent/Project",
+        "revalidate": "Re-check",
+        "none": "Blocked"
+      },
+      "selection": {
+        "selectedCount": "{{count}} selected",
+        "openBatch": "Bring the selection under central library management"
+      },
+      "batchSummary": {
+        "executable": "Executable {{count}}",
+        "blocked": "Blocked {{count}}"
+      },
+      "centralize": {
+        "explain": "Central library management keeps a usable entry at the current location and switches it to the unified version in the central library.",
+        "done": "Brought under central library management: {{skill}}"
+      },
+      "undeployResult": {
+        "done": "Removed from the target: {{path}}"
+      },
+      "preview": {
+        "centralizeTitle": "Central library management preview",
+        "undeployTitle": "Remove from Agent/Project preview",
+        "targetLabel": "Target path",
+        "relationLabel": "Relationship type",
+        "verificationLabel": "Verification state",
+        "confirm": "Confirm",
+        "sharedImpactConfirm": "I confirm the shared directory impact",
+        "rejectedNote": "The backend rejected this request; the preview stays unchanged and no success state was applied."
+      },
+      "batch": {
+        "title": "Bring the selection under central library management",
+        "hint": "Blocked items are not selected by default; you can cancel single items, and the remaining rows are unaffected.",
+        "itemExecutable": "Executable",
+        "itemBlocked": "Blocked",
+        "itemCheck": "Run {{id}}",
+        "sharedImpactConfirm": "I confirm the shared directory impact ({{id}})",
+        "confirmCount": "Confirm running {{count}} items",
+        "running": "Running and verifying item by item…",
+        "resultTitle": "Batch result",
+        "resultPartial": "Partially committed: {{committed}} succeeded, {{failed}} failed",
+        "resultAll": "All brought under central library management ({{count}} items)",
+        "resultNone": "Nothing succeeded this time; review the per-item failures",
+        "resultCancelled": "{{count}} items cancelled",
+        "itemCommitted": "Succeeded",
+        "itemFailed": "Failed",
+        "itemCancelled": "Cancelled",
+        "itemRolledBack": "Rolled back",
+        "retry": "Retry {{id}}",
+        "rollback": "Roll back {{id}}",
+        "rollbackAvailable": "Rollback available",
+        "childOperation": "Operation record",
+        "trackerLabel": "Central library management batch",
+        "itemTrackerLabel": "Central library management: {{id}}",
+        "close": "Close"
+      },
+      "empty": {
+        "all": "Relationships are in good shape; there is no relationship change to handle.",
+        "filtered": "No relationships under this filter."
+      },
+      "manageRelations": "Manage relations"
     }
   },
   "operations": {

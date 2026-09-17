@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { RemovalImpactFact } from "../../api/bindings";
 import { Button } from "../../ui/Button";
@@ -12,6 +12,8 @@ export interface RelationshipRemovalImpactViewProps {
   /** 只读加载既有 RemovalImpact 事实；本组件不执行任何变更。 */
   loadImpact: () => Promise<RemovalImpactFact>;
   triggerLabel: string;
+  /** 挂载即展开（治理预览等已处于确认上下文时）；缺省保持原折叠行为。 */
+  defaultOpen?: boolean;
 }
 
 /**
@@ -20,25 +22,30 @@ export interface RelationshipRemovalImpactViewProps {
  * 用户确认之后，由既有移除/迁移命令负责。
  */
 export function RelationshipRemovalImpactView({
+  defaultOpen = false,
   loadImpact,
   triggerLabel,
 }: RelationshipRemovalImpactViewProps) {
   const { t } = useTranslation();
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(defaultOpen);
   const [impact, setImpact] = useState<RemovalImpactFact>();
   const [failed, setFailed] = useState(false);
+  const loadingRef = useRef(false);
 
-  const toggle = () => {
-    const next = !open;
-    setOpen(next);
-    if (next && !impact) {
-      loadImpact().then((value) => {
-        setImpact(value);
-      }).catch(() => {
-        setFailed(true);
-      });
-    }
-  };
+  // 展开且尚无事实时加载一次；默认展开（治理预览）也走同一条只读加载路径。
+  useEffect(() => {
+    if (!open || impact || failed || loadingRef.current) return;
+    loadingRef.current = true;
+    loadImpact().then((value) => {
+      setImpact(value);
+    }).catch(() => {
+      setFailed(true);
+    }).finally(() => {
+      loadingRef.current = false;
+    });
+  }, [failed, impact, loadImpact, open]);
+
+  const toggle = () => setOpen((value) => !value);
 
   return (
     <div className="sh-removal-impact" data-testid="removal-impact">

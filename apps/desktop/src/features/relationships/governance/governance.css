@@ -1,0 +1,157 @@
+/* 关系治理工作台样式（任务 8）。仅使用 --ui-* / --space-* 语义 token，不写死主题色。 */
+.sh-governance__source-bar {
+  display: flex;
+  justify-content: flex-start;
+}
+
+.sh-governance__eyebrow {
+  color: var(--ui-text-muted, var(--ui-text-secondary, inherit));
+  font-size: 0.85rem;
+  margin: 0;
+}
+
+.sh-governance__deploy-entry {
+  border: 1px solid var(--ui-border, var(--ui-border-subtle, currentColor));
+  border-radius: var(--space-2);
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-4);
+}
+
+.sh-governance__deploy-entry h2 {
+  margin: 0;
+}
+
+.sh-governance__filters {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.sh-governance__search {
+  display: flex;
+  gap: var(--space-2);
+  margin-left: auto;
+}
+
+.sh-governance__list {
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.sh-governance__table {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+.sh-governance__table th,
+.sh-governance__table td {
+  border-bottom: 1px solid var(--ui-border, var(--ui-border-subtle, currentColor));
+  padding: var(--space-2);
+  text-align: left;
+  vertical-align: top;
+}
+
+.sh-governance__table td > * {
+  display: block;
+}
+
+.sh-governance__readiness {
+  color: var(--ui-text-muted, var(--ui-text-secondary, inherit));
+  font-size: 0.85rem;
+}
+
+.sh-governance__blockers {
+  color: var(--ui-text-muted, var(--ui-text-secondary, inherit));
+  font-size: 0.85rem;
+  margin: var(--space-1) 0 0;
+  padding-left: var(--space-4);
+}
+
+.sh-governance__actions {
+  min-width: 10rem;
+}
+
+.sh-governance__actions .sh-button + .sh-button {
+  margin-top: var(--space-2);
+}
+
+.sh-governance__toolbar {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.sh-governance__dialog {
+  border: 1px solid var(--ui-border, var(--ui-border-subtle, currentColor));
+  border-radius: var(--space-2);
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-4);
+}
+
+.sh-governance__dialog h3 {
+  margin: 0;
+}
+
+.sh-governance__facts {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+}
+
+.sh-governance__facts div {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.sh-governance__facts dt {
+  font-weight: 600;
+  min-width: 6rem;
+}
+
+.sh-governance__facts dd {
+  margin: 0;
+}
+
+.sh-governance__confirm-check {
+  align-items: center;
+  display: flex;
+  gap: var(--space-2);
+}
+
+.sh-governance__dialog-actions {
+  display: flex;
+  gap: var(--space-2);
+  justify-content: flex-end;
+}
+
+.sh-governance__batch-items {
+  display: grid;
+  gap: var(--space-3);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.sh-governance__batch-items li {
+  border: 1px solid var(--ui-border, var(--ui-border-subtle, currentColor));
+  border-radius: var(--space-2);
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3);
+}
+
+.sh-governance__batch-items label {
+  align-items: center;
+  display: flex;
+  gap: var(--space-2);
+}
+
+/* 对象页（Agent/项目/Skill 详情/添加流程）里的「管理关系」深链：
+   与相邻的动作按钮同级、不抢主操作视觉。 */
+.sh-governance__row-link {
+  font-size: 0.9rem;
+}
