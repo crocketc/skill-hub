@@ -135,6 +135,15 @@ async function installNativePreview(page: Page) {
           case "list_skill_operations": return ok("skill_operations", skillOperations);
           case "diff_versions": return ok("version_diff", { added: ["new section"], changed: ["SKILL.md"], removed: [] });
           case "check_source_updates": return ok("source_update_checks", [{ skill_id: "pdf-reader", state: "update_available" }]);
+          // 任务 9 冻结指标带（任务 10 接线）：概览冲突计数与三个关系缩略
+          // 入口消费任务 1/2/3 只读查询；真实产品路由（"/"）同样需要确定性
+          // 关系事实，才能在无 Tauri 后端的浏览器里呈现冻结契约。
+          case "list_skill_relationship_candidates": return ok("skill_relationship_candidates", [
+            { skill_id: "pdf-reader", display_name: "PDF Reader", runtime_name: "pdf-reader", tags: ["documents"], matched_alias: null, relationship_count: 2, relationship_revision: "preview-rel-1", last_verified_at: null },
+            { skill_id: "release-notes", display_name: "Release Notes", runtime_name: "release-notes", tags: ["automation"], matched_alias: null, relationship_count: 1, relationship_revision: "preview-rel-1", last_verified_at: null },
+          ]);
+          case "get_conflict_workspace": return ok("conflict_workspace", { cases: [{ case: { classification: "uncertain", conflict_id: "conflict-1", evidence: { fingerprints_match: null, names_match: true, sufficient_identity_evidence: false }, member_skill_ids: [] }, latest_analysis: null, analysis_stale: false, recommended_decision: null }], handled_count: 0, handled: [], relationship_revision: "preview-rel-1", last_verified_at: null });
+          case "list_relation_governance": return ok("relation_governance_ledger", { rows: [], counts: { all: 3, eligible_to_centralize: 1, needs_validation: 1, blocked: 1 }, bucket: "all", total: 3, relationship_revision: "preview-rel-1", last_verified_at: null });
           case "get_deployment_plan": return ok("deployment_plan", { skill_id: query.payload.request.skill_id, version_id: query.payload.request.version_id, runtime_name: query.payload.request.runtime_name, mode: "symbolic_link", targets: [{ physical_target_id: "codex-physical", logical_target_ids: ["codex-target"], target_path: "C:/Preview/.agents", destination_path: "C:/Preview/.agents/pdf-reader", source_path: "C:/Preview/SkillHub/skills/pdf-reader", runtime_name: query.payload.request.runtime_name, skill_id: query.payload.request.skill_id, version_id: query.payload.request.version_id, mode: "symbolic_link", change: "no_op", warnings: [], conflicts: [] }], warnings: [], conflicts: [] });
           case "list_pending_items": return ok("pending_items", pending);
           case "list_ignore_rules": return ok("ignore_rules", ignoreRules);
@@ -237,7 +246,21 @@ async function installNativePreview(page: Page) {
 test("overview metrics, chart dimensions, and tag drilldown remain navigable", async ({ page }) => {
   await installNativePreview(page);
   await page.goto("/");
-  await expect(page.getByRole("link", { name: /4 skills/ })).toHaveAttribute("href", "/library");
+  // 任务 9 冻结五指标（任务 10 迁移）：hero=技能总数，钻取 /library。
+  await expect(page.getByRole("link", { name: "4 Total skills" })).toHaveAttribute("href", "/library");
+  // 冲突计数来自任务 2 工作台投影；三个缩略入口按冻结契约给出深链。
+  await expect(
+    page.getByRole("link", { name: "1 Unconfirmed relationship conflicts" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("link", { name: "Open relationship graph (2 skills with displayable relations)" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("link", { name: "Open conflict workspace (1 unconfirmed conflicts)" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("link", { name: "Open relationship governance (3 relation edges)" }),
+  ).toBeVisible();
   await expect(page.getByText("documents")).toBeVisible();
   await page.getByRole("radio", { name: "Projects" }).check();
   await expect(page.getByRole("img", { name: "Deployment relation count by project" })).toBeVisible();

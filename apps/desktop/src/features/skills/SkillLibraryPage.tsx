@@ -1122,9 +1122,17 @@ export function SkillLibraryPage({
     );
   }
 
+  // T3-C「每路由唯一 h1」（任务 10 h1 sweep）：顶栏标题降级为非 heading 后，
+  // 技能库自持 route-level h1。页面无可见页头（工具栏即首行，布局契约被
+  // 多个几何 e2e 锁定），故 h1 视觉隐藏，加载/错误/空态分支同样携带。
+  const libraryHeading = (
+    <h1 className="sh-visually-hidden">{t("navigation.library")}</h1>
+  );
+
   if (pageQuery.isPending) {
     return (
       <section className="sh-skill-library" ref={rootRef}>
+        {libraryHeading}
         <SkillLibrarySkeleton />
       </section>
     );
@@ -1133,6 +1141,7 @@ export function SkillLibraryPage({
   if (pageQuery.isError && isSkillLibraryUnavailable(pageQuery.error)) {
     return (
       <section className="sh-skill-library" ref={rootRef}>
+        {libraryHeading}
         <DataState
           message={t("skillLibrary.page.states.unavailable")}
           state="unavailable"
@@ -1144,6 +1153,7 @@ export function SkillLibraryPage({
   if (pageQuery.isError) {
     return (
       <section className="sh-skill-library" ref={rootRef}>
+        {libraryHeading}
         <DataState
           actionLabel={t("actions.retry")}
           message={t("skillLibrary.page.states.error")}
@@ -1256,6 +1266,7 @@ export function SkillLibraryPage({
   if (!pageRefreshing && page.total === 0 && !hasActiveFilter(query)) {
     return (
       <section className="sh-skill-library" ref={rootRef}>
+        {libraryHeading}
         <DataState
           actionLabel={onOpenDiscovery ? t("skillLibrary.page.states.openDiscovery") : undefined}
           message={t("skillLibrary.page.states.empty")}
@@ -1272,6 +1283,7 @@ export function SkillLibraryPage({
   if (!pageRefreshing && page.items.length === 0 && hasActiveFilter(query)) {
     return (
       <section className="sh-skill-library" ref={rootRef}>
+        {libraryHeading}
         <DataState
           actionLabel={t("skillLibrary.filters.clear")}
           message={t("skillLibrary.page.states.noResults")}
@@ -1296,6 +1308,7 @@ export function SkillLibraryPage({
         .join(" ")}
       ref={rootRef}
     >
+      {libraryHeading}
       {deployTarget ? (
         <p aria-live="polite" className="sh-notice" role="status">
           {t("skillLibrary.page.deployTargetBanner", { label: deployTarget.label })}

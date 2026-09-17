@@ -16,14 +16,15 @@ export interface OperationsRecordsPageProps {
  * AR-015：/operations 指向真实操作记录列表——本会话 tracker 操作与持久化
  * 最近记录双来源，渲染为结构化时间线；单条操作详情仍由
  * /operations/:operationId 的 OperationProgress 呈现。
- * 页面 h1 由顶栏承载，内容从 h2 开始（规格 4.3）。
+ * 页面自持 route-level h1（T3-C「每路由唯一 h1」：顶栏标题已降级为非
+ * heading，任务 10 h1 sweep 统一把五个顶层页面升回 level 1）。
  */
 export function OperationsRecordsPage({ recent = nativeRecentOperations, tracker }: OperationsRecordsPageProps) {
   const { t } = useTranslation();
   return (
     <PageFrame width="wide">
       <div className="sh-workflow-page sh-operations-page">
-        <PageHeader title={t("operations.recordsTitle")} />
+        <PageHeader headingLevel="h1" title={t("operations.recordsTitle")} />
         <section aria-label={t("operations.list.ariaLabel")} className="sh-workflow-card sh-operations-page__card">
           <OperationsList recent={recent} tracker={tracker} />
         </section>

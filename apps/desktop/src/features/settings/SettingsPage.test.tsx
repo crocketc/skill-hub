@@ -43,6 +43,27 @@ it("keeps the section navigation in a left column with dual scrolling at every w
   );
 });
 
+// T3-C「每路由唯一 h1」（任务 10 h1 sweep）：顶栏标题降级为非 heading 后，
+// 设置页自持 route-level h1。
+it("keeps a single page-level h1 for the settings heading outline", async () => {
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  render(
+    <MemoryRouter>
+      <I18nextProvider i18n={i18n}>
+        <ThemeProvider>
+          <SettingsPage
+            facade={{ execute: async () => undefined }}
+            initialSettings={settingsFixture()}
+          />
+        </ThemeProvider>
+      </I18nextProvider>
+    </MemoryRouter>,
+  );
+
+  expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
+  expect(screen.getByRole("heading", { level: 1, name: "让 SkillHub 适应你的工作方式" })).toBeVisible();
+});
+
 it("announces the section navigation as a vertical tablist", async () => {
   const i18n = await createSkillHubI18n(["zh-CN"]);
   render(

@@ -384,6 +384,15 @@ it("assigns an explicit palette color to every tag slice", () => {
   expect(tagRuntime).toContain("palette.chartColors[index % palette.chartColors.length]");
 });
 
+it("keeps a single page-level h1 for the overview heading outline", async () => {
+  // T3-C「每路由唯一 h1」：顶栏标题已降级为非 heading，route-level h1 由
+  // 页面自持（任务 10 h1 sweep 把概览页头升回 level 1）。
+  await renderOverview();
+
+  expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
+  expect(screen.getByRole("heading", { level: 1, name: "Overview" })).toBeVisible();
+});
+
 it("promotes a single primary metric and turns the rest into compact stats", async () => {
   await renderOverview();
 

@@ -24,7 +24,7 @@ import { OnlineDiscoveryPreview } from "../features/discovery/OnlineDiscoveryPre
 import { DiscoveryCardsPreview } from "../features/discovery/DiscoveryCardsPreview";
 import { UiFoundationsPreview } from "../features/dev-preview/UiFoundationsPreview";
 import { MarkdownWorkspacePreview } from "../features/markdown/MarkdownWorkspacePreview";
-import { OverviewPreviewShell } from "../features/overview/OverviewPreview";
+import { OverviewPreviewShell, overviewPreviewRelationshipsFacade } from "../features/overview/OverviewPreview";
 import { PendingPreview } from "../features/pending/PendingPreview";
 import { OperationsPreview, OperationProgressPreview } from "../features/operations/OperationsPreview";
 import { RecoveryPreview } from "../features/recovery/RecoveryPreview";
@@ -325,7 +325,12 @@ export const appRouter = createBrowserRouter([
         {
           path: "__preview/overview",
           element: <OverviewPreviewShell />,
-          children: [{ index: true, element: <OverviewPage /> }],
+          // 任务 10：预览桩注入确定性关系事实（任务 9 §7.4 桩需求），
+          // 仅 DEV 生效；生产路由仍使用原生门面默认值。
+          children: [{
+            index: true,
+            element: <OverviewPage relationshipsFacade={overviewPreviewRelationshipsFacade} />,
+          }],
         },
         { path: "__preview/onboarding/:scenario", element: <OnboardingPreview /> },
       ]
