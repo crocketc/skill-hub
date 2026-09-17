@@ -1,6 +1,7 @@
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { I18nextProvider } from "react-i18next";
+import { MemoryRouter } from "react-router-dom";
 import { expect, it, vi } from "vitest";
 import { createSkillHubI18n } from "../../i18n";
 import { createOperationTracker } from "../../platform/operationTracker";
@@ -364,4 +365,33 @@ describe("DeploymentDialog 与统一执行桥", () => {
     expect(failed.status).toBe("failed");
     expect(failed.error).toBe("deployment.plan_stale");
   });
+});
+
+it("offers a manage-relations deep link back to the governance workbench", async () => {
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  const facade: DeploymentFacade = {
+    listTargets: async () => deploymentTargetsFixture(),
+    preview: async () => {
+      throw new Error("not used here");
+    },
+    commit: async () => [],
+  };
+  render(
+    <MemoryRouter>
+      <I18nextProvider i18n={i18n}>
+        <DeploymentDialog
+          facade={facade}
+          manageRelationsHref="/relationships/governance?from=library&skillId=skill-pdf"
+          skillId="skill-pdf"
+          versionId="v1"
+        />
+      </I18nextProvider>
+    </MemoryRouter>,
+  );
+
+  const link = await screen.findByTestId("manage-relations-link");
+  expect(link.textContent).toContain("管理关系");
+  expect(link.getAttribute("href")).toBe(
+    "/relationships/governance?from=library&skillId=skill-pdf",
+  );
 });

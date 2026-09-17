@@ -1,4 +1,5 @@
 import { useTranslation } from "react-i18next";
+import { Link } from "react-router-dom";
 import type { RelationshipOverview, RemovalImpactFact } from "../../api/bindings";
 import { StatusBadge } from "../../ui/StatusBadge";
 import {
@@ -20,6 +21,8 @@ export interface DirectoryMatrixProps {
   currentAgentClientId?: string;
   /** 提供时每个活动关系都有"查看移除影响"入口；入口只读取影响，不执行变更。 */
   onLoadRemovalImpact?: (relationId: string) => Promise<RemovalImpactFact>;
+  /** 提供时每个关系行都有「管理关系」深链，指向治理页并携带来源与 relationId。 */
+  governanceHref?: (relation: RelationshipView) => string;
 }
 
 function recognitionTone(recognition: AgentDirectoryView["recognition"]): "neutral" | "success" | "warning" {
@@ -31,10 +34,12 @@ function recognitionTone(recognition: AgentDirectoryView["recognition"]): "neutr
 function DirectoryCard({
   currentAgentClientId,
   directory,
+  governanceHref,
   onLoadRemovalImpact,
 }: {
   currentAgentClientId?: string;
   directory: AgentDirectoryView;
+  governanceHref?: DirectoryMatrixProps["governanceHref"];
   onLoadRemovalImpact?: DirectoryMatrixProps["onLoadRemovalImpact"];
 }) {
   const { t } = useTranslation();
@@ -74,6 +79,7 @@ function DirectoryCard({
           {directory.relations.map((relation) => (
             <RelationRow
               currentAgentClientId={currentAgentClientId}
+              governanceHref={governanceHref}
               key={relation.relationId}
               onLoadRemovalImpact={onLoadRemovalImpact}
               relation={relation}
@@ -87,10 +93,12 @@ function DirectoryCard({
 
 function RelationRow({
   currentAgentClientId,
+  governanceHref,
   onLoadRemovalImpact,
   relation,
 }: {
   currentAgentClientId?: string;
+  governanceHref?: DirectoryMatrixProps["governanceHref"];
   onLoadRemovalImpact?: DirectoryMatrixProps["onLoadRemovalImpact"];
   relation: RelationshipView;
 }) {
@@ -119,6 +127,15 @@ function RelationRow({
           triggerLabel={t("relationshipGovernance.matrix.viewRemovalImpact")}
         />
       ) : null}
+      {governanceHref ? (
+        <Link
+          className="sh-governance__row-link"
+          data-testid="governance-link"
+          to={governanceHref(relation)}
+        >
+          {t("relationships.governance.manageRelations")}
+        </Link>
+      ) : null}
       <details>
         <summary>{t("relationshipGovernance.matrix.technicalSummary")}</summary>
         <p>{t(fileRepresentationLabelKey(relation.fileRepresentation) as never)}</p>
@@ -139,6 +156,7 @@ function RelationRow({
  */
 export function DirectoryMatrix({
   currentAgentClientId,
+  governanceHref,
   onLoadRemovalImpact,
   overview,
 }: DirectoryMatrixProps) {
@@ -172,6 +190,7 @@ export function DirectoryMatrix({
           <DirectoryCard
             currentAgentClientId={currentAgentClientId}
             directory={directory}
+            governanceHref={governanceHref}
             key={directory.directoryNodeId}
             onLoadRemovalImpact={onLoadRemovalImpact}
           />

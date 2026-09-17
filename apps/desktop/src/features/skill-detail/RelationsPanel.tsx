@@ -1,4 +1,5 @@
 import { useTranslation } from "react-i18next";
+import { Link } from "react-router-dom";
 import type { RemovalImpactFact } from "../../api/bindings";
 import { Button } from "../../ui/Button";
 import { StatusBadge } from "../../ui/StatusBadge";
@@ -7,6 +8,7 @@ import {
   fingerprintLabelKey,
   ownershipLabelKey,
   relationshipLabelKey,
+  type RelationshipView,
   type SkillRelationshipViews,
 } from "../relationshipGovernance/relationshipGovernance";
 import type { SkillRelation } from "./api";
@@ -18,9 +20,12 @@ export interface RelationsPanelProps {
   relationship?: SkillRelationshipViews;
   /** 只读加载移除影响；变更仍由用户在既有部署/移除流程中确认执行。 */
   onLoadRemovalImpact?: (relationId: string) => Promise<RemovalImpactFact>;
+  /** 提供时每条治理关系行都有「管理关系」深链，指向治理页并携带 relationId。 */
+  governanceHref?: (relation: RelationshipView) => string;
 }
 
 export function RelationsPanel({
+  governanceHref,
   onLoadRemovalImpact,
   onUndeploy,
   relations,
@@ -87,6 +92,15 @@ export function RelationsPanel({
                       loadImpact={() => onLoadRemovalImpact(row.relationId)}
                       triggerLabel={t("relationshipGovernance.matrix.viewRemovalImpact")}
                     />
+                  ) : null}
+                  {governanceHref ? (
+                    <Link
+                      className="sh-governance__row-link"
+                      data-testid="governance-link"
+                      to={governanceHref(row)}
+                    >
+                      {t("relationships.governance.manageRelations")}
+                    </Link>
                   ) : null}
                 </li>
               ))}

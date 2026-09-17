@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { Link } from "react-router-dom";
 import type { DeploymentRecord } from "../../api/bindings";
 import { describeNativeError } from "../../api/nativeErrors";
 import { Button } from "../../ui/Button";
@@ -13,13 +14,15 @@ export interface ProjectManagedDeploymentsOps {
 interface ProjectManagedDeploymentsProps {
   ops: ProjectManagedDeploymentsOps;
   projectId: string;
+  /** 提供时每条受管副本都有「管理关系」深链，指向治理页并携带来源与 skillId。 */
+  governanceHref?: (record: DeploymentRecord) => string;
 }
 
 /**
  * 项目详情"解除管理"落点：列出本项目目录下受管（managed=1）的 Skill 副本，
  * 经确认后调用既有 `detach_management` 契约。文件保留在原位，仅停止跟踪。
  */
-export function ProjectManagedDeployments({ ops, projectId }: ProjectManagedDeploymentsProps): JSX.Element {
+export function ProjectManagedDeployments({ governanceHref, ops, projectId }: ProjectManagedDeploymentsProps): JSX.Element {
   const { t } = useTranslation();
   const [records, setRecords] = useState<DeploymentRecord[]>();
   const [failed, setFailed] = useState(false);
@@ -92,6 +95,15 @@ export function ProjectManagedDeployments({ ops, projectId }: ProjectManagedDepl
                 <strong>{record.skill_id}</strong>
                 <small>{record.runtime_name}</small>
               </span>
+              {governanceHref ? (
+                <Link
+                  className="sh-governance__row-link"
+                  data-testid="governance-link"
+                  to={governanceHref(record)}
+                >
+                  {t("relationships.governance.manageRelations")}
+                </Link>
+              ) : null}
               {confirmingFor?.id === record.id ? (
                 <span className="sh-workflow-actions">
                   <small role="status">

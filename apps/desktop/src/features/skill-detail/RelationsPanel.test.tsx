@@ -1,6 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { I18nextProvider } from "react-i18next";
+import { MemoryRouter } from "react-router-dom";
 import { expect, it, vi } from "vitest";
 import type { RemovalImpactFact } from "../../api/bindings";
 import { createSkillHubI18n } from "../../i18n";
@@ -143,4 +144,33 @@ it("states honest emptiness when the overview has no deployment relations", asyn
   await renderPanel({ relationship: { conflicts: [], deployments: [], pendingTasks: [], sources: [] } });
 
   expect(screen.getByText("尚未登记部署关系事实。")).toBeVisible();
+});
+
+it("offers a governance deep link per governed relation when a builder is provided", async () => {
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  render(
+    <MemoryRouter>
+      <I18nextProvider i18n={i18n}>
+        <RelationsPanel
+          governanceHref={(relation) =>
+            `/relationships/governance?from=library&skillId=skill-pdf&relationId=${relation.relationId}`}
+          onLoadRemovalImpact={vi.fn().mockResolvedValue({} as RemovalImpactFact)}
+          relations={legacyRelations}
+          relationship={relationship}
+        />
+      </I18nextProvider>
+    </MemoryRouter>,
+  );
+
+  // 每条治理关系行都带「管理关系」深链，携带来源与各自 relationId。
+  const links = screen.getAllByTestId("governance-link");
+  expect(links.length).toBeGreaterThan(0);
+  const relCopyLink = links.find(
+    (link) => link.getAttribute("href")?.includes("relationId=rel-copy"),
+  );
+  expect(relCopyLink).toBeDefined();
+  expect(relCopyLink?.textContent).toBe("管理关系");
+  expect(relCopyLink?.getAttribute("href")).toBe(
+    "/relationships/governance?from=library&skillId=skill-pdf&relationId=rel-copy",
+  );
 });
