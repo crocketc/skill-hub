@@ -46,6 +46,14 @@ export function SecurityResults({ facade = unavailableSecurityFacade, skillId, t
   }, [facade, skillId, versionId, reloadKey]);
 
   const checkByKind = (kind: SecurityCheck["kind"]) => checks.find((check) => check.kind === kind);
+  // 结构化 AppError 必须转成可读文本：桥的缺省 describeError 用 String()，
+  // 收到 { code, params } 对象时会把 "[object Object]" 写进通知的补充说明。
+  const describeFailure = (error: unknown) =>
+    describeNativeError(
+      error,
+      (key, describeOptions) => String(t(key as never, describeOptions as never)),
+      "security.errors.generic",
+    );
   // 统一执行反馈（任务 4）：处置是用户可触发的单次写入，失败必须可见——
   // 之前 `void handleDisposition(...)` 会把拒绝吞掉，页面既不更新也不报错。
   const [dispositionError, setDispositionError] = useState<string>();
@@ -70,6 +78,7 @@ export function SecurityResults({ facade = unavailableSecurityFacade, skillId, t
           title: t("security.tracker.dispositionFailed"),
           detail: message,
         }),
+        describeError: describeFailure,
         run: () =>
           facade.setFindingDisposition(
             finding,
@@ -82,9 +91,8 @@ export function SecurityResults({ facade = unavailableSecurityFacade, skillId, t
       setFindings((current) => current.map((item) => item.id === finding.id ? { ...item, disposition } : item));
     } catch (reason: unknown) {
       // 处置未保存：列表保持原状态，并把原因留在页面上（通知只是补充）。
-      setDispositionError(
-        describeNativeError(reason, (key, options_) => String(t(key as never, options_ as never)), "security.errors.generic"),
-      );
+      // 局部提示与通知的补充说明取自同一段描述，两处不会互相矛盾。
+      setDispositionError(describeFailure(reason));
     }
   };
   const llmConfigured = preferences ? preferences.llmProvider.trim().length > 0 : true;
@@ -111,6 +119,7 @@ export function SecurityResults({ facade = unavailableSecurityFacade, skillId, t
         translate: (key, options) => String(t(key as never, options as never)),
         successNotice: () => ({ tone: "success", title: t("security.tracker.aiCheckLabel") }),
         errorNotice: (_error, message) => ({ tone: "danger", title: t("security.llm.runFailed", { message }), detail: message }),
+        describeError: describeFailure,
         run: async (handle) => {
           handleRef.current = handle;
           await runCheck(skillId, versionId);
@@ -120,7 +129,7 @@ export function SecurityResults({ facade = unavailableSecurityFacade, skillId, t
     } catch (reason: unknown) {
       // A run the user cancelled must not surface as a failure.
       if (!cancelledRef.current) {
-        setRunError(describeNativeError(reason, (key, options) => String(t(key as never, options as never)), "security.errors.generic"));
+        setRunError(describeFailure(reason));
       }
     } finally {
       setRunning(false);

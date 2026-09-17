@@ -77,6 +77,8 @@ async function renderSecurity({ checks, findings, preferences, runLlmCheck, canc
   };
 
   const i18n = await createSkillHubI18n(["zh-CN"]);
+  // Provider 顺序与生产一致（i18n 在外、通知中心在内）：否则 toast 区拿不到
+  // i18n 实例，通知文案会退化成未翻译的键名。
   const tree = (
     <I18nextProvider i18n={i18n}>
       <SecurityResults facade={facade} skillId="skill-pdf" tracker={tracker} versionId="v1" />
@@ -84,7 +86,11 @@ async function renderSecurity({ checks, findings, preferences, runLlmCheck, canc
   );
   const view = render(
     withNotices
-      ? <AppNotificationsProvider>{tree}</AppNotificationsProvider>
+      ? (
+          <I18nextProvider i18n={i18n}>
+            <AppNotificationsProvider>{tree}</AppNotificationsProvider>
+          </I18nextProvider>
+        )
       : tree,
   );
   const cancelSpy = facade.cancelLlmCheck ?? vi.fn();
@@ -401,6 +407,11 @@ describe("发现项处置与统一执行反馈", () => {
     await waitFor(() => expect(dispositionCalls).toHaveLength(1));
     const notice = await screen.findByTestId("notice-danger");
     expect(notice).toHaveTextContent("处置未能保存");
+    // 原生命令以结构化 AppError 拒绝：通知的补充说明必须可读，
+    // 不能把整个对象 String() 成 "[object Object]"。
+    const detail = notice.querySelector(".sh-notification__detail");
+    expect(detail?.textContent).not.toContain("[object Object]");
+    expect(detail?.textContent).toContain("security.disposition_save_failed");
     // 处置未被记入列表：操作入口仍在，说明保存失败没有被当成成功。
     expect(await screen.findByRole("button", { name: "确认已知晓" })).toBeVisible();
     expect(tracker.getSnapshot()).toEqual([]);
