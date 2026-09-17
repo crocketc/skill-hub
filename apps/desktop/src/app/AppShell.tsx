@@ -242,7 +242,10 @@ export function AppShell({ refreshSnapshot, snapshot, verification }: AppShellPr
                 <p className="sh-app-shell__title" data-tauri-drag-region>{title}</p>
               </div>
               <div className="sh-app-shell__topbar-context" data-tauri-drag-region>
+                {/* 任务 5 fix 1：在途任务摘要居中（计划口径“顶栏居中 360px 摘要”），
+                    与库路由视图切换器并存（切换器在前）；非库路由仅摘要居中。 */}
                 {isLibraryViewModeRoute(pathname) ? <LibraryViewModeSwitch /> : null}
+                <TaskStatusIndicator />
               </div>
               <div className="sh-app-shell__topbar-end" data-tauri-drag-region>
                 {verification.kind === "verifying" ? (
@@ -250,7 +253,6 @@ export function AppShell({ refreshSnapshot, snapshot, verification }: AppShellPr
                     {t("appShell.verification")}
                   </span>
                 ) : null}
-                <TaskStatusIndicator />
                 <NotificationBell />
                 <WindowControls />
               </div>

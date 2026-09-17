@@ -1007,13 +1007,14 @@ a {
   white-space: nowrap;
 }
 
-/* 技能库视图切换位于右侧操作簇，紧邻通知中心左侧。 */
+/* 任务 5 fix 1：context 区为顶栏居中列，承载库视图切换器与在途任务摘要；
+   非库路由仅摘要居中（360px 固定宽，见 .sh-task-summary）。 */
 .sh-app-shell__topbar-context {
   display: flex;
   min-width: 0;
   flex: 1 1 auto;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: center;
   gap: var(--space-1);
 }
 

@@ -5,6 +5,7 @@ import { I18nextProvider } from "react-i18next";
 import { BrowserRouter, Link, MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createSkillHubI18n } from "../i18n";
+import baseCss from "../styles/base.css?raw";
 import type { BootstrapSnapshot, ScanResult } from "../api/bindings";
 import type { BootstrapVerificationState } from "../features/bootstrap/api";
 import {
@@ -328,7 +329,7 @@ describe("AppShell", () => {
     expect(await screen.findByText("Background scan finished")).toBeVisible();
   });
 
-  it("keeps a running background scan visible in the global topbar before notifications", async () => {
+  it("centers the running task summary in the topbar context zone, coexisting with the view switch", async () => {
     await renderShell("/library");
 
     await act(async () => {
@@ -336,24 +337,57 @@ describe("AppShell", () => {
       await Promise.resolve();
     });
 
-    const end = document.querySelector(".sh-app-shell__topbar-end") as HTMLElement;
+    // 摘要挂在 topbar-context（居中列），不在右侧操作簇。
+    const context = document.querySelector(".sh-app-shell__topbar-context") as HTMLElement;
     const taskStatus = await waitFor(() => {
-      const element = within(end).getByRole("status", {
+      const element = within(context).getByRole("status", {
         name: "Initialization read-only scan",
       });
       expect(element).toBeVisible();
       return element;
     });
-    const viewSwitch = document.querySelector(".sh-app-shell__topbar-context")!;
-    const bell = within(end).getByRole("button", { name: "Notifications" });
+    // 库路由：视图切换器与摘要并存，切换器在前（摘要紧随其后居中）。
+    const viewSwitch = within(context).getByRole("group", { name: "View mode" });
     expect(viewSwitch.compareDocumentPosition(taskStatus) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(taskStatus.compareDocumentPosition(bell) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 
-    // 顶栏摘要打开的是小浮层（后台任务），不再是全屏任务抽屉。
+    const end = document.querySelector(".sh-app-shell__topbar-end") as HTMLElement;
+    expect(
+      within(end).queryByRole("status", { name: "Initialization read-only scan" }),
+    ).not.toBeInTheDocument();
+
+    // 摘要区域仍先于通知中心/窗口控制簇（context → end 的 DOM 顺序）。
+    const bell = within(end).getByRole("button", { name: "Notifications" });
+    expect(context.compareDocumentPosition(bell) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+    // 布局契约：context 区居中承载摘要（设计口径“顶栏居中 360px 摘要”）。
+    expect(baseCss).toMatch(
+      /\.sh-app-shell__topbar-context\s*\{[^}]*justify-content:\s*center/,
+    );
+
+    // 摘要浮层可交互：点击触发器打开小浮层（不被 drag-region 吞掉）。
     await userEvent.setup().click(
-      within(end).getByRole("button", { name: "Initialization read-only scan" }),
+      within(context).getByRole("button", { name: "Initialization read-only scan" }),
     );
     expect(await screen.findByRole("dialog", { name: "Background tasks" })).toBeVisible();
+  });
+
+  it("mounts the centered task summary in the context zone on non-library tabs", async () => {
+    await renderShell("/");
+
+    await act(async () => {
+      beginBackgroundScan(new Promise(() => undefined), [], Date.now());
+      await Promise.resolve();
+    });
+
+    const context = document.querySelector(".sh-app-shell__topbar-context") as HTMLElement;
+    expect(
+      await within(context).findByRole("status", { name: "Initialization read-only scan" }),
+    ).toBeVisible();
+    expect(within(context).queryByRole("group", { name: "View mode" })).not.toBeInTheDocument();
+    const end = document.querySelector(".sh-app-shell__topbar-end") as HTMLElement;
+    expect(
+      within(end).queryByRole("status", { name: "Initialization read-only scan" }),
+    ).not.toBeInTheDocument();
   });
 
   it("keeps the notification center reachable on skill detail routes", async () => {
