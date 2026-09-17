@@ -31,6 +31,10 @@ vi.mock("../api/bindings", async (importOriginal) => {
       if (query.type === "list_custom_agents") return { type: "custom_agents" as const, payload: [] };
       if (query.type === "list_deployments") return { type: "deployments" as const, payload: [] };
       if (query.type === "list_projects") return { type: "projects" as const, payload: [] };
+      // 任务 6 图谱画布：路由级环境没有候选事实，返回空候选让页面渲染发现 CTA 空态。
+      if (query.type === "list_skill_relationship_candidates") {
+        return { type: "skill_relationship_candidates" as const, payload: [] };
+      }
       if (query.type === "list_pending_items") return { type: "pending_items" as const, payload: [] };
       if (query.type === "get_desktop_preferences") return {
         type: "desktop_preferences" as const,
@@ -458,11 +462,15 @@ it("renders the three relationships routes with honest placeholders and module t
   expect(document.querySelector(".sh-app-shell__title")).toHaveTextContent(
     "Skill relations",
   );
+  // 任务 6 已填充图谱画布：只读候选查询在无候选时渲染发现 CTA 的空态，
+  // 不再是任务 5 的占位符；绝不触发扫描。
   expect(
-    await screen.findByText(
-      "The relationship graph canvas is not available yet; relation facts stay available in the Skill library and on Skill details.",
-    ),
+    await screen.findByText("No Skill has displayable relationships yet."),
   ).toBeVisible();
+  expect(screen.getByRole("link", { name: "Open discovery" })).toHaveAttribute(
+    "href",
+    "/discovery?from=relationships",
+  );
 
   await act(async () => {
     await appRouter.navigate("/relationships/decisions");
