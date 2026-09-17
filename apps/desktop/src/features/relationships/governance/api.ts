@@ -159,3 +159,41 @@ export function batchResultTitleKey(state: RelationGovernanceBatchOutcome["state
       return "relationships.governance.batch.resultNone";
   }
 }
+
+/**
+ * 把一次单项重跑（prepare+commit）的结果原位合并回批次结果：
+ * 计数与终态都按合并后的事实重算，成功/失败/取消绝不互相冒充。
+ */
+export function mergeBatchItemOutcome(
+  current: RelationGovernanceBatchOutcome,
+  relationId: string,
+  run: RelationGovernanceBatchOutcome,
+): RelationGovernanceBatchOutcome {
+  const replaced = run.items.find((item) => item.relation_id === relationId);
+  if (!replaced) return current;
+  const items = current.items.map(
+    (item) => item.relation_id === relationId ? replaced : item,
+  );
+  const countBy = (state: RelationGovernanceBatchItem["state"]) =>
+    items.filter((item) => item.state === state).length;
+  const committed = countBy("committed");
+  const failed = countBy("failed");
+  // rolled_back 与 cancelled 一样“没有产生新的成功”，但逐项标签各自如实。
+  const settled = items.filter(
+    (item) => item.state === "cancelled" || item.state === "rolled_back",
+  ).length;
+  const state = failed > 0
+    ? (committed > 0 ? "partially_committed" : "failed")
+    : committed > 0
+      ? "committed"
+      : settled > 0 ? "cancelled" : current.state;
+  return {
+    ...current,
+    items,
+    committed_count: committed,
+    failed_count: failed,
+    cancelled_count: settled,
+    state,
+    relationship_revision: run.relationship_revision || current.relationship_revision,
+  };
+}

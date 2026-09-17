@@ -20,6 +20,7 @@ import { useRelationshipsReturnState } from "../returnState";
 import { relationshipsKeys } from "../api";
 import {
   GOVERNANCE_BUCKETS,
+  mergeBatchItemOutcome,
   parseGovernanceSearchParams,
   rowIsBatchExecutable,
   summarizeRowExecutability,
@@ -29,7 +30,7 @@ import type { RelationGovernanceFacade } from "./api";
 import { nativeGovernanceFacade } from "./nativeApi";
 import { GovernanceRelationTable } from "./GovernanceRelationTable";
 import { GovernanceImpactPreview } from "./GovernanceImpactPreview";
-import { GovernanceBatchDialog } from "./GovernanceBatchDialog";
+import { BatchResult, GovernanceBatchDialog } from "./GovernanceBatchDialog";
 import "./governance.css";
 
 export type { RelationGovernanceFacade } from "./api";
@@ -46,7 +47,10 @@ interface SingleFlowState {
   row: RelationGovernanceRow;
   busy: boolean;
   error: string | null;
+  /** committed 终态的成功文案；其余终态为 null（改由逐项结果面板呈现）。 */
   resultText: string | null;
+  /** 纳入集中库管理的批次结果：committed 以外也必须保留逐项事实。 */
+  outcome: RelationGovernanceBatchOutcome | null;
   sharedImpactConfirmed: boolean;
 }
 
@@ -193,7 +197,15 @@ export function RelationshipGovernancePage({
   const [single, setSingle] = useState<SingleFlowState | null>(null);
 
   const openSingle = useCallback((kind: SingleFlowState["kind"], row: RelationGovernanceRow) => {
-    setSingle({ busy: false, error: null, kind, resultText: null, row, sharedImpactConfirmed: false });
+    setSingle({
+      busy: false,
+      error: null,
+      kind,
+      outcome: null,
+      resultText: null,
+      row,
+      sharedImpactConfirmed: false,
+    });
   }, []);
 
   // —— 批量流程 ——
@@ -312,16 +324,23 @@ export function RelationshipGovernancePage({
         }
         return outcome;
       },
-      successNotice: (outcome) => ({
-        detail: outcome.state === "partially_committed"
-          ? t("relationships.governance.batch.resultPartial", {
+      successNotice: (outcome) => {
+        // 通知标题必须与终态语义一致：partial 用部分成功文案，
+        // 0 成功（含 backend Ok 返回的全失败批次）直接用 resultNone，不冒充成功。
+        if (outcome.state === "committed") {
+          return { title: t("relationships.governance.batch.trackerLabel"), tone: "success" as const };
+        }
+        if (outcome.committed_count > 0) {
+          return {
+            title: t("relationships.governance.batch.resultPartial", {
               committed: outcome.committed_count,
               failed: outcome.failed_count,
-            })
-          : undefined,
-        title: t("relationships.governance.batch.trackerLabel"),
-        tone: outcome.state === "committed" ? "success" : "warning",
-      }),
+            }),
+            tone: "warning" as const,
+          };
+        }
+        return { title: t("relationships.governance.batch.resultNone"), tone: "danger" as const };
+      },
       summarize: (outcome) => ({
         failed: outcome.failed_count,
         skipped: outcome.cancelled_count + outcome.blocked_count,
@@ -335,20 +354,31 @@ export function RelationshipGovernancePage({
     });
   }, [buildConfirmations, describeError, facade, notifications, queryClient, t, tracker]);
 
+  /** 单条成功文案；committed 以外的终态一律走逐项结果面板，不冒充成功。 */
+  const centralizeDoneText = useCallback((flow: SingleFlowState) => t(
+    "relationships.governance.centralize.done",
+    {
+      skill: flow.row.skill_display_name ?? flow.row.relation.skill_id
+        ?? t("relationshipGovernance.matrix.unknownSkill"),
+    },
+  ), [t]);
+
   const confirmSingleCentralize = useCallback((flow: SingleFlowState) => {
     const relationId = flow.row.relation.relation_id;
     setSingle((current) => current ? { ...current, busy: true, error: null } : current);
     runCentralizeBatch(
       [relationId],
       flow.sharedImpactConfirmed ? new Set([relationId]) : new Set(),
-      () => {
+      (outcome) => {
+        // 后端在单项失败/受阻时同样 Ok 返回批次结果：只有 committed 才是成功，
+        // 其余终态交由逐项结果面板如实呈现（复用批量结果组件，不另造语义）。
         setSingle((current) => current ? {
           ...current,
           busy: false,
-          resultText: t("relationships.governance.centralize.done", {
-            skill: flow.row.skill_display_name ?? flow.row.relation.skill_id
-              ?? t("relationshipGovernance.matrix.unknownSkill"),
-          }),
+          outcome,
+          resultText: outcome.state === "committed"
+            ? centralizeDoneText(flow)
+            : null,
         } : current);
       },
       (message) => {
@@ -357,7 +387,76 @@ export function RelationshipGovernancePage({
       },
       t("relationships.governance.batch.running"),
     );
-  }, [runCentralizeBatch, t]);
+  }, [centralizeDoneText, runCentralizeBatch, t]);
+
+  /** 单条结果的逐项重试：与批量重试共用同一合并语义。 */
+  const retrySingleItem = useCallback((relationId: string) => {
+    if (!single?.outcome) return;
+    const confirmed = single.sharedImpactConfirmed ? new Set([relationId]) : new Set<string>();
+    setSingle((current) => current ? { ...current, busy: true, error: null } : current);
+    runCentralizeBatch(
+      [relationId],
+      confirmed,
+      (outcome) => {
+        setSingle((current) => {
+          if (!current?.outcome) return current;
+          const merged = mergeBatchItemOutcome(current.outcome, relationId, outcome);
+          return {
+            ...current,
+            busy: false,
+            outcome: merged,
+            resultText: merged.state === "committed" && current.row
+              ? centralizeDoneText(current)
+              : null,
+          };
+        });
+      },
+      (message) => setSingle((current) => current
+        ? { ...current, busy: false, error: message }
+        : current),
+      t("relationships.governance.batch.running"),
+    );
+  }, [centralizeDoneText, runCentralizeBatch, single, t]);
+
+  /** 单条结果的逐项回退：回退必须针对发起批次（子任务挂在该批次下）。 */
+  const rollbackSingleItem = useCallback((relationId: string) => {
+    if (!single?.outcome) return;
+    const batchId = single.outcome.batch_id;
+    setSingle((current) => current ? { ...current, busy: true, error: null } : current);
+    void runTrackedOperation<RelationGovernanceBatchOutcome>({
+      canCancel: false,
+      errorNotice: () => null,
+      invalidateQueryKeys: [[relationshipsKeys.root]],
+      kind: "relation_governance_batch",
+      label: t("relationships.governance.batch.trackerLabel"),
+      notifications,
+      queryClient,
+      run: async (handle) => {
+        const outcome = await facade.rollbackGovernanceBatch(batchId, [relationId]);
+        // 与批量回退一致：回退完成后对齐发起批次（时机裁定沿用复审登记项）。
+        handle.correlate(batchId);
+        return outcome;
+      },
+      successNotice: () => null,
+      summarize: () => ({ failed: 0, skipped: 0, succeeded: 1 }),
+      total: 1,
+      tracker,
+      translate: (key, options) => String(t(key as never, options as never)),
+    }).then((outcome) => {
+      setSingle((current) => {
+        if (!current?.outcome) return current;
+        return {
+          ...current,
+          busy: false,
+          outcome: mergeBatchItemOutcome(current.outcome, relationId, outcome),
+        };
+      });
+    }).catch((reason: unknown) => {
+      setSingle((current) => current
+        ? { ...current, busy: false, error: describeError(reason) }
+        : current);
+    });
+  }, [describeError, facade, notifications, queryClient, single, t, tracker]);
 
   const confirmSingleUndeploy = useCallback((flow: SingleFlowState) => {
     const relationId = flow.row.relation.relation_id;
@@ -414,32 +513,13 @@ export function RelationshipGovernancePage({
       [relationId],
       new Set(batchFlow.sharedConfirmedIds),
       (outcome) => {
-        // 逐项重试成功后原位替换该项，整体标题按合并后的结果重新计算。
+        // 逐项重试后原位替换该项，计数与终态按合并后的事实重算。
         setBatchFlow((current) => {
           if (!current.result) return { ...current, running: false };
-          const replaced = outcome.items.find((item) => item.relation_id === relationId);
-          if (!replaced) return { ...current, running: false };
-          const items = current.result.items.map(
-            (item) => item.relation_id === relationId ? replaced : item,
-          );
-          const committed = items.filter((item) => item.state === "committed").length;
-          const failed = items.filter((item) => item.state === "failed").length;
-          const cancelled = items.filter(
-            (item) => item.state === "cancelled" || item.state === "rolled_back",
-          ).length;
           return {
             ...current,
             running: false,
-            result: {
-              ...current.result,
-              committed_count: committed,
-              cancelled_count: cancelled,
-              failed_count: failed,
-              items,
-              state: failed > 0
-                ? "partially_committed"
-                : committed > 0 ? "committed" : current.result.state,
-            },
+            result: mergeBatchItemOutcome(current.result, relationId, outcome),
           };
         });
       },
@@ -473,17 +553,10 @@ export function RelationshipGovernancePage({
     }).then((outcome) => {
       setBatchFlow((current) => {
         if (!current.result) return { ...current, running: false };
-        const replaced = outcome.items.find((item) => item.relation_id === relationId);
-        if (!replaced) return { ...current, running: false };
         return {
           ...current,
           running: false,
-          result: {
-            ...current.result,
-            items: current.result.items.map(
-              (item) => item.relation_id === relationId ? replaced : item,
-            ),
-          },
+          result: mergeBatchItemOutcome(current.result, relationId, outcome),
         };
       });
     }).catch((reason: unknown) => {
@@ -621,6 +694,28 @@ export function RelationshipGovernancePage({
           <div aria-label={t("relationships.governance.batch.resultTitle")} className="sh-governance__dialog" role="dialog">
             <h3>{t("relationships.governance.batch.resultTitle")}</h3>
             <p role="status">{single.resultText}</p>
+            <div className="sh-governance__dialog-actions">
+              <Button onClick={closeSingle} variant="secondary">
+                {t("relationships.governance.batch.close")}
+              </Button>
+            </div>
+          </div>
+        ) : single.outcome ? (
+          // committed 以外的终态：与批量共用同一套逐项结果组件，
+          // 标题/失败明细/重试/回退语义完全一致，不冒充成功。
+          <div aria-label={t("relationships.governance.batch.resultTitle")} className="sh-governance__dialog" role="dialog">
+            <h3>{t("relationships.governance.batch.resultTitle")}</h3>
+            {single.error ? (
+              <div role="alert">
+                <p>{t("relationships.governance.preview.rejectedNote")}</p>
+                <p>{single.error}</p>
+              </div>
+            ) : null}
+            <BatchResult
+              onRetry={retrySingleItem}
+              onRollback={rollbackSingleItem}
+              result={single.outcome}
+            />
             <div className="sh-governance__dialog-actions">
               <Button onClick={closeSingle} variant="secondary">
                 {t("relationships.governance.batch.close")}

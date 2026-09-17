@@ -462,6 +462,48 @@ describe("RelationshipGovernancePage 单条治理", () => {
     expect(rowAction("managed:dep-undeploy")).toBeEnabled();
   });
 
+  it("surfaces a failed single centralize per item instead of success", async () => {
+    // 后端在单项失败时仍 Ok 返回批次结果（state=failed + failed 项）：
+    // 页面必须逐项如实呈现，绝不翻成成功文案。
+    const facade = createFacade(FULL_LEDGER, {
+      prepareGovernanceBatch: vi.fn().mockResolvedValue(batchOutcome({
+        items: [batchItem({ relation_id: "managed:dep-eligible", state: "prepared", operation_id: "op-child-9" })],
+        prepared_count: 1,
+      })),
+      commitGovernanceBatch: vi.fn().mockResolvedValue(batchOutcome({
+        state: "failed",
+        items: [batchItem({
+          relation_id: "managed:dep-eligible",
+          operation_id: "op-child-9",
+          state: "failed",
+          error_code: "operation.conflict",
+          detail: "内容在中途发生变化",
+        })],
+        prepared_count: 1,
+        failed_count: 1,
+      })),
+    });
+    const { tracker } = await renderGovernanceApp({ facade });
+    await waitRows();
+
+    fireEvent.click(rowAction("managed:dep-eligible"));
+    await screen.findByRole("dialog", { name: "纳入集中库管理预览" });
+    fireEvent.click(screen.getByRole("button", { name: "确认执行" }));
+
+    // 如实的失败终态：逐项失败信息 + 重试/回退入口。
+    await screen.findByText("本次没有成功，请逐条查看失败原因");
+    expect(screen.queryByText(/已纳入集中库管理：/)).not.toBeInTheDocument();
+    const failedItem = screen.getByTestId("governance-batch-result-managed:dep-eligible");
+    expect(failedItem).toHaveTextContent("失败");
+    expect(failedItem).toHaveTextContent("内容在中途发生变化");
+    expect(screen.getByRole("button", { name: "重试 managed:dep-eligible" })).toBeEnabled();
+    expect(failedItem).toHaveTextContent("可回退");
+
+    // tracker 父任务同样落 failed 终态。
+    const parent = tracker.getSnapshot().find((operation) => operation.kind === "relation_governance_batch");
+    expect(parent?.status).toBe("failed");
+  });
+
   it("requires explicit shared-impact confirmation before centralizing a needs-validation row", async () => {
     const { facade } = await renderGovernanceApp();
     await waitRows();

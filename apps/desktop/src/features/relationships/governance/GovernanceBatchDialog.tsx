@@ -171,7 +171,8 @@ export function GovernanceBatchDialog({
   );
 }
 
-function BatchResult({
+/** 批次结果（逐项终态 + 重试/回退）。单条纳入的结果面板复用同一套语义。 */
+export function BatchResult({
   onRetry,
   onRollback,
   result,
