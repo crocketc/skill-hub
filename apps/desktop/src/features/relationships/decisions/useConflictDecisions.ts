@@ -12,7 +12,7 @@ import {
   type OperationTracker,
 } from "../../../platform/operationTracker";
 import { runTrackedOperation } from "../../../platform/runTrackedOperation";
-import type { AppNotifications } from "../../../ui/notifications";
+import { type AppNotifications, useOptionalAppNotifications } from "../../../ui/notifications";
 import { relationshipsKeys } from "../api";
 import type { ConflictDecisionsFacade } from "./decisionsApi";
 
@@ -84,6 +84,7 @@ export function useConflictAiAnalysis(options: {
 }): ConflictAiAnalysisState {
   const { facade, tracker = operationTracker } = options;
   const { t } = useTranslation();
+  const notifications = useOptionalAppNotifications();
   const queryClient = useQueryClient();
   const [running, setRunning] = useState(false);
   const [lastRun, setLastRun] = useState<ConflictAnalysisState | null>(null);
@@ -95,14 +96,13 @@ export function useConflictAiAnalysis(options: {
     setError(null);
     runTrackedOperation({
       tracker,
-      // 分析结果保留在工作台内反馈；不额外发全局通知。
-      notifications: null,
+      notifications,
       kind: "ai_analysis",
       label: t("relationships.decisions.ai.trackerLabel"),
       translate: (key, translateOptions) =>
         String(t(key as never, translateOptions as never)),
-      successNotice: () => null,
-      errorNotice: () => null,
+      successNotice: () => ({ tone: "success", title: t("relationships.decisions.ai.trackerLabel") }),
+      errorNotice: (_error, message) => ({ tone: "danger", title: t("relationships.decisions.ai.failureReason", { reason: message }), detail: message }),
       run: () => facade.analyzeConflict(scope),
     })
       .then((result) => {
