@@ -1,5 +1,7 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
+import { useOptionalAppNotifications } from "../../ui/notifications";
+import { runTrackedOperation } from "../../platform/runTrackedOperation";
 import { Switch } from "../../ui/Switch";
 import type { NetworkSettings, SettingsFacade } from "./api";
 import { unavailableSettingsFacade } from "./api";
@@ -20,8 +22,34 @@ export function dataScopeView(
 
 export function AiNetworkSettings({ settings, facade = unavailableSettingsFacade }: { settings: NetworkSettings; facade?: SettingsFacade }) {
   const { t } = useTranslation();
+  const notifications = useOptionalAppNotifications();
   const [enabled, setEnabled] = useState(settings.networkEnabled);
-  const toggle = async () => { const next = !enabled; setEnabled(next); await facade.execute({ type: "set_network_enabled", payload: { enabled: next } }); };
+  const toggle = async () => {
+    const previous = enabled;
+    const next = !previous;
+    setEnabled(next);
+    try {
+      await runTrackedOperation({
+        kind: "settings_network",
+        label: t("settings.network.heading"),
+        mode: "instant",
+        notifications,
+        translate: (key, options) => t(key as never, options),
+        successNotice: () => ({
+          tone: "success",
+          title: t(next ? "settings.network.enabled" : "settings.network.disabled"),
+        }),
+        errorNotice: (_error, message) => ({
+          tone: "danger",
+          title: t("settings.network.saveFailed"),
+          detail: message,
+        }),
+        run: () => facade.execute({ type: "set_network_enabled", payload: { enabled: next } }),
+      });
+    } catch {
+      setEnabled(previous);
+    }
+  };
   const scope = dataScopeView(settings.dataScope, (key) => t(key as never));
   const providerLabel = settings.llmProvider.trim();
   const hasConfiguredProvider =

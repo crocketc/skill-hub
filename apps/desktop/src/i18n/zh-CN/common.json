@@ -2617,7 +2617,10 @@
       "dataScopeNote": "开启某项 AI 功能后，只发送该功能所需的最少内容（例如技能描述、搜索关键词）；不会上传整个技能库。",
       "providerUnconfigured": "尚未配置可用的 LLM 供应商",
       "providerUnconfiguredLegacy": "未配置",
-      "providerConfigured": "已配置：{{provider}}"
+      "providerConfigured": "已配置：{{provider}}",
+      "enabled": "已开启网络功能",
+      "disabled": "已关闭网络功能",
+      "saveFailed": "无法保存网络设置，已恢复原来的设置。"
     },
     "llm": {
       "capabilitiesHeading": "AI 能力开关",

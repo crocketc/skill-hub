@@ -2617,7 +2617,10 @@
       "dataScopeNote": "When an AI feature is enabled, only the minimal content that feature needs (such as a skill description or search keywords) is sent; your skill library is never uploaded wholesale.",
       "providerUnconfigured": "No usable LLM provider configured yet",
       "providerUnconfiguredLegacy": "Not configured",
-      "providerConfigured": "Configured: {{provider}}"
+      "providerConfigured": "Configured: {{provider}}",
+      "enabled": "Network features enabled",
+      "disabled": "Network features disabled",
+      "saveFailed": "The network setting could not be saved, so the previous setting was restored."
     },
     "llm": {
       "capabilitiesHeading": "AI capabilities",

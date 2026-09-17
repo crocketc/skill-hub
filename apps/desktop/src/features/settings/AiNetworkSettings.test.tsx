@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { I18nextProvider } from "react-i18next";
 import { expect, it, vi } from "vitest";
@@ -88,4 +88,19 @@ it("keeps toggling the network switch through the facade", async () => {
   await user.click(screen.getByRole("switch", { name: "关闭所有网络功能" }));
 
   expect(execute).toHaveBeenCalledWith({ type: "set_network_enabled", payload: { enabled: false } });
+});
+
+it("restores the previous network switch value when saving fails", async () => {
+  const user = userEvent.setup();
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  renderCard(
+    { networkEnabled: true, llmProvider: "local-model", dataScope: "explicit_selection" },
+    facadeWith(async () => { throw new Error("write failed"); }),
+    i18n,
+  );
+
+  const networkSwitch = screen.getByRole("switch", { name: "关闭所有网络功能" });
+  await user.click(networkSwitch);
+
+  await waitFor(() => expect(networkSwitch).not.toBeChecked());
 });
