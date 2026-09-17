@@ -22,7 +22,7 @@ describe("conflict decision query namespace", () => {
     const isAiAvailable = vi.fn(async () => true);
     const facade = {
       isAiAvailable,
-    } as ConflictDecisionsFacade;
+    } as unknown as ConflictDecisionsFacade;
 
     render(
       <I18nextProvider i18n={i18n}>
