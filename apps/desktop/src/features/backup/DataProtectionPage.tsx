@@ -21,6 +21,7 @@ import { desktopDirectoryOpener } from "../../platform/directoryOpener";
 import { operationTracker, type OperationTracker } from "../../platform/operationTracker";
 import { runTrackedOperation } from "../../platform/runTrackedOperation";
 import { Button } from "../../ui/Button";
+import { useOptionalAppNotifications } from "../../ui/notifications";
 import type { BackupFacade } from "./api";
 
 type Decision = "overwrite" | "keep_both" | "skip";
@@ -59,6 +60,7 @@ export function DataProtectionPage({
   tracker?: OperationTracker;
 }) {
   const { t } = useTranslation();
+  const notifications = useOptionalAppNotifications();
   const location = useLocation();
   const [path, setPath] = useState("");
   const [verifyMessage, setVerifyMessage] = useState<string>();
@@ -168,17 +170,17 @@ export function DataProtectionPage({
   const commitRestore = () => run(async () => {
     if (!restorePlan) return;
     const decisions = restorePlan.conflicts.filter((conflict) => conflict.skill_id).map((conflict) => ({ skill_id: conflict.skill_id!, decision: restoreDecisions[conflict.skill_id!] })) as RestoreDecision[];
-    // 统一执行桥（任务 4）：恢复提交进 tracker 在途投影；结果反馈保留在
-    // 页面内（notifications: null），异常 rethrow 由页面 run() 承接，不吞掉。
+    // 统一执行桥（任务 4）：恢复提交进 tracker 在途投影与通知中心；
+    // 页面仍保留结果详情，异常由页面 run() 承接，不吞掉。
     const result = await runTrackedOperation({
       tracker,
-      notifications: null,
+      notifications,
       kind: "restore",
       label: t("dataProtection.tracker.restoreLabel"),
       total: restorePlan.skills,
       translate: (key, options) => String(t(key as never, options as never)),
-      successNotice: () => null,
-      errorNotice: () => null,
+      successNotice: () => ({ tone: "success", title: t("dataProtection.tracker.restoreLabel") }),
+      errorNotice: (_error, message) => ({ tone: "danger", title: t("dataProtection.tracker.restoreLabel"), detail: message }),
       summarize: (settled) => ({
         succeeded: settled.skills_restored,
         failed: 0,

@@ -4,6 +4,7 @@ import { describeNativeError } from "../../api/nativeErrors";
 import { operationTracker, type OperationTracker } from "../../platform/operationTracker";
 import { runTrackedOperation } from "../../platform/runTrackedOperation";
 import { Button } from "../../ui/Button";
+import { useOptionalAppNotifications } from "../../ui/notifications";
 import { ConfirmDialog } from "../../ui/ConfirmDialog";
 import { BrandTag } from "../../ui/BrandTag";
 import { AgentKindBadge } from "../../ui/AgentKindBadge";
@@ -43,6 +44,7 @@ interface SnapshotState {
  */
 export function LocalDiscoveryWorkbench({ facade, onReviewCandidates, tracker = operationTracker }: LocalDiscoveryWorkbenchProps) {
   const { t } = useTranslation();
+  const notifications = useOptionalAppNotifications();
   const [snapshot, setSnapshot] = useState<SnapshotState | null>(null);
   const [classification, setClassification] = useState<ScanClassification | null>(null);
   // P1-04：保留本次扫描候选，"审查并导入"必须原样带给导入向导。
@@ -94,13 +96,13 @@ export function LocalDiscoveryWorkbench({ facade, onReviewCandidates, tracker = 
     try {
       const { result, snap } = await runTrackedOperation({
         tracker,
-        notifications: null,
+        notifications,
         kind: "discovery_scan",
         label: t("discovery.workbench.rescan"),
         total: 1,
         translate: (key, options) => String(t(key as never, options as never)),
-        successNotice: () => null,
-        errorNotice: () => null,
+        successNotice: () => ({ tone: "success", title: t("discovery.workbench.rescan") }),
+        errorNotice: (_error, message) => ({ tone: "danger", title: t("discovery.workbench.scanFailed"), detail: message }),
         run: async () => ({
           result: await facade.scanTargets([]),
           snap: await facade.getDiscoverySnapshot(),
