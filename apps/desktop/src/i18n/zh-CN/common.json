@@ -2682,8 +2682,11 @@
     "summary": {
       "entries": {
         "conflicts": "冲突处理",
+        "conflictsAria": "打开冲突处理（{{count}} 个待确认冲突）",
         "graph": "关系图谱",
-        "governance": "关系治理"
+        "graphAria": "打开关系图谱（{{count}} 个 Skill 有可展示关系）",
+        "governance": "关系治理",
+        "governanceAria": "打开关系治理（{{count}} 条关系边）"
       },
       "metrics": {
         "agentsCombined": "Agent（已配置 {{configured}} 个 · 已发现 {{discovered}} 个）",
@@ -2691,6 +2694,12 @@
         "projectsManage": "管理项目",
         "skillsTotal": "技能总数",
         "unconfirmedConflicts": "待确认的关系冲突"
+      },
+      "network": {
+        "emptyHint": "还没有可展示的关系事实。",
+        "eyebrow": "关系概览",
+        "heading": "技能关系",
+        "unavailable": "关系概览暂时不可用。"
       }
     },
     "tags": {

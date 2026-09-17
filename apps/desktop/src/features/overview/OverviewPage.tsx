@@ -6,12 +6,17 @@ import { DataState } from "../../ui/DataState";
 import { Icon, type IconName } from "../../ui/Icon";
 import { PageFrame } from "../../ui/PageFrame";
 import { PageHeader } from "../../ui/PageHeader";
+import type { RelationshipsFacade } from "../relationships/api";
 import { DeploymentBarChart, DeploymentDetailList } from "./DeploymentBarChart";
 import { PendingSummary } from "./PendingSummary";
+import {
+  RelationshipThumbnailNetwork,
+  useOverviewRelationshipSummaries,
+} from "./RelationshipThumbnail";
 import { TagDistributionChart } from "./TagDistributionChart";
 import {
   getDeploymentItems,
-  getOverviewMetrics,
+  getOverviewSummaryMetrics,
   getTagItems,
   type OverviewDimension,
   type OverviewMetric,
@@ -19,10 +24,19 @@ import {
 import "./overview.css";
 
 /**
- * 紧凑统计的装饰图标映射。`getOverviewMetrics` 的口径顺序固定为
- * 已配置 Agent、发现到的 Agent、项目、部署；图标按同一次序注册，纯装饰。
+ * 紧凑统计的装饰图标映射。`getOverviewSummaryMetrics` 的口径顺序冻结于
+ * api.test.ts：合并 Agent、管理项目、部署关系、待确认冲突；图标按同一次序
+ * 注册，纯装饰。
  */
-const compactStatIcons: IconName[] = ["agents", "discovery", "projects", "deploy"];
+const compactStatIcons: IconName[] = ["agents", "projects", "deploy", "warning"];
+
+export interface OverviewPageProps {
+  /**
+   * 测试与预览桩的接缝：缺省使用原生只读关系门面。概览是纯浏览查询，
+   * 不经 runTrackedOperation（无写入、无顶栏任务）。
+   */
+  relationshipsFacade?: RelationshipsFacade;
+}
 
 function OverviewHeroMetric({ metric }: { metric: OverviewMetric }) {
   const body = (
@@ -43,12 +57,21 @@ function OverviewHeroMetric({ metric }: { metric: OverviewMetric }) {
 }
 
 /** 紧凑统计的两行卡内容：图标 + 数字（第一行）与指标名（第二行）。 */
-function CompactStatBody({ icon, metric }: { icon: IconName; metric: OverviewMetric }) {
+function CompactStatBody({
+  icon,
+  metric,
+  placeholder = false,
+}: {
+  icon: IconName;
+  metric: OverviewMetric;
+  /** 计数来源（关系投影）未就绪时以占位符呈现，不显示假 0。 */
+  placeholder?: boolean;
+}) {
   return (
     <>
       <span className="sh-overview__stat-figure">
         <Icon aria-hidden="true" name={icon} size={16} />
-        <strong>{metric.count}</strong>
+        <strong>{placeholder ? "–" : metric.count}</strong>
       </span>
       <span className="sh-overview__stat-name">{metric.name}</span>
     </>
@@ -128,14 +151,19 @@ function TagDistributionPanel({
   );
 }
 
-export function OverviewPage() {
+export function OverviewPage({ relationshipsFacade }: OverviewPageProps) {
   const { snapshot } = useOutletContext<BootstrapOutletContext>();
   const { t } = useTranslation();
   const [dimension, setDimension] = useState<OverviewDimension>("agent");
-  const metrics = getOverviewMetrics(snapshot, t);
+  const { conflictsQuery } = useOverviewRelationshipSummaries(relationshipsFacade);
+  // 五个冻结指标（api.test.ts 锁定名称与口径）。前四项来自 bootstrap 快照
+  // 同步可得；冲突项计数来自任务 2 工作台投影（异步）——未就绪时以占位符
+  // 呈现且不提供携带假计数的钻取链接，绝不把 0 当作"查询还没回来"。
+  const summaryMetrics = getOverviewSummaryMetrics(snapshot, conflictsQuery.data ?? null, t);
+  const conflictMetric = summaryMetrics[summaryMetrics.length - 1];
   const heroMetric =
-    metrics.find((metric) => metric.tone === "accent") ?? metrics[0];
-  const compactMetrics = metrics.filter((metric) => metric !== heroMetric);
+    summaryMetrics.find((metric) => metric.tone === "accent") ?? summaryMetrics[0];
+  const compactMetrics = summaryMetrics.filter((metric) => metric !== heroMetric);
   const deploymentItems = getDeploymentItems(snapshot, dimension, t);
   const tagItems = getTagItems(snapshot, t);
 
@@ -152,19 +180,28 @@ export function OverviewPage() {
             aria-label={t("overview.metrics.compactLabel")}
             className="sh-overview__stats"
           >
-            {compactMetrics.map((metric, index) => (
-              <li key={metric.name}>
-                {metric.href ? (
-                  <Link className="sh-overview__stat" to={metric.href}>
-                    <CompactStatBody icon={compactStatIcons[index] ?? "info"} metric={metric} />
-                  </Link>
-                ) : (
-                  <p className="sh-overview__stat">
-                    <CompactStatBody icon={compactStatIcons[index] ?? "info"} metric={metric} />
-                  </p>
-                )}
-              </li>
-            ))}
+            {compactMetrics.map((metric, index) => {
+              const placeholder = metric === conflictMetric && !conflictsQuery.isSuccess;
+              const body = (
+                <CompactStatBody
+                  icon={compactStatIcons[index] ?? "info"}
+                  metric={metric}
+                  placeholder={placeholder}
+                />
+              );
+              const target = placeholder ? undefined : metric.href;
+              return (
+                <li key={metric.name}>
+                  {target ? (
+                    <Link className="sh-overview__stat" to={target}>
+                      {body}
+                    </Link>
+                  ) : (
+                    <p className="sh-overview__stat">{body}</p>
+                  )}
+                </li>
+              );
+            })}
           </ul>
         </section>
 
@@ -203,6 +240,8 @@ export function OverviewPage() {
             <PendingSummary snapshot={snapshot} />
           </div>
         </section>
+
+        <RelationshipThumbnailNetwork facade={relationshipsFacade} />
       </section>
     </PageFrame>
   );

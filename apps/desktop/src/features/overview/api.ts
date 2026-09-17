@@ -165,6 +165,18 @@ export function getPendingSummaryItems(
 /** 关系缩略区域深链目标。路由由页面切片接线，数据层只提供稳定 key。 */
 export type OverviewRelationEntryKey = "conflicts" | "graph" | "governance";
 
+/**
+ * 任务 9 页面切片接线的深链目标（路由由任务 5 交付，URL 即状态）。
+ * 图谱入口固定不带 skillId：缩略条目只携带稳定 key，概览不伪造
+ * 图谱选中态——skillId 深链由技能详情等持有事实的入口发起。
+ */
+export function getOverviewRelationEntryHref(key: OverviewRelationEntryKey): string {
+  if (key === "graph") {
+    return "/relationships";
+  }
+  return key === "conflicts" ? "/relationships/decisions" : "/relationships/governance";
+}
+
 export interface OverviewRelationEntry {
   count: number;
   key: OverviewRelationEntryKey;
@@ -252,8 +264,10 @@ export function getOverviewSummaryMetrics(
       tone: "neutral",
     },
     {
-      // 冲突子页路由随页面切片接入后补充 href；数据层不做深链假设。
+      // 冲突数复用任务 2 工作台投影的 `cases`（已实现待确认筛选）；
+      // 钻取目标 /relationships/decisions 由任务 5 交付、任务 9 页面切片接线。
       count: conflictWorkspace?.cases.length ?? 0,
+      href: "/relationships/decisions",
       name: t("overview.summary.metrics.unconfirmedConflicts"),
       tone: "neutral",
     },

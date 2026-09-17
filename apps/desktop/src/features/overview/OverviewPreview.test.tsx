@@ -53,8 +53,15 @@ it("mounts the deterministic overview preview with deployment, tag, and pending 
   ).toBeVisible();
   expect(screen.getByRole("list", { name: "Skill count by tag" })).toBeVisible();
   expect(screen.getByRole("heading", { name: "4 pending items" })).toBeVisible();
-  expect(screen.getByRole("link", { name: "3 configured agents" })).toBeVisible();
-  expect(screen.getByRole("link", { name: "5 discovered agents" })).toBeVisible();
+  // 冻结指标（api.test.ts 锁定）：已配置/已发现合并为一条指标。
+  expect(
+    screen.getByRole("link", { name: "3 Agents (3 configured · 5 discovered)" }),
+  ).toBeVisible();
+  // 预览夹具没有 QueryClientProvider：关系摘要按占位降级（任务 10 的预览桩
+  // 会注入确定性事实），但绝不吞没图表/待办或崩溃页面。
+  expect(screen.getByRole("region", { name: "Skill relationships" })).toBeVisible();
+  expect(screen.getAllByText("–")).toHaveLength(4);
+  expect(screen.queryByRole("link", { name: /unconfirmed conflicts/i })).not.toBeInTheDocument();
 });
 
 it("fills the remaining shell height without a viewport-derived outer scroll range", () => {

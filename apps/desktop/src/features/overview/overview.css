@@ -130,7 +130,7 @@
 .sh-overview {
   display: grid;
   min-height: 0;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr) auto;
   gap: var(--page-gap);
 }
 
@@ -206,6 +206,108 @@
 .sh-overview__toggle-option input:focus-visible + span {
   outline: 2px solid var(--ui-focus);
   outline-offset: 2px;
+}
+
+/* 关系缩略网络（任务 9 页面切片）：组织/关系区域的第三块固定区。占据
+   fill 网格的固定 auto 行；空/加载/失败只改变本区内部，不改变 PageFrame
+   的高度契约——100% 缩放下外层不出滚动条，被压缩的是图表区 minmax(0,1fr)。 */
+.sh-overview__relations {
+  display: grid;
+  min-height: 0;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-lg);
+  background: var(--ui-surface);
+}
+
+.sh-overview__relations-hint {
+  align-self: center;
+  color: var(--ui-ink-muted);
+  font-size: var(--font-size-sm);
+}
+
+.sh-overview__relations-list {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-2);
+  list-style: none;
+}
+
+.sh-overview__relations-list li {
+  display: grid;
+  min-width: 0;
+}
+
+/* 入口卡沿用紧凑统计的两行结构：图标 + 数字 / 入口名。 */
+.sh-overview__relation {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: var(--space-1);
+  min-width: 0;
+  min-height: 4rem;
+  padding: var(--space-3) var(--space-4);
+  margin: 0;
+  border: 1px solid var(--ui-border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--ui-surface);
+  color: var(--ui-ink);
+  text-decoration: none;
+}
+
+.sh-overview__relation-figure {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.sh-overview__relation-figure strong {
+  font-size: var(--font-size-lg);
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+
+/* 与概览统计卡相同：为 T0 无描边注册表补 1.75px currentColor 线条。 */
+.sh-overview__relation svg {
+  flex: none;
+  color: var(--ui-icon);
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.75;
+}
+
+.sh-overview__relation-name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--ui-ink-muted);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+}
+
+.sh-overview__relation:hover {
+  border-color: var(--ui-control-border-hover);
+  background: var(--ui-hover-surface);
+}
+
+/* 有待确认冲突时冲突入口带警示描边与数字着色，与待办徽章同一语义。 */
+.sh-overview__relation--alert,
+.sh-overview__relation--alert:hover {
+  border-color: var(--ui-warning-border);
+}
+
+.sh-overview__relation--alert .sh-overview__relation-figure strong {
+  color: var(--ui-warning-foreground);
+}
+
+@container workspace (max-width: 40rem) {
+  .sh-overview .sh-overview__relations-list {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 /* 容器查询：以 AppShell 的 workspace 内容容器为断点（展开侧栏 13.875rem）。

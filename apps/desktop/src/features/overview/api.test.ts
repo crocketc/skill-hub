@@ -6,7 +6,7 @@ import type {
   SkillRelationshipCandidate,
 } from "../../api/bindings";
 import { createSkillHubI18n } from "../../i18n";
-import { getOverviewRelationEntries, getOverviewSummaryMetrics } from "./api";
+import { getOverviewRelationEntries, getOverviewRelationEntryHref, getOverviewSummaryMetrics } from "./api";
 
 const summarySnapshot: BootstrapSnapshot = {
   initialization_state: "initialized",
@@ -142,7 +142,7 @@ it("mirrors the frozen metric names in English with the same caliber", async () 
   ]);
 });
 
-it("keeps the fixed metric order, accent hero and existing drill-down targets", async () => {
+it("keeps the fixed metric order, accent hero and frozen drill-down targets", async () => {
   const i18n = await createSkillHubI18n(["zh-CN"]);
   const t = i18n.t.bind(i18n);
   const metrics = getOverviewSummaryMetrics(summarySnapshot, pendingConflictWorkspace, t);
@@ -154,13 +154,22 @@ it("keeps the fixed metric order, accent hero and existing drill-down targets", 
     "neutral",
     "neutral",
   ]);
+  // 页面切片（任务 9）接线：冲突指标钻取任务 5 已交付的 /relationships/decisions。
   expect(metrics.map((metric) => metric.href)).toEqual([
     "/library",
     "/agents",
     "/projects",
     "/library?deployment=deployed",
-    undefined,
+    "/relationships/decisions",
   ]);
+});
+
+it("maps each relation entry key to its frozen relationship subpage route", async () => {
+  // 任务 5 路由即状态：图谱入口不带 skillId（条目只携带稳定 key，页面不伪造
+  // 选中态）；冲突与治理各进自己的子页。
+  expect(getOverviewRelationEntryHref("graph")).toBe("/relationships");
+  expect(getOverviewRelationEntryHref("conflicts")).toBe("/relationships/decisions");
+  expect(getOverviewRelationEntryHref("governance")).toBe("/relationships/governance");
 });
 
 it("splits deployment relations by dimension across all chart categories", async () => {
