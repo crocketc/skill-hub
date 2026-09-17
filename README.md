@@ -93,8 +93,8 @@ flowchart LR
 
 进行中（代码与自动化已完成，真实设备验收待做）：
 
-- 导入关系分组确认、复制副本/共享引用转管理链接、Agent 目录矩阵与 Skill 详情关系视图、可选 AI 冲突分析（进度与证据见 [开发状态](docs/development/开发状态-2026-09-16.md) 与 [自动化测试说明](docs/development/自动化测试说明-2026-09-16.md)）
-- 技能关系一级模块：后端契约已完成、页面未开始。已完成关系投影与图谱/候选查询、冲突显式决定与工作台契约、关系治理只读清单与安全批处理编排（含逐行确认、部分失败保留成功项、取消隔离）；技能图谱、冲突处理、关系治理三个页面与统一异步执行反馈仍在实施中。实施进度见 [实施计划](docs/superpowers/plans/2026-09-16-skill-relationship-module-and-unified-execution-implementation-plan.md)
+- 导入关系分组确认、复制副本/共享引用转管理链接、Agent 目录矩阵、Skill 详情关系视图、可选 AI 冲突分析及冲突组生产写入链路已完成代码与自动化；真实设备验收待做。进度见 [开发状态](docs/development/开发状态-2026-09-17.md)、[自动化测试说明](docs/development/自动化测试说明-2026-09-17.md) 与 [验收矩阵](docs/development/功能完成度与验收状态矩阵-2026-09-17.md)
+- 技能关系一级模块页面与统一异步执行反馈已进入收口：关系图谱、冲突工作台、治理清单具备实现和自动化证据；异步入口仍有未桥接即时写入，Windows junction 与链接权限仍待真机取证。实施范围见 [实施计划](docs/superpowers/plans/2026-09-16-skill-relationship-module-and-unified-execution-implementation-plan.md)
 - Windows 目录联接（junction）执行器已实现（未开启开发者模式的账号也能完成“纳入集中库管理”），但只在 macOS 上跑过自动化、在 Windows 上仅做过类型检查，真实 Windows 运行证据待人工验收（RC-13/RC-14）
 
 实验能力（仅供参考）：
@@ -240,7 +240,7 @@ docs/                          安装、发布和依赖说明
 - [安装说明](docs/install/)
 - [LLM 用户配置与隐私说明](docs/llm/用户配置与隐私说明-2026-09-13.md)
 - [LLM 供应商兼容矩阵](docs/llm/供应商兼容矩阵-2026-09-13.md)
-- [开发状态](docs/development/开发状态-2026-09-16.md) / [自动化测试说明](docs/development/自动化测试说明-2026-09-16.md) / [人工验收清单](docs/development/人工验收清单-2026-09-16.md) / [功能完成度与验收状态矩阵](docs/development/功能完成度与验收状态矩阵-2026-09-16.md)
+- [开发状态](docs/development/开发状态-2026-09-17.md) / [自动化测试说明](docs/development/自动化测试说明-2026-09-17.md) / [人工验收清单](docs/development/人工验收清单-2026-09-17.md) / [功能完成度与验收状态矩阵](docs/development/功能完成度与验收状态矩阵-2026-09-17.md)
 - [LLM 技术架构决策](docs/llm/架构决策-2026-09-10.md)
 
 ## 反馈与贡献
