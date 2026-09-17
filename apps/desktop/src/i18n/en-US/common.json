@@ -2562,6 +2562,7 @@
       "language": "Language",
       "languageDescription": "The interface changes immediately and the choice is saved locally.",
       "languageSaveError": "The language could not be saved, so the previous setting was restored.",
+      "languageSaved": "Language setting saved",
       "languages": {
         "system": "Follow system",
         "zhCN": "Simplified Chinese",
@@ -2570,6 +2571,7 @@
       "theme": "Theme",
       "themeDescription": "Your choice applies immediately and is saved to local preferences.",
       "themeSaveError": "The theme could not be saved, so the previous setting was restored.",
+      "themeSaved": "Theme setting saved",
       "reducedMotion": "Always reduce motion",
       "reducedMotionDescription": "Interface transitions and notices appear and disappear instantly. No need to enable this if your system already reduces motion."
     },

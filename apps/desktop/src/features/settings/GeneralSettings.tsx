@@ -8,6 +8,8 @@ import { useTheme } from "../../styles/ThemeProvider";
 import type { ThemeName } from "../../styles/theme";
 import { setUserReducedMotion, useUserReducedMotion } from "../../ui/reducedMotion";
 import { Switch } from "../../ui/Switch";
+import { runTrackedOperation } from "../../platform/runTrackedOperation";
+import { useOptionalAppNotifications } from "../../ui/notifications";
 import type { SettingsFacade, SettingsSnapshot } from "./api";
 
 function resolvedLanguage(language: SettingsSnapshot["appearance"]["language"]) {
@@ -17,6 +19,7 @@ function resolvedLanguage(language: SettingsSnapshot["appearance"]["language"]) 
 
 export function GeneralSettings({ facade, settings }: { facade: SettingsFacade; settings: SettingsSnapshot }) {
   const { i18n, t } = useTranslation();
+  const notifications = useOptionalAppNotifications();
   const { appearance, resolvedTheme, setAppearance } = useTheme();
   const [language, setLanguage] = useState(settings.appearance.language);
   const [error, setError] = useState<string>();
@@ -25,7 +28,16 @@ export function GeneralSettings({ facade, settings }: { facade: SettingsFacade; 
     const previous = appearance;
     setAppearance(theme);
     setError(undefined);
-    void facade.execute({ type: "set_theme", payload: { theme } }).catch(() => {
+    void runTrackedOperation({
+      kind: "settings_theme",
+      label: t("settings.general.heading"),
+      mode: "instant",
+      notifications,
+      translate: (name, options) => t(name as never, options),
+      successNotice: () => ({ tone: "success", title: t("settings.general.themeSaved") }),
+      errorNotice: (_error, message) => ({ tone: "danger", title: t("settings.general.themeSaveError"), detail: message }),
+      run: () => facade.execute({ type: "set_theme", payload: { theme } }),
+    }).catch(() => {
       setAppearance(previous);
       setError(t("settings.general.themeSaveError"));
     });
@@ -36,7 +48,16 @@ export function GeneralSettings({ facade, settings }: { facade: SettingsFacade; 
     setLanguage(next);
     setError(undefined);
     void i18n.changeLanguage(resolvedLanguage(next));
-    void facade.execute({ type: "set_language", payload: { language: next } }).catch(() => {
+    void runTrackedOperation({
+      kind: "settings_language",
+      label: t("settings.general.heading"),
+      mode: "instant",
+      notifications,
+      translate: (name, options) => t(name as never, options),
+      successNotice: () => ({ tone: "success", title: t("settings.general.languageSaved") }),
+      errorNotice: (_error, message) => ({ tone: "danger", title: t("settings.general.languageSaveError"), detail: message }),
+      run: () => facade.execute({ type: "set_language", payload: { language: next } }),
+    }).catch(() => {
       setLanguage(previous);
       void i18n.changeLanguage(resolvedLanguage(previous));
       setError(t("settings.general.languageSaveError"));

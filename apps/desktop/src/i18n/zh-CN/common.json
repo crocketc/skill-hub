@@ -2562,6 +2562,7 @@
       "language": "语言",
       "languageDescription": "切换后立即更新界面，并保存到本机偏好。",
       "languageSaveError": "语言未能保存，已恢复为原来的设置。",
+      "languageSaved": "已保存语言设置",
       "languages": {
         "system": "跟随系统",
         "zhCN": "简体中文",
@@ -2570,6 +2571,7 @@
       "theme": "主题",
       "themeDescription": "选择主题后会立即应用，并保存到本机偏好。",
       "themeSaveError": "主题未能保存，已恢复为原来的设置。",
+      "themeSaved": "已保存主题设置",
       "reducedMotion": "始终减少动效",
       "reducedMotionDescription": "开启后界面过渡与提示动效改为即时出现、即时消失；系统已开启减少动效时无需重复设置。"
     },
