@@ -1,0 +1,7 @@
+/* 技能关系模块壳层样式（任务 5）。业务画布样式由任务 6/7/8 各自补充；
+ * 仅使用 --ui-* / --space-* 语义 token，不写死主题色。 */
+.sh-relationships {
+  display: grid;
+  gap: var(--space-5);
+  min-width: 0;
+}

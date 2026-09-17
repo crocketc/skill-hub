@@ -1,10 +1,18 @@
 import { I18nextProvider } from "react-i18next";
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createSkillHubI18n } from "../i18n";
 import baseCss from "../styles/base.css?raw";
 import { Sidebar } from "./Sidebar";
+
+// 预取接线：Sidebar 悬停/聚焦应通过 preloadRoute 触发对应路由 chunk 预加载。
+const preloadRouteMock = vi.hoisted(() => vi.fn());
+vi.mock("./router", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./router")>()),
+  preloadRoute: preloadRouteMock,
+}));
 
 async function renderSidebar(entry = "/library/skill-pdf", collapsed = false) {
   const i18n = await createSkillHubI18n(["en-US"]);
@@ -92,5 +100,48 @@ describe("Sidebar", () => {
       .querySelector(".sh-sidebar__header");
     expect(collapsedHeader!.querySelector(".sh-sidebar__toggle")).not.toBeNull();
     expect(collapsedHeader!.querySelector(".sh-sidebar__brand")).toBeNull();
+  });
+
+  it("places Skill relations between Skill library and Discover", async () => {
+    await renderSidebar();
+
+    const library = screen.getByRole("link", { name: "Skill library" });
+    const relations = screen.getByRole("link", { name: "Skill relations" });
+    const discover = screen.getByRole("link", { name: "Discover" });
+    expect(
+      library.compareDocumentPosition(relations) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      relations.compareDocumentPosition(discover) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it("marks Skill relations current on the module tab and its sub-routes", async () => {
+    await renderSidebar("/relationships");
+    expect(screen.getByRole("link", { name: "Skill relations" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+
+    await renderSidebar("/relationships/governance");
+    const second = screen.getAllByRole("complementary", { name: "Main navigation" })[1];
+    const relationsLink = Array.from(second.querySelectorAll("a")).find(
+      (link) => link.textContent === "Skill relations",
+    );
+    expect(relationsLink).not.toBeUndefined();
+    expect(relationsLink).toHaveAttribute("aria-current", "page");
+  });
+
+  it("preloads the relationships route chunk on hover and focus", async () => {
+    const user = userEvent.setup();
+    await renderSidebar("/library");
+
+    const relations = screen.getByRole("link", { name: "Skill relations" });
+    await user.hover(relations);
+    expect(preloadRouteMock).toHaveBeenCalledWith("/relationships");
+
+    preloadRouteMock.mockClear();
+    relations.focus();
+    expect(preloadRouteMock).toHaveBeenCalledWith("/relationships");
   });
 });

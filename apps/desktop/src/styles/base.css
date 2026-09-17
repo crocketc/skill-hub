@@ -983,7 +983,9 @@ a {
   background: var(--color-page);
 }
 
-.sh-app-shell__topbar h1 {
+/* 顶栏标题原为 h1；2026-09-17 起降级为非 heading（.sh-app-shell__title），
+ * route-level h1 由页面自持，视觉规格保持不变。 */
+.sh-app-shell__topbar .sh-app-shell__title {
   margin: 0;
   padding-inline: var(--space-2);
   border-bottom: 2px solid var(--ui-accent);
@@ -999,7 +1001,7 @@ a {
   gap: var(--space-1);
 }
 
-.sh-app-shell__topbar-start h1 {
+.sh-app-shell__topbar-start .sh-app-shell__title {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

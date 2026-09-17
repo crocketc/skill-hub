@@ -10,7 +10,7 @@ import {
 import { sidebarNavigationEnd } from "./Sidebar";
 import { resolveRouteTitleKey, resolveSubRouteFallback } from "./AppShell";
 import { queryClient } from "./queryClient";
-import { appRouter, AppRouter } from "./router";
+import { appRouter, AppRouter, routePreloaders } from "./router";
 import { installDomAbortPrimitives } from "../test-setup";
 import { desktopBootstrapRuntime } from "../features/bootstrap/api";
 
@@ -216,7 +216,8 @@ it("isolates deterministic Skill detail preview data from production", async () 
   expect(await screen.findByRole("heading", { name: "PDF Reader" })).toBeVisible();
   // 新增01-4 验收修复：详情路由恢复标准顶栏，shell 标题 "Skill library" 应可见
   //（与下方 resolveRouteTitleKey("/__preview/skill-detail/...") 的单元断言一致）。
-  expect(screen.queryByRole("heading", { name: "Skill library" })).toBeVisible();
+  // 2026-09-17 起顶栏标题为非 heading 元素（回归修复 §5.4）。
+  expect(document.querySelector(".sh-app-shell__title")).toHaveTextContent("Skill library");
   expect(
     await screen.findByRole("heading", { name: "Markdown workspace" }),
   ).toBeVisible();
@@ -241,7 +242,9 @@ it("keeps the Skill library shell title on the library route", async () => {
 
   render(<AppRouter />);
 
-  expect(await screen.findByRole("heading", { name: "Skill library" })).toBeVisible();
+  // 顶栏标题为非 heading 元素（2026-09-17 回归修复 §5.4）。
+  expect(await screen.findByText("PDF Reader")).toBeVisible();
+  expect(document.querySelector(".sh-app-shell__title")).toHaveTextContent("Skill library");
 });
 
 it("mounts the DEV-only UI foundations preview board with theme switching", async () => {
@@ -337,14 +340,19 @@ it("keeps shell titles for filtered agent and project deployment destinations", 
   await appRouter.navigate("/agents/openai.codex-cli?view=deployments");
   render(<AppRouter />);
 
-  expect(await screen.findAllByRole("heading", { name: "Agents" })).toHaveLength(1);
+  // 顶栏标题为非 heading 元素（2026-09-17 回归修复 §5.4）；侧栏高亮 Agents。
+  await waitFor(() =>
+    expect(document.querySelector(".sh-app-shell__title")).toHaveTextContent("Agents"),
+  );
   expect(screen.getByRole("link", { name: "Agents" })).toHaveAttribute("aria-current", "page");
 
   await act(async () => {
     await appRouter.navigate("/projects/project-aurora?view=deployments");
   });
 
-  expect(await screen.findAllByRole("heading", { name: "Projects" })).toHaveLength(1);
+  await waitFor(() =>
+    expect(document.querySelector(".sh-app-shell__title")).toHaveTextContent("Projects"),
+  );
   expect(screen.getByRole("link", { name: "Projects" })).toHaveAttribute("aria-current", "page");
 });
 
@@ -415,7 +423,10 @@ it("loads the production settings route from native preferences", async () => {
   await appRouter.navigate("/settings");
   render(<AppRouter />);
 
-  expect(await screen.findByRole("heading", { name: "Settings" })).toBeVisible();
+  // 顶栏标题为非 heading 元素（2026-09-17 回归修复 §5.4）。
+  await waitFor(() =>
+    expect(document.querySelector(".sh-app-shell__title")).toHaveTextContent("Settings"),
+  );
   // 分区化后库路径位于“Library maintenance”分区；切换分区确认真实偏好已加载。
   fireEvent.click(screen.getByRole("tab", { name: "Library maintenance" }));
   expect(await screen.findByText("C:\\Users\\Test\\SkillHub")).toBeVisible();
@@ -433,4 +444,77 @@ it("routes /discovery/repositories to the standalone repository management page"
   expect(await screen.findByText("anthropics/skills")).toBeVisible();
   // 发现子路由的壳层顶栏保留返回发现主页的锚点。
   expect(screen.getByRole("button", { name: "返回" })).toBeVisible();
+});
+
+// —— 任务 5：技能关系模块壳层（路由/预取/标题/嵌套回退）——
+
+it("renders the three relationships routes with honest placeholders and module titles", async () => {
+  mockBrowserPreferences();
+  await skillHubI18n.changeLanguage("en-US");
+  await appRouter.navigate("/relationships");
+  render(<AppRouter />);
+
+  expect(await screen.findByRole("heading", { name: "Skill graph" })).toBeVisible();
+  expect(document.querySelector(".sh-app-shell__title")).toHaveTextContent(
+    "Skill relations",
+  );
+  expect(
+    await screen.findByText(
+      "The relationship graph canvas is not available yet; relation facts stay available in the Skill library and on Skill details.",
+    ),
+  ).toBeVisible();
+
+  await act(async () => {
+    await appRouter.navigate("/relationships/decisions");
+  });
+  expect(await screen.findByRole("heading", { name: "Conflict decisions" })).toBeVisible();
+  expect(
+    await screen.findByText(
+      "The conflict comparison workbench is not available yet; conflict decisions during import remain available in the import workflow.",
+    ),
+  ).toBeVisible();
+
+  await act(async () => {
+    await appRouter.navigate("/relationships/governance");
+  });
+  expect(
+    await screen.findByRole("heading", { name: "Relationship governance" }),
+  ).toBeVisible();
+  expect(
+    await screen.findByText(
+      "The relationship governance workbench is not available yet; the governance panel on Skill details remains available.",
+    ),
+  ).toBeVisible();
+});
+
+it("preloads the relationships chunk and maps module titles with nested fallbacks", async () => {
+  expect(routePreloaders["/relationships"]).toBeTypeOf("function");
+  const chunk = (await routePreloaders["/relationships"]()) as Record<string, unknown>;
+  expect(chunk.RelationshipsGraphPage).toBeTypeOf("function");
+  expect(chunk.RelationshipsDecisionsPage).toBeTypeOf("function");
+  expect(chunk.RelationshipsGovernancePage).toBeTypeOf("function");
+
+  expect(resolveRouteTitleKey("/relationships")).toBe("relationships.nav");
+  expect(resolveRouteTitleKey("/relationships/decisions")).toBe("relationships.nav");
+  expect(resolveRouteTitleKey("/relationships/governance")).toBe("relationships.nav");
+  expect(resolveSubRouteFallback("/relationships")).toBeNull();
+  expect(resolveSubRouteFallback("/relationships/decisions")).toBe("/relationships");
+  expect(resolveSubRouteFallback("/relationships/governance")).toBe("/relationships");
+});
+
+it("offers the shell back button on relationships sub-routes returning to the module", async () => {
+  mockBrowserPreferences();
+  await skillHubI18n.changeLanguage("zh-CN");
+  // 先进入模块主页再进入子页：历史优先回退落在 /relationships。
+  await appRouter.navigate("/relationships");
+  await appRouter.navigate("/relationships/decisions");
+  render(<AppRouter />);
+
+  const back = await screen.findByRole("button", { name: "返回" });
+  await act(async () => {
+    fireEvent.click(back);
+  });
+  await waitFor(() =>
+    expect(appRouter.state.location.pathname).toBe("/relationships"),
+  );
 });

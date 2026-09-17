@@ -49,6 +49,7 @@ import "../styles/base.css";
 import "../features/settings/settings.css";
 import "../features/discovery/discovery.css";
 import "../features/skill-detail/skill-detail.css";
+import "../features/relationships/relationships.css";
 import { ThemeProvider, useTheme } from "../styles/ThemeProvider";
 import { DesktopApp } from "./App";
 import { queryClient } from "./queryClient";
@@ -75,6 +76,10 @@ const SkillLibraryPage = lazy(() => import("../features/skills/SkillLibraryPage"
 const SkillDetailPage = lazy(() => import("../features/skill-detail/SkillDetailPage").then((m) => ({ default: m.SkillDetailPage })));
 const CombinationManagerPage = lazy(() => import("../features/skills/CombinationManagerPage").then((m) => ({ default: m.CombinationManagerPage })));
 const RepoManagerPage = lazy(() => import("../features/discovery/RepoManagerPage").then((m) => ({ default: m.RepoManagerPage })));
+// 任务 5：技能关系模块三页共享同一懒加载 chunk（RelationshipsPages）。
+const RelationshipsGraphPage = lazy(() => import("../features/relationships/RelationshipsPages").then((m) => ({ default: m.RelationshipsGraphPage })));
+const RelationshipsDecisionsPage = lazy(() => import("../features/relationships/RelationshipsPages").then((m) => ({ default: m.RelationshipsDecisionsPage })));
+const RelationshipsGovernancePage = lazy(() => import("../features/relationships/RelationshipsPages").then((m) => ({ default: m.RelationshipsGovernancePage })));
 
 function RouteSuspense({ children }: { children: ReactNode }) {
   const { t } = useTranslation();
@@ -86,10 +91,11 @@ function RouteSuspense({ children }: { children: ReactNode }) {
 }
 
 // 悬停/聚焦导航时预取对应路由 chunk（bundle-preload），消除首次点击的 Suspense 停顿。
-const routePreloaders: Record<string, () => Promise<unknown>> = {
+export const routePreloaders: Record<string, () => Promise<unknown>> = {
   "/": () => import("../features/overview/OverviewPage"),
   "/agents": () => import("../features/agents/AgentListPage"),
   "/library": () => import("../features/skills/SkillLibraryPage"),
+  "/relationships": () => import("../features/relationships/RelationshipsPages"),
   "/operations": () => import("../features/operations/OperationsRecordsPage"),
   "/pending": () => import("../features/pending/PendingPage"),
   "/projects": () => import("../features/projects/ProjectListPage"),
@@ -266,6 +272,10 @@ export const appRouter = createBrowserRouter([
       { path: "library/:skillId/deploy", element: <DeploymentRoute /> },
       { path: "deploy", element: <BatchDeploymentRoute /> },
       { path: "library/:skillId/security", element: <SecurityRoute /> },
+      // 任务 5：技能关系模块（图谱/冲突处理/关系治理），业务画布由任务 6/7/8 接入。
+      { path: "relationships", element: <RouteSuspense><RelationshipsGraphPage /></RouteSuspense> },
+      { path: "relationships/decisions", element: <RouteSuspense><RelationshipsDecisionsPage /></RouteSuspense> },
+      { path: "relationships/governance", element: <RouteSuspense><RelationshipsGovernancePage /></RouteSuspense> },
       // AR-012：发现主页 + 每种发现方式的独立子页（本机/在线/仓库/lock）。
       { path: "discovery", element: <DiscoveryRoute /> },
       { path: "discovery/local", element: <DiscoveryRoute view="local" /> },

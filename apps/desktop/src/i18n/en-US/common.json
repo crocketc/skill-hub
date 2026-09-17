@@ -2168,6 +2168,21 @@
       "partialCoverage": "Analyzed {{analyzed}} of {{total}} case groups in this scope"
     }
   },
+  "relationships": {
+    "nav": "Skill relations",
+    "graph": {
+      "title": "Skill graph",
+      "placeholder": "The relationship graph canvas is not available yet; relation facts stay available in the Skill library and on Skill details."
+    },
+    "decisions": {
+      "title": "Conflict decisions",
+      "placeholder": "The conflict comparison workbench is not available yet; conflict decisions during import remain available in the import workflow."
+    },
+    "governance": {
+      "title": "Relationship governance",
+      "placeholder": "The relationship governance workbench is not available yet; the governance panel on Skill details remains available."
+    }
+  },
   "operations": {
     "eyebrow": "Operation progress",
     "progressHeading": "Operation status",

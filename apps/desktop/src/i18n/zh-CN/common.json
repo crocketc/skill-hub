@@ -2168,6 +2168,21 @@
       "partialCoverage": "本次已分析 {{analyzed}} 组（范围内共 {{total}} 组）"
     }
   },
+  "relationships": {
+    "nav": "技能关系",
+    "graph": {
+      "title": "技能图谱",
+      "placeholder": "关系图谱画布尚未提供；关系事实仍可在技能库与 Skill 详情中查看。"
+    },
+    "decisions": {
+      "title": "冲突处理",
+      "placeholder": "冲突对比工作台尚未提供；导入流程中的冲突处理仍然可用。"
+    },
+    "governance": {
+      "title": "关系治理",
+      "placeholder": "关系治理工作台尚未提供；Skill 详情中的关系治理面板仍然可用。"
+    }
+  },
   "operations": {
     "eyebrow": "操作进度",
     "progressHeading": "操作状态",

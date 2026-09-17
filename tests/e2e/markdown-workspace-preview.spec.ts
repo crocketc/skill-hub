@@ -43,11 +43,14 @@ test("markdown content slots below the workspace heading on the preview outline"
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.goto("/__preview/markdown-workspace");
 
-  // 页面 outline：顶栏 h1 唯一；页面 h2 -> 工作区 h3 -> Markdown 标题 h4。
+  // 页面 outline（2026-09-17 顶栏标题降级为非 heading，基线回归 §5.4）：
+  // route-level h1 由页面自持；本预览夹具暂无页面级 h1，页面从 h2 开始，
+  // 工作区 h3 -> Markdown 标题 h4。
   await expect(
     page.getByRole("heading", { name: "Markdown workspace preview", exact: true, level: 2 }),
   ).toBeVisible();
-  await expect(page.getByRole("heading", { level: 1 })).toHaveCount(1);
+  await expect(page.locator(".sh-app-shell__title")).toHaveText("Overview");
+  await expect(page.getByRole("heading", { level: 1 })).toHaveCount(0);
   await expect(
     page.getByRole("heading", { name: "Skill description", exact: true, level: 2 }),
   ).toBeVisible();

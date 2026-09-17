@@ -119,6 +119,18 @@ const registry: Record<string, ReactNode> = {
   settings: (
     <path d="M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7Zm0-5v2M12 18.5v2M3.5 12h2M18.5 12h2M5.9 5.9l1.4 1.4M16.7 16.7l1.4 1.4M18.1 5.9l-1.4 1.4M7.3 16.7l-1.4 1.4" />
   ),
+  // 关系图谱：三个 Skill 节点两两相连（任务 5 新增导航图标；含义由可见
+  // 文字承载，图标保持纯装饰 aria-hidden）。
+  relationships: (
+    <>
+      <circle cx="6" cy="6" r="2.5" />
+      <circle cx="18" cy="7.5" r="2.5" />
+      <circle cx="11" cy="18" r="2.5" />
+      <path d="M8.5 6.3 15.5 7.2" />
+      <path d="M7 8.3 10 15.7" />
+      <path d="M16.6 9.6 12.4 15.9" />
+    </>
+  ),
 };
 
 export type IconName = keyof typeof registry;

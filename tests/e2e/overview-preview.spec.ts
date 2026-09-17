@@ -81,8 +81,11 @@ test("mounts the overview preview with one primary metric and compact stats", as
 }) => {
   await page.goto("/__preview/overview");
 
-  await expect(page.getByRole("heading", { level: 1, name: "Overview" })).toBeVisible();
+  // 2026-09-17 顶栏标题降级为非 heading（基线回归 §5.4）：route-level h1 由
+  // 页面自持，概览页标题为 h2，顶栏标题保持可见但不再进入 heading outline。
+  await expect(page.locator(".sh-app-shell__title")).toHaveText("Overview");
   await expect(page.getByRole("heading", { level: 2, name: "Overview" })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1 })).toHaveCount(0);
   await expect(page.getByRole("link", { name: "27 skills" })).toBeVisible();
   const stats = page.getByRole("list", { name: "Key stats" });
   for (const name of statNames) {
