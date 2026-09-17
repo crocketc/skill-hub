@@ -76,6 +76,7 @@
   display: grid;
   gap: var(--space-4);
   grid-template-columns: minmax(0, 1fr) 20rem;
+  min-width: 0;
 }
 
 @media (max-width: 60rem) {

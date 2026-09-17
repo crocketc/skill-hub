@@ -373,6 +373,16 @@ it("keeps the relationship band inside the fill grid so 100% zoom keeps the oute
   );
 });
 
+it("contains overlong relationship thumbnail labels inside their cards", () => {
+  const relationRule = overviewCss.match(/\.sh-overview__relation\s*\{([^}]*)\}/)?.[1] ?? "";
+  const labelRule = overviewCss.match(/\.sh-overview__relation-name\s*\{([^}]*)\}/)?.[1] ?? "";
+
+  expect(relationRule).toContain("max-width: 100%");
+  expect(relationRule).toContain("overflow-wrap: anywhere");
+  expect(labelRule).toContain("min-width: 0");
+  expect(labelRule).toContain("overflow-wrap: anywhere");
+});
+
 it("renders the tag distribution in a fixed chart panel with a text equivalent", async () => {
   await renderOverview();
 

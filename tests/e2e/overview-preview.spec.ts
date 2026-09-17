@@ -175,6 +175,32 @@ test.describe("overview stays free of horizontal overflow", () => {
     await expectNoRootHorizontalOverflow(page);
     await expect(page.getByRole("heading", { name: "4 pending items" })).toBeVisible();
   });
+
+  test("keeps the compact overview panels non-overlapping at 800x600", async ({ page }) => {
+    await page.setViewportSize({ width: 800, height: 600 });
+    await page.goto("/__preview/overview");
+
+    await expect(page.getByRole("link", { name: relationEntryNames[2] })).toBeVisible();
+    const panels = await page.locator(
+      ".sh-overview__metrics, .sh-overview__content-grid, .sh-overview__relations",
+    ).evaluateAll((elements) => elements.map((element) => {
+      const rect = element.getBoundingClientRect();
+      return { bottom: rect.bottom, height: rect.height, top: rect.top };
+    }));
+
+    expect(panels).toHaveLength(3);
+    for (let index = 1; index < panels.length; index += 1) {
+      expect(
+        panels[index]!.top,
+        `overview panel ${index} must start after the previous panel ends`,
+      ).toBeGreaterThanOrEqual(panels[index - 1]!.bottom - 1);
+      expect(panels[index]!.height, `overview panel ${index} must remain measurable`).toBeGreaterThan(0);
+    }
+
+    const tagDetails = page.locator(".sh-overview__tag-details-scroll");
+    await expect(tagDetails).toHaveCSS("overflow-y", "auto");
+    await expectNoRootHorizontalOverflow(page);
+  });
 });
 
 test("stacks chart and pending into one column with single-column stats at 800px", async ({
