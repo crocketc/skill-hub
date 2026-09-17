@@ -42,8 +42,8 @@ import {
   operationTracker,
   useHasRunningOperation,
   type OperationTracker,
-  type TrackedResultSummary,
 } from "../../platform/operationTracker";
+import { runTrackedOperation } from "../../platform/runTrackedOperation";
 
 type WizardPhase =
   | "source"
@@ -425,7 +425,8 @@ export function ImportWizard({
 }: ImportWizardProps) {
   const { t } = useTranslation();
   // 验收反馈：导入提交的成功/失败/取消接入全局通知；错误详情仍留在流程页。
-  const { notify } = useAppNotifications();
+  const notifications = useAppNotifications();
+  const { notify } = notifications;
   const normalizedInitialSources = Array.from(new Set(initialSources.map(normalizeWindowsPath)));
   const normalizedInitialSourceText = normalizeWindowsPath(initialSourceText);
   const [state, dispatch] = useReducer(reducer, {
@@ -794,38 +795,47 @@ type: "failed",
     const operation = ++operationRef.current;
     const total = state.plan.candidates.length;
     dispatch({ type: "commit_started", total });
-    // 提交循环挂在全局 tracker 上：用户离开本页（组件卸载）后循环继续，
-    // 进度与结果通过全局指示器可见（验收反馈 #12）。
-    const trackedId = tracker.begin({
-      kind: "import",
-      label: t("importWorkflow.tracker.label"),
-      total,
-    });
     try {
-      const results = await facade.commitImport(state.plan, state.actions, (progress) => {
-        tracker.progress(trackedId, progress.completed, progress.total);
-        if (operation === operationRef.current) dispatch({ type: "commit_progress", progress });
-      }, state.governanceDecision);
-      const summary: TrackedResultSummary = {
-        succeeded: results.filter((result) => result.status === "succeeded").length,
-        failed: results.filter((result) => result.status === "failed").length,
-        skipped: results.filter((result) => result.status === "skipped").length,
-        todo: results.filter((result) => result.status === "todo").length,
-      };
-      tracker.complete(trackedId, summary);
-      // 全局通知不依赖向导仍挂载：用户离开页面后提交完成也要可见。
-      notify({
-        tone: summary.failed > 0 || (summary.todo ?? 0) > 0 ? "warning" : "success",
-        title: (summary.todo ?? 0) > 0
-          ? t("importWorkflow.notifications.attentionTitle")
-          : t("importWorkflow.notifications.succeededTitle"),
-        detail: t("importWorkflow.notifications.succeededDetail", {
-          failed: summary.failed,
-          skipped: summary.skipped,
-          succeeded: summary.succeeded,
-          todo: summary.todo ?? 0,
+      const results = await runTrackedOperation<ImportResult[]>({
+        tracker,
+        notifications,
+        kind: "import",
+        label: t("importWorkflow.tracker.label"),
+        total,
+        translate: (key, options) => String(t(key as never, options as never)),
+        summarize: (settled) => ({
+          succeeded: settled.filter((result) => result.status === "succeeded").length,
+          failed: settled.filter((result) => result.status === "failed").length,
+          skipped: settled.filter((result) => result.status === "skipped").length,
+          todo: settled.filter((result) => result.status === "todo").length,
         }),
-        action: { label: t("importWorkflow.notifications.openLibrary"), to: "/library" },
+        successNotice: (_settled, summary) => ({
+          tone: summary?.failed || summary?.todo ? "warning" : "success",
+          title: summary?.todo
+            ? t("importWorkflow.notifications.attentionTitle")
+            : t("importWorkflow.notifications.succeededTitle"),
+          detail: t("importWorkflow.notifications.succeededDetail", {
+            failed: summary?.failed ?? 0,
+            skipped: summary?.skipped ?? 0,
+            succeeded: summary?.succeeded ?? 0,
+            todo: summary?.todo ?? 0,
+          }),
+          action: { label: t("importWorkflow.notifications.openLibrary"), to: "/library" },
+        }),
+        errorNotice: (_error, message) => ({
+          tone: "danger",
+          title: t("importWorkflow.notifications.failedTitle"),
+          detail: message,
+        }),
+        run: async (handle) => facade.commitImport(
+          state.plan!,
+          state.actions,
+          (progress) => {
+            handle.progress(progress.completed, progress.total);
+            if (operation === operationRef.current) dispatch({ type: "commit_progress", progress });
+          },
+          state.governanceDecision,
+        ),
       });
       if (operation === operationRef.current) {
         dispatch({ type: "commit_succeeded", results });
@@ -833,12 +843,6 @@ type: "failed",
       }
     } catch (error) {
       const commitError = describeNativeError(error, (key, options) => String(t(key as never, options as never)), "importWorkflow.errors.generic");
-      tracker.fail(trackedId, commitError);
-      notify({
-        tone: "danger",
-        title: t("importWorkflow.notifications.failedTitle"),
-        detail: commitError,
-      });
       if (operation === operationRef.current) {
         dispatch({ type: "failed", error: commitError, previousPhase: "conflicts" });
       }
