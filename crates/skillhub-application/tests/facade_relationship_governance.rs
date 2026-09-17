@@ -284,6 +284,26 @@ fn missing_symlink_capability() -> bool {
     )
 }
 
+/// Whether a scenario that only needs the conversion to be able to link *at
+/// all* has to give up on this host.
+///
+/// The product refuses a conversion only when neither link kind is available
+/// (`plan_relation_conversion` rejects the copy fallback), so a host that can
+/// fall back to a junction — a Windows account without the symlink privilege —
+/// still has to run these scenarios instead of skipping them.
+#[track_caller]
+fn missing_directory_link_capability() -> bool {
+    let capabilities =
+        skillhub_adapters::deployment::DeploymentFilesystem::new().available_capabilities();
+    let available =
+        !link_capability_forced_off() && (capabilities.symlink || capabilities.junction);
+    skip_or_continue_for_missing_capability(
+        available,
+        "a symbolic link or a junction",
+        std::panic::Location::caller(),
+    )
+}
+
 fn write_skill(path: &std::path::Path) {
     std::fs::create_dir_all(path).expect("skill directory");
     std::fs::write(path.join("SKILL.md"), BODY).expect("skill body");
@@ -4659,8 +4679,17 @@ async fn governance_batch_requires_the_shared_impact_confirmation_per_row() {
     // `shared_reference_conversion_repoints_one_alias_and_keeps_the_shared_body`.
     // Note the confirmed row reaching `Prepared` also proves on-disk honesty:
     // prepare's `validate_relation_entity` for `Copy` rejects symlink alias
-    // positions, so this passing on macOS means the fixture staged a real
-    // directory and never touched link creation.
+    // positions, so the assertion below can only hold when the fixture staged
+    // a real directory and never created a link.
+    //
+    // RC-16: the confirmed row is asserted to reach `Prepared` again.  The
+    // link-free fixture removes the alias-creation premise, but a conversion
+    // still has to link at the relation's own volume, so a host that can
+    // create neither link kind is an explicit, counted skip rather than a
+    // quietly weaker assertion.
+    if missing_directory_link_capability() {
+        return;
+    }
     let fixture = fixture_with(RelationKind::SharedReferenceCopyAlias { other_consumers: 1 }).await;
     let relation_id = fixture.relation_id.clone();
 
@@ -4688,9 +4717,11 @@ async fn governance_batch_requires_the_shared_impact_confirmation_per_row() {
         vec![RelationGovernanceBlocker::SharedImpactConfirmationRequired]
     );
 
-    // 提供该行的确认令牌后，确认阻塞必须消失。真实链接可用时该行会
-    // Prepared；无链接权限的宿主则会诚实报告能力失败，不能把它误判成
-    // 仍在等待用户确认。
+    // 提供该行的确认令牌后，确认阻塞必须消失，且该行必须真的走到 `Prepared`
+    // ——这是 RC-16 恢复的原始断言。夹具按构造不创建链接（别名位置是真实目录，
+    // 校验用 `symlink_metadata` 判定），因此只有「父目录所在卷确实无法创建
+    // 链接」才会让该行落到 Failed；那种宿主必须显式跳过，不能把「没进入
+    // `Prepared`」当作通过。
     let confirmed = prepare_batch(
         &fixture.facade,
         vec![relation_id.clone()],
@@ -4698,6 +4729,14 @@ async fn governance_batch_requires_the_shared_impact_confirmation_per_row() {
     )
     .await;
     assert_eq!(confirmed.blocked_count, 0);
+    assert_eq!(
+        confirmed.prepared_count, 1,
+        "the confirmed row must be executed, not merely unblocked: {confirmed:?}"
+    );
+    assert_eq!(
+        batch_item(&confirmed, &relation_id).state,
+        RelationGovernanceBatchItemState::Prepared
+    );
     assert!(
         !batch_item(&confirmed, &relation_id)
             .blockers
