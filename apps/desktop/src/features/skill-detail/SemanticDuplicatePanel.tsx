@@ -6,6 +6,7 @@ import { operationTracker, type OperationTracker } from "../../platform/operatio
 import { runTrackedOperation } from "../../platform/runTrackedOperation";
 import { Button } from "../../ui/Button";
 import { StatusBadge } from "../../ui/StatusBadge";
+import { useOptionalAppNotifications } from "../../ui/notifications";
 import { conflictWorkspaceHref } from "../relationships/decisions/conflictDecisions";
 import {
   type SemanticDuplicateReport,
@@ -35,6 +36,7 @@ export function SemanticDuplicatePanel({
   tracker = operationTracker,
 }: SemanticDuplicatePanelProps): JSX.Element {
   const { t } = useTranslation();
+  const notifications = useOptionalAppNotifications();
   const [running, setRunning] = useState(false);
   const [report, setReport] = useState<SemanticDuplicateReport>();
   const [error, setError] = useState<string>();
@@ -67,16 +69,16 @@ export function SemanticDuplicatePanel({
     if (running) return;
     setRunning(true);
     setError(undefined);
-    // 统一执行桥（任务 4）：AI 分析进 tracker 在途投影；结果与失败反馈
-    // 保留在本面板内（notifications: null），异常 rethrow 不吞掉。
+    // 统一执行桥（任务 4）：AI 分析进 tracker 在途投影，并同步进入
+    // 通知中心；页面内仍保留可读错误与确定性候选，异常不吞掉。
     runTrackedOperation({
       tracker,
-      notifications: null,
+      notifications,
       kind: "ai_analysis",
       label: t("skillDetail.tracker.aiAnalysisLabel"),
       translate: (key, options) => String(t(key as never, options as never)),
-      successNotice: () => null,
-      errorNotice: () => null,
+      successNotice: () => ({ tone: "success", title: t("skillDetail.tracker.aiAnalysisLabel") }),
+      errorNotice: (_error, message) => ({ tone: "danger", title: t("skillDetail.duplicates.runFailed", { message }), detail: message }),
       run: (handle) => {
         handle.phase(t("skillDetail.tracker.duplicatesPhase"));
         return facade.analyzeSemanticDuplicates(skillId);

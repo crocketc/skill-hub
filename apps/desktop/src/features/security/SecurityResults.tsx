@@ -6,6 +6,7 @@ import { runTrackedOperation, type TrackedOperationHandle } from "../../platform
 import { Button } from "../../ui/Button";
 import { DataState } from "../../ui/DataState";
 import { StatusBadge } from "../../ui/StatusBadge";
+import { useOptionalAppNotifications } from "../../ui/notifications";
 import { FindingActions } from "./FindingActions";
 import { type SecurityCheck, type SecurityFacade, type SecurityFinding, type SecurityPreferences, unavailableSecurityFacade } from "./api";
 
@@ -19,6 +20,7 @@ export interface SecurityResultsProps {
 
 export function SecurityResults({ facade = unavailableSecurityFacade, skillId, tracker = operationTracker, versionId }: SecurityResultsProps) {
   const { t } = useTranslation();
+  const notifications = useOptionalAppNotifications();
   const [checks, setChecks] = useState<SecurityCheck[]>([]);
   const [findings, setFindings] = useState<SecurityFinding[]>([]);
   const [preferences, setPreferences] = useState<SecurityPreferences>();
@@ -65,13 +67,13 @@ export function SecurityResults({ facade = unavailableSecurityFacade, skillId, t
     try {
       await runTrackedOperation({
         tracker,
-        notifications: null,
+        notifications,
         kind: "ai_check",
         label: t("security.tracker.aiCheckLabel"),
         canCancel: true,
         translate: (key, options) => String(t(key as never, options as never)),
-        successNotice: () => null,
-        errorNotice: () => null,
+        successNotice: () => ({ tone: "success", title: t("security.tracker.aiCheckLabel") }),
+        errorNotice: (_error, message) => ({ tone: "danger", title: t("security.llm.runFailed", { message }), detail: message }),
         run: async (handle) => {
           handleRef.current = handle;
           await runCheck(skillId, versionId);
