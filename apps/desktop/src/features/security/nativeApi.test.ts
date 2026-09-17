@@ -1,11 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { executeCommand, queryApplication } from "../../api/bindings";
 import {
-  renameNativeSkill,
   runNativeLlmSafetyCheck,
-  setNativeSkillLifecycle,
-  setNativeSkillMetadata,
-  setNativeSkillTrial,
   nativeSecurityFacade,
 } from "./nativeApi";
 import type { SecurityFinding } from "./api";
@@ -203,45 +199,6 @@ describe("security native API", () => {
     expect(executeCommand).toHaveBeenCalledWith({
       type: "run_llm_safety_check",
       payload: { skill_id: "skill-1", version_id: "version-1" },
-    });
-  });
-
-  it("maps catalog metadata mutations to typed commands", async () => {
-    const summary = {
-      operation_id: "op-1",
-      phase: "committed" as const,
-      message_code: "catalog.updated",
-      error_code: null,
-    };
-    vi.mocked(executeCommand).mockResolvedValue({ type: "operation_summary", payload: summary });
-
-    await renameNativeSkill("skill-1", "Renamed");
-    await setNativeSkillMetadata("skill-1", {
-      display_name: null,
-      note: "note",
-      tags: ["tag"],
-      author: null,
-      license: "MIT",
-      user_purpose: null,
-    });
-    await setNativeSkillLifecycle("skill-1", "Deprecated");
-    await setNativeSkillTrial("skill-1", [2026, 9, 1]);
-
-    expect(executeCommand).toHaveBeenNthCalledWith(1, {
-      type: "rename_skill",
-      payload: { skill_id: "skill-1", name: "Renamed" },
-    });
-    expect(executeCommand).toHaveBeenNthCalledWith(2, {
-      type: "set_metadata",
-      payload: { skill_id: "skill-1", display_name: null, note: "note", tags: ["tag"], author: null, license: "MIT", user_purpose: null },
-    });
-    expect(executeCommand).toHaveBeenNthCalledWith(3, {
-      type: "set_lifecycle",
-      payload: { skill_id: "skill-1", lifecycle: "Deprecated" },
-    });
-    expect(executeCommand).toHaveBeenNthCalledWith(4, {
-      type: "set_trial",
-      payload: { skill_id: "skill-1", due: [2026, 9, 1] },
     });
   });
 
