@@ -1,5 +1,6 @@
 import { RelationshipsLayout } from "./RelationshipsLayout";
 import { SkillGraphPage } from "./graph/SkillGraphPage";
+import { ConflictDecisionPage } from "./decisions/ConflictDecisionPage";
 
 /**
  * 任务 5 的三条懒加载路由入口。图谱画布（任务 6）已接入 graph 槽位；
@@ -14,7 +15,11 @@ export function RelationshipsGraphPage() {
 }
 
 export function RelationshipsDecisionsPage() {
-  return <RelationshipsLayout scope="decisions" />;
+  return (
+    <RelationshipsLayout scope="decisions">
+      <ConflictDecisionPage />
+    </RelationshipsLayout>
+  );
 }
 
 export function RelationshipsGovernancePage() {

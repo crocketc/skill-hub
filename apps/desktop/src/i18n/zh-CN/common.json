@@ -1724,21 +1724,9 @@
       "library": "本地集中库",
       "deployments": "添加目标"
     },
-    "conflicts": {
-      "heading": "相关冲突（可选 AI 分析）",
-      "run": "分析相关冲突",
-      "scopeNote": "分析范围：与该 Skill 相关的冲突组。",
-      "aiUnavailable": "尚未配置可用的 LLM 供应商；AI 分析按钮已停用，确定性冲突分组照常展示。",
-      "empty": "该 Skill 当前没有关联的冲突组。",
-      "caseHeading": "冲突组 {{id}}",
-      "failureReason": "冲突分析未能完成：{{reason}}",
-      "deterministicNote": "确定性冲突分组不受影响。"
-    },
     "tracker": {
       "aiAnalysisLabel": "AI 语义分析",
-      "conflictPhaseLabel": "AI 冲突分析",
-      "duplicatesPhase": "分析语义重复候选",
-      "conflictPhase": "分析相关冲突"
+      "duplicatesPhase": "分析语义重复候选"
     }
   },
   "deployment": {
@@ -2138,34 +2126,6 @@
       "loadError": "无法加载移除影响。",
       "hide": "收起移除影响",
       "consumerRecognition": "识别状态：{{recognition}}"
-    },
-    "conflictAnalysis": {
-      "heading": "冲突组 AI 分析（可选）",
-      "description": "AI 只给出短结论与建议；确定性基线始终先于 AI 结论展示。",
-      "baselineLabel": "确定性基线",
-      "runAll": "分析全部未决冲突",
-      "runCategory": "按分类分析：{{classification}}",
-      "runCase": "AI 分析",
-      "recommendedAction": "建议动作：{{action}}",
-      "recommendedKeep": "建议保留：{{member}}",
-      "keyEvidence": "关键证据",
-      "uncertainties": "不确定点",
-      "confidence": "置信度：{{value}}%",
-      "advisoryNote": "AI 结果仅供参考，不会自动合并、删除或改变你的裁决。",
-      "sourceLlm": "结果来源：AI 短结论（附确定性基线）",
-      "sourceDeterministic": "结果来源：仅确定性基线（AI 层未返回结果）",
-      "failureReason": "冲突分析未能完成：{{reason}}",
-      "deterministicNote": "确定性冲突分组不受影响。",
-      "failureUnknown": "AI 返回未知失败（{{code}}）。",
-      "empty": "没有符合条件的冲突组。",
-      "action": {
-        "same_skill_version": "归为同一 Skill 的不同版本",
-        "distinct_skill": "视为不同 Skill",
-        "keep_uncertain": "保持待定并留在待办"
-      },
-      "skippedDecided_one": "已有用户裁决的冲突组：{{count}} 个（不送 AI）。",
-      "skippedDecided_other": "已有用户裁决的冲突组：{{count}} 个（不送 AI）。",
-      "partialCoverage": "本次已分析 {{analyzed}} 组（范围内共 {{total}} 组）"
     }
   },
   "relationships": {
@@ -2266,7 +2226,124 @@
     },
     "decisions": {
       "title": "冲突处理",
-      "placeholder": "冲突对比工作台尚未提供；导入流程中的冲突处理仍然可用。"
+      "placeholder": "冲突对比工作台尚未提供；导入流程中的冲突处理仍然可用。",
+      "loadPending": "正在读取冲突工作台…",
+      "loadFailed": "冲突工作台暂时无法读取。",
+      "status": {
+        "pending": "待确认 {{count}} 组",
+        "handledTotal": "累计已处理 {{count}} 组"
+      },
+      "chipsLabel": "冲突类别",
+      "chipAll": "全部类别",
+      "queueLabel": "待确认冲突列表",
+      "queue": {
+        "hasConclusion": "有 AI 结论"
+      },
+      "kind": {
+        "duplicate_same_content": "重复内容",
+        "same_name_different_content": "同名不同内容",
+        "same_source_fork": "同源分叉",
+        "shared_directory_duplicate": "共享目录重复",
+        "unknown_directory_recognition": "未识别目录来源",
+        "unknown": "其他冲突"
+      },
+      "nav": {
+        "prev": "上一个",
+        "next": "下一个",
+        "position": "第 {{index}} / {{total}} 组"
+      },
+      "comparison": {
+        "caseHeading": "冲突组 {{id}}",
+        "baselineLabel": "确定性基线",
+        "memberHeading": "成员 {{index}}",
+        "pathLabel": "路径",
+        "fingerprintLabel": "指纹",
+        "memberSkillLabel": "已入库 Skill",
+        "noMembers": "该冲突组没有可展示的成员路径。",
+        "evidenceHeading": "确定性证据",
+        "fingerprints": {
+          "match": "指纹一致",
+          "mismatch": "指纹不一致",
+          "unknown": "指纹未知"
+        },
+        "names": {
+          "match": "名称一致",
+          "mismatch": "名称不同",
+          "unknown": "名称未知"
+        },
+        "sufficientEvidence": {
+          "yes": "身份证据充分",
+          "no": "身份证据不足"
+        }
+      },
+      "actions": {
+        "heading": "处理决定",
+        "confirmSame": "确认同一 Skill",
+        "keepDistinct": "保留为独立 Skill",
+        "centralize": "纳入集中库管理",
+        "centralizeHint": "不改文件：前往关系治理查看影响预览并最终确认。",
+        "notNow": "暂不处理",
+        "notNowHint": "「暂不处理」不会写入任何结论或历史。",
+        "followSuggestion": "按建议：{{action}}"
+      },
+      "resolve": {
+        "trackerLabel": "写入冲突结论",
+        "successTitle": "冲突结论已写入",
+        "successDetail": "{{conflictId}} 已按你的决定完成处理。",
+        "errorTitle": "未能写入冲突结论",
+        "errorUnknown": "写入冲突结论时出现问题（{{code}}）。"
+      },
+      "ai": {
+        "heading": "AI 分析（可选）",
+        "unavailable": "尚未配置可用的 LLM 供应商；人工决定不受影响。",
+        "runCase": "分析此冲突",
+        "runCategory": "分析当前类别",
+        "runAll": "分析全部待确认",
+        "trackerLabel": "AI 冲突分析",
+        "baselineLabel": "确定性基线",
+        "sourceLlm": "结果来源：AI 短结论（附确定性基线）",
+        "sourceDeterministic": "结果来源：仅确定性基线（AI 层未返回结果）",
+        "failureReason": "冲突分析未能完成：{{reason}}",
+        "failureUnknown": "AI 返回未知失败（{{code}}）。",
+        "deterministicNote": "确定性冲突分组不受影响。",
+        "staleBadge": "分析已过期",
+        "staleNotice": "冲突事实已变化：旧结论不再对应当前状态，不能作为执行依据。",
+        "noConclusion": "此冲突还没有 AI 结论。",
+        "recommendedAction": "建议动作：{{action}}",
+        "recommendedKeep": "建议保留：{{member}}",
+        "keyEvidence": "关键证据",
+        "uncertainties": "不确定点",
+        "confidence": "置信度：{{value}}%",
+        "advisoryNote": "AI 结果仅供参考；「按建议」执行的是你确认的具体决定。",
+        "action": {
+          "same_skill_version": "确认同一 Skill",
+          "distinct_skill": "保留为独立 Skill",
+          "keep_uncertain": "保持待定"
+        },
+        "skippedDecided": "已有用户裁决的冲突组：{{count}} 个（不送 AI）。",
+        "partialCoverage": "本次已分析 {{analyzed}} 组（范围内共 {{total}} 组）",
+        "emptyRun": "没有符合条件的冲突组。"
+      },
+      "history": {
+        "heading": "已处理记录",
+        "concludedAs": "结论：{{conclusion}}",
+        "decidedAt": "处理于 {{date}}"
+      },
+      "decision": {
+        "confirm_same_skill": "确认同一 Skill",
+        "keep_distinct": "保留为独立 Skill",
+        "centralize_management": "纳入集中库管理"
+      },
+      "empty": {
+        "allDone": "干得漂亮！累计已处理 {{count}} 组冲突。",
+        "none": "当前没有待确认的冲突。",
+        "hint": "新冲突会在关系刷新或重新扫描后出现在这里。"
+      },
+      "deepLink": {
+        "hint": "冲突组的 AI 分析与裁决集中在冲突处理工作台完成。",
+        "label": "前往冲突处理"
+      },
+      "panelHeading": "导入冲突组（确定性）"
     },
     "governance": {
       "title": "关系治理",

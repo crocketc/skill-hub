@@ -1,11 +1,12 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { I18nextProvider } from "react-i18next";
 import type { ComponentProps } from "react";
+import { MemoryRouter } from "react-router-dom";
 import { expect, it, vi } from "vitest";
 import { createSkillHubI18n } from "../../i18n";
 import { RelationshipGovernancePanel } from "./RelationshipGovernancePanel";
 import type { ImportGovernanceGroup } from "./relationshipGovernance";
-import type { ConflictAnalysis, ConflictCaseFact } from "../../api/bindings";
+import type { ConflictCaseFact } from "../../api/bindings";
 
 const groups: ImportGovernanceGroup[] = [
   {
@@ -48,7 +49,9 @@ async function renderPanel(props: ComponentProps<typeof RelationshipGovernancePa
   const i18n = await createSkillHubI18n(["zh-CN"]);
   render(
     <I18nextProvider i18n={i18n}>
-      <RelationshipGovernancePanel {...props} />
+      <MemoryRouter>
+        <RelationshipGovernancePanel {...props} />
+      </MemoryRouter>
     </I18nextProvider>,
   );
 }
@@ -139,7 +142,7 @@ it("renders relationship governance copy in the active English locale", async ()
   expect(screen.getByRole("button", { name: "Expand 2 items" })).toBeVisible();
 });
 
-// --- Task 8: 冲突组区可选 AI 分析 ---
+// --- 任务 7 清理后：冲突组只留确定性摘要与工作台深链 ---
 
 const conflictCases: ConflictCaseFact[] = [
   {
@@ -176,157 +179,46 @@ const conflictCases: ConflictCaseFact[] = [
   },
 ];
 
-const conflictAnalysisResult: ConflictAnalysis = {
-  scope: { type: "case", value: { conflict_id: "conflict:notes" } },
-  input_fingerprint: "sha256:input",
-  skipped_decided_cases: 0,
-  total_case_count: 1,
-  source: "llm",
-  failure_code: null,
-  cases: [
-    {
-      conflict_id: "conflict:notes",
-      baseline_classification: "uncertain",
-      summary: "成员指纹不同，无法确认是否同一 Skill。",
-      recommended_action: "keep_uncertain",
-      recommended_keep_member: null,
-      key_evidence: ["成员指纹不同"],
-      uncertainties: ["版本字段缺失"],
-      confidence: 40,
-    },
-  ],
-};
-
-it("lists deterministic conflict cases first and offers all category and case scopes", async () => {
-  const onAnalyze = vi.fn();
+it("lists deterministic conflict facts and deep-links to the decisions workspace", async () => {
   await renderPanel({
     aiAvailable: true,
-    conflictAnalysis: { cases: conflictCases, onAnalyze, running: false },
+    conflictCases: conflictCases,
     groups,
     onDecision: vi.fn(),
   });
 
-  // 确定性事实先于任何 AI 结论展示：冲突组 ID、成员路径与基线分类常显。
+  // 确定性事实常显：冲突组 ID、成员路径与分类。
   expect(screen.getByText("conflict:notes")).toBeVisible();
   expect(screen.getByText("/lib/notes")).toBeVisible();
-  expect(screen.getAllByText(/确定性基线/).length).toBeGreaterThan(0);
-
-  fireEvent.click(screen.getByRole("button", { name: "AI 分析" }));
-  expect(onAnalyze).toHaveBeenLastCalledWith({
-    type: "case",
-    value: { conflict_id: "conflict:notes" },
-  });
-
-  fireEvent.click(screen.getByRole("button", { name: "按分类分析：证据不足（待办）" }));
-  expect(onAnalyze).toHaveBeenLastCalledWith({
-    type: "category",
-    value: { classification: "uncertain" },
-  });
-
-  fireEvent.click(screen.getByRole("button", { name: "分析全部未决冲突" }));
-  expect(onAnalyze).toHaveBeenLastCalledWith({ type: "all" });
-});
-
-it("renders the returned short conclusion with its baseline and the advisory note", async () => {
-  await renderPanel({
-    aiAvailable: true,
-    conflictAnalysis: {
-      cases: conflictCases,
-      onAnalyze: vi.fn(),
-      result: conflictAnalysisResult,
-      running: false,
-    },
-    groups,
-    onDecision: vi.fn(),
-  });
-
-  expect(screen.getByText("成员指纹不同，无法确认是否同一 Skill。")).toBeVisible();
-  expect(screen.getByText(/建议动作/)).toBeVisible();
-  expect(screen.getByText("置信度：40%")).toBeVisible();
-  expect(screen.getByText("版本字段缺失")).toBeVisible();
-  // 建议只是建议：不改变用户裁决的说明必须出现。
-  expect(
-    screen.getByText("AI 结果仅供参考，不会自动合并、删除或改变你的裁决。"),
-  ).toBeVisible();
-  // 基线先于 AI 结论出现。
-  const section = screen.getByTestId("conflict-analysis-section");
-  const sectionText = section.textContent ?? "";
-  expect(sectionText.indexOf("确定性基线")).toBeLessThan(
-    sectionText.indexOf("成员指纹不同，无法确认是否同一 Skill。"),
+  expect(screen.getByText("证据不足（待办）")).toBeVisible();
+  // 深链携带冲突上下文，AI 分析集中到冲突处理工作台。
+  const link = screen.getByRole("link", { name: "前往冲突处理" });
+  expect(link).toHaveAttribute(
+    "href",
+    "/relationships/decisions?conflictId=conflict:notes",
   );
+  expect(screen.getByText("冲突组的 AI 分析与裁决集中在冲突处理工作台完成。")).toBeVisible();
+  // 旧位置不再有 AI 冲突入口，也不渲染 AI 结论。
+  expect(screen.queryByRole("button", { name: "AI 分析" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: /分析全部/ })).not.toBeInTheDocument();
+  expect(screen.queryByText(/建议动作/)).not.toBeInTheDocument();
+  expect(screen.queryByText(/置信度/)).not.toBeInTheDocument();
 });
 
-it("reports a failed conflict analysis through a readable reason and keeps the baselines", async () => {
-  await renderPanel({
-    aiAvailable: true,
-    conflictAnalysis: {
-      cases: conflictCases,
-      onAnalyze: vi.fn(),
-      result: {
-        ...conflictAnalysisResult,
-        source: "deterministic_only",
-        failure_code: "llm.request_timeout",
-        cases: [],
-      },
-      running: false,
-    },
-    groups,
-    onDecision: vi.fn(),
-  });
-
-  expect(screen.getByText(/冲突分析未能完成：连接模型服务超时/)).toBeVisible();
-  expect(screen.getByText("确定性冲突分组不受影响。")).toBeVisible();
-  expect(screen.getByText("conflict:notes")).toBeVisible();
-});
-
-it("hides conflict analysis actions when AI is unavailable without hiding the facts", async () => {
-  const onAnalyze = vi.fn();
+it("keeps the deterministic conflict facts visible when AI is unavailable", async () => {
   await renderPanel({
     aiAvailable: false,
-    conflictAnalysis: { cases: conflictCases, onAnalyze, running: false },
+    conflictCases: conflictCases,
     groups,
     onDecision: vi.fn(),
   });
 
-  expect(screen.queryByRole("button", { name: "AI 分析" })).not.toBeInTheDocument();
-  expect(screen.queryByRole("button", { name: "分析全部未决冲突" })).not.toBeInTheDocument();
-  // 事实仍在：确定性基线不因 AI 缺席而消失。
   expect(screen.getByText("conflict:notes")).toBeVisible();
-  expect(
-    screen.getByText("AI 建议未配置；已保留确定性关系判断。"),
-  ).toBeVisible();
+  expect(screen.getByRole("link", { name: "前往冲突处理" })).toBeVisible();
 });
 
-it("disables conflict analysis actions while a run is in progress", async () => {
-  const onAnalyze = vi.fn();
-  await renderPanel({
-    aiAvailable: true,
-    conflictAnalysis: { cases: conflictCases, onAnalyze, running: true },
-    groups,
-    onDecision: vi.fn(),
-  });
+it("shows no conflict section when the host supplies no conflict cases", async () => {
+  await renderPanel({ groups, onDecision: vi.fn() });
 
-  expect(screen.getByRole("button", { name: "AI 分析" })).toBeDisabled();
-  expect(screen.getByRole("button", { name: "分析全部未决冲突" })).toBeDisabled();
-});
-
-it("states partial coverage honestly when the scope exceeds one request", async () => {
-  const onAnalyze = vi.fn();
-  await renderPanel({
-    aiAvailable: true,
-    conflictAnalysis: {
-      cases: conflictCases,
-      onAnalyze,
-      running: false,
-      result: {
-        ...conflictAnalysisResult,
-        total_case_count: 20,
-        cases: conflictAnalysisResult.cases,
-      },
-    },
-    groups,
-    onDecision: vi.fn(),
-  });
-
-  expect(screen.getByText("本次已分析 1 组（范围内共 20 组）")).toBeVisible();
+  expect(screen.queryByTestId("conflict-cases-section")).not.toBeInTheDocument();
 });

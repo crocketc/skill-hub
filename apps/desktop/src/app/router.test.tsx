@@ -476,10 +476,10 @@ it("renders the three relationships routes with honest placeholders and module t
     await appRouter.navigate("/relationships/decisions");
   });
   expect(await screen.findByRole("heading", { name: "Conflict decisions" })).toBeVisible();
+  // 任务 7 已接入真实冲突处理工作台：路由 mock 不提供工作台投影查询，
+  // 页面诚实呈现读取失败，而不是“尚未提供”占位。
   expect(
-    await screen.findByText(
-      "The conflict comparison workbench is not available yet; conflict decisions during import remain available in the import workflow.",
-    ),
+    await screen.findByText("The conflict workspace cannot be read right now."),
   ).toBeVisible();
 
   await act(async () => {

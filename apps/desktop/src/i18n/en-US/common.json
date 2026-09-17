@@ -1724,21 +1724,9 @@
       "library": "Central library",
       "deployments": "Addition targets"
     },
-    "conflicts": {
-      "heading": "Related conflicts (optional AI analysis)",
-      "run": "Analyze related conflicts",
-      "scopeNote": "Scope: conflict cases related to this skill.",
-      "aiUnavailable": "No usable LLM provider is configured; AI actions are disabled and deterministic conflict grouping remains available.",
-      "empty": "This skill has no related conflict cases.",
-      "caseHeading": "Conflict case {{id}}",
-      "failureReason": "Conflict analysis failed: {{reason}}",
-      "deterministicNote": "Deterministic conflict grouping is unaffected."
-    },
     "tracker": {
       "aiAnalysisLabel": "AI semantic analysis",
-      "conflictPhaseLabel": "AI conflict analysis",
-      "duplicatesPhase": "Analyzing semantic duplicate candidates",
-      "conflictPhase": "Analyzing related conflicts"
+      "duplicatesPhase": "Analyzing semantic duplicate candidates"
     }
   },
   "deployment": {
@@ -2138,34 +2126,6 @@
       "loadError": "Unable to load the removal impact.",
       "hide": "Hide removal impact",
       "consumerRecognition": "Recognition: {{recognition}}"
-    },
-    "conflictAnalysis": {
-      "heading": "Conflict case AI analysis (optional)",
-      "description": "The AI only provides short conclusions and suggestions; the deterministic baseline always comes first.",
-      "baselineLabel": "Deterministic baseline:",
-      "runAll": "Analyze all undecided conflicts",
-      "runCategory": "Analyze by category: {{classification}}",
-      "runCase": "AI analysis",
-      "recommendedAction": "Suggested action: {{action}}",
-      "recommendedKeep": "Suggested keep: {{member}}",
-      "keyEvidence": "Key evidence",
-      "uncertainties": "Uncertainties",
-      "confidence": "Confidence: {{value}}%",
-      "advisoryNote": "AI output is advisory only; nothing is merged, deleted or decided for you.",
-      "sourceLlm": "Source: AI short conclusions (with deterministic baseline)",
-      "sourceDeterministic": "Source: deterministic baseline only (the AI layer returned nothing)",
-      "failureReason": "Conflict analysis failed: {{reason}}",
-      "deterministicNote": "Deterministic conflict grouping is unaffected.",
-      "failureUnknown": "Unknown AI failure ({{code}}).",
-      "empty": "No conflict cases match this scope.",
-      "action": {
-        "same_skill_version": "treat as versions of the same skill",
-        "distinct_skill": "treat as distinct skills",
-        "keep_uncertain": "keep undecided and tracked as a todo"
-      },
-      "skippedDecided_one": "{{count}} conflict case already has a user decision and was not analyzed.",
-      "skippedDecided_other": "{{count}} conflict cases already have a user decision and were not analyzed.",
-      "partialCoverage": "Analyzed {{analyzed}} of {{total}} case groups in this scope"
     }
   },
   "relationships": {
@@ -2266,7 +2226,124 @@
     },
     "decisions": {
       "title": "Conflict decisions",
-      "placeholder": "The conflict comparison workbench is not available yet; conflict decisions during import remain available in the import workflow."
+      "placeholder": "The conflict comparison workbench is not available yet; conflict decisions during import remain available in the import workflow.",
+      "loadPending": "Reading the conflict workspace…",
+      "loadFailed": "The conflict workspace cannot be read right now.",
+      "status": {
+        "pending": "{{count}} pending review",
+        "handledTotal": "{{count}} handled in total"
+      },
+      "chipsLabel": "Conflict kinds",
+      "chipAll": "All kinds",
+      "queueLabel": "Pending conflict list",
+      "queue": {
+        "hasConclusion": "Has AI conclusion"
+      },
+      "kind": {
+        "duplicate_same_content": "Duplicate content",
+        "same_name_different_content": "Same name, different content",
+        "same_source_fork": "Same-source fork",
+        "shared_directory_duplicate": "Shared-directory duplicate",
+        "unknown_directory_recognition": "Unrecognized directory source",
+        "unknown": "Other conflicts"
+      },
+      "nav": {
+        "prev": "Previous",
+        "next": "Next",
+        "position": "{{index}} / {{total}}"
+      },
+      "comparison": {
+        "caseHeading": "Conflict group {{id}}",
+        "baselineLabel": "Deterministic baseline",
+        "memberHeading": "Member {{index}}",
+        "pathLabel": "Path",
+        "fingerprintLabel": "Fingerprint",
+        "memberSkillLabel": "Registered Skill",
+        "noMembers": "This conflict group has no displayable member paths.",
+        "evidenceHeading": "Deterministic evidence",
+        "fingerprints": {
+          "match": "Fingerprints match",
+          "mismatch": "Fingerprints differ",
+          "unknown": "Fingerprints unknown"
+        },
+        "names": {
+          "match": "Names match",
+          "mismatch": "Names differ",
+          "unknown": "Names unknown"
+        },
+        "sufficientEvidence": {
+          "yes": "Identity evidence is sufficient",
+          "no": "Identity evidence is insufficient"
+        }
+      },
+      "actions": {
+        "heading": "Decision",
+        "confirmSame": "Confirm same Skill",
+        "keepDistinct": "Keep as separate Skills",
+        "centralize": "Centralize management",
+        "centralizeHint": "No files change here: open relationship governance to review the impact preview and confirm.",
+        "notNow": "Not now",
+        "notNowHint": "“Not now” writes no conclusion and no history.",
+        "followSuggestion": "Follow suggestion: {{action}}"
+      },
+      "resolve": {
+        "trackerLabel": "Write conflict conclusion",
+        "successTitle": "Conflict conclusion written",
+        "successDetail": "{{conflictId}} was handled per your decision.",
+        "errorTitle": "Could not write the conflict conclusion",
+        "errorUnknown": "A problem occurred while writing the conflict conclusion ({{code}})."
+      },
+      "ai": {
+        "heading": "AI analysis (optional)",
+        "unavailable": "No usable LLM provider is configured; manual decisions are unaffected.",
+        "runCase": "Analyze this conflict",
+        "runCategory": "Analyze current kind",
+        "runAll": "Analyze all pending",
+        "trackerLabel": "AI conflict analysis",
+        "baselineLabel": "Deterministic baseline",
+        "sourceLlm": "Source: AI short conclusion (with deterministic baseline)",
+        "sourceDeterministic": "Source: deterministic baseline only (the AI layer returned no result)",
+        "failureReason": "Conflict analysis failed: {{reason}}",
+        "failureUnknown": "The AI run failed with an unknown error ({{code}}).",
+        "deterministicNote": "The deterministic conflict groups are unaffected.",
+        "staleBadge": "Analysis expired",
+        "staleNotice": "The underlying facts changed: this older conclusion no longer matches the current state and must not be treated as executable advice.",
+        "noConclusion": "No AI conclusion exists for this conflict yet.",
+        "recommendedAction": "Suggested action: {{action}}",
+        "recommendedKeep": "Suggested keep: {{member}}",
+        "keyEvidence": "Key evidence",
+        "uncertainties": "Uncertainties",
+        "confidence": "Confidence: {{value}}%",
+        "advisoryNote": "AI results are advisory only; “Follow suggestion” executes the concrete decision you confirmed.",
+        "action": {
+          "same_skill_version": "Confirm same Skill",
+          "distinct_skill": "Keep as separate Skills",
+          "keep_uncertain": "Keep pending"
+        },
+        "skippedDecided": "Conflict groups already decided: {{count}} (not sent to AI).",
+        "partialCoverage": "Analyzed {{analyzed}} of {{total}} groups in scope this run",
+        "emptyRun": "No conflict groups match this scope."
+      },
+      "history": {
+        "heading": "Handled records",
+        "concludedAs": "Conclusion: {{conclusion}}",
+        "decidedAt": "Handled {{date}}"
+      },
+      "decision": {
+        "confirm_same_skill": "Confirm same Skill",
+        "keep_distinct": "Keep as separate Skills",
+        "centralize_management": "Centralize management"
+      },
+      "empty": {
+        "allDone": "Well done! {{count}} conflicts handled in total.",
+        "none": "No conflicts are waiting for your review.",
+        "hint": "New conflicts appear here after relationship refreshes or rescans."
+      },
+      "deepLink": {
+        "hint": "AI analysis and decisions for conflict groups live in the conflict decisions workspace.",
+        "label": "Open conflict decisions"
+      },
+      "panelHeading": "Import conflict groups (deterministic)"
     },
     "governance": {
       "title": "Relationship governance",
