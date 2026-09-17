@@ -1,4 +1,5 @@
 import { RelationshipsLayout } from "./RelationshipsLayout";
+import { ConflictDecisionPage } from "./decisions/ConflictDecisionPage";
 
 /**
  * 任务 5 的三条懒加载路由入口。业务画布由任务 6（图谱）、任务 7（冲突处理）、
@@ -9,7 +10,11 @@ export function RelationshipsGraphPage() {
 }
 
 export function RelationshipsDecisionsPage() {
-  return <RelationshipsLayout scope="decisions" />;
+  return (
+    <RelationshipsLayout scope="decisions">
+      <ConflictDecisionPage />
+    </RelationshipsLayout>
+  );
 }
 
 export function RelationshipsGovernancePage() {

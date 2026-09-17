@@ -1,0 +1,201 @@
+/* 冲突处理工作台样式（任务 7）。只用 --ui-* / --space-* 语义 token，
+ * 不写死主题色；双侧对比是页面的核心构图，其余保持安静。 */
+.sh-conflict-page {
+  display: grid;
+  gap: var(--space-5);
+  min-width: 0;
+}
+
+.sh-conflict-page__status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin: 0;
+}
+
+.sh-conflict-page__count {
+  color: var(--ui-text-muted, inherit);
+  font-size: 0.9em;
+}
+
+.sh-conflict-page__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+/* 工作台：宽屏双栏（对比 | 决定），窄屏纵向堆叠。 */
+.sh-conflict-workbench {
+  display: grid;
+  gap: var(--space-5);
+  align-items: start;
+}
+
+@media (min-width: 60rem) {
+  .sh-conflict-workbench {
+    grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  }
+}
+
+.sh-conflict-comparison {
+  display: grid;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.sh-conflict-comparison__members {
+  display: grid;
+  gap: var(--space-3);
+}
+
+@media (min-width: 40rem) {
+  .sh-conflict-comparison__members {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.sh-conflict-comparison__member {
+  border: 1px solid var(--ui-border, currentColor);
+  border-radius: 0.5rem;
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  min-width: 0;
+  padding: var(--space-3);
+}
+
+.sh-conflict-comparison__member h4 {
+  margin: 0;
+}
+
+.sh-conflict-comparison__member code,
+.sh-conflict-comparison__evidence code {
+  overflow-wrap: anywhere;
+}
+
+.sh-conflict-comparison__evidence ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
+  margin: 0;
+  padding-left: 1rem;
+}
+
+.sh-conflict-actions {
+  display: grid;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.sh-conflict-actions__buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.sh-conflict-actions__ai {
+  border-top: 1px solid var(--ui-border, currentColor);
+  display: grid;
+  gap: var(--space-3);
+  padding-top: var(--space-3);
+}
+
+.sh-conflict-actions__ai h4 {
+  margin: 0;
+}
+
+.sh-conflict-actions__ai .sh-button-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.sh-conflict-ai-conclusion {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.sh-conflict-ai-conclusion__source {
+  margin: 0;
+}
+
+.sh-conflict-ai-conclusion__summary {
+  font-weight: 600;
+  margin: 0;
+}
+
+.sh-conflict-ai-conclusion h4 {
+  font-size: 0.9em;
+  margin: 0 0 var(--space-1);
+}
+
+.sh-conflict-ai-conclusion ul {
+  margin: 0;
+  padding-left: 1rem;
+}
+
+.sh-conflict-nav {
+  align-items: center;
+  display: flex;
+  gap: var(--space-3);
+  justify-content: center;
+}
+
+.sh-conflict-queue ul {
+  display: grid;
+  gap: var(--space-2);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.sh-conflict-queue__row {
+  align-items: center;
+  background: transparent;
+  border: 1px solid var(--ui-border, currentColor);
+  border-radius: 0.5rem;
+  cursor: pointer;
+  display: flex;
+  flex-wrap: wrap;
+  font: inherit;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  text-align: left;
+  width: 100%;
+}
+
+.sh-conflict-queue__row--active {
+  border-color: var(--ui-accent, currentColor);
+  font-weight: 600;
+}
+
+.sh-conflict-queue__id {
+  font-family: var(--ui-font-mono, monospace);
+}
+
+.sh-conflict-queue__analysis {
+  color: var(--ui-text-muted, inherit);
+  font-size: 0.85em;
+}
+
+.sh-conflict-history ul {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+}
+
+.sh-conflict-history li {
+  align-items: baseline;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sh-conflict-page *,
+  .sh-conflict-page *::before,
+  .sh-conflict-page *::after {
+    transition: none !important;
+  }
+}
