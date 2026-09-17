@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { describeNativeError } from "../../api/nativeErrors";
+import { operationTracker, type OperationTracker } from "../../platform/operationTracker";
+import { runTrackedOperation } from "../../platform/runTrackedOperation";
 import { Button } from "../../ui/Button";
 import { ConfirmDialog } from "../../ui/ConfirmDialog";
 import { BrandTag } from "../../ui/BrandTag";
@@ -19,6 +21,8 @@ import {
 
 export interface LocalDiscoveryWorkbenchProps {
   facade: DiscoveryFacade;
+  /** 统一执行桥的在途投影；测试可注入独立 tracker。 */
+  tracker?: OperationTracker;
   /** C3 收口：待导入横幅的"审查"入口；未提供时横幅不渲染动作按钮。 */
   onReviewCandidates?: (candidates: DiscoveredSkill[]) => void;
 }
@@ -37,7 +41,7 @@ interface SnapshotState {
  * P1-06：新增"发现的 Agent 目录"分组区（品牌分组 / 类型徽标 / 不可用置底 /
  * 同目录合并），以及只通过忽略规则实现的安全排除——绝不删除用户文件。
  */
-export function LocalDiscoveryWorkbench({ facade, onReviewCandidates }: LocalDiscoveryWorkbenchProps) {
+export function LocalDiscoveryWorkbench({ facade, onReviewCandidates, tracker = operationTracker }: LocalDiscoveryWorkbenchProps) {
   const { t } = useTranslation();
   const [snapshot, setSnapshot] = useState<SnapshotState | null>(null);
   const [classification, setClassification] = useState<ScanClassification | null>(null);
@@ -88,8 +92,20 @@ export function LocalDiscoveryWorkbench({ facade, onReviewCandidates }: LocalDis
     setScanning(true);
     setError(null);
     try {
-      const result = await facade.scanTargets([]);
-      const snap = await facade.getDiscoverySnapshot();
+      const { result, snap } = await runTrackedOperation({
+        tracker,
+        notifications: null,
+        kind: "discovery_scan",
+        label: t("discovery.workbench.rescan"),
+        total: 1,
+        translate: (key, options) => String(t(key as never, options as never)),
+        successNotice: () => null,
+        errorNotice: () => null,
+        run: async () => ({
+          result: await facade.scanTargets([]),
+          snap: await facade.getDiscoverySnapshot(),
+        }),
+      });
       setSnapshot({
         observedAt: snap.observed_at,
         clients: snap.instances.length,
@@ -103,7 +119,7 @@ export function LocalDiscoveryWorkbench({ facade, onReviewCandidates }: LocalDis
     } finally {
       setScanning(false);
     }
-  }, [facade, t]);
+  }, [facade, t, tracker]);
 
   // P1-06：分组派生保持纯函数；排除过的目录从展示中移除。
   const agentGroups = useMemo(() => {
