@@ -20,6 +20,8 @@ import {
  * - 「即时写入」command（单次同步响应、无后台阶段）传 mode: "instant"——
  *   不进入在途投影、不让顶栏闪烁，只给结果反馈；
  * - run 抛出的异常在完成 tracker 记账后原样 rethrow，绝不吞掉；
+ * - 经 `markCancelled()` 确认的取消不记失败、不发失败通知：取消是用户主动
+ *   动作，误报失败会污染顶栏与通知中心；
  * - 本模块只投影，不持久化：审计事实仍只存在于后端 operation repository。
  */
 
@@ -35,7 +37,8 @@ export interface TrackedOperationHandle {
   needsUser: (phase?: string) => void;
   /** 记录用户取消请求；真实取消由调用方经后端命令确认。 */
   requestCancel: () => void;
-  /** 后端确认取消后调用：终态落 cancelled，后续异常按取消处理，不再记失败。 */
+  /** 后端确认取消后调用：终态落 cancelled；随后的异常按取消处理，既不记失败
+   *  也不发失败通知（取消是用户主动动作，不是失败）。 */
   markCancelled: () => void;
 }
 
@@ -225,7 +228,13 @@ export async function runTrackedOperation<T>(
     return result;
   } catch (error) {
     const message = describeError(error);
-    if (mode === "phased" && !cancelled) {
+    // 已确认的取消不是失败：终态不落 failed，也不得发失败通知。取消是用户
+    // 主动动作，在途顶栏已经显示 cancelled；再补一条 danger 通知等于把取消
+    // 误报成失败（调用方普遍给失败映射了红色文案，这里必须统一拦住）。
+    if (cancelled) {
+      throw error;
+    }
+    if (mode === "phased") {
       tracker.fail(trackedId, message);
     }
     if (notifications) {

@@ -361,6 +361,32 @@ describe("runTrackedOperation", () => {
     expect(notifications.notify).not.toHaveBeenCalled();
   });
 
+  it("does not report a confirmed cancellation as a failure notice for callers that map failures", async () => {
+    const tracker = createOperationTracker();
+    const notifications = stubNotifications();
+    const cancellation = new Error("operation cancelled");
+
+    // 真实调用方（如 AI 检查）都会给失败映射一个 danger 通知；取消不是失败，
+    // 该映射在取消路径上不得生效——否则用户主动取消后会收到红色“失败”提示。
+    const run = runTrackedOperation({
+      tracker,
+      notifications,
+      kind: "ai_check",
+      label: "AI 检查",
+      canCancel: true,
+      errorNotice: (_error, message) => ({ tone: "danger", title: "AI 检查失败", detail: message }),
+      run: async (handle) => {
+        handle.requestCancel();
+        handle.markCancelled();
+        throw cancellation;
+      },
+    });
+
+    await expect(run).rejects.toBe(cancellation);
+    expect(tracker.getSnapshot()[0].status).toBe("cancelled");
+    expect(notifications.notify).not.toHaveBeenCalled();
+  });
+
   it("does not flash the topbar for instant commands: no tracker entry and only a result notice", async () => {
     const tracker = createOperationTracker();
     const notifications = stubNotifications();
