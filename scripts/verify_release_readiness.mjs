@@ -70,6 +70,28 @@ record("desktop build script", desktopPackage?.scripts?.build === "tsc --noEmit 
 record("Tauri dev command is desktop-local", tauriConfig?.build?.beforeDevCommand === "pnpm dev");
 record("Tauri build command is desktop-local", tauriConfig?.build?.beforeBuildCommand === "pnpm build");
 record("Tauri frontend distribution", tauriConfig?.build?.frontendDist === "../dist");
+// WebView2 与 WKWebView 都按 CSP 决定是否放行 Tauri 的 IPC 自定义协议；connect-src
+// 缺席时会回落到 default-src 'self'，于是每次启动都先失败一次再退回 postMessage。
+const cspDirectives = new Map(
+  String(tauriConfig?.app?.security?.csp ?? "")
+    .split(";")
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .map((part) => {
+      const [name, ...values] = part.split(/\s+/);
+      return [name.toLowerCase(), values];
+    }),
+);
+const connectSrc = cspDirectives.get("connect-src");
+record(
+  "Tauri CSP declares connect-src for the IPC custom protocol",
+  connectSrc !== undefined && connectSrc.includes("ipc:") && connectSrc.includes("http://ipc.localhost"),
+  connectSrc === undefined ? "connect-src is not declared" : connectSrc.join(" "),
+);
+record(
+  "Tauri CSP still restricts scripts to same-origin",
+  (cspDirectives.get("script-src") ?? []).includes("'self'") && (cspDirectives.get("default-src") ?? []).includes("'self'"),
+);
 record("Tauri updater artifacts enabled", tauriConfig?.bundle?.createUpdaterArtifacts === true);
 const updaterEndpoints = tauriConfig?.plugins?.updater?.endpoints ?? [];
 record(

@@ -54,6 +54,27 @@ test("release configuration keeps updater artifacts separate from first-install 
   assert.doesNotMatch(workflow, /TAURI_SIGNING_PRIVATE_KEY_PASSWORD secret is required/);
 });
 
+test("release CSP allows the Tauri IPC custom protocol on every platform", () => {
+  const config = JSON.parse(readFileSync(resolve(projectRoot, "apps/desktop/src-tauri/tauri.conf.json"), "utf8"));
+  const directives = new Map(
+    String(config.app?.security?.csp ?? "")
+      .split(";")
+      .map((part) => part.trim())
+      .filter(Boolean)
+      .map((part) => {
+        const [name, ...values] = part.split(/\s+/);
+        return [name.toLowerCase(), values];
+      }),
+  );
+
+  // connect-src 缺席会回落到 default-src 'self'，Tauri 的 IPC 自定义协议被拒后
+  // 每次启动都退回 postMessage；ipc: 覆盖 macOS/Linux，http://ipc.localhost 覆盖
+  // Windows/Android。
+  assert.deepEqual(directives.get("connect-src"), ["'self'", "ipc:", "http://ipc.localhost"]);
+  assert.deepEqual(directives.get("script-src"), ["'self'"]);
+  assert.deepEqual(directives.get("default-src"), ["'self'"]);
+});
+
 test("release readiness rejects updater endpoints that are not fixed HTTPS GitHub endpoints", () => {
   const config = JSON.parse(readFileSync(resolve(projectRoot, "apps/desktop/src-tauri/tauri.conf.json"), "utf8"));
   const endpoints = config.plugins?.updater?.endpoints ?? [];
