@@ -1803,8 +1803,11 @@
       "automatic": "Automatic (recommended per target)",
       "symbolic_link": "Symbolic link",
       "directory_junction": "Directory junction",
-      "managed_copy": "Managed copy"
+      "managed_copy": "Managed copy",
+      "symbolic_link_unavailable": "This target does not support symbolic links",
+      "directory_junction_unavailable": "This target does not support directory junctions"
     },
+    "name_mismatch": "The skill folder name does not match the name field in SKILL.md; agents may not recognize this skill. Fix it and import again.",
     "results": {
       "heading": "Addition results",
       "status": {

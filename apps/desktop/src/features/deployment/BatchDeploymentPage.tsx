@@ -291,14 +291,14 @@ export function BatchDeploymentPage({ facade, skillIds, tracker, onCommitted }: 
         {preview.failures.length ? <ul className="sh-notice-list" role="alert">{preview.failures.map((failure) => <li key={failure.skillId}>{t("deployment.batch.previewFailed", failure)}</li>)}</ul> : null}
         {preview.plans.map(({ skillId, plan }) => <section key={skillId}>
           <h3>{skillId}</h3>
-          {plan.warnings.length > 0 ? <ul className="sh-notice-list">{plan.warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul> : null}
+          {plan.warnings.length > 0 ? <ul className="sh-notice-list">{plan.warnings.map((warning) => <li key={warning}>{String(t(warning as never, { defaultValue: warning } as never))}</li>)}</ul> : null}
           <ul className="sh-workflow-list">
             {plan.targets.map((target) => <li className="sh-workflow-list__item" data-testid="target-plan" key={target.targetId}>
               <span><strong>{target.label}</strong><small>{t(`deployment.mode.${target.mode}`)}</small></span>
               {target.warnings.length > 0 ? (
                 <span className="sh-status sh-status--warning">
                   <Icon aria-hidden="true" name="warning" size={16} />
-                  {target.warnings.join(" ")}
+                  {target.warnings.map((warning) => String(t(warning as never, { defaultValue: warning } as never))).join(" ")}
                 </span>
               ) : null}
             </li>)}

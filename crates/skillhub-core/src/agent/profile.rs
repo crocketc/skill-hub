@@ -192,6 +192,22 @@ pub struct ProfileCatalog {
 }
 
 impl ProfileCatalog {
+    /// Declared deployment support of one concrete client.  Deployment modes
+    /// must satisfy both the host filesystem and this profile claim, so an
+    /// unconfirmed capability (for example Claude Code junctions) never gets
+    /// selected even when the host could create one.  Unknown clients return
+    /// `None`; callers keep their host-derived capabilities in that case.
+    pub fn deployment_capability_for_client(
+        &self,
+        client_id: &str,
+    ) -> Option<&DeploymentCapability> {
+        self.profiles
+            .iter()
+            .flat_map(|profile| profile.clients.iter())
+            .find(|client| client.id == client_id)
+            .map(|client| &client.deployment)
+    }
+
     pub fn profile_ids(&self) -> std::collections::BTreeSet<String> {
         self.profiles
             .iter()

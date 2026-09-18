@@ -10,9 +10,10 @@ pub use database::{
     ConflictRepository, CustomAgentRepository, Database, DeploymentRepository,
     DeploymentRepositorySqlite, DirectoryRepository, GovernanceTaskRepository, ImportRepository,
     LlmConnectionTestRepository, LlmProfileRepository, MigrationReport, OperationRepositorySqlite,
-    PendingApplicationUpdate, PersistedConnectionTest, PersistedTranslation, ProjectRepository,
-    RecoveryPoint, RelationshipImpactSnapshot, RelationshipRepository, ScanRepository,
-    SearchCandidateRepository, SearchRepository, UsageEvidenceRepository,
+    PendingApplicationUpdate, PersistedConnectionTest, PersistedTranslation, PhysicalTargetRegistration,
+    ProjectRepository, RecoveryPoint, RelationshipImpactSnapshot, RelationshipRepository,
+    ScanRepository, SearchCandidateRepository, SearchRepository, TargetRepository,
+    UsageEvidenceRepository,
 };
 pub use library::{CentralLibrary, ManifestFaultHandler, PortableManifestStore};
 pub use skillhub_core::{LibraryManifest, LibraryPaths, PortableSkillRecord};

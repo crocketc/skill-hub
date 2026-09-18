@@ -348,7 +348,9 @@ impl LocalDeploymentBackend {
             .management_dir
             .join("deployment-trees")
             .join(target.skill_id.to_string())
-            .join(target.version_id.as_str());
+            .join(skillhub_core::deployment::deployment_tree_dir_name(
+                &target.version_id,
+            ));
         if !materialized.is_dir() {
             std::fs::create_dir_all(&materialized).map_err(|error| {
                 AppError::new(ErrorCode::OperationConflict, Severity::Error)
@@ -441,6 +443,63 @@ impl LocalDeploymentBackend {
     fn deployment_destination(&self, deployment: &DeploymentRecord) -> AppResult<PathBuf> {
         Ok(self.target_root(deployment)?.join(&deployment.runtime_name))
     }
+
+    /// Registers (or refreshes) the physical `targets` row for a committed
+    /// deployment.  `deployments.target_id` carries a hard foreign key to
+    /// `targets(id)`, and removal plus ownership proofs read the registered
+    /// path back from that row, so accounting and disk state must land
+    /// together.
+    fn ensure_targets_row(database: &Database, target: &TargetPlan) -> AppResult<()> {
+        let (agent_id, scope, project_id) = Self::target_registration(database, target)?;
+        database
+            .target_repository()
+            .upsert_physical_target(&skillhub_storage::PhysicalTargetRegistration {
+                id: &target.physical_target_id,
+                agent_id: &agent_id,
+                project_id: project_id.as_deref(),
+                scope,
+                path: &target.target_path,
+            })
+    }
+
+    /// Resolves who owns the target for the legacy `targets` columns:
+    /// discovery targets carry their agent client, project targets carry the
+    /// project, and anything else is recorded as a SkillHub registration.
+    fn target_registration(
+        database: &Database,
+        target: &TargetPlan,
+    ) -> AppResult<(String, &'static str, Option<String>)> {
+        if let Some(snapshot) = database.agent_repository().load()? {
+            for logical_id in &target.logical_target_ids {
+                if let Some(logical) = snapshot
+                    .logical_targets
+                    .iter()
+                    .find(|candidate| &candidate.id == logical_id)
+                {
+                    let scope = match logical.scope {
+                        skillhub_core::agent::TargetScope::Project => "project",
+                        skillhub_core::agent::TargetScope::Global
+                        | skillhub_core::agent::TargetScope::Extra => "global",
+                    };
+                    return Ok((logical.client_id.clone(), scope, None));
+                }
+            }
+        }
+        for project in database.project_repository().list()? {
+            if target
+                .logical_target_ids
+                .iter()
+                .any(|id| *id == project.id.to_string())
+            {
+                return Ok((
+                    "skillhub".to_owned(),
+                    "project",
+                    Some(project.id.to_string()),
+                ));
+            }
+        }
+        Ok(("skillhub".to_owned(), "global", None))
+    }
 }
 
 #[async_trait]
@@ -468,6 +527,7 @@ impl DeploymentBackend for LocalDeploymentBackend {
                 .with_param("operation", "execute.commit_deployment")
                 .with_action(RecoveryAction::Retry)
         })?;
+        Self::ensure_targets_row(&database, target)?;
         database.deployment_repository().insert_sync(&record)?;
         Ok(record)
     }
@@ -5916,24 +5976,8 @@ impl LocalApplicationFacade {
     }
 
     fn list_deployment_targets(&self) -> AppResult<AppQueryResult> {
-        let capabilities = DeploymentFilesystem::new().available_capabilities();
-        let modes = [
-            (
-                capabilities.symlink,
-                skillhub_core::DeploymentMode::SymbolicLink,
-            ),
-            (
-                capabilities.junction,
-                skillhub_core::DeploymentMode::DirectoryJunction,
-            ),
-            (
-                capabilities.copy,
-                skillhub_core::DeploymentMode::ManagedCopy,
-            ),
-        ]
-        .into_iter()
-        .filter_map(|(supported, mode)| supported.then_some(mode))
-        .collect::<Vec<_>>();
+        let host_capabilities = DeploymentFilesystem::new().available_capabilities();
+        let modes = offered_modes(&host_capabilities);
         self.with_database("query.list_deployment_targets", |database| {
             let mut targets: Vec<skillhub_core::api::DeploymentTarget> = database
                 .agent_repository()
@@ -5942,13 +5986,19 @@ impl LocalApplicationFacade {
                     snapshot
                         .logical_targets
                         .into_iter()
-                        .map(|target| skillhub_core::api::DeploymentTarget {
-                            id: target.id,
-                            label: target.client_id,
-                            path: target.path,
-                            available: target.available,
-                            physical_id: target.physical_id,
-                            modes: modes.clone(),
+                        .map(|target| {
+                            let modes = offered_modes(&effective_target_capabilities(
+                                &target.client_id,
+                                &host_capabilities,
+                            ));
+                            skillhub_core::api::DeploymentTarget {
+                                id: target.id,
+                                label: target.client_id,
+                                path: target.path,
+                                available: target.available,
+                                physical_id: target.physical_id,
+                                modes,
+                            }
                         })
                         .collect()
                 })
@@ -6050,13 +6100,45 @@ impl LocalApplicationFacade {
             let resolver = self.discovery_target_index()?;
             request.resolve(&resolver, source_path)?
         };
-        skillhub_core::DeploymentPlanner
-            .plan_request(&input)
-            .map(AppQueryResult::DeploymentPlan)
+        let mut plan = skillhub_core::DeploymentPlanner.plan_request(&input)?;
+        if let Some(warning) = self.deployment_name_warning(&plan)? {
+            plan.warnings.push(warning.clone());
+            for target in &mut plan.targets {
+                target.warnings.push(warning.clone());
+            }
+        }
+        Ok(AppQueryResult::DeploymentPlan(plan))
+    }
+
+    /// Reads the deployed version's own SKILL.md and compares its `name`
+    /// with the folder name agents will see.  A mismatch means agents will
+    /// not recognize the deployed skill, so the plan carries a warning
+    /// instead of deploying silently.
+    fn deployment_name_warning(
+        &self,
+        plan: &skillhub_core::DeploymentPlan,
+    ) -> AppResult<Option<String>> {
+        let library = self.library_runtime.snapshot()?;
+        let content = match library
+            .store
+            .read_file(&plan.version_id, "SKILL.md", 256 * 1024)
+        {
+            Ok((_, bytes)) => bytes,
+            Err(error) if error.code == ErrorCode::ObjectNotFound => return Ok(None),
+            Err(error) => return Err(error),
+        };
+        let Some(frontmatter_name) = read_frontmatter_name(&String::from_utf8_lossy(&content))
+        else {
+            return Ok(None);
+        };
+        if frontmatter_name == plan.runtime_name {
+            return Ok(None);
+        }
+        Ok(Some("deployment.name_mismatch".to_owned()))
     }
 
     fn discovery_target_index(&self) -> AppResult<RegisteredTargetIndex> {
-        let capabilities = DeploymentFilesystem::new().available_capabilities();
+        let host_capabilities = DeploymentFilesystem::new().available_capabilities();
         self.with_database("query.get_deployment_plan", |database| {
             let mut facts = Vec::new();
             let mut roots = Vec::new();
@@ -6072,7 +6154,7 @@ impl LocalApplicationFacade {
                     roots.push(root);
                     facts.push(TargetFact::from_logical_target(
                         &target,
-                        capabilities.clone(),
+                        effective_target_capabilities(&target.client_id, &host_capabilities),
                     ));
                 }
             }
@@ -6082,7 +6164,10 @@ impl LocalApplicationFacade {
                     continue;
                 };
                 roots.push(root);
-                facts.push(TargetFact::from_project(&project, capabilities.clone()));
+                facts.push(TargetFact::from_project(
+                    &project,
+                    host_capabilities.clone(),
+                ));
             }
             let policy = PathPolicy::from_roots(roots)?;
             RegisteredTargetIndex::from_facts(facts, policy)
@@ -8168,6 +8253,55 @@ fn restore_version_pointer(
         Some(previous) => library.set_current(skill_id, &previous),
         None => library.clear_current(skill_id),
     }
+}
+
+/// D-9：一个部署方式必须同时被宿主文件系统与 Agent profile 声明允许。
+/// 未收录的客户端保持宿主能力（fail-open），已有 profile 的客户端以
+/// profile 为准（例如 Claude Code 声明 junction 未确认，即使宿主能建也
+/// 不自动选择）。
+fn effective_target_capabilities(
+    client_id: &str,
+    host: &skillhub_core::DeploymentCapability,
+) -> skillhub_core::DeploymentCapability {
+    skillhub_core::ProfileCatalog::builtin()
+        .deployment_capability_for_client(client_id)
+        .map(|declared| host.intersect(declared))
+        .unwrap_or_else(|| host.clone())
+}
+
+/// 计划界面可提供的部署方式（顺序即规划器偏好：链接 → 联接 → 复制）。
+fn offered_modes(
+    capabilities: &skillhub_core::DeploymentCapability,
+) -> Vec<skillhub_core::DeploymentMode> {
+    [
+        (
+            capabilities.symlink,
+            skillhub_core::DeploymentMode::SymbolicLink,
+        ),
+        (
+            capabilities.junction,
+            skillhub_core::DeploymentMode::DirectoryJunction,
+        ),
+        (capabilities.copy, skillhub_core::DeploymentMode::ManagedCopy),
+    ]
+    .into_iter()
+    .filter_map(|(supported, mode)| supported.then_some(mode))
+    .collect()
+}
+
+/// 读取 SKILL.md frontmatter 中的 name 字段（各 Agent 的 Skill 识别依据）。
+fn read_frontmatter_name(markdown: &str) -> Option<String> {
+    let mut lines = markdown.lines();
+    if lines.next().map(str::trim) != Some("---") {
+        return None;
+    }
+    lines
+        .take_while(|line| line.trim() != "---")
+        .find_map(|line| {
+            let (key, value) = line.trim().split_once(':')?;
+            (key.trim() == "name").then(|| value.trim().trim_matches('"').to_owned())
+        })
+        .filter(|value| !value.is_empty())
 }
 
 /// QA-009：读取 SKILL.md frontmatter 中的 description 字段。

@@ -1803,8 +1803,11 @@
       "automatic": "自动（按目标推荐）",
       "symbolic_link": "符号链接",
       "directory_junction": "目录联接",
-      "managed_copy": "托管复制"
+      "managed_copy": "托管复制",
+      "symbolic_link_unavailable": "此目标不支持符号链接",
+      "directory_junction_unavailable": "此目标不支持目录联接"
     },
+    "name_mismatch": "Skill 文件夹名与 SKILL.md 内的 name 不一致，Agent 可能无法识别这个 Skill。请修正后重新导入。",
     "results": {
       "heading": "添加结果",
       "status": {

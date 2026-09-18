@@ -3,6 +3,7 @@ mod observed;
 mod planner;
 pub mod reconcile;
 pub mod removal;
+pub mod staging;
 
 pub use crate::relationship::DeploymentRelationFact;
 pub use model::{
@@ -25,6 +26,7 @@ pub use reconcile::{
 pub use removal::{
     DeploymentRemovalResult, RemovalChoice, RemovalDecision, RemovalImpact, RemovalResult,
 };
+pub use staging::deployment_tree_dir_name;
 
 /// Resolves logical IDs selected by an API caller to currently verified target
 /// facts.  The application implementation is responsible for loading only

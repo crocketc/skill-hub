@@ -70,6 +70,24 @@ impl DeploymentCapability {
             limitations: Vec::new(),
         }
     }
+
+    /// A deployment mode is offerable only when both the host filesystem and
+    /// the agent profile allow it.  Limitations from both sides are kept so
+    /// explanations never lose evidence.
+    pub fn intersect(&self, other: &Self) -> Self {
+        let mut limitations = self.limitations.clone();
+        for limitation in &other.limitations {
+            if !limitations.contains(limitation) {
+                limitations.push(limitation.clone());
+            }
+        }
+        Self {
+            copy: self.copy && other.copy,
+            symlink: self.symlink && other.symlink,
+            junction: self.junction && other.junction,
+            limitations,
+        }
+    }
 }
 
 /// The registered source from which a target fact was obtained.  Raw paths

@@ -27,6 +27,7 @@ mod skill_repo_repository;
 mod skill_repo_scan_state_repository;
 mod source_repository;
 mod source_search_cache;
+mod target_repository;
 mod translation_repository;
 mod ui_preference_repository;
 
@@ -72,6 +73,7 @@ pub use skill_repo_repository::SkillRepoRepository;
 pub use skill_repo_scan_state_repository::SkillRepoScanStateRepository;
 pub use source_repository::SourceRepository;
 pub use source_search_cache::SourceSearchCache;
+pub use target_repository::{PhysicalTargetRegistration, TargetRepository};
 pub use translation_repository::{PersistedTranslation, TranslationRecordRepository};
 pub use ui_preference_repository::UiPreferenceRepository;
 
@@ -113,6 +115,10 @@ impl Database {
 
     pub fn agent_repository(&self) -> AgentRepository<'_> {
         AgentRepository::new(self)
+    }
+
+    pub fn target_repository(&self) -> TargetRepository<'_> {
+        TargetRepository::new(self)
     }
 
     pub fn directory_repository(&self) -> DirectoryRepository<'_> {
