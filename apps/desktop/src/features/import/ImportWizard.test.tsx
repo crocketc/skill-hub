@@ -416,6 +416,25 @@ it("suggests takeover for Agent-owned candidates and requires explicit selection
   expect(screen.getByRole("button", { name: "提交导入" })).toBeDisabled();
 });
 
+it("leads the governance and conflicts steps with a readable summary strip (DEV-20)", async () => {
+  const user = userEvent.setup();
+  await renderWizard(createMockImportFacade({ scenario: "conflict-required" }));
+
+  await user.type(screen.getByLabelText("来源"), "C:/incoming");
+  await user.click(screen.getByRole("button", { name: "解析来源" }));
+  await user.click(await screen.findByRole("button", { name: "继续选择候选" }));
+  await user.click(screen.getByRole("checkbox", { name: /PDF/ }));
+  await user.click(screen.getByRole("button", { name: "分析冲突" }));
+
+  // 冲突步首屏：结论区先行播报冲突总数与必须决策数。
+  const conflictsSummary = await screen.findByRole("status", { name: "本次导入的冲突结论" });
+  expect(conflictsSummary).toBeVisible();
+  expect(conflictsSummary).toHaveTextContent(/共发现 1 处冲突/);
+  expect(conflictsSummary).toHaveTextContent(/1 处必须由你选择/);
+  // 决策控件在结论区之后仍然可达。
+  expect(await screen.findByRole("radio", { name: "独立导入" })).toBeVisible();
+});
+
 it("requires a candidate selection before analyzing", async () => {
   const user = userEvent.setup();
   await renderWizard();

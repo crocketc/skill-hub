@@ -294,7 +294,9 @@
       "batchPrompt": "Choose an action",
       "batchScopeCount": "Will apply to {{count}} items",
       "batchScopeNote": "Only affects conflicts matching the current filter; each item can still be adjusted individually.",
-      "detailsToggle": "Details"
+      "detailsToggle": "Details",
+      "summaryHeading": "Conflict summary for this import",
+      "summary": "{{conflicts}} conflicts found; {{required}} of them require your choice before continuing."
     },
     "summary": {
       "eyebrow": "Import summary",
@@ -374,7 +376,9 @@
         "confirm_shared_directory_impact": "Shared directory impact pending",
         "convert_shared_reference_to_managed_link": "Shared reference conversion pending",
         "unknown_directory_recognition": "Directory recognition pending"
-      }
+      },
+      "summaryHeading": "Relationship summary",
+      "summary": "{{skills}} skills identified across {{groups}} relation groups ({{members}} members); confirm the handling per group below."
     },
     "commitMessages": {
       "imported": "Imported",
@@ -2634,16 +2638,16 @@
         "standard": "Standard",
         "comfortable": "Comfortable"
       },
-      "saveFailed": "The information density setting could not be saved."
-      ,"saved": "Information density setting saved"
+      "saveFailed": "The information density setting could not be saved.",
+      "saved": "Information density setting saved"
     },
     "automation": {
       "heading": "Automation",
       "perSkill": "Per-Skill checks",
       "batch": "Batch checks",
       "global": "Global auto-checks",
-      "saveFailed": "The automation settings could not be saved."
-      ,"saved": "Automation settings saved"
+      "saveFailed": "The automation settings could not be saved.",
+      "saved": "Automation settings saved"
     },
     "network": {
       "heading": "AI and network",

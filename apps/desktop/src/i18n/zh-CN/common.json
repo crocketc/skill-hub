@@ -294,7 +294,9 @@
       "batchPrompt": "请选择处理方式",
       "batchScopeCount": "将应用到 {{count}} 项",
       "batchScopeNote": "仅作用于当前筛选出的冲突；每条冲突仍可单独调整。",
-      "detailsToggle": "详情"
+      "detailsToggle": "详情",
+      "summaryHeading": "本次导入的冲突结论",
+      "summary": "共发现 {{conflicts}} 处冲突；其中 {{required}} 处必须由你选择处理方式后才能继续。"
     },
     "summary": {
       "eyebrow": "导入摘要",
@@ -374,7 +376,9 @@
         "confirm_shared_directory_impact": "待确认通用目录影响范围",
         "convert_shared_reference_to_managed_link": "待将通用目录引用转为管理链接",
         "unknown_directory_recognition": "待确认目录识别能力"
-      }
+      },
+      "summaryHeading": "关系处理结论",
+      "summary": "已识别 {{skills}} 个 Skill、{{groups}} 组关系（共 {{members}} 个成员）；请在下方逐组确认关系处理方式。"
     },
     "commitMessages": {
       "imported": "已导入",
@@ -2634,16 +2638,16 @@
         "standard": "标准",
         "comfortable": "宽松"
       },
-      "saveFailed": "无法保存信息密度设置。"
-      ,"saved": "已保存信息密度设置"
+      "saveFailed": "无法保存信息密度设置。",
+      "saved": "已保存信息密度设置"
     },
     "automation": {
       "heading": "自动化",
       "perSkill": "单个 Skill 检查",
       "batch": "批量检查",
       "global": "全局自动检查",
-      "saveFailed": "无法保存自动化设置。"
-      ,"saved": "已保存自动化设置"
+      "saveFailed": "无法保存自动化设置。",
+      "saved": "已保存自动化设置"
     },
     "network": {
       "heading": "AI 与网络",

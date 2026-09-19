@@ -357,3 +357,23 @@ section.sh-import-wizard {
   font-size: var(--font-size-xs);
   overflow-wrap: anywhere;
 }
+
+/* DEV-20：治理/冲突两步的首屏结论区——识别结果 + 待决策量先行播报。 */
+.sh-import-wizard .sh-import-wizard__summary {
+  border: 1px solid var(--ui-border);
+  border-left: 4px solid var(--ui-accent, currentColor);
+  border-radius: var(--radius-md);
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+}
+
+.sh-import-wizard .sh-import-wizard__summary h2 {
+  font-size: var(--font-size-base);
+  margin: 0;
+}
+
+.sh-import-wizard .sh-import-wizard__summary p {
+  margin: 0;
+  color: var(--color-text);
+}

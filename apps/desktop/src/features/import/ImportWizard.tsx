@@ -1241,16 +1241,40 @@ type: "failed",
       ) : null}
 
       {state.phase === "governance" && state.plan ? (
+        <>
+        {/* DEV-20：首屏结论区——先给出识别结果与待决策量，解释文字留在
+            下方工作台内；决策控件在关系治理面板内保持视觉突出。 */}
+        <section aria-label={t("importWorkflow.governance.summaryHeading")} className="sh-import-wizard__summary" role="status">
+          <h2 id="import-governance-summary-heading">{t("importWorkflow.governance.summaryHeading")}</h2>
+          <p>
+            {t("importWorkflow.governance.summary", {
+              groups: (state.plan.governanceGroups ?? []).length,
+              members: (state.plan.governanceGroups ?? []).reduce((total, group) => total + group.members.length, 0),
+              skills: state.selectedIds.length,
+            })}
+          </p>
+        </section>
         <RelationshipGovernancePanel
           aiAvailable={aiAvailable === true}
           decision={state.governanceDecision}
           groups={state.plan.governanceGroups ?? []}
           onDecision={(decision) => dispatch({ type: "governance_decision", decision })}
         />
+        </>
       ) : null}
 
       {state.phase === "conflicts" && state.plan ? (
         <>
+          {/* DEV-20：冲突步首屏结论区——多少处冲突、几处必须选择。 */}
+          <section aria-label={t("importWorkflow.conflicts.summaryHeading")} className="sh-import-wizard__summary" role="status">
+            <h2 id="import-conflicts-summary-heading">{t("importWorkflow.conflicts.summaryHeading")}</h2>
+            <p>
+              {t("importWorkflow.conflicts.summary", {
+                conflicts: state.plan.conflicts.length,
+                required: state.plan.conflicts.filter((conflict) => conflict.required).length,
+              })}
+            </p>
+          </section>
           <ConflictResolution
             actions={state.actions}
             conflicts={state.plan.conflicts}
