@@ -73,6 +73,8 @@ test("release CSP allows the Tauri IPC custom protocol on every platform", () =>
   assert.deepEqual(directives.get("connect-src"), ["'self'", "ipc:", "http://ipc.localhost"]);
   assert.deepEqual(directives.get("script-src"), ["'self'"]);
   assert.deepEqual(directives.get("default-src"), ["'self'"]);
+  // DEV-4：内联样式显式放行（组件 `style={{…}}` 广泛存在），脚本源不放宽。
+  assert.deepEqual(directives.get("style-src"), ["'self'", "'unsafe-inline'"]);
 });
 
 test("release readiness rejects updater endpoints that are not fixed HTTPS GitHub endpoints", () => {

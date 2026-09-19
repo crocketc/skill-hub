@@ -92,6 +92,15 @@ record(
   "Tauri CSP still restricts scripts to same-origin",
   (cspDirectives.get("script-src") ?? []).includes("'self'") && (cspDirectives.get("default-src") ?? []).includes("'self'"),
 );
+// DEV-4（2026-09-20 裁决）：组件内联 `style={{…}}` 广泛存在，逐个消除收益低，
+// 显式声明 `style-src 'self' 'unsafe-inline'`，避免回落 default-src 产生的
+// 启动期 CSP 违规噪音；脚本源仍锁死 'self' 不放宽。
+const styleSrc = cspDirectives.get("style-src");
+record(
+  "Tauri CSP declares style-src for component inline styles",
+  styleSrc !== undefined && styleSrc.includes("'self'") && styleSrc.includes("'unsafe-inline'"),
+  styleSrc === undefined ? "style-src is not declared" : styleSrc.join(" "),
+);
 record("Tauri updater artifacts enabled", tauriConfig?.bundle?.createUpdaterArtifacts === true);
 const updaterEndpoints = tauriConfig?.plugins?.updater?.endpoints ?? [];
 record(
