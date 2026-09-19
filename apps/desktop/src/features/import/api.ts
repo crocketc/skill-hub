@@ -50,6 +50,8 @@ export interface ImportCandidate {
   path: string;
   ownership: CandidateOwnership;
   basicCheck: "not_checked" | "passed" | "failed";
+  /** DEV-3：SKILL.md frontmatter `name`；与 name（文件夹名）不一致时给非阻塞警告。 */
+  frontmatterName?: string | null;
 }
 
 export interface ImportMatchedSkill {

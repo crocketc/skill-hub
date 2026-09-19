@@ -226,6 +226,7 @@
       "selectAll": "全选可导入候选",
       "analyze": "分析冲突",
       "empty": "此来源没有找到候选 Skill。",
+      "nameMismatch": "文件夹名与 SKILL.md 内声明的名称不一致；不影响导入，部署后 Agent 按文件夹名识别",
       "basicCheck": {
         "not_checked": "尚未检查",
         "passed": "基础检查通过",

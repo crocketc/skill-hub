@@ -56,6 +56,7 @@ function toCandidate(candidate: NativeImportCandidate): ImportCandidate {
     basicCheck: "not_checked",
     id: candidateId(candidate),
     name: candidate.runtime_name,
+    frontmatterName: candidate.frontmatter_name ?? null,
     ownership: ownership(candidate.ownership),
     path: normalizeWindowsPath(candidate.absolute_root),
     source: {

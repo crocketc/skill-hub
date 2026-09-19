@@ -61,9 +61,11 @@ fn catalog_exposes_declared_deployment_capability_for_a_client() {
         .expect("claude code client is part of the bundled catalog");
     assert!(capability.copy);
     assert!(capability.symlink);
+    // DEV-21（2026-09-20 用户裁决）：junction 声明走「官方文档 或 真机探针
+    // 实证」双通道；Claude Code 属真机实证（RC-13/RC-14），据此声明为 true。
     assert!(
-        !capability.junction,
-        "the profile declares junction support as unconfirmed"
+        capability.junction,
+        "the profile declares junction support via probe-verified evidence"
     );
 }
 

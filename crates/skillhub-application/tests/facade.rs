@@ -1721,6 +1721,55 @@ async fn discover_import_candidates_query_reads_local_skill_directories() {
 }
 
 #[tokio::test]
+async fn import_candidates_carry_frontmatter_name_for_non_blocking_mismatch_warning() {
+    // DEV-3：候选携带 SKILL.md frontmatter `name`，供界面在「文件夹名 ≠
+    // frontmatter name」时给出非阻塞警告；不拒绝导入、不改 runtime_name。
+    let database = Database::open_in_memory().expect("database");
+    let root = tempfile::tempdir().expect("source root");
+    std::fs::create_dir_all(root.path().join("official-name")).expect("skill directory");
+    std::fs::write(
+        root.path().join("official-name/SKILL.md"),
+        "---
+name: official-name
+---
+# Skill
+",
+    )
+    .expect("write skill");
+    // 无 frontmatter 的候选：诚实缺省 None。
+    std::fs::create_dir_all(root.path().join("no-frontmatter")).expect("skill directory");
+    std::fs::write(root.path().join("no-frontmatter/SKILL.md"), "# Plain
+")
+        .expect("write skill");
+    let facade = LocalApplicationFacade::new_with_today(database, (2026, 9, 20));
+
+    let result = facade
+        .query(RootAppQuery::DiscoverImportCandidates(
+            DiscoverImportCandidates {
+                source: SourceDescriptor::new(
+                    SourceKind::Local,
+                    SourceLocator::local_path(root.path()),
+                ),
+            },
+        ))
+        .await
+        .expect("candidate discovery");
+    let AppQueryResult::ImportCandidates(candidates) = result else {
+        panic!("expected import candidates");
+    };
+    let named = candidates
+        .iter()
+        .find(|candidate| candidate.runtime_name == "official-name")
+        .expect("named candidate");
+    assert_eq!(named.frontmatter_name.as_deref(), Some("official-name"));
+    let plain = candidates
+        .iter()
+        .find(|candidate| candidate.runtime_name == "no-frontmatter")
+        .expect("plain candidate");
+    assert_eq!(plain.frontmatter_name, None);
+}
+
+#[tokio::test]
 async fn preview_project_directory_query_reports_traces_and_candidates_without_writes() {
     let database = Database::open_in_memory().expect("database");
     let root = tempfile::tempdir().expect("project root");

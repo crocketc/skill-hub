@@ -48,6 +48,18 @@ async function renderCandidateSelection(props: Partial<React.ComponentProps<type
   );
 }
 
+it("warns non-blockingly when a folder name differs from its SKILL.md name", async () => {
+  // DEV-3：名称不一致只提示、不拦截导入；一致或缺失 frontmatter 时不提示。
+  const mismatched = [
+    { ...candidates[0], frontmatterName: "official-pdf-reader" },
+    { ...candidates[1], frontmatterName: null },
+  ];
+  await renderCandidateSelection({ candidates: mismatched });
+
+  expect(screen.getByText(/Folder name differs from the name declared in SKILL.md/)).toBeVisible();
+  expect(screen.getAllByText(/Folder name differs/)).toHaveLength(1);
+});
+
 it("emits an explicit toggle for each candidate", async () => {
   const onToggle = vi.fn();
   await renderCandidateSelection({ onToggle });

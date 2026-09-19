@@ -5887,6 +5887,16 @@ impl ApplicationFacade for LocalApplicationFacade {
                     return Err(unsupported("query.discover_import_candidates"));
                 };
                 let mut candidates = SkillDetector::default().detect(root.clone(), source)?;
+                // DEV-3：读取每个候选的 SKILL.md frontmatter `name`，供界面
+                // 在「文件夹名 ≠ frontmatter name」时给出非阻塞警告；读取
+                // 失败或缺省字段保持 None（诚实缺省），绝不据此拒绝导入。
+                for candidate in &mut candidates {
+                    let marker_path = std::path::Path::new(&candidate.absolute_root)
+                        .join(&candidate.marker);
+                    if let Ok(content) = std::fs::read_to_string(&marker_path) {
+                        candidate.frontmatter_name = read_frontmatter_name(&content);
+                    }
+                }
                 // 仓库发现下载目录 → 给候选盖上长期上游坐标，随 prepare/commit 原样回流。
                 if let Ok(registry) = self.upstream_origins.lock() {
                     let key = root.to_string_lossy().to_string();

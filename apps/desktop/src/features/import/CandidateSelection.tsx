@@ -67,6 +67,13 @@ export function CandidateSelection({
                       {t(`importWorkflow.candidates.ownership.${candidate.ownership}`)}
                     </StatusBadge>
                     <code title={displayPath(candidate.path)}>{displayPath(candidate.path)}</code>
+                    {/* DEV-3：文件夹名 ≠ SKILL.md name 的非阻塞警告——不拦截导入，
+                        只提示部署时 Agent 看到的名称以文件夹名为准。 */}
+                    {candidate.frontmatterName && candidate.frontmatterName !== candidate.name ? (
+                      <StatusBadge tone="warning">
+                        {t("importWorkflow.candidates.nameMismatch")}
+                      </StatusBadge>
+                    ) : null}
                   </div>
                 </li>
               );

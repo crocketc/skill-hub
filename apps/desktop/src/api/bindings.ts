@@ -1319,6 +1319,12 @@ export type ImportCandidate = {
 	ownership_detail: string | null,
 	/**  仓库发现导入盖章的长期上游坐标；本地导入为 None。 */
 	upstream?: UpstreamOrigin | null,
+	/**
+	 *  DEV-3：SKILL.md frontmatter 的 `name`（读取失败或缺省为 None）。
+	 *  与 `runtime_name`（= 文件夹名）不一致时界面给出非阻塞警告；
+	 *  生成逻辑不受该字段影响（runtime_name 不变量）。
+	 */
+	frontmatter_name?: string | null,
 };
 
 export type ImportConflict = {

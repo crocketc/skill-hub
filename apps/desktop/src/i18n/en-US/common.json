@@ -226,6 +226,7 @@
       "selectAll": "Select all importable candidates",
       "analyze": "Analyze conflicts",
       "empty": "No candidates were found for this source.",
+      "nameMismatch": "Folder name differs from the name declared in SKILL.md; import is unaffected, and agents identify the skill by its folder name after deployment",
       "basicCheck": {
         "not_checked": "Not checked",
         "passed": "Basic check passed",
