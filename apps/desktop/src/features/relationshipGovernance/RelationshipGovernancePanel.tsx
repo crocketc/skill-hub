@@ -1,3 +1,4 @@
+import { readableAgentIdName } from "../skills/AgentDeploymentIcons";
 import { useState, type JSX } from "react";
 import { displayPath } from "../../platform/displayPath";
 import { useTranslation } from "react-i18next";
@@ -91,7 +92,12 @@ function ConflictCasesSummary({
 
 /** 组级影响事实全部由成员聚合而来；后端不产出界面散文。 */
 function affectedAgentsOfGroup(group: ImportGovernanceGroup): string[] {
-  return [...new Set(group.members.flatMap((member) => member.affected_agents))];
+  // DEV-11：id 转品牌可读名（Trae、ZCode…），裸技术 id 不进界面。
+  return [
+    ...new Set(
+      group.members.flatMap((member) => member.affected_agents).map(readableAgentIdName),
+    ),
+  ];
 }
 
 /**

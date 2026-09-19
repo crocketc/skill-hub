@@ -62,7 +62,7 @@ it("renders structured impact facts per group without backend prose", async () =
   // 影响数量与受影响 Agent 由成员聚合；第二个成员无 Agent 证据，
   // 不阻止第一个成员的登记 Agent 出现。
   expect(
-    screen.getByText("2 个 Skill 将导入集中库。受影响 Agent：trae.code、zcode.shared。"),
+    screen.getByText("2 个 Skill 将导入集中库。受影响 Agent：Trae、ZCode。"),
   ).toBeVisible();
   expect(screen.getByText("通用目录直接读取")).toBeVisible();
   // 回退方式按分类给出，文案来自 i18n 而不是后端。
@@ -130,7 +130,7 @@ it("renders relationship governance copy in the active English locale", async ()
   expect(screen.getByText("Shared directory reads")).toBeVisible();
   expect(
     screen.getByText(
-      "2 skills will be imported into the central library. Affected agents: trae.code, zcode.shared.",
+      "2 skills will be imported into the central library. Affected agents: Trae, ZCode.",
     ),
   ).toBeVisible();
   expect(

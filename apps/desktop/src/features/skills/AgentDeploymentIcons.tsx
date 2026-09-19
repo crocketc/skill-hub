@@ -91,6 +91,17 @@ export function getAgentDisplayName(agent: AgentDeployment) {
   return AGENT_DISPLAY_NAMES[agent.id.toLowerCase()] ?? agent.name;
 }
 
+/**
+ * DEV-11：裸 agent id（如 `trae.code`、`zcode.shared`）→ 用户可读品牌名。
+ * 优先全 id 匹配，再退回 profile 前缀；未知 id 原样透出（诚实缺省）。
+ */
+export function readableAgentIdName(id: string): string {
+  const lowered = id.toLowerCase();
+  if (AGENT_DISPLAY_NAMES[lowered]) return AGENT_DISPLAY_NAMES[lowered];
+  const profile = lowered.split(".")[0];
+  return AGENT_DISPLAY_NAMES[profile] ?? id;
+}
+
 function AgentMark({ agent }: { agent: AgentDeployment }) {
   const visual = getAgentVisual(agent);
   const style = { "--agent-accent": visual.color } as CSSProperties;
