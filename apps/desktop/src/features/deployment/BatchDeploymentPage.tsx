@@ -268,20 +268,16 @@ export function BatchDeploymentPage({ facade, skillIds, tracker, onCommitted }: 
           </div>
           <span className="sh-count-badge">{selected.length}</span>
         </div>
+        {/* DEV-11：不可用目标不进默认列表（用户裁定）——选择页只呈现
+            「已发现且可写」的目标，与文案承诺一致。 */}
         <div className="sh-workflow-targets">
-          {targets.map((target) => <label className="sh-workflow-target" key={target.id}>
-            <input aria-label={target.label} checked={selectedIds.includes(target.id)} disabled={!target.available} onChange={(event) => {
+          {targets.filter((target) => target.available).map((target) => <label className="sh-workflow-target" key={target.id}>
+            <input aria-label={target.label} checked={selectedIds.includes(target.id)} onChange={(event) => {
               setMode(undefined);
               setPreview(undefined);
               setSelectedIds((current) => event.target.checked ? [...current, target.id] : current.filter((id) => id !== target.id));
             }} type="checkbox" />
             <span><strong>{target.label}</strong><small>{displayPath(target.path)}</small></span>
-            {!target.available ? (
-              <span className="sh-status sh-status--warning">
-                <Icon aria-hidden="true" name="warning" size={16} />
-                {t("deployment.targets.unavailable")}
-              </span>
-            ) : null}
           </label>)}
         </div>
         {expandableLinks.length > 0 ? <div className="sh-deployment-flow__expand">

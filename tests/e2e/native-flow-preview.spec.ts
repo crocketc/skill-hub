@@ -439,7 +439,8 @@ test("deployment target selection exposes unavailable and non-atomic batch bound
   await installNativePreview(page);
   await page.goto("/deploy?skill=pdf-reader&skill=release-notes");
   await expect(page.getByRole("heading", { name: "Add 2 Skills" })).toBeVisible();
-  await expect(page.getByLabel("Unavailable target")).toBeDisabled();
+  // DEV-11：不可用目标不再出现在默认选择列表（用户裁定：不显示）。
+  await expect(page.getByLabel("Unavailable target")).toHaveCount(0);
   // T4-D：非原子批量风险随流程进入 footer 操作区，紧邻提交动作。
   const footer = page.locator("footer");
   await expect(footer).toContainText(/not atomic/i);

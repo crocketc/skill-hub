@@ -253,12 +253,13 @@ export function DeploymentDialog({
             <span className="sh-count-badge">{selected.length}</span>
           </div>
           <div className="sh-workflow-targets">
-            {targets.map((target) => (
+            {/* DEV-11：不可用目标不进默认列表（用户裁定）——选择页只呈现
+                「已发现且可写」的目标，与文案承诺一致。 */}
+            {targets.filter((target) => target.available).map((target) => (
               <label className="sh-workflow-target" key={target.id}>
                 <input
                   aria-label={target.label}
                   checked={selectedIds.includes(target.id)}
-                  disabled={!target.available}
                   onChange={(event) => {
                     setMode(undefined);
                     setPlan(undefined);
@@ -270,12 +271,6 @@ export function DeploymentDialog({
                   <strong>{target.label}</strong>
                   <small>{displayPath(target.path)}</small>
                 </span>
-                {!target.available ? (
-                  <span className="sh-status sh-status--warning">
-                    <Icon aria-hidden="true" name="warning" size={16} />
-                    {t("deployment.targets.unavailable")}
-                  </span>
-                ) : null}
               </label>
             ))}
           </div>

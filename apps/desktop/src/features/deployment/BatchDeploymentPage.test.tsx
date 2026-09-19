@@ -41,6 +41,20 @@ function batchFacade(overrides: Partial<BatchDeploymentFacade> = {}): BatchDeplo
   };
 }
 
+it("hides unavailable targets from the default selection list (DEV-11)", async () => {
+  const i18n = await createSkillHubI18n(["en-US"]);
+  const facade: BatchDeploymentFacade = {
+    listTargets: async () => deploymentTargetsFixture(),
+    preview: async () => ({ failures: [], plans: [] }),
+    commit: async () => [],
+  };
+  render(<I18nextProvider i18n={i18n}><MemoryRouter><BatchDeploymentPage facade={facade} skillIds={["skill-pdf"]} /></MemoryRouter></I18nextProvider>);
+
+  // 可用目标可选；不可用目标不出现在默认列表（文案承诺"已发现且可写"）。
+  expect(await screen.findByLabelText("Codex CLI")).toBeVisible();
+  expect(screen.queryByLabelText("Read-only Agent")).not.toBeInTheDocument();
+});
+
 it("previews every selected Skill before explicitly committing a batch", async () => {
   const user = userEvent.setup();
   const i18n = await createSkillHubI18n(["zh-CN"]);
