@@ -54,7 +54,8 @@ use skillhub_core::catalog::{CatalogRepository, Skill};
 use skillhub_core::check::{CheckKind, CheckRun, CheckRunPhase, FindingDisposition};
 use skillhub_core::deployment::{
     observed_path_key, path_lives_under, reconcile_observed_row, DeploymentPlanRequest,
-    DeploymentRecord, DeploymentState, RegisteredTargetIndex, TargetFact, TargetPlan,
+    DeploymentRecord, DeploymentState, ExistingDeployment, ExistingOwnership,
+    RegisteredTargetIndex, TargetFact, TargetPlan, VerifiedTarget,
 };
 use skillhub_core::duplicate::{
     build_conflict_analysis_input, conflict_case_matches_scope, parse_conflict_analysis_response,
@@ -6189,12 +6190,13 @@ impl LocalApplicationFacade {
             .join(request.skill_id.to_string())
             .join(request.version_id.as_str());
         let source_path = source_path.to_string_lossy().into_owned();
-        let input = if let Some(resolver) = self.deployment_targets.as_ref() {
+        let mut input = if let Some(resolver) = self.deployment_targets.as_ref() {
             request.resolve(resolver, source_path)?
         } else {
             let resolver = self.discovery_target_index()?;
             request.resolve(&resolver, source_path)?
         };
+        self.attach_target_occupancy(&input.runtime_name, &mut input.targets)?;
         let mut plan = skillhub_core::DeploymentPlanner.plan_request(&input)?;
         if let Some(warning) = self.deployment_name_warning(&plan)? {
             plan.warnings.push(warning.clone());
@@ -6267,6 +6269,65 @@ impl LocalApplicationFacade {
             let policy = PathPolicy::from_roots(roots)?;
             RegisteredTargetIndex::from_facts(facts, policy)
         })
+    }
+
+    /// D-11: the planner is pure and never sees the database or the disk, so
+    /// occupancy facts must ride in on the verified targets.  An active managed
+    /// row of this physical target is reported as `managed`; when no such row
+    /// covers the runtime name, an entry already sitting at the destination is
+    /// reported as unknown ownership.  A detached (`managed=0`) or removed row
+    /// owns nothing, so the disk probe decides for it.  Without this
+    /// attachment, planning answers `create` with no conflicts for an occupied
+    /// destination and the collision only surfaces as a rejected commit.
+    fn attach_target_occupancy(
+        &self,
+        runtime_name: &str,
+        targets: &mut [VerifiedTarget],
+    ) -> AppResult<()> {
+        if targets.is_empty() {
+            return Ok(());
+        }
+        let rows = self.with_database("query.get_deployment_plan", |database| {
+            database.deployment_repository().list_all()
+        })?;
+        for target in targets.iter_mut() {
+            let mut existing = Vec::new();
+            for row in &rows {
+                if row.target_id != target.physical_target_id()
+                    || !row.managed
+                    || !matches!(
+                        row.state,
+                        DeploymentState::Deployed | DeploymentState::NeedsRecovery
+                    )
+                    || !occupancy_names_equal(
+                        &row.runtime_name,
+                        runtime_name,
+                        target.case_sensitive(),
+                    )
+                {
+                    continue;
+                }
+                existing.push(ExistingDeployment::managed(
+                    row.runtime_name.clone(),
+                    row.id,
+                    row.skill_id,
+                    row.version_id.clone(),
+                ));
+            }
+            if existing.is_empty()
+                && is_single_path_component(runtime_name)
+                && std::fs::symlink_metadata(Path::new(target.path()).join(runtime_name)).is_ok()
+            {
+                existing.push(ExistingDeployment::new(
+                    runtime_name,
+                    ExistingOwnership::Unknown,
+                ));
+            }
+            for entry in existing {
+                *target = target.clone().with_existing(entry);
+            }
+        }
+        Ok(())
     }
 
     fn prepare_import(&self, request: skillhub_core::PrepareImport) -> AppResult<AppCommandResult> {
@@ -8802,6 +8863,23 @@ fn pending_recovery_targets(summary: &skillhub_core::application::DeploymentSumm
         })
         .collect();
     serde_json::json!({ "pending_targets": pending })
+}
+
+/// Runtime-name comparison for occupancy facts, matching the planner's own
+/// per-target case rule (Windows destinations compare case-insensitively).
+fn occupancy_names_equal(left: &str, right: &str, case_sensitive: bool) -> bool {
+    if case_sensitive {
+        left == right
+    } else {
+        left.eq_ignore_ascii_case(right)
+    }
+}
+
+/// A runtime name the planner will accept as one safe path component.
+/// Anything else is rejected by the planner anyway, and probing it could read
+/// outside the verified target root.
+fn is_single_path_component(value: &str) -> bool {
+    !value.is_empty() && value != "." && value != ".." && !value.contains(['\0', '/', '\\', ':'])
 }
 
 fn journal_record(

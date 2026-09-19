@@ -8,7 +8,7 @@ use skillhub_core::api::{
     ListDeployments, PrepareDeployment, PrepareUndeploy,
 };
 use skillhub_core::catalog::{CatalogRepository, Skill};
-use skillhub_core::deployment::DeploymentMode;
+use skillhub_core::deployment::{DeploymentMode, TargetChange};
 use skillhub_core::{
     AppCommand, AppQuery as RootAppQuery, ApplicationFacade, BootstrapSnapshot, ErrorCode,
     OperationId, OperationPhase, RecoveryAction, RemovalDecision, StartupRecoveryState,
@@ -433,14 +433,19 @@ async fn re_adding_a_removed_skill_reuses_the_same_position() {
 /// written (the destination is already occupied) is a terminal outcome, not a
 /// recoverable one.  A plain rejected add must therefore keep the next launch
 /// out of the recovery gate.
+///
+/// D-11 moves an occupied destination's rejection to planning time, so this
+/// test plants the foreign directory *after* planning: it covers the race
+/// where the destination is taken between plan and commit.
 #[tokio::test]
 async fn a_rejected_deployment_is_terminal_and_keeps_startup_clean() {
     let harness = harness("anthropic.claude-code", "find-skills").await;
+    let plan = managed_copy_plan(&harness).await;
     let occupied = harness.target_root.path().join("find-skills");
     std::fs::create_dir_all(&occupied).expect("foreign directory");
     std::fs::write(occupied.join("SKILL.md"), "# foreign\n").expect("foreign file");
 
-    let outcome = commit_outcome(&harness, managed_copy_plan(&harness).await).await;
+    let outcome = commit_outcome(&harness, plan).await;
     assert!(!outcome.committed, "an occupied destination rejects the add");
     assert_eq!(outcome.error_codes, vec![Some("deployment.target_exists".into())]);
 
@@ -471,13 +476,18 @@ async fn a_rejected_deployment_is_terminal_and_keeps_startup_clean() {
 
 /// The rejected add must tell the user *which* target failed and where, not
 /// only an error code: `/operations/:id` reads this projection.
+///
+/// Like the terminal-classification test above, the foreign directory is
+/// planted after planning because D-11 rejects an occupied destination at
+/// planning time; this test covers the commit-time race.
 #[tokio::test]
 async fn a_rejected_deployment_records_the_failing_target_details() {
     let harness = harness("anthropic.claude-code", "find-skills").await;
+    let plan = managed_copy_plan(&harness).await;
     let occupied = harness.target_root.path().join("find-skills");
     std::fs::create_dir_all(&occupied).expect("foreign directory");
 
-    let outcome = commit_outcome(&harness, managed_copy_plan(&harness).await).await;
+    let outcome = commit_outcome(&harness, plan).await;
     let snapshot = bootstrap(&harness).await;
     let operation = snapshot
         .recent_operations
@@ -605,3 +615,80 @@ async fn rolling_back_recovery_removes_the_recorded_target() {
     assert_eq!(operation.phase, OperationPhase::RolledBack);
 }
 
+/// D-11 regression: a destination already occupied by a foreign directory
+/// must be rejected at planning time, so the user decides before anything is
+/// written instead of discovering the collision as a failed commit.
+#[tokio::test]
+async fn a_plan_for_an_occupied_destination_is_rejected_before_commit() {
+    let harness = harness("anthropic.claude-code", "find-skills").await;
+    let occupied = harness.target_root.path().join("find-skills");
+    std::fs::create_dir_all(&occupied).expect("foreign directory");
+    std::fs::write(occupied.join("SKILL.md"), "# foreign\n").expect("foreign file");
+
+    let planned = harness
+        .facade
+        .query(RootAppQuery::GetDeploymentPlan(GetDeploymentPlan {
+            request: skillhub_core::deployment::DeploymentPlanRequest {
+                skill_id: harness.skill.id(),
+                version_id: harness.version_id.clone(),
+                runtime_name: "find-skills".into(),
+                logical_target_ids: vec!["claude-global".into()],
+                mode_override: Some(DeploymentMode::ManagedCopy),
+            },
+        }))
+        .await;
+
+    let error = planned.expect_err("an occupied destination must fail planning");
+    assert_eq!(error.code.as_str(), "deployment.target_exists");
+    assert_eq!(
+        std::fs::read_to_string(occupied.join("SKILL.md")).expect("foreign file survives"),
+        "# foreign\n",
+        "planning must never touch the foreign content"
+    );
+    assert!(deployment_rows(&harness).is_empty(), "no accounting row");
+}
+
+/// D-11 regression: the same Skill and version already managed at the target
+/// must plan as a no-op, not as a fresh create over an invisible deployment.
+#[tokio::test]
+async fn replanning_a_deployed_skill_reports_noop() {
+    let harness = harness("anthropic.claude-code", "find-skills").await;
+    commit(&harness, managed_copy_plan(&harness).await).await;
+
+    let plan = managed_copy_plan(&harness).await;
+    assert!(
+        plan.conflicts.is_empty(),
+        "the skill's own deployment is not a conflict: {:?}",
+        plan.conflicts
+    );
+    assert_eq!(plan.targets.len(), 1);
+    assert_eq!(plan.targets[0].change, TargetChange::NoOp);
+}
+
+/// D-11 companion: a removed row keeps its `(target, runtime_name)` position
+/// in the database but occupies nothing on disk, so re-adding must plan as a
+/// clean create.
+#[tokio::test]
+async fn replanning_after_undeploy_offers_a_clean_readd() {
+    let harness = harness("anthropic.claude-code", "find-skills").await;
+    commit(&harness, managed_copy_plan(&harness).await).await;
+    let records = harness
+        .facade
+        .query(RootAppQuery::ListDeployments(ListDeployments {
+            skill_id: Some(harness.skill.id()),
+        }))
+        .await
+        .expect("deployment records");
+    let AppQueryResult::Deployments(records) = records else {
+        panic!("expected deployment records");
+    };
+    undeploy(&harness, records[0].id).await;
+
+    let plan = managed_copy_plan(&harness).await;
+    assert!(
+        plan.conflicts.is_empty(),
+        "a removed deployment must not block re-adding: {:?}",
+        plan.conflicts
+    );
+    assert_eq!(plan.targets[0].change, TargetChange::Create);
+}
