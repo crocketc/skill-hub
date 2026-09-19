@@ -174,7 +174,12 @@ fn workbuddy_local_directories_follow_the_2026_09_05_confirmation() {
 }
 
 #[test]
-fn link_capabilities_are_true_only_when_officially_documented() {
+fn link_capabilities_are_true_only_when_documented_or_probe_verified() {
+    // DEV-21（2026-09-20 用户裁决，不静默放松）：junction 声明改为双通道——
+    // ① 官方文档明确支持；② Windows 真机探针实证（RC-13/RC-14：非管理员
+    // 账号下 junction 落地为 reparse point、原文件零误删、探针零残留）。
+    // 下列客户端的目标目录均为 Windows 用户目录，属真机实证通道；其余
+    // 客户端维持保守的 junction:false，直到取得同等级证据。
     let catalog = ProfileCatalog::builtin();
     let documented = [
         "openai.codex-cli",
@@ -183,11 +188,29 @@ fn link_capabilities_are_true_only_when_officially_documented() {
         "zcode.desktop",
         "openclaw.agent",
     ];
+    let junction_probe_verified = [
+        "openai.codex-cli",
+        "openai.codex-ide",
+        "anthropic.claude-code",
+        "zcode.desktop",
+        "openclaw.agent",
+    ];
     for profile in catalog.profiles {
         for client in profile.clients {
+            let junction_allowed = junction_probe_verified.contains(&client.id.as_str());
+            assert_eq!(
+                client.deployment.junction, junction_allowed,
+                "junction declaration must match the dual-channel evidence: {}",
+                client.id
+            );
             assert!(
-                !client.deployment.junction,
-                "unconfirmed junction: {}",
+                !client.deployment.junction
+                    || !client
+                        .deployment
+                        .limitations
+                        .iter()
+                        .any(|limitation| limitation == "junction_support_unconfirmed"),
+                "probe-verified junction must drop the unconfirmed limitation: {}",
                 client.id
             );
             if documented.contains(&client.id.as_str()) {

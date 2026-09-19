@@ -35,10 +35,9 @@
       "deployment": {
         "copy": true,
         "symlink": true,
-        "junction": false,
+        "junction": true,
         "limitations": [
-          "runtime_loading_unknown",
-          "junction_support_unconfirmed"
+          "runtime_loading_unknown"
         ]
       },
       "call_policy": "unknown"
@@ -71,10 +70,9 @@
       "deployment": {
         "copy": true,
         "symlink": true,
-        "junction": false,
+        "junction": true,
         "limitations": [
-          "runtime_loading_unknown",
-          "junction_support_unconfirmed"
+          "runtime_loading_unknown"
         ]
       },
       "call_policy": "unknown"

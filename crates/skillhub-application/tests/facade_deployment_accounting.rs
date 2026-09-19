@@ -299,11 +299,14 @@ async fn deployment_commit_writes_the_targets_row() {
     assert_eq!(count, 1, "the physical target must be registered");
 }
 
-/// D-9 regression: the bundled Claude Code profile declares junction support
-/// as unconfirmed, so a junction must never be auto-selected even when the
-/// host account could create one.
+/// D-9 regression, updated by DEV-21 (2026-09-20 user decision): the Claude
+/// Code profile now declares junction support through the probe-verified
+/// channel (RC-13/RC-14 real-machine evidence), so the plan follows the host
+/// probe — symbolic link first, then junction, then managed copy. The D-9
+/// gate itself (profile declaration ∩ host probe) is unchanged and stays
+/// guarded by the dual-channel assertion in `builtin_profiles`.
 #[tokio::test]
-async fn claude_code_target_never_selects_a_junction() {
+async fn claude_code_target_follows_host_capabilities_for_link_selection() {
     let harness = harness("anthropic.claude-code", "find-skills").await;
     let planned = harness
         .facade
@@ -322,10 +325,18 @@ async fn claude_code_target_never_selects_a_junction() {
         panic!("expected deployment plan");
     };
     assert_eq!(plan.targets.len(), 1);
-    assert_ne!(
-        plan.targets[0].mode,
-        DeploymentMode::DirectoryJunction,
-        "profile declares junction unconfirmed"
+    let host = skillhub_adapters::deployment::DeploymentFilesystem::new()
+        .available_capabilities();
+    let declared = skillhub_core::DeploymentCapability::new(true, true, true);
+    let expected = DeploymentMode::select(&skillhub_core::DeploymentCapability::new(
+        declared.symlink && host.symlink,
+        declared.junction && host.junction,
+        declared.copy && host.copy,
+    ))
+    .expect("managed copy keeps the plan total");
+    assert_eq!(
+        plan.targets[0].mode, expected,
+        "mode selection must follow the host probe under the declared profile"
     );
 }
 
