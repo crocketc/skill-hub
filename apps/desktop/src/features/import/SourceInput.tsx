@@ -22,8 +22,6 @@ export interface SourceInputProps {
   onSelectAllSources?: () => void;
   /** M-29：已选来源列表的单条删除。 */
   onRemoveSource?: (source: string) => void;
-  /** M-29：已选来源列表的多选删除。 */
-  onRemoveSources?: (sources: string[]) => void;
   /** M-29：清空全部已选来源。 */
   onClearSources?: () => void;
   /** M-29：失败来源在统一确认列表内重试。 */
@@ -48,15 +46,11 @@ export function SourceInput({
   onToggleSource,
   onSelectAllSources,
   onRemoveSource,
-  onRemoveSources,
   onClearSources,
   onRetrySource,
 }: SourceInputProps) {
   const { t } = useTranslation();
   const isNpxReference = /^npx\s+skills\s+add\s+/i.test(value.trim());
-  // M-29：多选删除的勾选标记是纯列表 UI 状态；删除后立即清空。
-  const [markedSources, setMarkedSources] = useState<string[]>([]);
-  const marked = markedSources.filter((source) => selectedSources.includes(source));
   const sourceEntries = Array.from(new Set([...suggestedSources, ...selectedSources]));
   const itemRefs = useRef(new Map<string, HTMLLIElement>());
 
@@ -91,20 +85,6 @@ export function SourceInput({
       default:
         return "neutral";
     }
-  };
-
-  const toggleMarked = (source: string) => {
-    setMarkedSources((current) =>
-      current.includes(source)
-        ? current.filter((markedSource) => markedSource !== source)
-        : [...current, source],
-    );
-  };
-
-  const removeMarked = () => {
-    if (!onRemoveSources || marked.length === 0) return;
-    onRemoveSources(marked);
-    setMarkedSources([]);
   };
 
   return (
@@ -143,17 +123,9 @@ export function SourceInput({
                   }}
                   tabIndex={-1}
                 >
-                  {onRemoveSources ? (
-                    <label className="sh-import-source__item-mark">
-                      <input
-                        aria-label={t("importWorkflow.sources.markForRemoval", { source })}
-                        checked={marked.includes(source)}
-                        disabled={disabled}
-                        onChange={() => toggleMarked(source)}
-                        type="checkbox"
-                      />
-                    </label>
-                  ) : null}
+                  {/* DEV-9：每行只有一个复选框——「参与导入」的行选中语义。
+                      此前的批量删除标记复选框与之并列，用户无法区分两者，
+                      误点后行状态纹丝不动（DEV-13 的「未扫描」困惑同源）。 */}
                   <label className="sh-import-source__item-select">
                     <input
                       aria-label={source}
@@ -197,16 +169,6 @@ export function SourceInput({
           {onClearSources ? (
             <Button disabled={disabled} onClick={onClearSources} size="sm" variant="ghost">
               {t("importWorkflow.sources.clearAll")}
-            </Button>
-          ) : null}
-          {onRemoveSources ? (
-            <Button
-              disabled={disabled || marked.length === 0}
-              onClick={removeMarked}
-              size="sm"
-              variant="secondary"
-            >
-              {t("importWorkflow.sources.removeSelected", { count: marked.length })}
             </Button>
           ) : null}
         </fieldset>

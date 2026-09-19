@@ -134,7 +134,6 @@ it("lists every selected source as unscanned before any scan happens", async () 
   await renderSourceInput({
     onClearSources: vi.fn(),
     onRemoveSource: vi.fn(),
-    onRemoveSources: vi.fn(),
     selectedSources: ["C:/codex/skills", "C:/manual/skills"],
     suggestedSources: ["C:/codex/skills"],
   });
@@ -163,25 +162,45 @@ it("shows scanned counts and failed reasons per source in the selected list", as
   expect(screen.getByText("权限不足")).toBeVisible();
 });
 
-it("supports per-item removal, marked bulk removal, and clear-all", async () => {
+it("renders exactly one checkbox per source row with the participate semantics", async () => {
+  // DEV-9：此前每行并列两个复选框（行选中 + 批量删除标记），语义不明且
+  // 用户误点后行状态纹丝不动。现在每行只保留「参与导入」的行选中复选框。
+  const onRemoveSource = vi.fn();
+  const onToggleSource = vi.fn();
+  const user = userEvent.setup();
+  await renderSourceInput({
+    onClearSources: vi.fn(),
+    onRemoveSource,
+    onToggleSource,
+    selectedSources: ["C:/a/skills", "C:/b/skills"],
+  });
+
+  const list = screen.getByRole("list", { name: "已选来源" });
+  const items = within(list).getAllByRole("listitem");
+  expect(within(items[0]).getAllByRole("checkbox")).toHaveLength(1);
+  expect(within(items[1]).getAllByRole("checkbox")).toHaveLength(1);
+  expect(screen.queryByRole("checkbox", { name: "选中来源 C:/b/skills 以便批量删除" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "删除所选（1）" })).not.toBeInTheDocument();
+
+  // 行选中由唯一复选框承载；单条删除按钮不受影响。
+  await user.click(within(items[1]).getByRole("checkbox", { name: "C:/b/skills" }));
+  expect(onToggleSource).toHaveBeenCalledWith("C:/b/skills");
+  await user.click(screen.getByRole("button", { name: "移除已选来源 C:/a/skills" }));
+  expect(onRemoveSource).toHaveBeenCalledWith("C:/a/skills");
+});
+
+it("supports per-item removal and clear-all", async () => {
   const onClearSources = vi.fn();
   const onRemoveSource = vi.fn();
-  const onRemoveSources = vi.fn();
   const user = userEvent.setup();
   await renderSourceInput({
     onClearSources,
     onRemoveSource,
-    onRemoveSources,
     selectedSources: ["C:/a/skills", "C:/b/skills"],
   });
 
   await user.click(screen.getByRole("button", { name: "移除已选来源 C:/a/skills" }));
   expect(onRemoveSource).toHaveBeenCalledWith("C:/a/skills");
-  expect(onRemoveSources).not.toHaveBeenCalled();
-
-  fireEvent.click(screen.getByRole("checkbox", { name: "选中来源 C:/b/skills 以便批量删除" }));
-  await user.click(screen.getByRole("button", { name: "删除所选（1）" }));
-  expect(onRemoveSources).toHaveBeenCalledWith(["C:/b/skills"]);
 
   await user.click(screen.getByRole("button", { name: "全部清空" }));
   expect(onClearSources).toHaveBeenCalledOnce();

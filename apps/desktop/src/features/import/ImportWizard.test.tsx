@@ -199,6 +199,29 @@ it("keeps the onboarding footer actionable when every auto-previewed source is d
   expect(screen.getByRole("button", { name: "解析来源" })).toBeEnabled();
 });
 
+it("scans pre-selected sources automatically in the standard wizard and on re-check", async () => {
+  // DEV-13：标准向导挂载时已勾选来源必须立即后台解析（与文案「Skill 数量
+  // 会在后台自动解析」一致），取消再勾选也要重新解析，用户无需再点
+  // 「读取已选目录候选」。
+  const user = userEvent.setup();
+  const acquire = vi.fn(async () => []);
+  const facade = createMockImportFacade({ scenario: "safe-local" });
+  facade.acquireCandidates = acquire;
+  await renderGuidedWizard(facade, "standard");
+
+  // 初始来源已勾选：挂载即解析（mock 即时完成，直接断言候选数与调用）。
+  expect((await screen.findAllByText("0 个候选")).length).toBeGreaterThanOrEqual(2);
+  expect(acquire.mock.calls.length).toBeGreaterThanOrEqual(2);
+
+  // 取消再勾选：重新解析该来源。
+  const claudeCheckbox = screen.getByRole("checkbox", { name: "C:/claude/skills" });
+  const callsBefore = acquire.mock.calls.length;
+  await user.click(claudeCheckbox);
+  await user.click(claudeCheckbox);
+  expect((await screen.findAllByText("0 个候选")).length).toBeGreaterThanOrEqual(1);
+  expect(acquire.mock.calls.length).toBeGreaterThan(callsBefore);
+});
+
 it("drops the stale preview completion when a toggled source restarts its preview mid-flight", async () => {
   const user = userEvent.setup();
   const facade = createMockImportFacade({ scenario: "safe-local" });
@@ -485,11 +508,12 @@ it("adds a manual directory alongside scanned sources for mixed import", async (
 
   await user.click(screen.getByRole("button", { name: "读取已选目录候选" }));
   expect(await screen.findByRole("button", { name: "继续选择候选" })).toBeVisible();
-  expect(facade.calls.acquiredSources).toEqual([
-    "C:/windsurf/skills",
-    "C:/codex/skills",
-    "C:/claude/skills",
-  ]);
+  // DEV-13：挂载即自动解析已选来源（codex/claude 各一次），手动目录在
+  // 添加时解析一次；随后批量读取因输入编辑作废过预览缓存而重扫已选来源。
+  const acquired = facade.calls.acquiredSources;
+  expect(acquired.filter((source) => source === "C:/windsurf/skills")).toHaveLength(1);
+  expect(acquired.filter((source) => source === "C:/codex/skills")).toHaveLength(2);
+  expect(acquired.filter((source) => source === "C:/claude/skills")).toHaveLength(2);
 });
 
 it("shows a manually added directory in the selected list while silently previewing", async () => {
@@ -627,7 +651,9 @@ it("keeps POSIX case-variant directories as distinct sources", async () => {
   expect(within(list).getByText("/users/a/skills")).toBeVisible();
 });
 
-it("removes selected sources individually, in bulk, and all at once from the list", async () => {
+it("removes selected sources individually and all at once from the list", async () => {
+  // DEV-9：批量删除标记复选框已移除（与行选中复选框并列造成语义混淆），
+  // 删除收口为「单条移除 + 全部清空」。
   const user = userEvent.setup();
   await renderGuidedWizard();
 
@@ -640,10 +666,8 @@ it("removes selected sources individually, in bulk, and all at once from the lis
   const list = screen.getByRole("list", { name: "已选来源" });
   expect(within(list).getAllByRole("listitem")).toHaveLength(3);
 
-  // 多选删除。
-  await user.click(screen.getByRole("checkbox", { name: "选中来源 C:/claude/skills 以便批量删除" }));
-  await user.click(screen.getByRole("checkbox", { name: "选中来源 C:/windsurf/skills 以便批量删除" }));
-  await user.click(screen.getByRole("button", { name: "删除所选（2）" }));
+  await user.click(screen.getByRole("button", { name: "移除已选来源 C:/claude/skills" }));
+  await user.click(screen.getByRole("button", { name: "移除已选来源 C:/windsurf/skills" }));
   expect(screen.getByRole("list", { name: "已选来源" })).toBeVisible();
 
   // 清空后重新添加一个来源，再全部清空。
@@ -848,11 +872,12 @@ it("adds a directory from the native picker without clearing selected scan sourc
   await user.click(screen.getByRole("button", { name: "选择本地目录" }));
   await user.click(screen.getByRole("button", { name: "读取已选目录候选" }));
 
-  expect(facade.calls.acquiredSources).toEqual([
-    "C:/picked/skills",
-    "C:/codex/skills",
-    "C:/claude/skills",
-  ]);
+  // DEV-13：本机选取的目录解析一次；挂载时已选来源自动解析过，批量读取
+  // 视预览缓存是否命中可能重扫，因此只断言它们都参与了获取。
+  const acquired = facade.calls.acquiredSources;
+  expect(acquired.filter((source) => source === "C:/picked/skills")).toHaveLength(1);
+  expect(acquired).toContain("C:/codex/skills");
+  expect(acquired).toContain("C:/claude/skills");
 });
 
 it("requires a fresh conflict decision when retrying an import", async () => {

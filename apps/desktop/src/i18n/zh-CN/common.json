@@ -421,8 +421,6 @@
       },
       "remove": "移除",
       "removeSource": "移除已选来源 {{source}}",
-      "markForRemoval": "选中来源 {{source}} 以便批量删除",
-      "removeSelected": "删除所选（{{count}}）",
       "clearAll": "全部清空",
       "retry": "重试扫描",
       "retrySource": "重新扫描 {{source}}"

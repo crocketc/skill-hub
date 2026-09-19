@@ -620,6 +620,21 @@ type: "failed",
     for (const source of onboardingSources) void previewSource(source);
   }, [normalizedInitialSources.join("\u0000"), previewSource, variant]);
 
+  // DEV-13：标准向导挂载时已选来源（初始建议 + 会话恢复）立即后台解析。
+  // 此前只有 onboarding 变体有自动预览，标准向导的已选来源一直停在
+  // 「未扫描」，与文案「Skill 数量会在后台自动解析」不符；用户必须再点
+  // 「读取已选目录候选」。挂载后每条来源的勾选/追加各有即时预览路径，
+  // 这里只补挂载这一次。
+  const standardPreviewKeyRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (variant !== "standard") return;
+    const key = [...selectedSourcesRef.current].sort().join("\u0000");
+    if (standardPreviewKeyRef.current === key) return;
+    standardPreviewKeyRef.current = key;
+    for (const source of selectedSourcesRef.current) void previewSource(source);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // 作废当前预览会话：清空请求序号表与预览缓存。在途预览的迟到完成因
   // 序号不再匹配被守卫丢弃，不会再写回状态或触发 onboarding 终结。
   const discardPreviews = () => {
@@ -675,11 +690,7 @@ type: "failed",
     dispatch({ type: "source_removed", source });
   };
 
-  // M-29：多选删除——逐个来源走同一条移除路径。
-  const removeSources = (sources: string[]) => {
-    for (const source of sources) removeSource(source);
-  };
-
+  // DEV-9：批量删除入口已随复选框收口一并移除（单条删除 + 全部清空已覆盖）。
   const clearSources = () => {
     discardPreviews();
     selectedSourcesRef.current = [];
@@ -1109,7 +1120,6 @@ type: "failed",
           onFocusedSourceApplied={() => setFocusedSource(undefined)}
           onPickLocalPath={() => void pickLocalDirectory()}
           onRemoveSource={removeSource}
-          onRemoveSources={removeSources}
           onRetrySource={(source) => void (state.phase === "candidate_gate" ? rescanSource(source) : previewSource(source))}
           onSelectAllSources={() => {
             const allSelected = normalizedInitialSources.every((source) => selectedSources.includes(source));

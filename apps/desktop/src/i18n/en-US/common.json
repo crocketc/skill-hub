@@ -421,8 +421,6 @@
       },
       "remove": "Remove",
       "removeSource": "Remove selected source {{source}}",
-      "markForRemoval": "Mark source {{source}} for removal",
-      "removeSelected": "Remove selected ({{count}})",
       "clearAll": "Clear all",
       "retry": "Retry scan",
       "retrySource": "Rescan {{source}}"
