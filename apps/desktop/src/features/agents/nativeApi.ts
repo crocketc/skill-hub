@@ -44,6 +44,24 @@ function discoveredStatus(targets: LogicalTarget[]): AgentStatus {
   return targets.some((target) => target.available) ? "accessible" : "inaccessible";
 }
 
+/**
+ * DEV-5：按文件系统身份归并仅斜杠/大小写拼写不同的同一路径。
+ * Windows 卷大小写不敏感，折叠大小写比较；POSIX 保持大小写敏感精确比较。
+ */
+function dedupePathsByFsIdentity(paths: string[]): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const path of paths) {
+    const identity = path.includes("\\") || /^[a-zA-Z]:[\\/]/.test(path)
+      ? path.replaceAll("/", "\\").toLowerCase()
+      : path;
+    if (seen.has(identity)) continue;
+    seen.add(identity);
+    result.push(path);
+  }
+  return result;
+}
+
 function discoveredAgents(snapshot: DiscoverySnapshot, deployments: DeploymentRecord[]): AgentView[] {
   return snapshot.instances.map((instance) => {
     const targets = snapshot.logical_targets.filter(
@@ -57,7 +75,9 @@ function discoveredAgents(snapshot: DiscoverySnapshot, deployments: DeploymentRe
       instance: instance.client_id,
       managedDeploymentCount: stats.skills,
       managedDeploymentRelationCount: stats.relations,
-      discoveredPaths: [...new Set(targets.map((target) => target.path))],
+      // DEV-5：同一物理目录只展示一条——按「斜杠统一 + Windows 大小写折叠」
+      // 的文件系统身份去重（快照层已按 physical_id 归并，这里是展示层兜底）。
+      discoveredPaths: dedupePathsByFsIdentity(targets.map((target) => target.path)),
       officialReference: null,
       relations: targets.map((target) => relationOf(target, snapshot)),
       status: discoveredStatus(targets),

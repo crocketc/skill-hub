@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { displayPath } from "../../platform/displayPath";
 import { useTranslation } from "react-i18next";
 import type {
   HealthFinding,
@@ -208,7 +209,7 @@ export function LibrarySettings({ settings, health }: LibrarySettingsProps) {
       <h2>{t("settings.library.heading")}</h2>
       <dl className="sh-facts">
         <dt>{t("settings.library.path")}</dt>
-        <dd>{settings.library.path}</dd>
+        <dd>{displayPath(settings.library.path)}</dd>
       </dl>
       {settings.library.migrationAvailable ? (
         <p className="sh-settings-note">{t("settings.library.migrationAvailable")}</p>

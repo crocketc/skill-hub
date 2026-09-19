@@ -24,6 +24,7 @@ import { runTrackedOperation } from "../../platform/runTrackedOperation";
 import { Button } from "../../ui/Button";
 import { useOptionalAppNotifications } from "../../ui/notifications";
 import type { BackupFacade } from "./api";
+import { displayPath } from "../../platform/displayPath";
 
 type Decision = "overwrite" | "keep_both" | "skip";
 type SensitiveDecision = "resolve_first" | "exclude_skill" | "include_and_mark";
@@ -264,7 +265,7 @@ export function DataProtectionPage({
           >
             {t("dataProtection.openLibrary.open")}
           </Button>
-          {libraryPath ? <span role="status">{libraryPath}</span> : <span>{t("dataProtection.openLibrary.pathUnknown")}</span>}
+          {libraryPath ? <span role="status">{displayPath(libraryPath)}</span> : <span>{t("dataProtection.openLibrary.pathUnknown")}</span>}
         </div>
         <p>{t("dataProtection.recoveryPointNote")}</p>
       </section>

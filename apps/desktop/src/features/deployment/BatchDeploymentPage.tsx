@@ -21,6 +21,7 @@ import {
 } from "./api";
 import { describeDeploymentResult } from "./api";
 import { createNativeBatchDeploymentFacade } from "./nativeApi";
+import { displayPath } from "../../platform/displayPath";
 
 export interface BatchDeploymentPageProps {
   facade?: BatchDeploymentFacade;
@@ -261,7 +262,7 @@ export function BatchDeploymentPage({ facade, skillIds, tracker, onCommitted }: 
               setPreview(undefined);
               setSelectedIds((current) => event.target.checked ? [...current, target.id] : current.filter((id) => id !== target.id));
             }} type="checkbox" />
-            <span><strong>{target.label}</strong><small>{target.path}</small></span>
+            <span><strong>{target.label}</strong><small>{displayPath(target.path)}</small></span>
             {!target.available ? (
               <span className="sh-status sh-status--warning">
                 <Icon aria-hidden="true" name="warning" size={16} />

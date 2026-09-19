@@ -8,6 +8,7 @@ import {
   relationshipLabelKey,
 } from "../../relationshipGovernance/relationshipGovernance";
 import { rowNeedsSharedImpactConfirmation } from "./api";
+import { displayPath } from "../../../platform/displayPath";
 
 export interface GovernanceRelationTableProps {
   rows: readonly RelationGovernanceRow[];
@@ -113,7 +114,7 @@ export function GovernanceRelationTable({
                 </td>
                 <td data-testid={`governance-target-${relationId}`}>
                   <span>{row.relation.agent_client_id}</span>
-                  <code>{row.relation.path}</code>
+                  <code>{displayPath(row.relation.path)}</code>
                 </td>
                 <td data-testid={`governance-impact-${relationId}`}>
                   {row.impact.other_consumer_agent_ids.length > 0

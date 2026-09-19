@@ -19,6 +19,7 @@ import {
   type DeploymentTarget,
 } from "./api";
 import { createNativeDeploymentFacade } from "./nativeApi";
+import { displayPath } from "../../platform/displayPath";
 
 export interface DeploymentDialogProps {
   facade?: DeploymentFacade;
@@ -267,7 +268,7 @@ export function DeploymentDialog({
                 />
                 <span>
                   <strong>{target.label}</strong>
-                  <small>{target.path}</small>
+                  <small>{displayPath(target.path)}</small>
                 </span>
                 {!target.available ? (
                   <span className="sh-status sh-status--warning">

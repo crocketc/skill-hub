@@ -5,6 +5,7 @@ import { Drawer } from "../../ui/Drawer";
 import { Icon } from "../../ui/Icon";
 import type { RemovalChoice, RemovalImpact } from "../removal/api";
 import "./batchRemovalDrawer.css";
+import { displayPath } from "../../platform/displayPath";
 
 /**
  * M-21 #4：批量删除确认从“页面流末尾的嵌入对话框”改为自下而上滑出的
@@ -82,7 +83,7 @@ export function BatchRemovalDrawer({
               <label className="sh-skill-library__removal-deployment" key={deployment.id}>
                 <span>
                   <strong>{deployment.label}</strong>
-                  <small>{deployment.path}</small>
+                  <small>{displayPath(deployment.path)}</small>
                 </span>
                 <select
                   aria-label={`${t("removal.choiceLabel")}: ${deployment.label}`}

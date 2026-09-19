@@ -16,6 +16,7 @@ import { useOptionalAppNotifications } from "../../ui/notifications";
 import { type AgentFacade, type AgentView, unavailableAgentFacade } from "./api";
 import { CustomAgentForm } from "./CustomAgentForm";
 import "./agents.css";
+import { displayPath } from "../../platform/displayPath";
 
 export interface AgentListPageProps {
   facade?: AgentFacade;
@@ -145,7 +146,7 @@ export function AgentListPage({
                 <div className="sh-agent-card__paths">
                   <span className="sh-agent-card__paths-label">{t("agents.card.directory")}</span>
                   <ul className="sh-agent-card__path-list">
-                    {agent.discoveredPaths.map((path) => <li key={path}><code className="sh-agent-card__path">{path}</code></li>)}
+                    {agent.discoveredPaths.map((path) => <li key={path}><code className="sh-agent-card__path">{displayPath(path)}</code></li>)}
                   </ul>
                 </div>
                 <div className="sh-agent-card__meta">

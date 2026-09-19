@@ -1,3 +1,4 @@
+import { displayPath } from "../../../platform/displayPath";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
 import type {
@@ -98,7 +99,7 @@ export function GovernanceBatchDialog({
                     <span>{relationId}</span>
                     <span>{t("relationships.governance.batch.itemExecutable")}</span>
                   </label>
-                  <code>{row.relation.path}</code>
+                  <code>{displayPath(row.relation.path)}</code>
                   {needsConfirmation ? (
                     <label className="sh-governance__confirm-check">
                       <input

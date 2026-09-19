@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { displayPath } from "../../platform/displayPath";
 import { useTranslation } from "react-i18next";
 import type { RemovalImpactFact } from "../../api/bindings";
 import { Button } from "../../ui/Button";
@@ -79,7 +80,7 @@ export function RelationshipRemovalImpactView({
             {impact.other_skill_paths.length > 0
               ? t("relationshipGovernance.removalImpact.otherSkillPaths", {
                   paths: impact.other_skill_paths
-                    .map((path) => `${path.path} (${t(relationshipLabelKey(path.relationship) as never)})`)
+                    .map((path) => `${displayPath(path.path)} (${t(relationshipLabelKey(path.relationship) as never)})`)
                     .join(t("importWorkflow.governance.impact.agentSeparator") as never),
                 })
               : t("relationshipGovernance.removalImpact.noOtherSkillPaths")}

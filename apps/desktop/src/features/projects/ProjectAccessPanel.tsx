@@ -1,3 +1,4 @@
+import { displayPath } from "../../platform/displayPath";
 import { useTranslation } from "react-i18next";
 import { StatusBadge } from "../../ui/StatusBadge";
 import {
@@ -30,7 +31,7 @@ export function ProjectAccessPanel({ project, snapshotFailed, targets }: Project
     <section aria-labelledby="project-access-title" className="sh-project-detail__panel">
       <div className="sh-project-section-heading"><div><p className="sh-project-eyebrow">{t("projects.detail.access.eyebrow")}</p><h2 id="project-access-title">{t("projects.detail.access.title")}</h2></div></div>
       <dl className="sh-project-detail__facts">
-        <div><dt>{t("projects.detail.access.path")}</dt><dd>{project.devicePath}</dd></div>
+        <div><dt>{t("projects.detail.access.path")}</dt><dd>{displayPath(project.devicePath)}</dd></div>
         <div><dt>{t("projects.detail.access.state")}</dt><dd><StatusBadge tone={projectAccessTone[accessState]}>{stateLabel}</StatusBadge></dd></div>
       </dl>
       {accessState === "untracked" && !snapshotFailed ? <p role="status">{t("projects.detail.access.untrackedNote")}</p> : null}

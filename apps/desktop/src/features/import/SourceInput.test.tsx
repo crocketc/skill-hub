@@ -141,8 +141,8 @@ it("lists every selected source as unscanned before any scan happens", async () 
   const list = screen.getByRole("list", { name: "已选来源" });
   const items = within(list).getAllByRole("listitem");
   expect(items).toHaveLength(2);
-  expect(within(items[0]).getByText("C:/codex/skills")).toBeVisible();
-  expect(within(items[1]).getByText("C:/manual/skills")).toBeVisible();
+  expect(within(items[0]).getByText("C:\\codex\\skills")).toBeVisible();
+  expect(within(items[1]).getByText("C:\\manual\\skills")).toBeVisible();
   expect(within(items[0]).getByText("未扫描")).toBeVisible();
   expect(within(items[1]).getByText("未扫描")).toBeVisible();
 });
@@ -217,6 +217,6 @@ it("focuses the highlighted source entry and reports it as applied", async () =>
 
   const item = within(screen.getByRole("list", { name: "已选来源" })
     .querySelector("li") as HTMLElement);
-  expect(document.activeElement).toBe(item.getByText("C:/a/skills").closest("li"));
+  expect(document.activeElement).toBe(item.getByText("C:\\a\\skills").closest("li"));
   expect(onFocusedSourceApplied).toHaveBeenCalledOnce();
 });

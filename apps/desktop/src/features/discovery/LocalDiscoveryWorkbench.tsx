@@ -1,3 +1,4 @@
+import { displayPath } from "../../platform/displayPath";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { describeNativeError } from "../../api/nativeErrors";
@@ -310,7 +311,7 @@ function AgentCard({
       ) : null}
       {/* P2-02：超长路径换行展示（overflow-wrap: anywhere），完整值经原生
           title 提示可达——与忽略项规则值和卡片描述同一策略。 */}
-      <code className="sh-discovery-workbench__agent-path" title={card.path}>{card.path}</code>
+      <code className="sh-discovery-workbench__agent-path" title={displayPath(card.path)}>{displayPath(card.path)}</code>
       <ConfirmDialog
         cancelLabel={t("actions.cancel")}
         confirmLabel={t("discovery.workbench.excludeConfirm")}

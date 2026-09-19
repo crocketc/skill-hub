@@ -15,6 +15,7 @@ import {
 import { CompatibilityStep } from "./CompatibilityStep";
 import { ScanStep } from "./ScanStep";
 import { WizardShell, type WizardStep } from "./WizardShell";
+import { displayPath } from "../../platform/displayPath";
 
 export interface RescanWizardProps {
   libraryPath: string;
@@ -141,7 +142,7 @@ export function RescanWizard({
       {step > 0 ? (
         <div className="sh-onboarding__path">
           <span>{t("onboarding.rescanLibraryLocation")}</span>
-          <code>{libraryPath}</code>
+          <code>{displayPath(libraryPath)}</code>
         </div>
       ) : null}
       {step === 0 ? (
@@ -150,7 +151,7 @@ export function RescanWizard({
           <p>{t("onboarding.rescanDescription")}</p>
           <div className="sh-onboarding__path">
             <span>{t("onboarding.rescanLibraryLocation")}</span>
-            <code>{libraryPath}</code>
+            <code>{displayPath(libraryPath)}</code>
           </div>
           <CheckboxField
             checked={confirmed}

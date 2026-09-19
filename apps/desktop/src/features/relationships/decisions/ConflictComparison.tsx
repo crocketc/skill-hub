@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import type { ConflictCaseFact } from "../../../api/bindings";
 import { StatusBadge } from "../../../ui/StatusBadge";
 import { conflictClassificationLabelKey } from "../../relationshipGovernance/relationshipGovernance";
+import { displayPath } from "../../../platform/displayPath";
 
 export interface ConflictComparisonProps {
   caseFact: ConflictCaseFact;
@@ -56,7 +57,7 @@ export function ConflictComparison({ caseFact }: ConflictComparisonProps): JSX.E
                   <span className="sh-settings-local-note">
                     {t("relationships.decisions.comparison.pathLabel")}
                   </span>{" "}
-                  <code>{member.path}</code>
+                  <code>{displayPath(member.path)}</code>
                 </p>
               ) : null}
               {member.fingerprint ? (

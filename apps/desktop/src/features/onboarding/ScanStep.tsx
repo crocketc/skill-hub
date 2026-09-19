@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "../../ui/Button";
 import type { ScanResult } from "../../api/bindings";
+import { displayPath } from "../../platform/displayPath";
 
 interface ScanStepProps {
   isScanning: boolean;
@@ -92,7 +93,7 @@ export function ScanStep({
                 {scanResult.discovered.map((skill) => (
                   <li key={skill.path}>
                     <strong>{skill.relative_path || skill.path}</strong>
-                    <code>{skill.path}</code>
+                    <code>{displayPath(skill.path)}</code>
                   </li>
                 ))}
               </ul>
@@ -105,7 +106,7 @@ export function ScanStep({
                 <ul className="sh-onboarding__scan-list">
                   {scanResult.errors.map((issue) => (
                     <li key={`${issue.path}:${issue.code}`}>
-                      <code>{issue.path}</code>
+                      <code>{displayPath(issue.path)}</code>
                       <span>{issue.code}</span>
                     </li>
                   ))}

@@ -15,6 +15,7 @@ import {
   type RelationshipView,
 } from "../relationshipGovernance/relationshipGovernance";
 import { RelationshipRemovalImpactView } from "../relationshipGovernance/RelationshipRemovalImpactView";
+import { displayPath } from "../../platform/displayPath";
 
 export interface DirectoryMatrixProps {
   overview?: RelationshipOverview;
@@ -46,7 +47,7 @@ function DirectoryCard({
   return (
     <article className="sh-agent-directory-card" data-testid="directory-card">
       <header className="sh-agent-directory-card__header">
-        <code>{directory.path}</code>
+        <code>{displayPath(directory.path)}</code>
         <StatusBadge tone="info">{t(directoryRoleLabelKey(directory.role) as never)}</StatusBadge>
         <StatusBadge tone={recognitionTone(directory.recognition)}>
           {t(recognitionLabelKey(directory.recognition) as never)}

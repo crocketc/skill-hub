@@ -476,7 +476,7 @@ it("removes one source from the unified confirmation list and keeps the other so
 
   expect(await screen.findByText("候选项已准备好")).toBeVisible();
   const sourceList = screen.getByRole("list", { name: "已选来源" });
-  expect(within(sourceList).getByText("C:/claude/skills")).toBeVisible();
+  expect(within(sourceList).getByText("C:\\claude\\skills")).toBeVisible();
   expect(within(sourceList).getByRole("checkbox", { name: "C:/codex/skills" })).not.toBeChecked();
 });
 
@@ -528,10 +528,10 @@ it("shows a manually added directory in the selected list while silently preview
   const list = screen.getByRole("list", { name: "已选来源" });
   const items = within(list).getAllByRole("listitem");
   expect(items).toHaveLength(3);
-  expect(within(items[2]).getByText("C:/windsurf/skills")).toBeVisible();
+  expect(within(items[2]).getByText("C:\\windsurf\\skills")).toBeVisible();
   expect(await within(items[2]).findByText("2 个候选")).toBeVisible();
   // 既有来源保持已选状态（会话内可见）。
-  expect(within(items[0]).getByText("C:/codex/skills")).toBeVisible();
+  expect(within(items[0]).getByText("C:\\codex\\skills")).toBeVisible();
   expect(facade.calls.acquiredSources).toContain("C:/windsurf/skills");
 });
 
@@ -592,7 +592,7 @@ it("deduplicates a repeated directory and focuses the existing entry", async () 
   // 去重：不新增重复条目；高亮/聚焦已有条目。
   const list = screen.getByRole("list", { name: "已选来源" });
   expect(within(list).getAllByRole("listitem")).toHaveLength(2);
-  const codexItem = within(list).getByText("C:/codex/skills").closest("li");
+  const codexItem = within(list).getByText("C:\\codex\\skills").closest("li");
   expect(document.activeElement).toBe(codexItem);
 });
 
@@ -611,7 +611,7 @@ it("deduplicates case-variant directories to one entry on Windows paths", async 
 
   const list = screen.getByRole("list", { name: "已选来源" });
   expect(within(list).getAllByRole("listitem")).toHaveLength(2);
-  expect(within(list).getByText("C:/codex/skills")).toBeVisible();
+  expect(within(list).getByText("C:\\codex\\skills")).toBeVisible();
 });
 
 it("deduplicates a picked directory against a case-variant selected source", async () => {
@@ -626,9 +626,9 @@ it("deduplicates a picked directory against a case-variant selected source", asy
 
   const list = screen.getByRole("list", { name: "已选来源" });
   expect(within(list).getAllByRole("listitem")).toHaveLength(2);
-  expect(within(list).getByText("C:/codex/skills")).toBeVisible();
+  expect(within(list).getByText("C:\\codex\\skills")).toBeVisible();
   expect(document.activeElement).toBe(
-    within(list).getByText("C:/codex/skills").closest("li"),
+    within(list).getByText("C:\\codex\\skills").closest("li"),
   );
 });
 
@@ -703,8 +703,8 @@ it("restores the selected sources when the wizard reopens in the same session", 
     </TestShell>,
   );
   const list = screen.getByRole("list", { name: "已选来源" });
-  expect(within(list).getByText("C:/codex/skills")).toBeVisible();
-  expect(within(list).getByText("C:/extra/skills")).toBeVisible();
+  expect(within(list).getByText("C:\\codex\\skills")).toBeVisible();
+  expect(within(list).getByText("C:\\extra\\skills")).toBeVisible();
   expect(facade.calls.acquiredSources).toContain("C:/extra/skills");
 });
 
@@ -738,7 +738,7 @@ it("keeps onboarding selections local instead of restoring them from the session
   const list = screen.getByRole("list", { name: "已选来源" });
   const items = within(list).getAllByRole("listitem");
   expect(items).toHaveLength(1);
-  expect(within(items[0]).getByText("C:/codex/skills")).toBeVisible();
+  expect(within(items[0]).getByText("C:\\codex\\skills")).toBeVisible();
 });
 
 it("automatically acquires onboarding sources without a second read action", async () => {

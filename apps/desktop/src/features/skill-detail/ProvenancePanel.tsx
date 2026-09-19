@@ -1,3 +1,4 @@
+import { displayPath } from "../../platform/displayPath";
 import { useTranslation } from "react-i18next";
 import type {
   ConflictCaseFact,
@@ -122,7 +123,7 @@ export function ProvenancePanel({
               <ul>
                 {sources.map((source) => (
                   <li data-testid="provenance-source" key={source.provenance_id}>
-                    <span>{source.source_path}</span>
+                    <span>{displayPath(source.source_path)}</span>
                     <StatusBadge tone="info">
                       {t(relationshipLabelKey(source.relationship) as never)}
                     </StatusBadge>

@@ -435,10 +435,10 @@ it("groups discovered agent directories by brand with merged kind badges", async
   // 并列展示官方产品名（不按品牌名猜测）。
   expect(screen.getByText("桌面端/CLI")).toBeVisible();
   expect(screen.getByText("Cursor / Cursor CLI")).toBeVisible();
-  expect(screen.getByText("C:/u/.cursor/skills")).toBeVisible();
+  expect(screen.getByText("C:\\u\\.cursor\\skills")).toBeVisible();
   // 完全不可用的品牌整体置底，单独分区说明。
   expect(screen.getByText("暂不可用")).toBeVisible();
-  expect(screen.getByText("C:/u/broken/skills")).toBeVisible();
+  expect(screen.getByText("C:\\u\\broken\\skills")).toBeVisible();
   // 可用目录不再重复标注不可用徽标。
   expect(screen.getAllByText("不可用")).toHaveLength(1);
 });
@@ -454,7 +454,7 @@ it("shows exactly one generic ownership card for the shared agents directory", a
 
   // 通用目录卡片只出现一次：路径全页唯一。
   await screen.findByText("发现的 Agent 目录");
-  expect(screen.getAllByText("C:/u/.agents/skills")).toHaveLength(1);
+  expect(screen.getAllByText("C:\\u\\.agents\\skills")).toHaveLength(1);
   // 卡片标注共享引用来源：品牌仍能看到目录可用，但归属只在通用卡片上。
   expect(screen.getByText("被 2 个已登记客户端共享")).toBeVisible();
   expect(screen.getByText("被 2 个已登记客户端共享").getAttribute("title"))
@@ -533,10 +533,12 @@ it("keeps very long directory paths wrapped and reachable through a title hint (
     </I18nextProvider>,
   );
 
-  const pathCode = await screen.findByText(longPath);
+  // DEV-5：展示层统一斜杠风格（Windows 形态路径渲染为反斜杠）。
+  const displayLongPath = longPath.replaceAll("/", "\\");
+  const pathCode = await screen.findByText(displayLongPath);
   expect(pathCode).toHaveClass("sh-discovery-workbench__agent-path");
   // 完整值经原生 title 提示可达（与忽略项规则值同一策略）。
-  expect(pathCode).toHaveAttribute("title", longPath);
+  expect(pathCode).toHaveAttribute("title", displayLongPath);
   // CSS 层锁定换行策略：不靠横向滚动或裁切展示超长路径。
   expect(discoveryCss).toMatch(
     /\.sh-discovery-workbench__agent-path\s*\{[^}]*overflow-wrap:\s*anywhere/,
@@ -562,10 +564,10 @@ it("excludes a directory only after confirmation via the ignore rule and never d
 
   expect(createIgnoreRule).toHaveBeenCalledWith("C:/u/.agents/skills");
   // 成功后卡片从本次结果中移除并说明可撤销。
-  await waitFor(() => expect(screen.queryByText("C:/u/.agents/skills")).not.toBeInTheDocument());
+  await waitFor(() => expect(screen.queryByText("C:\\u\\.agents\\skills")).not.toBeInTheDocument());
   expect(screen.getByText(/已排除 C:\/u\/.agents\/skills/)).toBeVisible();
   // 不可用分区仍在。
-  expect(screen.getByText("C:/u/broken/skills")).toBeVisible();
+  expect(screen.getByText("C:\\u\\broken\\skills")).toBeVisible();
 });
 
 it("keeps the directory visible with a readable error when the exclusion fails", async () => {
@@ -587,5 +589,5 @@ it("keeps the directory visible with a readable error when the exclusion fails",
   const alert = await screen.findByRole("alert");
   expect(alert).toHaveTextContent("排除失败");
   // 失败不移除卡片，目录仍然可见。
-  expect(screen.getByText("C:/u/.agents/skills")).toBeVisible();
+  expect(screen.getByText("C:\\u\\.agents\\skills")).toBeVisible();
 });

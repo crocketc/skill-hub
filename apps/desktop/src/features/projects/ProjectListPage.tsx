@@ -26,6 +26,7 @@ import {
   unavailableProjectFacade,
 } from "./api";
 import "./projects.css";
+import { displayPath } from "../../platform/displayPath";
 
 export function matchesProjectFilters(project: ProjectView, text: string, selectedTags: string[]) {
   const normalizedText = text.trim().toLocaleLowerCase();
@@ -276,13 +277,13 @@ export function ProjectListPage({
                 <h4>{t("projects.registration.preview.agents")}</h4>
                 {preview.agentTraces.length ? (
                   <ul>
-                    {preview.agentTraces.map((trace) => <li key={trace.targetId}><strong>{trace.label}</strong><small>{trace.path}</small></li>)}
+                    {preview.agentTraces.map((trace) => <li key={trace.targetId}><strong>{trace.label}</strong><small>{displayPath(trace.path)}</small></li>)}
                   </ul>
                 ) : <p>{t("projects.registration.preview.agentsEmpty")}</p>}
                 <h4 title={t("projects.registration.preview.skillsSortHint")}>{t("projects.registration.preview.skills")}</h4>
                 {preview.skillCandidates.length ? (
                   <ul aria-label={t("projects.registration.preview.skills")}>
-                    {sortSkillCandidatesByTraceAffinity(preview.skillCandidates, preview.agentTraces).map((candidate) => <li key={candidate.path}>{candidate.name}<small>{candidate.path}</small></li>)}
+                    {sortSkillCandidatesByTraceAffinity(preview.skillCandidates, preview.agentTraces).map((candidate) => <li key={candidate.path}>{candidate.name}<small>{displayPath(candidate.path)}</small></li>)}
                   </ul>
                 ) : <p>{t("projects.registration.preview.skillsEmpty")}</p>}
               </section>
@@ -340,7 +341,7 @@ export function ProjectListPage({
                 {project.name}
               </Button>
               {project.description ? <p className="sh-project-card__description">{project.description}</p> : null}
-              <code className="sh-project-card__path">{project.devicePath}</code>
+              <code className="sh-project-card__path">{displayPath(project.devicePath)}</code>
               {accessState ? (
                 <p className="sh-project-card__meta">
                   <StatusBadge tone={accessState === "unknown" ? "neutral" : projectAccessTone[accessState]}>{t(`projects.card.access.${accessState}`)}</StatusBadge>

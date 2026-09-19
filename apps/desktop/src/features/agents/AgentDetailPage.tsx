@@ -15,6 +15,7 @@ import { CustomAgentForm } from "./CustomAgentForm";
 import { RelationsView } from "./RelationsView";
 import { UsageEvidencePanel } from "./UsageEvidencePanel";
 import "./agents.css";
+import { displayPath } from "../../platform/displayPath";
 
 export interface AgentDetailPageProps {
   agentId?: string;
@@ -114,7 +115,7 @@ export function AgentDetailPage({ agentId = "default", facade = unavailableAgent
           <dt>{t("agents.detail.paths")}</dt>
           <dd>
             <ul aria-label={t("agents.detail.paths")} className="sh-agent-detail__paths">
-              {agent.discoveredPaths.map((path) => <li key={path}><code>{path}</code></li>)}
+              {agent.discoveredPaths.map((path) => <li key={path}><code>{displayPath(path)}</code></li>)}
             </ul>
           </dd>
         </div>

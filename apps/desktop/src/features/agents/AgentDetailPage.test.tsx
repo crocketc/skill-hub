@@ -121,8 +121,9 @@ it("renders each discovered path as its own readable entry", async () => {
   await renderDetailPage(facadeWith(multiPath));
 
   const paths = await screen.findByRole("list", { name: "已发现路径" });
+  // DEV-5：Windows 形态路径经 displayPath 统一为反斜杠；POSIX 路径保持不变。
   expect(within(paths).getAllByRole("listitem").map((item) => item.textContent)).toEqual([
-    "C:/Users/demo/AppData/Local/SkillHub/agents/codex/global skills directory",
+    "C:\\Users\\demo\\AppData\\Local\\SkillHub\\agents\\codex\\global skills directory",
     "/Users/demo/Library/Application Support/SkillHub/agents/codex/skills",
   ]);
 });

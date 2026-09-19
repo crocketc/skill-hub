@@ -612,7 +612,7 @@ describe("Task 7: governed relationship sections", () => {
     });
 
     expect(await screen.findByText("多来源存证")).toBeVisible();
-    expect(screen.getByText("C:/Users/demo/.codex/skills/pdf-reader")).toBeVisible();
+    expect(screen.getByText("C:\\Users\\demo\\.codex\\skills\\pdf-reader")).toBeVisible();
     expect(screen.getByText("关系类型与移除影响")).toBeVisible();
     expect(screen.getByTestId("governed-relation")).toBeVisible();
     expect(screen.getByText("复制部署")).toBeVisible();

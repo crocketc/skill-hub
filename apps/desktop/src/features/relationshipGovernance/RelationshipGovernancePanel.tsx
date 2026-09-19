@@ -1,4 +1,5 @@
 import { useState, type JSX } from "react";
+import { displayPath } from "../../platform/displayPath";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
 import type { ConflictCaseFact } from "../../api/bindings";
@@ -73,7 +74,7 @@ function ConflictCasesSummary({
               {t(conflictClassificationLabelKey(conflict.classification) as never)}
             </span>
             {(conflict.members ?? []).map((member) =>
-              member.path ? <code key={member.path}>{member.path}</code> : null,
+              member.path ? <code key={member.path}>{displayPath(member.path)}</code> : null,
             )}
             <Link to={conflictWorkspaceHref(conflict.conflict_id)}>
               {t("relationships.decisions.deepLink.label")}

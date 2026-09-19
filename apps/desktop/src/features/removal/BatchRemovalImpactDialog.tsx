@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { Button } from "../../ui/Button";
 import type { RemovalChoice, RemovalImpact } from "./api";
 import { RemovalShell } from "./RemovalShell";
+import { displayPath } from "../../platform/displayPath";
 
 interface BatchRemovalImpactDialogProps {
   error?: string;
@@ -77,7 +78,7 @@ export function BatchRemovalImpactDialog({
           {impact.deployments.length === 0 ? <p>{t("removal.batch.noDeployments")}</p> : null}
           {impact.deployments.map((deployment) => (
             <label className="sh-workflow-list__item" key={deployment.id}>
-              <span><strong>{deployment.label}</strong><small>{deployment.path}</small></span>
+              <span><strong>{deployment.label}</strong><small>{displayPath(deployment.path)}</small></span>
               <select
                 aria-label={`${t("removal.choiceLabel")}: ${deployment.label}`}
                 onChange={(event) => setChoices((current) => ({

@@ -96,6 +96,21 @@ impl DiscoverAgents {
             }
         }
 
+        // DEV-5：同一 (profile, client, scope) 内，同一物理目录（physical_id
+        // 相同，仅斜杠/点段等拼写不同）只保留一条 logical target。不同
+        // client 或不同 scope 仍各留一条：那是"同目录、不同客户端/项目级"
+        // 的真实语义，不是重复。发现快照归并后，Agent 页等消费方不再出现
+        // 仅拼写不同的重复目录。
+        let mut seen = std::collections::HashSet::<(String, String, String, String)>::new();
+        logical_targets.retain(|target| {
+            seen.insert((
+                target.physical_id.clone(),
+                format!("{:?}", target.scope),
+                target.profile_id.clone(),
+                target.client_id.clone(),
+            ))
+        });
+
         let mut physical = BTreeMap::<String, PhysicalTarget>::new();
         for target in &logical_targets {
             if !target.exists {

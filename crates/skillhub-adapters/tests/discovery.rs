@@ -461,3 +461,68 @@ fn generic_ownership_target_resolves_the_user_home_placeholder_per_platform() {
         target.path
     );
 }
+
+#[test]
+fn spelling_variants_of_one_directory_collapse_to_one_logical_target_per_client_scope() {
+    // DEV-5：同一 client 同一 scope 下，仅斜杠/点段拼写不同的同一路径必须
+    // 按 (physical_id, scope) 归并为一条 logical target；不同 client 仍各留
+    // 一条（保留"同目录、不同客户端"的语义）。
+    let workspace = tempdir().unwrap();
+    let home = workspace.path().join("home");
+    std::fs::create_dir_all(home.join("skills")).unwrap();
+
+    use skillhub_core::agent::{
+        AgentClient, AgentProfile, CallPolicy, ClientKind, DeploymentCapability,
+        DirectoryPrecedence, PathCandidate, TargetScope,
+    };
+    let candidate = |path: &str| PathCandidate {
+        path: path.into(),
+        scope: TargetScope::Global,
+        precedence: DirectoryPrecedence::Preferred,
+        marker: "SKILL.md".into(),
+        shared_reference: false,
+    };
+    let client = AgentClient {
+        id: "fixture.user".into(),
+        display_name: "Fixture".into(),
+        kind: ClientKind::Cli,
+        supported_os: vec![OperatingSystem::Windows, OperatingSystem::Macos],
+        path_candidates: vec![
+            candidate("{user_home}/skills"),
+            candidate("{user_home}/./skills"),
+        ],
+        skill_marker: "SKILL.md".into(),
+        deployment: DeploymentCapability {
+            copy: true,
+            symlink: false,
+            junction: false,
+            limitations: vec![],
+        },
+        call_policy: CallPolicy::Unknown,
+    };
+    let catalog = skillhub_core::agent::ProfileCatalog {
+        profiles: vec![AgentProfile {
+            profile_version: 1,
+            research_date: "2026-09-20".into(),
+            official_references: vec!["https://example.com".into()],
+            brand: "Fixture".into(),
+            clients: vec![client],
+        }],
+    };
+
+    let snapshot = DiscoverAgents::new(catalog)
+        .discover(&DiscoveryRoots::new(OperatingSystem::Windows, &home))
+        .unwrap();
+    assert_eq!(
+        snapshot.logical_targets.len(),
+        1,
+        "logical targets: {:?}",
+        snapshot
+            .logical_targets
+            .iter()
+            .map(|target| (&target.client_id, &target.scope, &target.path))
+            .collect::<Vec<_>>()
+    );
+    assert_eq!(snapshot.physical_targets.len(), 1);
+    assert_eq!(snapshot.physical_targets[0].logical_target_ids.len(), 1);
+}

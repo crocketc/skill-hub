@@ -1,4 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { displayPath } from "../../platform/displayPath";
 import {
   type ComponentType,
   type CSSProperties,
@@ -162,7 +163,7 @@ function RelationsModule({ view }: ModuleProps) {
                 {visibleProjects.map((project) => (
                   <li key={project.id}>
                     <strong title={project.name}>{project.name}</strong>
-                    <code title={project.path}>{project.path}</code>
+                    <code title={displayPath(project.path)}>{displayPath(project.path)}</code>
                   </li>
                 ))}
               </ul>

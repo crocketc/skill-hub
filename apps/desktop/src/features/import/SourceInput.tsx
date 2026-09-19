@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { Button } from "../../ui/Button";
 import { StatusBadge } from "../../ui/StatusBadge";
 import type { SourceDescriptor, SourceScanStatus } from "./api";
+import { displayPath } from "../../platform/displayPath";
 
 export interface SourceInputProps {
   value: string;
@@ -135,7 +136,7 @@ export function SourceInput({
                       type="checkbox"
                     />
                   </label>
-                  <code title={source}>{source}</code>
+                  <code title={displayPath(source)}>{displayPath(source)}</code>
                   {selected || sourceStatuses[source] ? <StatusBadge tone={statusTone(status)}>{statusLabel(status)}</StatusBadge> : null}
                   {(selected || sourceStatuses[source]) && status.kind === "failed" ? (
                     <span className="sh-import-source__item-reason" role="status">{status.reason}</span>

@@ -2,6 +2,7 @@ import { useTranslation } from "react-i18next";
 import { Button } from "../../ui/Button";
 import { StatusBadge } from "../../ui/StatusBadge";
 import type { CandidateOwnership, ImportCandidate } from "./api";
+import { displayPath } from "../../platform/displayPath";
 
 export interface CandidateSelectionProps {
   candidates: ImportCandidate[];
@@ -65,7 +66,7 @@ export function CandidateSelection({
                     <StatusBadge tone={ownershipTone[candidate.ownership]}>
                       {t(`importWorkflow.candidates.ownership.${candidate.ownership}`)}
                     </StatusBadge>
-                    <code title={candidate.path}>{candidate.path}</code>
+                    <code title={displayPath(candidate.path)}>{displayPath(candidate.path)}</code>
                   </div>
                 </li>
               );

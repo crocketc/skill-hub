@@ -378,7 +378,8 @@ it("shows the library path and opens it through the native opener", async () => 
   const opener = { openDirectory: vi.fn(async () => undefined) };
   renderPage(facade, { opener });
 
-  expect(await screen.findByText("C:/Users/demo/SkillHub")).toBeVisible();
+  // DEV-5：展示层统一斜杠风格；底层 opener 仍收到原始路径。
+  expect(await screen.findByText("C:\\Users\\demo\\SkillHub")).toBeVisible();
   fireEvent.click(screen.getByRole("button", { name: "Open library folder" }));
   await waitFor(() => expect(opener.openDirectory).toHaveBeenCalledWith("C:/Users/demo/SkillHub"));
 });

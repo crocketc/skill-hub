@@ -4,6 +4,7 @@ import { Button } from "../../ui/Button";
 import type { RemovalChoice, RemovalImpact } from "./api";
 import { Icon } from "../../ui/Icon";
 import { RemovalShell } from "./RemovalShell";
+import { displayPath } from "../../platform/displayPath";
 
 interface RemovalImpactDialogProps {
   error?: string;
@@ -47,7 +48,7 @@ export function RemovalImpactDialog({ error, impact, onCancel, onConfirm, submit
       <div className="sh-workflow-list">
         {impact.deployments.map((deployment) => (
           <label className="sh-workflow-list__item" key={deployment.id}>
-            <span><strong>{deployment.label}</strong><small>{deployment.path}</small></span>
+            <span><strong>{deployment.label}</strong><small>{displayPath(deployment.path)}</small></span>
             <select aria-label={`${t("removal.choiceLabel")}：${deployment.label}`} value={choices[deployment.id] ?? ""} onChange={(event) => setChoices((current) => ({ ...current, [deployment.id]: event.target.value as RemovalChoice }))}>
               <option value="">{t("removal.choose")}</option>
               <option value="keep_deployed">{t("removal.choices.keep")}</option>

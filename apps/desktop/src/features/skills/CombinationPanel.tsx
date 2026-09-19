@@ -13,6 +13,7 @@ import { ConfirmDialog } from "../../ui/ConfirmDialog";
 import { Input } from "../../ui/Input";
 import { Select } from "../../ui/Select";
 import type { SkillLibraryFacade, SkillLibraryQuery, SkillTableRow } from "./api";
+import { displayPath } from "../../platform/displayPath";
 
 /** 成员候选分页大小：候选经 listSkills 真实分页查询，「加载更多」按页追加。 */
 const CANDIDATE_PAGE_SIZE = 50;
@@ -469,7 +470,7 @@ export function CombinationPanel({ facade, skillNames }: CombinationPanelProps):
       {error ? <p role="alert">{error}</p> : null}
       {renamedStatus ? <p role="status">{renamedStatus}</p> : null}
       {exportResult ? (
-        <p role="status">{t("skillLibrary.combinations.exported", { path: exportResult })}</p>
+        <p role="status">{t("skillLibrary.combinations.exported", { path: displayPath(exportResult) })}</p>
       ) : null}
       {combinationsQuery.isLoading ? (
         <p>{t("skillLibrary.combinations.loading")}</p>
