@@ -40,7 +40,7 @@ const expectedAccents: Record<(typeof themeNames)[number], string> = {
 // 确定性关系事实：2 个待确认冲突、4 个图谱候选、9 条治理关系边。
 const heroMetricName = "27 Total skills";
 const statNames = [
-  "3 Agents (3 configured · 5 discovered)",
+  "3 Agents (3 configured targets · 5 discovered)",
   "3 Manage projects",
   "45 Skill deployment relations (27 to agents · 18 to projects)",
   "2 Unconfirmed relationship conflicts",
@@ -113,9 +113,10 @@ test("exposes the three relationship thumbnail entries with frozen deep links", 
 }) => {
   await page.goto("/__preview/overview");
 
+  const graphEntry = page.getByRole("link", { name: relationEntryNames[0] });
+  await expect(graphEntry).toBeVisible();
   // 任务 9 冻结契约：缩略带三入口深链 /relationships、/relationships/decisions、
   // /relationships/governance；计数来自预览桩的确定性关系事实。
-  const graphEntry = page.getByRole("link", { name: relationEntryNames[0] });
   await expect(graphEntry).toBeVisible();
   await expect(graphEntry).toHaveAttribute("href", "/relationships");
   const conflictsEntry = page.getByRole("link", { name: relationEntryNames[1] });

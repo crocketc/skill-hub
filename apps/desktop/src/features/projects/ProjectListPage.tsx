@@ -267,7 +267,7 @@ export function ProjectListPage({
         {registrationOpen && !registeredProject ? (
           <div className="sh-project-registration">
             <Button disabled={registering} onClick={() => void chooseDirectory()} variant="secondary">{t("projects.registration.pickDirectory")}</Button>
-            {registrationPath ? <p className="sh-project-registration__path">{registrationPath}</p> : null}
+            {registrationPath ? <p className="sh-project-registration__path">{displayPath(registrationPath)}</p> : null}
             {previewPending ? <p role="status">{t("projects.registration.preview.loading")}</p> : null}
             {previewFailed ? <p className="sh-project-registration__preview-error" role="alert">{t("projects.registration.preview.error")}</p> : null}
             {preview ? (

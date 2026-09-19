@@ -99,7 +99,7 @@ test.describe("batch deployment flow", () => {
     await page.goto("/__preview/deployment?scenario=batch");
 
     await expect(page.getByRole("heading", { name: "Add 8 Skills" })).toBeVisible();
-    await expect(page.getByLabel("Unavailable target")).toBeDisabled();
+    await expect(page.getByLabel("Unavailable target")).toHaveCount(0);
 
     const footer = page.locator("footer");
     await expect(footer).toHaveCount(1);

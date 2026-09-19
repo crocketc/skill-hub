@@ -1,4 +1,5 @@
 import { useState, type RefObject } from "react";
+import { displayPath } from "../../platform/displayPath";
 import { useTranslation } from "react-i18next";
 import { describeNativeError } from "../../api/nativeErrors";
 import { Drawer } from "../../ui/Drawer";
@@ -131,7 +132,7 @@ export function ProjectQuickDrawer({ project, open, accessState, nextStep, facad
       ) : (
         <>
           <dl className="sh-project-drawer__facts">
-            <div><dt>{t("projects.drawer.identity")}</dt><dd>{project.sharedConfig.identityHint}</dd></div>
+            <div><dt>{t("projects.drawer.identity")}</dt><dd>{displayPath(project.sharedConfig.identityHint)}</dd></div>
             {accessState ? (
               <div><dt>{t("projects.drawer.access")}</dt><dd><StatusBadge tone={accessState === "unknown" ? "neutral" : projectAccessTone[accessState]}>{t(`projects.card.access.${accessState}`)}</StatusBadge></dd></div>
             ) : null}

@@ -205,12 +205,12 @@ test.describe("local discovery workbench agent groups (P1-06)", () => {
     await expect(sharedCard).toHaveCount(1);
     await expect(sharedCard.getByText("Shared directory")).toBeVisible();
     await expect(sharedCard.getByText("Shared by 2 registered clients")).toBeVisible();
-    await expect(sharedCard.getByText("C:/Users/demo/.agents/skills")).toBeVisible();
+    await expect(sharedCard.getByText("C:\\Users\\demo\\.agents\\skills")).toBeVisible();
     // 旧的 ZCode 品牌（desktop/cli 合并类型徽标）卡片不再出现。
     await expect(page.getByText("Desktop app/CLI")).toHaveCount(0);
     // 完全不可用的品牌沉底，单独分区说明。
     await expect(page.getByText("Unavailable now")).toBeVisible();
-    await expect(page.getByText("C:/Users/demo/broken/skills")).toBeVisible();
+    await expect(page.getByText("C:\\Users\\demo\\broken\\skills")).toBeVisible();
     await expect(page.getByTestId("agent-card-phys-broken").getByText("Unavailable")).toBeVisible();
   });
 

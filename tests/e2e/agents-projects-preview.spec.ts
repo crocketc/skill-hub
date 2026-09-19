@@ -34,7 +34,7 @@ test("agent cards expose a clean title link, directory path, and status text", a
 
   // Directory fact stays readable as its own element, not buried in the link.
   await expect(page.getByText("Skill directory").first()).toBeVisible();
-  await expect(page.getByText("C:/Users/Developer/AppData/Local/SkillHub/agents/codex/skills")).toBeVisible();
+  await expect(page.getByText("C:\\Users\\Developer\\AppData\\Local\\SkillHub\\agents\\codex\\skills")).toBeVisible();
 
   // Status is always icon/marker plus text, never color alone.
   await expect(page.getByText("Accessible").first()).toBeVisible();
@@ -61,7 +61,7 @@ test("project cards expose title, path, tags, access, and a next step", async ({
     has: page.getByRole("button", { name: "Aurora Web" }),
   });
   await expect(auroraCard).toBeVisible();
-  await expect(auroraCard.getByText("D:/Work/very-long-project-paths/aurora-web/workspace/root")).toBeVisible();
+  await expect(auroraCard.getByText("D:\\Work\\very-long-project-paths\\aurora-web\\workspace\\root")).toBeVisible();
   await expect(auroraCard.getByText("rust", { exact: true })).toBeVisible();
 
   // Access state comes from the discovery snapshot; the associated Agent
@@ -105,7 +105,7 @@ test("project registration runs in a drawer and returns focus to its trigger", a
   await expect(registration).toBeVisible();
 
   await registration.getByRole("button", { name: "Choose project directory" }).click();
-  await expect(registration.getByText("C:/Preview/Aurora", { exact: true })).toBeVisible();
+  await expect(registration.getByText("C:\\Preview\\Aurora", { exact: true })).toBeVisible();
   await expect(registration.getByRole("textbox", { name: "Project name" })).toHaveValue("Aurora");
 
   await registration.getByRole("checkbox", { name: "OpenAI · Codex CLI" }).check();
@@ -134,7 +134,7 @@ test("project registration keeps the read-only preview boundary inside the drawe
 
   await registration.getByRole("button", { name: "Choose project directory" }).click();
   await expect(registration.getByText("The preview only reads the directory. It creates no project, imports no Skill, and writes no files.")).toBeVisible();
-  await expect(registration.getByText("C:/Preview/Aurora/.claude/skills", { exact: true })).toBeVisible();
+  await expect(registration.getByText("C:\\Preview\\Aurora\\.claude\\skills", { exact: true })).toBeVisible();
   await expect(registration.getByRole("checkbox", { name: "anthropic · anthropic.claude-code" })).toBeChecked();
 });
 
@@ -162,7 +162,7 @@ test("long directory paths wrap instead of being clipped at 800px", async ({ pag
   await page.goto("/__preview/agents");
 
   const longPath = page.getByText(
-    "D:/Very/Long/Windows/Library/Directory/On/A/Second/Volume/with/project/workspace/skills",
+    "D:\\Very\\Long\\Windows\\Library\\Directory\\On\\A\\Second\\Volume\\with\\project\\workspace\\skills",
   );
   await expect(longPath).toBeVisible();
   const box = (await longPath.boundingBox())!;
@@ -192,7 +192,7 @@ test("the agent detail keeps every discovered path readable at 800px", async ({ 
   await page.goto("/__preview/agents/detail");
 
   await expect(page.getByRole("list", { name: "Discovered paths" })).toBeVisible();
-  await expect(page.getByText("C:/Users/preview/AppData/Local/SkillHub/agents/auditor/very/long/global skill directory")).toBeVisible();
+  await expect(page.getByText("C:\\Users\\preview\\AppData\\Local\\SkillHub\\agents\\auditor\\very\\long\\global skill directory")).toBeVisible();
   await expect(page.getByText("Auditor Desktop")).toBeVisible();
 });
 

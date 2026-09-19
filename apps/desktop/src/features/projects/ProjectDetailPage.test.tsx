@@ -99,7 +99,7 @@ it.each([
     </I18nextProvider>,
   );
 
-  expect(await screen.findByText("D:/Work/Aurora")).toBeVisible();
+  expect(await screen.findByText("D:\\Work\\Aurora")).toBeVisible();
   expect(screen.getByText(label)).toBeVisible();
 });
 
@@ -114,7 +114,7 @@ it("says honestly when the discovery snapshot has no matching physical target", 
     </I18nextProvider>,
   );
 
-  expect(await screen.findByText("D:/Work/Aurora")).toBeVisible();
+  expect(await screen.findByText("D:\\Work\\Aurora")).toBeVisible();
   expect(screen.getByText("未在发现快照中找到对应物理目标，无法判断访问状态。")).toBeVisible();
 });
 

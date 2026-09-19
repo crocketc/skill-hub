@@ -228,7 +228,7 @@ test("surfaces per-source acquisition failures in the unified source list and re
   const failedItem = page
     .getByRole("list", { name: "已选来源" })
     .getByRole("listitem")
-    .filter({ hasText: "C:/skills/preview" });
+    .filter({ hasText: "C:\\skills\\preview" });
   await expect(failedItem.getByText("扫描失败")).toBeVisible();
   await expect(failedItem.getByText("导入步骤未能完成（preview.acquire_failed）。")).toBeVisible();
   // 行内重试是来源列表里的小号（sm）行操作，44px 契约只约束 footer 主操作：

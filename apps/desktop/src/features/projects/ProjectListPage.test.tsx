@@ -52,7 +52,7 @@ it("opens a flat project summary drawer from its row", async () => {
 
   await user.click(await screen.findByRole("button", { name: "Demo Project" }));
   expect(await screen.findByRole("dialog")).toBeVisible();
-  expect(screen.getByText("C:/Projects/demo")).toBeVisible();
+  expect(screen.getByText("C:\\Projects\\demo")).toBeVisible();
 });
 
 it("opens project management from the project summary", async () => {
@@ -87,7 +87,7 @@ it("registers a user-selected local directory without creating a shared config",
   await user.click(await screen.findByRole("button", { name: "注册项目" }));
   await user.click(screen.getByRole("button", { name: "选择项目目录" }));
 
-  expect(screen.getByText("C:/Projects/Aurora")).toBeVisible();
+  expect(screen.getByText("C:\\Projects\\Aurora")).toBeVisible();
   expect(screen.getByRole("textbox", { name: "项目名称" })).toHaveValue("Aurora");
   await user.click(await screen.findByRole("checkbox", { name: "OpenAI · Codex CLI" }));
   await user.click(screen.getByRole("button", { name: "确认注册" }));
@@ -153,7 +153,7 @@ it("previews the chosen directory read-only and suggests traced agents before re
   await user.click(await screen.findByRole("button", { name: "注册项目" }));
   await user.click(screen.getByRole("button", { name: "选择项目目录" }));
 
-  expect(await screen.findByText("C:/Projects/Aurora/.claude/skills")).toBeVisible();
+  expect(await screen.findByText("C:\\Projects\\Aurora\\.claude\\skills")).toBeVisible();
   expect(screen.getByText("research")).toBeVisible();
   expect(screen.getByText("预览仅读取目录，不会创建项目、导入 Skill 或写入任何文件。")).toBeVisible();
   expect(screen.getByRole("checkbox", { name: "anthropic · anthropic.claude-code" })).toBeChecked();
@@ -201,10 +201,12 @@ it("orders preview skill candidates by agent trace affinity and explains the ord
   await user.click(screen.getByRole("button", { name: "选择项目目录" }));
 
   const skillList = await screen.findByRole("list", { name: "可扫描的项目 Skill（不会自动导入）" });
+  // DEV-5：候选路径经 displayPath 统一为反斜杠展示。
+  const bs = String.fromCharCode(92);
   expect(within(skillList).getAllByRole("listitem").map((item) => item.textContent)).toEqual([
-    "researchC:/Projects/Aurora/.claude/skills/research",
-    "docs-skillC:/Projects/Aurora/docs/docs-skill",
-    "elsewhereD:/Other/elsewhere",
+    `researchC:${bs}Projects${bs}Aurora${bs}.claude${bs}skills${bs}research`,
+    `docs-skillC:${bs}Projects${bs}Aurora${bs}docs${bs}docs-skill`,
+    `elsewhereD:${bs}Other${bs}elsewhere`,
   ]);
   expect(screen.getByTitle("与已发现 Agent 目录同前缀或同根的候选排在前面，其余保持原有顺序。")).toBeInTheDocument();
 });
@@ -416,7 +418,7 @@ async function openRegistrationDrawer(user: ReturnType<typeof userEvent.setup>, 
   );
   await user.click(await screen.findByRole("button", { name: "注册项目" }));
   await user.click(screen.getByRole("button", { name: "选择项目目录" }));
-  await screen.findByText("C:/Projects/Aurora");
+  await screen.findByText("C:\\Projects\\Aurora");
 }
 
 it("stores optional registration tags through setTags after a successful registration", async () => {

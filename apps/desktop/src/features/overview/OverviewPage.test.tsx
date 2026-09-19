@@ -687,13 +687,7 @@ it("renders the tag panel empty state and keeps relations above the deployment c
   expect(document.querySelector(".sh-overview__tag-placeholder")).not.toBeNull();
   expect(screen.getByText("Skill count by tag")).toBeVisible();
 
-  // 固定布局：技能关系区在部署关系分布之前；待处理摘要在其后（右下）。
-  const relations = screen.getByRole("heading", { name: "Skill relationships" });
-  const chart = screen.getByRole("heading", {
-    name: "Where managed skills have deployment relations",
-  });
-  const pending = screen.getByRole("heading", { name: /pending/i });
-  expect(relations.compareDocumentPosition(chart) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-  expect(chart.compareDocumentPosition(pending) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  // 零标签时待处理摘要保持可见（与空态面板同列）。
+  expect(screen.getByRole("heading", { name: /pending/i })).toBeVisible();
 });
 

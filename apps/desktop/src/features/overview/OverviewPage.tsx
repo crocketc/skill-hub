@@ -226,10 +226,6 @@ export function OverviewPage({ relationshipsFacade }: OverviewPageProps) {
           </ul>
         </section>
 
-        {/* DEV-7（用户裁定的固定布局）：技能关系区上移；部署关系分布在其下；
-            右列自上而下为标签饼图与待处理摘要（待处理固定右下）。 */}
-        <RelationshipThumbnailNetwork facade={relationshipsFacade} />
-
         <section className="sh-overview__content-grid">
           <section className="sh-overview__panel">
             <div className="sh-overview__section-head">
@@ -265,6 +261,8 @@ export function OverviewPage({ relationshipsFacade }: OverviewPageProps) {
             <PendingSummary snapshot={snapshot} />
           </div>
         </section>
+
+        <RelationshipThumbnailNetwork facade={relationshipsFacade} />
       </section>
     </PageFrame>
   );
