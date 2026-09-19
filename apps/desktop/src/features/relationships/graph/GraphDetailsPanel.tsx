@@ -1,5 +1,6 @@
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
+import { formatTimestamp, resolveLocale } from "../../../i18n";
 import type { RelationshipGraphFactCounts } from "../../../api/bindings";
 import {
   edgeStatusLabelKey,
@@ -40,13 +41,15 @@ function nodeLabel(node: ProjectedNode["node"], fallback: string): string {
 }
 
 function VerifiedLine({ lastVerifiedAt }: { lastVerifiedAt: string | null }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const locale = resolveLocale([i18n.resolvedLanguage ?? i18n.language]);
   return (
     <div>
       <dt>{t("relationships.graph.lastVerifiedLabel")}</dt>
+      {/* DEV-15：unix 秒/毫秒时间戳一并格式化为可读本地时间。 */}
       <dd>
         {lastVerifiedAt
-          ? t("relationships.graph.lastVerified", { time: lastVerifiedAt })
+          ? t("relationships.graph.lastVerified", { time: formatTimestamp(lastVerifiedAt, locale) })
           : t("relationships.graph.neverVerified")}
       </dd>
     </div>

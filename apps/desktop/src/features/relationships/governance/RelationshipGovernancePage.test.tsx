@@ -329,7 +329,7 @@ describe("RelationshipGovernancePage 清单（按关系边渲染）", () => {
     // 五条关系边各一行；即使多条边属于同一个 Skill 也不按 Skill 合并。
     expect(screen.getAllByTestId("governance-row")).toHaveLength(5);
     expect(screen.getByText("PDF 阅读器")).toBeVisible();
-    expect(screen.getByText("C:/agents/codex/skills/link-reader")).toBeVisible();
+    expect(screen.getByText("C:\\agents\\codex\\skills\\link-reader")).toBeVisible();
 
     expect(screen.getByTestId("governance-header-relation")).toHaveTextContent("关系");
     expect(screen.getByTestId("governance-header-source")).toHaveTextContent("来源");

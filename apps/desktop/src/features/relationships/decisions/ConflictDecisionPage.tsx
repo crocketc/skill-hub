@@ -2,6 +2,7 @@ import type { JSX } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import type { ConflictResolutionRecord } from "../../../api/bindings";
+import { formatTimestamp, readableTailOfId, resolveLocale } from "../../../i18n";
 import { Button } from "../../../ui/Button";
 import { DataState } from "../../../ui/DataState";
 import {
@@ -302,7 +303,8 @@ function ConflictHistory({
 }: {
   handled: readonly ConflictResolutionRecord[];
 }): JSX.Element | null {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const locale = resolveLocale([i18n.resolvedLanguage ?? i18n.language]);
   if (handled.length === 0) return null;
   return (
     <section aria-labelledby="conflict-history-heading" className="sh-conflict-history">
@@ -310,7 +312,9 @@ function ConflictHistory({
       <ul>
         {handled.map((record) => (
           <li key={`${record.conflict_id}-${record.decided_at}`}>
-            <span>{record.conflict_id}</span>
+            {/* DEV-15：历史行以用户可读信息为主——Skill 名称 + 结论 +
+                本地化时间；裸冲突 id 与 unix 时间戳不再进界面。 */}
+            <span>{readableTailOfId(record.conflict_id)}</span>
             <span>{t(conflictDecisionLabelKey(record.decision) as never)}</span>
             <span className="sh-settings-local-note">
               {t("relationships.decisions.history.concludedAs", {
@@ -319,7 +323,7 @@ function ConflictHistory({
             </span>
             <span className="sh-settings-local-note">
               {t("relationships.decisions.history.decidedAt", {
-                date: record.decided_at.slice(0, 10),
+                date: formatTimestamp(record.decided_at, locale),
               })}
             </span>
           </li>

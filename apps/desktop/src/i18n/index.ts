@@ -86,6 +86,34 @@ export function formatDateTime(
   }).format(value);
 }
 
+/**
+ * DEV-15：后端时间字段既有 ISO 字符串也有 unix 秒/毫秒十进制串（Specta
+ * 不放行 64 位整数的历史口径）。界面一律经本助手渲染可读本地时间，
+ * 不可解析时原样透出（诚实缺省），绝不把裸时间戳交给用户。
+ */
+export function formatTimestamp(
+  value: string | null | undefined,
+  locale: SupportedLocale,
+): string {
+  if (!value) return "";
+  const trimmed = value.trim();
+  if (/^\d{13}$/.test(trimmed)) return formatDateTime(Number(trimmed), locale);
+  if (/^\d{10}$/.test(trimmed)) return formatDateTime(Number(trimmed) * 1000, locale);
+  const parsed = new Date(trimmed);
+  if (!Number.isNaN(parsed.getTime())) return formatDateTime(parsed, locale);
+  return trimmed;
+}
+
+/**
+ * DEV-15：把技术标识里的可读尾段解析出来（如
+ * `import-conflict:same_name_different_content:find-skills` → `find-skills`），
+ * 供历史记录等处以用户可读信息为主展示。
+ */
+export function readableTailOfId(value: string): string {
+  const parts = value.split(":").filter(Boolean);
+  return parts[parts.length - 1] || value;
+}
+
 export function formatFileSize(bytes: number, locale: SupportedLocale) {
   if (bytes < 1000) {
     return new Intl.NumberFormat(locale, {

@@ -26,6 +26,8 @@ export interface SkillGraphCanvasProps {
   selectedEdgeId: string | null;
   selectedNodeId: string | null;
   viewport: GraphViewport;
+  /** DEV-15：SkillId → 展示名解析；节点标签用名称，不裸显 UUID。 */
+  resolveSkillName?: (skillId: string) => string | undefined;
 }
 
 const MIN_ZOOM = 0.4;
@@ -35,10 +37,18 @@ function clampZoom(zoom: number): number {
   return Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, Math.round(zoom * 100) / 100));
 }
 
-function nodeLabel(node: ProjectedNode["node"], fallback: string): string {
+function nodeLabel(
+  node: ProjectedNode["node"],
+  fallback: string,
+  resolveSkillName?: (skillId: string) => string | undefined,
+): string {
   switch (node.kind) {
-    case "skill":
-      return node.skill_id ?? fallback;
+    case "skill": {
+      if (node.skill_id) {
+        return resolveSkillName?.(node.skill_id) ?? node.skill_id;
+      }
+      return fallback;
+    }
     case "agent":
       return node.agent_client_id ?? fallback;
     case "directory":
@@ -64,6 +74,7 @@ export function SkillGraphCanvas({
   onSelectNode,
   onViewportChange,
   projection,
+  resolveSkillName,
   selectedEdgeId,
   selectedNodeId,
   viewport,
@@ -207,7 +218,7 @@ export function SkillGraphCanvas({
             const selected = node.node_id === selectedNodeId;
             const label = node.kind === "collapsed"
               ? t("relationships.graph.collapsedNodeLabel", { count: node.collapsed_count })
-              : nodeLabel(node, node.node_id);
+              : nodeLabel(node, node.node_id, resolveSkillName);
             const handleClick = () => {
               if (projected.layer === "related" && node.skill_id) {
                 onBeforeJump?.();

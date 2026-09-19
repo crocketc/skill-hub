@@ -160,6 +160,20 @@ export function SkillGraphPage({
     queryFn: () => facade.listCandidates(candidatesParams),
   });
 
+  // DEV-15：SkillId → 展示名映射（来自关系候选查询的 display_name）；
+  // 图谱节点标签用名称，不裸显 UUID。
+  const skillNameById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const candidate of candidatesQuery.data ?? []) {
+      if (candidate.skill_id) map.set(candidate.skill_id, candidate.display_name);
+    }
+    return map;
+  }, [candidatesQuery.data]);
+  const resolveSkillName = useCallback(
+    (skillId: string) => skillNameById.get(skillId),
+    [skillNameById],
+  );
+
   const mergeRevisions = useCallback((list: SkillRelationshipCandidate[]) => {
     setKnownRevisions((prev) => {
       let changed = false;
@@ -443,6 +457,7 @@ export function SkillGraphPage({
           }}
           onViewportChange={setViewport}
           projection={projection}
+          resolveSkillName={resolveSkillName}
           selectedEdgeId={selectedEdgeId}
           selectedNodeId={selectedNodeId}
           viewport={viewport}

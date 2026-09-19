@@ -125,10 +125,10 @@ function workspaceFixture(overrides: Partial<ConflictWorkspace> = {}): ConflictW
     handled_count: 1,
     handled: [
       {
-        conflict_id: "conflict:z",
+        conflict_id: "import-conflict:same_name_different_content:find-skills",
         decision: "keep_distinct",
         conclusion: "distinct_skill",
-        decided_at: "2026-09-01T10:00:00Z",
+        decided_at: "1789832619",
       },
     ],
     relationship_revision: "r7",
@@ -240,7 +240,12 @@ describe("ConflictDecisionPage", () => {
     expect(screen.getByText("名称一致")).toBeVisible();
     // 已处理项只进历史，绝不回流队列（DTO 中没有它，也不得从 handled 混入）。
     expect(screen.getByRole("heading", { name: "已处理记录" })).toBeVisible();
-    expect(screen.getByText(/conflict:z/)).toBeVisible();
+    // DEV-15：历史行以可读信息为主——名称尾段 + 本地化时间；
+    // 裸冲突 id 与 unix 秒时间戳不进界面。
+    expect(screen.getByText("find-skills")).toBeVisible();
+    expect(screen.getByText(/处理于 2026/)).toBeVisible();
+    expect(screen.queryByText(/import-conflict:/)).not.toBeInTheDocument();
+    expect(screen.queryByText("处理于 1789832619")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "conflict:z" })).not.toBeInTheDocument();
     // 没有「刷新冲突」按钮：队列只随关系刷新/重新扫描变化。
     expect(screen.queryByRole("button", { name: "刷新冲突" })).not.toBeInTheDocument();

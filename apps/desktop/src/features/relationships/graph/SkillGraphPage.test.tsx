@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useEffect, useRef } from "react";
@@ -356,11 +356,13 @@ describe("alias search", () => {
     await user.click(screen.getByRole("button", { name: "Search" }));
 
     expect(await screen.findByText("Multiple Skills match — choose one.")).toBeVisible();
-    expect(screen.getByRole("button", { name: /PDF Reader/ })).toBeVisible();
-    expect(screen.getByRole("button", { name: /Doc Reader/ })).toBeVisible();
+    // 搜索结果限定在结果列表内：画布节点标签同样可读（DEV-15），不做全局匹配。
+    const resultsList = document.querySelector(".sh-graph-search__results ul") as HTMLElement;
+    expect(within(resultsList).getByRole("button", { name: /PDF Reader/ })).toBeVisible();
+    expect(within(resultsList).getByRole("button", { name: /Doc Reader/ })).toBeVisible();
     expect(calls.candidates.at(-1)).toEqual({ text: "reader", tags: [] });
 
-    await user.click(screen.getByRole("button", { name: /Doc Reader/ }));
+    await user.click(within(resultsList).getByRole("button", { name: /Doc Reader/ }));
     await waitFor(() => {
       expect(screen.getByRole("heading", { name: "Doc Reader" })).toBeVisible();
     });
