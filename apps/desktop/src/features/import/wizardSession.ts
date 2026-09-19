@@ -1,4 +1,4 @@
-import type { ImportCandidate } from "./api";
+import type { ImportCandidate, SourceScanStatus } from "./api";
 
 /**
  * DEV-12：标准导入向导的会话内扫描事实——扫描结果（逐来源候选与状态）、
@@ -12,14 +12,8 @@ export interface WizardSessionSnapshot {
   sources: string[];
   candidates: ImportCandidate[];
   candidatesBySource: Array<{ source: string; candidates: ImportCandidate[] }>;
-  sourceResults: Array<{ source: string; status: ImportCandidateScanStatus }>;
+  sourceResults: Array<{ source: string; status: SourceScanStatus }>;
   selectedIds: string[];
-}
-
-export interface ImportCandidateScanStatus {
-  kind: "unscanned" | "scanning" | "scanned" | "failed";
-  count?: number;
-  reason?: string;
 }
 
 let snapshot: WizardSessionSnapshot | null = null;
