@@ -632,7 +632,7 @@ type: "failed",
     if (standardPreviewKeyRef.current === key) return;
     standardPreviewKeyRef.current = key;
     for (const source of selectedSourcesRef.current) void previewSource(source);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // 挂载时一次性补齐：后续勾选/追加各有自己的即时预览路径。
   }, []);
 
   // 作废当前预览会话：清空请求序号表与预览缓存。在途预览的迟到完成因
