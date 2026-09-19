@@ -287,7 +287,12 @@ export function SkillDetailPage({
     );
   }
 
-  const deploymentCount = summaryQuery.data.agentDeploymentCount + summaryQuery.data.projectDeploymentCount;
+  // DEV-22：状态栏与轨迹的部署关系计数与「关系」区块同源（同一份
+  // get_deployment_relations 查询，仅计活跃关系）。summary 里的计数字段
+  // 是后端未填充的占位 0，此前状态页签恒显 0、与关系页签矛盾。
+  const deploymentCount = relationsQuery.data
+    ? relationsQuery.data.length
+    : summaryQuery.data.agentDeploymentCount + summaryQuery.data.projectDeploymentCount;
 
   return (
     <section className="sh-skill-detail">
@@ -331,7 +336,12 @@ export function SkillDetailPage({
               <h3>{t("skillDetail.navigation.sections.overview")}</h3>
               <p>{summaryQuery.data.purpose}</p>
               <LifecyclePanel summary={summaryQuery.data} />
-              <DetailStatusRail facade={facade} skillId={skillId} summary={summaryQuery.data} />
+              <DetailStatusRail
+                deployments={relationsQuery.data?.length}
+                facade={facade}
+                skillId={skillId}
+                summary={summaryQuery.data}
+              />
             </div>
             <div className="sh-skill-detail__block" id="security">
               <h3>{t("skillDetail.navigation.sections.security")}</h3>

@@ -274,7 +274,7 @@ it("keeps configured and discovered agent calibers distinct inside the combined 
   // 冻结指标把两个口径并列在同一条指标名里（已配置 3 · 已发现 5），不再是
   // 两条独立钻取；口径仍分开命名、分开计数，不混用。
   expect(
-    await screen.findByRole("link", { name: "3 Agents (3 configured · 5 discovered)" }),
+    await screen.findByRole("link", { name: "3 Agents (3 configured targets · 5 discovered)" }),
   ).toBeVisible();
   expect(screen.queryByRole("link", { name: "5 discovered agents" })).not.toBeInTheDocument();
   expect(screen.queryByRole("link", { name: "3 configured agents" })).not.toBeInTheDocument();
@@ -284,7 +284,7 @@ it("drills the combined agent metric into the agent management workspace", async
   await renderOverview();
 
   // 冻结契约：合并后的 Agent 指标统一去 /agents 管理已登记部署目标。
-  const agentMetric = screen.getByRole("link", { name: "3 Agents (3 configured · 5 discovered)" });
+  const agentMetric = screen.getByRole("link", { name: "3 Agents (3 configured targets · 5 discovered)" });
   expect(agentMetric).toHaveAttribute("href", "/agents");
 
   fireEvent.click(agentMetric);
@@ -317,7 +317,7 @@ it("renders each compact stat as a two-line card with a numeric figure and a met
   // 密度结构：数字与指标名是两个可寻址元素，可访问名称仍由二者组成。
   const statsList = screen.getByRole("list", { name: "Key stats" });
   const compactStats = [
-    ["3", "Agents (3 configured · 5 discovered)"],
+    ["3", "Agents (3 configured targets · 5 discovered)"],
     ["2", "Manage projects"],
     ["18", "Skill deployment relations (15 to agents · 3 to projects)"],
     ["2", "Unconfirmed relationship conflicts"],
@@ -416,7 +416,7 @@ it("promotes a single primary metric and turns the rest into compact stats", asy
 
   const statsList = screen.getByRole("list", { name: "Key stats" });
   const compactHrefs = [
-    ["3 Agents (3 configured · 5 discovered)", "/agents"],
+    ["3 Agents (3 configured targets · 5 discovered)", "/agents"],
     ["2 Manage projects", "/projects"],
     [
       "18 Skill deployment relations (15 to agents · 3 to projects)",
@@ -613,7 +613,7 @@ it("shows the pending summary without exposing the recent-operation log", async 
   // 等关系投影落地后再锁定指标带上的冲突项。
   await screen.findByRole("link", { name: "Open conflict workspace (2 unconfirmed conflicts)" });
   const statsList = screen.getByRole("list", { name: "Key stats" });
-  expect(within(statsList).getByRole("link", { name: "3 Agents (3 configured · 5 discovered)" })).toBeVisible();
+  expect(within(statsList).getByRole("link", { name: "3 Agents (3 configured targets · 5 discovered)" })).toBeVisible();
   expect(within(statsList).getByRole("link", { name: "2 Manage projects" })).toBeVisible();
   expect(
     within(statsList).getByRole("link", {
@@ -653,7 +653,7 @@ it("keeps empty and zero-count states legible in the redesigned overview", async
 
   const statsList = screen.getByRole("list", { name: "Key stats" });
   expect(
-    within(statsList).getByRole("link", { name: "0 Agents (0 configured · 0 discovered)" }),
+    within(statsList).getByRole("link", { name: "0 Agents (0 configured targets · 0 discovered)" }),
   ).toBeVisible();
   expect(
     within(statsList).getByRole("link", {

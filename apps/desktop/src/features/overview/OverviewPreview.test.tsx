@@ -64,7 +64,7 @@ it("mounts the deterministic overview preview with deployment, tag, and pending 
   expect(screen.getByRole("heading", { name: "4 pending items" })).toBeVisible();
   // 冻结指标（api.test.ts 锁定）：已配置/已发现合并为一条指标。
   expect(
-    screen.getByRole("link", { name: "3 Agents (3 configured · 5 discovered)" }),
+    screen.getByRole("link", { name: "3 Agents (3 configured targets · 5 discovered)" }),
   ).toBeVisible();
   // 确定性关系事实落地后：冲突指标给出真实计数与钻取（不再是占位符）。
   expect(

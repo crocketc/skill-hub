@@ -595,6 +595,16 @@ describe("Task 7: governed relationship sections", () => {
     agent_execution_confirmed: false,
   };
 
+  it("counts deployment relations on the status rail from the same facts as the relations block", async () => {
+    // DEV-22：状态页签的部署关系计数此前读 summary 的占位 0，与「关系」
+    // 区块（同一页有数据）矛盾；现与关系区块同源同值。
+    await renderDetail();
+
+    const rail = await screen.findByRole("group", { name: "Skill status" });
+    expect(within(rail).getByText("Deployment relations")).toBeVisible();
+    expect(within(rail).getByText("2")).toBeVisible();
+  });
+
   it("renders multi-source provenance and governed deployment relations on the page", async () => {
     await renderDetail({
       facade: createMockSkillDetailFacade({ relationshipOverview: overview }),

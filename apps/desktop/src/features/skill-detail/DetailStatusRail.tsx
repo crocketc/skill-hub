@@ -9,11 +9,14 @@ interface DetailStatusRailProps {
   facade: SkillDetailFacade;
   skillId: string;
   summary: SkillDetailSummary;
+  /** 活跃部署关系数（与「关系」区块同一查询的长度）；缺省回退 summary 汇总。 */
+  deployments?: number;
 }
 
-export function DetailStatusRail({ facade, skillId, summary }: DetailStatusRailProps) {
+export function DetailStatusRail({ deployments: deploymentsOverride, facade, skillId, summary }: DetailStatusRailProps) {
   const { t } = useTranslation();
-  const deployments = summary.agentDeploymentCount + summary.projectDeploymentCount;
+  const deployments = deploymentsOverride
+    ?? summary.agentDeploymentCount + summary.projectDeploymentCount;
   return (
     <div
       aria-label={t("skillDetail.statusRail.label")}

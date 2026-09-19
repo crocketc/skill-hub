@@ -3030,7 +3030,7 @@
         "governanceAria": "Open relationship governance ({{count}} relation edges)"
       },
       "metrics": {
-        "agentsCombined": "Agents ({{configured}} configured · {{discovered}} discovered)",
+        "agentsCombined": "Agents ({{configured}} configured targets · {{discovered}} discovered)",
         "deploymentRelations": "Skill deployment relations ({{agentCount}} to agents · {{projectCount}} to projects)",
         "projectsManage": "Manage projects",
         "skillsTotal": "Total skills",

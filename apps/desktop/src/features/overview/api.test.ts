@@ -122,7 +122,7 @@ it("names the five overview metrics with the frozen zh semantics and counts", as
   expect(metrics.map((metric) => metric.count)).toEqual([12, 3, 2, 18, 2]);
   expect(metrics.map((metric) => metric.name)).toEqual([
     "技能总数",
-    "Agent（已配置 3 个 · 已发现 5 个）",
+    "Agent（已配置部署目标 3 个 · 已发现 5 个）",
     "管理项目",
     "Skill 部署关系（部署到 Agent 15 条 · 项目 3 条）",
     "待确认的关系冲突",
@@ -135,7 +135,7 @@ it("mirrors the frozen metric names in English with the same caliber", async () 
 
   expect(metrics.map((metric) => metric.name)).toEqual([
     "Total skills",
-    "Agents (3 configured · 5 discovered)",
+    "Agents (3 configured targets · 5 discovered)",
     "Manage projects",
     "Skill deployment relations (15 to agents · 3 to projects)",
     "Unconfirmed relationship conflicts",
@@ -212,7 +212,7 @@ it("returns well-defined empty shapes that keep the overview intact without rela
   expect(metrics).toHaveLength(5);
   expect(metrics.map((metric) => metric.name)).toEqual([
     "技能总数",
-    "Agent（已配置 0 个 · 已发现 0 个）",
+    "Agent（已配置部署目标 0 个 · 已发现 0 个）",
     "管理项目",
     "Skill 部署关系（部署到 Agent 0 条 · 项目 0 条）",
     "待确认的关系冲突",

@@ -5,6 +5,7 @@ import { MemoryRouter } from "react-router-dom";
 import { expect, it, vi } from "vitest";
 import { createSkillHubI18n } from "../../i18n";
 import type { DirectoryPicker } from "../../platform/directoryPicker";
+import { notifyDeploymentFactsChanged } from "../../platform/deploymentEvents";
 import { createOperationTracker } from "../../platform/operationTracker";
 import { type AgentFacade, type AgentView } from "./api";
 import { AgentListPage } from "./AgentListPage";
@@ -71,6 +72,19 @@ async function renderListPage(facade: AgentFacade, localeAgents?: AgentView[]) {
     </MemoryRouter>,
   );
 }
+
+it("refreshes the card counts when a deployment commit broadcasts changed facts", async () => {
+  // DEV-22：部署提交成功后 Agent 页此前收不到任何通知，卡片计数停在旧值。
+  // 现在监听部署事实广播并重读列表。
+  const facade = facadeWith();
+  renderListPage(facade);
+  expect(await screen.findByText("2 个 Skill · 5 条部署关系")).toBeVisible();
+  expect(facade.list).toHaveBeenCalledTimes(1);
+
+  notifyDeploymentFactsChanged();
+
+  await waitFor(() => expect(facade.list).toHaveBeenCalledTimes(2));
+});
 
 it("groups agents by brand and refreshes the real discovery facts", async () => {
   const user = userEvent.setup();

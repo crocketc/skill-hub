@@ -2,7 +2,7 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { MotionConfig } from "motion/react";
 import { lazy, Suspense, useEffect, useState, type ReactNode } from "react";
 import { I18nextProvider, useTranslation } from "react-i18next";
-import { createBrowserRouter, RouterProvider, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { createBrowserRouter, RouterProvider, useNavigate, useOutletContext, useParams, useSearchParams } from "react-router-dom";
 import { OnboardingPreview } from "../features/onboarding/OnboardingPreview";
 import { desktopBootstrapRuntime } from "../features/bootstrap/api";
 import { AgentsPreview, AgentDetailPreview } from "../features/agents/AgentsPreview";
@@ -43,6 +43,7 @@ import {
   nativeSkillLibraryFacade,
 } from "../features/skills/nativeApi";
 import { skillLibraryKeys } from "../features/skills/api";
+import { notifyDeploymentFactsChanged } from "../platform/deploymentEvents";
 import { skillHubI18n } from "../i18n";
 import "../features/markdown/markdown.css";
 import "../styles/base.css";
@@ -52,6 +53,7 @@ import "../features/skill-detail/skill-detail.css";
 import "../features/relationships/relationships.css";
 import { ThemeProvider, useTheme } from "../styles/ThemeProvider";
 import { DesktopApp } from "./App";
+import type { BootstrapOutletContext } from "./AppShell";
 import { queryClient } from "./queryClient";
 import { DataState } from "../ui/DataState";
 
@@ -184,6 +186,9 @@ function ProjectListRoute() {
 function DeploymentRoute() {
   const { skillId } = useParams();
   const effectiveSkillId = skillId ?? "unknown";
+  // DEV-22：概览读启动期快照（无 query key），部署提交成功后经 outlet 的
+  // refreshSnapshot 拉新，保证概览指标与关系页一致。
+  const { refreshSnapshot } = useOutletContext<BootstrapOutletContext>();
   return (
     <RouteSuspense>
     <DeploymentDialog
@@ -193,7 +198,10 @@ function DeploymentRoute() {
             queryClient.invalidateQueries({ queryKey: skillLibraryKeys.root }),
             queryClient.invalidateQueries({ queryKey: skillDetailKeys.relations(effectiveSkillId) }),
             queryClient.invalidateQueries({ queryKey: skillDetailKeys.summary(effectiveSkillId) }),
+            queryClient.invalidateQueries({ queryKey: skillDetailKeys.relationship(effectiveSkillId) }),
+            refreshSnapshot(),
           ]);
+          notifyDeploymentFactsChanged();
         }
       }}
       skillId={effectiveSkillId}
@@ -206,10 +214,25 @@ function DeploymentRoute() {
 function BatchDeploymentRoute() {
   const [searchParams] = useSearchParams();
   const skillIds = [...new Set(searchParams.getAll("skill").filter(Boolean))];
+  const { refreshSnapshot } = useOutletContext<BootstrapOutletContext>();
   return <RouteSuspense><BatchDeploymentPage
     onCommitted={(results) => {
-      if (results.some((result) => result.status === "succeeded")) {
-        void queryClient.invalidateQueries({ queryKey: skillLibraryKeys.root });
+      const succeededSkillIds = [...new Set(results
+        .filter((result) => result.status === "succeeded")
+        .map((result) => result.skillId))];
+      if (succeededSkillIds.length > 0) {
+        // DEV-22：批量此前只失效技能库——详情页状态计数、关系概览、概览
+        // 快照与 Agent 页全部收不到通知，提交后各视图计数不一致。
+        void Promise.all([
+          queryClient.invalidateQueries({ queryKey: skillLibraryKeys.root }),
+          ...succeededSkillIds.flatMap((succeededSkillId) => [
+            queryClient.invalidateQueries({ queryKey: skillDetailKeys.relations(succeededSkillId) }),
+            queryClient.invalidateQueries({ queryKey: skillDetailKeys.summary(succeededSkillId) }),
+            queryClient.invalidateQueries({ queryKey: skillDetailKeys.relationship(succeededSkillId) }),
+          ]),
+          refreshSnapshot(),
+        ]);
+        notifyDeploymentFactsChanged();
       }
     }}
     skillIds={skillIds}

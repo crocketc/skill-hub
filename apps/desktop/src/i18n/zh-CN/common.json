@@ -3030,7 +3030,7 @@
         "governanceAria": "打开关系治理（{{count}} 条关系边）"
       },
       "metrics": {
-        "agentsCombined": "Agent（已配置 {{configured}} 个 · 已发现 {{discovered}} 个）",
+        "agentsCombined": "Agent（已配置部署目标 {{configured}} 个 · 已发现 {{discovered}} 个）",
         "deploymentRelations": "Skill 部署关系（部署到 Agent {{agentCount}} 条 · 项目 {{projectCount}} 条）",
         "projectsManage": "管理项目",
         "skillsTotal": "技能总数",
