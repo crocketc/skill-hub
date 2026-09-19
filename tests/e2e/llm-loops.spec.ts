@@ -73,7 +73,7 @@ test("the import wizard offers an optional AI pre-check with per-object outcomes
 
   // 走真实向导步骤到冲突处理阶段：来源 → 候选 → 冲突分析。
   await page.getByLabel("Source", { exact: true }).fill("C:/skills/fixture");
-  await page.getByRole("button", { name: "Parse source" }).click();
+  await page.getByRole("button", { name: "Read candidates from this source" }).click();
   await page.getByRole("button", { name: "Continue to candidate selection" }).click();
   await page.getByRole("button", { name: "Select all importable candidates" }).click();
   await page.getByRole("button", { name: "Analyze conflicts" }).click();

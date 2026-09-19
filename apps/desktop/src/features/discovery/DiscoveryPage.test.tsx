@@ -244,7 +244,7 @@ it("reports committed imports and lets the user open the refreshed library", asy
 
   await user.click(screen.getAllByRole("button", { name: "Import Skill" })[0]);
   await user.type(screen.getByLabelText("Source"), "C:\\Skills");
-  await user.click(screen.getByRole("button", { name: "Parse source" }));
+  await user.click(screen.getByRole("button", { name: "Read candidates from this source" }));
   await user.click(await screen.findByRole("button", { name: "Continue to candidate selection" }));
   await user.click(screen.getByRole("checkbox", { name: /PDF/ }));
   await user.click(screen.getByRole("button", { name: "Analyze conflicts" }));

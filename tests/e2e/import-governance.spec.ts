@@ -45,7 +45,7 @@ test("routes the import through the governance phase before conflicts", async ({
   await expect(page.getByText("通用目录直接读取")).toBeVisible();
   await expect(page.getByText("同名不同内容")).toBeVisible();
   await expect(
-    page.getByText("1 个 Skill 将导入集中库。受影响 Agent：trae.code。"),
+    page.getByText("1 个 Skill 将导入集中库。受影响 Agent：Trae。"),
   ).toBeVisible();
   await expect(
     page.getByText("回退方式：共享目录原件不会被本操作修改。"),
