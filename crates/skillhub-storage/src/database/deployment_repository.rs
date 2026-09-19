@@ -60,38 +60,84 @@ impl<'a> DeploymentRepositorySqlite<'a> {
 
     /// Synchronous write used by filesystem-backed application operations.
     /// The caller already serializes access to the open database connection.
-    pub fn insert_sync(&self, deployment: &DeploymentRecord) -> AppResult<()> {
+    ///
+    /// One `(target_id, runtime_name)` position holds exactly one row. Removing
+    /// a deployment only marks that row `removed`, so adding the same Skill to
+    /// the same Agent again must reactivate it: a plain insert would hit the
+    /// table's `UNIQUE(target_id, runtime_name)` constraint and strand the
+    /// directory that was already written to disk. The existing row keeps its
+    /// id so relationship keys (`managed:<deployment id>`) stay stable.
+    ///
+    /// Returns the id the row actually carries, which the caller must use for
+    /// anything that points back at this deployment.
+    pub fn insert_sync(&self, deployment: &DeploymentRecord) -> AppResult<DeploymentId> {
         let transaction = self
             .database
             .connection
             .unchecked_transaction()
             .map_err(database_error)?;
-        transaction
-            .execute(
-                "INSERT INTO deployments (id,skill_id,version_id,target_id,state,method,managed,runtime_name,expected_hash,observed_hash,created_at,updated_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?11)",
-                params![
-                    deployment.id.to_string(),
-                    deployment.skill_id.to_string(),
-                    deployment.version_id.to_string(),
-                    deployment.target_id,
-                    state_code(deployment.state),
-                    mode_code(deployment.mode),
-                    i64::from(deployment.managed),
-                    deployment.runtime_name,
-                    deployment.expected_hash,
-                    deployment.observed_hash,
-                    now(),
-                ],
+        let existing_id = transaction
+            .query_row(
+                "SELECT id FROM deployments WHERE target_id=?1 AND runtime_name=?2",
+                params![deployment.target_id, deployment.runtime_name],
+                |row| row.get::<_, String>(0),
             )
+            .optional()
             .map_err(database_error)?;
+        let effective_id = match existing_id.as_deref() {
+            Some(id) => id.parse().map_err(|_| invalid_record())?,
+            None => deployment.id,
+        };
+        let mut effective = deployment.clone();
+        effective.id = effective_id;
+        if existing_id.is_some() {
+            transaction
+                .execute(
+                    "UPDATE deployments SET skill_id=?1,version_id=?2,target_id=?3,state=?4,method=?5,managed=?6,runtime_name=?7,expected_hash=?8,observed_hash=?9,updated_at=?10 WHERE id=?11",
+                    params![
+                        effective.skill_id.to_string(),
+                        effective.version_id.to_string(),
+                        effective.target_id,
+                        state_code(effective.state),
+                        mode_code(effective.mode),
+                        i64::from(effective.managed),
+                        effective.runtime_name,
+                        effective.expected_hash,
+                        effective.observed_hash,
+                        now(),
+                        effective_id.to_string(),
+                    ],
+                )
+                .map_err(database_error)?;
+        } else {
+            transaction
+                .execute(
+                    "INSERT INTO deployments (id,skill_id,version_id,target_id,state,method,managed,runtime_name,expected_hash,observed_hash,created_at,updated_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?11)",
+                    params![
+                        effective_id.to_string(),
+                        effective.skill_id.to_string(),
+                        effective.version_id.to_string(),
+                        effective.target_id,
+                        state_code(effective.state),
+                        mode_code(effective.mode),
+                        i64::from(effective.managed),
+                        effective.runtime_name,
+                        effective.expected_hash,
+                        effective.observed_hash,
+                        now(),
+                    ],
+                )
+                .map_err(database_error)?;
+        }
         let relationship_changed = self
             .database
             .relationship_repository()
-            .sync_managed_deployment_tx(&transaction, deployment)?;
+            .sync_managed_deployment_tx(&transaction, &effective)?;
         if relationship_changed {
             super::relationship_repository::bump_relationship_revision_tx(&transaction)?;
         }
-        transaction.commit().map_err(database_error)
+        transaction.commit().map_err(database_error)?;
+        Ok(effective_id)
     }
 
     pub fn mark_removed_sync(&self, id: DeploymentId) -> AppResult<()> {
@@ -207,7 +253,7 @@ impl<'a> DeploymentRepositorySqlite<'a> {
 #[async_trait(?Send)]
 impl DeploymentRepositoryPort for DeploymentRepositorySqlite<'_> {
     async fn insert(&self, deployment: &DeploymentRecord) -> AppResult<()> {
-        self.insert_sync(deployment)
+        self.insert_sync(deployment).map(|_| ())
     }
 
     async fn get(&self, id: DeploymentId) -> AppResult<Option<DeploymentRecord>> {

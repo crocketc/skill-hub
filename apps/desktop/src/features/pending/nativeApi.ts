@@ -42,6 +42,16 @@ async function createPendingIgnoreRule(item: PendingItem, reason: string, deferU
   }
 }
 
+/**
+ * 处置一条「需要恢复」的待办：走 `resolve_recovery` 的回滚动作，与恢复页一致。
+ * `acknowledge_recovery` 在应用层没有实现分支，用它只会拿到 `internal.error`，
+ * 待办项永远处置不掉。
+ */
+async function resolveRecoverableOperation(operationId: string): Promise<void> {
+  const result = await executeCommand({ type: "resolve_recovery", payload: { operation_id: operationId, action: "rollback_operation" } });
+  if (result.type !== "operation_summary") throw new Error("recovery resolution returned an unexpected result");
+}
+
 export const nativePendingFacade: PendingFacade = {
   async list() {
     const result = await queryApplication({ type: "list_pending_items", payload: null });
@@ -58,7 +68,7 @@ export const nativePendingFacade: PendingFacade = {
       return;
     }
     if (item.kind === "recovery") {
-      await executeCommand({ type: "acknowledge_recovery", payload: { operation_id: item.subject } });
+      await resolveRecoverableOperation(item.subject);
       return;
     }
     await executeCommand({ type: "set_lifecycle", payload: { skill_id: item.subject, lifecycle: "Archived" } });
@@ -75,7 +85,7 @@ export const nativePendingFacade: PendingFacade = {
     await nativePendingFacade.resolve(item);
   },
   async recover(item) {
-    await executeCommand({ type: "acknowledge_recovery", payload: { operation_id: item.subject } });
+    await resolveRecoverableOperation(item.subject);
   },
   async defer(items, days, reason) {
     const deferUntil = localDateDaysFromNow(days);

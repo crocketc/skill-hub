@@ -1986,7 +1986,7 @@
     "actions": {
       "recheck": "Recheck",
       "convert": "Make regular",
-      "recover": "Acknowledge recovery",
+      "recover": "Confirm recovery",
       "defer": "Defer",
       "ignore": "Ignore",
       "deferReason": "Deferred for {{days}} days; remind me when it is due",
@@ -2036,10 +2036,17 @@
   },
   "recovery": {
     "eyebrow": "Recovery",
-    "heading": "Finish the interrupted operation",
-    "description": "Review the operation state before acknowledging recovery and continuing.",
+    "heading": "Recover the unfinished operation",
+    "description": "The last operation did not finish and may have been written halfway. Confirming recovery makes SkillHub undo that unfinished change and put things back the way they were.",
     "loading": "Loading recovery state",
-    "acknowledge": "Acknowledge recovery",
+    "acknowledge": "Confirm recovery",
+    "noCandidates": "Nothing needs recovery right now.",
+    "candidatesHeading": "Operations requiring recovery",
+    "candidateLabel": "Select operation {{id}}",
+    "resolved": "Recovered: the unfinished change has been undone.",
+    "errors": {
+      "generic": "Recovery failed (error code: {{code}}). Retry; if it keeps failing, pass the code to support."
+    },
     "tabs": {
       "records": "Operation records",
       "backupRestore": "Backup & restore",
@@ -2523,7 +2530,7 @@
       "verifying": "Verifying",
       "committed": "Committed",
       "needs_recovery": "Needs recovery",
-      "rolled_back": "Rolled back"
+      "rolled_back": "Undone"
     },
     "tracker": {
       "ariaLabel": "Background operations",
@@ -3072,6 +3079,12 @@
       "noDeployments": "No deployment relations are registered.",
       "selectDeployment": "Select deployment relation {{id}}",
       "deploymentLabel": "{{id}}: {{skill_id}} → {{target_id}} ({{state}})",
+      "deploymentState": {
+        "planned": "planned",
+        "deployed": "deployed",
+        "removed": "removed",
+        "needs_recovery": "needs recovery"
+      },
       "preview": "Preview impact",
       "apply": "Apply selected actions",
       "impactSummary": "{{count}} deployment relations are affected.",

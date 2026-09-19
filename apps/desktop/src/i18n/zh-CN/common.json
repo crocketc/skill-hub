@@ -2036,10 +2036,17 @@
   },
   "recovery": {
     "eyebrow": "恢复",
-    "heading": "完成中断的操作",
-    "description": "确认操作状态后，再确认恢复并继续。",
+    "heading": "恢复未完成的操作",
+    "description": "上次的操作没有走完，可能已经写了一半。确认恢复后，SkillHub 会撤销这次未完成的改动，让它回到操作前的状态。",
     "loading": "正在加载恢复状态",
     "acknowledge": "确认恢复",
+    "noCandidates": "当前没有需要恢复的操作。",
+    "candidatesHeading": "需要恢复的操作",
+    "candidateLabel": "选择操作 {{id}}",
+    "resolved": "已恢复：这次未完成的改动已撤销。",
+    "errors": {
+      "generic": "恢复失败（错误码：{{code}}）。请重试；若持续失败，请把该错误码提供给支持人员。"
+    },
     "tabs": {
       "records": "操作记录",
       "backupRestore": "备份恢复",
@@ -2523,7 +2530,7 @@
       "verifying": "验证中",
       "committed": "已提交",
       "needs_recovery": "需要恢复",
-      "rolled_back": "已回滚"
+      "rolled_back": "已撤销"
     },
     "tracker": {
       "ariaLabel": "后台操作",
@@ -3072,6 +3079,12 @@
       "noDeployments": "当前没有部署关系。",
       "selectDeployment": "选择部署关系 {{id}}",
       "deploymentLabel": "{{id}}：{{skill_id}} → {{target_id}}（{{state}}）",
+      "deploymentState": {
+        "planned": "计划中",
+        "deployed": "已部署",
+        "removed": "已移除",
+        "needs_recovery": "待恢复"
+      },
       "preview": "预览影响",
       "apply": "应用所选动作",
       "impactSummary": "将影响 {{count}} 个部署关系。",

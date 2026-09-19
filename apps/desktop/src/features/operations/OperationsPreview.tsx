@@ -80,7 +80,8 @@ export function OperationProgressPreview() {
       total: 1,
       message: "import.finished",
     }),
-    acknowledgeRecovery: async () => undefined,
+    listRecoveryCandidates: async () => [],
+    resolveRecovery: async () => undefined,
   }), []);
   return (
     <div className="sh-workflow-page">

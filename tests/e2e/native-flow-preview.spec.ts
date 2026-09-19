@@ -135,6 +135,10 @@ async function installNativePreview(page: Page) {
           case "list_skill_operations": return ok("skill_operations", skillOperations);
           case "diff_versions": return ok("version_diff", { added: ["new section"], changed: ["SKILL.md"], removed: [] });
           case "check_source_updates": return ok("source_update_checks", [{ skill_id: "pdf-reader", state: "update_available" }]);
+          // 恢复候选走的是 **查询**（`queryApplication { type: "list_recovery_candidates" }`），
+          // 不是命令；写在下面 execute_command 分支里等于没接线，恢复页只能拿到
+          // default 的 bootstrap_snapshot，于是整页落进错误态。
+          case "list_recovery_candidates": return ok("recovery_candidates", []);
           // 任务 9 冻结指标带（任务 10 接线）：概览冲突计数与三个关系缩略
           // 入口消费任务 1/2/3 只读查询；真实产品路由（"/"）同样需要确定性
           // 关系事实，才能在无 Tauri 后端的浏览器里呈现冻结契约。
@@ -194,11 +198,10 @@ async function installNativePreview(page: Page) {
           case "commit_restore": return ok("restore_result", { skills_restored: 1, skills_skipped: 0, deployments_requiring_rediscovery: 0 });
           case "prepare_standard_export": return ok("export_plan", { selection: { skills: ["pdf-reader"] }, versions: "current", skills: [{ skill_id: "pdf-reader", version_id: "v1", content: "# PDF", display_name: "PDF Reader" }], sensitive_items: [{ skill_id: "pdf-reader", reason: "contains credential-like content" }] });
           case "create_standard_export": return ok("export_result", { path: "C:/Preview/skillhub-export.zip", skills_exported: 1 });
-          case "list_recovery_candidates": return ok("recovery_candidates", []);
-          case "acknowledge_recovery": return ok("operation_summary", operationSummary);
+          case "resolve_recovery": return ok("operation_summary", operationSummary);
           case "set_ui_preference": return ok("operation_summary", operationSummary);
           case "prepare_deployment": return ok("prepared_deployment", { id: "prepared-deploy-1", operation_id: "op-deploy-1", plan: args.command.payload.plan });
-          case "commit_deployment": return ok("deployment_summary", { operation_id: "op-deploy-1", skill_id: args.command.payload.prepared_deployment_id, version_id: "v1", committed: true, targets: [{ logical_target_ids: ["codex-target"], physical_target_id: "codex-physical", status: "succeeded", error_code: null }] });
+          case "commit_deployment": return ok("deployment_summary", { operation_id: "op-deploy-1", skill_id: args.command.payload.prepared_deployment_id, version_id: "v1", committed: true, targets: [{ logical_target_ids: ["codex-target"], physical_target_id: "codex-physical", status: "succeeded", error_code: null, residue: false }] });
           case "check_source_update": return ok("upstream_check_result", { skill_id: "pdf-reader", state: "update_available", local_version: "v1", upstream_version: "v2", upstream_label: "v2.0.0" });
           case "apply_source_update": return ok("applied_source_update", { skill_id: "pdf-reader", decision: args.command.payload.decision, new_version: args.command.payload.decision === "take_upstream" ? "v2" : null, deployments_need_reconciliation: false });
           case "relink_source":
@@ -380,7 +383,7 @@ test("pending, recovery, and security routes expose state boundaries", async ({ 
   // 2026-09-17 顶栏标题降级为非 heading（基线回归 §5.4）：恢复页经页面自身
   // 标题（recovery.heading）断言，不再依赖顶栏 h1 的子串匹配。
   await expect(
-    page.getByRole("heading", { name: "Finish the interrupted operation" }),
+    page.getByRole("heading", { name: "Recover the unfinished operation" }),
   ).toBeVisible();
   await page.getByRole("tab", { name: "Backup & restore" }).click();
   await expect(page.getByText(/full backup\/restore flow/i)).toBeVisible();

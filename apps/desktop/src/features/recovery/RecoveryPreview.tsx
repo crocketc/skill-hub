@@ -44,7 +44,8 @@ export function RecoveryPreview() {
       total: 1,
       message: "deployment.target_conflict",
     }),
-    acknowledgeRecovery: async () => undefined,
+    listRecoveryCandidates: async () => (previewFlag("empty") ? [] : [{ operationId: "op-deploy-9", actions: ["rollback_operation"] }]),
+    resolveRecovery: async () => undefined,
   }), []);
   const recent = useMemo<RecentOperationsReader>(() => (
     previewFlag("error")

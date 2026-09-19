@@ -101,6 +101,16 @@ impl PendingSummary {
     }
 }
 
+/// 一条操作记录里的目标级结果。用户看到的失败不能只是错误码：必须能回答
+/// 「哪个目标、哪个路径出了问题」。
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+pub struct RecentOperationTarget {
+    pub physical_target_id: String,
+    /// 失败时我们有理由认为出了问题的目标路径；成功或未知时为空。
+    pub path: Option<String>,
+    pub error_code: Option<String>,
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 pub struct RecentOperationSummary {
     pub operation_id: OperationId,
@@ -109,6 +119,8 @@ pub struct RecentOperationSummary {
     pub phase: OperationPhase,
     pub error_code: Option<String>,
     pub created_at: String,
+    /// 目标级明细；仅带目标结果的操作（当前为部署类）非空。
+    pub targets: Vec<RecentOperationTarget>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize, specta::Type)]

@@ -9,13 +9,13 @@ import type { DeploymentRecord, VersionResult } from "../../api/bindings";
 import type { BackupFacade } from "./api";
 import { DataProtectionPage } from "./DataProtectionPage";
 
-function deploymentRecord(id: string, skillId: string): DeploymentRecord {
+function deploymentRecord(id: string, skillId: string, state: DeploymentRecord["state"] = "deployed"): DeploymentRecord {
   return {
     id,
     skill_id: skillId,
     version_id: `${skillId}-v1`,
     target_id: `target-${id}`,
-    state: "deployed",
+    state,
     mode: "symbolic_link",
     managed: true,
     runtime_name: skillId,
@@ -292,6 +292,24 @@ describe("DataProtectionPage", () => {
 
     expect(await screen.findByRole("alert")).toHaveTextContent("deployments unavailable");
     expect(screen.queryByLabelText("Select deployment relation dep-1")).not.toBeInTheDocument();
+  });
+
+  /**
+   * 退出管理列出的是**仍然存在**的部署关系。`removed` 行只是账目历史，磁盘上
+   * 已经没有这个副本，列出来会让用户去处置一个并不存在的关系；状态也要说人话，
+   * 不能把裸枚举值直接显示出来。
+   */
+  it("lists only deployments that still exist and names their state in the UI language", async () => {
+    const facade = createFacade();
+    facade.listDeployments = vi.fn().mockResolvedValue([
+      deploymentRecord("dep-live", "skill-live"),
+      deploymentRecord("dep-gone", "skill-gone", "removed"),
+    ]);
+    renderPage(facade);
+
+    expect(await screen.findByLabelText("Select deployment relation dep-live")).toBeVisible();
+    expect(screen.queryByLabelText("Select deployment relation dep-gone")).not.toBeInTheDocument();
+    expect(screen.getByText(/dep-live: skill-live → target-dep-live \(deployed\)/)).toBeVisible();
   });
 });
 

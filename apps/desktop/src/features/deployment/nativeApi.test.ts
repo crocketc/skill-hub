@@ -81,6 +81,7 @@ it("maps a native plan and commits through prepare then commit", async () => {
         deployment_id: null,
         version_id: "v1",
         error_code: "deployment.target_exists",
+        residue: false,
         error: {
           code: "deployment.target_exists",
           severity: "error",

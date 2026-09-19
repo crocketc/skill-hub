@@ -3,6 +3,7 @@ import { fireEvent } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import userEvent from "@testing-library/user-event";
 import { I18nextProvider } from "react-i18next";
+import { expect, it, vi } from "vitest";
 import { createSkillHubI18n } from "../../i18n";
 import { RecoveryPage } from "./RecoveryPage";
 import type { OperationFacade, OperationState } from "../operations/api";
@@ -15,24 +16,35 @@ const operation: OperationState = {
   message: "deployment.target_conflict",
 };
 
-const facade: OperationFacade = {
-  async get() {
-    return operation;
-  },
-  async acknowledgeRecovery() {
-    return;
-  },
-};
+function createFacade(overrides: Partial<OperationFacade> = {}): OperationFacade {
+  return {
+    async get() {
+      return operation;
+    },
+    async listRecoveryCandidates() {
+      return [{ operationId: "op-recover", actions: ["complete_operation", "rollback_operation"] }];
+    },
+    async resolveRecovery() {
+      return;
+    },
+    ...overrides,
+  };
+}
 
-async function renderPage() {
+async function renderPage(facade: OperationFacade = createFacade()) {
   const i18n = await createSkillHubI18n(["zh-CN"]);
-  return render(
-    <I18nextProvider i18n={i18n}>
-      <MemoryRouter>
-        <RecoveryPage facade={facade} />
-      </MemoryRouter>
-    </I18nextProvider>,
-  );
+  // 页面挂载后会立刻去读候选与选中项，用 act 包住渲染才不会留下更新警告。
+  let result: ReturnType<typeof render> | undefined;
+  await act(async () => {
+    result = render(
+      <I18nextProvider i18n={i18n}>
+        <MemoryRouter>
+          <RecoveryPage facade={facade} />
+        </MemoryRouter>
+      </I18nextProvider>,
+    );
+  });
+  return result as ReturnType<typeof render>;
 }
 
 it("defaults to the operation records tab", async () => {
@@ -51,15 +63,67 @@ it("switches to the backup & restore tab and keeps the recovery confirmation the
   expect(screen.getByRole("button", { name: "确认恢复" })).toBeVisible();
 });
 
-it("acknowledges recovery from the backup & restore tab", async () => {
+/**
+ * 恢复闸门列出**全部**候选：只认「最新一条」会让 UI 在候选不是最新那条时
+ * 无路可走，应用就永久卡在恢复页。
+ */
+it("lists every recovery candidate so the gate always has an exit", async () => {
   const user = userEvent.setup();
-  await renderPage();
+  await renderPage(createFacade({
+    async listRecoveryCandidates() {
+      return [
+        { operationId: "op-first", actions: ["rollback_operation"] },
+        { operationId: "op-second", actions: ["rollback_operation"] },
+      ];
+    },
+  }));
+
+  await user.click(screen.getByRole("tab", { name: "备份恢复" }));
+  expect(screen.getByLabelText("选择操作 op-first")).toBeVisible();
+  expect(screen.getByLabelText("选择操作 op-second")).toBeVisible();
+});
+
+it("recovers the selected candidate through resolve_recovery", async () => {
+  const user = userEvent.setup();
+  const resolveRecovery = vi.fn(async () => undefined);
+  await renderPage(createFacade({ resolveRecovery }));
 
   await user.click(screen.getByRole("tab", { name: "备份恢复" }));
   await act(async () => {
     await user.click(screen.getByRole("button", { name: "确认恢复" }));
   });
-  expect(screen.getByText("已回滚")).toBeVisible();
+
+  expect(resolveRecovery).toHaveBeenCalledWith("op-recover", "rollback_operation");
+  expect(screen.getByRole("status")).toHaveTextContent("已恢复");
+});
+
+it("reports a failed recovery readably instead of rendering [object Object]", async () => {
+  const user = userEvent.setup();
+  await renderPage(createFacade({
+    async resolveRecovery() {
+      // Tauri IPC 的 rejection 是结构化对象，不是 Error 实例。
+      throw { code: "operation.conflict", severity: "error", params: { field: "recovery_candidate" }, actions: ["retry"] };
+    },
+  }));
+
+  await user.click(screen.getByRole("tab", { name: "备份恢复" }));
+  await act(async () => {
+    await user.click(screen.getByRole("button", { name: "确认恢复" }));
+  });
+
+  const message = screen.getByRole("status");
+  expect(message).toHaveTextContent("恢复失败");
+  expect(message).toHaveTextContent("operation.conflict");
+  expect(message).not.toHaveTextContent("[object Object]");
+});
+
+it("says so plainly when nothing needs recovery", async () => {
+  const user = userEvent.setup();
+  await renderPage(createFacade({ async listRecoveryCandidates() { return []; } }));
+
+  await user.click(screen.getByRole("tab", { name: "备份恢复" }));
+  expect(screen.getByText("当前没有需要恢复的操作。")).toBeVisible();
+  expect(screen.queryByRole("button", { name: "确认恢复" })).not.toBeInTheDocument();
 });
 
 it("wires each tab to its panel with aria-controls and roving tabindex", async () => {

@@ -287,8 +287,17 @@ async fn a_failed_create_skill_is_a_terminal_rolled_back_record_without_recovery
     );
 }
 
+/// A commit that fails *before* anything reaches the target directory must settle
+/// as `rolled_back`, not `needs_recovery`.
+///
+/// This used to assert `needs_recovery` for every failure that was not
+/// `ObjectNotFound`, which meant a plain rejected add gated the next launch
+/// (see R-10 in 人工验收清单-2026-09-18).  `needs_recovery` is now reserved for
+/// residue the app could not clean up on its own — here the backend never wrote
+/// a byte, so there is nothing for the user to decide.  The retry contract on
+/// the same prepared record is unchanged and is asserted below.
 #[tokio::test]
-async fn a_failed_deployment_commit_is_recoverable_and_retry_updates_the_same_record() {
+async fn a_failed_deployment_commit_rolls_back_cleanly_and_retry_reuses_the_record() {
     let database = Database::open_in_memory().expect("database");
     let skill = Skill::new(skillhub_core::SkillId::new(), "Retryable");
     database
@@ -378,16 +387,17 @@ async fn a_failed_deployment_commit_is_recoverable_and_retry_updates_the_same_re
     let failed_record = operations
         .iter()
         .find(|record| record.operation_id == prepared.id)
-        .expect("failed commit must mark the record recoverable");
-    assert_eq!(failed_record.state, "needs_recovery");
-    assert_eq!(failed_record.phase, OperationPhase::NeedsRecovery);
+        .expect("failed commit must settle the prepared record");
+    assert_eq!(failed_record.state, "rolled_back");
+    assert_eq!(failed_record.phase, OperationPhase::RolledBack);
     assert!(
         failed_record.error_code.is_some(),
-        "recoverable failures must carry an error code"
+        "failures must carry an error code even when they roll back cleanly"
     );
     assert_eq!(
         recovery_state(&facade).await,
-        StartupRecoveryState::NeedsRecovery
+        StartupRecoveryState::Clean,
+        "a failure that left no residue must not gate the next launch"
     );
 
     std::fs::create_dir_all(&missing_parent).expect("repair target");

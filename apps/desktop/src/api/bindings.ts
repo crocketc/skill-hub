@@ -2185,6 +2185,19 @@ export type RecentOperationSummary = {
 	phase: OperationPhase,
 	error_code: string | null,
 	created_at: string,
+	/**  目标级明细；仅带目标结果的操作（当前为部署类）非空。 */
+	targets: RecentOperationTarget[],
+};
+
+/**
+ *  一条操作记录里的目标级结果。用户看到的失败不能只是错误码：必须能回答
+ *  「哪个目标、哪个路径出了问题」。
+ */
+export type RecentOperationTarget = {
+	physical_target_id: string,
+	/**  失败时我们有理由认为出了问题的目标路径；成功或未知时为空。 */
+	path: string | null,
+	error_code: string | null,
 };
 
 export type RecheckBasic = {
@@ -3319,6 +3332,12 @@ export type TargetOperationResult = {
 	 *  remains for wire compatibility with older clients.
 	 */
 	error: TargetOperationError | null,
+	/**
+	 *  Whether this failure left something behind at the target that only the
+	 *  user can settle. A failure the backend fully undid needs no decision;
+	 *  only residue justifies sending the operation to the recovery entry.
+	 */
+	residue: boolean,
 };
 
 export type TargetOperationStatus = "succeeded" | "failed";

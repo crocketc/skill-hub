@@ -43,6 +43,7 @@ const overviewSnapshot: BootstrapSnapshot = {
       operation_id: "operation-1",
       phase: "committed",
       state: "completed",
+      targets: [],
     },
   ],
   recovery_state: "clean",

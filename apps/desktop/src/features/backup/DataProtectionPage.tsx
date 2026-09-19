@@ -106,6 +106,9 @@ export function DataProtectionPage({
   const [uninstallResult, setUninstallResult] = useState<OperationSummary>();
   const [error, setError] = useState<string>();
   const [busy, setBusy] = useState(false);
+  // 「退出管理」列出的是仍然存在的部署关系：`removed` 行只是账目历史，磁盘上
+  // 已经没有对应副本了，列出来会让用户去处置一个并不存在的关系。
+  const visibleDeployments = deployments?.filter((deployment) => deployment.state !== "removed") ?? [];
 
   const run = async (action: () => Promise<void>) => {
     setBusy(true);
@@ -347,9 +350,9 @@ export function DataProtectionPage({
         <p className="sh-settings-note">{t("backup.uninstall.scenario")}</p>
         {deploymentError ? <p role="alert">{deploymentError}</p> : null}
         {deployments ? (
-          deployments.length === 0
+          visibleDeployments.length === 0
             ? <p>{t("backup.uninstall.noDeployments")}</p>
-            : deployments.map((deployment) => (
+            : visibleDeployments.map((deployment) => (
               <label key={deployment.id}>
                 <input
                   aria-label={t("backup.uninstall.selectDeployment", { id: deployment.id })}
@@ -357,7 +360,7 @@ export function DataProtectionPage({
                   onChange={() => toggleDeploymentSelection(deployment.id)}
                   type="checkbox"
                 />
-                {t("backup.uninstall.deploymentLabel", deployment)}
+                {t("backup.uninstall.deploymentLabel", { ...deployment, state: t(`backup.uninstall.deploymentState.${deployment.state}`) })}
               </label>
             ))
         ) : !deploymentError ? <p role="status">{t("backup.uninstall.loadingDeployments")}</p> : null}

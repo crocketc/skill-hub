@@ -19,7 +19,7 @@ pub use external_link::{ExternalLinkService, ExternalUrlOpener, SystemExternalUr
 use skillhub_adapters::agent::discovery::{DiscoverAgents, DiscoveryRoots};
 use skillhub_adapters::app_update::github_releases::GithubReleaseProvider;
 use skillhub_adapters::credentials::{OsCredentialStore, SessionCredentialStore};
-use skillhub_adapters::deployment::{DeploymentFilesystem, OwnershipProof};
+use skillhub_adapters::deployment::{AppliedTarget, DeploymentFilesystem, OwnershipProof};
 use skillhub_adapters::import::SkillDetector;
 use skillhub_adapters::llm::HttpLlmTaskRunner;
 use skillhub_adapters::scanner::ScanService;
@@ -519,17 +519,80 @@ impl DeploymentBackend for LocalDeploymentBackend {
             mode: target.mode,
             managed: true,
             runtime_name: target.runtime_name.clone(),
-            expected_hash: applied.ownership.expected_hash,
-            observed_hash: Some(applied.observed_tree_hash),
+            expected_hash: applied.ownership.expected_hash.clone(),
+            observed_hash: Some(applied.observed_tree_hash.clone()),
         };
-        let database = self.database.lock().map_err(|_| {
-            AppError::new(ErrorCode::InternalError, Severity::Error)
-                .with_param("operation", "execute.commit_deployment")
-                .with_action(RecoveryAction::Retry)
-        })?;
+        match self.persist_target(target, &record) {
+            Ok(id) => Ok(DeploymentRecord { id, ..record }),
+            // Undo the write when the accounting row cannot be created: a tree
+            // with no row is invisible to every query and to the reconciler
+            // (which needs a known deployment id), so it would sit in the
+            // user's Agent directory with no way to find or clean it up.
+            Err(error) => Err(self.roll_back_applied(&applied, error)),
+        }
+    }
+}
+
+impl LocalDeploymentBackend {
+    /// Writes the accounting row for a target that is already on disk, and
+    /// returns the id the row actually carries.  `insert_sync` reuses the row
+    /// that already owns this `(target, runtime_name)` position, so the
+    /// returned id can differ from the freshly generated one.
+    fn persist_target(
+        &self,
+        target: &TargetPlan,
+        record: &DeploymentRecord,
+    ) -> AppResult<skillhub_core::DeploymentId> {
+        let database = self
+            .database
+            .lock()
+            .map_err(|_| internal("execute.commit_deployment"))?;
         Self::ensure_targets_row(&database, target)?;
-        database.deployment_repository().insert_sync(&record)?;
-        Ok(record)
+        database.deployment_repository().insert_sync(record)
+    }
+
+    /// Undoes a written target after its accounting row failed.  Reports
+    /// `residue` on the error so the caller can tell "fully rolled back" apart
+    /// from "something is still on disk": only the latter needs a user
+    /// decision, and treating a clean rollback as recoverable would gate the
+    /// next launch for no reason.
+    fn roll_back_applied(&self, applied: &AppliedTarget, error: AppError) -> AppError {
+        // `replace_owned` checks the physical identity but tolerates a content
+        // mismatch: the tree was written moments ago and is not the same
+        // object the ownership proof was minted for.
+        let residue = self.filesystem.replace_owned(&applied.ownership).is_err();
+        let mut error = error;
+        if residue {
+            error.params.insert(
+                "path".to_owned(),
+                serde_json::Value::String(
+                    applied
+                        .ownership
+                        .destination_path
+                        .to_string_lossy()
+                        .into_owned(),
+                ),
+            );
+            error.params.insert(
+                "runtime_name".to_owned(),
+                serde_json::Value::String(applied.ownership.runtime_name.clone()),
+            );
+            error.params.insert(
+                "requested_mode".to_owned(),
+                serde_json::Value::String(
+                    match applied.ownership.mode {
+                        DeploymentMode::ManagedCopy => "managed_copy",
+                        DeploymentMode::SymbolicLink => "symbolic_link",
+                        DeploymentMode::DirectoryJunction => "directory_junction",
+                    }
+                    .to_owned(),
+                ),
+            );
+        }
+        error
+            .params
+            .insert("residue".to_owned(), serde_json::Value::Bool(residue));
+        error
     }
 }
 
@@ -2089,7 +2152,27 @@ impl LocalApplicationFacade {
         phase: skillhub_core::OperationPhase,
         error_code: Option<ErrorCode>,
     ) {
-        let record = journal_record(operation_id, kind, phase, error_code);
+        self.journal_write(journal_record(operation_id, kind, phase, error_code));
+    }
+
+    /// [`Self::journal_advance`] plus the durable details a user needs to act:
+    /// the per-object result and the data recovery reads to undo the write.
+    fn journal_advance_with_details(
+        &self,
+        operation_id: OperationId,
+        kind: &'static str,
+        phase: skillhub_core::OperationPhase,
+        error_code: Option<ErrorCode>,
+        result: Option<serde_json::Value>,
+        recovery_data: serde_json::Value,
+    ) {
+        let mut record = journal_record(operation_id, kind, phase, error_code);
+        record.result = result;
+        record.recovery_data = recovery_data;
+        self.journal_write(record);
+    }
+
+    fn journal_write(&self, record: skillhub_core::OperationRecord) {
         let updated = self.with_database("operation_journal.advance", |database| {
             database.operation_repository().update_sync(&record)
         });
@@ -6053,31 +6136,43 @@ impl LocalApplicationFacade {
                 None,
             ),
             Ok(summary) => {
-                // The prepared deployment stays retryable after target-level
-                // failures, so the record lands in the recovery entry.
+                // Failure classification: the user is only asked to decide when
+                // something is actually left behind.  A target the backend
+                // fully undid is accounted as rolled back, so a plain rejected
+                // add — a foreign directory in the way, say — no longer gates
+                // the next launch.  `needs_recovery` is reserved for residue
+                // the app could not clean up on its own.
+                let residue = summary.targets.iter().any(|target| target.residue);
                 let error_code = summary
                     .targets
                     .iter()
                     .filter_map(|target| target.error.as_ref().map(|error| error.code))
                     .next()
                     .unwrap_or(ErrorCode::InternalError);
-                self.journal_advance(
+                self.journal_advance_with_details(
                     id,
                     "deploy_skill",
-                    skillhub_core::OperationPhase::NeedsRecovery,
+                    if residue {
+                        skillhub_core::OperationPhase::NeedsRecovery
+                    } else {
+                        skillhub_core::OperationPhase::RolledBack
+                    },
                     Some(error_code),
+                    serde_json::to_value(summary).ok(),
+                    if residue {
+                        pending_recovery_targets(summary)
+                    } else {
+                        serde_json::Value::Object(Default::default())
+                    },
                 );
             }
-            Err(error) if error.code == ErrorCode::ObjectNotFound => self.journal_advance(
-                id,
-                "deploy_skill",
-                skillhub_core::OperationPhase::RolledBack,
-                Some(error.code),
-            ),
+            // A commit that fails before touching a target (no prepared
+            // deployment, a rejected revalidation) leaves nothing behind, so
+            // it settles as rolled back too.
             Err(error) => self.journal_advance(
                 id,
                 "deploy_skill",
-                skillhub_core::OperationPhase::NeedsRecovery,
+                skillhub_core::OperationPhase::RolledBack,
                 Some(error.code),
             ),
         }
@@ -8605,7 +8700,10 @@ impl skillhub_core::DeploymentPreparationPort for LocalAssemblyDeployment<'_> {
         };
         self.facade
             .with_database("assembly.commit.persist", |database| {
-                database.deployment_repository().insert_sync(&record)
+                database
+                    .deployment_repository()
+                    .insert_sync(&record)
+                    .map(|_| ())
             })?;
         Ok(())
     }
@@ -8681,6 +8779,31 @@ fn operation_summary(message_code: &str) -> skillhub_core::OperationSummary {
 /// phase and a whitelisted error code. The request fingerprint stays empty —
 /// there is no stable per-request digest yet, and unsanitized request
 /// parameters must not reach the durable history.
+/// Recovery data for a deployment whose failure left something behind:
+/// recovery deletes exactly these paths when the user rolls the operation
+/// back.  That is what makes 「恢复」 mean "undo what this operation wrote"
+/// instead of "settle a row while the half-written tree stays on disk".
+///
+/// Only targets that reported residue are recorded — a target the backend
+/// already undid must never be deleted a second time.
+fn pending_recovery_targets(summary: &skillhub_core::application::DeploymentSummary) -> serde_json::Value {
+    let pending: Vec<serde_json::Value> = summary
+        .targets
+        .iter()
+        .filter(|target| target.residue)
+        .filter_map(|target| {
+            let error = target.error.as_ref()?;
+            Some(serde_json::json!({
+                "path": error.params.get("path"),
+                "runtime_name": error.params.get("runtime_name"),
+                "mode": error.params.get("requested_mode"),
+                "physical_target_id": target.physical_target_id,
+            }))
+        })
+        .collect();
+    serde_json::json!({ "pending_targets": pending })
+}
+
 fn journal_record(
     operation_id: OperationId,
     kind: &str,
@@ -9339,11 +9462,18 @@ impl RecoveryBackend for LocalRecoveryBackend {
     }
 
     async fn resolve(&self, operation_id: OperationId, action: RecoveryAction) -> AppResult<()> {
-        let phase = match action {
-            RecoveryAction::CompleteOperation => ("committed", "completed"),
-            RecoveryAction::RollbackOperation => ("rolled_back", "rolled_back"),
+        let (phase, state, rolls_back) = match action {
+            RecoveryAction::CompleteOperation => ("committed", "completed", false),
+            RecoveryAction::RollbackOperation => ("rolled_back", "rolled_back", true),
             _ => return Err(unsupported("recovery.resolve")),
         };
+        // Undo the disk first: once the row is settled the user has no second
+        // chance to clean up, so a failed removal must keep the candidate in
+        // the recovery entry instead of recording a rollback that never
+        // happened.
+        if rolls_back {
+            self.roll_back_pending_targets(operation_id)?;
+        }
         let database = self
             .database
             .lock()
@@ -9354,7 +9484,7 @@ impl RecoveryBackend for LocalRecoveryBackend {
             .execute(
                 &format!(
                     "UPDATE operations SET phase='{}', state='{}' WHERE operation_id='{}' AND phase IN ('planned','prepared','applying','verifying','needs_recovery')",
-                    phase.0, phase.1, operation_id
+                    phase, state, operation_id
                 ),
                 [],
             )
@@ -9363,6 +9493,43 @@ impl RecoveryBackend for LocalRecoveryBackend {
             return Err(AppError::new(ErrorCode::ObjectNotFound, Severity::Error)
                 .with_param("field", "recovery_candidate")
                 .with_action(RecoveryAction::Retry));
+        }
+        Ok(())
+    }
+}
+
+impl LocalRecoveryBackend {
+    /// Deletes the targets an interrupted operation recorded in its
+    /// `recovery_data`.  Rolling a candidate back has to undo what the
+    /// operation wrote, not only settle its accounting row.
+    fn roll_back_pending_targets(&self, operation_id: OperationId) -> AppResult<()> {
+        let record = self
+            .database
+            .lock()
+            .map_err(|_| internal("recovery.resolve"))?
+            .operation_repository()
+            .get_sync(operation_id)?;
+        let Some(record) = record else {
+            return Ok(());
+        };
+        let Some(pending) = record
+            .recovery_data
+            .get("pending_targets")
+            .and_then(serde_json::Value::as_array)
+        else {
+            return Ok(());
+        };
+        let filesystem = DeploymentFilesystem::new();
+        for target in pending {
+            let Some(path) = target.get("path").and_then(serde_json::Value::as_str) else {
+                continue;
+            };
+            let mode = match target.get("mode").and_then(serde_json::Value::as_str) {
+                Some("symbolic_link") => DeploymentMode::SymbolicLink,
+                Some("directory_junction") => DeploymentMode::DirectoryJunction,
+                _ => DeploymentMode::ManagedCopy,
+            };
+            filesystem.remove_residue(Path::new(path), mode)?;
         }
         Ok(())
     }

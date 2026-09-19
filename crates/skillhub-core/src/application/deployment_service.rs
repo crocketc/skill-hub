@@ -33,6 +33,10 @@ pub struct TargetOperationResult {
     /// Structured, user-safe details for a target-level failure. `error_code`
     /// remains for wire compatibility with older clients.
     pub error: Option<TargetOperationError>,
+    /// Whether this failure left something behind at the target that only the
+    /// user can settle. A failure the backend fully undid needs no decision;
+    /// only residue justifies sending the operation to the recovery entry.
+    pub residue: bool,
 }
 
 /// Safe, typed projection of an [`AppError`] for a per-target deployment
@@ -61,8 +65,7 @@ impl From<AppError> for TargetOperationError {
             "requested_mode",
             "runtime_name",
             "target_path",
-        ];
-        let params = error
+        ];        let params = error
             .params
             .into_iter()
             .filter(|(key, value)| SAFE_KEYS.contains(&key.as_str()) && is_safe_param_value(value))
@@ -158,6 +161,7 @@ where
                     version_id: target.version_id.clone(),
                     error_code: None,
                     error: None,
+                    residue: false,
                 });
                 continue;
             }
@@ -165,6 +169,15 @@ where
                 Ok(record) => targets.push(result_from_record(target, record)),
                 Err(error) => {
                     let error_code = error.code.as_str().to_owned();
+                    // The backend reports whether it could undo its own write.
+                    // Absent the marker, assume residue: sending a fully
+                    // rolled back operation to the recovery entry would ask the
+                    // user to decide something the app already settled.
+                    let residue = error
+                        .params
+                        .get("residue")
+                        .and_then(serde_json::Value::as_bool)
+                        .unwrap_or(false);
                     targets.push(TargetOperationResult {
                         physical_target_id: target.physical_target_id.clone(),
                         logical_target_ids: target.logical_target_ids.clone(),
@@ -173,6 +186,7 @@ where
                         version_id: target.version_id.clone(),
                         error_code: Some(error_code),
                         error: Some(error.into()),
+                        residue,
                     })
                 }
             }
@@ -202,5 +216,6 @@ fn result_from_record(target: &TargetPlan, record: DeploymentRecord) -> TargetOp
         version_id: record.version_id,
         error_code: None,
         error: None,
+        residue: false,
     }
 }

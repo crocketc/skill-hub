@@ -6,7 +6,10 @@ vi.mock("../../api/bindings", () => ({ queryApplication: vi.fn(), executeCommand
 
 const query = vi.mocked(queryApplication);
 
-  beforeEach(() => { query.mockReset(); vi.mocked(executeCommand).mockReset(); });
+beforeEach(() => {
+  query.mockReset();
+  vi.mocked(executeCommand).mockReset();
+});
 
 it("maps derived pending work to stable page identities", async () => {
   query.mockResolvedValue({
@@ -43,6 +46,32 @@ it("resolves a security finding through the matching typed command", async () =>
     type: "set_finding_disposition",
     payload: expect.objectContaining({ skill_id: "skill", version_id: "version-1", finding_id: "finding-7", disposition: "acknowledged" }),
   }));
+});
+
+/**
+ * 「需要恢复」的待办也必须走 `resolve_recovery`：`acknowledge_recovery` 在应用层
+ * 没有实现分支，用它换来的只是 `internal.error`，这些待办项永远处置不掉。
+ */
+it("resolves a recovery pending item by rolling the operation back", async () => {
+  vi.mocked(executeCommand).mockResolvedValue({ type: "operation_summary", payload: {} as never });
+  await nativePendingFacade.resolve({
+    id: "recovery:op-9:needs_recovery", subject: "op-9", kind: "recovery", code: "needs_recovery", message: "recovery",
+  });
+  expect(executeCommand).toHaveBeenCalledWith({
+    type: "resolve_recovery",
+    payload: { operation_id: "op-9", action: "rollback_operation" },
+  });
+});
+
+it("recovers a recovery pending item through the same rollback path", async () => {
+  vi.mocked(executeCommand).mockResolvedValue({ type: "operation_summary", payload: {} as never });
+  await nativePendingFacade.recover({
+    id: "recovery:op-9:needs_recovery", subject: "op-9", kind: "recovery", code: "needs_recovery", message: "recovery",
+  });
+  expect(executeCommand).toHaveBeenCalledWith({
+    type: "resolve_recovery",
+    payload: { operation_id: "op-9", action: "rollback_operation" },
+  });
 });
 
 it("defers each item through an exact_pending ignore rule with a local due date", async () => {
@@ -103,8 +132,7 @@ it("removes an ignore rule by id when undoing a handled entry", async () => {
   expect(executeCommand).toHaveBeenCalledWith({ type: "remove_ignore_rule", payload: { rule_id: "rule-1" } });
 });
 
-it("restores a saved view kind and stores new kinds as JSON", async () => {
-  query.mockResolvedValue({
+it("restores a saved view kind and stores new kinds as JSON", async () => {  query.mockResolvedValue({
     type: "ui_preference",
     payload: { key: "pending.view.kind", value_json: "{\"kind\":\"security_finding\"}" },
   });

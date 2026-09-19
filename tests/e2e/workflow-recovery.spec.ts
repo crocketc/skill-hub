@@ -70,8 +70,8 @@ test("keeps the recovery confirmation inside the backup & restore tab", async ({
 
   await page.getByRole("tab", { name: "Backup & restore" }).click();
   await expect(page.getByText("deployment.target_conflict")).toBeVisible();
-  await page.getByRole("button", { name: "Acknowledge recovery" }).click();
-  await expect(page.getByText("Rolled back")).toBeVisible();
+  await page.getByRole("button", { name: "Confirm recovery" }).click();
+  await expect(page.getByText("Recovered")).toBeVisible();
 });
 
 test("surfaces a records read failure without faking an empty history", async ({ page }) => {
@@ -89,7 +89,7 @@ test.describe("recovery width matrix", () => {
       const backup = page.getByRole("tab", { name: "Backup & restore" });
       await expect(backup).toBeVisible();
       await backup.click();
-      await expect(page.getByRole("button", { name: "Acknowledge recovery" })).toBeVisible();
+      await expect(page.getByRole("button", { name: "Confirm recovery" })).toBeVisible();
       await expectNoRootHorizontalOverflow(page);
     });
   }
@@ -108,7 +108,7 @@ test.describe("recovery 9-theme matrix at 1280x900", () => {
       const records = page.getByRole("tab", { name: "Operation records" });
       await expect(records).toHaveAttribute("aria-selected", "true");
       await page.getByRole("tab", { name: "Backup & restore" }).click();
-      await expect(page.getByRole("button", { name: "Acknowledge recovery" })).toBeVisible();
+      await expect(page.getByRole("button", { name: "Confirm recovery" })).toBeVisible();
       await expect(page.getByText("Needs recovery")).toBeVisible();
     });
   }

@@ -260,6 +260,26 @@ impl DeploymentFilesystem {
         remove_target(proof)
     }
 
+    /// Removes a target that this machine recorded as written by an
+    /// interrupted operation.  The caller supplies the path from its own
+    /// durable `recovery_data`, so the content-hash ownership proof is
+    /// deliberately skipped: residue is by definition a half-written tree
+    /// whose hash cannot match anything.  The physical identity is not
+    /// re-checked either, for the same reason — the entry may not exist yet.
+    /// A missing path is a no-op, which keeps the call idempotent.
+    pub fn remove_residue(&self, path: &Path, mode: DeploymentMode) -> AppResult<()> {
+        if fs::symlink_metadata(path).is_err() {
+            return Ok(());
+        }
+        match mode {
+            DeploymentMode::ManagedCopy => fs::remove_dir_all(path).map_err(io_error),
+            DeploymentMode::SymbolicLink => symlink::remove_dir_link(path).map_err(io_error),
+            DeploymentMode::DirectoryJunction => {
+                junction_windows::remove_junction(path).map_err(io_error)
+            }
+        }
+    }
+
     /// Removes a target after the caller has explicitly confirmed a restore.
     /// The physical identity is still checked, but the content hash is allowed
     /// to differ because this operation intentionally replaces external edits.

@@ -33,7 +33,7 @@ test("renders a structured operation timeline with phases and localized times", 
   await expect(entries.nth(0).getByText("Committed")).toBeVisible();
   await expect(entries.nth(1).getByText("Needs recovery")).toBeVisible();
   await expect(entries.nth(1).getByText(/Error code: deployment\.target_conflict/)).toBeVisible();
-  await expect(entries.nth(2).getByText("Rolled back")).toBeVisible();
+  await expect(entries.nth(2).getByText("Undone")).toBeVisible();
 
   // Raw ISO timestamps only live in the machine-readable dateTime attribute.
   const firstTime = entries.nth(0).locator("time");

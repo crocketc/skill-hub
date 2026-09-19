@@ -2,7 +2,8 @@ use super::Database;
 use rusqlite::{params, OptionalExtension};
 use skillhub_core::bootstrap::{
     BootstrapSnapshot, DeploymentChartCategory, DeploymentDimension, InitializationStatus,
-    PendingSummary, RecentOperationSummary, StartupRecoveryState, TagChartCategory,
+    PendingSummary, RecentOperationSummary, RecentOperationTarget, StartupRecoveryState,
+    TagChartCategory,
 };
 use skillhub_core::pending::{PendingItem, PendingKind};
 use skillhub_core::OperationPhase;
@@ -332,7 +333,7 @@ impl<'a> BootstrapRepository<'a> {
         deployment_categories.extend(self.deployment_chart(DeploymentDimension::Project)?);
         let tag_categories = self.tag_chart()?;
         let mut recent_operations = Vec::new();
-        let mut ops = self.database.connection.prepare("SELECT operation_id,kind,state,phase,error_code,created_at FROM operations ORDER BY created_at DESC,operation_id DESC LIMIT 10").map_err(error)?;
+        let mut ops = self.database.connection.prepare("SELECT operation_id,kind,state,phase,error_code,created_at,progress_json FROM operations ORDER BY created_at DESC,operation_id DESC LIMIT 10").map_err(error)?;
         for row in ops
             .query_map([], |row| {
                 Ok((
@@ -342,11 +343,12 @@ impl<'a> BootstrapRepository<'a> {
                     row.get::<_, String>(3)?,
                     row.get::<_, Option<String>>(4)?,
                     row.get::<_, i64>(5)?,
+                    row.get::<_, String>(6)?,
                 ))
             })
             .map_err(error)?
         {
-            let (id, kind, state, phase, error_code, created_at) = row.map_err(error)?;
+            let (id, kind, state, phase, error_code, created_at, progress_json) = row.map_err(error)?;
             recent_operations.push(RecentOperationSummary {
                 operation_id: id.parse().map_err(|_| invalid_snapshot())?,
                 kind,
@@ -354,6 +356,7 @@ impl<'a> BootstrapRepository<'a> {
                 phase: parse_phase(&phase)?,
                 error_code,
                 created_at: created_at.to_string(),
+                targets: stored_target_details(&progress_json),
             });
         }
         let last_scan_at = self
@@ -406,6 +409,46 @@ fn format_date((year, month, day): (i32, u8, u8)) -> String {
 fn parse_skill(value: String) -> AppResult<SkillId> {
     value.parse().map_err(|_| invalid_snapshot())
 }
+/// Projects the per-target results an operation recorded. The journal stores
+/// the deployment summary inside `progress_json`; surfacing it here is what
+/// lets `/operations/:id` say *which* target failed and where, instead of
+/// showing a bare error code. The envelope is parsed leniently: an unreadable
+/// or absent payload yields no details rather than failing the whole snapshot.
+fn stored_target_details(progress_json: &str) -> Vec<RecentOperationTarget> {
+    let Ok(stored) = serde_json::from_str::<serde_json::Value>(progress_json) else {
+        return Vec::new();
+    };
+    let Some(targets) = stored
+        .get("result")
+        .and_then(|result| result.get("targets"))
+        .and_then(serde_json::Value::as_array)
+    else {
+        return Vec::new();
+    };
+    targets
+        .iter()
+        .filter_map(|target| {
+            let physical_target_id = target
+                .get("physical_target_id")
+                .and_then(serde_json::Value::as_str)?
+                .to_owned();
+            Some(RecentOperationTarget {
+                physical_target_id,
+                path: target
+                    .get("error")
+                    .and_then(|error| error.get("params"))
+                    .and_then(|params| params.get("path"))
+                    .and_then(serde_json::Value::as_str)
+                    .map(ToOwned::to_owned),
+                error_code: target
+                    .get("error_code")
+                    .and_then(serde_json::Value::as_str)
+                    .map(ToOwned::to_owned),
+            })
+        })
+        .collect()
+}
+
 fn parse_phase(value: &str) -> AppResult<OperationPhase> {
     match value {
         "planned" => Ok(OperationPhase::Planned),

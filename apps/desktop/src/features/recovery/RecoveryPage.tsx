@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { describeNativeError } from "../../api/nativeErrors";
 import { Button } from "../../ui/Button";
 import { DataState } from "../../ui/DataState";
 import { PageFrame } from "../../ui/PageFrame";
@@ -7,7 +8,7 @@ import { PageHeader } from "../../ui/PageHeader";
 import { OperationsList } from "../operations/OperationsList";
 import { OperationPhaseStatus } from "../operations/OperationPhaseStatus";
 import { nativeRecentOperations, type RecentOperationsReader } from "../operations/nativeApi";
-import { type OperationFacade, unavailableOperationFacade, type OperationState } from "../operations/api";
+import { type OperationFacade, type OperationState, type RecoveryCandidate, unavailableOperationFacade } from "../operations/api";
 import "./recovery.css";
 
 const TAB_ORDER = ["records", "backupRestore"] as const;
@@ -23,13 +24,65 @@ const PANEL_IDS: Record<RecoveryTab, string> = {
   backupRestore: "recovery-panel-backup",
 };
 
-export function RecoveryPage({ operationId = "latest", facade = unavailableOperationFacade, recent = nativeRecentOperations }: { operationId?: string; facade?: OperationFacade; recent?: RecentOperationsReader }) {
+/**
+ * 恢复页是恢复闸门的唯一出口：闸门在 `recovery_state !== "clean"` 时阻断其余
+ * 全部路由，所以这一页必须列出 `list_recovery_candidates` 的**所有**候选，
+ * 而不是只认「最新一条」。处置走 `resolve_recovery`（统一回滚语义，用户可见
+ * 文案只说「恢复」，不出现「回滚」）。
+ */
+export function RecoveryPage({ facade = unavailableOperationFacade, recent = nativeRecentOperations }: { facade?: OperationFacade; recent?: RecentOperationsReader }) {
   const { t } = useTranslation();
   const [tab, setTab] = useState<RecoveryTab>("records");
+  const [candidates, setCandidates] = useState<RecoveryCandidate[]>();
+  const [selectedId, setSelectedId] = useState<string>();
   const [operation, setOperation] = useState<OperationState>();
   const [error, setError] = useState<string>();
+  const [resolved, setResolved] = useState(false);
+  const [busy, setBusy] = useState(false);
   const tabRefs = useRef<Partial<Record<RecoveryTab, HTMLButtonElement | null>>>({});
-  useEffect(() => { void facade.get(operationId).then(setOperation).catch((reason: unknown) => setError(reason instanceof Error ? reason.message : String(reason))); }, [facade, operationId]);
+
+  const describe = useCallback(
+    (reason: unknown) => describeNativeError(reason, (key, options) => String(t(key as never, options as never)), "recovery.errors.generic"),
+    [t],
+  );
+
+  const loadCandidates = useCallback(async () => {
+    const list = await facade.listRecoveryCandidates();
+    setCandidates(list);
+    setSelectedId((current) => (current && list.some((candidate) => candidate.operationId === current) ? current : list[0]?.operationId));
+  }, [facade]);
+
+  useEffect(() => {
+    let cancelled = false;
+    loadCandidates().catch((reason: unknown) => { if (!cancelled) setError(describe(reason)); });
+    return () => { cancelled = true; };
+  }, [loadCandidates, describe]);
+
+  useEffect(() => {
+    if (!selectedId) { setOperation(undefined); return; }
+    let cancelled = false;
+    facade.get(selectedId).then(
+      (state) => { if (!cancelled) setOperation(state); },
+      (reason: unknown) => { if (!cancelled) setError(describe(reason)); },
+    );
+    return () => { cancelled = true; };
+  }, [facade, selectedId, describe]);
+
+  const confirmRecovery = async () => {
+    if (!selectedId) return;
+    setBusy(true);
+    setError(undefined);
+    setResolved(false);
+    try {
+      await facade.resolveRecovery(selectedId, "rollback_operation");
+      setResolved(true);
+      await loadCandidates();
+    } catch (reason: unknown) {
+      setError(describe(reason));
+    } finally {
+      setBusy(false);
+    }
+  };
 
   // WAI-ARIA tabs：roving tabindex + 方向键/Home/End 循环移动，焦点与选中同步。
   const moveTab = (current: RecoveryTab, key: string) => {
@@ -88,7 +141,16 @@ export function RecoveryPage({ operationId = "latest", facade = unavailableOpera
             role="tabpanel"
             tabIndex={0}
           >
-            <BackupRestoreTab error={error} facade={facade} onLoaded={setOperation} operation={operation} />
+            <RecoveryCandidatesTab
+              busy={busy}
+              candidates={candidates}
+              error={error}
+              onConfirm={() => void confirmRecovery()}
+              onSelect={setSelectedId}
+              operation={operation}
+              resolved={resolved}
+              selectedId={selectedId}
+            />
           </div>
         )}
       </div>
@@ -96,33 +158,52 @@ export function RecoveryPage({ operationId = "latest", facade = unavailableOpera
   );
 }
 
-function BackupRestoreTab({ operation, error, facade, onLoaded }: {
+function RecoveryCandidatesTab({ candidates, selectedId, operation, error, resolved, busy, onSelect, onConfirm }: {
+  candidates?: RecoveryCandidate[];
+  selectedId?: string;
   operation?: OperationState;
   error?: string;
-  facade: OperationFacade;
-  onLoaded: (operation: OperationState) => void;
+  resolved: boolean;
+  busy: boolean;
+  onSelect: (operationId: string) => void;
+  onConfirm: () => void;
 }) {
   const { t } = useTranslation();
-  const [localError, setLocalError] = useState<string>();
-  const current = operation;
-  const acknowledge = async () => {
-    if (!current) return;
-    try {
-      await facade.acknowledgeRecovery(current.operationId);
-      onLoaded({ ...current, phase: "rolled_back" });
-    } catch (reason: unknown) {
-      setLocalError(reason instanceof Error ? reason.message : String(reason));
-    }
-  };
-  if (error || localError) return <DataState message={error ?? localError ?? ""} state="unavailable" />;
-  if (!current) return <DataState message={t("recovery.loading")} state="loading" />;
+  if (error) return <DataState message={error} state="unavailable" />;
+  if (!candidates) return <DataState message={t("recovery.loading")} state="loading" />;
+  if (candidates.length === 0) {
+    return (
+      <>
+        <p className="sh-eyebrow">{t("recovery.tabs.backupRestoreHint")}</p>
+        <p>{t("recovery.noCandidates")}</p>
+        {resolved ? <p role="status">{t("recovery.resolved")}</p> : null}
+      </>
+    );
+  }
   return (
     <>
       <p className="sh-eyebrow">{t("recovery.tabs.backupRestoreHint")}</p>
-      <OperationSummary operation={current} />
+      <fieldset className="sh-recovery__candidates">
+        <legend>{t("recovery.candidatesHeading")}</legend>
+        {candidates.map((candidate) => (
+          <label key={candidate.operationId}>
+            <input
+              aria-label={t("recovery.candidateLabel", { id: candidate.operationId })}
+              checked={candidate.operationId === selectedId}
+              name="recovery-candidate"
+              onChange={() => onSelect(candidate.operationId)}
+              type="radio"
+              value={candidate.operationId}
+            />
+            {candidate.operationId}
+          </label>
+        ))}
+      </fieldset>
+      {operation ? <OperationSummary operation={operation} /> : <DataState message={t("recovery.loading")} state="loading" />}
       <div className="sh-recovery__actions">
-        <Button onClick={() => void acknowledge()} variant="primary">{t("recovery.acknowledge")}</Button>
+        <Button disabled={busy || !selectedId} onClick={onConfirm} variant="primary">{t("recovery.acknowledge")}</Button>
       </div>
+      {resolved ? <p role="status">{t("recovery.resolved")}</p> : null}
     </>
   );
 }
