@@ -1180,8 +1180,7 @@
     "drawer": {
       "actions": {
         "addTags": "Add tags",
-        "delete": "Delete from library",
-        "removeTags": "Remove tags"
+        "delete": "Delete from library"
       },
       "configure": "Configure quick drawer",
       "description": "Skill summary, common actions, and configurable detail modules.",
@@ -1212,7 +1211,6 @@
         "versions": "Versions"
       },
       "moduleVisibility": "Drawer modules",
-      "moveBefore": "Move {{module}} before {{before}}",
       "preferenceFailure": "Preference was not saved. The temporary layout is still active.",
       "metadataFailure": "Alias or note was not saved. The last saved content was restored.",
       "presets": {

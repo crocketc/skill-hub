@@ -12,7 +12,7 @@ import {
   useState,
 } from "react";
 import { useTranslation } from "react-i18next";
-import { Link, useLocation } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { Button } from "../../ui/Button";
 import { Drawer } from "../../ui/Drawer";
 import { Icon } from "../../ui/Icon";
@@ -46,6 +46,8 @@ export interface SkillQuickDrawerProps {
   facade: SkillLibraryFacade;
   libraryReturn?: SkillLibraryReturnState;
   onDelete?: (skillId: string, skillName: string) => void;
+  /** DEV-19：单技能来源更新检查（宿主实现，与批量栏共用 facade 契约）。 */
+  onCheckUpdates?: (skillId: string, skillName: string) => void;
   onOpenChange: (open: boolean) => void;
   onPreferencesChange: (preferences: SkillDrawerPreferences) => void;
   open: boolean;
@@ -522,17 +524,37 @@ function IdentityRegion({
 
 interface PrimaryActionsProps extends ModuleProps {
   onDelete?: (skillId: string, skillName: string) => void;
+  /** 单技能来源更新检查；由宿主页面提供（与批量栏同一 facade 契约）。 */
+  onCheckUpdates?: (skillId: string, skillName: string) => void;
 }
 
-function PrimaryActions({ onDelete, view }: PrimaryActionsProps) {
+function PrimaryActions({ onCheckUpdates, onDelete, view }: PrimaryActionsProps) {
   const { t } = useTranslation();
-  // 加入组合/安全检查/导出/归档依赖的 emitBatchIntent 在生产未绑定后端
-  // 命令（bindings 无 emit_batch_intent），按钮此前只会静默失败。按诚实
-  // 缺省原则移除入口，后端能力落地后再恢复；保留真实的删除动作。
-  if (!onDelete) return null;
+  const navigate = useNavigate();
+  // DEV-19（2026-09-20 收口）：抽屉动作与批量栏/详情页在「真实可用契约」
+  // 范围内对齐——添加到…（/deploy 导航）、检查来源更新（check_source_updates）、
+  // 发起导出（数据保护页导航）与删除全部可用，且单/批量双模式共用同一 i18n 键。
+  // 「运行安全检查/提交导出任务/归档」仍依赖生产未绑定的 emitBatchIntent，
+  // 后端能力落地前不恢复（诚实缺省，理由见 01d5ff21 与四份文档）。
+  if (!onDelete && !onCheckUpdates) return null;
   return (
     <section aria-label={t(MODULE_LABEL_KEYS.primary_actions)} className="sh-skill-drawer__actions">
-      <Button onClick={() => onDelete(view.id, view.name)} size="sm" variant="danger">
+      <Button onClick={() => navigate(`/deploy?skill=${encodeURIComponent(view.id)}`)} size="sm" variant="secondary">
+        {t("skillLibrary.page.batch.addTo")}
+      </Button>
+      {onCheckUpdates ? (
+        <Button onClick={() => onCheckUpdates(view.id, view.name)} size="sm" variant="secondary">
+          {t("skillLibrary.page.batch.checkUpdates")}
+        </Button>
+      ) : null}
+      <Button
+        onClick={() => navigate("/settings/data-protection", { state: { exportSkillIds: [view.id] } })}
+        size="sm"
+        variant="secondary"
+      >
+        {t("skillLibrary.page.batch.startExport")}
+      </Button>
+      <Button onClick={() => onDelete?.(view.id, view.name)} size="sm" variant="danger">
         {t("skillLibrary.drawer.actions.delete")}
       </Button>
     </section>
@@ -714,6 +736,7 @@ export function SkillQuickDrawer({
   facade,
   libraryReturn,
   onDelete,
+  onCheckUpdates,
   onOpenChange,
   onPreferencesChange,
   open,
@@ -1186,7 +1209,7 @@ export function SkillQuickDrawer({
                 onRemoveTag={removeTag}
                 view={view}
               />
-              <PrimaryActions onDelete={onDelete} view={view} />
+              <PrimaryActions onDelete={onDelete} onCheckUpdates={onCheckUpdates} view={view} />
               <RiskSummary view={view} />
             </div>
           ) : null}

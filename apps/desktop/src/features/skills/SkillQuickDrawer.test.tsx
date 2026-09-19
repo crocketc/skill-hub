@@ -1,8 +1,9 @@
+import userEvent2 from "@testing-library/user-event";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
 import { useRef, useState } from "react";
 import { I18nextProvider } from "react-i18next";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, useLocation } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createSkillHubI18n } from "../../i18n";
 import "../../styles/base.css";
@@ -170,6 +171,8 @@ interface DrawerHarnessProps {
   detailSearch?: string;
   facade: SkillLibraryFacade;
   libraryReturn?: SkillLibraryReturnState;
+  onDelete?: (skillId: string, skillName: string) => void;
+  onCheckUpdates?: (skillId: string, skillName: string) => void;
   open?: boolean;
   preferences?: SkillDrawerPreferences;
   skillId?: string;
@@ -179,10 +182,15 @@ function DrawerHarness({
   detailSearch,
   facade,
   libraryReturn,
+  onDelete,
+  onCheckUpdates,
   open = true,
   preferences = DEFAULT_DRAWER_PREFERENCES,
   skillId = "skill-pdf",
-}: DrawerHarnessProps) {
+}: DrawerHarnessProps & {
+  onDelete?: (skillId: string, skillName: string) => void;
+  onCheckUpdates?: (skillId: string, skillName: string) => void;
+}) {
   const [controlledPreferences, setControlledPreferences] = useState(() =>
     clonePreferences(preferences),
   );
@@ -198,6 +206,8 @@ function DrawerHarness({
         detailSearch={detailSearch}
         facade={facade}
         libraryReturn={libraryReturn}
+        onDelete={onDelete}
+        onCheckUpdates={onCheckUpdates}
         onOpenChange={() => undefined}
         onPreferencesChange={setControlledPreferences}
         open={open}
@@ -986,4 +996,73 @@ it("closes with the shared close icon instead of a character glyph", async () =>
   const close = await screen.findByRole("button", { name: "Close" });
   expect(close).not.toHaveTextContent("×");
   expect(close.querySelector("svg")).not.toBeNull();
+});
+
+
+describe("drawer primary actions equivalence (DEV-19)", () => {
+  it("restores add-to, check-updates and export entries alongside delete", async () => {
+    const onCheckUpdates = vi.fn();
+    await renderDrawer({ facade: createMockSkillLibraryFacade(), onDelete: vi.fn(), onCheckUpdates });
+
+    // 三处入口（批量栏/抽屉/详情页）动作全集对齐：批量栏的四个真实契约
+    // 动作在抽屉内同样可用（单技能模式）。
+    expect(await screen.findByRole("button", { name: "Add to…" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Check source updates" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Start export" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Delete from library" })).toBeVisible();
+
+    const user = userEvent2.setup();
+    await user.click(screen.getByRole("button", { name: "Check source updates" }));
+    expect(onCheckUpdates).toHaveBeenCalledWith("skill-pdf", "PDF Reader");
+  });
+
+  it("navigates add-to and export entries with the single-skill contract", async () => {
+    const locations: Array<string> = [];
+    function LocationProbe() {
+      const location = useLocation();
+      locations.push(`${location.pathname}${location.search}#${JSON.stringify(location.state)}`);
+      return null;
+    }
+    // 复用 DrawerHarness 渲染，但追加一个路由探针。
+    const i18n = await createSkillHubI18n(["en-US"]);
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    function Harness() {
+      const [controlledPreferences, setControlledPreferences] = useState(() => clonePreferences(DEFAULT_DRAWER_PREFERENCES));
+      const returnFocusRef = useRef<HTMLButtonElement>(null);
+      return (
+        <>
+          <LocationProbe />
+          <button ref={returnFocusRef} type="button">PDF Reader row</button>
+          <SkillQuickDrawer
+            facade={createMockSkillLibraryFacade()}
+            onDelete={vi.fn()}
+            onCheckUpdates={vi.fn()}
+            onOpenChange={() => undefined}
+            onPreferencesChange={setControlledPreferences}
+            open
+            preferences={controlledPreferences}
+            returnFocusRef={returnFocusRef}
+            skillId="skill-pdf"
+          />
+        </>
+      );
+    }
+    render(
+      <QueryClientProvider client={client}>
+        <I18nextProvider i18n={i18n}>
+          <MemoryRouter initialEntries={["/library"]}>
+            <Harness />
+          </MemoryRouter>
+        </I18nextProvider>
+      </QueryClientProvider>,
+    );
+
+    const user = userEvent2.setup();
+    await user.click(await screen.findByRole("button", { name: "Add to…" }));
+    expect(locations.at(-1)).toContain("/deploy?skill=skill-pdf");
+
+    await user.click(screen.getByRole("button", { name: "Start export" }));
+    expect(locations.at(-1)).toContain("/settings/data-protection");
+    expect(locations.at(-1)).toContain(JSON.stringify({ exportSkillIds: ["skill-pdf"] }));
+  });
 });

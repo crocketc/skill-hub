@@ -1180,8 +1180,7 @@
     "drawer": {
       "actions": {
         "addTags": "添加标签",
-        "delete": "从库中删除 Skill",
-        "removeTags": "移除标签"
+        "delete": "从库中删除 Skill"
       },
       "configure": "配置快速抽屉",
       "description": "Skill 摘要、常用操作和可配置详情模块。",
@@ -1212,7 +1211,6 @@
         "versions": "版本"
       },
       "moduleVisibility": "抽屉模块",
-      "moveBefore": "将{{module}}移到{{before}}之前",
       "preferenceFailure": "偏好未保存，临时布局仍然有效。",
       "metadataFailure": "别名或备注未保存，已恢复为已保存的内容。",
       "presets": {

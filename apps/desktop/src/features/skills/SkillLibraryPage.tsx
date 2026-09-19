@@ -912,6 +912,25 @@ export function SkillLibraryPage({
       });
   };
 
+  // DEV-19：抽屉内的单技能来源更新检查——与批量栏同一 facade 契约
+  // （check_source_updates）、同一通知形态，仅选择集为单条。
+  const startSingleUpdateCheck = (skillId: string, skillName: string) => {
+    if (!facade.checkSourceUpdates) return;
+    const checkFacade = facade.checkSourceUpdates;
+    void checkFacade([skillId])
+      .then((entries) => {
+        notify({
+          detailNode: <SourceUpdateCheckSummary reports={entries.map((entry) => ({ ...entry, name: skillName || skillId }))} />,
+          kind: "batch",
+          title: t("skillLibrary.page.sourceUpdates.title"),
+          tone: "info",
+        });
+      })
+      .catch(() => {
+        notify({ kind: "batch", title: t("skillLibrary.page.batch.unconnected"), tone: "danger" });
+      });
+  };
+
   const startBatchExport = () => {    if (selection.kind === "none" || selectionCount(selection) <= 0) return;
     if (selection.kind === "explicit") {
       navigate("/settings/data-protection", { state: { exportSkillIds: [...selection.skillIds] } });
@@ -1574,6 +1593,7 @@ export function SkillLibraryPage({
           closeDrawer();
           void startBatchRemoval({ id, name });
         }}
+        onCheckUpdates={facade.checkSourceUpdates ? startSingleUpdateCheck : undefined}
         onPreferencesChange={setDrawerPreferences}
         open={Boolean(skillId)}
         preferenceSaveFailed={Boolean(drawerSaveFailure)}
