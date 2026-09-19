@@ -157,6 +157,38 @@ test.describe("previews stay free of horizontal overflow at every benchmark widt
   }
 });
 
+test("registration drawer agent list scrolls internally without horizontal overflow (DEV-14)", async ({ page }) => {
+  await page.setViewportSize({ width: 800, height: 600 });
+  await page.goto("/__preview/projects");
+  await page.getByRole("button", { name: "Register project" }).click();
+  const registration = page.getByRole("dialog", { name: "Register local project" });
+  await expect(registration).toBeVisible();
+
+  // 选目录（预览桩固定返回 Aurora）后 Agent 勾选列表出现。
+  await registration.getByRole("button", { name: "Choose project directory" }).click();
+  const agentList = registration.locator(".sh-project-registration__agent-list");
+  await expect(agentList).toBeVisible();
+
+  // 超长无空格标签可折行可读：名称行高度超过单行（>24px）且列表内部纵向滚动。
+  const longLabel = agentList.getByText(/deepseek-harness · deepseek-harness/);
+  await expect(longLabel).toBeVisible();
+  const labelBox = (await longLabel.boundingBox())!;
+  expect(labelBox.height, "a long unbroken agent label must wrap onto multiple lines").toBeGreaterThan(24);
+  await expect(agentList).toHaveCSS("overflow-y", "auto");
+
+  // 抽屉自身与根元素都不产生横向溢出。
+  const overflow = await page.evaluate(() => ({
+    root: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    drawer: document.querySelector("[role=dialog]").scrollWidth - document.querySelector("[role=dialog]").clientWidth,
+  }));
+  expect(overflow.root, "no root horizontal overflow").toBeLessThanOrEqual(0);
+  expect(overflow.drawer, "no drawer horizontal overflow").toBeLessThanOrEqual(0);
+
+  // 不可用项的原因说明可见；确认按钮仍在抽屉内可达。
+  await expect(agentList.getByText(/Currently unavailable/)).toBeVisible();
+  await expect(registration.getByRole("button", { name: "Register project" }).last()).toBeVisible();
+});
+
 test("long directory paths wrap instead of being clipped at 800px", async ({ page }) => {
   await page.setViewportSize({ width: 800, height: 900 });
   await page.goto("/__preview/agents");

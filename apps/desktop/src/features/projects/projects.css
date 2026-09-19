@@ -238,6 +238,23 @@
   border: 0;
 }
 
+/* DEV-14：Agent 勾选列表——内部纵向滚动（不撑破抽屉、不产生根级横向溢出），
+   行内复选框定宽、名称可任意折行；不可用项的原因经 CheckboxField description 呈现。 */
+.sh-project-registration__agent-list {
+  display: grid;
+  gap: var(--space-1);
+  max-height: 13rem;
+  padding: var(--space-2);
+  overflow-y: auto;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-md);
+}
+
+.sh-project-registration .sh-checkbox-field__label,
+.sh-project-registration .sh-checkbox-field__description {
+  overflow-wrap: anywhere;
+}
+
 .sh-project-registration fieldset legend {
   margin-bottom: var(--space-2);
   padding: 0;

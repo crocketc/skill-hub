@@ -14,6 +14,12 @@ import { ProjectListPage } from "./ProjectListPage";
 const previewCandidates: ProjectAgentCandidate[] = [
   { id: "codex-target", label: "OpenAI · Codex CLI", available: true },
   { id: "claude-code", label: "anthropic · anthropic.claude-code", available: true },
+  // DEV-14：超长无空格标签——钉死「勾选列表不得横向溢出抽屉」的回归护栏。
+  {
+    id: "long-label-target",
+    label: "deepseek-harness · deepseek-harness.local-agent.with.an.extremely.long.unbroken.directory.suffix.that.must.wrap.instead.of.overflowing",
+    available: true,
+  },
   { id: "missing-target", label: "Unavailable target", available: false },
 ];
 

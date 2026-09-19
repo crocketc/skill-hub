@@ -793,6 +793,7 @@
       "failed": "无法注册此项目（{{code}}）。",
       "name": "项目名称",
       "pickDirectory": "选择项目目录",
+      "agentUnavailable": "当前不可用（目录不存在或不可写）",
       "pickFailed": "无法打开目录选择器。",
       "tags": "标签（可选）",
       "tagsHint": "多个标签用英文逗号分隔。",

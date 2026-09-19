@@ -793,6 +793,7 @@
       "failed": "This project could not be registered ({{code}}).",
       "name": "Project name",
       "pickDirectory": "Choose project directory",
+      "agentUnavailable": "Currently unavailable (directory missing or not writable)",
       "pickFailed": "The directory picker could not be opened.",
       "tags": "Tags (optional)",
       "tagsHint": "Separate multiple tags with commas.",

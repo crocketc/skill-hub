@@ -307,7 +307,23 @@ export function ProjectListPage({
               />
             </Field>
             {agentCandidates.length ? (
-              <fieldset><legend>{t("projects.registration.agents")}</legend>{agentCandidates.map((agent) => <CheckboxField key={agent.id} checked={selectedAgentIds.includes(agent.id)} disabled={registering || !agent.available} label={agent.label} onChange={() => setSelectedAgentIds((current) => current.includes(agent.id) ? current.filter((id) => id !== agent.id) : [...current, agent.id])} />)}</fieldset>
+              /* DEV-14：Agent 勾选列表重排——固定高度内滚（不撑破抽屉）、
+                 复选框定宽、名称可折行；不可用项给出原因说明而非静默禁用。 */
+              <fieldset className="sh-project-registration__agents">
+                <legend>{t("projects.registration.agents")}</legend>
+                <div className="sh-project-registration__agent-list" tabIndex={-1}>
+                  {agentCandidates.map((agent) => (
+                    <CheckboxField
+                      checked={selectedAgentIds.includes(agent.id)}
+                      description={agent.available ? undefined : t("projects.registration.agentUnavailable")}
+                      disabled={registering || !agent.available}
+                      key={agent.id}
+                      label={agent.label}
+                      onChange={() => setSelectedAgentIds((current) => current.includes(agent.id) ? current.filter((id) => id !== agent.id) : [...current, agent.id])}
+                    />
+                  ))}
+                </div>
+              </fieldset>
             ) : null}
             {registrationError ? <p aria-live="polite" role="status">{registrationError}</p> : null}
             <div className="sh-project-registration__actions">
