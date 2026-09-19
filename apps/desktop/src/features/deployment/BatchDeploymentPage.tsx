@@ -221,13 +221,24 @@ export function BatchDeploymentPage({ facade, skillIds, tracker, onCommitted }: 
         {phase === "targets" ? (
           <Button disabled={selected.length === 0} onClick={() => void previewBatch()} size="lg">{t("deployment.preview")}</Button>
         ) : (
-          <Button
-            disabled={committing || previewFailures.length > 0}
-            onClick={() => void commit()}
-            size="lg"
-          >
-            {t("deployment.commit")}
-          </Button>
+          <>
+            <Button
+              disabled={committing}
+              onClick={() => {
+                setPreview(undefined);
+              }}
+              variant="secondary"
+            >
+              {t("actions.back")}
+            </Button>
+            <Button
+              disabled={committing || previewFailures.length > 0}
+              onClick={() => void commit()}
+              size="lg"
+            >
+              {t("deployment.commit")}
+            </Button>
+          </>
         )}
       </div>
     </>
@@ -247,7 +258,9 @@ export function BatchDeploymentPage({ facade, skillIds, tracker, onCommitted }: 
       {phase === "list-error" ? <DataState message={listError ?? ""} state="error" /> : null}
       {phase === "loading" ? <DataState message={t("deployment.states.loading")} state="loading" /> : null}
       {phase === "empty" ? <DataState message={t("deployment.states.empty")} state="empty" /> : null}
-      {targets && targets.length > 0 ? <section aria-labelledby="deployment-targets-heading" className="sh-deployment-flow__section">
+      {/* DEV-17：计划区是独立呈现单元——预览步/提交步不再并列渲染目标
+          长列表，「上一步」返回选择步且勾选保持。 */}
+      {targets && targets.length > 0 && phase === "targets" ? <section aria-labelledby="deployment-targets-heading" className="sh-deployment-flow__section">
         <div className="sh-section-heading">
           <div>
             <h2 id="deployment-targets-heading">{t("deployment.targets.heading")}</h2>

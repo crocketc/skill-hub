@@ -330,6 +330,26 @@ it("renders a preview occupancy conflict as readable text with takeover guidance
   expect(screen.getByRole("button", { name: "确认添加" })).toBeDisabled();
 });
 
+it("swaps the target list for the plan panel at the preview step and supports going back", async () => {
+  // DEV-17：计划区必须是独立呈现单元——预览步不再把「添加计划」追加在
+  // 目标长列表尾部；提供「上一步」返回选择，勾选状态保持。
+  const user = userEvent.setup();
+  await renderBatchPage(batchFacade(), ["skill-pdf", "skill-docx"]);
+
+  await user.click(await screen.findByLabelText("Codex CLI"));
+  await user.click(screen.getByRole("button", { name: "预览" }));
+
+  // 预览步：目标选择列表退出首屏，仅呈现计划区。
+  expect(screen.queryByRole("region", { name: "Agent 目标" })).not.toBeInTheDocument();
+  expect(screen.getByRole("region", { name: /添加计划/ })).toBeVisible();
+  expect(screen.queryByRole("checkbox", { name: "Codex CLI" })).not.toBeInTheDocument();
+
+  // 上一步：回到选择步，勾选保持。
+  await user.click(screen.getByRole("button", { name: "上一步" }));
+  const codex = await screen.findByRole("checkbox", { name: "Codex CLI" });
+  expect(codex).toBeChecked();
+});
+
 it("hides the batch footer during committing and announces the non-atomic progress", async () => {
   const user = userEvent.setup();
   let resolveCommit: (value: Awaited<ReturnType<BatchDeploymentFacade["commit"]>>) => void = () => undefined;
