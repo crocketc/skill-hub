@@ -121,6 +121,26 @@ function TagDistributionPanel({
   const navigate = useNavigate();
   const heading = t("overview.tags.heading");
 
+  if (items.length === 0) {
+    // DEV-7（用户裁定）：零标签渲染空态面板——饼图占位 + 暂无标签文案，
+    // 待处理摘要的位置因此保持稳定，不再随标签数量出现/消失。
+    return (
+      <section aria-label={heading} className="sh-overview__tag-panel">
+        <div className="sh-overview__details-head">
+          <h2>{heading}</h2>
+          <span>{t("overview.tags.detailCount", { count: 0 })}</span>
+        </div>
+        <div className="sh-overview__tag-layout sh-overview__tag-layout--empty">
+          <div className="sh-overview__tag-placeholder" aria-hidden="true" />
+          <div className="sh-overview__tag-empty">
+            <p className="sh-overview__tag-empty-title">{t("overview.tags.emptyTitle")}</p>
+            <p className="sh-overview__tag-empty-hint">{t("overview.tags.emptyHint")}</p>
+          </div>
+        </div>
+      </section>
+    );
+  }
+
   return (
     <section aria-label={heading} className="sh-overview__tag-panel">
       <div className="sh-overview__details-head">
@@ -206,6 +226,10 @@ export function OverviewPage({ relationshipsFacade }: OverviewPageProps) {
           </ul>
         </section>
 
+        {/* DEV-7（用户裁定的固定布局）：技能关系区上移；部署关系分布在其下；
+            右列自上而下为标签饼图与待处理摘要（待处理固定右下）。 */}
+        <RelationshipThumbnailNetwork facade={relationshipsFacade} />
+
         <section className="sh-overview__content-grid">
           <section className="sh-overview__panel">
             <div className="sh-overview__section-head">
@@ -237,12 +261,10 @@ export function OverviewPage({ relationshipsFacade }: OverviewPageProps) {
           </section>
 
           <div className="sh-overview__rail">
-            {tagItems.length > 0 ? <TagDistributionPanel items={tagItems} /> : null}
+            <TagDistributionPanel items={tagItems} />
             <PendingSummary snapshot={snapshot} />
           </div>
         </section>
-
-        <RelationshipThumbnailNetwork facade={relationshipsFacade} />
       </section>
     </PageFrame>
   );

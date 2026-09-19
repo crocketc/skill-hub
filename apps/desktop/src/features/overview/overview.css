@@ -184,6 +184,31 @@
   gap: var(--space-3);
 }
 
+/* DEV-7：零标签空态——饼图占位（虚线圆）+ 暂无标签说明，
+   面板常驻使右列布局不随标签数量出现/消失。 */
+.sh-overview__tag-layout--empty {
+  grid-template-columns: minmax(6rem, 0.6fr) minmax(0, 1fr);
+}
+
+.sh-overview__tag-placeholder {
+  aspect-ratio: 1;
+  width: min(8rem, 100%);
+  margin: 0 auto;
+  border: 2px dashed color-mix(in srgb, var(--ui-border) 70%, transparent);
+  border-radius: 999px;
+}
+
+.sh-overview__tag-empty-title {
+  margin: 0;
+  font-weight: 600;
+}
+
+.sh-overview__tag-empty-hint {
+  margin: var(--space-1) 0 0;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+
 .sh-overview__tag-chart {
   min-width: 0;
   height: 10rem;

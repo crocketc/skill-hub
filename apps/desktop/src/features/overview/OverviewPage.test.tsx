@@ -673,3 +673,27 @@ it("keeps the desktop overview grid at smaller window widths instead of switchin
   expect(compactOverviewRule).not.toContain(".sh-overview__content-grid");
   expect(baseCss).toMatch(/\.sh-overview__content-grid\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\) clamp\(/);
 });
+
+
+it("renders the tag panel empty state and keeps relations above the deployment chart (DEV-7)", async () => {
+  const emptyTags = {
+    ...overviewSnapshot,
+    tag_categories: [],
+  };
+  await renderOverview(emptyTags);
+
+  // 零标签：空态饼图面板仍然渲染（占位 + 暂无标签），不再整块消失。
+  expect(await screen.findByText("No tags yet")).toBeVisible();
+  expect(document.querySelector(".sh-overview__tag-placeholder")).not.toBeNull();
+  expect(screen.getByText("Skill count by tag")).toBeVisible();
+
+  // 固定布局：技能关系区在部署关系分布之前；待处理摘要在其后（右下）。
+  const relations = screen.getByRole("heading", { name: "Skill relationships" });
+  const chart = screen.getByRole("heading", {
+    name: "Where managed skills have deployment relations",
+  });
+  const pending = screen.getByRole("heading", { name: /pending/i });
+  expect(relations.compareDocumentPosition(chart) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(chart.compareDocumentPosition(pending) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+});
+

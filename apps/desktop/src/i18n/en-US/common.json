@@ -3046,6 +3046,8 @@
       "heading": "Skill count by tag",
       "chartAria": "Skill count by tag chart",
       "drilldown": "View {{count}} skills tagged {{label}}",
+      "emptyTitle": "No tags yet",
+      "emptyHint": "Tag your skills and the distribution will appear here.",
       "detailCount": "{{count}} tags"
     }
   },
