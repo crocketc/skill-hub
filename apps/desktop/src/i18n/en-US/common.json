@@ -2201,6 +2201,7 @@
       "zoomIn": "Zoom in",
       "zoomOut": "Zoom out",
       "zoomReset": "Reset view",
+      "fitView": "Fit content (center all)",
       "collapsedSummary_one": "{{count}} item hidden or folded",
       "collapsedSummary_other": "{{count}} items hidden or folded",
       "collapsedNodeLabel_one": "{{count}} folded",

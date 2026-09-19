@@ -11,6 +11,7 @@ import type {
   SkillRelationshipCandidate,
 } from "../api";
 import { relationshipsKeys } from "../api";
+import { applyPositions, computeForceLayout, type ForcePositions } from "./forceLayout";
 import { nativeRelationshipsFacade } from "../nativeApi";
 import { useRelationshipsReturnState } from "../returnState";
 import {
@@ -254,6 +255,24 @@ export function SkillGraphPage({
     [graph, urlState.types, urlState.statuses, display],
   );
 
+  // DEV-24：力导向布局（确定性 d3-force 族实现）。关系事实或筛选变化时
+  // 重新松弛并触发 fit-view；用户拖拽过的节点以钉住坐标作为松弛起点。
+  const [dragPositions, setDragPositions] = useState<ForcePositions>({});
+  useEffect(() => {
+    setDragPositions({});
+  }, [projection]);
+  const layoutPositions = useMemo(
+    () => (projection ? computeForceLayout(projection, { overrides: dragPositions }) : null),
+    [projection, dragPositions],
+  );
+  const layoutProjection = useMemo(
+    () => (projection && layoutPositions ? applyPositions(projection, layoutPositions) : null),
+    [projection, layoutPositions],
+  );
+  const handleNodeDrag = useCallback((nodeId: string, x: number, y: number) => {
+    setDragPositions((current) => ({ ...current, [nodeId]: { x, y } }));
+  }, []);
+
   const saveReturnState = useCallback(() => {
     returnState.saveState({ viewport });
   }, [returnState.saveState, viewport]);
@@ -456,7 +475,9 @@ export function SkillGraphPage({
             setSelectedEdgeId(null);
           }}
           onViewportChange={setViewport}
-          projection={projection}
+          fitSignal={layoutProjection}
+          onNodeDrag={handleNodeDrag}
+          projection={layoutProjection ?? projection}
           resolveSkillName={resolveSkillName}
           selectedEdgeId={selectedEdgeId}
           selectedNodeId={selectedNodeId}

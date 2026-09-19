@@ -1,4 +1,4 @@
-import { useRef, type PointerEvent as ReactPointerEvent, type MouseEvent as ReactMouseEvent } from "react";
+import { useEffect, useRef, type PointerEvent as ReactPointerEvent, type MouseEvent as ReactMouseEvent, type WheelEvent as ReactWheelEvent } from "react";
 import { useTranslation } from "react-i18next";
 import {
   CANVAS_SIZE,
@@ -22,12 +22,16 @@ export interface SkillGraphCanvasProps {
   onSelectEdge: (edgeId: string | null) => void;
   onSelectNode: (nodeId: string | null) => void;
   onViewportChange: (viewport: GraphViewport) => void;
+  /** DEV-24：节点拖拽落点回调（画布坐标）；缺省时节点不可拖拽。 */
+  onNodeDrag?: (nodeId: string, x: number, y: number) => void;
   projection: GraphProjection;
   selectedEdgeId: string | null;
   selectedNodeId: string | null;
   viewport: GraphViewport;
   /** DEV-15：SkillId → 展示名解析；节点标签用名称，不裸显 UUID。 */
   resolveSkillName?: (skillId: string) => string | undefined;
+  /** 变化时触发一次 fit-view（内容整体居中，DEV-24）。 */
+  fitSignal?: unknown;
 }
 
 const MIN_ZOOM = 0.4;
@@ -63,13 +67,15 @@ function nodeLabel(
 }
 
 /**
- * 图谱画布（任务 6）：React/SVG 本地稳定分层布局，不引入图渲染框架。
- * 平移/缩放只通过指针、滚轮和可键盘操作的控件按钮提供；
- * 画布表面本身不可聚焦，不承诺键盘拖拽/缩放。
+ * 图谱画布（任务 6；DEV-24 重设计）：React/SVG 渲染 + 力导向坐标（页面侧
+ * computeForceLayout）。交互：画布拖拽平移、滚轮缩放、节点可拖拽定位、
+ * fit-view 内容整体居中；可键盘操作的控件按钮保留。
  */
 export function SkillGraphCanvas({
+  fitSignal,
   onBeforeJump,
   onFocusSkill,
+  onNodeDrag,
   onSelectEdge,
   onSelectNode,
   onViewportChange,
@@ -82,9 +88,84 @@ export function SkillGraphCanvas({
   const { t } = useTranslation();
   const surfaceRef = useRef<HTMLDivElement | null>(null);
   const dragState = useRef<{ pointerId: number; startX: number; startY: number; originX: number; originY: number; moved: boolean } | null>(null);
+  const nodeDragRef = useRef<{ nodeId: string; pointerId: number; startX: number; startY: number; originX: number; originY: number; moved: boolean } | null>(null);
 
   const zoomBy = (factor: number) => {
     onViewportChange({ ...viewport, zoom: clampZoom(viewport.zoom * factor) });
+  };
+
+  /** DEV-24：fit-view——按当前内容包围盒缩放并居中（不再以选中 Skill 为锚）。 */
+  const fitToContent = () => {
+    const surface = surfaceRef.current;
+    if (!surface) return;
+    const width = surface.clientWidth;
+    const height = surface.clientHeight;
+    if (width <= 0 || height <= 0 || projection.nodes.length === 0) {
+      onViewportChange({ x: 0, y: 0, zoom: 1 });
+      return;
+    }
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    for (const projected of projection.nodes) {
+      minX = Math.min(minX, projected.x);
+      minY = Math.min(minY, projected.y);
+      maxX = Math.max(maxX, projected.x);
+      maxY = Math.max(maxY, projected.y);
+    }
+    const contentWidth = Math.max(1, maxX - minX);
+    const contentHeight = Math.max(1, maxY - minY);
+    const zoom = clampZoom(Math.min(width / (contentWidth + 160), height / (contentHeight + 160)));
+    onViewportChange({
+      x: (width - contentWidth * zoom) / 2 - minX * zoom,
+      y: (height - contentHeight * zoom) / 2 - minY * zoom,
+      zoom,
+    });
+  };
+
+  // 内容变化（事实/筛选/拖拽布局重算）即内容整体居中。
+  useEffect(() => {
+    fitToContent();
+  }, [fitSignal]);
+
+  const handleWheel = (event: ReactWheelEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    zoomBy(event.deltaY < 0 ? 1.1 : 0.9);
+  };
+
+  const handleNodePointerDown = (event: ReactPointerEvent<HTMLElement>, nodeId: string) => {
+    if (!onNodeDrag) return;
+    event.stopPropagation();
+    nodeDragRef.current = {
+      nodeId,
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      originX: projection.nodes.find((projected) => projected.node.node_id === nodeId)?.x ?? 0,
+      originY: projection.nodes.find((projected) => projected.node.node_id === nodeId)?.y ?? 0,
+      moved: false,
+    };
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+  };
+
+  const handleNodePointerMove = (event: ReactPointerEvent<HTMLElement>) => {
+    const drag = nodeDragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    const dx = event.clientX - drag.startX;
+    const dy = event.clientY - drag.startY;
+    if (Math.abs(dx) > 3 || Math.abs(dy) > 3) {
+      drag.moved = true;
+    }
+    onNodeDrag?.(drag.nodeId, drag.originX + dx / viewport.zoom, drag.originY + dy / viewport.zoom);
+  };
+
+  const handleNodePointerUp = (event: ReactPointerEvent<HTMLElement>) => {
+    const drag = nodeDragRef.current;
+    if (drag && drag.pointerId === event.pointerId) {
+      // 拖拽过的节点释放前清除记录：随后的 click 落回选中语义。
+      if (!drag.moved) nodeDragRef.current = null;
+    }
   };
 
   const handlePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -147,10 +228,11 @@ export function SkillGraphCanvas({
         <button
           type="button"
           className="sh-button sh-button--secondary sh-button--sm"
-          aria-label={t("relationships.graph.zoomReset")}
-          onClick={() => onViewportChange({ x: 0, y: 0, zoom: 1 })}
+          aria-label={t("relationships.graph.fitView")}
+          title={t("relationships.graph.fitView")}
+          onClick={fitToContent}
         >
-          ⟲
+          ⛶
         </button>
       </div>
       <div
@@ -160,6 +242,7 @@ export function SkillGraphCanvas({
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
+        onWheel={handleWheel}
         onClick={handleSurfaceClick}
       >
         <div
@@ -220,6 +303,11 @@ export function SkillGraphCanvas({
               ? t("relationships.graph.collapsedNodeLabel", { count: node.collapsed_count })
               : nodeLabel(node, node.node_id, resolveSkillName);
             const handleClick = () => {
+              // 拖拽（位移超阈值）不算点击：不触发选中/跳转。
+              if (nodeDragRef.current?.moved) {
+                nodeDragRef.current = null;
+                return;
+              }
               if (projected.layer === "related" && node.skill_id) {
                 onBeforeJump?.();
                 onFocusSkill(node.skill_id);
@@ -238,7 +326,15 @@ export function SkillGraphCanvas({
                   selected ? "is-selected" : "",
                 ].filter(Boolean).join(" ")}
                 style={{ left: projected.x, top: projected.y }}
-                onPointerDown={(event) => event.stopPropagation()}
+                onPointerDown={(event) => {
+                  if (onNodeDrag) {
+                    handleNodePointerDown(event, node.node_id);
+                    return;
+                  }
+                  event.stopPropagation();
+                }}
+                onPointerMove={onNodeDrag ? handleNodePointerMove : undefined}
+                onPointerUp={onNodeDrag ? handleNodePointerUp : undefined}
                 onClick={handleClick}
               >
                 <span aria-hidden="true" className="sh-graph-node__kind">

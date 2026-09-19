@@ -21,7 +21,7 @@ test("routes the import through the governance phase before conflicts", async ({
 }) => {
   await page.goto(PREVIEW);
   await page.getByRole("textbox", { name: "来源" }).fill("C:/skills/preview");
-  await page.getByRole("button", { name: "解析来源" }).click();
+  await page.getByRole("button", { name: "读取该来源的候选" }).click();
   await page
     .getByRole("button", { name: "继续选择候选" })
     .click({ timeout: 10_000 });
@@ -58,11 +58,11 @@ test("routes the import through the governance phase before conflicts", async ({
   // 展开成员并做单项覆盖（单项优先于分组动作）。
   await page.getByRole("button", { name: "展开 1 个项目" }).first().click();
   await page
-    .getByRole("radio", { name: "PDF Reader：创建待办" })
+    .getByRole("radio", { name: "PDF Reader：先不导入，记为待办" })
     .first()
     .click();
   await page
-    .getByRole("radio", { name: "创建待办" })
+    .getByRole("radio", { name: "先不导入，记为待办" })
     .last()
     .click();
   await expect(confirm).toBeEnabled();

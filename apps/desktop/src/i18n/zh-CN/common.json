@@ -2201,6 +2201,7 @@
       "zoomIn": "放大",
       "zoomOut": "缩小",
       "zoomReset": "重置视图",
+      "fitView": "适配内容（整体居中）",
       "collapsedSummary_one": "已折叠或隐藏 {{count}} 项",
       "collapsedSummary_other": "已折叠或隐藏 {{count}} 项",
       "collapsedNodeLabel_one": "已折叠 {{count}} 项",

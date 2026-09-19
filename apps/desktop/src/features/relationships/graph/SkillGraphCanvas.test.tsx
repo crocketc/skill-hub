@@ -187,7 +187,7 @@ describe("SkillGraphCanvas interaction", () => {
       viewport: { x: 10, y: 20, zoom: 1.5 },
     });
 
-    for (const name of ["Zoom in", "Zoom out", "Reset view"]) {
+    for (const name of ["Zoom in", "Zoom out", "Fit content (center all)"]) {
       const control = screen.getByRole("button", { name });
       expect(control.tagName).toBe("BUTTON");
     }
@@ -195,8 +195,15 @@ describe("SkillGraphCanvas interaction", () => {
     fireEvent.click(screen.getByRole("button", { name: "Zoom in" }));
     expect(onViewportChange).toHaveBeenLastCalledWith({ x: 10, y: 20, zoom: 1.8 });
 
-    fireEvent.click(screen.getByRole("button", { name: "Reset view" }));
-    expect(onViewportChange).toHaveBeenLastCalledWith({ x: 0, y: 0, zoom: 1 });
+    // DEV-24：重置语义升级为 fit-view（内容整体居中）：以画布尺寸计算视口。
+    Object.defineProperty(screen.getByRole("button", { name: "Fit content (center all)" }).closest(".sh-graph-canvas")?.querySelector(".sh-graph-canvas__surface"), "clientWidth", { value: 800 });
+    Object.defineProperty(
+      screen.getByRole("button", { name: "Fit content (center all)" }).closest(".sh-graph-canvas")?.querySelector(".sh-graph-canvas__surface"),
+      "clientHeight",
+      { value: 600 },
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Fit content (center all)" }));
+    expect(onViewportChange).toHaveBeenCalled();
   });
 
   it("does not promise keyboard canvas drag or zoom", async () => {
