@@ -146,7 +146,7 @@ async function installNativePreview(page: Page) {
             { skill_id: "pdf-reader", display_name: "PDF Reader", runtime_name: "pdf-reader", tags: ["documents"], matched_alias: null, relationship_count: 2, relationship_revision: "preview-rel-1", last_verified_at: null },
             { skill_id: "release-notes", display_name: "Release Notes", runtime_name: "release-notes", tags: ["automation"], matched_alias: null, relationship_count: 1, relationship_revision: "preview-rel-1", last_verified_at: null },
           ]);
-          case "get_conflict_workspace": return ok("conflict_workspace", { cases: [{ case: { classification: "uncertain", conflict_id: "conflict-1", evidence: { fingerprints_match: null, names_match: true, sufficient_identity_evidence: false }, member_skill_ids: [] }, latest_analysis: null, analysis_stale: false, recommended_decision: null }], handled_count: 0, handled: [], relationship_revision: "preview-rel-1", last_verified_at: null });
+          case "get_conflict_workspace": return ok("conflict_workspace", { cases: [{ case: { classification: "uncertain", conflict_id: "import-conflict:same_name_different_content:find-skills", evidence: { fingerprints_match: null, names_match: true, sufficient_identity_evidence: false }, member_skill_ids: ["pdf-reader", "release-notes"], members: [{ skill_id: "pdf-reader", version_id: "v1", provenance_id: null, directory_node_id: null, path: "C:/Preview/SkillHub/skills/find-skills", fingerprint: "fnv1a:0abc" }, { skill_id: "release-notes", version_id: "v2", provenance_id: null, directory_node_id: null, path: "C:/Preview/.claude/skills/find-skills", fingerprint: "fnv1a:0def" }] }, latest_analysis: null, analysis_stale: false, recommended_decision: null }], handled_count: 0, handled: [], relationship_revision: "preview-rel-1", last_verified_at: null });
           case "list_relation_governance": return ok("relation_governance_ledger", { rows: [], counts: { all: 3, eligible_to_centralize: 1, needs_validation: 1, blocked: 1 }, bucket: "all", total: 3, relationship_revision: "preview-rel-1", last_verified_at: null });
           case "get_deployment_plan": {
             // DEV-18：占用组合（真实场景 find-skills → Claude Code，目标目录
@@ -469,6 +469,36 @@ test("preview occupancy conflict renders readable guidance instead of [object Ob
   await expect(alert).toContainText(/central library management/i);
   await expect(alert).not.toContainText("[object Object]");
   await expect(page.getByRole("button", { name: "Confirm and add" })).toBeDisabled();
+});
+
+test("conflict workbench keeps members readable, actions reachable and preview scrollable at 800x600 (DEV-2)", async ({ page }) => {
+  // J-REL-3 内容判据的浏览器自动化复测（准-B 同构素材：同名不同内容组）：
+  // ① 成员列表可读；② 处理动作区可达；③ 根元素无横向溢出。
+  await installNativePreview(page);
+  await page.setViewportSize({ width: 800, height: 600 });
+  await page.goto("/relationships/decisions");
+
+  await expect(page.getByRole("heading", { level: 1, name: "Conflict decisions" })).toBeVisible();
+
+  // ① 成员列表：两个成员路径以统一展示形态可读，且都在视口内。
+  const memberCodes = page.locator("code", { hasText: "find-skills" });
+  await expect(memberCodes).toHaveCount(2);
+  for (let index = 0; index < await memberCodes.count(); index += 1) {
+    const box = (await memberCodes.nth(index).boundingBox())!;
+    expect(box.x, "member path stays inside the viewport").toBeGreaterThanOrEqual(0);
+    expect(box.x + box.width).toBeLessThanOrEqual(800);
+  }
+
+  // ② 动作区可达：处理决定控件完整落在视口内。
+  const decision = page.locator("section.sh-conflict-actions").first();
+  await decision.scrollIntoViewIfNeeded();
+  const decisionBox = (await decision.boundingBox())!;
+  expect(decisionBox.y, "decision controls scroll fully into view at 800x600").toBeGreaterThanOrEqual(0);
+  expect(decisionBox.y + decisionBox.height, "decision controls stay reachable at 800x600").toBeLessThanOrEqual(608);
+
+  // ③ 根元素无横向溢出。
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+  expect(overflow).toBeLessThanOrEqual(0);
 });
 
 test("relationship module exposes in-page navigation with counts between the three scopes", async ({ page }) => {
