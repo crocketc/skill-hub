@@ -32,6 +32,7 @@ import {
 } from "../relationshipGovernance/relationshipGovernance";
 import { SourceInput } from "./SourceInput";
 import { readSessionSelectedSources, writeSessionSelectedSources } from "./sessionSources";
+import { clearWizardSession, readWizardSession, saveWizardSession } from "./wizardSession";
 import {
   desktopDirectoryPicker,
   normalizeWindowsPath,
@@ -124,6 +125,7 @@ type WizardEvent =
   | { type: "source_preview_finished"; source: string; status: SourceScanStatus }
   | { type: "source_rescan_started"; source: string }
   | { type: "source_rescan_finished"; source: string; status: SourceScanStatus; candidates: WizardState["candidates"] }
+  | { type: "session_restored"; candidates: WizardState["candidates"]; sourceResults: SourceScanResult[]; candidatesBySource: WizardState["candidatesBySource"]; selectedIds: string[] }
   | { type: "failed"; error: string; previousPhase: WizardPhase }
   | { type: "cancelled" }
   | { type: "retry" };
@@ -253,6 +255,17 @@ function reducer(state: WizardState, event: WizardEvent): WizardState {
       return { ...initialState, sourceText: state.sourceText };
     case "show_candidates":
       return { ...state, governanceDecision: emptyGovernanceDecision(), phase: "candidates" };
+    case "session_restored":
+      // DEV-12：会话恢复——扫描结果与已勾选候选原样回到门槛步（勾选保留，
+      // 继续后仍生效）；仅当来源集合与保存时一致才派发本事件。
+      return {
+        ...state,
+        candidates: event.candidates,
+        candidatesBySource: event.candidatesBySource,
+        sourceResults: event.sourceResults,
+        selectedIds: event.selectedIds,
+        phase: "candidate_gate",
+      };
     case "candidates_selected":
       return { ...state, selectedIds: event.ids };
     case "analysis_started":
@@ -491,6 +504,52 @@ export function ImportWizard({
     if (variant === "standard") writeSessionSelectedSources(selectedSources);
   }, [selectedSources, variant]);
 
+  // DEV-12：扫描事实与勾选持久进会话存储（标准变体）。提交/清空后作废，
+  // 其余带扫描结果的阶段都保存；来源页/解析中不保存（尚无可恢复的事实）。
+  // restoredRef 由下方挂载恢复 effect 声明并置位。
+  useEffect(() => {
+    if (variant !== "standard") return;
+    if (!restoredRef.current) return;
+    if (state.phase === "source" || state.phase === "acquiring") return;
+    if (state.phase === "committing" || state.phase === "summary" || state.candidates.length === 0) {
+      clearWizardSession();
+      return;
+    }
+    saveWizardSession({
+      candidates: state.candidates,
+      candidatesBySource: state.candidatesBySource,
+      selectedIds: state.selectedIds,
+      sourceResults: state.sourceResults,
+      sources: selectedSources,
+    });
+  }, [variant, selectedSources, state.phase, state.candidates, state.candidatesBySource, state.selectedIds, state.sourceResults]);
+
+  // DEV-12/DEV-13：标准向导挂载时二选一——
+  // ① 会话中有同一来源集合的扫描事实：原样恢复（扫描结果 + 已勾选候选），
+  //    不重新扫描；
+  // ② 无会话或来源已变化：对已选来源立即后台解析（与文案「Skill 数量会在
+  //    后台自动解析」一致）。挂载后每条来源的勾选/追加各有即时预览路径。
+  const restoredRef = useRef(false);
+  useEffect(() => {
+    if (variant !== "standard" || restoredRef.current) return;
+    restoredRef.current = true;
+    const saved = readWizardSession();
+    const sameSources = Boolean(saved)
+      && saved!.sources.length === selectedSourcesRef.current.length
+      && saved!.sources.every((source) => selectedSourcesRef.current.some((current) => sameSourcePath(current, source)));
+    if (saved && sameSources) {
+      dispatch({
+        candidates: saved.candidates,
+        candidatesBySource: saved.candidatesBySource,
+        selectedIds: saved.selectedIds,
+        sourceResults: saved.sourceResults,
+        type: "session_restored",
+      });
+      return;
+    }
+    for (const source of selectedSourcesRef.current) void previewSource(source);
+  }, [variant]);
+
   // 互斥的 import 结束后自动解除本地锁定提示。
   useEffect(() => {
     if (!importLocked) setCommitBlockedNotice(false);
@@ -620,20 +679,8 @@ type: "failed",
     for (const source of onboardingSources) void previewSource(source);
   }, [normalizedInitialSources.join("\u0000"), previewSource, variant]);
 
-  // DEV-13：标准向导挂载时已选来源（初始建议 + 会话恢复）立即后台解析。
-  // 此前只有 onboarding 变体有自动预览，标准向导的已选来源一直停在
-  // 「未扫描」，与文案「Skill 数量会在后台自动解析」不符；用户必须再点
-  // 「读取已选目录候选」。挂载后每条来源的勾选/追加各有即时预览路径，
-  // 这里只补挂载这一次。
-  const standardPreviewKeyRef = useRef<string | null>(null);
-  useEffect(() => {
-    if (variant !== "standard") return;
-    const key = [...selectedSourcesRef.current].sort().join("\u0000");
-    if (standardPreviewKeyRef.current === key) return;
-    standardPreviewKeyRef.current = key;
-    for (const source of selectedSourcesRef.current) void previewSource(source);
-    // 挂载时一次性补齐：后续勾选/追加各有自己的即时预览路径。
-  }, []);
+  // DEV-13：标准向导挂载时的自动解析已并入上方 DEV-12 的挂载 effect——
+  // 有会话扫描事实则恢复、否则立即后台解析，两者互斥。
 
   // 作废当前预览会话：清空请求序号表与预览缓存。在途预览的迟到完成因
   // 序号不再匹配被守卫丢弃，不会再写回状态或触发 onboarding 终结。

@@ -8,6 +8,7 @@ import { createSkillHubI18n } from "../../i18n";
 import { AppNotificationsProvider } from "../../ui/notifications";
 import { createOperationTracker } from "../../platform/operationTracker";
 import { clearSessionSelectedSources } from "./sessionSources";
+import { clearWizardSession } from "./wizardSession";
 import { createMockImportFacade, unavailableImportFacade, type ImportAction, type ImportCandidate, type ImportPlan, type ImportProgress, type ImportResult, type SourceDescriptor } from "./api";
 import type { ImportGovernanceDecision } from "../relationshipGovernance/relationshipGovernance";
 import type { ImportGovernanceGroup } from "../../api/bindings";
@@ -60,6 +61,7 @@ async function renderGuidedWizard(
 // M-29：会话内已选来源是模块级单例；每个用例从干净状态开始。
 beforeEach(() => {
   clearSessionSelectedSources();
+  clearWizardSession();
 });
 
 it("exposes the unified step rail and keeps the primary action in a stable footer", async () => {
@@ -706,6 +708,42 @@ it("restores the selected sources when the wizard reopens in the same session", 
   expect(within(list).getByText("C:\\codex\\skills")).toBeVisible();
   expect(within(list).getByText("C:\\extra\\skills")).toBeVisible();
   expect(facade.calls.acquiredSources).toContain("C:/extra/skills");
+});
+
+it("restores scan results and candidate selection after the wizard remounts", async () => {
+  // DEV-12：候选选到一半切走再回来——扫描结果（逐来源候选数）与已勾选
+  // 候选原样恢复；恢复不触发重新扫描。
+  const user = userEvent.setup();
+  const facade = createMockImportFacade({ scenario: "safe-local" });
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  const first = render(
+    <TestShell>
+      <I18nextProvider i18n={i18n}>
+        <ImportWizard facade={facade} initialSources={["C:/codex/skills", "C:/claude/skills"]} initialSourceText="C:/codex/skills" />
+      </I18nextProvider>
+    </TestShell>,
+  );
+  await user.click(await screen.findByRole("button", { name: "读取已选目录候选" }));
+  await user.click(await screen.findByRole("button", { name: "继续选择候选" }));
+  const pdfCheckbox = screen.getAllByRole("checkbox", { name: /PDF/ })[0];
+  await user.click(pdfCheckbox);
+  expect(pdfCheckbox).toBeChecked();
+  const callsBeforeRemount = facade.calls.acquiredSources.length;
+  first.unmount();
+
+  render(
+    <TestShell>
+      <I18nextProvider i18n={i18n}>
+        <ImportWizard facade={facade} initialSources={["C:/codex/skills", "C:/claude/skills"]} initialSourceText="C:/codex/skills" />
+      </I18nextProvider>
+    </TestShell>,
+  );
+
+  // 恢复停在扫描结果门槛步；继续后勾选原样，且全程未重新扫描。
+  await user.click(await screen.findByRole("button", { name: "继续选择候选" }));
+  const restoredCheckboxes = await screen.findAllByRole("checkbox", { name: /PDF/ });
+  expect(restoredCheckboxes[0]).toBeChecked();
+  expect(facade.calls.acquiredSources).toHaveLength(callsBeforeRemount);
 });
 
 it("keeps onboarding selections local instead of restoring them from the session store", async () => {
