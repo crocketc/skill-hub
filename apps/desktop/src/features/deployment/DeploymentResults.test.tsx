@@ -23,7 +23,9 @@ it("renders a structured target failure as localized, actionable text", async ()
     </I18nextProvider>,
   );
 
-  expect(await screen.findByText("目标目录已存在，请选择其他名称或检查目标后再试。")).toBeVisible();
+  expect(await screen.findByText(/目标目录已存在同名内容，无法重复添加/)).toBeVisible();
+  // 占用冲突文案必须带出路引导（DEV-18）：提示可改用「纳入集中库管理」。
+  expect(screen.getByText(/纳入集中库管理/)).toBeVisible();
   expect(screen.queryByText("deployment.target_exists")).not.toBeInTheDocument();
 });
 

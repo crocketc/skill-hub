@@ -16,6 +16,7 @@ import type {
 
   BackupRetentionResult,
 } from "../../api/bindings";
+import { describeNativeError } from "../../api/nativeErrors";
 import { desktopDirectoryPicker } from "../../platform/directoryPicker";
 import { desktopDirectoryOpener } from "../../platform/directoryOpener";
 import { operationTracker, type OperationTracker } from "../../platform/operationTracker";
@@ -88,7 +89,7 @@ export function DataProtectionPage({
         scope: "full",
       }));
     } catch (reason) {
-      setRollingError(reason instanceof Error ? reason.message : String(reason));
+      setRollingError(describeNativeError(reason, (key, options) => String(t(key as never, options as never)), "tasks.notices.failureUnknown"));
     } finally {
       setRollingBusy(false);
     }
@@ -113,7 +114,7 @@ export function DataProtectionPage({
   const run = async (action: () => Promise<void>) => {
     setBusy(true);
     setError(undefined);
-    try { await action(); } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); }
+    try { await action(); } catch (reason) { setError(describeNativeError(reason, (key, options) => String(t(key as never, options as never)), "tasks.notices.failureUnknown")); }
     finally { setBusy(false); }
   };
 
@@ -158,7 +159,7 @@ export function DataProtectionPage({
       (records) => { if (!cancelled) setDeployments(records); },
       (reason: unknown) => {
         if (cancelled) return;
-        setDeploymentError(reason instanceof Error ? reason.message : String(reason));
+        setDeploymentError(describeNativeError(reason, (key, options) => String(t(key as never, options as never)), "tasks.notices.failureUnknown"));
       },
     );
     return () => { cancelled = true; };

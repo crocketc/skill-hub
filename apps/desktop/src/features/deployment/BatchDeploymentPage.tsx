@@ -288,7 +288,14 @@ export function BatchDeploymentPage({ facade, skillIds, tracker, onCommitted }: 
             <p>{t("deployment.batch.planDescription")}</p>
           </div>
         </div>
-        {preview.failures.length ? <ul className="sh-notice-list" role="alert">{preview.failures.map((failure) => <li key={failure.skillId}>{t("deployment.batch.previewFailed", failure)}</li>)}</ul> : null}
+        {preview.failures.length ? <ul className="sh-notice-list" role="alert">{preview.failures.map((failure) => <li key={failure.skillId}>{t("deployment.batch.previewFailed", {
+          skillId: failure.skillId,
+          // 结构化错误走 describeNativeError 渲染可读文案（DEV-18）；
+          // 纯文本兜底（Error.message 等）原样透出。
+          message: failure.error
+            ? describeNativeError(failure.error, (key, options) => String(t(key as never, options as never)), "deployment.errors.generic")
+            : failure.message,
+        })}</li>)}</ul> : null}
         {preview.plans.map(({ skillId, plan }) => <section key={skillId}>
           <h3>{skillId}</h3>
           {plan.warnings.length > 0 ? <ul className="sh-notice-list">{plan.warnings.map((warning) => <li key={warning}>{String(t(warning as never, { defaultValue: warning } as never))}</li>)}</ul> : null}

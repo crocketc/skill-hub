@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { describeNativeError } from "../../api/nativeErrors";
 import { DataState } from "../../ui/DataState";
 import { OperationPhaseStatus } from "./OperationPhaseStatus";
 import { type OperationFacade, type OperationState, unavailableOperationFacade } from "./api";
@@ -8,7 +9,7 @@ export function OperationProgress({ operationId, facade = unavailableOperationFa
   const { t } = useTranslation();
   const [operation, setOperation] = useState<OperationState>();
   const [error, setError] = useState<string>();
-  useEffect(() => { void facade.get(operationId).then(setOperation).catch((reason: unknown) => setError(reason instanceof Error ? reason.message : String(reason))); }, [facade, operationId]);
+  useEffect(() => { void facade.get(operationId).then(setOperation).catch((reason: unknown) => setError(describeNativeError(reason, (key, options) => String(t(key as never, options as never)), "tasks.notices.failureUnknown"))); }, [facade, operationId, t]);
   if (error) return <DataState message={error} state="unavailable" />;
   if (!operation) return <DataState message={t("operations.loading")} state="loading" />;
   const progress = operation.total > 0 ? Math.round((operation.completed / operation.total) * 100) : 0;

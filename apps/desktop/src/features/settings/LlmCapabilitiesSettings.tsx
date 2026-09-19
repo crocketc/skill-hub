@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { Field } from "../../ui/Field";
 import { Select } from "../../ui/Select";
 import { Switch } from "../../ui/Switch";
+import { describeNativeError } from "../../api/nativeErrors";
 import {
   type LlmAdminFacade,
   type LlmCapabilityState,
@@ -29,8 +30,8 @@ export function LlmCapabilitiesSettings({ facade = unavailableLlmFacade }: { fac
     facade
       .readCapabilityState()
       .then(setState)
-      .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : String(reason)));
-  }, [facade]);
+      .catch((reason: unknown) => setError(describeNativeError(reason, (key, options) => String(t(key as never, options as never)), "tasks.notices.failureUnknown")));
+  }, [facade, t]);
 
   const update = (patch: Partial<LlmCapabilityState>) => {
     if (!state) return;
@@ -38,7 +39,7 @@ export function LlmCapabilitiesSettings({ facade = unavailableLlmFacade }: { fac
     setState(next);
     facade
       .writeCapabilityState(next)
-      .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : String(reason)));
+      .catch((reason: unknown) => setError(describeNativeError(reason, (key, options) => String(t(key as never, options as never)), "tasks.notices.failureUnknown")));
   };
 
   return (

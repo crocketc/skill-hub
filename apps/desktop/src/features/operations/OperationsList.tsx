@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
+import { describeNativeError } from "../../api/nativeErrors";
 import { formatDateTime, resolveLocale, type SupportedLocale } from "../../i18n";
 import { DataState } from "../../ui/DataState";
 import { Icon } from "../../ui/Icon";
@@ -39,12 +40,12 @@ export function OperationsList({ recent, tracker }: OperationsListProps) {
         if (!cancelled) setRows(result);
       })
       .catch((reason: unknown) => {
-        if (!cancelled) setError(reason instanceof Error ? reason.message : String(reason));
+        if (!cancelled) setError(describeNativeError(reason, (key, options) => String(t(key as never, options as never)), "tasks.notices.failureUnknown"));
       });
     return () => {
       cancelled = true;
     };
-  }, [recent]);
+  }, [recent, t]);
 
   // 记录列表规模为数十行，直接逐行格式化；无测量证据不做记忆化
   // （计划第 2 节：性能优化必须有可复现的前后证据）。

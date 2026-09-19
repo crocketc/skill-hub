@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
+import { describeNativeError } from "../../api/nativeErrors";
 import { DataState } from "../../ui/DataState";
 import { PageHeader } from "../../ui/PageHeader";
 import {
@@ -41,7 +42,7 @@ export function SettingsPage({ facade = unavailableSettingsFacade, initialSettin
         : current,
     );
   }, []);
-  useEffect(() => { if (initialSettings || !facade.get) return; void facade.get().then(setSettings).catch((reason: unknown) => setError(reason instanceof Error ? reason.message : String(reason))); }, [facade, initialSettings]);
+  useEffect(() => { if (initialSettings || !facade.get) return; void facade.get().then(setSettings).catch((reason: unknown) => setError(describeNativeError(reason, (key, options) => String(t(key as never, options as never)), "tasks.notices.failureUnknown"))); }, [facade, initialSettings, t]);
 
   if (error) return <DataState message={error} state="unavailable" />;
   if (!settings) return <DataState message={t("settings.loading")} state="loading" />;

@@ -196,7 +196,7 @@ it("renders structured native target failures as actionable batch text", async (
   await user.click(screen.getByRole("button", { name: "预览" }));
   await user.click(await screen.findByRole("button", { name: "确认添加" }));
 
-  expect(await screen.findByText("目标目录已存在，请选择其他名称或检查目标后再试。")).toBeVisible();
+  expect(await screen.findByText(/目标目录已存在同名内容，无法重复添加/)).toBeVisible();
   expect(screen.queryByText("deployment.target_exists")).not.toBeInTheDocument();
   expect(targets).toHaveLength(1);
 });
@@ -295,6 +295,39 @@ it("blocks the batch commit and announces the failure when a skill preview fails
   expect(screen.getByRole("button", { name: "确认添加" })).toBeDisabled();
   expect(screen.getByText("部分 Skill 无法生成预览，已阻止提交")).toBeVisible();
   expect(facade.commit).not.toHaveBeenCalled();
+});
+
+it("renders a preview occupancy conflict as readable text with takeover guidance", async () => {
+  const user = userEvent.setup();
+  const facade = batchFacade({
+    preview: vi.fn<BatchDeploymentFacade["preview"]>(async (_skillIds, selected) => ({
+      failures: [{
+        skillId: "skill-docx",
+        message: "[object Object]",
+        error: {
+          code: "deployment.target_exists",
+          severity: "error",
+          params: { path: "C:/Users/demo/.claude/skills/find-skills" },
+          actions: ["choose_another_name", "inspect_target"],
+        },
+      }],
+      plans: [{
+        skillId: "skill-pdf",
+        plan: { skillId: "skill-pdf", versionId: "v1", targets: selected.map((target) => ({ targetId: target.id, label: target.label, mode: "managed_copy" as const, warnings: [] })), warnings: [] },
+      }],
+    })),
+  });
+  await renderBatchPage(facade, ["skill-pdf", "skill-docx"]);
+
+  await user.click(await screen.findByLabelText("Codex CLI"));
+  await user.click(screen.getByRole("button", { name: "预览" }));
+
+  const alert = await screen.findByRole("alert");
+  expect(alert.textContent).not.toContain("[object Object]");
+  expect(alert.textContent).toContain("目标目录已存在");
+  // 占用冲突必须引导出路：提示可改用「纳入集中库管理」。
+  expect(alert.textContent).toContain("纳入集中库管理");
+  expect(screen.getByRole("button", { name: "确认添加" })).toBeDisabled();
 });
 
 it("hides the batch footer during committing and announces the non-atomic progress", async () => {

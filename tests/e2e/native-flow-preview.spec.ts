@@ -148,7 +148,16 @@ async function installNativePreview(page: Page) {
           ]);
           case "get_conflict_workspace": return ok("conflict_workspace", { cases: [{ case: { classification: "uncertain", conflict_id: "conflict-1", evidence: { fingerprints_match: null, names_match: true, sufficient_identity_evidence: false }, member_skill_ids: [] }, latest_analysis: null, analysis_stale: false, recommended_decision: null }], handled_count: 0, handled: [], relationship_revision: "preview-rel-1", last_verified_at: null });
           case "list_relation_governance": return ok("relation_governance_ledger", { rows: [], counts: { all: 3, eligible_to_centralize: 1, needs_validation: 1, blocked: 1 }, bucket: "all", total: 3, relationship_revision: "preview-rel-1", last_verified_at: null });
-          case "get_deployment_plan": return ok("deployment_plan", { skill_id: query.payload.request.skill_id, version_id: query.payload.request.version_id, runtime_name: query.payload.request.runtime_name, mode: "symbolic_link", targets: [{ physical_target_id: "codex-physical", logical_target_ids: ["codex-target"], target_path: "C:/Preview/.agents", destination_path: "C:/Preview/.agents/pdf-reader", source_path: "C:/Preview/SkillHub/skills/pdf-reader", runtime_name: query.payload.request.runtime_name, skill_id: query.payload.request.skill_id, version_id: query.payload.request.version_id, mode: "symbolic_link", change: "no_op", warnings: [], conflicts: [] }], warnings: [], conflicts: [] });
+          case "get_deployment_plan": {
+            // DEV-18：占用组合（真实场景 find-skills → Claude Code，目标目录
+            // 已有同名副本）在规划期即被 D-11 占用识别拒绝。mock 以结构化
+            // AppError 复现同款失败，验证页面渲染可读文案与「纳入集中库
+            // 管理」引导，而不是 [object Object]。
+            if (query.payload.request.logical_target_ids.includes("claude-target")) {
+              throw { code: "deployment.target_exists", severity: "error", params: { path: "C:/Preview/.claude/pdf-reader" }, actions: ["choose_another_name", "inspect_target"] };
+            }
+            return ok("deployment_plan", { skill_id: query.payload.request.skill_id, version_id: query.payload.request.version_id, runtime_name: query.payload.request.runtime_name, mode: "symbolic_link", targets: [{ physical_target_id: "codex-physical", logical_target_ids: ["codex-target"], target_path: "C:/Preview/.agents", destination_path: "C:/Preview/.agents/pdf-reader", source_path: "C:/Preview/SkillHub/skills/pdf-reader", runtime_name: query.payload.request.runtime_name, skill_id: query.payload.request.skill_id, version_id: query.payload.request.version_id, mode: "symbolic_link", change: "no_op", warnings: [], conflicts: [] }], warnings: [], conflicts: [] });
+          }
           case "list_pending_items": return ok("pending_items", pending);
           case "list_ignore_rules": return ok("ignore_rules", ignoreRules);
           case "get_ui_preference": return ok("ui_preference", { key: query.payload?.key, value_json: JSON.stringify({ kind: "all" }) });
@@ -443,6 +452,22 @@ test("deployment target selection exposes unavailable and non-atomic batch bound
   await page.getByRole("button", { name: "Confirm and add" }).click();
   await expect(page.getByTestId("batch-summary")).toBeVisible();
   await expect(page.getByText("Adding finished")).toBeVisible();
+});
+
+test("preview occupancy conflict renders readable guidance instead of [object Object]", async ({ page }) => {
+  // DEV-18 回归护栏：占用组合（find-skills → Claude Code 的同款失败）必须
+  // 给出可读文案 + 「纳入集中库管理」引导，且不阻塞在不可读错误上。
+  await installNativePreview(page);
+  await page.goto("/deploy?skill=pdf-reader");
+  await page.getByLabel("Claude Code").check();
+  await page.getByRole("button", { name: "Preview" }).click();
+
+  const alert = page.getByRole("alert");
+  await expect(alert).toContainText("pdf-reader");
+  await expect(alert).toContainText(/target directory already contains/i);
+  await expect(alert).toContainText(/central library management/i);
+  await expect(alert).not.toContainText("[object Object]");
+  await expect(page.getByRole("button", { name: "Confirm and add" })).toBeDisabled();
 });
 
 test("combination manager maintains members, renames, and guards duplicates", async ({ page }) => {

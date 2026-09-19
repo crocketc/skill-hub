@@ -6,9 +6,11 @@ import {
   type DeploymentPlan as NativeDeploymentPlan,
   type DeploymentTarget as NativeDeploymentTarget,
 } from "../../api/bindings";
+import { isStructuredNativeError, type NativeAppError } from "../../api/nativeErrors";
 import type {
   BatchDeploymentFacade,
   BatchDeploymentPlan,
+  BatchDeploymentPreview,
   BatchDeploymentResult,
   DeploymentFacade,
   DeploymentMode,
@@ -166,13 +168,36 @@ export function createNativeDeploymentFacade(context: NativeDeploymentContext): 
   };
 }
 
-function messageOf(reason: unknown) {
-  return reason instanceof Error ? reason.message : String(reason);
+/**
+ * DEV-18：IPC 结构化 AppError 绝不能走 `String(reason)`（会渲染成
+ * "[object Object]"，掩盖真实的占用冲突等原因）。此处把结构化错误本体
+ * 摘出来随结果透传，页面用 `describeNativeError` 渲染可读文案；
+ * 非 Error/非结构化的失败才退回纯文本。
+ */
+function structuredErrorOf(reason: unknown): NativeAppError | undefined {
+  if (typeof reason === "object" && reason !== null && !(reason instanceof Error)) {
+    if (isStructuredNativeError(reason)) return reason as NativeAppError;
+  }
+  if (typeof reason === "string" && isStructuredNativeError(reason)) {
+    try {
+      return JSON.parse(reason) as NativeAppError;
+    } catch {
+      return undefined;
+    }
+  }
+  return undefined;
+}
+
+/** 预览/提交失败的三元组：message 取稳定错误码兜底，结构化错误本体随行透传。 */
+function failureOf(reason: unknown): { message: string; error?: NativeAppError } {
+  const error = structuredErrorOf(reason);
+  if (error) return { message: error.code, error };
+  return { message: reason instanceof Error ? reason.message : String(reason) };
 }
 
 type BatchPreviewAttempt =
   | { ok: true; skillId: string; plan: DeploymentPlan }
-  | { ok: false; skillId: string; message: string };
+  | { ok: false; skillId: string; message: string; error?: NativeAppError };
 
 /**
  * The native boundary prepares and commits exactly one Skill per operation.
@@ -196,16 +221,16 @@ export function createNativeBatchDeploymentFacade(): BatchDeploymentFacade {
           const plan = await createNativeDeploymentFacade({ skillId, versionId: "current" }).preview(targets, mode);
           return { ok: true, skillId, plan };
         } catch (reason) {
-          return { ok: false, skillId, message: messageOf(reason) };
+          return { ok: false, skillId, ...failureOf(reason) };
         }
       }));
       const plans: BatchDeploymentPlan[] = [];
-      const failures: Array<{ skillId: string; message: string }> = [];
+      const failures: BatchDeploymentPreview["failures"] = [];
       for (const preview of previews) {
         if (preview.ok) {
           plans.push({ skillId: preview.skillId, plan: preview.plan });
         } else {
-          failures.push({ skillId: preview.skillId, message: preview.message });
+          failures.push({ skillId: preview.skillId, message: preview.message, error: preview.error });
         }
       }
       return { plans, failures };
@@ -218,12 +243,14 @@ export function createNativeBatchDeploymentFacade(): BatchDeploymentFacade {
           const committed = await createNativeDeploymentFacade({ skillId, versionId: plan.versionId }).commit(plan);
           results.push(...committed.map((result) => ({ ...result, skillId })));
         } catch (reason) {
+          const failure = failureOf(reason);
           results.push(...plan.targets.map((target) => ({
             skillId,
             targetId: target.targetId,
             label: target.label,
             status: "failed" as const,
-            message: messageOf(reason),
+            message: failure.message,
+            error: failure.error,
           })));
         }
         // 批次非原子：每个 Skill 落定即推进一次真实进度（不做估算）。

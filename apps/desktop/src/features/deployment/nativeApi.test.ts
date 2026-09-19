@@ -163,6 +163,74 @@ it("keeps a failed Skill preview out of the batch commit candidates", async () =
   });
 });
 
+it("carries the structured native error through a failed batch preview instead of [object Object]", async () => {
+  const structured = {
+    code: "deployment.target_exists",
+    severity: "error",
+    params: { path: "C:/Users/demo/.claude/skills/find-skills" },
+    actions: ["choose_another_name", "inspect_target"],
+  };
+  vi.mocked(queryApplication).mockImplementation(async (request) => {
+    if (request.type === "get_skill") {
+      return {
+        type: "skill",
+        payload: {
+          skill_id: request.payload.skill_id,
+          display_name: request.payload.skill_id,
+          runtime_name: request.payload.skill_id,
+          original_description: "",
+          translated_description: null,
+          user_note: null,
+          user_purpose: null,
+          tags: [],
+          author: null,
+          license: null,
+          lifecycle: "Normal",
+          trial_due: null,
+          current_version: "v1",
+        },
+      };
+    }
+    if (request.type === "get_deployment_plan") throw structured;
+    throw new Error(`Unexpected request ${request.type}`);
+  });
+  const target: DeploymentTarget = { id: "codex-global", label: "Codex CLI", path: "hidden", available: true, physicalId: "fs:codex", modes: ["managed_copy"] };
+
+  const preview = await createNativeBatchDeploymentFacade().preview(["skill-pdf"], [target]);
+  expect(preview.plans).toHaveLength(0);
+  expect(preview.failures).toEqual([{
+    skillId: "skill-pdf",
+    message: expect.not.stringContaining("[object Object]"),
+    error: structured,
+  }]);
+});
+
+it("carries the structured native error through a failed batch commit result", async () => {
+  const structured = {
+    code: "deployment.target_exists",
+    severity: "error",
+    params: { path: "C:/Users/demo/.claude/skills/find-skills" },
+    actions: ["choose_another_name"],
+  };
+  vi.mocked(executeCommand)
+    .mockResolvedValueOnce({ type: "prepared_deployment", payload: { id: "prep-1" } } as never)
+    .mockRejectedValueOnce(structured);
+  const facade = createNativeBatchDeploymentFacade();
+  const plan = {
+    skillId: "s",
+    versionId: "v1",
+    targets: [{ targetId: "t-1", label: "Codex CLI", mode: "managed_copy" as const, warnings: [] }],
+    warnings: [],
+    native: { skill_id: "s", version_id: "v1", runtime_name: "s", mode: "managed_copy" as const, targets: [], warnings: [], conflicts: [] },
+  };
+
+  const results = await facade.commit([{ skillId: "skill-pdf", plan }]);
+  expect(results).toHaveLength(1);
+  expect(results[0].status).toBe("failed");
+  expect(results[0].message).not.toContain("[object Object]");
+  expect(results[0].error).toEqual(structured);
+});
+
 it("surfaces unexpected native results as stable codes, not localized sentences", async () => {
   vi.mocked(queryApplication).mockResolvedValue({ type: "bootstrap_snapshot", payload: {} } as never);
   const facade = createNativeDeploymentFacade({ skillId: "s", versionId: "current", runtimeName: "pdf" });
