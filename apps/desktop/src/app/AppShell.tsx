@@ -242,9 +242,8 @@ export function AppShell({ refreshSnapshot, snapshot, verification }: AppShellPr
                 <p className="sh-app-shell__title" data-tauri-drag-region>{title}</p>
               </div>
               <div className="sh-app-shell__topbar-context" data-tauri-drag-region>
-                {/* 任务 5 fix 1：在途任务摘要居中（计划口径“顶栏居中 360px 摘要”），
-                    与库路由视图切换器并存（切换器在前）；非库路由仅摘要居中。 */}
-                {isLibraryViewModeRoute(pathname) ? <LibraryViewModeSwitch /> : null}
+                {/* DEV-6：中间区完整让给在途任务摘要（任务 5 的 360px 摘要口径）；
+                    库路由视图切换器归位到右侧通知铃铛旁（用户裁定位置）。 */}
                 <TaskStatusIndicator />
               </div>
               <div className="sh-app-shell__topbar-end" data-tauri-drag-region>
@@ -253,6 +252,7 @@ export function AppShell({ refreshSnapshot, snapshot, verification }: AppShellPr
                     {t("appShell.verification")}
                   </span>
                 ) : null}
+                {isLibraryViewModeRoute(pathname) ? <LibraryViewModeSwitch /> : null}
                 <NotificationBell />
                 <WindowControls />
               </div>

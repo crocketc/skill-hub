@@ -253,14 +253,21 @@ describe("AppShell", () => {
     expect(glyph).toHaveAttribute("height", "14");
   });
 
-  it("shows the library view switch inside the title-bar context zone on /library", async () => {
+  it("shows the library view switch next to the notification bell in the topbar end cluster", async () => {
+    // DEV-6：切换按钮归位到右侧通知铃铛旁；中间区完整留给异步任务摘要。
     await renderShell("/library");
 
-    const context = document.querySelector(".sh-app-shell__topbar-context");
-    expect(context).not.toBeNull();
+    const end = document.querySelector(".sh-app-shell__topbar-end");
+    expect(end).not.toBeNull();
+    const switchGroup = within(end as HTMLElement).getByRole("group", { name: "View mode" });
+    expect(switchGroup).toBeVisible();
+
+    // 布局防回归：切换器与任务摘要分属两列，互不重叠。
+    const context = document.querySelector(".sh-app-shell__topbar-context") as HTMLElement;
+    expect(within(context).queryByRole("group", { name: "View mode" })).not.toBeInTheDocument();
     expect(
-      within(context as HTMLElement).getByRole("group", { name: "View mode" }),
-    ).toBeVisible();
+      (switchGroup as HTMLElement).getBoundingClientRect().left,
+    ).toBeGreaterThanOrEqual(context.getBoundingClientRect().right - 1);
   });
 
   it("hides the library view switch outside the library tab", async () => {
@@ -339,18 +346,21 @@ describe("AppShell", () => {
 
     // 摘要挂在 topbar-context（居中列），不在右侧操作簇。
     const context = document.querySelector(".sh-app-shell__topbar-context") as HTMLElement;
-    const taskStatus = await waitFor(() => {
+    await waitFor(() => {
       const element = within(context).getByRole("status", {
         name: "Initialization read-only scan",
       });
       expect(element).toBeVisible();
-      return element;
     });
-    // 库路由：视图切换器与摘要并存，切换器在前（摘要紧随其后居中）。
-    const viewSwitch = within(context).getByRole("group", { name: "View mode" });
-    expect(viewSwitch.compareDocumentPosition(taskStatus) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-
+    // DEV-6：库路由下视图切换器归位到右侧操作簇（通知铃铛旁），
+    // 中间区只有任务摘要。
     const end = document.querySelector(".sh-app-shell__topbar-end") as HTMLElement;
+    const viewSwitch = within(end).getByRole("group", { name: "View mode" });
+    expect(
+      viewSwitch.compareDocumentPosition(
+        within(end).getByRole("button", { name: "Notifications" }),
+      ) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
     expect(
       within(end).queryByRole("status", { name: "Initialization read-only scan" }),
     ).not.toBeInTheDocument();
