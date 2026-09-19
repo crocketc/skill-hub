@@ -16,6 +16,7 @@ import { Button } from "../../ui/Button";
 import { Drawer } from "../../ui/Drawer";
 import { Icon } from "../../ui/Icon";
 import type { SkillLibraryReturnState } from "../skill-detail/detailContext";
+import { skillDetailKeys } from "../skill-detail/api";
 import {
   DEFAULT_DRAWER_PREFERENCES,
   type CheckState,
@@ -1019,7 +1020,11 @@ export function SkillQuickDrawer({
       () => {
         setMetadataSaveFailed(false);
         // 失效技能库根键：前缀匹配同时重新读取列表和当前快速视图。
+        // DEV-16：详情页的 summary/metadata 缓存一并失效，列表、抽屉、
+        // 详情页三处读值同步，不留陈旧投影。
         void queryClient.invalidateQueries({ queryKey: skillLibraryKeys.root });
+        void queryClient.invalidateQueries({ queryKey: skillDetailKeys.metadata(view.id) });
+        void queryClient.invalidateQueries({ queryKey: skillDetailKeys.summary(view.id) });
       },
       () => {
         setMetadataSaveFailed(true);
@@ -1050,7 +1055,10 @@ export function SkillQuickDrawer({
       () => {
         setTagsSaveFailed(false);
         // 失效技能库根键：列表 tags 列与筛选 facets 随之刷新（同别名保存先例）。
+        // DEV-16：详情页 summary/metadata 同步失效，三处投影一致。
         void queryClient.invalidateQueries({ queryKey: skillLibraryKeys.root });
+        void queryClient.invalidateQueries({ queryKey: skillDetailKeys.metadata(view.id) });
+        void queryClient.invalidateQueries({ queryKey: skillDetailKeys.summary(view.id) });
       },
       () => {
         setTagsSaveFailed(true);

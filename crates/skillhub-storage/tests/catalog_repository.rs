@@ -1,6 +1,6 @@
 use skillhub_core::{
     catalog::{CallPolicy, CatalogRepository, Skill},
-    SkillId,
+    ListSkills, SkillId,
 };
 use skillhub_storage::{CatalogRepositorySqlite, Database};
 
@@ -129,6 +129,55 @@ fn catalog_round_trip_preserves_extended_invocation_policy() {
             .call_policy(),
         CallPolicy::ModelOnly
     );
+}
+
+#[test]
+fn list_page_projects_user_tags_and_purpose_into_list_items() {
+    // DEV-16：列表行的用户字段投影。get_detail 会 attach_tags，list_page
+    // 此前从未调用 → 技能库「标签」列恒为空（用途列却有值），同一份数据
+    // 在不同视图的投影不一致。
+    let db = Database::open_in_memory().unwrap();
+    let repo = CatalogRepositorySqlite::new(&db).unwrap();
+    let mut skill = Skill::new(SkillId::new(), "pdf")
+        .with_description("Extract PDF tables")
+        .with_tag("document");
+    skill
+        .set_metadata(
+            None,
+            None,
+            ["document".to_owned()].into_iter().collect(),
+            None,
+            None,
+            Some("用于 PDF 表格提取".to_owned()),
+        )
+        .unwrap();
+    block_on(repo.insert(&skill)).unwrap();
+    let untagged = Skill::new(SkillId::new(), "notes").with_description("Notes");
+    block_on(repo.insert(&untagged)).unwrap();
+
+    let page = repo
+        .list_page(&ListSkills {
+            text: String::new(),
+            page: 1,
+            page_size: 10,
+            filters: Default::default(),
+            sort: Default::default(),
+        })
+        .unwrap();
+    assert_eq!(page.items.len(), 2);
+    let tagged = page
+        .items
+        .iter()
+        .find(|item| item.skill_id == skill.id())
+        .unwrap();
+    assert_eq!(tagged.tags, vec!["document".to_owned()]);
+    assert_eq!(tagged.user_purpose.as_deref(), Some("用于 PDF 表格提取"));
+    let plain = page
+        .items
+        .iter()
+        .find(|item| item.skill_id == untagged.id())
+        .unwrap();
+    assert!(plain.tags.is_empty());
 }
 
 fn block_on<F: std::future::Future>(future: F) -> F::Output {

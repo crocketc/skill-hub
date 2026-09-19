@@ -304,21 +304,20 @@ export function MetadataPanel({ facade, metadata, skillId, tracker = operationTr
           {translationError ? <p role="alert">{translationError}</p> : null}
         </section>
       </details>
-      {/* 别名的唯一展示位是头部；此处只保留编辑契约。 */}
+      {/* DEV-16：身份区显示别名与用途的读值——用户要求详情页完整显示所有
+          字段，同一份数据在各视图的投影必须一致；头部别名行仅在别名与
+          原名不同时出现，此处始终如实展示字段当前值。 */}
       <EditableTextSection
         key={`alias-${metadata.alias ?? ""}`}
         label={t("skillDetail.metadata.alias")}
-        showReadValue={false}
         onSave={(alias) => savePatch({ alias: alias || null })}
         value={metadata.alias ?? ""}
       />
-      {/* 用途的唯一展示位是概览块（用户用途优先口径）；此处只保留编辑契约。 */}
       <EditableTextSection
         key={`purpose-${metadata.purpose}`}
         label={t("skillDetail.metadata.purpose")}
         hint={t("skillDetail.metadata.purposeHint")}
         multiline
-        showReadValue={false}
         onSave={(purpose) => savePatch({ purpose })}
         value={metadata.purpose}
       />

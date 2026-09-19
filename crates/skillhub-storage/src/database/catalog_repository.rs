@@ -249,6 +249,13 @@ impl<'a> CatalogRepositorySqlite<'a> {
             items.push(read_status_row(skill_id, row)?);
         }
         self.attach_deployment_facts(&mut items, &agent_targets, &project_targets)?;
+        // DEV-16：列表行与详情视图（get_detail）共用同一份用户标签投影。
+        // 此前 list_page 从不填充 tags，技能库「标签」列恒为空（用途列却有
+        // 值），同一份数据在不同视图的投影不一致。page_size 上限 100，逐条
+        // 附加与 get_detail 同一查询，保持实现单一路径。
+        for item in &mut items {
+            self.attach_tags(item)?;
+        }
         let mut facets = self
             .database
             .connection

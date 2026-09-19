@@ -68,10 +68,14 @@ async function saveAlias(value: string) {
 describe("MetadataPanel", () => {
   it("keeps original description, saved translation and user purpose distinct", async () => {
     await renderMetadata();
-    // P1-12：原文与译文收纳为次级展示；用户用途保留编辑契约、不再重复只读展示。
+    // P1-12：原文与译文收纳为次级展示。
     fireEvent.click(screen.getByText("原始文本与译文"));
     expect(screen.getByText("Original description")).toBeVisible();
     expect(screen.getByText("模型译文")).toBeVisible();
+    // DEV-16：身份区必须显示别名与用途的读值，不进入编辑态也要可见
+    // （同一份数据在所有视图的投影一致）。
+    expect(screen.getByLabelText("别名")).toHaveTextContent("PDF 表格读取器");
+    expect(screen.getByLabelText("我的用途说明")).toHaveTextContent("用于 PDF 表格提取");
     fireEvent.click(screen.getByRole("button", { name: "编辑我的用途说明" }));
     expect(screen.getByRole("textbox", { name: "我的用途说明" })).toHaveValue("用于 PDF 表格提取");
   });
@@ -114,8 +118,8 @@ describe("MetadataPanel", () => {
         { patch: { alias: "PDF 助手" }, skillId: "skill-pdf" },
       ]);
     });
-    // P1-12：保存后回到只读态时不再重复展示别名值（头部是唯一的别名展示位）。
-    expect(screen.queryByLabelText("别名")).not.toBeInTheDocument();
+    // DEV-16：保存后回到只读态时，身份区显示保存后的别名读值。
+    expect(screen.getByLabelText("别名")).toHaveTextContent("PDF 助手");
     expect(screen.getByRole("button", { name: "编辑别名" })).toBeVisible();
   });
 

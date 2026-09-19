@@ -66,10 +66,12 @@ describe("native skill detail facade", () => {
       .mockResolvedValueOnce(translationsPayload);
 
     // P1-12：概览用途唯一口径——用户用途优先（QA-008），缺省回退译文、再回退原文。
-    // 头部不再重复展示用途，概览是全页唯一的用途陈述。
+    // DEV-16：summary 必须携带别名（display_name ≠ runtime_name 时），
+    // 头部别名的唯一展示位不能回退到裸 SkillId。
     await expect(nativeSkillDetailFacade.getSummary("skill-1")).resolves.toMatchObject({
       id: "skill-1",
       name: "PDF Reader",
+      alias: "PDF Reader",
       purpose: "用于 PDF 表格提取",
       lifecycle: "trial",
       trialDue: "2026-09-15",

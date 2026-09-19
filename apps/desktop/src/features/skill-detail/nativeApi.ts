@@ -58,9 +58,13 @@ async function getSkill(skillId: string): Promise<SkillResult> {
 }
 
 function summaryOf(skill: SkillResult): SkillDetailSummary {
+  // P1-10：别名（display_name）与原名（runtime_name）一致时不产生冗余别名；
+  // 头部别名行绝不回退到裸 SkillId（DEV-15/DEV-16）。
+  const aliased = skill.display_name !== skill.runtime_name;
   return {
     agentDeploymentCount: 0,
     aiCheck: "not_run",
+    alias: aliased ? skill.display_name : undefined,
     basicCheck: "not_run",
     // QA-010：概览展示后端推导的可读标签，内容哈希不进入展示层。
     currentVersion: skill.current_version_label ?? "unknown",

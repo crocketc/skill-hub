@@ -485,11 +485,12 @@ describe("SkillDetailPage shell", () => {
     expect(header?.contains(purposes[0])).toBe(false);
   });
 
-  it("shows the alias once in the header and keeps alias editing in the metadata", async () => {
+  it("shows the alias in the header and its current value in the identity zone", async () => {
     await renderDetail();
 
-    // 别名只在头部展示一次；元数据保留编辑契约但不再重复只读展示同一值。
-    expect(await screen.findAllByText("PDF 表格读取器")).toHaveLength(1);
+    // DEV-16：头部展示别名（仅当与原名不同），身份区字段清单同时如实展示
+    // 别名当前值——详情页完整显示所有用户字段，不再把读值藏进编辑态。
+    expect(await screen.findAllByText("PDF 表格读取器")).toHaveLength(2);
     const header = document.querySelector(".sh-skill-detail__header");
     expect(header?.textContent).toContain("PDF 表格读取器");
     expect(screen.getByRole("button", { name: "Edit Alias" })).toBeVisible();
