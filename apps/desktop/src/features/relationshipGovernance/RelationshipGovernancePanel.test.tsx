@@ -70,8 +70,8 @@ it("renders structured impact facts per group without backend prose", async () =
     screen.getByText("回退方式：共享目录原件不会被本操作修改。"),
   ).toBeVisible();
   expect(screen.getByText("同名不同内容")).toBeVisible();
-  // "原件保留" 动作在两个分组都出现：至少存在且可见即可。
-  expect(screen.getAllByText("原件保留").length).toBeGreaterThan(0);
+  // "保留原件，不导入" 动作在两个分组都出现：至少存在且可见即可。
+  expect(screen.getAllByText("保留原件，不导入").length).toBeGreaterThan(0);
 });
 
 it("shows member source paths when a group is expanded", async () => {
@@ -87,7 +87,7 @@ it("confirms a deterministic group, expands members, and gives an item override 
   await renderPanel({ groups, onDecision });
 
   fireEvent.click(screen.getByRole("button", { name: "展开 2 个项目" }));
-  fireEvent.click(screen.getByRole("radio", { name: "PDF：创建待办" }));
+  fireEvent.click(screen.getByRole("radio", { name: "PDF：先不导入，记为待办" }));
 
   expect(onDecision).toHaveBeenLastCalledWith({
     group_actions: {},
@@ -99,10 +99,10 @@ it("keeps deterministic defaults selectable per group", async () => {
   const onDecision = vi.fn();
   await renderPanel({ groups, onDecision });
 
-  // 同名不同内容组的默认动作是创建待办；显式选择分组动作后按选择回传。
+  // 同名不同内容组的默认动作是先不导入，记为待办；显式选择分组动作后按选择回传。
   const articles = screen.getAllByRole("article");
   fireEvent.click(
-    within(articles[1]).getByRole("radio", { name: "创建待办" }),
+    within(articles[1]).getByRole("radio", { name: "先不导入，记为待办" }),
   );
 
   expect(onDecision).toHaveBeenLastCalledWith({

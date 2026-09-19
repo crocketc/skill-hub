@@ -74,7 +74,7 @@ async function expectNotCovered(page: import("@playwright/test").Page, label: st
 
 async function parseSource(page: import("@playwright/test").Page, source = "C:/skills/preview") {
   await page.getByRole("textbox", { name: "来源" }).fill(source);
-  await page.getByRole("button", { name: "解析来源" }).click();
+  await page.getByRole("button", { name: "读取该来源的候选" }).click();
   await page.getByRole("button", { name: "继续选择候选" }).click();
   await expect(page.getByRole("button", { name: "分析冲突" })).toBeVisible();
 }
@@ -88,7 +88,7 @@ test("keeps the step rail, 44px primary actions and one stable footer across the
   await expect(rail.getByRole("listitem").nth(0)).toHaveAttribute("aria-current", "step");
   await expect(rail.getByRole("listitem").nth(0)).toContainText("选择来源");
 
-  const parse = page.getByRole("button", { name: "解析来源" });
+  const parse = page.getByRole("button", { name: "读取该来源的候选" });
   await expect(parse).toBeInViewport();
   expect((await parse.boundingBox())!.height).toBeGreaterThanOrEqual(44);
   const footerBox = (await footerOf(page).boundingBox())!;
@@ -190,7 +190,7 @@ test("wraps very long Windows paths without horizontal overflow at 800px", async
   await page.getByRole("textbox", { name: "来源" }).fill(longPath);
   await expectNoRootHorizontalOverflow(page, "long source path@800");
 
-  await page.getByRole("button", { name: "解析来源" }).click();
+  await page.getByRole("button", { name: "读取该来源的候选" }).click();
   await page.getByRole("button", { name: "继续选择候选" }).click();
   await expect(page.getByRole("checkbox", { name: /PDF/ }).first()).toBeVisible();
   await expectNoRootHorizontalOverflow(page, "long candidate paths@800");
@@ -220,7 +220,7 @@ test("surfaces per-source acquisition failures in the unified source list and re
   await page.goto(`${PREVIEW}?scenario=fail-acquire`);
 
   await page.getByRole("textbox", { name: "来源" }).fill("C:/skills/preview");
-  await page.getByRole("button", { name: "解析来源" }).click();
+  await page.getByRole("button", { name: "读取该来源的候选" }).click();
 
   // M-29：单目录获取失败停在统一来源列表——失败徽标、失败原因（裸状态
   // 文本，紧随路径 <code>）与按目录重试可见；门槛保持诚实（0 个候选不放行），
@@ -250,7 +250,7 @@ test("returns cancelled acquisitions to a reusable source step", async ({ page }
   await page.goto(`${PREVIEW}?scenario=cancel`);
 
   await page.getByRole("textbox", { name: "来源" }).fill("C:/skills/preview");
-  await page.getByRole("button", { name: "解析来源" }).click();
+  await page.getByRole("button", { name: "读取该来源的候选" }).click();
 
   const cancel = page.getByRole("button", { name: "取消获取" });
   await expect(cancel).toBeInViewport();
@@ -309,7 +309,7 @@ test.describe("theme contract", () => {
       await page.goto(PREVIEW);
       await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
       await expect(stepRail(page)).toBeVisible();
-      await expect(page.getByRole("button", { name: "解析来源" })).toBeVisible();
+      await expect(page.getByRole("button", { name: "读取该来源的候选" })).toBeVisible();
       await expectNoRootHorizontalOverflow(page, `theme ${theme}@1280`);
       await expectFocusVisible(page, theme);
 
@@ -317,7 +317,7 @@ test.describe("theme contract", () => {
       await page.goto(`${PREVIEW}?scenario=fail-acquire`);
       await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
       await page.getByRole("textbox", { name: "来源" }).fill("C:/skills/preview");
-      await page.getByRole("button", { name: "解析来源" }).click();
+      await page.getByRole("button", { name: "读取该来源的候选" }).click();
       await expect(page.getByText("导入步骤未能完成（preview.acquire_failed）。")).toBeVisible();
       await expect(page.getByRole("button", { name: "重新扫描 C:/skills/preview" })).toBeVisible();
       await expectNoRootHorizontalOverflow(page, `theme ${theme} failure@1280`);
@@ -334,7 +334,7 @@ test.describe("theme contract", () => {
       await page.goto(PREVIEW);
       await expect(page.locator("html")).toHaveAttribute("data-theme", "grok-night");
       await expect(stepRail(page)).toBeVisible();
-      await expect(page.getByRole("button", { name: "解析来源" })).toBeVisible();
+      await expect(page.getByRole("button", { name: "读取该来源的候选" })).toBeVisible();
       await expectNoRootHorizontalOverflow(page, `grok-night@${width}`);
     }
   });

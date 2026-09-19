@@ -142,7 +142,7 @@
       "noDefaultAction": "This candidate has no automatically selectable import action; pick one manually before importing.",
       "remoteNotWired": "Remote source download is not wired up yet; download the repository locally first and import it as a local directory.",
       "unknown": "The import step could not be completed.",
-      "sameRuntimeNameConflict": "The runtime name conflicts with an existing Skill; choose another import action.",
+      "sameRuntimeNameConflict": "The folder name matches an existing Skill; choose another import action.",
       "exactDuplicateConflict": "The candidate duplicates an existing Skill; existing content was not overwritten.",
       "takeoverVerificationMismatch": "Verification failed after takeover; the original source was preserved."
     },
@@ -200,7 +200,7 @@
       "selectAllSources": "Select all scanned sources",
       "deselectAllSources": "Deselect all scanned sources",
       "placeholder": "C:/skills or https://github.com/owner/repository",
-      "parse": "Parse source",
+      "parse": "Read candidates from this source",
       "acquireSelectedSources": "Read selected directory candidates",
       "previewing": "Resolving sources…",
       "continueCandidates": "Continue to candidate selection",
@@ -343,8 +343,8 @@
       "expandMembers": "Expand {{count}} items",
       "collapseMembers": "Collapse items",
       "actions": {
-        "preserveOriginal": "Keep original",
-        "createTodo": "Create task"
+        "preserveOriginal": "Keep original (do not import)",
+        "createTodo": "Skip import; record a task"
       },
       "classification": {
         "exactDuplicate": "Exact duplicates",

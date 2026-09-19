@@ -126,7 +126,7 @@ async function renderDiscoveryRoute(
 async function commitSingleCandidateImport(user: ReturnType<typeof userEvent.setup>): Promise<void> {
   await user.click(screen.getAllByRole("button", { name: "导入 Skill" })[0]);
   await user.type(screen.getByLabelText("来源"), "C:/Skills");
-  await user.click(screen.getByRole("button", { name: "解析来源" }));
+  await user.click(screen.getByRole("button", { name: "读取该来源的候选" }));
   await user.click(await screen.findByRole("button", { name: "继续选择候选" }));
   await user.click(screen.getByRole("checkbox", { name: /PDF/ }));
   await user.click(screen.getByRole("button", { name: "分析冲突" }));
@@ -136,7 +136,7 @@ async function commitSingleCandidateImport(user: ReturnType<typeof userEvent.set
 async function commitAllCandidateImport(user: ReturnType<typeof userEvent.setup>): Promise<void> {
   await user.click(screen.getAllByRole("button", { name: "导入 Skill" })[0]);
   await user.type(screen.getByLabelText("来源"), "C:/Skills");
-  await user.click(screen.getByRole("button", { name: "解析来源" }));
+  await user.click(screen.getByRole("button", { name: "读取该来源的候选" }));
   await user.click(await screen.findByRole("button", { name: "继续选择候选" }));
   await user.click(screen.getByRole("button", { name: "全选可导入候选" }));
   await user.click(screen.getByRole("button", { name: "分析冲突" }));
@@ -274,12 +274,12 @@ governanceGroups: [{
 
   await user.click(screen.getAllByRole("button", { name: "导入 Skill" })[0]);
   await user.type(screen.getByLabelText("来源"), "C:/Skills");
-  await user.click(screen.getByRole("button", { name: "解析来源" }));
+  await user.click(screen.getByRole("button", { name: "读取该来源的候选" }));
   await user.click(await screen.findByRole("button", { name: "继续选择候选" }));
   await user.click(screen.getByRole("checkbox", { name: /PDF/ }));
   await user.click(screen.getByRole("button", { name: "分析冲突" }));
   await screen.findByRole("heading", { name: "确认导入后的关系处理" });
-  await user.click(screen.getByRole("radio", { name: "创建待办" }));
+  await user.click(screen.getByRole("radio", { name: "先不导入，记为待办" }));
   await user.click(screen.getByRole("button", { name: "确认关系处理" }));
   await user.click(await screen.findByRole("button", { name: "提交导入" }));
   await user.click(screen.getByRole("button", { name: /查看治理待办/ }));

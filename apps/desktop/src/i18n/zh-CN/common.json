@@ -142,7 +142,7 @@
       "noDefaultAction": "该候选项没有可自动选择的导入方式；请为它手动选择一个操作后再导入。",
       "remoteNotWired": "远程来源下载尚未接入；请先将仓库下载到本地，再用本地目录导入。",
       "unknown": "导入步骤未能完成。",
-      "sameRuntimeNameConflict": "运行时名称与已有 Skill 冲突，需要重新选择导入方式。",
+      "sameRuntimeNameConflict": "文件夹名与已有 Skill 相同，需要重新选择导入方式。",
       "exactDuplicateConflict": "候选内容与已有 Skill 重复，未自动覆盖原内容。",
       "takeoverVerificationMismatch": "纳入管理后的内容核验未通过，原始来源已保留。"
     },
@@ -200,7 +200,7 @@
       "selectAllSources": "全选扫描来源",
       "deselectAllSources": "全不选扫描来源",
       "placeholder": "C:/skills 或 https://github.com/owner/repository",
-      "parse": "解析来源",
+      "parse": "读取该来源的候选",
       "acquireSelectedSources": "读取已选目录候选",
       "previewing": "正在解析…",
       "continueCandidates": "继续选择候选",
@@ -343,8 +343,8 @@
       "expandMembers": "展开 {{count}} 个项目",
       "collapseMembers": "收起项目",
       "actions": {
-        "preserveOriginal": "原件保留",
-        "createTodo": "创建待办"
+        "preserveOriginal": "保留原件，不导入",
+        "createTodo": "先不导入，记为待办"
       },
       "classification": {
         "exactDuplicate": "完全重复",
