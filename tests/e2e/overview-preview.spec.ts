@@ -324,8 +324,26 @@ test("reaches every overview control by keyboard with visible focus", async ({ p
   await expect(page.getByRole("link", { name: statNames[2] })).toBeFocused();
   await page.keyboard.press("Tab");
   await expect(page.getByRole("link", { name: statNames[3] })).toBeFocused();
+  // DEV-7 固定布局：技能关系区上移，指标带之后先遍历三个关系入口，
+  // 再到部署分布区的维度切换（自然文档流下允许中间经过锚点/跳转元素）。
+  const isFocused = (locator: import("@playwright/test").Locator) =>
+    locator.evaluate((element) => element === document.activeElement);
+  let reachedGraph = false;
+  for (let attempt = 0; attempt < 6 && !reachedGraph; attempt += 1) {
+    await page.keyboard.press("Tab");
+    reachedGraph = await isFocused(page.getByRole("link", { name: relationEntryNames[0] }));
+  }
+  expect(reachedGraph, "keyboard must reach the graph entry after the stats").toBeTruthy();
   await page.keyboard.press("Tab");
-  await expect(page.getByRole("radio", { name: "Agents" })).toBeFocused();
+  await expect(page.getByRole("link", { name: relationEntryNames[1] })).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(page.getByRole("link", { name: relationEntryNames[2] })).toBeFocused();
+  let reachedAgents = false;
+  for (let attempt = 0; attempt < 6 && !reachedAgents; attempt += 1) {
+    await page.keyboard.press("Tab");
+    reachedAgents = await isFocused(page.getByRole("radio", { name: "Agents" }));
+  }
+  expect(reachedAgents, "keyboard must reach the dimension toggle after relation entries").toBeTruthy();
 
   // 聚焦的维度切换项必须把可见焦点画在可见的选项胶囊上（输入框本身透明）。
   const expectFocusedPillOutline = async () => {
@@ -382,13 +400,8 @@ test("reaches every overview control by keyboard with visible focus", async ({ p
   await expect(page.getByRole("link", { name: "1 recovery action" })).toBeFocused();
   await page.keyboard.press("Tab");
   await expect(page.getByRole("link", { name: "1 trial due" })).toBeFocused();
-  // 任务 9 冻结契约（任务 10 接线）：待办摘要之后是三个关系缩略入口深链。
-  await page.keyboard.press("Tab");
-  await expect(page.getByRole("link", { name: relationEntryNames[0] })).toBeFocused();
-  await page.keyboard.press("Tab");
-  await expect(page.getByRole("link", { name: relationEntryNames[1] })).toBeFocused();
-  await page.keyboard.press("Tab");
-  await expect(page.getByRole("link", { name: relationEntryNames[2] })).toBeFocused();
+  // DEV-7：三个关系缩略入口已随关系区上移，在本遍历前段（指标带之后）
+  // 完成覆盖；待办摘要是自然文档流的最后一段。
 });
 
 test.describe("overview honors the theme contract at 1280x900", () => {
@@ -462,3 +475,5 @@ test("renders without continuous motion when the system prefers reduced motion",
   });
   expect(await freeOfMotion.jsonValue()).toBe(true);
 });
+
+

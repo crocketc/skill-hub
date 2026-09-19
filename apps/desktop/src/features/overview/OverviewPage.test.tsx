@@ -359,15 +359,15 @@ it("locks the density ladder and the two-row metrics contract in overview.css", 
 });
 
 it("keeps the relationship band inside the fill grid so 100% zoom keeps the outer shell still", () => {
-  // jsdom 量不出滚动条：按团队既有模式锁定 CSS 源契约——概览网格必须是
-  // 「auto / 剩余高度 / auto」三行，关系带占固定 auto 行、三卡单行排布且
-  // 自身可压缩（min-height: 0），不得把外层 PageFrame 撑出滚动。
-  // 真实几何验收（1280×900 纵向无滚动条）由 Task 10 的概览 e2e 承担。
+  // DEV-7（2026-09-20 用户裁定）：关系区上移后总高超出单屏，概览改为自然
+  // 文档流（grid-template-rows: none + 顶部对齐）；关系带不可塌缩
+  // （min-height: max-content），三卡单行排布且可压缩（min-width: 0）。
+  // 真实几何验收（1280×900 与 800×600 截图迭代）由 overview e2e 承担。
   expect(overviewCss).toMatch(
-    /\.sh-overview\s*\{[^}]*grid-template-rows:\s*auto minmax\(0, 1fr\) auto/,
+    /\.sh-overview\s*\{[^}]*grid-template-rows:\s*none/,
   );
   expect(overviewCss).toMatch(
-    /\.sh-overview__relations\s*\{[^}]*min-height:\s*0/,
+    /\.sh-overview__relations\s*\{[^}]*min-height:\s*max-content/,
   );
   expect(overviewCss).toMatch(
     /\.sh-overview__relations-list\s*\{[^}]*grid-template-columns:\s*repeat\(3, minmax\(0, 1fr\)\)/,

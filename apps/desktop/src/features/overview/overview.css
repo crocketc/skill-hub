@@ -129,8 +129,11 @@
 
 .sh-overview {
   display: grid;
-  min-height: 0;
-  grid-template-rows: auto minmax(0, 1fr) auto;
+  /* DEV-7 固定布局：指标带 → 技能关系区（上移）→ 部署分布 + 右列。
+     关系区上移后总高超出单屏，改为自然文档流（页面纵向滚动），
+     面板各自持有高度；不再把三块硬塞进一屏的受约束网格。 */
+  grid-template-rows: none;
+  align-content: start;
   gap: var(--page-gap);
 }
 
@@ -138,7 +141,12 @@
    时把顶栏和内边距重复算入而触发外层滚动条。 */
 .sh-overview .sh-overview__content-grid {
   min-height: 0;
-  height: 100%;
+  /* DEV-7：自然流下面板自带高度（部署分布主区 + 右列内部滚动仍成立）。 */
+  height: auto;
+}
+
+.sh-overview .sh-overview__panel {
+  min-height: 30rem;
 }
 
 /* 宽屏概览固定四块区域：部署分布为主区，右侧依次为标签饼图与待处理；
@@ -238,7 +246,8 @@
    的高度契约——100% 缩放下外层不出滚动条，被压缩的是图表区 minmax(0,1fr)。 */
 .sh-overview__relations {
   display: grid;
-  min-height: 0;
+  /* DEV-7：上移后的关系区不允许在受约束网格中塌缩。 */
+  min-height: max-content;
   gap: var(--space-3);
   padding: var(--space-4);
   border: 1px solid var(--ui-border);
