@@ -2166,6 +2166,7 @@
   },
   "relationships": {
     "nav": "技能关系",
+    "sectionNavLabel": "技能关系分区",
     "graph": {
       "title": "技能图谱",
       "placeholder": "关系图谱画布尚未提供；关系事实仍可在技能库与 Skill 详情中查看。",

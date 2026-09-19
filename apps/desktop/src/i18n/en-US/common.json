@@ -2166,6 +2166,7 @@
   },
   "relationships": {
     "nav": "Skill relations",
+    "sectionNavLabel": "Relationship sections",
     "graph": {
       "title": "Skill graph",
       "placeholder": "The relationship graph canvas is not available yet; relation facts stay available in the Skill library and on Skill details.",

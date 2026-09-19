@@ -470,6 +470,34 @@ test("preview occupancy conflict renders readable guidance instead of [object Ob
   await expect(page.getByRole("button", { name: "Confirm and add" })).toBeDisabled();
 });
 
+test("relationship module exposes in-page navigation with counts between the three scopes", async ({ page }) => {
+  // DEV-23 回归护栏：三个子页此前只能从概览卡片或直达 URL 进入，页内无任何
+  // 入口；现在页签必须可达且计数与概览同源（candidates=2 / conflicts=1 / governance=3）。
+  await installNativePreview(page);
+  await page.goto("/relationships");
+
+  const nav = page.getByRole("navigation", { name: "Relationship sections" });
+  await expect(nav.getByRole("link", { name: "Skill graph" })).toHaveAttribute("aria-current", "page");
+  await expect(nav.getByTestId("relationships-nav-count-graph")).toHaveText("2");
+  await expect(nav.getByTestId("relationships-nav-count-decisions")).toHaveText("1");
+  await expect(nav.getByTestId("relationships-nav-count-governance")).toHaveText("3");
+
+  await nav.getByRole("link", { name: "Conflict decisions" }).click();
+  await expect(page).toHaveURL(/\/relationships\/decisions$/);
+  await expect(page.getByRole("heading", { level: 1, name: "Conflict decisions" })).toBeVisible();
+  await expect(nav.getByRole("link", { name: "Conflict decisions" })).toHaveAttribute("aria-current", "page");
+
+  await nav.getByRole("link", { name: "Relationship governance" }).click();
+  await expect(page).toHaveURL(/\/relationships\/governance$/);
+  await expect(page.getByRole("heading", { level: 1, name: "Relationship governance" })).toBeVisible();
+
+  // 概览卡片深链入口保持不变。
+  await page.goto("/");
+  await expect(
+    page.getByRole("link", { name: "Open conflict workspace (1 unconfirmed conflicts)" }),
+  ).toHaveAttribute("href", "/relationships/decisions");
+});
+
 test("combination manager maintains members, renames, and guards duplicates", async ({ page }) => {
   const combinationCommands = () =>
     page.evaluate(() => (window as unknown as { __combinationCommands: string[] }).__combinationCommands);
