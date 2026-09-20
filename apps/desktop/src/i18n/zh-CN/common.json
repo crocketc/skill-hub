@@ -1809,11 +1809,16 @@
       "directory_junction": "目录联接",
       "managed_copy": "托管复制",
       "symbolic_link_unavailable": "此目标不支持符号链接",
-      "directory_junction_unavailable": "此目标不支持目录联接"
+      "directory_junction_unavailable": "此目标不支持目录联接",
+      "userLink": "链接部署",
+      "userCopy": "复制部署",
+      "userLinkUnavailable": "此目标不支持链接部署，将改用复制部署",
+      "technical": "实现方式"
     },
     "name_mismatch": "Skill 文件夹名与 SKILL.md 内的 name 不一致，Agent 可能无法识别这个 Skill。请修正后重新导入。",
     "results": {
       "heading": "添加结果",
+      "manageDeployment": "管理此部署",
       "status": {
         "succeeded": "已成功",
         "failed": "失败",

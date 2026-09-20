@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { describeNativeError } from "../../api/nativeErrors";
 import type { OperationTracker } from "../../platform/operationTracker";
 import { runTrackedOperation } from "../../platform/runTrackedOperation";
@@ -16,6 +16,9 @@ import {
   type BatchDeploymentPreview,
   type BatchProjectInfo,
   type BatchDeploymentResult,
+  isImplementationWarning,
+  userFacingDeploymentMode,
+  userFacingDeploymentWarning,
   type DeploymentMode,
   type DeploymentTarget,
 } from "./api";
@@ -29,6 +32,8 @@ export interface BatchDeploymentPageProps {
   /** 统一执行桥的在途投影；测试可注入独立实例，默认模块级单例。 */
   tracker?: OperationTracker;
   onCommitted?: (results: BatchDeploymentResult[]) => void;
+  /** 成功后跳转到 Skill 详情管理部署（undeploy 可达）；测试可注入。 */
+  onManageDeployment?: (skillId: string) => void;
 }
 
 type FlowPhase = "list-error" | "loading" | "empty" | "targets" | "plan" | "committing" | "results";
@@ -39,11 +44,12 @@ function uniqueIds(skillIds: string[]) {
   return [...new Set(skillIds.filter(Boolean))];
 }
 
-export function BatchDeploymentPage({ facade, skillIds, tracker, onCommitted }: BatchDeploymentPageProps) {
+export function BatchDeploymentPage({ facade, skillIds, tracker, onCommitted, onManageDeployment }: BatchDeploymentPageProps) {
   const { t } = useTranslation();
   // Provider 缺席（预览/测试挂载）时通知为 null：桥不发通知，行为不降级。
   const notifications = useOptionalAppNotifications();
   const activeFacade = useMemo(() => facade ?? createNativeBatchDeploymentFacade(), [facade]);
+  const navigate = useNavigate();
   const selectedSkillIds = useMemo(() => uniqueIds(skillIds), [skillIds]);
   const [targets, setTargets] = useState<DeploymentTarget[]>();
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -172,6 +178,11 @@ export function BatchDeploymentPage({ facade, skillIds, tracker, onCommitted }: 
     state: index < stepIndex ? "complete" : index === stepIndex ? "current" : "upcoming",
   }));
 
+  // DEV-21-A：结果面按 Skill 去重给出「管理此部署」入口，避免多目标重复条目。
+  const managedSkills = [...new Map((results ?? [])
+    .filter((result): result is BatchDeploymentResult & { skillId: string } => result.status === "succeeded" && Boolean(result.skillId))
+    .map((result) => [result.skillId, { skillId: result.skillId, displayName: result.displayName }]))
+    .values()];
   const failedResults = results?.filter((result) => result.status === "failed") ?? [];
   const previewFailures = preview?.failures ?? [];
   const status: ImportStatus | null =
@@ -212,7 +223,7 @@ export function BatchDeploymentPage({ facade, skillIds, tracker, onCommitted }: 
               value={mode ?? ""}
             >
               <option value="">{t("deployment.mode.automatic")}</option>
-              {availableModes.map((candidate) => <option key={candidate} value={candidate}>{t(`deployment.mode.${candidate}`)}</option>)}
+              {availableModes.map((candidate) => <option key={candidate} value={candidate}>{t(userFacingDeploymentMode(candidate))}</option>)}
             </select>
           </label>
         ) : null}
@@ -320,14 +331,31 @@ export function BatchDeploymentPage({ facade, skillIds, tracker, onCommitted }: 
         {/* DEV-18-A：计划区标题用展示名，裸 Skill UUID 不作为主文案。 */}
         {preview.plans.map(({ skillId, displayName, plan }) => <section key={skillId}>
           <h3>{displayName ?? skillId}</h3>
-          {plan.warnings.length > 0 ? <ul className="sh-notice-list">{plan.warnings.map((warning) => <li key={warning}>{String(t(warning as never, { defaultValue: warning } as never))}</li>)}</ul> : null}
+          {plan.warnings.length > 0 ? <ul className="sh-notice-list">{plan.warnings.map((warning) => <li key={warning}>{String(t(userFacingDeploymentWarning(warning) as never, { defaultValue: userFacingDeploymentWarning(warning) } as never))}</li>)}</ul> : null}
           <ul className="sh-workflow-list">
             {plan.targets.map((target) => <li className="sh-workflow-list__item" data-testid="target-plan" key={target.targetId}>
-              <span><strong>{target.label}</strong><small>{t(`deployment.mode.${target.mode}`)}</small></span>
+              <span><strong>{target.label}</strong><small>{t(userFacingDeploymentMode(target.mode))}</small></span>
+              {/* DEV-21-A：具体实现方式（符号链接/目录联接/托管复制）只在技术详情，
+                  首屏主文案统一为「链接部署」/「复制部署」。 */}
+              <details className="sh-deployment-flow__diagnostics">
+                <summary>{t("deployment.mode.technical")}</summary>
+                <dl className="sh-deployment-flow__diagnostics-list">
+                  <div>
+                    <dt>{t("deployment.mode.technical")}</dt>
+                    <dd>{t(`deployment.mode.${target.mode}`)}</dd>
+                  </div>
+                  {/* 实现方式告警的原始术语只留在技术详情（DEV-21-A）。 */}
+                  {target.warnings.filter(isImplementationWarning).map((warning) => <div key={warning}>
+                    <dt>{t("deployment.mode.technical")}</dt>
+                    <dd>{String(t(warning as never, { defaultValue: warning } as never))}</dd>
+                  </div>)}
+                </dl>
+              </details>
               {target.warnings.length > 0 ? (
                 <span className="sh-status sh-status--warning">
                   <Icon aria-hidden="true" name="warning" size={16} />
-                  {target.warnings.map((warning) => String(t(warning as never, { defaultValue: warning } as never))).join(" ")}
+                  {/* DEV-21-A：主文案只说「链接部署」/「复制部署」。 */}
+                  {target.warnings.map((warning) => String(t(userFacingDeploymentWarning(warning) as never, { defaultValue: userFacingDeploymentWarning(warning) } as never))).join(" ")}
                 </span>
               ) : null}
             </li>)}
@@ -342,6 +370,26 @@ export function BatchDeploymentPage({ facade, skillIds, tracker, onCommitted }: 
           status: result.status,
         }))}
       /> : null}
+      {/* DEV-21-A：成功后让用户从同一结果面到达「从 Agent/项目移除」（undeploy）。
+          每个 Skill 一条入口（同一 Skill 的多个目标不重复）；详情页/治理页
+          承载真正的移除动作，这里只保证可达。 */}
+      {managedSkills.length > 0 ? (
+        <section className="sh-deployment-flow__manage" aria-labelledby="deployment-manage-heading">
+          <h2 id="deployment-manage-heading">{t("deployment.results.manageDeployment")}</h2>
+          <ul className="sh-workflow-list">
+            {managedSkills.map(({ skillId, displayName }) => (
+              <li className="sh-workflow-list__item" key={skillId}>
+                <button
+                  type="button"
+                  onClick={() => (onManageDeployment ? onManageDeployment(skillId) : navigate(`/library/${skillId}`))}
+                >
+                  {t("deployment.results.manageDeployment")}：{displayName ?? skillId}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
     </ImportShell>
   );
 }

@@ -127,6 +127,38 @@ it("lets the user override the target default with a managed copy or a link", as
   expect(preview).toHaveBeenCalledWith([targets[0]], "managed_copy");
 });
 
+it("states an unsupported link mode in user-facing words and keeps the implementation reason in technical details (DEV-21-A)", async () => {
+  const user = userEvent.setup();
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  const facade = planFacade(async (selected) => ({
+    skillId: "skill-pdf",
+    versionId: "v1",
+    targets: selected.map((target) => ({
+      targetId: target.id,
+      label: target.label,
+      mode: "managed_copy" as const,
+      warnings: ["deployment.mode.directory_junction_unavailable"],
+    })),
+    warnings: [],
+  }));
+
+  render(
+    <I18nextProvider i18n={i18n}>
+      <DeploymentDialog skillId="skill-pdf" versionId="v1" facade={facade} />
+    </I18nextProvider>,
+  );
+
+  await user.click(await screen.findByLabelText("Codex CLI"));
+  await user.click(screen.getByRole("button", { name: "预览" }));
+
+  const row = (await screen.findAllByTestId("target-plan"))[0];
+  // 主文案说「链接部署」，不出现「目录联接」这类实现术语。
+  expect(within(row).getByText("此目标不支持链接部署，将改用复制部署")).toBeVisible();
+  const implNode = within(row).getByText("此目标不支持目录联接");
+  expect(implNode.closest("details")).not.toBeNull();
+  expect(implNode).not.toBeVisible();
+});
+
 function planFacade(previewFn: DeploymentFacade["preview"], commitFn?: DeploymentFacade["commit"]): DeploymentFacade {
   return { listTargets: async () => deploymentTargetsFixture(), preview: previewFn, commit: commitFn ?? vi.fn() };
 }

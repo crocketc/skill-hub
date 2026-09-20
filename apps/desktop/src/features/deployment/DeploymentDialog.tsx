@@ -17,6 +17,9 @@ import {
   type DeploymentPlan,
   type DeploymentResult,
   type DeploymentTarget,
+  isImplementationWarning,
+  userFacingDeploymentMode,
+  userFacingDeploymentWarning,
 } from "./api";
 import { createNativeDeploymentFacade } from "./nativeApi";
 import { displayPath } from "../../platform/displayPath";
@@ -196,7 +199,7 @@ export function DeploymentDialog({
             >
               <option value="">{t("deployment.mode.automatic")}</option>
               {availableModes.map((candidate) => (
-                <option key={candidate} value={candidate}>{t(`deployment.mode.${candidate}`)}</option>
+                <option key={candidate} value={candidate}>{t(userFacingDeploymentMode(candidate))}</option>
               ))}
             </select>
           </label>
@@ -284,15 +287,31 @@ export function DeploymentDialog({
               <p>{t("deployment.plan.description")}</p>
             </div>
           </div>
-          {plan.warnings.length > 0 ? <ul className="sh-notice-list">{plan.warnings.map((warning) => <li key={warning}>{String(t(warning as never, { defaultValue: warning } as never))}</li>)}</ul> : null}
+          {plan.warnings.length > 0 ? <ul className="sh-notice-list">{plan.warnings.map((warning) => <li key={warning}>{String(t(userFacingDeploymentWarning(warning) as never, { defaultValue: userFacingDeploymentWarning(warning) } as never))}</li>)}</ul> : null}
           <ul className="sh-workflow-list">
             {plan.targets.map((target) => (
               <li className="sh-workflow-list__item" data-testid="target-plan" key={target.targetId}>
-                <span><strong>{target.label}</strong><small>{t(`deployment.mode.${target.mode}`)}</small></span>
+                <span><strong>{target.label}</strong><small>{t(userFacingDeploymentMode(target.mode))}</small></span>
+                {/* DEV-21-A：实现方式只在技术详情，首屏主文案统一为「链接部署」/「复制部署」。 */}
+                <details className="sh-deployment-flow__diagnostics">
+                  <summary>{t("deployment.mode.technical")}</summary>
+                  <dl className="sh-deployment-flow__diagnostics-list">
+                    <div>
+                      <dt>{t("deployment.mode.technical")}</dt>
+                      <dd>{t(`deployment.mode.${target.mode}`)}</dd>
+                    </div>
+                    {/* 实现方式告警的原始术语只留在技术详情（DEV-21-A）。 */}
+                    {target.warnings.filter(isImplementationWarning).map((warning) => <div key={warning}>
+                      <dt>{t("deployment.mode.technical")}</dt>
+                      <dd>{String(t(warning as never, { defaultValue: warning } as never))}</dd>
+                    </div>)}
+                  </dl>
+                </details>
                 {target.warnings.length > 0 ? (
                   <span className="sh-status sh-status--warning">
                     <Icon aria-hidden="true" name="warning" size={16} />
-                    {target.warnings.map((warning) => String(t(warning as never, { defaultValue: warning } as never))).join(" ")}
+                    {/* DEV-21-A：主文案只说「链接部署」/「复制部署」。 */}
+                    {target.warnings.map((warning) => String(t(userFacingDeploymentWarning(warning) as never, { defaultValue: userFacingDeploymentWarning(warning) } as never))).join(" ")}
                   </span>
                 ) : null}
               </li>
