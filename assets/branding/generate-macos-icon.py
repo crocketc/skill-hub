@@ -20,6 +20,12 @@
 
 用法（仓库根目录）：
     python3 assets/branding/generate-macos-icon.py [--source PATH]
+    python3 assets/branding/generate-macos-icon.py --candidate [--outer N] [--margin N] [--radius N]
+
+`--candidate` 仅从**现有** 1024×1024 RGBA 母版“重切边距”生成候选母版与候选
+`.icns`（写到 `skillhub-app-icon-master-candidate.png` / `.icns`），绝不覆盖既有
+母版 / `icon.icns` / `icon.ico`，也不写入 `tauri-icons` / `src-tauri/icons`，从而
+保留回滚基线。详见脚本下方“候选几何”常量与 D5-11 / OPT-20260914-06 整改说明。
 
 `--source` 默认指向母版路径本身；仅当母版仍是旧的 1254 全出血 RGB 方图
 时可直接运行。母版被替换后如需再加工，请先从 git 历史取出旧母版：
@@ -48,6 +54,15 @@ OUTER = 896
 MARGIN = (CANVAS - OUTER) // 2  # 64
 RADIUS = 180
 SS = 4
+
+# --- 候选几何（D5-11 macOS Dock 视觉偏大整改，OPT-20260914-06）-------------
+# 现状母版外层 896（87.5%）/ 边距 64（6.25%）在 Dock 中与相邻 App 并排时仍显
+# 得略大（人工验收边界，非回归）。候选“仅切掉更多暗色背景、不重绘品牌图形”：
+# 外层 864（84.4%）、边距 80（7.8%），品牌主标记随外层等比缩小。圆角半径按
+# 外层 20.1% 取 174，保持既有的圆角观感。仅生成候选文件，保留回滚基线。
+CAND_OUTER = 864
+CAND_MARGIN = (CANVAS - CAND_OUTER) // 2  # 80
+CAND_RADIUS = 174
 
 # 旧母版中品牌主标记的亮度阈值（仅用于自检报告，不参与加工）。
 MARK_BRIGHTNESS_THRESHOLD = 150
@@ -105,6 +120,36 @@ def build_master(source: Image.Image) -> Image.Image:
     return canvas
 
 
+def build_candidate(master: Image.Image, outer: int, margin: int, radius: int) -> Image.Image:
+    """从既有 1024×1024 RGBA 母版“重切边距”得到候选母版。
+
+    裁剪母版的不透明块（暗色圆角外层 + 品牌主标记）、等比缩到 `outer`、重新套
+    圆角 alpha 蒙版、居中合成到 1024 透明画布。品牌图形随外层等比缩放、**不重
+    绘**；仅放大透明边距以缓解 Dock 中视觉偏大。绝不读写 Windows `.ico` 或受控
+    副本目录。
+    """
+    if master.mode != "RGBA" or master.size != (CANVAS, CANVAS):
+        raise SystemExit(f"candidate mode needs the existing {CANVAS}x{CANVAS} RGBA master, got {master.mode} {master.size}")
+    alpha = master.getchannel("A")
+    bbox = alpha.point(lambda v: 255 if v >= 128 else 0).getbbox()
+    if bbox is None:
+        raise SystemExit("candidate mode: master has no opaque pixels to re-margin")
+    tile = master.crop(bbox).resize((outer, outer), Image.Resampling.LANCZOS).convert("RGBA")
+
+    mask = Image.new("L", (outer * SS, outer * SS), 0)
+    ImageDraw.Draw(mask).rounded_rectangle(
+        (0, 0, outer * SS - 1, outer * SS - 1),
+        radius=radius * SS,
+        fill=255,
+    )
+    mask = mask.resize((outer, outer), Image.Resampling.LANCZOS)
+    tile.putalpha(mask)
+
+    canvas = Image.new("RGBA", (CANVAS, CANVAS), (0, 0, 0, 0))
+    canvas.alpha_composite(tile, (margin, margin))
+    return canvas
+
+
 def run_sips(size: int, source: Path, destination: Path) -> None:
     subprocess.run(
         ["sips", "-s", "format", "png", "-z", str(size), str(size), str(source), "--out", str(destination)],
@@ -123,8 +168,49 @@ def main() -> None:
         default=default_master,
         help="旧的全出血 RGB 方图母版路径（默认为母版路径本身）",
     )
+    parser.add_argument(
+        "--candidate",
+        action="store_true",
+        help="从现有 1024×1024 RGBA 母版重切边距，仅生成候选母版 + 候选 .icns（不动既有母版/.icns/.ico）",
+    )
+    parser.add_argument("--outer", type=int, default=None, help="候选外层边长（默认 %d）" % CAND_OUTER)
+    parser.add_argument("--margin", type=int, default=None, help="候选四周透明边距（默认由 (画布-outer)/2 推导）")
+    parser.add_argument("--radius", type=int, default=None, help="候选圆角半径（默认 %d）" % CAND_RADIUS)
     args = parser.parse_args()
     source_path: Path = args.source
+
+    if args.candidate:
+        outer = args.outer or CAND_OUTER
+        radius = args.radius or CAND_RADIUS
+        margin = args.margin if args.margin is not None else (CANVAS - outer) // 2
+        if margin < 0 or outer <= 0 or outer + 2 * margin > CANVAS:
+            raise SystemExit(f"candidate geometry invalid: outer={outer} margin={margin} (canvas={CANVAS})")
+
+        master = Image.open(default_master).convert("RGBA")
+        candidate = build_candidate(master, outer, margin, radius)
+        cand_png = default_master.parent / f"{default_master.stem}-candidate{default_master.suffix}"
+        candidate.save(cand_png)
+        print(f"[candidate master] wrote {cand_png} ({CANVAS}x{CANVAS} RGBA, outer={outer}, margin={margin}, radius={radius})")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_dir = Path(tmp)
+            iconset = tmp_dir / "icon.iconset"
+            iconset.mkdir()
+            for name, size in ICONSET_FILES.items():
+                run_sips(size, cand_png, iconset / name)
+            icns_built = tmp_dir / "icon.icns"
+            subprocess.run(
+                ["iconutil", "-c", "icns", str(iconset), "-o", str(icns_built)],
+                check=True,
+                capture_output=True,
+            )
+            cand_icns = default_master.parent / f"{default_master.stem}-candidate.icns"
+            data = icns_built.read_bytes()
+            cand_icns.write_bytes(data)
+            print(f"[candidate icns] wrote {cand_icns} ({len(data)} bytes)")
+
+        self_check(cand_png, master.convert("RGB"))
+        return
 
     source = Image.open(source_path)
     source.load()  # 母版路径即输出路径：先完整读入源数据再覆盖。
