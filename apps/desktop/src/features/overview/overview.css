@@ -127,33 +127,68 @@
   height: 100%;
 }
 
+/* DEV-25：概览按"可用高度"分配纵向空间，页面根不再出现无必要的纵向滚动。
+   AppShell/PageFrame（fill 契约）已把剩余高度交到本容器，这里只把它切成
+   三条可压缩轨道——指标带 / 技能关系 / 部署分布+右列：每条 min-height:0，
+   空间不足时区块在自己分配到的高度内滚动，而不是把页面撑长。
+   不使用任何视口高度魔法数字：压缩量完全由可用高度决定。 */
 .sh-overview {
-  display: grid;
-  /* DEV-7 固定布局：指标带 → 技能关系区（上移）→ 部署分布 + 右列。
-     关系区上移后总高超出单屏，改为自然文档流（页面纵向滚动），
-     面板各自持有高度；不再把三块硬塞进一屏的受约束网格。 */
-  grid-template-rows: none;
-  align-content: start;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
   gap: var(--page-gap);
+}
+
+.sh-overview > .sh-overview__metrics,
+.sh-overview > .sh-overview__relations,
+.sh-overview > .sh-overview__content-grid {
+  min-height: 0;
+}
+
+/* 指标带与技能关系区按内容取高，空间不足时压缩并各自内部滚动；
+   关系区（"偏高"的那一块）收缩得更快，把高度让给主区。 */
+.sh-overview > .sh-overview__metrics {
+  flex: 0 1 auto;
+  overflow-y: auto;
+}
+
+.sh-overview > .sh-overview__relations {
+  flex: 0 2 auto;
+  overflow-y: auto;
 }
 
 /* 只消费 AppShell 已分配的剩余高度，禁止用整块视口高度反推，避免 100% 全屏
    时把顶栏和内边距重复算入而触发外层滚动条。 */
-.sh-overview .sh-overview__content-grid {
-  min-height: 0;
-  /* DEV-7：自然流下面板自带高度（部署分布主区 + 右列内部滚动仍成立）。 */
-  height: auto;
-}
-
-.sh-overview .sh-overview__panel {
-  min-height: 30rem;
+.sh-overview > .sh-overview__content-grid {
+  flex: 1 1 auto;
+  /* 主区保底：压缩优先发生在关系区与指标带，图表区至少留一个可读下限
+     （组件下限，不是视口推导值），不够就由卡片自己滚动。 */
+  min-height: 14rem;
+  overflow-y: auto;
+  /* 并排（宽容器）时只有一行：行占满分配到的高度，主区与右列随之伸缩，
+     不再各自按内容高度溢出成滚动条。 */
+  grid-template-rows: minmax(0, 1fr);
 }
 
 /* 宽屏概览固定四块区域：部署分布为主区，右侧依次为标签饼图与待处理；
    列表只在自己的卡片内滚动，页面本身不因标签数量变长。 */
 .sh-overview .sh-overview__panel {
-  min-height: 0;
-  grid-template-rows: auto minmax(8rem, 1fr) minmax(6rem, 1fr);
+  /* DEV-25：面板可压缩——不再有 30rem 的硬性下限，图表区是主要压缩位；
+     下限保留图表与明细各一条可读轨道，绝不被右列挤成 0 高度而裁掉图表。 */
+  min-height: 14rem;
+  /* 图表是主区，明细是可滚列表：可用高度按 2:1 分给两者。 */
+  grid-template-rows: auto minmax(5rem, 2fr) minmax(3rem, 1fr);
+  /* 高度紧张时面板内部自己滚动，绝不把图表裁掉。 */
+  overflow-y: auto;
+}
+
+/* 明细区在自己的行内滚动：head 固定，列表吃掉剩余高度。 */
+.sh-overview .sh-overview__panel > .sh-overview__details {
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.sh-overview .sh-overview__details-scroll {
+  max-height: 100%;
 }
 
 .sh-overview .sh-overview__chart-figure {
@@ -246,8 +281,9 @@
    的高度契约——100% 缩放下外层不出滚动条，被压缩的是图表区 minmax(0,1fr)。 */
 .sh-overview__relations {
   display: grid;
-  /* DEV-7：上移后的关系区不允许在受约束网格中塌缩。 */
-  min-height: max-content;
+  /* DEV-25：关系区是"偏高"的区块之一——允许压缩（min-height:0）并在自己
+     分配到的高度内滚动，不再用 max-content 把自己的高度写死给页面。 */
+  min-height: 0;
   gap: var(--space-3);
   padding: var(--space-4);
   border: 1px solid var(--ui-border);
@@ -373,51 +409,28 @@
 
   .sh-overview .sh-overview__rail {
     align-content: stretch;
-    grid-template-rows: minmax(0, 1fr) minmax(8rem, 12rem);
+    /* DEV-25：待办区拿到自己内容的高度（不再被挤到图表下方才出现），
+       标签饼图拿剩余高度；两者都在自己的轨道内滚动。 */
+    grid-template-rows: minmax(0, 1fr) minmax(8rem, 16rem);
   }
 
   .sh-overview .sh-overview__pending {
     min-height: 0;
-    overflow: hidden;
+    /* DEV-25：待办区被压缩时自己滚动，不用 hidden 把条目裁掉。 */
+    overflow-y: auto;
   }
 }
 
 @container workspace (max-width: 56rem) {
   .sh-overview .sh-overview__content-grid {
     grid-template-columns: minmax(0, 1fr);
-  }
-}
-
-/* 窗口化且高度紧张时，不能继续把主区锁进一条剩余高度轨道：部署卡和右栏
-   的标签/待办都有各自的可读最小高度，强行压缩会令网格子项越界相叠。
-   改用内容本身高度并交给 AppShell 的唯一外层滚动区；高窗口仍保留上面的
-   满高布局，因此全屏不会因为这条兜底规则额外出现滚动条。 */
-@media (max-height: 70rem) {
-  #main-content .sh-page-frame--fill {
-    height: auto;
-    grid-template-rows: none;
-  }
-
-  .sh-overview {
-    grid-template-rows: none;
-  }
-
-  .sh-overview .sh-overview__content-grid {
-    height: auto;
-    min-height: auto;
-    align-items: start;
-  }
-
-  .sh-overview .sh-overview__panel {
-    grid-template-rows: auto auto auto;
-  }
-
-  .sh-overview .sh-overview__chart-figure {
-    height: clamp(14rem, 34vh, 20rem);
-  }
-
-  .sh-overview .sh-overview__rail {
-    grid-template-rows: auto;
+    /* DEV-25：单列堆叠时主区与右列各自保留内容高度（不互相挤压），
+       超出部分由主区自己滚动——被压成 0 高度会把图表裁掉。 */
+    grid-template-rows: auto auto;
     align-content: start;
   }
 }
+
+/* DEV-25：原先那条"窗口高度偏小就退回自然文档流"的兜底已删除——它用视口
+   高度反推布局，窗口一变小就把滚动条推给页面根。现在压缩与滚动全部由上面
+   的弹性轨道消化：轨道的 min 值是"组件可读下限"，不是视口魔法数字。 */

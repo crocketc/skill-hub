@@ -90,8 +90,15 @@ it("fills the remaining shell height without a viewport-derived outer scroll ran
   expect(overviewCss).toMatch(/\.sh-overview__content-grid\s*\{[\s\S]*min-height:\s*0/);
 });
 
-it("falls back to intrinsic overview height before cards can overlap in a short window", () => {
-  expect(overviewCss).toMatch(/@media \(max-height: 70rem\) \{[\s\S]*?\.sh-page-frame--fill \{[\s\S]*?height:\s*auto/);
-  expect(overviewCss).toMatch(/@media \(max-height: 70rem\) \{[\s\S]*?\.sh-overview \.sh-overview__content-grid \{[\s\S]*?height:\s*auto/);
-  expect(overviewCss).toMatch(/@media \(max-height: 70rem\) \{[\s\S]*?\.sh-overview \.sh-overview__panel \{[\s\S]*?grid-template-rows:\s*auto auto auto/);
+it("allocates available height instead of falling back to a viewport-derived scroll range", () => {
+  // DEV-25（契约迁移）：短窗口不再退回"自然高度 + 页面根滚动"——那条
+  // `@media (max-height: 70rem)` 兜底用视口高度反推布局，正是验收发现的
+  // 页面级滚动条来源。现在高度由弹性轨道分配，主区保底 + 卡片内部滚动。
+  expect(overviewCss).not.toMatch(/@media \(max-height/);
+  expect(overviewCss).not.toMatch(/\.sh-page-frame--fill \{[\s\S]*?height:\s*auto/);
+  expect(overviewCss).toMatch(/\.sh-overview > \.sh-overview__content-grid\s*\{[\s\S]*?flex: 1 1 auto/);
+  expect(overviewCss).toMatch(/\.sh-overview > \.sh-overview__content-grid\s*\{[\s\S]*?min-height:\s*14rem/);
+  // 明细列表与待办区在自己的行/卡片内滚动，不把高度推给页面。
+  expect(overviewCss).toMatch(/\.sh-overview \.sh-overview__details-scroll\s*\{[\s\S]*?max-height:\s*100%/);
+  expect(overviewCss).toMatch(/@container workspace \(min-width: 60rem\) \{[\s\S]*?\.sh-overview \.sh-overview__pending \{[\s\S]*?overflow-y:\s*auto/);
 });
