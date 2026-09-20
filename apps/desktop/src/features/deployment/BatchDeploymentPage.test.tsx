@@ -341,6 +341,29 @@ it("maps the skill UUID to a display name in preview failure rows and keeps the 
   expect(alert.querySelector("strong")).toHaveTextContent("PDF 抽取器");
 });
 
+it("labels each batch plan with the resolved display name instead of the raw Skill id (DEV-18-A)", async () => {
+  const user = userEvent.setup();
+  const facade = batchFacade({
+    preview: vi.fn<BatchDeploymentFacade["preview"]>(async (_skillIds, selected) => ({
+      failures: [],
+      plans: [{
+        skillId: "sku-0001-aaaa",
+        displayName: "PDF 抽取器",
+        plan: { skillId: "sku-0001-aaaa", versionId: "v1", targets: selected.map((target) => ({ targetId: target.id, label: target.label, mode: "managed_copy" as const, warnings: [] })), warnings: [] },
+      }],
+    })),
+  });
+  await renderBatchPage(facade, ["sku-0001-aaaa"]);
+
+  await user.click(await screen.findByLabelText("Codex CLI"));
+  await user.click(screen.getByRole("button", { name: "预览" }));
+
+  const plan = await screen.findByRole("region", { name: /添加计划/ });
+  expect(within(plan).getByRole("heading", { name: "PDF 抽取器" })).toBeVisible();
+  // 裸 UUID 不作为计划区主文案出现。
+  expect(within(plan).queryByText("sku-0001-aaaa")).toBeNull();
+});
+
 it("renders a preview occupancy conflict as readable text with takeover guidance", async () => {
   const user = userEvent.setup();
   const facade = batchFacade({

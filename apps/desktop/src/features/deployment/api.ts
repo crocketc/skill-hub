@@ -2,6 +2,7 @@ import type { DeploymentPlan as NativeDeploymentPlan } from "../../api/bindings"
 import { describeNativeError, type NativeAppError } from "../../api/nativeErrors";
 
 export type DeploymentMode = "symbolic_link" | "directory_junction" | "managed_copy";
+
 export type DeploymentTarget = {
   id: string;
   label: string;
@@ -19,12 +20,16 @@ export type DeploymentPlanTarget = {
 export type DeploymentPlan = {
   skillId: string;
   versionId: string;
+  /** 展示名（回退 runtime name）：预览阶段随计划解析，供主文案使用（DEV-18-A）。 */
+  displayName?: string;
   targets: DeploymentPlanTarget[];
   warnings: string[];
   native?: NativeDeploymentPlan;
 };
 export type DeploymentResult = {
   skillId?: string;
+  /** 展示名（回退 runtime name）：主文案用它，裸 UUID 只进技术详情（DEV-18-A）。 */
+  displayName?: string;
   targetId: string;
   label: string;
   status: "succeeded" | "failed" | "skipped";
@@ -55,7 +60,7 @@ export interface DeploymentFacade {
   commit(plan: DeploymentPlan): Promise<DeploymentResult[]>;
 }
 
-export type BatchDeploymentPlan = { skillId: string; plan: DeploymentPlan };
+export type BatchDeploymentPlan = { skillId: string; displayName?: string; plan: DeploymentPlan };
 export type BatchDeploymentPreview = {
   plans: BatchDeploymentPlan[];
   /**

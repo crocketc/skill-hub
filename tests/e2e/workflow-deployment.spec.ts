@@ -113,7 +113,9 @@ test.describe("batch deployment flow", () => {
     // 提交动作与非原子风险提示必须同处一个 footer 操作区（相邻）。
     await expect(footer).toContainText(/not atomic/i);
     await expect(footer.getByRole("button", { name: "Confirm and add" })).toBeVisible();
-    await expect(page.getByText("preview-skill-8")).toBeVisible();
+    // DEV-18-A：计划区主文案是展示名，裸 Skill UUID 不出现在首屏。
+    await expect(page.getByText("Preview Skill 8")).toBeVisible();
+    await expect(page.getByText("preview-skill-8")).toHaveCount(0);
   });
 
   test("blocks the commit when a batch preview fails", async ({ page }) => {
@@ -123,7 +125,12 @@ test.describe("batch deployment flow", () => {
     await page.getByLabel("Preview Agent 1").check();
     await page.getByRole("button", { name: "Preview" }).click();
 
-    await expect(page.getByRole("alert")).toContainText("preview-skill-2");
+    // DEV-18-A：失败行主文案是展示名；裸 UUID 只在技术详情内。
+    await expect(page.getByRole("alert")).toContainText("Preview Skill 2");
+    const alert = page.getByRole("alert");
+    await expect(alert.getByText("preview-skill-2")).toBeHidden();
+    await alert.getByText("Technical details").click();
+    await expect(alert.getByText("preview-skill-2")).toBeVisible();
     await expect(page.getByRole("button", { name: "Confirm and add" })).toBeDisabled();
     // 批量流程壳（标题含数量）自己的状态区。
     await expect(flowStatus(page, "Add 8 Skills")).toContainText("commit is blocked");

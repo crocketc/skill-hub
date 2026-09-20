@@ -241,6 +241,53 @@ it("resolves the skill display name into a failed batch preview (DEV-18-A)", asy
   }]);
 });
 
+it("projects the skill display name into batch commit results (DEV-18-A)", async () => {
+  vi.mocked(queryApplication).mockImplementation(async (request) => {
+    if (request.type === "get_skill") {
+      return {
+        type: "skill",
+        payload: {
+          skill_id: request.payload.skill_id,
+          display_name: "PDF 抽取器",
+          runtime_name: "pdf-extractor",
+          original_description: "",
+          translated_description: null,
+          user_note: null,
+          user_purpose: null,
+          tags: [],
+          author: null,
+          license: null,
+          lifecycle: "Normal",
+          trial_due: null,
+          current_version: "v1",
+        },
+      };
+    }
+    throw new Error(`Unexpected request ${request.type}`);
+  });
+  vi.mocked(executeCommand)
+    .mockResolvedValueOnce({ type: "prepared_deployment", payload: { id: "prep-1" } } as never)
+    .mockResolvedValueOnce({
+      type: "deployment_summary",
+      payload: {
+        operation_id: "op-1",
+        targets: [{ logical_target_ids: ["t-1"], physical_target_id: "p-1", status: "succeeded", error_code: null }],
+      },
+    } as never);
+
+  const facade = createNativeBatchDeploymentFacade();
+  const plan = {
+    skillId: "skill-pdf",
+    versionId: "v1",
+    targets: [{ targetId: "t-1", label: "Codex CLI", mode: "managed_copy" as const, warnings: [] }],
+    warnings: [],
+    native: { skill_id: "skill-pdf", version_id: "v1", runtime_name: "pdf-extractor", mode: "managed_copy" as const, targets: [], warnings: [], conflicts: [] },
+  };
+
+  const results = await facade.commit([{ skillId: "skill-pdf", plan }]);
+  expect(results).toEqual([expect.objectContaining({ skillId: "skill-pdf", displayName: "PDF 抽取器" })]);
+});
+
 it("carries the structured native error through a failed batch commit result", async () => {
   const structured = {
     code: "deployment.target_exists",

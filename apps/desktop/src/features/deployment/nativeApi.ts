@@ -24,6 +24,8 @@ type NativeDeploymentContext = {
   skillId: string;
   versionId: string;
   runtimeName?: string;
+  /** 已知展示名时不再回源查询（DEV-18-A）。 */
+  displayName?: string;
 };
 
 function targetsResult(result: AppQueryResult): NativeDeploymentTarget[] {
@@ -119,10 +121,13 @@ export function createNativeDeploymentFacade(context: NativeDeploymentContext): 
       const selectedById = new Map(selected.map((target) => [target.id, target]));
       let runtimeName = context.runtimeName;
       let versionId = context.versionId;
+      let displayName = context.displayName;
       if (!runtimeName || versionId === "current") {
         const skill = await queryApplication({ type: "get_skill", payload: { skill_id: context.skillId } });
         if (skill.type !== "skill") throw new Error("deployment.runtime_name_unavailable");
         runtimeName ??= skill.payload.runtime_name;
+        // 展示名回退 runtime name：供结果/计划主文案使用（DEV-18-A）。
+        displayName ??= skill.payload.display_name || skill.payload.runtime_name;
         if (versionId === "current") {
           if (!skill.payload.current_version) throw new Error("deployment.no_current_version");
           versionId = skill.payload.current_version;
@@ -140,7 +145,7 @@ export function createNativeDeploymentFacade(context: NativeDeploymentContext): 
           },
         },
       });
-      return toPlan(planResult(result), selectedById);
+      return { ...toPlan(planResult(result), selectedById), displayName };
     },
 
     async commit(plan) {
@@ -242,7 +247,7 @@ export function createNativeBatchDeploymentFacade(): BatchDeploymentFacade {
       const failures: BatchDeploymentPreview["failures"] = [];
       for (const preview of previews) {
         if (preview.ok) {
-          plans.push({ skillId: preview.skillId, plan: preview.plan });
+          plans.push({ skillId: preview.skillId, displayName: preview.plan.displayName, plan: preview.plan });
         } else {
           failures.push({ skillId: preview.skillId, displayName: preview.displayName, message: preview.message, error: preview.error });
         }
@@ -252,14 +257,17 @@ export function createNativeBatchDeploymentFacade(): BatchDeploymentFacade {
 
     async commit(plans: BatchDeploymentPlan[], onProgress?: (completedSkills: number) => void): Promise<BatchDeploymentResult[]> {
       const results: BatchDeploymentResult[] = [];
-      for (const { skillId, plan } of plans) {
+      for (const { skillId, displayName, plan } of plans) {
+        // 展示名随结果投影：结果行主文案用展示名，裸 UUID 只进技术详情（DEV-18-A）。
+        const resolvedName = displayName ?? plan.displayName ?? await resolveSkillDisplayName(skillId);
         try {
           const committed = await createNativeDeploymentFacade({ skillId, versionId: plan.versionId }).commit(plan);
-          results.push(...committed.map((result) => ({ ...result, skillId })));
+          results.push(...committed.map((result) => ({ ...result, skillId, displayName: resolvedName })));
         } catch (reason) {
           const failure = failureOf(reason);
           results.push(...plan.targets.map((target) => ({
             skillId,
+            displayName: resolvedName,
             targetId: target.targetId,
             label: target.label,
             status: "failed" as const,

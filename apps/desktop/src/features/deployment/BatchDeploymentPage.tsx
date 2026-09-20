@@ -317,8 +317,9 @@ export function BatchDeploymentPage({ facade, skillIds, tracker, onCommitted }: 
             </dl>
           </details>
         </li>)}</ul> : null}
-        {preview.plans.map(({ skillId, plan }) => <section key={skillId}>
-          <h3>{skillId}</h3>
+        {/* DEV-18-A：计划区标题用展示名，裸 Skill UUID 不作为主文案。 */}
+        {preview.plans.map(({ skillId, displayName, plan }) => <section key={skillId}>
+          <h3>{displayName ?? skillId}</h3>
           {plan.warnings.length > 0 ? <ul className="sh-notice-list">{plan.warnings.map((warning) => <li key={warning}>{String(t(warning as never, { defaultValue: warning } as never))}</li>)}</ul> : null}
           <ul className="sh-workflow-list">
             {plan.targets.map((target) => <li className="sh-workflow-list__item" data-testid="target-plan" key={target.targetId}>
