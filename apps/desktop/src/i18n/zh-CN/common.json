@@ -1753,6 +1753,10 @@
   },
   "deployment": {
     "eyebrow": "安全添加",
+    "dimension": {
+      "agent": "Agent",
+      "project": "项目"
+    },
     "errors": {
       "generic": "添加操作失败（{{code}}）。请重试；若持续出现请记录该错误码。"
     },

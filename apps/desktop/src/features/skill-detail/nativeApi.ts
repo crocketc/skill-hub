@@ -11,6 +11,7 @@ import {
   type UpdateDecision,
   type UpstreamCheckResult,
 } from "../../api/bindings";
+import { indexTargetsByAnyId } from "../deployment/targetProjection";
 import { usableLlmProviderLabel } from "../settings/llmApi";
 import {
   SkillDetailUnavailableError,
@@ -268,10 +269,10 @@ async function getRollbackImpact(
     type: "list_deployment_targets",
     payload: null,
   });
-  const targets =
-    targetsResult.type === "deployment_targets"
-      ? new Map(targetsResult.payload.map((target) => [target.id, target]))
-      : new Map<string, DeploymentTarget>();
+  // DEV-22-A：关系行的 target_id 可能是物理目标 id，逻辑/物理双键回查。
+  const targets = targetsResult.type === "deployment_targets"
+    ? indexTargetsByAnyId(targetsResult.payload)
+    : new Map<string, DeploymentTarget>();
   return {
     deployments: relationsResult.payload.map((relation) => ({
       affected: true,
@@ -431,7 +432,8 @@ export const nativeSkillDetailFacade: SkillDetailFacade = {
     if (relationsResult.type !== "deployment_relations") throw unavailableResult();
     const targetsResult = await queryApplication({ type: "list_deployment_targets", payload: null });
     if (targetsResult.type !== "deployment_targets") throw unavailableResult();
-    const targets = new Map(targetsResult.payload.map((target) => [target.id, target]));
+    // DEV-22-A：关系行的 target_id 可能是物理目标 id，逻辑/物理双键回查。
+    const targets = indexTargetsByAnyId(targetsResult.payload);
     return relationsResult.payload.map((relation) => {
       const target = targets.get(relation.target_id);
       const targetPath = target?.path.replace(/[\\/]+$/, "") ?? relation.target_id;

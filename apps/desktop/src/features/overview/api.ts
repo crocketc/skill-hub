@@ -47,8 +47,13 @@ function deploymentTarget(dimension: DeploymentDimension, key: string) {
   return `/projects/${key}?view=deployments`;
 }
 
-function deploymentLabel(category: DeploymentChartCategory): string {
-  return category.label_code;
+/**
+ * DEV-22-A：`label_code` 可能是 i18n 键（后端按维度兜底时给的就是
+ * `deployment.dimension.agent` 这类内部键），绝不能原样渲染；翻译不出来时
+ * 才把它当作现成名称使用。
+ */
+function deploymentLabel(category: DeploymentChartCategory, t: TFunction): string {
+  return String(t(category.label_code as never, { defaultValue: category.label_code } as never));
 }
 
 export function getOverviewMetrics(
@@ -101,12 +106,14 @@ export function getDeploymentItems(
   snapshot: BootstrapSnapshot,
   dimension: OverviewDimension,
   t: TFunction,
+  /** 类别 key（Agent 客户端 id / 项目 id）到可读名称的映射；缺省退回翻译结果。 */
+  names?: ReadonlyMap<string, string>,
 ): OverviewDeploymentItem[] {
   return snapshot.deployment_categories
     .filter((category) => category.dimension === dimension)
     .sort((left, right) => right.count - left.count || left.label_code.localeCompare(right.label_code))
     .map((category) => {
-      const label = deploymentLabel(category);
+      const label = names?.get(category.key) ?? deploymentLabel(category, t);
       return {
         buttonLabel: t(`overview.chart.drilldown.${dimension}`, {
           count: category.count,

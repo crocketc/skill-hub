@@ -1753,6 +1753,10 @@
   },
   "deployment": {
     "eyebrow": "Safe addition",
+    "dimension": {
+      "agent": "Agent",
+      "project": "Project"
+    },
     "errors": {
       "generic": "The add operation failed ({{code}}). Please retry; note the error code if it persists."
     },

@@ -10,6 +10,7 @@ import {
   type LogicalTarget,
   type OperatingSystem,
 } from "../../api/bindings";
+import { countManagedDeployments, deploymentTargetIdSpace, type TargetIdPair } from "../deployment/targetProjection";
 import type { AgentFacade, AgentRelation, AgentStatus, AgentView, CustomAgentFormValues } from "./api";
 
 function unexpectedResult(operation: string): Error {
@@ -26,17 +27,16 @@ function relationOf(target: LogicalTarget, snapshot: DiscoverySnapshot): AgentRe
   };
 }
 
-function managedDeploymentStats(targetIds: string[], deployments: DeploymentRecord[]): {
+/**
+ * DEV-22-A：真实提交把 `deployments.target_id` 写成物理目标 id，而本页持有
+ * 的是逻辑目标 id。两个 id 空间互投影后再统计，否则刚部署完的 Skill 在本页
+ * 计数为 0（概览按 `targets.agent_id` 分组却数得出来）。
+ */
+function managedDeploymentStats(targets: TargetIdPair[], deployments: DeploymentRecord[]): {
   relations: number;
   skills: number;
 } {
-  const active = deployments.filter(
-    (deployment) => deployment.managed && deployment.state !== "removed" && targetIds.includes(deployment.target_id),
-  );
-  return {
-    relations: active.length,
-    skills: new Set(active.map((deployment) => deployment.skill_id)).size,
-  };
+  return countManagedDeployments(deployments, deploymentTargetIdSpace(targets));
 }
 
 function discoveredStatus(targets: LogicalTarget[]): AgentStatus {
@@ -67,7 +67,10 @@ function discoveredAgents(snapshot: DiscoverySnapshot, deployments: DeploymentRe
     const targets = snapshot.logical_targets.filter(
       (target) => target.profile_id === instance.profile_id && target.client_id === instance.client_id,
     );
-    const stats = managedDeploymentStats(targets.map((target) => target.id), deployments);
+    const stats = managedDeploymentStats(
+      targets.map((target) => ({ id: target.id, physicalId: target.physical_id })),
+      deployments,
+    );
     return {
       id: `${instance.profile_id}.${instance.client_id}`,
       brand: instance.profile_id,
@@ -87,7 +90,11 @@ function discoveredAgents(snapshot: DiscoverySnapshot, deployments: DeploymentRe
 
 function customAgent(agent: CustomAgent, deployments: DeploymentRecord[]): AgentView {
   const client = agent.profile.clients[0]?.id ?? "custom";
-  const stats = managedDeploymentStats([agent.id], deployments);
+  // 自定义 Agent：逻辑 id 是 agent 自身 id，物理 id 是目录授权 id。
+  const stats = managedDeploymentStats(
+    [{ id: agent.id, physicalId: agent.directory.grant_id }],
+    deployments,
+  );
   return {
     id: agent.id,
     brand: agent.profile.brand,

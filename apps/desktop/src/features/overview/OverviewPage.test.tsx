@@ -9,6 +9,10 @@ import type {
   SkillRelationshipCandidate,
 } from "../../api/bindings";
 import { createSkillHubI18n } from "../../i18n";
+import type { AgentFacade } from "../agents/api";
+import { nativeAgentFacade } from "../agents/nativeApi";
+import type { ProjectFacade } from "../projects/api";
+import { nativeProjectFacade } from "../projects/nativeApi";
 import type { RelationshipsFacade } from "../relationships/api";
 import baseCss from "../../styles/base.css?raw";
 import { ThemeProvider } from "../../styles/ThemeProvider";
@@ -214,6 +218,7 @@ function mockBrowserPreferences() {
 async function renderOverview(
   snapshot = overviewSnapshot,
   facade: RelationshipsFacade = populatedRelationshipsFacade,
+  options: { agentFacade?: AgentFacade; projectFacade?: ProjectFacade } = {},
 ) {
   const i18n = await createSkillHubI18n(["en-US"]);
   mockBrowserPreferences();
@@ -228,7 +233,14 @@ async function renderOverview(
           <MemoryRouter initialEntries={["/"]}>
             <Routes>
               <Route element={<OverviewRoute snapshot={snapshot} />}>
-                <Route index element={<OverviewPage relationshipsFacade={facade} />} />
+                <Route
+                  element={<OverviewPage
+                    agentFacade={options.agentFacade ?? nativeAgentFacade}
+                    projectFacade={options.projectFacade ?? nativeProjectFacade}
+                    relationshipsFacade={facade}
+                  />}
+                  index
+                />
                 <Route path="agents" element={<LocationDisplay />} />
                 <Route path="agents/:agentKey" element={<LocationDisplay />} />
                 <Route path="projects/:projectKey" element={<LocationDisplay />} />
@@ -691,3 +703,38 @@ it("renders the tag panel empty state and keeps relations above the deployment c
   expect(screen.getByRole("heading", { name: /pending/i })).toBeVisible();
 });
 
+it("renders readable Agent names in the deployment chart instead of internal i18n keys (DEV-22-A)", async () => {
+  const keySnapshot: BootstrapSnapshot = {
+    ...overviewSnapshot,
+    deployment_categories: [
+      { count: 12, dimension: "agent", key: "openai.codex-cli", label_code: "deployment.dimension.agent" },
+      { count: 3, dimension: "project", key: "project-aurora", label_code: "deployment.dimension.project" },
+    ],
+  };
+  const agentFacade = {
+    list: async () => [{ client: "codex-cli", id: "openai.codex-cli", instance: "Codex CLI" }],
+  } as unknown as AgentFacade;
+  const projectFacade = {
+    list: async () => [{ id: "project-aurora", name: "Aurora" }],
+  } as unknown as ProjectFacade;
+
+  await renderOverview(keySnapshot, populatedRelationshipsFacade, { agentFacade, projectFacade });
+
+  // 名称来自 Agent/项目本身；内部 i18n 键不出现在图表明细里。
+  expect(await screen.findByText("Codex CLI")).toBeVisible();
+  expect(screen.queryByText("deployment.dimension.agent")).not.toBeInTheDocument();
+});
+
+it("falls back to the translated dimension name when no Agent name is available (DEV-22-A)", async () => {
+  const keySnapshot: BootstrapSnapshot = {
+    ...overviewSnapshot,
+    deployment_categories: [
+      { count: 12, dimension: "agent", key: "openai.codex-cli", label_code: "deployment.dimension.agent" },
+    ],
+  };
+
+  await renderOverview(keySnapshot);
+
+  expect(await screen.findByText("Agent")).toBeVisible();
+  expect(screen.queryByText("deployment.dimension.agent")).not.toBeInTheDocument();
+});

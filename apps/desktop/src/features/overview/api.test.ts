@@ -6,7 +6,7 @@ import type {
   SkillRelationshipCandidate,
 } from "../../api/bindings";
 import { createSkillHubI18n } from "../../i18n";
-import { getOverviewRelationEntries, getOverviewRelationEntryHref, getOverviewSummaryMetrics } from "./api";
+import { getDeploymentItems, getOverviewRelationEntries, getOverviewRelationEntryHref, getOverviewSummaryMetrics } from "./api";
 
 const summarySnapshot: BootstrapSnapshot = {
   initialization_state: "initialized",
@@ -188,6 +188,44 @@ it("splits deployment relations by dimension across all chart categories", async
 
   expect(metrics[3].count).toBe(13);
   expect(metrics[3].name).toBe("Skill 部署关系（部署到 Agent 8 条 · 项目 5 条）");
+});
+
+it("never renders the raw i18n key as a chart label (DEV-22-A)", async () => {
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  // 后端按维度分组时给的 label_code 是内部 i18n 键，必须翻译后呈现。
+  const keySnapshot: BootstrapSnapshot = {
+    ...summarySnapshot,
+    deployment_categories: [
+      { count: 4, dimension: "agent", key: "codex-cli", label_code: "deployment.dimension.agent" },
+      { count: 2, dimension: "project", key: "project-aurora", label_code: "deployment.dimension.project" },
+    ],
+  };
+
+  const agents = getDeploymentItems(keySnapshot, "agent", i18n.t.bind(i18n));
+  const projects = getDeploymentItems(keySnapshot, "project", i18n.t.bind(i18n));
+
+  expect(agents.map((item) => item.label)).toEqual(["Agent"]);
+  expect(projects.map((item) => item.label)).toEqual(["项目"]);
+  for (const item of [...agents, ...projects]) {
+    expect(item.label).not.toMatch(/^deployment\./);
+  }
+});
+
+it("prefers the resolved Agent/Project name over the dimension key (DEV-22-A)", async () => {
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  const keySnapshot: BootstrapSnapshot = {
+    ...summarySnapshot,
+    deployment_categories: [
+      { count: 4, dimension: "agent", key: "codex-cli", label_code: "deployment.dimension.agent" },
+      { count: 2, dimension: "project", key: "project-aurora", label_code: "deployment.dimension.project" },
+    ],
+  };
+  const names = new Map([["codex-cli", "Codex CLI"], ["project-aurora", "Aurora"]]);
+
+  expect(getDeploymentItems(keySnapshot, "agent", i18n.t.bind(i18n), names).map((item) => item.label))
+    .toEqual(["Codex CLI"]);
+  expect(getDeploymentItems(keySnapshot, "project", i18n.t.bind(i18n), names).map((item) => item.label))
+    .toEqual(["Aurora"]);
 });
 
 it("counts exactly the unconfirmed conflicts the workspace projection already selected", async () => {
