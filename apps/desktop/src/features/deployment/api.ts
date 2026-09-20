@@ -62,7 +62,7 @@ export type BatchDeploymentPreview = {
    * 预览失败必须保留结构化错误本体（DEV-18）：message 只是纯文本兜底，
    * 页面用 `describeNativeError(error)` 渲染可读文案，绝不 `String(对象)`。
    */
-  failures: Array<{ skillId: string; message: string; error?: NativeAppError }>;
+  failures: Array<{ skillId: string; displayName?: string; message: string; error?: NativeAppError }>;
 };
 export type BatchDeploymentResult = DeploymentResult & { skillId: string };
 

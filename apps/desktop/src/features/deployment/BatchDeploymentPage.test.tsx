@@ -311,6 +311,36 @@ it("blocks the batch commit and announces the failure when a skill preview fails
   expect(facade.commit).not.toHaveBeenCalled();
 });
 
+it("maps the skill UUID to a display name in preview failure rows and keeps the raw id in technical details (DEV-18-A)", async () => {
+  const user = userEvent.setup();
+  const facade = batchFacade({
+    preview: vi.fn<BatchDeploymentFacade["preview"]>(async (_skillIds, selected) => ({
+      failures: [{
+        skillId: "skill-docx",
+        displayName: "PDF 抽取器",
+        message: "版本缺失",
+      }],
+      plans: [{
+        skillId: "skill-pdf",
+        plan: { skillId: "skill-pdf", versionId: "v1", targets: selected.map((target) => ({ targetId: target.id, label: target.label, mode: "managed_copy" as const, warnings: [] })), warnings: [] },
+      }],
+    })),
+  });
+  await renderBatchPage(facade, ["skill-pdf", "skill-docx"]);
+
+  await user.click(await screen.findByLabelText("Codex CLI"));
+  await user.click(screen.getByRole("button", { name: "预览" }));
+
+  // 主文案显示展示名，绝不在首屏呈现裸 UUID。
+  const alert = await screen.findByRole("alert");
+  expect(screen.getByText("PDF 抽取器")).toBeVisible();
+  // 裸 UUID 仅出现在「技术详情」可展开区域内，不得作为首屏主文案。
+  const idNode = screen.getByText("skill-docx");
+  expect(idNode.closest("details")).not.toBeNull();
+  // 主文案的展示名与裸 UUID 不是同一个节点。
+  expect(alert.querySelector("strong")).toHaveTextContent("PDF 抽取器");
+});
+
 it("renders a preview occupancy conflict as readable text with takeover guidance", async () => {
   const user = userEvent.setup();
   const facade = batchFacade({

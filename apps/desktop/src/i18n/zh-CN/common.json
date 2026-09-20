@@ -1798,7 +1798,9 @@
       "expandAgents": "展开关联 Agent（{{count}} 个）",
       "expandAgentsHint": "把所选项目已关联的 Agent 目标一并加入选择。",
       "nonAtomicNotice": "批次将逐个 Skill、逐个目标提交，不是原子操作：部分成功不会自动回滚已成功的部分。",
-      "committing": "正在添加，请稍候；批次非原子，逐项结果将在完成后展示。"
+      "committing": "正在添加，请稍候；批次非原子，逐项结果将在完成后展示。",
+      "technicalDetails": "技术详情",
+      "skillId": "Skill ID"
     },
     "mode": {
       "label": "部署方式",

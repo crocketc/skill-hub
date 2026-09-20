@@ -159,7 +159,7 @@ it("keeps a failed Skill preview out of the batch commit candidates", async () =
 
   await expect(createNativeBatchDeploymentFacade().preview(["skill-pdf", "skill-docx"], [target])).resolves.toEqual({
     plans: [expect.objectContaining({ skillId: "skill-pdf" })],
-    failures: [{ skillId: "skill-docx", message: "basic check required" }],
+    failures: [{ skillId: "skill-docx", displayName: "skill-docx", message: "basic check required" }],
   });
 });
 
@@ -200,8 +200,44 @@ it("carries the structured native error through a failed batch preview instead o
   expect(preview.plans).toHaveLength(0);
   expect(preview.failures).toEqual([{
     skillId: "skill-pdf",
+    displayName: "skill-pdf",
     message: expect.not.stringContaining("[object Object]"),
     error: structured,
+  }]);
+});
+
+it("resolves the skill display name into a failed batch preview (DEV-18-A)", async () => {
+  vi.mocked(queryApplication).mockImplementation(async (request) => {
+    if (request.type === "get_skill") {
+      return {
+        type: "skill",
+        payload: {
+          skill_id: request.payload.skill_id,
+          display_name: "PDF 抽取器",
+          runtime_name: "pdf-extractor",
+          original_description: "",
+          translated_description: null,
+          user_note: null,
+          user_purpose: null,
+          tags: [],
+          author: null,
+          license: null,
+          lifecycle: "Normal",
+          trial_due: null,
+          current_version: "v1",
+        },
+      };
+    }
+    if (request.type === "get_deployment_plan") throw new Error("basic check required");
+    throw new Error(`Unexpected request ${request.type}`);
+  });
+  const target: DeploymentTarget = { id: "codex-global", label: "Codex CLI", path: "hidden", available: true, physicalId: "fs:codex", modes: ["managed_copy"] };
+
+  const preview = await createNativeBatchDeploymentFacade().preview(["skill-pdf"], [target]);
+  expect(preview.failures).toEqual([{
+    skillId: "skill-pdf",
+    displayName: "PDF 抽取器",
+    message: "basic check required",
   }]);
 });
 

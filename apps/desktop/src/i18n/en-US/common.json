@@ -1798,7 +1798,9 @@
       "expandAgents": "Expand linked agents ({{count}})",
       "expandAgentsHint": "Adds the agents associated with the selected projects to the target selection.",
       "nonAtomicNotice": "The batch commits per skill and per target and is not atomic: partial success does not roll back completed parts.",
-      "committing": "Adding, please wait; the batch is not atomic, per-target results appear once finished."
+      "committing": "Adding, please wait; the batch is not atomic, per-target results appear once finished.",
+      "technicalDetails": "Technical details",
+      "skillId": "Skill ID"
     },
     "mode": {
       "label": "Deployment mode",

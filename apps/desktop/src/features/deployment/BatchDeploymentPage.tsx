@@ -298,14 +298,25 @@ export function BatchDeploymentPage({ facade, skillIds, tracker, onCommitted }: 
             <p>{t("deployment.batch.planDescription")}</p>
           </div>
         </div>
-        {preview.failures.length ? <ul className="sh-notice-list" role="alert">{preview.failures.map((failure) => <li key={failure.skillId}>{t("deployment.batch.previewFailed", {
-          skillId: failure.skillId,
-          // 结构化错误走 describeNativeError 渲染可读文案（DEV-18）；
-          // 纯文本兜底（Error.message 等）原样透出。
-          message: failure.error
-            ? describeNativeError(failure.error, (key, options) => String(t(key as never, options as never)), "deployment.errors.generic")
-            : failure.message,
-        })}</li>)}</ul> : null}
+        {preview.failures.length ? <ul className="sh-notice-list" role="alert">{preview.failures.map((failure) => <li className="sh-deployment-flow__failure" key={failure.skillId}>
+          <div>
+            {/* DEV-18-A：失败行主文案用展示名（回退 runtime name）；裸 Skill
+                UUID 绝不作为首屏可见文本，只在可展开的「技术详情」区域内。 */}
+            <strong>{failure.displayName ?? failure.skillId}</strong>
+            <p>{failure.error
+              ? describeNativeError(failure.error, (key, options) => String(t(key as never, options as never)), "deployment.errors.generic")
+              : failure.message}</p>
+          </div>
+          <details className="sh-deployment-flow__diagnostics">
+            <summary>{t("deployment.batch.technicalDetails")}</summary>
+            <dl className="sh-deployment-flow__diagnostics-list">
+              <div>
+                <dt>{t("deployment.batch.skillId")}</dt>
+                <dd>{failure.skillId}</dd>
+              </div>
+            </dl>
+          </details>
+        </li>)}</ul> : null}
         {preview.plans.map(({ skillId, plan }) => <section key={skillId}>
           <h3>{skillId}</h3>
           {plan.warnings.length > 0 ? <ul className="sh-notice-list">{plan.warnings.map((warning) => <li key={warning}>{String(t(warning as never, { defaultValue: warning } as never))}</li>)}</ul> : null}
