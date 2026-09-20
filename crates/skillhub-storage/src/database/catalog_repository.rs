@@ -5,7 +5,7 @@ use skillhub_core::api::{
     ListSkills, SkillDeploymentFilter, SkillLifecycleFilter, SkillListItem, SkillListPage,
     SkillSortColumn, SkillSortDirection,
 };
-use skillhub_core::catalog::{CallPolicy, CatalogRepository, Skill, SkillLifecycle};
+use skillhub_core::catalog::{CallPolicy, CatalogRepository, InvocationPolicyFact, InvocationPolicySource, Skill, SkillLifecycle};
 use skillhub_core::check::CheckState;
 use skillhub_core::{AppError, AppResult, ErrorCode, RecoveryAction, Severity, SkillId, VersionId};
 use std::collections::{BTreeSet, HashMap, HashSet};
@@ -48,7 +48,17 @@ impl<'a> CatalogRepositorySqlite<'a> {
         let due = skill
             .trial_due()
             .map(|(y, m, d)| format!("{y:04}-{m:02}-{d:02}"));
-        tx.execute("INSERT OR REPLACE INTO catalog_skill_metadata(skill_id,requirements_json,trial_due) VALUES (?1,?2,?3)", params![skill.id().to_string(), req, due]).map_err(error)?;
+        tx.execute(
+            "INSERT OR REPLACE INTO catalog_skill_metadata(skill_id,requirements_json,trial_due,invocation_source,invocation_field) VALUES (?1,?2,?3,?4,?5)",
+            params![
+                skill.id().to_string(),
+                req,
+                due,
+                invocation_source_code(skill.invocation_source()),
+                skill.invocation_field().map(str::to_owned),
+            ],
+        )
+        .map_err(error)?;
         tx.commit().map_err(error)
     }
 
@@ -382,13 +392,15 @@ fn status_columns() -> String {
     let latest_basic_id = latest_check_run_id_expr("s.id", "cp.version_id", "basic");
     let latest_llm_id = latest_check_run_id_expr("s.id", "cp.version_id", "llm");
     format!(
+        "s.display_name,s.runtime_name,s.original        format!(
         "s.display_name,s.runtime_name,s.original_description,s.translated_description,s.user_note,s.user_purpose,s.license,s.lifecycle,m.trial_due,s.author,\
          (SELECT src.kind FROM skill_sources ss JOIN sources src ON src.id=ss.source_id WHERE ss.skill_id=s.id ORDER BY src.id ASC LIMIT 1),\
          (SELECT src.locator FROM skill_sources ss JOIN sources src ON src.id=ss.source_id WHERE ss.skill_id=s.id ORDER BY src.id ASC LIMIT 1),\
          cp.version_id,v.source_version,\
          COALESCE({latest_basic},'not_checked'),\
          COALESCE({latest_llm},'not_checked'),\
-         (SELECT COUNT(*) FROM check_findings f WHERE f.run_id IN ({latest_basic_id},{latest_llm_id}) AND f.severity IN ('error','critical') AND f.disposition='actionable')"
+         (SELECT COUNT(*) FROM check_findings f WHERE f.run_id IN ({latest_basic_id},{latest_llm_id}) AND f.severity IN ('error','critical') AND f.disposition='actionable'),\
+         s.call_policy,m.invocation_source,m.invocation_field"
     )
 }
 
@@ -417,6 +429,9 @@ struct StatusRow {
     basic_check: Option<String>,
     ai_check: Option<String>,
     high_risk_count: i64,
+    call_policy: String,
+    invocation_source: Option<String>,
+    invocation_field: Option<String>,
 }
 
 fn read_status_row(id: SkillId, row: StatusRow) -> AppResult<SkillListItem> {
@@ -579,7 +594,17 @@ impl CatalogRepository for CatalogRepositorySqlite<'_> {
         let due = skill
             .trial_due()
             .map(|(y, m, d)| format!("{y:04}-{m:02}-{d:02}"));
-        tx.execute("INSERT OR REPLACE INTO catalog_skill_metadata(skill_id,requirements_json,trial_due) VALUES (?1,?2,?3)", params![skill.id().to_string(), req, due]).map_err(error)?;
+        tx.execute(
+            "INSERT OR REPLACE INTO catalog_skill_metadata(skill_id,requirements_json,trial_due,invocation_source,invocation_field) VALUES (?1,?2,?3,?4,?5)",
+            params![
+                skill.id().to_string(),
+                req,
+                due,
+                invocation_source_code(skill.invocation_source()),
+                skill.invocation_field().map(str::to_owned),
+            ],
+        )
+        .map_err(error)?;
         tx.commit().map_err(error)
     }
 
@@ -628,23 +653,25 @@ impl CatalogRepository for CatalogRepositorySqlite<'_> {
         {
             tags.insert(tag.map_err(error)?);
         }
-        let metadata: Option<(String, Option<String>)> = conn
+        let metadata: Option<(String, Option<String>, String, Option<String>)> = conn
             .query_row(
-                "SELECT requirements_json,trial_due FROM catalog_skill_metadata WHERE skill_id=?1",
+                "SELECT requirements_json,trial_due,invocation_source,invocation_field FROM catalog_skill_metadata WHERE skill_id=?1",
                 [id.to_string()],
-                |r| Ok((r.get::<_, String>(0)?, r.get(1)?)),
+                |r| Ok((r.get::<_, String>(0)?, r.get(1)?, r.get::<_, String>(2)?, r.get(3)?)),
             )
             .optional()
             .map_err(error)?;
-        let (requirements, due) = if let Some((json, due)) = metadata {
+        let (requirements, due, invocation_source, invocation_field) = if let Some((json, due, source, field)) = metadata {
             (
                 serde_json::from_str(&json).map_err(|_| {
                     AppError::new(ErrorCode::RequirementsInvalidDeclaration, Severity::Error)
                 })?,
                 due,
+                parse_invocation_source(&source),
+                field,
             )
         } else {
-            (Vec::new(), None)
+            (Vec::new(), None, InvocationPolicySource::Default, None)
         };
         Ok(Some(Skill::from_parts(
             id,
@@ -665,7 +692,12 @@ impl CatalogRepository for CatalogRepositorySqlite<'_> {
             parse_lifecycle(&lifecycle)?,
             requirements,
             due.and_then(parse_date),
-        )?))
+        )?
+        .with_invocation(
+            parse_policy(&policy)?,
+            invocation_source,
+            invocation_field,
+        )))
     }
 
     async fn get(&self, id: SkillId) -> AppResult<Option<Skill>> {

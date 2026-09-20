@@ -2,7 +2,8 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::{catalog::CallPolicy, SkillId, VersionId};
+use crate::catalog::{CallPolicy, InvocationPolicySource};
+use crate::{SkillId, VersionId};
 
 /// Portable paths and files that make up the central Skill library.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -84,6 +85,12 @@ pub struct PortableSkillRecord {
     pub call_policy: CallPolicy,
     #[serde(default)]
     pub declared_requirements: BTreeMap<String, String>,
+    /// Read-only invocation policy source: `explicit`, `default` or `unknown`.
+    #[serde(default)]
+    pub invocation_source: Option<String>,
+    /// The frontmatter/YAML field that produced the invocation fact, when explicit.
+    #[serde(default)]
+    pub invocation_field: Option<String>,
     #[serde(default)]
     pub current_version: Option<VersionId>,
 }
@@ -104,6 +111,8 @@ impl PortableSkillRecord {
             license: None,
             call_policy: CallPolicy::default(),
             declared_requirements: BTreeMap::new(),
+            invocation_source: None,
+            invocation_field: None,
             current_version: None,
         }
     }
