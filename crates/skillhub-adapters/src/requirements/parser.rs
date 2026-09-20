@@ -74,7 +74,11 @@ impl DeclaredRequirementParser {
         };
         let mut seen_env = BTreeSet::new();
         for file in files {
-            let content = fs::read_to_string(&file)?;
+            let raw = fs::read(&file)?;
+            // Lossy decoding keeps a single unreadable/non-UTF8 file from
+            // aborting the whole scan; the Skill still surfaces whatever else it
+            // declared (DEV-28 parse-failure safety).
+            let content = String::from_utf8_lossy(&raw).into_owned();
             let relative = file
                 .strip_prefix(root)
                 .unwrap_or(&file)
@@ -281,7 +285,7 @@ fn deduplicate(values: &mut Vec<RequirementEvidence>) {
         if !unique.iter().any(|existing: &RequirementEvidence| {
             existing.kind == value.kind
                 && existing.name == value.name
-                && existing.location == value.location
+                && existing.version == value.version
         }) {
             unique.push(value);
         }

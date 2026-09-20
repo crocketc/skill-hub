@@ -1,6 +1,8 @@
 use crate::agent::{CustomAgent, DiscoverySnapshot};
 use crate::app_update::{ApplicationUpdate, CheckApplicationUpdate, UpdateState};
-use crate::catalog::SkillLifecycle;
+use crate::catalog::{
+    DeclaredRequirementFact, InvocationPolicyFact, SkillLifecycle,
+};
 use crate::check::{
     CheckKind, CheckResult as DomainCheckResult, CheckState, Finding, FindingDisposition,
 };
@@ -133,6 +135,15 @@ pub struct SkillListItem {
     pub basic_check: CheckState,
     pub ai_check: CheckState,
     pub high_risk_count: u32,
+    /// Read-only invocation policy fact (identified result or safe default).
+    /// `None` only when the Skill record is missing; the UI must render a single
+    /// explicit empty state rather than duplicate "no reliable data" stacks.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub invocation_policy: Option<InvocationPolicyFact>,
+    /// Read-only declared runtime requirements. Empty when the Skill declares no
+    /// runtime requirements.
+    #[serde(default)]
+    pub declared_requirements: Vec<DeclaredRequirementFact>,
 }
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 pub struct SkillListPage {
@@ -232,6 +243,12 @@ pub struct SkillResult {
     /// 内容哈希只是技术身份，不进入展示标签（不可读时为 None）。
     #[serde(default)]
     pub current_version_label: Option<String>,
+    /// Read-only invocation policy fact (identified result or safe default).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub invocation_policy: Option<InvocationPolicyFact>,
+    /// Read-only declared runtime requirements. Empty when none are declared.
+    #[serde(default)]
+    pub declared_requirements: Vec<DeclaredRequirementFact>,
 }
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 pub struct VersionResult {

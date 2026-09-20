@@ -178,3 +178,100 @@ fn redacts_quoted_and_yaml_values_without_preserving_suffixes() {
                 && !requirement.source_code.contains("Python")
         }));
 }
+
+#[test]
+fn deduplicates_identical_dependency_declarations() {
+    let root = tempfile::tempdir().unwrap();
+    std::fs::write(
+        root.path().join("SKILL.md"),
+        "---\nrequires:\n  - python=3.11\n  - python=3.11\n  - ffmpeg\n  - ffmpeg\n---\n",
+    )
+    .unwrap();
+    let parsed = DeclaredRequirementParser::parse(root.path()).unwrap();
+    let python = parsed
+        .explicit
+        .iter()
+        .filter(|requirement| requirement.kind == RequirementKind::Python)
+        .count();
+    let ffmpeg = parsed
+        .explicit
+        .iter()
+        .filter(|requirement| requirement.kind == RequirementKind::Ffmpeg)
+        .count();
+    assert_eq!(python, 1, "identical python declaration must be deduplicated");
+    assert_eq!(ffmpeg, 1, "identical ffmpeg declaration must be deduplicated");
+}
+
+#[test]
+fn extracts_version_constraints_from_dependency_lines() {
+    let root = tempfile::tempdir().unwrap();
+    std::fs::write(
+        root.path().join("SKILL.md"),
+        "---\nrequires:\n  - python>=3.11\n  - node>=18.0\n---\n",
+    )
+    .unwrap();
+    let parsed = DeclaredRequirementParser::parse(root.path()).unwrap();
+    let python = parsed
+        .explicit
+        .iter()
+        .find(|requirement| requirement.kind == RequirementKind::Python)
+        .expect("python requirement present");
+    assert_eq!(python.version.as_deref(), Some("3.11"));
+    let node = parsed
+        .explicit
+        .iter()
+        .find(|requirement| requirement.kind == RequirementKind::OtherTool && requirement.name == "node")
+        .expect("node requirement present");
+    assert_eq!(node.version.as_deref(), Some("18.0"));
+}
+
+#[test]
+fn masks_environment_variable_values_and_records_only_names() {
+    let root = tempfile::tempdir().unwrap();
+    std::fs::write(
+        root.path().join("SKILL.md"),
+        "Set ANTHROPIC_API_KEY=sk-real-secret-123 before running.\nOPENAI_API_KEY: also-secret here.\n",
+    )
+    .unwrap();
+    let parsed = DeclaredRequirementParser::parse(root.path()).unwrap();
+    let names: Vec<&str> = parsed
+        .environment_variables
+        .iter()
+        .map(|variable| variable.name.as_str())
+        .collect();
+    assert!(names.contains(&"ANTHROPIC_API_KEY"));
+    assert!(names.contains(&"OPENAI_API_KEY"));
+    assert!(
+        parsed
+            .environment_variables
+            .iter()
+            .all(|variable| variable.value.is_none()),
+        "sensitive values must never be recorded"
+    );
+    assert!(
+        parsed
+            .explicit
+            .iter()
+            .chain(parsed.clues.iter())
+            .all(|requirement| !requirement.source_code.contains("sk-real-secret-123")
+                && !requirement.source_code.contains("also-secret")),
+        "masked values must not leak into source snippets"
+    );
+}
+
+#[test]
+fn parse_failure_of_one_file_never_breaks_the_whole_scan() {
+    // A .env.example with an invalid encoding sits next to a clean SKILL.md.
+    let root = tempfile::tempdir().unwrap();
+    std::fs::write(root.path().join("SKILL.md"), "Uses python for parsing.\n").unwrap();
+    std::fs::write(root.path().join(".env.example"), [0xff, 0xfe, 0xfd]).unwrap();
+    // The parser reads files as UTF-8 lossy / handles IO without panicking.
+    let parsed = DeclaredRequirementParser::parse(root.path());
+    assert!(parsed.is_ok(), "a broken file must not abort the scan");
+    let parsed = parsed.unwrap();
+    assert!(parsed
+        .explicit
+        .iter()
+        .chain(parsed.clues.iter())
+        .any(|requirement| requirement.kind == RequirementKind::Python));
+}

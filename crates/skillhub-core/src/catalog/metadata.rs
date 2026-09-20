@@ -21,7 +21,105 @@ pub enum SkillCallPolicy {
 
 pub type CallPolicy = SkillCallPolicy;
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+/// Read-only source of an invocation-policy fact. `Explicit` means the Skill
+/// declared a callable subject; `Default` means no declaration was found and
+/// the safe default (`model_and_user`) applies; `Unknown` means the platform's
+/// Skill format does not expose an invocation field at all.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "snake_case")]
+pub enum InvocationPolicySource {
+    Explicit,
+    #[default]
+    Default,
+    Unknown,
+}
+
+/// User-facing invocation mode exposed by the quick drawer and detail page.
+/// Snake_case to match the desktop client `InvocationMode` contract.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "snake_case")]
+pub enum InvocationMode {
+    #[default]
+    ModelAndUser,
+    ModelOnly,
+    UserOnly,
+    Disabled,
+}
+
+impl InvocationMode {
+    /// Maps the stored `CallPolicy` to the user-facing invocation mode.
+    pub fn from_call_policy(policy: &CallPolicy) -> Self {
+        match policy {
+            CallPolicy::AutomaticAndManual => InvocationMode::ModelAndUser,
+            CallPolicy::ModelOnly => InvocationMode::ModelOnly,
+            CallPolicy::ManualOnly => InvocationMode::UserOnly,
+            CallPolicy::Disabled => InvocationMode::Disabled,
+        }
+    }
+
+    /// Inverse of [`InvocationMode::from_call_policy`].
+    pub fn to_call_policy(self) -> CallPolicy {
+        match self {
+            InvocationMode::ModelAndUser => CallPolicy::AutomaticAndManual,
+            InvocationMode::ModelOnly => CallPolicy::ModelOnly,
+            InvocationMode::UserOnly => CallPolicy::ManualOnly,
+            InvocationMode::Disabled => CallPolicy::Disabled,
+        }
+    }
+}
+
+/// Read-only fact describing how a Skill may be invoked. The UI must present the
+/// `Default` source as a derived rule, never as an explicit declaration.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct InvocationPolicyFact {
+    pub mode: InvocationMode,
+    pub source: InvocationPolicySource,
+    /// The YAML/frontmatter field that produced the fact, when explicit.
+    /// Omitted for default/unknown sources so the UI never invents a field.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub field: Option<String>,
+}
+
+impl InvocationPolicyFact {
+    pub fn from_parts(policy: CallPolicy, source: InvocationPolicySource, field: Option<String>) -> Self {
+        Self {
+            mode: InvocationMode::from_call_policy(&policy),
+            source,
+            field,
+        }
+    }
+}
+
+/// Read-only fact describing one declared runtime requirement. Values of
+/// sensitive environment variables are never recorded; only the variable name
+/// and source location survive parsing.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct DeclaredRequirementFact {
+    pub kind: RequirementKind,
+    pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub version: Option<String>,
+    pub explicit: bool,
+    /// Human-readable evidence snippet (variable values already masked).
+    pub source: String,
+}
+
+impl DeclaredRequirementFact {
+    pub fn from_declared(requirement: &DeclaredRequirement) -> Self {
+        Self {
+            kind: requirement.kind.clone(),
+            name: requirement.name.clone(),
+            version: requirement.version.clone(),
+            explicit: requirement.explicit,
+            source: requirement.source.clone(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "snake_case")]
 pub enum RequirementKind {
     Python,
     Ffmpeg,
