@@ -4393,6 +4393,19 @@ impl LocalApplicationFacade {
         })
     }
 
+    fn persist_upstream_check(
+        &self,
+        result: AppResult<AppCommandResult>,
+    ) -> AppResult<AppCommandResult> {
+        let result = result?;
+        if let AppCommandResult::UpstreamCheckResult(check) = &result {
+            self.with_database("execute.check_source_update.persist", |database| {
+                database.source_repository().record_update_check(check)
+            })?;
+        }
+        Ok(result)
+    }
+
     fn check_source_update(&self, request: CheckSourceUpdate) -> AppResult<AppCommandResult> {
         let (skill_exists, source) =
             self.with_database("execute.check_source_update.source", |database| {
@@ -4410,19 +4423,19 @@ impl LocalApplicationFacade {
         }
         let Some(source) = source else {
             // AR-020：没有来源记录就没有上游；本地目录不是上游来源。
-            return Ok(AppCommandResult::UpstreamCheckResult(
+            return self.persist_upstream_check(Ok(AppCommandResult::UpstreamCheckResult(
                 skillhub_core::UpstreamCheckResult::new(request.skill_id, SourceState::NoUpstream),
-            ));
+            )));
         };
         if source.kind != skillhub_core::SourceKind::Git {
             // AR-020：本地目录来源（导入路径或用户自建）不是可检查的上游；
             // 本地文件变化由外部变化与健康检查追踪，不伪装成"来源更新"。
-            return Ok(AppCommandResult::UpstreamCheckResult(
+            return self.persist_upstream_check(Ok(AppCommandResult::UpstreamCheckResult(
                 skillhub_core::UpstreamCheckResult::new(request.skill_id, SourceState::NoUpstream),
-            ));
+            )));
         }
         // 远端 git 来源（含 N7a 记录的仓库导入坐标）：拉取远端归档做哈希对比。
-        self.check_remote_source_update(request.skill_id)
+        self.persist_upstream_check(self.check_remote_source_update(request.skill_id))
     }
 
     /// 读取 Skill 的 UpstreamOrigin 坐标，经仓库归档下载把远端 Skill 目录
@@ -4688,9 +4701,15 @@ impl LocalApplicationFacade {
             return Err(error);
         }
         self.with_database("execute.apply_source_update.persist", |database| {
-            database
-                .source_repository()
-                .set_revision(request.skill_id, Some(&version.manifest.tree_hash))
+            let source_repository = database.source_repository();
+            source_repository.set_revision(request.skill_id, Some(&version.manifest.tree_hash))?;
+            source_repository.record_update_check(
+                &skillhub_core::UpstreamCheckResult::new(
+                    request.skill_id,
+                    SourceState::UpToDate,
+                )
+                .with_versions(Some(version.id.clone()), Some(version.id.clone())),
+            )
         })?;
         Ok(AppCommandResult::AppliedSourceUpdate(
             skillhub_core::AppliedSourceUpdate {

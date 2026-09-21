@@ -3064,6 +3064,7 @@ export type SkillListFilters = {
 	deployment?: SkillDeploymentFilter,
 	lifecycle?: SkillLifecycleFilter[],
 	tags?: string[],
+	version?: SkillVersionFilter,
 };
 
 export type SkillListItem = {
@@ -3089,6 +3090,11 @@ export type SkillListItem = {
 	basic_check: CheckState,
 	ai_check: CheckState,
 	high_risk_count: number,
+	/**
+	 *  Latest explicit upstream observation; absent means the Skill has not
+	 *  been checked yet in this installation.
+	 */
+	upstream_state?: SourceState | null,
 	/**
 	 *  Read-only invocation policy fact (identified result or safe default).
 	 *  `None` only when the Skill record is missing; the UI must render a single
@@ -3264,6 +3270,8 @@ export type SkillResult = {
 export type SkillSortColumn = "name" | "lifecycle" | "agent_deployments" | "project_deployments" | "version" | "updated";
 
 export type SkillSortDirection = "asc" | "desc";
+
+export type SkillVersionFilter = "any" | "upgrade_available";
 
 export type SourceDescriptor = {
 	kind: SourceKind,

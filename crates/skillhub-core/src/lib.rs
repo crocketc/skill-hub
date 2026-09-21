@@ -102,7 +102,7 @@ pub use api::{
     RunLlmSafetyCheck, RunRollingBackup, SaveUserTranslationRevision, SearchOnlineSources,
     SearchOnlineSourcesAssisted, SetApplicationUpdatePolicy, SetUiPreference, SkillListItem,
     SkillListPage, SkillOperationEntry, SkillOperationsResult, TranslateDescription,
-    TranslateDescriptionsBatch, VerifyBackup,
+    SkillVersionFilter, TranslateDescriptionsBatch, VerifyBackup,
 };
 pub use app_update::{
     install_action_for, select_artifact, validate_official_artifact_url,

@@ -73,9 +73,13 @@ export const NATIVE_SORTABLE_COLUMNS: SkillColumnId[] = [
   "version",
 ];
 
-/** The upgrade filter needs upstream source data that has no read model yet,
- * so the filter control stays disabled instead of failing the whole page. */
-export const NATIVE_VERSION_UPGRADE_FILTER_SUPPORTED = false;
+/** The list read model persists the latest explicit upstream observation. */
+export const NATIVE_VERSION_UPGRADE_FILTER_SUPPORTED = true;
+
+function upgradeAvailableOf(item: SkillListItem): boolean {
+  return item.upstream_state === "update_available"
+    || item.upstream_state === "update_available_with_local_changes";
+}
 
 function toTableRow(item: SkillListItem, agentTargets: Map<string, AgentDeployment>): SkillTableRow {
   const agentDeployments = item.agent_deployment_target_ids.map(
@@ -109,7 +113,7 @@ function toTableRow(item: SkillListItem, agentTargets: Map<string, AgentDeployme
     tags: item.tags,
     translatedDescription: item.translated_description ?? undefined,
     license: item.license ?? undefined,
-    upgradeAvailable: false,
+    upgradeAvailable: upgradeAvailableOf(item),
   };
 }
 
@@ -193,13 +197,13 @@ export const nativeSkillLibraryFacade: SkillLibraryFacade = {
   async listSkills(query) {
     const sortColumn = SORT_COLUMNS[query.sort.column];
     if (!sortColumn) throw unavailableResult();
-    if (query.filters.version !== "any") throw unavailableResult();
     const filters = {
       ai_check: query.filters.aiCheck.map(nativeCheckStateOf),
       basic_check: query.filters.basicCheck.map(nativeCheckStateOf),
       deployment: query.filters.deployment,
       lifecycle: query.filters.lifecycle,
       tags: query.filters.tags,
+      version: query.filters.version,
     };
     try {
       const result = await queryApplication({

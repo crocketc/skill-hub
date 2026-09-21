@@ -79,7 +79,7 @@ describe("native skill library facade", () => {
         text: "",
         page: 1,
         page_size: 25,
-        filters: { ai_check: [], basic_check: [], deployment: "any", lifecycle: [], tags: [] },
+        filters: { ai_check: [], basic_check: [], deployment: "any", lifecycle: [], tags: [], version: "any" },
         sort: { column: "name", direction: "asc" },
       },
     });
@@ -158,6 +158,7 @@ describe("native skill library facade", () => {
             basic_check: "failed",
             ai_check: "running",
             high_risk_count: 1,
+            upstream_state: "update_available",
           }),
         ]),
       )
@@ -187,7 +188,23 @@ describe("native skill library facade", () => {
       basicCheck: "failed",
       aiCheck: "warning",
       highRiskCount: 1,
+      upgradeAvailable: true,
     });
+  });
+
+  it("forwards the upgrade filter to the native read model", async () => {
+    vi.mocked(queryApplication).mockResolvedValue(skillPage([]));
+
+    await nativeSkillLibraryFacade.listSkills({
+      ...DEFAULT_SKILL_QUERY,
+      filters: { ...DEFAULT_SKILL_QUERY.filters, version: "upgrade_available" },
+    });
+
+    expect(queryApplication).toHaveBeenCalledWith(expect.objectContaining({
+      payload: expect.objectContaining({
+        filters: expect.objectContaining({ version: "upgrade_available" }),
+      }),
+    }));
   });
 
   it("keeps raw target ids when the deployment target lookup cannot resolve them", async () => {
@@ -230,6 +247,7 @@ describe("native skill library facade", () => {
           deployment: "deployed",
           lifecycle: ["trial", "archived"],
           tags: ["documents"],
+          version: "any",
         },
         sort: { column: "agent_deployments", direction: "desc" },
       },
@@ -264,14 +282,6 @@ describe("native skill library facade", () => {
 
   it("rejects filters and sorts that still have no native read model", async () => {
     vi.clearAllMocks();
-    await expect(
-      nativeSkillLibraryFacade.listSkills({
-        ...DEFAULT_SKILL_QUERY,
-        filters: { ...DEFAULT_SKILL_QUERY.filters, version: "upgrade_available" },
-      }),
-    ).rejects.toSatisfy(
-      (error) => error instanceof Error && error.name === "SkillLibraryUnavailableError",
-    );
     await expect(
       nativeSkillLibraryFacade.listSkills({
         ...DEFAULT_SKILL_QUERY,

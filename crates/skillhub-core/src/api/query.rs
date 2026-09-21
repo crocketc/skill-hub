@@ -11,7 +11,7 @@ use crate::evidence::UsageEvidenceAnalysis;
 use crate::import::{ImportAnalysis, ImportCandidate};
 use crate::project::{AssemblyPlan, Project, SavedProjectView};
 use crate::search::{SearchHit, SearchQuery};
-use crate::source::{SourceDescriptor, SourceSearchPage, SourceSearchQuery};
+use crate::source::{SourceDescriptor, SourceSearchPage, SourceSearchQuery, SourceState};
 use crate::{
     BootstrapSnapshot, DeploymentPlan, DeploymentPlanRequest, Severity, SkillId, VersionId,
 };
@@ -64,6 +64,15 @@ pub struct SkillListFilters {
     pub deployment: SkillDeploymentFilter,
     pub lifecycle: Vec<SkillLifecycleFilter>,
     pub tags: Vec<String>,
+    pub version: SkillVersionFilter,
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(rename_all = "snake_case")]
+pub enum SkillVersionFilter {
+    #[default]
+    Any,
+    UpgradeAvailable,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
@@ -135,6 +144,10 @@ pub struct SkillListItem {
     pub basic_check: CheckState,
     pub ai_check: CheckState,
     pub high_risk_count: u32,
+    /// Latest explicit upstream observation; absent means the Skill has not
+    /// been checked yet in this installation.
+    #[serde(default)]
+    pub upstream_state: Option<SourceState>,
     /// Read-only invocation policy fact (identified result or safe default).
     /// `None` only when the Skill record is missing; the UI must render a single
     /// explicit empty state rather than duplicate "no reliable data" stacks.

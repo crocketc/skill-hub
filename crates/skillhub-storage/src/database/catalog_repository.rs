@@ -3,13 +3,14 @@ use async_trait::async_trait;
 use rusqlite::{params, OptionalExtension};
 use skillhub_core::api::{
     ListSkills, SkillDeploymentFilter, SkillLifecycleFilter, SkillListItem, SkillListPage,
-    SkillSortColumn, SkillSortDirection,
+    SkillSortColumn, SkillSortDirection, SkillVersionFilter,
 };
 use skillhub_core::catalog::{
     CallPolicy, CatalogRepository, DeclaredRequirement, DeclaredRequirementFact,
     InvocationPolicyFact, InvocationPolicySource, Skill, SkillLifecycle,
 };
 use skillhub_core::check::CheckState;
+use skillhub_core::source::SourceState;
 use skillhub_core::{AppError, AppResult, ErrorCode, RecoveryAction, Severity, SkillId, VersionId};
 use std::collections::{BTreeSet, HashMap, HashSet};
 
@@ -227,6 +228,12 @@ impl<'a> CatalogRepositorySqlite<'a> {
                 "'not_checked'"
             ));
         }
+        if request.filters.version == SkillVersionFilter::UpgradeAvailable {
+            conditions.push(
+                "EXISTS (SELECT 1 FROM source_update_checks suc WHERE suc.skill_id=s.id AND suc.state IN ('update_available','update_available_with_local_changes'))"
+                    .into(),
+            );
+        }
         let where_sql = conditions.join(" AND ");
 
         let total_sql = format!(
@@ -402,6 +409,7 @@ fn status_columns() -> String {
          COALESCE({latest_basic},'not_checked'),\
          COALESCE({latest_llm},'not_checked'),\
          (SELECT COUNT(*) FROM check_findings f WHERE f.run_id IN ({latest_basic_id},{latest_llm_id}) AND f.severity IN ('error','critical') AND f.disposition='actionable'),\
+         (SELECT suc.state FROM source_update_checks suc WHERE suc.skill_id=s.id LIMIT 1),\
          s.call_policy,m.invocation_source,m.invocation_field,m.requirements_json"
     )
 }
@@ -431,6 +439,7 @@ struct StatusRow {
     basic_check: Option<String>,
     ai_check: Option<String>,
     high_risk_count: i64,
+    upstream_state: Option<String>,
     call_policy: String,
     invocation_source: Option<String>,
     invocation_field: Option<String>,
@@ -473,6 +482,11 @@ fn read_status_row(id: SkillId, row: StatusRow) -> AppResult<SkillListItem> {
         basic_check: parse_check_state(row.basic_check)?,
         ai_check: parse_check_state(row.ai_check)?,
         high_risk_count: row.high_risk_count.max(0) as u32,
+        upstream_state: row
+            .upstream_state
+            .as_deref()
+            .map(parse_source_state)
+            .transpose()?,
         invocation_policy: Some(InvocationPolicyFact::from_parts(
             call_policy,
             invocation_source,
@@ -547,6 +561,19 @@ fn parse_check_state(value: Option<String>) -> AppResult<CheckState> {
     }
 }
 
+fn parse_source_state(value: &str) -> AppResult<SourceState> {
+    match value {
+        "up_to_date" => Ok(SourceState::UpToDate),
+        "update_available" => Ok(SourceState::UpdateAvailable),
+        "update_available_with_local_changes" => Ok(SourceState::UpdateAvailableWithLocalChanges),
+        "source_unavailable" => Ok(SourceState::SourceUnavailable),
+        "authentication_required" => Ok(SourceState::AuthenticationRequired),
+        "no_upstream" => Ok(SourceState::NoUpstream),
+        _ => Err(AppError::new(ErrorCode::InternalError, Severity::Error)
+            .with_param("source_update_state", value)),
+    }
+}
+
 fn sql_string_list(values: &[String]) -> String {
     values
         .iter()
@@ -576,10 +603,11 @@ fn map_status_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<(String, StatusRo
             basic_check: row.get(15)?,
             ai_check: row.get(16)?,
             high_risk_count: row.get(17)?,
-            call_policy: row.get(18)?,
-            invocation_source: row.get(19)?,
-            invocation_field: row.get(20)?,
-            requirements_json: row.get(21)?,
+            upstream_state: row.get(18)?,
+            call_policy: row.get(19)?,
+            invocation_source: row.get(20)?,
+            invocation_field: row.get(21)?,
+            requirements_json: row.get(22)?,
         },
     ))
 }

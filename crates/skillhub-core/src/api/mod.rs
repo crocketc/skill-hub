@@ -67,7 +67,8 @@ pub use query::{
     SkillDeploymentFilter, SkillLifecycleFilter, SkillListFilters, SkillListItem, SkillListPage,
     SkillListSort, SkillOperationEntry, SkillOperationsResult, SkillProvenanceResult,
     SkillRelationshipCandidate, SkillRelationshipGraphResult, SkillResult, SkillSortColumn,
-    SkillSortDirection, SourceUpdateCheckOutcome, VersionDiffResult, VersionResult,
+    SkillSortDirection, SkillVersionFilter, SourceUpdateCheckOutcome, VersionDiffResult,
+    VersionResult,
 };
 
 use crate::AppResult;

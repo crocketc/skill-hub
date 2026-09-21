@@ -3,7 +3,8 @@ use skillhub_core::{
         CallPolicy, CatalogRepository, DeclaredRequirement, InvocationPolicySource,
         RequirementKind, Skill,
     },
-    ListSkills, SkillId,
+    source::SourceState,
+    ListSkills, SkillId, SkillVersionFilter,
 };
 use skillhub_storage::{CatalogRepositorySqlite, Database};
 
@@ -236,6 +237,62 @@ fn list_page_projects_user_tags_and_purpose_into_list_items() {
         .find(|item| item.skill_id == untagged.id())
         .unwrap();
     assert!(plain.tags.is_empty());
+}
+
+#[test]
+fn list_page_projects_persisted_upstream_state_and_filters_updates() {
+    let db = Database::open_in_memory().unwrap();
+    let repo = CatalogRepositorySqlite::new(&db).unwrap();
+    let available = Skill::new(SkillId::new(), "available");
+    let unchanged = Skill::new(SkillId::new(), "unchanged");
+    block_on(repo.insert(&available)).unwrap();
+    block_on(repo.insert(&unchanged)).unwrap();
+
+    db.connection_for_test()
+        .execute(
+            "INSERT INTO source_update_checks(skill_id,state,upstream_label,checked_at) VALUES (?1,'update_available','v2',100)",
+            [available.id().to_string()],
+        )
+        .unwrap();
+    db.connection_for_test()
+        .execute(
+            "INSERT INTO source_update_checks(skill_id,state,upstream_label,checked_at) VALUES (?1,'up_to_date',NULL,100)",
+            [unchanged.id().to_string()],
+        )
+        .unwrap();
+
+    let all = repo
+        .list_page(&ListSkills {
+            text: String::new(),
+            page: 1,
+            page_size: 10,
+            filters: Default::default(),
+            sort: Default::default(),
+        })
+        .unwrap();
+    assert_eq!(
+        all.items
+            .iter()
+            .find(|item| item.skill_id == available.id())
+            .unwrap()
+            .upstream_state,
+        Some(SourceState::UpdateAvailable)
+    );
+
+    let updates = repo
+        .list_page(&ListSkills {
+            text: String::new(),
+            page: 1,
+            page_size: 10,
+            filters: skillhub_core::api::SkillListFilters {
+                version: SkillVersionFilter::UpgradeAvailable,
+                ..Default::default()
+            },
+            sort: Default::default(),
+        })
+        .unwrap();
+    assert_eq!(updates.total, 1);
+    assert_eq!(updates.items[0].skill_id, available.id());
 }
 
 fn block_on<F: std::future::Future>(future: F) -> F::Output {

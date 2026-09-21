@@ -2,7 +2,8 @@ use super::Database;
 use rusqlite::OptionalExtension;
 use sha2::{Digest, Sha256};
 use skillhub_core::source::{
-    SourceDescriptor, SourceKind, SourceLocator, SourceRecord, SourceRole,
+    SourceDescriptor, SourceKind, SourceLocator, SourceRecord, SourceRole, SourceState,
+    UpstreamCheckResult,
 };
 use skillhub_core::{AppError, AppResult, ErrorCode, Severity, SkillId};
 
@@ -227,6 +228,32 @@ impl<'a> SourceRepository<'a> {
             )
             .map(|_| ())
             .map_err(error)
+    }
+
+    pub fn record_update_check(&self, check: &UpstreamCheckResult) -> AppResult<()> {
+        self.database
+            .connection
+            .execute(
+                "INSERT INTO source_update_checks(skill_id,state,upstream_label,checked_at) VALUES (?1,?2,?3,strftime('%s','now')) ON CONFLICT(skill_id) DO UPDATE SET state=excluded.state,upstream_label=excluded.upstream_label,checked_at=excluded.checked_at",
+                rusqlite::params![
+                    check.skill_id.to_string(),
+                    source_state_code(check.state),
+                    check.upstream_label,
+                ],
+            )
+            .map(|_| ())
+            .map_err(error)
+    }
+}
+
+fn source_state_code(state: SourceState) -> &'static str {
+    match state {
+        SourceState::UpToDate => "up_to_date",
+        SourceState::UpdateAvailable => "update_available",
+        SourceState::UpdateAvailableWithLocalChanges => "update_available_with_local_changes",
+        SourceState::SourceUnavailable => "source_unavailable",
+        SourceState::AuthenticationRequired => "authentication_required",
+        SourceState::NoUpstream => "no_upstream",
     }
 }
 
