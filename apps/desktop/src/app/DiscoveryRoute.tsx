@@ -7,6 +7,7 @@ import { type ImportFacade, type ImportResult } from "../features/import/api";
 import { nativeImportFacade } from "../features/import/nativeApi";
 import { DEFAULT_SKILL_QUERY, skillLibraryKeys } from "../features/skills/api";
 import { nativeSkillLibraryFacade } from "../features/skills/nativeApi";
+import { relationshipsKeys } from "../features/relationships/api";
 import type { BootstrapOutletContext } from "./AppShell";
 import { queryClient } from "./queryClient";
 
@@ -74,6 +75,7 @@ export function DiscoveryRoute({
     if (hasImportedData) {
       void queryClient.invalidateQueries({ queryKey: skillLibraryKeys.root });
       void queryClient.invalidateQueries({ queryKey: relationshipOverviewQueryKey });
+      void queryClient.invalidateQueries({ queryKey: [relationshipsKeys.root] });
       void refreshSnapshot();
     }
   };

@@ -18,6 +18,7 @@ import {
 import { DiscoveryRoute } from "./DiscoveryRoute";
 import type { BootstrapOutletContext } from "./AppShell";
 import { queryClient } from "./queryClient";
+import { relationshipsKeys } from "../features/relationships/api";
 
 const relationshipOverviewQueryKey = ["relationship-overview", "all"] as const;
 
@@ -183,6 +184,27 @@ it("refreshes shared library and snapshot data when the only import result is to
   expect(await screen.findByText("待处理 1")).toBeVisible();
   expect(refreshSnapshot).toHaveBeenCalledTimes(1);
   expect(queryClient.getQueryState(relationshipOverviewQueryKey)?.isInvalidated).toBe(true);
+});
+
+it("invalidates the conflict workspace after an import writes conflict facts", async () => {
+  const user = userEvent.setup();
+  const facade = createMockImportFacade({ scenario: "safe-local" });
+  queryClient.setQueryData(relationshipsKeys.conflicts({ relationshipRevision: "r1" }), {
+    cases: [],
+    handled_count: 0,
+    handled: [],
+    relationship_revision: "r1",
+    last_verified_at: null,
+  });
+  const { refreshSnapshot } = await renderDiscoveryRoute(facade);
+
+  await commitSingleCandidateImport(user);
+
+  expect(await screen.findByText("所有选中的候选项都已完成处理。")).toBeVisible();
+  expect(refreshSnapshot).toHaveBeenCalledTimes(1);
+  await waitFor(() => {
+    expect(queryClient.getQueryState(relationshipsKeys.conflicts({ relationshipRevision: "r1" }))?.isInvalidated).toBe(true);
+  });
 });
 
 it("refreshes shared data for a mixed succeeded and todo import result", async () => {
