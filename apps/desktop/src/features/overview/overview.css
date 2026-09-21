@@ -149,11 +149,13 @@
    关系区（"偏高"的那一块）收缩得更快，把高度让给主区。 */
 .sh-overview > .sh-overview__metrics {
   flex: 0 1 auto;
+  min-height: 0;
   overflow-y: auto;
 }
 
 .sh-overview > .sh-overview__relations {
   flex: 0 2 auto;
+  min-height: 0;
   overflow-y: auto;
 }
 
