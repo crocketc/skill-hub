@@ -611,7 +611,11 @@ fn map_status_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<(String, StatusRo
             call_policy: row.get(20)?,
             invocation_source: row.get(21)?,
             invocation_field: row.get(22)?,
-            requirements_json: row.get(23)?,
+            // The metadata table is left-joined so legacy/manual fixtures can
+            // legitimately have no row yet; absence means no declaration.
+            requirements_json: row
+                .get::<_, Option<String>>(23)?
+                .unwrap_or_else(|| "[]".to_owned()),
         },
     ))
 }
