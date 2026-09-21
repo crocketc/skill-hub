@@ -473,6 +473,10 @@
         "repo": {
           "title": "仓库发现",
           "description": "从配置的 GitHub 仓库下载归档并扫描 SKILL.md。"
+        },
+        "manual": {
+          "title": "手动来源",
+          "description": "识别来源格式，并将本地路径接入现有安全导入流程。"
         }
       }
     },
@@ -482,6 +486,20 @@
       "description": "检查你选择的路径，在导入前先审阅候选项。",
       "factPath": "只读取选定路径",
       "factReadOnly": "发现不会移动文件，也不会把 Skill 添加到 Agent/项目"
+    },
+    "manual": {
+      "eyebrow": "手动来源",
+      "title": "解析来源",
+      "description": "在导入前识别本地路径、URL、Git 地址或 npx skills add 引用。",
+      "inputLabel": "来源",
+      "placeholder": "C:/skills/demo、https://github.com/owner/repo 或 npx skills add owner/repo",
+      "parse": "解析来源",
+      "parsing": "解析中…",
+      "localKind": "本地路径",
+      "recognizedKind": "已识别来源",
+      "localReady": "将打开现有导入流程处理该本地路径。",
+      "remoteUnsupported": "已识别，暂不支持导入。",
+      "parseFailed": "无法解析该来源，请检查格式后重试。"
     },
     "online": {
       "eyebrow": "远程来源",

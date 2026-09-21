@@ -11,7 +11,7 @@ import { createOperationTracker } from "../../platform/operationTracker";
 import type { DiscoveryFacade } from "./api";
 import { DiscoveryPage, type DiscoveryModuleView } from "./DiscoveryPage";
 
-const MODULE_VIEWS: DiscoveryModuleView[] = ["local", "online", "repo"];
+const MODULE_VIEWS: DiscoveryModuleView[] = ["local", "online", "repo", "manual"];
 
 it("renders fixed discovery module cards on the home page without runtime claims", async () => {
   const i18n = await createSkillHubI18n(["zh-CN"]);
@@ -26,7 +26,8 @@ it("renders fixed discovery module cards on the home page without runtime claims
   expect(screen.getByRole("heading", { name: "本机发现" })).toBeVisible();
   expect(screen.getByRole("heading", { name: "在线发现" })).toBeVisible();
   expect(screen.getByRole("heading", { name: "仓库发现" })).toBeVisible();
-  expect(screen.getAllByRole("button", { name: /^进入/ })).toHaveLength(3);
+  expect(screen.getByRole("heading", { name: "手动来源" })).toBeVisible();
+  expect(screen.getAllByRole("button", { name: /^进入/ })).toHaveLength(4);
   // 主页只承载模块入口；详细搜索、配置、导入按钮全部下沉到子页。
   expect(screen.queryByRole("button", { name: "导入 Skill" })).not.toBeInTheDocument();
   expect(screen.queryByText(/已授权|可用|验证通过/)).not.toBeInTheDocument();
@@ -48,7 +49,7 @@ it("renders home module icons from the icon registry instead of font glyphs", as
   expect(screen.queryByText("⭳")).not.toBeInTheDocument();
   expect(screen.queryByText("⇣")).not.toBeInTheDocument();
   const icons = container.querySelectorAll("article svg");
-  expect(icons).toHaveLength(3);
+  expect(icons).toHaveLength(4);
   for (const icon of icons) {
     expect(icon).toHaveAttribute("aria-hidden", "true");
   }
@@ -83,11 +84,13 @@ it("navigates from each home card to its module subpage", async () => {
   fireEvent.click(screen.getByRole("button", { name: "进入本机发现" }));
   fireEvent.click(screen.getByRole("button", { name: "进入在线发现" }));
   fireEvent.click(screen.getByRole("button", { name: "进入仓库发现" }));
+  fireEvent.click(screen.getByRole("button", { name: "进入手动来源" }));
 
-  expect(onNavigate).toHaveBeenCalledTimes(3);
+  expect(onNavigate).toHaveBeenCalledTimes(4);
   expect(onNavigate).toHaveBeenNthCalledWith(1, "local");
   expect(onNavigate).toHaveBeenNthCalledWith(2, "online");
   expect(onNavigate).toHaveBeenNthCalledWith(3, "repo");
+  expect(onNavigate).toHaveBeenNthCalledWith(4, "manual");
 });
 
 it("leaves the sub-route return to the shell topbar without an in-page duplicate", async () => {
@@ -140,6 +143,16 @@ it("hosts the original module capabilities on their own subpages", async () => {
     await Promise.resolve();
   });
   expect(screen.getByRole("heading", { name: "仓库发现" })).toBeVisible();
+  unmount();
+
+  render(
+    <I18nextProvider i18n={i18n}>
+      <MemoryRouter><AppNotificationsProvider>
+        <DiscoveryPage view="manual" importFacade={createMockImportFacade({ scenario: "safe-local" })} />
+      </AppNotificationsProvider></MemoryRouter>
+    </I18nextProvider>,
+  );
+  expect(screen.getByRole("heading", { name: "解析来源" })).toBeVisible();
   unmount();
 
 });

@@ -473,6 +473,10 @@
         "repo": {
           "title": "Repository discovery",
           "description": "Download archives from configured GitHub repositories and scan for SKILL.md."
+        },
+        "manual": {
+          "title": "Manual source",
+          "description": "Recognize a source format and route local paths into the existing safe import flow."
         }
       }
     },
@@ -482,6 +486,20 @@
       "description": "Inspect a path you choose and review its candidates before import.",
       "factPath": "Reads only the selected path",
       "factReadOnly": "Discovery does not move files or add Skills to Agents/projects"
+    },
+    "manual": {
+      "eyebrow": "Manual source",
+      "title": "Parse a source",
+      "description": "Recognize a local path, URL, Git address, or npx skills add reference before importing.",
+      "inputLabel": "Source",
+      "placeholder": "C:/skills/demo, https://github.com/owner/repo, or npx skills add owner/repo",
+      "parse": "Parse source",
+      "parsing": "Parsing…",
+      "localKind": "Local path",
+      "recognizedKind": "Source recognized",
+      "localReady": "Opening the existing import flow for this local path.",
+      "remoteUnsupported": "Recognized, import is not supported yet.",
+      "parseFailed": "Could not parse this source. Check the format and try again."
     },
     "online": {
       "eyebrow": "Remote sources",

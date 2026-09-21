@@ -72,6 +72,47 @@
   margin-top: auto;
 }
 
+.sh-discovery-manual-source__controls {
+  display: grid;
+  gap: var(--space-2);
+  max-width: 48rem;
+}
+
+.sh-discovery-manual-source__row {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.sh-discovery-manual-source__row input {
+  background: var(--ui-control-background);
+  border: 1px solid var(--ui-control-border);
+  border-radius: var(--radius-xs);
+  color: var(--ui-ink);
+  flex: 1 1 20rem;
+  min-width: 0;
+  padding: var(--space-2) var(--space-3);
+}
+
+.sh-discovery-manual-source__result {
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-xs);
+  display: grid;
+  gap: var(--space-1);
+  max-width: 48rem;
+  padding: var(--space-3);
+}
+
+.sh-discovery-manual-source__result code {
+  overflow-wrap: anywhere;
+}
+
+.sh-discovery-manual-source__result p {
+  color: var(--ui-ink-muted);
+  margin: 0;
+}
+
 /* —— 发现模块子页：模块头 + 控制行 + 结果网格（设计规格 5.2）—— */
 
 .sh-discovery-module {

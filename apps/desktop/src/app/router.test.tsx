@@ -323,6 +323,7 @@ it("offers a topbar back target for sub-routes and none for main tabs", () => {
   expect(resolveSubRouteFallback("/discovery/local")).toBe("/discovery");
   expect(resolveSubRouteFallback("/discovery/online")).toBe("/discovery");
   expect(resolveSubRouteFallback("/discovery/repositories")).toBe("/discovery");
+  expect(resolveSubRouteFallback("/discovery/lock")).toBe("/discovery");
   expect(resolveSubRouteFallback("/library/combinations")).toBe("/library");
   expect(resolveSubRouteFallback("/agents")).toBeNull();
   expect(resolveSubRouteFallback("/library")).toBeNull();

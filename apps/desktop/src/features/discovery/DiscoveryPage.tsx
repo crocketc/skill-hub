@@ -15,10 +15,11 @@ import { LocalDiscovery } from "./LocalDiscovery";
 import { LocalDiscoveryWorkbench } from "./LocalDiscoveryWorkbench";
 import { OnlineDiscovery } from "./OnlineDiscovery";
 import { RepoDiscovery } from "./RepoDiscovery";
+import { ManualSourceDiscovery } from "./ManualSourceDiscovery";
 import type { DiscoveryFacade } from "./api";
 
 /** 主页三张固定模块卡片对应的子页视图。 */
-export type DiscoveryModuleView = "local" | "online" | "repo";
+export type DiscoveryModuleView = "local" | "online" | "repo" | "manual";
 export type DiscoveryView = "home" | DiscoveryModuleView;
 
 export interface DiscoveryPageProps {
@@ -73,7 +74,9 @@ type HomeCardTextKey =
   | "discovery.home.cards.online.title"
   | "discovery.home.cards.online.description"
   | "discovery.home.cards.repo.title"
-  | "discovery.home.cards.repo.description";
+  | "discovery.home.cards.repo.description"
+  | "discovery.home.cards.manual.title"
+  | "discovery.home.cards.manual.description";
 
 interface HomeCardSpec {
   view: DiscoveryModuleView;
@@ -103,6 +106,12 @@ const HOME_CARDS: HomeCardSpec[] = [
     icon: "import",
     titleKey: "discovery.home.cards.repo.title",
     descriptionKey: "discovery.home.cards.repo.description",
+  },
+  {
+    view: "manual",
+    icon: "import",
+    titleKey: "discovery.home.cards.manual.title",
+    descriptionKey: "discovery.home.cards.manual.description",
   },
 ];
 
@@ -378,6 +387,9 @@ function DiscoveryModulePage({
             />
           ) : null}
         </>
+      ) : null}
+      {view === "manual" ? (
+        <ManualSourceDiscovery facade={importFacade} onOpenLocal={wizard.openWizardWithDirectory} />
       ) : null}
       {view === "online" ? (
         <OnlineDiscovery
