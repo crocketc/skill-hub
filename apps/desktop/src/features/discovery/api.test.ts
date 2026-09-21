@@ -181,6 +181,33 @@ describe("buildAgentGroups", () => {
     expect(brandAgentCards).toEqual([]);
   });
 
+  it("creates the shared directory card when the snapshot only contains brand references", () => {
+    const referenceOnly = buildAgentGroups(
+      {
+        ...agentSnapshot,
+        instances: agentSnapshot.instances.filter((instance) =>
+          ["zcode-desktop", "codex-cli"].includes(instance.client_id),
+        ),
+        logical_targets: agentSnapshot.logical_targets
+          .filter((target) => target.physical_id === "phys-agents")
+          .map((target) => ({ ...target, shared_reference: true })),
+      },
+      { os: "windows" },
+    );
+
+    expect(referenceOnly.available).toHaveLength(1);
+    expect(referenceOnly.available[0]).toMatchObject({
+      brand: "agent-skills",
+      cards: [
+        {
+          physicalId: "phys-agents",
+          path: "C:/u/.agents/skills",
+          sharedClients: 2,
+        },
+      ],
+    });
+  });
+
   it("carries official client names on cards and shared reference names on the generic card", () => {
     const generic = available.find((group) => group.brand === "agent-skills")!;
     expect(generic.cards[0].sharedClientNames).toEqual(

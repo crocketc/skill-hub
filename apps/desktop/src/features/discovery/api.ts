@@ -558,7 +558,10 @@ export function buildAgentGroups(
     available: boolean;
   }
   const byBrand = new Map<string, Map<string, PhysicalAccumulator>>();
-  const sharedByPhysical = new Map<string, { count: number; names: string[] }>();
+  const sharedByPhysical = new Map<
+    string,
+    { available: boolean; clientIds: string[]; names: string[]; path: string }
+  >();
   for (const target of snapshot.logical_targets as LogicalTarget[]) {
     if (!clientIds.has(target.client_id)) continue;
     const kind = instanceKindByClient.get(target.client_id);
@@ -568,10 +571,11 @@ export function buildAgentGroups(
       // OPT-07：共享引用不产出归属卡片，聚合到通用目录卡片上。
       let shared = sharedByPhysical.get(target.physical_id);
       if (!shared) {
-        shared = { count: 0, names: [] };
+        shared = { available: false, clientIds: [], names: [], path: target.path };
         sharedByPhysical.set(target.physical_id, shared);
       }
-      shared.count += 1;
+      shared.available = shared.available || target.available;
+      if (!shared.clientIds.includes(target.client_id)) shared.clientIds.push(target.client_id);
       if (!shared.names.includes(clientName)) shared.names.push(clientName);
       continue;
     }
@@ -597,6 +601,26 @@ export function buildAgentGroups(
     card.available = card.available || target.available;
   }
 
+  // A snapshot can contain only brand-specific references when the generic
+  // shared-directory profile was not registered. The physical shared
+  // directory is still one independent user-facing entity.
+  const genericCards = byBrand.get("agent-skills") ?? new Map<string, PhysicalAccumulator>();
+  for (const [physicalId, shared] of sharedByPhysical) {
+    const existing = genericCards.get(physicalId);
+    if (existing) {
+      existing.available = existing.available || shared.available;
+      continue;
+    }
+    genericCards.set(physicalId, {
+      physicalId,
+      path: shared.path,
+      kinds: ["shared_directory"],
+      names: ["Agent Skills"],
+      available: shared.available,
+    });
+  }
+  if (genericCards.size > 0) byBrand.set("agent-skills", genericCards);
+
   const groups: AgentBrandGroup[] = [];
   for (const [brand, cards] of byBrand) {
     const ordered = [...cards.values()]
@@ -606,7 +630,7 @@ export function buildAgentGroups(
           ...card,
           kinds: [...card.kinds],
           names: [...card.names],
-          sharedClients: shared?.count ?? 0,
+          sharedClients: shared?.clientIds.length ?? 0,
           sharedClientNames: shared ? [...shared.names] : [],
         };
       })
