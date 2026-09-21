@@ -589,6 +589,11 @@ export type ConflictWorkspace = {
 	handled_count: number,
 	/**  已处理历史，最近优先。 */
 	handled: ConflictResolutionRecord[],
+	/**
+	 *  已由确定性证据识别并处理的完全重复事实。它们不需要用户再次裁决，
+	 *  但必须保留在工作台历史中，解释为何允许复制/复用后继续存在两个实体。
+	 */
+	deterministic_history?: ConflictWorkspaceCase[],
 	relationship_revision: string,
 	last_verified_at: string | null,
 };

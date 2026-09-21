@@ -2389,6 +2389,8 @@
       },
       "history": {
         "heading": "Handled records",
+        "deterministicLabel": "Identical-content import",
+        "deterministicDescription": "Recorded as the same Skill version; no repeated decision was required.",
         "concludedAs": "Conclusion: {{conclusion}}",
         "decidedAt": "Handled {{date}}"
       },

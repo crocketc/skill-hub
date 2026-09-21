@@ -2389,6 +2389,8 @@
       },
       "history": {
         "heading": "已处理记录",
+        "deterministicLabel": "内容一致的导入",
+        "deterministicDescription": "已记录为同一 Skill 版本，无需重复裁决。",
         "concludedAs": "结论：{{conclusion}}",
         "decidedAt": "处理于 {{date}}"
       },

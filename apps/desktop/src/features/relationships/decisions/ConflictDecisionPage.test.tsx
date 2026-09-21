@@ -535,6 +535,32 @@ describe("ConflictDecisionPage", () => {
     expect(screen.queryByRole("button", { name: "刷新冲突" })).not.toBeInTheDocument();
   });
 
+  it("shows deterministic identical-content imports in history without adding a decision card", async () => {
+    const deterministic = makeCase({
+      conflictId: "import-conflict:duplicate_same_content:notes",
+      kind: "duplicate_same_content",
+    });
+    deterministic.case.classification = "same_skill_version";
+    deterministic.case.evidence = {
+      fingerprints_match: true,
+      names_match: true,
+      identity_direction: "same_skill",
+      sufficient_identity_evidence: true,
+    };
+    await renderPage(
+      createFacade(workspaceFixture({
+        cases: [],
+        handled_count: 0,
+        handled: [],
+        deterministic_history: [deterministic],
+      })),
+    );
+
+    expect(await screen.findByText("内容一致的导入")).toBeVisible();
+    expect(screen.getByText("已记录为同一 Skill 版本，无需重复裁决。")).toBeVisible();
+    expect(screen.queryByRole("button", { name: /duplicate_same_content/ })).not.toBeInTheDocument();
+  });
+
   it("shows honest loading and failure states for the workspace query", async () => {
     const i18n = await createSkillHubI18n(["zh-CN"]);
     const queryClient = new QueryClient({

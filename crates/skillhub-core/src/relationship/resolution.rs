@@ -143,6 +143,11 @@ pub struct ConflictWorkspace {
     pub handled_count: u32,
     /// 已处理历史，最近优先。
     pub handled: Vec<ConflictResolutionRecord>,
+    /// 已由确定性证据识别并处理的完全重复事实。它们不需要用户再次裁决，
+    /// 但必须保留在工作台历史中，解释为何允许复制/复用后继续存在两个实体。
+    #[serde(default)]
+    #[specta(optional)]
+    pub deterministic_history: Vec<ConflictWorkspaceCase>,
     pub relationship_revision: String,
     #[serde(with = "crate::i64_option_string")]
     #[specta(type = Option<String>)]
@@ -236,10 +241,31 @@ pub fn build_conflict_workspace(
             .then_with(|| left.conflict_id.cmp(&right.conflict_id))
     });
 
+    let mut deterministic_history: Vec<ConflictWorkspaceCase> = cases
+        .iter()
+        .filter(|case| {
+            case.kind == crate::relationship::ConflictKind::DuplicateSameContent
+                && case.classification == ConflictClassification::SameSkillVersion
+                && case.user_decision.is_none()
+        })
+        .map(|case| ConflictWorkspaceCase {
+            case: case.clone(),
+            latest_analysis: None,
+            analysis_stale: false,
+            recommended_decision: None,
+        })
+        .collect();
+    deterministic_history.sort_by(|left, right| {
+        left.case
+            .conflict_id
+            .cmp(&right.case.conflict_id)
+    });
+
     Ok(ConflictWorkspace {
         cases: workspace_cases,
         handled_count: u32::try_from(handled.len()).unwrap_or(u32::MAX),
         handled,
+        deterministic_history,
         relationship_revision: relationship_revision.to_string(),
         last_verified_at,
     })

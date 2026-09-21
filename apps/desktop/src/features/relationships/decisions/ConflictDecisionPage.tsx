@@ -1,7 +1,7 @@
 import type { JSX } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import type { ConflictResolutionRecord } from "../../../api/bindings";
+import type { ConflictResolutionRecord, ConflictWorkspaceCase } from "../../../api/bindings";
 import { formatTimestamp, readableTailOfId, resolveLocale } from "../../../i18n";
 import { Button } from "../../../ui/Button";
 import { DataState } from "../../../ui/DataState";
@@ -72,6 +72,8 @@ export function ConflictDecisionPage({
   const workspace = workspaceQuery.data;
   const cases = workspace?.cases ?? [];
   const handled = workspace?.handled ?? [];
+  const deterministicHistory = workspace?.deterministic_history ?? [];
+  const historyCount = handled.length + deterministicHistory.length;
 
   const categoryParam = searchParams.get("category");
   const conflictIdParam = searchParams.get("conflictId");
@@ -152,17 +154,17 @@ export function ConflictDecisionPage({
       <div className="sh-conflict-page">
         <DataState
           message={
-            workspace.handled_count > 0
+            historyCount > 0
               ? t("relationships.decisions.empty.allDone", {
-                  count: workspace.handled_count,
+                  count: historyCount,
                 })
               : t("relationships.decisions.empty.none")
           }
           hint={t("relationships.decisions.empty.hint")}
           state="empty"
         />
-        {handled.length > 0 ? (
-          <ConflictHistory handled={handled} />
+        {historyCount > 0 ? (
+          <ConflictHistory deterministic={deterministicHistory} handled={handled} />
         ) : null}
       </div>
     );
@@ -293,23 +295,33 @@ export function ConflictDecisionPage({
           ))}
         </ul>
       </section>
-      <ConflictHistory handled={handled} />
+      <ConflictHistory deterministic={deterministicHistory} handled={handled} />
     </div>
   );
 }
 
 function ConflictHistory({
   handled,
+  deterministic,
 }: {
   handled: readonly ConflictResolutionRecord[];
+  deterministic: readonly ConflictWorkspaceCase[];
 }): JSX.Element | null {
   const { t, i18n } = useTranslation();
   const locale = resolveLocale([i18n.resolvedLanguage ?? i18n.language]);
-  if (handled.length === 0) return null;
+  if (handled.length === 0 && deterministic.length === 0) return null;
   return (
     <section aria-labelledby="conflict-history-heading" className="sh-conflict-history">
       <h2 id="conflict-history-heading">{t("relationships.decisions.history.heading")}</h2>
       <ul>
+        {deterministic.map((entry) => (
+          <li key={`deterministic-${entry.case.conflict_id}`}>
+            <span>{t("relationships.decisions.history.deterministicLabel")}</span>
+            <span className="sh-settings-local-note">
+              {t("relationships.decisions.history.deterministicDescription")}
+            </span>
+          </li>
+        ))}
         {handled.map((record) => (
           <li key={`${record.conflict_id}-${record.decided_at}`}>
             {/* DEV-15：历史行以用户可读信息为主——Skill 名称 + 结论 +

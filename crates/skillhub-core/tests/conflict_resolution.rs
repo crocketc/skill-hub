@@ -165,6 +165,26 @@ fn only_pending_uncertain_conflicts_enter_the_workspace() {
 }
 
 #[test]
+fn keeps_deterministic_duplicate_history_visible_without_putting_it_back_in_the_queue() {
+    let mut duplicate = case("conflict:duplicate", ConflictClassification::SameSkillVersion);
+    duplicate.kind = ConflictKind::DuplicateSameContent;
+    duplicate.evidence.fingerprints_match = Some(true);
+    duplicate.evidence.identity_direction = Some(
+        skillhub_core::relationship::IdentityDirection::SameSkill,
+    );
+
+    let workspace = build_conflict_workspace(&[duplicate], &[], 8, Some(7)).expect("workspace");
+
+    assert!(workspace.cases.is_empty());
+    assert_eq!(workspace.handled_count, 0);
+    assert_eq!(workspace.deterministic_history.len(), 1);
+    assert_eq!(
+        workspace.deterministic_history[0].case.conflict_id,
+        "conflict:duplicate"
+    );
+}
+
+#[test]
 fn each_conclusion_decision_records_its_state_time_and_history() {
     let pending = case("conflict:pending", ConflictClassification::Uncertain);
 
