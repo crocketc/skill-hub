@@ -109,7 +109,20 @@ function tableMeta(table: { options: { meta?: unknown } }): SkillTableMeta {
 }
 
 function secondary(value: string | undefined) {
-  return value ? <span className="sh-skill-table__secondary" title={value}>{value}</span> : <span>—</span>;
+  return value ? (
+    <span aria-label={value} className="sh-skill-table__secondary" tabIndex={0} title={value}>{value}</span>
+  ) : <span>—</span>;
+}
+
+function tagBadges(tags: string[]) {
+  if (!tags.length) return <span>—</span>;
+  return (
+    <div className="sh-skill-table__tag-list">
+      {tags.map((tag) => (
+        <span aria-label={tag} className="sh-skill-table__tag" key={tag} tabIndex={0} title={tag}>{tag}</span>
+      ))}
+    </div>
+  );
 }
 
 function checkTone(state: CheckState) {
@@ -168,7 +181,7 @@ export function createSkillColumns(t: TFunction): ColumnDef<SkillTableRow>[] {
         <div className="sh-skill-table__inline sh-skill-table__name">
           <strong>{row.original.name}</strong>
           {row.original.originalName && row.original.originalName !== row.original.name ? (
-            <span className="sh-skill-table__alias" title={row.original.originalName}>
+            <span aria-label={row.original.originalName} className="sh-skill-table__alias" tabIndex={0} title={row.original.originalName}>
               <span className="sh-skill-table__alias-label">{t("skillLibrary.table.originalNameLabel")}:</span> {row.original.originalName}
             </span>
           ) : null}
@@ -177,7 +190,7 @@ export function createSkillColumns(t: TFunction): ColumnDef<SkillTableRow>[] {
       header: t(COLUMN_LABELS.name),
     },
     { accessorKey: "purpose", id: "purpose", cell: ({ row }) => secondary(row.original.purpose), header: t(COLUMN_LABELS.purpose) },
-    { accessorKey: "tags", id: "tags", cell: ({ row }) => <span>{row.original.tags.join(", ")}</span>, header: t(COLUMN_LABELS.tags) },
+    { accessorKey: "tags", id: "tags", cell: ({ row }) => tagBadges(row.original.tags), header: t(COLUMN_LABELS.tags) },
     { accessorKey: "lifecycle", id: "lifecycle", cell: ({ row }) => <span>{t(LIFECYCLE_LABELS[row.original.lifecycle])}</span>, header: t(COLUMN_LABELS.lifecycle) },
     {
       id: "agent_deployments",
@@ -206,10 +219,7 @@ export function createSkillColumns(t: TFunction): ColumnDef<SkillTableRow>[] {
     {
       id: "invocation",
       cell: ({ row }) => (
-        <div className="sh-skill-table__invocation-cell">
-          <InvocationBadge policy={row.original.invocationPolicy} />
-          {row.original.invocation ? <span className="sh-skill-table__invocation-command" title={row.original.invocation}>{row.original.invocation}</span> : null}
-        </div>
+        <div className="sh-skill-table__invocation-cell"><InvocationBadge policy={row.original.invocationPolicy} /></div>
       ),
       header: t(COLUMN_LABELS.invocation),
     },

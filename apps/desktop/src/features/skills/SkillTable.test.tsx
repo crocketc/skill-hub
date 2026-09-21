@@ -144,6 +144,38 @@ it("renders invocation actor badges instead of a raw invocation command", async 
   const invocationCell = screen.getByText("Model only").closest("[data-invocation-mode]");
   expect(invocationCell).toBeVisible();
   expect(invocationCell).toHaveAttribute("data-invocation-mode", "model_only");
+  expect(invocationCell?.closest("td")?.querySelector(".sh-skill-table__invocation-command")).not.toBeInTheDocument();
+});
+
+it("renders tags as individual badges and keeps full values keyboard-readable", async () => {
+  await renderTable({
+    preferences: {
+      ...DEFAULT_TABLE_PREFERENCES,
+      visibleColumns: [...DEFAULT_TABLE_PREFERENCES.visibleColumns, "requirements"],
+    },
+  });
+
+  const pdfRow = screen.getByText("PDF Reader").closest("tr");
+  if (!pdfRow) throw new Error("Expected the PDF Reader row");
+
+  const tagsCell = pdfRow.querySelector('td[data-column="tags"]');
+  if (!tagsCell) throw new Error("Expected the tags cell");
+  const tagsElement = tagsCell as HTMLElement;
+  const documentsTag = within(tagsElement).getByLabelText("documents");
+  const pdfTag = within(tagsElement).getByLabelText("pdf");
+  expect(documentsTag).toHaveClass("sh-skill-table__tag");
+  expect(pdfTag).toHaveClass("sh-skill-table__tag");
+  expect(documentsTag).toHaveAttribute("title", "documents");
+  expect(documentsTag).toHaveAttribute("tabindex", "0");
+
+  const purpose = within(pdfRow).getByLabelText("Read and extract PDFs");
+  expect(purpose).toHaveClass("sh-skill-table__secondary");
+  expect(purpose).toHaveAttribute("title", "Read and extract PDFs");
+  expect(purpose).toHaveAttribute("tabindex", "0");
+
+  const requirements = within(pdfRow).getByLabelText("Python 3.11");
+  expect(requirements).toHaveAttribute("title", "Python 3.11");
+  expect(requirements).toHaveAttribute("tabindex", "0");
 });
 
 it("splits deployments into project count and compact agent tags", async () => {

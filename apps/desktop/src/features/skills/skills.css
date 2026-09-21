@@ -130,6 +130,36 @@
   flex-wrap: wrap;
 }
 
+.sh-skill-table__tag-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.sh-skill-table__tag {
+  display: inline-flex;
+  max-width: 100%;
+  overflow: hidden;
+  padding: 0.12rem 0.35rem;
+  border: 1px solid var(--ui-border);
+  border-radius: 999px;
+  background: var(--ui-surface-subtle);
+  color: var(--ui-ink-muted);
+  font-size: var(--font-size-xs);
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sh-skill-table__alias:focus-visible,
+.sh-skill-table__secondary:focus-visible,
+.sh-skill-table__tag:focus-visible {
+  outline: 2px solid var(--ui-focus);
+  outline-offset: 2px;
+}
+
 /* ≤90rem 时 base.css 允许外层内容滚动；区域的 max-height 会超过 workspace
    的 auto 行轨并盖住分页栏（既有缺陷）。这里解除内部高度限制，让表格
    完整参与外层文档滚动，分页栏不再遮挡末行。 */

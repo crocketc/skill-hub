@@ -232,8 +232,8 @@ describe("SkillGraphCanvas interaction", () => {
     const onViewportChange = vi.fn();
     await renderCanvas({ onViewportChange, viewport: { x: 10, y: 20, zoom: 1 } });
 
-    const layer = screen.getByTestId("skill-graph-surface").querySelector(".sh-graph-canvas__layer");
-    expect(layer).toBeTruthy();
+    const layer = screen.getByTestId("skill-graph-surface").querySelector<HTMLElement>(".sh-graph-canvas__layer");
+    if (!layer) throw new Error("Expected the graph layer");
     const pointerDown = new MouseEvent("pointerdown", { bubbles: true, clientX: 100, clientY: 120 });
     Object.defineProperty(pointerDown, "pointerId", { value: 7 });
     fireEvent(layer, pointerDown);
