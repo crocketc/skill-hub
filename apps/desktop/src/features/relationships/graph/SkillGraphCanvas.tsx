@@ -210,33 +210,6 @@ export function SkillGraphCanvas({
 
   return (
     <div className="sh-graph-canvas" role="group" aria-label={t("relationships.graph.canvasLabel")}>
-      <div className="sh-graph-canvas__controls">
-        <button
-          type="button"
-          className="sh-button sh-button--secondary sh-button--sm"
-          aria-label={t("relationships.graph.zoomIn")}
-          onClick={() => zoomBy(1.2)}
-        >
-          +
-        </button>
-        <button
-          type="button"
-          className="sh-button sh-button--secondary sh-button--sm"
-          aria-label={t("relationships.graph.zoomOut")}
-          onClick={() => zoomBy(1 / 1.2)}
-        >
-          −
-        </button>
-        <button
-          type="button"
-          className="sh-button sh-button--secondary sh-button--sm"
-          aria-label={t("relationships.graph.fitView")}
-          title={t("relationships.graph.fitView")}
-          onClick={fitToContent}
-        >
-          ⛶
-        </button>
-      </div>
       <div
         ref={surfaceRef}
         className="sh-graph-canvas__surface"
@@ -247,6 +220,33 @@ export function SkillGraphCanvas({
         onWheel={handleWheel}
         onClick={handleSurfaceClick}
       >
+        <div className="sh-graph-canvas__controls">
+          <button
+            type="button"
+            className="sh-button sh-button--secondary sh-button--sm"
+            aria-label={t("relationships.graph.zoomIn")}
+            onClick={() => zoomBy(1.2)}
+          >
+            +
+          </button>
+          <button
+            type="button"
+            className="sh-button sh-button--secondary sh-button--sm"
+            aria-label={t("relationships.graph.zoomOut")}
+            onClick={() => zoomBy(1 / 1.2)}
+          >
+            −
+          </button>
+          <button
+            type="button"
+            className="sh-button sh-button--secondary sh-button--sm"
+            aria-label={t("relationships.graph.fitView")}
+            title={t("relationships.graph.fitView")}
+            onClick={fitToContent}
+          >
+            ⛶
+          </button>
+        </div>
         <div
           className="sh-graph-canvas__layer"
           style={{

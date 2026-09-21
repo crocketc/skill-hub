@@ -2,6 +2,7 @@ import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
 import { formatTimestamp, resolveLocale } from "../../../i18n";
 import { displayPath } from "../../../platform/displayPath";
+import { readableAgentIdName } from "../../skills/AgentDeploymentIcons";
 import type { RelationshipGraphFactCounts } from "../../../api/bindings";
 import {
   edgeStatusLabelKey,
@@ -19,17 +20,23 @@ export interface GraphDetailsPanelProps {
   /** 外链点击前保存图谱返回状态（视口/筛选已由 URL 承载）。 */
   onBeforeNavigate: () => void;
   projection: GraphProjection;
+  /** Resolve internal Skill ids to the current user-facing display name. */
+  resolveSkillName?: (skillId: string) => string | undefined;
   relationshipRevision: string;
   selectedEdgeId: string | null;
   selectedNodeId: string | null;
 }
 
-function nodeLabel(node: ProjectedNode["node"], fallback: string): string {
+function nodeLabel(
+  node: ProjectedNode["node"],
+  fallback: string,
+  resolveSkillName?: (skillId: string) => string | undefined,
+): string {
   switch (node.kind) {
     case "skill":
-      return node.skill_id ?? fallback;
+      return node.skill_id ? resolveSkillName?.(node.skill_id) ?? node.skill_id : fallback;
     case "agent":
-      return node.agent_client_id ?? fallback;
+      return node.agent_client_id ? readableAgentIdName(node.agent_client_id) : fallback;
     case "directory":
       return node.path ? displayPath(node.path) : node.directory_node_id ?? fallback;
     case "conflict":
@@ -98,6 +105,7 @@ export function GraphDetailsPanel({
   lastVerifiedAt,
   onBeforeNavigate,
   projection,
+  resolveSkillName,
   relationshipRevision,
   selectedEdgeId,
   selectedNodeId,
@@ -180,7 +188,7 @@ export function GraphDetailsPanel({
           </>
         ) : selectedNodeEntry ? (
           <>
-            <h3>{nodeLabel(selectedNodeEntry.node, selectedNodeEntry.node.node_id)}</h3>
+            <h3>{nodeLabel(selectedNodeEntry.node, selectedNodeEntry.node.node_id, resolveSkillName)}</h3>
             <p className="sh-graph-details__kind">
               {t(`relationships.graph.nodeKind.${selectedNodeEntry.node.kind}`)}
             </p>

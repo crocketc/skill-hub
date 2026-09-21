@@ -95,4 +95,40 @@ describe("GraphDetailsPanel path presentation", () => {
     expect(screen.getByRole("heading", { name: "C:\\skills\\pdf" })).toBeVisible();
     expect(screen.queryByText(/\\\\\?\\/)).not.toBeInTheDocument();
   });
+
+  it("uses the resolved Skill name for selected Skill nodes", async () => {
+    const i18n = await createSkillHubI18n(["en-US"]);
+    const graph = fixture();
+    graph.nodes.push({
+      ...graph.nodes[0],
+      node_id: "related-skill",
+      skill_id: "notes-reader",
+    });
+    graph.edges.push({
+      ...graph.edges[0],
+      edge_id: "e-related",
+      to_node_id: "related-skill",
+    });
+    const projection = projectGraph(graph, { relationshipTypes: [], statuses: [] }, ALL_DISPLAY_ON);
+    render(
+      <I18nextProvider i18n={i18n}>
+        <MemoryRouter>
+          <GraphDetailsPanel
+            centerSkillId="pdf-reader"
+            displayName="PDF Reader"
+            factCounts={projection.factCounts}
+            lastVerifiedAt={null}
+            onBeforeNavigate={() => undefined}
+            projection={projection}
+            relationshipRevision="r1"
+            resolveSkillName={(skillId) => skillId === "notes-reader" ? "Notes Reader" : undefined}
+            selectedEdgeId={null}
+            selectedNodeId="related-skill"
+          />
+        </MemoryRouter>
+      </I18nextProvider>,
+    );
+
+    expect(screen.getByRole("heading", { name: "Notes Reader" })).toBeVisible();
+  });
 });

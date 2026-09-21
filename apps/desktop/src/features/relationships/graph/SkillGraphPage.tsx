@@ -490,6 +490,7 @@ export function SkillGraphPage({
           lastVerifiedAt={graph.last_verified_at}
           onBeforeNavigate={saveReturnState}
           projection={projection}
+          resolveSkillName={resolveSkillName}
           relationshipRevision={graph.relationship_revision}
           selectedEdgeId={selectedEdgeId}
           selectedNodeId={selectedNodeId}

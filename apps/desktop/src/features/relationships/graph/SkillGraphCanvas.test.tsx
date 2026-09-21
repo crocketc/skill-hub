@@ -190,6 +190,7 @@ describe("SkillGraphCanvas interaction", () => {
     for (const name of ["Zoom in", "Zoom out", "Fit content (center all)"]) {
       const control = screen.getByRole("button", { name });
       expect(control.tagName).toBe("BUTTON");
+      expect(control.closest('[data-testid="skill-graph-surface"]')).not.toBeNull();
     }
 
     fireEvent.click(screen.getByRole("button", { name: "Zoom in" }));
