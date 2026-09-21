@@ -1851,6 +1851,7 @@
       },
       "failure": {
         "targetExists": "目标目录已存在同名内容，无法重复添加。可以先移走或重命名已有文件夹再试；若那是这个 Skill 之前的副本，也可以改用「纳入集中库管理」直接管理它。",
+        "nameMismatch": "部署文件夹名与 SKILL.md 不一致。请选择与声明名称一致的部署名；系统不会改写源文件。",
         "targetChanged": "目标在添加过程中发生变化，请检查目标后再试。",
         "symlinkNotSupported": "目标不支持符号链接，请改用托管复制。",
         "junctionNotSupported": "目标不支持目录联接，请改用托管复制。",

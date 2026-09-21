@@ -160,6 +160,15 @@ describe("nativeErrors", () => {
     );
     expect(message).toBe("importWorkflow.errors.securityBlocked");
   });
+
+  it("maps a deployment name mismatch to source-preserving guidance", () => {
+    const message = describeNativeError(
+      { code: "deployment.name_mismatch", severity: "error", params: {}, actions: ["choose_another_name"] },
+      (translationKey) => translationKey,
+      "deployment.results.failure.generic",
+    );
+    expect(message).toBe("deployment.results.failure.nameMismatch");
+  });
 });
 
 describe("isStructuredNativeError", () => {

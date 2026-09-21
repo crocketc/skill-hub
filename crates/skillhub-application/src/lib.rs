@@ -6228,13 +6228,8 @@ impl LocalApplicationFacade {
             request.resolve(&resolver, source_path)?
         };
         self.attach_target_occupancy(&input.runtime_name, &mut input.targets)?;
-        let mut plan = skillhub_core::DeploymentPlanner.plan_request(&input)?;
-        if let Some(warning) = self.deployment_name_warning(&plan)? {
-            plan.warnings.push(warning.clone());
-            for target in &mut plan.targets {
-                target.warnings.push(warning.clone());
-            }
-        }
+        let plan = skillhub_core::DeploymentPlanner.plan_request(&input)?;
+        self.enforce_deployment_name_boundary(&plan)?;
         Ok(AppQueryResult::DeploymentPlan(plan))
     }
 
@@ -6242,27 +6237,30 @@ impl LocalApplicationFacade {
     /// with the folder name agents will see.  A mismatch means agents will
     /// not recognize the deployed skill, so the plan carries a warning
     /// instead of deploying silently.
-    fn deployment_name_warning(
+    fn enforce_deployment_name_boundary(
         &self,
         plan: &skillhub_core::DeploymentPlan,
-    ) -> AppResult<Option<String>> {
+    ) -> AppResult<()> {
         let library = self.library_runtime.snapshot()?;
         let content = match library
             .store
             .read_file(&plan.version_id, "SKILL.md", 256 * 1024)
         {
             Ok((_, bytes)) => bytes,
-            Err(error) if error.code == ErrorCode::ObjectNotFound => return Ok(None),
+            Err(error) if error.code == ErrorCode::ObjectNotFound => return Ok(()),
             Err(error) => return Err(error),
         };
         let Some(frontmatter_name) = read_frontmatter_name(&String::from_utf8_lossy(&content))
         else {
-            return Ok(None);
+            return Ok(());
         };
         if frontmatter_name == plan.runtime_name {
-            return Ok(None);
+            return Ok(());
         }
-        Ok(Some("deployment.name_mismatch".to_owned()))
+        Err(AppError::new(ErrorCode::DeploymentNameMismatch, Severity::Error)
+            .with_param("runtime_name", plan.runtime_name.clone())
+            .with_param("declared_name", frontmatter_name)
+            .with_action(RecoveryAction::ChooseAnotherName))
     }
 
     fn discovery_target_index(&self) -> AppResult<RegisteredTargetIndex> {

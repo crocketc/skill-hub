@@ -362,19 +362,25 @@ async fn profile_without_any_deployment_support_blocks_the_plan() {
 }
 
 /// Name consistency: SKILL.md `name` must match the deployed folder name or
-/// agents will not recognize the skill.  The plan surfaces a warning.
+/// agents will not recognize the skill.  Without a safe alias strategy the
+/// deployment preview must block before any target is touched.
 #[tokio::test]
-async fn deployment_plan_warns_when_folder_name_differs_from_frontmatter_name() {
+async fn deployment_plan_blocks_when_folder_name_differs_from_frontmatter_name() {
     let harness = harness("anthropic.claude-code", "some-other-name").await;
-    let plan = managed_copy_plan(&harness).await;
-    assert!(
-        plan.warnings
-            .iter()
-            .chain(plan.targets[0].warnings.iter())
-            .any(|warning| warning == "deployment.name_mismatch"),
-        "expected a name mismatch warning, got {:?}",
-        plan.warnings
-    );
+    let error = harness
+        .facade
+        .query(RootAppQuery::GetDeploymentPlan(GetDeploymentPlan {
+            request: skillhub_core::deployment::DeploymentPlanRequest {
+                skill_id: harness.skill.id(),
+                version_id: harness.version_id.clone(),
+                runtime_name: "find-skills".into(),
+                logical_target_ids: vec!["claude-global".into()],
+                mode_override: Some(DeploymentMode::ManagedCopy),
+            },
+        }))
+        .await
+        .expect_err("a deployment alias must not be silently applied");
+    assert_eq!(error.code, ErrorCode::DeploymentNameMismatch);
 }
 
 #[tokio::test]

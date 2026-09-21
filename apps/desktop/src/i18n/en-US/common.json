@@ -1851,6 +1851,7 @@
       },
       "failure": {
         "targetExists": "The target directory already contains an entry with the same name, so it cannot be added again. Move or rename the existing folder and retry, or use \"Bring under central library management\" to adopt the existing copy.",
+        "nameMismatch": "The deployed folder name does not match SKILL.md. Choose a deployment name that matches the declared Skill name; no source file was rewritten.",
         "targetChanged": "The target changed while being added. Inspect the target before retrying.",
         "symlinkNotSupported": "The target does not support symbolic links. Try managed copy instead.",
         "junctionNotSupported": "The target does not support directory junctions. Try managed copy instead.",

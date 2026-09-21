@@ -27,6 +27,8 @@ pub enum ErrorCode {
     OwnershipMismatch,
     #[serde(rename = "deployment.security_check_blocked")]
     CheckBlocked,
+    #[serde(rename = "deployment.name_mismatch")]
+    DeploymentNameMismatch,
     #[serde(rename = "operation.conflict")]
     OperationConflict,
     #[serde(rename = "operation.id_reused_with_different_request")]
@@ -138,6 +140,7 @@ impl ErrorCode {
             Self::OwnershipUnknown => "target.ownership_unknown",
             Self::OwnershipMismatch => "deployment.ownership_mismatch",
             Self::CheckBlocked => "deployment.security_check_blocked",
+            Self::DeploymentNameMismatch => "deployment.name_mismatch",
             Self::OperationConflict => "operation.conflict",
             Self::OperationIdReusedWithDifferentRequest => {
                 "operation.id_reused_with_different_request"
