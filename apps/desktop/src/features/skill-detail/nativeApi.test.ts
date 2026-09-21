@@ -680,7 +680,7 @@ describe("native translation loop", () => {
         skillId: "skill-1",
         type: "translate_description",
       }),
-    ).resolves.toBeUndefined();
+    ).resolves.toEqual({ text: "提取表格的译文" });
     expect(executeCommand).toHaveBeenCalledWith({
       type: "translate_description",
       payload: {

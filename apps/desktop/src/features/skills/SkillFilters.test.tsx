@@ -256,14 +256,14 @@ it("keeps the search field bounded inside the primary filter row", () => {
 });
 
 it("keeps the search band on one compact row that wraps by cluster", () => {
-  // 现行契约：检索带整簇折行（flex-wrap），搜索簇以 24rem 弹性下限参与折行，
+  // 现行契约：检索带整簇折行（flex-wrap），搜索簇以 36rem 上限参与空间平衡，
   // 100%/110% 缩放下先整簇换行而非控件散架。
   const bandStart = skillsCss.indexOf(".sh-skill-library__band--search {");
   expect(bandStart).toBeGreaterThanOrEqual(0);
   const bandBlock = skillsCss.slice(bandStart, skillsCss.indexOf("}", bandStart));
   expect(bandBlock).toContain("flex-wrap: wrap");
   expect(skillsCss).toMatch(
-    /\.sh-skill-library__band--search > \.sh-skill-filters\s*\{[\s\S]*?flex:\s*1 1 24rem/,
+    /\.sh-skill-library__band--search > \.sh-skill-filters\s*\{[\s\S]*?flex:\s*0 1 36rem[\s\S]*?width:\s*100%[\s\S]*?max-width:\s*36rem/,
   );
 });
 
