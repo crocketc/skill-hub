@@ -344,6 +344,32 @@ describe("zero candidates", () => {
 });
 
 describe("alias search", () => {
+  it("offers live candidates in an anchored listbox with keyboard selection", async () => {
+    const user = userEvent.setup();
+    const { calls } = await renderPage("/relationships?skillId=pdf-reader");
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "PDF Reader" })).toBeVisible();
+    });
+
+    const input = screen.getByRole("combobox", { name: "Search by name or alias" });
+    await user.type(input, "reader");
+    const listbox = await screen.findByRole("listbox", { name: "Search suggestions" });
+    expect(listbox).toBeVisible();
+    expect(within(listbox).getAllByRole("option")).toHaveLength(3);
+    expect(calls.candidates.at(-1)).toEqual({ text: "reader", tags: [] });
+
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("listbox", { name: "Search suggestions" })).not.toBeInTheDocument();
+
+    await user.clear(input);
+    await user.type(input, "reader");
+    await screen.findByRole("listbox", { name: "Search suggestions" });
+    await user.keyboard("{ArrowDown}{Enter}");
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Doc Reader" })).toBeVisible());
+    expect(screen.queryByRole("listbox", { name: "Search suggestions" })).not.toBeInTheDocument();
+  });
+
   it("presents a choice when several skills match the alias", async () => {
     const user = userEvent.setup();
     const { calls } = await renderPage("/relationships?skillId=pdf-reader");
@@ -358,11 +384,11 @@ describe("alias search", () => {
     expect(await screen.findByText("Multiple Skills match — choose one.")).toBeVisible();
     // 搜索结果限定在结果列表内：画布节点标签同样可读（DEV-15），不做全局匹配。
     const resultsList = document.querySelector(".sh-graph-search__results ul") as HTMLElement;
-    expect(within(resultsList).getByRole("button", { name: /PDF Reader/ })).toBeVisible();
-    expect(within(resultsList).getByRole("button", { name: /Doc Reader/ })).toBeVisible();
+    expect(within(resultsList).getByRole("option", { name: /PDF Reader/ })).toBeVisible();
+    expect(within(resultsList).getByRole("option", { name: /Doc Reader/ })).toBeVisible();
     expect(calls.candidates.at(-1)).toEqual({ text: "reader", tags: [] });
 
-    await user.click(within(resultsList).getByRole("button", { name: /Doc Reader/ }));
+    await user.click(within(resultsList).getByRole("option", { name: /Doc Reader/ }));
     await waitFor(() => {
       expect(screen.getByRole("heading", { name: "Doc Reader" })).toBeVisible();
     });

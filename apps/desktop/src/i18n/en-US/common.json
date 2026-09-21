@@ -2210,6 +2210,7 @@
       "searchPlaceholder": "Enter a Skill name or alias",
       "searchSubmit": "Search",
       "searchChoiceHint": "Multiple Skills match — choose one.",
+      "searchSuggestions": "Search suggestions",
       "searchMatchedAlias": "Alias: {{alias}}",
       "searchNoResults": "No matching Skill.",
       "searchFailed": "The search failed. Try again.",

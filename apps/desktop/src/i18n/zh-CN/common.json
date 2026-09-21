@@ -2210,6 +2210,7 @@
       "searchPlaceholder": "输入 Skill 名称或别名",
       "searchSubmit": "搜索",
       "searchChoiceHint": "多个 Skill 匹配，请选择一个。",
+      "searchSuggestions": "搜索建议",
       "searchMatchedAlias": "别名：{{alias}}",
       "searchNoResults": "没有匹配的 Skill。",
       "searchFailed": "搜索失败，请重试。",
