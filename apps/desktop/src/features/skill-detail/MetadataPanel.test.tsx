@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { I18nextProvider } from "react-i18next";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createSkillHubI18n } from "../../i18n";
 import { createOperationTracker, type OperationTracker } from "../../platform/operationTracker";
 import { AppNotificationsProvider } from "../../ui/notifications";
@@ -12,6 +12,11 @@ import { createMockSkillDetailFacade, detailFixture } from "./testFixtures";
 async function renderMetadata({
   facade = createMockSkillDetailFacade(),
   metadata = detailFixture().metadata,
+  refreshSnapshot,
+}: {
+  facade?: ReturnType<typeof createMockSkillDetailFacade>;
+  metadata?: SkillMetadata;
+  refreshSnapshot?: () => Promise<void>;
 } = {}) {
   const i18n = await createSkillHubI18n(["zh-CN"]);
   const client = new QueryClient({
@@ -20,7 +25,12 @@ async function renderMetadata({
   render(
     <QueryClientProvider client={client}>
       <I18nextProvider i18n={i18n}>
-        <MetadataPanel facade={facade} metadata={metadata} skillId="skill-pdf" />
+        <MetadataPanel
+          facade={facade}
+          metadata={metadata}
+          refreshSnapshot={refreshSnapshot}
+          skillId="skill-pdf"
+        />
       </I18nextProvider>
     </QueryClientProvider>,
   );
@@ -128,6 +138,30 @@ describe("MetadataPanel", () => {
     fireEvent.click(screen.getByRole("button", { name: "编辑标签" }));
 
     expect(screen.getByText("多个标签请用逗号分隔")).toBeVisible();
+  });
+
+  it("normalizes Chinese and English commas and removes duplicate tags before saving", async () => {
+    const { facade } = await renderMetadata();
+    fireEvent.click(screen.getByRole("button", { name: "编辑标签" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "标签" }), {
+      target: { value: "documents，pdf, documents , ,pdf" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "保存标签" }));
+
+    await waitFor(() => {
+      expect(facade.calls.metadataPatches).toEqual([
+        { patch: { tags: ["documents", "pdf"] }, skillId: "skill-pdf" },
+      ]);
+    });
+  });
+
+  it("refreshes the bootstrap snapshot after a successful metadata save", async () => {
+    const refreshSnapshot = vi.fn<() => Promise<void>>().mockResolvedValue(undefined);
+    await renderMetadata({ refreshSnapshot });
+
+    await saveAlias("PDF 助手");
+
+    await waitFor(() => expect(refreshSnapshot).toHaveBeenCalledTimes(1));
   });
 
   it("requires confirmation before replacing a user-revised translation", async () => {

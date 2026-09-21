@@ -18,6 +18,7 @@ import { skillDetailKeys } from "./api";
 interface MetadataPanelProps {
   facade: SkillDetailFacade;
   metadata: SkillMetadata;
+  refreshSnapshot?: () => Promise<void>;
   skillId: string;
   /** 统一执行桥的在途投影；测试可注入独立实例，默认模块级单例。 */
   tracker?: OperationTracker;
@@ -142,7 +143,13 @@ function EditableTextSection({
   );
 }
 
-export function MetadataPanel({ facade, metadata, skillId, tracker = operationTracker }: MetadataPanelProps) {
+export function MetadataPanel({
+  facade,
+  metadata,
+  refreshSnapshot,
+  skillId,
+  tracker = operationTracker,
+}: MetadataPanelProps) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const notifications = useOptionalAppNotifications();
@@ -179,6 +186,7 @@ export function MetadataPanel({ facade, metadata, skillId, tracker = operationTr
       queryClient.invalidateQueries({ queryKey: skillDetailKeys.metadata(skillId) }),
       queryClient.invalidateQueries({ queryKey: skillDetailKeys.summary(skillId) }),
       queryClient.invalidateQueries({ queryKey: skillLibraryKeys.root }),
+      refreshSnapshot?.(),
     ]);
   };
   // 重新翻译是 AI 长流程，占用在途顶栏（不可取消：后端没有该操作的取消契约）。
@@ -326,7 +334,9 @@ export function MetadataPanel({ facade, metadata, skillId, tracker = operationTr
         label={t("skillDetail.metadata.tags")}
         hint={t("skillDetail.metadata.tagsHint")}
         onSave={(tags) =>
-          savePatch({ tags: tags.split(",").map((tag) => tag.trim()).filter(Boolean) })
+          savePatch({
+            tags: [...new Set(tags.split(/[,，]/).map((tag) => tag.trim()).filter(Boolean))],
+          })
         }
         value={metadata.tags.join(", ")}
       />

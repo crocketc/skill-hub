@@ -57,6 +57,7 @@ interface SkillDetailPageProps {
   facade: SkillDetailFacade;
   markdownFacade?: MarkdownFacade;
   removalFacade?: RemovalFacade;
+  refreshSnapshot?: () => Promise<void>;
   tracker?: OperationTracker;
 }
 
@@ -104,6 +105,7 @@ export function SkillDetailPage({
   facade,
   markdownFacade = nativeMarkdownFacade,
   removalFacade,
+  refreshSnapshot,
   tracker = operationTracker,
 }: SkillDetailPageProps) {
   const { t } = useTranslation();
@@ -325,7 +327,12 @@ export function SkillDetailPage({
               ) : metadataQuery.isError || !metadataQuery.data ? (
                 <p role="alert">{t("skillDetail.states.metadataError")}</p>
               ) : (
-                <MetadataPanel facade={facade} metadata={metadataQuery.data} skillId={skillId} />
+                <MetadataPanel
+                  facade={facade}
+                  metadata={metadataQuery.data}
+                  refreshSnapshot={refreshSnapshot}
+                  skillId={skillId}
+                />
               )}
               <SourceRelinkPanel facade={facade} skillId={skillId} />
             </div>

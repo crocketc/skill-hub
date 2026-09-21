@@ -183,6 +183,11 @@ function ProjectListRoute() {
   return <RouteSuspense><ProjectListPage facade={nativeProjectFacade} onOpenProject={(projectId) => navigate(`/projects/${projectId}`)} /></RouteSuspense>;
 }
 
+function SkillDetailRoute() {
+  const { refreshSnapshot } = useOutletContext<BootstrapOutletContext>();
+  return <RouteSuspense><SkillDetailPage facade={nativeSkillDetailFacade} refreshSnapshot={refreshSnapshot} /></RouteSuspense>;
+}
+
 function DeploymentRoute() {
   const { skillId } = useParams();
   const effectiveSkillId = skillId ?? "unknown";
@@ -290,7 +295,7 @@ export const appRouter = createBrowserRouter([
       },
       {
         path: "library/:skillId",
-        element: <RouteSuspense><SkillDetailPage facade={nativeSkillDetailFacade} /></RouteSuspense>,
+        element: <SkillDetailRoute />,
       },
       { path: "library/:skillId/deploy", element: <DeploymentRoute /> },
       { path: "deploy", element: <BatchDeploymentRoute /> },
