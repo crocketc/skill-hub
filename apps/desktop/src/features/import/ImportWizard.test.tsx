@@ -959,7 +959,7 @@ it("requires a fresh conflict decision when retrying an import", async () => {
   expect(screen.getByRole("button", { name: "提交导入" })).toBeEnabled();
 });
 
-it("renders governance before conflicts and sends group plus member override to commit", async () => {
+it("resolves conflicts before relationship impact and sends both decisions to commit", async () => {
   const user = userEvent.setup();
   const facade = createMockImportFacade({ scenario: "safe-local" });
   const originalAnalyze = facade.analyzeConflicts.bind(facade);
@@ -1010,6 +1010,8 @@ it("renders governance before conflicts and sends group plus member override to 
   await user.click(screen.getByRole("checkbox", { name: /PDF/ }));
   await user.click(screen.getByRole("button", { name: "分析冲突" }));
 
+  expect(await screen.findByRole("heading", { name: "处理需要确认的冲突" })).toBeVisible();
+  await user.click(screen.getByRole("button", { name: "继续确认关系影响" }));
   expect(await screen.findByRole("heading", { name: "确认导入后的关系处理" })).toBeVisible();
   await user.click(screen.getByRole("radio", { name: "先不导入，记为待办" }));
   await user.click(screen.getByRole("button", { name: "展开 1 个项目" }));
@@ -1047,12 +1049,17 @@ it("requires a new governance confirmation after returning to candidates and rea
   await user.click(await screen.findByRole("button", { name: "继续选择候选" }));
   await user.click(screen.getByRole("checkbox", { name: /PDF/ }));
   await user.click(screen.getByRole("button", { name: "分析冲突" }));
+  await screen.findByRole("heading", { name: "处理需要确认的冲突" });
+  await user.click(screen.getByRole("button", { name: "继续确认关系影响" }));
   await screen.findByRole("heading", { name: "确认导入后的关系处理" });
   await user.click(screen.getByRole("radio", { name: "先不导入，记为待办" }));
 
   await user.click(screen.getByRole("button", { name: "上一步" }));
+  await user.click(screen.getByRole("button", { name: "上一步" }));
   await user.click(screen.getByRole("button", { name: "分析冲突" }));
 
+  await screen.findByRole("heading", { name: "处理需要确认的冲突" });
+  await user.click(screen.getByRole("button", { name: "继续确认关系影响" }));
   await screen.findByRole("heading", { name: "确认导入后的关系处理" });
   expect(screen.getByRole("button", { name: "确认关系处理" })).toBeDisabled();
 });

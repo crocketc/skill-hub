@@ -115,6 +115,8 @@ type WizardEvent =
   | { type: "analysis_progress"; progress: ImportProgress }
   | { type: "analysis_succeeded"; plan: ImportPlan }
   | { type: "governance_decision"; decision: ImportGovernanceDecision }
+  | { type: "conflicts_confirmed" }
+  | { type: "governance_back_to_conflicts" }
   | { type: "governance_confirmed" }
   | { type: "analysis_cancelled" }
   | { type: "action_selected"; candidateId: string; action: ImportAction }
@@ -288,12 +290,18 @@ function reducer(state: WizardState, event: WizardEvent): WizardState {
         analysisStartedAt: undefined,
         analysisTotal: undefined,
         error: undefined,
-        phase: event.plan.governanceGroups?.length ? "governance" : "conflicts",
+        // 内容/名称冲突是导入前必须先解决的事实；关系影响只在冲突决定
+        // 之后按需确认，避免用户在尚未知道 Skill 决定时先处理另一类关系。
+        phase: "conflicts",
         plan: event.plan,
         governanceDecision: emptyGovernanceDecision(),
       };
     case "governance_decision":
       return { ...state, governanceDecision: event.decision };
+    case "conflicts_confirmed":
+      return { ...state, phase: "governance" };
+    case "governance_back_to_conflicts":
+      return { ...state, phase: "conflicts" };
     case "governance_confirmed":
       return { ...state, phase: "conflicts" };
     case "analysis_cancelled":
@@ -952,6 +960,7 @@ type: "failed",
   const governanceConfirmed = state.plan
     ? hasExplicitGovernanceConfirmation(state.plan.governanceGroups ?? [], state.governanceDecision)
     : false;
+  const governanceAfterConflicts = hasGovernanceGroups && !governanceConfirmed;
   const canParse = state.phase === "source"
     && (state.sourceText.trim().length > 0 || selectedSources.length > 0);
   // onboarding 页脚禁用判定只信任真实条目状态（未扫描/解析中）。
@@ -1059,14 +1068,25 @@ type: "failed",
           <Button
             disabled={missingRequiredAction || commitLockNotice}
             key="commit"
-            onClick={() => void commit()}
+            onClick={() => {
+              if (governanceAfterConflicts) dispatch({ type: "conflicts_confirmed" });
+              else void commit();
+            }}
             size="lg"
           >
-            {t("importWorkflow.conflicts.commit")}
+            {t(
+              governanceAfterConflicts
+                ? "importWorkflow.conflicts.continueToGovernance"
+                : "importWorkflow.conflicts.commit",
+            )}
           </Button>,
         ],
         secondary: [
-          <Button key="back" onClick={() => dispatch({ type: "show_candidates" })} variant="ghost">
+          <Button
+            key="back"
+            onClick={() => dispatch({ type: "show_candidates" })}
+            variant="ghost"
+          >
             {t("actions.back")}
           </Button>,
         ],
@@ -1080,7 +1100,7 @@ type: "failed",
           </Button>,
         ],
         secondary: [
-          <Button key="back" onClick={() => dispatch({ type: "show_candidates" })} variant="ghost">
+          <Button key="back" onClick={() => dispatch({ type: "governance_back_to_conflicts" })} variant="ghost">
             {t("actions.back")}
           </Button>,
         ],

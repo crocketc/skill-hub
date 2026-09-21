@@ -251,6 +251,7 @@
       "candidatePath": "候选来源：",
       "matchedWith": "与已有 Skill 冲突：",
       "commit": "提交导入",
+      "continueToGovernance": "继续确认关系影响",
       "none": "没有需要处理的冲突。",
       "kinds": {
         "exact_duplicate": "完全重复",

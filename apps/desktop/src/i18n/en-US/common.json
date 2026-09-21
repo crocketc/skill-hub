@@ -251,6 +251,7 @@
       "candidatePath": "Candidate source: ",
       "matchedWith": "Conflicts with existing skills: ",
       "commit": "Commit import",
+      "continueToGovernance": "Continue to relationship review",
       "none": "No conflicts require a decision.",
       "kinds": {
         "exact_duplicate": "Exact duplicate",
