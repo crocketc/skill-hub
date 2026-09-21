@@ -323,7 +323,9 @@
 }
 
 .sh-skill-library__band--search > .sh-skill-filters {
-  flex: 1 1 24rem;
+  flex: 0 1 36rem;
+  width: 100%;
+  max-width: 36rem;
   min-width: 0;
 }
 

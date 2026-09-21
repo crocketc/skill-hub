@@ -25,6 +25,7 @@ import {
   type SkillPage,
 } from "./api";
 import { SkillLibraryPage } from "./SkillLibraryPage";
+import skillsCssRaw from "./skills.css?raw";
 import type { RemovalFacade } from "../removal/api";
 import {
   createMockSkillLibraryFacade,
@@ -1895,6 +1896,26 @@ describe("SkillLibraryPage", () => {
     const actions = document.querySelector(".sh-skill-library__toolbar-actions") as HTMLElement;
     expect(actions.querySelector(".sh-skill-library__toolbar-divider")).not.toBeNull();
     expect(getComputedStyle(actions.querySelector(".sh-skill-library__toolbar-divider") as HTMLElement).backgroundColor).toBeTruthy();
+  });
+
+  it("caps the wide-screen search cluster without removing narrow-window wrapping", async () => {
+    const facade = createMockSkillLibraryFacade({ total: 80 });
+    facade.listCombinations = vi.fn().mockResolvedValue([]);
+    renderLibrary({ facade, persistedViewMode: "unset" });
+
+    await screen.findByTestId("skill-card-skill-pdf");
+
+    const searchCluster = document.querySelector(
+      ".sh-skill-library__band--search > .sh-skill-filters",
+    ) as HTMLElement;
+    expect(searchCluster).not.toBeNull();
+    expect(getComputedStyle(searchCluster).maxWidth).toBe("36rem");
+    expect(skillsCssRaw).toMatch(
+      /\.sh-skill-library__band--search > \.sh-skill-filters\s*\{[^}]*flex:\s*0 1 36rem[^}]*max-width:\s*36rem/s,
+    );
+    expect(skillsCssRaw).toMatch(
+      /\.sh-skill-library__band--search\s*\{[^}]*flex-wrap:\s*wrap/s,
+    );
   });
 
   it("links to the combination manager instead of embedding the panel", async () => {
