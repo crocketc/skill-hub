@@ -1632,6 +1632,7 @@
       "next": "下一个 Skill",
       "position": "第 {{position}} 个，共 {{total}} 个",
       "previous": "上一个 Skill",
+      "skillIdentity": "当前 Skill",
       "sectionsLabel": "详情章节",
       "sections": {
         "connections": "相关 Skill",

@@ -307,6 +307,16 @@ export function SkillDetailPage({
           >
             {t("skillDetail.navigation.back")}
           </Link>
+          <div
+            aria-label={t("skillDetail.navigation.skillIdentity")}
+            className="sh-skill-detail__rail-identity"
+            role="group"
+          >
+            {summaryQuery.data.alias ? (
+              <span className="sh-skill-detail__rail-alias">{summaryQuery.data.alias}</span>
+            ) : null}
+            <strong>{summaryQuery.data.name}</strong>
+          </div>
           <DetailSectionNav
             adjacent={adjacentQuery.data}
             backSearch={backSearch}

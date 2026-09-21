@@ -414,6 +414,10 @@ describe("SkillDetailPage shell", () => {
     const rail = document.querySelector(".sh-skill-detail__rail");
     const content = document.querySelector(".sh-skill-detail__content");
     expect(rail).toBeInTheDocument();
+    const railIdentity = screen.getByRole("group", { name: "Current Skill" });
+    expect(railIdentity).toHaveTextContent("PDF 表格读取器");
+    expect(railIdentity).toHaveTextContent("PDF Reader");
+    expect(rail?.querySelector(".sh-skill-detail__rail-identity")).toBe(railIdentity);
     expect(rail).toContainElement(screen.getByRole("navigation", { name: "Detail sections" }));
     expect(content).toContainElement(document.querySelector(".sh-skill-detail__header"));
     expect(content).toBeInTheDocument();
@@ -490,9 +494,10 @@ describe("SkillDetailPage shell", () => {
 
     // DEV-16：头部展示别名（仅当与原名不同），身份区字段清单同时如实展示
     // 别名当前值——详情页完整显示所有用户字段，不再把读值藏进编辑态。
-    expect(await screen.findAllByText("PDF 表格读取器")).toHaveLength(2);
+    expect(await screen.findAllByText("PDF 表格读取器")).toHaveLength(3);
     const header = document.querySelector(".sh-skill-detail__header");
     expect(header?.textContent).toContain("PDF 表格读取器");
+    expect(screen.getByRole("group", { name: "Current Skill" })).toHaveTextContent("PDF 表格读取器");
     expect(screen.getByRole("button", { name: "Edit Alias" })).toBeVisible();
   });
 

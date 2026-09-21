@@ -1632,6 +1632,7 @@
       "next": "Next Skill",
       "position": "{{position}} of {{total}}",
       "previous": "Previous Skill",
+      "skillIdentity": "Current Skill",
       "sectionsLabel": "Detail sections",
       "sections": {
         "connections": "Related Skills",

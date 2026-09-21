@@ -82,6 +82,27 @@
 }
 
 /* —— 分区导航（rail 内纵向；窄窗口退化为横向，见底部媒体查询） —— */
+.sh-skill-detail__rail-identity {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+  padding-block: var(--space-3);
+  border-block: 1px solid var(--ui-border-subtle);
+}
+
+.sh-skill-detail__rail-identity strong {
+  overflow-wrap: anywhere;
+  color: var(--ui-ink);
+  font-size: var(--font-size-sm);
+  line-height: 1.35;
+}
+
+.sh-skill-detail__rail-alias {
+  overflow-wrap: anywhere;
+  color: var(--ui-ink-muted);
+  font-size: var(--font-size-xs);
+}
+
 .sh-skill-detail__zone-nav {
   display: grid;
   flex: 0 0 auto;
