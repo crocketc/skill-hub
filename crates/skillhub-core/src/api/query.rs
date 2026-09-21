@@ -138,7 +138,7 @@ pub struct SkillListItem {
     /// Read-only invocation policy fact (identified result or safe default).
     /// `None` only when the Skill record is missing; the UI must render a single
     /// explicit empty state rather than duplicate "no reliable data" stacks.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub invocation_policy: Option<InvocationPolicyFact>,
     /// Read-only declared runtime requirements. Empty when the Skill declares no
     /// runtime requirements.
@@ -244,7 +244,7 @@ pub struct SkillResult {
     #[serde(default)]
     pub current_version_label: Option<String>,
     /// Read-only invocation policy fact (identified result or safe default).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub invocation_policy: Option<InvocationPolicyFact>,
     /// Read-only declared runtime requirements. Empty when none are declared.
     #[serde(default)]

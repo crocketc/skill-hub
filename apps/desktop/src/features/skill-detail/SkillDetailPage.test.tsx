@@ -496,10 +496,11 @@ describe("SkillDetailPage shell", () => {
     expect(screen.getByRole("button", { name: "Edit Alias" })).toBeVisible();
   });
 
-  it("shows invocation and declared runtime requirements in the detail page", async () => {
+  it("shows the read-only invocation policy and declared runtime requirements in the detail page", async () => {
     await renderDetail();
 
-    expect(await screen.findByText("pdf-reader <file>")).toBeVisible();
+    expect(await screen.findByText("Model and user")).toBeVisible();
+    expect(screen.queryByText("pdf-reader <file>")).not.toBeInTheDocument();
     expect(screen.getByText("Poppler")).toBeVisible();
     expect(screen.getByText("Executable used for PDF rendering")).toBeVisible();
   });

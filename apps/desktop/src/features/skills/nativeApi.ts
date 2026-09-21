@@ -42,6 +42,19 @@ function nativeCheckStateOf(state: CheckState): NativeCheckState {
   throw unavailableResult();
 }
 
+function requirementLabels(requirements: SkillListItem["declared_requirements"]): string[] {
+  return (requirements ?? []).map((requirement) =>
+    requirement.version ? `${requirement.name} ${requirement.version}` : requirement.name,
+  );
+}
+
+function invocationPolicyOf(item: SkillListItem): SkillTableRow["invocationPolicy"] {
+  const policy = item.invocation_policy;
+  return policy
+    ? { mode: policy.mode, source: policy.source, field: policy.field ?? undefined }
+    : undefined;
+}
+
 const SORT_COLUMNS: Partial<Record<SkillColumnId, SkillSortColumn>> = {
   name: "name",
   lifecycle: "lifecycle",
@@ -80,7 +93,7 @@ function toTableRow(item: SkillListItem, agentTargets: Map<string, AgentDeployme
     currentVersion: item.current_version_label ?? "unknown",
     highRiskCount: item.high_risk_count,
     id: item.skill_id,
-    invocation: undefined,
+    invocationPolicy: invocationPolicyOf(item),
     lifecycle: lifecycleOf(item),
     name: item.display_name,
     originalDescription: item.original_description,
@@ -91,7 +104,7 @@ function toTableRow(item: SkillListItem, agentTargets: Map<string, AgentDeployme
     // M-21 #6：用途列按“用户设置用途优先，空则回退 Skill 原始描述”渲染。
     purpose: item.user_purpose || item.original_description,
     userPurpose: item.user_purpose ?? undefined,
-    requirements: [],
+    requirements: requirementLabels(item.declared_requirements),
     source: item.source_locator ?? item.source_kind ?? undefined,
     tags: item.tags,
     translatedDescription: item.translated_description ?? undefined,
@@ -139,7 +152,14 @@ function asQuickView(result: AppQueryResult): SkillQuickView {
     pendingCount: 0,
     projectDeploymentCount: 0,
     purpose: "",
-    requirements: [],
+    invocationPolicy: payload.invocation_policy
+      ? {
+          mode: payload.invocation_policy.mode,
+          source: payload.invocation_policy.source,
+          field: payload.invocation_policy.field ?? undefined,
+        }
+      : undefined,
+    requirements: requirementLabels(payload.declared_requirements),
     tags: [],
     upgradeAvailable: false,
   };

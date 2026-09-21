@@ -128,6 +128,13 @@ async function translationOf(skillId: string): Promise<SkillTranslation | undefi
 function metadataOf(skill: SkillResult, translation?: SkillTranslation): SkillMetadata {
   return {
     alias: skill.display_name,
+    invocationPolicy: skill.invocation_policy
+      ? {
+          mode: skill.invocation_policy.mode,
+          source: skill.invocation_policy.source,
+          field: skill.invocation_policy.field ?? undefined,
+        }
+      : undefined,
     license: skill.license ?? undefined,
     note: skill.user_note ?? undefined,
     originalDescription: skill.original_description,
@@ -385,6 +392,17 @@ export const nativeSkillDetailFacade: SkillDetailFacade = {
       translationOf(skillId).catch(() => undefined),
     ]);
     return metadataOf(skill, translation);
+  },
+  async getRequirements(skillId) {
+    const skill = await getSkill(skillId);
+    return (skill.declared_requirements ?? []).map((requirement) => ({
+      declaration: requirement.source,
+      id: `${requirement.kind}:${requirement.name}`,
+      name: requirement.version
+        ? `${requirement.name} ${requirement.version}`
+        : requirement.name,
+      verification: "declared_only" as const,
+    }));
   },
   saveMetadata,
   async getProvenance(skillId): Promise<SkillProvenance> {

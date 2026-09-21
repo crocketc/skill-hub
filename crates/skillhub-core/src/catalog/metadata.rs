@@ -77,7 +77,7 @@ pub struct InvocationPolicyFact {
     pub source: InvocationPolicySource,
     /// The YAML/frontmatter field that produced the fact, when explicit.
     /// Omitted for default/unknown sources so the UI never invents a field.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub field: Option<String>,
 }
 
@@ -99,7 +99,7 @@ impl InvocationPolicyFact {
 pub struct DeclaredRequirementFact {
     pub kind: RequirementKind,
     pub name: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub version: Option<String>,
     pub explicit: bool,
     /// Human-readable evidence snippet (variable values already masked).

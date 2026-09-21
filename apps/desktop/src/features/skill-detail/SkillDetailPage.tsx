@@ -417,7 +417,7 @@ export function SkillDetailPage({
               <h3>{t("skillDetail.navigation.sections.requirements")}</h3>
               {requirementsQuery.data ? (
                 <RequirementsPanel
-                  invocation={metadataQuery.data?.invocation}
+                  invocationPolicy={metadataQuery.data?.invocationPolicy}
                   requirements={requirementsQuery.data}
                 />
               ) : null}

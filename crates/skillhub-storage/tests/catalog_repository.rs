@@ -1,5 +1,8 @@
 use skillhub_core::{
-    catalog::{CallPolicy, CatalogRepository, Skill},
+    catalog::{
+        CallPolicy, CatalogRepository, DeclaredRequirement, InvocationPolicySource,
+        RequirementKind, Skill,
+    },
     ListSkills, SkillId,
 };
 use skillhub_storage::{CatalogRepositorySqlite, Database};
@@ -129,6 +132,61 @@ fn catalog_round_trip_preserves_extended_invocation_policy() {
             .call_policy(),
         CallPolicy::ModelOnly
     );
+}
+
+#[test]
+fn list_and_detail_project_invocation_and_declared_requirements_consistently() {
+    let db = Database::open_in_memory().unwrap();
+    let repo = CatalogRepositorySqlite::new(&db).unwrap();
+    let mut requirement = DeclaredRequirement::new(RequirementKind::OtherTool, "poppler");
+    requirement.version = Some("24".to_owned());
+    requirement.source = "requires poppler >= 24".to_owned();
+    let skill = Skill::from_parts(
+        SkillId::new(),
+        "PDF reader".to_owned(),
+        "pdf-reader".to_owned(),
+        "Extract PDF text".to_owned(),
+        None,
+        None,
+        None,
+        Default::default(),
+        None,
+        None,
+        CallPolicy::ManualOnly,
+        skillhub_core::catalog::SkillLifecycle::Normal,
+        vec![requirement],
+        None,
+    )
+    .unwrap()
+    .with_invocation(
+        CallPolicy::ManualOnly,
+        InvocationPolicySource::Explicit,
+        Some("invocation".to_owned()),
+    );
+    block_on(repo.insert(&skill)).unwrap();
+
+    let page = repo
+        .list_page(&ListSkills {
+            text: String::new(),
+            page: 1,
+            page_size: 10,
+            filters: Default::default(),
+            sort: Default::default(),
+        })
+        .unwrap();
+    let listed = page.items.iter().find(|item| item.skill_id == skill.id()).unwrap();
+    let detailed = repo.get_detail(skill.id()).unwrap().unwrap();
+
+    for item in [listed, &detailed] {
+        let policy = item.invocation_policy.as_ref().unwrap();
+        assert_eq!(policy.mode, skillhub_core::catalog::InvocationMode::UserOnly);
+        assert_eq!(policy.source, InvocationPolicySource::Explicit);
+        assert_eq!(policy.field.as_deref(), Some("invocation"));
+        assert_eq!(item.declared_requirements.len(), 1);
+        assert_eq!(item.declared_requirements[0].name, "poppler");
+        assert_eq!(item.declared_requirements[0].version.as_deref(), Some("24"));
+        assert_eq!(item.declared_requirements[0].source, "requires poppler >= 24");
+    }
 }
 
 #[test]

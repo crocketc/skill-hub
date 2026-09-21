@@ -2,6 +2,7 @@ import type { AppliedSourceUpdate, AnalyzeConflictScope, ConflictAnalysis, Relat
 import type {
   BatchAction,
   CheckState,
+  InvocationPolicy,
   SkillLibraryQuery,
   SkillLifecycle,
 } from "../skills/api";
@@ -41,6 +42,9 @@ export interface SkillMetadata {
   alias?: string;
   author?: string;
   copyright?: string;
+  /** Read-only invocation fact; SkillHub does not edit Agent call switches. */
+  invocationPolicy?: InvocationPolicy;
+  /** Legacy fixture compatibility; command text is not rendered as a field. */
   invocation?: string;
   license?: string;
   note?: string;

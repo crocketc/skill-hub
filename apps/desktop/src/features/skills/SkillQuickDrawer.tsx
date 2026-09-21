@@ -269,7 +269,6 @@ function InvocationRequirementsModule({ view }: ModuleProps) {
       <p>
         <strong>{t("skillLibrary.drawer.values.invocation")}</strong>{" "}
         <InvocationBadge policy={view.invocationPolicy} />{" "}
-        {view.invocation ?? <EmptyValue />}
       </p>
       <ValueList values={view.requirements} />
     </ModuleCard>

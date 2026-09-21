@@ -5861,6 +5861,8 @@ impl ApplicationFacade for LocalApplicationFacade {
                         trial_due: skill.trial_due,
                         current_version,
                         current_version_label,
+                        invocation_policy: skill.invocation_policy,
+                        declared_requirements: skill.declared_requirements,
                     }))
                 })
             }

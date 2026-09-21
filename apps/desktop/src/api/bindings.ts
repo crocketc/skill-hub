@@ -703,6 +703,20 @@ export type CustomHeader = {
 	sensitive: boolean,
 };
 
+/**
+ *  Read-only fact describing one declared runtime requirement. Values of
+ *  sensitive environment variables are never recorded; only the variable name
+ *  and source location survive parsing.
+ */
+export type DeclaredRequirementFact = {
+	kind: RequirementKind,
+	name: string,
+	version?: string | null,
+	explicit: boolean,
+	/**  Human-readable evidence snippet (variable values already masked). */
+	source: string,
+};
+
 export type DeleteCombination = {
 	name: string,
 };
@@ -1467,6 +1481,34 @@ export type InitializationStatus = {
 export type InstallAction = "open_official_release" | "install_verified_asset";
 
 export type InstallApplicationUpdate = null;
+
+/**
+ *  User-facing invocation mode exposed by the quick drawer and detail page.
+ *  Snake_case to match the desktop client `InvocationMode` contract.
+ */
+export type InvocationMode = "model_and_user" | "model_only" | "user_only" | "disabled";
+
+/**
+ *  Read-only fact describing how a Skill may be invoked. The UI must present the
+ *  `Default` source as a derived rule, never as an explicit declaration.
+ */
+export type InvocationPolicyFact = {
+	mode: InvocationMode,
+	source: InvocationPolicySource,
+	/**
+	 *  The YAML/frontmatter field that produced the fact, when explicit.
+	 *  Omitted for default/unknown sources so the UI never invents a field.
+	 */
+	field?: string | null,
+};
+
+/**
+ *  Read-only source of an invocation-policy fact. `Explicit` means the Skill
+ *  declared a callable subject; `Default` means no declaration was found and
+ *  the safe default (`model_and_user`) applies; `Unknown` means the platform's
+ *  Skill format does not expose an invocation field at all.
+ */
+export type InvocationPolicySource = "explicit" | "default" | "unknown";
 
 export type KeepIndependentCopy = {
 	deployment_id: DeploymentId,
@@ -2605,6 +2647,8 @@ export type RepoScanState = {
 	error: string | null,
 };
 
+export type RequirementKind = "python" | "ffmpeg" | "mcp" | "plugin" | "environment_variable" | "other_tool";
+
 export type RescanSkill = {
 	scope_id: string,
 	path: string,
@@ -3045,6 +3089,17 @@ export type SkillListItem = {
 	basic_check: CheckState,
 	ai_check: CheckState,
 	high_risk_count: number,
+	/**
+	 *  Read-only invocation policy fact (identified result or safe default).
+	 *  `None` only when the Skill record is missing; the UI must render a single
+	 *  explicit empty state rather than duplicate "no reliable data" stacks.
+	 */
+	invocation_policy?: InvocationPolicyFact | null,
+	/**
+	 *  Read-only declared runtime requirements. Empty when the Skill declares no
+	 *  runtime requirements.
+	 */
+	declared_requirements?: DeclaredRequirementFact[],
 };
 
 export type SkillListPage = {
@@ -3200,6 +3255,10 @@ export type SkillResult = {
 	 *  内容哈希只是技术身份，不进入展示标签（不可读时为 None）。
 	 */
 	current_version_label?: string | null,
+	/**  Read-only invocation policy fact (identified result or safe default). */
+	invocation_policy?: InvocationPolicyFact | null,
+	/**  Read-only declared runtime requirements. Empty when none are declared. */
+	declared_requirements?: DeclaredRequirementFact[],
 };
 
 export type SkillSortColumn = "name" | "lifecycle" | "agent_deployments" | "project_deployments" | "version" | "updated";

@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::catalog::{CallPolicy, InvocationPolicySource};
+use crate::catalog::CallPolicy;
 use crate::{SkillId, VersionId};
 
 /// Portable paths and files that make up the central Skill library.

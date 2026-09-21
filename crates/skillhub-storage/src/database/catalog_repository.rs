@@ -5,7 +5,10 @@ use skillhub_core::api::{
     ListSkills, SkillDeploymentFilter, SkillLifecycleFilter, SkillListItem, SkillListPage,
     SkillSortColumn, SkillSortDirection,
 };
-use skillhub_core::catalog::{CallPolicy, CatalogRepository, InvocationPolicyFact, InvocationPolicySource, Skill, SkillLifecycle};
+use skillhub_core::catalog::{
+    CallPolicy, CatalogRepository, DeclaredRequirement, DeclaredRequirementFact,
+    InvocationPolicyFact, InvocationPolicySource, Skill, SkillLifecycle,
+};
 use skillhub_core::check::CheckState;
 use skillhub_core::{AppError, AppResult, ErrorCode, RecoveryAction, Severity, SkillId, VersionId};
 use std::collections::{BTreeSet, HashMap, HashSet};
@@ -392,7 +395,6 @@ fn status_columns() -> String {
     let latest_basic_id = latest_check_run_id_expr("s.id", "cp.version_id", "basic");
     let latest_llm_id = latest_check_run_id_expr("s.id", "cp.version_id", "llm");
     format!(
-        "s.display_name,s.runtime_name,s.original        format!(
         "s.display_name,s.runtime_name,s.original_description,s.translated_description,s.user_note,s.user_purpose,s.license,s.lifecycle,m.trial_due,s.author,\
          (SELECT src.kind FROM skill_sources ss JOIN sources src ON src.id=ss.source_id WHERE ss.skill_id=s.id ORDER BY src.id ASC LIMIT 1),\
          (SELECT src.locator FROM skill_sources ss JOIN sources src ON src.id=ss.source_id WHERE ss.skill_id=s.id ORDER BY src.id ASC LIMIT 1),\
@@ -400,7 +402,7 @@ fn status_columns() -> String {
          COALESCE({latest_basic},'not_checked'),\
          COALESCE({latest_llm},'not_checked'),\
          (SELECT COUNT(*) FROM check_findings f WHERE f.run_id IN ({latest_basic_id},{latest_llm_id}) AND f.severity IN ('error','critical') AND f.disposition='actionable'),\
-         s.call_policy,m.invocation_source,m.invocation_field"
+         s.call_policy,m.invocation_source,m.invocation_field,m.requirements_json"
     )
 }
 
@@ -432,9 +434,18 @@ struct StatusRow {
     call_policy: String,
     invocation_source: Option<String>,
     invocation_field: Option<String>,
+    requirements_json: String,
 }
 
 fn read_status_row(id: SkillId, row: StatusRow) -> AppResult<SkillListItem> {
+    let call_policy = parse_policy(&row.call_policy)?;
+    let invocation_source = row
+        .invocation_source
+        .as_deref()
+        .map(parse_invocation_source)
+        .unwrap_or(InvocationPolicySource::Default);
+    let declared_requirements: Vec<DeclaredRequirement> = serde_json::from_str(&row.requirements_json)
+        .map_err(|_| AppError::new(ErrorCode::RequirementsInvalidDeclaration, Severity::Error))?;
     Ok(SkillListItem {
         skill_id: id,
         display_name: row.display_name,
@@ -462,6 +473,15 @@ fn read_status_row(id: SkillId, row: StatusRow) -> AppResult<SkillListItem> {
         basic_check: parse_check_state(row.basic_check)?,
         ai_check: parse_check_state(row.ai_check)?,
         high_risk_count: row.high_risk_count.max(0) as u32,
+        invocation_policy: Some(InvocationPolicyFact::from_parts(
+            call_policy,
+            invocation_source,
+            row.invocation_field,
+        )),
+        declared_requirements: declared_requirements
+            .iter()
+            .map(DeclaredRequirementFact::from_declared)
+            .collect(),
     })
 }
 
@@ -556,6 +576,10 @@ fn map_status_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<(String, StatusRo
             basic_check: row.get(15)?,
             ai_check: row.get(16)?,
             high_risk_count: row.get(17)?,
+            call_policy: row.get(18)?,
+            invocation_source: row.get(19)?,
+            invocation_field: row.get(20)?,
+            requirements_json: row.get(21)?,
         },
     ))
 }
@@ -663,7 +687,7 @@ impl CatalogRepository for CatalogRepositorySqlite<'_> {
             .map_err(error)?;
         let (requirements, due, invocation_source, invocation_field) = if let Some((json, due, source, field)) = metadata {
             (
-                serde_json::from_str(&json).map_err(|_| {
+                serde_json::from_str::<Vec<DeclaredRequirement>>(&json).map_err(|_| {
                     AppError::new(ErrorCode::RequirementsInvalidDeclaration, Severity::Error)
                 })?,
                 due,
@@ -725,6 +749,20 @@ fn policy_code(v: CallPolicy) -> &'static str {
         CallPolicy::ManualOnly => "manual_only",
         CallPolicy::ModelOnly => "model_only",
         CallPolicy::Disabled => "disabled",
+    }
+}
+fn invocation_source_code(v: InvocationPolicySource) -> &'static str {
+    match v {
+        InvocationPolicySource::Explicit => "explicit",
+        InvocationPolicySource::Default => "default",
+        InvocationPolicySource::Unknown => "unknown",
+    }
+}
+fn parse_invocation_source(v: &str) -> InvocationPolicySource {
+    match v {
+        "explicit" => InvocationPolicySource::Explicit,
+        "unknown" => InvocationPolicySource::Unknown,
+        _ => InvocationPolicySource::Default,
     }
 }
 fn lifecycle_code(v: SkillLifecycle) -> &'static str {

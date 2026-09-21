@@ -24,6 +24,7 @@ impl PortableMetadataRepository for CentralLibrary {
             Some("unknown") => skillhub_core::catalog::InvocationPolicySource::Unknown,
             _ => skillhub_core::catalog::InvocationPolicySource::Default,
         };
+        let call_policy = record.call_policy.clone();
         let skill = Skill::from_parts(
             id,
             record.display_name,
@@ -35,13 +36,13 @@ impl PortableMetadataRepository for CentralLibrary {
             record.tags.into_iter().collect::<BTreeSet<_>>(),
             record.author,
             record.license,
-            record.call_policy,
+            call_policy.clone(),
             SkillLifecycle::Normal,
             Vec::new(),
             None,
         )?
         .with_invocation(
-            record.call_policy,
+            call_policy,
             invocation_source,
             record.invocation_field.clone(),
         );
