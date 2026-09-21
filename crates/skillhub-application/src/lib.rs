@@ -6417,6 +6417,34 @@ impl LocalApplicationFacade {
         })
     }
 
+    /// Import is a write boundary: run the deterministic scanner against the
+    /// user source before creating any catalog/version/materialized files.
+    /// Findings are returned as structured evidence so clients can explain
+    /// the block without parsing a localized error sentence.
+    fn enforce_import_security_gate(candidate: &skillhub_core::ImportCandidate) -> AppResult<()> {
+        let report =
+            BasicScanner::default().scan_version_report(Path::new(&candidate.absolute_root))?;
+        if report.findings.is_empty() {
+            return Ok(());
+        }
+        let evidence = report
+            .findings
+            .iter()
+            .map(|finding| {
+                serde_json::json!({
+                    "code": finding.code,
+                    "file": finding.file,
+                    "line": finding.line_start,
+                })
+            })
+            .collect::<Vec<_>>();
+        Err(AppError::new(ErrorCode::CheckBlocked, Severity::Error)
+            .with_param("reason", "import_basic_check")
+            .with_param("finding_count", report.findings.len() as u64)
+            .with_param("findings", serde_json::Value::Array(evidence))
+            .with_action(RecoveryAction::ReviewSecurityFindings))
+    }
+
     fn cancel_import(&self, prepared_import_id: OperationId) -> AppResult<AppCommandResult> {
         let result = self.cancel_import_flow(prepared_import_id);
         // A cancel always ends the record as rolled_back: updated when the
@@ -6594,6 +6622,7 @@ impl LocalApplicationFacade {
                 },
             )));
         }
+        Self::enforce_import_security_gate(&prepared.candidate)?;
         if request.decision == skillhub_core::ImportDecision::ReuseExisting {
             let skill_id = prepared
                 .analysis

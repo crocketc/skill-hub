@@ -146,6 +146,20 @@ describe("nativeErrors", () => {
     );
     expect(message).toBe(key);
   });
+
+  it("maps an import security gate to the import-specific localized copy", () => {
+    const message = describeNativeError(
+      {
+        code: "deployment.security_check_blocked",
+        severity: "error",
+        params: { reason: "import_basic_check", finding_count: 1 },
+        actions: ["review_security_findings"],
+      },
+      (translationKey) => translationKey,
+      "importWorkflow.errors.generic",
+    );
+    expect(message).toBe("importWorkflow.errors.securityBlocked");
+  });
 });
 
 describe("isStructuredNativeError", () => {

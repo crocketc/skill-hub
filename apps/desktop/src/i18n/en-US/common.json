@@ -141,6 +141,7 @@
       "generic": "The import step could not be completed ({{code}}).",
       "noDefaultAction": "This candidate has no automatically selectable import action; pick one manually before importing.",
       "remoteNotWired": "Remote source download is not wired up yet; download the repository locally first and import it as a local directory.",
+      "securityBlocked": "The deterministic security check found a risk in this source. Review the findings before importing it.",
       "unknown": "The import step could not be completed.",
       "sameRuntimeNameConflict": "The folder name matches an existing Skill; choose another import action.",
       "exactDuplicateConflict": "The candidate duplicates an existing Skill; existing content was not overwritten.",

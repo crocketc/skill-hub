@@ -145,6 +145,9 @@ export function keyedMessage(
   if (code === "deployment.symlink_not_supported") return "deployment.results.failure.symlinkNotSupported";
   if (code === "deployment.junction_not_supported") return "deployment.results.failure.junctionNotSupported";
   if (code === "deployment.ownership_mismatch") return "deployment.results.failure.ownershipMismatch";
+  if (code === "deployment.security_check_blocked" && reason === "import_basic_check") {
+    return "importWorkflow.errors.securityBlocked";
+  }
   if (code === "deployment.security_check_blocked") return "deployment.results.failure.securityBlocked";
   if (code === "target.ownership_unknown") return "deployment.results.failure.ownershipUnknown";
   if (code === "agent_profile.invalid_capability") return "deployment.results.failure.invalidCapability";
