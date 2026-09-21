@@ -129,7 +129,7 @@ function GraphLegend() {
     <section aria-label={t("relationships.graph.legend.label")} className="sh-graph__legend">
       <h2>{t("relationships.graph.legend.title")}</h2>
       <div className="sh-graph__legend-states">
-        {states.map(([className, line, status]) => (
+        {states.map(([_className, line, status]) => (
           <span className="sh-graph__legend-item" key={status}>
             <span aria-hidden="true" className={`sh-graph__legend-line sh-graph__legend-line--${line}`} />
             {t(`relationships.graph.status.${status}`)}
