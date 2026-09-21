@@ -4,7 +4,7 @@ import { expect, test } from "@playwright/test";
  * Task 5/9 导入关系治理阶段预览验收（DEV-only
  * /__preview/import-wizard?scenario=governance）。
  * 只断言公开角色、可访问名称与确定性事实；全部跑在 mock facade 上。
- * 覆盖：分析后插入治理阶段（5 步流程）、分组确认门槛、单项覆盖、
+ * 覆盖：分析后先确认冲突、再进入治理阶段（5 步流程）、分组确认门槛、单项覆盖、
  * AI 不可用诚实提示、提交后待处理摘要与治理待办入口。
  */
 
@@ -29,7 +29,11 @@ test("routes the import through the governance phase before conflicts", async ({
   await page.getByRole("checkbox", { name: /Browser Helper/ }).click();
   await page.getByRole("button", { name: "分析冲突" }).click();
 
-  // 治理阶段出现在分析与冲突之间；步骤条为 5 步且当前步骤是治理。
+  // 冲突确认先于治理阶段；点击明确入口后进入治理，步骤条为 5 步。
+  await expect(
+    page.getByRole("heading", { name: "处理需要确认的冲突" }),
+  ).toBeVisible({ timeout: 10_000 });
+  await page.getByRole("button", { name: "继续确认关系影响" }).click();
   const heading = page.getByRole("heading", { name: "确认导入后的关系处理" });
   await expect(heading).toBeVisible({ timeout: 10_000 });
   const rail = page.getByRole("list", { name: "导入步骤" });
