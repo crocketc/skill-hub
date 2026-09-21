@@ -1,4 +1,6 @@
 import type { CSSProperties } from "react";
+import { useTranslation } from "react-i18next";
+import { BRAND_DISPLAY_NAMES, BrandTag } from "../../ui/BrandTag";
 import type { AgentDeployment } from "./api";
 
 interface AgentVisual {
@@ -99,7 +101,60 @@ export function readableAgentIdName(id: string): string {
   const lowered = id.toLowerCase();
   if (AGENT_DISPLAY_NAMES[lowered]) return AGENT_DISPLAY_NAMES[lowered];
   const profile = lowered.split(".")[0];
-  return AGENT_DISPLAY_NAMES[profile] ?? id;
+  if (AGENT_DISPLAY_NAMES[profile]) return AGENT_DISPLAY_NAMES[profile];
+  const family = profile.split("-")[0];
+  return AGENT_DISPLAY_NAMES[family] ?? id;
+}
+
+export type AgentKindKey =
+  | "cli"
+  | "desktop"
+  | "ideExtension"
+  | "tui"
+  | "headless"
+  | "acp"
+  | "web"
+  | "mobile"
+  | "bot"
+  | "sharedDirectory"
+  | "unknown";
+
+/** Map an evidence identifier to the user-facing brand used by BrandTag. */
+export function agentBrandKey(id: string): string {
+  const lowered = id.trim().toLowerCase();
+  if (BRAND_DISPLAY_NAMES[lowered]) return lowered;
+  const profile = lowered.split(".")[0];
+  if (BRAND_DISPLAY_NAMES[profile]) return profile;
+  const family = profile.split("-")[0];
+  return BRAND_DISPLAY_NAMES[family] ? family : profile;
+}
+
+export function agentKindKey(id: string): AgentKindKey {
+  const lowered = id.toLowerCase();
+  if (lowered.includes("shared")) return "sharedDirectory";
+  if (lowered.includes("ide") || lowered.includes("extension")) return "ideExtension";
+  if (lowered.includes("desktop")) return "desktop";
+  if (lowered.includes("mobile")) return "mobile";
+  if (lowered.includes("headless")) return "headless";
+  if (lowered.includes("acp")) return "acp";
+  if (lowered.includes("web")) return "web";
+  if (lowered.includes("bot")) return "bot";
+  if (lowered.includes("tui")) return "tui";
+  if (lowered.includes("cli")) return "cli";
+  return "unknown";
+}
+
+export function AgentIdentity({ agentId }: { agentId: string }) {
+  const { t } = useTranslation();
+  const kind = agentKindKey(agentId);
+  return (
+    <span className="sh-agent-presentation" data-agent-id={agentId}>
+      <BrandTag brand={agentBrandKey(agentId)} />
+      <span className="sh-agent-presentation__kind">
+        {t(`agents.kind.${kind}` as never)}
+      </span>
+    </span>
+  );
 }
 
 function AgentMark({ agent }: { agent: AgentDeployment }) {

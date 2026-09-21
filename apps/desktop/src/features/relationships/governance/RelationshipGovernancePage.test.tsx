@@ -336,9 +336,9 @@ describe("RelationshipGovernancePage 清单（按关系边渲染）", () => {
     expect(screen.getByTestId("governance-header-target")).toHaveTextContent("目标");
     expect(screen.getByTestId("governance-header-impact")).toHaveTextContent("影响");
     expect(screen.getByTestId("governance-source-managed:dep-eligible")).toHaveTextContent("导入登记");
-    expect(screen.getByTestId("governance-target-managed:dep-eligible")).toHaveTextContent("codex");
+    expect(screen.getByTestId("governance-target-managed:dep-eligible")).toHaveTextContent("Codex");
     // 影响列展示其他共享消费者。
-    expect(screen.getByTestId("governance-impact-managed:dep-shared")).toHaveTextContent("cursor");
+    expect(screen.getByTestId("governance-impact-managed:dep-shared")).toHaveTextContent("Cursor");
   });
 
   it("shows the four bucket filters with ledger counts and filters by bucket", async () => {

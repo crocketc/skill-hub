@@ -1,6 +1,7 @@
 import { useEffect, useRef, type PointerEvent as ReactPointerEvent, type MouseEvent as ReactMouseEvent, type WheelEvent as ReactWheelEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { displayPath } from "../../../platform/displayPath";
+import { AgentIdentity, readableAgentIdName } from "../../skills/AgentDeploymentIcons";
 import {
   CANVAS_SIZE,
   edgeStatusLabelKey,
@@ -55,7 +56,7 @@ function nodeLabel(
       return fallback;
     }
     case "agent":
-      return node.agent_client_id ?? fallback;
+      return node.agent_client_id ? readableAgentIdName(node.agent_client_id) : fallback;
     case "directory":
       return node.path ? displayPath(node.path) : node.directory_node_id ?? fallback;
     case "conflict":
@@ -342,7 +343,11 @@ export function SkillGraphCanvas({
                 <span aria-hidden="true" className="sh-graph-node__kind">
                   {t(`relationships.graph.nodeKind.${node.kind}`)}
                 </span>
-                <span className="sh-graph-node__label">{label}</span>
+                {node.kind === "agent" && node.agent_client_id ? (
+                  <AgentIdentity agentId={node.agent_client_id} />
+                ) : (
+                  <span className="sh-graph-node__label">{label}</span>
+                )}
               </button>
             );
           })}

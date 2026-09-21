@@ -169,7 +169,7 @@ describe("SkillGraphCanvas interaction", () => {
     const onSelectNode = vi.fn();
     await renderCanvas({ onFocusSkill, onSelectNode });
 
-    fireEvent.click(screen.getByRole("button", { name: "claude-code" }));
+    fireEvent.click(screen.getByRole("button", { name: /Claude/ }));
     expect(onSelectNode).toHaveBeenCalledWith("n-agent-1");
     expect(onFocusSkill).not.toHaveBeenCalled();
 

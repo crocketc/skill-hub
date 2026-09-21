@@ -5,6 +5,7 @@ import { RelationshipRemovalImpactView } from "../../relationshipGovernance/Rela
 import { fingerprintLabelKey, relationshipLabelKey } from "../../relationshipGovernance/relationshipGovernance";
 import { rowNeedsSharedImpactConfirmation } from "./api";
 import { displayPath } from "../../../platform/displayPath";
+import { AgentIdentity } from "../../skills/AgentDeploymentIcons";
 
 export interface GovernanceImpactPreviewProps {
   row: RelationGovernanceRow;
@@ -58,7 +59,7 @@ export function GovernanceImpactPreview({
         <div>
           <dt>{t("relationships.governance.preview.targetLabel")}</dt>
           <dd>
-            <span>{row.relation.agent_client_id}</span>
+            <AgentIdentity agentId={row.relation.agent_client_id} />
             <code>{displayPath(row.relation.path)}</code>
           </dd>
         </div>

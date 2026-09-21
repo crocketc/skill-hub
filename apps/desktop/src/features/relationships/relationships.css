@@ -6,23 +6,28 @@
   min-width: 0;
 }
 
-/* DEV-23：三页共用页内页签。路由级导航语义（nav + aria-current），
- * 视觉与既有 .sh-tabs 一脉相承：胶囊排、计数徽标内联。窄视口可横向滚动。 */
+/* DEV-33：三页共用页内页签。路由级导航语义（nav + aria-current），
+ * 使用轻量下划线层级保持页面标题与内容连续；窄视口只滚动这组页签。 */
 .sh-relationships__nav {
   display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
+  flex-wrap: nowrap;
+  gap: var(--space-4);
+  overflow-x: auto;
+  padding-inline: var(--space-1);
+  scrollbar-width: thin;
 }
 
 .sh-relationships__nav-link {
   align-items: center;
-  border: 1px solid var(--color-border-subtle, color-mix(in srgb, currentColor 18%, transparent));
-  border-radius: 999px;
+  border: 0;
+  border-bottom: 2px solid transparent;
   color: var(--color-text-muted);
   display: inline-flex;
   font-size: var(--font-size-sm);
   gap: var(--space-2);
-  padding: var(--space-1) var(--space-3);
+  flex: 0 0 auto;
+  min-height: 2.5rem;
+  padding: var(--space-2) 0 calc(var(--space-2) - 2px);
   text-decoration: none;
 }
 
@@ -31,8 +36,7 @@
 }
 
 .sh-relationships__nav-link--active {
-  background: var(--color-accent-soft);
-  border-color: transparent;
+  border-bottom-color: var(--color-accent);
   color: var(--color-accent-strong);
   font-weight: 600;
 }
@@ -55,4 +59,22 @@
   min-width: 1.25rem;
   justify-content: center;
   padding: 0 var(--space-1);
+}
+
+.sh-agent-presentation {
+  align-items: center;
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.sh-agent-presentation__kind {
+  border: 1px solid var(--ui-border-subtle);
+  border-radius: var(--radius-xs);
+  color: var(--ui-ink-muted);
+  font-size: var(--font-size-xs);
+  line-height: 1.35;
+  padding: 0 var(--space-1);
+  white-space: nowrap;
 }

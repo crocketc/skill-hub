@@ -685,9 +685,10 @@
       "acp": "ACP",
       "web": "Web",
       "mobile": "移动端",
-      "bot": "Bot",
-      "sharedDirectory": "共享目录",
-      "evidenceTitle": "类型来自该客户端配置档案中声明的适配器证据"
+        "bot": "Bot",
+        "sharedDirectory": "共享目录",
+        "unknown": "Agent",
+        "evidenceTitle": "类型来自该客户端配置档案中声明的适配器证据"
     },
     "status": {
       "accessible": "可访问",

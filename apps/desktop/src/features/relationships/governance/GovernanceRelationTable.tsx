@@ -9,6 +9,7 @@ import {
 } from "../../relationshipGovernance/relationshipGovernance";
 import { rowNeedsSharedImpactConfirmation } from "./api";
 import { displayPath } from "../../../platform/displayPath";
+import { AgentIdentity, readableAgentIdName } from "../../skills/AgentDeploymentIcons";
 
 export interface GovernanceRelationTableProps {
   rows: readonly RelationGovernanceRow[];
@@ -113,13 +114,15 @@ export function GovernanceRelationTable({
                   {t(`relationships.governance.source.${row.relation.origin}` as never)}
                 </td>
                 <td data-testid={`governance-target-${relationId}`}>
-                  <span>{row.relation.agent_client_id}</span>
+                  <AgentIdentity agentId={row.relation.agent_client_id} />
                   <code>{displayPath(row.relation.path)}</code>
                 </td>
                 <td data-testid={`governance-impact-${relationId}`}>
                   {row.impact.other_consumer_agent_ids.length > 0
                     ? t("relationships.governance.impact.otherConsumers", {
-                        agents: row.impact.other_consumer_agent_ids.join("、"),
+                        agents: row.impact.other_consumer_agent_ids
+                          .map(readableAgentIdName)
+                          .join("、"),
                         count: row.impact.other_consumer_agent_ids.length,
                       })
                     : t("relationships.governance.impact.noOtherConsumers")}

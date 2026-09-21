@@ -685,9 +685,10 @@
       "acp": "ACP",
       "web": "Web",
       "mobile": "Mobile",
-      "bot": "Bot",
-      "sharedDirectory": "Shared directory",
-      "evidenceTitle": "Kind comes from the adapter evidence declared in the client profile"
+        "bot": "Bot",
+        "sharedDirectory": "Shared directory",
+        "unknown": "Agent",
+        "evidenceTitle": "Kind comes from the adapter evidence declared in the client profile"
     },
     "status": {
       "accessible": "Accessible",
