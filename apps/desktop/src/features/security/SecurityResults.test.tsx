@@ -38,6 +38,7 @@ interface FacadeOverrides {
   checks?: SecurityCheck[];
   findings?: SecurityFinding[];
   preferences?: SecurityPreferences;
+  runBasicCheck?: (skillId: string, versionId: string) => Promise<void>;
   runLlmCheck?: (skillId: string, versionId: string) => Promise<void>;
   cancelLlmCheck?: (operationId: string) => Promise<void>;
   listRunningLlmChecks?: () => Promise<Array<{ skillId: string; versionId: string; operationId: string }>>;
@@ -49,7 +50,7 @@ interface FacadeOverrides {
   withNotices?: boolean;
 }
 
-async function renderSecurity({ checks, findings, preferences, runLlmCheck, cancelLlmCheck, listRunningLlmChecks, onDisposition, tracker, dispositionRejection, withNotices }: FacadeOverrides) {
+async function renderSecurity({ checks, findings, preferences, runBasicCheck, runLlmCheck, cancelLlmCheck, listRunningLlmChecks, onDisposition, tracker, dispositionRejection, withNotices }: FacadeOverrides) {
   const dispositionCalls: DispositionCall[] = [];
   const fixture = separateCheckFixture();
   const listFindings = vi.fn(async () => findings ?? fixture.findings);
@@ -71,6 +72,7 @@ async function renderSecurity({ checks, findings, preferences, runLlmCheck, canc
       if (dispositionRejection !== undefined) throw dispositionRejection;
     },
     ...(preferences === undefined ? {} : { getPreferences: async () => preferences }),
+    ...(runBasicCheck ? { runBasicCheck: vi.fn(runBasicCheck) } : {}),
     runLlmCheck: runSpy,
     ...(cancelLlmCheck ? { cancelLlmCheck: vi.fn(cancelLlmCheck) } : {}),
     ...(listRunningLlmChecks ? { listRunningLlmChecks: vi.fn(listRunningLlmChecks) } : {}),
@@ -96,6 +98,17 @@ async function renderSecurity({ checks, findings, preferences, runLlmCheck, canc
   const cancelSpy = facade.cancelLlmCheck ?? vi.fn();
   return { dispositionCalls, listFindings, runSpy, cancelSpy, ...view };
 }
+
+it("offers the deterministic basic check action and refreshes its facts", async () => {
+  const runBasicCheck = vi.fn(async () => undefined);
+  const view = await renderSecurity({ runBasicCheck });
+
+  const run = await screen.findByRole("button", { name: "运行基础检查" });
+  fireEvent.click(run);
+
+  await waitFor(() => expect(runBasicCheck).toHaveBeenCalledWith("skill-pdf", "v1"));
+  expect(view.listFindings).toHaveBeenCalledTimes(2);
+});
 
 it("renders basic and LLM checks independently and requires explicit confirmation for high-risk handling", async () => {
   const { dispositionCalls } = await renderSecurity({});

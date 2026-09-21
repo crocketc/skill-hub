@@ -35,6 +35,7 @@ describe("Skill detail evidence panels", () => {
   it("shows current basic findings in the security section", async () => {
     await renderEvidence();
     expect(await screen.findByText("检查发现项")).toBeVisible();
+    expect(screen.getByRole("link", { name: "打开安全检查" })).toHaveAttribute("href", "/library/skill-pdf/security");
     expect(screen.getByText("fixture_rule")).toBeVisible();
     expect(screen.getAllByText(/SKILL\.md/)[0]).toBeVisible();
   });
@@ -44,11 +45,13 @@ describe("Skill detail evidence panels", () => {
     const fixture = detailFixture();
     render(
       <I18nextProvider i18n={i18n}>
-        <SecurityEvidence
-          findings={[{ code: "fixture_rule", disposition: "actionable", file: "SKILL.md", highRisk: false, id: "f-basic", severity: "warning" }]}
-          llmFindings={[{ code: "llm_rule", disposition: "actionable", file: "SKILL.md", highRisk: false, id: "f-llm", severity: "info" }]}
-          summary={fixture.summary}
-        />
+        <MemoryRouter>
+          <SecurityEvidence
+            findings={[{ code: "fixture_rule", disposition: "actionable", file: "SKILL.md", highRisk: false, id: "f-basic", severity: "warning" }]}
+            llmFindings={[{ code: "llm_rule", disposition: "actionable", file: "SKILL.md", highRisk: false, id: "f-llm", severity: "info" }]}
+            summary={fixture.summary}
+          />
+        </MemoryRouter>
       </I18nextProvider>,
     );
 

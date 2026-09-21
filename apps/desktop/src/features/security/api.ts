@@ -34,6 +34,7 @@ export interface SecurityFacade {
     highRiskConfirmed: boolean,
   ): Promise<void>;
   getPreferences?(): Promise<SecurityPreferences>;
+  runBasicCheck?(skillId: string, versionId: string): Promise<void>;
   runLlmCheck?(skillId: string, versionId: string): Promise<void>;
   /** Cancels the running LLM check identified by its native operation id. */
   cancelLlmCheck?(operationId: string): Promise<void>;

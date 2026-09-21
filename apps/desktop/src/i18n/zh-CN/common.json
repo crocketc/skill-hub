@@ -1199,6 +1199,9 @@
       "editNote": "编辑备注",
       "editPurpose": "编辑用途",
       "removeTag": "移除标签 {{tag}}",
+      "security": {
+        "open": "打开安全检查"
+      },
       "tagsFailure": "标签未保存，已恢复为已保存的内容。",
       "fullDetails": "查看编辑完整详情",
       "modules": {
@@ -1340,7 +1343,8 @@
         "projectDeployments": "已添加到项目",
         "purpose": "用途",
         "requirements": "要求",
-        "security": "安全检查",
+        "securityResults": "安全结果",
+        "securityStatus": "安全状态",
         "selection": "选择",
         "source": "来源",
         "tags": "标签",
@@ -1515,6 +1519,7 @@
       "operationHistoryEmpty": "暂无操作日志记录。",
       "operationHistoryLimitation": "操作日志暂未记录 Skill 维度，以下为全局日志记录。",
       "riskSummary": "{{high}} 个高风险，{{pending}} 个待处理项",
+      "openSecurity": "打开安全检查",
       "usageEvidence": "使用证据"
     },
     "relations": {
@@ -1878,6 +1883,10 @@
       "failed": "失败"
     },
     "basicHeading": "基础安全检查",
+    "basic": {
+      "run": "运行基础检查",
+      "runFailed": "基础检查失败：{{message}}"
+    },
     "llmHeading": "LLM 安全检查",
     "experimental": "实验功能，仅供参考",
     "findingsHeading": "发现的问题",
@@ -1911,6 +1920,7 @@
       "runFailed": "AI 检查运行失败：{{message}}"
     },
     "tracker": {
+      "basicCheckLabel": "基础安全检查",
       "dispositionLabel": "处置发现项",
       "dispositionSaved": "已记录处置结果：{{disposition}}",
       "dispositionFailed": "处置未能保存",

@@ -2974,7 +2974,8 @@ a {
 .sh-skill-table [data-column="agent_deployments"] { width: 14rem; min-width: 14rem; }
 .sh-skill-table [data-column="project_deployments"] { width: 9rem; min-width: 9rem; }
 .sh-skill-table [data-column="version"] { width: 9rem; min-width: 9rem; }
-.sh-skill-table [data-column="security"] { width: 22rem; min-width: 22rem; }
+.sh-skill-table [data-column="security_status"] { width: 9rem; min-width: 9rem; }
+.sh-skill-table [data-column="security_results"] { width: 9rem; min-width: 9rem; }
 .sh-skill-table [data-column="source"] { width: 12rem; min-width: 12rem; }
 .sh-skill-table [data-column="ownership"] { width: 12rem; min-width: 12rem; }
 .sh-skill-table [data-column="license"] { width: 8rem; min-width: 8rem; }

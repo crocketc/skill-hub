@@ -42,7 +42,7 @@ it("applies a saved view without copying page or selection", () => {
     name: "Risk review",
     query: {
       filters: { ...DEFAULT_SKILL_QUERY.filters, basicCheck: ["failed"] },
-      sort: { column: "security", direction: "desc" },
+      sort: { column: "security_results", direction: "desc" },
       text: "",
     },
     table: DEFAULT_TABLE_PREFERENCES,

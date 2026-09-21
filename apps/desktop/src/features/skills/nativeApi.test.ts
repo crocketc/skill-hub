@@ -38,6 +38,7 @@ function nativeItem(overrides: Partial<SkillListItem> = {}): SkillListItem {
     project_deployment_count: 0,
     basic_check: "not_checked",
     ai_check: "not_checked",
+    pending_count: 0,
     high_risk_count: 0,
     ...overrides,
   };
@@ -285,7 +286,7 @@ describe("native skill library facade", () => {
     await expect(
       nativeSkillLibraryFacade.listSkills({
         ...DEFAULT_SKILL_QUERY,
-        sort: { column: "security", direction: "asc" },
+        sort: { column: "security_results", direction: "asc" },
       }),
     ).rejects.toSatisfy(
       (error) => error instanceof Error && error.name === "SkillLibraryUnavailableError",

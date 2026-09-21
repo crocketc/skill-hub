@@ -408,6 +408,7 @@ fn status_columns() -> String {
          cp.version_id,v.source_version,\
          COALESCE({latest_basic},'not_checked'),\
          COALESCE({latest_llm},'not_checked'),\
+         (SELECT COUNT(*) FROM check_findings f WHERE f.run_id IN ({latest_basic_id},{latest_llm_id}) AND f.disposition='actionable'),\
          (SELECT COUNT(*) FROM check_findings f WHERE f.run_id IN ({latest_basic_id},{latest_llm_id}) AND f.severity IN ('error','critical') AND f.disposition='actionable'),\
          (SELECT suc.state FROM source_update_checks suc WHERE suc.skill_id=s.id LIMIT 1),\
          s.call_policy,m.invocation_source,m.invocation_field,m.requirements_json"
@@ -438,6 +439,7 @@ struct StatusRow {
     version_label: Option<String>,
     basic_check: Option<String>,
     ai_check: Option<String>,
+    pending_count: i64,
     high_risk_count: i64,
     upstream_state: Option<String>,
     call_policy: String,
@@ -481,6 +483,7 @@ fn read_status_row(id: SkillId, row: StatusRow) -> AppResult<SkillListItem> {
         project_deployment_count: 0,
         basic_check: parse_check_state(row.basic_check)?,
         ai_check: parse_check_state(row.ai_check)?,
+        pending_count: row.pending_count.max(0) as u32,
         high_risk_count: row.high_risk_count.max(0) as u32,
         upstream_state: row
             .upstream_state
@@ -602,12 +605,13 @@ fn map_status_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<(String, StatusRo
             version_label: row.get(14)?,
             basic_check: row.get(15)?,
             ai_check: row.get(16)?,
-            high_risk_count: row.get(17)?,
-            upstream_state: row.get(18)?,
-            call_policy: row.get(19)?,
-            invocation_source: row.get(20)?,
-            invocation_field: row.get(21)?,
-            requirements_json: row.get(22)?,
+            pending_count: row.get(17)?,
+            high_risk_count: row.get(18)?,
+            upstream_state: row.get(19)?,
+            call_policy: row.get(20)?,
+            invocation_source: row.get(21)?,
+            invocation_field: row.get(22)?,
+            requirements_json: row.get(23)?,
         },
     ))
 }

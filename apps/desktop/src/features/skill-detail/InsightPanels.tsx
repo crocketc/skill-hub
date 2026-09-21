@@ -1,4 +1,5 @@
 import { useTranslation } from "react-i18next";
+import { Link } from "react-router-dom";
 import { StatusBadge } from "../../ui/StatusBadge";
 import type { SkillDetailInsights, SkillDetailSummary, SkillFinding } from "./api";
 
@@ -15,6 +16,7 @@ export function SecurityEvidence({
         {t(`skillLibrary.table.checkStates.${summary.basicCheck === "not_run" ? "notRun" : summary.basicCheck}`)}
       </StatusBadge>
       <p>{t("skillDetail.insights.riskSummary", { high: summary.highRiskCount, pending: summary.pendingCount })}</p>
+      <Link className="sh-button sh-button--secondary sh-button--sm" to="security">{t("skillDetail.insights.openSecurity")}</Link>
       {findings.length ? (
         <section>
           <h4>{t("skillDetail.insights.findings")}</h4>

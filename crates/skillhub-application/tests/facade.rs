@@ -3074,6 +3074,7 @@ async fn list_skills_query_returns_real_status_fields_and_sorts_by_agent_deploym
     assert_eq!(alpha_item.project_deployment_count, 0);
     assert_eq!(alpha_item.basic_check, CheckState::Failed);
     assert_eq!(alpha_item.ai_check, CheckState::NotChecked);
+    assert_eq!(alpha_item.pending_count, 1);
     assert_eq!(alpha_item.high_risk_count, 1);
 
     let beta_item = page
@@ -3086,6 +3087,7 @@ async fn list_skills_query_returns_real_status_fields_and_sorts_by_agent_deploym
     assert_eq!(beta_item.current_version, None);
     assert_eq!(beta_item.agent_deployment_count, 0);
     assert_eq!(beta_item.basic_check, CheckState::NotChecked);
+    assert_eq!(beta_item.pending_count, 0);
     assert_eq!(beta_item.high_risk_count, 0);
 
     assert_eq!(page.items[0].display_name, "Alpha");

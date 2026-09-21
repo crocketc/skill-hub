@@ -29,7 +29,8 @@ export type SkillColumnId =
   | "agent_deployments"
   | "project_deployments"
   | "version"
-  | "security"
+  | "security_status"
+  | "security_results"
   | "source"
   | "ownership"
   | "license"
@@ -247,7 +248,8 @@ const SKILL_COLUMN_ORDER = freeze<SkillColumnId[]>([
   "invocation",
   "agent_deployments",
   "project_deployments",
-  "security",
+  "security_status",
+  "security_results",
   "version",
   "source",
   "ownership",
@@ -264,7 +266,8 @@ const DEFAULT_VISIBLE_COLUMNS = freeze<SkillColumnId[]>([
   "invocation",
   "agent_deployments",
   "project_deployments",
-  "security",
+  "security_status",
+  "security_results",
 ]);
 
 const DRAWER_MODULE_ORDER = freeze<DrawerModuleId[]>([

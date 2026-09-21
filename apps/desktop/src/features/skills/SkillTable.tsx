@@ -47,7 +47,7 @@ const LOCKED_COLUMNS: SkillColumnId[] = ["select", "name"];
 // 导出全列集合（审查 C4，2026-09-14）：测试用它做长度/集合断言，
 // 防止新增列时测试夹具静默失守。
 export const COLUMN_IDS: SkillColumnId[] = [
-  "select", "name", "purpose", "tags", "invocation", "agent_deployments", "project_deployments", "version", "security",
+  "select", "name", "purpose", "tags", "invocation", "agent_deployments", "project_deployments", "version", "security_status", "security_results",
   "source", "ownership", "license", "requirements", "lifecycle",
 ];
 
@@ -61,7 +61,8 @@ const COLUMN_LABELS = {
   project_deployments: "skillLibrary.table.columns.projectDeployments",
   purpose: "skillLibrary.table.columns.purpose",
   requirements: "skillLibrary.table.columns.requirements",
-  security: "skillLibrary.table.columns.security",
+  security_results: "skillLibrary.table.columns.securityResults",
+  security_status: "skillLibrary.table.columns.securityStatus",
   select: "skillLibrary.table.columns.selection",
   source: "skillLibrary.table.columns.source",
   tags: "skillLibrary.table.columns.tags",
@@ -132,7 +133,7 @@ function checkTone(state: CheckState) {
   return "info";
 }
 
-function SecurityCell({ row }: { row: SkillTableRow }) {
+function SecurityStatusCell({ row }: { row: SkillTableRow }) {
   const { t } = useTranslation();
   return (
     <div className="sh-skill-table__inline sh-skill-table__security">
@@ -142,6 +143,14 @@ function SecurityCell({ row }: { row: SkillTableRow }) {
       <span className={`sh-status-badge sh-status-badge--${checkTone(row.aiCheck)}`}>
         {t("skillLibrary.table.aiStatus", { state: t(CHECK_LABELS[row.aiCheck]) })}
       </span>
+    </div>
+  );
+}
+
+function SecurityResultsCell({ row }: { row: SkillTableRow }) {
+  const { t } = useTranslation();
+  return (
+    <div className="sh-skill-table__inline sh-skill-table__security-results">
       <span>{t("skillLibrary.table.pendingCount", { count: row.pendingCount })}</span>
       <span>{t("skillLibrary.table.highRiskCount", { count: row.highRiskCount })}</span>
     </div>
@@ -212,7 +221,8 @@ export function createSkillColumns(t: TFunction): ColumnDef<SkillTableRow>[] {
       cell: ({ row }) => <div className="sh-skill-table__version"><span>{row.original.currentVersion}</span>{row.original.upgradeAvailable ? <span>{t("skillLibrary.table.updateAvailable")}</span> : null}</div>,
       header: t(COLUMN_LABELS.version),
     },
-    { id: "security", cell: ({ row }) => <SecurityCell row={row.original} />, header: t(COLUMN_LABELS.security) },
+    { id: "security_status", cell: ({ row }) => <SecurityStatusCell row={row.original} />, header: t(COLUMN_LABELS.security_status) },
+    { id: "security_results", cell: ({ row }) => <SecurityResultsCell row={row.original} />, header: t(COLUMN_LABELS.security_results) },
     { accessorKey: "source", id: "source", cell: ({ row }) => secondary(row.original.source), header: t(COLUMN_LABELS.source) },
     { accessorKey: "ownership", id: "ownership", cell: ({ row }) => secondary(row.original.ownership), header: t(COLUMN_LABELS.ownership) },
     { accessorKey: "license", id: "license", cell: ({ row }) => secondary(row.original.license), header: t(COLUMN_LABELS.license) },

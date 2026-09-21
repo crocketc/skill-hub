@@ -1199,6 +1199,9 @@
       "editNote": "Edit note",
       "editPurpose": "Edit purpose",
       "removeTag": "Remove tag {{tag}}",
+      "security": {
+        "open": "Open security checks"
+      },
       "tagsFailure": "Tags were not saved; the saved tags were restored.",
       "fullDetails": "View and edit full details",
       "modules": {
@@ -1340,7 +1343,8 @@
         "projectDeployments": "Added to projects",
         "purpose": "Purpose",
         "requirements": "Requirements",
-        "security": "Security",
+        "securityResults": "Security results",
+        "securityStatus": "Security status",
         "selection": "Selection",
         "source": "Source",
         "tags": "Tags",
@@ -1515,6 +1519,7 @@
       "operationHistoryEmpty": "No operation journal entries yet.",
       "operationHistoryLimitation": "The operation journal does not record a per-skill dimension yet; the entries below are the global journal.",
       "riskSummary": "{{high}} high-risk and {{pending}} pending findings",
+      "openSecurity": "Open security checks",
       "usageEvidence": "Usage evidence"
     },
     "relations": {
@@ -1878,6 +1883,10 @@
       "failed": "Failed"
     },
     "basicHeading": "Basic security check",
+    "basic": {
+      "run": "Run basic check",
+      "runFailed": "The basic check failed: {{message}}"
+    },
     "llmHeading": "LLM security check",
     "experimental": "Experimental; informational only",
     "findingsHeading": "Findings",
@@ -1911,6 +1920,7 @@
       "runFailed": "AI check failed: {{message}}"
     },
     "tracker": {
+      "basicCheckLabel": "Basic safety check",
       "dispositionLabel": "Dispose of finding",
       "dispositionSaved": "Disposition recorded: {{disposition}}",
       "dispositionFailed": "Failed to save the disposition",

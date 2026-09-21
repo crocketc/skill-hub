@@ -103,7 +103,7 @@ function toTableRow(item: SkillListItem, agentTargets: Map<string, AgentDeployme
     originalDescription: item.original_description,
     originalName: item.runtime_name,
     ownership: item.author ?? undefined,
-    pendingCount: 0,
+    pendingCount: item.pending_count,
     projectDeploymentCount: item.project_deployment_count,
     // M-21 #6：用途列按“用户设置用途优先，空则回退 Skill 原始描述”渲染。
     purpose: item.user_purpose || item.original_description,

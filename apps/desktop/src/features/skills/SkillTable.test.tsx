@@ -77,7 +77,8 @@ const allColumnIds = [
   "invocation",
   "agent_deployments",
   "project_deployments",
-  "security",
+  "security_status",
+  "security_results",
   "version",
   "source",
   "ownership",
@@ -271,7 +272,7 @@ it("offers all supported page sizes and reports the current page range", async (
   expect(screen.getByRole("button", { name: "Next page" })).not.toBeDisabled();
 });
 
-it("reports basic and AI security checks separately with neutral unavailable states", async () => {
+it("reports security status separately from actionable result counts", async () => {
   await renderTable();
 
   const pdfRow = screen.getByRole("row", { name: /PDF Reader/ });
@@ -565,9 +566,9 @@ it("lets security badges wrap-stack instead of forcing single-line max-content",
   const baseDeclarations = baseCss.replace(/\/\*[\s\S]*?\*\//g, "");
   expect(baseDeclarations).not.toMatch(/\.sh-skill-table__security\s*\{[^}]*min-width/);
   // skills.css 侧的换行堆叠契约保持不变。
-  expect(skillsCss).toMatch(/td\[data-column="security"\]\s*\{[^}]*white-space:\s*normal/);
+  expect(skillsCss).toMatch(/td\[data-column="security_status"\]\s*\{[^}]*white-space:\s*normal/);
   expect(skillsCss).toMatch(
-    /td\[data-column="security"\] \.sh-skill-table__inline\s*\{[^}]*flex-wrap:\s*wrap/,
+    /td\[data-column="security_status"\] \.sh-skill-table__inline\s*\{[^}]*flex-wrap:\s*wrap/,
   );
 });
 

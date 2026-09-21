@@ -81,6 +81,16 @@ describe("security native API", () => {
     });
   });
 
+  it("runs the deterministic basic check through the native command", async () => {
+    vi.mocked(executeCommand).mockResolvedValue({ type: "basic_check_result", payload: {} as never });
+
+    await expect(nativeSecurityFacade.runBasicCheck?.("skill-1", "version-1")).resolves.toBeUndefined();
+    expect(executeCommand).toHaveBeenCalledWith({
+      type: "run_basic_check",
+      payload: { skill_id: "skill-1", version_id: "version-1" },
+    });
+  });
+
   it("runs an LLM safety check through the generated command binding", async () => {
     vi.mocked(executeCommand).mockResolvedValue({ type: "llm_safety_check_result", payload: llmResultPayload });
 

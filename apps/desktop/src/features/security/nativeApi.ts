@@ -61,6 +61,13 @@ export const nativeSecurityFacade: SecurityFacade = {
     const result = await executeCommand({ type: "set_finding_disposition", payload: { skill_id: skillId, version_id: versionId, kind: finding.kind, finding_id: finding.id, disposition, high_risk_confirmed: highRiskConfirmed } });
     if (result.type !== "basic_check_result" && result.type !== "llm_safety_check_result") throw new Error("security.disposition_unexpected_result");
   },
+  async runBasicCheck(skillId, versionId) {
+    const result = await executeCommand({
+      type: "run_basic_check",
+      payload: { skill_id: skillId, version_id: versionId },
+    });
+    if (result.type !== "basic_check_result") throw new Error("security.basic_check_unexpected_result");
+  },
   async getPreferences() {
     const result = await queryApplication({ type: "get_desktop_preferences" });
     if (result.type !== "desktop_preferences") throw new Error("security.preferences_unexpected_result");

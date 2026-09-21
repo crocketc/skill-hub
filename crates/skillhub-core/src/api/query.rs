@@ -143,6 +143,10 @@ pub struct SkillListItem {
     pub project_deployment_count: u32,
     pub basic_check: CheckState,
     pub ai_check: CheckState,
+    /// Number of actionable findings across the latest basic and AI checks.
+    /// This is a read-model fact used by the library result column; it is not
+    /// a UI default or a count of high-risk findings only.
+    pub pending_count: u32,
     pub high_risk_count: u32,
     /// Latest explicit upstream observation; absent means the Skill has not
     /// been checked yet in this installation.

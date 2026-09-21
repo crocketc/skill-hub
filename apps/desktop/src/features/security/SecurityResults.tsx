@@ -26,6 +26,8 @@ export function SecurityResults({ facade = unavailableSecurityFacade, skillId, t
   const [preferences, setPreferences] = useState<SecurityPreferences>();
   const [error, setError] = useState<string>();
   const [runError, setRunError] = useState<string>();
+  const [basicRunning, setBasicRunning] = useState(false);
+  const [basicError, setBasicError] = useState<string>();
   const [running, setRunning] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
   useEffect(() => {
@@ -93,6 +95,30 @@ export function SecurityResults({ facade = unavailableSecurityFacade, skillId, t
       // 处置未保存：列表保持原状态，并把原因留在页面上（通知只是补充）。
       // 局部提示与通知的补充说明取自同一段描述，两处不会互相矛盾。
       setDispositionError(describeFailure(reason));
+    }
+  };
+  const handleRunBasic = async () => {
+    if (!facade.runBasicCheck) return;
+    setBasicRunning(true);
+    setBasicError(undefined);
+    try {
+      await runTrackedOperation({
+        kind: "basic_check",
+        label: t("security.tracker.basicCheckLabel"),
+        mode: "phased",
+        notifications,
+        tracker,
+        translate: (key, options) => String(t(key as never, options as never)),
+        successNotice: () => ({ tone: "success", title: t("security.tracker.basicCheckLabel") }),
+        errorNotice: (_error, message) => ({ tone: "danger", title: t("security.basic.runFailed", { message }), detail: message }),
+        describeError: describeFailure,
+        run: () => facade.runBasicCheck!(skillId, versionId),
+      });
+      setReloadKey((key) => key + 1);
+    } catch (reason: unknown) {
+      setBasicError(describeFailure(reason));
+    } finally {
+      setBasicRunning(false);
     }
   };
   const llmConfigured = preferences ? preferences.llmProvider.trim().length > 0 : true;
@@ -194,6 +220,8 @@ export function SecurityResults({ facade = unavailableSecurityFacade, skillId, t
         <section aria-labelledby="basic-security-heading" className="sh-workflow-card">
           <h2 id="basic-security-heading">{t("security.basicHeading")}</h2>
           <CheckSummary check={checkByKind("basic")} />
+          {facade.runBasicCheck ? <Button disabled={basicRunning} loading={basicRunning} onClick={() => void handleRunBasic()} size="sm">{t("security.basic.run")}</Button> : null}
+          {basicError ? <p role="alert">{t("security.basic.runFailed", { message: basicError })}</p> : null}
         </section>
         <section aria-labelledby="llm-security-heading" className="sh-workflow-card">
           <h2 id="llm-security-heading">{t("security.llmHeading")}</h2>

@@ -627,6 +627,10 @@ it("resets defaults, keeps modules independently scrollable, and links to full d
   expect(screen.getByRole("link", { name: "View and edit full details" })).toHaveClass(
     "sh-button--primary",
   );
+  expect(screen.getByRole("link", { name: "Open security checks" })).toHaveAttribute(
+    "href",
+    "/library/skill-pdf/security",
+  );
   const toolbar = document.querySelector(".sh-skill-drawer__toolbar");
   expect(toolbar?.firstElementChild).toContainElement(
     screen.getByRole("link", { name: "View and edit full details" }),

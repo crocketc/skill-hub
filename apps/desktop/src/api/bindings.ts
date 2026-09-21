@@ -3094,6 +3094,12 @@ export type SkillListItem = {
 	project_deployment_count: number,
 	basic_check: CheckState,
 	ai_check: CheckState,
+	/**
+	 *  Number of actionable findings across the latest basic and AI checks.
+	 *  This is a read-model fact used by the library result column; it is not
+	 *  a UI default or a count of high-risk findings only.
+	 */
+	pending_count: number,
 	high_risk_count: number,
 	/**
 	 *  Latest explicit upstream observation; absent means the Skill has not
