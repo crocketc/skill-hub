@@ -9,7 +9,7 @@ use skillhub_core::import::{
 };
 use skillhub_core::source::{SourceDescriptor, SourceKind, SourceLocator};
 use skillhub_core::{OperationId, SkillId};
-use skillhub_storage::Database;
+use skillhub_storage::{Database, CURRENT_SCHEMA_VERSION};
 
 /// observed_deployments 等表对 skills(id) 有外键约束，先落父行。
 fn insert_skill(database: &Database, skill_id: SkillId) {
@@ -40,7 +40,7 @@ fn provenance(skill_id: SkillId, path: &str, client: Option<&str>) -> ImportProv
 #[test]
 fn schema_pins_migration_0013() {
     let database = Database::open_in_memory().unwrap();
-    assert_eq!(database.schema_version().unwrap(), 16);
+    assert_eq!(database.schema_version().unwrap(), CURRENT_SCHEMA_VERSION);
 }
 
 #[test]

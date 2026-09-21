@@ -57,7 +57,7 @@ pub use import_repository::ImportRepository;
 pub use llm_connection_test_repository::{LlmConnectionTestRepository, PersistedConnectionTest};
 pub use llm_profile_repository::LlmProfileRepository;
 pub use llm_provider_repository::LlmProviderRepository;
-pub use migrations::MigrationReport;
+pub use migrations::{MigrationReport, CURRENT_SCHEMA_VERSION};
 pub use operation_repository::OperationRepositorySqlite;
 pub use project_repository::{ProjectRepository, VersionPin};
 pub use provenance_repository::ProvenanceRepository;

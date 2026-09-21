@@ -10,7 +10,7 @@ use skillhub_core::duplicate::{
 use skillhub_core::relationship::{
     ConflictCaseFact, ConflictClassification, ConflictEvidence, ConflictKind,
 };
-use skillhub_storage::Database;
+use skillhub_storage::{Database, CURRENT_SCHEMA_VERSION};
 
 fn case(conflict_id: &str) -> ConflictCaseFact {
     ConflictCaseFact {
@@ -131,7 +131,7 @@ fn adopting_a_missing_analysis_record_fails_honestly() {
 }
 
 #[test]
-fn v14_database_upgrades_to_0015_and_keeps_conflict_facts_readable() {
+fn v14_database_upgrades_to_current_schema_and_keeps_conflict_facts_readable() {
     let workspace = tempfile::tempdir().unwrap();
     let db_path = workspace.path().join("upgrade.sqlite");
     {
@@ -165,7 +165,10 @@ fn v14_database_upgrades_to_0015_and_keeps_conflict_facts_readable() {
         connection.pragma_update(None, "user_version", 14).unwrap();
     }
     let upgraded = Database::open(&db_path).unwrap();
-    assert_eq!(upgraded.schema_version().unwrap(), 16);
+    assert_eq!(
+        upgraded.schema_version().unwrap(),
+        CURRENT_SCHEMA_VERSION
+    );
     assert!(upgraded.has_table("conflict_analysis_records").unwrap());
     let cases = upgraded.conflict_repository().list_cases().unwrap();
     assert_eq!(cases.len(), 1);

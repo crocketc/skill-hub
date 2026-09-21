@@ -15,7 +15,7 @@ use skillhub_core::source::{SourceDescriptor, SourceKind, SourceLocator};
 use skillhub_core::{
     DeploymentId, ObservedMatchState, ObservedOrigin, OwnershipState, SkillId, VersionId,
 };
-use skillhub_storage::Database;
+use skillhub_storage::{Database, CURRENT_SCHEMA_VERSION};
 
 fn skill(db: &Database, skill_id: SkillId) {
     db.connection_for_test()
@@ -190,7 +190,7 @@ fn relationship_revision_advances_at_fact_repository_boundaries_but_not_for_ai_a
 #[test]
 fn schema_0015_upgrades_to_relationship_projection_state_without_editing_old_migrations() {
     let db = Database::open_in_memory().expect("database");
-    assert_eq!(db.schema_version().unwrap(), 16);
+    assert_eq!(db.schema_version().unwrap(), CURRENT_SCHEMA_VERSION);
     assert_eq!(
         db.relationship_repository()
             .relationship_revision()

@@ -10,6 +10,7 @@ pub use database::{
     ConflictRepository, CustomAgentRepository, Database, DeploymentRepository,
     DeploymentRepositorySqlite, DirectoryRepository, GovernanceTaskRepository, ImportRepository,
     LlmConnectionTestRepository, LlmProfileRepository, MigrationReport, OperationRepositorySqlite,
+    CURRENT_SCHEMA_VERSION,
     PendingApplicationUpdate, PersistedConnectionTest, PersistedTranslation, PhysicalTargetRegistration,
     ProjectRepository, RecoveryPoint, RelationshipImpactSnapshot, RelationshipRepository,
     ScanRepository, SearchCandidateRepository, SearchRepository, TargetRepository,
