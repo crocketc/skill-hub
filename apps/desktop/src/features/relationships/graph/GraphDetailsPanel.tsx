@@ -1,6 +1,7 @@
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
 import { formatTimestamp, resolveLocale } from "../../../i18n";
+import { displayPath } from "../../../platform/displayPath";
 import type { RelationshipGraphFactCounts } from "../../../api/bindings";
 import {
   edgeStatusLabelKey,
@@ -30,11 +31,11 @@ function nodeLabel(node: ProjectedNode["node"], fallback: string): string {
     case "agent":
       return node.agent_client_id ?? fallback;
     case "directory":
-      return node.path ?? node.directory_node_id ?? fallback;
+      return node.path ? displayPath(node.path) : node.directory_node_id ?? fallback;
     case "conflict":
       return node.conflict_id ?? fallback;
     case "source":
-      return node.path ?? fallback;
+      return node.path ? displayPath(node.path) : fallback;
     default:
       return fallback;
   }

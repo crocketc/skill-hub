@@ -227,4 +227,20 @@ describe("SkillGraphCanvas interaction", () => {
     expect(onSelectEdge).toHaveBeenCalledWith("e1");
     expect(CANVAS_SIZE.width).toBeGreaterThan(0);
   });
+
+  it("pans when the pointer starts on the blank graph layer", async () => {
+    const onViewportChange = vi.fn();
+    await renderCanvas({ onViewportChange, viewport: { x: 10, y: 20, zoom: 1 } });
+
+    const layer = screen.getByTestId("skill-graph-surface").querySelector(".sh-graph-canvas__layer");
+    expect(layer).toBeTruthy();
+    const pointerDown = new MouseEvent("pointerdown", { bubbles: true, clientX: 100, clientY: 120 });
+    Object.defineProperty(pointerDown, "pointerId", { value: 7 });
+    fireEvent(layer, pointerDown);
+    const pointerMove = new MouseEvent("pointermove", { bubbles: true, clientX: 140, clientY: 155 });
+    Object.defineProperty(pointerMove, "pointerId", { value: 7 });
+    fireEvent(screen.getByTestId("skill-graph-surface"), pointerMove);
+
+    expect(onViewportChange).toHaveBeenLastCalledWith({ x: 50, y: 55, zoom: 1 });
+  });
 });

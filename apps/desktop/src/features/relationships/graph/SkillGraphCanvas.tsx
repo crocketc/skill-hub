@@ -1,5 +1,6 @@
 import { useEffect, useRef, type PointerEvent as ReactPointerEvent, type MouseEvent as ReactMouseEvent, type WheelEvent as ReactWheelEvent } from "react";
 import { useTranslation } from "react-i18next";
+import { displayPath } from "../../../platform/displayPath";
 import {
   CANVAS_SIZE,
   edgeStatusLabelKey,
@@ -56,11 +57,11 @@ function nodeLabel(
     case "agent":
       return node.agent_client_id ?? fallback;
     case "directory":
-      return node.path ?? node.directory_node_id ?? fallback;
+      return node.path ? displayPath(node.path) : node.directory_node_id ?? fallback;
     case "conflict":
       return node.conflict_id ?? fallback;
     case "source":
-      return node.path ?? fallback;
+      return node.path ? displayPath(node.path) : fallback;
     default:
       return fallback;
   }
@@ -169,7 +170,8 @@ export function SkillGraphCanvas({
   };
 
   const handlePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
-    if (event.target !== event.currentTarget) return;
+    const target = event.target as Element;
+    if (target.closest(".sh-graph-node, .sh-graph-edge__hit")) return;
     dragState.current = {
       pointerId: event.pointerId,
       startX: event.clientX,
