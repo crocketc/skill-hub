@@ -55,7 +55,7 @@ export interface GraphUrlState {
 export function parseGraphSearchParams(params: URLSearchParams): GraphUrlState {
   const list = (name: string) =>
     (params.get(name) ?? "")
-      .split(",")
+      .split(/[,，]/)
       .map((item) => item.trim())
       .filter(Boolean);
   return {
@@ -391,7 +391,7 @@ export function SkillGraphPage({
             className="sh-button sh-button--secondary sh-button--sm"
             onClick={() =>
               updateParams({
-                tags: tagsDraft.split(",").map((tag) => tag.trim()).filter(Boolean),
+                tags: [...new Set(tagsDraft.split(/[,，]/).map((tag) => tag.trim()).filter(Boolean))],
               })
             }
           >

@@ -65,7 +65,7 @@ export function ProjectQuickDrawer({ project, open, accessState, nextStep, facad
     setTagsError(undefined);
     try {
       const withDetails = await facade.updateDetails(project.id, { name: draftName.trim(), note: draftNote });
-      const nextTags = draftTags.split(",").map((tag) => tag.trim()).filter(Boolean);
+      const nextTags = [...new Set(draftTags.split(/[,，]/).map((tag) => tag.trim()).filter(Boolean))];
       try {
         const withTags = await facade.setTags(project.id, nextTags);
         setEditing(false);
