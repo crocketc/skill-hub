@@ -18,6 +18,12 @@ describe("ImportFacade contract", () => {
     );
   });
 
+  it("classifies canonical GitHub repository URLs as Git sources", async () => {
+    await expect(parseSourceInput("https://github.com/owner/repo")).resolves.toEqual(
+      expect.objectContaining({ kind: "git", displayTarget: "https://github.com/owner/repo" }),
+    );
+  });
+
   it("rejects acquisition and commit at the production boundary", async () => {
     const source = await unavailableImportFacade.parseSource("C:\\Skills\\pdf");
 

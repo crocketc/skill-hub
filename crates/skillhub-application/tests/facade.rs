@@ -1,3 +1,5 @@
+use std::process::Command;
+
 use skillhub_application::LocalApplicationFacade;
 use skillhub_core::check::CheckRepository;
 use skillhub_core::{
@@ -1718,6 +1720,64 @@ async fn discover_import_candidates_query_reads_local_skill_directories() {
     assert_eq!(candidates.len(), 1);
     assert_eq!(candidates[0].marker, "SKILL.md");
     assert_eq!(candidates[0].runtime_name, "notes");
+}
+
+#[tokio::test]
+async fn discover_import_candidates_acquires_git_sources_and_retains_the_source_coordinate() {
+    let repository = tempfile::tempdir().expect("git source");
+    run_git(repository.path(), &["init"]);
+    run_git(
+        repository.path(),
+        &["config", "user.email", "skillhub-tests@example.com"],
+    );
+    run_git(
+        repository.path(),
+        &["config", "user.name", "SkillHub Tests"],
+    );
+    std::fs::create_dir_all(repository.path().join("pdf")).expect("skill directory");
+    std::fs::write(repository.path().join("pdf/SKILL.md"), "# PDF\n").expect("skill marker");
+    run_git(repository.path(), &["add", "."]);
+    run_git(
+        repository.path(),
+        &["commit", "--no-gpg-sign", "--no-verify", "-m", "fixture"],
+    );
+
+    let source_url = format!(
+        "file:///{}",
+        repository.path().to_string_lossy().replace('\\', "/")
+    );
+    let source = SourceDescriptor::new(SourceKind::Git, SourceLocator::git_url(source_url));
+    let facade = LocalApplicationFacade::new(Database::open_in_memory().expect("database"));
+
+    let result = facade
+        .query(RootAppQuery::DiscoverImportCandidates(
+            DiscoverImportCandidates {
+                source: source.clone(),
+            },
+        ))
+        .await
+        .expect("remote candidate discovery");
+    let AppQueryResult::ImportCandidates(candidates) = result else {
+        panic!("expected import candidates");
+    };
+    assert_eq!(candidates.len(), 1);
+    assert_eq!(candidates[0].runtime_name, "pdf");
+    assert_eq!(candidates[0].source, source);
+    assert!(std::path::Path::new(&candidates[0].absolute_root).is_dir());
+}
+
+fn run_git(repository: &std::path::Path, args: &[&str]) {
+    let output = Command::new("git")
+        .current_dir(repository)
+        .args(args)
+        .output()
+        .expect("invoke git fixture");
+    assert!(
+        output.status.success(),
+        "git fixture command {:?} failed: {}",
+        args,
+        String::from_utf8_lossy(&output.stderr)
+    );
 }
 
 #[tokio::test]

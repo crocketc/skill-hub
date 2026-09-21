@@ -189,19 +189,29 @@ export function parseSourceInput(input: string): Promise<SourceDescriptor> {
 
   if (npxMatch?.[1]) {
     return Promise.resolve({
-      displayTarget: npxMatch[1].trim(),
+      displayTarget: npxMatch[1].trim().split(/\s+/)[0] ?? "",
       executesCommand: false,
       input: trimmed,
       kind: "npx_reference",
     });
   }
 
-  if (/^https?:\/\//i.test(trimmed)) {
+  if (/^(?:github|gitlab):[^\s/]+\/.+/i.test(trimmed)) {
     return Promise.resolve({
       displayTarget: trimmed,
       executesCommand: false,
       input: trimmed,
-      kind: "url",
+      kind: "git",
+    });
+  }
+
+  if (/^https?:\/\//i.test(trimmed)) {
+    const repositoryUrl = /^https:\/\/(?:www\.)?(?:github\.com|gitlab\.com)\/[\w.@_-]+(?:\/[\w.@_-]+)+\/?(?:\.git)?$/i;
+    return Promise.resolve({
+      displayTarget: trimmed,
+      executesCommand: false,
+      input: trimmed,
+      kind: repositoryUrl.test(trimmed) ? "git" : "url",
     });
   }
 

@@ -25,7 +25,9 @@ use skillhub_adapters::llm::HttpLlmTaskRunner;
 use skillhub_adapters::scanner::ScanService;
 use skillhub_adapters::security::BasicScanner;
 use skillhub_adapters::source::{
-    cleanup_stale_downloads, stale_download_retention, RepoDiscoveryProvider, SkillsShProvider,
+    cleanup_stale_downloads, stale_download_retention, AcquiredSource, AcquisitionLimits,
+    ArchiveExtractor, GixSourceFetcher, HttpsSourceFetcher, RepoDiscoveryProvider,
+    SkillsShProvider,
 };
 use skillhub_core::api::{
     ApplySourceUpdate, BasicCheckResult, BatchTranslationItemFailure, BatchTranslationOutcome,
@@ -133,6 +135,9 @@ pub struct LocalApplicationFacade {
     external_link_service: ExternalLinkService,
     llm_runs: Mutex<HashMap<(String, String), RunningLlmCheck>>,
     upstream_origins: Mutex<HashMap<String, skillhub_core::UpstreamOrigin>>,
+    /// Keeps remote acquisition workspaces alive from discovery through import
+    /// preparation/commit. Candidate paths are valid while the facade owns it.
+    acquired_import_sources: Mutex<HashMap<String, AcquiredSource>>,
 }
 
 /// One in-flight LLM check: its externally visible operation id plus the flag
@@ -1736,6 +1741,7 @@ impl LocalApplicationFacade {
             external_link_service: ExternalLinkService::new(),
             llm_runs: Mutex::new(HashMap::new()),
             upstream_origins: Mutex::new(HashMap::new()),
+            acquired_import_sources: Mutex::new(HashMap::new()),
             llm_credentials: Arc::new(SessionCredentialStore::default()),
             llm_admin: None,
             network_gate: NetworkGate::open(),
@@ -1810,6 +1816,7 @@ impl LocalApplicationFacade {
             external_link_service: ExternalLinkService::new(),
             llm_runs: Mutex::new(HashMap::new()),
             upstream_origins: Mutex::new(HashMap::new()),
+            acquired_import_sources: Mutex::new(HashMap::new()),
             llm_credentials: Arc::new(SessionCredentialStore::default()),
             llm_admin: None,
             network_gate: NetworkGate::open(),
@@ -5887,8 +5894,9 @@ impl ApplicationFacade for LocalApplicationFacade {
             }
             AppQuery::DiscoverImportCandidates(request) => {
                 let source = request.source;
-                let Some(root) = source.locator.as_local_path().cloned() else {
-                    return Err(unsupported("query.discover_import_candidates"));
+                let root = match source.locator.as_local_path().cloned() {
+                    Some(root) => root,
+                    None => self.acquire_import_source(&source).await?,
                 };
                 let mut candidates = SkillDetector::default().detect(root.clone(), source)?;
                 // DEV-3：读取每个候选的 SKILL.md frontmatter `name`，供界面
@@ -6396,6 +6404,82 @@ impl LocalApplicationFacade {
                 .hash_tree_read_only(Path::new(&candidate.absolute_root))
                 .ok()
         })
+    }
+
+    /// Materializes a remote import into a bounded temporary workspace. The
+    /// workspace is retained because candidate paths are reused by analyze,
+    /// prepare, and commit after discovery returns.
+    async fn acquire_import_source(&self, source: &SourceDescriptor) -> AppResult<PathBuf> {
+        let cache_key = serde_json::to_string(source)
+            .map_err(|_| internal("query.discover_import_candidates.key"))?;
+        if let Some(root) = self
+            .acquired_import_sources
+            .lock()
+            .map_err(|_| internal("query.discover_import_candidates.acquire"))?
+            .get(&cache_key)
+            .map(|acquired| acquired.root().to_path_buf())
+        {
+            return Ok(root);
+        }
+        self.ensure_network_enabled()?;
+        let acquired = match (&source.kind, &source.locator) {
+            (skillhub_core::SourceKind::Git, SourceLocator::GitUrl(url)) => {
+                GixSourceFetcher::default()
+                    .fetch(url)
+                    .await
+                    .map_err(|error| {
+                        AppError::new(ErrorCode::OperationConflict, Severity::Warning)
+                            .with_param("reason", error.code.as_str())
+                            .with_param("detail", error.to_string())
+                            .with_action(RecoveryAction::Retry)
+                    })?
+            }
+            (skillhub_core::SourceKind::Https, SourceLocator::HttpsUrl(url)) => {
+                let downloaded = HttpsSourceFetcher::default()
+                    .fetch(url)
+                    .await
+                    .map_err(|error| {
+                        AppError::new(ErrorCode::OperationConflict, Severity::Warning)
+                            .with_param("reason", error.code.as_str())
+                            .with_param("detail", error.to_string())
+                            .with_action(RecoveryAction::Retry)
+                    })?;
+                if !is_supported_remote_archive(url) {
+                    return Err(AppError::new(ErrorCode::InvalidInput, Severity::Error)
+                        .with_param("reason", "source.archive_required")
+                        .with_param("detail", "HTTPS imports must point to a ZIP or TAR archive")
+                        .with_action(RecoveryAction::Acknowledge));
+                }
+                let named_archive = downloaded.root().join("source.zip");
+                std::fs::rename(downloaded.root().join("source"), &named_archive).map_err(
+                    |error| {
+                        AppError::new(ErrorCode::InternalError, Severity::Error)
+                            .with_param("source", error.to_string())
+                            .with_action(RecoveryAction::Retry)
+                    },
+                )?;
+                // ArchiveExtractor owns a separate bounded workspace. The
+                // downloaded workspace is dropped after extraction completes.
+                drop(downloaded);
+                ArchiveExtractor::new(AcquisitionLimits::default())
+                    .extract(named_archive)
+                    .map_err(|error| {
+                        AppError::new(ErrorCode::InvalidInput, Severity::Error)
+                            .with_param("reason", error.code.as_str())
+                            .with_param("detail", error.to_string())
+                            .with_action(RecoveryAction::Acknowledge)
+                    })?
+            }
+            _ => {
+                return Err(unsupported("query.discover_import_candidates"));
+            }
+        };
+        let root = acquired.root().to_path_buf();
+        self.acquired_import_sources
+            .lock()
+            .map_err(|_| internal("query.discover_import_candidates.store"))?
+            .insert(cache_key, acquired);
+        Ok(root)
     }
 
     /// Import is a write boundary: run the deterministic scanner against the
@@ -9075,6 +9159,17 @@ fn import_markdown_files(root: &str) -> Vec<String> {
     files.sort();
     files.truncate(32);
     files
+}
+
+fn is_supported_remote_archive(url: &str) -> bool {
+    let path = url
+        .split(['?', '#'])
+        .next()
+        .unwrap_or(url)
+        .to_ascii_lowercase();
+    [".zip", ".tar", ".tar.gz", ".tgz", ".tar.bz2", ".tbz2"]
+        .iter()
+        .any(|suffix| path.ends_with(suffix))
 }
 
 fn read_import_evidence(root: &str, files: &[String]) -> AppResult<String> {

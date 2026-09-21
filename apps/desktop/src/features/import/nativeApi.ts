@@ -24,10 +24,64 @@ import {
 import { normalizeWindowsPath } from "../../platform/directoryPicker";
 
 function nativeSource(source: SourceDescriptor) {
-  if (source.kind !== "local_path") {
-    throw new Error("import.remote_download_not_wired");
+  if (source.kind === "local_path") {
+    return { kind: "local" as const, locator: { local_path: normalizeWindowsPath(source.displayTarget) } };
   }
-  return { kind: "local" as const, locator: { local_path: normalizeWindowsPath(source.displayTarget) } };
+  if (source.kind === "url") {
+    return { kind: "https" as const, locator: { https_url: source.displayTarget } };
+  }
+  if (source.kind === "git") {
+    return { kind: "git" as const, locator: { git_url: canonicalGitSource(source.displayTarget) } };
+  }
+  if (source.kind === "npx_reference") {
+    const target = source.displayTarget.trim().split(/\s+/)[0] ?? "";
+    if (/^(?:github|gitlab):/i.test(target)) {
+      return nativeSource({ ...source, kind: "git", displayTarget: target });
+    }
+    if (/^[^/\s]+\/[^/\s]+$/.test(target)) {
+      return nativeSource({ ...source, kind: "git", displayTarget: `github:${target}` });
+    }
+    if (/^https:\/\//i.test(target)) {
+      return nativeSource({ ...source, kind: "url", displayTarget: target });
+    }
+    throw new Error("import.source_not_supported");
+  }
+  throw new Error("import.source_not_supported");
+}
+
+function canonicalGitSource(value: string): string {
+  if (/^github:/i.test(value)) return `https://github.com/${value.slice("github:".length).replace(/\/$/, "")}`;
+  if (/^gitlab:/i.test(value)) return `https://gitlab.com/${value.slice("gitlab:".length).replace(/\/$/, "")}`;
+  if (/^git\+https:\/\//i.test(value)) return value.replace(/^git\+/, "");
+  return value;
+}
+
+function candidateSource(source: NativeImportCandidate["source"]): SourceDescriptor {
+  if (source.locator.local_path) {
+    return {
+      displayTarget: normalizeWindowsPath(source.locator.local_path),
+      executesCommand: false,
+      input: normalizeWindowsPath(source.locator.local_path),
+      kind: "local_path",
+    };
+  }
+  if (source.locator.https_url) {
+    return {
+      displayTarget: source.locator.https_url,
+      executesCommand: false,
+      input: source.locator.https_url,
+      kind: "url",
+    };
+  }
+  if (source.locator.git_url) {
+    return {
+      displayTarget: source.locator.git_url,
+      executesCommand: false,
+      input: source.locator.git_url,
+      kind: "git",
+    };
+  }
+  throw new Error("import.source_not_supported");
 }
 
 function candidateId(candidate: NativeImportCandidate): string {
@@ -59,12 +113,7 @@ function toCandidate(candidate: NativeImportCandidate): ImportCandidate {
     frontmatterName: candidate.frontmatter_name ?? null,
     ownership: ownership(candidate.ownership),
     path: normalizeWindowsPath(candidate.absolute_root),
-    source: {
-      displayTarget: normalizeWindowsPath(candidate.source.locator.local_path ?? candidate.absolute_root),
-      executesCommand: false,
-      input: normalizeWindowsPath(candidate.source.locator.local_path ?? candidate.absolute_root),
-      kind: "local_path",
-    },
+    source: candidateSource(candidate.source),
   };
 }
 

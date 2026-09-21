@@ -406,12 +406,31 @@ describe("native import facade", () => {
     });
   });
 
-  it("distinguishes recognized remote sources from unsupported remote acquisition", async () => {
+  it("passes recognized remote Git sources to the native acquisition boundary", async () => {
+    vi.mocked(queryApplication).mockResolvedValue({
+      type: "import_candidates",
+      payload: [{
+        absolute_root: "C:/Temp/skillhub-acquired/pdf",
+        default_action: "review",
+        marker: "SKILL.md",
+        ownership: "downloaded_source",
+        ownership_detail: null,
+        relative_root: "pdf",
+        runtime_name: "pdf",
+        source: { kind: "git", locator: { git_url: "https://github.com/example/skills" } },
+      }],
+    });
     const source = await nativeImportFacade.parseSource("https://github.com/example/skills");
+    const [candidate] = await nativeImportFacade.acquireCandidates(source);
 
-    await expect(nativeImportFacade.acquireCandidates(source)).rejects.toThrow(
-      "import.remote_download_not_wired",
-    );
+    expect(queryApplication).toHaveBeenCalledWith({
+      type: "discover_import_candidates",
+      payload: { source: { kind: "git", locator: { git_url: "https://github.com/example/skills" } } },
+    });
+    expect(candidate.source).toEqual(expect.objectContaining({
+      kind: "git",
+      displayTarget: "https://github.com/example/skills",
+    }));
   });
 
   it("maps the independent action to the decision allowed by native conflict analysis", async () => {
