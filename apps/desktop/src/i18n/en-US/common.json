@@ -1753,6 +1753,10 @@
   },
   "deployment": {
     "eyebrow": "Safe addition",
+    "dimension": {
+      "agent": "Agent",
+      "project": "Project"
+    },
     "errors": {
       "generic": "The add operation failed ({{code}}). Please retry; note the error code if it persists."
     },
@@ -1798,7 +1802,9 @@
       "expandAgents": "Expand linked agents ({{count}})",
       "expandAgentsHint": "Adds the agents associated with the selected projects to the target selection.",
       "nonAtomicNotice": "The batch commits per skill and per target and is not atomic: partial success does not roll back completed parts.",
-      "committing": "Adding, please wait; the batch is not atomic, per-target results appear once finished."
+      "committing": "Adding, please wait; the batch is not atomic, per-target results appear once finished.",
+      "technicalDetails": "Technical details",
+      "skillId": "Skill ID"
     },
     "mode": {
       "label": "Deployment mode",
@@ -1807,11 +1813,16 @@
       "directory_junction": "Directory junction",
       "managed_copy": "Managed copy",
       "symbolic_link_unavailable": "This target does not support symbolic links",
-      "directory_junction_unavailable": "This target does not support directory junctions"
+      "directory_junction_unavailable": "This target does not support directory junctions",
+      "userLink": "Link deployment",
+      "userCopy": "Copy deployment",
+      "userLinkUnavailable": "This target does not support link deployment; copy deployment will be used instead",
+      "technical": "Implementation"
     },
     "name_mismatch": "The skill folder name does not match the name field in SKILL.md; agents may not recognize this skill. Fix it and import again.",
     "results": {
       "heading": "Addition results",
+      "manageDeployment": "Manage this deployment",
       "status": {
         "succeeded": "Succeeded",
         "failed": "Failed",

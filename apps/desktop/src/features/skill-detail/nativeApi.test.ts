@@ -383,6 +383,49 @@ describe("native skill detail facade", () => {
     });
   });
 
+  it("resolves a relation recorded with the physical target id (DEV-22-A)", async () => {
+    vi.clearAllMocks();
+    vi.mocked(queryApplication)
+      .mockResolvedValueOnce({
+        type: "deployment_relations",
+        payload: [{
+          id: "deployment-1",
+          skill_id: "skill-1",
+          version_id: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          // 真实提交写的是物理目标 id；详情/关系页必须仍能回查到目标。
+          target_id: "fs:codex",
+          state: "deployed",
+          mode: "managed_copy",
+          managed: true,
+          runtime_name: "pdf-reader",
+          expected_hash: "sha256:tree",
+          observed_hash: "sha256:tree",
+        }],
+      })
+      .mockResolvedValueOnce({
+        type: "deployment_targets",
+        payload: [{
+          id: "codex-global",
+          label: "Codex CLI",
+          path: "C:/Users/demo/.codex/skills/",
+          available: true,
+          physical_id: "fs:codex",
+          modes: ["managed_copy"],
+        }],
+      });
+
+    await expect(nativeSkillDetailFacade.getRelations("skill-1")).resolves.toEqual([{
+      affectedByCurrentVersion: true,
+      id: "deployment-1",
+      kind: "agent",
+      label: "Codex CLI",
+      logicalTarget: "fs:codex",
+      physicalTarget: "C:/Users/demo/.codex/skills/pdf-reader",
+      pinned: false,
+      version: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    }]);
+  });
+
   it("maps the persisted journal into the operation history with an honest limitation", async () => {
     vi.clearAllMocks();
     vi.mocked(queryApplication)

@@ -120,11 +120,15 @@ it("renders governed deployment relations with user-facing relationship labels",
 });
 
 it("keeps the existing deployment rows and undeploy entries unchanged", async () => {
+  const user = userEvent.setup();
   const onUndeploy = vi.fn();
   await renderPanel({ onUndeploy });
 
   expect(screen.getAllByTestId("physical-target")).toHaveLength(1);
   expect(screen.getByRole("button", { name: "从 Codex CLI 移除" })).toBeVisible();
+  // DEV-21-A：部署成功后「移除部署并恢复原状」在详情页可达——点击即进入移除流程。
+  await user.click(screen.getByRole("button", { name: "从 Codex CLI 移除" }));
+  expect(onUndeploy).toHaveBeenCalledWith(expect.objectContaining({ id: "deployment-1", label: "Codex CLI" }));
 });
 
 it("opens the deterministic removal impact preview per governed relation", async () => {

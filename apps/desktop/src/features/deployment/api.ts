@@ -2,6 +2,34 @@ import type { DeploymentPlan as NativeDeploymentPlan } from "../../api/bindings"
 import { describeNativeError, type NativeAppError } from "../../api/nativeErrors";
 
 export type DeploymentMode = "symbolic_link" | "directory_junction" | "managed_copy";
+
+/**
+ * 用户面向的部署方式标签：符号链接与目录联接都归并为「链接部署」，
+ * 托管复制为「复制部署」。具体实现方式（符号链接/目录联接/托管复制）
+ * 只进技术详情，不在首屏作为主文案出现（DEV-21-A）。
+ */
+export function userFacingDeploymentMode(mode: DeploymentMode): "deployment.mode.userCopy" | "deployment.mode.userLink" {
+  return mode === "managed_copy" ? "deployment.mode.userCopy" : "deployment.mode.userLink";
+}
+
+/**
+ * 目标告警同样可能携带实现方式术语（"不支持符号链接"/"不支持目录联接"）。
+ * 用户层统一说「链接部署」/「复制部署」，原始键只留在技术详情（DEV-21-A）。
+ */
+const IMPLEMENTATION_WARNING_ALIASES: Record<string, string> = {
+  "deployment.mode.symbolic_link_unavailable": "deployment.mode.userLinkUnavailable",
+  "deployment.mode.directory_junction_unavailable": "deployment.mode.userLinkUnavailable",
+};
+
+/** 把实现方式告警改写为用户层文案；非实现方式告警原样返回。 */
+export function userFacingDeploymentWarning(warning: string): string {
+  return IMPLEMENTATION_WARNING_ALIASES[warning] ?? warning;
+}
+
+/** 该告警是否在描述实现方式（原始术语需要沉到技术详情）。 */
+export function isImplementationWarning(warning: string): boolean {
+  return Object.hasOwn(IMPLEMENTATION_WARNING_ALIASES, warning);
+}
 export type DeploymentTarget = {
   id: string;
   label: string;
@@ -19,12 +47,16 @@ export type DeploymentPlanTarget = {
 export type DeploymentPlan = {
   skillId: string;
   versionId: string;
+  /** 展示名（回退 runtime name）：预览阶段随计划解析，供主文案使用（DEV-18-A）。 */
+  displayName?: string;
   targets: DeploymentPlanTarget[];
   warnings: string[];
   native?: NativeDeploymentPlan;
 };
 export type DeploymentResult = {
   skillId?: string;
+  /** 展示名（回退 runtime name）：主文案用它，裸 UUID 只进技术详情（DEV-18-A）。 */
+  displayName?: string;
   targetId: string;
   label: string;
   status: "succeeded" | "failed" | "skipped";
@@ -55,14 +87,14 @@ export interface DeploymentFacade {
   commit(plan: DeploymentPlan): Promise<DeploymentResult[]>;
 }
 
-export type BatchDeploymentPlan = { skillId: string; plan: DeploymentPlan };
+export type BatchDeploymentPlan = { skillId: string; displayName?: string; plan: DeploymentPlan };
 export type BatchDeploymentPreview = {
   plans: BatchDeploymentPlan[];
   /**
    * 预览失败必须保留结构化错误本体（DEV-18）：message 只是纯文本兜底，
    * 页面用 `describeNativeError(error)` 渲染可读文案，绝不 `String(对象)`。
    */
-  failures: Array<{ skillId: string; message: string; error?: NativeAppError }>;
+  failures: Array<{ skillId: string; displayName?: string; message: string; error?: NativeAppError }>;
 };
 export type BatchDeploymentResult = DeploymentResult & { skillId: string };
 

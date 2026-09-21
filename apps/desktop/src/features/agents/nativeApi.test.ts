@@ -163,6 +163,64 @@ it("marks registered custom agents as custom with their granted directory", asyn
   })]);
 });
 
+it("counts a real deployment whose record carries the physical target id (DEV-22-A)", async () => {
+  // 真实提交把 deployments.target_id 写成物理目标 id；Agent 页只持有逻辑
+  // 目标 id。两者必须互投影，否则刚部署完的 Skill 在本页计数为 0。
+  query
+    .mockResolvedValueOnce({
+      type: "discovery_snapshot",
+      payload: snapshotWithTarget({ targetId: "openai.codex-cli.user", physicalId: "physical-1" }),
+    })
+    .mockResolvedValueOnce({ type: "custom_agents", payload: [] })
+    .mockResolvedValueOnce({
+      type: "deployments",
+      payload: [
+        { ...deployments("physical-1", ["deployed"])[0], id: "dep-1", skill_id: "skill-a" },
+        { ...deployments("physical-1", ["deployed"])[0], id: "dep-2", skill_id: "skill-b" },
+        { ...deployments("physical-1", ["needs_recovery"])[0], id: "dep-3", skill_id: "skill-a" },
+        { ...deployments("physical-other", ["deployed"])[0], id: "dep-4", skill_id: "skill-c" },
+      ],
+    });
+
+  const agents = await nativeAgentFacade.list();
+
+  // 2 个 Skill、3 条关系；别的目标的部署不混入。
+  expect(agents).toEqual([expect.objectContaining({
+    id: "openai.codex-cli",
+    managedDeploymentCount: 2,
+    managedDeploymentRelationCount: 3,
+  })]);
+});
+
+it("counts a custom agent deployment recorded against its directory grant (DEV-22-A)", async () => {
+  query
+    .mockResolvedValueOnce({ type: "discovery_snapshot", payload: emptySnapshot })
+    .mockResolvedValueOnce({
+      type: "custom_agents",
+      payload: [{
+        id: "custom-reviewer",
+        display_name: "Reviewer",
+        directory: { grant_id: "grant-1", path: "D:/Agents/reviewer", operating_system: "windows" },
+        profile: {
+          profile_version: 1,
+          research_date: "2026-09-02",
+          official_references: [],
+          brand: "Acme",
+          clients: [],
+        },
+      }],
+    })
+    .mockResolvedValueOnce({ type: "deployments", payload: deployments("grant-1", ["deployed"]) });
+
+  const agents = await nativeAgentFacade.list();
+
+  expect(agents).toEqual([expect.objectContaining({
+    id: "custom-reviewer",
+    managedDeploymentCount: 1,
+    managedDeploymentRelationCount: 1,
+  })]);
+});
+
 it("aggregates managed deployments by unique skill while keeping the relation total", async () => {
   const record = (skillId: string, index: number, state: DeploymentRecord["state"] = "deployed"): DeploymentRecord => ({
     id: `deployment-${index}`,

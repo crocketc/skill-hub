@@ -9,6 +9,10 @@ import type {
   SkillRelationshipCandidate,
 } from "../../api/bindings";
 import { createSkillHubI18n } from "../../i18n";
+import type { AgentFacade } from "../agents/api";
+import { nativeAgentFacade } from "../agents/nativeApi";
+import type { ProjectFacade } from "../projects/api";
+import { nativeProjectFacade } from "../projects/nativeApi";
 import type { RelationshipsFacade } from "../relationships/api";
 import baseCss from "../../styles/base.css?raw";
 import { ThemeProvider } from "../../styles/ThemeProvider";
@@ -214,6 +218,7 @@ function mockBrowserPreferences() {
 async function renderOverview(
   snapshot = overviewSnapshot,
   facade: RelationshipsFacade = populatedRelationshipsFacade,
+  options: { agentFacade?: AgentFacade; projectFacade?: ProjectFacade } = {},
 ) {
   const i18n = await createSkillHubI18n(["en-US"]);
   mockBrowserPreferences();
@@ -228,7 +233,14 @@ async function renderOverview(
           <MemoryRouter initialEntries={["/"]}>
             <Routes>
               <Route element={<OverviewRoute snapshot={snapshot} />}>
-                <Route index element={<OverviewPage relationshipsFacade={facade} />} />
+                <Route
+                  element={<OverviewPage
+                    agentFacade={options.agentFacade ?? nativeAgentFacade}
+                    projectFacade={options.projectFacade ?? nativeProjectFacade}
+                    relationshipsFacade={facade}
+                  />}
+                  index
+                />
                 <Route path="agents" element={<LocationDisplay />} />
                 <Route path="agents/:agentKey" element={<LocationDisplay />} />
                 <Route path="projects/:projectKey" element={<LocationDisplay />} />
@@ -358,17 +370,34 @@ it("locks the density ladder and the two-row metrics contract in overview.css", 
   expect(overviewCss).not.toMatch(/grid-template-columns: minmax\(0, 1\.35fr\) repeat\(4/);
 });
 
-it("keeps the relationship band inside the fill grid so 100% zoom keeps the outer shell still", () => {
-  // DEV-7（2026-09-20 用户裁定）：关系区上移后总高超出单屏，概览改为自然
-  // 文档流（grid-template-rows: none + 顶部对齐）；关系带不可塌缩
-  // （min-height: max-content），三卡单行排布且可压缩（min-width: 0）。
-  // 真实几何验收（1280×900 与 800×600 截图迭代）由 overview e2e 承担。
+it("keeps every overview band in a compressible track so the page root never scrolls", () => {
+  // DEV-25（契约迁移，取代 DEV-7 的"自然文档流"裁定）：概览不再用
+  // `grid-template-rows: none` 把纵向滚动推给页面根，而是把可用高度切成
+  // 三条可压缩轨道（指标带 / 关系带 / 主区），每条 min-height: 0 且可内部
+  // 滚动；关系带不再用 max-content 把自己的高度写死给页面。
+  // 真实几何验收（800×600 与大窗口）由 tests/e2e/overview-height.spec.ts 承担。
   expect(overviewCss).toMatch(
-    /\.sh-overview\s*\{[^}]*grid-template-rows:\s*none/,
+    /\.sh-overview\s*\{[^}]*display:\s*flex[^}]*flex-direction:\s*column[^}]*min-height:\s*0/s,
+  );
+  // 三条轨道共享的压缩前提：min-height: 0（各自规则里的 flex/overflow 见下）。
+  expect(overviewCss).toMatch(
+    /\.sh-overview > \.sh-overview__metrics,\s*\.sh-overview > \.sh-overview__relations,\s*\.sh-overview > \.sh-overview__content-grid\s*\{[^}]*min-height:\s*0/,
   );
   expect(overviewCss).toMatch(
-    /\.sh-overview__relations\s*\{[^}]*min-height:\s*max-content/,
+    /\.sh-overview > \.sh-overview__metrics \{\s*flex: 0 1 auto;\s*min-height: 0;\s*overflow-y: auto;\s*\}/,
   );
+  expect(overviewCss).toMatch(
+    /\.sh-overview > \.sh-overview__relations \{\s*flex: 0 2 auto;\s*min-height: 0;\s*overflow-y: auto;\s*\}/,
+  );
+  expect(overviewCss).toMatch(
+    /\.sh-overview > \.sh-overview__content-grid \{[\s\S]*?flex: 1 1 auto;[\s\S]*?overflow-y: auto;\s*\}/,
+  );
+  // 关系区收缩得比指标带更快（"偏高的那一块"优先让出高度）。
+  expect(overviewCss).toMatch(/\.sh-overview > \.sh-overview__relations\s*\{[^}]*flex: 0 2 auto/s);
+  expect(overviewCss).toMatch(
+    /\.sh-overview__relations\s*\{[^}]*min-height:\s*0/,
+  );
+  expect(overviewCss).not.toMatch(/min-height:\s*max-content/);
   expect(overviewCss).toMatch(
     /\.sh-overview__relations-list\s*\{[^}]*grid-template-columns:\s*repeat\(3, minmax\(0, 1fr\)\)/,
   );
@@ -691,3 +720,38 @@ it("renders the tag panel empty state and keeps relations above the deployment c
   expect(screen.getByRole("heading", { name: /pending/i })).toBeVisible();
 });
 
+it("renders readable Agent names in the deployment chart instead of internal i18n keys (DEV-22-A)", async () => {
+  const keySnapshot: BootstrapSnapshot = {
+    ...overviewSnapshot,
+    deployment_categories: [
+      { count: 12, dimension: "agent", key: "openai.codex-cli", label_code: "deployment.dimension.agent" },
+      { count: 3, dimension: "project", key: "project-aurora", label_code: "deployment.dimension.project" },
+    ],
+  };
+  const agentFacade = {
+    list: async () => [{ client: "codex-cli", id: "openai.codex-cli", instance: "Codex CLI" }],
+  } as unknown as AgentFacade;
+  const projectFacade = {
+    list: async () => [{ id: "project-aurora", name: "Aurora" }],
+  } as unknown as ProjectFacade;
+
+  await renderOverview(keySnapshot, populatedRelationshipsFacade, { agentFacade, projectFacade });
+
+  // 名称来自 Agent/项目本身；内部 i18n 键不出现在图表明细里。
+  expect(await screen.findByText("Codex CLI")).toBeVisible();
+  expect(screen.queryByText("deployment.dimension.agent")).not.toBeInTheDocument();
+});
+
+it("falls back to the translated dimension name when no Agent name is available (DEV-22-A)", async () => {
+  const keySnapshot: BootstrapSnapshot = {
+    ...overviewSnapshot,
+    deployment_categories: [
+      { count: 12, dimension: "agent", key: "openai.codex-cli", label_code: "deployment.dimension.agent" },
+    ],
+  };
+
+  await renderOverview(keySnapshot);
+
+  expect(await screen.findByText("Agent")).toBeVisible();
+  expect(screen.queryByText("deployment.dimension.agent")).not.toBeInTheDocument();
+});

@@ -1753,6 +1753,10 @@
   },
   "deployment": {
     "eyebrow": "安全添加",
+    "dimension": {
+      "agent": "Agent",
+      "project": "项目"
+    },
     "errors": {
       "generic": "添加操作失败（{{code}}）。请重试；若持续出现请记录该错误码。"
     },
@@ -1798,7 +1802,9 @@
       "expandAgents": "展开关联 Agent（{{count}} 个）",
       "expandAgentsHint": "把所选项目已关联的 Agent 目标一并加入选择。",
       "nonAtomicNotice": "批次将逐个 Skill、逐个目标提交，不是原子操作：部分成功不会自动回滚已成功的部分。",
-      "committing": "正在添加，请稍候；批次非原子，逐项结果将在完成后展示。"
+      "committing": "正在添加，请稍候；批次非原子，逐项结果将在完成后展示。",
+      "technicalDetails": "技术详情",
+      "skillId": "Skill ID"
     },
     "mode": {
       "label": "部署方式",
@@ -1807,11 +1813,16 @@
       "directory_junction": "目录联接",
       "managed_copy": "托管复制",
       "symbolic_link_unavailable": "此目标不支持符号链接",
-      "directory_junction_unavailable": "此目标不支持目录联接"
+      "directory_junction_unavailable": "此目标不支持目录联接",
+      "userLink": "链接部署",
+      "userCopy": "复制部署",
+      "userLinkUnavailable": "此目标不支持链接部署，将改用复制部署",
+      "technical": "实现方式"
     },
     "name_mismatch": "Skill 文件夹名与 SKILL.md 内的 name 不一致，Agent 可能无法识别这个 Skill。请修正后重新导入。",
     "results": {
       "heading": "添加结果",
+      "manageDeployment": "管理此部署",
       "status": {
         "succeeded": "已成功",
         "failed": "失败",

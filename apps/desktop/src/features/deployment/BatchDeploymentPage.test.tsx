@@ -311,6 +311,59 @@ it("blocks the batch commit and announces the failure when a skill preview fails
   expect(facade.commit).not.toHaveBeenCalled();
 });
 
+it("maps the skill UUID to a display name in preview failure rows and keeps the raw id in technical details (DEV-18-A)", async () => {
+  const user = userEvent.setup();
+  const facade = batchFacade({
+    preview: vi.fn<BatchDeploymentFacade["preview"]>(async (_skillIds, selected) => ({
+      failures: [{
+        skillId: "skill-docx",
+        displayName: "PDF 抽取器",
+        message: "版本缺失",
+      }],
+      plans: [{
+        skillId: "skill-pdf",
+        plan: { skillId: "skill-pdf", versionId: "v1", targets: selected.map((target) => ({ targetId: target.id, label: target.label, mode: "managed_copy" as const, warnings: [] })), warnings: [] },
+      }],
+    })),
+  });
+  await renderBatchPage(facade, ["skill-pdf", "skill-docx"]);
+
+  await user.click(await screen.findByLabelText("Codex CLI"));
+  await user.click(screen.getByRole("button", { name: "预览" }));
+
+  // 主文案显示展示名，绝不在首屏呈现裸 UUID。
+  const alert = await screen.findByRole("alert");
+  expect(screen.getByText("PDF 抽取器")).toBeVisible();
+  // 裸 UUID 仅出现在「技术详情」可展开区域内，不得作为首屏主文案。
+  const idNode = screen.getByText("skill-docx");
+  expect(idNode.closest("details")).not.toBeNull();
+  // 主文案的展示名与裸 UUID 不是同一个节点。
+  expect(alert.querySelector("strong")).toHaveTextContent("PDF 抽取器");
+});
+
+it("labels each batch plan with the resolved display name instead of the raw Skill id (DEV-18-A)", async () => {
+  const user = userEvent.setup();
+  const facade = batchFacade({
+    preview: vi.fn<BatchDeploymentFacade["preview"]>(async (_skillIds, selected) => ({
+      failures: [],
+      plans: [{
+        skillId: "sku-0001-aaaa",
+        displayName: "PDF 抽取器",
+        plan: { skillId: "sku-0001-aaaa", versionId: "v1", targets: selected.map((target) => ({ targetId: target.id, label: target.label, mode: "managed_copy" as const, warnings: [] })), warnings: [] },
+      }],
+    })),
+  });
+  await renderBatchPage(facade, ["sku-0001-aaaa"]);
+
+  await user.click(await screen.findByLabelText("Codex CLI"));
+  await user.click(screen.getByRole("button", { name: "预览" }));
+
+  const plan = await screen.findByRole("region", { name: /添加计划/ });
+  expect(within(plan).getByRole("heading", { name: "PDF 抽取器" })).toBeVisible();
+  // 裸 UUID 不作为计划区主文案出现。
+  expect(within(plan).queryByText("sku-0001-aaaa")).toBeNull();
+});
+
 it("renders a preview occupancy conflict as readable text with takeover guidance", async () => {
   const user = userEvent.setup();
   const facade = batchFacade({
@@ -381,6 +434,80 @@ it("hides the batch footer during committing and announces the non-atomic progre
 
   resolveCommit([{ skillId: "skill-pdf", targetId: "codex-cli", label: "Codex CLI", status: "succeeded" as const, message: "已部署" }]);
   expect(await screen.findByTestId("batch-summary")).toHaveTextContent("成功 1");
+});
+
+it("shows the user-facing mode and keeps the implementation type in technical details (DEV-21-A)", async () => {
+  const user = userEvent.setup();
+  await renderBatchPage(batchFacade(), ["skill-pdf", "skill-docx"]);
+
+  await user.click(await screen.findByLabelText("Codex CLI"));
+  await user.click(screen.getByRole("button", { name: "预览" }));
+
+  // 首屏主文案是「复制部署」，绝不作为主文案出现「托管复制」。
+  const rows = await screen.findAllByTestId("target-plan");
+  expect(rows.length).toBeGreaterThan(0);
+  expect(within(rows[0]).getByText("复制部署")).toBeVisible();
+  // 具体实现方式只在「技术详情」可展开区域内。
+  const implNode = within(rows[0]).getByText("托管复制");
+  expect(implNode.closest("details")).not.toBeNull();
+  expect(implNode).not.toBeVisible();
+});
+
+it("states an unsupported link mode in user-facing words and keeps the implementation reason in technical details (DEV-21-A)", async () => {
+  const user = userEvent.setup();
+  const facade = batchFacade({
+    preview: vi.fn<BatchDeploymentFacade["preview"]>(async (_skillIds, selected) => ({
+      failures: [],
+      plans: [{
+        skillId: "skill-pdf",
+        plan: {
+          skillId: "skill-pdf",
+          versionId: "v1",
+          warnings: [],
+          targets: selected.map((target) => ({
+            targetId: target.id,
+            label: target.label,
+            mode: "managed_copy" as const,
+            warnings: ["deployment.mode.symbolic_link_unavailable"],
+          })),
+        },
+      }],
+    })),
+  });
+  await renderBatchPage(facade, ["skill-pdf"]);
+
+  await user.click(await screen.findByLabelText("Codex CLI"));
+  await user.click(screen.getByRole("button", { name: "预览" }));
+
+  const row = (await screen.findAllByTestId("target-plan"))[0];
+  // 主文案说「链接部署」，不出现「符号链接」这类实现术语。
+  expect(within(row).getByText("此目标不支持链接部署，将改用复制部署")).toBeVisible();
+  const implNode = within(row).getByText("此目标不支持符号链接");
+  expect(implNode.closest("details")).not.toBeNull();
+  expect(implNode).not.toBeVisible();
+});
+
+it("offers a reachable manage-deployment entry after a successful batch (DEV-21-A)", async () => {
+  const user = userEvent.setup();
+  const onManageDeployment = vi.fn();
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  render(
+    <I18nextProvider i18n={i18n}>
+      <MemoryRouter>
+        <BatchDeploymentPage facade={batchFacade()} skillIds={["skill-pdf", "skill-docx"]} onManageDeployment={onManageDeployment} />
+      </MemoryRouter>
+    </I18nextProvider>,
+  );
+
+  await user.click(await screen.findByLabelText("Codex CLI"));
+  await user.click(screen.getByRole("button", { name: "预览" }));
+  await user.click(await screen.findByRole("button", { name: "确认添加" }));
+
+  // 每个成功的 Skill 一条入口（同一 Skill 的多目标不重复）。
+  const manage = await screen.findAllByRole("button", { name: /管理此部署/ });
+  expect(manage).toHaveLength(2);
+  await user.click(screen.getByRole("button", { name: /管理此部署：skill-pdf/ }));
+  expect(onManageDeployment).toHaveBeenCalledWith("skill-pdf");
 });
 
 describe("BatchDeploymentPage 与统一执行桥", () => {

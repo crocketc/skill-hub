@@ -8,6 +8,7 @@ import { PageFrame } from "../../ui/PageFrame";
 import { PageHeader } from "../../ui/PageHeader";
 import type { RelationshipsFacade } from "../relationships/api";
 import { DeploymentBarChart, DeploymentDetailList } from "./DeploymentBarChart";
+import { useOverviewDeploymentNames } from "./deploymentNames";
 import { PendingSummary } from "./PendingSummary";
 import {
   RelationshipThumbnailNetwork,
@@ -36,6 +37,9 @@ export interface OverviewPageProps {
    * 不经 runTrackedOperation（无写入、无顶栏任务）。
    */
   relationshipsFacade?: RelationshipsFacade;
+  /** DEV-22-A：图表类别 key → Agent/项目名的解析来源（测试可注入）。 */
+  agentFacade?: Parameters<typeof useOverviewDeploymentNames>[0];
+  projectFacade?: Parameters<typeof useOverviewDeploymentNames>[1];
 }
 
 function OverviewHeroMetric({ metric }: { metric: OverviewMetric }) {
@@ -171,11 +175,13 @@ function TagDistributionPanel({
   );
 }
 
-export function OverviewPage({ relationshipsFacade }: OverviewPageProps) {
+export function OverviewPage({ agentFacade, projectFacade, relationshipsFacade }: OverviewPageProps) {
   const { snapshot } = useOutletContext<BootstrapOutletContext>();
   const { t } = useTranslation();
   const [dimension, setDimension] = useState<OverviewDimension>("agent");
   const { conflictsQuery } = useOverviewRelationshipSummaries(relationshipsFacade);
+  // DEV-22-A：图表用可读的 Agent/项目名，绝不渲染内部 i18n 键。
+  const deploymentNames = useOverviewDeploymentNames(agentFacade, projectFacade);
   // 五个冻结指标（api.test.ts 锁定名称与口径）。前四项来自 bootstrap 快照
   // 同步可得；冲突项计数来自任务 2 工作台投影（异步）——未就绪时以占位符
   // 呈现且不提供携带假计数的钻取链接，绝不把 0 当作"查询还没回来"。
@@ -184,7 +190,7 @@ export function OverviewPage({ relationshipsFacade }: OverviewPageProps) {
   const heroMetric =
     summaryMetrics.find((metric) => metric.tone === "accent") ?? summaryMetrics[0];
   const compactMetrics = summaryMetrics.filter((metric) => metric !== heroMetric);
-  const deploymentItems = getDeploymentItems(snapshot, dimension, t);
+  const deploymentItems = getDeploymentItems(snapshot, dimension, t, deploymentNames);
   const tagItems = getTagItems(snapshot, t);
 
   return (

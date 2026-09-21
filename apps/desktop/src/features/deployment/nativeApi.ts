@@ -24,6 +24,8 @@ type NativeDeploymentContext = {
   skillId: string;
   versionId: string;
   runtimeName?: string;
+  /** 已知展示名时不再回源查询（DEV-18-A）。 */
+  displayName?: string;
 };
 
 function targetsResult(result: AppQueryResult): NativeDeploymentTarget[] {
@@ -119,10 +121,13 @@ export function createNativeDeploymentFacade(context: NativeDeploymentContext): 
       const selectedById = new Map(selected.map((target) => [target.id, target]));
       let runtimeName = context.runtimeName;
       let versionId = context.versionId;
+      let displayName = context.displayName;
       if (!runtimeName || versionId === "current") {
         const skill = await queryApplication({ type: "get_skill", payload: { skill_id: context.skillId } });
         if (skill.type !== "skill") throw new Error("deployment.runtime_name_unavailable");
         runtimeName ??= skill.payload.runtime_name;
+        // 展示名回退 runtime name：供结果/计划主文案使用（DEV-18-A）。
+        displayName ??= skill.payload.display_name || skill.payload.runtime_name;
         if (versionId === "current") {
           if (!skill.payload.current_version) throw new Error("deployment.no_current_version");
           versionId = skill.payload.current_version;
@@ -140,7 +145,7 @@ export function createNativeDeploymentFacade(context: NativeDeploymentContext): 
           },
         },
       });
-      return toPlan(planResult(result), selectedById);
+      return { ...toPlan(planResult(result), selectedById), displayName };
     },
 
     async commit(plan) {
@@ -197,7 +202,7 @@ function failureOf(reason: unknown): { message: string; error?: NativeAppError }
 
 type BatchPreviewAttempt =
   | { ok: true; skillId: string; plan: DeploymentPlan }
-  | { ok: false; skillId: string; message: string; error?: NativeAppError };
+  | { ok: false; skillId: string; displayName?: string; message: string; error?: NativeAppError };
 
 /**
  * The native boundary prepares and commits exactly one Skill per operation.
@@ -208,6 +213,17 @@ async function listProjects() {
   const result = await queryApplication({ type: "list_projects", payload: null });
   if (result.type !== "projects") throw new Error("list_projects returned an unexpected result.");
   return result.payload.map((project) => ({ id: project.id, agentIds: project.agent_ids ?? [] }));
+}
+
+/** 解析 Skill 展示名（回退 runtime name），用于失败行主文案（DEV-18-A）。 */
+async function resolveSkillDisplayName(skillId: string): Promise<string | undefined> {
+  try {
+    const result = await queryApplication({ type: "get_skill", payload: { skill_id: skillId } });
+    if (result.type !== "skill") return undefined;
+    return result.payload.display_name || result.payload.runtime_name || undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 export function createNativeBatchDeploymentFacade(): BatchDeploymentFacade {
@@ -221,16 +237,19 @@ export function createNativeBatchDeploymentFacade(): BatchDeploymentFacade {
           const plan = await createNativeDeploymentFacade({ skillId, versionId: "current" }).preview(targets, mode);
           return { ok: true, skillId, plan };
         } catch (reason) {
-          return { ok: false, skillId, ...failureOf(reason) };
+          const failure = failureOf(reason);
+          // 裸 Skill UUID 仅作兜底；优先带展示名（DEV-18-A）。
+          const displayName = await resolveSkillDisplayName(skillId);
+          return { ok: false, skillId, displayName, ...failure };
         }
       }));
       const plans: BatchDeploymentPlan[] = [];
       const failures: BatchDeploymentPreview["failures"] = [];
       for (const preview of previews) {
         if (preview.ok) {
-          plans.push({ skillId: preview.skillId, plan: preview.plan });
+          plans.push({ skillId: preview.skillId, displayName: preview.plan.displayName, plan: preview.plan });
         } else {
-          failures.push({ skillId: preview.skillId, message: preview.message, error: preview.error });
+          failures.push({ skillId: preview.skillId, displayName: preview.displayName, message: preview.message, error: preview.error });
         }
       }
       return { plans, failures };
@@ -238,14 +257,17 @@ export function createNativeBatchDeploymentFacade(): BatchDeploymentFacade {
 
     async commit(plans: BatchDeploymentPlan[], onProgress?: (completedSkills: number) => void): Promise<BatchDeploymentResult[]> {
       const results: BatchDeploymentResult[] = [];
-      for (const { skillId, plan } of plans) {
+      for (const { skillId, displayName, plan } of plans) {
+        // 展示名随结果投影：结果行主文案用展示名，裸 UUID 只进技术详情（DEV-18-A）。
+        const resolvedName = displayName ?? plan.displayName ?? await resolveSkillDisplayName(skillId);
         try {
           const committed = await createNativeDeploymentFacade({ skillId, versionId: plan.versionId }).commit(plan);
-          results.push(...committed.map((result) => ({ ...result, skillId })));
+          results.push(...committed.map((result) => ({ ...result, skillId, displayName: resolvedName })));
         } catch (reason) {
           const failure = failureOf(reason);
           results.push(...plan.targets.map((target) => ({
             skillId,
+            displayName: resolvedName,
             targetId: target.targetId,
             label: target.label,
             status: "failed" as const,

@@ -110,26 +110,32 @@ function createSingleFacade(scenario: PreviewScenario): DeploymentFacade {
   };
 }
 
+/** DEV-18-A：预览也走「展示名主文案」投影，与真机行为一致。 */
+function previewSkillDisplayName(skillId: string): string {
+  return skillId.replace(/^preview-skill-/, "Preview Skill ");
+}
+
 function createBatchFacade(scenario: PreviewScenario): BatchDeploymentFacade {
   const skillIds = Array.from({ length: batchSkillCount(scenario) }, (_, index) => `preview-skill-${index + 1}`);
   return {
     listTargets: async () => previewTargets(3, scenario === "batch-bulk"),
     preview: async (_skillIds, selected) => scenario === "batch-preview-fail"
       ? {
-          failures: [{ skillId: "preview-skill-2", message: "preview.version_missing" }],
+          failures: [{ skillId: "preview-skill-2", displayName: previewSkillDisplayName("preview-skill-2"), message: "preview.version_missing" }],
           plans: [{
             skillId: "preview-skill-1",
+            displayName: previewSkillDisplayName("preview-skill-1"),
             plan: planFor(selected, [], false),
           }],
         }
       : {
           failures: [],
-          plans: skillIds.map((skillId) => ({ skillId, plan: planFor(selected, [], false) })),
+          plans: skillIds.map((skillId) => ({ skillId, displayName: previewSkillDisplayName(skillId), plan: planFor(selected, [], false) })),
         },
-    commit: async (plans) => plans.flatMap(({ skillId, plan }) => resultFor(
+    commit: async (plans) => plans.flatMap(({ skillId, displayName, plan }) => resultFor(
       [plan],
       scenario === "batch-partial" ? [plan.targets[0]?.targetId ?? ""] : [],
-    ).map((result) => ({ ...result, skillId }))),
+    ).map((result) => ({ ...result, skillId, displayName }))),
   };
 }
 
