@@ -214,6 +214,25 @@ describe("MetadataPanel", () => {
       ]);
     });
   });
+
+  it("asks before copying a generated translation into my purpose", async () => {
+    const facade = createMockSkillDetailFacade();
+    facade.emitIntent = async () => ({ text: "用于读取 PDF 文本" });
+    await renderMetadata({ facade });
+
+    fireEvent.click(screen.getByText("原始文本与译文"));
+    fireEvent.click(screen.getByRole("button", { name: "重新翻译描述" }));
+
+    expect(await screen.findByText("用于读取 PDF 文本")).toBeVisible();
+    expect(facade.calls.metadataPatches).toEqual([]);
+    fireEvent.click(screen.getByRole("button", { name: "将译文写入我的用途" }));
+    await waitFor(() => {
+      expect(facade.calls.metadataPatches).toContainEqual({
+        patch: { purpose: "用于读取 PDF 文本" },
+        skillId: "skill-pdf",
+      });
+    });
+  });
 });
 
 describe("MetadataPanel 与统一执行桥", () => {

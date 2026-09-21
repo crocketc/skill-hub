@@ -347,7 +347,7 @@ export const nativeSkillDetailFacade: SkillDetailFacade = {
         },
       });
       if (result.type !== "translation_result") throw unavailableResult();
-      return;
+      return { text: result.payload.text };
     }
     if (intent.type === "abandon_trial") {
       const result: AppCommandResult = await executeCommand({

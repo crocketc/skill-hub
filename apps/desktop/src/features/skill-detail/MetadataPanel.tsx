@@ -154,6 +154,7 @@ export function MetadataPanel({
   const queryClient = useQueryClient();
   const notifications = useOptionalAppNotifications();
   const [translationConfirmation, setTranslationConfirmation] = useState(false);
+  const [translationPurposeDraft, setTranslationPurposeDraft] = useState<string>();
   const [translationError, setTranslationError] = useState<string>();
   // 结构化失败必须可读：原生命令以 AppError 对象拒绝，默认 String() 会得到
   // "[object Object]"。通知的补充说明与页面局部提示共用同一段描述。
@@ -193,7 +194,7 @@ export function MetadataPanel({
   const requestTranslation = async (overwriteUserRevision: boolean) => {
     setTranslationError(undefined);
     try {
-      await runTrackedOperation({
+      const translationResult = await runTrackedOperation({
         kind: "translate_description",
         label: t("skillDetail.tracker.translateLabel"),
         notifications,
@@ -213,6 +214,9 @@ export function MetadataPanel({
             type: "translate_description",
           }),
       });
+      if (translationResult && "text" in translationResult) {
+        setTranslationPurposeDraft(translationResult.text);
+      }
       setTranslationConfirmation(false);
       await queryClient.invalidateQueries({
         queryKey: skillDetailKeys.metadata(skillId),
@@ -222,6 +226,16 @@ export function MetadataPanel({
       // 局部提示与通知的补充说明取自同一段描述，两处不会互相矛盾。
       setTranslationConfirmation(false);
       setTranslationError(describeFailure(reason));
+    }
+  };
+
+  const saveTranslationAsPurpose = async () => {
+    if (!translationPurposeDraft) return;
+    try {
+      await savePatch({ purpose: translationPurposeDraft });
+      setTranslationPurposeDraft(undefined);
+    } catch {
+      // savePatch already emits the structured failure and keeps the edit path visible.
     }
   };
 
@@ -310,6 +324,17 @@ export function MetadataPanel({
             </div>
           ) : null}
           {translationError ? <p role="alert">{translationError}</p> : null}
+          {translationPurposeDraft ? (
+            <div aria-label={t("skillDetail.metadata.translationPurposeConfirmLabel")} role="alertdialog">
+              <p>{translationPurposeDraft}</p>
+              <Button onClick={() => void saveTranslationAsPurpose()} size="sm">
+                {t("skillDetail.metadata.useTranslationAsPurpose")}
+              </Button>
+              <Button onClick={() => setTranslationPurposeDraft(undefined)} size="sm" variant="ghost">
+                {t("actions.cancel")}
+              </Button>
+            </div>
+          ) : null}
         </section>
       </details>
       {/* DEV-16：身份区显示别名与用途的读值——用户要求详情页完整显示所有

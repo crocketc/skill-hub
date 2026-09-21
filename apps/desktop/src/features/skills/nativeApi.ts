@@ -369,6 +369,15 @@ export const nativeSkillLibraryFacade: SkillLibraryFacade = {
     if (commandResult.type !== "operation_summary") throw unavailableResult();
   },
 
+  async translateDescription(skillId) {
+    const result = await executeCommand({
+      type: "translate_description",
+      payload: { skill_id: skillId, language: "zh-CN", overwrite_user_revision: false },
+    });
+    if (result.type !== "translation_result") throw unavailableResult();
+    return { text: result.payload.text };
+  },
+
   // FE-04 组合视图：读写组合目录；导出走标准导出（缺省格式由偏好决定）。
   async listCombinations() {
     const result = await queryApplication({ type: "list_combinations", payload: null });

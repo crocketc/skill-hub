@@ -205,6 +205,8 @@ export interface SkillLibraryFacade {
   retainMatchingSkillIds(skillIds: string[], query: SkillLibraryQuery): Promise<string[]>;
   saveDrawerPreferences(preferences: SkillDrawerPreferences): Promise<void>;
   saveSkillMetadata?: (skillId: string, patch: SkillMetadataPatch) => Promise<void>;
+  /** Optional model translation action; success returns text for user confirmation. */
+  translateDescription?: (skillId: string) => Promise<{ text: string }>;
   saveTablePreferences(preferences: SkillTablePreferences): Promise<void>;
   deleteView(viewId: string): Promise<void>;
   saveView(view: Omit<SavedSkillView, "builtIn" | "id">): Promise<SavedSkillView>;

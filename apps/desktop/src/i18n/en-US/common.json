@@ -1234,6 +1234,14 @@
         "showMoreProjects": "Show {{count}} more projects"
       },
       "title": "Skill details",
+      "translation": {
+        "action": "Translate description",
+        "confirmLabel": "Confirm translated purpose",
+        "failed": "The description could not be translated.",
+        "inProgress": "Translating…",
+        "saveFailed": "The translation could not be saved as my purpose.",
+        "useAsPurpose": "Use as my purpose"
+      },
       "viewUpdate": "View update",
       "values": {
         "agents": "Agents",
@@ -1614,6 +1622,8 @@
       "translation": "Saved translation",
       "translationText": "Translation text",
       "translationOverwrite": "The existing user-revised {{locale}} translation will be replaced.",
+      "translationPurposeConfirmLabel": "Confirm translated purpose",
+      "useTranslationAsPurpose": "Use translation as my purpose",
       "userRevised": "User revised"
     },
     "navigation": {

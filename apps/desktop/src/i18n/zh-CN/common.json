@@ -1234,6 +1234,14 @@
         "showMoreProjects": "展开另外 {{count}} 个项目"
       },
       "title": "Skill 详情",
+      "translation": {
+        "action": "翻译描述",
+        "confirmLabel": "确认译文用途",
+        "failed": "描述翻译未能完成。",
+        "inProgress": "正在翻译…",
+        "saveFailed": "译文未能写入我的用途。",
+        "useAsPurpose": "写入我的用途"
+      },
       "viewUpdate": "查看更新",
       "values": {
         "agents": "Agent",
@@ -1614,6 +1622,8 @@
       "translation": "已保存译文",
       "translationText": "译文内容",
       "translationOverwrite": "现有用户修订译文将被替换（{{locale}}）。",
+      "translationPurposeConfirmLabel": "确认将译文写入用途",
+      "useTranslationAsPurpose": "将译文写入我的用途",
       "userRevised": "用户已修订"
     },
     "navigation": {

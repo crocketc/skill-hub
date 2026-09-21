@@ -232,7 +232,7 @@ export interface SkillDetailFacade {
   ): Promise<{ newVersionId: string }>;
   /** AR-021：为版本设置用户可读名称。 */
   setVersionLabel(skillId: string, versionId: string, label: string): Promise<void>;
-  emitIntent(intent: SkillDetailIntent): Promise<void>;
+  emitIntent(intent: SkillDetailIntent): Promise<{ text: string } | void>;
   getAdjacentContext(
     skillId: string,
     query: SkillLibraryQuery,

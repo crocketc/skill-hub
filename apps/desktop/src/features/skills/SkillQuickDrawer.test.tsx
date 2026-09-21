@@ -861,6 +861,24 @@ it("edits my purpose in the drawer and saves it as independent metadata", async 
   expect(screen.getByText("用于合同扫描件归档")).toBeVisible();
 });
 
+it("translates the original description and only writes the result to purpose after confirmation", async () => {
+  const facade = createMockSkillLibraryFacade();
+  facade.translateDescription = vi.fn().mockResolvedValue({ text: "用于读取 PDF 文本" });
+  await renderDrawer({ facade });
+
+  fireEvent.click(await screen.findByRole("button", { name: "Translate description" }));
+  expect(await screen.findByText("用于读取 PDF 文本")).toBeVisible();
+  expect(facade.calls.saveSkillMetadata).toEqual([]);
+
+  fireEvent.click(screen.getByRole("button", { name: "Use as my purpose" }));
+  await waitFor(() => {
+    expect(facade.calls.saveSkillMetadata).toContainEqual({
+      skillId: "skill-pdf",
+      patch: { purpose: "用于读取 PDF 文本" },
+    });
+  });
+});
+
 it("clamps long description fields into scrollable areas instead of stretching the drawer", async () => {
   const facade = createMockSkillLibraryFacade({
     quickView: {

@@ -344,6 +344,12 @@ interface IdentityRegionProps extends ModuleProps {
   onChange: (value: string) => void;
   onCommit: () => void;
   onRemoveTag: (tag: string) => void;
+  onTranslateDescription?: () => void;
+  onConfirmTranslation?: () => void;
+  onCancelTranslation?: () => void;
+  translationDraft?: string;
+  translationError?: string;
+  translationLoading?: boolean;
 }
 
 function IdentityRegion({
@@ -354,6 +360,12 @@ function IdentityRegion({
   onChange,
   onCommit,
   onRemoveTag,
+  onCancelTranslation,
+  onConfirmTranslation,
+  onTranslateDescription,
+  translationDraft,
+  translationError,
+  translationLoading = false,
   view,
 }: IdentityRegionProps) {
   const { t } = useTranslation();
@@ -406,6 +418,30 @@ function IdentityRegion({
         <span className="sh-skill-drawer__field-value sh-skill-drawer__field-value--clamped">
           {view.originalDescription ?? <EmptyValue />}
         </span>
+        {onTranslateDescription ? (
+          <Button
+            disabled={translationLoading}
+            onClick={onTranslateDescription}
+            size="sm"
+            variant="ghost"
+          >
+            {translationLoading
+              ? t("skillLibrary.drawer.translation.inProgress")
+              : t("skillLibrary.drawer.translation.action")}
+          </Button>
+        ) : null}
+        {translationError ? <p role="alert">{translationError}</p> : null}
+        {translationDraft ? (
+          <div aria-label={t("skillLibrary.drawer.translation.confirmLabel")} role="alertdialog">
+            <p>{translationDraft}</p>
+            <Button onClick={onConfirmTranslation} size="sm">
+              {t("skillLibrary.drawer.translation.useAsPurpose")}
+            </Button>
+            <Button onClick={onCancelTranslation} size="sm" variant="ghost">
+              {t("actions.cancel")}
+            </Button>
+          </div>
+        ) : null}
       </div>
       {view.translatedDescription ? (
         <div className="sh-skill-drawer__field">
@@ -754,6 +790,9 @@ export function SkillQuickDrawer({
   const [metadataSaveFailed, setMetadataSaveFailed] = useState(false);
   const [tagsSaveFailed, setTagsSaveFailed] = useState(false);
   const [localView, setLocalView] = useState<SkillQuickView>();
+  const [translationDraft, setTranslationDraft] = useState<string>();
+  const [translationLoading, setTranslationLoading] = useState(false);
+  const [translationError, setTranslationError] = useState<string>();
   // 抽屉只经对话框批量添加标签；移除走逐个 chip（onRemoveTag → saveTags）。
   const [tagAction, setTagAction] = useState<Extract<BatchTagAction, "add_tag">>();
   const dragSessionRef = useRef<DragSession>();
@@ -984,6 +1023,9 @@ export function SkillQuickDrawer({
     />
   );
   useEffect(() => {
+    setTranslationDraft(undefined);
+    setTranslationError(undefined);
+    setTranslationLoading(false);
     if (detailQuery.data) {
       setLocalView(detailQuery.data);
       setEditingField(undefined);
@@ -1052,6 +1094,43 @@ export function SkillQuickDrawer({
       () => {
         setMetadataSaveFailed(true);
         if (persistedView) setLocalView(persistedView);
+      },
+    );
+  };
+
+  const translateDescription = () => {
+    if (!view || !facade.translateDescription) return;
+    setTranslationLoading(true);
+    setTranslationError(undefined);
+    void facade.translateDescription(view.id).then(
+      (result) => {
+        setTranslationDraft(result.text);
+        setTranslationLoading(false);
+      },
+      () => {
+        setTranslationError(t("skillLibrary.drawer.translation.failed"));
+        setTranslationLoading(false);
+      },
+    );
+  };
+
+  const confirmTranslation = () => {
+    if (!view || !translationDraft || !facade.saveSkillMetadata) return;
+    const draft = translationDraft;
+    const persistedView = detailQuery.data;
+    void facade.saveSkillMetadata(view.id, { purpose: draft }).then(
+      () => {
+        setLocalView({ ...view, purpose: draft, userPurpose: draft, translatedDescription: draft });
+        setTranslationDraft(undefined);
+        setTranslationError(undefined);
+        void queryClient.invalidateQueries({ queryKey: skillLibraryKeys.root });
+        void queryClient.invalidateQueries({ queryKey: skillLibraryKeys.quickView(view.id) });
+        void queryClient.invalidateQueries({ queryKey: skillDetailKeys.metadata(view.id) });
+        void queryClient.invalidateQueries({ queryKey: skillDetailKeys.summary(view.id) });
+      },
+      () => {
+        if (persistedView) setLocalView(persistedView);
+        setTranslationError(t("skillLibrary.drawer.translation.saveFailed"));
       },
     );
   };
@@ -1206,6 +1285,15 @@ export function SkillQuickDrawer({
                 onChange={setEditingValue}
                 onCommit={commitEdit}
                 onRemoveTag={removeTag}
+                onCancelTranslation={() => {
+                  setTranslationDraft(undefined);
+                  setTranslationError(undefined);
+                }}
+                onConfirmTranslation={confirmTranslation}
+                onTranslateDescription={facade.translateDescription ? translateDescription : undefined}
+                translationDraft={translationDraft}
+                translationError={translationError}
+                translationLoading={translationLoading}
                 view={view}
               />
               <PrimaryActions onDelete={onDelete} onCheckUpdates={onCheckUpdates} view={view} />
