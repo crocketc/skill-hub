@@ -130,7 +130,12 @@ export function GraphSearch({ onPick, search }: GraphSearchProps) {
                   id={`sh-graph-search-option-${index}`}
                   role="option"
                   type="button"
-                  onClick={() => pick(item.skill_id)}
+                  // Select before the input can blur and dismiss the list. This keeps
+                  // pointer selection deterministic when focus events are delayed.
+                  onMouseDown={(event) => {
+                    event.preventDefault();
+                    pick(item.skill_id);
+                  }}
                   onMouseEnter={() => setState({ ...state, activeIndex: index })}
                 >
                   <span className="sh-graph-search__name">{item.display_name}</span>
