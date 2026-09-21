@@ -75,6 +75,21 @@ const MASTER_CANVAS = 1024;
 const MASTER_OUTER_FRACTION_RANGE = [0.86, 0.88] as const;
 const MASTER_MARGIN_FRACTION_RANGE = [0.06, 0.07] as const;
 
+/**
+ * 候选母版几何参数（D5-11 macOS Dock 视觉偏大整改，OPT-20260914-06）。
+ *
+ * 现状母版外层 896（87.5%）/ 边距 64（6.25%）在 Dock 中与相邻 App 并排时
+ * 仍显得略大（人工验收边界，非回归）。候选“仅切掉更多暗色背景、不重绘品牌
+ * 图形”：外层 864（84.4%）、边距 80（7.8%），品牌主标记随外层等比缩小。
+ *
+ * 测试区间同时充当护栏：外层上限 0.87 低于现状 0.875，边距下限 0.07 高于现状
+ * 0.0625 —— 一旦有人把暗色背景放大回旧尺寸，候选测试即报红，防止视觉偏大
+ * 再次悄悄回归。母版（现状基线）测试区间保持不变，作为可回滚保证。
+ */
+const masterCandidatePng = path.resolve(desktopRoot, "..", "..", "assets", "branding", "skillhub-app-icon-master-candidate.png");
+const MASTER_CANDIDATE_OUTER_FRACTION_RANGE = [0.82, 0.87] as const;
+const MASTER_CANDIDATE_MARGIN_FRACTION_RANGE = [0.07, 0.10] as const;
+
 interface DecodedPngRgba {
   width: number;
   height: number;
@@ -169,6 +184,94 @@ function opaqueBounds(image: DecodedPngRgba, threshold = 128): { left: number; t
   return { left, top, right, bottom };
 }
 
+/**
+ * macOS 母版（现状母版或候选母版）的几何护栏：1024×1024 RGBA、四角与四边
+ * 中点透明（圆角外层，Dock 中不再直角黑底）、中心不透明、外层占比与四周透明
+ * 边距落在给定区间内、且外层为“圆角矩形”而非方形切角或整圆。master 基线测试
+ * 与候选测试共用此函数，仅传入不同的区间常量，避免重复断言。
+ */
+function assertMacOsMasterGeometry(
+  masterPath: string,
+  canvas: number,
+  outerRange: readonly [number, number],
+  marginRange: readonly [number, number],
+  label: string,
+): void {
+  const master = readPngHeader(readFileSync(masterPath));
+  expect(master.width, `${label} canvas is ${canvas}px wide`).toBe(canvas);
+  expect(master.height, `${label} canvas is ${canvas}px tall`).toBe(canvas);
+  expect(master.colorType, `${label} keeps an alpha channel`).toBe(6);
+
+  const image = decodePngRgba(readFileSync(masterPath));
+  // 画布四角与四边中点都落在透明边距/圆角外：Dock 中不再出现直角黑底。
+  const corners: Array<[number, number]> = [
+    [0, 0],
+    [canvas - 1, 0],
+    [0, canvas - 1],
+    [canvas - 1, canvas - 1],
+  ];
+  for (const [x, y] of corners) {
+    expect(image.alphaAt(x, y), `${label} corner (${x},${y}) stays transparent`).toBe(0);
+  }
+  const edgeMidpoints: Array<[number, number]> = [
+    [0, canvas >> 1],
+    [canvas - 1, canvas >> 1],
+    [canvas >> 1, 0],
+    [canvas >> 1, canvas - 1],
+  ];
+  for (const [x, y] of edgeMidpoints) {
+    expect(image.alphaAt(x, y), `${label} edge midpoint (${x},${y}) stays transparent`).toBe(0);
+  }
+  expect(image.alphaAt(canvas >> 1, canvas >> 1), `${label} center stays opaque`).toBe(255);
+
+  const bounds = opaqueBounds(image);
+  const side = Math.max(bounds.right - bounds.left + 1, bounds.bottom - bounds.top + 1);
+  const sideFraction = side / canvas;
+  expect(
+    sideFraction,
+    `${label} rounded outer tile must span ${outerRange[0] * 100}-${outerRange[1] * 100}% of the canvas (got ${(sideFraction * 100).toFixed(2)}%)`,
+  ).toBeGreaterThanOrEqual(outerRange[0]);
+  expect(sideFraction).toBeLessThanOrEqual(outerRange[1]);
+
+  // 四周透明边距。
+  const margins = {
+    left: bounds.left,
+    top: bounds.top,
+    right: canvas - 1 - bounds.right,
+    bottom: canvas - 1 - bounds.bottom,
+  };
+  for (const [edge, margin] of Object.entries(margins)) {
+    const fraction = margin / canvas;
+    expect(
+      fraction,
+      `${label} ${edge} margin must stay within ${marginRange[0] * 100}-${marginRange[1] * 100}% of the canvas (got ${(fraction * 100).toFixed(2)}%)`,
+    ).toBeGreaterThanOrEqual(marginRange[0]);
+    expect(fraction).toBeLessThanOrEqual(marginRange[1]);
+  }
+
+  // 圆角几何：包围盒四角（若为直角应不透明）必须透明；沿边向内越过圆角切点后
+  // 必须不透明——锁定“圆角矩形”而非方形切角或整圆。
+  const cornerPoints: Array<[number, number]> = [
+    [bounds.left, bounds.top],
+    [bounds.right, bounds.top],
+    [bounds.left, bounds.bottom],
+    [bounds.right, bounds.bottom],
+  ];
+  for (const [x, y] of cornerPoints) {
+    expect(image.alphaAt(x, y), `${label} outer tile corner (${x},${y}) must be rounded away`).toBeLessThan(128);
+  }
+  const inset = Math.round(side * 0.25);
+  const insideEdgePoints: Array<[number, number]> = [
+    [bounds.left + inset, bounds.top + 1],
+    [bounds.right - inset, bounds.top + 1],
+    [bounds.left + 1, bounds.top + inset],
+    [bounds.left + inset, bounds.bottom - 1],
+  ];
+  for (const [x, y] of insideEdgePoints) {
+    expect(image.alphaAt(x, y), `${label} outer tile edge (${x},${y}) must be opaque past the corner arc`).toBeGreaterThanOrEqual(128);
+  }
+}
+
 it("points the bundle, the window and the NSIS installer at a controlled icon set", () => {
   const iconList = tauriConfig.bundle?.icon;
   expect(Array.isArray(iconList)).toBe(true);
@@ -239,80 +342,13 @@ it("matches the controlled master artwork byte for byte", () => {
 });
 
 it("ships the macOS master as a 1024x1024 RGBA canvas with transparent margins", () => {
-  const master = readPngHeader(readFileSync(masterPng));
-  expect(master.width, "macOS master canvas is 1024px wide").toBe(MASTER_CANVAS);
-  expect(master.height, "macOS master canvas is 1024px tall").toBe(MASTER_CANVAS);
-  expect(master.colorType, "macOS master keeps an alpha channel").toBe(6);
-
-  const image = decodePngRgba(readFileSync(masterPng));
-  // 画布四角与四边中点都落在透明边距/圆角外：Dock 中不再出现直角黑底。
-  const corners: Array<[number, number]> = [
-    [0, 0],
-    [MASTER_CANVAS - 1, 0],
-    [0, MASTER_CANVAS - 1],
-    [MASTER_CANVAS - 1, MASTER_CANVAS - 1],
-  ];
-  for (const [x, y] of corners) {
-    expect(image.alphaAt(x, y), `corner (${x},${y}) stays transparent`).toBe(0);
-  }
-  const edgeMidpoints: Array<[number, number]> = [
-    [0, MASTER_CANVAS >> 1],
-    [MASTER_CANVAS - 1, MASTER_CANVAS >> 1],
-    [MASTER_CANVAS >> 1, 0],
-    [MASTER_CANVAS >> 1, MASTER_CANVAS - 1],
-  ];
-  for (const [x, y] of edgeMidpoints) {
-    expect(image.alphaAt(x, y), `edge midpoint (${x},${y}) stays transparent`).toBe(0);
-  }
-  expect(image.alphaAt(MASTER_CANVAS >> 1, MASTER_CANVAS >> 1), "canvas center stays opaque").toBe(255);
+  // 现状母版即回滚基线：保留旧几何（外层 86%-88% / 边距 6%-7%）以证明可回退。
+  assertMacOsMasterGeometry(masterPng, MASTER_CANVAS, MASTER_OUTER_FRACTION_RANGE, MASTER_MARGIN_FRACTION_RANGE, "macOS master");
 });
 
-it("shapes the macOS master as a rounded tile within the dock size budget", () => {
-  const image = decodePngRgba(readFileSync(masterPng));
-  const bounds = opaqueBounds(image);
-  const side = Math.max(bounds.right - bounds.left + 1, bounds.bottom - bounds.top + 1);
-  const sideFraction = side / MASTER_CANVAS;
-  expect(
-    sideFraction,
-    `rounded outer tile must span 86%-88% of the canvas (got ${(sideFraction * 100).toFixed(2)}%)`,
-  ).toBeGreaterThanOrEqual(MASTER_OUTER_FRACTION_RANGE[0]);
-  expect(sideFraction).toBeLessThanOrEqual(MASTER_OUTER_FRACTION_RANGE[1]);
-
-  // 四周透明边距 6%-7%。
-  const margins = {
-    left: bounds.left,
-    top: bounds.top,
-    right: MASTER_CANVAS - 1 - bounds.right,
-    bottom: MASTER_CANVAS - 1 - bounds.bottom,
-  };
-  for (const [edge, margin] of Object.entries(margins)) {
-    const fraction = margin / MASTER_CANVAS;
-    expect(
-      fraction,
-      `${edge} margin must stay within 6%-7% of the canvas (got ${(fraction * 100).toFixed(2)}%)`,
-    ).toBeGreaterThanOrEqual(MASTER_MARGIN_FRACTION_RANGE[0]);
-    expect(fraction).toBeLessThanOrEqual(MASTER_MARGIN_FRACTION_RANGE[1]);
-  }
-
-  // 圆角几何：包围盒四角（若为直角应不透明）必须透明；沿边向内越过
-  // 圆角切点后必须不透明——锁定“圆角矩形”而非方形切角或整圆。
-  const cornerPoints: Array<[number, number]> = [
-    [bounds.left, bounds.top],
-    [bounds.right, bounds.top],
-    [bounds.left, bounds.bottom],
-    [bounds.right, bounds.bottom],
-  ];
-  for (const [x, y] of cornerPoints) {
-    expect(image.alphaAt(x, y), `outer tile corner (${x},${y}) must be rounded away`).toBeLessThan(128);
-  }
-  const inset = Math.round(side * 0.25);
-  const insideEdgePoints: Array<[number, number]> = [
-    [bounds.left + inset, bounds.top + 1],
-    [bounds.right - inset, bounds.top + 1],
-    [bounds.left + 1, bounds.top + inset],
-    [bounds.left + inset, bounds.bottom - 1],
-  ];
-  for (const [x, y] of insideEdgePoints) {
-    expect(image.alphaAt(x, y), `outer tile edge (${x},${y}) must be opaque past the corner arc`).toBeGreaterThanOrEqual(128);
-  }
+it("ships the macOS candidate master as a 1024x1024 RGBA canvas with a larger transparent margin (D5-11 Dock-optical-size guardrail)", () => {
+  // 候选母版：仅放大透明边距（外层 84.4% / 边距 7.8%）以缓解 Dock 中视觉偏大。
+  // 区间上限 0.87 < 现状 0.875、边距下限 0.07 > 现状 0.0625，构成护栏防回归。
+  expect(existsSync(masterCandidatePng), "candidate macOS master must exist").toBe(true);
+  assertMacOsMasterGeometry(masterCandidatePng, MASTER_CANVAS, MASTER_CANDIDATE_OUTER_FRACTION_RANGE, MASTER_CANDIDATE_MARGIN_FRACTION_RANGE, "macOS candidate master");
 });
