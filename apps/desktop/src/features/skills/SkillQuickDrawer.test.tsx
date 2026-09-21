@@ -175,6 +175,7 @@ interface DrawerHarnessProps {
   onCheckUpdates?: (skillId: string, skillName: string) => void;
   open?: boolean;
   preferences?: SkillDrawerPreferences;
+  refreshSnapshot?: () => Promise<void>;
   skillId?: string;
 }
 
@@ -186,6 +187,7 @@ function DrawerHarness({
   onCheckUpdates,
   open = true,
   preferences = DEFAULT_DRAWER_PREFERENCES,
+  refreshSnapshot,
   skillId = "skill-pdf",
 }: DrawerHarnessProps & {
   onDelete?: (skillId: string, skillName: string) => void;
@@ -212,6 +214,7 @@ function DrawerHarness({
         onPreferencesChange={setControlledPreferences}
         open={open}
         preferences={controlledPreferences}
+        refreshSnapshot={refreshSnapshot}
         returnFocusRef={returnFocusRef}
         skillId={skillId}
       />
@@ -765,6 +768,18 @@ it("removes a tag chip and persists the reduced tag set", async () => {
   expect(facade.calls.emitBatchIntent).not.toContainEqual(
     expect.objectContaining({ action: "remove_tag" }),
   );
+});
+
+it("refreshes the bootstrap snapshot after drawer metadata changes", async () => {
+  const refreshSnapshot = vi.fn(async () => undefined);
+  const facade = createMockSkillLibraryFacade();
+  await renderDrawer({ facade, refreshSnapshot });
+
+  fireEvent.click(await screen.findByRole("button", { name: "Remove tag documents" }));
+
+  await waitFor(() => {
+    expect(refreshSnapshot).toHaveBeenCalledTimes(1);
+  });
 });
 
 it("shows a visible failure and restores the saved tags when a tag save is rejected", async () => {

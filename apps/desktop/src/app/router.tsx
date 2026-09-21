@@ -246,6 +246,7 @@ function BatchDeploymentRoute() {
 
 function SkillLibraryRoute() {
   const navigate = useNavigate();
+  const { refreshSnapshot } = useOutletContext<BootstrapOutletContext>();
   return (
     <RouteSuspense>
     <SkillLibraryPage
@@ -255,6 +256,7 @@ function SkillLibraryRoute() {
       }}
       facade={nativeSkillLibraryFacade}
       onOpenDiscovery={() => navigate("/discovery")}
+      refreshSnapshot={refreshSnapshot}
     />
     </RouteSuspense>
   );

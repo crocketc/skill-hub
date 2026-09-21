@@ -97,6 +97,8 @@ export interface SkillLibraryPageProps {
   facade: SkillLibraryFacade;
   onOpenDiscovery?: () => void;
   removalFacade?: RemovalFacade;
+  /** Refresh the bootstrap projection after library metadata changes. */
+  refreshSnapshot?: () => Promise<void>;
   /** 统一执行桥的在途投影；测试可注入独立实例，默认模块级单例。 */
   tracker?: OperationTracker;
 }
@@ -413,6 +415,7 @@ export function SkillLibraryPage({
   facade,
   onOpenDiscovery,
   removalFacade = nativeRemovalFacade,
+  refreshSnapshot,
   tracker = operationTracker,
 }: SkillLibraryPageProps): JSX.Element {
   const { t } = useTranslation();
@@ -1592,6 +1595,7 @@ export function SkillLibraryPage({
         open={Boolean(skillId)}
         preferenceSaveFailed={Boolean(drawerSaveFailure)}
         preferences={effectiveDrawerPreferences}
+        refreshSnapshot={refreshSnapshot}
         returnFocusRef={returnFocusRef}
         skillId={skillId}
       />

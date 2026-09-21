@@ -53,6 +53,8 @@ export interface SkillQuickDrawerProps {
   open: boolean;
   preferenceSaveFailed?: boolean;
   preferences: SkillDrawerPreferences;
+  /** Refresh the bootstrap projection after metadata changes. */
+  refreshSnapshot?: () => Promise<void>;
   returnFocusRef: RefObject<HTMLElement | null>;
   skillId?: string;
 }
@@ -780,6 +782,7 @@ export function SkillQuickDrawer({
   open,
   preferenceSaveFailed,
   preferences,
+  refreshSnapshot,
   returnFocusRef,
   skillId,
 }: SkillQuickDrawerProps) {
@@ -1093,6 +1096,7 @@ export function SkillQuickDrawer({
         void queryClient.invalidateQueries({ queryKey: skillLibraryKeys.root });
         void queryClient.invalidateQueries({ queryKey: skillDetailKeys.metadata(view.id) });
         void queryClient.invalidateQueries({ queryKey: skillDetailKeys.summary(view.id) });
+        void refreshSnapshot?.();
       },
       () => {
         setMetadataSaveFailed(true);
@@ -1130,6 +1134,7 @@ export function SkillQuickDrawer({
         void queryClient.invalidateQueries({ queryKey: skillLibraryKeys.quickView(view.id) });
         void queryClient.invalidateQueries({ queryKey: skillDetailKeys.metadata(view.id) });
         void queryClient.invalidateQueries({ queryKey: skillDetailKeys.summary(view.id) });
+        void refreshSnapshot?.();
       },
       () => {
         if (persistedView) setLocalView(persistedView);
@@ -1164,6 +1169,7 @@ export function SkillQuickDrawer({
         void queryClient.invalidateQueries({ queryKey: skillLibraryKeys.root });
         void queryClient.invalidateQueries({ queryKey: skillDetailKeys.metadata(view.id) });
         void queryClient.invalidateQueries({ queryKey: skillDetailKeys.summary(view.id) });
+        void refreshSnapshot?.();
       },
       () => {
         setTagsSaveFailed(true);
