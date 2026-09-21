@@ -8,7 +8,7 @@ import { expect, test, type Page } from "@playwright/test";
  * 横向可滚范围恰好少一个槽宽——scrollLeft 钳制上限实测为
  * `scrollWidth − borderBox 宽`（CSSOM 标准应为 `scrollWidth − clientWidth`），
  * 导致横向溢出内容的末 (borderBox − clientWidth) px 永久停在纵向滚动条槽位
- * 之下、无法滚出。默认列集下 security 就是最后一个可见列，溢出量小于一个
+ * 之下、无法滚出。默认列集下 security_results 就是最后一个可见列，溢出量小于一个
  * 槽宽时 scrollLeft 被钳到 0，徽标右缘被永久盖住——即 Windows 真机
  * “滚动到最右/最下时安全检查徽标与文字不完整可读”的根因。
  *
@@ -85,14 +85,14 @@ async function enableAllColumns(page: Page): Promise<void> {
   await page.getByRole("button", { name: "Columns and density" }).click();
 }
 
-/** 用键盘把 security 列挪到末位（复用 D2-2a 的键盘排序语义，不触碰可见性）。 */
+/** 用键盘把 security_results 列挪到末位（复用 D2-2a 的键盘排序语义，不触碰可见性）。 */
 async function moveSecurityColumnLast(page: Page): Promise<void> {
   await page.getByRole("button", { name: "Columns and density" }).click();
   const chip = page
     .getByRole("list", { name: "Reorder columns" })
-    .getByRole("button", { name: "Security", exact: true });
+    .getByRole("button", { name: "Security results", exact: true });
   await chip.focus();
-  // 默认列序中 security 位于索引 7/13（0 基），连按 6 次到末位。
+  // 默认列序中 security_results 位于索引 8/14（0 基），连按 5 次到末位。
   for (let step = 0; step < 6; step += 1) {
     await page.keyboard.press("ArrowRight");
   }
@@ -100,7 +100,7 @@ async function moveSecurityColumnLast(page: Page): Promise<void> {
   await page.getByRole("button", { name: "Columns and density" }).click();
   await expect(page.locator(".sh-skill-table thead th").last()).toHaveAttribute(
     "data-column",
-    "security",
+    "security_results",
   );
 }
 
@@ -144,7 +144,7 @@ async function scrollRegionToFarCorner(page: Page): Promise<ScrollbarClearance> 
     }
     const securityBadgeRects = [
       ...region.querySelectorAll<HTMLElement>(
-        "td[data-column='security'] .sh-skill-table__security > *",
+        "td[data-column='security_results'] .sh-skill-table__security-results > *",
       ),
     ].map((badge) => {
       const badgeRect = badge.getBoundingClientRect();
@@ -186,7 +186,7 @@ test("all enabled columns scroll fully clear of the vertical scrollbar slot", as
   await moveSecurityColumnLast(page);
   const { geometry, tableRight, contentRightByColumn, securityBadgeRects, lastColumn } =
     await scrollRegionToFarCorner(page);
-  expect(lastColumn).toBe("security");
+  expect(lastColumn).toBe("security_results");
 
   // 核心不变量（CSSOM 标准钳制）：横向滚距必须达到 scrollWidth − clientWidth。
   // 取证基线（gutter stable）：scrollLeft 钳制在 783 < 798−1，末 15px 永久不可达。
@@ -218,8 +218,8 @@ test("all enabled columns scroll fully clear of the vertical scrollbar slot", as
   }
 });
 
-test("default column set keeps the trailing security column readable at 1280", async ({ page }) => {
-  // 用户真机场景：默认列集下 security 就是最后一个可见列；1280 视口 +
+test("default column set keeps the trailing security results column readable at 1280", async ({ page }) => {
+  // 用户真机场景：默认列集下 security_results 就是最后一个可见列；1280 视口 +
   // 纵向滚动条出现后，其徽标右缘必须留在客户区内（不允许“滚不回来的遮挡”）。
   await page.setViewportSize({ width: 1280, height: 800 });
   await openTableWithRows(page);
@@ -231,7 +231,7 @@ test("default column set keeps the trailing security column readable at 1280", a
   // 纵向滚动存在（前提）。
   expect(geometry.scrollTop).toBeGreaterThan(0);
 
-  const securityContentRight = contentRightByColumn.security;
+  const securityContentRight = contentRightByColumn.security_results;
   expect(securityContentRight).toBeDefined();
   // 滚到最右最下后，安全检查列内容必须完整可读：不进纵向滚动条槽位。
   expect(securityContentRight, "security content clears the scrollbar slot").toBeLessThanOrEqual(

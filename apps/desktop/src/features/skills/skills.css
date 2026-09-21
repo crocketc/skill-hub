@@ -109,8 +109,8 @@
 .sh-skill-library .sh-skill-table [data-column="agent_deployments"] { width: 9rem; min-width: 0; }
 .sh-skill-library .sh-skill-table [data-column="project_deployments"] { width: 7rem; min-width: 0; }
 .sh-skill-library .sh-skill-table [data-column="version"] { width: 6rem; min-width: 0; }
-.sh-skill-library .sh-skill-table [data-column="security_status"] { width: 9rem; min-width: 0; }
-.sh-skill-library .sh-skill-table [data-column="security_results"] { width: 9rem; min-width: 0; }
+.sh-skill-library .sh-skill-table [data-column="security_status"] { width: 6rem; min-width: 0; }
+.sh-skill-library .sh-skill-table [data-column="security_results"] { width: 6rem; min-width: 0; }
 .sh-skill-library .sh-skill-table [data-column="source"] { width: 8rem; min-width: 0; }
 .sh-skill-library .sh-skill-table [data-column="ownership"] { width: 7rem; min-width: 0; }
 .sh-skill-library .sh-skill-table [data-column="license"] { width: 6rem; min-width: 0; }

@@ -157,12 +157,12 @@ test("wide desktop keeps library content reachable and the batch bar clear of th
   await page.getByRole("button", { name: "Table view" }).click();
   await expect(page.getByRole("row", { name: /PDF Reader/ })).toBeVisible();
 
-  // 末列可达：区域横向滚到最右后 security 列头可见（列集恰好放下时本就可见）。
+  // 末列可达：区域横向滚到最右后 security_results 列头可见（列集恰好放下时本就可见）。
   const region = page.locator(".sh-skill-table__region");
   await region.evaluate((element) => {
     element.scrollLeft = element.scrollWidth;
   });
-  await expect(page.locator("th[data-column='security']")).toBeVisible();
+  await expect(page.locator("th[data-column='security_results']")).toBeVisible();
 
   // 批量条激活后滚动到底：末行与分页按钮都必须不被固定批量条遮挡。
   await page.getByRole("checkbox", { name: "Select current page" }).check();

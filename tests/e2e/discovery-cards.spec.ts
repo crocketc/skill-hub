@@ -80,7 +80,7 @@ test.describe("discovery shared skill cards", () => {
     });
   }
 
-  test("repo and lock results map onto the same card model", async ({ page }) => {
+  test("repository results map onto the shared card model", async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 900 });
     await page.goto(PREVIEW);
 
@@ -95,14 +95,8 @@ test.describe("discovery shared skill cards", () => {
     await expect(nestedCard).toBeVisible();
     await expect(nestedCard.getByText("deep/nested/tool")).toBeVisible();
 
-    await page.getByRole("button", { name: "Scan lock file" }).click();
-    const lockList = page.getByRole("list", { name: "Lock entries" });
-    await expect(lockList.getByRole("heading", { name: "pdf", exact: true })).toBeVisible();
-    const lockCard = lockList.getByRole("article").first();
-    await expect(lockCard.getByText("anthropics/skills@v2")).toBeVisible();
-    await expect(lockCard.getByText("Repo path: skills/pdf")).toBeVisible();
-    // lock 条目没有描述与安装数：卡片如实省略。
-    expect(await lockCard.getByText(/Installs:/).count()).toBe(0);
+    // DEV-50：锁文件发现已移除，旧入口不再出现在发现工作台。
+    await expect(page.getByRole("button", { name: "Scan lock file" })).toHaveCount(0);
   });
 
   for (const width of [800, 1024, 1280, 1440, 1600]) {

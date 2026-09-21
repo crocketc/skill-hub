@@ -71,7 +71,7 @@ test("states each fact once and keeps deterministic candidates ahead of the opti
   // 编辑契约保留在元数据（读值与头部别名行同值）。
   await expect(page.getByRole("heading", { level: 1, name: "PDF Reader" })).toBeVisible();
   await expect(page.getByText("用于 PDF 表格提取")).toHaveCount(2);
-  await expect(page.getByText("PDF 表格读取器")).toHaveCount(2);
+  await expect(page.getByText("PDF 表格读取器")).toHaveCount(3);
   await expect(page.getByRole("button", { name: "Edit Alias" })).toBeVisible();
 
   // 确定性重复候选加载即常显；可选 AI 分析未运行时不显示任何结果来源。

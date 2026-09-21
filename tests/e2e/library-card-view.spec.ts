@@ -167,7 +167,7 @@ test("hidden table columns stay reachable through a visible horizontal scrollbar
     element.scrollLeft = element.scrollWidth;
   });
   const securityVisible = await page.evaluate(() => {
-    const column = document.querySelector<HTMLElement>("th[data-column='security']");
+    const column = document.querySelector<HTMLElement>("th[data-column='security_results']");
     const owner = document.querySelector<HTMLElement>(".sh-skill-table__region");
     if (!column || !owner) return false;
     const columnRect = column.getBoundingClientRect();
