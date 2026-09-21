@@ -34,7 +34,7 @@ function nodeLabel(
 ): string {
   switch (node.kind) {
     case "skill":
-      return node.skill_id ? resolveSkillName?.(node.skill_id) ?? node.skill_id : fallback;
+      return node.skill_id ? resolveSkillName?.(node.skill_id) ?? fallback : fallback;
     case "agent":
       return node.agent_client_id ? readableAgentIdName(node.agent_client_id) : fallback;
     case "directory":
@@ -128,7 +128,7 @@ export function GraphDetailsPanel({
   return (
     <aside className="sh-graph-details" aria-label={t("relationships.graph.detailsLabel")}>
       <section className="sh-graph-details__center">
-        <h2>{displayName ?? centerSkillId}</h2>
+        <h2>{displayName ?? t("relationships.graph.unknownSkill")}</h2>
         <dl>
           <div>
             <dt>{t("relationships.graph.detailsFacts")}</dt>
@@ -141,10 +141,19 @@ export function GraphDetailsPanel({
             </dd>
           </div>
           <VerifiedLine lastVerifiedAt={lastVerifiedAt} />
-          <div>
-            <dt>{t("relationships.graph.revisionLabel")}</dt>
-            <dd>{relationshipRevision}</dd>
-          </div>
+          <details className="sh-graph-details__technical">
+            <summary>{t("relationships.graph.technicalDetails")}</summary>
+            <dl>
+              <div>
+                <dt>{t("relationships.graph.revisionLabel")}</dt>
+                <dd>{relationshipRevision}</dd>
+              </div>
+              <div>
+                <dt>{t("relationships.graph.centerIdLabel")}</dt>
+                <dd>{centerSkillId}</dd>
+              </div>
+            </dl>
+          </details>
         </dl>
         <div className="sh-graph-details__actions">
           <Link
@@ -170,10 +179,13 @@ export function GraphDetailsPanel({
             <dl>
               <EdgeFacts projected={selectedEdge} />
               {selectedEdge.edge.relation_id ? (
-                <div>
-                  <dt>{t("relationships.graph.detailsRelationId")}</dt>
-                  <dd>{selectedEdge.edge.relation_id}</dd>
-                </div>
+                <details className="sh-graph-details__technical">
+                  <summary>{t("relationships.graph.technicalDetails")}</summary>
+                  <div>
+                    <dt>{t("relationships.graph.detailsRelationId")}</dt>
+                    <dd>{selectedEdge.edge.relation_id}</dd>
+                  </div>
+                </details>
               ) : null}
             </dl>
             {selectedEdge.edge.relation_id ? (
