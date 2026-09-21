@@ -118,6 +118,29 @@ function ToolbarPopover({ label, children }: { label: string; children: ReactNod
   );
 }
 
+function GraphLegend() {
+  const { t } = useTranslation();
+  const states = [
+    ["verified", "solid", "content_verified"],
+    ["unverified", "dotted", "name_only"],
+    ["inactive", "dashed", "released"],
+  ] as const;
+  return (
+    <section aria-label={t("relationships.graph.legend.label")} className="sh-graph__legend">
+      <h2>{t("relationships.graph.legend.title")}</h2>
+      <div className="sh-graph__legend-states">
+        {states.map(([className, line, status]) => (
+          <span className="sh-graph__legend-item" key={status}>
+            <span aria-hidden="true" className={`sh-graph__legend-line sh-graph__legend-line--${line}`} />
+            {t(`relationships.graph.status.${status}`)}
+          </span>
+        ))}
+      </div>
+      <p>{t("relationships.graph.legend.typeHint")}</p>
+    </section>
+  );
+}
+
 export interface SkillGraphPageProps {
   facade?: RelationshipsFacade;
   /** 随机源（首次选中心/换一个）；默认 Math.random，测试注入固定值。 */
@@ -465,6 +488,7 @@ export function SkillGraphPage({
       {pickAnotherNotice ? (
         <p role="status">{t("relationships.graph.pickAnotherNone")}</p>
       ) : null}
+      <GraphLegend />
       <div className="sh-graph__body">
         <SkillGraphCanvas
           onBeforeJump={saveReturnState}

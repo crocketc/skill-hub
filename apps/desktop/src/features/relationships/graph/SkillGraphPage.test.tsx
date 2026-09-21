@@ -240,6 +240,14 @@ async function renderPage(url: string, options: PageOptions = {}) {
 }
 
 describe("first-load center selection", () => {
+  it("explains relationship edge state and type encodings in a visible legend", async () => {
+    await renderPage("/relationships?skillId=pdf-reader");
+
+    expect(await screen.findByRole("region", { name: "Graph legend" })).toBeVisible();
+    expect(screen.getByText("Content verified")).toBeVisible();
+    expect(screen.getByText("Managed link")).toBeVisible();
+  });
+
   it("picks the center once from candidates and replaces the URL", async () => {
     const random = vi.fn(() => 0);
     const { calls, locations } = await renderPage("/relationships", { random });

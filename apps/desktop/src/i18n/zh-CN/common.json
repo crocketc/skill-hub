@@ -2230,6 +2230,11 @@
       "displayAgentsProjects": "Agent/项目",
       "displayDirectories": "目录",
       "displayConflicts": "冲突",
+      "legend": {
+        "label": "图谱图例",
+        "title": "图谱阅读方式",
+        "typeHint": "边上的文字表示关系类型，线型表示关系验证状态。"
+      },
       "canvasLabel": "技能关系图",
       "zoomIn": "放大",
       "zoomOut": "缩小",

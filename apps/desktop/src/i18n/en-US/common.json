@@ -2230,6 +2230,11 @@
       "displayAgentsProjects": "Agents/Projects",
       "displayDirectories": "Directories",
       "displayConflicts": "Conflicts",
+      "legend": {
+        "label": "Graph legend",
+        "title": "How to read the graph",
+        "typeHint": "Edge labels identify the relationship type; line style identifies its verification state."
+      },
       "canvasLabel": "Skill relationship graph",
       "zoomIn": "Zoom in",
       "zoomOut": "Zoom out",
