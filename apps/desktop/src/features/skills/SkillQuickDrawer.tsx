@@ -242,9 +242,6 @@ function SourceLicenseModule({ view }: ModuleProps) {
           <dd>{view.license ?? <EmptyValue />}</dd>
         </div>
       </dl>
-      <Link className="sh-button sh-button--secondary sh-button--sm" to={`/library/${encodeURIComponent(view.id)}/security`}>
-        {t("skillLibrary.drawer.security.open")}
-      </Link>
     </ModuleCard>
   );
 }
@@ -263,6 +260,9 @@ function SecurityChecksModule({ view }: ModuleProps) {
           <dd>{t(CHECK_STATE_KEYS[view.aiCheck])}</dd>
         </div>
       </dl>
+      <Link className="sh-button sh-button--secondary sh-button--sm" to={`/library/${encodeURIComponent(view.id)}/security`}>
+        {t("skillLibrary.drawer.security.open")}
+      </Link>
     </ModuleCard>
   );
 }
