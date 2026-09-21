@@ -70,9 +70,6 @@ export function OnlineDiscoveryPreview() {
     async discoverRepoSkills() {
       return { skills: [], warnings: [] };
     },
-    async discoverAgentsLockSkills() {
-      return [];
-    },
     async addSkillRepo() {
       return [];
     },

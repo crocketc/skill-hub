@@ -11,9 +11,9 @@ import { createOperationTracker } from "../../platform/operationTracker";
 import type { DiscoveryFacade } from "./api";
 import { DiscoveryPage, type DiscoveryModuleView } from "./DiscoveryPage";
 
-const MODULE_VIEWS: DiscoveryModuleView[] = ["local", "online", "repo", "lock"];
+const MODULE_VIEWS: DiscoveryModuleView[] = ["local", "online", "repo"];
 
-it("renders four fixed discovery module cards on the home page without runtime claims", async () => {
+it("renders fixed discovery module cards on the home page without runtime claims", async () => {
   const i18n = await createSkillHubI18n(["zh-CN"]);
   render(
     <I18nextProvider i18n={i18n}>
@@ -26,8 +26,7 @@ it("renders four fixed discovery module cards on the home page without runtime c
   expect(screen.getByRole("heading", { name: "本机发现" })).toBeVisible();
   expect(screen.getByRole("heading", { name: "在线发现" })).toBeVisible();
   expect(screen.getByRole("heading", { name: "仓库发现" })).toBeVisible();
-  expect(screen.getByRole("heading", { name: "~/.agents lock" })).toBeVisible();
-  expect(screen.getAllByRole("button", { name: /^进入/ })).toHaveLength(4);
+  expect(screen.getAllByRole("button", { name: /^进入/ })).toHaveLength(3);
   // 主页只承载模块入口；详细搜索、配置、导入按钮全部下沉到子页。
   expect(screen.queryByRole("button", { name: "导入 Skill" })).not.toBeInTheDocument();
   expect(screen.queryByText(/已授权|可用|验证通过/)).not.toBeInTheDocument();
@@ -49,7 +48,7 @@ it("renders home module icons from the icon registry instead of font glyphs", as
   expect(screen.queryByText("⭳")).not.toBeInTheDocument();
   expect(screen.queryByText("⇣")).not.toBeInTheDocument();
   const icons = container.querySelectorAll("article svg");
-  expect(icons).toHaveLength(4);
+  expect(icons).toHaveLength(3);
   for (const icon of icons) {
     expect(icon).toHaveAttribute("aria-hidden", "true");
   }
@@ -84,13 +83,11 @@ it("navigates from each home card to its module subpage", async () => {
   fireEvent.click(screen.getByRole("button", { name: "进入本机发现" }));
   fireEvent.click(screen.getByRole("button", { name: "进入在线发现" }));
   fireEvent.click(screen.getByRole("button", { name: "进入仓库发现" }));
-  fireEvent.click(screen.getByRole("button", { name: "进入~/.agents lock" }));
 
-  expect(onNavigate).toHaveBeenCalledTimes(4);
+  expect(onNavigate).toHaveBeenCalledTimes(3);
   expect(onNavigate).toHaveBeenNthCalledWith(1, "local");
   expect(onNavigate).toHaveBeenNthCalledWith(2, "online");
   expect(onNavigate).toHaveBeenNthCalledWith(3, "repo");
-  expect(onNavigate).toHaveBeenNthCalledWith(4, "lock");
 });
 
 it("leaves the sub-route return to the shell topbar without an in-page duplicate", async () => {
@@ -145,52 +142,6 @@ it("hosts the original module capabilities on their own subpages", async () => {
   expect(screen.getByRole("heading", { name: "仓库发现" })).toBeVisible();
   unmount();
 
-  render(
-    <I18nextProvider i18n={i18n}>
-      <MemoryRouter><AppNotificationsProvider>
-      <DiscoveryPage view="lock" discoveryFacade={repoStubFacade()} />
-    </AppNotificationsProvider></MemoryRouter>
-    </I18nextProvider>,
-  );
-  await act(async () => {
-    await Promise.resolve();
-  });
-  expect(screen.getByRole("heading", { name: "~/.agents lock 导入" })).toBeVisible();
-  unmount();
-});
-
-it("demotes the ~/.agents lock card to the last, visually secondary source", async () => {
-  const i18n = await createSkillHubI18n(["zh-CN"]);
-  render(
-    <I18nextProvider i18n={i18n}>
-      <MemoryRouter><AppNotificationsProvider>
-      <DiscoveryPage />
-    </AppNotificationsProvider></MemoryRouter>
-    </I18nextProvider>,
-  );
-
-  const lockHeading = screen.getByRole("heading", { name: "~/.agents lock" });
-  const lockCard = lockHeading.closest("article");
-  expect(lockCard).not.toBeNull();
-  expect(lockCard).toHaveClass("sh-discovery-home__card--secondary");
-  // 四张卡片中 lock 固定排在最后（次级来源）。
-  const cards = screen.getAllByRole("heading", { level: 2 }).map((heading) => heading.closest("article"));
-  expect(cards[cards.length - 1]).toBe(lockCard);
-  expect(screen.getByText(/次级来源：来自/)).toHaveTextContent("skill-lock.json");
-});
-
-it("explains the secondary lock source at the top of the lock subpage", async () => {
-  const i18n = await createSkillHubI18n(["zh-CN"]);
-  render(
-    <I18nextProvider i18n={i18n}>
-      <MemoryRouter><AppNotificationsProvider>
-      <DiscoveryPage view="lock" discoveryFacade={repoStubFacade()} />
-    </AppNotificationsProvider></MemoryRouter>
-    </I18nextProvider>,
-  );
-
-  expect(screen.getByText(/只读解析，不改动它/)).toBeVisible();
-  expect(screen.getByText(/本模块的数据来自/)).toHaveTextContent("skill-lock.json");
 });
 
 it("opens the production import wizard without showing mock candidates", async () => {
@@ -504,7 +455,6 @@ function repoStubFacade(): DiscoveryFacade {
     },
     listSkillRepos: async () => [],
     discoverRepoSkills: async () => ({ skills: [], warnings: [] }),
-    discoverAgentsLockSkills: async () => [],
     addSkillRepo: async () => [],
     removeSkillRepo: async () => [],
     downloadRepoSkill: async () => {

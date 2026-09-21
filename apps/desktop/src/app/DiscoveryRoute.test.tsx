@@ -64,7 +64,6 @@ function stubDiscoveryFacade(): DiscoveryFacade {
     },
     listSkillRepos: async () => [],
     discoverRepoSkills: async () => ({ skills: [], warnings: [] }),
-    discoverAgentsLockSkills: async () => [],
     addSkillRepo: async () => [],
     removeSkillRepo: async () => [],
     downloadRepoSkill: async () => {

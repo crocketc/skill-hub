@@ -473,15 +473,9 @@
         "repo": {
           "title": "Repository discovery",
           "description": "Download archives from configured GitHub repositories and scan for SKILL.md."
-        },
-        "lock": {
-          "title": "~/.agents lock",
-          "description": "Read locked GitHub skills recorded in ~/.agents/.skill-lock.json.",
-          "note": "Secondary source: locked GitHub sources recorded in ~/.agents/.skill-lock.json."
         }
       }
     },
-    "lockNote": "This module reads locked GitHub sources recorded in ~/.agents/.skill-lock.json. The file is maintained by other tools; SkillHub parses it read-only and never modifies it.",
     "local": {
       "eyebrow": "On this device",
       "title": "Local discovery",
@@ -635,22 +629,6 @@
       "openOnGithub": "Open {{repo}} on GitHub",
       "defaultBranch": "default branch",
       "unsupportedAction": "Per-repository refresh is not available in this environment."
-    },
-    "agentsLock": {
-      "eyebrow": "External installs",
-      "title": "~/.agents lock import",
-      "description": "Reads ~/.agents/.skill-lock.json and lists its GitHub-sourced Skills; read-only discovery, the file is never modified.",
-      "scan": "Scan lock file",
-      "scanning": "Scanning…",
-      "failed": "Failed to read the lock file.",
-      "empty": "No GitHub-sourced Skill entries found.",
-      "results": "Lock entries",
-      "source": "{{repo}}@{{branch}}",
-      "defaultBranch": "default branch",
-      "skillPath": "Repo path: {{path}}",
-      "downloadImport": "Download & import",
-      "downloading": "Downloading…",
-      "downloadFailed": "Download failed. Please try again later."
     },
     "card": {
       "status": {

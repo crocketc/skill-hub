@@ -1,9 +1,8 @@
-import type { AgentsLockEntry, DiscoverableRepoSkill, DiscoverySnapshot, DownloadedRepoSkill, ScanResult, SkillRepo, SkillRepoView, SourceSearchHit, SourceSearchPage } from "../../api/bindings";
+import type { DiscoverableRepoSkill, DiscoverySnapshot, DownloadedRepoSkill, ScanResult, SkillRepo, SkillRepoView, SourceSearchHit, SourceSearchPage } from "../../api/bindings";
 import { PageFrame } from "../../ui/PageFrame";
 import { PageHeader } from "../../ui/PageHeader";
 import { useTheme } from "../../styles/ThemeProvider";
 import { themeNames } from "../../styles/theme";
-import { AgentsLockDiscovery } from "../discovery/AgentsLockDiscovery";
 import { LocalDiscoveryWorkbench } from "../discovery/LocalDiscoveryWorkbench";
 import { OnlineDiscovery } from "../discovery/OnlineDiscovery";
 import type { DiscoveryFacade } from "../discovery/api";
@@ -115,23 +114,6 @@ const REPO_SKILLS: DiscoverableRepoSkill[] = [
     repo_owner: "anthropics",
     repo_name: "skills",
     repo_branch: "main",
-  },
-];
-
-const LOCK_ENTRIES: AgentsLockEntry[] = [
-  {
-    name: "pdf",
-    owner: "anthropics",
-    repo: "skills",
-    branch: "v2",
-    skill_path: "skills/pdf",
-  },
-  {
-    name: "whole-repo",
-    owner: "octo",
-    repo: "whole",
-    branch: null,
-    skill_path: null,
   },
 ];
 
@@ -319,9 +301,6 @@ function previewFacade(): DiscoveryFacade {
     async discoverRepoSkills() {
       return { skills: REPO_SKILLS, warnings: [{ owner: "gone", name: "missing", reason: "DOWNLOAD_FAILED status=404" }] };
     },
-    async discoverAgentsLockSkills(): Promise<AgentsLockEntry[]> {
-      return LOCK_ENTRIES;
-    },
     async addSkillRepo(repo: SkillRepo): Promise<SkillRepoView[]> {
       return [{ repo, scan: null }];
     },
@@ -341,7 +320,7 @@ function previewFacade(): DiscoveryFacade {
 
 /**
  * DEV-only preview (/__preview/discovery-cards).
- * 发现页共享 Skill 卡片的单一验收入口：在线/仓库/lock 三类结果卡片、
+ * 发现页共享 Skill 卡片的单一验收入口：在线/仓库两类结果卡片、
  * AI 扩展命中、已在库、不可安装、长名称状态与 9 主题切换。
  * 全部数据为确定性夹具，不触网络，不进入生产路由。
  */
@@ -376,7 +355,6 @@ export function DiscoveryCardsPreview() {
       />
       <LocalDiscoveryWorkbench facade={facade} />
       <RepoDiscovery facade={facade} onImportDirectory={() => undefined} />
-      <AgentsLockDiscovery facade={facade} onImportDirectory={() => undefined} />
     </PageFrame>
   );
 }

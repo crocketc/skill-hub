@@ -304,13 +304,12 @@ export const appRouter = createBrowserRouter([
       { path: "relationships", element: <RouteSuspense><RelationshipsGraphPage /></RouteSuspense> },
       { path: "relationships/decisions", element: <RouteSuspense><RelationshipsDecisionsPage /></RouteSuspense> },
       { path: "relationships/governance", element: <RouteSuspense><RelationshipsGovernancePage /></RouteSuspense> },
-      // AR-012：发现主页 + 每种发现方式的独立子页（本机/在线/仓库/lock）。
+      // AR-012：发现主页 + 每种发现方式的独立子页（本机/在线/仓库）。
       { path: "discovery", element: <DiscoveryRoute /> },
       { path: "discovery/local", element: <DiscoveryRoute view="local" /> },
       { path: "discovery/online", element: <DiscoveryRoute view="online" /> },
       { path: "discovery/repo", element: <DiscoveryRoute view="repo" /> },
       { path: "discovery/repositories", element: <RepoManagerRoute /> },
-      { path: "discovery/lock", element: <DiscoveryRoute view="lock" /> },
       { path: "agents", element: <RouteSuspense><AgentListPage facade={nativeAgentFacade} /></RouteSuspense> },
       { path: "agents/:agentKey", element: <AgentDetailRoute /> },
       { path: "projects", element: <ProjectListRoute /> },

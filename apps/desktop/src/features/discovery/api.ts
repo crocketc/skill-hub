@@ -1,7 +1,6 @@
 import {
   executeCommand,
   queryApplication,
-  type AgentsLockEntry,
   type ClientInstance,
   type ClientKind,
   type DiscoverableRepoSkill,
@@ -37,7 +36,6 @@ export interface DiscoveryFacade {
   /** 仓库列表（含每仓最近一次扫描状态；D4 仓库管理）。 */
   listSkillRepos: () => Promise<SkillRepoView[]>;
   discoverRepoSkills: () => Promise<RepoDiscoveryReport>;
-  discoverAgentsLockSkills: () => Promise<AgentsLockEntry[]>;
   addSkillRepo: (repo: SkillRepo) => Promise<SkillRepoView[]>;
   removeSkillRepo: (owner: string, name: string) => Promise<SkillRepoView[]>;
   /**
@@ -120,13 +118,6 @@ export const desktopDiscoveryFacade: DiscoveryFacade = {
     const result = await queryApplication({ type: "discover_repo_skills", payload: null });
     if (result.type !== "repo_discovery_report") {
       throw new Error("Unexpected repo discovery response from the native application.");
-    }
-    return result.payload;
-  },
-  async discoverAgentsLockSkills() {
-    const result = await queryApplication({ type: "discover_agents_lock_skills", payload: null });
-    if (result.type !== "agents_lock_entries") {
-      throw new Error("Unexpected agents lock response from the native application.");
     }
     return result.payload;
   },

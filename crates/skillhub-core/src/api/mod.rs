@@ -51,7 +51,7 @@ pub use event::{AppEvent, FactsChanged};
 pub use query::{
     AnalyzeGlobalSkillEvidence, AnalyzeImport, AppQuery, AppQueryResult, BasicCheckResult,
     CheckSourceUpdates, CombinationResult, DeploymentTarget, DeterministicDuplicateEntry,
-    DiffVersions, DiscoverAgentsLockSkills, DiscoverImportCandidates, DiscoverRepoSkills,
+    DiffVersions, DiscoverImportCandidates, DiscoverRepoSkills,
     FindingResult, GetBasicCheckResult, GetBootstrapSnapshot, GetCallPolicy, GetConflictWorkspace,
     GetDeploymentPlan, GetDeploymentRelations, GetDiscoverySnapshot, GetLlmSafetyCheckResult,
     GetProjectAssemblyPlan, GetReconcilePlan, GetRelationshipOverview,

@@ -83,7 +83,7 @@ pub use api::{
     CommitDeleteSkill, CommitDeployment, CommitImport, CommitInitialRestore,
     CommitRelationMigration, CommitRepair, CommitRestore, CommitUndeploy, CreateBackup,
     CreateIgnoreRule, CreateStandardExport, DeploymentTarget, DetachManagement,
-    DiscoverAgentsLockSkills, DiscoverImportCandidates, DiscoverRepoSkills,
+    DiscoverImportCandidates, DiscoverRepoSkills,
     DownloadApplicationUpdate, DownloadRepoSkill, FactsChanged, GenerateOnlineSearchQuery,
     GetCallPolicy, GetDeploymentPlan, GetDeploymentRelations, GetLlmSafetyCheckResult,
     GetProjectAssemblyPlan, GetReconcilePlan, GetRelationshipOverview,
@@ -208,7 +208,7 @@ pub use relationship::{
 };
 pub use scan::{DiscoveredSkill, ScanGeneration, ScanIssue, ScanRepository, ScanResult, ScanScope};
 pub use source::{
-    AgentsLockEntry, SearchCandidateRecord, SearchCandidateStatus, SearchHitOrigin,
+    SearchCandidateRecord, SearchCandidateStatus, SearchHitOrigin,
     SourceDescriptor, SourceKind, SourceLocator, SourceRecord, SourceRole, SourceSearchHit,
     SourceSearchPage, SourceSearchQuery, UpstreamOrigin,
 };

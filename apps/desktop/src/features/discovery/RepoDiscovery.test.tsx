@@ -58,7 +58,6 @@ function baseFacade(overrides: Partial<DiscoveryFacade> = {}): DiscoveryFacade {
     },
     listSkillRepos: async () => defaultRepos,
     discoverRepoSkills: async () => report,
-    discoverAgentsLockSkills: async () => [],
     addSkillRepo: async (repo: SkillRepo) => [{ repo, scan: null }],
     removeSkillRepo: async () => defaultRepos,
     downloadRepoSkill: async (): Promise<DownloadedRepoSkill> => ({

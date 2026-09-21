@@ -49,7 +49,6 @@ function baseFacade(overrides: Partial<DiscoveryFacade> = {}): DiscoveryFacade {
     searchOnlineSources: vi.fn(async () => page),
     listSkillRepos: async () => [],
     discoverRepoSkills: async () => ({ skills: [], warnings: [] }),
-    discoverAgentsLockSkills: async () => [],
     addSkillRepo: async () => [],
     removeSkillRepo: async () => [],
     downloadRepoSkill: vi.fn(async (): Promise<DownloadedRepoSkill> => ({

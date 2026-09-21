@@ -88,7 +88,6 @@ async function installNativePreview(page: Page) {
       // 是自由错误串（error.to_string()），已知类别隐藏原始串并给出可读文案。
       warnings: [{ owner: "cexll", name: "myclaude", reason: "DOWNLOAD_FAILED status=404 Not Found" }],
     };
-    const lockEntries = [{ name: "PDF Reader", owner: "anthropics", repo: "skills", branch: "main", skill_path: "pdf" }];
     const deploymentTargets = [
       { id: "codex-target", label: "Codex CLI", path: "C:/Preview/.agents", available: true, physical_id: "codex-physical", modes: ["symbolic_link", "managed_copy"] },
       { id: "claude-target", label: "Claude Code", path: "C:/Preview/.claude", available: true, physical_id: "claude-physical", modes: ["managed_copy"] },
@@ -127,7 +126,6 @@ async function installNativePreview(page: Page) {
           case "list_skill_repos": return ok("skill_repos", repos);
           case "search_online_sources": return ok("source_search_page", onlinePage);
           case "discover_repo_skills": return ok("repo_discovery_report", repoReport);
-          case "discover_agents_lock_skills": return ok("agents_lock_entries", lockEntries);
           case "list_deployments": return ok("deployments", deployments);
           case "list_deployment_targets": return ok("deployment_targets", deploymentTargets);
           case "list_skills": return ok("skill_page", { items: skillItems, total: skillItems.length, page: query.payload.page, page_size: query.payload.page_size, tags: ["documents", "automation"] });
@@ -328,7 +326,7 @@ for (const [width, height] of [[800, 600], [1280, 900]] as const) {
   });
 }
 
-test("online, repository, and lock discovery expose deterministic result states", async ({ page }) => {
+test("online and repository discovery expose deterministic result states", async ({ page }) => {
   await installNativePreview(page);
   await page.goto("/discovery/online");
   await page.getByRole("textbox", { name: "Search skills.sh" }).fill("pdf");
@@ -355,10 +353,6 @@ test("online, repository, and lock discovery expose deterministic result states"
   await expect(page.getByText("3 candidate Skills")).toBeVisible();
   await expect(page.getByText("Never scanned")).toBeVisible();
 
-  await page.goto("/discovery/lock");
-  await page.getByRole("button", { name: "Scan lock file" }).click();
-  await expect(page.getByText(/PDF Reader/)).toBeVisible();
-  await expect(page.getByText(/anthropics\/skills/)).toBeVisible();
 });
 
 test("agents and projects expose inspectable records and guarded forms", async ({ page }) => {

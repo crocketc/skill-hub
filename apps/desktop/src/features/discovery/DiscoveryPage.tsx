@@ -14,12 +14,11 @@ import { Icon, type IconName } from "../../ui/Icon";
 import { LocalDiscovery } from "./LocalDiscovery";
 import { LocalDiscoveryWorkbench } from "./LocalDiscoveryWorkbench";
 import { OnlineDiscovery } from "./OnlineDiscovery";
-import { AgentsLockDiscovery } from "./AgentsLockDiscovery";
 import { RepoDiscovery } from "./RepoDiscovery";
 import type { DiscoveryFacade } from "./api";
 
-/** 主页四张固定模块卡片对应的子页视图。 */
-export type DiscoveryModuleView = "local" | "online" | "repo" | "lock";
+/** 主页三张固定模块卡片对应的子页视图。 */
+export type DiscoveryModuleView = "local" | "online" | "repo";
 export type DiscoveryView = "home" | DiscoveryModuleView;
 
 export interface DiscoveryPageProps {
@@ -67,17 +66,14 @@ interface WizardController {
   closeWizard: () => void;
 }
 
-/** AR-012：主页固定模块卡片规格；lock 卡片按 AR-013 降级为最后的次级来源。 */
+/** AR-012：主页固定模块卡片规格。 */
 type HomeCardTextKey =
   | "discovery.home.cards.local.title"
   | "discovery.home.cards.local.description"
   | "discovery.home.cards.online.title"
   | "discovery.home.cards.online.description"
   | "discovery.home.cards.repo.title"
-  | "discovery.home.cards.repo.description"
-  | "discovery.home.cards.lock.title"
-  | "discovery.home.cards.lock.description"
-  | "discovery.home.cards.lock.note";
+  | "discovery.home.cards.repo.description";
 
 interface HomeCardSpec {
   view: DiscoveryModuleView;
@@ -107,14 +103,6 @@ const HOME_CARDS: HomeCardSpec[] = [
     icon: "import",
     titleKey: "discovery.home.cards.repo.title",
     descriptionKey: "discovery.home.cards.repo.description",
-  },
-  {
-    view: "lock",
-    icon: "operations",
-    titleKey: "discovery.home.cards.lock.title",
-    descriptionKey: "discovery.home.cards.lock.description",
-    noteKey: "discovery.home.cards.lock.note",
-    secondary: true,
   },
 ];
 
@@ -371,9 +359,6 @@ function DiscoveryModulePage({
             tasks={governanceTasks}
           />
         ) : null}
-        {view === "lock" ? (
-        <p className="sh-discovery-subpage__note">{t("discovery.lockNote")}</p>
-      ) : null}
       {wizard.importBlocked ? (
         <p role="alert" className="sh-discovery-page__notice">
           {t("discovery.importRunning")}
@@ -406,9 +391,6 @@ function DiscoveryModulePage({
       ) : null}
       {view === "repo" && facade ? (
         <RepoDiscovery facade={facade} onImportDirectory={wizard.openWizardWithDirectory} />
-      ) : null}
-      {view === "lock" && facade ? (
-        <AgentsLockDiscovery facade={facade} onImportDirectory={wizard.openWizardWithDirectory} />
       ) : null}
     </div>
   );
