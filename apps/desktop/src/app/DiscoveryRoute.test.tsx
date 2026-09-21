@@ -299,9 +299,12 @@ governanceGroups: [{
   await user.click(await screen.findByRole("button", { name: "继续选择候选" }));
   await user.click(screen.getByRole("checkbox", { name: /PDF/ }));
   await user.click(screen.getByRole("button", { name: "分析冲突" }));
+  await screen.findByRole("heading", { name: "处理需要确认的冲突" });
+  await user.click(screen.getByRole("button", { name: "继续确认关系影响" }));
   await screen.findByRole("heading", { name: "确认导入后的关系处理" });
   await user.click(screen.getByRole("radio", { name: "先不导入，记为待办" }));
   await user.click(screen.getByRole("button", { name: "确认关系处理" }));
+  await screen.findByRole("heading", { name: "处理需要确认的冲突" });
   await user.click(await screen.findByRole("button", { name: "提交导入" }));
   await user.click(screen.getByRole("button", { name: /查看治理待办/ }));
 

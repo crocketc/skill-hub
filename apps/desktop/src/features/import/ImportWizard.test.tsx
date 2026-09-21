@@ -1644,6 +1644,8 @@ describe("AI import pre-check", () => {
     await user.click(await screen.findByRole("button", { name: "继续选择候选" }));
     await user.click(screen.getByRole("checkbox", { name: /PDF/ }));
     await user.click(screen.getByRole("button", { name: "分析冲突" }));
+    expect(await screen.findByRole("heading", { name: "处理需要确认的冲突" })).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "继续确认关系影响" }));
     expect(await screen.findByRole("heading", { name: "确认导入后的关系处理" })).toBeVisible();
 
     expect(
@@ -1688,6 +1690,8 @@ describe("AI import pre-check", () => {
     await user.click(await screen.findByRole("button", { name: "继续选择候选" }));
     await user.click(screen.getByRole("checkbox", { name: /PDF/ }));
     await user.click(screen.getByRole("button", { name: "分析冲突" }));
+    expect(await screen.findByRole("heading", { name: "处理需要确认的冲突" })).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "继续确认关系影响" }));
     expect(await screen.findByRole("heading", { name: "确认导入后的关系处理" })).toBeVisible();
 
     // 默认 mock 供应商已配置并启用：治理区不再显示不可用提示。
