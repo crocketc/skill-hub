@@ -97,3 +97,84 @@ fn unsupported_platforms_keep_both_actors_but_mark_evidence_unknown() {
     assert_eq!(result.policy, CallPolicy::AutomaticAndManual);
     assert_eq!(result.source, InvocationSource::Unknown);
 }
+
+#[test]
+fn generic_platform_without_params_resolves_to_default_model_and_user() {
+    let result = resolve_invocation(InvocationPlatform::Generic, "---\nname: demo\n---", None);
+
+    assert_eq!(result.policy, CallPolicy::AutomaticAndManual);
+    assert_eq!(result.source, InvocationSource::Default);
+    assert_eq!(result.field, None);
+}
+
+#[test]
+fn same_skill_on_different_platforms_yields_different_facts() {
+    // A neutral Skill with no explicit invocation declaration.
+    let markdown = "---\nname: demo\n---";
+
+    let claude = resolve_invocation(InvocationPlatform::ClaudeCode, markdown, None);
+    let codex = resolve_invocation(
+        InvocationPlatform::Codex,
+        "",
+        Some("policy:\n  allow_implicit_invocation: true\n"),
+    );
+    let opencode = resolve_invocation(InvocationPlatform::OpenCode, "---\nslash: false\n---", None);
+    let generic = resolve_invocation(InvocationPlatform::Generic, markdown, None);
+
+    // Claude and Generic share the Claude-style frontmatter convention.
+    assert_eq!(claude.policy, CallPolicy::AutomaticAndManual);
+    assert_eq!(claude.source, InvocationSource::Default);
+    assert_eq!(generic.source, InvocationSource::Default);
+
+    // Codex and OpenCode read the same neutral content under their own conventions.
+    assert_eq!(codex.policy, CallPolicy::AutomaticAndManual);
+    assert_eq!(codex.source, InvocationSource::Explicit);
+    assert_eq!(opencode.policy, CallPolicy::ModelOnly);
+    assert_eq!(opencode.source, InvocationSource::Explicit);
+
+    // The platform genuinely changes the resolved fact.
+    let claude_fact = (claude.policy.clone(), claude.source);
+    let codex_fact = (codex.policy.clone(), codex.source);
+    let opencode_fact = (opencode.policy.clone(), opencode.source);
+    let generic_fact = (generic.policy.clone(), generic.source);
+    assert_ne!(claude_fact, codex_fact, "Claude and Codex facts must differ");
+    assert_ne!(claude_fact, opencode_fact, "Claude and OpenCode facts must differ");
+    assert_ne!(codex_fact, opencode_fact, "Codex and OpenCode facts must differ");
+    assert_eq!(claude_fact, generic_fact, "Claude and Generic share frontmatter convention");
+}
+
+#[test]
+fn malformed_frontmatter_does_not_panic_and_falls_back_to_default() {
+    let result = resolve_invocation(
+        InvocationPlatform::ClaudeCode,
+        "---\nthis: : : is : not : valid\n disable-model-invocation: not-a-bool\n---",
+        None,
+    );
+    // Invalid values are ignored, not crashed on; caller gets a safe default.
+    assert_eq!(result.policy, CallPolicy::AutomaticAndManual);
+    assert_eq!(result.source, InvocationSource::Default);
+    assert_eq!(result.field, None);
+}
+
+#[test]
+fn fact_maps_call_policy_to_user_facing_mode_and_preserves_source() {
+    use skillhub_core::catalog::{InvocationMode, InvocationPolicyFact, InvocationPolicySource};
+
+    let fact = InvocationPolicyFact::from_parts(
+        CallPolicy::ManualOnly,
+        InvocationPolicySource::Explicit,
+        Some("disable-model-invocation".to_owned()),
+    );
+    assert_eq!(fact.mode, InvocationMode::UserOnly);
+    assert_eq!(fact.source, InvocationPolicySource::Explicit);
+    assert_eq!(fact.field.as_deref(), Some("disable-model-invocation"));
+
+    let default = InvocationPolicyFact::from_parts(
+        CallPolicy::AutomaticAndManual,
+        InvocationPolicySource::Default,
+        None,
+    );
+    assert_eq!(default.mode, InvocationMode::ModelAndUser);
+    assert_eq!(default.source, InvocationPolicySource::Default);
+    assert!(default.field.is_none());
+}

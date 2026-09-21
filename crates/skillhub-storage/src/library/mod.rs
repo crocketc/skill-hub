@@ -19,6 +19,11 @@ impl PortableMetadataRepository for CentralLibrary {
         let Some((record, current)) = self.load_portable_skill(id)? else {
             return Ok(None);
         };
+        let invocation_source = match record.invocation_source.as_deref() {
+            Some("explicit") => skillhub_core::catalog::InvocationPolicySource::Explicit,
+            Some("unknown") => skillhub_core::catalog::InvocationPolicySource::Unknown,
+            _ => skillhub_core::catalog::InvocationPolicySource::Default,
+        };
         let skill = Skill::from_parts(
             id,
             record.display_name,
@@ -34,7 +39,12 @@ impl PortableMetadataRepository for CentralLibrary {
             SkillLifecycle::Normal,
             Vec::new(),
             None,
-        )?;
+        )?
+        .with_invocation(
+            record.call_policy,
+            invocation_source,
+            record.invocation_field.clone(),
+        );
         Ok(Some((skill, current)))
     }
     async fn remove_skill(&self, id: SkillId) -> AppResult<()> {

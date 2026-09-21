@@ -7,7 +7,8 @@ pub mod skill;
 
 pub use combination::{CombinationMember, SkillCombination};
 pub use metadata::{
-    parse_declared_requirements, CallPolicy, DeclaredRequirement, RequirementKind, TranslationState,
+    parse_declared_requirements, CallPolicy, DeclaredRequirement, DeclaredRequirementFact,
+    InvocationMode, InvocationPolicyFact, InvocationPolicySource, RequirementKind, TranslationState,
 };
 pub use ownership::{
     markdown_editability, ContentProvenance, MarkdownEditability, MarkdownReadOnlyReason,

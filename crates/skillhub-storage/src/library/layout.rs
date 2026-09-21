@@ -163,6 +163,15 @@ impl CentralLibrary {
         record.author = skill.author().map(str::to_owned);
         record.license = skill.license().map(str::to_owned);
         record.call_policy = skill.call_policy();
+        record.invocation_source = Some(
+            match skill.invocation_source() {
+                skillhub_core::catalog::InvocationPolicySource::Explicit => "explicit",
+                skillhub_core::catalog::InvocationPolicySource::Default => "default",
+                skillhub_core::catalog::InvocationPolicySource::Unknown => "unknown",
+            }
+            .to_owned(),
+        );
+        record.invocation_field = skill.invocation_field().map(str::to_owned);
         record.current_version = current.cloned();
         manifest.skills.retain(|existing| existing.id != skill.id());
         manifest.skills.push(record);

@@ -1,4 +1,4 @@
-use super::metadata::{CallPolicy, DeclaredRequirement, TranslationState};
+use super::metadata::{CallPolicy, DeclaredRequirement, InvocationPolicySource, TranslationState};
 use crate::{AppError, ErrorCode, Severity, SkillId};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
@@ -32,6 +32,12 @@ pub struct Skill {
     call_policy: CallPolicy,
     lifecycle: SkillLifecycle,
     declared_requirements: Vec<DeclaredRequirement>,
+    /// Read-only source of the invocation policy fact: whether the Skill declared
+    /// a callable subject (`Explicit`), fell back to the safe default
+    /// (`Default`), or the platform exposes no invocation field (`Unknown`).
+    invocation_source: InvocationPolicySource,
+    /// The YAML/frontmatter field that produced the invocation fact, when explicit.
+    invocation_field: Option<String>,
     trial_due: Option<(i32, u8, u8)>,
 }
 
@@ -53,6 +59,8 @@ impl Skill {
             call_policy: CallPolicy::AutomaticAndManual,
             lifecycle: SkillLifecycle::Normal,
             declared_requirements: Vec::new(),
+            invocation_source: InvocationPolicySource::Default,
+            invocation_field: None,
             trial_due: None,
         }
     }
@@ -91,6 +99,25 @@ impl Skill {
     }
     pub fn call_policy(&self) -> CallPolicy {
         self.call_policy.clone()
+    }
+    pub fn invocation_source(&self) -> InvocationPolicySource {
+        self.invocation_source
+    }
+    pub fn invocation_field(&self) -> Option<&str> {
+        self.invocation_field.as_deref()
+    }
+    /// Sets the invocation policy fact (mode, source, and producing field) in one
+    /// place so the stored policy and its provenance never drift apart.
+    pub fn with_invocation(
+        mut self,
+        policy: CallPolicy,
+        source: InvocationPolicySource,
+        field: Option<String>,
+    ) -> Self {
+        self.call_policy = policy;
+        self.invocation_source = source;
+        self.invocation_field = field;
+        self
     }
     pub fn author(&self) -> Option<&str> {
         self.author.as_deref()
@@ -260,6 +287,11 @@ impl Skill {
             requirements,
             trial_due,
         );
+        // Invocation provenance defaults to `Default`/none; the import/capture
+        // path overwrites it with the resolved fact when a Skill is built from a
+        // directory (DEV-28).
+        skill.invocation_source = InvocationPolicySource::Default;
+        skill.invocation_field = None;
         skill.validate()?;
         Ok(skill)
     }
