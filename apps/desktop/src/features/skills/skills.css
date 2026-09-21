@@ -432,6 +432,13 @@
   display: none;
 }
 
+.sh-skill-library__no-results {
+  display: grid;
+  min-height: 12rem;
+  place-items: center;
+  padding: var(--space-5) 0;
+}
+
 /* —— 卡片视图分页（与表格分页共用 SkillPagination 语义） —— */
 
 /* P1-08：卡片视图的页级选择工具行。 */

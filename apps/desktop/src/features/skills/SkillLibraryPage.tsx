@@ -1299,20 +1299,6 @@ export function SkillLibraryPage({
     );
   }
 
-  if (!pageRefreshing && page.items.length === 0 && hasActiveFilter(query)) {
-    return (
-      <section className="sh-skill-library" ref={rootRef}>
-        {libraryHeading}
-        <DataState
-          actionLabel={t("skillLibrary.filters.clear")}
-          message={t("skillLibrary.page.states.noResults")}
-          onAction={clearFilters}
-          state="empty"
-        />
-      </section>
-    );
-  }
-
   return (
     <section
       className={[
@@ -1446,17 +1432,25 @@ export function SkillLibraryPage({
         </p>
       ) : null}
 
+      {!pageRefreshing && page.items.length === 0 && hasActiveFilter(query) ? (
+        <div className="sh-skill-library__no-results">
+          <DataState
+            message={t("skillLibrary.page.states.noResults")}
+            state="empty"
+          />
+        </div>
+      ) : null}
       {pageRefreshing ? (
         <SkillLibrarySkeleton />
       ) : null}
-      {!pageRefreshing && viewMode === "matrix" ? (
+      {!pageRefreshing && page.items.length > 0 && viewMode === "matrix" ? (
           <SkillMatrix
             deploymentRecords={deploymentRecords}
             deploymentTargets={deploymentTargets}
             items={page.items}
           />
       ) : null}
-      {!pageRefreshing && viewMode === "cards" ? (
+      {!pageRefreshing && page.items.length > 0 && viewMode === "cards" ? (
         // M-21：卡片视图与表格同一「专属滚动区域 + 稳定页脚」模型——
         // 页级选择工具行钉在滚动区上方，卡网格在 __scroll 内滚动，
         // 分页（下方兄弟节点）常驻底部可见。
@@ -1498,7 +1492,7 @@ export function SkillLibraryPage({
           </div>
         </div>
       ) : null}
-      {viewMode === "cards" ? (
+      {page.items.length > 0 && viewMode === "cards" ? (
         <SkillPagination
           className="sh-skill-cards__pagination"
           onPageChange={(nextPage) => updateQuery({ ...query, page: nextPage })}
@@ -1507,7 +1501,7 @@ export function SkillLibraryPage({
           query={query}
         />
       ) : null}
-      {!pageRefreshing && viewMode === "table" ? (
+      {!pageRefreshing && page.items.length > 0 && viewMode === "table" ? (
         <SkillTable
           pageStatus={t("skillLibrary.page.pageStatus", {
             count: page.total,

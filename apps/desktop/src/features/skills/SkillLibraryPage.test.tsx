@@ -824,6 +824,9 @@ describe("SkillLibraryPage", () => {
     expect(
       await screen.findByText("No skills match the current filters"),
     ).toBeVisible();
+    expect(screen.getByRole("searchbox", { name: "Search skills" })).toBeVisible();
+    expect(screen.getByRole("button", { name: /Filters/ })).toBeVisible();
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Clear filters" })).toBeVisible();
   });
 
