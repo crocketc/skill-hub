@@ -673,6 +673,69 @@ fn project_and_capability_contexts_do_not_reverse_expand_skills() {
 }
 
 #[test]
+fn shared_directory_deployments_expand_through_supported_agent_capabilities() {
+    let center = SkillId::new();
+    let mut relation = deployment(
+        "shared:deployment",
+        Some(center),
+        "agent.codex",
+        "shared-entry",
+        RelationshipType::SharedDirectoryRead,
+    );
+    relation.directory_node_id = Some("directory:shared".into());
+    let graph = project_skill_relationship_graph(
+        center,
+        &[relation],
+        &[],
+        &[directory("directory:shared", DirectoryRole::SharedDirectory)],
+        &[
+            AgentDirectoryCapabilityFact {
+                agent_client_id: "agent.codex".into(),
+                directory_node_id: "directory:shared".into(),
+                recognition: DirectoryRecognition::Supported,
+                precedence: DirectoryPrecedence::Preferred,
+                evidence_reference: None,
+                researched_at: None,
+                applicable_platforms: vec!["windows".into()],
+            },
+            AgentDirectoryCapabilityFact {
+                agent_client_id: "agent.claude".into(),
+                directory_node_id: "directory:shared".into(),
+                recognition: DirectoryRecognition::Supported,
+                precedence: DirectoryPrecedence::Preferred,
+                evidence_reference: None,
+                researched_at: None,
+                applicable_platforms: vec!["windows".into()],
+            },
+        ],
+        &[],
+        &RelationshipGraphFilters::default(),
+    );
+
+    assert!(graph.has_node("directory:directory:shared"));
+    assert!(graph.has_node("agent:agent.codex"));
+    assert!(graph.has_node("agent:agent.claude"));
+    assert!(graph.edges.iter().any(|edge| {
+        edge.from_node_id == center.to_string()
+            && edge.to_node_id == "directory:directory:shared"
+            && edge.kind == RelationshipGraphEdgeKind::Shared
+    }));
+    assert!(graph.edges.iter().any(|edge| {
+        edge.from_node_id == "directory:directory:shared"
+            && edge.to_node_id == "agent:agent.codex"
+            && edge.kind == RelationshipGraphEdgeKind::Shared
+    }));
+    assert!(graph.edges.iter().any(|edge| {
+        edge.from_node_id == "directory:directory:shared"
+            && edge.to_node_id == "agent:agent.claude"
+            && edge.kind == RelationshipGraphEdgeKind::Shared
+    }));
+    assert!(!graph.edges.iter().any(|edge| {
+        edge.from_node_id == center.to_string() && edge.kind == RelationshipGraphEdgeKind::Deployment
+    }));
+}
+
+#[test]
 fn reversed_source_and_conflict_inputs_have_stable_output_order() {
     let center = SkillId::new();
     let related_a = SkillId::new();
