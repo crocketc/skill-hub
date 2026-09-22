@@ -3,7 +3,6 @@ import { useTranslation } from "react-i18next";
 import { NavLink } from "react-router-dom";
 import { useOverviewRelationshipSummaries } from "../overview/RelationshipThumbnail";
 import { PageFrame } from "../../ui/PageFrame";
-import { PageHeader } from "../../ui/PageHeader";
 import { DataState } from "../../ui/DataState";
 import type { RelationshipsFacade } from "./api";
 
@@ -91,10 +90,10 @@ interface RelationshipsLayoutProps {
 }
 
 /**
- * 技能关系模块三页共用的壳层（任务 5）：模块标题统一由一个 h1 承载，
- * 三个工作区名称作为同一标题行内的页签展示。画布/工作台由任务 6/7/8 填充。
+ * 技能关系模块三页共用的壳层（任务 5）：模块标题由 AppShell 顶栏承载，
+ * 三个工作区名称作为页签展示。画布/工作台由任务 6/7/8 填充。
  * DEV-23 起壳层同时承载页内页签导航：三页共享同一份计数事实，
- * 概览卡片深链入口保持不变；DEV-67 避免当前路由标题与图谱页签重复。
+ * 概览卡片深链入口保持不变；DEV-67 避免当前路由标题与页签重复。
  */
 export function RelationshipsLayout({ scope, children, facade }: RelationshipsLayoutProps) {
   const { t } = useTranslation();
@@ -102,11 +101,7 @@ export function RelationshipsLayout({ scope, children, facade }: RelationshipsLa
   return (
     <PageFrame fill width="wide">
       <div className="sh-relationships">
-        <PageHeader
-          actions={<RelationshipsNav facade={facade} />}
-          headingLevel="h1"
-          title={t("relationships.nav")}
-        />
+        <RelationshipsNav facade={facade} />
         {children ?? <DataState message={t(PLACEHOLDER_KEYS[scope])} state="unavailable" />}
       </div>
     </PageFrame>

@@ -20,10 +20,14 @@ async function renderLayout(scope: "graph" | "decisions" | "governance") {
 }
 
 describe("RelationshipsLayout", () => {
-  it("owns one module h1 while the active scope remains a page tab", async () => {
+  it("leaves the module title to the app topbar and renders only the three workspace tabs", async () => {
     await renderLayout("graph");
-    expect(screen.getByRole("heading", { level: 1, name: "Skill relations" })).toBeVisible();
-    expect(screen.queryByRole("heading", { level: 1, name: "Skill graph" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading")).not.toBeInTheDocument();
+    const nav = screen.getByRole("navigation", { name: "Relationship sections" });
+    expect(within(nav).getByRole("link", { name: "Skill graph" })).toBeVisible();
+    expect(within(nav).getByRole("link", { name: "Conflict decisions" })).toBeVisible();
+    expect(within(nav).getByRole("link", { name: "Relationship governance" })).toBeVisible();
+    expect(within(nav).getAllByRole("link")).toHaveLength(3);
     expect(
       screen.getByText(
         "The relationship graph canvas is not available yet; relation facts stay available in the Skill library and on Skill details.",
@@ -31,15 +35,13 @@ describe("RelationshipsLayout", () => {
     ).toBeVisible();
 
     await renderLayout("decisions");
-    expect(screen.getByRole("heading", { level: 1, name: "Skill relations" })).toBeVisible();
-    expect(screen.queryByRole("heading", { level: 1, name: "Conflict decisions" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading")).not.toBeInTheDocument();
 
     await renderLayout("governance");
-    expect(screen.getByRole("heading", { level: 1, name: "Skill relations" })).toBeVisible();
-    expect(screen.queryByRole("heading", { level: 1, name: "Relationship governance" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading")).not.toBeInTheDocument();
   });
 
-  it("keeps the module heading and section navigation in one header row", async () => {
+  it("keeps the section navigation available without duplicating the topbar title", async () => {
     const i18n = await createSkillHubI18n(["en-US"]);
     render(
       <I18nextProvider i18n={i18n}>
@@ -49,9 +51,8 @@ describe("RelationshipsLayout", () => {
       </I18nextProvider>,
     );
 
-    const heading = screen.getByRole("heading", { level: 1, name: "Skill relations" });
     const nav = screen.getByRole("navigation", { name: "Relationship sections" });
-    expect(heading.closest("header")).toContainElement(nav);
+    expect(nav).toHaveClass("sh-relationships__nav");
   });
 
   it("renders provided page content instead of the placeholder when a page supplies children", async () => {
