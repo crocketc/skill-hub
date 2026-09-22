@@ -2127,6 +2127,18 @@ async fn commit_import_blocks_a_source_with_basic_security_findings_before_copyi
         visible_skill_roots.is_empty(),
         "blocked import must not copy"
     );
+
+    let recovery = facade
+        .query(RootAppQuery::ListRecoveryCandidates)
+        .await
+        .expect("list recovery candidates");
+    let AppQueryResult::RecoveryCandidates(candidates) = recovery else {
+        panic!("expected recovery candidates");
+    };
+    assert!(
+        candidates.is_empty(),
+        "a security check that blocks before copying must not gate the next startup"
+    );
 }
 
 #[tokio::test]

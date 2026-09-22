@@ -6551,9 +6551,10 @@ impl LocalApplicationFacade {
     fn commit_import(&self, request: skillhub_core::CommitImport) -> AppResult<AppCommandResult> {
         let _relation_migration_guard = self.lock_relation_migration("execute.commit_import")?;
         let operation_id = request.prepared_import_id;
-        // Unknown prepared ids have nothing to retry, so their failure is a
-        // terminal rolled_back record. Everything after a known prepare stays
-        // retryable (the prepared import is kept) and lands in needs_recovery.
+        // `needs_recovery` is reserved for an import cleanup failure that may
+        // have left residue. A prepared import can otherwise fail before any
+        // central-library write (for example, at the mandatory security gate);
+        // that failure remains visible in history but must not block startup.
         let prepared_known = self
             .prepared_imports
             .lock()
@@ -6567,12 +6568,13 @@ impl LocalApplicationFacade {
                 skillhub_core::OperationPhase::Committed,
                 None,
             ),
-            Err(error) if prepared_known => self.journal_advance(
-                operation_id,
-                "import_skill",
-                skillhub_core::OperationPhase::NeedsRecovery,
-                Some(error.code),
-            ),
+            Err(error) if prepared_known && error.severity == Severity::Critical => self
+                .journal_advance(
+                    operation_id,
+                    "import_skill",
+                    skillhub_core::OperationPhase::NeedsRecovery,
+                    Some(error.code),
+                ),
             Err(error) => self.journal_advance(
                 operation_id,
                 "import_skill",
