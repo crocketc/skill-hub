@@ -520,6 +520,21 @@ describe("relationship_revision convergence", () => {
 });
 
 describe("fact filters", () => {
+  it("keeps secondary graph controls available from the compact toolbar menu", async () => {
+    await renderPage("/relationships?skillId=pdf-reader");
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "PDF Reader" })).toBeVisible();
+    });
+
+    const toolbar = screen.getByRole("toolbar", { name: "Graph controls" });
+    expect(
+      within(toolbar).getByRole("button", { name: "More graph controls", hidden: true }),
+    ).toBeInTheDocument();
+    expect(within(toolbar).getByRole("button", { name: "Filters" })).toBeInTheDocument();
+    expect(within(toolbar).getByRole("button", { name: "Display settings" })).toBeInTheDocument();
+  });
+
   it("moves filter state into the URL and the graph query without changing reported facts", async () => {
     const user = userEvent.setup();
     const { calls } = await renderPage("/relationships?skillId=pdf-reader");

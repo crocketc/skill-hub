@@ -2207,6 +2207,9 @@
     "sectionNavLabel": "技能关系分区",
     "graph": {
       "title": "技能图谱",
+      "toolbarLabel": "图谱控件",
+      "toolbarMore": "更多图谱控件",
+      "toolbarBack": "返回",
       "placeholder": "关系图谱画布尚未提供；关系事实仍可在技能库与 Skill 详情中查看。",
       "searchLabel": "按原名或别名搜索",
       "searchPlaceholder": "输入 Skill 名称或别名",

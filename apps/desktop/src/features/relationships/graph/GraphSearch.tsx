@@ -88,7 +88,7 @@ export function GraphSearch({ onPick, search }: GraphSearchProps) {
   return (
     <div className="sh-graph-search" ref={rootRef}>
       <form className="sh-graph-search__form" onSubmit={submit}>
-        <label className="sh-graph-search__label" htmlFor="sh-graph-search-input">
+        <label className="sh-graph-search__label sh-visually-hidden" htmlFor="sh-graph-search-input">
           {t("relationships.graph.searchLabel")}
         </label>
         <input

@@ -2207,6 +2207,9 @@
     "sectionNavLabel": "Relationship sections",
     "graph": {
       "title": "Skill graph",
+      "toolbarLabel": "Graph controls",
+      "toolbarMore": "More graph controls",
+      "toolbarBack": "Back",
       "placeholder": "The relationship graph canvas is not available yet; relation facts stay available in the Skill library and on Skill details.",
       "searchLabel": "Search by name or alias",
       "searchPlaceholder": "Enter a Skill name or alias",

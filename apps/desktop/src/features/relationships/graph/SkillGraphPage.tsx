@@ -125,6 +125,67 @@ function ToolbarPopover({ label, children }: { label: string; children: ReactNod
   );
 }
 
+function ToolbarOverflowMenu({
+  filterContent,
+  displayContent,
+}: {
+  filterContent: ReactNode;
+  displayContent: ReactNode;
+}) {
+  const { t } = useTranslation();
+  const [open, setOpen] = useState(false);
+  const [section, setSection] = useState<"root" | "filters" | "display">("root");
+
+  return (
+    <div className="sh-graph__toolbar-overflow">
+      <button
+        type="button"
+        className="sh-button sh-button--secondary sh-button--sm"
+        aria-expanded={open}
+        onClick={() => {
+          setOpen((value) => !value);
+          setSection("root");
+        }}
+      >
+        {t("relationships.graph.toolbarMore")}
+      </button>
+      {open ? (
+        <div className="sh-graph-pop__panel sh-graph__toolbar-overflow-panel">
+          {section === "root" ? (
+            <div className="sh-graph__toolbar-overflow-actions">
+              <button
+                type="button"
+                className="sh-button sh-button--ghost sh-button--sm"
+                onClick={() => setSection("filters")}
+              >
+                {t("relationships.graph.filters")}
+              </button>
+              <button
+                type="button"
+                className="sh-button sh-button--ghost sh-button--sm"
+                onClick={() => setSection("display")}
+              >
+                {t("relationships.graph.displaySettings")}
+              </button>
+            </div>
+          ) : (
+            <>
+              <button
+                type="button"
+                className="sh-button sh-button--ghost sh-button--sm"
+                onClick={() => setSection("root")}
+              >
+                {t("relationships.graph.toolbarBack")}
+              </button>
+              {section === "filters" ? filterContent : displayContent}
+            </>
+          )}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function GraphLegend() {
   const { t } = useTranslation();
   const [expanded, setExpanded] = useState(false);
@@ -429,90 +490,106 @@ export function SkillGraphPage({
   const displayName =
     candidatesQuery.data?.find((candidate) => candidate.skill_id === skillId)?.display_name ?? null;
 
+  const filterContent = (
+    <>
+      <fieldset>
+        <legend>{t("relationships.graph.filterTypes")}</legend>
+        {RELATIONSHIP_TYPES.map((type) => (
+          <label key={type}>
+            <input
+              type="checkbox"
+              checked={urlState.types.includes(type)}
+              onChange={() => updateParams({ types: toggleInList(urlState.types, type) })}
+            />
+            {t(`relationships.graph.edgeType.${type}`)}
+          </label>
+        ))}
+      </fieldset>
+      <fieldset>
+        <legend>{t("relationships.graph.filterStatuses")}</legend>
+        {GRAPH_STATUSES.map((status) => (
+          <label key={status}>
+            <input
+              type="checkbox"
+              checked={urlState.statuses.includes(status)}
+              onChange={() =>
+                updateParams({ statuses: toggleInList(urlState.statuses, status) })
+              }
+            />
+            {t(`relationships.graph.status.${status}`)}
+          </label>
+        ))}
+      </fieldset>
+      <button
+        type="button"
+        className="sh-button sh-button--ghost sh-button--sm"
+        onClick={() => updateParams({ types: [], statuses: [] })}
+      >
+        {t("relationships.graph.filtersClear")}
+      </button>
+    </>
+  );
+  const displayContent = (
+    <>
+      {(
+        [
+          ["showSources", "displaySources"],
+          ["showAgentsProjects", "displayAgentsProjects"],
+          ["showDirectories", "displayDirectories"],
+          ["showConflicts", "displayConflicts"],
+        ] as const
+      ).map(([key, labelKey]) => (
+        <label key={key}>
+          <input
+            type="checkbox"
+            checked={display[key]}
+            onChange={() => setDisplay((prev) => ({ ...prev, [key]: !prev[key] }))}
+          />
+          {t(`relationships.graph.${labelKey}`)}
+        </label>
+      ))}
+    </>
+  );
+
   return (
     <div className="sh-graph">
-      <div className="sh-graph__toolbar">
-        <GraphSearch onPick={navigateToSkill} search={fetchCandidates} />
-        <div className="sh-graph__tags">
-          <label className="sh-graph__tags-label" htmlFor="sh-graph-tags-input">
-            {t("relationships.graph.tagsLabel")}
-          </label>
-          <input
-            id="sh-graph-tags-input"
-            className="sh-graph__tags-input"
-            type="text"
-            value={tagsDraft}
-            placeholder={t("relationships.graph.tagsPlaceholder")}
-            onChange={(event) => setTagsDraft(event.target.value)}
-          />
-          <button
-            type="button"
-            className="sh-button sh-button--secondary sh-button--sm"
-            onClick={() =>
-              updateParams({
-                tags: [...new Set(tagsDraft.split(/[,，]/).map((tag) => tag.trim()).filter(Boolean))],
-              })
-            }
-          >
-            {t("relationships.graph.tagsApply")}
-          </button>
-        </div>
-        <ToolbarPopover label={t("relationships.graph.filters")}>
-          <fieldset>
-            <legend>{t("relationships.graph.filterTypes")}</legend>
-            {RELATIONSHIP_TYPES.map((type) => (
-              <label key={type}>
-                <input
-                  type="checkbox"
-                  checked={urlState.types.includes(type)}
-                  onChange={() => updateParams({ types: toggleInList(urlState.types, type) })}
-                />
-                {t(`relationships.graph.edgeType.${type}`)}
-              </label>
-            ))}
-          </fieldset>
-          <fieldset>
-            <legend>{t("relationships.graph.filterStatuses")}</legend>
-            {GRAPH_STATUSES.map((status) => (
-              <label key={status}>
-                <input
-                  type="checkbox"
-                  checked={urlState.statuses.includes(status)}
-                  onChange={() =>
-                    updateParams({ statuses: toggleInList(urlState.statuses, status) })
-                  }
-                />
-                {t(`relationships.graph.status.${status}`)}
-              </label>
-            ))}
-          </fieldset>
-          <button
-            type="button"
-            className="sh-button sh-button--ghost sh-button--sm"
-            onClick={() => updateParams({ types: [], statuses: [] })}
-          >
-            {t("relationships.graph.filtersClear")}
-          </button>
-        </ToolbarPopover>
-        <ToolbarPopover label={t("relationships.graph.displaySettings")}>
-          {(
-            [
-              ["showSources", "displaySources"],
-              ["showAgentsProjects", "displayAgentsProjects"],
-              ["showDirectories", "displayDirectories"],
-              ["showConflicts", "displayConflicts"],
-            ] as const
-          ).map(([key, labelKey]) => (
-            <label key={key}>
-              <input
-                type="checkbox"
-                checked={display[key]}
-                onChange={() => setDisplay((prev) => ({ ...prev, [key]: !prev[key] }))}
-              />
-              {t(`relationships.graph.${labelKey}`)}
+      <div
+        aria-label={t("relationships.graph.toolbarLabel")}
+        className="sh-graph__toolbar"
+        role="toolbar"
+      >
+        <div className="sh-graph__toolbar-primary">
+          <GraphSearch onPick={navigateToSkill} search={fetchCandidates} />
+          <div className="sh-graph__tags">
+            <label className="sh-graph__tags-label" htmlFor="sh-graph-tags-input">
+              {t("relationships.graph.tagsLabel")}
             </label>
-          ))}
-        </ToolbarPopover>
+            <input
+              id="sh-graph-tags-input"
+              className="sh-graph__tags-input"
+              type="text"
+              value={tagsDraft}
+              placeholder={t("relationships.graph.tagsPlaceholder")}
+              onChange={(event) => setTagsDraft(event.target.value)}
+            />
+            <button
+              type="button"
+              className="sh-button sh-button--secondary sh-button--sm"
+              onClick={() =>
+                updateParams({
+                  tags: [...new Set(tagsDraft.split(/[,，]/).map((tag) => tag.trim()).filter(Boolean))],
+                })
+              }
+            >
+              {t("relationships.graph.tagsApply")}
+            </button>
+          </div>
+        </div>
+        <div className="sh-graph__toolbar-secondary">
+          <ToolbarPopover label={t("relationships.graph.filters")}>{filterContent}</ToolbarPopover>
+          <ToolbarPopover label={t("relationships.graph.displaySettings")}>{displayContent}</ToolbarPopover>
+        </div>
+        <ToolbarOverflowMenu filterContent={filterContent} displayContent={displayContent} />
         <button
           type="button"
           className="sh-button sh-button--secondary sh-button--sm"
