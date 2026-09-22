@@ -9,6 +9,8 @@ import { PageFrame } from "../../ui/PageFrame";
 import { PageHeader } from "../../ui/PageHeader";
 import { Switch } from "../../ui/Switch";
 import { ExternalLink } from "../markdown/ExternalLink";
+import { RepositoryCard } from "../shared/repository-card/RepositoryCard";
+import type { RepositoryCardViewModel } from "../shared/repository-card/RepositoryCardViewModel";
 import type { SkillRepoView } from "../../api/bindings";
 import { describeRepoWarning, formatRelativeScanTime, parseRepoInput } from "./api";
 import type { DiscoveryFacade } from "./api";
@@ -152,36 +154,33 @@ export function RepoManagerPage({ facade }: RepoManagerPageProps) {
     }
   }, [describe, facade, pendingRemoval]);
 
-  const scanFacts = (view: SkillRepoView) => {
+  const scanFacts = (view: SkillRepoView): RepositoryCardViewModel["scan"] => {
     const { scan } = view;
     if (!scan) {
-      return (
-        <p className="sh-repo-manager__scan">
-          {t("discovery.repoManager.neverScanned")}
-        </p>
-      );
+      return {
+        detail: undefined,
+        label: t("discovery.repoManager.lastScan"),
+        tone: "neutral",
+        value: t("discovery.repoManager.neverScanned"),
+      };
     }
     const time =
       formatRelativeScanTime(scan.scanned_at, { locale })
       ?? t("discovery.repoManager.neverScanned");
-    return (
-      <p className="sh-repo-manager__scan">
-        <span className="sh-repo-manager__scan-label">
-          {t("discovery.repoManager.lastScan")}
-        </span>
-        <span>{time}</span>
-        {scan.ok ? (
-          <span>
-            {t("discovery.repoManager.candidates", { candidates: scan.candidate_count })}
-          </span>
-        ) : (
-          <span className="sh-repo-manager__scan-error">
-            {describeRepoWarning(scan.error ?? "", (key, options) =>
-              String(t(key as never, options as never)))}
-          </span>
-        )}
-      </p>
-    );
+    return scan.ok
+      ? {
+          detail: t("discovery.repoManager.candidates", { candidates: scan.candidate_count }),
+          label: t("discovery.repoManager.lastScan"),
+          tone: "positive",
+          value: time,
+        }
+      : {
+          detail: describeRepoWarning(scan.error ?? "", (key, options) =>
+            String(t(key as never, options as never))),
+          label: t("discovery.repoManager.lastScan"),
+          tone: "negative",
+          value: time,
+        };
   };
 
   return (
@@ -235,76 +234,82 @@ export function RepoManagerPage({ facade }: RepoManagerPageProps) {
       ) : loaded && views.length === 0 ? (
         <DataState message={t("discovery.repo.empty")} state="empty" />
       ) : (
-        <ul className="sh-repo-manager__list">
+        <div className="sh-repository-cards-zone">
+          <ul className="sh-repository-cards">
           {views.map((view) => {
             const key = repoKey(view.repo);
             return (
-              <li
-                className={
-                  view.repo.enabled
-                    ? "sh-repo-manager__row"
-                    : "sh-repo-manager__row sh-repo-manager__row--disabled"
-                }
-                key={key}
-              >
-                <div className="sh-repo-manager__id">
-                  <span className="sh-repo-manager__name">{key}</span>
-                  <span className="sh-repo-manager__branch">
-                    {view.repo.branch || t("discovery.repoManager.defaultBranch")}
-                  </span>
-                  <ExternalLink
-                    ariaLabel={t("discovery.repoManager.openOnGithub", { repo: key })}
-                    onOpen={() =>
-                      void facade.openExternalUrl(`https://github.com/${key}`)
-                    }
-                    target={`https://github.com/${key}`}
-                  >
-                    GitHub
-                  </ExternalLink>
-                </div>
-                {scanFacts(view)}
-                <div className="sh-repo-manager__actions">
-                  <Switch
-                    checked={view.repo.enabled}
-                    disabled={togglingKey !== null}
-                    label={t("discovery.repo.enabled")}
-                    onChange={() => void toggleRepo(view)}
-                  />
-                  <Button
-                    aria-label={t("discovery.repoManager.refreshAria", { repo: key })}
-                    disabled={refreshingKey !== null}
-                    loading={refreshingKey === key}
-                    onClick={() => void refreshRepo(view)}
-                    size="sm"
-                    variant="secondary"
-                  >
-                    {/* 审查 m2（2026-09-14）：可见文案与可访问名拆键——可见
-                        文案固定“刷新”，带仓库坐标的可访问名走 refreshAria。 */}
-                    {refreshingKey === key
-                      ? t("discovery.repoManager.refreshingRepo")
-                      : t("discovery.repoManager.refresh")}
-                  </Button>
-                  <ConfirmDialog
-                    cancelLabel={t("actions.cancel")}
-                    confirmDisabled={removing}
-                    confirmLabel={t("discovery.repo.confirmRemove")}
-                    description={t("discovery.repo.confirmRemoveDescription", {
-                      repo: key,
-                    })}
-                    onConfirm={() => void removeRepo()}
-                    title={t("discovery.repo.confirmRemoveTitle")}
-                    trigger={
-                      <Button onClick={() => setPendingRemoval(view)} variant="ghost">
-                        {t("discovery.repo.remove")}
+              <li key={key}>
+                <RepositoryCard
+                  actions={
+                    <>
+                      <Button
+                        aria-label={t("discovery.repoManager.refreshAria", { repo: key })}
+                        disabled={refreshingKey !== null}
+                        loading={refreshingKey === key}
+                        onClick={() => void refreshRepo(view)}
+                        size="sm"
+                        variant="secondary"
+                      >
+                        {refreshingKey === key
+                          ? t("discovery.repoManager.refreshingRepo")
+                          : t("discovery.repoManager.refresh")}
                       </Button>
-                    }
-                    variant="primary"
-                  />
-                </div>
+                      <ConfirmDialog
+                        cancelLabel={t("actions.cancel")}
+                        confirmDisabled={removing}
+                        confirmLabel={t("discovery.repo.confirmRemove")}
+                        description={t("discovery.repo.confirmRemoveDescription", {
+                          repo: key,
+                        })}
+                        onConfirm={() => void removeRepo()}
+                        title={t("discovery.repo.confirmRemoveTitle")}
+                        trigger={
+                          <Button onClick={() => setPendingRemoval(view)} variant="ghost">
+                            {t("discovery.repo.remove")}
+                          </Button>
+                        }
+                        variant="primary"
+                      />
+                    </>
+                  }
+                  repository={{
+                    branch: view.repo.branch || t("discovery.repoManager.defaultBranch"),
+                    branchLabel: t("discovery.repoManager.branchLabel"),
+                    coordinates: key,
+                    enabled: view.repo.enabled,
+                    enabledLabel: view.repo.enabled
+                      ? t("discovery.repoManager.enabledState")
+                      : t("discovery.repoManager.disabledState"),
+                    id: key,
+                    scan: scanFacts(view),
+                    sourceLabel: "GitHub",
+                  }}
+                  sourceAction={
+                    <ExternalLink
+                      ariaLabel={t("discovery.repoManager.openOnGithub", { repo: key })}
+                      onOpen={() =>
+                        void facade.openExternalUrl(`https://github.com/${key}`)
+                      }
+                      target={`https://github.com/${key}`}
+                    >
+                      GitHub
+                    </ExternalLink>
+                  }
+                  statusControl={
+                    <Switch
+                      checked={view.repo.enabled}
+                      disabled={togglingKey !== null}
+                      label={t("discovery.repo.enabled")}
+                      onChange={() => void toggleRepo(view)}
+                    />
+                  }
+                />
               </li>
             );
           })}
-        </ul>
+          </ul>
+        </div>
       )}
     </PageFrame>
   );

@@ -647,6 +647,10 @@
       "refreshFailed": "刷新失败：",
       "openOnGithub": "在 GitHub 打开 {{repo}}",
       "defaultBranch": "默认分支",
+      "branchLabel": "分支",
+      "enabledState": "已启用",
+      "disabledState": "已暂停",
+      "justNow": "刚刚",
       "unsupportedAction": "当前环境不支持逐仓刷新。"
     },
     "card": {

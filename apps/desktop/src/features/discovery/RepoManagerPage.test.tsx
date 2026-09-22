@@ -4,6 +4,7 @@ import { createSkillHubI18n } from "../../i18n";
 import type { RepoDiscoveryReport, SkillRepoView } from "../../api/bindings";
 import { RepoManagerPage } from "./RepoManagerPage";
 import type { DiscoveryFacade } from "./api";
+import repositoryCardCss from "../shared/repository-card/repository-card.css?raw";
 
 const scannedRecently = new Date(Date.now() - 30_000).toISOString();
 const scannedOlder = new Date(Date.now() - 120_000).toISOString();
@@ -90,12 +91,14 @@ it("renders repositories with branch, scan time, candidate count and failure rea
 
   expect(await screen.findByText("anthropics/skills")).toBeVisible();
   expect(screen.getByText("JimLiu/baoyu-skills")).toBeVisible();
+  expect(screen.getAllByTestId("repository-card")).toHaveLength(3);
+  expect(document.querySelectorAll(".sh-repo-manager__row")).toHaveLength(0);
   // 空分支用“默认分支”哨兵文案而不是露出空串。
   expect(screen.getAllByText("main")).toHaveLength(2);
   expect(screen.getByText("默认分支")).toBeVisible();
 
   // 最近一次扫描时间、候选数与失败原因（分类文案，不露原始错误串）。
-  expect(screen.getAllByText("上次扫描")).toHaveLength(2);
+  expect(screen.getAllByText("上次扫描")).toHaveLength(3);
   expect(screen.getByText("30秒钟前")).toBeVisible();
   expect(screen.getByText("3 个候选 Skill")).toBeVisible();
   expect(screen.getByText(/仓库或分支不存在/)).toBeVisible();
@@ -112,6 +115,17 @@ it("renders repositories with branch, scan time, candidate count and failure rea
   // 审查 m1（2026-09-14）：GitHub 外链的可访问名走 openOnGithub 键，
   // 不再只有裸的可见文案 “GitHub”。
   expect(screen.getByRole("link", { name: "在 GitHub 打开 anthropics/skills" })).toBeVisible();
+});
+
+it("keeps repository cards keyboard reachable and responsive across viewports", async () => {
+  renderPage(baseFacade());
+
+  const cards = await screen.findAllByTestId("repository-card");
+  expect(cards[0].querySelector("input[role='switch']")).toBeInTheDocument();
+  expect(cards[0].querySelector("button")).toBeInTheDocument();
+  expect(repositoryCardCss).toContain("@container (min-width: 760px)");
+  expect(repositoryCardCss).toContain("@container (min-width: 1180px)");
+  expect(repositoryCardCss).toContain("@media (max-width: 48rem)");
 });
 
 it("parses a full GitHub URL into coordinates and submits the add", async () => {

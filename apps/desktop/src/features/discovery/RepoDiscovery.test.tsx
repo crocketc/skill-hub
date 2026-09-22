@@ -111,8 +111,12 @@ it("renders the configured repositories with enabled state", async () => {
   const listSkillRepos = vi.fn(async () => defaultRepos);
   renderCard(baseFacade({ listSkillRepos }));
 
-  expect(await screen.findByText("anthropics/skills@main")).toBeVisible();
-  expect(screen.getByText("cexll/myclaude@master")).toBeVisible();
+  expect(await screen.findByRole("heading", { name: "anthropics/skills" })).toBeVisible();
+  expect(screen.getByRole("heading", { name: "cexll/myclaude" })).toBeVisible();
+  expect(screen.getAllByTestId("repository-card")).toHaveLength(2);
+  expect(document.querySelectorAll(".sh-discovery-repos__repo")).toHaveLength(0);
+  expect(screen.getByRole("heading", { name: "anthropics/skills" })).toBeVisible();
+  expect(screen.getAllByText("从未扫描")).toHaveLength(2);
   const checkboxes = screen.getAllByRole("checkbox");
   expect(checkboxes[0]).toBeChecked();
   expect(checkboxes[1]).not.toBeChecked();
@@ -126,6 +130,8 @@ it("discovers skills across repositories and surfaces per-repo warnings", async 
   await click(await screen.findByRole("button", { name: "扫描仓库" }));
 
   await waitFor(() => expect(screen.getByText("PDF")).toBeVisible());
+  expect(screen.getByText("刚刚")).toBeVisible();
+  expect(screen.getByText("1 个候选 Skill")).toBeVisible();
   expect(screen.getByText("Handle PDF files")).toBeVisible();
   const readme = screen.getByRole("link", { name: "README" });
 
@@ -180,6 +186,24 @@ it("renders warnings as readable categories with a per-repo retry button", async
   expect(screen.getByRole("button", { name: "重试扫描 gone/missing" })).toBeVisible();
   expect(screen.getByRole("button", { name: "重试扫描 slow/repo" })).toBeVisible();
   expect(screen.getByRole("button", { name: "重试扫描 net/blocked" })).toBeVisible();
+});
+
+it("projects a configured repository failure into the shared card facts", async () => {
+  const discoverRepoSkills = vi.fn(async () => ({
+    skills: [],
+    warnings: [{
+      owner: "anthropics",
+      name: "skills",
+      reason: "DOWNLOAD_FAILED status=404 Not Found",
+    }],
+  }));
+  renderCard(baseFacade({ discoverRepoSkills }));
+
+  await click(await screen.findByRole("button", { name: "扫描仓库" }));
+
+  const card = await screen.findAllByTestId("repository-card").then((cards) => cards[0]);
+  expect(within(card).getByText("刚刚")).toBeVisible();
+  expect(within(card).getByText(/仓库或分支不存在/)).toBeVisible();
 });
 
 it("retries only the failed repo row and merges the refreshed result", async () => {
@@ -359,7 +383,7 @@ it("adds a repository through the facade and refreshes the list", async () => {
     branch: "",
     enabled: true,
   });
-  await waitFor(() => expect(screen.getByText("octocat/skills@")).toBeVisible());
+  await waitFor(() => expect(screen.getByRole("heading", { name: "octocat/skills" })).toBeVisible());
 });
 
 it("toggles a repository by re-adding it with the flipped enabled flag", async () => {
@@ -381,7 +405,7 @@ it("removes a repository only after an explicit confirmation", async () => {
   const removeSkillRepo = vi.fn(async () => defaultRepos);
   renderCard(baseFacade({ removeSkillRepo }));
 
-  await screen.findByText("anthropics/skills@main");
+  await screen.findByRole("heading", { name: "anthropics/skills" });
   await click(screen.getAllByRole("button", { name: "移除" })[0]);
   expect(removeSkillRepo).not.toHaveBeenCalled();
 

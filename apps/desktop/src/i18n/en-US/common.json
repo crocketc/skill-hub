@@ -647,6 +647,10 @@
       "refreshFailed": "Refresh failed:",
       "openOnGithub": "Open {{repo}} on GitHub",
       "defaultBranch": "default branch",
+      "branchLabel": "Branch",
+      "enabledState": "Enabled",
+      "disabledState": "Paused",
+      "justNow": "Just now",
       "unsupportedAction": "Per-repository refresh is not available in this environment."
     },
     "card": {

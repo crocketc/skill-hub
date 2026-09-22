@@ -9,8 +9,10 @@ import { Input } from "../../ui/Input";
 import { ExternalLink } from "../markdown/ExternalLink";
 import { SkillCard } from "../shared/skill-card/SkillCard";
 import type { SkillCardViewModel } from "../shared/skill-card/SkillCardViewModel";
+import { RepositoryCard } from "../shared/repository-card/RepositoryCard";
+import type { RepositoryCardViewModel } from "../shared/repository-card/RepositoryCardViewModel";
 import type { DiscoverableRepoSkill, SkillRepoView } from "../../api/bindings";
-import { describeRepoWarning } from "./api";
+import { describeRepoWarning, formatRelativeScanTime } from "./api";
 import type { DiscoveryFacade } from "./api";
 
 export interface RepoDiscoveryProps {
@@ -29,7 +31,8 @@ export { describeRepoWarning };
  * 显式进入既有导入向导完成。单仓库失败仅告警，不拖垮整体。
  */
 export function RepoDiscovery({ facade, onImportDirectory }: RepoDiscoveryProps) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const locale = i18n.resolvedLanguage ?? undefined;
   const [repos, setRepos] = useState<SkillRepoView[]>([]);
   const [reposLoaded, setReposLoaded] = useState(false);
   const [owner, setOwner] = useState("");
@@ -229,6 +232,58 @@ export function RepoDiscovery({ facade, onImportDirectory }: RepoDiscoveryProps)
     sourceAddress: skill.readme_url ?? undefined,
   });
 
+  const scanFacts = (view: SkillRepoView): RepositoryCardViewModel["scan"] => {
+    const repoKey = `${view.repo.owner}/${view.repo.name}`;
+    const warning = report?.warnings.find(
+      (entry) => `${entry.owner}/${entry.name}` === repoKey,
+    );
+    if (warning) {
+      return {
+        detail: describeRepoWarning(warning.reason, (key, options) =>
+          String(t(key as never, options as never))),
+        label: t("discovery.repoManager.lastScan"),
+        tone: "negative",
+        value: t("discovery.repoManager.justNow"),
+      };
+    }
+    if (report && view.repo.enabled) {
+      const candidates = report.skills.filter(
+        (skill) => skill.repo_owner === view.repo.owner && skill.repo_name === view.repo.name,
+      ).length;
+      return {
+        detail: t("discovery.repoManager.candidates", { candidates }),
+        label: t("discovery.repoManager.lastScan"),
+        tone: "positive",
+        value: t("discovery.repoManager.justNow"),
+      };
+    }
+    if (!view.scan) {
+      return {
+        label: t("discovery.repoManager.lastScan"),
+        tone: "neutral",
+        value: t("discovery.repoManager.neverScanned"),
+      };
+    }
+    const time = formatRelativeScanTime(view.scan.scanned_at, { locale })
+      ?? t("discovery.repoManager.neverScanned");
+    return view.scan.ok
+      ? {
+          detail: t("discovery.repoManager.candidates", {
+            candidates: view.scan.candidate_count,
+          }),
+          label: t("discovery.repoManager.lastScan"),
+          tone: "positive",
+          value: time,
+        }
+      : {
+          detail: describeRepoWarning(view.scan.error ?? "", (key, options) =>
+            String(t(key as never, options as never))),
+          label: t("discovery.repoManager.lastScan"),
+          tone: "negative",
+          value: time,
+        };
+  };
+
   return (
     <section aria-label={t("discovery.repo.title")} className="sh-discovery-module">
       <header className="sh-discovery-module__heading">
@@ -250,45 +305,72 @@ export function RepoDiscovery({ facade, onImportDirectory }: RepoDiscoveryProps)
       </div>
 
       <div className="sh-discovery-module__body">
-        <ul className="sh-discovery-repos">
+        <div className="sh-repository-cards-zone">
+          <ul className="sh-repository-cards">
           {repos.map((view) => {
             const repo = view.repo;
+            const key = `${repo.owner}/${repo.name}`;
             return (
-              <li className="sh-discovery-repos__repo" key={`${repo.owner}/${repo.name}`}>
-                <label className="sh-discovery-repos__toggle">
-                  <input
-                    checked={repo.enabled}
-                    onChange={() => void toggleRepo(view)}
-                    type="checkbox"
-                    aria-label={t("discovery.repo.enabled")}
-                  />
-                  <span className="sh-discovery-repos__name">{`${repo.owner}/${repo.name}@${repo.branch}`}</span>
-                </label>
-                <ConfirmDialog
-                  cancelLabel={t("actions.cancel")}
-                  confirmLabel={t("discovery.repo.confirmRemove")}
-                  description={t("discovery.repo.confirmRemoveDescription", {
-                    repo: `${repo.owner}/${repo.name}`,
-                  })}
-                  onConfirm={() => void removeRepo()}
-                  title={t("discovery.repo.confirmRemoveTitle")}
-                  trigger={
-                    <Button
-                      onClick={() => setPendingRemoval(view)}
-                      variant="ghost"
-                    >
-                      {t("discovery.repo.remove")}
-                    </Button>
+              <li key={key}>
+                <RepositoryCard
+                  actions={
+                    <ConfirmDialog
+                      cancelLabel={t("actions.cancel")}
+                      confirmLabel={t("discovery.repo.confirmRemove")}
+                      description={t("discovery.repo.confirmRemoveDescription", {
+                        repo: key,
+                      })}
+                      onConfirm={() => void removeRepo()}
+                      title={t("discovery.repo.confirmRemoveTitle")}
+                      trigger={
+                        <Button onClick={() => setPendingRemoval(view)} variant="ghost">
+                          {t("discovery.repo.remove")}
+                        </Button>
+                      }
+                      variant="primary"
+                    />
                   }
-                  variant="primary"
+                  repository={{
+                    branch: repo.branch || t("discovery.repoManager.defaultBranch"),
+                    branchLabel: t("discovery.repoManager.branchLabel"),
+                    coordinates: key,
+                    enabled: repo.enabled,
+                    enabledLabel: repo.enabled
+                      ? t("discovery.repoManager.enabledState")
+                      : t("discovery.repoManager.disabledState"),
+                    id: key,
+                    scan: scanFacts(view),
+                    sourceLabel: "GitHub",
+                  }}
+                  sourceAction={
+                    <ExternalLink
+                      ariaLabel={t("discovery.repoManager.openOnGithub", { repo: key })}
+                      onOpen={() => void facade.openExternalUrl(`https://github.com/${key}`)}
+                      target={`https://github.com/${key}`}
+                    >
+                      GitHub
+                    </ExternalLink>
+                  }
+                  statusControl={
+                    <label className="sh-repository-card__toggle">
+                      <input
+                        checked={repo.enabled}
+                        onChange={() => void toggleRepo(view)}
+                        type="checkbox"
+                        aria-label={t("discovery.repo.enabled")}
+                      />
+                      <span>{t("discovery.repo.enabled")}</span>
+                    </label>
+                  }
                 />
               </li>
             );
           })}
           {reposLoaded && repos.length === 0 ? (
-            <li>{t("discovery.repo.empty")}</li>
+            <li className="sh-repository-cards__empty">{t("discovery.repo.empty")}</li>
           ) : null}
-        </ul>
+          </ul>
+        </div>
 
         <div className="sh-discovery-module__controls">
           <Input
