@@ -677,18 +677,18 @@
     },
     "managedDeploymentCount": "{{count}} managed copies",
     "kind": {
-      "cli": "CLI",
+      "cli": "Terminal",
       "desktop": "Desktop app",
       "ideExtension": "IDE extension",
       "tui": "Terminal UI",
       "headless": "Headless",
-      "acp": "ACP",
+      "acp": "Protocol integration",
       "web": "Web",
       "mobile": "Mobile",
         "bot": "Bot",
         "sharedDirectory": "Shared directory",
         "unknown": "Agent",
-        "evidenceTitle": "Kind comes from the adapter evidence declared in the client profile"
+        "evidenceTitle": "{{kind}}: Kind comes from the adapter evidence declared in the client profile"
     },
     "status": {
       "accessible": "Accessible",
@@ -953,12 +953,12 @@
     "selectAllAvailable": "Select all available targets",
     "brandOther": "Other",
     "clientKind": {
-      "cli": "CLI",
+      "cli": "Terminal",
       "desktop": "Desktop app",
       "ide_extension": "IDE extension",
       "tui": "Terminal UI",
       "headless": "Headless",
-      "acp": "ACP protocol",
+      "acp": "Protocol integration",
       "web": "Web",
       "mobile": "Mobile",
       "bot": "Bot"

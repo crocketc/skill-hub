@@ -24,7 +24,7 @@ const KIND_KEYS: Record<ClientKind, string> = {
 /**
  * P1-06：有适配器证据的 Agent 类型徽标（kind 来自 profile 声明，
  * 发现快照逐实例输出）。多个类型合并在一张卡片上以 "/" 连接，
- * 例如 "桌面端/CLI"。
+ * 例如 "桌面端/终端"。
  */
 export function AgentKindBadge({ kinds }: AgentKindBadgeProps): JSX.Element | null {
   const { t } = useTranslation();
@@ -34,7 +34,11 @@ export function AgentKindBadge({ kinds }: AgentKindBadgeProps): JSX.Element | nu
     .map((kind) => (KIND_KEYS[kind] ? String(t(KIND_KEYS[kind] as never)) : kind))
     .join("/");
   return (
-    <span className="sh-agent-kind-badge" title={t("agents.kind.evidenceTitle")}>
+    <span
+      aria-label={label}
+      className="sh-agent-kind-badge"
+      title={t("agents.kind.evidenceTitle", { kind: label })}
+    >
       {label}
     </span>
   );

@@ -239,7 +239,7 @@ it("describes an unavailable target through the checkbox accessible description"
   const codex = screen.getByLabelText("Codex");
   const codexDescribedBy = codex.getAttribute("aria-describedby");
   expect(codexDescribedBy).toBeTruthy();
-  expect(screen.getByText("命令行")).toHaveAttribute("id", codexDescribedBy);
+  expect(screen.getByText("终端")).toHaveAttribute("id", codexDescribedBy);
 });
 
 it("offers named color themes during initialization and previews the chosen theme", async () => {

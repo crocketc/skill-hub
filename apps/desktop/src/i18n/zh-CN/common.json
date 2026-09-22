@@ -677,18 +677,18 @@
     },
     "managedDeploymentCount": "{{count}} 个受管副本",
     "kind": {
-      "cli": "CLI",
+      "cli": "终端",
       "desktop": "桌面端",
       "ideExtension": "IDE 插件",
       "tui": "终端界面",
       "headless": "无界面",
-      "acp": "ACP",
+      "acp": "协议接入",
       "web": "Web",
       "mobile": "移动端",
         "bot": "Bot",
         "sharedDirectory": "共享目录",
         "unknown": "Agent",
-        "evidenceTitle": "类型来自该客户端配置档案中声明的适配器证据"
+        "evidenceTitle": "{{kind}}：类型来自该客户端配置档案中声明的适配器证据"
     },
     "status": {
       "accessible": "可访问",
@@ -953,12 +953,12 @@
     "selectAllAvailable": "全选可用目标",
     "brandOther": "其他",
     "clientKind": {
-      "cli": "命令行",
+      "cli": "终端",
       "desktop": "桌面应用",
       "ide_extension": "IDE 插件",
       "tui": "终端界面",
       "headless": "无界面",
-      "acp": "ACP 协议",
+      "acp": "协议接入",
       "web": "网页",
       "mobile": "移动端",
       "bot": "机器人"

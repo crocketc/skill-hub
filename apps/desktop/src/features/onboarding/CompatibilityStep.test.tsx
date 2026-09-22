@@ -9,6 +9,7 @@ const targets: CompatibilityTarget[] = [
   { id: "t1", label: "codex-cli", profileId: "openai", kind: "cli", availability: "available" },
   { id: "t2", label: "codex-desktop", profileId: "openai", kind: "desktop", availability: "available" },
   { id: "t3", label: "claude-code", profileId: "anthropic", kind: "cli", availability: "available" },
+  { id: "t5", label: "grok-acp", profileId: "grok", kind: "acp", availability: "available" },
   { id: "t4", label: "legacy-agent", availability: "unavailable" },
 ];
 
@@ -39,8 +40,9 @@ it("groups agent targets by brand with clients listed underneath", async () => {
   expect(screen.getByLabelText("codex-desktop")).toBeVisible();
   expect(screen.getByLabelText("claude-code")).toBeVisible();
   expect(screen.getByLabelText("legacy-agent")).toBeVisible();
-  expect(screen.getAllByText("命令行")).toHaveLength(2);
+  expect(screen.getAllByText("终端")).toHaveLength(2);
   expect(screen.getByText("桌面应用")).toBeVisible();
+  expect(screen.getByText("协议接入")).toBeVisible();
 });
 
 it("keeps a flat list when no brand information is available", async () => {

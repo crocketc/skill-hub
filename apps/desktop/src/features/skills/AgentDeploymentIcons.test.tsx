@@ -1,8 +1,11 @@
 import { render, screen } from "@testing-library/react";
+import { I18nextProvider } from "react-i18next";
 import { expect, it } from "vitest";
 import baseCss from "../../styles/base.css?raw";
+import { createSkillHubI18n } from "../../i18n";
 import {
   AGENT_PROFILE_IDS,
+  AgentIdentity,
   AgentDeploymentIcons,
   getAgentVisual,
 } from "./AgentDeploymentIcons";
@@ -104,6 +107,21 @@ it("uses compact display names and summarizes agents after the seventh tag", () 
   expect(container.querySelectorAll("[data-agent-row]")).toHaveLength(2);
   expect(container.querySelector('[data-agent-row="0"]')?.querySelectorAll("[data-agent-id]")).toHaveLength(4);
   expect(container.querySelector('[data-agent-row="1"]')?.querySelectorAll("[data-agent-id]")).toHaveLength(3);
+});
+
+it("uses the same user-facing kind labels in deployment and relationship identities", async () => {
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  render(
+    <I18nextProvider i18n={i18n}>
+      <AgentIdentity agentId="codex-cli" />
+      <AgentIdentity agentId="grok-acp" />
+    </I18nextProvider>,
+  );
+
+  expect(screen.getByText("终端")).toBeVisible();
+  expect(screen.getByText("协议接入")).toBeVisible();
+  expect(screen.queryByText("CLI")).not.toBeInTheDocument();
+  expect(screen.queryByText("ACP")).not.toBeInTheDocument();
 });
 
 it("keeps the compact deployment column sizing", () => {

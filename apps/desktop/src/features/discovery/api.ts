@@ -484,7 +484,7 @@ export interface AgentTargetCard {
   physicalId: string;
   /** 该 physical 组内任一 target 的路径（同一 physical 路径等价）。 */
   path: string;
-  /** 组内去重后的客户端类型（如 desktop+cli → "桌面端/CLI"）。 */
+  /** 组内去重后的客户端类型（如 desktop+cli → "桌面端/终端"）。 */
   kinds: ClientKind[];
   /** OPT-07：组内客户端的官方产品名（逐客户端核验，去重、按出现顺序）。 */
   names: string[];
