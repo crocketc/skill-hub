@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import { I18nextProvider } from "react-i18next";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { describe, expect, it } from "vitest";
@@ -8,6 +8,7 @@ import { createSkillHubI18n } from "../../i18n";
 import { RelationshipsLayout } from "./RelationshipsLayout";
 
 async function renderLayout(scope: "graph" | "decisions" | "governance") {
+  cleanup();
   const i18n = await createSkillHubI18n(["en-US"]);
   render(
     <I18nextProvider i18n={i18n}>
@@ -19,9 +20,10 @@ async function renderLayout(scope: "graph" | "decisions" | "governance") {
 }
 
 describe("RelationshipsLayout", () => {
-  it("owns the route-level h1 and shows an honest unavailable placeholder per scope", async () => {
+  it("owns one module h1 while the active scope remains a page tab", async () => {
     await renderLayout("graph");
-    expect(screen.getByRole("heading", { level: 1, name: "Skill graph" })).toBeVisible();
+    expect(screen.getByRole("heading", { level: 1, name: "Skill relations" })).toBeVisible();
+    expect(screen.queryByRole("heading", { level: 1, name: "Skill graph" })).not.toBeInTheDocument();
     expect(
       screen.getByText(
         "The relationship graph canvas is not available yet; relation facts stay available in the Skill library and on Skill details.",
@@ -29,15 +31,27 @@ describe("RelationshipsLayout", () => {
     ).toBeVisible();
 
     await renderLayout("decisions");
-    const [second] = screen.getAllByRole("heading", { level: 1, name: "Conflict decisions" });
-    expect(second).toBeVisible();
+    expect(screen.getByRole("heading", { level: 1, name: "Skill relations" })).toBeVisible();
+    expect(screen.queryByRole("heading", { level: 1, name: "Conflict decisions" })).not.toBeInTheDocument();
 
     await renderLayout("governance");
-    const [third] = screen.getAllByRole("heading", {
-      level: 1,
-      name: "Relationship governance",
-    });
-    expect(third).toBeVisible();
+    expect(screen.getByRole("heading", { level: 1, name: "Skill relations" })).toBeVisible();
+    expect(screen.queryByRole("heading", { level: 1, name: "Relationship governance" })).not.toBeInTheDocument();
+  });
+
+  it("keeps the module heading and section navigation in one header row", async () => {
+    const i18n = await createSkillHubI18n(["en-US"]);
+    render(
+      <I18nextProvider i18n={i18n}>
+        <MemoryRouter initialEntries={["/relationships"]}>
+          <RelationshipsLayout scope="graph" />
+        </MemoryRouter>
+      </I18nextProvider>,
+    );
+
+    const heading = screen.getByRole("heading", { level: 1, name: "Skill relations" });
+    const nav = screen.getByRole("navigation", { name: "Relationship sections" });
+    expect(heading.closest("header")).toContainElement(nav);
   });
 
   it("renders provided page content instead of the placeholder when a page supplies children", async () => {

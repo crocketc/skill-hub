@@ -470,7 +470,7 @@ it("renders the three relationships routes with honest placeholders and module t
   await appRouter.navigate("/relationships");
   render(<AppRouter />);
 
-  expect(await screen.findByRole("heading", { name: "Skill graph" })).toBeVisible();
+  expect(await screen.findByRole("heading", { name: "Skill relations", level: 1 })).toBeVisible();
   expect(document.querySelector(".sh-app-shell__title")).toHaveTextContent(
     "Skill relations",
   );
@@ -487,7 +487,7 @@ it("renders the three relationships routes with honest placeholders and module t
   await act(async () => {
     await appRouter.navigate("/relationships/decisions");
   });
-  expect(await screen.findByRole("heading", { name: "Conflict decisions" })).toBeVisible();
+  expect(await screen.findByRole("heading", { name: "Skill relations", level: 1 })).toBeVisible();
   // 任务 7 已接入真实冲突处理工作台：路由 mock 不提供工作台投影查询，
   // 页面诚实呈现读取失败，而不是“尚未提供”占位。
   expect(
@@ -497,9 +497,7 @@ it("renders the three relationships routes with honest placeholders and module t
   await act(async () => {
     await appRouter.navigate("/relationships/governance");
   });
-  expect(
-    await screen.findByRole("heading", { name: "Relationship governance" }),
-  ).toBeVisible();
+  expect(await screen.findByRole("heading", { name: "Skill relations", level: 1 })).toBeVisible();
   // 任务 8：治理插槽已换成真实工作台——普通添加入口与治理清单的诚实空态，
   // 不再渲染"尚未提供"占位。
   expect(await screen.findByTestId("governance-deploy-entry")).toBeVisible();

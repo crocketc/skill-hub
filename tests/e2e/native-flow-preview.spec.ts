@@ -472,7 +472,7 @@ test("conflict workbench keeps members readable, actions reachable and preview s
   await page.setViewportSize({ width: 800, height: 600 });
   await page.goto("/relationships/decisions");
 
-  await expect(page.getByRole("heading", { level: 1, name: "Conflict decisions" })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1, name: "Skill relations" })).toBeVisible();
 
   // ① 成员列表：两个成员路径以统一展示形态可读，且都在视口内。
   const memberCodes = page.locator("code", { hasText: "find-skills" });
@@ -501,6 +501,11 @@ test("relationship module exposes in-page navigation with counts between the thr
   await installNativePreview(page);
   await page.goto("/relationships");
 
+  const moduleHeading = page.getByRole("heading", { level: 1, name: "Skill relations" });
+  await expect(moduleHeading).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1, name: "Skill graph" })).toHaveCount(0);
+  await expect(page.locator("header.sh-page-header").getByRole("navigation", { name: "Relationship sections" })).toBeVisible();
+
   const nav = page.getByRole("navigation", { name: "Relationship sections" });
   await expect(nav.getByRole("link", { name: "Skill graph" })).toHaveAttribute("aria-current", "page");
   await expect(nav.getByTestId("relationships-nav-count-graph")).toHaveText("2");
@@ -509,12 +514,12 @@ test("relationship module exposes in-page navigation with counts between the thr
 
   await nav.getByRole("link", { name: "Conflict decisions" }).click();
   await expect(page).toHaveURL(/\/relationships\/decisions$/);
-  await expect(page.getByRole("heading", { level: 1, name: "Conflict decisions" })).toBeVisible();
+  await expect(moduleHeading).toBeVisible();
   await expect(nav.getByRole("link", { name: "Conflict decisions" })).toHaveAttribute("aria-current", "page");
 
   await nav.getByRole("link", { name: "Relationship governance" }).click();
   await expect(page).toHaveURL(/\/relationships\/governance$/);
-  await expect(page.getByRole("heading", { level: 1, name: "Relationship governance" })).toBeVisible();
+  await expect(moduleHeading).toBeVisible();
 
   // 概览卡片深链入口保持不变。
   await page.goto("/");

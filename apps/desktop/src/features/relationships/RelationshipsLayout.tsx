@@ -90,10 +90,10 @@ interface RelationshipsLayoutProps {
 }
 
 /**
- * 技能关系模块三页共用的壳层（任务 5）：模块页自持 route-level h1
- * （顶栏标题自 2026-09-17 起不再是 heading），画布/工作台由任务 6/7/8 填充。
+ * 技能关系模块三页共用的壳层（任务 5）：模块标题统一由一个 h1 承载，
+ * 三个工作区名称作为同一标题行内的页签展示。画布/工作台由任务 6/7/8 填充。
  * DEV-23 起壳层同时承载页内页签导航：三页共享同一份计数事实，
- * 概览卡片深链入口保持不变。
+ * 概览卡片深链入口保持不变；DEV-67 避免当前路由标题与图谱页签重复。
  */
 export function RelationshipsLayout({ scope, children, facade }: RelationshipsLayoutProps) {
   const { t } = useTranslation();
@@ -101,8 +101,11 @@ export function RelationshipsLayout({ scope, children, facade }: RelationshipsLa
   return (
     <PageFrame width="wide">
       <div className="sh-relationships">
-        <PageHeader headingLevel="h1" title={t(TITLE_KEYS[scope])} />
-        <RelationshipsNav facade={facade} />
+        <PageHeader
+          actions={<RelationshipsNav facade={facade} />}
+          headingLevel="h1"
+          title={t("relationships.nav")}
+        />
         {children ?? <DataState message={t(PLACEHOLDER_KEYS[scope])} state="unavailable" />}
       </div>
     </PageFrame>

@@ -6,12 +6,24 @@
   min-width: 0;
 }
 
+/* DEV-67：模块名称与子页签属于同一导航层级，保持在一个标题行内；
+ * actions 允许在窄容器中收缩，让页签自身负责横向滚动。 */
+.sh-relationships .sh-page-header {
+  align-items: center;
+}
+
+.sh-relationships .sh-page-header__actions {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
 /* DEV-33：三页共用页内页签。路由级导航语义（nav + aria-current），
  * 使用轻量下划线层级保持页面标题与内容连续；窄视口只滚动这组页签。 */
 .sh-relationships__nav {
   display: flex;
   flex-wrap: nowrap;
   gap: var(--space-4);
+  max-width: 100%;
   overflow-x: auto;
   padding-inline: var(--space-1);
   scrollbar-width: thin;
