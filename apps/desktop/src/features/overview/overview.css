@@ -127,16 +127,13 @@
   height: 100%;
 }
 
-/* DEV-25：概览按"可用高度"分配纵向空间，页面根不再出现无必要的纵向滚动。
-   AppShell/PageFrame（fill 契约）已把剩余高度交到本容器，这里只把它切成
-   三条可压缩轨道——指标带 / 技能关系 / 部署分布+右列：每条 min-height:0，
-   空间不足时区块在自己分配到的高度内滚动，而不是把页面撑长。
-   不使用任何视口高度魔法数字：压缩量完全由可用高度决定。 */
+/* DEV-66：概览继续消费 AppShell/PageFrame 的 fill 高度，但每一块数据都留在
+   正常文档流中。模块不再以固定轨道承接溢出，避免滚动条遮住列表内容。 */
 .sh-overview {
   display: flex;
   flex-direction: column;
   min-height: 0;
-  gap: var(--page-gap);
+  gap: var(--space-3);
 }
 
 .sh-overview > .sh-overview__metrics,
@@ -145,57 +142,44 @@
   min-height: 0;
 }
 
-/* 指标带与技能关系区按内容取高，空间不足时压缩并各自内部滚动；
-   关系区（"偏高"的那一块）收缩得更快，把高度让给主区。 */
+/* 指标带与技能关系区按内容取高，确保完整内容参与页面布局。 */
 .sh-overview > .sh-overview__metrics {
-  flex: 0 1 auto;
+  flex: 0 0 auto;
   min-height: 0;
-  overflow-y: auto;
 }
 
 .sh-overview > .sh-overview__relations {
-  flex: 0 2 auto;
+  flex: 0 0 auto;
   min-height: 0;
-  overflow-y: auto;
 }
 
-/* 只消费 AppShell 已分配的剩余高度，禁止用整块视口高度反推，避免 100% 全屏
-   时把顶栏和内边距重复算入而触发外层滚动条。 */
+/* 主区按内容自然展开，避免把图表、明细或右栏裁到固定高度轨道里。 */
 .sh-overview > .sh-overview__content-grid {
-  flex: 1 1 auto;
-  /* 主区保底：压缩优先发生在关系区与指标带，图表区至少留一个可读下限
-     （组件下限，不是视口推导值），不够就由卡片自己滚动。 */
-  min-height: 14rem;
-  overflow-y: auto;
-  /* 并排（宽容器）时只有一行：行占满分配到的高度，主区与右列随之伸缩，
-     不再各自按内容高度溢出成滚动条。 */
-  grid-template-rows: minmax(0, 1fr);
+  flex: 0 0 auto;
+  min-height: 0;
+  grid-template-rows: auto;
 }
 
 /* 宽屏概览固定四块区域：部署分布为主区，右侧依次为标签饼图与待处理；
-   列表只在自己的卡片内滚动，页面本身不因标签数量变长。 */
+   列表按内容自然展开，页面不会因为模块内部滚动而隐藏条目。 */
 .sh-overview .sh-overview__panel {
-  /* DEV-25：面板可压缩——不再有 30rem 的硬性下限，图表区是主要压缩位；
-     下限保留图表与明细各一条可读轨道，绝不被右列挤成 0 高度而裁掉图表。 */
-  min-height: 14rem;
-  /* 图表是主区，明细是可滚列表：可用高度按 2:1 分给两者。 */
-  grid-template-rows: auto minmax(5rem, 2fr) minmax(3rem, 1fr);
-  /* 高度紧张时面板内部自己滚动，绝不把图表裁掉。 */
-  overflow-y: auto;
+  min-height: 0;
+  grid-template-rows: auto auto auto;
 }
 
-/* 明细区在自己的行内滚动：head 固定，列表吃掉剩余高度。 */
+/* 明细区与列表保持自然高度，完整信息由页面布局承接。 */
 .sh-overview .sh-overview__panel > .sh-overview__details {
   grid-template-rows: auto minmax(0, 1fr);
 }
 
 .sh-overview .sh-overview__details-scroll {
-  max-height: 100%;
+  max-height: none;
+  overflow-y: visible;
 }
 
 .sh-overview .sh-overview__chart-figure {
-  min-height: 0;
-  height: 100%;
+  min-height: 18rem;
+  height: auto;
 }
 
 .sh-overview .sh-overview__chart-canvas,
@@ -217,7 +201,7 @@
 .sh-overview .sh-overview__panel > .sh-overview__details {
   min-height: 0;
   max-height: none;
-  overflow: hidden;
+  overflow: visible;
   padding: var(--space-3) 0 0;
 }
 
@@ -266,9 +250,8 @@
 
 .sh-overview__tag-details-scroll {
   min-width: 0;
-  max-height: 10rem;
-  overflow-y: auto;
-  scrollbar-gutter: stable;
+  max-height: none;
+  overflow-y: visible;
 }
 
 /* 维度切换的输入框视觉上透明（绝对定位 + opacity:0），全局 ：focus-visible
@@ -278,13 +261,11 @@
   outline-offset: 2px;
 }
 
-/* 关系缩略网络（任务 9 页面切片）：组织/关系区域的第三块固定区。占据
-   fill 网格的固定 auto 行；空/加载/失败只改变本区内部，不改变 PageFrame
-   的高度契约——100% 缩放下外层不出滚动条，被压缩的是图表区 minmax(0,1fr)。 */
+/* 关系缩略网络（任务 9 页面切片）：组织/关系区域的第三块数据区。空态、
+   加载态和失败态都在自然文档流中呈现，不通过固定高度裁剪内容。 */
 .sh-overview__relations {
   display: grid;
-  /* DEV-25：关系区是"偏高"的区块之一——允许压缩（min-height:0）并在自己
-     分配到的高度内滚动，不再用 max-content 把自己的高度写死给页面。 */
+  /* 关系区可以收缩，但内容继续留在页面流中，不制造模块内滚动条。 */
   min-height: 0;
   gap: var(--space-3);
   padding: var(--space-4);
@@ -378,6 +359,19 @@
   color: var(--ui-warning-foreground);
 }
 
+/* 概览卡片的内层节奏比通用页面卡片更紧凑；保留舒适的点击区域，把节省的
+   高度交给数据内容，避免宽屏最大化时只因卡片 chrome 产生页面滚动。 */
+.sh-overview .sh-overview__panel,
+.sh-overview .sh-overview__pending,
+.sh-overview .sh-overview__details {
+  gap: var(--space-3);
+  padding: var(--space-4);
+}
+
+.sh-overview .sh-overview__panel > .sh-overview__details {
+  padding: var(--space-3) 0 0;
+}
+
 @container workspace (max-width: 40rem) {
   .sh-overview .sh-overview__relations-list {
     grid-template-columns: minmax(0, 1fr);
@@ -410,29 +404,184 @@
   }
 
   .sh-overview .sh-overview__rail {
-    align-content: stretch;
-    /* DEV-25：待办区拿到自己内容的高度（不再被挤到图表下方才出现），
-       标签饼图拿剩余高度；两者都在自己的轨道内滚动。 */
-    grid-template-rows: minmax(0, 1fr) minmax(8rem, 16rem);
-  }
-
-  .sh-overview .sh-overview__pending {
-    min-height: 0;
-    /* DEV-25：待办区被压缩时自己滚动，不用 hidden 把条目裁掉。 */
-    overflow-y: auto;
+    align-content: start;
+    grid-template-rows: auto auto;
   }
 }
 
 @container workspace (max-width: 56rem) {
   .sh-overview .sh-overview__content-grid {
     grid-template-columns: minmax(0, 1fr);
-    /* DEV-25：单列堆叠时主区与右列各自保留内容高度（不互相挤压），
-       超出部分由主区自己滚动——被压成 0 高度会把图表裁掉。 */
+    /* 单列堆叠时主区与右列各自保留完整内容高度。 */
     grid-template-rows: auto auto;
     align-content: start;
   }
 }
 
-/* DEV-25：原先那条"窗口高度偏小就退回自然文档流"的兜底已删除——它用视口
-   高度反推布局，窗口一变小就把滚动条推给页面根。现在压缩与滚动全部由上面
-   的弹性轨道消化：轨道的 min 值是"组件可读下限"，不是视口魔法数字。 */
+/* Must come after the width container rules: height compaction is a final layout
+   decision, so it can override the narrow-container stacked fallback. */
+@media (max-height: 44rem) {
+  .sh-overview {
+    gap: var(--space-2);
+  }
+
+  .sh-overview .sh-overview__metrics {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    grid-auto-rows: auto;
+    gap: var(--space-1);
+  }
+
+  .sh-overview .sh-overview__hero {
+    min-height: 2.5rem;
+    padding: var(--space-1) var(--space-2);
+  }
+
+  .sh-overview .sh-overview__stats {
+    display: contents;
+  }
+
+  .sh-overview .sh-overview__stat {
+    min-height: 2.5rem;
+    padding: var(--space-1) var(--space-2);
+  }
+
+  .sh-overview .sh-overview__stat-name,
+  .sh-overview .sh-overview__relation-name {
+    font-size: var(--font-size-xs);
+    line-height: 1.2;
+  }
+
+  .sh-overview .sh-overview__relations {
+    gap: var(--space-1);
+    padding: var(--space-1);
+  }
+
+  .sh-overview .sh-overview__relations-list {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: var(--space-1);
+  }
+
+  .sh-overview .sh-overview__relation {
+    min-height: 2rem;
+    padding: var(--space-1);
+  }
+
+  .sh-overview .sh-overview__relation-figure strong {
+    font-size: var(--font-size-sm);
+  }
+
+  .sh-overview .sh-overview__content-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-rows: auto;
+    gap: var(--space-2);
+  }
+
+  .sh-overview .sh-overview__panel,
+  .sh-overview .sh-overview__pending,
+  .sh-overview .sh-overview__details {
+    gap: var(--space-1);
+    padding: var(--space-2);
+  }
+
+  .sh-overview .sh-overview__panel {
+    grid-template-rows: auto auto auto;
+  }
+
+  .sh-overview .sh-overview__panel .sh-overview__section-head {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .sh-overview .sh-overview__panel .sh-overview__toggle {
+    align-self: flex-start;
+  }
+
+  .sh-overview .sh-overview__rail {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-rows: auto;
+    gap: var(--space-2);
+  }
+
+  .sh-overview .sh-overview__panel .sh-overview__chart-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-1);
+  }
+
+  .sh-overview .sh-overview__section-head {
+    align-items: center;
+    gap: var(--space-1);
+  }
+
+  .sh-overview .sh-overview__eyebrow {
+    display: none;
+  }
+
+  .sh-overview .sh-overview__section-head h2,
+  .sh-overview .sh-overview__details h2,
+  .sh-overview .sh-overview__pending h2,
+  .sh-overview .sh-overview__tag-panel h2 {
+    font-size: var(--font-size-sm);
+    line-height: 1.2;
+  }
+
+  .sh-overview .sh-overview__toggle {
+    gap: 0;
+    padding: 0.125rem;
+  }
+
+  .sh-overview .sh-overview__toggle-option span {
+    min-height: 1.5rem;
+    padding-inline: var(--space-2);
+    font-size: var(--font-size-xs);
+  }
+
+  .sh-overview .sh-overview__chart-figure {
+    min-height: 0;
+    height: 3rem;
+  }
+
+  .sh-overview .sh-overview__chart-link,
+  .sh-overview .sh-overview__pending-item {
+    min-height: 0;
+    padding: var(--space-1) var(--space-2);
+    font-size: var(--font-size-xs);
+    line-height: 1.2;
+  }
+
+  .sh-overview .sh-overview__tag-panel {
+    gap: var(--space-1);
+    padding: var(--space-1);
+  }
+
+  .sh-overview .sh-overview__pending .sh-status-badge {
+    display: none;
+  }
+
+  .sh-overview .sh-overview__pending-list,
+  .sh-overview .sh-overview__tag-details-scroll .sh-overview__chart-list {
+    gap: var(--space-1);
+  }
+
+  .sh-overview .sh-overview__tag-layout {
+    grid-template-columns: minmax(4rem, 0.8fr) minmax(0, 1fr);
+    gap: var(--space-1);
+  }
+
+  .sh-overview .sh-overview__tag-chart {
+    height: 3rem;
+  }
+
+  .sh-page-frame--fill > .sh-page-header .sh-page-header__description {
+    display: none;
+  }
+}
+
+/* 高度充足时不额外放大图表，给完整页面流保留自然的垂直余量。 */
+@media (min-height: 60rem) {
+  .sh-overview .sh-overview__chart-figure {
+    min-height: 0;
+  }
+}
+
+/* DEV-66：数据模块保持页面流布局；短窗口通过紧凑档减少装饰性占用，避免
+   页面根和模块内部出现滚动条。 */

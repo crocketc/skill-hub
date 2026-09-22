@@ -370,30 +370,18 @@ it("locks the density ladder and the two-row metrics contract in overview.css", 
   expect(overviewCss).not.toMatch(/grid-template-columns: minmax\(0, 1\.35fr\) repeat\(4/);
 });
 
-it("keeps every overview band in a compressible track so the page root never scrolls", () => {
-  // DEV-25（契约迁移，取代 DEV-7 的"自然文档流"裁定）：概览不再用
-  // `grid-template-rows: none` 把纵向滚动推给页面根，而是把可用高度切成
-  // 三条可压缩轨道（指标带 / 关系带 / 主区），每条 min-height: 0 且可内部
-  // 滚动；关系带不再用 max-content 把自己的高度写死给页面。
-  // 真实几何验收（800×600 与大窗口）由 tests/e2e/overview-height.spec.ts 承担。
+it("keeps every overview band in the page flow without nested scroll containers", () => {
+  // DEV-66：概览必须继续消费共享 fill 高度，但数据内容不能被固定轨道
+  // 或嵌套滚动容器隐藏；真实几何验收由 tests/e2e/overview-height.spec.ts 承担。
   expect(overviewCss).toMatch(
     /\.sh-overview\s*\{[^}]*display:\s*flex[^}]*flex-direction:\s*column[^}]*min-height:\s*0/s,
   );
-  // 三条轨道共享的压缩前提：min-height: 0（各自规则里的 flex/overflow 见下）。
+  // 三条数据带共享可压缩前提：min-height: 0。
   expect(overviewCss).toMatch(
     /\.sh-overview > \.sh-overview__metrics,\s*\.sh-overview > \.sh-overview__relations,\s*\.sh-overview > \.sh-overview__content-grid\s*\{[^}]*min-height:\s*0/,
   );
-  expect(overviewCss).toMatch(
-    /\.sh-overview > \.sh-overview__metrics \{\s*flex: 0 1 auto;\s*min-height: 0;\s*overflow-y: auto;\s*\}/,
-  );
-  expect(overviewCss).toMatch(
-    /\.sh-overview > \.sh-overview__relations \{\s*flex: 0 2 auto;\s*min-height: 0;\s*overflow-y: auto;\s*\}/,
-  );
-  expect(overviewCss).toMatch(
-    /\.sh-overview > \.sh-overview__content-grid \{[\s\S]*?flex: 1 1 auto;[\s\S]*?overflow-y: auto;\s*\}/,
-  );
-  // 关系区收缩得比指标带更快（"偏高的那一块"优先让出高度）。
-  expect(overviewCss).toMatch(/\.sh-overview > \.sh-overview__relations\s*\{[^}]*flex: 0 2 auto/s);
+  expect(overviewCss).not.toMatch(/\.sh-overview > [^{]+\{[^}]*overflow-y:\s*(auto|scroll)/s);
+  expect(overviewCss).not.toMatch(/\.sh-overview [^{]+\{[^}]*overflow-y:\s*(auto|scroll)/s);
   expect(overviewCss).toMatch(
     /\.sh-overview__relations\s*\{[^}]*min-height:\s*0/,
   );

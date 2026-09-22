@@ -199,7 +199,7 @@ test.describe("overview stays free of horizontal overflow", () => {
     }
 
     const tagDetails = page.locator(".sh-overview__tag-details-scroll");
-    await expect(tagDetails).toHaveCSS("overflow-y", "auto");
+    await expect(tagDetails).toHaveCSS("overflow-y", "visible");
     await expectNoRootHorizontalOverflow(page);
   });
 });
