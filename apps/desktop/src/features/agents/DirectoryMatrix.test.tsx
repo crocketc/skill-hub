@@ -226,7 +226,8 @@ it("renders the generic shared directory card first with the agent recognition s
   expect(shared.getByText("已确认支持")).toHaveClass("sh-status-badge--success");
   // 共享消费者 = 已确认支持的能力 + 有活动关系的 Agent（观察事实）；
   // unknown（识别未确认）与 unsupported（已确认不支持）不得从目录存在推断。
-  expect(shared.getByText("共享消费者：trae.code、zcode.shared")).toBeVisible();
+  expect(shared.getAllByLabelText("Trae · 终端").length).toBeGreaterThan(0);
+  expect(shared.getAllByLabelText("共享目录").length).toBeGreaterThan(0);
   expect(shared.queryByText(/gpt\.bird/)).not.toBeInTheDocument();
   expect(shared.queryByText(/legacy\.agent/)).not.toBeInTheDocument();
 });
@@ -240,7 +241,8 @@ it("annotates relations owned by other agents and links pending tasks to their r
   const foreignRow = rows.find((row) => within(row).queryByText("识别到的复制副本") !== null);
   expect(foreignRow).toBeDefined();
   // 其他 Agent 的关系必须显式标注归属，不得混入当前 Agent 的矩阵语义。
-  expect(within(foreignRow!).getByText("归属 Agent：trae.code")).toBeVisible();
+  expect(within(foreignRow!).getByText("归属 Agent：")).toBeVisible();
+  expect(within(foreignRow!).getByLabelText("Trae · 终端")).toBeVisible();
   // 当前 Agent 自己的关系行不重复标注归属。
   const ownRow = rows.find((row) => within(row).queryByText("skill-pdf") !== null);
   expect(ownRow).toBeDefined();
@@ -339,7 +341,8 @@ it("offers a removal impact entry per active relation and shows deterministic fa
   const facts = await screen.findByTestId("removal-impact-facts");
   expect(facts.textContent).toContain("建议只移除当前别名，共享目录本体与其他引用保持不变");
   expect(facts.textContent).toContain("当前 Agent 直接读取该通用共享目录。");
-  expect(facts.textContent).toContain("其他识别该目录的 Agent：trae.code (识别能力未确认)");
+  expect(facts.textContent).toContain("其他识别该目录的 Agent：");
+  expect(facts.querySelector('[aria-label="Trae · 终端"]')).not.toBeNull();
   expect(facts.textContent).toContain("同一 Skill 的其他路径：/home/demo/.trae/skills/pdf (复制部署)");
   expect(facts.textContent).toContain("可回退；备份位置：/backups/rel-read");
   expect(facts.textContent).toContain("权限受限");
@@ -406,7 +409,7 @@ it("renders English copy with the same structure", async () => {
 
   const cards = screen.getAllByTestId("directory-card");
   const shared = within(cards[0]);
-  expect(shared.getByText("Shared directory")).toBeVisible();
+  expect(shared.getAllByText("Shared directory").length).toBeGreaterThan(0);
   expect(shared.getByText("Recognition confirmed")).toBeVisible();
   expect(screen.getByText("Shared directory direct read")).toBeVisible();
   expect(screen.getByText("Copy deployment")).toBeVisible();

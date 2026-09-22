@@ -1,7 +1,10 @@
 import type { CSSProperties } from "react";
-import { useTranslation } from "react-i18next";
-import { BRAND_DISPLAY_NAMES, BrandTag } from "../../ui/BrandTag";
+import { AgentPresentation, agentBrandKey } from "../../ui/AgentPresentation";
 import type { AgentDeployment } from "./api";
+
+export { AgentIdentity, agentBrandKey, readableAgentIdName } from "../../ui/AgentPresentation";
+export { inferAgentKindKey as agentKindKey } from "../../ui/AgentPresentation";
+export type { AgentKindKey } from "../../ui/AgentPresentation";
 
 interface AgentVisual {
   color: string;
@@ -9,8 +12,8 @@ interface AgentVisual {
 
 /**
  * The adapter profiles are the source of truth for this local catalog. The
- * table deliberately uses text tags instead of vendor logo artwork; each tag
- * keeps a restrained brand accent without implying an official integration.
+ * shared AgentPresentation component keeps deployment targets consistent with
+ * the rest of the product: brand logo plus a user-facing platform type.
  */
 export const AGENT_PROFILE_IDS = [
   "anthropic",
@@ -93,70 +96,6 @@ export function getAgentDisplayName(agent: AgentDeployment) {
   return AGENT_DISPLAY_NAMES[agent.id.toLowerCase()] ?? agent.name;
 }
 
-/**
- * DEV-11：裸 agent id（如 `trae.code`、`zcode.shared`）→ 用户可读品牌名。
- * 优先全 id 匹配，再退回 profile 前缀；未知 id 原样透出（诚实缺省）。
- */
-export function readableAgentIdName(id: string): string {
-  const lowered = id.toLowerCase();
-  if (AGENT_DISPLAY_NAMES[lowered]) return AGENT_DISPLAY_NAMES[lowered];
-  const profile = lowered.split(".")[0];
-  if (AGENT_DISPLAY_NAMES[profile]) return AGENT_DISPLAY_NAMES[profile];
-  const family = profile.split("-")[0];
-  return AGENT_DISPLAY_NAMES[family] ?? id;
-}
-
-export type AgentKindKey =
-  | "cli"
-  | "desktop"
-  | "ideExtension"
-  | "tui"
-  | "headless"
-  | "acp"
-  | "web"
-  | "mobile"
-  | "bot"
-  | "sharedDirectory"
-  | "unknown";
-
-/** Map an evidence identifier to the user-facing brand used by BrandTag. */
-export function agentBrandKey(id: string): string {
-  const lowered = id.trim().toLowerCase();
-  if (BRAND_DISPLAY_NAMES[lowered]) return lowered;
-  const profile = lowered.split(".")[0];
-  if (BRAND_DISPLAY_NAMES[profile]) return profile;
-  const family = profile.split("-")[0];
-  return BRAND_DISPLAY_NAMES[family] ? family : profile;
-}
-
-export function agentKindKey(id: string): AgentKindKey {
-  const lowered = id.toLowerCase();
-  if (lowered.includes("shared")) return "sharedDirectory";
-  if (lowered.includes("ide") || lowered.includes("extension")) return "ideExtension";
-  if (lowered.includes("desktop")) return "desktop";
-  if (lowered.includes("mobile")) return "mobile";
-  if (lowered.includes("headless")) return "headless";
-  if (lowered.includes("acp")) return "acp";
-  if (lowered.includes("web")) return "web";
-  if (lowered.includes("bot")) return "bot";
-  if (lowered.includes("tui")) return "tui";
-  if (lowered.includes("cli")) return "cli";
-  return "unknown";
-}
-
-export function AgentIdentity({ agentId }: { agentId: string }) {
-  const { t } = useTranslation();
-  const kind = agentKindKey(agentId);
-  return (
-    <span className="sh-agent-presentation" data-agent-id={agentId}>
-      <BrandTag brand={agentBrandKey(agentId)} />
-      <span className="sh-agent-presentation__kind">
-        {t(`agents.kind.${kind}` as never)}
-      </span>
-    </span>
-  );
-}
-
 function AgentMark({ agent }: { agent: AgentDeployment }) {
   const visual = getAgentVisual(agent);
   const style = { "--agent-accent": visual.color } as CSSProperties;
@@ -167,7 +106,11 @@ function AgentMark({ agent }: { agent: AgentDeployment }) {
       style={style}
       title={agent.name}
     >
-      <span className="sh-skill-table__agent-deployment-label">{getAgentDisplayName(agent)}</span>
+      <AgentPresentation
+        agentId={agent.id}
+        brand={agentBrandKey(agent.id)}
+        brandClassName="sh-skill-table__agent-deployment-label"
+      />
     </span>
   );
 }

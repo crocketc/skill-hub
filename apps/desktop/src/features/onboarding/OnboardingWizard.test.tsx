@@ -199,10 +199,10 @@ it("shows discovery targets without deploying and requires selection confirmatio
   await click(screen.getByLabelText("我确认这里只识别 Agent，不会把技能添加到 Agent/项目"));
   await click(screen.getByRole("button", { name: "识别 Agent" }));
 
-  expect(await screen.findByLabelText("Codex")).toBeVisible();
-  const missing = screen.getByLabelText("Missing Agent");
+  expect(await screen.findByRole("checkbox", { name: "Codex · Agent" })).toBeVisible();
+  const missing = screen.getByRole("checkbox", { name: "Missing Agent · Agent" });
   expect(missing).toBeDisabled();
-  await click(screen.getByLabelText("Codex"));
+  await click(screen.getByRole("checkbox", { name: "Codex · Agent" }));
   expect(screen.getByRole("button", { name: "继续" })).toBeDisabled();
   await click(screen.getByLabelText("我确认所选目标只用于只读扫描，不会把技能添加到 Agent/项目"));
   expect(screen.getByRole("button", { name: "继续" })).toBeEnabled();
@@ -230,16 +230,16 @@ it("describes an unavailable target through the checkbox accessible description"
   await click(screen.getByLabelText("我确认这里只识别 Agent，不会把技能添加到 Agent/项目"));
   await click(screen.getByRole("button", { name: "识别 Agent" }));
 
-  const missing = await screen.findByLabelText("Missing Agent");
+  const missing = await screen.findByRole("checkbox", { name: "Missing Agent · Agent" });
   expect(missing).toBeDisabled();
   const describedBy = missing.getAttribute("aria-describedby");
   expect(describedBy).toBeTruthy();
   expect(screen.getByText("不可用")).toHaveAttribute("id", describedBy);
 
-  const codex = screen.getByLabelText("Codex");
+  const codex = screen.getByRole("checkbox", { name: "Codex · 终端" });
   const codexDescribedBy = codex.getAttribute("aria-describedby");
   expect(codexDescribedBy).toBeTruthy();
-  expect(screen.getByText("终端")).toHaveAttribute("id", codexDescribedBy);
+  expect(document.getElementById(codexDescribedBy!)).toHaveTextContent("终端");
 });
 
 it("offers named color themes during initialization and previews the chosen theme", async () => {
@@ -695,7 +695,7 @@ it("shows a completion summary with honest counts and enters the app only on an 
   await click(screen.getByRole("button", { name: "继续" }));
   await click(screen.getByLabelText("我确认这里只识别 Agent，不会把技能添加到 Agent/项目"));
   await click(screen.getByRole("button", { name: "识别 Agent" }));
-  await click(screen.getByLabelText("Codex"));
+  await click(screen.getByRole("checkbox", { name: "Codex · Agent" }));
   await click(screen.getByLabelText("我确认所选目标只用于只读扫描，不会把技能添加到 Agent/项目"));
   await click(screen.getByRole("button", { name: "继续" }));
   await click(screen.getByRole("button", { name: "开始只读扫描" }));

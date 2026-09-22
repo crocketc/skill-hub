@@ -101,14 +101,15 @@ export function brandColorClass(brand: string): string {
 export interface BrandTagProps {
   /** Brand profile id (e.g. "openai") or raw display name (e.g. "Acme"). */
   brand: string;
+  className?: string;
 }
 
-export function BrandTag({ brand }: BrandTagProps): JSX.Element | null {
+export function BrandTag({ brand, className }: BrandTagProps): JSX.Element | null {
   const key = normalizeBrandKey(brand);
   if (!key) return null;
   const icon = brandIconSrc(brand);
   return (
-    <span className={`sh-brand-tag ${brandColorClass(brand)}`} title={brand.trim()}>
+    <span className={["sh-brand-tag", brandColorClass(brand), className].filter(Boolean).join(" ")} title={brand.trim()}>
       {icon ? (
         <img
           alt=""

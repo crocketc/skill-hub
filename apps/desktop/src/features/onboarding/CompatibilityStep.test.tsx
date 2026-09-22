@@ -33,16 +33,16 @@ it("groups agent targets by brand with clients listed underneath", async () => {
   );
 
   // 品牌分组标题以品牌化彩色标签呈现（规范化友好名 + 品牌特征色）
-  expect(screen.getByText("OpenAI")).toHaveClass("sh-brand-tag sh-brand-tag--openai");
-  expect(screen.getByText("Claude")).toHaveClass("sh-brand-tag sh-brand-tag--anthropic");
+  expect(document.querySelector(".sh-onboarding__brand .sh-brand-tag--openai")).toBeInTheDocument();
+  expect(document.querySelector(".sh-onboarding__brand .sh-brand-tag--anthropic")).toBeInTheDocument();
   expect(screen.getByText("其他", { exact: false })).toBeVisible();
-  expect(screen.getByLabelText("codex-cli")).toBeVisible();
-  expect(screen.getByLabelText("codex-desktop")).toBeVisible();
-  expect(screen.getByLabelText("claude-code")).toBeVisible();
-  expect(screen.getByLabelText("legacy-agent")).toBeVisible();
-  expect(screen.getAllByText("终端")).toHaveLength(2);
+  expect(screen.getAllByLabelText("OpenAI · 终端").length).toBeGreaterThan(0);
+  expect(screen.getAllByLabelText("OpenAI · 桌面端").length).toBeGreaterThan(0);
+  expect(screen.getAllByLabelText("Claude · 终端").length).toBeGreaterThan(0);
+  expect(screen.getAllByLabelText("Grok · 协议接入").length).toBeGreaterThan(0);
+  expect(screen.getAllByText("终端").length).toBeGreaterThan(0);
   expect(screen.getByText("桌面应用")).toBeVisible();
-  expect(screen.getByText("协议接入")).toBeVisible();
+  expect(screen.getAllByText("协议接入").length).toBeGreaterThan(0);
 });
 
 it("keeps a flat list when no brand information is available", async () => {
@@ -67,7 +67,7 @@ it("keeps a flat list when no brand information is available", async () => {
     </I18nextProvider>,
   );
 
-  expect(screen.getByLabelText("Codex")).toBeVisible();
-  expect(screen.getByLabelText("Claude")).toBeVisible();
+  expect(screen.getAllByLabelText("Codex · Agent").length).toBeGreaterThan(0);
+  expect(screen.getAllByLabelText("Claude · Agent").length).toBeGreaterThan(0);
   expect(screen.queryByText("openai")).not.toBeInTheDocument();
 });

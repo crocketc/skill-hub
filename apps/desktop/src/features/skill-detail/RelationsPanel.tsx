@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import type { RemovalImpactFact } from "../../api/bindings";
 import { Button } from "../../ui/Button";
 import { StatusBadge } from "../../ui/StatusBadge";
+import { AgentPresentation } from "../../ui/AgentPresentation";
 import { RelationshipRemovalImpactView } from "../relationshipGovernance/RelationshipRemovalImpactView";
 import {
   fingerprintLabelKey,
@@ -82,7 +83,8 @@ export function RelationsPanel({
                   <span>{t(ownershipLabelKey(row.ownership) as never)}</span>
                   <span>{t(fingerprintLabelKey(row.fingerprintState) as never)}</span>
                   <span>
-                    {t("skillDetail.relations.governed.sharedAgent", { agent: row.targetAgentClientId })}
+                    {t("skillDetail.relations.governed.sharedAgent", { agent: "" })}
+                    <AgentPresentation agentId={row.targetAgentClientId} />
                   </span>
                   {!row.active ? (
                     <StatusBadge tone="neutral">{t("relationshipGovernance.matrix.inactive")}</StatusBadge>

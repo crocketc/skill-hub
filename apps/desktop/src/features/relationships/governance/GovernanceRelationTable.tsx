@@ -9,7 +9,8 @@ import {
 } from "../../relationshipGovernance/relationshipGovernance";
 import { rowNeedsSharedImpactConfirmation } from "./api";
 import { displayPath } from "../../../platform/displayPath";
-import { AgentIdentity, readableAgentIdName } from "../../skills/AgentDeploymentIcons";
+import { AgentIdentity } from "../../skills/AgentDeploymentIcons";
+import { AgentPresentation } from "../../../ui/AgentPresentation";
 
 export interface GovernanceRelationTableProps {
   rows: readonly RelationGovernanceRow[];
@@ -119,12 +120,18 @@ export function GovernanceRelationTable({
                 </td>
                 <td data-testid={`governance-impact-${relationId}`}>
                   {row.impact.other_consumer_agent_ids.length > 0
-                    ? t("relationships.governance.impact.otherConsumers", {
-                        agents: row.impact.other_consumer_agent_ids
-                          .map(readableAgentIdName)
-                          .join("、"),
-                        count: row.impact.other_consumer_agent_ids.length,
-                      })
+                    ? <>
+                        {t("relationships.governance.impact.otherConsumers", {
+                          agents: "",
+                          count: row.impact.other_consumer_agent_ids.length,
+                        })}
+                        {row.impact.other_consumer_agent_ids.map((agentId, index) => (
+                          <span key={agentId}>
+                            {index > 0 ? "、" : ""}
+                            <AgentPresentation agentId={agentId} />
+                          </span>
+                        ))}
+                      </>
                     : t("relationships.governance.impact.noOtherConsumers")}
                   <span>
                     {row.impact.rollback_available

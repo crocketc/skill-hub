@@ -2,6 +2,7 @@ import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
 import type { RelationshipOverview, RemovalImpactFact } from "../../api/bindings";
 import { StatusBadge } from "../../ui/StatusBadge";
+import { AgentPresentation } from "../../ui/AgentPresentation";
 import {
   buildAgentDirectoryViews,
   directoryRoleLabelKey,
@@ -59,9 +60,15 @@ function DirectoryCard({
       <p>{t("relationshipGovernance.matrix.skillCount", { count: directory.skillCount })}</p>
       <p>
         {directory.sharedConsumers.length > 0
-          ? t("relationshipGovernance.matrix.sharedConsumers", {
-              agents: directory.sharedConsumers.join(t("importWorkflow.governance.impact.agentSeparator") as never),
-            })
+          ? <>
+              {t("relationshipGovernance.matrix.sharedConsumers", { agents: "" })}
+              {directory.sharedConsumers.map((agentId, index) => (
+                <span key={agentId}>
+                  {index > 0 ? `${t("importWorkflow.governance.impact.agentSeparator") as never} ` : ""}
+                  <AgentPresentation agentId={agentId} />
+                </span>
+              ))}
+            </>
           : t("relationshipGovernance.matrix.noSharedConsumers")}
       </p>
       {directory.precedence ? (
@@ -113,7 +120,8 @@ function RelationRow({
       {/* 其他 Agent 的关系必须显式标注归属，不混入当前 Agent 的矩阵语义。 */}
       {relation.targetAgentClientId !== currentAgentClientId ? (
         <span>
-          {t("relationshipGovernance.matrix.ownerAgent", { agent: relation.targetAgentClientId })}
+          {t("relationshipGovernance.matrix.ownerAgent", { agent: "" })}
+          <AgentPresentation agentId={relation.targetAgentClientId} />
         </span>
       ) : null}
       {relation.pendingTaskIds.length > 0 ? (

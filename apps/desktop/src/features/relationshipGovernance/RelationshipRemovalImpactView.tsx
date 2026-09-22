@@ -3,6 +3,7 @@ import { displayPath } from "../../platform/displayPath";
 import { useTranslation } from "react-i18next";
 import type { RemovalImpactFact } from "../../api/bindings";
 import { Button } from "../../ui/Button";
+import { AgentPresentation } from "../../ui/AgentPresentation";
 import {
   minimalImpactActionLabelKey,
   recognitionLabelKey,
@@ -67,13 +68,16 @@ export function RelationshipRemovalImpactView({
           ) : null}
           <p>
             {impact.other_consumers.length > 0
-              ? t("relationshipGovernance.removalImpact.otherConsumers", {
-                  agents: impact.other_consumers
-                    .map((consumer) => `${consumer.agent_client_id} (${
-                      t(recognitionLabelKey(consumer.recognition) as never)
-                    })`)
-                    .join(t("importWorkflow.governance.impact.agentSeparator") as never),
-                })
+              ? <>
+                  {t("relationshipGovernance.removalImpact.otherConsumers", { agents: "" })}
+                  {impact.other_consumers.map((consumer, index) => (
+                    <span key={`${consumer.agent_client_id}-${consumer.relation_id ?? index}`}>
+                      {index > 0 ? `${t("importWorkflow.governance.impact.agentSeparator") as never} ` : ""}
+                      <AgentPresentation agentId={consumer.agent_client_id} />{" "}
+                      ({t(recognitionLabelKey(consumer.recognition) as never)})
+                    </span>
+                  ))}
+                </>
               : t("relationshipGovernance.removalImpact.noOtherConsumers")}
           </p>
           <p>

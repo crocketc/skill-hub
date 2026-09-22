@@ -1,7 +1,8 @@
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "../../ui/Button";
-import { BrandTag } from "../../ui/BrandTag";
+import { AgentPresentation, agentKindLabel, isAgentKindKey } from "../../ui/AgentPresentation";
+import { brandDisplayName, BrandTag } from "../../ui/BrandTag";
 import { CheckboxField } from "../../ui/CheckboxField";
 import type { CompatibilityTarget } from "../bootstrap/api";
 
@@ -134,10 +135,21 @@ function TargetCheckbox({
     .join(" · ");
   return (
     <CheckboxField
+      ariaLabel={`${brandDisplayName(target.profileId ?? target.label)} · ${
+        target.kind && isAgentKindKey(target.kind)
+          ? agentKindLabel(target.kind, (key) => String(t(key as never)))
+          : t("agents.kind.unknown")
+      }`}
       checked={selectedTargetIds.includes(target.id)}
       description={description || undefined}
       disabled={target.availability === "unavailable"}
-      label={target.label}
+      label={
+        <AgentPresentation
+          agentId={target.label}
+          brand={target.profileId}
+          kinds={target.kind && isAgentKindKey(target.kind) ? [target.kind] : undefined}
+        />
+      }
       onChange={(event) => onTargetSelectionChange(target.id, event.target.checked)}
     />
   );

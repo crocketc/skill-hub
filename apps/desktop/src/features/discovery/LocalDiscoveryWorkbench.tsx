@@ -7,8 +7,7 @@ import { runTrackedOperation } from "../../platform/runTrackedOperation";
 import { Button } from "../../ui/Button";
 import { useOptionalAppNotifications } from "../../ui/notifications";
 import { ConfirmDialog } from "../../ui/ConfirmDialog";
-import { BrandTag } from "../../ui/BrandTag";
-import { AgentKindBadge } from "../../ui/AgentKindBadge";
+import { AgentPresentation } from "../../ui/AgentPresentation";
 import type { DiscoverySnapshot, DiscoveredSkill } from "../../api/bindings";
 import {
   buildAgentGroups,
@@ -290,13 +289,13 @@ function AgentCard({
   return (
     <li className="sh-discovery-workbench__agent-card" data-testid={`agent-card-${card.physicalId}`}>
       <div className="sh-discovery-workbench__agent-line">
-        <BrandTag brand={brand} />
-        {card.names.length > 0 ? (
-          <span className="sh-discovery-workbench__agent-names" title={card.names.join(" / ")}>
-            {card.names.join(" / ")}
-          </span>
-        ) : null}
-        <AgentKindBadge kinds={card.kinds} />
+        <AgentPresentation
+          agentId={brand}
+          brand={brand}
+          instanceNames={card.names}
+          kinds={card.kinds}
+          sharedDirectory={card.kinds.includes("shared_directory")}
+        />
         {!card.available ? (
           <span className="sh-discovery-workbench__agent-unavailable-label">
             {t("discovery.workbench.agentUnavailable")}

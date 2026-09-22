@@ -109,7 +109,7 @@ it("records agent rescans in the unified operation tracker", async () => {
   const facade = facadeWith();
   const tracker = createOperationTracker();
 
-  render(
+  return render(
     <MemoryRouter>
       <I18nextProvider i18n={await createSkillHubI18n(["zh-CN"])}>
         <AgentListPage facade={facade} picker={pickingPicker} tracker={tracker} />
@@ -148,6 +148,30 @@ it("aggregates duplicate deployment relations by unique skill per agent", async 
 
   expect(await screen.findByText("2 个 Skill · 5 条部署关系")).toBeVisible();
   expect(screen.queryByText(/5 个受管部署/)).not.toBeInTheDocument();
+});
+
+it("merges same-brand agents on one directory and presents their platform types once", async () => {
+  const sameDirectory: AgentView[] = [
+    {
+      ...agents[0],
+      client: "codex-cli",
+      id: "openai.codex-cli",
+      instance: "Codex CLI",
+    },
+    {
+      ...agents[0],
+      client: "codex-desktop",
+      id: "openai.codex-desktop",
+      instance: "Codex Desktop",
+    },
+  ];
+
+  const { container } = await renderListPage(facadeWith(), sameDirectory);
+
+  expect(await screen.findByText("桌面端/终端")).toBeVisible();
+  expect(container.querySelectorAll(".sh-agent-card")).toHaveLength(1);
+  expect(screen.queryByText("codex-cli")).not.toBeInTheDocument();
+  expect(screen.queryByText("codex-desktop")).not.toBeInTheDocument();
 });
 
 it("offers an explicit custom agent creation entry with the filled values", async () => {

@@ -1,0 +1,27 @@
+.sh-agent-presentation {
+  align-items: center;
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.sh-agent-presentation__kind {
+  background: var(--ui-surface-subtle);
+  border: 1px solid var(--ui-border-subtle);
+  border-radius: var(--radius-xs);
+  color: var(--ui-ink-muted);
+  font-size: var(--font-size-xs);
+  line-height: 1.35;
+  padding: 0 var(--space-1);
+  white-space: nowrap;
+}
+
+.sh-agent-presentation__names {
+  color: var(--ui-ink-muted);
+  font-size: var(--font-size-xs);
+  max-width: 20rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

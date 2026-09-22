@@ -6,7 +6,13 @@ import { onDeploymentFactsChanged } from "../../platform/deploymentEvents";
 import { operationTracker, type OperationTracker } from "../../platform/operationTracker";
 import { runTrackedOperation } from "../../platform/runTrackedOperation";
 import { Button } from "../../ui/Button";
-import { BrandTag } from "../../ui/BrandTag";
+import { BrandTag, normalizeBrandKey } from "../../ui/BrandTag";
+import {
+  AgentPresentation,
+  inferAgentKindKey,
+  normalizeAgentKinds,
+  type AgentKindKey,
+} from "../../ui/AgentPresentation";
 import { ConfirmDialog } from "../../ui/ConfirmDialog";
 import { DataState } from "../../ui/DataState";
 import { Drawer } from "../../ui/Drawer";
@@ -26,6 +32,56 @@ export interface AgentListPageProps {
 }
 
 type CustomAgentFormState = { mode: "create" } | { agent: AgentView; mode: "edit" };
+
+interface AgentCardView {
+  agent: AgentView;
+  agents: AgentView[];
+  kinds: AgentKindKey[];
+  sharedDirectory: boolean;
+}
+
+function directoryKey(path: string): string {
+  return path.trim().replaceAll("\\", "/").replace(/\/+/g, "/").toLowerCase();
+}
+
+function buildAgentCardViews(agents: AgentView[]): Map<string, AgentCardView[]> {
+  const grouped = new Map<string, AgentCardView[]>();
+  for (const agent of agents) {
+    const brand = normalizeBrandKey(agent.brand);
+    const paths = [...new Set(agent.discoveredPaths.map(directoryKey).filter(Boolean))];
+    const existingGroup = grouped.get(brand) ?? [];
+    const kind = inferAgentKindKey(agent.client, agent.instance);
+    const existing = paths.length > 0
+      ? existingGroup.find((card) => {
+          const cardPaths = new Set(card.agent.discoveredPaths.map(directoryKey).filter(Boolean));
+          return paths.some((path) => cardPaths.has(path));
+        })
+      : undefined;
+    if (existing) {
+      existing.agents.push(agent);
+      existing.kinds = normalizeAgentKinds([...existing.kinds, kind]);
+      existing.agent = {
+        ...existing.agent,
+        discoveredPaths: [...new Set([...existing.agent.discoveredPaths, ...agent.discoveredPaths])],
+        managedDeploymentCount: Math.max(existing.agent.managedDeploymentCount, agent.managedDeploymentCount),
+        managedDeploymentRelationCount: Math.max(
+          existing.agent.managedDeploymentRelationCount,
+          agent.managedDeploymentRelationCount,
+        ),
+      };
+      existing.sharedDirectory ||= kind === "shared_directory";
+      continue;
+    }
+    existingGroup.push({
+      agent,
+      agents: [agent],
+      kinds: normalizeAgentKinds([kind]),
+      sharedDirectory: kind === "shared_directory",
+    });
+    grouped.set(brand, existingGroup);
+  }
+  return grouped;
+}
 
 export function AgentListPage({
   facade = unavailableAgentFacade,
@@ -57,13 +113,10 @@ export function AgentListPage({
     setRevision((current) => current + 1);
   }), []);
 
-  const agentGroups = useMemo(() => {
-    const grouped = new Map<string, AgentView[]>();
-    for (const agent of agents ?? []) {
-      grouped.set(agent.brand, [...(grouped.get(agent.brand) ?? []), agent]);
-    }
-    return [...grouped.entries()].sort(([left], [right]) => left.localeCompare(right));
-  }, [agents]);
+  const agentGroups = useMemo(
+    () => [...buildAgentCardViews(agents ?? [])].sort(([left], [right]) => left.localeCompare(right)),
+    [agents],
+  );
 
   const rescan = async () => {
     setRefreshing(true);
@@ -133,14 +186,28 @@ export function AgentListPage({
         headingLevel="h1"
         title={t("agents.title")}
       />
-      {agents.length === 0 ? <DataState message={t("agents.empty")} state="empty" /> : agentGroups.map(([brand, groupedAgents]) => (
+      {agents.length === 0 ? <DataState message={t("agents.empty")} state="empty" /> : agentGroups.map(([brand, cards]) => (
         <section aria-labelledby={`agent-brand-${brand}`} className="sh-agents-page__brand" key={brand}>
-          <h2 id={`agent-brand-${brand}`}><BrandTag brand={brand} /></h2>
+          <h2 id={`agent-brand-${brand}`}>
+            {normalizeBrandKey(brand) === "agent-skills" ? (
+              <AgentPresentation sharedDirectory />
+            ) : (
+              <BrandTag brand={cards[0]?.agent.brand ?? brand} />
+            )}
+          </h2>
           <ul className="sh-agents-page__cards">
-            {groupedAgents.map((agent) => (
-              <li className="sh-agent-card" key={agent.id}>
+            {cards.map(({ agent, agents: relatedAgents, kinds, sharedDirectory }) => (
+              <li className="sh-agent-card" data-testid="agent-card" key={agent.id}>
                 <div className="sh-agent-card__head">
-                  <Link className="sh-agent-card__title" to={`/agents/${agent.id}`}>{agent.instance}</Link>
+                  <Link className="sh-agent-card__title" to={`/agents/${agent.id}`}>
+                    <AgentPresentation
+                      agentId={agent.client}
+                      brand={agent.brand}
+                      instanceNames={relatedAgents.map((related) => related.instance)}
+                      kinds={kinds}
+                      sharedDirectory={sharedDirectory}
+                    />
+                  </Link>
                   <StatusBadge tone={statusTone(agent.status)}>{t(`agents.status.${agent.status}`)}</StatusBadge>
                 </div>
                 <div className="sh-agent-card__paths">

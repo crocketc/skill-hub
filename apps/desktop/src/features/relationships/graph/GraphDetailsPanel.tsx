@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { formatTimestamp, resolveLocale } from "../../../i18n";
 import { displayPath } from "../../../platform/displayPath";
 import { readableAgentIdName } from "../../skills/AgentDeploymentIcons";
+import { AgentPresentation } from "../../../ui/AgentPresentation";
 import type { RelationshipGraphFactCounts } from "../../../api/bindings";
 import {
   edgeStatusLabelKey,
@@ -200,7 +201,13 @@ export function GraphDetailsPanel({
           </>
         ) : selectedNodeEntry ? (
           <>
-            <h3>{nodeLabel(selectedNodeEntry.node, selectedNodeEntry.node.node_id, resolveSkillName)}</h3>
+            <h3>
+              {selectedNodeEntry.node.kind === "agent" && selectedNodeEntry.node.agent_client_id ? (
+                <AgentPresentation agentId={selectedNodeEntry.node.agent_client_id} />
+              ) : (
+                nodeLabel(selectedNodeEntry.node, selectedNodeEntry.node.node_id, resolveSkillName)
+              )}
+            </h3>
             <p className="sh-graph-details__kind">
               {t(`relationships.graph.nodeKind.${selectedNodeEntry.node.kind}`)}
             </p>

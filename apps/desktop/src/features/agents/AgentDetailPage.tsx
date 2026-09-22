@@ -4,7 +4,12 @@ import { useNavigate } from "react-router-dom";
 import { desktopDirectoryPicker, type DirectoryPicker } from "../../platform/directoryPicker";
 import type { RelationshipOverview } from "../../api/bindings";
 import { Button } from "../../ui/Button";
-import { BrandTag } from "../../ui/BrandTag";
+import {
+  AgentPresentation,
+  agentKindLabelKey,
+  inferAgentKindKey,
+} from "../../ui/AgentPresentation";
+import { brandDisplayName } from "../../ui/BrandTag";
 import { ConfirmDialog } from "../../ui/ConfirmDialog";
 import { DataState } from "../../ui/DataState";
 import { Drawer } from "../../ui/Drawer";
@@ -81,13 +86,20 @@ export function AgentDetailPage({ agentId = "default", facade = unavailableAgent
       <header className="sh-agent-detail__header">
         <div>
           <p className="sh-agent-eyebrow">{t("agents.detail.eyebrow")}</p>
-          <h1><BrandTag brand={agent.brand} /> · {agent.instance}</h1>
+          <h1><AgentPresentation agentId={agent.client} brand={agent.brand} instance={agent.instance} /></h1>
           <p>{t("agents.detail.discoveredFact")}</p>
         </div>
         <div className="sh-agent-detail__header-side">
           <StatusBadge tone={statusTone(agent.status)}>{t(`agents.status.${agent.status}`)}</StatusBadge>
           <Button
-            onClick={() => navigate("/library", { state: { deployTarget: { id: agent.id, label: `${agent.brand} · ${agent.instance}` } } })}
+            onClick={() => navigate("/library", {
+              state: {
+                deployTarget: {
+                  id: agent.id,
+                  label: `${brandDisplayName(agent.brand)} · ${t(agentKindLabelKey(inferAgentKindKey(agent.client, agent.instance)) as never)}`,
+                },
+              },
+            })}
             variant="secondary"
           >
             {t("agents.launchDeployment")}
@@ -108,8 +120,11 @@ export function AgentDetailPage({ agentId = "default", facade = unavailableAgent
         </div>
       </header>
       <section className="sh-agent-facts" aria-label={t("agents.detail.identity")}>
-        <div><dt>{t("agents.detail.brand")}</dt><dd><BrandTag brand={agent.brand} /></dd></div>
-        <div><dt>{t("agents.detail.client")}</dt><dd>{agent.client}</dd></div>
+        <div>
+          <dt>{t("agents.detail.brand")}</dt>
+          <dd><AgentPresentation agentId={agent.client} brand={agent.brand} instance={agent.instance} /></dd>
+        </div>
+        <div><dt>{t("agents.detail.client")}</dt><dd><AgentPresentation agentId={agent.client} kinds={[inferAgentKindKey(agent.client, agent.instance)]} /></dd></div>
         <div><dt>{t("agents.detail.instance")}</dt><dd>{agent.instance}</dd></div>
         <div>
           <dt>{t("agents.detail.paths")}</dt>

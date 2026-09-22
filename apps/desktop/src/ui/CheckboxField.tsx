@@ -1,4 +1,4 @@
-import { forwardRef, type ChangeEventHandler, useId } from "react";
+import { forwardRef, type ChangeEventHandler, type ReactNode, useId } from "react";
 
 export interface CheckboxFieldProps {
   checked?: boolean;
@@ -6,7 +6,8 @@ export interface CheckboxFieldProps {
   description?: string;
   disabled?: boolean;
   id?: string;
-  label: string;
+  label: ReactNode;
+  ariaLabel?: string;
   name?: string;
   onChange?: ChangeEventHandler<HTMLInputElement>;
   value?: string;
@@ -26,6 +27,7 @@ export const CheckboxField = forwardRef<HTMLInputElement, CheckboxFieldProps>(
       disabled,
       id,
       label,
+      ariaLabel,
       name,
       onChange,
       value,
@@ -41,7 +43,8 @@ export const CheckboxField = forwardRef<HTMLInputElement, CheckboxFieldProps>(
       <label className="sh-checkbox-field" htmlFor={inputId}>
         <input
           aria-describedby={descriptionId}
-          aria-labelledby={labelId}
+          aria-label={ariaLabel}
+          aria-labelledby={ariaLabel ? undefined : labelId}
           checked={checked}
           className="sh-checkbox-field__input"
           defaultChecked={defaultChecked}

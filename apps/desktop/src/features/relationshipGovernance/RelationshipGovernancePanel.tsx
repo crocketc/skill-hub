@@ -1,4 +1,4 @@
-import { readableAgentIdName } from "../skills/AgentDeploymentIcons";
+import { AgentPresentation } from "../../ui/AgentPresentation";
 import { useState, type JSX } from "react";
 import { displayPath } from "../../platform/displayPath";
 import { useTranslation } from "react-i18next";
@@ -92,10 +92,9 @@ function ConflictCasesSummary({
 
 /** 组级影响事实全部由成员聚合而来；后端不产出界面散文。 */
 function affectedAgentsOfGroup(group: ImportGovernanceGroup): string[] {
-  // DEV-11：id 转品牌可读名（Trae、ZCode…），裸技术 id 不进界面。
   return [
-    ...new Set(
-      group.members.flatMap((member) => member.affected_agents).map(readableAgentIdName),
+      ...new Set(
+      group.members.flatMap((member) => member.affected_agents),
     ),
   ];
 }
@@ -140,17 +139,21 @@ export function RelationshipGovernancePanel({
       ) : null}
       {groups.map((group) => {
         const agents = affectedAgentsOfGroup(group);
-        const agentSummary = agents.length > 0
-          ? agents.join(t("importWorkflow.governance.impact.agentSeparator") as never)
-          : String(t("importWorkflow.governance.impact.noKnownAgent") as never);
         return (
         <article key={group.group_id}>
           <h3>{t(classificationKeys[group.classification] as never)}</h3>
           <p>
-            {t("importWorkflow.governance.impact.summary", {
-              agents: agentSummary,
-              count: group.members.length,
-            })}
+            {agents.length > 0 ? (
+              <>
+                {t("importWorkflow.governance.impact.summary", { agents: "", count: group.members.length })}
+                {agents.map((agentId, index) => (
+                  <span key={agentId}>
+                    {index > 0 ? "、 " : ""}
+                    <AgentPresentation agentId={agentId} />
+                  </span>
+                ))}
+              </>
+            ) : t("importWorkflow.governance.impact.noKnownAgent")}
           </p>
           <p>{t(rollbackKeys[group.classification] as never)}</p>
           <fieldset>
