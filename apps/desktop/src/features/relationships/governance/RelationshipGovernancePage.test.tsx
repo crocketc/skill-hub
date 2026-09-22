@@ -101,6 +101,7 @@ const SHARED_IMPACT_ROW = makeRow({
   readiness: "needs_validation",
   primaryAction: "revalidate",
   blockers: ["shared_impact_confirmation_required"],
+  displayName: "共享 PDF",
   otherConsumers: ["cursor"],
 });
 
@@ -639,7 +640,7 @@ describe("RelationshipGovernancePage 批量治理", () => {
     fireEvent.click(confirmButton);
     expect(facade.prepareGovernanceBatch).not.toHaveBeenCalled();
 
-    fireEvent.click(screen.getByLabelText("我已确认共享目录影响（managed:dep-shared）"));
+    fireEvent.click(screen.getByLabelText("我已确认 共享 PDF 对共享目录的影响"));
     fireEvent.click(screen.getByRole("button", { name: "确认执行 2 条" }));
 
     await waitFor(() => expect(facade.prepareGovernanceBatch).toHaveBeenCalledWith({
@@ -676,7 +677,7 @@ describe("RelationshipGovernancePage 批量治理", () => {
     });
     const { tracker } = await openBatchDialog({ facade });
 
-    fireEvent.click(screen.getByLabelText("我已确认共享目录影响（managed:dep-shared）"));
+    fireEvent.click(screen.getByLabelText("我已确认 共享 PDF 对共享目录的影响"));
     fireEvent.click(screen.getByRole("button", { name: "确认执行 2 条" }));
 
     // 部分成功必须逐项呈现：成功一条、失败一条（含错误明细与重试/回退信息）。
@@ -732,7 +733,7 @@ describe("RelationshipGovernancePage 批量治理", () => {
     });
     await openBatchDialog({ facade });
 
-    fireEvent.click(screen.getByLabelText("我已确认共享目录影响（managed:dep-shared）"));
+    fireEvent.click(screen.getByLabelText("我已确认 共享 PDF 对共享目录的影响"));
     fireEvent.click(screen.getByRole("button", { name: "确认执行 2 条" }));
     await screen.findByText("部分成功：1 条成功，1 条失败");
 

@@ -117,9 +117,25 @@ it("renders the configured repositories with enabled state", async () => {
   expect(document.querySelectorAll(".sh-discovery-repos__repo")).toHaveLength(0);
   expect(screen.getByRole("heading", { name: "anthropics/skills" })).toBeVisible();
   expect(screen.getAllByText("从未扫描")).toHaveLength(2);
-  const checkboxes = screen.getAllByRole("checkbox");
-  expect(checkboxes[0]).toBeChecked();
-  expect(checkboxes[1]).not.toBeChecked();
+  const switches = screen.getAllByRole("switch");
+  expect(switches[0]).toBeChecked();
+  expect(switches[1]).not.toBeChecked();
+});
+
+it("keeps repository setup actions in the toolbar above the cards", async () => {
+  renderCard(baseFacade());
+
+  const toolbar = await screen.findByTestId("repo-discovery-toolbar");
+  expect(toolbar).toContainElement(screen.getByLabelText("所有者"));
+  expect(toolbar).toContainElement(screen.getByLabelText("仓库名"));
+  expect(toolbar).toContainElement(screen.getByLabelText("分支（留空=默认）"));
+  expect(toolbar).toContainElement(screen.getByRole("button", { name: "添加仓库" }));
+  expect(toolbar).toContainElement(screen.getByRole("button", { name: "扫描仓库" }));
+  expect(toolbar).toContainElement(screen.getByRole("link", { name: "管理仓库" }));
+  expect(
+    toolbar.compareDocumentPosition(screen.getAllByTestId("repository-card")[0]) &
+      Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
 });
 
 it("discovers skills across repositories and surfaces per-repo warnings", async () => {
@@ -390,8 +406,8 @@ it("toggles a repository by re-adding it with the flipped enabled flag", async (
   const addSkillRepo = vi.fn(async (repo: SkillRepo) => [{ repo, scan: null }]);
   renderCard(baseFacade({ addSkillRepo }));
 
-  const checkboxes = await screen.findAllByRole("checkbox");
-  await click(checkboxes[1]);
+  const switches = await screen.findAllByRole("switch");
+  await click(switches[1]);
 
   expect(addSkillRepo).toHaveBeenCalledWith({
     owner: "cexll",

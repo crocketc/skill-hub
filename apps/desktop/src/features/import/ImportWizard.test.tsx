@@ -959,7 +959,7 @@ it("requires a fresh conflict decision when retrying an import", async () => {
   expect(screen.getByRole("button", { name: "提交导入" })).toBeEnabled();
 });
 
-it("resolves conflicts before relationship impact and sends both decisions to commit", async () => {
+it("submits directly after conflicts even when analysis reports relationship groups", async () => {
   const user = userEvent.setup();
   const facade = createMockImportFacade({ scenario: "safe-local" });
   const originalAnalyze = facade.analyzeConflicts.bind(facade);
@@ -971,10 +971,7 @@ it("resolves conflicts before relationship impact and sends both decisions to co
   ): Promise<ImportResult[]> => {
     expect(plan.governanceGroups).toHaveLength(1);
     expect(actions).toEqual({});
-    expect(governanceDecision).toEqual({
-      group_actions: { "unrecognized-source": "create_todo" },
-      item_overrides: { "safe-pdf": "preserve_original" },
-    });
+    expect(governanceDecision).toBeUndefined();
     return [{
       action: "copy",
       candidateId: "safe-pdf",
@@ -1011,19 +1008,14 @@ it("resolves conflicts before relationship impact and sends both decisions to co
   await user.click(screen.getByRole("button", { name: "分析冲突" }));
 
   expect(await screen.findByRole("heading", { name: "处理需要确认的冲突" })).toBeVisible();
-  await user.click(screen.getByRole("button", { name: "继续确认关系影响" }));
-  expect(await screen.findByRole("heading", { name: "确认导入后的关系处理" })).toBeVisible();
-  await user.click(screen.getByRole("radio", { name: "先不导入，记为待办" }));
-  await user.click(screen.getByRole("button", { name: "展开 1 个项目" }));
-  await user.click(screen.getByRole("radio", { name: "PDF：保留原件，不导入" }));
-  await user.click(screen.getByRole("button", { name: "确认关系处理" }));
-  await user.click(await screen.findByRole("button", { name: "提交导入" }));
+  expect(screen.queryByRole("heading", { name: "确认导入后的关系处理" })).not.toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "提交导入" }));
 
   expect(commitImport).toHaveBeenCalledTimes(1);
   expect(await screen.findByText("待处理")).toBeVisible();
 });
 
-it("requires a new governance confirmation after returning to candidates and reanalyzing", async () => {
+it("does not add a governance step after returning to candidates and reanalyzing", async () => {
   const user = userEvent.setup();
   const facade = createMockImportFacade({ scenario: "safe-local" });
   const originalAnalyze = facade.analyzeConflicts.bind(facade);
@@ -1050,18 +1042,13 @@ it("requires a new governance confirmation after returning to candidates and rea
   await user.click(screen.getByRole("checkbox", { name: /PDF/ }));
   await user.click(screen.getByRole("button", { name: "分析冲突" }));
   await screen.findByRole("heading", { name: "处理需要确认的冲突" });
-  await user.click(screen.getByRole("button", { name: "继续确认关系影响" }));
-  await screen.findByRole("heading", { name: "确认导入后的关系处理" });
-  await user.click(screen.getByRole("radio", { name: "先不导入，记为待办" }));
+  expect(screen.queryByRole("heading", { name: "确认导入后的关系处理" })).not.toBeInTheDocument();
 
-  await user.click(screen.getByRole("button", { name: "上一步" }));
   await user.click(screen.getByRole("button", { name: "上一步" }));
   await user.click(screen.getByRole("button", { name: "分析冲突" }));
 
   await screen.findByRole("heading", { name: "处理需要确认的冲突" });
-  await user.click(screen.getByRole("button", { name: "继续确认关系影响" }));
-  await screen.findByRole("heading", { name: "确认导入后的关系处理" });
-  expect(screen.getByRole("button", { name: "确认关系处理" })).toBeDisabled();
+  expect(screen.queryByRole("heading", { name: "确认导入后的关系处理" })).not.toBeInTheDocument();
 });
 
 it("counts todo results as attention in the status, notification, and tracked summary", async () => {
@@ -1614,29 +1601,11 @@ describe("AI import pre-check", () => {
     ).toBeVisible();
   });
 
-  it("wires the governance AI notice to the real provider state", async () => {
+  it("keeps import pre-check copy honest when no provider is configured", async () => {
     const user = userEvent.setup();
     const facade = createMockImportFacade({ scenario: "safe-local" });
-    const originalAnalyze = facade.analyzeConflicts.bind(facade);
     facade.runAiPreChecks = vi.fn();
-    // Task 8 遗留修复：面板 aiAvailable 接真实供应商状态，而不是
-    // Boolean(facade.runAiPreChecks)。未配置供应商 → 不可用提示必须可达。
     facade.listLlmProviders = vi.fn(async () => []);
-    facade.analyzeConflicts = vi.fn(async (candidates, onProgress) => ({
-      ...(await originalAnalyze(candidates, onProgress)),
-      governanceGroups: [{
-        group_id: "same-group",
-        classification: "unrecognized_source",
-        default_action: "create_todo",
-        available_actions: ["preserve_original", "create_todo"],
-        members: [{
-          member_id: "safe-pdf",
-          display_name: "PDF",
-          source_path: "C:/skills/safe-pdf",
-          affected_agents: [],
-        }],
-      } satisfies ImportGovernanceGroup],
-    }));
     await renderWizard(facade);
 
     await user.type(screen.getByLabelText("来源"), "C:/skills");
@@ -1645,18 +1614,7 @@ describe("AI import pre-check", () => {
     await user.click(screen.getByRole("checkbox", { name: /PDF/ }));
     await user.click(screen.getByRole("button", { name: "分析冲突" }));
     expect(await screen.findByRole("heading", { name: "处理需要确认的冲突" })).toBeVisible();
-    await user.click(screen.getByRole("button", { name: "继续确认关系影响" }));
-    expect(await screen.findByRole("heading", { name: "确认导入后的关系处理" })).toBeVisible();
-
-    expect(
-      screen.getByText("AI 建议未配置；已保留确定性关系判断。"),
-    ).toBeVisible();
     expect(facade.listLlmProviders).toHaveBeenCalled();
-
-    await user.click(screen.getByRole("radio", { name: "先不导入，记为待办" }));
-    await user.click(screen.getByRole("button", { name: "确认关系处理" }));
-    expect(await screen.findByRole("button", { name: "提交导入" })).toBeVisible();
-    // 预检入口同样诚实：无供应商时不出现运行按钮，并给出原因说明。
     expect(screen.queryByRole("button", { name: "运行 AI 预检" })).not.toBeInTheDocument();
     expect(
       screen.getByText("尚未配置可用的 LLM 供应商，无法运行 AI 预检；可直接继续导入。"),
@@ -1666,23 +1624,7 @@ describe("AI import pre-check", () => {
   it("keeps the AI entries available when a usable provider is configured", async () => {
     const user = userEvent.setup();
     const facade = createMockImportFacade({ scenario: "safe-local" });
-    const originalAnalyze = facade.analyzeConflicts.bind(facade);
     facade.runAiPreChecks = vi.fn();
-    facade.analyzeConflicts = vi.fn(async (candidates, onProgress) => ({
-      ...(await originalAnalyze(candidates, onProgress)),
-      governanceGroups: [{
-        group_id: "same-group",
-        classification: "unrecognized_source",
-        default_action: "create_todo",
-        available_actions: ["preserve_original", "create_todo"],
-        members: [{
-          member_id: "safe-pdf",
-          display_name: "PDF",
-          source_path: "C:/skills/safe-pdf",
-          affected_agents: [],
-        }],
-      } satisfies ImportGovernanceGroup],
-    }));
     await renderWizard(facade);
 
     await user.type(screen.getByLabelText("来源"), "C:/skills");
@@ -1691,16 +1633,6 @@ describe("AI import pre-check", () => {
     await user.click(screen.getByRole("checkbox", { name: /PDF/ }));
     await user.click(screen.getByRole("button", { name: "分析冲突" }));
     expect(await screen.findByRole("heading", { name: "处理需要确认的冲突" })).toBeVisible();
-    await user.click(screen.getByRole("button", { name: "继续确认关系影响" }));
-    expect(await screen.findByRole("heading", { name: "确认导入后的关系处理" })).toBeVisible();
-
-    // 默认 mock 供应商已配置并启用：治理区不再显示不可用提示。
-    expect(
-      screen.queryByText("AI 建议未配置；已保留确定性关系判断。"),
-    ).not.toBeInTheDocument();
-
-    await user.click(screen.getByRole("radio", { name: "先不导入，记为待办" }));
-    await user.click(screen.getByRole("button", { name: "确认关系处理" }));
     expect(
       await screen.findByRole("button", { name: "运行 AI 预检" }),
     ).toBeVisible();

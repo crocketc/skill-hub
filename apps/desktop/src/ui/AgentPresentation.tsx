@@ -117,7 +117,6 @@ export interface AgentPresentationProps {
   brandClassName?: string;
   className?: string;
   instance?: string;
-  instanceNames?: string[];
   kinds?: readonly AgentKindKey[];
   sharedDirectory?: boolean;
 }
@@ -128,7 +127,6 @@ export function AgentPresentation({
   brandClassName,
   className,
   instance,
-  instanceNames,
   kinds,
   sharedDirectory = false,
 }: AgentPresentationProps): JSX.Element {
@@ -140,7 +138,6 @@ export function AgentPresentation({
   const labels = visibleKinds.map((kind) => agentKindLabel(kind, (key) => String(t(key as never))));
   const brandLabel = isShared ? null : brandDisplayName(resolvedBrand);
   const accessibleName = [brandLabel, ...labels].filter(Boolean).join(" · ");
-  const names = (instanceNames ?? (instance ? [instance] : [])).filter(Boolean);
 
   return (
     <span
@@ -152,11 +149,6 @@ export function AgentPresentation({
       <span className="sh-agent-presentation__kind" title={accessibleName}>
         {labels.join("/")}
       </span>
-      {names.length > 0 ? (
-        <span className="sh-agent-presentation__names" title={names.join(" / ")}>
-          {names.join(" / ")}
-        </span>
-      ) : null}
     </span>
   );
 }

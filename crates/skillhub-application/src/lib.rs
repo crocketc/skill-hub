@@ -6634,25 +6634,9 @@ impl LocalApplicationFacade {
                     .with_param("field", "governance_decision.item_overrides"));
             }
         }
-        // `default_action` is a recommendation only.  A caller must explicitly
-        // confirm each group, or explicitly decide every member in that group;
-        // otherwise an import would silently apply relationship governance.
-        for group in &prepared.analysis.governance_groups {
-            let group_confirmed = request
-                .governance_decision
-                .group_actions
-                .contains_key(&group.group_id);
-            let all_members_confirmed = group.members.iter().all(|member| {
-                request
-                    .governance_decision
-                    .item_overrides
-                    .contains_key(&member.member_id)
-            });
-            if !group_confirmed && !all_members_confirmed {
-                return Err(AppError::new(ErrorCode::InvalidInput, Severity::Error)
-                    .with_param("field", "governance_decision.confirmation"));
-            }
-        }
+        // 导入只复制到集中库并记录可核对的关系事实；它绝不在此阶段
+        // 变更 Agent 原目录。旧客户端可继续提交治理决定以创建待办，
+        // 但空决定同样有效，治理由完成后的独立工作台显式发起。
         let governance_tasks =
             Self::import_governance_tasks(&prepared.analysis, &request.governance_decision);
         if request.decision == skillhub_core::ImportDecision::Skip {

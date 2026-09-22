@@ -208,7 +208,7 @@ it("edits a custom agent through its list entry with prefilled values", async ()
   renderListPage(facade);
   await screen.findByRole("heading", { name: "Acme" });
 
-  const customItem = screen.getByText("Reviewer").closest("li");
+  const customItem = screen.getAllByTestId("agent-card")[0];
   if (!customItem) throw new Error("custom agent item missing");
   await user.click(within(customItem).getByRole("button", { name: "编辑" }));
 
@@ -235,7 +235,7 @@ it("removes a custom agent only after explicit confirmation", async () => {
   renderListPage(facade);
   await screen.findByRole("heading", { name: "Acme" });
 
-  const customItem = screen.getByText("Reviewer").closest("li");
+  const customItem = screen.getAllByTestId("agent-card")[0];
   if (!customItem) throw new Error("custom agent item missing");
   await user.click(within(customItem).getByRole("button", { name: "删除" }));
 
@@ -302,7 +302,7 @@ it("returns drawer focus to the card edit trigger after editing", async () => {
   renderListPage(facade);
   await screen.findByRole("heading", { name: "Acme" });
 
-  const customItem = screen.getByText("Reviewer").closest("li");
+  const customItem = screen.getAllByTestId("agent-card")[0];
   if (!customItem) throw new Error("custom agent item missing");
   await user.click(within(customItem).getByRole("button", { name: "编辑" }));
   expect(await screen.findByRole("dialog")).toBeVisible();

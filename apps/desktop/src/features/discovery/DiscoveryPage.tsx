@@ -42,6 +42,8 @@ export interface DiscoveryPageProps {
   governanceTasks?: GovernanceTaskFact[];
   governanceTasksLoading?: boolean;
   onOpenLibrary?: () => void;
+  /** 导入完成后，打开独立的关系治理工作台。 */
+  onOpenGovernance?: () => void;
   /** 生产路由提供：打开治理待办时刷新真实关系概览并回到本地发现入口。 */
   onOpenGovernanceTask?: (task: NonNullable<ImportResult["governanceTasks"]>[number]) => void;
   /** AI 就绪提示的"前往设置"动作；路由层注入应用内导航，缺省整页跳转兜底。 */
@@ -129,6 +131,7 @@ export function DiscoveryPage({
   governanceTasks = [],
   governanceTasksLoading = false,
   onOpenLibrary,
+  onOpenGovernance,
   onOpenGovernanceTask,
   onOpenSettings,
   importedNames,
@@ -239,6 +242,7 @@ export function DiscoveryPage({
       governanceTasks={governanceTasks}
       governanceTasksLoading={governanceTasksLoading}
       onOpenLibrary={onOpenLibrary}
+      onOpenGovernance={onOpenGovernance}
       onOpenGovernanceTask={onOpenGovernanceTask}
       onOpenSettings={onOpenSettings}
       tracker={tracker}
@@ -307,6 +311,7 @@ interface DiscoveryModulePageProps {
   governanceTasks: GovernanceTaskFact[];
   governanceTasksLoading: boolean;
   onOpenLibrary?: () => void;
+  onOpenGovernance?: () => void;
   onOpenGovernanceTask?: (task: NonNullable<ImportResult["governanceTasks"]>[number]) => void;
   /** AI 就绪提示的"前往设置"动作；路由层注入应用内导航，缺省整页跳转兜底。 */
   onOpenSettings?: () => void;
@@ -330,6 +335,7 @@ function DiscoveryModulePage({
   governanceTasks,
   governanceTasksLoading,
   onOpenLibrary,
+  onOpenGovernance,
   onOpenGovernanceTask,
   onOpenSettings,
   importedNames,
@@ -352,6 +358,7 @@ function DiscoveryModulePage({
           variant={wizard.variant}
           onComplete={onImportComplete}
           onOpenLibrary={onOpenLibrary}
+          onOpenGovernance={onOpenGovernance}
           onOpenGovernanceTask={onOpenGovernanceTask}
           tracker={tracker}
         />

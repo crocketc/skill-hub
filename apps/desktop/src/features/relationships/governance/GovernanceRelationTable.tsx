@@ -1,4 +1,5 @@
 import { useTranslation } from "react-i18next";
+import type { TFunction } from "i18next";
 import type { RefObject } from "react";
 import type { RelationGovernanceRow } from "../../../api/bindings";
 import { Button } from "../../../ui/Button";
@@ -10,7 +11,8 @@ import {
 import { rowNeedsSharedImpactConfirmation } from "./api";
 import { displayPath } from "../../../platform/displayPath";
 import { AgentIdentity } from "../../skills/AgentDeploymentIcons";
-import { AgentPresentation } from "../../../ui/AgentPresentation";
+import { AgentPresentation, agentBrandKey } from "../../../ui/AgentPresentation";
+import { brandDisplayName } from "../../../ui/BrandTag";
 
 export interface GovernanceRelationTableProps {
   rows: readonly RelationGovernanceRow[];
@@ -115,8 +117,11 @@ export function GovernanceRelationTable({
                   {t(`relationships.governance.source.${row.relation.origin}` as never)}
                 </td>
                 <td data-testid={`governance-target-${relationId}`}>
+                  <strong className="sh-governance__directory-kind">
+                    {directoryGovernanceLabel(row, t)}
+                  </strong>
                   <AgentIdentity agentId={row.relation.agent_client_id} />
-                  <code>{displayPath(row.relation.path)}</code>
+                  <span>{t("agents.pathLabel")} <code>{displayPath(row.relation.path)}</code></span>
                 </td>
                 <td data-testid={`governance-impact-${relationId}`}>
                   {row.impact.other_consumer_agent_ids.length > 0
@@ -183,6 +188,34 @@ export function GovernanceRelationTable({
       </table>
     </div>
   );
+}
+
+/**
+ * 治理单位按同一物理目录上的消费者关系呈现：共享目录只操作一次；
+ * 同品牌多端共用的目录也只操作一次；其余目录保持独立。内部 relation
+ * 类型不进入用户界面。
+ */
+function directoryGovernanceLabel(
+  row: RelationGovernanceRow,
+  t: TFunction,
+): string {
+  if (
+    row.relation.relationship === "shared_directory_read"
+    || row.relation.relationship === "shared_directory_reference"
+  ) {
+    return t("relationships.governance.directory.sharedAgent");
+  }
+  const consumers = [
+    row.relation.agent_client_id,
+    ...row.impact.other_consumer_agent_ids,
+  ];
+  const brands = new Set(consumers.map(agentBrandKey));
+  if (consumers.length > 1 && brands.size === 1) {
+    return t("relationships.governance.directory.brandCommon", {
+      brand: brandDisplayName(agentBrandKey(row.relation.agent_client_id)),
+    });
+  }
+  return t("relationships.governance.directory.independent");
 }
 
 function PrimaryActionButton({

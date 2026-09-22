@@ -310,6 +310,10 @@
       "showCompletedDetails": "查看成功和跳过明细",
       "hideCompletedDetails": "收起成功和跳过明细",
       "originalsPreserved": "原始副本保持不变；如需清理，请在关系治理中单独确认并保留回退路径。",
+      "governanceNextLabel": "后续整理",
+      "governanceNextDescription": "已复制到集中库。你可以现在整理 Agent 中的副本，也可以稍后在关系治理中处理。",
+      "organizeNow": "现在整理 Agent 副本",
+      "organizeLater": "稍后再说",
       "governanceTasksLabel": "关系治理待办",
       "openGovernanceTask": "查看治理待办 {{taskId}}",
       "counts": {
@@ -332,6 +336,7 @@
         "todo": "待处理"
       },
       "provenance": "已从 {{path}} 导入（{{agent}}）",
+      "provenanceAgent": "来源 Agent：",
       "unknownAgent": "来源未识别"
     },
     "governance": {
@@ -664,6 +669,7 @@
     "eyebrow": "Agent 工作区",
     "title": "Agent",
     "description": "查看已发现的客户端和 Skill 目录事实。",
+    "pathLabel": "路径：",
     "loading": "正在加载 Agent 事实",
     "unavailable": "Agent 数据尚未连接到本机服务。",
     "empty": "尚未发现任何 Agent。可以重新扫描，或新增自定义 Agent。",
@@ -2502,6 +2508,11 @@
         "shared_impact_confirmation_required": "其他 Agent 也在读取同一共享目录，需要显式确认共享影响。",
         "skill_identity_unconfirmed": "缺少确定的 Skill 身份或内容指纹。"
       },
+      "directory": {
+        "sharedAgent": "共享 Agent 目录",
+        "brandCommon": "{{brand}} 通用目录",
+        "independent": "独立 Agent 目录"
+      },
       "impact": {
         "noOtherConsumers": "没有其他共享消费者",
         "otherConsumers_one": "共享消费者：{{count}} 个（{{agents}}）",
@@ -2545,8 +2556,9 @@
         "hint": "受阻项默认不选中；可以逐项取消，其余行不受影响。",
         "itemExecutable": "可执行",
         "itemBlocked": "受阻",
-        "itemCheck": "执行 {{id}}",
-        "sharedImpactConfirm": "我已确认共享目录影响（{{id}}）",
+        "itemCheck": "执行 {{name}}",
+        "sharedImpactConfirm": "我已确认 {{name}} 对共享目录的影响",
+        "selectedRelationship": "已选关系",
         "confirmCount": "确认执行 {{count}} 条",
         "running": "正在逐条执行并验证…",
         "resultTitle": "批量结果",

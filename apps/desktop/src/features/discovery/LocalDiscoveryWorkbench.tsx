@@ -292,7 +292,6 @@ function AgentCard({
         <AgentPresentation
           agentId={brand}
           brand={brand}
-          instanceNames={card.names}
           kinds={card.kinds}
           sharedDirectory={card.kinds.includes("shared_directory")}
         />
@@ -310,6 +309,7 @@ function AgentCard({
       ) : null}
       {/* P2-02：超长路径换行展示（overflow-wrap: anywhere），完整值经原生
           title 提示可达——与忽略项规则值和卡片描述同一策略。 */}
+      <span className="sh-discovery-workbench__agent-path-label">{t("agents.pathLabel")}</span>{" "}
       <code className="sh-discovery-workbench__agent-path" title={displayPath(card.path)}>{displayPath(card.path)}</code>
       <ConfirmDialog
         cancelLabel={t("actions.cancel")}

@@ -1,4 +1,5 @@
 import { fireEvent, render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { I18nextProvider } from "react-i18next";
 import { expect, it, vi } from "vitest";
 import { createSkillHubI18n } from "../../i18n";
@@ -146,7 +147,9 @@ it("renders the import provenance line only when evidence was recorded", async (
   // 成功明细默认折叠：先展开再核验存证行。
   fireEvent.click(screen.getByRole("button", { name: "查看成功和跳过明细" }));
   expect(screen.getAllByTestId("import-provenance")).toHaveLength(2);
-  expect(screen.getByText(/已从 \/agents\/trae\/skills\/demo 导入（trae.code）/)).toBeVisible();
+  expect(screen.getAllByTestId("import-provenance")[0]).toHaveTextContent("来源 Agent：");
+  expect(screen.getAllByTestId("import-provenance")[0]).toHaveTextContent("路径：");
+  expect(screen.queryByText("trae.code")).not.toBeInTheDocument();
   expect(screen.getByText(/来源未识别/)).toBeVisible();
 });
 
@@ -225,4 +228,27 @@ it("renders the added import summary copy in the active English locale", async (
 
   expect(screen.getByText("Original copies remain unchanged; cleanup is a separate confirmed action with a recovery path.")).toBeVisible();
   expect(screen.getByRole("button", { name: "View governance task governance-task-1" })).toBeVisible();
+});
+
+it("offers relationship governance only after a successful import", async () => {
+  const onOpenGovernance = vi.fn();
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  render(
+    <I18nextProvider i18n={i18n}>
+      <ImportSummary
+        onOpenGovernance={onOpenGovernance}
+        results={[{
+          candidateId: "shared-pdf",
+          action: "copy",
+          status: "succeeded",
+          message: "importWorkflow.commitMessages.imported",
+          originalPreserved: true,
+        }]}
+      />
+    </I18nextProvider>,
+  );
+
+  await userEvent.click(screen.getByRole("button", { name: "现在整理 Agent 副本" }));
+  expect(onOpenGovernance).toHaveBeenCalledOnce();
+  expect(screen.getByRole("button", { name: "稍后再说" })).toBeVisible();
 });

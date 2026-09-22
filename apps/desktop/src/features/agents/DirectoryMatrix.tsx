@@ -48,7 +48,7 @@ function DirectoryCard({
   return (
     <article className="sh-agent-directory-card" data-testid="directory-card">
       <header className="sh-agent-directory-card__header">
-        <code>{displayPath(directory.path)}</code>
+        <span>{t("agents.pathLabel")} <code>{displayPath(directory.path)}</code></span>
         <StatusBadge tone="info">{t(directoryRoleLabelKey(directory.role) as never)}</StatusBadge>
         <StatusBadge tone={recognitionTone(directory.recognition)}>
           {t(recognitionLabelKey(directory.recognition) as never)}

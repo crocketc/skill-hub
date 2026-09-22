@@ -59,6 +59,7 @@ function RelationshipsNav({ facade }: RelationshipsNavProps) {
         <NavLink
           className={({ isActive }) => [
             "sh-relationships__nav-link",
+            "sh-relationships__nav-link--title-scale",
             isActive ? "sh-relationships__nav-link--active" : "",
             item.scope === "decisions" && (counts.decisions ?? 0) > 0
               ? "sh-relationships__nav-link--alert"

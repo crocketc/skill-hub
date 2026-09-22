@@ -3,11 +3,15 @@ import { useTranslation } from "react-i18next";
 import { Button } from "../../ui/Button";
 import { DataState } from "../../ui/DataState";
 import { StatusBadge } from "../../ui/StatusBadge";
+import { AgentPresentation } from "../../ui/AgentPresentation";
+import { displayPath } from "../../platform/displayPath";
 import type { ImportResult } from "./api";
 
 export interface ImportSummaryProps {
   results: ImportResult[];
   unavailable?: boolean;
+  onOpenGovernance?: () => void;
+  onContinueLater?: () => void;
   onOpenGovernanceTask?: (task: NonNullable<ImportResult["governanceTasks"]>[number]) => void;
 }
 
@@ -15,6 +19,8 @@ export interface ImportSummaryProps {
 export function ImportSummary({
   results,
   unavailable = false,
+  onOpenGovernance,
+  onContinueLater,
   onOpenGovernanceTask,
 }: ImportSummaryProps) {
   const { t } = useTranslation();
@@ -66,6 +72,20 @@ export function ImportSummary({
         </p>
       ) : null}
 
+      {succeeded > 0 && originalsPreserved ? (
+        <section aria-label={t("importWorkflow.summary.governanceNextLabel")} className="sh-import-summary__governance-next">
+          <p>{t("importWorkflow.summary.governanceNextDescription")}</p>
+          <div className="sh-button-row">
+            <Button onClick={onOpenGovernance} disabled={!onOpenGovernance}>
+              {t("importWorkflow.summary.organizeNow")}
+            </Button>
+            <Button onClick={onContinueLater} disabled={!onContinueLater} variant="secondary">
+              {t("importWorkflow.summary.organizeLater")}
+            </Button>
+          </div>
+        </section>
+      ) : null}
+
       {governanceTasks.length > 0 && onOpenGovernanceTask ? (
         <div aria-label={t("importWorkflow.summary.governanceTasksLabel")}>
           {governanceTasks.map((task) => (
@@ -92,11 +112,12 @@ export function ImportSummary({
                 className="sh-import-summary__provenance"
                 data-testid="import-provenance"
               >
-                {t("importWorkflow.summary.provenance", {
-                  agent: result.provenance.agentClientId ??
-                    t("importWorkflow.summary.unknownAgent"),
-                  path: result.provenance.originalPath,
-                })}
+                {t("importWorkflow.summary.provenanceAgent")}{" "}
+                {result.provenance.agentClientId ? (
+                  <AgentPresentation agentId={result.provenance.agentClientId} />
+                ) : t("importWorkflow.summary.unknownAgent")}{" "}
+                <strong>{t("agents.pathLabel")}</strong>{" "}
+                {displayPath(result.provenance.originalPath)}
               </p>
             ) : null}
           </li>

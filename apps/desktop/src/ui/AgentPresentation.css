@@ -16,12 +16,3 @@
   padding: 0 var(--space-1);
   white-space: nowrap;
 }
-
-.sh-agent-presentation__names {
-  color: var(--ui-ink-muted);
-  font-size: var(--font-size-xs);
-  max-width: 20rem;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}

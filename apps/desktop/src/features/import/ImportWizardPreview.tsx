@@ -150,6 +150,7 @@ export function ImportWizardPreview() {
     <ImportWizard
       facade={setup.facade}
       initialSources={setup.initialSources}
+      onOpenGovernance={() => undefined}
       onOpenGovernanceTask={() => undefined}
       variant={setup.variant}
     />

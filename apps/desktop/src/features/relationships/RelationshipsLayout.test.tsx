@@ -91,6 +91,13 @@ describe("RelationshipsLayout", () => {
 
     const nav = screen.getByRole("navigation", { name: "Relationship sections" });
     const graph = within(nav).getByRole("link", { name: "Skill graph" });
+    expect(graph).toHaveClass("sh-relationships__nav-link--title-scale");
+    expect(within(nav).getByRole("link", { name: "Conflict decisions" })).toHaveClass(
+      "sh-relationships__nav-link--title-scale",
+    );
+    expect(within(nav).getByRole("link", { name: "Relationship governance" })).toHaveClass(
+      "sh-relationships__nav-link--title-scale",
+    );
     expect(graph).toHaveAttribute("href", "/relationships");
     expect(graph).toHaveAttribute("aria-current", "page");
     expect(within(nav).getByRole("link", { name: "Conflict decisions" })).toHaveAttribute(

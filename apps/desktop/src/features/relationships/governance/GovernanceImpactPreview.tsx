@@ -60,7 +60,7 @@ export function GovernanceImpactPreview({
           <dt>{t("relationships.governance.preview.targetLabel")}</dt>
           <dd>
             <AgentIdentity agentId={row.relation.agent_client_id} />
-            <code>{displayPath(row.relation.path)}</code>
+            <span>{t("agents.pathLabel")} <code>{displayPath(row.relation.path)}</code></span>
           </dd>
         </div>
         <div>

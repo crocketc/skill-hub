@@ -196,14 +196,13 @@ export function AgentListPage({
             )}
           </h2>
           <ul className="sh-agents-page__cards">
-            {cards.map(({ agent, agents: relatedAgents, kinds, sharedDirectory }) => (
+            {cards.map(({ agent, kinds, sharedDirectory }) => (
               <li className="sh-agent-card" data-testid="agent-card" key={agent.id}>
                 <div className="sh-agent-card__head">
                   <Link className="sh-agent-card__title" to={`/agents/${agent.id}`}>
                     <AgentPresentation
                       agentId={agent.client}
                       brand={agent.brand}
-                      instanceNames={relatedAgents.map((related) => related.instance)}
                       kinds={kinds}
                       sharedDirectory={sharedDirectory}
                     />
@@ -211,7 +210,7 @@ export function AgentListPage({
                   <StatusBadge tone={statusTone(agent.status)}>{t(`agents.status.${agent.status}`)}</StatusBadge>
                 </div>
                 <div className="sh-agent-card__paths">
-                  <span className="sh-agent-card__paths-label">{t("agents.card.directory")}</span>
+                  <span className="sh-agent-card__paths-label">{t("agents.pathLabel")}</span>
                   <ul className="sh-agent-card__path-list">
                     {agent.discoveredPaths.map((path) => <li key={path}><code className="sh-agent-card__path">{displayPath(path)}</code></li>)}
                   </ul>

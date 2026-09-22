@@ -310,6 +310,10 @@
       "showCompletedDetails": "Show successful and skipped details",
       "hideCompletedDetails": "Hide successful and skipped details",
       "originalsPreserved": "Original copies remain unchanged; cleanup is a separate confirmed action with a recovery path.",
+      "governanceNextLabel": "Next steps",
+      "governanceNextDescription": "The Skill is now in the central library. You can organize the Agent copy now or return later from relationship governance.",
+      "organizeNow": "Organize Agent copy now",
+      "organizeLater": "Not now",
       "governanceTasksLabel": "Relationship governance tasks",
       "openGovernanceTask": "View governance task {{taskId}}",
       "counts": {
@@ -332,6 +336,7 @@
         "todo": "Needs attention"
       },
       "provenance": "Imported from {{path}} ({{agent}})",
+      "provenanceAgent": "Source agent:",
       "unknownAgent": "source unrecognized"
     },
     "governance": {
@@ -664,6 +669,7 @@
     "eyebrow": "Agent workspace",
     "title": "Agents",
     "description": "Review discovered client and Skill directory facts.",
+    "pathLabel": "Path:",
     "loading": "Loading Agent facts",
     "unavailable": "Agent data is not connected to the native service yet.",
     "empty": "No agents discovered yet. Rescan, or add a custom agent.",
@@ -2502,6 +2508,11 @@
         "shared_impact_confirmation_required": "Other Agents read the same shared directory; the shared impact needs explicit confirmation.",
         "skill_identity_unconfirmed": "A deterministic Skill identity or content fingerprint is missing."
       },
+      "directory": {
+        "sharedAgent": "Shared Agent directory",
+        "brandCommon": "{{brand}} shared directory",
+        "independent": "Separate Agent directory"
+      },
       "impact": {
         "noOtherConsumers": "No other shared consumers",
         "otherConsumers_one": "Shared consumers: {{count}} ({{agents}})",
@@ -2545,8 +2556,9 @@
         "hint": "Blocked items are not selected by default; you can cancel single items, and the remaining rows are unaffected.",
         "itemExecutable": "Executable",
         "itemBlocked": "Blocked",
-        "itemCheck": "Run {{id}}",
-        "sharedImpactConfirm": "I confirm the shared directory impact ({{id}})",
+        "itemCheck": "Run {{name}}",
+        "sharedImpactConfirm": "I confirm the shared-directory impact for {{name}}",
+        "selectedRelationship": "Selected relationship",
         "confirmCount": "Confirm running {{count}} items",
         "running": "Running and verifying item by item…",
         "resultTitle": "Batch result",

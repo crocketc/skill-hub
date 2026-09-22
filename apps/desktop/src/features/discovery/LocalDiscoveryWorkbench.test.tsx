@@ -433,7 +433,7 @@ it("groups discovered agent directories by brand with merged kind badges", async
   // 同目录合并：同一品牌下 desktop 与 cli 聚合为一张卡片的类型集合，
   // 并列展示官方产品名（不按品牌名猜测）。
   expect(screen.getByText("桌面端/终端")).toBeVisible();
-  expect(screen.getByText("Cursor / Cursor CLI")).toBeVisible();
+  expect(screen.queryByText("Cursor / Cursor CLI")).not.toBeInTheDocument();
   expect(screen.getByText("C:\\u\\.cursor\\skills")).toBeVisible();
   // 完全不可用的品牌整体置底，单独分区说明。
   expect(screen.getByText("暂不可用")).toBeVisible();

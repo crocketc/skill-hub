@@ -6,6 +6,7 @@ import { Button } from "../../ui/Button";
 import { ConfirmDialog } from "../../ui/ConfirmDialog";
 import { Icon } from "../../ui/Icon";
 import { Input } from "../../ui/Input";
+import { Switch } from "../../ui/Switch";
 import { ExternalLink } from "../markdown/ExternalLink";
 import { SkillCard } from "../shared/skill-card/SkillCard";
 import type { SkillCardViewModel } from "../shared/skill-card/SkillCardViewModel";
@@ -297,12 +298,54 @@ export function RepoDiscovery({ facade, onImportDirectory }: RepoDiscoveryProps)
       </header>
       <p className="sh-discovery-module__description">{t("discovery.repo.description")}</p>
 
-      {/* D4：仓库管理独立页入口；本区保留扫描与结果展示能力不撤。 */}
-      <div className="sh-discovery-module__manage">
+      <div className="sh-discovery-module__toolbar" data-testid="repo-discovery-toolbar">
+        <div className="sh-discovery-module__controls">
+          <Input
+            aria-label={t("discovery.repo.owner")}
+            onChange={(event) => setOwner(event.target.value)}
+            placeholder={t("discovery.repo.owner")}
+            type="text"
+            value={owner}
+          />
+          <Input
+            aria-label={t("discovery.repo.name")}
+            onChange={(event) => setName(event.target.value)}
+            placeholder={t("discovery.repo.name")}
+            type="text"
+            value={name}
+          />
+          <Input
+            aria-label={t("discovery.repo.branch")}
+            onChange={(event) => setBranch(event.target.value)}
+            placeholder={t("discovery.repo.branch")}
+            type="text"
+            value={branch}
+          />
+          <Button
+            disabled={!owner.trim() || !name.trim()}
+            onClick={() => void addRepo()}
+            size="sm"
+            variant="secondary"
+          >
+            {t("discovery.repo.add")}
+          </Button>
+          <Button disabled={discovering} onClick={() => void discover()} size="sm">
+            {discovering ? t("discovery.repo.scanning") : t("discovery.repo.scan")}
+          </Button>
+        </div>
+        {/* D4：仓库管理独立页入口；保留在工具行右侧。 */}
         <Link className="sh-button sh-button--secondary sh-button--sm" to="/discovery/repositories">
           {t("discovery.repo.manage")}
         </Link>
       </div>
+      {discovering ? (
+        <p aria-live="polite" role="status" className="sh-discovery-repos__scanning">
+          {t("discovery.repo.scanningElapsed", { seconds: elapsedSeconds })}
+          {" "}
+          {t("discovery.repo.scanningHint")}
+        </p>
+      ) : null}
+      {error ? <p role="alert">{error}</p> : null}
 
       <div className="sh-discovery-module__body">
         <div className="sh-repository-cards-zone">
@@ -352,15 +395,11 @@ export function RepoDiscovery({ facade, onImportDirectory }: RepoDiscoveryProps)
                     </ExternalLink>
                   }
                   statusControl={
-                    <label className="sh-repository-card__toggle">
-                      <input
-                        checked={repo.enabled}
-                        onChange={() => void toggleRepo(view)}
-                        type="checkbox"
-                        aria-label={t("discovery.repo.enabled")}
-                      />
-                      <span>{t("discovery.repo.enabled")}</span>
-                    </label>
+                    <Switch
+                      checked={repo.enabled}
+                      label={t("discovery.repo.enabled")}
+                      onChange={() => void toggleRepo(view)}
+                    />
                   }
                 />
               </li>
@@ -370,44 +409,6 @@ export function RepoDiscovery({ facade, onImportDirectory }: RepoDiscoveryProps)
             <li className="sh-repository-cards__empty">{t("discovery.repo.empty")}</li>
           ) : null}
           </ul>
-        </div>
-
-        <div className="sh-discovery-module__controls">
-          <Input
-            aria-label={t("discovery.repo.owner")}
-            onChange={(event) => setOwner(event.target.value)}
-            placeholder={t("discovery.repo.owner")}
-            type="text"
-            value={owner}
-          />
-          <Input
-            aria-label={t("discovery.repo.name")}
-            onChange={(event) => setName(event.target.value)}
-            placeholder={t("discovery.repo.name")}
-            type="text"
-            value={name}
-          />
-          <Input
-            aria-label={t("discovery.repo.branch")}
-            onChange={(event) => setBranch(event.target.value)}
-            placeholder={t("discovery.repo.branch")}
-            type="text"
-            value={branch}
-          />
-          <Button disabled={!owner.trim() || !name.trim()} onClick={() => void addRepo()} variant="secondary">
-            {t("discovery.repo.add")}
-          </Button>
-          <Button disabled={discovering} onClick={() => void discover()} variant="secondary">
-            {discovering ? t("discovery.repo.scanning") : t("discovery.repo.scan")}
-          </Button>
-          {discovering ? (
-            <p aria-live="polite" role="status" className="sh-discovery-repos__scanning">
-              {t("discovery.repo.scanningElapsed", { seconds: elapsedSeconds })}
-              {" "}
-              {t("discovery.repo.scanningHint")}
-            </p>
-          ) : null}
-          {error ? <p role="alert">{error}</p> : null}
         </div>
 
         {report ? (

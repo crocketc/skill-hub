@@ -22,7 +22,7 @@ export function RelationsView({ relations }: RelationsViewProps) {
         {physicalTargets.map((physical) => (
           <article className="sh-agent-relations__physical" data-testid="physical-target" key={physical.physicalTargetId}>
             <strong>{t("agents.relations.physicalTarget")}</strong>
-            <code>{physical.physicalPath}</code>
+            <span>{t("agents.pathLabel")} <code>{physical.physicalPath}</code></span>
             <div className="sh-agent-relations__logical">
               {relations.filter((relation) => relation.physicalTargetId === physical.physicalTargetId).map((relation) => (
                 <span data-testid="logical-target" key={relation.logicalTargetId}>{relation.logicalLabel}</span>

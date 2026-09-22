@@ -711,7 +711,7 @@ async fn relationship_overview_combines_facts_without_claiming_agent_execution()
 }
 
 #[tokio::test]
-async fn import_requires_an_explicit_governance_confirmation_before_copying() {
+async fn import_copies_without_a_governance_confirmation_and_preserves_the_source() {
     let database = Database::open_in_memory().expect("database");
     let library_root = tempfile::tempdir().expect("library root");
     CentralLibrary::initialize(library_root.path()).expect("library");
@@ -736,7 +736,7 @@ async fn import_requires_an_explicit_governance_confirmation_before_copying() {
     };
     assert_eq!(prepared.analysis.governance_groups.len(), 1);
 
-    let error = facade
+    let committed = facade
         .execute(AppCommand::CommitImport(skillhub_core::CommitImport {
             prepared_import_id: prepared.id,
             decision: ImportDecision::CopyIntoLibrary,
@@ -746,9 +746,13 @@ async fn import_requires_an_explicit_governance_confirmation_before_copying() {
             },
         }))
         .await
-        .expect_err("the suggested default is not a user confirmation");
+        .expect("an import does not govern the source during commit");
 
-    assert_eq!(error.code, ErrorCode::InvalidInput);
+    let AppCommandResult::ImportSummary(summary) = committed else {
+        panic!("expected import summary");
+    };
+    assert!(summary.committed);
+    assert_eq!(summary.items[0].status, skillhub_core::ImportItemStatus::Succeeded);
     assert!(source.path().join("SKILL.md").is_file());
 }
 

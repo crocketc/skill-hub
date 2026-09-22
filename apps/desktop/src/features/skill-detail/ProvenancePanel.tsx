@@ -6,6 +6,7 @@ import type {
   SourceRelationFact,
 } from "../../api/bindings";
 import { StatusBadge } from "../../ui/StatusBadge";
+import { AgentPresentation } from "../../ui/AgentPresentation";
 import {
   conflictClassificationLabelKey,
   governanceTaskKindLabelKey,
@@ -64,12 +65,13 @@ export function ProvenancePanel({
           </p>
           <p>
             <strong>{t("skillDetail.provenance.agent")}</strong>{" "}
-            {provenance.agentClientId ??
-              t("skillDetail.provenance.unknownAgent")}
+            {provenance.agentClientId ? (
+              <AgentPresentation agentId={provenance.agentClientId} />
+            ) : t("skillDetail.provenance.unknownAgent")}
           </p>
           <p>
-            <strong>{t("skillDetail.provenance.originalPath")}</strong>{" "}
-            <span>{provenance.originalPath}</span>
+            <strong>{t("agents.pathLabel")}</strong>{" "}
+            <span>{displayPath(provenance.originalPath)}</span>
           </p>
           <p>
             <strong>{t("skillDetail.provenance.importedAt")}</strong>{" "}
@@ -95,8 +97,8 @@ export function ProvenancePanel({
         <ul data-testid="observed-deployments">
           {observedDeployments.map((relation) => (
             <li key={relation.id} data-testid="observed-deployment">
-              <span>{relation.originalPath}</span>
-              <span>{relation.clientId}</span>
+              <span><AgentPresentation agentId={relation.clientId} /></span>
+              <span><strong>{t("agents.pathLabel")}</strong>{" "}{displayPath(relation.originalPath)}</span>
               <StatusBadge
                 tone={relation.matchState === "content_verified" ? "success" : "neutral"}
               >

@@ -110,6 +110,7 @@ export function DiscoveryRoute({
       governanceTasks={governanceTasks}
       governanceTasksLoading={governanceTasksLoading}
       onOpenLibrary={() => navigate("/library")}
+      onOpenGovernance={() => navigate("/relationships/governance")}
       onOpenGovernanceTask={handleOpenGovernanceTask}
       onNavigate={(module) => navigate(`/discovery/${module}`)}
       onOpenSettings={() => navigate("/settings")}

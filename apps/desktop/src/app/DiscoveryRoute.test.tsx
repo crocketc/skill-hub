@@ -114,6 +114,7 @@ async function renderDiscoveryRoute(
                 element={<DiscoveryRoute discoveryFacade={stubDiscoveryFacade()} importFacade={facade} view="local" />}
                 path="discovery/local"
               />
+              <Route element={<h1>关系治理工作台</h1>} path="relationships/governance" />
             </Route>
           </Routes>
         </AppNotificationsProvider>
@@ -244,7 +245,7 @@ it("renders the onboarding handoff import without the manual add-source action",
   expect(facade.calls.acquiredSources).toEqual(["C:/codex/skills", "C:/claude/skills"]);
 });
 
-it("opens governance work from the production discovery route through the relationship overview query", async () => {
+it("opens independent governance from the production import completion page", async () => {
   const user = userEvent.setup();
   const task = {
     task_id: "governance-task-1",
@@ -267,29 +268,12 @@ it("opens governance work from the production discovery route through the relati
     },
   } as unknown as Awaited<ReturnType<typeof bindings.queryApplication>>);
   const facade = createMockImportFacade({ scenario: "safe-local" });
-  const originalAnalyze = facade.analyzeConflicts.bind(facade);
-  facade.analyzeConflicts = async (candidates, onProgress) => ({
-    ...(await originalAnalyze(candidates, onProgress)),
-governanceGroups: [{
-      group_id: "unrecognized-source",
-      classification: "unrecognized_source",
-      default_action: "create_todo",
-      available_actions: ["preserve_original", "create_todo"],
-      members: [{
-        member_id: "safe-pdf",
-        display_name: "PDF",
-        source_path: "C:/skills/safe-pdf",
-        affected_agents: [],
-      }],
-    }],
-  });
   facade.commitImport = async () => [{
     action: "copy",
     candidateId: "safe-pdf",
     message: "importWorkflow.commitMessages.imported",
     originalPreserved: true,
-    governanceTasks: [task],
-    status: "todo",
+    status: "succeeded",
   }];
   await renderDiscoveryRoute(facade);
 
@@ -300,24 +284,9 @@ governanceGroups: [{
   await user.click(screen.getByRole("checkbox", { name: /PDF/ }));
   await user.click(screen.getByRole("button", { name: "分析冲突" }));
   await screen.findByRole("heading", { name: "处理需要确认的冲突" });
-  await user.click(screen.getByRole("button", { name: "继续确认关系影响" }));
-  await screen.findByRole("heading", { name: "确认导入后的关系处理" });
-  await user.click(screen.getByRole("radio", { name: "先不导入，记为待办" }));
-  await user.click(screen.getByRole("button", { name: "确认关系处理" }));
-  await screen.findByRole("heading", { name: "处理需要确认的冲突" });
   await user.click(await screen.findByRole("button", { name: "提交导入" }));
-  await user.click(screen.getByRole("button", { name: /查看治理待办/ }));
-
-  await waitFor(() => expect(query).toHaveBeenCalledWith({
-    type: "get_relationship_overview",
-    payload: { scope: { type: "all" } },
-  }));
-  expect(await screen.findByRole("heading", { name: "关系治理待办" })).toBeVisible();
-  expect(screen.getByTestId("governance-task-governance-task-1")).toHaveAttribute(
-    "aria-current",
-    "true",
-  );
-  expect(screen.getByText(task.detail)).toBeVisible();
+  await user.click(await screen.findByRole("button", { name: "现在整理 Agent 副本" }));
+  expect(await screen.findByRole("heading", { name: "关系治理工作台" })).toBeVisible();
   query.mockRestore();
 });
 

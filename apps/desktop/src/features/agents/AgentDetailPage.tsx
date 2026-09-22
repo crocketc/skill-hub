@@ -125,9 +125,8 @@ export function AgentDetailPage({ agentId = "default", facade = unavailableAgent
           <dd><AgentPresentation agentId={agent.client} brand={agent.brand} instance={agent.instance} /></dd>
         </div>
         <div><dt>{t("agents.detail.client")}</dt><dd><AgentPresentation agentId={agent.client} kinds={[inferAgentKindKey(agent.client, agent.instance)]} /></dd></div>
-        <div><dt>{t("agents.detail.instance")}</dt><dd>{agent.instance}</dd></div>
         <div>
-          <dt>{t("agents.detail.paths")}</dt>
+          <dt>{t("agents.pathLabel")}</dt>
           <dd>
             <ul aria-label={t("agents.detail.paths")} className="sh-agent-detail__paths">
               {agent.discoveredPaths.map((path) => <li key={path}><code>{displayPath(path)}</code></li>)}

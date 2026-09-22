@@ -89,21 +89,21 @@ export function GovernanceBatchDialog({
                 <li data-testid={`governance-batch-item-${relationId}`} key={relationId}>
                   <label>
                     <input
-                      aria-label={t("relationships.governance.batch.itemCheck", { id: relationId })}
+                      aria-label={t("relationships.governance.batch.itemCheck", { name: row.skill_display_name ?? t("relationshipGovernance.matrix.unknownSkill") })}
                       checked={checkedIds.has(relationId)}
                       data-testid={`governance-batch-check-${relationId}`}
                       disabled={running}
                       onChange={(event) => onToggleItem(relationId, event.target.checked)}
                       type="checkbox"
                     />
-                    <span>{relationId}</span>
+                    <span>{row.skill_display_name ?? t("relationshipGovernance.matrix.unknownSkill")}</span>
                     <span>{t("relationships.governance.batch.itemExecutable")}</span>
                   </label>
-                  <code>{displayPath(row.relation.path)}</code>
+                  <span>{t("agents.pathLabel")} <code>{displayPath(row.relation.path)}</code></span>
                   {needsConfirmation ? (
                     <label className="sh-governance__confirm-check">
                       <input
-                        aria-label={t("relationships.governance.batch.sharedImpactConfirm", { id: relationId })}
+                        aria-label={t("relationships.governance.batch.sharedImpactConfirm", { name: row.skill_display_name ?? t("relationshipGovernance.matrix.unknownSkill") })}
                         checked={sharedConfirmedIds.has(relationId)}
                         disabled={running}
                         onChange={(event) => onSharedImpactConfirm(relationId, event.target.checked)}
@@ -121,14 +121,14 @@ export function GovernanceBatchDialog({
                 <li data-testid={`governance-batch-item-${relationId}`} key={relationId}>
                   <label>
                     <input
-                      aria-label={t("relationships.governance.batch.itemCheck", { id: relationId })}
+                      aria-label={t("relationships.governance.batch.itemCheck", { name: row.skill_display_name ?? t("relationshipGovernance.matrix.unknownSkill") })}
                       checked={false}
                       data-testid={`governance-batch-check-${relationId}`}
                       disabled
                       readOnly
                       type="checkbox"
                     />
-                    <span>{relationId}</span>
+                    <span>{row.skill_display_name ?? t("relationshipGovernance.matrix.unknownSkill")}</span>
                     <span>{t("relationships.governance.batch.itemBlocked")}</span>
                   </label>
                   <ul className="sh-governance__blockers">
@@ -219,7 +219,7 @@ function BatchResultItem({
   const relationId = item.relation_id;
   return (
     <li data-testid={`governance-batch-result-${relationId}`}>
-      <span>{relationId}</span>
+      <span>{t("relationships.governance.batch.selectedRelationship")}</span>
       <span>{t(batchItemStateLabelKey(item.state) as never)}</span>
       {item.detail ? <span>{item.detail}</span> : null}
       {item.state === "committed" && item.rollback_available ? (

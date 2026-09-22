@@ -167,6 +167,14 @@
   color: var(--ui-ink-muted);
 }
 
+.sh-discovery-module__toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
 .sh-discovery-module__body {
   display: grid;
   /* P1-06：控件行与结果区之间的间距收紧。 */
@@ -178,18 +186,18 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
+  flex: 1 1 auto;
   gap: var(--space-3);
-}
-
-.sh-discovery-module__controls .sh-input {
-  /* 搜索输入在窄窗口保持可用宽度，同时不挤压 AI 辅助开关。 */
-  flex: 1 1 16rem;
   min-width: 0;
 }
 
-.sh-discovery-module__controls p {
-  flex-basis: 100%;
-  margin: 0;
+.sh-discovery-module__controls > .sh-input {
+  flex: 1 1 12rem;
+  min-width: 0;
+}
+
+.sh-discovery-module__toolbar > .sh-button {
+  flex: 0 0 auto;
 }
 
 /* 仓库配置复用 shared/repository-card；这里仅保留发现流程自己的附加状态。 */
@@ -273,6 +281,15 @@
   .sh-discovery-page__grid,
   .sh-discovery-home__grid {
     grid-template-columns: 1fr;
+  }
+
+  .sh-discovery-module__toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .sh-discovery-module__toolbar > .sh-button {
+    align-self: flex-start;
   }
 }
 

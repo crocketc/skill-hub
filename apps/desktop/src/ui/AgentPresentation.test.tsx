@@ -25,6 +25,20 @@ it("combines a real brand logo with a user-facing platform type", async () => {
   expect(screen.queryByText("codebuddy.code")).not.toBeInTheDocument();
 });
 
+it("does not expose technical instance names next to the brand and platform type", async () => {
+  await renderPresentation({
+    agentId: "anthropic.claude-code",
+    brand: "Claude",
+    instance: "claude-code",
+    kinds: ["cli"],
+  });
+
+  expect(screen.getByText("Claude")).toBeVisible();
+  expect(screen.getByText("终端")).toBeVisible();
+  expect(screen.queryByText("anthropic.claude-code")).not.toBeInTheDocument();
+  expect(screen.queryByText("claude-code")).not.toBeInTheDocument();
+});
+
 it("deduplicates explicit platform kinds while preserving their user-facing order", async () => {
   await renderPresentation({
     brand: "ZCode",
