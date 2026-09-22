@@ -40,10 +40,14 @@ export interface SkillGraphCanvasProps {
   layoutSize?: GraphLayoutSize;
   /** DEV-69：报告真实可用区域，供页面侧布局和初始 fit 使用。 */
   onCanvasSizeChange?: (size: GraphLayoutSize) => void;
+  /** 从返回状态恢复时保留传入视口，直到内容事实发生变化或用户主动 fit。 */
+  preserveInitialViewport?: boolean;
 }
 
 const MIN_ZOOM = 0.4;
 const MAX_ZOOM = 3;
+
+type GraphViewportUpdate = GraphViewport | ((current: GraphViewport) => GraphViewport);
 
 function clampZoom(zoom: number): number {
   return Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, Math.round(zoom * 100) / 100));
@@ -90,6 +94,7 @@ export function SkillGraphCanvas({
   onSelectEdge,
   onSelectNode,
   onViewportChange,
+  preserveInitialViewport = false,
   projection,
   resolveSkillName,
   selectedEdgeId,
@@ -98,8 +103,19 @@ export function SkillGraphCanvas({
 }: SkillGraphCanvasProps) {
   const { t } = useTranslation();
   const surfaceRef = useRef<HTMLDivElement | null>(null);
+  const viewportRef = useRef(viewport);
+  const initialViewportRef = useRef(viewport);
+  const initialFitSignalRef = useRef(fitSignal);
   const dragState = useRef<{ pointerId: number; startX: number; startY: number; originX: number; originY: number; moved: boolean } | null>(null);
   const nodeDragRef = useRef<{ nodeId: string; pointerId: number; startX: number; startY: number; originX: number; originY: number; moved: boolean } | null>(null);
+
+  viewportRef.current = viewport;
+
+  const commitViewport = useCallback((update: GraphViewportUpdate) => {
+    const next = typeof update === "function" ? update(viewportRef.current) : update;
+    viewportRef.current = next;
+    onViewportChange(next);
+  }, [onViewportChange]);
 
   const reportCanvasSize = useCallback(() => {
     const surface = surfaceRef.current;
@@ -120,18 +136,18 @@ export function SkillGraphCanvas({
     return () => observer.disconnect();
   }, [onCanvasSizeChange, reportCanvasSize]);
 
-  const zoomBy = (factor: number) => {
-    onViewportChange({ ...viewport, zoom: clampZoom(viewport.zoom * factor) });
-  };
+  const zoomBy = useCallback((factor: number) => {
+    commitViewport((current) => ({ ...current, zoom: clampZoom(current.zoom * factor) }));
+  }, [commitViewport]);
 
   /** DEV-24：fit-view——按当前内容包围盒缩放并居中（不再以选中 Skill 为锚）。 */
-  const fitToContent = () => {
+  const fitToContent = useCallback(() => {
     const surface = surfaceRef.current;
     if (!surface) return;
     const width = surface.clientWidth;
     const height = surface.clientHeight;
     if (width <= 0 || height <= 0 || projection.nodes.length === 0) {
-      onViewportChange({ x: 0, y: 0, zoom: 1 });
+      commitViewport({ x: 0, y: 0, zoom: 1 });
       return;
     }
     let minX = Infinity;
@@ -147,17 +163,28 @@ export function SkillGraphCanvas({
     const contentWidth = Math.max(1, maxX - minX);
     const contentHeight = Math.max(1, maxY - minY);
     const zoom = clampZoom(Math.min(width / (contentWidth + 160), height / (contentHeight + 160)));
-    onViewportChange({
+    commitViewport({
       x: (width - contentWidth * zoom) / 2 - minX * zoom,
       y: (height - contentHeight * zoom) / 2 - minY * zoom,
       zoom,
     });
-  };
+  }, [commitViewport, projection.nodes]);
 
   // 内容变化（事实/筛选/拖拽布局重算）即内容整体居中。
   useEffect(() => {
+    const contentChanged = initialFitSignalRef.current !== fitSignal;
+    initialFitSignalRef.current = fitSignal;
+
+    // 返回状态是用户明确留下的视口。首次挂载和首次尺寸回报都不能用
+    // fit-view 覆盖它；后续真正的图谱事实变化仍会重新 fit。
+    const initialViewportWasProvided =
+      preserveInitialViewport
+      || initialViewportRef.current.x !== 0
+      || initialViewportRef.current.y !== 0
+      || initialViewportRef.current.zoom !== 1;
+    if (initialViewportWasProvided && !contentChanged) return;
     fitToContent();
-  }, [fitSignal, layoutSize]);
+  }, [fitSignal, fitToContent, layoutSize, preserveInitialViewport]);
 
   const handleWheel = (event: ReactWheelEvent<HTMLDivElement>) => {
     event.preventDefault();
@@ -200,7 +227,7 @@ export function SkillGraphCanvas({
 
   const handlePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
     const target = event.target as Element;
-    if (target.closest(".sh-graph-node, .sh-graph-edge__hit")) return;
+    if (target.closest(".sh-graph-node, .sh-graph-edge__hit, .sh-graph-canvas__controls, .sh-graph__legend")) return;
     dragState.current = {
       pointerId: event.pointerId,
       startX: event.clientX,
@@ -220,7 +247,7 @@ export function SkillGraphCanvas({
     if (Math.abs(dx) > 4 || Math.abs(dy) > 4) {
       drag.moved = true;
     }
-    onViewportChange({ x: drag.originX + dx, y: drag.originY + dy, zoom: viewport.zoom });
+    commitViewport({ x: drag.originX + dx, y: drag.originY + dy, zoom: viewportRef.current.zoom });
   };
 
   const handlePointerUp = (event: ReactPointerEvent<HTMLDivElement>) => {

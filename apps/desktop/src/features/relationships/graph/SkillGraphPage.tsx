@@ -537,8 +537,11 @@ export function SkillGraphPage({
             setSelectedEdgeId(null);
           }}
           onViewportChange={setViewport}
-          fitSignal={layoutProjection}
+          // 视口 fit 只跟随关系事实/筛选变化，不跟随尺寸适配产生的新坐标，
+          // 否则返回状态会在首次 ResizeObserver 回报时被覆盖。
+          fitSignal={projection}
           onNodeDrag={handleNodeDrag}
+          preserveInitialViewport={Boolean(returnState.initialState?.viewport)}
           projection={layoutProjection ?? projection}
           resolveSkillName={resolveSkillName}
           selectedEdgeId={selectedEdgeId}

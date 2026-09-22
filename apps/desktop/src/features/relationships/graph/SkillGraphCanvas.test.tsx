@@ -1,5 +1,6 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { I18nextProvider } from "react-i18next";
+import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { createSkillHubI18n } from "../../../i18n";
 import {
@@ -154,7 +155,62 @@ async function renderCanvas(options: {
   return projection;
 }
 
+function ControlledCanvas({ initialViewport }: { initialViewport: GraphViewport }) {
+  const [viewport, setViewport] = useState(initialViewport);
+  const projection = projectGraph(graphFixture(), NO_FILTERS, ALL_DISPLAY_ON);
+  return (
+    <SkillGraphCanvas
+      onFocusSkill={() => {}}
+      onSelectEdge={() => {}}
+      onSelectNode={() => {}}
+      onViewportChange={setViewport}
+      projection={projection}
+      selectedEdgeId={null}
+      selectedNodeId={null}
+      viewport={viewport}
+    />
+  );
+}
+
 describe("SkillGraphCanvas interaction", () => {
+  it("applies control clicks to the rendered viewport transform", async () => {
+    const i18n = await createSkillHubI18n(["en-US"]);
+    render(
+      <I18nextProvider i18n={i18n}>
+        <ControlledCanvas initialViewport={{ x: 10, y: 20, zoom: 1 }} />
+      </I18nextProvider>,
+    );
+
+    const layer = screen.getByTestId("skill-graph-surface").querySelector<HTMLElement>(".sh-graph-canvas__layer");
+    expect(layer?.style.transform).toBe("translate(10px, 20px) scale(1)");
+
+    fireEvent.click(screen.getByRole("button", { name: "Zoom in" }));
+
+    expect(layer?.style.transform).toBe("translate(10px, 20px) scale(1.2)");
+
+    fireEvent.click(screen.getByRole("button", { name: "Zoom out" }));
+    expect(layer?.style.transform).toBe("translate(10px, 20px) scale(1)");
+
+    const surface = screen.getByTestId("skill-graph-surface");
+    Object.defineProperty(surface, "clientWidth", { configurable: true, value: 800 });
+    Object.defineProperty(surface, "clientHeight", { configurable: true, value: 600 });
+    fireEvent.click(screen.getByRole("button", { name: "Fit content (center all)" }));
+
+    expect(layer?.style.transform).not.toBe("translate(10px, 20px) scale(1)");
+  });
+
+  it("does not replace a restored non-default viewport during the initial fit", async () => {
+    const i18n = await createSkillHubI18n(["en-US"]);
+    render(
+      <I18nextProvider i18n={i18n}>
+        <ControlledCanvas initialViewport={{ x: 123, y: 45, zoom: 1.4 }} />
+      </I18nextProvider>,
+    );
+
+    const layer = screen.getByTestId("skill-graph-surface").querySelector<HTMLElement>(".sh-graph-canvas__layer");
+    expect(layer?.style.transform).toBe("translate(123px, 45px) scale(1.4)");
+  });
+
   it("refocuses the graph when a related Skill is clicked", async () => {
     const onFocusSkill = vi.fn();
     const onSelectNode = vi.fn();
