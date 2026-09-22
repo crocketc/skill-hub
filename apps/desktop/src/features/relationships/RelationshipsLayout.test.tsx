@@ -67,6 +67,9 @@ describe("RelationshipsLayout", () => {
     );
 
     expect(screen.getByText("Real canvas content")).toBeVisible();
+    expect(screen.getByText("Real canvas content").closest(".sh-page-frame")).toHaveClass(
+      "sh-page-frame--fill",
+    );
     expect(
       screen.queryByText(/not available yet/),
     ).not.toBeInTheDocument();

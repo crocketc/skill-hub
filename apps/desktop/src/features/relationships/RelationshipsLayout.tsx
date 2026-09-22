@@ -99,7 +99,7 @@ export function RelationshipsLayout({ scope, children, facade }: RelationshipsLa
   const { t } = useTranslation();
 
   return (
-    <PageFrame width="wide">
+    <PageFrame fill width="wide">
       <div className="sh-relationships">
         <PageHeader
           actions={<RelationshipsNav facade={facade} />}

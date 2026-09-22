@@ -2,7 +2,9 @@
 .sh-graph {
   display: grid;
   gap: var(--space-4);
+  grid-template-rows: auto minmax(0, 1fr) auto;
   min-width: 0;
+  min-height: 0;
 }
 
 .sh-graph__toolbar {
@@ -151,6 +153,7 @@
   gap: var(--space-4);
   grid-template-columns: minmax(0, 1fr) 20rem;
   min-width: 0;
+  min-height: 0;
 }
 
 @media (max-width: 60rem) {
@@ -162,7 +165,9 @@
 /* 画布：SVG 边 + HTML 节点按钮的分层平面。 */
 .sh-graph-canvas {
   display: grid;
+  height: 100%;
   min-width: 0;
+  min-height: 0;
 }
 
 .sh-graph__legend {
@@ -258,7 +263,7 @@
   border-radius: 8px;
   cursor: grab;
   height: 100%;
-  min-height: 30rem;
+  min-height: 0;
   overflow: hidden;
   position: relative;
 }
@@ -376,6 +381,8 @@
   border-radius: 8px;
   display: grid;
   gap: var(--space-4);
+  min-height: 0;
+  overflow-y: auto;
   padding: var(--space-4);
 }
 

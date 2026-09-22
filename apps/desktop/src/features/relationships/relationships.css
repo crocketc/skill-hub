@@ -3,7 +3,11 @@
 .sh-relationships {
   display: grid;
   gap: var(--space-5);
+  grid-row: 1 / -1;
+  grid-template-rows: auto minmax(0, 1fr);
+  height: 100%;
   min-width: 0;
+  min-height: 0;
 }
 
 /* DEV-67：模块名称与子页签属于同一导航层级，保持在一个标题行内；
