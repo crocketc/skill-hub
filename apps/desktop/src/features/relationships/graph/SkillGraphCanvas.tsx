@@ -1,4 +1,4 @@
-import { useEffect, useRef, type PointerEvent as ReactPointerEvent, type MouseEvent as ReactMouseEvent, type WheelEvent as ReactWheelEvent } from "react";
+import { useEffect, useRef, type PointerEvent as ReactPointerEvent, type MouseEvent as ReactMouseEvent, type ReactNode, type WheelEvent as ReactWheelEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { displayPath } from "../../../platform/displayPath";
 import { AgentIdentity, readableAgentIdName } from "../../skills/AgentDeploymentIcons";
@@ -18,6 +18,7 @@ export interface GraphViewport {
 }
 
 export interface SkillGraphCanvasProps {
+  legend?: ReactNode;
   /** 跳转前保存返回状态（视口），供浏览器后退恢复。 */
   onBeforeJump?: () => void;
   onFocusSkill: (skillId: string) => void;
@@ -75,6 +76,7 @@ function nodeLabel(
  */
 export function SkillGraphCanvas({
   fitSignal,
+  legend,
   onBeforeJump,
   onFocusSkill,
   onNodeDrag,
@@ -221,6 +223,7 @@ export function SkillGraphCanvas({
         onWheel={handleWheel}
         onClick={handleSurfaceClick}
       >
+        {legend}
         <div className="sh-graph-canvas__controls">
           <button
             type="button"

@@ -2237,6 +2237,9 @@
       "legend": {
         "label": "Graph legend",
         "title": "How to read the graph",
+        "statesLabel": "Verification states",
+        "showDetails": "Show graph legend details",
+        "hideDetails": "Hide graph legend details",
         "typeHint": "Edge labels identify the relationship type; line style identifies its verification state."
       },
       "canvasLabel": "Skill relationship graph",

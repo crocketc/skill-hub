@@ -248,6 +248,28 @@ describe("first-load center selection", () => {
     expect(screen.getByText("Managed link")).toBeVisible();
   });
 
+  it("keeps the legend inside the canvas and expands its detailed reading hint on demand", async () => {
+    const user = userEvent.setup();
+    await renderPage("/relationships?skillId=pdf-reader");
+
+    const canvas = await screen.findByRole("group", { name: "Skill relationship graph" });
+    const legend = within(canvas).getByRole("region", { name: "Graph legend" });
+    expect(legend.closest(".sh-graph-canvas__surface")).not.toBeNull();
+    expect(within(legend).getByRole("button", { name: "Show graph legend details" })).toHaveAttribute(
+      "aria-expanded",
+      "false",
+    );
+    expect(within(legend).queryByText("Edge labels identify the relationship type; line style identifies its verification state.")).not.toBeInTheDocument();
+
+    await user.click(within(legend).getByRole("button", { name: "Show graph legend details" }));
+
+    expect(within(legend).getByRole("button", { name: "Hide graph legend details" })).toHaveAttribute(
+      "aria-expanded",
+      "true",
+    );
+    expect(within(legend).getByText("Edge labels identify the relationship type; line style identifies its verification state.")).toBeVisible();
+  });
+
   it("picks the center once from candidates and replaces the URL", async () => {
     const random = vi.fn(() => 0);
     const { calls, locations } = await renderPage("/relationships", { random });

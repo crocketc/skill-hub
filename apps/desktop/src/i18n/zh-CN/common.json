@@ -2237,6 +2237,9 @@
       "legend": {
         "label": "图谱图例",
         "title": "图谱阅读方式",
+        "statesLabel": "验证状态",
+        "showDetails": "展开图谱图例说明",
+        "hideDetails": "收起图谱图例说明",
         "typeHint": "边上的文字表示关系类型，线型表示关系验证状态。"
       },
       "canvasLabel": "技能关系图",

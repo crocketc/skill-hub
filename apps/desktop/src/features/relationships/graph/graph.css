@@ -166,12 +166,28 @@
 }
 
 .sh-graph__legend {
+  bottom: var(--space-3);
   display: grid;
   gap: var(--space-2);
-  padding: var(--space-3) var(--space-4);
+  max-height: min(12rem, calc(100% - 6rem));
+  max-width: min(26rem, calc(100% - 1.5rem));
+  overflow: auto;
+  padding: var(--space-2) var(--space-3);
+  pointer-events: auto;
+  position: absolute;
+  right: var(--space-3);
   border: 1px solid var(--ui-border-subtle);
   border-radius: var(--radius-md);
-  background: var(--ui-surface-subtle);
+  background: color-mix(in srgb, var(--ui-surface) 94%, transparent);
+  box-shadow: 0 8px 20px rgb(0 0 0 / 0.14);
+  z-index: 3;
+}
+
+.sh-graph__legend-header {
+  align-items: center;
+  display: flex;
+  gap: var(--space-3);
+  justify-content: space-between;
 }
 
 .sh-graph__legend h2,
@@ -181,6 +197,7 @@
 
 .sh-graph__legend h2 {
   font-size: var(--font-size-sm);
+  white-space: nowrap;
 }
 
 .sh-graph__legend p {
@@ -191,7 +208,7 @@
 .sh-graph__legend-states {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--space-3);
+  gap: var(--space-2) var(--space-3);
 }
 
 .sh-graph__legend-item {
@@ -203,12 +220,29 @@
 
 .sh-graph__legend-line {
   display: inline-block;
-  width: 2rem;
+  width: 1.5rem;
   border-top: 2px solid var(--ui-ink-muted);
 }
 
 .sh-graph__legend-line--dashed { border-top-style: dashed; }
 .sh-graph__legend-line--dotted { border-top-style: dotted; }
+
+@media (max-width: 40rem) {
+  .sh-graph__legend {
+    left: var(--space-3);
+    max-width: none;
+    right: var(--space-3);
+  }
+
+  .sh-graph__legend-header {
+    gap: var(--space-2);
+  }
+
+  .sh-graph__legend h2 {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+}
 
 .sh-graph-canvas__controls {
   inset: var(--space-3) var(--space-3) auto auto;

@@ -120,6 +120,7 @@ function ToolbarPopover({ label, children }: { label: string; children: ReactNod
 
 function GraphLegend() {
   const { t } = useTranslation();
+  const [expanded, setExpanded] = useState(false);
   const states = [
     ["verified", "solid", "content_verified"],
     ["unverified", "dotted", "name_only"],
@@ -127,16 +128,29 @@ function GraphLegend() {
   ] as const;
   return (
     <section aria-label={t("relationships.graph.legend.label")} className="sh-graph__legend">
-      <h2>{t("relationships.graph.legend.title")}</h2>
-      <div className="sh-graph__legend-states">
+      <div className="sh-graph__legend-header">
+        <h2>{t("relationships.graph.legend.title")}</h2>
+        <button
+          type="button"
+          className="sh-button sh-button--ghost sh-button--sm"
+          aria-controls="sh-graph-legend-details"
+          aria-expanded={expanded}
+          onClick={() => setExpanded((value) => !value)}
+        >
+          {t(`relationships.graph.legend.${expanded ? "hideDetails" : "showDetails"}`)}
+        </button>
+      </div>
+      <div className="sh-graph__legend-states" aria-label={t("relationships.graph.legend.statesLabel")}>
         {states.map(([_className, line, status]) => (
           <span className="sh-graph__legend-item" key={status}>
             <span aria-hidden="true" className={`sh-graph__legend-line sh-graph__legend-line--${line}`} />
-            {t(`relationships.graph.status.${status}`)}
+            <span>{t(`relationships.graph.status.${status}`)}</span>
           </span>
         ))}
       </div>
-      <p>{t("relationships.graph.legend.typeHint")}</p>
+      {expanded ? (
+        <p id="sh-graph-legend-details">{t("relationships.graph.legend.typeHint")}</p>
+      ) : null}
     </section>
   );
 }
@@ -488,9 +502,9 @@ export function SkillGraphPage({
       {pickAnotherNotice ? (
         <p role="status">{t("relationships.graph.pickAnotherNone")}</p>
       ) : null}
-      <GraphLegend />
       <div className="sh-graph__body">
         <SkillGraphCanvas
+          legend={<GraphLegend />}
           onBeforeJump={saveReturnState}
           onFocusSkill={navigateToSkill}
           onSelectEdge={setSelectedEdgeId}
