@@ -9,6 +9,7 @@ import {
   projectGraph,
 } from "./graphProjection";
 import { SkillGraphCanvas, type GraphViewport } from "./SkillGraphCanvas";
+import type { GraphLayoutSize } from "./forceLayout";
 import type { SkillRelationshipGraphResult } from "../api";
 
 const LAST_VERIFIED = "2026-09-01T08:00:00Z";
@@ -126,6 +127,7 @@ async function renderCanvas(options: {
   onSelectEdge?: (edgeId: string | null) => void;
   onSelectNode?: (nodeId: string | null) => void;
   onViewportChange?: (viewport: GraphViewport) => void;
+  layoutSize?: GraphLayoutSize;
   selectedEdgeId?: string | null;
   selectedNodeId?: string | null;
   viewport?: GraphViewport;
@@ -141,6 +143,7 @@ async function renderCanvas(options: {
         onSelectEdge={options.onSelectEdge ?? (() => {})}
         onSelectNode={options.onSelectNode ?? (() => {})}
         onViewportChange={options.onViewportChange ?? (() => {})}
+        layoutSize={options.layoutSize}
         projection={projection}
         selectedEdgeId={options.selectedEdgeId ?? null}
         selectedNodeId={options.selectedNodeId ?? null}
@@ -213,6 +216,18 @@ describe("SkillGraphCanvas interaction", () => {
     // 画布表面不可聚焦、不绑定键盘拖拽/缩放：键鼠承诺只落在控件按钮上。
     const surface = screen.getByTestId("skill-graph-surface");
     expect(surface.getAttribute("tabindex")).toBeNull();
+  });
+
+  it("uses the adaptive layout size for the SVG drawing surface", async () => {
+    await renderCanvas({ layoutSize: { width: 720, height: 420 } });
+
+    const surface = screen.getByTestId("skill-graph-surface");
+    const layer = surface.querySelector<HTMLElement>(".sh-graph-canvas__layer");
+    const svg = surface.querySelector<SVGSVGElement>(".sh-graph-canvas__edges");
+    expect(layer?.style.width).toBe("720px");
+    expect(layer?.style.height).toBe("420px");
+    expect(svg?.getAttribute("width")).toBe("720");
+    expect(svg?.getAttribute("height")).toBe("420");
   });
 
   it("selects an edge through its widened hit line", async () => {

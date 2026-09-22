@@ -11,11 +11,18 @@ import type {
   SkillRelationshipCandidate,
 } from "../api";
 import { relationshipsKeys } from "../api";
-import { applyPositions, computeForceLayout, type ForcePositions } from "./forceLayout";
+import {
+  applyPositions,
+  computeForceLayout,
+  type ForceLayoutOptions,
+  type ForcePositions,
+  type GraphLayoutSize,
+} from "./forceLayout";
 import { nativeRelationshipsFacade } from "../nativeApi";
 import { useRelationshipsReturnState } from "../returnState";
 import {
   ALL_DISPLAY_ON,
+  CANVAS_SIZE,
   type GraphDisplaySettings,
   projectGraph,
 } from "./graphProjection";
@@ -180,6 +187,7 @@ export function SkillGraphPage({
   const [viewport, setViewport] = useState<GraphViewport>(
     returnState.initialState?.viewport ?? DEFAULT_VIEWPORT,
   );
+  const [layoutSize, setLayoutSize] = useState<GraphLayoutSize>(CANVAS_SIZE);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
   const [display, setDisplay] = useState<GraphDisplaySettings>(ALL_DISPLAY_ON);
@@ -299,8 +307,16 @@ export function SkillGraphPage({
     setDragPositions({});
   }, [projection]);
   const layoutPositions = useMemo(
-    () => (projection ? computeForceLayout(projection, { overrides: dragPositions }) : null),
-    [projection, dragPositions],
+    () => {
+      if (!projection) return null;
+      const options: ForceLayoutOptions = {
+        overrides: dragPositions,
+        width: layoutSize.width,
+        height: layoutSize.height,
+      };
+      return computeForceLayout(projection, options);
+    },
+    [projection, dragPositions, layoutSize],
   );
   const layoutProjection = useMemo(
     () => (projection && layoutPositions ? applyPositions(projection, layoutPositions) : null),
@@ -308,6 +324,12 @@ export function SkillGraphPage({
   );
   const handleNodeDrag = useCallback((nodeId: string, x: number, y: number) => {
     setDragPositions((current) => ({ ...current, [nodeId]: { x, y } }));
+  }, []);
+
+  const handleCanvasSizeChange = useCallback((next: GraphLayoutSize) => {
+    setLayoutSize((current) =>
+      current.width === next.width && current.height === next.height ? current : next,
+    );
   }, []);
 
   const saveReturnState = useCallback(() => {
@@ -505,7 +527,9 @@ export function SkillGraphPage({
       <div className="sh-graph__body">
         <SkillGraphCanvas
           legend={<GraphLegend />}
+          layoutSize={layoutSize}
           onBeforeJump={saveReturnState}
+          onCanvasSizeChange={handleCanvasSizeChange}
           onFocusSkill={navigateToSkill}
           onSelectEdge={setSelectedEdgeId}
           onSelectNode={(nodeId) => {

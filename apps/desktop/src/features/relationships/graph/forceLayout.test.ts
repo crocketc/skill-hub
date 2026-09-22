@@ -81,6 +81,50 @@ describe("computeForceLayout (DEV-24)", () => {
     expect(positions["node-2"]).toEqual({ x: 10, y: 20 });
   });
 
+  it("adapts the layout to the available canvas and node density", () => {
+    const projection = projectionFixture(6);
+    const compact = computeForceLayout(projection, {
+      width: 480,
+      height: 320,
+      nodeWidth: 96,
+      nodeHeight: 32,
+    });
+    const roomy = computeForceLayout(projection, {
+      width: 1280,
+      height: 760,
+      nodeWidth: 160,
+      nodeHeight: 48,
+    });
+
+    expect(compact).not.toEqual(roomy);
+    for (const position of Object.values(compact)) {
+      expect(position.x).toBeGreaterThanOrEqual(0);
+      expect(position.x).toBeLessThanOrEqual(480);
+      expect(position.y).toBeGreaterThanOrEqual(0);
+      expect(position.y).toBeLessThanOrEqual(320);
+    }
+  });
+
+  it("keeps estimated node boxes from overlapping when the canvas has room", () => {
+    const projection = projectionFixture(8);
+    const positions = computeForceLayout(projection, {
+      width: 1280,
+      height: 760,
+      nodeWidth: 160,
+      nodeHeight: 48,
+    });
+    const nodes = Object.values(positions);
+    for (let index = 0; index < nodes.length; index += 1) {
+      for (let otherIndex = index + 1; otherIndex < nodes.length; otherIndex += 1) {
+        const first = nodes[index];
+        const second = nodes[otherIndex];
+        const separatedOnAxis =
+          Math.abs(first.x - second.x) >= 172 || Math.abs(first.y - second.y) >= 60;
+        expect(separatedOnAxis).toBe(true);
+      }
+    }
+  });
+
   it("applies positions onto the projection including edge endpoints", () => {
     const projection = projectionFixture(3);
     const positions = computeForceLayout(projection);

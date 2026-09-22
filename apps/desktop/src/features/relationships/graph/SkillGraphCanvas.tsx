@@ -1,4 +1,4 @@
-import { useEffect, useRef, type PointerEvent as ReactPointerEvent, type MouseEvent as ReactMouseEvent, type ReactNode, type WheelEvent as ReactWheelEvent } from "react";
+import { useCallback, useEffect, useRef, type PointerEvent as ReactPointerEvent, type MouseEvent as ReactMouseEvent, type ReactNode, type WheelEvent as ReactWheelEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { displayPath } from "../../../platform/displayPath";
 import { AgentIdentity, readableAgentIdName } from "../../skills/AgentDeploymentIcons";
@@ -9,6 +9,7 @@ import {
   type GraphProjection,
   type ProjectedNode,
 } from "./graphProjection";
+import type { GraphLayoutSize } from "./forceLayout";
 import "./graph.css";
 
 export interface GraphViewport {
@@ -35,6 +36,10 @@ export interface SkillGraphCanvasProps {
   resolveSkillName?: (skillId: string) => string | undefined;
   /** 变化时触发一次 fit-view（内容整体居中，DEV-24）。 */
   fitSignal?: unknown;
+  /** DEV-69：按实际画布尺寸重算布局；未提供时使用设计基准尺寸。 */
+  layoutSize?: GraphLayoutSize;
+  /** DEV-69：报告真实可用区域，供页面侧布局和初始 fit 使用。 */
+  onCanvasSizeChange?: (size: GraphLayoutSize) => void;
 }
 
 const MIN_ZOOM = 0.4;
@@ -77,7 +82,9 @@ function nodeLabel(
 export function SkillGraphCanvas({
   fitSignal,
   legend,
+  layoutSize = CANVAS_SIZE,
   onBeforeJump,
+  onCanvasSizeChange,
   onFocusSkill,
   onNodeDrag,
   onSelectEdge,
@@ -93,6 +100,25 @@ export function SkillGraphCanvas({
   const surfaceRef = useRef<HTMLDivElement | null>(null);
   const dragState = useRef<{ pointerId: number; startX: number; startY: number; originX: number; originY: number; moved: boolean } | null>(null);
   const nodeDragRef = useRef<{ nodeId: string; pointerId: number; startX: number; startY: number; originX: number; originY: number; moved: boolean } | null>(null);
+
+  const reportCanvasSize = useCallback(() => {
+    const surface = surfaceRef.current;
+    if (!surface || !onCanvasSizeChange) return;
+    const width = surface.clientWidth;
+    const height = surface.clientHeight;
+    if (width > 0 && height > 0) {
+      onCanvasSizeChange({ width, height });
+    }
+  }, [onCanvasSizeChange]);
+
+  useEffect(() => {
+    reportCanvasSize();
+    const surface = surfaceRef.current;
+    if (!surface || !onCanvasSizeChange || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(reportCanvasSize);
+    observer.observe(surface);
+    return () => observer.disconnect();
+  }, [onCanvasSizeChange, reportCanvasSize]);
 
   const zoomBy = (factor: number) => {
     onViewportChange({ ...viewport, zoom: clampZoom(viewport.zoom * factor) });
@@ -131,7 +157,7 @@ export function SkillGraphCanvas({
   // 内容变化（事实/筛选/拖拽布局重算）即内容整体居中。
   useEffect(() => {
     fitToContent();
-  }, [fitSignal]);
+  }, [fitSignal, layoutSize]);
 
   const handleWheel = (event: ReactWheelEvent<HTMLDivElement>) => {
     event.preventDefault();
@@ -254,17 +280,17 @@ export function SkillGraphCanvas({
         <div
           className="sh-graph-canvas__layer"
           style={{
-            width: CANVAS_SIZE.width,
-            height: CANVAS_SIZE.height,
+            width: layoutSize.width,
+            height: layoutSize.height,
             transform: `translate(${viewport.x}px, ${viewport.y}px) scale(${viewport.zoom})`,
           }}
         >
           <svg
             aria-hidden="true"
             className="sh-graph-canvas__edges"
-            width={CANVAS_SIZE.width}
-            height={CANVAS_SIZE.height}
-            viewBox={`0 0 ${CANVAS_SIZE.width} ${CANVAS_SIZE.height}`}
+            width={layoutSize.width}
+            height={layoutSize.height}
+            viewBox={`0 0 ${layoutSize.width} ${layoutSize.height}`}
           >
             {projection.edges.map((projected) => {
               const { edge } = projected;
