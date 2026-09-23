@@ -37,6 +37,9 @@ export type DeploymentTarget = {
   available: boolean;
   physicalId: string;
   modes: DeploymentMode[];
+  agentClientId?: string;
+  agentProfileId?: string;
+  sharedDirectory?: boolean;
 };
 export type DeploymentPlanTarget = {
   targetId: string;

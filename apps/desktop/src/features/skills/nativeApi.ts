@@ -123,7 +123,17 @@ async function loadAgentTargetLabels(): Promise<Map<string, AgentDeployment>> {
     const result = await queryApplication({ type: "list_deployment_targets", payload: null });
     if (result.type !== "deployment_targets") return map;
     for (const target of result.payload as DeploymentTarget[]) {
-      map.set(target.id, { id: target.physical_id, name: target.label });
+      const deployment = target.agent_client_id
+        ? {
+            id: target.id,
+            name: target.label,
+            agentId: target.agent_client_id,
+            brand: target.agent_profile_id ?? undefined,
+            sharedDirectory: target.shared_directory,
+          } satisfies AgentDeployment
+        : { id: target.physical_id, name: target.label } satisfies AgentDeployment;
+      map.set(target.id, deployment);
+      map.set(target.physical_id, deployment);
     }
   } catch {
     // Agent names are an enhancement; counts stay real when the lookup fails.
@@ -318,8 +328,28 @@ export const nativeSkillLibraryFacade: SkillLibraryFacade = {
       }
       try {
         const relations = await queryApplication({ type: "get_deployment_relations", payload: { skill_id: skillId } });
+        let targetsResult: AppQueryResult | undefined;
+        try { targetsResult = await queryApplication({ type: "list_deployment_targets", payload: null }); } catch { /* legacy/test bridge */ }
         if (relations.type === "deployment_relations") {
-          view.agentDeployments = relations.payload.map((record) => ({ id: record.id, name: record.runtime_name }));
+          const targets = new Map<string, DeploymentTarget>();
+          if (targetsResult?.type === "deployment_targets") {
+            for (const target of targetsResult.payload) {
+              targets.set(target.id, target);
+              targets.set(target.physical_id, target);
+            }
+          }
+          view.agentDeployments = relations.payload.flatMap((record) => {
+            const target = targets.get(record.target_id);
+            if (!target) return [{ id: record.id, name: record.runtime_name }];
+            if (!target.agent_client_id) return [];
+            return [{
+              id: record.id,
+              name: target.label,
+              agentId: target.agent_client_id,
+              brand: target.agent_profile_id ?? undefined,
+              sharedDirectory: target.shared_directory,
+            }];
+          });
           view.agentDeploymentCount = relations.payload.length;
         }
       } catch {

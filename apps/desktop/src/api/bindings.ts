@@ -832,6 +832,13 @@ export type DeploymentTarget = {
 	available: boolean,
 	physical_id: string,
 	modes: DeploymentMode[],
+	/**
+	 *  Structured identity used by clients to render an Agent consistently.
+	 *  Project targets leave these fields empty.
+	 */
+	agent_client_id?: string | null,
+	agent_profile_id?: string | null,
+	shared_directory?: boolean,
 };
 
 export type DesktopPreferences = {

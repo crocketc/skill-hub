@@ -257,15 +257,12 @@ impl<'a> BootstrapRepository<'a> {
         &self,
         dimension: DeploymentDimension,
     ) -> AppResult<Vec<DeploymentChartCategory>> {
-        let (column, label_code) = match dimension {
-            DeploymentDimension::Agent => ("t.agent_id", "deployment.dimension.agent"),
-            DeploymentDimension::Project => (
-                "COALESCE(t.project_id, 'project:none')",
-                "deployment.dimension.project",
-            ),
+        let (column, label_code, scope_filter) = match dimension {
+            DeploymentDimension::Agent => ("t.agent_id", "deployment.dimension.agent", "t.project_id IS NULL"),
+            DeploymentDimension::Project => ("t.project_id", "deployment.dimension.project", "t.project_id IS NOT NULL"),
         };
         let sql = format!(
-            "SELECT {column}, COUNT(*) FROM deployments d JOIN targets t ON t.id=d.target_id WHERE d.state IN ('deployed','active') AND d.managed=1 GROUP BY {column} ORDER BY {column}"
+            "SELECT {column}, COUNT(*) FROM deployments d JOIN targets t ON t.id=d.target_id WHERE d.state IN ('deployed','active') AND d.managed=1 AND {scope_filter} GROUP BY {column} ORDER BY {column}"
         );
         let mut statement = self.database.connection.prepare(&sql).map_err(error)?;
         let mut result = Vec::new();
@@ -287,10 +284,11 @@ impl<'a> BootstrapRepository<'a> {
     }
 
     /// Aggregates skill counts per tag for the overview tag drill-down.
-    /// Tags without any skill are omitted; the library page remains the source
-    /// of truth for the full facet list.
+    /// Each skill contributes to exactly one bucket: its alphabetically first
+    /// tag, or the explicit untagged bucket. This keeps the chart total equal
+    /// to the skill total even when a skill carries multiple tags.
     pub fn tag_chart(&self) -> AppResult<Vec<TagChartCategory>> {
-        let sql = "SELECT t.name, COUNT(st.skill_id) FROM tags t JOIN skill_tags st ON st.tag_id=t.id GROUP BY t.name ORDER BY t.name";
+        let sql = "SELECT COALESCE((SELECT MIN(t.name) FROM tags t JOIN skill_tags st ON st.tag_id=t.id WHERE st.skill_id=s.id), '__untagged__'), COUNT(*) FROM skills s GROUP BY 1 ORDER BY 1";
         let mut statement = self.database.connection.prepare(sql).map_err(error)?;
         let mut result = Vec::new();
         for row in statement

@@ -24,9 +24,9 @@ export interface ForceLayoutOptions {
   nodeHeight?: number;
 }
 
-const DEFAULT_NODE_WIDTH = 192;
-const DEFAULT_NODE_HEIGHT = 48;
-const NODE_GAP = 12;
+const DEFAULT_NODE_WIDTH = 144;
+const DEFAULT_NODE_HEIGHT = 40;
+const NODE_GAP = 24;
 
 function positiveDimension(value: number | undefined, fallback: number): number {
   return Number.isFinite(value) && (value ?? 0) > 0 ? value as number : fallback;
@@ -71,7 +71,7 @@ export function computeForceLayout(
   const verticalMargin = Math.min(height / 2, nodeHeight / 2 + NODE_GAP);
   const scale = Math.sqrt((width * height) / (CANVAS_SIZE.width * CANVAS_SIZE.height));
   const density = Math.sqrt(Math.max(1, projection.nodes.length) / 6);
-  const springLength = clamp(150 * scale / density, nodeWidth + NODE_GAP, Math.max(nodeWidth + NODE_GAP, Math.max(width, height) / 2));
+  const springLength = clamp(210 * scale / density, nodeWidth + NODE_GAP, Math.max(nodeWidth + NODE_GAP, Math.max(width, height) / 2));
   const minimumDistanceX = nodeWidth + NODE_GAP;
   const minimumDistanceY = nodeHeight + NODE_GAP;
 

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { AgentPresentation } from "../../ui/AgentPresentation";
 import { useNavigate } from "react-router-dom";
 import { DataState } from "../../ui/DataState";
 import { Button } from "../../ui/Button";
@@ -78,7 +79,7 @@ export function ProjectDetailPage({ projectId = "default", facade = unavailableP
       <section aria-labelledby="project-agent-associations" className="sh-project-detail__panel">
         <div className="sh-project-section-heading"><div><p className="sh-project-eyebrow">{t("projects.detail.agentAssociations.eyebrow")}</p><h2 id="project-agent-associations">{t("projects.detail.agentAssociations.title")}</h2></div></div>
         <p>{t("projects.detail.agentAssociations.description")}</p>
-        {agentCandidates.length ? <fieldset><legend>{t("projects.detail.agentAssociations.legend")}</legend>{agentCandidates.map((agent) => <label key={agent.id}><input aria-label={agent.label} checked={agentIds.includes(agent.id)} disabled={savingAgents || !agent.available} onChange={() => { setSaved(false); setAgentIds((current) => current.includes(agent.id) ? current.filter((id) => id !== agent.id) : [...current, agent.id]); }} type="checkbox" />{agent.label}</label>)}</fieldset> : <p>{t("projects.detail.agentAssociations.none")}</p>}
+        {agentCandidates.length ? <fieldset><legend>{t("projects.detail.agentAssociations.legend")}</legend>{agentCandidates.map((agent) => <label key={agent.id}><input aria-label={agent.agentId ?? agent.label} checked={agentIds.includes(agent.id)} disabled={savingAgents || !agent.available} onChange={() => { setSaved(false); setAgentIds((current) => current.includes(agent.id) ? current.filter((id) => id !== agent.id) : [...current, agent.id]); }} type="checkbox" /><AgentPresentation agentId={agent.agentId ?? agent.id} brand={agent.brand} sharedDirectory={agent.sharedDirectory} /></label>)}</fieldset> : <p>{t("projects.detail.agentAssociations.none")}</p>}
         <Button disabled={savingAgents} loading={savingAgents} onClick={() => void saveAgentAssociations()} variant="secondary">{t("projects.detail.agentAssociations.save")}</Button>
         {saved ? <p aria-live="polite" role="status">{t("projects.detail.agentAssociations.saved")}</p> : null}
         {saveError ? <p aria-live="polite" role="status">{t("projects.detail.agentAssociations.saveFailed")}</p> : null}

@@ -86,15 +86,23 @@ export const nativeRemovalFacade = {
       type: "prepare_delete_skill",
       payload: { skill_id: skillId },
     }));
+    let targetsResult: AppQueryResult | undefined;
+    try { targetsResult = await queryApplication({ type: "list_deployment_targets", payload: null }); } catch { /* legacy/test bridge */ }
+    const targets = targetsResult?.type === "deployment_targets" ? new Map(
+      targetsResult.payload.flatMap((target) => [[target.id, target], [target.physical_id, target]] as const),
+    ) : new Map();
     return {
       operationId: impact.operation_id,
       skillId: impact.skill_id,
       skillName: skillName ?? skillId,
       deployments: impact.deployments.map((deployment) => ({
         id: deployment.id,
-        label: deployment.runtime_name,
-        path: deployment.target_id,
+        label: targets.get(deployment.target_id)?.label ?? deployment.runtime_name,
+        path: targets.get(deployment.target_id)?.path ?? deployment.target_id,
         physicalId: deployment.target_id,
+        agentId: targets.get(deployment.target_id)?.agent_client_id ?? undefined,
+        brand: targets.get(deployment.target_id)?.agent_profile_id ?? undefined,
+        sharedDirectory: targets.get(deployment.target_id)?.shared_directory,
       })),
       // QA-001：逐字段映射领域影响矩阵，不再把依赖冒充成关联项目。
       // 绑定因 serde(default) 将新字段标为可选；后端总是发送，

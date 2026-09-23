@@ -89,11 +89,11 @@ const AGENT_DISPLAY_NAMES: Record<string, string> = {
 };
 
 export function getAgentVisual(agent: AgentDeployment): AgentVisual {
-  return AGENT_VISUALS[agent.id.toLowerCase()] ?? { color: "#64748b" };
+  return AGENT_VISUALS[(agent.brand ?? agent.agentId ?? agent.id).toLowerCase()] ?? { color: "#64748b" };
 }
 
 export function getAgentDisplayName(agent: AgentDeployment) {
-  return AGENT_DISPLAY_NAMES[agent.id.toLowerCase()] ?? agent.name;
+  return AGENT_DISPLAY_NAMES[(agent.brand ?? agent.agentId ?? agent.id).toLowerCase()] ?? agent.name;
 }
 
 function AgentMark({ agent }: { agent: AgentDeployment }) {
@@ -107,8 +107,9 @@ function AgentMark({ agent }: { agent: AgentDeployment }) {
       title={agent.name}
     >
       <AgentPresentation
-        agentId={agent.id}
-        brand={agentBrandKey(agent.id)}
+        agentId={agent.agentId ?? agent.id}
+        brand={agent.brand ?? agentBrandKey(agent.agentId ?? agent.id)}
+        sharedDirectory={agent.sharedDirectory}
         brandClassName="sh-skill-table__agent-deployment-label"
       />
     </span>

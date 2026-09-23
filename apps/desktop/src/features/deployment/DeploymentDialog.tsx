@@ -23,6 +23,7 @@ import {
 } from "./api";
 import { createNativeDeploymentFacade } from "./nativeApi";
 import { displayPath } from "../../platform/displayPath";
+import { DeploymentTargetPresentation } from "./DeploymentTargetPresentation";
 
 export interface DeploymentDialogProps {
   facade?: DeploymentFacade;
@@ -261,7 +262,7 @@ export function DeploymentDialog({
             {targets.filter((target) => target.available).map((target) => (
               <label className="sh-workflow-target" key={target.id}>
                 <input
-                  aria-label={target.label}
+                  aria-label={target.agentClientId ?? target.label}
                   checked={selectedIds.includes(target.id)}
                   onChange={(event) => {
                     setMode(undefined);
@@ -271,7 +272,7 @@ export function DeploymentDialog({
                   type="checkbox"
                 />
                 <span>
-                  <strong>{target.label}</strong>
+                  <DeploymentTargetPresentation fallback={target.label} target={target} />
                   <small>{displayPath(target.path)}</small>
                 </span>
               </label>
@@ -291,7 +292,7 @@ export function DeploymentDialog({
           <ul className="sh-workflow-list">
             {plan.targets.map((target) => (
               <li className="sh-workflow-list__item" data-testid="target-plan" key={target.targetId}>
-                <span><strong>{target.label}</strong><small>{t(userFacingDeploymentMode(target.mode))}</small></span>
+                <span><DeploymentTargetPresentation fallback={target.label} target={targets?.find((candidate) => candidate.id === target.targetId)} /><small>{t(userFacingDeploymentMode(target.mode))}</small></span>
                 {/* DEV-21-A：实现方式只在技术详情，首屏主文案统一为「链接部署」/「复制部署」。 */}
                 <details className="sh-deployment-flow__diagnostics">
                   <summary>{t("deployment.mode.technical")}</summary>
@@ -319,7 +320,7 @@ export function DeploymentDialog({
           </ul>
         </section>
       ) : null}
-      {phase === "results" && results ? <DeploymentResults results={results} /> : null}
+      {phase === "results" && results ? <DeploymentResults results={results} targets={targets} /> : null}
       <span className="sh-visually-hidden">{skillId}:{versionId}</span>
     </ImportShell>
   );

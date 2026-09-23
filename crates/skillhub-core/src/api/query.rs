@@ -420,6 +420,14 @@ pub struct DeploymentTarget {
     pub available: bool,
     pub physical_id: String,
     pub modes: Vec<DeploymentMode>,
+    /// Structured identity used by clients to render an Agent consistently.
+    /// Project targets leave these fields empty.
+    #[serde(default)]
+    pub agent_client_id: Option<String>,
+    #[serde(default)]
+    pub agent_profile_id: Option<String>,
+    #[serde(default)]
+    pub shared_directory: bool,
 }
 
 /// Lists registered logical targets without scanning arbitrary directories.

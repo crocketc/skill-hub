@@ -363,9 +363,15 @@ export function SkillGraphPage({
 
   // DEV-24：力导向布局（确定性 d3-force 族实现）。关系事实或筛选变化时
   // 重新松弛并触发 fit-view；用户拖拽过的节点以钉住坐标作为松弛起点。
-  const [dragPositions, setDragPositions] = useState<ForcePositions>({});
+  const [dragPositions, setDragPositions] = useState<ForcePositions>(
+    returnState.initialState?.dragPositions ?? {},
+  );
   useEffect(() => {
-    setDragPositions({});
+    if (!projection) return;
+    setDragPositions((current) => {
+      const valid = new Set(projection.nodes.map((node) => node.node.node_id));
+      return Object.fromEntries(Object.entries(current).filter(([id]) => valid.has(id)));
+    });
   }, [projection]);
   const layoutPositions = useMemo(
     () => {
@@ -394,8 +400,12 @@ export function SkillGraphPage({
   }, []);
 
   const saveReturnState = useCallback(() => {
-    returnState.saveState({ viewport });
-  }, [returnState.saveState, viewport]);
+    returnState.saveState({ viewport, dragPositions });
+  }, [dragPositions, returnState.saveState, viewport]);
+
+  useEffect(() => {
+    saveReturnState();
+  }, [dragPositions, saveReturnState, viewport]);
 
   const navigateToSkill = useCallback(
     (nextSkillId: string) => {

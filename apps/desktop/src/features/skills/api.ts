@@ -14,6 +14,9 @@ export interface InvocationPolicy {
 export interface AgentDeployment {
   id: string;
   name: string;
+  agentId?: string;
+  brand?: string;
+  sharedDirectory?: boolean;
 }
 export interface ProjectDeployment {
   id: string;

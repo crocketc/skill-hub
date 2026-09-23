@@ -12,6 +12,8 @@ export interface RelationshipsReturnState {
   filters?: Record<string, string>;
   /** 画布视口（平移/缩放）；仅图谱 scope 使用。 */
   viewport?: { x: number; y: number; zoom: number };
+  /** 每个 Skill 图谱的用户拖拽节点坐标。 */
+  dragPositions?: Record<string, { x: number; y: number }>;
   /** 列表滚动位置；仅治理/冲突 scope 使用。 */
   scrollY?: number;
   /** 选中的行/边 ID；仅治理 scope 使用。 */

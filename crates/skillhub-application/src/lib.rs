@@ -6099,11 +6099,14 @@ impl LocalApplicationFacade {
                             ));
                             skillhub_core::api::DeploymentTarget {
                                 id: target.id,
-                                label: target.client_id,
+                                label: target.client_id.clone(),
                                 path: target.path,
                                 available: target.available,
                                 physical_id: target.physical_id,
                                 modes,
+                                agent_client_id: Some(target.client_id),
+                                agent_profile_id: Some(target.profile_id),
+                                shared_directory: target.shared_reference,
                             }
                         })
                         .collect()
@@ -6123,6 +6126,9 @@ impl LocalApplicationFacade {
                             available,
                             physical_id: project.physical_id,
                             modes: modes.clone(),
+                            agent_client_id: None,
+                            agent_profile_id: None,
+                            shared_directory: false,
                         }
                     }),
             );

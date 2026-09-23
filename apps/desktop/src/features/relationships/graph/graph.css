@@ -435,6 +435,8 @@
   text-align: left;
   transform: translate(-50%, -50%);
   max-width: 12rem;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .sh-graph-node:hover {
@@ -471,6 +473,18 @@
 
 .sh-graph-node__label {
   color: var(--ui-ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sh-graph-node .sh-agent-presentation {
+  font-size: 0.78rem;
+  gap: 0.25rem;
+  max-width: 9rem;
+}
+
+.sh-graph-node .sh-agent-presentation__kind {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

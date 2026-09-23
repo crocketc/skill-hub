@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { desktopDirectoryPicker, normalizeWindowsPath, type DirectoryPicker } from "../../platform/directoryPicker";
 import { describeNativeError } from "../../api/nativeErrors";
 import { Button } from "../../ui/Button";
+import { AgentPresentation } from "../../ui/AgentPresentation";
 import { CheckboxField } from "../../ui/CheckboxField";
 import { DataState } from "../../ui/DataState";
 import { Drawer } from "../../ui/Drawer";
@@ -277,7 +278,7 @@ export function ProjectListPage({
                 <h4>{t("projects.registration.preview.agents")}</h4>
                 {preview.agentTraces.length ? (
                   <ul>
-                    {preview.agentTraces.map((trace) => <li key={trace.targetId}><strong>{trace.label}</strong><small>{displayPath(trace.path)}</small></li>)}
+                    {preview.agentTraces.map((trace) => <li key={trace.targetId}><AgentPresentation agentId={trace.agentId ?? trace.targetId} brand={trace.brand} sharedDirectory={trace.sharedDirectory} /><small>{displayPath(trace.path)}</small></li>)}
                   </ul>
                 ) : <p>{t("projects.registration.preview.agentsEmpty")}</p>}
                 <h4 title={t("projects.registration.preview.skillsSortHint")}>{t("projects.registration.preview.skills")}</h4>
@@ -318,7 +319,8 @@ export function ProjectListPage({
                       description={agent.available ? undefined : t("projects.registration.agentUnavailable")}
                       disabled={registering || !agent.available}
                       key={agent.id}
-                      label={agent.label}
+                      label={<AgentPresentation agentId={agent.agentId ?? agent.id} brand={agent.brand} sharedDirectory={agent.sharedDirectory} />}
+                      ariaLabel={agent.agentId ?? agent.label}
                       onChange={() => setSelectedAgentIds((current) => current.includes(agent.id) ? current.filter((id) => id !== agent.id) : [...current, agent.id])}
                     />
                   ))}

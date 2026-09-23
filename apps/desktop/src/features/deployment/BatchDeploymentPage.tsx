@@ -25,6 +25,7 @@ import {
 import { describeDeploymentResult } from "./api";
 import { createNativeBatchDeploymentFacade } from "./nativeApi";
 import { displayPath } from "../../platform/displayPath";
+import { DeploymentTargetPresentation } from "./DeploymentTargetPresentation";
 
 export interface BatchDeploymentPageProps {
   facade?: BatchDeploymentFacade;
@@ -283,12 +284,12 @@ export function BatchDeploymentPage({ facade, skillIds, tracker, onCommitted, on
             「已发现且可写」的目标，与文案承诺一致。 */}
         <div className="sh-workflow-targets">
           {targets.filter((target) => target.available).map((target) => <label className="sh-workflow-target" key={target.id}>
-            <input aria-label={target.label} checked={selectedIds.includes(target.id)} onChange={(event) => {
+            <input aria-label={target.agentClientId ?? target.label} checked={selectedIds.includes(target.id)} onChange={(event) => {
               setMode(undefined);
               setPreview(undefined);
               setSelectedIds((current) => event.target.checked ? [...current, target.id] : current.filter((id) => id !== target.id));
             }} type="checkbox" />
-            <span><strong>{target.label}</strong><small>{displayPath(target.path)}</small></span>
+            <span><DeploymentTargetPresentation fallback={target.label} target={target} /><small>{displayPath(target.path)}</small></span>
           </label>)}
         </div>
         {expandableLinks.length > 0 ? <div className="sh-deployment-flow__expand">
@@ -334,7 +335,7 @@ export function BatchDeploymentPage({ facade, skillIds, tracker, onCommitted, on
           {plan.warnings.length > 0 ? <ul className="sh-notice-list">{plan.warnings.map((warning) => <li key={warning}>{String(t(userFacingDeploymentWarning(warning) as never, { defaultValue: userFacingDeploymentWarning(warning) } as never))}</li>)}</ul> : null}
           <ul className="sh-workflow-list">
             {plan.targets.map((target) => <li className="sh-workflow-list__item" data-testid="target-plan" key={target.targetId}>
-              <span><strong>{target.label}</strong><small>{t(userFacingDeploymentMode(target.mode))}</small></span>
+              <span><DeploymentTargetPresentation fallback={target.label} target={targets?.find((candidate) => candidate.id === target.targetId)} /><small>{t(userFacingDeploymentMode(target.mode))}</small></span>
               {/* DEV-21-A：具体实现方式（符号链接/目录联接/托管复制）只在技术详情，
                   首屏主文案统一为「链接部署」/「复制部署」。 */}
               <details className="sh-deployment-flow__diagnostics">

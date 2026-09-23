@@ -35,7 +35,14 @@ export interface ProjectRegistration {
   tags: string[];
 }
 
-export interface ProjectAgentCandidate { id: string; label: string; available: boolean; }
+export interface ProjectAgentCandidate {
+  id: string;
+  label: string;
+  available: boolean;
+  agentId?: string;
+  brand?: string;
+  sharedDirectory?: boolean;
+}
 
 export interface ProjectAgentTrace {
   available: boolean;
@@ -43,6 +50,9 @@ export interface ProjectAgentTrace {
   marker: string;
   path: string;
   targetId: string;
+  agentId?: string;
+  brand?: string;
+  sharedDirectory?: boolean;
 }
 
 export interface ProjectSkillCandidatePreview {

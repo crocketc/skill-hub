@@ -464,6 +464,9 @@ export const nativeSkillDetailFacade: SkillDetailFacade = {
         physicalTarget: `${targetPath}/${relation.runtime_name}`,
         pinned: false,
         version: relation.version_id,
+        agentClientId: target?.agent_client_id ?? undefined,
+        agentProfileId: target?.agent_profile_id ?? undefined,
+        sharedDirectory: target?.shared_directory,
       };
     });
   },

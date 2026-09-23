@@ -1,6 +1,7 @@
 import { useTranslation } from "react-i18next";
 import type { DeploymentRecord, DeploymentTarget } from "../../api/bindings";
 import type { SkillTableRow } from "./api";
+import { AgentPresentation } from "../../ui/AgentPresentation";
 
 export interface SkillMatrixProps {
   items: SkillTableRow[];
@@ -23,9 +24,11 @@ export function SkillMatrix({ items, deploymentRecords, deploymentTargets }: Ski
     return <p>{t("skillLibrary.matrix.empty")}</p>;
   }
 
-  const labelByTargetId = new Map(
-    (deploymentTargets ?? []).map((target) => [target.id, target.label]),
-  );
+  const targetById = new Map<string, DeploymentTarget>();
+  for (const target of deploymentTargets ?? []) {
+    targetById.set(target.id, target);
+    targetById.set(target.physical_id, target);
+  }
   const targetIds = [...new Set(deploymentRecords.map((record) => record.target_id))];
   const deployed = new Set(
     deploymentRecords
@@ -40,7 +43,16 @@ export function SkillMatrix({ items, deploymentRecords, deploymentTargets }: Ski
             <th scope="col">{t("skillLibrary.matrix.skillColumn")}</th>
             {targetIds.map((targetId) => (
               <th key={targetId} scope="col">
-                {labelByTargetId.get(targetId) ?? targetId}
+                {(() => {
+                  const target = targetById.get(targetId);
+                  return target?.agent_client_id ? (
+                    <AgentPresentation
+                      agentId={target.agent_client_id}
+                      brand={target.agent_profile_id ?? undefined}
+                      sharedDirectory={target.shared_directory}
+                    />
+                  ) : target?.label ?? targetId;
+                })()}
               </th>
             ))}
           </tr>

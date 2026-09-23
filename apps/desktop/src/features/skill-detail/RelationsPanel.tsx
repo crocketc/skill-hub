@@ -47,7 +47,9 @@ export function RelationsPanel({
           <ul>
             {items.map((relation) => (
               <li data-testid="logical-target" key={relation.id}>
-                <strong>{relation.label}</strong>
+                {relation.kind === "agent" && relation.agentClientId ? (
+                  <AgentPresentation agentId={relation.agentClientId} brand={relation.agentProfileId} sharedDirectory={relation.sharedDirectory} />
+                ) : <strong>{relation.label}</strong>}
                 <span>{relation.logicalTarget}</span>
                 <span>{relation.version}</span>
                 {relation.pinned ? <span>{t("skillDetail.relations.pinned")}</span> : null}

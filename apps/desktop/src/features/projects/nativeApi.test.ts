@@ -320,6 +320,8 @@ it("previews a chosen project directory read-only before registration", async ()
       path: "D:/Work/Aurora/.claude/skills",
       marker: "SKILL.md",
       available: true,
+      agentId: "anthropic.claude-code",
+      brand: "anthropic",
     }],
     skillCandidates: [{
       name: "research",

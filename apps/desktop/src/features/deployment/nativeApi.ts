@@ -64,6 +64,9 @@ function toTarget(target: NativeDeploymentTarget): DeploymentTarget {
     available: target.available,
     physicalId: target.physical_id,
     modes: target.modes,
+    agentClientId: target.agent_client_id ?? undefined,
+    agentProfileId: target.agent_profile_id ?? undefined,
+    sharedDirectory: target.shared_directory,
   };
 }
 

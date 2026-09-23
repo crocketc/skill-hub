@@ -121,6 +121,9 @@ export const nativeProjectFacade: ProjectFacade = {
       id: target.id,
       label: `${target.profile_id} · ${target.client_id}`,
       available: target.available,
+      agentId: target.client_id,
+      brand: target.profile_id,
+      sharedDirectory: target.shared_reference,
     }));
   },
   async previewDirectory(path) {
@@ -131,13 +134,16 @@ export const nativeProjectFacade: ProjectFacade = {
     if (result.type !== "project_directory_preview") {
       throw new Error("preview_project_directory returned an unexpected native result.");
     }
-    return {
-      path: result.payload.path,
+      return {
+        path: result.payload.path,
       agentTraces: result.payload.agent_traces.map((trace) => ({
         targetId: trace.id,
         label: `${trace.profile_id} · ${trace.client_id}`,
         path: trace.path,
         marker: trace.marker,
+        ...(trace.client_id ? { agentId: trace.client_id } : {}),
+        ...(trace.profile_id ? { brand: trace.profile_id } : {}),
+        ...(trace.shared_reference ? { sharedDirectory: true } : {}),
         available: trace.available,
       })),
       skillCandidates: result.payload.skill_candidates.map((candidate) => ({

@@ -4,6 +4,9 @@ export type RemovalDeployment = {
   label: string;
   path: string;
   physicalId: string;
+  agentId?: string;
+  brand?: string;
+  sharedDirectory?: boolean;
 };
 /** QA-001：项目对某 Skill 的固定版本（US-051）。 */
 export type RemovalVersionPin = {

@@ -73,6 +73,9 @@ export interface SkillRelation {
   physicalTarget: string;
   pinned: boolean;
   version: string;
+  agentClientId?: string;
+  agentProfileId?: string;
+  sharedDirectory?: boolean;
 }
 
 /** OPT-20260914-08：导入存证的展示形态（导入那一刻的不可变事实）。 */
