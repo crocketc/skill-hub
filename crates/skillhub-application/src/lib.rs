@@ -6090,45 +6090,57 @@ impl LocalApplicationFacade {
                 .load()?
                 .map(|snapshot| {
                     let mut targets = Vec::new();
-                    let mut shared_by_physical_id = BTreeMap::new();
+                    let mut targets_by_physical_id = BTreeMap::new();
                     for target in snapshot.logical_targets {
-                        if target.shared_reference {
-                            shared_by_physical_id
-                                .entry(target.physical_id.clone())
-                                .or_insert_with(Vec::new)
-                                .push(target);
+                        targets_by_physical_id
+                            .entry(target.physical_id.clone())
+                            .or_insert_with(Vec::new)
+                            .push(target);
+                    }
+                    for (_, mut physical_targets) in targets_by_physical_id {
+                        physical_targets.sort_by(|left, right| left.id.cmp(&right.id));
+                        let is_shared_directory = physical_targets
+                            .iter()
+                            .any(|target| target.shared_reference);
+                        if !is_shared_directory {
+                            for target in physical_targets {
+                                let modes = offered_modes(&effective_target_capabilities(
+                                    &target.client_id,
+                                    &host_capabilities,
+                                ));
+                                targets.push(skillhub_core::api::DeploymentTarget {
+                                    id: target.id,
+                                    label: target.client_id.clone(),
+                                    path: target.path,
+                                    available: target.available,
+                                    physical_id: target.physical_id,
+                                    modes,
+                                    agent_client_id: Some(target.client_id),
+                                    agent_profile_id: Some(target.profile_id),
+                                    shared_directory: false,
+                                    shared_agent_brands: Vec::new(),
+                                });
+                            }
                             continue;
                         }
-                        let modes = offered_modes(&effective_target_capabilities(
-                            &target.client_id,
-                            &host_capabilities,
-                        ));
-                        targets.push(skillhub_core::api::DeploymentTarget {
-                            id: target.id,
-                            label: target.client_id.clone(),
-                            path: target.path,
-                            available: target.available,
-                            physical_id: target.physical_id,
-                            modes,
-                            agent_client_id: Some(target.client_id),
-                            agent_profile_id: Some(target.profile_id),
-                            shared_directory: false,
-                            shared_agent_brands: Vec::new(),
-                        });
-                    }
-                    // One physical shared directory is one deployment target. A stable
-                    // canonical logical id preserves the planner's existing write path.
-                    for (_, mut recognized_targets) in shared_by_physical_id {
-                        recognized_targets.sort_by(|left, right| left.id.cmp(&right.id));
-                        let canonical = recognized_targets
-                            .first()
-                            .expect("shared directory group is never empty");
+                        // The directory's own generic profile is the canonical
+                        // deployment entry. Every brand that recognises that physical
+                        // directory is metadata on this one selectable target.
+                        let canonical = physical_targets
+                            .iter()
+                            .find(|target| target.profile_id == "agent-skills")
+                            .unwrap_or_else(|| {
+                                physical_targets
+                                    .first()
+                                    .expect("physical target group is never empty")
+                            });
                         let modes = offered_modes(&effective_target_capabilities(
                             &canonical.client_id,
                             &host_capabilities,
                         ));
-                        let mut shared_agent_brands = recognized_targets
+                        let mut shared_agent_brands = physical_targets
                             .iter()
+                            .filter(|target| target.profile_id != "agent-skills")
                             .map(|target| target.profile_id.clone())
                             .collect::<Vec<_>>();
                         shared_agent_brands.sort();

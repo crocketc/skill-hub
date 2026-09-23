@@ -4420,6 +4420,21 @@ async fn deployment_target_query_includes_discovery_and_registered_project_targe
                 physical_id: "fs:codex".into(),
             },
             LogicalTarget {
+                id: "shared-directory".into(),
+                profile_id: "agent-skills".into(),
+                client_id: "agent-skills.shared-directory".into(),
+                scope: TargetScope::Global,
+                path: "C:/Users/demo/.agents/skills".into(),
+                marker: "SKILL.md".into(),
+                precedence: DirectoryPrecedence::Preferred,
+                shared_reference: false,
+                exists: true,
+                readable: true,
+                writable: true,
+                available: true,
+                physical_id: "fs:shared-agents".into(),
+            },
+            LogicalTarget {
                 id: "shared-codex".into(),
                 profile_id: "codex".into(),
                 client_id: "codex.cli".into(),
@@ -4501,6 +4516,7 @@ async fn deployment_target_query_includes_discovery_and_registered_project_targe
         .find(|target| target.physical_id == "fs:shared-agents")
         .expect("deduplicated shared target");
     assert!(shared_target.shared_directory);
+    assert_eq!(shared_target.id, "shared-directory");
     assert_eq!(shared_target.path, "C:/Users/demo/.agents/skills");
     assert_eq!(shared_target.shared_agent_brands, ["anthropic", "codex"]);
     let project_target = targets
