@@ -11,6 +11,9 @@ import { expect, test } from "./fixtures";
 
 const sizeProfiles = [
   { height: 600, name: "800x600", width: 800 },
+  // Windows 2560×1600 在 175% 显示缩放下的最大化 Tauri client area。
+  // 这类中间有效高度必须触发紧凑档，而不能只覆盖极矮或高度充足的两端。
+  { height: 866, name: "Windows 175% scaled 1462x866", width: 1462 },
   { height: 1080, name: "1920x1080", width: 1920 },
 ] as const;
 

@@ -420,7 +420,10 @@
 
 /* Must come after the width container rules: height compaction is a final layout
    decision, so it can override the narrow-container stacked fallback. */
-@media (max-height: 44rem) {
+/* 以视口高度而不是物理分辨率决定密度。56rem 覆盖高 DPI 缩放后常见的
+   866px client area：扣除桌面顶栏、页面标题和间距后，常规卡片密度已无法
+   保证所有模块同时完整可见。 */
+@media (max-height: 56rem) {
   .sh-overview {
     gap: var(--space-2);
   }

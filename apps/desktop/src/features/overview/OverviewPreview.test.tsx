@@ -92,7 +92,7 @@ it("fills the remaining shell height without a viewport-derived outer scroll ran
 
 it("keeps overview data modules in the page flow instead of creating nested scroll regions", () => {
   // DEV-66：概览不再用固定高度轨道把信息挤进模块内部滚动条。
-  expect(overviewCss).toMatch(/@media \(max-height:\s*44rem\)/);
+  expect(overviewCss).toMatch(/@media \(max-height:\s*56rem\)/);
   expect(overviewCss).not.toMatch(/\.sh-page-frame--fill \{[\s\S]*?height:\s*auto/);
   expect(overviewCss).not.toMatch(/\.sh-overview[^}]*overflow-y:\s*(auto|scroll)/);
   expect(overviewCss).not.toMatch(/\.sh-overview[^}]*max-height:\s*10rem/);

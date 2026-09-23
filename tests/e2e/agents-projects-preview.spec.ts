@@ -28,12 +28,12 @@ test("agent cards expose a clean title link, directory path, and status text", a
 
   await expect(page.getByRole("main").getByRole("heading", { name: "Agents", exact: true })).toBeVisible();
 
-  // Title link keeps the instance name as its whole accessible name.
-  const codexLink = page.getByRole("link", { name: "Codex CLI", exact: true });
+  // Agent 主展示遵循品牌 + 用户可理解类型，而不是裸 client_id/技术实例名。
+  const codexLink = page.getByRole("link", { name: "OpenAI · Terminal", exact: true });
   await expect(codexLink).toBeVisible();
 
   // Directory fact stays readable as its own element, not buried in the link.
-  await expect(page.getByText("Skill directory").first()).toBeVisible();
+  await expect(page.getByText("Path:").first()).toBeVisible();
   await expect(page.getByText("C:\\Users\\Developer\\AppData\\Local\\SkillHub\\agents\\codex\\skills")).toBeVisible();
 
   // Status is always icon/marker plus text, never color alone.
@@ -43,7 +43,7 @@ test("agent cards expose a clean title link, directory path, and status text", a
 
   // Custom agents keep edit and confirmed removal on the card.
   const reviewerCard = page.getByRole("listitem").filter({
-    has: page.getByRole("link", { name: "Release Reviewer", exact: true }),
+    has: page.getByText("D:\\Custom Agents\\Release Reviewer\\global skill directory", { exact: true }),
   });
   await expect(reviewerCard.getByRole("button", { name: "Edit" })).toBeVisible();
   await expect(reviewerCard.getByRole("button", { name: "Remove" })).toBeVisible();
