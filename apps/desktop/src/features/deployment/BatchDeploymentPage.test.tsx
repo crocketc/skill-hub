@@ -55,6 +55,24 @@ it("hides unavailable targets from the default selection list (DEV-11)", async (
   expect(screen.queryByLabelText("Read-only Agent")).not.toBeInTheDocument();
 });
 
+it("renders selectable deployment targets as compact cards with full-path hints (DEV-82)", async () => {
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  const targets = deploymentTargetsFixture().slice(0, 2);
+  const facade: BatchDeploymentFacade = {
+    listTargets: async () => targets,
+    preview: async () => ({ failures: [], plans: [] }),
+    commit: async () => [],
+  };
+  render(<I18nextProvider i18n={i18n}><MemoryRouter><BatchDeploymentPage facade={facade} skillIds={["skill-pdf"]} /></MemoryRouter></I18nextProvider>);
+
+  const grid = await screen.findByTestId("deployment-target-grid");
+  expect(grid).toHaveClass("sh-deployment-targets");
+  const cards = within(grid).getAllByTestId("deployment-target-card");
+  expect(cards).toHaveLength(2);
+  expect(cards[0]).toHaveClass("sh-deployment-target-card");
+  expect(within(cards[0]).getByTitle("C:\\Users\\demo\\.codex\\skills")).toHaveTextContent("C:\\Users\\demo\\.codex\\skills");
+});
+
 it("previews every selected Skill before explicitly committing a batch", async () => {
   const user = userEvent.setup();
   const i18n = await createSkillHubI18n(["zh-CN"]);

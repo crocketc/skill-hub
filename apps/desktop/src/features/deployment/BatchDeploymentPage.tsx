@@ -282,15 +282,22 @@ export function BatchDeploymentPage({ facade, skillIds, tracker, onCommitted, on
         </div>
         {/* DEV-11：不可用目标不进默认列表（用户裁定）——选择页只呈现
             「已发现且可写」的目标，与文案承诺一致。 */}
-        <div className="sh-workflow-targets">
-          {targets.filter((target) => target.available).map((target) => <label className="sh-workflow-target" key={target.id}>
-            <input aria-label={target.agentClientId ?? target.label} checked={selectedIds.includes(target.id)} onChange={(event) => {
-              setMode(undefined);
-              setPreview(undefined);
-              setSelectedIds((current) => event.target.checked ? [...current, target.id] : current.filter((id) => id !== target.id));
-            }} type="checkbox" />
-            <span><DeploymentTargetPresentation fallback={target.label} target={target} /><small>{displayPath(target.path)}</small></span>
-          </label>)}
+        <div className="sh-deployment-targets" data-testid="deployment-target-grid">
+          {targets.filter((target) => target.available).map((target) => {
+            const targetPath = displayPath(target.path);
+
+            return <label className="sh-deployment-target-card" data-testid="deployment-target-card" key={target.id}>
+              <input aria-label={target.agentClientId ?? target.label} checked={selectedIds.includes(target.id)} onChange={(event) => {
+                setMode(undefined);
+                setPreview(undefined);
+                setSelectedIds((current) => event.target.checked ? [...current, target.id] : current.filter((id) => id !== target.id));
+              }} type="checkbox" />
+              <span className="sh-deployment-target-card__body">
+                <DeploymentTargetPresentation fallback={target.label} target={target} />
+                <small title={targetPath}>{targetPath}</small>
+              </span>
+            </label>;
+          })}
         </div>
         {expandableLinks.length > 0 ? <div className="sh-deployment-flow__expand">
           <Button onClick={() => {

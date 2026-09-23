@@ -29,14 +29,12 @@
   margin: 0;
 }
 
-/* 长路径在目标与计划列表中换行，不产生根级横向滚动。 */
-.sh-deployment-flow__section .sh-workflow-target span,
-.sh-deployment-flow__section .sh-workflow-list__item span,
-.sh-deployment-flow__section .sh-workflow-list__item div {
+/* 计划列表的内容列可以收缩，避免长路径撑出流程面板。 */
+.sh-deployment-flow__section .sh-workflow-list__item > span,
+.sh-deployment-flow__section .sh-workflow-list__item > div {
   min-width: 0;
 }
 
-.sh-deployment-flow__section .sh-workflow-target small,
 .sh-deployment-flow__section .sh-workflow-list__item small {
   overflow-wrap: anywhere;
 }
@@ -86,12 +84,57 @@
   color: var(--ui-ink-muted);
 }
 
-/* 批量目标行对齐：复选框与名称/路径相邻，状态徽标靠右，
-   避免居中空洞导致勾选关联弱（审查 F3）。 */
-.sh-deployment-flow__section .sh-workflow-target {
-  justify-content: flex-start;
+/* DEV-82：目标采用紧凑的响应式卡片网格。专用类避免宽泛 span 规则
+   覆盖品牌标签的 inline-flex 布局，卡片在窄面板自动退为单列。 */
+.sh-deployment-targets {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr));
+  gap: var(--space-2);
 }
 
-.sh-deployment-flow__section .sh-workflow-target > span:first-of-type {
-  flex: 1 1 auto;
+.sh-deployment-target-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: var(--space-2);
+  min-width: 0;
+  padding: var(--space-3);
+  border: 1px solid var(--ui-border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--ui-surface);
+  cursor: pointer;
+}
+
+.sh-deployment-target-card:hover {
+  border-color: var(--ui-control-border-hover);
+}
+
+.sh-deployment-target-card:has(input:focus-visible) {
+  outline: 2px solid var(--ui-focus);
+  outline-offset: 2px;
+}
+
+.sh-deployment-target-card__body {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.sh-deployment-target-card .sh-agent-presentation,
+.sh-deployment-target-card .sh-brand-tag,
+.sh-deployment-target-card .sh-agent-presentation__kind {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.sh-deployment-target-card .sh-brand-tag__label,
+.sh-deployment-target-card .sh-agent-presentation__kind,
+.sh-deployment-target-card small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sh-deployment-target-card small {
+  color: var(--ui-ink-muted);
 }
