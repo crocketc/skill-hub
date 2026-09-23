@@ -6,7 +6,10 @@ import {
   LibraryViewModeProvider,
   LibraryViewModeSwitch,
 } from "../features/skills/libraryViewContext";
-import { applyWindowChromePlatformClass } from "../platform/windowChrome";
+import {
+  applyWindowChromePlatformClass,
+  observeWindowMaximizedClass,
+} from "../platform/windowChrome";
 import { BrandLogo } from "../ui/BrandLogo";
 import { IconButton } from "../ui/IconButton";
 import { WindowControls } from "../ui/WindowControls";
@@ -178,6 +181,30 @@ export function AppShell({ refreshSnapshot, snapshot, verification }: AppShellPr
   // 自绘窗口控制的平台适配只在挂载时做一次（macOS 红绿灯避让类标记）。
   useEffect(() => {
     applyWindowChromePlatformClass();
+  }, []);
+
+  // 原生最大化状态决定概览是否进入“无滚动、填满页面”的布局；普通窗口
+  // 保持自然文档流，允许页面滚动。异步订阅必须在卸载后自行释放。
+  useEffect(() => {
+    let disposed = false;
+    let stopObserving: (() => void) | undefined;
+
+    void observeWindowMaximizedClass()
+      .then((stop) => {
+        if (disposed) {
+          stop();
+        } else {
+          stopObserving = stop;
+        }
+      })
+      .catch(() => {
+        // 原生桥接不可用时已由适配层回落为普通窗口布局；不影响应用挂载。
+      });
+
+    return () => {
+      disposed = true;
+      stopObserving?.();
+    };
   }, []);
 
   const title = t(resolveRouteTitleKey(pathname));

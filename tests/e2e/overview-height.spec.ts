@@ -53,6 +53,17 @@ async function scrollMetrics(page: import("@playwright/test").Page) {
   });
 }
 
+async function setMaximizedMode(page: import("@playwright/test").Page, maximized: boolean) {
+  // 浏览器预览会由 AppShell 的非 Tauri 适配层清除状态类；先让挂载后的
+  // 异步适配完成，再模拟原生窗口观察器写入的最终状态。
+  await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
+  await page.evaluate((enabled) => {
+    document.documentElement.classList.toggle("sh-is-window-maximized", enabled);
+    window.dispatchEvent(new Event("resize"));
+  }, maximized);
+  await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
+}
+
 async function blockGeometry(
   page: import("@playwright/test").Page,
   selectors: readonly string[],
@@ -98,6 +109,7 @@ for (const profile of sizeProfiles) {
     // 关系投影落地后再测量，避免占位状态引入的几何竞态。
     await expect(page.getByRole("link", { name: "2 Unconfirmed relationship conflicts" })).toBeVisible();
     await expect(page.getByRole("img", { name: "Deployment relation count by agent" })).toBeVisible();
+    await setMaximizedMode(page, true);
 
     const metrics = await scrollMetrics(page);
     expect(
@@ -118,6 +130,7 @@ for (const profile of sizeProfiles) {
 
     await expect(page.getByRole("link", { name: "2 Unconfirmed relationship conflicts" })).toBeVisible();
     await expect(page.getByRole("img", { name: "Deployment relation count by agent" })).toBeVisible();
+    await setMaximizedMode(page, true);
 
     for (const block of await blockGeometry(page, overviewSelectors)) {
       expect(block.height, `${block.selector} must remain measurable`).toBeGreaterThan(0);
@@ -140,6 +153,7 @@ test("keeps every overview data module free of internal vertical scrolling (DEV-
   await page.goto("/__preview/overview");
 
   await expect(page.getByRole("img", { name: "Deployment relation count by agent" })).toBeVisible();
+  await setMaximizedMode(page, true);
 
   const scrollableModules = await page.locator(
     ".sh-overview, .sh-overview__metrics, .sh-overview__relations, " +
@@ -157,4 +171,46 @@ test("keeps every overview data module free of internal vertical scrolling (DEV-
   const metrics = await scrollMetrics(page);
   expect(metrics.scrollHeight).toBeLessThanOrEqual(metrics.clientHeight + tolerance);
   expect(metrics.documentScrollHeight).toBeLessThanOrEqual(metrics.documentClientHeight + tolerance);
+});
+
+test("keeps a windowed overview in its natural page flow instead of applying maximized compaction", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1462, height: 866 });
+  await page.goto("/__preview/overview");
+
+  await expect(page.getByRole("img", { name: "Deployment relation count by agent" })).toBeVisible();
+  await expect(page.locator("html")).not.toHaveClass(/sh-is-window-maximized/);
+
+  const metrics = await scrollMetrics(page);
+  expect(metrics.scrollHeight).toBeGreaterThan(metrics.clientHeight);
+  await expect(page.locator(".sh-overview__chart-figure")).toHaveCSS("min-height", "288px");
+});
+
+test("uses the maximized remainder for overview modules instead of leaving a blank lower page", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1462, height: 866 });
+  await page.goto("/__preview/overview");
+  await expect(page.getByRole("img", { name: "Deployment relation count by agent" })).toBeVisible();
+  await setMaximizedMode(page, true);
+
+  const geometry = await page.evaluate(() => {
+    const main = document.querySelector<HTMLElement>("#main-content");
+    const content = document.querySelector<HTMLElement>(".sh-overview__content-grid");
+    if (!main || !content) throw new Error("overview geometry is missing");
+    const mainRect = main.getBoundingClientRect();
+    const contentRect = content.getBoundingClientRect();
+    return {
+      distanceToBottom: mainRect.bottom - contentRect.bottom,
+      contentHeight: contentRect.height,
+      scrollHeight: main.scrollHeight,
+      clientHeight: main.clientHeight,
+    };
+  });
+
+  expect(geometry.scrollHeight).toBeLessThanOrEqual(geometry.clientHeight + tolerance);
+  expect(geometry.contentHeight).toBeGreaterThan(260);
+  // 内容区自身保留统一 20px 页面内边距；不应把它误判成未被模块使用的空白。
+  expect(geometry.distanceToBottom).toBeLessThanOrEqual(22);
 });

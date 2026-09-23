@@ -8,6 +8,7 @@ vi.mock("@tauri-apps/api/window", () => ({
 
 import {
   applyWindowChromePlatformClass,
+  observeWindowMaximizedClass,
   isMacOSPlatform,
   resolveWindowChrome,
 } from "./windowChrome";
@@ -186,6 +187,33 @@ describe("applyWindowChromePlatformClass", () => {
     } finally {
       vi.unstubAllGlobals();
     }
+  });
+});
+
+describe("observeWindowMaximizedClass", () => {
+  it("mirrors the native maximized state onto the document and follows resize changes", async () => {
+    const instance = createWindowInstance();
+    enableTauriRuntime(instance);
+    instance.isMaximized.mockResolvedValue(true);
+
+    const stop = await observeWindowMaximizedClass();
+    expect(document.documentElement).toHaveClass("sh-is-window-maximized");
+
+    instance.isMaximized.mockResolvedValue(false);
+    await instance.emitResize();
+    expect(document.documentElement).not.toHaveClass("sh-is-window-maximized");
+
+    stop();
+    expect(instance.unlistens[0]).toHaveBeenCalledTimes(1);
+  });
+
+  it("removes a stale maximized marker outside Tauri", async () => {
+    document.documentElement.classList.add("sh-is-window-maximized");
+
+    const stop = await observeWindowMaximizedClass();
+
+    expect(document.documentElement).not.toHaveClass("sh-is-window-maximized");
+    stop();
   });
 });
 

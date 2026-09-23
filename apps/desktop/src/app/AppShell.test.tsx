@@ -20,11 +20,13 @@ import { AppShell } from "./AppShell";
 const windowChromeMocks = vi.hoisted(() => ({
   chrome: null as unknown,
   applyPlatformClass: vi.fn(),
+  observeMaximizedClass: vi.fn(async () => vi.fn()),
 }));
 
 vi.mock("../platform/windowChrome", () => ({
   resolveWindowChrome: () => windowChromeMocks.chrome,
   applyWindowChromePlatformClass: windowChromeMocks.applyPlatformClass,
+  observeWindowMaximizedClass: windowChromeMocks.observeMaximizedClass,
 }));
 
 const completedScan: ScanResult = {
@@ -41,6 +43,7 @@ afterEach(() => {
   resetBackgroundScan();
   windowChromeMocks.chrome = null;
   windowChromeMocks.applyPlatformClass.mockClear();
+  windowChromeMocks.observeMaximizedClass.mockClear();
   sessionStorage.clear();
   relationshipsLibraryRows = 0;
 });
@@ -300,6 +303,7 @@ describe("AppShell", () => {
     await renderShell();
 
     expect(windowChromeMocks.applyPlatformClass).toHaveBeenCalledTimes(1);
+    expect(windowChromeMocks.observeMaximizedClass).toHaveBeenCalledTimes(1);
   });
 
   it("mounts the native window controls after the notification bell", async () => {

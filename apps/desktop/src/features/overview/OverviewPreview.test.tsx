@@ -91,8 +91,10 @@ it("fills the remaining shell height without a viewport-derived outer scroll ran
 });
 
 it("keeps overview data modules in the page flow instead of creating nested scroll regions", () => {
-  // DEV-66：概览不再用固定高度轨道把信息挤进模块内部滚动条。
-  expect(overviewCss).toMatch(/@media \(max-height:\s*56rem\)/);
+  // DEV-66：最大化布局由 Tauri 原生窗口状态驱动，不能把“窗口高度较小”
+  // 错当成最大化；普通窗口保留自然文档流。
+  expect(overviewCss).toMatch(/:root\.sh-is-window-maximized \.sh-overview/);
+  expect(overviewCss).not.toMatch(/@media \(max-height:\s*56rem\)/);
   expect(overviewCss).not.toMatch(/\.sh-page-frame--fill \{[\s\S]*?height:\s*auto/);
   expect(overviewCss).not.toMatch(/\.sh-overview[^}]*overflow-y:\s*(auto|scroll)/);
   expect(overviewCss).not.toMatch(/\.sh-overview[^}]*max-height:\s*10rem/);

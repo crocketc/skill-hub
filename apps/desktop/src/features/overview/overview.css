@@ -418,173 +418,226 @@
   }
 }
 
-/* Must come after the width container rules: height compaction is a final layout
-   decision, so it can override the narrow-container stacked fallback. */
-/* 以视口高度而不是物理分辨率决定密度。56rem 覆盖高 DPI 缩放后常见的
-   866px client area：扣除桌面顶栏、页面标题和间距后，常规卡片密度已无法
-   保证所有模块同时完整可见。 */
-@media (max-height: 56rem) {
-  .sh-overview {
-    gap: var(--space-2);
+/* DEV-66：紧凑填充布局只能由原生窗口“已最大化”状态触发，不能从 CSS
+   高度猜测。普通窗口保持上方的自然文档流和页面滚动，避免窗口化时出现
+   被压缩的内容与无意义留白。 */
+:root.sh-is-window-maximized .sh-overview {
+  display: grid;
+  height: 100%;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  gap: var(--space-2);
+}
+
+/* AppShell 的常规页面容器按内容高度排列。只有概览在原生最大化时需要
+   明确取得它剩余的整行高度，否则 `height: 100%` 会落在不定高度上，
+   既无法填满，也会重新生成根滚动范围。 */
+:root.sh-is-window-maximized .sh-app-shell__content:has(.sh-overview) {
+  align-content: stretch;
+  grid-template-rows: minmax(0, 1fr);
+}
+
+:root.sh-is-window-maximized .sh-overview > .sh-overview__metrics {
+  display: grid;
+  flex: none;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-auto-rows: auto;
+  gap: var(--space-1);
+}
+
+:root.sh-is-window-maximized .sh-overview .sh-overview__hero,
+:root.sh-is-window-maximized .sh-overview .sh-overview__stat {
+  min-height: 2.75rem;
+  padding: var(--space-1) var(--space-2);
+}
+
+:root.sh-is-window-maximized .sh-overview .sh-overview__stats {
+  display: contents;
+}
+
+:root.sh-is-window-maximized .sh-overview .sh-overview__stat-name,
+:root.sh-is-window-maximized .sh-overview .sh-overview__relation-name {
+  font-size: var(--font-size-xs);
+  line-height: 1.2;
+}
+
+:root.sh-is-window-maximized .sh-overview > .sh-overview__relations {
+  flex: none;
+  gap: var(--space-1);
+  padding: var(--space-2);
+}
+
+:root.sh-is-window-maximized .sh-overview .sh-overview__relations-list {
+  gap: var(--space-1);
+}
+
+:root.sh-is-window-maximized .sh-overview .sh-overview__relation {
+  min-height: 2.25rem;
+  padding: var(--space-1) var(--space-2);
+}
+
+:root.sh-is-window-maximized .sh-overview .sh-overview__relation-figure strong {
+  font-size: var(--font-size-sm);
+}
+
+:root.sh-is-window-maximized .sh-overview > .sh-overview__content-grid {
+  display: grid;
+  align-self: stretch;
+  height: 100%;
+  min-height: 0;
+  grid-template-columns: minmax(0, 1fr) minmax(18rem, 0.82fr);
+  grid-template-rows: minmax(0, 1fr);
+  gap: var(--space-2);
+}
+
+:root.sh-is-window-maximized .sh-overview .sh-overview__panel,
+:root.sh-is-window-maximized .sh-overview .sh-overview__rail,
+:root.sh-is-window-maximized .sh-overview .sh-overview__tag-panel,
+:root.sh-is-window-maximized .sh-overview .sh-overview__pending {
+  height: 100%;
+  min-height: 0;
+}
+
+:root.sh-is-window-maximized .sh-overview .sh-overview__panel {
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: var(--space-2);
+  padding: var(--space-2);
+}
+
+:root.sh-is-window-maximized .sh-overview .sh-overview__chart-figure {
+  min-height: 6rem;
+  height: 100%;
+}
+
+:root.sh-is-window-maximized .sh-overview .sh-overview__chart-canvas,
+:root.sh-is-window-maximized .sh-overview .sh-overview__chart-canvas--horizontal {
+  min-height: 0;
+  height: 100%;
+}
+
+:root.sh-is-window-maximized .sh-overview .sh-overview__panel > .sh-overview__details {
+  gap: var(--space-1);
+  padding: var(--space-2) 0 0;
+}
+
+:root.sh-is-window-maximized .sh-overview .sh-overview__rail {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
+  align-content: stretch;
+  gap: var(--space-2);
+}
+
+:root.sh-is-window-maximized .sh-overview .sh-overview__tag-panel,
+:root.sh-is-window-maximized .sh-overview .sh-overview__pending {
+  gap: var(--space-2);
+  padding: var(--space-2);
+}
+
+:root.sh-is-window-maximized .sh-overview .sh-overview__tag-chart {
+  height: clamp(3rem, 12vh, 7rem);
+}
+
+/* 右列在填充轨道内保留所有条目：减少控制项本身的默认最小点击高度和
+   段落外边距，而不是让卡片内容溢出到网格外。 */
+:root.sh-is-window-maximized .sh-overview .sh-overview__tag-details-scroll .sh-overview__chart-link {
+  min-height: 0;
+  padding: 0.25rem var(--space-1);
+  font-size: var(--font-size-xs);
+  line-height: 1.15;
+}
+
+:root.sh-is-window-maximized .sh-overview .sh-overview__pending-item {
+  min-height: 0;
+  padding: 0.25rem var(--space-1);
+  font-size: var(--font-size-xs);
+  line-height: 1.15;
+}
+
+:root.sh-is-window-maximized .sh-overview .sh-overview__pending-empty {
+  margin: 0;
+}
+
+:root.sh-is-window-maximized .sh-page-frame--fill > .sh-page-header .sh-page-header__description {
+  display: none;
+}
+
+@container workspace (max-width: 56rem) {
+  :root.sh-is-window-maximized .sh-overview > .sh-overview__content-grid {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr);
   }
 
-  .sh-overview .sh-overview__metrics {
-    grid-template-columns: repeat(5, minmax(0, 1fr));
-    grid-auto-rows: auto;
+  :root.sh-is-window-maximized .sh-overview .sh-overview__rail {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-rows: minmax(0, 1fr);
+  }
+}
+
+/* 极矮的最大化窗口仍然是最大化布局，只在这个原生状态下进一步压缩。
+   这里的高度查询只调节已选布局的密度，不再用它判断窗口是否最大化。 */
+@media (max-height: 42rem) {
+  :root.sh-is-window-maximized .sh-overview {
     gap: var(--space-1);
   }
 
-  .sh-overview .sh-overview__hero {
-    min-height: 2.5rem;
-    padding: var(--space-1) var(--space-2);
+  :root.sh-is-window-maximized .sh-overview .sh-overview__hero,
+  :root.sh-is-window-maximized .sh-overview .sh-overview__stat {
+    min-height: 2.25rem;
+    padding: var(--space-1);
   }
 
-  .sh-overview .sh-overview__stats {
-    display: contents;
-  }
-
-  .sh-overview .sh-overview__stat {
-    min-height: 2.5rem;
-    padding: var(--space-1) var(--space-2);
-  }
-
-  .sh-overview .sh-overview__stat-name,
-  .sh-overview .sh-overview__relation-name {
-    font-size: var(--font-size-xs);
-    line-height: 1.2;
-  }
-
-  .sh-overview .sh-overview__relations {
+  :root.sh-is-window-maximized .sh-overview > .sh-overview__relations,
+  :root.sh-is-window-maximized .sh-overview .sh-overview__panel,
+  :root.sh-is-window-maximized .sh-overview .sh-overview__tag-panel,
+  :root.sh-is-window-maximized .sh-overview .sh-overview__pending {
     gap: var(--space-1);
     padding: var(--space-1);
   }
 
-  .sh-overview .sh-overview__relations-list {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: var(--space-1);
-  }
-
-  .sh-overview .sh-overview__relation {
+  :root.sh-is-window-maximized .sh-overview .sh-overview__relation {
     min-height: 2rem;
     padding: var(--space-1);
   }
 
-  .sh-overview .sh-overview__relation-figure strong {
-    font-size: var(--font-size-sm);
+  :root.sh-is-window-maximized .sh-overview .sh-overview__relations-list {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
-  .sh-overview .sh-overview__content-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    grid-template-rows: auto;
-    gap: var(--space-2);
-  }
-
-  .sh-overview .sh-overview__panel,
-  .sh-overview .sh-overview__pending,
-  .sh-overview .sh-overview__details {
-    gap: var(--space-1);
-    padding: var(--space-2);
-  }
-
-  .sh-overview .sh-overview__panel {
-    grid-template-rows: auto auto auto;
-  }
-
-  .sh-overview .sh-overview__panel .sh-overview__section-head {
-    flex-direction: column;
-    align-items: stretch;
-  }
-
-  .sh-overview .sh-overview__panel .sh-overview__toggle {
-    align-self: flex-start;
-  }
-
-  .sh-overview .sh-overview__rail {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    grid-template-rows: auto;
-    gap: var(--space-2);
-  }
-
-  .sh-overview .sh-overview__panel .sh-overview__chart-list {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: var(--space-1);
-  }
-
-  .sh-overview .sh-overview__section-head {
-    align-items: center;
-    gap: var(--space-1);
-  }
-
-  .sh-overview .sh-overview__eyebrow {
+  :root.sh-is-window-maximized .sh-overview .sh-overview__eyebrow {
     display: none;
   }
 
-  .sh-overview .sh-overview__section-head h2,
-  .sh-overview .sh-overview__details h2,
-  .sh-overview .sh-overview__pending h2,
-  .sh-overview .sh-overview__tag-panel h2 {
+  :root.sh-is-window-maximized .sh-overview .sh-overview__section-head h2,
+  :root.sh-is-window-maximized .sh-overview .sh-overview__details h2,
+  :root.sh-is-window-maximized .sh-overview .sh-overview__pending h2,
+  :root.sh-is-window-maximized .sh-overview .sh-overview__tag-panel h2 {
     font-size: var(--font-size-sm);
     line-height: 1.2;
   }
 
-  .sh-overview .sh-overview__toggle {
-    gap: 0;
-    padding: 0.125rem;
-  }
-
-  .sh-overview .sh-overview__toggle-option span {
-    min-height: 1.5rem;
-    padding-inline: var(--space-2);
-    font-size: var(--font-size-xs);
-  }
-
-  .sh-overview .sh-overview__chart-figure {
+  :root.sh-is-window-maximized .sh-overview .sh-overview__chart-figure {
     min-height: 0;
     height: 3rem;
-  }
-
-  .sh-overview .sh-overview__chart-link,
-  .sh-overview .sh-overview__pending-item {
-    min-height: 0;
-    padding: var(--space-1) var(--space-2);
-    font-size: var(--font-size-xs);
-    line-height: 1.2;
-  }
-
-  .sh-overview .sh-overview__tag-panel {
-    gap: var(--space-1);
     padding: var(--space-1);
   }
 
-  .sh-overview .sh-overview__pending .sh-status-badge {
-    display: none;
-  }
-
-  .sh-overview .sh-overview__pending-list,
-  .sh-overview .sh-overview__tag-details-scroll .sh-overview__chart-list {
-    gap: var(--space-1);
-  }
-
-  .sh-overview .sh-overview__tag-layout {
-    grid-template-columns: minmax(4rem, 0.8fr) minmax(0, 1fr);
-    gap: var(--space-1);
-  }
-
-  .sh-overview .sh-overview__tag-chart {
+  :root.sh-is-window-maximized .sh-overview .sh-overview__tag-chart {
     height: 3rem;
   }
 
-  .sh-page-frame--fill > .sh-page-header .sh-page-header__description {
-    display: none;
-  }
-}
-
-/* 高度充足时不额外放大图表，给完整页面流保留自然的垂直余量。 */
-@media (min-height: 60rem) {
-  .sh-overview .sh-overview__chart-figure {
+  :root.sh-is-window-maximized .sh-overview .sh-overview__chart-link,
+  :root.sh-is-window-maximized .sh-overview .sh-overview__pending-item {
     min-height: 0;
+    padding: 0.25rem var(--space-1);
+    font-size: var(--font-size-xs);
+    line-height: 1.15;
+  }
+
+  :root.sh-is-window-maximized .sh-overview > .sh-overview__content-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  :root.sh-is-window-maximized .sh-overview .sh-overview__rail {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-rows: minmax(0, 1fr);
   }
 }
-
-/* DEV-66：数据模块保持页面流布局；短窗口通过紧凑档减少装饰性占用，避免
-   页面根和模块内部出现滚动条。 */
