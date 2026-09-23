@@ -182,7 +182,9 @@ export function SkillGraphCanvas({
       || initialViewportRef.current.x !== 0
       || initialViewportRef.current.y !== 0
       || initialViewportRef.current.zoom !== 1;
-    if (initialViewportWasProvided && !contentChanged) return;
+    // 切换回已有偏好的 Skill 同样会带来新的 projection 引用；这不是用户
+    // 请求重置视图，不能让自动 fit 覆盖其保存的缩放和拖拽布局。
+    if (preserveInitialViewport || (initialViewportWasProvided && !contentChanged)) return;
     fitToContent();
   }, [fitSignal, fitToContent, layoutSize, preserveInitialViewport]);
 
@@ -400,7 +402,7 @@ export function SkillGraphCanvas({
                   {t(`relationships.graph.nodeKind.${node.kind}`)}
                 </span>
                 {node.kind === "agent" && node.agent_client_id ? (
-                  <AgentIdentity agentId={node.agent_client_id} />
+                  <AgentIdentity agentId={node.agent_client_id} density="compact" />
                 ) : (
                   <span className="sh-graph-node__label">{label}</span>
                 )}

@@ -428,6 +428,10 @@ pub struct DeploymentTarget {
     pub agent_profile_id: Option<String>,
     #[serde(default)]
     pub shared_directory: bool,
+    /// Brand profiles that recognise the same physical shared directory.
+    /// Empty for ordinary Agent and project targets.
+    #[serde(default)]
+    pub shared_agent_brands: Vec<String>,
 }
 
 /// Lists registered logical targets without scanning arbitrary directories.

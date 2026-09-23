@@ -14,6 +14,13 @@ export interface RelationshipsReturnState {
   viewport?: { x: number; y: number; zoom: number };
   /** 每个 Skill 图谱的用户拖拽节点坐标。 */
   dragPositions?: Record<string, { x: number; y: number }>;
+  /** 图谱的纯展示开关；仅 graph scope 使用。字段可选以兼容已有会话快照。 */
+  display?: {
+    showSources?: boolean;
+    showAgentsProjects?: boolean;
+    showDirectories?: boolean;
+    showConflicts?: boolean;
+  };
   /** 列表滚动位置；仅治理/冲突 scope 使用。 */
   scrollY?: number;
   /** 选中的行/边 ID；仅治理 scope 使用。 */
@@ -29,6 +36,17 @@ export function relationshipsReturnStateStorageKey(
   entryKey: string,
 ): string {
   return `${STORAGE_PREFIX}:${scope}:${entryKey}`;
+}
+
+/** 图谱偏好属于 Skill；其它关系页仍按历史条目隔离。 */
+export function relationshipsReturnStateEntryKey(
+  scope: RelationshipsReturnStateScope,
+  locationEntryKey: string,
+  stableSkillId?: string | null,
+): string {
+  return scope === "graph" && stableSkillId?.trim()
+    ? `skill:${stableSkillId.trim()}`
+    : locationEntryKey;
 }
 
 function readStore(): Storage | null {
@@ -84,9 +102,10 @@ export interface RelationshipsReturnStateControl {
 /** 页面级 hook：图谱/治理/冲突页用它保存与恢复各自的非 URL 视图状态。 */
 export function useRelationshipsReturnState(
   scope: RelationshipsReturnStateScope,
+  stableSkillId?: string | null,
 ): RelationshipsReturnStateControl {
   const location = useLocation();
-  const entryKey = location.key;
+  const entryKey = relationshipsReturnStateEntryKey(scope, location.key, stableSkillId);
   const initialState = useMemo(
     () => readRelationshipsReturnState(scope, entryKey),
     [scope, entryKey],

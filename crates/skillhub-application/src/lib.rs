@@ -6,7 +6,7 @@ mod relationship_governance_batch;
 mod relationship_governance_service;
 mod update_service;
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -6089,27 +6089,64 @@ impl LocalApplicationFacade {
                 .agent_repository()
                 .load()?
                 .map(|snapshot| {
-                    snapshot
-                        .logical_targets
-                        .into_iter()
-                        .map(|target| {
-                            let modes = offered_modes(&effective_target_capabilities(
-                                &target.client_id,
-                                &host_capabilities,
-                            ));
-                            skillhub_core::api::DeploymentTarget {
-                                id: target.id,
-                                label: target.client_id.clone(),
-                                path: target.path,
-                                available: target.available,
-                                physical_id: target.physical_id,
-                                modes,
-                                agent_client_id: Some(target.client_id),
-                                agent_profile_id: Some(target.profile_id),
-                                shared_directory: target.shared_reference,
-                            }
-                        })
-                        .collect()
+                    let mut targets = Vec::new();
+                    let mut shared_by_physical_id = BTreeMap::new();
+                    for target in snapshot.logical_targets {
+                        if target.shared_reference {
+                            shared_by_physical_id
+                                .entry(target.physical_id.clone())
+                                .or_insert_with(Vec::new)
+                                .push(target);
+                            continue;
+                        }
+                        let modes = offered_modes(&effective_target_capabilities(
+                            &target.client_id,
+                            &host_capabilities,
+                        ));
+                        targets.push(skillhub_core::api::DeploymentTarget {
+                            id: target.id,
+                            label: target.client_id.clone(),
+                            path: target.path,
+                            available: target.available,
+                            physical_id: target.physical_id,
+                            modes,
+                            agent_client_id: Some(target.client_id),
+                            agent_profile_id: Some(target.profile_id),
+                            shared_directory: false,
+                            shared_agent_brands: Vec::new(),
+                        });
+                    }
+                    // One physical shared directory is one deployment target. A stable
+                    // canonical logical id preserves the planner's existing write path.
+                    for (_, mut recognized_targets) in shared_by_physical_id {
+                        recognized_targets.sort_by(|left, right| left.id.cmp(&right.id));
+                        let canonical = recognized_targets
+                            .first()
+                            .expect("shared directory group is never empty");
+                        let modes = offered_modes(&effective_target_capabilities(
+                            &canonical.client_id,
+                            &host_capabilities,
+                        ));
+                        let mut shared_agent_brands = recognized_targets
+                            .iter()
+                            .map(|target| target.profile_id.clone())
+                            .collect::<Vec<_>>();
+                        shared_agent_brands.sort();
+                        shared_agent_brands.dedup();
+                        targets.push(skillhub_core::api::DeploymentTarget {
+                            id: canonical.id.clone(),
+                            label: canonical.client_id.clone(),
+                            path: canonical.path.clone(),
+                            available: canonical.available,
+                            physical_id: canonical.physical_id.clone(),
+                            modes,
+                            agent_client_id: Some(canonical.client_id.clone()),
+                            agent_profile_id: None,
+                            shared_directory: true,
+                            shared_agent_brands,
+                        });
+                    }
+                    targets
                 })
                 .unwrap_or_default();
             targets.extend(
@@ -6129,6 +6166,7 @@ impl LocalApplicationFacade {
                             agent_client_id: None,
                             agent_profile_id: None,
                             shared_directory: false,
+                            shared_agent_brands: Vec::new(),
                         }
                     }),
             );

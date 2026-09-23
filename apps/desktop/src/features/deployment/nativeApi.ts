@@ -67,6 +67,7 @@ function toTarget(target: NativeDeploymentTarget): DeploymentTarget {
     agentClientId: target.agent_client_id ?? undefined,
     agentProfileId: target.agent_profile_id ?? undefined,
     sharedDirectory: target.shared_directory,
+    sharedAgentBrands: target.shared_agent_brands,
   };
 }
 

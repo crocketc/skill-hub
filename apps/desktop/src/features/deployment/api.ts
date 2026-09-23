@@ -40,6 +40,7 @@ export type DeploymentTarget = {
   agentClientId?: string;
   agentProfileId?: string;
   sharedDirectory?: boolean;
+  sharedAgentBrands?: string[];
 };
 export type DeploymentPlanTarget = {
   targetId: string;

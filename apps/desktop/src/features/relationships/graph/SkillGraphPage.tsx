@@ -52,6 +52,12 @@ const GRAPH_STATUSES: RelationshipGraphStatus[] = [
 
 const DEFAULT_VIEWPORT: GraphViewport = { x: 0, y: 0, zoom: 1 };
 
+function restoreGraphDisplay(
+  saved: { showSources?: boolean; showAgentsProjects?: boolean; showDirectories?: boolean; showConflicts?: boolean } | undefined,
+): GraphDisplaySettings {
+  return { ...ALL_DISPLAY_ON, ...saved };
+}
+
 export interface GraphUrlState {
   skillId: string | null;
   types: RelationshipType[];
@@ -243,7 +249,7 @@ export function SkillGraphPage({
   const urlState = useMemo(() => parseGraphSearchParams(searchParams), [searchParams]);
   const { skillId } = urlState;
   const queryClient = useQueryClient();
-  const returnState = useRelationshipsReturnState("graph");
+  const returnState = useRelationshipsReturnState("graph", skillId);
 
   const [viewport, setViewport] = useState<GraphViewport>(
     returnState.initialState?.viewport ?? DEFAULT_VIEWPORT,
@@ -251,7 +257,9 @@ export function SkillGraphPage({
   const [layoutSize, setLayoutSize] = useState<GraphLayoutSize>(CANVAS_SIZE);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
-  const [display, setDisplay] = useState<GraphDisplaySettings>(ALL_DISPLAY_ON);
+  const [display, setDisplay] = useState<GraphDisplaySettings>(
+    () => restoreGraphDisplay(returnState.initialState?.display),
+  );
   const [tagsDraft, setTagsDraft] = useState(urlState.tags.join(","));
   const [knownRevisions, setKnownRevisions] = useState<Record<string, string>>({});
   const [initialPick, setInitialPick] = useState<"pending" | "empty">("pending");
@@ -366,6 +374,14 @@ export function SkillGraphPage({
   const [dragPositions, setDragPositions] = useState<ForcePositions>(
     returnState.initialState?.dragPositions ?? {},
   );
+  const [hydratedStateKey, setHydratedStateKey] = useState(returnState.entryKey);
+  useEffect(() => {
+    const saved = returnState.initialState;
+    setViewport(saved?.viewport ?? DEFAULT_VIEWPORT);
+    setDragPositions(saved?.dragPositions ?? {});
+    setDisplay(restoreGraphDisplay(saved?.display));
+    setHydratedStateKey(returnState.entryKey);
+  }, [returnState.entryKey, returnState.initialState]);
   useEffect(() => {
     if (!projection) return;
     setDragPositions((current) => {
@@ -400,12 +416,12 @@ export function SkillGraphPage({
   }, []);
 
   const saveReturnState = useCallback(() => {
-    returnState.saveState({ viewport, dragPositions });
-  }, [dragPositions, returnState.saveState, viewport]);
+    returnState.saveState({ viewport, dragPositions, display });
+  }, [display, dragPositions, returnState.saveState, viewport]);
 
   useEffect(() => {
-    saveReturnState();
-  }, [dragPositions, saveReturnState, viewport]);
+    if (hydratedStateKey === returnState.entryKey) saveReturnState();
+  }, [hydratedStateKey, returnState.entryKey, saveReturnState]);
 
   const navigateToSkill = useCallback(
     (nextSkillId: string) => {

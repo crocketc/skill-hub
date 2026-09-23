@@ -54,7 +54,7 @@ it("uses the neutral monogram fallback for an unknown agent", () => {
   });
 });
 
-it("renders deployment names as brand-colored text tags without logo glyphs", () => {
+it("renders compact brand icons with full identities available on hover", () => {
   const { container } = render(
     <AgentDeploymentIcons
       agents={[
@@ -65,16 +65,15 @@ it("renders deployment names as brand-colored text tags without logo glyphs", ()
     />,
   );
 
-  expect(screen.getByText("Codex")).toHaveClass(
-    "sh-skill-table__agent-deployment-label",
+  expect(container.querySelectorAll(".sh-agent-presentation--compact img")).toHaveLength(2);
+  expect(screen.queryByText("Codex")).not.toBeInTheDocument();
+  expect(container.querySelector('[data-agent-id="codex"] .sh-agent-presentation')).toHaveAttribute(
+    "title",
+    "Codex · Agent",
   );
-  expect(screen.getByText("Claude")).toHaveClass(
-    "sh-skill-table__agent-deployment-label",
-  );
-  expect(container.querySelectorAll("svg")).toHaveLength(0);
 });
 
-it("renders Pi and DeepSeek Harness deployment names", () => {
+it("renders Pi and DeepSeek Harness compact brand icons", () => {
   render(
     <AgentDeploymentIcons
       agents={[
@@ -85,8 +84,7 @@ it("renders Pi and DeepSeek Harness deployment names", () => {
     />,
   );
 
-  expect(screen.getByText("Pi")).toBeVisible();
-  expect(screen.getByText("DeepSeek Harness")).toBeVisible();
+  expect(document.querySelectorAll(".sh-agent-presentation--compact img")).toHaveLength(2);
 });
 
 it("uses compact display names and summarizes agents after the seventh tag", () => {
@@ -101,7 +99,7 @@ it("uses compact display names and summarizes agents after the seventh tag", () 
   );
 
   expect(screen.queryByText("OpenAI Codex")).not.toBeInTheDocument();
-  expect(screen.getByText("Codex")).toBeVisible();
+  expect(container.querySelector('[data-agent-id="codex"] .sh-agent-presentation--compact img')).toBeVisible();
   expect(container.querySelectorAll("[data-agent-id]")).toHaveLength(7);
   expect(screen.getByText("+3")).toBeVisible();
   expect(container.querySelectorAll("[data-agent-row]")).toHaveLength(2);

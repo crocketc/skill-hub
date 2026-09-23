@@ -111,6 +111,7 @@ function AgentMark({ agent }: { agent: AgentDeployment }) {
         brand={agent.brand ?? agentBrandKey(agent.agentId ?? agent.id)}
         sharedDirectory={agent.sharedDirectory}
         brandClassName="sh-skill-table__agent-deployment-label"
+        density="compact"
       />
     </span>
   );

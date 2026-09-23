@@ -24,9 +24,10 @@ export interface ForceLayoutOptions {
   nodeHeight?: number;
 }
 
-const DEFAULT_NODE_WIDTH = 144;
-const DEFAULT_NODE_HEIGHT = 40;
-const NODE_GAP = 24;
+const DEFAULT_NODE_WIDTH = 136;
+const DEFAULT_NODE_HEIGHT = 56;
+// 边标签位于节点连线中段；把可读净空计入力导向约束，避免节点压住关系说明。
+const NODE_GAP = 72;
 
 function positiveDimension(value: number | undefined, fallback: number): number {
   return Number.isFinite(value) && (value ?? 0) > 0 ? value as number : fallback;
@@ -71,7 +72,7 @@ export function computeForceLayout(
   const verticalMargin = Math.min(height / 2, nodeHeight / 2 + NODE_GAP);
   const scale = Math.sqrt((width * height) / (CANVAS_SIZE.width * CANVAS_SIZE.height));
   const density = Math.sqrt(Math.max(1, projection.nodes.length) / 6);
-  const springLength = clamp(210 * scale / density, nodeWidth + NODE_GAP, Math.max(nodeWidth + NODE_GAP, Math.max(width, height) / 2));
+  const springLength = clamp(220 * scale / density, nodeWidth + NODE_GAP, Math.max(nodeWidth + NODE_GAP, Math.max(width, height) / 2));
   const minimumDistanceX = nodeWidth + NODE_GAP;
   const minimumDistanceY = nodeHeight + NODE_GAP;
 
@@ -109,9 +110,9 @@ export function computeForceLayout(
     })
     .filter((link): link is { from: number; to: number } => link !== null);
 
-  const REPULSION = 26000 * Math.max(0.55, scale) / Math.max(1, density);
+  const REPULSION = 52000 * Math.max(0.55, scale) / Math.max(1, density);
   const SPRING_LENGTH = springLength;
-  const SPRING_STRENGTH = 0.02 * Math.max(0.75, Math.min(1.5, density));
+  const SPRING_STRENGTH = 0.06 * Math.max(0.75, Math.min(1.5, density));
   const GRAVITY = 0.03;
   const MAX_STEP = 18;
 

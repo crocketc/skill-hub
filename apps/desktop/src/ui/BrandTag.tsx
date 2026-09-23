@@ -102,14 +102,16 @@ export interface BrandTagProps {
   /** Brand profile id (e.g. "openai") or raw display name (e.g. "Acme"). */
   brand: string;
   className?: string;
+  /** Constrained surfaces can retain the recognizable mark without text. */
+  iconOnly?: boolean;
 }
 
-export function BrandTag({ brand, className }: BrandTagProps): JSX.Element | null {
+export function BrandTag({ brand, className, iconOnly = false }: BrandTagProps): JSX.Element | null {
   const key = normalizeBrandKey(brand);
   if (!key) return null;
   const icon = brandIconSrc(brand);
   return (
-    <span className={["sh-brand-tag", brandColorClass(brand), className].filter(Boolean).join(" ")} title={brand.trim()}>
+    <span className={["sh-brand-tag", brandColorClass(brand), iconOnly ? "sh-brand-tag--icon-only" : "", className].filter(Boolean).join(" ")} title={brand.trim()}>
       {icon ? (
         <img
           alt=""
@@ -120,7 +122,8 @@ export function BrandTag({ brand, className }: BrandTagProps): JSX.Element | nul
           width={20}
         />
       ) : null}
-      {brandDisplayName(brand)}
+      {!icon && iconOnly ? <span aria-hidden="true" className="sh-brand-tag__fallback">{brandDisplayName(brand).slice(0, 1)}</span> : null}
+      {iconOnly ? null : <span className="sh-brand-tag__label">{brandDisplayName(brand)}</span>}
     </span>
   );
 }

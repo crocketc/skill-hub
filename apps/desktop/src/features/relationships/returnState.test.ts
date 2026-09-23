@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   clearRelationshipsReturnState,
   readRelationshipsReturnState,
+  relationshipsReturnStateEntryKey,
   relationshipsReturnStateStorageKey,
   saveRelationshipsReturnState,
 } from "./returnState";
@@ -11,6 +12,11 @@ afterEach(() => {
 });
 
 describe("relationships return state", () => {
+  it("uses a stable Skill key for graph state while other pages stay history-scoped", () => {
+    expect(relationshipsReturnStateEntryKey("graph", "entry-a", "skill-pdf")).toBe("skill:skill-pdf");
+    expect(relationshipsReturnStateEntryKey("governance", "entry-a", "skill-pdf")).toBe("entry-a");
+  });
+
   it("round-trips non-URL view state under a namespaced, entry-scoped key", () => {
     const state = {
       filters: { center: "pdf-reader" },

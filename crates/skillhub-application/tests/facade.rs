@@ -4403,21 +4403,53 @@ async fn deployment_target_query_includes_discovery_and_registered_project_targe
             supported_os: vec![OperatingSystem::Windows],
             client_presence: ClientPresence::Unknown,
         }],
-        logical_targets: vec![LogicalTarget {
-            id: "codex-global".into(),
-            profile_id: "codex".into(),
-            client_id: "codex.cli".into(),
-            scope: TargetScope::Global,
-            path: "C:/Users/demo/.codex/skills".into(),
-            marker: "SKILL.md".into(),
-            precedence: DirectoryPrecedence::Preferred,
-            shared_reference: false,
-            exists: true,
-            readable: true,
-            writable: true,
-            available: true,
-            physical_id: "fs:codex".into(),
-        }],
+        logical_targets: vec![
+            LogicalTarget {
+                id: "codex-global".into(),
+                profile_id: "codex".into(),
+                client_id: "codex.cli".into(),
+                scope: TargetScope::Global,
+                path: "C:/Users/demo/.codex/skills".into(),
+                marker: "SKILL.md".into(),
+                precedence: DirectoryPrecedence::Preferred,
+                shared_reference: false,
+                exists: true,
+                readable: true,
+                writable: true,
+                available: true,
+                physical_id: "fs:codex".into(),
+            },
+            LogicalTarget {
+                id: "shared-codex".into(),
+                profile_id: "codex".into(),
+                client_id: "codex.cli".into(),
+                scope: TargetScope::Global,
+                path: "C:/Users/demo/.agents/skills".into(),
+                marker: "SKILL.md".into(),
+                precedence: DirectoryPrecedence::Preferred,
+                shared_reference: true,
+                exists: true,
+                readable: true,
+                writable: true,
+                available: true,
+                physical_id: "fs:shared-agents".into(),
+            },
+            LogicalTarget {
+                id: "shared-claude".into(),
+                profile_id: "anthropic".into(),
+                client_id: "anthropic.claude-code".into(),
+                scope: TargetScope::Global,
+                path: "C:/Users/demo/.agents/skills".into(),
+                marker: "SKILL.md".into(),
+                precedence: DirectoryPrecedence::Preferred,
+                shared_reference: true,
+                exists: true,
+                readable: true,
+                writable: true,
+                available: true,
+                physical_id: "fs:shared-agents".into(),
+            },
+        ],
         physical_targets: Vec::new(),
     };
     database
@@ -4444,7 +4476,11 @@ async fn deployment_target_query_includes_discovery_and_registered_project_targe
     let AppQueryResult::DeploymentTargets(targets) = result else {
         panic!("expected deployment targets");
     };
-    assert_eq!(targets.len(), 2);
+    assert_eq!(
+        targets.len(),
+        3,
+        "one physical shared directory is one selectable target"
+    );
     assert_eq!(targets[0].id, "codex-global");
     // The advertised modes mirror the running environment's link support, so
     // derive the expectation from the same probe instead of hard-coding it.
@@ -4460,6 +4496,13 @@ async fn deployment_target_query_includes_discovery_and_registered_project_targe
     }
     assert_eq!(targets[0].modes, expected_modes);
     assert!(targets[0].available);
+    let shared_target = targets
+        .iter()
+        .find(|target| target.physical_id == "fs:shared-agents")
+        .expect("deduplicated shared target");
+    assert!(shared_target.shared_directory);
+    assert_eq!(shared_target.path, "C:/Users/demo/.agents/skills");
+    assert_eq!(shared_target.shared_agent_brands, ["anthropic", "codex"]);
     let project_target = targets
         .iter()
         .find(|target| target.id == project.id.to_string())

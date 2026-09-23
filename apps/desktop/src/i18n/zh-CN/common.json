@@ -666,6 +666,7 @@
     }
   },
   "agents": {
+    "sharedBrand": "共享",
     "eyebrow": "Agent 工作区",
     "title": "Agent",
     "description": "查看已发现的客户端和 Skill 目录事实。",

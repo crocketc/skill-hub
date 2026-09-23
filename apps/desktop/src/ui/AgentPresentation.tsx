@@ -4,6 +4,7 @@ import { brandDisplayName, BrandTag, BRAND_DISPLAY_NAMES } from "./BrandTag";
 import "./AgentPresentation.css";
 
 export type AgentKindKey = ClientKind | "unknown";
+export type AgentPresentationDensity = "full" | "compact";
 
 const KIND_KEYS: Record<AgentKindKey, string> = {
   cli: "agents.kind.cli",
@@ -119,6 +120,9 @@ export interface AgentPresentationProps {
   instance?: string;
   kinds?: readonly AgentKindKey[];
   sharedDirectory?: boolean;
+  /** Brands that recognise one physical shared directory. */
+  sharedAgentBrands?: readonly string[];
+  density?: AgentPresentationDensity;
 }
 
 export function AgentPresentation({
@@ -129,26 +133,29 @@ export function AgentPresentation({
   instance,
   kinds,
   sharedDirectory = false,
+  sharedAgentBrands = [],
+  density = "full",
 }: AgentPresentationProps): JSX.Element {
   const { t } = useTranslation();
   const resolvedKinds = normalizeAgentKinds(kinds, agentId, instance);
   const isShared = sharedDirectory || resolvedKinds.includes("shared_directory");
   const visibleKinds = isShared ? ["shared_directory" as const] : resolvedKinds;
   const resolvedBrand = brand?.trim() || agentBrandKey(agentId);
-  const labels = visibleKinds.map((kind) => agentKindLabel(kind, (key) => String(t(key as never))));
-  const brandLabel = isShared ? null : brandDisplayName(resolvedBrand);
+  const labels = isShared && sharedAgentBrands.length > 0
+    ? [...new Set(sharedAgentBrands)].map((candidate) => brandDisplayName(candidate))
+    : visibleKinds.map((kind) => agentKindLabel(kind, (key) => String(t(key as never))));
+  const brandLabel = isShared ? String(t("agents.sharedBrand")) : brandDisplayName(resolvedBrand);
   const accessibleName = [brandLabel, ...labels].filter(Boolean).join(" · ");
 
   return (
     <span
       aria-label={accessibleName}
-      className={["sh-agent-presentation", className].filter(Boolean).join(" ")}
+      className={["sh-agent-presentation", `sh-agent-presentation--${density}`, className].filter(Boolean).join(" ")}
       data-agent-kind={visibleKinds.join(",")}
+      title={accessibleName}
     >
-      {isShared ? null : <BrandTag brand={resolvedBrand} className={brandClassName} />}
-      <span className="sh-agent-presentation__kind" title={accessibleName}>
-        {labels.join("/")}
-      </span>
+      {isShared ? <span className="sh-agent-presentation__shared-brand">{brandLabel}</span> : <BrandTag brand={resolvedBrand} className={brandClassName} iconOnly={density === "compact"} />}
+      {density === "full" ? <span className="sh-agent-presentation__kind" title={accessibleName}>{labels.join("/")}</span> : null}
     </span>
   );
 }

@@ -13,6 +13,7 @@ export function DeploymentTargetPresentation({
       <AgentPresentation
         agentId={target.agentClientId}
         brand={target.agentProfileId}
+        sharedAgentBrands={target.sharedAgentBrands}
         sharedDirectory={target.sharedDirectory}
       />
     );

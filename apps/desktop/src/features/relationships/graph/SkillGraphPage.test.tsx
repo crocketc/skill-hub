@@ -558,6 +558,30 @@ describe("fact filters", () => {
 });
 
 describe("jumps and return state", () => {
+  it("restores each Skill graph viewport after switching away and returning", async () => {
+    const user = userEvent.setup();
+    await renderPage("/relationships?skillId=pdf-reader", { random: vi.fn(() => 0) });
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "PDF Reader" })).toBeVisible();
+    });
+    await user.click(screen.getByRole("button", { name: "Zoom in" }));
+    await waitFor(() => {
+      expect(sessionStorage.getItem("skillhub:relationships:return-state:graph:skill:pdf-reader"))
+        .toContain('"zoom":1.2');
+    });
+
+    await user.click(screen.getByRole("button", { name: "Pick another Skill" }));
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "Doc Reader" })).toBeVisible();
+    });
+    await user.click(screen.getByRole("button", { name: "test-back" }));
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "PDF Reader" })).toBeVisible();
+    });
+    expect(document.querySelector(".sh-graph-canvas__layer")).toHaveStyle("transform: translate(0px, 0px) scale(1.2)");
+  });
+
   it("carries from=relationships on outbound jumps and saves the return state", async () => {
     const { view } = await renderPage("/relationships?skillId=pdf-reader");
 

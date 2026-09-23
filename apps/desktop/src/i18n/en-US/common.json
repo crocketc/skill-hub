@@ -666,6 +666,7 @@
     }
   },
   "agents": {
+    "sharedBrand": "Shared",
     "eyebrow": "Agent workspace",
     "title": "Agents",
     "description": "Review discovered client and Skill directory facts.",

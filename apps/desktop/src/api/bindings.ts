@@ -839,6 +839,11 @@ export type DeploymentTarget = {
 	agent_client_id?: string | null,
 	agent_profile_id?: string | null,
 	shared_directory?: boolean,
+	/**
+	 *  Brand profiles that recognise the same physical shared directory.
+	 *  Empty for ordinary Agent and project targets.
+	 */
+	shared_agent_brands?: string[],
 };
 
 export type DesktopPreferences = {

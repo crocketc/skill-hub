@@ -16,3 +16,62 @@
   padding: 0 var(--space-1);
   white-space: nowrap;
 }
+
+.sh-agent-presentation__shared-brand {
+  align-items: center;
+  background: var(--ui-surface-subtle);
+  border: 1px solid var(--ui-border-subtle);
+  border-radius: 999px;
+  color: var(--ui-ink);
+  display: inline-flex;
+  font-size: var(--font-size-xs);
+  font-weight: 700;
+  min-height: 1.35rem;
+  padding: 0 var(--space-2);
+  white-space: nowrap;
+}
+
+.sh-agent-presentation--compact {
+  flex-wrap: nowrap;
+}
+
+.sh-agent-presentation--compact .sh-brand-tag {
+  flex: 0 0 auto;
+}
+
+.sh-agent-presentation--compact .sh-agent-presentation__shared-brand {
+  font-size: 0;
+  height: 1.35rem;
+  padding: 0;
+  width: 1.35rem;
+}
+
+.sh-agent-presentation--compact .sh-agent-presentation__shared-brand::after {
+  content: "↔";
+  font-size: 0.8rem;
+}
+
+.sh-agent-presentation--compact .sh-brand-tag--icon-only {
+  border-radius: 999px;
+  display: inline-grid;
+  height: 1.35rem;
+  overflow: hidden;
+  padding: 0.15rem;
+  place-items: center;
+  width: 1.35rem;
+}
+
+.sh-agent-presentation--compact .sh-brand-tag--icon-only .sh-brand-tag__icon {
+  height: 0.9rem;
+  width: 0.9rem;
+}
+
+.sh-agent-presentation--compact .sh-brand-tag__label {
+  display: none;
+}
+
+.sh-brand-tag__fallback {
+  font-size: 0.72rem;
+  font-weight: 700;
+  line-height: 1;
+}

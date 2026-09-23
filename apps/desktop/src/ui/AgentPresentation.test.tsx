@@ -68,3 +68,35 @@ it("keeps the shared directory as a standalone user-facing entity", async () => 
   expect(container.querySelector(".sh-brand-tag")).toBeNull();
   expect(screen.queryByText("agent-skills.shared-directory")).not.toBeInTheDocument();
 });
+
+it("makes one shared directory the brand and recognised vendors its visible types", async () => {
+  await renderPresentation({
+    agentId: "agent-skills.shared-directory",
+    sharedDirectory: true,
+    sharedAgentBrands: ["anthropic", "codex"],
+  });
+
+  expect(screen.getByText("共享")).toBeVisible();
+  expect(screen.getByText("Claude/Codex")).toBeVisible();
+});
+
+it("uses an icon-only compact presentation while retaining the full accessible identity", async () => {
+  const { container } = await renderPresentation({
+    agentId: "anthropic.claude-code",
+    brand: "Claude",
+    kinds: ["cli"],
+    density: "compact",
+  });
+
+  expect(container.querySelector(".sh-agent-presentation--compact img")).toBeVisible();
+  expect(screen.queryByText("Claude")).not.toBeInTheDocument();
+  expect(screen.queryByText("终端")).not.toBeInTheDocument();
+  expect(container.querySelector(".sh-agent-presentation--compact")).toHaveAttribute(
+    "aria-label",
+    "Claude · 终端",
+  );
+  expect(container.querySelector(".sh-agent-presentation--compact")).toHaveAttribute(
+    "title",
+    "Claude · 终端",
+  );
+});
