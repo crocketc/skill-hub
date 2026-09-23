@@ -14,6 +14,7 @@ import {
 } from "echarts/components";
 import { SVGRenderer } from "echarts/renderers";
 import type { TagDistributionChartRuntimeProps } from "./TagDistributionChart";
+import { observeChartContainerResize } from "./chartContainerResize";
 
 use([AriaComponent, PieChart, SVGRenderer, TooltipComponent]);
 
@@ -87,10 +88,12 @@ export default function TagDistributionChartRuntime(
       }
     });
 
-    const resize = () => chart.resize();
-    window.addEventListener("resize", resize);
+    const stopObservingResize = observeChartContainerResize(
+      chartRef.current,
+      () => chart.resize(),
+    );
     return () => {
-      window.removeEventListener("resize", resize);
+      stopObservingResize();
       chart.dispose();
       instanceRef.current = null;
     };

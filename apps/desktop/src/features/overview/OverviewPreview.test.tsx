@@ -100,3 +100,9 @@ it("keeps overview data modules in the page flow instead of creating nested scro
   expect(overviewCss).not.toMatch(/\.sh-overview[^}]*max-height:\s*10rem/);
   expect(overviewCss).toMatch(/\.sh-overview__tag-details-scroll\s*\{[\s\S]*?overflow-y:\s*visible/);
 });
+
+it("uses four equal compact metric tracks when the maximized hero occupies its own row", () => {
+  expect(overviewCss).toMatch(
+    /:root\.sh-is-window-maximized \.sh-overview > \.sh-overview__metrics\s*\{[\s\S]*grid-template-columns:\s*repeat\(4, minmax\(0, 1fr\)\)/,
+  );
+});

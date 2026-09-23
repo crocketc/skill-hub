@@ -61,7 +61,19 @@ async function setMaximizedMode(page: import("@playwright/test").Page, maximized
     document.documentElement.classList.toggle("sh-is-window-maximized", enabled);
     window.dispatchEvent(new Event("resize"));
   }, maximized);
-  await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
+  // 最大化样式先完成一帧布局，ResizeObserver 再在下一帧让 ECharts 重测。
+  await page.evaluate(() => new Promise<void>((resolve) => {
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+  }));
+  await page.waitForFunction(() =>
+    [
+      ".sh-overview__chart-canvas",
+      ".sh-overview__tag-chart-canvas",
+    ].every((selector) => {
+      const canvas = document.querySelector<HTMLElement>(selector);
+      return canvas !== null && canvas.scrollHeight <= canvas.clientHeight + 2;
+    }),
+  );
 }
 
 async function blockGeometry(
@@ -193,6 +205,8 @@ test("uses the maximized remainder for overview modules instead of leaving a bla
   await page.setViewportSize({ width: 1462, height: 866 });
   await page.goto("/__preview/overview");
   await expect(page.getByRole("img", { name: "Deployment relation count by agent" })).toBeVisible();
+  await expect(page.locator(".sh-overview__chart-figure")).toBeVisible();
+  await expect(page.locator(".sh-overview__tag-chart")).toBeVisible();
   await setMaximizedMode(page, true);
 
   const geometry = await page.evaluate(() => {
@@ -213,4 +227,50 @@ test("uses the maximized remainder for overview modules instead of leaving a bla
   expect(geometry.contentHeight).toBeGreaterThan(260);
   // 内容区自身保留统一 20px 页面内边距；不应把它误判成未被模块使用的空白。
   expect(geometry.distanceToBottom).toBeLessThanOrEqual(22);
+});
+
+test("fills the maximized metric band and keeps chart SVGs inside their own cards", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1462, height: 866 });
+  await page.goto("/__preview/overview");
+  await expect(page.getByRole("img", { name: "Deployment relation count by agent" })).toBeVisible();
+  await setMaximizedMode(page, true);
+
+  const geometry = await page.evaluate(() => {
+    const metrics = document.querySelector<HTMLElement>(".sh-overview__metrics");
+    const stats = [...document.querySelectorAll<HTMLElement>(".sh-overview__stat")];
+    const chartPairs = [
+      [".sh-overview__chart-figure", ".sh-overview__chart-canvas svg"],
+      [".sh-overview__tag-chart", ".sh-overview__tag-chart-canvas svg"],
+    ] as const;
+    if (!metrics || stats.length === 0) throw new Error("overview geometry is missing");
+    const metricsRect = metrics.getBoundingClientRect();
+    const lastStatRect = stats.at(-1)?.getBoundingClientRect();
+    if (!lastStatRect) throw new Error("compact metrics are missing");
+    return {
+      metricRightGap: metricsRect.right - lastStatRect.right,
+      chartBounds: chartPairs.map(([containerSelector, svgSelector]) => {
+        const container = document.querySelector<HTMLElement>(containerSelector);
+        const svg = document.querySelector<SVGElement>(svgSelector);
+        if (!container || !svg) throw new Error(`missing ${containerSelector}`);
+        const outer = container.getBoundingClientRect();
+        const inner = svg.getBoundingClientRect();
+        return {
+          bottomOverflow: inner.bottom - outer.bottom,
+          leftOverflow: outer.left - inner.left,
+          rightOverflow: inner.right - outer.right,
+          topOverflow: outer.top - inner.top,
+        };
+      }),
+    };
+  });
+
+  expect(geometry.metricRightGap).toBeLessThanOrEqual(tolerance);
+  for (const bounds of geometry.chartBounds) {
+    expect(bounds.leftOverflow).toBeLessThanOrEqual(tolerance);
+    expect(bounds.topOverflow).toBeLessThanOrEqual(tolerance);
+    expect(bounds.rightOverflow).toBeLessThanOrEqual(tolerance);
+    expect(bounds.bottomOverflow).toBeLessThanOrEqual(tolerance);
+  }
 });

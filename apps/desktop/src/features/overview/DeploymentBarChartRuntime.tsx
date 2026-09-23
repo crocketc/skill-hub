@@ -16,6 +16,7 @@ import {
 } from "echarts/components";
 import { SVGRenderer } from "echarts/renderers";
 import type { DeploymentBarChartRuntimeProps } from "./DeploymentBarChart";
+import { observeChartContainerResize } from "./chartContainerResize";
 
 use([AriaComponent, BarChart, GridComponent, SVGRenderer, TooltipComponent]);
 
@@ -149,14 +150,13 @@ export default function DeploymentBarChartRuntime(
       }
     });
 
-    const resize = () => {
-      chart.resize();
-    };
-
-    window.addEventListener("resize", resize);
+    const stopObservingResize = observeChartContainerResize(
+      chartRef.current,
+      () => chart.resize(),
+    );
 
     return () => {
-      window.removeEventListener("resize", resize);
+      stopObservingResize();
       chart.dispose();
       instanceRef.current = null;
     };
