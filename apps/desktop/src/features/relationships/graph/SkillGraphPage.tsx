@@ -374,11 +374,18 @@ export function SkillGraphPage({
   const [dragPositions, setDragPositions] = useState<ForcePositions>(
     returnState.initialState?.dragPositions ?? {},
   );
+  // 拖动期间冻结其余节点，避免每个 pointermove 都重新松弛整张图，
+  // 导致节点跳动或画布出现旧位置与新位置交替绘制的空白感。
+  const [dragLayoutSnapshot, setDragLayoutSnapshot] = useState<ForcePositions | null>(null);
+  const [draggingNodeId, setDraggingNodeId] = useState<string | null>(null);
+  const layoutPositionsRef = useRef<ForcePositions | null>(null);
   const [hydratedStateKey, setHydratedStateKey] = useState(returnState.entryKey);
   useEffect(() => {
     const saved = returnState.initialState;
     setViewport(saved?.viewport ?? DEFAULT_VIEWPORT);
     setDragPositions(saved?.dragPositions ?? {});
+    setDragLayoutSnapshot(null);
+    setDraggingNodeId(null);
     setDisplay(restoreGraphDisplay(saved?.display));
     setHydratedStateKey(returnState.entryKey);
   }, [returnState.entryKey, returnState.initialState]);
@@ -392,21 +399,47 @@ export function SkillGraphPage({
   const layoutPositions = useMemo(
     () => {
       if (!projection) return null;
+      if (dragLayoutSnapshot) {
+        const next = { ...dragLayoutSnapshot };
+        if (draggingNodeId && dragPositions[draggingNodeId]) {
+          next[draggingNodeId] = dragPositions[draggingNodeId];
+        }
+        return next;
+      }
       const options: ForceLayoutOptions = {
         overrides: dragPositions,
+        nodeWidth: projection.nodes.length <= 3 ? 68 : 136,
+        nodeHeight: projection.nodes.length <= 3 ? 40 : 56,
         width: layoutSize.width,
         height: layoutSize.height,
       };
       return computeForceLayout(projection, options);
     },
-    [projection, dragPositions, layoutSize],
+    [projection, dragLayoutSnapshot, draggingNodeId, dragPositions, layoutSize],
   );
+  useEffect(() => {
+    layoutPositionsRef.current = layoutPositions;
+  }, [layoutPositions]);
+  useEffect(() => {
+    setDragLayoutSnapshot(null);
+    setDraggingNodeId(null);
+  }, [projection, layoutSize]);
   const layoutProjection = useMemo(
     () => (projection && layoutPositions ? applyPositions(projection, layoutPositions) : null),
     [projection, layoutPositions],
   );
   const handleNodeDrag = useCallback((nodeId: string, x: number, y: number) => {
     setDragPositions((current) => ({ ...current, [nodeId]: { x, y } }));
+    setDragLayoutSnapshot((current) => current ? { ...current, [nodeId]: { x, y } } : current);
+  }, []);
+
+  const handleNodeDragStart = useCallback((nodeId: string) => {
+    setDragLayoutSnapshot(layoutPositionsRef.current);
+    setDraggingNodeId(nodeId);
+  }, []);
+
+  const handleNodeDragEnd = useCallback(() => {
+    setDraggingNodeId(null);
   }, []);
 
   const handleCanvasSizeChange = useCallback((next: GraphLayoutSize) => {
@@ -644,6 +677,8 @@ export function SkillGraphPage({
           // 否则返回状态会在首次 ResizeObserver 回报时被覆盖。
           fitSignal={projection}
           onNodeDrag={handleNodeDrag}
+          onNodeDragEnd={handleNodeDragEnd}
+          onNodeDragStart={handleNodeDragStart}
           preserveInitialViewport={Boolean(returnState.initialState?.viewport)}
           projection={layoutProjection ?? projection}
           resolveSkillName={resolveSkillName}

@@ -7,6 +7,7 @@ import {
   ALL_DISPLAY_ON,
   CANVAS_SIZE,
   type GraphFactFilters,
+  type GraphProjection,
   projectGraph,
 } from "./graphProjection";
 import { SkillGraphCanvas, type GraphViewport } from "./SkillGraphCanvas";
@@ -120,6 +121,15 @@ function graphFixture(): SkillRelationshipGraphResult {
   };
 }
 
+function sparseProjection(): GraphProjection {
+  const graph = graphFixture();
+  const nodes = graph.nodes.filter((candidate) =>
+    ["n-center", "n-agent-1", "n-dir-1"].includes(candidate.node_id),
+  );
+  const edges = graph.edges.filter((candidate) => ["e2", "e3"].includes(candidate.edge_id));
+  return projectGraph({ ...graph, nodes, edges }, NO_FILTERS, ALL_DISPLAY_ON);
+}
+
 const NO_FILTERS: GraphFactFilters = { relationshipTypes: [], statuses: [] };
 
 async function renderCanvas(options: {
@@ -128,13 +138,17 @@ async function renderCanvas(options: {
   onSelectEdge?: (edgeId: string | null) => void;
   onSelectNode?: (nodeId: string | null) => void;
   onViewportChange?: (viewport: GraphViewport) => void;
+  onNodeDrag?: (nodeId: string, x: number, y: number) => void;
+  onNodeDragStart?: (nodeId: string) => void;
+  onNodeDragEnd?: (nodeId: string) => void;
   layoutSize?: GraphLayoutSize;
+  projection?: GraphProjection;
   selectedEdgeId?: string | null;
   selectedNodeId?: string | null;
   viewport?: GraphViewport;
 }) {
   const i18n = await createSkillHubI18n(["en-US"]);
-  const projection = projectGraph(graphFixture(), NO_FILTERS, ALL_DISPLAY_ON);
+  const projection = options.projection ?? projectGraph(graphFixture(), NO_FILTERS, ALL_DISPLAY_ON);
   const viewport = options.viewport ?? { x: 0, y: 0, zoom: 1 };
   render(
     <I18nextProvider i18n={i18n}>
@@ -144,6 +158,9 @@ async function renderCanvas(options: {
         onSelectEdge={options.onSelectEdge ?? (() => {})}
         onSelectNode={options.onSelectNode ?? (() => {})}
         onViewportChange={options.onViewportChange ?? (() => {})}
+        onNodeDrag={options.onNodeDrag}
+        onNodeDragStart={options.onNodeDragStart}
+        onNodeDragEnd={options.onNodeDragEnd}
         layoutSize={options.layoutSize}
         projection={projection}
         selectedEdgeId={options.selectedEdgeId ?? null}
@@ -173,6 +190,32 @@ function ControlledCanvas({ initialViewport }: { initialViewport: GraphViewport 
 }
 
 describe("SkillGraphCanvas interaction", () => {
+  it("marks sparse graphs for compact node presentation", async () => {
+    await renderCanvas({ projection: sparseProjection() });
+
+    expect(screen.getByTestId("skill-graph-surface")).toHaveClass(
+      "sh-graph-canvas__surface--sparse",
+    );
+  });
+
+  it("exposes a stable node-drag lifecycle and prevents text selection", async () => {
+    const onNodeDrag = vi.fn();
+    const onNodeDragStart = vi.fn();
+    const onNodeDragEnd = vi.fn();
+    await renderCanvas({ onNodeDrag, onNodeDragStart, onNodeDragEnd });
+
+    const node = screen.getByRole("button", { name: /pdf-reader/ });
+    fireEvent.pointerDown(node, { pointerId: 3, clientX: 100, clientY: 100 });
+    expect(onNodeDragStart).toHaveBeenCalledWith("n-center");
+    expect(screen.getByTestId("skill-graph-surface")).toHaveClass("is-dragging");
+
+    fireEvent.pointerMove(node, { pointerId: 3, clientX: 130, clientY: 120 });
+    expect(onNodeDrag).toHaveBeenCalled();
+    fireEvent.pointerUp(node, { pointerId: 3, clientX: 130, clientY: 120 });
+    expect(onNodeDragEnd).toHaveBeenCalledWith("n-center");
+    expect(screen.getByTestId("skill-graph-surface")).not.toHaveClass("is-dragging");
+  });
+
   it("applies control clicks to the rendered viewport transform", async () => {
     const i18n = await createSkillHubI18n(["en-US"]);
     render(

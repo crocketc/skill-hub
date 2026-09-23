@@ -366,10 +366,43 @@
   min-height: 0;
   overflow: hidden;
   position: relative;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .sh-graph-canvas__surface:active {
   cursor: grabbing;
+}
+
+.sh-graph-canvas__surface.is-dragging {
+  cursor: grabbing;
+}
+
+/* 少节点图谱不应把少量内容放大成几张大卡片；保持关系线和标签可读，
+   将节点视觉尺寸降到默认的一半，并让紧凑 Agent 徽标同步收缩。 */
+.sh-graph-canvas__surface--sparse .sh-graph-node {
+  inline-size: min(4.25rem, calc(100% - 1rem));
+  max-inline-size: 4.25rem;
+  padding: 0.25rem 0.35rem;
+}
+
+.sh-graph-canvas__surface--sparse .sh-graph-node__kind {
+  font-size: 0.55rem;
+}
+
+.sh-graph-canvas__surface--sparse .sh-graph-node__label {
+  font-size: 0.7rem;
+}
+
+.sh-graph-canvas__surface--sparse .sh-agent-presentation--compact .sh-brand-tag--icon-only {
+  height: 0.8rem;
+  width: 0.8rem;
+}
+
+.sh-graph-canvas__surface--sparse .sh-agent-presentation--compact .sh-brand-tag__icon {
+  height: 0.55rem;
+  width: 0.55rem;
 }
 
 .sh-graph-canvas__layer {

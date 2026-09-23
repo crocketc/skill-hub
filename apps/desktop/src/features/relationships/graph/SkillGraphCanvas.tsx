@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, type PointerEvent as ReactPointerEvent, type MouseEvent as ReactMouseEvent, type ReactNode, type WheelEvent as ReactWheelEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type MouseEvent as ReactMouseEvent, type ReactNode, type WheelEvent as ReactWheelEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { displayPath } from "../../../platform/displayPath";
 import { AgentIdentity, readableAgentIdName } from "../../skills/AgentDeploymentIcons";
@@ -28,6 +28,8 @@ export interface SkillGraphCanvasProps {
   onViewportChange: (viewport: GraphViewport) => void;
   /** DEV-24：节点拖拽落点回调（画布坐标）；缺省时节点不可拖拽。 */
   onNodeDrag?: (nodeId: string, x: number, y: number) => void;
+  onNodeDragStart?: (nodeId: string) => void;
+  onNodeDragEnd?: (nodeId: string) => void;
   projection: GraphProjection;
   selectedEdgeId: string | null;
   selectedNodeId: string | null;
@@ -91,6 +93,8 @@ export function SkillGraphCanvas({
   onCanvasSizeChange,
   onFocusSkill,
   onNodeDrag,
+  onNodeDragEnd,
+  onNodeDragStart,
   onSelectEdge,
   onSelectNode,
   onViewportChange,
@@ -108,6 +112,7 @@ export function SkillGraphCanvas({
   const initialFitSignalRef = useRef(fitSignal);
   const dragState = useRef<{ pointerId: number; startX: number; startY: number; originX: number; originY: number; moved: boolean } | null>(null);
   const nodeDragRef = useRef<{ nodeId: string; pointerId: number; startX: number; startY: number; originX: number; originY: number; moved: boolean } | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
 
   viewportRef.current = viewport;
 
@@ -160,9 +165,20 @@ export function SkillGraphCanvas({
       maxX = Math.max(maxX, projected.x);
       maxY = Math.max(maxY, projected.y);
     }
+    const sparse = projection.nodes.length <= 3;
+    const nodeWidth = sparse ? 68 : 136;
+    const nodeHeight = sparse ? 40 : 56;
+    minX -= nodeWidth / 2;
+    maxX += nodeWidth / 2;
+    minY -= nodeHeight / 2;
+    maxY += nodeHeight / 2;
     const contentWidth = Math.max(1, maxX - minX);
     const contentHeight = Math.max(1, maxY - minY);
-    const zoom = clampZoom(Math.min(width / (contentWidth + 160), height / (contentHeight + 160)));
+    const zoom = clampZoom(Math.min(
+      width / (contentWidth + 160),
+      height / (contentHeight + 160),
+      sparse ? 1 : MAX_ZOOM,
+    ));
     commitViewport({
       x: (width - contentWidth * zoom) / 2 - minX * zoom,
       y: (height - contentHeight * zoom) / 2 - minY * zoom,
@@ -195,6 +211,7 @@ export function SkillGraphCanvas({
 
   const handleNodePointerDown = (event: ReactPointerEvent<HTMLElement>, nodeId: string) => {
     if (!onNodeDrag) return;
+    event.preventDefault();
     event.stopPropagation();
     nodeDragRef.current = {
       nodeId,
@@ -205,6 +222,8 @@ export function SkillGraphCanvas({
       originY: projection.nodes.find((projected) => projected.node.node_id === nodeId)?.y ?? 0,
       moved: false,
     };
+    setIsDragging(true);
+    onNodeDragStart?.(nodeId);
     event.currentTarget.setPointerCapture?.(event.pointerId);
   };
 
@@ -223,13 +242,24 @@ export function SkillGraphCanvas({
     const drag = nodeDragRef.current;
     if (drag && drag.pointerId === event.pointerId) {
       // 拖拽过的节点释放前清除记录：随后的 click 落回选中语义。
+      setIsDragging(false);
+      onNodeDragEnd?.(drag.nodeId);
       if (!drag.moved) nodeDragRef.current = null;
     }
+  };
+
+  const handleNodePointerCancel = (event: ReactPointerEvent<HTMLElement>) => {
+    const drag = nodeDragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    setIsDragging(false);
+    onNodeDragEnd?.(drag.nodeId);
+    nodeDragRef.current = null;
   };
 
   const handlePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
     const target = event.target as Element;
     if (target.closest(".sh-graph-node, .sh-graph-edge__hit, .sh-graph-canvas__controls, .sh-graph__legend")) return;
+    event.preventDefault();
     dragState.current = {
       pointerId: event.pointerId,
       startX: event.clientX,
@@ -238,6 +268,7 @@ export function SkillGraphCanvas({
       originY: viewport.y,
       moved: false,
     };
+    setIsDragging(true);
     event.currentTarget.setPointerCapture?.(event.pointerId);
   };
 
@@ -255,6 +286,14 @@ export function SkillGraphCanvas({
   const handlePointerUp = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (dragState.current?.pointerId === event.pointerId) {
       dragState.current = null;
+      setIsDragging(false);
+    }
+  };
+
+  const handlePointerCancel = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (dragState.current?.pointerId === event.pointerId) {
+      dragState.current = null;
+      setIsDragging(false);
     }
   };
 
@@ -270,11 +309,16 @@ export function SkillGraphCanvas({
     <div className="sh-graph-canvas" role="group" aria-label={t("relationships.graph.canvasLabel")}>
       <div
         ref={surfaceRef}
-        className="sh-graph-canvas__surface"
+        className={[
+          "sh-graph-canvas__surface",
+          projection.nodes.length <= 3 ? "sh-graph-canvas__surface--sparse" : "",
+          isDragging ? "is-dragging" : "",
+        ].filter(Boolean).join(" ")}
         data-testid="skill-graph-surface"
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerCancel}
         onWheel={handleWheel}
         onClick={handleSurfaceClick}
       >
@@ -396,6 +440,7 @@ export function SkillGraphCanvas({
                 }}
                 onPointerMove={onNodeDrag ? handleNodePointerMove : undefined}
                 onPointerUp={onNodeDrag ? handleNodePointerUp : undefined}
+                onPointerCancel={onNodeDrag ? handleNodePointerCancel : undefined}
                 onClick={handleClick}
               >
                 <span aria-hidden="true" className="sh-graph-node__kind">
