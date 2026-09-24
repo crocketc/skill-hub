@@ -1,8 +1,6 @@
 use crate::agent::{CustomAgent, DiscoverySnapshot};
 use crate::app_update::{ApplicationUpdate, CheckApplicationUpdate, UpdateState};
-use crate::catalog::{
-    DeclaredRequirementFact, InvocationPolicyFact, SkillLifecycle,
-};
+use crate::catalog::{DeclaredRequirementFact, InvocationPolicyFact, SkillLifecycle};
 use crate::check::{
     CheckKind, CheckResult as DomainCheckResult, CheckState, Finding, FindingDisposition,
 };
@@ -794,6 +792,8 @@ pub struct GetProjectAssemblyPlan {
 pub enum AppQuery {
     #[serde(rename = "check_application_update")]
     CheckApplicationUpdate(CheckApplicationUpdate),
+    #[serde(rename = "query_open_import_batch")]
+    QueryOpenImportBatch(crate::api::QueryOpenImportBatch),
     #[serde(rename = "get_application_update_policy")]
     GetApplicationUpdatePolicy,
     #[serde(rename = "get_skill")]
@@ -959,6 +959,8 @@ pub enum AppQueryResult {
     ImportAnalysis(ImportAnalysis),
     #[serde(rename = "import_candidates")]
     ImportCandidates(Vec<ImportCandidate>),
+    #[serde(rename = "open_import_batches")]
+    OpenImportBatches(Vec<crate::api::OpenImportBatch>),
     #[serde(rename = "source_search_page")]
     SourceSearchPage(SourceSearchPage),
     #[serde(rename = "search_candidates")]

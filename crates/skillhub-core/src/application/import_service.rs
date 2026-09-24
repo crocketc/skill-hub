@@ -65,12 +65,22 @@ pub struct ImportItemResult {
     pub provenance: Option<crate::import::ImportProvenance>,
 }
 
+/// 本次向导会话的批次上下文；batch_id 只用于结果关联，不作界面展示。
+#[derive(Clone, Debug, serde::Deserialize, Eq, PartialEq, serde::Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct ImportBatchContext {
+    pub batch_id: String,
+}
+
 #[derive(Clone, Debug, serde::Deserialize, Eq, PartialEq, serde::Serialize, specta::Type)]
 #[serde(deny_unknown_fields)]
 pub struct ImportSummary {
     pub operation_id: OperationId,
     pub items: Vec<ImportItemResult>,
     pub committed: bool,
+    /// 批次级上下文与逐项结果分离；缺省兼容旧客户端载荷。
+    #[serde(default)]
+    pub batch: Option<ImportBatchContext>,
 }
 
 pub struct ImportService<B> {
@@ -186,6 +196,7 @@ where
                 provenance: None,
             }],
             committed: true,
+            batch: None,
         })
     }
 

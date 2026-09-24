@@ -125,6 +125,8 @@ async fn import_skill_with_upstream(
                     .collect(),
                 item_overrides: Default::default(),
             },
+            batch_id: None,
+            candidate_key: None,
         }))
         .await
         .expect("committed import");

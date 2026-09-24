@@ -191,6 +191,8 @@ async fn import_ai_checks_report_per_object_and_leave_import_gates_intact() {
             prepared_import_id: id,
             decision: ImportDecision::CopyIntoLibrary,
             governance_decision: governance_confirm(&group_id),
+            batch_id: None,
+            candidate_key: None,
         }))
         .await
         .expect("commit import after ai findings");

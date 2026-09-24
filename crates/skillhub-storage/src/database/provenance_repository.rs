@@ -96,16 +96,41 @@ impl<'a> ProvenanceRepository<'a> {
             .map_err(database_error)?;
         let relationship_changed =
             super::relationship_repository::upsert_source_relation_tx(&transaction, &relation)?;
+        Self::upsert_provenance_projection_tx(&transaction, provenance, true)?;
+        if relationship_changed {
+            super::relationship_repository::bump_relationship_revision_tx(&transaction)?;
+        }
+        transaction.commit().map_err(database_error)
+    }
+
+    /// Deprecated `import_provenance` latest-only projection write, shared by
+    /// [`Self::upsert_provenance`] and the v19 single-transaction import
+    /// outcome path. The immutable events stay authoritative; this table only
+    /// keeps existing readers working. `overwrite=false` keeps first-import
+    /// facts intact — a reuse confirmation must never rewrite the original
+    /// provenance history of the reused Skill.
+    pub fn upsert_provenance_projection_tx(
+        transaction: &Transaction<'_>,
+        provenance: &ImportProvenance,
+        overwrite: bool,
+    ) -> AppResult<()> {
+        let on_conflict = if overwrite {
+            "DO UPDATE SET \
+             agent_client_id=excluded.agent_client_id, original_path=excluded.original_path, \
+             source_kind=excluded.source_kind, source_locator=excluded.source_locator, \
+             ownership=excluded.ownership, content_fingerprint=excluded.content_fingerprint, \
+             imported_at=excluded.imported_at"
+        } else {
+            "DO NOTHING"
+        };
         transaction
             .execute(
-                "INSERT INTO import_provenance \
-                 (skill_id, agent_client_id, original_path, source_kind, source_locator, ownership, content_fingerprint, imported_at) \
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8) \
-                 ON CONFLICT(skill_id) DO UPDATE SET \
-                 agent_client_id=excluded.agent_client_id, original_path=excluded.original_path, \
-                 source_kind=excluded.source_kind, source_locator=excluded.source_locator, \
-                 ownership=excluded.ownership, content_fingerprint=excluded.content_fingerprint, \
-                 imported_at=excluded.imported_at",
+                &format!(
+                    "INSERT INTO import_provenance \
+                     (skill_id, agent_client_id, original_path, source_kind, source_locator, ownership, content_fingerprint, imported_at) \
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8) \
+                     ON CONFLICT(skill_id) {on_conflict}"
+                ),
                 params![
                     provenance.skill_id.to_string(),
                     provenance.agent_client_id,
@@ -118,10 +143,7 @@ impl<'a> ProvenanceRepository<'a> {
                 ],
             )
             .map_err(database_error)?;
-        if relationship_changed {
-            super::relationship_repository::bump_relationship_revision_tx(&transaction)?;
-        }
-        transaction.commit().map_err(database_error)
+        Ok(())
     }
 
     /// Deprecated latest-only compatibility projection over the immutable
@@ -301,6 +323,38 @@ impl<'a> ProvenanceRepository<'a> {
             batch_id: batch_id.to_owned(),
             imported_count: u32::try_from(count).unwrap_or(u32::MAX),
         }))
+    }
+
+    /// Lists batches still in the `running` state (open), oldest first, so a
+    /// restarted process can offer resume-or-abandon for each one.
+    pub fn list_open_import_batches(&self) -> AppResult<Vec<(String, i64)>> {
+        let mut statement = self
+            .database
+            .connection
+            .prepare("SELECT batch_id, started_at FROM import_batches WHERE status='running' ORDER BY started_at, batch_id")
+            .map_err(database_error)?;
+        let rows = statement
+            .query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+            })
+            .map_err(database_error)?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(database_error)?;
+        Ok(rows)
+    }
+
+    /// Count of successful batch items that established an active-governable
+    /// source relation — the persisted source of `manageable_source_count`.
+    pub fn manageable_source_count(&self, batch_id: &str) -> AppResult<i64> {
+        self.database
+            .connection
+            .query_row(
+                "SELECT COUNT(*) FROM import_batch_items
+                 WHERE batch_id=?1 AND status='succeeded' AND source_relation_id IS NOT NULL",
+                [batch_id],
+                |row| row.get(0),
+            )
+            .map_err(database_error)
     }
 
     /// Closes an import batch with a terminal status and finish time.

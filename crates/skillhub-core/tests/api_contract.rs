@@ -90,6 +90,8 @@ fn import_prepare_commit_and_cancel_have_stable_wire_shapes() {
         prepared_import_id: prepared,
         decision: ImportDecision::CopyIntoLibrary,
         governance_decision: skillhub_core::ImportGovernanceDecision::default(),
+        batch_id: None,
+        candidate_key: None,
     });
     let cancel = AppCommand::CancelImport {
         prepared_import_id: prepared,

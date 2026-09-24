@@ -9,8 +9,9 @@ use skillhub_application::LocalApplicationFacade;
 use skillhub_core::api::{GetRelationshipOverview, RelationshipOverviewScope};
 use skillhub_core::relationship::{ConflictClassification, ConflictEvidence, ConflictKind};
 use skillhub_core::{
-    AppCommand, AppCommandResult, AppQuery, AppQueryResult, ApplicationFacade, DuplicateKind,
-    ImportCandidate, ImportDecision, PrepareImport, SourceDescriptor, SourceKind, SourceLocator,
+    AppCommand, AppCommandResult, AppQuery, AppQueryResult, AppResult, ApplicationFacade,
+    DuplicateKind, ImportCandidate, ImportDecision, PrepareImport, SourceDescriptor, SourceKind,
+    SourceLocator,
 };
 use skillhub_storage::{CentralLibrary, Database};
 
@@ -60,6 +61,8 @@ async fn commit_copy(facade: &LocalApplicationFacade, prepared: &skillhub_core::
                     .collect(),
                 item_overrides: Default::default(),
             },
+            batch_id: None,
+            candidate_key: None,
         }))
         .await
         .expect("commit import");
@@ -74,6 +77,51 @@ async fn commit_copy(facade: &LocalApplicationFacade, prepared: &skillhub_core::
 
 fn write_skill(root: &std::path::Path, body: &str) {
     std::fs::write(root.join("SKILL.md"), body).expect("write SKILL.md");
+}
+
+async fn begin_batch(facade: &LocalApplicationFacade) -> String {
+    let started = facade
+        .execute(AppCommand::BeginImportBatch(
+            skillhub_core::api::BeginImportBatch {},
+        ))
+        .await
+        .expect("begin import batch");
+    let AppCommandResult::ImportBatchStarted(started) = started else {
+        panic!("expected import batch id");
+    };
+    started.batch_id
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn commit_in_batch(
+    facade: &LocalApplicationFacade,
+    prepared: &skillhub_core::PreparedImport,
+    decision: ImportDecision,
+    batch_id: &str,
+    candidate_key: &str,
+) -> AppResult<Box<skillhub_core::ImportSummary>> {
+    let committed = facade
+        .execute(AppCommand::CommitImport(skillhub_core::CommitImport {
+            prepared_import_id: prepared.id,
+            decision,
+            governance_decision: skillhub_core::ImportGovernanceDecision {
+                group_actions: prepared
+                    .analysis
+                    .governance_groups
+                    .iter()
+                    .map(|group| (group.group_id.clone(), group.default_action))
+                    .collect(),
+                item_overrides: Default::default(),
+            },
+            batch_id: Some(batch_id.to_owned()),
+            candidate_key: Some(candidate_key.to_owned()),
+        }))
+        .await;
+    match committed {
+        Ok(AppCommandResult::ImportSummary(summary)) => Ok(summary),
+        Ok(other) => panic!("expected import summary, got {other:?}"),
+        Err(error) => Err(error),
+    }
 }
 
 #[tokio::test]
@@ -185,6 +233,8 @@ async fn commit_with(
                     .collect(),
                 item_overrides: Default::default(),
             },
+            batch_id: None,
+            candidate_key: None,
         }))
         .await
         .expect("commit import");
@@ -255,9 +305,11 @@ async fn keep_independent_import_persists_the_conflict_case_for_the_relationship
     let first_summary = commit_with(&facade, &first, ImportDecision::CopyIntoLibrary).await;
     let library_skill = first_summary.items[0].skill_id.expect("first import");
 
-    // 同名不同内容：用户选择保留独立副本。
-    write_skill(source.path(), "# Notes rewritten\n");
-    let second = prepare(&facade, source.path(), "Notes").await;
+    // 同名不同内容：用户选择保留独立副本。第二次导入来自不同物理目录，
+    // 不触发来源身份冲突（该场景由 identity_conflict 专门覆盖）。
+    let second_source = tempfile::tempdir().expect("second source");
+    write_skill(second_source.path(), "# Notes rewritten\n");
+    let second = prepare(&facade, second_source.path(), "Notes").await;
     assert_eq!(
         second.analysis.duplicate_kind,
         Some(DuplicateKind::SameRuntimeNameDifferentContent)
@@ -302,7 +354,7 @@ async fn keep_independent_import_persists_the_conflict_case_for_the_relationship
     assert_eq!(importer_member.skill_id, Some(imported_skill));
     assert_eq!(
         importer_member.path.as_deref(),
-        Some(source.path().to_string_lossy().as_ref())
+        Some(second_source.path().to_string_lossy().as_ref())
     );
     assert!(importer_member.fingerprint.is_some());
 }
@@ -383,7 +435,10 @@ async fn unadjudicated_imports_never_clobber_an_existing_user_decision() {
     commit_with(&facade, &first, ImportDecision::CopyIntoLibrary).await;
 
     // 完全重复推导不出用户裁决身份（None），绝不能拿 None 覆盖既有裁决。
-    let reuse = prepare(&facade, source.path(), "Notes").await;
+    // 第二次导入来自不同物理目录的相同内容，不触发来源身份冲突。
+    let second_source = tempfile::tempdir().expect("second source");
+    write_skill(second_source.path(), "# Notes\n");
+    let reuse = prepare(&facade, second_source.path(), "Notes").await;
     commit_with(&facade, &reuse, ImportDecision::CopyIntoLibrary).await;
 
     let cases = all_conflict_cases(&facade).await;
@@ -427,9 +482,11 @@ async fn an_explicit_new_decision_updates_the_case_and_refreshes_decided_at() {
     let first = prepare(&facade, source.path(), "Notes").await;
     commit_with(&facade, &first, ImportDecision::CopyIntoLibrary).await;
 
-    // 显式新裁决：以其更新并刷新 decided_at。
-    write_skill(source.path(), "# Notes rewritten\n");
-    let second = prepare(&facade, source.path(), "Notes").await;
+    // 显式新裁决：以其更新并刷新 decided_at。第二次导入来自不同物理
+    // 目录，不触发来源身份冲突。
+    let second_source = tempfile::tempdir().expect("second source");
+    write_skill(second_source.path(), "# Notes rewritten\n");
+    let second = prepare(&facade, second_source.path(), "Notes").await;
     commit_with(&facade, &second, ImportDecision::KeepIndependent).await;
 
     let cases = all_conflict_cases(&facade).await;
@@ -489,4 +546,241 @@ async fn skip_never_creates_or_touches_conflict_cases() {
     );
     assert_eq!(cases[0].decided_at, Some(42), "existing case untouched");
     assert!(cases[0].members.is_empty(), "seeded members stay untouched");
+}
+
+#[tokio::test]
+async fn batch_lifecycle_maps_every_outcome_and_finalizes_once() {
+    let workspace = tempfile::tempdir().expect("workspace");
+    let facade = facade_with(workspace.path());
+    let source = tempfile::tempdir().expect("source");
+    write_skill(source.path(), "# Notes\n");
+    let batch_id = begin_batch(&facade).await;
+
+    // 成功项：事件 + 批次项 + 活动来源关系，summary 携带批次上下文。
+    let prepared = prepare(&facade, source.path(), "Notes").await;
+    let summary = commit_in_batch(
+        &facade,
+        &prepared,
+        ImportDecision::CopyIntoLibrary,
+        &batch_id,
+        "acq|notes",
+    )
+    .await
+    .expect("first commit");
+    let skill_id = summary.items[0].skill_id.expect("skill id");
+    assert_eq!(
+        summary.batch.as_ref().expect("batch context").batch_id,
+        batch_id
+    );
+
+    // 跳过项：只有批次项，没有事件。
+    let second = prepare(&facade, source.path(), "Notes").await;
+    let skipped = commit_in_batch(
+        &facade,
+        &second,
+        ImportDecision::Skip,
+        &batch_id,
+        "acq|notes|skip",
+    )
+    .await
+    .expect("skip commit");
+
+    let database = facade.database_for_tests().clone();
+    {
+        let database = database.lock().unwrap();
+        let events = database
+            .provenance_repository()
+            .list_provenance_events_for_skill(skill_id)
+            .expect("events");
+        assert_eq!(events.len(), 1, "skip must not append an event");
+        let skipped_items: i64 = database
+            .connection_for_test()
+            .query_row(
+                "SELECT COUNT(*) FROM import_batch_items WHERE batch_id=?1 AND status='skipped'",
+                [batch_id.as_str()],
+                |row| row.get(0),
+            )
+            .expect("skipped items");
+        assert_eq!(skipped_items, 1, "skip records a batch item only");
+    }
+    let _ = skipped;
+
+    // 终结：从持久化映射计算 manageable_source_count，重复终结幂等。
+    let finalized = facade
+        .execute(AppCommand::FinalizeImportBatch(
+            skillhub_core::api::FinalizeImportBatch {
+                batch_id: batch_id.clone(),
+            },
+        ))
+        .await
+        .expect("finalize");
+    let AppCommandResult::ImportBatchFinalized(finalized) = finalized else {
+        panic!("expected batch finalization");
+    };
+    assert_eq!(finalized.batch_id, batch_id);
+    assert_eq!(finalized.manageable_source_count, 1);
+    let replay = facade
+        .execute(AppCommand::FinalizeImportBatch(
+            skillhub_core::api::FinalizeImportBatch { batch_id },
+        ))
+        .await
+        .expect("finalize replay is idempotent");
+    let AppCommandResult::ImportBatchFinalized(replay) = replay else {
+        panic!("expected batch finalization");
+    };
+    assert_eq!(replay.manageable_source_count, 1);
+}
+
+#[tokio::test]
+async fn reuse_existing_appends_evidence_and_keeps_one_active_relation() {
+    let workspace = tempfile::tempdir().expect("workspace");
+    let facade = facade_with(workspace.path());
+    let source = tempfile::tempdir().expect("source");
+    write_skill(source.path(), "# Notes\n");
+    let batch_id = begin_batch(&facade).await;
+
+    let first = prepare(&facade, source.path(), "Notes").await;
+    let first_summary = commit_in_batch(
+        &facade,
+        &first,
+        ImportDecision::CopyIntoLibrary,
+        &batch_id,
+        "acq|notes|1",
+    )
+    .await
+    .expect("copy commit");
+    let skill_id = first_summary.items[0].skill_id.expect("skill id");
+
+    let second = prepare(&facade, source.path(), "Notes").await;
+    let second_summary = commit_in_batch(
+        &facade,
+        &second,
+        ImportDecision::ReuseExisting,
+        &batch_id,
+        "acq|notes|2",
+    )
+    .await
+    .expect("reuse commit");
+    assert_eq!(
+        second_summary.items[0].skill_id,
+        Some(skill_id),
+        "reuse resolves to the matched skill"
+    );
+
+    let database = facade.database_for_tests().clone();
+    let database = database.lock().unwrap();
+    let repository = database.provenance_repository();
+    let events = repository
+        .list_provenance_events_for_skill(skill_id)
+        .expect("events");
+    assert_eq!(
+        events.len(),
+        2,
+        "every successful import appends its own event"
+    );
+    let relations = database
+        .relationship_repository()
+        .list_source_copy_relations(true)
+        .expect("relations");
+    assert_eq!(
+        relations.len(),
+        1,
+        "one active relation per physical source"
+    );
+    let relation_id = relations[0].relation_id.clone();
+    let mapped: i64 = database
+        .connection_for_test()
+        .query_row(
+            "SELECT COUNT(*) FROM import_batch_items \
+             WHERE batch_id=?1 AND status='succeeded' AND source_relation_id=?2",
+            rusqlite::params![batch_id.as_str(), relation_id.as_str()],
+            |row| row.get(0),
+        )
+        .expect("mapped items");
+    assert_eq!(mapped, 2, "both batch items map the active relation");
+}
+
+#[tokio::test]
+async fn identity_conflict_demands_decision_and_never_overwrites() {
+    let workspace = tempfile::tempdir().expect("workspace");
+    let facade = facade_with(workspace.path());
+    let source = tempfile::tempdir().expect("source");
+    write_skill(source.path(), "# Notes\n");
+    let batch_id = begin_batch(&facade).await;
+
+    let first = prepare(&facade, source.path(), "Notes").await;
+    let first_summary = commit_in_batch(
+        &facade,
+        &first,
+        ImportDecision::CopyIntoLibrary,
+        &batch_id,
+        "acq|notes|a",
+    )
+    .await
+    .expect("copy commit");
+    let skill_a = first_summary.items[0].skill_id.expect("skill a");
+
+    // 同一物理目录内容变化后再次导入并保留独立副本：物理身份已活动
+    // 映射 A，指向新 Skill 的决策必须返回 needs_identity_decision 且
+    // 不覆盖旧关系。
+    write_skill(source.path(), "# Notes rewritten\n");
+    let second = prepare(&facade, source.path(), "Notes").await;
+    let conflict = commit_in_batch(
+        &facade,
+        &second,
+        ImportDecision::KeepIndependent,
+        &batch_id,
+        "acq|notes|b",
+    )
+    .await
+    .expect_err("identity conflict must fail the commit");
+    assert_eq!(conflict.code, skillhub_core::ErrorCode::OperationConflict);
+
+    let database = facade.database_for_tests().clone();
+    let database = database.lock().unwrap();
+    let relations = database
+        .relationship_repository()
+        .list_source_copy_relations(true)
+        .expect("relations");
+    assert_eq!(relations.len(), 1);
+    assert_eq!(relations[0].skill_id, skill_a, "old relation stands");
+}
+
+#[tokio::test]
+async fn legacy_establish_managed_relation_is_rejected_without_writes() {
+    let workspace = tempfile::tempdir().expect("workspace");
+    let facade = facade_with(workspace.path());
+    let source = tempfile::tempdir().expect("source");
+    write_skill(source.path(), "# Notes\n");
+    let batch_id = begin_batch(&facade).await;
+
+    let prepared = prepare(&facade, source.path(), "Notes").await;
+    let error = commit_in_batch(
+        &facade,
+        &prepared,
+        ImportDecision::EstablishManagedRelation,
+        &batch_id,
+        "acq|notes|legacy",
+    )
+    .await
+    .expect_err("legacy decision is rejected");
+    assert_eq!(error.code, skillhub_core::ErrorCode::InvalidInput);
+
+    let database = facade.database_for_tests().clone();
+    let database = database.lock().unwrap();
+    let skills: i64 = database
+        .connection_for_test()
+        .query_row("SELECT COUNT(*) FROM skills", [], |row| row.get(0))
+        .expect("skill count");
+    assert_eq!(skills, 0, "no skill was created");
+    let events: i64 = database
+        .connection_for_test()
+        .query_row(
+            "SELECT COUNT(*) FROM import_provenance_events_v19",
+            [],
+            |row| row.get(0),
+        )
+        .expect("event count");
+    assert_eq!(events, 0, "no event was written");
+    let _ = batch_id;
 }

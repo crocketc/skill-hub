@@ -116,11 +116,12 @@ pub use application::{
     BasicCheckOutput, BasicCheckScanner, CallPolicyBackend, CallPolicyService, CheckService,
     DeploymentBackend, DeploymentService, DeploymentSummary, DuplicateCandidateProvider,
     DuplicateService, HealthBackend, HealthService, IgnoreBackend, IgnoreService, ImportBackend,
-    ImportItemResult, ImportItemStatus, ImportService, ImportSummary, LlmSafetyService,
-    OperationService, PreparedDeployment, PreparedImport, ProjectAssemblyService, ReconcileBackend,
-    ReconcileService, RecoveryBackend, RecoveryService, RemovalBackend, RemovalService,
-    RuntimeScheduler, SearchQueryService, TargetOperationError, TargetOperationResult,
-    TargetOperationStatus, TranslationRepository, TranslationService, VersionMaterializer,
+    ImportBatchContext, ImportItemResult, ImportItemStatus, ImportService, ImportSummary,
+    LlmSafetyService, OperationService, PreparedDeployment, PreparedImport, ProjectAssemblyService,
+    ReconcileBackend, ReconcileService, RecoveryBackend, RecoveryService, RemovalBackend,
+    RemovalService, RuntimeScheduler, SearchQueryService, TargetOperationError,
+    TargetOperationResult, TargetOperationStatus, TranslationRepository, TranslationService,
+    VersionMaterializer,
 };
 pub use application::{WatchConfirmation, WatchHint, WatchHintKind, WatchService};
 pub use bootstrap::{

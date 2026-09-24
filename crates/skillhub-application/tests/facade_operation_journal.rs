@@ -209,6 +209,8 @@ async fn import_prepare_commit_and_cancel_write_the_full_lifecycle() {
                     .collect(),
                 item_overrides: Default::default(),
             },
+            batch_id: None,
+            candidate_key: None,
         }))
         .await
         .expect("commit import");

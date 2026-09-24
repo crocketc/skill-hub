@@ -211,6 +211,58 @@ pub struct CommitImport {
     pub decision: ImportDecision,
     #[serde(default)]
     pub governance_decision: crate::import::ImportGovernanceDecision,
+    /// 本次导入向导会话的批次；缺省时应用层派生隐式批次，事实写入不变。
+    #[serde(default)]
+    pub batch_id: Option<String>,
+    /// 稳定的候选键（acquisition identity + normalized relative root）；
+    /// 缺省时由应用层从来源与相对根派生，绝不使用显示名。
+    #[serde(default)]
+    pub candidate_key: Option<String>,
+}
+
+/// 打开一个导入批次；返回的 batch_id 由同一向导会话的所有提交共享。
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct BeginImportBatch {}
+
+/// 终结导入批次。幂等：重复终结返回相同的 manageable_source_count。
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct FinalizeImportBatch {
+    pub batch_id: String,
+}
+
+/// 查询仍在进行中的导入批次（进程重启后可继续或标记放弃）。
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct QueryOpenImportBatch {}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct ImportBatchStarted {
+    pub batch_id: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct ImportBatchFinalized {
+    pub batch_id: String,
+    /// 有活动来源副本关系的成功项数量；由持久化映射计算，不信任前端汇总。
+    /// 跨 IPC 以字符串承载（与 epoch 计数同一裁决，见 `crate::i64_string`）。
+    #[serde(with = "crate::i64_string")]
+    #[specta(type = String)]
+    pub manageable_source_count: i64,
+}
+
+/// 一个仍在进行中的导入批次。
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct OpenImportBatch {
+    pub batch_id: String,
+    /// 批次开始时间（epoch 秒；跨 IPC 以字符串承载，见 `crate::i64_string`）。
+    #[serde(with = "crate::i64_string")]
+    #[specta(type = String)]
+    pub started_at: i64,
 }
 
 /// OPT-20260914-08：原始文件迁移的准备请求。准备只读地核验存证、路径
@@ -940,6 +992,10 @@ pub struct SetFindingDisposition {
 pub enum AppCommand {
     #[serde(rename = "set_desktop_preferences")]
     SetDesktopPreferences(crate::DesktopPreferences),
+    #[serde(rename = "begin_import_batch")]
+    BeginImportBatch(BeginImportBatch),
+    #[serde(rename = "finalize_import_batch")]
+    FinalizeImportBatch(FinalizeImportBatch),
     #[serde(rename = "open_official_release")]
     OpenOfficialRelease(OpenOfficialRelease),
     #[serde(rename = "open_external_url")]
@@ -1183,6 +1239,10 @@ pub enum AppCommand {
 pub enum AppCommandResult {
     #[serde(rename = "desktop_preferences")]
     DesktopPreferences(crate::DesktopPreferences),
+    #[serde(rename = "import_batch_started")]
+    ImportBatchStarted(ImportBatchStarted),
+    #[serde(rename = "import_batch_finalized")]
+    ImportBatchFinalized(ImportBatchFinalized),
     #[serde(rename = "application_update")]
     ApplicationUpdate(ApplicationUpdate),
     #[serde(rename = "application_update_policy")]

@@ -106,6 +106,8 @@ async fn commit_import_records_upstream_origin_as_long_term_git_source() {
                     .collect(),
                 item_overrides: Default::default(),
             },
+            batch_id: None,
+            candidate_key: None,
         }))
         .await
         .expect("committed import");
@@ -170,6 +172,8 @@ async fn local_imports_without_upstream_do_not_record_git_sources() {
                     .collect(),
                 item_overrides: Default::default(),
             },
+            batch_id: None,
+            candidate_key: None,
         }))
         .await
         .expect("committed import");

@@ -163,3 +163,41 @@ fn block_on<F: std::future::Future>(future: F) -> F::Output {
         .unwrap()
         .block_on(future)
 }
+
+#[test]
+fn import_batch_contract_is_serde_stable_and_legacy_payloads_survive() {
+    // 批次契约（plan 4.1/4.7）：CommitImport 携带 batch_id/candidate_key，
+    // 批次命令存在；旧客户端缺省字段仍可反序列化（语义由应用层强制）。
+    let commit = skillhub_core::CommitImport {
+        prepared_import_id: skillhub_core::OperationId::new(),
+        decision: ImportDecision::Skip,
+        governance_decision: Default::default(),
+        batch_id: Some("batch-1".into()),
+        candidate_key: Some("acq|notes".into()),
+    };
+    let mut value = serde_json::to_value(&commit).expect("serialize commit");
+    assert_eq!(value["batch_id"], "batch-1");
+    value.as_object_mut().unwrap().remove("batch_id");
+    value.as_object_mut().unwrap().remove("candidate_key");
+    let legacy: skillhub_core::CommitImport =
+        serde_json::from_value(value).expect("legacy payload deserializes");
+    assert_eq!(legacy.batch_id, None);
+    assert_eq!(legacy.candidate_key, None);
+
+    let _begin = skillhub_core::api::BeginImportBatch {};
+    let finalize = skillhub_core::api::FinalizeImportBatch {
+        batch_id: "batch-1".into(),
+    };
+    assert_eq!(finalize.batch_id, "batch-1");
+    let _query = skillhub_core::api::QueryOpenImportBatch {};
+
+    let summary = skillhub_core::ImportSummary {
+        operation_id: commit.prepared_import_id,
+        items: Vec::new(),
+        committed: true,
+        batch: Some(skillhub_core::ImportBatchContext {
+            batch_id: "batch-1".into(),
+        }),
+    };
+    assert_eq!(summary.batch.as_ref().expect("batch").batch_id, "batch-1");
+}

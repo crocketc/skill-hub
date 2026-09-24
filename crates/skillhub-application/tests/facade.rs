@@ -2035,6 +2035,8 @@ async fn commit_import_copies_skill_into_the_central_library() {
                     .collect(),
                 item_overrides: Default::default(),
             },
+            batch_id: None,
+            candidate_key: None,
         }))
         .await
         .expect("committed import");
@@ -2113,6 +2115,8 @@ async fn commit_import_blocks_a_source_with_basic_security_findings_before_copyi
                     .collect(),
                 item_overrides: Default::default(),
             },
+            batch_id: None,
+            candidate_key: None,
         }))
         .await
         .expect_err("unsafe import must be blocked");
@@ -2189,6 +2193,8 @@ async fn commit_import_reads_frontmatter_description_into_the_catalog() {
                     .collect(),
                 item_overrides: Default::default(),
             },
+            batch_id: None,
+            candidate_key: None,
         }))
         .await
         .expect("committed import");
@@ -2249,6 +2255,8 @@ async fn get_skill_exposes_capture_sequence_as_current_version_label() {
                     .collect(),
                 item_overrides: Default::default(),
             },
+            batch_id: None,
+            candidate_key: None,
         }))
         .await
         .expect("committed import");
@@ -2313,6 +2321,8 @@ async fn named_version_label_takes_priority_over_capture_sequence() {
                     .collect(),
                 item_overrides: Default::default(),
             },
+            batch_id: None,
+            candidate_key: None,
         }))
         .await
         .expect("committed import");
@@ -2387,6 +2397,8 @@ async fn read_markdown_file_reports_ownership_from_the_domain_matrix() {
                     .collect(),
                 item_overrides: Default::default(),
             },
+            batch_id: None,
+            candidate_key: None,
         }))
         .await
         .expect("committed import");
@@ -2594,6 +2606,8 @@ async fn failed_import_commit_removes_partial_catalog_and_version_state() {
                     .collect(),
                 item_overrides: Default::default(),
             },
+            batch_id: None,
+            candidate_key: None,
         }))
         .await
         .expect_err("malformed source descriptor should fail");

@@ -744,6 +744,8 @@ async fn import_copies_without_a_governance_confirmation_and_preserves_the_sourc
                 group_actions: BTreeMap::new(),
                 item_overrides: BTreeMap::new(),
             },
+            batch_id: None,
+            candidate_key: None,
         }))
         .await
         .expect("an import does not govern the source during commit");
@@ -800,6 +802,8 @@ async fn import_item_override_creates_a_queryable_governance_task_without_removi
                     ImportGovernanceAction::CreateTodo,
                 )]),
             },
+            batch_id: None,
+            candidate_key: None,
         }))
         .await
         .expect("committed import");
@@ -876,6 +880,8 @@ async fn takeover_after_verify_copies_and_verifies_without_deleting_original() {
                 group_actions: BTreeMap::new(),
                 item_overrides: BTreeMap::new(),
             },
+            batch_id: None,
+            candidate_key: None,
         }))
         .await
         .expect("takeover committed");
@@ -3362,6 +3368,8 @@ async fn import_from_shared_directory_groups_members_with_affected_agents() {
                 )]),
                 item_overrides: BTreeMap::new(),
             },
+            batch_id: None,
+            candidate_key: None,
         }))
         .await
         .expect("committed import");
@@ -3448,6 +3456,8 @@ async fn same_name_conflict_todo_maps_to_classify_same_name_skill() {
                 )]),
                 item_overrides: BTreeMap::new(),
             },
+            batch_id: None,
+            candidate_key: None,
         }))
         .await
         .expect("committed import");
@@ -3523,6 +3533,8 @@ async fn exact_duplicate_todo_maps_to_select_authoritative_version() {
                 )]),
                 item_overrides: BTreeMap::new(),
             },
+            batch_id: None,
+            candidate_key: None,
         }))
         .await
         .expect("committed import");

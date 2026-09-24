@@ -162,6 +162,16 @@ pub struct ClassifiedImportSource {
     pub agent_client_id: Option<String>,
 }
 
+/// 一次成功导入在持久层的落点摘要。事件/关系/批次项的具体 ID 以不可变
+/// 事件与批次项行为准，后续治理面通过历史查询读取，不在调用方回传。
+type RecordedImportOutcome = Option<skillhub_core::ImportProvenance>;
+
+/// 一次导入提交在批次中的定位：批次 ID 与候选键一起唯一定位一个批次项。
+struct ImportBatchSlot {
+    batch_id: String,
+    candidate_key: String,
+}
+
 /// One in-flight LLM check: its externally visible operation id plus the flag
 /// `cancel_operation` sets to abandon it.
 struct RunningLlmCheck {
@@ -5312,6 +5322,8 @@ impl ApplicationFacade for LocalApplicationFacade {
                 return self.commit_deployment(request.prepared_deployment_id).await
             }
             AppCommand::PrepareImport(request) => return self.prepare_import(request),
+            AppCommand::BeginImportBatch(_) => return self.begin_import_batch(),
+            AppCommand::FinalizeImportBatch(request) => return self.finalize_import_batch(request),
             AppCommand::CommitImport(request) => return self.commit_import(request),
             AppCommand::PrepareOriginalMigration(request) => {
                 return self.prepare_original_migration(request)
@@ -6025,6 +6037,22 @@ impl ApplicationFacade for LocalApplicationFacade {
                 }
                 Ok(AppQueryResult::ImportCandidates(candidates))
             }
+            AppQuery::QueryOpenImportBatch(_) => {
+                self.with_database("query.open_import_batches", |database| {
+                    let batches = database
+                        .provenance_repository()
+                        .list_open_import_batches()?
+                        .into_iter()
+                        .map(
+                            |(batch_id, started_at)| skillhub_core::api::OpenImportBatch {
+                                batch_id,
+                                started_at,
+                            },
+                        )
+                        .collect();
+                    Ok(AppQueryResult::OpenImportBatches(batches))
+                })
+            }
             AppQuery::ListSkills(request) => self.with_database("query.list_skills", |database| {
                 database
                     .catalog_repository()?
@@ -6720,6 +6748,48 @@ impl LocalApplicationFacade {
         ))
     }
 
+    /// 打开一个导入批次：一个向导会话对应一个 batch_id，所有提交共享。
+    fn begin_import_batch(&self) -> AppResult<AppCommandResult> {
+        let batch_id = format!("batch-{}", OperationId::new());
+        self.with_database("execute.begin_import_batch", |database| {
+            database
+                .provenance_repository()
+                .begin_import_batch(&batch_id, now_epoch_seconds())
+        })?;
+        Ok(AppCommandResult::ImportBatchStarted(
+            skillhub_core::api::ImportBatchStarted { batch_id },
+        ))
+    }
+
+    /// 终结导入批次：manageable_source_count 从持久化批次项映射计算，
+    /// 绝不信任前端汇总；重复终结幂等并返回相同计数（4.11）。
+    fn finalize_import_batch(
+        &self,
+        request: skillhub_core::api::FinalizeImportBatch,
+    ) -> AppResult<AppCommandResult> {
+        self.with_database("execute.finalize_import_batch", |database| {
+            let repository = database.provenance_repository();
+            if repository.import_batch(&request.batch_id)?.is_none() {
+                return Err(AppError::new(ErrorCode::ObjectNotFound, Severity::Error)
+                    .with_param("field", "import_batch")
+                    .with_param("batch_id", request.batch_id.clone())
+                    .with_action(RecoveryAction::ChooseAnotherName));
+            }
+            let manageable_source_count = repository.manageable_source_count(&request.batch_id)?;
+            repository.finalize_import_batch(
+                &request.batch_id,
+                skillhub_storage::ImportBatchFinalStatus::Completed,
+                now_epoch_seconds(),
+            )?;
+            Ok(AppCommandResult::ImportBatchFinalized(
+                skillhub_core::api::ImportBatchFinalized {
+                    batch_id: request.batch_id,
+                    manageable_source_count,
+                },
+            ))
+        })
+    }
+
     fn commit_import(&self, request: skillhub_core::CommitImport) -> AppResult<AppCommandResult> {
         let _relation_migration_guard = self.lock_relation_migration("execute.commit_import")?;
         let operation_id = request.prepared_import_id;
@@ -6757,6 +6827,9 @@ impl LocalApplicationFacade {
         result
     }
 
+    /// 提交导入：解析批次与候选键，把每次决策映射为持久化事实；任何
+    /// 失败都落一条 failed 批次项（不建事件、不动来源文件），原样传播
+    /// 首个错误。
     fn commit_import_flow(
         &self,
         request: skillhub_core::CommitImport,
@@ -6776,6 +6849,62 @@ impl LocalApplicationFacade {
                     .with_param("prepared_import_id", request.prepared_import_id.to_string())
                     .with_action(RecoveryAction::ChooseAnotherName)
             })?;
+        if request.decision == skillhub_core::ImportDecision::EstablishManagedRelation {
+            // 旧的“导入时直接建管”决策由导入事实流取代：明确拒绝，
+            // 不写文件、不静默转换成其他决定（plan 4.5）。
+            return Err(AppError::new(ErrorCode::InvalidInput, Severity::Error)
+                .with_param("field", "decision")
+                .with_param("reason", "legacy_import_relation_decision")
+                .with_action(RecoveryAction::ChooseAnotherName));
+        }
+        let batch_id = request
+            .batch_id
+            .clone()
+            .filter(|id| !id.trim().is_empty())
+            .unwrap_or_else(|| format!("implicit-{}", request.prepared_import_id));
+        let candidate_key = request
+            .candidate_key
+            .clone()
+            .filter(|key| !key.trim().is_empty())
+            .unwrap_or_else(|| Self::candidate_key_for(&prepared.candidate));
+        self.with_database("execute.commit_import.batch", |database| {
+            if database
+                .provenance_repository()
+                .import_batch(&batch_id)?
+                .is_none()
+            {
+                database
+                    .provenance_repository()
+                    .begin_import_batch(&batch_id, now_epoch_seconds())?;
+            }
+            Ok(())
+        })?;
+        let result = self.commit_import_apply(&prepared, &request, &batch_id, &candidate_key);
+        if let Err(error) = result.as_ref() {
+            let _ = self.with_database("execute.commit_import.failure_item", |database| {
+                database.provenance_repository().record_batch_item(
+                    &skillhub_storage::ImportBatchItemRecord {
+                        batch_id: batch_id.clone(),
+                        candidate_key: candidate_key.clone(),
+                        skill_id: None,
+                        provenance_id: None,
+                        source_relation_id: None,
+                        status: skillhub_storage::ImportBatchItemStatus::Failed,
+                        reason: Some(error.code.as_str().to_owned()),
+                    },
+                )
+            });
+        }
+        result
+    }
+
+    fn commit_import_apply(
+        &self,
+        prepared: &skillhub_core::PreparedImport,
+        request: &skillhub_core::CommitImport,
+        batch_id: &str,
+        candidate_key: &str,
+    ) -> AppResult<AppCommandResult> {
         if !prepared.analysis.actions.contains(&request.decision) {
             return Err(AppError::new(ErrorCode::InvalidInput, Severity::Error)
                 .with_param("field", "decision")
@@ -6817,6 +6946,20 @@ impl LocalApplicationFacade {
             self.with_database("execute.commit_import.governance_task", |database| {
                 Self::persist_import_governance_tasks(database, &governance_tasks)
             })?;
+            // 跳过只落批次项，不建事件、不建来源关系（4.10）。
+            self.with_database("execute.commit_import.skip_item", |database| {
+                database.provenance_repository().record_batch_item(
+                    &skillhub_storage::ImportBatchItemRecord {
+                        batch_id: batch_id.to_owned(),
+                        candidate_key: candidate_key.to_owned(),
+                        skill_id: None,
+                        provenance_id: None,
+                        source_relation_id: None,
+                        status: skillhub_storage::ImportBatchItemStatus::Skipped,
+                        reason: Some("import.skipped_by_user".into()),
+                    },
+                )
+            })?;
             self.prepared_imports
                 .lock()
                 .map_err(|_| {
@@ -6842,6 +6985,9 @@ impl LocalApplicationFacade {
                         provenance: None,
                     }],
                     committed: true,
+                    batch: Some(skillhub_core::ImportBatchContext {
+                        batch_id: batch_id.to_owned(),
+                    }),
                 },
             )));
         }
@@ -6857,32 +7003,39 @@ impl LocalApplicationFacade {
                         .with_param("field", "existing_skill")
                         .with_action(RecoveryAction::ChooseAnotherName)
                 })?;
-            // OPT-20260914-08：复用同样是一次导入确认。只在被复用 Skill
-            // 尚无存证时补记本次事实，绝不覆盖已有存证历史；已观察关系
-            // 仅在指纹仍然一致（身份可靠）且归属明确时建立。
-            let fingerprint = self.candidate_tree_hash(&prepared.candidate, None);
-            if let Some(fingerprint) = fingerprint.as_deref() {
-                self.with_database("execute.commit_import.reuse_evidence", |database| {
-                    self.record_import_evidence(
-                        database,
-                        skill_id,
-                        &prepared.candidate,
-                        fingerprint,
-                        false,
-                    )
-                    .map(|_| ())
+            // 复用同样是一次成功导入：每次都追加本次不可变存证并把可治理
+            // 来源挂到最终命中的 Skill；不再“已有存证则跳过”（plan 4.8）。
+            let fingerprint = self
+                .candidate_tree_hash(&prepared.candidate, None)
+                .ok_or_else(|| {
+                    AppError::new(ErrorCode::InvalidInput, Severity::Error)
+                        .with_param("reason", "import.fingerprint_unavailable")
+                        .with_action(RecoveryAction::Retry)
                 })?;
-            }
+            self.with_database("execute.commit_import.outcome", |database| {
+                self.record_import_outcome(
+                    database,
+                    &ImportBatchSlot {
+                        batch_id: batch_id.to_owned(),
+                        candidate_key: candidate_key.to_owned(),
+                    },
+                    &prepared.candidate,
+                    skill_id,
+                    &fingerprint,
+                    false,
+                )
+                .map(|_| ())
+            })?;
             self.with_database("execute.commit_import.governance_task", |database| {
                 Self::persist_import_governance_tasks(database, &governance_tasks)
             })?;
             self.with_database("execute.commit_import.conflict_case", |database| {
                 self.record_import_conflict_case(
                     database,
-                    &prepared,
+                    prepared,
                     request.decision,
                     skill_id,
-                    fingerprint,
+                    Some(fingerprint),
                 )
             })?;
             self.prepared_imports
@@ -6910,6 +7063,9 @@ impl LocalApplicationFacade {
                         provenance: None,
                     }],
                     committed: true,
+                    batch: Some(skillhub_core::ImportBatchContext {
+                        batch_id: batch_id.to_owned(),
+                    }),
                 },
             )));
         }
@@ -6991,18 +7147,22 @@ impl LocalApplicationFacade {
                     cleanup_import_state(database, central, store, skill_id, &version),
                 ));
             }
-            // OPT-20260914-08：导入即存证。写溯源（来源/Agent 形态/原始
-            // 路径/导入时间/内容指纹/所有权状态），身份可靠且归属明确时
-            // 自动建立已观察部署关系。存证失败视为导入失败并回滚库内
-            // 状态——"无存证的导入"不是完成的导入。
-            let evidence = self.record_import_evidence(
+            // 导入即存证（单一 record_import_outcome）：在同一事务里追加
+            // 不可变事件、批次项，并按权威类别/物理身份 upsert 来源副本；
+            // Online/项目/集中库只写事件。失败视为导入失败并回滚库内
+            // 状态——“无存证的导入”不是完成的导入。
+            let outcome = self.record_import_outcome(
                 database,
-                skill_id,
+                &ImportBatchSlot {
+                    batch_id: batch_id.to_owned(),
+                    candidate_key: candidate_key.to_owned(),
+                },
                 &prepared.candidate,
+                skill_id,
                 &version.manifest.tree_hash,
                 true,
             );
-            let provenance = match evidence {
+            let provenance = match outcome {
                 Ok(provenance) => provenance,
                 Err(error) => {
                     return Err(cleanup_import_error(
@@ -7047,7 +7207,7 @@ impl LocalApplicationFacade {
             // 状态——"无冲突组的冲突导入"不是完成的导入。
             if let Err(error) = self.record_import_conflict_case(
                 database,
-                &prepared,
+                prepared,
                 request.decision,
                 skill_id,
                 Some(version.manifest.tree_hash.clone()),
@@ -7082,6 +7242,9 @@ impl LocalApplicationFacade {
                         provenance,
                     }],
                     committed: true,
+                    batch: Some(skillhub_core::ImportBatchContext {
+                        batch_id: batch_id.to_owned(),
+                    }),
                 },
             )))
         })
@@ -7675,43 +7838,215 @@ impl LocalApplicationFacade {
 
     /// 导入提交即存证：写溯源、并在身份可靠（指纹一致）且归属明确时
     /// 自动建立已观察部署关系。复用已有 Skill 时不覆盖其既有存证历史。
-    fn record_import_evidence(
+    /// 单一导入结果写入点（plan 4.9）：在一个数据库事务里追加不可变
+    /// provenance 事件、写批次项，并按权威类别/物理身份 upsert 活动来源
+    /// 副本（仅 AgentLocal/UserLocal 可建）。同一物理身份已活动映射其他
+    /// Skill 时返回 needs_identity_decision，绝不覆盖旧关系；
+    /// Online/项目/集中库只写事件；TemporaryCache 不落临时目录路径。
+    /// 兼容投影在同一事务维护，供既有读取方继续工作。
+    /// 发现阶段未运行（直接 Prepare/Commit 的调用方）时的按需分类兜底：
+    /// 仍走唯一的权威分类器并回写注册表，绝不从路径猜类别。仓库下载
+    /// 缓存（带上游坐标）与发现路径一致按 Online 处理。
+    fn classify_import_source_on_demand(
         &self,
         database: &Database,
-        skill_id: skillhub_core::SkillId,
         candidate: &skillhub_core::ImportCandidate,
-        fingerprint: &str,
-        overwrite_existing_provenance: bool,
-    ) -> AppResult<Option<skillhub_core::ImportProvenance>> {
-        let repository = database.provenance_repository();
-        if !overwrite_existing_provenance && repository.provenance_for_skill(skill_id)?.is_some() {
-            return Ok(None);
+        observed_key: &str,
+    ) -> Option<ClassifiedImportSource> {
+        let classified = if candidate.upstream.is_some() {
+            ClassifiedImportSource {
+                source_class: skillhub_core::ImportSourceClass::Online,
+                physical_source_id: None,
+                source_container_id: None,
+                agent_client_id: None,
+            }
+        } else {
+            let central_root = self
+                .library_runtime
+                .snapshot()
+                .ok()
+                .map(|library| library.root.to_string_lossy().into_owned());
+            Self::classify_import_source(
+                database,
+                &candidate.source,
+                &candidate.absolute_root,
+                central_root.as_deref(),
+            )
+            .ok()?
+        };
+        if let Ok(mut registry) = self.import_source_classifications.lock() {
+            registry.insert(observed_key.to_owned(), classified.clone());
         }
-        let client_id = Self::resolve_agent_client_id(database, &candidate.absolute_root)?;
+        Some(classified)
+    }
+
+    fn record_import_outcome(
+        &self,
+        database: &Database,
+        slot: &ImportBatchSlot,
+        candidate: &skillhub_core::ImportCandidate,
+        final_skill_id: skillhub_core::SkillId,
+        fingerprint: &str,
+        establish_observed: bool,
+    ) -> AppResult<RecordedImportOutcome> {
+        let observed_key = observed_path_key(&candidate.absolute_root);
+        let classification = self
+            .import_source_classifications
+            .lock()
+            .ok()
+            .and_then(|registry| registry.get(&observed_key).cloned())
+            .or_else(|| self.classify_import_source_on_demand(database, candidate, &observed_key));
+        let source_class = classification
+            .as_ref()
+            .map(|classified| classified.source_class)
+            .or(candidate.source_class)
+            .unwrap_or(skillhub_core::ImportSourceClass::LegacyUnclassified);
+        let temporary_cache = matches!(
+            candidate.acquisition,
+            Some(skillhub_core::ImportAcquisitionContext {
+                workspace_kind: skillhub_core::AcquisitionWorkspaceKind::TemporaryCache,
+                ..
+            })
+        );
+        // 仓库导入的长期来源是 git 坐标；下载缓存目录绝不进入长期事实。
+        let origin_source = match candidate.upstream.clone() {
+            Some(upstream) => SourceDescriptor::new(
+                skillhub_core::SourceKind::Git,
+                SourceLocator::git_url(upstream.url.clone()),
+            ),
+            None => candidate.source.clone(),
+        };
+        let local_source_path =
+            if source_class == skillhub_core::ImportSourceClass::Online || temporary_cache {
+                None
+            } else {
+                Some(candidate.absolute_root.clone())
+            };
+        let physical_source_id = classification
+            .as_ref()
+            .and_then(|classified| classified.physical_source_id.clone());
+        let source_container_id = classification
+            .as_ref()
+            .and_then(|classified| classified.source_container_id.clone())
+            .or_else(|| candidate.source_container_id.clone());
+        let agent_client_id = classification
+            .as_ref()
+            .and_then(|classified| classified.agent_client_id.clone())
+            .or_else(|| {
+                Self::resolve_agent_client_id(database, &candidate.absolute_root)
+                    .ok()
+                    .flatten()
+            });
+        let event = skillhub_core::import::ImportProvenanceEvent {
+            provenance_id: format!("prov-{}", skillhub_core::OperationId::new()),
+            batch_id: slot.batch_id.clone(),
+            skill_id: final_skill_id,
+            source_class,
+            source: origin_source,
+            local_source_path,
+            source_container_id,
+            physical_source_id: physical_source_id.clone(),
+            agent_client_id: agent_client_id.clone(),
+            content_fingerprint: fingerprint.to_owned(),
+            imported_at: now_epoch_seconds(),
+        };
         let mut provenance = skillhub_core::ImportProvenance::new(
-            skill_id,
+            final_skill_id,
             &candidate.absolute_root,
             candidate.source.clone(),
             candidate.ownership,
             fingerprint,
-            now_epoch_seconds(),
+            event.imported_at,
         );
-        if let Some(client) = client_id.as_ref() {
+        if let Some(client) = agent_client_id.as_ref() {
             provenance = provenance.with_agent_client_id(client.clone());
         }
-        repository.upsert_provenance(&provenance)?;
-        // 关系只在"内容指纹一致 + 归属已知"时建立；其余一律不建（不猜）。
-        // 关系行存"观察到的路径"（导入=用户原始输入；扫描=scanner 的
-        // canonical 形态），比较时统一折叠（见 canonical_path_string），
-        // 保证同一目录不会因符号链接前缀形态不同而重复建档。
-        if let Some(client) = client_id.as_ref() {
-            if Self::fingerprint_matches_current_version(database, skill_id, fingerprint)? {
+        let transaction = database.begin_transaction()?;
+        skillhub_storage::ProvenanceRepository::append_provenance_event_tx(&transaction, &event)?;
+        let mut source_relation_id = None;
+        if let Some(physical_id) = physical_source_id.as_deref() {
+            let active = database
+                .relationship_repository()
+                .list_source_copy_relations(true)?;
+            // 身份冲突（plan 4.4）：同一物理身份已活动映射其他 Skill 时，
+            // 指向新 Skill 的决策必须显式裁决，不覆盖旧关系。
+            if let Some(existing) = active
+                .iter()
+                .find(|relation| {
+                    relation.physical_source_id == physical_id
+                        && relation.skill_id != final_skill_id
+                })
+                .cloned()
+            {
+                transaction.rollback().ok();
+                return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                    .with_param("reason", "needs_identity_decision")
+                    .with_param("relation_id", existing.relation_id)
+                    .with_action(RecoveryAction::ChooseAnotherName));
+            }
+            // 同一 Skill 重复导入同一来源时刷新既有活动关系而不是新插一
+            // 行：(Skill, 物理身份/路径) 是唯一活动槽位，upsert 以
+            // relation_id 为键。
+            let relation_id = active
+                .iter()
+                .find(|relation| {
+                    relation.skill_id == final_skill_id
+                        && (relation.physical_source_id == physical_id
+                            || relation.source_path_key == observed_key)
+                })
+                .map(|relation| relation.relation_id.clone())
+                .unwrap_or_else(|| format!("rel-{}", skillhub_core::OperationId::new()));
+            if let Some(fact) =
+                skillhub_core::relationship::SourceCopyRelationFact::from_import_event(
+                    relation_id,
+                    &event,
+                    observed_key,
+                    physical_id,
+                )
+            {
+                skillhub_storage::RelationshipRepository::upsert_source_copy_relation_tx(
+                    &transaction,
+                    &fact,
+                    "fs",
+                    1,
+                )?;
+                source_relation_id = Some(fact.relation_id.clone());
+            }
+        }
+        skillhub_storage::ProvenanceRepository::record_batch_item_tx(
+            &transaction,
+            &skillhub_storage::ImportBatchItemRecord {
+                batch_id: slot.batch_id.clone(),
+                candidate_key: slot.candidate_key.clone(),
+                skill_id: Some(final_skill_id),
+                provenance_id: Some(event.provenance_id.clone()),
+                source_relation_id: source_relation_id.clone(),
+                status: skillhub_storage::ImportBatchItemStatus::Succeeded,
+                reason: None,
+            },
+        )?;
+        // 兼容投影（deprecated）：同事务维护，供 collect_migration_facts
+        // 等既有读取方继续工作；身份以不可变事件为准。覆写保持关闭——
+        // 复用确认绝不改写被复用 Skill 的首次存证事实。
+        skillhub_storage::ProvenanceRepository::upsert_provenance_projection_tx(
+            &transaction,
+            &provenance,
+            false,
+        )?;
+        skillhub_storage::Database::commit_transaction(transaction)?;
+        // 已观察部署关系：只在"指纹一致 + 归属明确"且本次是真正复制入库
+        // 的导入时建立（既有语义）；复用确认只补事件与关系事实，观察行
+        // 交给扫描以 canonical 形态建档。
+        if let Some(client) = agent_client_id.as_ref() {
+            if establish_observed
+                && Self::fingerprint_matches_current_version(database, final_skill_id, fingerprint)?
+            {
                 let observation = skillhub_core::ObservedPathObservation {
                     path: candidate.absolute_root.clone(),
                     fingerprint: fingerprint.to_owned(),
                 };
-                let action = reconcile_observed_row(None, Some(&observation), Some(skill_id));
-                repository.apply_observed_row_action(
+                let action = reconcile_observed_row(None, Some(&observation), Some(final_skill_id));
+                database.provenance_repository().apply_observed_row_action(
                     client,
                     &observation.path,
                     &action,
@@ -7721,6 +8056,19 @@ impl LocalApplicationFacade {
             }
         }
         Ok(Some(provenance))
+    }
+
+    /// 稳定候选键 = acquisition identity + normalized relative skill root；
+    /// 显示名绝不参与（plan 4.7）。
+    fn candidate_key_for(candidate: &skillhub_core::ImportCandidate) -> String {
+        let identity = serde_json::to_string(&candidate.source).unwrap_or_default();
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        std::hash::Hash::hash(&identity, &mut hasher);
+        format!(
+            "{:016x}|{}",
+            std::hash::Hasher::finish(&hasher),
+            observed_path_key(&candidate.relative_root)
+        )
     }
 
     fn fingerprint_matches_current_version(

@@ -141,6 +141,8 @@ async fn commit_copy(
             prepared_import_id: prepared.id,
             decision: ImportDecision::CopyIntoLibrary,
             governance_decision,
+            batch_id: None,
+            candidate_key: None,
         }))
         .await
         .expect("commit import");
@@ -403,6 +405,8 @@ async fn repeated_import_is_an_explicit_conflict_and_keeps_provenance_history() 
                     .collect(),
                 item_overrides: Default::default(),
             },
+            batch_id: None,
+            candidate_key: None,
         }))
         .await
         .expect("reuse commit");

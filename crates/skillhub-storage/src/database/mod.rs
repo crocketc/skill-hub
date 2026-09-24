@@ -234,6 +234,13 @@ impl Database {
             .map_err(database_error)
     }
 
+    /// Commits a transaction opened via [`Self::begin_transaction`], mapping
+    /// the driver error into the shared `AppError` shape so callers outside
+    /// this crate never need a rusqlite dependency to close a write.
+    pub fn commit_transaction(transaction: Transaction<'_>) -> AppResult<()> {
+        transaction.commit().map_err(database_error)
+    }
+
     pub fn operation_repository(&self) -> OperationRepositorySqlite<'_> {
         OperationRepositorySqlite::new(self)
     }
