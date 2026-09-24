@@ -10,7 +10,7 @@ it("renders known profile ids as their friendly brand names", () => {
 
   const tag = screen.getByText("OpenAI");
   expect(tag).toBeVisible();
-  expect(tag).toHaveAttribute("title", "openai");
+  expect(tag.closest(".sh-brand-tag")).toHaveAttribute("title", "openai");
 });
 
 it("maps both claude and anthropic profile ids to the Claude brand", () => {
@@ -40,10 +40,10 @@ it("renders Pi and DeepSeek Harness as known platform brands with official logos
     </>,
   );
 
-  expect(screen.getByText("Pi")).toHaveClass("sh-brand-tag--pi");
-  expect(screen.getByText("DeepSeek Harness")).toHaveClass("sh-brand-tag--deepseek-harness");
+  expect(screen.getByText("Pi").closest(".sh-brand-tag")).toHaveClass("sh-brand-tag--pi");
+  expect(screen.getByText("DeepSeek Harness").closest(".sh-brand-tag")).toHaveClass("sh-brand-tag--deepseek-harness");
   const tags = screen.getAllByText(/^(Pi|DeepSeek Harness)$/);
-  expect(tags.map((tag) => tag.firstElementChild?.getAttribute("src"))).toEqual([
+  expect(tags.map((tag) => tag.closest(".sh-brand-tag")?.querySelector("img")?.getAttribute("src"))).toEqual([
     "/brand/agents/lobehub/pi.svg",
     "/brand/agents/lobehub/deepseek-harness.svg",
   ]);
@@ -53,7 +53,7 @@ it("title-cases unknown brands while preserving the raw value in title", () => {
   render(<BrandTag brand="acme_robotics" />);
 
   const tag = screen.getByText("Acme Robotics");
-  expect(tag).toHaveAttribute("title", "acme_robotics");
+  expect(tag.closest(".sh-brand-tag")).toHaveAttribute("title", "acme_robotics");
 });
 
 it("maps a profile id deterministically to one preset brand color class", () => {

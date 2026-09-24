@@ -571,8 +571,12 @@ it("shows agent tags and project names with paths in the relations module", asyn
   });
   await renderDrawer({ facade });
 
-  expect(await screen.findByText("Codex")).toBeVisible();
-  expect(screen.getByText("Claude")).toBeVisible();
+  // Agent 呈现统一为「logo + 展示类型」：紧凑芯片不再渲染品牌文本，
+  // 名称经 title/aria-label 提供（AGENTS.md 呈现约定）。
+  const codex = await screen.findByTitle("OpenAI Codex");
+  expect(codex).toBeVisible();
+  expect(codex).toHaveAttribute("data-agent-id", "codex");
+  expect(screen.getByTitle("Claude Code")).toHaveAttribute("data-agent-id", "claude");
   expect(screen.getByText("Document workflows")).toBeVisible();
   expect(screen.getByText("C:\\workspace\\docs")).toBeVisible();
   expect(screen.getByText("Operations")).toBeVisible();

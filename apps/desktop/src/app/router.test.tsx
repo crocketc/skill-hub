@@ -470,15 +470,15 @@ it("renders the three relationships routes with honest placeholders and module t
   await appRouter.navigate("/relationships");
   render(<AppRouter />);
 
-  expect(await screen.findByRole("heading", { name: "Skill relations", level: 1 })).toBeVisible();
-  expect(document.querySelector(".sh-app-shell__title")).toHaveTextContent(
-    "Skill relations",
-  );
+  // 模块标题只由顶栏承载，布局不再渲染重复 h1；用空态内容等待路由就绪。
   // 任务 6 已填充图谱画布：只读候选查询在无候选时渲染发现 CTA 的空态，
   // 不再是任务 5 的占位符；绝不触发扫描。
   expect(
     await screen.findByText("No Skill has displayable relationships yet."),
   ).toBeVisible();
+  expect(document.querySelector(".sh-app-shell__title")).toHaveTextContent(
+    "Skill relations",
+  );
   expect(screen.getByRole("link", { name: "Open discovery" })).toHaveAttribute(
     "href",
     "/discovery?from=relationships",
@@ -487,7 +487,6 @@ it("renders the three relationships routes with honest placeholders and module t
   await act(async () => {
     await appRouter.navigate("/relationships/decisions");
   });
-  expect(await screen.findByRole("heading", { name: "Skill relations", level: 1 })).toBeVisible();
   // 任务 7 已接入真实冲突处理工作台：路由 mock 不提供工作台投影查询，
   // 页面诚实呈现读取失败，而不是“尚未提供”占位。
   expect(
@@ -497,7 +496,6 @@ it("renders the three relationships routes with honest placeholders and module t
   await act(async () => {
     await appRouter.navigate("/relationships/governance");
   });
-  expect(await screen.findByRole("heading", { name: "Skill relations", level: 1 })).toBeVisible();
   // 任务 8：治理插槽已换成真实工作台——普通添加入口与治理清单的诚实空态，
   // 不再渲染"尚未提供"占位。
   expect(await screen.findByTestId("governance-deploy-entry")).toBeVisible();

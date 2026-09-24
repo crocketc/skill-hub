@@ -145,7 +145,10 @@ export function AgentPresentation({
     ? [...new Set(sharedAgentBrands)].map((candidate) => brandDisplayName(candidate))
     : visibleKinds.map((kind) => agentKindLabel(kind, (key) => String(t(key as never))));
   const brandLabel = isShared ? String(t("agents.sharedBrand")) : brandDisplayName(resolvedBrand);
-  const accessibleName = [brandLabel, ...labels].filter(Boolean).join(" · ");
+  // 独立共享目录实体的名称就是「共享目录」；只有列出关联品牌时才加「共享」前缀。
+  const accessibleName = isShared && sharedAgentBrands.length === 0
+    ? labels.filter(Boolean).join("/")
+    : [brandLabel, ...labels].filter(Boolean).join(" · ");
 
   return (
     <span
