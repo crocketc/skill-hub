@@ -7,6 +7,7 @@ import type {
   SkillRelationshipEdge,
   SkillRelationshipGraphResult,
   SkillRelationshipNode,
+  SourceCopyRelationFact,
 } from "../../../api/bindings";
 
 /**
@@ -55,6 +56,12 @@ export interface ProjectedEdge {
   edge: SkillRelationshipEdge;
   line: GraphEdgeLine;
   state: GraphEdgeVisualState;
+  /**
+   * 治理深链目标（任务 12B）：部署边自带 relation_id；来源边由当前
+   * 来源副本台账按 latest_provenance_id 关联得出。null 表示只读事实，
+   * 详情面板不得提供治理入口。
+   */
+  governanceRelationId: string | null;
   x1: number;
   y1: number;
   x2: number;
@@ -162,14 +169,31 @@ function spreadY(count: number, index: number): number {
   return LAYER_PADDING + ((index + 0.5) * usable) / count;
 }
 
+/** 业务 locator 键（任务 12B）：同一在线来源/本地目录只合并为一个节点。 */
+function sourceLocatorKey(source: NonNullable<SkillRelationshipNode["source"]>): string {
+  // 生成的 SourceLocator 是互斥联合，这里按值判别而不是 kind 字段。
+  const locator = source.locator as {
+    local_path?: string;
+    https_url?: string;
+    git_url?: string;
+  };
+  if (locator.https_url) return `https:${locator.https_url}`;
+  if (locator.git_url) return `git:${locator.git_url}`;
+  if (locator.local_path) return `local:${locator.local_path}`;
+  return `kind:${source.kind}`;
+}
+
 /**
  * 把快照投影为单中心、一跳、固定坐标的分层布局。
+ * sourceCopies 是当前来源副本台账（任务 7/9）：来源边借此获得治理 relation
+ * 深链；同一业务 locator 的多次 provenance 合并为一个展示节点。
  * 纯函数：不修改入参；事实计数与修订号原样透传。
  */
 export function projectGraph(
   graph: SkillRelationshipGraphResult,
   filters: GraphFactFilters,
   display: GraphDisplaySettings,
+  sourceCopies: readonly SourceCopyRelationFact[] = [],
 ): GraphProjection {
   const nodeById = new Map(graph.nodes.map((node) => [node.node_id, node]));
   const center = nodeById.get(
@@ -189,16 +213,53 @@ export function projectGraph(
     };
   }
 
+  // 任务 12B：来源节点按业务 locator 合并——同一 https/git URL 或本地目录的
+  // 多次 provenance 事件共享一个展示节点（代表节点取 node_id 最小者，稳定）。
+  const mergedNodeIdByRaw = new Map<string, string>();
+  const mergedRepresentative = new Map<string, SkillRelationshipNode>();
+  const sourceMembers = new Map<string, SkillRelationshipNode[]>();
+  for (const node of graph.nodes) {
+    if (node.kind !== "source" || !node.source) continue;
+    const key = sourceLocatorKey(node.source);
+    const members = sourceMembers.get(key);
+    if (members) {
+      members.push(node);
+    } else {
+      sourceMembers.set(key, [node]);
+    }
+  }
+  for (const [key, members] of sourceMembers) {
+    members.sort((left, right) => left.node_id.localeCompare(right.node_id));
+    const mergedId = `source-locator:${key}`;
+    const representative = members[0];
+    if (!representative) continue;
+    mergedRepresentative.set(mergedId, { ...representative, node_id: mergedId });
+    for (const member of members) {
+      mergedNodeIdByRaw.set(member.node_id, mergedId);
+    }
+  }
+  const displayNodeId = (rawId: string): string => mergedNodeIdByRaw.get(rawId) ?? rawId;
+
   // 边界：只保留恰好以中心为一端的边；上下文叶子/其他 Skill 之间的边一律丢弃。
-  const centerEdges = graph.edges.filter((candidate) => {
+  // 边端点同时改写为合并后的展示节点 id。
+  const centerEdges: SkillRelationshipEdge[] = [];
+  for (const candidate of graph.edges) {
     const from = nodeById.get(candidate.from_node_id);
     const to = nodeById.get(candidate.to_node_id);
-    if (!from || !to) return false;
-    return (
+    if (!from || !to) continue;
+    if (
       (from.node_id === center.node_id && to.node_id !== center.node_id)
       || (to.node_id === center.node_id && from.node_id !== center.node_id)
-    );
-  });
+    ) {
+      const fromMerged = displayNodeId(candidate.from_node_id);
+      const toMerged = displayNodeId(candidate.to_node_id);
+      centerEdges.push(
+        fromMerged === candidate.from_node_id && toMerged === candidate.to_node_id
+          ? candidate
+          : { ...candidate, from_node_id: fromMerged, to_node_id: toMerged },
+      );
+    }
+  }
 
   const hiddenEdgeCount = centerEdges.filter((candidate) =>
     edgeHiddenByFactFilters(candidate, filters),
@@ -209,9 +270,9 @@ export function projectGraph(
     const otherId = candidate.from_node_id === center.node_id
       ? candidate.to_node_id
       : candidate.from_node_id;
-    const other = nodeById.get(otherId);
+    const other = mergedRepresentative.get(otherId) ?? nodeById.get(otherId);
     if (other) {
-      endpoints.set(other.node_id, other);
+      endpoints.set(otherId, other);
     }
   }
 
@@ -299,6 +360,10 @@ export function projectGraph(
   );
 
   const projectedPosition = new Map(projectedNodes.map((node) => [node.node.node_id, node]));
+  // 任务 12B：来源边的治理 relation 由当前来源副本台账按 provenance 关联。
+  const relationByProvenance = new Map(
+    sourceCopies.map((copy) => [copy.latest_provenance_id, copy.relation_id]),
+  );
   const projectedEdges: ProjectedEdge[] = [];
   for (const candidate of centerEdges) {
     if (!edgeHiddenByFactFilters(candidate, filters)) {
@@ -310,6 +375,10 @@ export function projectGraph(
           edge: candidate,
           line: visual.line,
           state: visual.state,
+          governanceRelationId: candidate.relation_id
+            ?? (candidate.kind === "source" && candidate.provenance_id
+              ? relationByProvenance.get(candidate.provenance_id) ?? null
+              : null),
           x1: from.x,
           y1: from.y,
           x2: to.x,

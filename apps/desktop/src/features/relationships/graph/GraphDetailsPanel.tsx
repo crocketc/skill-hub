@@ -43,6 +43,16 @@ function nodeLabel(
     case "conflict":
       return node.conflict_id ?? fallback;
     case "source":
+      // 任务 12B：在线来源展示用户可读 URL，不暴露缓存路径；本地来源展示路径。
+      if (node.source) {
+        const locator = node.source.locator as {
+          local_path?: string;
+          https_url?: string;
+          git_url?: string;
+        };
+        if (locator.https_url) return locator.https_url;
+        if (locator.git_url) return locator.git_url;
+      }
       return node.path ? displayPath(node.path) : fallback;
     default:
       return fallback;
@@ -179,20 +189,24 @@ export function GraphDetailsPanel({
             <h3>{t(edgeTypeLabelKey(selectedEdge.edge))}</h3>
             <dl>
               <EdgeFacts projected={selectedEdge} />
-              {selectedEdge.edge.relation_id ? (
+              {selectedEdge.governanceRelationId ? (
                 <details className="sh-graph-details__technical">
                   <summary>{t("relationships.graph.technicalDetails")}</summary>
                   <div>
                     <dt>{t("relationships.graph.detailsRelationId")}</dt>
-                    <dd>{selectedEdge.edge.relation_id}</dd>
+                    <dd>{selectedEdge.governanceRelationId}</dd>
                   </div>
                 </details>
               ) : null}
             </dl>
-            {selectedEdge.edge.relation_id ? (
+            {/*
+              任务 12.12：只有可管理（当前来源副本/部署 relation 存在）才给
+              治理入口；纯 provenance 事实只提供来源详情，不给治理按钮。
+            */}
+            {selectedEdge.governanceRelationId ? (
               <Link
                 className="sh-button sh-button--secondary sh-button--sm"
-                to={`/relationships/governance?from=graph&relationId=${encodeURIComponent(selectedEdge.edge.relation_id)}`}
+                to={`/relationships/governance?from=graph&relationId=${encodeURIComponent(selectedEdge.governanceRelationId)}`}
                 onClick={onBeforeNavigate}
               >
                 {t("relationships.graph.governRelation")}

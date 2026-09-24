@@ -356,6 +356,20 @@ export function SkillGraphPage({
     }
   }, [skillId, graphQuery.data, knownRevisions]);
 
+  // 任务 12B：当前来源副本台账（按中心 Skill 过滤）——来源边借此获得治理
+  // relation 深链；查询失败不阻塞图谱，只是没有深链。
+  const governanceQuery = useQuery({
+    queryKey: relationshipsKeys.governance({ skill_id: skillId ?? "" }),
+    queryFn: () => facade.listGovernance({ skill_id: skillId ?? "" }),
+    enabled: skillId !== null,
+  });
+  const sourceCopies = useMemo(
+    () =>
+      (governanceQuery.data?.rows ?? []).flatMap((row) =>
+        row.relation.kind === "source_copy" ? [row.relation.fact] : []),
+      [governanceQuery.data],
+  );
+
   const graph = skillId ? graphQuery.data ?? null : null;
   const projection = useMemo(
     () =>
@@ -364,9 +378,10 @@ export function SkillGraphPage({
             graph,
             { relationshipTypes: urlState.types, statuses: urlState.statuses },
             display,
+            sourceCopies,
           )
         : null,
-    [graph, urlState.types, urlState.statuses, display],
+    [graph, urlState.types, urlState.statuses, display, sourceCopies],
   );
 
   // DEV-24：力导向布局（确定性 d3-force 族实现）。关系事实或筛选变化时
