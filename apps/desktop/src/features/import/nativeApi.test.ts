@@ -14,6 +14,22 @@ describe("native import facade", () => {
     await nativeImportFacade.cancel();
   });
 
+  // 计划 9.3：每次向导提交会话先开批次、后终结批次；测试按需排队这两
+  // 个批次事实，中间留给逐项 prepare/commit 响应。
+  function mockBeginBatch(batchId = "batch-1") {
+    vi.mocked(executeCommand).mockResolvedValueOnce({
+      type: "import_batch_started",
+      payload: { batch_id: batchId },
+    });
+  }
+
+  function mockFinalizeBatch(batchId = "batch-1", manageableSourceCount = "1") {
+    vi.mocked(executeCommand).mockResolvedValueOnce({
+      type: "import_batch_finalized",
+      payload: { batch_id: batchId, manageable_source_count: manageableSourceCount },
+    });
+  }
+
   it("discovers local candidates through the typed native query", async () => {
     vi.mocked(queryApplication).mockResolvedValue({
       type: "import_candidates",
@@ -144,6 +160,7 @@ describe("native import facade", () => {
 
   it("prepares and commits a selected local candidate", async () => {
     const progress = vi.fn();
+    mockBeginBatch();
     vi.mocked(executeCommand)
       .mockResolvedValueOnce({
         type: "prepared_import",
@@ -155,8 +172,14 @@ describe("native import facade", () => {
       })
       .mockResolvedValueOnce({
         type: "import_summary",
-        payload: { committed: true, items: [{ decision: "copy_into_library", governance_tasks: [], original_preserved: true, provenance: null, reason_code: null, skill_id: "skill-1", status: "succeeded" }], operation_id: "operation-1" },
+        payload: {
+          committed: true,
+          batch: { batch_id: "batch-1" },
+          items: [{ decision: "copy_into_library", governance_tasks: [], original_preserved: true, provenance: null, reason_code: null, skill_id: "skill-1", source_relation_id: "rel-1", status: "succeeded" }],
+          operation_id: "operation-1",
+        },
       });
+    mockFinalizeBatch();
 
     const source = await nativeImportFacade.parseSource("C:/incoming");
     const candidate = {
@@ -167,18 +190,30 @@ describe("native import facade", () => {
       path: "C:/incoming/notes",
       source,
     };
-    const results = await nativeImportFacade.commitImport(
+    const outcome = await nativeImportFacade.commitImport(
       { candidates: [candidate], conflicts: [] },
       { [candidate.id]: "copy" },
       progress,
     );
 
-    expect(executeCommand).toHaveBeenNthCalledWith(1, expect.objectContaining({ type: "prepare_import" }));
-    expect(executeCommand).toHaveBeenNthCalledWith(2, {
+    expect(executeCommand).toHaveBeenNthCalledWith(1, expect.objectContaining({ type: "begin_import_batch" }));
+    expect(executeCommand).toHaveBeenNthCalledWith(2, expect.objectContaining({ type: "prepare_import" }));
+    expect(executeCommand).toHaveBeenNthCalledWith(3, {
       type: "commit_import",
-      payload: { decision: "copy_into_library", governance_decision: { group_actions: {}, item_overrides: {} }, prepared_import_id: "operation-1" },
+      payload: {
+        decision: "copy_into_library",
+        governance_decision: { group_actions: {}, item_overrides: {} },
+        prepared_import_id: "operation-1",
+        batch_id: "batch-1",
+        candidate_key: candidate.id,
+      },
     });
-    expect(results).toEqual([{
+    expect(executeCommand).toHaveBeenLastCalledWith({
+      type: "finalize_import_batch",
+      payload: { batch_id: "batch-1" },
+    });
+    expect(outcome.batch).toEqual({ batchId: "batch-1", manageableSourceCount: 1 });
+    expect(outcome.results).toEqual([{
       action: "copy",
       candidateId: candidate.id,
       governanceTasks: [],
@@ -187,11 +222,14 @@ describe("native import facade", () => {
       provenance: undefined,
       reasonCode: undefined,
       status: "succeeded",
+      skillId: "skill-1",
+      sourceRelationId: "rel-1",
     }]);
     expect(progress).toHaveBeenLastCalledWith({ candidateId: candidate.id, completed: 1, total: 1 });
   });
 
   it("uses an allowed default decision when a candidate has no required conflict", async () => {
+    mockBeginBatch();
     vi.mocked(executeCommand)
       .mockResolvedValueOnce({
         type: "prepared_import",
@@ -205,10 +243,12 @@ describe("native import facade", () => {
         type: "import_summary",
         payload: {
           committed: true,
+          batch: { batch_id: "batch-1" },
           items: [{ decision: "copy_as_independent_managed_skill", governance_tasks: [], original_preserved: true, provenance: null, reason_code: null, skill_id: "skill-default", status: "succeeded" }],
           operation_id: "operation-default",
         },
       });
+    mockFinalizeBatch();
     const candidate = {
       basicCheck: "passed" as const,
       id: "C:/incoming/builtin#builtin",
@@ -218,17 +258,19 @@ describe("native import facade", () => {
       source: await nativeImportFacade.parseSource("C:/incoming"),
     };
 
-    const [result] = await nativeImportFacade.commitImport(
+    const { results: [result] } = await nativeImportFacade.commitImport(
       { candidates: [candidate], conflicts: [] },
       {},
     );
 
-    expect(executeCommand).toHaveBeenLastCalledWith({
+    expect(executeCommand).toHaveBeenNthCalledWith(3, {
       type: "commit_import",
       payload: {
         decision: "copy_as_independent_managed_skill",
         governance_decision: { group_actions: {}, item_overrides: {} },
         prepared_import_id: "operation-default",
+        batch_id: "batch-1",
+        candidate_key: candidate.id,
       },
     });
     expect(result).toEqual(expect.objectContaining({ action: "independent", status: "succeeded" }));
@@ -257,6 +299,7 @@ describe("native import facade", () => {
           matches: [],
         },
       });
+    mockBeginBatch();
     vi.mocked(executeCommand)
       .mockResolvedValueOnce({
         type: "prepared_import",
@@ -268,8 +311,9 @@ describe("native import facade", () => {
       })
       .mockResolvedValueOnce({
         type: "import_summary",
-        payload: { committed: true, items: [{ decision: "copy_into_library", governance_tasks: [], original_preserved: true, provenance: null, reason_code: null, skill_id: "skill-2", status: "succeeded" }], operation_id: "operation-2" },
+        payload: { committed: true, batch: { batch_id: "batch-1" }, items: [{ decision: "copy_into_library", governance_tasks: [], original_preserved: true, provenance: null, reason_code: null, skill_id: "skill-2", status: "succeeded" }], operation_id: "operation-2" },
       });
+    mockFinalizeBatch();
 
     const source = await nativeImportFacade.parseSource("C:/workspace");
     const [candidate] = await nativeImportFacade.acquireCandidates(source);
@@ -280,17 +324,19 @@ describe("native import facade", () => {
       type: "analyze_import",
       payload: { candidate: nativeCandidate, tree_hash: null },
     });
-    expect(executeCommand).toHaveBeenNthCalledWith(1, {
+    expect(executeCommand).toHaveBeenNthCalledWith(2, {
       type: "prepare_import",
       payload: { candidate: nativeCandidate, tree_hash: null },
     });
   });
 
   it("resolves unknown native error codes to readable copy for failed imports", async () => {
-    vi.mocked(executeCommand).mockRejectedValue({
+    mockBeginBatch();
+    vi.mocked(executeCommand).mockRejectedValueOnce({
       code: "io_error",
       params: { operation: "capture", path: "C:/incoming/notes" },
     });
+    mockFinalizeBatch("batch-1", "0");
 
     const candidate = {
       basicCheck: "passed" as const,
@@ -300,7 +346,7 @@ describe("native import facade", () => {
       path: "C:/incoming/notes",
       source: await nativeImportFacade.parseSource("C:/incoming"),
     };
-    const [result] = await nativeImportFacade.commitImport(
+    const { batch, results: [result] } = await nativeImportFacade.commitImport(
       { candidates: [candidate], conflicts: [] },
       { [candidate.id]: "copy" },
     );
@@ -313,12 +359,16 @@ describe("native import facade", () => {
         governanceTasks: [],
         status: "failed",
     }));
+    // 失败项不产生来源关系：批次计数如实为 0（计划 9.3 online-only=0 语义）。
+    expect(batch).toEqual({ batchId: "batch-1", manageableSourceCount: 0 });
   });
 
   it("maps known native error codes to their translation keys", async () => {
-    vi.mocked(executeCommand).mockRejectedValue({
+    mockBeginBatch();
+    vi.mocked(executeCommand).mockRejectedValueOnce({
       code: "network.disabled",
     });
+    mockFinalizeBatch("batch-1", "0");
 
     const candidate = {
       basicCheck: "passed" as const,
@@ -328,7 +378,7 @@ describe("native import facade", () => {
       path: "C:/incoming/notes",
       source: await nativeImportFacade.parseSource("C:/incoming"),
     };
-    const [result] = await nativeImportFacade.commitImport(
+    const { results: [result] } = await nativeImportFacade.commitImport(
       { candidates: [candidate], conflicts: [] },
       { [candidate.id]: "copy" },
     );
@@ -340,6 +390,7 @@ describe("native import facade", () => {
   });
 
   it("maps takeover verification conflicts by their structured reason", async () => {
+    mockBeginBatch();
     vi.mocked(executeCommand)
       .mockResolvedValueOnce({
         type: "prepared_import",
@@ -353,6 +404,7 @@ describe("native import facade", () => {
         code: "operation.conflict",
         params: { reason: "takeover_verification_mismatch" },
       });
+    mockFinalizeBatch("batch-1", "0");
 
     const candidate = {
       basicCheck: "passed" as const,
@@ -362,7 +414,7 @@ describe("native import facade", () => {
       path: "C:/incoming/notes",
       source: await nativeImportFacade.parseSource("C:/incoming"),
     };
-    const [result] = await nativeImportFacade.commitImport(
+    const { results: [result] } = await nativeImportFacade.commitImport(
       { candidates: [candidate], conflicts: [] },
       { [candidate.id]: "takeover" },
     );
@@ -453,6 +505,7 @@ describe("native import facade", () => {
       },
     });
     await nativeImportFacade.analyzeConflicts([candidate]);
+    mockBeginBatch();
     vi.mocked(executeCommand)
       .mockResolvedValueOnce({
         type: "prepared_import",
@@ -462,13 +515,100 @@ describe("native import facade", () => {
           analysis: { actions: ["copy_as_independent_managed_skill", "skip"] } as never,
         },
       })
-      .mockResolvedValueOnce({ type: "import_summary", payload: { committed: true, items: [{ decision: "copy_as_independent_managed_skill", governance_tasks: [], original_preserved: true, provenance: null, reason_code: null, skill_id: "skill-3", status: "succeeded" }], operation_id: "operation-3" } });
+      .mockResolvedValueOnce({ type: "import_summary", payload: { committed: true, batch: { batch_id: "batch-1" }, items: [{ decision: "copy_as_independent_managed_skill", governance_tasks: [], original_preserved: true, provenance: null, reason_code: null, skill_id: "skill-3", status: "succeeded" }], operation_id: "operation-3" } });
+    mockFinalizeBatch("batch-1", "0");
 
     await nativeImportFacade.commitImport({ candidates: [candidate], conflicts: [] }, { [candidate.id]: "independent" });
 
-    expect(executeCommand).toHaveBeenLastCalledWith({
+    expect(executeCommand).toHaveBeenNthCalledWith(3, {
       type: "commit_import",
-      payload: { decision: "copy_as_independent_managed_skill", governance_decision: { group_actions: {}, item_overrides: {} }, prepared_import_id: "operation-3" },
+      payload: { decision: "copy_as_independent_managed_skill", governance_decision: { group_actions: {}, item_overrides: {} }, prepared_import_id: "operation-3", batch_id: "batch-1", candidate_key: candidate.id },
     });
+  });
+
+  // 计划 9.3：一次向导提交会话只创建一个批次；逐项 commit 复用同一
+  // batch_id；批次级上下文由 finalize 返回，失败/无来源关系的会话
+  // 如实为 0。
+  it("creates exactly one batch per commit session and reuses it for every item", async () => {
+    mockBeginBatch("batch-session");
+    vi.mocked(executeCommand)
+      .mockResolvedValueOnce({
+        type: "prepared_import",
+        payload: {
+          id: "operation-a",
+          candidate: {} as never,
+          analysis: { actions: ["copy_into_library", "skip"] } as never,
+        },
+      })
+      .mockResolvedValueOnce({
+        type: "import_summary",
+        payload: {
+          committed: true,
+          batch: { batch_id: "batch-session" },
+          items: [{ decision: "copy_into_library", governance_tasks: [], original_preserved: true, provenance: null, reason_code: null, skill_id: "skill-a", source_relation_id: "rel-a", status: "succeeded" }],
+          operation_id: "operation-a",
+        },
+      })
+      .mockResolvedValueOnce({
+        type: "prepared_import",
+        payload: {
+          id: "operation-b",
+          candidate: {} as never,
+          analysis: { actions: ["copy_into_library", "skip"] } as never,
+        },
+      })
+      .mockResolvedValueOnce({
+        type: "import_summary",
+        payload: {
+          committed: true,
+          batch: { batch_id: "batch-session" },
+          items: [{ decision: "reuse_existing", governance_tasks: [], original_preserved: true, provenance: null, reason_code: null, skill_id: "skill-b", source_relation_id: null, status: "succeeded" }],
+          operation_id: "operation-b",
+        },
+      });
+    mockFinalizeBatch("batch-session", "1");
+
+    const source = await nativeImportFacade.parseSource("C:/incoming");
+    const first = {
+      basicCheck: "passed" as const,
+      id: "C:/incoming/one#one",
+      name: "one",
+      ownership: "unknown" as const,
+      path: "C:/incoming/one",
+      source,
+    };
+    const second = {
+      basicCheck: "passed" as const,
+      id: "C:/incoming/two#two",
+      name: "two",
+      ownership: "unknown" as const,
+      path: "C:/incoming/two",
+      source,
+    };
+    const outcome = await nativeImportFacade.commitImport(
+      { candidates: [first, second], conflicts: [] },
+      { [first.id]: "copy", [second.id]: "copy" },
+    );
+
+    const batchCommands = vi.mocked(executeCommand).mock.calls.filter(
+      ([command]) => command.type === "begin_import_batch",
+    );
+    expect(batchCommands).toHaveLength(1);
+    expect(executeCommand).toHaveBeenNthCalledWith(1, { type: "begin_import_batch", payload: {} });
+    expect(executeCommand).toHaveBeenNthCalledWith(3, expect.objectContaining({
+      type: "commit_import",
+      payload: expect.objectContaining({ batch_id: "batch-session", candidate_key: first.id }),
+    }));
+    expect(executeCommand).toHaveBeenNthCalledWith(5, expect.objectContaining({
+      type: "commit_import",
+      payload: expect.objectContaining({ batch_id: "batch-session", candidate_key: second.id }),
+    }));
+    expect(executeCommand).toHaveBeenLastCalledWith({
+      type: "finalize_import_batch",
+      payload: { batch_id: "batch-session" },
+    });
+    expect(outcome.batch).toEqual({ batchId: "batch-session", manageableSourceCount: 1 });
+    expect(outcome.results.map((result) => result.skillId)).toEqual(["skill-a", "skill-b"]);
+    expect(outcome.results.map((result) => result.sourceRelationId)).toEqual(["rel-a", undefined]);
   });
 });

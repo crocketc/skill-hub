@@ -2,12 +2,19 @@ import {
   executeCommand,
   queryApplication,
   type AppCommandResult,
+  type GovernanceHistoryPage,
+  type ListGovernanceHistory,
   type RelationGovernanceBatchOutcome,
+  type RelationshipCheckLevel,
+  type RelationshipCheckReport,
   type RemovalImpactFact,
   type RemovalResult,
+  type SourceCopyRelationFact,
 } from "../../../api/bindings";
 import { nativeRelationshipsFacade } from "../nativeApi";
 import type {
+  GovernableRelation,
+  GovernanceHistoryParams,
   RelationGovernanceBatchRequest,
   RelationGovernanceFacade,
   RelationUndeployPreparation,
@@ -17,20 +24,43 @@ function unexpectedResult(queryType: string): never {
   throw new Error(`${queryType} returned an unexpected native result.`);
 }
 
-/**
- * SkillHub 创建的部署关系在关系台账里的 relation_id 约定为
- * `managed:<deployment_id>`（relationship_repository 写入时的格式）。
- * 「从 Agent/项目移除」命令族走 deployment_id 命名空间，这里在
- * 适配层做一次确定性翻译；观测型关系没有 SkillHub 创建的目标入口，
- * 本来就不该出现移除动作，因此直接抛错而不是猜测。
- */
+/** 治理历史驼峰参数 → 生成契约的 snake_case 查询载荷。 */
+function historyQuery(params: GovernanceHistoryParams): ListGovernanceHistory {
+  return {
+    page: params.page,
+    page_size: params.pageSize,
+    relation_id: params.relationId ?? null,
+    skill_id: params.skillId ?? null,
+    agent_client_id: params.agentClientId ?? null,
+    project_id: params.projectId ?? null,
+    result: params.result ?? null,
+  };
+}
+
 const MANAGED_RELATION_PREFIX = "managed:";
 
-function deploymentIdForRelation(relationId: string): string {
+/**
+ * 「从 Agent/项目移除」命令族走 deployment_id 命名空间。行类别（scope）
+ * 由调用方读生成 DTO 的 `kind` 字段判定（计划 9.9）；这里只做一次确定性的
+ * id 命名空间翻译——SkillHub 创建的部署关系在台账里的 relation_id 约定为
+ * `managed:<deployment_id>`（relationship_repository 写入时的格式）。观测型
+ * 关系（kind=source_copy 等）由 DTO 判定直接拒绝，绝不猜测。
+ */
+function deploymentIdForRelation(relation: GovernableRelation): {
+  relationId: string;
+  deploymentId: string;
+} {
+  if (relation.kind !== "deployment") {
+    throw new Error("governance.undeploy_requires_deployment_relation");
+  }
+  const relationId = relation.fact.relation_id;
   if (!relationId.startsWith(MANAGED_RELATION_PREFIX)) {
     throw new Error("governance.undeploy_requires_managed_relation");
   }
-  return relationId.slice(MANAGED_RELATION_PREFIX.length);
+  return {
+    relationId,
+    deploymentId: relationId.slice(MANAGED_RELATION_PREFIX.length),
+  };
 }
 
 /**
@@ -40,6 +70,62 @@ function deploymentIdForRelation(relationId: string): string {
  */
 export const nativeGovernanceFacade: RelationGovernanceFacade = {
   listGovernance: (params) => nativeRelationshipsFacade.listGovernance(params),
+
+  /** 计划 9.4：重校验是 RunRelationshipCheck 命令，事实由 Full/Light 校验落库。 */
+  async revalidate(
+    relationIds: string[],
+    level: RelationshipCheckLevel = "full",
+  ): Promise<RelationshipCheckReport> {
+    const result = await executeCommand({
+      type: "run_relationship_check",
+      payload: {
+        level,
+        scope: relationIds.length > 0
+          ? { relation_ids: { relation_ids: relationIds } }
+          : "all_active",
+      },
+    });
+    if (result.type !== "relationship_check_report") {
+      return unexpectedResult("run_relationship_check");
+    }
+    return result.payload;
+  },
+
+  /** 计划 9.4：治理历史走独立分页查询，不混入通用清单。 */
+  async listHistory(params: GovernanceHistoryParams): Promise<GovernanceHistoryPage> {
+    const result = await queryApplication({
+      type: "list_governance_history",
+      payload: historyQuery(params),
+    });
+    if (result.type !== "governance_history_page") {
+      return unexpectedResult("list_governance_history");
+    }
+    return result.payload;
+  },
+
+  /** 计划 8.15：保留来源副本——单条命令，幂等。 */
+  async retainSourceCopy(relationId: string): Promise<SourceCopyRelationFact> {
+    const result = await executeCommand({
+      type: "retain_source_copy",
+      payload: { source_relation_id: relationId },
+    });
+    if (result.type !== "source_copy_relation_updated") {
+      return unexpectedResult("retain_source_copy");
+    }
+    return result.payload;
+  },
+
+  /** 计划 8.8/8.15：重关联——身份/内容校验与槽位判定都在后端完成。 */
+  async relinkSourceCopy(relationId: string, newSourcePath: string): Promise<SourceCopyRelationFact> {
+    const result = await executeCommand({
+      type: "relink_source_copy",
+      payload: { source_relation_id: relationId, new_source_path: newSourcePath },
+    });
+    if (result.type !== "source_copy_relation_updated") {
+      return unexpectedResult("relink_source_copy");
+    }
+    return result.payload;
+  },
 
   async getRelationshipRemovalImpact(relationId: string): Promise<RemovalImpactFact> {
     const result = await queryApplication({
@@ -60,7 +146,7 @@ export const nativeGovernanceFacade: RelationGovernanceFacade = {
     const result = await executeCommand({
       type: "prepare_relation_governance_batch",
       payload: {
-        action: "centralize_management",
+        action: request.action,
         relation_ids: request.relationIds,
         confirmations: confirmations.length > 0 ? Object.fromEntries(confirmations) : undefined,
       },
@@ -93,8 +179,8 @@ export const nativeGovernanceFacade: RelationGovernanceFacade = {
     return result.payload;
   },
 
-  async prepareRelationUndeploy(relationId: string): Promise<RelationUndeployPreparation> {
-    const deploymentId = deploymentIdForRelation(relationId);
+  async prepareRelationUndeploy(relation: GovernableRelation): Promise<RelationUndeployPreparation> {
+    const { relationId, deploymentId } = deploymentIdForRelation(relation);
     const result = await executeCommand({
       type: "prepare_undeploy",
       payload: { deployment_id: deploymentId },

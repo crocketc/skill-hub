@@ -22,6 +22,9 @@ import {
   GOVERNANCE_BUCKETS,
   mergeBatchItemOutcome,
   parseGovernanceSearchParams,
+  relationIdOf,
+  relationPathOf,
+  relationSkillIdOf,
   rowIsBatchExecutable,
   summarizeRowExecutability,
   SHARED_IMPACT_CONFIRMATION_TOKEN,
@@ -176,7 +179,7 @@ export function RelationshipGovernancePage({
       // 全选默认跳过受阻行；它们仍可被单独勾选（勾选后在预览里按受阻呈现）。
       return rows
         .filter((row) => row.readiness !== "blocked")
-        .map((row) => row.relation.relation_id);
+        .map((row) => relationIdOf(row.relation));
     });
   }, [rows]);
 
@@ -210,7 +213,7 @@ export function RelationshipGovernancePage({
 
   // —— 批量流程 ——
   const selectedRows = useMemo(
-    () => rows.filter((row) => selectedIds.includes(row.relation.relation_id)),
+    () => rows.filter((row) => selectedIds.includes(relationIdOf(row.relation))),
     [rows, selectedIds],
   );
   const executability = useMemo(
@@ -226,7 +229,7 @@ export function RelationshipGovernancePage({
       // 受阻行在对话框里默认不选中（它们根本不可勾选执行）。
       checkedIds: selectedRows
         .filter(rowIsBatchExecutable)
-        .map((row) => row.relation.relation_id),
+        .map((row) => relationIdOf(row.relation)),
     });
     setBatchOpen(true);
   }, [selectedRows]);
@@ -240,7 +243,7 @@ export function RelationshipGovernancePage({
   // 其余关系照常可操作。
   const busyRelationIds = useMemo(() => {
     const busy = new Set<string>();
-    if (single) busy.add(single.row.relation.relation_id);
+    if (single) busy.add(relationIdOf(single.row.relation));
     if (batchOpen && batchFlow.running) {
       for (const id of batchFlow.checkedIds) busy.add(id);
     }
@@ -287,6 +290,7 @@ export function RelationshipGovernancePage({
       run: async (handle) => {
         handle.phase(phaseLabel);
         const prepared = await facade.prepareGovernanceBatch({
+          action: "centralize_management",
           confirmations: buildConfirmations(relationIds, confirmed),
           relationIds,
         });
@@ -360,13 +364,13 @@ export function RelationshipGovernancePage({
   const centralizeDoneText = useCallback((flow: SingleFlowState) => t(
     "relationships.governance.centralize.done",
     {
-      skill: flow.row.skill_display_name ?? flow.row.relation.skill_id
+      skill: flow.row.skill_display_name ?? relationSkillIdOf(flow.row.relation)
         ?? t("relationshipGovernance.matrix.unknownSkill"),
     },
   ), [t]);
 
   const confirmSingleCentralize = useCallback((flow: SingleFlowState) => {
-    const relationId = flow.row.relation.relation_id;
+    const relationId = relationIdOf(flow.row.relation);
     setSingle((current) => current ? { ...current, busy: true, error: null } : current);
     runCentralizeBatch(
       [relationId],
@@ -461,7 +465,6 @@ export function RelationshipGovernancePage({
   }, [describeError, facade, notifications, queryClient, single, t, tracker]);
 
   const confirmSingleUndeploy = useCallback((flow: SingleFlowState) => {
-    const relationId = flow.row.relation.relation_id;
     setSingle((current) => current ? { ...current, busy: true, error: null } : current);
     void runTrackedOperation({
       canCancel: false,
@@ -472,7 +475,7 @@ export function RelationshipGovernancePage({
       notifications,
       queryClient,
       run: async (handle) => {
-        const prepared = await facade.prepareRelationUndeploy(relationId);
+        const prepared = await facade.prepareRelationUndeploy(flow.row.relation);
         handle.correlate(prepared.operationId);
         return await facade.commitRelationUndeploy(prepared.operationId);
       },
@@ -488,7 +491,7 @@ export function RelationshipGovernancePage({
       setSingle((current) => current ? {
         ...current,
         busy: false,
-        resultText: t("relationships.governance.undeployResult.done", { path: flow.row.relation.path }),
+        resultText: t("relationships.governance.undeployResult.done", { path: relationPathOf(flow.row.relation) }),
       } : current);
     }).catch((reason: unknown) => {
       setSingle((current) => current
@@ -572,7 +575,7 @@ export function RelationshipGovernancePage({
     if (!ledgerQuery.isSuccess || !pendingRelationIdRef.current) return;
     const relationId = pendingRelationIdRef.current;
     pendingRelationIdRef.current = null;
-    const row = rows.find((candidate) => candidate.relation.relation_id === relationId);
+    const row = rows.find((candidate) => relationIdOf(candidate.relation) === relationId);
     if (!row) return;
     if (rowIsBatchExecutable(row)) openSingle("centralize", row);
     else if (row.primary_action === "undeploy") openSingle("undeploy", row);
@@ -728,7 +731,7 @@ export function RelationshipGovernancePage({
           <GovernanceImpactPreview
             busy={single.busy}
             error={single.error}
-            loadImpact={() => facade.getRelationshipRemovalImpact(single.row.relation.relation_id)}
+            loadImpact={() => facade.getRelationshipRemovalImpact(relationIdOf(single.row.relation))}
             mode={single.kind}
             onCancel={closeSingle}
             onConfirm={() => (single.kind === "centralize"

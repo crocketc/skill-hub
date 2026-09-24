@@ -66,7 +66,7 @@ const populatedCandidates: SkillRelationshipCandidate[] = [
 
 const populatedLedger: RelationGovernanceLedger = {
   bucket: "all",
-  counts: { all: 7, blocked: 1, eligible_to_centralize: 4, needs_validation: 2 },
+  counts: { all: 7, blocked: 1, eligible_to_centralize: 4, needs_validation: 2, status_normal: 0, status_retained: 0, status_needs_validation: 2, status_needs_attention: 0, status_blocked: 1, source_copies: 0, deployments: 0 },
   last_verified_at: null,
   relationship_revision: "7",
   rows: [],
@@ -105,7 +105,7 @@ const emptyFacade: RelationshipsFacade = {
       ...populatedLedger,
       rows: [],
       total: 0,
-      counts: { all: 0, blocked: 0, eligible_to_centralize: 0, needs_validation: 0 },
+      counts: { all: 0, blocked: 0, eligible_to_centralize: 0, needs_validation: 0, status_normal: 0, status_retained: 0, status_needs_validation: 0, status_needs_attention: 0, status_blocked: 0, source_copies: 0, deployments: 0 },
     };
   },
 };

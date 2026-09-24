@@ -49,7 +49,7 @@ describe("ImportFacade contract", () => {
     });
 
     expect(candidates[0].ownership).toBe("agent_builtin");
-    expect(results.map((result) => result.status)).toEqual([
+    expect(results.results.map((result) => result.status)).toEqual([
       "succeeded",
       "skipped",
     ]);

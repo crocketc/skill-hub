@@ -194,7 +194,12 @@ pub struct ClassifiedImportSource {
 
 /// 一次成功导入在持久层的落点摘要。事件/关系/批次项的具体 ID 以不可变
 /// 事件与批次项行为准，后续治理面通过历史查询读取，不在调用方回传。
-type RecordedImportOutcome = Option<skillhub_core::ImportProvenance>;
+/// `source_relation_id` 随摘要项逐项返回（计划 9.7），供导入完成页
+/// 直连“这次导入”的治理上下文。
+struct RecordedImportOutcome {
+    provenance: Option<skillhub_core::ImportProvenance>,
+    source_relation_id: Option<String>,
+}
 
 /// 一次导入提交在批次中的定位：批次 ID 与候选键一起唯一定位一个批次项。
 struct ImportBatchSlot {
@@ -7036,6 +7041,7 @@ impl LocalApplicationFacade {
                         reason_code: Some("import.skipped_by_user".into()),
                         governance_tasks,
                         provenance: None,
+                        source_relation_id: None,
                     }],
                     committed: true,
                     batch: Some(skillhub_core::ImportBatchContext {
@@ -7065,20 +7071,21 @@ impl LocalApplicationFacade {
                         .with_param("reason", "import.fingerprint_unavailable")
                         .with_action(RecoveryAction::Retry)
                 })?;
-            self.with_database("execute.commit_import.outcome", |database| {
-                self.record_import_outcome(
-                    database,
-                    &ImportBatchSlot {
-                        batch_id: batch_id.to_owned(),
-                        candidate_key: candidate_key.to_owned(),
-                    },
-                    &prepared.candidate,
-                    skill_id,
-                    &fingerprint,
-                    false,
-                )
-                .map(|_| ())
-            })?;
+            let reuse_source_relation_id = self
+                .with_database("execute.commit_import.outcome", |database| {
+                    self.record_import_outcome(
+                        database,
+                        &ImportBatchSlot {
+                            batch_id: batch_id.to_owned(),
+                            candidate_key: candidate_key.to_owned(),
+                        },
+                        &prepared.candidate,
+                        skill_id,
+                        &fingerprint,
+                        false,
+                    )
+                    .map(|recorded| recorded.source_relation_id)
+                })?;
             self.with_database("execute.commit_import.governance_task", |database| {
                 Self::persist_import_governance_tasks(database, &governance_tasks)
             })?;
@@ -7114,6 +7121,7 @@ impl LocalApplicationFacade {
                         reason_code: None,
                         governance_tasks,
                         provenance: None,
+                        source_relation_id: reuse_source_relation_id,
                     }],
                     committed: true,
                     batch: Some(skillhub_core::ImportBatchContext {
@@ -7215,8 +7223,8 @@ impl LocalApplicationFacade {
                 &version.manifest.tree_hash,
                 true,
             );
-            let provenance = match outcome {
-                Ok(provenance) => provenance,
+            let recorded = match outcome {
+                Ok(recorded) => recorded,
                 Err(error) => {
                     return Err(cleanup_import_error(
                         error,
@@ -7292,7 +7300,8 @@ impl LocalApplicationFacade {
                         original_preserved: true,
                         reason_code: None,
                         governance_tasks,
-                        provenance,
+                        provenance: recorded.provenance,
+                        source_relation_id: recorded.source_relation_id,
                     }],
                     committed: true,
                     batch: Some(skillhub_core::ImportBatchContext {
@@ -8124,7 +8133,10 @@ impl LocalApplicationFacade {
                 )?;
             }
         }
-        Ok(Some(provenance))
+        Ok(RecordedImportOutcome {
+            provenance: Some(provenance),
+            source_relation_id,
+        })
     }
 
     /// 稳定候选键 = acquisition identity + normalized relative skill root；

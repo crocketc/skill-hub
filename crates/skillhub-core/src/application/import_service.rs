@@ -63,6 +63,11 @@ pub struct ImportItemResult {
     /// 供导入摘要展示；复用/跳过等未新建存证的分支为 None。
     #[serde(default)]
     pub provenance: Option<crate::import::ImportProvenance>,
+    /// 计划 9.7：本次导入建立或刷新的活动来源副本关系；复用未建关系、
+    /// 跳过等分支诚实缺省为 None。导入完成页用它直连“这次导入”的
+    /// 治理上下文，绝不从缓存路径反查。
+    #[serde(default)]
+    pub source_relation_id: Option<String>,
 }
 
 /// 本次向导会话的批次上下文；batch_id 只用于结果关联，不作界面展示。
@@ -194,6 +199,7 @@ where
                 reason_code: None,
                 governance_tasks: Vec::new(),
                 provenance: None,
+                source_relation_id: None,
             }],
             committed: true,
             batch: None,

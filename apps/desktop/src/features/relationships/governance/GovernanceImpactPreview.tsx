@@ -3,7 +3,13 @@ import type { RelationGovernanceRow, RemovalImpactFact } from "../../../api/bind
 import { Button } from "../../../ui/Button";
 import { RelationshipRemovalImpactView } from "../../relationshipGovernance/RelationshipRemovalImpactView";
 import { fingerprintLabelKey, relationshipLabelKey } from "../../relationshipGovernance/relationshipGovernance";
-import { rowNeedsSharedImpactConfirmation } from "./api";
+import {
+  relationAgentIdOf,
+  relationPathOf,
+  relationVerificationKeyOf,
+  relationshipKeyOf,
+  rowNeedsSharedImpactConfirmation,
+} from "./api";
 import { displayPath } from "../../../platform/displayPath";
 import { AgentIdentity } from "../../skills/AgentDeploymentIcons";
 
@@ -39,6 +45,8 @@ export function GovernanceImpactPreview({
 }: GovernanceImpactPreviewProps) {
   const { t } = useTranslation();
   const needsSharedImpactConfirmation = rowNeedsSharedImpactConfirmation(row);
+  // 来源副本边没有 Agent 归属；部署边才显示 Agent 身份。
+  const agentId = relationAgentIdOf(row.relation);
   const title = mode === "centralize"
     ? t("relationships.governance.preview.centralizeTitle")
     : t("relationships.governance.preview.undeployTitle");
@@ -54,18 +62,18 @@ export function GovernanceImpactPreview({
       <dl className="sh-governance__facts">
         <div>
           <dt>{t("relationships.governance.preview.relationLabel")}</dt>
-          <dd>{t(relationshipLabelKey(row.relation.relationship) as never)}</dd>
+          <dd>{t(relationshipLabelKey(relationshipKeyOf(row.relation) as never) as never)}</dd>
         </div>
         <div>
           <dt>{t("relationships.governance.preview.targetLabel")}</dt>
           <dd>
-            <AgentIdentity agentId={row.relation.agent_client_id} />
-            <span>{t("agents.pathLabel")} <code>{displayPath(row.relation.path)}</code></span>
+            {agentId ? <AgentIdentity agentId={agentId} /> : null}
+            <span>{t("agents.pathLabel")} <code>{displayPath(relationPathOf(row.relation))}</code></span>
           </dd>
         </div>
         <div>
           <dt>{t("relationships.governance.preview.verificationLabel")}</dt>
-          <dd>{t(fingerprintLabelKey(row.relation.match_state) as never)}</dd>
+          <dd>{t(fingerprintLabelKey(relationVerificationKeyOf(row.relation) as never) as never)}</dd>
         </div>
       </dl>
       {/* 复用共享移除影响视图：备份、共享消费者、其他路径与回退信息都在这里。 */}

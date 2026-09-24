@@ -1,12 +1,17 @@
 import type {
+  GovernanceHistoryPage,
+  RelationGovernanceBatchAction,
   RelationGovernanceBatchItem,
   RelationGovernanceBatchOutcome,
   RelationGovernanceBlocker,
   RelationGovernanceBucket,
   RelationGovernanceLedger,
   RelationGovernanceRow,
+  RelationshipCheckLevel,
+  RelationshipCheckReport,
   RemovalImpactFact,
   RemovalResult,
+  SourceCopyRelationFact,
 } from "../../../api/bindings";
 import type { RelationshipGovernanceParams } from "../api";
 
@@ -23,6 +28,7 @@ export const GOVERNANCE_BUCKETS: RelationGovernanceBucket[] = [
 
 const GOVERNANCE_SOURCES = [
   "library",
+  "import",
   "graph",
   "conflict",
   "agent",
@@ -32,13 +38,38 @@ const GOVERNANCE_SOURCES = [
 /** 深链来源：治理页据此提供返回入口与初始筛选（?from=…）。 */
 export type GovernanceSourceParam = (typeof GOVERNANCE_SOURCES)[number];
 
+/**
+ * 行类别过滤（计划 9.5）：scope=source_copy 只看来源副本行，
+ * scope=deployment 只看部署边；未知值回退为不过滤。
+ */
+const GOVERNANCE_SCOPES = ["all", "source_copy", "deployment"] as const;
+export type GovernanceScopeParam = (typeof GOVERNANCE_SCOPES)[number];
+
+/** 行状态过滤候选（与 GovernableRelationStatus 词表对齐）。 */
+const GOVERNANCE_STATUSES = [
+  "normal",
+  "retained",
+  "needs_validation",
+  "needs_attention",
+  "blocked",
+] as const;
+
 /** 共享影响确认令牌：后端只校验非空；事实校验仍由四段安全链路负责。 */
 export const SHARED_IMPACT_CONFIRMATION_TOKEN = "shared_impact_confirmed";
 
-/** 单条「纳入集中库管理」复用批命令编排：一条关系也是一个批次。 */
+/**
+ * 批次动作（计划 8.16）：部署转换沿用 centralize_management；来源副本
+ * 批次用 retain_source_copy / clean_source_copy，后端按 action 分派到
+ * 各自的单条状态机。
+ */
+export type RelationGovernanceBatchActionParam = RelationGovernanceBatchAction;
+
+/** 单条批命令编排：一条关系也是一个批次。 */
 export interface RelationGovernanceBatchRequest {
+  /** 批次动作决定逐行走哪条单条状态机；前端不自行编排文件系统操作。 */
+  action: RelationGovernanceBatchActionParam;
   relationIds: string[];
-  /** relation_id → 非空确认令牌；仅共享影响需要显式确认的行需要。 */
+  /** relation_id → 非空确认令牌；共享影响确认与来源清理确认都走这里。 */
   confirmations: Record<string, string>;
 }
 
@@ -50,16 +81,87 @@ export interface RelationUndeployPreparation {
 }
 
 /**
+ * 行类别（计划 9.9）：scope 判定只能读生成 DTO 的 kind 字段，
+ * 绝不通过 relation_id 前缀猜测。
+ */
+export type GovernableRelation = import("../../../api/bindings").GovernableRelationFact;
+
+/** 行身份：两类关系各自 DTO 里的 relation_id（计划 9.9 统一收窄入口）。 */
+export function relationIdOf(relation: GovernableRelation): string {
+  return relation.fact.relation_id;
+}
+
+/** 行的目标路径：部署边是部署路径，来源副本是来源目录。 */
+export function relationPathOf(relation: GovernableRelation): string {
+  return relation.kind === "deployment" ? relation.fact.path : relation.fact.source_path;
+}
+
+/** 行的 Skill；来源副本恒有，部署边可能为空。 */
+export function relationSkillIdOf(relation: GovernableRelation): string | null {
+  return relation.fact.skill_id;
+}
+
+/** 行的 Agent：来源副本可能没有单一 Agent（共享目录等）。 */
+export function relationAgentIdOf(relation: GovernableRelation): string | null {
+  return relation.kind === "deployment" ? relation.fact.agent_client_id : relation.fact.agent_client_id;
+}
+
+/** 关系展示键：部署边用 relationship 词表；来源副本统一为 source_copy。 */
+export function relationshipKeyOf(relation: GovernableRelation): string {
+  return relation.kind === "deployment" ? relation.fact.relationship : "source_copy";
+}
+
+/** 来源词表键：部署边用 origin；来源副本用 source_class。 */
+export function relationSourceKeyOf(relation: GovernableRelation): string {
+  return relation.kind === "deployment" ? relation.fact.origin : relation.fact.source_class;
+}
+
+/** 核验词表键：部署边用 match_state；来源副本用 health。 */
+export function relationVerificationKeyOf(relation: GovernableRelation): string {
+  return relation.kind === "deployment" ? relation.fact.match_state : relation.fact.health;
+}
+
+/** 是否为可执行「从 Agent/项目移除」的部署边（DTO 判定，非前缀猜测）。 */
+export function isUndeployableDeployment(relation: GovernableRelation): boolean {
+  return relation.kind === "deployment";
+}
+
+/** 治理历史分页查询参数（独立只读查询；驼峰命名，native 层转生成契约）。 */
+export interface GovernanceHistoryParams {
+  page?: number;
+  pageSize?: number;
+  relationId?: string | null;
+  skillId?: string | null;
+  agentClientId?: string | null;
+  projectId?: string | null;
+  result?: string | null;
+}
+
+/**
  * 关系治理页面门面（任务 8）：读取任务 3 的清单 query 与编排命令。
  * 页面绝不越过门面直接触碰文件系统；所有执行经 runTrackedOperation 走桥。
  */
 export interface RelationGovernanceFacade {
   listGovernance(params?: RelationshipGovernanceParams): Promise<RelationGovernanceLedger>;
+  /** 计划 9.4：重校验走 RunRelationshipCheck 命令，而不是再查一次清单。 */
+  revalidate(
+    relationIds: string[],
+    level?: RelationshipCheckLevel,
+  ): Promise<RelationshipCheckReport>;
+  /** 计划 9.4：治理历史是独立分页查询，只读写入时固化的显示快照。 */
+  listHistory(params: GovernanceHistoryParams): Promise<GovernanceHistoryPage>;
+  /** 计划 8.15：保留来源副本——只改决策并记历史，绝不触碰来源目录。 */
+  retainSourceCopy(relationId: string): Promise<SourceCopyRelationFact>;
+  /**
+   * 计划 8.8/8.15：重关联——ExternalRemoved 关系指向用户经目录 picker
+   * 授权的新目录；身份/内容校验与槽位冲突判定都在后端。
+   */
+  relinkSourceCopy(relationId: string, newSourcePath: string): Promise<SourceCopyRelationFact>;
   getRelationshipRemovalImpact(relationId: string): Promise<RemovalImpactFact>;
   prepareGovernanceBatch(request: RelationGovernanceBatchRequest): Promise<RelationGovernanceBatchOutcome>;
   commitGovernanceBatch(batchId: string, relationIds: string[]): Promise<RelationGovernanceBatchOutcome>;
   rollbackGovernanceBatch(batchId: string, relationIds: string[]): Promise<RelationGovernanceBatchOutcome>;
-  prepareRelationUndeploy(relationId: string): Promise<RelationUndeployPreparation>;
+  prepareRelationUndeploy(relation: GovernableRelation): Promise<RelationUndeployPreparation>;
   commitRelationUndeploy(operationId: string): Promise<RemovalResult>;
 }
 
@@ -73,17 +175,25 @@ export interface GovernanceDeepLink {
   projectId: string | null;
   conflictId: string | null;
   relationId: string | null;
+  /** 行类别过滤（计划 9.5）：source_copy / deployment / all。 */
+  scope: GovernanceScopeParam;
+  /** 行状态过滤（计划 9.5）：五状态词表之外的值忽略。 */
+  status: (typeof GOVERNANCE_STATUSES)[number] | null;
+  /** 导入批次过滤（计划 9.5）：只显示该批次映射的关系。 */
+  batchId: string | null;
 }
 
 const SHARED_IMPACT_BLOCKER: RelationGovernanceBlocker = "shared_impact_confirmation_required";
 
 /**
- * 行过滤参数只透传已提交的事实；未知来源/桶回退为“不过滤”，
+ * 行过滤参数只透传已提交的事实；未知来源/桶/scope/状态回退为“不过滤”，
  * 不让恶意或过期的 URL 制造查询错误。
  */
 export function parseGovernanceSearchParams(searchParams: URLSearchParams): GovernanceDeepLink {
   const bucketParam = searchParams.get("bucket");
   const fromParam = searchParams.get("from");
+  const scopeParam = searchParams.get("scope");
+  const statusParam = searchParams.get("status");
   return {
     from: GOVERNANCE_SOURCES.find((candidate) => candidate === fromParam) ?? null,
     bucket: GOVERNANCE_BUCKETS.find((candidate) => candidate === bucketParam) ?? "all",
@@ -93,6 +203,9 @@ export function parseGovernanceSearchParams(searchParams: URLSearchParams): Gove
     projectId: searchParams.get("project"),
     conflictId: searchParams.get("conflictId"),
     relationId: searchParams.get("relationId"),
+    scope: GOVERNANCE_SCOPES.find((candidate) => candidate === scopeParam) ?? "all",
+    status: GOVERNANCE_STATUSES.find((candidate) => candidate === statusParam) ?? null,
+    batchId: searchParams.get("batch"),
   };
 }
 

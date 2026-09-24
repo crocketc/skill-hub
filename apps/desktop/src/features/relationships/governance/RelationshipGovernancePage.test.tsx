@@ -52,8 +52,16 @@ function relationFact(overrides: Partial<DeploymentRelationFact> = {}): Deployme
   };
 }
 
+function deploymentFactOf(row: RelationGovernanceRow): DeploymentRelationFact {
+  if (row.relation.kind !== "deployment") {
+    throw new Error("expected a deployment relation in this test fixture");
+  }
+  return row.relation.fact;
+}
+
 interface RowSpec {
   relationId: string;
+  status?: RelationGovernanceRow["status"];
   readiness: RelationGovernanceRow["readiness"];
   primaryAction: RelationGovernanceRow["primary_action"];
   blockers?: RelationGovernanceRow["blockers"];
@@ -68,15 +76,19 @@ interface RowSpec {
 
 function makeRow(spec: RowSpec): RelationGovernanceRow {
   return {
-    relation: relationFact({
-      relation_id: spec.relationId,
-      skill_id: spec.skillId === undefined ? "skill-pdf" : spec.skillId,
-      agent_client_id: spec.agentClientId ?? "codex",
-      path: spec.path ?? "C:/agents/codex/skills/pdf-reader",
-      relationship: spec.relationship ?? "managed_copy",
-      ownership: spec.ownership ?? "skillhub_managed",
-    }),
+    relation: {
+      kind: "deployment" as const,
+      fact: relationFact({
+        relation_id: spec.relationId,
+        skill_id: spec.skillId === undefined ? "skill-pdf" : spec.skillId,
+        agent_client_id: spec.agentClientId ?? "codex",
+        path: spec.path ?? "C:/agents/codex/skills/pdf-reader",
+        relationship: spec.relationship ?? "managed_copy",
+        ownership: spec.ownership ?? "skillhub_managed",
+      }),
+    },
     skill_display_name: spec.displayName ?? null,
+    status: spec.status ?? (spec.readiness === "blocked" ? "blocked" : "needs_validation"),
     readiness: spec.readiness,
     primary_action: spec.primaryAction,
     blockers: spec.blockers ?? [],
@@ -134,7 +146,19 @@ const MANAGED_ROW = makeRow({
 
 const FULL_LEDGER: RelationGovernanceLedger = {
   rows: [ELIGIBLE_ROW, SHARED_IMPACT_ROW, STALE_VERIFICATION_ROW, BLOCKED_ROW, MANAGED_ROW],
-  counts: { all: 5, eligible_to_centralize: 1, needs_validation: 2, blocked: 1 },
+  counts: {
+    all: 5,
+    eligible_to_centralize: 1,
+    needs_validation: 2,
+    blocked: 1,
+    status_normal: 0,
+    status_retained: 0,
+    status_needs_validation: 2,
+    status_needs_attention: 1,
+    status_blocked: 1,
+    source_copies: 0,
+    deployments: 5,
+  },
   bucket: "all",
   total: 5,
   relationship_revision: "rev-1",
@@ -143,8 +167,8 @@ const FULL_LEDGER: RelationGovernanceLedger = {
 
 function removalImpactFact(): RemovalImpactFact {
   return {
-    relation_id: ELIGIBLE_ROW.relation.relation_id,
-    relation: ELIGIBLE_ROW.relation,
+    relation_id: deploymentFactOf(ELIGIBLE_ROW).relation_id,
+    relation: deploymentFactOf(ELIGIBLE_ROW),
     ownership: "skillhub_managed",
     current_agent_reads_shared_directory: false,
     other_consumers: [],
@@ -163,7 +187,7 @@ function removalImpactFact(): RemovalImpactFact {
 
 function batchItem(overrides: Partial<RelationGovernanceBatchItem> = {}): RelationGovernanceBatchItem {
   return {
-    relation_id: ELIGIBLE_ROW.relation.relation_id,
+    relation_id: deploymentFactOf(ELIGIBLE_ROW).relation_id,
     operation_id: "op-child-1",
     state: "prepared",
     error_code: null,
@@ -216,6 +240,10 @@ function createFacade(
 ): RelationGovernanceFacade {
   return {
     listGovernance: vi.fn().mockResolvedValue(ledger),
+    revalidate: vi.fn().mockResolvedValue(undefined),
+    listHistory: vi.fn().mockResolvedValue(undefined),
+    retainSourceCopy: vi.fn().mockResolvedValue(undefined),
+    relinkSourceCopy: vi.fn().mockResolvedValue(undefined),
     getRelationshipRemovalImpact: vi.fn().mockResolvedValue(removalImpactFact()),
     prepareGovernanceBatch: vi.fn().mockResolvedValue(batchOutcome()),
     commitGovernanceBatch: vi.fn().mockResolvedValue(batchOutcome({
@@ -229,7 +257,7 @@ function createFacade(
       items: [batchItem({ state: "rolled_back" })],
     })),
     prepareRelationUndeploy: vi.fn().mockResolvedValue({
-      relationId: MANAGED_ROW.relation.relation_id,
+      relationId: deploymentFactOf(MANAGED_ROW).relation_id,
       deploymentId: "dep-undeploy",
       operationId: "op-undeploy-1",
     }),
@@ -409,6 +437,7 @@ describe("RelationshipGovernancePage 单条治理", () => {
     fireEvent.click(screen.getByRole("button", { name: "确认执行" }));
 
     await waitFor(() => expect(facade.prepareGovernanceBatch).toHaveBeenCalledWith({
+      action: "centralize_management",
       confirmations: {},
       relationIds: ["managed:dep-eligible"],
     }));
@@ -455,7 +484,7 @@ describe("RelationshipGovernancePage 单条治理", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "确认执行" }));
 
-    await waitFor(() => expect(facade.prepareRelationUndeploy).toHaveBeenCalledWith("managed:dep-undeploy"));
+    await waitFor(() => expect(facade.prepareRelationUndeploy).toHaveBeenCalledWith(MANAGED_ROW.relation));
     await waitFor(() => expect(facade.commitRelationUndeploy).toHaveBeenCalledWith("op-undeploy-1"));
     await screen.findByText(/已从目标移除/);
     await waitFor(() => expect(facade.listGovernance).toHaveBeenCalledTimes(2));
@@ -574,7 +603,8 @@ describe("RelationshipGovernancePage 单条治理", () => {
     fireEvent.click(screen.getByRole("button", { name: "确认执行" }));
 
     await waitFor(() => expect(facade.prepareGovernanceBatch).toHaveBeenCalledWith({
-      confirmations: { "managed:dep-shared": expect.any(String) },
+      action: "centralize_management",
+      confirmations: { "managed:dep-shared": "shared_impact_confirmed" },
       relationIds: ["managed:dep-shared"],
     }));
   });
@@ -625,6 +655,7 @@ describe("RelationshipGovernancePage 批量治理", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "确认执行 1 条" }));
     await waitFor(() => expect(facade.prepareGovernanceBatch).toHaveBeenCalledWith({
+      action: "centralize_management",
       confirmations: {},
       relationIds: ["managed:dep-eligible"],
     }));
@@ -644,7 +675,8 @@ describe("RelationshipGovernancePage 批量治理", () => {
     fireEvent.click(screen.getByRole("button", { name: "确认执行 2 条" }));
 
     await waitFor(() => expect(facade.prepareGovernanceBatch).toHaveBeenCalledWith({
-      confirmations: { "managed:dep-shared": expect.any(String) },
+      action: "centralize_management",
+      confirmations: { "managed:dep-shared": "shared_impact_confirmed" },
       relationIds: ["managed:dep-eligible", "managed:dep-shared"],
     }));
   });
@@ -741,7 +773,8 @@ describe("RelationshipGovernancePage 批量治理", () => {
 
     await screen.findByText("已全部纳入集中库管理（2 条）");
     expect(facade.prepareGovernanceBatch).toHaveBeenLastCalledWith({
-      confirmations: { "managed:dep-shared": expect.any(String) },
+      action: "centralize_management",
+      confirmations: { "managed:dep-shared": "shared_impact_confirmed" },
       relationIds: ["managed:dep-shared"],
     });
   });

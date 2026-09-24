@@ -205,6 +205,9 @@ function resultForSummary(
           importedAt: item.provenance.imported_at,
         }
       : undefined,
+    // 计划 9.7：逐项稳定身份来自生成 DTO，绝不从结果数组下标或缓存路径推断。
+    skillId: item?.skill_id ?? undefined,
+    sourceRelationId: item?.source_relation_id ?? undefined,
   };
 }
 
@@ -301,6 +304,20 @@ function importSummary(result: AppCommandResult) {
   return result.payload;
 }
 
+function importBatchStarted(result: AppCommandResult): string {
+  if (result.type !== "import_batch_started") {
+    throw new Error("native import batch start returned an unexpected result");
+  }
+  return result.payload.batch_id;
+}
+
+function importBatchFinalized(result: AppCommandResult) {
+  if (result.type !== "import_batch_finalized") {
+    throw new Error("native import batch finalize returned an unexpected result");
+  }
+  return result.payload;
+}
+
 const discoveredCandidates = new Map<string, NativeImportCandidate>();
 function reconstructedCandidate(candidate: ImportCandidate): NativeImportCandidate {
   return {
@@ -391,6 +408,12 @@ export const nativeImportFacade: ImportFacade = {
   },
 
   async commitImport(plan, actions, onProgress, governanceDecision = { group_actions: {}, item_overrides: {} }) {
+    // 计划 9.3：一次向导提交会话只创建一个批次；每项 commit 复用同一
+    // batch_id。批次上下文来自 begin/finalize 与后端回显，绝不从
+    // results[0] 偶然取得。
+    const batchId = importBatchStarted(
+      await executeCommand({ type: "begin_import_batch", payload: {} }),
+    );
     const results: ImportResult[] = [];
     for (const [index, candidate] of plan.candidates.entries()) {
       onProgress?.({
@@ -418,6 +441,8 @@ export const nativeImportFacade: ImportFacade = {
             decision,
             governance_decision: decisionForPrepared(governanceDecision, prepared.analysis.governance_groups ?? []),
             prepared_import_id: prepared.id,
+            batch_id: batchId,
+            candidate_key: candidate.id,
           },
         }));
         results.push(resultForSummary(candidate, action, summary));
@@ -441,7 +466,20 @@ export const nativeImportFacade: ImportFacade = {
         total: plan.candidates.length,
       });
     }
-    return results;
+    // 计划 9.3：终结批次并取回批次级事实。manageable_source_count 由
+    // 后端持久化映射计算：Online 等无来源关系的结果不计入（为 0 时
+    // 就是 0，前端绝不自行汇总）。
+    const finalized = importBatchFinalized(await executeCommand({
+      type: "finalize_import_batch",
+      payload: { batch_id: batchId },
+    }));
+    return {
+      batch: {
+        batchId: finalized.batch_id,
+        manageableSourceCount: Number(finalized.manageable_source_count),
+      },
+      results,
+    };
   },
 
   cancel: () => {

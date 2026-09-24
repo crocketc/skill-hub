@@ -9,7 +9,7 @@ import { AppNotificationsProvider } from "../../ui/notifications";
 import { createOperationTracker } from "../../platform/operationTracker";
 import { clearSessionSelectedSources } from "./sessionSources";
 import { clearWizardSession } from "./wizardSession";
-import { createMockImportFacade, unavailableImportFacade, type ImportAction, type ImportCandidate, type ImportPlan, type ImportProgress, type ImportResult, type SourceDescriptor } from "./api";
+import { createMockImportFacade, unavailableImportFacade, type ImportAction, type ImportCandidate, type ImportCommitOutcome, type ImportPlan, type ImportProgress, type SourceDescriptor } from "./api";
 import type { ImportGovernanceDecision } from "../relationshipGovernance/relationshipGovernance";
 import type { ImportGovernanceGroup } from "../../api/bindings";
 import type { DirectoryPicker } from "../../platform/directoryPicker";
@@ -344,10 +344,13 @@ it("offers the cancelled state its own message and footer retry without merging 
 it("returns a partially failed summary to a fresh run through the footer retry", async () => {
   const user = userEvent.setup();
   const facade = createMockImportFacade({ scenario: "safe-local" });
-  facade.commitImport = vi.fn(async (): Promise<ImportResult[]> => [
-    { candidateId: "safe-pdf", action: "copy", status: "succeeded", message: "已导入" },
-    { candidateId: "safe-browser", action: "copy", status: "failed", message: "写入失败" },
-  ]);
+  facade.commitImport = vi.fn(async (): Promise<ImportCommitOutcome> => ({
+    batch: { batchId: "batch-test", manageableSourceCount: 0 },
+    results: [
+      { candidateId: "safe-pdf", action: "copy", status: "succeeded", message: "已导入" },
+      { candidateId: "safe-browser", action: "copy", status: "failed", message: "写入失败" },
+    ],
+  }));
   await renderWizard(facade);
 
   await user.type(screen.getByLabelText("来源"), "C:/skills/pdf");
@@ -968,17 +971,20 @@ it("submits directly after conflicts even when analysis reports relationship gro
     actions: Record<string, ImportAction>,
     _onProgress?: (progress: ImportProgress) => void,
     governanceDecision?: ImportGovernanceDecision,
-  ): Promise<ImportResult[]> => {
+  ): Promise<ImportCommitOutcome> => {
     expect(plan.governanceGroups).toHaveLength(1);
     expect(actions).toEqual({});
     expect(governanceDecision).toBeUndefined();
-    return [{
-      action: "copy",
-      candidateId: "safe-pdf",
-      message: "importWorkflow.commitMessages.imported",
-      originalPreserved: true,
-      status: "todo",
-    }];
+    return {
+      batch: { batchId: "batch-test", manageableSourceCount: 0 },
+      results: [{
+        action: "copy",
+        candidateId: "safe-pdf",
+        message: "importWorkflow.commitMessages.imported",
+        originalPreserved: true,
+        status: "todo",
+      }],
+    };
   });
   facade.analyzeConflicts = vi.fn(async (candidates, onProgress) => {
     const plan = await originalAnalyze(candidates, onProgress);
@@ -1055,13 +1061,16 @@ it("counts todo results as attention in the status, notification, and tracked su
   const user = userEvent.setup();
   const tracker = createOperationTracker();
   const facade = createMockImportFacade({ scenario: "safe-local" });
-  facade.commitImport = vi.fn(async (): Promise<ImportResult[]> => [{
-    action: "copy",
-    candidateId: "safe-pdf",
-    message: "importWorkflow.commitMessages.imported",
-    originalPreserved: true,
-    status: "todo",
-  }]);
+  facade.commitImport = vi.fn(async (): Promise<ImportCommitOutcome> => ({
+    batch: { batchId: "batch-test", manageableSourceCount: 0 },
+    results: [{
+      action: "copy",
+      candidateId: "safe-pdf",
+      message: "importWorkflow.commitMessages.imported",
+      originalPreserved: true,
+      status: "todo",
+    }],
+  }));
   await renderWithTracker(facade, tracker);
 
   await user.type(screen.getByLabelText("来源"), "C:/skills");
@@ -1155,10 +1164,13 @@ it("keeps the commit running in the global tracker after the wizard unmounts", a
   // 提交期间离开页面（卸载向导）
   unmount();
   await act(async () => {
-    release([
-      { candidateId: "c1", action: "copy", status: "succeeded", message: "ok" },
-      { candidateId: "c2", action: "skip", status: "skipped", message: "dup" },
-    ]);
+    release({
+      batch: { batchId: "batch-test", manageableSourceCount: 0 },
+      results: [
+        { candidateId: "c1", action: "copy", status: "succeeded", message: "ok" },
+        { candidateId: "c2", action: "skip", status: "skipped", message: "dup" },
+      ],
+    });
   });
 
   const [operation] = tracker.getSnapshot();
@@ -1174,7 +1186,7 @@ it("refuses to commit while another import is still running", async () => {
   const tracker = createOperationTracker();
   tracker.begin({ kind: "import", label: "后台导入进行中", total: 3 });
   const facade = createMockImportFacade({ scenario: "safe-local" });
-  facade.commitImport = vi.fn(async () => []);
+  facade.commitImport = vi.fn(async () => ({ batch: { batchId: "batch-test", manageableSourceCount: 0 }, results: [] }));
   const i18n = await createSkillHubI18n(["zh-CN"]);
   render(
     <TestShell>
@@ -1225,7 +1237,7 @@ it("shows candidate progress while commit is in flight", async () => {
   expect(await screen.findByText("正在提交导入（已完成 0/2，当前：safe-pdf）")).toBeVisible();
   expect(screen.getByText("可以离开此页面；导入会在后台继续。请通过顶栏任务状态查看进度，完成后到通知中心查看结果。")).toBeVisible();
   await act(async () => {
-    release([]);
+    release({ batch: { batchId: "batch-test", manageableSourceCount: 0 }, results: [] });
   });
 });
 
@@ -1258,10 +1270,13 @@ describe("global notifications for import outcomes", () => {
 
   it("marks a finished import with per-object failures as a warning notice", async () => {
     const facade = createMockImportFacade({ scenario: "safe-local" });
-    facade.commitImport = vi.fn(async (): Promise<ImportResult[]> => [
-      { candidateId: "safe-pdf", action: "copy", status: "succeeded", message: "已导入" },
-      { candidateId: "safe-browser", action: "copy", status: "failed", message: "写入失败" },
-    ]);
+    facade.commitImport = vi.fn(async (): Promise<ImportCommitOutcome> => ({
+      batch: { batchId: "batch-test", manageableSourceCount: 0 },
+      results: [
+        { candidateId: "safe-pdf", action: "copy", status: "succeeded", message: "已导入" },
+        { candidateId: "safe-browser", action: "copy", status: "failed", message: "写入失败" },
+      ],
+    }));
     const user = await reachCommit(facade);
     await user.click(screen.getByRole("button", { name: "提交导入" }));
 

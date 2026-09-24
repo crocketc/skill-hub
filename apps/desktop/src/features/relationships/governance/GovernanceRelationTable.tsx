@@ -2,6 +2,15 @@ import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 import type { RefObject } from "react";
 import type { RelationGovernanceRow } from "../../../api/bindings";
+import {
+  relationAgentIdOf,
+  relationIdOf,
+  relationPathOf,
+  relationSkillIdOf,
+  relationSourceKeyOf,
+  relationVerificationKeyOf,
+  relationshipKeyOf,
+} from "./api";
 import { Button } from "../../../ui/Button";
 import { StatusBadge } from "../../../ui/StatusBadge";
 import {
@@ -49,7 +58,7 @@ export function GovernanceRelationTable({
   selectedIds,
 }: GovernanceRelationTableProps) {
   const { t } = useTranslation();
-  const allChecked = rows.length > 0 && rows.every((row) => selectedIds.has(row.relation.relation_id));
+  const allChecked = rows.length > 0 && rows.every((row) => selectedIds.has(relationIdOf(row.relation)));
 
   return (
     <div
@@ -88,7 +97,8 @@ export function GovernanceRelationTable({
         </thead>
         <tbody>
           {rows.map((row) => {
-            const relationId = row.relation.relation_id;
+            const relationId = relationIdOf(row.relation);
+            const rowAgentId = relationAgentIdOf(row.relation);
             const busy = busyRelationIds.has(relationId);
             return (
               <tr data-testid="governance-row" key={relationId}>
@@ -103,25 +113,26 @@ export function GovernanceRelationTable({
                 </td>
                 <td>
                   <strong>
-                    {row.skill_display_name ?? row.relation.skill_id
+                    {row.skill_display_name ?? relationSkillIdOf(row.relation)
                       ?? t("relationshipGovernance.matrix.unknownSkill")}
                   </strong>
                   <StatusBadge tone="info">
-                    {t(relationshipLabelKey(row.relation.relationship) as never)}
+                    {t(relationshipLabelKey(relationshipKeyOf(row.relation) as never) as never)}
                   </StatusBadge>
                   <span className="sh-governance__readiness">
                     {t(`relationships.governance.readiness.${row.readiness}` as never)}
                   </span>
                 </td>
                 <td data-testid={`governance-source-${relationId}`}>
-                  {t(`relationships.governance.source.${row.relation.origin}` as never)}
+                  {t(`relationships.governance.source.${relationSourceKeyOf(row.relation)}` as never)}
                 </td>
                 <td data-testid={`governance-target-${relationId}`}>
                   <strong className="sh-governance__directory-kind">
                     {directoryGovernanceLabel(row, t)}
                   </strong>
-                  <AgentIdentity agentId={row.relation.agent_client_id} />
-                  <span>{t("agents.pathLabel")} <code>{displayPath(row.relation.path)}</code></span>
+                  {/* 来源副本边没有 Agent 归属，仅部署边呈现 Agent 身份。 */}
+                  {rowAgentId ? <AgentIdentity agentId={rowAgentId} /> : null}
+                  <span>{t("agents.pathLabel")} <code>{displayPath(relationPathOf(row.relation))}</code></span>
                 </td>
                 <td data-testid={`governance-impact-${relationId}`}>
                   {row.impact.other_consumer_agent_ids.length > 0
@@ -145,7 +156,7 @@ export function GovernanceRelationTable({
                   </span>
                 </td>
                 <td>
-                  <span>{t(fingerprintLabelKey(row.relation.match_state) as never)}</span>
+                  <span>{t(fingerprintLabelKey(relationVerificationKeyOf(row.relation) as never) as never)}</span>
                   {row.blockers.length > 0 ? (
                     <ul
                       className="sh-governance__blockers"
@@ -200,19 +211,20 @@ function directoryGovernanceLabel(
   t: TFunction,
 ): string {
   if (
-    row.relation.relationship === "shared_directory_read"
-    || row.relation.relationship === "shared_directory_reference"
+    row.relation.kind === "deployment"
+    && (row.relation.fact.relationship === "shared_directory_read"
+      || row.relation.fact.relationship === "shared_directory_reference")
   ) {
     return t("relationships.governance.directory.sharedAgent");
   }
   const consumers = [
-    row.relation.agent_client_id,
+    relationAgentIdOf(row.relation),
     ...row.impact.other_consumer_agent_ids,
-  ];
+  ].filter((agentId): agentId is string => agentId !== null);
   const brands = new Set(consumers.map(agentBrandKey));
   if (consumers.length > 1 && brands.size === 1) {
     return t("relationships.governance.directory.brandCommon", {
-      brand: brandDisplayName(agentBrandKey(row.relation.agent_client_id)),
+      brand: brandDisplayName(agentBrandKey(consumers[0])),
     });
   }
   return t("relationships.governance.directory.independent");
@@ -242,7 +254,7 @@ function PrimaryActionButton({
   };
   return (
     <Button
-      data-testid={`governance-action-${row.relation.relation_id}`}
+      data-testid={`governance-action-${relationIdOf(row.relation)}`}
       disabled={disabled}
       onClick={onClick}
       size="sm"

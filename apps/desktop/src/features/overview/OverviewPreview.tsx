@@ -119,7 +119,7 @@ const previewConflictWorkspace: ConflictWorkspace = {
 
 const previewGovernanceLedger: RelationGovernanceLedger = {
   bucket: "all",
-  counts: { all: 9, blocked: 2, eligible_to_centralize: 4, needs_validation: 3 },
+  counts: { all: 9, blocked: 2, eligible_to_centralize: 4, needs_validation: 3, status_normal: 0, status_retained: 0, status_needs_validation: 3, status_needs_attention: 0, status_blocked: 2, source_copies: 0, deployments: 0 },
   last_verified_at: "2026-09-10T08:00:00Z",
   relationship_revision: "preview-rel-1",
   rows: [],

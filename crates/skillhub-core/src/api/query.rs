@@ -886,6 +886,7 @@ pub enum AppQuery {
     GetConflictWorkspace(GetConflictWorkspace),
     #[serde(rename = "list_relation_governance")]
     ListRelationGovernance(ListRelationGovernance),
+    #[serde(rename = "list_governance_history")]
     ListGovernanceHistory(crate::relationship::ListGovernanceHistory),
     #[serde(rename = "list_recovery_candidates")]
     ListRecoveryCandidates,

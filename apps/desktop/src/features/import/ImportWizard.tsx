@@ -853,14 +853,13 @@ type: "failed",
           title: t("importWorkflow.notifications.failedTitle"),
           detail: message,
         }),
-        run: async (handle) => facade.commitImport(
-          state.plan!,
-          state.actions,
-          (progress) => {
-            handle.progress(progress.completed, progress.total);
-            if (operation === operationRef.current) dispatch({ type: "commit_progress", progress });
-          },
-        ),
+        run: async (handle) =>
+          (
+            await facade.commitImport(state.plan!, state.actions, (progress) => {
+              handle.progress(progress.completed, progress.total);
+              if (operation === operationRef.current) dispatch({ type: "commit_progress", progress });
+            })
+          ).results,
       });
       if (operation === operationRef.current) {
         dispatch({ type: "commit_succeeded", results });

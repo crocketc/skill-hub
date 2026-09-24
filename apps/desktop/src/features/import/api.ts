@@ -104,6 +104,26 @@ export interface ImportResult {
   governanceTasks?: import("../../api/bindings").GovernanceTaskFact[];
   /** 结构化原因码，界面不得反向解析展示文案。 */
   reasonCode?: string;
+  /** 计划 9.7：本次导入命中的集中库 Skill；跳过/失败诚实缺省。 */
+  skillId?: string;
+  /**
+   * 计划 9.7：本次导入建立或刷新的活动来源副本关系；完成页据此直连
+   * “这次导入”的治理上下文。绝不从缓存路径反查关系。
+   */
+  sourceRelationId?: string;
+}
+
+/** 一次向导提交会话的批次摘要；计数由后端持久化映射计算，前端不汇总猜测。 */
+export interface ImportBatchSummary {
+  batchId: string;
+  /** 有活动来源副本关系的成功项数量；Online 等无来源关系的结果不计入。 */
+  manageableSourceCount: number;
+}
+
+/** commitImport 的完整结果：批次级上下文与逐项结果分离（计划 9.3/9.7）。 */
+export interface ImportCommitOutcome {
+  batch: ImportBatchSummary;
+  results: ImportResult[];
 }
 
 export interface ImportProgress {
@@ -156,7 +176,7 @@ export interface ImportFacade {
     actions: Record<string, ImportAction>,
     onProgress?: (progress: ImportProgress) => void,
     governanceDecision?: import("../relationshipGovernance/relationshipGovernance").ImportGovernanceDecision,
-  ): Promise<ImportResult[]>;
+  ): Promise<ImportCommitOutcome>;
   cancel(): Promise<void>;
   /** Optional advisory AI safety pre-check (step 5). Findings never change
    * the deterministic import gates; failures are per object. Absent keeps
@@ -479,6 +499,8 @@ export function createMockImportFacade(
             message: "importWorkflow.commitMessages.imported",
             originalPreserved: true,
             status: "todo",
+            skillId: `mock-skill-${index}`,
+            sourceRelationId: `rel-mock-${index}`,
             governanceTasks: [
               {
                 created_at: "0",
@@ -497,10 +519,19 @@ export function createMockImportFacade(
           candidateId: candidate.id,
           message: "已导入",
           status: "succeeded",
+          skillId: `mock-skill-${index}`,
+          sourceRelationId: `rel-mock-${index}`,
         };
       });
       facade.fixtures.results = clone(results);
-      return clone(results);
+      // 批次摘要与逐项结果分离：成功且携带来源关系的项才计入。
+      const manageableSourceCount = results.filter(
+        (result) => result.sourceRelationId !== undefined,
+      ).length;
+      return clone({
+        batch: { batchId: "batch-mock", manageableSourceCount },
+        results,
+      });
     },
     cancel() {
       cancelled = true;

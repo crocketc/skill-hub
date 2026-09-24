@@ -10,6 +10,8 @@ import { Button } from "../../../ui/Button";
 import {
   batchItemStateLabelKey,
   batchResultTitleKey,
+  relationIdOf,
+  relationPathOf,
   rowIsBatchExecutable,
   rowNeedsSharedImpactConfirmation,
 } from "./api";
@@ -55,9 +57,9 @@ export function GovernanceBatchDialog({
   const { t } = useTranslation();
   const executableRows = rows.filter(rowIsBatchExecutable);
   const blockedRows = rows.filter((row) => !rowIsBatchExecutable(row));
-  const checkedCount = executableRows.filter((row) => checkedIds.has(row.relation.relation_id)).length;
+  const checkedCount = executableRows.filter((row) => checkedIds.has(relationIdOf(row.relation))).length;
   const missingSharedConfirmation = executableRows.some((row) => {
-    const relationId = row.relation.relation_id;
+    const relationId = relationIdOf(row.relation);
     return rowNeedsSharedImpactConfirmation(row)
       && checkedIds.has(relationId)
       && !sharedConfirmedIds.has(relationId);
@@ -83,7 +85,7 @@ export function GovernanceBatchDialog({
           ) : null}
           <ul className="sh-governance__batch-items">
             {executableRows.map((row) => {
-              const relationId = row.relation.relation_id;
+              const relationId = relationIdOf(row.relation);
               const needsConfirmation = rowNeedsSharedImpactConfirmation(row);
               return (
                 <li data-testid={`governance-batch-item-${relationId}`} key={relationId}>
@@ -99,7 +101,7 @@ export function GovernanceBatchDialog({
                     <span>{row.skill_display_name ?? t("relationshipGovernance.matrix.unknownSkill")}</span>
                     <span>{t("relationships.governance.batch.itemExecutable")}</span>
                   </label>
-                  <span>{t("agents.pathLabel")} <code>{displayPath(row.relation.path)}</code></span>
+                  <span>{t("agents.pathLabel")} <code>{displayPath(relationPathOf(row.relation))}</code></span>
                   {needsConfirmation ? (
                     <label className="sh-governance__confirm-check">
                       <input
@@ -116,7 +118,7 @@ export function GovernanceBatchDialog({
               );
             })}
             {blockedRows.map((row) => {
-              const relationId = row.relation.relation_id;
+              const relationId = relationIdOf(row.relation);
               return (
                 <li data-testid={`governance-batch-item-${relationId}`} key={relationId}>
                   <label>

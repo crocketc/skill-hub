@@ -11,6 +11,7 @@ import type { DiscoveryFacade } from "../features/discovery/api";
 import {
   createMockImportFacade,
   type ImportAction,
+  type ImportCommitOutcome,
   type ImportFacade,
   type ImportPlan,
   type ImportResult,
@@ -75,24 +76,28 @@ function stubDiscoveryFacade(): DiscoveryFacade {
 }
 
 function allFailedCommit(facade: ImportFacade): void {
-  facade.commitImport = async (plan: ImportPlan, actions: Record<string, ImportAction>) =>
-    plan.candidates.map<ImportResult>((candidate) => ({
+  facade.commitImport = async (plan: ImportPlan, actions: Record<string, ImportAction>): Promise<ImportCommitOutcome> => ({
+    batch: { batchId: "batch-test", manageableSourceCount: 0 },
+    results: plan.candidates.map<ImportResult>((candidate) => ({
       action: actions[candidate.id] ?? "copy",
       candidateId: candidate.id,
       message: "目标目录不可写",
       status: "failed",
-    }));
+    })),
+  });
 }
 
 function todoOnlyCommit(facade: ImportFacade): void {
-  facade.commitImport = async (plan: ImportPlan, actions: Record<string, ImportAction>) =>
-    plan.candidates.map<ImportResult>((candidate) => ({
+  facade.commitImport = async (plan: ImportPlan, actions: Record<string, ImportAction>): Promise<ImportCommitOutcome> => ({
+    batch: { batchId: "batch-test", manageableSourceCount: 0 },
+    results: plan.candidates.map<ImportResult>((candidate) => ({
       action: actions[candidate.id] ?? "copy",
       candidateId: candidate.id,
       message: "importWorkflow.commitMessages.imported",
       originalPreserved: true,
       status: "todo",
-    }));
+    })),
+  });
 }
 
 async function renderDiscoveryRoute(
@@ -210,13 +215,16 @@ it("invalidates the conflict workspace after an import writes conflict facts", a
 it("refreshes shared data for a mixed succeeded and todo import result", async () => {
   const user = userEvent.setup();
   const facade = createMockImportFacade({ scenario: "safe-local" });
-  facade.commitImport = async (plan, actions) => plan.candidates.map<ImportResult>((candidate, index) => ({
-    action: actions[candidate.id] ?? "copy",
-    candidateId: candidate.id,
-    message: index === 0 ? "importWorkflow.commitMessages.imported" : "importWorkflow.commitMessages.skipped",
-    originalPreserved: true,
-    status: index === 0 ? "todo" : "succeeded",
-  }));
+  facade.commitImport = async (plan, actions): Promise<ImportCommitOutcome> => ({
+    batch: { batchId: "batch-test", manageableSourceCount: 0 },
+    results: plan.candidates.map<ImportResult>((candidate, index) => ({
+      action: actions[candidate.id] ?? "copy",
+      candidateId: candidate.id,
+      message: index === 0 ? "importWorkflow.commitMessages.imported" : "importWorkflow.commitMessages.skipped",
+      originalPreserved: true,
+      status: index === 0 ? "todo" : "succeeded",
+    })),
+  });
   queryClient.setQueryData(relationshipOverviewQueryKey, { pending_governance_tasks: [] });
   const { refreshSnapshot } = await renderDiscoveryRoute(facade);
 
@@ -268,13 +276,16 @@ it("opens independent governance from the production import completion page", as
     },
   } as unknown as Awaited<ReturnType<typeof bindings.queryApplication>>);
   const facade = createMockImportFacade({ scenario: "safe-local" });
-  facade.commitImport = async () => [{
-    action: "copy",
-    candidateId: "safe-pdf",
-    message: "importWorkflow.commitMessages.imported",
-    originalPreserved: true,
-    status: "succeeded",
-  }];
+  facade.commitImport = async (): Promise<ImportCommitOutcome> => ({
+    batch: { batchId: "batch-test", manageableSourceCount: 0 },
+    results: [{
+      action: "copy",
+      candidateId: "safe-pdf",
+      message: "importWorkflow.commitMessages.imported",
+      originalPreserved: true,
+      status: "succeeded",
+    }],
+  });
   await renderDiscoveryRoute(facade);
 
   await user.click(screen.getAllByRole("button", { name: "导入 Skill" })[0]);

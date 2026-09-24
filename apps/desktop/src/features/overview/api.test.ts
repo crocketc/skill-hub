@@ -104,7 +104,7 @@ const relationshipCandidates: SkillRelationshipCandidate[] = [
 
 const governanceLedger: RelationGovernanceLedger = {
   bucket: "all",
-  counts: { all: 7, blocked: 1, eligible_to_centralize: 4, needs_validation: 2 },
+  counts: { all: 7, blocked: 1, eligible_to_centralize: 4, needs_validation: 2, status_normal: 0, status_retained: 0, status_needs_validation: 2, status_needs_attention: 0, status_blocked: 1, source_copies: 0, deployments: 0 },
   last_verified_at: null,
   relationship_revision: "7",
   rows: [],
