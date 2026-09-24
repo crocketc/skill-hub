@@ -29,7 +29,9 @@ use skillhub_core::{
         DeploymentRepository, DeploymentState, RegisteredTargetIndex, TargetChange, TargetFact,
         TargetFactSource, TargetPlan,
     },
-    import::ImportCandidate,
+    import::{
+        AcquisitionWorkspaceKind, ImportAcquisitionContext, ImportCandidate, ImportSourceClass,
+    },
     project::{
         PortableSource, Project, SavedProjectView, SharedProjectConfig, SharedSkillRequirement,
     },
@@ -1798,9 +1800,12 @@ name: official-name
     .expect("write skill");
     // 无 frontmatter 的候选：诚实缺省 None。
     std::fs::create_dir_all(root.path().join("no-frontmatter")).expect("skill directory");
-    std::fs::write(root.path().join("no-frontmatter/SKILL.md"), "# Plain
-")
-        .expect("write skill");
+    std::fs::write(
+        root.path().join("no-frontmatter/SKILL.md"),
+        "# Plain
+",
+    )
+    .expect("write skill");
     let facade = LocalApplicationFacade::new_with_today(database, (2026, 9, 20));
 
     let result = facade
@@ -5742,4 +5747,236 @@ fn facade_constructors_share_pending_and_active_library_runtime_states() {
         .snapshot()
         .expect("active snapshot");
     assert_eq!(snapshot.root, root.path());
+}
+
+#[tokio::test]
+async fn discovery_classifies_user_local_sources_with_physical_identity() {
+    // 普通用户目录 = UserLocal；物理身份来自权威推导，大小写/斜杠拼写差异
+    // 不产生第二份分类记录。
+    let database = Database::open_in_memory().expect("database");
+    let library_root = tempfile::tempdir().expect("library root");
+    let source_root = tempfile::tempdir().expect("source root");
+    std::fs::create_dir_all(source_root.path().join("notes")).expect("skill dir");
+    std::fs::write(source_root.path().join("notes/SKILL.md"), "# Notes\n").expect("marker");
+    let facade = LocalApplicationFacade::new_with_library(database, library_root.path());
+
+    let AppQueryResult::ImportCandidates(candidates) = facade
+        .query(RootAppQuery::DiscoverImportCandidates(
+            DiscoverImportCandidates {
+                source: SourceDescriptor::new(
+                    SourceKind::Local,
+                    SourceLocator::local_path(source_root.path()),
+                ),
+            },
+        ))
+        .await
+        .expect("discovery")
+    else {
+        panic!("expected import candidates");
+    };
+    assert_eq!(candidates.len(), 1);
+    assert_eq!(
+        candidates[0].source_class,
+        Some(ImportSourceClass::UserLocal)
+    );
+    assert!(matches!(
+        candidates[0].acquisition,
+        Some(ImportAcquisitionContext {
+            workspace_kind: AcquisitionWorkspaceKind::DirectSource,
+            workspace_path: None,
+        })
+    ));
+
+    let classification = facade
+        .import_source_classification_for_tests(candidates[0].absolute_root.clone())
+        .expect("classification recorded at discovery");
+    assert_eq!(classification.source_class, ImportSourceClass::UserLocal);
+    assert_eq!(
+        classification.physical_source_id,
+        skillhub_core::physical_id_for_path(&candidates[0].absolute_root),
+    );
+    let lowered = candidates[0].absolute_root.to_lowercase();
+    let by_spelling = facade
+        .import_source_classification_for_tests(lowered)
+        .expect("classification lookup is spelling tolerant");
+    assert_eq!(
+        by_spelling.physical_source_id,
+        classification.physical_source_id
+    );
+}
+
+#[tokio::test]
+async fn discovery_classifies_agent_and_project_roots_by_deepest_match() {
+    // 已识别 Agent 目录 = AgentLocal；注册项目目录 = RegisteredProject；
+    // 嵌套时按最长物理路径归属（项目根更深则项目获胜）。
+    let database = Database::open_in_memory().expect("database");
+    let workspace = tempfile::tempdir().expect("workspace");
+    let agent_root = workspace.path().join("agent");
+    let project_root = agent_root.join("proj");
+    std::fs::create_dir_all(project_root.join("inner")).expect("directories");
+    std::fs::create_dir_all(agent_root.join("direct")).expect("directories");
+    std::fs::write(agent_root.join("direct/SKILL.md"), "# Direct\n").expect("marker");
+    std::fs::write(project_root.join("inner/SKILL.md"), "# Inner\n").expect("marker");
+    database
+        .agent_repository()
+        .replace(&DiscoverySnapshot {
+            generation: "1".into(),
+            observed_at: "2026-09-24T00:00:00Z".into(),
+            instances: Vec::new(),
+            logical_targets: vec![LogicalTarget {
+                id: "agent".into(),
+                profile_id: "codex".into(),
+                client_id: "codex-cli".into(),
+                scope: TargetScope::Global,
+                path: agent_root.to_string_lossy().into_owned(),
+                marker: "SKILL.md".into(),
+                precedence: DirectoryPrecedence::Preferred,
+                shared_reference: false,
+                exists: true,
+                readable: true,
+                writable: true,
+                available: true,
+                physical_id: skillhub_core::physical_id_for_path(&agent_root).expect("physical id"),
+            }],
+            physical_targets: Vec::new(),
+        })
+        .expect("save discovery");
+    database
+        .project_repository()
+        .register(Project::new(
+            skillhub_core::ProjectId::new(),
+            "proj",
+            &project_root,
+        ))
+        .expect("register project");
+    let facade = LocalApplicationFacade::new(database);
+
+    let AppQueryResult::ImportCandidates(candidates) = facade
+        .query(RootAppQuery::DiscoverImportCandidates(
+            DiscoverImportCandidates {
+                source: SourceDescriptor::new(
+                    SourceKind::Local,
+                    SourceLocator::local_path(&agent_root),
+                ),
+            },
+        ))
+        .await
+        .expect("discovery")
+    else {
+        panic!("expected import candidates");
+    };
+    let class_of = |relative: &str| {
+        candidates
+            .iter()
+            .find(|candidate| candidate.relative_root == relative)
+            .map(|candidate| candidate.source_class)
+            .unwrap_or_else(|| panic!("candidate {relative} missing"))
+    };
+    assert_eq!(class_of("direct"), Some(ImportSourceClass::AgentLocal));
+    assert_eq!(
+        class_of("proj/inner"),
+        Some(ImportSourceClass::RegisteredProject)
+    );
+
+    let direct = facade
+        .import_source_classification_for_tests(
+            candidates
+                .iter()
+                .find(|candidate| candidate.relative_root == "direct")
+                .unwrap()
+                .absolute_root
+                .clone(),
+        )
+        .expect("direct classification");
+    assert_eq!(direct.agent_client_id.as_deref(), Some("codex-cli"));
+}
+
+#[tokio::test]
+async fn discovery_classifies_central_library_content() {
+    // 集中库内部内容 = CentralLibrary，不产生可治理来源语义。
+    let database = Database::open_in_memory().expect("database");
+    let library_root = tempfile::tempdir().expect("library root");
+    std::fs::create_dir_all(library_root.path().join("central-skill")).expect("skill dir");
+    std::fs::write(
+        library_root.path().join("central-skill/SKILL.md"),
+        "# Central\n",
+    )
+    .expect("marker");
+    let facade = LocalApplicationFacade::new_with_library(database, library_root.path());
+
+    let AppQueryResult::ImportCandidates(candidates) = facade
+        .query(RootAppQuery::DiscoverImportCandidates(
+            DiscoverImportCandidates {
+                source: SourceDescriptor::new(
+                    SourceKind::Local,
+                    SourceLocator::local_path(library_root.path()),
+                ),
+            },
+        ))
+        .await
+        .expect("discovery")
+    else {
+        panic!("expected import candidates");
+    };
+    let central = candidates
+        .iter()
+        .find(|candidate| candidate.relative_root == "central-skill")
+        .expect("central skill candidate");
+    assert_eq!(
+        central.source_class,
+        Some(ImportSourceClass::CentralLibrary)
+    );
+}
+
+#[tokio::test]
+async fn git_acquisition_classifies_online_with_temporary_cache() {
+    // Git/HTTPS 获取落到临时目录后 provenance 仍为 Online；工作区形态是
+    // TemporaryCache 且不携带临时目录路径。
+    let repository = tempfile::tempdir().expect("git source");
+    run_git(repository.path(), &["init"]);
+    run_git(
+        repository.path(),
+        &["config", "user.email", "skillhub-tests@example.com"],
+    );
+    run_git(
+        repository.path(),
+        &["config", "user.name", "SkillHub Tests"],
+    );
+    std::fs::create_dir_all(repository.path().join("pdf")).expect("skill directory");
+    std::fs::write(repository.path().join("pdf/SKILL.md"), "# PDF\n").expect("skill marker");
+    run_git(repository.path(), &["add", "."]);
+    run_git(
+        repository.path(),
+        &["commit", "--no-gpg-sign", "--no-verify", "-m", "fixture"],
+    );
+    let source_url = format!(
+        "file:///{}",
+        repository.path().to_string_lossy().replace('\\', "/")
+    );
+    let source = SourceDescriptor::new(SourceKind::Git, SourceLocator::git_url(source_url));
+    let facade = LocalApplicationFacade::new(Database::open_in_memory().expect("database"));
+
+    let AppQueryResult::ImportCandidates(candidates) = facade
+        .query(RootAppQuery::DiscoverImportCandidates(
+            DiscoverImportCandidates { source },
+        ))
+        .await
+        .expect("remote discovery")
+    else {
+        panic!("expected import candidates");
+    };
+    assert_eq!(candidates.len(), 1);
+    assert_eq!(candidates[0].source_class, Some(ImportSourceClass::Online));
+    assert!(matches!(
+        candidates[0].acquisition,
+        Some(ImportAcquisitionContext {
+            workspace_kind: AcquisitionWorkspaceKind::TemporaryCache,
+            workspace_path: None,
+        })
+    ));
+    let classification = facade
+        .import_source_classification_for_tests(candidates[0].absolute_root.clone())
+        .expect("classification recorded for acquired source");
+    assert_eq!(classification.source_class, ImportSourceClass::Online);
+    assert_eq!(classification.physical_source_id, None);
 }

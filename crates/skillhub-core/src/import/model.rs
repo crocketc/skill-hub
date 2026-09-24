@@ -100,6 +100,15 @@ pub struct ImportCandidate {
     /// 生成逻辑不受该字段影响（runtime_name 不变量）。
     #[serde(default)]
     pub frontmatter_name: Option<String>,
+    /// 应用层在发现时盖章的权威来源类别；适配器绝不猜测，缺省 None。
+    #[serde(default)]
+    pub source_class: Option<ImportSourceClass>,
+    /// 调用方提供的来源容器标识（如仓库/归档容器）；本地目录来源为 None。
+    #[serde(default)]
+    pub source_container_id: Option<String>,
+    /// 获取工作区形态；TemporaryCache 只能由获取流程显式标记。
+    #[serde(default)]
+    pub acquisition: Option<ImportAcquisitionContext>,
 }
 
 impl ImportCandidate {
@@ -121,6 +130,9 @@ impl ImportCandidate {
             ownership_detail: None,
             upstream: None,
             frontmatter_name: None,
+            source_class: None,
+            source_container_id: None,
+            acquisition: None,
         }
     }
 

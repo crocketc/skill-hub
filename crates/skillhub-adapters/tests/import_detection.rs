@@ -4,7 +4,9 @@ use skillhub_adapters::import::{
     KnownAgentDirectory, KnownProjectDirectory, OwnershipClassifier, ReadOnlySkillDirectory,
     SkillDetectionConfig, SkillDetector,
 };
-use skillhub_core::import::{CandidateOwnership, ImportAction};
+use skillhub_core::import::{
+    AcquisitionWorkspaceKind, CandidateOwnership, ImportAcquisitionContext, ImportAction,
+};
 use skillhub_core::source::{SourceDescriptor, SourceKind, SourceLocator};
 use skillhub_core::ProjectId;
 use tempfile::tempdir;
@@ -297,4 +299,35 @@ fn classifier_uses_deepest_registered_root_when_roots_overlap() {
     assert!(
         normalize(PathBuf::from(candidate.absolute_root)).ends_with("agent/skills/plugins/builtin")
     );
+}
+
+#[test]
+fn detection_transports_caller_acquisition_context_and_never_guesses_source_class() {
+    // 适配器只透传调用方盖章的获取上下文，绝不根据路径字符串猜测
+    // Agent/项目/集中库等长期来源类别（分类权威在应用层）。
+    let workspace = tempdir().unwrap();
+    let agent_root = workspace.path().join("agent/skills");
+    write_skill(&agent_root, "owned", "SKILL.md");
+    let context = ImportAcquisitionContext {
+        workspace_kind: AcquisitionWorkspaceKind::TemporaryCache,
+        workspace_path: None,
+    };
+
+    let stamped = SkillDetector::default()
+        .detect_with_context(
+            &agent_root,
+            local_source(&agent_root),
+            Some(context.clone()),
+        )
+        .unwrap();
+    assert_eq!(stamped.len(), 1);
+    assert_eq!(stamped[0].acquisition, Some(context));
+    assert_eq!(stamped[0].source_class, None, "adapter must not guess");
+    assert_eq!(stamped[0].source_container_id, None);
+
+    let plain = SkillDetector::default()
+        .detect(&agent_root, local_source(&agent_root))
+        .unwrap();
+    assert_eq!(plain[0].acquisition, None);
+    assert_eq!(plain[0].source_class, None);
 }

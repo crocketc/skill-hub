@@ -137,7 +137,29 @@ pub struct LocalApplicationFacade {
     upstream_origins: Mutex<HashMap<String, skillhub_core::UpstreamOrigin>>,
     /// Keeps remote acquisition workspaces alive from discovery through import
     /// preparation/commit. Candidate paths are valid while the facade owns it.
-    acquired_import_sources: Mutex<HashMap<String, AcquiredSource>>,
+    acquired_import_sources: Mutex<HashMap<String, AcquiredImportSource>>,
+    /// 发现时固化的权威来源分类，按 observed_path_key 索引；提交阶段按
+    /// 同一 key 取回，不按路径拼写或显示名反推类别与物理身份。
+    import_source_classifications: Mutex<HashMap<String, ClassifiedImportSource>>,
+}
+
+/// 获取阶段落地的完整来源记录：原始 descriptor、临时工作区、权威类别与
+/// 工作区形态一体保存，不再只保存临时目录。
+pub struct AcquiredImportSource {
+    pub source: SourceDescriptor,
+    pub workspace: AcquiredSource,
+    pub source_class: skillhub_core::ImportSourceClass,
+    pub workspace_kind: skillhub_core::AcquisitionWorkspaceKind,
+}
+
+/// 发现时固化的权威分类结果。`physical_source_id` 为 None 表示身份缺失
+/// 或来源不可治理（Online/CentralLibrary），后续治理必须 fail-closed。
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ClassifiedImportSource {
+    pub source_class: skillhub_core::ImportSourceClass,
+    pub physical_source_id: Option<String>,
+    pub source_container_id: Option<String>,
+    pub agent_client_id: Option<String>,
 }
 
 /// One in-flight LLM check: its externally visible operation id plus the flag
@@ -456,15 +478,15 @@ impl LocalDeploymentBackend {
     /// together.
     fn ensure_targets_row(database: &Database, target: &TargetPlan) -> AppResult<()> {
         let (agent_id, scope, project_id) = Self::target_registration(database, target)?;
-        database
-            .target_repository()
-            .upsert_physical_target(&skillhub_storage::PhysicalTargetRegistration {
+        database.target_repository().upsert_physical_target(
+            &skillhub_storage::PhysicalTargetRegistration {
                 id: &target.physical_target_id,
                 agent_id: &agent_id,
                 project_id: project_id.as_deref(),
                 scope,
                 path: &target.target_path,
-            })
+            },
+        )
     }
 
     /// Resolves who owns the target for the legacy `targets` columns:
@@ -1742,6 +1764,7 @@ impl LocalApplicationFacade {
             llm_runs: Mutex::new(HashMap::new()),
             upstream_origins: Mutex::new(HashMap::new()),
             acquired_import_sources: Mutex::new(HashMap::new()),
+            import_source_classifications: Mutex::new(HashMap::new()),
             llm_credentials: Arc::new(SessionCredentialStore::default()),
             llm_admin: None,
             network_gate: NetworkGate::open(),
@@ -1817,6 +1840,7 @@ impl LocalApplicationFacade {
             llm_runs: Mutex::new(HashMap::new()),
             upstream_origins: Mutex::new(HashMap::new()),
             acquired_import_sources: Mutex::new(HashMap::new()),
+            import_source_classifications: Mutex::new(HashMap::new()),
             llm_credentials: Arc::new(SessionCredentialStore::default()),
             llm_admin: None,
             network_gate: NetworkGate::open(),
@@ -1922,6 +1946,20 @@ impl LocalApplicationFacade {
         if let Ok(mut registry) = self.upstream_origins.lock() {
             registry.insert(local_path.into(), origin);
         }
+    }
+
+    /// 仅供测试：按路径（大小写/斜杠不敏感）读取发现时固化的来源分类。
+    #[doc(hidden)]
+    pub fn import_source_classification_for_tests(
+        &self,
+        root: impl Into<String>,
+    ) -> Option<ClassifiedImportSource> {
+        let key = observed_path_key(&root.into());
+        self.import_source_classifications
+            .lock()
+            .ok()?
+            .get(&key)
+            .cloned()
     }
 
     /// 仅供测试：把仓库归档下载指向本地 fixture 服务器。
@@ -4710,11 +4748,8 @@ impl LocalApplicationFacade {
             let source_repository = database.source_repository();
             source_repository.set_revision(request.skill_id, Some(&version.manifest.tree_hash))?;
             source_repository.record_update_check(
-                &skillhub_core::UpstreamCheckResult::new(
-                    request.skill_id,
-                    SourceState::UpToDate,
-                )
-                .with_versions(Some(version.id.clone()), Some(version.id.clone())),
+                &skillhub_core::UpstreamCheckResult::new(request.skill_id, SourceState::UpToDate)
+                    .with_versions(Some(version.id.clone()), Some(version.id.clone())),
             )
         })?;
         Ok(AppCommandResult::AppliedSourceUpdate(
@@ -5898,13 +5933,39 @@ impl ApplicationFacade for LocalApplicationFacade {
                     Some(root) => root,
                     None => self.acquire_import_source(&source).await?,
                 };
-                let mut candidates = SkillDetector::default().detect(root.clone(), source)?;
+                // 获取上下文只能来自获取流程的显式盖章；本地目录是直接来源。
+                let acquired = serde_json::to_string(&source).ok().and_then(|cache_key| {
+                    self.acquired_import_sources
+                        .lock()
+                        .ok()?
+                        .get(&cache_key)
+                        .map(|acquired| acquired.workspace_kind)
+                });
+                let acquisition = acquired
+                    .map(|workspace_kind| skillhub_core::ImportAcquisitionContext {
+                        workspace_kind,
+                        workspace_path: None,
+                    })
+                    .or_else(|| {
+                        source.locator.as_local_path().map(|_| {
+                            skillhub_core::ImportAcquisitionContext {
+                                workspace_kind:
+                                    skillhub_core::AcquisitionWorkspaceKind::DirectSource,
+                                workspace_path: None,
+                            }
+                        })
+                    });
+                let mut candidates = SkillDetector::default().detect_with_context(
+                    root.clone(),
+                    source.clone(),
+                    acquisition,
+                )?;
                 // DEV-3：读取每个候选的 SKILL.md frontmatter `name`，供界面
                 // 在「文件夹名 ≠ frontmatter name」时给出非阻塞警告；读取
                 // 失败或缺省字段保持 None（诚实缺省），绝不据此拒绝导入。
                 for candidate in &mut candidates {
-                    let marker_path = std::path::Path::new(&candidate.absolute_root)
-                        .join(&candidate.marker);
+                    let marker_path =
+                        std::path::Path::new(&candidate.absolute_root).join(&candidate.marker);
                     if let Ok(content) = std::fs::read_to_string(&marker_path) {
                         candidate.frontmatter_name = read_frontmatter_name(&content);
                     }
@@ -5916,6 +5977,50 @@ impl ApplicationFacade for LocalApplicationFacade {
                         for candidate in &mut candidates {
                             candidate.upstream = Some(origin.clone());
                         }
+                    }
+                }
+                // 权威来源分类只在应用层发生：下载缓存/上游注册路径一律
+                // Online，本地路径按目录证据归类；结果固化供提交阶段取回。
+                let central_root = self
+                    .library_runtime
+                    .snapshot()
+                    .ok()
+                    .map(|library| library.root.to_string_lossy().into_owned());
+                let mut classifications = Vec::with_capacity(candidates.len());
+                for candidate in &mut candidates {
+                    let classified = if candidate.upstream.is_some() {
+                        candidate.source_class = Some(skillhub_core::ImportSourceClass::Online);
+                        candidate.acquisition = Some(skillhub_core::ImportAcquisitionContext {
+                            workspace_kind: skillhub_core::AcquisitionWorkspaceKind::TemporaryCache,
+                            workspace_path: None,
+                        });
+                        ClassifiedImportSource {
+                            source_class: skillhub_core::ImportSourceClass::Online,
+                            physical_source_id: None,
+                            source_container_id: None,
+                            agent_client_id: None,
+                        }
+                    } else {
+                        let classified = self.with_database(
+                            "query.discover_import_candidates.classify",
+                            |database| {
+                                Self::classify_import_source(
+                                    database,
+                                    &candidate.source,
+                                    &candidate.absolute_root,
+                                    central_root.as_deref(),
+                                )
+                            },
+                        )?;
+                        candidate.source_class = Some(classified.source_class);
+                        candidate.source_container_id = classified.source_container_id.clone();
+                        classified
+                    };
+                    classifications.push((observed_path_key(&candidate.absolute_root), classified));
+                }
+                if let Ok(mut registry) = self.import_source_classifications.lock() {
+                    for (key, classified) in classifications {
+                        registry.insert(key, classified);
                     }
                 }
                 Ok(AppQueryResult::ImportCandidates(candidates))
@@ -6304,10 +6409,12 @@ impl LocalApplicationFacade {
         if frontmatter_name == plan.runtime_name {
             return Ok(());
         }
-        Err(AppError::new(ErrorCode::DeploymentNameMismatch, Severity::Error)
-            .with_param("runtime_name", plan.runtime_name.clone())
-            .with_param("declared_name", frontmatter_name)
-            .with_action(RecoveryAction::ChooseAnotherName))
+        Err(
+            AppError::new(ErrorCode::DeploymentNameMismatch, Severity::Error)
+                .with_param("runtime_name", plan.runtime_name.clone())
+                .with_param("declared_name", frontmatter_name)
+                .with_action(RecoveryAction::ChooseAnotherName),
+        )
     }
 
     fn discovery_target_index(&self) -> AppResult<RegisteredTargetIndex> {
@@ -6473,7 +6580,7 @@ impl LocalApplicationFacade {
             .lock()
             .map_err(|_| internal("query.discover_import_candidates.acquire"))?
             .get(&cache_key)
-            .map(|acquired| acquired.root().to_path_buf())
+            .map(|acquired| acquired.workspace.root().to_path_buf())
         {
             return Ok(root);
         }
@@ -6491,15 +6598,16 @@ impl LocalApplicationFacade {
                     })?
             }
             (skillhub_core::SourceKind::Https, SourceLocator::HttpsUrl(url)) => {
-                let downloaded = HttpsSourceFetcher::default()
-                    .fetch(url)
-                    .await
-                    .map_err(|error| {
-                        AppError::new(ErrorCode::OperationConflict, Severity::Warning)
-                            .with_param("reason", error.code.as_str())
-                            .with_param("detail", error.to_string())
-                            .with_action(RecoveryAction::Retry)
-                    })?;
+                let downloaded =
+                    HttpsSourceFetcher::default()
+                        .fetch(url)
+                        .await
+                        .map_err(|error| {
+                            AppError::new(ErrorCode::OperationConflict, Severity::Warning)
+                                .with_param("reason", error.code.as_str())
+                                .with_param("detail", error.to_string())
+                                .with_action(RecoveryAction::Retry)
+                        })?;
                 if !is_supported_remote_archive(url) {
                     return Err(AppError::new(ErrorCode::InvalidInput, Severity::Error)
                         .with_param("reason", "source.archive_required")
@@ -6534,7 +6642,15 @@ impl LocalApplicationFacade {
         self.acquired_import_sources
             .lock()
             .map_err(|_| internal("query.discover_import_candidates.store"))?
-            .insert(cache_key, acquired);
+            .insert(
+                cache_key,
+                AcquiredImportSource {
+                    source: source.clone(),
+                    workspace: acquired,
+                    source_class: skillhub_core::ImportSourceClass::Online,
+                    workspace_kind: skillhub_core::AcquisitionWorkspaceKind::TemporaryCache,
+                },
+            );
         Ok(root)
     }
 
@@ -7290,6 +7406,113 @@ impl LocalApplicationFacade {
             source_is_link,
             observed_copy_verified,
             affected_agents,
+        })
+    }
+
+    /// 发现时的权威来源分类（设计 §3.6）。输入来源 descriptor、已解析的
+    /// 候选根与集中库根；项目根、Agent 目录与目录节点证据从数据库读取。
+    /// 用户选择只提供 locator，不作为类别权威；全部根按最长物理路径匹配，
+    /// 嵌套时最具体根获胜，同长时集中库 > 项目 > Agent。
+    /// 物理身份用 `physical_id_for_path` 权威推导；推导失败或类别不可治理
+    /// （Online/CentralLibrary）时为 None，治理侧据此 fail-closed。
+    fn classify_import_source(
+        database: &Database,
+        source: &SourceDescriptor,
+        resolved_root: &str,
+        central_root: Option<&str>,
+    ) -> AppResult<ClassifiedImportSource> {
+        #[derive(Clone, Copy, PartialEq, Eq)]
+        enum RootKind {
+            Central,
+            Project,
+            Agent,
+        }
+        let kind_rank = |kind: &RootKind| match kind {
+            RootKind::Central => 3,
+            RootKind::Project => 2,
+            RootKind::Agent => 1,
+        };
+        if source.locator.as_local_path().is_none() {
+            // 在线来源只保存业务坐标；临时缓存不产生长期身份事实。
+            return Ok(ClassifiedImportSource {
+                source_class: skillhub_core::ImportSourceClass::Online,
+                physical_source_id: None,
+                source_container_id: None,
+                agent_client_id: None,
+            });
+        }
+        // 目录节点先收集，Agent 逻辑目标后收集：同为最长匹配时目标自带
+        // client_id，优先作为归属证据。
+        let mut roots: Vec<(String, RootKind, Option<String>, Option<String>)> = Vec::new();
+        if let Some(central) = central_root {
+            roots.push((
+                Self::canonical_path_string(central),
+                RootKind::Central,
+                None,
+                None,
+            ));
+        }
+        for node in database
+            .directory_repository()
+            .list_nodes()?
+            .into_iter()
+            .filter(|node| node.exists)
+        {
+            roots.push((
+                Self::canonical_path_string(&node.path),
+                RootKind::Agent,
+                Some(node.node_id),
+                None,
+            ));
+        }
+        if let Some(snapshot) = database.agent_repository().load()? {
+            for target in snapshot
+                .logical_targets
+                .into_iter()
+                .filter(|target| target.available && target.exists)
+            {
+                roots.push((
+                    Self::canonical_path_string(&target.path),
+                    RootKind::Agent,
+                    None,
+                    Some(target.client_id),
+                ));
+            }
+        }
+        for project in database.project_repository().list()? {
+            roots.push((
+                Self::canonical_path_string(&project.device_path),
+                RootKind::Project,
+                None,
+                None,
+            ));
+        }
+        let canonical = Self::canonical_path_string(resolved_root);
+        let matched = roots
+            .into_iter()
+            .filter(|(root, _, _, _)| canonical == *root || path_lives_under(&canonical, root))
+            .max_by_key(|(root, kind, _, _)| (root.chars().count(), kind_rank(kind)));
+        let physical = skillhub_core::physical_id_for_path(resolved_root);
+        Ok(match matched {
+            Some((_, kind, node_id, client_id)) => ClassifiedImportSource {
+                source_class: match kind {
+                    RootKind::Central => skillhub_core::ImportSourceClass::CentralLibrary,
+                    RootKind::Project => skillhub_core::ImportSourceClass::RegisteredProject,
+                    RootKind::Agent => skillhub_core::ImportSourceClass::AgentLocal,
+                },
+                physical_source_id: match kind {
+                    RootKind::Central => None,
+                    _ => physical,
+                },
+                source_container_id: node_id,
+                agent_client_id: client_id,
+            },
+            None => ClassifiedImportSource {
+                source_class: skillhub_core::ImportSourceClass::UserLocal,
+                physical_source_id: physical,
+                source_container_id: None,
+                agent_client_id: None,
+            },
         })
     }
 
@@ -8605,7 +8828,10 @@ fn offered_modes(
             capabilities.junction,
             skillhub_core::DeploymentMode::DirectoryJunction,
         ),
-        (capabilities.copy, skillhub_core::DeploymentMode::ManagedCopy),
+        (
+            capabilities.copy,
+            skillhub_core::DeploymentMode::ManagedCopy,
+        ),
     ]
     .into_iter()
     .filter_map(|(supported, mode)| supported.then_some(mode))
@@ -9003,7 +9229,9 @@ fn operation_summary(message_code: &str) -> skillhub_core::OperationSummary {
 ///
 /// Only targets that reported residue are recorded — a target the backend
 /// already undid must never be deleted a second time.
-fn pending_recovery_targets(summary: &skillhub_core::application::DeploymentSummary) -> serde_json::Value {
+fn pending_recovery_targets(
+    summary: &skillhub_core::application::DeploymentSummary,
+) -> serde_json::Value {
     let pending: Vec<serde_json::Value> = summary
         .targets
         .iter()

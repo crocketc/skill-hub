@@ -1,6 +1,6 @@
 use skillhub_core::{
-    source::SourceDescriptor, AppError, AppResult, ErrorCode, ImportCandidate, RecoveryAction,
-    Severity,
+    import::ImportAcquisitionContext, source::SourceDescriptor, AppError, AppResult, ErrorCode,
+    ImportCandidate, RecoveryAction, Severity,
 };
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -39,11 +39,24 @@ impl SkillDetector {
         root: impl AsRef<Path>,
         source: SourceDescriptor,
     ) -> AppResult<Vec<ImportCandidate>> {
+        self.detect_with_context(root, source, None)
+    }
+
+    /// Detects candidates and transports the caller-provided acquisition
+    /// context verbatim. The adapter never derives a provenance source class
+    /// from path strings; classification authority lives in the application.
+    pub fn detect_with_context(
+        &self,
+        root: impl AsRef<Path>,
+        source: SourceDescriptor,
+        acquisition: Option<ImportAcquisitionContext>,
+    ) -> AppResult<Vec<ImportCandidate>> {
         self.validate_config()?;
         let root = canonical_directory(root.as_ref())?;
         let mut state = DetectionState {
             scan_root: root.clone(),
             source,
+            acquisition,
             candidates: Vec::new(),
             entries: 0,
         };
@@ -76,6 +89,7 @@ impl SkillDetector {
                 directory,
                 &marker,
                 state.source.clone(),
+                state.acquisition.clone(),
             )?);
             if !self.config.allow_nested_candidates {
                 return Ok(());
@@ -105,6 +119,7 @@ impl SkillDetector {
 struct DetectionState {
     scan_root: PathBuf,
     source: SourceDescriptor,
+    acquisition: Option<ImportAcquisitionContext>,
     candidates: Vec<ImportCandidate>,
     entries: usize,
 }
@@ -149,6 +164,7 @@ fn candidate_for(
     directory: &Path,
     marker: &str,
     source: SourceDescriptor,
+    acquisition: Option<ImportAcquisitionContext>,
 ) -> AppResult<ImportCandidate> {
     let absolute = directory
         .canonicalize()
@@ -162,13 +178,15 @@ fn candidate_for(
         .file_name()
         .map(|name| name.to_string_lossy().into_owned())
         .unwrap_or_else(|| relative.clone());
-    Ok(ImportCandidate::detected(
+    let mut candidate = ImportCandidate::detected(
         source,
         absolute.to_string_lossy().into_owned(),
         relative,
         marker.to_owned(),
         runtime_name,
-    ))
+    );
+    candidate.acquisition = acquisition;
+    Ok(candidate)
 }
 
 fn invalid_input(detail: impl Into<String>) -> AppError {

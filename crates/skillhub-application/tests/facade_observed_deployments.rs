@@ -688,3 +688,49 @@ async fn original_migration_restores_the_original_directory_from_the_backup_on_r
         skillhub_core::ErrorCode::OperationConflict
     );
 }
+
+#[tokio::test]
+async fn upstream_registered_local_path_classifies_online_with_temporary_cache() {
+    // 仓库发现 local_path + UpstreamOrigin：本地绝对路径只是下载缓存，
+    // provenance 类别必须仍是 Online，工作区形态 TemporaryCache。
+    let database = Database::open_in_memory().expect("database");
+    let cache_root = tempfile::tempdir().expect("repo cache");
+    std::fs::create_dir_all(cache_root.path().join("pdf")).expect("skill dir");
+    std::fs::write(cache_root.path().join("pdf/SKILL.md"), "# PDF\n").expect("marker");
+    let facade = LocalApplicationFacade::new(database);
+    facade.register_upstream_origin(
+        cache_root.path().to_string_lossy().into_owned(),
+        skillhub_core::UpstreamOrigin {
+            url: "https://example.com/org/repo".into(),
+            branch: "main".into(),
+            directory: String::new(),
+        },
+    );
+
+    let result = facade
+        .query(AppQuery::DiscoverImportCandidates(
+            skillhub_core::api::DiscoverImportCandidates {
+                source: SourceDescriptor::new(
+                    SourceKind::Local,
+                    SourceLocator::local_path(cache_root.path()),
+                ),
+            },
+        ))
+        .await
+        .expect("discovery");
+    let AppQueryResult::ImportCandidates(candidates) = result else {
+        panic!("expected import candidates");
+    };
+    assert_eq!(candidates.len(), 1);
+    assert_eq!(
+        candidates[0].source_class,
+        Some(skillhub_core::import::ImportSourceClass::Online)
+    );
+    assert!(matches!(
+        candidates[0].acquisition,
+        Some(skillhub_core::import::ImportAcquisitionContext {
+            workspace_kind: skillhub_core::import::AcquisitionWorkspaceKind::TemporaryCache,
+            workspace_path: None,
+        })
+    ));
+}

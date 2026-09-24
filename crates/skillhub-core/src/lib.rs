@@ -83,26 +83,26 @@ pub use api::{
     CommitDeleteSkill, CommitDeployment, CommitImport, CommitInitialRestore,
     CommitRelationMigration, CommitRepair, CommitRestore, CommitUndeploy, CreateBackup,
     CreateIgnoreRule, CreateStandardExport, DeploymentTarget, DetachManagement,
-    DiscoverImportCandidates, DiscoverRepoSkills,
-    DownloadApplicationUpdate, DownloadRepoSkill, FactsChanged, GenerateOnlineSearchQuery,
-    GetCallPolicy, GetDeploymentPlan, GetDeploymentRelations, GetLlmSafetyCheckResult,
-    GetProjectAssemblyPlan, GetReconcilePlan, GetRelationshipOverview,
-    GetRelationshipRemovalImpact, GetRemovalImpact, GetUiPreference, GetUiPreferenceResult,
-    IgnoreExternalChange, InstallApplicationUpdate, KeepIndependentCopy, ListDeploymentTargets,
-    ListDeployments, ListMarkdownFiles, ListPendingItems, ListSkillOperations, ListSkillRepos,
-    ListSkills, LlmCheckRun, MarkdownFileContent, MarkdownFileEntry, OpenOfficialRelease, Page,
-    PrepareApplicationUpdate, PrepareBackup, PrepareCallPolicyChange, PrepareDeleteSkill,
-    PrepareDeployment, PrepareImport, PrepareInitialRestore, PrepareRelationMigration,
-    PrepareRepair, PrepareRestore, PrepareStandardExport, PrepareUndeploy, PrepareUninstall,
-    ReadMarkdownFile, RecheckLlmSafety, RefreshSkillRepo, RelationMigrationInput,
-    RelationMigrationTargetMode, RelationshipMigrationBackupPolicy, RelationshipOverview,
-    RelationshipOverviewScope, RelationshipScope, RelinkSource, RemoveIgnoreRule, RemoveSkillRepo,
-    ResolveRecovery, RestoreDecision, RestoreDeployment, RestoreOriginalCallPolicy,
-    RollbackApplicationUpdate, RollbackRelationMigration, RunHealthCheck, RunImportAiChecks,
-    RunLlmSafetyCheck, RunRollingBackup, SaveUserTranslationRevision, SearchOnlineSources,
+    DiscoverImportCandidates, DiscoverRepoSkills, DownloadApplicationUpdate, DownloadRepoSkill,
+    FactsChanged, GenerateOnlineSearchQuery, GetCallPolicy, GetDeploymentPlan,
+    GetDeploymentRelations, GetLlmSafetyCheckResult, GetProjectAssemblyPlan, GetReconcilePlan,
+    GetRelationshipOverview, GetRelationshipRemovalImpact, GetRemovalImpact, GetUiPreference,
+    GetUiPreferenceResult, IgnoreExternalChange, InstallApplicationUpdate, KeepIndependentCopy,
+    ListDeploymentTargets, ListDeployments, ListMarkdownFiles, ListPendingItems,
+    ListSkillOperations, ListSkillRepos, ListSkills, LlmCheckRun, MarkdownFileContent,
+    MarkdownFileEntry, OpenOfficialRelease, Page, PrepareApplicationUpdate, PrepareBackup,
+    PrepareCallPolicyChange, PrepareDeleteSkill, PrepareDeployment, PrepareImport,
+    PrepareInitialRestore, PrepareRelationMigration, PrepareRepair, PrepareRestore,
+    PrepareStandardExport, PrepareUndeploy, PrepareUninstall, ReadMarkdownFile, RecheckLlmSafety,
+    RefreshSkillRepo, RelationMigrationInput, RelationMigrationTargetMode,
+    RelationshipMigrationBackupPolicy, RelationshipOverview, RelationshipOverviewScope,
+    RelationshipScope, RelinkSource, RemoveIgnoreRule, RemoveSkillRepo, ResolveRecovery,
+    RestoreDecision, RestoreDeployment, RestoreOriginalCallPolicy, RollbackApplicationUpdate,
+    RollbackRelationMigration, RunHealthCheck, RunImportAiChecks, RunLlmSafetyCheck,
+    RunRollingBackup, SaveUserTranslationRevision, SearchOnlineSources,
     SearchOnlineSourcesAssisted, SetApplicationUpdatePolicy, SetUiPreference, SkillListItem,
-    SkillListPage, SkillOperationEntry, SkillOperationsResult, TranslateDescription,
-    SkillVersionFilter, TranslateDescriptionsBatch, VerifyBackup,
+    SkillListPage, SkillOperationEntry, SkillOperationsResult, SkillVersionFilter,
+    TranslateDescription, TranslateDescriptionsBatch, VerifyBackup,
 };
 pub use app_update::{
     install_action_for, select_artifact, validate_official_artifact_url,
@@ -180,12 +180,13 @@ pub use ignore::{IgnoreRule, IgnoreSubject};
 pub use import::{
     analyze_import, ensure_original_deletion_authorized, import_conflict_case_id,
     import_governance_task_id, plan_import_conflict_case, plan_original_migration,
-    CandidateOwnership, DuplicateKind, ExistingSkillRecord, ImportAction, ImportAnalysis,
-    ImportCandidate, ImportCaseOutcome, ImportConflict, ImportDecision, ImportGovernanceAction,
-    ImportGovernanceClassification, ImportGovernanceDecision, ImportGovernanceGroup,
-    ImportGovernanceMember, ImportMatch, ImportProvenance, ImportSourceFacts, MatchBasis,
-    OriginalMigrationConflict, OriginalMigrationConflictReason, OriginalMigrationFacts,
-    OriginalMigrationPlan, OriginalMigrationResult, OriginalMigrationState,
+    AcquisitionWorkspaceKind, CandidateOwnership, DuplicateKind, ExistingSkillRecord,
+    ImportAcquisitionContext, ImportAction, ImportAnalysis, ImportCandidate, ImportCaseOutcome,
+    ImportConflict, ImportDecision, ImportGovernanceAction, ImportGovernanceClassification,
+    ImportGovernanceDecision, ImportGovernanceGroup, ImportGovernanceMember, ImportMatch,
+    ImportProvenance, ImportSourceClass, ImportSourceFacts, MatchBasis, OriginalMigrationConflict,
+    OriginalMigrationConflictReason, OriginalMigrationFacts, OriginalMigrationPlan,
+    OriginalMigrationResult, OriginalMigrationState,
 };
 pub use llm::{search_query, translation};
 pub use llm::{
@@ -208,11 +209,11 @@ pub use relationship::{
 };
 pub use scan::{DiscoveredSkill, ScanGeneration, ScanIssue, ScanRepository, ScanResult, ScanScope};
 pub use source::{
-    SearchCandidateRecord, SearchCandidateStatus, SearchHitOrigin,
-    SourceDescriptor, SourceKind, SourceLocator, SourceRecord, SourceRole, SourceSearchHit,
-    SourceSearchPage, SourceSearchQuery, UpstreamOrigin,
+    AppliedSourceUpdate, SourceState, SourceUpdateBackend, UpdateDecision, UpstreamCheckResult,
 };
 pub use source::{
-    AppliedSourceUpdate, SourceState, SourceUpdateBackend, UpdateDecision, UpstreamCheckResult,
+    SearchCandidateRecord, SearchCandidateStatus, SearchHitOrigin, SourceDescriptor, SourceKind,
+    SourceLocator, SourceRecord, SourceRole, SourceSearchHit, SourceSearchPage, SourceSearchQuery,
+    UpstreamOrigin,
 };
 pub use versioning::{FileEntry, VersionDiff, VersionManifest, VersionRecord, VersionRepository};
