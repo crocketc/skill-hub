@@ -288,6 +288,29 @@ impl NativeRelationshipWatcher {
         self.inner.start()
     }
 
+    /// Switch the active root set to a new generation. While running, the
+    /// backend replaces its registrations in one start call — there is no
+    /// stop/start gap; already-queued events from the previous generation
+    /// are dropped by the new root filter. An empty set stops the watcher.
+    pub fn apply_root_generation<I, P>(&mut self, roots: I) -> AppResult<()>
+    where
+        I: IntoIterator<Item = P>,
+        P: Into<PathBuf>,
+    {
+        let roots: std::collections::BTreeSet<PathBuf> =
+            roots.into_iter().map(Into::into).collect();
+        self.inner.set_active_roots(roots);
+        if self.inner.is_running() {
+            let watched: Vec<PathBuf> = self.inner.active_roots().map(Path::to_path_buf).collect();
+            if watched.is_empty() {
+                self.stop()?;
+            } else {
+                self.backend.start(&watched)?;
+            }
+        }
+        Ok(())
+    }
+
     pub fn stop(&mut self) -> AppResult<()> {
         self.backend.stop()?;
         self.inner.stop()
@@ -307,6 +330,10 @@ impl NativeRelationshipWatcher {
 
     pub fn on_app_resumed(&mut self) -> bool {
         self.inner.on_app_resumed()
+    }
+
+    pub fn on_overflow(&mut self, root: impl Into<String>) -> bool {
+        self.inner.on_overflow(root)
     }
 
     pub fn on_reconnected(&mut self, root: impl Into<String>) -> bool {

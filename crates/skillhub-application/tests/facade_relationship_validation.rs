@@ -531,3 +531,368 @@ async fn legacy_reconciliation_reclassifies_only_provable_sources() {
         "the original legacy event is retained as history"
     );
 }
+
+mod watch_confirmation {
+    //! Task 6B 验收：watcher hint 只做映射关系确认（Full）；补偿类 hint
+    //! 触发 Light 全量扫描；确认失败时 hint 留在 pending，不归档、不推进
+    //! revision；root generation 原子切换且空集合保持停止（plan 6.2–6.4、
+    //! 6.9）。
+
+    use std::collections::VecDeque;
+    use std::path::{Path, PathBuf};
+    use std::sync::{Arc, Mutex};
+
+    use skillhub_adapters::watcher::{
+        ManualWatchClock, NativeWatchBackend, NativeWatchEvent, NativeWatchEventKind,
+    };
+    use skillhub_application::relationship_watch_confirmation::{
+        FacadeRelationshipCheckExecutor, RelationshipCheckExecuting, RelationshipWatchRuntime,
+    };
+    use skillhub_core::relationship::{
+        RelationshipCheckItem, RelationshipCheckItemStatus, SourceCopyHealth,
+    };
+    use skillhub_core::{AppError, ErrorCode, Severity, SkillId};
+
+    use super::*;
+
+    fn facade_arc(workspace: &std::path::Path) -> Arc<LocalApplicationFacade> {
+        Arc::new(facade_with(workspace))
+    }
+
+    fn changed_event(path: &Path) -> NativeWatchEvent {
+        NativeWatchEvent {
+            kind: NativeWatchEventKind::Changed,
+            path: path.to_path_buf(),
+        }
+    }
+
+    fn runtime_with(backend: &FakeBackend, clock: &ManualWatchClock) -> RelationshipWatchRuntime {
+        RelationshipWatchRuntime::for_tests(Box::new(backend.clone()), Box::new(clock.clone()))
+    }
+
+    fn unchanged_report() -> RelationshipCheckReport {
+        RelationshipCheckReport {
+            items: vec![RelationshipCheckItem {
+                relation_id: "relation-fake".to_owned(),
+                skill_id: SkillId::new(),
+                status: RelationshipCheckItemStatus::Unchanged,
+                health: Some(SourceCopyHealth::Normal),
+                reason: None,
+            }],
+            relationship_revision: 0,
+        }
+    }
+
+    #[derive(Default)]
+    struct FakeExecutorState {
+        roots: Vec<PathBuf>,
+        check_calls: usize,
+        compensate_calls: usize,
+        fail: bool,
+        empty_for: Vec<String>,
+    }
+
+    #[derive(Clone, Default)]
+    struct FakeExecutor {
+        state: Arc<Mutex<FakeExecutorState>>,
+    }
+
+    impl FakeExecutor {
+        fn set_roots(&self, roots: &[PathBuf]) {
+            self.state.lock().unwrap().roots = roots.to_vec();
+        }
+
+        fn calls(&self) -> (usize, usize) {
+            let state = self.state.lock().unwrap();
+            (state.check_calls, state.compensate_calls)
+        }
+
+        fn set_fail(&self, fail: bool) {
+            self.state.lock().unwrap().fail = fail;
+        }
+
+        fn return_empty_for(&self, path: &str) {
+            self.state.lock().unwrap().empty_for.push(path.to_owned());
+        }
+    }
+
+    impl RelationshipCheckExecuting for FakeExecutor {
+        fn active_roots(&self) -> skillhub_core::AppResult<Vec<PathBuf>> {
+            Ok(self.state.lock().unwrap().roots.clone())
+        }
+
+        fn check_path(&self, path: &Path) -> skillhub_core::AppResult<RelationshipCheckReport> {
+            let mut state = self.state.lock().unwrap();
+            state.check_calls += 1;
+            if state.fail {
+                return Err(AppError::new(ErrorCode::InternalError, Severity::Error));
+            }
+            if state
+                .empty_for
+                .iter()
+                .any(|target| *target == path.to_string_lossy())
+            {
+                return Ok(RelationshipCheckReport {
+                    items: Vec::new(),
+                    relationship_revision: 0,
+                });
+            }
+            Ok(unchanged_report())
+        }
+
+        fn compensate(&self) -> skillhub_core::AppResult<RelationshipCheckReport> {
+            let mut state = self.state.lock().unwrap();
+            state.compensate_calls += 1;
+            if state.fail {
+                return Err(AppError::new(ErrorCode::InternalError, Severity::Error));
+            }
+            Ok(unchanged_report())
+        }
+    }
+
+    #[tokio::test]
+    async fn watch_hints_run_full_checks_only_for_mapped_relations() {
+        let workspace = tempfile::tempdir().expect("workspace");
+        let facade = facade_arc(workspace.path());
+        let source = workspace.path().join("watched-src");
+        write_skill(&source, "# Watched\n");
+        import_copy(&facade, &source, "Watched").await;
+
+        let executor = FacadeRelationshipCheckExecutor::new(facade.clone());
+        let backend = FakeBackend::default();
+        let clock = ManualWatchClock::default();
+        let mut runtime = runtime_with(&backend, &clock);
+        runtime.start(&executor).expect("start");
+        assert_eq!(
+            runtime.roots_generation(),
+            1,
+            "first refresh applies the relation roots"
+        );
+        let revision_before = run_check(
+            &facade,
+            RelationshipCheckLevel::Full,
+            RelationshipCheckScope::AllActive,
+        )
+        .await
+        .relationship_revision;
+
+        // 映射路径内的 hint：只检查映射到的关系，检查后事实不变。
+        backend.push(changed_event(&source.join("references/a.md")));
+        assert_eq!(
+            runtime.collect().expect("collect"),
+            0,
+            "a hint stamps on its arrival tick"
+        );
+        clock.advance(400);
+        assert_eq!(
+            runtime.collect().expect("collect"),
+            1,
+            "and is confirmed after the stable window"
+        );
+        let report = runtime.confirm_pending(&executor);
+        assert_eq!(report.confirmed_file_hints, 1);
+        assert_eq!(report.dropped_unmapped, 0);
+        assert_eq!(report.retained_hints, 0);
+        assert!(
+            !report.facts_changed,
+            "unchanged facts do not announce a change"
+        );
+
+        // 未映射路径（不在任何活动关系根下）的 hint 在 watcher 过滤层就被
+        // 丢弃，confirm 队列为空，不触发任何检查。
+        backend.push(changed_event(&workspace.path().join("elsewhere/x.md")));
+        assert_eq!(runtime.collect().expect("collect"), 0);
+        clock.advance(400);
+        assert_eq!(runtime.collect().expect("collect"), 0);
+        let report = runtime.confirm_pending(&executor);
+        assert_eq!(report.confirmed_file_hints, 0);
+        assert_eq!(report.retained_hints, 0);
+        assert_eq!(runtime.pending_len(), 0);
+
+        let revision_after = run_check(
+            &facade,
+            RelationshipCheckLevel::Full,
+            RelationshipCheckScope::AllActive,
+        )
+        .await
+        .relationship_revision;
+        assert_eq!(revision_after, revision_before);
+        assert_eq!(runtime.pending_len(), 0);
+    }
+
+    #[tokio::test]
+    async fn compensation_hints_run_light_scans_through_the_real_pipeline() {
+        let workspace = tempfile::tempdir().expect("workspace");
+        let facade = facade_arc(workspace.path());
+        let source = workspace.path().join("vanish-src");
+        write_skill(&source, "# Vanish\n");
+        import_copy(&facade, &source, "Vanish").await;
+        std::fs::remove_dir_all(&source).expect("remove source");
+
+        let executor = FacadeRelationshipCheckExecutor::new(facade.clone());
+        let backend = FakeBackend::default();
+        let clock = ManualWatchClock::default();
+        let mut runtime = runtime_with(&backend, &clock);
+        runtime.start(&executor).expect("start");
+
+        runtime.on_app_resumed();
+        assert_eq!(
+            runtime.collect().expect("collect"),
+            1,
+            "compensation intent surfaces as one pending hint"
+        );
+        let report = runtime.confirm_pending(&executor);
+        assert_eq!(report.compensation_scans, 1);
+        assert_eq!(report.confirmed_file_hints, 0);
+        assert!(
+            report.facts_changed,
+            "the compensation scan archived a genuinely removed source"
+        );
+
+        // 第二次补偿（Overflow）继续走同一通道；归档后重扫无活动关系。
+        runtime.on_overflow(source.to_string_lossy().into_owned());
+        runtime.collect().expect("collect");
+        let report = runtime.confirm_pending(&executor);
+        assert_eq!(report.compensation_scans, 1);
+
+        let database = facade.database_for_tests().clone();
+        let database = database.lock().unwrap();
+        let relations = database
+            .relationship_repository()
+            .list_source_copy_relations(true)
+            .expect("relations");
+        assert!(
+            relations.is_empty(),
+            "the removed source was archived by the compensation scan"
+        );
+    }
+
+    #[tokio::test]
+    async fn failed_confirmation_keeps_hint_pending_without_fact_changes() {
+        let executor = FakeExecutor::default();
+        executor.set_roots(&[PathBuf::from("/lib")]);
+        let backend = FakeBackend::default();
+        let clock = ManualWatchClock::default();
+        let mut runtime = runtime_with(&backend, &clock);
+        runtime.start(&executor).expect("start");
+
+        backend.push(changed_event(Path::new("/lib/pdf/SKILL.md")));
+        assert_eq!(runtime.collect().expect("collect"), 0);
+        clock.advance(400);
+        assert_eq!(runtime.collect().expect("collect"), 1);
+
+        executor.set_fail(true);
+        let report = runtime.confirm_pending(&executor);
+        assert_eq!(report.retained_hints, 1);
+        assert_eq!(runtime.pending_len(), 1, "failed confirmation stays queued");
+        assert!(!report.facts_changed);
+        assert_eq!(executor.calls(), (1, 0));
+
+        executor.set_fail(false);
+        let report = runtime.confirm_pending(&executor);
+        assert_eq!(report.confirmed_file_hints, 1);
+        assert_eq!(report.retained_hints, 0);
+        assert_eq!(runtime.pending_len(), 0);
+        assert_eq!(executor.calls(), (2, 0));
+    }
+
+    #[tokio::test]
+    async fn hints_without_mapped_relations_are_dropped_without_effects() {
+        let executor = FakeExecutor::default();
+        executor.set_roots(&[PathBuf::from("/lib")]);
+        executor.return_empty_for("/lib/other/x.md");
+        let backend = FakeBackend::default();
+        let clock = ManualWatchClock::default();
+        let mut runtime = runtime_with(&backend, &clock);
+        runtime.start(&executor).expect("start");
+
+        backend.push(changed_event(Path::new("/lib/other/x.md")));
+        runtime.collect().expect("collect");
+        clock.advance(400);
+        runtime.collect().expect("collect");
+
+        let report = runtime.confirm_pending(&executor);
+        assert_eq!(report.dropped_unmapped, 1);
+        assert_eq!(report.confirmed_file_hints, 0);
+        assert!(!report.facts_changed);
+        assert_eq!(runtime.pending_len(), 0);
+    }
+
+    #[tokio::test]
+    async fn root_generation_switches_replace_roots_without_event_loss() {
+        let executor = FakeExecutor::default();
+        let root_a = PathBuf::from("/gen-a");
+        let root_b = PathBuf::from("/gen-b");
+        executor.set_roots(std::slice::from_ref(&root_a));
+        let backend = FakeBackend::default();
+        let clock = ManualWatchClock::default();
+        let mut runtime = runtime_with(&backend, &clock);
+        runtime.start(&executor).expect("start");
+        assert_eq!(runtime.roots_generation(), 1);
+
+        executor.set_roots(std::slice::from_ref(&root_b));
+        assert!(runtime.refresh_roots(&executor).expect("refresh"));
+        assert_eq!(runtime.roots_generation(), 2);
+        assert!(runtime.is_running(), "non-empty switch keeps watching");
+
+        // 旧 generation 的事件被新 root 过滤丢弃（即使已过窗口也不会
+        // 入队），新 generation 事件在后续 tick 确认。
+        backend.push(changed_event(&root_a.join("x.md")));
+        clock.advance(400);
+        assert_eq!(runtime.collect().expect("collect"), 0);
+        backend.push(changed_event(&root_b.join("y.md")));
+        assert_eq!(
+            runtime.collect().expect("collect"),
+            0,
+            "stamped on the arrival tick"
+        );
+        clock.advance(400);
+        assert_eq!(
+            runtime.collect().expect("collect"),
+            1,
+            "confirmed after the stable window"
+        );
+
+        // 未变化的 roots 不换代。
+        assert!(!runtime.refresh_roots(&executor).expect("refresh"));
+        assert_eq!(runtime.roots_generation(), 2);
+
+        // 空集合保持停止。
+        executor.set_roots(&[]);
+        assert!(runtime.refresh_roots(&executor).expect("refresh"));
+        assert!(!runtime.is_running());
+        backend.push(changed_event(&root_b.join("y.md")));
+        assert_eq!(runtime.collect().expect("collect"), 0);
+        assert_eq!(runtime.roots_generation(), 3);
+    }
+
+    #[derive(Default)]
+    struct FakeBackendState {
+        queue: VecDeque<NativeWatchEvent>,
+    }
+
+    #[derive(Clone, Default)]
+    struct FakeBackend {
+        state: Arc<Mutex<FakeBackendState>>,
+    }
+
+    impl FakeBackend {
+        fn push(&self, event: NativeWatchEvent) {
+            self.state.lock().unwrap().queue.push_back(event);
+        }
+    }
+
+    impl NativeWatchBackend for FakeBackend {
+        fn start(&mut self, _roots: &[PathBuf]) -> skillhub_core::AppResult<()> {
+            Ok(())
+        }
+
+        fn stop(&mut self) -> skillhub_core::AppResult<()> {
+            Ok(())
+        }
+
+        fn poll(&mut self) -> Vec<NativeWatchEvent> {
+            self.state.lock().unwrap().queue.drain(..).collect()
+        }
+    }
+}

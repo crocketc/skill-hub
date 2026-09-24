@@ -5,6 +5,7 @@ pub mod library_runtime;
 mod relationship_governance_batch;
 mod relationship_governance_service;
 pub mod relationship_validation_service;
+pub mod relationship_watch_confirmation;
 mod update_service;
 
 use std::collections::{BTreeMap, HashMap};

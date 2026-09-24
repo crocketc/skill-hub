@@ -63,6 +63,16 @@ impl Watcher {
         self.active_roots.iter().map(PathBuf::as_path)
     }
 
+    /// Replace the active root set without touching the coalescer or running
+    /// state; the caller decides when to (re)register the backend.
+    pub fn set_active_roots<I, P>(&mut self, roots: I)
+    where
+        I: IntoIterator<Item = P>,
+        P: Into<PathBuf>,
+    {
+        self.active_roots = roots.into_iter().map(Into::into).collect();
+    }
+
     pub fn coalescer(&self) -> &WatchCoalescer {
         &self.coalescer
     }
